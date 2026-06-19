@@ -14,6 +14,223 @@
 - 后端主要目录：`Code/backend`、`Code/algorithms`、`Code/infra`
 - 共同维护目录：`Code/docs`、`Code/shared`、根目录 `README.md`
 
+## Windows 和 Linux 下的 Git 安装与基础配置
+
+### Windows 安装 Git
+
+如果我是 Windows 用户，我优先这样安装：
+
+1. 打开 Git 官网：`https://git-scm.com/download/win`
+2. 下载 Windows 安装包并安装
+3. 安装时大多数选项保持默认即可
+4. 安装完成后，打开 `PowerShell`、`Git Bash` 或终端测试：
+
+```bash
+git --version
+```
+
+如果能看到版本号，例如 `git version 2.x.x`，说明安装成功。
+
+### Linux 安装 Git
+
+如果我是 Linux 用户，我根据发行版执行对应命令。
+
+Ubuntu / Debian:
+
+```bash
+sudo apt update
+sudo apt install -y git
+```
+
+CentOS / Rocky / RHEL:
+
+```bash
+sudo dnf install -y git
+```
+
+较老系统如果没有 `dnf`，可尝试：
+
+```bash
+sudo yum install -y git
+```
+
+安装完成后测试：
+
+```bash
+git --version
+```
+
+### 第一次基础配置
+
+不管我是 Windows 还是 Linux，第一次安装 Git 后，建议先配置用户名和邮箱：
+
+```bash
+git config --global user.name "你的名字"
+git config --global user.email "你的邮箱"
+```
+
+查看当前全局配置：
+
+```bash
+git config --global --list
+```
+
+如果我是 Windows 用户，建议再配置一次换行策略：
+
+```bash
+git config --global core.autocrlf true
+```
+
+如果我是 Linux 用户，建议保持 `LF`：
+
+```bash
+git config --global core.autocrlf input
+```
+
+如果我希望默认分支名是 `main`，可以执行：
+
+```bash
+git config --global init.defaultBranch main
+```
+
+### 可选：生成 SSH Key
+
+如果我后续希望更方便地推送 GitHub，也可以配置 SSH Key。
+
+先生成：
+
+```bash
+ssh-keygen -t ed25519 -C "你的邮箱"
+```
+
+然后查看公钥内容：
+
+```bash
+cat ~/.ssh/id_ed25519.pub
+```
+
+把公钥添加到 GitHub 账号后，后续就可以使用 SSH 地址克隆和推送仓库。
+
+## 基本 Git 使用方法
+
+### 日常命令
+
+查看当前目录是不是 Git 仓库：
+
+```bash
+git status
+```
+
+查看当前分支：
+
+```bash
+git branch --show-current
+```
+
+查看远端仓库：
+
+```bash
+git remote -v
+```
+
+查看提交历史：
+
+```bash
+git log --oneline --graph --decorate -10
+```
+
+### 我第一次拿到一个已有项目
+
+如果仓库已经在 GitHub 上，我一般这样获取：
+
+```bash
+git clone https://github.com/li589/WebGIS.git
+cd WebGIS
+```
+
+然后切到开发分支：
+
+```bash
+git checkout dev
+git pull origin dev
+```
+
+### 我本地改完代码后怎么提交
+
+最基本的提交流程是：
+
+```bash
+git status
+git add .
+git commit -m "feat: 简要说明本次改动"
+git push origin dev
+```
+
+如果我只想提交某一个文件或某一个目录，可以写具体路径：
+
+```bash
+git add Code/frontend
+git add Code/backend/app
+```
+
+### 我想先同步远端最新代码
+
+最直接的方式是：
+
+```bash
+git pull origin dev
+```
+
+如果我只想先拿远端信息，不立刻合并：
+
+```bash
+git fetch origin
+```
+
+### 我想新建一个功能分支
+
+如果我要开发独立功能，我可以从 `dev` 拉一个分支：
+
+```bash
+git checkout dev
+git pull origin dev
+git checkout -b feature/功能名
+```
+
+完成后推送：
+
+```bash
+git push -u origin feature/功能名
+```
+
+### 我改乱了但还没提交怎么办
+
+如果我只是改了工作区，还没提交，可以先看状态：
+
+```bash
+git status
+```
+
+如果我想临时把当前改动收起来：
+
+```bash
+git stash
+```
+
+恢复暂存内容：
+
+```bash
+git stash pop
+```
+
+### 我需要特别注意什么
+
+- `git add .` 会把当前目录下所有改动一起加入暂存区，执行前先看 `git status`
+- `git commit` 是提交到本地仓库，不等于已经上传 GitHub
+- `git push` 才是把本地提交上传到远端仓库
+- `git pull` 是“拉取并合并”，执行前最好确认自己当前分支和工作区状态
+- 如果本地有重要未提交改动，不要直接执行覆盖性的 `git restore --source ...`
+
 ## 如果我是前端开发者
 
 ### 第一次获取项目
