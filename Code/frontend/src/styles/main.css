@@ -14,12 +14,14 @@
   font-size: 15px;
   color: #d9e6f2;
   background:
-    radial-gradient(circle at top, rgba(17, 94, 160, 0.24), transparent 30rem),
+    radial-gradient(circle at 12% 0%, rgba(26, 105, 184, 0.28), transparent 28rem),
+    radial-gradient(circle at 88% 10%, rgba(68, 97, 210, 0.2), transparent 24rem),
     linear-gradient(180deg, #020814 0%, #071120 45%, #091425 100%);
   font-synthesis: none;
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+  color-scheme: dark;
 }
 
 html,
@@ -30,6 +32,8 @@ body,
 
 body {
   margin: 0;
+  min-width: 320px;
+  overflow: hidden;
 }
 
 button,
@@ -39,16 +43,38 @@ textarea {
   font: inherit;
 }
 
+button {
+  touch-action: manipulation;
+}
+
 a {
   color: inherit;
 }
 
 #app {
   min-height: 100vh;
-  padding: 0.75rem;
+  padding: 0.8rem;
 }
 
 .page-shell {
   max-width: none;
   margin: 0;
+}
+
+::selection {
+  background: rgba(110, 187, 255, 0.28);
+}
+
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+::-webkit-scrollbar-track {
+  background: rgba(8, 16, 28, 0.7);
+}
+
+::-webkit-scrollbar-thumb {
+  border-radius: 999px;
+  background: rgba(107, 152, 199, 0.34);
 }

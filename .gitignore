@@ -38,3 +38,6 @@ Desktop.ini
 *.db
 tmp/
 temp/
+Code/backend/.data/
+Code/frontend/.tmp_guangdong_pkg/
+Code/frontend/*.tgz
