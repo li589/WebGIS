@@ -1,0 +1,405 @@
+# Python Processing Package
+
+这个目录是后续所有 MATLAB -> Python 转换代码的唯一落点。
+
+设计目标：
+
+1. 整个 `Python` 文件夹可以被整体复制到后端处理脚本目录。
+2. 内部目录结构稳定，避免后续频繁改动导入路径。
+3. 对外统一提供任务入口、数据源接口、日志接口和产品输出接口。
+4. 后续 `A/B/C/D` 模块都在这个包结构下逐步迁移。
+
+## 当前结构
+
+```text
+Python/
+  pyproject.toml
+  requirements.txt
+  README.md
+  contracts/
+  interfaces/
+  runner/
+  service/
+  modules/
+  pipelines/
+  ingest/
+  algorithms/
+  workflow/
+  utils/
+```
+
+当前代码正在从“pipeline 主导”收敛到“`modules + workflow` 主导，`pipelines` 仅作兼容层”。
+
+当前已经落地的核心科学实现包括：
+
+```text
+ingest/
+  smap.py
+  ndvi.py
+  fy.py
+  station.py
+  mat_bundle.py
+  daily_bundle.py
+  timeseries_bundle.py
+algorithms/
+  ndvi.py
+  physics.py
+  inversion.py
+  block_inversion.py
+  omega.py
+modules/
+  block_inversion.py         # 原生 module：block_inversion
+  bundles.py                 # 原生 module：daily_bundle / timeseries_bundle
+  fy.py                      # 原生 module：fy_daily
+  inversion.py               # 原生 module：inversion_daily
+  ndvi.py                    # 原生 module：ndvi_daily
+  omega.py                   # 原生 module：omega_block
+  smap.py                    # 原生 module：smap_daily
+  station.py                 # 原生 module：station_daily
+  compat.py
+pipelines/
+  smap_products.py            # 兼容层：后续逐步下沉为 module
+  ndvi_products.py
+  fy_products.py
+  station_products.py
+  inversion_products.py
+  daily_bundle_products.py
+  timeseries_bundle_products.py
+  block_inversion_products.py
+  omega_block_products.py
+  retrieval_workflow_products.py
+```
+
+## 使用方式
+
+如果后端环境支持安装本地包，推荐在 `Python/` 目录执行：
+
+```bash
+python -m pip install -e .
+```
+
+如果后端只是直接复制脚本目录，也可以把 `Python/` 加入 `PYTHONPATH`，然后通过：
+
+```python
+from runner.dispatch import run_job
+```
+
+调用统一入口。
+
+如果调用来自 HTTP/JSON，当前也可以直接启动仓库内置的最小 HTTP 服务：
+
+```bash
+d:\Workspace\mat2py\venv\Scripts\python.exe -m service.http_server --host 127.0.0.1 --port 8000
+```
+
+当前最小 HTTP 服务提供：
+
+- `GET /health`
+- `GET /schemas/job-request`
+- `GET /schemas/workflow-definition`
+- `POST /jobs/validate`
+- `POST /jobs`
+- `POST /jobs/async`
+- `GET /jobs/{submission_id}`
+
+它的定位是“最薄可运行服务入口”，适合本地联调、平台接入收口和后端集成验证；但它还不是带鉴权、配额和网关治理的生产级服务。
+
+`run_job()` 当前支持四种执行形态：
+
+- 传统兼容模式：按 `pipeline_name` 直接执行旧 pipeline
+- 显式工作流模式：当 `JobRequest.workflow_definition` 非空时，直接执行 workflow；这里支持 `WorkflowDefinition` 实例、JSON-compatible `dict` 和 JSON 字符串，都会先被适配为运行时对象
+- 预定义工作流模式：当 `JobRequest.workflow_name` 为已注册预设时，入口会自动构建对应 workflow，例如 `retrieval_workflow`
+- 单模块模式：当 `JobRequest.module_name` 非空时，入口会自动包装成只有一个 `module` 节点的 workflow
+
+兼容迁移里，旧 `pipeline_name="retrieval_workflow_pipeline"` 也会被自动提升为 `workflow_name="retrieval_workflow"`，因此调用侧可以先不改参数结构，逐步完成迁移。
+
+注意：`JobRequest.pipeline_name` 当前仍是必填字段，因此在 `module_name / workflow_name / workflow_definition` 三种 workflow 化调用里，通常使用占位值 `workflow`；真正只有在“传统兼容模式”下，它才需要填写 `runner/registry.py` 中注册的 pipeline 名称。
+如果调用来自 HTTP/JSON，推荐复用 `workflow.serialization.coerce_workflow_definition()` 和 `get_workflow_definition_json_schema()`，先做反序列化与结构校验，再交给 `run_job()`。
+
+如果希望把这条链路收敛成统一服务边界，当前推荐优先复用：
+
+```python
+from service.job_api import (
+    JobService,
+    build_worker,
+    build_local_job_service,
+    build_local_persistent_job_service,
+)
+```
+
+其中：
+
+- `JobService.validate_job(...)`：只做解码和业务校验
+- `JobService.submit_job(...)`：执行 `coerce_job_request -> validate_job_request -> run_job`
+- `JobService.submit_job_async(...)`：返回异步 `submission_id`
+- `JobService.get_job_status(...)`：查询异步任务状态和最终结果
+- `build_job_result_dto(...)`：把 `JobResult + manifest_uri` 整形成稳定的 WebGIS-facing 结果 DTO
+- `JobService.list_modules_response(...)`：返回模块 catalog
+- `JobService.describe_module_response(...)`：返回模块详情
+- `JobService.list_workflows_response(...)`：返回 workflow catalog
+- `JobService.describe_workflow_response(...)`：返回 workflow 详情
+- `JobService.get_workflow_panel_schema_response(...)`：返回 workflow panel schema
+- `JobService.get_workflow_ui_schema_response(...)`：返回 workflow UI schema
+- `build_local_job_service(...)`：使用本地 adapter 构造最小可运行服务
+- `build_local_persistent_job_service(...)`：使用文件持久化状态存储构造本地服务
+- `build_worker(...)`：从已有 `JobService` 构造独立 worker 对象
+
+如果更希望从 HTTP 侧接入这些结构化接口，当前最关键的只读端点是：
+
+- `GET /api/v1/modules`
+- `GET /api/v1/modules/{module_name}`
+- `GET /api/v1/workflows`
+- `GET /api/v1/workflows/{workflow_name}`
+- `GET /api/v1/workflows/{workflow_name}/panel-schema`
+- `GET /api/v1/workflows/{workflow_name}/ui-schema`
+
+当前写接口时，推荐把：
+
+- `job_result`：当作底层执行记录
+- `result_dto`：当作给 WebGIS 页面、任务中心、产品面板消费的稳定结果视图
+
+`result_dto` 会尽量展开本地 manifest；如果 `manifest_uri` 是 `MinIO/S3/HTTP` 这类远端地址，则保持统一字段并把 `manifest_loaded` 置为 `false`。
+
+如果希望异步任务状态在服务重启后仍可查询，推荐直接使用：
+
+```python
+service = build_local_persistent_job_service(workspace="D:/workspace/mat2py-api")
+```
+
+它会把 submission 状态快照写到：
+
+- `workspace/service_state/submissions/*.json`
+
+如果还希望把异步入队也切换为本地文件队列，可以进一步使用：
+
+```python
+from service import FileJobQueue
+
+workspace = "D:/workspace/mat2py-api"
+queue = FileJobQueue(f"{workspace}/service_state/queue")
+service = build_local_persistent_job_service(workspace=workspace, job_queue=queue, start_worker=False)
+worker = build_worker(
+    build_local_persistent_job_service(workspace=workspace, job_queue=queue, start_worker=False)
+)
+```
+
+这样可以把“HTTP 受理进程”和“worker 消费进程”拆开，只共享 workspace 下的状态与队列目录。
+
+如果已经有平台 client，也可以直接使用首版真实 adapter：
+
+```python
+from service import (
+    PlatformSchedulerAdapter,
+    PlatformDataSourceAdapter,
+    PlatformLoggerAdapter,
+    PlatformProductSink,
+)
+```
+
+这些类既支持：
+
+- 直接传 `platform_client`
+- 也支持显式注入具体函数回调
+
+如果想先在本地验证“平台队列 + worker + 查询状态”的完整闭环，当前还可以直接使用：
+
+```python
+from service import (
+    PlatformClientMock,
+    build_platform_job_service,
+    build_platform_mock_service,
+)
+```
+
+其中：
+
+- `PlatformClientMock`：内存 mock 平台 client
+- `build_platform_job_service(...)`：用真实 adapter 组装 service + worker
+- `build_platform_mock_service(...)`：直接返回 `service, worker, platform_client_mock`
+
+`build_platform_mock_service(...)` 当前默认会启用：
+
+- `use_platform_queue=True`
+
+也就是默认直接通过 `PlatformJobQueue(platform_client=platform_client_mock)` 走平台队列接口闭环；如果想临时回退为内存队列，也可以显式传：
+
+```python
+service, worker, platform_client = build_platform_mock_service(
+    workspace="D:/workspace/mat2py-api",
+    use_platform_queue=False,
+    start_worker=False,
+)
+```
+
+这两个 factory 当前也支持显式注入：
+
+- `async_job_registry`
+- `job_queue`
+
+因此平台可以先复用现有 adapter 装配方式，只替换状态存储或队列承载实现。
+
+当前仓库还新增了队列侧的接入边界：
+
+- `FileJobQueue`：本地文件队列，适合单机分进程联调
+- `PlatformJobQueueTemplate`：平台正式队列适配模板
+- `PlatformJobQueue`：支持 `platform_client` 或显式回调的首版真实队列适配类，优先复用 `publish_submission / claim_submission / ack_submission`
+- `CallbackJobQueueBackend`：最小回调式队列骨架
+
+manifest 写出仍支持两种方式：
+
+- 显式传入 `product_sink`
+- 不传时自动回退到本地 `LocalProductSink`
+
+当前 `run_job()` 还会先执行 `pipeline.plan()`，再按 `required_datasets / required_variables / cache_requirement` 调用 `DataSourceAdapter` 做预取与物化，并把结果挂到 `JobRequest.datasource_selection["_prepared_bundles"]`。
+
+当前已引入 `modules/registry.py` 作为最终模块注册表；`runner/registry.py` 中的 pipeline 注册表暂时保留，主要承担旧 `pipeline_name` API 面的兼容职责。
+其中 `block_inversion`、`daily_bundle`、`timeseries_bundle`、`fy_daily`、`inversion_daily`、`ndvi_daily`、`omega_block`、`smap_daily` 与 `station_daily` 已经具备原生 module 实现，同名 compat module 会被原生版本覆盖。
+
+单模块自动包装时，`run_job()` 会把以下请求级对象绑定到模块输入：
+
+- `datasource_selection`
+- `algorithm_params`
+- `output_spec.extra`
+
+当前已内置的 workflow preset：
+
+- `retrieval_workflow`：显式串联 `timeseries_bundle -> block_inversion/omega_block`
+
+其中 `pipelines/retrieval_workflow_products.py` 现已退化为最薄兼容 shim，内部直接转发到 `retrieval_workflow` preset。
+更系统的 pipeline 收口分类见 `docs/pipeline_registry_audit.md`。
+
+可直接兼容调用的 pipeline 名称以 `runner/registry.py` 为准，目前包含：
+
+- `smap_daily_pipeline`
+- `ndvi_daily_pipeline`
+- `fy_daily_pipeline`
+- `station_daily_pipeline`
+- `inversion_daily_pipeline`
+- `daily_bundle_pipeline`
+- `timeseries_bundle_pipeline`
+- `block_inversion_pipeline`
+- `omega_block_pipeline`
+- `retrieval_workflow_pipeline`（兼容名，内部会自动桥接到 `retrieval_workflow` preset）
+
+推荐的默认请求写法：
+
+说明：下面示例里的 `pipeline_name: workflow` 是当前 `JobRequest` 兼容字段的占位写法，不会去 `runner/registry.py` 查找名为 `workflow` 的 pipeline；如果你走的是兼容 pipeline 模式，则必须改成真实注册名，例如 `smap_daily_pipeline`。
+
+```yaml
+# 单模块
+job_id: smap-job-001
+pipeline_name: workflow
+module_name: smap_daily
+task_type: smap_daily
+time_range:
+  start: 2025-01-01
+  end: 2025-01-02
+region:
+  kind: global
+  value: {}
+datasource_selection: {}
+algorithm_params: {}
+output_spec: {}
+```
+
+```yaml
+# 预定义工作流
+job_id: retrieval-job-001
+pipeline_name: workflow
+workflow_name: retrieval_workflow
+task_type: retrieval
+time_range:
+  start: 2025-01-01
+  end: 2025-01-31
+region:
+  kind: bbox
+  value:
+    xmin: 73
+    ymin: 18
+    xmax: 135
+    ymax: 54
+datasource_selection: {}
+algorithm_params:
+  mode: omega
+output_spec: {}
+```
+
+## 配置约定
+
+当前代码已经支持“字段别名配置 + 默认字段回退”：
+
+- `daily_bundle` 侧通过 `build_daily_bundle_config()` 读取 `algorithm_params`
+- `omega` 侧通过 `build_omega_field_config()` 读取 bundle / MAT 字段别名
+- `block_inversion` 侧通过 `build_block_field_config()` 读取字段别名
+
+这意味着后续如果真实数据字段名不是当前默认值，不需要改源码，只需要在 `JobRequest.algorithm_params` 里传入别名参数。
+
+同时，`physics.py` 与 `block_inversion.py` 已经统一了 shape 契约：
+
+- 时序矩阵输入使用 `(nt, npix)`
+- 静态向量输入使用 `(npix,)`
+- 标量、1D、`(1, npix)` 形式会自动广播到目标 shape
+
+详细字段映射和 shape 契约说明请参考：
+
+- `d:\Workspace\mat2py\docs\field_mapping_contract.md`
+
+关于下一阶段“模块化工作流 / 节点化执行 / 丰富输入 schema / 多格式适配 / 最终只保留模块与工作流两层抽象”的扩展设计，请参考：
+
+- `d:\Workspace\mat2py\docs\workflow_extension_design.md`
+
+## 当前边界
+
+当前统一入口已经保留了 `DataSourceAdapter` 边界，并开始支持 workflow 执行；但多数科学实现仍经由兼容层 module 包装旧 pipeline，内部仍主要直接读取 `JobRequest.datasource_selection` 中的本地路径和附加参数。  
+也就是说，数据源适配协议已经稳定，入口层也已经接入 `plan -> adapter` 预取链；但“所有旧 pipeline 完全下沉为原生 module、并全面通过 adapter + artifact store 驱动”仍属于下一阶段集成工作。
+
+同样地，当前 `service/` 目录已经补上了最小 HTTP adapter 和服务收口层，但默认仍连接本地 adapter；要接入真正的 WebGIS 后端调度器，仍需要替换为平台自己的：
+
+- `SchedulerAdapter`
+- `DataSourceAdapter`
+- `LoggerAdapter`
+- `ProductSink`
+
+当前也已经提供函数式平台 adapter 骨架，位于 `service/platform_adapters.py`，可以先把平台现有回调能力挂接到以下封装上：
+
+- `CallbackSchedulerAdapter`
+- `TrackingSchedulerAdapter`
+- `CallbackDataSourceAdapter`
+- `CallbackLoggerAdapter`
+- `CallbackProductSink`
+
+## 当前产品边界
+
+当前 FY 链已经区分两种模式：
+
+- `execute_commands = false`：只生成 `fy_daily_plan_json` 与 `fy_daily_command_plan`
+- `execute_commands = true`：在命令执行完成且最终多波段 TIF 存在时，额外登记 `fy_daily_tif`，并从中解包生成 `TBv/TBh/IA` 的 `fy_daily_mat`
+
+当前站点链除了站点级 `daily/am6` 聚合外，还可以按需输出验证层产物：
+
+- `*_site.mat`
+- `*_grid.mat`
+- `*_net.mat`
+
+其中 `grid/net` 产物用于逐站点向 SMAP 网格和网络层聚合，作为 MATLAB `C2/C4` 验证链的结构化替代。
+
+这些 plan / TIF / MAT 产物属于当前 Python 兼容层的中间与交换产物；面向 WebGIS 的最终发布层仍应按 `docs/blueprint_report.md` 中的 COG / Parquet / JSON 口径继续演化。
+
+## 当前阶段说明
+
+目前这里先搭稳定骨架和统一接口，便于后续逐个迁移：
+
+1. `B1_SMAPL3.m`
+2. `A3_VI_daily.m`
+3. `FY3B.py / FY3dfinalfinal.py`
+4. `C1-C4`
+5. `D1_raw_omeg.m / D2_avg_sm_vod.m`
+
+详细架构与设计请参考：
+
+- `d:\Workspace\mat2py\docs\blueprint_report.md`
+- `d:\Workspace\mat2py\docs\detailed_design.md`
+- `d:\Workspace\mat2py\docs\field_mapping_contract.md`
+- `d:\Workspace\mat2py\docs\backend_integration_contract.md`
+- `d:\Workspace\mat2py\docs\minimal_job_http_service.md`
+- `d:\Workspace\mat2py\docs\platform_queue_worker_integration.md`

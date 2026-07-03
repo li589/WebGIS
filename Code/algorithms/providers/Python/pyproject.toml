@@ -1,0 +1,47 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "mat2py"
+version = "0.1.0"
+description = "Structured Python computation package for MATLAB remote sensing workflows."
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+  "numpy",
+  "scipy",
+  "pandas",
+  "h5py",
+  "netCDF4",
+  "rasterio",
+  "pyproj",
+  "xarray",
+  "numba",
+  "joblib",
+  "loguru",
+  "pydantic",
+  "typing_extensions",
+]
+
+[tool.setuptools]
+include-package-data = true
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = [
+  "contracts*",
+   "data_access*",
+  "interfaces*",
+  "runner*",
+  "service*",
+  "modules*",
+  "pipelines*",
+  "ingest*",
+  "standardize*",
+  "algorithms*",
+  "workflow*",
+  "publish*",
+  "storage*",
+  "utils*",
+]

@@ -1,0 +1,277 @@
+from __future__ import annotations
+
+from datetime import datetime, timedelta
+from typing import Any, Iterable
+
+
+def build_datetime_sequence(start: datetime, end: datetime, step_days: int) -> list[datetime]:
+    dates: list[datetime] = []
+    current = start
+    while current <= end:
+        dates.append(current)
+        current += timedelta(days=step_days)
+    return dates
+
+
+def to_day_numbers(dates: Iterable[datetime]) -> Any:
+    import numpy as np
+
+    return np.array([value.toordinal() for value in dates], dtype=np.float64)
+
+
+def _linear_interp_with_nan(
+    source_x: Any,
+    source_y: Any,
+    target_x: Any,
+) -> Any:
+    import numpy as np
+
+    if source_x.size == 0:
+        return np.full(target_x.shape, np.nan, dtype=np.float64)
+    left_mask = target_x < source_x.min()
+    right_mask = target_x > source_x.max()
+    values = np.interp(target_x, source_x, source_y)
+    values[left_mask | right_mask] = np.nan
+    return values
+
+
+def vi_sg_interpolate(
+    data: Any,
+    observation_days: Any,
+    sg_days: Any,
+    output_days: Any,
+    gap_threshold_days: int = 30,
+    sg_polyorder: int = 6,
+    sg_window_length: int = 9,
+) -> Any:
+    import numpy as np
+    from scipy.signal import savgol_filter
+
+    valid_mask = ~np.isnan(data)
+    if valid_mask.sum() <= 4:
+        return np.full(output_days.shape, np.nan, dtype=np.float64)
+
+    interpolated_8day = _linear_interp_with_nan(
+        observation_days[valid_mask],
+        data[valid_mask],
+        sg_days,
+    )
+    sg_filtered = savgol_filter(interpolated_8day, sg_window_length, sg_polyorder, mode="interp")
+    daily_values = _linear_interp_with_nan(sg_days, sg_filtered, output_days)
+
+    valid_dates = observation_days[valid_mask]
+    if valid_dates.size >= 2:
+        gaps = np.diff(valid_dates)
+        gap_indices = np.where(gaps > gap_threshold_days)[0]
+        for gap_index in gap_indices:
+            left_day = valid_dates[gap_index]
+            right_day = valid_dates[gap_index + 1]
+            daily_values[(output_days > left_day) & (output_days < right_day)] = np.nan
+    return daily_values
+
+
+def process_ndvi_stack_to_daily(
+    ndvi_stack: Any,
+    observation_dates: list[datetime],
+    start_time: datetime,
+    end_time: datetime,
+    sg_step_days: int = 8,
+    daily_step_days: int = 1,
+    gap_threshold_days: int = 30,
+    sg_polyorder: int = 6,
+    sg_window_length: int = 9,
+) -> tuple[Any, list[datetime]]:
+    import numpy as np
+
+    if ndvi_stack.ndim != 3:
+        raise ValueError("NDVI stack must be a 3D array: rows x cols x time")
+    if ndvi_stack.shape[2] != len(observation_dates):
+        raise ValueError("Observation date count does not match NDVI stack time dimension")
+
+    sg_dates = build_datetime_sequence(start_time, end_time, sg_step_days)
+    daily_dates = build_datetime_sequence(start_time, end_time, daily_step_days)
+    observation_days = to_day_numbers(observation_dates)
+    sg_days = to_day_numbers(sg_dates)
+    output_days = to_day_numbers(daily_dates)
+
+    rows, cols, _ = ndvi_stack.shape
+    flattened = ndvi_stack.reshape(rows * cols, -1)
+    daily_flattened = np.full((flattened.shape[0], output_days.size), np.nan, dtype=np.float64)
+
+    for pixel_index in range(flattened.shape[0]):
+        daily_flattened[pixel_index] = vi_sg_interpolate(
+            flattened[pixel_index],
+            observation_days,
+            sg_days,
+            output_days,
+            gap_threshold_days=gap_threshold_days,
+            sg_polyorder=sg_polyorder,
+            sg_window_length=sg_window_length,
+        )
+
+    daily_stack = daily_flattened.reshape(rows, cols, output_days.size)
+    daily_stack[(daily_stack < 0.0) | (daily_stack > 1.0)] = np.nan
+    return daily_stack, daily_dates
+
+
+def _safe_nanmean(values: Any, axis: int) -> Any:
+    import warnings
+
+    import numpy as np
+
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", category=RuntimeWarning)
+        return np.nanmean(values, axis=axis)
+
+
+def _safe_nanmax(values: Any, axis: int) -> Any:
+    import warnings
+
+    import numpy as np
+
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", category=RuntimeWarning)
+        return np.nanmax(values, axis=axis)
+
+
+def _safe_nanmin(values: Any, axis: int) -> Any:
+    import warnings
+
+    import numpy as np
+
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", category=RuntimeWarning)
+        return np.nanmin(values, axis=axis)
+
+
+def _safe_nanpercentile(values: Any, q: float, axis: int) -> Any:
+    import warnings
+
+    import numpy as np
+
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", category=RuntimeWarning)
+        return np.nanpercentile(values, q, axis=axis)
+
+
+def _build_dtw_kernel():
+    import numpy as np
+    from numba import njit
+
+    @njit(cache=True)
+    def _dtw_distance_1d(left: Any, right: Any) -> float:
+        n_left = left.shape[0]
+        n_right = right.shape[0]
+        dp = np.full((n_left + 1, n_right + 1), np.inf, dtype=np.float64)
+        dp[0, 0] = 0.0
+        for i in range(1, n_left + 1):
+            left_value = left[i - 1]
+            for j in range(1, n_right + 1):
+                cost = abs(left_value - right[j - 1])
+                dp[i, j] = cost + min(dp[i - 1, j], dp[i, j - 1], dp[i - 1, j - 1])
+        return dp[n_left, n_right]
+
+    @njit(cache=True)
+    def _dtw_map(clim_flat: Any, dyn_flat: Any) -> Any:
+        pixel_count = dyn_flat.shape[0]
+        result = np.full(pixel_count, np.nan, dtype=np.float64)
+        for pixel_index in range(pixel_count):
+            clim_count = 0
+            dyn_count = 0
+            for time_index in range(clim_flat.shape[1]):
+                if np.isfinite(clim_flat[pixel_index, time_index]):
+                    clim_count += 1
+                if np.isfinite(dyn_flat[pixel_index, time_index]):
+                    dyn_count += 1
+            if clim_count < 3 or dyn_count < 3:
+                continue
+            clim_series = np.empty(clim_count, dtype=np.float64)
+            dyn_series = np.empty(dyn_count, dtype=np.float64)
+            clim_fill = 0
+            dyn_fill = 0
+            for time_index in range(clim_flat.shape[1]):
+                clim_value = clim_flat[pixel_index, time_index]
+                if np.isfinite(clim_value):
+                    clim_series[clim_fill] = clim_value
+                    clim_fill += 1
+                dyn_value = dyn_flat[pixel_index, time_index]
+                if np.isfinite(dyn_value):
+                    dyn_series[dyn_fill] = dyn_value
+                    dyn_fill += 1
+            result[pixel_index] = _dtw_distance_1d(clim_series, dyn_series)
+        return result
+
+    return _dtw_map
+
+
+_COMPUTE_DTW_MAP = _build_dtw_kernel()
+
+
+def build_ndvi_quality_metrics(
+    dynamic_stack: Any,
+    climatology_stack: Any | None = None,
+) -> dict[str, Any]:
+    import numpy as np
+
+    dynamic_stack = np.asarray(dynamic_stack, dtype=np.float64)
+    if dynamic_stack.ndim != 3:
+        raise ValueError("dynamic_stack must be a 3D array: rows x cols x time")
+
+    pixel_valid_count = np.sum(np.isfinite(dynamic_stack), axis=2).astype(np.float64)
+    summary: dict[str, Any] = {
+        "NDVI_v_mean": _safe_nanmean(dynamic_stack, axis=2),
+        "NDVI_v_max": _safe_nanmax(dynamic_stack, axis=2),
+        "NDVI_v_min": _safe_nanmin(dynamic_stack, axis=2),
+        "NDVI_v_range": _safe_nanpercentile(dynamic_stack, 95.0, axis=2)
+        - _safe_nanpercentile(dynamic_stack, 5.0, axis=2),
+        "NDVI_v_vali": np.where(pixel_valid_count >= 3, pixel_valid_count, np.nan),
+    }
+
+    if climatology_stack is None:
+        nan_like = np.full(dynamic_stack.shape[:2], np.nan, dtype=np.float64)
+        summary["NDVI_v_diff_mean"] = nan_like.copy()
+        summary["NDVI_v_diff_std"] = nan_like.copy()
+        summary["NDVI_v_od"] = nan_like.copy()
+        return summary
+
+    climatology_stack = np.asarray(climatology_stack, dtype=np.float64)
+    if climatology_stack.shape != dynamic_stack.shape:
+        raise ValueError("climatology_stack must match dynamic_stack shape")
+
+    diff_stack = dynamic_stack - climatology_stack
+    summary["NDVI_v_diff_mean"] = _safe_nanmean(diff_stack, axis=2)
+    summary["NDVI_v_diff_std"] = np.sqrt(_safe_nanmean(diff_stack**2, axis=2))
+    summary["NDVI_v_od"] = _COMPUTE_DTW_MAP(
+        climatology_stack.reshape(-1, climatology_stack.shape[2]),
+        dynamic_stack.reshape(-1, dynamic_stack.shape[2]),
+    ).reshape(dynamic_stack.shape[:2])
+    return summary
+
+
+def merge_ndvi_quality_metrics(metric_list: list[dict[str, Any]]) -> dict[str, Any]:
+    import numpy as np
+
+    if not metric_list:
+        raise ValueError("metric_list must not be empty")
+
+    mean_stack = np.stack([np.asarray(item["NDVI_v_mean"], dtype=np.float64) for item in metric_list], axis=2)
+    max_stack = np.stack([np.asarray(item["NDVI_v_max"], dtype=np.float64) for item in metric_list], axis=2)
+    min_stack = np.stack([np.asarray(item["NDVI_v_min"], dtype=np.float64) for item in metric_list], axis=2)
+    range_stack = np.stack([np.asarray(item["NDVI_v_range"], dtype=np.float64) for item in metric_list], axis=2)
+    diff_mean_stack = np.stack([np.asarray(item["NDVI_v_diff_mean"], dtype=np.float64) for item in metric_list], axis=2)
+    diff_std_stack = np.stack([np.asarray(item["NDVI_v_diff_std"], dtype=np.float64) for item in metric_list], axis=2)
+    od_stack = np.stack([np.asarray(item["NDVI_v_od"], dtype=np.float64) for item in metric_list], axis=2)
+    vali_stack = np.stack([np.asarray(item["NDVI_v_vali"], dtype=np.float64) for item in metric_list], axis=2)
+
+    merged = {
+        "NDVI_v_mean": _safe_nanmean(mean_stack, axis=2),
+        "NDVI_v_max": _safe_nanmax(max_stack, axis=2),
+        "NDVI_v_min": _safe_nanmin(min_stack, axis=2),
+        "NDVI_v_range": _safe_nanmean(range_stack, axis=2),
+        "NDVI_v_od": np.sqrt(_safe_nanmean(od_stack**2, axis=2) * od_stack.shape[2]),
+        "NDVI_v_diff_mean": _safe_nanmean(diff_mean_stack, axis=2),
+        "NDVI_v_diff_std": np.sqrt(_safe_nanmean(diff_std_stack**2, axis=2)),
+        "NDVI_v_vali": np.nansum(vali_stack, axis=2),
+    }
+    merged["NDVI_v_od"][merged["NDVI_v_od"] == 0.0] = np.nan
+    return merged

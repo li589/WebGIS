@@ -1,0 +1,13 @@
+numpy
+scipy
+pandas
+h5py
+netCDF4
+rasterio
+pyproj
+xarray
+numba
+joblib
+loguru
+pydantic
+typing_extensions
