@@ -52,6 +52,8 @@ export interface LayerCatalogItem {
 
 export type JobStatus = 'running' | 'succeeded' | 'failed' | 'queued' | 'cancelled'
 
+import type { WorkflowResultDto, WorkflowRunViewResponse } from '../../services/runtime-api'
+
 export interface JobLayerItem {
   /** 作业 ID (run_id) */
   jobId: string
@@ -68,6 +70,10 @@ export interface JobLayerItem {
   metrics?: Array<{ label: string; value: string }>
   /** 报告文本摘要 */
   reportSummary?: string
+  /** 统一结果视图 */
+  resultDto?: WorkflowResultDto
+  /** UI 视图模型 */
+  resultView?: WorkflowRunViewResponse
   /** 结果引用链接 */
   resultUrl?: string
 }

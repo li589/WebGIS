@@ -3,11 +3,12 @@ from __future__ import annotations
 from pathlib import Path
 
 from algorithms.ndvi import build_ndvi_quality_metrics, merge_ndvi_quality_metrics, process_ndvi_stack_to_daily
-from contracts.product import ProductManifest, ProductRef
+from contracts.product import ProductManifest
 from data_access import resolve_prepared_local_directory
 from ingest.ndvi import load_ndvi_stack
 from modules.base import BaseModule
 from modules.registry import register_module
+from output import OutputCoordinator
 from workflow.schemas import ArtifactRef, NodeExecutionContext, PortSpec
 
 
@@ -29,6 +30,81 @@ def _store_manifest(
     )
     ctx.artifact_store.put(artifact, payload=manifest)
     return {"manifest": artifact}
+
+
+def _extract_region_bounds(region, stack_shape: tuple) -> tuple[float, float, float, float] | None:
+    """
+    从 RegionSpec 中提取地理边界（west, south, east, north）。
+
+    无 region 时返回中国区域默认值（73E-135E, 18N-53N）。
+    """
+    if region is None:
+        return (73.0, 18.0, 135.0, 53.0)
+
+    kind = getattr(region, "kind", None)
+    value = getattr(region, "value", None)
+
+    if kind == "bbox":
+        bbox = value.get("bbox") if value else None
+        if bbox is None and value:
+            bbox = (value.get("west"), value.get("south"), value.get("east"), value.get("north"))
+        if bbox and len(bbox) == 4:
+            return tuple(float(c) for c in bbox)
+
+    if kind == "aoi":
+        # AOI: 从 geometry bounds 提取
+        geom = value.get("geometry") or value.get("coordinates")
+        if geom:
+            coords = geom.get("coordinates", geom) if isinstance(geom, dict) else geom
+            return _bounds_from_geojson_coords(coords)
+
+    return (73.0, 18.0, 135.0, 53.0)
+
+
+def _bounds_from_geojson_coords(coords) -> tuple[float, float, float, float]:
+    """从 GeoJSON 坐标计算边界"""
+    def _flatten(lst):
+        for item in lst:
+            if isinstance(item, (list, tuple)) and isinstance(item[0], (int, float)):
+                yield item
+            else:
+                yield from _flatten(item)
+    pts = list(_flatten(coords))
+    if not pts:
+        return (73.0, 18.0, 135.0, 53.0)
+    lons = [p[0] for p in pts]
+    lats = [p[1] for p in pts]
+    return (min(lons), min(lats), max(lons), max(lats))
+
+
+def _build_transform_from_bounds(
+    bounds: tuple[float, float, float, float] | None,
+    stack_shape: tuple,
+) -> tuple:
+    """
+    根据边界和数组 shape 构建 rasterio.Affine 变换对象和 CRS。
+
+    返回：(transform, crs)
+    """
+    try:
+        from rasterio.transform import from_bounds
+    except ImportError:
+        return (None, None)
+
+    height, width = stack_shape[:2]
+    if bounds is None:
+        bounds = (73.0, 18.0, 135.0, 53.0)
+    west, south, east, north = bounds
+
+    transform = from_bounds(west, south, east, north, width, height)
+
+    try:
+        import rasterio
+        crs = rasterio.crs.CRS.from_epsg(4326)
+    except ImportError:
+        crs = None
+
+    return (transform, crs)
 
 
 def _resolve_ndvi_input_dir(datasource_selection: dict[str, object]) -> Path:
@@ -99,83 +175,135 @@ class NdviDailyModule(BaseModule):
             sg_window_length=int(algorithm_params.get("sg_window_length", 9)),
         )
 
-        product_refs: list[ProductRef] = []
+        # 从 region 提取地理范围，无 region 时使用中国区域默认值
+        region_bounds = _extract_region_bounds(ctx.request.region, daily_stack.shape)
+        transform, crs = _build_transform_from_bounds(region_bounds, daily_stack.shape)
+
+        # 初始化输出协调器
+        coordinator = OutputCoordinator(
+            job_id=ctx.request.job_id,
+            output_dir=output_dir,
+            module_name=self.name,
+            workflow_name=ctx.request.workflow_name or "",
+            time_range={
+                "start": ctx.request.time_range.start.isoformat(),
+                "end": ctx.request.time_range.end.isoformat(),
+            },
+            region={"bounds": region_bounds} if region_bounds else None,
+            crs="EPSG:4326",
+            pixel_resolution=abs(transform.a) if transform else 0.01,
+            preview_cmap="viridis",
+            preview_size=(512, 512),
+            compress="deflate",
+            overwrite=True,
+        )
+
+        # 写出每日 NDVI 产物：MAT（保留） + COG + preview PNG + manifest 条目
         for index, current_date in enumerate(daily_dates):
-            output_path = output_dir / f"{current_date:%Y%m%d}.mat"
-            savemat(output_path, {"NDVI": daily_stack[:, :, index]}, do_compression=True)
-            product_refs.append(
-                ProductRef(
-                    name=output_path.stem,
-                    type="daily_ndvi_mat",
-                    uri=str(output_path),
-                    variable="NDVI",
-                    tags={"date_key": output_path.stem},
-                )
+            mat_path = output_dir / f"{current_date:%Y%m%d}.mat"
+            savemat(mat_path, {"NDVI": daily_stack[:, :, index]}, do_compression=True)
+
+            daily_data = daily_stack[:, :, index]
+            name = f"ndvi_{current_date:%Y%m%d}"
+            coordinator.write_raster(
+                name=name,
+                data=daily_data,
+                transform=transform,
+                nodata=-9999.0,
+                unit="NDVI",
+                description=f"VIIRS NDVI 日值 {current_date:%Y-%m-%d}",
+                var_name="NDVI",
+                generate_preview=True,
+            )
+            coordinator.add_mat(
+                name=mat_path.stem,
+                path=mat_path,
+                variable="NDVI",
+                description="VIIRS NDVI 日值 MATLAB 格式",
             )
             if ctx.logger_adapter is not None:
-                ctx.logger_adapter.emit_artifact("ndvi_daily", str(output_path), "daily_ndvi_mat")
+                ctx.logger_adapter.emit_artifact("ndvi_daily", str(mat_path), "daily_ndvi_mat")
 
-        quality_product_refs: list[ProductRef] = []
+        # 写出质量评价产物
+        quality_product_count = 0
         if emit_quality_products:
             climatology_stack = None
             if ndvi_clim_dir_value is not None:
                 climatology_stack = _load_daily_climatology_stack(ndvi_clim_dir_value, daily_dates)
             yearly_metrics_by_year = _build_yearly_quality_metrics(daily_stack, daily_dates, climatology_stack)
             yearly_metrics_only = [metrics for _, metrics in yearly_metrics_by_year]
+
             for year_label, yearly_metrics in yearly_metrics_by_year:
                 yearly_path = quality_dir / f"VI_viirs_{year_label}.mat"
                 savemat(yearly_path, yearly_metrics, do_compression=True)
-                quality_product_refs.append(
-                    ProductRef(
-                        name=yearly_path.stem,
-                        type="ndvi_yearly_qa_mat",
-                        uri=str(yearly_path),
-                        variable="NDVI_v_mean,NDVI_v_max,NDVI_v_min,NDVI_v_diff_mean,NDVI_v_diff_std,NDVI_v_range,NDVI_v_od,NDVI_v_vali",
-                        tags={"year": year_label},
-                    )
+                coordinator.add_mat(
+                    name=yearly_path.stem,
+                    path=yearly_path,
+                    variable="NDVI_v_mean,NDVI_v_max,NDVI_v_min,NDVI_v_diff_mean,NDVI_v_diff_std,NDVI_v_range,NDVI_v_od,NDVI_v_vali",
+                    description=f"NDVI 年质量统计 {year_label} 年",
                 )
+                quality_product_count += 1
+
             merged_metrics = merge_ndvi_quality_metrics(yearly_metrics_only)
             merged_path = quality_dir / "VI_v_qa.mat"
             savemat(merged_path, merged_metrics, do_compression=True)
-            quality_product_refs.append(
-                ProductRef(
-                    name=merged_path.stem,
-                    type="ndvi_multi_year_qa_mat",
-                    uri=str(merged_path),
-                    variable="NDVI_v_mean,NDVI_v_max,NDVI_v_min,NDVI_v_diff_mean,NDVI_v_diff_std,NDVI_v_range,NDVI_v_od,NDVI_v_vali",
-                    tags={"aggregation": "multi_year"},
-                )
+            coordinator.add_mat(
+                name=merged_path.stem,
+                path=merged_path,
+                variable="NDVI_v_mean,NDVI_v_max,NDVI_v_min,NDVI_v_diff_mean,NDVI_v_diff_std,NDVI_v_range,NDVI_v_od,NDVI_v_vali",
+                description="NDVI 多年质量统计汇总",
             )
+            quality_product_count += 1
+
             if ctx.logger_adapter is not None:
-                for product in quality_product_refs:
-                    ctx.logger_adapter.emit_artifact("ndvi_daily", product.uri, product.type)
+                ctx.logger_adapter.emit_artifact("ndvi_daily", str(merged_path), "ndvi_multi_year_qa_mat")
+
+        # 添加诊断信息
+        coordinator.add_diagnostic("daily_count", len(daily_dates))
+        coordinator.add_diagnostic("stack_shape", list(daily_stack.shape))
+        coordinator.add_diagnostic("input_dir", str(input_dir))
+        coordinator.add_diagnostic("algorithm_params", algorithm_params)
+
+        # 构建并写出 manifest.json
+        manifest_dict = coordinator.build_manifest(extra={
+            "module_name": self.name,
+            "output_dir": str(output_dir),
+            "quality_output_dir": str(quality_dir) if emit_quality_products else None,
+            "region_bounds": region_bounds,
+        })
 
         if ctx.logger_adapter is not None:
             ctx.logger_adapter.emit_stage_end(
                 "ndvi_daily",
-                f"Generated {len(product_refs)} daily NDVI files"
-                + (f" and {len(quality_product_refs)} quality products" if quality_product_refs else ""),
+                f"Generated {len(daily_dates)} daily NDVI + {quality_product_count} quality products"
+                f" → {manifest_dict.get('manifest_path', output_dir / 'manifest.json')}",
             )
 
         manifest = ProductManifest(
             job_id=ctx.request.job_id,
             run_id=ctx.runtime_context.run_id,
-            products=[*product_refs, *quality_product_refs],
+            products=[],
             main_layers=["NDVI"],
-            metadata_uri=None,
+            metadata_uri=manifest_dict.get("manifest_uri"),
             extra={
                 "module_name": self.name,
                 "output_dir": str(output_dir),
-                "count": len(product_refs),
+                "count": len(daily_dates),
                 "emit_quality_products": emit_quality_products,
                 "quality_output_dir": str(quality_dir) if emit_quality_products else None,
+                "manifest_path": manifest_dict.get("manifest_path", ""),
+                "product_count": len(daily_dates) + quality_product_count,
             },
         )
         return _store_manifest(
             ctx,
             module_name=self.name,
             manifest=manifest,
-            metadata={"product_count": len(product_refs), "quality_product_count": len(quality_product_refs)},
+            metadata={
+                "product_count": len(daily_dates),
+                "quality_product_count": quality_product_count,
+                "manifest_path": manifest_dict.get("manifest_path", ""),
+            },
         )
 
 

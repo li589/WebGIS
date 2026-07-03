@@ -1,0 +1,22 @@
+---
+description: QingTian 决策交互策略：禁原生决策卡，选择走 MCP 文本/qt-choices，保持持续对话不断
+globs: *
+alwaysApply: true
+---
+
+# QingTian 决策交互策略（持续对话防断）
+
+处理 `qtwx-mcp-*` 消息、需要用户做选择/决策时，必须遵守：
+
+1. **禁止**使用 AskQuestion、选项卡，或任何需要用户在 Cursor 原生界面点击的决策/审批类工具来征求选择——它们渲染在 Cursor 本地 UI、不经 MCP 投递，插件侧用户看不到也点不了，且会让本回合 yield、停止 `check_messages` 轮询，导致对话「断开」。
+2. 需要决策时，把选项写进**回复正文**，用下面的 `qt-choices` 选择卡格式（前端会渲染成可点按钮；不渲染时也是可读纯文本）：
+
+```qt-choices
+Q: 这里写问题（可选）
+A) 选项一
+B) 选项二
+C) 其他
+```
+
+3. 输出选项后照常 `record_reply({ content })` 同步全文，再 `check_messages()` 等用户在插件里回复所选项；绝不因「在等用户选」而停止轮询。
+4. 选项用简短编号 A/B/C…；需要自由输入时，提示用户直接打字回复即可。

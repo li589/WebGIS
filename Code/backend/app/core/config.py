@@ -80,12 +80,24 @@ class Settings:
     workflow_queue_algorithm_heavy: str = os.getenv("BACKEND_WORKFLOW_QUEUE_ALGORITHM_HEAVY", workflow_queue_analysis_heavy)
     workflow_queue_algorithm_batch: str = os.getenv("BACKEND_WORKFLOW_QUEUE_ALGORITHM_BATCH", workflow_queue_analysis_batch)
     api_key: str = os.getenv("BACKEND_API_KEY", "")
+    api_keys_enabled: bool = os.getenv(
+        "BACKEND_API_KEYS_ENABLED",
+        "true" if os.getenv("BACKEND_API_KEY", "").strip() else "false",
+    ).lower() == "true"
     cors_origins: list[str] = field(
         default_factory=lambda: _parse_csv_env(
             "BACKEND_CORS_ORIGINS",
             "http://127.0.0.1:5173,http://localhost:5173,http://127.0.0.1:4173,http://localhost:4173",
         )
     )
+
+    # ---- 数据源配置 ----
+    # 存储后端类型：local（本地文件系统）或 minio（MinIO 对象存储）
+    storage_backend: str = os.getenv("BACKEND_STORAGE_BACKEND", "local")
+    # 本地模式数据根目录（逻辑数据集的根路径）
+    data_root: str = os.getenv("BACKEND_DATA_ROOT", r"I:\Geograph_DataSet")
+    # 产物输出根目录（算法产物的写入路径）
+    output_root: str = os.getenv("BACKEND_OUTPUT_ROOT", r"I:\GeoOutput")
 
 
 settings = Settings()

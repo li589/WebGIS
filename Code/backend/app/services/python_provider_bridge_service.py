@@ -99,6 +99,11 @@ class PythonProviderBridgeService:
             job_result=job_result,
             result_dto=result_dto,
         )
+        result_dto["workflow_entry_name"] = (
+            request_payload.get("workflow_name")
+            or request_payload.get("module_name")
+            or "workflow_definition"
+        )
         entry_name = (
             request_payload.get("workflow_name")
             or request_payload.get("module_name")
@@ -154,6 +159,20 @@ class PythonProviderBridgeService:
                 f"已生成 {len(result_refs)} 个结果引用。"
             ),
             result_refs=result_refs,
+            result_dto={
+                "workflow_entry_name": entry_name,
+                "job_id": job_result.get("job_id"),
+                "run_id": job_result.get("run_id"),
+                "job_status": job_result.get("status"),
+                "manifest_loaded": bool(result_dto.get("manifest_loaded")),
+                "manifest_summary": manifest_summary,
+                "products": result_dto.get("products") or [],
+                "main_layers": result_dto.get("main_layers") or [],
+                "qc_layers": result_dto.get("qc_layers") or [],
+                "tables": result_dto.get("tables") or [],
+                "extra": result_dto.get("extra") or {},
+                "artifacts": result_dto.get("artifacts") or {},
+            },
             diagnostics=diagnostics,
             events=events,
         )
@@ -261,10 +280,10 @@ class PythonProviderBridgeService:
         job_result: dict[str, Any],
         result_dto: dict[str, Any],
     ) -> list[WorkflowResultReference]:
-        requested_output_kinds = {str(item) for item in payload.requested_outputs}
-        requested_output_kinds.update(
-            item.value for item in payload.requested_outputs if isinstance(item, ResultKind)
-        )
+        requested_output_kinds = {
+            item.value if isinstance(item, ResultKind) else str(item)
+            for item in payload.requested_outputs
+        }
 
         result_refs: list[WorkflowResultReference] = [
             WorkflowResultReference(

@@ -35,21 +35,44 @@ class SQLiteWorkflowRepository:
         self._db_path = self._state_dir / "workflow_state.sqlite3"
         self._ensure_layout()
         self._initialize_schema()
+        self._migrate_schema()
 
-    def save_run(self, run_status: WorkflowRunStatusResponse) -> None:
+    def save_run(self, run_status: WorkflowRunStatusResponse, request_json: str | None = None) -> None:
         payload = json.dumps(run_status.model_dump(mode="json"), ensure_ascii=False)
         with self._connect() as connection:
-            connection.execute(
-                """
-                INSERT INTO workflow_runs (run_id, status, updated_at, payload_json)
-                VALUES (?, ?, ?, ?)
-                ON CONFLICT(run_id) DO UPDATE SET
-                    status = excluded.status,
-                    updated_at = excluded.updated_at,
-                    payload_json = excluded.payload_json
-                """,
-                (run_status.run_id, run_status.status.value, run_status.updated_at.isoformat(), payload),
-            )
+            if request_json is not None:
+                connection.execute(
+                    """
+                    INSERT INTO workflow_runs (run_id, status, updated_at, payload_json, request_json)
+                    VALUES (?, ?, ?, ?, ?)
+                    ON CONFLICT(run_id) DO UPDATE SET
+                        status = excluded.status,
+                        updated_at = excluded.updated_at,
+                        payload_json = excluded.payload_json,
+                        request_json = COALESCE(excluded.request_json, request_json)
+                    """,
+                    (run_status.run_id, run_status.status.value, run_status.updated_at.isoformat(), payload, request_json),
+                )
+            else:
+                connection.execute(
+                    """
+                    INSERT INTO workflow_runs (run_id, status, updated_at, payload_json)
+                    VALUES (?, ?, ?, ?)
+                    ON CONFLICT(run_id) DO UPDATE SET
+                        status = excluded.status,
+                        updated_at = excluded.updated_at,
+                        payload_json = excluded.payload_json
+                    """,
+                    (run_status.run_id, run_status.status.value, run_status.updated_at.isoformat(), payload),
+                )
+
+    def get_run_request_json(self, run_id: str) -> str | None:
+        with self._connect() as connection:
+            row = connection.execute(
+                "SELECT request_json FROM workflow_runs WHERE run_id = ?",
+                (run_id,),
+            ).fetchone()
+        return row[0] if row is not None else None
 
     def get_run(self, run_id: str) -> WorkflowRunStatusResponse | None:
         with self._connect() as connection:
@@ -147,7 +170,8 @@ class SQLiteWorkflowRepository:
                     run_id TEXT PRIMARY KEY,
                     status TEXT NOT NULL,
                     updated_at TEXT NOT NULL,
-                    payload_json TEXT NOT NULL
+                    payload_json TEXT NOT NULL,
+                    request_json TEXT
                 )
                 """
             )
@@ -186,6 +210,13 @@ class SQLiteWorkflowRepository:
                         """,
                         (scope, config_key, json.dumps(value, ensure_ascii=False)),
                     )
+
+    def _migrate_schema(self) -> None:
+        with self._connect() as connection:
+            cursor = connection.execute("PRAGMA table_info(workflow_runs)")
+            columns = {row[1] for row in cursor.fetchall()}
+            if "request_json" not in columns:
+                connection.execute("ALTER TABLE workflow_runs ADD COLUMN request_json TEXT")
 
     def _connect(self) -> sqlite3.Connection:
         connection = sqlite3.connect(self._db_path)

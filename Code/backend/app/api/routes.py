@@ -10,6 +10,7 @@ from app.services.interaction_hub import interaction_hub
 from app.services.layer_catalog import get_layer_catalog
 from app.services.python_provider_bridge_service import python_provider_bridge_service
 from app.services.result_storage import result_storage_service
+from app.services.result_view_service import result_view_service
 from app.services.task_store import task_store
 from shared.contracts.api_contracts import (
     DemoLayerSnapshot,
@@ -26,6 +27,7 @@ from shared.contracts.api_contracts import (
     WorkflowAcceptedResponse,
     WorkflowEventsResponse,
     WorkflowRunStatusResponse,
+    WorkflowRunViewResponse,
     WorkflowSubmitRequest,
 )
 
@@ -120,6 +122,17 @@ def get_workflow_run(run_id: str) -> WorkflowRunStatusResponse:
     return run_status
 
 
+@router.get("/workflow-runs/{run_id}/view", tags=["workflow"], response_model=WorkflowRunViewResponse)
+def get_workflow_run_view(run_id: str) -> WorkflowRunViewResponse:
+    run_view = result_view_service.get_workflow_run_view(run_id)
+    if run_view is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Workflow run not found: {run_id}",
+        )
+    return run_view
+
+
 @router.get("/workflow-runs/{run_id}/events", tags=["workflow"], response_model=WorkflowEventsResponse)
 def list_workflow_events(request: Request, run_id: str) -> WorkflowEventsResponse:
     client_ip = request.client.host if request.client else "unknown"
@@ -135,6 +148,22 @@ def list_workflow_events(request: Request, run_id: str) -> WorkflowEventsRespons
             detail=f"Workflow run not found: {run_id}",
         )
     return events
+
+
+@router.post("/workflow-runs/{run_id}/cancel", tags=["workflow"], response_model=WorkflowRunStatusResponse, dependencies=[Depends(require_write_access)])
+def cancel_workflow_run(run_id: str) -> WorkflowRunStatusResponse:
+    try:
+        return interaction_hub.cancel_workflow_run(run_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+
+
+@router.post("/workflow-runs/{run_id}/retry", tags=["workflow"], response_model=WorkflowAcceptedResponse, dependencies=[Depends(require_write_access)])
+def retry_workflow_run(run_id: str) -> WorkflowAcceptedResponse:
+    try:
+        return interaction_hub.retry_workflow_run(run_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
 
 
 @router.patch(

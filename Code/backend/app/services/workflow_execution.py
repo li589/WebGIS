@@ -10,6 +10,7 @@ from shared.contracts.api_contracts import WorkflowEvent, WorkflowResultReferenc
 class WorkflowExecutionResult:
     message: str
     result_refs: list[WorkflowResultReference] = field(default_factory=list)
+    result_dto: dict[str, Any] | None = None
     diagnostics: list[str] = field(default_factory=list)
     events: list[WorkflowEvent] = field(default_factory=list)
     follow_up_tasks: list[dict[str, Any]] = field(default_factory=list)

@@ -3,6 +3,7 @@ import { computed } from 'vue'
 
 import type { ActiveLayerDisplay } from '../stores/layers/types'
 import type { DemoHotspot } from '../app/demo-data'
+import { buildResultDisplayModel } from './info-panel/result-adapter'
 
 const props = defineProps<{
   viewLabel: string
@@ -11,11 +12,30 @@ const props = defineProps<{
   stageLabel: string
   visibleHotspots: DemoHotspot[]
   selectedLayer?: ActiveLayerDisplay | null
+  isSubmitting?: boolean
+  workflowError?: string | null
 }>()
 
-// Use selectedLayer if available, otherwise fall back to activeLayer prop
+const emit = defineEmits<{
+  runWorkflow: [catalogId: string]
+}>()
+
 const displayLayer = computed(() => props.selectedLayer ?? props.activeLayer)
 const jobLayer = computed(() => displayLayer.value?.jobLayer)
+const resultModel = computed(() => buildResultDisplayModel(jobLayer.value?.resultView ?? null))
+const canRunWorkflow = computed(() => !displayLayer.value?.isAdminBoundary)
+const isWorkflowRunning = computed(() => jobLayer.value?.status === 'running' || jobLayer.value?.status === 'queued')
+const buttonDisabled = computed(() => isWorkflowRunning.value || props.isSubmitting)
+const buttonLabel = computed(() => {
+  if (props.isSubmitting) return '提交中...'
+  if (isWorkflowRunning.value) return '任务进行中'
+  return '运行工作流'
+})
+
+function handleRunWorkflow() {
+  if (!displayLayer.value || !canRunWorkflow.value || buttonDisabled.value) return
+  emit('runWorkflow', displayLayer.value.catalogId)
+}
 </script>
 
 <template>
@@ -27,6 +47,23 @@ const jobLayer = computed(() => displayLayer.value?.jobLayer)
           <p class="panel-subtitle">当前摘要</p>
         </div>
         <span class="readiness">{{ stageLabel }}</span>
+      </div>
+
+      <!-- Error display -->
+      <div v-if="workflowError" class="workflow-error">
+        <span class="error-icon">⚠️</span>
+        <span class="error-message">{{ workflowError }}</span>
+      </div>
+
+      <div class="action-row">
+        <button
+          v-if="canRunWorkflow"
+          class="run-workflow-btn"
+          :disabled="buttonDisabled"
+          @click="handleRunWorkflow"
+        >
+          {{ buttonLabel }}
+        </button>
       </div>
 
       <dl class="meta-list">
@@ -58,7 +95,6 @@ const jobLayer = computed(() => displayLayer.value?.jobLayer)
         </span>
       </div>
 
-      <!-- Progress bar for running jobs -->
       <div v-if="jobLayer.status === 'running'" class="job-progress-row">
         <div class="job-progress-bar">
           <div class="job-progress-fill" :style="{ width: `${jobLayer.progress}%` }"></div>
@@ -68,24 +104,31 @@ const jobLayer = computed(() => displayLayer.value?.jobLayer)
 
       <p class="job-message">{{ jobLayer.message || '作业正在处理中...' }}</p>
 
-      <!-- Job metrics -->
-      <div v-if="jobLayer.metrics && jobLayer.metrics.length > 0" class="job-metrics">
-        <div v-for="m in jobLayer.metrics" :key="m.label" class="job-metric-item">
+      <div v-if="resultModel?.metricRows.length" class="job-metrics">
+        <div v-for="m in resultModel.metricRows" :key="m.label" class="job-metric-item">
           <span class="jm-label">{{ m.label }}</span>
           <strong class="jm-value">{{ m.value }}</strong>
         </div>
       </div>
 
-      <!-- Report summary -->
-      <div v-if="jobLayer.reportSummary" class="job-summary">
-        <h3>报告摘要</h3>
-        <p>{{ jobLayer.reportSummary }}</p>
+      <div v-if="resultModel" class="job-summary">
+        <h3>结果视图</h3>
+        <p>{{ resultModel.title }} · {{ resultModel.subtitle }}</p>
       </div>
 
-      <!-- Result link -->
+      <div v-if="resultModel?.metricRows.length" class="job-summary-meta">
+        <h3>稳定适配层</h3>
+        <dl class="summary-grid">
+          <div v-for="row in resultModel.metricRows" :key="row.label" class="summary-item">
+            <dt>{{ row.label }}</dt>
+            <dd>{{ row.value }}</dd>
+          </div>
+        </dl>
+      </div>
+
       <a
-        v-if="jobLayer.resultUrl"
-        :href="jobLayer.resultUrl"
+        v-if="resultModel?.canShowResultLink && resultModel.resultUrl"
+        :href="resultModel.resultUrl"
         target="_blank"
         class="job-result-link"
       >
@@ -164,6 +207,51 @@ const jobLayer = computed(() => displayLayer.value?.jobLayer)
   display: grid;
   gap: 0.46rem;
   padding: 0.12rem;
+}
+
+.action-row {
+  display: flex;
+  justify-content: flex-start;
+}
+
+.workflow-error {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.34rem 0.48rem;
+  border-radius: 0.62rem;
+  background: rgba(255, 80, 80, 0.12);
+  border: 1px solid rgba(255, 80, 80, 0.22);
+  color: #ff9999;
+  font-size: 0.58rem;
+}
+
+.error-icon {
+  font-size: 0.72rem;
+}
+
+.error-message {
+  line-height: 1.3;
+}
+
+.run-workflow-btn {
+  border: 1px solid rgba(103, 212, 255, 0.24);
+  border-radius: 999px;
+  background: rgba(29, 78, 216, 0.18);
+  color: #d8f3ff;
+  font-size: 0.62rem;
+  padding: 0.34rem 0.7rem;
+  cursor: pointer;
+  transition: background-color 0.18s ease, opacity 0.18s ease;
+}
+
+.run-workflow-btn:hover:not(:disabled) {
+  background: rgba(29, 78, 216, 0.28);
+}
+
+.run-workflow-btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.62;
 }
 
 .panel-header {
@@ -316,12 +404,14 @@ dd {
   font-weight: 600;
 }
 
-.job-summary {
+.job-summary,
+.job-summary-meta {
   display: grid;
   gap: 0.18rem;
 }
 
-.job-summary h3 {
+.job-summary h3,
+.job-summary-meta h3 {
   font-size: 0.64rem;
   color: #b8d4ee;
 }
@@ -331,6 +421,31 @@ dd {
   color: #8ea8c0;
   font-size: 0.6rem;
   line-height: 1.38;
+}
+
+.summary-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.18rem;
+  margin: 0;
+}
+
+.summary-item {
+  display: grid;
+  gap: 0.08rem;
+  padding: 0.24rem 0.28rem;
+  border-radius: 0.48rem;
+  background: rgba(4, 12, 23, 0.26);
+}
+
+.summary-item dt {
+  color: #7d90a7;
+  font-size: 0.5rem;
+}
+
+.summary-item dd {
+  color: #d8e6f2;
+  font-size: 0.6rem;
 }
 
 .job-result-link {

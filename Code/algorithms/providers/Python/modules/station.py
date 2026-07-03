@@ -9,10 +9,11 @@ from algorithms.station import (
     filter_station_records,
     station_records_to_rows,
 )
-from contracts.product import ProductManifest, ProductRef
+from contracts.product import ProductManifest
 from data_access import resolve_prepared_local_directory, resolve_prepared_local_path
 from ingest.mat_bundle import load_mat_file
 from ingest.station import (
+    StationRecord,
     discover_casmos_txt_files,
     discover_ismn_stm_files,
     load_casmos_site_info,
@@ -21,6 +22,7 @@ from ingest.station import (
 )
 from modules.base import BaseModule
 from modules.registry import register_module
+from output import OutputCoordinator
 from workflow.schemas import ArtifactRef, NodeExecutionContext, PortSpec
 
 
@@ -106,7 +108,20 @@ class StationDailyModule(BaseModule):
         if ctx.logger_adapter is not None:
             ctx.logger_adapter.emit_stage_start("station_daily", f"Process {source_type} station records from {input_dir}")
 
-        product_refs: list[ProductRef] = []
+        # 初始化输出协调器
+        coordinator = OutputCoordinator(
+            job_id=ctx.request.job_id,
+            output_dir=output_dir,
+            module_name=self.name,
+            workflow_name=ctx.request.workflow_name or "",
+            time_range={
+                "start": ctx.request.time_range.start.isoformat(),
+                "end": ctx.request.time_range.end.isoformat(),
+            },
+            crs="EPSG:4326",
+            overwrite=True,
+        )
+
         if source_type == "ISMN":
             input_files = discover_ismn_stm_files(input_dir)
             for file_path in input_files:
@@ -139,28 +154,42 @@ class StationDailyModule(BaseModule):
                     continue
                 site_output = output_dir / file_path.stem
                 site_output.mkdir(parents=True, exist_ok=True)
-                daily_path = site_output / "daily.mat"
-                am6_path = site_output / "am6.mat"
+
                 if daily_records:
+                    daily_path = site_output / "daily.mat"
                     savemat(daily_path, {"ismn": station_records_to_rows(daily_records)}, do_compression=True)
-                    product_refs.append(
-                        ProductRef(
-                            name=f"{file_path.stem}_daily",
-                            type="station_daily_mat",
-                            uri=str(daily_path),
-                            variable="soil_moisture",
-                        )
+                    coordinator.add_mat(
+                        name=f"{file_path.stem}_daily",
+                        path=daily_path,
+                        variable="soil_moisture",
+                        description="ISMN 站点日均土壤水分 MATLAB 格式",
                     )
+                    # 写出 Parquet 表格（前端可消费）
+                    df = _station_records_to_dataframe(daily_records, source_type="ISMN")
+                    coordinator.write_table(
+                        name=f"{file_path.stem}_daily",
+                        df=df,
+                        description="ISMN 站点日均土壤水分表格",
+                    )
+                    if ctx.logger_adapter is not None:
+                        ctx.logger_adapter.emit_artifact("station_daily", str(daily_path), "station_daily_mat")
+
                 if am6_records:
+                    am6_path = site_output / "am6.mat"
                     savemat(am6_path, {"ismn": station_records_to_rows(am6_records)}, do_compression=True)
-                    product_refs.append(
-                        ProductRef(
-                            name=f"{file_path.stem}_am6",
-                            type="station_am6_mat",
-                            uri=str(am6_path),
-                            variable="soil_moisture",
-                        )
+                    coordinator.add_mat(
+                        name=f"{file_path.stem}_am6",
+                        path=am6_path,
+                        variable="soil_moisture",
+                        description="ISMN 站点 6AM 土壤水分 MATLAB 格式",
                     )
+                    df = _station_records_to_dataframe(am6_records, source_type="ISMN")
+                    coordinator.write_table(
+                        name=f"{file_path.stem}_am6",
+                        df=df,
+                        description="ISMN 站点 6AM 土壤水分表格",
+                    )
+
         elif source_type == "CASMOS":
             site_info_path = datasource_selection.get("site_info_csv")
             site_info = load_casmos_site_info(site_info_path) if site_info_path else {}
@@ -195,32 +224,44 @@ class StationDailyModule(BaseModule):
                     continue
                 site_output = output_dir / file_path.stem
                 site_output.mkdir(parents=True, exist_ok=True)
-                daily_path = site_output / "daily.mat"
-                am6_path = site_output / "am6.mat"
+
                 if daily_records:
+                    daily_path = site_output / "daily.mat"
                     savemat(daily_path, {"china_10cm": station_records_to_rows(daily_records)}, do_compression=True)
-                    product_refs.append(
-                        ProductRef(
-                            name=f"{file_path.stem}_daily",
-                            type="station_daily_mat",
-                            uri=str(daily_path),
-                            variable="soil_moisture",
-                        )
+                    coordinator.add_mat(
+                        name=f"{file_path.stem}_daily",
+                        path=daily_path,
+                        variable="soil_moisture",
+                        description="CASMOS 站点日均土壤水分 MATLAB 格式",
                     )
+                    df = _station_records_to_dataframe(daily_records, source_type="CASMOS")
+                    coordinator.write_table(
+                        name=f"{file_path.stem}_daily",
+                        df=df,
+                        description="CASMOS 站点日均土壤水分表格",
+                    )
+                    if ctx.logger_adapter is not None:
+                        ctx.logger_adapter.emit_artifact("station_daily", str(daily_path), "station_daily_mat")
+
                 if am6_records:
+                    am6_path = site_output / "am6.mat"
                     savemat(am6_path, {"china_10cm": station_records_to_rows(am6_records)}, do_compression=True)
-                    product_refs.append(
-                        ProductRef(
-                            name=f"{file_path.stem}_am6",
-                            type="station_am6_mat",
-                            uri=str(am6_path),
-                            variable="soil_moisture",
-                        )
+                    coordinator.add_mat(
+                        name=f"{file_path.stem}_am6",
+                        path=am6_path,
+                        variable="soil_moisture",
+                        description="CASMOS 站点 6AM 土壤水分 MATLAB 格式",
+                    )
+                    df = _station_records_to_dataframe(am6_records, source_type="CASMOS")
+                    coordinator.write_table(
+                        name=f"{file_path.stem}_am6",
+                        df=df,
+                        description="CASMOS 站点 6AM 土壤水分表格",
                     )
         else:
             raise ValueError(f"Unsupported station source_type: {source_type}")
 
-        validation_refs = self._write_validation_products(
+        validation_refs = _write_validation_products(
             datasource_selection=datasource_selection,
             algorithm_params=algorithm_params,
             output_dir=output_dir,
@@ -230,120 +271,176 @@ class StationDailyModule(BaseModule):
             validation_end=validation_end,
             min_valid_days=min_valid_days,
             enabled=emit_validation_products,
+            coordinator=coordinator,
         )
-        product_refs.extend(validation_refs)
 
         if ctx.logger_adapter is not None:
-            for product in product_refs:
-                ctx.logger_adapter.emit_artifact("station_daily", product.uri, product.type)
-            ctx.logger_adapter.emit_stage_end("station_daily", f"Generated {len(product_refs)} station products")
+            ctx.logger_adapter.emit_stage_end(
+                "station_daily",
+                f"Generated station products → {output_dir}",
+            )
+
+        # 添加诊断信息
+        coordinator.add_diagnostic("source_type", source_type)
+        coordinator.add_diagnostic("input_dir", str(input_dir))
+        coordinator.add_diagnostic("site_count", len(validation_records_by_site))
+        coordinator.add_diagnostic("validation_start", validation_start.strftime("%Y%m%d"))
+        coordinator.add_diagnostic("validation_end", validation_end.strftime("%Y%m%d"))
+        coordinator.add_diagnostic("algorithm_params", algorithm_params)
+
+        # 构建并写出 manifest.json
+        manifest_dict = coordinator.build_manifest(extra={
+            "module_name": self.name,
+            "source_type": source_type,
+            "output_dir": str(output_dir),
+            "emit_validation_products": emit_validation_products,
+            "validation_start": validation_start.strftime("%Y%m%d"),
+            "validation_end": validation_end.strftime("%Y%m%d"),
+            "validation_hour": validation_hour,
+            "validation_max_depth_cm": max_depth_cm,
+        })
 
         manifest = ProductManifest(
             job_id=ctx.request.job_id,
             run_id=ctx.runtime_context.run_id,
-            products=product_refs,
+            products=[],
             main_layers=["soil_moisture"],
-            metadata_uri=None,
+            metadata_uri=manifest_dict.get("manifest_uri"),
             extra={
                 "module_name": self.name,
                 "source_type": source_type,
                 "output_dir": str(output_dir),
-                "count": len(product_refs),
+                "count": coordinator.product_count,
                 "emit_validation_products": emit_validation_products,
-                "validation_start": validation_start.strftime("%Y%m%d"),
-                "validation_end": validation_end.strftime("%Y%m%d"),
-                "validation_hour": validation_hour,
-                "validation_max_depth_cm": max_depth_cm,
-                "validation_min_sm": min_sm,
-                "validation_max_sm": max_sm,
+                "manifest_path": manifest_dict.get("manifest_path", ""),
             },
         )
-        return _store_manifest(ctx, module_name=self.name, manifest=manifest, metadata={"product_count": len(product_refs)})
+        return _store_manifest(
+            ctx,
+            module_name=self.name,
+            manifest=manifest,
+            metadata={
+                "product_count": coordinator.product_count,
+                "manifest_path": manifest_dict.get("manifest_path", ""),
+            },
+        )
 
-    def _write_validation_products(
-        self,
-        *,
-        datasource_selection: dict[str, object],
-        algorithm_params: dict[str, object],
-        output_dir: Path,
-        source_type: str,
-        records_by_site: dict[str, list],
+def _station_records_to_dataframe(records: list[StationRecord], source_type: str = "ISMN") -> "pd.DataFrame":
+    """
+    将 StationRecord 列表转换为 pandas DataFrame（用于 Parquet 写出）。
+
+    前端图表可直接消费此格式。
+    """
+    try:
+        import pandas as pd
+    except ImportError:
+        raise ImportError("pandas is required for table output. Install: pip install pandas pyarrow")
+
+    rows = []
+    for record in records:
+        rows.append(
+            {
+                "year": record.year,
+                "month": record.month,
+                "day": record.day,
+                "hour": record.hour,
+                "date": f"{record.year:04d}-{record.month:02d}-{record.day:02d}",
+                "lat": record.lat,
+                "lon": record.lon,
+                "elev": record.elev,
+                "depth_upper_cm": round(record.depth_upper * 100, 2),
+                "depth_lower_cm": round(record.depth_lower * 100, 2),
+                "soil_moisture": record.soil_moisture,
+                "quality_flag": record.quality_flag,
+                "site_id": record.site_id,
+                "source": record.source or source_type,
+            }
+        )
+    return pd.DataFrame(rows)
+
+
+def _write_validation_products(
+    *,
+    datasource_selection: dict[str, object],
+    algorithm_params: dict[str, object],
+    output_dir: Path,
+    source_type: str,
+    records_by_site: dict[str, list[StationRecord]],
+    validation_start: datetime,
+    validation_end: datetime,
+    min_valid_days: int,
+    enabled: bool,
+    coordinator: OutputCoordinator,
+) -> dict[str, object]:
+    from scipy.io import savemat
+
+    if not enabled or not records_by_site:
+        return {}
+    ancillary_path = datasource_selection.get("smap_grid_mat")
+    if ancillary_path is None:
+        return {}
+
+    smap_payload = load_mat_file(ancillary_path)
+    smap_lat = _pick_first_available(smap_payload, _alias_list(algorithm_params, "smap_lat_aliases", ["lat_smap", "lat", "lat_9km"]))
+    smap_lon = _pick_first_available(smap_payload, _alias_list(algorithm_params, "smap_lon_aliases", ["lon_smap", "lon", "lon_9km"]))
+
+    landcover_grid = landcover_lat = landcover_lon = None
+    landcover_mat = datasource_selection.get("landcover_mat")
+    if landcover_mat is not None:
+        payload = load_mat_file(landcover_mat)
+        landcover_grid = _pick_first_available(payload, _alias_list(algorithm_params, "landcover_aliases", ["IGBP_9km_12", "LC"]), required=False)
+        landcover_lat = _pick_first_available(payload, _alias_list(algorithm_params, "landcover_lat_aliases", ["lat_9km", "lat"]), required=False)
+        landcover_lon = _pick_first_available(payload, _alias_list(algorithm_params, "landcover_lon_aliases", ["lon_9km", "lon"]), required=False)
+
+    climate_grid = climate_lat = climate_lon = None
+    climate_mat = datasource_selection.get("climate_mat")
+    if climate_mat is not None:
+        payload = load_mat_file(climate_mat)
+        climate_grid = _pick_first_available(payload, _alias_list(algorithm_params, "climate_aliases", ["Koppen_present_083", "Koppen", "climate"]), required=False)
+        climate_lat = _pick_first_available(payload, _alias_list(algorithm_params, "climate_lat_aliases", ["lat_kop", "lat"]), required=False)
+        climate_lon = _pick_first_available(payload, _alias_list(algorithm_params, "climate_lon_aliases", ["lon_kop", "lon"]), required=False)
+
+    smap_landcover_grid = _pick_first_available(
+        smap_payload,
+        _alias_list(algorithm_params, "smap_landcover_aliases", ["IGBP_9km_12", "lc_smap", "site_lc_smap"]),
+        required=False,
+    )
+    network_map = None
+    network_map_csv = datasource_selection.get("network_map_csv")
+    if network_map_csv is not None:
+        network_map = _load_network_map(network_map_csv)
+
+    validation_payload = build_station_validation_outputs(
+        records_by_site,
         validation_start,
         validation_end,
-        min_valid_days: int,
-        enabled: bool,
-    ) -> list[ProductRef]:
-        from scipy.io import savemat
+        smap_lat=smap_lat,
+        smap_lon=smap_lon,
+        min_valid_days=min_valid_days,
+        landcover_grid=landcover_grid,
+        landcover_lat=landcover_lat,
+        landcover_lon=landcover_lon,
+        climate_grid=climate_grid,
+        climate_lat=climate_lat,
+        climate_lon=climate_lon,
+        smap_landcover_grid=smap_landcover_grid,
+        network_map=network_map,
+    )
+    if not validation_payload:
+        return {}
 
-        if not enabled or not records_by_site:
-            return []
-        ancillary_path = datasource_selection.get("smap_grid_mat")
-        if ancillary_path is None:
-            return []
-
-        smap_payload = load_mat_file(ancillary_path)
-        smap_lat = _pick_first_available(smap_payload, _alias_list(algorithm_params, "smap_lat_aliases", ["lat_smap", "lat", "lat_9km"]))
-        smap_lon = _pick_first_available(smap_payload, _alias_list(algorithm_params, "smap_lon_aliases", ["lon_smap", "lon", "lon_9km"]))
-
-        landcover_grid = landcover_lat = landcover_lon = None
-        landcover_mat = datasource_selection.get("landcover_mat")
-        if landcover_mat is not None:
-            payload = load_mat_file(landcover_mat)
-            landcover_grid = _pick_first_available(payload, _alias_list(algorithm_params, "landcover_aliases", ["IGBP_9km_12", "LC"]), required=False)
-            landcover_lat = _pick_first_available(payload, _alias_list(algorithm_params, "landcover_lat_aliases", ["lat_9km", "lat"]), required=False)
-            landcover_lon = _pick_first_available(payload, _alias_list(algorithm_params, "landcover_lon_aliases", ["lon_9km", "lon"]), required=False)
-
-        climate_grid = climate_lat = climate_lon = None
-        climate_mat = datasource_selection.get("climate_mat")
-        if climate_mat is not None:
-            payload = load_mat_file(climate_mat)
-            climate_grid = _pick_first_available(payload, _alias_list(algorithm_params, "climate_aliases", ["Koppen_present_083", "Koppen", "climate"]), required=False)
-            climate_lat = _pick_first_available(payload, _alias_list(algorithm_params, "climate_lat_aliases", ["lat_kop", "lat"]), required=False)
-            climate_lon = _pick_first_available(payload, _alias_list(algorithm_params, "climate_lon_aliases", ["lon_kop", "lon"]), required=False)
-
-        smap_landcover_grid = _pick_first_available(
-            smap_payload,
-            _alias_list(algorithm_params, "smap_landcover_aliases", ["IGBP_9km_12", "lc_smap", "site_lc_smap"]),
-            required=False,
+    prefix = "ismn" if source_type == "ISMN" else "china"
+    for payload_name, payload in validation_payload.items():
+        output_path = output_dir / f"{prefix}_{payload_name}.mat"
+        savemat(output_path, payload, do_compression=True)
+        coordinator.add_mat(
+            name=f"{prefix}_{payload_name}",
+            path=output_path,
+            variable=payload_name,
+            description=f"站点{payload_name}验证 MATLAB 格式",
         )
-        network_map = None
-        network_map_csv = datasource_selection.get("network_map_csv")
-        if network_map_csv is not None:
-            network_map = _load_network_map(network_map_csv)
 
-        validation_payload = build_station_validation_outputs(
-            records_by_site,
-            validation_start,
-            validation_end,
-            smap_lat=smap_lat,
-            smap_lon=smap_lon,
-            min_valid_days=min_valid_days,
-            landcover_grid=landcover_grid,
-            landcover_lat=landcover_lat,
-            landcover_lon=landcover_lon,
-            climate_grid=climate_grid,
-            climate_lat=climate_lat,
-            climate_lon=climate_lon,
-            smap_landcover_grid=smap_landcover_grid,
-            network_map=network_map,
-        )
-        if not validation_payload:
-            return []
-
-        prefix = "ismn" if source_type == "ISMN" else "china"
-        product_refs: list[ProductRef] = []
-        for payload_name, payload in validation_payload.items():
-            output_path = output_dir / f"{prefix}_{payload_name}.mat"
-            savemat(output_path, payload, do_compression=True)
-            product_refs.append(
-                ProductRef(
-                    name=f"{prefix}_{payload_name}",
-                    type=f"station_{payload_name}_validation_mat",
-                    uri=str(output_path),
-                    variable=payload_name,
-                )
-            )
-        return product_refs
+    return {}
 
 
 def _alias_list(params: dict[str, object], key: str, default_aliases: list[str]) -> list[str]:

@@ -3,7 +3,7 @@
 WebGIS 后端接入方只需实现这里列出的 Protocol（接口），即可通过 run_job() 驱动计算。
 """
 
-from .datasource import DataAsset, DataSourceAdapter
+from .datasource import DataAsset, DataSourceAdapter, DataSourceAdapterImpl
 from .logger import LoggerAdapter
 from .product_sink import ProductSink, RasterProduct, TableProduct
 from .scheduler import SchedulerAdapter
@@ -11,6 +11,7 @@ from .scheduler import SchedulerAdapter
 __all__ = [
     "DataAsset",
     "DataSourceAdapter",
+    "DataSourceAdapterImpl",
     "LoggerAdapter",
     "ProductSink",
     "RasterProduct",

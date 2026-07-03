@@ -298,6 +298,7 @@ class AlgorithmWorkflowRequest(BaseModel):
     module_name: str | None = None
     workflow_name: str | None = None
     workflow_definition: dict[str, Any] | str | None = None
+    workflow_entry_name: str | None = None
     datasource_selection: dict[str, Any] = Field(default_factory=dict)
     algorithm_params: dict[str, Any] = Field(default_factory=dict)
     output_spec: AlgorithmOutputSpec = Field(default_factory=AlgorithmOutputSpec)
@@ -367,8 +368,59 @@ class WorkflowEventsResponse(BaseModel):
     items: list[WorkflowEvent]
 
 
+class WorkflowAnalysisResultDto(BaseModel):
+    workflow_entry_name: str | None = None
+    layer_id: str | None = None
+    requested_hour: float | None = None
+    metric_label: str | None = None
+    metric_value: float | int | str | None = None
+    metric_unit: str | None = None
+    hotspot_count: int | None = None
+    availability_state: str | None = None
+    data_state_mode: str | None = None
+    result_category: str = "analysis"
+    results: dict[str, str | None] = Field(default_factory=dict)
+
+
+class WorkflowProviderResultDto(BaseModel):
+    workflow_entry_name: str | None = None
+    layer_id: str | None = None
+    provider_key: str | None = None
+    summary: str | None = None
+    metric_label: str | None = None
+    metric_unit: str | None = None
+    metric_value: float | int | str | None = None
+    status_label: str | None = None
+    confidence_label: str | None = None
+    hotspot_count: int | None = None
+    series_point_count: int | None = None
+    result_category: str = "provider"
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+class WorkflowDownloadResultDto(BaseModel):
+    workflow_entry_name: str | None = None
+    layer_id: str | None = None
+    requested_hour: float | None = None
+    download_ticket_id: str | None = None
+    execution_status: str | None = None
+    job_state: dict[str, Any] = Field(default_factory=dict)
+    follow_up_policy: str | None = None
+    source_mode: str | None = None
+    refresh_policy: str | None = None
+    cache_status: str | None = None
+    cache_key: str | None = None
+    manifest_result_id: str | None = None
+    result_category: str = "download"
+
+
+WorkflowResultDto = WorkflowAnalysisResultDto | WorkflowProviderResultDto | WorkflowDownloadResultDto | dict[str, Any]
+
+
 class WorkflowRunStatusResponse(BaseModel):
     run_id: str
+    status_url: str | None = None
+    events_url: str | None = None
     command_type: WorkflowCommandType
     command_label: str | None = None
     layer_id: str | None = None
@@ -387,8 +439,30 @@ class WorkflowRunStatusResponse(BaseModel):
     client: ClientIdentity = Field(default_factory=ClientIdentity)
     map_context: RuntimeMapContext = Field(default_factory=RuntimeMapContext)
     config_overrides: dict[str, Any] = Field(default_factory=dict)
+    executor_metadata: dict[str, Any] = Field(default_factory=dict)
     result_refs: list[WorkflowResultReference] = Field(default_factory=list)
+    result_dto: WorkflowResultDto | None = None
     diagnostics: list[str] = Field(default_factory=list)
+
+
+class WorkflowRunViewSummaryRow(BaseModel):
+    label: str
+    value: str
+
+
+class WorkflowRunViewResponse(BaseModel):
+    run_id: str
+    category: str
+    title: str
+    subtitle: str
+    status_text: str
+    progress_text: str
+    summary: str | None = None
+    metric_rows: list[WorkflowRunViewSummaryRow] = Field(default_factory=list)
+    result_url: str | None = None
+    artifact_refs: list[WorkflowResultReference] = Field(default_factory=list)
+    can_show_link: bool = False
+    updated_at: datetime
 
 
 class RuntimeConfigPatch(BaseModel):

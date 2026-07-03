@@ -1,85 +1,96 @@
-# Frontend Learning Guide
+# Frontend
 
-这个目录现在已经是一个真正可运行的 `Vue 3 + TypeScript + Vite` 前端工程，不再只是空目录骨架。
+`Code/frontend/` 是本项目的前端工程根目录，当前已经是一个可运行的 `Vue 3 + TypeScript + Vite` 应用。它承担 WebGIS 的统一展示壳层，负责地图模式切换、图层管理、时间控制、任务入口和结果展示。
 
-## 你现在可以怎么理解这个工程
+## 当前前端定位
 
-- `src/main.ts`：应用入口，负责挂载 Vue、Pinia 和路由
-- `src/App.vue`：最外层壳子，负责放页面路由出口
+当前前端的目标不是单纯做一个地图页面，而是组织一个能够统一承载多类地理分析任务的交互界面：
+
+- `2D / 3D` 模式切换
+- 图层面板与图层可见性控制
+- 时间轴与时空范围控制
+- 任务提交与结果回显
+- 地图内容、状态面板与信息展示的统一组织
+
+## 当前技术栈
+
+- `Vue 3`
+- `TypeScript`
+- `Vite`
+- `Pinia`
+- `vue-router`
+- 现有页面结构与组件化组织
+
+## 关键目录与文件
+
+- `src/main.ts`：应用入口，挂载 Vue、Pinia 和路由
+- `src/App.vue`：最外层壳子，负责路由出口
 - `src/app/router.ts`：页面路由配置
-- `src/stores/ui.ts`：全局状态示例，这里管理 2D/3D 模式、当前数据图层、当前时间
-- `src/views/DashboardView.vue`：页面级组件，负责组织整个 WebGIS 壳子
-- `src/components/*.vue`：子组件，分别负责工具栏、图层侧栏、地图区、时间轴、信息面板
+- `src/views/DashboardView.vue`：主页面视图，组织整体布局
+- `src/stores/ui.ts`：全局 UI 状态，管理模式、图层和时间等信息
+- `src/stores/layers/`：图层目录与图层状态
+- `src/components/`：工具栏、侧栏、地图区、时间轴、信息面板等组件
+- `src/services/runtime-api.ts`：与后端运行时 API 的交互封装
 - `src/styles/main.css`：全局样式
 
-## 当前学习目标
+## 当前页面结构理解
 
-你不需要一上来就学会所有 Vue 技巧，先把下面这条链路看懂：
+前端可以按“壳层 + 页面 + 组件 + 状态 + 服务”来理解：
 
-1. `main.ts` 如何启动应用
-2. `App.vue` 如何渲染页面
-3. `DashboardView.vue` 如何组织子组件
-4. 子组件如何通过 `props` 接收数据
-5. 子组件如何通过 `emit` 把事件传回父组件
-6. `Pinia store` 如何管理共享状态
+### 壳层
+`App.vue` 和 `main.ts` 负责把应用启动起来。
 
-## 当前页面对应的 Vue 知识点
+### 页面层
+`DashboardView.vue` 负责组织主页面布局，是当前前端最重要的页面容器。
 
-- `ModeToolbar.vue`：按钮点击、事件发送
-- `LayerSidebar.vue`：`v-for` 列表渲染、父子通信
-- `MapCanvas.vue`：根据状态动态显示不同内容
-- `TimelineScrubber.vue`：按钮控制时间步进
-- `InfoPanel.vue`：展示父组件汇总后的数据
+### 组件层
+`ModeToolbar.vue`、`LayerSidebar.vue`、`MapCanvas.vue`、`TimelineScrubber.vue`、`InfoPanel.vue` 等组件分别承担交互、图层、地图、时间和信息展示职责。
 
-## 启动方式
+### 状态层
+`stores/` 负责保存 UI 状态、图层状态和页面共享状态。
 
-在 `Code/frontend` 目录下运行：
+### 服务层
+`services/runtime-api.ts` 负责对接后端运行接口，不把后端调用逻辑散落在组件中。
 
-```bash
-npm install
-npm run dev
-```
+## 前端运行链路
 
-默认开发地址通常是：
+前端当前的典型工作方式是：
 
-```text
-http://localhost:5173/
-```
+1. 应用启动
+2. 加载全局状态和基础路由
+3. 进入 Dashboard 主页面
+4. 通过组件组合展示地图、侧栏、时间轴和信息面板
+5. 用户切换模式、图层或时间范围
+6. 调用 runtime API 提交或查询任务
+7. 根据后端返回结果更新界面
 
-生产构建：
+## 前端与后端的关系
 
-```bash
-npm run build
-```
+前端只负责交互和展示，不直接承载复杂算法逻辑。所有涉及任务执行、状态管理、结果读取和工作流查询的能力，都通过后端 API 完成。
 
-## 推荐学习顺序
+当前前后端已经形成更明确的双通道消费方式：
 
-建议你按下面顺序阅读：
+- 控制流接口：用于任务状态、事件、取消、重试与运行态查询
+- 数据流接口：用于结果视图、artifact 访问和展示数据获取
 
-1. `src/main.ts`
-2. `src/App.vue`
-3. `src/views/DashboardView.vue`
-4. `src/stores/ui.ts`
-5. `src/components/ModeToolbar.vue`
-6. `src/components/LayerSidebar.vue`
-7. `src/components/MapCanvas.vue`
-8. `src/components/TimelineScrubber.vue`
-9. `src/components/InfoPanel.vue`
+因此前端与后端的关系可以概括为：
 
-## 下一步你可以自己练习
+- 前端负责“怎么展示”和“怎么操作”
+- 后端负责“怎么执行”和“怎么回传”
+- 共享协议负责“双方如何理解同一份数据”
+- 结果视图接口负责“前端如何稳定消费后端结果”
 
-- 把 `风场`、`降水` 等数据改成你自己的名称
-- 给时间轴增加“自动播放”按钮
-- 给 2D/3D 模式切换增加不同背景效果
-- 把 `MapCanvas.vue` 替换成真实地图容器
-- 尝试引入 `MapLibre` 做第一版 2D 地图
+## 推荐阅读顺序
 
-## 当前技术说明
+如果你在接手前端，建议按以下顺序阅读：
 
-- Vue 版本：`3`
-- 构建工具：`Vite`
-- 语言：`TypeScript`
-- 路由：`vue-router`
-- 状态管理：`Pinia`
+1. `Code/frontend/README.md`
+2. `Code/shared/contracts/README.md`
+3. `Code/backend/README.md`
+4. `Code/algorithms/providers/Python/README.md`
 
-这个版本的目标不是直接做完项目，而是先给你一个适合学习和后续扩展的前端起点。
+## 说明
+
+- 当前前端已经进入真实工程阶段，不再是空骨架
+- 文档应优先服务于当前实际组件、状态与服务结构
+- 后续如果继续扩展地图引擎或图层能力，应优先保持交互层与服务层分离

@@ -4,7 +4,6 @@ import { storeToRefs } from 'pinia'
 
 import { resolveDemoLayer } from '../app/demo-adapter'
 import { demoLayerCatalog, type DemoHotspot, type DemoLayer } from '../app/demo-data'
-import type { ActiveLayerDisplay } from '../stores/layers/types'
 import FloatingPanelFrame from '../components/FloatingPanelFrame.vue'
 import InfoPanel from '../components/InfoPanel.vue'
 import LayerSidebar from '../components/LayerSidebar.vue'
@@ -20,43 +19,9 @@ const uiStore = useUiStore()
 const layersStore = useLayersStore()
 
 const { tileSourceId, currentHour, hourLabel } = storeToRefs(uiStore)
-const { selectedLayerDisplay, activeLayerCount } = storeToRefs(layersStore)
+const { selectedLayerDisplay, activeLayerCount, workflowError, isSubmitting } = storeToRefs(layersStore)
 
-// Keep legacy refs for backward compat with components not yet migrated
-const activeLayer = computed<ActiveLayerDisplay>(() => {
-  const s = selectedLayerDisplay.value
-  if (s) return s
-  // Fallback: derive ActiveLayerDisplay from DemoLayer
-  const demo = resolveDemoLayer('wind', currentHour.value)
-  return {
-    instanceId: '',
-    catalogId: 'wind',
-    name: demo.name,
-    category: demo.category,
-    summary: demo.summary,
-    metricLabel: demo.metricLabel,
-    metricValue: demo.metricValue,
-    trendLabel: demo.trendLabel,
-    statusLabel: demo.statusLabel,
-    updateLabel: demo.updateLabel,
-    sourceLabel: demo.sourceLabel,
-    confidenceLabel: demo.confidenceLabel,
-    accentColor: demo.accentColor,
-    accentGlow: demo.accentGlow,
-    chipTone: demo.chipTone,
-    availabilityState: demo.availabilityState,
-    availabilityLabel: demo.availabilityLabel,
-    availabilityDescription: demo.availabilityDescription,
-    observationTimeLabel: demo.observationTimeLabel,
-    missingFieldsLabel: demo.missingFieldsLabel,
-    hotspots: demo.hotspots,
-    isAdminBoundary: false,
-    visible: true,
-    opacity: 1,
-    order: 0,
-    dataState: 'demo',
-  }
-})
+const activeLayer = computed(() => selectedLayerDisplay.value ?? buildFallbackActiveLayer(currentHour.value))
 const activeLayerId = ref('wind')
 
 const viewLabel = computed(() => '2D 主视图')
@@ -66,7 +31,6 @@ const visibleHotspots = ref<DemoHotspot[]>([])
 const mapCanvasRef = ref<InstanceType<typeof MapCanvas> | null>(null)
 const screenshotOpen = ref(false)
 
-// Sync currentHour to layersStore for demo data resolution
 watch(currentHour, (hour) => {
   layersStore.setCurrentHour(hour)
 }, { immediate: true })
@@ -113,8 +77,45 @@ function handleCloseScreenshot() {
   screenshotOpen.value = false
 }
 
-// MapCanvas internally manages visibleHotspots via @visibleHotspotsChange.
-// activeLayer-derived hotspots are handled by the MapCanvas component.
+async function handleRunWorkflow(catalogId: string) {
+  try {
+    await layersStore.runWorkflowForCatalog(catalogId)
+  } catch (error) {
+    console.error('[DashboardView] workflow submit failed', error)
+  }
+}
+
+function buildFallbackActiveLayer(hour: number): ActiveLayerDisplay {
+  const demo = resolveDemoLayer('wind', hour)
+  return {
+    instanceId: '',
+    catalogId: 'wind',
+    name: demo.name,
+    category: demo.category,
+    summary: demo.summary,
+    metricLabel: demo.metricLabel,
+    metricValue: demo.metricValue,
+    trendLabel: demo.trendLabel,
+    statusLabel: demo.statusLabel,
+    updateLabel: demo.updateLabel,
+    sourceLabel: demo.sourceLabel,
+    confidenceLabel: demo.confidenceLabel,
+    accentColor: demo.accentColor,
+    accentGlow: demo.accentGlow,
+    chipTone: demo.chipTone,
+    availabilityState: demo.availabilityState,
+    availabilityLabel: demo.availabilityLabel,
+    availabilityDescription: demo.availabilityDescription,
+    observationTimeLabel: demo.observationTimeLabel,
+    missingFieldsLabel: demo.missingFieldsLabel,
+    hotspots: demo.hotspots,
+    isAdminBoundary: false,
+    visible: true,
+    opacity: 1,
+    order: 0,
+    dataState: 'demo',
+  }
+}
 </script>
 
 <template>
@@ -171,6 +172,9 @@ function handleCloseScreenshot() {
             :stage-label="stageLabel"
             :visible-hotspots="visibleHotspots"
             :selected-layer="selectedLayerDisplay"
+            :is-submitting="isSubmitting"
+            :workflow-error="workflowError"
+            @run-workflow="handleRunWorkflow"
           />
         </FloatingPanelFrame>
       </div>

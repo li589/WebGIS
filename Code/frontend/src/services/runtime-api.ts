@@ -86,14 +86,69 @@ export interface WorkflowResultReference {
   mime_type: string
   inline_data?: Record<string, unknown>
   resource_url?: string
+  resource_backend?: string
+  resource_key?: string
+  resource_size_bytes?: number
   updated_at: string
 }
+
+export interface WorkflowAnalysisResultDto {
+  workflow_entry_name?: string
+  layer_id?: string
+  requested_hour?: number | null
+  metric_label?: string | null
+  metric_value?: string | number | null
+  metric_unit?: string | null
+  hotspot_count?: number | null
+  availability_state?: string | null
+  data_state_mode?: string | null
+  result_category?: 'analysis' | string
+  results?: Record<string, string | null>
+}
+
+export interface WorkflowProviderResultDto {
+  workflow_entry_name?: string
+  layer_id?: string
+  provider_key?: string | null
+  summary?: string | null
+  metric_label?: string | null
+  metric_unit?: string | null
+  metric_value?: string | number | null
+  status_label?: string | null
+  confidence_label?: string | null
+  hotspot_count?: number | null
+  series_point_count?: number | null
+  result_category?: 'provider' | string
+  metadata?: Record<string, unknown>
+}
+
+export interface WorkflowDownloadResultDto {
+  workflow_entry_name?: string
+  layer_id?: string
+  requested_hour?: number | null
+  download_ticket_id?: string | null
+  execution_status?: string | null
+  job_state?: Record<string, unknown>
+  follow_up_policy?: string | null
+  source_mode?: string | null
+  refresh_policy?: string | null
+  cache_status?: string | null
+  cache_key?: string | null
+  manifest_result_id?: string | null
+  result_category?: 'download' | string
+}
+
+export type WorkflowResultDto = WorkflowAnalysisResultDto | WorkflowProviderResultDto | WorkflowDownloadResultDto | Record<string, unknown>
 
 export interface WorkflowRunStatusResponse {
   run_id: string
   command_type: WorkflowCommandType
   command_label?: string
   layer_id?: string
+  priority?: 'low' | 'normal' | 'high' | 'critical'
+  resource_profile?: 'light' | 'standard' | 'heavy' | 'batch'
+  realtime_preferred?: boolean
+  queue_tag?: string
   status: ExecutionStatus
   progress: number
   message: string
@@ -105,7 +160,9 @@ export interface WorkflowRunStatusResponse {
   client: ClientIdentity
   map_context: RuntimeMapContext
   config_overrides: Record<string, unknown>
+  executor_metadata: Record<string, unknown>
   result_refs: WorkflowResultReference[]
+  result_dto?: WorkflowResultDto | null
   diagnostics: string[]
 }
 
@@ -211,6 +268,10 @@ export function getWorkflowRun(runId: string) {
   return requestJson<WorkflowRunStatusResponse>(`/workflow-runs/${runId}`)
 }
 
+export function getWorkflowRunView(runId: string) {
+  return requestJson<WorkflowRunViewResponse>(`/workflow-runs/${runId}/view`)
+}
+
 export function listWorkflowEvents(runId: string) {
   return requestJson<WorkflowEventsResponse>(`/workflow-runs/${runId}/events`)
 }
@@ -230,5 +291,17 @@ export function submitFrontendCommand(payload: FrontendCommandRequest) {
   return requestJson<FrontendCommandResponse>('/frontend/commands', {
     method: 'POST',
     body: JSON.stringify(payload),
+  })
+}
+
+export function cancelWorkflowRun(runId: string) {
+  return requestJson<WorkflowRunStatusResponse>(`/workflow-runs/${runId}/cancel`, {
+    method: 'POST',
+  })
+}
+
+export function retryWorkflowRun(runId: string) {
+  return requestJson<WorkflowAcceptedResponse>(`/workflow-runs/${runId}/retry`, {
+    method: 'POST',
   })
 }

@@ -103,6 +103,21 @@ class ProviderWorkflowService:
         return WorkflowExecutionResult(
             message=f"{provider_result.title} 工作流执行完成，已生成 {len(result_refs)} 个结果引用。",
             result_refs=result_refs,
+            result_dto={
+                "workflow_entry_name": payload.workflow_name or payload.module_name or "provider_workflow",
+                "layer_id": provider_result.layer_id,
+                "provider_key": provider_result.provider_key,
+                "summary": provider_result.summary,
+                "metric_label": provider_result.metric_label,
+                "metric_unit": provider_result.metric_unit,
+                "metric_value": provider_result.metric_value,
+                "status_label": provider_result.status_label,
+                "confidence_label": provider_result.confidence_label,
+                "hotspot_count": len(provider_result.hotspots),
+                "series_point_count": len(provider_result.series),
+                "result_category": "provider",
+                "metadata": provider_result.metadata,
+            },
             diagnostics=diagnostics,
             events=events,
         )

@@ -2,11 +2,11 @@
 
 ## 1. 文档目的
 
-本文档描述当前 `Python/` 目录下已经落地的字段映射机制与 shape 契约。
+本文档描述当前 `Code/algorithms/providers/Python/` 目录下已经落地的字段映射机制与 shape 契约。
 
 它解决两个现实问题：
 
-1. 后续真实数据的变量名不一定和当前测试样本一致。
+1. 真实数据的变量名不一定和测试样本一致。
 2. 不同模块对输入数组形状的要求必须统一，否则多日、多像元任务会因为广播不一致而失败。
 
 本文档以当前代码实现为准，重点覆盖：
@@ -197,24 +197,12 @@
 
 显式广播到与 `ndvi` 相同的目标 shape。
 
-这意味着以下输入组合都可以接受：
-
-1. `ndvi=(nt,npix)`，静态量为 `(npix,)`
-2. `ndvi=(nt,npix)`，角度为 `(nt,npix)`
-3. `ndvi=(1,npix)`，静态量为标量或 `(npix,)`
-
 ### 7.3 `block_inversion.py`
 
 `execute_block_inversion()` 入口会先做两步规范化：
 
 1. `_as_time_pixel_matrix()`：把 `TBv/TBh/IA/Ts/NDVI/SF` 统一成 `(nt, npix)`
 2. `_as_static_vector()`：把 `Albedo/B/CF/porosity/LC/NDVI_v_max/NDVI_v_min/H` 统一成 `(npix,)`
-
-这保证了：
-
-1. 多日样本不再依赖手写 `None, :` 广播。
-2. 单日样本与多日样本共享同一算法入口。
-3. 使用字段别名时，不会因为输入 shape 略有不同而额外修改代码。
 
 ## 8. MATCH_INFO 与温度诊断
 
@@ -239,11 +227,7 @@
 - `qc_condk_mat`
 - `qc_sratio_mat`
 
-它们不再是占位常数，而是基于 block Jacobian 的有限差分近似计算。
-
 ## 10. 参数示例
-
-下面给一个典型 `algorithm_params` 例子：
 
 ```python
 algorithm_params = {
@@ -263,9 +247,7 @@ algorithm_params = {
 
 ## 11. 推荐做法
 
-为了后续接入真实数据更稳，建议遵守以下实践：
-
 1. 新数据源先只改 `algorithm_params` 别名，不要先改源码。
 2. 原始日文件和时序 bundle 的字段名最好分别维护，不要混用。
-3. 如果新增模板字段、固定先验字段或 Exp 标定字段，也优先通过 builder 扩展。
+3. 新模板字段、固定先验字段或 Exp 标定字段，也优先通过 builder 扩展。
 4. 任何新模块进入主链前，都应明确自己消费的是“时序矩阵”还是“静态向量”。

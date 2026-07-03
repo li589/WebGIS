@@ -3,11 +3,21 @@ import { defineStore } from 'pinia'
 
 import { demoLayerCatalog } from '../../app/demo-data'
 import { resolveDemoLayer } from '../../app/demo-adapter'
+import { getWorkflowRun, submitWorkflow, cancelWorkflowRun, retryWorkflowRun } from '../../services/runtime-api'
 import { LAYER_CATEGORIES, LAYER_LIBRARY, LAYER_LIBRARY_BY_CATEGORY } from './catalog'
+import { buildJobLayer } from './result-adapter'
 import type { ActiveLayer, ActiveLayerDisplay, JobLayerItem, LayerSidebarView } from './types'
 
 function genInstanceId() {
   return `layer-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+}
+
+function isTerminalStatus(status: string) {
+  return status === 'succeeded' || status === 'failed' || status === 'cancelled'
+}
+
+function getCatalogDisplayName(catalogId: string) {
+  return LAYER_LIBRARY.find((item) => item.catalogId === catalogId)?.name ?? catalogId
 }
 
 // ─── Store ───────────────────────────────────────────────────────────────────
@@ -27,6 +37,9 @@ export const useLayersStore = defineStore('layers', () => {
 
   // ── Current hour (用于 resolveDemoLayer 派生 display 数据) ─────────────────
   const currentHour = ref(12)
+  const workflowError = ref<string | null>(null)
+  const workflowPollingHandles = new Map<string, number>()
+  const isSubmitting = ref(false)
 
   // ─────────────────────────────────────────────────────────────────────────────
 
@@ -166,6 +179,154 @@ export const useLayersStore = defineStore('layers', () => {
     jobLayers.value = jobs
   }
 
+  function stopWorkflowPolling(jobId: string) {
+    const handle = workflowPollingHandles.get(jobId)
+    if (handle !== undefined) {
+      window.clearTimeout(handle)
+      workflowPollingHandles.delete(jobId)
+    }
+  }
+
+  function syncJobLayerToActiveLayer(catalogId: string, jobLayer: JobLayerItem) {
+    const existingRealLayer = activeLayers.value.find((layer) => layer.jobLayer?.jobId === jobLayer.jobId)
+    if (existingRealLayer) {
+      existingRealLayer.jobLayer = jobLayer
+      existingRealLayer.dataState = 'real'
+      return
+    }
+
+    const existingCatalogLayer = activeLayers.value.find((layer) => layer.catalogId === catalogId && !layer.isAdminBoundary)
+    if (existingCatalogLayer) {
+      existingCatalogLayer.jobLayer = jobLayer
+      existingCatalogLayer.dataState = 'real'
+      selectedInstanceId.value = existingCatalogLayer.instanceId
+      return
+    }
+
+    addLayer(catalogId, false, jobLayer)
+  }
+
+  function upsertJobLayer(catalogId: string, jobLayer: JobLayerItem) {
+    const existingIndex = jobLayers.value.findIndex((item) => item.jobId === jobLayer.jobId)
+    if (existingIndex >= 0) {
+      jobLayers.value.splice(existingIndex, 1, jobLayer)
+    } else {
+      jobLayers.value.unshift(jobLayer)
+    }
+    syncJobLayerToActiveLayer(catalogId, jobLayer)
+  }
+
+  async function pollWorkflowRun(jobId: string, catalogId: string) {
+    try {
+      const run = await getWorkflowRun(jobId)
+      const jobLayer = await buildJobLayer(run, catalogId)
+      upsertJobLayer(catalogId, jobLayer)
+      workflowError.value = null
+
+      if (isTerminalStatus(jobLayer.status)) {
+        stopWorkflowPolling(jobId)
+        return
+      }
+    } catch (error) {
+      workflowError.value = error instanceof Error ? error.message : '轮询 workflow-runs 失败'
+    }
+
+    stopWorkflowPolling(jobId)
+    const handle = window.setTimeout(() => {
+      void pollWorkflowRun(jobId, catalogId)
+    }, 1500)
+    workflowPollingHandles.set(jobId, handle)
+  }
+
+  async function runWorkflowForCatalog(catalogId: string) {
+    if (isSubmitting.value) return
+    workflowError.value = null
+    isSubmitting.value = true
+    try {
+      const catalogName = getCatalogDisplayName(catalogId)
+      const accepted = await submitWorkflow({
+        command_type: 'analysis',
+        command_label: `运行 ${catalogName} 分析`,
+        layer_id: catalogId,
+        requested_outputs: ['json', 'text', 'table'],
+        parameters: {
+          hour: currentHour.value,
+        },
+        client: {
+          page: 'dashboard',
+          view_id: 'map-2d',
+        },
+        map_context: {
+          active_layer_id: catalogId,
+          map_mode: '2d',
+        },
+      })
+
+      upsertJobLayer(catalogId, {
+        jobId: accepted.run_id,
+        name: catalogName,
+        commandType: 'analysis',
+        status: 'queued',
+        progress: 12,
+        createdAt: accepted.created_at,
+        updatedAt: accepted.created_at,
+        message: accepted.message,
+        metrics: [],
+        reportSummary: accepted.message,
+        resultUrl: undefined,
+      })
+
+      void pollWorkflowRun(accepted.run_id, catalogId)
+      return accepted.run_id
+    } catch (error) {
+      workflowError.value = error instanceof Error ? error.message : '提交 workflow 失败'
+      throw error
+    } finally {
+      isSubmitting.value = false
+    }
+  }
+
+  async function cancelWorkflowRunForJob(jobId: string, catalogId: string) {
+    try {
+      const run = await cancelWorkflowRun(jobId)
+      const jobLayer = buildJobLayer(run, catalogId)
+      upsertJobLayer(catalogId, jobLayer)
+      stopWorkflowPolling(jobId)
+    } catch (error) {
+      workflowError.value = error instanceof Error ? error.message : '取消 workflow 失败'
+    }
+  }
+
+  async function retryWorkflowRunForJob(jobId: string, catalogId: string) {
+    if (isSubmitting.value) return
+    workflowError.value = null
+    isSubmitting.value = true
+    try {
+      const accepted = await retryWorkflowRun(jobId)
+      const catalogName = getCatalogDisplayName(catalogId)
+      upsertJobLayer(catalogId, {
+        jobId: accepted.run_id,
+        name: catalogName,
+        commandType: 'analysis',
+        status: 'queued',
+        progress: 12,
+        createdAt: accepted.created_at,
+        updatedAt: accepted.created_at,
+        message: accepted.message,
+        metrics: [],
+        reportSummary: accepted.message,
+        resultUrl: undefined,
+      })
+      void pollWorkflowRun(accepted.run_id, catalogId)
+      return accepted.run_id
+    } catch (error) {
+      workflowError.value = error instanceof Error ? error.message : '重试 workflow 失败'
+      throw error
+    } finally {
+      isSubmitting.value = false
+    }
+  }
+
   function reorderLayers(fromIndex: number, toIndex: number) {
     const sorted = activeLayers.value.slice().sort((a, b) => a.order - b.order)
     const [moved] = sorted.splice(fromIndex, 1)
@@ -182,6 +343,8 @@ export const useLayersStore = defineStore('layers', () => {
     selectedInstanceId,
     jobLayers,
     currentHour,
+    workflowError,
+    isSubmitting,
     // Computed
     activeLayersDisplay,
     selectedLayerDisplay,
@@ -202,5 +365,9 @@ export const useLayersStore = defineStore('layers', () => {
     setCurrentHour,
     setJobLayers,
     reorderLayers,
+    runWorkflowForCatalog,
+    cancelWorkflowRunForJob,
+    retryWorkflowRunForJob,
+    stopWorkflowPolling,
   }
 })

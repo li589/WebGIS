@@ -137,6 +137,24 @@ class AnalysisWorkflowService:
         return WorkflowExecutionResult(
             message=f"{snapshot.display_name} 分析工作流执行完成，已生成 {len(result_refs)} 个结果引用。",
             result_refs=result_refs,
+            result_dto={
+                "workflow_entry_name": payload.workflow_name or payload.module_name or "analysis_workflow",
+                "layer_id": layer_id,
+                "requested_hour": snapshot.requested_hour,
+                "metric_label": snapshot.metric_label,
+                "metric_value": metric_value,
+                "metric_unit": snapshot.metric_unit,
+                "hotspot_count": len(hotspot_rows),
+                "availability_state": snapshot.availability_state.value,
+                "data_state_mode": snapshot.data_state_mode.value,
+                "result_category": "analysis",
+                "results": {
+                    "json_result_id": result_refs[0].result_id,
+                    "table_result_id": next((item.result_id for item in result_refs if item.result_kind == ResultKind.table), None),
+                    "chart_result_id": next((item.result_id for item in result_refs if item.result_kind == ResultKind.chart), None),
+                    "text_result_id": next((item.result_id for item in result_refs if item.result_kind == ResultKind.text), None),
+                },
+            },
             diagnostics=diagnostics,
             events=events,
         )

@@ -1,50 +1,52 @@
+param()
+
 $ErrorActionPreference = "Stop"
 
-$LocalConfig = Join-Path $PSScriptRoot "dev.env.ps1"
-$PythonHome = Join-Path (Split-Path -Parent $PSScriptRoot) "Python312"
-$ActivateScript = Join-Path $PythonHome "activate-project-venv.ps1"
-$InstallDepsScript = Join-Path $PythonHome "install-backend-deps.ps1"
-$CommonScript = Join-Path (Split-Path -Parent $PSScriptRoot) "common\project-paths.ps1"
+function Invoke-Python {
+    param(
+        [Parameter(ValueFromRemainingArguments = $true)]
+        [string[]]$Args
+    )
 
-$BackendHost = "127.0.0.1"
-$BackendPort = "8000"
-$BackendReload = $true
-
-if (-not (Test-Path $CommonScript)) {
-    throw "Project path resolver not found: $CommonScript"
-}
-
-. $CommonScript
-
-if (Test-Path $LocalConfig) {
-    . $LocalConfig
-}
-
-if (-not (Test-Path $BackendDir)) {
-    throw "Backend directory not found: $BackendDir"
-}
-
-. $InstallDepsScript
-. $ActivateScript
-
-Push-Location $BackendDir
-
-try {
-    $env:PROJECT_ROOT = $ProjectRoot
-    $env:PROJECT_CODE_DIR = $CodeRoot
-    $env:PROJECT_BACKEND_DIR = $BackendDir
-    $env:BACKEND_HOST = $BackendHost
-    $env:BACKEND_PORT = $BackendPort
-    $env:BACKEND_RELOAD = $BackendReload.ToString().ToLower()
-
-    Write-Host "Starting backend dev environment..."
-    Write-Host "Directory: $BackendDir"
-    Write-Host "URL: http://$BackendHost`:$BackendPort/"
-
-    python -m uvicorn app.main:app --host $BackendHost --port $BackendPort --reload
-    if ($LASTEXITCODE -ne 0) {
-        throw "uvicorn startup failed."
+    if (Get-Command python -ErrorAction SilentlyContinue) {
+        & python @Args
+        return
     }
+
+    if (Get-Command py -ErrorAction SilentlyContinue) {
+        & py -3.12 @Args
+        return
+    }
+
+    throw "未找到 python/py，请先安装 Python 3.12。"
+}
+
+$scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
+. (Join-Path $scriptDir "dev.env.ps1")
+
+$backendDir = [System.IO.Path]::GetFullPath((Join-Path $scriptDir "..\..\Code\backend"))
+$activateScript = Join-Path $backendDir ".venv\Scripts\Activate.ps1"
+if (Test-Path $activateScript) {
+    . $activateScript
+}
+
+$env:BACKEND_WORKFLOW_EXECUTOR = "sync"
+
+Push-Location $backendDir
+try {
+    $uvicornArgs = @(
+        "-m",
+        "uvicorn",
+        "app.main:app",
+        "--host",
+        $env:BACKEND_HOST,
+        "--port",
+        $env:BACKEND_PORT
+    )
+    if ($env:BACKEND_RELOAD -eq "true") {
+        $uvicornArgs += "--reload"
+    }
+    Invoke-Python @uvicornArgs
 }
 finally {
     Pop-Location
