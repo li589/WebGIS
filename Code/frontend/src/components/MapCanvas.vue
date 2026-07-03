@@ -1,21 +1,28 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 
-import type { DemoHotspot, DemoLayer } from '../app/demo-data'
-import type { BasemapMode } from '../stores/ui'
+import { useLayersStore } from '../stores/layers'
+import type { DemoHotspot } from '../app/demo-data'
+import type { TileSourceId } from '../stores/ui'
+import { TILE_SOURCE_MAP } from '../stores/ui'
 import type { StyleSpecification } from 'maplibre-gl'
 
+const layersStore = useLayersStore()
+
 const props = defineProps<{
-  basemapMode: BasemapMode
-  activeLayer: DemoLayer
+  tileSourceId: TileSourceId
   currentHour: number
   hourLabel: string
 }>()
+
 const emit = defineEmits<{
   visibleHotspotsChange: [hotspots: DemoHotspot[]]
 }>()
 
+defineExpose({ getMapStageElement })
+
 const mapContainer = ref<HTMLElement | null>(null)
+const mapStageRef = ref<HTMLElement | null>(null)
 const hotspotPins = ref<
   Array<{
     id: string
@@ -29,48 +36,11 @@ const mapReady = ref(false)
 const mapVisible = ref(false)
 const skeletonVisible = ref(true)
 const isMapInteracting = ref(false)
-const isBasemapTransitioning = ref(false)
+const isSourceTransitioning = ref(false)
 const loadingLabel = ref('正在加载地图...')
-const timeProgressPercent = computed(() => `${(props.currentHour / 23) * 100}%`)
-const timeGlowOpacity = computed(() => {
-  const normalized = props.currentHour / 23
-  const peak = 1 - Math.abs(normalized - 0.55) / 0.55
-  return (0.08 + Math.max(0, peak) * 0.18).toFixed(3)
-})
-const horizonPosition = computed(() => `${12 + (props.currentHour / 23) * 76}%`)
-const stageBandOpacity = computed(() => {
-  const normalized = props.currentHour / 23
-  const peak = 1 - Math.abs(normalized - 0.58) / 0.58
-  return (0.06 + Math.max(0, peak) * 0.16).toFixed(3)
-})
-const stageGlowSpread = computed(() => {
-  if (props.currentHour < 6) return '16rem'
-  if (props.currentHour < 11) return '20rem'
-  if (props.currentHour < 17) return '24rem'
-  if (props.currentHour < 20) return '21rem'
-  return '17rem'
-})
-const hotspotScale = computed(() => {
-  if (props.currentHour < 6) return '0.88'
-  if (props.currentHour < 11) return '0.96'
-  if (props.currentHour < 17) return '1.08'
-  if (props.currentHour < 20) return '0.98'
-  return '0.9'
-})
-const hotspotHaloSize = computed(() => {
-  if (props.currentHour < 6) return '8px'
-  if (props.currentHour < 11) return '10px'
-  if (props.currentHour < 17) return '12px'
-  if (props.currentHour < 20) return '10px'
-  return '8px'
-})
-const hotspotLabelOpacity = computed(() => {
-  if (props.currentHour < 6) return '0.82'
-  if (props.currentHour < 11) return '0.9'
-  if (props.currentHour < 17) return '1'
-  if (props.currentHour < 20) return '0.92'
-  return '0.84'
-})
+const tileLoadFailed = ref(false)
+const tileLoadRetryCount = ref(0)
+const MAX_TILE_RETRIES = 2
 
 type MapInstance = import('maplibre-gl').Map
 type GeoJsonSourceSpecification = import('maplibre-gl').GeoJSONSourceSpecification
@@ -78,64 +48,95 @@ type RasterSourceSpecification = import('maplibre-gl').RasterSourceSpecification
 type GuangdongBoundaryData = typeof import('../app/guangdong-boundaries')
 
 let boundaryModule: GuangdongBoundaryData | null = null
-let boundaryModulePromise: Promise<GuangdongBoundaryData> | null = null
+let boundaryModulePromise: Promise<GuangdongBoundaryData | null> | null = null
 let map: MapInstance | null = null
 let animationFrameId: number | null = null
-let basemapTransitionTimer: number | null = null
+let sourceTransitionTimer: number | null = null
 
-const modeDescription = computed(() => (!mapReady.value ? '正在加载地图...' : '2D 地图已就绪。'))
-const isOsmFocused = computed(() => props.basemapMode === 'osm')
+const TILE_SOURCE_ID = 'tile-base'
+const TILE_LAYER_ID = 'tile-base-raster'
 
-function createBaseStyle(): StyleSpecification {
+const currentTileConfig = computed(() => TILE_SOURCE_MAP.get(props.tileSourceId) ?? TILE_SOURCE_MAP.get('esri-street')!)
+
+// ── Derived from layersStore ──────────────────────────────────────────────────
+
+const selectedLayer = computed(() => layersStore.selectedLayerDisplay)
+const hasAdminBoundary = computed(() => layersStore.activeLayersDisplay.some((d) => d.isAdminBoundary))
+const adminBoundaryOpacity = computed(() => {
+  const layer = layersStore.activeLayersDisplay.find((d) => d.isAdminBoundary)
+  return layer ? layer.opacity : 1
+})
+
+// Safe fallback for template (no selected layer = dark atmospheric state)
+const activeLayer = computed(() => {
+  const s = selectedLayer.value
+  if (s) return s
   return {
-    version: 8,
-    sources: {},
-    layers: [
-      {
-        id: 'background',
-        type: 'background',
-        paint: {
-          'background-color': '#07111e',
-        },
-      },
-    ],
+    name: '无图层',
+    availabilityState: 'empty' as const,
+    availabilityLabel: '空状态',
+    availabilityDescription: '从左侧图层面板添加数据图层。',
+    observationTimeLabel: '—',
+    missingFieldsLabel: '—',
+    accentColor: '#5a6a80',
+    accentGlow: 'rgba(90, 106, 128, 0.3)',
+    chipTone: 'rgba(90, 106, 128, 0.16)',
+    metricLabel: '—',
+    metricValue: '—',
+    hotspots: [],
+    summary: '',
+    trendLabel: '',
+    statusLabel: '',
+    updateLabel: '',
+    sourceLabel: '',
+    confidenceLabel: '',
+    trend: '',
+    dataState: 'demo' as const,
+    isAdminBoundary: false,
+    instanceId: '',
+    catalogId: '',
+    category: '',
+    order: 0,
+    visible: true,
+    opacity: 1,
+    reportSummary: '',
+    resultUrl: '',
   }
-}
+})
 
-function waitForFirstPaint() {
-  return new Promise<void>((resolve) => {
-    requestAnimationFrame(() => resolve())
-  })
-}
+// ─── Tile layer management ───────────────────────────────────────────────────
 
-function ensureOsmRasterLayer() {
-  if (!map) {
-    return
-  }
+function ensureTileLayer(sourceId: TileSourceId) {
+  if (!map) return
 
-  if (!map.getSource('osm')) {
-    map.addSource('osm', {
+  const cfg = TILE_SOURCE_MAP.get(sourceId)
+  if (!cfg) return
+
+  if (!map.getSource(TILE_SOURCE_ID)) {
+    map.addSource(TILE_SOURCE_ID, {
       type: 'raster',
-      tiles: ['https://tile.openstreetmap.org/{z}/{x}/{y}.png'],
-      tileSize: 256,
-      attribution: '&copy; OpenStreetMap contributors',
+      tiles: [cfg.urlTemplate],
+      tileSize: cfg.tileSize ?? 256,
+      attribution: cfg.attribution,
+      maxzoom: 18,
+      scheme: 'xyz',
     } as RasterSourceSpecification)
   }
 
-  if (!map.getLayer('osm-raster')) {
+  if (!map.getLayer(TILE_LAYER_ID)) {
     const beforeLayerId = map.getLayer('admin-fill') ? 'admin-fill' : undefined
     map.addLayer(
       {
-        id: 'osm-raster',
+        id: TILE_LAYER_ID,
         type: 'raster',
-        source: 'osm',
-        layout: {
-          visibility: 'none',
-        },
+        source: TILE_SOURCE_ID,
+        layout: { visibility: 'none' },
         paint: {
-          'raster-opacity': 0.82,
-          'raster-saturation': -0.18,
-          'raster-contrast': 0.18,
+          'raster-opacity': 0.88,
+          'raster-saturation': cfg.saturation,
+          'raster-brightness-max': 1.0 + cfg.brightness,
+          'raster-brightness-min': 0.0 + Math.max(0, cfg.brightness),
+          'raster-contrast': cfg.contrast,
         },
       },
       beforeLayerId,
@@ -143,25 +144,64 @@ function ensureOsmRasterLayer() {
   }
 }
 
+function switchTileSource(sourceId: TileSourceId) {
+  if (!map) return
+
+  if (sourceId === 'none') {
+    if (map.getLayer(TILE_LAYER_ID)) {
+      map.setLayoutProperty(TILE_LAYER_ID, 'visibility', 'none')
+    }
+    return
+  }
+
+  const cfg = TILE_SOURCE_MAP.get(sourceId)
+  if (!cfg) return
+
+  const wasVisible = map.getLayer(TILE_LAYER_ID)
+    ? map.getLayoutProperty(TILE_LAYER_ID, 'visibility') === 'visible'
+    : false
+
+  if (map.getSource(TILE_SOURCE_ID)) {
+    if (map.getLayer(TILE_LAYER_ID)) map.removeLayer(TILE_LAYER_ID)
+    map.removeSource(TILE_SOURCE_ID)
+  }
+
+  ensureTileLayer(sourceId)
+
+  if (map.getLayer(TILE_LAYER_ID)) {
+    map.setLayoutProperty(TILE_LAYER_ID, 'visibility', wasVisible ? 'visible' : 'none')
+    map.setPaintProperty(TILE_LAYER_ID, 'raster-opacity', 0.88)
+    map.setPaintProperty(TILE_LAYER_ID, 'raster-saturation', cfg.saturation)
+    map.setPaintProperty(TILE_LAYER_ID, 'raster-brightness-max', 1.0 + cfg.brightness)
+    map.setPaintProperty(TILE_LAYER_ID, 'raster-brightness-min', 0.0 + Math.max(0, cfg.brightness))
+    map.setPaintProperty(TILE_LAYER_ID, 'raster-contrast', cfg.contrast)
+  }
+}
+
+// ─── Boundary layers ─────────────────────────────────────────────────────────
+
 async function ensureBoundaryModule() {
   if (!boundaryModule) {
     if (!boundaryModulePromise) {
       loadingLabel.value = '正在载入行政区边界...'
-      boundaryModulePromise = import('../app/guangdong-boundaries')
+      boundaryModulePromise = import('../app/guangdong-boundaries').catch((err) => {
+        console.error('[MapCanvas] Failed to load boundary module:', err)
+        boundaryModulePromise = null
+        return null
+      })
     }
-
-    boundaryModule = await boundaryModulePromise
+    const module = await boundaryModulePromise
+    if (!module) return null
+    boundaryModule = module
   }
-
   return boundaryModule
 }
 
 async function ensureBoundaryLayers() {
-  if (!map) {
-    return
-  }
+  if (!map) return
 
-  const loadedBoundaryModule = boundaryModule ?? (await ensureBoundaryModule())
+  const loadedBoundaryModule = await ensureBoundaryModule()
+  if (!loadedBoundaryModule) return
 
   if (!map.getSource('admin-boundaries')) {
     map.addSource('admin-boundaries', {
@@ -184,7 +224,7 @@ async function ensureBoundaryLayers() {
       source: 'admin-boundaries',
       paint: {
         'fill-color': '#0c2238',
-        'fill-opacity': 0.32,
+        'fill-opacity': 0,
       },
     })
   }
@@ -197,7 +237,7 @@ async function ensureBoundaryLayers() {
       paint: {
         'line-color': '#4c88ba',
         'line-width': 1,
-        'line-opacity': 0.82,
+        'line-opacity': 0,
       },
     })
   }
@@ -210,7 +250,7 @@ async function ensureBoundaryLayers() {
       paint: {
         'circle-radius': 2.2,
         'circle-color': '#d8efff',
-        'circle-opacity': 0.72,
+        'circle-opacity': 0,
         'circle-stroke-width': 1,
         'circle-stroke-color': '#0a233a',
       },
@@ -218,90 +258,94 @@ async function ensureBoundaryLayers() {
   }
 }
 
-async function applyBasemapMode(mode: BasemapMode) {
-  if (!map) {
-    return
-  }
-
-  const showOsm = mode === 'osm' || mode === 'hybrid'
-  const showAdmin = mode === 'admin' || mode === 'hybrid'
-
-  if (showOsm) {
-    ensureOsmRasterLayer()
-  }
-
-  if (showAdmin) {
-    await ensureBoundaryLayers()
-  }
-
-  if (map.getLayer('osm-raster')) {
-    map.setLayoutProperty('osm-raster', 'visibility', showOsm ? 'visible' : 'none')
-    map.setPaintProperty('osm-raster', 'raster-opacity', mode === 'hybrid' ? 0.4 : 0.88)
-    map.setPaintProperty('osm-raster', 'raster-saturation', mode === 'osm' ? -0.04 : -0.14)
-    map.setPaintProperty('osm-raster', 'raster-contrast', mode === 'osm' ? 0.1 : 0.16)
-  }
+function applyAdminOverlay(show: boolean, opacity: number) {
+  if (!map) return
+  const lineOpacity = show ? 0.82 * opacity : 0
+  const fillOpacity = show ? 0.32 * opacity : 0
+  const centerOpacity = show ? 0.72 * opacity : 0
 
   if (map.getLayer('admin-fill')) {
-    map.setLayoutProperty('admin-fill', 'visibility', showAdmin ? 'visible' : 'none')
-    map.setPaintProperty('admin-fill', 'fill-opacity', mode === 'hybrid' ? 0.1 : 0.2)
+    map.setLayoutProperty('admin-fill', 'visibility', 'visible')
+    map.setPaintProperty('admin-fill', 'fill-opacity', fillOpacity)
   }
-
   if (map.getLayer('admin-line')) {
-    map.setLayoutProperty('admin-line', 'visibility', showAdmin ? 'visible' : 'none')
-    map.setPaintProperty('admin-line', 'line-opacity', mode === 'hybrid' ? 0.92 : 0.78)
+    map.setLayoutProperty('admin-line', 'visibility', 'visible')
+    map.setPaintProperty('admin-line', 'line-opacity', lineOpacity)
   }
-
   if (map.getLayer('admin-center-points')) {
-    map.setLayoutProperty('admin-center-points', 'visibility', showAdmin ? 'visible' : 'none')
+    map.setLayoutProperty('admin-center-points', 'visibility', 'visible')
+    map.setPaintProperty('admin-center-points', 'circle-opacity', centerOpacity)
   }
 }
 
-function triggerBasemapTransition() {
-  if (typeof window === 'undefined') {
-    return
+function syncAdminOverlay() {
+  if (!mapReady.value) return
+  applyAdminOverlay(hasAdminBoundary.value, adminBoundaryOpacity.value)
+}
+
+// ─── Tile error handling ─────────────────────────────────────────────────────
+
+function handleTileError() {
+  if (tileLoadFailed.value) return
+  tileLoadRetryCount.value++
+  if (tileLoadRetryCount.value > MAX_TILE_RETRIES) {
+    tileLoadFailed.value = true
   }
+}
 
-  isBasemapTransitioning.value = true
-
-  if (basemapTransitionTimer !== null) {
-    window.clearTimeout(basemapTransitionTimer)
+function retryTileLoad() {
+  tileLoadFailed.value = false
+  tileLoadRetryCount.value = 0
+  if (map && map.getSource(TILE_SOURCE_ID)) {
+    switchTileSource(props.tileSourceId)
+    if (map.getLayer(TILE_LAYER_ID)) {
+      map.setLayoutProperty(TILE_LAYER_ID, 'visibility', 'visible')
+    }
   }
+}
 
-  basemapTransitionTimer = window.setTimeout(() => {
-    isBasemapTransitioning.value = false
-    basemapTransitionTimer = null
+// ─── Source transition ───────────────────────────────────────────────────────
+
+function triggerSourceTransition() {
+  if (typeof window === 'undefined') return
+  isSourceTransitioning.value = true
+  if (sourceTransitionTimer !== null) window.clearTimeout(sourceTransitionTimer)
+  sourceTransitionTimer = window.setTimeout(() => {
+    isSourceTransitioning.value = false
+    sourceTransitionTimer = null
   }, 260)
 }
 
+// ─── Hotspot sync ────────────────────────────────────────────────────────────
+
+let hotspotSyncThrottleTimer: number | null = null
+
 function scheduleHotspotSync() {
-  if (!map) {
-    return
-  }
-
-  if (animationFrameId !== null) {
-    cancelAnimationFrame(animationFrameId)
-  }
-
+  if (!map) return
+  if (animationFrameId !== null) cancelAnimationFrame(animationFrameId)
+  if (hotspotSyncThrottleTimer !== null) return
+  hotspotSyncThrottleTimer = window.setTimeout(() => {
+    hotspotSyncThrottleTimer = null
+  }, 50)
   animationFrameId = requestAnimationFrame(() => {
     const currentMap = map
-    if (!currentMap) {
-      return
-    }
+    if (!currentMap) return
 
+    const layer = selectedLayer.value
+    const hotspots = layer?.hotspots ?? []
     const zoom = currentMap.getZoom()
     const visibleHotspots =
       zoom < 5.4
-        ? props.activeLayer.hotspots.slice(0, 1)
+        ? hotspots.slice(0, 1)
         : zoom < 6.2
-          ? props.activeLayer.hotspots.slice(0, 2)
+          ? hotspots.slice(0, 2)
           : zoom < 7
-            ? props.activeLayer.hotspots.slice(0, 3)
-            : props.activeLayer.hotspots
+            ? hotspots.slice(0, 3)
+            : hotspots
 
     emit('visibleHotspotsChange', visibleHotspots)
     hotspotPins.value = visibleHotspots.map((hotspot) => {
       const point = currentMap.project([hotspot.lng, hotspot.lat])
-
       return {
         id: hotspot.id,
         name: hotspot.name,
@@ -310,17 +354,15 @@ function scheduleHotspotSync() {
         top: `${point.y}px`,
       }
     })
-
     animationFrameId = null
   })
 }
 
 function focusActiveLayer() {
-  if (!map || props.activeLayer.hotspots.length === 0) {
-    return
-  }
-
-  const firstHotspot = props.activeLayer.hotspots[0]
+  if (!map) return
+  const layer = selectedLayer.value
+  if (!layer || layer.hotspots.length === 0) return
+  const firstHotspot = layer.hotspots[0]
   map.easeTo({
     center: [firstHotspot.lng, firstHotspot.lat],
     zoom: 6.4,
@@ -329,19 +371,92 @@ function focusActiveLayer() {
   })
 }
 
-onMounted(async () => {
-  if (!mapContainer.value) {
-    return
+/** 供父组件截图使用：返回地图舞台 DOM 元素 */
+function getMapStageElement(): HTMLElement | null {
+  return mapStageRef.value
+}
+
+// ─── Time-of-day visual vars ─────────────────────────────────────────────────
+
+const timeProgressPercent = computed(() => `${(props.currentHour / 23) * 100}%`)
+const timeGlowOpacity = computed(() => {
+  const normalized = props.currentHour / 23
+  const peak = 1 - Math.abs(normalized - 0.55) / 0.55
+  return (0.08 + Math.max(0, peak) * 0.18).toFixed(3)
+})
+const horizonPosition = computed(() => `${12 + (props.currentHour / 23) * 76}%`)
+const stageBandOpacity = computed(() => {
+  const normalized = props.currentHour / 23
+  const peak = 1 - Math.abs(normalized - 0.58) / 0.58
+  return (0.06 + Math.max(0, peak) * 0.16).toFixed(3)
+})
+
+function timeBandValue<T extends string>(hour: number, entries: Array<{ threshold: number; value: T }>): T {
+  for (const { threshold, value } of entries) {
+    if (hour < threshold) return value
   }
+  return entries[entries.length - 1].value
+}
+
+const stageGlowSpread = computed(() =>
+  timeBandValue(props.currentHour, [
+    { threshold: 6, value: '16rem' },
+    { threshold: 11, value: '20rem' },
+    { threshold: 17, value: '24rem' },
+    { threshold: 20, value: '21rem' },
+    { threshold: 24, value: '17rem' },
+  ]),
+)
+const hotspotScale = computed(() =>
+  timeBandValue(props.currentHour, [
+    { threshold: 6, value: '0.88' },
+    { threshold: 11, value: '0.96' },
+    { threshold: 17, value: '1.08' },
+    { threshold: 20, value: '0.98' },
+    { threshold: 24, value: '0.9' },
+  ]),
+)
+const hotspotHaloSize = computed(() =>
+  timeBandValue(props.currentHour, [
+    { threshold: 6, value: '8px' },
+    { threshold: 11, value: '10px' },
+    { threshold: 17, value: '12px' },
+    { threshold: 20, value: '10px' },
+    { threshold: 24, value: '8px' },
+  ]),
+)
+const hotspotLabelOpacity = computed(() =>
+  timeBandValue(props.currentHour, [
+    { threshold: 6, value: '0.82' },
+    { threshold: 11, value: '0.9' },
+    { threshold: 17, value: '1' },
+    { threshold: 20, value: '0.92' },
+    { threshold: 24, value: '0.84' },
+  ]),
+)
+
+// ─── Map init ────────────────────────────────────────────────────────────────
+
+function waitForFirstPaint() {
+  return new Promise<void>((resolve) => requestAnimationFrame(() => resolve()))
+}
+
+onMounted(async () => {
+  if (!mapContainer.value) return
 
   loadingLabel.value = '正在准备地图...'
   await waitForFirstPaint()
   loadingLabel.value = '正在加载地图引擎...'
+
   const { default: maplibregl } = await import('maplibre-gl')
 
   map = new maplibregl.Map({
     container: mapContainer.value,
-    style: createBaseStyle(),
+    style: {
+      version: 8,
+      sources: {},
+      layers: [{ id: 'background', type: 'background', paint: { 'background-color': '#07111e' } }],
+    } as StyleSpecification,
     center: [113.2644, 23.1291],
     zoom: 4.8,
     pitch: 0,
@@ -352,10 +467,25 @@ onMounted(async () => {
     refreshExpiredTiles: false,
   })
 
-  map.addControl(new maplibregl.NavigationControl({ visualizePitch: true }), 'top-right')
-  map.addControl(new maplibregl.ScaleControl({ unit: 'metric' }), 'bottom-left')
+  map.addControl(new maplibregl.NavigationControl({ visualizePitch: true }), 'bottom-right')
+  map.addControl(new maplibregl.ScaleControl({ unit: 'metric' }), 'bottom-right')
+
+  map.on('error', (e) => {
+    if (((e as any).sourceId !== TILE_SOURCE_ID && (e as any).sourceId !== undefined)) return
+    const status = e.error?.status
+    if (status === undefined || status === 0 || status === 403 || status === 404) {
+      handleTileError()
+    }
+  })
+
   map.on('load', async () => {
-    await applyBasemapMode(props.basemapMode)
+    ensureTileLayer(props.tileSourceId)
+    await ensureBoundaryModule()
+    await ensureBoundaryLayers()
+    if (map!.getLayer(TILE_LAYER_ID)) {
+      map!.setLayoutProperty(TILE_LAYER_ID, 'visibility', 'visible')
+    }
+    syncAdminOverlay()
     focusActiveLayer()
     scheduleHotspotSync()
     mapReady.value = true
@@ -366,49 +496,50 @@ onMounted(async () => {
       }, 260)
     })
   })
-  map.on('movestart', () => {
-    isMapInteracting.value = true
-  })
-  map.on('zoomstart', () => {
-    isMapInteracting.value = true
-  })
-  map.on('moveend', scheduleHotspotSync)
-  map.on('zoomend', scheduleHotspotSync)
+
+  map.on('movestart', () => { isMapInteracting.value = true })
   map.on('moveend', () => {
     isMapInteracting.value = false
+    scheduleHotspotSync()
   })
+  map.on('zoomstart', () => { isMapInteracting.value = true })
   map.on('zoomend', () => {
     isMapInteracting.value = false
+    scheduleHotspotSync()
   })
   map.on('resize', scheduleHotspotSync)
 })
 
+// ─── Watchers ────────────────────────────────────────────────────────────────
+
 watch(
-  () => props.basemapMode,
-  (mode) => {
-    if (mapReady.value) {
-      triggerBasemapTransition()
-    }
-    void applyBasemapMode(mode)
+  () => props.tileSourceId,
+  (sourceId) => {
+    if (!mapReady.value) return
+    triggerSourceTransition()
+    switchTileSource(sourceId)
   },
 )
 
+// Watch layersStore for admin boundary changes
 watch(
-  () => props.activeLayer,
+  () => [hasAdminBoundary.value, adminBoundaryOpacity.value],
+  () => syncAdminOverlay(),
+)
+
+// Watch selected layer for hotspot changes
+watch(
+  () => [selectedLayer.value?.instanceId, selectedLayer.value?.hotspots],
   () => {
-    emit('visibleHotspotsChange', props.activeLayer.hotspots.slice(0, 3))
     focusActiveLayer()
     scheduleHotspotSync()
   },
 )
 
 onBeforeUnmount(() => {
-  if (animationFrameId !== null) {
-    cancelAnimationFrame(animationFrameId)
-  }
-  if (basemapTransitionTimer !== null && typeof window !== 'undefined') {
-    window.clearTimeout(basemapTransitionTimer)
-  }
+  if (animationFrameId !== null) cancelAnimationFrame(animationFrameId)
+  if (sourceTransitionTimer !== null && typeof window !== 'undefined') window.clearTimeout(sourceTransitionTimer)
+  if (hotspotSyncThrottleTimer !== null && typeof window !== 'undefined') window.clearTimeout(hotspotSyncThrottleTimer)
   map?.remove()
   map = null
 })
@@ -416,17 +547,17 @@ onBeforeUnmount(() => {
 
 <template>
   <section
+    ref="mapStageRef"
     class="map-stage"
-    :class="[
-      { 'map-stage-osm': isOsmFocused },
-      { 'map-stage-moving': isMapInteracting },
-      { 'map-stage-basemap-transitioning': isBasemapTransitioning },
-      `map-stage-${props.activeLayer.availabilityState}`,
-    ]"
+    :class="{
+      'map-stage-interacting': isMapInteracting,
+      'map-stage-transitioning': isSourceTransitioning,
+      [`map-stage-${activeLayer.availabilityState}`]: true,
+    }"
     :style="{
-      '--accent-color': props.activeLayer.accentColor,
-      '--accent-glow': props.activeLayer.accentGlow,
-      '--chip-tone': props.activeLayer.chipTone,
+      '--accent-color': activeLayer.accentColor,
+      '--accent-glow': activeLayer.accentGlow,
+      '--chip-tone': activeLayer.chipTone,
       '--time-progress': timeProgressPercent,
       '--time-glow-opacity': timeGlowOpacity,
       '--horizon-position': horizonPosition,
@@ -438,6 +569,8 @@ onBeforeUnmount(() => {
     }"
   >
     <div ref="mapContainer" class="map-host" :class="{ visible: mapVisible }"></div>
+
+    <!-- Skeleton -->
     <div class="map-skeleton" :class="{ hidden: !skeletonVisible }" aria-hidden="true">
       <div class="skeleton-sweep"></div>
       <div class="skeleton-node skeleton-node-a"></div>
@@ -445,57 +578,71 @@ onBeforeUnmount(() => {
       <div class="skeleton-strip skeleton-strip-a"></div>
       <div class="skeleton-strip skeleton-strip-b"></div>
     </div>
+
+    <!-- Atmosphere layers -->
     <div class="map-fog"></div>
     <div class="basemap-transition-mask"></div>
     <div class="time-sheen"></div>
     <div class="time-band"></div>
     <div class="weather-overlay"></div>
     <div class="grid-overlay"></div>
+
+    <!-- Loading indicator -->
     <div v-if="!mapReady" class="map-loading">
       <span class="loading-dot"></span>
       <span>{{ loadingLabel }}</span>
     </div>
 
+    <!-- Tile error banner -->
+    <div v-if="tileLoadFailed" class="tile-load-error">
+      <span class="tile-error-icon">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="12" cy="12" r="10"/>
+          <line x1="12" y1="8" x2="12" y2="12"/>
+          <line x1="12" y1="16" x2="12.01" y2="16"/>
+        </svg>
+      </span>
+      <span>瓦片加载失败</span>
+      <button class="tile-retry-btn" @click="retryTileLoad">重试</button>
+    </div>
+
+    <!-- Map chips -->
     <div class="map-overlay">
       <span class="chip">
-        {{
-          props.basemapMode === 'admin'
-            ? '行政区'
-            : props.basemapMode === 'osm'
-              ? 'OSM'
-              : '混合底图'
-        }}
+        {{ currentTileConfig.provider }} · {{ currentTileConfig.label }}
       </span>
-      <span class="chip">{{ props.hourLabel }}</span>
-      <span class="chip secondary">{{ props.activeLayer.name }}</span>
-      <span class="chip" :class="`chip-${props.activeLayer.availabilityState}`">
-        {{ props.activeLayer.availabilityLabel }}
+      <span class="chip">{{ hourLabel }}</span>
+      <span class="chip secondary">{{ activeLayer.name }}</span>
+      <span class="chip" :class="`chip-${activeLayer.availabilityState}`">
+        {{ activeLayer.availabilityLabel }}
       </span>
     </div>
 
+    <!-- Layer info card -->
     <div class="map-note">
-      <h2>{{ props.activeLayer.name }}</h2>
-      <p>{{ props.activeLayer.trendLabel }}</p>
-      <span class="map-note-meta">{{ props.activeLayer.observationTimeLabel }} · {{ props.activeLayer.availabilityLabel }}</span>
+      <h2>{{ activeLayer.name }}</h2>
+      <p>{{ activeLayer.trendLabel }}</p>
+      <span class="map-note-meta">{{ activeLayer.observationTimeLabel }} · {{ activeLayer.availabilityLabel }}</span>
       <div class="time-indicator" aria-hidden="true">
         <div class="time-indicator-fill"></div>
       </div>
     </div>
 
-    <div class="metric-card" :class="`metric-card-${props.activeLayer.availabilityState}`">
-      <strong>{{ props.activeLayer.metricLabel }}</strong>
-      <span class="metric-value">{{ props.activeLayer.metricValue }}</span>
-      <span>{{ props.activeLayer.availabilityDescription }}</span>
-      <span>缺失：{{ props.activeLayer.missingFieldsLabel }}</span>
-      <span>{{ modeDescription }}</span>
+    <!-- Metric card (merged with empty-hint, placed left of zoom controls) -->
+    <div class="metric-card" :class="`metric-card-${activeLayer.availabilityState}`">
+      <div class="metric-primary">
+        <strong class="metric-label">{{ activeLayer.metricLabel }}</strong>
+        <span class="metric-value">{{ activeLayer.metricValue }}</span>
+      </div>
+      <p class="metric-description">{{ activeLayer.availabilityDescription }}</p>
+      <div class="metric-secondary">
+        <span class="metric-missing">缺失：{{ activeLayer.missingFieldsLabel }}</span>
+        <span class="metric-status">{{ mapReady ? '2D 地图已就绪' : '正在加载地图...' }}</span>
+      </div>
     </div>
 
-    <div v-if="hotspotPins.length === 0" class="map-empty-hint">
-      <strong>{{ props.activeLayer.availabilityLabel }}</strong>
-      <span>{{ props.activeLayer.availabilityDescription }}</span>
-    </div>
-
-    <div class="hotspot-layer" :class="`hotspot-layer-${props.activeLayer.availabilityState}`" aria-hidden="true">
+    <!-- Hotspot pins -->
+    <div class="hotspot-layer" :class="`hotspot-layer-${activeLayer.availabilityState}`" aria-hidden="true">
       <div
         v-for="pin in hotspotPins"
         :key="pin.id"
@@ -522,6 +669,8 @@ onBeforeUnmount(() => {
   background:
     radial-gradient(circle at top, rgba(66, 130, 255, 0.14), transparent 28rem),
     linear-gradient(180deg, rgba(6, 14, 26, 0.98), rgba(10, 19, 35, 0.94));
+  /* 性能优化：contained paint layer */
+  contain: layout style paint;
 }
 
 .map-host,
@@ -560,6 +709,10 @@ onBeforeUnmount(() => {
   pointer-events: none;
 }
 
+.map-skeleton.hidden .skeleton-sweep {
+  animation-play-state: paused;
+}
+
 .skeleton-sweep,
 .skeleton-node,
 .skeleton-strip {
@@ -567,10 +720,13 @@ onBeforeUnmount(() => {
 }
 
 .skeleton-sweep {
+  position: absolute;
   inset: 0;
   background: linear-gradient(110deg, transparent 26%, rgba(255, 255, 255, 0.08) 50%, transparent 74%);
   transform: translateX(-100%);
   animation: sweep 2.4s linear infinite;
+  /* 性能优化：GPU 加速 */
+  will-change: transform;
 }
 
 .skeleton-node {
@@ -581,15 +737,8 @@ onBeforeUnmount(() => {
   box-shadow: 0 0 0 10px rgba(82, 134, 255, 0.08);
 }
 
-.skeleton-node-a {
-  top: 34%;
-  left: 28%;
-}
-
-.skeleton-node-b {
-  top: 56%;
-  left: 64%;
-}
+.skeleton-node-a { top: 34%; left: 28%; }
+.skeleton-node-b { top: 56%; left: 64%; }
 
 .skeleton-strip {
   height: 0.7rem;
@@ -597,17 +746,8 @@ onBeforeUnmount(() => {
   background: rgba(255, 255, 255, 0.06);
 }
 
-.skeleton-strip-a {
-  left: 1rem;
-  bottom: 5rem;
-  width: 10rem;
-}
-
-.skeleton-strip-b {
-  right: 1rem;
-  bottom: 4.9rem;
-  width: 7.6rem;
-}
+.skeleton-strip-a { left: 1rem; bottom: 5rem; width: 10rem; }
+.skeleton-strip-b { right: 1rem; bottom: 4.9rem; width: 7.6rem; }
 
 .map-fog {
   z-index: 1;
@@ -626,6 +766,9 @@ onBeforeUnmount(() => {
   background:
     radial-gradient(circle at 50% 48%, rgba(125, 192, 255, 0.08), transparent 18rem),
     linear-gradient(180deg, rgba(4, 11, 20, 0.08), rgba(4, 11, 20, 0.14));
+  /* 性能优化：GPU 加速，仅 opacity 使用过渡 */
+  transform: translateZ(0);
+  will-change: opacity;
   transition: opacity 0.22s ease;
 }
 
@@ -645,7 +788,10 @@ onBeforeUnmount(() => {
       rgba(255, 181, 107, calc(var(--time-glow-opacity) * 0.35)) 0%,
       transparent 38%
     );
-  transition: background 0.35s ease;
+  /* 性能优化：GPU 加速，仅 opacity 使用过渡 */
+  transform: translateZ(0);
+  will-change: opacity;
+  transition: opacity 0.35s ease;
 }
 
 .time-band {
@@ -656,7 +802,7 @@ onBeforeUnmount(() => {
   background:
     radial-gradient(
       circle at var(--horizon-position) 72%,
-      color-mix(in srgb, var(--accent-color) 18%, rgba(255, 210, 150, var(--stage-band-opacity))),
+      rgba(100, 140, 220, 0.18),
       transparent var(--stage-glow-spread)
     ),
     linear-gradient(
@@ -664,8 +810,11 @@ onBeforeUnmount(() => {
       transparent 58%,
       rgba(255, 255, 255, calc(var(--stage-band-opacity) * 0.16)) 100%
     );
+  /* 性能优化：GPU 加速，仅 opacity 使用过渡 */
+  transform: translateZ(0);
+  will-change: opacity;
   opacity: 0.92;
-  transition: background 0.35s ease, opacity 0.35s ease;
+  transition: opacity 0.35s ease;
 }
 
 .weather-overlay {
@@ -673,11 +822,12 @@ onBeforeUnmount(() => {
   pointer-events: none;
   opacity: 0.24;
   background:
-    radial-gradient(circle at 18% 30%, color-mix(in srgb, var(--accent-color) 18%, transparent), transparent 18rem),
+    radial-gradient(circle at 18% 30%, rgba(82, 134, 255, 0.12), transparent 18rem),
     radial-gradient(circle at 78% 24%, rgba(82, 134, 255, 0.12), transparent 20rem),
     radial-gradient(circle at 52% 72%, rgba(255, 255, 255, 0.06), transparent 16rem);
-  filter: blur(8px);
+  /* 性能优化：移除 filter blur，改用背景渐变透明度，GPU 加速 */
   transform: translateZ(0);
+  will-change: opacity;
 }
 
 .grid-overlay {
@@ -688,101 +838,51 @@ onBeforeUnmount(() => {
     linear-gradient(90deg, rgba(255, 255, 255, 0.035) 1px, transparent 1px);
   background-size: 72px 72px;
   mask-image: linear-gradient(180deg, transparent, rgba(0, 0, 0, 0.6) 18%, rgba(0, 0, 0, 0.92));
+  will-change: opacity;
 }
 
-.map-stage-osm .map-fog {
-  background: linear-gradient(180deg, rgba(4, 11, 20, 0.02), rgba(4, 11, 20, 0.14));
-}
-
-.map-stage-osm .time-sheen {
-  opacity: 0.7;
-}
-
-.map-stage-osm .weather-overlay {
-  opacity: 0.12;
-  filter: none;
-}
-
-.map-stage-osm .time-band {
-  opacity: 0.62;
-}
-
-.map-stage-osm .grid-overlay {
-  opacity: 0.42;
-}
-
-.map-stage-moving .weather-overlay,
-.map-stage-moving .time-sheen,
-.map-stage-moving .time-band,
-.map-stage-moving .grid-overlay {
+.map-stage-interacting .weather-overlay,
+.map-stage-interacting .time-sheen,
+.map-stage-interacting .time-band,
+.map-stage-interacting .grid-overlay {
   opacity: 0.08;
-  filter: none;
 }
 
-.map-stage-moving .hotspot-layer {
+.map-stage-interacting .hotspot-layer {
   opacity: 0.4;
 }
 
-.map-stage-basemap-transitioning .basemap-transition-mask {
+.map-stage-transitioning .basemap-transition-mask {
   opacity: 1;
 }
 
-.map-stage-basemap-transitioning .map-host {
+.map-stage-transitioning .map-host {
   filter: saturate(0.92) brightness(0.92);
 }
 
-.map-stage-ready .weather-overlay {
-  opacity: 0.28;
-}
-
-.map-stage-ready .time-sheen {
-  opacity: 1;
-}
-
-.map-stage-ready .time-band {
-  opacity: 1;
-}
-
-.map-stage-partial .weather-overlay {
-  opacity: 0.16;
-  filter: blur(6px);
-}
-
-.map-stage-partial .grid-overlay {
-  opacity: 0.32;
-}
-
-.map-stage-empty .map-fog {
-  background:
-    radial-gradient(circle at 20% 18%, rgba(3, 12, 24, 0.12), transparent 18rem),
-    linear-gradient(180deg, rgba(4, 11, 20, 0.08), rgba(4, 11, 20, 0.34));
-}
-
-.map-stage-empty .time-sheen {
-  opacity: 0.38;
-}
-
-.map-stage-empty .time-band {
-  opacity: 0.46;
-}
-
-.map-stage-empty .weather-overlay {
-  opacity: 0.08;
-  filter: none;
-}
-
-.map-stage-empty .grid-overlay {
-  opacity: 0.2;
-}
+.map-stage-ready .weather-overlay { opacity: 0.28; }
+.map-stage-ready .time-sheen { opacity: 1; }
+.map-stage-ready .time-band { opacity: 1; }
+.map-stage-partial .weather-overlay { opacity: 0.16; }
+.map-stage-partial .grid-overlay { opacity: 0.32; }
+.map-stage-empty .map-fog { background: radial-gradient(circle at 20% 18%, rgba(3, 12, 24, 0.12), transparent 18rem), linear-gradient(180deg, rgba(4, 11, 20, 0.08), rgba(4, 11, 20, 0.34)); }
+.map-stage-empty .time-sheen { opacity: 0.38; }
+.map-stage-empty .time-band { opacity: 0.46; }
+.map-stage-empty .weather-overlay { opacity: 0.08; }
+.map-stage-empty .grid-overlay { opacity: 0.2; }
 
 .map-overlay {
   position: absolute;
-  z-index: 2;
-  top: 5.2rem;
-  left: 1rem;
+  z-index: 21;
+  top: 0;
+  left: 0;
+  right: auto;
   display: flex;
   gap: 0.38rem;
   flex-wrap: wrap;
+  padding: 0.8rem 0.8rem 0;
+  box-sizing: border-box;
+  align-content: flex-start;
 }
 
 .chip {
@@ -796,61 +896,31 @@ onBeforeUnmount(() => {
 
 .chip.secondary {
   color: #eaf7ff;
-  border-color: color-mix(in srgb, var(--accent-color) 36%, rgba(136, 192, 255, 0.16));
-  background: color-mix(in srgb, var(--chip-tone) 100%, rgba(8, 18, 33, 0.78));
+  border-color: rgba(90, 162, 255, 0.36);
+  background: rgba(36, 90, 170, 0.16);
 }
 
-.chip-ready {
-  color: #9ff8cf;
-  border-color: rgba(114, 255, 207, 0.2);
-  background: rgba(114, 255, 207, 0.08);
-}
-
-.chip-partial {
-  color: #ffd38a;
-  border-color: rgba(255, 196, 120, 0.18);
-  background: rgba(255, 196, 120, 0.08);
-}
-
-.chip-empty {
-  color: #d7c1ff;
-  border-color: rgba(187, 137, 255, 0.18);
-  background: rgba(187, 137, 255, 0.08);
-}
+.chip-ready { color: #9ff8cf; border-color: rgba(114, 255, 207, 0.2); background: rgba(114, 255, 207, 0.08); }
+.chip-partial { color: #ffd38a; border-color: rgba(255, 196, 120, 0.18); background: rgba(255, 196, 120, 0.08); }
+.chip-empty { color: #d7c1ff; border-color: rgba(187, 137, 255, 0.18); background: rgba(187, 137, 255, 0.08); }
 
 .map-note {
   position: absolute;
-  z-index: 2;
+  z-index: 18;
   left: 1rem;
-  bottom: 5.1rem;
+  bottom: 0.1rem;
   max-width: 12rem;
   display: grid;
   gap: 0.22rem;
   padding: 0.48rem 0.56rem;
   border-radius: 0.82rem;
-  background: rgba(8, 18, 33, 0.46);
-  border: 1px solid color-mix(in srgb, var(--accent-color) 14%, rgba(136, 192, 255, 0.12));
-  backdrop-filter: blur(14px);
+  background: rgba(8, 18, 33, 0.72);
+  border: 1px solid rgba(90, 162, 255, 0.12);
 }
 
-.map-note h2 {
-  margin: 0;
-  font-size: 0.76rem;
-  color: #f3fbff;
-}
-
-.map-note p {
-  margin: 0;
-  color: #96a8bb;
-  font-size: 0.64rem;
-  line-height: 1.32;
-}
-
-.map-note-meta {
-  color: #bfd3e6;
-  font-size: 0.58rem;
-  letter-spacing: 0.02em;
-}
+.map-note h2 { margin: 0; font-size: 0.76rem; color: #f3fbff; }
+.map-note p { margin: 0; color: #96a8bb; font-size: 0.64rem; line-height: 1.32; }
+.map-note-meta { color: #bfd3e6; font-size: 0.58rem; letter-spacing: 0.02em; }
 
 .time-indicator {
   position: relative;
@@ -865,99 +935,86 @@ onBeforeUnmount(() => {
   width: var(--time-progress);
   height: 100%;
   border-radius: inherit;
-  background: linear-gradient(90deg, color-mix(in srgb, var(--accent-color) 40%, rgba(255, 255, 255, 0.1)), var(--accent-color));
+  background: rgba(90, 106, 128, 0.25);
 }
 
 .metric-card {
   position: absolute;
-  z-index: 2;
-  display: grid;
+  z-index: 18;
+  right: calc(100px + 0.8rem + 0.28rem);
+  bottom: 0.8rem;
+  display: flex;
+  flex-direction: column;
   gap: 0.18rem;
-  right: 1rem;
-  bottom: 5rem;
-  max-width: 8.4rem;
-  padding: 0.44rem 0.54rem;
+  max-width: 10rem;
+  padding: 0.48rem 0.6rem;
   border-radius: 0.82rem;
-  background: rgba(8, 18, 33, 0.48);
+  background: rgba(8, 18, 33, 0.85);
   border: 1px solid rgba(136, 192, 255, 0.12);
-  backdrop-filter: blur(14px);
   color: #dbe7f2;
+  box-shadow: 0 8px 24px rgba(3, 10, 20, 0.4);
 }
 
-.metric-card strong {
-  font-size: 0.64rem;
+.metric-primary {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.5rem;
 }
 
-.metric-card span {
+.metric-label {
   color: #90a2b5;
-  line-height: 1.3;
   font-size: 0.6rem;
-}
-
-.metric-card-ready {
-  border-color: rgba(114, 255, 207, 0.18);
-}
-
-.metric-card-partial {
-  border-color: rgba(255, 196, 120, 0.16);
-}
-
-.metric-card-empty {
-  border-color: rgba(187, 137, 255, 0.16);
-  background: rgba(8, 18, 33, 0.58);
-}
-
-.map-empty-hint {
-  position: absolute;
-  z-index: 2;
-  right: 1rem;
-  bottom: 3.7rem;
-  display: grid;
-  gap: 0.18rem;
-  max-width: 12rem;
-  padding: 0.52rem 0.62rem;
-  border-radius: 0.9rem;
-  background: rgba(8, 18, 33, 0.66);
-  border: 1px solid rgba(148, 163, 184, 0.12);
-}
-
-.map-empty-hint strong {
-  color: #eef7ff;
-  font-size: 0.68rem;
-}
-
-.map-empty-hint span {
-  color: #98abbe;
-  font-size: 0.6rem;
-  line-height: 1.34;
+  font-weight: 500;
 }
 
 .metric-value {
   color: #f5fbff;
-  font-size: 0.92rem;
+  font-size: 0.84rem;
   font-weight: 700;
 }
 
-.hotspot-layer {
-  z-index: 2;
-  pointer-events: none;
+.metric-description {
+  margin: 0;
+  color: #7f93a9;
+  font-size: 0.58rem;
+  line-height: 1.35;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
-.hotspot-layer-ready .hotspot-pin {
-  opacity: 1;
+.metric-secondary {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
 }
 
-.hotspot-layer-partial .hotspot-pin {
-  opacity: 0.76;
+.metric-missing {
+  color: #5a7080;
+  font-size: 0.56rem;
 }
 
-.hotspot-layer-empty .hotspot-pin {
-  opacity: 0.38;
+.metric-status {
+  color: #6e8ba0;
+  font-size: 0.56rem;
 }
+
+.metric-card-ready { border-color: rgba(114, 255, 207, 0.18); }
+.metric-card-partial { border-color: rgba(255, 196, 120, 0.16); }
+.metric-card-empty { border-color: rgba(187, 137, 255, 0.16); }
+
+.hotspot-layer { z-index: 2; pointer-events: none; }
+.hotspot-layer-ready .hotspot-pin { opacity: 1; }
+.hotspot-layer-partial .hotspot-pin { opacity: 0.76; }
+.hotspot-layer-empty .hotspot-pin { opacity: 0.38; }
 
 .hotspot-pin {
   position: absolute;
   transform: translate(-50%, -50%);
+  /* 性能优化：GPU 加速，仅 opacity 使用过渡 */
+  will-change: opacity;
+  transition: opacity 0.28s ease;
 }
 
 .hotspot-core {
@@ -965,24 +1022,27 @@ onBeforeUnmount(() => {
   height: 0.74rem;
   border-radius: 999px;
   background: var(--accent-color);
-  transform: scale(var(--hotspot-scale));
+  transform: translateZ(0) scale(var(--hotspot-scale));
   box-shadow:
     0 0 0 0 rgba(255, 255, 255, 0.08),
-    0 0 0 var(--hotspot-halo-size) color-mix(in srgb, var(--accent-glow) 70%, transparent);
-  transition: transform 0.28s ease, box-shadow 0.28s ease;
+    0 0 0 var(--hotspot-halo-size) rgba(90, 106, 128, 0.3);
+  /* 性能优化：仅 GPU 属性过渡 */
+  transition: transform 0.28s cubic-bezier(0.25, 0.46, 0.45, 0.94), box-shadow 0.28s ease;
 }
 
 .hotspot-label {
   margin-top: 0.4rem;
   padding: 0.32rem 0.42rem;
   border-radius: 0.8rem;
-  background: rgba(4, 12, 23, 0.66);
+  background: rgba(4, 12, 23, 0.72);
   border: 1px solid rgba(136, 192, 255, 0.14);
   color: #e8f3fc;
   white-space: nowrap;
   box-shadow: 0 10px 18px rgba(1, 8, 16, 0.18);
   opacity: var(--hotspot-label-opacity);
-  transition: opacity 0.28s ease, transform 0.28s ease;
+  will-change: opacity;
+  transition: opacity 0.28s ease;
+  transform: translateZ(0);
 }
 
 .map-loading {
@@ -994,11 +1054,10 @@ onBeforeUnmount(() => {
   gap: 0.45rem;
   padding: 0.5rem 0.72rem;
   border-radius: 999px;
-  background: rgba(8, 18, 33, 0.84);
+  background: rgba(8, 18, 33, 0.88);
   border: 1px solid rgba(136, 192, 255, 0.16);
   color: #dfeefd;
   font-size: 0.74rem;
-  backdrop-filter: blur(14px);
 }
 
 .loading-dot {
@@ -1006,72 +1065,114 @@ onBeforeUnmount(() => {
   height: 0.48rem;
   border-radius: 999px;
   background: var(--accent-color);
-  box-shadow: 0 0 0 6px color-mix(in srgb, var(--accent-glow) 42%, transparent);
+  box-shadow: 0 0 0 6px rgba(90, 106, 128, 0.13);
+}
+
+.tile-load-error {
+  position: absolute;
+  top: 110px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 3;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.38rem;
+  padding: 0.38rem 0.6rem 0.38rem 0.5rem;
+  border-radius: 999px;
+  background: rgba(8, 18, 33, 0.92);
+  border: 1px solid rgba(255, 100, 100, 0.28);
+  color: #ffb3b3;
+  font-size: 0.64rem;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.24);
+}
+
+.tile-error-icon { display: flex; align-items: center; color: #ff9090; }
+
+.tile-retry-btn {
+  margin-left: 0.18rem;
+  padding: 0.18rem 0.46rem;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 140, 140, 0.3);
+  background: rgba(255, 80, 80, 0.12);
+  color: #ffc0c0;
+  font-size: 0.6rem;
+  font-family: inherit;
+  cursor: pointer;
+  transition: background 0.18s ease, color 0.18s ease;
+}
+
+.tile-retry-btn:hover {
+  background: rgba(255, 80, 80, 0.22);
+  color: #fff0f0;
 }
 
 .hotspot-label strong,
 .hotspot-label span {
   display: block;
 }
+.hotspot-label strong { font-size: 0.64rem; }
+.hotspot-label span { margin-top: 0.15rem; color: #99afc3; font-size: 0.6rem; }
 
-.hotspot-label strong {
-  font-size: 0.64rem;
-}
-
-.hotspot-label span {
-  margin-top: 0.15rem;
-  color: #99afc3;
-  font-size: 0.6rem;
-}
-
-:deep(.maplibregl-ctrl-top-right) {
-  top: 7rem;
+:deep(.maplibregl-ctrl-bottom-right) {
   right: 0.8rem;
+  bottom: 0.8rem;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 0.28rem;
 }
-
-:deep(.maplibregl-ctrl-group) {
-  border-radius: 0.8rem;
+:deep(.maplibregl-ctrl-bottom-right .maplibregl-ctrl-group) {
+  display: flex;
+  flex-direction: column;
+  border-radius: 0.7rem;
   overflow: hidden;
-  box-shadow: 0 12px 32px rgba(3, 10, 20, 0.35);
+  box-shadow: 0 8px 24px rgba(3, 10, 20, 0.4);
+  background: rgba(8, 18, 33, 0.85);
+  border: 1px solid rgba(136, 192, 255, 0.12);
 }
+:deep(.maplibregl-ctrl-bottom-right .maplibregl-ctrl-group button) {
+  width: 2rem;
+  height: 2rem;
+  background: transparent;
+  border: none;
+  color: #c5d8ed;
+  box-shadow: none;
+  border-radius: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+:deep(.maplibregl-ctrl-bottom-right .maplibregl-ctrl-group button:hover) {
+  background: rgba(136, 192, 255, 0.12);
+  color: #e8f2ff;
+}
+:deep(.maplibregl-ctrl-bottom-right .maplibregl-ctrl-group button + button) {
+  border-top: 1px solid rgba(136, 192, 255, 0.08);
+}
+:deep(.maplibregl-ctrl-bottom-right .maplibregl-ctrl-group button .maplibregl-ctrl-icon) {
+  filter: none;
+}
+:deep(.maplibregl-ctrl-bottom-right .maplibregl-ctrl-scale) {
+  border-radius: 0.6rem;
+  border: none;
+  background: rgba(8, 18, 33, 0.85);
+  color: #c5d8ed;
+  font-size: 0.64rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  padding: 0.32rem 0.6rem;
+  box-shadow: 0 8px 24px rgba(3, 10, 20, 0.4);
+  box-sizing: border-box;
+}
+:deep(.maplibregl-ctrl-attrib) { background: rgba(255, 255, 255, 0.8); }
 
-:deep(.maplibregl-ctrl-attrib) {
-  background: rgba(255, 255, 255, 0.8);
-}
-
-@keyframes sweep {
-  to {
-    transform: translateX(100%);
-  }
-}
+@keyframes sweep { to { transform: translateX(100%); } }
 
 @media (max-width: 820px) {
-  .map-stage {
-    min-height: calc(100vh - 1rem);
-  }
-
-  .map-overlay {
-    top: 7.15rem;
-    left: 0.75rem;
-    right: 0.75rem;
-  }
-
-  .map-note {
-    left: 0.75rem;
-    right: 0.75rem;
-    bottom: 8.3rem;
-    max-width: none;
-  }
-
-  .metric-card {
-    right: 0.75rem;
-    left: 0.75rem;
-    bottom: 5.2rem;
-    max-width: none;
-  }
-
-  :deep(.maplibregl-ctrl-top-right) {
-    top: 11rem;
-  }
+  .map-stage { min-height: calc(100vh - 1rem); }
+  .map-overlay { top: 0; left: 0; padding: 0.75rem 0.75rem 0; }
+  .map-note { left: 0.75rem; right: 0.75rem; bottom: 8.3rem; max-width: none; }
+  .metric-card { right: calc(100px + 0.75rem + 0.28rem); bottom: 0.75rem; }
+  :deep(.maplibregl-ctrl-bottom-right) { right: 0.75rem; bottom: 0.75rem; }
 }
 </style>

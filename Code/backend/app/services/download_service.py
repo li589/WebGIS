@@ -27,6 +27,7 @@ class DownloadPlan:
     execution_status: str
     job_state: dict[str, Any]
     source_fetch_summary: dict[str, Any]
+    follow_up_policy: dict[str, Any]
     manifest_result_ref: WorkflowResultReference
 
 
@@ -61,16 +62,20 @@ class DownloadService:
         cache_status = "warm" if current_entry and current_entry.is_fresh and cached_manifest_ref else "cold"
         source_refs = self._resolve_source_refs(layer_id, requested_hour, refresh_policy, cache_status)
         download_ticket_id = self._resolve_download_ticket_id(current_entry, cache_status)
+        follow_up_policy = self._build_follow_up_policy(payload_parameters=payload_parameters)
         execution_status = "cache_hit" if cache_status == "warm" else "prepared"
         job_state = self._build_job_state(
             download_ticket_id=download_ticket_id,
             cache_status=cache_status,
             realtime_preferred=realtime_preferred,
             refresh_policy=refresh_policy,
+            follow_up_policy=follow_up_policy,
+            requested_at=requested_at,
         )
         source_fetch_summary = self._build_source_fetch_summary(
             source_refs=source_refs,
             cache_status=cache_status,
+            follow_up_policy=follow_up_policy,
         )
         manifest_result_ref = cached_manifest_ref or self._build_manifest_result_ref(
             run_id=run_id,
@@ -84,6 +89,7 @@ class DownloadService:
             payload_parameters=payload_parameters,
             job_state=job_state,
             source_fetch_summary=source_fetch_summary,
+            follow_up_policy=follow_up_policy,
         )
         cache_entry = cache_service.upsert_entry(
             cache_key=cache_key,
@@ -101,6 +107,8 @@ class DownloadService:
                 "job_phase": job_state["phase"],
                 "job_progress": job_state["progress"],
                 "source_fetch_status": source_fetch_summary["status"],
+                "fetch_attempts": job_state["fetch_attempts"],
+                "max_attempts": job_state["max_attempts"],
                 "manifest_result_id": manifest_result_ref.result_id,
                 "manifest_result_kind": manifest_result_ref.result_kind.value,
                 "artifact_title": manifest_result_ref.title,
@@ -125,6 +133,7 @@ class DownloadService:
             execution_status=execution_status,
             job_state=job_state,
             source_fetch_summary=source_fetch_summary,
+            follow_up_policy=follow_up_policy,
             manifest_result_ref=manifest_result_ref,
         )
 
@@ -150,6 +159,9 @@ class DownloadService:
             "summary_result_id": summary_result_id,
             "manifest_result_id": plan.manifest_result_ref.result_id,
             "artifact_resource_key": plan.manifest_result_ref.resource_key,
+            "max_attempts": plan.follow_up_policy["max_attempts"],
+            "simulate_fail_attempts": plan.follow_up_policy["simulate_fail_attempts"],
+            "partial_failure_ref_ids": plan.follow_up_policy["partial_failure_ref_ids"],
         }
 
     def complete_follow_up_task(
@@ -157,11 +169,12 @@ class DownloadService:
         *,
         run_id: str,
         result_refs: list[WorkflowResultReference],
+        task_data: dict[str, Any],
         cache_key: str,
         summary_result_id: str,
         manifest_result_id: str,
         updated_at: datetime,
-    ) -> tuple[list[WorkflowResultReference], list[str]]:
+    ) -> tuple[list[WorkflowResultReference], list[str], dict[str, Any]]:
         summary_ref = next((item for item in result_refs if item.result_id == summary_result_id), None)
         manifest_ref = next((item for item in result_refs if item.result_id == manifest_result_id), None)
         if summary_ref is None or summary_ref.inline_data is None:
@@ -170,37 +183,180 @@ class DownloadService:
             raise ValueError("Download manifest result is missing for follow-up task.")
 
         summary_payload = self._clone_payload(summary_ref.inline_data)
-        source_refs = [
+        execution_payload = summary_payload.setdefault("execution", {})
+        existing_job_state = execution_payload.setdefault("job_state", {})
+        follow_up_policy = execution_payload.setdefault(
+            "follow_up_policy",
             {
-                **item,
-                "fetch_status": "ready" if item.get("fetch_status") == "pending" else item.get("fetch_status", "ready"),
-                "fetch_stage": "fetched_to_artifact"
-                if item.get("fetch_status") == "pending"
-                else item.get("fetch_stage", "source_manifest_ready"),
-            }
-            for item in summary_payload.get("download_plan", {}).get("source_refs", [])
-        ]
-        summary_payload["download_plan"]["source_refs"] = source_refs
-        total_bytes = sum(int(item.get("estimated_bytes", 0)) for item in source_refs)
-        summary_payload["source_fetch"] = {
-            "status": "fetched",
-            "total_sources": len(source_refs),
-            "pending_sources": 0,
+                "max_attempts": max(1, self._coerce_int(task_data.get("max_attempts")) or 3),
+                "retryable": True,
+                "simulate_fail_attempts": max(0, self._coerce_int(task_data.get("simulate_fail_attempts")) or 0),
+                "partial_failure_ref_ids": self._coerce_str_list(task_data.get("partial_failure_ref_ids")),
+            },
+        )
+        source_refs = self._clone_payload(summary_payload.get("download_plan", {}).get("source_refs", []))
+        attempt_number = max(0, self._coerce_int(existing_job_state.get("fetch_attempts")) or 0) + 1
+        max_attempts = max(1, self._coerce_int(task_data.get("max_attempts")) or self._coerce_int(follow_up_policy.get("max_attempts")) or 3)
+        simulate_fail_attempts = max(
+            0,
+            self._coerce_int(task_data.get("simulate_fail_attempts"))
+            or self._coerce_int(follow_up_policy.get("simulate_fail_attempts"))
+            or 0,
+        )
+        partial_failure_ref_ids = set(
+            self._coerce_str_list(task_data.get("partial_failure_ref_ids"))
+            or self._coerce_str_list(follow_up_policy.get("partial_failure_ref_ids"))
+        )
+        forced_full_failure = attempt_number <= simulate_fail_attempts
+        ready_count = 0
+        pending_count = 0
+        failed_count = 0
+        transient_failure_count = 0
+        last_error: str | None = None
+        completed_at_value: str | None = None
+        manifest_locator = manifest_ref.resource_key
+        updated_source_refs: list[dict[str, Any]] = []
+
+        for item in source_refs:
+            source_item = {**item}
+            previous_status = str(source_item.get("fetch_status", "pending"))
+            source_item["attempt_count"] = attempt_number
+            source_item["last_attempt_at"] = updated_at.astimezone(timezone.utc).isoformat()
+            source_item.setdefault("artifact_locator", None)
+            source_item.setdefault("completed_at", None)
+            source_item.setdefault("last_error", None)
+
+            is_fetch_target = previous_status not in {"cached", "ready"}
+            should_fail_this_source = False
+            failure_reason: str | None = None
+            if is_fetch_target and forced_full_failure:
+                should_fail_this_source = True
+                failure_reason = "Simulated download source fetch failure for retryable skeleton."
+            elif is_fetch_target and str(source_item.get("ref_id")) in partial_failure_ref_ids:
+                should_fail_this_source = True
+                failure_reason = "Simulated partial source failure for retryable skeleton."
+
+            if should_fail_this_source:
+                retryable = attempt_number < max_attempts
+                source_item["fetch_status"] = "retry_pending" if retryable else "failed"
+                source_item["fetch_stage"] = "awaiting_retry" if retryable else "failed_terminal"
+                source_item["last_error"] = failure_reason
+                source_item["completed_at"] = None
+                source_item["artifact_locator"] = None
+                pending_count += 1 if retryable else 0
+                failed_count += 0 if retryable else 1
+                transient_failure_count += 1 if retryable else 0
+                last_error = failure_reason
+            else:
+                source_item["fetch_status"] = "cached" if previous_status == "cached" else "ready"
+                source_item["fetch_stage"] = (
+                    source_item.get("fetch_stage", "metadata_attached")
+                    if previous_status == "cached"
+                    else "fetched_to_artifact"
+                )
+                source_item["last_error"] = None
+                source_item["completed_at"] = updated_at.astimezone(timezone.utc).isoformat()
+                source_item["artifact_locator"] = (
+                    f"{manifest_locator}#source/{source_item.get('ref_id')}" if manifest_locator else None
+                )
+                ready_count += 1
+                if previous_status not in {"cached", "ready"} and (forced_full_failure or partial_failure_ref_ids):
+                    completed_at_value = updated_at.astimezone(timezone.utc).isoformat()
+
+            updated_source_refs.append(source_item)
+
+        if failed_count:
+            fetch_status = "failed"
+        elif transient_failure_count and ready_count:
+            fetch_status = "partial_success"
+        elif transient_failure_count:
+            fetch_status = "retry_pending"
+        else:
+            fetch_status = "fetched"
+            completed_at_value = updated_at.astimezone(timezone.utc).isoformat()
+
+        total_bytes = sum(int(item.get("estimated_bytes", 0)) for item in updated_source_refs)
+        partial_success = fetch_status == "partial_success"
+        retry_recommended = transient_failure_count > 0
+        source_fetch_summary = {
+            "status": fetch_status,
+            "total_sources": len(updated_source_refs),
+            "pending_sources": pending_count,
             "estimated_total_bytes": total_bytes,
-            "ready_sources": len(source_refs),
+            "ready_sources": ready_count,
+            "failed_sources": failed_count,
+            "partial_success": partial_success,
+            "completed_at": completed_at_value,
+            "last_error": last_error,
         }
-        job_state = {
-            **summary_payload.get("execution", {}).get("job_state", {}),
-            "phase": "fulfilled",
-            "status": "fetched",
-            "progress": 100,
-            "requires_fetch": False,
-            "artifact_status": "updated",
-            "next_action": "publish_cached_manifest",
-            "completed_at": updated_at.astimezone(timezone.utc).isoformat(),
+        if fetch_status == "failed":
+            job_state = {
+                **existing_job_state,
+                "phase": "failed",
+                "status": "failed",
+                "progress": 100,
+                "requires_fetch": False,
+                "artifact_status": "stale",
+                "next_action": "mark_download_failed",
+                "fetch_attempts": attempt_number,
+                "max_attempts": max_attempts,
+                "retryable": True,
+                "retry_recommended": False,
+                "partial_success": False,
+                "last_error": last_error,
+                "last_attempt_at": updated_at.astimezone(timezone.utc).isoformat(),
+                "completed_at": updated_at.astimezone(timezone.utc).isoformat(),
+            }
+            execution_status = "failed"
+        elif retry_recommended:
+            job_state = {
+                **existing_job_state,
+                "phase": "partial_ready" if partial_success else "fetch_retry_pending",
+                "status": "partial_success" if partial_success else "retry_pending",
+                "progress": 86 if partial_success else 72,
+                "requires_fetch": True,
+                "artifact_status": "partial" if partial_success else "stale_pending_retry",
+                "next_action": "retry_failed_sources",
+                "fetch_attempts": attempt_number,
+                "max_attempts": max_attempts,
+                "retryable": True,
+                "retry_recommended": True,
+                "partial_success": partial_success,
+                "last_error": last_error,
+                "last_attempt_at": updated_at.astimezone(timezone.utc).isoformat(),
+                "completed_at": completed_at_value,
+            }
+            execution_status = "partial_success" if partial_success else "retry_pending"
+        else:
+            job_state = {
+                **existing_job_state,
+                "phase": "fulfilled",
+                "status": "fetched",
+                "progress": 100,
+                "requires_fetch": False,
+                "artifact_status": "updated",
+                "next_action": "publish_cached_manifest",
+                "fetch_attempts": attempt_number,
+                "max_attempts": max_attempts,
+                "retryable": True,
+                "retry_recommended": False,
+                "partial_success": False,
+                "last_error": None,
+                "last_attempt_at": updated_at.astimezone(timezone.utc).isoformat(),
+                "completed_at": updated_at.astimezone(timezone.utc).isoformat(),
+            }
+            execution_status = "fetched"
+
+        summary_payload["download_plan"]["source_refs"] = updated_source_refs
+        summary_payload["source_fetch"] = source_fetch_summary
+        execution_payload["status"] = execution_status
+        execution_payload["job_state"] = job_state
+        execution_payload["follow_up_policy"] = {
+            "max_attempts": max_attempts,
+            "retryable": True,
+            "simulate_fail_attempts": simulate_fail_attempts,
+            "partial_failure_ref_ids": list(partial_failure_ref_ids),
         }
-        summary_payload["execution"]["status"] = "fetched"
-        summary_payload["execution"]["job_state"] = job_state
 
         updated_manifest_ref = result_storage_service.replace_artifact_result_ref(
             run_id=run_id,
@@ -213,10 +369,13 @@ class DownloadService:
         cache_metadata = {
             **(current_cache.metadata if current_cache is not None else {}),
             "download_ticket_id": summary_payload["execution"]["download_ticket_id"],
-            "execution_status": "fetched",
+            "execution_status": execution_status,
             "job_phase": job_state["phase"],
             "job_progress": job_state["progress"],
             "source_fetch_status": summary_payload["source_fetch"]["status"],
+            "fetch_attempts": job_state["fetch_attempts"],
+            "max_attempts": job_state["max_attempts"],
+            "last_error": job_state["last_error"],
             "manifest_result_id": updated_manifest_ref.result_id,
             "manifest_result_kind": updated_manifest_ref.result_kind.value,
             "artifact_title": updated_manifest_ref.title,
@@ -230,7 +389,7 @@ class DownloadService:
             cache_key=cache_key,
             scope=current_cache.scope if current_cache is not None else "download-plan",
             ttl_seconds=ttl_seconds,
-            status="warm",
+            status="warm" if execution_status == "fetched" else "degraded",
             metadata=cache_metadata,
         )
         summary_payload["cache"]["status"] = cache_entry.status
@@ -263,9 +422,10 @@ class DownloadService:
                         mime_type=item.mime_type,
                         inline_data={
                             "text": (
-                                f"{summary_payload['download_plan']['target_dataset']} 下载占位任务已完成源抓取回写，"
+                                f"{summary_payload['download_plan']['target_dataset']} 下载 follow-up task 已完成第 {attempt_number} 次抓取尝试，"
                                 f"当前缓存状态 {cache_entry.status}，"
-                                f"执行阶段 {job_state['phase']}。"
+                                f"执行阶段 {job_state['phase']}，"
+                                f"source fetch 状态 {source_fetch_summary['status']}。"
                             )
                         },
                         updated_at=updated_at,
@@ -274,12 +434,30 @@ class DownloadService:
             else:
                 updated_result_refs.append(item)
 
+        task_report = {
+            "download_ticket_id": summary_payload["execution"]["download_ticket_id"],
+            "execution_status": execution_status,
+            "job_phase": job_state["phase"],
+            "fetch_attempts": attempt_number,
+            "max_attempts": max_attempts,
+            "retry_recommended": retry_recommended,
+            "partial_success": partial_success,
+            "source_fetch_status": source_fetch_summary["status"],
+            "ready_sources": ready_count,
+            "pending_sources": pending_count,
+            "failed_sources": failed_count,
+            "last_error": last_error,
+            "artifact_resource_key": updated_manifest_ref.resource_key,
+            "cache_status": cache_entry.status,
+        }
         return updated_result_refs, [
             f"download_follow_up_ticket={summary_payload['execution']['download_ticket_id']}",
-            "download_follow_up_status=fetched",
+            f"download_follow_up_status={execution_status}",
+            f"download_follow_up_attempt={attempt_number}/{max_attempts}",
             f"download_follow_up_cache={cache_entry.status}",
+            f"download_follow_up_source_fetch={source_fetch_summary['status']}",
             f"download_follow_up_artifact={updated_manifest_ref.resource_key}",
-        ]
+        ], task_report
 
     def _resolve_source_refs(
         self,
@@ -358,6 +536,7 @@ class DownloadService:
         payload_parameters: dict[str, Any],
         job_state: dict[str, Any],
         source_fetch_summary: dict[str, Any],
+        follow_up_policy: dict[str, Any],
     ) -> WorkflowResultReference:
         manifest_payload = {
             "manifest_version": 1,
@@ -379,6 +558,7 @@ class DownloadService:
                 "refresh_policy": refresh_policy,
                 "executor": "download_service",
                 "job_state": job_state,
+                "follow_up_policy": follow_up_policy,
             },
             "source_fetch": source_fetch_summary,
             "source_refs": source_refs,
@@ -436,6 +616,7 @@ class DownloadService:
                 "refresh_policy": summary_payload.get("download_plan", {}).get("refresh_policy"),
                 "executor": "download_follow_up_task",
                 "job_state": execution_payload.get("job_state", {}),
+                "follow_up_policy": execution_payload.get("follow_up_policy", {}),
             },
             "source_fetch": summary_payload.get("source_fetch", {}),
             "source_refs": summary_payload.get("download_plan", {}).get("source_refs", []),
@@ -452,6 +633,17 @@ class DownloadService:
     def _clone_payload(self, payload: dict[str, Any]) -> dict[str, Any]:
         return json.loads(json.dumps(payload, ensure_ascii=False))
 
+    def _build_follow_up_policy(self, *, payload_parameters: dict[str, Any]) -> dict[str, Any]:
+        partial_failure_ref_ids = self._coerce_str_list(payload_parameters.get("partial_failure_ref_ids"))
+        max_attempts = max(1, self._coerce_int(payload_parameters.get("max_attempts")) or 3)
+        simulate_fail_attempts = max(0, self._coerce_int(payload_parameters.get("simulate_fail_attempts")) or 0)
+        return {
+            "max_attempts": max_attempts,
+            "retryable": True,
+            "simulate_fail_attempts": simulate_fail_attempts,
+            "partial_failure_ref_ids": partial_failure_ref_ids,
+        }
+
     def _build_job_state(
         self,
         *,
@@ -459,6 +651,8 @@ class DownloadService:
         cache_status: str,
         realtime_preferred: bool,
         refresh_policy: str,
+        follow_up_policy: dict[str, Any],
+        requested_at: datetime,
     ) -> dict[str, Any]:
         if cache_status == "warm":
             return {
@@ -472,6 +666,14 @@ class DownloadService:
                 "requires_fetch": False,
                 "artifact_status": "reused",
                 "next_action": "hydrate_result_from_artifact",
+                "fetch_attempts": 0,
+                "max_attempts": follow_up_policy["max_attempts"],
+                "retryable": follow_up_policy["retryable"],
+                "retry_recommended": False,
+                "partial_success": False,
+                "last_error": None,
+                "last_attempt_at": None,
+                "completed_at": requested_at.astimezone(timezone.utc).isoformat(),
             }
         return {
             "ticket_id": download_ticket_id,
@@ -484,6 +686,14 @@ class DownloadService:
             "requires_fetch": True,
             "artifact_status": "created",
             "next_action": "dispatch_source_fetch",
+            "fetch_attempts": 0,
+            "max_attempts": follow_up_policy["max_attempts"],
+            "retryable": follow_up_policy["retryable"],
+            "retry_recommended": False,
+            "partial_success": False,
+            "last_error": None,
+            "last_attempt_at": None,
+            "completed_at": None,
         }
 
     def _build_source_fetch_summary(
@@ -491,6 +701,7 @@ class DownloadService:
         *,
         source_refs: list[dict[str, Any]],
         cache_status: str,
+        follow_up_policy: dict[str, Any],
     ) -> dict[str, Any]:
         total_bytes = sum(int(item.get("estimated_bytes", 0)) for item in source_refs)
         pending_count = sum(1 for item in source_refs if item.get("fetch_status") not in {"cached", "ready"})
@@ -501,6 +712,11 @@ class DownloadService:
                 "pending_sources": 0,
                 "estimated_total_bytes": total_bytes,
                 "ready_sources": len(source_refs),
+                "failed_sources": 0,
+                "partial_success": False,
+                "retryable": follow_up_policy["retryable"],
+                "completed_at": None,
+                "last_error": None,
             }
         return {
             "status": "awaiting_fetch",
@@ -508,6 +724,11 @@ class DownloadService:
             "pending_sources": pending_count,
             "estimated_total_bytes": total_bytes,
             "ready_sources": len(source_refs) - pending_count,
+            "failed_sources": 0,
+            "partial_success": False,
+            "retryable": follow_up_policy["retryable"],
+            "completed_at": None,
+            "last_error": None,
         }
 
     def _coerce_int(self, value: Any) -> int | None:
@@ -517,6 +738,22 @@ class DownloadService:
             return int(value)
         except (TypeError, ValueError):
             return None
+
+    def _coerce_str_list(self, value: Any) -> list[str]:
+        if value is None:
+            return []
+        if isinstance(value, str):
+            normalized = value.strip()
+            return [normalized] if normalized else []
+        if isinstance(value, list):
+            items: list[str] = []
+            for item in value:
+                if isinstance(item, str):
+                    normalized = item.strip()
+                    if normalized:
+                        items.append(normalized)
+            return items
+        return []
 
 
 download_service = DownloadService()

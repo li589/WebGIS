@@ -10,6 +10,13 @@ const props = withDefaults(
     defaultCollapsed?: boolean
     maxOffsetX?: number
     maxOffsetY?: number
+    defaultWidth?: number
+    defaultHeight?: number
+    minWidth?: number
+    minHeight?: number
+    maxWidth?: number
+    maxHeight?: number
+    resizable?: boolean
   }>(),
   {
     draggable: true,
@@ -17,6 +24,13 @@ const props = withDefaults(
     defaultCollapsed: false,
     maxOffsetX: 120,
     maxOffsetY: 100,
+    defaultWidth: 0,
+    defaultHeight: 0,
+    minWidth: 200,
+    minHeight: 80,
+    maxWidth: 600,
+    maxHeight: 800,
+    resizable: true,
   },
 )
 
@@ -25,6 +39,8 @@ interface PersistedPanelState {
   collapsed: boolean
   offsetX: number
   offsetY: number
+  width?: number
+  height?: number
 }
 
 function getStorageKey(panelKey: string | undefined) {
@@ -53,7 +69,10 @@ const visible = ref(persistedState?.visible ?? true)
 const collapsed = ref(persistedState?.collapsed ?? props.defaultCollapsed)
 const offsetX = ref(persistedState?.offsetX ?? 0)
 const offsetY = ref(persistedState?.offsetY ?? 0)
-let persistTimer: number | null = null
+const persistTimer = ref<number | null>(null)
+const panelWidth = ref(persistedState?.width ?? props.defaultWidth)
+const panelHeight = ref(persistedState?.height ?? props.defaultHeight)
+const resetSizeFlag = ref(false)
 
 let dragStartX = 0
 let dragStartY = 0
@@ -79,11 +98,6 @@ function hidePanel() {
 
 function showPanel() {
   visible.value = true
-}
-
-function resetPosition() {
-  offsetX.value = 0
-  offsetY.value = 0
 }
 
 function clampOffset(value: number, limit: number) {
@@ -120,34 +134,92 @@ function startDragging(event: PointerEvent) {
   window.addEventListener('pointerup', stopDragging)
 }
 
+const panelSizeStyle = computed(() => {
+  if (resetSizeFlag.value) {
+    resetSizeFlag.value = false
+    return {}
+  }
+  const style: Record<string, string> = {}
+  if (panelWidth.value > 0) style.width = `${panelWidth.value}px`
+  if (panelHeight.value > 0) style.height = `${panelHeight.value}px`
+  style.maxHeight = `${props.maxHeight}px`
+  style.minHeight = `${props.minHeight}px`
+  return style
+})
+
+let resizeStartX = 0
+let resizeStartY = 0
+let baseWidth = 0
+let baseHeight = 0
+let resizing = false
+
+function handleResizeMove(event: PointerEvent) {
+  if (!resizing) return
+  const deltaX = event.clientX - resizeStartX
+  const deltaY = event.clientY - resizeStartY
+  panelWidth.value = Math.min(props.maxWidth, Math.max(props.minWidth, baseWidth + deltaX))
+  panelHeight.value = Math.min(props.maxHeight, Math.max(props.minHeight, baseHeight + deltaY))
+}
+
+function stopResizing() {
+  resizing = false
+  window.removeEventListener('pointermove', handleResizeMove)
+  window.removeEventListener('pointerup', stopResizing)
+}
+
+function startResizing(event: PointerEvent) {
+  if (!props.resizable || collapsed.value) return
+  event.preventDefault()
+  resizing = true
+  resizeStartX = event.clientX
+  resizeStartY = event.clientY
+  baseWidth = panelWidth.value || props.defaultWidth || props.minWidth
+  baseHeight = panelHeight.value || props.defaultHeight || props.minHeight
+  window.addEventListener('pointermove', handleResizeMove)
+  window.addEventListener('pointerup', stopResizing)
+}
+
+function resetPanel() {
+  offsetX.value = 0
+  offsetY.value = 0
+  if (panelWidth.value > 0 || panelHeight.value > 0) {
+    panelWidth.value = 0
+    panelHeight.value = 0
+    resetSizeFlag.value = true
+  }
+}
+
 onBeforeUnmount(() => {
   stopDragging()
-  if (persistTimer !== null) {
-    window.clearTimeout(persistTimer)
+  stopResizing()
+  if (persistTimer.value !== null) {
+    window.clearTimeout(persistTimer.value)
   }
 })
 
 watch(
-  [visible, collapsed, offsetX, offsetY],
+  [visible, collapsed, offsetX, offsetY, panelWidth, panelHeight],
   () => {
     if (typeof window === 'undefined' || !props.panelKey) {
       return
     }
 
-    if (persistTimer !== null) {
-      window.clearTimeout(persistTimer)
+    if (persistTimer.value !== null) {
+      window.clearTimeout(persistTimer.value)
     }
 
-    persistTimer = window.setTimeout(() => {
+    persistTimer.value = window.setTimeout(() => {
       const nextState: PersistedPanelState = {
         visible: visible.value,
         collapsed: collapsed.value,
         offsetX: offsetX.value,
         offsetY: offsetY.value,
+        width: panelWidth.value,
+        height: panelHeight.value,
       }
 
       window.localStorage.setItem(getStorageKey(props.panelKey), JSON.stringify(nextState))
-      persistTimer = null
+      persistTimer.value = null
     }, 120)
   },
   { deep: false },
@@ -165,7 +237,7 @@ watch(
       <span>{{ panelLabel }}</span>
     </button>
 
-    <section v-else class="panel-frame" :class="{ collapsed }">
+    <section v-else class="panel-frame" :class="{ collapsed }" :style="panelSizeStyle">
       <header class="panel-tools">
         <button
           v-if="draggable"
@@ -197,7 +269,7 @@ watch(
               <path d="M3 8h10M8 13 3 8l5-5" />
             </svg>
           </button>
-          <button class="tool-button icon-button" type="button" title="复位" aria-label="复位" @click="resetPosition">
+          <button class="tool-button icon-button" type="button" title="复位" aria-label="复位" @click="resetPanel">
             <svg viewBox="0 0 16 16" aria-hidden="true">
               <path d="M3 8a5 5 0 1 0 1.5-3.6M3 3v3.4h3.4" />
             </svg>
@@ -213,14 +285,31 @@ watch(
       <div v-show="!collapsed" class="panel-body">
         <slot></slot>
       </div>
+
+      <div
+        v-if="resizable && !collapsed"
+        class="resize-handle"
+        title="拖动调整尺寸 · 双击恢复默认"
+        @pointerdown.prevent="startResizing"
+        @dblclick="resetPanel"
+      ></div>
+
+      <div v-if="!resizable && !collapsed" class="resize-handle resize-handle--hidden" aria-hidden="true"></div>
     </section>
   </div>
 </template>
 
 <style scoped>
 .panel-anchor {
+  position: relative;
   pointer-events: auto;
-  transition: transform 0.18s ease;
+  will-change: transform;
+  /* 性能优化：transform 使用 GPU 加速曲线 */
+  transition: transform 0.18s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+  width: 100%;
+  height: 100%;
+  display: inline-block;
+  min-width: 200px;
 }
 
 .restore-pill {
@@ -230,21 +319,27 @@ watch(
   border: 1px solid rgba(136, 192, 255, 0.16);
   border-radius: 999px;
   padding: 0.42rem 0.68rem;
-  background: rgba(8, 18, 33, 0.78);
+  background: rgba(8, 18, 33, 0.88);
   color: #dfeefe;
   cursor: pointer;
   font: inherit;
   font-size: 0.72rem;
-  backdrop-filter: blur(12px);
 }
 
 .panel-frame {
+  position: relative;
   min-width: 0;
+  max-height: 560px;
   border-radius: 1rem;
   background: rgba(4, 11, 22, 0.16);
   box-shadow: 0 14px 30px rgba(1, 8, 16, 0.18);
   opacity: 0.92;
+  display: flex;
+  flex-direction: column;
+  /* 性能优化：仅 opacity 使用 GPU 加速过渡 */
   transition: opacity 0.2s ease, box-shadow 0.2s ease;
+  overflow: visible;
+  min-height: 0;
 }
 
 .panel-frame:hover {
@@ -264,8 +359,7 @@ watch(
   padding: 0.26rem 0.34rem;
   border: 1px solid rgba(136, 192, 255, 0.12);
   border-radius: 0.82rem;
-  background: rgba(8, 18, 33, 0.54);
-  backdrop-filter: blur(16px);
+  background: rgba(8, 18, 33, 0.78);
 }
 
 .drag-handle,
@@ -320,6 +414,9 @@ watch(
 
 .panel-body {
   margin-top: 0.32rem;
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
 }
 
 .icon-button {
@@ -329,6 +426,48 @@ watch(
   width: 1.95rem;
   height: 1.95rem;
   padding: 0;
+}
+
+.resize-handle {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  width: 1.4rem;
+  height: 1.4rem;
+  cursor: se-resize;
+  opacity: 0;
+  transition: opacity 0.18s ease;
+  z-index: 10;
+  border-bottom-right-radius: 1rem;
+}
+
+.resize-handle--hidden {
+  pointer-events: none;
+  visibility: hidden;
+}
+
+.resize-handle::before,
+.resize-handle::after {
+  content: '';
+  position: absolute;
+  right: 0.28rem;
+  bottom: 0.28rem;
+  background: rgba(90, 162, 255, 0.4);
+  border-radius: 1px;
+}
+
+.resize-handle::before {
+  width: 0.4rem;
+  height: 2px;
+}
+
+.resize-handle::after {
+  width: 2px;
+  height: 0.4rem;
+}
+
+.panel-anchor:hover .resize-handle {
+  opacity: 1;
 }
 
 .restore-pill svg,

@@ -13,6 +13,18 @@ from shared.contracts.api_contracts import ResultKind, WorkflowResultReference, 
 
 logger = logging.getLogger(__name__)
 
+# P0-5: Parameter whitelist — only these keys are permitted in workflow parameters.
+_ALLOWED_PARAMETER_KEYS: frozenset[str] = frozenset({
+    "hour",
+    "hotspot_count",
+    "series_step_hours",
+    "cache_ttl_seconds",
+    "max_attempts",
+    "simulate_fail_attempts",
+    "partial_failure_ref_ids",
+})
+_MAX_PARAMETER_KEYS = 64
+
 
 class ProviderWorkflowService:
     def execute(
@@ -31,11 +43,13 @@ class ProviderWorkflowService:
         if provider is None:
             raise ValueError(f"No provider registered for layer: {layer_id}")
 
+        validated_params = self._validate_parameters(payload.parameters)
+
         provider_payload = ProviderExecutionPayload(
             layer_id=layer_id,
             requested_at=requested_at,
             requested_hour=self._resolve_requested_hour(payload),
-            parameters=payload.parameters,
+            parameters=validated_params,
             requested_outputs=payload.requested_outputs,
             spatial_filter=payload.spatial_filter.model_dump(mode="json") if payload.spatial_filter else {},
             time_range=payload.time_range.model_dump(mode="json") if payload.time_range else {},
@@ -261,6 +275,29 @@ class ProviderWorkflowService:
         provider_result.series = series
         provider_result.diagnostics = diagnostics
         return provider_result
+
+    def _validate_parameters(self, parameters: dict[str, object]) -> dict[str, object]:
+        """P0-5: Reject parameters with illegal keys or oversized dicts."""
+        if len(parameters) > _MAX_PARAMETER_KEYS:
+            raise ValueError(
+                f"Too many parameter keys: {len(parameters)} > {_MAX_PARAMETER_KEYS}. "
+                "Rejecting to prevent parameter DoS."
+            )
+        illegal_keys = set(parameters.keys()) - _ALLOWED_PARAMETER_KEYS
+        if illegal_keys:
+            raise ValueError(
+                f"Illegal parameter keys: {sorted(illegal_keys)}. "
+                f"Allowed keys: {sorted(_ALLOWED_PARAMETER_KEYS)}."
+            )
+        # Sanitise values — drop any non-JSON-serialisable objects that could cause
+        # downstream crashes when the dict is json.dumps'd.
+        sanitised: dict[str, object] = {}
+        for k, v in parameters.items():
+            if isinstance(v, (str, int, float, bool, type(None), list, dict)):
+                sanitised[k] = v
+            else:
+                sanitised[k] = str(v)
+        return sanitised
 
 
 provider_workflow_service = ProviderWorkflowService()

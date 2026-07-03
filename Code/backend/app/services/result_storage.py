@@ -6,7 +6,8 @@ from itertools import islice
 import json
 import logging
 from pathlib import Path
-from typing import Iterable
+import re
+from typing import Iterator
 from uuid import uuid4
 
 from app.core.config import settings
@@ -185,7 +186,7 @@ class ResultStorageService:
         title: str,
         mime_type: str,
         updated_at: datetime,
-        items: Iterable[dict[str, object]],
+        items: Iterator[dict[str, object]],
         chunk_size: int,
         manifest_payload: dict[str, object],
     ) -> tuple[WorkflowResultReference, list[str]]:
@@ -193,30 +194,27 @@ class ResultStorageService:
         chunk_count = 0
         chunk_refs: list[dict[str, object]] = []
         total_items = 0
-        item_iterator = iter(items)
-        while True:
-            chunk_items = list(islice(item_iterator, max(1, chunk_size)))
-            if not chunk_items:
-                break
+        # islice is lazy; list() only materializes one chunk at a time — no OOM for large iterators
+        while chunk := list(islice(items, chunk_size)):
             chunk_index = chunk_count
             chunk_count += 1
-            total_items += len(chunk_items)
+            total_items += len(chunk)
             chunk_object = self._store.put_bytes(
                 object_key=self._artifact_key(f"{artifact_id}-chunk-{chunk_index}"),
-                data=json.dumps({"items": chunk_items}, ensure_ascii=False).encode("utf-8"),
+                data=json.dumps({"items": chunk}, ensure_ascii=False).encode("utf-8"),
                 content_type="application/json",
                 metadata={
                     "run_id": run_id,
                     "title": f"{title} chunk {chunk_index}",
                     "chunk_index": chunk_index,
-                    "item_count": len(chunk_items),
+                    "item_count": len(chunk),
                     "artifact_id": f"{artifact_id}-chunk-{chunk_index}",
                 },
             )
             chunk_refs.append(
                 {
                     "chunk_index": chunk_index,
-                    "item_count": len(chunk_items),
+                    "item_count": len(chunk),
                     "resource_url": chunk_object.public_url
                     or f"{settings.object_store_public_base}/{chunk_object.metadata.get('artifact_id', chunk_object.object_key)}",
                     "resource_key": chunk_object.metadata.get("artifact_id", chunk_object.object_key),
@@ -295,7 +293,10 @@ class ResultStorageService:
         )
 
     def _artifact_key(self, artifact_name: str) -> str:
-        return artifact_name
+        normalized = artifact_name.replace("\\", "/").strip("/")
+        if ".." in normalized or normalized.startswith("/") or not re.match(r"^[a-zA-Z0-9_\-./]+$", normalized):
+            raise ValueError(f"Invalid artifact name (path traversal or illegal characters): {artifact_name!r}")
+        return normalized
 
 
 result_storage_service = ResultStorageService()

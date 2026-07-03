@@ -25,9 +25,10 @@ def execute_download_follow_up_task(*, task_data: dict[str, Any]) -> None:
         if run is None:
             raise ValueError(f"Workflow run not found for download follow-up task: {run_id}")
         updated_at = datetime.now(timezone.utc)
-        result_refs, diagnostics = download_service.complete_follow_up_task(
+        result_refs, diagnostics, task_report = download_service.complete_follow_up_task(
             run_id=run_id,
             result_refs=run.result_refs,
+            task_data=task_data,
             cache_key=str(task_data["cache_key"]),
             summary_result_id=str(task_data["summary_result_id"]),
             manifest_result_id=str(task_data["manifest_result_id"]),
@@ -36,7 +37,11 @@ def execute_download_follow_up_task(*, task_data: dict[str, Any]) -> None:
         run.result_refs = result_refs
         run.diagnostics = [*run.diagnostics, *diagnostics]
         run.updated_at = updated_at
-        run.message = "下载工作流执行完成，异步下载占位结果已回写。"
+        run.message = (
+            "下载工作流执行完成，follow-up 抓取骨架已完成回写。"
+            if task_report["execution_status"] == "fetched"
+            else "下载工作流已完成 follow-up 抓取尝试，当前仍需后续重试或人工处理。"
+        )
         repository.save_run(run)
         repository.append_event(
             WorkflowEvent(
@@ -44,14 +49,24 @@ def execute_download_follow_up_task(*, task_data: dict[str, Any]) -> None:
                 run_id=run_id,
                 channel=EventChannel.system,
                 level=LogLevel.info,
-                message="下载 follow-up task 已完成并回写 manifest。",
+                message="下载 follow-up task 已完成一次抓取尝试并回写 manifest。",
                 created_at=updated_at,
-                progress=100,
+                progress=100 if task_report["execution_status"] == "fetched" else 82,
                 payload={
                     "task_id": task_id,
-                    "download_ticket_id": task_data.get("download_ticket_id"),
+                    "download_ticket_id": task_report["download_ticket_id"],
                     "cache_key": task_data.get("cache_key"),
-                    "artifact_resource_key": task_data.get("artifact_resource_key"),
+                    "artifact_resource_key": task_report["artifact_resource_key"],
+                    "execution_status": task_report["execution_status"],
+                    "job_phase": task_report["job_phase"],
+                    "fetch_attempts": task_report["fetch_attempts"],
+                    "max_attempts": task_report["max_attempts"],
+                    "source_fetch_status": task_report["source_fetch_status"],
+                    "retry_recommended": task_report["retry_recommended"],
+                    "partial_success": task_report["partial_success"],
+                    "failed_sources": task_report["failed_sources"],
+                    "pending_sources": task_report["pending_sources"],
+                    "last_error": task_report["last_error"],
                 },
             )
         )

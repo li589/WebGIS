@@ -80,9 +80,7 @@ function formatHotspotValue(value: number, unit: string, precision: number) {
 function formatObservationTimeLabel(hour: number) {
   const wholeHours = Math.floor(hour)
   const minutes = Math.round((hour - wholeHours) * 60)
-  const normalizedMinutes = minutes === 60 ? 0 : minutes
-  const normalizedHours = minutes === 60 ? (wholeHours + 1) % 24 : wholeHours
-  return `${String(normalizedHours).padStart(2, '0')}:${String(normalizedMinutes).padStart(2, '0')}`
+  return `${String(wholeHours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}`
 }
 
 function createAvailabilityProfile(state: DemoAvailabilityProfile['state']): DemoAvailabilityProfile {
@@ -100,7 +98,7 @@ function createAvailabilityProfile(state: DemoAvailabilityProfile['state']): Dem
       state,
       label: '半数据',
       description: '部分字段已返回，可用于框架联调但仍需补齐缺项。',
-      missingFields: [],
+      missingFields: ['metric', 'status', 'time', 'hotspots'],
     }
   }
 

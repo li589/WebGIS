@@ -1,13 +1,21 @@
 <script setup lang="ts">
-import type { DemoHotspot, DemoLayer } from '../app/demo-data'
+import { computed } from 'vue'
 
-defineProps<{
+import type { ActiveLayerDisplay } from '../stores/layers/types'
+import type { DemoHotspot } from '../app/demo-data'
+
+const props = defineProps<{
   viewLabel: string
-  activeLayer: DemoLayer
+  activeLayer: ActiveLayerDisplay
   hourLabel: string
   stageLabel: string
   visibleHotspots: DemoHotspot[]
+  selectedLayer?: ActiveLayerDisplay | null
 }>()
+
+// Use selectedLayer if available, otherwise fall back to activeLayer prop
+const displayLayer = computed(() => props.selectedLayer ?? props.activeLayer)
+const jobLayer = computed(() => displayLayer.value?.jobLayer)
 </script>
 
 <template>
@@ -24,7 +32,7 @@ defineProps<{
       <dl class="meta-list">
         <div>
           <dt>图层</dt>
-          <dd>{{ activeLayer.name }}</dd>
+          <dd>{{ displayLayer.name }}</dd>
         </div>
         <div>
           <dt>时间</dt>
@@ -36,49 +44,90 @@ defineProps<{
         </div>
         <div>
           <dt>来源</dt>
-          <dd>{{ activeLayer.sourceLabel }}</dd>
+          <dd>{{ displayLayer.sourceLabel }}</dd>
         </div>
       </dl>
     </div>
 
-    <section class="hero-metric" :style="{ '--accent-color': activeLayer.accentColor }">
-      <span>{{ activeLayer.metricLabel }}</span>
-      <strong>{{ activeLayer.metricValue }}</strong>
-      <p>{{ activeLayer.trendLabel }}</p>
+    <!-- Job layer report section -->
+    <div v-if="jobLayer" class="job-report-card">
+      <div class="job-report-header">
+        <span class="job-report-title">作业生产报告</span>
+        <span class="job-status-chip" :class="`job-${jobLayer.status}`">
+          {{ jobLayer.status === 'running' ? `运行中 ${jobLayer.progress}%` : jobLayer.status === 'succeeded' ? '已完成' : jobLayer.status === 'failed' ? '失败' : jobLayer.status }}
+        </span>
+      </div>
+
+      <!-- Progress bar for running jobs -->
+      <div v-if="jobLayer.status === 'running'" class="job-progress-row">
+        <div class="job-progress-bar">
+          <div class="job-progress-fill" :style="{ width: `${jobLayer.progress}%` }"></div>
+        </div>
+        <span class="job-progress-label">{{ jobLayer.progress }}%</span>
+      </div>
+
+      <p class="job-message">{{ jobLayer.message || '作业正在处理中...' }}</p>
+
+      <!-- Job metrics -->
+      <div v-if="jobLayer.metrics && jobLayer.metrics.length > 0" class="job-metrics">
+        <div v-for="m in jobLayer.metrics" :key="m.label" class="job-metric-item">
+          <span class="jm-label">{{ m.label }}</span>
+          <strong class="jm-value">{{ m.value }}</strong>
+        </div>
+      </div>
+
+      <!-- Report summary -->
+      <div v-if="jobLayer.reportSummary" class="job-summary">
+        <h3>报告摘要</h3>
+        <p>{{ jobLayer.reportSummary }}</p>
+      </div>
+
+      <!-- Result link -->
+      <a
+        v-if="jobLayer.resultUrl"
+        :href="jobLayer.resultUrl"
+        target="_blank"
+        class="job-result-link"
+      >
+        查看结果文件 →
+      </a>
+    </div>
+
+    <section class="hero-metric" :style="{ '--accent-color': displayLayer.accentColor }">
+      <span>{{ displayLayer.metricLabel }}</span>
+      <strong>{{ displayLayer.metricValue }}</strong>
+      <p>{{ displayLayer.trendLabel }}</p>
     </section>
 
     <div class="insight-grid">
       <article class="insight-card">
         <span>更新频率</span>
-        <strong>{{ activeLayer.updateLabel }}</strong>
+        <strong>{{ displayLayer.updateLabel }}</strong>
       </article>
       <article class="insight-card">
         <span>可用性</span>
-        <strong>{{ activeLayer.availabilityLabel }}</strong>
+        <strong>{{ displayLayer.availabilityLabel }}</strong>
       </article>
       <article class="insight-card">
         <span>可靠性</span>
-        <strong>{{ activeLayer.confidenceLabel }}</strong>
+        <strong>{{ displayLayer.confidenceLabel }}</strong>
       </article>
       <article class="insight-card">
         <span>观测时间</span>
-        <strong>{{ activeLayer.observationTimeLabel }}</strong>
+        <strong>{{ displayLayer.observationTimeLabel }}</strong>
       </article>
     </div>
 
     <div class="learning-note">
       <h3>摘要</h3>
-      <p>{{ activeLayer.summary }}</p>
+      <p>{{ displayLayer.summary }}</p>
     </div>
 
     <details class="protocol-details">
       <summary>接入占位</summary>
-      <p>协议模式：{{ activeLayer.dataStateLabel }}</p>
-      <p>状态说明：{{ activeLayer.availabilityDescription }}</p>
-      <p>缺失字段：{{ activeLayer.missingFieldsLabel }}</p>
-      <p>字段别名：{{ activeLayer.fieldAliasLabel }}</p>
-      <p>时间字段：{{ activeLayer.observationFieldLabel }}</p>
-      <p>空值占位：{{ activeLayer.emptyStateLabel }}</p>
+      <p>协议模式：{{ displayLayer.dataState === 'real' ? '真实数据' : '演示数据' }}</p>
+      <p>状态说明：{{ displayLayer.availabilityDescription }}</p>
+      <p>缺失字段：{{ displayLayer.missingFieldsLabel }}</p>
     </details>
 
     <div class="learning-note">
@@ -101,13 +150,14 @@ defineProps<{
   padding: 0.58rem;
   border-radius: 0.88rem;
   border: 1px solid rgba(148, 163, 184, 0.15);
-  background: linear-gradient(180deg, rgba(13, 21, 36, 0.42), rgba(8, 15, 28, 0.3));
-  backdrop-filter: blur(18px);
+  background: linear-gradient(180deg, rgba(13, 21, 36, 0.72), rgba(8, 15, 28, 0.6));
   box-shadow:
     inset 0 1px 0 rgba(255, 255, 255, 0.03),
     0 12px 26px rgba(1, 8, 16, 0.14);
   max-height: min(31rem, calc(100vh - 10rem));
   overflow: auto;
+  /* 性能优化：contain 隔离渲染 */
+  contain: layout style;
 }
 
 .panel-topline {
@@ -171,15 +221,147 @@ dd {
   font-size: 0.68rem;
 }
 
+/* Job report card */
+.job-report-card {
+  display: grid;
+  gap: 0.32rem;
+  padding: 0.5rem 0.54rem;
+  border-radius: 0.72rem;
+  background: rgba(10, 60, 120, 0.18);
+  border: 1px solid rgba(90, 213, 255, 0.18);
+}
+
+.job-report-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.4rem;
+}
+
+.job-report-title {
+  color: #8fe7ff;
+  font-size: 0.66rem;
+  font-weight: 600;
+}
+
+.job-status-chip {
+  padding: 0.1rem 0.34rem;
+  border-radius: 999px;
+  font-size: 0.54rem;
+  font-weight: 600;
+}
+
+.job-running { color: #5ad5ff; background: rgba(10, 132, 255, 0.14); border: 1px solid rgba(90, 213, 255, 0.22); }
+.job-succeeded { color: #9ff8cf; background: rgba(114, 255, 207, 0.1); border: 1px solid rgba(114, 255, 207, 0.2); }
+.job-failed { color: #ff8080; background: rgba(255, 80, 80, 0.1); border: 1px solid rgba(255, 80, 80, 0.2); }
+.job-queued, .job-cancelled { color: #d7c1ff; background: rgba(187, 137, 255, 0.08); border: 1px solid rgba(187, 137, 255, 0.16); }
+
+.job-progress-row {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.job-progress-bar {
+  flex: 1;
+  height: 0.28rem;
+  border-radius: 999px;
+  background: rgba(136, 192, 255, 0.12);
+  overflow: hidden;
+}
+
+.job-progress-fill {
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, rgba(10, 132, 255, 0.6), #5ad5ff);
+  transition: width 0.4s ease;
+}
+
+.job-progress-label {
+  color: #5ad5ff;
+  font-size: 0.54rem;
+  min-width: 2rem;
+  text-align: right;
+}
+
+.job-message {
+  margin: 0;
+  color: #8ea8c0;
+  font-size: 0.6rem;
+  line-height: 1.35;
+}
+
+.job-metrics {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.2rem;
+}
+
+.job-metric-item {
+  display: grid;
+  gap: 0.1rem;
+  padding: 0.22rem 0.3rem;
+  border-radius: 0.5rem;
+  background: rgba(4, 12, 23, 0.3);
+}
+
+.jm-label {
+  color: #7a8fa8;
+  font-size: 0.52rem;
+}
+
+.jm-value {
+  color: #d8e8f5;
+  font-size: 0.64rem;
+  font-weight: 600;
+}
+
+.job-summary {
+  display: grid;
+  gap: 0.18rem;
+}
+
+.job-summary h3 {
+  font-size: 0.64rem;
+  color: #b8d4ee;
+}
+
+.job-summary p {
+  margin: 0;
+  color: #8ea8c0;
+  font-size: 0.6rem;
+  line-height: 1.38;
+}
+
+.job-result-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.2rem;
+  color: #5ad5ff;
+  font-size: 0.6rem;
+  text-decoration: none;
+  padding: 0.18rem 0.3rem;
+  border-radius: 0.5rem;
+  border: 1px solid rgba(90, 213, 255, 0.18);
+  background: rgba(10, 132, 255, 0.08);
+  transition: background 0.16s ease, border-color 0.16s ease;
+  align-self: flex-start;
+}
+
+.job-result-link:hover {
+  background: rgba(10, 132, 255, 0.16);
+  border-color: rgba(90, 213, 255, 0.3);
+}
+
 .hero-metric {
   display: grid;
   gap: 0.24rem;
   padding: 0.58rem;
   border-radius: 0.78rem;
   background:
-    linear-gradient(135deg, color-mix(in srgb, var(--accent-color) 12%, rgba(8, 18, 33, 0.82)), rgba(8, 18, 33, 0.58)),
+    linear-gradient(135deg, rgba(90, 162, 255, 0.12), rgba(8, 18, 33, 0.58)),
     rgba(8, 18, 33, 0.52);
-  border: 1px solid color-mix(in srgb, var(--accent-color) 22%, rgba(136, 192, 255, 0.14));
+  border: 1px solid rgba(90, 162, 255, 0.22);
 }
 
 .hero-metric span {

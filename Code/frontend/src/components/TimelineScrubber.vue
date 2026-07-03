@@ -22,7 +22,7 @@ const emit = defineEmits<{
   changeHour: [hour: number]
 }>()
 
-const progressPercent = computed(() => `${(props.currentHour / 23) * 100}%`)
+const progressPercent = computed(() => `${((props.currentHour / 23) * 100).toFixed(1)}%`)
 const liveLabel = computed(() => `${props.hourLabel} / 24h`)
 const phaseLabel = computed(() => {
   if (props.currentHour < 6) return '夜间'
@@ -162,7 +162,8 @@ strong {
   cursor: pointer;
   font: inherit;
   font-size: 0.72rem;
-  transition: border-color 0.2s ease, color 0.2s ease, transform 0.2s ease;
+  /* 性能优化：仅 GPU 属性的过渡，避免触发重排 */
+  transition: border-color 0.2s ease, color 0.2s ease, transform 0.2s cubic-bezier(0.25, 0.46, 0.45, 0.94);
 }
 
 .ghost-button:hover {
@@ -235,7 +236,7 @@ strong {
 .track-fill {
   left: 0;
   width: var(--track-progress);
-  background: linear-gradient(90deg, color-mix(in srgb, var(--accent-color) 26%, rgba(45, 110, 212, 0.22)), var(--accent-color));
+  background: linear-gradient(90deg, rgba(45, 110, 212, 0.22), var(--accent-color));
 }
 
 .track-buffer {
@@ -246,24 +247,32 @@ strong {
 
 .track-thumb {
   left: var(--track-progress);
-  width: 0.86rem;
-  height: 0.86rem;
+  width: 1rem;
+  height: 1rem;
   top: 50%;
   border-radius: 999px;
   background: #f7fbff;
-  border: 2px solid color-mix(in srgb, var(--accent-color) 64%, #ffffff);
-  box-shadow: 0 0 0 8px color-mix(in srgb, var(--accent-color) 22%, transparent);
+  border: 2px solid rgba(90, 162, 255, 0.64);
+  box-shadow: 0 0 0 8px rgba(90, 162, 255, 0.22);
   transform: translate(-50%, -50%);
+  z-index: 0;
+  will-change: left;
+  /* 性能优化：GPU 加速 */
+  translate: -50% -50%;
 }
 
 .slider {
   position: absolute;
-  inset: -0.45rem 0 0;
-  width: 100%;
-  height: 1.45rem;
+  left: 0;
+  right: 0;
+  top: 50%;
+  height: 1.5rem;
   margin: 0;
+  transform: translateY(-50%);
   opacity: 0;
   cursor: pointer;
+  /* Expand hit area to cover the thumb without extending beyond track ends */
+  z-index: 1;
 }
 
 .timeline-ticks {

@@ -1,21 +1,59 @@
 <script setup lang="ts">
-import type { DemoLayer } from '../app/demo-data'
-import type { BasemapMode } from '../stores/ui'
+import { computed } from 'vue'
 
-defineProps<{
-  basemapMode: BasemapMode
-  activeLayer: DemoLayer
+import type { ActiveLayerDisplay } from '../stores/layers/types'
+import { TILE_SOURCES, TILE_SOURCES_BY_STYLE, type BasemapStyle, type TileSourceConfig, type TileSourceId } from '../stores/ui'
+
+const props = defineProps<{
+  tileSourceId: TileSourceId
+  activeLayer: ActiveLayerDisplay
   hourLabel: string
   supportedLayerCount: number
+  activeLayerCount: number
 }>()
 
 const emit = defineEmits<{
-  changeBasemap: [mode: BasemapMode]
+  changeTileSource: [sourceId: TileSourceId]
+  openScreenshot: []
 }>()
+
+const activeStyle = computed<BasemapStyle>(() => {
+  const cfg = TILE_SOURCES.find((s) => s.id === props.tileSourceId)
+  return cfg?.style ?? 'street'
+})
+
+const sourcesByStyle = computed(() => {
+  const result: Array<{ style: BasemapStyle; label: string; icon: string; sources: TileSourceConfig[] }> = []
+  const styleMeta: Record<BasemapStyle, { label: string; icon: string }> = {
+    none: { label: '空图', icon: '◇' },
+    satellite: { label: '影像', icon: '◆' },
+    street: { label: '街道', icon: '▦' },
+    dark: { label: '深色', icon: '◑' },
+    terrain: { label: '地形', icon: '⛰' },
+    topo: { label: '地形', icon: '⛰' },
+  }
+
+  // Only show standard sources in the picker (non-standard need backend transform)
+  for (const [style, sources] of TILE_SOURCES_BY_STYLE) {
+    if (sources.some((s) => s.isStandard)) {
+      result.push({
+        style,
+        label: styleMeta[style]?.label ?? style,
+        icon: styleMeta[style]?.icon ?? '▦',
+        sources: sources.filter((s) => s.isStandard),
+      })
+    }
+  }
+
+  return result
+})
+
+const currentTileConfig = computed(() => TILE_SOURCES.find((s) => s.id === props.tileSourceId))
 </script>
 
 <template>
   <header class="toolbar">
+    <!-- Brand -->
     <div class="brand">
       <div class="brand-mark"></div>
       <div class="brand-copy">
@@ -25,32 +63,50 @@ const emit = defineEmits<{
       </div>
     </div>
 
+    <!-- Main toolbar -->
     <div class="toolbar-main">
+      <!-- Style tabs -->
       <div class="toolbar-strip">
-        <div class="basemap-switch">
+        <div class="style-tabs" role="tablist" aria-label="底图风格">
           <button
-            class="basemap-button"
-            :class="{ active: basemapMode === 'admin' }"
-            @click="emit('changeBasemap', 'admin')"
+            v-for="group in sourcesByStyle"
+            :key="group.style"
+            class="style-tab"
+            :class="{ active: activeStyle === group.style }"
+            role="tab"
+            :aria-selected="activeStyle === group.style"
+            @click="emit('changeTileSource', group.sources[0].id)"
           >
-            行政区
-          </button>
-          <button
-            class="basemap-button"
-            :class="{ active: basemapMode === 'osm' }"
-            @click="emit('changeBasemap', 'osm')"
-          >
-            OSM
-          </button>
-          <button
-            class="basemap-button"
-            :class="{ active: basemapMode === 'hybrid' }"
-            @click="emit('changeBasemap', 'hybrid')"
-          >
-            混合
+            <span class="style-icon" aria-hidden="true">{{ group.icon }}</span>
+            <span>{{ group.label }}</span>
           </button>
         </div>
 
+        <!-- Source selector (shows sources for current style) -->
+        <div v-if="activeStyle !== 'none'" class="source-pill">
+          <button
+            v-for="source in sourcesByStyle.find(g => g.style === activeStyle)?.sources ?? []"
+            :key="source.id"
+            class="source-btn"
+            :class="{ active: tileSourceId === source.id }"
+            :title="`${source.provider} · ${source.label}`"
+            @click="emit('changeTileSource', source.id)"
+          >
+            {{ source.provider[0] }}
+          </button>
+        </div>
+
+        <!-- Screenshot export -->
+        <button
+          class="screenshot-btn"
+          title="导出截图"
+          @click="emit('openScreenshot')"
+        >
+          <span class="screenshot-icon" aria-hidden="true">◫</span>
+          <span>截图</span>
+        </button>
+
+        <!-- Quick stats -->
         <div class="quick-stats">
           <div class="stat-pill">
             <span class="label">时间</span>
@@ -63,17 +119,22 @@ const emit = defineEmits<{
         </div>
       </div>
 
+      <!-- Status row -->
       <div class="toolbar-strip">
         <div class="status-chip">2D-first</div>
-        <div class="status-chip">{{ activeLayer.name }}</div>
-        <div class="status-chip" :class="`availability-${activeLayer.availabilityState}`">
+        <div v-if="activeLayerCount > 0" class="status-chip">{{ activeLayer.name }}</div>
+        <div v-else class="status-chip">无图层</div>
+        <div v-if="activeLayerCount > 0" class="status-chip" :class="`availability-${activeLayer.availabilityState}`">
           {{ activeLayer.availabilityLabel }}
+        </div>
+        <div v-if="activeLayerCount > 0" class="status-chip">{{ activeLayerCount }} 个图层</div>
+        <div v-if="currentTileConfig?.needsBackendTransform" class="status-chip warning">
+          需坐标转换
         </div>
       </div>
     </div>
   </header>
 </template>
-
 
 <style scoped>
 .toolbar {
@@ -81,7 +142,7 @@ const emit = defineEmits<{
   justify-content: space-between;
   gap: 0.8rem;
   align-items: center;
-  padding: 0.62rem 0.76rem;
+  padding: 0.48rem 0.7rem;
   border: 1px solid rgba(145, 197, 255, 0.14);
   border-radius: 1rem;
   background:
@@ -111,8 +172,31 @@ const emit = defineEmits<{
   box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.06), 0 12px 30px rgba(47, 126, 255, 0.28);
 }
 
-.brand-copy {
-  min-width: 0;
+.brand-copy { min-width: 0; }
+
+.eyebrow {
+  margin: 0 0 0.08rem;
+  color: #88dfff;
+  font-size: 0.62rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+h1 {
+  margin: 0;
+  font-size: clamp(0.9rem, 1.5vw, 1.18rem);
+  color: #f5fbff;
+}
+
+.subtitle {
+  margin: 0.1rem 0 0;
+  color: #93a4b8;
+  line-height: 1.35;
+  font-size: 0.68rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 16rem;
 }
 
 .toolbar-main {
@@ -129,37 +213,176 @@ const emit = defineEmits<{
   flex-wrap: wrap;
 }
 
-.basemap-switch {
+.toolbar-strip:last-child {
+  flex-wrap: nowrap;
+  overflow: hidden;
+  min-width: 0;
+}
+
+/* Style tabs */
+.style-tabs {
   display: inline-flex;
-  gap: 0.22rem;
-  padding: 0.18rem;
+  gap: 0.18rem;
+  padding: 0.16rem;
   border: 1px solid rgba(136, 192, 255, 0.14);
   border-radius: 999px;
   background: rgba(4, 12, 23, 0.82);
 }
 
-.eyebrow {
-  margin: 0 0 0.18rem;
-  color: #88dfff;
+.style-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.28rem;
+  border: none;
+  border-radius: 999px;
+  padding: 0.26rem 0.52rem;
+  background: transparent;
+  color: #8aa8bf;
+  cursor: pointer;
+  font: inherit;
+  font-size: 0.64rem;
+  transition: background-color 0.2s ease, color 0.2s ease, transform 0.2s ease;
+  white-space: nowrap;
+}
+
+.style-tab:hover {
+  color: #f0f8ff;
+  background: rgba(136, 192, 255, 0.1);
+  transform: translateY(-1px);
+}
+
+.style-tab.active {
+  background: rgba(10, 132, 255, 0.5);
+  color: #f0faff;
+  font-weight: 600;
+  box-shadow: inset 0 0 0 1px rgba(90, 213, 255, 0.2);
+}
+
+.style-icon {
+  font-size: 0.7rem;
+  opacity: 0.7;
+}
+
+.style-tab.active .style-icon {
+  opacity: 1;
+}
+
+/* Source buttons */
+.source-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.14rem;
+  padding: 0.16rem 0.22rem 0.16rem 0.3rem;
+  border: 1px solid rgba(136, 192, 255, 0.1);
+  border-radius: 999px;
+  background: rgba(4, 12, 23, 0.6);
+}
+
+.source-pill::before {
+  content: '源';
+  color: #5a7080;
+  font-size: 0.56rem;
+  letter-spacing: 0.04em;
+  margin-right: 0.12rem;
+}
+
+.source-btn {
+  width: 1.38rem;
+  height: 1.38rem;
+  border: none;
+  border-radius: 0.4rem;
+  padding: 0;
+  background: transparent;
+  color: #6e8ba0;
+  cursor: pointer;
+  font: inherit;
+  font-size: 0.58rem;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  transition: background 0.16s ease, color 0.16s ease, transform 0.16s ease;
+}
+
+.source-btn:hover {
+  background: rgba(136, 192, 255, 0.1);
+  color: #c8dff0;
+  transform: scale(1.06);
+}
+
+.source-btn.active {
+  background: rgba(10, 132, 255, 0.22);
+  color: #5ad5ff;
+  box-shadow: inset 0 0 0 1px rgba(90, 213, 255, 0.3);
+}
+
+/* Admin overlay toggle */
+.overlay-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.28rem;
+  border: 1px solid rgba(136, 192, 255, 0.1);
+  border-radius: 999px;
+  padding: 0.26rem 0.52rem;
+  background: rgba(4, 12, 23, 0.6);
+  color: #6e8ba0;
+  cursor: pointer;
+  font: inherit;
   font-size: 0.62rem;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
+  font-weight: 500;
+  transition: border-color 0.18s ease, color 0.18s ease, background 0.18s ease;
+  white-space: nowrap;
 }
 
-h1 {
-  margin: 0;
-  font-size: clamp(0.9rem, 1.5vw, 1.18rem);
-  color: #f5fbff;
+.overlay-toggle:hover {
+  border-color: rgba(136, 192, 255, 0.24);
+  color: #c8dff0;
+  background: rgba(136, 192, 255, 0.08);
 }
 
-.subtitle {
-  max-width: 22rem;
-  margin: 0.18rem 0 0;
-  color: #93a4b8;
-  line-height: 1.35;
-  font-size: 0.68rem;
+.overlay-toggle.active {
+  border-color: rgba(76, 136, 186, 0.4);
+  color: #7fd0f8;
+  background: rgba(60, 120, 170, 0.16);
 }
 
+.overlay-icon {
+  font-size: 0.7rem;
+  opacity: 0.8;
+}
+
+.overlay-toggle.active .overlay-icon {
+  opacity: 1;
+}
+
+/* Screenshot button */
+.screenshot-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.28rem;
+  border: 1px solid rgba(136, 192, 255, 0.1);
+  border-radius: 999px;
+  padding: 0.26rem 0.52rem;
+  background: rgba(4, 12, 23, 0.6);
+  color: #6e8ba0;
+  cursor: pointer;
+  font: inherit;
+  font-size: 0.62rem;
+  font-weight: 500;
+  transition: border-color 0.18s ease, color 0.18s ease, background 0.18s ease;
+  white-space: nowrap;
+}
+
+.screenshot-btn:hover {
+  border-color: rgba(90, 213, 255, 0.3);
+  color: #5ad5ff;
+  background: rgba(10, 132, 255, 0.12);
+}
+
+.screenshot-icon {
+  font-size: 0.7rem;
+  opacity: 0.8;
+}
+
+/* Stats */
 .quick-stats {
   display: flex;
   gap: 0.28rem;
@@ -177,9 +400,7 @@ h1 {
   border: 1px solid rgba(136, 192, 255, 0.1);
 }
 
-.stat-pill.compact {
-  min-width: 3rem;
-}
+.stat-pill.compact { min-width: 3rem; }
 
 .label {
   color: #7f96ab;
@@ -207,46 +428,10 @@ h1 {
   text-overflow: ellipsis;
 }
 
-.availability-ready {
-  color: #9ff8cf;
-  border-color: rgba(114, 255, 207, 0.18);
-  background: rgba(114, 255, 207, 0.1);
-}
-
-.availability-partial {
-  color: #ffd38a;
-  border-color: rgba(255, 196, 120, 0.18);
-  background: rgba(255, 196, 120, 0.08);
-}
-
-.availability-empty {
-  color: #d7c1ff;
-  border-color: rgba(187, 137, 255, 0.2);
-  background: rgba(187, 137, 255, 0.1);
-}
-
-.basemap-button {
-  border: none;
-  border-radius: 999px;
-  padding: 0.28rem 0.52rem;
-  background: transparent;
-  color: #a9bdd0;
-  cursor: pointer;
-  font: inherit;
-  font-size: 0.64rem;
-  transition: background-color 0.2s ease, color 0.2s ease, transform 0.2s ease;
-}
-
-.basemap-button:hover {
-  color: #f5fbff;
-  transform: translateY(-1px);
-}
-
-.basemap-button.active {
-  background: linear-gradient(135deg, #0a84ff, #3cb4ff);
-  color: #081221;
-  font-weight: 700;
-}
+.availability-ready { color: #9ff8cf; border-color: rgba(114, 255, 207, 0.18); background: rgba(114, 255, 207, 0.1); }
+.availability-partial { color: #ffd38a; border-color: rgba(255, 196, 120, 0.18); background: rgba(255, 196, 120, 0.08); }
+.availability-empty { color: #d7c1ff; border-color: rgba(187, 137, 255, 0.2); background: rgba(187, 137, 255, 0.1); }
+.status-chip.warning { color: #ffc878; border-color: rgba(255, 180, 80, 0.2); background: rgba(255, 160, 60, 0.1); }
 
 @media (max-width: 900px) {
   .toolbar {
@@ -255,17 +440,16 @@ h1 {
     padding: 0.72rem;
   }
 
-  .toolbar-main {
-    align-items: stretch;
-  }
+  .toolbar-main { align-items: stretch; }
 
   .toolbar-strip,
   .quick-stats {
     justify-content: flex-start;
   }
 
-  .basemap-switch {
+  .style-tabs {
     align-self: flex-start;
+    flex-wrap: wrap;
   }
 }
 </style>

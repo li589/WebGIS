@@ -299,6 +299,10 @@ class InMemoryInteractionHub:
                     "max_active_runs": settings.max_active_runs,
                     "queues": {
                         "realtime": settings.workflow_queue_realtime,
+                        "algorithm_realtime": settings.workflow_queue_algorithm_realtime,
+                        "algorithm_standard": settings.workflow_queue_algorithm_standard,
+                        "algorithm_heavy": settings.workflow_queue_algorithm_heavy,
+                        "algorithm_batch": settings.workflow_queue_algorithm_batch,
                         "download_realtime": settings.workflow_queue_download_realtime,
                         "download_standard": settings.workflow_queue_download_standard,
                         "analysis_standard": settings.workflow_queue_analysis_standard,
@@ -320,6 +324,22 @@ class InMemoryInteractionHub:
                     "provider_table_chunk_size": settings.provider_table_chunk_size,
                     "provider_series_chunk_size": settings.provider_series_chunk_size,
                     "object_store_backend": settings.object_store_backend,
+                },
+            ),
+            BackendServiceStatus(
+                service_name="python_provider_bridge_service",
+                health=ServiceHealth.ok,
+                message="Python 算法桥接服务可用。",
+                updated_at=now,
+                details={
+                    "provider_root": settings.python_provider_root,
+                    "workspace": settings.python_provider_workspace,
+                    "queues": {
+                        "realtime": settings.workflow_queue_algorithm_realtime,
+                        "standard": settings.workflow_queue_algorithm_standard,
+                        "heavy": settings.workflow_queue_algorithm_heavy,
+                        "batch": settings.workflow_queue_algorithm_batch,
+                    },
                 },
             ),
             BackendServiceStatus(
