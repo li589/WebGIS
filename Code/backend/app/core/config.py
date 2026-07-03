@@ -8,6 +8,8 @@ DEFAULT_WORKFLOW_STATE_DIR = BACKEND_ROOT / ".data" / "workflow_state"
 DEFAULT_LOG_DIR = BACKEND_ROOT / ".data" / "logs"
 DEFAULT_ARTIFACT_DIR = BACKEND_ROOT / ".data" / "artifacts"
 DEFAULT_CACHE_DIR = BACKEND_ROOT / ".data" / "cache"
+DEFAULT_PYTHON_PROVIDER_ROOT = BACKEND_ROOT.parent / "algorithms" / "providers" / "Python"
+DEFAULT_PYTHON_PROVIDER_WORKSPACE = BACKEND_ROOT / ".data" / "python_provider"
 
 
 def _parse_csv_env(name: str, default: str = "") -> list[str]:
@@ -33,6 +35,14 @@ class Settings:
     workflow_state_dir: str = os.getenv(
         "BACKEND_WORKFLOW_STATE_DIR",
         str(DEFAULT_WORKFLOW_STATE_DIR),
+    )
+    python_provider_root: str = os.getenv(
+        "BACKEND_PYTHON_PROVIDER_ROOT",
+        str(DEFAULT_PYTHON_PROVIDER_ROOT),
+    )
+    python_provider_workspace: str = os.getenv(
+        "BACKEND_PYTHON_PROVIDER_WORKSPACE",
+        str(DEFAULT_PYTHON_PROVIDER_WORKSPACE),
     )
     log_dir: str = os.getenv("BACKEND_LOG_DIR", str(DEFAULT_LOG_DIR))
     log_level: str = os.getenv("BACKEND_LOG_LEVEL", "INFO")
@@ -65,6 +75,10 @@ class Settings:
     workflow_queue_analysis_standard: str = os.getenv("BACKEND_WORKFLOW_QUEUE_ANALYSIS_STANDARD", workflow_queue_standard)
     workflow_queue_analysis_heavy: str = os.getenv("BACKEND_WORKFLOW_QUEUE_ANALYSIS_HEAVY", workflow_queue_heavy)
     workflow_queue_analysis_batch: str = os.getenv("BACKEND_WORKFLOW_QUEUE_ANALYSIS_BATCH", workflow_queue_batch)
+    workflow_queue_algorithm_realtime: str = os.getenv("BACKEND_WORKFLOW_QUEUE_ALGORITHM_REALTIME", workflow_queue_realtime)
+    workflow_queue_algorithm_standard: str = os.getenv("BACKEND_WORKFLOW_QUEUE_ALGORITHM_STANDARD", workflow_queue_analysis_standard)
+    workflow_queue_algorithm_heavy: str = os.getenv("BACKEND_WORKFLOW_QUEUE_ALGORITHM_HEAVY", workflow_queue_analysis_heavy)
+    workflow_queue_algorithm_batch: str = os.getenv("BACKEND_WORKFLOW_QUEUE_ALGORITHM_BATCH", workflow_queue_analysis_batch)
     api_key: str = os.getenv("BACKEND_API_KEY", "")
     cors_origins: list[str] = field(
         default_factory=lambda: _parse_csv_env(

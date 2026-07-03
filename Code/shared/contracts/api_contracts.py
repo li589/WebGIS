@@ -286,6 +286,30 @@ class RuntimeMapContext(BaseModel):
     viewport_bbox: BoundingBox | None = None
 
 
+class AlgorithmOutputSpec(BaseModel):
+    raster_format: str = "COG"
+    table_format: str = "parquet"
+    include_qc: bool = True
+    include_manifest: bool = True
+    extra: dict[str, Any] = Field(default_factory=dict)
+
+
+class AlgorithmWorkflowRequest(BaseModel):
+    module_name: str | None = None
+    workflow_name: str | None = None
+    workflow_definition: dict[str, Any] | str | None = None
+    datasource_selection: dict[str, Any] = Field(default_factory=dict)
+    algorithm_params: dict[str, Any] = Field(default_factory=dict)
+    output_spec: AlgorithmOutputSpec = Field(default_factory=AlgorithmOutputSpec)
+    resource_hint: dict[str, Any] | None = None
+    cache_policy: dict[str, Any] | None = None
+    resume_policy: dict[str, Any] | None = None
+    tags: dict[str, str] = Field(default_factory=dict)
+    task_type: str | None = None
+    region: dict[str, Any] | None = None
+    time_range: dict[str, Any] | None = None
+
+
 class WorkflowSubmitRequest(BaseModel):
     command_type: WorkflowCommandType
     command_label: str | None = None
@@ -297,6 +321,7 @@ class WorkflowSubmitRequest(BaseModel):
     spatial_filter: SpatialFilter | None = None
     time_range: TimeRange | None = None
     parameters: dict[str, Any] = Field(default_factory=dict)
+    algorithm_request: AlgorithmWorkflowRequest | dict[str, Any] = Field(default_factory=AlgorithmWorkflowRequest)
     config_overrides: dict[str, Any] = Field(default_factory=dict)
     requested_outputs: list[ResultKind | str] = Field(default_factory=lambda: [ResultKind.json])
     client: ClientIdentity = Field(default_factory=ClientIdentity)

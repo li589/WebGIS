@@ -1,0 +1,436 @@
+from __future__ import annotations
+
+from contextlib import contextmanager
+from datetime import datetime
+from functools import lru_cache
+import importlib
+import logging
+from pathlib import Path
+import sys
+from typing import Any, Iterator
+from urllib.parse import unquote, urlparse
+
+from app.core.config import settings
+from app.services.result_storage import result_storage_service
+from app.services.workflow_execution import WorkflowExecutionResult
+from shared.contracts.api_contracts import (
+    AlgorithmWorkflowRequest,
+    ResultKind,
+    WorkflowResultReference,
+    WorkflowSubmitRequest,
+)
+
+logger = logging.getLogger(__name__)
+
+_ALGORITHM_REQUEST_ENTRY_KEYS = ("module_name", "workflow_name", "workflow_definition")
+_ALGORITHM_PRIORITY_MAP = {
+    "low": 1,
+    "normal": 5,
+    "high": 8,
+    "critical": 9,
+}
+_ARTIFACT_MIME_TYPES = {
+    "manifest": "application/json",
+    "metadata": "application/json",
+    "log": "text/plain",
+}
+
+
+@contextmanager
+def _python_provider_import_path(provider_root: Path) -> Iterator[None]:
+    provider_path = str(provider_root)
+    inserted = False
+    if provider_path not in sys.path:
+        sys.path.insert(0, provider_path)
+        inserted = True
+    try:
+        yield
+    finally:
+        if inserted:
+            try:
+                sys.path.remove(provider_path)
+            except ValueError:
+                pass
+
+
+@lru_cache(maxsize=1)
+def _load_python_job_service(provider_root_str: str, workspace_str: str):
+    provider_root = Path(provider_root_str)
+    workspace = Path(workspace_str)
+    workspace.mkdir(parents=True, exist_ok=True)
+    with _python_provider_import_path(provider_root):
+        job_api_module = importlib.import_module("service.job_api")
+        build_local_persistent_job_service = getattr(job_api_module, "build_local_persistent_job_service")
+        return build_local_persistent_job_service(workspace=workspace, start_worker=False)
+
+
+class PythonProviderBridgeService:
+    def supports(self, payload: WorkflowSubmitRequest) -> bool:
+        algorithm_request = self._normalize_algorithm_request(payload.algorithm_request)
+        return any(key in algorithm_request for key in _ALGORITHM_REQUEST_ENTRY_KEYS)
+
+    def execute(
+        self,
+        *,
+        run_id: str,
+        payload: WorkflowSubmitRequest,
+        requested_at: datetime,
+        event_factory,
+    ) -> WorkflowExecutionResult:
+        request_payload = self._build_job_request_payload(run_id=run_id, payload=payload)
+        service = self._get_job_service()
+        response = service.submit_job(request_payload)
+        response_body = dict(response.body)
+        if response.status_code >= 400:
+            developer_message = str(
+                response_body.get("developer_message")
+                or response_body.get("user_message")
+                or "Python provider job service returned an error."
+            )
+            raise ValueError(developer_message)
+
+        job_result = self._as_dict(response_body.get("job_result"))
+        result_dto = self._as_dict(response_body.get("result_dto"))
+        result_refs = self._build_result_refs(
+            run_id=run_id,
+            payload=payload,
+            requested_at=requested_at,
+            request_payload=request_payload,
+            job_result=job_result,
+            result_dto=result_dto,
+        )
+        entry_name = (
+            request_payload.get("workflow_name")
+            or request_payload.get("module_name")
+            or "workflow_definition"
+        )
+        events = [
+            event_factory(
+                channel="log",
+                message="Python 算法任务已完成执行。",
+                progress=74,
+                payload={
+                    "job_id": job_result.get("job_id"),
+                    "run_id": job_result.get("run_id"),
+                    "entry_name": entry_name,
+                    "job_status": job_result.get("status"),
+                },
+            ),
+            event_factory(
+                channel="data",
+                message="算法 result_dto 已映射为 workflow 结果引用。",
+                progress=95,
+                payload={
+                    "result_count": len(result_refs),
+                    "manifest_loaded": bool(result_dto.get("manifest_loaded")),
+                    "product_count": len(result_dto.get("products") or []),
+                    "entry_name": entry_name,
+                },
+            ),
+        ]
+        diagnostics = [
+            "python_provider_bridge_service 已接入 workflow-runs 主链。",
+            f"python_provider_root={settings.python_provider_root}",
+            f"python_provider_workspace={settings.python_provider_workspace}",
+            f"job_id={job_result.get('job_id')}",
+            f"algorithm_status={job_result.get('status')}",
+            f"entry_name={entry_name}",
+            f"manifest_loaded={bool(result_dto.get('manifest_loaded'))}",
+            f"product_count={len(result_dto.get('products') or [])}",
+        ]
+        manifest_summary = self._as_dict(result_dto.get("manifest_summary"))
+        if manifest_summary:
+            diagnostics.extend(
+                [
+                    f"manifest_product_count={manifest_summary.get('product_count', 0)}",
+                    f"conversion_trace_dataset_count={manifest_summary.get('conversion_trace_dataset_count', 0)}",
+                    f"conversion_trace_resource_count={manifest_summary.get('conversion_trace_resource_count', 0)}",
+                ]
+            )
+
+        return WorkflowExecutionResult(
+            message=(
+                f"Python 算法任务 {entry_name} 执行完成，"
+                f"已生成 {len(result_refs)} 个结果引用。"
+            ),
+            result_refs=result_refs,
+            diagnostics=diagnostics,
+            events=events,
+        )
+
+    def list_workflows_response(self):
+        return self._get_job_service().list_workflows_response()
+
+    def describe_workflow_response(self, workflow_name: str):
+        return self._get_job_service().describe_workflow_response(workflow_name)
+
+    def get_workflow_panel_schema_response(self, workflow_name: str):
+        return self._get_job_service().get_workflow_panel_schema_response(workflow_name)
+
+    def get_workflow_ui_schema_response(self, workflow_name: str):
+        return self._get_job_service().get_workflow_ui_schema_response(workflow_name)
+
+    def _get_job_service(self):
+        provider_root = Path(settings.python_provider_root)
+        if not provider_root.exists():
+            raise RuntimeError(f"Python provider root does not exist: {provider_root}")
+        try:
+            return _load_python_job_service(str(provider_root), str(Path(settings.python_provider_workspace)))
+        except Exception as exc:  # pragma: no cover - depends on runtime environment
+            logger.exception("Failed to initialize Python provider job service")
+            raise RuntimeError(
+                f"Failed to initialize Python provider job service: {exc}"
+            ) from exc
+
+    def _build_job_request_payload(self, *, run_id: str, payload: WorkflowSubmitRequest) -> dict[str, Any]:
+        algorithm_request = self._normalize_algorithm_request(payload.algorithm_request)
+        if not any(key in algorithm_request for key in _ALGORITHM_REQUEST_ENTRY_KEYS):
+            raise ValueError(
+                "algorithm_request 必须至少包含 module_name、workflow_name 或 workflow_definition 之一。"
+            )
+
+        request_payload = dict(algorithm_request)
+        request_payload.setdefault("job_id", run_id)
+        request_payload.setdefault("pipeline_name", "workflow")
+        request_payload.setdefault("task_type", algorithm_request.get("task_type") or payload.command_type.value)
+        request_payload.setdefault("datasource_selection", {})
+        request_payload.setdefault("algorithm_params", {})
+        request_payload.setdefault("output_spec", {"include_manifest": True, "extra": {}})
+        request_payload.setdefault("tags", {})
+        if isinstance(request_payload["tags"], dict):
+            request_payload["tags"].setdefault("workflow_run_id", run_id)
+            request_payload["tags"].setdefault("workflow_command_type", payload.command_type.value)
+            if payload.layer_id:
+                request_payload["tags"].setdefault("workflow_layer_id", payload.layer_id)
+
+        if payload.time_range is not None and "time_range" not in request_payload:
+            request_payload["time_range"] = {
+                "start": payload.time_range.start_at.isoformat(),
+                "end": payload.time_range.end_at.isoformat(),
+            }
+
+        if "region" not in request_payload:
+            request_payload["region"] = self._build_region_payload(payload)
+
+        if request_payload.get("priority") is None:
+            request_payload["priority"] = _ALGORITHM_PRIORITY_MAP[payload.priority.value]
+
+        algorithm_params = request_payload.get("algorithm_params")
+        if not isinstance(algorithm_params, dict):
+            request_payload["algorithm_params"] = {}
+            algorithm_params = request_payload["algorithm_params"]
+        for key, value in payload.parameters.items():
+            algorithm_params.setdefault(key, value)
+
+        output_spec = request_payload.get("output_spec")
+        if not isinstance(output_spec, dict):
+            output_spec = {"include_manifest": True, "extra": {}}
+            request_payload["output_spec"] = output_spec
+        output_spec.setdefault("include_manifest", True)
+        output_spec.setdefault("include_qc", True)
+        output_spec.setdefault("raster_format", "COG")
+        output_spec.setdefault("table_format", "parquet")
+        if not isinstance(output_spec.get("extra"), dict):
+            output_spec["extra"] = {}
+
+        self._validate_algorithm_request_shape(request_payload)
+        return request_payload
+
+    def _build_region_payload(self, payload: WorkflowSubmitRequest) -> dict[str, Any]:
+        bbox = payload.spatial_filter.bbox if payload.spatial_filter else None
+        if bbox is not None:
+            return {
+                "kind": "bbox",
+                "value": {
+                    "xmin": bbox.west,
+                    "ymin": bbox.south,
+                    "xmax": bbox.east,
+                    "ymax": bbox.north,
+                    "crs": bbox.crs,
+                },
+            }
+        return {"kind": "global", "value": {}}
+
+    def _build_result_refs(
+        self,
+        *,
+        run_id: str,
+        payload: WorkflowSubmitRequest,
+        requested_at: datetime,
+        request_payload: dict[str, Any],
+        job_result: dict[str, Any],
+        result_dto: dict[str, Any],
+    ) -> list[WorkflowResultReference]:
+        requested_output_kinds = {str(item) for item in payload.requested_outputs}
+        requested_output_kinds.update(
+            item.value for item in payload.requested_outputs if isinstance(item, ResultKind)
+        )
+
+        result_refs: list[WorkflowResultReference] = [
+            WorkflowResultReference(
+                result_id=f"algorithm-result-{run_id[-8:]}",
+                result_kind=ResultKind.json,
+                title="算法任务结果",
+                mime_type="application/json",
+                inline_data={
+                    "workflow": {
+                        "run_id": run_id,
+                        "command_type": payload.command_type.value,
+                        "layer_id": payload.layer_id,
+                    },
+                    "algorithm_request": request_payload,
+                    "job_result": job_result,
+                    "result_dto": result_dto,
+                },
+                updated_at=requested_at,
+            )
+        ]
+
+        if ResultKind.text.value in requested_output_kinds:
+            summary = self._build_text_summary(request_payload=request_payload, job_result=job_result, result_dto=result_dto)
+            result_refs.append(
+                WorkflowResultReference(
+                    result_id=f"algorithm-summary-{run_id[-8:]}",
+                    result_kind=ResultKind.text,
+                    title="算法任务摘要",
+                    mime_type="text/plain",
+                    inline_data={"text": summary},
+                    updated_at=requested_at,
+                )
+            )
+
+        result_refs.extend(
+            self._build_artifact_refs(
+                run_id=run_id,
+                requested_at=requested_at,
+                result_dto=result_dto,
+            )
+        )
+        return result_refs
+
+    def _build_text_summary(
+        self,
+        *,
+        request_payload: dict[str, Any],
+        job_result: dict[str, Any],
+        result_dto: dict[str, Any],
+    ) -> str:
+        entry_name = (
+            request_payload.get("workflow_name")
+            or request_payload.get("module_name")
+            or "workflow_definition"
+        )
+        manifest_summary = self._as_dict(result_dto.get("manifest_summary"))
+        return (
+            f"算法任务 {entry_name} 已执行完成，"
+            f"job_status={job_result.get('status')}，"
+            f"manifest_loaded={bool(result_dto.get('manifest_loaded'))}，"
+            f"products={manifest_summary.get('product_count', 0)}。"
+        )
+
+    def _build_artifact_refs(
+        self,
+        *,
+        run_id: str,
+        requested_at: datetime,
+        result_dto: dict[str, Any],
+    ) -> list[WorkflowResultReference]:
+        artifacts = self._as_dict(result_dto.get("artifacts"))
+        artifact_refs: list[WorkflowResultReference] = []
+        for artifact_name in ("manifest", "metadata", "log"):
+            artifact_view = self._as_dict(artifacts.get(artifact_name))
+            if not artifact_view:
+                continue
+            artifact_ref = self._build_artifact_ref(
+                run_id=run_id,
+                requested_at=requested_at,
+                artifact_name=artifact_name,
+                artifact_view=artifact_view,
+            )
+            if artifact_ref is not None:
+                artifact_refs.append(artifact_ref)
+        return artifact_refs
+
+    def _build_artifact_ref(
+        self,
+        *,
+        run_id: str,
+        requested_at: datetime,
+        artifact_name: str,
+        artifact_view: dict[str, Any],
+    ) -> WorkflowResultReference | None:
+        title = f"算法 {artifact_name}"
+        uri = str(
+            artifact_view.get("download_url")
+            or artifact_view.get("preview_url")
+            or artifact_view.get("uri")
+            or ""
+        ).strip()
+        if not uri:
+            return None
+
+        local_path = self._uri_to_local_path(uri)
+        if local_path is not None and local_path.exists() and local_path.is_file():
+            payload = local_path.read_bytes()
+            return result_storage_service.create_artifact_result_ref(
+                run_id=run_id,
+                result_id=f"algorithm-{artifact_name}-{local_path.stem}",
+                result_kind=ResultKind.file,
+                title=title,
+                mime_type=_ARTIFACT_MIME_TYPES[artifact_name],
+                updated_at=requested_at,
+                payload=payload,
+            )
+
+        parsed = urlparse(uri)
+        resource_backend = str(artifact_view.get("storage_backend") or parsed.scheme or "external")
+        resource_key = str(artifact_view.get("object_key") or uri)
+        return WorkflowResultReference(
+            result_id=f"algorithm-{artifact_name}-{run_id[-8:]}",
+            result_kind=ResultKind.file,
+            title=title,
+            mime_type=_ARTIFACT_MIME_TYPES[artifact_name],
+            resource_url=uri,
+            resource_backend=resource_backend,
+            resource_key=resource_key,
+            updated_at=requested_at,
+        )
+
+    def _uri_to_local_path(self, uri: str) -> Path | None:
+        parsed = urlparse(uri)
+        if parsed.scheme not in {"", "file"}:
+            return None
+        if parsed.scheme == "file":
+            raw_path = unquote(f"{parsed.netloc}{parsed.path}")
+        else:
+            raw_path = unquote(uri)
+        if raw_path.startswith("/") and len(raw_path) > 2 and raw_path[2] == ":":
+            raw_path = raw_path[1:]
+        if not raw_path:
+            return None
+        return Path(raw_path)
+
+    def _as_dict(self, value: Any) -> dict[str, Any]:
+        if isinstance(value, dict):
+            return dict(value)
+        return {}
+
+    def _normalize_algorithm_request(self, value: AlgorithmWorkflowRequest | dict[str, Any] | Any) -> dict[str, Any]:
+        if isinstance(value, AlgorithmWorkflowRequest):
+            return value.model_dump(mode="json", exclude_none=True)
+        if isinstance(value, dict):
+            return dict(value)
+        return {}
+
+    def _validate_algorithm_request_shape(self, request_payload: dict[str, Any]) -> None:
+        if not isinstance(request_payload.get("datasource_selection"), dict):
+            raise ValueError("algorithm_request.datasource_selection 必须为 object。")
+        if not isinstance(request_payload.get("algorithm_params"), dict):
+            raise ValueError("algorithm_request.algorithm_params 必须为 object。")
+        if not isinstance(request_payload.get("output_spec"), dict):
+            raise ValueError("algorithm_request.output_spec 必须为 object。")
+        if request_payload.get("workflow_definition") is not None and request_payload.get("module_name") is not None:
+            raise ValueError("algorithm_request.workflow_definition 与 module_name 不能同时出现。")
+
+
+python_provider_bridge_service = PythonProviderBridgeService()

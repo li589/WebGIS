@@ -1,11 +1,14 @@
-from fastapi import APIRouter, Depends, HTTPException, status
-from fastapi.responses import FileResponse, RedirectResponse, Response
+from datetime import datetime, timedelta
+from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi.responses import FileResponse, JSONResponse, RedirectResponse, Response
+from threading import Lock
 
 from app.api.deps import require_write_access
 from app.core.config import settings
 from app.services.demo_snapshots import get_demo_layer_snapshot, list_demo_layer_snapshots
 from app.services.interaction_hub import interaction_hub
 from app.services.layer_catalog import get_layer_catalog
+from app.services.python_provider_bridge_service import python_provider_bridge_service
 from app.services.result_storage import result_storage_service
 from app.services.task_store import task_store
 from shared.contracts.api_contracts import (
@@ -27,6 +30,37 @@ from shared.contracts.api_contracts import (
 )
 
 router = APIRouter()
+
+# P0-4: Per-IP rate limiter for SSE endpoint (in-process, suitable for single-node).
+# For multi-worker deployments replace with a Redis-based counter.
+_SSE_RATE_LIMIT = 10  # max SSE connections per IP
+_SSE_WINDOW = timedelta(minutes=5)
+
+
+class _SseRateLimiter:
+    def __init__(self, limit: int, window: timedelta) -> None:
+        self._limit = limit
+        self._window = window
+        self._lock = Lock()
+        self._requests: dict[str, list[datetime]] = {}
+
+    def check(self, ip: str) -> bool:
+        now = datetime.utcnow()
+        cutoff = now - self._window
+        with self._lock:
+            timestamps = self._requests.setdefault(ip, [])
+            timestamps[:] = [t for t in timestamps if t > cutoff]
+            if len(timestamps) >= self._limit:
+                return False
+            timestamps.append(now)
+            return True
+
+
+_sse_limiter = _SseRateLimiter(_SSE_RATE_LIMIT, _SSE_WINDOW)
+
+
+def _service_json_response(service_response) -> JSONResponse:
+    return JSONResponse(status_code=service_response.status_code, content=service_response.body)
 
 
 @router.get("/health", tags=["system"])
@@ -87,7 +121,13 @@ def get_workflow_run(run_id: str) -> WorkflowRunStatusResponse:
 
 
 @router.get("/workflow-runs/{run_id}/events", tags=["workflow"], response_model=WorkflowEventsResponse)
-def list_workflow_events(run_id: str) -> WorkflowEventsResponse:
+def list_workflow_events(request: Request, run_id: str) -> WorkflowEventsResponse:
+    client_ip = request.client.host if request.client else "unknown"
+    if not _sse_limiter.check(client_ip):
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail=f"Too many SSE connections from {client_ip}. Limit: {_SSE_RATE_LIMIT} per {_SSE_WINDOW}.",
+        )
     events = interaction_hub.list_workflow_events(run_id)
     if events is None:
         raise HTTPException(
@@ -116,6 +156,26 @@ def update_runtime_config(payload: RuntimeConfigUpdateRequest) -> RuntimeConfigU
 @router.get("/runtime/status", tags=["runtime"], response_model=RuntimeStatusResponse)
 def get_runtime_status() -> RuntimeStatusResponse:
     return interaction_hub.get_runtime_status()
+
+
+@router.get("/algorithm/workflows", tags=["algorithm"])
+def list_algorithm_workflows() -> JSONResponse:
+    return _service_json_response(python_provider_bridge_service.list_workflows_response())
+
+
+@router.get("/algorithm/workflows/{workflow_name}", tags=["algorithm"])
+def describe_algorithm_workflow(workflow_name: str) -> JSONResponse:
+    return _service_json_response(python_provider_bridge_service.describe_workflow_response(workflow_name))
+
+
+@router.get("/algorithm/workflows/{workflow_name}/panel-schema", tags=["algorithm"])
+def get_algorithm_workflow_panel_schema(workflow_name: str) -> JSONResponse:
+    return _service_json_response(python_provider_bridge_service.get_workflow_panel_schema_response(workflow_name))
+
+
+@router.get("/algorithm/workflows/{workflow_name}/ui-schema", tags=["algorithm"])
+def get_algorithm_workflow_ui_schema(workflow_name: str) -> JSONResponse:
+    return _service_json_response(python_provider_bridge_service.get_workflow_ui_schema_response(workflow_name))
 
 
 @router.post(

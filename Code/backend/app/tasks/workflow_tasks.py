@@ -7,6 +7,7 @@ from app.core.config import settings
 from app.services.analysis_workflow_service import analysis_workflow_service
 from app.services.download_workflow_service import download_workflow_service
 from app.services.provider_workflow_service import provider_workflow_service
+from app.services.python_provider_bridge_service import python_provider_bridge_service
 from app.services.workflow_execution import WorkflowExecutionResult
 from shared.contracts.api_contracts import (
     WorkflowCommandType,
@@ -17,7 +18,9 @@ from shared.contracts.api_contracts import (
 
 
 def execute_workflow_task(*, run_id: str, payload: WorkflowSubmitRequest, requested_at, event_factory) -> WorkflowExecutionResult:
-    if provider_workflow_service.supports(payload):
+    if python_provider_bridge_service.supports(payload):
+        handler = python_provider_bridge_service.execute
+    elif provider_workflow_service.supports(payload):
         handler = provider_workflow_service.execute
     else:
         task_map = {
@@ -38,6 +41,8 @@ def execute_workflow_task(*, run_id: str, payload: WorkflowSubmitRequest, reques
 
 
 def resolve_workflow_channel(payload: WorkflowSubmitRequest) -> str:
+    if python_provider_bridge_service.supports(payload):
+        return "algorithm"
     if payload.command_type in {
         WorkflowCommandType.refresh_data,
         WorkflowCommandType.sync_demo,
@@ -54,6 +59,14 @@ def resolve_workflow_queue(payload: WorkflowSubmitRequest) -> str:
     is_realtime = payload.realtime_preferred or payload.priority in {WorkflowPriority.high, WorkflowPriority.critical}
     if channel == "download":
         return settings.workflow_queue_download_realtime if is_realtime else settings.workflow_queue_download_standard
+    if channel == "algorithm":
+        if payload.resource_profile == WorkflowResourceProfile.batch:
+            return settings.workflow_queue_algorithm_batch
+        if payload.resource_profile == WorkflowResourceProfile.heavy:
+            return settings.workflow_queue_algorithm_heavy
+        if is_realtime:
+            return settings.workflow_queue_algorithm_realtime
+        return settings.workflow_queue_algorithm_standard
     if payload.resource_profile == WorkflowResourceProfile.batch:
         return settings.workflow_queue_analysis_batch
     if payload.resource_profile == WorkflowResourceProfile.heavy:

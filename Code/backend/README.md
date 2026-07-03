@@ -9,6 +9,10 @@
 - `GET /workflow-runs/{run_id}`
 - `GET /workflow-runs/{run_id}/events`
 - `GET /artifacts/{artifact_id}`
+- `GET /algorithm/workflows`
+- `GET /algorithm/workflows/{workflow_name}`
+- `GET /algorithm/workflows/{workflow_name}/panel-schema`
+- `GET /algorithm/workflows/{workflow_name}/ui-schema`
 - 支持 `sync / celery` 两种工作流执行模式
 - 支持结构化日志、结果大对象落盘与旧 `/tasks` 桥接
 
@@ -103,6 +107,10 @@ $env:BACKEND_RESULT_INLINE_MAX_BYTES="131072"
 
 ```powershell
 $env:BACKEND_WORKFLOW_QUEUE_REALTIME="realtime"
+$env:BACKEND_WORKFLOW_QUEUE_ALGORITHM_REALTIME="realtime"
+$env:BACKEND_WORKFLOW_QUEUE_ALGORITHM_STANDARD="standard"
+$env:BACKEND_WORKFLOW_QUEUE_ALGORITHM_HEAVY="heavy"
+$env:BACKEND_WORKFLOW_QUEUE_ALGORITHM_BATCH="batch"
 $env:BACKEND_WORKFLOW_QUEUE_DOWNLOAD_REALTIME="download-realtime"
 $env:BACKEND_WORKFLOW_QUEUE_DOWNLOAD_STANDARD="download-standard"
 $env:BACKEND_WORKFLOW_QUEUE_ANALYSIS_STANDARD="standard"
@@ -111,8 +119,10 @@ $env:BACKEND_WORKFLOW_QUEUE_ANALYSIS_BATCH="batch"
 ```
 
 - `WorkflowSubmitRequest` 现已支持 `priority`、`resource_profile`、`realtime_preferred`、`queue_tag`
+- `WorkflowSubmitRequest` 现已支持 `algorithm_request`
 - Celery 模式下会先区分两大通道，再按这些标签自动选择队列和优先级
 - 当前双通道策略：
+  - `algorithm_request -> algorithm`
   - `layer_preview / refresh_data / sync_demo -> download`
   - `analysis / export / custom -> analysis`
 - 旧 `/tasks` 已映射为默认调度策略：
@@ -202,6 +212,33 @@ $env:LAB_OUTPUT_ALGORITHM_ENTRYPOINT="algorithms.providers.lab_output_example_im
 - 输出：`dict`
 - 推荐返回字段：`title`、`summary`、`metric_label`、`metric_unit`、`metric_value`、`hotspots`、`series`、`diagnostics`、`metadata`
 
+## Python 算法桥接
+
+- 当前已新增 `python_provider_bridge_service`
+- 目标是把 `Code/algorithms/providers/Python` 作为完整算法任务子系统接入现有 `workflow-runs -> Celery worker` 主链
+- 当前桥接策略：
+  - FastAPI 仍作为统一平台入口
+  - Celery + Redis 仍作为唯一正式任务调度器
+  - worker 内部直接调用 `Python/service/job_api.py` 提供的 `JobService`
+- 当前 `WorkflowSubmitRequest.algorithm_request` 会被映射为 Python 侧 `JobRequest` 负载
+- 当前已接通的只读元数据接口：
+  - `GET /algorithm/workflows`
+  - `GET /algorithm/workflows/{workflow_name}`
+  - `GET /algorithm/workflows/{workflow_name}/panel-schema`
+  - `GET /algorithm/workflows/{workflow_name}/ui-schema`
+- 当前运行结果映射策略：
+  - `job_result + result_dto` 会回填到 `json` 结果引用
+  - `manifest / metadata / log` 会优先映射为 `file` 结果引用
+  - 仍由现有 artifact / spill / chunk 体系统一处理
+- 当前桥接优先面向：
+  - `module_name`
+  - `workflow_name`
+  - `workflow_definition`
+- 后续应继续补齐：
+  - `JobRequest` 专用共享协议
+  - 真实样本任务联调
+  - `result_dto.products` 到 WebGIS 预览层的进一步映射
+
 ## 状态存储
 
 - `workflow-runs`、事件流和运行时配置当前默认写入 `Code/backend/.data/workflow_state`
@@ -257,11 +294,17 @@ $env:BACKEND_CACHE_DEFAULT_TTL_SECONDS="1800"
 - 当前 `refresh_data / layer_preview / sync_demo` 返回中，除 JSON 摘要外，还会附带一个真实 `file` 类型结果引用，指向下载执行清单
 - 当前 JSON 摘要中已包含：
   - `execution.job_state`
+  - `execution.follow_up_policy`
   - `source_fetch`
   - 每个 `source_ref` 的 `fetch_status / fetch_stage / source_uri / estimated_bytes`
 - 当 `job_state.next_action=dispatch_source_fetch` 时，系统现在会在 workflow 落库后继续触发下载 follow-up task：
   - `sync` 模式下直接本地执行并回写 run / event / manifest
   - `celery` 模式下派发到下载队列，再由 worker 回写 run / event / manifest
+- 当前 follow-up task 已升级为“可重试抓取骨架”：
+  - 会记录 `fetch_attempts / max_attempts / last_error / completed_at`
+  - 会把 source 级状态推进到 `ready / retry_pending / failed`
+  - 当前已验证 `partial_success` 与最大尝试次数命中后的 `failed` 状态
+  - 当本次抓取未完全成功时，cache 状态会转为 `degraded`
 
 ## Provider 流式写出
 
