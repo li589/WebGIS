@@ -244,11 +244,16 @@ export const useLayersStore = defineStore('layers', () => {
     isSubmitting.value = true
     try {
       const catalogName = getCatalogDisplayName(catalogId)
+      const requestedOutputs =
+        catalogId === 'wind-field' || catalogId === 'temperature' || catalogId === 'precipitation'
+          ? ['json', 'text', 'table', 'map_layer']
+          : ['json', 'text', 'table']
+
       const accepted = await submitWorkflow({
         command_type: 'analysis',
         command_label: `运行 ${catalogName} 分析`,
         layer_id: catalogId,
-        requested_outputs: ['json', 'text', 'table'],
+        requested_outputs: requestedOutputs,
         parameters: {
           hour: currentHour.value,
         },
@@ -289,7 +294,7 @@ export const useLayersStore = defineStore('layers', () => {
   async function cancelWorkflowRunForJob(jobId: string, catalogId: string) {
     try {
       const run = await cancelWorkflowRun(jobId)
-      const jobLayer = buildJobLayer(run, catalogId)
+      const jobLayer = await buildJobLayer(run, catalogId)
       upsertJobLayer(catalogId, jobLayer)
       stopWorkflowPolling(jobId)
     } catch (error) {

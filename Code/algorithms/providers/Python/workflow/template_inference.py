@@ -34,6 +34,8 @@ def infer_workflow_request_template(value: object) -> WorkflowRequestTemplate:
 
 
 def _infer_workflow_request_template(definition: WorkflowDefinition) -> WorkflowRequestTemplate:
+    from modules.registry import get_module
+
     required_inputs: set[str] = set()
     referenced_request_keys: set[str] = set()
     node_requirements: list[WorkflowNodeRequirement] = []
@@ -52,6 +54,12 @@ def _infer_workflow_request_template(definition: WorkflowDefinition) -> Workflow
                 node_request_keys=node_request_keys,
             )
         entry_name = _resolve_entry_name(node)
+        if node.node_type == "module" and entry_name:
+            module_mode_required_inputs = dict(get_module(entry_name).get_spec().mode_required_inputs)
+            mode = str(node.params.get("mode", "")).lower()
+            for required_input in module_mode_required_inputs.get(mode, ()):
+                required_inputs.add(required_input)
+                node_input_keys.add(required_input)
         node_requirements.append(
             WorkflowNodeRequirement(
                 node_id=node.node_id,

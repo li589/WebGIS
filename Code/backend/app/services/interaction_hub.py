@@ -236,6 +236,14 @@ class InMemoryInteractionHub:
                         "analysis_standard": settings.workflow_queue_analysis_standard,
                         "analysis_heavy": settings.workflow_queue_analysis_heavy,
                         "analysis_batch": settings.workflow_queue_analysis_batch,
+                        "gee_realtime": settings.workflow_queue_gee_realtime,
+                        "gee_standard": settings.workflow_queue_gee_standard,
+                        "gee_heavy": settings.workflow_queue_gee_heavy,
+                        "gee_batch": settings.workflow_queue_gee_batch,
+                        "weather_realtime": settings.workflow_queue_weather_realtime,
+                        "weather_standard": settings.workflow_queue_weather_standard,
+                        "weather_heavy": settings.workflow_queue_weather_heavy,
+                        "weather_batch": settings.workflow_queue_weather_batch,
                     },
                 },
             ),
@@ -267,6 +275,41 @@ class InMemoryInteractionHub:
                         "standard": settings.workflow_queue_algorithm_standard,
                         "heavy": settings.workflow_queue_algorithm_heavy,
                         "batch": settings.workflow_queue_algorithm_batch,
+                    },
+                },
+            ),
+            BackendServiceStatus(
+                service_name="gee_bridge_service",
+                health=ServiceHealth.ok if settings.gee_enabled else ServiceHealth.offline,
+                message="GEE 引擎桥接服务可用。" if settings.gee_enabled else "GEE 引擎桥接已禁用（BACKEND_GEE_ENABLED=false）。",
+                updated_at=now,
+                details={
+                    "enabled": settings.gee_enabled,
+                    "module_root": settings.gee_module_root,
+                    "storage_backend": settings.gee_storage_backend,
+                    "local_storage_root": settings.gee_local_storage_root,
+                    "account_cooldown_seconds": settings.gee_account_cooldown_seconds,
+                    "max_parallel_exports": settings.gee_max_parallel_exports,
+                    "queues": {
+                        "realtime": settings.workflow_queue_gee_realtime,
+                        "standard": settings.workflow_queue_gee_standard,
+                        "heavy": settings.workflow_queue_gee_heavy,
+                        "batch": settings.workflow_queue_gee_batch,
+                    },
+                },
+            ),
+            BackendServiceStatus(
+                service_name="weather_bridge_service",
+                health=ServiceHealth.ok if settings.weather_workflow_enabled else ServiceHealth.offline,
+                message="天气工作流桥接服务可用。" if settings.weather_workflow_enabled else "天气工作流桥接已禁用（BACKEND_WEATHER_WORKFLOW_ENABLED=false）。",
+                updated_at=now,
+                details={
+                    "enabled": settings.weather_workflow_enabled,
+                    "queues": {
+                        "realtime": settings.workflow_queue_weather_realtime,
+                        "standard": settings.workflow_queue_weather_standard,
+                        "heavy": settings.workflow_queue_weather_heavy,
+                        "batch": settings.workflow_queue_weather_batch,
                     },
                 },
             ),
@@ -410,10 +453,10 @@ class InMemoryInteractionHub:
 
     def _dispatch_async_workflow(self, run_id: str, payload: WorkflowSubmitRequest) -> None:
         dispatch_at = datetime.now(timezone.utc)
+        queue_name = resolve_workflow_queue(payload)
+        dispatch_channel = resolve_workflow_channel(payload)
         with log_context(run_id=run_id):
             try:
-                queue_name = resolve_workflow_queue(payload)
-                dispatch_channel = resolve_workflow_channel(payload)
                 task_id = dispatch_workflow_task(run_id, payload)
                 current_run = self._repository.get_run(run_id)
                 self._save_run_status(
@@ -454,8 +497,6 @@ class InMemoryInteractionHub:
             except Exception as exc:
                 logger.exception("Workflow dispatch failed")
                 current_run = self._repository.get_run(run_id)
-                queue_name = resolve_workflow_queue(payload)
-                dispatch_channel = resolve_workflow_channel(payload)
                 self._save_run_status(
                     self._build_execution_transition(
                         run_id=run_id,

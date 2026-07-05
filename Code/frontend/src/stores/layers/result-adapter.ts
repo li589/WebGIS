@@ -1,5 +1,5 @@
 import { getWorkflowRunView } from '../../services/runtime-api'
-import type { WorkflowResultReference, WorkflowRunStatusResponse, WorkflowRunViewResponse } from '../../services/runtime-api'
+import type { WeatherLayerRenderHint, WorkflowResultReference, WorkflowRunStatusResponse, WorkflowRunViewResponse } from '../../services/runtime-api'
 import type { JobLayerItem } from './types'
 
 function asRecord(value: unknown): Record<string, unknown> | null {
@@ -63,6 +63,24 @@ function extractMetrics(run: WorkflowRunStatusResponse) {
   return metrics
 }
 
+function extractMapLayerPayload(resultRefs: WorkflowResultReference[]) {
+  const mapLayerResult = resultRefs.find((item) => item.result_kind === 'map_layer')
+  const payload = asRecord(mapLayerResult?.inline_data)
+  if (!payload) return undefined
+  const layerAssets = asRecord(payload.layer_assets)
+  const renderHint = asRecord(payload.render_hint) as WeatherLayerRenderHint | null
+  return {
+    renderHint: renderHint ?? undefined,
+    pointFeature: asRecord(payload.point_feature) ?? undefined,
+    layerAssets: layerAssets
+      ? {
+          geojsonUrl: typeof layerAssets.geojson_url === 'string' ? layerAssets.geojson_url : undefined,
+          cogUrl: typeof layerAssets.cog_url === 'string' ? layerAssets.cog_url : undefined,
+        }
+      : undefined,
+  }
+}
+
 export async function buildJobLayer(run: WorkflowRunStatusResponse, catalogName: string): Promise<JobLayerItem> {
   const status = run.status === 'accepted' ? 'queued' : run.status
   const entryName = extractWorkflowEntryName(run)
@@ -81,5 +99,6 @@ export async function buildJobLayer(run: WorkflowRunStatusResponse, catalogName:
     resultDto: run.result_dto ?? undefined,
     resultView: resultView ?? undefined,
     resultUrl: resultView?.result_url ?? extractResultUrl(run.result_refs),
+    mapLayerPayload: extractMapLayerPayload(run.result_refs),
   }
 }

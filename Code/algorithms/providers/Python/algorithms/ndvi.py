@@ -5,6 +5,8 @@ from typing import Any, Iterable
 
 
 def build_datetime_sequence(start: datetime, end: datetime, step_days: int) -> list[datetime]:
+    if step_days <= 0:
+        raise ValueError("step_days must be positive")
     dates: list[datetime] = []
     current = start
     while current <= end:

@@ -311,6 +311,38 @@ class AlgorithmWorkflowRequest(BaseModel):
     time_range: dict[str, Any] | None = None
 
 
+class GeeWorkflowRequest(BaseModel):
+    """GEE 引擎工作流请求。
+
+    与 AlgorithmWorkflowRequest 平行：
+    - workflow / context 直接对应 webgis_gee 的 WorkflowSubmissionPayload
+    - 当 workflow_definition 非空时，作为 GEE WorkflowDefinition 字典传入
+    - manifest_uri 用于导出状态轮询场景（command_type=custom 且仅查询导出状态时使用）
+    """
+
+    workflow: dict[str, Any] | None = None
+    context: dict[str, Any] | None = None
+    workflow_id: str | None = None
+    manifest_uri: str | None = None
+    update_manifest: bool = False
+    tags: dict[str, str] = Field(default_factory=dict)
+
+
+class WeatherWorkflowRequest(BaseModel):
+    """天气引擎工作流请求。
+
+    与 GeeWorkflowRequest / AlgorithmWorkflowRequest 平行：
+    - workflow / context 直接对应 weatherengine 的 WorkflowDefinition
+    - layer_id 用于指定天气图层（wind-field / temperature / precipitation）
+    """
+
+    workflow: dict[str, Any] | None = None
+    context: dict[str, Any] | None = None
+    workflow_id: str | None = None
+    layer_id: str | None = None
+    tags: dict[str, str] = Field(default_factory=dict)
+
+
 class WorkflowSubmitRequest(BaseModel):
     command_type: WorkflowCommandType
     command_label: str | None = None
@@ -322,7 +354,15 @@ class WorkflowSubmitRequest(BaseModel):
     spatial_filter: SpatialFilter | None = None
     time_range: TimeRange | None = None
     parameters: dict[str, Any] = Field(default_factory=dict)
+    # M13 修复：旧字段保留向后兼容，标记 deprecated，新增引擎请使用 engine_kind + engine_requests
     algorithm_request: AlgorithmWorkflowRequest | dict[str, Any] = Field(default_factory=AlgorithmWorkflowRequest)
+    gee_request: GeeWorkflowRequest | dict[str, Any] | None = None
+    weather_request: WeatherWorkflowRequest | dict[str, Any] | None = None
+    # 新扩展点：引擎无关的统一入口，避免每加一个引擎就新增 *_request 字段（OCP）
+    # engine_kind 取值："gee" / "weather" / "algorithm" / "provider" / None
+    # engine_requests: {engine_kind: request_dict}，支持多引擎并存
+    engine_kind: str | None = None
+    engine_requests: dict[str, dict[str, Any]] = Field(default_factory=dict)
     config_overrides: dict[str, Any] = Field(default_factory=dict)
     requested_outputs: list[ResultKind | str] = Field(default_factory=lambda: [ResultKind.json])
     client: ClientIdentity = Field(default_factory=ClientIdentity)
@@ -463,6 +503,56 @@ class WorkflowRunViewResponse(BaseModel):
     artifact_refs: list[WorkflowResultReference] = Field(default_factory=list)
     can_show_link: bool = False
     updated_at: datetime
+
+
+class WeatherLayerRenderHint(BaseModel):
+    layer_id: str
+    paint_mode: str = "point_symbol"
+    palette: str
+    primary_metric: str
+    unit_label: str
+    opacity: float = 0.82
+    legend_ticks: list[float | int | str] = Field(default_factory=list)
+    notes: list[str] = Field(default_factory=list)
+
+
+class WeatherPointCurrent(BaseModel):
+    temperature_2m: float | None = None
+    apparent_temperature: float | None = None
+    precipitation: float | None = None
+    rain: float | None = None
+    weather_code: int | None = None
+    cloud_cover: float | None = None
+    pressure_msl: float | None = None
+    wind_speed_10m: float | None = None
+    wind_direction_10m: float | None = None
+    wind_gusts_10m: float | None = None
+
+
+class WeatherPointHourlyEntry(BaseModel):
+    time: datetime
+    temperature_2m: float | None = None
+    precipitation: float | None = None
+    wind_speed_10m: float | None = None
+
+
+class WeatherPointResponse(BaseModel):
+    provider: str
+    model: str
+    resolved_model: str | None = None
+    layer_id: str
+    latitude: float
+    longitude: float
+    place_name: str | None = None
+    timezone: str | None = None
+    fetched_at: datetime
+    observation_time: datetime | None = None
+    cache_status: str
+    summary: str
+    current: WeatherPointCurrent = Field(default_factory=WeatherPointCurrent)
+    hourly: list[WeatherPointHourlyEntry] = Field(default_factory=list)
+    render_hint: WeatherLayerRenderHint
+    diagnostics: list[str] = Field(default_factory=list)
 
 
 class RuntimeConfigPatch(BaseModel):

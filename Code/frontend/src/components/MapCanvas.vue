@@ -3,6 +3,16 @@ import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 
 import { useLayersStore } from '../stores/layers'
 import type { DemoHotspot } from '../app/demo-data'
+import {
+  buildWeatherArrowSizeExpression,
+  buildWeatherFillColorExpression,
+  buildWeatherPointColorExpression,
+  buildWeatherPointRadiusExpression,
+  getWeatherFillOpacity,
+  getWeatherLineColor,
+  getWeatherLineOpacity,
+} from './map/weather-render'
+import { resolveApiUrl } from '../services/runtime-api'
 import type { TileSourceId } from '../stores/ui'
 import { TILE_SOURCE_MAP } from '../stores/ui'
 import type { StyleSpecification } from 'maplibre-gl'
@@ -17,6 +27,8 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   visibleHotspotsChange: [hotspots: DemoHotspot[]]
+  hotspotSelect: [hotspot: DemoHotspot | null]
+  mapPointSelect: [point: { lng: number; lat: number }]
 }>()
 
 defineExpose({ getMapStageElement })
@@ -30,8 +42,10 @@ const hotspotPins = ref<
     value: string
     left: string
     top: string
+    selected: boolean
   }>
 >([])
+const selectedHotspotId = ref<string | null>(null)
 const mapReady = ref(false)
 const mapVisible = ref(false)
 const skeletonVisible = ref(true)
@@ -44,6 +58,7 @@ const MAX_TILE_RETRIES = 2
 
 type MapInstance = import('maplibre-gl').Map
 type GeoJsonSourceSpecification = import('maplibre-gl').GeoJSONSourceSpecification
+type GeoJSONSource = import('maplibre-gl').GeoJSONSource
 type RasterSourceSpecification = import('maplibre-gl').RasterSourceSpecification
 type GuangdongBoundaryData = typeof import('../app/guangdong-boundaries')
 
@@ -55,6 +70,11 @@ let sourceTransitionTimer: number | null = null
 
 const TILE_SOURCE_ID = 'tile-base'
 const TILE_LAYER_ID = 'tile-base-raster'
+const WEATHER_SOURCE_ID = 'weather-vector-source'
+const WEATHER_FILL_LAYER_ID = 'weather-vector-fill'
+const WEATHER_LINE_LAYER_ID = 'weather-vector-line'
+const WEATHER_POINT_LAYER_ID = 'weather-vector-point'
+const WEATHER_ARROW_LAYER_ID = 'weather-vector-arrow'
 
 const currentTileConfig = computed(() => TILE_SOURCE_MAP.get(props.tileSourceId) ?? TILE_SOURCE_MAP.get('esri-street')!)
 
@@ -147,6 +167,9 @@ function ensureTileLayer(sourceId: TileSourceId) {
 function switchTileSource(sourceId: TileSourceId) {
   if (!map) return
 
+  tileLoadFailed.value = false
+  tileLoadRetryCount.value = 0
+
   if (sourceId === 'none') {
     if (map.getLayer(TILE_LAYER_ID)) {
       map.setLayoutProperty(TILE_LAYER_ID, 'visibility', 'none')
@@ -157,10 +180,6 @@ function switchTileSource(sourceId: TileSourceId) {
   const cfg = TILE_SOURCE_MAP.get(sourceId)
   if (!cfg) return
 
-  const wasVisible = map.getLayer(TILE_LAYER_ID)
-    ? map.getLayoutProperty(TILE_LAYER_ID, 'visibility') === 'visible'
-    : false
-
   if (map.getSource(TILE_SOURCE_ID)) {
     if (map.getLayer(TILE_LAYER_ID)) map.removeLayer(TILE_LAYER_ID)
     map.removeSource(TILE_SOURCE_ID)
@@ -169,7 +188,7 @@ function switchTileSource(sourceId: TileSourceId) {
   ensureTileLayer(sourceId)
 
   if (map.getLayer(TILE_LAYER_ID)) {
-    map.setLayoutProperty(TILE_LAYER_ID, 'visibility', wasVisible ? 'visible' : 'none')
+    map.setLayoutProperty(TILE_LAYER_ID, 'visibility', 'visible')
     map.setPaintProperty(TILE_LAYER_ID, 'raster-opacity', 0.88)
     map.setPaintProperty(TILE_LAYER_ID, 'raster-saturation', cfg.saturation)
     map.setPaintProperty(TILE_LAYER_ID, 'raster-brightness-max', 1.0 + cfg.brightness)
@@ -283,10 +302,175 @@ function syncAdminOverlay() {
   applyAdminOverlay(hasAdminBoundary.value, adminBoundaryOpacity.value)
 }
 
+function removeWeatherOverlay() {
+  if (!map) return
+  if (map.getLayer(WEATHER_ARROW_LAYER_ID)) map.removeLayer(WEATHER_ARROW_LAYER_ID)
+  if (map.getLayer(WEATHER_POINT_LAYER_ID)) map.removeLayer(WEATHER_POINT_LAYER_ID)
+  if (map.getLayer(WEATHER_LINE_LAYER_ID)) map.removeLayer(WEATHER_LINE_LAYER_ID)
+  if (map.getLayer(WEATHER_FILL_LAYER_ID)) map.removeLayer(WEATHER_FILL_LAYER_ID)
+  if (map.getSource(WEATHER_SOURCE_ID)) map.removeSource(WEATHER_SOURCE_ID)
+}
+
+function resolveWeatherOverlayState() {
+  const layer = selectedLayer.value
+  if (!layer) return null
+  if (!layer.visible) return null
+  const renderHint = layer.jobLayer?.mapLayerPayload?.renderHint
+  if (!renderHint) return null
+  const geojsonUrl = layer.jobLayer?.mapLayerPayload?.layerAssets?.geojsonUrl
+  if (typeof geojsonUrl !== 'string' || !geojsonUrl.trim()) return null
+  return {
+    geojsonUrl: resolveApiUrl(geojsonUrl),
+    renderHint,
+    opacity: layer.opacity,
+  }
+}
+
+function syncWeatherOverlay() {
+  if (!mapReady.value || !map) return
+  const overlayState = resolveWeatherOverlayState()
+  if (!overlayState) {
+    removeWeatherOverlay()
+    return
+  }
+
+  if (overlayState.renderHint.paint_mode === 'point_symbol') {
+    syncWeatherPointOverlay(overlayState)
+    return
+  }
+
+  if (overlayState.renderHint.paint_mode !== 'grid_fill') {
+    removeWeatherOverlay()
+    return
+  }
+
+  if (map.getLayer(WEATHER_ARROW_LAYER_ID) || map.getLayer(WEATHER_POINT_LAYER_ID)) {
+    removeWeatherOverlay()
+  }
+
+  const existingSource = map.getSource(WEATHER_SOURCE_ID) as GeoJSONSource | undefined
+  const fillOpacity = getWeatherFillOpacity(overlayState.renderHint, overlayState.opacity)
+  const lineOpacity = getWeatherLineOpacity(overlayState.renderHint, overlayState.opacity)
+  const fillColor = buildWeatherFillColorExpression(overlayState.renderHint)
+  const lineColor = getWeatherLineColor(overlayState.renderHint)
+  if (!existingSource) {
+    map.addSource(WEATHER_SOURCE_ID, {
+      type: 'geojson',
+      data: overlayState.geojsonUrl,
+    } as GeoJsonSourceSpecification)
+
+    map.addLayer(
+      {
+        id: WEATHER_FILL_LAYER_ID,
+        type: 'fill',
+        source: WEATHER_SOURCE_ID,
+        paint: {
+          'fill-color': fillColor,
+          'fill-opacity': fillOpacity,
+        },
+      },
+      map.getLayer('admin-fill') ? 'admin-fill' : undefined,
+    )
+
+    map.addLayer(
+      {
+        id: WEATHER_LINE_LAYER_ID,
+        type: 'line',
+        source: WEATHER_SOURCE_ID,
+        paint: {
+          'line-color': lineColor,
+          'line-width': 0.45,
+          'line-opacity': lineOpacity,
+        },
+      },
+      map.getLayer('admin-fill') ? 'admin-fill' : undefined,
+    )
+    return
+  }
+
+  existingSource.setData(overlayState.geojsonUrl)
+  if (map.getLayer(WEATHER_FILL_LAYER_ID)) {
+    map.setPaintProperty(WEATHER_FILL_LAYER_ID, 'fill-color', fillColor)
+    map.setPaintProperty(WEATHER_FILL_LAYER_ID, 'fill-opacity', fillOpacity)
+    map.setLayoutProperty(WEATHER_FILL_LAYER_ID, 'visibility', 'visible')
+  }
+  if (map.getLayer(WEATHER_LINE_LAYER_ID)) {
+    map.setPaintProperty(WEATHER_LINE_LAYER_ID, 'line-color', lineColor)
+    map.setPaintProperty(WEATHER_LINE_LAYER_ID, 'line-opacity', lineOpacity)
+    map.setLayoutProperty(WEATHER_LINE_LAYER_ID, 'visibility', 'visible')
+  }
+}
+
+function syncWeatherPointOverlay(overlayState: NonNullable<ReturnType<typeof resolveWeatherOverlayState>>) {
+  if (!map) return
+  if (map.getLayer(WEATHER_FILL_LAYER_ID) || map.getLayer(WEATHER_LINE_LAYER_ID)) {
+    removeWeatherOverlay()
+  }
+
+  const existingSource = map.getSource(WEATHER_SOURCE_ID) as GeoJSONSource | undefined
+  const pointColor = buildWeatherPointColorExpression(overlayState.renderHint)
+  const pointRadius = buildWeatherPointRadiusExpression(overlayState.renderHint)
+  const arrowSize = buildWeatherArrowSizeExpression(overlayState.renderHint)
+  const pointOpacity = getWeatherFillOpacity(overlayState.renderHint, overlayState.opacity)
+
+  if (!existingSource) {
+    map.addSource(WEATHER_SOURCE_ID, {
+      type: 'geojson',
+      data: overlayState.geojsonUrl,
+    } as GeoJsonSourceSpecification)
+
+    map.addLayer({
+      id: WEATHER_POINT_LAYER_ID,
+      type: 'circle',
+      source: WEATHER_SOURCE_ID,
+      paint: {
+        'circle-radius': pointRadius,
+        'circle-color': pointColor,
+        'circle-opacity': Math.max(0.18, pointOpacity * 0.52),
+        'circle-stroke-color': 'rgba(230, 248, 255, 0.82)',
+        'circle-stroke-width': 0.7,
+        'circle-stroke-opacity': Math.max(0.18, pointOpacity * 0.7),
+      },
+    })
+
+    map.addLayer({
+      id: WEATHER_ARROW_LAYER_ID,
+      type: 'symbol',
+      source: WEATHER_SOURCE_ID,
+      layout: {
+        'text-field': '➤',
+        'text-size': ['*', 15, arrowSize],
+        'text-allow-overlap': true,
+        'text-ignore-placement': true,
+        'text-rotate': ['coalesce', ['to-number', ['get', 'wind_direction_10m']], 0],
+        'text-rotation-alignment': 'map',
+      },
+      paint: {
+        'text-color': '#e8fbff',
+        'text-opacity': pointOpacity,
+        'text-halo-color': 'rgba(5, 16, 30, 0.86)',
+        'text-halo-width': 1.1,
+      },
+    })
+    return
+  }
+
+  existingSource.setData(overlayState.geojsonUrl)
+  if (map.getLayer(WEATHER_POINT_LAYER_ID)) {
+    map.setPaintProperty(WEATHER_POINT_LAYER_ID, 'circle-radius', pointRadius)
+    map.setPaintProperty(WEATHER_POINT_LAYER_ID, 'circle-color', pointColor)
+    map.setPaintProperty(WEATHER_POINT_LAYER_ID, 'circle-opacity', Math.max(0.18, pointOpacity * 0.52))
+    map.setPaintProperty(WEATHER_POINT_LAYER_ID, 'circle-stroke-opacity', Math.max(0.18, pointOpacity * 0.7))
+  }
+  if (map.getLayer(WEATHER_ARROW_LAYER_ID)) {
+    map.setLayoutProperty(WEATHER_ARROW_LAYER_ID, 'text-size', ['*', 15, arrowSize])
+    map.setPaintProperty(WEATHER_ARROW_LAYER_ID, 'text-opacity', pointOpacity)
+  }
+}
+
 // ─── Tile error handling ─────────────────────────────────────────────────────
 
 function handleTileError() {
-  if (tileLoadFailed.value) return
   tileLoadRetryCount.value++
   if (tileLoadRetryCount.value > MAX_TILE_RETRIES) {
     tileLoadFailed.value = true
@@ -298,7 +482,7 @@ function retryTileLoad() {
   tileLoadRetryCount.value = 0
   if (map && map.getSource(TILE_SOURCE_ID)) {
     switchTileSource(props.tileSourceId)
-    if (map.getLayer(TILE_LAYER_ID)) {
+    if (map.getLayer(TILE_LAYER_ID) && props.tileSourceId !== 'none') {
       map.setLayoutProperty(TILE_LAYER_ID, 'visibility', 'visible')
     }
   }
@@ -318,56 +502,99 @@ function triggerSourceTransition() {
 
 // ─── Hotspot sync ────────────────────────────────────────────────────────────
 
-let hotspotSyncThrottleTimer: number | null = null
+function getVisibleHotspots() {
+  const hotspots = selectedLayer.value?.hotspots ?? []
+  const currentMap = map
+  if (!currentMap) return hotspots
+
+  const zoom = currentMap.getZoom()
+  if (zoom < 5.4) return hotspots.slice(0, 1)
+  if (zoom < 6.2) return hotspots.slice(0, 2)
+  if (zoom < 7) return hotspots.slice(0, 3)
+  return hotspots
+}
+
+function syncHotspotPins() {
+  const currentMap = map
+  if (!currentMap) return
+
+  const visibleHotspots = getVisibleHotspots()
+  emit('visibleHotspotsChange', visibleHotspots)
+
+  if (selectedHotspotId.value && !visibleHotspots.some((hotspot) => hotspot.id === selectedHotspotId.value)) {
+    selectedHotspotId.value = null
+    emit('hotspotSelect', null)
+  }
+
+  hotspotPins.value = visibleHotspots.map((hotspot) => {
+    const point = currentMap.project([hotspot.lng, hotspot.lat])
+    return {
+      id: hotspot.id,
+      name: hotspot.name,
+      value: hotspot.value,
+      left: `${point.x}px`,
+      top: `${point.y}px`,
+      selected: hotspot.id === selectedHotspotId.value,
+    }
+  })
+}
 
 function scheduleHotspotSync() {
-  if (!map) return
-  if (animationFrameId !== null) cancelAnimationFrame(animationFrameId)
-  if (hotspotSyncThrottleTimer !== null) return
-  hotspotSyncThrottleTimer = window.setTimeout(() => {
-    hotspotSyncThrottleTimer = null
-  }, 50)
+  if (!map || animationFrameId !== null) return
   animationFrameId = requestAnimationFrame(() => {
-    const currentMap = map
-    if (!currentMap) return
-
-    const layer = selectedLayer.value
-    const hotspots = layer?.hotspots ?? []
-    const zoom = currentMap.getZoom()
-    const visibleHotspots =
-      zoom < 5.4
-        ? hotspots.slice(0, 1)
-        : zoom < 6.2
-          ? hotspots.slice(0, 2)
-          : zoom < 7
-            ? hotspots.slice(0, 3)
-            : hotspots
-
-    emit('visibleHotspotsChange', visibleHotspots)
-    hotspotPins.value = visibleHotspots.map((hotspot) => {
-      const point = currentMap.project([hotspot.lng, hotspot.lat])
-      return {
-        id: hotspot.id,
-        name: hotspot.name,
-        value: hotspot.value,
-        left: `${point.x}px`,
-        top: `${point.y}px`,
-      }
-    })
     animationFrameId = null
+    syncHotspotPins()
   })
 }
 
 function focusActiveLayer() {
   if (!map) return
-  const layer = selectedLayer.value
-  if (!layer || layer.hotspots.length === 0) return
-  const firstHotspot = layer.hotspots[0]
-  map.easeTo({
-    center: [firstHotspot.lng, firstHotspot.lat],
-    zoom: 6.4,
-    duration: 650,
+  const hotspots = selectedLayer.value?.hotspots ?? []
+  if (hotspots.length === 0) return
+
+  if (hotspots.length === 1) {
+    const hotspot = hotspots[0]
+    map.easeTo({
+      center: [hotspot.lng, hotspot.lat],
+      zoom: 6.6,
+      duration: 650,
+      essential: true,
+    })
+    return
+  }
+
+  const lngs = hotspots.map((hotspot) => hotspot.lng)
+  const lats = hotspots.map((hotspot) => hotspot.lat)
+  const bounds: [[number, number], [number, number]] = [
+    [Math.min(...lngs), Math.min(...lats)],
+    [Math.max(...lngs), Math.max(...lats)],
+  ]
+
+  map.fitBounds(bounds, {
+    padding: { top: 120, right: 220, bottom: 120, left: 220 },
+    maxZoom: 6.8,
+    duration: 700,
     essential: true,
+  })
+}
+
+function toggleHotspotSelection(pinId: string) {
+  const nextId = selectedHotspotId.value === pinId ? null : pinId
+  selectedHotspotId.value = nextId
+  emit('hotspotSelect', activeLayer.value.hotspots.find((hotspot) => hotspot.id === nextId) ?? null)
+}
+
+function syncNavigationControlTheme() {
+  const navButtons = mapContainer.value?.querySelectorAll('.maplibregl-ctrl-bottom-right .maplibregl-ctrl-group button')
+  if (!navButtons?.length) return
+
+  const buttonBackground =
+    currentTileConfig.value.style === 'satellite' || currentTileConfig.value.style === 'terrain'
+      ? 'rgba(255,255,255,0.86)'
+      : 'rgba(8,18,33,0.85)'
+
+  navButtons.forEach((button) => {
+    ;(button as HTMLElement).style.backgroundColor = buttonBackground
   })
 }
 
@@ -450,7 +677,7 @@ onMounted(async () => {
 
   const { default: maplibregl } = await import('maplibre-gl')
 
-  map = new maplibregl.Map({
+  const mapOptions: ConstructorParameters<typeof maplibregl.Map>[0] = {
     container: mapContainer.value,
     style: {
       version: 8,
@@ -465,10 +692,16 @@ onMounted(async () => {
     renderWorldCopies: false,
     cancelPendingTileRequestsWhileZooming: false,
     refreshExpiredTiles: false,
-  })
+    canvasContextAttributes: {
+      preserveDrawingBuffer: true,
+    },
+  }
+
+  map = new maplibregl.Map(mapOptions)
 
   map.addControl(new maplibregl.NavigationControl({ visualizePitch: true }), 'bottom-right')
-  map.addControl(new maplibregl.ScaleControl({ unit: 'metric' }), 'bottom-right')
+  map.addControl(new maplibregl.ScaleControl({ unit: 'metric' }), 'bottom-left')
+  window.setTimeout(syncNavigationControlTheme, 0)
 
   map.on('error', (e) => {
     if (((e as any).sourceId !== TILE_SOURCE_ID && (e as any).sourceId !== undefined)) return
@@ -483,9 +716,10 @@ onMounted(async () => {
     await ensureBoundaryModule()
     await ensureBoundaryLayers()
     if (map!.getLayer(TILE_LAYER_ID)) {
-      map!.setLayoutProperty(TILE_LAYER_ID, 'visibility', 'visible')
+      map!.setLayoutProperty(TILE_LAYER_ID, 'visibility', props.tileSourceId === 'none' ? 'none' : 'visible')
     }
     syncAdminOverlay()
+    syncWeatherOverlay()
     focusActiveLayer()
     scheduleHotspotSync()
     mapReady.value = true
@@ -498,16 +732,25 @@ onMounted(async () => {
   })
 
   map.on('movestart', () => { isMapInteracting.value = true })
+  map.on('move', scheduleHotspotSync)
   map.on('moveend', () => {
     isMapInteracting.value = false
     scheduleHotspotSync()
   })
   map.on('zoomstart', () => { isMapInteracting.value = true })
+  map.on('zoom', scheduleHotspotSync)
   map.on('zoomend', () => {
     isMapInteracting.value = false
     scheduleHotspotSync()
   })
   map.on('resize', scheduleHotspotSync)
+  map.on('render', scheduleHotspotSync)
+  map.on('click', (event) => {
+    emit('mapPointSelect', {
+      lng: event.lngLat.lng,
+      lat: event.lngLat.lat,
+    })
+  })
 })
 
 // ─── Watchers ────────────────────────────────────────────────────────────────
@@ -518,6 +761,7 @@ watch(
     if (!mapReady.value) return
     triggerSourceTransition()
     switchTileSource(sourceId)
+    window.setTimeout(syncNavigationControlTheme, 0)
   },
 )
 
@@ -525,6 +769,22 @@ watch(
 watch(
   () => [hasAdminBoundary.value, adminBoundaryOpacity.value],
   () => syncAdminOverlay(),
+)
+
+watch(
+  () => [
+    selectedLayer.value?.instanceId,
+    selectedLayer.value?.catalogId,
+    selectedLayer.value?.visible,
+    selectedLayer.value?.opacity,
+    selectedLayer.value?.jobLayer?.updatedAt,
+    selectedLayer.value?.jobLayer?.mapLayerPayload?.renderHint?.paint_mode,
+    selectedLayer.value?.jobLayer?.mapLayerPayload?.renderHint?.palette,
+    selectedLayer.value?.jobLayer?.mapLayerPayload?.renderHint?.opacity,
+    selectedLayer.value?.jobLayer?.mapLayerPayload?.renderHint?.primary_metric,
+    selectedLayer.value?.jobLayer?.mapLayerPayload?.layerAssets?.geojsonUrl,
+  ],
+  () => syncWeatherOverlay(),
 )
 
 // Watch selected layer for hotspot changes
@@ -539,7 +799,7 @@ watch(
 onBeforeUnmount(() => {
   if (animationFrameId !== null) cancelAnimationFrame(animationFrameId)
   if (sourceTransitionTimer !== null && typeof window !== 'undefined') window.clearTimeout(sourceTransitionTimer)
-  if (hotspotSyncThrottleTimer !== null && typeof window !== 'undefined') window.clearTimeout(hotspotSyncThrottleTimer)
+  removeWeatherOverlay()
   map?.remove()
   map = null
 })
@@ -552,6 +812,8 @@ onBeforeUnmount(() => {
     :class="{
       'map-stage-interacting': isMapInteracting,
       'map-stage-transitioning': isSourceTransitioning,
+      'map-stage-light': currentTileConfig.style === 'satellite' || currentTileConfig.style === 'terrain',
+      'map-stage-dark': currentTileConfig.style === 'dark',
       [`map-stage-${activeLayer.availabilityState}`]: true,
     }"
     :style="{
@@ -628,33 +890,23 @@ onBeforeUnmount(() => {
       </div>
     </div>
 
-    <!-- Metric card (merged with empty-hint, placed left of zoom controls) -->
-    <div class="metric-card" :class="`metric-card-${activeLayer.availabilityState}`">
-      <div class="metric-primary">
-        <strong class="metric-label">{{ activeLayer.metricLabel }}</strong>
-        <span class="metric-value">{{ activeLayer.metricValue }}</span>
-      </div>
-      <p class="metric-description">{{ activeLayer.availabilityDescription }}</p>
-      <div class="metric-secondary">
-        <span class="metric-missing">缺失：{{ activeLayer.missingFieldsLabel }}</span>
-        <span class="metric-status">{{ mapReady ? '2D 地图已就绪' : '正在加载地图...' }}</span>
-      </div>
-    </div>
-
     <!-- Hotspot pins -->
     <div class="hotspot-layer" :class="`hotspot-layer-${activeLayer.availabilityState}`" aria-hidden="true">
-      <div
+      <button
         v-for="pin in hotspotPins"
         :key="pin.id"
         class="hotspot-pin"
+        :class="{ selected: pin.selected }"
         :style="{ left: pin.left, top: pin.top }"
+        type="button"
+        @click="toggleHotspotSelection(pin.id)"
       >
         <div class="hotspot-core"></div>
         <div class="hotspot-label">
           <strong>{{ pin.name }}</strong>
           <span>{{ pin.value }}</span>
         </div>
-      </div>
+      </button>
     </div>
   </section>
 </template>
@@ -908,11 +1160,11 @@ onBeforeUnmount(() => {
   position: absolute;
   z-index: 18;
   left: 1rem;
-  bottom: 0.1rem;
-  max-width: 12rem;
+  bottom: 3.15rem;
+  max-width: 13rem;
   display: grid;
-  gap: 0.22rem;
-  padding: 0.48rem 0.56rem;
+  gap: 0.2rem;
+  padding: 0.46rem 0.54rem;
   border-radius: 0.82rem;
   background: rgba(8, 18, 33, 0.72);
   border: 1px solid rgba(90, 162, 255, 0.12);
@@ -938,72 +1190,6 @@ onBeforeUnmount(() => {
   background: rgba(90, 106, 128, 0.25);
 }
 
-.metric-card {
-  position: absolute;
-  z-index: 18;
-  right: calc(100px + 0.8rem + 0.28rem);
-  bottom: 0.8rem;
-  display: flex;
-  flex-direction: column;
-  gap: 0.18rem;
-  max-width: 10rem;
-  padding: 0.48rem 0.6rem;
-  border-radius: 0.82rem;
-  background: rgba(8, 18, 33, 0.85);
-  border: 1px solid rgba(136, 192, 255, 0.12);
-  color: #dbe7f2;
-  box-shadow: 0 8px 24px rgba(3, 10, 20, 0.4);
-}
-
-.metric-primary {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 0.5rem;
-}
-
-.metric-label {
-  color: #90a2b5;
-  font-size: 0.6rem;
-  font-weight: 500;
-}
-
-.metric-value {
-  color: #f5fbff;
-  font-size: 0.84rem;
-  font-weight: 700;
-}
-
-.metric-description {
-  margin: 0;
-  color: #7f93a9;
-  font-size: 0.58rem;
-  line-height: 1.35;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.metric-secondary {
-  display: flex;
-  flex-direction: column;
-  gap: 0.1rem;
-}
-
-.metric-missing {
-  color: #5a7080;
-  font-size: 0.56rem;
-}
-
-.metric-status {
-  color: #6e8ba0;
-  font-size: 0.56rem;
-}
-
-.metric-card-ready { border-color: rgba(114, 255, 207, 0.18); }
-.metric-card-partial { border-color: rgba(255, 196, 120, 0.16); }
-.metric-card-empty { border-color: rgba(187, 137, 255, 0.16); }
-
 .hotspot-layer { z-index: 2; pointer-events: none; }
 .hotspot-layer-ready .hotspot-pin { opacity: 1; }
 .hotspot-layer-partial .hotspot-pin { opacity: 0.76; }
@@ -1012,6 +1198,15 @@ onBeforeUnmount(() => {
 .hotspot-pin {
   position: absolute;
   transform: translate(-50%, -50%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 0;
+  border: none;
+  background: transparent;
+  appearance: none;
+  pointer-events: auto;
+  cursor: pointer;
   /* 性能优化：GPU 加速，仅 opacity 使用过渡 */
   will-change: opacity;
   transition: opacity 0.28s ease;
@@ -1126,8 +1321,8 @@ onBeforeUnmount(() => {
   flex-direction: column;
   border-radius: 0.7rem;
   overflow: hidden;
-  box-shadow: 0 8px 24px rgba(3, 10, 20, 0.4);
-  background: rgba(8, 18, 33, 0.85);
+  box-shadow: 0 8px 24px rgba(3, 10, 20, 0.18);
+  background: rgba(8, 18, 33, 0.9);
   border: 1px solid rgba(136, 192, 255, 0.12);
 }
 :deep(.maplibregl-ctrl-bottom-right .maplibregl-ctrl-group button) {
@@ -1135,7 +1330,7 @@ onBeforeUnmount(() => {
   height: 2rem;
   background: transparent;
   border: none;
-  color: #c5d8ed;
+  color: #dbe8f5;
   box-shadow: none;
   border-radius: 0;
   display: flex;
@@ -1143,25 +1338,71 @@ onBeforeUnmount(() => {
   justify-content: center;
 }
 :deep(.maplibregl-ctrl-bottom-right .maplibregl-ctrl-group button:hover) {
-  background: rgba(136, 192, 255, 0.12);
-  color: #e8f2ff;
+  background: rgba(255, 255, 255, 0.08);
+  color: #f4fbff;
 }
 :deep(.maplibregl-ctrl-bottom-right .maplibregl-ctrl-group button + button) {
   border-top: 1px solid rgba(136, 192, 255, 0.08);
 }
 :deep(.maplibregl-ctrl-bottom-right .maplibregl-ctrl-group button .maplibregl-ctrl-icon) {
-  filter: none;
+  filter: brightness(1.15) contrast(1.05);
+}
+
+.map-stage-light :deep(.maplibregl-ctrl-bottom-right .maplibregl-ctrl-group),
+.map-stage-light :deep(.maplibregl-ctrl-bottom-left .maplibregl-ctrl-scale) {
+  background: rgba(8, 18, 33, 0.92);
+  border-color: rgba(136, 192, 255, 0.12);
+  box-shadow: 0 8px 24px rgba(3, 10, 20, 0.18);
+}
+
+.map-stage-light :deep(.maplibregl-ctrl-bottom-right .maplibregl-ctrl-group button),
+.map-stage-light :deep(.maplibregl-ctrl-bottom-left .maplibregl-ctrl-scale) {
+  color: #eaf3fb;
+}
+
+.map-stage-light :deep(.maplibregl-ctrl-bottom-right .maplibregl-ctrl-group button:hover) {
+  background: rgba(255, 255, 255, 0.08);
+  color: #ffffff;
+}
+
+.map-stage-light :deep(.maplibregl-ctrl-bottom-right .maplibregl-ctrl-group button .maplibregl-ctrl-icon) {
+  filter: brightness(1.15) contrast(1.08);
+}
+
+.map-stage-light :deep(.maplibregl-ctrl-bottom-left .maplibregl-ctrl-scale) {
+  color: #eaf3fb;
+}
+
+.map-stage-dark :deep(.maplibregl-ctrl-bottom-right .maplibregl-ctrl-group),
+.map-stage-dark :deep(.maplibregl-ctrl-bottom-left .maplibregl-ctrl-scale) {
+  background: rgba(255, 255, 255, 0.9);
+  border-color: rgba(18, 28, 44, 0.14);
+  box-shadow: 0 8px 24px rgba(3, 10, 20, 0.16);
+}
+
+.map-stage-dark :deep(.maplibregl-ctrl-bottom-right .maplibregl-ctrl-group button),
+.map-stage-dark :deep(.maplibregl-ctrl-bottom-left .maplibregl-ctrl-scale) {
+  color: #203040;
+}
+
+.map-stage-dark :deep(.maplibregl-ctrl-bottom-right .maplibregl-ctrl-group button:hover) {
+  background: rgba(24, 80, 160, 0.12);
+  color: #10233a;
+}
+
+.map-stage-dark :deep(.maplibregl-ctrl-bottom-right .maplibregl-ctrl-group button .maplibregl-ctrl-icon) {
+  filter: brightness(0.42) contrast(1.15);
 }
 :deep(.maplibregl-ctrl-bottom-right .maplibregl-ctrl-scale) {
   border-radius: 0.6rem;
   border: none;
-  background: rgba(8, 18, 33, 0.85);
-  color: #c5d8ed;
+  background: rgba(8, 18, 33, 0.9);
+  color: #eaf3fb;
   font-size: 0.64rem;
   font-weight: 700;
   letter-spacing: 0.04em;
   padding: 0.32rem 0.6rem;
-  box-shadow: 0 8px 24px rgba(3, 10, 20, 0.4);
+  box-shadow: 0 8px 24px rgba(3, 10, 20, 0.18);
   box-sizing: border-box;
 }
 :deep(.maplibregl-ctrl-attrib) { background: rgba(255, 255, 255, 0.8); }
@@ -1172,7 +1413,7 @@ onBeforeUnmount(() => {
   .map-stage { min-height: calc(100vh - 1rem); }
   .map-overlay { top: 0; left: 0; padding: 0.75rem 0.75rem 0; }
   .map-note { left: 0.75rem; right: 0.75rem; bottom: 8.3rem; max-width: none; }
-  .metric-card { right: calc(100px + 0.75rem + 0.28rem); bottom: 0.75rem; }
+  :deep(.maplibregl-ctrl-bottom-left) { left: 0.75rem; bottom: 0.75rem; }
   :deep(.maplibregl-ctrl-bottom-right) { right: 0.75rem; bottom: 0.75rem; }
 }
 </style>

@@ -52,7 +52,18 @@ export interface LayerCatalogItem {
 
 export type JobStatus = 'running' | 'succeeded' | 'failed' | 'queued' | 'cancelled'
 
-import type { WorkflowResultDto, WorkflowRunViewResponse } from '../../services/runtime-api'
+import type { WeatherLayerRenderHint, WorkflowResultDto, WorkflowRunViewResponse } from '../../services/runtime-api'
+
+export interface JobLayerMapAssets {
+  geojsonUrl?: string
+  cogUrl?: string
+}
+
+export interface JobLayerMapLayerPayload {
+  renderHint?: WeatherLayerRenderHint
+  pointFeature?: Record<string, unknown>
+  layerAssets?: JobLayerMapAssets
+}
 
 export interface JobLayerItem {
   /** 作业 ID (run_id) */
@@ -76,6 +87,8 @@ export interface JobLayerItem {
   resultView?: WorkflowRunViewResponse
   /** 结果引用链接 */
   resultUrl?: string
+  /** map_layer 产物中的附加地图资产 */
+  mapLayerPayload?: JobLayerMapLayerPayload
 }
 
 // ─── Active layer (已添加图层) ────────────────────────────────────────────────

@@ -185,37 +185,37 @@ function openSourcePicker(catalogId: string) {
     <!-- ── Header ─────────────────────────────────────────────────────────── -->
     <div class="panel-topline">
       <div class="panel-header">
-        <div>
+        <div class="header-copy">
           <h2>{{ sidebarViewLabel }}</h2>
           <p class="panel-subtitle">{{ sidebarView === 'empty' ? '开始添加图层' : sidebarView === 'library' ? '从库中选择' : `${activeLayerCount} 个图层已加载` }}</p>
         </div>
-        <span v-if="activeLayerCount > 0" class="badge">{{ activeLayerCount }}</span>
-      </div>
-
-      <!-- View mode tabs -->
-      <div class="view-tabs" role="tablist">
-        <button
-          class="view-tab"
-          :class="{ active: sidebarView === 'empty' }"
-          role="tab"
-          title="清空"
-          @click="openEmpty"
-        >✕</button>
-        <button
-          class="view-tab"
-          :class="{ active: sidebarView === 'library' }"
-          role="tab"
-          title="图层库"
-          @click="openLibrary"
-        >+</button>
-        <button
-          class="view-tab"
-          :class="{ active: sidebarView === 'active' }"
-          role="tab"
-          :aria-selected="sidebarView === 'active'"
-          title="已添加图层"
-          @click="openActive"
-        >≡</button>
+        <div class="header-actions">
+          <span v-if="activeLayerCount > 0" class="badge">{{ activeLayerCount }}</span>
+          <div class="view-tabs" role="tablist">
+            <button
+              class="view-tab"
+              :class="{ active: sidebarView === 'empty' }"
+              role="tab"
+              title="清空"
+              @click="openEmpty"
+            >✕</button>
+            <button
+              class="view-tab"
+              :class="{ active: sidebarView === 'library' }"
+              role="tab"
+              title="图层库"
+              @click="openLibrary"
+            >+</button>
+            <button
+              class="view-tab"
+              :class="{ active: sidebarView === 'active' }"
+              role="tab"
+              :aria-selected="sidebarView === 'active'"
+              title="已添加图层"
+              @click="openActive"
+            >≡</button>
+          </div>
+        </div>
       </div>
     </div>
 
@@ -424,7 +424,7 @@ function openSourcePicker(catalogId: string) {
     <p class="panel-footnote">
       <template v-if="sidebarView === 'active'">拖动排序 · 点击查看详情</template>
       <template v-else-if="sidebarView === 'library'">选择图层添加到地图</template>
-      <template v-else>选择 + 打开图层库开始</template>
+      <template v-else></template>
     </p>
   </aside>
 </template>
@@ -434,8 +434,8 @@ function openSourcePicker(catalogId: string) {
 .panel {
   display: flex;
   flex-direction: column;
-  gap: 0.56rem;
-  padding: 0.58rem;
+  gap: 0.42rem;
+  padding: 0.46rem;
   border: 1px solid rgba(148, 163, 184, 0.15);
   border-radius: 0.88rem;
   background: linear-gradient(180deg, rgba(13, 21, 36, 0.42), rgba(8, 15, 28, 0.3));
@@ -444,9 +444,9 @@ function openSourcePicker(catalogId: string) {
     inset 0 1px 0 rgba(255, 255, 255, 0.03),
     0 12px 26px rgba(1, 8, 16, 0.14);
   overflow: hidden;
-  /* 填满父容器宽度和高度，使 resize handle 绑定到面板右下角 */
   width: 100%;
-  height: 100%;
+  height: min(100%, calc(100vh - 12rem));
+  max-height: min(100%, calc(100vh - 12rem));
   box-sizing: border-box;
 }
 
@@ -454,15 +454,27 @@ function openSourcePicker(catalogId: string) {
 .panel-topline {
   display: flex;
   flex-direction: column;
-  gap: 0.46rem;
-  padding: 0.12rem;
+  gap: 0.28rem;
+  padding: 0.08rem;
 }
 
 .panel-header {
   display: flex;
   justify-content: space-between;
-  align-items: flex-start;
-  gap: 0.55rem;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.header-copy {
+  min-width: 0;
+}
+
+.header-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.42rem;
+  flex-wrap: wrap;
+  justify-content: flex-end;
 }
 
 h2 {

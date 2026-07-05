@@ -13,6 +13,7 @@ class ModuleSpec:
     input_ports: list[PortSpec] = field(default_factory=list)
     output_ports: list[PortSpec] = field(default_factory=list)
     default_params: dict[str, object] = field(default_factory=dict)
+    mode_required_inputs: dict[str, tuple[str, ...]] = field(default_factory=dict)
     tags: dict[str, str] = field(default_factory=dict)
 
 
@@ -22,6 +23,7 @@ class BaseModule(ABC):
     input_ports: list[PortSpec] = []
     output_ports: list[PortSpec] = []
     default_params: dict[str, object] = {}
+    mode_required_inputs: dict[str, tuple[str, ...]] = {}
 
     def get_spec(self) -> ModuleSpec:
         return ModuleSpec(
@@ -30,6 +32,7 @@ class BaseModule(ABC):
             input_ports=list(self.input_ports),
             output_ports=list(self.output_ports),
             default_params=dict(self.default_params),
+            mode_required_inputs={mode: tuple(inputs) for mode, inputs in self.mode_required_inputs.items()},
         )
 
     def resolve_params(self, params: dict[str, object]) -> dict[str, object]:

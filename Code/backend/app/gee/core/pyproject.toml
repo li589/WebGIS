@@ -1,0 +1,40 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "webgis-gee"
+version = "0.1.0"
+description = "Modular GEE workflow engine for WebGIS backend integration."
+readme = "README.md"
+requires-python = ">=3.12"
+authors = [
+  { name = "TRAE" }
+]
+dependencies = [
+  "earthengine-api>=1.0.0",
+  "minio>=7.2.7",
+  "networkx>=3.3",
+  "orjson>=3.10.6",
+  "pydantic>=2.8.2",
+  "pydantic-settings>=2.3.4",
+  "redis>=5.0.7",
+  "python-dotenv>=1.0.1",
+  "structlog>=24.2.0",
+  "tenacity>=8.5.0",
+]
+
+[project.optional-dependencies]
+dev = [
+  "pytest>=8.3.2",
+]
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+testpaths = ["tests"]

@@ -19,6 +19,9 @@ from algorithms.physics import (
 )
 from ingest.mat_bundle import get_first_available, normalize_aliases_param
 
+# 矿物土壤颗粒密度 (g/cm³)，用于孔隙度计算 porosity = 1 - bulk_density / particle_density
+_MINERAL_PARTICLE_DENSITY = 2.65
+
 
 @dataclass(frozen=True, slots=True)
 class OmegaConfig:
@@ -1962,7 +1965,7 @@ def retrieve_omega_pixel_timeseries(
                 )
             )
 
-        porosity = 1.0 - float(bulk_density_value) / 2.65
+        porosity = 1.0 - float(bulk_density_value) / _MINERAL_PARTICLE_DENSITY
         retrieved_indices = np.flatnonzero(valid_tau & np.isfinite(omega))
         for k in retrieved_indices:
             model_context = all_model_contexts[int(k)]

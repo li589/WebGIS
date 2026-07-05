@@ -16,7 +16,7 @@ def build_retrieval_workflow_definition(request: JobRequest) -> WorkflowDefiniti
                 "omega_fixed_mat": "input:omega_fixed_mat",
                 "exp0_calib_mat": "input:exp0_calib_mat",
             },
-            params={"module_name": "omega_block"},
+            params={"module_name": "omega_block", "mode": mode},
         )
     else:
         retrieval_bindings = {
@@ -29,7 +29,7 @@ def build_retrieval_workflow_definition(request: JobRequest) -> WorkflowDefiniti
             node_id="block_inversion",
             node_type="module",
             input_bindings=retrieval_bindings,
-            params={"module_name": "block_inversion"},
+            params={"module_name": "block_inversion", "mode": mode},
         )
 
     return WorkflowDefinition(

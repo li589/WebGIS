@@ -53,10 +53,10 @@ class AnalysisWorkflowService:
             )
         ]
 
-        requested_output_kinds = {str(item) for item in payload.requested_outputs}
-        requested_output_kinds.update(
-            item.value for item in payload.requested_outputs if isinstance(item, ResultKind)
-        )
+        requested_output_kinds = {
+            item.value if isinstance(item, ResultKind) else str(item)
+            for item in payload.requested_outputs
+        }
 
         if ResultKind.table.value in requested_output_kinds:
             result_refs.append(
@@ -134,11 +134,16 @@ class AnalysisWorkflowService:
             f"result_count={len(result_refs)}",
         ]
 
+        algorithm_request = payload.algorithm_request if isinstance(payload.algorithm_request, dict) else payload.algorithm_request.model_dump(mode="json")
+        workflow_entry_name = (
+            str(algorithm_request.get("workflow_name") or algorithm_request.get("module_name") or "analysis_workflow")
+        )
+
         return WorkflowExecutionResult(
             message=f"{snapshot.display_name} 分析工作流执行完成，已生成 {len(result_refs)} 个结果引用。",
             result_refs=result_refs,
             result_dto={
-                "workflow_entry_name": payload.workflow_name or payload.module_name or "analysis_workflow",
+                "workflow_entry_name": workflow_entry_name,
                 "layer_id": layer_id,
                 "requested_hour": snapshot.requested_hour,
                 "metric_label": snapshot.metric_label,

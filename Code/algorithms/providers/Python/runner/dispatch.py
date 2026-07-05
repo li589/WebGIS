@@ -465,7 +465,10 @@ def _build_single_module_workflow(request: JobRequest):
                     "algorithm_params": "request:algorithm_params",
                     "output_spec_extra": "request:output_spec_extra",
                 },
-                params={"module_name": request.module_name},
+                params={
+                    "module_name": request.module_name,
+                    **({"mode": request.algorithm_params.get("mode")} if request.algorithm_params.get("mode") is not None else {}),
+                },
             )
         ],
         outputs=[WorkflowOutputSpec(name="final_manifest", source="node:module_node.manifest")],

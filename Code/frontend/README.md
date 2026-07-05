@@ -33,6 +33,13 @@
 - `src/services/runtime-api.ts`：与后端运行时 API 的交互封装
 - `src/styles/main.css`：全局样式
 
+## 当前界面补充说明
+
+- `FloatingPanelFrame.vue` 负责图层/分析/时间轴等浮动面板的拖动、折叠、隐藏与复位
+- `InfoPanel.vue` 当前承担“全图态势 + 调度器任务状态 + 选中图层/热点/结果”分段展示
+- `TimelineScrubber.vue` 是独立时间轴组件，不应被浮动面板缩放逻辑影响
+- `MapCanvas.vue` 负责地图底图、控件样式与热点同步
+
 ## 当前页面结构理解
 
 前端可以按“壳层 + 页面 + 组件 + 状态 + 服务”来理解：

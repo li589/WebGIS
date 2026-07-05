@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 
 from contracts.request_templates import get_module_request_template
+from modules.registry import get_module
 from workflow.serialization import coerce_workflow_definition
 from workflow.template_inference import _infer_workflow_request_template
 from workflow.validation import validate_workflow_definition
@@ -65,8 +66,10 @@ def build_workflow_input_panel_schema(value: object) -> WorkflowInputPanelSchema
         direct_bound_ports = set(node.input_bindings) | edge_targets.get(node.node_id, set())
         entry_name = node_requirement.entry_name
         module_template = None
+        module_mode_required_inputs: dict[str, tuple[str, ...]] = {}
         if node.node_type == "module" and entry_name:
             module_template = get_module_request_template(entry_name)
+            module_mode_required_inputs = dict(get_module(entry_name).get_spec().mode_required_inputs)
 
         for input_key in node_requirement.required_input_keys:
             field = datasource_fields.setdefault(input_key, _MutableField(key=input_key, section="datasource_selection"))
@@ -116,12 +119,6 @@ def build_workflow_input_panel_schema(value: object) -> WorkflowInputPanelSchema
                 field.consumers.add(node_requirement.node_id)
                 field.entry_names.add(module_template.entry_name)
                 field.description = field.description or f"Required algorithm param for module '{module_template.entry_name}'."
-            for key in module_template.optional_algorithm_keys:
-                field = algorithm_fields.setdefault(key, _MutableField(key=key, section="algorithm_params"))
-                field.value_kind = field.value_kind or "scalar"
-                field.consumers.add(node_requirement.node_id)
-                field.entry_names.add(module_template.entry_name)
-                field.description = field.description or f"Optional algorithm param for module '{module_template.entry_name}'."
             for key, values in module_template.allowed_algorithm_values.items():
                 field = algorithm_fields.setdefault(key, _MutableField(key=key, section="algorithm_params"))
                 field.value_kind = "enum"
@@ -129,6 +126,28 @@ def build_workflow_input_panel_schema(value: object) -> WorkflowInputPanelSchema
                 field.consumers.add(node_requirement.node_id)
                 field.entry_names.add(module_template.entry_name)
                 field.description = field.description or f"Enum-like algorithm param for module '{module_template.entry_name}'."
+            for key in module_template.optional_algorithm_keys:
+                field = algorithm_fields.setdefault(key, _MutableField(key=key, section="algorithm_params"))
+                field.value_kind = field.value_kind or "scalar"
+                field.consumers.add(node_requirement.node_id)
+                field.entry_names.add(module_template.entry_name)
+                field.description = field.description or f"Optional algorithm param for module '{module_template.entry_name}'."
+            for mode, required_inputs in module_mode_required_inputs.items():
+                mode_field = algorithm_fields.setdefault("mode", _MutableField(key="mode", section="algorithm_params"))
+                mode_field.value_kind = "enum"
+                mode_field.allowed_values.add(mode)
+                mode_field.consumers.add(node_requirement.node_id)
+                mode_field.entry_names.add(module_template.entry_name)
+                mode_field.description = mode_field.description or "Workflow mode selector that activates mode-specific input requirements."
+                for required_input in required_inputs:
+                    if required_input in direct_bound_ports and required_input != "algorithm_params":
+                        continue
+                    field = datasource_fields.setdefault(required_input, _MutableField(key=required_input, section="datasource_selection"))
+                    field.required = True
+                    field.value_kind = field.value_kind or "path_or_uri"
+                    field.consumers.add(node_requirement.node_id)
+                    field.entry_names.add(module_template.entry_name)
+                    field.description = field.description or f"Mode-specific datasource key for module '{module_template.entry_name}' in mode '{mode}'."
 
     return WorkflowInputPanelSchema(
         workflow_id=template.workflow_id,

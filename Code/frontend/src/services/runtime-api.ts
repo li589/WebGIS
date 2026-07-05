@@ -166,6 +166,76 @@ export interface WorkflowRunStatusResponse {
   diagnostics: string[]
 }
 
+export interface WorkflowRunViewSummaryRow {
+  label: string
+  value: string
+}
+
+export interface WorkflowRunViewResponse {
+  run_id: string
+  category: string
+  title: string
+  subtitle: string
+  status_text: string
+  progress_text: string
+  summary?: string | null
+  metric_rows: WorkflowRunViewSummaryRow[]
+  result_url?: string | null
+  artifact_refs: WorkflowResultReference[]
+  can_show_link: boolean
+  updated_at: string
+}
+
+export interface WeatherLayerRenderHint {
+  layer_id: string
+  paint_mode: string
+  palette: string
+  primary_metric: string
+  unit_label: string
+  opacity: number
+  legend_ticks: Array<number | string>
+  notes: string[]
+}
+
+export interface WeatherPointCurrent {
+  temperature_2m?: number | null
+  apparent_temperature?: number | null
+  precipitation?: number | null
+  rain?: number | null
+  weather_code?: number | null
+  cloud_cover?: number | null
+  pressure_msl?: number | null
+  wind_speed_10m?: number | null
+  wind_direction_10m?: number | null
+  wind_gusts_10m?: number | null
+}
+
+export interface WeatherPointHourlyEntry {
+  time: string
+  temperature_2m?: number | null
+  precipitation?: number | null
+  wind_speed_10m?: number | null
+}
+
+export interface WeatherPointResponse {
+  provider: string
+  model: string
+  resolved_model?: string | null
+  layer_id: string
+  latitude: number
+  longitude: number
+  place_name?: string | null
+  timezone?: string | null
+  fetched_at: string
+  observation_time?: string | null
+  cache_status: string
+  summary: string
+  current: WeatherPointCurrent
+  hourly: WeatherPointHourlyEntry[]
+  render_hint: WeatherLayerRenderHint
+  diagnostics: string[]
+}
+
 export interface WorkflowEvent {
   event_id: string
   run_id: string
@@ -241,8 +311,14 @@ function getApiBaseUrl() {
   return import.meta.env.VITE_API_BASE_URL?.replace(/\/$/, '') ?? 'http://127.0.0.1:8000'
 }
 
+export function resolveApiUrl(pathOrUrl: string) {
+  if (/^https?:\/\//i.test(pathOrUrl)) return pathOrUrl
+  const normalizedPath = pathOrUrl.startsWith('/') ? pathOrUrl : `/${pathOrUrl}`
+  return `${getApiBaseUrl()}${normalizedPath}`
+}
+
 async function requestJson<T>(path: string, init?: RequestInit): Promise<T> {
-  const response = await fetch(`${getApiBaseUrl()}${path}`, {
+  const response = await fetch(resolveApiUrl(path), {
     headers: {
       'Content-Type': 'application/json',
       ...(init?.headers ?? {}),
@@ -285,6 +361,25 @@ export function updateRuntimeConfig(payload: RuntimeConfigUpdateRequest) {
 
 export function getRuntimeStatus() {
   return requestJson<RuntimeStatusResponse>('/runtime/status')
+}
+
+export function getWeatherPoint(params: {
+  layer_id: string
+  latitude: number
+  longitude: number
+  model?: string
+  forecast_hours?: number
+  place_name?: string
+}) {
+  const search = new URLSearchParams({
+    layer_id: params.layer_id,
+    latitude: String(params.latitude),
+    longitude: String(params.longitude),
+  })
+  if (params.model) search.set('model', params.model)
+  if (typeof params.forecast_hours === 'number') search.set('forecast_hours', String(params.forecast_hours))
+  if (params.place_name) search.set('place_name', params.place_name)
+  return requestJson<WeatherPointResponse>(`/weather/point?${search.toString()}`)
 }
 
 export function submitFrontendCommand(payload: FrontendCommandRequest) {

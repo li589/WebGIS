@@ -54,9 +54,10 @@ def _python_provider_import_path(provider_root: Path) -> Iterator[None]:
 
 
 @lru_cache(maxsize=1)
-def _load_python_job_service(provider_root_str: str, workspace_str: str):
-    provider_root = Path(provider_root_str)
-    workspace = Path(workspace_str)
+def _load_python_job_service():
+    """M7 修复：与其他 bridge 一致，使用无参 lru_cache 单例。"""
+    provider_root = Path(settings.python_provider_root)
+    workspace = Path(settings.python_provider_workspace)
     workspace.mkdir(parents=True, exist_ok=True)
     with _python_provider_import_path(provider_root):
         job_api_module = importlib.import_module("service.job_api")
@@ -66,6 +67,9 @@ def _load_python_job_service(provider_root_str: str, workspace_str: str):
 
 class PythonProviderBridgeService:
     def supports(self, payload: WorkflowSubmitRequest) -> bool:
+        # M8 修复：与其他 bridge 对齐 enabled flag 检查
+        if not settings.python_provider_enabled:
+            return False
         algorithm_request = self._normalize_algorithm_request(payload.algorithm_request)
         return any(key in algorithm_request for key in _ALGORITHM_REQUEST_ENTRY_KEYS)
 
@@ -99,16 +103,13 @@ class PythonProviderBridgeService:
             job_result=job_result,
             result_dto=result_dto,
         )
-        result_dto["workflow_entry_name"] = (
-            request_payload.get("workflow_name")
-            or request_payload.get("module_name")
-            or "workflow_definition"
-        )
+        # m18 修复：消除 entry_name 重复赋值，提取为局部变量复用
         entry_name = (
             request_payload.get("workflow_name")
             or request_payload.get("module_name")
             or "workflow_definition"
         )
+        result_dto["workflow_entry_name"] = entry_name
         events = [
             event_factory(
                 channel="log",
@@ -161,8 +162,9 @@ class PythonProviderBridgeService:
             result_refs=result_refs,
             result_dto={
                 "workflow_entry_name": entry_name,
+                "run_id": run_id,
+                "engine_run_id": job_result.get("run_id"),
                 "job_id": job_result.get("job_id"),
-                "run_id": job_result.get("run_id"),
                 "job_status": job_result.get("status"),
                 "manifest_loaded": bool(result_dto.get("manifest_loaded")),
                 "manifest_summary": manifest_summary,
@@ -178,10 +180,65 @@ class PythonProviderBridgeService:
         )
 
     def list_workflows_response(self):
-        return self._get_job_service().list_workflows_response()
+        # m25 修复：归一化返回结构，确保包含 workflows/workflow_count/source 字段
+        response = self._get_job_service().list_workflows_response()
+        return self._normalize_list_response(response, source="python_provider")
 
     def describe_workflow_response(self, workflow_name: str):
-        return self._get_job_service().describe_workflow_response(workflow_name)
+        # m25 修复：归一化返回结构，确保包含 name/node_type/category/source 字段
+        response = self._get_job_service().describe_workflow_response(workflow_name)
+        return self._normalize_describe_response(response, source="python_provider", workflow_name=workflow_name)
+
+    @staticmethod
+    def _normalize_list_response(response: dict, *, source: str) -> dict:
+        """归一化 list_workflows_response 返回结构。"""
+        if not isinstance(response, dict) or "status_code" not in response:
+            return response  # 非 {status_code, body} 结构，原样返回
+        body = response.get("body") or {}
+        workflows = body.get("workflows") or body.get("items") or []
+        # 若 workflows 为 list[str]，转换为 list[dict]
+        normalized_workflows = []
+        for item in workflows:
+            if isinstance(item, str):
+                normalized_workflows.append({
+                    "name": item,
+                    "node_type": item,
+                    "category": "algorithm",
+                })
+            elif isinstance(item, dict):
+                if "name" not in item and "workflow_name" in item:
+                    item = {**item, "name": item["workflow_name"]}
+                if "node_type" not in item and "name" in item:
+                    item = {**item, "node_type": item["name"]}
+                if "category" not in item:
+                    item = {**item, "category": "algorithm"}
+                normalized_workflows.append(item)
+            else:
+                normalized_workflows.append({"name": str(item), "node_type": str(item), "category": "algorithm"})
+        return {
+            "status_code": response.get("status_code", 200),
+            "body": {
+                "workflows": normalized_workflows,
+                "workflow_count": len(normalized_workflows),
+                "source": source,
+            },
+        }
+
+    @staticmethod
+    def _normalize_describe_response(response: dict, *, source: str, workflow_name: str) -> dict:
+        """归一化 describe_workflow_response 返回结构。"""
+        if not isinstance(response, dict) or "status_code" not in response:
+            return response
+        body = response.get("body") or {}
+        if "name" not in body:
+            body = {**body, "name": workflow_name}
+        if "node_type" not in body:
+            body = {**body, "node_type": workflow_name}
+        if "category" not in body:
+            body = {**body, "category": "algorithm"}
+        if "source" not in body:
+            body = {**body, "source": source}
+        return {"status_code": response.get("status_code", 200), "body": body}
 
     def get_workflow_panel_schema_response(self, workflow_name: str):
         return self._get_job_service().get_workflow_panel_schema_response(workflow_name)
@@ -189,12 +246,37 @@ class PythonProviderBridgeService:
     def get_workflow_ui_schema_response(self, workflow_name: str):
         return self._get_job_service().get_workflow_ui_schema_response(workflow_name)
 
+    def get_diagnostics_response(self):
+        """返回 Python provider 诊断信息。"""
+        try:
+            from app.core.config import settings as app_settings
+            service = self._get_job_service()
+            return {
+                "status_code": 200,
+                "body": {
+                    "source": "python_provider",
+                    "python_provider_enabled": app_settings.python_provider_enabled,
+                    "python_provider_root": app_settings.python_provider_root,
+                    "python_provider_workspace": app_settings.python_provider_workspace,
+                },
+            }
+        except Exception as exc:
+            return {
+                "status_code": 500,
+                "body": {
+                    "error_type": "internal_error",
+                    "error_code": "python_provider_diagnostics_failed",
+                    "user_message": "无法获取 Python provider 诊断信息。",
+                    "developer_message": str(exc),
+                },
+            }
+
     def _get_job_service(self):
         provider_root = Path(settings.python_provider_root)
         if not provider_root.exists():
             raise RuntimeError(f"Python provider root does not exist: {provider_root}")
         try:
-            return _load_python_job_service(str(provider_root), str(Path(settings.python_provider_workspace)))
+            return _load_python_job_service()
         except Exception as exc:  # pragma: no cover - depends on runtime environment
             logger.exception("Failed to initialize Python provider job service")
             raise RuntimeError(
@@ -403,7 +485,9 @@ class PythonProviderBridgeService:
 
         parsed = urlparse(uri)
         resource_backend = str(artifact_view.get("storage_backend") or parsed.scheme or "external")
-        resource_key = str(artifact_view.get("object_key") or uri)
+        resource_key = str(artifact_view.get("object_key") or parsed.path or uri)
+        if resource_backend == "file" and not resource_key.startswith("/"):
+            resource_key = f"/{resource_key.lstrip('/')}"
         return WorkflowResultReference(
             result_id=f"algorithm-{artifact_name}-{run_id[-8:]}",
             result_kind=ResultKind.file,
@@ -448,6 +532,12 @@ class PythonProviderBridgeService:
             raise ValueError("algorithm_request.algorithm_params 必须为 object。")
         if not isinstance(request_payload.get("output_spec"), dict):
             raise ValueError("algorithm_request.output_spec 必须为 object。")
+        if not isinstance(request_payload.get("tags"), dict):
+            raise ValueError("algorithm_request.tags 必须为 object。")
+        if "time_range" in request_payload and request_payload.get("time_range") is not None and not isinstance(request_payload.get("time_range"), dict):
+            raise ValueError("algorithm_request.time_range 必须为 object。")
+        if "region" in request_payload and request_payload.get("region") is not None and not isinstance(request_payload.get("region"), dict):
+            raise ValueError("algorithm_request.region 必须为 object。")
         if request_payload.get("workflow_definition") is not None and request_payload.get("module_name") is not None:
             raise ValueError("algorithm_request.workflow_definition 与 module_name 不能同时出现。")
 

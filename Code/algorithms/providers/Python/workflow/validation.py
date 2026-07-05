@@ -55,6 +55,7 @@ def validate_workflow_definition(definition: WorkflowDefinition) -> WorkflowDefi
             node_map=node_map,
             edges=definition.edges,
         )
+        _validate_mode_required_inputs(node, node_signatures=node_signatures)
 
     output_names: set[str] = set()
     for index, output_spec in enumerate(definition.outputs):
@@ -218,6 +219,37 @@ def _validate_node_inputs(
             raise WorkflowDefinitionValidationError(
                 f"Workflow input port received multiple bindings: {node.node_id}.{port_name}"
             )
+
+
+def _validate_mode_required_inputs(
+    node: WorkflowNodeSpec,
+    *,
+    node_signatures: dict[str, _NodeSignature],
+) -> None:
+    if node.node_type != "module":
+        return
+    module_name = str(node.params.get("module_name", "")).strip()
+    mode = str(node.params.get("mode", "")).lower()
+    required_inputs = tuple(getattr(_load_module_spec(module_name), "mode_required_inputs", {}).get(mode, ()))
+    if not required_inputs:
+        return
+    signature = node_signatures[node.node_id].input_ports
+    for input_name in required_inputs:
+        if input_name not in signature:
+            raise WorkflowDefinitionValidationError(
+                f"workflow_definition.nodes[{node.node_id}] mode '{mode}' requires input port {input_name}, but the module does not expose it"
+            )
+        if input_name not in node.input_bindings:
+            raise WorkflowDefinitionValidationError(
+                f"workflow_definition.nodes[{node.node_id}] mode '{mode}' requires input_bindings.{input_name}"
+            )
+
+
+def _load_module_spec(module_name: str):
+    from modules.registry import get_module
+
+    module = get_module(module_name)
+    return module.get_spec()
 
 
 def _validate_binding(

@@ -153,7 +153,7 @@ class ResultStorageService:
                     title=result_ref.title,
                     mime_type=result_ref.mime_type,
                     inline_data=None,
-                    resource_url=f"{settings.object_store_public_base}/{stored.artifact_id}",
+                    resource_url=stored.public_url or f"{settings.object_store_public_base}/{stored.artifact_id}",
                     resource_backend=settings.object_store_backend,
                     resource_key=stored.artifact_id,
                     resource_size_bytes=stored.content_length,

@@ -66,6 +66,13 @@ class Settings:
     provider_max_series_points: int = int(os.getenv("BACKEND_PROVIDER_MAX_SERIES_POINTS", "240"))
     provider_table_chunk_size: int = int(os.getenv("BACKEND_PROVIDER_TABLE_CHUNK_SIZE", "100"))
     provider_series_chunk_size: int = int(os.getenv("BACKEND_PROVIDER_SERIES_CHUNK_SIZE", "120"))
+    weather_default_model: str = os.getenv("BACKEND_WEATHER_DEFAULT_MODEL", "best_match")
+    weather_cache_ttl_seconds: int = int(os.getenv("BACKEND_WEATHER_CACHE_TTL_SECONDS", "3600"))
+    weather_refresh_forecast_hours: int = int(os.getenv("BACKEND_WEATHER_REFRESH_FORECAST_HOURS", "6"))
+    weather_schedule_enabled: bool = os.getenv("BACKEND_WEATHER_SCHEDULE_ENABLED", "true").lower() == "true"
+    weather_default_latitude: float = float(os.getenv("BACKEND_WEATHER_DEFAULT_LATITUDE", "23.1291"))
+    weather_default_longitude: float = float(os.getenv("BACKEND_WEATHER_DEFAULT_LONGITUDE", "113.2644"))
+    weather_default_place_name: str = os.getenv("BACKEND_WEATHER_DEFAULT_PLACE_NAME", "Guangzhou")
     workflow_queue_realtime: str = os.getenv("BACKEND_WORKFLOW_QUEUE_REALTIME", "realtime")
     workflow_queue_standard: str = os.getenv("BACKEND_WORKFLOW_QUEUE_STANDARD", "standard")
     workflow_queue_heavy: str = os.getenv("BACKEND_WORKFLOW_QUEUE_HEAVY", "heavy")
@@ -98,6 +105,54 @@ class Settings:
     data_root: str = os.getenv("BACKEND_DATA_ROOT", r"I:\Geograph_DataSet")
     # 产物输出根目录（算法产物的写入路径）
     output_root: str = os.getenv("BACKEND_OUTPUT_ROOT", r"I:\GeoOutput")
+
+    # ---- GEE 引擎配置 ----
+    # 是否启用 GEE 引擎桥接（False 时 gee_bridge_service.supports 永远返回 False）
+    gee_enabled: bool = os.getenv("BACKEND_GEE_ENABLED", "true").lower() == "true"
+    # GEE core 模块 src 根目录（指向 webgis_gee 包所在位置）
+    gee_module_root: str = os.getenv(
+        "BACKEND_GEE_MODULE_ROOT",
+        str(BACKEND_ROOT / "app" / "gee" / "core" / "src"),
+    )
+    # GEE 存储后端：local / minio（独立于平台 object_store，避免与 artifact 存储混用）
+    gee_storage_backend: str = os.getenv("BACKEND_GEE_STORAGE_BACKEND", "local")
+    # GEE 本地存储根目录（manifest/导出产物落盘根路径）
+    gee_local_storage_root: str = os.getenv(
+        "BACKEND_GEE_LOCAL_STORAGE_ROOT",
+        str(BACKEND_ROOT / ".data" / "gee"),
+    )
+    # GEE MinIO 配置（仅当 gee_storage_backend=minio 时使用）
+    gee_minio_endpoint: str = os.getenv("BACKEND_GEE_MINIO_ENDPOINT", "")
+    gee_minio_access_key: str = os.getenv("BACKEND_GEE_MINIO_ACCESS_KEY", "")
+    gee_minio_secret_key: str = os.getenv("BACKEND_GEE_MINIO_SECRET_KEY", "")
+    gee_minio_bucket: str = os.getenv("BACKEND_GEE_MINIO_BUCKET", "gee-exports")
+    gee_minio_secure: bool = os.getenv("BACKEND_GEE_MINIO_SECURE", "false").lower() == "true"
+    # GEE 运行时资源控制
+    gee_account_cooldown_seconds: int = int(os.getenv("BACKEND_GEE_ACCOUNT_COOLDOWN_SECONDS", "300"))
+    gee_max_parallel_exports: int = int(os.getenv("BACKEND_GEE_MAX_PARALLEL_EXPORTS", "2"))
+    gee_max_parallel_uploads: int = int(os.getenv("BACKEND_GEE_MAX_PARALLEL_UPLOADS", "4"))
+    gee_max_parallel_downloads: int = int(os.getenv("BACKEND_GEE_MAX_PARALLEL_DOWNLOADS", "4"))
+    gee_max_local_write_bytes: int = int(os.getenv("BACKEND_GEE_MAX_LOCAL_WRITE_BYTES", str(10 * 1024 * 1024)))
+    # GEE 队列（独立队列，避免与 algorithm 队列混用）
+    workflow_queue_gee_realtime: str = os.getenv("BACKEND_WORKFLOW_QUEUE_GEE_REALTIME", "gee-realtime")
+    workflow_queue_gee_standard: str = os.getenv("BACKEND_WORKFLOW_QUEUE_GEE_STANDARD", "gee-standard")
+    workflow_queue_gee_heavy: str = os.getenv("BACKEND_WORKFLOW_QUEUE_GEE_HEAVY", "gee-heavy")
+    workflow_queue_gee_batch: str = os.getenv("BACKEND_WORKFLOW_QUEUE_GEE_BATCH", "gee-batch")
+
+    # ---- 天气工作流引擎配置 ----
+    # 是否启用天气工作流桥接（False 时 weather_bridge_service.supports 永远返回 False）
+    weather_workflow_enabled: bool = os.getenv("BACKEND_WEATHER_WORKFLOW_ENABLED", "true").lower() == "true"
+    # 天气工作流队列（独立队列，避免与 algorithm/gee 队列混用）
+    workflow_queue_weather_realtime: str = os.getenv("BACKEND_WORKFLOW_QUEUE_WEATHER_REALTIME", "weather-realtime")
+    workflow_queue_weather_standard: str = os.getenv("BACKEND_WORKFLOW_QUEUE_WEATHER_STANDARD", "weather-standard")
+    workflow_queue_weather_heavy: str = os.getenv("BACKEND_WORKFLOW_QUEUE_WEATHER_HEAVY", "weather-heavy")
+    workflow_queue_weather_batch: str = os.getenv("BACKEND_WORKFLOW_QUEUE_WEATHER_BATCH", "weather-batch")
+
+    # ---- Provider 工作流引擎配置 ----
+    # C5 修复：与其他 bridge 对齐 enabled flag，False 时 provider_workflow_service.supports 永远返回 False
+    provider_workflow_enabled: bool = os.getenv("BACKEND_PROVIDER_WORKFLOW_ENABLED", "true").lower() == "true"
+    # M8 修复：python_provider bridge 也对齐 enabled flag
+    python_provider_enabled: bool = os.getenv("BACKEND_PYTHON_PROVIDER_ENABLED", "true").lower() == "true"
 
 
 settings = Settings()

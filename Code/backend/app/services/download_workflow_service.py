@@ -93,7 +93,11 @@ class DownloadWorkflowService:
                 )
             )
 
-        if ResultKind.text.value in {str(item) for item in payload.requested_outputs}:
+        requested_output_kinds = {
+            item.value if isinstance(item, ResultKind) else str(item)
+            for item in payload.requested_outputs
+        }
+        if ResultKind.text.value in requested_output_kinds:
             result_refs.append(
                 WorkflowResultReference(
                     result_id=f"download-text-{uuid4().hex[:10]}",
@@ -166,11 +170,16 @@ class DownloadWorkflowService:
             f"manifest_resource_key={plan.manifest_result_ref.resource_key}",
         ]
 
+        algorithm_request = payload.algorithm_request if isinstance(payload.algorithm_request, dict) else payload.algorithm_request.model_dump(mode="json")
+        workflow_entry_name = (
+            str(algorithm_request.get("workflow_name") or algorithm_request.get("module_name") or "download_workflow")
+        )
+
         return WorkflowExecutionResult(
             message=f"{snapshot.display_name} 下载工作流执行完成，已生成 {len(result_refs)} 个结果引用。",
             result_refs=result_refs,
             result_dto={
-                "workflow_entry_name": payload.workflow_name or payload.module_name or "download_workflow",
+                "workflow_entry_name": workflow_entry_name,
                 "layer_id": layer_id,
                 "requested_hour": requested_hour,
                 "download_ticket_id": plan.download_ticket_id,

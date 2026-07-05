@@ -44,6 +44,7 @@ class SQLiteTaskStore:
         task_id = f"task-{uuid4().hex[:12]}"
         status_url = f"/tasks/{task_id}"
         workflow_payload = self._to_workflow_request(payload)
+        payload_json = json.dumps(payload.model_dump(mode="json"), ensure_ascii=False)
 
         with log_context(task_id=task_id):
             accepted = interaction_hub.submit_workflow(workflow_payload)
@@ -52,13 +53,14 @@ class SQLiteTaskStore:
             with self._connect() as connection:
                 connection.execute(
                     """
-                    INSERT INTO tasks (task_id, run_id, layer_id, task_type, created_at, updated_at)
-                    VALUES (?, ?, ?, ?, ?, ?)
+                    INSERT INTO tasks (task_id, run_id, layer_id, task_type, created_at, updated_at, payload_json)
+                    VALUES (?, ?, ?, ?, ?, ?, ?)
                     ON CONFLICT(task_id) DO UPDATE SET
                         run_id = excluded.run_id,
                         layer_id = excluded.layer_id,
                         task_type = excluded.task_type,
-                        updated_at = excluded.updated_at
+                        updated_at = excluded.updated_at,
+                        payload_json = excluded.payload_json
                     """,
                     (
                         task_id,
@@ -67,6 +69,7 @@ class SQLiteTaskStore:
                         payload.task_type.value,
                         now.isoformat(),
                         now.isoformat(),
+                        payload_json,
                     ),
                 )
 
@@ -231,6 +234,8 @@ class SQLiteTaskStore:
             return TaskStatus.running
         if status == ExecutionStatus.succeeded:
             return TaskStatus.succeeded
+        if status == ExecutionStatus.cancelled:
+            return TaskStatus.cancelled
         return TaskStatus.failed
 
     def _map_result_ref(self, result_ref: WorkflowResultReference) -> TaskResultReference:

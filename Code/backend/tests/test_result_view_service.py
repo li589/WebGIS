@@ -2,30 +2,31 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 from pathlib import Path
+import shutil
 import tempfile
 import unittest
 
 from app.services.result_view_service import ResultViewService
 from app.services.workflow_repository import SQLiteWorkflowRepository
 from shared.contracts.api_contracts import (
+    ClientIdentity,
     ExecutionStatus,
     ResultKind,
+    RuntimeMapContext,
     WorkflowAnalysisResultDto,
-    WorkflowResultReference,
-    WorkflowRunStatusResponse,
-    WorkflowSubmitRequest,
     WorkflowCommandType,
     WorkflowPriority,
     WorkflowResourceProfile,
-    ClientIdentity,
-    RuntimeMapContext,
+    WorkflowResultReference,
+    WorkflowRunStatusResponse,
 )
 
 
 class ResultViewServiceTests(unittest.TestCase):
     def test_builds_view_model_from_run_status(self) -> None:
-        with tempfile.TemporaryDirectory() as tmpdir:
-            repository = SQLiteWorkflowRepository(state_dir=Path(tmpdir))
+        tmpdir = Path(tempfile.mkdtemp())
+        try:
+            repository = SQLiteWorkflowRepository(state_dir=tmpdir)
             service = ResultViewService(repository)
             now = datetime.now(timezone.utc)
             run = WorkflowRunStatusResponse(
@@ -33,7 +34,7 @@ class ResultViewServiceTests(unittest.TestCase):
                 status_url="/workflow-runs/run-1",
                 events_url="/workflow-runs/run-1/events",
                 command_type=WorkflowCommandType.analysis,
-                command_label="分析测试",
+                command_label="analysis test",
                 layer_id="wind-field",
                 priority=WorkflowPriority.normal,
                 resource_profile=WorkflowResourceProfile.standard,
@@ -76,7 +77,9 @@ class ResultViewServiceTests(unittest.TestCase):
             self.assertTrue(view.can_show_link)
             self.assertEqual(view.result_url, "https://example.test/artifacts/ref-1")
             self.assertGreaterEqual(len(view.metric_rows), 4)
-            self.assertEqual(view.metric_rows[0].label, "入口")
+            self.assertEqual(view.metric_rows[0].label, "Entry")
+        finally:
+            shutil.rmtree(tmpdir, ignore_errors=True)
 
 
 if __name__ == "__main__":

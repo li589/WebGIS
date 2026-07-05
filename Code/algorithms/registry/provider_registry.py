@@ -13,3 +13,8 @@ LAYER_PROVIDER_INDEX: dict[str, AlgorithmProvider] = {
 
 def get_provider_for_layer(layer_id: str) -> AlgorithmProvider | None:
     return LAYER_PROVIDER_INDEX.get(layer_id)
+
+
+def list_registered_layers() -> list[str]:
+    """返回所有已注册的 provider layer_id 列表。"""
+    return sorted(LAYER_PROVIDER_INDEX.keys())

@@ -138,8 +138,9 @@ class DownloadService:
         )
 
     def _resolve_ttl_seconds(self, realtime_preferred: bool, payload_parameters: dict[str, Any]) -> int:
-        if isinstance(payload_parameters.get("cache_ttl_seconds"), int):
-            return max(1, int(payload_parameters["cache_ttl_seconds"]))
+        ttl_value = self._coerce_int(payload_parameters.get("cache_ttl_seconds"))
+        if ttl_value is not None:
+            return max(1, ttl_value)
         if realtime_preferred:
             return min(settings.cache_default_ttl_seconds, 300)
         return settings.cache_default_ttl_seconds
@@ -181,6 +182,8 @@ class DownloadService:
             raise ValueError("Download summary result is missing for follow-up task.")
         if manifest_ref is None:
             raise ValueError("Download manifest result is missing for follow-up task.")
+        if manifest_ref.resource_key is None:
+            raise ValueError("Download manifest artifact is missing resource_key for follow-up task.")
 
         summary_payload = self._clone_payload(summary_ref.inline_data)
         execution_payload = summary_payload.setdefault("execution", {})

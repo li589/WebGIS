@@ -5,6 +5,8 @@ export type ScreenshotMode = 'shell' | 'bare' | 'clean' | 'pure'
 export type ScreenshotFormat = 'png' | 'pdf'
 
 const props = defineProps<{
+  dashboardEl: HTMLElement | null
+  mapShellEl: HTMLElement | null
   mapStageEl: HTMLElement | null
   activeLayerName: string
   hourLabel: string
@@ -18,10 +20,10 @@ const isCapturing = ref(false)
 const captureMsg = ref('')
 
 const MODES: Array<{ id: ScreenshotMode; label: string; icon: string; desc: string }> = [
-  { id: 'shell', label: '带外壳', icon: '▣', desc: '完整页面，含圆角边框与背景光效' },
-  { id: 'bare', label: '无外壳', icon: '▤', desc: '地图舞台区域，去除外层边框' },
-  { id: 'clean', label: '无控件', icon: '▥', desc: '仅地图与叠加层，隐藏所有信息标签' },
-  { id: 'pure', label: '纯净', icon: '◇', desc: '纯地图与叠加层，无任何光影与装饰' },
+  { id: 'shell', label: '带外壳', icon: '▣', desc: '当前界面，含外层背景与全部模块' },
+  { id: 'bare', label: '无外壳', icon: '▤', desc: '仅界面内部内容，保留面板与信息框' },
+  { id: 'clean', label: '无控件', icon: '▥', desc: '移除全部控件，保留光影、主图和叠加层' },
+  { id: 'pure', label: '纯净', icon: '◇', desc: '仅底图、比例尺和叠加层，无其他装饰' },
 ]
 
 const FORMATS: Array<{ id: ScreenshotFormat; label: string; icon: string }> = [
@@ -34,6 +36,81 @@ const selectedFormat = ref<ScreenshotFormat>('png')
 
 const canCapture = computed(() => !!props.mapStageEl && !isCapturing.value)
 
+const CLEAN_IGNORE_SELECTORS = [
+  '.overlay',
+  '.map-overlay',
+  '.map-note',
+  '.tile-load-error',
+  '.map-loading',
+  '.map-skeleton',
+  '.maplibregl-ctrl-bottom-right',
+  '.maplibregl-ctrl-bottom-left',
+]
+
+const PURE_IGNORE_SELECTORS = [
+  '.overlay',
+  '.map-overlay',
+  '.map-note',
+  '.tile-load-error',
+  '.map-loading',
+  '.map-skeleton',
+  '.maplibregl-ctrl-bottom-right',
+  '.map-fog',
+  '.time-sheen',
+  '.time-band',
+  '.weather-overlay',
+  '.grid-overlay',
+  '.basemap-transition-mask',
+]
+
+type MapSnapshot = {
+  dataUrl: string
+  dx: number
+  dy: number
+  dw: number
+  dh: number
+}
+
+function buildMapSnapshot(stage: HTMLElement, captureEl: HTMLElement, scale: number): MapSnapshot | null {
+  const mapCanvas = stage.querySelector('.maplibregl-canvas') as HTMLCanvasElement | null
+  if (!mapCanvas) return null
+
+  try {
+    const dataUrl = mapCanvas.toDataURL('image/png')
+    const rect = mapCanvas.getBoundingClientRect()
+    const parentRect = captureEl.getBoundingClientRect()
+
+    return {
+      dataUrl,
+      dx: (rect.left - parentRect.left) * scale,
+      dy: (rect.top - parentRect.top) * scale,
+      dw: rect.width * scale,
+      dh: rect.height * scale,
+    }
+  } catch (error) {
+    console.warn('[ScreenshotExport] Failed to read map canvas:', error)
+    return null
+  }
+}
+
+function resolveCaptureElement(mode: ScreenshotMode): HTMLElement | null {
+  if (!props.mapStageEl) return null
+
+  if (mode === 'shell') {
+    return props.dashboardEl?.ownerDocument.documentElement ?? props.dashboardEl ?? props.mapShellEl ?? props.mapStageEl
+  }
+
+  if (mode === 'bare' || mode === 'clean') {
+    return props.mapShellEl ?? props.mapStageEl
+  }
+
+  return props.mapStageEl
+}
+
+function matchesAnySelector(el: HTMLElement, selectors: string[]) {
+  return selectors.some((selector) => el.matches(selector) || !!el.closest(selector))
+}
+
 async function capture() {
   if (!props.mapStageEl || isCapturing.value) return
   isCapturing.value = true
@@ -44,74 +121,106 @@ async function capture() {
   const mode = selectedMode.value
   const format = selectedFormat.value
 
+  const captureEl = resolveCaptureElement(mode)
+  if (!captureEl) {
+    captureMsg.value = '截图失败'
+    isCapturing.value = false
+    return
+  }
+
   let saved = false
-  const overlayEls: HTMLElement[] = []
   try {
     const { default: html2canvas } = await import('html2canvas')
     const { default: jsPDF } = await import('jspdf')
 
-    let captureEl: HTMLElement = stage
-
-    if (mode === 'clean' || mode === 'pure') {
-      // Hide chips, map-note, metric-card, hotspot-layer, map-overlay
-      const hideSelectors = '.map-overlay,.map-note,.metric-card,.map-empty-hint,.hotspot-layer,.tile-load-error,.map-loading'
-      for (const el of stage.querySelectorAll<HTMLElement>(hideSelectors)) {
-        el.style.display = 'none'
-        overlayEls.push(el)
-      }
-    }
-
-    if (mode === 'pure') {
-      // Hide atmosphere overlays
-      const atmosphereSelectors = '.map-fog,.time-sheen,.time-band,.weather-overlay,.grid-overlay,.basemap-transition-mask'
-      for (const el of stage.querySelectorAll<HTMLElement>(atmosphereSelectors)) {
-        el.style.display = 'none'
-        overlayEls.push(el)
-      }
-    }
-
-    if (mode === 'bare') {
-      captureEl = stage
-    } else if (mode === 'shell') {
-      captureEl = stage
-    }
-
     captureMsg.value = '正在渲染...'
+    const scale = window.devicePixelRatio * 2
+    const mapSnapshot = buildMapSnapshot(stage, captureEl, scale)
 
     const canvas = await html2canvas(captureEl, {
       useCORS: true,
       allowTaint: true,
-      scale: window.devicePixelRatio * 2,
+      scale,
       backgroundColor: null,
       logging: false,
+      onclone: (clonedDoc) => {
+        const clonedStage = clonedDoc.querySelector('.map-stage') as HTMLElement | null
+        if (clonedStage) {
+          clonedStage.style.background = 'transparent'
+          if (mode === 'pure') {
+            clonedStage.style.border = 'none'
+            clonedStage.style.borderRadius = '0'
+            clonedStage.style.boxShadow = 'none'
+          }
+        }
+
+        const clonedMapHost = clonedDoc.querySelector('.map-host') as HTMLElement | null
+        if (clonedMapHost) {
+          clonedMapHost.style.background = 'transparent'
+        }
+
+        clonedDoc.querySelectorAll('.maplibregl-canvas-container,.maplibregl-canvas').forEach((el) => {
+          ;(el as HTMLElement).style.visibility = 'hidden'
+        })
+      },
       ignoreElements: (el) => {
-        if (mode === 'clean' || mode === 'pure') {
-          const selectors = '.map-overlay,.map-note,.metric-card,.map-empty-hint,.hotspot-layer,.tile-load-error,.map-loading,.skeleton'
-          if (el.matches && (el.matches(selectors) || el.closest(selectors))) return true
+        if (el instanceof HTMLElement && (el.matches('.maplibregl-canvas-container') || el.matches('.maplibregl-canvas'))) {
+          return true
         }
-        if (mode === 'pure') {
-          const selectors = '.map-fog,.time-sheen,.time-band,.weather-overlay,.grid-overlay,.basemap-transition-mask'
-          if (el.matches && (el.matches(selectors) || el.closest(selectors))) return true
+
+        if (!(el instanceof HTMLElement)) return false
+
+        if (el.matches('.screenshot-overlay') || !!el.closest('.screenshot-overlay')) {
+          return true
         }
-        if (mode === 'shell') {
-          // Keep all
+
+        if (mode === 'clean' && matchesAnySelector(el, CLEAN_IGNORE_SELECTORS)) {
+          return true
         }
+
+        if (mode === 'pure' && matchesAnySelector(el, PURE_IGNORE_SELECTORS)) {
+          return true
+        }
+
         return false
       },
     })
 
-    const filename = `geoflow-${props.activeLayerName}-${props.hourLabel.replace(':', '')}-${mode}`
+    let finalCanvas = canvas
+    if (mapSnapshot) {
+      const composedCanvas = document.createElement('canvas')
+      composedCanvas.width = canvas.width
+      composedCanvas.height = canvas.height
+      const composedCtx = composedCanvas.getContext('2d')
+
+      if (composedCtx) {
+        const mapImage = new Image()
+        mapImage.src = mapSnapshot.dataUrl
+        await new Promise((resolve) => {
+          mapImage.onload = () => {
+            composedCtx.drawImage(mapImage, mapSnapshot.dx, mapSnapshot.dy, mapSnapshot.dw, mapSnapshot.dh)
+            composedCtx.drawImage(canvas, 0, 0)
+            finalCanvas = composedCanvas
+            resolve(null)
+          }
+          mapImage.onerror = () => resolve(null)
+        })
+      }
+    }
+
+    const exportName = props.activeLayerName === '无图层' ? '无数据图层' : props.activeLayerName
+    const filename = `geoflow-${exportName}-${props.hourLabel.replace(':', '')}-${mode}`
 
     if (format === 'png') {
       const link = document.createElement('a')
       link.download = `${filename}.png`
-      link.href = canvas.toDataURL('image/png')
+      link.href = finalCanvas.toDataURL('image/png')
       link.click()
       saved = true
     } else {
-      const imgData = canvas.toDataURL('image/png')
-      const pdfWidth = canvas.width
-      const pdfHeight = canvas.height
+      const imgData = finalCanvas.toDataURL('image/png')
+      const pdfWidth = finalCanvas.width
+      const pdfHeight = finalCanvas.height
       const pdf = new jsPDF({
         orientation: pdfWidth > pdfHeight ? 'landscape' : 'portrait',
         unit: 'px',
@@ -127,10 +236,6 @@ async function capture() {
     console.error('[ScreenshotExport] Capture failed:', err)
     captureMsg.value = '截图失败'
   } finally {
-    // Restore all overlays
-    for (const el of overlayEls) {
-      el.style.display = ''
-    }
     isCapturing.value = false
     setTimeout(() => {
       captureMsg.value = ''

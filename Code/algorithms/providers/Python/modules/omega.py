@@ -45,6 +45,9 @@ def _resolve_omega_datasource_selection(datasource_selection: dict[str, object])
 class OmegaBlockModule(BaseModule):
     name = "omega_block"
     description = "Native module that runs OMEGA block retrieval over a timeseries MAT bundle."
+    mode_required_inputs = {
+        "omega": ("input_mat", "omega_fixed_mat", "exp0_calib_mat"),
+    }
     input_ports = [
         PortSpec(name="datasource_selection", kind="config", data_class="dict", required=False),
         PortSpec(name="algorithm_params", kind="config", data_class="dict", required=False),
@@ -68,6 +71,17 @@ class OmegaBlockModule(BaseModule):
         datasource_selection = _resolve_omega_datasource_selection(datasource_selection)
         algorithm_params = dict(inputs.get("algorithm_params", {}))
         output_spec_extra = dict(inputs.get("output_spec_extra", {}))
+
+        mode = str(algorithm_params.get("mode", "dh")).lower()
+        missing_keys = [key for key in ("input_mat",) if key not in datasource_selection]
+        if mode == "omega":
+            missing_keys.extend(
+                key
+                for key in ("omega_fixed_mat", "exp0_calib_mat")
+                if key not in datasource_selection or datasource_selection.get(key) is None
+            )
+        if missing_keys:
+            raise ValueError(f"omega_block requires datasource_selection keys for mode '{mode}': {', '.join(sorted(missing_keys))}")
 
         input_mat = Path(datasource_selection["input_mat"])
         payload = load_mat_file(input_mat)

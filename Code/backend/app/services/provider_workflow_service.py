@@ -35,6 +35,47 @@ class ProviderWorkflowService:
         requested_at: datetime,
         event_factory,
     ) -> WorkflowExecutionResult:
+        # C5 修复：execute 外层包裹 try/except，异常时返回带 error 的 WorkflowExecutionResult
+        # 而非向上抛出，避免拖垮整个 workflow-runs 主链
+        try:
+            return self._do_execute(
+                run_id=run_id,
+                payload=payload,
+                requested_at=requested_at,
+                event_factory=event_factory,
+            )
+        except Exception as exc:
+            logger.exception("ProviderWorkflowService.execute failed")
+            return WorkflowExecutionResult(
+                message=f"Provider 工作流执行失败: {exc}",
+                result_refs=[],
+                result_dto={
+                    "error": str(exc),
+                    "error_type": type(exc).__name__,
+                    "result_category": "provider",
+                },
+                diagnostics=[
+                    f"error_type={type(exc).__name__}",
+                    f"error={exc}",
+                ],
+                events=[
+                    event_factory(
+                        channel="log",
+                        message=f"Provider 工作流执行失败: {exc}",
+                        progress=100,
+                        payload={"error": str(exc), "error_type": type(exc).__name__},
+                    ),
+                ],
+            )
+
+    def _do_execute(
+        self,
+        *,
+        run_id: str,
+        payload: WorkflowSubmitRequest,
+        requested_at: datetime,
+        event_factory,
+    ) -> WorkflowExecutionResult:
         layer_id = payload.layer_id or payload.map_context.active_layer_id
         if layer_id is None:
             raise ValueError("Provider workflow requires layer_id.")
@@ -64,7 +105,10 @@ class ProviderWorkflowService:
             correlation_id=payload.correlation_id,
         )
         provider_result = self._apply_result_limits(provider.execute(provider_payload))
-        result_refs, chunk_diagnostics = self._build_result_refs(run_id, payload, requested_at, provider_result)
+        # C5 修复：使用内部方法获取 refs + diagnostics，公开方法仅返回 refs
+        result_refs, chunk_diagnostics = self._build_result_refs_with_diagnostics(
+            run_id, payload, requested_at, provider_result,
+        )
 
         events = [
             event_factory(
@@ -100,11 +144,18 @@ class ProviderWorkflowService:
             *chunk_diagnostics,
         ]
 
+        algorithm_request = payload.algorithm_request if isinstance(payload.algorithm_request, dict) else payload.algorithm_request.model_dump(mode="json")
+        workflow_entry_name = (
+            str(algorithm_request.get("workflow_name") or algorithm_request.get("module_name") or "provider_workflow")
+        )
+
         return WorkflowExecutionResult(
             message=f"{provider_result.title} 工作流执行完成，已生成 {len(result_refs)} 个结果引用。",
             result_refs=result_refs,
             result_dto={
-                "workflow_entry_name": payload.workflow_name or payload.module_name or "provider_workflow",
+                "workflow_entry_name": workflow_entry_name,
+                "run_id": run_id,
+                "engine_run_id": provider_result.run_id,
                 "layer_id": provider_result.layer_id,
                 "provider_key": provider_result.provider_key,
                 "summary": provider_result.summary,
@@ -123,10 +174,115 @@ class ProviderWorkflowService:
         )
 
     def supports(self, payload: WorkflowSubmitRequest) -> bool:
+        # C5 修复：与其他 bridge 对齐 enabled flag 检查
+        if not settings.provider_workflow_enabled:
+            return False
         layer_id = payload.layer_id or payload.map_context.active_layer_id
         return bool(layer_id and get_provider_for_layer(layer_id) is not None)
 
+    # ------------------------------------------------------------------ 元数据接口（M6 修复：补齐 Bridge Protocol）
+
+    def list_workflows_response(self) -> dict[str, Any]:
+        """返回 provider 支持的 workflow 列表。
+
+        Provider 无静态 workflow 注册表，通过 layer_id 反查 provider 元数据。
+        """
+        from algorithms.registry.provider_registry import list_registered_layers
+
+        try:
+            layer_ids = list(list_registered_layers())
+        except Exception as exc:
+            logger.exception("ProviderWorkflowService.list_workflows_response failed")
+            return {
+                "status_code": 500,
+                "body": {
+                    "error_type": "internal_error",
+                    "error_code": "provider_list_failed",
+                    "user_message": "无法获取 provider workflow 列表。",
+                    "developer_message": str(exc),
+                },
+            }
+        workflows = [
+            {
+                "name": layer_id,
+                "node_type": layer_id,
+                "category": "provider",
+            }
+            for layer_id in layer_ids
+        ]
+        return {
+            "status_code": 200,
+            "body": {
+                "workflows": workflows,
+                "workflow_count": len(workflows),
+                "source": "provider",
+            },
+        }
+
+    def describe_workflow_response(self, workflow_name: str) -> dict[str, Any]:
+        """返回单个 provider workflow 详情。"""
+        provider = get_provider_for_layer(workflow_name)
+        if provider is None:
+            return {
+                "status_code": 404,
+                "body": {
+                    "error_type": "not_found",
+                    "error_code": "provider_workflow_not_found",
+                    "user_message": f"Provider 节点类型不存在: {workflow_name}",
+                    "developer_message": f"workflow_name not in registered provider layers: {workflow_name}",
+                },
+            }
+        return {
+            "status_code": 200,
+            "body": {
+                "name": workflow_name,
+                "node_type": workflow_name,
+                "category": "provider",
+                "source": "provider",
+            },
+        }
+
+    def get_diagnostics_response(self) -> dict[str, Any]:
+        """返回 provider 诊断信息。"""
+        from algorithms.registry.provider_registry import list_registered_layers
+
+        try:
+            layer_ids = list(list_registered_layers())
+        except Exception as exc:
+            logger.exception("ProviderWorkflowService.get_diagnostics_response failed")
+            return {
+                "status_code": 500,
+                "body": {
+                    "error_type": "internal_error",
+                    "error_code": "provider_diagnostics_failed",
+                    "user_message": "无法获取 provider 诊断信息。",
+                    "developer_message": str(exc),
+                },
+            }
+        return {
+            "status_code": 200,
+            "body": {
+                "source": "provider",
+                "provider_workflow_enabled": settings.provider_workflow_enabled,
+                "registered_layer_count": len(layer_ids),
+                "registered_layers": layer_ids,
+                "max_hotspots": settings.provider_max_hotspots,
+                "max_series_points": settings.provider_max_series_points,
+            },
+        }
+
     def _build_result_refs(
+        self,
+        run_id: str,
+        payload: WorkflowSubmitRequest,
+        requested_at: datetime,
+        provider_result: ProviderExecutionResult,
+    ) -> list[WorkflowResultReference]:
+        """Bridge 协议：仅返回 result_refs 列表，与其他 bridge 一致。"""
+        refs, _ = self._build_result_refs_with_diagnostics(run_id, payload, requested_at, provider_result)
+        return refs
+
+    def _build_result_refs_with_diagnostics(
         self,
         run_id: str,
         payload: WorkflowSubmitRequest,
@@ -169,10 +325,10 @@ class ProviderWorkflowService:
         ]
         diagnostics: list[str] = []
 
-        requested_output_kinds = {str(item) for item in payload.requested_outputs}
-        requested_output_kinds.update(
-            item.value for item in payload.requested_outputs if isinstance(item, ResultKind)
-        )
+        requested_output_kinds = {
+            item.value if isinstance(item, ResultKind) else str(item)
+            for item in payload.requested_outputs
+        }
 
         if ResultKind.table.value in requested_output_kinds:
             if len(provider_result.hotspots) > settings.provider_table_chunk_size:

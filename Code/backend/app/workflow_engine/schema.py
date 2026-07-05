@@ -1,0 +1,6 @@
+from __future__ import annotations
+
+CURRENT_SCHEMA_VERSION = "1.0"
+SUPPORTED_SCHEMA_VERSIONS = (CURRENT_SCHEMA_VERSION,)
+SCHEMA_UPGRADE_PATHS: dict[str, str] = {}
+AUTO_MIGRATE_FROM_SCHEMA_VERSIONS: tuple[str, ...] = ()

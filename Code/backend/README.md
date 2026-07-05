@@ -29,8 +29,14 @@
 - `GET /algorithm/workflows/{workflow_name}`
 - `GET /algorithm/workflows/{workflow_name}/panel-schema`
 - `GET /algorithm/workflows/{workflow_name}/ui-schema`
+- `GET /geo/transform`：用于私有坐标系到展示坐标的基础转换入口
 - 支持 `sync / celery` 两种工作流执行模式
 - 支持结构化日志、结果大对象落盘与旧 `/tasks` 桥接
+
+## 当前实现备注
+
+- `python_provider_bridge_service.py` 已接入工作流主链，用于把 Python provider 的结果映射成统一结果引用
+- 坐标转换服务当前提供 `GCJ-02 / BD-09 / EPSG:3857` 的基础入口，后续如需精确投影应继续按数据源补充
 
 ## 目录结构
 

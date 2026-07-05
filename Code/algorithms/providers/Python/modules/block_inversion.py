@@ -44,6 +44,10 @@ def _resolve_block_datasource_selection(datasource_selection: dict[str, object])
 class BlockInversionModule(BaseModule):
     name = "block_inversion"
     description = "Native module that runs block-based DH or DDCA inversion over a timeseries MAT bundle."
+    mode_required_inputs = {
+        "ddca": ("input_mat", "dh_mat"),
+        "dh": ("input_mat",),
+    }
     input_ports = [
         PortSpec(name="datasource_selection", kind="config", data_class="dict", required=False),
         PortSpec(name="algorithm_params", kind="config", data_class="dict", required=False),
@@ -68,9 +72,15 @@ class BlockInversionModule(BaseModule):
         algorithm_params = dict(inputs.get("algorithm_params", {}))
         output_spec_extra = dict(inputs.get("output_spec_extra", {}))
 
+        mode = str(algorithm_params.get("mode", "dh")).lower()
+        missing_keys = [key for key in ("input_mat",) if key not in datasource_selection]
+        if mode == "ddca" and "dh_mat" not in datasource_selection:
+            missing_keys.append("dh_mat")
+        if missing_keys:
+            raise ValueError(f"block_inversion requires datasource_selection keys for mode '{mode}': {', '.join(sorted(missing_keys))}")
+
         input_mat = Path(datasource_selection["input_mat"])
         payload = load_mat_file(input_mat)
-        mode = str(algorithm_params.get("mode", "dh")).lower()
         freq_ghz = float(algorithm_params.get("freq_ghz", 1.4))
         pixel_chunk_size = int(algorithm_params.get("pixel_chunk_size", 2000))
         write_daily_files = bool(algorithm_params.get("write_daily_files", True))

@@ -215,6 +215,8 @@ def retrieve_dynamic_h_pixel(
     residual = lambda x: f_h_cost(x, tbv, tbh, ts, tau_ini, clay_fraction, albedo, freq_ghz, theta_deg, model_context)
     lower_bounds = (0.02, 0.0)
     upper_bounds = (porosity, 3.0)
+    if porosity <= 0.02:
+        return float("nan")
     result = least_squares(
         residual,
         x0=[0.2, 0.5],

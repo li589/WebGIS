@@ -6,8 +6,10 @@ from app.core.config import settings
 
 try:
     from celery import Celery
+    from celery.schedules import crontab
 except ImportError:  # pragma: no cover - optional dependency during bootstrap
     Celery = None
+    crontab = None
 
 
 celery_available = Celery is not None
@@ -17,7 +19,7 @@ if celery_available:
         "cgda_backend",
         broker=settings.celery_broker_url,
         backend=settings.celery_result_backend,
-        include=["app.tasks.workflow_tasks", "app.tasks.download_tasks"],
+        include=["app.tasks.workflow_tasks", "app.tasks.download_tasks", "app.tasks.weather_tasks"],
     )
     celery_app.conf.update(
         task_serializer="json",
@@ -28,6 +30,13 @@ if celery_available:
         task_track_started=True,
         task_always_eager=settings.celery_task_always_eager,
     )
+    if settings.weather_schedule_enabled and crontab is not None:
+        celery_app.conf.beat_schedule = {
+            "refresh-weather-layers-hourly": {
+                "task": "app.tasks.weather_tasks.refresh_weather_layers_hourly",
+                "schedule": crontab(minute=0),
+            }
+        }
 else:  # pragma: no cover - exercised only when Celery is unavailable
     celery_app = None
 
