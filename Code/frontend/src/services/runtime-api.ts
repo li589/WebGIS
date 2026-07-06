@@ -5,6 +5,7 @@ export type ExecutionStatus =
   | 'succeeded'
   | 'failed'
   | 'cancelled'
+  | 'retry_pending'
 
 export type WorkflowCommandType =
   | 'analysis'
@@ -60,14 +61,23 @@ export interface WorkflowSubmitRequest {
   command_type: WorkflowCommandType
   command_label?: string
   layer_id?: string
+  priority?: 'low' | 'normal' | 'high' | 'critical'
+  resource_profile?: 'light' | 'standard' | 'heavy' | 'batch'
+  realtime_preferred?: boolean
+  queue_tag?: string
   spatial_filter?: SpatialFilter
   time_range?: TimeRange
   parameters?: Record<string, unknown>
+  algorithm_request?: Record<string, unknown>
+  gee_request?: Record<string, unknown>
+  weather_request?: Record<string, unknown>
   config_overrides?: Record<string, unknown>
   requested_outputs?: Array<ResultKind | string>
   client?: ClientIdentity
   map_context?: RuntimeMapContext
   correlation_id?: string
+  retry_policy?: { max_attempts?: number; initial_backoff_seconds?: number }
+  retry_attempt?: number
 }
 
 export interface WorkflowAcceptedResponse {
@@ -208,6 +218,31 @@ export interface WeatherPointCurrent {
   wind_speed_10m?: number | null
   wind_direction_10m?: number | null
   wind_gusts_10m?: number | null
+  // 多高度风场/温度（80m/120m/180m）
+  wind_speed_80m?: number | null
+  wind_direction_80m?: number | null
+  wind_speed_120m?: number | null
+  wind_direction_120m?: number | null
+  wind_speed_180m?: number | null
+  wind_direction_180m?: number | null
+  temperature_80m?: number | null
+  temperature_120m?: number | null
+  temperature_180m?: number | null
+  // 湿度与露点
+  relative_humidity_2m?: number | null
+  dew_point_2m?: number | null
+  // 能见度
+  visibility?: number | null
+  // 气压层变量（850hPa/500hPa/200hPa）
+  wind_speed_850hPa?: number | null
+  wind_direction_850hPa?: number | null
+  temperature_850hPa?: number | null
+  wind_speed_500hPa?: number | null
+  wind_direction_500hPa?: number | null
+  temperature_500hPa?: number | null
+  wind_speed_200hPa?: number | null
+  wind_direction_200hPa?: number | null
+  temperature_200hPa?: number | null
 }
 
 export interface WeatherPointHourlyEntry {
@@ -317,20 +352,45 @@ export function resolveApiUrl(pathOrUrl: string) {
   return `${getApiBaseUrl()}${normalizedPath}`
 }
 
-async function requestJson<T>(path: string, init?: RequestInit): Promise<T> {
-  const response = await fetch(resolveApiUrl(path), {
-    headers: {
-      'Content-Type': 'application/json',
-      ...(init?.headers ?? {}),
-    },
-    ...init,
-  })
-
-  if (!response.ok) {
-    throw new Error(`Request failed: ${response.status} ${path}`)
+async function requestJson<T>(path: string, init?: RequestInit & { timeoutMs?: number }): Promise<T> {
+  // 修复：headers 合并顺序错误。原代码先构造 headers 再展开 ...init，
+  // 导致 init.headers 整体替换而非合并。改为先提取 headers 单独合并。
+  const { headers: initHeaders, timeoutMs, ...restInit } = init ?? {}
+  const mergedHeaders: Record<string, string> = {
+    'Content-Type': 'application/json',
+    ...(initHeaders as Record<string, string> | undefined),
   }
 
-  return (await response.json()) as T
+  // 修复：添加超时控制，避免请求挂起
+  const controller = new AbortController()
+  const timeoutId = window.setTimeout(
+    () => controller.abort(),
+    timeoutMs ?? 30000,
+  )
+
+  try {
+    const response = await fetch(resolveApiUrl(path), {
+      ...restInit,
+      headers: mergedHeaders,
+      signal: restInit.signal ?? controller.signal,
+    })
+
+    if (!response.ok) {
+      // 修复：解析结构化错误体，而非丢弃
+      let errorDetail = ''
+      try {
+        const errorBody = await response.json()
+        errorDetail = errorBody?.user_message || errorBody?.error || errorBody?.detail || JSON.stringify(errorBody)
+      } catch {
+        errorDetail = await response.text().catch(() => '')
+      }
+      throw new Error(`Request failed: ${response.status} ${path}${errorDetail ? ` - ${errorDetail}` : ''}`)
+    }
+
+    return (await response.json()) as T
+  } finally {
+    window.clearTimeout(timeoutId)
+  }
 }
 
 export function submitWorkflow(payload: WorkflowSubmitRequest) {

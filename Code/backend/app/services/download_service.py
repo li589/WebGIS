@@ -9,6 +9,7 @@ from uuid import uuid4
 from app.core.config import settings
 from app.services.cache_service import CacheEntry, cache_service
 from app.services.result_storage import result_storage_service
+from app.services.source_fetcher import FetchResult, source_fetcher_registry
 from shared.contracts.api_contracts import ResultKind, WorkflowResultReference
 
 
@@ -153,13 +154,14 @@ class DownloadService:
         summary_result_id: str,
     ) -> dict[str, Any]:
         return {
-            "task_type": "download_fetch_placeholder",
+            "task_type": "download_fetch",
             "run_id": run_id,
             "download_ticket_id": plan.download_ticket_id,
             "cache_key": plan.cache_entry.cache_key,
             "summary_result_id": summary_result_id,
             "manifest_result_id": plan.manifest_result_ref.result_id,
             "artifact_resource_key": plan.manifest_result_ref.resource_key,
+            "source_refs": plan.source_refs,
             "max_attempts": plan.follow_up_policy["max_attempts"],
             "simulate_fail_attempts": plan.follow_up_policy["simulate_fail_attempts"],
             "partial_failure_ref_ids": plan.follow_up_policy["partial_failure_ref_ids"],
@@ -198,6 +200,10 @@ class DownloadService:
             },
         )
         source_refs = self._clone_payload(summary_payload.get("download_plan", {}).get("source_refs", []))
+        # 优先使用 task_data 中的 source_refs（由 build_follow_up_task 传入，更可靠）
+        task_source_refs = task_data.get("source_refs")
+        if isinstance(task_source_refs, list) and task_source_refs:
+            source_refs = self._clone_payload(task_source_refs)
         attempt_number = max(0, self._coerce_int(existing_job_state.get("fetch_attempts")) or 0) + 1
         max_attempts = max(1, self._coerce_int(task_data.get("max_attempts")) or self._coerce_int(follow_up_policy.get("max_attempts")) or 3)
         simulate_fail_attempts = max(
@@ -219,6 +225,8 @@ class DownloadService:
         completed_at_value: str | None = None
         manifest_locator = manifest_ref.resource_key
         updated_source_refs: list[dict[str, Any]] = []
+        # 真实抓取的 artifact key 前缀，用于 source_fetcher_registry 写入 object_store
+        artifact_key_prefix = f"download-fetch/{run_id}/{attempt_number}"
 
         for item in source_refs:
             source_item = {**item}
@@ -228,43 +236,70 @@ class DownloadService:
             source_item.setdefault("artifact_locator", None)
             source_item.setdefault("completed_at", None)
             source_item.setdefault("last_error", None)
+            source_item.setdefault("fetched_bytes", 0)
 
             is_fetch_target = previous_status not in {"cached", "ready"}
-            should_fail_this_source = False
-            failure_reason: str | None = None
-            if is_fetch_target and forced_full_failure:
-                should_fail_this_source = True
-                failure_reason = "Simulated download source fetch failure for retryable skeleton."
-            elif is_fetch_target and str(source_item.get("ref_id")) in partial_failure_ref_ids:
-                should_fail_this_source = True
-                failure_reason = "Simulated partial source failure for retryable skeleton."
+            if not is_fetch_target:
+                # 已 cached/ready 的 source 直接保留状态
+                source_item["fetch_status"] = "cached" if previous_status == "cached" else "ready"
+                source_item["fetch_stage"] = source_item.get("fetch_stage", "metadata_attached")
+                ready_count += 1
+                updated_source_refs.append(source_item)
+                continue
 
-            if should_fail_this_source:
+            # 强制模拟失败（仅用于测试重试骨架）
+            if forced_full_failure:
                 retryable = attempt_number < max_attempts
                 source_item["fetch_status"] = "retry_pending" if retryable else "failed"
                 source_item["fetch_stage"] = "awaiting_retry" if retryable else "failed_terminal"
-                source_item["last_error"] = failure_reason
+                source_item["last_error"] = "Simulated download source fetch failure for retryable skeleton."
                 source_item["completed_at"] = None
                 source_item["artifact_locator"] = None
                 pending_count += 1 if retryable else 0
                 failed_count += 0 if retryable else 1
                 transient_failure_count += 1 if retryable else 0
-                last_error = failure_reason
-            else:
-                source_item["fetch_status"] = "cached" if previous_status == "cached" else "ready"
-                source_item["fetch_stage"] = (
-                    source_item.get("fetch_stage", "metadata_attached")
-                    if previous_status == "cached"
-                    else "fetched_to_artifact"
-                )
+                last_error = source_item["last_error"]
+                updated_source_refs.append(source_item)
+                continue
+
+            # 真实抓取：调用 source_fetcher_registry
+            ref_id = str(source_item.get("ref_id", "unknown"))
+            source_uri = str(source_item.get("source_uri", ""))
+            fetch_result = source_fetcher_registry.fetch(
+                ref_id=ref_id,
+                source_uri=source_uri,
+                artifact_key_prefix=artifact_key_prefix,
+            )
+            source_item["last_attempt_at"] = fetch_result.fetched_at or updated_at.astimezone(timezone.utc).isoformat()
+
+            if fetch_result.success:
+                source_item["fetch_status"] = "ready"
+                source_item["fetch_stage"] = "fetched_to_artifact"
                 source_item["last_error"] = None
-                source_item["completed_at"] = updated_at.astimezone(timezone.utc).isoformat()
-                source_item["artifact_locator"] = (
-                    f"{manifest_locator}#source/{source_item.get('ref_id')}" if manifest_locator else None
-                )
+                source_item["completed_at"] = fetch_result.fetched_at or updated_at.astimezone(timezone.utc).isoformat()
+                source_item["artifact_locator"] = fetch_result.artifact_key
+                source_item["fetched_bytes"] = fetch_result.fetched_bytes
+                source_item["content_type"] = fetch_result.content_type
+                if fetch_result.local_path:
+                    source_item["local_path"] = fetch_result.local_path
                 ready_count += 1
-                if previous_status not in {"cached", "ready"} and (forced_full_failure or partial_failure_ref_ids):
-                    completed_at_value = updated_at.astimezone(timezone.utc).isoformat()
+                completed_at_value = source_item["completed_at"]
+            else:
+                # 失败分类修复：修复 partial_failure_ref_ids 逻辑漏洞
+                # 修复前：retryable = (attempt_number < max_attempts) or forced_partial
+                #   → forced_partial=True 时即使超过 max_attempts 仍 retry_pending，永不转终态
+                # 修复后：retryable = attempt_number < max_attempts（与 forced_partial 无关）
+                #   forced_partial 仅影响是否注入模拟失败，不影响重试判定
+                retryable = attempt_number < max_attempts
+                source_item["fetch_status"] = "retry_pending" if retryable else "failed"
+                source_item["fetch_stage"] = "awaiting_retry" if retryable else "failed_terminal"
+                source_item["last_error"] = fetch_result.error or "Unknown fetch failure"
+                source_item["completed_at"] = None
+                source_item["artifact_locator"] = None
+                pending_count += 1 if retryable else 0
+                failed_count += 0 if retryable else 1
+                transient_failure_count += 1 if retryable else 0
+                last_error = source_item["last_error"]
 
             updated_source_refs.append(source_item)
 
@@ -278,14 +313,15 @@ class DownloadService:
             fetch_status = "fetched"
             completed_at_value = updated_at.astimezone(timezone.utc).isoformat()
 
-        total_bytes = sum(int(item.get("estimated_bytes", 0)) for item in updated_source_refs)
+        total_bytes = sum(int(item.get("fetched_bytes", 0) or item.get("estimated_bytes", 0)) for item in updated_source_refs)
         partial_success = fetch_status == "partial_success"
         retry_recommended = transient_failure_count > 0
         source_fetch_summary = {
             "status": fetch_status,
             "total_sources": len(updated_source_refs),
             "pending_sources": pending_count,
-            "estimated_total_bytes": total_bytes,
+            "fetched_total_bytes": total_bytes,
+            "estimated_total_bytes": sum(int(item.get("estimated_bytes", 0)) for item in updated_source_refs),
             "ready_sources": ready_count,
             "failed_sources": failed_count,
             "partial_success": partial_success,
@@ -469,12 +505,26 @@ class DownloadService:
         refresh_policy: str,
         cache_status: str,
     ) -> list[dict[str, Any]]:
+        """解析图层的 source_refs。
+
+        优先从 settings.download_source_uri_map 读取真实 source_uri 模板，
+        若未配置则回退到 demo:// 占位（保持向后兼容）。
+        """
         base_ref = {
             "kind": "demo_snapshot",
             "layer_id": layer_id,
             "requested_hour": requested_hour,
             "refresh_policy": refresh_policy,
         }
+        # 尝试从配置读取真实 source_uri
+        real_snapshot_uri = self._resolve_real_source_uri(layer_id, requested_hour)
+        snapshot_source_kind = "snapshot"
+        snapshot_estimated_bytes = 65536
+        if real_snapshot_uri:
+            snapshot_source_kind = "real_source"
+            # 真实源无法预知字节大小，保留估算值用于 cache 元数据
+            snapshot_estimated_bytes = 0
+
         return [
             {
                 **base_ref,
@@ -482,9 +532,9 @@ class DownloadService:
                 "priority": "high" if refresh_policy == "realtime" else "normal",
                 "fetch_status": "cached" if cache_status == "warm" else "pending",
                 "fetch_stage": "source_manifest_ready" if cache_status == "warm" else "awaiting_dispatch",
-                "source_kind": "snapshot",
-                "source_uri": f"demo://snapshots/{layer_id}?hour={requested_hour}",
-                "estimated_bytes": 65536,
+                "source_kind": snapshot_source_kind,
+                "source_uri": real_snapshot_uri or f"demo://snapshots/{layer_id}?hour={requested_hour}",
+                "estimated_bytes": snapshot_estimated_bytes,
             },
             {
                 **base_ref,
@@ -497,6 +547,33 @@ class DownloadService:
                 "estimated_bytes": 4096,
             },
         ]
+
+    def _resolve_real_source_uri(self, layer_id: str, requested_hour: float) -> str | None:
+        """从 settings.download_source_uri_map 读取图层对应的真实 source_uri 模板。
+
+        支持占位符：{layer_id} {hour}
+        返回 None 表示未配置，调用方回退到 demo:// scheme。
+        """
+        if not settings.download_real_fetch_enabled:
+            return None
+        uri_map_raw = settings.download_source_uri_map.strip()
+        if not uri_map_raw:
+            return None
+        try:
+            uri_map = json.loads(uri_map_raw)
+        except (json.JSONDecodeError, TypeError):
+            return None
+        if not isinstance(uri_map, dict):
+            return None
+        template = uri_map.get(layer_id)
+        if not isinstance(template, str) or not template:
+            return None
+        # 支持 {layer_id} {hour} 占位符
+        hour_int = int(requested_hour)
+        try:
+            return template.format(layer_id=layer_id, hour=hour_int, hour_float=requested_hour)
+        except (KeyError, IndexError):
+            return template
 
     def _build_cached_manifest_result_ref(
         self,

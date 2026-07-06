@@ -57,6 +57,14 @@ import type { WeatherLayerRenderHint, WorkflowResultDto, WorkflowRunViewResponse
 export interface JobLayerMapAssets {
   geojsonUrl?: string
   cogUrl?: string
+  cogPreviewUrl?: string
+  cogBbox?: {
+    west: number
+    south: number
+    east: number
+    north: number
+    crs?: string
+  }
 }
 
 export interface JobLayerMapLayerPayload {

@@ -21,6 +21,7 @@ venv/
 node_modules/
 dist/
 .npm/
+.npm-cache/
 
 # IDE and OS files
 .vscode/
@@ -40,7 +41,16 @@ tmp/
 temp/
 Code/backend/.data/
 Code/frontend/.tmp_guangdong_pkg/
+Code/frontend/.tmp/
 Code/frontend/*.tgz
+dump.rdb
 
 # Screenshots
 screenshot*.png
+*screenshot*.png
+
+# Python build artifacts
+*.egg-info/
+
+# Review notes
+temp.txt

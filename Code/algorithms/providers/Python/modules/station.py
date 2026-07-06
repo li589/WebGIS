@@ -21,7 +21,7 @@ from ingest.station import (
     parse_ismn_stm_file,
 )
 from modules.base import BaseModule
-from modules.registry import register_module
+from modules.registry import register_module_decorator
 from output import OutputCoordinator
 from workflow.schemas import ArtifactRef, NodeExecutionContext, PortSpec
 
@@ -68,6 +68,7 @@ def _resolve_station_datasource_selection(datasource_selection: dict[str, object
     return resolved
 
 
+@register_module_decorator(name="station_daily", aliases=["station_daily_pipeline"])
 class StationDailyModule(BaseModule):
     name = "station_daily"
     description = "Native module that builds station daily/am6 products and validation artifacts."
@@ -485,10 +486,3 @@ def _coerce_datetime(value):
             except ValueError:
                 continue
     raise ValueError(f"Unsupported datetime value: {value!r}")
-
-
-def register_default_station_modules() -> None:
-    register_module(StationDailyModule(), aliases=["station_daily_pipeline"])
-
-
-register_default_station_modules()

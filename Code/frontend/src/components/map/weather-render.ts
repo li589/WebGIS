@@ -33,7 +33,13 @@ function getPaletteDefinition(palette: string): WeatherPaletteDefinition {
 }
 
 export function isRealtimeWeatherLayerId(layerId?: string | null) {
-  return layerId === 'wind-field' || layerId === 'temperature' || layerId === 'precipitation'
+  if (!layerId) return false
+  // 风场全高度变体（wind-field / wind-field-80m / wind-field-120m / wind-field-180m / wind-field-850hPa 等）
+  if (layerId.startsWith('wind-field')) return true
+  // 温度全高度变体（temperature / temperature-80m / temperature-120m / temperature-180m）
+  if (layerId.startsWith('temperature')) return true
+  // 其他 weatherengine 实时图层
+  return ['precipitation', 'pressure', 'humidity', 'visibility'].includes(layerId)
 }
 
 export function buildWeatherLegendStops(hint: WeatherLayerRenderHint): WeatherLegendStop[] {

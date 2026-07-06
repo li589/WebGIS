@@ -1,11 +1,14 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, ref, watch } from 'vue'
 
 import type { ActiveLayerDisplay } from '../stores/layers/types'
 import type { DemoHotspot } from '../app/demo-data'
 import type { WeatherPointResponse } from '../services/runtime-api'
+import { useLayersStore } from '../stores/layers'
 import { buildWeatherLegendStops, isRealtimeWeatherLayerId } from './map/weather-render'
 import { buildResultDisplayModel } from './info-panel/result-adapter'
+
+const layersStore = useLayersStore()
 
 const props = defineProps<{
   viewLabel: string
@@ -38,6 +41,13 @@ const weatherRenderHint = computed(
 )
 const weatherLegendStops = computed(() => (weatherRenderHint.value ? buildWeatherLegendStops(weatherRenderHint.value) : []))
 const hasWeatherLayerAsset = computed(() => !!jobLayer.value?.mapLayerPayload?.layerAssets?.geojsonUrl)
+
+// 粒子流切换：仅风场变体图层显示按钮，独占式启用
+const canToggleParticleFlow = computed(() => layersStore.supportsParticleFlow(displayLayer.value.catalogId))
+const isParticleFlowEnabled = computed(() => layersStore.particleFlowCatalogId === displayLayer.value.catalogId)
+function handleToggleParticleFlow() {
+  layersStore.toggleParticleFlow(displayLayer.value.catalogId)
+}
 const hasPointWeatherSection = computed(
   () =>
     props.pointWeatherLoading ||
@@ -49,6 +59,54 @@ const pointWeatherPrimaryLabel = computed(() => {
   if (displayLayer.value.catalogId === 'wind-field') return '实时风速'
   if (displayLayer.value.catalogId === 'precipitation') return '实时降水'
   return '实时气温'
+})
+
+// ── 元数据详情 ──────────────────────────────────────────────────────────────
+const layerMetadata = computed(() => {
+  const dl = displayLayer.value
+  const weather = props.pointWeather
+  const meta: { label: string; value: string }[] = [
+    { label: '数据源', value: dl.sourceLabel || '—' },
+    { label: '更新频率', value: dl.updateLabel || '—' },
+    { label: '观测时间', value: dl.observationTimeLabel || '—' },
+    { label: '可用性', value: dl.availabilityLabel || '—' },
+  ]
+  if (weather) {
+    meta.push({ label: '数据提供方', value: weather.provider || '—' })
+    meta.push({ label: '气象模型', value: weather.model || '—' })
+    meta.push({ label: '缓存状态', value: weather.cache_status || '—' })
+  }
+  if (dl.jobLayer) {
+    meta.push({ label: '作业状态', value: dl.jobLayer.status || '—' })
+  }
+  return meta
+})
+
+// ── 叠加图层列表 ────────────────────────────────────────────────────────────
+const overlayLayers = computed(() => {
+  return layersStore.activeLayersDisplay
+    .filter((l) => l.instanceId !== displayLayer.value.instanceId && l.visible)
+    .map((l) => ({
+      name: l.name,
+      category: l.category,
+      availabilityState: l.availabilityState,
+      accentColor: l.accentColor,
+    }))
+})
+
+const hasOverlayLayers = computed(() => overlayLayers.value.length > 0)
+
+// ── 历史趋势方向识别 ────────────────────────────────────────────────────────
+const trendDirection = computed<'up' | 'down' | 'flat'>(() => {
+  const text = displayLayer.value?.trendLabel ?? ''
+  if (/上升|增长|偏高|高于|增|升|回暖/.test(text)) return 'up'
+  if (/下降|降低|偏低|低于|减|降|转凉/.test(text)) return 'down'
+  return 'flat'
+})
+const trendArrowSymbol = computed(() => {
+  if (trendDirection.value === 'up') return '↗'
+  if (trendDirection.value === 'down') return '↘'
+  return '→'
 })
 const pointWeatherPrimaryValue = computed(() => {
   const weather = props.pointWeather
@@ -116,6 +174,8 @@ const buttonLabel = computed(() => {
 
 const analysisScrollEl = ref<HTMLElement | null>(null)
 const topSummaryEl = ref<HTMLElement | null>(null)
+// 待清理的 setTimeout 句柄（组件卸载时统一清理，避免回调在卸载后执行）
+const pendingTimers: number[] = []
 
 function formatMetric(value: number | null | undefined, unit: string) {
   if (typeof value !== 'number' || Number.isNaN(value)) return `-- ${unit}`.trim()
@@ -154,16 +214,18 @@ function handleLayerOpacityInput(event: Event) {
 }
 
 function scrollAnalysisIntoView(selector: string) {
-  window.setTimeout(() => {
+  const t = window.setTimeout(() => {
     const el = analysisScrollEl.value?.querySelector(selector) as HTMLElement | null
     el?.scrollIntoView({ behavior: 'smooth', block: 'start' })
   }, 0)
+  pendingTimers.push(t)
 }
 
 function scrollToTopSummary() {
-  window.setTimeout(() => {
+  const t = window.setTimeout(() => {
     topSummaryEl.value?.scrollIntoView({ behavior: 'smooth', block: 'start' })
   }, 0)
+  pendingTimers.push(t)
 }
 
 watch(
@@ -189,6 +251,11 @@ watch(
     }
   },
 )
+
+onBeforeUnmount(() => {
+  pendingTimers.forEach((t) => window.clearTimeout(t))
+  pendingTimers.length = 0
+})
 </script>
 
 <template>
@@ -354,6 +421,16 @@ watch(
               />
               <strong>{{ Math.round(displayLayer.opacity * 100) }}%</strong>
             </div>
+            <button
+              v-if="canToggleParticleFlow"
+              class="particle-flow-toggle-btn"
+              :class="{ active: isParticleFlowEnabled }"
+              :title="isParticleFlowEnabled ? '关闭粒子流动画，释放 Canvas 资源' : '启用粒子流动画（独占式，同时只能一个图层启用）'"
+              @click="handleToggleParticleFlow"
+            >
+              <span class="pf-icon" aria-hidden="true">≋</span>
+              {{ isParticleFlowEnabled ? '关闭粒子流' : '启用粒子流' }}
+            </button>
           </div>
 
           <div class="weather-legend-row">
@@ -443,6 +520,62 @@ watch(
       <p>状态说明：{{ displayLayer.availabilityDescription }}</p>
       <p>缺失字段：{{ displayLayer.missingFieldsLabel }}</p>
     </details>
+
+    <!-- ── 元数据详情卡片 ─────────────────────────────────────────────────── -->
+    <section v-if="layerMetadata.length" class="info-card meta-card">
+      <div class="info-card-head">
+        <span class="info-kicker">元数据</span>
+        <span class="info-card-tag" :class="{ real: displayLayer.dataState === 'real' }">
+          {{ displayLayer.dataState === 'real' ? '真实' : '演示' }}
+        </span>
+      </div>
+      <dl class="meta-grid">
+        <div v-for="row in layerMetadata" :key="row.label" class="meta-grid-row">
+          <dt>{{ row.label }}</dt>
+          <dd>{{ row.value }}</dd>
+        </div>
+      </dl>
+    </section>
+
+    <!-- ── 历史趋势对比 ───────────────────────────────────────────────────── -->
+    <section v-if="displayLayer.trendLabel" class="info-card trend-card" :style="{ '--accent-color': displayLayer.accentColor }">
+      <div class="info-card-head">
+        <span class="info-kicker">历史对比</span>
+        <span class="info-card-tag trend">{{ displayLayer.metricLabel }}</span>
+      </div>
+      <div class="trend-body">
+        <div class="trend-current">
+          <span class="trend-current-label">当前</span>
+          <strong class="trend-current-value">{{ displayLayer.metricValue }}</strong>
+        </div>
+        <div class="trend-indicator">
+          <span class="trend-arrow" :class="trendDirection">{{ trendArrowSymbol }}</span>
+          <span class="trend-text">{{ displayLayer.trendLabel }}</span>
+        </div>
+      </div>
+    </section>
+
+    <!-- ── 叠加图层列表 ───────────────────────────────────────────────────── -->
+    <section v-if="hasOverlayLayers" class="info-card overlay-card">
+      <div class="info-card-head">
+        <span class="info-kicker">叠加分析</span>
+        <span class="info-card-tag">{{ overlayLayers.length }} 个共显</span>
+      </div>
+      <ul class="overlay-list">
+        <li
+          v-for="layer in overlayLayers"
+          :key="layer.name"
+          :style="{ '--layer-accent': layer.accentColor }"
+        >
+          <span class="overlay-dot" aria-hidden="true"></span>
+          <div class="overlay-info">
+            <strong class="overlay-name">{{ layer.name }}</strong>
+            <span class="overlay-category">{{ layer.category }}</span>
+          </div>
+          <span class="overlay-state" :class="`state-${layer.availabilityState}`">{{ layer.availabilityState }}</span>
+        </li>
+      </ul>
+    </section>
   </aside>
 </template>
 
@@ -501,6 +634,39 @@ watch(
 .weather-style-head { display: flex; justify-content: space-between; gap: 0.4rem; align-items: center; color: #eaf3fb; font-size: 0.58rem; }
 .weather-layer-controls { display: grid; gap: 0.24rem; }
 .weather-visibility-btn { border: 1px solid rgba(103, 212, 255, 0.2); border-radius: 999px; background: rgba(29, 78, 216, 0.14); color: #d8f3ff; font-size: 0.58rem; padding: 0.28rem 0.62rem; cursor: pointer; justify-self: start; }
+.particle-flow-toggle-btn {
+  border: 1px solid rgba(103, 212, 255, 0.28);
+  border-radius: 999px;
+  background: rgba(15, 23, 42, 0.5);
+  color: #b8d4ff;
+  font-size: 0.58rem;
+  padding: 0.3rem 0.72rem;
+  cursor: pointer;
+  justify-self: start;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  transition: all 0.18s ease;
+}
+.particle-flow-toggle-btn .pf-icon { font-size: 0.72rem; line-height: 1; }
+.particle-flow-toggle-btn:hover {
+  border-color: rgba(103, 212, 255, 0.5);
+  background: rgba(29, 78, 216, 0.22);
+  color: #e8f3ff;
+}
+.particle-flow-toggle-btn.active {
+  border-color: rgba(110, 200, 255, 0.7);
+  background: linear-gradient(135deg, rgba(56, 189, 248, 0.32), rgba(99, 102, 241, 0.28));
+  color: #f0f9ff;
+  box-shadow: 0 0 12px rgba(110, 200, 255, 0.36), inset 0 0 8px rgba(110, 200, 255, 0.18);
+}
+.particle-flow-toggle-btn.active .pf-icon {
+  animation: pf-pulse 1.4s ease-in-out infinite;
+}
+@keyframes pf-pulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.6; transform: scale(1.12); }
+}
 .weather-opacity-row { display: grid; grid-template-columns: auto 1fr auto; gap: 0.3rem; align-items: center; color: #9eb3c8; font-size: 0.56rem; }
 .weather-opacity-slider { width: 100%; }
 .weather-legend-row { display: flex; justify-content: space-between; gap: 0.4rem; color: #9eb3c8; font-size: 0.54rem; }
@@ -541,4 +707,43 @@ watch(
 .hotspot-list li.selected { background: rgba(90, 213, 255, 0.16); border-color: rgba(90, 213, 255, 0.28); box-shadow: 0 0 0 1px rgba(90, 213, 255, 0.08) inset; transform: translateX(2px); }
 .hotspot-list li.selected span, .hotspot-list li.selected strong { color: #f4fbff; }
 .job-result-link { color: #5ad5ff; font-size: 0.58rem; text-decoration: none; }
+
+/* ── 增强信息展示：元数据 / 历史对比 / 叠加分析 ─────────────────────────── */
+.info-card { display: grid; gap: 0.32rem; padding: 0.46rem 0.5rem; border-radius: 0.82rem; background: rgba(8, 18, 33, 0.56); border: 1px solid rgba(136, 192, 255, 0.1); }
+.info-card-head { display: flex; justify-content: space-between; align-items: center; gap: 0.4rem; }
+.info-kicker { color: #7f93a9; font-size: 0.52rem; letter-spacing: 0.08em; text-transform: uppercase; }
+.info-card-tag { padding: 0.12rem 0.34rem; border-radius: 999px; background: rgba(148, 163, 184, 0.12); color: #bfd3e6; font-size: 0.52rem; }
+.info-card-tag.real { background: rgba(114, 255, 207, 0.12); color: #9ff8cf; }
+.info-card-tag.trend { background: rgba(126, 168, 255, 0.14); color: #c8d8ff; }
+
+/* 元数据网格 */
+.meta-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.22rem 0.5rem; margin: 0; }
+.meta-grid-row { display: grid; gap: 0.04rem; }
+.meta-grid dt { color: #7f93a9; font-size: 0.52rem; }
+.meta-grid dd { margin: 0; color: #eaf3fb; font-size: 0.6rem; word-break: break-word; }
+
+/* 历史趋势卡片 */
+.trend-card { border-color: rgba(126, 168, 255, 0.18); background: linear-gradient(180deg, rgba(10, 20, 38, 0.72), rgba(8, 18, 33, 0.56)); }
+.trend-body { display: flex; align-items: center; gap: 0.56rem; }
+.trend-current { display: grid; gap: 0.04rem; min-width: 4.4rem; }
+.trend-current-label { color: #7f93a9; font-size: 0.52rem; }
+.trend-current-value { color: var(--accent-color, #f4fbff); font-size: 0.86rem; }
+.trend-indicator { display: flex; align-items: center; gap: 0.3rem; flex: 1; padding: 0.2rem 0.34rem; border-radius: 0.56rem; background: rgba(148, 163, 184, 0.06); }
+.trend-arrow { font-size: 0.78rem; line-height: 1; }
+.trend-arrow.up { color: #ff8aa7; }
+.trend-arrow.down { color: #5ad5ff; }
+.trend-arrow.flat { color: #9eb3c8; }
+.trend-text { color: #c8dff0; font-size: 0.56rem; line-height: 1.35; }
+
+/* 叠加图层列表 */
+.overlay-list { display: grid; gap: 0.18rem; padding: 0; margin: 0; list-style: none; }
+.overlay-list li { display: flex; align-items: center; gap: 0.34rem; padding: 0.24rem 0.3rem; border-radius: 0.56rem; background: rgba(148, 163, 184, 0.05); border: 1px solid rgba(148, 163, 184, 0.08); }
+.overlay-dot { width: 0.5rem; height: 0.5rem; border-radius: 999px; background: var(--layer-accent, #88d8ff); box-shadow: 0 0 6px var(--layer-accent, rgba(136, 216, 255, 0.6)); flex-shrink: 0; }
+.overlay-info { display: grid; gap: 0.04rem; flex: 1; min-width: 0; }
+.overlay-name { color: #eaf3fb; font-size: 0.6rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.overlay-category { color: #7f93a9; font-size: 0.52rem; }
+.overlay-state { padding: 0.1rem 0.3rem; border-radius: 999px; font-size: 0.5rem; text-transform: uppercase; letter-spacing: 0.04em; }
+.overlay-state.state-ready { background: rgba(114, 255, 207, 0.12); color: #9ff8cf; }
+.overlay-state.state-partial { background: rgba(255, 196, 120, 0.12); color: #ffd38a; }
+.overlay-state.state-empty { background: rgba(148, 163, 184, 0.12); color: #b6c9da; }
 </style>

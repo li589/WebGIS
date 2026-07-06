@@ -7,7 +7,7 @@ from contracts.product import ProductManifest
 from data_access import resolve_prepared_local_directory
 from ingest.ndvi import load_ndvi_stack
 from modules.base import BaseModule
-from modules.registry import register_module
+from modules.registry import register_module_decorator
 from output import OutputCoordinator
 from workflow.schemas import ArtifactRef, NodeExecutionContext, PortSpec
 
@@ -130,6 +130,7 @@ def _resolve_ndvi_climatology_dir(datasource_selection: dict[str, object]) -> st
     return str(ndvi_clim_dir_value)
 
 
+@register_module_decorator(name="ndvi_daily", aliases=["ndvi_daily_pipeline"])
 class NdviDailyModule(BaseModule):
     name = "ndvi_daily"
     description = "Native module that converts 16-day NDVI rasters to daily MAT products."
@@ -343,10 +344,3 @@ def _build_yearly_quality_metrics(
             year_climatology = np.asarray(climatology_stack[:, :, indices], dtype=np.float64)
         metrics_by_year.append((str(year), build_ndvi_quality_metrics(year_stack, year_climatology)))
     return metrics_by_year
-
-
-def register_default_ndvi_modules() -> None:
-    register_module(NdviDailyModule(), aliases=["ndvi_daily_pipeline"])
-
-
-register_default_ndvi_modules()

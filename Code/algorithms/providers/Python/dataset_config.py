@@ -87,6 +87,22 @@ def _get_output_root() -> Path:
     return root
 
 
+# ProjectBackup 根目录（用于 resolve_dataset_path 的兜底递归搜索）
+_BACKEND_PROJECTBACKUP_ROOT_DEFAULT = r"I:\ProjectBackup\GeoPaper"
+
+
+def _get_projectbackup_root() -> Path:
+    """获取 ProjectBackup 根目录，优先使用环境变量，否则使用默认值。"""
+    root = Path(os.getenv("BACKEND_PROJECTBACKUP_ROOT", _BACKEND_PROJECTBACKUP_ROOT_DEFAULT))
+    if root.exists():
+        return root
+    # Fallback: 尝试默认路径
+    default = Path(_BACKEND_PROJECTBACKUP_ROOT_DEFAULT)
+    if default.exists():
+        return default
+    return root
+
+
 # 公开属性
 BACKEND_DATA_ROOT: Path = _get_data_root()
 BACKEND_OUTPUT_ROOT: Path = _get_output_root()
@@ -314,7 +330,7 @@ def resolve_dataset_path(logical_name: str) -> Path | None:
         return candidate
 
     # 尝试从 ProjectBackup 根目录查找
-    backup_root = Path(r"I:\ProjectBackup\GeoPaper")
+    backup_root = _get_projectbackup_root()
     if backup_root.exists():
         # 递归搜索（深度限制为 3 层）
         for parent in (backup_root / "数据", backup_root):

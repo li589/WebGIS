@@ -1,0 +1,229 @@
+"""weather 前端 dataState 兼容性测试。
+
+模拟前端 runWorkflowForCatalog 的 payload（不带 weather_request.workflow，走 fallback 路径），
+验证 result_refs 包含 map_layer 类型，且 inline_data 含前端期望的
+render_hint / point_feature / layer_assets 字段。
+mock Open-Meteo API 避免网络依赖。
+"""
+from __future__ import annotations
+
+import json
+import os
+import shutil
+import unittest
+from typing import Any
+from unittest.mock import patch
+
+from app.services.interaction_hub import interaction_hub
+from app.weatherengine.service import weather_engine_service
+from shared.contracts.api_contracts import WorkflowSubmitRequest
+
+
+class _FakeOpenMeteoClient:
+    """模拟 OpenMeteoClient。"""
+
+    def fetch_point_forecast(
+        self,
+        *,
+        latitude: float,
+        longitude: float,
+        layer_spec,
+        model: str,
+        forecast_hours: int,
+        ttl_seconds: int,
+        pressure_levels: tuple[int, ...] | None = None,
+    ) -> tuple[dict[str, Any], str]:
+        return (_build_mock_payload(), "miss")
+
+
+def _build_mock_payload() -> dict[str, Any]:
+    """构造模拟 Open-Meteo 响应 payload。"""
+    return {
+        "timezone": "Asia/Shanghai",
+        "utc_offset_seconds": 28800,
+        "generationtime_ms": 0.0123,
+        "model": "best_match",
+        "current": {
+            "time": "2026-07-06T00:00",
+            "temperature_2m": 25.7,
+            "apparent_temperature": 30.4,
+            "precipitation": 0.2,
+            "rain": 0.1,
+            "weather_code": 3,
+            "cloud_cover": 65,
+            "wind_speed_10m": 13.2,
+            "wind_direction_10m": 154.0,
+            "wind_gusts_10m": 27.0,
+        },
+        "hourly": {
+            "time": ["2026-07-06T00:00", "2026-07-06T01:00", "2026-07-06T02:00",
+                     "2026-07-06T03:00", "2026-07-06T04:00", "2026-07-06T05:00"],
+            "temperature_2m": [25.7, 25.3, 24.9, 24.5, 24.1, 23.8],
+            "precipitation": [0.2, 0.7, 0.0, 0.0, 0.1, 0.3],
+            "wind_speed_10m": [13.2, 12.9, 13.2, 12.5, 11.8, 11.1],
+        },
+    }
+
+
+class WeatherFrontendCompatTests(unittest.TestCase):
+    """验证 fallback 路径产出的 map_layer ref 符合前端 extractMapLayerPayload 期望。"""
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls._original_client = weather_engine_service._client
+
+    @classmethod
+    def tearDownClass(cls) -> None:
+        weather_engine_service._client = cls._original_client
+
+    def setUp(self) -> None:
+        cache_dir = os.path.join(os.getcwd(), ".data", "cache", "weatherengine")
+        if os.path.exists(cache_dir):
+            shutil.rmtree(cache_dir, ignore_errors=True)
+
+    def _submit_fallback_workflow(self, layer_id: str) -> str:
+        """模拟前端 runWorkflowForCatalog 提交（无 weather_request.workflow，走 fallback）。"""
+        payload = WorkflowSubmitRequest(
+            command_type="analysis",
+            command_label=f"运行 {layer_id} 分析",
+            layer_id=layer_id,
+            requested_outputs=["json", "text", "table", "map_layer"],
+            parameters={"hour": 0},
+            client={"page": "dashboard", "view_id": "map-2d"},
+            map_context={"active_layer_id": layer_id, "map_mode": "2d"},
+        )
+        accepted = interaction_hub.submit_workflow(payload)
+        return accepted.run_id
+
+    def _find_map_layer_ref(self, result_refs) -> dict | None:
+        """从 result_refs 中找到 map_layer 类型的 ref，处理 spill 情况。"""
+        from app.services.result_storage import result_storage_service
+
+        for ref in result_refs:
+            ref_dict = ref.model_dump(mode="json") if hasattr(ref, "model_dump") else dict(ref)
+            if ref_dict.get("result_kind") != "map_layer":
+                continue
+            inline = ref_dict.get("inline_data") or {}
+            if not inline:
+                # spill 到 artifact storage
+                resource_key = ref_dict.get("resource_key")
+                if resource_key:
+                    artifact = result_storage_service.get_artifact(resource_key)
+                    if artifact and artifact.file_path:
+                        with open(artifact.file_path, "r", encoding="utf-8") as f:
+                            inline = json.load(f)
+            if inline:
+                return inline
+        return None
+
+    def test_wind_field_map_layer_ref(self) -> None:
+        """验证 wind-field 图层的 map_layer ref 格式。"""
+        with patch.object(weather_engine_service, "_client", _FakeOpenMeteoClient()):
+            run_id = self._submit_fallback_workflow("wind-field")
+            status_resp = interaction_hub.get_workflow_run(run_id)
+
+        self.assertIn(status_resp.status, ("succeeded", "completed"))
+
+        # 必须有 map_layer 类型 ref
+        ref_kinds = []
+        for ref in status_resp.result_refs:
+            ref_dict = ref.model_dump(mode="json") if hasattr(ref, "model_dump") else dict(ref)
+            ref_kinds.append(ref_dict.get("result_kind"))
+        self.assertIn("map_layer", ref_kinds, f"result_refs kinds: {ref_kinds}")
+
+        inline = self._find_map_layer_ref(status_resp.result_refs)
+        self.assertIsNotNone(inline, "未找到 map_layer ref 的 inline_data")
+
+        # render_hint 字段（前端 WeatherLayerRenderHint 期望）
+        render_hint = inline.get("render_hint") or {}
+        self.assertEqual(render_hint.get("paint_mode"), "particle_flow")
+        self.assertEqual(render_hint.get("palette"), "wind-blue")
+        self.assertEqual(render_hint.get("primary_metric"), "wind_speed_10m")
+        self.assertEqual(render_hint.get("unit_label"), "m/s")
+
+        # point_feature
+        point_feature = inline.get("point_feature") or {}
+        self.assertEqual(point_feature.get("type"), "Feature")
+        geometry = point_feature.get("geometry") or {}
+        self.assertEqual(geometry.get("type"), "Point")
+
+        # layer_assets（wind-field 应有 geojson_url，无 cog_url）
+        layer_assets = inline.get("layer_assets") or {}
+        self.assertTrue(layer_assets.get("geojson_url"), "missing geojson_url")
+
+    def test_temperature_map_layer_ref(self) -> None:
+        """验证 temperature 图层的 map_layer ref 格式（含 COG）。"""
+        with patch.object(weather_engine_service, "_client", _FakeOpenMeteoClient()):
+            run_id = self._submit_fallback_workflow("temperature")
+            status_resp = interaction_hub.get_workflow_run(run_id)
+
+        self.assertIn(status_resp.status, ("succeeded", "completed"))
+
+        inline = self._find_map_layer_ref(status_resp.result_refs)
+        self.assertIsNotNone(inline, "未找到 map_layer ref 的 inline_data")
+
+        render_hint = inline.get("render_hint") or {}
+        self.assertEqual(render_hint.get("paint_mode"), "grid_fill")
+        self.assertEqual(render_hint.get("palette"), "thermal-orange")
+        self.assertEqual(render_hint.get("primary_metric"), "temperature_2m")
+        self.assertEqual(render_hint.get("unit_label"), "C")
+
+        # layer_assets（temperature 应有 geojson_url + cog_url + cog_bbox）
+        layer_assets = inline.get("layer_assets") or {}
+        self.assertTrue(layer_assets.get("geojson_url"), "missing geojson_url")
+        self.assertTrue(layer_assets.get("cog_url"), "missing cog_url")
+
+        cog_bbox = layer_assets.get("cog_bbox") or {}
+        self.assertIsNotNone(cog_bbox.get("west"), "missing cog_bbox.west")
+        self.assertIsNotNone(cog_bbox.get("south"), "missing cog_bbox.south")
+        self.assertIsNotNone(cog_bbox.get("east"), "missing cog_bbox.east")
+        self.assertIsNotNone(cog_bbox.get("north"), "missing cog_bbox.north")
+        self.assertEqual(cog_bbox.get("crs"), "EPSG:4326")
+
+    def test_precipitation_map_layer_ref(self) -> None:
+        """验证 precipitation 图层的 map_layer ref 格式（含 COG）。"""
+        with patch.object(weather_engine_service, "_client", _FakeOpenMeteoClient()):
+            run_id = self._submit_fallback_workflow("precipitation")
+            status_resp = interaction_hub.get_workflow_run(run_id)
+
+        self.assertIn(status_resp.status, ("succeeded", "completed"))
+
+        inline = self._find_map_layer_ref(status_resp.result_refs)
+        self.assertIsNotNone(inline, "未找到 map_layer ref 的 inline_data")
+
+        render_hint = inline.get("render_hint") or {}
+        self.assertEqual(render_hint.get("paint_mode"), "grid_fill")
+        self.assertEqual(render_hint.get("palette"), "precip-cyan")
+        self.assertEqual(render_hint.get("primary_metric"), "precipitation")
+        self.assertEqual(render_hint.get("unit_label"), "mm")
+
+        layer_assets = inline.get("layer_assets") or {}
+        self.assertTrue(layer_assets.get("geojson_url"), "missing geojson_url")
+        self.assertTrue(layer_assets.get("cog_url"), "missing cog_url")
+
+        cog_bbox = layer_assets.get("cog_bbox") or {}
+        self.assertIsNotNone(cog_bbox.get("west"))
+        self.assertEqual(cog_bbox.get("crs"), "EPSG:4326")
+
+    def test_all_three_layers_succeed(self) -> None:
+        """验证 3 个图层 fallback 路径全部成功。"""
+        with patch.object(weather_engine_service, "_client", _FakeOpenMeteoClient()):
+            for layer_id in ("wind-field", "temperature", "precipitation"):
+                run_id = self._submit_fallback_workflow(layer_id)
+                status_resp = interaction_hub.get_workflow_run(run_id)
+                self.assertIn(
+                    status_resp.status, ("succeeded", "completed"),
+                    f"{layer_id} failed: {status_resp.status}",
+                )
+                self.assertEqual(status_resp.progress, 100)
+
+                # 验证 result_refs 含 map_layer
+                ref_kinds = []
+                for ref in status_resp.result_refs:
+                    ref_dict = ref.model_dump(mode="json") if hasattr(ref, "model_dump") else dict(ref)
+                    ref_kinds.append(ref_dict.get("result_kind"))
+                self.assertIn("map_layer", ref_kinds, f"{layer_id} missing map_layer ref")
+
+
+if __name__ == "__main__":
+    unittest.main()

@@ -38,10 +38,21 @@ class ForecastFetchNode(BaseNode):
 
             spec = WEATHER_LAYER_SPECS[layer_id]
 
-            latitude = coerce_float(inputs.get("latitude")) or settings.weather_default_latitude
-            longitude = coerce_float(inputs.get("longitude")) or settings.weather_default_longitude
+            # 修复：coerce_float(...) or default 会误判 0.0（赤道/本初子午线被替换为广州）
+            # 改为显式 None 检查，仅在 coerce 失败时使用默认值
+            latitude = coerce_float(inputs.get("latitude"))
+            if latitude is None:
+                latitude = settings.weather_default_latitude
+            longitude = coerce_float(inputs.get("longitude"))
+            if longitude is None:
+                longitude = settings.weather_default_longitude
             model = inputs.get("model") or settings.weather_default_model
-            forecast_hours = coerce_int(inputs.get("forecast_hours")) or settings.weather_refresh_forecast_hours
+            forecast_hours = coerce_int(inputs.get("forecast_hours"))
+            if not forecast_hours:
+                forecast_hours = settings.weather_refresh_forecast_hours
+
+            # 修复：补传 pressure_levels，否则气压层风场（850hPa/500hPa/200hPa）在 workflow 路径下完全失效
+            pressure_levels = spec.pressure_levels or None
 
             payload, cache_status = self._client.fetch_point_forecast(
                 latitude=latitude,
@@ -50,6 +61,7 @@ class ForecastFetchNode(BaseNode):
                 model=model,
                 forecast_hours=forecast_hours,
                 ttl_seconds=settings.weather_cache_ttl_seconds,
+                pressure_levels=pressure_levels,
             )
 
             layer_spec_dict = asdict(spec)

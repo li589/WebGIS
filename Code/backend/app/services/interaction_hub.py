@@ -22,6 +22,7 @@ from shared.contracts.api_contracts import (
     BackendServiceStatus,
     EventChannel,
     ExecutionStatus,
+    FailureCategory,
     FrontendCommandRequest,
     FrontendCommandResponse,
     LogLevel,
@@ -91,7 +92,7 @@ class InMemoryInteractionHub:
             )
             for transition in submission_transitions:
                 self._save_run_status(
-                    transition.status,
+                    run_status=transition.status,
                     request_json=request_json if transition.request_json else None,
                 )
                 for event in transition.events:
@@ -121,7 +122,7 @@ class InMemoryInteractionHub:
                 running_at = datetime.now(timezone.utc)
                 logger.info("Workflow execution started")
                 self._save_run_status(
-                    self._build_running_transition(
+                    run_status=self._build_running_transition(
                         run_id=run_id,
                         payload=payload,
                         created_at=created_at,
@@ -157,13 +158,183 @@ class InMemoryInteractionHub:
                     requested_at=running_at,
                 )
                 logger.info("Workflow execution finished")
-            except Exception:
+            except Exception as exc:
                 logger.exception("Workflow execution failed")
-                self._finalize_workflow_failure(
+                # 失败分类修复：区分 transient/terminal，可重试失败进入 retry_pending 状态
+                self._handle_workflow_failure(
                     run_id=run_id,
                     payload=payload,
                     created_at=created_at,
+                    exc=exc,
                 )
+
+    def _handle_workflow_failure(
+        self,
+        *,
+        run_id: str,
+        payload: WorkflowSubmitRequest,
+        created_at: datetime,
+        exc: Exception,
+    ) -> None:
+        """失败分类处理：可重试 → retry_pending + 调度重试；不可重试 → failed。"""
+        from app.services.failure_classifier import FailureClassifier
+
+        category = FailureClassifier.classify(exc)
+        retry_policy = payload.retry_policy
+
+        # 读取当前 attempt 次数（优先从 payload.retry_attempt 读取，向后兼容）
+        current_attempt = payload.retry_attempt or 1
+
+        if category.retryable and current_attempt < retry_policy.max_attempts:
+            # 可重试：进入 retry_pending 状态
+            next_attempt = current_attempt + 1
+            backoff_seconds = retry_policy.compute_backoff(current_attempt)
+            self._finalize_workflow_retry(
+                run_id=run_id,
+                payload=payload,
+                created_at=created_at,
+                exc=exc,
+                category=category,
+                current_attempt=current_attempt,
+                next_attempt=next_attempt,
+                backoff_seconds=backoff_seconds,
+            )
+        else:
+            # 不可重试或超过最大次数：进入 failed 状态
+            self._finalize_workflow_failure(
+                run_id=run_id,
+                payload=payload,
+                created_at=created_at,
+                exc=exc,
+                category=category,
+                attempt_count=current_attempt,
+            )
+
+    def _finalize_workflow_retry(
+        self,
+        *,
+        run_id: str,
+        payload: WorkflowSubmitRequest,
+        created_at: datetime,
+        exc: Exception,
+        category: FailureCategory,
+        current_attempt: int,
+        next_attempt: int,
+        backoff_seconds: float,
+    ) -> None:
+        """瞬态失败进入 retry_pending 状态，并调度延迟重试。"""
+        retry_at = datetime.now(timezone.utc)
+        self._save_run_status(
+            run_status=self._build_retry_pending_transition(
+                run_id=run_id,
+                payload=payload,
+                created_at=created_at,
+                updated_at=retry_at,
+                status_url=self._workflow_status_url(run_id),
+                events_url=self._workflow_events_url(run_id),
+                category=category,
+                current_attempt=current_attempt,
+                next_attempt=next_attempt,
+                backoff_seconds=backoff_seconds,
+            )
+        )
+        self._record_event(
+            run_id=run_id,
+            channel=EventChannel.log,
+            level=LogLevel.warning,
+            message=(
+                f"工作流瞬态失败（{category.value}），"
+                f"第 {current_attempt}/{payload.retry_policy.max_attempts} 次尝试，"
+                f"将在 {backoff_seconds:.1f}s 后重试。"
+            ),
+            progress=50,
+            payload={
+                "failure_category": category.value,
+                "attempt": current_attempt,
+                "next_attempt": next_attempt,
+                "backoff_seconds": backoff_seconds,
+                "error_message": str(exc)[:500],
+            },
+            created_at=retry_at,
+        )
+        # 调度延迟重试（Celery countdown）
+        self._schedule_retry(
+            run_id=run_id,
+            payload=payload,
+            next_attempt=next_attempt,
+            backoff_seconds=backoff_seconds,
+        )
+
+    def _schedule_retry(
+        self,
+        *,
+        run_id: str,
+        payload: WorkflowSubmitRequest,
+        next_attempt: int,
+        backoff_seconds: float,
+    ) -> None:
+        """调度延迟重试任务。
+
+        修复：调度失败时不再静默吞掉异常，而是将 workflow 从 retry_pending
+        转为 failed，避免僵尸任务永久卡在 retry_pending 状态。
+        """
+        from app.tasks.workflow_tasks import dispatch_workflow_task
+
+        try:
+            # 在 payload 中携带 attempt_count，供下次执行读取
+            retry_payload = payload.model_copy(update={"retry_attempt": next_attempt})
+            dispatch_workflow_task(
+                run_id=run_id,
+                payload=retry_payload,
+            )
+        except Exception as schedule_exc:
+            logger.exception(
+                "Failed to schedule workflow retry for run %s, transitioning to failed",
+                run_id,
+            )
+            # 调度失败：将 workflow 标记为 failed，避免僵尸任务
+            self._finalize_workflow_failure(
+                run_id=run_id,
+                payload=payload,
+                created_at=datetime.now(timezone.utc),
+                exc=schedule_exc,
+                category=FailureCategory.terminal,
+                attempt_count=next_attempt - 1,
+            )
+
+    def _build_retry_pending_transition(
+        self,
+        *,
+        run_id: str,
+        payload: WorkflowSubmitRequest,
+        created_at: datetime,
+        updated_at: datetime,
+        status_url: str,
+        events_url: str,
+        category: FailureCategory,
+        current_attempt: int,
+        next_attempt: int,
+        backoff_seconds: float,
+    ) -> WorkflowRunStatusResponse:
+        """构建 retry_pending 状态响应。"""
+        return WorkflowRunStatusResponse(
+            run_id=run_id,
+            status=ExecutionStatus.retry_pending,
+            command_type=payload.command_type,
+            priority=payload.priority,
+            created_at=created_at,
+            updated_at=updated_at,
+            status_url=status_url,
+            events_url=events_url,
+            message=f"工作流瞬态失败（{category.value}），等待第 {next_attempt} 次重试。",
+            diagnostics=[
+                f"failure_category={category.value}",
+                f"attempt={current_attempt}",
+                f"next_attempt={next_attempt}",
+                f"backoff_seconds={backoff_seconds:.1f}",
+                f"retryable={category.retryable}",
+            ],
+        )
 
     def get_workflow_run(self, run_id: str) -> WorkflowRunStatusResponse | None:
         return self._repository.get_run(run_id)
@@ -185,6 +356,26 @@ class InMemoryInteractionHub:
             message="运行时配置已更新。",
             config_snapshot=self._repository.get_config_snapshot(),
         )
+
+    def _collect_cache_stats(self) -> dict[str, Any]:
+        """收集 cache_service 的运行时统计快照。"""
+        try:
+            from app.services.cache_service import cache_service
+
+            stats = cache_service.get_stats()
+            return {
+                "hits": stats.hits,
+                "misses": stats.misses,
+                "upserts": stats.upserts,
+                "evictions": stats.evictions,
+                "hit_rate": stats.hit_rate,
+                "total_entries": stats.total_entries,
+                "fresh_entries": stats.fresh_entries,
+                "expired_entries": stats.expired_entries,
+                "scopes": stats.scopes,
+            }
+        except Exception as exc:  # pragma: no cover - 防御性兜底
+            return {"error": str(exc)}
 
     def get_runtime_status(self) -> RuntimeStatusResponse:
         now = datetime.now(timezone.utc)
@@ -324,6 +515,8 @@ class InMemoryInteractionHub:
                     "download_standard_queue": settings.workflow_queue_download_standard,
                     "cache_dir": settings.cache_dir,
                     "cache_default_ttl_seconds": settings.cache_default_ttl_seconds,
+                    # cache 运行时统计（hit/miss/eviction 计数）
+                    "cache_stats": self._collect_cache_stats(),
                 },
             ),
         ]
@@ -372,7 +565,7 @@ class InMemoryInteractionHub:
                 revoke_task(task_id, terminate=True)
 
         self._save_run_status(
-            self._build_execution_transition(
+            run_status=self._build_execution_transition(
                 run_id=run_id,
                 payload=WorkflowSubmitRequest(
                     command_type=current_run.command_type,
@@ -430,7 +623,7 @@ class InMemoryInteractionHub:
 
         if new_run:
             self._save_run_status(
-                self._build_execution_transition(
+                run_status=self._build_execution_transition(
                     run_id=new_response.run_id,
                     payload=payload,
                     status=new_run.status,
@@ -460,7 +653,7 @@ class InMemoryInteractionHub:
                 task_id = dispatch_workflow_task(run_id, payload)
                 current_run = self._repository.get_run(run_id)
                 self._save_run_status(
-                    self._build_execution_transition(
+                    run_status=self._build_execution_transition(
                         run_id=run_id,
                         payload=payload,
                         status=ExecutionStatus.queued,
@@ -498,7 +691,7 @@ class InMemoryInteractionHub:
                 logger.exception("Workflow dispatch failed")
                 current_run = self._repository.get_run(run_id)
                 self._save_run_status(
-                    self._build_execution_transition(
+                    run_status=self._build_execution_transition(
                         run_id=run_id,
                         payload=payload,
                         status=ExecutionStatus.failed,
@@ -551,7 +744,7 @@ class InMemoryInteractionHub:
         )
         completed_at = datetime.now(timezone.utc)
         self._save_run_status(
-            self._build_succeeded_transition(
+            run_status=self._build_succeeded_transition(
                 run_id=run_id,
                 payload=payload,
                 message=execution.message,
@@ -600,10 +793,27 @@ class InMemoryInteractionHub:
         run_id: str,
         payload: WorkflowSubmitRequest,
         created_at: datetime,
+        exc: Exception | None = None,
+        category: FailureCategory | None = None,
+        attempt_count: int = 1,
     ) -> None:
         failed_at = datetime.now(timezone.utc)
+        # 失败分类修复：携带 failure_category + attempt_count 到 diagnostics
+        diagnostics = [
+            "workflow-runs 已进入服务编排链，但本次执行失败。",
+            f"error_code=workflow_execution_failed",
+            f"attempt_count={attempt_count}",
+        ]
+        if category is not None:
+            diagnostics.append(f"failure_category={category.value}")
+            diagnostics.append(f"retryable={category.retryable}")
+        if exc is not None:
+            # 截断错误信息避免 diagnostics 过长
+            diagnostics.append(f"error_type={type(exc).__name__}")
+            diagnostics.append(f"error_message={str(exc)[:200]}")
+
         self._save_run_status(
-            self._build_failed_transition(
+            run_status=self._build_failed_transition(
                 run_id=run_id,
                 payload=payload,
                 message="工作流执行失败，请查看服务端日志。",
@@ -611,10 +821,7 @@ class InMemoryInteractionHub:
                 updated_at=failed_at,
                 status_url=self._workflow_status_url(run_id),
                 events_url=self._workflow_events_url(run_id),
-                diagnostics=[
-                    "workflow-runs 已进入服务编排链，但本次执行失败。",
-                    "error_code=workflow_execution_failed",
-                ],
+                diagnostics=diagnostics,
             )
         )
         self._record_event(
@@ -623,7 +830,12 @@ class InMemoryInteractionHub:
             level=LogLevel.error,
             message="工作流执行失败。",
             progress=100,
-            payload={"error_code": "workflow_execution_failed"},
+            payload={
+                "error_code": "workflow_execution_failed",
+                "failure_category": category.value if category else "unknown",
+                "attempt_count": attempt_count,
+                "error_type": type(exc).__name__ if exc else "unknown",
+            },
             created_at=failed_at,
         )
 
@@ -652,7 +864,10 @@ class InMemoryInteractionHub:
         }[payload.priority]
         queue_name = resolve_workflow_queue(payload)
         for task_data in follow_up_tasks:
-            if task_data.get("task_type") != "download_fetch_placeholder":
+            # P0 修复：task_type 过滤条件与 download_service.build_follow_up_task 产出的值对齐
+            # 修复前：仅匹配 "download_fetch_placeholder"（旧占位名），导致 follow-up 任务永远不被派发
+            # 修复后：匹配 "download_fetch"（新名）与 "download_fetch_placeholder"（向后兼容）
+            if task_data.get("task_type") not in {"download_fetch", "download_fetch_placeholder"}:
                 continue
             with log_context(run_id=run_id):
                 try:

@@ -4,17 +4,24 @@ import { defineStore } from 'pinia'
 import { demoLayerCatalog } from '../../app/demo-data'
 import { resolveDemoLayer } from '../../app/demo-adapter'
 import { getWorkflowRun, submitWorkflow, cancelWorkflowRun, retryWorkflowRun } from '../../services/runtime-api'
+import type { BoundingBox } from '../../services/runtime-api'
 import { LAYER_CATEGORIES, LAYER_LIBRARY, LAYER_LIBRARY_BY_CATEGORY } from './catalog'
 import { buildJobLayer } from './result-adapter'
-import type { ActiveLayer, ActiveLayerDisplay, JobLayerItem, LayerSidebarView } from './types'
+import type { ActiveLayer, ActiveLayerDisplay, JobLayerItem, JobStatus, LayerSidebarView } from './types'
 
 function genInstanceId() {
   return `layer-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
 }
 
 function isTerminalStatus(status: string) {
+  // retry_pending 是非终态（等待重试），不应包含在此处
   return status === 'succeeded' || status === 'failed' || status === 'cancelled'
 }
+
+// 轮询退避配置：对齐后端 retry_policy（max_attempts=3, initial_backoff=2s）
+const POLL_INITIAL_INTERVAL_MS = 1500
+const POLL_MAX_INTERVAL_MS = 10000
+const POLL_MAX_ATTEMPTS = 30 // 总轮询次数上限，防止后端异常时无限轮询
 
 function getCatalogDisplayName(catalogId: string) {
   return LAYER_LIBRARY.find((item) => item.catalogId === catalogId)?.name ?? catalogId
@@ -40,6 +47,17 @@ export const useLayersStore = defineStore('layers', () => {
   const workflowError = ref<string | null>(null)
   const workflowPollingHandles = new Map<string, number>()
   const isSubmitting = ref(false)
+
+  // ── 粒子流独占启用状态 ───────────────────────────────────────────────────
+  // particle_flow 是 Canvas 叠加层，性能开销大且视觉冲突，同一时间只允许一个图层启用
+  // null 表示未启用任何粒子流；值为 catalogId 时该图层独占粒子流渲染
+  const particleFlowCatalogId = ref<string | null>(null)
+
+  // ── 当前地图视口（中心点 + 可见范围）─────────────────────────────────────
+  // 用于 runWorkflowForCatalog 时把视口范围传给后端，使风场网格在用户当前位置生成
+  // 而非硬编码为广州。bbox 可能为 null（地图未初始化完成时）。
+  const currentMapCenter = ref<{ lng: number; lat: number }>({ lng: 113.2644, lat: 23.1291 })
+  const currentMapBBox = ref<BoundingBox | null>(null)
 
   // ─────────────────────────────────────────────────────────────────────────────
 
@@ -135,6 +153,11 @@ export const useLayersStore = defineStore('layers', () => {
   function removeLayer(instanceId: string) {
     const idx = activeLayers.value.findIndex((l) => l.instanceId === instanceId)
     if (idx === -1) return
+    // 修复：删除图层时停止对应工作流轮询，避免泄漏 setTimeout 句柄
+    const layer = activeLayers.value[idx]
+    if (layer.jobLayer?.jobId) {
+      stopWorkflowPolling(layer.jobLayer.jobId)
+    }
     activeLayers.value.splice(idx, 1)
 
     if (selectedInstanceId.value === instanceId) {
@@ -146,6 +169,25 @@ export const useLayersStore = defineStore('layers', () => {
     const layer = activeLayers.value.find((l) => l.instanceId === instanceId)
     if (layer) {
       layer.visible = !layer.visible
+    }
+  }
+
+  /** 批量设置所有图层可见性 */
+  function setAllLayerVisibility(visible: boolean) {
+    for (const layer of activeLayers.value) {
+      layer.visible = visible
+    }
+  }
+
+  /** 批量移除所有图层（保留行政区边界） */
+  function removeAllLayers(keepBoundary = true) {
+    if (keepBoundary) {
+      activeLayers.value = activeLayers.value.filter((l) => l.isAdminBoundary)
+    } else {
+      activeLayers.value = []
+    }
+    if (!activeLayers.value.some((l) => l.instanceId === selectedInstanceId.value)) {
+      selectedInstanceId.value = activeLayers.value[0]?.instanceId ?? null
     }
   }
 
@@ -216,7 +258,7 @@ export const useLayersStore = defineStore('layers', () => {
     syncJobLayerToActiveLayer(catalogId, jobLayer)
   }
 
-  async function pollWorkflowRun(jobId: string, catalogId: string) {
+  async function pollWorkflowRun(jobId: string, catalogId: string, attempt = 1) {
     try {
       const run = await getWorkflowRun(jobId)
       const jobLayer = await buildJobLayer(run, catalogId)
@@ -231,10 +273,21 @@ export const useLayersStore = defineStore('layers', () => {
       workflowError.value = error instanceof Error ? error.message : '轮询 workflow-runs 失败'
     }
 
-    stopWorkflowPolling(jobId)
+    // 修复：加入最大轮询次数上限，防止后端异常时无限轮询
+    if (attempt >= POLL_MAX_ATTEMPTS) {
+      workflowError.value = `工作流轮询超过最大次数 (${POLL_MAX_ATTEMPTS})，已停止轮询`
+      stopWorkflowPolling(jobId)
+      return
+    }
+
+    // 修复：指数退避，对齐后端 retry_policy。retry_pending 状态下更应拉长间隔
+    const backoffMs = Math.min(
+      POLL_INITIAL_INTERVAL_MS * Math.pow(1.5, attempt - 1),
+      POLL_MAX_INTERVAL_MS,
+    )
     const handle = window.setTimeout(() => {
-      void pollWorkflowRun(jobId, catalogId)
-    }, 1500)
+      void pollWorkflowRun(jobId, catalogId, attempt + 1)
+    }, backoffMs)
     workflowPollingHandles.set(jobId, handle)
   }
 
@@ -244,10 +297,14 @@ export const useLayersStore = defineStore('layers', () => {
     isSubmitting.value = true
     try {
       const catalogName = getCatalogDisplayName(catalogId)
-      const requestedOutputs =
-        catalogId === 'wind-field' || catalogId === 'temperature' || catalogId === 'precipitation'
-          ? ['json', 'text', 'table', 'map_layer']
-          : ['json', 'text', 'table']
+      // 支持 map_layer 渲染的图层：风场全高度变体 + 温度 + 降水
+      const supportsMapLayer =
+        catalogId.startsWith('wind-field') ||
+        catalogId.startsWith('temperature') ||
+        catalogId === 'precipitation'
+      const requestedOutputs = supportsMapLayer
+        ? ['json', 'text', 'table', 'map_layer']
+        : ['json', 'text', 'table']
 
       const accepted = await submitWorkflow({
         command_type: 'analysis',
@@ -256,6 +313,10 @@ export const useLayersStore = defineStore('layers', () => {
         requested_outputs: requestedOutputs,
         parameters: {
           hour: currentHour.value,
+          // 把当前地图中心点作为预报点传给后端，使风场网格围绕用户当前位置生成
+          // 后端 _resolve_point 优先读 parameters.latitude/longitude
+          latitude: currentMapCenter.value.lat,
+          longitude: currentMapCenter.value.lng,
         },
         client: {
           page: 'dashboard',
@@ -264,6 +325,9 @@ export const useLayersStore = defineStore('layers', () => {
         map_context: {
           active_layer_id: catalogId,
           map_mode: '2d',
+          // 把当前视口范围传给后端，后端 _resolve_render_bbox 优先使用此 bbox 生成网格
+          // 允许全球范围浏览：用户缩放到全球时，网格会覆盖整个可见区域
+          viewport_bbox: currentMapBBox.value ?? undefined,
         },
       })
 
@@ -341,6 +405,52 @@ export const useLayersStore = defineStore('layers', () => {
     })
   }
 
+  /** 判断 catalogId 是否由 weatherengine 后端支持（用于自动运行工作流） */
+  function isWeatherEngineLayer(catalogId: string): boolean {
+    // 风场全高度变体（wind-field / wind-field-80m / wind-field-120m / wind-field-180m）
+    if (catalogId.startsWith('wind-field')) return true
+    // 温度全高度变体（temperature / temperature-80m / temperature-120m / temperature-180m）
+    if (catalogId.startsWith('temperature')) return true
+    // 其他 weatherengine 图层
+    return ['precipitation', 'pressure', 'humidity', 'visibility'].includes(catalogId)
+  }
+
+  /** 判断 catalogId 是否支持粒子流渲染（所有 wind-field 变体都支持） */
+  function supportsParticleFlow(catalogId: string): boolean {
+    return catalogId.startsWith('wind-field')
+  }
+
+  /** 切换粒子流启用状态：再次点击同一图层会关闭，点击新图层会切换 */
+  function toggleParticleFlow(catalogId: string) {
+    if (particleFlowCatalogId.value === catalogId) {
+      particleFlowCatalogId.value = null
+    } else {
+      particleFlowCatalogId.value = catalogId
+    }
+  }
+
+  /** 直接设置粒子流启用图层（设为 null 关闭） */
+  function setParticleFlow(catalogId: string | null) {
+    particleFlowCatalogId.value = catalogId
+  }
+
+  /** 更新当前地图视口（中心点 + 可见 bbox），由 MapCanvas 在 moveend 时调用 */
+  function setMapViewport(center: { lng: number; lat: number }, bbox: BoundingBox | null) {
+    currentMapCenter.value = center
+    currentMapBBox.value = bbox
+  }
+
+  /** catalogId → 工作流状态映射，用于 library 卡片显示自动运行反馈 */
+  const catalogJobStatus = computed(() => {
+    const map = new Map<string, JobStatus>()
+    for (const layer of activeLayers.value) {
+      if (layer.jobLayer) {
+        map.set(layer.catalogId, layer.jobLayer.status)
+      }
+    }
+    return map
+  })
+
   return {
     // State
     activeLayers,
@@ -350,11 +460,15 @@ export const useLayersStore = defineStore('layers', () => {
     currentHour,
     workflowError,
     isSubmitting,
+    particleFlowCatalogId,
+    currentMapCenter,
+    currentMapBBox,
     // Computed
     activeLayersDisplay,
     selectedLayerDisplay,
     activeLayerCount,
     sidebarViewLabel,
+    catalogJobStatus,
     // Data
     layerLibrary: LAYER_LIBRARY,
     layerLibraryByCategory: LAYER_LIBRARY_BY_CATEGORY,
@@ -363,6 +477,8 @@ export const useLayersStore = defineStore('layers', () => {
     addLayer,
     removeLayer,
     toggleLayerVisibility,
+    setAllLayerVisibility,
+    removeAllLayers,
     setLayerOpacity,
     setLayerOrder,
     selectLayer,
@@ -374,5 +490,10 @@ export const useLayersStore = defineStore('layers', () => {
     cancelWorkflowRunForJob,
     retryWorkflowRunForJob,
     stopWorkflowPolling,
+    isWeatherEngineLayer,
+    supportsParticleFlow,
+    toggleParticleFlow,
+    setParticleFlow,
+    setMapViewport,
   }
 })

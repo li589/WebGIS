@@ -4,7 +4,7 @@ from dataclasses import replace
 
 from contracts.job import JobRequest
 from modules.base import BaseModule
-from modules.registry import register_module
+from modules.registry import MODULE_REGISTRY, register_module
 from runner.call_guard import forbid_shim_pipeline_reentry, push_runtime_call
 from runner.dispatch import _prepare_required_datasets
 from runner.registry import get_pipeline
@@ -111,15 +111,19 @@ class PipelineBackedModule(BaseModule):
 
 
 def register_default_compat_modules() -> None:
-    register_module(PipelineBackedModule("smap_daily", "smap_daily_pipeline"), aliases=["smap_daily_pipeline"])
-    register_module(PipelineBackedModule("ndvi_daily", "ndvi_daily_pipeline"), aliases=["ndvi_daily_pipeline"])
-    register_module(PipelineBackedModule("fy_daily", "fy_daily_pipeline"), aliases=["fy_daily_pipeline"])
-    register_module(PipelineBackedModule("station_daily", "station_daily_pipeline"), aliases=["station_daily_pipeline"])
-    register_module(PipelineBackedModule("inversion_daily", "inversion_daily_pipeline"), aliases=["inversion_daily_pipeline"])
-    register_module(PipelineBackedModule("daily_bundle", "daily_bundle_pipeline"), aliases=["daily_bundle_pipeline"])
-    register_module(PipelineBackedModule("timeseries_bundle", "timeseries_bundle_pipeline"), aliases=["timeseries_bundle_pipeline"])
-    register_module(PipelineBackedModule("block_inversion", "block_inversion_pipeline"), aliases=["block_inversion_pipeline"])
-    register_module(PipelineBackedModule("omega_block", "omega_block_pipeline"), aliases=["omega_block_pipeline"])
-
-
-register_default_compat_modules()
+    # 兼容 shim：仅在原生 module 未注册时才注册，避免覆盖原生实现。
+    _shims = (
+        ("smap_daily", "smap_daily_pipeline"),
+        ("ndvi_daily", "ndvi_daily_pipeline"),
+        ("fy_daily", "fy_daily_pipeline"),
+        ("station_daily", "station_daily_pipeline"),
+        ("inversion_daily", "inversion_daily_pipeline"),
+        ("daily_bundle", "daily_bundle_pipeline"),
+        ("timeseries_bundle", "timeseries_bundle_pipeline"),
+        ("block_inversion", "block_inversion_pipeline"),
+        ("omega_block", "omega_block_pipeline"),
+    )
+    for name, pipeline_name in _shims:
+        if name in MODULE_REGISTRY:
+            continue
+        register_module(PipelineBackedModule(name, pipeline_name), aliases=[pipeline_name])

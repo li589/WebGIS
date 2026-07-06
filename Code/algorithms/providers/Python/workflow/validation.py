@@ -55,7 +55,7 @@ def validate_workflow_definition(definition: WorkflowDefinition) -> WorkflowDefi
             node_map=node_map,
             edges=definition.edges,
         )
-        _validate_mode_required_inputs(node, node_signatures=node_signatures)
+        _validate_mode_required_inputs(node, node_signatures=node_signatures, edges=definition.edges)
 
     output_names: set[str] = set()
     for index, output_spec in enumerate(definition.outputs):
@@ -225,6 +225,7 @@ def _validate_mode_required_inputs(
     node: WorkflowNodeSpec,
     *,
     node_signatures: dict[str, _NodeSignature],
+    edges: list[WorkflowEdge],
 ) -> None:
     if node.node_type != "module":
         return
@@ -234,12 +235,13 @@ def _validate_mode_required_inputs(
     if not required_inputs:
         return
     signature = node_signatures[node.node_id].input_ports
+    edge_bound_ports = {edge.to_port for edge in edges if edge.to_node == node.node_id}
     for input_name in required_inputs:
         if input_name not in signature:
             raise WorkflowDefinitionValidationError(
                 f"workflow_definition.nodes[{node.node_id}] mode '{mode}' requires input port {input_name}, but the module does not expose it"
             )
-        if input_name not in node.input_bindings:
+        if input_name not in node.input_bindings and input_name not in edge_bound_ports:
             raise WorkflowDefinitionValidationError(
                 f"workflow_definition.nodes[{node.node_id}] mode '{mode}' requires input_bindings.{input_name}"
             )

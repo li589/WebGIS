@@ -12,6 +12,9 @@ from app.weatherengine.nodes import (
     WindFieldRenderNode,
     TemperatureGridRenderNode,
     PrecipitationGridRenderNode,
+    HumidityGridRenderNode,
+    PressureGridRenderNode,
+    VisibilityGridRenderNode,
     SummaryGenerateNode,
 )
 
@@ -40,6 +43,9 @@ class WeatherWorkflowService:
             WindFieldRenderNode,
             TemperatureGridRenderNode,
             PrecipitationGridRenderNode,
+            HumidityGridRenderNode,
+            PressureGridRenderNode,
+            VisibilityGridRenderNode,
             SummaryGenerateNode,
         )
         for node_cls in default_nodes:

@@ -178,6 +178,10 @@ class ResultStorageService:
             public_url=stored_object.public_url,
         )
 
+    def fetch_artifact_bytes(self, artifact_id: str) -> bytes | None:
+        """Fetch raw bytes for an artifact (works for both local and MinIO backends)."""
+        return self._store.fetch_bytes(self._artifact_key(artifact_id))
+
     def build_chunked_reference(
         self,
         *,

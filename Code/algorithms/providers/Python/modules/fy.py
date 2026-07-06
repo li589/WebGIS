@@ -12,7 +12,7 @@ from contracts.product import ProductManifest, ProductRef
 from data_access import resolve_prepared_local_directory
 from ingest.fy import build_fy_daily_job_plans, write_fy_daily_plan_json
 from modules.base import BaseModule
-from modules.registry import register_module
+from modules.registry import register_module_decorator
 from utils.fy_executor import execute_fy_command_steps
 from workflow.schemas import ArtifactRef, NodeExecutionContext, PortSpec
 
@@ -47,6 +47,7 @@ def _resolve_fy_input_dir(datasource_selection: dict[str, object]) -> Path:
     return Path(str(input_dir))
 
 
+@register_module_decorator(name="fy_daily", aliases=["fy_daily_pipeline"])
 class FyDailyModule(BaseModule):
     name = "fy_daily"
     description = "Native module that builds FY daily plans and optional execution products."
@@ -222,10 +223,3 @@ def _load_fy_multiband_payload(tif_path: Path, *, satellite: str) -> dict[str, o
     tbv[(tbv > 330.0) | (tbv < 0.0)] = np.nan
     tbh[(tbh > 330.0) | (tbh < 0.0)] = np.nan
     return {"TBv": tbv, "TBh": tbh, "IA": ia}
-
-
-def register_default_fy_modules() -> None:
-    register_module(FyDailyModule(), aliases=["fy_daily_pipeline"])
-
-
-register_default_fy_modules()

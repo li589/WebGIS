@@ -1,12 +1,13 @@
 from __future__ import annotations
 
 from contracts.job import JobRequest
+from contracts.modes import RetrievalMode
 from workflow.graph import WorkflowDefinition, WorkflowEdge, WorkflowNodeSpec, WorkflowOutputSpec
 
 
 def build_retrieval_workflow_definition(request: JobRequest) -> WorkflowDefinition:
-    mode = str(request.algorithm_params.get("mode", "dh")).lower()
-    if mode == "omega":
+    mode = str(request.algorithm_params.get("mode", RetrievalMode.DH.value)).lower()
+    if mode == RetrievalMode.OMEGA.value:
         retrieval_node = WorkflowNodeSpec(
             node_id="omega_block",
             node_type="module",

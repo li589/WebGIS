@@ -6,7 +6,7 @@ from contracts.product import ProductManifest, ProductRef
 from data_access import resolve_prepared_local_directory
 from ingest.smap import convert_smap_l3_directory_to_mat
 from modules.base import BaseModule
-from modules.registry import register_module
+from modules.registry import register_module_decorator
 from workflow.schemas import ArtifactRef, NodeExecutionContext, PortSpec
 
 
@@ -40,6 +40,7 @@ def _resolve_smap_input_dir(datasource_selection: dict[str, object]) -> Path:
     return Path(str(input_dir))
 
 
+@register_module_decorator(name="smap_daily", aliases=["smap_daily_pipeline"])
 class SmapDailyModule(BaseModule):
     name = "smap_daily"
     description = "Native module that converts SMAP L3 HDF5 files to daily MAT products."
@@ -94,10 +95,3 @@ class SmapDailyModule(BaseModule):
             },
         )
         return _store_manifest(ctx, module_name=self.name, manifest=manifest, metadata={"product_count": len(outputs)})
-
-
-def register_default_smap_modules() -> None:
-    register_module(SmapDailyModule(), aliases=["smap_daily_pipeline"])
-
-
-register_default_smap_modules()

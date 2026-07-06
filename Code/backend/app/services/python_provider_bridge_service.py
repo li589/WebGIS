@@ -83,6 +83,24 @@ class PythonProviderBridgeService:
     ) -> WorkflowExecutionResult:
         request_payload = self._build_job_request_payload(run_id=run_id, payload=payload)
         service = self._get_job_service()
+
+        # Provider 标准契约模板修复：在 submit_job 前调用 validate_job 做语义校验
+        # 修复前：只做 _validate_algorithm_request_shape 结构校验，语义错误要到 run_job 深处才暴露
+        # 修复后：调用 provider manifest 的 validate_job_response 提前发现参数错误
+        validation_response = service.validate_job_response(request_payload)
+        if validation_response.status_code == 200:
+            validation_body = dict(validation_response.body)
+            if not validation_body.get("is_valid", True):
+                errors = validation_body.get("errors", [])
+                from app.services.bridge_protocol import BridgeExecutionError
+                from shared.contracts.api_contracts import FailureCategory
+
+                raise BridgeExecutionError(
+                    category=FailureCategory.validation_error,
+                    message=f"Provider template validation failed: {'; '.join(errors)}",
+                    details={"validation_errors": errors},
+                )
+
         response = service.submit_job(request_payload)
         response_body = dict(response.body)
         if response.status_code >= 400:
@@ -91,7 +109,21 @@ class PythonProviderBridgeService:
                 or response_body.get("user_message")
                 or "Python provider job service returned an error."
             )
-            raise ValueError(developer_message)
+            # 失败分类修复：区分 4xx（终态）/ 5xx（瞬态）/ 429（限流）
+            # 修复前：所有 HTTP >= 400 都抛 ValueError（被分类为 terminal_failure，永不重试）
+            # 修复后：5xx/429 抛 BridgeExecutionError(transient_*)，hub 会自动重试
+            from app.services.bridge_protocol import BridgeExecutionError
+            from app.services.failure_classifier import FailureClassifier
+
+            category = FailureClassifier._classify_http_status(response.status_code)
+            raise BridgeExecutionError(
+                category=category,
+                message=developer_message,
+                details={
+                    "status_code": response.status_code,
+                    "response_body": response_body,
+                },
+            ) from None
 
         job_result = self._as_dict(response_body.get("job_result"))
         result_dto = self._as_dict(response_body.get("result_dto"))
@@ -103,9 +135,11 @@ class PythonProviderBridgeService:
             job_result=job_result,
             result_dto=result_dto,
         )
-        # m18 修复：消除 entry_name 重复赋值，提取为局部变量复用
+        # 协议统一修复：优先使用调用方透传的 workflow_entry_name，避免信息损失
+        # 仅当调用方未设置时，才回退到 workflow_name/module_name/"workflow_definition" 重算
         entry_name = (
-            request_payload.get("workflow_name")
+            request_payload.get("workflow_entry_name")
+            or request_payload.get("workflow_name")
             or request_payload.get("module_name")
             or "workflow_definition"
         )
@@ -534,10 +568,29 @@ class PythonProviderBridgeService:
             raise ValueError("algorithm_request.output_spec 必须为 object。")
         if not isinstance(request_payload.get("tags"), dict):
             raise ValueError("algorithm_request.tags 必须为 object。")
-        if "time_range" in request_payload and request_payload.get("time_range") is not None and not isinstance(request_payload.get("time_range"), dict):
-            raise ValueError("algorithm_request.time_range 必须为 object。")
-        if "region" in request_payload and request_payload.get("region") is not None and not isinstance(request_payload.get("region"), dict):
-            raise ValueError("algorithm_request.region 必须为 object。")
+
+        # 协议统一增强：校验 time_range 内部结构，提前在 bridge 层暴露错误
+        # Python provider 侧 TimeRange 要求 {start: str, end: str, step?: str}
+        time_range = request_payload.get("time_range")
+        if time_range is not None:
+            if not isinstance(time_range, dict):
+                raise ValueError("algorithm_request.time_range 必须为 object。")
+            if "start" not in time_range or "end" not in time_range:
+                raise ValueError(
+                    "algorithm_request.time_range 必须包含 'start' 和 'end' 字段（ISO 8601 字符串）。"
+                )
+
+        # 协议统一增强：校验 region 内部结构
+        # Python provider 侧 RegionSpec 要求 {kind: str, value: dict}
+        region = request_payload.get("region")
+        if region is not None:
+            if not isinstance(region, dict):
+                raise ValueError("algorithm_request.region 必须为 object。")
+            if "kind" not in region or "value" not in region:
+                raise ValueError(
+                    "algorithm_request.region 必须包含 'kind' 和 'value' 字段。"
+                )
+
         if request_payload.get("workflow_definition") is not None and request_payload.get("module_name") is not None:
             raise ValueError("algorithm_request.workflow_definition 与 module_name 不能同时出现。")
 

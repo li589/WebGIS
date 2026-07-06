@@ -27,3 +27,10 @@ class Settings(BaseSettings):
     max_parallel_downloads: int = Field(default=4, ge=1)
     max_local_write_bytes: int = Field(default=10 * 1024 * 1024, ge=1)
     account_cooldown_seconds: int = Field(default=300, ge=0)
+    # GEE 凭证配置（Service Account 模式）
+    # 凭证加密密钥（32 字节 hex 字符串，用于 AES-GCM 加密 service_account JSON）
+    credentials_encryption_key: str = ""
+    # 凭证存储路径（SQLite 文件路径）
+    credentials_db_path: str = ""
+    # 是否允许通过 API 添加 service_account
+    api_account_management_enabled: bool = True

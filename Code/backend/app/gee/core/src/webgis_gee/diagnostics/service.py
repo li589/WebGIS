@@ -44,6 +44,11 @@ class DiagnosticsService:
         }
         if self._account_pool is not None:
             checks["account_pool"] = self._account_pool.health_report()
+        else:
+            checks["account_pool"] = {
+                "status": "error",
+                "error": "no account pool configured — GEE credentials not loaded",
+            }
         if self._resource_controller is not None:
             checks["resource_control"] = self._resource_controller.snapshot()
         if self._metrics_collector is not None:

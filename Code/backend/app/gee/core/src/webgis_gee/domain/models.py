@@ -77,6 +77,14 @@ class AccountLease(BaseModel):
     last_error: str | None = None
     success_count: int = 0
     failure_count: int = 0
+    # 与账号关联的 ee.Credentials 对象（运行时对象，不参与 JSON 序列化）
+    credentials: Any | None = None
+    # GCP project_id（用于 ee.Initialize(project=...)）
+    project_id: str | None = None
+    # 账号类型：service_account / oauth
+    account_type: str = "service_account"
+    # 友好显示名（脱敏后的 email 或自定义名称）
+    display_name: str | None = None
 
     def mark_leased(self) -> None:
         self.state = AccountState.LEASED

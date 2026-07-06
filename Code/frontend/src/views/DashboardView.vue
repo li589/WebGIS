@@ -104,7 +104,10 @@ function clearPointWeather() {
 }
 
 function isRealtimeWeatherLayer(catalogId?: string) {
-  return catalogId === 'wind-field' || catalogId === 'temperature' || catalogId === 'precipitation'
+  if (!catalogId) return false
+  if (catalogId.startsWith('wind-field')) return true
+  if (catalogId.startsWith('temperature')) return true
+  return ['precipitation', 'pressure', 'humidity', 'visibility'].includes(catalogId)
 }
 
 async function fetchPointWeather(lng: number, lat: number) {
@@ -320,6 +323,7 @@ function buildFallbackActiveLayer(hour: number): ActiveLayerDisplay {
       :dashboard-el="dashboardRef"
       :map-shell-el="mapShellRef"
       :map-stage-el="mapCanvasRef?.getMapStageElement() ?? null"
+      :capture-map-canvas="mapCanvasRef?.captureMapCanvas ?? null"
       :active-layer-name="activeLayer.name"
       :hour-label="hourLabel"
       @close="handleCloseScreenshot"

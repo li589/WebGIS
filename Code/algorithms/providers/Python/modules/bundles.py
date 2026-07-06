@@ -7,7 +7,7 @@ from data_access import resolve_prepared_local_path
 from ingest.daily_bundle import build_daily_bundle_config, build_daily_bundle_for_date, date_keys_from_range, load_lin_pix_selection
 from ingest.timeseries_bundle import build_timeseries_bundle_from_range
 from modules.base import BaseModule
-from modules.registry import register_module
+from modules.registry import register_module_decorator
 from workflow.schemas import ArtifactRef, NodeExecutionContext, PortSpec
 
 
@@ -59,6 +59,7 @@ def _resolve_bundle_datasource_selection(datasource_selection: dict[str, object]
     return resolved
 
 
+@register_module_decorator(name="daily_bundle", aliases=["daily_bundle_pipeline"])
 class DailyBundleModule(BaseModule):
     name = "daily_bundle"
     description = "Native module that builds one MAT bundle per day."
@@ -142,6 +143,7 @@ class DailyBundleModule(BaseModule):
         return _store_manifest(ctx, module_name=self.name, manifest=manifest, metadata={"product_count": len(products)})
 
 
+@register_module_decorator(name="timeseries_bundle", aliases=["timeseries_bundle_pipeline"])
 class TimeSeriesBundleModule(BaseModule):
     name = "timeseries_bundle"
     description = "Native module that builds one MAT time-series bundle for a date range."
@@ -248,11 +250,3 @@ class TimeSeriesBundleModule(BaseModule):
         outputs["missing_dates"] = list(bundle.missing_dates)
         outputs["pixel_count"] = bundle.pixel_count
         return outputs
-
-
-def register_default_bundle_modules() -> None:
-    register_module(DailyBundleModule(), aliases=["daily_bundle_pipeline"])
-    register_module(TimeSeriesBundleModule(), aliases=["timeseries_bundle_pipeline"])
-
-
-register_default_bundle_modules()

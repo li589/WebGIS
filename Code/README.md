@@ -92,6 +92,7 @@ Code/
 - 协作说明
 - 接口与协议说明
 - 阶段性设计文档
+- 阶段代码事实同步文档
 
 ## 当前开发优先级
 
@@ -116,8 +117,9 @@ Code/
 
 1. `README.md`
 2. `Code/README.md`
-3. `Code/backend/README.md`
-4. `Code/frontend/README.md`
-5. `Code/shared/contracts/README.md`
-6. `Code/algorithms/providers/Python/README.md`
-7. `Code/algorithms/providers/docs/detailed_design.md`
+3. `Code/docs/代码事实同步文档-2026-07-06.md`
+4. `Code/backend/README.md`
+5. `Code/frontend/README.md`
+6. `Code/shared/contracts/README.md`
+7. `Code/algorithms/providers/Python/README.md`
+8. `Code/algorithms/providers/docs/detailed_design.md`

@@ -76,6 +76,17 @@ function extractMapLayerPayload(resultRefs: WorkflowResultReference[]) {
       ? {
           geojsonUrl: typeof layerAssets.geojson_url === 'string' ? layerAssets.geojson_url : undefined,
           cogUrl: typeof layerAssets.cog_url === 'string' ? layerAssets.cog_url : undefined,
+          cogPreviewUrl: typeof layerAssets.cog_preview_url === 'string' ? layerAssets.cog_preview_url : undefined,
+          cogBbox:
+            asRecord(layerAssets.cog_bbox) && typeof asRecord(layerAssets.cog_bbox)?.west === 'number'
+              ? {
+                  west: Number(asRecord(layerAssets.cog_bbox)?.west),
+                  south: Number(asRecord(layerAssets.cog_bbox)?.south),
+                  east: Number(asRecord(layerAssets.cog_bbox)?.east),
+                  north: Number(asRecord(layerAssets.cog_bbox)?.north),
+                  crs: typeof asRecord(layerAssets.cog_bbox)?.crs === 'string' ? String(asRecord(layerAssets.cog_bbox)?.crs) : undefined,
+                }
+              : undefined,
         }
       : undefined,
   }

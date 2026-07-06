@@ -35,38 +35,17 @@ class ProviderWorkflowService:
         requested_at: datetime,
         event_factory,
     ) -> WorkflowExecutionResult:
-        # C5 修复：execute 外层包裹 try/except，异常时返回带 error 的 WorkflowExecutionResult
-        # 而非向上抛出，避免拖垮整个 workflow-runs 主链
-        try:
-            return self._do_execute(
-                run_id=run_id,
-                payload=payload,
-                requested_at=requested_at,
-                event_factory=event_factory,
-            )
-        except Exception as exc:
-            logger.exception("ProviderWorkflowService.execute failed")
-            return WorkflowExecutionResult(
-                message=f"Provider 工作流执行失败: {exc}",
-                result_refs=[],
-                result_dto={
-                    "error": str(exc),
-                    "error_type": type(exc).__name__,
-                    "result_category": "provider",
-                },
-                diagnostics=[
-                    f"error_type={type(exc).__name__}",
-                    f"error={exc}",
-                ],
-                events=[
-                    event_factory(
-                        channel="log",
-                        message=f"Provider 工作流执行失败: {exc}",
-                        progress=100,
-                        payload={"error": str(exc), "error_type": type(exc).__name__},
-                    ),
-                ],
-            )
+        # 修复：移除 try/except 包裹，让异常向上抛出至 interaction_hub.process_workflow_run
+        # 的 except 块，由 _handle_workflow_failure 正确分类并标记 failed/retry_pending。
+        # 此前捕获异常返回带 error 的 WorkflowExecutionResult 会被 hub 当作成功结果
+        # 调用 _finalize_workflow_success，导致 provider 失败被隐藏在 succeeded 状态下。
+        # 与 WeatherBridgeService 的失败传播行为保持一致（违反 BridgeProtocol）。
+        return self._do_execute(
+            run_id=run_id,
+            payload=payload,
+            requested_at=requested_at,
+            event_factory=event_factory,
+        )
 
     def _do_execute(
         self,

@@ -7,6 +7,8 @@ from pathlib import Path
 import re
 from typing import Any, Mapping
 
+from algorithms.omega import _MINERAL_PARTICLE_DENSITY
+from contracts.modes import DualTgMode
 from ingest.mat_bundle import load_mat_file, normalize_aliases_param
 
 
@@ -20,7 +22,7 @@ class DailyBundleConfig:
     sf_invert_mode: str = "POINT1"
     temp_scheme: str = "ORIG_TS"
     ndvi_clim_varname: str = "NDVI_clim"
-    dual_tg_mode: str = "PAPER_CT"
+    dual_tg_mode: str = DualTgMode.PAPER_CT.value
     ct_smref: float = 0.30
     ct_exp: float = 0.30
     tbv_aliases: tuple[str, ...] = ("TBv", "tbv")
@@ -66,7 +68,7 @@ def build_daily_bundle_config(params: Mapping[str, Any]) -> DailyBundleConfig:
         sf_invert_mode=str(params_dict.get("sf_invert_mode", "POINT1")),
         temp_scheme=str(params_dict.get("temp_scheme", "ORIG_TS")),
         ndvi_clim_varname=str(params_dict.get("ndvi_clim_varname", "NDVI_clim")),
-        dual_tg_mode=str(params_dict.get("dual_tg_mode", "PAPER_CT")),
+        dual_tg_mode=str(params_dict.get("dual_tg_mode", DualTgMode.PAPER_CT.value)),
         ct_smref=float(params_dict.get("ct_smref", 0.30)),
         ct_exp=float(params_dict.get("ct_exp", 0.30)),
         tbv_aliases=normalize_aliases_param(params_dict.get("tbv_aliases"), ("TBv", "tbv")),
@@ -296,7 +298,7 @@ def load_static_ancillary_bundle(
         ndvi_v_min = _load_selected_mat_var(ndvi_extrema_mat, list(config.ndvi_v_min_aliases), lin_pix)
 
     landcover_selected = _subset_grid(landcover, lin_pix)
-    porosity = 1.0 - bulk_density / 2.65
+    porosity = 1.0 - bulk_density / _MINERAL_PARTICLE_DENSITY
     return {
         "LC": landcover_selected,
         "lat_9km": _subset_grid(lat_grid, lin_pix) if lat_grid is not None else None,
@@ -663,13 +665,13 @@ def build_effective_soil_temperature_scheme(
     tg = np.full(sm_ref.shape, np.nan, dtype=np.float64)
 
     mode = str(dual_tg_mode).upper()
-    if mode == "PAPER_CT":
+    if mode == DualTgMode.PAPER_CT.value:
         ok = np.isfinite(sm_ref) & (sm_ref >= 0)
         ct[ok] = np.power(sm_ref[ok] / float(ct_smref), float(ct_exp))
         tg = tsoil2 + ct * (tsoil1 - tsoil2)
-    elif mode == "TSOIL1_ONLY":
+    elif mode == DualTgMode.TSOIL1_ONLY.value:
         tg = tsoil1
-    elif mode == "TSOIL2_ONLY":
+    elif mode == DualTgMode.TSOIL2_ONLY.value:
         tg = tsoil2
     else:
         raise ValueError(f"Unsupported dual TG mode: {dual_tg_mode}")

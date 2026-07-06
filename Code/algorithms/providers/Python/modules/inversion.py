@@ -6,7 +6,7 @@ from contracts.product import ProductManifest, ProductRef
 from data_access import resolve_prepared_local_path
 from ingest.mat_bundle import extract_ddca_inputs, extract_inversion_inputs, load_mat_file
 from modules.base import BaseModule
-from modules.registry import register_module
+from modules.registry import register_module_decorator
 from workflow.schemas import ArtifactRef, NodeExecutionContext, PortSpec
 
 
@@ -40,6 +40,7 @@ def _resolve_inversion_input_mat(datasource_selection: dict[str, object]) -> Pat
     return Path(str(input_mat))
 
 
+@register_module_decorator(name="inversion_daily", aliases=["inversion_daily_pipeline"])
 class InversionDailyModule(BaseModule):
     name = "inversion_daily"
     description = "Native module that runs DDCA or dynamic-h daily inversion from a prepared MAT bundle."
@@ -128,10 +129,3 @@ class InversionDailyModule(BaseModule):
             },
         )
         return _store_manifest(ctx, module_name=self.name, manifest=manifest, metadata={"product_count": len(products)})
-
-
-def register_default_inversion_modules() -> None:
-    register_module(InversionDailyModule(), aliases=["inversion_daily_pipeline"])
-
-
-register_default_inversion_modules()

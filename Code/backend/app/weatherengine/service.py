@@ -66,6 +66,7 @@ class WeatherEngineService:
             model=resolved_model,
             forecast_hours=forecast_hours,
             ttl_seconds=ttl_seconds,
+            pressure_levels=spec.pressure_levels or None,
         )
 
         return self.parse_forecast_to_point(
@@ -112,8 +113,22 @@ class WeatherEngineService:
                     wind_speed_10m=self._pick_series_value(hourly, "wind_speed_10m", index),
                 )
             )
+        # 气压层变量仅出现在 hourly 段，取首小时作为当前值
+        # 当 spec 未请求气压层时这些字段保持 None
+        pl_wind_speed_850 = self._pick_series_value(hourly, "wind_speed_850hPa", 0)
+        pl_wind_direction_850 = self._pick_series_value(hourly, "wind_direction_850hPa", 0)
+        pl_temperature_850 = self._pick_series_value(hourly, "temperature_850hPa", 0)
+        pl_wind_speed_500 = self._pick_series_value(hourly, "wind_speed_500hPa", 0)
+        pl_wind_direction_500 = self._pick_series_value(hourly, "wind_direction_500hPa", 0)
+        pl_temperature_500 = self._pick_series_value(hourly, "temperature_500hPa", 0)
+        pl_wind_speed_200 = self._pick_series_value(hourly, "wind_speed_200hPa", 0)
+        pl_wind_direction_200 = self._pick_series_value(hourly, "wind_direction_200hPa", 0)
+        pl_temperature_200 = self._pick_series_value(hourly, "temperature_200hPa", 0)
 
+        # metric_value 优先从 current 取；气压层变量不在 current 段，回退到 hourly 首小时
         metric_value = current.get(spec.primary_metric)
+        if metric_value is None and spec.pressure_levels:
+            metric_value = self._pick_series_value(hourly, spec.primary_metric, 0)
         summary = spec.summary_template.format(value=metric_value if metric_value is not None else "--", unit=spec.unit_label)
         observation_time = self._coerce_datetime(current.get("time"))
         return WeatherPointResponse(
@@ -137,9 +152,32 @@ class WeatherEngineService:
                 weather_code=current.get("weather_code"),
                 cloud_cover=current.get("cloud_cover"),
                 pressure_msl=current.get("pressure_msl"),
+                surface_pressure=current.get("surface_pressure"),
                 wind_speed_10m=current.get("wind_speed_10m"),
                 wind_direction_10m=current.get("wind_direction_10m"),
                 wind_gusts_10m=current.get("wind_gusts_10m"),
+                wind_speed_80m=current.get("wind_speed_80m"),
+                wind_direction_80m=current.get("wind_direction_80m"),
+                wind_speed_120m=current.get("wind_speed_120m"),
+                wind_direction_120m=current.get("wind_direction_120m"),
+                wind_speed_180m=current.get("wind_speed_180m"),
+                wind_direction_180m=current.get("wind_direction_180m"),
+                temperature_80m=current.get("temperature_80m"),
+                temperature_120m=current.get("temperature_120m"),
+                temperature_180m=current.get("temperature_180m"),
+                relative_humidity_2m=current.get("relative_humidity_2m"),
+                dew_point_2m=current.get("dew_point_2m"),
+                visibility=current.get("visibility"),
+                # 气压层变量（仅在 spec 请求 pressure_levels 时有值）
+                wind_speed_850hPa=pl_wind_speed_850,
+                wind_direction_850hPa=pl_wind_direction_850,
+                temperature_850hPa=pl_temperature_850,
+                wind_speed_500hPa=pl_wind_speed_500,
+                wind_direction_500hPa=pl_wind_direction_500,
+                temperature_500hPa=pl_temperature_500,
+                wind_speed_200hPa=pl_wind_speed_200,
+                wind_direction_200hPa=pl_wind_direction_200,
+                temperature_200hPa=pl_temperature_200,
             ),
             hourly=hourly_rows,
             render_hint=WeatherLayerRenderHint(
@@ -334,7 +372,7 @@ class WeatherEngineService:
         geojson_ref: WorkflowResultReference | None = None
         cog_ref: WorkflowResultReference | None = None
 
-        if spec.layer_id == "wind-field":
+        if spec.layer_id == "wind-field" or spec.layer_id.startswith("wind-field-"):
             bbox = self._resolve_render_bbox(payload, weather.latitude, weather.longitude)
             feature_collection = self.build_wind_geojson(weather, bbox)
             geojson_ref = result_storage_service.create_artifact_result_ref(
@@ -348,7 +386,8 @@ class WeatherEngineService:
             )
             result_refs.append(geojson_ref)
             diagnostics.append(f"wind_geojson_points={len(feature_collection['features'])}")
-        elif spec.layer_id == "temperature":
+            diagnostics.append(f"wind_height={feature_collection['features'][0]['properties']['height'] if feature_collection['features'] else '10m'}")
+        elif spec.layer_id == "temperature" or spec.layer_id.startswith("temperature-"):
             bbox = self._resolve_render_bbox(payload, weather.latitude, weather.longitude)
             feature_collection = self.build_temperature_geojson(weather, bbox)
             geojson_ref = result_storage_service.create_artifact_result_ref(
@@ -362,6 +401,7 @@ class WeatherEngineService:
             )
             result_refs.append(geojson_ref)
             diagnostics.append(f"temperature_geojson_cells={len(feature_collection['features'])}")
+            diagnostics.append(f"temperature_height={feature_collection['features'][0]['properties'].get('height', '2m') if feature_collection['features'] else '2m'}")
 
             cog_ref, cog_diagnostics = self._build_temperature_cog_artifact(
                 run_id=run_id,
@@ -398,6 +438,51 @@ class WeatherEngineService:
             if cog_ref is not None:
                 result_refs.append(cog_ref)
             diagnostics.extend(cog_diagnostics)
+        elif spec.layer_id == "humidity":
+            # humidity 仅生成 GeoJSON，不生成 COG（与 wind-field 一致）
+            bbox = self._resolve_render_bbox(payload, weather.latitude, weather.longitude)
+            feature_collection = self.build_humidity_geojson(weather, bbox)
+            geojson_ref = result_storage_service.create_artifact_result_ref(
+                run_id=run_id,
+                result_id=f"humidity-geojson-{uuid4().hex[:10]}",
+                result_kind=ResultKind.file,
+                title=f"{spec.display_name} GeoJSON Layer",
+                mime_type="application/geo+json",
+                updated_at=requested_at,
+                payload=feature_collection,
+            )
+            result_refs.append(geojson_ref)
+            diagnostics.append(f"humidity_geojson_cells={len(feature_collection['features'])}")
+        elif spec.layer_id == "pressure":
+            # pressure 仅生成 GeoJSON，不生成 COG（与 wind-field 一致）
+            bbox = self._resolve_render_bbox(payload, weather.latitude, weather.longitude)
+            feature_collection = self.build_pressure_geojson(weather, bbox)
+            geojson_ref = result_storage_service.create_artifact_result_ref(
+                run_id=run_id,
+                result_id=f"pressure-geojson-{uuid4().hex[:10]}",
+                result_kind=ResultKind.file,
+                title=f"{spec.display_name} GeoJSON Layer",
+                mime_type="application/geo+json",
+                updated_at=requested_at,
+                payload=feature_collection,
+            )
+            result_refs.append(geojson_ref)
+            diagnostics.append(f"pressure_geojson_cells={len(feature_collection['features'])}")
+        elif spec.layer_id == "visibility":
+            # visibility 仅生成 GeoJSON，不生成 COG（与 wind-field 一致）
+            bbox = self._resolve_render_bbox(payload, weather.latitude, weather.longitude)
+            feature_collection = self.build_visibility_geojson(weather, bbox)
+            geojson_ref = result_storage_service.create_artifact_result_ref(
+                run_id=run_id,
+                result_id=f"visibility-geojson-{uuid4().hex[:10]}",
+                result_kind=ResultKind.file,
+                title=f"{spec.display_name} GeoJSON Layer",
+                mime_type="application/geo+json",
+                updated_at=requested_at,
+                payload=feature_collection,
+            )
+            result_refs.append(geojson_ref)
+            diagnostics.append(f"visibility_geojson_cells={len(feature_collection['features'])}")
 
         result_refs.append(
             WorkflowResultReference(
@@ -411,6 +496,14 @@ class WeatherEngineService:
                     "layer_assets": {
                         "geojson_url": geojson_ref.resource_url if geojson_ref else None,
                         "cog_url": cog_ref.resource_url if cog_ref else None,
+                        "cog_preview_url": f"/artifacts/{cog_ref.resource_key}/preview.png" if cog_ref and cog_ref.resource_key else None,
+                        "cog_bbox": {
+                            "west": bbox.west,
+                            "south": bbox.south,
+                            "east": bbox.east,
+                            "north": bbox.north,
+                            "crs": bbox.crs,
+                        } if (cog_ref and (spec.layer_id.startswith("temperature") or spec.layer_id == "precipitation")) else None,
                     },
                 },
                 updated_at=requested_at,
@@ -422,14 +515,22 @@ class WeatherEngineService:
         self,
         weather: WeatherPointResponse,
         bbox: BoundingBox,
-        rows: int = 9,
-        cols: int = 11,
+        rows: int = 24,
+        cols: int = 32,
     ) -> dict[str, object]:
         features: list[dict[str, object]] = []
         lat_step = (bbox.north - bbox.south) / rows
         lon_step = (bbox.east - bbox.west) / cols
-        base_speed = weather.current.wind_speed_10m or 0.0
-        base_direction = weather.current.wind_direction_10m or 0.0
+        # 根据 layer_id 高度后缀读取对应字段：wind-field → 10m，wind-field-80m → 80m，…
+        # 回退到 10m 字段，保证旧调用方兼容
+        layer_id = weather.layer_id
+        height_suffix = "10m"
+        if layer_id and layer_id.startswith("wind-field-"):
+            height_suffix = layer_id.split("-", 2)[-1]  # "80m" / "120m" / "180m"
+        speed_attr = f"wind_speed_{height_suffix}"
+        direction_attr = f"wind_direction_{height_suffix}"
+        base_speed = getattr(weather.current, speed_attr, None) or weather.current.wind_speed_10m or 0.0
+        base_direction = getattr(weather.current, direction_attr, None) or weather.current.wind_direction_10m or 0.0
         for row in range(rows):
             for col in range(cols):
                 lat = bbox.south + (row + 0.5) * lat_step
@@ -449,8 +550,9 @@ class WeatherEngineService:
                         "type": "Feature",
                         "geometry": {"type": "Point", "coordinates": [lon, lat]},
                         "properties": {
-                            "wind_speed_10m": round(speed, 2),
-                            "wind_direction_10m": round(direction, 1),
+                            speed_attr: round(speed, 2),
+                            direction_attr: round(direction, 1),
+                            "height": height_suffix,
                             "unit": "m/s",
                             "row": row,
                             "col": col,
@@ -469,7 +571,14 @@ class WeatherEngineService:
         features: list[dict[str, object]] = []
         lat_step = (bbox.north - bbox.south) / rows
         lon_step = (bbox.east - bbox.west) / cols
-        base_temp = weather.current.temperature_2m or 0.0
+        # 根据 layer_id 高度后缀读取对应字段：temperature → 2m，temperature-80m → 80m，…
+        # 回退到 temperature_2m，保证旧调用方兼容
+        layer_id = weather.layer_id
+        height_suffix = "2m"
+        if layer_id and layer_id.startswith("temperature-"):
+            height_suffix = layer_id.split("-", 1)[-1]  # "80m" / "120m" / "180m"
+        temp_attr = f"temperature_{height_suffix}"
+        base_temp = getattr(weather.current, temp_attr, None) or weather.current.temperature_2m or 0.0
         for row in range(rows):
             for col in range(cols):
                 south = bbox.south + row * lat_step
@@ -501,7 +610,8 @@ class WeatherEngineService:
                             ]],
                         },
                         "properties": {
-                            "temperature_2m": round(value, 2),
+                            temp_attr: round(value, 2),
+                            "height": height_suffix,
                             "unit": "C",
                             "row": row,
                             "col": col,
@@ -531,7 +641,13 @@ class WeatherEngineService:
         rows = 96
         cols = 96
         array = numpy.zeros((rows, cols), dtype="float32")
-        base_temp = weather.current.temperature_2m or 0.0
+        # 同步 build_temperature_geojson 的多高度字段读取逻辑
+        layer_id = weather.layer_id
+        height_suffix = "2m"
+        if layer_id and layer_id.startswith("temperature-"):
+            height_suffix = layer_id.split("-", 1)[-1]
+        temp_attr = f"temperature_{height_suffix}"
+        base_temp = getattr(weather.current, temp_attr, None) or weather.current.temperature_2m or 0.0
         for row in range(rows):
             lat = bbox.north - ((row + 0.5) / rows) * (bbox.north - bbox.south)
             for col in range(cols):
@@ -554,14 +670,14 @@ class WeatherEngineService:
         job_dir = Path(settings.cache_dir) / "weatherengine" / run_id
         writer = writer_cls(output_dir=job_dir, overwrite=True)
         transform = transform_module.from_bounds(bbox.west, bbox.south, bbox.east, bbox.north, cols, rows)
-        output_name = f"temperature_{run_id}"
+        output_name = f"temperature_{height_suffix}_{run_id}"
         result = writer.write(
             array,
             output_name,
             crs="EPSG:4326",
             transform=transform,
             unit=spec.unit_label,
-            description="WeatherEngine temperature raster preview",
+            description=f"WeatherEngine temperature ({height_suffix}) raster preview",
         )
         cog_path = job_dir / result["path"]
         cog_ref = result_storage_service.create_artifact_result_ref(
@@ -695,6 +811,159 @@ class WeatherEngineService:
         diagnostics.append(f"precipitation_cog_size_bytes={cog_ref.resource_size_bytes or 0}")
         return cog_ref, diagnostics
 
+    def build_humidity_geojson(
+        self,
+        weather: WeatherPointResponse,
+        bbox: BoundingBox,
+        rows: int = 18,
+        cols: int = 18,
+    ) -> dict[str, object]:
+        features: list[dict[str, object]] = []
+        lat_step = (bbox.north - bbox.south) / rows
+        lon_step = (bbox.east - bbox.west) / cols
+        base_humidity = weather.current.relative_humidity_2m or 0.0
+        for row in range(rows):
+            for col in range(cols):
+                south = bbox.south + row * lat_step
+                north = south + lat_step
+                west = bbox.west + col * lon_step
+                east = west + lon_step
+                cell_lat = south + lat_step / 2
+                cell_lon = west + lon_step / 2
+                value = self._humidity_value_for_location(
+                    base_humidity=base_humidity,
+                    center_lat=weather.latitude,
+                    center_lon=weather.longitude,
+                    lat=cell_lat,
+                    lon=cell_lon,
+                    lat_span=max(0.1, bbox.north - bbox.south),
+                    lon_span=max(0.1, bbox.east - bbox.west),
+                )
+                features.append(
+                    {
+                        "type": "Feature",
+                        "geometry": {
+                            "type": "Polygon",
+                            "coordinates": [[
+                                [west, south],
+                                [east, south],
+                                [east, north],
+                                [west, north],
+                                [west, south],
+                            ]],
+                        },
+                        "properties": {
+                            "relative_humidity_2m": round(value, 2),
+                            "unit": "%",
+                            "row": row,
+                            "col": col,
+                        },
+                    }
+                )
+        return {"type": "FeatureCollection", "features": features}
+
+    def build_pressure_geojson(
+        self,
+        weather: WeatherPointResponse,
+        bbox: BoundingBox,
+        rows: int = 18,
+        cols: int = 18,
+    ) -> dict[str, object]:
+        features: list[dict[str, object]] = []
+        lat_step = (bbox.north - bbox.south) / rows
+        lon_step = (bbox.east - bbox.west) / cols
+        base_pressure = weather.current.pressure_msl or 0.0
+        for row in range(rows):
+            for col in range(cols):
+                south = bbox.south + row * lat_step
+                north = south + lat_step
+                west = bbox.west + col * lon_step
+                east = west + lon_step
+                cell_lat = south + lat_step / 2
+                cell_lon = west + lon_step / 2
+                value = self._pressure_value_for_location(
+                    base_pressure=base_pressure,
+                    center_lat=weather.latitude,
+                    center_lon=weather.longitude,
+                    lat=cell_lat,
+                    lon=cell_lon,
+                    lat_span=max(0.1, bbox.north - bbox.south),
+                    lon_span=max(0.1, bbox.east - bbox.west),
+                )
+                features.append(
+                    {
+                        "type": "Feature",
+                        "geometry": {
+                            "type": "Polygon",
+                            "coordinates": [[
+                                [west, south],
+                                [east, south],
+                                [east, north],
+                                [west, north],
+                                [west, south],
+                            ]],
+                        },
+                        "properties": {
+                            "pressure_msl": round(value, 2),
+                            "unit": "hPa",
+                            "row": row,
+                            "col": col,
+                        },
+                    }
+                )
+        return {"type": "FeatureCollection", "features": features}
+
+    def build_visibility_geojson(
+        self,
+        weather: WeatherPointResponse,
+        bbox: BoundingBox,
+        rows: int = 18,
+        cols: int = 18,
+    ) -> dict[str, object]:
+        features: list[dict[str, object]] = []
+        lat_step = (bbox.north - bbox.south) / rows
+        lon_step = (bbox.east - bbox.west) / cols
+        base_visibility = weather.current.visibility or 0.0
+        for row in range(rows):
+            for col in range(cols):
+                south = bbox.south + row * lat_step
+                north = south + lat_step
+                west = bbox.west + col * lon_step
+                east = west + lon_step
+                cell_lat = south + lat_step / 2
+                cell_lon = west + lon_step / 2
+                value = self._visibility_value_for_location(
+                    base_visibility=base_visibility,
+                    center_lat=weather.latitude,
+                    center_lon=weather.longitude,
+                    lat=cell_lat,
+                    lon=cell_lon,
+                    lat_span=max(0.1, bbox.north - bbox.south),
+                    lon_span=max(0.1, bbox.east - bbox.west),
+                )
+                features.append(
+                    {
+                        "type": "Feature",
+                        "geometry": {
+                            "type": "Polygon",
+                            "coordinates": [[
+                                [west, south],
+                                [east, south],
+                                [east, north],
+                                [west, north],
+                                [west, south],
+                            ]],
+                        },
+                        "properties": {
+                            "visibility": round(value, 2),
+                            "unit": "m",
+                            "row": row,
+                            "col": col,
+                        },
+                    }
+                )
+        return {"type": "FeatureCollection", "features": features}
+
     def _resolve_render_bbox(
         self,
         payload: WorkflowSubmitRequest,
@@ -705,11 +974,23 @@ class WeatherEngineService:
             return payload.map_context.viewport_bbox
         if payload.spatial_filter and payload.spatial_filter.bbox is not None:
             return payload.spatial_filter.bbox
+        west = longitude - 1.6
+        east = longitude + 1.6
+        south = latitude - 1.2
+        north = latitude + 1.2
+        # 日界线 wraparound：longitude≈180 时 east 会 >180，需折回 [-180, 180]
+        while west < -180:
+            west += 360
+        while east > 180:
+            east -= 360
+        # 极地纬度 clamp：latitude≈90 时 north 会 >90，需限制到 [-90, 90]
+        north = min(90, max(-90, north))
+        south = min(90, max(-90, south))
         return BoundingBox(
-            west=longitude - 1.6,
-            south=latitude - 1.2,
-            east=longitude + 1.6,
-            north=latitude + 1.2,
+            west=west,
+            south=south,
+            east=east,
+            north=north,
             crs="EPSG:4326",
         )
 
@@ -746,6 +1027,59 @@ class WeatherEngineService:
         core = max(0.0, 1.28 - radial * 2.15)
         band = max(0.0, 0.72 - abs(lat_norm + lon_norm * 0.55) * 1.4)
         return max(0.0, base_precip + core * 8.5 + band * 4.2 - radial * 1.1)
+
+    def _humidity_value_for_location(
+        self,
+        *,
+        base_humidity: float,
+        center_lat: float,
+        center_lon: float,
+        lat: float,
+        lon: float,
+        lat_span: float,
+        lon_span: float,
+    ) -> float:
+        # 简单的经纬度扰动模型，相对湿度限制在 0~100%
+        lat_norm = (lat - center_lat) / lat_span
+        lon_norm = (lon - center_lon) / lon_span
+        noise = (math.sin(lat_norm * math.pi) * 0.5 + math.cos(lon_norm * math.pi) * 0.5) * 5.0
+        return max(0.0, min(100.0, base_humidity + noise))
+
+    def _pressure_value_for_location(
+        self,
+        *,
+        base_pressure: float,
+        center_lat: float,
+        center_lon: float,
+        lat: float,
+        lon: float,
+        lat_span: float,
+        lon_span: float,
+    ) -> float:
+        # 中心气压偏高、外围略低，模拟低压系统扰动
+        lat_norm = (lat - center_lat) / lat_span
+        lon_norm = (lon - center_lon) / lon_span
+        radial = math.sqrt(lat_norm * lat_norm + lon_norm * lon_norm)
+        noise = -radial * 3.2 + math.sin(lon_norm * math.pi) * 1.5 - math.cos(lat_norm * math.pi) * 1.2
+        return base_pressure + noise
+
+    def _visibility_value_for_location(
+        self,
+        *,
+        base_visibility: float,
+        center_lat: float,
+        center_lon: float,
+        lat: float,
+        lon: float,
+        lat_span: float,
+        lon_span: float,
+    ) -> float:
+        # 能见度向边缘衰减，模拟局部能见度差异
+        lat_norm = (lat - center_lat) / lat_span
+        lon_norm = (lon - center_lon) / lon_span
+        radial = math.sqrt(lat_norm * lat_norm + lon_norm * lon_norm)
+        noise = -radial * 1200.0 + math.sin((lat_norm + lon_norm) * math.pi) * 600.0
+        return max(0.0, base_visibility + noise)
 
     def _wind_value_for_location(
         self,

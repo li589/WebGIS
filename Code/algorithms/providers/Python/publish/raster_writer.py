@@ -227,6 +227,9 @@ class COGWriter:
             raise FileExistsError(f"文件已存在（overwrite=False）: {output_file}")
 
         # 构造 rasterio profile
+        # 注意：COG driver 是虚拟 driver，自动处理 tiling/block size，
+        # 不支持 GTiff 的 description/tiled/blockxsize/blockysize 创建选项。
+        # description 通过 dst.update_tags 写入（见下方），不放在 profile 中。
         profile: dict[str, Any] = {
             "driver": "COG",
             "height": height,
@@ -238,10 +241,6 @@ class COGWriter:
             "compress": compress,
             "BIGTIFF": "IF_SAFER",
             "nodata": nodata_val,
-            "description": description,
-            "tiled": True,
-            "blockxsize": 512,
-            "blockysize": 512,
         }
 
         # 如果有单位信息，写入到 Tags 中

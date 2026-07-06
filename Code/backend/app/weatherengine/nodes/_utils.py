@@ -47,7 +47,11 @@ def coerce_int(value: Any) -> int | None:
 
 
 def resolve_bbox(inputs: dict[str, Any], latitude: float, longitude: float) -> BoundingBox:
-    """解析渲染范围，默认以中心点 ±0.5 度生成包围盒。"""
+    """解析渲染范围，默认以中心点经度 ±1.6、纬度 ±1.2 度生成包围盒。
+
+    兜底范围与 service.py 的 _resolve_render_bbox 保持一致，
+    确保 workflow 节点路径与 service 路径生成相同密度的网格。
+    """
     bbox_param = inputs.get("bbox")
     if isinstance(bbox_param, dict):
         west = bbox_param.get("west")
@@ -57,9 +61,9 @@ def resolve_bbox(inputs: dict[str, Any], latitude: float, longitude: float) -> B
         if all(isinstance(v, (int, float)) for v in (west, south, east, north)):
             return BoundingBox(west=float(west), south=float(south), east=float(east), north=float(north))
     return BoundingBox(
-        west=longitude - 0.5,
-        south=latitude - 0.5,
-        east=longitude + 0.5,
-        north=latitude + 0.5,
+        west=longitude - 1.6,
+        south=latitude - 1.2,
+        east=longitude + 1.6,
+        north=latitude + 1.2,
         crs="EPSG:4326",
     )

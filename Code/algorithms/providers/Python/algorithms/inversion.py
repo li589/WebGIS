@@ -15,6 +15,9 @@ from algorithms.physics import (
     mironov_dielectric_from_context,
 )
 
+# Choudhury polarization mixing factor Q
+_POLARIZATION_MIXING_Q = 0.1771
+
 
 def _is_nan(value: float) -> bool:
     return math.isnan(value)
@@ -29,7 +32,7 @@ class TbModelContext:
 def rough_reflectance(theta_deg: float, h_value: float, rh: float, rv: float) -> tuple[float, float]:
     import math
 
-    q_value = 0.1771 * h_value
+    q_value = _POLARIZATION_MIXING_Q * h_value
     exp_term = math.exp(-h_value * math.cos(math.radians(theta_deg)) ** 2)
     rh_r = ((1 - q_value) * rh + q_value * rv) * exp_term
     rv_r = ((1 - q_value) * rv + q_value * rh) * exp_term
@@ -37,7 +40,7 @@ def rough_reflectance(theta_deg: float, h_value: float, rh: float, rv: float) ->
 
 
 def rough_reflectance_from_context(context: TbModelContext, h_value: float, rh: float, rv: float) -> tuple[float, float]:
-    q_value = 0.1771 * h_value
+    q_value = _POLARIZATION_MIXING_Q * h_value
     exp_term = math.exp(-h_value * context.fresnel.cos_theta_sq)
     rh_r = ((1 - q_value) * rh + q_value * rv) * exp_term
     rv_r = ((1 - q_value) * rv + q_value * rh) * exp_term

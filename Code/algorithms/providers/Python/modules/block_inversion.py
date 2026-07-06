@@ -6,7 +6,7 @@ from contracts.product import ProductManifest, ProductRef
 from data_access import resolve_prepared_local_path
 from ingest.mat_bundle import load_mat_file
 from modules.base import BaseModule
-from modules.registry import register_module
+from modules.registry import register_module_decorator
 from workflow.schemas import ArtifactRef, NodeExecutionContext, PortSpec
 
 
@@ -41,6 +41,7 @@ def _resolve_block_datasource_selection(datasource_selection: dict[str, object])
     return resolved
 
 
+@register_module_decorator(name="block_inversion", aliases=["block_inversion_pipeline"])
 class BlockInversionModule(BaseModule):
     name = "block_inversion"
     description = "Native module that runs block-based DH or DDCA inversion over a timeseries MAT bundle."
@@ -210,10 +211,3 @@ class BlockInversionModule(BaseModule):
             },
         )
         return _store_manifest(ctx, module_name=self.name, manifest=manifest, metadata={"product_count": len(products)})
-
-
-def register_default_block_modules() -> None:
-    register_module(BlockInversionModule(), aliases=["block_inversion_pipeline"])
-
-
-register_default_block_modules()

@@ -4,7 +4,33 @@ from datetime import datetime
 from typing import Any, Protocol, runtime_checkable
 
 from app.services.workflow_execution import WorkflowExecutionResult
-from shared.contracts.api_contracts import WorkflowSubmitRequest
+from shared.contracts.api_contracts import FailureCategory, WorkflowSubmitRequest
+
+
+class BridgeExecutionError(Exception):
+    """Bridge 执行失败统一异常。
+
+    携带失败分类（FailureCategory）+ 原始 cause，供 hub 层判断是否重试。
+    bridge 层只做分类，不做循环重试（避免阻塞 worker）。
+    """
+
+    def __init__(
+        self,
+        *,
+        category: FailureCategory,
+        message: str,
+        cause: Exception | None = None,
+        details: dict[str, Any] | None = None,
+    ) -> None:
+        super().__init__(message)
+        self.category = category
+        self.cause = cause
+        self.details = details or {}
+        self.retryable = category.retryable
+
+    def __str__(self) -> str:
+        cause_repr = f" (cause: {self.cause!r})" if self.cause else ""
+        return f"[{self.category.value}] {super().__str__()}{cause_repr}"
 
 
 @runtime_checkable
@@ -17,6 +43,7 @@ class BridgeProtocol(Protocol):
     实现要求：
     - supports() 必须先检查 enabled flag，禁用时返回 False
     - execute() 必须自己处理异常，不应向上抛出（避免拖垮主链）
+      瞬态失败应抛 BridgeExecutionError(category=transient_*)，hub 会自动重试
     - 元数据接口（list/describe/diagnostics）必须返回 dict[str, Any]
       包含 status_code 与 body 两个键
     """
@@ -33,7 +60,13 @@ class BridgeProtocol(Protocol):
         requested_at: datetime,
         event_factory: Any,
     ) -> WorkflowExecutionResult:
-        """执行工作流，返回 WorkflowExecutionResult。异常应被捕获并写入 result_dto。"""
+        """执行工作流，返回 WorkflowExecutionResult。
+
+        异常处理约定：
+        - 瞬态失败（网络/上游 5xx/超时/限流）：抛 BridgeExecutionError(category=transient_*)
+        - 终态失败（参数错误/协议错误/业务逻辑错误）：抛 BridgeExecutionError(category=terminal_*)
+        - 内部可恢复的降级：写入 diagnostics，不抛异常
+        """
         ...
 
     def list_workflows_response(self) -> dict[str, Any]:

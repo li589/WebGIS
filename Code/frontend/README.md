@@ -38,7 +38,59 @@
 - `FloatingPanelFrame.vue` 负责图层/分析/时间轴等浮动面板的拖动、折叠、隐藏与复位
 - `InfoPanel.vue` 当前承担“全图态势 + 调度器任务状态 + 选中图层/热点/结果”分段展示
 - `TimelineScrubber.vue` 是独立时间轴组件，不应被浮动面板缩放逻辑影响
-- `MapCanvas.vue` 负责地图底图、控件样式与热点同步
+- `MapCanvas.vue` 负责地图底图、控件样式、热点同步，以及天气图层渲染
+
+## 当前地图与天气渲染事实
+
+`MapCanvas.vue` 已经从基础地图容器演进为前端地图渲染总入口，当前至少承担以下职责：
+
+- 底图 source/layer 管理
+- hotspot 同步与点击
+- weatherengine 图层叠加
+- 风场 canvas 覆盖层调度
+- COG preview 栅格叠加
+
+当前天气图层语义不是“单图层切换”，而是：
+
+- `grid_fill` 图层可多图层并行叠加
+- `point_symbol` 图层按各自 source/layer 独立渲染
+- `particle_flow` 图层同一时刻只允许一个启用，由 `particleFlowCatalogId` 控制
+
+前端当前还会把地图上下文写入图层状态：
+
+- `currentMapCenter`
+- `currentMapBBox`
+
+这两个状态会进入 workflow 提交参数，影响天气图层产物范围与默认取样区域。
+
+## 当前天气相关前端模块
+
+天气渲染不再只靠一个组件，而是由一组组件和 helper 协作完成：
+
+- `src/components/MapCanvas.vue`：统一调度 GeoJSON、preview raster 和 canvas overlay
+- `src/components/InfoPanel.vue`：展示天气摘要、图例、图层元数据和可见图层摘要
+- `src/components/map/weather-render.ts`：统一 `render_hint` 到地图颜色、透明度、图例 stops 的映射
+- `src/components/map/wind-particle-canvas.ts`：风粒子流动画层
+- `src/components/map/wind-barb-layer.ts`：风羽图层
+- `src/components/map/wind-contour-layer.ts`：风速等值线图层
+- `src/stores/layers/result-adapter.ts`：解析 `map_layer.payload.render_hint` 与 `layer_assets`
+- `src/stores/layers/index.ts`：图层状态、workflow 提交、粒子流独占开关和地图视口状态
+
+## 当前前端对后端天气契约的消费方式
+
+前端当前稳定消费的天气结果字段包括：
+
+- `render_hint`
+- `point_feature`
+- `layer_assets.geojson_url`
+- `layer_assets.cog_preview_url`
+- `layer_assets.cog_bbox`
+
+其中：
+
+- `render_hint` 统一驱动地图样式、图例和透明度
+- `cog_preview_url + cog_bbox` 用于 MapLibre `image source + raster layer` 叠加
+- `geojson_url` 作为 preview raster 不可用时的回退方案
 
 ## 当前页面结构理解
 

@@ -18,6 +18,7 @@ class LayerSourceType(str, Enum):
     cog = "cog"
     vector_tile = "vector_tile"
     algorithm_output = "algorithm_output"
+    weather = "weather"
 
 
 class LayerRenderType(str, Enum):
@@ -78,6 +79,8 @@ class LayerDescriptor(BaseModel):
     extent: BoundingBox
     style: LayerStyleHint = Field(default_factory=LayerStyleHint)
     tags: list[str] = Field(default_factory=list)
+    module_name: str | None = None
+    engine: str | None = None
 
 
 class LayerCatalogResponse(BaseModel):
@@ -195,6 +198,40 @@ class ExecutionStatus(str, Enum):
     succeeded = "succeeded"
     failed = "failed"
     cancelled = "cancelled"
+    # 失败分类修复：新增 retry_pending 中间态，表示瞬态失败等待自动重试
+    retry_pending = "retry_pending"
+
+
+class FailureCategory(str, Enum):
+    """失败分类枚举，区分可重试与不可重试失败。"""
+
+    # ---- 终态：不可重试 ----
+    validation_error = "validation_error"
+    not_found = "not_found"
+    permission_denied = "permission_denied"
+    contract_violation = "contract_violation"
+    terminal_failure = "terminal_failure"
+
+    # ---- 瞬态：可重试 ----
+    transient_network = "transient_network"
+    transient_upstream = "transient_upstream"
+    rate_limited = "rate_limited"
+    timeout = "timeout"
+
+    # ---- 部分成功 ----
+    partial_success = "partial_success"
+    degraded = "degraded"
+
+    @property
+    def retryable(self) -> bool:
+        """该类别是否可重试。"""
+        return self in {
+            FailureCategory.transient_network,
+            FailureCategory.transient_upstream,
+            FailureCategory.rate_limited,
+            FailureCategory.timeout,
+            FailureCategory.partial_success,
+        }
 
 
 class WorkflowPriority(str, Enum):
@@ -309,6 +346,8 @@ class AlgorithmWorkflowRequest(BaseModel):
     task_type: str | None = None
     region: dict[str, Any] | None = None
     time_range: dict[str, Any] | None = None
+    # 算法级优先级提示（1/5/8/9），未设置时由 bridge 从外层 WorkflowSubmitRequest.priority 映射
+    priority: int | None = None
 
 
 class GeeWorkflowRequest(BaseModel):
@@ -343,6 +382,31 @@ class WeatherWorkflowRequest(BaseModel):
     tags: dict[str, str] = Field(default_factory=dict)
 
 
+class RetryPolicy(BaseModel):
+    """统一重试策略。
+
+    适用于所有 bridge service 的瞬态失败重试。
+    bridge 层只做失败分类（抛 BridgeExecutionError），hub 层根据 retryable 决定是否重试。
+    """
+
+    max_attempts: int = 3
+    initial_backoff_seconds: float = 2.0
+    backoff_multiplier: float = 2.0
+    max_backoff_seconds: float = 60.0
+    jitter_ratio: float = 0.2
+
+    def compute_backoff(self, attempt: int) -> float:
+        """计算第 attempt 次重试的退避秒数（含抖动）。"""
+        import random
+
+        base = min(
+            self.max_backoff_seconds,
+            self.initial_backoff_seconds * (self.backoff_multiplier ** max(0, attempt - 1)),
+        )
+        jitter = base * self.jitter_ratio
+        return base + random.uniform(-jitter, jitter)
+
+
 class WorkflowSubmitRequest(BaseModel):
     command_type: WorkflowCommandType
     command_label: str | None = None
@@ -354,20 +418,19 @@ class WorkflowSubmitRequest(BaseModel):
     spatial_filter: SpatialFilter | None = None
     time_range: TimeRange | None = None
     parameters: dict[str, Any] = Field(default_factory=dict)
-    # M13 修复：旧字段保留向后兼容，标记 deprecated，新增引擎请使用 engine_kind + engine_requests
+    # M13 修复：旧字段保留向后兼容，标记 deprecated
     algorithm_request: AlgorithmWorkflowRequest | dict[str, Any] = Field(default_factory=AlgorithmWorkflowRequest)
     gee_request: GeeWorkflowRequest | dict[str, Any] | None = None
     weather_request: WeatherWorkflowRequest | dict[str, Any] | None = None
-    # 新扩展点：引擎无关的统一入口，避免每加一个引擎就新增 *_request 字段（OCP）
-    # engine_kind 取值："gee" / "weather" / "algorithm" / "provider" / None
-    # engine_requests: {engine_kind: request_dict}，支持多引擎并存
-    engine_kind: str | None = None
-    engine_requests: dict[str, dict[str, Any]] = Field(default_factory=dict)
     config_overrides: dict[str, Any] = Field(default_factory=dict)
     requested_outputs: list[ResultKind | str] = Field(default_factory=lambda: [ResultKind.json])
     client: ClientIdentity = Field(default_factory=ClientIdentity)
     map_context: RuntimeMapContext = Field(default_factory=RuntimeMapContext)
     correlation_id: str | None = None
+    # 失败分类修复：顶层统一重试策略，覆盖各 bridge 的瞬态失败
+    retry_policy: RetryPolicy = Field(default_factory=RetryPolicy)
+    # 内部字段：重试时由 hub 注入，表示当前是第几次尝试（首次为 1，不填等同于 1）
+    retry_attempt: int | None = None
 
 
 class WorkflowAcceptedResponse(BaseModel):
@@ -524,9 +587,36 @@ class WeatherPointCurrent(BaseModel):
     weather_code: int | None = None
     cloud_cover: float | None = None
     pressure_msl: float | None = None
+    surface_pressure: float | None = None
     wind_speed_10m: float | None = None
     wind_direction_10m: float | None = None
     wind_gusts_10m: float | None = None
+    # 风场高层（Open-Meteo 风塔高度层）
+    wind_speed_80m: float | None = None
+    wind_direction_80m: float | None = None
+    wind_speed_120m: float | None = None
+    wind_direction_120m: float | None = None
+    wind_speed_180m: float | None = None
+    wind_direction_180m: float | None = None
+    # 温度高层
+    temperature_80m: float | None = None
+    temperature_120m: float | None = None
+    temperature_180m: float | None = None
+    # 之前缺失的近地面变量
+    relative_humidity_2m: float | None = None
+    dew_point_2m: float | None = None
+    visibility: float | None = None
+    # 气压层变量（Open-Meteo pressure_levels 参数对应字段）
+    # 当前值取自 hourly 数组首小时；保留 None 表示未请求气压层
+    wind_speed_850hPa: float | None = None
+    wind_direction_850hPa: float | None = None
+    temperature_850hPa: float | None = None
+    wind_speed_500hPa: float | None = None
+    wind_direction_500hPa: float | None = None
+    temperature_500hPa: float | None = None
+    wind_speed_200hPa: float | None = None
+    wind_direction_200hPa: float | None = None
+    temperature_200hPa: float | None = None
 
 
 class WeatherPointHourlyEntry(BaseModel):

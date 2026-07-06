@@ -8,6 +8,7 @@ const props = defineProps<{
   dashboardEl: HTMLElement | null
   mapShellEl: HTMLElement | null
   mapStageEl: HTMLElement | null
+  captureMapCanvas: (() => string | null) | null
   activeLayerName: string
   hourLabel: string
 }>()
@@ -76,7 +77,11 @@ function buildMapSnapshot(stage: HTMLElement, captureEl: HTMLElement, scale: num
   if (!mapCanvas) return null
 
   try {
-    const dataUrl = mapCanvas.toDataURL('image/png')
+    // preserveDrawingBuffer=false 下，必须通过 map.render() + 同步 toDataURL() 读取
+    const dataUrl = props.captureMapCanvas
+      ? props.captureMapCanvas()
+      : mapCanvas.toDataURL('image/png')
+    if (!dataUrl) return null
     const rect = mapCanvas.getBoundingClientRect()
     const parentRect = captureEl.getBoundingClientRect()
 

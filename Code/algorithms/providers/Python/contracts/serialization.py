@@ -171,6 +171,7 @@ def job_request_from_mapping(payload: Mapping[str, object]) -> JobRequest:
             "module_name",
             "workflow_name",
             "workflow_definition",
+            "workflow_entry_name",
         },
         path="job_request",
     )
@@ -205,6 +206,7 @@ def job_request_from_mapping(payload: Mapping[str, object]) -> JobRequest:
         module_name=_optional_string(payload, "module_name", "job_request.module_name"),
         workflow_name=_optional_string(payload, "workflow_name", "job_request.workflow_name"),
         workflow_definition=_parse_workflow_definition(payload.get("workflow_definition")),
+        workflow_entry_name=_optional_string(payload, "workflow_entry_name", "job_request.workflow_entry_name"),
     )
 
 

@@ -82,6 +82,48 @@ class JobService:
     def get_workflow_definition_schema_response(self) -> ServiceResponse:
         return ServiceResponse(status_code=200, body=_to_jsonable(get_workflow_definition_json_schema()))
 
+    def validate_job_response(self, payload: object) -> ServiceResponse:
+        """基于 provider manifest 模板校验 JobRequest。
+
+        供 backend bridge 在 submit_job 之前调用，提前发现参数错误。
+        """
+        from contracts.provider_manifest import provider_manifest
+
+        try:
+            request = coerce_job_request(payload)
+            result = provider_manifest.validate_request(request)
+            body = {
+                "is_valid": result.is_valid,
+                "errors": result.errors,
+                "template": (
+                    {
+                        "entry_kind": result.template.entry_kind,
+                        "entry_name": result.template.entry_name,
+                        "allowed_task_types": list(result.template.allowed_task_types),
+                        "required_datasource_keys": list(result.template.required_datasource_keys),
+                        "required_algorithm_keys": list(result.template.required_algorithm_keys),
+                    }
+                    if result.template is not None
+                    else None
+                ),
+            }
+            return ServiceResponse(status_code=200, body=body)
+        except Exception as exc:
+            return ServiceResponse(
+                status_code=400,
+                body={
+                    "is_valid": False,
+                    "errors": [f"Failed to validate: {exc}"],
+                    "template": None,
+                },
+            )
+
+    def get_provider_manifest_response(self) -> ServiceResponse:
+        """导出完整 provider manifest（供 backend /workflows API 展示）。"""
+        from contracts.provider_manifest import provider_manifest
+
+        return ServiceResponse(status_code=200, body=_to_jsonable(provider_manifest.export_manifest()))
+
     def list_modules_response(self) -> ServiceResponse:
         module_names = list_registered_modules()
         return ServiceResponse(
@@ -501,6 +543,7 @@ def _build_preview_request(
     workflow_name: str | None = None,
     module_name: str | None = None,
     algorithm_params: dict[str, object] | None = None,
+    datasource_selection: dict[str, object] | None = None,
 ) -> JobRequest:
     from contracts.product import OutputSpec
     from contracts.runtime import RegionSpec, TimeRange
@@ -515,7 +558,7 @@ def _build_preview_request(
             end=datetime(2025, 1, 2, tzinfo=UTC),
         ),
         region=RegionSpec(kind="global", value={}),
-        datasource_selection={},
+        datasource_selection=dict(datasource_selection) if datasource_selection else {},
         algorithm_params={"mode": "dh"} if algorithm_params is None else dict(algorithm_params),
         output_spec=OutputSpec(),
         module_name=module_name,
@@ -527,8 +570,16 @@ def _build_preview_requests(workflow_name: str) -> tuple[JobRequest, ...]:
     preview_modes = _workflow_preview_modes(workflow_name)
     if not preview_modes:
         return (_build_preview_request(workflow_name=workflow_name),)
+    # 为各模式提供必要的 datasource_selection 占位键，确保预览变体验证通过
+    mode_datasource: dict[str, dict[str, str]] = {
+        "ddca": {"dh_mat": "placeholder"},
+    }
     return tuple(
-        _build_preview_request(workflow_name=workflow_name, algorithm_params={"mode": mode})
+        _build_preview_request(
+            workflow_name=workflow_name,
+            algorithm_params={"mode": mode},
+            datasource_selection=mode_datasource.get(mode),
+        )
         for mode in preview_modes
     )
 

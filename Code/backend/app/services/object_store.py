@@ -4,10 +4,13 @@ from abc import ABC, abstractmethod
 from io import BytesIO
 from dataclasses import dataclass, field
 import json
+import logging
 from pathlib import Path
 from typing import Any
 
 from app.core.config import settings
+
+logger = logging.getLogger(__name__)
 
 try:
     from minio import Minio
@@ -43,6 +46,18 @@ class ObjectStore(ABC):
     def get_object(self, object_key: str) -> StoredObject | None:
         ...
 
+    def fetch_bytes(self, object_key: str) -> bytes | None:
+        """Return raw bytes for an object, or None if not found.
+
+        Default implementation reads from ``file_path``; MinIO overrides
+        to stream from the remote bucket. Used by preview routes when
+        ``file_path`` is None (MinIO-backed artifacts).
+        """
+        stored = self.get_object(object_key)
+        if stored is None or stored.file_path is None:
+            return None
+        return stored.file_path.read_bytes()
+
 
 class LocalObjectStore(ObjectStore):
     backend_name = "local"
@@ -61,10 +76,14 @@ class LocalObjectStore(ObjectStore):
     ) -> StoredObject:
         file_path = self._root_dir / object_key
         file_path.parent.mkdir(parents=True, exist_ok=True)
-        file_path.write_bytes(data)
+        # 原子写入：先写临时文件再 rename，避免半写文件被并发读取
+        tmp_path = file_path.with_suffix(file_path.suffix + ".tmp")
+        tmp_path.write_bytes(data)
+        tmp_path.replace(file_path)
         meta_path = self._meta_path(object_key)
         meta_path.parent.mkdir(parents=True, exist_ok=True)
-        meta_path.write_text(
+        meta_tmp_path = meta_path.with_suffix(meta_path.suffix + ".tmp")
+        meta_tmp_path.write_text(
             json.dumps(
                 {
                     "object_key": object_key,
@@ -76,6 +95,7 @@ class LocalObjectStore(ObjectStore):
             ),
             encoding="utf-8",
         )
+        meta_tmp_path.replace(meta_path)
         return StoredObject(
             object_key=object_key,
             file_path=file_path,
@@ -155,7 +175,8 @@ class MinioObjectStore(ObjectStore):
     def get_object(self, object_key: str) -> StoredObject | None:
         try:
             stat = self._client.stat_object(self._bucket, object_key)
-        except Exception:
+        except Exception as exc:
+            logger.warning("MinIO get_object failed for %s: %s", object_key, exc)
             return None
         return StoredObject(
             object_key=object_key,
@@ -165,6 +186,18 @@ class MinioObjectStore(ObjectStore):
             metadata={key: value for key, value in getattr(stat, "metadata", {}).items()},
             public_url=self._client.presigned_get_object(self._bucket, object_key),
         )
+
+    def fetch_bytes(self, object_key: str) -> bytes | None:
+        try:
+            response = self._client.get_object(self._bucket, object_key)
+            try:
+                return response.read()
+            finally:
+                response.close()
+                response.release_conn()
+        except Exception as exc:
+            logger.warning("MinIO fetch_bytes failed for %s: %s", object_key, exc)
+            return None
 
 
 def build_object_store() -> ObjectStore:

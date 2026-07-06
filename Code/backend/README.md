@@ -25,6 +25,8 @@
 - `POST /workflow-runs/{run_id}/retry`
 - `GET /runtime/status`
 - `GET /artifacts/{artifact_id}`
+- `GET /artifacts/{artifact_id}/preview.png`
+- `GET /weather/point`
 - `GET /algorithm/workflows`
 - `GET /algorithm/workflows/{workflow_name}`
 - `GET /algorithm/workflows/{workflow_name}/panel-schema`
@@ -32,6 +34,17 @@
 - `GET /geo/transform`：用于私有坐标系到展示坐标的基础转换入口
 - 支持 `sync / celery` 两种工作流执行模式
 - 支持结构化日志、结果大对象落盘与旧 `/tasks` 桥接
+
+## 当前新增后端事实
+
+当前后端除了基础 workflow 主链，还已经稳定存在以下实现：
+
+- `retry_pending` 中间态与自动重试语义
+- `FailureCategory` 失败分类
+- `BridgeExecutionError` 作为 bridge 层统一失败协议
+- `source_fetcher` 驱动的真实下载抓取链
+- `weatherengine fallback` 与 `weather workflow DAG` 双路径天气执行面
+- artifact preview 路由，供前端以 PNG 方式读取 COG 结果
 
 ## 当前实现备注
 
@@ -62,8 +75,20 @@ backend/
 ### `app/services/`
 这里是后端的主业务层，当前已经包含工作流执行、任务仓储、结果存储、对象存储、缓存、Python provider bridge、download/analysis workflow 等职责。
 
+其中最近变化较大的模块包括：
+
+- `interaction_hub.py`：统一工作流状态流转，已支持失败分类和自动重试
+- `failure_classifier.py`：负责异常到 `FailureCategory` 的映射
+- `bridge_protocol.py`：定义 `BridgeExecutionError`
+- `source_fetcher.py`：提供 `http / minio / local file` 抓取实现
+- `download_service.py`：已支持 `partial_success`、`retry_pending` 和真实 artifact 抓取
+- `python_provider_bridge_service.py`：已开始消费 provider manifest / template 校验结果
+- `weather_bridge_service.py`：把 workflow 主链路由到天气 DAG
+
 ### `app/tasks/`
 负责长耗时任务的 Celery 任务定义与调度入口。
+
+当前任务侧除了通用 workflow task，还已包含天气刷新等定时任务入口。
 
 ### `tests/`
 覆盖后端服务、工作流、任务与集成路径的测试。
@@ -81,6 +106,35 @@ backend/
 7. 大对象通过 artifact 接口按需访问
 
 控制流负责状态机与编排，数据流负责展示与资源访问，二者保持分离以降低耦合。
+
+补充说明：
+
+- 控制流状态当前不止 `accepted/running/succeeded/failed`，还包含 `retry_pending`
+- 数据流不止有原始 artifact，还包含 `/artifacts/{artifact_id}/preview.png` 这种面向前端展示的预览接口
+- `ResultKind.map_layer` 已经成为天气图层、GeoJSON 和栅格预览链的重要数据面入口
+
+## 当前天气执行结构
+
+天气相关代码当前不是单点实现，而是两条路径并存：
+
+1. `weatherengine/service.py`
+   - 负责 `/weather/point`
+   - 负责 fallback `map_layer` 产物
+   - 负责 `GeoJSON / COG / preview` 资产组织
+2. `weatherengine/workflow_service.py` + `weatherengine/nodes/*`
+   - 负责天气 DAG
+   - 当前节点已覆盖风场、温度、降水、湿度、气压、能见度与摘要生成
+
+这两条路径通过 `weather_bridge_service.py` 与 `workflow_tasks.py` 接入现有 `workflow-runs` 主链。
+
+## 当前与 Python provider 契约层的关系
+
+后端现在不只是调用 provider 执行函数，还开始消费 provider 契约层：
+
+- `algorithms/providers/Python/contracts/provider_manifest.py`
+- `algorithms/providers/Python/contracts/template_deriver.py`
+
+这意味着 provider 的模板导出、请求校验和 list/describe 结果，正在从分散实现收口到统一入口。
 
 ## 与 Python 算法包的关系
 

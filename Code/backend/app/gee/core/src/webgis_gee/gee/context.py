@@ -20,9 +20,11 @@ class GeeContext:
         account_id: str,
         credentials: Optional[Any] = None,
         ee_module: Any | None = None,
+        project_id: Optional[str] = None,
     ) -> None:
         self.account_id = account_id
         self._credentials = credentials
+        self._project_id = project_id
         self._initialized = False
         self._lock_acquired = False
         self._ee = ee_module or ee
@@ -35,7 +37,9 @@ class GeeContext:
         self._runtime_lock.acquire()
         self._lock_acquired = True
         try:
-            if self._credentials:
+            if self._credentials and self._project_id:
+                self._ee.Initialize(credentials=self._credentials, project=self._project_id)
+            elif self._credentials:
                 self._ee.Initialize(credentials=self._credentials)
             else:
                 self._ee.Initialize()

@@ -184,6 +184,9 @@ class WorkflowService:
             lease = self._account_pool.acquire()
             leased_account_id = lease.account_id
             context.account_id = lease.account_id
+            # 把账号池中 lease 携带的凭证/project_id 透传到后续 GeeContext 构造
+            leased_credentials = lease.credentials
+            leased_project_id = lease.project_id
             self._metrics.increment("account.lease.acquired")
             log_structured_event(
                 logger,
@@ -194,9 +197,26 @@ class WorkflowService:
                 workflow_id=workflow.workflow_id,
                 account_id=lease.account_id,
             )
+        else:
+            leased_credentials = None
+            leased_project_id = None
 
         if context.account_id and gee_context is None:
-            gee_context = GeeContext(account_id=context.account_id)
+            # 优先用账号池 lease 携带的凭证；否则查 pool.get(account_id) 兜底
+            credentials = leased_credentials
+            project_id = leased_project_id
+            if credentials is None and self._account_pool is not None:
+                try:
+                    pool_lease = self._account_pool.get(context.account_id)
+                    credentials = pool_lease.credentials
+                    project_id = pool_lease.project_id
+                except Exception:
+                    pass
+            gee_context = GeeContext(
+                account_id=context.account_id,
+                credentials=credentials,
+                project_id=project_id,
+            )
             context.metadata["gee_context"] = gee_context
             created_gee_context = True
 

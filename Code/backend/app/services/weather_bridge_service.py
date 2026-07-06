@@ -90,6 +90,17 @@ class WeatherBridgeService:
         exec_context = ExecutionContext.model_validate(context) if isinstance(context, dict) else context
         run_result = service.execute_workflow(workflow, exec_context)
 
+        # P0 修复：检查 run_result.status，失败时抛错让 hub 正确标记 failed
+        # 修复前：即使所有节点失败（status=failed），bridge 仍构造成功结果返回
+        # 修复后：status=failed 时抛 RuntimeError，hub 会捕获并标记 workflow 为 failed
+        # 注意：必须使用 _status_str() 而非 str()，因为 RunStatus(str, Enum) 在
+        # Python 3.11+ 下 str() 返回 "RunStatus.failed" 而非 "failed"
+        if self._status_str(run_result.status).lower() == "failed":
+            error_detail = "; ".join(run_result.errors[:5]) if run_result.errors else "unknown failure"
+            raise RuntimeError(
+                f"天气工作流执行失败 (status=failed): {error_detail}"
+            )
+
         result_refs = self._build_result_refs(
             run_id=run_id,
             payload=payload,

@@ -94,7 +94,7 @@ class Settings:
     cors_origins: list[str] = field(
         default_factory=lambda: _parse_csv_env(
             "BACKEND_CORS_ORIGINS",
-            "http://127.0.0.1:5173,http://localhost:5173,http://127.0.0.1:4173,http://localhost:4173",
+            "http://127.0.0.1:5173,http://localhost:5173,http://127.0.0.1:5174,http://localhost:5174,http://127.0.0.1:4173,http://localhost:4173",
         )
     )
 
@@ -138,6 +138,16 @@ class Settings:
     workflow_queue_gee_standard: str = os.getenv("BACKEND_WORKFLOW_QUEUE_GEE_STANDARD", "gee-standard")
     workflow_queue_gee_heavy: str = os.getenv("BACKEND_WORKFLOW_QUEUE_GEE_HEAVY", "gee-heavy")
     workflow_queue_gee_batch: str = os.getenv("BACKEND_WORKFLOW_QUEUE_GEE_BATCH", "gee-batch")
+    # GEE 凭证配置（Service Account 模式）
+    # 凭证加密密钥（32 字节 hex 字符串，用于 AES-GCM 加密 service_account JSON）
+    gee_credentials_encryption_key: str = os.getenv("BACKEND_GEE_CREDENTIALS_ENCRYPTION_KEY", "")
+    # 凭证存储路径（SQLite 文件路径，默认复用 workflow_state 目录）
+    gee_credentials_db_path: str = os.getenv(
+        "BACKEND_GEE_CREDENTIALS_DB_PATH",
+        str(BACKEND_ROOT / ".data" / "workflow_state" / "gee_credentials.sqlite3"),
+    )
+    # 是否允许通过 API 添加 service_account（生产环境建议 False，仅启动时从环境变量加载）
+    gee_api_account_management_enabled: bool = os.getenv("BACKEND_GEE_API_ACCOUNT_MANAGEMENT_ENABLED", "true").lower() == "true"
 
     # ---- 天气工作流引擎配置 ----
     # 是否启用天气工作流桥接（False 时 weather_bridge_service.supports 永远返回 False）
@@ -153,6 +163,16 @@ class Settings:
     provider_workflow_enabled: bool = os.getenv("BACKEND_PROVIDER_WORKFLOW_ENABLED", "true").lower() == "true"
     # M8 修复：python_provider bridge 也对齐 enabled flag
     python_provider_enabled: bool = os.getenv("BACKEND_PYTHON_PROVIDER_ENABLED", "true").lower() == "true"
+
+    # ---- 下载链真实抓取器配置 ----
+    # 数据源根目录（local:// scheme 的基础路径，用于 wind-field/precipitation 等图层的真实数据定位）
+    download_source_root: str = os.getenv("BACKEND_DOWNLOAD_SOURCE_ROOT", "")
+    # 图层 → source_uri 模板映射（JSON 字符串），支持 {layer_id} {hour} 占位符
+    # 示例：{"wind-field": "file:///data/wind/{hour}.json", "precipitation": "http://example.com/precip/{hour}.tif"}
+    download_source_uri_map: str = os.getenv("BACKEND_DOWNLOAD_SOURCE_URI_MAP", "")
+    # 是否启用真实抓取（False 时仍走 demo:// 占位路径，保持向后兼容）
+    download_real_fetch_enabled: bool = os.getenv("BACKEND_DOWNLOAD_REAL_FETCH_ENABLED", "true").lower() == "true"
+
 
 
 settings = Settings()

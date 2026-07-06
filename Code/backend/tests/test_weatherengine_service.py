@@ -18,6 +18,7 @@ class _FakeOpenMeteoClient:
         model: str,
         forecast_hours: int,
         ttl_seconds: int,
+        pressure_levels: tuple[int, ...] | None = None,
     ):
         return (
             {
@@ -159,7 +160,7 @@ class WeatherEngineServiceTests(unittest.TestCase):
         inline_data = map_layer_ref.inline_data or {}
         render_hint = inline_data.get("render_hint") or {}
         layer_assets = inline_data.get("layer_assets") or {}
-        self.assertEqual(render_hint.get("paint_mode"), "point_symbol")
+        self.assertEqual(render_hint.get("paint_mode"), "particle_flow")
         self.assertTrue(layer_assets.get("geojson_url"))
 
 

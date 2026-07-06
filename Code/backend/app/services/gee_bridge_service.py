@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from contextlib import contextmanager
+from contextlib import contextmanager, nullcontext
 from datetime import datetime
 from functools import lru_cache
 import importlib
@@ -19,6 +19,90 @@ from shared.contracts.api_contracts import (
 )
 
 logger = logging.getLogger(__name__)
+
+
+def reload_gee_facade() -> None:
+    """清空 _load_gee_facade 的 lru_cache，让下次访问时重建 facade（含账号池）。
+
+    在账号增删/启用/禁用后调用，使新的凭证配置生效。
+    """
+    _load_gee_facade.cache_clear()
+
+
+def _build_account_pool_from_repository(
+    gee_module_import_path_ctx,
+    *,
+    pool_cls,
+    account_config_cls,
+    credentials_loader_cls,
+):
+    """从 GeeCredentialsRepository 加载账号并构造 InMemoryAccountPool。
+
+    返回 (account_pool, account_count)。失败时返回 (None, 0) 并记录 warning。
+    """
+    try:
+        from app.services.gee_credentials_repository import GeeCredentialsRepository
+
+        repo = GeeCredentialsRepository(
+            db_path=settings.gee_credentials_db_path,
+            encryption_key=settings.gee_credentials_encryption_key,
+        )
+        accounts_with_creds = repo.list_enabled_accounts_with_credentials()
+    except Exception as exc:
+        logger.warning(
+            "Failed to load GEE credentials repository (%s); "
+            "falling back to global ~/.config/earthengine/ credentials",
+            exc,
+        )
+        return None, 0
+
+    if not accounts_with_creds:
+        logger.warning(
+            "GEE account pool is empty; workflows will fall back to "
+            "ee.Initialize() without credentials (requires ~/.config/earthengine/)"
+        )
+        return None, 0
+
+    configs = []
+    for account_id, sa_json, project_id in accounts_with_creds:
+        try:
+            with gee_module_import_path_ctx:
+                creds = credentials_loader_cls.load_service_account_credentials(
+                    sa_json, project_id=project_id
+                )
+            display_name = sa_json.get("client_email") if isinstance(sa_json, dict) else account_id
+            configs.append(
+                account_config_cls(
+                    account_id=account_id,
+                    credentials=creds,
+                    project_id=project_id,
+                    account_type="service_account",
+                    display_name=display_name,
+                )
+            )
+        except Exception as exc:
+            logger.error(
+                "Failed to load credentials for GEE account %s: %s",
+                account_id,
+                exc,
+            )
+
+    if not configs:
+        return None, 0
+
+    pool = pool_cls(accounts=configs)
+    logger.info("Loaded %d GEE account(s) into pool", len(configs))
+    return pool, len(configs)
+
+
+def _is_account_unavailable_error(exc: BaseException) -> bool:
+    """Return True if exc indicates no GEE account could be leased (credentials missing/unavailable)."""
+    try:
+        from webgis_gee.runtime.exceptions import AccountUnavailableError
+
+        return isinstance(exc, AccountUnavailableError)
+    except Exception:
+        return type(exc).__name__ == "AccountUnavailableError"
 
 
 @contextmanager
@@ -78,9 +162,30 @@ def _load_gee_facade():
             max_local_write_bytes=settings.gee_max_local_write_bytes,
         )
 
-        # 直接用 gee_settings 构造 WorkflowService，确保 resource_controller、
+        # Build account pool from the credentials repository; fall back to pool=None
+        # on any failure so facade construction still succeeds. nullcontext is safe
+        # here because we are already inside _gee_module_import_path, and it can be
+        # re-entered per-account within _build_account_pool_from_repository.
+        pool = None
+        account_count = 0
+        try:
+            pool_module = importlib.import_module("webgis_gee.accounts.pool")
+            credentials_module = importlib.import_module("webgis_gee.accounts.credentials")
+            pool, account_count = _build_account_pool_from_repository(
+                nullcontext(),
+                pool_cls=getattr(pool_module, "InMemoryAccountPool"),
+                account_config_cls=getattr(pool_module, "AccountConfig"),
+                credentials_loader_cls=getattr(credentials_module, "GeeCredentialsLoader"),
+            )
+        except Exception as exc:
+            logger.warning("Failed to build GEE account pool (%s); continuing without pool", exc)
+            pool = None
+            account_count = 0
+        logger.info("GEE account pool prepared: %d account(s) loaded", account_count)
+
+        # 用 gee_settings + account_pool 构造 WorkflowService，确保 resource_controller、
         # task_service、storage_backend 等内部组件使用正确的配置
-        service = workflow_service_cls(settings=gee_settings)
+        service = workflow_service_cls(settings=gee_settings, account_pool=pool)
 
         adapter = contract_adapter_cls(service)
         api_facade_cls = getattr(facade_module, "WorkflowApiFacade")
@@ -150,7 +255,19 @@ class GeeBridgeService:
         workflow = gee_request.get("workflow")
         context = gee_request.get("context") or self._build_default_context(payload, run_id)
 
-        response = facade.submit_workflow(workflow, context)
+        try:
+            response = facade.submit_workflow(workflow, context)
+        except Exception as exc:
+            if _is_account_unavailable_error(exc):
+                logger.warning(
+                    "GEE workflow %s failed: no account pool/credentials available (%s)",
+                    run_id,
+                    exc,
+                )
+                return self._credentials_error_result(
+                    run_id=run_id, exc=exc, event_factory=event_factory
+                )
+            raise
         result_refs = self._build_result_refs(
             run_id=run_id,
             payload=payload,
@@ -397,6 +514,47 @@ class GeeBridgeService:
         except Exception as exc:
             logger.exception("Failed to initialize GEE facade")
             raise RuntimeError(f"Failed to initialize GEE facade: {exc}") from exc
+
+    def _credentials_error_result(
+        self,
+        *,
+        run_id: str,
+        exc: Exception,
+        event_factory,
+    ) -> WorkflowExecutionResult:
+        """Build a clear error result when GEE credentials/account pool is unavailable."""
+        message = (
+            "GEE credentials not configured — set BACKEND_GEE_CREDENTIALS_ENCRYPTION_KEY "
+            "and seed credentials via /gee/accounts"
+        )
+        result_dto = {
+            "workflow_entry_name": "gee_workflow",
+            "run_id": run_id,
+            "error_type": "credentials_not_configured",
+            "error_code": "gee_credentials_missing",
+            "user_message": message,
+            "developer_message": str(exc),
+        }
+        events = [
+            event_factory(
+                channel="log",
+                message=message,
+                progress=95,
+                payload={"run_id": run_id, "error_code": "gee_credentials_missing"},
+            ),
+        ]
+        diagnostics = [
+            "gee_bridge_service: GEE credentials not configured.",
+            f"error={exc}",
+            "Set BACKEND_GEE_CREDENTIALS_ENCRYPTION_KEY and seed credentials via /gee/accounts.",
+        ]
+        return WorkflowExecutionResult(
+            message=message,
+            result_refs=[],
+            result_dto=result_dto,
+            diagnostics=diagnostics,
+            events=events,
+        )
 
     def _build_default_context(self, payload: WorkflowSubmitRequest, run_id: str) -> dict[str, Any]:
         gee_request = self._normalize_gee_request(payload.gee_request)

@@ -26,6 +26,9 @@ class JobRequest:
     module_name: str | None = None
     workflow_name: str | None = None
     workflow_definition: Any | None = None
+    # 透明透传字段：由调用方设置的工作流入口名，结果侧原样回写
+    # 修复前：该字段在 AlgorithmWorkflowRequest 中存在但经 bridge 转换时被丢弃，导致信息损失
+    workflow_entry_name: str | None = None
 
 
 @dataclass(slots=True)
