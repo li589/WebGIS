@@ -197,6 +197,7 @@ class NdviDailyModule(BaseModule):
             preview_size=(512, 512),
             compress="deflate",
             overwrite=True,
+            storage_backend=ctx.runtime_context.storage_backend,
         )
 
         # 写出每日 NDVI 产物：MAT（保留） + COG + preview PNG + manifest 条目

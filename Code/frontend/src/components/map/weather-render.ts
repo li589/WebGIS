@@ -32,6 +32,28 @@ function getPaletteDefinition(palette: string): WeatherPaletteDefinition {
   return WEATHER_PALETTES[palette] ?? WEATHER_PALETTES['wind-blue']
 }
 
+// ── 渲染参数常量 ─────────────────────────────────────────
+
+/** 天气图层填充不透明度范围 */
+const FILL_OPACITY_MIN = 0.08
+const FILL_OPACITY_MAX = 0.9
+
+/** 天气图层线条不透明度范围及相对填充的折扣系数 */
+const LINE_OPACITY_MIN = 0.08
+const LINE_OPACITY_MAX = 0.42
+const LINE_OPACITY_RATIO = 0.46
+
+/** 天气点半径映射范围（像素） */
+const POINT_RADIUS_MIN = 3.5
+const POINT_RADIUS_MAX = 9.5
+
+/** 风向箭头大小映射范围 */
+const ARROW_SIZE_MIN = 0.54
+const ARROW_SIZE_MAX = 1.12
+
+/** 默认图例刻度（后端未提供时使用） */
+const DEFAULT_LEGEND_TICKS = [0, 1, 2, 3]
+
 export function isRealtimeWeatherLayerId(layerId?: string | null) {
   if (!layerId) return false
   // 风场全高度变体（wind-field / wind-field-80m / wind-field-120m / wind-field-180m / wind-field-850hPa 等）
@@ -44,7 +66,7 @@ export function isRealtimeWeatherLayerId(layerId?: string | null) {
 
 export function buildWeatherLegendStops(hint: WeatherLayerRenderHint): WeatherLegendStop[] {
   const palette = getPaletteDefinition(hint.palette)
-  const ticks = hint.legend_ticks.length > 0 ? hint.legend_ticks : [0, 1, 2, 3]
+  const ticks = hint.legend_ticks.length > 0 ? hint.legend_ticks : DEFAULT_LEGEND_TICKS
   return ticks.map((tick, index) => ({
     value: tick,
     label: typeof tick === 'number' ? `${tick} ${hint.unit_label}`.trim() : String(tick),
@@ -82,8 +104,8 @@ export function buildWeatherPointRadiusExpression(hint: WeatherLayerRenderHint):
     'interpolate',
     ['linear'],
     ['coalesce', ['to-number', ['get', hint.primary_metric]], 0],
-    minTick, 3.5,
-    maxTick, 9.5,
+    minTick, POINT_RADIUS_MIN,
+    maxTick, POINT_RADIUS_MAX,
   ] as unknown as ExpressionSpecification
 }
 
@@ -95,8 +117,8 @@ export function buildWeatherArrowSizeExpression(hint: WeatherLayerRenderHint): E
     'interpolate',
     ['linear'],
     ['coalesce', ['to-number', ['get', hint.primary_metric]], 0],
-    minTick, 0.54,
-    maxTick, 1.12,
+    minTick, ARROW_SIZE_MIN,
+    maxTick, ARROW_SIZE_MAX,
   ] as unknown as ExpressionSpecification
 }
 
@@ -105,9 +127,9 @@ export function getWeatherLineColor(hint: WeatherLayerRenderHint) {
 }
 
 export function getWeatherFillOpacity(hint: WeatherLayerRenderHint, layerOpacity: number) {
-  return Math.max(0.08, Math.min(0.9, hint.opacity * layerOpacity))
+  return Math.max(FILL_OPACITY_MIN, Math.min(FILL_OPACITY_MAX, hint.opacity * layerOpacity))
 }
 
 export function getWeatherLineOpacity(hint: WeatherLayerRenderHint, layerOpacity: number) {
-  return Math.max(0.08, Math.min(0.42, hint.opacity * layerOpacity * 0.46))
+  return Math.max(LINE_OPACITY_MIN, Math.min(LINE_OPACITY_MAX, hint.opacity * layerOpacity * LINE_OPACITY_RATIO))
 }

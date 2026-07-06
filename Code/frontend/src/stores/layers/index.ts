@@ -3,14 +3,14 @@ import { defineStore } from 'pinia'
 
 import { demoLayerCatalog } from '../../app/demo-data'
 import { resolveDemoLayer } from '../../app/demo-adapter'
-import { getWorkflowRun, submitWorkflow, cancelWorkflowRun, retryWorkflowRun } from '../../services/runtime-api'
-import type { BoundingBox } from '../../services/runtime-api'
+import { fetchLayerCatalog, getWorkflowRun, submitWorkflow, cancelWorkflowRun, retryWorkflowRun } from '../../services/runtime-api'
+import type { BoundingBox, RuntimeLayerDescriptor } from '../../services/runtime-api'
 import { LAYER_CATEGORIES, LAYER_LIBRARY, LAYER_LIBRARY_BY_CATEGORY } from './catalog'
 import { buildJobLayer } from './result-adapter'
 import type { ActiveLayer, ActiveLayerDisplay, JobLayerItem, JobStatus, LayerSidebarView } from './types'
 
 function genInstanceId() {
-  return `layer-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+  return crypto.randomUUID()
 }
 
 function isTerminalStatus(status: string) {
@@ -22,9 +22,14 @@ function isTerminalStatus(status: string) {
 const POLL_INITIAL_INTERVAL_MS = 1500
 const POLL_MAX_INTERVAL_MS = 10000
 const POLL_MAX_ATTEMPTS = 30 // 总轮询次数上限，防止后端异常时无限轮询
+const POLL_BACKOFF_BASE = 1.5 // 指数退避基数，与后端 retry_policy 对齐
 
 function getCatalogDisplayName(catalogId: string) {
   return LAYER_LIBRARY.find((item) => item.catalogId === catalogId)?.name ?? catalogId
+}
+
+function isBlockedRunReadiness(readiness?: string | null) {
+  return readiness === 'blocked'
 }
 
 // ─── Store ───────────────────────────────────────────────────────────────────
@@ -47,6 +52,9 @@ export const useLayersStore = defineStore('layers', () => {
   const workflowError = ref<string | null>(null)
   const workflowPollingHandles = new Map<string, number>()
   const isSubmitting = ref(false)
+  const runtimeLayerCatalog = ref<Record<string, RuntimeLayerDescriptor>>({})
+  const runtimeLayerCatalogLoading = ref(false)
+  let runtimeLayerCatalogRequest: Promise<void> | null = null
 
   // ── 粒子流独占启用状态 ───────────────────────────────────────────────────
   // particle_flow 是 Canvas 叠加层，性能开销大且视觉冲突，同一时间只允许一个图层启用
@@ -181,6 +189,13 @@ export const useLayersStore = defineStore('layers', () => {
 
   /** 批量移除所有图层（保留行政区边界） */
   function removeAllLayers(keepBoundary = true) {
+    const removedJobIds = activeLayers.value
+      .filter((layer) => !keepBoundary || !layer.isAdminBoundary)
+      .map((layer) => layer.jobLayer?.jobId)
+      .filter((jobId): jobId is string => Boolean(jobId))
+    for (const jobId of removedJobIds) {
+      stopWorkflowPolling(jobId)
+    }
     if (keepBoundary) {
       activeLayers.value = activeLayers.value.filter((l) => l.isAdminBoundary)
     } else {
@@ -215,6 +230,48 @@ export const useLayersStore = defineStore('layers', () => {
 
   function setCurrentHour(hour: number) {
     currentHour.value = hour
+  }
+
+  function getRuntimeLayerDescriptor(catalogId: string) {
+    return runtimeLayerCatalog.value[catalogId] ?? null
+  }
+
+  async function ensureRuntimeLayerCatalog(force = false) {
+    if (!force && Object.keys(runtimeLayerCatalog.value).length > 0) {
+      return
+    }
+    if (runtimeLayerCatalogRequest && !force) {
+      return runtimeLayerCatalogRequest
+    }
+
+    runtimeLayerCatalogLoading.value = true
+    runtimeLayerCatalogRequest = fetchLayerCatalog()
+      .then((response) => {
+        runtimeLayerCatalog.value = Object.fromEntries(response.items.map((item) => [item.layer_id, item]))
+      })
+      .finally(() => {
+        runtimeLayerCatalogLoading.value = false
+        runtimeLayerCatalogRequest = null
+      })
+
+    return runtimeLayerCatalogRequest
+  }
+
+  function getCatalogRunBlockReason(catalogId: string) {
+    const descriptor = getRuntimeLayerDescriptor(catalogId)
+    if (!descriptor || !isBlockedRunReadiness(descriptor.run_readiness)) {
+      return null
+    }
+
+    return (
+      descriptor.run_readiness_summary ??
+      descriptor.run_readiness_notes?.[0] ??
+      `${getCatalogDisplayName(catalogId)} 默认数据源未就绪`
+    )
+  }
+
+  function canRunCatalog(catalogId: string) {
+    return !getCatalogRunBlockReason(catalogId)
   }
 
   function setJobLayers(jobs: JobLayerItem[]) {
@@ -261,7 +318,8 @@ export const useLayersStore = defineStore('layers', () => {
   async function pollWorkflowRun(jobId: string, catalogId: string, attempt = 1) {
     try {
       const run = await getWorkflowRun(jobId)
-      const jobLayer = await buildJobLayer(run, catalogId)
+      const existingJobLayer = jobLayers.value.find((item) => item.jobId === jobId)
+      const jobLayer = await buildJobLayer(run, catalogId, { previousJobLayer: existingJobLayer })
       upsertJobLayer(catalogId, jobLayer)
       workflowError.value = null
 
@@ -282,7 +340,7 @@ export const useLayersStore = defineStore('layers', () => {
 
     // 修复：指数退避，对齐后端 retry_policy。retry_pending 状态下更应拉长间隔
     const backoffMs = Math.min(
-      POLL_INITIAL_INTERVAL_MS * Math.pow(1.5, attempt - 1),
+      POLL_INITIAL_INTERVAL_MS * Math.pow(POLL_BACKOFF_BASE, attempt - 1),
       POLL_MAX_INTERVAL_MS,
     )
     const handle = window.setTimeout(() => {
@@ -296,12 +354,14 @@ export const useLayersStore = defineStore('layers', () => {
     workflowError.value = null
     isSubmitting.value = true
     try {
+      await ensureRuntimeLayerCatalog()
+      const blockedReason = getCatalogRunBlockReason(catalogId)
+      if (blockedReason) {
+        throw new Error(blockedReason)
+      }
+
       const catalogName = getCatalogDisplayName(catalogId)
-      // 支持 map_layer 渲染的图层：风场全高度变体 + 温度 + 降水
-      const supportsMapLayer =
-        catalogId.startsWith('wind-field') ||
-        catalogId.startsWith('temperature') ||
-        catalogId === 'precipitation'
+      const supportsMapLayer = isWeatherEngineLayer(catalogId)
       const requestedOutputs = supportsMapLayer
         ? ['json', 'text', 'table', 'map_layer']
         : ['json', 'text', 'table']
@@ -358,7 +418,8 @@ export const useLayersStore = defineStore('layers', () => {
   async function cancelWorkflowRunForJob(jobId: string, catalogId: string) {
     try {
       const run = await cancelWorkflowRun(jobId)
-      const jobLayer = await buildJobLayer(run, catalogId)
+      const existingJobLayer = jobLayers.value.find((item) => item.jobId === jobId)
+      const jobLayer = await buildJobLayer(run, catalogId, { previousJobLayer: existingJobLayer })
       upsertJobLayer(catalogId, jobLayer)
       stopWorkflowPolling(jobId)
     } catch (error) {
@@ -451,6 +512,14 @@ export const useLayersStore = defineStore('layers', () => {
     return map
   })
 
+  const catalogRunReadiness = computed(() => {
+    const map = new Map<string, string>()
+    for (const descriptor of Object.values(runtimeLayerCatalog.value)) {
+      map.set(descriptor.layer_id, descriptor.run_readiness ?? 'ready')
+    }
+    return map
+  })
+
   return {
     // State
     activeLayers,
@@ -460,6 +529,7 @@ export const useLayersStore = defineStore('layers', () => {
     currentHour,
     workflowError,
     isSubmitting,
+    runtimeLayerCatalogLoading,
     particleFlowCatalogId,
     currentMapCenter,
     currentMapBBox,
@@ -469,6 +539,7 @@ export const useLayersStore = defineStore('layers', () => {
     activeLayerCount,
     sidebarViewLabel,
     catalogJobStatus,
+    catalogRunReadiness,
     // Data
     layerLibrary: LAYER_LIBRARY,
     layerLibraryByCategory: LAYER_LIBRARY_BY_CATEGORY,
@@ -485,11 +556,14 @@ export const useLayersStore = defineStore('layers', () => {
     setSidebarView,
     setCurrentHour,
     setJobLayers,
+    ensureRuntimeLayerCatalog,
     reorderLayers,
     runWorkflowForCatalog,
     cancelWorkflowRunForJob,
     retryWorkflowRunForJob,
     stopWorkflowPolling,
+    getCatalogRunBlockReason,
+    canRunCatalog,
     isWeatherEngineLayer,
     supportsParticleFlow,
     toggleParticleFlow,

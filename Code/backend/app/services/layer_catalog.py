@@ -309,12 +309,16 @@ def get_layer_catalog() -> LayerCatalogResponse:
             tags=["ndvi", "vegetation", "remote-sensing", "frontend-aligned"],
             module_name="ndvi_daily",
             engine="python_provider",
+            default_task_type="ndvi_daily",
+            default_data_access_sources={
+                "NDVI_16DAY_RASTER": ["NDVI_VIIRS", "NDVI_MODIS", "ndvi"],
+            },
         ),
         LayerDescriptor(
             layer_id="remote-sensing",
             dataset_key="remote_sensing_demo",
             display_name="遥感反演",
-            description="2D Demo 遥感反演图层，当前以占位协议演示字段映射与空数据状态。",
+            description="基于 Sentinel-2 场景的 NDVI 遥感反演工作流，统一走 GEE bridge 自动生成导出 manifest。",
             category="遥感产品",
             source_type=LayerSourceType.algorithm_output,
             render_type=LayerRenderType.raster,
@@ -322,12 +326,58 @@ def get_layer_catalog() -> LayerCatalogResponse:
             supports_time=True,
             is_realtime=False,
             default_visible=False,
-            status="placeholder",
             time_granularity=TimeGranularity.day,
             default_time_offset=-1,
             extent=extent,
             style=LayerStyleHint(palette="purple-green", unit_label="index", opacity=0.75),
             tags=["remote-sensing", "2d-demo", "frontend-aligned"],
+            engine="gee",
+            workflow_id="gee-remote-sensing-ndvi",
+            workflow_definition={
+                "workflow_id": "gee-remote-sensing-ndvi",
+                "nodes": [
+                    {
+                        "node_id": "source",
+                        "node_type": "gee_image",
+                        "params": {
+                            "asset_id": "COPERNICUS/S2_SR_HARMONIZED/20230101T000000_20230101T000000_T50SMJ",
+                        },
+                    },
+                    {
+                        "node_id": "index",
+                        "node_type": "gee_spectral_index",
+                        "params": {
+                            "index": "ndvi",
+                            "output_band": "ndvi",
+                        },
+                    },
+                    {
+                        "node_id": "export",
+                        "node_type": "gee_export_image",
+                        "params": {
+                            "destination": "manifest",
+                            "description": "remote-sensing-ndvi",
+                            "file_name_prefix": "remote_sensing_ndvi",
+                            "scale": 10,
+                            "start_task": False,
+                        },
+                    },
+                ],
+                "edges": [
+                    {
+                        "source_node_id": "source",
+                        "source_port": "image",
+                        "target_node_id": "index",
+                        "target_port": "image",
+                    },
+                    {
+                        "source_node_id": "index",
+                        "source_port": "index_image",
+                        "target_node_id": "export",
+                        "target_port": "image",
+                    },
+                ],
+            },
         ),
         LayerDescriptor(
             layer_id="lab-output",
@@ -368,6 +418,10 @@ def get_layer_catalog() -> LayerCatalogResponse:
             tags=["smap", "soil-moisture", "remote-sensing", "frontend-aligned"],
             module_name="smap_daily",
             engine="python_provider",
+            default_task_type="smap_daily",
+            default_data_access_sources={
+                "SMAP_SPL3SMP_E": ["SMAP_L3", "smap"],
+            },
         ),
         LayerDescriptor(
             layer_id="fy-mwri",
@@ -389,6 +443,10 @@ def get_layer_catalog() -> LayerCatalogResponse:
             tags=["fy", "brightness-temperature", "remote-sensing", "frontend-aligned"],
             module_name="fy_daily",
             engine="python_provider",
+            default_task_type="fy_daily",
+            default_data_access_sources={
+                "FY_MWRI_HDF": ["fy", "fy_mwri", "FY_MWRI_HDF"],
+            },
         ),
         LayerDescriptor(
             layer_id="station-soil",
@@ -410,6 +468,10 @@ def get_layer_catalog() -> LayerCatalogResponse:
             tags=["station", "soil-moisture", "validation", "frontend-aligned"],
             module_name="station_daily",
             engine="python_provider",
+            default_task_type="station_daily",
+            default_data_access_sources={
+                "ISMN_STM_OR_CASMOS_TXT": ["ISMN_STATION", "CASMOS_STATION", "station/ismn", "station/casmos"],
+            },
         ),
         LayerDescriptor(
             layer_id="inversion-daily",
@@ -431,6 +493,7 @@ def get_layer_catalog() -> LayerCatalogResponse:
             tags=["inversion", "soil-moisture", "vod", "frontend-aligned"],
             module_name="inversion_daily",
             engine="python_provider",
+            default_task_type="inversion_daily",
         ),
         LayerDescriptor(
             layer_id="block-inversion",
@@ -452,6 +515,7 @@ def get_layer_catalog() -> LayerCatalogResponse:
             tags=["block-inversion", "timeseries", "soil-moisture", "vod", "frontend-aligned"],
             module_name="block_inversion",
             engine="python_provider",
+            default_task_type="block_inversion",
         ),
         LayerDescriptor(
             layer_id="omega-block",
@@ -473,7 +537,15 @@ def get_layer_catalog() -> LayerCatalogResponse:
             tags=["omega", "retrieval", "soil-moisture", "vod", "frontend-aligned"],
             module_name="omega_block",
             engine="python_provider",
+            default_task_type="omega_block",
         ),
     ]
 
     return LayerCatalogResponse(items=items)
+
+
+def get_layer_descriptor(layer_id: str) -> LayerDescriptor | None:
+    for item in get_layer_catalog().items:
+        if item.layer_id == layer_id:
+            return item
+    return None

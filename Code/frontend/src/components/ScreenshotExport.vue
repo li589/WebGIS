@@ -208,7 +208,7 @@ async function capture() {
             finalCanvas = composedCanvas
             resolve(null)
           }
-          mapImage.onerror = () => resolve(null)
+          mapImage.onerror = () => { finalCanvas = canvas; resolve(null) }
         })
       }
     }

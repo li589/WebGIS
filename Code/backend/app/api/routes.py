@@ -9,7 +9,6 @@ from app.api.deps import require_write_access
 from app.core.config import settings
 from app.services.coordinate_transform_service import transform_point
 from app.services.demo_snapshots import get_demo_layer_snapshot, list_demo_layer_snapshots
-from app.services.gee_bridge_service import gee_bridge_service
 from app.services.interaction_hub import interaction_hub
 from app.services.layer_catalog import get_layer_catalog
 from app.services.python_provider_bridge_service import python_provider_bridge_service
@@ -19,6 +18,7 @@ from app.services.result_storage import result_storage_service
 from app.services.result_view_service import result_view_service
 from app.services.task_store import task_store
 from app.services.weather_bridge_service import weather_bridge_service
+from app.services.workflow_request_resolver import describe_layer_run_readiness
 from app.weatherengine.service import weather_engine_service
 from shared.contracts.api_contracts import (
     DemoLayerSnapshot,
@@ -72,6 +72,11 @@ _sse_limiter = _SseRateLimiter(_SSE_RATE_LIMIT, _SSE_WINDOW)
 
 
 def _service_json_response(service_response) -> JSONResponse:
+    # m26 修复：支持 dict 和对象两种返回格式
+    # 某些 bridge service 返回 {"status_code": int, "body": dict} 格式的 dict
+    # 其他服务返回具有 status_code 和 body 属性的对象
+    if isinstance(service_response, dict):
+        return JSONResponse(status_code=service_response.get("status_code", 200), content=service_response.get("body", {}))
     return JSONResponse(status_code=service_response.status_code, content=service_response.body)
 
 
@@ -82,7 +87,20 @@ def health_check() -> dict[str, str]:
 
 @router.get("/layers", tags=["catalog"], response_model=LayerCatalogResponse)
 def list_layers() -> LayerCatalogResponse:
-    return get_layer_catalog()
+    catalog = get_layer_catalog()
+    items = []
+    for descriptor in catalog.items:
+        readiness = describe_layer_run_readiness(descriptor.layer_id) or {}
+        items.append(
+            descriptor.model_copy(
+                update={
+                    "run_readiness": readiness.get("run_readiness", descriptor.run_readiness),
+                    "run_readiness_summary": readiness.get("run_readiness_summary", descriptor.run_readiness_summary),
+                    "run_readiness_notes": readiness.get("run_readiness_notes", descriptor.run_readiness_notes),
+                }
+            )
+        )
+    return LayerCatalogResponse(items=items)
 
 
 @router.get("/demo/layers/snapshots", tags=["demo"], response_model=DemoLayerSnapshotsResponse)
@@ -163,8 +181,14 @@ def get_artifact_preview_png(
         raw_bytes = result_storage_service.fetch_artifact_bytes(artifact_id)
         if raw_bytes is None:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Artifact bytes not found: {artifact_id}")
-        temp_path = Path(tempfile.gettempdir()) / f"preview_{artifact_id}.tif"
-        temp_path.write_bytes(raw_bytes)
+        with tempfile.NamedTemporaryFile(
+            mode="wb",
+            suffix=".tif",
+            prefix=f"preview_{artifact_id}_",
+            delete=False,
+        ) as temp_file:
+            temp_file.write(raw_bytes)
+            temp_path = Path(temp_file.name)
         cog_path = temp_path
 
     try:
@@ -187,6 +211,33 @@ def get_artifact_preview_png(
     return Response(content=png_bytes, media_type="image/png")
 
 
+# catalogId → algorithm_request 映射
+# 当 layer_id 对应 Python provider 模块时，自动注入 algorithm_request
+# 使 bridge chain 能正确路由到 python_provider_bridge_service
+_CATALOG_ALGORITHM_MAP: dict[str, dict[str, object]] = {
+    # 植被指数：调用 ndvi_daily 模块（注册名与 modules/ndvi.py 的 @register_module_decorator 一致）
+    "ndvi": {
+        "module_name": "ndvi_daily",
+        "workflow_name": "ndvi_analysis",
+    },
+    # 遥感反演：调用 fy_daily 模块（FY 卫星反演，预留）
+    "remote-sensing": {
+        "module_name": "fy_daily",
+        "workflow_name": "remote_sensing_analysis",
+    },
+    # 课题组模型输出：调用 lab_output 模块（预留）
+    "lab-output": {
+        "module_name": "lab_output",
+        "workflow_name": "lab_output_analysis",
+    },
+    # 土壤湿度：调用 soil_moisture 模块（预留）
+    "smap-soil": {
+        "module_name": "soil_moisture",
+        "workflow_name": "soil_moisture_analysis",
+    },
+}
+
+
 @router.post(
     "/workflow-runs",
     tags=["workflow"],
@@ -195,6 +246,23 @@ def get_artifact_preview_png(
     dependencies=[Depends(require_write_access)],
 )
 def submit_workflow(payload: WorkflowSubmitRequest) -> WorkflowAcceptedResponse:
+    # 注入 algorithm_request：将 layer_id 映射到 Python provider 模块
+    # 覆盖原有 algorithm_request（前端可能传空），确保 bridge chain 能正确路由
+    if payload.layer_id and payload.algorithm_request is None:
+        algo_map = _CATALOG_ALGORITHM_MAP.get(payload.layer_id)
+        if algo_map is not None:
+            import copy
+            enriched = copy.deepcopy(payload)
+            enriched.algorithm_request = {
+                **dict(algo_map),
+                # 透传前端 parameters（latitude/longitude/hour 等）
+                "algorithm_params": dict(payload.parameters or {}),
+                # 透传时间/空间范围
+                **({"time_range": payload.time_range.model_dump(mode="json")} if payload.time_range else {}),
+                **({"region": {"kind": "bbox", "value": payload.spatial_filter.bbox.model_dump(mode="json")}}
+                   if payload.spatial_filter and payload.spatial_filter.bbox else {}),
+            }
+            payload = enriched
     try:
         return interaction_hub.submit_workflow(payload)
     except ValueError as exc:
@@ -219,9 +287,19 @@ def get_workflow_run_view(run_id: str) -> WorkflowRunViewResponse:
     return run_view
 
 
+def _get_client_ip(request: Request) -> str:
+    forwarded = request.headers.get("x-forwarded-for")
+    if forwarded:
+        return forwarded.split(",")[0].strip()
+    real_ip = request.headers.get("x-real-ip")
+    if real_ip:
+        return real_ip
+    return request.client.host if request.client else "unknown"
+
+
 @router.get("/workflow-runs/{run_id}/events", tags=["workflow"], response_model=WorkflowEventsResponse)
 def list_workflow_events(request: Request, run_id: str) -> WorkflowEventsResponse:
-    client_ip = request.client.host if request.client else "unknown"
+    client_ip = _get_client_ip(request)
     if not _sse_limiter.check(client_ip):
         raise HTTPException(
             status_code=status.HTTP_429_TOO_MANY_REQUESTS,
@@ -311,55 +389,7 @@ def submit_frontend_command(payload: FrontendCommandRequest) -> FrontendCommandR
     return interaction_hub.submit_frontend_command(payload)
 
 
-# ---------------- GEE 引擎接口 ----------------
-# GEE 引擎通过 /gee/* 暴露元数据、诊断和导出状态查询；
-# 工作流执行统一走 /workflow-runs（通过 gee_request 字段路由到 gee_bridge_service）。
-
-
-def _gee_service_response(service_call) -> JSONResponse:
-    try:
-        return _service_json_response(service_call())
-    except RuntimeError as exc:
-        detail = str(exc)
-        status_code = status.HTTP_503_SERVICE_UNAVAILABLE if "disabled" in detail.lower() or "initialize" in detail.lower() else status.HTTP_500_INTERNAL_SERVER_ERROR
-        raise HTTPException(status_code=status_code, detail=detail) from exc
-    except ValueError as exc:
-        detail = str(exc)
-        status_code = status.HTTP_404_NOT_FOUND if "not found" in detail.lower() else status.HTTP_400_BAD_REQUEST
-        raise HTTPException(status_code=status_code, detail=detail) from exc
-
-
-@router.get("/gee/workflows", tags=["gee"])
-def list_gee_workflows() -> JSONResponse:
-    return _gee_service_response(gee_bridge_service.list_workflows_response)
-
-
-@router.get("/gee/workflows/{workflow_name}", tags=["gee"])
-def describe_gee_workflow(workflow_name: str) -> JSONResponse:
-    return _gee_service_response(lambda: gee_bridge_service.describe_workflow_response(workflow_name))
-
-
-@router.get("/gee/workflows/{workflow_name}/panel-schema", tags=["gee"])
-def get_gee_workflow_panel_schema(workflow_name: str) -> JSONResponse:
-    return _gee_service_response(lambda: gee_bridge_service.get_workflow_panel_schema_response(workflow_name))
-
-
-@router.get("/gee/workflows/{workflow_name}/ui-schema", tags=["gee"])
-def get_gee_workflow_ui_schema(workflow_name: str) -> JSONResponse:
-    return _gee_service_response(lambda: gee_bridge_service.get_workflow_ui_schema_response(workflow_name))
-
-
-@router.get("/gee/diagnostics", tags=["gee"])
-def get_gee_diagnostics() -> JSONResponse:
-    return _gee_service_response(gee_bridge_service.get_diagnostics_response)
-
-
-@router.get("/gee/exports:status", tags=["gee"])
-def get_gee_export_status(manifest_uri: str, update_manifest: bool = False) -> JSONResponse:
-    return _gee_service_response(
-        lambda: gee_bridge_service.get_export_status_response(manifest_uri, update_manifest=update_manifest)
-    )
-
+# GEE 引擎路由已迁移至 GEE router（通过 main.py 挂载），由 webgis_gee/api/routes.py 管理。
 
 # ---------------- 天气工作流引擎接口 ----------------
 # 天气工作流引擎通过 /weather/workflows/* 暴露元数据和诊断；

@@ -6,8 +6,11 @@ from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.routes import router
+from app.api.tile_routes import router as tile_router
+from app.api.gee_config_routes import router as gee_config_router
 from app.core.config import settings
 from app.core.logging import ensure_logging_configured, log_context, set_request_id
+from app.gee.core.src.webgis_gee.api.routes import create_api_router as create_gee_router
 
 logger = logging.getLogger(__name__)
 
@@ -20,9 +23,15 @@ def create_app() -> FastAPI:
         version="0.1.0",
         description="Minimal backend service for the geographic analysis platform.",
     )
+    _origins = settings.cors_origins
+    if not _origins:
+        raise ValueError(
+            "CORS origins must be explicitly configured. "
+            "Do not set BACKEND_CORS_ORIGINS to empty — list specific origins instead of '*'."
+        )
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=settings.cors_origins or ["*"],
+        allow_origins=_origins,
         allow_credentials=True,
         allow_methods=["*"],
         allow_headers=["*"],
@@ -60,6 +69,17 @@ def create_app() -> FastAPI:
         )
 
     app.include_router(router)
+    app.include_router(tile_router)
+    app.include_router(gee_config_router)
+
+    # 挂载 GEE engine router，使 /gee/* 路由正式接入 FastAPI
+    # 路由前缀已在 create_gee_router 内部定义为 /gee
+    try:
+        gee_router = create_gee_router()
+        app.include_router(gee_router)
+    except Exception:
+        logger.warning("GEE router failed to mount — GEE backend may not be installed or configured.")
+
     return app
 
 

@@ -196,6 +196,35 @@ export interface WorkflowRunViewResponse {
   updated_at: string
 }
 
+export interface RuntimeLayerDescriptor {
+  layer_id: string
+  dataset_key: string
+  display_name: string
+  description: string
+  category: string
+  source_type: string
+  render_type: string
+  supported_map_modes: string[]
+  supports_time?: boolean
+  is_realtime?: boolean
+  default_visible?: boolean
+  status: string
+  module_name?: string | null
+  engine?: string | null
+  workflow_name?: string | null
+  workflow_id?: string | null
+  workflow_definition?: Record<string, unknown> | null
+  default_task_type?: string | null
+  default_data_access_sources?: Record<string, string[]>
+  run_readiness?: string
+  run_readiness_summary?: string | null
+  run_readiness_notes?: string[]
+}
+
+export interface RuntimeLayerCatalogResponse {
+  items: RuntimeLayerDescriptor[]
+}
+
 export interface WeatherLayerRenderHint {
   layer_id: string
   paint_mode: string
@@ -398,6 +427,10 @@ export function submitWorkflow(payload: WorkflowSubmitRequest) {
     method: 'POST',
     body: JSON.stringify(payload),
   })
+}
+
+export function fetchLayerCatalog() {
+  return requestJson<RuntimeLayerCatalogResponse>('/layers')
 }
 
 export function getWorkflowRun(runId: string) {

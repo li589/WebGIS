@@ -9,6 +9,7 @@ import { buildWeatherLegendStops, isRealtimeWeatherLayerId } from './map/weather
 import { buildResultDisplayModel } from './info-panel/result-adapter'
 
 const layersStore = useLayersStore()
+void layersStore.ensureRuntimeLayerCatalog()
 
 const props = defineProps<{
   viewLabel: string
@@ -78,6 +79,9 @@ const layerMetadata = computed(() => {
   }
   if (dl.jobLayer) {
     meta.push({ label: '作业状态', value: dl.jobLayer.status || '—' })
+    if (dl.jobLayer.diagnosticNotes?.length) {
+      meta.push({ label: '诊断', value: dl.jobLayer.diagnosticNotes.slice(0, 2).join('；') })
+    }
   }
   return meta
 })
@@ -132,7 +136,7 @@ const pointWeatherRows = computed(() => {
           ? formatMetric(weather.current.wind_speed_10m, 'm/s')
           : displayLayer.value.catalogId === 'precipitation'
             ? formatMetric(weather.current.precipitation, 'mm')
-            : formatMetric(weather.current.temperature_2m, 'C'),
+            : formatMetric(weather.current.temperature_2m, '°C'),
     },
     { label: 'Observed', value: weather.observation_time ? formatTime(weather.observation_time) : '--' },
   ]
@@ -157,6 +161,7 @@ const pointWeatherHourlyRows = computed(() => {
 })
 const canRunWorkflow = computed(() => !displayLayer.value?.isAdminBoundary)
 const isWorkflowRunning = computed(() => jobLayer.value?.status === 'running' || jobLayer.value?.status === 'queued')
+const runBlockedReason = computed(() => layersStore.getCatalogRunBlockReason(displayLayer.value.catalogId))
 const workflowStage = computed(() => {
   if (props.isSubmitting) return 'submitting'
   if (jobLayer.value?.status === 'queued') return 'queued'
@@ -165,8 +170,9 @@ const workflowStage = computed(() => {
   if (jobLayer.value?.status === 'failed') return 'failed'
   return 'idle'
 })
-const buttonDisabled = computed(() => isWorkflowRunning.value || props.isSubmitting)
+const buttonDisabled = computed(() => Boolean(runBlockedReason.value) || isWorkflowRunning.value || props.isSubmitting)
 const buttonLabel = computed(() => {
+  if (runBlockedReason.value) return '数据未就绪'
   if (props.isSubmitting) return '提交中...'
   if (isWorkflowRunning.value) return '任务进行中'
   return '运行工作流'
@@ -279,11 +285,15 @@ onBeforeUnmount(() => {
           v-if="canRunWorkflow"
           class="run-workflow-btn"
           :disabled="buttonDisabled"
+          :title="runBlockedReason ?? ''"
           @click="handleRunWorkflow"
         >
           {{ buttonLabel }}
         </button>
         <span v-else class="run-workflow-hint">该图层仅用于边界展示，不支持任务运行</span>
+      </div>
+      <div v-if="runBlockedReason" class="run-block-hint">
+        {{ runBlockedReason }}
       </div>
 
       <div class="workflow-stage-row">
@@ -337,6 +347,9 @@ onBeforeUnmount(() => {
             <span class="job-progress-label">{{ jobLayer.progress }}%</span>
           </div>
           <p class="job-message">{{ jobLayer.message || '作业正在处理中...' }}</p>
+          <ul v-if="jobLayer.diagnosticNotes?.length" class="job-diagnostic-list">
+            <li v-for="note in jobLayer.diagnosticNotes" :key="note" class="job-diagnostic-item">{{ note }}</li>
+          </ul>
         </div>
 
         <div class="job-steps">
@@ -588,6 +601,8 @@ onBeforeUnmount(() => {
 .workflow-error { display: flex; align-items: center; gap: 0.4rem; padding: 0.34rem 0.48rem; border-radius: 0.62rem; background: rgba(255, 80, 80, 0.12); border: 1px solid rgba(255, 80, 80, 0.22); color: #ff9999; font-size: 0.58rem; }
 .error-icon { font-size: 0.72rem; }
 .run-workflow-btn { border: 1px solid rgba(103, 212, 255, 0.24); border-radius: 999px; background: rgba(29, 78, 216, 0.18); color: #d8f3ff; font-size: 0.62rem; padding: 0.34rem 0.7rem; cursor: pointer; }
+.run-workflow-btn:disabled { opacity: 0.58; cursor: not-allowed; }
+.run-block-hint { color: #ffd38a; font-size: 0.56rem; line-height: 1.4; }
 .workflow-stage-row { display: flex; align-items: center; gap: 0.4rem; }
 .stage-pill { padding: 0.18rem 0.44rem; border-radius: 999px; font-size: 0.56rem; background: rgba(148, 163, 184, 0.12); color: #bfd3e6; }
 .stage-pill.running, .stage-pill.queued { background: rgba(90, 213, 255, 0.14); color: #bcefff; }
@@ -687,6 +702,8 @@ onBeforeUnmount(() => {
 .job-progress-fill { height: 100%; background: linear-gradient(90deg, #5ad5ff, #7ea8ff); }
 .job-progress-label { width: 2rem; text-align: right; color: #8ea3b8; font-size: 0.54rem; }
 .job-message { margin: 0; color: #c8dff0; font-size: 0.58rem; line-height: 1.4; }
+.job-diagnostic-list { display: grid; gap: 0.12rem; margin: 0; padding-left: 1rem; color: #ffcf99; font-size: 0.54rem; }
+.job-diagnostic-item { line-height: 1.35; }
 .job-steps { display: flex; flex-direction: column; gap: 0.18rem; }
 .job-step { padding: 0.18rem 0.34rem; border-radius: 0.52rem; background: rgba(148, 163, 184, 0.08); color: #7f93a9; font-size: 0.56rem; }
 .job-step.active { background: rgba(90, 213, 255, 0.12); color: #bcefff; }

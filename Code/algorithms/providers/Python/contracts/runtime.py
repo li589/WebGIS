@@ -44,3 +44,4 @@ class RuntimeContext:
     resource_hint: ResourceHint | None = None
     env: dict[str, str] = field(default_factory=dict)
     call_chain: list[str] = field(default_factory=list)
+    storage_backend: Any = None

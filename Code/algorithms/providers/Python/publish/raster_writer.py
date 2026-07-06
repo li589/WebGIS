@@ -151,7 +151,7 @@ class COGWriter:
         self.output_dir = Path(output_dir)
         self.overwrite = overwrite
 
-    def write(
+    def write_bytes(
         self,
         data: np.ndarray,
         output_name: str,
@@ -164,37 +164,27 @@ class COGWriter:
         description: str = "",
         unit: str = "",
         **profile_overrides: Any,
-    ) -> dict:
-        """将 numpy 数组写出为 COG 格式 GeoTIFF。
+    ) -> tuple[bytes, dict]:
+        """将 numpy 数组写出为 COG 格式 bytes 和元数据（不写文件）。
 
         参数：
-            data: 2D 或 3D numpy 数组，shape 为 (bands, height, width) 或 (height, width)
+            data: 2D 或 3D numpy 数组
             output_name: 输出文件名（不含扩展名）
-            crs: 坐标系，默认为 EPSG:4326
-            transform: rasterio transform 对象，如果为 None 则生成全 1 的仿射变换
-            nodata: NoData 值，默认为 np.nan（浮点型）或 -9999（整型）
-            dtype: 输出数据类型，如 "float32", "int16"，默认为 data.dtype
+            crs: 坐标系
+            transform: rasterio transform 对象
+            nodata: NoData 值
+            dtype: 输出数据类型
             compress: 压缩算法，默认 "deflate"
             description: 栅格描述
-            unit: 数据单位，如 "mm", "kg/m2", "K"
+            unit: 数据单位
+            **profile_overrides: COG 写入额外参数
 
         返回：
-            dict: {
-                "path": str,           # 相对输出目录的路径
-                "uri": str,             # 完整 URI
-                "shape": tuple,         # (height, width) 或 (bands, height, width)
-                "dtype": str,           # 数据类型
-                "crs": str,             # 坐标系
-                "nodata": float|None,  # NoData 值
-                "unit": str,            # 数据单位
-                "bounds": tuple,        # (west, south, east, north)
-                "size_bytes": int,      # 文件大小
-            }
+            (bytes, dict): COG 文件字节数据和元数据字典。
+                元数据: {"path": str, "shape": tuple, "dtype": str, "crs": str,
+                         "nodata": float|None, "unit": str, "bounds": tuple, "size_bytes": int}
         """
         rasterio, Affine = _check_rasterio()
-
-        # 创建输出目录
-        self.output_dir.mkdir(parents=True, exist_ok=True)
 
         # 规范化数组
         bands_data, is_single_band = _normalize_array(data)
@@ -207,7 +197,7 @@ class COGWriter:
         # 自动设置 nodata
         nodata_val = nodata if nodata is not None else _auto_nodata(out_dtype)
 
-        # 生成默认 transform（以 (0,0) 为左上角，1.0 像素分辨率）
+        # 生成默认 transform
         if transform is None:
             transform = Affine(1.0, 0.0, 0.0, 0.0, -1.0, 0.0)
 
@@ -221,15 +211,7 @@ class COGWriter:
             )
         crs_normalized = _normalize_crs(crs)
 
-        # 构造输出路径
-        output_file = self.output_dir / f"{output_name}.tif"
-        if output_file.exists() and not self.overwrite:
-            raise FileExistsError(f"文件已存在（overwrite=False）: {output_file}")
-
         # 构造 rasterio profile
-        # 注意：COG driver 是虚拟 driver，自动处理 tiling/block size，
-        # 不支持 GTiff 的 description/tiled/blockxsize/blockysize 创建选项。
-        # description 通过 dst.update_tags 写入（见下方），不放在 profile 中。
         profile: dict[str, Any] = {
             "driver": "COG",
             "height": height,
@@ -252,8 +234,11 @@ class COGWriter:
         # 合并用户提供的额外参数
         profile.update(profile_overrides)
 
-        # 写入文件
-        with rasterio.open(output_file, "w", **profile) as dst:
+        # 写入内存缓冲区
+        from io import BytesIO
+
+        buf = BytesIO()
+        with rasterio.open(buf, "w", **profile) as dst:
             dst.write(bands_data)
             if description:
                 dst.update_tags(description=description)
@@ -262,27 +247,54 @@ class COGWriter:
             if tags:
                 dst.update_tags(**tags)
 
-        # 验证文件
-        if not output_file.exists():
-            raise IOError(f"写入失败，文件不存在: {output_file}")
-        file_size = output_file.stat().st_size
-        if file_size == 0:
-            raise IOError(f"写入失败，文件大小为 0: {output_file}")
+        cog_bytes = buf.getvalue()
+        if len(cog_bytes) == 0:
+            raise IOError("COG 写入失败，缓冲区为空")
 
         bounds = _compute_bounds(transform, width, height)
-        rel_path = str(output_file.relative_to(self.output_dir))
+        rel_path = f"{output_name}.tif"
 
-        return {
+        metadata = {
             "path": rel_path,
-            "uri": str(output_file.resolve().as_uri()),
             "shape": (height, width) if is_single_band else (count, height, width),
             "dtype": out_dtype_str,
             "crs": crs_normalized,
             "nodata": nodata_val,
             "unit": unit,
             "bounds": bounds,
-            "size_bytes": file_size,
+            "size_bytes": len(cog_bytes),
         }
+        return cog_bytes, metadata
+
+    def write(
+        self,
+        data: np.ndarray,
+        output_name: str,
+        *,
+        crs: str = "EPSG:4326",
+        transform: Optional["Affine"] = None,
+        nodata: Optional[float] = None,
+        dtype: Optional[str] = None,
+        compress: str = "deflate",
+        description: str = "",
+        unit: str = "",
+        **profile_overrides: Any,
+    ) -> dict:
+        """将 numpy 数组写出为 COG 格式 GeoTIFF 文件（兼容旧接口）。"""
+        cog_bytes, metadata = self.write_bytes(
+            data, output_name, crs=crs, transform=transform, nodata=nodata,
+            dtype=dtype, compress=compress, description=description, unit=unit,
+            **profile_overrides,
+        )
+        self.output_dir.mkdir(parents=True, exist_ok=True)
+        output_file = self.output_dir / f"{output_name}.tif"
+        if output_file.exists() and not self.overwrite:
+            raise FileExistsError(f"文件已存在（overwrite=False）: {output_file}")
+        output_file.write_bytes(cog_bytes)
+        file_size = output_file.stat().st_size
+        if file_size == 0:
+            raise IOError(f"写入失败，文件大小为 0: {output_file}")
+        return {**metadata, "uri": str(output_file.resolve().as_uri())}
 
 
 # ---------------------------------------------------------------------------
@@ -306,7 +318,7 @@ class PreviewGenerator:
         self.output_dir = Path(output_dir)
         self.size = size  # (width, height)
 
-    def generate(
+    def generate_bytes(
         self,
         data: np.ndarray,
         output_name: str,
@@ -317,31 +329,23 @@ class PreviewGenerator:
         vmax: Optional[float] = None,
         title: str = "",
         overlay_extent: Optional[tuple] = None,
-    ) -> dict:
-        """从栅格数据生成 PNG 缩略图。
+    ) -> tuple[bytes, dict]:
+        """从栅格数据生成 PNG bytes 和元数据（不写文件）。
 
         参数：
-            data: 2D numpy 数组，shape 为 (height, width)
+            data: 2D numpy 数组
             output_name: 输出文件名（不含扩展名）
-            cmap: colormap 名称，默认 viridis
-            nodata: NoData 值，会渲染为灰色或透明
-            vmin: 最小拉伸值，默认为数据 2% 分位数
-            vmax: 最大拉伸值，默认为数据 98% 分位数
+            cmap: colormap 名称
+            nodata: NoData 值
+            vmin/vmax: 拉伸范围
             title: 图像标题
             overlay_extent: 经纬度范围 (west, south, east, north)
 
         返回：
-            dict: {
-                "path": str,
-                "uri": str,
-                "size": tuple,
-                "size_bytes": int,
-            }
+            (bytes, dict): PNG 字节数据和元数据字典。
+                元数据: {"path": str, "size": tuple, "size_bytes": int}
         """
         matplotlib, plt, cm = _check_matplotlib()
-
-        # 创建输出目录
-        self.output_dir.mkdir(parents=True, exist_ok=True)
 
         # 规范化数组（确保 2D）
         data = np.asarray(data)
@@ -355,14 +359,10 @@ class PreviewGenerator:
         elif data.ndim != 2:
             raise ValueError(f"不支持的数据维度: {data.ndim}D，仅支持 2D 数组")
 
-        # 复制数据避免修改原数组
         plot_data = data.astype(np.float64, copy=True)
-
-        # 处理 nodata
         if nodata is not None:
             plot_data[plot_data == nodata] = np.nan
 
-        # 计算拉伸范围
         if vmin is None or vmax is None:
             valid_data = plot_data[~np.isnan(plot_data)]
             if valid_data.size == 0:
@@ -376,16 +376,12 @@ class PreviewGenerator:
         else:
             vmin_calc, vmax_calc = vmin, vmax
 
-        # 创建图形
         fig_w, fig_h = self.size[0] / 100, self.size[1] / 100
         fig, ax = plt.subplots(figsize=(fig_w, fig_h), dpi=100)
         fig.patch.set_facecolor("white")
         ax.set_facecolor("white")
 
-        # 使用 masked array 处理 nodata 显示为灰色
         masked_data = np.ma.masked_invalid(plot_data)
-
-        # 渲染图像
         im = ax.imshow(
             masked_data,
             cmap=cmap,
@@ -394,11 +390,9 @@ class PreviewGenerator:
             aspect="equal",
         )
 
-        # 移除坐标轴刻度
         ax.set_xticks([])
         ax.set_yticks([])
 
-        # 添加标题
         if title:
             title_font = _resolve_title_font()
             if not (_contains_non_ascii(title) and title_font is None):
@@ -407,24 +401,22 @@ class PreviewGenerator:
                     title_kwargs["fontproperties"] = title_font
                 ax.set_title(title, **title_kwargs)
 
-        # 添加经纬度边框
         if overlay_extent is not None:
             west, south, east, north = overlay_extent
             ax.set_xlim(west, east)
             ax.set_ylim(south, north)
 
-        # 添加 colorbar（缩小尺寸以适应缩略图）
         if fig_w > 1.5 and fig_h > 1.5:
             cbar = fig.colorbar(im, ax=ax, orientation="vertical", fraction=0.05, pad=0.02)
             cbar.ax.tick_params(labelsize=6)
 
-        # 紧凑布局
         fig.tight_layout(pad=0.1)
 
-        # 保存图像
-        output_file = self.output_dir / f"{output_name}.png"
+        from io import BytesIO
+
+        buf = BytesIO()
         fig.savefig(
-            output_file,
+            buf,
             format="png",
             dpi=100,
             bbox_inches="tight",
@@ -432,19 +424,33 @@ class PreviewGenerator:
             edgecolor="none",
         )
         plt.close(fig)
+        png_bytes = buf.getvalue()
+        if len(png_bytes) == 0:
+            raise IOError("预览图生成失败，缓冲区为空")
+        rel_path = f"{output_name}.png"
+        return png_bytes, {"path": rel_path, "size": self.size, "size_bytes": len(png_bytes)}
 
-        # 验证文件
-        if not output_file.exists():
-            raise IOError(f"预览图写入失败: {output_file}")
+    def generate(
+        self,
+        data: np.ndarray,
+        output_name: str,
+        *,
+        cmap: str = "viridis",
+        nodata: Optional[float] = None,
+        vmin: Optional[float] = None,
+        vmax: Optional[float] = None,
+        title: str = "",
+        overlay_extent: Optional[tuple] = None,
+    ) -> dict:
+        """从栅格数据生成 PNG 缩略图文件（兼容旧接口）。"""
+        png_bytes, metadata = self.generate_bytes(
+            data, output_name, cmap=cmap, nodata=nodata, vmin=vmin, vmax=vmax,
+            title=title, overlay_extent=overlay_extent,
+        )
+        self.output_dir.mkdir(parents=True, exist_ok=True)
+        output_file = self.output_dir / f"{output_name}.png"
+        output_file.write_bytes(png_bytes)
         file_size = output_file.stat().st_size
         if file_size == 0:
-            raise IOError(f"预览图写入失败，文件大小为 0: {output_file}")
-
-        rel_path = str(output_file.relative_to(self.output_dir))
-
-        return {
-            "path": rel_path,
-            "uri": str(output_file.resolve().as_uri()),
-            "size": self.size,
-            "size_bytes": file_size,
-        }
+            raise IOError("预览图写入失败，文件大小为 0")
+        return {**metadata, "uri": str(output_file.resolve().as_uri())}

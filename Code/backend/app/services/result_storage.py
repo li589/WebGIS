@@ -220,8 +220,8 @@ class ResultStorageService:
                     "chunk_index": chunk_index,
                     "item_count": len(chunk),
                     "resource_url": chunk_object.public_url
-                    or f"{settings.object_store_public_base}/{chunk_object.metadata.get('artifact_id', chunk_object.object_key)}",
-                    "resource_key": chunk_object.metadata.get("artifact_id", chunk_object.object_key),
+                    or f"{settings.object_store_public_base}/{chunk_object.object_key}",
+                    "resource_key": chunk_object.object_key,
                     "resource_backend": settings.object_store_backend,
                     "resource_size_bytes": chunk_object.content_length,
                 }
@@ -273,11 +273,7 @@ class ResultStorageService:
         artifact_id = f"artifact-{uuid4().hex[:12]}"
         stored_object = self._store.put_bytes(
             object_key=self._artifact_key(artifact_id),
-            data=(
-                str(result_ref.inline_data.get("text", "")).encode("utf-8")
-                if result_ref.mime_type.startswith("text/plain") and result_ref.inline_data
-                else serialized
-            ),
+            data=serialized,
             content_type=result_ref.mime_type,
             metadata={
                 "artifact_id": artifact_id,

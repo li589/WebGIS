@@ -10,6 +10,7 @@ from app.core.celery_app import celery_available, get_celery_runtime_details, re
 from app.core.config import settings
 from app.core.logging import ensure_logging_configured, log_context
 from app.services.result_storage import result_storage_service
+from app.services.workflow_request_resolver import normalize_workflow_submit_request
 from app.services.workflow_repository import SQLiteWorkflowRepository
 from app.tasks.download_tasks import dispatch_download_follow_up_task, execute_download_follow_up_task
 from app.tasks.workflow_tasks import (
@@ -71,6 +72,7 @@ class InMemoryInteractionHub:
         return f"/workflow-runs/{run_id}/events"
 
     def submit_workflow(self, payload: WorkflowSubmitRequest) -> WorkflowAcceptedResponse:
+        payload = normalize_workflow_submit_request(payload)
         now = datetime.now(timezone.utc)
         run_id = f"run-{uuid4().hex[:12]}"
         status_url = self._workflow_status_url(run_id)
@@ -286,6 +288,7 @@ class InMemoryInteractionHub:
             dispatch_workflow_task(
                 run_id=run_id,
                 payload=retry_payload,
+                countdown=backoff_seconds,
             )
         except Exception as schedule_exc:
             logger.exception(
@@ -298,7 +301,7 @@ class InMemoryInteractionHub:
                 payload=payload,
                 created_at=datetime.now(timezone.utc),
                 exc=schedule_exc,
-                category=FailureCategory.terminal,
+                category=FailureCategory.terminal_failure,
                 attempt_count=next_attempt - 1,
             )
 
@@ -811,12 +814,17 @@ class InMemoryInteractionHub:
             # 截断错误信息避免 diagnostics 过长
             diagnostics.append(f"error_type={type(exc).__name__}")
             diagnostics.append(f"error_message={str(exc)[:200]}")
+            diagnostics.extend(self._extract_exception_diagnostics(exc))
+
+        failure_message = "工作流执行失败，请查看服务端日志。"
+        if exc is not None and category == FailureCategory.validation_error:
+            failure_message = f"工作流校验失败：{str(exc)[:180]}"
 
         self._save_run_status(
             run_status=self._build_failed_transition(
                 run_id=run_id,
                 payload=payload,
-                message="工作流执行失败，请查看服务端日志。",
+                message=failure_message,
                 created_at=created_at,
                 updated_at=failed_at,
                 status_url=self._workflow_status_url(run_id),
@@ -838,6 +846,44 @@ class InMemoryInteractionHub:
             },
             created_at=failed_at,
         )
+
+    def _extract_exception_diagnostics(self, exc: Exception) -> list[str]:
+        from app.services.bridge_protocol import BridgeExecutionError
+
+        if not isinstance(exc, BridgeExecutionError):
+            return []
+
+        details = exc.details if isinstance(exc.details, dict) else {}
+        resolution = details.get("resolution_diagnostics")
+        if not isinstance(resolution, dict):
+            return []
+
+        diagnostics: list[str] = []
+        for key in ("layer_id", "module_name", "task_type", "layer_status"):
+            value = resolution.get(key)
+            if value:
+                diagnostics.append(f"validation_{key}={value}")
+
+        explicit_datasets = resolution.get("explicit_data_access_datasets")
+        if isinstance(explicit_datasets, list) and explicit_datasets:
+            diagnostics.append(f"validation_explicit_data_access_datasets={'|'.join(str(item) for item in explicit_datasets)}")
+
+        unresolved_datasets = resolution.get("unresolved_default_datasets")
+        if isinstance(unresolved_datasets, list):
+            for item in unresolved_datasets:
+                if not isinstance(item, dict):
+                    continue
+                dataset_name = item.get("dataset_name")
+                if not dataset_name:
+                    continue
+                diagnostics.append(f"validation_dataset_missing={dataset_name}")
+                candidate_sources = item.get("candidate_sources")
+                if isinstance(candidate_sources, list) and candidate_sources:
+                    diagnostics.append(
+                        f"validation_dataset_candidates.{dataset_name}={'|'.join(str(source) for source in candidate_sources)}"
+                    )
+
+        return diagnostics
 
     def _augment_result_dto(
         self,
@@ -1023,6 +1069,37 @@ class InMemoryInteractionHub:
                 ],
             ),
         ]
+
+    def _build_execution_transition(
+        self,
+        *,
+        run_id: str,
+        payload: WorkflowSubmitRequest,
+        status: ExecutionStatus,
+        progress: int,
+        message: str,
+        created_at: datetime,
+        updated_at: datetime,
+        result_refs: list[WorkflowResultReference] | None = None,
+        result_dto: dict[str, object] | None = None,
+        diagnostics: list[str] | None = None,
+        executor_metadata: dict[str, object] | None = None,
+    ) -> WorkflowRunStatusResponse:
+        return self._build_transition_status(
+            run_id=run_id,
+            payload=payload,
+            status=status,
+            progress=progress,
+            message=message,
+            created_at=created_at,
+            updated_at=updated_at,
+            status_url=self._workflow_status_url(run_id),
+            events_url=self._workflow_events_url(run_id),
+            result_refs=result_refs,
+            result_dto=result_dto,
+            diagnostics=diagnostics,
+            executor_metadata=executor_metadata,
+        )
 
     def _build_running_transition(
         self,

@@ -2,6 +2,43 @@ import { computed, ref } from 'vue'
 import { defineStore } from 'pinia'
 
 export type MapMode = '2d' | '3d'
+export type BasemapStyle = 'none' | 'street' | 'satellite' | 'dark' | 'terrain'
+export type TileSourceId =
+  | 'none'
+  | 'esri-street'       // Esri 世界街道
+  | 'esri-imagery'      // Esri 世界影像
+  | 'esri-terrain'      // Esri 地形
+  | 'osm-standard'       // OSM 标准
+  | 'osm-hot'           // OSM 人道主义
+  | 'carto-light'       // CARTO 亮色
+  | 'carto-dark'        // CARTO 深色
+  | 'stadia-streets'    // Stadia 街道
+  | 'stadia-dark'       // Stadia 深色
+  | 'stadia-satellite'   // Stadia 卫星
+  | 'bing-road'         // Bing 道路
+  | 'bing-aerial'       // Bing 航空
+  | 'bing-dark'         // Bing 深色
+  | 'gaode-street'      // 高德街道（需代理）
+  | 'gaode-satellite'   // 高德卫星（需代理）
+  | 'tianditu-img'      // 天地图影像（需代理）
+  | 'tianditu-label'    // 天地图标注（需代理）
+  | 'baidu-street'      // 百度街道（需代理）
+  | 'baidu-satellite'   // 百度卫星（需代理）
+
+export interface TileSourceConfig {
+  id: TileSourceId
+  label: string
+  provider: string
+  style: BasemapStyle
+  urlTemplate: string
+  attribution?: string
+  tileSize?: number
+  saturation: number
+  brightness: number
+  contrast: number
+  isStandard: boolean
+  needsBackendTransform: boolean
+}
 
 // 图层类型
 export type LayerType = 'raster' | 'vector' | 'point' | 'polygon' | 'heatmap' | 'wind'
@@ -31,8 +68,398 @@ export interface LegendConfig {
   type: 'continuous' | 'discrete' // 连续色带 或 离散颜色
   min: number
   max: number
-  items: LegendItem[] // 离散颜色使用
+  items?: LegendItem[] // 离散颜色使用
   gradient?: string[] // 连续色带使用
+}
+
+export const TILE_SOURCES: TileSourceConfig[] = [
+  // 空白底图
+  {
+    id: 'none',
+    label: '空白',
+    provider: 'None',
+    style: 'none',
+    urlTemplate: '',
+    saturation: 0,
+    brightness: 0,
+    contrast: 0,
+    isStandard: true,
+    needsBackendTransform: false,
+  },
+
+  // ===== Esri 系列 =====
+  {
+    id: 'esri-street',
+    label: 'Esri 世界街道',
+    provider: 'Esri',
+    style: 'street',
+    urlTemplate: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}',
+    attribution: 'Esri',
+    tileSize: 256,
+    saturation: -0.08,
+    brightness: 0.02,
+    contrast: 0.08,
+    isStandard: true,
+    needsBackendTransform: false,
+  },
+  {
+    id: 'esri-imagery',
+    label: 'Esri 世界影像',
+    provider: 'Esri',
+    style: 'satellite',
+    urlTemplate: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
+    attribution: 'Esri',
+    tileSize: 256,
+    saturation: 0.04,
+    brightness: 0.03,
+    contrast: 0.1,
+    isStandard: true,
+    needsBackendTransform: false,
+  },
+  {
+    id: 'esri-terrain',
+    label: 'Esri 地形',
+    provider: 'Esri',
+    style: 'terrain',
+    urlTemplate: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Topo_Map/MapServer/tile/{z}/{y}/{x}',
+    attribution: 'Esri',
+    tileSize: 256,
+    saturation: -0.1,
+    brightness: 0.02,
+    contrast: 0.12,
+    isStandard: true,
+    needsBackendTransform: false,
+  },
+
+  // ===== OSM 系列 =====
+  {
+    id: 'osm-standard',
+    label: 'OSM 标准',
+    provider: 'OSM',
+    style: 'street',
+    // 注意：OSM 标准服务器国内访问可能不稳定
+    urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+    attribution: '© OpenStreetMap contributors',
+    tileSize: 256,
+    saturation: 0,
+    brightness: 0,
+    contrast: 0.02,
+    isStandard: true,
+    needsBackendTransform: false,
+  },
+  {
+    id: 'osm-hot',
+    label: 'OSM 人道主义',
+    provider: 'OSM-FR',
+    style: 'street',
+    // OSM France 人道主义地图 - 国内可访问
+    urlTemplate: 'https://a.tile.openstreetmap.fr/hot/{z}/{x}/{y}.png',
+    attribution: '© OpenStreetMap contributors',
+    tileSize: 256,
+    saturation: -0.05,
+    brightness: 0,
+    contrast: 0.05,
+    isStandard: true,
+    needsBackendTransform: false,
+  },
+
+  // ===== CARTO 系列 =====
+  {
+    id: 'carto-light',
+    label: 'CARTO 亮色',
+    provider: 'CARTO',
+    style: 'street',
+    // CARTO Light - 备用
+    urlTemplate: 'https://a.basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png',
+    attribution: 'CARTO',
+    tileSize: 256,
+    saturation: -0.05,
+    brightness: 0.02,
+    contrast: 0.08,
+    isStandard: true,
+    needsBackendTransform: false,
+  },
+  {
+    id: 'carto-dark',
+    label: 'CARTO 深色',
+    provider: 'CARTO',
+    style: 'dark',
+    // CARTO Dark - 备用深色底图
+    urlTemplate: 'https://a.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png',
+    attribution: 'CARTO',
+    tileSize: 256,
+    saturation: -0.2,
+    brightness: -0.04,
+    contrast: 0.16,
+    isStandard: true,
+    needsBackendTransform: false,
+  },
+
+  // ===== Stadia 系列 =====
+  {
+    id: 'stadia-streets',
+    label: 'Stadia 街道',
+    provider: 'Stadia',
+    style: 'street',
+    // Stadia Streets - 需 API Key（使用公共示例）
+    urlTemplate: 'https://tiles.stadiamaps.com/tiles/stamen_toner/{z}/{x}/{y}.png',
+    attribution: '© Stadia Maps',
+    tileSize: 256,
+    saturation: 0,
+    brightness: 0,
+    contrast: 0.05,
+    isStandard: true,
+    needsBackendTransform: false,
+  },
+  {
+    id: 'stadia-dark',
+    label: 'Stadia 深色',
+    provider: 'Stadia',
+    style: 'dark',
+    // Stadia Dark
+    urlTemplate: 'https://tiles.stadiamaps.com/tiles/alidade_smooth_dark/{z}/{x}/{y}.png',
+    attribution: '© Stadia Maps',
+    tileSize: 256,
+    saturation: -0.15,
+    brightness: -0.08,
+    contrast: 0.1,
+    isStandard: true,
+    needsBackendTransform: false,
+  },
+  {
+    id: 'stadia-satellite',
+    label: 'Stadia 卫星',
+    provider: 'Stadia',
+    style: 'satellite',
+    // Stadia Satellite (via Stamen)
+    urlTemplate: 'https://tiles.stadiamaps.com/tiles/stamen_toner_satellite/{z}/{x}/{y}.png',
+    attribution: '© Stadia Maps',
+    tileSize: 256,
+    saturation: 0.02,
+    brightness: 0.02,
+    contrast: 0.08,
+    isStandard: true,
+    needsBackendTransform: false,
+  },
+
+  // ===== Bing 系列 =====
+  {
+    id: 'bing-road',
+    label: 'Bing 道路',
+    provider: 'Bing',
+    style: 'street',
+    // Bing 道路地图 - 通过后端代理
+    urlTemplate: '/tiles/bing-road/{z}/{x}/{y}',
+    attribution: '© Microsoft Bing',
+    tileSize: 256,
+    saturation: -0.02,
+    brightness: 0.01,
+    contrast: 0.05,
+    isStandard: true,
+    needsBackendTransform: true,  // Bing 使用自己的坐标系统
+  },
+  {
+    id: 'bing-aerial',
+    label: 'Bing 航空',
+    provider: 'Bing',
+    style: 'satellite',
+    // Bing 航空影像
+    urlTemplate: '/tiles/bing-aerial/{z}/{x}/{y}',
+    attribution: '© Microsoft Bing',
+    tileSize: 256,
+    saturation: 0.02,
+    brightness: 0.02,
+    contrast: 0.08,
+    isStandard: true,
+    needsBackendTransform: true,
+  },
+  {
+    id: 'bing-dark',
+    label: 'Bing 深色',
+    provider: 'Bing',
+    style: 'dark',
+    // Bing 深色主题
+    urlTemplate: '/tiles/bing-dark/{z}/{x}/{y}',
+    attribution: '© Microsoft Bing',
+    tileSize: 256,
+    saturation: -0.1,
+    brightness: -0.05,
+    contrast: 0.08,
+    isStandard: true,
+    needsBackendTransform: true,
+  },
+
+  // ===== 中国底图（需代理）=====
+  {
+    id: 'gaode-street',
+    label: '高德街道',
+    provider: 'AutoNavi',
+    style: 'street',
+    // 高德街道地图 - GCJ-02 坐标系，通过后端代理
+    urlTemplate: '/tiles/gaode-street/{z}/{x}/{y}',
+    attribution: '© 高德地图',
+    tileSize: 256,
+    saturation: 0,
+    brightness: 0,
+    contrast: 0.05,
+    isStandard: true,
+    needsBackendTransform: true,
+  },
+  {
+    id: 'gaode-satellite',
+    label: '高德卫星',
+    provider: 'AutoNavi',
+    style: 'satellite',
+    // 高德卫星影像 - GCJ-02 坐标系
+    urlTemplate: '/tiles/gaode-satellite/{z}/{x}/{y}',
+    attribution: '© 高德影像',
+    tileSize: 256,
+    saturation: 0.02,
+    brightness: 0.02,
+    contrast: 0.08,
+    isStandard: true,
+    needsBackendTransform: true,
+  },
+  {
+    id: 'tianditu-img',
+    label: '天地图影像',
+    provider: 'Tianditu',
+    style: 'satellite',
+    // 天地图影像 - 需 API Key
+    urlTemplate: '/tiles/tianditu-img/{z}/{x}/{y}',
+    attribution: '© 天地图',
+    tileSize: 256,
+    saturation: 0.02,
+    brightness: 0.02,
+    contrast: 0.08,
+    isStandard: true,
+    needsBackendTransform: true,
+  },
+  {
+    id: 'tianditu-label',
+    label: '天地图标注',
+    provider: 'Tianditu',
+    style: 'street',
+    // 天地图标注（可叠加在其他影像上）
+    urlTemplate: '/tiles/tianditu-label/{z}/{x}/{y}',
+    attribution: '© 天地图',
+    tileSize: 256,
+    saturation: 0,
+    brightness: 0,
+    contrast: 0.02,
+    isStandard: true,
+    needsBackendTransform: true,
+  },
+  {
+    id: 'baidu-street',
+    label: '百度街道',
+    provider: 'Baidu',
+    style: 'street',
+    // 百度街道地图 - BD-09 坐标系
+    urlTemplate: '/tiles/baidu-street/{z}/{x}/{y}',
+    attribution: '© 百度地图',
+    tileSize: 256,
+    saturation: 0,
+    brightness: 0,
+    contrast: 0.05,
+    isStandard: true,
+    needsBackendTransform: true,
+  },
+  {
+    id: 'baidu-satellite',
+    label: '百度卫星',
+    provider: 'Baidu',
+    style: 'satellite',
+    // 百度卫星影像 - BD-09 坐标系
+    urlTemplate: '/tiles/baidu-satellite/{z}/{x}/{y}',
+    attribution: '© 百度影像',
+    tileSize: 256,
+    saturation: 0.02,
+    brightness: 0.02,
+    contrast: 0.08,
+    isStandard: true,
+    needsBackendTransform: true,
+  },
+]
+
+export const TILE_SOURCE_MAP = new Map<TileSourceId, TileSourceConfig>(
+  TILE_SOURCES.map((source) => [source.id, source]),
+)
+
+export const TILE_SOURCES_BY_STYLE = new Map<BasemapStyle, TileSourceConfig[]>()
+for (const source of TILE_SOURCES) {
+  const existing = TILE_SOURCES_BY_STYLE.get(source.style)
+  if (existing) {
+    existing.push(source)
+  } else {
+    TILE_SOURCES_BY_STYLE.set(source.style, [source])
+  }
+}
+
+// ============================================================
+// 底图辅助函数
+// ============================================================
+
+/**
+ * 检查底图是否需要通过后端代理
+ */
+export function needsBackendProxy(sourceId: TileSourceId): boolean {
+  const source = TILE_SOURCE_MAP.get(sourceId)
+  return source?.needsBackendTransform ?? false
+}
+
+/**
+ * 获取底图 URL（自动处理代理路径）
+ * 对于需要代理的底图，返回后端代理路径
+ * 对于直接访问的底图，返回原始 URL
+ */
+export function getTileUrl(sourceId: TileSourceId): string {
+  const source = TILE_SOURCE_MAP.get(sourceId)
+  if (!source) return ''
+
+  // 如果需要代理，已经配置了 /tiles/xxx 格式
+  if (source.needsBackendTransform) {
+    return source.urlTemplate
+  }
+
+  return source.urlTemplate
+}
+
+/**
+ * 获取所有需要代理的底图列表
+ */
+export function getProxyRequiredSources(): TileSourceConfig[] {
+  return TILE_SOURCES.filter((s) => s.needsBackendTransform)
+}
+
+/**
+ * 获取可直接访问的底图列表
+ */
+export function getDirectAccessSources(): TileSourceConfig[] {
+  return TILE_SOURCES.filter((s) => !s.needsBackendTransform && s.id !== 'none')
+}
+
+/**
+ * 根据风格获取底图列表
+ */
+export function getSourcesByStyle(style: BasemapStyle): TileSourceConfig[] {
+  return TILE_SOURCES_BY_STYLE.get(style) ?? []
+}
+
+/**
+ * 获取默认底图（直接访问）
+ */
+export function getDefaultTileSource(): TileSourceId {
+  // 优先使用 Esri（全球覆盖，国内可访问）
+  return 'esri-street'
+}
+
+/**
+ * 检查底图是否可用
+ */
+export function isSourceAvailable(sourceId: TileSourceId): boolean {
+  const source = TILE_SOURCE_MAP.get(sourceId)
+  return source !== undefined && source.id !== 'none'
 }
 
 export const layerLegends: Record<string, LegendConfig> = {
@@ -130,6 +557,7 @@ const initialLayers: Layer[] = [
 export const useUiStore = defineStore('ui', () => {
   const mapMode = ref<MapMode>('2d')
   const activeDataset = ref('风场')
+  const tileSourceId = ref<TileSourceId>('esri-street')
   const layers = ref<Layer[]>(initialLayers)
 
   // 时间轴相关 - 使用当前时间初始化
@@ -177,6 +605,14 @@ export const useUiStore = defineStore('ui', () => {
 
   function setDataset(dataset: string) {
     activeDataset.value = dataset
+  }
+
+  function setTileSource(sourceId: TileSourceId) {
+    tileSourceId.value = sourceId
+  }
+
+  function setHour(hour: number) {
+    currentHour.value = Math.max(0, Math.min(23, Math.round(hour)))
   }
 
   function stepHour(delta: number) {
@@ -273,6 +709,7 @@ export const useUiStore = defineStore('ui', () => {
   return {
     mapMode,
     activeDataset,
+    tileSourceId,
     currentHour,
     hourLabel,
     fullTimeLabel,
@@ -286,6 +723,8 @@ export const useUiStore = defineStore('ui', () => {
     sidebarCollapsed,
     setMode,
     setDataset,
+    setTileSource,
+    setHour,
     stepHour,
     play,
     pause,

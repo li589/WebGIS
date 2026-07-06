@@ -173,6 +173,18 @@ DATASET_REGISTRY: dict[str, DatasetInfo] = {
         crs="EPSG:4326",
         tags=("soil_moisture", "smos", "satellite"),
     ),
+    "FY_MWRI_HDF": DatasetInfo(
+        name="FY-3 MWRI 亮温产品",
+        logical_name="FY_MWRI_HDF",
+        relative_path="fy",
+        description="风云三号 MWRI 微波成像仪轨道 HDF 数据，用于亮温产品生成。",
+        file_format="hdf",
+        variables=("10V", "10H", "18V", "18H", "23V", "36V", "36H", "89V", "89H"),
+        time_range=None,
+        resolution=None,
+        crs="EPSG:4326",
+        tags=("fy", "mwri", "brightness_temperature", "satellite"),
+    ),
     "LANDCOVER": DatasetInfo(
         name="MODIS 土地覆盖产品",
         logical_name="LANDCOVER",

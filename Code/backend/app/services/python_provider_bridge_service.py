@@ -13,6 +13,7 @@ from urllib.parse import unquote, urlparse
 from app.core.config import settings
 from app.services.result_storage import result_storage_service
 from app.services.workflow_execution import WorkflowExecutionResult
+from app.services.workflow_request_resolver import describe_python_provider_resolution
 from shared.contracts.api_contracts import (
     AlgorithmWorkflowRequest,
     ResultKind,
@@ -92,13 +93,21 @@ class PythonProviderBridgeService:
             validation_body = dict(validation_response.body)
             if not validation_body.get("is_valid", True):
                 errors = validation_body.get("errors", [])
+                resolution_diagnostics = describe_python_provider_resolution(payload)
                 from app.services.bridge_protocol import BridgeExecutionError
                 from shared.contracts.api_contracts import FailureCategory
 
                 raise BridgeExecutionError(
                     category=FailureCategory.validation_error,
-                    message=f"Provider template validation failed: {'; '.join(errors)}",
-                    details={"validation_errors": errors},
+                    message=self._build_validation_error_message(
+                        errors=errors,
+                        resolution_diagnostics=resolution_diagnostics,
+                    ),
+                    details={
+                        "validation_errors": errors,
+                        "validation_template": validation_body.get("template"),
+                        "resolution_diagnostics": resolution_diagnostics,
+                    },
                 )
 
         response = service.submit_job(request_payload)
@@ -558,6 +567,32 @@ class PythonProviderBridgeService:
         if isinstance(value, dict):
             return dict(value)
         return {}
+
+    @staticmethod
+    def _build_validation_error_message(
+        *,
+        errors: list[str],
+        resolution_diagnostics: dict[str, Any] | None,
+    ) -> str:
+        base_message = f"Provider template validation failed: {'; '.join(errors)}"
+        if not resolution_diagnostics:
+            return base_message
+
+        unresolved_datasets = resolution_diagnostics.get("unresolved_default_datasets") or []
+        if not unresolved_datasets:
+            return base_message
+
+        dataset_text = "; ".join(
+            f"{item['dataset_name']} <= {', '.join(item.get('candidate_sources') or [])}"
+            for item in unresolved_datasets
+        )
+        layer_id = resolution_diagnostics.get("layer_id") or "unknown-layer"
+        module_name = resolution_diagnostics.get("module_name") or "unknown-module"
+        layer_status = resolution_diagnostics.get("layer_status") or "unknown"
+        return (
+            f"{base_message} Default data sources are not ready for layer '{layer_id}' "
+            f"(module={module_name}, status={layer_status}): {dataset_text}"
+        )
 
     def _validate_algorithm_request_shape(self, request_payload: dict[str, Any]) -> None:
         if not isinstance(request_payload.get("datasource_selection"), dict):

@@ -152,6 +152,58 @@ class TableWriter:
             "size_bytes": file_size,
         }
 
+    def write_bytes(
+        self,
+        df: "pd.DataFrame",
+        output_name: str,
+        *,
+        index: bool = False,
+        compression: str = "snappy",
+        metadata: Optional[dict] = None,
+    ) -> tuple[bytes, dict]:
+        """将 pandas DataFrame 序列化为 Parquet bytes 和元数据（不写文件）。
+
+        参数：
+            df: 要写出的 DataFrame
+            output_name: 输出文件名（不含扩展名）
+            index: 是否包含索引列
+            compression: 压缩算法，默认 "snappy"
+            metadata: 自定义元数据字典
+
+        返回：
+            (bytes, dict): Parquet 字节数据和元数据字典。
+                元数据: {"path": str, "rows": int, "columns": list[str], "size_bytes": int}
+        """
+        from io import BytesIO
+
+        pd, pa, pq = _check_dependencies()
+
+        parquet_metadata: dict[str, Any] = {}
+        if metadata:
+            parquet_metadata.update(metadata)
+        parquet_metadata["write_time"] = datetime.utcnow().isoformat()
+        parquet_metadata["rows"] = len(df)
+        parquet_metadata["columns"] = list(df.columns)
+
+        table = pa.Table.from_pandas(df, preserve_index=index)
+        if parquet_metadata:
+            new_schema = table.schema.with_metadata(parquet_metadata)
+            table = table.cast(new_schema)
+
+        buf = BytesIO()
+        pq.write_table(table, buf, compression=compression)
+        parquet_bytes = buf.getvalue()
+        if len(parquet_bytes) == 0:
+            raise IOError("Parquet 序列化失败，缓冲区为空")
+
+        rel_path = f"{output_name}.parquet"
+        return parquet_bytes, {
+            "path": rel_path,
+            "rows": len(df),
+            "columns": list(df.columns),
+            "size_bytes": len(parquet_bytes),
+        }
+
 
 # ---------------------------------------------------------------------------
 # write_timeseries - 时序数据写出辅助函数

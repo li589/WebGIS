@@ -9,6 +9,7 @@ const emit = defineEmits<{
 }>()
 
 const layersStore = useLayersStore()
+void layersStore.ensureRuntimeLayerCatalog()
 
 // Use storeToRefs only for reactive state
 const {
@@ -63,6 +64,10 @@ function getCatalogJobStatus(catalogId: string): string | undefined {
   return catalogJobStatus.value.get(catalogId)
 }
 
+function getCatalogRunBlockReason(catalogId: string): string | null {
+  return layersStore.getCatalogRunBlockReason(catalogId)
+}
+
 function isAdminAdded(): boolean {
   return activeLayersDisplay.value.some((d) => d.isAdminBoundary)
 }
@@ -99,7 +104,7 @@ function addAllInCategory(items: { catalogId: string; isAdminBoundary?: boolean 
   for (const item of items) {
     if (!isAdded(item.catalogId) && !item.isAdminBoundary) {
       // 统一走 addCatalogItem，保证自动运行工作流的逻辑一致
-      addCatalogItem(item.catalogId, false)
+      addCatalogItem(item.catalogId, !!item.isAdminBoundary)
     }
   }
 }
@@ -419,6 +424,7 @@ function toggleSourcePicker(catalogId: string) {
                   v-if="!isAdded(item.catalogId)"
                   class="add-btn"
                   :disabled="isAdded(item.catalogId)"
+                  :title="getCatalogRunBlockReason(item.catalogId) ?? ''"
                   @click="addCatalogItem(item.catalogId)"
                 >
                   + 添加
@@ -430,6 +436,9 @@ function toggleSourcePicker(catalogId: string) {
                 <span v-else-if="getCatalogJobStatus(item.catalogId) === 'queued'" class="job-status-chip job-status-queued">
                   排队中
                 </span>
+                <span v-else-if="getCatalogJobStatus(item.catalogId) === 'retry_pending'" class="job-status-chip job-status-queued">
+                  等待重试
+                </span>
                 <span v-else-if="getCatalogJobStatus(item.catalogId) === 'succeeded'" class="job-status-chip job-status-succeeded">
                   已就绪 ✓
                 </span>
@@ -437,6 +446,9 @@ function toggleSourcePicker(catalogId: string) {
                   运行失败
                 </span>
                 <span v-else class="added-label">已添加 ✓</span>
+              </div>
+              <div v-if="getCatalogRunBlockReason(item.catalogId)" class="run-block-note">
+                {{ getCatalogRunBlockReason(item.catalogId) }}
               </div>
             </div>
           </div>
@@ -1171,6 +1183,13 @@ h2 {
   gap: 0.3rem;
   /* 与 source-area 的 padding 对齐，保证三块内容左右边距一致 */
   padding: 0 0.32rem;
+}
+
+.run-block-note {
+  padding: 0 0.32rem;
+  color: #ffd38a;
+  font-size: 0.54rem;
+  line-height: 1.35;
 }
 
 .card-metric {

@@ -173,18 +173,22 @@ else:
         raise RuntimeError("Celery is not installed. Install backend dependencies before using celery executor.")
 
 
-def dispatch_workflow_task(run_id: str, payload: WorkflowSubmitRequest) -> str:
+def dispatch_workflow_task(run_id: str, payload: WorkflowSubmitRequest, *, countdown: float | None = None) -> str:
     if not celery_available or celery_app is None:
         raise RuntimeError("Celery is not installed. Install backend dependencies before using celery executor.")
 
-    async_result = process_workflow_run_task.apply_async(
-        kwargs={"run_id": run_id, "payload_data": payload.model_dump(mode="json")},
-        queue=resolve_workflow_queue(payload),
-        priority={
+    apply_async_kwargs: dict[str, Any] = {
+        "kwargs": {"run_id": run_id, "payload_data": payload.model_dump(mode="json")},
+        "queue": resolve_workflow_queue(payload),
+        "priority": {
             WorkflowPriority.low: 1,
             WorkflowPriority.normal: 5,
             WorkflowPriority.high: 8,
             WorkflowPriority.critical: 9,
         }[payload.priority],
-    )
+    }
+    if countdown is not None:
+        apply_async_kwargs["countdown"] = countdown
+
+    async_result = process_workflow_run_task.apply_async(**apply_async_kwargs)
     return async_result.id

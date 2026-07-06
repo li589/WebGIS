@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from contextlib import contextmanager
 import json
 from pathlib import Path
 import sqlite3
@@ -218,11 +219,20 @@ class SQLiteWorkflowRepository:
             if "request_json" not in columns:
                 connection.execute("ALTER TABLE workflow_runs ADD COLUMN request_json TEXT")
 
-    def _connect(self) -> sqlite3.Connection:
+    @contextmanager
+    def _connect(self):
         connection = sqlite3.connect(self._db_path)
         connection.execute("PRAGMA journal_mode=WAL")
         connection.execute("PRAGMA synchronous=NORMAL")
-        return connection
+        try:
+            yield connection
+            connection.commit()
+        except Exception:
+            connection.rollback()
+            raise
+        finally:
+            connection.close()
 
     def _clone_default_config(self) -> dict[str, dict[str, object]]:
-        return json.loads(json.dumps(DEFAULT_CONFIG_SNAPSHOT))
+        import copy
+        return copy.deepcopy(DEFAULT_CONFIG_SNAPSHOT)

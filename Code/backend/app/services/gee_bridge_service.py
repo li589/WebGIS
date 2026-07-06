@@ -81,10 +81,9 @@ def _build_account_pool_from_repository(
                 )
             )
         except Exception as exc:
-            logger.error(
-                "Failed to load credentials for GEE account %s: %s",
+            logger.exception(
+                "Failed to load credentials for GEE account %s",
                 account_id,
-                exc,
             )
 
     if not configs:
@@ -96,13 +95,18 @@ def _build_account_pool_from_repository(
 
 
 def _is_account_unavailable_error(exc: BaseException) -> bool:
-    """Return True if exc indicates no GEE account could be leased (credentials missing/unavailable)."""
+    global _AccountUnavailableError_cls
+    if _AccountUnavailableError_cls is not None:
+        return isinstance(exc, _AccountUnavailableError_cls)
     try:
-        from webgis_gee.runtime.exceptions import AccountUnavailableError
-
-        return isinstance(exc, AccountUnavailableError)
+        from webgis_gee.runtime.exceptions import AccountUnavailableError as _cls
+        _AccountUnavailableError_cls = _cls
+        return isinstance(exc, _cls)
     except Exception:
-        return type(exc).__name__ == "AccountUnavailableError"
+        return False
+
+
+_AccountUnavailableError_cls: type | None = None
 
 
 @contextmanager

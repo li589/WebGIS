@@ -16,6 +16,7 @@ import { WindParticleCanvas } from './map/wind-particle-canvas'
 import { WindBarbLayer } from './map/wind-barb-layer'
 import { WindContourLayer } from './map/wind-contour-layer'
 import { resolveApiUrl } from '../services/runtime-api'
+import type { WeatherLayerRenderHint } from '../services/runtime-api'
 import type { TileSourceId } from '../stores/ui'
 import { TILE_SOURCE_MAP } from '../stores/ui'
 import type { StyleSpecification } from 'maplibre-gl'
@@ -341,6 +342,15 @@ function removeWeatherOverlayForCatalog(catalogId: string) {
   if (map.getLayer(lineId)) map.removeLayer(lineId)
   if (map.getLayer(fillId)) map.removeLayer(fillId)
   if (map.getSource(srcId)) map.removeSource(srcId)
+  // 清理该 catalog 关联的 canvas 叠加层实例
+  if (currentParticleFlowCatalogId === catalogId) {
+    if (windParticleCanvas) { windParticleCanvas.destroy(); windParticleCanvas = null }
+    if (windBarbLayer) { windBarbLayer.destroy(); windBarbLayer = null }
+    if (windContourLayer) { windContourLayer.destroy(); windContourLayer = null }
+    currentWindGeojson = null
+    lastWindGeojsonUrl = null
+    currentParticleFlowCatalogId = null
+  }
   renderedWeatherCatalogIds.delete(catalogId)
 }
 
@@ -373,7 +383,7 @@ interface WeatherOverlayState {
   geojsonUrl: string | null
   cogPreviewUrl: string | null
   cogBbox: { west: number; south: number; east: number; north: number } | null
-  renderHint: any
+  renderHint: WeatherLayerRenderHint
   opacity: number
 }
 
@@ -494,7 +504,9 @@ function syncWeatherCogOverlay(overlayState: WeatherOverlayState) {
   if (map.getLayer(fillId)) map.removeLayer(fillId)
   if (map.getSource(srcId)) map.removeSource(srcId)
 
-  const ticks = overlayState.renderHint.legend_ticks.filter((tick): tick is number => typeof tick === 'number')
+  const ticks = overlayState.renderHint.legend_ticks.filter(
+    (tick: number | string): tick is number => typeof tick === 'number',
+  )
   const minValue = ticks[0] ?? 0
   const maxValue = ticks[ticks.length - 1] ?? (minValue + 1)
   const previewUrl = `${overlayState.cogPreviewUrl}?palette=${encodeURIComponent(overlayState.renderHint.palette)}&min_value=${minValue}&max_value=${maxValue}&width=768&height=768`
@@ -845,7 +857,6 @@ function syncHotspotPins() {
   for (const pin of sorted) {
     let px = pin.x
     let py = pin.y
-    let placedOk = false
 
     // 尝试原位 → 向下 → 向上 → 向右 → 向左
     const candidates = [
@@ -869,7 +880,6 @@ function syncHotspotPins() {
       if (!overlaps) {
         px = cx
         py = cy
-        placedOk = true
         break
       }
     }
@@ -992,7 +1002,7 @@ function getMapStageElement(): HTMLElement | null {
 function captureMapCanvas(): string | null {
   if (!map) return null
   try {
-    map.render()
+    ;(map as MapInstance & { render: () => void }).render()
     const canvas = map.getCanvas()
     return canvas.toDataURL('image/png')
   } catch (error) {

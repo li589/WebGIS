@@ -157,33 +157,14 @@ class ManifestBuilder:
         """
         self.diagnostics[str(key)] = value
 
-    def build(self, output_dir: Path | str) -> dict:
-        """构建并写出 manifest.json。
-
-        参数：
-            output_dir: 输出目录
+    def build_bytes(self) -> tuple[bytes, dict]:
+        """将 manifest 内容序列化为 JSON bytes（不写文件）。
 
         返回：
-            dict: manifest 内容，包含：
-            {
-                "job_id": str,
-                "created_at": str,
-                "module_name": str,
-                "workflow_name": str,
-                "time_range": dict,
-                "region": dict,
-                "products": list[dict],
-                "diagnostics": dict,
-                "extra": dict,
-            }
+            (bytes, dict): JSON 字节数据和 manifest 内容字典。
         """
-        output_dir = Path(output_dir)
-        output_dir.mkdir(parents=True, exist_ok=True)
-
-        # 生成 ISO 格式时间戳
         self.created_at = datetime.now(timezone.utc).isoformat()
 
-        # 组装 manifest
         manifest: dict[str, Any] = {
             "job_id": self.job_id,
             "created_at": self.created_at,
@@ -195,13 +176,26 @@ class ManifestBuilder:
             "diagnostics": self.diagnostics,
             "extra": self.extra,
         }
+        json_bytes = json.dumps(manifest, ensure_ascii=False, indent=2).encode("utf-8")
+        return json_bytes, manifest
 
-        # 写出 JSON 文件
+    def build(self, output_dir: Path | str) -> dict:
+        """构建并写出 manifest.json（兼容旧接口）。
+
+        参数：
+            output_dir: 输出目录
+
+        返回：
+            dict: manifest 内容
+        """
+        output_dir = Path(output_dir)
+        output_dir.mkdir(parents=True, exist_ok=True)
+
+        json_bytes, manifest = self.build_bytes()
+
         manifest_file = output_dir / "manifest.json"
-        with open(manifest_file, "w", encoding="utf-8") as f:
-            json.dump(manifest, f, ensure_ascii=False, indent=2)
+        manifest_file.write_bytes(json_bytes)
 
-        # 验证文件
         if not manifest_file.exists():
             raise IOError(f"manifest.json 写入失败: {manifest_file}")
         file_size = manifest_file.stat().st_size

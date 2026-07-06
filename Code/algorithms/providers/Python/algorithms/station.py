@@ -29,7 +29,7 @@ def filter_station_records(
             continue
         if hour_filter is not None and record.hour != hour_filter:
             continue
-        if require_good_quality and record.quality_flag == 0:
+        if require_good_quality and record.quality_flag != 1:
             continue
         if min_sm is not None and (record.soil_moisture != record.soil_moisture or record.soil_moisture <= min_sm):
             continue

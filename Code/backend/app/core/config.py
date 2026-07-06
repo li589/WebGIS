@@ -2,6 +2,12 @@ from dataclasses import dataclass, field
 import os
 from pathlib import Path
 
+from dotenv import load_dotenv
+
+# 加载 .env 文件到环境变量（优先查找 backend 目录）
+_env_path = Path(__file__).resolve().parents[2] / ".env"
+load_dotenv(_env_path)
+
 
 BACKEND_ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_WORKFLOW_STATE_DIR = BACKEND_ROOT / ".data" / "workflow_state"
@@ -172,6 +178,14 @@ class Settings:
     download_source_uri_map: str = os.getenv("BACKEND_DOWNLOAD_SOURCE_URI_MAP", "")
     # 是否启用真实抓取（False 时仍走 demo:// 占位路径，保持向后兼容）
     download_real_fetch_enabled: bool = os.getenv("BACKEND_DOWNLOAD_REAL_FETCH_ENABLED", "true").lower() == "true"
+
+    # ---- 底图代理配置 ----
+    # 天地图 API Key（从 https://console.tianditu.gov.cn/ 获取）
+    tianditu_api_key: str = os.getenv("BACKEND_TIANDITU_API_KEY", "")
+    # 是否启用底图代理（False 时前端直接访问外部 tile 服务器）
+    tile_proxy_enabled: bool = os.getenv("BACKEND_TILE_PROXY_ENABLED", "true").lower() == "true"
+    # 底图代理缓存 TTL（秒）
+    tile_proxy_cache_ttl_seconds: int = int(os.getenv("BACKEND_TILE_PROXY_CACHE_TTL_SECONDS", "86400"))
 
 
 

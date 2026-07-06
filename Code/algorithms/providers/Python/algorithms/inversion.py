@@ -295,17 +295,46 @@ def retrieve_dynamic_h_grid(
     porosity_flat = porosity.reshape(-1)
     theta_flat = theta_deg.reshape(-1)
     output_flat = output.reshape(-1)
-    for index in range(tbv_flat.size):
+
+    valid_mask = ~(
+        np.isnan(tbv) | np.isnan(tbh) | np.isnan(ts) | np.isnan(tau_ini)
+        | np.isnan(clay_fraction) | np.isnan(albedo) | np.isnan(porosity)
+        | np.isnan(theta_deg) | (porosity <= 0.02)
+    )
+    if not np.any(valid_mask):
+        return output
+
+    valid_indices = np.where(valid_mask.ravel())[0]
+    tbv_flat = tbv.ravel()
+    tbh_flat = tbh.ravel()
+    ts_flat = ts.ravel()
+    tau_flat = tau_ini.ravel()
+    clay_flat = clay_fraction.ravel()
+    albedo_flat = albedo.ravel()
+    porosity_flat = porosity.ravel()
+    theta_flat = theta_deg.ravel()
+    output_flat = output.reshape(-1)
+
+    unique_keys = set(
+        (float(clay_flat[i]), float(theta_flat[i])) for i in valid_indices
+    )
+    context_cache = {
+        key: build_tb_model_context(freq_ghz, key[0], key[1]) for key in unique_keys
+    }
+
+    for index in valid_indices:
+        key = (float(clay_flat[index]), float(theta_flat[index]))
         output_flat[index] = retrieve_dynamic_h_pixel(
-            tbv_flat[index],
-            tbh_flat[index],
-            ts_flat[index],
-            tau_flat[index],
-            clay_flat[index],
-            albedo_flat[index],
-            porosity_flat[index],
+            float(tbv_flat[index]),
+            float(tbh_flat[index]),
+            float(ts_flat[index]),
+            float(tau_flat[index]),
+            key[0],
+            float(albedo_flat[index]),
+            float(porosity_flat[index]),
             freq_ghz,
-            theta_flat[index],
+            key[1],
+            model_context=context_cache[key],
         )
     return output
 
@@ -346,17 +375,48 @@ def ddca_retrieve_grid(
     theta_flat = theta_deg.reshape(-1)
     sm_flat = sm.reshape(-1)
     vod_flat = vod.reshape(-1)
-    for index in range(tbv_flat.size):
+
+    valid_mask = ~(
+        np.isnan(tbv) | np.isnan(tbh) | np.isnan(ts) | np.isnan(tau_ini)
+        | np.isnan(h_value) | np.isnan(clay_fraction) | np.isnan(albedo)
+        | np.isnan(porosity) | np.isnan(theta_deg)
+    )
+    if not np.any(valid_mask):
+        return sm, vod
+
+    valid_indices = np.where(valid_mask.ravel())[0]
+    tbv_flat = tbv.ravel()
+    tbh_flat = tbh.ravel()
+    ts_flat = ts.ravel()
+    tau_flat = tau_ini.ravel()
+    h_flat = h_value.ravel()
+    clay_flat = clay_fraction.ravel()
+    albedo_flat = albedo.ravel()
+    porosity_flat = porosity.ravel()
+    theta_flat = theta_deg.ravel()
+    sm_flat = sm.ravel()
+    vod_flat = vod.ravel()
+
+    unique_keys = set(
+        (float(clay_flat[i]), float(theta_flat[i])) for i in valid_indices
+    )
+    context_cache = {
+        key: build_tb_model_context(freq_ghz, key[0], key[1]) for key in unique_keys
+    }
+
+    for index in valid_indices:
+        key = (float(clay_flat[index]), float(theta_flat[index]))
         sm_flat[index], vod_flat[index] = ddca_retrieve_pixel(
-            tbv_flat[index],
-            tbh_flat[index],
-            ts_flat[index],
-            tau_flat[index],
-            h_flat[index],
-            clay_flat[index],
-            albedo_flat[index],
-            porosity_flat[index],
+            float(tbv_flat[index]),
+            float(tbh_flat[index]),
+            float(ts_flat[index]),
+            float(tau_flat[index]),
+            float(h_flat[index]),
+            key[0],
+            float(albedo_flat[index]),
+            float(porosity_flat[index]),
             freq_ghz,
-            theta_flat[index],
+            key[1],
+            model_context=context_cache[key],
         )
     return sm, vod

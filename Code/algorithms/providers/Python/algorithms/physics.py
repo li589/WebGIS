@@ -220,6 +220,9 @@ def mironov_dielectric(freq_ghz: float, soil_moisture: float, clay_fraction: flo
 def build_mironov_context(freq_ghz: float, clay_fraction: float) -> MironovContext:
     import math
 
+    if not (0.0 <= clay_fraction <= 1.0):
+        raise ValueError(f"clay_fraction must be in [0.0, 1.0], got {clay_fraction}")
+
     eps_0 = 8.854e-12
     eps_winf = 4.9
     freq_hz = freq_ghz * 1e9

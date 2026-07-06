@@ -80,7 +80,7 @@ class GeeCredentialsRepository:
             logger.warning("cryptography not installed, storing plaintext")
             return plaintext, ""
         except Exception as e:
-            logger.error("Encryption failed: %s, storing plaintext", e)
+            logger.error("Encryption failed for account, storing plaintext: %s", e)
             return plaintext, ""
 
     def _decrypt(self, ciphertext_b64: str, iv_b64: str) -> str:

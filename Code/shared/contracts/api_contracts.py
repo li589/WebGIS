@@ -81,6 +81,14 @@ class LayerDescriptor(BaseModel):
     tags: list[str] = Field(default_factory=list)
     module_name: str | None = None
     engine: str | None = None
+    workflow_name: str | None = None
+    workflow_id: str | None = None
+    workflow_definition: dict[str, Any] | None = None
+    default_task_type: str | None = None
+    default_data_access_sources: dict[str, list[str]] = Field(default_factory=dict)
+    run_readiness: str = "ready"
+    run_readiness_summary: str | None = None
+    run_readiness_notes: list[str] = Field(default_factory=list)
 
 
 class LayerCatalogResponse(BaseModel):

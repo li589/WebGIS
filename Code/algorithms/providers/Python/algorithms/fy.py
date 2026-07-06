@@ -123,7 +123,8 @@ def resolve_gdal_bins(force_bin: str | None = None) -> dict[str, str]:
 
 
 def hdf_sds_uri(hdf_path: str, sds_path: str) -> str:
-    return f'HDF5:"{hdf_path}":{sds_path}'
+    escaped = hdf_path.replace('"', "%22")
+    return f'HDF5:"{escaped}":{sds_path}'
 
 
 def build_geoloc_metadata_block(lon_vrt_path: str, lat_vrt_path: str) -> str:

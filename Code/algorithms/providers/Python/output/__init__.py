@@ -784,6 +784,10 @@ class OutputCoordinator:
     - PNG 预览图（前端快速预览）
     - Parquet 表格（前端图表消费）
     - JSON manifest（产物清单）
+
+    支持双后端写出：
+    - 始终写入本地文件，保持调试兼容性
+    - 若传入 storage_backend，同时写入远程存储（local fs / MinIO）
     """
 
     def __init__(
@@ -801,6 +805,7 @@ class OutputCoordinator:
         preview_size: tuple[int, int] = (512, 512),
         compress: str = "deflate",
         overwrite: bool = True,
+        storage_backend: Any | None = None,
     ):
         self.job_id = job_id
         self.output_dir = Path(output_dir)
@@ -814,6 +819,7 @@ class OutputCoordinator:
         self.preview_size = preview_size
         self.compress = compress
         self.overwrite = overwrite
+        self.storage_backend = storage_backend
 
         self._raster_pub = RasterPublisher(
             output_dir=self.output_dir,
@@ -836,6 +842,13 @@ class OutputCoordinator:
             region=self.region,
         )
 
+    def _write_to_backend(self, rel_path: str, data: bytes) -> str:
+        """将数据写入 storage_backend（如已配置），返回远程 URI。"""
+        if self.storage_backend is None:
+            return ""
+        backend_path = self.storage_backend.resolve_path(self.job_id, str(Path(rel_path)))
+        return self.storage_backend.write_bytes(backend_path, data)
+
     def write_raster(
         self,
         name: str,
@@ -852,6 +865,8 @@ class OutputCoordinator:
         """
         写出栅格数据（COG + preview）并添加 manifest 条目。
 
+        产物同时写入本地和 storage_backend（如已配置）。
+
         返回栅格写出结果（包含 cog_path / preview_path 等）。
         """
         result = self._raster_pub.publish(
@@ -864,6 +879,23 @@ class OutputCoordinator:
             generate_preview=generate_preview,
             pixel_resolution=self.pixel_resolution,
         )
+
+        # 写入远程存储（如已配置）
+        if self.storage_backend is not None:
+            cog_path_str = result.get("path") or result.get("cog_path", "")
+            if cog_path_str:
+                p = Path(cog_path_str)
+                if p.exists():
+                    remote_uri = self._write_to_backend(str(p.relative_to(self.output_dir)), p.read_bytes())
+                    if remote_uri:
+                        result["remote_uri"] = remote_uri
+            preview_path_str = result.get("preview_path", "")
+            if preview_path_str:
+                p = Path(preview_path_str)
+                if p.exists():
+                    remote_uri = self._write_to_backend(str(p.relative_to(self.output_dir)), p.read_bytes())
+                    if remote_uri:
+                        result["remote_uri_preview"] = remote_uri
 
         # 添加到 manifest
         # 推断 format: 如果文件扩展名是 .cog.tif 则为 COG，否则为 GeoTIFF
@@ -897,13 +929,26 @@ class OutputCoordinator:
         description: str = "",
         **kwargs,
     ) -> dict[str, Any]:
-        """写出表格数据（Parquet）并添加 manifest 条目。"""
+        """写出表格数据（Parquet）并添加 manifest 条目。
+
+        产物同时写入本地和 storage_backend（如已配置）。
+        """
         result = self._table_pub.publish(
             df=df,
             name=name,
             description=description,
             **kwargs,
         )
+
+        # 写入远程存储（如已配置）
+        if self.storage_backend is not None:
+            path_str = result.get("path", "")
+            if path_str:
+                p = Path(path_str)
+                if p.exists():
+                    remote_uri = self._write_to_backend(str(p.relative_to(self.output_dir)), p.read_bytes())
+                    if remote_uri:
+                        result["remote_uri"] = remote_uri
 
         self._manifest_pub.add_table(
             name=name,

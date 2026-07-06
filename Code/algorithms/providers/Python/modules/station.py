@@ -121,6 +121,7 @@ class StationDailyModule(BaseModule):
             },
             crs="EPSG:4326",
             overwrite=True,
+            storage_backend=ctx.runtime_context.storage_backend,
         )
 
         if source_type == "ISMN":

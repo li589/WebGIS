@@ -5,6 +5,7 @@
  * 在 5/10/15 m/s 处绘制等风速线，颜色渐变表示风速级别。
  */
 import type { Map as MaplibreMap } from 'maplibre-gl'
+import { DEFAULT_HEIGHT_SUFFIX, MAP_EVENT_MOVE, MAP_EVENT_MOVEEND, MAP_EVENT_RESIZE } from './types'
 
 interface GridData {
   rows: number
@@ -27,12 +28,37 @@ interface WindGeoJSON {
   features: WindGeoJSONFeature[]
 }
 
+// ── 渲染参数常量 ─────────────────────────────────────────
+
+/** 等值线 LOD 缩放阈值 */
+const CONTOUR_ZOOM_HIDE = 3        // zoom < 3 不绘制
+const CONTOUR_ZOOM_FILTER_HIGH = 4 // zoom < 4 仅显示强风级别
+const CONTOUR_ZOOM_ALL_LEVELS = 7  // zoom < 7 显示默认级别
+const CONTOUR_ZOOM_LABEL_THRESHOLD = 5   // zoom > 5 且段数够多才绘制标注
+const CONTOUR_ZOOM_LABEL_COUNT_BREAK = 8 // zoom > 8 时标注数量翻倍
+
+/** 等值线标注参数 */
+const MIN_SEGMENTS_FOR_LABELS = 10
+const LABEL_COUNT_CLOSE_VIEW = 12
+const LABEL_COUNT_DEFAULT = 6
+
+/** 等值线标注字体大小（像素） */
+const CONTOUR_LABEL_FONT_SIZE = 10
+
+/** Marching Squares 插值 epsilon（避免除零） */
+const INTERPOLATION_EPSILON = 0.001
+
+/** 等值线段视口剔除边距（像素） */
+const CONTOUR_SEGMENT_CULLING_MARGIN_PX = 30
+
+/** Canvas 布局边距（像素） */
+const CONTOUR_CANVAS_MARGIN_PX = 40
+
 export class WindContourLayer {
   private map: MaplibreMap
   private canvas: HTMLCanvasElement
   private ctx: CanvasRenderingContext2D
   private gridData: GridData | null = null
-  private levels: { value: number; color: string; width: number; label: string }[]
   private moveHandler: () => void
   private resizeHandler: () => void
   private isVisible = true
@@ -40,16 +66,8 @@ export class WindContourLayer {
   private canvasOffsetX = 0
   private canvasOffsetY = 0
 
-  constructor(map: MaplibreMap, geojson: WindGeoJSON, options?: { levels?: number[] }) {
+  constructor(map: MaplibreMap, geojson: WindGeoJSON, _options?: { levels?: number[] }) {
     this.map = map
-    const levelValues = options?.levels ?? [5, 10, 15]
-    const colors = ['rgba(100, 180, 255, 0.5)', 'rgba(150, 220, 255, 0.6)', 'rgba(200, 240, 255, 0.7)']
-    this.levels = levelValues.map((v, i) => ({
-      value: v,
-      color: colors[i % colors.length],
-      width: i === 0 ? 1.0 : 1.3,
-      label: `${v} m/s`,
-    }))
 
     const container = map.getContainer()
     this.canvas = document.createElement('canvas')
@@ -75,9 +93,9 @@ export class WindContourLayer {
       })
     }
     this.resizeHandler = () => { this.updateCanvasBounds(); this.draw() }
-    map.on('move', this.moveHandler)
-    map.on('moveend', this.moveHandler)
-    map.on('resize', this.resizeHandler)
+    map.on(MAP_EVENT_MOVE, this.moveHandler)
+    map.on(MAP_EVENT_MOVEEND, this.moveHandler)
+    map.on(MAP_EVENT_RESIZE, this.resizeHandler)
   }
 
   /** 将 canvas 尺寸/位置适配到网格数据投影范围与视口的交集 */
@@ -102,7 +120,7 @@ export class WindContourLayer {
     const tr = this.map.project([east, north])
     const bl = this.map.project([west, south])
     const br = this.map.project([east, south])
-    const margin = 40
+    const margin = CONTOUR_CANVAS_MARGIN_PX
     const gridMinX = Math.min(tl.x, tr.x, bl.x, br.x) - margin
     const gridMaxX = Math.max(tl.x, tr.x, bl.x, br.x) + margin
     const gridMinY = Math.min(tl.y, tr.y, bl.y, br.y) - margin
@@ -137,7 +155,7 @@ export class WindContourLayer {
 
     // 从首个 feature 推断高度后缀，支持 10m / 80m / 120m / 180m 等多高度风场
     const firstProps = features[0]?.properties || {}
-    const heightSuffix: string = firstProps.height ?? '10m'
+    const heightSuffix: string = firstProps.height ?? DEFAULT_HEIGHT_SUFFIX
     const speedKey = `wind_speed_${heightSuffix}`
 
     for (const f of features) {
@@ -198,7 +216,7 @@ export class WindContourLayer {
         // 线性插值交点位置（0-1）
         const interp = (a: number, b: number) => {
           const diff = b - a
-          if (Math.abs(diff) < 0.001) return 0.5
+          if (Math.abs(diff) < INTERPOLATION_EPSILON) return 0.5
           return (level - a) / diff
         }
 
@@ -238,7 +256,7 @@ export class WindContourLayer {
     this.ctx.clearRect(0, 0, cw, ch)
 
     const zoom = this.map.getZoom()
-    if (zoom < 3) return
+    if (zoom < CONTOUR_ZOOM_HIDE) return
 
     // LOD 策略：根据 zoom 动态选择等值线级别
     // zoom 小（看大范围）→ 只显示高级别（10/15），避免线条过密
@@ -256,10 +274,10 @@ export class WindContourLayer {
         const p1 = this.map.project(seg[0])
         const p2 = this.map.project(seg[1])
         // 视口剔除（基于 canvas 范围）
-        if ((p1.x < ox - 30 && p2.x < ox - 30) ||
-            (p1.x > ox + cw + 30 && p2.x > ox + cw + 30) ||
-            (p1.y < oy - 30 && p2.y < oy - 30) ||
-            (p1.y > oy + ch + 30 && p2.y > oy + ch + 30)) continue
+        if ((p1.x < ox - CONTOUR_SEGMENT_CULLING_MARGIN_PX && p2.x < ox - CONTOUR_SEGMENT_CULLING_MARGIN_PX) ||
+            (p1.x > ox + cw + CONTOUR_SEGMENT_CULLING_MARGIN_PX && p2.x > ox + cw + CONTOUR_SEGMENT_CULLING_MARGIN_PX) ||
+            (p1.y < oy - CONTOUR_SEGMENT_CULLING_MARGIN_PX && p2.y < oy - CONTOUR_SEGMENT_CULLING_MARGIN_PX) ||
+            (p1.y > oy + ch + CONTOUR_SEGMENT_CULLING_MARGIN_PX && p2.y > oy + ch + CONTOUR_SEGMENT_CULLING_MARGIN_PX)) continue
         this.ctx.beginPath()
         this.ctx.moveTo(p1.x - ox, p1.y - oy)
         this.ctx.lineTo(p2.x - ox, p2.y - oy)
@@ -267,11 +285,11 @@ export class WindContourLayer {
       }
 
       // 在等值线上标注数值（采样若干段）
-      if (segments.length > 0 && zoom > 5) {
+      if (segments.length > MIN_SEGMENTS_FOR_LABELS && zoom > CONTOUR_ZOOM_LABEL_THRESHOLD) {
         this.ctx.fillStyle = level.color.replace(/[\d.]+\)$/, '0.9)')
-        this.ctx.font = '10px monospace'
+        this.ctx.font = `${CONTOUR_LABEL_FONT_SIZE}px monospace`
         // 标注密度也随 zoom 调整：zoom 大时标注更多
-        const targetLabelCount = zoom > 8 ? 12 : 6
+        const targetLabelCount = zoom > CONTOUR_ZOOM_LABEL_COUNT_BREAK ? LABEL_COUNT_CLOSE_VIEW : LABEL_COUNT_DEFAULT
         const labelInterval = Math.max(1, Math.floor(segments.length / targetLabelCount))
         for (let i = 0; i < segments.length; i += labelInterval) {
           const mid: [number, number] = [
@@ -280,8 +298,8 @@ export class WindContourLayer {
           ]
           const screen = this.map.project(mid)
           // 标注位置也转换为 canvas 内坐标
-          if (screen.x < ox - 30 || screen.x > ox + cw + 30 ||
-              screen.y < oy - 30 || screen.y > oy + ch + 30) continue
+          if (screen.x < ox - CONTOUR_SEGMENT_CULLING_MARGIN_PX || screen.x > ox + cw + CONTOUR_SEGMENT_CULLING_MARGIN_PX ||
+              screen.y < oy - CONTOUR_SEGMENT_CULLING_MARGIN_PX || screen.y > oy + ch + CONTOUR_SEGMENT_CULLING_MARGIN_PX) continue
           this.ctx.fillText(level.label, screen.x - ox + 3, screen.y - oy - 3)
         }
       }
@@ -301,11 +319,11 @@ export class WindContourLayer {
     const widthFor = (v: number) => (v <= 5 ? 1.0 : 1.3)
     const make = (v: number) => ({ value: v, color: colorFor(v), width: widthFor(v), label: `${v} m/s` })
 
-    if (zoom < 4) {
+    if (zoom < CONTOUR_ZOOM_FILTER_HIGH) {
       // 远视图：只显示高级别，避免线条过密
       return [10, 15].map(make)
     }
-    if (zoom < 7) {
+    if (zoom < CONTOUR_ZOOM_ALL_LEVELS) {
       // 中视图：标准 5/10/15
       return [5, 10, 15].map(make)
     }
@@ -332,9 +350,9 @@ export class WindContourLayer {
       cancelAnimationFrame(this.rafId)
       this.rafId = null
     }
-    this.map.off('move', this.moveHandler)
-    this.map.off('moveend', this.moveHandler)
-    this.map.off('resize', this.resizeHandler)
+    this.map.off(MAP_EVENT_MOVE, this.moveHandler)
+    this.map.off(MAP_EVENT_MOVEEND, this.moveHandler)
+    this.map.off(MAP_EVENT_RESIZE, this.resizeHandler)
     if (this.canvas.parentNode) {
       this.canvas.parentNode.removeChild(this.canvas)
     }

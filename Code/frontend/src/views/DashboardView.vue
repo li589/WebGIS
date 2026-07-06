@@ -19,6 +19,7 @@ import { useLayersStore } from '../stores/layers'
 
 const uiStore = useUiStore()
 const layersStore = useLayersStore()
+void layersStore.ensureRuntimeLayerCatalog()
 
 const { tileSourceId, currentHour, hourLabel } = storeToRefs(uiStore)
 const { selectedLayerDisplay, activeLayerCount, workflowError, isSubmitting } = storeToRefs(layersStore)

@@ -63,6 +63,61 @@ function extractMetrics(run: WorkflowRunStatusResponse) {
   return metrics
 }
 
+function extractDiagnosticNotes(run: WorkflowRunStatusResponse) {
+  const missingDatasets: string[] = []
+  const candidateSources = new Map<string, string[]>()
+  let layerStatus: string | undefined
+  let errorMessage: string | undefined
+
+  for (const item of run.diagnostics ?? []) {
+    if (typeof item !== 'string' || !item.trim()) continue
+    if (item.startsWith('validation_layer_status=')) {
+      layerStatus = item.slice('validation_layer_status='.length)
+      continue
+    }
+    if (item.startsWith('validation_dataset_missing=')) {
+      missingDatasets.push(item.slice('validation_dataset_missing='.length))
+      continue
+    }
+    if (item.startsWith('validation_dataset_candidates.')) {
+      const separatorIndex = item.indexOf('=')
+      if (separatorIndex > 0) {
+        const key = item.slice('validation_dataset_candidates.'.length, separatorIndex)
+        const values = item
+          .slice(separatorIndex + 1)
+          .split('|')
+          .map((value) => value.trim())
+          .filter(Boolean)
+        if (values.length) candidateSources.set(key, values)
+      }
+      continue
+    }
+    if (!errorMessage && item.startsWith('error_message=')) {
+      errorMessage = item.slice('error_message='.length)
+    }
+  }
+
+  const notes: string[] = []
+  if (missingDatasets.length) {
+    notes.push(`缺少默认数据集：${missingDatasets.join('、')}`)
+    for (const datasetName of missingDatasets) {
+      const candidates = candidateSources.get(datasetName)
+      if (candidates?.length) {
+        notes.push(`${datasetName} 候选源：${candidates.join(' / ')}`)
+      }
+    }
+  }
+  if (layerStatus === 'placeholder') {
+    notes.push('图层仍处于 placeholder 状态，默认数据源尚未接入')
+  } else if (layerStatus) {
+    notes.push(`图层状态：${layerStatus}`)
+  }
+  if (!notes.length && errorMessage) {
+    notes.push(errorMessage)
+  }
+  return notes
+}
+
 function extractMapLayerPayload(resultRefs: WorkflowResultReference[]) {
   const mapLayerResult = resultRefs.find((item) => item.result_kind === 'map_layer')
   const payload = asRecord(mapLayerResult?.inline_data)
@@ -92,10 +147,29 @@ function extractMapLayerPayload(resultRefs: WorkflowResultReference[]) {
   }
 }
 
-export async function buildJobLayer(run: WorkflowRunStatusResponse, catalogName: string): Promise<JobLayerItem> {
+function shouldFetchWorkflowRunView(run: WorkflowRunStatusResponse) {
+  return run.status === 'succeeded' || run.status === 'failed' || run.status === 'cancelled'
+}
+
+interface BuildJobLayerOptions {
+  previousJobLayer?: JobLayerItem
+}
+
+export async function buildJobLayer(
+  run: WorkflowRunStatusResponse,
+  catalogName: string,
+  options: BuildJobLayerOptions = {},
+): Promise<JobLayerItem> {
   const status = run.status === 'accepted' ? 'queued' : run.status
   const entryName = extractWorkflowEntryName(run)
-  const resultView: WorkflowRunViewResponse | null = await getWorkflowRunView(run.run_id).catch(() => null)
+  const diagnosticNotes = extractDiagnosticNotes(run)
+  const previousJobLayer = options.previousJobLayer
+  const resultView: WorkflowRunViewResponse | null = shouldFetchWorkflowRunView(run)
+    ? await getWorkflowRunView(run.run_id).catch(() => previousJobLayer?.resultView ?? null)
+    : (previousJobLayer?.resultView ?? null)
+  const resultUrl = resultView?.result_url ?? previousJobLayer?.resultUrl ?? extractResultUrl(run.result_refs)
+  const reportSummary =
+    resultView?.summary ?? previousJobLayer?.reportSummary ?? extractReportSummary(run.result_refs, diagnosticNotes[0] ?? run.message)
   return {
     jobId: run.run_id,
     name: entryName ?? catalogName,
@@ -106,10 +180,12 @@ export async function buildJobLayer(run: WorkflowRunStatusResponse, catalogName:
     updatedAt: run.updated_at,
     message: run.message,
     metrics: extractMetrics(run),
-    reportSummary: resultView?.summary ?? extractReportSummary(run.result_refs, run.message),
+    reportSummary,
     resultDto: run.result_dto ?? undefined,
     resultView: resultView ?? undefined,
-    resultUrl: resultView?.result_url ?? extractResultUrl(run.result_refs),
+    resultUrl,
     mapLayerPayload: extractMapLayerPayload(run.result_refs),
+    diagnostics: run.diagnostics ?? [],
+    diagnosticNotes,
   }
 }

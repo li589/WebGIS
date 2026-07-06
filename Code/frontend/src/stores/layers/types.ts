@@ -50,7 +50,7 @@ export interface LayerCatalogItem {
 
 // ─── Job layer item (作业生产数据) ───────────────────────────────────────────
 
-export type JobStatus = 'running' | 'succeeded' | 'failed' | 'queued' | 'cancelled'
+export type JobStatus = 'running' | 'succeeded' | 'failed' | 'queued' | 'cancelled' | 'retry_pending'
 
 import type { WeatherLayerRenderHint, WorkflowResultDto, WorkflowRunViewResponse } from '../../services/runtime-api'
 
@@ -97,6 +97,10 @@ export interface JobLayerItem {
   resultUrl?: string
   /** map_layer 产物中的附加地图资产 */
   mapLayerPayload?: JobLayerMapLayerPayload
+  /** 原始诊断信息 */
+  diagnostics?: string[]
+  /** 面向 UI 的诊断摘要 */
+  diagnosticNotes?: string[]
 }
 
 // ─── Active layer (已添加图层) ────────────────────────────────────────────────

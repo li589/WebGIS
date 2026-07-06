@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime, timezone
+from pathlib import Path
 import json
 from typing import Any
 from uuid import uuid4
@@ -551,6 +552,10 @@ class DownloadService:
     def _resolve_real_source_uri(self, layer_id: str, requested_hour: float) -> str | None:
         """从 settings.download_source_uri_map 读取图层对应的真实 source_uri 模板。
 
+        支持两种配置方式：
+        1. 直接 JSON 对象字符串（适合少量图层）
+        2. @/path/to/file.json 格式，从外部文件加载 JSON（推荐，方便维护）
+
         支持占位符：{layer_id} {hour}
         返回 None 表示未配置，调用方回退到 demo:// scheme。
         """
@@ -559,10 +564,32 @@ class DownloadService:
         uri_map_raw = settings.download_source_uri_map.strip()
         if not uri_map_raw:
             return None
-        try:
-            uri_map = json.loads(uri_map_raw)
-        except (json.JSONDecodeError, TypeError):
-            return None
+
+        # 支持 @file:// 方式加载外部 JSON 文件
+        if uri_map_raw.startswith("@"):
+            # @/absolute/path.json 或 @relative/path.json
+            file_path_str = uri_map_raw[1:].strip()
+            map_file = Path(file_path_str)
+            # 相对路径相对于 backend 根目录
+            if not map_file.is_absolute():
+                from app.core.config import BACKEND_ROOT
+                map_file = BACKEND_ROOT / file_path_str
+            try:
+                with open(map_file, encoding="utf-8") as f:
+                    raw = f.read()
+                # 移除 // 和 # 注释行，支持带注释的 JSON 配置文件
+                lines = [line for line in raw.splitlines()
+                         if not line.strip().startswith("//") and not line.strip().startswith("#")]
+                cleaned = "\n".join(lines)
+                uri_map = json.loads(cleaned)
+            except (FileNotFoundError, json.JSONDecodeError, OSError):
+                return None
+        else:
+            try:
+                uri_map = json.loads(uri_map_raw)
+            except (json.JSONDecodeError, TypeError):
+                return None
+
         if not isinstance(uri_map, dict):
             return None
         template = uri_map.get(layer_id)

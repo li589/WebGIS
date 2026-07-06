@@ -65,6 +65,37 @@ class ArtifactPreviewRouteTests(unittest.TestCase):
         self.assertEqual(response.status_code, 400)
         self.assertIn("not a TIFF/COG", response.json()["detail"])
 
+    def test_preview_route_uses_unique_tempfile_for_remote_artifact(self) -> None:
+        remote_artifact = StoredArtifact(
+            artifact_id="artifact-preview-remote",
+            file_path=None,
+            mime_type="image/tiff",
+            title="Remote Temperature COG",
+            content_length=8,
+        )
+        preview_paths: list[Path] = []
+
+        def _render_preview(*, cog_path: Path, **kwargs) -> bytes:
+            self.assertTrue(cog_path.exists())
+            self.assertEqual(cog_path.read_bytes(), b"remote-cog")
+            preview_paths.append(cog_path)
+            return b"png-bytes"
+
+        with (
+            patch("app.api.routes.result_storage_service.get_artifact", return_value=remote_artifact),
+            patch("app.api.routes.result_storage_service.fetch_artifact_bytes", return_value=b"remote-cog"),
+            patch("app.api.routes.raster_preview_service.render_cog_preview", side_effect=_render_preview),
+        ):
+            first = self._client.get("/artifacts/artifact-preview-remote/preview.png")
+            second = self._client.get("/artifacts/artifact-preview-remote/preview.png")
+
+        self.assertEqual(first.status_code, 200)
+        self.assertEqual(second.status_code, 200)
+        self.assertEqual(len(preview_paths), 2)
+        self.assertNotEqual(preview_paths[0], preview_paths[1])
+        for preview_path in preview_paths:
+            self.assertFalse(preview_path.exists(), f"temp preview file still exists: {preview_path}")
+
 
 if __name__ == "__main__":
     unittest.main()

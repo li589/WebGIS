@@ -205,10 +205,62 @@ class WeatherFrontendCompatTests(unittest.TestCase):
         self.assertIsNotNone(cog_bbox.get("west"))
         self.assertEqual(cog_bbox.get("crs"), "EPSG:4326")
 
-    def test_all_three_layers_succeed(self) -> None:
-        """验证 3 个图层 fallback 路径全部成功。"""
+    def _assert_geojson_only_grid_layer(
+        self,
+        *,
+        layer_id: str,
+        expected_palette: str,
+        expected_metric: str,
+        expected_unit: str,
+    ) -> None:
         with patch.object(weather_engine_service, "_client", _FakeOpenMeteoClient()):
-            for layer_id in ("wind-field", "temperature", "precipitation"):
+            run_id = self._submit_fallback_workflow(layer_id)
+            status_resp = interaction_hub.get_workflow_run(run_id)
+
+        self.assertIn(status_resp.status, ("succeeded", "completed"))
+
+        inline = self._find_map_layer_ref(status_resp.result_refs)
+        self.assertIsNotNone(inline, f"{layer_id} 未找到 map_layer ref 的 inline_data")
+
+        render_hint = inline.get("render_hint") or {}
+        self.assertEqual(render_hint.get("paint_mode"), "grid_fill")
+        self.assertEqual(render_hint.get("palette"), expected_palette)
+        self.assertEqual(render_hint.get("primary_metric"), expected_metric)
+        self.assertEqual(render_hint.get("unit_label"), expected_unit)
+
+        layer_assets = inline.get("layer_assets") or {}
+        self.assertTrue(layer_assets.get("geojson_url"), f"{layer_id} missing geojson_url")
+        self.assertFalse(layer_assets.get("cog_url"), f"{layer_id} should not include cog_url")
+        self.assertFalse(layer_assets.get("cog_preview_url"), f"{layer_id} should not include cog_preview_url")
+
+    def test_pressure_map_layer_ref(self) -> None:
+        self._assert_geojson_only_grid_layer(
+            layer_id="pressure",
+            expected_palette="pressure-purple",
+            expected_metric="pressure_msl",
+            expected_unit="hPa",
+        )
+
+    def test_humidity_map_layer_ref(self) -> None:
+        self._assert_geojson_only_grid_layer(
+            layer_id="humidity",
+            expected_palette="humidity-green",
+            expected_metric="relative_humidity_2m",
+            expected_unit="%",
+        )
+
+    def test_visibility_map_layer_ref(self) -> None:
+        self._assert_geojson_only_grid_layer(
+            layer_id="visibility",
+            expected_palette="visibility-amber",
+            expected_metric="visibility",
+            expected_unit="m",
+        )
+
+    def test_all_weather_layers_succeed(self) -> None:
+        """验证所有 weather 图层 fallback 路径全部成功。"""
+        with patch.object(weather_engine_service, "_client", _FakeOpenMeteoClient()):
+            for layer_id in ("wind-field", "temperature", "precipitation", "pressure", "humidity", "visibility"):
                 run_id = self._submit_fallback_workflow(layer_id)
                 status_resp = interaction_hub.get_workflow_run(run_id)
                 self.assertIn(
