@@ -7,8 +7,18 @@ from pathlib import Path
 from unittest.mock import patch
 from urllib.error import HTTPError
 
+from app.core.redis_client import get_redis_client
 from app.weatherengine.client import OpenMeteoClient
 from app.weatherengine.constants import WEATHER_LAYER_SPECS
+
+
+def _flush_weather_redis_cache() -> None:
+    """Clear weather-related keys from Redis to isolate tests from cache state."""
+    client = get_redis_client()
+    if client is None:
+        return
+    for key in client.scan_iter("weather:*"):
+        client.delete(key)
 
 
 class _FakeHttpResponse:
@@ -26,6 +36,9 @@ class _FakeHttpResponse:
 
 
 class OpenMeteoClientTests(unittest.TestCase):
+    def setUp(self) -> None:
+        _flush_weather_redis_cache()
+
     def test_fetch_point_forecast_recreates_missing_cache_directory(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             client = OpenMeteoClient(cache_root=tmpdir)
@@ -65,6 +78,7 @@ class OpenMeteoClientTests(unittest.TestCase):
             self.assertTrue(any(cache_root.glob("wind-field-*.json")))
 
     def test_fetch_point_forecast_uses_stale_cache_on_429(self) -> None:
+        _flush_weather_redis_cache()
         with tempfile.TemporaryDirectory() as tmpdir:
             client = OpenMeteoClient(cache_root=tmpdir)
             cache_root = Path(tmpdir) / "weatherengine"
@@ -98,6 +112,8 @@ class OpenMeteoClientTests(unittest.TestCase):
             cached = json.loads(cache_file.read_text(encoding="utf-8"))
             cached["expires_at"] = "2000-01-01T00:00:00+00:00"
             cache_file.write_text(json.dumps(cached), encoding="utf-8")
+            # Flush Redis so the 429 test falls back to stale file cache
+            _flush_weather_redis_cache()
 
             http_error = HTTPError(
                 url="https://api.open-meteo.com/v1/forecast",

@@ -63,21 +63,15 @@ def get_celery_runtime_details() -> dict[str, Any]:
         }
 
     try:
-        inspector = celery_app.control.inspect(timeout=1.0)
+        inspector = celery_app.control.inspect(timeout=0.5)
         ping_result = inspector.ping() or {}
-        queues_result = inspector.active_queues() or {}
-        stats_result = inspector.stats() or {}
-        worker_names = sorted(set(ping_result) | set(queues_result) | set(stats_result))
-        queue_names = {
-            worker: [item.get("name", "") for item in queues_result.get(worker, [])]
-            for worker in worker_names
-        }
+        worker_names = sorted(set(ping_result))
         return {
             "available": True,
             "probe_ok": True,
             "worker_count": len(worker_names),
             "workers": worker_names,
-            "active_queues": queue_names,
+            "active_queues": {},
         }
     except Exception as exc:  # pragma: no cover - depends on runtime infra
         return {

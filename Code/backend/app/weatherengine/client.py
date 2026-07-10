@@ -12,8 +12,17 @@ from urllib.request import urlopen
 import logging
 
 from app.core.config import settings
+from app.core.redis_client import (
+    cache_get_json,
+    cache_set_json,
+    acquire_dedup_lock,
+    release_dedup_lock,
+    wait_for_dedup,
+)
 from app.weatherengine.constants import OPEN_METEO_BASE_URL, WeatherLayerSpec
 from shared.contracts.api_contracts import BoundingBox
+
+REDIS_CACHE_PREFIX = "weather:"
 
 logger = logging.getLogger(__name__)
 
@@ -64,11 +73,33 @@ class OpenMeteoClient:
             forecast_hours=forecast_hours,
             pressure_levels=pressure_levels,
         )
+        redis_key = f"{REDIS_CACHE_PREFIX}point:{cache_key}"
         cache_path = self._cache_root / f"{cache_key}.json"
         now = datetime.now(timezone.utc)
+
+        # 1. Check Redis cache first (fast, cross-worker)
+        redis_payload = cache_get_json(redis_key)
+        if redis_payload is not None:
+            return redis_payload, "hit"
+
+        # 2. Check file cache
         cached_payload, cache_is_fresh = self._read_cached_payload(cache_path, now=now)
         if cache_is_fresh and cached_payload is not None:
+            # Backfill Redis from file cache
+            cache_set_json(redis_key, cached_payload, max(60, ttl_seconds))
             return cached_payload, "hit"
+
+        # 3. Cross-worker request deduplication
+        dedup_lock_key = f"{REDIS_CACHE_PREFIX}lock:point:{cache_key}"
+        if not acquire_dedup_lock(dedup_lock_key, ttl_seconds=60):
+            # Another worker is fetching this data — wait and re-check cache
+            if wait_for_dedup(dedup_lock_key, timeout_seconds=30.0):
+                redis_payload = cache_get_json(redis_key)
+                if redis_payload is not None:
+                    return redis_payload, "dedup-hit"
+                cached_payload, cache_is_fresh = self._read_cached_payload(cache_path, now=now)
+                if cache_is_fresh and cached_payload is not None:
+                    return cached_payload, "dedup-hit"
 
         current_fields = sorted(set(layer_spec.current_fields))
         hourly_fields = sorted(set(layer_spec.hourly_fields))
@@ -154,6 +185,9 @@ class OpenMeteoClient:
             encoding="utf-8",
         )
         cache_tmp_path.replace(cache_path)
+        # Write to Redis cache for fast cross-worker access
+        cache_set_json(redis_key, payload, max(60, ttl_seconds))
+        release_dedup_lock(dedup_lock_key)
         return payload, "miss"
 
     def _build_cache_key(
@@ -223,13 +257,31 @@ class OpenMeteoClient:
             model=model,
             pressure_levels=pressure_levels,
         )
+        redis_key = f"{REDIS_CACHE_PREFIX}grid:{cache_key}"
         cache_path = self._cache_root / f"grid-{cache_key}.json"
         now = datetime.now(timezone.utc)
 
-        # 检查缓存
+        # 1. Check Redis cache first (fast, cross-worker)
+        redis_payload = cache_get_json(redis_key)
+        if redis_payload is not None:
+            return redis_payload, "hit"
+
+        # 2. Check file cache
         cached_payload, cache_is_fresh = self._read_cached_payload(cache_path, now=now)
         if cache_is_fresh and cached_payload is not None:
+            cache_set_json(redis_key, cached_payload, max(60, ttl_seconds))
             return cached_payload, "hit"
+
+        # 3. Cross-worker request deduplication
+        dedup_lock_key = f"{REDIS_CACHE_PREFIX}lock:grid:{cache_key}"
+        if not acquire_dedup_lock(dedup_lock_key, ttl_seconds=120):
+            if wait_for_dedup(dedup_lock_key, timeout_seconds=60.0):
+                redis_payload = cache_get_json(redis_key)
+                if redis_payload is not None:
+                    return redis_payload, "dedup-hit"
+                cached_payload, cache_is_fresh = self._read_cached_payload(cache_path, now=now)
+                if cache_is_fresh and cached_payload is not None:
+                    return cached_payload, "dedup-hit"
 
         # 计算网格点数
         lat_span = bbox.north - bbox.south
@@ -410,6 +462,9 @@ class OpenMeteoClient:
             encoding="utf-8",
         )
         cache_tmp_path.replace(cache_path)
+        # Write to Redis cache for fast cross-worker access
+        cache_set_json(redis_key, grid_data, max(60, ttl_seconds))
+        release_dedup_lock(dedup_lock_key)
 
         # [OpenMeteoClient] 调试：打印最终数据汇总
         current_fields_summary = {k: f"{len(v)} values, non_none={sum(1 for x in v if x is not None)}" for k, v in all_current_data.items()}
