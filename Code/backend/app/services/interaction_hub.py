@@ -11,6 +11,7 @@ from celery.exceptions import SoftTimeLimitExceeded
 from app.core.celery_app import celery_available, celery_app, get_celery_runtime_details, revoke_task
 from app.core.config import settings
 from app.core.logging import ensure_logging_configured, log_context
+from app.core.redis_client import get_redis_client
 from app.services.result_storage import result_storage_service
 from app.services.workflow_request_resolver import normalize_workflow_submit_request
 from app.services.workflow_repository import SQLiteWorkflowRepository
@@ -443,6 +444,55 @@ class InMemoryInteractionHub:
         except Exception as exc:  # pragma: no cover - 防御性兜底
             return {"error": str(exc)}
 
+    def _get_redis_health(self) -> ServiceHealth:
+        """探测 Redis 缓存健康状态。"""
+        client = get_redis_client()
+        if client is None:
+            return ServiceHealth.degraded
+        try:
+            client.ping()
+            return ServiceHealth.ok
+        except Exception:
+            return ServiceHealth.degraded
+
+    def _get_redis_message(self) -> str:
+        """返回 Redis 缓存状态描述。"""
+        client = get_redis_client()
+        if client is None:
+            return "Redis 缓存不可用，天气数据回退到文件缓存。"
+        try:
+            client.ping()
+            return "Redis 缓存在线，用于天气数据缓存与跨 worker 去重。"
+        except Exception as exc:
+            return f"Redis 连接异常：{exc}"
+
+    def _collect_redis_stats(self) -> dict[str, Any]:
+        """收集 Redis 缓存运行时统计快照。"""
+        client = get_redis_client()
+        if client is None:
+            return {"available": False, "reason": "client_unavailable"}
+        try:
+            info = client.info(section="memory")
+            dbsize = client.dbsize()
+            weather_keys = len(client.keys("weather:*"))
+            dedup_lock_keys = len(client.keys("weather:lock:*"))
+            return {
+                "available": True,
+                "url": settings.redis_url,
+                "db_size": dbsize,
+                "weather_cache_keys": weather_keys - dedup_lock_keys,
+                "dedup_lock_keys": dedup_lock_keys,
+                "used_memory_human": info.get("used_memory_human"),
+                "used_memory_peak_human": info.get("used_memory_peak_human"),
+                "maxmemory_human": info.get("maxmemory_human"),
+                "evicted_keys": info.get("evicted_keys", 0),
+                "expired_keys": info.get("expired_keys", 0),
+                "connected_clients": info.get("connected_clients"),
+                "uptime_in_seconds": info.get("uptime_in_seconds"),
+            }
+        except Exception as exc:  # pragma: no cover - 防御性兜底
+            return {"available": False, "error": str(exc)}
+
     def get_runtime_status(self) -> RuntimeStatusResponse:
         now = datetime.now(timezone.utc)
         active_run_count = self._repository.count_active_runs()
@@ -584,6 +634,13 @@ class InMemoryInteractionHub:
                     # cache 运行时统计（hit/miss/eviction 计数）
                     "cache_stats": self._collect_cache_stats(),
                 },
+            ),
+            BackendServiceStatus(
+                service_name="redis_cache",
+                health=self._get_redis_health(),
+                message=self._get_redis_message(),
+                updated_at=now,
+                details=self._collect_redis_stats(),
             ),
         ]
         overall_health = ServiceHealth.busy if active_run_count > 0 else ServiceHealth.ok
