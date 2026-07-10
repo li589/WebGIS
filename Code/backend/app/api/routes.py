@@ -333,6 +333,12 @@ def update_runtime_config(payload: RuntimeConfigUpdateRequest) -> RuntimeConfigU
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
 
 
+@router.get("/runtime/config", tags=["runtime"])
+def get_runtime_config() -> dict:
+    """Return the current runtime configuration snapshot (defaults + DB overrides)."""
+    return interaction_hub.get_runtime_config()
+
+
 @router.get("/runtime/status", tags=["runtime"], response_model=RuntimeStatusResponse)
 def get_runtime_status() -> RuntimeStatusResponse:
     return interaction_hub.get_runtime_status()

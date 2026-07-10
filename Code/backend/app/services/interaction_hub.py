@@ -58,8 +58,29 @@ class _SubmissionTransition:
 
 ALLOWED_RUNTIME_CONFIG_KEYS: dict[str, set[str]] = {
     "frontend": {"demo_source_mode", "timeline_granularity", "ui_density"},
-    "backend": {"task_executor", "demo_snapshot_provider"},
+    "backend": {
+        "task_executor",
+        "demo_snapshot_provider",
+        "max_active_runs",
+        "max_requested_outputs",
+        "weather_cache_ttl_seconds",
+        "weather_refresh_forecast_hours",
+        "log_level",
+    },
     "workflow": {"default_queue", "result_retention"},
+}
+
+# Value type/range validation for runtime config keys.
+# Each entry: (type_name, min_value, max_value) or ("choice", [allowed_values])
+RUNTIME_CONFIG_VALUE_VALIDATORS: dict[str, dict[str, tuple]] = {
+    "backend": {
+        "max_active_runs": ("int", 1, 16),
+        "max_requested_outputs": ("int", 1, 20),
+        "weather_cache_ttl_seconds": ("int", 60, 86400),
+        "weather_refresh_forecast_hours": ("int", 1, 48),
+        "log_level": ("choice", ["DEBUG", "INFO", "WARNING", "ERROR"]),
+        "task_executor": ("choice", ["celery", "in_memory", "sync"]),
+    },
 }
 
 
@@ -1022,22 +1043,61 @@ class InMemoryInteractionHub:
 
     def _assert_workflow_capacity(self) -> None:
         active_runs = self._repository.count_active_runs()
-        if active_runs >= settings.max_active_runs:
+        limit = self._get_effective_config_int("backend", "max_active_runs", settings.max_active_runs)
+        if active_runs >= limit:
             raise ValueError(
-                f"Workflow capacity reached: active_runs={active_runs}, limit={settings.max_active_runs}"
+                f"Workflow capacity reached: active_runs={active_runs}, limit={limit}"
             )
 
     def _validate_requested_outputs(self, payload: WorkflowSubmitRequest) -> None:
-        if len(payload.requested_outputs) > settings.max_requested_outputs:
+        limit = self._get_effective_config_int("backend", "max_requested_outputs", settings.max_requested_outputs)
+        if len(payload.requested_outputs) > limit:
             raise ValueError(
-                f"Requested outputs exceed limit: count={len(payload.requested_outputs)}, limit={settings.max_requested_outputs}"
+                f"Requested outputs exceed limit: count={len(payload.requested_outputs)}, limit={limit}"
             )
+
+    def _get_effective_config_int(self, scope: str, key: str, default: int) -> int:
+        """Get an int config value from DB runtime config, falling back to default."""
+        try:
+            snapshot = self._repository.get_config_snapshot()
+            value = snapshot.get(scope, {}).get(key)
+            if isinstance(value, int) and not isinstance(value, bool):
+                return value
+        except Exception:
+            pass
+        return default
+
+    def get_runtime_config(self) -> dict[str, dict[str, object]]:
+        """Return the current runtime config snapshot (merged defaults + DB overrides)."""
+        return self._repository.get_config_snapshot()
 
     def _validate_runtime_config(self, payload: RuntimeConfigUpdateRequest) -> None:
         for item in payload.items:
             allowed_keys = ALLOWED_RUNTIME_CONFIG_KEYS.get(item.scope.value, set())
             if item.key not in allowed_keys:
                 raise ValueError(f"Unsupported runtime config key: {item.scope.value}.{item.key}")
+            # Value type/range validation
+            scope_validators = RUNTIME_CONFIG_VALUE_VALIDATORS.get(item.scope.value, {})
+            validator = scope_validators.get(item.key)
+            if validator is None:
+                continue
+            kind = validator[0]
+            if kind == "int":
+                _, min_val, max_val = validator
+                if not isinstance(item.value, int) or isinstance(item.value, bool):
+                    raise ValueError(
+                        f"Invalid value for {item.scope.value}.{item.key}: expected int, got {type(item.value).__name__}"
+                    )
+                if not (min_val <= item.value <= max_val):
+                    raise ValueError(
+                        f"Value for {item.scope.value}.{item.key} out of range: {item.value}, expected [{min_val}, {max_val}]"
+                    )
+            elif kind == "choice":
+                allowed_values = validator[1]
+                if item.value not in allowed_values:
+                    raise ValueError(
+                        f"Invalid value for {item.scope.value}.{item.key}: {item.value!r}, expected one of {allowed_values}"
+                    )
 
     def _build_submission_transitions(
         self,
