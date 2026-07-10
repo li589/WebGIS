@@ -3,13 +3,15 @@ import { computed, ref } from 'vue'
 import { storeToRefs } from 'pinia'
 
 import { useLayersStore } from '../stores/layers'
+import { useUiStore } from '../stores/ui'
+import type { RuntimeLayerLibraryItem } from '../stores/layers/types'
 
 const emit = defineEmits<{
   selectLayer: [instanceId: string]
 }>()
 
 const layersStore = useLayersStore()
-void layersStore.ensureRuntimeLayerCatalog()
+const uiStore = useUiStore()
 
 // Use storeToRefs only for reactive state
 const {
@@ -19,10 +21,9 @@ const {
   activeLayerCount,
   sidebarViewLabel,
   catalogJobStatus,
+  layerLibrary,
 } = storeToRefs(layersStore)
 
-// Static catalog data — access directly from store (no storeToRefs needed)
-const layerLibrary = layersStore.layerLibrary
 const layerCategories = layersStore.layerCategories
 
 const searchQuery = ref('')
@@ -33,18 +34,19 @@ const dragOverInstanceId = ref<string | null>(null)
 // ── Filter library items by search ────────────────────────────────────────────
 
 const filteredLibrary = computed(() => {
-  if (!searchQuery.value.trim()) return layerLibrary
+  if (!searchQuery.value.trim()) return layerLibrary.value
   const q = searchQuery.value.toLowerCase()
-  return layerLibrary.filter(
+  return layerLibrary.value.filter(
     (item) =>
       item.name.toLowerCase().includes(q) ||
       item.category.toLowerCase().includes(q) ||
-      item.sourceLabel.toLowerCase().includes(q),
+      item.sourceLabel.toLowerCase().includes(q) ||
+      item.description.toLowerCase().includes(q),
   )
 })
 
 const filteredLibraryByCategory = computed(() => {
-  const map = new Map(layerCategories.map((c) => [c.id, { category: c, items: [] as typeof layerLibrary }]))
+  const map = new Map(layerCategories.map((c) => [c.id, { category: c, items: [] as RuntimeLayerLibraryItem[] }]))
   for (const item of filteredLibrary.value) {
     if (map.has(item.category)) {
       map.get(item.category)!.items.push(item)
@@ -66,6 +68,28 @@ function getCatalogJobStatus(catalogId: string): string | undefined {
 
 function getCatalogRunBlockReason(catalogId: string): string | null {
   return layersStore.getCatalogRunBlockReason(catalogId)
+}
+
+function getCatalogItem(catalogId: string) {
+  return layerLibrary.value.find((item) => item.catalogId === catalogId)
+}
+
+function getCatalogSemanticNote(catalogId: string): string | null {
+  const blockReason = getCatalogRunBlockReason(catalogId)
+  if (blockReason) return blockReason
+  const item = getCatalogItem(catalogId)
+  if (!item) return null
+  if (item.backendStatus === 'sample') {
+    return item.runReadinessSummary ?? item.runReadinessNotes[0] ?? '样板 provider 链路，可运行但不代表正式生产数据。'
+  }
+  if (item.backendStatus === 'placeholder') {
+    return item.runReadinessSummary ?? item.runReadinessNotes[0] ?? '占位图层，默认数据源尚未接入。'
+  }
+  return null
+}
+
+function catalogSemanticNoteClass(catalogId: string) {
+  return getCatalogItem(catalogId)?.backendStatus === 'sample' ? 'catalog-note-sample' : 'catalog-note-blocked'
 }
 
 function isAdminAdded(): boolean {
@@ -132,6 +156,11 @@ function removeItem(instanceId: string, event: MouseEvent) {
 function selectItem(instanceId: string) {
   layersStore.selectLayer(instanceId)
   emit('selectLayer', instanceId)
+}
+
+function openJobReport(instanceId: string) {
+  selectItem(instanceId)
+  uiStore.requestAnalysisFocus(['report-section', 'result-section', 'scheduler-status'])
 }
 
 function toggleVisibility(instanceId: string, event: MouseEvent) {
@@ -210,35 +239,24 @@ function getCategoryName(categoryId: string): string {
 //   - 多数据源：显示当前选中源 + 展开按钮，可单选切换
 
 function getCatalogSources(catalogId: string) {
-  return layerLibrary.find((l) => l.catalogId === catalogId)?.sources ?? []
+  return layerLibrary.value.find((l) => l.catalogId === catalogId)?.sources ?? []
 }
 
-/** 多源时记录每 catalog 用户选中的 sourceId；未选则回退首个 */
-const selectedSourceByCatalog = ref<Record<string, string>>({})
-
-function getSelectedSourceId(catalogId: string): string {
+function getPrimarySourceId(catalogId: string): string {
   const sources = getCatalogSources(catalogId)
-  return selectedSourceByCatalog.value[catalogId] ?? sources[0]?.id ?? ''
+  return sources[0]?.id ?? ''
 }
 
-function getSelectedSourceName(catalogId: string): string {
+function getPrimarySourceName(catalogId: string): string {
   const sources = getCatalogSources(catalogId)
-  const id = getSelectedSourceId(catalogId)
+  const id = getPrimarySourceId(catalogId)
   return sources.find((s) => s.id === id)?.name ?? (sources.length === 0 ? '暂无可用数据源' : '未选择')
 }
 
-function isSourceSelected(catalogId: string, sourceId: string): boolean {
-  return getSelectedSourceId(catalogId) === sourceId
-}
-
-function selectSource(catalogId: string, sourceId: string) {
-  selectedSourceByCatalog.value[catalogId] = sourceId
-}
-
-const sourcePickerOpen = ref<string | null>(null)
-
-function toggleSourcePicker(catalogId: string) {
-  sourcePickerOpen.value = sourcePickerOpen.value === catalogId ? null : catalogId
+function getCatalogSourceSummary(catalogId: string): string {
+  const sources = getCatalogSources(catalogId)
+  if (!sources.length) return '暂无可用数据源'
+  return sources.map((source) => source.name).join(' / ')
 }
 </script>
 
@@ -383,37 +401,32 @@ function toggleSourcePicker(catalogId: string) {
                   </div>
                 </div>
 
-                <!-- 多数据源：可展开切换 -->
+                <!-- 多数据源：仅展示候选源信息，当前未接入前端切换链路 -->
                 <div v-else class="source-multi">
-                  <button
+                  <div
                     class="source-picker-btn"
-                    :title="`已选：${getSelectedSourceName(item.catalogId)}（共 ${item.sources.length} 个数据源）`"
-                    @click="toggleSourcePicker(item.catalogId)"
+                    :title="getCatalogSourceSummary(item.catalogId)"
                   >
                     <span class="src-dot" :style="{ background: item.accentColor }"></span>
-                    <span class="src-current">{{ getSelectedSourceName(item.catalogId) }}</span>
-                    <span class="src-count">{{ item.sources.length }}</span>
-                    <span class="sp-arrow" :class="{ open: sourcePickerOpen === item.catalogId }">▸</span>
-                  </button>
-                  <div v-if="sourcePickerOpen === item.catalogId" class="source-list">
-                    <button
+                    <span class="src-current">{{ getPrimarySourceName(item.catalogId) }}</span>
+                    <span class="src-count">{{ item.sources.length }} 个候选源</span>
+                  </div>
+                  <div class="source-list source-list-static">
+                    <div
                       v-for="src in item.sources"
                       :key="src.id"
-                      class="source-option"
-                      :class="{ active: isSourceSelected(item.catalogId, src.id) }"
+                      class="source-option active"
                       :title="src.description"
-                      @click.stop="selectSource(item.catalogId, src.id)"
                     >
                       <div class="src-opt-top">
                         <span class="src-name">{{ src.name }}</span>
-                        <span v-if="isSourceSelected(item.catalogId, src.id)" class="src-check" aria-hidden="true">✓</span>
                       </div>
                       <div class="src-meta">
                         <span class="src-badge">{{ src.updateFrequency }}</span>
                         <span class="src-coord">{{ src.coordSys }}</span>
                         <span v-if="src.needsAuth" class="src-auth" title="需要认证">🔒</span>
                       </div>
-                    </button>
+                    </div>
                   </div>
                 </div>
               </div>
@@ -447,8 +460,8 @@ function toggleSourcePicker(catalogId: string) {
                 </span>
                 <span v-else class="added-label">已添加 ✓</span>
               </div>
-              <div v-if="getCatalogRunBlockReason(item.catalogId)" class="run-block-note">
-                {{ getCatalogRunBlockReason(item.catalogId) }}
+              <div v-if="getCatalogSemanticNote(item.catalogId)" class="run-block-note" :class="catalogSemanticNoteClass(item.catalogId)">
+                {{ getCatalogSemanticNote(item.catalogId) }}
               </div>
             </div>
           </div>
@@ -558,9 +571,14 @@ function toggleSourcePicker(catalogId: string) {
                 <span class="job-status-badge" :class="`job-${layer.jobLayer.status}`">
                   {{ layer.jobLayer.status === 'running' ? `运行中 ${layer.jobLayer.progress}%` : layer.jobLayer.status === 'succeeded' ? '已完成' : layer.jobLayer.status === 'failed' ? '失败' : layer.jobLayer.status }}
                 </span>
-                <span v-if="layer.jobLayer.reportSummary" class="job-report-hint" @click.stop>
+                <button
+                  v-if="layer.jobLayer.reportSummary"
+                  class="job-report-hint"
+                  type="button"
+                  @click.stop="openJobReport(layer.instanceId)"
+                >
                   查看报告
-                </span>
+                </button>
               </div>
             </div>
           </li>
@@ -580,6 +598,10 @@ function toggleSourcePicker(catalogId: string) {
 <style scoped>
 /* ── Base panel ──────────────────────────────────────────────────────────── */
 .panel {
+  --sidebar-card-radius: 0.72rem;
+  --sidebar-soft-radius: 0.6rem;
+  --sidebar-section-padding: 0.46rem;
+  --sidebar-inner-padding: 0.32rem;
   display: flex;
   flex-direction: column;
   gap: 0.42rem;
@@ -596,6 +618,12 @@ function toggleSourcePicker(catalogId: string) {
   height: min(100%, calc(100vh - 12rem));
   max-height: min(100%, calc(100vh - 12rem));
   box-sizing: border-box;
+}
+
+.panel,
+.panel * {
+  box-sizing: border-box;
+  min-width: 0;
 }
 
 /* ── Header ──────────────────────────────────────────────────────────────── */
@@ -950,9 +978,9 @@ h2 {
 .library-card {
   display: grid;
   gap: 0.32rem;
-  padding: 0.46rem 0.5rem;
+  padding: var(--sidebar-section-padding) 0.5rem;
   border: 1px solid rgba(136, 192, 255, 0.08);
-  border-radius: 0.72rem;
+  border-radius: var(--sidebar-card-radius);
   background: linear-gradient(135deg, rgba(8, 18, 33, 0.6), rgba(8, 18, 33, 0.4));
   transition: border-color 0.18s ease, box-shadow 0.18s ease, transform 0.18s ease;
 }
@@ -1006,9 +1034,9 @@ h2 {
 .source-area {
   display: grid;
   gap: 0.18rem;
-  padding: 0.32rem;
+  padding: var(--sidebar-inner-padding);
   border: 1px solid rgba(136, 192, 255, 0.06);
-  border-radius: 0.5rem;
+  border-radius: var(--sidebar-soft-radius);
   background: rgba(4, 12, 23, 0.32);
 }
 
@@ -1123,15 +1151,6 @@ h2 {
   flex-shrink: 0;
 }
 
-.sp-arrow {
-  display: inline-block;
-  transition: transform 0.18s ease;
-  font-size: 0.5rem;
-  color: #8a9eb0;
-}
-
-.sp-arrow.open { transform: rotate(90deg); }
-
 .source-list {
   display: grid;
   gap: 0.12rem;
@@ -1190,6 +1209,10 @@ h2 {
   color: #ffd38a;
   font-size: 0.54rem;
   line-height: 1.35;
+}
+
+.catalog-note-sample {
+  color: #ffb8d2;
 }
 
 .card-metric {
@@ -1321,14 +1344,14 @@ h2 {
   gap: 0;
   padding: 0.26rem 0.42rem;
   border: 1px solid rgba(136, 192, 255, 0.1);
-  border-radius: 0.5rem;
+  border-radius: var(--sidebar-soft-radius);
   background: rgba(8, 18, 33, 0.5);
   color: #d8e4ef;
-  cursor: pointer;
   font: inherit;
   font-size: 0.66rem;
   /* 性能优化：移除非必要的 transform 过渡，避免触发重排 */
   transition: border-color 0.2s ease, background-color 0.2s ease, box-shadow 0.2s ease, opacity 0.2s ease;
+  /* M15 修复：移除 cursor: pointer，避免整个行区域显示手型指针 */
   user-select: none;
 }
 
@@ -1472,39 +1495,62 @@ h2 {
   width: 2.2rem;
 }
 
+/* M15 修复：增大滑块可点击区域，防止拖动滑块时误触发行点击 */
 .opacity-slider {
   flex: 1;
   -webkit-appearance: none;
-  height: 3px;
-  border-radius: 999px;
-  background: rgba(136, 192, 255, 0.12);
+  appearance: none;
+  height: 1.8rem;
+  background: transparent;
   outline: none;
   cursor: pointer;
+  /* 增大点击区域，使滑块更容易拖动 */
+  margin: 0;
+  padding: 0;
+}
+
+.opacity-slider::-webkit-slider-runnable-track {
+  height: 6px;
+  border-radius: 999px;
+  background: rgba(136, 192, 255, 0.18);
+}
+
+.opacity-slider::-moz-range-track {
+  height: 6px;
+  border-radius: 999px;
+  background: rgba(136, 192, 255, 0.18);
 }
 
 .opacity-slider::-webkit-slider-thumb {
   -webkit-appearance: none;
-  width: 0.8rem;
-  height: 0.8rem;
+  appearance: none;
+  width: 1rem;
+  height: 1rem;
+  margin-top: -0.5rem;
   border-radius: 50%;
   background: var(--accent, #5ad5ff);
   box-shadow: 0 0 6px var(--accent, #5ad5ff);
   cursor: pointer;
-  transition: transform 0.14s ease;
+  transition: transform 0.14s ease, box-shadow 0.14s ease;
 }
 
 .opacity-slider::-webkit-slider-thumb:hover {
-  transform: scale(1.2);
+  transform: scale(1.15);
+  box-shadow: 0 0 10px var(--accent, #5ad5ff);
 }
 
 .opacity-slider::-moz-range-thumb {
-  width: 0.8rem;
-  height: 0.8rem;
+  width: 1rem;
+  height: 1rem;
   border: none;
   border-radius: 50%;
   background: var(--accent, #5ad5ff);
   box-shadow: 0 0 6px var(--accent, #5ad5ff);
   cursor: pointer;
+}
+
+.opacity-slider::-moz-range-thumb:hover {
+  box-shadow: 0 0 10px var(--accent, #5ad5ff);
 }
 
 .opacity-value {
@@ -1555,6 +1601,7 @@ h2 {
   display: flex;
   align-items: center;
   gap: 0.32rem;
+  min-width: 0;
 }
 
 .job-status-badge {
@@ -1590,11 +1637,15 @@ h2 {
 
 .job-report-hint {
   margin-left: auto;
+  border: none;
+  background: transparent;
   color: #5ad5ff;
   font-size: 0.54rem;
   cursor: pointer;
   text-decoration: underline;
   text-decoration-style: dotted;
+  padding: 0;
+  white-space: nowrap;
 }
 
 /* ── Footer ─────────────────────────────────────────────────────────────── */

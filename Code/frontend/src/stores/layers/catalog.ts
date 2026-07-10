@@ -44,11 +44,11 @@ export const LAYER_CATEGORIES: LayerCategory[] = [
     chipTone: 'rgba(127, 217, 154, 0.16)',
   },
   {
-    id: 'simulation',
-    name: '模拟结果',
-    icon: 'S',
-    accentColor: '#ff6f91',
-    chipTone: 'rgba(255, 111, 145, 0.16)',
+    id: 'runtime',
+    name: '运行时目录',
+    icon: 'C',
+    accentColor: '#7ea7ff',
+    chipTone: 'rgba(126, 167, 255, 0.16)',
   },
   {
     id: 'boundary',
@@ -513,7 +513,7 @@ export const LAYER_LIBRARY: LayerCatalogItem[] = [
   {
     catalogId: 'lab-output',
     name: '课题组模型输出',
-    category: 'simulation',
+    category: 'runtime',
     metricLabel: '综合评分',
     metricUnit: '/ 100',
     metricPrecision: 0,

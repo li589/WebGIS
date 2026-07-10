@@ -48,7 +48,7 @@ const props = withDefaults(defineProps<PanelProps>(), {
   maxOffsetY: 70,
   defaultWidth: 720,
   defaultHeight: 190,
-  minWidth: 460,
+  minWidth: 600,
   minHeight: 170,
   maxWidth: 980,
   maxHeight: 248,
@@ -59,7 +59,7 @@ const visible = ref(persistedState?.visible ?? true)
 const collapsed = ref(persistedState?.collapsed ?? props.defaultCollapsed)
 const offsetX = ref(persistedState?.offsetX ?? 0)
 const offsetY = ref(persistedState?.offsetY ?? 0)
-const width = ref(persistedState?.width ?? props.defaultWidth)
+const width = ref(persistedState?.width && persistedState.width >= props.minWidth ? persistedState.width : props.defaultWidth)
 const height = ref(persistedState?.height ?? props.defaultHeight)
 const persistTimer = ref<number | null>(null)
 
@@ -186,7 +186,7 @@ onBeforeUnmount(() => {
 
 <style scoped>
 .timeline-anchor{position:relative;width:100%;height:100%;display:inline-block;pointer-events:auto;will-change:transform;transition:transform .18s cubic-bezier(.25,.46,.45,.94)}
-.timeline-panel{display:flex;flex-direction:column;overflow:hidden;width:100%;border:1px solid rgba(155,180,210,.18);border-radius:1rem;background:linear-gradient(180deg, rgba(18, 28, 46, 0.72), rgba(8, 15, 28, 0.52)), radial-gradient(circle at top left, rgba(255,255,255,0.08), transparent 34%);box-shadow:inset 0 1px 0 rgba(255,255,255,.08), inset 0 -1px 0 rgba(255,255,255,.03), 0 14px 30px rgba(1,8,16,.14);backdrop-filter:blur(14px) saturate(1.08);-webkit-backdrop-filter:blur(14px) saturate(1.08)}
+.timeline-panel{display:flex;flex-direction:column;overflow:hidden;box-sizing:border-box;width:100%;border:1px solid rgba(155,180,210,.18);border-radius:1rem;background:linear-gradient(180deg, rgba(18, 28, 46, 0.72), rgba(8, 15, 28, 0.52)), radial-gradient(circle at top left, rgba(255,255,255,0.08), transparent 34%);box-shadow:inset 0 1px 0 rgba(255,255,255,.08), inset 0 -1px 0 rgba(255,255,255,.03), 0 14px 30px rgba(1,8,16,.14);backdrop-filter:blur(14px) saturate(1.08);-webkit-backdrop-filter:blur(14px) saturate(1.08)}
 .timeline-header{display:flex;align-items:center;justify-content:space-between;gap:.5rem;min-height:2.3rem;padding:.26rem .36rem;border-bottom:1px solid rgba(136,192,255,.12);background:linear-gradient(180deg, rgba(18, 28, 46, 0.74), rgba(8, 18, 33, 0.62));backdrop-filter:blur(12px) saturate(1.08);-webkit-backdrop-filter:blur(12px) saturate(1.08);box-shadow:inset 0 1px 0 rgba(255,255,255,.08);cursor:grab;user-select:none}
 .timeline-header-dragging{cursor:grabbing}
 .timeline-title{display:grid;grid-template-columns:auto 1fr;grid-template-rows:auto auto;column-gap:.34rem;row-gap:.02rem;align-items:center;min-width:0}

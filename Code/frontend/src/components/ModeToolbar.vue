@@ -1,20 +1,35 @@
 <script setup lang="ts">
 import { computed } from 'vue'
+import { storeToRefs } from 'pinia'
 
+import {
+  TILE_SOURCES,
+  TILE_SOURCES_BY_STYLE,
+  type BasemapStyle,
+  type TileSourceConfig,
+  type TileSourceId,
+} from '../services/api-config'
 import type { ActiveLayerDisplay } from '../stores/layers/types'
-import { TILE_SOURCES, TILE_SOURCES_BY_STYLE, type BasemapStyle, type TileSourceConfig, type TileSourceId } from '../stores/ui'
+import { useLayersStore } from '../stores/layers'
+import { useUiStore } from '../stores/ui'
+import WorkflowStatusButton from './workflow/WorkflowStatusButton.vue'
+
+const layersStore = useLayersStore()
+const uiStore = useUiStore()
+const { workflowSummary } = storeToRefs(layersStore)
+const { interactionMode } = storeToRefs(uiStore)
 
 const props = defineProps<{
   tileSourceId: TileSourceId
   activeLayer: ActiveLayerDisplay
   hourLabel: string
-  supportedLayerCount: number
   activeLayerCount: number
 }>()
 
 const emit = defineEmits<{
   changeTileSource: [sourceId: TileSourceId]
   openScreenshot: []
+  openWorkflowStatus: []
 }>()
 
 const activeStyle = computed<BasemapStyle>(() => {
@@ -30,7 +45,6 @@ const sourcesByStyle = computed(() => {
     street: { label: '街道', icon: '▦' },
     dark: { label: '深色', icon: '◑' },
     terrain: { label: '地形', icon: '⛰' },
-    topo: { label: '地形', icon: '⛰' },
   }
 
   // Only show standard sources in the picker (non-standard need backend transform)
@@ -61,6 +75,30 @@ const currentTileConfig = computed(() => TILE_SOURCES.find((s) => s.id === props
         <h1>综合地理态势</h1>
         <p class="subtitle">2D 演示台</p>
       </div>
+    </div>
+
+    <!-- Interaction mode: 移动 / 选择 -->
+    <div class="interaction-mode" role="group" aria-label="交互模式">
+      <button
+        class="mode-btn"
+        :class="{ active: interactionMode === 'move' }"
+        :aria-pressed="interactionMode === 'move'"
+        title="移动模式：拖动地图视角"
+        @click="uiStore.setInteractionMode('move')"
+      >
+        <span class="mode-icon" aria-hidden="true">✥</span>
+        <span>移动</span>
+      </button>
+      <button
+        class="mode-btn"
+        :class="{ active: interactionMode === 'select' }"
+        :aria-pressed="interactionMode === 'select'"
+        title="选择模式：点击选择点或图层"
+        @click="uiStore.setInteractionMode('select')"
+      >
+        <span class="mode-icon" aria-hidden="true">⌖</span>
+        <span>选择</span>
+      </button>
     </div>
 
     <!-- Main toolbar -->
@@ -105,6 +143,12 @@ const currentTileConfig = computed(() => TILE_SOURCES.find((s) => s.id === props
           <span class="screenshot-icon" aria-hidden="true">◫</span>
           <span>截图</span>
         </button>
+
+        <!-- Workflow status -->
+        <WorkflowStatusButton
+          :summary="workflowSummary"
+          @click="emit('openWorkflowStatus')"
+        />
 
         <!-- Quick stats -->
         <div class="quick-stats">
@@ -197,6 +241,54 @@ h1 {
   overflow: hidden;
   text-overflow: ellipsis;
   max-width: 16rem;
+}
+
+/* Interaction mode (移动 / 选择) */
+.interaction-mode {
+  display: inline-flex;
+  gap: 0.18rem;
+  padding: 0.16rem;
+  border: 1px solid rgba(136, 192, 255, 0.14);
+  border-radius: 999px;
+  background: rgba(4, 12, 23, 0.82);
+}
+
+.mode-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.26rem;
+  border: none;
+  border-radius: 999px;
+  padding: 0.28rem 0.56rem;
+  background: transparent;
+  color: #8aa8bf;
+  cursor: pointer;
+  font: inherit;
+  font-size: 0.64rem;
+  transition: background-color 0.2s ease, color 0.2s ease, transform 0.2s ease;
+  white-space: nowrap;
+}
+
+.mode-btn:hover {
+  color: #f0f8ff;
+  background: rgba(136, 192, 255, 0.1);
+  transform: translateY(-1px);
+}
+
+.mode-btn.active {
+  background: rgba(10, 132, 255, 0.5);
+  color: #f0faff;
+  font-weight: 600;
+  box-shadow: inset 0 0 0 1px rgba(90, 213, 255, 0.2);
+}
+
+.mode-icon {
+  font-size: 0.72rem;
+  opacity: 0.7;
+}
+
+.mode-btn.active .mode-icon {
+  opacity: 1;
 }
 
 .toolbar-main {

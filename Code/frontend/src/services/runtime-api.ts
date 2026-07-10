@@ -17,10 +17,7 @@ export type WorkflowCommandType =
 
 export type ResultKind = 'json' | 'table' | 'chart' | 'map_layer' | 'log' | 'file' | 'text' | 'diagnostic'
 export type EventChannel = 'status' | 'log' | 'data' | 'chart' | 'notification' | 'system'
-export type RuntimeConfigScope = 'frontend' | 'backend' | 'provider' | 'workflow' | 'system'
-export type FrontendCommandType = 'preload' | 'clear_cache' | 'cleanup' | 'cancel_run' | 'reload_catalog' | 'custom'
-export type ServiceHealth = 'ok' | 'busy' | 'degraded' | 'offline'
-
+export type LogLevel = 'debug' | 'info' | 'warning' | 'error'
 export interface BoundingBox {
   west: number
   south: number
@@ -100,6 +97,22 @@ export interface WorkflowResultReference {
   resource_key?: string
   resource_size_bytes?: number
   updated_at: string
+}
+
+export interface WorkflowEvent {
+  event_id: string
+  run_id: string
+  channel: EventChannel
+  level: LogLevel
+  message: string
+  created_at: string
+  progress?: number | null
+  payload: Record<string, unknown>
+}
+
+export interface WorkflowEventsResponse {
+  run_id: string
+  items: WorkflowEvent[]
 }
 
 export interface WorkflowAnalysisResultDto {
@@ -279,6 +292,8 @@ export interface WeatherPointHourlyEntry {
   temperature_2m?: number | null
   precipitation?: number | null
   wind_speed_10m?: number | null
+  primary_metric?: string | null
+  primary_value?: number | null
 }
 
 export interface WeatherPointResponse {
@@ -300,79 +315,48 @@ export interface WeatherPointResponse {
   diagnostics: string[]
 }
 
-export interface WorkflowEvent {
-  event_id: string
-  run_id: string
-  channel: EventChannel
-  level: 'debug' | 'info' | 'warning' | 'error'
-  message: string
-  created_at: string
-  progress?: number
-  payload: Record<string, unknown>
+const DEBUG_RUNTIME_API_URL = 'http://127.0.0.1:7777/event'
+const DEBUG_RUNTIME_SESSION_ID = 'runtime-api-pending'
+const DEBUG_RUNTIME_RUN_ID = 'post-fix'
+const RUNTIME_API_DEBUG_ENABLED = import.meta.env.VITE_RUNTIME_API_DEBUG === '1'
+
+function shouldReportRuntimeDebug(path: string) {
+  if (!RUNTIME_API_DEBUG_ENABLED) return false
+  return path.startsWith('/runtime/api-config')
+    || path === '/workflow-runs'
+    || /^\/workflow-runs\/[^/]+(?:\/events|\/view)?(?:\?.*)?$/.test(path)
 }
 
-export interface WorkflowEventsResponse {
-  run_id: string
-  items: WorkflowEvent[]
+function getRuntimeDebugHypothesisId(path: string) {
+  if (path.startsWith('/runtime/api-config')) return 'A'
+  if (path === '/workflow-runs') return 'B'
+  return 'E'
 }
 
-export interface RuntimeConfigPatch {
-  scope: RuntimeConfigScope
-  key: string
-  value: unknown
-  description?: string
+// #region debug-point B:runtime-api-report-helper
+function reportRuntimeDebug(path: string, location: string, msg: string, data: Record<string, unknown>) {
+  fetch(DEBUG_RUNTIME_API_URL, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      sessionId: DEBUG_RUNTIME_SESSION_ID,
+      runId: DEBUG_RUNTIME_RUN_ID,
+      hypothesisId: getRuntimeDebugHypothesisId(path),
+      location,
+      msg,
+      data,
+      ts: Date.now(),
+    }),
+  }).catch(() => {})
 }
-
-export interface RuntimeConfigUpdateRequest {
-  items: RuntimeConfigPatch[]
-  client?: ClientIdentity
-}
-
-export interface RuntimeConfigUpdateResponse {
-  accepted: boolean
-  updated_at: string
-  applied_count: number
-  message: string
-  config_snapshot: Record<string, Record<string, unknown>>
-}
-
-export interface BackendServiceStatus {
-  service_name: string
-  health: ServiceHealth
-  message: string
-  updated_at: string
-  details: Record<string, unknown>
-}
-
-export interface RuntimeStatusResponse {
-  overall_health: ServiceHealth
-  service_name: string
-  environment: string
-  updated_at: string
-  active_run_count: number
-  config_snapshot: Record<string, Record<string, unknown>>
-  services: BackendServiceStatus[]
-}
-
-export interface FrontendCommandRequest {
-  command_type: FrontendCommandType
-  target?: string
-  payload?: Record<string, unknown>
-  client?: ClientIdentity
-  correlation_id?: string
-}
-
-export interface FrontendCommandResponse {
-  accepted: boolean
-  command_type: FrontendCommandType
-  target?: string
-  created_at: string
-  message: string
-  next_action?: string
-}
+// #endregion
 
 function getApiBaseUrl() {
-  return import.meta.env.VITE_API_BASE_URL?.replace(/\/$/, '') ?? 'http://127.0.0.1:8000'
+  // 开发模式走 Vite proxy（相对路径），避免 CORS 问题
+  if (import.meta.env.DEV) return ''
+  return import.meta.env.VITE_API_BASE_URL?.replace(/\/$/, '') ?? ''
 }
 
 export function resolveApiUrl(pathOrUrl: string) {
@@ -382,27 +366,46 @@ export function resolveApiUrl(pathOrUrl: string) {
 }
 
 async function requestJson<T>(path: string, init?: RequestInit & { timeoutMs?: number }): Promise<T> {
-  // 修复：headers 合并顺序错误。原代码先构造 headers 再展开 ...init，
-  // 导致 init.headers 整体替换而非合并。改为先提取 headers 单独合并。
   const { headers: initHeaders, timeoutMs, ...restInit } = init ?? {}
   const mergedHeaders: Record<string, string> = {
     'Content-Type': 'application/json',
     ...(initHeaders as Record<string, string> | undefined),
   }
 
-  // 修复：添加超时控制，避免请求挂起
   const controller = new AbortController()
   const timeoutId = window.setTimeout(
     () => controller.abort(),
     timeoutMs ?? 30000,
   )
+  const shouldDebug = shouldReportRuntimeDebug(path)
 
   try {
+    // #region debug-point B:request-json-start
+    if (shouldDebug) {
+      reportRuntimeDebug(path, 'runtime-api.requestJson.start', '[DEBUG] request start', {
+        path,
+        method: restInit.method ?? 'GET',
+        timeoutMs: timeoutMs ?? 30000,
+        hasExternalSignal: Boolean(restInit.signal),
+      })
+    }
+    // #endregion
     const response = await fetch(resolveApiUrl(path), {
       ...restInit,
       headers: mergedHeaders,
       signal: restInit.signal ?? controller.signal,
     })
+
+    // #region debug-point B:request-json-response
+    if (shouldDebug) {
+      reportRuntimeDebug(path, 'runtime-api.requestJson.response', '[DEBUG] request response received', {
+        path,
+        method: restInit.method ?? 'GET',
+        status: response.status,
+        ok: response.ok,
+      })
+    }
+    // #endregion
 
     if (!response.ok) {
       // 修复：解析结构化错误体，而非丢弃
@@ -413,10 +416,45 @@ async function requestJson<T>(path: string, init?: RequestInit & { timeoutMs?: n
       } catch {
         errorDetail = await response.text().catch(() => '')
       }
+      // #region debug-point A:request-json-error-response
+      if (shouldDebug) {
+        reportRuntimeDebug(path, 'runtime-api.requestJson.error_response', '[DEBUG] request error response', {
+          path,
+          method: restInit.method ?? 'GET',
+          status: response.status,
+          detail: errorDetail,
+        })
+      }
+      // #endregion
       throw new Error(`Request failed: ${response.status} ${path}${errorDetail ? ` - ${errorDetail}` : ''}`)
     }
 
-    return (await response.json()) as T
+    const body = (await response.json()) as T
+    // #region debug-point B:request-json-success
+    if (shouldDebug) {
+      reportRuntimeDebug(path, 'runtime-api.requestJson.success', '[DEBUG] request json parsed', {
+        path,
+        method: restInit.method ?? 'GET',
+        bodyType: Array.isArray(body) ? 'array' : typeof body,
+        topLevelKeys: body && typeof body === 'object' && !Array.isArray(body)
+          ? Object.keys(body as Record<string, unknown>).slice(0, 8)
+          : [],
+      })
+    }
+    // #endregion
+    return body
+  } catch (error) {
+    // #region debug-point C:request-json-catch
+    if (shouldDebug) {
+      reportRuntimeDebug(path, 'runtime-api.requestJson.catch', '[DEBUG] request threw', {
+        path,
+        method: restInit.method ?? 'GET',
+        errorName: error instanceof Error ? error.name : typeof error,
+        errorMessage: error instanceof Error ? error.message : String(error),
+      })
+    }
+    // #endregion
+    throw error
   } finally {
     window.clearTimeout(timeoutId)
   }
@@ -426,34 +464,36 @@ export function submitWorkflow(payload: WorkflowSubmitRequest) {
   return requestJson<WorkflowAcceptedResponse>('/workflow-runs', {
     method: 'POST',
     body: JSON.stringify(payload),
+    timeoutMs: 120000,
   })
 }
 
 export function fetchLayerCatalog() {
-  return requestJson<RuntimeLayerCatalogResponse>('/layers')
+  return requestJson<RuntimeLayerCatalogResponse>('/layers', {
+    timeoutMs: 120000,
+  })
 }
 
 export function getWorkflowRun(runId: string) {
   return requestJson<WorkflowRunStatusResponse>(`/workflow-runs/${runId}`)
 }
 
+export function getWorkflowEvents(
+  runId: string,
+  options?: {
+    afterEventId?: string
+    limit?: number
+  },
+) {
+  const search = new URLSearchParams()
+  if (options?.afterEventId) search.set('after_event_id', options.afterEventId)
+  if (typeof options?.limit === 'number') search.set('limit', String(options.limit))
+  const suffix = search.toString() ? `?${search.toString()}` : ''
+  return requestJson<WorkflowEventsResponse>(`/workflow-runs/${runId}/events${suffix}`)
+}
+
 export function getWorkflowRunView(runId: string) {
   return requestJson<WorkflowRunViewResponse>(`/workflow-runs/${runId}/view`)
-}
-
-export function listWorkflowEvents(runId: string) {
-  return requestJson<WorkflowEventsResponse>(`/workflow-runs/${runId}/events`)
-}
-
-export function updateRuntimeConfig(payload: RuntimeConfigUpdateRequest) {
-  return requestJson<RuntimeConfigUpdateResponse>('/runtime/config', {
-    method: 'PATCH',
-    body: JSON.stringify(payload),
-  })
-}
-
-export function getRuntimeStatus() {
-  return requestJson<RuntimeStatusResponse>('/runtime/status')
 }
 
 export function getWeatherPoint(params: {
@@ -463,6 +503,7 @@ export function getWeatherPoint(params: {
   model?: string
   forecast_hours?: number
   place_name?: string
+  signal?: AbortSignal
 }) {
   const search = new URLSearchParams({
     layer_id: params.layer_id,
@@ -472,13 +513,8 @@ export function getWeatherPoint(params: {
   if (params.model) search.set('model', params.model)
   if (typeof params.forecast_hours === 'number') search.set('forecast_hours', String(params.forecast_hours))
   if (params.place_name) search.set('place_name', params.place_name)
-  return requestJson<WeatherPointResponse>(`/weather/point?${search.toString()}`)
-}
-
-export function submitFrontendCommand(payload: FrontendCommandRequest) {
-  return requestJson<FrontendCommandResponse>('/frontend/commands', {
-    method: 'POST',
-    body: JSON.stringify(payload),
+  return requestJson<WeatherPointResponse>(`/weather/point?${search.toString()}`, {
+    signal: params.signal,
   })
 }
 

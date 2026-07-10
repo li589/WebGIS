@@ -34,5 +34,6 @@ export const MAP_EVENT_MOVESTART = 'movestart'
 export const MAP_EVENT_MOVEEND = 'moveend'
 export const MAP_EVENT_RESIZE = 'resize'
 
-/** 最小可视 zoom 级别（所有风场图层的统一阈值） */
-export const MIN_VISIBLE_ZOOM = 3
+/** 最小可视 zoom 级别（所有风场图层的统一阈值）。
+ *  设为 0 使全球视图下也可见风场图层（粒子数量会根据 zoom 降级）。 */
+export const MIN_VISIBLE_ZOOM = 0

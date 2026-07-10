@@ -1,24 +1,23 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
 
-import type { ActiveLayerDisplay } from '../stores/layers/types'
-import type { DemoHotspot } from '../app/demo-data'
+import type { ActiveLayerDisplay, LayerHotspot } from '../stores/layers/types'
 import type { WeatherPointResponse } from '../services/runtime-api'
 import { useLayersStore } from '../stores/layers'
+import { useUiStore } from '../stores/ui'
+import IntegrationStatusPanel from './info-panel/IntegrationStatusPanel.vue'
 import { buildWeatherLegendStops, isRealtimeWeatherLayerId } from './map/weather-render'
 import { buildResultDisplayModel } from './info-panel/result-adapter'
 
 const layersStore = useLayersStore()
-void layersStore.ensureRuntimeLayerCatalog()
+const uiStore = useUiStore()
 
 const props = defineProps<{
-  viewLabel: string
   activeLayer: ActiveLayerDisplay
-  hourLabel: string
   stageLabel: string
-  visibleHotspots: DemoHotspot[]
+  visibleHotspots: LayerHotspot[]
   selectedLayer?: ActiveLayerDisplay | null
-  selectedHotspot?: DemoHotspot | null
+  selectedHotspot?: LayerHotspot | null
   isSubmitting?: boolean
   workflowError?: string | null
   pointWeather?: WeatherPointResponse | null
@@ -36,17 +35,24 @@ const displayLayer = computed(() => props.selectedLayer ?? props.activeLayer)
 const jobLayer = computed(() => displayLayer.value?.jobLayer)
 const resultModel = computed(() => buildResultDisplayModel(jobLayer.value?.resultView ?? null))
 const analysisSummary = computed(() => displayLayer.value.summary || props.activeLayer.summary)
+const jobReportSummary = computed(() => jobLayer.value?.resultView?.summary ?? jobLayer.value?.reportSummary ?? '')
 const isRealtimeWeatherLayer = computed(() => isRealtimeWeatherLayerId(displayLayer.value.catalogId))
 const weatherRenderHint = computed(
   () => jobLayer.value?.mapLayerPayload?.renderHint ?? props.pointWeather?.render_hint ?? null,
 )
 const weatherLegendStops = computed(() => (weatherRenderHint.value ? buildWeatherLegendStops(weatherRenderHint.value) : []))
 const hasWeatherLayerAsset = computed(() => !!jobLayer.value?.mapLayerPayload?.layerAssets?.geojsonUrl)
+const jobEventNotes = computed(() => jobLayer.value?.eventMessages ?? jobLayer.value?.diagnosticNotes ?? [])
+const hasWeatherStyleSection = computed(
+  () => !!weatherRenderHint.value || canToggleParticleFlow.value || isRealtimeWeatherLayer.value,
+)
+const particleFlowButtonDisabled = computed(() => !hasWeatherLayerAsset.value && !isParticleFlowEnabled.value)
 
 // 粒子流切换：仅风场变体图层显示按钮，独占式启用
 const canToggleParticleFlow = computed(() => layersStore.supportsParticleFlow(displayLayer.value.catalogId))
 const isParticleFlowEnabled = computed(() => layersStore.particleFlowCatalogId === displayLayer.value.catalogId)
 function handleToggleParticleFlow() {
+  if (particleFlowButtonDisabled.value) return
   layersStore.toggleParticleFlow(displayLayer.value.catalogId)
 }
 const hasPointWeatherSection = computed(
@@ -56,11 +62,80 @@ const hasPointWeatherSection = computed(
     !!props.pointWeather ||
     isRealtimeWeatherLayer.value,
 )
-const pointWeatherPrimaryLabel = computed(() => {
-  if (displayLayer.value.catalogId === 'wind-field') return '实时风速'
-  if (displayLayer.value.catalogId === 'precipitation') return '实时降水'
-  return '实时气温'
+
+const WEATHER_METRIC_LABELS: Record<string, string> = {
+  wind_speed_10m: '实时风速',
+  wind_speed_80m: '80m 风速',
+  wind_speed_120m: '120m 风速',
+  wind_speed_180m: '180m 风速',
+  wind_speed_850hPa: '850hPa 风速',
+  wind_speed_500hPa: '500hPa 风速',
+  wind_speed_200hPa: '200hPa 风速',
+  temperature_2m: '实时气温',
+  temperature_80m: '80m 气温',
+  temperature_120m: '120m 气温',
+  temperature_180m: '180m 气温',
+  temperature_850hPa: '850hPa 气温',
+  temperature_500hPa: '500hPa 气温',
+  temperature_200hPa: '200hPa 气温',
+  precipitation: '实时降水',
+  relative_humidity_2m: '实时湿度',
+  pressure_msl: '实时气压',
+  visibility: '实时能见度',
+}
+
+function asWeatherRecord(value: unknown): Record<string, unknown> | null {
+  return value !== null && typeof value === 'object' ? value as Record<string, unknown> : null
+}
+
+function readWeatherMetricValue(source: unknown, metricKey: string | null | undefined): number | null {
+  if (!metricKey) return null
+  const record = asWeatherRecord(source)
+  const value = record?.[metricKey]
+  return typeof value === 'number' && Number.isFinite(value) ? value : null
+}
+
+function normalizeWeatherUnit(unit: string | null | undefined): string {
+  if (unit === 'C') return '°C'
+  return unit ?? ''
+}
+
+function inferFallbackMetric(catalogId: string): string {
+  if (catalogId.startsWith('wind-field-80m')) return 'wind_speed_80m'
+  if (catalogId.startsWith('wind-field-120m')) return 'wind_speed_120m'
+  if (catalogId.startsWith('wind-field-180m')) return 'wind_speed_180m'
+  if (catalogId.startsWith('wind-field-850hPa')) return 'wind_speed_850hPa'
+  if (catalogId.startsWith('wind-field-500hPa')) return 'wind_speed_500hPa'
+  if (catalogId.startsWith('wind-field-200hPa')) return 'wind_speed_200hPa'
+  if (catalogId.startsWith('wind-field')) return 'wind_speed_10m'
+  if (catalogId.startsWith('temperature-80m')) return 'temperature_80m'
+  if (catalogId.startsWith('temperature-120m')) return 'temperature_120m'
+  if (catalogId.startsWith('temperature-180m')) return 'temperature_180m'
+  if (catalogId.startsWith('temperature')) return 'temperature_2m'
+  if (catalogId === 'precipitation') return 'precipitation'
+  if (catalogId === 'humidity') return 'relative_humidity_2m'
+  if (catalogId === 'pressure') return 'pressure_msl'
+  if (catalogId === 'visibility') return 'visibility'
+  return 'temperature_2m'
+}
+
+const pointWeatherMetric = computed(() => {
+  const metricKey =
+    props.pointWeather?.render_hint?.primary_metric
+    ?? weatherRenderHint.value?.primary_metric
+    ?? inferFallbackMetric(displayLayer.value.catalogId)
+  const unit =
+    props.pointWeather?.render_hint?.unit_label
+    ?? weatherRenderHint.value?.unit_label
+    ?? ''
+  return {
+    key: metricKey,
+    label: WEATHER_METRIC_LABELS[metricKey] ?? '实时指标',
+    unit: normalizeWeatherUnit(unit),
+  }
 })
+
+const pointWeatherPrimaryLabel = computed(() => pointWeatherMetric.value.label)
 
 // ── 元数据详情 ──────────────────────────────────────────────────────────────
 const layerMetadata = computed(() => {
@@ -115,28 +190,24 @@ const trendArrowSymbol = computed(() => {
 const pointWeatherPrimaryValue = computed(() => {
   const weather = props.pointWeather
   if (!weather) return '--'
-  if (displayLayer.value.catalogId === 'wind-field') {
-    return formatMetric(weather.current.wind_speed_10m, 'm/s')
-  }
-  if (displayLayer.value.catalogId === 'precipitation') {
-    return formatMetric(weather.current.precipitation, 'mm')
-  }
-  return formatMetric(weather.current.temperature_2m, 'C')
+  return formatMetric(
+    readWeatherMetricValue(weather.current, pointWeatherMetric.value.key),
+    pointWeatherMetric.value.unit,
+  )
 })
 const pointWeatherRows = computed(() => {
   const weather = props.pointWeather
   if (!weather) return []
+  const primaryValue = formatMetric(
+    readWeatherMetricValue(weather.current, pointWeatherMetric.value.key),
+    pointWeatherMetric.value.unit,
+  )
   return [
     { label: 'Point', value: weather.place_name ?? `${weather.latitude.toFixed(3)}, ${weather.longitude.toFixed(3)}` },
     { label: 'Model', value: weather.model },
     {
-      label: displayLayer.value.catalogId === 'wind-field' ? 'Wind' : displayLayer.value.catalogId === 'precipitation' ? 'Precipitation' : 'Temperature',
-      value:
-        displayLayer.value.catalogId === 'wind-field'
-          ? formatMetric(weather.current.wind_speed_10m, 'm/s')
-          : displayLayer.value.catalogId === 'precipitation'
-            ? formatMetric(weather.current.precipitation, 'mm')
-            : formatMetric(weather.current.temperature_2m, '°C'),
+      label: pointWeatherMetric.value.label,
+      value: primaryValue,
     },
     { label: 'Observed', value: weather.observation_time ? formatTime(weather.observation_time) : '--' },
   ]
@@ -145,19 +216,16 @@ const pointWeatherHourlyRows = computed(() => {
   const weather = props.pointWeather
   if (!weather) return []
   return weather.hourly.slice(0, 4).map((entry) => {
-    let metric = '--'
-    if (displayLayer.value.catalogId === 'wind-field') {
-      metric = formatMetric(entry.wind_speed_10m, 'm/s')
-    } else if (displayLayer.value.catalogId === 'precipitation') {
-      metric = formatMetric(entry.precipitation, 'mm')
-    } else {
-      metric = formatMetric(entry.temperature_2m, 'C')
-    }
+    const metricValue =
+      typeof entry.primary_value === 'number'
+        ? entry.primary_value
+        : readWeatherMetricValue(entry, pointWeatherMetric.value.key)
+    const metric = formatMetric(metricValue, pointWeatherMetric.value.unit)
     return {
       time: formatHour(entry.time),
       metric,
     }
-  })
+  }).filter((entry) => entry.metric !== `-- ${pointWeatherMetric.value.unit}`.trim())
 })
 const canRunWorkflow = computed(() => !displayLayer.value?.isAdminBoundary)
 const isWorkflowRunning = computed(() => jobLayer.value?.status === 'running' || jobLayer.value?.status === 'queued')
@@ -234,6 +302,33 @@ function scrollToTopSummary() {
   pendingTimers.push(t)
 }
 
+async function focusRequestedAnalysisSection(ids: string[], token: number) {
+  await nextTick()
+  let attempt = 0
+
+  const tryFocus = () => {
+    const container = analysisScrollEl.value
+    if (!container) return
+    const target = ids
+      .map((id) => container.querySelector<HTMLElement>(`#${id}`))
+      .find((element) => element !== null)
+    if (target) {
+      target.scrollIntoView({ behavior: 'smooth', block: 'start' })
+      uiStore.clearAnalysisFocusRequest(token)
+      return
+    }
+    if (attempt >= 3) {
+      uiStore.clearAnalysisFocusRequest(token)
+      return
+    }
+    attempt += 1
+    const retryTimer = window.setTimeout(tryFocus, 90)
+    pendingTimers.push(retryTimer)
+  }
+
+  tryFocus()
+}
+
 watch(
   () => displayLayer.value?.instanceId,
   (instanceId) => {
@@ -255,6 +350,14 @@ watch(
     if (props.visibleHotspots.length > 0) {
       void scrollAnalysisIntoView('#hotspot-section')
     }
+  },
+)
+
+watch(
+  () => uiStore.analysisFocusRequest,
+  (request) => {
+    if (!request) return
+    void focusRequestedAnalysisSection(request.ids, request.token)
   },
 )
 
@@ -347,8 +450,8 @@ onBeforeUnmount(() => {
             <span class="job-progress-label">{{ jobLayer.progress }}%</span>
           </div>
           <p class="job-message">{{ jobLayer.message || '作业正在处理中...' }}</p>
-          <ul v-if="jobLayer.diagnosticNotes?.length" class="job-diagnostic-list">
-            <li v-for="note in jobLayer.diagnosticNotes" :key="note" class="job-diagnostic-item">{{ note }}</li>
+          <ul v-if="jobEventNotes.length" class="job-diagnostic-list">
+            <li v-for="note in jobEventNotes" :key="note" class="job-diagnostic-item">{{ note }}</li>
           </ul>
         </div>
 
@@ -364,6 +467,26 @@ onBeforeUnmount(() => {
             <strong class="jm-value">{{ m.value }}</strong>
           </div>
         </div>
+      </section>
+
+      <section v-if="jobLayer && jobReportSummary" class="analysis-section analysis-section--report" id="report-section">
+        <div class="section-kicker">报告</div>
+        <div class="report-section-head">
+          <div>
+            <h3>工作流报告</h3>
+            <p>这里展示该图层当前任务的摘要与结果说明。</p>
+          </div>
+          <a
+            v-if="jobLayer.resultUrl"
+            class="job-result-link"
+            :href="jobLayer.resultUrl"
+            target="_blank"
+            rel="noreferrer"
+          >
+            打开结果
+          </a>
+        </div>
+        <p class="job-report-copy">{{ jobReportSummary }}</p>
       </section>
 
       <section class="analysis-section analysis-section--layer" :id="`layer-${displayLayer.instanceId || 'default'}`">
@@ -412,10 +535,10 @@ onBeforeUnmount(() => {
           </div>
         </template>
 
-        <div v-if="weatherRenderHint" class="weather-style-panel">
+        <div v-if="hasWeatherStyleSection" class="weather-style-panel">
           <div class="weather-style-head">
             <strong>图层样式</strong>
-            <span class="analysis-chip">{{ weatherRenderHint.paint_mode }}</span>
+            <span class="analysis-chip">{{ weatherRenderHint?.paint_mode ?? (canToggleParticleFlow ? 'particle_flow' : '等待产物') }}</span>
           </div>
 
           <div v-if="displayLayer.instanceId" class="weather-layer-controls">
@@ -438,7 +561,14 @@ onBeforeUnmount(() => {
               v-if="canToggleParticleFlow"
               class="particle-flow-toggle-btn"
               :class="{ active: isParticleFlowEnabled }"
-              :title="isParticleFlowEnabled ? '关闭粒子流动画，释放 Canvas 资源' : '启用粒子流动画（独占式，同时只能一个图层启用）'"
+              :disabled="particleFlowButtonDisabled"
+              :title="
+                particleFlowButtonDisabled
+                  ? '当前风场地图产物尚未就绪'
+                  : isParticleFlowEnabled
+                    ? '关闭粒子流动画，释放 Canvas 资源'
+                    : '启用粒子流动画（独占式，同时只能一个图层启用）'
+              "
               @click="handleToggleParticleFlow"
             >
               <span class="pf-icon" aria-hidden="true">≋</span>
@@ -446,13 +576,13 @@ onBeforeUnmount(() => {
             </button>
           </div>
 
-          <div class="weather-legend-row">
+          <div v-if="weatherRenderHint" class="weather-legend-row">
             <span class="weather-legend-label">图例</span>
             <span class="weather-legend-meta">
               {{ weatherRenderHint.primary_metric }} · {{ weatherRenderHint.unit_label }}
             </span>
           </div>
-          <div class="weather-legend-strip">
+          <div v-if="weatherRenderHint" class="weather-legend-strip">
             <div
               v-for="stop in weatherLegendStops"
               :key="`${stop.value}`"
@@ -465,10 +595,10 @@ onBeforeUnmount(() => {
 
           <div class="weather-style-meta">
             <span>{{ hasWeatherLayerAsset ? 'GeoJSON 已挂载' : '尚未生成地图产物' }}</span>
-            <span>默认不透明度 {{ Math.round(weatherRenderHint.opacity * 100) }}%</span>
+            <span>{{ weatherRenderHint ? `默认不透明度 ${Math.round(weatherRenderHint.opacity * 100)}%` : '等待运行结果' }}</span>
           </div>
 
-          <ul v-if="weatherRenderHint.notes.length" class="weather-note-list">
+          <ul v-if="weatherRenderHint?.notes.length" class="weather-note-list">
             <li v-for="note in weatherRenderHint.notes" :key="note">{{ note }}</li>
           </ul>
         </div>
@@ -528,18 +658,21 @@ onBeforeUnmount(() => {
     </div>
 
     <details class="protocol-details">
-      <summary>接入占位</summary>
-      <p>协议模式：{{ displayLayer.dataState === 'real' ? '真实数据' : '演示数据' }}</p>
+      <summary>接入状态</summary>
+      <p>数据阶段：{{ displayLayer.dataState === 'real' ? '真实数据' : '目录态' }}</p>
+      <p>状态标签：{{ displayLayer.statusLabel }}</p>
       <p>状态说明：{{ displayLayer.availabilityDescription }}</p>
       <p>缺失字段：{{ displayLayer.missingFieldsLabel }}</p>
     </details>
+
+    <IntegrationStatusPanel />
 
     <!-- ── 元数据详情卡片 ─────────────────────────────────────────────────── -->
     <section v-if="layerMetadata.length" class="info-card meta-card">
       <div class="info-card-head">
         <span class="info-kicker">元数据</span>
         <span class="info-card-tag" :class="{ real: displayLayer.dataState === 'real' }">
-          {{ displayLayer.dataState === 'real' ? '真实' : '演示' }}
+          {{ displayLayer.dataState === 'real' ? '真实' : '目录' }}
         </span>
       </div>
       <dl class="meta-grid">
@@ -593,10 +726,16 @@ onBeforeUnmount(() => {
 </template>
 
 <style scoped>
-.panel { display: grid; gap: 0.52rem; padding: 0.56rem 0.48rem 0.5rem; border-radius: 0.88rem; border: 1px solid rgba(148, 163, 184, 0.15); background: linear-gradient(180deg, rgba(13, 21, 36, 0.72), rgba(8, 15, 28, 0.6)); box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.03), 0 12px 26px rgba(1, 8, 16, 0.14); min-height: 100%; overflow: visible; contain: layout style; }
-.panel-topline { display: grid; gap: 0.38rem; padding: 0.12rem 0.06rem 0.02rem; }
-.panel-header { display: flex; justify-content: space-between; align-items: flex-start; gap: 0.44rem; }
-.readiness { padding: 0.16rem 0.36rem; border-radius: 999px; background: rgba(90, 162, 255, 0.16); color: #cfeaff; font-size: 0.58rem; }
+.panel { --info-card-radius: 0.82rem; --info-card-padding-y: 0.46rem; --info-card-padding-x: 0.5rem; --info-soft-gap: 0.34rem; display: grid; gap: 0.52rem; width: 100%; max-width: 100%; padding: 0.56rem 0.48rem 0.5rem; border-radius: 0.88rem; border: 1px solid rgba(148, 163, 184, 0.15); background: linear-gradient(180deg, rgba(13, 21, 36, 0.72), rgba(8, 15, 28, 0.6)); box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.03), 0 12px 26px rgba(1, 8, 16, 0.14); min-height: 100%; overflow: hidden; contain: layout style; }
+.panel,
+.panel * { box-sizing: border-box; }
+.panel > *,
+.panel :is(.panel-topline,.panel-header,.workflow-error,.workflow-stage-row,.meta-list,.meta-list > div,.analysis-stream,.analysis-section,.job-report-card,.job-report-header,.job-progress-shell,.job-progress-row,.job-steps,.job-metrics,.job-metric-item,.weather-section-head,.weather-primary-card,.weather-row-grid,.weather-row-card,.weather-hourly-strip,.weather-hourly-card,.weather-style-panel,.weather-style-head,.weather-layer-controls,.weather-legend-row,.weather-legend-strip,.weather-style-meta,.hero-metric,.insight-grid,.insight-card,.learning-note,.protocol-details,.info-card,.info-card-head,.meta-grid,.meta-grid-row,.trend-body,.trend-current,.trend-indicator,.overlay-list li,.overlay-info,.hotspot-list li,.report-section-head) { min-width: 0; }
+.panel :is(p,span,strong,dd,dt,a,button,.job-message,.job-diagnostic-item,.trend-text,.overlay-name,.run-block-hint,.error-message,.job-report-copy,.weather-legend-stop,.weather-style-meta span) { overflow-wrap: anywhere; }
+.panel-topline { display: grid; gap: 0.38rem; padding: 0.12rem 0.06rem 0.02rem; min-width: 0; }
+.panel-header { display: flex; justify-content: space-between; align-items: flex-start; gap: 0.44rem; flex-wrap: wrap; min-width: 0; }
+.panel-header > div:first-child { flex: 1 1 8rem; min-width: 0; }
+.readiness { padding: 0.16rem 0.36rem; border-radius: 999px; background: rgba(90, 162, 255, 0.16); color: #cfeaff; font-size: 0.58rem; flex: 0 1 auto; min-width: 0; max-width: 100%; align-self: flex-start; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .action-row { display: flex; justify-content: flex-start; }
 .workflow-error { display: flex; align-items: center; gap: 0.4rem; padding: 0.34rem 0.48rem; border-radius: 0.62rem; background: rgba(255, 80, 80, 0.12); border: 1px solid rgba(255, 80, 80, 0.22); color: #ff9999; font-size: 0.58rem; }
 .error-icon { font-size: 0.72rem; }
@@ -613,16 +752,19 @@ onBeforeUnmount(() => {
 .meta-list { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.28rem 0.56rem; }
 .meta-list dt { color: #7f93a9; font-size: 0.56rem; }
 .meta-list dd { margin: 0.06rem 0 0; color: #eaf3fb; font-size: 0.66rem; }
-.analysis-stream { display: grid; gap: 0.34rem; overflow: visible; scrollbar-width: thin; scrollbar-color: rgba(136,192,255,.22) rgba(255,255,255,.05); }
+.analysis-stream { display: grid; gap: var(--info-soft-gap); overflow-x: hidden; overflow-y: visible; scrollbar-width: thin; scrollbar-color: rgba(136,192,255,.22) rgba(255,255,255,.05); }
 .analysis-stream::-webkit-scrollbar { width: 4px; }
 .analysis-stream::-webkit-scrollbar-thumb { background: rgba(136,192,255,.22); border-radius: 999px; }
 .analysis-stream::-webkit-scrollbar-track { background: rgba(255,255,255,.05); }
-.analysis-section, .job-report-card { background: rgba(8, 18, 33, 0.56); border: 1px solid rgba(136, 192, 255, 0.1); border-radius: 0.82rem; padding: 0.46rem 0.5rem; }
+.analysis-section, .job-report-card { background: rgba(8, 18, 33, 0.56); border: 1px solid rgba(136, 192, 255, 0.1); border-radius: var(--info-card-radius); padding: var(--info-card-padding-y) var(--info-card-padding-x); }
 .analysis-section--overview { background: linear-gradient(180deg, rgba(12, 25, 43, 0.82), rgba(8, 18, 33, 0.62)); border-color: rgba(103, 212, 255, 0.16); }
 .analysis-section--layer { border-color: rgba(136, 192, 255, 0.14); }
 .analysis-section--weather { border-color: rgba(103, 212, 255, 0.18); background: linear-gradient(180deg, rgba(8, 23, 42, 0.78), rgba(8, 18, 33, 0.62)); }
 .analysis-section--hotspots { border-color: rgba(114, 255, 207, 0.14); }
+.analysis-section--report { border-color: rgba(126, 168, 255, 0.18); background: linear-gradient(180deg, rgba(10, 22, 39, 0.72), rgba(8, 18, 33, 0.56)); }
 .analysis-section--result { border-color: rgba(126, 168, 255, 0.16); }
+.report-section-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 0.5rem; }
+.job-report-copy { margin-top: 0.32rem !important; color: #d7e6f5 !important; }
 .analysis-section h3 { margin: 0.1rem 0 0.18rem; font-size: 0.68rem; color: #f0f7ff; }
 .analysis-section p { margin: 0; color: #9eb3c8; font-size: 0.58rem; line-height: 1.45; }
 .section-kicker { color: #7f93a9; font-size: 0.52rem; letter-spacing: 0.08em; text-transform: uppercase; }
@@ -669,6 +811,13 @@ onBeforeUnmount(() => {
   background: rgba(29, 78, 216, 0.22);
   color: #e8f3ff;
 }
+.particle-flow-toggle-btn:disabled {
+  opacity: 0.52;
+  cursor: not-allowed;
+  border-color: rgba(148, 163, 184, 0.18);
+  background: rgba(15, 23, 42, 0.3);
+  color: #8da1b7;
+}
 .particle-flow-toggle-btn.active {
   border-color: rgba(110, 200, 255, 0.7);
   background: linear-gradient(135deg, rgba(56, 189, 248, 0.32), rgba(99, 102, 241, 0.28));
@@ -690,7 +839,7 @@ onBeforeUnmount(() => {
 .weather-legend-strip { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.18rem 0.3rem; }
 .weather-legend-stop { display: flex; align-items: center; gap: 0.24rem; color: #c8dff0; font-size: 0.54rem; }
 .weather-legend-swatch { width: 0.72rem; height: 0.72rem; border-radius: 0.22rem; border: 1px solid rgba(255, 255, 255, 0.08); flex-shrink: 0; }
-.weather-style-meta { display: flex; justify-content: space-between; gap: 0.4rem; color: #7f93a9; font-size: 0.52rem; }
+.weather-style-meta { display: flex; justify-content: space-between; gap: 0.4rem; color: #7f93a9; font-size: 0.52rem; flex-wrap: wrap; }
 .weather-note-list { display: grid; gap: 0.16rem; margin: 0; padding-left: 1rem; color: #9eb3c8; font-size: 0.54rem; }
 .job-report-header { display: flex; justify-content: space-between; align-items: flex-start; gap: 0.4rem; }
 .job-report-title { color: #eaf3fb; font-size: 0.66rem; font-weight: 700; }
@@ -711,7 +860,7 @@ onBeforeUnmount(() => {
 .job-metric-item { display: grid; gap: 0.06rem; padding: 0.28rem 0.34rem; border-radius: 0.56rem; background: rgba(148, 163, 184, 0.08); }
 .jm-label { color: #7f93a9; font-size: 0.54rem; }
 .jm-value { color: #edf6ff; font-size: 0.62rem; margin: 0; }
-.hero-metric, .insight-card, .learning-note, .protocol-details { border-radius: 0.82rem; background: rgba(8, 18, 33, 0.56); border: 1px solid rgba(136, 192, 255, 0.1); padding: 0.5rem 0.56rem; }
+.hero-metric, .insight-card, .learning-note, .protocol-details { border-radius: var(--info-card-radius); background: rgba(8, 18, 33, 0.56); border: 1px solid rgba(136, 192, 255, 0.1); padding: 0.5rem 0.56rem; }
 .hero-metric span, .insight-card span { color: #7f93a9; font-size: 0.56rem; }
 .hero-metric strong { display: block; font-size: 0.96rem; color: #f4fbff; }
 .hero-metric p { margin: 0.16rem 0 0; color: #8ea3b8; font-size: 0.56rem; }
@@ -726,7 +875,7 @@ onBeforeUnmount(() => {
 .job-result-link { color: #5ad5ff; font-size: 0.58rem; text-decoration: none; }
 
 /* ── 增强信息展示：元数据 / 历史对比 / 叠加分析 ─────────────────────────── */
-.info-card { display: grid; gap: 0.32rem; padding: 0.46rem 0.5rem; border-radius: 0.82rem; background: rgba(8, 18, 33, 0.56); border: 1px solid rgba(136, 192, 255, 0.1); }
+.info-card { display: grid; gap: 0.32rem; padding: var(--info-card-padding-y) var(--info-card-padding-x); border-radius: var(--info-card-radius); background: rgba(8, 18, 33, 0.56); border: 1px solid rgba(136, 192, 255, 0.1); }
 .info-card-head { display: flex; justify-content: space-between; align-items: center; gap: 0.4rem; }
 .info-kicker { color: #7f93a9; font-size: 0.52rem; letter-spacing: 0.08em; text-transform: uppercase; }
 .info-card-tag { padding: 0.12rem 0.34rem; border-radius: 999px; background: rgba(148, 163, 184, 0.12); color: #bfd3e6; font-size: 0.52rem; }
@@ -763,4 +912,23 @@ onBeforeUnmount(() => {
 .overlay-state.state-ready { background: rgba(114, 255, 207, 0.12); color: #9ff8cf; }
 .overlay-state.state-partial { background: rgba(255, 196, 120, 0.12); color: #ffd38a; }
 .overlay-state.state-empty { background: rgba(148, 163, 184, 0.12); color: #b6c9da; }
+@media (max-width: 560px) {
+  .meta-list,
+  .weather-row-grid,
+  .job-metrics,
+  .meta-grid,
+  .insight-grid,
+  .weather-hourly-strip {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .weather-section-head,
+  .job-report-header,
+  .report-section-head,
+  .info-card-head,
+  .trend-body {
+    grid-template-columns: minmax(0, 1fr);
+    display: grid;
+  }
+}
 </style>

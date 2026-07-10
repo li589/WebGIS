@@ -1,39 +1,24 @@
 /**
- * 风场粒子流动画 — WebGL2 渲染。
+ * 风场粒子流动画 — Canvas 2D 渲染。
  *
- * 迁移自 Canvas 2D 版本，核心改进：
- *   1. 全 GPU 渲染：粒子拖尾用 GL_LINES 批量绘制，单次 drawArrays 调用
- *   2. 零合成开销：粒子 canvas 使用与 MapLibre 相同的 WebGL 上下文，
- *      直接共享 GPU 硬件加速，无 Canvas 2D / WebGL 跨上下文合成开销
- *   3. 粒子存储经纬度 + canvas内像素prev坐标，GPU 自动完成坐标变换
- *   4. 预解析颜色 RGB，避免每帧字符串解析
- *   5. 帧率节流到 30fps，给 maplibre 留出渲染空间
+ * 使用粒子追踪方式可视化风场向量场：
+ *   1. 大量粒子在网格中随机分布，跟随风向移动
+ *   2. Canvas 2D 天然支持轨迹累积（fillRect 淡化旧轨迹）
+ *   3. 粒子颜色按风速分级，拖尾长度反映风速大小
+ *   4. 帧率节流到 30fps，给 maplibre 留出渲染空间
  */
 import type { Map as MaplibreMap } from 'maplibre-gl'
 import type { WindGeoJSON } from './types'
-import { DEFAULT_HEIGHT_SUFFIX, MAP_EVENT_MOVESTART, MAP_EVENT_MOVEEND, MAP_EVENT_RESIZE } from './types'
-import {
-  createProgram,
-  createDynamicFloat32Buffer,
-  updateBufferData,
-  buildGeoToNdc,
-  computeCanvasLayout,
-  WebGLCanvas,
-} from './webgl-utils'
+import { DEFAULT_HEIGHT_SUFFIX, MAP_EVENT_MOVE, MAP_EVENT_MOVESTART, MAP_EVENT_MOVEEND, MAP_EVENT_RESIZE, MIN_VISIBLE_ZOOM } from './types'
+import { computeCanvasLayout, type CanvasLayout } from './canvas-utils'
 
 // ── 渲染参数常量 ─────────────────────────────────────────
-
-/** 粒子轨迹尾端透明度（使拖尾起点更淡） */
-const PARTICLE_TRAIL_TAIL_ALPHA = 0.2
 
 /** 弧度转换常数（Math.PI / 180） */
 const DEG_TO_RAD = Math.PI / 180
 
 /** 气象风向偏移量：气象风向是风来向，需加 180° 转为数学风向（风去向） */
 const WIND_DIRECTION_OFFSET = 180
-
-/** 粒子尖端最大透明度（新生粒子） */
-const PARTICLE_HEAD_MAX_ALPHA = 0.9
 
 /** 节流帧间隔，约 30fps（ms） */
 const TARGET_FRAME_INTERVAL_MS = 33
@@ -44,33 +29,49 @@ const MS_PER_60FPS_FRAME = 1000 / 60
 /** dt 归一化上界（防止标签页失焦后恢复时粒子跳帧） */
 const MAX_DT_FRAMES = 4
 
-/** 拖尾衰减透明度上界（防止完全不透明） */
-const TRAIL_FADE_MAX_ALPHA = 0.15
-
 /** 视口剔除边距（像素），使边缘粒子不突然消失 */
 const VIEWPORT_CULLING_MARGIN_PX = 10
 
 /** 拖尾长度限制（像素），防止跳帧时线段过长 */
-const MAX_TRAIL_LENGTH_PX = 50
+const MAX_TRAIL_LENGTH_PX = 80
 
 /** 粒子数变化触发重初始化的阈值（25%） */
 const PARTICLE_COUNT_CHANGE_THRESHOLD = 0.25
 
-/** 粒子默认配置 */
+/** 每个粒子的轨迹历史长度（点数），越大曲线越长越平滑 */
+const TRAIL_LENGTH = 20
+
+/** 粒子默认配置（稀疏柔和风格：少量粒子 + 慢速流动 + 细线） */
 const DEFAULT_PARTICLE_OPTIONS = {
-  particleCount: 300,
-  maxAge: 50,
-  speedScale: 0.00012,
-  fadeAlpha: 0.025,
-  lineWidth: 1.6,
+  particleCount: 1500,
+  maxAge: 60,
+  speedScale: 0.008,
+  fadeAlpha: 0.028,
+  lineWidth: 1.0,
 } as const
 
-/** 粒子数 LOD 配置：{ 低于此 zoom: 粒子数 }，最后一项无 zoomThreshold 作为默认 */
-const PARTICLE_COUNT_LOD: { zoomThreshold?: number; count: number }[] = [
-  { zoomThreshold: 4, count: 150 },
-  { zoomThreshold: 7, count: 300 },
-  { count: 500 },
-]
+/** 粒子数量上限（防止过大网格导致性能问题） */
+const MAX_PARTICLE_COUNT = 4000
+
+/** 粒子数量下限 */
+const MIN_PARTICLE_COUNT = 500
+
+/** DPI 上限（防止超高分屏幕创建过大 canvas） */
+const MAX_PIXEL_RATIO = 2
+
+/** zoomFactor 上限，防止低缩放级别下粒子速度过快导致视觉混乱（线条抽搐） */
+const MAX_ZOOM_FACTOR = 4
+
+/**
+ * 根据网格面积动态计算粒子数量。
+ * 面积越大粒子越多，但受上限约束。
+ * 密度约为每平方度 7 个粒子，保持稀疏柔和的视觉效果。
+ */
+function computeParticleCountForGrid(grid: WindGrid): number {
+  const area = Math.abs(grid.north - grid.south) * Math.abs(grid.east - grid.west)
+  const count = Math.round(area * 7)
+  return Math.min(MAX_PARTICLE_COUNT, Math.max(MIN_PARTICLE_COUNT, count))
+}
 
 /** 粒子寿命随机上界增量（使寿命有随机分布） */
 const MAX_AGE_RANDOM_RANGE = 20
@@ -137,27 +138,34 @@ function speedToColorIndex(speed: number, stops: number[]): { idx: number; t: nu
 }
 
 function windToUV(speed: number, directionDeg: number): [number, number] {
+  // 气象风向是风来向，加 180° 转为风去向 θ
+  // u = speed * sin(θ)（东为正），v = speed * cos(θ)（北为正）
   const rad = (directionDeg + WIND_DIRECTION_OFFSET) * DEG_TO_RAD
   const u = speed * Math.sin(rad)
-  const v = -speed * Math.cos(rad)
+  const v = speed * Math.cos(rad)
   return [u, v]
 }
 
 // ── GeoJSON → 风场网格 ──────────────────────────────────
 
+/** 经纬度量化精度（0.001°，约 100m），用于合并浮点误差导致的微小差异 */
+const GRID_COORD_QUANTIZE_FACTOR = 1000
+
 function buildWindGridFromGeoJSON(geojson: WindGeoJSON): WindGrid | null {
   const features = geojson?.features || []
   if (features.length === 0) return null
-
-  let maxRow = 0, maxCol = 0
-  let minLat = Infinity, maxLat = -Infinity
-  let minLon = Infinity, maxLon = -Infinity
-  const pointMap = new Map<string, WindGridPoint>()
 
   const firstProps = features[0]?.properties || {}
   const heightSuffix: string = firstProps.height ?? DEFAULT_HEIGHT_SUFFIX
   const speedKey = `wind_speed_${heightSuffix}`
   const directionKey = `wind_direction_${heightSuffix}`
+
+  // 收集所有点的数据和量化后的唯一经纬度
+  // 不依赖后端的 row/col 属性 —— 多瓦片合并时各瓦片的 row/col 是相对内部的，会互相冲突覆盖
+  interface RawPoint { lat: number; lon: number; speed: number; direction: number }
+  const rawPoints: RawPoint[] = []
+  const latQuantSet = new Set<number>()
+  const lonQuantSet = new Set<number>()
 
   for (const f of features) {
     const coords = f.geometry?.coordinates
@@ -165,38 +173,68 @@ function buildWindGridFromGeoJSON(geojson: WindGeoJSON): WindGrid | null {
     const lon = coords[0]
     const lat = coords[1]
     const props = f.properties || {}
-    const row = props.row ?? 0
-    const col = props.col ?? 0
-    maxRow = Math.max(maxRow, row)
-    maxCol = Math.max(maxCol, col)
-    minLat = Math.min(minLat, lat)
-    maxLat = Math.max(maxLat, lat)
-    minLon = Math.min(minLon, lon)
-    maxLon = Math.max(maxLon, lon)
     const speed = (props[speedKey] ?? props.wind_speed_10m ?? 0) as number
     const direction = (props[directionKey] ?? props.wind_direction_10m ?? 0) as number
-    pointMap.set(`${row}:${col}`, { lat, lon, speed, direction })
+    rawPoints.push({ lat, lon, speed, direction })
+    latQuantSet.add(Math.round(lat * GRID_COORD_QUANTIZE_FACTOR))
+    lonQuantSet.add(Math.round(lon * GRID_COORD_QUANTIZE_FACTOR))
   }
 
-  const rows = maxRow + 1
-  const cols = maxCol + 1
+  if (rawPoints.length === 0) return null
+
+  // 排序：lat 降序（北→南，row 0 = 最北），lon 升序（西→东，col 0 = 最西）
+  const sortedLats = Array.from(latQuantSet).sort((a, b) => b - a)
+  const sortedLons = Array.from(lonQuantSet).sort((a, b) => a - b)
+  const rows = sortedLats.length
+  const cols = sortedLons.length
   if (rows < 2 || cols < 2) return null
 
+  // 量化值 → 网格索引映射
+  const latIndex = new Map<number, number>()
+  sortedLats.forEach((q, i) => latIndex.set(q, i))
+  const lonIndex = new Map<number, number>()
+  sortedLons.forEach((q, i) => lonIndex.set(q, i))
+
+  // 构建二维网格，缺失点填默认值（多瓦片合并时边缘区域可能没有数据）
   const points: WindGridPoint[][] = []
   for (let r = 0; r < rows; r++) {
     points[r] = []
     for (let c = 0; c < cols; c++) {
-      points[r][c] = pointMap.get(`${r}:${c}`) || { lat: 0, lon: 0, speed: 0, direction: 0 }
+      points[r][c] = {
+        lat: sortedLats[r] / GRID_COORD_QUANTIZE_FACTOR,
+        lon: sortedLons[c] / GRID_COORD_QUANTIZE_FACTOR,
+        speed: 0,
+        direction: 0,
+      }
     }
   }
+  for (const p of rawPoints) {
+    const r = latIndex.get(Math.round(p.lat * GRID_COORD_QUANTIZE_FACTOR))!
+    const c = lonIndex.get(Math.round(p.lon * GRID_COORD_QUANTIZE_FACTOR))!
+    points[r][c] = { lat: p.lat, lon: p.lon, speed: p.speed, direction: p.direction }
+  }
 
-  return { rows, cols, south: minLat, north: maxLat, west: minLon, east: maxLon, points }
+  const south = sortedLats[rows - 1] / GRID_COORD_QUANTIZE_FACTOR
+  const north = sortedLats[0] / GRID_COORD_QUANTIZE_FACTOR
+  const west = sortedLons[0] / GRID_COORD_QUANTIZE_FACTOR
+  const east = sortedLons[cols - 1] / GRID_COORD_QUANTIZE_FACTOR
+
+  // [WindParticle] 调试：打印网格构建结果
+  const sampleSpeeds = points.flat().slice(0, 5).map(p => p.speed.toFixed(1))
+  console.log(
+    '[WindParticle] buildWindGridFromGeoJSON: rows=%d cols=%d bounds=[%.4f,%.4f,%.4f,%.4f] points=%d height=%s',
+    rows, cols, west, south, east, north, rawPoints.length, heightSuffix,
+  )
+
+  return { rows, cols, south, north, west, east, points }
 }
 
 function interpolateWind(grid: WindGrid, lat: number, lon: number): WindGridPoint {
   const { rows, cols, south, north, west, east, points } = grid
   const clampedLat = Math.max(south, Math.min(north, lat))
   const clampedLon = Math.max(west, Math.min(east, lon))
+  // buildWindGridFromGeoJSON 按 lat 降序排序（row 0 = 最北，row rows-1 = 最南）
+  // 所以 fy 应该用 (north - lat) / (north - south)
   const fy = ((north - clampedLat) / (north - south)) * (rows - 1)
   const fx = ((clampedLon - west) / (east - west)) * (cols - 1)
   const r0 = Math.floor(fy)
@@ -227,82 +265,13 @@ function interpolateWind(grid: WindGrid, lat: number, lon: number): WindGridPoin
   return { lat: clampedLat, lon: clampedLon, speed, direction }
 }
 
-// ── WebGL 着色器 ─────────────────────────────────────────
-
-/** 粒子顶点着色器：
- * 每帧接收粒子状态（经纬度 + canvas内prev坐标 + 年龄），
- * GPU 自动完成坐标变换：经纬度→NDC，prev像素→NDC。
- * 输出 prev→cur 线段的两个端点坐标和 alpha。
- *
- * 布局（每顶点 7 个 float）：
- *   0: lat, 1: lon, 2: prevX, 3: prevY, 4: age, 5: maxAge, 6: vertexType(0=prev, 1=cur)
- */
-/**
- * 返回粒子顶点着色器源码。
- * 透明度阈值通过参数注入，使 TypeScript 能追踪常量引用。
- */
-function makeParticleVertSrc(trailTailAlpha: number, particleHeadMaxAlpha: number): string {
-  return `#version 300 es
-precision highp float;
-
-layout(location = 0) in float a_lat;
-layout(location = 1) in float a_lon;
-layout(location = 2) in float a_prevX;
-layout(location = 3) in float a_prevY;
-layout(location = 4) in float a_age;
-layout(location = 5) in float a_maxAge;
-layout(location = 6) in float a_vertexType; // 0=prev, 1=cur
-
-uniform mat3 u_geoToNdc;
-uniform vec2 u_resolution;
-
-out float v_alpha;
-out vec3 v_color;
-
-void main() {
-  // 当前点（经纬度→NDC）
-  vec3 curNdc = u_geoToNdc * vec3(a_lon, a_lat, 1.0);
-  // 上一帧点（像素→NDC）
-  vec2 prevNdc = vec2(a_prevX / u_resolution.x * 2.0 - 1.0,
-                      1.0 - a_prevY / u_resolution.y * 2.0);
-
-  // 根据顶点类型选择输出位置
-  if (a_vertexType < 0.5) {
-    gl_Position = vec4(prevNdc, 0.0, 1.0);
-    v_alpha = ${trailTailAlpha};
-  } else {
-    gl_Position = vec4(curNdc.xy, 0.0, 1.0);
-    float lifeRatio = clamp(a_age / max(a_maxAge, 1.0), 0.0, 1.0);
-    v_alpha = mix(${particleHeadMaxAlpha}, 0.0, lifeRatio);
-  }
-
-  // 颜色由 JS 侧通过 uniform 传入，这里用占位值
-  v_color = vec3(0.3, 0.7, 1.0);
-}
-`
-}
-
-const FRAG_SRC = `#version 300 es
-precision highp float;
-
-in float v_alpha;
-in vec3 v_color;
-uniform vec4 u_color;
-
-out vec4 fragColor;
-
-void main() {
-  fragColor = vec4(u_color.rgb, u_color.a * v_alpha);
-}
-`
-
-// ── 粒子数据结构（CPU 端） ───────────────────────────────
+// ── 粒子数据结构 ─────────────────────────────────────────
 
 interface Particle {
   lat: number
   lon: number
-  prevX: number
-  prevY: number
+  /** 轨迹历史，canvas 坐标对 [x0,y0, x1,y1, ...]，最新点在末尾 */
+  trail: number[]
   age: number
   maxAge: number
 }
@@ -311,8 +280,10 @@ interface Particle {
 
 export class WindParticleCanvas {
   private map: MaplibreMap
-  private glCanvas: WebGLCanvas
-  private gl: WebGL2RenderingContext
+  private canvas: HTMLCanvasElement
+  private ctx: CanvasRenderingContext2D
+  private pixelRatio: number
+  private layout: CanvasLayout = { width: 0, height: 0, offsetX: 0, offsetY: 0, lonWrapOffset: 0 }
   private grid: WindGrid | null = null
   private particles: Particle[] = []
   private rafId: number | null = null
@@ -320,17 +291,16 @@ export class WindParticleCanvas {
   private resizeObserver: ResizeObserver | null = null
   private movestartHandler: (() => void) | null = null
   private moveendHandler: (() => void) | null = null
+  private moveHandler: (() => void) | null = null
   private resizeHandler: (() => void) | null = null
+  private moveRafId: number | null = null
   private isMapInteracting = false
   private lastDrawTime = 0
   private lastParticleZoom = 0
+  /** 经度 wrap 偏移量（来自 computeCanvasLayout），用于将粒子经度投影到可见世界副本 */
+  private lonWrapOffset = 0
 
-  // WebGL 资源
-  private program!: WebGLProgram
-  private vertexBuffer!: WebGLBuffer
-  // 每个粒子对应 2 个顶点（prev + cur），每顶点 7 个 float
-  private readonly stride = 7 * 4
-
+  /** 预解析的颜色 RGB 数组（避免每帧字符串解析） */
   private colorRgbCache: [number, number, number][] = []
 
   constructor(map: MaplibreMap, geojson: WindGeoJSON, options?: WindParticleOptions) {
@@ -345,11 +315,23 @@ export class WindParticleCanvas {
       colorStops: options?.colorStops ?? DEFAULT_WIND_SPEED_STOPS,
     }
 
-    this.glCanvas = new WebGLCanvas(map)
-    this.gl = this.glCanvas.gl
-    this.colorRgbCache = this.options.colors.map(hexToRgb)
+    this.pixelRatio = Math.min(window.devicePixelRatio, MAX_PIXEL_RATIO)
 
-    this.initWebGL()
+    // 创建 Canvas 2D 叠加层
+    this.canvas = document.createElement('canvas')
+    this.canvas.style.position = 'absolute'
+    this.canvas.style.top = '0'
+    this.canvas.style.left = '0'
+    this.canvas.style.pointerEvents = 'none'
+    this.canvas.className = 'wind-particle-canvas'
+    this.canvas.style.zIndex = '5'
+    map.getContainer().appendChild(this.canvas)
+
+    const ctx = this.canvas.getContext('2d', { alpha: true })
+    if (!ctx) throw new Error('Canvas 2D context not available')
+    this.ctx = ctx
+
+    this.colorRgbCache = this.options.colors.map(hexToRgb)
 
     this.grid = buildWindGridFromGeoJSON(geojson)
     this.updateCanvasBounds()
@@ -364,22 +346,48 @@ export class WindParticleCanvas {
     this.resizeObserver.observe(map.getContainer())
   }
 
-  private initWebGL(): void {
-    const gl = this.gl
-    this.program = createProgram(gl, makeParticleVertSrc(PARTICLE_TRAIL_TAIL_ALPHA, PARTICLE_HEAD_MAX_ALPHA), FRAG_SRC)
-    this.vertexBuffer = createDynamicFloat32Buffer(gl)
-
-    gl.enable(gl.BLEND)
-    gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA)
-  }
-
   private setupMapEvents(): void {
     this.movestartHandler = () => {
       this.isMapInteracting = true
+      // 缩放/平移开始时立即清除画布，防止动画期间旧尺寸的轨迹残留（旧 canvas 位置/大小已不匹配新视图）
+      this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height)
+    }
+    this.moveHandler = () => {
+      // 用独立的 rAF 节流，避免与 animate 循环的 rafId 冲突
+      if (this.moveRafId !== null) return
+      this.moveRafId = requestAnimationFrame(() => {
+        this.moveRafId = null
+        if (!this.isMapInteracting || !this.grid) return
+        // 平移/缩放期间持续更新 canvas 位置，使粒子跟随地图移动
+        this.updateCanvasBounds()
+        // 重新投影粒子到新位置（只保留最后一个点，避免轨迹拉伸）
+        const { offsetX, offsetY } = this.layout
+        const dpr = this.pixelRatio
+        for (const p of this.particles) {
+          const screen = this.map.project([p.lon + this.lonWrapOffset, p.lat])
+          const x = (screen.x - offsetX) * dpr
+          const y = (screen.y - offsetY) * dpr
+          p.trail = [x, y]
+        }
+        this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height)
+      })
     }
     this.moveendHandler = () => {
       this.isMapInteracting = false
       this.updateCanvasBounds()
+      // 地图交互结束后清除 canvas，避免旧位置的轨迹残留
+      this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height)
+      // 重置所有粒子的轨迹，避免跨帧拖尾跳变
+      if (this.grid) {
+        const { offsetX, offsetY } = this.layout
+        const dpr = this.pixelRatio
+        for (const p of this.particles) {
+          const screen = this.map.project([p.lon + this.lonWrapOffset, p.lat])
+          const x = (screen.x - offsetX) * dpr
+          const y = (screen.y - offsetY) * dpr
+          p.trail = [x, y]
+        }
+      }
       const zoom = this.map.getZoom()
       const targetCount = this.resolveParticleCountForZoom(zoom)
       const currentCount = this.particles.length
@@ -395,6 +403,7 @@ export class WindParticleCanvas {
     this.resizeHandler = () => this.updateCanvasBounds()
 
     this.map.on(MAP_EVENT_MOVESTART, this.movestartHandler)
+    this.map.on(MAP_EVENT_MOVE, this.moveHandler)
     this.map.on(MAP_EVENT_MOVEEND, this.moveendHandler)
     this.map.on(MAP_EVENT_RESIZE, this.resizeHandler)
   }
@@ -402,64 +411,119 @@ export class WindParticleCanvas {
   private updateCanvasBounds(): void {
     if (!this.grid) {
       const container = this.map.getContainer()
-      this.glCanvas.layout = {
+      this.layout = {
         width: container.clientWidth,
         height: container.clientHeight,
         offsetX: 0,
         offsetY: 0,
+        lonWrapOffset: 0,
       }
-      this.glCanvas.resize()
+      this.lonWrapOffset = 0
+      this.resizeCanvas()
       return
     }
-    const layout = computeCanvasLayout(
+    this.layout = computeCanvasLayout(
       this.map,
       this.grid.west,
       this.grid.east,
       this.grid.south,
       this.grid.north,
     )
-    this.glCanvas.layout = layout
-    this.glCanvas.resize()
+    // 同步 lonWrapOffset，供 initParticles/resetParticle/draw 中的 project 调用使用
+    this.lonWrapOffset = this.layout.lonWrapOffset
+    this.resizeCanvas()
+  }
+
+  private resizeCanvas(): void {
+    const { width, height, offsetX, offsetY } = this.layout
+    const dpr = this.pixelRatio
+    this.canvas.width = Math.round(width * dpr)
+    this.canvas.height = Math.round(height * dpr)
+    this.canvas.style.width = `${width}px`
+    this.canvas.style.height = `${height}px`
+    this.canvas.style.left = `${offsetX}px`
+    this.canvas.style.top = `${offsetY}px`
+    // 清除画布（尺寸变化后内容已失效）
+    this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height)
   }
 
   private resolveParticleCountForZoom(zoom: number): number {
-    for (const level of PARTICLE_COUNT_LOD) {
-      if ('zoomThreshold' in level && level.zoomThreshold !== undefined && zoom < level.zoomThreshold) {
-        return level.count
-      }
+    if (!this.grid) return DEFAULT_PARTICLE_OPTIONS.particleCount
+    const baseCount = computeParticleCountForGrid(this.grid)
+    // 低缩放级别降级粒子数量，避免全球视图下视觉混乱和性能下降
+    if (zoom < 2) return Math.min(baseCount, 200)
+    if (zoom < 3) return Math.min(baseCount, 500)
+    return baseCount
+  }
+
+  private createRandomParticle(): Particle {
+    const { south, north, west, east } = this.grid!
+    const { offsetX, offsetY } = this.layout
+    const dpr = this.pixelRatio
+    const lat = south + Math.random() * (north - south)
+    const lon = west + Math.random() * (east - west)
+    const screen = this.map.project([lon + this.lonWrapOffset, lat])
+    const x = (screen.x - offsetX) * dpr
+    const y = (screen.y - offsetY) * dpr
+    return {
+      lat,
+      lon,
+      trail: [x, y],
+      age: Math.floor(Math.random() * this.options.maxAge),
+      maxAge: this.options.maxAge + Math.floor(Math.random() * MAX_AGE_RANDOM_RANGE),
     }
-    return PARTICLE_COUNT_LOD[PARTICLE_COUNT_LOD.length - 1].count
   }
 
   private initParticles(): void {
     if (!this.grid) return
-    const { south, north, west, east } = this.grid
-    const { offsetX, offsetY } = this.glCanvas.layout
+    const targetCount = this.resolveParticleCountForZoom(this.map.getZoom())
+    this.options.particleCount = targetCount
     this.particles = []
-    for (let i = 0; i < this.options.particleCount; i++) {
-      const lat = south + Math.random() * (north - south)
-      const lon = west + Math.random() * (east - west)
-      const screen = this.map.project([lon, lat])
-      this.particles.push({
-        lat,
-        lon,
-        prevX: screen.x - offsetX,
-        prevY: screen.y - offsetY,
-        age: Math.floor(Math.random() * this.options.maxAge),
-        maxAge: this.options.maxAge + Math.floor(Math.random() * MAX_AGE_RANDOM_RANGE),
-      })
+    for (let i = 0; i < targetCount; i++) {
+      this.particles.push(this.createRandomParticle())
     }
+    const { south, north, west, east } = this.grid
+    const { offsetX, offsetY } = this.layout
+    console.log(
+      '[WindParticle] initParticles: count=%d grid_bounds=[%.4f,%.4f,%.4f,%.4f] zoom=%.2f canvas=%dx%d offset=(%d,%d)',
+      this.particles.length, west, south, east, north,
+      this.map.getZoom(), this.layout.width, this.layout.height,
+      offsetX, offsetY,
+    )
+  }
+
+  /** 渐进更新粒子：保留重叠区域粒子，仅重置区域外粒子，调整粒子数量 */
+  private progressiveUpdateParticles(targetCount: number): void {
+    if (!this.grid) return
+    const { south, north, west, east } = this.grid
+    // 重置超出新网格范围的粒子
+    for (const p of this.particles) {
+      if (p.lat < south || p.lat > north || p.lon < west || p.lon > east) {
+        this.resetParticle(p)
+      }
+    }
+    // 调整粒子数量
+    if (this.particles.length < targetCount) {
+      while (this.particles.length < targetCount) {
+        this.particles.push(this.createRandomParticle())
+      }
+    } else if (this.particles.length > targetCount) {
+      this.particles.length = targetCount
+    }
+    this.options.particleCount = targetCount
   }
 
   private resetParticle(p: Particle): void {
     if (!this.grid) return
     const { south, north, west, east } = this.grid
-    const { offsetX, offsetY } = this.glCanvas.layout
+    const { offsetX, offsetY } = this.layout
+    const dpr = this.pixelRatio
     p.lat = south + Math.random() * (north - south)
     p.lon = west + Math.random() * (east - west)
-    const screen = this.map.project([p.lon, p.lat])
-    p.prevX = screen.x - offsetX
-    p.prevY = screen.y - offsetY
+    const screen = this.map.project([p.lon + this.lonWrapOffset, p.lat])
+    const x = (screen.x - offsetX) * dpr
+    const y = (screen.y - offsetY) * dpr
+    p.trail = [x, y]
     p.age = 0
   }
 
@@ -488,29 +552,48 @@ export class WindParticleCanvas {
   }
 
   private draw(dt: number): void {
-    const gl = this.gl
-    const { width, height, offsetX, offsetY } = this.glCanvas.layout
-    const { fadeAlpha, speedScale, colorStops } = this.options
+    const ctx = this.ctx
+    const dpr = this.pixelRatio
+    const { width, height, offsetX, offsetY } = this.layout
+    const { fadeAlpha, speedScale, colorStops, lineWidth } = this.options
     const grid = this.grid!
-    const scaledSpeed = speedScale * dt
     const project = this.map.project.bind(this.map)
 
-    // 构建经纬度→NDC 变换
-    const geoToNdc = buildGeoToNdc(width, height, offsetX, offsetY)
+    // 低缩放级别下隐藏粒子流（风场数据仅覆盖局部区域，全球视图下粒子流无意义且视觉混乱）
+    // 与 WindBarbLayer / WindContourLayer 的 MIN_VISIBLE_ZOOM 保持一致
+    const zoom = this.map.getZoom()
+    if (zoom < MIN_VISIBLE_ZOOM) {
+      this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height)
+      return
+    }
 
-    // 拖尾衰减：先画半透明黑色背景
-    gl.clearColor(0, 0, 0, 0)
-    gl.clear(gl.COLOR_BUFFER_BIT)
-    gl.enable(gl.BLEND)
-    gl.blendFunc(gl.ONE, gl.ZERO)
-    gl.clearColor(0, 0, 0, Math.min(fadeAlpha * dt, TRAIL_FADE_MAX_ALPHA))
-    gl.clear(gl.COLOR_BUFFER_BIT)
-    gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA)
+    // 根据缩放级别动态调整速度比例：低 zoom 时粒子经纬度移动量需更大
+    // 使用更温和的指数（5-zoom 而非 6-zoom），配合 MAX_ZOOM_FACTOR=4 防止低 zoom 时速度过快导致线条抽搐
+    const zoomFactor = Math.min(Math.pow(2, 5 - zoom), MAX_ZOOM_FACTOR)
+    const scaledSpeed = speedScale * zoomFactor * dt
 
-    // 收集有效粒子到顶点缓冲区
-    const stride = this.stride
-    const vertexData = new Float32Array(this.particles.length * 2 * 7)
-    let vertexCount = 0
+    // === 1. 拖尾衰减：destination-out 模式淡化旧轨迹 ===
+    ctx.globalCompositeOperation = 'destination-out'
+    ctx.globalAlpha = Math.min(fadeAlpha * dt, 0.15)
+    ctx.fillStyle = '#000'
+    ctx.fillRect(0, 0, this.canvas.width, this.canvas.height)
+
+    // === 2. 更新粒子位置 & 收集轨迹到颜色分组 ===
+    ctx.globalCompositeOperation = 'source-over'
+    ctx.lineWidth = lineWidth * dpr
+    ctx.lineCap = 'round'
+    ctx.lineJoin = 'round'
+
+    const w = width * dpr
+    const h = height * dpr
+    const maxTrailPoints = TRAIL_LENGTH * 2
+
+    // 每个颜色分组收集粒子轨迹的多段子路径
+    // subpaths: [len0, x0,y0,x1,y1..., len1, x0,y0,...]
+    const colorSubpaths: number[][] = []
+    for (let i = 0; i < this.colorRgbCache.length - 1; i++) {
+      colorSubpaths.push([])
+    }
 
     for (const p of this.particles) {
       const wind = interpolateWind(grid, p.lat, p.lon)
@@ -529,117 +612,82 @@ export class WindParticleCanvas {
         continue
       }
 
-      const screen = project([p.lon, p.lat])
-      const cx = screen.x - offsetX
-      const cy = screen.y - offsetY
+      const screen = project([p.lon + this.lonWrapOffset, p.lat])
+      const cx = (screen.x - offsetX) * dpr
+      const cy = (screen.y - offsetY) * dpr
 
       // 视口剔除
-      if (cx < -VIEWPORT_CULLING_MARGIN_PX || cx > width + VIEWPORT_CULLING_MARGIN_PX || cy < -VIEWPORT_CULLING_MARGIN_PX || cy > height + VIEWPORT_CULLING_MARGIN_PX) {
-        p.prevX = cx
-        p.prevY = cy
+      if (cx < -VIEWPORT_CULLING_MARGIN_PX || cx > w + VIEWPORT_CULLING_MARGIN_PX ||
+          cy < -VIEWPORT_CULLING_MARGIN_PX || cy > h + VIEWPORT_CULLING_MARGIN_PX) {
+        p.trail = [cx, cy]
         continue
       }
 
-      // 拖尾长度限制
-      const dx = cx - p.prevX
-      const dy = cy - p.prevY
-      if (Math.abs(dx) > MAX_TRAIL_LENGTH_PX || Math.abs(dy) > MAX_TRAIL_LENGTH_PX) {
-        p.prevX = cx
-        p.prevY = cy
-        continue
-      }
-
-      p.prevX = cx
-      p.prevY = cy
-
-      // 每粒子 2 个顶点：prev (vtype=0) + cur (vtype=1)
-      const base = vertexCount * stride
-      // prev
-      vertexData[base + 0] = p.lat
-      vertexData[base + 1] = p.lon
-      vertexData[base + 2] = p.prevX
-      vertexData[base + 3] = p.prevY
-      vertexData[base + 4] = p.age
-      vertexData[base + 5] = p.maxAge
-      vertexData[base + 6] = 0
-      // cur
-      vertexData[base + 7] = p.lat
-      vertexData[base + 8] = p.lon
-      vertexData[base + 9] = p.prevX
-      vertexData[base + 10] = p.prevY
-      vertexData[base + 11] = p.age
-      vertexData[base + 12] = p.maxAge
-      vertexData[base + 13] = 1
-      vertexCount += 2
-    }
-
-    if (vertexCount === 0) return
-
-    // 上传顶点数据
-    const uploadData = vertexData.subarray(0, vertexCount * 7)
-    updateBufferData(gl, this.vertexBuffer, uploadData)
-
-    // 按颜色桶分组绘制（保持原有的颜色分级效果）
-    // 注意：必须在顶点构建循环中同步收集 buckets（已过滤无效粒子），避免索引错位
-    const buckets: { start: number; count: number; colorIdx: number }[] = []
-    let bucketStart = -1
-    let currentIdx = -1
-    let currentCount = 0
-
-    for (let i = 0; i < this.particles.length; i++) {
-      const p = this.particles[i]
-      // 跳过已在顶点构建中被过滤的粒子（age/maxAge/视口/拖尾超限）
-      const baseVertex = i * 2
-      if (baseVertex >= vertexCount * 2) break
-      // 用 speedToColorIndex 重新查颜色（与顶点构建循环一致）
-      const wind = interpolateWind(grid, p.lat, p.lon)
-      const { idx } = speedToColorIndex(wind.speed, colorStops)
-      if (idx !== currentIdx || currentCount === 0) {
-        if (currentCount > 0) {
-          buckets.push({ start: bucketStart, count: currentCount, colorIdx: currentIdx })
+      // 跳帧保护：如果新点与上一个点距离过大，重置轨迹
+      const trail = p.trail
+      const lastIdx = trail.length - 2
+      if (lastIdx >= 0) {
+        const dx = cx - trail[lastIdx]
+        const dy = cy - trail[lastIdx + 1]
+        if (Math.abs(dx) > MAX_TRAIL_LENGTH_PX || Math.abs(dy) > MAX_TRAIL_LENGTH_PX) {
+          p.trail = [cx, cy]
+          continue
         }
-        currentIdx = idx
-        bucketStart = baseVertex
-        currentCount = 2
-      } else {
-        currentCount += 2
+      }
+
+      // 追加新点到轨迹
+      trail.push(cx, cy)
+      // 限制轨迹长度（保留最新的 TRAIL_LENGTH 个点）
+      if (trail.length > maxTrailPoints) {
+        trail.splice(0, trail.length - maxTrailPoints)
+      }
+
+      // 轨迹至少需要 2 个点才能画线
+      if (trail.length < 4) continue
+
+      // 按风速分组收集
+      const { idx } = speedToColorIndex(wind.speed, colorStops)
+      const subpaths = colorSubpaths[idx]
+      if (subpaths) {
+        // 写入子路径：[点数, x0, y0, x1, y1, ...]
+        subpaths.push(trail.length >> 1)  // 点数
+        for (let k = 0; k < trail.length; k++) {
+          subpaths.push(trail[k])
+        }
       }
     }
-    if (currentCount > 0) {
-      buckets.push({ start: bucketStart, count: currentCount, colorIdx: currentIdx })
+
+    // === 3. 按颜色分组批量绘制轨迹（每条轨迹是一条连续 polyline）===
+    for (let i = 0; i < colorSubpaths.length; i++) {
+      const subpaths = colorSubpaths[i]
+      if (subpaths.length === 0) continue
+
+      const [r1, g1, b1] = this.colorRgbCache[i]
+      const [r2, g2, b2] = this.colorRgbCache[i + 1]
+      const r = ((r1 + r2) >> 1)
+      const g = ((g1 + g2) >> 1)
+      const b = ((b1 + b2) >> 1)
+
+      ctx.strokeStyle = `rgb(${r},${g},${b})`
+      ctx.globalAlpha = 0.75
+
+      ctx.beginPath()
+      let si = 0
+      while (si < subpaths.length) {
+        const ptCount = subpaths[si]
+        si++
+        // moveTo 第一个点
+        ctx.moveTo(subpaths[si], subpaths[si + 1])
+        // lineTo 后续点
+        for (let k = 2; k < ptCount * 2; k += 2) {
+          ctx.lineTo(subpaths[si + k], subpaths[si + k + 1])
+        }
+        si += ptCount * 2
+      }
+      ctx.stroke()
     }
 
-    // 绑定 program 并设置 uniform
-    gl.useProgram(this.program)
-
-    const matLoc = gl.getUniformLocation(this.program, 'u_geoToNdc')
-    gl.uniformMatrix3fv(matLoc, false, geoToNdc.m)
-    gl.uniform2f(gl.getUniformLocation(this.program, 'u_resolution'), width, height)
-
-    // 设置顶点属性指针（每顶点 7 个 float）
-    const bindAttr = (loc: number, offset: number) => {
-      gl.enableVertexAttribArray(loc)
-      gl.vertexAttribPointer(loc, 1, gl.FLOAT, false, stride, offset * 4)
-    }
-    bindAttr(0, 0)  // lat
-    bindAttr(1, 1)  // lon
-    bindAttr(2, 2)  // prevX
-    bindAttr(3, 3)  // prevY
-    bindAttr(4, 4)  // age
-    bindAttr(5, 5)  // maxAge
-    bindAttr(6, 6)  // vertexType
-
-    for (const bucket of buckets) {
-      if (bucket.count < 2) continue
-      const [r1, g1, b1] = this.colorRgbCache[bucket.colorIdx]
-      const [r2, g2, b2] = this.colorRgbCache[bucket.colorIdx + 1]
-      const r = ((r1 + r2) >> 1) / 255
-      const g = ((g1 + g2) >> 1) / 255
-      const b = ((b1 + b2) >> 1) / 255
-      gl.uniform4f(gl.getUniformLocation(this.program, 'u_color'), r, g, b, 0.85)
-      gl.lineWidth(this.options.lineWidth)
-      gl.drawArrays(gl.LINES, bucket.start, bucket.count)
-    }
+    ctx.globalAlpha = 1
   }
 
   start(): void {
@@ -655,21 +703,36 @@ export class WindParticleCanvas {
   }
 
   updateGeoJSON(geojson: WindGeoJSON): void {
+    const featureCount = geojson?.features?.length ?? 0
+    console.log('[WindParticleCanvas] updateGeoJSON - features:', featureCount)
+    const oldGrid = this.grid
     this.grid = buildWindGridFromGeoJSON(geojson)
     if (this.grid) {
+      console.log('[WindParticleCanvas] Grid created - rows:', this.grid.rows, 'cols:', this.grid.cols, 'bounds:', this.grid.west, this.grid.south, this.grid.east, this.grid.north)
       this.updateCanvasBounds()
-      this.initParticles()
+      const targetCount = this.resolveParticleCountForZoom(this.map.getZoom())
+      if (!oldGrid) {
+        // 首次加载 —— 全量初始化粒子
+        this.initParticles()
+      } else {
+        // 渐进更新 —— 保留重叠区域粒子，仅重置区域外粒子
+        this.progressiveUpdateParticles(targetCount)
+      }
+    } else {
+      console.warn('[WindParticleCanvas] Failed to create grid from GeoJSON')
     }
   }
 
   destroy(): void {
     this.stop()
+    if (this.moveRafId !== null) { cancelAnimationFrame(this.moveRafId); this.moveRafId = null }
     if (this.movestartHandler) { this.map.off(MAP_EVENT_MOVESTART, this.movestartHandler); this.movestartHandler = null }
+    if (this.moveHandler) { this.map.off(MAP_EVENT_MOVE, this.moveHandler); this.moveHandler = null }
     if (this.moveendHandler) { this.map.off(MAP_EVENT_MOVEEND, this.moveendHandler); this.moveendHandler = null }
     if (this.resizeHandler) { this.map.off(MAP_EVENT_RESIZE, this.resizeHandler); this.resizeHandler = null }
     if (this.resizeObserver) { this.resizeObserver.disconnect(); this.resizeObserver = null }
-    if (this.vertexBuffer) this.gl.deleteBuffer(this.vertexBuffer)
-    if (this.program) this.gl.deleteProgram(this.program)
-    this.glCanvas.destroy()
+    if (this.canvas.parentElement) {
+      this.canvas.parentElement.removeChild(this.canvas)
+    }
   }
 }

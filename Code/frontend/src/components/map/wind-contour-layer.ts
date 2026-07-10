@@ -1,11 +1,19 @@
 /**
- * 风速等值线（Isotach）渲染层 — Canvas 叠加。
+ * 风速等值线（Isotach）渲染层 — Canvas 2D 叠加。
  *
  * 用 Marching Squares 算法从风场网格提取等值线，
  * 在 5/10/15 m/s 处绘制等风速线，颜色渐变表示风速级别。
+ *
+ * DPI 处理与布局计算与 WindBarbLayer/WindParticleCanvas 一致：
+ *   - pixelRatio = min(devicePixelRatio, 2)
+ *   - canvas 尺寸 = layout 尺寸 × dpr
+ *   - draw 时所有坐标乘以 dpr
+ *   - 布局计算复用 computeCanvasLayout
  */
 import type { Map as MaplibreMap } from 'maplibre-gl'
 import { DEFAULT_HEIGHT_SUFFIX, MAP_EVENT_MOVE, MAP_EVENT_MOVEEND, MAP_EVENT_RESIZE } from './types'
+import type { WindGeoJSON } from './types'
+import { computeCanvasLayout, type CanvasLayout } from './canvas-utils'
 
 interface GridData {
   rows: number
@@ -15,17 +23,6 @@ interface GridData {
   west: number
   east: number
   speeds: number[][]  // [row][col]
-}
-
-// ── GeoJSON 类型（轻量定义，仅覆盖风场图层用到的字段） ─────
-interface WindGeoJSONFeature {
-  type: 'Feature'
-  geometry: { type: string; coordinates: number[] }
-  properties: { wind_speed?: number; wind_direction?: number; [key: string]: any }
-}
-interface WindGeoJSON {
-  type: 'FeatureCollection'
-  features: WindGeoJSONFeature[]
 }
 
 // ── 渲染参数常量 ─────────────────────────────────────────
@@ -51,23 +48,26 @@ const INTERPOLATION_EPSILON = 0.001
 /** 等值线段视口剔除边距（像素） */
 const CONTOUR_SEGMENT_CULLING_MARGIN_PX = 30
 
-/** Canvas 布局边距（像素） */
-const CONTOUR_CANVAS_MARGIN_PX = 40
+/** DPI 上限（防止超高分屏幕创建过大 canvas） */
+const MAX_PIXEL_RATIO = 2
 
 export class WindContourLayer {
   private map: MaplibreMap
   private canvas: HTMLCanvasElement
   private ctx: CanvasRenderingContext2D
+  private pixelRatio: number
+  private layout: CanvasLayout = { width: 0, height: 0, offsetX: 0, offsetY: 0, lonWrapOffset: 0 }
   private gridData: GridData | null = null
   private moveHandler: () => void
   private resizeHandler: () => void
   private isVisible = true
   private rafId: number | null = null
-  private canvasOffsetX = 0
-  private canvasOffsetY = 0
+  /** 经度 wrap 偏移量（来自 computeCanvasLayout），用于将等值线端点投影到可见世界副本 */
+  private lonWrapOffset = 0
 
   constructor(map: MaplibreMap, geojson: WindGeoJSON, _options?: { levels?: number[] }) {
     this.map = map
+    this.pixelRatio = Math.min(window.devicePixelRatio, MAX_PIXEL_RATIO)
 
     const container = map.getContainer()
     this.canvas = document.createElement('canvas')
@@ -79,113 +79,116 @@ export class WindContourLayer {
     this.canvas.className = 'wind-contour-canvas'
     container.appendChild(this.canvas)
 
-    this.ctx = this.canvas.getContext('2d', { desynchronized: true })!
+    this.ctx = this.canvas.getContext('2d', { alpha: true })!
     this.loadData(geojson)
-    this.updateCanvasBounds()
+    this.updateLayout()
 
     // 用 rAF 节流：move 事件高频触发，但每帧只重绘一次
     this.moveHandler = () => {
       if (this.rafId !== null) return
       this.rafId = requestAnimationFrame(() => {
         this.rafId = null
-        this.updateCanvasBounds()
+        this.updateLayout()
         this.draw()
       })
     }
-    this.resizeHandler = () => { this.updateCanvasBounds(); this.draw() }
+    this.resizeHandler = () => { this.updateLayout(); this.draw() }
     map.on(MAP_EVENT_MOVE, this.moveHandler)
     map.on(MAP_EVENT_MOVEEND, this.moveHandler)
     map.on(MAP_EVENT_RESIZE, this.resizeHandler)
   }
 
-  /** 将 canvas 尺寸/位置适配到网格数据投影范围与视口的交集 */
-  private updateCanvasBounds(): void {
-    const container = this.map.getContainer()
-    const vw = container.clientWidth
-    const vh = container.clientHeight
-
+  /** 计算 canvas 尺寸/位置，使用共享的 computeCanvasLayout */
+  private updateLayout(): void {
     if (!this.gridData) {
-      this.canvas.width = vw
-      this.canvas.height = vh
+      // 无数据时退化为全屏 canvas
+      const container = this.map.getContainer()
+      const vw = container.clientWidth
+      const vh = container.clientHeight
+      const dpr = this.pixelRatio
+      this.canvas.width = Math.round(vw * dpr)
+      this.canvas.height = Math.round(vh * dpr)
+      this.canvas.style.width = `${vw}px`
+      this.canvas.style.height = `${vh}px`
       this.canvas.style.left = '0px'
       this.canvas.style.top = '0px'
-      this.canvasOffsetX = 0
-      this.canvasOffsetY = 0
-      this.ctx.setTransform(1, 0, 0, 1, 0, 0)
+      this.layout = { width: vw, height: vh, offsetX: 0, offsetY: 0, lonWrapOffset: 0 }
       return
     }
 
     const { south, north, west, east } = this.gridData
-    const tl = this.map.project([west, north])
-    const tr = this.map.project([east, north])
-    const bl = this.map.project([west, south])
-    const br = this.map.project([east, south])
-    const margin = CONTOUR_CANVAS_MARGIN_PX
-    const gridMinX = Math.min(tl.x, tr.x, bl.x, br.x) - margin
-    const gridMaxX = Math.max(tl.x, tr.x, bl.x, br.x) + margin
-    const gridMinY = Math.min(tl.y, tr.y, bl.y, br.y) - margin
-    const gridMaxY = Math.max(tl.y, tr.y, bl.y, br.y) + margin
-
-    // 裁剪到视口范围，避免缩放放大时 canvas 尺寸膨胀
-    const minX = Math.max(gridMinX, 0)
-    const maxX = Math.min(gridMaxX, vw)
-    const minY = Math.max(gridMinY, 0)
-    const maxY = Math.min(gridMaxY, vh)
-    const w = Math.max(1, Math.round(maxX - minX))
-    const h = Math.max(1, Math.round(maxY - minY))
-
-    this.canvas.width = w
-    this.canvas.height = h
-    this.canvas.style.width = `${w}px`
-    this.canvas.style.height = `${h}px`
-    this.canvas.style.left = `${Math.round(minX)}px`
-    this.canvas.style.top = `${Math.round(minY)}px`
-    this.canvasOffsetX = Math.round(minX)
-    this.canvasOffsetY = Math.round(minY)
-    this.ctx.setTransform(1, 0, 0, 1, 0, 0)
+    this.layout = computeCanvasLayout(this.map, west, east, south, north)
+    this.lonWrapOffset = this.layout.lonWrapOffset
+    const { width, height, offsetX, offsetY } = this.layout
+    const dpr = this.pixelRatio
+    this.canvas.width = Math.round(width * dpr)
+    this.canvas.height = Math.round(height * dpr)
+    this.canvas.style.width = `${width}px`
+    this.canvas.style.height = `${height}px`
+    this.canvas.style.left = `${offsetX}px`
+    this.canvas.style.top = `${offsetY}px`
   }
 
   private loadData(geojson: WindGeoJSON): void {
     const features = geojson?.features || []
     if (features.length === 0) return
 
-    let maxRow = 0, maxCol = 0
-    let minLat = Infinity, maxLat = -Infinity, minLon = Infinity, maxLon = -Infinity
-    const pointMap = new Map<string, { speed: number; lat: number; lon: number }>()
-
     // 从首个 feature 推断高度后缀，支持 10m / 80m / 120m / 180m 等多高度风场
     const firstProps = features[0]?.properties || {}
     const heightSuffix: string = firstProps.height ?? DEFAULT_HEIGHT_SUFFIX
     const speedKey = `wind_speed_${heightSuffix}`
 
+    // 收集所有点的数据和量化后的唯一经纬度
+    // 不依赖后端 row/col —— 多瓦片合并时各瓦片的 row/col 是相对内部的，会互相冲突覆盖
+    const QUANT = 1000 // 0.001° 精度，合并浮点误差
+    interface RawPoint { lat: number; lon: number; speed: number }
+    const rawPoints: RawPoint[] = []
+    const latQuantSet = new Set<number>()
+    const lonQuantSet = new Set<number>()
+
     for (const f of features) {
       if (f.geometry?.type !== 'Point') continue
       const coords = f.geometry.coordinates
       const props = f.properties || {}
-      const row = props.row ?? 0
-      const col = props.col ?? 0
-      maxRow = Math.max(maxRow, row)
-      maxCol = Math.max(maxCol, col)
-      minLat = Math.min(minLat, coords[1])
-      maxLat = Math.max(maxLat, coords[1])
-      minLon = Math.min(minLon, coords[0])
-      maxLon = Math.max(maxLon, coords[0])
-      const speed = props[speedKey] ?? props.wind_speed_10m ?? 0
-      pointMap.set(`${row}:${col}`, { speed, lat: coords[1], lon: coords[0] })
+      const speed = Number(props[speedKey] ?? props.wind_speed_10m ?? 0)
+      rawPoints.push({ lat: coords[1], lon: coords[0], speed })
+      latQuantSet.add(Math.round(coords[1] * QUANT))
+      lonQuantSet.add(Math.round(coords[0] * QUANT))
     }
 
-    const rows = maxRow + 1
-    const cols = maxCol + 1
+    if (rawPoints.length === 0) return
+
+    // 排序：lat 降序（北→南），lon 升序（西→东）
+    const sortedLats = Array.from(latQuantSet).sort((a, b) => b - a)
+    const sortedLons = Array.from(lonQuantSet).sort((a, b) => a - b)
+    const rows = sortedLats.length
+    const cols = sortedLons.length
+    if (rows < 2 || cols < 2) return
+
+    const latIndex = new Map<number, number>()
+    sortedLats.forEach((q, i) => latIndex.set(q, i))
+    const lonIndex = new Map<number, number>()
+    sortedLons.forEach((q, i) => lonIndex.set(q, i))
+
+    // 构建二维 speeds 数组，缺失点填 0（多瓦片合并时边缘区域可能没有数据）
     const speeds: number[][] = []
     for (let r = 0; r < rows; r++) {
-      speeds[r] = []
-      for (let c = 0; c < cols; c++) {
-        const p = pointMap.get(`${r}:${c}`)
-        speeds[r][c] = p?.speed ?? 0
-      }
+      speeds[r] = new Array(cols).fill(0)
+    }
+    for (const p of rawPoints) {
+      const r = latIndex.get(Math.round(p.lat * QUANT))!
+      const c = lonIndex.get(Math.round(p.lon * QUANT))!
+      speeds[r][c] = p.speed
     }
 
-    this.gridData = { rows, cols, south: minLat, north: maxLat, west: minLon, east: maxLon, speeds }
+    this.gridData = {
+      rows, cols,
+      south: sortedLats[rows - 1] / QUANT,
+      north: sortedLats[0] / QUANT,
+      west: sortedLons[0] / QUANT,
+      east: sortedLons[cols - 1] / QUANT,
+      speeds,
+    }
   }
 
   /** 网格坐标 → 经纬度 */
@@ -249,14 +252,16 @@ export class WindContourLayer {
 
   private draw(): void {
     if (!this.isVisible || !this.gridData) return
-    const cw = this.canvas.width
-    const ch = this.canvas.height
-    const ox = this.canvasOffsetX
-    const oy = this.canvasOffsetY
-    this.ctx.clearRect(0, 0, cw, ch)
+    const dpr = this.pixelRatio
+    const ctx = this.ctx
+    // clearRect 使用 canvas 实际像素尺寸（已乘 dpr）
+    ctx.clearRect(0, 0, this.canvas.width, this.canvas.height)
 
     const zoom = this.map.getZoom()
     if (zoom < CONTOUR_ZOOM_HIDE) return
+
+    // 视口剔除基于 CSS 像素的 layout 范围
+    const { width: cw, height: ch, offsetX: ox, offsetY: oy } = this.layout
 
     // LOD 策略：根据 zoom 动态选择等值线级别
     // zoom 小（看大范围）→ 只显示高级别（10/15），避免线条过密
@@ -265,29 +270,29 @@ export class WindContourLayer {
 
     for (const level of activeLevels) {
       const segments = this.marchingSquares(level.value)
-      this.ctx.strokeStyle = level.color
-      this.ctx.lineWidth = level.width
-      this.ctx.lineCap = 'round'
-      this.ctx.lineJoin = 'round'
+      ctx.strokeStyle = level.color
+      ctx.lineWidth = level.width * dpr
+      ctx.lineCap = 'round'
+      ctx.lineJoin = 'round'
 
       for (const seg of segments) {
-        const p1 = this.map.project(seg[0])
-        const p2 = this.map.project(seg[1])
-        // 视口剔除（基于 canvas 范围）
+        const p1 = this.map.project([seg[0][0] + this.lonWrapOffset, seg[0][1]])
+        const p2 = this.map.project([seg[1][0] + this.lonWrapOffset, seg[1][1]])
+        // 视口剔除（基于 canvas CSS 像素范围）
         if ((p1.x < ox - CONTOUR_SEGMENT_CULLING_MARGIN_PX && p2.x < ox - CONTOUR_SEGMENT_CULLING_MARGIN_PX) ||
             (p1.x > ox + cw + CONTOUR_SEGMENT_CULLING_MARGIN_PX && p2.x > ox + cw + CONTOUR_SEGMENT_CULLING_MARGIN_PX) ||
             (p1.y < oy - CONTOUR_SEGMENT_CULLING_MARGIN_PX && p2.y < oy - CONTOUR_SEGMENT_CULLING_MARGIN_PX) ||
             (p1.y > oy + ch + CONTOUR_SEGMENT_CULLING_MARGIN_PX && p2.y > oy + ch + CONTOUR_SEGMENT_CULLING_MARGIN_PX)) continue
-        this.ctx.beginPath()
-        this.ctx.moveTo(p1.x - ox, p1.y - oy)
-        this.ctx.lineTo(p2.x - ox, p2.y - oy)
-        this.ctx.stroke()
+        ctx.beginPath()
+        ctx.moveTo((p1.x - ox) * dpr, (p1.y - oy) * dpr)
+        ctx.lineTo((p2.x - ox) * dpr, (p2.y - oy) * dpr)
+        ctx.stroke()
       }
 
       // 在等值线上标注数值（采样若干段）
       if (segments.length > MIN_SEGMENTS_FOR_LABELS && zoom > CONTOUR_ZOOM_LABEL_THRESHOLD) {
-        this.ctx.fillStyle = level.color.replace(/[\d.]+\)$/, '0.9)')
-        this.ctx.font = `${CONTOUR_LABEL_FONT_SIZE}px monospace`
+        ctx.fillStyle = level.color.replace(/[\d.]+\)$/, '0.9)')
+        ctx.font = `${CONTOUR_LABEL_FONT_SIZE * dpr}px monospace`
         // 标注密度也随 zoom 调整：zoom 大时标注更多
         const targetLabelCount = zoom > CONTOUR_ZOOM_LABEL_COUNT_BREAK ? LABEL_COUNT_CLOSE_VIEW : LABEL_COUNT_DEFAULT
         const labelInterval = Math.max(1, Math.floor(segments.length / targetLabelCount))
@@ -296,11 +301,11 @@ export class WindContourLayer {
             (segments[i][0][0] + segments[i][1][0]) / 2,
             (segments[i][0][1] + segments[i][1][1]) / 2,
           ]
-          const screen = this.map.project(mid)
+          const screen = this.map.project([mid[0] + this.lonWrapOffset, mid[1]])
           // 标注位置也转换为 canvas 内坐标
           if (screen.x < ox - CONTOUR_SEGMENT_CULLING_MARGIN_PX || screen.x > ox + cw + CONTOUR_SEGMENT_CULLING_MARGIN_PX ||
               screen.y < oy - CONTOUR_SEGMENT_CULLING_MARGIN_PX || screen.y > oy + ch + CONTOUR_SEGMENT_CULLING_MARGIN_PX) continue
-          this.ctx.fillText(level.label, screen.x - ox + 3, screen.y - oy - 3)
+          ctx.fillText(level.label, (screen.x - ox + 3) * dpr, (screen.y - oy - 3) * dpr)
         }
       }
     }
@@ -342,6 +347,7 @@ export class WindContourLayer {
 
   updateGeoJSON(geojson: WindGeoJSON): void {
     this.loadData(geojson)
+    this.updateLayout()
     this.draw()
   }
 

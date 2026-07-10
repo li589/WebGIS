@@ -30,7 +30,7 @@ export interface LayerSource {
 // ─── Layer catalog item (图层库条目) ─────────────────────────────────────────
 
 export interface LayerCatalogItem {
-  /** 唯一标识，与 demoLayerCatalog id 对齐 */
+  /** 唯一标识，与后端 layer_id 对齐 */
   catalogId: string
   name: string
   category: string
@@ -48,14 +48,46 @@ export interface LayerCatalogItem {
   isAdminBoundary?: boolean
 }
 
+export interface RuntimeLayerLibraryItem extends LayerCatalogItem {
+  description: string
+  engine?: string | null
+  sourceType?: string | null
+  renderType?: string | null
+  workflowName?: string | null
+  runReadiness: string
+  runReadinessSummary?: string | null
+  runReadinessNotes: string[]
+  backendStatus?: string | null
+  defaultVisible?: boolean
+  supportsTime?: boolean
+}
+
 // ─── Job layer item (作业生产数据) ───────────────────────────────────────────
 
 export type JobStatus = 'running' | 'succeeded' | 'failed' | 'queued' | 'cancelled' | 'retry_pending'
+
+// ─── Workflow summary (全局工作流状态汇总) ──────────────────────────────────
+
+export interface WorkflowSummary {
+  total: number
+  running: number
+  queued: number
+  succeeded: number
+  failed: number
+  cancelled: number
+  retryPending: number
+  /** 整体状态：idle | active | succeeded | failed | mixed */
+  overall: 'idle' | 'active' | 'succeeded' | 'failed' | 'mixed'
+  /** 用于按钮配色的状态键 */
+  tone: 'idle' | 'active' | 'success' | 'warning' | 'error'
+  hasError: boolean
+}
 
 import type { WeatherLayerRenderHint, WorkflowResultDto, WorkflowRunViewResponse } from '../../services/runtime-api'
 
 export interface JobLayerMapAssets {
   geojsonUrl?: string
+  geojsonData?: Record<string, unknown>
   cogUrl?: string
   cogPreviewUrl?: string
   cogBbox?: {
@@ -101,6 +133,12 @@ export interface JobLayerItem {
   diagnostics?: string[]
   /** 面向 UI 的诊断摘要 */
   diagnosticNotes?: string[]
+  /** 最近一次已消费的事件游标 */
+  lastEventId?: string
+  /** 最近一次事件时间 */
+  lastEventAt?: string
+  /** 最近的增量事件消息，用于运行中展示持续产出 */
+  eventMessages?: string[]
 }
 
 // ─── Active layer (已添加图层) ────────────────────────────────────────────────
@@ -109,8 +147,6 @@ export interface ActiveLayer {
   /** 实例 ID (uuid)，用于列表 key 和唯一性 */
   instanceId: string
   catalogId: string
-  /** 当前选中的数据源 ID，为空使用 catalog 默认源 */
-  sourceId: string
   /** 是否可见 */
   visible: boolean
   /** 透明度 0-1 */
@@ -121,23 +157,36 @@ export interface ActiveLayer {
   isAdminBoundary: boolean
   /** 若来自作业，则关联作业信息 */
   jobLayer?: JobLayerItem
-  /** 数据状态：demo | real */
-  dataState: 'demo' | 'real'
+  /** 数据状态：catalog | real */
+  dataState: 'catalog' | 'real'
 }
 
 // ─── Layer sidebar view mode ──────────────────────────────────────────────────
 
 export type LayerSidebarView = 'empty' | 'library' | 'active'
 
-// ─── Derived types (从 demo-data 适配) ────────────────────────────────────────
+// ─── Derived types ────────────────────────────────────────────────────────────
 
 export type AvailabilityState = 'empty' | 'partial' | 'ready'
+
+export interface LayerHotspot {
+  id: string
+  name: string
+  lng: number
+  lat: number
+  value: string
+}
 
 export interface ActiveLayerDisplay {
   instanceId: string
   catalogId: string
   name: string
   category: string
+  description?: string
+  engine?: string | null
+  supportsTime?: boolean
+  runReadiness?: string
+  runReadinessSummary?: string | null
   summary: string
   metricLabel: string
   metricValue: string
@@ -154,17 +203,11 @@ export interface ActiveLayerDisplay {
   availabilityDescription: string
   observationTimeLabel: string
   missingFieldsLabel: string
-  hotspots: Array<{
-    id: string
-    name: string
-    lng: number
-    lat: number
-    value: string
-  }>
+  hotspots: LayerHotspot[]
   isAdminBoundary: boolean
   jobLayer?: JobLayerItem
   visible: boolean
   opacity: number
   order: number
-  dataState: 'demo' | 'real'
+  dataState: 'catalog' | 'real'
 }

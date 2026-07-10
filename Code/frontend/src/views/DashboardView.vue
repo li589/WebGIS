@@ -2,8 +2,6 @@
 import { computed, defineAsyncComponent, ref, watch } from 'vue'
 import { storeToRefs } from 'pinia'
 
-import { resolveDemoLayer } from '../app/demo-adapter'
-import { demoLayerCatalog, type DemoHotspot, type DemoLayer } from '../app/demo-data'
 import ControlPanel from '../components/ControlPanel.vue'
 import InfoPanel from '../components/InfoPanel.vue'
 import LayerSidebar from '../components/LayerSidebar.vue'
@@ -11,9 +9,9 @@ import MapCanvas from '../components/MapCanvas.vue'
 import ModeToolbar from '../components/ModeToolbar.vue'
 import TimelinePanel from '../components/TimelinePanel.vue'
 import TimelineScrubber from '../components/TimelineScrubber.vue'
-import { getWeatherPoint, type WeatherPointResponse } from '../services/runtime-api'
-import type { ActiveLayerDisplay } from '../stores/layers/types'
-import type { TileSourceId } from '../stores/ui'
+import WorkflowStatusPanel from '../components/workflow/WorkflowStatusPanel.vue'
+import type { TileSourceId } from '../services/api-config'
+import type { ActiveLayerDisplay, LayerHotspot } from '../stores/layers/types'
 import { useUiStore } from '../stores/ui'
 import { useLayersStore } from '../stores/layers'
 
@@ -22,46 +20,75 @@ const layersStore = useLayersStore()
 void layersStore.ensureRuntimeLayerCatalog()
 
 const { tileSourceId, currentHour, hourLabel } = storeToRefs(uiStore)
-const { selectedLayerDisplay, activeLayerCount, workflowError, isSubmitting } = storeToRefs(layersStore)
+const { selectedLayerDisplay, activeLayerCount, workflowError, isSubmitting, pointWeather, pointWeatherLoading, pointWeatherError } = storeToRefs(layersStore)
 
 const activeLayer = computed(() => {
   if (selectedLayerDisplay.value) return selectedLayerDisplay.value
-  return buildFallbackActiveLayer(currentHour.value)
+  return buildFallbackActiveLayer()
 })
 
-const viewLabel = computed(() => '2D 主视图')
-const stageLabel = computed(() => '2D-first Demo')
-const supportedLayerCount = computed(() => demoLayerCatalog.length)
-const visibleHotspots = ref<DemoHotspot[]>([])
-const selectedHotspot = ref<DemoHotspot | null>(null)
+const stageLabel = computed(() => (activeLayer.value.dataState === 'real' ? '运行时工作流' : '运行时目录'))
+const visibleHotspots = ref<LayerHotspot[]>([])
+const selectedHotspot = ref<LayerHotspot | null>(null)
 const selectedMapPoint = ref<{ lng: number; lat: number } | null>(null)
-const pointWeather = ref<WeatherPointResponse | null>(null)
-const pointWeatherLoading = ref(false)
-const pointWeatherError = ref<string | null>(null)
-let pointWeatherRequestToken = 0
 const dashboardRef = ref<HTMLElement | null>(null)
 const mapShellRef = ref<HTMLElement | null>(null)
 const mapCanvasRef = ref<InstanceType<typeof MapCanvas> | null>(null)
 const screenshotOpen = ref(false)
+const workflowStatusOpen = ref(false)
 const ScreenshotExport = defineAsyncComponent(() => import('../components/ScreenshotExport.vue'))
+
+const sidePanelDimensions = Object.freeze({
+  defaultHeight: 372,
+  minHeight: 236,
+  maxHeight: 540,
+  minWidth: 280,
+  maxWidth: 420,
+})
+
+const layerPanelDimensions = Object.freeze({
+  ...sidePanelDimensions,
+  defaultWidth: 292,
+})
+
+const analysisPanelDimensions = Object.freeze({
+  ...sidePanelDimensions,
+  defaultWidth: 304,
+})
 
 watch(currentHour, (hour) => {
   layersStore.setCurrentHour(hour)
 }, { immediate: true })
 
 const timelineSegments = computed(() => {
-  void currentHour.value
+  const layer = activeLayer.value
   return Array.from({ length: 8 }, (_, index) => {
     const hour = index * 3
-    let state: DemoLayer['availabilityState'] = 'empty'
+    let state: ActiveLayerDisplay['availabilityState'] = 'empty'
     let availabilityLabel = '空状态'
-    
-    if (activeLayer.value.catalogId) {
-      const snapshot: DemoLayer = resolveDemoLayer(activeLayer.value.catalogId, hour)
-      state = snapshot.availabilityState
-      availabilityLabel = snapshot.availabilityLabel
+
+    if (layer.catalogId) {
+      const nearestSlot = Math.round(currentHour.value / 3) * 3
+      const distance = Math.abs(hour - nearestSlot)
+      if (layer.runReadiness === 'blocked') {
+        state = 'empty'
+        availabilityLabel = '数据未就绪'
+      } else if (layer.dataState === 'real') {
+        state = distance <= 3
+          ? layer.availabilityState
+          : layer.availabilityState === 'ready'
+            ? 'partial'
+            : layer.availabilityState
+        availabilityLabel = distance <= 3 ? layer.availabilityLabel : '可继续查询'
+      } else if (layer.supportsTime) {
+        state = distance <= 6 ? 'partial' : 'empty'
+        availabilityLabel = distance <= 6 ? '待运行' : '可请求'
+      } else {
+        state = layer.availabilityState
+        availabilityLabel = layer.availabilityLabel
+      }
     }
-    
+
     return {
       hour,
       label: `${String(hour).padStart(2, '0')}:00`,
@@ -87,62 +114,20 @@ function handleTimelineChange(hour: number) {
   uiStore.setHour(hour)
 }
 
-function handleVisibleHotspotsChange(hotspots: DemoHotspot[]) {
+function handleVisibleHotspotsChange(hotspots: LayerHotspot[]) {
   visibleHotspots.value = hotspots
   if (selectedHotspot.value && !hotspots.some((hotspot) => hotspot.id === selectedHotspot.value?.id)) {
     selectedHotspot.value = null
   }
 }
 
-function handleHotspotSelect(hotspot: DemoHotspot | null) {
+function handleHotspotSelect(hotspot: LayerHotspot | null) {
   selectedHotspot.value = hotspot
-}
-
-function clearPointWeather() {
-  pointWeather.value = null
-  pointWeatherError.value = null
-  pointWeatherLoading.value = false
-}
-
-function isRealtimeWeatherLayer(catalogId?: string) {
-  if (!catalogId) return false
-  if (catalogId.startsWith('wind-field')) return true
-  if (catalogId.startsWith('temperature')) return true
-  return ['precipitation', 'pressure', 'humidity', 'visibility'].includes(catalogId)
-}
-
-async function fetchPointWeather(lng: number, lat: number) {
-  if (!isRealtimeWeatherLayer(activeLayer.value.catalogId)) {
-    clearPointWeather()
-    return
-  }
-  const token = ++pointWeatherRequestToken
-  pointWeatherLoading.value = true
-  pointWeatherError.value = null
-  try {
-    const weather = await getWeatherPoint({
-      layer_id: activeLayer.value.catalogId,
-      latitude: lat,
-      longitude: lng,
-      forecast_hours: 6,
-      place_name: `${lat.toFixed(3)}, ${lng.toFixed(3)}`,
-    })
-    if (token !== pointWeatherRequestToken) return
-    pointWeather.value = weather
-  } catch (error) {
-    if (token !== pointWeatherRequestToken) return
-    pointWeather.value = null
-    pointWeatherError.value = error instanceof Error ? error.message : 'Failed to load point weather'
-  } finally {
-    if (token === pointWeatherRequestToken) {
-      pointWeatherLoading.value = false
-    }
-  }
 }
 
 function handleMapPointSelect(point: { lng: number; lat: number }) {
   selectedMapPoint.value = point
-  void fetchPointWeather(point.lng, point.lat)
+  void layersStore.fetchPointWeather(point.lng, point.lat, activeLayer.value.catalogId)
 }
 
 function handleToggleLayerVisibility(instanceId: string) {
@@ -161,6 +146,14 @@ function handleCloseScreenshot() {
   screenshotOpen.value = false
 }
 
+function handleOpenWorkflowStatus() {
+  workflowStatusOpen.value = true
+}
+
+function handleCloseWorkflowStatus() {
+  workflowStatusOpen.value = false
+}
+
 async function handleRunWorkflow(catalogId: string) {
   try {
     await layersStore.runWorkflowForCatalog(catalogId)
@@ -172,18 +165,17 @@ async function handleRunWorkflow(catalogId: string) {
 watch(
   () => activeLayer.value.catalogId,
   (catalogId) => {
-    if (!isRealtimeWeatherLayer(catalogId)) {
-      clearPointWeather()
+    if (!layersStore.isWeatherEngineLayer(catalogId)) {
+      layersStore.clearPointWeather()
       return
     }
     if (selectedMapPoint.value) {
-      void fetchPointWeather(selectedMapPoint.value.lng, selectedMapPoint.value.lat)
+      void layersStore.fetchPointWeather(selectedMapPoint.value.lng, selectedMapPoint.value.lat, catalogId)
     }
   },
 )
 
-function buildFallbackActiveLayer(hour: number): ActiveLayerDisplay {
-  void hour
+function buildFallbackActiveLayer(): ActiveLayerDisplay {
   return {
     instanceId: '',
     catalogId: '',
@@ -210,7 +202,7 @@ function buildFallbackActiveLayer(hour: number): ActiveLayerDisplay {
     visible: true,
     opacity: 1,
     order: 0,
-    dataState: 'demo',
+    dataState: 'catalog',
   }
 }
 </script>
@@ -233,10 +225,10 @@ function buildFallbackActiveLayer(hour: number): ActiveLayerDisplay {
           :tile-source-id="tileSourceId"
           :active-layer="activeLayer"
           :hour-label="hourLabel"
-          :supported-layer-count="supportedLayerCount"
           :active-layer-count="activeLayerCount"
           @change-tile-source="handleTileSourceChange"
           @open-screenshot="handleOpenScreenshot"
+          @open-workflow-status="handleOpenWorkflowStatus"
         />
       </div>
 
@@ -247,12 +239,12 @@ function buildFallbackActiveLayer(hour: number): ActiveLayerDisplay {
           handle-position="bottom-right"
           :max-offset-x="100"
           :max-offset-y="110"
-          :default-width="290"
-          :default-height="360"
-          :min-width="240"
-          :min-height="220"
-          :max-width="400"
-          :max-height="520"
+          :default-width="layerPanelDimensions.defaultWidth"
+          :default-height="layerPanelDimensions.defaultHeight"
+          :min-width="layerPanelDimensions.minWidth"
+          :min-height="layerPanelDimensions.minHeight"
+          :max-width="layerPanelDimensions.maxWidth"
+          :max-height="layerPanelDimensions.maxHeight"
         >
           <LayerSidebar @select-layer="handleLayerSelect" />
         </ControlPanel>
@@ -265,17 +257,15 @@ function buildFallbackActiveLayer(hour: number): ActiveLayerDisplay {
           handle-position="bottom-left"
           :max-offset-x="80"
           :max-offset-y="110"
-          :default-width="300"
-          :default-height="360"
-          :min-width="280"
-          :min-height="220"
-          :max-width="420"
-          :max-height="520"
+          :default-width="analysisPanelDimensions.defaultWidth"
+          :default-height="analysisPanelDimensions.defaultHeight"
+          :min-width="analysisPanelDimensions.minWidth"
+          :min-height="analysisPanelDimensions.minHeight"
+          :max-width="analysisPanelDimensions.maxWidth"
+          :max-height="analysisPanelDimensions.maxHeight"
         >
           <InfoPanel
-            :view-label="viewLabel"
             :active-layer="activeLayer"
-            :hour-label="hourLabel"
             :stage-label="stageLabel"
             :visible-hotspots="visibleHotspots"
             :selected-layer="selectedLayerDisplay"
@@ -328,6 +318,11 @@ function buildFallbackActiveLayer(hour: number): ActiveLayerDisplay {
       :active-layer-name="activeLayer.name"
       :hour-label="hourLabel"
       @close="handleCloseScreenshot"
+    />
+
+    <WorkflowStatusPanel
+      v-if="workflowStatusOpen"
+      @close="handleCloseWorkflowStatus"
     />
   </main>
 </template>

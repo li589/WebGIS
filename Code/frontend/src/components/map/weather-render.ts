@@ -26,6 +26,10 @@ const WEATHER_PALETTES: Record<string, WeatherPaletteDefinition> = {
     colors: ['#10314b', '#1d6fa5', '#4bb9ff', '#84ddff', '#c4f3ff'],
     lineColor: 'rgba(170, 228, 255, 0.22)',
   },
+  'magenta-yellow': {
+    colors: ['#1a102a', '#5b1f7a', '#b832e0', '#ff5e9a', '#ffb347', '#fff2a6'],
+    lineColor: 'rgba(255, 214, 153, 0.24)',
+  },
 }
 
 function getPaletteDefinition(palette: string): WeatherPaletteDefinition {
@@ -34,22 +38,22 @@ function getPaletteDefinition(palette: string): WeatherPaletteDefinition {
 
 // ── 渲染参数常量 ─────────────────────────────────────────
 
-/** 天气图层填充不透明度范围 */
-const FILL_OPACITY_MIN = 0.08
-const FILL_OPACITY_MAX = 0.9
+/** 天气图层填充不透明度范围（柔和低调：上限压低，不抢底图视觉焦点） */
+const FILL_OPACITY_MIN = 0.06
+const FILL_OPACITY_MAX = 0.7
 
 /** 天气图层线条不透明度范围及相对填充的折扣系数 */
-const LINE_OPACITY_MIN = 0.08
-const LINE_OPACITY_MAX = 0.42
+const LINE_OPACITY_MIN = 0.06
+const LINE_OPACITY_MAX = 0.32
 const LINE_OPACITY_RATIO = 0.46
 
 /** 天气点半径映射范围（像素） */
-const POINT_RADIUS_MIN = 3.5
-const POINT_RADIUS_MAX = 9.5
+const POINT_RADIUS_MIN = 3.0
+const POINT_RADIUS_MAX = 7.0
 
 /** 风向箭头大小映射范围 */
-const ARROW_SIZE_MIN = 0.54
-const ARROW_SIZE_MAX = 1.12
+const ARROW_SIZE_MIN = 0.45
+const ARROW_SIZE_MAX = 0.9
 
 /** 默认图例刻度（后端未提供时使用） */
 const DEFAULT_LEGEND_TICKS = [0, 1, 2, 3]
@@ -106,6 +110,36 @@ export function buildWeatherPointRadiusExpression(hint: WeatherLayerRenderHint):
     ['coalesce', ['to-number', ['get', hint.primary_metric]], 0],
     minTick, POINT_RADIUS_MIN,
     maxTick, POINT_RADIUS_MAX,
+  ] as unknown as ExpressionSpecification
+}
+
+export function buildWeatherHeatmapColorExpression(hint: WeatherLayerRenderHint): ExpressionSpecification {
+  const palette = getPaletteDefinition(hint.palette).colors
+  const lastIndex = Math.max(1, palette.length - 1)
+  const expression: Array<string | number> = [
+    'interpolate',
+    ['linear'] as unknown as number,
+    ['heatmap-density'] as unknown as number,
+    0,
+    'rgba(0, 0, 0, 0)',
+  ]
+  for (let index = 0; index < palette.length; index += 1) {
+    const stop = Number(((index + 1) / (lastIndex + 1)).toFixed(3))
+    expression.push(stop, palette[index])
+  }
+  return expression as unknown as ExpressionSpecification
+}
+
+export function buildWeatherHeatmapWeightExpression(hint: WeatherLayerRenderHint): ExpressionSpecification {
+  const ticks = hint.legend_ticks.filter((tick): tick is number => typeof tick === 'number')
+  const minTick = ticks[0] ?? 0
+  const maxTick = ticks[ticks.length - 1] ?? 100
+  return [
+    'interpolate',
+    ['linear'],
+    ['coalesce', ['to-number', ['get', hint.primary_metric]], 0],
+    minTick, 0,
+    maxTick, 1,
   ] as unknown as ExpressionSpecification
 }
 

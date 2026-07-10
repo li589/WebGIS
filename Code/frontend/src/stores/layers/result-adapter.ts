@@ -1,6 +1,6 @@
-import { getWorkflowRunView } from '../../services/runtime-api'
+import { getWorkflowRunView, resolveApiUrl } from '../../services/runtime-api'
 import type { WeatherLayerRenderHint, WorkflowResultReference, WorkflowRunStatusResponse, WorkflowRunViewResponse } from '../../services/runtime-api'
-import type { JobLayerItem } from './types'
+import type { JobLayerItem, JobLayerMapLayerPayload } from './types'
 
 function asRecord(value: unknown): Record<string, unknown> | null {
   return value !== null && typeof value === 'object' ? (value as Record<string, unknown>) : null
@@ -108,7 +108,7 @@ function extractDiagnosticNotes(run: WorkflowRunStatusResponse) {
     }
   }
   if (layerStatus === 'placeholder') {
-    notes.push('图层仍处于 placeholder 状态，默认数据源尚未接入')
+    notes.push('图层仍处于占位状态，默认数据源尚未接入')
   } else if (layerStatus) {
     notes.push(`图层状态：${layerStatus}`)
   }
@@ -118,10 +118,12 @@ function extractDiagnosticNotes(run: WorkflowRunStatusResponse) {
   return notes
 }
 
-function extractMapLayerPayload(resultRefs: WorkflowResultReference[]) {
+function extractMapLayerPayload(resultRefs: WorkflowResultReference[]): JobLayerMapLayerPayload | undefined {
   const mapLayerResult = resultRefs.find((item) => item.result_kind === 'map_layer')
   const payload = asRecord(mapLayerResult?.inline_data)
-  if (!payload) return undefined
+  if (!payload) {
+    return undefined
+  }
   const layerAssets = asRecord(payload.layer_assets)
   const renderHint = asRecord(payload.render_hint) as WeatherLayerRenderHint | null
   return {
@@ -144,6 +146,23 @@ function extractMapLayerPayload(resultRefs: WorkflowResultReference[]) {
               : undefined,
         }
       : undefined,
+  }
+}
+
+async function fetchGeojsonData(geojsonUrl: string): Promise<Record<string, unknown> | undefined> {
+  const controller = new AbortController()
+  const timeoutId = window.setTimeout(() => controller.abort(), 20000)
+  try {
+    const response = await fetch(resolveApiUrl(geojsonUrl), {
+      signal: controller.signal,
+    })
+    if (!response.ok) return undefined
+    const payload = await response.json()
+    return payload && typeof payload === 'object' ? payload as Record<string, unknown> : undefined
+  } catch {
+    return undefined
+  } finally {
+    window.clearTimeout(timeoutId)
   }
 }
 
@@ -170,6 +189,16 @@ export async function buildJobLayer(
   const resultUrl = resultView?.result_url ?? previousJobLayer?.resultUrl ?? extractResultUrl(run.result_refs)
   const reportSummary =
     resultView?.summary ?? previousJobLayer?.reportSummary ?? extractReportSummary(run.result_refs, diagnosticNotes[0] ?? run.message)
+  const mapLayerPayload = extractMapLayerPayload(run.result_refs) ?? previousJobLayer?.mapLayerPayload
+  if (mapLayerPayload?.layerAssets?.geojsonUrl && !mapLayerPayload.layerAssets.geojsonData) {
+    const geojsonData = await fetchGeojsonData(mapLayerPayload.layerAssets.geojsonUrl)
+    if (geojsonData) {
+      mapLayerPayload.layerAssets = {
+        ...mapLayerPayload.layerAssets,
+        geojsonData,
+      }
+    }
+  }
   return {
     jobId: run.run_id,
     name: entryName ?? catalogName,
@@ -184,7 +213,7 @@ export async function buildJobLayer(
     resultDto: run.result_dto ?? undefined,
     resultView: resultView ?? undefined,
     resultUrl,
-    mapLayerPayload: extractMapLayerPayload(run.result_refs),
+    mapLayerPayload,
     diagnostics: run.diagnostics ?? [],
     diagnosticNotes,
   }

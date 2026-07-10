@@ -2,10 +2,13 @@
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 
 import { useLayersStore } from '../stores/layers'
-import type { DemoHotspot } from '../app/demo-data'
+import { useUiStore } from '../stores/ui'
+import type { LayerHotspot } from '../stores/layers/types'
 import {
   buildWeatherArrowSizeExpression,
   buildWeatherFillColorExpression,
+  buildWeatherHeatmapColorExpression,
+  buildWeatherHeatmapWeightExpression,
   buildWeatherPointColorExpression,
   buildWeatherPointRadiusExpression,
   getWeatherFillOpacity,
@@ -15,13 +18,13 @@ import {
 import { WindParticleCanvas } from './map/wind-particle-canvas'
 import { WindBarbLayer } from './map/wind-barb-layer'
 import { WindContourLayer } from './map/wind-contour-layer'
+import { TILE_SOURCE_MAP, type TileSourceId } from '../services/api-config'
 import { resolveApiUrl } from '../services/runtime-api'
 import type { WeatherLayerRenderHint } from '../services/runtime-api'
-import type { TileSourceId } from '../stores/ui'
-import { TILE_SOURCE_MAP } from '../stores/ui'
 import type { StyleSpecification } from 'maplibre-gl'
 
 const layersStore = useLayersStore()
+const uiStore = useUiStore()
 
 const props = defineProps<{
   tileSourceId: TileSourceId
@@ -30,8 +33,8 @@ const props = defineProps<{
 }>()
 
 const emit = defineEmits<{
-  visibleHotspotsChange: [hotspots: DemoHotspot[]]
-  hotspotSelect: [hotspot: DemoHotspot | null]
+  visibleHotspotsChange: [hotspots: LayerHotspot[]]
+  hotspotSelect: [hotspot: LayerHotspot | null]
   mapPointSelect: [point: { lng: number; lat: number }]
 }>()
 
@@ -57,8 +60,11 @@ const isMapInteracting = ref(false)
 const isSourceTransitioning = ref(false)
 const loadingLabel = ref('正在加载地图...')
 const tileLoadFailed = ref(false)
-const tileLoadRetryCount = ref(0)
-const MAX_TILE_RETRIES = 2
+const tileFailedProvider = ref<string | null>(null)
+// 瓦片错误计数：使用时间窗口内的滑动计数，避免单个边缘瓦片 404 就隐藏整个底图
+const tileErrorTimestamps: number[] = []
+const TILE_ERROR_WINDOW_MS = 5000   // 5 秒窗口
+const TILE_ERROR_THRESHOLD = 15      // 窗口内超过 15 次错误才判定为底图不可用
 
 type MapInstance = import('maplibre-gl').Map
 type GeoJsonSourceSpecification = import('maplibre-gl').GeoJSONSourceSpecification
@@ -66,6 +72,7 @@ type GeoJSONSource = import('maplibre-gl').GeoJSONSource
 type ImageSourceSpecification = import('maplibre-gl').ImageSourceSpecification
 type ImageSource = import('maplibre-gl').ImageSource
 type RasterSourceSpecification = import('maplibre-gl').RasterSourceSpecification
+type RasterTileSource = import('maplibre-gl').RasterTileSource
 type GuangdongBoundaryData = typeof import('../app/guangdong-boundaries')
 
 let boundaryModule: GuangdongBoundaryData | null = null
@@ -84,11 +91,16 @@ function weatherFillLayerId(catalogId: string) { return `weather-fill-${catalogI
 function weatherLineLayerId(catalogId: string) { return `weather-line-${catalogId}` }
 function weatherPointLayerId(catalogId: string) { return `weather-point-${catalogId}` }
 function weatherArrowLayerId(catalogId: string) { return `weather-arrow-${catalogId}` }
+function weatherHeatmapLayerId(catalogId: string) { return `weather-heatmap-${catalogId}` }
+function weatherHeatmapPointLayerId(catalogId: string) { return `weather-heatmap-point-${catalogId}` }
 function weatherImageSourceId(catalogId: string) { return `weather-img-src-${catalogId}` }
 function weatherRasterLayerId(catalogId: string) { return `weather-raster-${catalogId}` }
 
 // 跟踪当前已渲染的 weather 图层 catalogId（用于增量清理）
 const renderedWeatherCatalogIds = new Set<string>()
+
+// M15 修复：仅在首次加载时自动聚焦图层，避免用户手动缩放时被覆盖
+let _initialFocusDone = false
 
 // 风场粒子流/风羽/等值线 canvas 叠加层实例（独占，同时只一个图层启用）
 let windParticleCanvas: WindParticleCanvas | null = null
@@ -97,6 +109,18 @@ let windContourLayer: WindContourLayer | null = null
 let currentWindGeojson: any = null
 let lastWindGeojsonUrl: string | null = null
 let currentParticleFlowCatalogId: string | null = null
+let windParticleFetchToken = 0
+
+function resetWindParticleOverlays(options?: { invalidatePendingFetch?: boolean }) {
+  if (options?.invalidatePendingFetch !== false) {
+    windParticleFetchToken++
+  }
+  if (windParticleCanvas) { windParticleCanvas.destroy(); windParticleCanvas = null }
+  if (windBarbLayer) { windBarbLayer.destroy(); windBarbLayer = null }
+  if (windContourLayer) { windContourLayer.destroy(); windContourLayer = null }
+  currentWindGeojson = null
+  lastWindGeojsonUrl = null
+}
 
 const currentTileConfig = computed(() => TILE_SOURCE_MAP.get(props.tileSourceId) ?? TILE_SOURCE_MAP.get('esri-street')!)
 
@@ -133,7 +157,7 @@ const activeLayer = computed(() => {
     sourceLabel: '',
     confidenceLabel: '',
     trend: '',
-    dataState: 'demo' as const,
+    dataState: 'catalog' as const,
     isAdminBoundary: false,
     instanceId: '',
     catalogId: '',
@@ -149,10 +173,14 @@ const activeLayer = computed(() => {
 // ─── Tile layer management ───────────────────────────────────────────────────
 
 function ensureTileLayer(sourceId: TileSourceId) {
-  if (!map) return
+  if (!map) {
+    return
+  }
 
   const cfg = TILE_SOURCE_MAP.get(sourceId)
-  if (!cfg) return
+  if (!cfg) {
+    return
+  }
 
   if (!map.getSource(TILE_SOURCE_ID)) {
     map.addSource(TILE_SOURCE_ID, {
@@ -176,8 +204,8 @@ function ensureTileLayer(sourceId: TileSourceId) {
         paint: {
           'raster-opacity': 0.88,
           'raster-saturation': cfg.saturation,
-          'raster-brightness-max': 1.0 + cfg.brightness,
-          'raster-brightness-min': 0.0 + Math.max(0, cfg.brightness),
+          'raster-brightness-max': Math.min(1.0, 1.0 + cfg.brightness),
+          'raster-brightness-min': Math.max(0.0, Math.min(1.0, cfg.brightness)),
           'raster-contrast': cfg.contrast,
         },
       },
@@ -186,11 +214,15 @@ function ensureTileLayer(sourceId: TileSourceId) {
   }
 }
 
+// 快速切换底图时的竞态保护 token：每次切换递增，异步操作完成后检查 token 是否一致
+let switchTileToken = 0
+
 function switchTileSource(sourceId: TileSourceId) {
   if (!map) return
 
   tileLoadFailed.value = false
-  tileLoadRetryCount.value = 0
+  tileFailedProvider.value = null
+  tileErrorTimestamps.length = 0
 
   if (sourceId === 'none') {
     if (map.getLayer(TILE_LAYER_ID)) {
@@ -202,19 +234,24 @@ function switchTileSource(sourceId: TileSourceId) {
   const cfg = TILE_SOURCE_MAP.get(sourceId)
   if (!cfg) return
 
-  if (map.getSource(TILE_SOURCE_ID)) {
-    if (map.getLayer(TILE_LAYER_ID)) map.removeLayer(TILE_LAYER_ID)
-    map.removeSource(TILE_SOURCE_ID)
+  // 使用 setTiles 更新现有 source 的 tile URL，触发 maplibre 重新加载 tile。
+  // 避免 removeSource + addSource 同名 source 不刷新 tile 的 bug
+  // （表现为切换底图后按钮 active 但 0 个 tile 请求）。
+  const existingSource = map.getSource(TILE_SOURCE_ID) as RasterTileSource | undefined
+  if (existingSource && existingSource.type === 'raster') {
+    existingSource.setTiles([cfg.urlTemplate])
+    map.triggerRepaint()
   }
 
+  // 确保 source 和 layer 存在（首次切换时 source 不存在，ensureTileLayer 会创建）
   ensureTileLayer(sourceId)
 
   if (map.getLayer(TILE_LAYER_ID)) {
     map.setLayoutProperty(TILE_LAYER_ID, 'visibility', 'visible')
     map.setPaintProperty(TILE_LAYER_ID, 'raster-opacity', 0.88)
     map.setPaintProperty(TILE_LAYER_ID, 'raster-saturation', cfg.saturation)
-    map.setPaintProperty(TILE_LAYER_ID, 'raster-brightness-max', 1.0 + cfg.brightness)
-    map.setPaintProperty(TILE_LAYER_ID, 'raster-brightness-min', 0.0 + Math.max(0, cfg.brightness))
+    map.setPaintProperty(TILE_LAYER_ID, 'raster-brightness-max', Math.min(1.0, 1.0 + cfg.brightness))
+    map.setPaintProperty(TILE_LAYER_ID, 'raster-brightness-min', Math.max(0.0, Math.min(1.0, cfg.brightness)))
     map.setPaintProperty(TILE_LAYER_ID, 'raster-contrast', cfg.contrast)
   }
 }
@@ -333,10 +370,14 @@ function removeWeatherOverlayForCatalog(catalogId: string) {
   const lineId = weatherLineLayerId(catalogId)
   const pointId = weatherPointLayerId(catalogId)
   const arrowId = weatherArrowLayerId(catalogId)
+  const heatmapId = weatherHeatmapLayerId(catalogId)
+  const heatmapPointId = weatherHeatmapPointLayerId(catalogId)
   const imgSrcId = weatherImageSourceId(catalogId)
   const rasterId = weatherRasterLayerId(catalogId)
   if (map.getLayer(rasterId)) map.removeLayer(rasterId)
   if (map.getSource(imgSrcId)) map.removeSource(imgSrcId)
+  if (map.getLayer(heatmapPointId)) map.removeLayer(heatmapPointId)
+  if (map.getLayer(heatmapId)) map.removeLayer(heatmapId)
   if (map.getLayer(arrowId)) map.removeLayer(arrowId)
   if (map.getLayer(pointId)) map.removeLayer(pointId)
   if (map.getLayer(lineId)) map.removeLayer(lineId)
@@ -344,11 +385,7 @@ function removeWeatherOverlayForCatalog(catalogId: string) {
   if (map.getSource(srcId)) map.removeSource(srcId)
   // 清理该 catalog 关联的 canvas 叠加层实例
   if (currentParticleFlowCatalogId === catalogId) {
-    if (windParticleCanvas) { windParticleCanvas.destroy(); windParticleCanvas = null }
-    if (windBarbLayer) { windBarbLayer.destroy(); windBarbLayer = null }
-    if (windContourLayer) { windContourLayer.destroy(); windContourLayer = null }
-    currentWindGeojson = null
-    lastWindGeojsonUrl = null
+    resetWindParticleOverlays()
     currentParticleFlowCatalogId = null
   }
   renderedWeatherCatalogIds.delete(catalogId)
@@ -360,27 +397,14 @@ function removeWeatherOverlay() {
   for (const catalogId of Array.from(renderedWeatherCatalogIds)) {
     removeWeatherOverlayForCatalog(catalogId)
   }
-  // 销毁风场粒子流/风羽/等值线 canvas 叠加层
-  if (windParticleCanvas) {
-    windParticleCanvas.destroy()
-    windParticleCanvas = null
-  }
-  if (windBarbLayer) {
-    windBarbLayer.destroy()
-    windBarbLayer = null
-  }
-  if (windContourLayer) {
-    windContourLayer.destroy()
-    windContourLayer = null
-  }
-  currentWindGeojson = null
-  lastWindGeojsonUrl = null
+  resetWindParticleOverlays()
   currentParticleFlowCatalogId = null
 }
 
 interface WeatherOverlayState {
   catalogId: string
   geojsonUrl: string | null
+  geojsonData: Record<string, unknown> | null
   cogPreviewUrl: string | null
   cogBbox: { west: number; south: number; east: number; north: number } | null
   renderHint: WeatherLayerRenderHint
@@ -396,17 +420,31 @@ function resolveAllWeatherOverlayStates(): WeatherOverlayState[] {
     const renderHint = layer.jobLayer?.mapLayerPayload?.renderHint
     if (!renderHint) continue
     const geojsonUrl = layer.jobLayer?.mapLayerPayload?.layerAssets?.geojsonUrl
+    const geojsonData = layer.jobLayer?.mapLayerPayload?.layerAssets?.geojsonData ?? null
     const cogPreviewUrl = layer.jobLayer?.mapLayerPayload?.layerAssets?.cogPreviewUrl
     const cogBbox = layer.jobLayer?.mapLayerPayload?.layerAssets?.cogBbox ?? null
     const resolvedGeojsonUrl = typeof geojsonUrl === 'string' && geojsonUrl.trim() ? resolveApiUrl(geojsonUrl) : null
     const resolvedCogPreviewUrl =
       typeof cogPreviewUrl === 'string' && cogPreviewUrl.trim() ? resolveApiUrl(cogPreviewUrl) : null
-    if (renderHint.paint_mode === 'point_symbol' && !resolvedGeojsonUrl) continue
-    if (renderHint.paint_mode === 'particle_flow' && !resolvedGeojsonUrl) continue
-    if (renderHint.paint_mode === 'grid_fill' && !resolvedGeojsonUrl && !(resolvedCogPreviewUrl && cogBbox)) continue
+    const hasGeojsonSource = Boolean(geojsonData || resolvedGeojsonUrl)
+    if (renderHint.paint_mode === 'heatmap' && !hasGeojsonSource) continue
+    if (renderHint.paint_mode === 'point_symbol' && !hasGeojsonSource) continue
+    if (renderHint.paint_mode === 'particle_flow' && !hasGeojsonSource) continue
+    if (renderHint.paint_mode === 'grid_fill' && !hasGeojsonSource && !(resolvedCogPreviewUrl && cogBbox)) continue
+    // [MapCanvas] 调试：打印 overlay 状态
+    console.log(
+      '[MapCanvas] resolveOverlayState:',
+      'catalogId=', layer.catalogId,
+      'paint_mode=', renderHint.paint_mode,
+      'geojsonUrl=', resolvedGeojsonUrl,
+      'geojsonData=', geojsonData ? 'yes' : 'none',
+      'cogPreviewUrl=', resolvedCogPreviewUrl ? 'yes' : 'none',
+      'cogBbox=', cogBbox ? 'yes' : 'none',
+    )
     states.push({
       catalogId: layer.catalogId,
       geojsonUrl: resolvedGeojsonUrl,
+      geojsonData,
       cogPreviewUrl: resolvedCogPreviewUrl,
       cogBbox,
       renderHint,
@@ -416,8 +454,23 @@ function resolveAllWeatherOverlayStates(): WeatherOverlayState[] {
   return states
 }
 
+// syncWeatherOverlay 竞态保护：快速添加/移除图层时，只保留最后一次操作的结果
+let syncWeatherToken = 0
+// 微任务调度：合并同一 tick 内多次 syncWeatherOverlay 调用为一次执行
+let syncWeatherScheduled = false
+
+function scheduleSyncWeatherOverlay() {
+  if (syncWeatherScheduled) return
+  syncWeatherScheduled = true
+  queueMicrotask(() => {
+    syncWeatherScheduled = false
+    syncWeatherOverlay()
+  })
+}
+
 function syncWeatherOverlay() {
   if (!mapReady.value || !map) return
+  const token = ++syncWeatherToken
   const targetStates = resolveAllWeatherOverlayStates()
   const targetCatalogIds = new Set(targetStates.map((s) => s.catalogId))
 
@@ -432,43 +485,43 @@ function syncWeatherOverlay() {
   const enabledFlowId = layersStore.particleFlowCatalogId
   // 若启用的粒子流图层不在目标列表中（被移除/隐藏），则关闭粒子流
   if (enabledFlowId && !targetCatalogIds.has(enabledFlowId)) {
-    if (windParticleCanvas || windBarbLayer || windContourLayer) {
-      if (windParticleCanvas) { windParticleCanvas.destroy(); windParticleCanvas = null }
-      if (windBarbLayer) { windBarbLayer.destroy(); windBarbLayer = null }
-      if (windContourLayer) { windContourLayer.destroy(); windContourLayer = null }
-      currentWindGeojson = null
-      lastWindGeojsonUrl = null
-    }
+    resetWindParticleOverlays()
     currentParticleFlowCatalogId = null
   }
   // 切换粒子流图层时清理前一个 canvas
   if (enabledFlowId !== currentParticleFlowCatalogId) {
-    if (windParticleCanvas) { windParticleCanvas.destroy(); windParticleCanvas = null }
-    if (windBarbLayer) { windBarbLayer.destroy(); windBarbLayer = null }
-    if (windContourLayer) { windContourLayer.destroy(); windContourLayer = null }
-    currentWindGeojson = null
-    lastWindGeojsonUrl = null
-    // 上一图层标记为需清理（如果还在 rendered 集合中，会被 removeWeatherOverlayForCatalog 处理）
-    if (currentParticleFlowCatalogId) {
-      removeWeatherOverlayForCatalog(currentParticleFlowCatalogId)
-    }
+    const previousParticleFlowCatalogId = currentParticleFlowCatalogId
+    resetWindParticleOverlays()
     currentParticleFlowCatalogId = enabledFlowId
+    // 上一图层标记为需清理（如果还在 rendered 集合中，会被 removeWeatherOverlayForCatalog 处理）
+    if (previousParticleFlowCatalogId) {
+      removeWeatherOverlayForCatalog(previousParticleFlowCatalogId)
+    }
   }
 
   // 渲染每个图层
   for (const state of targetStates) {
+    // 竞态检查：如果在渲染过程中有新的 syncWeatherOverlay 被触发，跳过当前批次
+    if (token !== syncWeatherToken) return
+
     const { catalogId, renderHint } = state
 
     // particle_flow 图层：只渲染启用的那个
     if (renderHint.paint_mode === 'particle_flow') {
       if (catalogId === enabledFlowId) {
-        syncWindParticleFlow(state)
+        void syncWindParticleFlow(state, token)
         renderedWeatherCatalogIds.add(catalogId)
       }
       continue
     }
 
     // grid_fill / point_symbol 图层：独立渲染
+    if (renderHint.paint_mode === 'heatmap') {
+      syncWeatherHeatmapOverlay(state)
+      renderedWeatherCatalogIds.add(catalogId)
+      continue
+    }
+
     if (renderHint.paint_mode === 'grid_fill') {
       if (state.cogPreviewUrl && state.cogBbox) {
         syncWeatherCogOverlay(state)
@@ -497,7 +550,11 @@ function syncWeatherCogOverlay(overlayState: WeatherOverlayState) {
   const lineId = weatherLineLayerId(catalogId)
   const pointId = weatherPointLayerId(catalogId)
   const arrowId = weatherArrowLayerId(catalogId)
+  const heatmapId = weatherHeatmapLayerId(catalogId)
+  const heatmapPointId = weatherHeatmapPointLayerId(catalogId)
   const srcId = weatherSourceId(catalogId)
+  if (map.getLayer(heatmapPointId)) map.removeLayer(heatmapPointId)
+  if (map.getLayer(heatmapId)) map.removeLayer(heatmapId)
   if (map.getLayer(arrowId)) map.removeLayer(arrowId)
   if (map.getLayer(pointId)) map.removeLayer(pointId)
   if (map.getLayer(lineId)) map.removeLayer(lineId)
@@ -554,7 +611,8 @@ function syncWeatherCogOverlay(overlayState: WeatherOverlayState) {
 
 /** grid_fill 模式：geojson fill + line 渲染（每图层独立 source/layer） */
 function syncWeatherGridFillOverlay(overlayState: WeatherOverlayState) {
-  if (!map || !overlayState.geojsonUrl) return
+  const geojsonSource = overlayState.geojsonData ?? overlayState.geojsonUrl
+  if (!map || !geojsonSource) return
   const catalogId = overlayState.catalogId
   const srcId = weatherSourceId(catalogId)
   const fillId = weatherFillLayerId(catalogId)
@@ -562,10 +620,14 @@ function syncWeatherGridFillOverlay(overlayState: WeatherOverlayState) {
   // 切换渲染模式时清理同 catalog 的其他图层
   const pointId = weatherPointLayerId(catalogId)
   const arrowId = weatherArrowLayerId(catalogId)
+  const heatmapId = weatherHeatmapLayerId(catalogId)
+  const heatmapPointId = weatherHeatmapPointLayerId(catalogId)
   const imgSrcId = weatherImageSourceId(catalogId)
   const rasterId = weatherRasterLayerId(catalogId)
   if (map.getLayer(rasterId)) map.removeLayer(rasterId)
   if (map.getSource(imgSrcId)) map.removeSource(imgSrcId)
+  if (map.getLayer(heatmapPointId)) map.removeLayer(heatmapPointId)
+  if (map.getLayer(heatmapId)) map.removeLayer(heatmapId)
   if (map.getLayer(arrowId)) map.removeLayer(arrowId)
   if (map.getLayer(pointId)) map.removeLayer(pointId)
 
@@ -577,7 +639,7 @@ function syncWeatherGridFillOverlay(overlayState: WeatherOverlayState) {
   if (!existingSource) {
     map.addSource(srcId, {
       type: 'geojson',
-      data: overlayState.geojsonUrl,
+      data: geojsonSource,
     } as GeoJsonSourceSpecification)
 
     map.addLayer(
@@ -609,7 +671,7 @@ function syncWeatherGridFillOverlay(overlayState: WeatherOverlayState) {
     return
   }
 
-  existingSource.setData(overlayState.geojsonUrl)
+  existingSource.setData(geojsonSource as any)
   if (map.getLayer(fillId)) {
     map.setPaintProperty(fillId, 'fill-color', fillColor)
     map.setPaintProperty(fillId, 'fill-opacity', fillOpacity)
@@ -622,8 +684,169 @@ function syncWeatherGridFillOverlay(overlayState: WeatherOverlayState) {
   }
 }
 
+function syncWeatherHeatmapOverlay(overlayState: WeatherOverlayState) {
+  const geojsonSource = overlayState.geojsonData ?? overlayState.geojsonUrl
+  if (!map || !geojsonSource) return
+  const catalogId = overlayState.catalogId
+  const srcId = weatherSourceId(catalogId)
+  const heatmapId = weatherHeatmapLayerId(catalogId)
+  const heatmapPointId = weatherHeatmapPointLayerId(catalogId)
+
+  // 切换渲染模式时清理同 catalog 的其他图层，仅保留复用的 GeoJSON source。
+  const fillId = weatherFillLayerId(catalogId)
+  const lineId = weatherLineLayerId(catalogId)
+  const pointId = weatherPointLayerId(catalogId)
+  const arrowId = weatherArrowLayerId(catalogId)
+  const imgSrcId = weatherImageSourceId(catalogId)
+  const rasterId = weatherRasterLayerId(catalogId)
+  if (map.getLayer(rasterId)) map.removeLayer(rasterId)
+  if (map.getSource(imgSrcId)) map.removeSource(imgSrcId)
+  if (map.getLayer(arrowId)) map.removeLayer(arrowId)
+  if (map.getLayer(pointId)) map.removeLayer(pointId)
+  if (map.getLayer(lineId)) map.removeLayer(lineId)
+  if (map.getLayer(fillId)) map.removeLayer(fillId)
+
+  const existingSource = map.getSource(srcId) as GeoJSONSource | undefined
+  const heatmapOpacity = Math.max(0.12, getWeatherFillOpacity(overlayState.renderHint, overlayState.opacity))
+  const pointOpacity = Math.max(0.2, overlayState.opacity * 0.86)
+  const pointRadius = buildWeatherPointRadiusExpression(overlayState.renderHint)
+  const pointColor = buildWeatherPointColorExpression(overlayState.renderHint)
+  const heatmapColor = buildWeatherHeatmapColorExpression(overlayState.renderHint)
+  const heatmapWeight = buildWeatherHeatmapWeightExpression(overlayState.renderHint)
+
+  if (!existingSource) {
+    map.addSource(srcId, {
+      type: 'geojson',
+      data: geojsonSource,
+    } as GeoJsonSourceSpecification)
+  } else {
+    existingSource.setData(geojsonSource as any)
+  }
+
+  if (!map.getLayer(heatmapId)) {
+    map.addLayer(
+      {
+        id: heatmapId,
+        type: 'heatmap',
+        source: srcId,
+        maxzoom: 9,
+        paint: {
+          'heatmap-weight': heatmapWeight,
+          'heatmap-intensity': [
+            'interpolate',
+            ['linear'],
+            ['zoom'],
+            0, 0.28,
+            2.5, 0.42,
+            5, 0.68,
+            7, 0.9,
+            9, 1.02,
+          ],
+          'heatmap-radius': [
+            'interpolate',
+            ['linear'],
+            ['zoom'],
+            0, 18,
+            2.5, 26,
+            5, 34,
+            7, 42,
+            9, 52,
+          ],
+          'heatmap-opacity': heatmapOpacity,
+          'heatmap-color': heatmapColor,
+        },
+      },
+      map.getLayer('admin-fill') ? 'admin-fill' : undefined,
+    )
+  } else {
+    map.setPaintProperty(heatmapId, 'heatmap-weight', heatmapWeight)
+    map.setPaintProperty(heatmapId, 'heatmap-intensity', [
+      'interpolate',
+      ['linear'],
+      ['zoom'],
+      0, 0.28,
+      2.5, 0.42,
+      5, 0.68,
+      7, 0.9,
+      9, 1.02,
+    ])
+    map.setPaintProperty(heatmapId, 'heatmap-radius', [
+      'interpolate',
+      ['linear'],
+      ['zoom'],
+      0, 18,
+      2.5, 26,
+      5, 34,
+      7, 42,
+      9, 52,
+    ])
+    map.setPaintProperty(heatmapId, 'heatmap-opacity', heatmapOpacity)
+    map.setPaintProperty(heatmapId, 'heatmap-color', heatmapColor)
+    map.setLayoutProperty(heatmapId, 'visibility', 'visible')
+  }
+
+  if (!map.getLayer(heatmapPointId)) {
+    map.addLayer(
+      {
+        id: heatmapPointId,
+        type: 'circle',
+        source: srcId,
+        minzoom: 4.75,
+        paint: {
+          'circle-radius': pointRadius,
+          'circle-color': pointColor,
+          'circle-opacity': [
+            'interpolate',
+            ['linear'],
+            ['zoom'],
+            4.75, 0,
+            6.5, Math.max(0.14, pointOpacity * 0.42),
+            8.2, Math.max(0.18, pointOpacity * 0.72),
+            10, pointOpacity,
+          ],
+          'circle-stroke-color': 'rgba(255, 244, 214, 0.88)',
+          'circle-stroke-width': 0.6,
+          'circle-stroke-opacity': [
+            'interpolate',
+            ['linear'],
+            ['zoom'],
+            4.75, 0,
+            7, 0.18,
+            8.2, 0.34,
+            10, 0.52,
+          ],
+        },
+      },
+      map.getLayer('admin-fill') ? 'admin-fill' : undefined,
+    )
+  } else {
+    map.setPaintProperty(heatmapPointId, 'circle-radius', pointRadius)
+    map.setPaintProperty(heatmapPointId, 'circle-color', pointColor)
+    map.setPaintProperty(heatmapPointId, 'circle-opacity', [
+      'interpolate',
+      ['linear'],
+      ['zoom'],
+      4.75, 0,
+      6.5, Math.max(0.14, pointOpacity * 0.42),
+      8.2, Math.max(0.18, pointOpacity * 0.72),
+      10, pointOpacity,
+    ])
+    map.setPaintProperty(heatmapPointId, 'circle-stroke-opacity', [
+      'interpolate',
+      ['linear'],
+      ['zoom'],
+      4.75, 0,
+      7, 0.18,
+      8.2, 0.34,
+      10, 0.52,
+    ])
+    map.setLayoutProperty(heatmapPointId, 'visibility', 'visible')
+  }
+}
+
 function syncWeatherPointOverlay(overlayState: WeatherOverlayState) {
-  if (!map || !overlayState.geojsonUrl) return
+  const geojsonSource = overlayState.geojsonData ?? overlayState.geojsonUrl
+  if (!map || !geojsonSource) return
   const catalogId = overlayState.catalogId
   const srcId = weatherSourceId(catalogId)
   const pointId = weatherPointLayerId(catalogId)
@@ -631,10 +854,14 @@ function syncWeatherPointOverlay(overlayState: WeatherOverlayState) {
   // 切换渲染模式时清理同 catalog 的其他图层
   const fillId = weatherFillLayerId(catalogId)
   const lineId = weatherLineLayerId(catalogId)
+  const heatmapId = weatherHeatmapLayerId(catalogId)
+  const heatmapPointId = weatherHeatmapPointLayerId(catalogId)
   const imgSrcId = weatherImageSourceId(catalogId)
   const rasterId = weatherRasterLayerId(catalogId)
   if (map.getLayer(rasterId)) map.removeLayer(rasterId)
   if (map.getSource(imgSrcId)) map.removeSource(imgSrcId)
+  if (map.getLayer(heatmapPointId)) map.removeLayer(heatmapPointId)
+  if (map.getLayer(heatmapId)) map.removeLayer(heatmapId)
   if (map.getLayer(lineId)) map.removeLayer(lineId)
   if (map.getLayer(fillId)) map.removeLayer(fillId)
 
@@ -647,7 +874,7 @@ function syncWeatherPointOverlay(overlayState: WeatherOverlayState) {
   if (!existingSource) {
     map.addSource(srcId, {
       type: 'geojson',
-      data: overlayState.geojsonUrl,
+      data: geojsonSource,
     } as GeoJsonSourceSpecification)
 
     map.addLayer({
@@ -686,7 +913,7 @@ function syncWeatherPointOverlay(overlayState: WeatherOverlayState) {
     return
   }
 
-  existingSource.setData(overlayState.geojsonUrl)
+  existingSource.setData(geojsonSource as any)
   if (map.getLayer(pointId)) {
     map.setPaintProperty(pointId, 'circle-radius', pointRadius)
     map.setPaintProperty(pointId, 'circle-color', pointColor)
@@ -705,7 +932,7 @@ function syncWeatherPointOverlay(overlayState: WeatherOverlayState) {
  * 同步风场粒子流叠加层：等值线（底层） + 粒子流（中层） + 风羽符号（顶层）。
  * 类似 Windy.com 的炫酷风场渲染效果。fetch GeoJSON → 创建/更新三层 canvas。
  */
-async function syncWindParticleFlow(overlayState: WeatherOverlayState) {
+async function syncWindParticleFlow(overlayState: WeatherOverlayState, overlayToken: number) {
   if (!map) return
 
   // 粒子流模式不创建 maplibre source/layer（用 canvas 叠加）
@@ -715,42 +942,84 @@ async function syncWindParticleFlow(overlayState: WeatherOverlayState) {
   const lineId = weatherLineLayerId(catalogId)
   const pointId = weatherPointLayerId(catalogId)
   const arrowId = weatherArrowLayerId(catalogId)
+  const heatmapId = weatherHeatmapLayerId(catalogId)
+  const heatmapPointId = weatherHeatmapPointLayerId(catalogId)
   const imgSrcId = weatherImageSourceId(catalogId)
   const rasterId = weatherRasterLayerId(catalogId)
   const srcId = weatherSourceId(catalogId)
   if (map.getLayer(rasterId)) map.removeLayer(rasterId)
   if (map.getSource(imgSrcId)) map.removeSource(imgSrcId)
+  if (map.getLayer(heatmapPointId)) map.removeLayer(heatmapPointId)
+  if (map.getLayer(heatmapId)) map.removeLayer(heatmapId)
   if (map.getLayer(arrowId)) map.removeLayer(arrowId)
   if (map.getLayer(pointId)) map.removeLayer(pointId)
   if (map.getLayer(lineId)) map.removeLayer(lineId)
   if (map.getLayer(fillId)) map.removeLayer(fillId)
   if (map.getSource(srcId)) map.removeSource(srcId)
 
+  if (overlayToken !== syncWeatherToken || currentParticleFlowCatalogId !== catalogId) {
+    return
+  }
+
   // fetch GeoJSON 数据（仅当 URL 变化时重新 fetch）
   const urlChanged = lastWindGeojsonUrl !== overlayState.geojsonUrl
-  let geojson: any = urlChanged ? null : currentWindGeojson
-  if (urlChanged && overlayState.geojsonUrl) {
+  const inlineGeojson = overlayState.geojsonData
+  let geojson: any = inlineGeojson ?? (urlChanged ? null : currentWindGeojson)
+  const fetchToken = ++windParticleFetchToken
+  if (!inlineGeojson && urlChanged && overlayState.geojsonUrl) {
     try {
+      console.log('[MapCanvas] syncWindParticleFlow: fetching geojson from', overlayState.geojsonUrl)
       const resp = await fetch(overlayState.geojsonUrl)
       if (resp.ok) {
-        geojson = await resp.json()
-        currentWindGeojson = geojson
+        const fetchedGeojson = await resp.json()
+        if (
+          overlayToken !== syncWeatherToken
+          || fetchToken !== windParticleFetchToken
+          || currentParticleFlowCatalogId !== catalogId
+          || layersStore.particleFlowCatalogId !== catalogId
+        ) {
+          return
+        }
+        geojson = fetchedGeojson
+        currentWindGeojson = fetchedGeojson
         lastWindGeojsonUrl = overlayState.geojsonUrl
+        // [MapCanvas] 调试：打印 GeoJSON 概要
+        const features = geojson?.features ?? []
+        const coords = features.length > 0 ? features[0].geometry?.coordinates : null
+        console.log(
+          '[MapCanvas] syncWindParticleFlow: geojson loaded features=%d first_coord=%s last_coord=%s',
+          features.length,
+          coords ? `[${coords[0].toFixed(4)},${coords[1].toFixed(4)}]` : 'none',
+          features.length > 0 ? `[${features[features.length-1].geometry?.coordinates?.[0]?.toFixed(4)},${features[features.length-1].geometry?.coordinates?.[1]?.toFixed(4)}]` : 'none',
+        )
       } else {
-        console.warn('[MapCanvas] Failed to fetch wind geojson:', resp.status)
+        console.warn('[MapCanvas] syncWindParticleFlow: fetch failed status=%d', resp.status)
         return
       }
     } catch (err) {
-      console.error('[MapCanvas] Error fetching wind geojson:', err)
+      console.error('[MapCanvas] syncWindParticleFlow: fetch error', err)
       return
     }
+  }
+  if (inlineGeojson) {
+    currentWindGeojson = inlineGeojson
+    lastWindGeojsonUrl = overlayState.geojsonUrl
   }
 
   // 组件可能在 await 期间卸载（onBeforeUnmount 已将 map 置 null），需重新检查
   if (!map) return
+  if (
+    overlayToken !== syncWeatherToken
+    || fetchToken !== windParticleFetchToken
+    || currentParticleFlowCatalogId !== catalogId
+    || layersStore.particleFlowCatalogId !== catalogId
+  ) {
+    return
+  }
   if (!geojson) return
 
   // 创建或更新三层 canvas 叠加
+  // Wind GeoJSON loaded, updating particle canvas
   if (!windContourLayer) {
     windContourLayer = new WindContourLayer(map, geojson)
   } else {
@@ -773,18 +1042,35 @@ async function syncWindParticleFlow(overlayState: WeatherOverlayState) {
 
 // ─── Tile error handling ─────────────────────────────────────────────────────
 
-function handleTileError() {
-  tileLoadRetryCount.value++
-  if (tileLoadRetryCount.value > MAX_TILE_RETRIES) {
+function handleTileError(failedProvider: string | null) {
+  // 使用滑动时间窗口记录错误，避免单个边缘瓦片 404 就隐藏整个底图
+  const now = Date.now()
+  // 清除窗口外的旧记录
+  while (tileErrorTimestamps.length > 0 && now - tileErrorTimestamps[0] > TILE_ERROR_WINDOW_MS) {
+    tileErrorTimestamps.shift()
+  }
+  tileErrorTimestamps.push(now)
+
+  // 只有在时间窗口内错误数超过阈值时才判定底图不可用
+  if (tileErrorTimestamps.length > TILE_ERROR_THRESHOLD) {
     tileLoadFailed.value = true
+    tileFailedProvider.value = failedProvider ?? TILE_SOURCE_MAP.get(props.tileSourceId)?.provider ?? null
+    if (map?.getLayer(TILE_LAYER_ID)) {
+      map.setLayoutProperty(TILE_LAYER_ID, 'visibility', 'none')
+    }
   }
 }
 
 function retryTileLoad() {
   tileLoadFailed.value = false
-  tileLoadRetryCount.value = 0
+  tileFailedProvider.value = null
+  tileErrorTimestamps.length = 0
   if (map && map.getSource(TILE_SOURCE_ID)) {
-    switchTileSource(props.tileSourceId)
+    const source = map.getSource(TILE_SOURCE_ID) as RasterTileSource | undefined
+    if (source && source.type === 'raster') {
+      source.setTiles([currentTileConfig.value.urlTemplate])
+      map.triggerRepaint()
+    }
     if (map.getLayer(TILE_LAYER_ID) && props.tileSourceId !== 'none') {
       map.setLayoutProperty(TILE_LAYER_ID, 'visibility', 'visible')
     }
@@ -936,7 +1222,11 @@ function syncMapViewportToStore() {
       ;[west, east] = [east, west]
     }
   }
-  layersStore.setMapViewport({ lng, lat: center.lat }, { west, south, east, north, crs: 'EPSG:4326' })
+  layersStore.setMapViewport(
+    { lng, lat: center.lat },
+    { west, south, east, north, crs: 'EPSG:4326' },
+    map.getZoom(),
+  )
 }
 
 function focusActiveLayer() {
@@ -1117,8 +1407,13 @@ onMounted(async () => {
   map.on('error', (e) => {
     if (((e as any).sourceId !== TILE_SOURCE_ID && (e as any).sourceId !== undefined)) return
     const status = e.error?.status
-    if (status === undefined || status === 0 || status === 403 || status === 404) {
-      handleTileError()
+    // 提取失败底图的 provider 名称（从 URL /tiles/{provider}/... 中提取）
+    const url = e.error?.url ?? ''
+    const match = url.match(/\/tiles\/([^/]+)\//)
+    const provider = match ? match[1] : null
+    // 403/404/503/网络错误(0) 均视为加载失败
+    if (status === undefined || status === 0 || status === 403 || status === 404 || status === 503) {
+      handleTileError(provider ?? null)
     }
   })
 
@@ -1130,12 +1425,20 @@ onMounted(async () => {
       map!.setLayoutProperty(TILE_LAYER_ID, 'visibility', props.tileSourceId === 'none' ? 'none' : 'visible')
     }
     syncAdminOverlay()
-    syncWeatherOverlay()
+    // M15 修复：仅在首次加载时自动聚焦图层，避免用户手动缩放时被覆盖
     focusActiveLayer()
+    _initialFocusDone = true
     scheduleHotspotSync()
     // 初始化 store 的地图视口，使首次工作流提交时能拿到正确中心点和 bbox
     syncMapViewportToStore()
     mapReady.value = true
+    // 地图就绪后同步天气叠加层（之前 syncWeatherOverlay 在 mapReady=true 之前调用会被跳过）
+    syncWeatherOverlay()
+    // 应用初始交互模式（若已处于选择模式则禁用 dragPan）
+    if (uiStore.interactionMode === 'select') {
+      map.dragPan.disable()
+    }
+
     requestAnimationFrame(() => {
       mapVisible.value = true
       window.setTimeout(() => {
@@ -1161,6 +1464,8 @@ onMounted(async () => {
   map.on('resize', scheduleHotspotSync)
   map.on('render', scheduleHotspotSync)
   map.on('click', (event) => {
+    // 仅在选择模式下触发点选择，避免移动模式下点击也查询天气
+    if (uiStore.interactionMode !== 'select') return
     emit('mapPointSelect', {
       lng: event.lngLat.lng,
       lat: event.lngLat.lat,
@@ -1170,13 +1475,37 @@ onMounted(async () => {
 
 // ─── Watchers ────────────────────────────────────────────────────────────────
 
+// 底图切换防抖：快速连续切换时只执行最后一次
+let tileSourceDebounceHandle: number | null = null
+
 watch(
   () => props.tileSourceId,
   (sourceId) => {
     if (!mapReady.value) return
-    triggerSourceTransition()
-    switchTileSource(sourceId)
-    window.setTimeout(syncNavigationControlTheme, 0)
+    if (tileSourceDebounceHandle !== null) {
+      window.clearTimeout(tileSourceDebounceHandle)
+    }
+    const token = ++switchTileToken
+    tileSourceDebounceHandle = window.setTimeout(() => {
+      tileSourceDebounceHandle = null
+      if (token !== switchTileToken) return // 已被后续切换覆盖
+      triggerSourceTransition()
+      switchTileSource(sourceId)
+      window.setTimeout(syncNavigationControlTheme, 0)
+    }, 80)
+  },
+)
+
+// 交互模式切换：选择模式禁用 dragPan（改为点击选择），移动模式恢复 dragPan
+watch(
+  () => uiStore.interactionMode,
+  (mode) => {
+    if (!map || !mapReady.value) return
+    if (mode === 'select') {
+      map.dragPan.disable()
+    } else {
+      map.dragPan.enable()
+    }
   },
 )
 
@@ -1205,14 +1534,17 @@ watch(
     // 粒子流启用状态
     layersStore.particleFlowCatalogId,
   ],
-  () => syncWeatherOverlay(),
+  () => scheduleSyncWeatherOverlay(),
 )
 
 // Watch selected layer for hotspot changes
+// M15 修复：仅在首次加载后自动聚焦图层，后续选择不再触发缩放回弹
 watch(
   () => [selectedLayer.value?.instanceId, selectedLayer.value?.hotspots],
   () => {
-    focusActiveLayer()
+    if (!_initialFocusDone) {
+      focusActiveLayer()
+    }
     scheduleHotspotSync()
   },
 )
@@ -1220,6 +1552,7 @@ watch(
 onBeforeUnmount(() => {
   if (animationFrameId !== null) cancelAnimationFrame(animationFrameId)
   if (sourceTransitionTimer !== null && typeof window !== 'undefined') window.clearTimeout(sourceTransitionTimer)
+  if (tileSourceDebounceHandle !== null) window.clearTimeout(tileSourceDebounceHandle)
   removeWeatherOverlay()
   map?.remove()
   map = null
@@ -1285,7 +1618,8 @@ onBeforeUnmount(() => {
           <line x1="12" y1="16" x2="12.01" y2="16"/>
         </svg>
       </span>
-      <span>瓦片加载失败</span>
+      <span v-if="tileFailedProvider">底图「{{ tileFailedProvider }}」加载失败（需要配置 API Key 或网络不可达）</span>
+      <span v-else>底图瓦片加载失败</span>
       <button class="tile-retry-btn" @click="retryTileLoad">重试</button>
     </div>
 
