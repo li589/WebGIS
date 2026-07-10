@@ -92,6 +92,33 @@ class WorkflowRepositoryTests(unittest.TestCase):
             self.assertEqual(events[0].event_id, "evt-1")
             self.assertEqual(events[0].channel, EventChannel.status)
 
+    def test_list_events_supports_after_event_id_cursor(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            repository = SQLiteWorkflowRepository(state_dir=Path(tmpdir))
+            now = datetime.now(timezone.utc)
+            repository.append_event(
+                WorkflowEvent(
+                    event_id="evt-1",
+                    run_id="run-test",
+                    channel=EventChannel.status,
+                    message="accepted",
+                    created_at=now,
+                )
+            )
+            repository.append_event(
+                WorkflowEvent(
+                    event_id="evt-2",
+                    run_id="run-test",
+                    channel=EventChannel.system,
+                    message="running",
+                    created_at=now,
+                )
+            )
+
+            events = repository.list_events("run-test", after_event_id="evt-1")
+            self.assertEqual(len(events), 1)
+            self.assertEqual(events[0].event_id, "evt-2")
+
 
 if __name__ == "__main__":
     unittest.main()
