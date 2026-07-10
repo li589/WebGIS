@@ -483,6 +483,9 @@ class WorkflowAnalysisResultDto(BaseModel):
     workflow_entry_name: str | None = None
     layer_id: str | None = None
     requested_hour: float | None = None
+    compatibility_mode: str | None = None
+    summary: str | None = None
+    status_label: str | None = None
     metric_label: str | None = None
     metric_value: float | int | str | None = None
     metric_unit: str | None = None
@@ -513,6 +516,11 @@ class WorkflowDownloadResultDto(BaseModel):
     workflow_entry_name: str | None = None
     layer_id: str | None = None
     requested_hour: float | None = None
+    compatibility_mode: str | None = None
+    summary: str | None = None
+    status_label: str | None = None
+    availability_state: str | None = None
+    data_state_mode: str | None = None
     download_ticket_id: str | None = None
     execution_status: str | None = None
     job_state: dict[str, Any] = Field(default_factory=dict)
@@ -523,6 +531,7 @@ class WorkflowDownloadResultDto(BaseModel):
     cache_key: str | None = None
     manifest_result_id: str | None = None
     result_category: str = "download"
+    results: dict[str, str | None] = Field(default_factory=dict)
 
 
 WorkflowResultDto = WorkflowAnalysisResultDto | WorkflowProviderResultDto | WorkflowDownloadResultDto | dict[str, Any]
@@ -632,6 +641,8 @@ class WeatherPointHourlyEntry(BaseModel):
     temperature_2m: float | None = None
     precipitation: float | None = None
     wind_speed_10m: float | None = None
+    primary_metric: str | None = None
+    primary_value: float | None = None
 
 
 class WeatherPointResponse(BaseModel):

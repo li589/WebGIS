@@ -68,7 +68,7 @@ class ResultStorageService:
             title=title,
             mime_type=mime_type,
             inline_data=None,
-            resource_url=stored_object.public_url or f"{settings.object_store_public_base}/{artifact_id}",
+            resource_url=f"{settings.object_store_public_base}/{artifact_id}",
             resource_backend=settings.object_store_backend,
             resource_key=artifact_id,
             resource_size_bytes=stored_object.content_length,
@@ -110,7 +110,7 @@ class ResultStorageService:
             title=existing_ref.title,
             mime_type=existing_ref.mime_type,
             inline_data=None,
-            resource_url=stored_object.public_url or f"{settings.object_store_public_base}/{resource_key}",
+            resource_url=f"{settings.object_store_public_base}/{resource_key}",
             resource_backend=settings.object_store_backend,
             resource_key=resource_key,
             resource_size_bytes=stored_object.content_length,
@@ -129,6 +129,12 @@ class ResultStorageService:
 
         for result_ref in result_refs:
             if result_ref.inline_data is None:
+                persisted.append(result_ref)
+                continue
+
+            # map_layer 类型包含 layer_assets（geojson_url、cog_url 等关键 URL），
+            # 必须保留 inline_data，不能溢出为 artifact，否则前端无法获取 geojson_url
+            if result_ref.result_kind == ResultKind.map_layer:
                 persisted.append(result_ref)
                 continue
 
@@ -153,7 +159,7 @@ class ResultStorageService:
                     title=result_ref.title,
                     mime_type=result_ref.mime_type,
                     inline_data=None,
-                    resource_url=stored.public_url or f"{settings.object_store_public_base}/{stored.artifact_id}",
+                    resource_url=f"{settings.object_store_public_base}/{stored.artifact_id}",
                     resource_backend=settings.object_store_backend,
                     resource_key=stored.artifact_id,
                     resource_size_bytes=stored.content_length,
@@ -254,7 +260,7 @@ class ResultStorageService:
                 title=title,
                 mime_type=mime_type,
                 inline_data=manifest_data,
-                resource_url=manifest_object.public_url or f"{settings.object_store_public_base}/{artifact_id}",
+                resource_url=f"{settings.object_store_public_base}/{artifact_id}",
                 resource_backend=settings.object_store_backend,
                 resource_key=artifact_id,
                 resource_size_bytes=manifest_object.content_length,

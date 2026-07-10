@@ -106,10 +106,11 @@ class AnalysisWorkflowService:
         events = [
             event_factory(
                 channel="log",
-                message="分析服务已完成 Demo 快照提取与分析聚合。",
+                message="兼容分析服务已完成 Demo 快照提取与分析聚合。",
                 progress=70,
                 payload={
                     "service": "analysis_workflow_service",
+                    "compatibility_mode": "legacy-demo",
                     "layer_id": layer_id,
                     "requested_hour": snapshot.requested_hour,
                     "hotspot_count": len(hotspot_rows),
@@ -128,7 +129,8 @@ class AnalysisWorkflowService:
         ]
 
         diagnostics = [
-            "analysis_workflow_service 已接入 services -> tasks 编排链。",
+            "analysis_workflow_service 属于 legacy/demo 兼容实现，不应视为 workflow-runs 主业务事实源。",
+            "legacy_demo_service=true",
             f"resolved_layer_id={layer_id}",
             f"resolved_hour={snapshot.requested_hour}",
             f"result_count={len(result_refs)}",
@@ -146,6 +148,9 @@ class AnalysisWorkflowService:
                 "workflow_entry_name": workflow_entry_name,
                 "layer_id": layer_id,
                 "requested_hour": snapshot.requested_hour,
+                "compatibility_mode": "legacy-demo",
+                "summary": snapshot.summary,
+                "status_label": snapshot.status_label,
                 "metric_label": snapshot.metric_label,
                 "metric_value": metric_value,
                 "metric_unit": snapshot.metric_unit,

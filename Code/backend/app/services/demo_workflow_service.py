@@ -22,7 +22,7 @@ class DemoWorkflowService:
         requested_hour = self._resolve_requested_hour(payload)
         snapshot = get_demo_layer_snapshot(layer_id, requested_hour)
         if snapshot is None:
-            raise ValueError(f"Unsupported demo workflow layer: {layer_id}")
+            raise ValueError(f"Unsupported legacy/demo workflow layer: {layer_id}")
 
         metric_value = self._extract_metric_value(snapshot.raw_payload, snapshot.field_aliases.metric_value)
         hotspot_rows = self._build_hotspot_rows(snapshot)
@@ -106,9 +106,11 @@ class DemoWorkflowService:
         events = [
             event_factory(
                 channel="log",
-                message="任务层已完成 Demo 快照提取与分析聚合。",
+                message="兼容 Demo 工作流已完成快照提取与分析聚合。",
                 progress=70,
                 payload={
+                    "service": "demo_workflow_service",
+                    "compatibility_mode": "legacy-demo",
                     "layer_id": layer_id,
                     "requested_hour": snapshot.requested_hour,
                     "hotspot_count": len(hotspot_rows),
@@ -116,7 +118,7 @@ class DemoWorkflowService:
             ),
             event_factory(
                 channel="data",
-                message="真实工作流结果已生成。",
+                message="兼容 Demo 工作流结果已生成。",
                 progress=92,
                 payload={
                     "result_count": len(result_refs),
@@ -127,15 +129,37 @@ class DemoWorkflowService:
         ]
 
         diagnostics = [
-            "workflow-runs 已接入 services -> tasks 同步编排链。",
+            "demo_workflow_service 属于 legacy/demo 兼容实现，不应视为 workflow-runs 主业务事实源。",
+            "legacy_demo_service=true",
             f"resolved_layer_id={layer_id}",
             f"resolved_hour={snapshot.requested_hour}",
             f"result_count={len(result_refs)}",
         ]
 
         return WorkflowExecutionResult(
-            message=f"{snapshot.display_name} 工作流执行完成，已生成 {len(result_refs)} 个结果引用。",
+            message=f"兼容 Demo 工作流执行完成，已生成 {len(result_refs)} 个结果引用。",
             result_refs=result_refs,
+            result_dto={
+                "workflow_entry_name": "demo_workflow",
+                "layer_id": layer_id,
+                "requested_hour": snapshot.requested_hour,
+                "compatibility_mode": "legacy-demo",
+                "summary": snapshot.summary,
+                "status_label": snapshot.status_label,
+                "metric_label": snapshot.metric_label,
+                "metric_value": metric_value,
+                "metric_unit": snapshot.metric_unit,
+                "availability_state": snapshot.availability_state.value,
+                "data_state_mode": snapshot.data_state_mode.value,
+                "hotspot_count": len(hotspot_rows),
+                "result_category": "analysis",
+                "results": {
+                    "json_result_id": result_refs[0].result_id,
+                    "table_result_id": next((item.result_id for item in result_refs if item.result_kind == ResultKind.table), None),
+                    "chart_result_id": next((item.result_id for item in result_refs if item.result_kind == ResultKind.chart), None),
+                    "text_result_id": next((item.result_id for item in result_refs if item.result_kind == ResultKind.text), None),
+                },
+            },
             diagnostics=diagnostics,
             events=events,
         )

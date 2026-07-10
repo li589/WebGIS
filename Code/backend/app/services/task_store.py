@@ -79,7 +79,7 @@ class SQLiteTaskStore:
                 status=TaskStatus.queued,
                 status_url=status_url,
                 created_at=now,
-                message="任务已提交，内部已桥接到 workflow-runs 主链。",
+                message="任务已提交；该 legacy tasks 兼容入口已软下线，内部自动桥接到 workflow-runs 主链。",
             )
 
     def get_task(self, task_id: str) -> TaskStatusResponse | None:
@@ -224,6 +224,7 @@ class SQLiteTaskStore:
             diagnostics=[
                 f"bridged_run_id={workflow_run.run_id}",
                 "legacy_tasks_endpoint=true",
+                "compat_status=soft-offline",
                 *workflow_run.diagnostics,
             ],
         )

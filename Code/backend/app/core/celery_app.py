@@ -28,7 +28,17 @@ if celery_available:
         timezone="UTC",
         enable_utc=True,
         task_track_started=True,
+        # 禁用 task_send_sent_event 以避免 Windows 上 Celery 5.4 的 ValueError 问题
+        task_send_sent_event=False,
+        worker_send_task_events=False,
+        # 使用标准 trace 模式而非 fast_trace
+        worker_pool="prefork",
         task_always_eager=settings.celery_task_always_eager,
+        # 默认任务超时限制，防止无限期运行
+        # soft_time_limit：软超时，抛出 SoftTimeLimitExceeded，可被捕获清理
+        # time_limit：硬超时，直接 SIGKILL，不可捕获
+        task_soft_time_limit=settings.celery_task_soft_time_limit,
+        task_time_limit=settings.celery_task_time_limit,
     )
     if settings.weather_schedule_enabled and crontab is not None:
         celery_app.conf.beat_schedule = {

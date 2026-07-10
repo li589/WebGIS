@@ -100,17 +100,17 @@ class Settings:
     cors_origins: list[str] = field(
         default_factory=lambda: _parse_csv_env(
             "BACKEND_CORS_ORIGINS",
-            "http://127.0.0.1:5173,http://localhost:5173,http://127.0.0.1:5174,http://localhost:5174,http://127.0.0.1:4173,http://localhost:4173",
+            "http://127.0.0.1:5173,http://localhost:5173,http://127.0.0.1:5174,http://localhost:5174,http://127.0.0.1:5175,http://localhost:5175,http://127.0.0.1:5176,http://localhost:5176,http://127.0.0.1:4173,http://localhost:4173",
         )
     )
 
     # ---- 数据源配置 ----
     # 存储后端类型：local（本地文件系统）或 minio（MinIO 对象存储）
     storage_backend: str = os.getenv("BACKEND_STORAGE_BACKEND", "local")
-    # 本地模式数据根目录（逻辑数据集的根路径）
-    data_root: str = os.getenv("BACKEND_DATA_ROOT", r"I:\Geograph_DataSet")
-    # 产物输出根目录（算法产物的写入路径）
-    output_root: str = os.getenv("BACKEND_OUTPUT_ROOT", r"I:\GeoOutput")
+    # 本地模式数据根目录（逻辑数据集的根路径，必须通过环境变量配置）
+    data_root: str = os.getenv("BACKEND_DATA_ROOT", "")
+    # 产物输出根目录（算法产物的写入路径，必须通过环境变量配置）
+    output_root: str = os.getenv("BACKEND_OUTPUT_ROOT", "")
 
     # ---- GEE 引擎配置 ----
     # 是否启用 GEE 引擎桥接（False 时 gee_bridge_service.supports 永远返回 False）
@@ -182,10 +182,19 @@ class Settings:
     # ---- 底图代理配置 ----
     # 天地图 API Key（从 https://console.tianditu.gov.cn/ 获取）
     tianditu_api_key: str = os.getenv("BACKEND_TIANDITU_API_KEY", "")
+    # 百度地图 API Key（从 https://lbsyun.baidu.com/ 获取，百度 tile 服务需要 ak 认证）
+    baidu_api_key: str = os.getenv("BACKEND_BAIDU_API_KEY", "")
     # 是否启用底图代理（False 时前端直接访问外部 tile 服务器）
     tile_proxy_enabled: bool = os.getenv("BACKEND_TILE_PROXY_ENABLED", "true").lower() == "true"
     # 底图代理缓存 TTL（秒）
     tile_proxy_cache_ttl_seconds: int = int(os.getenv("BACKEND_TILE_PROXY_CACHE_TTL_SECONDS", "86400"))
+
+    # ---- Celery 任务超时配置 ----
+    # 软超时（秒）：任务超过此时间未完成则抛出 SoftTimeLimitExceeded，
+    # 可被 except SoftTimeLimitExceeded 捕获，用于优雅清理资源后退出
+    celery_task_soft_time_limit: int = int(os.getenv("BACKEND_CELERY_TASK_SOFT_TIME_LIMIT", "300"))
+    # 硬超时（秒）：任务超过此时间无论处于什么状态都会被 SIGKILL 强制终止
+    celery_task_time_limit: int = int(os.getenv("BACKEND_CELERY_TASK_TIME_LIMIT", "360"))
 
 
 

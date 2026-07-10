@@ -8,6 +8,7 @@ from app.workflow_engine.models import ExecutionContext, RunResult, WorkflowDefi
 from app.workflow_engine.registry import NodeRegistry
 from app.weatherengine.nodes import (
     ForecastFetchNode,
+    GridFetchNode,
     PointParseNode,
     WindFieldRenderNode,
     TemperatureGridRenderNode,
@@ -39,6 +40,7 @@ class WeatherWorkflowService:
     def _register_default_nodes(self) -> None:
         default_nodes = (
             ForecastFetchNode,
+            GridFetchNode,
             PointParseNode,
             WindFieldRenderNode,
             TemperatureGridRenderNode,

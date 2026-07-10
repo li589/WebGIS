@@ -120,10 +120,11 @@ class DownloadWorkflowService:
         events = [
             event_factory(
                 channel="system",
-                message="下载服务已生成数据拉取计划。",
+                message="兼容下载服务已生成 Demo/legacy 数据拉取计划。",
                 progress=68,
                 payload={
                     "service": "download_workflow_service",
+                    "compatibility_mode": "legacy-demo",
                     "layer_id": layer_id,
                     "channel": plan.channel,
                     "refresh_policy": plan.refresh_policy,
@@ -153,7 +154,8 @@ class DownloadWorkflowService:
         ]
 
         diagnostics = [
-            "download_workflow_service 已接入 services -> tasks 编排链。",
+            "download_workflow_service 属于 legacy/demo 兼容实现，不应视为 workflow-runs 主业务事实源。",
+            "legacy_demo_service=true",
             "download_service 已升级为可执行下载骨架，可生成并复用 manifest artifact。",
             "cache_service 已记录下载计划缓存元数据与 artifact 指针。",
             f"resolved_layer_id={layer_id}",
@@ -182,6 +184,11 @@ class DownloadWorkflowService:
                 "workflow_entry_name": workflow_entry_name,
                 "layer_id": layer_id,
                 "requested_hour": requested_hour,
+                "compatibility_mode": "legacy-demo",
+                "summary": snapshot.summary,
+                "status_label": snapshot.status_label,
+                "availability_state": snapshot.availability_state.value,
+                "data_state_mode": snapshot.data_state_mode.value,
                 "download_ticket_id": plan.download_ticket_id,
                 "execution_status": plan.execution_status,
                 "job_state": plan.job_state,
@@ -192,6 +199,11 @@ class DownloadWorkflowService:
                 "cache_key": plan.cache_entry.cache_key,
                 "manifest_result_id": plan.manifest_result_ref.result_id,
                 "result_category": "download",
+                "results": {
+                    "json_result_id": summary_result_id,
+                    "text_result_id": next((item.result_id for item in result_refs if item.result_kind == ResultKind.text), None),
+                    "manifest_result_id": plan.manifest_result_ref.result_id,
+                },
             },
             diagnostics=diagnostics,
             events=events,

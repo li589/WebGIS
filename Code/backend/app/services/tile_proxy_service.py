@@ -21,7 +21,13 @@ import httpx
 from fastapi import HTTPException
 
 from app.core.config import settings
-from app.services.coordinate_transform_service import bd09_to_gcj02, gcj02_to_wgs84
+from app.services.coordinate_transform_service import (
+    bd09_to_gcj02,
+    gcj02_to_wgs84,
+    wgs84_to_bd09,
+    wgs84_to_gcj02,
+    CoordinatePoint,
+)
 
 
 class TileProvider(Enum):
@@ -70,33 +76,35 @@ TILE_URL_TEMPLATES: dict[str, TileUrlTemplate] = {
     # 高德地图（GCJ-02 坐标系）
     "gaode-street": TileUrlTemplate(
         provider=TileProvider.GAODE,
-        url_pattern="https://webrd01.is.autonavi.com/appmaptile?lang=zh_cn&size=1&scale=1&style=8&x={x}&y={y}&z={z}",
+        url_pattern="https://webrd0{server}.is.autonavi.com/appmaptile?lang=zh_cn&size=1&scale=1&style=8&x={x}&y={y}&z={z}",
         requires_transform=True,
         coord_system="GCJ-02",
     ),
     "gaode-satellite": TileUrlTemplate(
         provider=TileProvider.GAODE,
-        url_pattern="https://wprd01.is.autonavi.com/appmaptile?lang=zh_cn&size=1&scale=1&style=6&x={x}&y={y}&z={z}",
+        url_pattern="https://webst0{server}.is.autonavi.com/appmaptile?style=6&x={x}&y={y}&z={z}",
         requires_transform=True,
         coord_system="GCJ-02",
     ),
     "gaode-label": TileUrlTemplate(
         provider=TileProvider.GAODE,
-        url_pattern="https://wprd01.is.autonavi.com/appmaptile?lang=zh_cn&size=1&scale=1&style=8&x={x}&y={y}&z={z}",
+        url_pattern="https://webst0{server}.is.autonavi.com/appmaptile?style=8&x={x}&y={y}&z={z}",
         requires_transform=True,
         coord_system="GCJ-02",
     ),
 
     # 百度地图（BD-09 坐标系）
+    # 注意：百度 tile 服务器不支持 HTTPS（SSL 握手失败），必须使用 HTTP
+    # 百度 tile 服务需要 ak 认证，未配置时返回 503 错误
     "baidu-street": TileUrlTemplate(
         provider=TileProvider.BAIDU,
-        url_pattern="https://maponline{server}.bdimg.com/stackion/v1/blogo?qt=vtile&x={x}&y={y}&z={z}&styles=pl&scaler=1&l=18",
+        url_pattern="http://online{server}.map.bdimg.com/onlinelabel/?qt=tile&x={x}&y={y}&z={z}&styles=pl&scaler=1&p=1&ak={ak}",
         requires_transform=True,
         coord_system="BD-09",
     ),
     "baidu-satellite": TileUrlTemplate(
         provider=TileProvider.BAIDU,
-        url_pattern="https://maponline{server}.bdimg.com/stackion/v1/bc?qt=tile&x={x}&y={y}&z={z}&styles=sl&scaler=1&l=18",
+        url_pattern="http://shangetu{server}.map.bdimg.com/it/u=x={x};y={y};z={z};v=009;type=sate&fm=46&ak={ak}",
         requires_transform=True,
         coord_system="BD-09",
     ),
@@ -114,11 +122,18 @@ TILE_URL_TEMPLATES: dict[str, TileUrlTemplate] = {
         requires_transform=False,
         coord_system="WGS84",
     ),
+    "esri-terrain": TileUrlTemplate(
+        provider=TileProvider.ESRI,
+        url_pattern="https://server.arcgisonline.com/ArcGIS/rest/services/World_Topo_Map/MapServer/tile/{z}/{y}/{x}",
+        requires_transform=False,
+        coord_system="WGS84",
+    ),
 
     # OSM（直接访问）
+    # 注意：tile.openstreetmap.org 在国内网络环境下不可达，改用德国镜像
     "osm-standard": TileUrlTemplate(
         provider=TileProvider.OSM,
-        url_pattern="https://tile.openstreetmap.org/{z}/{x}/{y}.png",
+        url_pattern="https://tile.openstreetmap.de/{z}/{x}/{y}.png",
         requires_transform=False,
         coord_system="WGS84",
     ),
@@ -132,19 +147,67 @@ TILE_URL_TEMPLATES: dict[str, TileUrlTemplate] = {
     # Bing（直接访问，无需坐标转换）
     "bing-road": TileUrlTemplate(
         provider=TileProvider.BING,
-        url_pattern="https://t0.ssl.ak.tiles.virtualearth.net/tiles/r{quadkey}.png?g=123",
+        url_pattern="https://ecn.t0.tiles.virtualearth.net/tiles/r{quadkey}.png?g=14245",
         requires_transform=False,
         coord_system="WGS84",
     ),
     "bing-aerial": TileUrlTemplate(
         provider=TileProvider.BING,
-        url_pattern="https://t0.ssl.ak.tiles.virtualearth.net/tiles/a{quadkey}.png?g=123",
+        url_pattern="https://ecn.t0.tiles.virtualearth.net/tiles/a{quadkey}.png?g=14245",
         requires_transform=False,
         coord_system="WGS84",
     ),
     "bing-dark": TileUrlTemplate(
         provider=TileProvider.BING,
-        url_pattern="https://t0.ssl.ak.tiles.virtualearth.net/tiles/h{quadkey}.png?g=123",
+        url_pattern="https://ecn.t0.tiles.virtualearth.net/tiles/h{quadkey}.png?g=14245",
+        requires_transform=False,
+        coord_system="WGS84",
+    ),
+
+    # CARTO（直接访问）
+    # 注意：a.basemaps.cartocdn.com 在国内不可达，改用 b 子域名
+    "carto-light": TileUrlTemplate(
+        provider=TileProvider.OSM,
+        url_pattern="https://b.basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png",
+        requires_transform=False,
+        coord_system="WGS84",
+    ),
+    "carto-dark": TileUrlTemplate(
+        provider=TileProvider.OSM,
+        url_pattern="https://b.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png",
+        requires_transform=False,
+        coord_system="WGS84",
+    ),
+
+    # Stadia（已迁移到 PolyMaps，需要 API Key，暂时禁用）
+    # "stadia-streets": TileUrlTemplate(
+    #     provider=TileProvider.OSM,
+    #     url_pattern="https://tiles.stadiamaps.com/tiles/stamen_toner/{z}/{x}/{y}.png",
+    #     requires_transform=False,
+    #     coord_system="WGS84",
+    # ),
+    # "stadia-dark": TileUrlTemplate(
+    #     provider=TileProvider.OSM,
+    #     url_pattern="https://tiles.stadiamaps.com/tiles/alidade_smooth_dark/{z}/{x}/{y}.png",
+    #     requires_transform=False,
+    #     coord_system="WGS84",
+    # ),
+    # "stadia-satellite": TileUrlTemplate(
+    #     provider=TileProvider.OSM,
+    #     url_pattern="https://tiles.stadiamaps.com/tiles/stamen_toner_satellite/{z}/{x}/{y}.png",
+    #     requires_transform=False,
+    #     coord_system="WGS84",
+    # ),
+
+    "esri-dark": TileUrlTemplate(
+        provider=TileProvider.ESRI,
+        url_pattern="https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}",
+        requires_transform=False,
+        coord_system="WGS84",
+    ),
+    "esri-light": TileUrlTemplate(
+        provider=TileProvider.ESRI,
+        url_pattern="https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Light_Gray_Base/MapServer/tile/{z}/{y}/{x}",
         requires_transform=False,
         coord_system="WGS84",
     ),
@@ -161,8 +224,9 @@ class TileProxyService:
 
     async def get_http_client(self) -> httpx.AsyncClient:
         if self._http_client is None:
+            # 分层超时：连接超时短（5s）让不可达底图快速失败，读取超时长（30s）允许慢速 CDN
             self._http_client = httpx.AsyncClient(
-                timeout=10.0,
+                timeout=httpx.Timeout(connect=5.0, read=30.0, write=10.0, pool=5.0),
                 follow_redirects=True,
                 headers={
                     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
@@ -214,36 +278,35 @@ class TileProxyService:
 
         # 2. 坐标转换
         if template.coord_system == "GCJ-02":
-            # WGS84 -> GCJ-02（注意：gcj02_to_wgs84 是反向的，我们需要反过来）
-            # 实际上对于 tile 请求，我们需要将 WGS84 转换为 GCJ-02
-            # 但 coordinate_transform_service 只提供了反向转换
-            # 这里使用近似方法：已知 WGS84，求 GCJ-02
-            # 简单近似：GCJ-02 偏移量约 0.001~0.002 度
-            gcj_lat = wgs_lat + 0.002  # 近似偏移
-            gcj_lon = wgs_lon + 0.001
+            target = wgs84_to_gcj02(wgs_lon, wgs_lat)
+            gcj_lon, gcj_lat = target.lng, target.lat
         elif template.coord_system == "BD-09":
-            # WGS84 -> BD-09 需要两步
-            # 先转 GCJ-02，再转 BD-09
-            gcj_lat = wgs_lat + 0.002
-            gcj_lon = wgs_lon + 0.001
-            bd_point = bd09_to_gcj02(gcj_lon, gcj_lat)
-            gcj_lat = bd_point.lat
-            gcj_lon = bd_point.lng
+            target = wgs84_to_bd09(wgs_lon, wgs_lat)
+            gcj_lon, gcj_lat = target.lng, target.lat
         else:
-            gcj_lat, gcj_lon = wgs_lat, wgs_lon
+            gcj_lon, gcj_lat = wgs_lon, wgs_lat
 
-        # 3. GCJ-02/BD-09 经纬度转 Mercator tile 坐标
-        # 使用近似方法：直接用转换后的坐标计算 tile
+        # 3. 将目标坐标系经纬度转换为 Mercator tile 坐标
+        merc = self._lonlat_to_mercator(gcj_lon, gcj_lat)
         n = 2 ** z
-        new_x = int((gcj_lon + 180.0) / 360.0 * n)
-        lat_rad = gcj_lat * math.pi / 180.0
-        new_y = int((1.0 - math.log(math.tan(lat_rad) + 1.0 / math.cos(lat_rad)) / math.pi) / 2.0 * n)
+        new_x = int((merc.lng + 20037508.342789244) / 20037508.342789244 / 2 * n)
+        new_y = int((20037508.342789244 - merc.lat) / 20037508.342789244 / 2 * n)
 
         # 限制范围
         new_x = max(0, min(n - 1, new_x))
         new_y = max(0, min(n - 1, new_y))
 
         return new_x, new_y, z
+
+    def _lonlat_to_mercator(self, lng: float, lat: float) -> 'CoordinatePoint':
+        """经纬度转 Web Mercator"""
+        import math
+        origin_shift = 20037508.342789244
+        max_lat = 85.05112878
+        clipped_lat = max(-max_lat, min(max_lat, lat))
+        mx = lng * origin_shift / 180.0
+        my = math.log(math.tan((90.0 + clipped_lat) * math.pi / 360.0)) * origin_shift / math.pi
+        return CoordinatePoint(lng=mx, lat=my)
 
     def _xyz_to_quadkey(self, x: int, y: int, z: int) -> str:
         """将 x, y, z tile 坐标转换为 Bing quadkey"""
@@ -284,6 +347,20 @@ class TileProxyService:
         if not template:
             raise HTTPException(status_code=400, detail=f"Unknown tile provider: {tile_id}")
 
+        # 天地图需要 API Key（tk），未配置时返回明确错误
+        if template.provider == TileProvider.TIANDITU and not settings.tianditu_api_key:
+            raise HTTPException(
+                status_code=503,
+                detail="天地图需要配置 BACKEND_TIANDITU_API_KEY 环境变量。请从 https://console.tianditu.gov.cn/ 申请 Key。",
+            )
+
+        # 百度需要 API Key（ak），未配置时返回明确错误（否则百度返回空白 tile）
+        if template.provider == TileProvider.BAIDU and not settings.baidu_api_key:
+            raise HTTPException(
+                status_code=503,
+                detail="百度地图需要配置 BACKEND_BAIDU_API_KEY 环境变量。请从 https://lbsyun.baidu.com/ 申请 ak。",
+            )
+
         # 坐标转换
         tx, ty, tz = self._transform_coords_for_tile(x, y, z, template)
 
@@ -293,11 +370,19 @@ class TileProxyService:
             quadkey = self._xyz_to_quadkey(tx, ty, tz)
             url = template.url_pattern.format(quadkey=quadkey)
         else:
-            url = template.url_pattern.format(
-                x=tx, y=ty, z=tz,
-                tk=settings.tianditu_api_key or "demo",
-                server=hashlib.md5(f"{tx}{ty}".encode()).hexdigest()[0] % 4 + 1,
-            )
+            # 只传递模板中需要的参数
+            format_args = {"x": tx, "y": ty, "z": tz}
+            # 只有天地图模板需要 tk 参数
+            if "{tk}" in template.url_pattern:
+                format_args["tk"] = settings.tianditu_api_key
+            # 百度模板需要 ak 参数
+            if "{ak}" in template.url_pattern:
+                format_args["ak"] = settings.baidu_api_key
+            # 高德/百度模板需要 server 子域名编号（1-4），用于负载均衡
+            if "{server}" in template.url_pattern:
+                # 修复：hexdigest()[0] 是字符串字符，必须先 int(..., 16) 转为整数才能取模
+                format_args["server"] = int(hashlib.md5(f"{tx}{ty}".encode()).hexdigest()[0], 16) % 4 + 1
+            url = template.url_pattern.format(**format_args)
 
         # 检查缓存
         cache_key = self._get_cache_key(url)

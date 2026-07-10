@@ -14,6 +14,12 @@ from shared.contracts.api_contracts import (
     WorkflowResultReference,
     WorkflowSubmitRequest,
 )
+from app.weatherengine.workflow_manager import (
+    WorkflowLifecycleManager,
+    WorkflowPriority,
+    WorkflowState,
+    workflow_lifecycle_manager,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -86,6 +92,47 @@ class WeatherBridgeService:
         workflow = weather_request.get("workflow")
         context = weather_request.get("context") or self._build_default_context(payload, run_id)
 
+        # 从 weather_request 中提取优先级，默认为 VIEWPORT
+        priority_str = weather_request.get("priority", "viewport")
+        try:
+            priority = WorkflowPriority[priority_str.upper()]
+        except KeyError:
+            priority = WorkflowPriority.VIEWPORT
+
+        # 获取图层 ID
+        layer_id = payload.layer_id or weather_request.get("layer_id") or f"weather-{run_id[-8:]}"
+
+        # 将 viewport_bbox 注入到 workflow.inputs，使节点可通过 resolve_bbox() 获取正确的渲染范围
+        viewport_bbox_dict = None
+        if payload.map_context and payload.map_context.viewport_bbox:
+            viewport_bbox_dict = payload.map_context.viewport_bbox.model_dump(mode="json")
+            if isinstance(workflow, dict):
+                workflow["inputs"] = {**workflow.get("inputs", {}), "viewport_bbox": viewport_bbox_dict}
+            elif hasattr(workflow, "inputs") and isinstance(workflow.inputs, dict):
+                workflow.inputs["viewport_bbox"] = viewport_bbox_dict
+
+        # 注册工作流到生命周期管理器（自动替换旧工作流）
+        workflow_id = weather_request.get("workflow_id") or f"wf-{layer_id}-{datetime.now().strftime('%Y%m%d%H%M%S')}"
+        
+        async def cancel_callback():
+            """取消回调：当新工作流替换旧工作流时调用"""
+            logger.info(f"[WeatherBridgeService] Cancel callback triggered for workflow {workflow_id}")
+
+        workflow_lifecycle_manager.submit_workflow(
+            layer_id=layer_id,
+            workflow_id=workflow_id,
+            priority=priority,
+            bbox=viewport_bbox_dict,
+            metadata={
+                "run_id": run_id,
+                "command_type": payload.command_type.value,
+            },
+            cancel_callback=cancel_callback,
+        )
+
+        # 更新状态为运行中
+        workflow_lifecycle_manager.update_workflow_state(layer_id, WorkflowState.RUNNING, run_id=run_id)
+
         # 执行工作流
         exec_context = ExecutionContext.model_validate(context) if isinstance(context, dict) else context
         run_result = service.execute_workflow(workflow, exec_context)
@@ -95,11 +142,17 @@ class WeatherBridgeService:
         # 修复后：status=failed 时抛 RuntimeError，hub 会捕获并标记 workflow 为 failed
         # 注意：必须使用 _status_str() 而非 str()，因为 RunStatus(str, Enum) 在
         # Python 3.11+ 下 str() 返回 "RunStatus.failed" 而非 "failed"
-        if self._status_str(run_result.status).lower() == "failed":
+        status_str = self._status_str(run_result.status).lower()
+        if status_str == "failed":
+            # 更新工作流状态为失败
+            workflow_lifecycle_manager.update_workflow_state(layer_id, WorkflowState.FAILED)
             error_detail = "; ".join(run_result.errors[:5]) if run_result.errors else "unknown failure"
             raise RuntimeError(
                 f"天气工作流执行失败 (status=failed): {error_detail}"
             )
+
+        # 更新工作流状态为完成
+        workflow_lifecycle_manager.update_workflow_state(layer_id, WorkflowState.COMPLETED)
 
         result_refs = self._build_result_refs(
             run_id=run_id,

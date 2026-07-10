@@ -1,4 +1,5 @@
 import logging
+from contextlib import asynccontextmanager
 from uuid import uuid4
 
 from fastapi import FastAPI, Request
@@ -11,10 +12,24 @@ from app.api.gee_config_routes import router as gee_config_router
 from app.core.config import settings
 from app.core.logging import ensure_logging_configured, log_context, set_request_id
 from app.gee.core.src.webgis_gee.api.routes import create_api_router as create_gee_router
+from app.services.interaction_hub import interaction_hub
 
 logger = logging.getLogger(__name__)
 
 ensure_logging_configured()
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # 启动时清理上一会话遗留的僵尸工作流（accepted/queued/running/retry_pending）
+    # 这些工作流在进程重启后不会再被 Celery worker 消费，会永久卡住
+    try:
+        cleaned = interaction_hub.cleanup_stale_workflow_runs()
+        if cleaned > 0:
+            logger.info("Startup cleanup: marked %d stale workflow run(s) as failed", cleaned)
+    except Exception:
+        logger.exception("Failed to cleanup stale workflow runs on startup")
+    yield
 
 
 def create_app() -> FastAPI:
@@ -22,6 +37,7 @@ def create_app() -> FastAPI:
         title=settings.service_name,
         version="0.1.0",
         description="Minimal backend service for the geographic analysis platform.",
+        lifespan=lifespan,
     )
     _origins = settings.cors_origins
     if not _origins:

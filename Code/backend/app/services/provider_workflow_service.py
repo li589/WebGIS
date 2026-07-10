@@ -7,15 +7,24 @@ from uuid import uuid4
 from algorithms.providers.base import ProviderExecutionPayload, ProviderExecutionResult
 from algorithms.registry.provider_registry import get_provider_for_layer
 from app.core.config import settings
+from app.services.layer_catalog import get_layer_descriptor
 from app.services.result_storage import result_storage_service
 from app.services.workflow_execution import WorkflowExecutionResult
-from shared.contracts.api_contracts import ResultKind, WorkflowResultReference, WorkflowSubmitRequest
+from shared.contracts.api_contracts import (
+    LayerRenderType,
+    ResultKind,
+    WeatherLayerRenderHint,
+    WorkflowResultReference,
+    WorkflowSubmitRequest,
+)
 
 logger = logging.getLogger(__name__)
 
 # P0-5: Parameter whitelist — only these keys are permitted in workflow parameters.
 _ALLOWED_PARAMETER_KEYS: frozenset[str] = frozenset({
     "hour",
+    "latitude",
+    "longitude",
     "hotspot_count",
     "series_step_hours",
     "cache_ttl_seconds",
@@ -127,6 +136,11 @@ class ProviderWorkflowService:
         workflow_entry_name = (
             str(algorithm_request.get("workflow_name") or algorithm_request.get("module_name") or "provider_workflow")
         )
+        engine_run_id = (
+            provider_result.metadata.get("engine_run_id")
+            if isinstance(provider_result.metadata, dict)
+            else None
+        )
 
         return WorkflowExecutionResult(
             message=f"{provider_result.title} 工作流执行完成，已生成 {len(result_refs)} 个结果引用。",
@@ -134,7 +148,7 @@ class ProviderWorkflowService:
             result_dto={
                 "workflow_entry_name": workflow_entry_name,
                 "run_id": run_id,
-                "engine_run_id": provider_result.run_id,
+                "engine_run_id": engine_run_id,
                 "layer_id": provider_result.layer_id,
                 "provider_key": provider_result.provider_key,
                 "summary": provider_result.summary,
@@ -395,7 +409,114 @@ class ProviderWorkflowService:
                 )
             )
 
+        if ResultKind.map_layer.value in requested_output_kinds:
+            map_layer_ref, map_layer_diagnostics = self._build_map_layer_ref(
+                run_id=run_id,
+                requested_at=requested_at,
+                provider_result=provider_result,
+            )
+            if map_layer_ref is not None:
+                result_refs.append(map_layer_ref)
+            diagnostics.extend(map_layer_diagnostics)
+
         return result_refs, diagnostics
+
+    def _build_map_layer_ref(
+        self,
+        *,
+        run_id: str,
+        requested_at: datetime,
+        provider_result: ProviderExecutionResult,
+    ) -> tuple[WorkflowResultReference | None, list[str]]:
+        descriptor = get_layer_descriptor(provider_result.layer_id)
+        if descriptor is None:
+            return None, [f"map_layer_skipped=descriptor_missing:{provider_result.layer_id}"]
+
+        if descriptor.render_type != LayerRenderType.heatmap:
+            return None, [f"map_layer_skipped=unsupported_render_type:{descriptor.render_type.value}"]
+
+        features: list[dict[str, object]] = []
+        for index, hotspot in enumerate(provider_result.hotspots):
+            if not isinstance(hotspot, dict):
+                continue
+            lng = hotspot.get("lng")
+            lat = hotspot.get("lat")
+            risk_score = hotspot.get("risk_score")
+            if not isinstance(lng, (int, float)) or not isinstance(lat, (int, float)):
+                continue
+            if not isinstance(risk_score, (int, float)):
+                risk_score = provider_result.metric_value if isinstance(provider_result.metric_value, (int, float)) else 0
+            features.append(
+                {
+                    "type": "Feature",
+                    "geometry": {
+                        "type": "Point",
+                        "coordinates": [float(lng), float(lat)],
+                    },
+                    "properties": {
+                        "id": f"{provider_result.layer_id}-{index + 1}",
+                        "name": str(hotspot.get("name", f"hotspot-{index + 1}")),
+                        "risk_score": float(risk_score),
+                        "metric": "risk_score",
+                        "value": float(risk_score),
+                        "unit": descriptor.style.unit_label or provider_result.metric_unit,
+                        "provider_key": provider_result.provider_key,
+                    },
+                }
+            )
+
+        if not features:
+            return None, [f"map_layer_skipped=no_heatmap_features:{provider_result.layer_id}"]
+
+        feature_collection = {
+            "type": "FeatureCollection",
+            "features": features,
+        }
+        geojson_ref = result_storage_service.create_artifact_result_ref(
+            run_id=run_id,
+            result_id=f"heatmap-geojson-{uuid4().hex[:10]}",
+            result_kind=ResultKind.file,
+            title=f"{provider_result.layer_id} heatmap geojson",
+            mime_type="application/geo+json",
+            updated_at=requested_at,
+            payload=feature_collection,
+        )
+        top_feature = features[0]
+        render_hint = WeatherLayerRenderHint(
+            layer_id=provider_result.layer_id,
+            paint_mode="heatmap",
+            palette=descriptor.style.palette or "magenta-yellow",
+            primary_metric="risk_score",
+            unit_label=descriptor.style.unit_label or provider_result.metric_unit,
+            opacity=descriptor.style.opacity,
+            legend_ticks=[0, 20, 40, 60, 80, 100],
+            notes=[
+                "provider_heatmap=true",
+                f"provider_key={provider_result.provider_key}",
+                "热力图由 provider hotspot 点集真实聚合生成。",
+            ],
+        )
+        map_layer_ref = WorkflowResultReference(
+            result_id=f"map-layer-{uuid4().hex[:10]}",
+            result_kind=ResultKind.map_layer,
+            title=f"{provider_result.title} 热力图图层",
+            mime_type="application/json",
+            inline_data={
+                "render_hint": render_hint.model_dump(mode="json"),
+                "point_feature": top_feature,
+                "layer_assets": {
+                    "geojson_url": geojson_ref.resource_url,
+                    "cog_url": None,
+                    "cog_preview_url": None,
+                    "cog_bbox": None,
+                },
+            },
+            updated_at=requested_at,
+        )
+        return map_layer_ref, [
+            f"heatmap_geojson_points={len(features)}",
+            f"heatmap_geojson_result_id={geojson_ref.result_id}",
+        ]
 
     def _resolve_requested_hour(self, payload: WorkflowSubmitRequest) -> float:
         hour_override = payload.parameters.get("hour")

@@ -103,19 +103,41 @@ class SQLiteWorkflowRepository:
                 (event.event_id, event.run_id, event.created_at.isoformat(), payload),
             )
 
-    def list_events(self, run_id: str) -> list[WorkflowEvent] | None:
+    def list_events(
+        self,
+        run_id: str,
+        *,
+        after_event_id: str | None = None,
+        limit: int | None = None,
+    ) -> list[WorkflowEvent]:
+        query = [
+            "SELECT payload_json",
+            "FROM workflow_events",
+            "WHERE run_id = ?",
+        ]
+        params: list[object] = [run_id]
+
+        if after_event_id:
+            query.extend(
+                [
+                    "AND (",
+                    "  created_at > COALESCE((SELECT created_at FROM workflow_events WHERE event_id = ?), '')",
+                    "  OR (",
+                    "    created_at = COALESCE((SELECT created_at FROM workflow_events WHERE event_id = ?), '')",
+                    "    AND event_id > ?",
+                    "  )",
+                    ")",
+                ]
+            )
+            params.extend([after_event_id, after_event_id, after_event_id])
+
+        query.append("ORDER BY created_at ASC, event_id ASC")
+        if isinstance(limit, int) and limit > 0:
+            query.append("LIMIT ?")
+            params.append(limit)
+
         with self._connect() as connection:
-            rows = connection.execute(
-                """
-                SELECT payload_json
-                FROM workflow_events
-                WHERE run_id = ?
-                ORDER BY created_at ASC, event_id ASC
-                """,
-                (run_id,),
-            ).fetchall()
-        if not rows:
-            return None
+            rows = connection.execute("\n".join(query), params).fetchall()
         return [WorkflowEvent.model_validate(json.loads(row[0])) for row in rows]
 
     def apply_runtime_config(self, items: list[RuntimeConfigPatch]) -> int:

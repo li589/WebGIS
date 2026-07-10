@@ -278,10 +278,10 @@ class LocalFileSourceFetcher(SourceFetcher):
 
 
 class DemoSourceFetcher(SourceFetcher):
-    """demo:// scheme 占位抓取器。
+    """demo:// scheme 兼容抓取器。
 
-    为保持向后兼容，demo:// scheme 仍然走"模拟成功"路径，
-    但会生成最小的占位 artifact，确保 manifest 有真实 resource_key。
+    为保持 legacy/demo 下载链路可继续联调，demo:// scheme 仍然走兼容成功路径，
+    但只会生成最小的 compat artifact，确保 manifest 始终持有稳定的 resource_key。
     """
 
     def supports(self, source_uri: str) -> bool:
@@ -299,7 +299,8 @@ class DemoSourceFetcher(SourceFetcher):
         payload = {
             "ref_id": ref_id,
             "source_uri": source_uri,
-            "note": "demo source placeholder, no real data fetched",
+            "note": "legacy/demo compatibility artifact; no production data fetched",
+            "compatibility_mode": "legacy-demo",
             "fetched_at": fetched_at,
         }
         data = __import__("json").dumps(payload, ensure_ascii=False).encode("utf-8")
@@ -313,6 +314,8 @@ class DemoSourceFetcher(SourceFetcher):
                 "ref_id": ref_id,
                 "fetched_at": fetched_at,
                 "demo": True,
+                "compatibility_mode": "legacy-demo",
+                "artifact_role": "compat-placeholder",
             },
         )
         return FetchResult(

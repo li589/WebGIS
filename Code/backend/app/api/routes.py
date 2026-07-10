@@ -1,12 +1,17 @@
 from datetime import datetime, timedelta, timezone
 from fastapi import APIRouter, Depends, HTTPException, Request, status
-from fastapi.responses import FileResponse, JSONResponse, RedirectResponse, Response
+from fastapi.responses import FileResponse, JSONResponse, Response
 from pathlib import Path
 from threading import Lock
+from concurrent.futures import ThreadPoolExecutor, as_completed
+import json
 import tempfile
+import urllib.request
+from urllib.error import HTTPError, URLError
 
 from app.api.deps import require_write_access
 from app.core.config import settings
+from app.services.api_config import api_config_manager, ApiProvider, DataType
 from app.services.coordinate_transform_service import transform_point
 from app.services.demo_snapshots import get_demo_layer_snapshot, list_demo_layer_snapshots
 from app.services.interaction_hub import interaction_hub
@@ -16,7 +21,6 @@ from app.services.raster_preview_service import raster_preview_service
 from app.services.provider_workflow_service import provider_workflow_service
 from app.services.result_storage import result_storage_service
 from app.services.result_view_service import result_view_service
-from app.services.task_store import task_store
 from app.services.weather_bridge_service import weather_bridge_service
 from app.services.workflow_request_resolver import describe_layer_run_readiness
 from app.weatherengine.service import weather_engine_service
@@ -71,6 +75,38 @@ class _SseRateLimiter:
 _sse_limiter = _SseRateLimiter(_SSE_RATE_LIMIT, _SSE_WINDOW)
 
 
+# #region debug-point A:runtime-api-debug-helper
+def _report_debug_event(
+    hypothesis_id: str,
+    location: str,
+    msg: str,
+    data: dict | None = None,
+    *,
+    run_id: str = "post-fix",
+) -> None:
+    payload = {
+        "sessionId": "runtime-api-pending",
+        "runId": run_id,
+        "hypothesisId": hypothesis_id,
+        "location": location,
+        "msg": msg,
+        "data": data or {},
+        "ts": int(datetime.now(timezone.utc).timestamp() * 1000),
+    }
+    try:
+        request = urllib.request.Request(
+            "http://127.0.0.1:7777/event",
+            data=json.dumps(payload).encode(),
+            headers={"Content-Type": "application/json"},
+        )
+        urllib.request.urlopen(request, timeout=2).read()
+    except Exception:
+        pass
+
+
+# #endregion
+
+
 def _service_json_response(service_response) -> JSONResponse:
     # m26 修复：支持 dict 和对象两种返回格式
     # 某些 bridge service 返回 {"status_code": int, "body": dict} 格式的 dict
@@ -78,6 +114,13 @@ def _service_json_response(service_response) -> JSONResponse:
     if isinstance(service_response, dict):
         return JSONResponse(status_code=service_response.get("status_code", 200), content=service_response.get("body", {}))
     return JSONResponse(status_code=service_response.status_code, content=service_response.body)
+
+
+def _mark_compat_response(response: Response, *, replacement: str, status_label: str) -> None:
+    response.headers["Deprecation"] = "true"
+    response.headers["X-Compat-Status"] = status_label
+    response.headers["X-Replacement-Path"] = replacement
+    response.headers["Warning"] = f'299 - "Deprecated compatibility endpoint. Prefer {replacement}."'
 
 
 @router.get("/health", tags=["system"])
@@ -88,9 +131,22 @@ def health_check() -> dict[str, str]:
 @router.get("/layers", tags=["catalog"], response_model=LayerCatalogResponse)
 def list_layers() -> LayerCatalogResponse:
     catalog = get_layer_catalog()
+
+    def _check_readiness(item) -> tuple[str, dict]:
+        readiness = describe_layer_run_readiness(item.layer_id) or {}
+        return item.layer_id, readiness
+
+    # 并行执行所有 readiness 检查（这些操作是 I/O 密集型的 module import）
+    layer_readiness: dict[str, dict[str, Any]] = {}
+    with ThreadPoolExecutor(max_workers=8) as executor:
+        futures = {executor.submit(_check_readiness, desc): desc for desc in catalog.items}
+        for future in as_completed(futures):
+            layer_id, readiness = future.result()
+            layer_readiness[layer_id] = readiness
+
     items = []
     for descriptor in catalog.items:
-        readiness = describe_layer_run_readiness(descriptor.layer_id) or {}
+        readiness = layer_readiness.get(descriptor.layer_id, {})
         items.append(
             descriptor.model_copy(
                 update={
@@ -104,12 +160,14 @@ def list_layers() -> LayerCatalogResponse:
 
 
 @router.get("/demo/layers/snapshots", tags=["demo"], response_model=DemoLayerSnapshotsResponse)
-def list_demo_snapshots(hour: float = 12) -> DemoLayerSnapshotsResponse:
+def list_demo_snapshots(response: Response, hour: float = 12) -> DemoLayerSnapshotsResponse:
+    _mark_compat_response(response, replacement="/layers + /workflow-runs", status_label="soft-offline-demo")
     return list_demo_layer_snapshots(hour)
 
 
 @router.get("/demo/layers/{layer_id}/snapshot", tags=["demo"], response_model=DemoLayerSnapshot)
-def get_demo_snapshot(layer_id: str, hour: float = 12) -> DemoLayerSnapshot:
+def get_demo_snapshot(response: Response, layer_id: str, hour: float = 12) -> DemoLayerSnapshot:
+    _mark_compat_response(response, replacement="/layers + /workflow-runs/{run_id}/view", status_label="soft-offline-demo")
     snapshot = get_demo_layer_snapshot(layer_id, hour)
     if snapshot is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Demo layer not found: {layer_id}")
@@ -145,6 +203,9 @@ def get_weather_point(
         )
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    except (HTTPError, URLError) as exc:
+        detail = "Open-Meteo point forecast is temporarily unavailable."
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=detail) from exc
 
 
 @router.get("/artifacts/{artifact_id}", tags=["artifacts"])
@@ -154,8 +215,10 @@ def get_artifact(artifact_id: str):
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Artifact not found: {artifact_id}")
     if artifact.file_path is not None and artifact.file_path.exists():
         return FileResponse(path=artifact.file_path, media_type=artifact.mime_type, filename=artifact.file_path.name)
-    if artifact.public_url:
-        return RedirectResponse(url=artifact.public_url, status_code=status.HTTP_307_TEMPORARY_REDIRECT)
+    # MinIO 存储：直接读取数据返回，避免 307 重定向导致浏览器直连 MinIO 跨域
+    data = result_storage_service.fetch_artifact_bytes(artifact_id)
+    if data is not None:
+        return Response(content=data, media_type=artifact.mime_type)
     raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Artifact is unavailable: {artifact_id}")
 
 
@@ -211,33 +274,6 @@ def get_artifact_preview_png(
     return Response(content=png_bytes, media_type="image/png")
 
 
-# catalogId → algorithm_request 映射
-# 当 layer_id 对应 Python provider 模块时，自动注入 algorithm_request
-# 使 bridge chain 能正确路由到 python_provider_bridge_service
-_CATALOG_ALGORITHM_MAP: dict[str, dict[str, object]] = {
-    # 植被指数：调用 ndvi_daily 模块（注册名与 modules/ndvi.py 的 @register_module_decorator 一致）
-    "ndvi": {
-        "module_name": "ndvi_daily",
-        "workflow_name": "ndvi_analysis",
-    },
-    # 遥感反演：调用 fy_daily 模块（FY 卫星反演，预留）
-    "remote-sensing": {
-        "module_name": "fy_daily",
-        "workflow_name": "remote_sensing_analysis",
-    },
-    # 课题组模型输出：调用 lab_output 模块（预留）
-    "lab-output": {
-        "module_name": "lab_output",
-        "workflow_name": "lab_output_analysis",
-    },
-    # 土壤湿度：调用 soil_moisture 模块（预留）
-    "smap-soil": {
-        "module_name": "soil_moisture",
-        "workflow_name": "soil_moisture_analysis",
-    },
-}
-
-
 @router.post(
     "/workflow-runs",
     tags=["workflow"],
@@ -246,29 +282,63 @@ _CATALOG_ALGORITHM_MAP: dict[str, dict[str, object]] = {
     dependencies=[Depends(require_write_access)],
 )
 def submit_workflow(payload: WorkflowSubmitRequest) -> WorkflowAcceptedResponse:
-    # 注入 algorithm_request：将 layer_id 映射到 Python provider 模块
-    # 覆盖原有 algorithm_request（前端可能传空），确保 bridge chain 能正确路由
-    if payload.layer_id and payload.algorithm_request is None:
-        algo_map = _CATALOG_ALGORITHM_MAP.get(payload.layer_id)
-        if algo_map is not None:
-            import copy
-            enriched = copy.deepcopy(payload)
-            enriched.algorithm_request = {
-                **dict(algo_map),
-                # 透传前端 parameters（latitude/longitude/hour 等）
-                "algorithm_params": dict(payload.parameters or {}),
-                # 透传时间/空间范围
-                **({"time_range": payload.time_range.model_dump(mode="json")} if payload.time_range else {}),
-                **({"region": {"kind": "bbox", "value": payload.spatial_filter.bbox.model_dump(mode="json")}}
-                   if payload.spatial_filter and payload.spatial_filter.bbox else {}),
-            }
-            payload = enriched
     try:
-        return interaction_hub.submit_workflow(payload)
+        # #region debug-point D:workflow-submit-enter
+        _report_debug_event(
+            "D",
+            "app.api.routes.submit_workflow.enter",
+            "[DEBUG] workflow submit enter",
+            {
+                "layer_id": payload.layer_id,
+                "command_type": payload.command_type,
+                "requested_outputs": payload.requested_outputs,
+                "client_page": payload.client.page if payload.client else None,
+            },
+        )
+        # #endregion
+        accepted = interaction_hub.submit_workflow(payload)
+        # #region debug-point B:workflow-submit-accepted
+        _report_debug_event(
+            "B",
+            "app.api.routes.submit_workflow.accepted",
+            "[DEBUG] workflow submit accepted",
+            {
+                "layer_id": payload.layer_id,
+                "run_id": accepted.run_id,
+                "status": accepted.status,
+            },
+        )
+        # #endregion
+        return accepted
     except ValueError as exc:
+        # #region debug-point D:workflow-submit-value-error
+        _report_debug_event(
+            "D",
+            "app.api.routes.submit_workflow.value_error",
+            "[DEBUG] workflow submit value error",
+            {
+                "layer_id": payload.layer_id,
+                "detail": str(exc),
+            },
+        )
+        # #endregion
         detail = str(exc)
         status_code = status.HTTP_429_TOO_MANY_REQUESTS if "capacity" in detail.lower() else status.HTTP_400_BAD_REQUEST
         raise HTTPException(status_code=status_code, detail=detail) from exc
+    except Exception as exc:
+        # #region debug-point D:workflow-submit-unexpected-error
+        _report_debug_event(
+            "D",
+            "app.api.routes.submit_workflow.unexpected_error",
+            "[DEBUG] workflow submit unexpected error",
+            {
+                "layer_id": payload.layer_id,
+                "error_type": type(exc).__name__,
+                "detail": str(exc),
+            },
+        )
+        # #endregion
+        raise
 
 
 @router.get("/workflow-runs/{run_id}", tags=["workflow"], response_model=WorkflowRunStatusResponse)
@@ -298,14 +368,19 @@ def _get_client_ip(request: Request) -> str:
 
 
 @router.get("/workflow-runs/{run_id}/events", tags=["workflow"], response_model=WorkflowEventsResponse)
-def list_workflow_events(request: Request, run_id: str) -> WorkflowEventsResponse:
+def list_workflow_events(
+    request: Request,
+    run_id: str,
+    after_event_id: str | None = None,
+    limit: int | None = None,
+) -> WorkflowEventsResponse:
     client_ip = _get_client_ip(request)
     if not _sse_limiter.check(client_ip):
         raise HTTPException(
             status_code=status.HTTP_429_TOO_MANY_REQUESTS,
             detail=f"Too many SSE connections from {client_ip}. Limit: {_SSE_RATE_LIMIT} per {_SSE_WINDOW}.",
         )
-    events = interaction_hub.list_workflow_events(run_id)
+    events = interaction_hub.list_workflow_events(run_id, after_event_id=after_event_id, limit=limit)
     if events is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Workflow run not found: {run_id}")
     return events
@@ -456,3 +531,137 @@ def get_provider_diagnostics() -> JSONResponse:
 @router.get("/provider/workflows/{workflow_name}", tags=["provider"])
 def describe_provider_workflow(workflow_name: str) -> JSONResponse:
     return _provider_service_response(lambda: provider_workflow_service.describe_workflow_response(workflow_name))
+
+
+# ---------------- API 配置管理接口 ----------------
+# 统一 API 配置端点，支持切换/替换数据源（Gee、百度、高德、天地图等）
+
+
+@router.get("/runtime/api-config", tags=["runtime"])
+def get_api_config_status() -> JSONResponse:
+    """返回所有 API 配置状态，供前端判断可用数据源。"""
+    try:
+        configs = api_config_manager.get_all_configs()
+        serializable_configs = api_config_manager.get_all_configs_serializable()
+        # #region debug-point A:runtime-api-config-enter
+        _report_debug_event(
+            "A",
+            "app.api.routes.get_api_config_status.enter",
+            "[DEBUG] runtime api-config enter",
+            {
+                "config_count": len(configs),
+                "key_types": [type(key).__name__ for key in configs.keys()],
+                "sample_value_types": [type(value).__name__ for value in list(configs.values())[:3]],
+            },
+        )
+        # #endregion
+        # #region debug-point A:runtime-api-config-success
+        _report_debug_event(
+            "A",
+            "app.api.routes.get_api_config_status.success",
+            "[DEBUG] runtime api-config serialized",
+            {
+                "provider_ids": list(serializable_configs.keys()),
+            },
+        )
+        # #endregion
+        return JSONResponse(content=serializable_configs)
+    except Exception as exc:
+        # #region debug-point A:runtime-api-config-error
+        _report_debug_event(
+            "A",
+            "app.api.routes.get_api_config_status.error",
+            "[DEBUG] runtime api-config failed",
+            {
+                "error_type": type(exc).__name__,
+                "detail": str(exc),
+            },
+        )
+        # #endregion
+        raise
+
+
+@router.get("/runtime/api-config/{provider}", tags=["runtime"])
+def get_provider_api_config(provider: str) -> JSONResponse:
+    """返回指定 Provider 的 API 配置状态。"""
+    try:
+        api_provider = ApiProvider(provider)
+    except ValueError:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Unknown provider: {provider}")
+    config = api_config_manager.get_config(api_provider)
+    if config is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Config not found for provider: {provider}")
+    try:
+        serializable_config = api_config_manager.get_config_serializable(api_provider)
+        # #region debug-point A:runtime-provider-api-config-enter
+        _report_debug_event(
+            "A",
+            "app.api.routes.get_provider_api_config.enter",
+            "[DEBUG] runtime provider api-config enter",
+            {
+                "provider": provider,
+                "config_type": type(config).__name__,
+                "endpoint_type": type(config.endpoint).__name__,
+            },
+        )
+        # #endregion
+        # #region debug-point A:runtime-provider-api-config-success
+        _report_debug_event(
+            "A",
+            "app.api.routes.get_provider_api_config.success",
+            "[DEBUG] runtime provider api-config serialized",
+            {
+                "provider": provider,
+                "keys": list(serializable_config.keys()) if isinstance(serializable_config, dict) else [],
+            },
+        )
+        # #endregion
+        return JSONResponse(content=serializable_config)
+    except Exception as exc:
+        # #region debug-point A:runtime-provider-api-config-error
+        _report_debug_event(
+            "A",
+            "app.api.routes.get_provider_api_config.error",
+            "[DEBUG] runtime provider api-config failed",
+            {
+                "provider": provider,
+                "error_type": type(exc).__name__,
+                "detail": str(exc),
+            },
+        )
+        # #endregion
+        raise
+
+
+@router.post("/runtime/api-config/{provider}", tags=["runtime"], dependencies=[Depends(require_write_access)])
+def update_provider_api_config(provider: str, config_update: dict) -> JSONResponse:
+    """更新指定 Provider 的 API 配置（如 API Key）。"""
+    try:
+        api_provider = ApiProvider(provider)
+    except ValueError:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Unknown provider: {provider}")
+    success = api_config_manager.update_config(api_provider, config_update)
+    if not success:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Failed to update config for provider: {provider}")
+    return JSONResponse(content={"status": "updated", "provider": provider})
+
+
+@router.get("/runtime/api-config/{provider}/best", tags=["runtime"])
+def get_best_available_api(provider: str) -> JSONResponse:
+    """返回指定数据类型中最佳可用的 API Provider。"""
+    try:
+        data_type = DataType(provider)
+    except ValueError:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Unknown data type: {provider}")
+    # get_best_available 需要 set[DataType]
+    best = api_config_manager.get_best_available(required_capabilities={data_type})
+    if best is None:
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=f"No available API provider for data type: {provider}")
+    # 返回可序列化格式
+    return JSONResponse(content={
+        "provider": best.provider.value,
+        "name": best.name,
+        "endpoint_url": best.endpoint.url,
+        "capabilities": [c.value for c in best.endpoint.capabilities],
+        "priority": best.priority,
+    })

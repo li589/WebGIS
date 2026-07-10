@@ -2,15 +2,18 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 import importlib
+import logging
 import math
 from pathlib import Path
 from uuid import uuid4
 
 from app.core.config import settings
+from app.services.api_config import api_config_manager, ApiProvider, DataType
 from app.services.result_storage import result_storage_service
 from app.services.workflow_execution import WorkflowExecutionResult
 from app.weatherengine.client import OpenMeteoClient
 from app.weatherengine.constants import DEFAULT_LAYER_ID, DEFAULT_POINT, WEATHER_LAYER_SPECS
+from app.weatherengine.nodes._utils import compute_dynamic_resolution
 from shared.contracts.api_contracts import (
     BoundingBox,
     ResultKind,
@@ -22,21 +25,35 @@ from shared.contracts.api_contracts import (
     WorkflowSubmitRequest,
 )
 
+logger = logging.getLogger(__name__)
+
 
 class WeatherEngineService:
     """天气引擎服务 — 提供"渲染原语"与 REST 端点直查。
 
     M12 修复：明确与 WeatherWorkflowService 的职责边界。
-    - 本类负责：API 调用（Open-Meteo）、forecast 解析、GeoJSON/COG 渲染原语。
+    - 本类负责：API 调用（Open-Meteo/GEE/百度/高德/天地图）、forecast 解析、GeoJSON/COG 渲染原语。
     - 节点依赖：仅依赖本类的渲染原语方法（build_wind_geojson 等）与解析方法
       （parse_forecast_to_point），不依赖 workflow 编排逻辑。
     - workflow 编排由 WeatherWorkflowService 负责，节点之间通过 ExecutionContext 传递数据。
     - REST 端点 /weather/point 直接调用本类 get_point_weather。
     - workflow-runs 调度链中，本类仅作为 layer-based fallback（无 weather_request 字段时）。
+
+    M15 增强：集成 api_config_manager，支持多数据源切换（Gee、百度、高德、天地图等）。
     """
 
     def __init__(self, client: OpenMeteoClient | None = None) -> None:
         self._client = client or OpenMeteoClient()
+        self._active_provider = ApiProvider.OPEN_METEO
+
+    def get_active_provider(self) -> ApiProvider:
+        """获取当前活跃的天气数据 Provider。"""
+        # 优先使用 api_config_manager 中配置的天气 Provider
+        # M15 兼容：get_best_available 返回 ApiConfig 对象，不是字典
+        best = api_config_manager.get_best_available(required_capabilities={DataType.WEATHER})
+        if best:
+            return best.provider
+        return self._active_provider
 
     def supports(self, payload: WorkflowSubmitRequest) -> bool:
         layer_id = payload.layer_id or payload.map_context.active_layer_id
@@ -59,6 +76,9 @@ class WeatherEngineService:
 
         resolved_model = model or settings.weather_default_model
         ttl_seconds = cache_ttl_seconds or settings.weather_cache_ttl_seconds
+
+        # M15: 根据 api_config_manager 选择最佳可用的 Provider
+        active_provider = self.get_active_provider()
         payload, cache_status = self._client.fetch_point_forecast(
             latitude=latitude,
             longitude=longitude,
@@ -78,6 +98,7 @@ class WeatherEngineService:
             resolved_model=resolved_model,
             forecast_hours=forecast_hours,
             place_name=place_name,
+            provider=active_provider.value,
         )
 
     def parse_forecast_to_point(
@@ -91,6 +112,7 @@ class WeatherEngineService:
         resolved_model: str,
         forecast_hours: int = 6,
         place_name: str | None = None,
+        provider: str = "open-meteo",
     ) -> WeatherPointResponse:
         """M11 修复：将 forecast payload 解析为 WeatherPointResponse，无需再次调用 API。
 
@@ -105,12 +127,15 @@ class WeatherEngineService:
         hourly_times = hourly.get("time") or []
         hourly_rows: list[WeatherPointHourlyEntry] = []
         for index, time_value in enumerate(hourly_times[: max(1, forecast_hours)]):
+            primary_value = self._pick_series_value(hourly, spec.primary_metric, index)
             hourly_rows.append(
                 WeatherPointHourlyEntry(
                     time=self._coerce_datetime(time_value),
                     temperature_2m=self._pick_series_value(hourly, "temperature_2m", index),
                     precipitation=self._pick_series_value(hourly, "precipitation", index),
                     wind_speed_10m=self._pick_series_value(hourly, "wind_speed_10m", index),
+                    primary_metric=spec.primary_metric,
+                    primary_value=primary_value,
                 )
             )
         # 气压层变量仅出现在 hourly 段，取首小时作为当前值
@@ -132,7 +157,7 @@ class WeatherEngineService:
         summary = spec.summary_template.format(value=metric_value if metric_value is not None else "--", unit=spec.unit_label)
         observation_time = self._coerce_datetime(current.get("time"))
         return WeatherPointResponse(
-            provider="open-meteo",
+            provider=provider,
             model=resolved_model,
             resolved_model=str(payload.get("model")) if payload.get("model") is not None else None,
             layer_id=layer_id,
@@ -191,11 +216,90 @@ class WeatherEngineService:
                 notes=list(spec.notes),
             ),
             diagnostics=[
-                f"provider=open-meteo",
+                f"provider={provider}",
                 f"layer_id={layer_id}",
                 f"model={resolved_model}",
                 f"cache_status={cache_status}",
                 f"render_mode={spec.paint_mode}",
+            ],
+        )
+
+    def _build_fallback_weather(
+        self,
+        *,
+        layer_id: str,
+        latitude: float,
+        longitude: float,
+        place_name: str | None,
+        spec,
+        error_message: str,
+    ) -> WeatherPointResponse:
+        """当 Open-Meteo API 不可用时构建降级 WeatherPointResponse，保证网格渲染工作流可继续。"""
+        logger.info("[WeatherEngine] building fallback weather for layer=%s lat=%.4f lon=%.4f", layer_id, latitude, longitude)
+        return WeatherPointResponse(
+            provider="open-meteo",
+            model=spec.default_model if hasattr(spec, 'default_model') else "icon_seamless",
+            resolved_model=None,
+            layer_id=layer_id,
+            latitude=latitude,
+            longitude=longitude,
+            place_name=place_name,
+            timezone=None,
+            fetched_at=datetime.now(timezone.utc),
+            observation_time=None,
+            cache_status="fallback",
+            summary=f"{spec.display_name} 点位数据暂不可用（API 限流），网格渲染仍可继续。",
+            current=WeatherPointCurrent(
+                temperature_2m=None,
+                apparent_temperature=None,
+                precipitation=None,
+                rain=None,
+                weather_code=None,
+                cloud_cover=None,
+                pressure_msl=None,
+                surface_pressure=None,
+                wind_speed_10m=None,
+                wind_direction_10m=None,
+                wind_gusts_10m=None,
+                wind_speed_80m=None,
+                wind_direction_80m=None,
+                wind_speed_120m=None,
+                wind_direction_120m=None,
+                wind_speed_180m=None,
+                wind_direction_180m=None,
+                temperature_80m=None,
+                temperature_120m=None,
+                temperature_180m=None,
+                relative_humidity_2m=None,
+                dew_point_2m=None,
+                visibility=None,
+                wind_speed_850hPa=None,
+                wind_direction_850hPa=None,
+                temperature_850hPa=None,
+                wind_speed_500hPa=None,
+                wind_direction_500hPa=None,
+                temperature_500hPa=None,
+                wind_speed_200hPa=None,
+                wind_direction_200hPa=None,
+                temperature_200hPa=None,
+            ),
+            hourly=[],
+            render_hint=WeatherLayerRenderHint(
+                layer_id=layer_id,
+                paint_mode=spec.paint_mode,
+                palette=spec.palette,
+                primary_metric=spec.primary_metric,
+                unit_label=spec.unit_label,
+                opacity=spec.default_opacity,
+                legend_ticks=list(spec.legend_ticks),
+                notes=list(spec.notes),
+            ),
+            diagnostics=[
+                f"provider=open-meteo",
+                f"layer_id={layer_id}",
+                f"cache_status=fallback",
+                f"render_mode={spec.paint_mode}",
+                f"point_weather_error={error_message}",
             ],
         )
 
@@ -210,16 +314,36 @@ class WeatherEngineService:
         layer_id = payload.layer_id or payload.map_context.active_layer_id or DEFAULT_LAYER_ID
         latitude, longitude, place_name = self._resolve_point(payload)
         forecast_hours = self._resolve_forecast_hours(payload)
-        weather = self.get_point_weather(
-            layer_id=layer_id,
-            latitude=latitude,
-            longitude=longitude,
-            model=self._as_string(payload.parameters.get("weather_model")),
-            forecast_hours=forecast_hours,
-            place_name=place_name,
-            cache_ttl_seconds=self._as_int(payload.parameters.get("cache_ttl_seconds")),
+        # [WeatherEngine] 调试：打印工作流入参
+        vp_bbox = payload.map_context.viewport_bbox
+        logger.info(
+            "[WeatherEngine] execute: run_id=%s layer_id=%s lat=%s lon=%s place=%s forecast_hours=%s viewport_bbox=%s params=%s",
+            run_id, layer_id, latitude, longitude, place_name, forecast_hours,
+            f"({vp_bbox.west},{vp_bbox.south},{vp_bbox.east},{vp_bbox.north})" if vp_bbox else "None",
+            {k: v for k, v in payload.parameters.items() if k in ('hour', 'latitude', 'longitude', 'weather_model')},
         )
         spec = WEATHER_LAYER_SPECS[layer_id]
+        try:
+            weather = self.get_point_weather(
+                layer_id=layer_id,
+                latitude=latitude,
+                longitude=longitude,
+                model=self._as_string(payload.parameters.get("weather_model")),
+                forecast_hours=forecast_hours,
+                place_name=place_name,
+                cache_ttl_seconds=self._as_int(payload.parameters.get("cache_ttl_seconds")),
+            )
+        except Exception as exc:
+            # 点位天气 API 失败（如 429 限流）不应阻断网格渲染工作流
+            logger.warning("[WeatherEngine] point weather failed, continuing with fallback: %s", exc)
+            weather = self._build_fallback_weather(
+                layer_id=layer_id,
+                latitude=latitude,
+                longitude=longitude,
+                place_name=place_name,
+                spec=spec,
+                error_message=str(exc),
+            )
         metric_value = getattr(weather.current, spec.primary_metric, None)
 
         result_refs = [
@@ -347,6 +471,65 @@ class WeatherEngineService:
             )
         return refreshed
 
+    def _fetch_layer_grid_data(self, *, bbox: BoundingBox, spec) -> tuple[dict[str, Any], str, float]:
+        resolution = compute_dynamic_resolution(bbox)
+        grid_data, cache_status = self._client.fetch_grid_forecast(
+            bbox=bbox,
+            resolution=resolution,
+            layer_spec=spec,
+            model=settings.weather_default_model,
+            ttl_seconds=settings.weather_cache_ttl_seconds,
+            pressure_levels=spec.pressure_levels or None,
+        )
+        return grid_data, cache_status, resolution
+
+    def _build_geojson_from_grid(self, *, grid_data: dict[str, Any], layer_id: str) -> dict[str, object]:
+        if layer_id == "precipitation":
+            return self.build_precipitation_geojson_from_grid(grid_data, layer_id)
+        if layer_id == "humidity":
+            return self.build_humidity_geojson_from_grid(grid_data, layer_id)
+        if layer_id == "pressure":
+            return self.build_pressure_geojson_from_grid(grid_data, layer_id)
+        if layer_id == "visibility":
+            return self.build_visibility_geojson_from_grid(grid_data, layer_id)
+        if layer_id == "temperature" or layer_id.startswith("temperature-"):
+            return self.build_temperature_geojson_from_grid(grid_data, layer_id)
+        return self.build_wind_geojson_from_grid(grid_data, layer_id)
+
+    def _build_scalar_array_from_grid(
+        self,
+        *,
+        numpy,
+        grid_data: dict[str, Any],
+        field_name: str,
+        rows: int,
+        cols: int,
+        fallback_field: str | None = None,
+    ):
+        array = numpy.zeros((rows, cols), dtype="float32")
+        grid = grid_data.get("grid") or {}
+        current = (grid_data.get("data") or {}).get("current") or {}
+        values = current.get(field_name)
+        if not isinstance(values, list) and fallback_field:
+            values = current.get(fallback_field)
+        if not isinstance(values, list):
+            return array
+
+        src_rows = max(1, int(grid.get("rows") or 1))
+        src_cols = max(1, int(grid.get("cols") or 1))
+        for row in range(rows):
+            src_row = min(src_rows - 1, int(row * src_rows / rows))
+            for col in range(cols):
+                src_col = min(src_cols - 1, int(col * src_cols / cols))
+                src_idx = src_row * src_cols + src_col
+                if src_idx >= len(values):
+                    continue
+                value = values[src_idx]
+                if value is None:
+                    continue
+                array[row, col] = float(value)
+        return array
+
     def _build_map_layer_outputs(
         self,
         *,
@@ -374,7 +557,16 @@ class WeatherEngineService:
 
         if spec.layer_id == "wind-field" or spec.layer_id.startswith("wind-field-"):
             bbox = self._resolve_render_bbox(payload, weather.latitude, weather.longitude)
-            feature_collection = self.build_wind_geojson(weather, bbox)
+            try:
+                grid_data, cache_status, resolution = self._fetch_layer_grid_data(bbox=bbox, spec=spec)
+                feature_collection = self.build_wind_geojson_from_grid(grid_data, spec.layer_id)
+                logger.info(
+                    "[WindDebug] build_wind_geojson_from_grid: layer=%s bbox=%s features=%d cache=%s resolution=%s",
+                    spec.layer_id, bbox, len(feature_collection['features']), cache_status, resolution,
+                )
+            except Exception as exc:
+                logger.warning("[WindDebug] Grid fetch failed, falling back to simulated data: %s", exc)
+                feature_collection = self.build_wind_geojson(weather, bbox)
             geojson_ref = result_storage_service.create_artifact_result_ref(
                 run_id=run_id,
                 result_id=f"wind-geojson-{uuid4().hex[:10]}",
@@ -384,12 +576,20 @@ class WeatherEngineService:
                 updated_at=requested_at,
                 payload=feature_collection,
             )
+            logger.info(
+                "[WindDebug] artifact created: result_id=%s resource_url=%s resource_key=%s",
+                geojson_ref.result_id, geojson_ref.resource_url, geojson_ref.resource_key,
+            )
             result_refs.append(geojson_ref)
             diagnostics.append(f"wind_geojson_points={len(feature_collection['features'])}")
             diagnostics.append(f"wind_height={feature_collection['features'][0]['properties']['height'] if feature_collection['features'] else '10m'}")
         elif spec.layer_id == "temperature" or spec.layer_id.startswith("temperature-"):
             bbox = self._resolve_render_bbox(payload, weather.latitude, weather.longitude)
-            feature_collection = self.build_temperature_geojson(weather, bbox)
+            try:
+                grid_data, _, _ = self._fetch_layer_grid_data(bbox=bbox, spec=spec)
+                feature_collection = self.build_temperature_geojson_from_grid(grid_data, spec.layer_id)
+            except Exception:
+                feature_collection = self.build_temperature_geojson(weather, bbox)
             geojson_ref = result_storage_service.create_artifact_result_ref(
                 run_id=run_id,
                 result_id=f"temperature-geojson-{uuid4().hex[:10]}",
@@ -415,7 +615,11 @@ class WeatherEngineService:
             diagnostics.extend(cog_diagnostics)
         elif spec.layer_id == "precipitation":
             bbox = self._resolve_render_bbox(payload, weather.latitude, weather.longitude)
-            feature_collection = self.build_precipitation_geojson(weather, bbox)
+            try:
+                grid_data, _, _ = self._fetch_layer_grid_data(bbox=bbox, spec=spec)
+                feature_collection = self.build_precipitation_geojson_from_grid(grid_data, spec.layer_id)
+            except Exception:
+                feature_collection = self.build_precipitation_geojson(weather, bbox)
             geojson_ref = result_storage_service.create_artifact_result_ref(
                 run_id=run_id,
                 result_id=f"precipitation-geojson-{uuid4().hex[:10]}",
@@ -439,9 +643,12 @@ class WeatherEngineService:
                 result_refs.append(cog_ref)
             diagnostics.extend(cog_diagnostics)
         elif spec.layer_id == "humidity":
-            # humidity 仅生成 GeoJSON，不生成 COG（与 wind-field 一致）
             bbox = self._resolve_render_bbox(payload, weather.latitude, weather.longitude)
-            feature_collection = self.build_humidity_geojson(weather, bbox)
+            try:
+                grid_data, _, _ = self._fetch_layer_grid_data(bbox=bbox, spec=spec)
+                feature_collection = self.build_humidity_geojson_from_grid(grid_data, spec.layer_id)
+            except Exception:
+                feature_collection = self.build_humidity_geojson(weather, bbox)
             geojson_ref = result_storage_service.create_artifact_result_ref(
                 run_id=run_id,
                 result_id=f"humidity-geojson-{uuid4().hex[:10]}",
@@ -454,9 +661,12 @@ class WeatherEngineService:
             result_refs.append(geojson_ref)
             diagnostics.append(f"humidity_geojson_cells={len(feature_collection['features'])}")
         elif spec.layer_id == "pressure":
-            # pressure 仅生成 GeoJSON，不生成 COG（与 wind-field 一致）
             bbox = self._resolve_render_bbox(payload, weather.latitude, weather.longitude)
-            feature_collection = self.build_pressure_geojson(weather, bbox)
+            try:
+                grid_data, _, _ = self._fetch_layer_grid_data(bbox=bbox, spec=spec)
+                feature_collection = self.build_pressure_geojson_from_grid(grid_data, spec.layer_id)
+            except Exception:
+                feature_collection = self.build_pressure_geojson(weather, bbox)
             geojson_ref = result_storage_service.create_artifact_result_ref(
                 run_id=run_id,
                 result_id=f"pressure-geojson-{uuid4().hex[:10]}",
@@ -469,9 +679,12 @@ class WeatherEngineService:
             result_refs.append(geojson_ref)
             diagnostics.append(f"pressure_geojson_cells={len(feature_collection['features'])}")
         elif spec.layer_id == "visibility":
-            # visibility 仅生成 GeoJSON，不生成 COG（与 wind-field 一致）
             bbox = self._resolve_render_bbox(payload, weather.latitude, weather.longitude)
-            feature_collection = self.build_visibility_geojson(weather, bbox)
+            try:
+                grid_data, _, _ = self._fetch_layer_grid_data(bbox=bbox, spec=spec)
+                feature_collection = self.build_visibility_geojson_from_grid(grid_data, spec.layer_id)
+            except Exception:
+                feature_collection = self.build_visibility_geojson(weather, bbox)
             geojson_ref = result_storage_service.create_artifact_result_ref(
                 run_id=run_id,
                 result_id=f"visibility-geojson-{uuid4().hex[:10]}",
@@ -509,18 +722,30 @@ class WeatherEngineService:
                 updated_at=requested_at,
             )
         )
+        logger.info(
+            "[WindDebug] map_layer result_ref created: geojson_url=%s cog_url=%s cog_preview=%s",
+            geojson_ref.resource_url if geojson_ref else None,
+            cog_ref.resource_url if cog_ref else None,
+            f"/artifacts/{cog_ref.resource_key}/preview.png" if cog_ref and cog_ref.resource_key else None,
+        )
         return result_refs, diagnostics
 
     def build_wind_geojson(
         self,
         weather: WeatherPointResponse,
         bbox: BoundingBox,
-        rows: int = 24,
-        cols: int = 32,
+        rows: int | None = None,
+        cols: int | None = None,
     ) -> dict[str, object]:
         features: list[dict[str, object]] = []
-        lat_step = (bbox.north - bbox.south) / rows
-        lon_step = (bbox.east - bbox.west) / cols
+        # 根据 bbox 范围动态计算网格点数，保持约 0.3-0.4 度间隔
+        # 最小 24×32（对应小视口），最大 180×360（全球约 1 度间隔）
+        lat_span = max(0.1, bbox.north - bbox.south)
+        lon_span = max(0.1, bbox.east - bbox.west)
+        resolved_rows = rows if rows is not None else max(24, min(180, int(lat_span / 0.35)))
+        resolved_cols = cols if cols is not None else max(32, min(360, int(lon_span / 0.35)))
+        lat_step = lat_span / resolved_rows
+        lon_step = lon_span / resolved_cols
         # 根据 layer_id 高度后缀读取对应字段：wind-field → 10m，wind-field-80m → 80m，…
         # 回退到 10m 字段，保证旧调用方兼容
         layer_id = weather.layer_id
@@ -531,8 +756,8 @@ class WeatherEngineService:
         direction_attr = f"wind_direction_{height_suffix}"
         base_speed = getattr(weather.current, speed_attr, None) or weather.current.wind_speed_10m or 0.0
         base_direction = getattr(weather.current, direction_attr, None) or weather.current.wind_direction_10m or 0.0
-        for row in range(rows):
-            for col in range(cols):
+        for row in range(resolved_rows):
+            for col in range(resolved_cols):
                 lat = bbox.south + (row + 0.5) * lat_step
                 lon = bbox.west + (col + 0.5) * lon_step
                 speed, direction = self._wind_value_for_location(
@@ -542,8 +767,8 @@ class WeatherEngineService:
                     center_lon=weather.longitude,
                     lat=lat,
                     lon=lon,
-                    lat_span=max(0.1, bbox.north - bbox.south),
-                    lon_span=max(0.1, bbox.east - bbox.west),
+                    lat_span=lat_span,
+                    lon_span=lon_span,
                 )
                 features.append(
                     {
@@ -561,16 +786,102 @@ class WeatherEngineService:
                 )
         return {"type": "FeatureCollection", "features": features}
 
+    def build_wind_geojson_from_grid(
+        self,
+        grid_data: dict[str, Any],
+        layer_id: str,
+    ) -> dict[str, object]:
+        """从真实网格数据构建风场 GeoJSON。
+
+        Args:
+            grid_data: fetch_grid_forecast() 返回的网格数据
+            layer_id: 图层类型（如 wind-field, wind-field-80m 等）
+
+        Returns:
+            GeoJSON FeatureCollection
+        """
+        grid = grid_data["grid"]
+        current = grid_data["data"]["current"]
+
+        rows, cols = grid["rows"], grid["cols"]
+        lats = grid["lats"]
+        lons = grid["lons"]
+        features = []
+
+        # 根据 layer_id 解析高度后缀
+        height_suffix = "10m"
+        if layer_id and layer_id.startswith("wind-field-"):
+            height_suffix = layer_id.split("-", 2)[-1]  # "80m" / "120m" / "180m" / "850hPa" 等
+
+        speed_attr = f"wind_speed_{height_suffix}"
+        direction_attr = f"wind_direction_{height_suffix}"
+
+        # Open-Meteo API 字段名转换（API 使用下划线）
+        api_speed_attr = speed_attr.replace("-", "_")
+        api_direction_attr = direction_attr.replace("-", "_")
+
+        # 从 API 响应中提取数据（数组格式，按索引对应）
+        speed_values = current.get(api_speed_attr, current.get("wind_speed_10m", []))
+        direction_values = current.get(api_direction_attr, current.get("wind_direction_10m", []))
+
+        # [WeatherEngine] 调试：打印网格数据概要
+        speed_sample = [speed_values[i] for i in range(min(5, len(speed_values))) if speed_values[i] is not None]
+        dir_sample = [direction_values[i] for i in range(min(5, len(direction_values))) if direction_values[i] is not None]
+        logger.info(
+            "[WeatherEngine] build_wind_geojson_from_grid: layer=%s rows=%d cols=%d total=%d speed_attr=%s(speed_values=%d, sample=%s) dir_attr=%s(dir_values=%d, sample=%s) lats=[%.4f..%.4f] lons=[%.4f..%.4f]",
+            layer_id, rows, cols, rows * cols,
+            api_speed_attr, len(speed_values), speed_sample,
+            api_direction_attr, len(direction_values), dir_sample,
+            lats[0] if lats else 0, lats[-1] if lats else 0,
+            lons[0] if lons else 0, lons[-1] if lons else 0,
+        )
+
+        for i in range(rows):
+            for j in range(cols):
+                idx = i * cols + j
+                lat = lats[i] if i < len(lats) else 0
+                lon = lons[j] if j < len(lons) else 0
+
+                speed = speed_values[idx] if idx < len(speed_values) else 0
+                direction = direction_values[idx] if idx < len(direction_values) else 0
+
+                features.append({
+                    "type": "Feature",
+                    "geometry": {"type": "Point", "coordinates": [lon, lat]},
+                    "properties": {
+                        speed_attr: round(speed, 2) if speed is not None else 0,
+                        direction_attr: round(direction, 1) if direction is not None else 0,
+                        "height": height_suffix,
+                        "unit": "m/s",
+                        "row": i,
+                        "col": j,
+                    }
+                })
+
+        logger.info("[WeatherEngine] build_wind_geojson_from_grid: generated %d features, first=(%.4f,%.4f) last=(%.4f,%.4f)",
+            len(features),
+            features[0]["geometry"]["coordinates"][0] if features else 0,
+            features[0]["geometry"]["coordinates"][1] if features else 0,
+            features[-1]["geometry"]["coordinates"][0] if features else 0,
+            features[-1]["geometry"]["coordinates"][1] if features else 0,
+        )
+        return {"type": "FeatureCollection", "features": features}
+
     def build_temperature_geojson(
         self,
         weather: WeatherPointResponse,
         bbox: BoundingBox,
-        rows: int = 18,
-        cols: int = 18,
+        rows: int | None = None,
+        cols: int | None = None,
     ) -> dict[str, object]:
         features: list[dict[str, object]] = []
-        lat_step = (bbox.north - bbox.south) / rows
-        lon_step = (bbox.east - bbox.west) / cols
+        # 根据 bbox 范围动态计算网格点数
+        lat_span = max(0.1, bbox.north - bbox.south)
+        lon_span = max(0.1, bbox.east - bbox.west)
+        resolved_rows = rows if rows is not None else max(18, min(120, int(lat_span / 0.4)))
+        resolved_cols = cols if cols is not None else max(18, min(120, int(lon_span / 0.4)))
+        lat_step = lat_span / resolved_rows
+        lon_step = lon_span / resolved_cols
         # 根据 layer_id 高度后缀读取对应字段：temperature → 2m，temperature-80m → 80m，…
         # 回退到 temperature_2m，保证旧调用方兼容
         layer_id = weather.layer_id
@@ -579,8 +890,8 @@ class WeatherEngineService:
             height_suffix = layer_id.split("-", 1)[-1]  # "80m" / "120m" / "180m"
         temp_attr = f"temperature_{height_suffix}"
         base_temp = getattr(weather.current, temp_attr, None) or weather.current.temperature_2m or 0.0
-        for row in range(rows):
-            for col in range(cols):
+        for row in range(resolved_rows):
+            for col in range(resolved_cols):
                 south = bbox.south + row * lat_step
                 north = south + lat_step
                 west = bbox.west + col * lon_step
@@ -593,8 +904,8 @@ class WeatherEngineService:
                     center_lon=weather.longitude,
                     lat=cell_lat,
                     lon=cell_lon,
-                    lat_span=max(0.1, bbox.north - bbox.south),
-                    lon_span=max(0.1, bbox.east - bbox.west),
+                    lat_span=lat_span,
+                    lon_span=lon_span,
                 )
                 features.append(
                     {
@@ -640,27 +951,39 @@ class WeatherEngineService:
 
         rows = 96
         cols = 96
-        array = numpy.zeros((rows, cols), dtype="float32")
         # 同步 build_temperature_geojson 的多高度字段读取逻辑
         layer_id = weather.layer_id
         height_suffix = "2m"
         if layer_id and layer_id.startswith("temperature-"):
             height_suffix = layer_id.split("-", 1)[-1]
         temp_attr = f"temperature_{height_suffix}"
-        base_temp = getattr(weather.current, temp_attr, None) or weather.current.temperature_2m or 0.0
-        for row in range(rows):
-            lat = bbox.north - ((row + 0.5) / rows) * (bbox.north - bbox.south)
-            for col in range(cols):
-                lon = bbox.west + ((col + 0.5) / cols) * (bbox.east - bbox.west)
-                array[row, col] = self._temperature_value_for_location(
-                    base_temp=base_temp,
-                    center_lat=weather.latitude,
-                    center_lon=weather.longitude,
-                    lat=lat,
-                    lon=lon,
-                    lat_span=max(0.1, bbox.north - bbox.south),
-                    lon_span=max(0.1, bbox.east - bbox.west),
-                )
+        api_temp_attr = temp_attr.replace("-", "_")
+        try:
+            grid_data, _, _ = self._fetch_layer_grid_data(bbox=bbox, spec=spec)
+            array = self._build_scalar_array_from_grid(
+                numpy=numpy,
+                grid_data=grid_data,
+                field_name=api_temp_attr,
+                fallback_field="temperature_2m",
+                rows=rows,
+                cols=cols,
+            )
+        except Exception:
+            array = numpy.zeros((rows, cols), dtype="float32")
+            base_temp = getattr(weather.current, temp_attr, None) or weather.current.temperature_2m or 0.0
+            for row in range(rows):
+                lat = bbox.north - ((row + 0.5) / rows) * (bbox.north - bbox.south)
+                for col in range(cols):
+                    lon = bbox.west + ((col + 0.5) / cols) * (bbox.east - bbox.west)
+                    array[row, col] = self._temperature_value_for_location(
+                        base_temp=base_temp,
+                        center_lat=weather.latitude,
+                        center_lon=weather.longitude,
+                        lat=lat,
+                        lon=lon,
+                        lat_span=max(0.1, bbox.north - bbox.south),
+                        lon_span=max(0.1, bbox.east - bbox.west),
+                    )
 
         writer_cls = getattr(raster_writer_module, "COGWriter", None)
         if writer_cls is None:
@@ -696,15 +1019,20 @@ class WeatherEngineService:
         self,
         weather: WeatherPointResponse,
         bbox: BoundingBox,
-        rows: int = 18,
-        cols: int = 18,
+        rows: int | None = None,
+        cols: int | None = None,
     ) -> dict[str, object]:
         features: list[dict[str, object]] = []
-        lat_step = (bbox.north - bbox.south) / rows
-        lon_step = (bbox.east - bbox.west) / cols
+        # 根据 bbox 范围动态计算网格点数
+        lat_span = max(0.1, bbox.north - bbox.south)
+        lon_span = max(0.1, bbox.east - bbox.west)
+        resolved_rows = rows if rows is not None else max(18, min(120, int(lat_span / 0.4)))
+        resolved_cols = cols if cols is not None else max(18, min(120, int(lon_span / 0.4)))
+        lat_step = lat_span / resolved_rows
+        lon_step = lon_span / resolved_cols
         base_precip = weather.current.precipitation or 0.0
-        for row in range(rows):
-            for col in range(cols):
+        for row in range(resolved_rows):
+            for col in range(resolved_cols):
                 south = bbox.south + row * lat_step
                 north = south + lat_step
                 west = bbox.west + col * lon_step
@@ -717,8 +1045,8 @@ class WeatherEngineService:
                     center_lon=weather.longitude,
                     lat=cell_lat,
                     lon=cell_lon,
-                    lat_span=max(0.1, bbox.north - bbox.south),
-                    lon_span=max(0.1, bbox.east - bbox.west),
+                    lat_span=lat_span,
+                    lon_span=lon_span,
                 )
                 if value < 0.1:
                     continue
@@ -765,21 +1093,31 @@ class WeatherEngineService:
 
         rows = 96
         cols = 96
-        array = numpy.zeros((rows, cols), dtype="float32")
-        base_precip = weather.current.precipitation or 0.0
-        for row in range(rows):
-            lat = bbox.north - ((row + 0.5) / rows) * (bbox.north - bbox.south)
-            for col in range(cols):
-                lon = bbox.west + ((col + 0.5) / cols) * (bbox.east - bbox.west)
-                array[row, col] = self._precipitation_value_for_location(
-                    base_precip=base_precip,
-                    center_lat=weather.latitude,
-                    center_lon=weather.longitude,
-                    lat=lat,
-                    lon=lon,
-                    lat_span=max(0.1, bbox.north - bbox.south),
-                    lon_span=max(0.1, bbox.east - bbox.west),
-                )
+        try:
+            grid_data, _, _ = self._fetch_layer_grid_data(bbox=bbox, spec=spec)
+            array = self._build_scalar_array_from_grid(
+                numpy=numpy,
+                grid_data=grid_data,
+                field_name="precipitation",
+                rows=rows,
+                cols=cols,
+            )
+        except Exception:
+            array = numpy.zeros((rows, cols), dtype="float32")
+            base_precip = weather.current.precipitation or 0.0
+            for row in range(rows):
+                lat = bbox.north - ((row + 0.5) / rows) * (bbox.north - bbox.south)
+                for col in range(cols):
+                    lon = bbox.west + ((col + 0.5) / cols) * (bbox.east - bbox.west)
+                    array[row, col] = self._precipitation_value_for_location(
+                        base_precip=base_precip,
+                        center_lat=weather.latitude,
+                        center_lon=weather.longitude,
+                        lat=lat,
+                        lon=lon,
+                        lat_span=max(0.1, bbox.north - bbox.south),
+                        lon_span=max(0.1, bbox.east - bbox.west),
+                    )
 
         writer_cls = getattr(raster_writer_module, "COGWriter", None)
         if writer_cls is None:
@@ -815,15 +1153,20 @@ class WeatherEngineService:
         self,
         weather: WeatherPointResponse,
         bbox: BoundingBox,
-        rows: int = 18,
-        cols: int = 18,
+        rows: int | None = None,
+        cols: int | None = None,
     ) -> dict[str, object]:
         features: list[dict[str, object]] = []
-        lat_step = (bbox.north - bbox.south) / rows
-        lon_step = (bbox.east - bbox.west) / cols
+        # 根据 bbox 范围动态计算网格点数
+        lat_span = max(0.1, bbox.north - bbox.south)
+        lon_span = max(0.1, bbox.east - bbox.west)
+        resolved_rows = rows if rows is not None else max(18, min(120, int(lat_span / 0.4)))
+        resolved_cols = cols if cols is not None else max(18, min(120, int(lon_span / 0.4)))
+        lat_step = lat_span / resolved_rows
+        lon_step = lon_span / resolved_cols
         base_humidity = weather.current.relative_humidity_2m or 0.0
-        for row in range(rows):
-            for col in range(cols):
+        for row in range(resolved_rows):
+            for col in range(resolved_cols):
                 south = bbox.south + row * lat_step
                 north = south + lat_step
                 west = bbox.west + col * lon_step
@@ -836,8 +1179,8 @@ class WeatherEngineService:
                     center_lon=weather.longitude,
                     lat=cell_lat,
                     lon=cell_lon,
-                    lat_span=max(0.1, bbox.north - bbox.south),
-                    lon_span=max(0.1, bbox.east - bbox.west),
+                    lat_span=lat_span,
+                    lon_span=lon_span,
                 )
                 features.append(
                     {
@@ -866,15 +1209,20 @@ class WeatherEngineService:
         self,
         weather: WeatherPointResponse,
         bbox: BoundingBox,
-        rows: int = 18,
-        cols: int = 18,
+        rows: int | None = None,
+        cols: int | None = None,
     ) -> dict[str, object]:
         features: list[dict[str, object]] = []
-        lat_step = (bbox.north - bbox.south) / rows
-        lon_step = (bbox.east - bbox.west) / cols
+        # 根据 bbox 范围动态计算网格点数
+        lat_span = max(0.1, bbox.north - bbox.south)
+        lon_span = max(0.1, bbox.east - bbox.west)
+        resolved_rows = rows if rows is not None else max(18, min(120, int(lat_span / 0.4)))
+        resolved_cols = cols if cols is not None else max(18, min(120, int(lon_span / 0.4)))
+        lat_step = lat_span / resolved_rows
+        lon_step = lon_span / resolved_cols
         base_pressure = weather.current.pressure_msl or 0.0
-        for row in range(rows):
-            for col in range(cols):
+        for row in range(resolved_rows):
+            for col in range(resolved_cols):
                 south = bbox.south + row * lat_step
                 north = south + lat_step
                 west = bbox.west + col * lon_step
@@ -887,8 +1235,8 @@ class WeatherEngineService:
                     center_lon=weather.longitude,
                     lat=cell_lat,
                     lon=cell_lon,
-                    lat_span=max(0.1, bbox.north - bbox.south),
-                    lon_span=max(0.1, bbox.east - bbox.west),
+                    lat_span=lat_span,
+                    lon_span=lon_span,
                 )
                 features.append(
                     {
@@ -917,15 +1265,20 @@ class WeatherEngineService:
         self,
         weather: WeatherPointResponse,
         bbox: BoundingBox,
-        rows: int = 18,
-        cols: int = 18,
+        rows: int | None = None,
+        cols: int | None = None,
     ) -> dict[str, object]:
         features: list[dict[str, object]] = []
-        lat_step = (bbox.north - bbox.south) / rows
-        lon_step = (bbox.east - bbox.west) / cols
+        # 根据 bbox 范围动态计算网格点数
+        lat_span = max(0.1, bbox.north - bbox.south)
+        lon_span = max(0.1, bbox.east - bbox.west)
+        resolved_rows = rows if rows is not None else max(18, min(120, int(lat_span / 0.4)))
+        resolved_cols = cols if cols is not None else max(18, min(120, int(lon_span / 0.4)))
+        lat_step = lat_span / resolved_rows
+        lon_step = lon_span / resolved_cols
         base_visibility = weather.current.visibility or 0.0
-        for row in range(rows):
-            for col in range(cols):
+        for row in range(resolved_rows):
+            for col in range(resolved_cols):
                 south = bbox.south + row * lat_step
                 north = south + lat_step
                 west = bbox.west + col * lon_step
@@ -938,8 +1291,8 @@ class WeatherEngineService:
                     center_lon=weather.longitude,
                     lat=cell_lat,
                     lon=cell_lon,
-                    lat_span=max(0.1, bbox.north - bbox.south),
-                    lon_span=max(0.1, bbox.east - bbox.west),
+                    lat_span=lat_span,
+                    lon_span=lon_span,
                 )
                 features.append(
                     {
@@ -964,16 +1317,345 @@ class WeatherEngineService:
                 )
         return {"type": "FeatureCollection", "features": features}
 
+    def build_temperature_geojson_from_grid(
+        self,
+        grid_data: dict[str, Any],
+        layer_id: str,
+    ) -> dict[str, object]:
+        """从真实网格数据构建温度 GeoJSON。
+
+        Args:
+            grid_data: fetch_grid_forecast() 返回的网格数据
+            layer_id: 图层类型（如 temperature, temperature-80m 等）
+
+        Returns:
+            GeoJSON FeatureCollection（Polygon 网格）
+        """
+        grid = grid_data["grid"]
+        current = grid_data["data"]["current"]
+
+        rows, cols = grid["rows"], grid["cols"]
+        lats = grid["lats"]
+        lons = grid["lons"]
+        features = []
+
+        # 根据 layer_id 解析高度后缀
+        height_suffix = "2m"
+        if layer_id and layer_id.startswith("temperature-"):
+            height_suffix = layer_id.split("-", 1)[-1]  # "80m" / "120m" / "180m"
+
+        temp_attr = f"temperature_{height_suffix}"
+        api_temp_attr = temp_attr.replace("-", "_")
+
+        # 从 API 响应中提取数据
+        temp_values = current.get(api_temp_attr, current.get("temperature_2m", []))
+
+        lat_step = (grid["bbox"]["north"] - grid["bbox"]["south"]) / rows
+        lon_step = (grid["bbox"]["east"] - grid["bbox"]["west"]) / cols
+
+        for i in range(rows):
+            for j in range(cols):
+                idx = i * cols + j
+                if idx >= len(temp_values):
+                    continue
+
+                south = grid["bbox"]["south"] + i * lat_step
+                north = south + lat_step
+                west = grid["bbox"]["west"] + j * lon_step
+                east = west + lon_step
+
+                value = temp_values[idx]
+
+                features.append({
+                    "type": "Feature",
+                    "geometry": {
+                        "type": "Polygon",
+                        "coordinates": [[
+                            [west, south],
+                            [east, south],
+                            [east, north],
+                            [west, north],
+                            [west, south],
+                        ]],
+                    },
+                    "properties": {
+                        temp_attr: round(value, 2) if value is not None else 0,
+                        "height": height_suffix,
+                        "unit": "C",
+                        "row": i,
+                        "col": j,
+                    }
+                })
+
+        return {"type": "FeatureCollection", "features": features}
+
+    def build_precipitation_geojson_from_grid(
+        self,
+        grid_data: dict[str, Any],
+        layer_id: str,
+    ) -> dict[str, object]:
+        """从真实网格数据构建降水 GeoJSON。
+
+        Args:
+            grid_data: fetch_grid_forecast() 返回的网格数据
+            layer_id: 图层类型（precipitation）
+
+        Returns:
+            GeoJSON FeatureCollection（Polygon 网格，仅降水 > 0.1mm 的区域）
+        """
+        grid = grid_data["grid"]
+        current = grid_data["data"]["current"]
+
+        rows, cols = grid["rows"], grid["cols"]
+        lats = grid["lats"]
+        lons = grid["lons"]
+        features = []
+
+        # 从 API 响应中提取数据
+        precip_values = current.get("precipitation", [])
+
+        lat_step = (grid["bbox"]["north"] - grid["bbox"]["south"]) / rows
+        lon_step = (grid["bbox"]["east"] - grid["bbox"]["west"]) / cols
+
+        for i in range(rows):
+            for j in range(cols):
+                idx = i * cols + j
+                if idx >= len(precip_values):
+                    continue
+
+                value = precip_values[idx]
+                if value is None or value < 0.1:
+                    continue
+
+                south = grid["bbox"]["south"] + i * lat_step
+                north = south + lat_step
+                west = grid["bbox"]["west"] + j * lon_step
+                east = west + lon_step
+
+                features.append({
+                    "type": "Feature",
+                    "geometry": {
+                        "type": "Polygon",
+                        "coordinates": [[
+                            [west, south],
+                            [east, south],
+                            [east, north],
+                            [west, north],
+                            [west, south],
+                        ]],
+                    },
+                    "properties": {
+                        "precipitation": round(value, 2),
+                        "unit": "mm",
+                        "row": i,
+                        "col": j,
+                    }
+                })
+
+        return {"type": "FeatureCollection", "features": features}
+
+    def build_humidity_geojson_from_grid(
+        self,
+        grid_data: dict[str, Any],
+        layer_id: str,
+    ) -> dict[str, object]:
+        """从真实网格数据构建湿度 GeoJSON。
+
+        Args:
+            grid_data: fetch_grid_forecast() 返回的网格数据
+            layer_id: 图层类型（humidity）
+
+        Returns:
+            GeoJSON FeatureCollection（Polygon 网格）
+        """
+        grid = grid_data["grid"]
+        current = grid_data["data"]["current"]
+
+        rows, cols = grid["rows"], grid["cols"]
+        features = []
+
+        # 从 API 响应中提取数据
+        humidity_values = current.get("relative_humidity_2m", [])
+
+        lat_step = (grid["bbox"]["north"] - grid["bbox"]["south"]) / rows
+        lon_step = (grid["bbox"]["east"] - grid["bbox"]["west"]) / cols
+
+        for i in range(rows):
+            for j in range(cols):
+                idx = i * cols + j
+                if idx >= len(humidity_values):
+                    continue
+
+                value = humidity_values[idx]
+
+                south = grid["bbox"]["south"] + i * lat_step
+                north = south + lat_step
+                west = grid["bbox"]["west"] + j * lon_step
+                east = west + lon_step
+
+                features.append({
+                    "type": "Feature",
+                    "geometry": {
+                        "type": "Polygon",
+                        "coordinates": [[
+                            [west, south],
+                            [east, south],
+                            [east, north],
+                            [west, north],
+                            [west, south],
+                        ]],
+                    },
+                    "properties": {
+                        "relative_humidity_2m": round(value, 2) if value is not None else 0,
+                        "unit": "%",
+                        "row": i,
+                        "col": j,
+                    }
+                })
+
+        return {"type": "FeatureCollection", "features": features}
+
+    def build_pressure_geojson_from_grid(
+        self,
+        grid_data: dict[str, Any],
+        layer_id: str,
+    ) -> dict[str, object]:
+        """从真实网格数据构建气压 GeoJSON。
+
+        Args:
+            grid_data: fetch_grid_forecast() 返回的网格数据
+            layer_id: 图层类型（pressure）
+
+        Returns:
+            GeoJSON FeatureCollection（Polygon 网格）
+        """
+        grid = grid_data["grid"]
+        current = grid_data["data"]["current"]
+
+        rows, cols = grid["rows"], grid["cols"]
+        features = []
+
+        # 从 API 响应中提取数据
+        pressure_values = current.get("pressure_msl", [])
+
+        lat_step = (grid["bbox"]["north"] - grid["bbox"]["south"]) / rows
+        lon_step = (grid["bbox"]["east"] - grid["bbox"]["west"]) / cols
+
+        for i in range(rows):
+            for j in range(cols):
+                idx = i * cols + j
+                if idx >= len(pressure_values):
+                    continue
+
+                value = pressure_values[idx]
+
+                south = grid["bbox"]["south"] + i * lat_step
+                north = south + lat_step
+                west = grid["bbox"]["west"] + j * lon_step
+                east = west + lon_step
+
+                features.append({
+                    "type": "Feature",
+                    "geometry": {
+                        "type": "Polygon",
+                        "coordinates": [[
+                            [west, south],
+                            [east, south],
+                            [east, north],
+                            [west, north],
+                            [west, south],
+                        ]],
+                    },
+                    "properties": {
+                        "pressure_msl": round(value, 2) if value is not None else 0,
+                        "unit": "hPa",
+                        "row": i,
+                        "col": j,
+                    }
+                })
+
+        return {"type": "FeatureCollection", "features": features}
+
+    def build_visibility_geojson_from_grid(
+        self,
+        grid_data: dict[str, Any],
+        layer_id: str,
+    ) -> dict[str, object]:
+        """从真实网格数据构建能见度 GeoJSON。
+
+        Args:
+            grid_data: fetch_grid_forecast() 返回的网格数据
+            layer_id: 图层类型（visibility）
+
+        Returns:
+            GeoJSON FeatureCollection（Polygon 网格）
+        """
+        grid = grid_data["grid"]
+        current = grid_data["data"]["current"]
+
+        rows, cols = grid["rows"], grid["cols"]
+        features = []
+
+        # 从 API 响应中提取数据
+        visibility_values = current.get("visibility", [])
+
+        lat_step = (grid["bbox"]["north"] - grid["bbox"]["south"]) / rows
+        lon_step = (grid["bbox"]["east"] - grid["bbox"]["west"]) / cols
+
+        for i in range(rows):
+            for j in range(cols):
+                idx = i * cols + j
+                if idx >= len(visibility_values):
+                    continue
+
+                value = visibility_values[idx]
+
+                south = grid["bbox"]["south"] + i * lat_step
+                north = south + lat_step
+                west = grid["bbox"]["west"] + j * lon_step
+                east = west + lon_step
+
+                features.append({
+                    "type": "Feature",
+                    "geometry": {
+                        "type": "Polygon",
+                        "coordinates": [[
+                            [west, south],
+                            [east, south],
+                            [east, north],
+                            [west, north],
+                            [west, south],
+                        ]],
+                    },
+                    "properties": {
+                        "visibility": round(value, 2) if value is not None else 0,
+                        "unit": "m",
+                        "row": i,
+                        "col": j,
+                    }
+                })
+
+        return {"type": "FeatureCollection", "features": features}
+
     def _resolve_render_bbox(
         self,
         payload: WorkflowSubmitRequest,
         latitude: float,
         longitude: float,
     ) -> BoundingBox:
-        if payload.map_context.viewport_bbox is not None:
-            return payload.map_context.viewport_bbox
+        # [WeatherEngine] 调试：打印 bbox 解析过程
+        vp_bbox = payload.map_context.viewport_bbox
+        if vp_bbox is not None:
+            logger.info(
+                "[WeatherEngine] _resolve_render_bbox: source=viewport_bbox bbox=(%s,%s,%s,%s) span=%.2fx%.2f",
+                vp_bbox.west, vp_bbox.south, vp_bbox.east, vp_bbox.north,
+                vp_bbox.east - vp_bbox.west, vp_bbox.north - vp_bbox.south,
+            )
+            return vp_bbox
         if payload.spatial_filter and payload.spatial_filter.bbox is not None:
-            return payload.spatial_filter.bbox
+            bbox = payload.spatial_filter.bbox
+            logger.info("[WeatherEngine] _resolve_render_bbox: source=spatial_filter bbox=(%s,%s,%s,%s)", bbox.west, bbox.south, bbox.east, bbox.north)
+            return bbox
         west = longitude - 1.6
         east = longitude + 1.6
         south = latitude - 1.2
@@ -986,6 +1668,7 @@ class WeatherEngineService:
         # 极地纬度 clamp：latitude≈90 时 north 会 >90，需限制到 [-90, 90]
         north = min(90, max(-90, north))
         south = min(90, max(-90, south))
+        logger.info("[WeatherEngine] _resolve_render_bbox: source=fallback(center±1.6/1.2) bbox=(%s,%s,%s,%s) center=(%s,%s)", west, south, east, north, longitude, latitude)
         return BoundingBox(
             west=west,
             south=south,

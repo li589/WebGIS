@@ -6,7 +6,9 @@ from datetime import datetime, timezone
 import logging
 from uuid import uuid4
 
-from app.core.celery_app import celery_available, get_celery_runtime_details, revoke_task
+from celery.exceptions import SoftTimeLimitExceeded
+
+from app.core.celery_app import celery_available, celery_app, get_celery_runtime_details, revoke_task
 from app.core.config import settings
 from app.core.logging import ensure_logging_configured, log_context
 from app.services.result_storage import result_storage_service
@@ -160,6 +162,13 @@ class InMemoryInteractionHub:
                     requested_at=running_at,
                 )
                 logger.info("Workflow execution finished")
+            except SoftTimeLimitExceeded:
+                logger.warning("Workflow execution soft-time-limit exceeded")
+                self._handle_workflow_timeout(
+                    run_id=run_id,
+                    payload=payload,
+                    created_at=created_at,
+                )
             except Exception as exc:
                 logger.exception("Workflow execution failed")
                 # 失败分类修复：区分 transient/terminal，可重试失败进入 retry_pending 状态
@@ -169,6 +178,32 @@ class InMemoryInteractionHub:
                     created_at=created_at,
                     exc=exc,
                 )
+
+    def _handle_workflow_timeout(
+        self,
+        *,
+        run_id: str,
+        payload: WorkflowSubmitRequest,
+        created_at: datetime,
+    ) -> None:
+        """Celery 软超时：进入 failed 状态，标记为超时原因（不可重试）。"""
+        from app.services.failure_classifier import FailureClassifier
+
+        current_attempt = payload.retry_attempt or 1
+        exc = TimeoutError(
+            f"Workflow execution exceeded soft time limit "
+            f"({settings.celery_task_soft_time_limit}s) and was terminated."
+        )
+        # 超时不重试：软超时通常是任务本身太慢，重试大概率仍会超时
+        category = FailureCategory.terminal_failure
+        self._finalize_workflow_failure(
+            run_id=run_id,
+            payload=payload,
+            created_at=created_at,
+            exc=exc,
+            category=category,
+            attempt_count=current_attempt,
+        )
 
     def _handle_workflow_failure(
         self,
@@ -337,15 +372,22 @@ class InMemoryInteractionHub:
                 f"backoff_seconds={backoff_seconds:.1f}",
                 f"retryable={category.retryable}",
             ],
+            progress=0,
         )
 
     def get_workflow_run(self, run_id: str) -> WorkflowRunStatusResponse | None:
         return self._repository.get_run(run_id)
 
-    def list_workflow_events(self, run_id: str) -> WorkflowEventsResponse | None:
-        events = self._repository.list_events(run_id)
-        if events is None:
+    def list_workflow_events(
+        self,
+        run_id: str,
+        *,
+        after_event_id: str | None = None,
+        limit: int | None = None,
+    ) -> WorkflowEventsResponse | None:
+        if self._repository.get_run(run_id) is None:
             return None
+        events = self._repository.list_events(run_id, after_event_id=after_event_id, limit=limit)
         return WorkflowEventsResponse(run_id=run_id, items=events)
 
     def update_runtime_config(self, payload: RuntimeConfigUpdateRequest) -> RuntimeConfigUpdateResponse:
@@ -739,6 +781,15 @@ class InMemoryInteractionHub:
             run_id=run_id,
             result_refs=execution.result_refs,
         )
+        logger.info(
+            "[InteractionHub] materialize_result_refs: run_id=%s result_refs_count=%d spill_count=%d",
+            run_id, len(result_refs), len(spill_diagnostics),
+        )
+        for r in result_refs:
+            logger.info(
+                "[InteractionHub] result_ref: result_id=%s result_kind=%s resource_url=%s inline_data=%s",
+                r.result_id, r.result_kind, r.resource_url, "present" if r.inline_data else "None",
+            )
         diagnostics = [*execution.diagnostics, *spill_diagnostics]
         result_dto = self._augment_result_dto(
             execution.result_dto,
@@ -1281,6 +1332,86 @@ class InMemoryInteractionHub:
             progress=progress,
             payload=payload or {},
         )
+
+    def cleanup_stale_workflow_runs(self) -> int:
+        """后端启动时清理上一会话遗留的僵尸工作流。
+
+        非终态（accepted/queued/running/retry_pending）的工作流在进程重启后
+        不会再被 Celery worker 消费，会永久卡住。本方法将它们标记为 failed，
+        使前端能感知失败并允许用户重试。
+        返回被清理的工作流数量。
+        """
+        non_terminal_statuses = {
+            ExecutionStatus.accepted,
+            ExecutionStatus.queued,
+            ExecutionStatus.running,
+            ExecutionStatus.retry_pending,
+        }
+        now = datetime.now(timezone.utc)
+        cleaned = 0
+        for run in self._repository.list_runs():
+            if run.status not in non_terminal_statuses:
+                continue
+            with log_context(run_id=run.run_id):
+                logger.warning(
+                    "Cleaning up stale workflow run (status=%s, updated_at=%s) on startup",
+                    run.status.value,
+                    run.updated_at.isoformat(),
+                )
+                payload = WorkflowSubmitRequest(
+                    command_type=run.command_type,
+                    command_label=run.command_label,
+                    priority=run.priority,
+                    resource_profile=run.resource_profile,
+                    realtime_preferred=run.realtime_preferred,
+                    queue_tag=run.queue_tag,
+                    spatial_filter=run.spatial_filter,
+                    time_range=run.time_range,
+                    requested_outputs=run.requested_outputs,
+                    client=run.client,
+                    map_context=run.map_context,
+                    config_overrides=run.config_overrides,
+                )
+                self._save_run_status(
+                    run_status=self._build_execution_transition(
+                        run_id=run.run_id,
+                        payload=payload,
+                        status=ExecutionStatus.failed,
+                        progress=100,
+                        message="工作流因后端重启被中断（僵尸任务清理）。",
+                        created_at=run.created_at,
+                        updated_at=now,
+                        result_refs=run.result_refs,
+                        result_dto=run.result_dto,
+                        diagnostics=[
+                            f"工作流在 {run.status.value} 状态下因后端进程重启而中断。",
+                            "error_code=workflow_orphaned_by_restart",
+                            f"last_status={run.status.value}",
+                            f"last_updated_at={run.updated_at.isoformat()}",
+                        ],
+                        executor_metadata={
+                            **run.executor_metadata,
+                            "orphaned_at": now.isoformat(),
+                            "cleanup_reason": "backend_restart",
+                        },
+                    )
+                )
+                self._record_event(
+                    run_id=run.run_id,
+                    channel=EventChannel.log,
+                    level=LogLevel.warning,
+                    message="工作流因后端重启被中断，已标记为失败。可点击重试重新提交。",
+                    progress=100,
+                    payload={
+                        "cleanup_reason": "backend_restart",
+                        "previous_status": run.status.value,
+                    },
+                    created_at=now,
+                )
+                cleaned += 1
+        if cleaned > 0:
+            logger.info("Cleaned up %d stale workflow run(s) on startup", cleaned)
+        return cleaned
 
 
 interaction_hub = InMemoryInteractionHub()

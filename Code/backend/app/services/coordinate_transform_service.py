@@ -6,6 +6,10 @@ from typing import Literal
 
 CoordinateSystem = Literal['EPSG:3857', 'GCJ-02', 'BD-09']
 
+# WGS84 椭球体参数
+_WGS84_A = 6378245.0
+_WGS84_EE = 0.00669342162296594323
+
 
 @dataclass(frozen=True)
 class CoordinatePoint:
@@ -36,15 +40,13 @@ def _transform_lng(lng: float, lat: float) -> float:
 def gcj02_to_wgs84(lng: float, lat: float) -> CoordinatePoint:
     if _out_of_china(lng, lat):
         return CoordinatePoint(lng=lng, lat=lat)
-    a = 6378245.0
-    ee = 0.00669342162296594323
     dlat = _transform_lat(lng - 105.0, lat - 35.0)
     dlng = _transform_lng(lng - 105.0, lat - 35.0)
     radlat = lat / 180.0 * pi
-    magic = 1 - ee * sin(radlat) ** 2
+    magic = 1 - _WGS84_EE * sin(radlat) ** 2
     sqrt_magic = sqrt(magic)
-    dlat = (dlat * 180.0) / ((a * (1 - ee)) / (magic * sqrt_magic) * pi)
-    dlng = (dlng * 180.0) / (a / sqrt_magic * cos(radlat) * pi)
+    dlat = (dlat * 180.0) / ((_WGS84_A * (1 - _WGS84_EE)) / (magic * sqrt_magic) * pi)
+    dlng = (dlng * 180.0) / (_WGS84_A / sqrt_magic * cos(radlat) * pi)
     return CoordinatePoint(lng=lng * 2 - (lng + dlng), lat=lat * 2 - (lat + dlat))
 
 
@@ -68,6 +70,30 @@ def bd09_to_gcj02(lng: float, lat: float) -> CoordinatePoint:
 def bd09_to_wgs84(lng: float, lat: float) -> CoordinatePoint:
     gcj = bd09_to_gcj02(lng, lat)
     return gcj02_to_wgs84(gcj.lng, gcj.lat)
+
+
+def wgs84_to_gcj02(lng: float, lat: float) -> CoordinatePoint:
+    """WGS84 转 GCJ-02"""
+    if _out_of_china(lng, lat):
+        return CoordinatePoint(lng=lng, lat=lat)
+    dlat = _transform_lat(lng - 105.0, lat - 35.0)
+    dlng = _transform_lng(lng - 105.0, lat - 35.0)
+    radlat = lat / 180.0 * pi
+    magic = 1 - _WGS84_EE * sin(radlat) ** 2
+    sqrt_magic = sqrt(magic)
+    dlat = (dlat * 180.0) / ((_WGS84_A * (1 - _WGS84_EE)) / (magic * sqrt_magic) * pi)
+    dlng = (dlng * 180.0) / (_WGS84_A / sqrt_magic * cos(radlat) * pi)
+    return CoordinatePoint(lng=lng + dlng, lat=lat + dlat)
+
+
+def wgs84_to_bd09(lng: float, lat: float) -> CoordinatePoint:
+    """WGS84 转 BD-09（先转 GCJ-02，再转 BD-09）"""
+    gcj = wgs84_to_gcj02(lng, lat)
+    x = gcj.lng
+    y = gcj.lat
+    z = sqrt(x * x + y * y) + 0.00002 * sin(y * pi * 3000.0 / 180.0)
+    theta = atan2(y, x) + 0.000003 * cos(x * pi * 3000.0 / 180.0)
+    return CoordinatePoint(lng=z * cos(theta), lat=z * sin(theta))
 
 
 def transform_point(lng: float, lat: float, source: CoordinateSystem, target: CoordinateSystem = 'EPSG:3857') -> CoordinatePoint:

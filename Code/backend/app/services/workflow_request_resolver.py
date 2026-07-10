@@ -3,8 +3,10 @@ from __future__ import annotations
 from contextlib import contextmanager
 from functools import lru_cache
 import importlib
+import logging
 from pathlib import Path
 import sys
+import threading
 from typing import Any
 from typing import Iterator
 
@@ -93,11 +95,15 @@ def describe_layer_run_readiness(layer_id: str) -> dict[str, Any] | None:
         return None
 
     readiness = "ready"
-    notes: list[str] = []
+    notes: list[str] = list(descriptor.run_readiness_notes)
+    summary: str | None = descriptor.run_readiness_summary
 
-    if descriptor.status == "placeholder":
+    if descriptor.status == "sample":
+        notes.append("当前图层为样板 provider 链路，可运行但结果仅用于联调/演示。")
+        summary = summary or "样板 provider 可运行，但不代表正式生产数据。"
+    elif descriptor.status == "placeholder":
         readiness = "blocked"
-        notes.append("图层仍处于 placeholder 状态，真实数据源尚未接入。")
+        notes.append("图层仍处于占位状态，真实数据源尚未接入。")
 
     unresolved_default_datasets: list[dict[str, Any]] = []
     if descriptor.engine == "python_provider" and descriptor.default_data_access_sources:
@@ -118,11 +124,10 @@ def describe_layer_run_readiness(layer_id: str) -> dict[str, Any] | None:
                 candidate_text = ", ".join(item["candidate_sources"]) or "未提供候选源"
                 notes.append(f"缺少默认数据集 {item['dataset_name']}；已检查：{candidate_text}")
 
-    summary: str | None = None
     if unresolved_default_datasets:
         dataset_names = "、".join(item["dataset_name"] for item in unresolved_default_datasets)
         summary = f"默认数据源未就绪：{dataset_names}"
-    elif readiness == "blocked" and notes:
+    elif summary is None and readiness == "blocked" and notes:
         summary = notes[0]
 
     return {
@@ -254,6 +259,7 @@ def _resolve_data_access_source_uri(source: str) -> str | None:
     return str(fallback_path) if fallback_path.exists() else None
 
 
+@lru_cache(maxsize=128)
 def _resolve_provider_dataset_path(logical_name: str) -> Path | None:
     dataset_helpers = _load_provider_dataset_helpers()
     if dataset_helpers is None:
@@ -276,22 +282,53 @@ def _resolve_provider_dataset_path(logical_name: str) -> Path | None:
     return None
 
 
-@lru_cache(maxsize=1)
-def _load_provider_dataset_helpers() -> tuple[Any, Any] | None:
+_provider_helpers_cache_lock = threading.Lock()
+
+# 内部实现（无缓存）
+def _load_provider_dataset_helpers_uncached() -> tuple[Any, Any] | None:
+    import time
+    start = time.time()
+    logger = logging.getLogger(__name__)
     provider_root = Path(settings.python_provider_root)
+    logger.info(f"[workflow_request_resolver] _load_provider_dataset_helpers start, root={provider_root}")
     if not provider_root.exists():
+        logger.info(f"[workflow_request_resolver] _load_provider_dataset_helpers: root doesn't exist, returning None")
         return None
 
     try:
-        with _python_provider_import_path(provider_root):
-            dataset_config = importlib.import_module("dataset_config")
-    except Exception:
+        import concurrent.futures
+
+        def _import_dataset_config() -> Any:
+            with _python_provider_import_path(provider_root):
+                return importlib.import_module("dataset_config")
+
+        # 添加超时保护，避免 dataset_config 导入挂起导致 /layers 端点响应缓慢
+        logger.info(f"[workflow_request_resolver] _load_provider_dataset_helpers: starting import with timeout")
+        with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
+            future = executor.submit(_import_dataset_config)
+            try:
+                dataset_config = future.result(timeout=5.0)  # 5秒超时
+                logger.info(f"[workflow_request_resolver] _load_provider_dataset_helpers: import succeeded after {time.time() - start:.1f}s")
+            except concurrent.futures.TimeoutError:
+                logger.warning("[workflow_request_resolver] _load_provider_dataset_helpers timed out after 5s")
+                return None
+    except Exception as e:
+        logger.warning(f"[workflow_request_resolver] _load_provider_dataset_helpers exception: {e}")
         return None
 
-    return (
+    result = (
         getattr(dataset_config, "resolve_dataset_path", None),
         getattr(dataset_config, "get_dataset_info", None),
     )
+    logger.info(f"[workflow_request_resolver] _load_provider_dataset_helpers done in {time.time() - start:.1f}s")
+    return result
+
+
+# 线程安全的缓存包装器
+@lru_cache(maxsize=1)
+def _load_provider_dataset_helpers() -> tuple[Any, Any] | None:
+    with _provider_helpers_cache_lock:
+        return _load_provider_dataset_helpers_uncached()
 
 
 @contextmanager
