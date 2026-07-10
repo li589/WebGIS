@@ -431,16 +431,6 @@ function resolveAllWeatherOverlayStates(): WeatherOverlayState[] {
     if (renderHint.paint_mode === 'point_symbol' && !hasGeojsonSource) continue
     if (renderHint.paint_mode === 'particle_flow' && !hasGeojsonSource) continue
     if (renderHint.paint_mode === 'grid_fill' && !hasGeojsonSource && !(resolvedCogPreviewUrl && cogBbox)) continue
-    // [MapCanvas] 调试：打印 overlay 状态
-    console.log(
-      '[MapCanvas] resolveOverlayState:',
-      'catalogId=', layer.catalogId,
-      'paint_mode=', renderHint.paint_mode,
-      'geojsonUrl=', resolvedGeojsonUrl,
-      'geojsonData=', geojsonData ? 'yes' : 'none',
-      'cogPreviewUrl=', resolvedCogPreviewUrl ? 'yes' : 'none',
-      'cogBbox=', cogBbox ? 'yes' : 'none',
-    )
     states.push({
       catalogId: layer.catalogId,
       geojsonUrl: resolvedGeojsonUrl,
@@ -968,7 +958,6 @@ async function syncWindParticleFlow(overlayState: WeatherOverlayState, overlayTo
   const fetchToken = ++windParticleFetchToken
   if (!inlineGeojson && urlChanged && overlayState.geojsonUrl) {
     try {
-      console.log('[MapCanvas] syncWindParticleFlow: fetching geojson from', overlayState.geojsonUrl)
       const resp = await fetch(overlayState.geojsonUrl)
       if (resp.ok) {
         const fetchedGeojson = await resp.json()
@@ -983,15 +972,6 @@ async function syncWindParticleFlow(overlayState: WeatherOverlayState, overlayTo
         geojson = fetchedGeojson
         currentWindGeojson = fetchedGeojson
         lastWindGeojsonUrl = overlayState.geojsonUrl
-        // [MapCanvas] 调试：打印 GeoJSON 概要
-        const features = geojson?.features ?? []
-        const coords = features.length > 0 ? features[0].geometry?.coordinates : null
-        console.log(
-          '[MapCanvas] syncWindParticleFlow: geojson loaded features=%d first_coord=%s last_coord=%s',
-          features.length,
-          coords ? `[${coords[0].toFixed(4)},${coords[1].toFixed(4)}]` : 'none',
-          features.length > 0 ? `[${features[features.length-1].geometry?.coordinates?.[0]?.toFixed(4)},${features[features.length-1].geometry?.coordinates?.[1]?.toFixed(4)}]` : 'none',
-        )
       } else {
         console.warn('[MapCanvas] syncWindParticleFlow: fetch failed status=%d', resp.status)
         return

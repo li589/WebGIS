@@ -257,6 +257,8 @@ class ProviderWorkflowService:
             "body": {
                 "source": "provider",
                 "provider_workflow_enabled": settings.provider_workflow_enabled,
+                "provider_tier": "sample",
+                "provider_note": "当前 provider 链路为过渡样板，结果仅用于联调与界面验收，不代表正式生产数据。",
                 "registered_layer_count": len(layer_ids),
                 "registered_layers": layer_ids,
                 "max_hotspots": settings.provider_max_hotspots,

@@ -1333,13 +1333,6 @@ export const useLayersStore = defineStore('layers', () => {
         }
       }
       const mapPayload = mergedJobLayer.mapLayerPayload
-      console.log(
-        '[LayersStore] workflow snapshot terminal:',
-        'catalogId=', catalogId,
-        'status=', mergedJobLayer.status,
-        'hasMapLayerPayload=', !!mapPayload,
-        mapPayload ? `paint_mode=${mapPayload.renderHint?.paint_mode} geojsonUrl=${mapPayload.layerAssets?.geojsonUrl ?? 'none'}` : '',
-      )
       if (
         particleFlowCatalogId.value === catalogId
         && supportsParticleFlow(catalogId)
@@ -1354,7 +1347,6 @@ export const useLayersStore = defineStore('layers', () => {
         && !particleFlowCatalogId.value
       ) {
         particleFlowCatalogId.value = catalogId
-        console.log('[LayersStore] auto-enabling particle flow for', catalogId)
       }
       return true
     }
@@ -1537,16 +1529,6 @@ export const useLayersStore = defineStore('layers', () => {
           return activeLayers.value.find((layer) => layer.catalogId === catalogId)?.jobLayer?.jobId
         }
       }
-
-      // [LayersStore] 调试：打印工作流提交参数
-      console.log(
-        '[LayersStore] runWorkflowForCatalog:',
-        'catalogId=', catalogId,
-        'center=', currentMapCenter.value.lat.toFixed(4), currentMapCenter.value.lng.toFixed(4),
-        'request_bbox=', requestBBox ? `(${requestBBox.west.toFixed(2)},${requestBBox.south.toFixed(2)},${requestBBox.east.toFixed(2)},${requestBBox.north.toFixed(2)})` : 'null',
-        'hour=', currentHour.value,
-        'supportsMapLayer=', supportsMapLayer,
-      )
 
       // 中断旧位置的活跃工作流（取消 API 调用 + 清空预取队列），但保留已成功的瓦片缓存
       // 先获取旧 jobLayer 的 mapLayerPayload，以便在新工作流运行期间保持旧数据可见

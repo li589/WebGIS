@@ -1,3 +1,12 @@
+"""课题组样板 provider（lab-output）。
+
+此模块为过渡样板 provider，用于验证 provider bridge 链路完整性与界面验收，
+不代表正式生产能力。正式课题组模型应通过 ``algorithm_entrypoint`` 字段
+接入真实算法实现，否则将回退到内置合成数据。
+
+状态：sample / compat — 不作为正式业务结果事实源。
+"""
+
 from __future__ import annotations
 
 from dataclasses import dataclass

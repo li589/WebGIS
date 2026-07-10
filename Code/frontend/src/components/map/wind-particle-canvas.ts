@@ -219,13 +219,6 @@ function buildWindGridFromGeoJSON(geojson: WindGeoJSON): WindGrid | null {
   const west = sortedLons[0] / GRID_COORD_QUANTIZE_FACTOR
   const east = sortedLons[cols - 1] / GRID_COORD_QUANTIZE_FACTOR
 
-  // [WindParticle] 调试：打印网格构建结果
-  const sampleSpeeds = points.flat().slice(0, 5).map(p => p.speed.toFixed(1))
-  console.log(
-    '[WindParticle] buildWindGridFromGeoJSON: rows=%d cols=%d bounds=[%.4f,%.4f,%.4f,%.4f] points=%d height=%s',
-    rows, cols, west, south, east, north, rawPoints.length, heightSuffix,
-  )
-
   return { rows, cols, south, north, west, east, points }
 }
 
@@ -482,14 +475,6 @@ export class WindParticleCanvas {
     for (let i = 0; i < targetCount; i++) {
       this.particles.push(this.createRandomParticle())
     }
-    const { south, north, west, east } = this.grid
-    const { offsetX, offsetY } = this.layout
-    console.log(
-      '[WindParticle] initParticles: count=%d grid_bounds=[%.4f,%.4f,%.4f,%.4f] zoom=%.2f canvas=%dx%d offset=(%d,%d)',
-      this.particles.length, west, south, east, north,
-      this.map.getZoom(), this.layout.width, this.layout.height,
-      offsetX, offsetY,
-    )
   }
 
   /** 渐进更新粒子：保留重叠区域粒子，仅重置区域外粒子，调整粒子数量 */
@@ -703,12 +688,9 @@ export class WindParticleCanvas {
   }
 
   updateGeoJSON(geojson: WindGeoJSON): void {
-    const featureCount = geojson?.features?.length ?? 0
-    console.log('[WindParticleCanvas] updateGeoJSON - features:', featureCount)
     const oldGrid = this.grid
     this.grid = buildWindGridFromGeoJSON(geojson)
     if (this.grid) {
-      console.log('[WindParticleCanvas] Grid created - rows:', this.grid.rows, 'cols:', this.grid.cols, 'bounds:', this.grid.west, this.grid.south, this.grid.east, this.grid.north)
       this.updateCanvasBounds()
       const targetCount = this.resolveParticleCountForZoom(this.map.getZoom())
       if (!oldGrid) {

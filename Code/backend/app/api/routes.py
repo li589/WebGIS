@@ -4,9 +4,7 @@ from fastapi.responses import FileResponse, JSONResponse, Response
 from pathlib import Path
 from threading import Lock
 from concurrent.futures import ThreadPoolExecutor, as_completed
-import json
 import tempfile
-import urllib.request
 from urllib.error import HTTPError, URLError
 
 from app.api.deps import require_write_access
@@ -73,38 +71,6 @@ class _SseRateLimiter:
 
 
 _sse_limiter = _SseRateLimiter(_SSE_RATE_LIMIT, _SSE_WINDOW)
-
-
-# #region debug-point A:runtime-api-debug-helper
-def _report_debug_event(
-    hypothesis_id: str,
-    location: str,
-    msg: str,
-    data: dict | None = None,
-    *,
-    run_id: str = "post-fix",
-) -> None:
-    payload = {
-        "sessionId": "runtime-api-pending",
-        "runId": run_id,
-        "hypothesisId": hypothesis_id,
-        "location": location,
-        "msg": msg,
-        "data": data or {},
-        "ts": int(datetime.now(timezone.utc).timestamp() * 1000),
-    }
-    try:
-        request = urllib.request.Request(
-            "http://127.0.0.1:7777/event",
-            data=json.dumps(payload).encode(),
-            headers={"Content-Type": "application/json"},
-        )
-        urllib.request.urlopen(request, timeout=2).read()
-    except Exception:
-        pass
-
-
-# #endregion
 
 
 def _service_json_response(service_response) -> JSONResponse:
@@ -283,61 +249,13 @@ def get_artifact_preview_png(
 )
 def submit_workflow(payload: WorkflowSubmitRequest) -> WorkflowAcceptedResponse:
     try:
-        # #region debug-point D:workflow-submit-enter
-        _report_debug_event(
-            "D",
-            "app.api.routes.submit_workflow.enter",
-            "[DEBUG] workflow submit enter",
-            {
-                "layer_id": payload.layer_id,
-                "command_type": payload.command_type,
-                "requested_outputs": payload.requested_outputs,
-                "client_page": payload.client.page if payload.client else None,
-            },
-        )
-        # #endregion
         accepted = interaction_hub.submit_workflow(payload)
-        # #region debug-point B:workflow-submit-accepted
-        _report_debug_event(
-            "B",
-            "app.api.routes.submit_workflow.accepted",
-            "[DEBUG] workflow submit accepted",
-            {
-                "layer_id": payload.layer_id,
-                "run_id": accepted.run_id,
-                "status": accepted.status,
-            },
-        )
-        # #endregion
         return accepted
     except ValueError as exc:
-        # #region debug-point D:workflow-submit-value-error
-        _report_debug_event(
-            "D",
-            "app.api.routes.submit_workflow.value_error",
-            "[DEBUG] workflow submit value error",
-            {
-                "layer_id": payload.layer_id,
-                "detail": str(exc),
-            },
-        )
-        # #endregion
         detail = str(exc)
         status_code = status.HTTP_429_TOO_MANY_REQUESTS if "capacity" in detail.lower() else status.HTTP_400_BAD_REQUEST
         raise HTTPException(status_code=status_code, detail=detail) from exc
     except Exception as exc:
-        # #region debug-point D:workflow-submit-unexpected-error
-        _report_debug_event(
-            "D",
-            "app.api.routes.submit_workflow.unexpected_error",
-            "[DEBUG] workflow submit unexpected error",
-            {
-                "layer_id": payload.layer_id,
-                "error_type": type(exc).__name__,
-                "detail": str(exc),
-            },
-        )
-        # #endregion
         raise
 
 
@@ -543,41 +461,8 @@ def get_api_config_status() -> JSONResponse:
     try:
         configs = api_config_manager.get_all_configs()
         serializable_configs = api_config_manager.get_all_configs_serializable()
-        # #region debug-point A:runtime-api-config-enter
-        _report_debug_event(
-            "A",
-            "app.api.routes.get_api_config_status.enter",
-            "[DEBUG] runtime api-config enter",
-            {
-                "config_count": len(configs),
-                "key_types": [type(key).__name__ for key in configs.keys()],
-                "sample_value_types": [type(value).__name__ for value in list(configs.values())[:3]],
-            },
-        )
-        # #endregion
-        # #region debug-point A:runtime-api-config-success
-        _report_debug_event(
-            "A",
-            "app.api.routes.get_api_config_status.success",
-            "[DEBUG] runtime api-config serialized",
-            {
-                "provider_ids": list(serializable_configs.keys()),
-            },
-        )
-        # #endregion
         return JSONResponse(content=serializable_configs)
     except Exception as exc:
-        # #region debug-point A:runtime-api-config-error
-        _report_debug_event(
-            "A",
-            "app.api.routes.get_api_config_status.error",
-            "[DEBUG] runtime api-config failed",
-            {
-                "error_type": type(exc).__name__,
-                "detail": str(exc),
-            },
-        )
-        # #endregion
         raise
 
 
@@ -593,43 +478,8 @@ def get_provider_api_config(provider: str) -> JSONResponse:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Config not found for provider: {provider}")
     try:
         serializable_config = api_config_manager.get_config_serializable(api_provider)
-        # #region debug-point A:runtime-provider-api-config-enter
-        _report_debug_event(
-            "A",
-            "app.api.routes.get_provider_api_config.enter",
-            "[DEBUG] runtime provider api-config enter",
-            {
-                "provider": provider,
-                "config_type": type(config).__name__,
-                "endpoint_type": type(config.endpoint).__name__,
-            },
-        )
-        # #endregion
-        # #region debug-point A:runtime-provider-api-config-success
-        _report_debug_event(
-            "A",
-            "app.api.routes.get_provider_api_config.success",
-            "[DEBUG] runtime provider api-config serialized",
-            {
-                "provider": provider,
-                "keys": list(serializable_config.keys()) if isinstance(serializable_config, dict) else [],
-            },
-        )
-        # #endregion
         return JSONResponse(content=serializable_config)
     except Exception as exc:
-        # #region debug-point A:runtime-provider-api-config-error
-        _report_debug_event(
-            "A",
-            "app.api.routes.get_provider_api_config.error",
-            "[DEBUG] runtime provider api-config failed",
-            {
-                "provider": provider,
-                "error_type": type(exc).__name__,
-                "detail": str(exc),
-            },
-        )
-        # #endregion
         raise
 
 
