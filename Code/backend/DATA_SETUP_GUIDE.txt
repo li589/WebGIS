@@ -1,0 +1,30 @@
+# ============================================================
+# 数据接入指南（快速配置清单）
+# ============================================================
+#
+# 接入步骤：
+#
+# 1. 复制配置文件
+#    copy source_uri_map.example.json source_uri_map.json
+#
+# 2. 编辑 source_uri_map.json
+#    - 将路径替换为实际数据文件位置
+#    - Windows 本地文件：file:///I:/Geograph_DataSet/...
+#    - 网络资源：       http://your-server/data/...
+#    - MinIO 对象存储： minio://bucket/path/...
+#    - 不需要某个图层：从 JSON 中删除该行（自动回退 demo://）
+#    - 支持占位符：{layer_id} {hour}
+#
+# 3. 编辑 .env 文件
+#    BACKEND_DOWNLOAD_REAL_FETCH_ENABLED=true
+#    BACKEND_DOWNLOAD_SOURCE_URI_MAP=@source_uri_map.json
+#
+# 4. 重启后端
+#
+# 验证：
+#    curl http://127.0.0.1:8000/docs
+#    POST /download/prepare
+#    检查返回 manifest 的 source_refs[].fetch_status = "ready"
+#    artifact 内容包含真实文件路径和字节数
+#
+# ============================================================

@@ -18,7 +18,7 @@ function Invoke-Python {
         return
     }
 
-    throw "未找到 python/py，请先安装 Python 3.12。"
+    throw "未找到 python/py, 请先安装 Python 3.12。"
 }
 
 $scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path

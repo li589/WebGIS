@@ -1,0 +1,75 @@
+# ============================================================
+# CGDA 后端基础设施
+#   - Redis: Celery broker & result backend
+#   - MinIO: S3-compatible 对象存储（artifact 持久化 / GEE 导出）
+# ============================================================
+version: "3.8"
+
+services:
+  # ----------------------------------------------------------
+  # Redis — Celery broker / result backend / 缓存
+  # ----------------------------------------------------------
+  redis:
+    image: redis:7-alpine
+    container_name: cgda-redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+    command: redis-server --appendonly yes
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  # ----------------------------------------------------------
+  # MinIO — 对象存储
+  #   Console: http://localhost:9101  (minioadmin / minioadmin)
+  #   API:     http://localhost:9100
+  #   注: 宿主机端口改为 9100/9101 以避开 Hyper-V 保留端口 8963-9062
+  # ----------------------------------------------------------
+  minio:
+    image: minio/minio:latest
+    container_name: cgda-minio
+    restart: unless-stopped
+    ports:
+      - "9100:9000"    # API (宿主机 9100 -> 容器 9000)
+      - "9101:9001"    # Console (宿主机 9101 -> 容器 9001)
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin
+      MINIO_DEFAULT_BUCKETS: workflow-artifacts,gee-exports,workflow-artifacts-public
+    volumes:
+      - minio-data:/data
+    command: server /data --console-address ":9001"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:9000/minio/health/live"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ----------------------------------------------------------
+  # MinIO 初始化 — 创建桶（非阻塞，等待 MinIO 就绪后执行一次）
+  # ----------------------------------------------------------
+  minio-init:
+    image: minio/mc:latest
+    container_name: cgda-minio-init
+    depends_on:
+      minio:
+        condition: service_healthy
+    entrypoint: >
+      /bin/sh -c "
+      mc alias set myminio http://minio:9000 minioadmin minioadmin;
+      mc mb -p myminio/workflow-artifacts;
+      mc mb -p myminio/gee-exports;
+      mc mb -p myminio/workflow-artifacts-public;
+      mc anonymous set download myminio/workflow-artifacts-public;
+      exit 0
+      "
+    restart: "no"
+
+volumes:
+  redis-data:
+  minio-data:

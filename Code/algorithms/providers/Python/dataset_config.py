@@ -41,6 +41,7 @@ from __future__ import annotations
 
 import os
 from dataclasses import dataclass, field
+from functools import lru_cache
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -318,6 +319,7 @@ DATASET_REGISTRY: dict[str, DatasetInfo] = {
 # ===========================================================================
 
 
+@lru_cache(maxsize=128)
 def resolve_dataset_path(logical_name: str) -> Path | None:
     """
     将逻辑数据集名解析为实际绝对路径。

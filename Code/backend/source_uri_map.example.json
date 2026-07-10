@@ -1,0 +1,30 @@
+{
+  "wind-field": "file:///I:/Geograph_DataSet/wind/10m/{hour}.json",
+  "wind-field-80m": "file:///I:/Geograph_DataSet/wind/80m/{hour}.json",
+  "wind-field-120m": "file:///I:/Geograph_DataSet/wind/120m/{hour}.json",
+  "wind-field-180m": "file:///I:/Geograph_DataSet/wind/180m/{hour}.json",
+  "wind-field-850hPa": "file:///I:/Geograph_DataSet/wind/850hPa/{hour}.json",
+  "wind-field-500hPa": "file:///I:/Geograph_DataSet/wind/500hPa/{hour}.json",
+  "wind-field-200hPa": "file:///I:/Geograph_DataSet/wind/200hPa/{hour}.json",
+
+  "precipitation": "file:///I:/Geograph_DataSet/precipitation/{hour}.tif",
+  "temperature": "file:///I:/Geograph_DataSet/temperature/{hour}.json",
+  "temperature-80m": "file:///I:/Geograph_DataSet/temperature/80m/{hour}.json",
+  "temperature-120m": "file:///I:/Geograph_DataSet/temperature/120m/{hour}.json",
+  "temperature-180m": "file:///I:/Geograph_DataSet/temperature/180m/{hour}.json",
+
+  "pressure": "file:///I:/Geograph_DataSet/pressure/{hour}.json",
+  "humidity": "file:///I:/Geograph_DataSet/humidity/{hour}.json",
+  "visibility": "file:///I:/Geograph_DataSet/visibility/{hour}.json",
+
+  "ndvi": "file:///I:/Geograph_DataSet/ndvi/{layer_id}.tif",
+  "remote-sensing": "file:///I:/Geograph_DataSet/remote-sensing/{layer_id}.tif",
+  "lab-output": "file:///I:/GeoOutput/{layer_id}/{hour}.json",
+
+  "smap-soil": "file:///I:/Geograph_DataSet/smap-soil/{layer_id}.tif",
+  "fy-mwri": "file:///I:/Geograph_DataSet/fy-mwri/{layer_id}.tif",
+  "station-soil": "file:///I:/Geograph_DataSet/station-soil/{layer_id}.json",
+  "inversion-daily": "file:///I:/Geograph_DataSet/inversion/{hour}.json",
+  "block-inversion": "file:///I:/Geograph_DataSet/block-inversion/{layer_id}.json",
+  "omega-block": "file:///I:/Geograph_DataSet/omega-block/{layer_id}.json"
+}

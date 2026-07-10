@@ -54,3 +54,15 @@ screenshot*.png
 
 # Review notes
 temp.txt
+
+# Celery beat schedule runtime files
+celerybeat-schedule.*
+celerybeat.pid
+
+# Debug artifacts
+.dbg/
+test_screenshots/
+debug-*.md
+
+# Legacy review archives
+Code/frontend/legacy-review/

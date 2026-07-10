@@ -1,10 +1,20 @@
 from __future__ import annotations
 
 import subprocess
+import sys
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any
 
 from algorithms.fy import FyCommandStep
+
+
+def _build_hidden_creationflags() -> dict[str, Any]:
+    """构建跨平台的子进程启动参数，在 Windows 上隐藏控制台黑框窗口。"""
+    kwargs: dict[str, Any] = {}
+    if sys.platform == "win32":
+        # CREATE_NO_WINDOW = 0x08000000，阻止弹出 cmd.exe 黑框
+        kwargs["creationflags"] = subprocess.CREATE_NO_WINDOW
+    return kwargs
 
 
 def inject_geoloc_metadata_to_vrt(source_vrt: str | Path, target_vrt: str | Path, metadata_block: str) -> Path:
@@ -32,6 +42,7 @@ def execute_fy_command_steps(
 ) -> list[dict[str, Any]]:
     results: list[dict[str, Any]] = []
     total_steps = max(len(steps), 1)
+    hidden_kwargs = _build_hidden_creationflags()
     for index, step in enumerate(steps, start=1):
         if step.command.startswith("WRITE_GEOLOC_METADATA"):
             inject_geoloc_metadata_to_vrt(
@@ -50,6 +61,7 @@ def execute_fy_command_steps(
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             text=True,
+            **hidden_kwargs,
         )
         results.append(
             {
