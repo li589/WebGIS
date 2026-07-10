@@ -331,6 +331,32 @@ def _load_provider_dataset_helpers() -> tuple[Any, Any] | None:
         return _load_provider_dataset_helpers_uncached()
 
 
+def warm_provider_helpers() -> bool:
+    """在应用启动时预热 provider dataset helpers 缓存 + 各图层 readiness 检查。
+
+    避免首次 /layers 请求时阻塞在 dataset_config 导入 + 数据源路径解析上。
+    返回 True 表示成功加载，False 表示失败或跳过。
+    """
+    helpers = _load_provider_dataset_helpers()
+    if helpers is None:
+        return False
+
+    # 预解析所有图层的 readiness，填充 _resolve_provider_dataset_path 的 lru_cache
+    # 避免首次 /layers 的 8 并发 readiness 检查串行等待
+    try:
+        from app.services.layer_catalog import get_layer_catalog
+        catalog = get_layer_catalog()
+        for descriptor in catalog.items:
+            try:
+                describe_layer_run_readiness(descriptor.layer_id)
+            except Exception:
+                pass  # 个别图层 readiness 失败不影响整体预热
+    except Exception:
+        pass  # catalog 加载失败不影响 helpers 预热
+
+    return True
+
+
 @contextmanager
 def _python_provider_import_path(provider_root: Path) -> Iterator[None]:
     provider_path = str(provider_root)

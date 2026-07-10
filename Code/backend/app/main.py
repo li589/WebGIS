@@ -29,6 +29,21 @@ async def lifespan(app: FastAPI):
             logger.info("Startup cleanup: marked %d stale workflow run(s) as failed", cleaned)
     except Exception:
         logger.exception("Failed to cleanup stale workflow runs on startup")
+
+    # 后台预热 provider dataset helpers 缓存，避免首次 /layers 请求阻塞
+    # 在后台线程运行，不阻塞服务启动
+    import threading
+    def _warmup():
+        try:
+            from app.services.workflow_request_resolver import warm_provider_helpers
+            if warm_provider_helpers():
+                logger.info("Provider dataset helpers warmed up successfully")
+            else:
+                logger.warning("Provider dataset helpers warmup returned None — /layers may be slow on first call")
+        except Exception:
+            logger.exception("Failed to warm up provider dataset helpers")
+    threading.Thread(target=_warmup, daemon=True, name="provider-warmup").start()
+
     yield
 
 

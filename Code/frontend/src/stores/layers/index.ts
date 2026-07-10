@@ -1031,7 +1031,12 @@ export const useLayersStore = defineStore('layers', () => {
         const geometry = asRecord(feature.geometry)
         const coordinates = Array.isArray(geometry?.coordinates) ? geometry.coordinates : []
         const properties = asRecord(feature.properties)
-        const dedupeKey = `${coordinates[0] ?? 'x'}:${coordinates[1] ?? 'y'}:${properties?.height ?? ''}:${properties?.value ?? ''}`
+        // 去重 key 仅用坐标（round 到 3 位小数 ≈ 100m 容差）+ height（不同高度层是独立特征）
+        // 修复：原 key 包含 value（grid 数据无此字段，恒为空），且坐标未取整，
+        // 导致浮点精度差异使相邻瓦片的重叠点无法正确去重
+        const lng = roundBboxCoordinate(Number(coordinates[0]) || 0)
+        const lat = roundBboxCoordinate(Number(coordinates[1]) || 0)
+        const dedupeKey = `${lng}:${lat}:${properties?.height ?? ''}`
         if (seen.has(dedupeKey)) continue
         seen.add(dedupeKey)
         features.push(feature)

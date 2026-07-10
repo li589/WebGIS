@@ -1,435 +1,155 @@
 # 天气图层系统工程级改进计划
 
-## 问题诊断
+> **更新于 2026-07-11**：根据代码实际状态核查后重写。原计划中大量项目已在前序迭代中完成（Redis 缓存、请求去重、bbox 限制、动态分辨率、数据预取、失败分类与重试、stale cache 降级）。本版本聚焦尚未完成且有实际收益的改进项。
 
-### 1. 性能瓶颈
+## 现状核查
 
-**日志分析发现的问题：**
-- Open-Meteo API 频繁超时（多次重试失败，每次等待 30 秒）
-- 请求 bbox 过大（120°x80° 范围导致 384 个网格点，URL 长度 3226 字符）
-- 缓存未生效（相同请求重复调用外部 API）
-- URL 长度可能导致 414 URI Too Long 错误
+### 已完成项（无需重复）
 
-**根因分析：**
-1. **URL 过长问题**：当 bbox 很大时，网格点数过多，URL 长度超过服务器限制
-2. **缓存策略不足**：文件缓存在并发场景下效率低，且缓存 key 可能不够精确
-3. **视口变化频繁触发**：每次视口变化都会触发工作流刷新，导致大量请求
-4. **错误处理不完善**：API 失败时没有降级到缓存数据
+| 原计划项 | 状态 | 实现位置 |
+|---------|------|---------|
+| 1.1 限制 bbox 大小 | ✅ 已完成 | 前端 `stores/layers/index.ts` WEATHER_REQUEST_BUCKETS（z0-z5 分级，最大 360×170 → 最小 15×10）；后端 `_utils.py:compute_dynamic_resolution`（5 档分辨率梯度） |
+| 1.2 Redis 缓存 | ✅ 已完成 | `redis_client.py` + `weatherengine/client.py`（cache_get_json/cache_set_json，commit f9ca734） |
+| 1.3 请求去重 | ✅ 已完成 | `weatherengine/client.py` SETNX 跨 worker 去重锁（`weather:lock:point:*` / `weather:lock:grid:*`） |
+| 3.1 数据预取 | ✅ 已完成 | 前端 BFS 环形扩散预取（WEATHER_PREFETCH_CONCURRENCY=2，WEATHER_PREFETCH_MAX_QUEUE=30，expandWeatherTilePrefetch） |
+| 2.1 失败分类与重试 | ✅ 部分完成 | FailureClassifier + RetryPolicy（指数退避+抖动，P1-4）；stale cache 429 降级（weatherengine/client.py）；**断路器未实现** |
 
-### 2. 架构问题
+### 当前实际问题（来自运行时观测）
 
-**当前架构：**
-```
-前端 → FastAPI → WeatherBridgeService → WeatherEngineService → OpenMeteoClient → Open-Meteo API
-```
-
-**问题：**
-- 单点依赖 Open-Meteo API，无备用数据源
-- 缓存层薄弱（仅文件缓存）
-- 无请求去重机制
-- 无断路器模式
+1. **风场数据稀疏/不连续**：地图平移后风场粒子出现断裂，边缘不衔接。根因：`buildMergedGeojsonForCatalog` 的去重 key 包含 `height:value`，相邻瓦片在边界处的特征点位置不完全重合，导致合并后出现缝隙
+2. **`/layers` 端点响应过慢**：首次调用需 ~72s。根因：`dataset_config` 导入 + 8 并发 readiness 检查全部触发 provider 路径解析
+3. **Open-Meteo API 429 限流**：并发 workflow 导致 API 限流，虽有 stale cache 降级但响应仍慢
 
 ---
 
 ## 改进方案
 
-### 阶段 1：性能优化（高优先级）
+### 阶段 A：风场连续性修复（高优先级）
 
-#### 1.1 限制 bbox 大小，避免 URL 过长
+#### A.1 修复瓦片合并去重逻辑
 
-**问题：** 当前 bbox 可达 120°x80°，导致 384 个网格点，URL 长度 3226 字符
+**问题**：`buildMergedGeojsonForCatalog`（index.ts:1020）的去重 key 为 `lng:lat:height:value`，相邻瓦片在边界处的网格点位置因分辨率步长不同（snap 后）不完全对齐，导致合并后出现空隙
 
-**解决方案：**
-- 在前端限制最大 bbox 范围为 60°x40°
-- 在后端添加 bbox 范围校验
-- 动态调整分辨率：bbox 越大，分辨率越低
+**方案**：
+- 去重 key 仅用坐标（`lng:lat`），去掉 `height:value`（同坐标不同高度是正常的多层叠加，不应去重）
+- 对边界点做容差匹配（±0.01°），避免 snap 步长导致的微小偏移被当作不同点
 
-**修改文件：**
-- `Code/frontend/src/stores/layers/index.ts` - 限制 bbox 大小
-- `Code/backend/app/weatherengine/service.py` - 添加 bbox 校验
-- `Code/backend/app/weatherengine/client.py` - 动态调整分辨率
+**修改文件**：
+- `Code/frontend/src/stores/layers/index.ts` — `buildMergedGeojsonForCatalog`
 
-**代码示例：**
-```typescript
-// 前端：限制 bbox 大小
-const MAX_BBOX_SPAN = { lon: 60, lat: 40 }
+#### A.2 瓦片边界对齐
 
-function clampBBox(bbox: BoundingBox): BoundingBox {
-  const lonSpan = bbox.east - bbox.west
-  const latSpan = bbox.north - bbox.south
-  
-  if (lonSpan > MAX_BBOX_SPAN.lon || latSpan > MAX_BBOX_SPAN.lat) {
-    const centerLng = (bbox.west + bbox.east) / 2
-    const centerLat = (bbox.south + bbox.north) / 2
-    return {
-      west: centerLng - MAX_BBOX_SPAN.lon / 2,
-      south: centerLat - MAX_BBOX_SPAN.lat / 2,
-      east: centerLng + MAX_BBOX_SPAN.lon / 2,
-      north: centerLat + MAX_BBOX_SPAN.lat / 2,
-      crs: bbox.crs,
-    }
-  }
-  return bbox
-}
-```
+**问题**：不同 zoom bucket 的瓦片分辨率不同（z2=120×80 vs z3=60×40），平移跨 bucket 时网格点不衔接
 
-```python
-# 后端：动态调整分辨率
-def compute_dynamic_resolution(bbox: BoundingBox, target_points: int = 200) -> float:
-    """根据 bbox 大小动态调整分辨率，控制网格点数量"""
-    lon_span = bbox.east - bbox.west
-    lat_span = bbox.north - bbox.south
-    area = lon_span * lat_span
-    # 分辨率 = sqrt(area / target_points)
-    resolution = math.sqrt(area / target_points)
-    # 限制在合理范围内
-    return max(0.1, min(resolution, 2.0))
-```
+**方案**：
+- 平移时若 zoom bucket 未变化，仅增量加载新进入视口的瓦片，不重置已有缓存
+- 跨 bucket 切换时做一次完整重载（已有 `evictDistantWeatherTiles` 逻辑，确认其在 bucket 切换时正确清旧）
 
-#### 1.2 改进缓存策略，使用 Redis 缓存
-
-**问题：** 文件缓存在并发场景下效率低
-
-**解决方案：**
-- 使用 Redis 替代文件缓存
-- 添加缓存预热机制
-- 实现缓存分层（短期缓存 + 长期缓存）
-
-**修改文件：**
-- `Code/backend/app/core/redis_client.py` - 添加 Redis 缓存客户端
-- `Code/backend/app/weatherengine/client.py` - 使用 Redis 缓存
-- `Code/backend/app/core/config.py` - 添加缓存配置
-
-**代码示例：**
-```python
-# Redis 缓存客户端
-class WeatherCacheService:
-    def __init__(self, redis_client):
-        self.redis = redis_client
-        self.short_ttl = 3600  # 1 小时
-        self.long_ttl = 86400  # 24 小时
-    
-    async def get_or_fetch(self, key: str, fetch_func, ttl: int = None):
-        """获取缓存或执行查询"""
-        cached = await self.redis.get(key)
-        if cached:
-            return json.loads(cached), "hit"
-        
-        result = await fetch_func()
-        ttl = ttl or self.short_ttl
-        await self.redis.setex(key, ttl, json.dumps(result))
-        return result, "miss"
-    
-    async def warm_cache(self, layer_ids: list[str], bbox: BoundingBox):
-        """缓存预热：提前获取常用数据"""
-        # 预取常用图层的数据
-        pass
-```
-
-#### 1.3 添加请求去重机制
-
-**问题：** 并发请求相同数据时，会重复调用 API
-
-**解决方案：**
-- 使用请求去重锁，相同请求只执行一次
-- 其他请求等待第一个请求完成
-
-**修改文件：**
-- `Code/backend/app/weatherengine/client.py` - 添加请求去重
-
-**代码示例：**
-```python
-from asyncio import Lock
-from typing import Dict, Tuple
-
-class RequestDeduplicator:
-    def __init__(self):
-        self._locks: Dict[str, Lock] = {}
-        self._results: Dict[str, Any] = {}
-    
-    async def deduplicate(self, key: str, fetch_func):
-        if key not in self._locks:
-            self._locks[key] = Lock()
-        
-        async with self._locks[key]:
-            if key in self._results:
-                return self._results[key]
-            
-            result = await fetch_func()
-            self._results[key] = result
-            return result
-```
-
-### 阶段 2：可靠性提升（高优先级）
-
-#### 2.1 改进错误处理和重试逻辑
-
-**问题：** API 失败时没有降级到缓存数据
-
-**解决方案：**
-- 实现断路器模式
-- API 失败时自动降级到缓存数据
-- 添加指数退避重试
-
-**修改文件：**
-- `Code/backend/app/weatherengine/client.py` - 添加断路器模式
-
-**代码示例：**
-```python
-from enum import Enum
-
-class CircuitState(Enum):
-    CLOSED = "closed"      # 正常状态
-    OPEN = "open"          # 断路器打开，拒绝请求
-    HALF_OPEN = "half_open" # 半开状态，尝试恢复
-
-class CircuitBreaker:
-    def __init__(self, failure_threshold=5, recovery_timeout=60):
-        self.failure_threshold = failure_threshold
-        self.recovery_timeout = recovery_timeout
-        self.failure_count = 0
-        self.last_failure_time = None
-        self.state = CircuitState.CLOSED
-    
-    def can_execute(self) -> bool:
-        if self.state == CircuitState.CLOSED:
-            return True
-        elif self.state == CircuitState.OPEN:
-            if time.time() - self.last_failure_time > self.recovery_timeout:
-                self.state = CircuitState.HALF_OPEN
-                return True
-            return False
-        else:  # HALF_OPEN
-            return True
-    
-    def record_success(self):
-        self.failure_count = 0
-        self.state = CircuitState.CLOSED
-    
-    def record_failure(self):
-        self.failure_count += 1
-        self.last_failure_time = time.time()
-        if self.failure_count >= self.failure_threshold:
-            self.state = CircuitState.OPEN
-```
-
-#### 2.2 添加多数据源支持
-
-**问题：** 单点依赖 Open-Meteo API
-
-**解决方案：**
-- 利用已有的 `api_config_manager` 实现多数据源切换
-- 添加备用数据源（如 Visual Crossing、WeatherAPI）
-- 实现数据源优先级和故障转移
-
-**修改文件：**
-- `Code/backend/app/services/api_config.py` - 添加更多数据源配置
-- `Code/backend/app/weatherengine/client.py` - 实现数据源切换
-
-**代码示例：**
-```python
-class MultiSourceWeatherClient:
-    def __init__(self, clients: list[WeatherClient]):
-        self.clients = clients  # 按优先级排序
-        self.circuit_breakers = {id(c): CircuitBreaker() for c in clients}
-    
-    async def fetch_forecast(self, **kwargs):
-        for client in self.clients:
-            breaker = self.circuit_breakers[id(client)]
-            if breaker.can_execute():
-                try:
-                    result = await client.fetch_forecast(**kwargs)
-                    breaker.record_success()
-                    return result
-                except Exception as e:
-                    breaker.record_failure()
-                    logger.warning(f"Data source {client.__class__.__name__} failed: {e}")
-                    continue
-        
-        # 所有数据源都失败，尝试使用缓存
-        return await self._fallback_to_cache(**kwargs)
-```
-
-### 阶段 3：功能增强（中优先级）
-
-#### 3.1 添加数据预取机制
-
-**功能：** 在用户可能访问的区域提前获取数据
-
-**实现方案：**
-- 根据用户移动方向预测下一个视口
-- 提前获取预测区域的数据
-- 使用 Web Worker 在后台执行预取
-
-**修改文件：**
-- `Code/frontend/src/stores/layers/index.ts` - 添加预取逻辑
-- `Code/frontend/src/services/runtime-api.ts` - 添加预取 API
-
-**代码示例：**
-```typescript
-// 预测下一个视口
-function predictNextViewport(
-  currentCenter: { lng: number; lat: number },
-  velocity: { dLng: number; dLat: number }
-): BoundingBox {
-  const predictedCenter = {
-    lng: currentCenter.lng + velocity.dLng * 2,  // 预测 2 秒后的位置
-    lat: currentCenter.lat + velocity.dLat * 2,
-  }
-  return buildBBoxAroundCenter(predictedCenter, currentZoom)
-}
-
-// 预取数据
-async function prefetchWeatherData(bbox: BoundingBox, layerIds: string[]) {
-  for (const layerId of layerIds) {
-    const key = buildCacheKey(layerId, bbox)
-    if (!weatherTileCache.has(key)) {
-      // 后台获取数据
-      void runWorkflowForCatalog(layerId, { bbox, isPrefetch: true })
-    }
-  }
-}
-```
-
-#### 3.2 添加离线模式
-
-**功能：** 在网络不可用时使用缓存数据
-
-**实现方案：**
-- 检测网络状态
-- 网络不可用时自动切换到离线模式
-- 使用 Service Worker 缓存关键数据
-
-**修改文件：**
-- `Code/frontend/src/services/runtime-api.ts` - 添加网络状态检测
-- `Code/frontend/src/stores/layers/index.ts` - 添加离线模式逻辑
-
-#### 3.3 添加性能监控和诊断
-
-**功能：** 收集性能指标，帮助诊断问题
-
-**实现方案：**
-- 添加请求耗时统计
-- 添加缓存命中率监控
-- 添加错误率监控
-- 提供性能仪表板
-
-**修改文件：**
-- `Code/backend/app/core/logging.py` - 添加性能日志
-- `Code/backend/app/api/routes.py` - 添加性能指标端点
-- `Code/frontend/src/services/runtime-api.ts` - 添加前端性能监控
-
-**代码示例：**
-```python
-# 性能指标收集
-class PerformanceMetrics:
-    def __init__(self, redis_client):
-        self.redis = redis_client
-    
-    async def record_request(self, endpoint: str, duration: float, status: str):
-        key = f"metrics:{endpoint}:{datetime.now().strftime('%Y%m%d')}"
-        await self.redis.hincrbyfloat(key, "total_duration", duration)
-        await self.redis.hincrby(key, "request_count", 1)
-        await self.redis.hincrby(key, f"status_{status}", 1)
-        await self.redis.expire(key, 86400)  # 保留 24 小时
-    
-    async def get_metrics(self, endpoint: str, date: str = None):
-        date = date or datetime.now().strftime('%Y%m%d')
-        key = f"metrics:{endpoint}:{date}"
-        return await self.redis.hgetall(key)
-```
-
-### 阶段 4：架构优化（低优先级）
-
-#### 4.1 引入消息队列
-
-**问题：** 当前使用 Celery，但配置不够优化
-
-**优化方案：**
-- 优化 Celery worker 配置
-- 添加优先级队列
-- 实现任务超时控制
-
-**修改文件：**
-- `Code/backend/app/core/celery_app.py` - 优化配置
-- `Code/backend/app/tasks/weather_tasks.py` - 添加优先级
-
-#### 4.2 实现微服务拆分
-
-**长期目标：** 将天气引擎拆分为独立服务
-
-**架构：**
-```
-前端 → API Gateway → Weather Service (独立服务)
-                    → Algorithm Service (独立服务)
-                    → GEE Service (独立服务)
-```
-
-**优势：**
-- 独立部署和扩展
-- 故障隔离
-- 技术栈灵活
+**修改文件**：
+- `Code/frontend/src/stores/layers/index.ts` — 瓦片加载/驱逐逻辑
 
 ---
 
-## 实施计划
+### 阶段 B：`/layers` 性能修复（高优先级）
 
-### 第一阶段（1-2 周）：性能优化
-- [ ] 限制 bbox 大小，避免 URL 过长
-- [ ] 改进缓存策略，使用 Redis 缓存
-- [ ] 添加请求去重机制
-- [ ] 性能测试和验证
+#### B.1 dataset_config 导入优化
 
-### 第二阶段（1-2 周）：可靠性提升
-- [ ] 改进错误处理和重试逻辑
-- [ ] 添加断路器模式
-- [ ] 添加多数据源支持
-- [ ] 故障转移测试
+**问题**：`/layers` 首次调用 ~72s。`workflow_request_resolver._load_provider_dataset_helpers` 在 ThreadPoolExecutor 内导入 `dataset_config`（5s 超时），但 `list_layers` 路由又对每个图层并行调用 `describe_layer_run_readiness`（8 并发），每个都触发 `_resolve_provider_dataset_path`（lru_cache），首次串行等待
 
-### 第三阶段（2-3 周）：功能增强
-- [ ] 添加数据预取机制
-- [ ] 添加离线模式
-- [ ] 添加性能监控和诊断
-- [ ] 用户体验测试
+**方案**：
+- 在应用启动时（FastAPI lifespan）预热 `_load_provider_dataset_helpers` 缓存，避免首次请求时阻塞
+- `/layers` 路由的 readiness 检查改为惰性：首次只返回 `run_readiness="unknown"`，后台异步填充
 
-### 第四阶段（长期）：架构优化
-- [ ] 优化 Celery 配置
-- [ ] 微服务拆分评估
-- [ ] 架构重构
+**修改文件**：
+- `Code/backend/app/main.py` — lifespan 预热
+- `Code/backend/app/api/routes.py` — `list_layers` 改为惰性 readiness
+- `Code/backend/app/services/workflow_request_resolver.py` — 添加 `warm_provider_helpers()` 函数
+
+---
+
+### 阶段 C：断路器与限流保护（中优先级）
+
+#### C.1 Open-Meteo 断路器
+
+**问题**：API 持续 429 时仍反复重试，浪费请求配额且增加延迟
+
+**方案**：
+- 在 `OpenMeteoClient` 中增加进程内断路器（CLOSED → OPEN → HALF_OPEN）
+- 连续 5 次 429/超时后打开断路器，60s 内直接返回 stale cache，不发请求
+- 半开状态放行 1 个探测请求，成功则关闭断路器
+
+**修改文件**：
+- `Code/backend/app/weatherengine/client.py` — 增加 `CircuitBreaker` 内部类
+- `Code/backend/app/weatherengine/constants.py` — 断路器参数常量
+
+#### C.2 workflow 并发限流优化
+
+**问题**：429 容量限制时（active_runs=4），前端仍持续提交预取请求
+
+**方案**：
+- 前端收到 429 后暂停预取队列，等待退避时间后再恢复（已有 `429 退避时间戳` 逻辑，确认覆盖预取队列）
+
+**修改文件**：
+- `Code/frontend/src/stores/layers/index.ts` — 确认 429 退避覆盖预取 drain
+
+---
+
+### 阶段 D：多数据源故障转移（低优先级）
+
+#### D.1 天气数据源备用切换
+
+**问题**：单点依赖 Open-Meteo API
+
+**现状**：`ApiConfigManager` 已注册 OPEN_METEO / TIANDITU / BAIDU / GAODE / GEE，但 weatherengine 仅使用 Open-Meteo
+
+**方案**：
+- 在 `OpenMeteoClient` 之外封装 `MultiSourceWeatherClient`，按优先级尝试
+- 断路器打开时自动切换到备用源（如有配置）
+- 无备用源配置时回退到 stale cache（已有逻辑）
+
+**修改文件**：
+- `Code/backend/app/weatherengine/client.py` — 封装多源客户端
+- `Code/backend/app/services/api_config.py` — 天气数据源优先级配置
+
+---
+
+### 阶段 E：性能监控增强（低优先级）
+
+#### E.1 请求耗时指标
+
+**现状**：`/runtime/status` 已有 redis_cache stats、cache_stats、celery stats（P1-5），但缺少 API 请求耗时统计
+
+**方案**：
+- 在 FastAPI 中间件中记录每个端点的 P50/P95 耗时
+- 写入 Redis hash（`metrics:{endpoint}:{date}`），TTL 24h
+- 新增 `/runtime/metrics` 端点查询
+
+**修改文件**：
+- `Code/backend/app/main.py` — 性能中间件
+- `Code/backend/app/api/routes.py` — `/runtime/metrics` 端点
+- `Code/backend/app/core/redis_client.py` — metrics 读写辅助
+
+---
+
+## 实施优先级
+
+| 优先级 | 任务 | 预期收益 | 状态 |
+|--------|------|---------|------|
+| P0 | A.1 瓦片合并去重修复 | 解决风场断裂可见问题 | ✅ 完成 2026-07-11 |
+| P0 | B.1 /layers 预热 + 惰性 readiness | 首次响应 72s → 7s | ✅ 完成 2026-07-11 |
+| P1 | A.2 瓦片边界对齐 | 跨 bucket 平移时无缝衔接 | 待开始 |
+| P1 | C.1 Open-Meteo 断路器 | 429 风暴时快速降级，减少无效请求 | 待开始 |
+| P2 | C.2 预取 429 退避确认 | 防止容量耗尽时持续冲击 | 待开始 |
+| P3 | D.1 多数据源故障转移 | Open-Meteo 宕机时仍可用 | 待开始 |
+| P3 | E.1 性能监控增强 | 可观测性，辅助后续调优 | 待开始 |
 
 ---
 
 ## 验证指标
 
-### 性能指标
-- API 响应时间 P95 < 2 秒
-- 缓存命中率 > 80%
-- 请求去重率 > 50%
-
-### 可靠性指标
-- API 成功率 > 99%
-- 故障恢复时间 < 30 秒
-- 数据源切换成功率 > 95%
-
-### 用户体验指标
-- 页面加载时间 < 3 秒
-- 图层渲染时间 < 1 秒
-- 视口变化响应时间 < 500 毫秒
-
----
-
-## 风险和注意事项
-
-1. **向后兼容性**：确保修改不影响现有功能
-2. **数据一致性**：缓存策略变更可能导致数据不一致
-3. **性能回退**：新引入的机制可能带来额外开销
-4. **复杂度增加**：多数据源和断路器模式增加系统复杂度
-
----
-
-## 下一步行动
-
-1. **立即执行**：限制 bbox 大小，解决 URL 过长问题
-2. **本周完成**：改进缓存策略，使用 Redis 缓存
-3. **下周完成**：添加请求去重和断路器模式
-4. **持续改进**：收集性能数据，持续优化
+| 指标 | 目标 | 验证方式 |
+|------|------|---------|
+| 风场连续性 | 平移后无可见断裂 | 前端目视 + 网格点密度对比 |
+| `/layers` 首次响应 | <2s | E2E 脚本计时 |
+| Open-Meteo 429 降级延迟 | <1s（断路器打开后直接 stale） | 单元测试 + 日志 |
+| 缓存命中率 | >80% | `/runtime/status` redis_cache stats |

@@ -295,7 +295,7 @@ def test_layers_catalog(base_url: str, report: E2EReport) -> None:
             report.fail(name, f"status={resp.status_code}")
             return
         data = resp.json()
-        layers = data.get("layers", [])
+        layers = data.get("items", data.get("layers", []))
         print(f"   图层数: {len(layers)}")
         report.ok(name)
     except Exception as exc:
