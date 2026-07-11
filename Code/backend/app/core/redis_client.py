@@ -119,3 +119,96 @@ def wait_for_dedup(key: str, timeout_seconds: float = 30.0, poll_interval: float
             return False
         time.sleep(poll_interval)
     return False
+
+
+# ─── 请求耗时指标 ─────────────────────────────────────────────────────────────
+
+_METRICS_KEY_PREFIX = "metrics"
+_METRICS_LIST_CAP = 1000
+_METRICS_TTL_SECONDS = 90000  # 25h，覆盖整天 + 1h 缓冲
+
+
+def record_request_metric(
+    method: str,
+    path_pattern: str,
+    status_code: int,
+    duration_ms: float,
+) -> None:
+    """记录一次请求的耗时到 Redis（按天分桶、按端点分组）。
+
+    使用 LPUSH + LTRIM 保持每端点每天最多 1000 条采样，TTL 25h。
+    Redis 不可用时静默跳过。
+    """
+    client = get_redis_client()
+    if client is None:
+        return
+    try:
+        date_str = time.strftime("%Y-%m-%d", time.gmtime())
+        key = f"{_METRICS_KEY_PREFIX}:{date_str}:{method}:{path_pattern}"
+        pipe = client.pipeline()
+        pipe.lpush(key, f"{duration_ms:.1f}")
+        pipe.ltrim(key, 0, _METRICS_LIST_CAP - 1)
+        pipe.expire(key, _METRICS_TTL_SECONDS)
+        pipe.execute()
+    except Exception as exc:
+        logger.debug("[RedisClient] record_request_metric error: %s", exc)
+
+
+def get_metrics_summary(date_str: str | None = None) -> dict[str, Any]:
+    """获取指定日期所有端点的 P50/P95/avg/min/max 耗时统计。
+
+    Args:
+        date_str: YYYY-MM-DD 格式日期，默认当天（UTC）。
+
+    Returns:
+        {"available": True, "date": "...", "endpoints": [...]} 或
+        {"available": False, "reason": "..."}
+    """
+    client = get_redis_client()
+    if client is None:
+        return {"available": False, "reason": "redis_unavailable"}
+    if date_str is None:
+        date_str = time.strftime("%Y-%m-%d", time.gmtime())
+    try:
+        pattern = f"{_METRICS_KEY_PREFIX}:{date_str}:*"
+        keys = sorted(client.keys(pattern))
+        endpoints: list[dict[str, Any]] = []
+        for key in keys:
+            # 解析 key: metrics:{date}:{method}:{path}
+            parts = key.split(":", 4)
+            if len(parts) < 4:
+                continue
+            method = parts[2]
+            path = parts[3]
+            raw_values = client.lrange(key, 0, -1)
+            timings: list[float] = []
+            for raw in raw_values:
+                try:
+                    timings.append(float(raw))
+                except (ValueError, TypeError):
+                    continue
+            if not timings:
+                continue
+            timings.sort()
+            count = len(timings)
+            p50 = timings[int(count * 0.5)]
+            p95 = timings[min(int(count * 0.95), count - 1)]
+            avg = sum(timings) / count
+            endpoints.append({
+                "method": method,
+                "path": path,
+                "count": count,
+                "p50_ms": round(p50, 1),
+                "p95_ms": round(p95, 1),
+                "avg_ms": round(avg, 1),
+                "min_ms": round(timings[0], 1),
+                "max_ms": round(timings[-1], 1),
+            })
+        endpoints.sort(key=lambda e: e["p95_ms"], reverse=True)
+        return {
+            "available": True,
+            "date": date_str,
+            "endpoints": endpoints,
+        }
+    except Exception as exc:
+        return {"available": False, "error": str(exc)}

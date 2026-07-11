@@ -61,6 +61,21 @@ class LayerStyleHint(BaseModel):
     opacity: float = 1.0
 
 
+class LayerCapabilities(BaseModel):
+    render_strategy: str | None = None
+    paint_mode: str | None = None
+    data_domain: str | None = None
+    primary_metric: str | None = None
+    supports_particle_flow: bool = False
+    supports_map_layer: bool = False
+    supports_viewport_refresh: bool = False
+    viewport_refresh_mode: str | None = None
+    legend_ticks: list[float | int | str] = Field(default_factory=list)
+    notes: list[str] = Field(default_factory=list)
+    delivery_modes: list[str] = Field(default_factory=list)
+    result_interfaces: list[str] = Field(default_factory=list)
+
+
 class LayerDescriptor(BaseModel):
     layer_id: str
     dataset_key: str
@@ -78,6 +93,7 @@ class LayerDescriptor(BaseModel):
     default_time_offset: int | None = None
     extent: BoundingBox
     style: LayerStyleHint = Field(default_factory=LayerStyleHint)
+    capabilities: LayerCapabilities = Field(default_factory=LayerCapabilities)
     tags: list[str] = Field(default_factory=list)
     module_name: str | None = None
     engine: str | None = None

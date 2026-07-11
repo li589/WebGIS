@@ -10,6 +10,7 @@ from app.weatherengine.nodes.summary_generate import SummaryGenerateNode
 from app.weatherengine.nodes.temperature_grid_render import TemperatureGridRenderNode
 from app.weatherengine.nodes.visibility_grid_render import VisibilityGridRenderNode
 from app.weatherengine.nodes.wind_field_render import WindFieldRenderNode
+from app.weatherengine.nodes.tile_render import WeatherTileRenderNode
 from app.weatherengine.nodes._utils import get_weather_engine_service
 
 __all__ = [
@@ -23,5 +24,6 @@ __all__ = [
     "TemperatureGridRenderNode",
     "VisibilityGridRenderNode",
     "WindFieldRenderNode",
+    "WeatherTileRenderNode",
     "get_weather_engine_service",
 ]

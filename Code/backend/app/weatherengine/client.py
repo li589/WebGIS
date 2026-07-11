@@ -4,6 +4,7 @@ from datetime import datetime, timezone
 from math import ceil
 import json
 from pathlib import Path
+import threading
 import time
 from typing import Any
 from urllib.error import HTTPError, URLError
@@ -19,7 +20,13 @@ from app.core.redis_client import (
     release_dedup_lock,
     wait_for_dedup,
 )
-from app.weatherengine.constants import OPEN_METEO_BASE_URL, WeatherLayerSpec
+from app.weatherengine.constants import (
+    CIRCUIT_BREAKER_FAILURE_THRESHOLD,
+    CIRCUIT_BREAKER_HALF_OPEN_PROBES,
+    CIRCUIT_BREAKER_RECOVERY_TIMEOUT,
+    OPEN_METEO_BASE_URL,
+    WeatherLayerSpec,
+)
 from shared.contracts.api_contracts import BoundingBox
 
 REDIS_CACHE_PREFIX = "weather:"
@@ -27,10 +34,104 @@ REDIS_CACHE_PREFIX = "weather:"
 logger = logging.getLogger(__name__)
 
 
+class CircuitBreaker:
+    """进程内断路器：在 Open-Meteo API 连续失败时快速降级到 stale cache。
+
+    状态机：
+    - CLOSED：正常放行所有请求
+    - OPEN：连续失败达到阈值后打开，RECOVERY_TIMEOUT 秒内直接拒绝请求
+    - HALF_OPEN：恢复超时后放行探测请求，成功则关闭，失败则重新打开
+
+    线程安全。通过类级别共享实例，同一进程内所有 OpenMeteoClient 实例共用同一断路器。
+    """
+
+    _CLOSED = "closed"
+    _OPEN = "open"
+    _HALF_OPEN = "half_open"
+
+    def __init__(
+        self,
+        failure_threshold: int = CIRCUIT_BREAKER_FAILURE_THRESHOLD,
+        recovery_timeout: float = CIRCUIT_BREAKER_RECOVERY_TIMEOUT,
+        half_open_probes: int = CIRCUIT_BREAKER_HALF_OPEN_PROBES,
+    ) -> None:
+        self._failure_threshold = failure_threshold
+        self._recovery_timeout = recovery_timeout
+        self._half_open_probes = half_open_probes
+        self._state = self._CLOSED
+        self._failure_count = 0
+        self._opened_at: float = 0.0
+        self._half_open_probes_in_flight = 0
+        self._lock = threading.Lock()
+
+    def can_pass(self) -> bool:
+        """检查是否允许请求通过。
+
+        CLOSED：始终允许。
+        OPEN：恢复超时前拒绝，超时后转为 HALF_OPEN 并放行探测。
+        HALF_OPEN：达到探测上限后拒绝。
+        """
+        with self._lock:
+            if self._state == self._CLOSED:
+                return True
+            if self._state == self._OPEN:
+                if time.monotonic() - self._opened_at >= self._recovery_timeout:
+                    self._state = self._HALF_OPEN
+                    self._half_open_probes_in_flight = 1
+                    logger.info("[CircuitBreaker] OPEN -> HALF_OPEN, allowing probe request")
+                    return True
+                return False
+            # HALF_OPEN
+            if self._half_open_probes_in_flight < self._half_open_probes:
+                self._half_open_probes_in_flight += 1
+                return True
+            return False
+
+    def record_success(self) -> None:
+        """记录成功请求，关闭断路器并重置失败计数。"""
+        with self._lock:
+            if self._state != self._CLOSED:
+                logger.info("[CircuitBreaker] %s -> CLOSED after successful request", self._state.upper())
+            self._state = self._CLOSED
+            self._failure_count = 0
+            self._half_open_probes_in_flight = 0
+
+    def record_failure(self) -> None:
+        """记录失败请求（429/超时/5xx）。
+
+        CLOSED：递增失败计数，达到阈值后打开断路器。
+        HALF_OPEN：立即重新打开断路器。
+        """
+        with self._lock:
+            if self._state == self._HALF_OPEN:
+                self._state = self._OPEN
+                self._opened_at = time.monotonic()
+                self._half_open_probes_in_flight = 0
+                logger.warning("[CircuitBreaker] HALF_OPEN -> OPEN (probe failed)")
+                return
+            self._failure_count += 1
+            if self._failure_count >= self._failure_threshold:
+                self._state = self._OPEN
+                self._opened_at = time.monotonic()
+                logger.warning(
+                    "[CircuitBreaker] CLOSED -> OPEN after %d consecutive failures",
+                    self._failure_count,
+                )
+
+    @property
+    def state(self) -> str:
+        with self._lock:
+            return self._state
+
+
 class OpenMeteoClient:
+    # 进程内共享断路器：所有实例共用同一状态，协调 API 保护
+    _shared_circuit = CircuitBreaker()
+
     def __init__(self, cache_root: str | Path | None = None) -> None:
         self._cache_root = Path(cache_root or settings.cache_dir) / "weatherengine"
         self._cache_root.mkdir(parents=True, exist_ok=True)
+        self._circuit = self._shared_circuit
 
     def _read_cached_payload(
         self,
@@ -89,6 +190,16 @@ class OpenMeteoClient:
             cache_set_json(redis_key, cached_payload, max(60, ttl_seconds))
             return cached_payload, "hit"
 
+        # Circuit breaker: if OPEN, skip API call and return stale cache
+        if not self._circuit.can_pass():
+            if cached_payload is not None:
+                logger.warning(
+                    "[OpenMeteoClient] circuit open, returning stale cache: lat=%.4f lon=%.4f layer=%s",
+                    latitude, longitude, layer_spec.layer_id,
+                )
+                return cached_payload, "circuit-open-stale"
+            raise HTTPError(OPEN_METEO_BASE_URL, 503, "Circuit breaker open", None, None)
+
         # 3. Cross-worker request deduplication
         dedup_lock_key = f"{REDIS_CACHE_PREFIX}lock:point:{cache_key}"
         if not acquire_dedup_lock(dedup_lock_key, ttl_seconds=60):
@@ -124,8 +235,12 @@ class OpenMeteoClient:
             try:
                 with urlopen(f"{OPEN_METEO_BASE_URL}?{query}", timeout=20) as response:
                     payload = json.loads(response.read().decode("utf-8"))
+                self._circuit.record_success()
                 break
             except HTTPError as exc:
+                # 429/5xx 视为 API 故障，记录到断路器；4xx 客户端错误不计入
+                if exc.code == 429 or exc.code >= 500:
+                    self._circuit.record_failure()
                 if exc.code == 429:
                     # 限流：优先使用 stale cache，否则指数退避重试
                     if cached_payload is not None:
@@ -156,6 +271,7 @@ class OpenMeteoClient:
                 time.sleep(backoff)
                 backoff *= 2
             except URLError:
+                self._circuit.record_failure()
                 if cached_payload is not None:
                     logger.warning(
                         "[OpenMeteoClient] point forecast falling back to stale cache after URL error: lat=%.4f lon=%.4f layer=%s",
@@ -272,6 +388,16 @@ class OpenMeteoClient:
             cache_set_json(redis_key, cached_payload, max(60, ttl_seconds))
             return cached_payload, "hit"
 
+        # Circuit breaker: if OPEN, skip API call and return stale cache
+        if not self._circuit.can_pass():
+            if cached_payload is not None:
+                logger.warning(
+                    "[OpenMeteoClient] circuit open, returning stale grid cache: layer=%s",
+                    layer_spec.layer_id,
+                )
+                return cached_payload, "circuit-open-stale"
+            raise HTTPError(OPEN_METEO_BASE_URL, 503, "Circuit breaker open", None, None)
+
         # 3. Cross-worker request deduplication
         dedup_lock_key = f"{REDIS_CACHE_PREFIX}lock:grid:{cache_key}"
         if not acquire_dedup_lock(dedup_lock_key, ttl_seconds=120):
@@ -316,6 +442,16 @@ class OpenMeteoClient:
 
         # 分批请求
         for batch_idx, batch_start in enumerate(range(0, total_points, batch_limit)):
+            # Circuit breaker: 如果 API 在批次中途打开断路器，停止后续请求
+            if not self._circuit.can_pass():
+                logger.warning(
+                    "[OpenMeteoClient] circuit open during grid fetch, stopping at batch %d",
+                    batch_idx,
+                )
+                if cached_payload is not None:
+                    return cached_payload, "circuit-open-stale"
+                raise HTTPError(OPEN_METEO_BASE_URL, 503, "Circuit breaker open during grid fetch", None, None)
+
             # 从第二批开始添加延迟，避免 Open-Meteo 免费 API 限流 (429)
             if batch_idx > 0:
                 time.sleep(1.0)
@@ -368,9 +504,13 @@ class OpenMeteoClient:
                         "[OpenMeteoClient] HTTP response: status=OK type=%s points=%d size=%d bytes",
                         resp_type, resp_len, len(raw_data),
                     )
+                    self._circuit.record_success()
                     break
                 except HTTPError as exc:
                     logger.warning("[OpenMeteoClient] HTTP error: code=%d attempt=%d/%d", exc.code, attempt + 1, max_attempts)
+                    # 429/5xx 视为 API 故障，记录到断路器；4xx 客户端错误不计入
+                    if exc.code == 429 or exc.code >= 500:
+                        self._circuit.record_failure()
                     if exc.code == 429:
                         # 限流：使用更长退避时间
                         retry_wait = max(backoff * 2, 5)
@@ -385,6 +525,7 @@ class OpenMeteoClient:
                     backoff *= 2
                 except URLError:
                     logger.warning("[OpenMeteoClient] URL error: attempt=%d/%d", attempt + 1, max_attempts)
+                    self._circuit.record_failure()
                     if attempt == max_attempts - 1:
                         raise
                     time.sleep(backoff)

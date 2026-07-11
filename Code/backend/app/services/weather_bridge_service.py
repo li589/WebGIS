@@ -111,27 +111,31 @@ class WeatherBridgeService:
             elif hasattr(workflow, "inputs") and isinstance(workflow.inputs, dict):
                 workflow.inputs["viewport_bbox"] = viewport_bbox_dict
 
+        # 瓦片 workflow 并发执行，不需要 lifecycle manager 的“每图层唯一”互斥替换
+        is_tile_workflow = self._is_tile_workflow(weather_request)
+
         # 注册工作流到生命周期管理器（自动替换旧工作流）
         workflow_id = weather_request.get("workflow_id") or f"wf-{layer_id}-{datetime.now().strftime('%Y%m%d%H%M%S')}"
-        
-        async def cancel_callback():
+
+        def cancel_callback():
             """取消回调：当新工作流替换旧工作流时调用"""
-            logger.info(f"[WeatherBridgeService] Cancel callback triggered for workflow {workflow_id}")
+            logger.info("[WeatherBridgeService] Cancel callback triggered for workflow %s", workflow_id)
 
-        workflow_lifecycle_manager.submit_workflow(
-            layer_id=layer_id,
-            workflow_id=workflow_id,
-            priority=priority,
-            bbox=viewport_bbox_dict,
-            metadata={
-                "run_id": run_id,
-                "command_type": payload.command_type.value,
-            },
-            cancel_callback=cancel_callback,
-        )
+        if not is_tile_workflow:
+            workflow_lifecycle_manager.submit_workflow(
+                layer_id=layer_id,
+                workflow_id=workflow_id,
+                priority=priority,
+                bbox=viewport_bbox_dict,
+                metadata={
+                    "run_id": run_id,
+                    "command_type": payload.command_type.value,
+                },
+                cancel_callback=cancel_callback,
+            )
 
-        # 更新状态为运行中
-        workflow_lifecycle_manager.update_workflow_state(layer_id, WorkflowState.RUNNING, run_id=run_id)
+            # 更新状态为运行中
+            workflow_lifecycle_manager.update_workflow_state(layer_id, WorkflowState.RUNNING, run_id=run_id)
 
         # 执行工作流
         exec_context = ExecutionContext.model_validate(context) if isinstance(context, dict) else context
@@ -144,15 +148,17 @@ class WeatherBridgeService:
         # Python 3.11+ 下 str() 返回 "RunStatus.failed" 而非 "failed"
         status_str = self._status_str(run_result.status).lower()
         if status_str == "failed":
-            # 更新工作流状态为失败
-            workflow_lifecycle_manager.update_workflow_state(layer_id, WorkflowState.FAILED)
+            if not is_tile_workflow:
+                # 更新工作流状态为失败
+                workflow_lifecycle_manager.update_workflow_state(layer_id, WorkflowState.FAILED)
             error_detail = "; ".join(run_result.errors[:5]) if run_result.errors else "unknown failure"
             raise RuntimeError(
                 f"天气工作流执行失败 (status=failed): {error_detail}"
             )
 
-        # 更新工作流状态为完成
-        workflow_lifecycle_manager.update_workflow_state(layer_id, WorkflowState.COMPLETED)
+        if not is_tile_workflow:
+            # 更新工作流状态为完成
+            workflow_lifecycle_manager.update_workflow_state(layer_id, WorkflowState.COMPLETED)
 
         result_refs = self._build_result_refs(
             run_id=run_id,
@@ -332,6 +338,13 @@ class WeatherBridgeService:
 
     def _build_default_context(self, payload: WorkflowSubmitRequest, run_id: str) -> dict[str, Any]:
         weather_request = self._normalize_weather_request(payload.weather_request)
+        # 优先取 weather_request.workflow_id；瓦片 workflow 还会把 id 放在 workflow.workflow_id
+        workflow_id = (
+            weather_request.get("workflow_id")
+            or (weather_request.get("workflow") or {}).get("workflow_id")
+            or payload.layer_id
+            or run_id
+        )
         metadata: dict[str, Any] = {
             "request_id": run_id,
             "workflow_run_id": run_id,
@@ -342,7 +355,7 @@ class WeatherBridgeService:
         if payload.correlation_id:
             metadata["correlation_id"] = payload.correlation_id
         context = {
-            "workflow_id": weather_request.get("workflow_id"),
+            "workflow_id": workflow_id,
             "metadata": metadata,
         }
         return context
@@ -387,6 +400,23 @@ class WeatherBridgeService:
             )
         ]
 
+        # Tile workflow 支持：若节点输出包含 GeoJSON FeatureCollection，追加一个可直接使用的 json result_ref
+        tile_geojson, tile_meta = self._extract_tile_geojson(run_result)
+        if tile_geojson is not None:
+            result_refs.append(
+                WorkflowResultReference(
+                    result_id=f"weather-tile-geojson-{run_id[-8:]}",
+                    result_kind=ResultKind.json,
+                    title="天气瓦片 GeoJSON",
+                    mime_type="application/geo+json",
+                    inline_data={
+                        "geojson": tile_geojson,
+                        "tile_meta": tile_meta,
+                    },
+                    updated_at=requested_at,
+                )
+            )
+
         # M15 修复：将 RunResult.artifacts 映射为 file 类型的 WorkflowResultReference
         # 与 gee_bridge_service._build_result_refs 的 artifact 映射逻辑对齐
         for index, artifact in enumerate(run_result.artifacts or []):
@@ -407,6 +437,40 @@ class WeatherBridgeService:
                 )
             )
         return result_refs
+
+    def _extract_tile_geojson(self, run_result) -> tuple[Any, Any]:
+        """从 workflow 输出中提取 tile GeoJSON 及其元数据（供前端 tile manager 使用）。"""
+        for key, value in (run_result.outputs or {}).items():
+            if not isinstance(value, dict):
+                continue
+            if value.get("type") == "FeatureCollection" and isinstance(value.get("features"), list):
+                tile_meta = value.get("_tile_meta")
+                if tile_meta is not None and isinstance(tile_meta, dict):
+                    logger.info(
+                        "[WeatherBridgeService] extracted tile geojson from outputs key=%s "
+                        "layer=%s z=%s x=%s y=%s hour=%s resolution=%s features=%s",
+                        key,
+                        tile_meta.get("layer_id"),
+                        tile_meta.get("z"),
+                        tile_meta.get("x"),
+                        tile_meta.get("y"),
+                        tile_meta.get("hour"),
+                        tile_meta.get("resolution"),
+                        len(value.get("features", [])),
+                    )
+                    return value, tile_meta
+        return None, None
+
+    @staticmethod
+    def _is_tile_workflow(weather_request: dict[str, Any]) -> bool:
+        """判断是否为瓦片 workflow：包含 weather_tile_render 节点。"""
+        workflow = weather_request.get("workflow") or {}
+        nodes = workflow.get("nodes") or []
+        return any(
+            (node.get("node_type") if isinstance(node, dict) else getattr(node, "node_type", None))
+            == "weather_tile_render"
+            for node in nodes
+        )
 
     def _normalize_weather_request(self, value: WeatherWorkflowRequest | dict[str, Any] | Any) -> dict[str, Any]:
         if value is None:

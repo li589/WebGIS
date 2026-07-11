@@ -1,4 +1,5 @@
 import logging
+import time
 from contextlib import asynccontextmanager
 from uuid import uuid4
 
@@ -8,9 +9,11 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.routes import router
 from app.api.tile_routes import router as tile_router
+from app.api.weather_tile_routes import router as weather_tile_router
 from app.api.gee_config_routes import router as gee_config_router
 from app.core.config import settings
 from app.core.logging import ensure_logging_configured, log_context, set_request_id
+from app.core.redis_client import record_request_metric
 from app.gee.core.src.webgis_gee.api.routes import create_api_router as create_gee_router
 from app.services.interaction_hub import interaction_hub
 
@@ -73,16 +76,31 @@ def create_app() -> FastAPI:
         request_id = request.headers.get("x-request-id", f"req-{uuid4().hex[:12]}")
         request.state.request_id = request_id
         set_request_id(request_id)
+        start_time = time.monotonic()
         with log_context(request_id=request_id):
             try:
                 response = await call_next(request)
                 response.headers["x-request-id"] = request_id
+                duration_ms = (time.monotonic() - start_time) * 1000
+                # 记录请求耗时指标到 Redis（按端点+日期分桶）
+                try:
+                    route = request.scope.get("route")
+                    path_pattern = getattr(route, "path", None) or request.url.path
+                    record_request_metric(
+                        method=request.method,
+                        path_pattern=path_pattern,
+                        status_code=response.status_code,
+                        duration_ms=duration_ms,
+                    )
+                except Exception:
+                    pass  # 指标记录不应影响正常请求
                 logger.info(
                     "HTTP request completed",
                     extra={
                         "method": request.method,
                         "path": request.url.path,
                         "status_code": response.status_code,
+                        "duration_ms": round(duration_ms, 1),
                     },
                 )
                 return response
@@ -101,6 +119,7 @@ def create_app() -> FastAPI:
 
     app.include_router(router)
     app.include_router(tile_router)
+    app.include_router(weather_tile_router)
     app.include_router(gee_config_router)
 
     # 挂载 GEE engine router，使 /gee/* 路由正式接入 FastAPI

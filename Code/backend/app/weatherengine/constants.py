@@ -5,6 +5,11 @@ from dataclasses import dataclass
 
 OPEN_METEO_BASE_URL = "https://api.open-meteo.com/v1/forecast"
 
+# 断路器参数：API 连续失败后打开断路器，RECOVERY_TIMEOUT 秒内直接返回 stale cache
+CIRCUIT_BREAKER_FAILURE_THRESHOLD = 5   # 连续失败次数阈值，达到后打开断路器
+CIRCUIT_BREAKER_RECOVERY_TIMEOUT = 60   # OPEN 状态持续时间（秒），超时后转为 HALF_OPEN
+CIRCUIT_BREAKER_HALF_OPEN_PROBES = 1    # HALF_OPEN 状态允许的探测请求数
+
 
 @dataclass(frozen=True, slots=True)
 class WeatherLayerSpec:

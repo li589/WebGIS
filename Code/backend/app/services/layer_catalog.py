@@ -1,5 +1,7 @@
+from app.weatherengine.constants import WEATHER_LAYER_SPECS
 from shared.contracts.api_contracts import (
     BoundingBox,
+    LayerCapabilities,
     LayerCatalogResponse,
     LayerDescriptor,
     LayerRenderType,
@@ -8,6 +10,80 @@ from shared.contracts.api_contracts import (
     MapMode,
     TimeGranularity,
 )
+
+
+def _layer_capabilities(
+    *,
+    render_strategy: str,
+    data_domain: str,
+    paint_mode: str | None = None,
+    primary_metric: str | None = None,
+    supports_particle_flow: bool = False,
+    supports_map_layer: bool = True,
+    supports_viewport_refresh: bool | None = None,
+    viewport_refresh_mode: str | None = None,
+    legend_ticks: list[float | int | str] | None = None,
+    notes: list[str] | None = None,
+    delivery_modes: list[str] | None = None,
+    result_interfaces: list[str] | None = None,
+) -> LayerCapabilities:
+    if supports_viewport_refresh is None:
+        supports_viewport_refresh = render_strategy in {"weather_tile", "workflow_map_layer"}
+    if viewport_refresh_mode is None and supports_viewport_refresh:
+        viewport_refresh_mode = "tile" if render_strategy == "weather_tile" else "workflow"
+    if delivery_modes is None:
+        delivery_modes = ["tile_cache", "point_query"] if render_strategy == "weather_tile" else ["workflow_result"]
+    if result_interfaces is None:
+        result_interfaces = (
+            ["map_layer", "weather_point"]
+            if render_strategy == "weather_tile"
+            else ["json", "text", "table", "map_layer"]
+        )
+    return LayerCapabilities(
+        render_strategy=render_strategy,
+        paint_mode=paint_mode,
+        data_domain=data_domain,
+        primary_metric=primary_metric,
+        supports_particle_flow=supports_particle_flow,
+        supports_map_layer=supports_map_layer,
+        supports_viewport_refresh=supports_viewport_refresh,
+        viewport_refresh_mode=viewport_refresh_mode,
+        legend_ticks=legend_ticks or [],
+        notes=notes or [],
+        delivery_modes=delivery_modes,
+        result_interfaces=result_interfaces,
+    )
+
+
+def _weather_capabilities(layer_id: str) -> LayerCapabilities:
+    spec = WEATHER_LAYER_SPECS[layer_id]
+    return _layer_capabilities(
+        render_strategy="weather_tile",
+        data_domain="weather",
+        paint_mode=spec.paint_mode,
+        primary_metric=spec.primary_metric,
+        supports_particle_flow=spec.paint_mode == "particle_flow",
+        legend_ticks=list(spec.legend_ticks),
+        notes=list(spec.notes),
+    )
+
+
+def _workflow_map_capabilities(
+    *,
+    data_domain: str,
+    paint_mode: str | None = None,
+    supports_viewport_refresh: bool = True,
+    delivery_modes: list[str] | None = None,
+    result_interfaces: list[str] | None = None,
+) -> LayerCapabilities:
+    return _layer_capabilities(
+        render_strategy="workflow_map_layer",
+        data_domain=data_domain,
+        paint_mode=paint_mode,
+        supports_viewport_refresh=supports_viewport_refresh,
+        delivery_modes=delivery_modes,
+        result_interfaces=result_interfaces,
+    )
 
 
 def get_layer_catalog() -> LayerCatalogResponse:
@@ -36,6 +112,7 @@ def get_layer_catalog() -> LayerCatalogResponse:
             default_time_offset=0,
             extent=extent,
             style=LayerStyleHint(palette="blue-cyan", unit_label="m/s", opacity=0.85),
+            capabilities=_weather_capabilities("wind-field"),
             tags=["wind", "2d-demo", "frontend-aligned", "10m"],
         ),
         LayerDescriptor(
@@ -54,6 +131,7 @@ def get_layer_catalog() -> LayerCatalogResponse:
             default_time_offset=0,
             extent=extent,
             style=LayerStyleHint(palette="blue-cyan", unit_label="m/s", opacity=0.85),
+            capabilities=_weather_capabilities("wind-field-80m"),
             tags=["wind", "2d-demo", "frontend-aligned", "80m", "turbine-hub"],
         ),
         LayerDescriptor(
@@ -72,6 +150,7 @@ def get_layer_catalog() -> LayerCatalogResponse:
             default_time_offset=0,
             extent=extent,
             style=LayerStyleHint(palette="blue-cyan", unit_label="m/s", opacity=0.85),
+            capabilities=_weather_capabilities("wind-field-120m"),
             tags=["wind", "2d-demo", "frontend-aligned", "120m", "offshore"],
         ),
         LayerDescriptor(
@@ -90,6 +169,7 @@ def get_layer_catalog() -> LayerCatalogResponse:
             default_time_offset=0,
             extent=extent,
             style=LayerStyleHint(palette="blue-cyan", unit_label="m/s", opacity=0.85),
+            capabilities=_weather_capabilities("wind-field-180m"),
             tags=["wind", "2d-demo", "frontend-aligned", "180m", "boundary-layer"],
         ),
         LayerDescriptor(
@@ -108,6 +188,7 @@ def get_layer_catalog() -> LayerCatalogResponse:
             default_time_offset=0,
             extent=extent,
             style=LayerStyleHint(palette="blue-cyan", unit_label="m/s", opacity=0.78),
+            capabilities=_weather_capabilities("wind-field-850hPa"),
             tags=["wind", "frontend-aligned", "850hPa", "pressure-level", "low-level-jet"],
         ),
         LayerDescriptor(
@@ -126,6 +207,7 @@ def get_layer_catalog() -> LayerCatalogResponse:
             default_time_offset=0,
             extent=extent,
             style=LayerStyleHint(palette="blue-cyan", unit_label="m/s", opacity=0.74),
+            capabilities=_weather_capabilities("wind-field-500hPa"),
             tags=["wind", "frontend-aligned", "500hPa", "pressure-level", "mid-level"],
         ),
         LayerDescriptor(
@@ -144,6 +226,7 @@ def get_layer_catalog() -> LayerCatalogResponse:
             default_time_offset=0,
             extent=extent,
             style=LayerStyleHint(palette="blue-cyan", unit_label="m/s", opacity=0.7),
+            capabilities=_weather_capabilities("wind-field-200hPa"),
             tags=["wind", "frontend-aligned", "200hPa", "pressure-level", "upper-jet"],
         ),
         LayerDescriptor(
@@ -162,6 +245,7 @@ def get_layer_catalog() -> LayerCatalogResponse:
             default_time_offset=-1,
             extent=extent,
             style=LayerStyleHint(palette="teal-blue", unit_label="mm/h", opacity=0.8),
+            capabilities=_weather_capabilities("precipitation"),
             tags=["rainfall", "2d-demo", "frontend-aligned"],
         ),
         LayerDescriptor(
@@ -180,6 +264,7 @@ def get_layer_catalog() -> LayerCatalogResponse:
             default_time_offset=0,
             extent=extent,
             style=LayerStyleHint(palette="orange-red", unit_label="degC", opacity=0.82),
+            capabilities=_weather_capabilities("temperature"),
             tags=["temperature", "2d-demo", "frontend-aligned"],
         ),
         LayerDescriptor(
@@ -198,6 +283,7 @@ def get_layer_catalog() -> LayerCatalogResponse:
             default_time_offset=0,
             extent=extent,
             style=LayerStyleHint(palette="orange-red", unit_label="degC", opacity=0.58),
+            capabilities=_weather_capabilities("temperature-80m"),
             tags=["temperature", "frontend-aligned", "80m", "turbine-hub"],
         ),
         LayerDescriptor(
@@ -216,6 +302,7 @@ def get_layer_catalog() -> LayerCatalogResponse:
             default_time_offset=0,
             extent=extent,
             style=LayerStyleHint(palette="orange-red", unit_label="degC", opacity=0.58),
+            capabilities=_weather_capabilities("temperature-120m"),
             tags=["temperature", "frontend-aligned", "120m", "offshore"],
         ),
         LayerDescriptor(
@@ -234,6 +321,7 @@ def get_layer_catalog() -> LayerCatalogResponse:
             default_time_offset=0,
             extent=extent,
             style=LayerStyleHint(palette="orange-red", unit_label="degC", opacity=0.58),
+            capabilities=_weather_capabilities("temperature-180m"),
             tags=["temperature", "frontend-aligned", "180m", "boundary-layer"],
         ),
         LayerDescriptor(
@@ -252,6 +340,7 @@ def get_layer_catalog() -> LayerCatalogResponse:
             default_time_offset=0,
             extent=extent,
             style=LayerStyleHint(palette="purple-seq", unit_label="hPa", opacity=0.62),
+            capabilities=_weather_capabilities("pressure"),
             tags=["pressure", "atmosphere", "frontend-aligned"],
         ),
         LayerDescriptor(
@@ -270,6 +359,7 @@ def get_layer_catalog() -> LayerCatalogResponse:
             default_time_offset=0,
             extent=extent,
             style=LayerStyleHint(palette="green-seq", unit_label="%", opacity=0.66),
+            capabilities=_weather_capabilities("humidity"),
             tags=["humidity", "atmosphere", "frontend-aligned"],
         ),
         LayerDescriptor(
@@ -288,6 +378,7 @@ def get_layer_catalog() -> LayerCatalogResponse:
             default_time_offset=0,
             extent=extent,
             style=LayerStyleHint(palette="amber-gray", unit_label="m", opacity=0.7),
+            capabilities=_weather_capabilities("visibility"),
             tags=["visibility", "atmosphere", "frontend-aligned"],
         ),
         LayerDescriptor(
@@ -306,6 +397,7 @@ def get_layer_catalog() -> LayerCatalogResponse:
             default_time_offset=-1,
             extent=extent,
             style=LayerStyleHint(palette="ndvi-ramp", unit_label="", opacity=0.78),
+            capabilities=_workflow_map_capabilities(data_domain="vegetation", paint_mode="grid_fill"),
             tags=["ndvi", "vegetation", "remote-sensing", "frontend-aligned"],
             module_name="ndvi_daily",
             engine="python_provider",
@@ -330,6 +422,7 @@ def get_layer_catalog() -> LayerCatalogResponse:
             default_time_offset=-1,
             extent=extent,
             style=LayerStyleHint(palette="purple-green", unit_label="index", opacity=0.75),
+            capabilities=_workflow_map_capabilities(data_domain="remote_sensing", paint_mode="grid_fill"),
             tags=["remote-sensing", "2d-demo", "frontend-aligned"],
             engine="gee",
             workflow_id="gee-remote-sensing-ndvi",
@@ -396,6 +489,7 @@ def get_layer_catalog() -> LayerCatalogResponse:
             default_time_offset=0,
             extent=extent,
             style=LayerStyleHint(palette="magenta-yellow", unit_label="score", opacity=0.9),
+            capabilities=_workflow_map_capabilities(data_domain="model_output", paint_mode="heatmap"),
             tags=["model", "sample-provider", "frontend-aligned"],
             engine="provider",
             run_readiness="ready",
@@ -419,6 +513,7 @@ def get_layer_catalog() -> LayerCatalogResponse:
             default_time_offset=-1,
             extent=extent,
             style=LayerStyleHint(palette="soil-moisture-ramp", unit_label="m³/m³", opacity=0.8),
+            capabilities=_workflow_map_capabilities(data_domain="soil_moisture", paint_mode="grid_fill"),
             tags=["smap", "soil-moisture", "remote-sensing", "frontend-aligned"],
             module_name="smap_daily",
             engine="python_provider",
@@ -444,6 +539,7 @@ def get_layer_catalog() -> LayerCatalogResponse:
             default_time_offset=-1,
             extent=extent,
             style=LayerStyleHint(palette="bright-temp-ramp", unit_label="K", opacity=0.78),
+            capabilities=_workflow_map_capabilities(data_domain="remote_sensing", paint_mode="grid_fill"),
             tags=["fy", "brightness-temperature", "remote-sensing", "frontend-aligned"],
             module_name="fy_daily",
             engine="python_provider",
@@ -469,6 +565,7 @@ def get_layer_catalog() -> LayerCatalogResponse:
             default_time_offset=-1,
             extent=extent,
             style=LayerStyleHint(palette="station-ramp", unit_label="m³/m³", opacity=0.85),
+            capabilities=_workflow_map_capabilities(data_domain="soil_moisture", paint_mode="point_symbol"),
             tags=["station", "soil-moisture", "validation", "frontend-aligned"],
             module_name="station_daily",
             engine="python_provider",
@@ -494,6 +591,7 @@ def get_layer_catalog() -> LayerCatalogResponse:
             default_time_offset=-1,
             extent=extent,
             style=LayerStyleHint(palette="inversion-ramp", unit_label="m³/m³", opacity=0.8),
+            capabilities=_workflow_map_capabilities(data_domain="soil_moisture", paint_mode="grid_fill"),
             tags=["inversion", "soil-moisture", "vod", "frontend-aligned"],
             module_name="inversion_daily",
             engine="python_provider",
@@ -516,6 +614,7 @@ def get_layer_catalog() -> LayerCatalogResponse:
             default_time_offset=-1,
             extent=extent,
             style=LayerStyleHint(palette="block-inversion-ramp", unit_label="m³/m³", opacity=0.8),
+            capabilities=_workflow_map_capabilities(data_domain="soil_moisture", paint_mode="grid_fill"),
             tags=["block-inversion", "timeseries", "soil-moisture", "vod", "frontend-aligned"],
             module_name="block_inversion",
             engine="python_provider",
@@ -538,6 +637,7 @@ def get_layer_catalog() -> LayerCatalogResponse:
             default_time_offset=-1,
             extent=extent,
             style=LayerStyleHint(palette="omega-ramp", unit_label="m³/m³", opacity=0.8),
+            capabilities=_workflow_map_capabilities(data_domain="soil_moisture", paint_mode="grid_fill"),
             tags=["omega", "retrieval", "soil-moisture", "vod", "frontend-aligned"],
             module_name="omega_block",
             engine="python_provider",

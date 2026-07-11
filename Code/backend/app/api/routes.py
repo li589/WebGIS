@@ -344,6 +344,17 @@ def get_runtime_status() -> RuntimeStatusResponse:
     return interaction_hub.get_runtime_status()
 
 
+@router.get("/runtime/metrics", tags=["runtime"])
+def get_runtime_metrics(date: str | None = None) -> dict:
+    """返回各端点的 P50/P95 请求耗时统计（按天聚合，从 Redis 读取）。
+
+    Query params:
+        date: YYYY-MM-DD 格式日期，默认当天（UTC）。
+    """
+    from app.core.redis_client import get_metrics_summary
+    return get_metrics_summary(date)
+
+
 def _algorithm_service_response(service_call) -> JSONResponse:
     try:
         return _service_json_response(service_call())

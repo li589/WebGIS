@@ -17,6 +17,7 @@ from app.weatherengine.nodes import (
     PressureGridRenderNode,
     VisibilityGridRenderNode,
     SummaryGenerateNode,
+    WeatherTileRenderNode,
 )
 
 logger = logging.getLogger(__name__)
@@ -49,6 +50,7 @@ class WeatherWorkflowService:
             PressureGridRenderNode,
             VisibilityGridRenderNode,
             SummaryGenerateNode,
+            WeatherTileRenderNode,
         )
         for node_cls in default_nodes:
             if not self._registry.has(node_cls.node_type):
