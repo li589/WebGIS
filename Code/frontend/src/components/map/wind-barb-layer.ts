@@ -83,6 +83,9 @@ interface BarbGeometry {
 interface AllBarbsGeometry {
   lineSegments: LineSegment[]
   circles: { x: number; y: number }[]
+  step: number
+  considered: number
+  visible: number
 }
 
 // ── 主类 ─────────────────────────────────────────────────
@@ -101,7 +104,8 @@ export class WindBarbLayer {
   private rafId: number | null = null
   private isVisible = true
   private barbSize: number
-  private gridCols = 0
+  private dataBounds: { west: number; east: number; south: number; north: number } | null = null
+  private lonWrapOffset = 0
 
   // 线条颜色（RGB 0-1 → 转换为 CSS rgba 字符串时乘以 255）
   private readonly STEM_COLOR = { r: 0.863, g: 0.941, b: 1.0, a: 0.90 }
@@ -128,6 +132,7 @@ export class WindBarbLayer {
 
     this.loadData(geojson)
     this.updateLayout()
+    console.log(`[${performance.now().toFixed(1)}ms] [WindBarbLayer] constructor`, 'dataCount', this.data.length, 'bounds', this.dataBounds)
 
     // 用 rAF 节流：move 事件高频触发，但每帧只重绘一次
     this.moveHandler = () => {
@@ -145,10 +150,14 @@ export class WindBarbLayer {
   }
 
   private updateLayout(): void {
+    // 使用实际数据范围计算布局，正确处理 lonWrapOffset
+    const b = this.dataBounds
     this.layout = computeCanvasLayout(
       this.map,
-      -180, 180, -90, 90, // 全局范围（风羽不一定有完整网格）
+      b ? b.west : -180, b ? b.east : 180,
+      b ? b.south : -90, b ? b.north : 90,
     )
+    this.lonWrapOffset = this.layout.lonWrapOffset
     const { width, height, offsetX, offsetY } = this.layout
     const dpr = this.pixelRatio
     this.canvas.width = Math.round(width * dpr)
@@ -162,7 +171,6 @@ export class WindBarbLayer {
   private loadData(geojson: WindGeoJSON): void {
     const features = geojson?.features || []
     this.data = []
-    this.gridCols = 0
     const firstProps = features[0]?.properties || {}
     const heightSuffix = firstProps.height ?? DEFAULT_HEIGHT_SUFFIX
     const speedKey = `wind_speed_${heightSuffix}`
@@ -187,7 +195,20 @@ export class WindBarbLayer {
       lonQuantSet.add(Math.round(coords[0] * QUANT))
     }
 
-    if (rawPoints.length === 0) return
+    if (rawPoints.length === 0) {
+      this.dataBounds = null
+      return
+    }
+
+    let minLat = rawPoints[0].lat, maxLat = rawPoints[0].lat
+    let minLon = rawPoints[0].lon, maxLon = rawPoints[0].lon
+    for (const p of rawPoints) {
+      if (p.lat < minLat) minLat = p.lat
+      if (p.lat > maxLat) maxLat = p.lat
+      if (p.lon < minLon) minLon = p.lon
+      if (p.lon > maxLon) maxLon = p.lon
+    }
+    this.dataBounds = { west: minLon, east: maxLon, south: minLat, north: maxLat }
 
     // 排序：lat 降序（北→南），lon 升序（西→东）
     const sortedLats = Array.from(latQuantSet).sort((a, b) => b - a)
@@ -209,7 +230,6 @@ export class WindBarbLayer {
         col: lonIndex.get(Math.round(p.lon * QUANT))!,
       })
     }
-    this.gridCols = sortedLons.length
   }
 
   /**
@@ -296,35 +316,39 @@ export class WindBarbLayer {
   private buildAllBarbs(): AllBarbsGeometry {
     const zoom = this.map.getZoom()
     if (zoom < BARB_MIN_VISIBLE_ZOOM || this.data.length === 0) {
-      return { lineSegments: [], circles: [] }
+      return { lineSegments: [], circles: [], step: 0, considered: 0, visible: 0 }
     }
 
     const { width: cw, height: ch, offsetX: ox, offsetY: oy } = this.layout
     if (cw < 1 || ch < 1) {
-      return { lineSegments: [], circles: [] }
+      return { lineSegments: [], circles: [], step: 0, considered: 0, visible: 0 }
     }
 
     // LOD：估算步长
     const targetSpacingPx = BARB_TARGET_SPACING_PX
     let gridPixelSize = 1
     if (this.data.length >= 2) {
-      const p0 = this.map.project([this.data[0].lon, this.data[0].lat])
-      const p1 = this.map.project([this.data[1].lon, this.data[1].lat])
+      const p0 = this.map.project([this.data[0].lon + this.lonWrapOffset, this.data[0].lat])
+      const p1 = this.map.project([this.data[1].lon + this.lonWrapOffset, this.data[1].lat])
       gridPixelSize = Math.hypot(p1.x - p0.x, p1.y - p0.y)
     }
     const step = Math.max(1, Math.round(targetSpacingPx / Math.max(gridPixelSize, 1)))
 
     const allLineSegments: LineSegment[] = []
     const allCircles: { x: number; y: number }[] = []
+    let considered = 0
+    let visible = 0
 
     for (const d of this.data) {
+      considered++
       if (d.row % step !== 0 || d.col % step !== 0) continue
-      const screen = this.map.project([d.lon, d.lat])
+      const screen = this.map.project([d.lon + this.lonWrapOffset, d.lat])
       const cx = screen.x - ox
       const cy = screen.y - oy
       // 视口裁剪
       if (cx < -BARB_VIEWPORT_CULLING_MARGIN_PX || cx > cw + BARB_VIEWPORT_CULLING_MARGIN_PX ||
           cy < -BARB_VIEWPORT_CULLING_MARGIN_PX || cy > ch + BARB_VIEWPORT_CULLING_MARGIN_PX) continue
+      visible++
 
       const rad = (d.direction * Math.PI) / 180
       const dirCos = Math.cos(rad)
@@ -336,7 +360,7 @@ export class WindBarbLayer {
       for (const c of circles) allCircles.push(c)
     }
 
-    return { lineSegments: allLineSegments, circles: allCircles }
+    return { lineSegments: allLineSegments, circles: allCircles, step, considered, visible }
   }
 
   private draw(): void {
@@ -350,7 +374,8 @@ export class WindBarbLayer {
     // 清除画布
     ctx.clearRect(0, 0, this.canvas.width, this.canvas.height)
 
-    const { lineSegments, circles } = this.buildAllBarbs()
+    const { lineSegments, circles, step, considered, visible } = this.buildAllBarbs()
+    console.log(`[${performance.now().toFixed(1)}ms] [WindBarbLayer] draw`, 'zoom', zoom, 'step', step, 'considered', considered, 'visible', visible, 'segments', lineSegments.length, 'circles', circles.length)
     if (lineSegments.length === 0 && circles.length === 0) return
 
     // 绘制所有线条（批量一次 stroke）
@@ -394,6 +419,7 @@ export class WindBarbLayer {
   updateGeoJSON(geojson: WindGeoJSON): void {
     this.loadData(geojson)
     this.updateLayout()
+    console.log(`[${performance.now().toFixed(1)}ms] [WindBarbLayer] updateGeoJSON`, 'dataCount', this.data.length, 'bounds', this.dataBounds)
     this.draw()
   }
 

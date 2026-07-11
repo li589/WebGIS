@@ -112,15 +112,8 @@ function openEmpty() {
 }
 
 function addCatalogItem(catalogId: string, isAdminBoundary = false) {
+  // 天气图层由 tile manager 按需拉取瓦片，不再自动提交 analysis workflow
   layersStore.addLayer(catalogId, isAdminBoundary)
-  // 自动运行：weatherengine 支持的图层（风场全高度变体/温度/降水/气压/湿度/能见度）
-  // 添加后立即触发工作流，无需用户手动点"运行工作流"
-  if (!isAdminBoundary && layersStore.isWeatherEngineLayer(catalogId)) {
-    // 异步触发，不阻塞 UI；失败时静默处理（用户可在 InfoPanel 手动重试）
-    void layersStore.runWorkflowForCatalog(catalogId).catch((err) => {
-      console.warn(`[LayerSidebar] 自动运行 ${catalogId} 工作流失败:`, err)
-    })
-  }
 }
 
 /** 批量添加某分类下所有未添加的图层 */

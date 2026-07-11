@@ -82,6 +82,7 @@ export class WindContourLayer {
     this.ctx = this.canvas.getContext('2d', { alpha: true })!
     this.loadData(geojson)
     this.updateLayout()
+    console.log(`[${performance.now().toFixed(1)}ms] [WindContourLayer] constructor`, 'grid', this.gridData ? `${this.gridData.rows}x${this.gridData.cols}` : 'null')
 
     // 用 rAF 节流：move 事件高频触发，但每帧只重绘一次
     this.moveHandler = () => {
@@ -170,15 +171,47 @@ export class WindContourLayer {
     const lonIndex = new Map<number, number>()
     sortedLons.forEach((q, i) => lonIndex.set(q, i))
 
-    // 构建二维 speeds 数组，缺失点填 0（多瓦片合并时边缘区域可能没有数据）
+    // 构建二维 speeds 数组，缺失点用最近邻填充（多瓦片合并时边缘区域可能没有数据）
+    // 注意：不能用 0 填充——Marching Squares 会围绕零速孔洞绘制等值线，
+    // 在瓦片边界产生"拼接状/十字/菱形"伪影，与用户报告的"等压线拼接问题"一致。
     const speeds: number[][] = []
+    const hasData: boolean[][] = []
     for (let r = 0; r < rows; r++) {
       speeds[r] = new Array(cols).fill(0)
+      hasData[r] = new Array(cols).fill(false)
     }
     for (const p of rawPoints) {
       const r = latIndex.get(Math.round(p.lat * QUANT))!
       const c = lonIndex.get(Math.round(p.lon * QUANT))!
       speeds[r][c] = p.speed
+      hasData[r][c] = true
+    }
+
+    // 多源 BFS 最近邻填充：所有数据单元同时入队，BFS 同时扩展，
+    // 最先到达孔洞的源即最近邻，用其速度值填充该孔洞。
+    const MISSING = rows * cols - rawPoints.length
+    if (MISSING > 0) {
+      const queue: Array<[number, number, number, number]> = [] // [r, c, srcR, srcC]
+      const visited = hasData // 复用：数据单元已"访问"
+      for (let r = 0; r < rows; r++) {
+        for (let c = 0; c < cols; c++) {
+          if (visited[r][c]) queue.push([r, c, r, c])
+        }
+      }
+      let head = 0
+      const DIRS: ReadonlyArray<readonly [number, number]> = [[-1, 0], [1, 0], [0, -1], [0, 1]]
+      while (head < queue.length) {
+        const [r, c, srcR, srcC] = queue[head++]
+        for (const [dr, dc] of DIRS) {
+          const nr = r + dr
+          const nc = c + dc
+          if (nr < 0 || nr >= rows || nc < 0 || nc >= cols) continue
+          if (visited[nr][nc]) continue
+          visited[nr][nc] = true
+          speeds[nr][nc] = speeds[srcR][srcC]
+          queue.push([nr, nc, srcR, srcC])
+        }
+      }
     }
 
     this.gridData = {
@@ -348,6 +381,7 @@ export class WindContourLayer {
   updateGeoJSON(geojson: WindGeoJSON): void {
     this.loadData(geojson)
     this.updateLayout()
+    console.log(`[${performance.now().toFixed(1)}ms] [WindContourLayer] updateGeoJSON`, 'grid', this.gridData ? `${this.gridData.rows}x${this.gridData.cols}` : 'null')
     this.draw()
   }
 

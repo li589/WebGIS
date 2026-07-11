@@ -5,12 +5,14 @@ import type { ActiveLayerDisplay, LayerHotspot } from '../stores/layers/types'
 import type { WeatherPointResponse } from '../services/runtime-api'
 import { useLayersStore } from '../stores/layers'
 import { useUiStore } from '../stores/ui'
+import { useWeatherTileManager } from '../stores/weather-tile-manager'
 import IntegrationStatusPanel from './info-panel/IntegrationStatusPanel.vue'
-import { buildWeatherLegendStops, isRealtimeWeatherLayerId } from './map/weather-render'
+import { buildWeatherLegendStops } from './map/weather-render'
 import { buildResultDisplayModel } from './info-panel/result-adapter'
 
 const layersStore = useLayersStore()
 const uiStore = useUiStore()
+const weatherTileManager = useWeatherTileManager()
 
 const props = defineProps<{
   activeLayer: ActiveLayerDisplay
@@ -36,12 +38,18 @@ const jobLayer = computed(() => displayLayer.value?.jobLayer)
 const resultModel = computed(() => buildResultDisplayModel(jobLayer.value?.resultView ?? null))
 const analysisSummary = computed(() => displayLayer.value.summary || props.activeLayer.summary)
 const jobReportSummary = computed(() => jobLayer.value?.resultView?.summary ?? jobLayer.value?.reportSummary ?? '')
-const isRealtimeWeatherLayer = computed(() => isRealtimeWeatherLayerId(displayLayer.value.catalogId))
+const isRealtimeWeatherLayer = computed(() => layersStore.isWeatherEngineLayer(displayLayer.value.catalogId))
 const weatherRenderHint = computed(
-  () => jobLayer.value?.mapLayerPayload?.renderHint ?? props.pointWeather?.render_hint ?? null,
+  () => displayLayer.value?.renderHint ?? jobLayer.value?.mapLayerPayload?.renderHint ?? props.pointWeather?.render_hint ?? null,
 )
 const weatherLegendStops = computed(() => (weatherRenderHint.value ? buildWeatherLegendStops(weatherRenderHint.value) : []))
-const hasWeatherLayerAsset = computed(() => !!jobLayer.value?.mapLayerPayload?.layerAssets?.geojsonUrl)
+const tileStats = computed(() =>
+  isRealtimeWeatherLayer.value ? weatherTileManager.getStats(displayLayer.value.catalogId) : null,
+)
+const hasWeatherLayerAsset = computed(() => {
+  if (isRealtimeWeatherLayer.value) return (tileStats.value?.cached ?? 0) > 0
+  return !!jobLayer.value?.mapLayerPayload?.layerAssets?.geojsonUrl
+})
 const jobEventNotes = computed(() => jobLayer.value?.eventMessages ?? jobLayer.value?.diagnosticNotes ?? [])
 const hasWeatherStyleSection = computed(
   () => !!weatherRenderHint.value || canToggleParticleFlow.value || isRealtimeWeatherLayer.value,
@@ -227,11 +235,18 @@ const pointWeatherHourlyRows = computed(() => {
     }
   }).filter((entry) => entry.metric !== `-- ${pointWeatherMetric.value.unit}`.trim())
 })
-const canRunWorkflow = computed(() => !displayLayer.value?.isAdminBoundary)
+const canRunWorkflow = computed(() => !displayLayer.value?.isAdminBoundary && !isRealtimeWeatherLayer.value)
 const isWorkflowRunning = computed(() => jobLayer.value?.status === 'running' || jobLayer.value?.status === 'queued')
 const runBlockedReason = computed(() => layersStore.getCatalogRunBlockReason(displayLayer.value.catalogId))
 const workflowStage = computed(() => {
   if (props.isSubmitting) return 'submitting'
+  if (isRealtimeWeatherLayer.value) {
+    const stats = tileStats.value
+    if (!stats) return 'idle'
+    if (stats.pending > 0) return 'running'
+    if (stats.cached > 0) return 'succeeded'
+    return 'idle'
+  }
   if (jobLayer.value?.status === 'queued') return 'queued'
   if (jobLayer.value?.status === 'running') return 'running'
   if (jobLayer.value?.status === 'succeeded') return 'succeeded'
@@ -240,6 +255,7 @@ const workflowStage = computed(() => {
 })
 const buttonDisabled = computed(() => Boolean(runBlockedReason.value) || isWorkflowRunning.value || props.isSubmitting)
 const buttonLabel = computed(() => {
+  if (isRealtimeWeatherLayer.value) return '瓦片自动加载'
   if (runBlockedReason.value) return '数据未就绪'
   if (props.isSubmitting) return '提交中...'
   if (isWorkflowRunning.value) return '任务进行中'
@@ -594,7 +610,10 @@ onBeforeUnmount(() => {
           </div>
 
           <div class="weather-style-meta">
-            <span>{{ hasWeatherLayerAsset ? 'GeoJSON 已挂载' : '尚未生成地图产物' }}</span>
+            <span v-if="isRealtimeWeatherLayer && tileStats">
+              瓦片：已缓存 {{ tileStats.cached }} / 可视 {{ tileStats.visible }} / 加载中 {{ tileStats.pending }}
+            </span>
+            <span v-else>{{ hasWeatherLayerAsset ? 'GeoJSON 已挂载' : '尚未生成地图产物' }}</span>
             <span>{{ weatherRenderHint ? `默认不透明度 ${Math.round(weatherRenderHint.opacity * 100)}%` : '等待运行结果' }}</span>
           </div>
 

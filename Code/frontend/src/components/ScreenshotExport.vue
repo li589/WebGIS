@@ -148,7 +148,7 @@ async function capture() {
       scale,
       backgroundColor: null,
       logging: false,
-      onclone: (clonedDoc) => {
+      onclone: (clonedDoc: Document) => {
         const clonedStage = clonedDoc.querySelector('.map-stage') as HTMLElement | null
         if (clonedStage) {
           clonedStage.style.background = 'transparent'
@@ -164,11 +164,11 @@ async function capture() {
           clonedMapHost.style.background = 'transparent'
         }
 
-        clonedDoc.querySelectorAll('.maplibregl-canvas-container,.maplibregl-canvas').forEach((el) => {
+        clonedDoc.querySelectorAll('.maplibregl-canvas-container,.maplibregl-canvas').forEach((el: Element) => {
           ;(el as HTMLElement).style.visibility = 'hidden'
         })
       },
-      ignoreElements: (el) => {
+      ignoreElements: (el: Element) => {
         if (el instanceof HTMLElement && (el.matches('.maplibregl-canvas-container') || el.matches('.maplibregl-canvas'))) {
           return true
         }

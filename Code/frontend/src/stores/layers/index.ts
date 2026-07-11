@@ -1,4 +1,4 @@
-import { computed, ref } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { defineStore } from 'pinia'
 
 import {
@@ -10,6 +10,14 @@ import {
   retryWorkflowRun,
   getWeatherPoint,
 } from '../../services/runtime-api'
+import {
+  isWeatherLayerDescriptor,
+  supportsMapLayerCapability,
+  supportsParticleFlowCapability,
+  supportsViewportDrivenRefreshCapability,
+} from '../../services/layer-capabilities'
+import { useWeatherTileManager } from '../weather-tile-manager'
+import { buildDefaultWeatherRenderHint } from '../../components/map/weather-render'
 import type { BoundingBox, RuntimeLayerDescriptor, WeatherPointResponse, WorkflowEvent } from '../../services/runtime-api'
 import { LAYER_CATEGORIES, LAYER_LIBRARY } from './catalog'
 import { buildJobLayer } from './result-adapter'
@@ -32,6 +40,10 @@ function genInstanceId() {
 function isTerminalStatus(status: string) {
   // retry_pending 是非终态（等待重试），不应包含在此处
   return status === 'succeeded' || status === 'failed' || status === 'cancelled'
+}
+
+function debugLog(module: string, ...args: unknown[]) {
+  console.log(`[${performance.now().toFixed(1)}ms] [LayersStore:${module}]`, ...args)
 }
 
 // ─── 真实数据适配器 ──────────────────────────────────────────────────────────
@@ -99,15 +111,6 @@ const STATUS_SYNC_INTERVAL_MS = 9000
 const EVENT_POLL_MAX_DURATION_MS = 600_000
 const MAX_EVENT_MESSAGE_COUNT = 5
 const MAX_CONSECUTIVE_POLL_ERRORS = 3
-const MAP_LAYER_RENDER_TYPES = new Set([
-  'grid_fill',
-  'point',
-  'point_symbol',
-  'particle_flow',
-  'heatmap',
-  'vector',
-])
-
 function getCatalogDisplayName(catalogId: string) {
   return LAYER_LIBRARY.find((item) => item.catalogId === catalogId)?.name ?? catalogId
 }
@@ -139,167 +142,6 @@ function formatHotspotValue(value: unknown, unit?: unknown) {
     return `${value}${unitLabel}`
   }
   return '--'
-}
-
-function isWeatherEngineCatalogId(catalogId: string): boolean {
-  if (catalogId.startsWith('wind-field')) return true
-  if (catalogId.startsWith('temperature')) return true
-  return ['precipitation', 'pressure', 'humidity', 'visibility'].includes(catalogId)
-}
-
-const WEATHER_REQUEST_WORLD_LAT_LIMIT = 85
-const WEATHER_REQUEST_VIEWPORT_EXPANSION = 1.4
-const WEATHER_REQUEST_TILE_STEP_RATIO = 0.5
-const WEATHER_PREFETCH_CONCURRENCY = 2
-const WEATHER_PREFETCH_MAX_QUEUE = 30
-const WEATHER_TILE_CACHE_MAX_PER_BUCKET = 50
-const WEATHER_REQUEST_BUCKETS: Array<{ key: string; maxZoom: number; lonSpan: number; latSpan: number }> = [
-  { key: 'z0', maxZoom: 2.5, lonSpan: 360, latSpan: 170 },
-  { key: 'z1', maxZoom: 4.0, lonSpan: 180, latSpan: 120 },
-  { key: 'z2', maxZoom: 5.5, lonSpan: 120, latSpan: 80 },
-  { key: 'z3', maxZoom: 7.0, lonSpan: 60, latSpan: 40 },
-  { key: 'z4', maxZoom: 8.5, lonSpan: 30, latSpan: 20 },
-  { key: 'z5', maxZoom: Number.POSITIVE_INFINITY, lonSpan: 15, latSpan: 10 },
-]
-
-interface WeatherTileSpec {
-  zoomBucketKey: string
-  tileKey: string
-  bbox: BoundingBox
-  center: { lng: number; lat: number }
-  lonSpan: number
-  latSpan: number
-}
-
-interface WeatherTileCacheEntry {
-  catalogId: string
-  spec: WeatherTileSpec
-  status: JobStatus
-  jobId?: string
-  updatedAt: string
-  geojsonData?: Record<string, unknown>
-}
-
-function clampNumber(value: number, min: number, max: number) {
-  return Math.min(max, Math.max(min, value))
-}
-
-function roundBboxCoordinate(value: number) {
-  return Math.round(value * 1000) / 1000
-}
-
-function areBoundingBoxesEqual(a: BoundingBox | null | undefined, b: BoundingBox | null | undefined) {
-  if (!a || !b) return false
-  return a.west === b.west
-    && a.south === b.south
-    && a.east === b.east
-    && a.north === b.north
-}
-
-function getBoundingBoxSpans(bbox: BoundingBox) {
-  return {
-    lonSpan: Math.max(0.1, bbox.east - bbox.west),
-    latSpan: Math.max(0.1, bbox.north - bbox.south),
-  }
-}
-
-function getWeatherRequestBucket(zoom: number) {
-  return WEATHER_REQUEST_BUCKETS.find((bucket) => zoom <= bucket.maxZoom) ?? WEATHER_REQUEST_BUCKETS[WEATHER_REQUEST_BUCKETS.length - 1]
-}
-
-function snapRequestCenter(value: number, span: number, min: number, max: number) {
-  const halfSpan = span / 2
-  const step = Math.max(0.1, span * WEATHER_REQUEST_TILE_STEP_RATIO)
-  const snapped = Math.round(value / step) * step
-  return clampNumber(snapped, min + halfSpan, max - halfSpan)
-}
-
-function buildWeatherTileSpec(
-  center: { lng: number; lat: number },
-  viewportBBox: BoundingBox,
-  zoom: number,
-): WeatherTileSpec {
-  const bucket = getWeatherRequestBucket(zoom)
-  if (bucket.lonSpan >= 360) {
-    const bbox = {
-      west: -180,
-      south: -WEATHER_REQUEST_WORLD_LAT_LIMIT,
-      east: 180,
-      north: WEATHER_REQUEST_WORLD_LAT_LIMIT,
-      crs: 'EPSG:4326',
-    }
-    return {
-      zoomBucketKey: bucket.key,
-      tileKey: `${bucket.key}:world`,
-      bbox,
-      center: { lng: 0, lat: 0 },
-      lonSpan: 360,
-      latSpan: WEATHER_REQUEST_WORLD_LAT_LIMIT * 2,
-    }
-  }
-
-  const viewportSpans = getBoundingBoxSpans(viewportBBox)
-  const lonSpan = Math.min(360, Math.max(bucket.lonSpan, viewportSpans.lonSpan * WEATHER_REQUEST_VIEWPORT_EXPANSION))
-  const latSpan = Math.min(WEATHER_REQUEST_WORLD_LAT_LIMIT * 2, Math.max(bucket.latSpan, viewportSpans.latSpan * WEATHER_REQUEST_VIEWPORT_EXPANSION))
-
-  const snappedLng = snapRequestCenter(center.lng, lonSpan, -180, 180)
-  const snappedLat = snapRequestCenter(center.lat, latSpan, -WEATHER_REQUEST_WORLD_LAT_LIMIT, WEATHER_REQUEST_WORLD_LAT_LIMIT)
-
-  const bbox = {
-    west: roundBboxCoordinate(snappedLng - lonSpan / 2),
-    south: roundBboxCoordinate(snappedLat - latSpan / 2),
-    east: roundBboxCoordinate(snappedLng + lonSpan / 2),
-    north: roundBboxCoordinate(snappedLat + latSpan / 2),
-    crs: 'EPSG:4326',
-  }
-  return {
-    zoomBucketKey: bucket.key,
-    tileKey: `${bucket.key}:${roundBboxCoordinate(snappedLng)}:${roundBboxCoordinate(snappedLat)}`,
-    bbox,
-    center: { lng: snappedLng, lat: snappedLat },
-    lonSpan,
-    latSpan,
-  }
-}
-
-function buildNeighborWeatherTileSpecs(primaryTile: WeatherTileSpec): WeatherTileSpec[] {
-  if (primaryTile.tileKey.endsWith(':world')) return []
-  const lonStep = Math.max(0.1, primaryTile.lonSpan * WEATHER_REQUEST_TILE_STEP_RATIO)
-  const latStep = Math.max(0.1, primaryTile.latSpan * WEATHER_REQUEST_TILE_STEP_RATIO)
-  const seen = new Set<string>()
-  const specs: WeatherTileSpec[] = []
-  for (const [dx, dy] of [[-1, -1], [0, -1], [1, -1], [-1, 0], [1, 0], [-1, 1], [0, 1], [1, 1]]) {
-    const nextCenterLng = snapRequestCenter(primaryTile.center.lng + dx * lonStep, primaryTile.lonSpan, -180, 180)
-    const nextCenterLat = snapRequestCenter(primaryTile.center.lat + dy * latStep, primaryTile.latSpan, -WEATHER_REQUEST_WORLD_LAT_LIMIT, WEATHER_REQUEST_WORLD_LAT_LIMIT)
-    const tileKey = `${primaryTile.zoomBucketKey}:${roundBboxCoordinate(nextCenterLng)}:${roundBboxCoordinate(nextCenterLat)}`
-    if (seen.has(tileKey) || tileKey === primaryTile.tileKey) continue
-    seen.add(tileKey)
-    specs.push({
-      zoomBucketKey: primaryTile.zoomBucketKey,
-      tileKey,
-      center: { lng: nextCenterLng, lat: nextCenterLat },
-      lonSpan: primaryTile.lonSpan,
-      latSpan: primaryTile.latSpan,
-      bbox: {
-        west: roundBboxCoordinate(nextCenterLng - primaryTile.lonSpan / 2),
-        south: roundBboxCoordinate(nextCenterLat - primaryTile.latSpan / 2),
-        east: roundBboxCoordinate(nextCenterLng + primaryTile.lonSpan / 2),
-        north: roundBboxCoordinate(nextCenterLat + primaryTile.latSpan / 2),
-        crs: 'EPSG:4326',
-      },
-    })
-  }
-  return specs
-}
-
-function resolvePrimaryWeatherTileSpec(
-  catalogId: string,
-  center: { lng: number; lat: number },
-  viewportBBox: BoundingBox | null,
-  zoom: number,
-): WeatherTileSpec | null {
-  if (!viewportBBox || !isWeatherEngineCatalogId(catalogId)) return null
-  return buildWeatherTileSpec(center, viewportBBox, zoom)
 }
 
 function buildHotspotFromFeature(
@@ -571,6 +413,8 @@ function buildAvailabilityState(layer: ActiveLayer, item: RuntimeLayerLibraryIte
 // ─── Store ───────────────────────────────────────────────────────────────────
 
 export const useLayersStore = defineStore('layers', () => {
+  const weatherTileManager = useWeatherTileManager()
+
   // ── Active layers (已添加的图层实例) ──────────────────────────────────────
   const activeLayers = ref<ActiveLayer[]>([])
 
@@ -653,28 +497,11 @@ export const useLayersStore = defineStore('layers', () => {
   // 地图移动/缩放时，使用防抖延迟避免频繁触发工作流更新
   const viewportDebounceTimer = ref<number | null>(null)
   const VIEWPORT_DEBOUNCE_MS = 500  // 防抖延迟（毫秒）
-  // 记录每个 catalogId 上次提交工作流的时间戳，避免缩放时频繁重新请求 API
-  const lastWorkflowSubmitTime = new Map<string, number>()
-  const WORKFLOW_REFRESH_MIN_INTERVAL_MS = 2000  // 最小重新提交间隔（2 秒，后端已有 429 重试保护）
-  // 记录每个 catalogId 上次提交工作流时的请求 bbox。
-  // 对 weatherengine 图层，这里存的是“按缩放级别标准化后的请求范围”，不是原始视口。
-  const lastWorkflowBBox = new Map<string, BoundingBox>()
-  // 视口面积变化阈值：面积比 > 2 或 < 0.5 时认为是显著变化
-  const SIGNIFICANT_VIEWPORT_RATIO = 2
 
   // ── 当前地图视口（中心点 + 可见范围）─────────────────────────────────────
-  // weatherengine 图层会基于它推导“按缩放级别分桶后的请求范围”，
-  // 用于从纯视口局部请求过渡到更大范围的懒加载。
   const currentMapCenter = ref<{ lng: number; lat: number }>({ lng: 113.2644, lat: 23.1291 })
   const currentMapBBox = ref<BoundingBox | null>(null)
   const currentMapZoom = ref(4.8)
-  const weatherTileCache = new Map<string, WeatherTileCacheEntry>()
-  const weatherCatalogPrimaryTileKey = new Map<string, string>()
-  const weatherRunTileSpecs = new Map<string, { catalogId: string; spec: WeatherTileSpec; primary: boolean }>()
-  const weatherPrefetchQueue: Array<{ catalogId: string; spec: WeatherTileSpec }> = []
-  const weatherPrefetchActiveKeys = new Set<string>()
-  /** 429 容量限制时的退避时间戳，在此时间前不 drain 预取队列 */
-  let weatherPrefetchBackoffUntil = 0
 
   // ─────────────────────────────────────────────────────────────────────────────
 
@@ -706,6 +533,23 @@ export const useLayersStore = defineStore('layers', () => {
         const item = buildCatalogFallbackItem(layerLibraryMap.value.get(layer.catalogId) ?? null, layer.catalogId)
         const availability = buildAvailabilityState(layer, item, layer.jobLayer)
         const realDisplay = layer.jobLayer ? buildRealLayerDisplay(layer, item) : {}
+        const descriptor = runtimeLayerCatalog.value[layer.catalogId] ?? null
+
+        const isWeatherLayer = !layer.isAdminBoundary && isWeatherLayerDescriptor(descriptor, layer.catalogId)
+        const tileStats = isWeatherLayer && layer.visible ? weatherTileManager.getStats(layer.catalogId) : null
+        const weatherRenderHint = isWeatherLayer
+          ? buildDefaultWeatherRenderHint(layer.catalogId, descriptor)
+          : (layer.jobLayer?.mapLayerPayload?.renderHint ?? null)
+        let finalAvailability = availability
+        if (isWeatherLayer && tileStats) {
+          if (tileStats.cached > 0 && tileStats.cached >= tileStats.visible && tileStats.pending === 0) {
+            finalAvailability = { state: 'ready' as const, label: '完整数据', description: `已缓存全部 ${tileStats.visible} 个可视瓦片` }
+          } else if (tileStats.cached > 0 || tileStats.pending > 0) {
+            finalAvailability = { state: 'partial' as const, label: '加载中', description: `已缓存 ${tileStats.cached} / 可视 ${tileStats.visible} / 加载中 ${tileStats.pending}` }
+          } else {
+            finalAvailability = { state: 'partial' as const, label: '等待瓦片', description: '正在等待瓦片调度' }
+          }
+        }
 
         return {
           instanceId: layer.instanceId,
@@ -717,23 +561,36 @@ export const useLayersStore = defineStore('layers', () => {
           supportsTime: item.supportsTime,
           runReadiness: item.runReadiness,
           runReadinessSummary: item.runReadinessSummary,
+          renderHint: weatherRenderHint ?? undefined,
           summary: layer.isAdminBoundary ? '广东省市级行政区边界叠加层' : (realDisplay.summary ?? item.description),
           metricLabel: layer.isAdminBoundary ? '边界层级' : item.metricLabel,
           metricValue: layer.isAdminBoundary ? '省市级' : (realDisplay.metricValue ?? '--'),
-          trendLabel: layer.isAdminBoundary ? '静态矢量边界叠加' : (realDisplay.trendLabel ?? (item.backendStatus === 'sample' ? '样板 provider 链路已接入' : item.supportsTime ? '支持时间维度查询' : '运行时目录已接入')),
-          statusLabel: layer.isAdminBoundary ? '静态数据' : (realDisplay.statusLabel ?? (item.backendStatus === 'sample' ? '样板 Provider' : item.backendStatus === 'placeholder' ? '占位图层' : '目录已接入')),
+          trendLabel: layer.isAdminBoundary
+            ? '静态矢量边界叠加'
+            : (isWeatherLayer
+                ? 'tile manager 已接入'
+                : (realDisplay.trendLabel ?? (item.backendStatus === 'sample' ? '样板 provider 链路已接入' : item.supportsTime ? '支持时间维度查询' : '运行时目录已接入'))),
+          statusLabel: layer.isAdminBoundary
+            ? '静态数据'
+            : (isWeatherLayer
+                ? '瓦片数据'
+                : (realDisplay.statusLabel ?? (item.backendStatus === 'sample' ? '样板 Provider' : item.backendStatus === 'placeholder' ? '占位图层' : '目录已接入'))),
           updateLabel: layer.isAdminBoundary ? '静态数据' : item.updateLabel,
           sourceLabel: layer.isAdminBoundary ? '广东省市级边界' : (realDisplay.sourceLabel ?? item.sourceLabel),
           confidenceLabel: layer.isAdminBoundary ? '置信度 100%' : (realDisplay.confidenceLabel ?? '以运行时目录为准'),
           accentColor: layer.isAdminBoundary ? '#88d8ff' : item.accentColor,
           accentGlow: layer.isAdminBoundary ? 'rgba(136, 216, 255, 0.3)' : item.accentGlow,
           chipTone: layer.isAdminBoundary ? 'rgba(136, 216, 255, 0.16)' : item.chipTone,
-          availabilityState: layer.isAdminBoundary ? 'ready' : availability.state,
-          availabilityLabel: layer.isAdminBoundary ? '完整数据' : availability.label,
+          availabilityState: layer.isAdminBoundary ? 'ready' : finalAvailability.state,
+          availabilityLabel: layer.isAdminBoundary ? '完整数据' : finalAvailability.label,
           availabilityDescription: layer.isAdminBoundary
             ? '静态矢量边界数据，已完整加载。'
-            : (realDisplay.availabilityDescription ?? availability.description),
-          observationTimeLabel: layer.isAdminBoundary ? '静态数据' : (realDisplay.observationTimeLabel ?? (item.supportsTime ? `${String(currentHour.value).padStart(2, '0')}:00` : '--')),
+            : (realDisplay.availabilityDescription ?? finalAvailability.description),
+          observationTimeLabel: layer.isAdminBoundary
+            ? '静态数据'
+            : (isWeatherLayer
+                ? `${String(currentHour.value).padStart(2, '0')}:00`
+                : (realDisplay.observationTimeLabel ?? (item.supportsTime ? `${String(currentHour.value).padStart(2, '0')}:00` : '--'))),
           missingFieldsLabel: layer.isAdminBoundary ? '无' : (realDisplay.missingFieldsLabel ?? (item.runReadinessNotes[0] ?? '无')),
           hotspots: layer.isAdminBoundary ? [] : (realDisplay.hotspots ?? []),
           isAdminBoundary: layer.isAdminBoundary,
@@ -786,6 +643,19 @@ export const useLayersStore = defineStore('layers', () => {
     if (sidebarView.value === 'empty' || sidebarView.value === 'library') {
       sidebarView.value = 'active'
     }
+
+    // 天气图层接入瓦片管理器，由 tile manager 按需拉取瓦片
+    if (!isAdminBoundary) {
+      weatherTileManager.setLayerActive(catalogId, true)
+      if (isWeatherEngineLayer(catalogId)) {
+        weatherTileManager.setViewport(catalogId, currentMapCenter.value, currentMapZoom.value, currentHour.value)
+        // 天气图层（如 wind-field）支持粒子流渲染，自动启用
+        if (supportsParticleFlow(catalogId) && !particleFlowCatalogId.value) {
+          particleFlowCatalogId.value = catalogId
+          debugLog('addLayer', 'auto-enable particle flow for', catalogId)
+        }
+      }
+    }
   }
 
   function removeLayer(instanceId: string) {
@@ -803,6 +673,10 @@ export const useLayersStore = defineStore('layers', () => {
       workflowRetryTimers.delete(layer.catalogId)
     }
     workflowRetryCounts.delete(layer.catalogId)
+    // 清理 tile manager 中对应图层状态
+    if (!layer.isAdminBoundary) {
+      weatherTileManager.clearLayer(layer.catalogId)
+    }
     activeLayers.value.splice(idx, 1)
 
     if (selectedInstanceId.value === instanceId) {
@@ -814,6 +688,11 @@ export const useLayersStore = defineStore('layers', () => {
     const layer = activeLayers.value.find((l) => l.instanceId === instanceId)
     if (layer) {
       layer.visible = !layer.visible
+      // 同步 tile manager 激活状态；重新可见时刷新当前视口
+      weatherTileManager.setLayerActive(layer.catalogId, layer.visible)
+      if (layer.visible && isWeatherEngineLayer(layer.catalogId)) {
+        weatherTileManager.setViewport(layer.catalogId, currentMapCenter.value, currentMapZoom.value, currentHour.value)
+      }
     }
   }
 
@@ -975,117 +854,6 @@ export const useLayersStore = defineStore('layers', () => {
     syncJobLayerToActiveLayer(catalogId, jobLayer)
   }
 
-  function getWeatherTileCacheKey(catalogId: string, spec: WeatherTileSpec) {
-    return `${catalogId}:${spec.tileKey}`
-  }
-
-  function getWeatherTileCacheEntry(catalogId: string, spec: WeatherTileSpec) {
-    return weatherTileCache.get(getWeatherTileCacheKey(catalogId, spec))
-  }
-
-  function setWeatherTileCacheEntry(entry: WeatherTileCacheEntry) {
-    weatherTileCache.set(getWeatherTileCacheKey(entry.catalogId, entry.spec), entry)
-  }
-
-  /** 淘汰远距离瓦片：清理其他 zoom bucket 的瓦片，当前 bucket 超过上限时按距离淘汰最远的 */
-  function evictDistantWeatherTiles(catalogId: string, currentCenter: { lng: number; lat: number }, currentZoomBucketKey: string) {
-    // 1. 淘汰其他 zoom bucket 的瓦片（只保留当前 bucket）
-    for (const [key, entry] of weatherTileCache.entries()) {
-      if (entry.catalogId === catalogId && entry.spec.zoomBucketKey !== currentZoomBucketKey) {
-        weatherTileCache.delete(key)
-      }
-    }
-    // 2. 当前 bucket 超过上限时，按距离淘汰最远的瓦片
-    const sameBucketEntries: Array<{ key: string; dist: number }> = []
-    for (const [key, entry] of weatherTileCache.entries()) {
-      if (entry.catalogId !== catalogId || entry.spec.zoomBucketKey !== currentZoomBucketKey) continue
-      if (entry.status !== 'succeeded') continue  // 只淘汰已完成的，不淘汰进行中的
-      const dLng = entry.spec.center.lng - currentCenter.lng
-      const dLat = entry.spec.center.lat - currentCenter.lat
-      sameBucketEntries.push({ key, dist: dLng * dLng + dLat * dLat })
-    }
-    if (sameBucketEntries.length <= WEATHER_TILE_CACHE_MAX_PER_BUCKET) return
-    sameBucketEntries.sort((a, b) => b.dist - a.dist)
-    const toEvict = sameBucketEntries.length - WEATHER_TILE_CACHE_MAX_PER_BUCKET
-    for (let i = 0; i < toEvict; i++) {
-      weatherTileCache.delete(sameBucketEntries[i].key)
-    }
-  }
-
-  function extractGeojsonDataFromJobLayer(jobLayer: JobLayerItem | null | undefined) {
-    const payload = jobLayer?.mapLayerPayload?.layerAssets?.geojsonData
-    return payload && typeof payload === 'object' ? payload : undefined
-  }
-
-  function buildMergedGeojsonForCatalog(catalogId: string, zoomBucketKey: string) {
-    const features: Record<string, unknown>[] = []
-    const seen = new Set<string>()
-    for (const entry of weatherTileCache.values()) {
-      if (entry.catalogId !== catalogId || entry.spec.zoomBucketKey !== zoomBucketKey || entry.status !== 'succeeded' || !entry.geojsonData) {
-        continue
-      }
-      const entryFeatures = Array.isArray((entry.geojsonData as { features?: unknown[] }).features)
-        ? ((entry.geojsonData as { features: Record<string, unknown>[] }).features)
-        : []
-      for (const feature of entryFeatures) {
-        const geometry = asRecord(feature.geometry)
-        const coordinates = Array.isArray(geometry?.coordinates) ? geometry.coordinates : []
-        const properties = asRecord(feature.properties)
-        // 去重 key 仅用坐标（round 到 3 位小数 ≈ 100m 容差）+ height（不同高度层是独立特征）
-        // 修复：原 key 包含 value（grid 数据无此字段，恒为空），且坐标未取整，
-        // 导致浮点精度差异使相邻瓦片的重叠点无法正确去重
-        const lng = roundBboxCoordinate(Number(coordinates[0]) || 0)
-        const lat = roundBboxCoordinate(Number(coordinates[1]) || 0)
-        const dedupeKey = `${lng}:${lat}:${properties?.height ?? ''}`
-        if (seen.has(dedupeKey)) continue
-        seen.add(dedupeKey)
-        features.push(feature)
-      }
-    }
-    if (!features.length) return null
-    return {
-      type: 'FeatureCollection',
-      features,
-    }
-  }
-
-  function patchCatalogJobLayerGeojson(catalogId: string, mergedGeojson: Record<string, unknown>) {
-    const targetLayer = activeLayers.value.find((layer) => layer.catalogId === catalogId && layer.jobLayer)
-    const baseJobLayer = targetLayer?.jobLayer
-      ?? jobLayers.value.find((item) => activeLayers.value.some((layer) => layer.catalogId === catalogId && layer.jobLayer?.jobId === item.jobId))
-    if (!baseJobLayer) return
-    const nextJobLayer: JobLayerItem = {
-      ...baseJobLayer,
-      updatedAt: new Date().toISOString(),
-      mapLayerPayload: {
-        ...baseJobLayer.mapLayerPayload,
-        layerAssets: {
-          ...baseJobLayer.mapLayerPayload?.layerAssets,
-          geojsonData: mergedGeojson,
-        },
-      },
-    }
-    upsertJobLayer(catalogId, nextJobLayer)
-  }
-
-  function applyMergedWeatherTileData(catalogId: string, zoomBucketKey: string) {
-    const mergedGeojson = buildMergedGeojsonForCatalog(catalogId, zoomBucketKey)
-    if (!mergedGeojson) return false
-    patchCatalogJobLayerGeojson(catalogId, mergedGeojson)
-    return true
-  }
-
-  function cacheWeatherTileJobLayer(catalogId: string, spec: WeatherTileSpec, jobLayer: JobLayerItem) {
-    setWeatherTileCacheEntry({
-      catalogId,
-      spec,
-      status: jobLayer.status,
-      jobId: jobLayer.jobId,
-      updatedAt: jobLayer.updatedAt,
-      geojsonData: extractGeojsonDataFromJobLayer(jobLayer),
-    })
-  }
-
   function buildWorkflowPayloadForCatalog(
     catalogId: string,
     catalogName: string,
@@ -1112,142 +880,6 @@ export const useLayersStore = defineStore('layers', () => {
         viewport_bbox: requestBBox ?? undefined,
       },
     }
-  }
-
-  async function pollHiddenWeatherTileRun(jobId: string, catalogId: string, spec: WeatherTileSpec) {
-    for (let attempt = 0; attempt < 120; attempt += 1) {
-      const run = await getWorkflowRun(jobId)
-      const status = run.status === 'accepted' ? 'queued' : run.status
-      if (isTerminalStatus(status)) {
-        const jobLayer = await buildJobLayer(run, catalogId)
-        cacheWeatherTileJobLayer(catalogId, spec, jobLayer)
-        weatherRunTileSpecs.delete(jobId)
-        if (jobLayer.status === 'succeeded') {
-          applyMergedWeatherTileData(catalogId, spec.zoomBucketKey)
-          evictDistantWeatherTiles(catalogId, currentMapCenter.value, spec.zoomBucketKey)
-          expandWeatherTilePrefetch(catalogId, spec)  // 预取瓦片成功后继续 BFS 扩散
-        }
-        return
-      }
-      await new Promise((resolve) => window.setTimeout(resolve, EVENT_POLL_ACTIVE_INTERVAL_MS))
-    }
-  }
-
-  async function drainWeatherPrefetchQueue() {
-    // 429 退避期内不 drain，避免持续撞击容量限制
-    if (Date.now() < weatherPrefetchBackoffUntil) return
-    if (weatherPrefetchActiveKeys.size >= WEATHER_PREFETCH_CONCURRENCY) return
-    const nextTask = weatherPrefetchQueue.shift()
-    if (!nextTask) return
-
-    const cacheKey = getWeatherTileCacheKey(nextTask.catalogId, nextTask.spec)
-    if (weatherPrefetchActiveKeys.has(cacheKey)) {
-      void drainWeatherPrefetchQueue()
-      return
-    }
-
-    weatherPrefetchActiveKeys.add(cacheKey)
-    void drainWeatherPrefetchQueue()
-    const catalogName = runtimeLayerCatalog.value[nextTask.catalogId]?.display_name ?? getCatalogDisplayName(nextTask.catalogId)
-    const requestedOutputs = supportsMapLayerResult(nextTask.catalogId)
-      ? ['json', 'text', 'table', 'map_layer']
-      : ['json', 'text', 'table']
-
-    try {
-      setWeatherTileCacheEntry({
-        catalogId: nextTask.catalogId,
-        spec: nextTask.spec,
-        status: 'queued',
-        updatedAt: new Date().toISOString(),
-      })
-      const accepted = await submitWorkflow(
-        buildWorkflowPayloadForCatalog(nextTask.catalogId, catalogName, requestedOutputs, nextTask.spec.bbox),
-      )
-      weatherRunTileSpecs.set(accepted.run_id, {
-        catalogId: nextTask.catalogId,
-        spec: nextTask.spec,
-        primary: false,
-      })
-      setWeatherTileCacheEntry({
-        catalogId: nextTask.catalogId,
-        spec: nextTask.spec,
-        status: 'running',
-        jobId: accepted.run_id,
-        updatedAt: accepted.created_at,
-      })
-      await pollHiddenWeatherTileRun(accepted.run_id, nextTask.catalogId, nextTask.spec)
-    } catch (error) {
-      const errMsg = error instanceof Error ? error.message : String(error)
-      if (errMsg.includes('429')) {
-        // 429 容量限制：将任务放回队列头部，设置 3s 退避后自动重试
-        weatherPrefetchQueue.unshift(nextTask)
-        weatherPrefetchBackoffUntil = Date.now() + 3000
-      } else {
-        console.warn('[LayersStore] weather tile prefetch failed:', nextTask.catalogId, nextTask.spec.tileKey, error)
-        setWeatherTileCacheEntry({
-          catalogId: nextTask.catalogId,
-          spec: nextTask.spec,
-          status: 'failed',
-          updatedAt: new Date().toISOString(),
-        })
-      }
-    } finally {
-      weatherPrefetchActiveKeys.delete(cacheKey)
-      // 退避期内延迟 drain，避免立即重试撞击 429
-      const backoffRemaining = weatherPrefetchBackoffUntil - Date.now()
-      if (backoffRemaining > 0) {
-        window.setTimeout(() => void drainWeatherPrefetchQueue(), backoffRemaining)
-      } else {
-        void drainWeatherPrefetchQueue()
-      }
-    }
-  }
-
-  function trimWeatherPrefetchQueueForCatalog(catalogId: string) {
-    for (let index = weatherPrefetchQueue.length - 1; index >= 0; index -= 1) {
-      if (weatherPrefetchQueue[index]?.catalogId === catalogId) {
-        weatherPrefetchQueue.splice(index, 1)
-      }
-    }
-  }
-
-  function enqueueWeatherTilePrefetch(catalogId: string, primarySpec: WeatherTileSpec) {
-    trimWeatherPrefetchQueueForCatalog(catalogId)
-    if (primarySpec.tileKey.endsWith(':world')) return
-    // BFS 入口：将 8 个邻居全部入队（跳过已缓存/已排队的），由 drainWeatherPrefetchQueue 并行拉取
-    const neighborSpecs = buildNeighborWeatherTileSpecs(primarySpec)
-    for (const spec of neighborSpecs) {
-      if (weatherPrefetchQueue.length >= WEATHER_PREFETCH_MAX_QUEUE) break
-      const existing = getWeatherTileCacheEntry(catalogId, spec)
-      if (existing && (existing.status === 'queued' || existing.status === 'running' || existing.status === 'succeeded')) {
-        continue
-      }
-      const cacheKey = getWeatherTileCacheKey(catalogId, spec)
-      if (weatherPrefetchQueue.some((item) => getWeatherTileCacheKey(item.catalogId, item.spec) === cacheKey)) {
-        continue
-      }
-      weatherPrefetchQueue.push({ catalogId, spec })
-    }
-    void drainWeatherPrefetchQueue()
-  }
-
-  /** BFS 环形扩散：当一个瓦片成功后，将其 8 个邻居入队，形成持续外扩加载 */
-  function expandWeatherTilePrefetch(catalogId: string, completedSpec: WeatherTileSpec) {
-    if (completedSpec.tileKey.endsWith(':world')) return
-    const neighborSpecs = buildNeighborWeatherTileSpecs(completedSpec)
-    for (const spec of neighborSpecs) {
-      if (weatherPrefetchQueue.length >= WEATHER_PREFETCH_MAX_QUEUE) break
-      const existing = getWeatherTileCacheEntry(catalogId, spec)
-      if (existing && (existing.status === 'queued' || existing.status === 'running' || existing.status === 'succeeded')) {
-        continue
-      }
-      const cacheKey = getWeatherTileCacheKey(catalogId, spec)
-      if (weatherPrefetchQueue.some((item) => getWeatherTileCacheKey(item.catalogId, item.spec) === cacheKey)) {
-        continue
-      }
-      weatherPrefetchQueue.push({ catalogId, spec })
-    }
-    void drainWeatherPrefetchQueue()
   }
 
   function applyWorkflowEventsToJobLayer(jobLayer: JobLayerItem, events: WorkflowEvent[]): JobLayerItem {
@@ -1319,25 +951,10 @@ export const useLayersStore = defineStore('layers', () => {
 
     upsertJobLayer(catalogId, mergedJobLayer)
     workflowLastStatusSyncAt.set(jobId, now)
-    const tileRunSpec = weatherRunTileSpecs.get(jobId)
-    if (tileRunSpec) {
-      cacheWeatherTileJobLayer(catalogId, tileRunSpec.spec, mergedJobLayer)
-    }
 
     if (isTerminalStatus(mergedJobLayer.status)) {
       stopWorkflowPolling(jobId)
       activeWorkflowCatalogIds.delete(catalogId)
-      if (tileRunSpec) {
-        weatherRunTileSpecs.delete(jobId)
-        if (mergedJobLayer.status === 'succeeded') {
-          weatherCatalogPrimaryTileKey.set(catalogId, tileRunSpec.spec.tileKey)
-          applyMergedWeatherTileData(catalogId, tileRunSpec.spec.zoomBucketKey)
-          evictDistantWeatherTiles(catalogId, currentMapCenter.value, tileRunSpec.spec.zoomBucketKey)
-          // primary 和非 primary 瓦片成功后都触发 BFS 扩散，形成持续外扩加载
-          expandWeatherTilePrefetch(catalogId, tileRunSpec.spec)
-        }
-      }
-      const mapPayload = mergedJobLayer.mapLayerPayload
       if (
         particleFlowCatalogId.value === catalogId
         && supportsParticleFlow(catalogId)
@@ -1452,7 +1069,7 @@ export const useLayersStore = defineStore('layers', () => {
     workflowPollingHandles.set(jobId, handle)
   }
 
-  /** 中断指定 catalogId 的活跃工作流（平移时调用）：停止轮询、取消 API（fire-and-forget）、清空预取队列，但保留已成功的瓦片缓存 */
+  /** 中断指定 catalogId 的活跃工作流（平移时调用）：停止轮询、取消 API（fire-and-forget），但保留旧的 jobLayer */
   function interruptWorkflowForCatalog(catalogId: string) {
     // 清理 429 重试定时器，避免与新的提交冲突
     const retryTimer = workflowRetryTimers.get(catalogId)
@@ -1460,36 +1077,34 @@ export const useLayersStore = defineStore('layers', () => {
       window.clearTimeout(retryTimer)
       workflowRetryTimers.delete(catalogId)
     }
-    // 从 weatherRunTileSpecs 找到 primary run
-    let runJobId: string | null = null
-    for (const [jid, spec] of weatherRunTileSpecs.entries()) {
-      if (spec.catalogId === catalogId && spec.primary) { runJobId = jid; break }
-    }
-    // fallback: 查找该 catalogId 的活跃 jobId（非终态）
-    if (!runJobId) {
-      const activeJobLayer = jobLayers.value.find((item) =>
-        activeLayers.value.some((l) => l.catalogId === catalogId && l.jobLayer?.jobId === item.jobId)
-        && !isTerminalStatus(item.status)
-      )
-      runJobId = activeJobLayer?.jobId ?? null
-    }
+    // 查找该 catalogId 的活跃 jobId（非终态）
+    const activeJobLayer = jobLayers.value.find((item) =>
+      activeLayers.value.some((l) => l.catalogId === catalogId && l.jobLayer?.jobId === item.jobId)
+      && !isTerminalStatus(item.status)
+    )
+    const runJobId = activeJobLayer?.jobId ?? null
     if (runJobId) {
       stopWorkflowPolling(runJobId)
       activeWorkflowCatalogIds.delete(catalogId)
-      weatherRunTileSpecs.delete(runJobId)
       // fire-and-forget 取消 API 调用，不阻塞新提交
       void cancelWorkflowRun(runJobId).catch(() => {})
     }
-    // 清空预取队列（旧位置的待拉取瓦片不再需要）
-    trimWeatherPrefetchQueueForCatalog(catalogId)
-    // 注意：不清空 weatherTileCache —— 已成功的数据保留！
   }
 
-  async function runWorkflowForCatalog(catalogId: string, options?: { skipIfRequestBBoxUnchanged?: boolean }) {
-    if (submittingCatalogIds.has(catalogId)) return
+  async function runWorkflowForCatalog(catalogId: string) {
+    if (submittingCatalogIds.has(catalogId)) {
+      debugLog('runWorkflow', catalogId, 'skip: already submitting')
+      return
+    }
     workflowError.value = null
     submittingCatalogIds.add(catalogId)
+    debugLog('runWorkflow', catalogId, 'start')
     try {
+      // 天气图层统一由 tile manager 按需拉取瓦片，不走 analysis workflow
+      if (isWeatherEngineLayer(catalogId)) {
+        submittingCatalogIds.delete(catalogId)
+        return
+      }
       let runtimeCatalogReady = false
       try {
         await ensureRuntimeLayerCatalog()
@@ -1512,40 +1127,20 @@ export const useLayersStore = defineStore('layers', () => {
       const requestedOutputs = supportsMapLayer
         ? ['json', 'text', 'table', 'map_layer']
         : ['json', 'text', 'table']
-      const primaryTileSpec = resolvePrimaryWeatherTileSpec(
-        catalogId,
-        currentMapCenter.value,
-        currentMapBBox.value,
-        currentMapZoom.value,
-      )
-      const requestBBox = primaryTileSpec?.bbox ?? currentMapBBox.value
-      const lastRequestBBox = lastWorkflowBBox.get(catalogId)
-      if (options?.skipIfRequestBBoxUnchanged && areBoundingBoxesEqual(lastRequestBBox, requestBBox)) {
-        return
-      }
-      if (primaryTileSpec) {
-        const cachedPrimaryTile = getWeatherTileCacheEntry(catalogId, primaryTileSpec)
-        if (cachedPrimaryTile?.status === 'succeeded') {
-          weatherCatalogPrimaryTileKey.set(catalogId, primaryTileSpec.tileKey)
-          lastWorkflowSubmitTime.set(catalogId, Date.now())
-          lastWorkflowBBox.set(catalogId, primaryTileSpec.bbox)
-          applyMergedWeatherTileData(catalogId, primaryTileSpec.zoomBucketKey)
-          enqueueWeatherTilePrefetch(catalogId, primaryTileSpec)
-          return activeLayers.value.find((layer) => layer.catalogId === catalogId)?.jobLayer?.jobId
-        }
-      }
+      const requestBBox = currentMapBBox.value
 
-      // 中断旧位置的活跃工作流（取消 API 调用 + 清空预取队列），但保留已成功的瓦片缓存
-      // 先获取旧 jobLayer 的 mapLayerPayload，以便在新工作流运行期间保持旧数据可见
+      // 中断旧位置的活跃工作流（取消 API 调用），但保留旧 mapLayerPayload 使地图资产在新工作流运行期间保持可见
       const previousJobLayer = activeLayers.value.find(
         (l) => l.catalogId === catalogId && !l.isAdminBoundary,
       )?.jobLayer
 
       interruptWorkflowForCatalog(catalogId)
 
+      debugLog('runWorkflow', catalogId, 'submitting new workflow', 'bbox', requestBBox)
       const accepted = await submitWorkflow(
         buildWorkflowPayloadForCatalog(catalogId, catalogName, requestedOutputs, requestBBox),
       )
+      debugLog('runWorkflow', catalogId, 'submitted', accepted.run_id)
 
       upsertJobLayer(catalogId, {
         jobId: accepted.run_id,
@@ -1562,27 +1157,6 @@ export const useLayersStore = defineStore('layers', () => {
         // 保留旧 mapLayerPayload，使粒子流/网格填充在新工作流运行期间保持可见
         mapLayerPayload: previousJobLayer?.mapLayerPayload,
       })
-
-      // 记录提交时间戳和 bbox，用于 refreshActiveWeatherWorkflows 的时间间隔和显著变化检查
-      lastWorkflowSubmitTime.set(catalogId, Date.now())
-      if (requestBBox) {
-        lastWorkflowBBox.set(catalogId, requestBBox)
-      }
-      if (primaryTileSpec) {
-        weatherCatalogPrimaryTileKey.set(catalogId, primaryTileSpec.tileKey)
-        weatherRunTileSpecs.set(accepted.run_id, {
-          catalogId,
-          spec: primaryTileSpec,
-          primary: true,
-        })
-        setWeatherTileCacheEntry({
-          catalogId,
-          spec: primaryTileSpec,
-          status: 'queued',
-          jobId: accepted.run_id,
-          updatedAt: accepted.created_at,
-        })
-      }
 
       activeWorkflowCatalogIds.add(catalogId)
       // 工作流提交成功，清除 429 重试计数
@@ -1708,30 +1282,20 @@ export const useLayersStore = defineStore('layers', () => {
 
   /** 判断 catalogId 是否由 weatherengine 后端支持（用于自动运行工作流） */
   function isWeatherEngineLayer(catalogId: string): boolean {
-    return isWeatherEngineCatalogId(catalogId)
+    return isWeatherLayerDescriptor(getRuntimeLayerDescriptor(catalogId), catalogId)
   }
 
   function supportsMapLayerResult(catalogId: string) {
-    const descriptor = getRuntimeLayerDescriptor(catalogId)
-    if (descriptor?.render_type) {
-      // 天气引擎图层（温度/降水/气压/湿度/能见度等）虽 render_type=raster，
-      // 但实际产出 Polygon GeoJSON + renderHint，需要请求 map_layer 输出
-      return MAP_LAYER_RENDER_TYPES.has(descriptor.render_type) || isWeatherEngineLayer(catalogId)
-    }
-    return isWeatherEngineLayer(catalogId) || catalogId === 'lab-output'
+    return supportsMapLayerCapability(getRuntimeLayerDescriptor(catalogId), catalogId)
   }
 
   function supportsViewportDrivenRefresh(catalogId: string) {
-    const descriptor = getRuntimeLayerDescriptor(catalogId)
-    if (descriptor?.render_type) {
-      return MAP_LAYER_RENDER_TYPES.has(descriptor.render_type) || isWeatherEngineLayer(catalogId)
-    }
-    return isWeatherEngineLayer(catalogId) || catalogId === 'lab-output'
+    return supportsViewportDrivenRefreshCapability(getRuntimeLayerDescriptor(catalogId), catalogId)
   }
 
   /** 判断 catalogId 是否支持粒子流渲染（所有 wind-field 变体都支持） */
   function supportsParticleFlow(catalogId: string): boolean {
-    return catalogId.startsWith('wind-field')
+    return supportsParticleFlowCapability(getRuntimeLayerDescriptor(catalogId), catalogId)
   }
 
   /** 切换粒子流启用状态：再次点击同一图层会关闭，点击新图层会切换 */
@@ -1807,77 +1371,30 @@ export const useLayersStore = defineStore('layers', () => {
     }
   }
 
-  /** 计算 bbox 的地理面积（平方度） */
-  function bboxArea(bbox: BoundingBox): number {
-    return Math.abs(bbox.east - bbox.west) * Math.abs(bbox.north - bbox.south)
-  }
-
-  /** 检测请求范围是否发生显著变化（面积比超过阈值），用于决定是否绕过最小刷新间隔 */
-  function isSignificantViewportChange(catalogId: string, currentBBox: BoundingBox): boolean {
-    const lastBBox = lastWorkflowBBox.get(catalogId)
-    if (!lastBBox) return true  // 首次提交或无记录，允许立即提交
-    const currentArea = bboxArea(currentBBox)
-    const lastArea = bboxArea(lastBBox)
-    if (lastArea <= 0) return true
-    const ratio = currentArea / lastArea
-    // 面积放大或缩小超过阈值（如从城市缩放到全球）时认为是显著变化
-    return ratio > SIGNIFICANT_VIEWPORT_RATIO || ratio < 1 / SIGNIFICANT_VIEWPORT_RATIO
-  }
-
-  /** 刷新所有活跃的地图型工作流图层（视口变化时调用） */
+  /** 刷新所有活跃的地图型工作流图层（视口变化时调用），天气图层由 tile manager 处理，不在此处刷新 */
   async function refreshActiveWeatherWorkflows() {
-    const activeWeatherLayers = activeLayers.value.filter(
-      (layer) => supportsViewportDrivenRefresh(layer.catalogId) && layer.jobLayer,
+    const activeMapLayers = activeLayers.value.filter(
+      (layer) => layer.visible && supportsViewportDrivenRefresh(layer.catalogId) && !isWeatherEngineLayer(layer.catalogId) && layer.jobLayer,
     )
+    debugLog('refreshActive', 'layers', activeMapLayers.map(l => l.catalogId), 'bbox', currentMapBBox.value)
 
-    const now = Date.now()
-    const currentBBox = currentMapBBox.value
-    for (const layer of activeWeatherLayers) {
-      const primaryTileSpec = resolvePrimaryWeatherTileSpec(
-        layer.catalogId,
-        currentMapCenter.value,
-        currentBBox,
-        currentMapZoom.value,
-      )
-      const requestBBox = primaryTileSpec?.bbox ?? currentBBox
-      const lastRequestBBox = lastWorkflowBBox.get(layer.catalogId)
-      if (requestBBox && areBoundingBoxesEqual(lastRequestBBox, requestBBox)) continue
-
-      // 跳过正在提交的工作流
-      if (submittingCatalogIds.has(layer.catalogId)) continue
-      // 检查距上次提交是否超过最小间隔（对所有状态生效，不仅限 succeeded）
-      const lastSubmit = lastWorkflowSubmitTime.get(layer.catalogId) ?? 0
-      const elapsed = now - lastSubmit
-      if (elapsed < WORKFLOW_REFRESH_MIN_INTERVAL_MS) {
-        // 请求范围显著变化（如缩放切换到新的分桶）时绕过最小间隔，允许立即重新提交
-        if (!requestBBox || !isSignificantViewportChange(layer.catalogId, requestBBox)) {
-          // 调度一次性重试：在剩余时间 + 100ms 后重新触发，确保 2s 间隔不导致更新丢失
-          // 页面不可见时延长到 10s，避免后台积压定时器导致回来后卡顿
-          const remaining = WORKFLOW_REFRESH_MIN_INTERVAL_MS - elapsed
-          const retryDelay = document.hidden ? Math.max(remaining + 100, 10000) : remaining + 100
-          if (viewportDebounceTimer.value === null) {
-            viewportDebounceTimer.value = window.setTimeout(() => {
-              viewportDebounceTimer.value = null
-              void refreshActiveWeatherWorkflows()
-            }, retryDelay)
-          }
-          continue
-        }
-      }
-      if (canRunCatalog(layer.catalogId)) {
-        try {
-          // 重新提交工作流，使用新的请求范围
-          await runWorkflowForCatalog(layer.catalogId, { skipIfRequestBBoxUnchanged: true })
-        } catch (error) {
-          // 单个图层失败不影响其他图层
-          console.warn(`[LayersStore] Failed to refresh weather workflow for ${layer.catalogId}:`, error)
-        }
+    for (const layer of activeMapLayers) {
+      if (!canRunCatalog(layer.catalogId)) continue
+      try {
+        await runWorkflowForCatalog(layer.catalogId)
+      } catch (error) {
+        // 单个图层失败不影响其他图层
+        console.warn(`[LayersStore] Failed to refresh map workflow for ${layer.catalogId}:`, error)
       }
     }
   }
 
-  /** 处理视口变化：防抖后刷新活跃的地图型工作流 */
+  /** 处理视口变化：防抖后刷新活跃的地图型工作流（天气图层由 tile manager 处理） */
   function handleViewportChange() {
+    const activeMapLayerIds = activeLayers.value
+      .filter((layer) => layer.visible && supportsViewportDrivenRefresh(layer.catalogId) && !isWeatherEngineLayer(layer.catalogId) && layer.jobLayer)
+      .map((layer) => layer.catalogId)
+    debugLog('handleViewportChange', 'debounce', VIEWPORT_DEBOUNCE_MS, 'ms', 'activeLayers', activeMapLayerIds, 'bbox', currentMapBBox.value)
     // 取消之前的防抖定时器
     if (viewportDebounceTimer.value !== null) {
       window.clearTimeout(viewportDebounceTimer.value)
@@ -1900,16 +1417,32 @@ export const useLayersStore = defineStore('layers', () => {
       currentMapZoom.value = zoom
     }
 
-    // 视口变化时触发工作流刷新（防抖处理）
-    if (bboxChanged && activeLayers.value.some((layer) => supportsViewportDrivenRefresh(layer.catalogId) && layer.jobLayer)) {
-      for (const layer of activeLayers.value) {
-        if (supportsViewportDrivenRefresh(layer.catalogId) && layer.jobLayer) {
-          trimWeatherPrefetchQueueForCatalog(layer.catalogId)
-        }
+    // 天气图层：将新视口同步给 tile manager，由它按需提交瓦片 workflow
+    for (const layer of activeLayers.value) {
+      if (layer.visible && isWeatherEngineLayer(layer.catalogId)) {
+        weatherTileManager.setViewport(layer.catalogId, center, currentMapZoom.value, currentHour.value, undefined, bbox)
       }
+    }
+
+    // 非天气的地图型工作流图层：视口变化时触发工作流刷新（防抖处理）
+    if (
+      bboxChanged
+      && activeLayers.value.some(
+        (layer) => supportsViewportDrivenRefresh(layer.catalogId) && layer.jobLayer && !isWeatherEngineLayer(layer.catalogId),
+      )
+    ) {
       handleViewportChange()
     }
   }
+
+  // 时间轴小时变化时，通知 tile manager 刷新所有可见天气图层
+  watch(currentHour, (hour) => {
+    for (const layer of activeLayers.value) {
+      if (layer.visible && isWeatherEngineLayer(layer.catalogId)) {
+        weatherTileManager.setViewport(layer.catalogId, currentMapCenter.value, currentMapZoom.value, hour)
+      }
+    }
+  })
 
   /** catalogId → 工作流状态映射，用于 library 卡片显示自动运行反馈 */
   const catalogJobStatus = computed(() => {

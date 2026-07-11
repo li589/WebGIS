@@ -222,6 +222,8 @@ export interface RuntimeLayerDescriptor {
   is_realtime?: boolean
   default_visible?: boolean
   status: string
+  style?: RuntimeLayerStyleHint
+  capabilities?: RuntimeLayerCapabilities
   module_name?: string | null
   engine?: string | null
   workflow_name?: string | null
@@ -232,6 +234,27 @@ export interface RuntimeLayerDescriptor {
   run_readiness?: string
   run_readiness_summary?: string | null
   run_readiness_notes?: string[]
+}
+
+export interface RuntimeLayerCapabilities {
+  render_strategy?: string | null
+  paint_mode?: string | null
+  data_domain?: string | null
+  primary_metric?: string | null
+  supports_particle_flow?: boolean
+  supports_map_layer?: boolean
+  supports_viewport_refresh?: boolean
+  viewport_refresh_mode?: string | null
+  legend_ticks?: Array<number | string>
+  notes?: string[]
+  delivery_modes?: string[]
+  result_interfaces?: string[]
+}
+
+export interface RuntimeLayerStyleHint {
+  palette?: string | null
+  unit_label?: string | null
+  opacity?: number
 }
 
 export interface RuntimeLayerCatalogResponse {

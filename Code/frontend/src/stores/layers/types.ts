@@ -85,6 +85,8 @@ export interface WorkflowSummary {
 
 import type { WeatherLayerRenderHint, WorkflowResultDto, WorkflowRunViewResponse } from '../../services/runtime-api'
 
+export type { WeatherLayerRenderHint }
+
 export interface JobLayerMapAssets {
   geojsonUrl?: string
   geojsonData?: Record<string, unknown>
@@ -210,4 +212,6 @@ export interface ActiveLayerDisplay {
   opacity: number
   order: number
   dataState: 'catalog' | 'real'
+  /** 天气图层默认渲染提示（tile manager 路径下使用） */
+  renderHint?: WeatherLayerRenderHint
 }

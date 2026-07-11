@@ -1,6 +1,6 @@
 import type { ExpressionSpecification } from 'maplibre-gl'
 
-import type { WeatherLayerRenderHint } from '../../services/runtime-api'
+import type { RuntimeLayerDescriptor, WeatherLayerRenderHint } from '../../services/runtime-api'
 
 export interface WeatherLegendStop {
   value: number | string
@@ -66,6 +66,187 @@ export function isRealtimeWeatherLayerId(layerId?: string | null) {
   if (layerId.startsWith('temperature')) return true
   // 其他 weatherengine 实时图层
   return ['precipitation', 'pressure', 'humidity', 'visibility'].includes(layerId)
+}
+
+const WEATHER_RENDER_HINTS: Record<string, WeatherLayerRenderHint> = {
+  'wind-field': {
+    layer_id: 'wind-field',
+    paint_mode: 'particle_flow',
+    palette: 'wind-blue',
+    primary_metric: 'wind_speed_10m',
+    unit_label: 'm/s',
+    opacity: 0.82,
+    legend_ticks: [0, 5, 10, 15, 20],
+    notes: ['10 m 风场粒子流'],
+  },
+  'wind-field-80m': {
+    layer_id: 'wind-field-80m',
+    paint_mode: 'particle_flow',
+    palette: 'wind-blue',
+    primary_metric: 'wind_speed_80m',
+    unit_label: 'm/s',
+    opacity: 0.82,
+    legend_ticks: [0, 5, 10, 15, 20],
+    notes: ['80 m 风场粒子流'],
+  },
+  'wind-field-120m': {
+    layer_id: 'wind-field-120m',
+    paint_mode: 'particle_flow',
+    palette: 'wind-blue',
+    primary_metric: 'wind_speed_120m',
+    unit_label: 'm/s',
+    opacity: 0.82,
+    legend_ticks: [0, 5, 10, 15, 20, 25],
+    notes: ['120 m 风场粒子流'],
+  },
+  'wind-field-180m': {
+    layer_id: 'wind-field-180m',
+    paint_mode: 'particle_flow',
+    palette: 'wind-blue',
+    primary_metric: 'wind_speed_180m',
+    unit_label: 'm/s',
+    opacity: 0.82,
+    legend_ticks: [0, 7, 14, 21, 28, 35],
+    notes: ['180 m 风场粒子流'],
+  },
+  'wind-field-850hPa': {
+    layer_id: 'wind-field-850hPa',
+    paint_mode: 'particle_flow',
+    palette: 'wind-blue',
+    primary_metric: 'wind_speed_850hPa',
+    unit_label: 'm/s',
+    opacity: 0.78,
+    legend_ticks: [0, 10, 20, 30, 40, 50],
+    notes: ['850 hPa 风场粒子流'],
+  },
+  'wind-field-500hPa': {
+    layer_id: 'wind-field-500hPa',
+    paint_mode: 'particle_flow',
+    palette: 'wind-blue',
+    primary_metric: 'wind_speed_500hPa',
+    unit_label: 'm/s',
+    opacity: 0.78,
+    legend_ticks: [0, 15, 30, 45, 60, 75],
+    notes: ['500 hPa 风场粒子流'],
+  },
+  'wind-field-200hPa': {
+    layer_id: 'wind-field-200hPa',
+    paint_mode: 'particle_flow',
+    palette: 'wind-blue',
+    primary_metric: 'wind_speed_200hPa',
+    unit_label: 'm/s',
+    opacity: 0.78,
+    legend_ticks: [0, 20, 40, 60, 80, 100],
+    notes: ['200 hPa 风场粒子流'],
+  },
+  'temperature': {
+    layer_id: 'temperature',
+    paint_mode: 'grid_fill',
+    palette: 'thermal-orange',
+    primary_metric: 'temperature_2m',
+    unit_label: '°C',
+    opacity: 0.7,
+    legend_ticks: [-10, 0, 10, 20, 30, 40],
+    notes: ['2 m 气温填充'],
+  },
+  'temperature-80m': {
+    layer_id: 'temperature-80m',
+    paint_mode: 'grid_fill',
+    palette: 'thermal-orange',
+    primary_metric: 'temperature_80m',
+    unit_label: '°C',
+    opacity: 0.7,
+    legend_ticks: [-10, 0, 10, 20, 30, 40],
+    notes: ['80 m 气温填充'],
+  },
+  'temperature-120m': {
+    layer_id: 'temperature-120m',
+    paint_mode: 'grid_fill',
+    palette: 'thermal-orange',
+    primary_metric: 'temperature_120m',
+    unit_label: '°C',
+    opacity: 0.7,
+    legend_ticks: [-10, 0, 10, 20, 30, 40],
+    notes: ['120 m 气温填充'],
+  },
+  'temperature-180m': {
+    layer_id: 'temperature-180m',
+    paint_mode: 'grid_fill',
+    palette: 'thermal-orange',
+    primary_metric: 'temperature_180m',
+    unit_label: '°C',
+    opacity: 0.7,
+    legend_ticks: [-10, 0, 10, 20, 30, 40],
+    notes: ['180 m 气温填充'],
+  },
+  'precipitation': {
+    layer_id: 'precipitation',
+    paint_mode: 'grid_fill',
+    palette: 'precip-cyan',
+    primary_metric: 'precipitation',
+    unit_label: 'mm',
+    opacity: 0.72,
+    legend_ticks: [0, 1, 5, 10, 20, 50],
+    notes: ['降水量填充'],
+  },
+  'pressure': {
+    layer_id: 'pressure',
+    paint_mode: 'grid_fill',
+    palette: 'magenta-yellow',
+    primary_metric: 'pressure_msl',
+    unit_label: 'hPa',
+    opacity: 0.68,
+    legend_ticks: [960, 980, 1000, 1020, 1040],
+    notes: ['海平面气压填充'],
+  },
+  'humidity': {
+    layer_id: 'humidity',
+    paint_mode: 'grid_fill',
+    palette: 'precip-cyan',
+    primary_metric: 'relative_humidity_2m',
+    unit_label: '%',
+    opacity: 0.68,
+    legend_ticks: [0, 20, 40, 60, 80, 100],
+    notes: ['相对湿度填充'],
+  },
+  'visibility': {
+    layer_id: 'visibility',
+    paint_mode: 'grid_fill',
+    palette: 'thermal-orange',
+    primary_metric: 'visibility',
+    unit_label: 'm',
+    opacity: 0.68,
+    legend_ticks: [0, 5000, 10000, 20000, 30000],
+    notes: ['能见度填充'],
+  },
+}
+
+/** 根据 catalogId 构建默认天气渲染提示（tile manager 路径下无 jobLayer 时使用）。 */
+export function buildDefaultWeatherRenderHint(
+  layerId?: string | null,
+  descriptor?: RuntimeLayerDescriptor | null,
+): WeatherLayerRenderHint | null {
+  if (!layerId) return null
+  const capabilityHint = descriptor?.capabilities
+  const styleHint = descriptor?.style
+  if (
+    capabilityHint?.paint_mode
+    && capabilityHint.primary_metric
+    && styleHint?.palette
+    && styleHint.unit_label
+  ) {
+    return {
+      layer_id: layerId,
+      paint_mode: capabilityHint.paint_mode,
+      palette: styleHint.palette,
+      primary_metric: capabilityHint.primary_metric,
+      unit_label: styleHint.unit_label,
+      opacity: typeof styleHint.opacity === 'number' ? styleHint.opacity : 1,
+      legend_ticks: capabilityHint.legend_ticks ?? [],
+      notes: capabilityHint.notes ?? [],
+    }
+  }
+  return WEATHER_RENDER_HINTS[layerId] ?? null
 }
 
 export function buildWeatherLegendStops(hint: WeatherLayerRenderHint): WeatherLegendStop[] {
