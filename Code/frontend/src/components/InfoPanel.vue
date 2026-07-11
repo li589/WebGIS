@@ -108,30 +108,12 @@ function normalizeWeatherUnit(unit: string | null | undefined): string {
   return unit ?? ''
 }
 
-function inferFallbackMetric(catalogId: string): string {
-  if (catalogId.startsWith('wind-field-80m')) return 'wind_speed_80m'
-  if (catalogId.startsWith('wind-field-120m')) return 'wind_speed_120m'
-  if (catalogId.startsWith('wind-field-180m')) return 'wind_speed_180m'
-  if (catalogId.startsWith('wind-field-850hPa')) return 'wind_speed_850hPa'
-  if (catalogId.startsWith('wind-field-500hPa')) return 'wind_speed_500hPa'
-  if (catalogId.startsWith('wind-field-200hPa')) return 'wind_speed_200hPa'
-  if (catalogId.startsWith('wind-field')) return 'wind_speed_10m'
-  if (catalogId.startsWith('temperature-80m')) return 'temperature_80m'
-  if (catalogId.startsWith('temperature-120m')) return 'temperature_120m'
-  if (catalogId.startsWith('temperature-180m')) return 'temperature_180m'
-  if (catalogId.startsWith('temperature')) return 'temperature_2m'
-  if (catalogId === 'precipitation') return 'precipitation'
-  if (catalogId === 'humidity') return 'relative_humidity_2m'
-  if (catalogId === 'pressure') return 'pressure_msl'
-  if (catalogId === 'visibility') return 'visibility'
-  return 'temperature_2m'
-}
-
 const pointWeatherMetric = computed(() => {
   const metricKey =
     props.pointWeather?.render_hint?.primary_metric
     ?? weatherRenderHint.value?.primary_metric
-    ?? inferFallbackMetric(displayLayer.value.catalogId)
+    ?? layersStore.getLayerPrimaryMetric(displayLayer.value.catalogId)
+    ?? 'temperature_2m'
   const unit =
     props.pointWeather?.render_hint?.unit_label
     ?? weatherRenderHint.value?.unit_label

@@ -535,7 +535,7 @@ export const useLayersStore = defineStore('layers', () => {
         const realDisplay = layer.jobLayer ? buildRealLayerDisplay(layer, item) : {}
         const descriptor = runtimeLayerCatalog.value[layer.catalogId] ?? null
 
-        const isWeatherLayer = !layer.isAdminBoundary && isWeatherLayerDescriptor(descriptor, layer.catalogId)
+        const isWeatherLayer = !layer.isAdminBoundary && isWeatherLayerDescriptor(descriptor)
         const tileStats = isWeatherLayer && layer.visible ? weatherTileManager.getStats(layer.catalogId) : null
         const weatherRenderHint = isWeatherLayer
           ? buildDefaultWeatherRenderHint(layer.catalogId, descriptor)
@@ -1282,20 +1282,25 @@ export const useLayersStore = defineStore('layers', () => {
 
   /** 判断 catalogId 是否由 weatherengine 后端支持（用于自动运行工作流） */
   function isWeatherEngineLayer(catalogId: string): boolean {
-    return isWeatherLayerDescriptor(getRuntimeLayerDescriptor(catalogId), catalogId)
+    return isWeatherLayerDescriptor(getRuntimeLayerDescriptor(catalogId))
   }
 
   function supportsMapLayerResult(catalogId: string) {
-    return supportsMapLayerCapability(getRuntimeLayerDescriptor(catalogId), catalogId)
+    return supportsMapLayerCapability(getRuntimeLayerDescriptor(catalogId))
   }
 
   function supportsViewportDrivenRefresh(catalogId: string) {
-    return supportsViewportDrivenRefreshCapability(getRuntimeLayerDescriptor(catalogId), catalogId)
+    return supportsViewportDrivenRefreshCapability(getRuntimeLayerDescriptor(catalogId))
   }
 
   /** 判断 catalogId 是否支持粒子流渲染（所有 wind-field 变体都支持） */
   function supportsParticleFlow(catalogId: string): boolean {
-    return supportsParticleFlowCapability(getRuntimeLayerDescriptor(catalogId), catalogId)
+    return supportsParticleFlowCapability(getRuntimeLayerDescriptor(catalogId))
+  }
+
+  /** 获取图层的 primary_metric 字段名（如 wind_speed_80m），从 capabilities 读取 */
+  function getLayerPrimaryMetric(catalogId: string): string | null {
+    return getRuntimeLayerDescriptor(catalogId)?.capabilities?.primary_metric ?? null
   }
 
   /** 切换粒子流启用状态：再次点击同一图层会关闭，点击新图层会切换 */
@@ -1512,6 +1517,7 @@ export const useLayersStore = defineStore('layers', () => {
     supportsMapLayerResult,
     supportsViewportDrivenRefresh,
     supportsParticleFlow,
+    getLayerPrimaryMetric,
     toggleParticleFlow,
     setParticleFlow,
     // 点天气查询（单工作流管理）

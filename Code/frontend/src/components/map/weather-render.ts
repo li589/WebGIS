@@ -58,16 +58,6 @@ const ARROW_SIZE_MAX = 0.9
 /** 默认图例刻度（后端未提供时使用） */
 const DEFAULT_LEGEND_TICKS = [0, 1, 2, 3]
 
-export function isRealtimeWeatherLayerId(layerId?: string | null) {
-  if (!layerId) return false
-  // 风场全高度变体（wind-field / wind-field-80m / wind-field-120m / wind-field-180m / wind-field-850hPa 等）
-  if (layerId.startsWith('wind-field')) return true
-  // 温度全高度变体（temperature / temperature-80m / temperature-120m / temperature-180m）
-  if (layerId.startsWith('temperature')) return true
-  // 其他 weatherengine 实时图层
-  return ['precipitation', 'pressure', 'humidity', 'visibility'].includes(layerId)
-}
-
 const WEATHER_RENDER_HINTS: Record<string, WeatherLayerRenderHint> = {
   'wind-field': {
     layer_id: 'wind-field',
