@@ -202,7 +202,7 @@ export async function fetchWeatherTile(
   if (typeof options.t === 'number') search.set('t', String(options.t))
 
   const suffix = search.toString() ? `?${search.toString()}` : ''
-  const url = resolveApiUrl(`/weather/tiles/${layerId}/${z}/${x}/${y}${suffix}`)
+  const url = resolveApiUrl(`/unified-tiles/${layerId}/${z}/${x}/${y}${suffix}`)
 
   const response = await fetch(url, {
     signal: options.signal,

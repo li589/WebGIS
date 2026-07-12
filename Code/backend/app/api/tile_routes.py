@@ -1,9 +1,11 @@
 """
-底图代理 API 路由
+底图代理 API 路由（已废弃，请使用 /unified-tiles/{layer_id}/{z}/{x}/{y}）
 
 提供以下端点：
 - GET /tiles/providers - 获取所有可用的底图提供商
 - GET /tiles/{provider}/{z}/{x}/{y} - 获取 tile 图像
+
+已废弃：请使用统一瓦片端点 ``GET /unified-tiles/{layer_id}/{z}/{x}/{y}``。
 """
 
 from fastapi import APIRouter, HTTPException, Response
@@ -42,7 +44,7 @@ async def get_tile_providers():
     )
 
 
-@router.get("/{provider}/{z}/{x}/{y}")
+@router.get("/{provider}/{z}/{x}/{y}", deprecated=True)
 async def get_tile(
     provider: str,
     z: int,

@@ -17,6 +17,7 @@ from app.api.routers import (
     weather_router,
     workflow_router,
 )
+from app.api.routers.unified_tile_router import router as unified_tile_router
 from app.api.tile_routes import router as tile_router
 from app.api.weather_tile_routes import router as weather_tile_router
 from app.api.gee_config_routes import router as gee_config_router
@@ -24,7 +25,11 @@ from app.core.config import settings
 from app.core.logging import ensure_logging_configured, log_context, set_request_id
 from app.core.redis_client import record_request_metric
 from app.gee.core.src.webgis_gee.api.routes import create_api_router as create_gee_router
+from app.services.providers import register_default_providers
 from app.services.workflow.service_container import follow_up_dispatch_service
+
+# 注册统一瓦片提供者（BaseMap + Weather）
+register_default_providers()
 
 logger = logging.getLogger(__name__)
 
@@ -134,6 +139,7 @@ def create_app() -> FastAPI:
     app.include_router(weather_router)
     app.include_router(provider_router)
     app.include_router(artifact_router)
+    app.include_router(unified_tile_router)
     app.include_router(tile_router)
     app.include_router(weather_tile_router)
     app.include_router(gee_config_router)

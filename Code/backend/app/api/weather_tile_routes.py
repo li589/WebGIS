@@ -1,6 +1,8 @@
-"""天气 GeoJSON 瓦片 REST 路由。
+"""天气 GeoJSON 瓦片 REST 路由（已废弃，请使用 /unified-tiles/{layer_id}/{z}/{x}/{y}）。
 
 标准 Web Mercator z/x/y 瓦片接口，供前端按瓦片请求天气数据。
+
+已废弃：请使用统一瓦片端点 ``GET /unified-tiles/{layer_id}/{z}/{x}/{y}``。
 """
 
 from __future__ import annotations
@@ -17,7 +19,7 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/weather/tiles", tags=["weather"])
 
 
-@router.get("/{layer_id}/{z}/{x}/{y}")
+@router.get("/{layer_id}/{z}/{x}/{y}", deprecated=True)
 async def get_weather_tile(
     request: Request,
     layer_id: str,
