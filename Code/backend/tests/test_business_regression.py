@@ -369,11 +369,12 @@ def test_workflow_dispatch() -> None:
 # ============================================================
 def test_routes() -> None:
     section("5. 路由注册与可达性")
-    from app.api.routes import router
+    from app.main import app
 
     # 收集所有 weather 和 gee 路由
-    weather_routes = [(r.path, r.methods) for r in router.routes if getattr(r, "path", "").startswith("/weather/workflows")]
-    gee_routes = [(r.path, r.methods) for r in router.routes if getattr(r, "path", "").startswith("/gee/")]
+    all_routes = app.routes
+    weather_routes = [(r.path, r.methods) for r in all_routes if getattr(r, "path", "").startswith("/weather/workflows")]
+    gee_routes = [(r.path, r.methods) for r in all_routes if getattr(r, "path", "").startswith("/gee/")]
 
     check("Weather 路由 — 3 条", len(weather_routes) == 3, f"routes={weather_routes}")
     check("GEE 路由 — 存在", len(gee_routes) >= 5, f"gee routes count={len(gee_routes)}")
@@ -385,7 +386,7 @@ def test_routes() -> None:
     check("路由顺序 — diagnostics 在 {workflow_name} 之前", diag_idx < dyn_idx, f"diag_idx={diag_idx}, dyn_idx={dyn_idx}")
 
     # 验证 /weather/point 路由仍然存在（旧路由不丢失）
-    has_weather_point = any(p == "/weather/point" for p, _ in [(r.path, r.methods) for r in router.routes if hasattr(r, 'path')])
+    has_weather_point = any(p == "/weather/point" for p, _ in [(r.path, r.methods) for r in all_routes if hasattr(r, 'path')])
     check("旧路由 — /weather/point 仍存在", has_weather_point)
 
 

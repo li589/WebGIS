@@ -4,7 +4,7 @@ from datetime import datetime, timezone
 import unittest
 from unittest.mock import patch
 
-from app.api import routes
+from app.api.routers.workflow_router import submit_workflow, list_workflow_events
 from shared.contracts.api_contracts import (
     ClientIdentity,
     RuntimeMapContext,
@@ -41,8 +41,8 @@ class WorkflowRoutesTests(unittest.TestCase):
             events_url="/workflow-runs/run-route-1/events",
         )
 
-        with patch("app.api.routes.submission_service.submit_workflow", return_value=accepted) as submit_mock:
-            response = routes.submit_workflow(payload)
+        with patch("app.api.routers.workflow_router.submission_service.submit_workflow", return_value=accepted) as submit_mock:
+            response = submit_workflow(payload)
 
         self.assertIs(response, accepted)
         submit_mock.assert_called_once()
@@ -79,8 +79,8 @@ class WorkflowRoutesTests(unittest.TestCase):
             },
         )()
 
-        with patch("app.api.routes.submission_service.list_workflow_events", return_value=event_response) as list_mock:
-            response = routes.list_workflow_events(request, "run-route-1", after_event_id="evt-1", limit=20)
+        with patch("app.api.routers.workflow_router.submission_service.list_workflow_events", return_value=event_response) as list_mock:
+            response = list_workflow_events(request, "run-route-1", after_event_id="evt-1", limit=20)
 
         self.assertIs(response, event_response)
         list_mock.assert_called_once_with("run-route-1", after_event_id="evt-1", limit=20)

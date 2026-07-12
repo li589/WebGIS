@@ -7,7 +7,16 @@ from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.api.routes import router
+from app.api.routers import (
+    algorithm_router,
+    artifact_router,
+    health_router,
+    layer_router,
+    provider_router,
+    runtime_router,
+    weather_router,
+    workflow_router,
+)
 from app.api.tile_routes import router as tile_router
 from app.api.weather_tile_routes import router as weather_tile_router
 from app.api.gee_config_routes import router as gee_config_router
@@ -117,7 +126,14 @@ def create_app() -> FastAPI:
             content={"detail": "Internal server error", "request_id": request_id},
         )
 
-    app.include_router(router)
+    app.include_router(health_router)
+    app.include_router(layer_router)
+    app.include_router(workflow_router)
+    app.include_router(runtime_router)
+    app.include_router(algorithm_router)
+    app.include_router(weather_router)
+    app.include_router(provider_router)
+    app.include_router(artifact_router)
     app.include_router(tile_router)
     app.include_router(weather_tile_router)
     app.include_router(gee_config_router)
