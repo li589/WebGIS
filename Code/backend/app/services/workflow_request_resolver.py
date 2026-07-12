@@ -11,6 +11,11 @@ from typing import Any
 from typing import Iterator
 
 from app.core.config import settings
+from app.services.engine_request_registry import (
+    EngineRequestPopulator,
+    get_engine_populator,
+    register_engine_populator,
+)
 from app.services.layer_catalog import get_layer_descriptor
 from shared.contracts.api_contracts import WorkflowCommandType, WorkflowSubmitRequest
 
@@ -25,6 +30,8 @@ def normalize_workflow_submit_request(payload: WorkflowSubmitRequest) -> Workflo
     当前前端只提交 `layer_id + parameters + map_context`，而 Python provider bridge
     需要 `algorithm_request.module_name/workflow_name/workflow_definition` 才会接管。
     这里优先使用后端 `layer_catalog` 作为执行事实源，避免前端维护第二份 workflow 元数据。
+
+    引擎分发通过 engine_request_registry 注册表完成，新增引擎只需注册 populator。
     """
 
     if payload.command_type != WorkflowCommandType.analysis:
@@ -38,19 +45,22 @@ def normalize_workflow_submit_request(payload: WorkflowSubmitRequest) -> Workflo
     if descriptor is None or not descriptor.engine:
         return payload
 
-    if descriptor.engine == "python_provider":
-        return _populate_python_provider_request(payload=payload, descriptor=descriptor)
+    populator = get_engine_populator(descriptor.engine)
+    if populator is None:
+        return payload
 
-    if descriptor.engine == "gee":
-        return _populate_gee_request(payload=payload, layer_id=layer_id, descriptor=descriptor)
-
-    if descriptor.engine == "weather_workflow":
-        return _populate_weather_request(payload=payload, layer_id=layer_id, descriptor=descriptor)
-
-    return payload
+    return populator.populate(payload=payload, layer_id=layer_id, descriptor=descriptor)
 
 
 def describe_python_provider_resolution(payload: WorkflowSubmitRequest) -> dict[str, Any] | None:
+    """公开 API：委托给 python_provider populator。"""
+    populator = get_engine_populator("python_provider")
+    if populator is None:
+        return None
+    return populator.describe_resolution(payload)
+
+
+def _describe_python_provider_resolution_impl(payload: WorkflowSubmitRequest) -> dict[str, Any] | None:
     layer_id = payload.layer_id or payload.map_context.active_layer_id
     if not layer_id:
         return None
@@ -105,24 +115,20 @@ def describe_layer_run_readiness(layer_id: str) -> dict[str, Any] | None:
         readiness = "blocked"
         notes.append("图层仍处于占位状态，真实数据源尚未接入。")
 
+    # 引擎特定就绪检查通过注册表分发
     unresolved_default_datasets: list[dict[str, Any]] = []
-    if descriptor.engine == "python_provider" and descriptor.default_data_access_sources:
-        for dataset_name, candidates in descriptor.default_data_access_sources.items():
-            resolution = _resolve_data_access_candidates(candidates)
-            if resolution["resolved_uri"] is not None:
-                continue
-            unresolved_default_datasets.append(
-                {
-                    "dataset_name": dataset_name,
-                    "candidate_sources": [item["source"] for item in resolution["candidates"]],
-                }
-            )
+    if descriptor.engine:
+        populator = get_engine_populator(descriptor.engine)
+        if populator is not None:
+            engine_result = populator.describe_readiness(descriptor)
+            if engine_result:
+                unresolved_default_datasets = engine_result.get("unresolved_default_datasets", [])
 
-        if unresolved_default_datasets:
-            readiness = "blocked"
-            for item in unresolved_default_datasets:
-                candidate_text = ", ".join(item["candidate_sources"]) or "未提供候选源"
-                notes.append(f"缺少默认数据集 {item['dataset_name']}；已检查：{candidate_text}")
+    if unresolved_default_datasets:
+        readiness = "blocked"
+        for item in unresolved_default_datasets:
+            candidate_text = ", ".join(item["candidate_sources"]) or "未提供候选源"
+            notes.append(f"缺少默认数据集 {item['dataset_name']}；已检查：{candidate_text}")
 
     if unresolved_default_datasets:
         dataset_names = "、".join(item["dataset_name"] for item in unresolved_default_datasets)
@@ -372,3 +378,94 @@ def _python_provider_import_path(provider_root: Path) -> Iterator[None]:
                 sys.path.remove(provider_path)
             except ValueError:
                 pass
+
+
+# ── Engine Request Populator 实现 ──────────────────────────────────────────
+
+
+class _PythonProviderPopulator:
+    """python_provider 引擎的请求填充器。"""
+
+    @property
+    def engine_name(self) -> str:
+        return "python_provider"
+
+    def populate(
+        self,
+        *,
+        payload: WorkflowSubmitRequest,
+        layer_id: str,
+        descriptor: Any,
+    ) -> WorkflowSubmitRequest:
+        return _populate_python_provider_request(payload=payload, descriptor=descriptor)
+
+    def describe_resolution(self, payload: WorkflowSubmitRequest) -> dict[str, Any] | None:
+        return _describe_python_provider_resolution_impl(payload)
+
+    def describe_readiness(self, descriptor: Any) -> dict[str, Any] | None:
+        if not descriptor.default_data_access_sources:
+            return None
+        unresolved: list[dict[str, Any]] = []
+        for dataset_name, candidates in descriptor.default_data_access_sources.items():
+            resolution = _resolve_data_access_candidates(candidates)
+            if resolution["resolved_uri"] is not None:
+                continue
+            unresolved.append(
+                {
+                    "dataset_name": dataset_name,
+                    "candidate_sources": [item["source"] for item in resolution["candidates"]],
+                }
+            )
+        return {"unresolved_default_datasets": unresolved} if unresolved else None
+
+
+class _GeePopulator:
+    """gee 引擎的请求填充器。"""
+
+    @property
+    def engine_name(self) -> str:
+        return "gee"
+
+    def populate(
+        self,
+        *,
+        payload: WorkflowSubmitRequest,
+        layer_id: str,
+        descriptor: Any,
+    ) -> WorkflowSubmitRequest:
+        return _populate_gee_request(payload=payload, layer_id=layer_id, descriptor=descriptor)
+
+    def describe_resolution(self, payload: WorkflowSubmitRequest) -> dict[str, Any] | None:
+        return None
+
+    def describe_readiness(self, descriptor: Any) -> dict[str, Any] | None:
+        return None
+
+
+class _WeatherPopulator:
+    """weather_workflow 引擎的请求填充器。"""
+
+    @property
+    def engine_name(self) -> str:
+        return "weather_workflow"
+
+    def populate(
+        self,
+        *,
+        payload: WorkflowSubmitRequest,
+        layer_id: str,
+        descriptor: Any,
+    ) -> WorkflowSubmitRequest:
+        return _populate_weather_request(payload=payload, layer_id=layer_id, descriptor=descriptor)
+
+    def describe_resolution(self, payload: WorkflowSubmitRequest) -> dict[str, Any] | None:
+        return None
+
+    def describe_readiness(self, descriptor: Any) -> dict[str, Any] | None:
+        return None
+
+
+# 模块加载时注册所有 populator
+register_engine_populator(_PythonProviderPopulator())
+register_engine_populator(_GeePopulator())
+register_engine_populator(_WeatherPopulator())
