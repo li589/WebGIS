@@ -9,7 +9,7 @@ from uuid import uuid4
 
 from app.core.config import settings
 from app.core.logging import log_context
-from app.services.interaction_hub import interaction_hub
+from app.services.workflow.service_container import submission_service
 from shared.contracts.api_contracts import (
     ClientIdentity,
     ExecutionStatus,
@@ -48,7 +48,7 @@ class SQLiteTaskStore:
         payload_json = json.dumps(payload.model_dump(mode="json"), ensure_ascii=False)
 
         with log_context(task_id=task_id):
-            accepted = interaction_hub.submit_workflow(workflow_payload)
+            accepted = submission_service.submit_workflow(workflow_payload)
             with log_context(run_id=accepted.run_id):
                 logger.info("Legacy task endpoint bridged to workflow-runs")
             with self._connect() as connection:
@@ -95,7 +95,7 @@ class SQLiteTaskStore:
         if row is None:
             return None
         run_id, layer_id, task_type, created_at = row
-        workflow_run = interaction_hub.get_workflow_run(run_id)
+        workflow_run = submission_service.get_workflow_run(run_id)
         if workflow_run is None:
             return None
         return self._to_task_status(

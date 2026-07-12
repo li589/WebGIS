@@ -162,10 +162,10 @@ if celery_available and celery_app is not None:
 
     @celery_app.task(name="app.tasks.workflow_tasks.process_workflow_run")
     def process_workflow_run_task(run_id: str, payload_data: dict[str, Any]) -> None:
-        from app.services.interaction_hub import interaction_hub
+        from app.services.workflow.service_container import submission_service
 
         payload = WorkflowSubmitRequest.model_validate(payload_data)
-        interaction_hub.process_workflow_run(run_id, payload)
+        submission_service.process_workflow_run(run_id, payload)
 
 else:
 

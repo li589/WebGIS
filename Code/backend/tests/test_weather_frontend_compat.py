@@ -14,7 +14,7 @@ import unittest
 from typing import Any
 from unittest.mock import patch
 
-from app.services.interaction_hub import interaction_hub
+from app.services.workflow.service_container import submission_service
 from app.weatherengine.service import weather_engine_service
 from shared.contracts.api_contracts import WorkflowSubmitRequest
 
@@ -92,7 +92,7 @@ class WeatherFrontendCompatTests(unittest.TestCase):
             client={"page": "dashboard", "view_id": "map-2d"},
             map_context={"active_layer_id": layer_id, "map_mode": "2d"},
         )
-        accepted = interaction_hub.submit_workflow(payload)
+        accepted = submission_service.submit_workflow(payload)
         return accepted.run_id
 
     def _find_map_layer_ref(self, result_refs) -> dict | None:
@@ -120,7 +120,7 @@ class WeatherFrontendCompatTests(unittest.TestCase):
         """验证 wind-field 图层的 map_layer ref 格式。"""
         with patch.object(weather_engine_service, "_client", _FakeOpenMeteoClient()):
             run_id = self._submit_fallback_workflow("wind-field")
-            status_resp = interaction_hub.get_workflow_run(run_id)
+            status_resp = submission_service.get_workflow_run(run_id)
 
         self.assertIn(status_resp.status, ("succeeded", "completed"))
 
@@ -155,7 +155,7 @@ class WeatherFrontendCompatTests(unittest.TestCase):
         """验证 temperature 图层的 map_layer ref 格式（含 COG）。"""
         with patch.object(weather_engine_service, "_client", _FakeOpenMeteoClient()):
             run_id = self._submit_fallback_workflow("temperature")
-            status_resp = interaction_hub.get_workflow_run(run_id)
+            status_resp = submission_service.get_workflow_run(run_id)
 
         self.assertIn(status_resp.status, ("succeeded", "completed"))
 
@@ -184,7 +184,7 @@ class WeatherFrontendCompatTests(unittest.TestCase):
         """验证 precipitation 图层的 map_layer ref 格式（含 COG）。"""
         with patch.object(weather_engine_service, "_client", _FakeOpenMeteoClient()):
             run_id = self._submit_fallback_workflow("precipitation")
-            status_resp = interaction_hub.get_workflow_run(run_id)
+            status_resp = submission_service.get_workflow_run(run_id)
 
         self.assertIn(status_resp.status, ("succeeded", "completed"))
 
@@ -215,7 +215,7 @@ class WeatherFrontendCompatTests(unittest.TestCase):
     ) -> None:
         with patch.object(weather_engine_service, "_client", _FakeOpenMeteoClient()):
             run_id = self._submit_fallback_workflow(layer_id)
-            status_resp = interaction_hub.get_workflow_run(run_id)
+            status_resp = submission_service.get_workflow_run(run_id)
 
         self.assertIn(status_resp.status, ("succeeded", "completed"))
 
@@ -262,7 +262,7 @@ class WeatherFrontendCompatTests(unittest.TestCase):
         with patch.object(weather_engine_service, "_client", _FakeOpenMeteoClient()):
             for layer_id in ("wind-field", "temperature", "precipitation", "pressure", "humidity", "visibility"):
                 run_id = self._submit_fallback_workflow(layer_id)
-                status_resp = interaction_hub.get_workflow_run(run_id)
+                status_resp = submission_service.get_workflow_run(run_id)
                 self.assertIn(
                     status_resp.status, ("succeeded", "completed"),
                     f"{layer_id} failed: {status_resp.status}",

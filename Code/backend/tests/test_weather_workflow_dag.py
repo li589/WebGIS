@@ -1,7 +1,7 @@
 """weather workflow 5 节点 DAG 端到端测试。
 
 构造 fetch → parse → 3 个 render (fan-out) 完整 DAG，
-通过 interaction_hub.submit_workflow 走完整主链路，
+通过 submission_service.submit_workflow 走完整主链路，
 mock Open-Meteo API 避免网络依赖。
 """
 from __future__ import annotations
@@ -13,7 +13,7 @@ import unittest
 from typing import Any
 from unittest.mock import patch
 
-from app.services.interaction_hub import interaction_hub
+from app.services.workflow.service_container import submission_service
 from app.weatherengine.service import weather_engine_service
 from shared.contracts.api_contracts import WorkflowSubmitRequest
 
@@ -98,7 +98,7 @@ def _build_5_node_workflow() -> dict[str, Any]:
 
 
 class WeatherWorkflowDagTests(unittest.TestCase):
-    """验证 5 节点 DAG 通过 interaction_hub 完整执行。"""
+    """验证 5 节点 DAG 通过 submission_service 完整执行。"""
 
     def setUp(self) -> None:
         # 清理缓存目录避免干扰
@@ -135,7 +135,7 @@ class WeatherWorkflowDagTests(unittest.TestCase):
             },
             requested_outputs=["json", "map_layer"],
         )
-        accepted = interaction_hub.submit_workflow(payload)
+        accepted = submission_service.submit_workflow(payload)
         return accepted.run_id
 
     def _extract_node_results(self, result_refs) -> list[dict]:
@@ -164,7 +164,7 @@ class WeatherWorkflowDagTests(unittest.TestCase):
         """验证 5 节点 DAG 全部 completed。"""
         with patch.object(weather_engine_service, "_client", _FakeOpenMeteoClient()):
             run_id = self._submit_workflow()
-            status_resp = interaction_hub.get_workflow_run(run_id)
+            status_resp = submission_service.get_workflow_run(run_id)
 
         self.assertIsNotNone(status_resp)
         self.assertIn(status_resp.status, ("succeeded", "completed"))
@@ -181,7 +181,7 @@ class WeatherWorkflowDagTests(unittest.TestCase):
         """验证 workflow_entry_name 透传正确。"""
         with patch.object(weather_engine_service, "_client", _FakeOpenMeteoClient()):
             run_id = self._submit_workflow()
-            status_resp = interaction_hub.get_workflow_run(run_id)
+            status_resp = submission_service.get_workflow_run(run_id)
 
         result_dto = status_resp.result_dto
         if hasattr(result_dto, "model_dump"):
@@ -200,7 +200,7 @@ class WeatherWorkflowDagTests(unittest.TestCase):
         """验证 5 个节点全部 completed。"""
         with patch.object(weather_engine_service, "_client", _FakeOpenMeteoClient()):
             run_id = self._submit_workflow()
-            status_resp = interaction_hub.get_workflow_run(run_id)
+            status_resp = submission_service.get_workflow_run(run_id)
 
         node_results = self._extract_node_results(status_resp.result_refs)
         self.assertEqual(len(node_results), 5)
@@ -213,7 +213,7 @@ class WeatherWorkflowDagTests(unittest.TestCase):
         """验证 3 个 render 节点都有 outputs（消费上游 weather_point）。"""
         with patch.object(weather_engine_service, "_client", _FakeOpenMeteoClient()):
             run_id = self._submit_workflow()
-            status_resp = interaction_hub.get_workflow_run(run_id)
+            status_resp = submission_service.get_workflow_run(run_id)
 
         node_results = self._extract_node_results(status_resp.result_refs)
         render_node_ids = {"wind_render", "temp_render", "precip_render"}
@@ -228,7 +228,7 @@ class WeatherWorkflowDagTests(unittest.TestCase):
         """验证 fetch 节点产出 forecast 输出（含真实 mock 数据）。"""
         with patch.object(weather_engine_service, "_client", _FakeOpenMeteoClient()):
             run_id = self._submit_workflow()
-            status_resp = interaction_hub.get_workflow_run(run_id)
+            status_resp = submission_service.get_workflow_run(run_id)
 
         node_results = self._extract_node_results(status_resp.result_refs)
         fetch_node = next((nr for nr in node_results if nr.get("node_id") == "fetch"), None)
@@ -248,7 +248,7 @@ class WeatherWorkflowDagTests(unittest.TestCase):
         """验证 parse 节点产出 weather_point 输出（被 3 个 render 消费）。"""
         with patch.object(weather_engine_service, "_client", _FakeOpenMeteoClient()):
             run_id = self._submit_workflow()
-            status_resp = interaction_hub.get_workflow_run(run_id)
+            status_resp = submission_service.get_workflow_run(run_id)
 
         node_results = self._extract_node_results(status_resp.result_refs)
         parse_node = next((nr for nr in node_results if nr.get("node_id") == "parse"), None)
@@ -265,7 +265,7 @@ class WeatherWorkflowDagTests(unittest.TestCase):
         """验证 diagnostics 含 engine_run_id（标识引擎执行）。"""
         with patch.object(weather_engine_service, "_client", _FakeOpenMeteoClient()):
             run_id = self._submit_workflow()
-            status_resp = interaction_hub.get_workflow_run(run_id)
+            status_resp = submission_service.get_workflow_run(run_id)
 
         diag_text = "\n".join(status_resp.diagnostics or [])
         self.assertIn("engine_run_id=", diag_text)

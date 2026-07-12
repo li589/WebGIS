@@ -430,12 +430,12 @@ def test_config_consistency() -> None:
     check("契约 — WeatherWorkflowRequest.workflow 字段", "workflow" in wf_fields)
     check("契约 — WeatherWorkflowRequest.context 字段", "context" in wf_fields)
 
-    # 6e. interaction_hub runtime status 包含 weather_bridge_service
-    from app.services.interaction_hub import interaction_hub
-    status = interaction_hub.get_runtime_status()
+    # 6e. runtime_status_service runtime status 包含 weather_bridge_service
+    from app.services.workflow.service_container import runtime_status_service
+    status = runtime_status_service.get_runtime_status()
     service_names = [s.service_name for s in status.services]
-    check("interaction_hub — gee_bridge_service 注册", "gee_bridge_service" in service_names, f"services={service_names}")
-    check("interaction_hub — weather_bridge_service 注册", "weather_bridge_service" in service_names, f"services={service_names}")
+    check("runtime_status_service — gee_bridge_service 注册", "gee_bridge_service" in service_names, f"services={service_names}")
+    check("runtime_status_service — weather_bridge_service 注册", "weather_bridge_service" in service_names, f"services={service_names}")
 
     # 6f. 服务详情包含 weather/gee 队列配置
     weather_svc = next((s for s in status.services if s.service_name == "weather_bridge_service"), None)

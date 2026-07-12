@@ -15,7 +15,7 @@ from app.core.config import settings
 from app.core.logging import ensure_logging_configured, log_context, set_request_id
 from app.core.redis_client import record_request_metric
 from app.gee.core.src.webgis_gee.api.routes import create_api_router as create_gee_router
-from app.services.interaction_hub import interaction_hub
+from app.services.workflow.service_container import follow_up_dispatch_service
 
 logger = logging.getLogger(__name__)
 
@@ -27,7 +27,7 @@ async def lifespan(app: FastAPI):
     # 启动时清理上一会话遗留的僵尸工作流（accepted/queued/running/retry_pending）
     # 这些工作流在进程重启后不会再被 Celery worker 消费，会永久卡住
     try:
-        cleaned = interaction_hub.cleanup_stale_workflow_runs()
+        cleaned = follow_up_dispatch_service.cleanup_stale_workflow_runs()
         if cleaned > 0:
             logger.info("Startup cleanup: marked %d stale workflow run(s) as failed", cleaned)
     except Exception:

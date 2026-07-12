@@ -12,7 +12,11 @@ from app.core.config import settings
 from app.services.api_config import api_config_manager, ApiProvider, DataType
 from app.services.coordinate_transform_service import transform_point
 from app.services.demo_snapshots import get_demo_layer_snapshot, list_demo_layer_snapshots
-from app.services.interaction_hub import interaction_hub
+from app.services.workflow.service_container import (
+    submission_service,
+    lifecycle_service,
+    runtime_status_service,
+)
 from app.services.layer_catalog import get_layer_catalog
 from app.services.python_provider_bridge_service import python_provider_bridge_service
 from app.services.raster_preview_service import raster_preview_service
@@ -249,7 +253,7 @@ def get_artifact_preview_png(
 )
 def submit_workflow(payload: WorkflowSubmitRequest) -> WorkflowAcceptedResponse:
     try:
-        accepted = interaction_hub.submit_workflow(payload)
+        accepted = submission_service.submit_workflow(payload)
         return accepted
     except ValueError as exc:
         detail = str(exc)
@@ -261,7 +265,7 @@ def submit_workflow(payload: WorkflowSubmitRequest) -> WorkflowAcceptedResponse:
 
 @router.get("/workflow-runs/{run_id}", tags=["workflow"], response_model=WorkflowRunStatusResponse)
 def get_workflow_run(run_id: str) -> WorkflowRunStatusResponse:
-    run_status = interaction_hub.get_workflow_run(run_id)
+    run_status = submission_service.get_workflow_run(run_id)
     if run_status is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Workflow run not found: {run_id}")
     return run_status
@@ -298,7 +302,7 @@ def list_workflow_events(
             status_code=status.HTTP_429_TOO_MANY_REQUESTS,
             detail=f"Too many SSE connections from {client_ip}. Limit: {_SSE_RATE_LIMIT} per {_SSE_WINDOW}.",
         )
-    events = interaction_hub.list_workflow_events(run_id, after_event_id=after_event_id, limit=limit)
+    events = submission_service.list_workflow_events(run_id, after_event_id=after_event_id, limit=limit)
     if events is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Workflow run not found: {run_id}")
     return events
@@ -307,7 +311,7 @@ def list_workflow_events(
 @router.post("/workflow-runs/{run_id}/cancel", tags=["workflow"], response_model=WorkflowRunStatusResponse, dependencies=[Depends(require_write_access)])
 def cancel_workflow_run(run_id: str) -> WorkflowRunStatusResponse:
     try:
-        return interaction_hub.cancel_workflow_run(run_id)
+        return lifecycle_service.cancel_workflow_run(run_id)
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
 
@@ -315,7 +319,7 @@ def cancel_workflow_run(run_id: str) -> WorkflowRunStatusResponse:
 @router.post("/workflow-runs/{run_id}/retry", tags=["workflow"], response_model=WorkflowAcceptedResponse, dependencies=[Depends(require_write_access)])
 def retry_workflow_run(run_id: str) -> WorkflowAcceptedResponse:
     try:
-        return interaction_hub.retry_workflow_run(run_id)
+        return lifecycle_service.retry_workflow_run(run_id)
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
 
@@ -328,7 +332,7 @@ def retry_workflow_run(run_id: str) -> WorkflowAcceptedResponse:
 )
 def update_runtime_config(payload: RuntimeConfigUpdateRequest) -> RuntimeConfigUpdateResponse:
     try:
-        return interaction_hub.update_runtime_config(payload)
+        return runtime_status_service.update_runtime_config(payload)
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
 
@@ -336,12 +340,12 @@ def update_runtime_config(payload: RuntimeConfigUpdateRequest) -> RuntimeConfigU
 @router.get("/runtime/config", tags=["runtime"])
 def get_runtime_config() -> dict:
     """Return the current runtime configuration snapshot (defaults + DB overrides)."""
-    return interaction_hub.get_runtime_config()
+    return runtime_status_service.get_runtime_config()
 
 
 @router.get("/runtime/status", tags=["runtime"], response_model=RuntimeStatusResponse)
 def get_runtime_status() -> RuntimeStatusResponse:
-    return interaction_hub.get_runtime_status()
+    return runtime_status_service.get_runtime_status()
 
 
 @router.get("/runtime/metrics", tags=["runtime"])
@@ -396,7 +400,7 @@ def get_algorithm_diagnostics() -> JSONResponse:
     dependencies=[Depends(require_write_access)],
 )
 def submit_frontend_command(payload: FrontendCommandRequest) -> FrontendCommandResponse:
-    return interaction_hub.submit_frontend_command(payload)
+    return runtime_status_service.submit_frontend_command(payload)
 
 
 # GEE 引擎路由已迁移至 GEE router（通过 main.py 挂载），由 webgis_gee/api/routes.py 管理。

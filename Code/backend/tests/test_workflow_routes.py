@@ -41,7 +41,7 @@ class WorkflowRoutesTests(unittest.TestCase):
             events_url="/workflow-runs/run-route-1/events",
         )
 
-        with patch("app.api.routes.interaction_hub.submit_workflow", return_value=accepted) as submit_mock:
+        with patch("app.api.routes.submission_service.submit_workflow", return_value=accepted) as submit_mock:
             response = routes.submit_workflow(payload)
 
         self.assertIs(response, accepted)
@@ -79,7 +79,7 @@ class WorkflowRoutesTests(unittest.TestCase):
             },
         )()
 
-        with patch("app.api.routes.interaction_hub.list_workflow_events", return_value=event_response) as list_mock:
+        with patch("app.api.routes.submission_service.list_workflow_events", return_value=event_response) as list_mock:
             response = routes.list_workflow_events(request, "run-route-1", after_event_id="evt-1", limit=20)
 
         self.assertIs(response, event_response)

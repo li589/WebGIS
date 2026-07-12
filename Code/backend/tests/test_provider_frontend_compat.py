@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import unittest
 
-from app.services.interaction_hub import interaction_hub
+from app.services.workflow.service_container import submission_service
 from shared.contracts.api_contracts import WorkflowSubmitRequest
 
 
@@ -33,7 +33,7 @@ class ProviderFrontendCompatTests(unittest.TestCase):
                 },
             },
         )
-        accepted = interaction_hub.submit_workflow(payload)
+        accepted = submission_service.submit_workflow(payload)
         return accepted.run_id
 
     def _find_map_layer_inline_data(self, result_refs) -> dict | None:
@@ -48,7 +48,7 @@ class ProviderFrontendCompatTests(unittest.TestCase):
 
     def test_lab_output_map_layer_ref_matches_frontend_shape(self) -> None:
         run_id = self._submit_provider_workflow("lab-output")
-        status_resp = interaction_hub.get_workflow_run(run_id)
+        status_resp = submission_service.get_workflow_run(run_id)
 
         self.assertIn(status_resp.status, ("succeeded", "completed"))
 
