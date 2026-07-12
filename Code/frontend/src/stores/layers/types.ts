@@ -83,7 +83,7 @@ export interface WorkflowSummary {
   hasError: boolean
 }
 
-import type { WeatherLayerRenderHint, WorkflowResultDto, WorkflowRunViewResponse } from '../../services/runtime-api'
+import type { WeatherLayerRenderHint, WorkflowResultDto, WorkflowRunViewResponse } from '../../types/api-reexports'
 
 export type { WeatherLayerRenderHint }
 
