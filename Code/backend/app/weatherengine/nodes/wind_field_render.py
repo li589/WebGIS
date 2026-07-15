@@ -86,7 +86,7 @@ class WindFieldRenderNode(BaseNode):
                     run_id=run_id,
                     result_id=f"wind-geojson-{self.spec.node_id}",
                     result_kind=ResultKind.file,
-                    title="风场 GeoJSON",
+                    title="Wind Field GeoJSON",
                     mime_type="application/geo+json",
                     updated_at=datetime.now(timezone.utc),
                     payload=geojson,

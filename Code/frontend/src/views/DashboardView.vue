@@ -7,11 +7,14 @@ import InfoPanel from '../components/InfoPanel.vue'
 import LayerSidebar from '../components/LayerSidebar.vue'
 import MapCanvas from '../components/MapCanvas.vue'
 import ModeToolbar from '../components/ModeToolbar.vue'
+import LogPanel from '../components/toolbar/LogPanel.vue'
 import TimelinePanel from '../components/TimelinePanel.vue'
 import TimelineScrubber from '../components/TimelineScrubber.vue'
 import WorkflowStatusPanel from '../components/workflow/WorkflowStatusPanel.vue'
 import type { TileSourceId } from '../services/api-config'
 import type { ActiveLayerDisplay, LayerHotspot } from '../stores/layers/types'
+import type { OverlayTimeState } from '../components/map/overlay-image-module'
+import { getOverlayValue, type OverlayPointValue } from '../services/runtime-api'
 import { useUiStore } from '../stores/ui'
 import { useLayersStore } from '../stores/layers'
 
@@ -31,11 +34,14 @@ const stageLabel = computed(() => (activeLayer.value.dataState === 'real' ? '运
 const visibleHotspots = ref<LayerHotspot[]>([])
 const selectedHotspot = ref<LayerHotspot | null>(null)
 const selectedMapPoint = ref<{ lng: number; lat: number } | null>(null)
+const overlayTimeStates = ref<OverlayTimeState[]>([])
+const overlayPointValues = ref<OverlayPointValue[]>([])
 const dashboardRef = ref<HTMLElement | null>(null)
 const mapShellRef = ref<HTMLElement | null>(null)
 const mapCanvasRef = ref<InstanceType<typeof MapCanvas> | null>(null)
 const screenshotOpen = ref(false)
 const workflowStatusOpen = ref(false)
+const logOpen = ref(false)
 const ScreenshotExport = defineAsyncComponent(() => import('../components/ScreenshotExport.vue'))
 
 const sidePanelDimensions = Object.freeze({
@@ -128,6 +134,25 @@ function handleHotspotSelect(hotspot: LayerHotspot | null) {
 function handleMapPointSelect(point: { lng: number; lat: number }) {
   selectedMapPoint.value = point
   void layersStore.fetchPointWeather(point.lng, point.lat, activeLayer.value.catalogId)
+  void fetchOverlayPointValues(point.lng, point.lat)
+}
+
+function handleOverlayTimeUpdate(states: OverlayTimeState[]) {
+  overlayTimeStates.value = states
+}
+
+async function fetchOverlayPointValues(lng: number, lat: number) {
+  const states = overlayTimeStates.value
+  if (states.length === 0) {
+    overlayPointValues.value = []
+    return
+  }
+  const results = await Promise.allSettled(
+    states.map((s) => getOverlayValue(s.layerId, lng, lat, s.currentTime ?? undefined)),
+  )
+  overlayPointValues.value = results
+    .map((r) => (r.status === 'fulfilled' ? r.value : null))
+    .filter((v): v is OverlayPointValue => v !== null)
 }
 
 function handleToggleLayerVisibility(instanceId: string) {
@@ -218,6 +243,7 @@ function buildFallbackActiveLayer(): ActiveLayerDisplay {
         @visible-hotspots-change="handleVisibleHotspotsChange"
         @hotspot-select="handleHotspotSelect"
         @map-point-select="handleMapPointSelect"
+        @overlay-time-update="handleOverlayTimeUpdate"
       />
 
       <div class="overlay overlay-top">
@@ -229,6 +255,7 @@ function buildFallbackActiveLayer(): ActiveLayerDisplay {
           @change-tile-source="handleTileSourceChange"
           @open-screenshot="handleOpenScreenshot"
           @open-workflow-status="handleOpenWorkflowStatus"
+          @open-log="logOpen = true"
         />
       </div>
 
@@ -275,6 +302,8 @@ function buildFallbackActiveLayer(): ActiveLayerDisplay {
             :point-weather="pointWeather"
             :point-weather-loading="pointWeatherLoading"
             :point-weather-error="pointWeatherError"
+            :overlay-time-states="overlayTimeStates"
+            :overlay-point-values="overlayPointValues"
             @run-workflow="handleRunWorkflow"
             @toggle-layer-visibility="handleToggleLayerVisibility"
             @set-layer-opacity="handleSetLayerOpacity"
@@ -323,6 +352,11 @@ function buildFallbackActiveLayer(): ActiveLayerDisplay {
     <WorkflowStatusPanel
       v-if="workflowStatusOpen"
       @close="handleCloseWorkflowStatus"
+    />
+
+    <LogPanel
+      v-if="logOpen"
+      @close="logOpen = false"
     />
   </main>
 </template>

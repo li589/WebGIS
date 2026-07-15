@@ -1,13 +1,15 @@
-"""Celery worker 启动脚本，确保 shared 模块在 Python 路径中。"""
+"""Celery worker 启动脚本，确保 shared / webgis_gee 模块在 Python 路径中。"""
 import sys
 from pathlib import Path
 
-# 将 Code/ 添加到 Python 路径（shared 是 Code/shared 下的包）
-code_path = Path(__file__).parent.parent
-if str(code_path) not in sys.path:
-    sys.path.insert(0, str(code_path))
+backend_root = Path(__file__).parent
+code_path = backend_root.parent
+gee_src = backend_root / "app" / "gee" / "core" / "src"
 
-# 现在可以安全导入 celery_app
+for p in (str(code_path), str(gee_src)):
+    if p not in sys.path:
+        sys.path.insert(0, p)
+
 from app.core.celery_app import celery_app
 
 if __name__ == "__main__":

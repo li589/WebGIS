@@ -86,7 +86,7 @@ class VisibilityGridRenderNode(BaseNode):
                     run_id=run_id,
                     result_id=f"visibility-geojson-{self.spec.node_id}",
                     result_kind=ResultKind.file,
-                    title="能见度网格 GeoJSON",
+                    title="Visibility Grid GeoJSON",
                     mime_type="application/geo+json",
                     updated_at=datetime.now(timezone.utc),
                     payload=geojson,

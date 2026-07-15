@@ -22,6 +22,11 @@ export default defineConfig(({ mode }) => {
         '/runtime': { target: apiTarget, changeOrigin: true },
         '/frontend': { target: apiTarget, changeOrigin: true },
         '/tiles': { target: apiTarget, changeOrigin: true },
+        '/unified-tiles': { target: apiTarget, changeOrigin: true },
+        '/overlay-preview': { target: apiTarget, changeOrigin: true },
+        '/overlay-bounds': { target: apiTarget, changeOrigin: true },
+        '/overlays': { target: apiTarget, changeOrigin: true },
+        '/import': { target: apiTarget, changeOrigin: true },
       },
     },
     build: {

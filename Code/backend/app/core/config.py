@@ -66,7 +66,7 @@ class Settings:
     minio_bucket: str = os.getenv("BACKEND_MINIO_BUCKET", "workflow-artifacts")
     minio_secure: bool = os.getenv("BACKEND_MINIO_SECURE", "false").lower() == "true"
     result_inline_max_bytes: int = int(os.getenv("BACKEND_RESULT_INLINE_MAX_BYTES", str(128 * 1024)))
-    max_active_runs: int = int(os.getenv("BACKEND_MAX_ACTIVE_RUNS", "4"))
+    max_active_runs: int = int(os.getenv("BACKEND_MAX_ACTIVE_RUNS", "8"))
     max_requested_outputs: int = int(os.getenv("BACKEND_MAX_REQUESTED_OUTPUTS", "6"))
     provider_max_hotspots: int = int(os.getenv("BACKEND_PROVIDER_MAX_HOTSPOTS", "200"))
     provider_max_series_points: int = int(os.getenv("BACKEND_PROVIDER_MAX_SERIES_POINTS", "240"))

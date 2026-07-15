@@ -9,6 +9,7 @@ import pytest
 
 from app.weatherengine.tile_service import (
     WeatherTileService,
+    _grid_data_for_hour,
     tile_bbox,
     tile_key,
 )
@@ -182,3 +183,79 @@ async def test_concurrent_generation_respects_semaphore(
 
     assert len(results) == 6
     assert max_active <= 4
+
+
+class TestGridDataForHour:
+    """测试 _grid_data_for_hour 按小时索引正确性。"""
+
+    def test_hour_zero_returns_original(self):
+        grid_data = {
+            "grid": {"rows": 2, "cols": 2},
+            "data": {
+                "current": {"wind_speed_10m": [1.0, 2.0, 3.0, 4.0]},
+                "hourly": {"wind_speed_10m": [[1.0] * 4, [2.0] * 4, [3.0] * 4, [4.0] * 4]},
+            },
+        }
+        result = _grid_data_for_hour(grid_data, 0)
+        assert result is grid_data
+
+    def test_extracts_per_point_hour_value(self):
+        """验证按小时取值是为每个点取对应时间步，而不是取第 hour 个点的时间序列。"""
+        grid_data = {
+            "grid": {"rows": 2, "cols": 2},
+            "data": {
+                "current": {"wind_speed_10m": [0.0, 0.0, 0.0, 0.0]},
+                "hourly": {
+                    "wind_speed_10m": [
+                        [10.0, 11.0, 12.0],  # point 0
+                        [20.0, 21.0, 22.0],  # point 1
+                        [30.0, 31.0, 32.0],  # point 2
+                        [40.0, 41.0, 42.0],  # point 3
+                    ],
+                    "wind_direction_10m": [
+                        [100.0, 110.0, 120.0],
+                        [200.0, 210.0, 220.0],
+                        [300.0, 310.0, 320.0],
+                        [400.0, 410.0, 420.0],
+                    ],
+                },
+            },
+        }
+        result = _grid_data_for_hour(grid_data, 2)
+        current = result["data"]["current"]
+        assert current["wind_speed_10m"] == [12.0, 22.0, 32.0, 42.0]
+        assert current["wind_direction_10m"] == [120.0, 220.0, 320.0, 420.0]
+
+    def test_falls_back_when_hourly_too_short(self):
+        grid_data = {
+            "grid": {"rows": 1, "cols": 2},
+            "data": {
+                "current": {"wind_speed_10m": [1.0, 2.0]},
+                "hourly": {
+                    "wind_speed_10m": [
+                        [10.0, 11.0],
+                        [20.0, 21.0],
+                    ],
+                },
+            },
+        }
+        result = _grid_data_for_hour(grid_data, 5)
+        assert result is grid_data
+
+    def test_handles_missing_point_series(self):
+        """验证当某个点的时间序列缺失或长度不足时填充 None。"""
+        grid_data = {
+            "grid": {"rows": 1, "cols": 2},
+            "data": {
+                "current": {"wind_speed_10m": [1.0, 2.0]},
+                "hourly": {
+                    "wind_speed_10m": [
+                        [10.0, 11.0, 12.0],
+                        [20.0, 21.0],  # shorter series
+                    ],
+                },
+            },
+        }
+        result = _grid_data_for_hour(grid_data, 2)
+        current = result["data"]["current"]
+        assert current["wind_speed_10m"] == [12.0, None]

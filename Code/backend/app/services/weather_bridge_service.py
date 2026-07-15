@@ -372,7 +372,7 @@ class WeatherBridgeService:
             WorkflowResultReference(
                 result_id=f"weather-result-{run_id[-8:]}",
                 result_kind=ResultKind.json,
-                title="天气工作流结果",
+                title="Weather Workflow Result",
                 mime_type="application/json",
                 inline_data={
                     "workflow": {
@@ -407,7 +407,7 @@ class WeatherBridgeService:
                 WorkflowResultReference(
                     result_id=f"weather-tile-geojson-{run_id[-8:]}",
                     result_kind=ResultKind.json,
-                    title="天气瓦片 GeoJSON",
+                    title="Weather Tile GeoJSON",
                     mime_type="application/geo+json",
                     inline_data={
                         "geojson": tile_geojson,

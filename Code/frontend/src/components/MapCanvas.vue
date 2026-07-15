@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted } from 'vue'
+import { computed, onBeforeUnmount, onMounted, watch } from 'vue'
 
 import { useLayersStore } from '../stores/layers'
 import { useUiStore } from '../stores/ui'
@@ -10,6 +10,9 @@ import { createMapCanvasExposeBridge } from './map/map-canvas-expose-bridge'
 import { createMapCanvasLifecycleBinder } from './map/map-canvas-lifecycle-binder'
 import { createMapCanvasMapOptions } from './map/map-canvas-map-options'
 import { createMapCanvasModuleBundle } from './map/map-canvas-module-bundle'
+import { createOverlayImageModule } from './map/overlay-image-module'
+import { createImportedLayerModule } from './map/imported-layer-module'
+import { useImportStore } from '../stores/import'
 import { createMapStagePresentationModule } from './map/map-stage-presentation-module'
 import { createMapCanvasState } from './map/map-canvas-state'
 import { createMapCanvasTeardownBinder } from './map/map-canvas-teardown-binder'
@@ -25,6 +28,7 @@ import { TILE_SOURCE_MAP, type TileSourceId } from '../services/api-config'
 const layersStore = useLayersStore()
 const uiStore = useUiStore()
 const weatherTileManager = useWeatherTileManager()
+const importStore = useImportStore()
 
 const props = defineProps<{
   tileSourceId: TileSourceId
@@ -36,6 +40,7 @@ const emit = defineEmits<{
   visibleHotspotsChange: [hotspots: LayerHotspot[]]
   hotspotSelect: [hotspot: LayerHotspot | null]
   mapPointSelect: [point: { lng: number; lat: number }]
+  overlayTimeUpdate: [states: import('./map/overlay-image-module').OverlayTimeState[]]
 }>()
 
 const state = createMapCanvasState()
@@ -73,6 +78,50 @@ const exposeBridge = createMapCanvasExposeBridge({
 
 defineExpose(exposeBridge)
 
+// ─── Overlay image module (generalized raster overlay) ──────────────────────
+let overlayImageModule: ReturnType<typeof createOverlayImageModule> | null = null
+let importedLayerModule: ReturnType<typeof createImportedLayerModule> | null = null
+const overlayTimeStates = computed(() => overlayImageModule?.overlayTimeStates.value ?? [])
+const activeTimeSeriesOverlays = computed(() =>
+  overlayTimeStates.value.filter((s) => s.category === 'time-series'),
+)
+const overlayLinkTimeEnabled = computed(() => overlayImageModule?.linkTimeEnabled.value ?? false)
+
+// 透传 overlay 时间状态到父组件
+watch(
+  overlayTimeStates,
+  (states) => { emit('overlayTimeUpdate', states) },
+  { deep: true },
+)
+
+function overlayStepTime(layerId: string, delta: number) {
+  if (!overlayImageModule) return
+  const state = overlayTimeStates.value.find((s) => s.layerId === layerId)
+  if (!state || !state.currentTime) return
+  const idx = state.timeList.indexOf(state.currentTime)
+  if (idx < 0) return
+  const nextIdx = idx + delta
+  if (nextIdx < 0 || nextIdx >= state.timeList.length) return
+  void overlayImageModule.setOverlayTime(layerId, state.timeList[nextIdx])
+}
+
+function overlayToggleLinkTime() {
+  if (!overlayImageModule) return
+  overlayImageModule.setLinkTime(!overlayImageModule.linkTimeEnabled.value)
+}
+
+function overlayFormatTime(time: string | null): string {
+  if (!time) return ''
+  // YYYYMMDD -> YYYY-MM-DD ; YYYYMM -> YYYY-MM
+  if (time.length === 8 && /^\d{8}$/.test(time)) {
+    return `${time.slice(0, 4)}-${time.slice(4, 6)}-${time.slice(6, 8)}`
+  }
+  if (time.length === 6 && /^\d{6}$/.test(time)) {
+    return `${time.slice(0, 4)}-${time.slice(4, 6)}`
+  }
+  return time
+}
+
 function debugLog(module: string, ...args: unknown[]) {
   console.log(`[${performance.now().toFixed(1)}ms] [${module}]`, ...args)
 }
@@ -102,6 +151,33 @@ const stageStatusModel = computed(() => buildMapStageStatusModel({
   tileLoadFailed: tileLoadFailed.value,
   tileFailedProvider: tileFailedProvider.value,
 }))
+
+// 天气瓦片加载/错误状态：聚合所有可见天气图层的状态
+const weatherTileStatusModel = computed(() => {
+  // 依赖 statusVersion 触发响应式更新
+  void weatherTileManager.statusVersion.value
+  const weatherLayers = layersStore.activeLayersDisplay.filter(
+    (l) => l.visible && layersStore.isWeatherEngineLayer(l.catalogId),
+  )
+  if (weatherLayers.length === 0) return { show: false, isLoading: false, error: null }
+
+  for (const layer of weatherLayers) {
+    const status = weatherTileManager.getLayerStatus(layer.catalogId)
+    if (!status.active) continue
+    // 错误优先级最高
+    if (status.errorType) {
+      return { show: true, isLoading: false, error: status.errorMessage ?? '天气数据加载失败' }
+    }
+  }
+  // 检查是否有图层正在加载（pending > 0 且视口内无缓存）
+  for (const layer of weatherLayers) {
+    const status = weatherTileManager.getLayerStatus(layer.catalogId)
+    if (status.active && status.pending > 0 && status.cachedInViewport === 0) {
+      return { show: true, isLoading: true, error: null }
+    }
+  }
+  return { show: false, isLoading: false, error: null }
+})
 const stageAppearanceModel = computed(() => buildMapStageAppearanceModel({
   basemapStyle: currentTileConfig.value.style,
   activeLayer: activeLayer.value,
@@ -227,10 +303,68 @@ onMounted(async () => {
     },
   }).bind()
 
+  // ─── Generalized raster image overlay module ───────────────────────────────
+  overlayImageModule = createOverlayImageModule({
+    map: mapInstance,
+    getMapReady: () => mapReady.value,
+    getActiveVisibleLayerIds: () =>
+      layersStore.activeLayersDisplay.filter((l) => l.visible).map((l) => l.catalogId),
+  })
+  overlayImageModule.init().then(() => { void syncOverlayLayers() })
+
+  async function syncOverlayLayers() {
+    if (!overlayImageModule) return
+    const known = overlayImageModule.knownOverlayIds.value
+    if (known.length === 0) return
+    const activeVisible = layersStore.activeLayersDisplay
+      .filter((l) => l.visible && known.includes(l.catalogId))
+      .map((l) => l.catalogId)
+    await overlayImageModule.syncOverlays(activeVisible)
+  }
+
+  watch(
+    () => layersStore.activeLayersDisplay.map((l) => l.catalogId + ':' + l.visible).join(','),
+    () => { void syncOverlayLayers() },
+  )
+
+  // ─── Imported layer module (前端导入的矢量/栅格图层) ──────────────────────
+  importedLayerModule = createImportedLayerModule({
+    map: mapInstance,
+    getMapReady: () => mapReady.value,
+  })
+
+  // 同步导入的矢量图层到地图
+  watch(
+    () => importStore.importedLayers.map((l) => l.id + ':' + l.visible + ':' + l.opacity).join(','),
+    () => {
+      if (!importedLayerModule) return
+      const imported = importStore.importedLayers
+      const loadedIds = new Set(importedLayerModule.getLoadedIds())
+      // 添加新导入的矢量图层
+      for (const layer of imported) {
+        if (layer.type === 'vector' && layer.geojson && !loadedIds.has(layer.id)) {
+          importedLayerModule.addVectorLayer(layer.id, layer.geojson, layer.name)
+        }
+      }
+      // 同步可见性和透明度
+      for (const layer of imported) {
+        importedLayerModule.setLayerVisibility(layer.id, layer.visible)
+        importedLayerModule.setLayerOpacity(layer.id, layer.opacity)
+      }
+      // 移除已删除的图层
+      for (const id of loadedIds) {
+        if (!imported.some((l) => l.id === id)) {
+          importedLayerModule.removeLayer(id)
+        }
+      }
+    },
+  )
+
 })
 
 onBeforeUnmount(() => {
   teardownBinder.dispose()
+  importedLayerModule?.dispose()
 })
 </script>
 
@@ -279,6 +413,24 @@ onBeforeUnmount(() => {
       <button class="tile-retry-btn" @click="actionBridge.retryTileLoad">{{ stageStatusModel.retryButtonLabel }}</button>
     </div>
 
+    <!-- Weather tile loading indicator -->
+    <div v-if="weatherTileStatusModel.show && weatherTileStatusModel.isLoading" class="weather-loading">
+      <span class="weather-loading-dot"></span>
+      <span>正在加载天气数据…</span>
+    </div>
+
+    <!-- Weather tile error banner -->
+    <div v-if="weatherTileStatusModel.show && weatherTileStatusModel.error" class="weather-load-error">
+      <span class="weather-error-icon">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/>
+          <line x1="12" y1="9" x2="12" y2="13"/>
+          <line x1="12" y1="17" x2="12.01" y2="17"/>
+        </svg>
+      </span>
+      <span>{{ weatherTileStatusModel.error }}</span>
+    </div>
+
     <!-- Map chips -->
     <div class="map-overlay">
       <span class="chip">
@@ -318,6 +470,42 @@ onBeforeUnmount(() => {
           <span>{{ pin.value }}</span>
         </div>
       </button>
+    </div>
+
+    <!-- Overlay time control (time-series raster overlays) -->
+    <div
+      v-if="activeTimeSeriesOverlays.length > 0"
+      class="overlay-time-bar"
+    >
+      <button
+        v-if="activeTimeSeriesOverlays.length > 1"
+        class="overlay-link-btn"
+        :class="{ active: overlayLinkTimeEnabled }"
+        type="button"
+        :title="overlayLinkTimeEnabled ? '取消联动' : '多图层时间联动'"
+        @click="overlayToggleLinkTime"
+      >{{ overlayLinkTimeEnabled ? '🔗' : '⛓' }}</button>
+      <div
+        v-for="state in activeTimeSeriesOverlays"
+        :key="'overlay-time-' + state.layerId"
+        class="overlay-time-control"
+      >
+        <button
+          class="overlay-time-btn"
+          type="button"
+          :disabled="state.timeList.indexOf(state.currentTime ?? '') <= 0"
+          @click="overlayStepTime(state.layerId, -1)"
+          aria-label="上一个时间"
+        >‹</button>
+        <span class="overlay-time-label">{{ overlayFormatTime(state.currentTime) }}</span>
+        <button
+          class="overlay-time-btn"
+          type="button"
+          :disabled="state.timeList.indexOf(state.currentTime ?? '') >= state.timeList.length - 1"
+          @click="overlayStepTime(state.layerId, 1)"
+          aria-label="下一个时间"
+        >›</button>
+      </div>
     </div>
   </section>
 </template>
@@ -712,12 +900,156 @@ onBeforeUnmount(() => {
   color: #fff0f0;
 }
 
+/* 天气瓦片加载指示器 */
+.weather-loading {
+  position: absolute;
+  top: 110px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 3;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.38rem;
+  padding: 0.38rem 0.7rem;
+  border-radius: 999px;
+  background: rgba(8, 18, 33, 0.88);
+  border: 1px solid rgba(100, 160, 255, 0.25);
+  color: #a8c8ff;
+  font-size: 0.64rem;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.24);
+}
+
+.weather-loading-dot {
+  width: 0.48rem;
+  height: 0.48rem;
+  border-radius: 999px;
+  background: #6aa0ff;
+  box-shadow: 0 0 0 6px rgba(100, 160, 255, 0.12);
+  animation: weather-pulse 1.2s ease-in-out infinite;
+}
+
+@keyframes weather-pulse {
+  0%, 100% { opacity: 0.5; }
+  50% { opacity: 1; }
+}
+
+/* 天气瓦片错误横幅 */
+.weather-load-error {
+  position: absolute;
+  top: 110px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 3;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.38rem;
+  padding: 0.38rem 0.6rem 0.38rem 0.5rem;
+  border-radius: 999px;
+  background: rgba(33, 22, 8, 0.92);
+  border: 1px solid rgba(255, 180, 60, 0.3);
+  color: #ffcb80;
+  font-size: 0.64rem;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.24);
+  max-width: 80%;
+}
+
+.weather-error-icon {
+  display: flex;
+  align-items: center;
+  color: #ffa040;
+  flex-shrink: 0;
+}
+
 .hotspot-label strong,
 .hotspot-label span {
   display: block;
 }
 .hotspot-label strong { font-size: 0.64rem; }
 .hotspot-label span { margin-top: 0.15rem; color: #99afc3; font-size: 0.6rem; }
+
+/* Overlay time-series control */
+.overlay-time-bar {
+  position: absolute;
+  z-index: 22;
+  bottom: 1rem;
+  right: 1rem;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 0.3rem;
+}
+
+.overlay-time-control {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 0.32rem 0.4rem;
+  border-radius: 0.7rem;
+  background: rgba(8, 18, 33, 0.88);
+  border: 1px solid rgba(136, 192, 255, 0.18);
+  box-shadow: 0 6px 20px rgba(3, 10, 20, 0.22);
+  color: #eaf3fb;
+  font-size: 0.7rem;
+}
+
+.overlay-link-btn {
+  width: 1.7rem;
+  height: 1.7rem;
+  border-radius: 0.5rem;
+  border: 1px solid rgba(136, 192, 255, 0.22);
+  background: rgba(8, 18, 33, 0.88);
+  color: #9fb6cc;
+  font-size: 0.85rem;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.18s ease, color 0.18s ease, border-color 0.18s ease;
+}
+
+.overlay-link-btn.active {
+  background: rgba(60, 160, 100, 0.24);
+  border-color: rgba(114, 255, 207, 0.4);
+  color: #9ff8cf;
+}
+
+.overlay-link-btn:hover {
+  border-color: rgba(136, 192, 255, 0.4);
+  color: #eaf3fb;
+}
+
+.overlay-time-btn {
+  width: 1.5rem;
+  height: 1.5rem;
+  border-radius: 0.4rem;
+  border: 1px solid rgba(136, 192, 255, 0.18);
+  background: rgba(36, 90, 170, 0.14);
+  color: #dfeefd;
+  font-size: 0.9rem;
+  font-family: inherit;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.18s ease, color 0.18s ease;
+}
+
+.overlay-time-btn:hover:not(:disabled) {
+  background: rgba(60, 120, 200, 0.28);
+  color: #ffffff;
+}
+
+.overlay-time-btn:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
+.overlay-time-label {
+  min-width: 5.2rem;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.02em;
+}
 
 :deep(.maplibregl-ctrl-bottom-right) {
   right: 0.8rem;

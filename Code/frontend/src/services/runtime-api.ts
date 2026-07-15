@@ -216,6 +216,33 @@ export function getWeatherPoint(params: {
   })
 }
 
+export interface OverlayPointValue {
+  layer_id: string
+  value: number | null
+  unit: string
+  time: string | null
+  lng: number
+  lat: number
+  error?: string
+}
+
+export function getOverlayValue(
+  layerId: string,
+  lng: number,
+  lat: number,
+  time?: string | null,
+  signal?: AbortSignal,
+): Promise<OverlayPointValue> {
+  const search = new URLSearchParams({
+    lng: String(lng),
+    lat: String(lat),
+  })
+  if (time) search.set('time', time)
+  return requestJson<OverlayPointValue>(`/overlay-value/${layerId}?${search.toString()}`, {
+    signal,
+  })
+}
+
 export function cancelWorkflowRun(runId: string) {
   return requestJson<WorkflowRunStatusResponse>(`/workflow-runs/${runId}/cancel`, {
     method: 'POST',

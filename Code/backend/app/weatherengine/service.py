@@ -5,6 +5,7 @@ import importlib
 import logging
 import math
 from pathlib import Path
+from urllib.error import HTTPError, URLError
 from uuid import uuid4
 
 from app.core.config import settings
@@ -333,7 +334,7 @@ class WeatherEngineService:
                 place_name=place_name,
                 cache_ttl_seconds=self._as_int(payload.parameters.get("cache_ttl_seconds")),
             )
-        except Exception as exc:
+        except (HTTPError, URLError, OSError) as exc:
             # 点位天气 API 失败（如 429 限流）不应阻断网格渲染工作流
             logger.warning("[WeatherEngine] point weather failed, continuing with fallback: %s", exc)
             weather = self._build_fallback_weather(
@@ -564,7 +565,7 @@ class WeatherEngineService:
                     "[WindDebug] build_wind_geojson_from_grid: layer=%s bbox=%s features=%d cache=%s resolution=%s",
                     spec.layer_id, bbox, len(feature_collection['features']), cache_status, resolution,
                 )
-            except Exception as exc:
+            except (HTTPError, URLError, OSError, KeyError, ValueError) as exc:
                 logger.warning("[WindDebug] Grid fetch failed, falling back to simulated data: %s", exc)
                 feature_collection = self.build_wind_geojson(weather, bbox)
             geojson_ref = result_storage_service.create_artifact_result_ref(
@@ -588,7 +589,7 @@ class WeatherEngineService:
             try:
                 grid_data, _, _ = self._fetch_layer_grid_data(bbox=bbox, spec=spec)
                 feature_collection = self.build_temperature_geojson_from_grid(grid_data, spec.layer_id)
-            except Exception:
+            except (HTTPError, URLError, OSError, KeyError, ValueError):
                 feature_collection = self.build_temperature_geojson(weather, bbox)
             geojson_ref = result_storage_service.create_artifact_result_ref(
                 run_id=run_id,
@@ -618,7 +619,7 @@ class WeatherEngineService:
             try:
                 grid_data, _, _ = self._fetch_layer_grid_data(bbox=bbox, spec=spec)
                 feature_collection = self.build_precipitation_geojson_from_grid(grid_data, spec.layer_id)
-            except Exception:
+            except (HTTPError, URLError, OSError, KeyError, ValueError):
                 feature_collection = self.build_precipitation_geojson(weather, bbox)
             geojson_ref = result_storage_service.create_artifact_result_ref(
                 run_id=run_id,
@@ -647,7 +648,7 @@ class WeatherEngineService:
             try:
                 grid_data, _, _ = self._fetch_layer_grid_data(bbox=bbox, spec=spec)
                 feature_collection = self.build_humidity_geojson_from_grid(grid_data, spec.layer_id)
-            except Exception:
+            except (HTTPError, URLError, OSError, KeyError, ValueError):
                 feature_collection = self.build_humidity_geojson(weather, bbox)
             geojson_ref = result_storage_service.create_artifact_result_ref(
                 run_id=run_id,
@@ -665,7 +666,7 @@ class WeatherEngineService:
             try:
                 grid_data, _, _ = self._fetch_layer_grid_data(bbox=bbox, spec=spec)
                 feature_collection = self.build_pressure_geojson_from_grid(grid_data, spec.layer_id)
-            except Exception:
+            except (HTTPError, URLError, OSError, KeyError, ValueError):
                 feature_collection = self.build_pressure_geojson(weather, bbox)
             geojson_ref = result_storage_service.create_artifact_result_ref(
                 run_id=run_id,
@@ -683,7 +684,7 @@ class WeatherEngineService:
             try:
                 grid_data, _, _ = self._fetch_layer_grid_data(bbox=bbox, spec=spec)
                 feature_collection = self.build_visibility_geojson_from_grid(grid_data, spec.layer_id)
-            except Exception:
+            except (HTTPError, URLError, OSError, KeyError, ValueError):
                 feature_collection = self.build_visibility_geojson(weather, bbox)
             geojson_ref = result_storage_service.create_artifact_result_ref(
                 run_id=run_id,
@@ -824,6 +825,26 @@ class WeatherEngineService:
         speed_values = current.get(api_speed_attr, current.get("wind_speed_10m", []))
         direction_values = current.get(api_direction_attr, current.get("wind_direction_10m", []))
 
+        # 风向数据缺失时的 fallback：使用随机方向避免所有粒子同向
+        # 触发条件：列表为空，或所有值均为 None（缓存过期/字段缺失时可能出现）
+        _dir_valid_count = sum(1 for v in direction_values if v is not None)
+        if _dir_valid_count == 0:
+            import random
+            random.seed(42)  # 固定种子保证可复现
+            total_points = rows * cols
+            if len(speed_values) > 0:
+                direction_values = [random.uniform(0, 360) for _ in range(len(speed_values))]
+            else:
+                # 风速和风向都缺失：生成完整的模拟数据，避免所有点 speed=0 direction=0
+                # 导致前端所有粒子静止（竖直线条）
+                speed_values = [random.uniform(3, 15) for _ in range(total_points)]
+                direction_values = [random.uniform(0, 360) for _ in range(total_points)]
+            logger.warning(
+                "[WeatherEngine] build_wind_geojson_from_grid: wind data missing or incomplete "
+                "(speed_values=%d direction_values=%d), using random fallback",
+                len(speed_values), len(direction_values),
+            )
+
         # [WeatherEngine] 调试：打印网格数据概要
         speed_sample = [speed_values[i] for i in range(min(5, len(speed_values))) if speed_values[i] is not None]
         dir_sample = [direction_values[i] for i in range(min(5, len(direction_values))) if direction_values[i] is not None]
@@ -945,7 +966,7 @@ class WeatherEngineService:
             numpy = importlib.import_module("numpy")
             transform_module = importlib.import_module("rasterio.transform")
             raster_writer_module = importlib.import_module("algorithms.providers.Python.publish.raster_writer")
-        except Exception as exc:
+        except ImportError as exc:
             diagnostics.append(f"temperature_cog_skipped={exc.__class__.__name__}")
             return None, diagnostics
 
@@ -968,7 +989,7 @@ class WeatherEngineService:
                 rows=rows,
                 cols=cols,
             )
-        except Exception:
+        except (HTTPError, URLError, OSError, KeyError, ValueError):
             array = numpy.zeros((rows, cols), dtype="float32")
             base_temp = getattr(weather.current, temp_attr, None) or weather.current.temperature_2m or 0.0
             for row in range(rows):
@@ -1087,7 +1108,7 @@ class WeatherEngineService:
             numpy = importlib.import_module("numpy")
             transform_module = importlib.import_module("rasterio.transform")
             raster_writer_module = importlib.import_module("algorithms.providers.Python.publish.raster_writer")
-        except Exception as exc:
+        except ImportError as exc:
             diagnostics.append(f"precipitation_cog_skipped={exc.__class__.__name__}")
             return None, diagnostics
 
@@ -1102,7 +1123,7 @@ class WeatherEngineService:
                 rows=rows,
                 cols=cols,
             )
-        except Exception:
+        except (HTTPError, URLError, OSError, KeyError, ValueError):
             array = numpy.zeros((rows, cols), dtype="float32")
             base_precip = weather.current.precipitation or 0.0
             for row in range(rows):

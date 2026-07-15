@@ -1,0 +1,171 @@
+[
+  {
+    "label": "InversionResults smap_avg doy_017 (MAT, OMEGA_AVG)",
+    "file": "I:\\Geograph_DataSet\\InversionResults\\smap_avg\\doy_017.mat",
+    "status": "ok",
+    "format": "mat",
+    "variables": [
+      "OMEGA_AVG",
+      "count_grid",
+      "used_years"
+    ],
+    "var_name": "OMEGA_AVG",
+    "shape": [
+      1624,
+      3856
+    ],
+    "stats": {
+      "total_pixels": 6262144,
+      "valid_pixels": 861144,
+      "nan_count": 5401000,
+      "nan_ratio": 0.8625,
+      "min": 0.0,
+      "max": 1.0,
+      "mean": 0.0991,
+      "std": 0.0614
+    }
+  },
+  {
+    "label": "CLCD 1997 (GeoTIFF, 分块读取中国区域)",
+    "file": "I:\\Geograph_DataSet\\LandCover\\CLCD_v01_1997.tif",
+    "status": "error",
+    "crs": "EPSG:4326",
+    "width": 228579,
+    "height": 131361,
+    "count": 1,
+    "dtype": "uint8",
+    "nodata": null,
+    "transform": "| 0.00, 0.00, 73.49|\n| 0.00,-0.00, 53.56|\n| 0.00, 0.00, 1.00|",
+    "res": [
+      0.0002694945852358565,
+      0.0002694945852358565
+    ],
+    "shape": [
+      131361,
+      228579
+    ],
+    "window": {
+      "col_off": -1805,
+      "row_off": -20181,
+      "width": 237482,
+      "height": 163269
+    },
+    "error": "Unable to allocate 28.0 GiB for an array with shape (30026366019,) and data type uint8",
+    "traceback": [
+      "            ~~~~^^^^^^^^^^^^^^^^",
+      "numpy._core._exceptions._ArrayMemoryError: Unable to allocate 28.0 GiB for an array with shape (30026366019,) and data type uint8",
+      ""
+    ]
+  },
+  {
+    "label": "ESACCI BIOMASS 2020 (NetCDF, 分块读取中国区域)",
+    "file": "I:\\Geograph_DataSet\\Biomass\\ESACCI-BIOMASS-L4-AGB-MERGED-100m-2020-fv6.0.nc",
+    "status": "ok",
+    "variables": [
+      "lon",
+      "lat",
+      "time",
+      "agb",
+      "agb_sd",
+      "crs",
+      "lon_bnds",
+      "lat_bnds",
+      "time_bnds"
+    ],
+    "attrs": {
+      "_FillValue": "-32768",
+      "long_name": "Above-ground biomass",
+      "ancillary_variables": "agb_se",
+      "grid_mapping": "crs",
+      "units": "Mg/ha",
+      "valid_min": "0.0",
+      "valid_max": "10000.0"
+    },
+    "lat_shape": [
+      157500
+    ],
+    "lon_shape": [
+      405000
+    ],
+    "lat_min": -59.9996,
+    "lat_max": 79.9996,
+    "lon_min": -179.9996,
+    "lon_max": 179.9996,
+    "shape": [
+      49500,
+      72000
+    ],
+    "crs": "EPSG:4326 (latitude_longitude)",
+    "stats": {
+      "total_pixels": 3564000000,
+      "valid_pixels": 3564000000,
+      "nan_count": 0,
+      "nan_ratio": 0.0,
+      "min": 0.0,
+      "max": 563.0,
+      "mean": 27.27,
+      "std": 55.8967
+    }
+  },
+  {
+    "label": "ERA5 DWAA SMCI 2020 (多波段验证, band_1=1月1日全NaN)",
+    "file": "I:\\Geograph_DataSet\\Hazards\\DWAA_result\\DW_T7\\ERA5_2020_DW_SMCI.tif",
+    "status": "ok",
+    "crs": "EPSG:4326",
+    "width": 1440,
+    "height": 720,
+    "count": 366,
+    "dtype": "uint8",
+    "nodata": 255.0,
+    "band_stats": {
+      "1": {
+        "valid_pixels": 0,
+        "total_pixels": 45056,
+        "nan_ratio": 1.0
+      },
+      "2": {
+        "valid_pixels": 0,
+        "total_pixels": 45056,
+        "nan_ratio": 1.0
+      },
+      "32": {
+        "valid_pixels": 53,
+        "total_pixels": 45056,
+        "nan_ratio": 0.9988,
+        "min": 1,
+        "max": 1,
+        "mean": 1.0,
+        "std": 0.0
+      },
+      "100": {
+        "valid_pixels": 29,
+        "total_pixels": 45056,
+        "nan_ratio": 0.9994,
+        "min": 1,
+        "max": 1,
+        "mean": 1.0,
+        "std": 0.0
+      },
+      "200": {
+        "valid_pixels": 29,
+        "total_pixels": 45056,
+        "nan_ratio": 0.9994,
+        "min": 1,
+        "max": 1,
+        "mean": 1.0,
+        "std": 0.0
+      },
+      "366": {
+        "valid_pixels": 0,
+        "total_pixels": 45056,
+        "nan_ratio": 1.0
+      }
+    },
+    "window": {
+      "col_off": 1012,
+      "row_off": 124,
+      "width": 256,
+      "height": 176
+    }
+  }
+]

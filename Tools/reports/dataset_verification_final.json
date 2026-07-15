@@ -1,0 +1,108 @@
+[
+  {
+    "label": "CLCD 1997 (GeoTIFF, 窗口交集修复)",
+    "file": "I:\\Geograph_DataSet\\LandCover\\CLCD_v01_1997.tif",
+    "status": "error",
+    "crs": "EPSG:4326",
+    "width": 228579,
+    "height": 131361,
+    "dtype": "uint8",
+    "nodata": null,
+    "res": [
+      0.0002694945852358565,
+      0.0002694945852358565
+    ],
+    "bounds": [
+      73.4862484659363,
+      18.160373748032782,
+      135.08705126456314,
+      53.561451959200134
+    ],
+    "shape": [
+      131361,
+      228579
+    ],
+    "window": {
+      "col_off": 0,
+      "row_off": 0,
+      "width": 228579,
+      "height": 131361
+    },
+    "error": "Unable to allocate 28.0 GiB for an array with shape (30026366019,) and data type uint8",
+    "traceback": [
+      "            ~~~~^^^^^^^^^^^^^^^^",
+      "numpy._core._exceptions._ArrayMemoryError: Unable to allocate 28.0 GiB for an array with shape (30026366019,) and data type uint8",
+      ""
+    ]
+  },
+  {
+    "label": "ERA5 DWAA 2020 辅助文件 (duration/intensity/start/end)",
+    "status": "ok",
+    "files": {
+      "duration": {
+        "dtype": "uint16",
+        "count": 366,
+        "nodata": 65535.0,
+        "shape": [
+          176,
+          256
+        ],
+        "band_tested": 100,
+        "valid_pixels": 29,
+        "total_pixels": 45056,
+        "min": 1,
+        "max": 2,
+        "mean": 1.0345,
+        "std": 0.1825
+      },
+      "intensity": {
+        "dtype": "float32",
+        "count": 366,
+        "nodata": -3.4028234663852886e+38,
+        "shape": [
+          176,
+          256
+        ],
+        "band_tested": 100,
+        "valid_pixels": 29,
+        "total_pixels": 45056,
+        "min": 0.1208,
+        "max": 0.8032,
+        "mean": 0.3113,
+        "std": 0.1702
+      },
+      "start_date": {
+        "dtype": "uint16",
+        "count": 366,
+        "nodata": 65535.0,
+        "shape": [
+          176,
+          256
+        ],
+        "band_tested": 100,
+        "valid_pixels": 29,
+        "total_pixels": 45056,
+        "min": 94,
+        "max": 97,
+        "mean": 95.5172,
+        "std": 0.9692
+      },
+      "end_date": {
+        "dtype": "uint16",
+        "count": 366,
+        "nodata": 65535.0,
+        "shape": [
+          176,
+          256
+        ],
+        "band_tested": 100,
+        "valid_pixels": 29,
+        "total_pixels": 45056,
+        "min": 103,
+        "max": 106,
+        "mean": 104.931,
+        "std": 0.9802
+      }
+    }
+  }
+]

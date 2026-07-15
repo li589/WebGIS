@@ -86,7 +86,7 @@ class PrecipitationGridRenderNode(BaseNode):
                     run_id=run_id,
                     result_id=f"precipitation-geojson-{self.spec.node_id}",
                     result_kind=ResultKind.file,
-                    title="降水网格 GeoJSON",
+                    title="Precipitation Grid GeoJSON",
                     mime_type="application/geo+json",
                     updated_at=datetime.now(timezone.utc),
                     payload=geojson,

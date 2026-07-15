@@ -2,6 +2,16 @@
 # ============================================================
 #  CGDA 一键启动 (Linux / macOS)
 #  调用跨平台 Python 启动器 launch.py
+#
+#  用法:
+#    start.sh start [component] [options]
+#    start.sh stop
+#    start.sh status
+#    start.sh restart [component] [options]
+#    start.sh logs [component] [-n N]
+#    start.sh flush
+#
+#  组件: all/docker/fastapi/beat/worker/worker:<name>/frontend
 # ============================================================
 set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"

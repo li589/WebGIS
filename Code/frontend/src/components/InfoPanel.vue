@@ -25,6 +25,8 @@ const props = defineProps<{
   pointWeather?: WeatherPointResponse | null
   pointWeatherLoading?: boolean
   pointWeatherError?: string | null
+  overlayTimeStates?: import('./map/overlay-image-module').OverlayTimeState[]
+  overlayPointValues?: import('../services/runtime-api').OverlayPointValue[]
 }>()
 
 const emit = defineEmits<{
@@ -153,17 +155,39 @@ const layerMetadata = computed(() => {
 
 // ── 叠加图层列表 ────────────────────────────────────────────────────────────
 const overlayLayers = computed(() => {
+  const timeStateMap = new Map(
+    (props.overlayTimeStates ?? []).map((s) => [s.layerId, s]),
+  )
   return layersStore.activeLayersDisplay
     .filter((l) => l.instanceId !== displayLayer.value.instanceId && l.visible)
-    .map((l) => ({
-      name: l.name,
-      category: l.category,
-      availabilityState: l.availabilityState,
-      accentColor: l.accentColor,
-    }))
+    .map((l) => {
+      const ts = timeStateMap.get(l.catalogId)
+      return {
+        name: l.name,
+        category: l.category,
+        availabilityState: l.availabilityState,
+        accentColor: l.accentColor,
+        catalogId: l.catalogId,
+        palette: ts?.palette ?? null,
+        vmin: ts?.vmin ?? null,
+        vmax: ts?.vmax ?? null,
+        unit: ts?.unit ?? '',
+        currentTime: ts?.currentTime ?? null,
+        isTimeSeries: ts?.category === 'time-series',
+      }
+    })
 })
 
 const hasOverlayLayers = computed(() => overlayLayers.value.length > 0)
+
+// ── 叠加图层像素值查询结果 ──────────────────────────────────────────────────
+const overlayPointValueMap = computed(() => {
+  const m = new Map<string, import('../services/runtime-api').OverlayPointValue>()
+  for (const v of props.overlayPointValues ?? []) {
+    m.set(v.layer_id, v)
+  }
+  return m
+})
 
 // ── 历史趋势方向识别 ────────────────────────────────────────────────────────
 const trendDirection = computed<'up' | 'down' | 'flat'>(() => {
@@ -252,6 +276,12 @@ const pendingTimers: number[] = []
 function formatMetric(value: number | null | undefined, unit: string) {
   if (typeof value !== 'number' || Number.isNaN(value)) return `-- ${unit}`.trim()
   return `${value.toFixed(1)} ${unit}`.trim()
+}
+
+function formatOverlayValue(v: import('../services/runtime-api').OverlayPointValue): string {
+  if (v.value === null || v.value === undefined) return 'N/A'
+  const digits = Math.abs(v.value) >= 100 ? 1 : 3
+  return `${v.value.toFixed(digits)} ${v.unit}`.trim()
 }
 
 function formatTime(value: string) {
@@ -491,6 +521,18 @@ onBeforeUnmount(() => {
         <div class="section-kicker">当前对象</div>
         <h3>选中图层</h3>
         <p>{{ displayLayer.name }} · {{ displayLayer.availabilityLabel }}</p>
+        <div v-if="displayLayer.instanceId" class="layer-opacity-row">
+          <span>透明度</span>
+          <input
+            class="layer-opacity-slider"
+            type="range"
+            min="0"
+            max="100"
+            :value="Math.round(displayLayer.opacity * 100)"
+            @input="handleLayerOpacityInput"
+          />
+          <strong>{{ Math.round(displayLayer.opacity * 100) }}%</strong>
+        </div>
       </section>
 
       <section v-if="hasPointWeatherSection" class="analysis-section analysis-section--weather" id="point-weather">
@@ -543,18 +585,6 @@ onBeforeUnmount(() => {
             <button class="weather-visibility-btn" @click="handleToggleLayerVisibility">
               {{ displayLayer.visible ? '隐藏天气图层' : '显示天气图层' }}
             </button>
-            <div class="weather-opacity-row">
-              <span>透明度</span>
-              <input
-                class="weather-opacity-slider"
-                type="range"
-                min="0"
-                max="100"
-                :value="Math.round(displayLayer.opacity * 100)"
-                @input="handleLayerOpacityInput"
-              />
-              <strong>{{ Math.round(displayLayer.opacity * 100) }}%</strong>
-            </div>
             <button
               v-if="canToggleParticleFlow"
               class="particle-flow-toggle-btn"
@@ -711,15 +741,35 @@ onBeforeUnmount(() => {
       <ul class="overlay-list">
         <li
           v-for="layer in overlayLayers"
-          :key="layer.name"
+          :key="layer.catalogId || layer.name"
           :style="{ '--layer-accent': layer.accentColor }"
         >
           <span class="overlay-dot" aria-hidden="true"></span>
           <div class="overlay-info">
             <strong class="overlay-name">{{ layer.name }}</strong>
-            <span class="overlay-category">{{ layer.category }}</span>
+            <span class="overlay-category">
+              {{ layer.category }}
+              <span v-if="layer.palette" class="overlay-palette-tag">{{ layer.palette }}</span>
+            </span>
+            <span v-if="layer.vmin !== null || layer.vmax !== null" class="overlay-range">
+              {{ layer.vmin ?? '—' }} – {{ layer.vmax ?? '—' }} {{ layer.unit }}
+            </span>
+            <span v-if="layer.isTimeSeries && layer.currentTime" class="overlay-time-tag">
+              {{ layer.currentTime }}
+            </span>
           </div>
-          <span class="overlay-state" :class="`state-${layer.availabilityState}`">{{ layer.availabilityState }}</span>
+          <div class="overlay-value-col">
+            <span class="overlay-state" :class="`state-${layer.availabilityState}`">{{ layer.availabilityState }}</span>
+            <span
+              v-if="overlayPointValueMap.get(layer.catalogId)"
+              class="overlay-point-value"
+              :class="{ na: overlayPointValueMap.get(layer.catalogId)?.value === null }"
+            >
+              {{ overlayPointValueMap.get(layer.catalogId)?.value !== null
+                  ? formatOverlayValue(overlayPointValueMap.get(layer.catalogId)!)
+                  : 'N/A' }}
+            </span>
+          </div>
         </li>
       </ul>
     </section>
@@ -834,6 +884,13 @@ onBeforeUnmount(() => {
 }
 .weather-opacity-row { display: grid; grid-template-columns: auto 1fr auto; gap: 0.3rem; align-items: center; color: #9eb3c8; font-size: 0.56rem; }
 .weather-opacity-slider { width: 100%; }
+.layer-opacity-row { display: grid; grid-template-columns: auto 1fr auto; gap: 0.3rem; align-items: center; margin-top: 0.34rem; color: #9eb3c8; font-size: 0.56rem; }
+.layer-opacity-slider { width: 100%; -webkit-appearance: none; appearance: none; height: 1.4rem; background: transparent; outline: none; cursor: pointer; }
+.layer-opacity-slider::-webkit-slider-runnable-track { height: 5px; border-radius: 999px; background: rgba(136, 192, 255, 0.18); }
+.layer-opacity-slider::-moz-range-track { height: 5px; border-radius: 999px; background: rgba(136, 192, 255, 0.18); }
+.layer-opacity-slider::-webkit-slider-thumb { -webkit-appearance: none; appearance: none; width: 0.9rem; height: 0.9rem; margin-top: -0.4rem; border-radius: 50%; background: var(--accent-color, #5ad5ff); box-shadow: 0 0 6px var(--accent-color, #5ad5ff); cursor: pointer; transition: transform 0.14s ease; }
+.layer-opacity-slider::-webkit-slider-thumb:hover { transform: scale(1.15); }
+.layer-opacity-slider::-moz-range-thumb { width: 0.9rem; height: 0.9rem; border: none; border-radius: 50%; background: var(--accent-color, #5ad5ff); box-shadow: 0 0 6px var(--accent-color, #5ad5ff); cursor: pointer; }
 .weather-legend-row { display: flex; justify-content: space-between; gap: 0.4rem; color: #9eb3c8; font-size: 0.54rem; }
 .weather-legend-label { color: #dbeeff; }
 .weather-legend-meta { color: #7f93a9; }
@@ -908,11 +965,17 @@ onBeforeUnmount(() => {
 .overlay-dot { width: 0.5rem; height: 0.5rem; border-radius: 999px; background: var(--layer-accent, #88d8ff); box-shadow: 0 0 6px var(--layer-accent, rgba(136, 216, 255, 0.6)); flex-shrink: 0; }
 .overlay-info { display: grid; gap: 0.04rem; flex: 1; min-width: 0; }
 .overlay-name { color: #eaf3fb; font-size: 0.6rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.overlay-category { color: #7f93a9; font-size: 0.52rem; }
+.overlay-category { color: #7f93a9; font-size: 0.52rem; display: flex; align-items: center; gap: 0.2rem; flex-wrap: wrap; }
+.overlay-palette-tag { padding: 0.04rem 0.22rem; border-radius: 0.28rem; background: rgba(126, 168, 255, 0.14); color: #c8d8ff; font-size: 0.46rem; }
+.overlay-range { color: #9eb3c8; font-size: 0.5rem; }
+.overlay-time-tag { color: #ffd38a; font-size: 0.5rem; font-variant-numeric: tabular-nums; }
+.overlay-value-col { display: grid; gap: 0.08rem; align-items: end; justify-items: end; flex-shrink: 0; }
 .overlay-state { padding: 0.1rem 0.3rem; border-radius: 999px; font-size: 0.5rem; text-transform: uppercase; letter-spacing: 0.04em; }
 .overlay-state.state-ready { background: rgba(114, 255, 207, 0.12); color: #9ff8cf; }
 .overlay-state.state-partial { background: rgba(255, 196, 120, 0.12); color: #ffd38a; }
 .overlay-state.state-empty { background: rgba(148, 163, 184, 0.12); color: #b6c9da; }
+.overlay-point-value { color: #eaf3fb; font-size: 0.54rem; font-variant-numeric: tabular-nums; padding: 0.06rem 0.24rem; border-radius: 0.32rem; background: rgba(90, 162, 255, 0.12); }
+.overlay-point-value.na { color: #7f93a9; background: rgba(148, 163, 184, 0.08); }
 @media (max-width: 560px) {
   .meta-list,
   .weather-row-grid,

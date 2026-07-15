@@ -1,0 +1,174 @@
+精选下载计划: 48 个文件
+目标目录: I:\Geograph_DataSet
+
+  [nas] 48 个文件
+
+[nas] 登录中...
+[nas] 登录成功，开始下载 48 个文件...
+  [1/48] SKIP (exists): SMAP_L3_SM_P_20230110_R18290_001.h5 -> SMAP\
+  [2/48] SKIP (exists): SMAP_L3_SM_P_20230118_R18290_001.h5 -> SMAP\
+  [3/48] SKIP (exists): SMAP_L3_SM_P_20230126_R18290_001.h5 -> SMAP\
+  [4/48] SKIP (exists): SMAP_L3_SM_P_20230129_R18290_001.h5 -> SMAP\
+  [5/48] SKIP (exists): SMAP_L3_SM_P_E_20220920_R19240_001.h5 -> SMAP\
+  [6/48] SKIP (exists): lrad_CMFD_V0106_B-01_01mo_010deg_197901-201812.nc -> Weather\
+  [7/48] SKIP (exists): srad_CMFD_V0106_B-01_01mo_010deg_197901-201812.nc -> Weather\
+  [8/48] SKIP (exists): hfp2018.tif -> HumanFootprint\
+  [9/48] SKIP (exists): hfp2019.tif -> HumanFootprint\
+  [10/48] Human Footprint 2020
+    nas:/Wangc/HFP/Human_p/hfp2020.tif
+    -> I:\Geograph_DataSet\HumanFootprint\hfp2020.tif
+    FAILED: [Errno 13] Permission denied: 'I:\\Geograph_DataSet\\HumanFootprint\\hfp2020.tif'
+  [11/48] ERA5 SMCI 2018
+    nas:/Wangc/ERES5/SMCI/ERA5_2018_SMCI-T7.nc
+    -> I:\Geograph_DataSet\Weather\ERA5_2018_SMCI-T7.nc
+    FAILED: [Errno 13] Permission denied: 'I:\\Geograph_DataSet\\Weather\\ERA5_2018_SMCI-T7.nc'
+  [12/48] ERA5 SMCI 2019
+    nas:/Wangc/ERES5/SMCI/ERA5_2019_SMCI-T7.nc
+    -> I:\Geograph_DataSet\Weather\ERA5_2019_SMCI-T7.nc
+    FAILED: [Errno 13] Permission denied: 'I:\\Geograph_DataSet\\Weather\\ERA5_2019_SMCI-T7.nc'
+  [13/48] ERA5 SMCI 2020
+    nas:/Wangc/ERES5/SMCI/ERA5_2020_SMCI-T7.nc
+    -> I:\Geograph_DataSet\Weather\ERA5_2020_SMCI-T7.nc
+    FAILED: [Errno 13] Permission denied: 'I:\\Geograph_DataSet\\Weather\\ERA5_2020_SMCI-T7.nc'
+  [14/48] MCD12Q1 China 2019
+    nas:/LiuSJ/Data/MCD12Q1_China/MCD12Q1_2019.tif
+    -> I:\Geograph_DataSet\LandCover\MCD12Q1_2019.tif
+    FAILED: [Errno 13] Permission denied: 'I:\\Geograph_DataSet\\LandCover\\MCD12Q1_2019.tif'
+  [15/48] MCD12Q1 China 2020
+    nas:/LiuSJ/Data/MCD12Q1_China/MCD12Q1_2020.tif
+    -> I:\Geograph_DataSet\LandCover\MCD12Q1_2020.tif
+    FAILED: [Errno 13] Permission denied: 'I:\\Geograph_DataSet\\LandCover\\MCD12Q1_2020.tif'
+  [16/48] MCD12Q1 China 2021
+    nas:/LiuSJ/Data/MCD12Q1_China/MCD12Q1_2021.tif
+    -> I:\Geograph_DataSet\LandCover\MCD12Q1_2021.tif
+    FAILED: [Errno 13] Permission denied: 'I:\\Geograph_DataSet\\LandCover\\MCD12Q1_2021.tif'
+  [17/48] ESACCI BIOMASS AGB 2020
+    nas:/Wangc/Biomass/2018/ESACCI-BIOMASS-L4-AGB-MERGED-100m-2020-fv6.0.nc
+    -> I:\Geograph_DataSet\Biomass\ESACCI-BIOMASS-L4-AGB-MERGED-100m-2020-fv6.0.nc
+    FAILED: [Errno 13] Permission denied: 'I:\\Geograph_DataSet\\Biomass\\ESACCI-BIOMASS-L4-AGB-MERGED-100m-2020-fv6.0.nc'
+  [18/48] CLCD China 1997
+    nas:/Wangc/CLCD/CLCD_v01_1997.tif
+    -> I:\Geograph_DataSet\LandCover\CLCD_v01_1997.tif
+    FAILED: [Errno 13] Permission denied: 'I:\\Geograph_DataSet\\LandCover\\CLCD_v01_1997.tif'
+  [19/48] China 1km precip 2002-01
+    nas:/Wangxd/china1km/pre_tif/pre_2002_01.tif
+    -> I:\Geograph_DataSet\Precipitation\pre_2002_01.tif
+    FAILED: [Errno 13] Permission denied: 'I:\\Geograph_DataSet\\Precipitation\\pre_2002_01.tif'
+  [20/48] China 1km precip 2002-02
+    nas:/Wangxd/china1km/pre_tif/pre_2002_02.tif
+    -> I:\Geograph_DataSet\Precipitation\pre_2002_02.tif
+    FAILED: [Errno 13] Permission denied: 'I:\\Geograph_DataSet\\Precipitation\\pre_2002_02.tif'
+  [21/48] China 1km precip 2002-03
+    nas:/Wangxd/china1km/pre_tif/pre_2002_03.tif
+    -> I:\Geograph_DataSet\Precipitation\pre_2002_03.tif
+    FAILED: [Errno 13] Permission denied: 'I:\\Geograph_DataSet\\Precipitation\\pre_2002_03.tif'
+  [22/48] China 1km temp 2002-01
+    nas:/Wangxd/china1km/tmp_tif/tmp_2002_01.tif
+    -> I:\Geograph_DataSet\Weather\tmp_2002_01.tif
+    FAILED: [Errno 13] Permission denied: 'I:\\Geograph_DataSet\\Weather\\tmp_2002_01.tif'
+  [23/48] China 1km temp 2002-02
+    nas:/Wangxd/china1km/tmp_tif/tmp_2002_02.tif
+    -> I:\Geograph_DataSet\Weather\tmp_2002_02.tif
+    FAILED: [Errno 13] Permission denied: 'I:\\Geograph_DataSet\\Weather\\tmp_2002_02.tif'
+  [24/48] China 1km temp 2002-03
+    nas:/Wangxd/china1km/tmp_tif/tmp_2002_03.tif
+    -> I:\Geograph_DataSet\Weather\tmp_2002_03.tif
+    FAILED: [Errno 13] Permission denied: 'I:\\Geograph_DataSet\\Weather\\tmp_2002_03.tif'
+  [25/48] SKIP (exists): doy_017.mat -> InversionResults\
+  [26/48] omega SMAP avg DOY 018
+    nas:/Liuzheng/omega_final/smap_avg_ω/doy_018.mat
+    -> I:\Geograph_DataSet\InversionResults\doy_018.mat
+    FAILED: [Errno 13] Permission denied: 'I:\\Geograph_DataSet\\InversionResults\\doy_018.mat'
+  [27/48] omega SMAP avg DOY 019
+    nas:/Liuzheng/omega_final/smap_avg_ω/doy_019.mat
+    -> I:\Geograph_DataSet\InversionResults\doy_019.mat
+    FAILED: [Errno 13] Permission denied: 'I:\\Geograph_DataSet\\InversionResults\\doy_019.mat'
+  [28/48] omega SMAP avg DOY 020
+    nas:/Liuzheng/omega_final/smap_avg_ω/doy_020.mat
+    -> I:\Geograph_DataSet\InversionResults\doy_020.mat
+    FAILED: [Errno 13] Permission denied: 'I:\\Geograph_DataSet\\InversionResults\\doy_020.mat'
+  [29/48] omega SMAP avg DOY 021
+    nas:/Liuzheng/omega_final/smap_avg_ω/doy_021.mat
+    -> I:\Geograph_DataSet\InversionResults\doy_021.mat
+    FAILED: [Errno 13] Permission denied: 'I:\\Geograph_DataSet\\InversionResults\\doy_021.mat'
+  [30/48] omega SMAP avg DOY 022
+    nas:/Liuzheng/omega_final/smap_avg_ω/doy_022.mat
+    -> I:\Geograph_DataSet\InversionResults\doy_022.mat
+    FAILED: [Errno 13] Permission denied: 'I:\\Geograph_DataSet\\InversionResults\\doy_022.mat'
+  [31/48] omega SMAP avg DOY 023
+    nas:/Liuzheng/omega_final/smap_avg_ω/doy_023.mat
+    -> I:\Geograph_DataSet\InversionResults\doy_023.mat
+    FAILED: [Errno 13] Permission denied: 'I:\\Geograph_DataSet\\InversionResults\\doy_023.mat'
+  [32/48] omega SMAP avg DOY 024
+    nas:/Liuzheng/omega_final/smap_avg_ω/doy_024.mat
+    -> I:\Geograph_DataSet\InversionResults\doy_024.mat
+    FAILED: [Errno 13] Permission denied: 'I:\\Geograph_DataSet\\InversionResults\\doy_024.mat'
+  [33/48] omega SMAP avg DOY 025
+    nas:/Liuzheng/omega_final/smap_avg_ω/doy_025.mat
+    -> I:\Geograph_DataSet\InversionResults\doy_025.mat
+    FAILED: [Errno 13] Permission denied: 'I:\\Geograph_DataSet\\InversionResults\\doy_025.mat'
+  [34/48] omega SMAP avg DOY 026
+    nas:/Liuzheng/omega_final/smap_avg_ω/doy_026.mat
+    -> I:\Geograph_DataSet\InversionResults\doy_026.mat
+    FAILED: [Errno 13] Permission denied: 'I:\\Geograph_DataSet\\InversionResults\\doy_026.mat'
+  [35/48] omega SMAP avg DOY 027
+    nas:/Liuzheng/omega_final/smap_avg_ω/doy_027.mat
+    -> I:\Geograph_DataSet\InversionResults\doy_027.mat
+    FAILED: [Errno 13] Permission denied: 'I:\\Geograph_DataSet\\InversionResults\\doy_027.mat'
+  [36/48] omega SMAP avg DOY 028
+    nas:/Liuzheng/omega_final/smap_avg_ω/doy_028.mat
+    -> I:\Geograph_DataSet\InversionResults\doy_028.mat
+    FAILED: [Errno 13] Permission denied: 'I:\\Geograph_DataSet\\InversionResults\\doy_028.mat'
+  [37/48] omega SMAP avg DOY 029
+    nas:/Liuzheng/omega_final/smap_avg_ω/doy_029.mat
+    -> I:\Geograph_DataSet\InversionResults\doy_029.mat
+    FAILED: [Errno 13] Permission denied: 'I:\\Geograph_DataSet\\InversionResults\\doy_029.mat'
+  [38/48] omega SMAP avg DOY 030
+    nas:/Liuzheng/omega_final/smap_avg_ω/doy_030.mat
+    -> I:\Geograph_DataSet\InversionResults\doy_030.mat
+    FAILED: [Errno 13] Permission denied: 'I:\\Geograph_DataSet\\InversionResults\\doy_030.mat'
+  [39/48] omega FY avg DOY 025
+    nas:/Liuzheng/omega_final/fy_avg_ω/doy_025.mat
+    -> I:\Geograph_DataSet\InversionResults\doy_025.mat
+    FAILED: [Errno 13] Permission denied: 'I:\\Geograph_DataSet\\InversionResults\\doy_025.mat'
+  [40/48] omega FY avg DOY 026
+    nas:/Liuzheng/omega_final/fy_avg_ω/doy_026.mat
+    -> I:\Geograph_DataSet\InversionResults\doy_026.mat
+    FAILED: [Errno 13] Permission denied: 'I:\\Geograph_DataSet\\InversionResults\\doy_026.mat'
+  [41/48] omega FY avg DOY 027
+    nas:/Liuzheng/omega_final/fy_avg_ω/doy_027.mat
+    -> I:\Geograph_DataSet\InversionResults\doy_027.mat
+    FAILED: [Errno 13] Permission denied: 'I:\\Geograph_DataSet\\InversionResults\\doy_027.mat'
+  [42/48] omega FY avg DOY 028
+    nas:/Liuzheng/omega_final/fy_avg_ω/doy_028.mat
+    -> I:\Geograph_DataSet\InversionResults\doy_028.mat
+    FAILED: [Errno 13] Permission denied: 'I:\\Geograph_DataSet\\InversionResults\\doy_028.mat'
+  [43/48] omega FY avg DOY 029
+    nas:/Liuzheng/omega_final/fy_avg_ω/doy_029.mat
+    -> I:\Geograph_DataSet\InversionResults\doy_029.mat
+    FAILED: [Errno 13] Permission denied: 'I:\\Geograph_DataSet\\InversionResults\\doy_029.mat'
+  [44/48] omega FY avg DOY 030
+    nas:/Liuzheng/omega_final/fy_avg_ω/doy_030.mat
+    -> I:\Geograph_DataSet\InversionResults\doy_030.mat
+    FAILED: [Errno 13] Permission denied: 'I:\\Geograph_DataSet\\InversionResults\\doy_030.mat'
+  [45/48] ISMN vs FLUXNET site matching
+    nas:/Liuzheng/ISMN和FLUXz站点匹配/ISMN_vs_Fluxnet2015.csv
+    -> I:\Geograph_DataSet\Station\ISMN_vs_Fluxnet2015.csv
+    FAILED: [Errno 13] Permission denied: 'I:\\Geograph_DataSet\\Station\\ISMN_vs_Fluxnet2015.csv'
+  [46/48] Landscape Metrics 9KM 2020
+    nas:/Liuzheng/Data/Landscape_Metrics_LandOnly_9KM_2020.mat
+    -> I:\Geograph_DataSet\InversionResults\Landscape_Metrics_LandOnly_9KM_2020.mat
+    FAILED: [Errno 13] Permission denied: 'I:\\Geograph_DataSet\\InversionResults\\Landscape_Metrics_LandOnly_9KM_2020.mat'
+  [47/48] Forest Ratio 9KM 2020
+    nas:/Liuzheng/Data/Forest_Ratio_9KM_2020.mat
+    -> I:\Geograph_DataSet\InversionResults\Forest_Ratio_9KM_2020.mat
+    FAILED: [Errno 13] Permission denied: 'I:\\Geograph_DataSet\\InversionResults\\Forest_Ratio_9KM_2020.mat'
+  [48/48] Aridity Index 1980-2020
+    nas:/Liuzheng/Data/AI/AridityIndex_MSWEP-prcp_div_GLEAM-Ep_1980-2020.tif
+    -> I:\Geograph_DataSet\Others\AridityIndex_MSWEP-prcp_div_GLEAM-Ep_1980-2020.tif
+    FAILED: [Errno 13] Permission denied: 'I:\\Geograph_DataSet\\Others\\AridityIndex_MSWEP-prcp_div_GLEAM-Ep_1980-2020.tif'
+
+============================================================
+下载完成: 0 成功, 10 跳过, 38 失败
+总下载量: 0 B
+============================================================

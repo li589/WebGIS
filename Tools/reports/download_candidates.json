@@ -1,0 +1,3870 @@
+{
+  "description": "Download candidates for China region testing",
+  "total_files": 207,
+  "total_size_human": "143.5 GB",
+  "by_temporal": {
+    "daily": 30,
+    "monthly": 3,
+    "yearly": 124,
+    "static": 50
+  },
+  "files": [
+    {
+      "server": "nas",
+      "remote_path": "/Wangc/SWAP L3/SMAP_L3_SM_P_20230126_R18290_001.h5",
+      "name": "SMAP_L3_SM_P_20230126_R18290_001.h5",
+      "extension": ".h5",
+      "size_bytes": 32373881,
+      "size_human": "30.9 MB",
+      "categories": [
+        "土壤水分"
+      ],
+      "depth": 2,
+      "modified": "2024-03-06T20:21:09.6164454+08:00",
+      "_temporal": "daily",
+      "_china": true
+    },
+    {
+      "server": "nas",
+      "remote_path": "/Wangc/SWAP L3/SMAP_L3_SM_P_20230129_R18290_001.h5",
+      "name": "SMAP_L3_SM_P_20230129_R18290_001.h5",
+      "extension": ".h5",
+      "size_bytes": 32413090,
+      "size_human": "30.9 MB",
+      "categories": [
+        "土壤水分"
+      ],
+      "depth": 2,
+      "modified": "2024-03-06T20:24:45.3570208+08:00",
+      "_temporal": "daily",
+      "_china": true
+    },
+    {
+      "server": "nas",
+      "remote_path": "/Wangc/SWAP L3/SMAP_L3_SM_P_20230118_R18290_001.h5",
+      "name": "SMAP_L3_SM_P_20230118_R18290_001.h5",
+      "extension": ".h5",
+      "size_bytes": 32422555,
+      "size_human": "30.9 MB",
+      "categories": [
+        "土壤水分"
+      ],
+      "depth": 2,
+      "modified": "2024-03-06T20:11:37.8005792+08:00",
+      "_temporal": "daily",
+      "_china": true
+    },
+    {
+      "server": "nas",
+      "remote_path": "/Wangc/SWAP L3/SMAP_L3_SM_P_20230110_R18290_001.h5",
+      "name": "SMAP_L3_SM_P_20230110_R18290_001.h5",
+      "extension": ".h5",
+      "size_bytes": 32444208,
+      "size_human": "30.9 MB",
+      "categories": [
+        "土壤水分"
+      ],
+      "depth": 2,
+      "modified": "2024-03-06T20:02:52.844799+08:00",
+      "_temporal": "daily",
+      "_china": true
+    },
+    {
+      "server": "nas",
+      "remote_path": "/Chenhaojun/Data/smap缺的日期/SMAP_L3_SM_P_E_20220920_R19240_001 (1).h5",
+      "name": "SMAP_L3_SM_P_E_20220920_R19240_001 (1).h5",
+      "extension": ".h5",
+      "size_bytes": 52403423,
+      "size_human": "50.0 MB",
+      "categories": [
+        "土壤水分"
+      ],
+      "depth": 3,
+      "modified": "2026-03-27T21:26:22.4555307+08:00",
+      "_temporal": "daily",
+      "_china": true
+    },
+    {
+      "server": "nas",
+      "remote_path": "/Chenhaojun/Data/smap缺的日期/SMAP_L3_SM_P_E_20220920_R19240_001.h5",
+      "name": "SMAP_L3_SM_P_E_20220920_R19240_001.h5",
+      "extension": ".h5",
+      "size_bytes": 52403423,
+      "size_human": "50.0 MB",
+      "categories": [
+        "土壤水分"
+      ],
+      "depth": 3,
+      "modified": "2026-03-27T21:51:25.0563981+08:00",
+      "_temporal": "daily",
+      "_china": true
+    },
+    {
+      "server": "nas",
+      "remote_path": "/Liuzheng/Data/landcover/lc_mcd12q1v061.t1_c_500m_s_20070101_20071231_go_epsg.4326_v20230818.tif",
+      "name": "lc_mcd12q1v061.t1_c_500m_s_20070101_20071231_go_epsg.4326_v20230818.tif",
+      "extension": ".tif",
+      "size_bytes": 131794391,
+      "size_human": "125.7 MB",
+      "categories": [
+        "土地覆盖"
+      ],
+      "depth": 3,
+      "modified": "2026-04-27T21:38:52.7957768+08:00",
+      "_temporal": "daily",
+      "_china": true
+    },
+    {
+      "server": "nas",
+      "remote_path": "/Liuzheng/Data/landcover/lc_mcd12q1v061.t1_c_500m_s_20080101_20081231_go_epsg.4326_v20230818.tif",
+      "name": "lc_mcd12q1v061.t1_c_500m_s_20080101_20081231_go_epsg.4326_v20230818.tif",
+      "extension": ".tif",
+      "size_bytes": 131869096,
+      "size_human": "125.8 MB",
+      "categories": [
+        "土地覆盖"
+      ],
+      "depth": 3,
+      "modified": "2026-04-27T21:38:52.1931106+08:00",
+      "_temporal": "daily",
+      "_china": true
+    },
+    {
+      "server": "nas",
+      "remote_path": "/Liuzheng/Data/landcover/lc_mcd12q1v061.t1_c_500m_s_20090101_20091231_go_epsg.4326_v20230818.tif",
+      "name": "lc_mcd12q1v061.t1_c_500m_s_20090101_20091231_go_epsg.4326_v20230818.tif",
+      "extension": ".tif",
+      "size_bytes": 132127536,
+      "size_human": "126.0 MB",
+      "categories": [
+        "土地覆盖"
+      ],
+      "depth": 3,
+      "modified": "2026-04-27T21:38:26.1268514+08:00",
+      "_temporal": "daily",
+      "_china": true
+    },
+    {
+      "server": "nas",
+      "remote_path": "/Liuzheng/Data/landcover/lc_mcd12q1v061.t1_c_500m_s_20100101_20101231_go_epsg.4326_v20230818.tif",
+      "name": "lc_mcd12q1v061.t1_c_500m_s_20100101_20101231_go_epsg.4326_v20230818.tif",
+      "extension": ".tif",
+      "size_bytes": 132277397,
+      "size_human": "126.1 MB",
+      "categories": [
+        "土地覆盖"
+      ],
+      "depth": 3,
+      "modified": "2026-04-27T21:47:37.583232+08:00",
+      "_temporal": "daily",
+      "_china": true
+    },
+    {
+      "server": "nas",
+      "remote_path": "/Liuzheng/Data/landcover/lc_mcd12q1v061.t1_c_500m_s_20120101_20121231_go_epsg.4326_v20230818.tif",
+      "name": "lc_mcd12q1v061.t1_c_500m_s_20120101_20121231_go_epsg.4326_v20230818.tif",
+      "extension": ".tif",
+      "size_bytes": 132546734,
+      "size_human": "126.4 MB",
+      "categories": [
+        "土地覆盖"
+      ],
+      "depth": 3,
+      "modified": "2026-04-27T21:38:58.5257314+08:00",
+      "_temporal": "daily",
+      "_china": true
+    },
+    {
+      "server": "nas",
+      "remote_path": "/Liuzheng/Data/landcover/lc_mcd12q1v061.t1_c_500m_s_20130101_20131231_go_epsg.4326_v20230818.tif",
+      "name": "lc_mcd12q1v061.t1_c_500m_s_20130101_20131231_go_epsg.4326_v20230818.tif",
+      "extension": ".tif",
+      "size_bytes": 132659201,
+      "size_human": "126.5 MB",
+      "categories": [
+        "土地覆盖"
+      ],
+      "depth": 3,
+      "modified": "2026-04-28T12:39:46.0973029+08:00",
+      "_temporal": "daily",
+      "_china": true
+    },
+    {
+      "server": "nas",
+      "remote_path": "/Liuzheng/Data/landcover/lc_mcd12q1v061.t1_c_500m_s_20110101_20111231_go_epsg.4326_v20230818.tif",
+      "name": "lc_mcd12q1v061.t1_c_500m_s_20110101_20111231_go_epsg.4326_v20230818.tif",
+      "extension": ".tif",
+      "size_bytes": 132867034,
+      "size_human": "126.7 MB",
+      "categories": [
+        "土地覆盖"
+      ],
+      "depth": 3,
+      "modified": "2026-04-27T21:39:09.400744+08:00",
+      "_temporal": "daily",
+      "_china": true
+    },
+    {
+      "server": "nas",
+      "remote_path": "/Liuzheng/Data/landcover/lc_mcd12q1v061.t1_c_500m_s_20140101_20141231_go_epsg.4326_v20230818.tif",
+      "name": "lc_mcd12q1v061.t1_c_500m_s_20140101_20141231_go_epsg.4326_v20230818.tif",
+      "extension": ".tif",
+      "size_bytes": 133309002,
+      "size_human": "127.1 MB",
+      "categories": [
+        "土地覆盖"
+      ],
+      "depth": 3,
+      "modified": "2026-04-27T21:40:49.3105645+08:00",
+      "_temporal": "daily",
+      "_china": true
+    },
+    {
+      "server": "nas",
+      "remote_path": "/Chenhaojun/Data/smap缺的日期/SMAP_L3_SM_P_E_20220922_R19240_002.h5",
+      "name": "SMAP_L3_SM_P_E_20220922_R19240_002.h5",
+      "extension": ".h5",
+      "size_bytes": 170816980,
+      "size_human": "162.9 MB",
+      "categories": [
+        "土壤水分"
+      ],
+      "depth": 3,
+      "modified": "2026-03-27T21:52:02.5035479+08:00",
+      "_temporal": "daily",
+      "_china": true
+    },
+    {
+      "server": "nas",
+      "remote_path": "/Wangc/ERES5/smap/SMAP_L4_SM_gph_20150501T193000_Vv5012_001.h5",
+      "name": "SMAP_L4_SM_gph_20150501T193000_Vv5012_001.h5",
+      "extension": ".h5",
+      "size_bytes": 204849124,
+      "size_human": "195.4 MB",
+      "categories": [
+        "土壤水分"
+      ],
+      "depth": 3,
+      "modified": "2020-09-02T01:31:39+08:00",
+      "_temporal": "daily",
+      "_china": true
+    },
+    {
+      "server": "nas",
+      "remote_path": "/Wangc/ERES5/smap/SMAP_L4_SM_gph_20150503T223000_Vv5012_001.h5",
+      "name": "SMAP_L4_SM_gph_20150503T223000_Vv5012_001.h5",
+      "extension": ".h5",
+      "size_bytes": 205725189,
+      "size_human": "196.2 MB",
+      "categories": [
+        "土壤水分"
+      ],
+      "depth": 3,
+      "modified": "2020-09-02T01:35:58+08:00",
+      "_temporal": "daily",
+      "_china": true
+    },
+    {
+      "server": "nas",
+      "remote_path": "/Wangc/ERES5/smap/SMAP_L4_SM_gph_20150501T223000_Vv5012_001.h5",
+      "name": "SMAP_L4_SM_gph_20150501T223000_Vv5012_001.h5",
+      "extension": ".h5",
+      "size_bytes": 206204107,
+      "size_human": "196.7 MB",
+      "categories": [
+        "土壤水分"
+      ],
+      "depth": 3,
+      "modified": "2020-09-02T01:31:37+08:00",
+      "_temporal": "daily",
+      "_china": true
+    },
+    {
+      "server": "nas",
+      "remote_path": "/Wangc/ERES5/smap/SMAP_L4_SM_gph_20150501T013000_Vv5012_001.h5",
+      "name": "SMAP_L4_SM_gph_20150501T013000_Vv5012_001.h5",
+      "extension": ".h5",
+      "size_bytes": 206265816,
+      "size_human": "196.7 MB",
+      "categories": [
+        "土壤水分"
+      ],
+      "depth": 3,
+      "modified": "2020-09-02T01:31:37+08:00",
+      "_temporal": "daily",
+      "_china": true
+    },
+    {
+      "server": "nas",
+      "remote_path": "/Wangc/ERES5/smap/SMAP_L4_SM_gph_20150502T013000_Vv5012_001.h5",
+      "name": "SMAP_L4_SM_gph_20150502T013000_Vv5012_001.h5",
+      "extension": ".h5",
+      "size_bytes": 206661859,
+      "size_human": "197.1 MB",
+      "categories": [
+        "土壤水分"
+      ],
+      "depth": 3,
+      "modified": "2020-09-02T01:31:22+08:00",
+      "_temporal": "daily",
+      "_china": true
+    },
+    {
+      "server": "nas",
+      "remote_path": "/Wangc/ERES5/smap/SMAP_L4_SM_gph_20150501T163000_Vv5012_001.h5",
+      "name": "SMAP_L4_SM_gph_20150501T163000_Vv5012_001.h5",
+      "extension": ".h5",
+      "size_bytes": 207208540,
+      "size_human": "197.6 MB",
+      "categories": [
+        "土壤水分"
+      ],
+      "depth": 3,
+      "modified": "2020-09-19T06:54:01+08:00",
+      "_temporal": "daily",
+      "_china": true
+    },
+    {
+      "server": "nas",
+      "remote_path": "/Wangc/ERES5/smap/SMAP_L4_SM_gph_20150501T073000_Vv5012_001.h5",
+      "name": "SMAP_L4_SM_gph_20150501T073000_Vv5012_001.h5",
+      "extension": ".h5",
+      "size_bytes": 207493070,
+      "size_human": "197.9 MB",
+      "categories": [
+        "土壤水分"
+      ],
+      "depth": 3,
+      "modified": "2020-09-02T01:31:39+08:00",
+      "_temporal": "daily",
+      "_china": true
+    },
+    {
+      "server": "nas",
+      "remote_path": "/Wangc/ERES5/smap/SMAP_L4_SM_gph_20150503T073000_Vv5012_001.h5",
+      "name": "SMAP_L4_SM_gph_20150503T073000_Vv5012_001.h5",
+      "extension": ".h5",
+      "size_bytes": 207501950,
+      "size_human": "197.9 MB",
+      "categories": [
+        "土壤水分"
+      ],
+      "depth": 3,
+      "modified": "2020-09-02T01:35:57+08:00",
+      "_temporal": "daily",
+      "_china": true
+    },
+    {
+      "server": "nas",
+      "remote_path": "/Wangc/ERES5/smap/SMAP_L4_SM_gph_20150501T043000_Vv5012_001.h5",
+      "name": "SMAP_L4_SM_gph_20150501T043000_Vv5012_001.h5",
+      "extension": ".h5",
+      "size_bytes": 207654080,
+      "size_human": "198.0 MB",
+      "categories": [
+        "土壤水分"
+      ],
+      "depth": 3,
+      "modified": "2026-01-24T12:35:36.0301849+08:00",
+      "_temporal": "daily",
+      "_china": true
+    },
+    {
+      "server": "nas",
+      "remote_path": "/Wangc/ERES5/smap/SMAP_L4_SM_gph_20150503T043000_Vv5012_001.h5",
+      "name": "SMAP_L4_SM_gph_20150503T043000_Vv5012_001.h5",
+      "extension": ".h5",
+      "size_bytes": 207702451,
+      "size_human": "198.1 MB",
+      "categories": [
+        "土壤水分"
+      ],
+      "depth": 3,
+      "modified": "2020-09-02T01:35:57+08:00",
+      "_temporal": "daily",
+      "_china": true
+    },
+    {
+      "server": "nas",
+      "remote_path": "/Wangc/ERES5/smap/SMAP_L4_SM_gph_20150502T043000_Vv5012_001.h5",
+      "name": "SMAP_L4_SM_gph_20150502T043000_Vv5012_001.h5",
+      "extension": ".h5",
+      "size_bytes": 208302000,
+      "size_human": "198.7 MB",
+      "categories": [
+        "土壤水分"
+      ],
+      "depth": 3,
+      "modified": "2020-09-02T01:31:22+08:00",
+      "_temporal": "daily",
+      "_china": true
+    },
+    {
+      "server": "nas",
+      "remote_path": "/Wangc/ERES5/smap/SMAP_L4_SM_gph_20150501T133000_Vv5012_001.h5",
+      "name": "SMAP_L4_SM_gph_20150501T133000_Vv5012_001.h5",
+      "extension": ".h5",
+      "size_bytes": 208675100,
+      "size_human": "199.0 MB",
+      "categories": [
+        "土壤水分"
+      ],
+      "depth": 3,
+      "modified": "2020-09-02T01:31:36+08:00",
+      "_temporal": "daily",
+      "_china": true
+    },
+    {
+      "server": "nas",
+      "remote_path": "/Wangc/ERES5/smap/SMAP_L4_SM_gph_20150503T103000_Vv5012_001.h5",
+      "name": "SMAP_L4_SM_gph_20150503T103000_Vv5012_001.h5",
+      "extension": ".h5",
+      "size_bytes": 209370728,
+      "size_human": "199.7 MB",
+      "categories": [
+        "土壤水分"
+      ],
+      "depth": 3,
+      "modified": "2020-09-02T01:35:43+08:00",
+      "_temporal": "daily",
+      "_china": true
+    },
+    {
+      "server": "nas",
+      "remote_path": "/Wangc/ERES5/smap/SMAP_L4_SM_gph_20150501T103000_Vv5012_001.h5",
+      "name": "SMAP_L4_SM_gph_20150501T103000_Vv5012_001.h5",
+      "extension": ".h5",
+      "size_bytes": 209401587,
+      "size_human": "199.7 MB",
+      "categories": [
+        "土壤水分"
+      ],
+      "depth": 3,
+      "modified": "2020-09-02T01:31:36+08:00",
+      "_temporal": "daily",
+      "_china": true
+    },
+    {
+      "server": "nas",
+      "remote_path": "/LiuSJ/Data_0.1/FIRE/rdnbr_sum_2000_2020.tif",
+      "name": "rdnbr_sum_2000_2020.tif",
+      "extension": ".tif",
+      "size_bytes": 246004480,
+      "size_human": "234.6 MB",
+      "categories": [
+        "其他"
+      ],
+      "depth": 3,
+      "modified": "2026-04-15T23:27:56.304908+08:00",
+      "_temporal": "daily",
+      "_china": true
+    },
+    {
+      "server": "nas",
+      "remote_path": "/Wangc/CMFD/Data_forcing_01mo_010deg/lrad_CMFD_V0106_B-01_01mo_010deg_197901-201812.nc",
+      "name": "lrad_CMFD_V0106_B-01_01mo_010deg_197901-201812.nc",
+      "extension": ".nc",
+      "size_bytes": 268809924,
+      "size_human": "256.4 MB",
+      "categories": [
+        "其他"
+      ],
+      "depth": 3,
+      "modified": "2019-06-13T16:51:06+08:00",
+      "_temporal": "monthly",
+      "_china": true
+    },
+    {
+      "server": "nas",
+      "remote_path": "/Wangc/CMFD/Data_forcing_01mo_010deg/srad_CMFD_V0106_B-01_01mo_010deg_197901-201812.nc",
+      "name": "srad_CMFD_V0106_B-01_01mo_010deg_197901-201812.nc",
+      "extension": ".nc",
+      "size_bytes": 268809924,
+      "size_human": "256.4 MB",
+      "categories": [
+        "其他"
+      ],
+      "depth": 3,
+      "modified": "2019-06-13T16:51:56+08:00",
+      "_temporal": "monthly",
+      "_china": true
+    },
+    {
+      "server": "nas",
+      "remote_path": "/Wangxd/CLM相关/CLMinputdata/domain.lnd.0.125x0.125_tx0.1v2.140704.nc",
+      "name": "domain.lnd.0.125x0.125_tx0.1v2.140704.nc",
+      "extension": ".nc",
+      "size_bytes": 414722308,
+      "size_human": "395.5 MB",
+      "categories": [
+        "其他"
+      ],
+      "depth": 3,
+      "modified": "2019-01-13T10:08:20+08:00",
+      "_temporal": "monthly",
+      "_china": true
+    },
+    {
+      "server": "nas",
+      "remote_path": "/Wangc/Biomass/2018/ESACCI-BIOMASS-L4-AGB-MERGED-100m-2020-fv6.0.nc",
+      "name": "ESACCI-BIOMASS-L4-AGB-MERGED-100m-2020-fv6.0.nc",
+      "extension": ".nc",
+      "size_bytes": 18142626682,
+      "size_human": "16.9 GB",
+      "categories": [
+        "其他"
+      ],
+      "depth": 3,
+      "modified": "2026-02-25T21:02:18.3252695+08:00",
+      "_temporal": "yearly",
+      "_china": true,
+      "_date_info": {
+        "year": 2020,
+        "month": null,
+        "day": null,
+        "doy": null
+      }
+    },
+    {
+      "server": "nas",
+      "remote_path": "/Wangc/Biomass/2018/JRC_GFC2020_V3_N50_E10.tif",
+      "name": "JRC_GFC2020_V3_N50_E10.tif",
+      "extension": ".tif",
+      "size_bytes": 410130208,
+      "size_human": "391.1 MB",
+      "categories": [
+        "其他"
+      ],
+      "depth": 3,
+      "modified": "2026-02-26T17:34:11.3251529+08:00",
+      "_temporal": "yearly",
+      "_china": true,
+      "_date_info": {
+        "year": 2020,
+        "month": null,
+        "day": null,
+        "doy": null
+      }
+    },
+    {
+      "server": "nas",
+      "remote_path": "/Wangc/Biomass/2018/GFC2020_Mountain_248.tif",
+      "name": "GFC2020_Mountain_248.tif",
+      "extension": ".tif",
+      "size_bytes": 2927235,
+      "size_human": "2.8 MB",
+      "categories": [
+        "其他"
+      ],
+      "depth": 3,
+      "modified": "2026-02-26T15:30:34.8161696+08:00",
+      "_temporal": "yearly",
+      "_china": true,
+      "_date_info": {
+        "year": 2020,
+        "month": null,
+        "day": null,
+        "doy": null
+      }
+    },
+    {
+      "server": "nas",
+      "remote_path": "/Wangc/Biomass/2017/ESACCI-BIOMASS-L4-AGB-CHANGE-100m-2020-2019-fv6.0.nc",
+      "name": "ESACCI-BIOMASS-L4-AGB-CHANGE-100m-2020-2019-fv6.0.nc",
+      "extension": ".nc",
+      "size_bytes": 10352137437,
+      "size_human": "9.6 GB",
+      "categories": [
+        "其他"
+      ],
+      "depth": 3,
+      "modified": "2026-02-15T10:36:44.8890604+08:00",
+      "_temporal": "yearly",
+      "_china": true,
+      "_date_info": {
+        "year": 2020,
+        "month": null,
+        "day": null,
+        "doy": null
+      }
+    },
+    {
+      "server": "nas",
+      "remote_path": "/Wangc/Biomass/2017/ESACCI-BIOMASS-L4-AGB-CHANGE-100m-2019-2018-fv6.0.nc",
+      "name": "ESACCI-BIOMASS-L4-AGB-CHANGE-100m-2019-2018-fv6.0.nc",
+      "extension": ".nc",
+      "size_bytes": 10337620505,
+      "size_human": "9.6 GB",
+      "categories": [
+        "其他"
+      ],
+      "depth": 3,
+      "modified": "2026-02-14T20:42:48.7843806+08:00",
+      "_temporal": "yearly",
+      "_china": true,
+      "_date_info": {
+        "year": 2019,
+        "month": null,
+        "day": null,
+        "doy": null
+      }
+    },
+    {
+      "server": "nas",
+      "remote_path": "/Wangc/Biomass/2017/ESACCI-BIOMASS-L4-AGB-CHANGE-100m-2018-2017-fv6.0.nc",
+      "name": "ESACCI-BIOMASS-L4-AGB-CHANGE-100m-2018-2017-fv6.0.nc",
+      "extension": ".nc",
+      "size_bytes": 10415501484,
+      "size_human": "9.7 GB",
+      "categories": [
+        "其他"
+      ],
+      "depth": 3,
+      "modified": "2026-02-14T22:08:01.2605851+08:00",
+      "_temporal": "yearly",
+      "_china": true,
+      "_date_info": {
+        "year": 2018,
+        "month": null,
+        "day": null,
+        "doy": null
+      }
+    },
+    {
+      "server": "nas",
+      "remote_path": "/Wangc/CATCD/CATCD_2023_v01.tif",
+      "name": "CATCD_2023_v01.tif",
+      "extension": ".tif",
+      "size_bytes": 7237318398,
+      "size_human": "6.7 GB",
+      "categories": [
+        "其他"
+      ],
+      "depth": 2,
+      "modified": "2024-03-29T08:27:32+08:00",
+      "_temporal": "yearly",
+      "_china": true,
+      "_date_info": {
+        "year": 2023,
+        "month": null,
+        "day": null,
+        "doy": null
+      }
+    },
+    {
+      "server": "nas",
+      "remote_path": "/Wangc/CATCD/CATCD_2022_v01.tif",
+      "name": "CATCD_2022_v01.tif",
+      "extension": ".tif",
+      "size_bytes": 7259162941,
+      "size_human": "6.8 GB",
+      "categories": [
+        "其他"
+      ],
+      "depth": 2,
+      "modified": "2026-01-26T14:35:11.3192176+08:00",
+      "_temporal": "yearly",
+      "_china": true,
+      "_date_info": {
+        "year": 2022,
+        "month": null,
+        "day": null,
+        "doy": null
+      }
+    },
+    {
+      "server": "nas",
+      "remote_path": "/Wangc/CATCD/CATCD_2021_v01.tif",
+      "name": "CATCD_2021_v01.tif",
+      "extension": ".tif",
+      "size_bytes": 7124011426,
+      "size_human": "6.6 GB",
+      "categories": [
+        "其他"
+      ],
+      "depth": 2,
+      "modified": "2026-01-26T14:33:44.0749138+08:00",
+      "_temporal": "yearly",
+      "_china": true,
+      "_date_info": {
+        "year": 2021,
+        "month": null,
+        "day": null,
+        "doy": null
+      }
+    },
+    {
+      "server": "nas",
+      "remote_path": "/Liuzheng/Data/canopy_height/Forest_height_2019_SAM.tif",
+      "name": "Forest_height_2019_SAM.tif",
+      "extension": ".tif",
+      "size_bytes": 6921009177,
+      "size_human": "6.4 GB",
+      "categories": [
+        "其他"
+      ],
+      "depth": 3,
+      "modified": "2026-04-02T04:20:45.1685102+08:00",
+      "_temporal": "yearly",
+      "_china": true,
+      "_date_info": {
+        "year": 2019,
+        "month": null,
+        "day": null,
+        "doy": null
+      }
+    },
+    {
+      "server": "nas",
+      "remote_path": "/Liuzheng/Data/canopy_height/Forest_height_2019_SAFR.tif",
+      "name": "Forest_height_2019_SAFR.tif",
+      "extension": ".tif",
+      "size_bytes": 5721121398,
+      "size_human": "5.3 GB",
+      "categories": [
+        "其他"
+      ],
+      "depth": 3,
+      "modified": "2026-04-02T04:17:22.7440154+08:00",
+      "_temporal": "yearly",
+      "_china": true,
+      "_date_info": {
+        "year": 2019,
+        "month": null,
+        "day": null,
+        "doy": null
+      }
+    },
+    {
+      "server": "nas",
+      "remote_path": "/Liuzheng/Data/canopy_height/Forest_height_2019_NAM.tif",
+      "name": "Forest_height_2019_NAM.tif",
+      "extension": ".tif",
+      "size_bytes": 5680464301,
+      "size_human": "5.3 GB",
+      "categories": [
+        "其他"
+      ],
+      "depth": 3,
+      "modified": "2026-04-02T04:18:12.0388903+08:00",
+      "_temporal": "yearly",
+      "_china": true,
+      "_date_info": {
+        "year": 2019,
+        "month": null,
+        "day": null,
+        "doy": null
+      }
+    },
+    {
+      "server": "nas",
+      "remote_path": "/Wangc/GFMD/ProbaV_LC100_epoch2015_global_v2.0.3_forest-management-layer-proba_EPSG-4326.tif",
+      "name": "ProbaV_LC100_epoch2015_global_v2.0.3_forest-management-layer-proba_EPSG-4326.tif",
+      "extension": ".tif",
+      "size_bytes": 6224767182,
+      "size_human": "5.8 GB",
+      "categories": [
+        "其他"
+      ],
+      "depth": 2,
+      "modified": "2026-02-21T15:13:10.9110749+08:00",
+      "_temporal": "yearly",
+      "_china": true,
+      "_date_info": {
+        "year": 2015,
+        "month": null,
+        "day": null,
+        "doy": null
+      }
+    },
+    {
+      "server": "nas",
+      "remote_path": "/Wangc/ERES5/SMCI/ERA5_2020_SMCI-T7.nc",
+      "name": "ERA5_2020_SMCI-T7.nc",
+      "extension": ".nc",
+      "size_bytes": 3040004332,
+      "size_human": "2.8 GB",
+      "categories": [
+        "土壤水分",
+        "气象数据"
+      ],
+      "depth": 3,
+      "modified": "2024-05-28T13:41:59.0290806+08:00",
+      "_temporal": "yearly",
+      "_china": true,
+      "_date_info": {
+        "year": 2020,
+        "month": null,
+        "day": null,
+        "doy": null
+      }
+    },
+    {
+      "server": "nas",
+      "remote_path": "/Wangc/ERES5/SMCI/ERA5_2019_SMCI-T7.nc",
+      "name": "ERA5_2019_SMCI-T7.nc",
+      "extension": ".nc",
+      "size_bytes": 3031698396,
+      "size_human": "2.8 GB",
+      "categories": [
+        "土壤水分",
+        "气象数据"
+      ],
+      "depth": 3,
+      "modified": "2024-05-28T11:36:05.7265371+08:00",
+      "_temporal": "yearly",
+      "_china": true,
+      "_date_info": {
+        "year": 2019,
+        "month": null,
+        "day": null,
+        "doy": null
+      }
+    },
+    {
+      "server": "nas",
+      "remote_path": "/Wangc/ERES5/SMCI/ERA5_2018_SMCI-T7.nc",
+      "name": "ERA5_2018_SMCI-T7.nc",
+      "extension": ".nc",
+      "size_bytes": 3031698396,
+      "size_human": "2.8 GB",
+      "categories": [
+        "土壤水分",
+        "气象数据"
+      ],
+      "depth": 3,
+      "modified": "2024-05-28T11:00:07.8340554+08:00",
+      "_temporal": "yearly",
+      "_china": true,
+      "_date_info": {
+        "year": 2018,
+        "month": null,
+        "day": null,
+        "doy": null
+      }
+    },
+    {
+      "server": "nas",
+      "remote_path": "/Wangc/Global_hunman_footprint/hdt_tif/hfp2020.tif",
+      "name": "hfp2020.tif",
+      "extension": ".tif",
+      "size_bytes": 572769374,
+      "size_human": "546.2 MB",
+      "categories": [
+        "其他"
+      ],
+      "depth": 3,
+      "modified": "2024-09-19T21:02:29.4190194+08:00",
+      "_temporal": "yearly",
+      "_china": true,
+      "_date_info": {
+        "year": 2020,
+        "month": null,
+        "day": null,
+        "doy": null
+      }
+    },
+    {
+      "server": "nas",
+      "remote_path": "/Wangc/Global_hunman_footprint/hdt_tif/hfp2019.tif",
+      "name": "hfp2019.tif",
+      "extension": ".tif",
+      "size_bytes": 572512070,
+      "size_human": "546.0 MB",
+      "categories": [
+        "其他"
+      ],
+      "depth": 3,
+      "modified": "2024-02-27T16:52:27.4386444+08:00",
+      "_temporal": "yearly",
+      "_china": true,
+      "_date_info": {
+        "year": 2019,
+        "month": null,
+        "day": null,
+        "doy": null
+      }
+    },
+    {
+      "server": "nas",
+      "remote_path": "/Wangc/Global_hunman_footprint/hdt_tif/hfp2007.tif",
+      "name": "hfp2007.tif",
+      "extension": ".tif",
+      "size_bytes": 2364579706,
+      "size_human": "2.2 GB",
+      "categories": [
+        "其他"
+      ],
+      "depth": 3,
+      "modified": "2024-02-27T16:49:22.4281204+08:00",
+      "_temporal": "yearly",
+      "_china": true,
+      "_date_info": {
+        "year": 2007,
+        "month": null,
+        "day": null,
+        "doy": null
+      }
+    },
+    {
+      "server": "nas",
+      "remote_path": "/Wangc/Global_hunman_footprint/hfp2001/hfp2001.tif",
+      "name": "hfp2001.tif",
+      "extension": ".tif",
+      "size_bytes": 2364711704,
+      "size_human": "2.2 GB",
+      "categories": [
+        "其他"
+      ],
+      "depth": 3,
+      "modified": "2024-02-27T16:15:22.0798123+08:00",
+      "_temporal": "yearly",
+      "_china": true,
+      "_date_info": {
+        "year": 2001,
+        "month": null,
+        "day": null,
+        "doy": null
+      }
+    },
+    {
+      "server": "nas",
+      "remote_path": "/Wangc/HFP/Human_p/hfp2020.tif",
+      "name": "hfp2020.tif",
+      "extension": ".tif",
+      "size_bytes": 572726903,
+      "size_human": "546.2 MB",
+      "categories": [
+        "其他"
+      ],
+      "depth": 3,
+      "modified": "2026-03-14T11:29:14.6395102+08:00",
+      "_temporal": "yearly",
+      "_china": true,
+      "_date_info": {
+        "year": 2020,
+        "month": null,
+        "day": null,
+        "doy": null
+      }
+    },
+    {
+      "server": "nas",
+      "remote_path": "/Wangc/HFP/Human_p/hfp2019.tif",
+      "name": "hfp2019.tif",
+      "extension": ".tif",
+      "size_bytes": 572759216,
+      "size_human": "546.2 MB",
+      "categories": [
+        "其他"
+      ],
+      "depth": 3,
+      "modified": "2026-03-14T11:29:13.4392365+08:00",
+      "_temporal": "yearly",
+      "_china": true,
+      "_date_info": {
+        "year": 2019,
+        "month": null,
+        "day": null,
+        "doy": null
+      }
+    },
+    {
+      "server": "nas",
+      "remote_path": "/Wangc/HFP/Human_p/hfp2018.tif",
+      "name": "hfp2018.tif",
+      "extension": ".tif",
+      "size_bytes": 2364579706,
+      "size_human": "2.2 GB",
+      "categories": [
+        "其他"
+      ],
+      "depth": 3,
+      "modified": "2026-03-14T11:29:06.4582567+08:00",
+      "_temporal": "yearly",
+      "_china": true,
+      "_date_info": {
+        "year": 2018,
+        "month": null,
+        "day": null,
+        "doy": null
+      }
+    },
+    {
+      "server": "nas",
+      "remote_path": "/LiuSJ/Data/Human Footprint/hfp2020.tif",
+      "name": "hfp2020.tif",
+      "extension": ".tif",
+      "size_bytes": 572726903,
+      "size_human": "546.2 MB",
+      "categories": [
+        "其他"
+      ],
+      "depth": 3,
+      "modified": "2024-06-17T10:58:34+08:00",
+      "_temporal": "yearly",
+      "_china": true,
+      "_date_info": {
+        "year": 2020,
+        "month": null,
+        "day": null,
+        "doy": null
+      }
+    },
+    {
+      "server": "nas",
+      "remote_path": "/LiuSJ/Data/Human Footprint/hfp2019.tif",
+      "name": "hfp2019.tif",
+      "extension": ".tif",
+      "size_bytes": 572759216,
+      "size_human": "546.2 MB",
+      "categories": [
+        "其他"
+      ],
+      "depth": 3,
+      "modified": "2024-06-17T10:56:26+08:00",
+      "_temporal": "yearly",
+      "_china": true,
+      "_date_info": {
+        "year": 2019,
+        "month": null,
+        "day": null,
+        "doy": null
+      }
+    },
+    {
+      "server": "nas",
+      "remote_path": "/LiuSJ/Data/Human Footprint/hfp2018.tif",
+      "name": "hfp2018.tif",
+      "extension": ".tif",
+      "size_bytes": 2364579706,
+      "size_human": "2.2 GB",
+      "categories": [
+        "其他"
+      ],
+      "depth": 3,
+      "modified": "2021-08-12T15:43:10.6296855+08:00",
+      "_temporal": "yearly",
+      "_china": true,
+      "_date_info": {
+        "year": 2018,
+        "month": null,
+        "day": null,
+        "doy": null
+      }
+    },
+    {
+      "server": "nas",
+      "remote_path": "/LiuSJ/Saved/LFMC-0.07/LFMC_MAP_2005_05_compressed.nc",
+      "name": "LFMC_MAP_2005_05_compressed.nc",
+      "extension": ".nc",
+      "size_bytes": 2107836223,
+      "size_human": "2.0 GB",
+      "categories": [
+        "其他"
+      ],
+      "depth": 3,
+      "modified": "2026-04-03T21:56:11.8998066+08:00",
+      "_temporal": "yearly",
+      "_china": true,
+      "_date_info": {
+        "year": 2005,
+        "month": null,
+        "day": null,
+        "doy": null
+      }
+    },
+    {
+      "server": "nas",
+      "remote_path": "/LiuSJ/Saved/LFMC-0.07/LFMC_MAP_2005_03_compressed.nc",
+      "name": "LFMC_MAP_2005_03_compressed.nc",
+      "extension": ".nc",
+      "size_bytes": 2105875693,
+      "size_human": "2.0 GB",
+      "categories": [
+        "其他"
+      ],
+      "depth": 3,
+      "modified": "2026-04-03T21:50:02.496198+08:00",
+      "_temporal": "yearly",
+      "_china": true,
+      "_date_info": {
+        "year": 2005,
+        "month": null,
+        "day": null,
+        "doy": null
+      }
+    },
+    {
+      "server": "nas",
+      "remote_path": "/LiuSJ/Saved/LFMC-0.07/LFMC_MAP_2005_01_compressed.nc",
+      "name": "LFMC_MAP_2005_01_compressed.nc",
+      "extension": ".nc",
+      "size_bytes": 2104725054,
+      "size_human": "2.0 GB",
+      "categories": [
+        "其他"
+      ],
+      "depth": 3,
+      "modified": "2026-04-03T21:47:17.1641743+08:00",
+      "_temporal": "yearly",
+      "_china": true,
+      "_date_info": {
+        "year": 2005,
+        "month": null,
+        "day": null,
+        "doy": null
+      }
+    },
+    {
+      "server": "nas",
+      "remote_path": "/Wangxd/ERA5/T_2m_converted/ERA5_T2m_daily-2012_converted.tif",
+      "name": "ERA5_T2m_daily-2012_converted.tif",
+      "extension": ".tif",
+      "size_bytes": 1392706472,
+      "size_human": "1.3 GB",
+      "categories": [
+        "气象数据"
+      ],
+      "depth": 3,
+      "modified": "2025-10-28T16:49:56.9608496+08:00",
+      "_temporal": "yearly",
+      "_china": true,
+      "_date_info": {
+        "year": 2012,
+        "month": null,
+        "day": null,
+        "doy": null
+      }
+    },
+    {
+      "server": "nas",
+      "remote_path": "/Wangxd/ERA5/T_2m_converted/ERA5_T2m_daily-2011_converted.tif",
+      "name": "ERA5_T2m_daily-2011_converted.tif",
+      "extension": ".tif",
+      "size_bytes": 1388739748,
+      "size_human": "1.3 GB",
+      "categories": [
+        "气象数据"
+      ],
+      "depth": 3,
+      "modified": "2025-10-28T16:49:42.4526113+08:00",
+      "_temporal": "yearly",
+      "_china": true,
+      "_date_info": {
+        "year": 2011,
+        "month": null,
+        "day": null,
+        "doy": null
+      }
+    },
+    {
+      "server": "nas",
+      "remote_path": "/Wangxd/ERA5/T_2m_converted/ERA5_T2m_daily-2010_converted.tif",
+      "name": "ERA5_T2m_daily-2010_converted.tif",
+      "extension": ".tif",
+      "size_bytes": 1391907184,
+      "size_human": "1.3 GB",
+      "categories": [
+        "气象数据"
+      ],
+      "depth": 3,
+      "modified": "2025-10-28T16:49:27.9528957+08:00",
+      "_temporal": "yearly",
+      "_china": true,
+      "_date_info": {
+        "year": 2010,
+        "month": null,
+        "day": null,
+        "doy": null
+      }
+    },
+    {
+      "server": "nas",
+      "remote_path": "/LiuSJ/Saved/fuel-group-0.07/FUEL_MAP_2005_01_compressed.nc",
+      "name": "FUEL_MAP_2005_01_compressed.nc",
+      "extension": ".nc",
+      "size_bytes": 1167032098,
+      "size_human": "1.1 GB",
+      "categories": [
+        "其他"
+      ],
+      "depth": 3,
+      "modified": "2026-04-04T03:54:31.6615427+08:00",
+      "_temporal": "yearly",
+      "_china": true,
+      "_date_info": {
+        "year": 2005,
+        "month": null,
+        "day": null,
+        "doy": null
+      }
+    },
+    {
+      "server": "nas",
+      "remote_path": "/LiuSJ/Saved/fuel-group-0.07/FUEL_MAP_2005_03_compressed.nc",
+      "name": "FUEL_MAP_2005_03_compressed.nc",
+      "extension": ".nc",
+      "size_bytes": 1162160280,
+      "size_human": "1.1 GB",
+      "categories": [
+        "其他"
+      ],
+      "depth": 3,
+      "modified": "2026-04-04T03:55:16.8248288+08:00",
+      "_temporal": "yearly",
+      "_china": true,
+      "_date_info": {
+        "year": 2005,
+        "month": null,
+        "day": null,
+        "doy": null
+      }
+    },
+    {
+      "server": "nas",
+      "remote_path": "/LiuSJ/Saved/fuel-group-0.07/FUEL_MAP_2005_05_compressed.nc",
+      "name": "FUEL_MAP_2005_05_compressed.nc",
+      "extension": ".nc",
+      "size_bytes": 1146652997,
+      "size_human": "1.1 GB",
+      "categories": [
+        "其他"
+      ],
+      "depth": 3,
+      "modified": "2026-04-04T03:58:23.2905815+08:00",
+      "_temporal": "yearly",
+      "_china": true,
+      "_date_info": {
+        "year": 2005,
+        "month": null,
+        "day": null,
+        "doy": null
+      }
+    },
+    {
+      "server": "nas",
+      "remote_path": "/Wangc/CLCD/CLCD_v01_1997_albert_province.tif",
+      "name": "CLCD_v01_1997_albert_province.tif",
+      "extension": ".tif",
+      "size_bytes": 883936913,
+      "size_human": "843.0 MB",
+      "categories": [
+        "行政区划"
+      ],
+      "depth": 2,
+      "modified": "2026-02-21T15:38:30.8944915+08:00",
+      "_temporal": "yearly",
+      "_china": true,
+      "_date_info": {
+        "year": 1997,
+        "month": null,
+        "day": null,
+        "doy": null
+      }
+    },
+    {
+      "server": "nas",
+      "remote_path": "/Wangc/CLCD/CLCD_v01_1997.tif",
+      "name": "CLCD_v01_1997.tif",
+      "extension": ".tif",
+      "size_bytes": 821477864,
+      "size_human": "783.4 MB",
+      "categories": [
+        "其他"
+      ],
+      "depth": 2,
+      "modified": "2026-02-21T15:33:11.165702+08:00",
+      "_temporal": "yearly",
+      "_china": true,
+      "_date_info": {
+        "year": 1997,
+        "month": null,
+        "day": null,
+        "doy": null
+      }
+    },
+    {
+      "server": "nas",
+      "remote_path": "/Wangc/CLCD/CLCD_v01_1997_albert.tif",
+      "name": "CLCD_v01_1997_albert.tif",
+      "extension": ".tif",
+      "size_bytes": 737425273,
+      "size_human": "703.3 MB",
+      "categories": [
+        "其他"
+      ],
+      "depth": 2,
+      "modified": "2026-02-21T15:35:38.807156+08:00",
+      "_temporal": "yearly",
+      "_china": true,
+      "_date_info": {
+        "year": 1997,
+        "month": null,
+        "day": null,
+        "doy": null
+      }
+    },
+    {
+      "server": "nas",
+      "remote_path": "/Wangc/GFC/Hansen_GFC-2019-v1.7_treecover2000_30N_100E.tif",
+      "name": "Hansen_GFC-2019-v1.7_treecover2000_30N_100E.tif",
+      "extension": ".tif",
+      "size_bytes": 836196932,
+      "size_human": "797.5 MB",
+      "categories": [
+        "其他"
+      ],
+      "depth": 2,
+      "modified": "2025-10-05T18:38:54.9204567+08:00",
+      "_temporal": "yearly",
+      "_china": true,
+      "_date_info": {
+        "year": 2019,
+        "month": null,
+        "day": null,
+        "doy": null
+      }
+    },
+    {
+      "server": "nas",
+      "remote_path": "/Wangc/GFC/Hansen_GFC-2019-v1.7_treecover2000_60N_120E.tif",
+      "name": "Hansen_GFC-2019-v1.7_treecover2000_60N_120E.tif",
+      "extension": ".tif",
+      "size_bytes": 823852607,
+      "size_human": "785.7 MB",
+      "categories": [
+        "其他"
+      ],
+      "depth": 2,
+      "modified": "2024-03-23T11:19:39.1802757+08:00",
+      "_temporal": "yearly",
+      "_china": true,
+      "_date_info": {
+        "year": 2019,
+        "month": null,
+        "day": null,
+        "doy": null
+      }
+    },
+    {
+      "server": "nas",
+      "remote_path": "/Wangc/GFC/Hansen_GFC-2019-v1.7_treecover2000_60N_130E.tif",
+      "name": "Hansen_GFC-2019-v1.7_treecover2000_60N_130E.tif",
+      "extension": ".tif",
+      "size_bytes": 735673243,
+      "size_human": "701.6 MB",
+      "categories": [
+        "其他"
+      ],
+      "depth": 2,
+      "modified": "2024-03-23T11:19:32.8211106+08:00",
+      "_temporal": "yearly",
+      "_china": true,
+      "_date_info": {
+        "year": 2019,
+        "month": null,
+        "day": null,
+        "doy": null
+      }
+    },
+    {
+      "server": "nas",
+      "remote_path": "/Wangxd/Fuel-data/Fuel-group_0.1/FUEL_MAP_2005_01_compressed.nc",
+      "name": "FUEL_MAP_2005_01_compressed.nc",
+      "extension": ".nc",
+      "size_bytes": 629005967,
+      "size_human": "599.9 MB",
+      "categories": [
+        "其他"
+      ],
+      "depth": 3,
+      "modified": "2026-04-08T17:48:42.8935974+08:00",
+      "_temporal": "yearly",
+      "_china": true,
+      "_date_info": {
+        "year": 2005,
+        "month": null,
+        "day": null,
+        "doy": null
+      }
+    },
+    {
+      "server": "nas",
+      "remote_path": "/Wangxd/Fuel-data/Fuel-group_0.1/FUEL_MAP_2005_03_compressed.nc",
+      "name": "FUEL_MAP_2005_03_compressed.nc",
+      "extension": ".nc",
+      "size_bytes": 628248920,
+      "size_human": "599.1 MB",
+      "categories": [
+        "其他"
+      ],
+      "depth": 3,
+      "modified": "2026-04-08T17:48:47.3733157+08:00",
+      "_temporal": "yearly",
+      "_china": true,
+      "_date_info": {
+        "year": 2005,
+        "month": null,
+        "day": null,
+        "doy": null
+      }
+    },
+    {
+      "server": "nas",
+      "remote_path": "/Wangxd/Fuel-data/Fuel-group_0.1/FUEL_MAP_2005_05_compressed.nc",
+      "name": "FUEL_MAP_2005_05_compressed.nc",
+      "extension": ".nc",
+      "size_bytes": 624879637,
+      "size_human": "595.9 MB",
+      "categories": [
+        "其他"
+      ],
+      "depth": 3,
+      "modified": "2026-04-08T17:48:52.3178019+08:00",
+      "_temporal": "yearly",
+      "_china": true,
+      "_date_info": {
+        "year": 2005,
+        "month": null,
+        "day": null,
+        "doy": null
+      }
+    },
+    {
+      "server": "nas",
+      "remote_path": "/Wangc/GLCLU_treeheight/2020/2020_10N_020E.tif",
+      "name": "2020_10N_020E.tif",
+      "extension": ".tif",
+      "size_bytes": 620876538,
+      "size_human": "592.1 MB",
+      "categories": [
+        "其他"
+      ],
+      "depth": 3,
+      "modified": "2023-03-23T18:04:23.5638244+08:00",
+      "_temporal": "yearly",
+      "_china": true,
+      "_date_info": {
+        "year": 2020,
+        "month": null,
+        "day": null,
+        "doy": null
+      }
+    },
+    {
+      "server": "nas",
+      "remote_path": "/Wangc/GLCLU_treeheight/2020/2020_00N_060W.tif",
+      "name": "2020_00N_060W.tif",
+      "extension": ".tif",
+      "size_bytes": 614659159,
+      "size_human": "586.2 MB",
+      "categories": [
+        "其他"
+      ],
+      "depth": 3,
+      "modified": "2023-03-23T17:31:15.2579217+08:00",
+      "_temporal": "yearly",
+      "_china": true,
+      "_date_info": {
+        "year": 2020,
+        "month": null,
+        "day": null,
+        "doy": null
+      }
+    },
+    {
+      "server": "nas",
+      "remote_path": "/Wangc/GLCLU_treeheight/2020/2020_10N_010E.tif",
+      "name": "2020_10N_010E.tif",
+      "extension": ".tif",
+      "size_bytes": 608301846,
+      "size_human": "580.1 MB",
+      "categories": [
+        "其他"
+      ],
+      "depth": 3,
+      "modified": "2023-03-23T17:56:31.3261013+08:00",
+      "_temporal": "yearly",
+      "_china": true,
+      "_date_info": {
+        "year": 2020,
+        "month": null,
+        "day": null,
+        "doy": null
+      }
+    },
+    {
+      "server": "nas",
+      "remote_path": "/Wangxd/GUB/GUB_Global_2018.shp",
+      "name": "GUB_Global_2018.shp",
+      "extension": ".shp",
+      "size_bytes": 544757600,
+      "size_human": "519.5 MB",
+      "categories": [
+        "其他"
+      ],
+      "depth": 2,
+      "modified": "2020-01-09T12:02:33.2152259+08:00",
+      "_temporal": "yearly",
+      "_china": true,
+      "_date_info": {
+        "year": 2018,
+        "month": null,
+        "day": null,
+        "doy": null
+      }
+    },
+    {
+      "server": "nas",
+      "remote_path": "/Wangxd/GUB/GUB_Global_2015.shp",
+      "name": "GUB_Global_2015.shp",
+      "extension": ".shp",
+      "size_bytes": 448166676,
+      "size_human": "427.4 MB",
+      "categories": [
+        "其他"
+      ],
+      "depth": 2,
+      "modified": "2021-01-25T12:08:04.1794333+08:00",
+      "_temporal": "yearly",
+      "_china": true,
+      "_date_info": {
+        "year": 2015,
+        "month": null,
+        "day": null,
+        "doy": null
+      }
+    },
+    {
+      "server": "nas",
+      "remote_path": "/Wangxd/GUB/GUB_Global_2010.shp",
+      "name": "GUB_Global_2010.shp",
+      "extension": ".shp",
+      "size_bytes": 418701520,
+      "size_human": "399.3 MB",
+      "categories": [
+        "其他"
+      ],
+      "depth": 2,
+      "modified": "2020-01-09T12:23:35.3433645+08:00",
+      "_temporal": "yearly",
+      "_china": true,
+      "_date_info": {
+        "year": 2010,
+        "month": null,
+        "day": null,
+        "doy": null
+      }
+    },
+    {
+      "server": "nas",
+      "remote_path": "/Wangxd/Fuel-data/LFMC_0.1/LFMC_MAP_2005_05_compressed.nc",
+      "name": "LFMC_MAP_2005_05_compressed.nc",
+      "extension": ".nc",
+      "size_bytes": 393847520,
+      "size_human": "375.6 MB",
+      "categories": [
+        "其他"
+      ],
+      "depth": 3,
+      "modified": "2026-04-08T17:02:14.3830992+08:00",
+      "_temporal": "yearly",
+      "_china": true,
+      "_date_info": {
+        "year": 2005,
+        "month": null,
+        "day": null,
+        "doy": null
+      }
+    },
+    {
+      "server": "nas",
+      "remote_path": "/Wangxd/Fuel-data/LFMC_0.1/LFMC_MAP_2005_03_compressed.nc",
+      "name": "LFMC_MAP_2005_03_compressed.nc",
+      "extension": ".nc",
+      "size_bytes": 393053233,
+      "size_human": "374.8 MB",
+      "categories": [
+        "其他"
+      ],
+      "depth": 3,
+      "modified": "2026-04-08T17:01:06.0955793+08:00",
+      "_temporal": "yearly",
+      "_china": true,
+      "_date_info": {
+        "year": 2005,
+        "month": null,
+        "day": null,
+        "doy": null
+      }
+    },
+    {
+      "server": "nas",
+      "remote_path": "/Wangxd/Fuel-data/LFMC_0.1/LFMC_MAP_2005_01_compressed.nc",
+      "name": "LFMC_MAP_2005_01_compressed.nc",
+      "extension": ".nc",
+      "size_bytes": 392550929,
+      "size_human": "374.4 MB",
+      "categories": [
+        "其他"
+      ],
+      "depth": 3,
+      "modified": "2026-04-08T17:00:00.0591446+08:00",
+      "_temporal": "yearly",
+      "_china": true,
+      "_date_info": {
+        "year": 2005,
+        "month": null,
+        "day": null,
+        "doy": null
+      }
+    },
+    {
+      "server": "nas",
+      "remote_path": "/Wangc/Global_hunman_footprint/hfp2020_Clip.tif",
+      "name": "hfp2020_Clip.tif",
+      "extension": ".tif",
+      "size_bytes": 162571177,
+      "size_human": "155.0 MB",
+      "categories": [
+        "其他"
+      ],
+      "depth": 2,
+      "modified": "2024-09-19T21:30:15.3080734+08:00",
+      "_temporal": "yearly",
+      "_china": true,
+      "_date_info": {
+        "year": 2020,
+        "month": null,
+        "day": null,
+        "doy": null
+      }
+    },
+    {
+      "server": "nas",
+      "remote_path": "/Wangc/Global_hunman_footprint/hfp2020_cli11.tif",
+      "name": "hfp2020_cli11.tif",
+      "extension": ".tif",
+      "size_bytes": 105409769,
+      "size_human": "100.5 MB",
+      "categories": [
+        "其他"
+      ],
+      "depth": 2,
+      "modified": "2024-09-19T21:42:28.3833866+08:00",
+      "_temporal": "yearly",
+      "_china": true,
+      "_date_info": {
+        "year": 2020,
+        "month": null,
+        "day": null,
+        "doy": null
+      }
+    },
+    {
+      "server": "nas",
+      "remote_path": "/Wangc/Global_hunman_footprint/hfp2001_Clip.tif",
+      "name": "hfp2001_Clip.tif",
+      "extension": ".tif",
+      "size_bytes": 358833867,
+      "size_human": "342.2 MB",
+      "categories": [
+        "其他"
+      ],
+      "depth": 2,
+      "modified": "2024-09-19T21:31:03.5885964+08:00",
+      "_temporal": "yearly",
+      "_china": true,
+      "_date_info": {
+        "year": 2001,
+        "month": null,
+        "day": null,
+        "doy": null
+      }
+    },
+    {
+      "server": "nas",
+      "remote_path": "/Wangxd/ERA5/evaporation_land_processed/ERA5_2008_processed.tif",
+      "name": "ERA5_2008_processed.tif",
+      "extension": ".tif",
+      "size_bytes": 291251772,
+      "size_human": "277.8 MB",
+      "categories": [
+        "气象数据"
+      ],
+      "depth": 3,
+      "modified": "2025-07-26T23:46:31.8946863+08:00",
+      "_temporal": "yearly",
+      "_china": true,
+      "_date_info": {
+        "year": 2008,
+        "month": null,
+        "day": null,
+        "doy": null
+      }
+    },
+    {
+      "server": "nas",
+      "remote_path": "/Wangxd/ERA5/evaporation_land_processed/ERA5_2007_processed.tif",
+      "name": "ERA5_2007_processed.tif",
+      "extension": ".tif",
+      "size_bytes": 290329408,
+      "size_human": "276.9 MB",
+      "categories": [
+        "气象数据"
+      ],
+      "depth": 3,
+      "modified": "2025-07-26T23:33:11.9072631+08:00",
+      "_temporal": "yearly",
+      "_china": true,
+      "_date_info": {
+        "year": 2007,
+        "month": null,
+        "day": null,
+        "doy": null
+      }
+    },
+    {
+      "server": "nas",
+      "remote_path": "/Wangxd/ERA5/evaporation_land_processed/ERA5_2006_processed.tif",
+      "name": "ERA5_2006_processed.tif",
+      "extension": ".tif",
+      "size_bytes": 290249436,
+      "size_human": "276.8 MB",
+      "categories": [
+        "气象数据"
+      ],
+      "depth": 3,
+      "modified": "2025-07-26T23:19:27.4150723+08:00",
+      "_temporal": "yearly",
+      "_china": true,
+      "_date_info": {
+        "year": 2006,
+        "month": null,
+        "day": null,
+        "doy": null
+      }
+    },
+    {
+      "server": "nas",
+      "remote_path": "/Wangxd/Fuel-data/DFMC_0.1/DFMC_MAP_2005_05_compressed.nc",
+      "name": "DFMC_MAP_2005_05_compressed.nc",
+      "extension": ".nc",
+      "size_bytes": 223703949,
+      "size_human": "213.3 MB",
+      "categories": [
+        "其他"
+      ],
+      "depth": 3,
+      "modified": "2026-04-08T14:49:25.6693922+08:00",
+      "_temporal": "yearly",
+      "_china": true,
+      "_date_info": {
+        "year": 2005,
+        "month": null,
+        "day": null,
+        "doy": null
+      }
+    },
+    {
+      "server": "nas",
+      "remote_path": "/Wangxd/Fuel-data/DFMC_0.1/DFMC_MAP_2005_06_compressed.nc",
+      "name": "DFMC_MAP_2005_06_compressed.nc",
+      "extension": ".nc",
+      "size_bytes": 218001919,
+      "size_human": "207.9 MB",
+      "categories": [
+        "其他"
+      ],
+      "depth": 3,
+      "modified": "2026-04-08T14:49:47.4104021+08:00",
+      "_temporal": "yearly",
+      "_china": true,
+      "_date_info": {
+        "year": 2005,
+        "month": null,
+        "day": null,
+        "doy": null
+      }
+    },
+    {
+      "server": "nas",
+      "remote_path": "/Wangxd/Fuel-data/DFMC_0.1/DFMC_MAP_2005_03_compressed.nc",
+      "name": "DFMC_MAP_2005_03_compressed.nc",
+      "extension": ".nc",
+      "size_bytes": 213726034,
+      "size_human": "203.8 MB",
+      "categories": [
+        "其他"
+      ],
+      "depth": 3,
+      "modified": "2026-04-08T14:48:42.6466121+08:00",
+      "_temporal": "yearly",
+      "_china": true,
+      "_date_info": {
+        "year": 2005,
+        "month": null,
+        "day": null,
+        "doy": null
+      }
+    },
+    {
+      "server": "nas",
+      "remote_path": "/LiuSJ/Data_0.1/VPD/2005-05.nc",
+      "name": "2005-05.nc",
+      "extension": ".nc",
+      "size_bytes": 190899600,
+      "size_human": "182.1 MB",
+      "categories": [
+        "其他"
+      ],
+      "depth": 3,
+      "modified": "2026-04-17T22:04:00.9596537+08:00",
+      "_temporal": "yearly",
+      "_china": true,
+      "_date_info": {
+        "year": 2005,
+        "month": null,
+        "day": null,
+        "doy": null
+      }
+    },
+    {
+      "server": "nas",
+      "remote_path": "/LiuSJ/Data_0.1/VPD/2005-03.nc",
+      "name": "2005-03.nc",
+      "extension": ".nc",
+      "size_bytes": 189297226,
+      "size_human": "180.5 MB",
+      "categories": [
+        "其他"
+      ],
+      "depth": 3,
+      "modified": "2026-04-17T22:03:25.4026148+08:00",
+      "_temporal": "yearly",
+      "_china": true,
+      "_date_info": {
+        "year": 2005,
+        "month": null,
+        "day": null,
+        "doy": null
+      }
+    },
+    {
+      "server": "nas",
+      "remote_path": "/LiuSJ/Data_0.1/VPD/2005-01.nc",
+      "name": "2005-01.nc",
+      "extension": ".nc",
+      "size_bytes": 187718859,
+      "size_human": "179.0 MB",
+      "categories": [
+        "其他"
+      ],
+      "depth": 3,
+      "modified": "2026-04-17T22:02:48.3859215+08:00",
+      "_temporal": "yearly",
+      "_china": true,
+      "_date_info": {
+        "year": 2005,
+        "month": null,
+        "day": null,
+        "doy": null
+      }
+    },
+    {
+      "server": "nas",
+      "remote_path": "/Wangxd/ERA5/total_precipitation_land/ERA5_2008.tif",
+      "name": "ERA5_2008.tif",
+      "extension": ".tif",
+      "size_bytes": 176680739,
+      "size_human": "168.5 MB",
+      "categories": [
+        "气象数据",
+        "降水"
+      ],
+      "depth": 3,
+      "modified": "2025-07-19T18:04:23.8288165+08:00",
+      "_temporal": "yearly",
+      "_china": true,
+      "_date_info": {
+        "year": 2008,
+        "month": null,
+        "day": null,
+        "doy": null
+      }
+    },
+    {
+      "server": "nas",
+      "remote_path": "/Wangxd/ERA5/total_precipitation_land/ERA5_2007.tif",
+      "name": "ERA5_2007.tif",
+      "extension": ".tif",
+      "size_bytes": 175417395,
+      "size_human": "167.3 MB",
+      "categories": [
+        "气象数据",
+        "降水"
+      ],
+      "depth": 3,
+      "modified": "2025-07-19T18:04:06.7652355+08:00",
+      "_temporal": "yearly",
+      "_china": true,
+      "_date_info": {
+        "year": 2007,
+        "month": null,
+        "day": null,
+        "doy": null
+      }
+    },
+    {
+      "server": "nas",
+      "remote_path": "/Wangxd/ERA5/total_precipitation_land/ERA5_2006.tif",
+      "name": "ERA5_2006.tif",
+      "extension": ".tif",
+      "size_bytes": 177642454,
+      "size_human": "169.4 MB",
+      "categories": [
+        "气象数据",
+        "降水"
+      ],
+      "depth": 3,
+      "modified": "2025-07-19T18:03:49.0706828+08:00",
+      "_temporal": "yearly",
+      "_china": true,
+      "_date_info": {
+        "year": 2006,
+        "month": null,
+        "day": null,
+        "doy": null
+      }
+    },
+    {
+      "server": "nas",
+      "remote_path": "/Wangc/Biomass/2016/N00E020_ESACCI-BIOMASS-L4-AGB-MERGED-100m-2016-fv6.0.tif",
+      "name": "N00E020_ESACCI-BIOMASS-L4-AGB-MERGED-100m-2016-fv6.0.tif",
+      "extension": ".tif",
+      "size_bytes": 155995368,
+      "size_human": "148.8 MB",
+      "categories": [
+        "其他"
+      ],
+      "depth": 3,
+      "modified": "2026-02-14T10:30:49.2001196+08:00",
+      "_temporal": "yearly",
+      "_china": true,
+      "_date_info": {
+        "year": 2016,
+        "month": null,
+        "day": null,
+        "doy": null
+      }
+    },
+    {
+      "server": "nas",
+      "remote_path": "/Wangc/Biomass/2016/N00E020_ESACCI-BIOMASS-L4-AGB_SD-MERGED-100m-2016-fv6.0.tif",
+      "name": "N00E020_ESACCI-BIOMASS-L4-AGB_SD-MERGED-100m-2016-fv6.0.tif",
+      "extension": ".tif",
+      "size_bytes": 139859902,
+      "size_human": "133.4 MB",
+      "categories": [
+        "其他"
+      ],
+      "depth": 3,
+      "modified": "2026-02-14T10:30:01.489769+08:00",
+      "_temporal": "yearly",
+      "_china": true,
+      "_date_info": {
+        "year": 2016,
+        "month": null,
+        "day": null,
+        "doy": null
+      }
+    },
+    {
+      "server": "nas",
+      "remote_path": "/Wangc/Biomass/2016/N00E010_ESACCI-BIOMASS-L4-AGB-MERGED-100m-2016-fv6.0.tif",
+      "name": "N00E010_ESACCI-BIOMASS-L4-AGB-MERGED-100m-2016-fv6.0.tif",
+      "extension": ".tif",
+      "size_bytes": 116421872,
+      "size_human": "111.0 MB",
+      "categories": [
+        "其他"
+      ],
+      "depth": 3,
+      "modified": "2026-02-14T10:25:12.4642692+08:00",
+      "_temporal": "yearly",
+      "_china": true,
+      "_date_info": {
+        "year": 2016,
+        "month": null,
+        "day": null,
+        "doy": null
+      }
+    },
+    {
+      "server": "nas",
+      "remote_path": "/LiuSJ/Data_0.1/2m_Temperature/2005-03.nc",
+      "name": "2005-03.nc",
+      "extension": ".nc",
+      "size_bytes": 145892398,
+      "size_human": "139.1 MB",
+      "categories": [
+        "气象数据"
+      ],
+      "depth": 3,
+      "modified": "2026-04-17T20:10:49.1517659+08:00",
+      "_temporal": "yearly",
+      "_china": true,
+      "_date_info": {
+        "year": 2005,
+        "month": null,
+        "day": null,
+        "doy": null
+      }
+    },
+    {
+      "server": "nas",
+      "remote_path": "/LiuSJ/Data_0.1/2m_Temperature/2005-05.nc",
+      "name": "2005-05.nc",
+      "extension": ".nc",
+      "size_bytes": 145706080,
+      "size_human": "139.0 MB",
+      "categories": [
+        "气象数据"
+      ],
+      "depth": 3,
+      "modified": "2026-04-17T20:11:41.397888+08:00",
+      "_temporal": "yearly",
+      "_china": true,
+      "_date_info": {
+        "year": 2005,
+        "month": null,
+        "day": null,
+        "doy": null
+      }
+    },
+    {
+      "server": "nas",
+      "remote_path": "/LiuSJ/Data_0.1/2m_Temperature/2005-01.nc",
+      "name": "2005-01.nc",
+      "extension": ".nc",
+      "size_bytes": 144309312,
+      "size_human": "137.6 MB",
+      "categories": [
+        "气象数据"
+      ],
+      "depth": 3,
+      "modified": "2026-04-17T20:09:56.9801939+08:00",
+      "_temporal": "yearly",
+      "_china": true,
+      "_date_info": {
+        "year": 2005,
+        "month": null,
+        "day": null,
+        "doy": null
+      }
+    },
+    {
+      "server": "nas",
+      "remote_path": "/LiuSJ/Data_0.1/ERA5_PrTotal/ERA5_PrTotal_Daily_2005_6.tif",
+      "name": "ERA5_PrTotal_Daily_2005_6.tif",
+      "extension": ".tif",
+      "size_bytes": 128215806,
+      "size_human": "122.3 MB",
+      "categories": [
+        "气象数据"
+      ],
+      "depth": 3,
+      "modified": "2026-04-18T14:32:09.3546289+08:00",
+      "_temporal": "yearly",
+      "_china": true,
+      "_date_info": {
+        "year": 2005,
+        "month": null,
+        "day": null,
+        "doy": null
+      }
+    },
+    {
+      "server": "nas",
+      "remote_path": "/LiuSJ/Data_0.1/ERA5_PrTotal/ERA5_PrTotal_Daily_2005_5.tif",
+      "name": "ERA5_PrTotal_Daily_2005_5.tif",
+      "extension": ".tif",
+      "size_bytes": 123669875,
+      "size_human": "117.9 MB",
+      "categories": [
+        "气象数据"
+      ],
+      "depth": 3,
+      "modified": "2026-04-18T14:32:00.4156047+08:00",
+      "_temporal": "yearly",
+      "_china": true,
+      "_date_info": {
+        "year": 2005,
+        "month": null,
+        "day": null,
+        "doy": null
+      }
+    },
+    {
+      "server": "nas",
+      "remote_path": "/LiuSJ/Data_0.1/ERA5_PrTotal/ERA5_PrTotal_Daily_2005_3.tif",
+      "name": "ERA5_PrTotal_Daily_2005_3.tif",
+      "extension": ".tif",
+      "size_bytes": 114864040,
+      "size_human": "109.5 MB",
+      "categories": [
+        "气象数据"
+      ],
+      "depth": 3,
+      "modified": "2026-04-18T14:31:42.4936804+08:00",
+      "_temporal": "yearly",
+      "_china": true,
+      "_date_info": {
+        "year": 2005,
+        "month": null,
+        "day": null,
+        "doy": null
+      }
+    },
+    {
+      "server": "nas",
+      "remote_path": "/Liuzheng/Data/Landscape_Metrics_LandOnly_9KM_2020.mat",
+      "name": "Landscape_Metrics_LandOnly_9KM_2020.mat",
+      "extension": ".mat",
+      "size_bytes": 125243592,
+      "size_human": "119.4 MB",
+      "categories": [
+        "其他"
+      ],
+      "depth": 2,
+      "modified": "2026-04-02T10:58:02.5925716+08:00",
+      "_temporal": "yearly",
+      "_china": true,
+      "_date_info": {
+        "year": 2020,
+        "month": null,
+        "day": null,
+        "doy": null
+      }
+    },
+    {
+      "server": "nas",
+      "remote_path": "/Liuzheng/Data/Forest_Ratio_9KM_2020.mat",
+      "name": "Forest_Ratio_9KM_2020.mat",
+      "extension": ".mat",
+      "size_bytes": 25049056,
+      "size_human": "23.9 MB",
+      "categories": [
+        "其他"
+      ],
+      "depth": 2,
+      "modified": "2026-04-02T09:34:04.5437351+08:00",
+      "_temporal": "yearly",
+      "_china": true,
+      "_date_info": {
+        "year": 2020,
+        "month": null,
+        "day": null,
+        "doy": null
+      }
+    },
+    {
+      "server": "nas",
+      "remote_path": "/Wangxd/china1km/pre_tif/pre_2002_01.tif",
+      "name": "pre_2002_01.tif",
+      "extension": ".tif",
+      "size_bytes": 80813368,
+      "size_human": "77.1 MB",
+      "categories": [
+        "其他"
+      ],
+      "depth": 3,
+      "modified": "2026-07-13T11:23:24.2906527+08:00",
+      "_temporal": "yearly",
+      "_china": true,
+      "_date_info": {
+        "year": 2002,
+        "month": null,
+        "day": null,
+        "doy": null
+      }
+    },
+    {
+      "server": "nas",
+      "remote_path": "/Wangxd/china1km/pre_tif/pre_2002_02.tif",
+      "name": "pre_2002_02.tif",
+      "extension": ".tif",
+      "size_bytes": 80813368,
+      "size_human": "77.1 MB",
+      "categories": [
+        "其他"
+      ],
+      "depth": 3,
+      "modified": "2026-07-13T11:23:30.9296269+08:00",
+      "_temporal": "yearly",
+      "_china": true,
+      "_date_info": {
+        "year": 2002,
+        "month": null,
+        "day": null,
+        "doy": null
+      }
+    },
+    {
+      "server": "nas",
+      "remote_path": "/Wangxd/china1km/pre_tif/pre_2002_03.tif",
+      "name": "pre_2002_03.tif",
+      "extension": ".tif",
+      "size_bytes": 80813368,
+      "size_human": "77.1 MB",
+      "categories": [
+        "其他"
+      ],
+      "depth": 3,
+      "modified": "2026-07-13T11:23:31.4949021+08:00",
+      "_temporal": "yearly",
+      "_china": true,
+      "_date_info": {
+        "year": 2002,
+        "month": null,
+        "day": null,
+        "doy": null
+      }
+    },
+    {
+      "server": "nas",
+      "remote_path": "/Wangxd/china1km/tmp_tif/tmp_2002_01.tif",
+      "name": "tmp_2002_01.tif",
+      "extension": ".tif",
+      "size_bytes": 80813390,
+      "size_human": "77.1 MB",
+      "categories": [
+        "其他"
+      ],
+      "depth": 3,
+      "modified": "2026-07-13T11:37:48.5211328+08:00",
+      "_temporal": "yearly",
+      "_china": true,
+      "_date_info": {
+        "year": 2002,
+        "month": null,
+        "day": null,
+        "doy": null
+      }
+    },
+    {
+      "server": "nas",
+      "remote_path": "/Wangxd/china1km/tmp_tif/tmp_2002_02.tif",
+      "name": "tmp_2002_02.tif",
+      "extension": ".tif",
+      "size_bytes": 80813390,
+      "size_human": "77.1 MB",
+      "categories": [
+        "其他"
+      ],
+      "depth": 3,
+      "modified": "2026-07-13T11:37:42.8846613+08:00",
+      "_temporal": "yearly",
+      "_china": true,
+      "_date_info": {
+        "year": 2002,
+        "month": null,
+        "day": null,
+        "doy": null
+      }
+    },
+    {
+      "server": "nas",
+      "remote_path": "/Wangxd/china1km/tmp_tif/tmp_2002_03.tif",
+      "name": "tmp_2002_03.tif",
+      "extension": ".tif",
+      "size_bytes": 80813390,
+      "size_human": "77.1 MB",
+      "categories": [
+        "其他"
+      ],
+      "depth": 3,
+      "modified": "2026-07-13T11:37:47.6205117+08:00",
+      "_temporal": "yearly",
+      "_china": true,
+      "_date_info": {
+        "year": 2002,
+        "month": null,
+        "day": null,
+        "doy": null
+      }
+    },
+    {
+      "server": "nas",
+      "remote_path": "/LiuSJ/WF&DWA/0 MOSEV_dNBR_TIFF/MOSEV_dNBR_2003001_EPSG4326.tif",
+      "name": "MOSEV_dNBR_2003001_EPSG4326.tif",
+      "extension": ".tif",
+      "size_bytes": 46726510,
+      "size_human": "44.6 MB",
+      "categories": [
+        "其他"
+      ],
+      "depth": 3,
+      "modified": "2026-03-16T15:09:38.8676681+08:00",
+      "_temporal": "yearly",
+      "_china": true,
+      "_date_info": {
+        "year": 2003,
+        "month": null,
+        "day": null,
+        "doy": null
+      }
+    },
+    {
+      "server": "nas",
+      "remote_path": "/LiuSJ/WF&DWA/0 MOSEV_dNBR_TIFF/MOSEV_dNBR_2003060_EPSG4326.tif",
+      "name": "MOSEV_dNBR_2003060_EPSG4326.tif",
+      "extension": ".tif",
+      "size_bytes": 45029062,
+      "size_human": "42.9 MB",
+      "categories": [
+        "其他"
+      ],
+      "depth": 3,
+      "modified": "2026-03-16T15:14:16.6408302+08:00",
+      "_temporal": "yearly",
+      "_china": true,
+      "_date_info": {
+        "year": 2003,
+        "month": null,
+        "day": null,
+        "doy": null
+      }
+    },
+    {
+      "server": "nas",
+      "remote_path": "/LiuSJ/WF&DWA/0 MOSEV_dNBR_TIFF/MOSEV_dNBR_2003032_EPSG4326.tif",
+      "name": "MOSEV_dNBR_2003032_EPSG4326.tif",
+      "extension": ".tif",
+      "size_bytes": 44134781,
+      "size_human": "42.1 MB",
+      "categories": [
+        "其他"
+      ],
+      "depth": 3,
+      "modified": "2026-03-16T15:11:56.1710639+08:00",
+      "_temporal": "yearly",
+      "_china": true,
+      "_date_info": {
+        "year": 2003,
+        "month": null,
+        "day": null,
+        "doy": null
+      }
+    },
+    {
+      "server": "nas",
+      "remote_path": "/LiuSJ/WF&DWA/MOSEV_RdNBR_2000306_EPSG4326.tif",
+      "name": "MOSEV_RdNBR_2000306_EPSG4326.tif",
+      "extension": ".tif",
+      "size_bytes": 46962852,
+      "size_human": "44.8 MB",
+      "categories": [
+        "其他"
+      ],
+      "depth": 2,
+      "modified": "2026-03-17T17:11:47.0234439+08:00",
+      "_temporal": "yearly",
+      "_china": true,
+      "_date_info": {
+        "year": 2000,
+        "month": null,
+        "day": null,
+        "doy": null
+      }
+    },
+    {
+      "server": "nas",
+      "remote_path": "/Wangc/CMFD/Data_forcing_01yr_010deg/srad_CMFD_V0106_B-01_01yr_010deg_1979-2018.nc",
+      "name": "srad_CMFD_V0106_B-01_01yr_010deg_1979-2018.nc",
+      "extension": ".nc",
+      "size_bytes": 22406624,
+      "size_human": "21.4 MB",
+      "categories": [
+        "其他"
+      ],
+      "depth": 3,
+      "modified": "2019-06-13T16:52:12+08:00",
+      "_temporal": "yearly",
+      "_china": true,
+      "_date_info": {
+        "year": 1979,
+        "month": null,
+        "day": null,
+        "doy": null
+      }
+    },
+    {
+      "server": "nas",
+      "remote_path": "/Wangc/CMFD/Data_forcing_01yr_010deg/lrad_CMFD_V0106_B-01_01yr_010deg_1979-2018.nc",
+      "name": "lrad_CMFD_V0106_B-01_01yr_010deg_1979-2018.nc",
+      "extension": ".nc",
+      "size_bytes": 22406620,
+      "size_human": "21.4 MB",
+      "categories": [
+        "其他"
+      ],
+      "depth": 3,
+      "modified": "2019-06-13T16:52:08+08:00",
+      "_temporal": "yearly",
+      "_china": true,
+      "_date_info": {
+        "year": 1979,
+        "month": null,
+        "day": null,
+        "doy": null
+      }
+    },
+    {
+      "server": "nas",
+      "remote_path": "/Wangc/CMFD/Data_forcing_01yr_010deg/shum_CMFD_V0106_B-01_01yr_010deg_1979-2018.nc",
+      "name": "shum_CMFD_V0106_B-01_01yr_010deg_1979-2018.nc",
+      "extension": ".nc",
+      "size_bytes": 22406620,
+      "size_human": "21.4 MB",
+      "categories": [
+        "其他"
+      ],
+      "depth": 3,
+      "modified": "2019-06-13T16:52:16+08:00",
+      "_temporal": "yearly",
+      "_china": true,
+      "_date_info": {
+        "year": 1979,
+        "month": null,
+        "day": null,
+        "doy": null
+      }
+    },
+    {
+      "server": "nas",
+      "remote_path": "/LiuSJ/Data/MCD12Q1_China/MCD12Q1_2021.tif",
+      "name": "MCD12Q1_2021.tif",
+      "extension": ".tif",
+      "size_bytes": 19109524,
+      "size_human": "18.2 MB",
+      "categories": [
+        "土地覆盖"
+      ],
+      "depth": 3,
+      "modified": "2026-07-05T14:28:20.5045028+08:00",
+      "_temporal": "yearly",
+      "_china": true,
+      "_date_info": {
+        "year": 2021,
+        "month": null,
+        "day": null,
+        "doy": null
+      }
+    },
+    {
+      "server": "nas",
+      "remote_path": "/LiuSJ/Data/MCD12Q1_China/MCD12Q1_2020.tif",
+      "name": "MCD12Q1_2020.tif",
+      "extension": ".tif",
+      "size_bytes": 19152472,
+      "size_human": "18.3 MB",
+      "categories": [
+        "土地覆盖"
+      ],
+      "depth": 3,
+      "modified": "2026-07-05T14:27:59.11732+08:00",
+      "_temporal": "yearly",
+      "_china": true,
+      "_date_info": {
+        "year": 2020,
+        "month": null,
+        "day": null,
+        "doy": null
+      }
+    },
+    {
+      "server": "nas",
+      "remote_path": "/LiuSJ/Data/MCD12Q1_China/MCD12Q1_2019.tif",
+      "name": "MCD12Q1_2019.tif",
+      "extension": ".tif",
+      "size_bytes": 19116530,
+      "size_human": "18.2 MB",
+      "categories": [
+        "土地覆盖"
+      ],
+      "depth": 3,
+      "modified": "2026-07-05T14:27:37.8645205+08:00",
+      "_temporal": "yearly",
+      "_china": true,
+      "_date_info": {
+        "year": 2019,
+        "month": null,
+        "day": null,
+        "doy": null
+      }
+    },
+    {
+      "server": "nas",
+      "remote_path": "/Wangc/CMFD/Data_forcing_clim_010deg/lrad_CMFD_V0106_B-01_01mo_010deg_197901-201812-moltm.nc",
+      "name": "lrad_CMFD_V0106_B-01_01mo_010deg_197901-201812-moltm.nc",
+      "extension": ".nc",
+      "size_bytes": 6726364,
+      "size_human": "6.4 MB",
+      "categories": [
+        "其他"
+      ],
+      "depth": 3,
+      "modified": "2019-06-14T11:59:16+08:00",
+      "_temporal": "yearly",
+      "_china": true,
+      "_date_info": {
+        "year": 1979,
+        "month": null,
+        "day": null,
+        "doy": null
+      }
+    },
+    {
+      "server": "nas",
+      "remote_path": "/Wangc/CMFD/Data_forcing_clim_010deg/srad_CMFD_V0106_B-01_01mo_010deg_197901-201812-moltm.nc",
+      "name": "srad_CMFD_V0106_B-01_01mo_010deg_197901-201812-moltm.nc",
+      "extension": ".nc",
+      "size_bytes": 6726364,
+      "size_human": "6.4 MB",
+      "categories": [
+        "其他"
+      ],
+      "depth": 3,
+      "modified": "2019-06-14T11:59:10+08:00",
+      "_temporal": "yearly",
+      "_china": true,
+      "_date_info": {
+        "year": 1979,
+        "month": null,
+        "day": null,
+        "doy": null
+      }
+    },
+    {
+      "server": "nas",
+      "remote_path": "/Wangc/CMFD/Data_forcing_clim_010deg/shum_CMFD_V0106_B-01_01mo_010deg_197901-201812-moltm.nc",
+      "name": "shum_CMFD_V0106_B-01_01mo_010deg_197901-201812-moltm.nc",
+      "extension": ".nc",
+      "size_bytes": 6726360,
+      "size_human": "6.4 MB",
+      "categories": [
+        "其他"
+      ],
+      "depth": 3,
+      "modified": "2019-06-14T11:59:12+08:00",
+      "_temporal": "yearly",
+      "_china": true,
+      "_date_info": {
+        "year": 1979,
+        "month": null,
+        "day": null,
+        "doy": null
+      }
+    },
+    {
+      "server": "nas",
+      "remote_path": "/Wangc/标准中国地图/审图号GS（2016）1554_原图/审图号GS（2016）1554.tif",
+      "name": "审图号GS（2016）1554.tif",
+      "extension": ".tif",
+      "size_bytes": 5342224,
+      "size_human": "5.1 MB",
+      "categories": [
+        "其他"
+      ],
+      "depth": 3,
+      "modified": "2025-09-28T21:02:16+08:00",
+      "_temporal": "yearly",
+      "_china": true,
+      "_date_info": {
+        "year": 2016,
+        "month": null,
+        "day": null,
+        "doy": null
+      }
+    },
+    {
+      "server": "nas",
+      "remote_path": "/Wangxd/GAIA/downlond_links_priority_years/gaia_global_links_2020.txt",
+      "name": "gaia_global_links_2020.txt",
+      "extension": ".txt",
+      "size_bytes": 357184,
+      "size_human": "348.8 KB",
+      "categories": [
+        "其他"
+      ],
+      "depth": 3,
+      "modified": "2026-04-28T01:46:22.9888189+08:00",
+      "_temporal": "yearly",
+      "_china": true,
+      "_date_info": {
+        "year": 2020,
+        "month": null,
+        "day": null,
+        "doy": null
+      }
+    },
+    {
+      "server": "nas",
+      "remote_path": "/Wangxd/GAIA/downlond_links_priority_years/gaia_global_links_2020_failed.txt",
+      "name": "gaia_global_links_2020_failed.txt",
+      "extension": ".txt",
+      "size_bytes": 0,
+      "size_human": "0 B",
+      "categories": [
+        "其他"
+      ],
+      "depth": 3,
+      "modified": "2026-04-28T01:46:22.9881774+08:00",
+      "_temporal": "yearly",
+      "_china": true,
+      "_date_info": {
+        "year": 2020,
+        "month": null,
+        "day": null,
+        "doy": null
+      }
+    },
+    {
+      "server": "nas",
+      "remote_path": "/Wangxd/GAIA/downlond_links_priority_years/gaia_global_links_2019.txt",
+      "name": "gaia_global_links_2019.txt",
+      "extension": ".txt",
+      "size_bytes": 357072,
+      "size_human": "348.7 KB",
+      "categories": [
+        "其他"
+      ],
+      "depth": 3,
+      "modified": "2026-04-28T01:46:00.8983991+08:00",
+      "_temporal": "yearly",
+      "_china": true,
+      "_date_info": {
+        "year": 2019,
+        "month": null,
+        "day": null,
+        "doy": null
+      }
+    },
+    {
+      "server": "nas",
+      "remote_path": "/Chenhaojun/事件图/农业收割/Saskatchewan_SpringWheat_Harvest_PointSeries_2020 (2).csv",
+      "name": "Saskatchewan_SpringWheat_Harvest_PointSeries_2020 (2).csv",
+      "extension": ".csv",
+      "size_bytes": 186990,
+      "size_human": "182.6 KB",
+      "categories": [
+        "其他"
+      ],
+      "depth": 3,
+      "modified": "2026-07-02T01:03:31.9882244+08:00",
+      "_temporal": "yearly",
+      "_china": true,
+      "_date_info": {
+        "year": 2020,
+        "month": null,
+        "day": null,
+        "doy": null
+      }
+    },
+    {
+      "server": "nas",
+      "remote_path": "/Chenhaojun/事件图/玉米/CornBelt_CornFullSeason_2020_POINT_SERIES.csv",
+      "name": "CornBelt_CornFullSeason_2020_POINT_SERIES.csv",
+      "extension": ".csv",
+      "size_bytes": 143083,
+      "size_human": "139.7 KB",
+      "categories": [
+        "其他"
+      ],
+      "depth": 3,
+      "modified": "2026-07-01T14:38:19.9362039+08:00",
+      "_temporal": "yearly",
+      "_china": true,
+      "_date_info": {
+        "year": 2020,
+        "month": null,
+        "day": null,
+        "doy": null
+      }
+    },
+    {
+      "server": "nas",
+      "remote_path": "/Liuzheng/Data/AI/AridityIndex_MSWEP-prcp_div_GLEAM-Ep_1980-2020.tif",
+      "name": "AridityIndex_MSWEP-prcp_div_GLEAM-Ep_1980-2020.tif",
+      "extension": ".tif",
+      "size_bytes": 126060,
+      "size_human": "123.1 KB",
+      "categories": [
+        "其他"
+      ],
+      "depth": 3,
+      "modified": "2026-04-04T10:51:18.7423594+08:00",
+      "_temporal": "yearly",
+      "_china": true,
+      "_date_info": {
+        "year": 1980,
+        "month": null,
+        "day": null,
+        "doy": null
+      }
+    },
+    {
+      "server": "nas",
+      "remote_path": "/Wangxd/GAIA/_tmp_filelist_1985_p1.json",
+      "name": "_tmp_filelist_1985_p1.json",
+      "extension": ".json",
+      "size_bytes": 41443,
+      "size_human": "40.5 KB",
+      "categories": [
+        "其他"
+      ],
+      "depth": 2,
+      "modified": "2026-04-28T01:25:10.352722+08:00",
+      "_temporal": "yearly",
+      "_china": true,
+      "_date_info": {
+        "year": 1985,
+        "month": null,
+        "day": null,
+        "doy": null
+      }
+    },
+    {
+      "server": "nas",
+      "remote_path": "/Chenhaojun/中国气象局辽宁省农业气象灾害重点实验室开放基金申请书/合同/2026年东北冷涡实验室项目申请评分表 - 面上项目.xls",
+      "name": "2026年东北冷涡实验室项目申请评分表 - 面上项目.xls",
+      "extension": ".xls",
+      "size_bytes": 37376,
+      "size_human": "36.5 KB",
+      "categories": [
+        "气象数据",
+        "行政区划"
+      ],
+      "depth": 3,
+      "modified": "2026-06-07T11:18:21.2562814+08:00",
+      "_temporal": "yearly",
+      "_china": true,
+      "_date_info": {
+        "year": 2026,
+        "month": null,
+        "day": null,
+        "doy": null
+      }
+    },
+    {
+      "server": "nas",
+      "remote_path": "/Liuzheng/ISMN和FLUXz站点匹配/ISMN_vs_Fluxnet2015.csv",
+      "name": "ISMN_vs_Fluxnet2015.csv",
+      "extension": ".csv",
+      "size_bytes": 34436,
+      "size_human": "33.6 KB",
+      "categories": [
+        "土壤水分",
+        "站点观测"
+      ],
+      "depth": 2,
+      "modified": "2026-01-11T16:24:20.6717902+08:00",
+      "_temporal": "yearly",
+      "_china": true,
+      "_date_info": {
+        "year": 2015,
+        "month": null,
+        "day": null,
+        "doy": null
+      }
+    },
+    {
+      "server": "nas",
+      "remote_path": "/Wangxd/GAIA/downlond_links/iearth_download_links_2026-01-29T08-48-03-477Z.txt",
+      "name": "iearth_download_links_2026-01-29T08-48-03-477Z.txt",
+      "extension": ".txt",
+      "size_bytes": 24391,
+      "size_human": "23.8 KB",
+      "categories": [
+        "其他"
+      ],
+      "depth": 3,
+      "modified": "2026-01-29T16:48:14.3882619+08:00",
+      "_temporal": "yearly",
+      "_china": true,
+      "_date_info": {
+        "year": 2026,
+        "month": null,
+        "day": null,
+        "doy": null
+      }
+    },
+    {
+      "server": "nas",
+      "remote_path": "/Wangxd/GAIA/downlond_links/iearth_download_links_2026-01-29T08-54-31-230Z.txt",
+      "name": "iearth_download_links_2026-01-29T08-54-31-230Z.txt",
+      "extension": ".txt",
+      "size_bytes": 24391,
+      "size_human": "23.8 KB",
+      "categories": [
+        "其他"
+      ],
+      "depth": 3,
+      "modified": "2026-01-29T16:54:37.8431893+08:00",
+      "_temporal": "yearly",
+      "_china": true,
+      "_date_info": {
+        "year": 2026,
+        "month": null,
+        "day": null,
+        "doy": null
+      }
+    },
+    {
+      "server": "nas",
+      "remote_path": "/Wangxd/GAIA/downlond_links/iearth_download_links_2026-01-29T08-57-22-029Z.txt",
+      "name": "iearth_download_links_2026-01-29T08-57-22-029Z.txt",
+      "extension": ".txt",
+      "size_bytes": 24391,
+      "size_human": "23.8 KB",
+      "categories": [
+        "其他"
+      ],
+      "depth": 3,
+      "modified": "2026-01-29T16:57:33.6857456+08:00",
+      "_temporal": "yearly",
+      "_china": true,
+      "_date_info": {
+        "year": 2026,
+        "month": null,
+        "day": null,
+        "doy": null
+      }
+    },
+    {
+      "server": "nas",
+      "remote_path": "/Wangxd/china1km/spei_pkg_check/pkg_spei12_2018_03_r2120_c5497.csv",
+      "name": "pkg_spei12_2018_03_r2120_c5497.csv",
+      "extension": ".csv",
+      "size_bytes": 16307,
+      "size_human": "15.9 KB",
+      "categories": [
+        "其他"
+      ],
+      "depth": 3,
+      "modified": "2026-07-13T23:36:22.6464132+08:00",
+      "_temporal": "yearly",
+      "_china": true,
+      "_date_info": {
+        "year": 2018,
+        "month": null,
+        "day": null,
+        "doy": null
+      }
+    },
+    {
+      "server": "nas",
+      "remote_path": "/Wangxd/china1km/spei_pkg_check/pkg_spei01_2018_03_r2120_c5497.csv",
+      "name": "pkg_spei01_2018_03_r2120_c5497.csv",
+      "extension": ".csv",
+      "size_bytes": 15606,
+      "size_human": "15.2 KB",
+      "categories": [
+        "其他"
+      ],
+      "depth": 3,
+      "modified": "2026-07-13T23:31:16.3683728+08:00",
+      "_temporal": "yearly",
+      "_china": true,
+      "_date_info": {
+        "year": 2018,
+        "month": null,
+        "day": null,
+        "doy": null
+      }
+    },
+    {
+      "server": "nas",
+      "remote_path": "/Wangxd/china1km/spei_pkg_check/pkg_spei03_2018_03_r2120_c5497.csv",
+      "name": "pkg_spei03_2018_03_r2120_c5497.csv",
+      "extension": ".csv",
+      "size_bytes": 15556,
+      "size_human": "15.2 KB",
+      "categories": [
+        "其他"
+      ],
+      "depth": 3,
+      "modified": "2026-07-13T23:33:02.7761037+08:00",
+      "_temporal": "yearly",
+      "_china": true,
+      "_date_info": {
+        "year": 2018,
+        "month": null,
+        "day": null,
+        "doy": null
+      }
+    },
+    {
+      "server": "nas",
+      "remote_path": "/Wangxd/FIRED/2001-2021.txt",
+      "name": "2001-2021.txt",
+      "extension": ".txt",
+      "size_bytes": 10947,
+      "size_human": "10.7 KB",
+      "categories": [
+        "其他"
+      ],
+      "depth": 2,
+      "modified": "2025-05-25T11:20:25.6535779+08:00",
+      "_temporal": "yearly",
+      "_china": true,
+      "_date_info": {
+        "year": 2001,
+        "month": null,
+        "day": null,
+        "doy": null
+      }
+    },
+    {
+      "server": "nas",
+      "remote_path": "/Wangxd/FIRED/2000-2024.txt",
+      "name": "2000-2024.txt",
+      "extension": ".txt",
+      "size_bytes": 15008,
+      "size_human": "14.7 KB",
+      "categories": [
+        "其他"
+      ],
+      "depth": 2,
+      "modified": "2025-05-25T11:45:12.7264988+08:00",
+      "_temporal": "yearly",
+      "_china": true,
+      "_date_info": {
+        "year": 2000,
+        "month": null,
+        "day": null,
+        "doy": null
+      }
+    },
+    {
+      "server": "nas",
+      "remote_path": "/Wangc/HFP/common_treeline/2020_result_points.csv",
+      "name": "2020_result_points.csv",
+      "extension": ".csv",
+      "size_bytes": 14603,
+      "size_human": "14.3 KB",
+      "categories": [
+        "其他"
+      ],
+      "depth": 3,
+      "modified": "2026-03-16T15:35:43.6189924+08:00",
+      "_temporal": "yearly",
+      "_china": true,
+      "_date_info": {
+        "year": 2020,
+        "month": null,
+        "day": null,
+        "doy": null
+      }
+    },
+    {
+      "server": "nas",
+      "remote_path": "/Wangc/HFP/common_treeline/2019_result_points.csv",
+      "name": "2019_result_points.csv",
+      "extension": ".csv",
+      "size_bytes": 14615,
+      "size_human": "14.3 KB",
+      "categories": [
+        "其他"
+      ],
+      "depth": 3,
+      "modified": "2026-03-16T15:35:43.6169167+08:00",
+      "_temporal": "yearly",
+      "_china": true,
+      "_date_info": {
+        "year": 2019,
+        "month": null,
+        "day": null,
+        "doy": null
+      }
+    },
+    {
+      "server": "nas",
+      "remote_path": "/Wangc/HFP/common_treeline/2018_result_points.csv",
+      "name": "2018_result_points.csv",
+      "extension": ".csv",
+      "size_bytes": 14626,
+      "size_human": "14.3 KB",
+      "categories": [
+        "其他"
+      ],
+      "depth": 3,
+      "modified": "2026-03-16T15:35:43.6137662+08:00",
+      "_temporal": "yearly",
+      "_china": true,
+      "_date_info": {
+        "year": 2018,
+        "month": null,
+        "day": null,
+        "doy": null
+      }
+    },
+    {
+      "server": "nas",
+      "remote_path": "/Wangc/HFP/2020_result_points.csv",
+      "name": "2020_result_points.csv",
+      "extension": ".csv",
+      "size_bytes": 11226,
+      "size_human": "11.0 KB",
+      "categories": [
+        "其他"
+      ],
+      "depth": 2,
+      "modified": "2026-03-15T15:50:12.4224432+08:00",
+      "_temporal": "yearly",
+      "_china": true,
+      "_date_info": {
+        "year": 2020,
+        "month": null,
+        "day": null,
+        "doy": null
+      }
+    },
+    {
+      "server": "nas",
+      "remote_path": "/Wangc/HFP/2019_result_points.csv",
+      "name": "2019_result_points.csv",
+      "extension": ".csv",
+      "size_bytes": 13370,
+      "size_human": "13.1 KB",
+      "categories": [
+        "其他"
+      ],
+      "depth": 2,
+      "modified": "2026-03-15T15:54:03.0949999+08:00",
+      "_temporal": "yearly",
+      "_china": true,
+      "_date_info": {
+        "year": 2019,
+        "month": null,
+        "day": null,
+        "doy": null
+      }
+    },
+    {
+      "server": "nas",
+      "remote_path": "/Wangc/HFP/2018_result_points.csv",
+      "name": "2018_result_points.csv",
+      "extension": ".csv",
+      "size_bytes": 11015,
+      "size_human": "10.8 KB",
+      "categories": [
+        "其他"
+      ],
+      "depth": 2,
+      "modified": "2026-03-15T16:02:22.7528005+08:00",
+      "_temporal": "yearly",
+      "_china": true,
+      "_date_info": {
+        "year": 2018,
+        "month": null,
+        "day": null,
+        "doy": null
+      }
+    },
+    {
+      "server": "nas",
+      "remote_path": "/Liuzheng/Attribute_ω/2020年单年分析/2020_Per_IGBP_Attribution.csv",
+      "name": "2020_Per_IGBP_Attribution.csv",
+      "extension": ".csv",
+      "size_bytes": 1600,
+      "size_human": "1.6 KB",
+      "categories": [
+        "土地覆盖"
+      ],
+      "depth": 3,
+      "modified": "2026-04-03T17:25:23.4235497+08:00",
+      "_temporal": "yearly",
+      "_china": true,
+      "_date_info": {
+        "year": 2020,
+        "month": null,
+        "day": null,
+        "doy": null
+      }
+    },
+    {
+      "server": "nas",
+      "remote_path": "/Liuzheng/Attribute_ω/2020年单年分析/2020_Attribution.csv",
+      "name": "2020_Attribution.csv",
+      "extension": ".csv",
+      "size_bytes": 715,
+      "size_human": "715.0 B",
+      "categories": [
+        "其他"
+      ],
+      "depth": 3,
+      "modified": "2026-04-03T16:14:19.5570599+08:00",
+      "_temporal": "yearly",
+      "_china": true,
+      "_date_info": {
+        "year": 2020,
+        "month": null,
+        "day": null,
+        "doy": null
+      }
+    },
+    {
+      "server": "nas",
+      "remote_path": "/Liuzheng/omega_final/smap_avg_ω/doy_025.mat",
+      "name": "doy_025.mat",
+      "extension": ".mat",
+      "size_bytes": 3345662,
+      "size_human": "3.2 MB",
+      "categories": [
+        "土壤水分"
+      ],
+      "depth": 3,
+      "modified": "2026-05-25T13:13:03.9257266+08:00",
+      "_temporal": "static",
+      "_china": true
+    },
+    {
+      "server": "nas",
+      "remote_path": "/Liuzheng/omega_final/smap_avg_ω/doy_026.mat",
+      "name": "doy_026.mat",
+      "extension": ".mat",
+      "size_bytes": 3345662,
+      "size_human": "3.2 MB",
+      "categories": [
+        "土壤水分"
+      ],
+      "depth": 3,
+      "modified": "2026-05-25T13:13:05.401165+08:00",
+      "_temporal": "static",
+      "_china": true
+    },
+    {
+      "server": "nas",
+      "remote_path": "/Liuzheng/omega_final/smap_avg_ω/doy_027.mat",
+      "name": "doy_027.mat",
+      "extension": ".mat",
+      "size_bytes": 3345662,
+      "size_human": "3.2 MB",
+      "categories": [
+        "土壤水分"
+      ],
+      "depth": 3,
+      "modified": "2026-05-25T13:13:08.1964454+08:00",
+      "_temporal": "static",
+      "_china": true
+    },
+    {
+      "server": "nas",
+      "remote_path": "/Liuzheng/omega_final/smap_avg_ω/doy_028.mat",
+      "name": "doy_028.mat",
+      "extension": ".mat",
+      "size_bytes": 3345662,
+      "size_human": "3.2 MB",
+      "categories": [
+        "土壤水分"
+      ],
+      "depth": 3,
+      "modified": "2026-05-25T13:13:08.1944717+08:00",
+      "_temporal": "static",
+      "_china": true
+    },
+    {
+      "server": "nas",
+      "remote_path": "/Liuzheng/omega_final/smap_avg_ω/doy_029.mat",
+      "name": "doy_029.mat",
+      "extension": ".mat",
+      "size_bytes": 3345662,
+      "size_human": "3.2 MB",
+      "categories": [
+        "土壤水分"
+      ],
+      "depth": 3,
+      "modified": "2026-05-25T13:13:11.0470314+08:00",
+      "_temporal": "static",
+      "_china": true
+    },
+    {
+      "server": "nas",
+      "remote_path": "/Liuzheng/omega_final/smap_avg_ω/doy_030.mat",
+      "name": "doy_030.mat",
+      "extension": ".mat",
+      "size_bytes": 3345662,
+      "size_human": "3.2 MB",
+      "categories": [
+        "土壤水分"
+      ],
+      "depth": 3,
+      "modified": "2026-05-25T13:13:11.8208878+08:00",
+      "_temporal": "static",
+      "_china": true
+    },
+    {
+      "server": "nas",
+      "remote_path": "/Liuzheng/omega_final/smap_avg_ω/doy_017.mat",
+      "name": "doy_017.mat",
+      "extension": ".mat",
+      "size_bytes": 3403698,
+      "size_human": "3.2 MB",
+      "categories": [
+        "土壤水分"
+      ],
+      "depth": 3,
+      "modified": "2026-05-25T13:12:52.6062212+08:00",
+      "_temporal": "static",
+      "_china": true
+    },
+    {
+      "server": "nas",
+      "remote_path": "/Liuzheng/omega_final/smap_avg_ω/doy_018.mat",
+      "name": "doy_018.mat",
+      "extension": ".mat",
+      "size_bytes": 3403698,
+      "size_human": "3.2 MB",
+      "categories": [
+        "土壤水分"
+      ],
+      "depth": 3,
+      "modified": "2026-05-25T13:12:54.2813228+08:00",
+      "_temporal": "static",
+      "_china": true
+    },
+    {
+      "server": "nas",
+      "remote_path": "/Liuzheng/omega_final/smap_avg_ω/doy_019.mat",
+      "name": "doy_019.mat",
+      "extension": ".mat",
+      "size_bytes": 3403698,
+      "size_human": "3.2 MB",
+      "categories": [
+        "土壤水分"
+      ],
+      "depth": 3,
+      "modified": "2026-05-25T13:12:55.1643252+08:00",
+      "_temporal": "static",
+      "_china": true
+    },
+    {
+      "server": "nas",
+      "remote_path": "/Liuzheng/omega_final/smap_avg_ω/doy_020.mat",
+      "name": "doy_020.mat",
+      "extension": ".mat",
+      "size_bytes": 3403698,
+      "size_human": "3.2 MB",
+      "categories": [
+        "土壤水分"
+      ],
+      "depth": 3,
+      "modified": "2026-05-25T13:12:56.6553485+08:00",
+      "_temporal": "static",
+      "_china": true
+    },
+    {
+      "server": "nas",
+      "remote_path": "/Liuzheng/omega_final/smap_avg_ω/doy_021.mat",
+      "name": "doy_021.mat",
+      "extension": ".mat",
+      "size_bytes": 3403698,
+      "size_human": "3.2 MB",
+      "categories": [
+        "土壤水分"
+      ],
+      "depth": 3,
+      "modified": "2026-05-25T13:12:57.5677095+08:00",
+      "_temporal": "static",
+      "_china": true
+    },
+    {
+      "server": "nas",
+      "remote_path": "/Liuzheng/omega_final/smap_avg_ω/doy_022.mat",
+      "name": "doy_022.mat",
+      "extension": ".mat",
+      "size_bytes": 3403698,
+      "size_human": "3.2 MB",
+      "categories": [
+        "土壤水分"
+      ],
+      "depth": 3,
+      "modified": "2026-05-25T13:12:59.7240126+08:00",
+      "_temporal": "static",
+      "_china": true
+    },
+    {
+      "server": "nas",
+      "remote_path": "/Liuzheng/omega_final/smap_avg_ω/doy_023.mat",
+      "name": "doy_023.mat",
+      "extension": ".mat",
+      "size_bytes": 3403698,
+      "size_human": "3.2 MB",
+      "categories": [
+        "土壤水分"
+      ],
+      "depth": 3,
+      "modified": "2026-05-25T13:13:01.3231966+08:00",
+      "_temporal": "static",
+      "_china": true
+    },
+    {
+      "server": "nas",
+      "remote_path": "/Liuzheng/omega_final/smap_avg_ω/doy_024.mat",
+      "name": "doy_024.mat",
+      "extension": ".mat",
+      "size_bytes": 3403698,
+      "size_human": "3.2 MB",
+      "categories": [
+        "土壤水分"
+      ],
+      "depth": 3,
+      "modified": "2026-05-25T13:13:02.3169116+08:00",
+      "_temporal": "static",
+      "_china": true
+    },
+    {
+      "server": "nas",
+      "remote_path": "/Liuzheng/omega_final/fy_avg_ω/doy_025.mat",
+      "name": "doy_025.mat",
+      "extension": ".mat",
+      "size_bytes": 3428278,
+      "size_human": "3.3 MB",
+      "categories": [
+        "其他"
+      ],
+      "depth": 3,
+      "modified": "2026-05-25T13:02:08.4806447+08:00",
+      "_temporal": "static",
+      "_china": true
+    },
+    {
+      "server": "nas",
+      "remote_path": "/Liuzheng/omega_final/fy_avg_ω/doy_026.mat",
+      "name": "doy_026.mat",
+      "extension": ".mat",
+      "size_bytes": 3428278,
+      "size_human": "3.3 MB",
+      "categories": [
+        "其他"
+      ],
+      "depth": 3,
+      "modified": "2026-05-25T13:02:08.4662582+08:00",
+      "_temporal": "static",
+      "_china": true
+    },
+    {
+      "server": "nas",
+      "remote_path": "/Liuzheng/omega_final/fy_avg_ω/doy_027.mat",
+      "name": "doy_027.mat",
+      "extension": ".mat",
+      "size_bytes": 3428278,
+      "size_human": "3.3 MB",
+      "categories": [
+        "其他"
+      ],
+      "depth": 3,
+      "modified": "2026-05-25T13:02:13.8084516+08:00",
+      "_temporal": "static",
+      "_china": true
+    },
+    {
+      "server": "nas",
+      "remote_path": "/Liuzheng/omega_final/fy_avg_ω/doy_028.mat",
+      "name": "doy_028.mat",
+      "extension": ".mat",
+      "size_bytes": 3428278,
+      "size_human": "3.3 MB",
+      "categories": [
+        "其他"
+      ],
+      "depth": 3,
+      "modified": "2026-05-25T13:02:13.7930193+08:00",
+      "_temporal": "static",
+      "_china": true
+    },
+    {
+      "server": "nas",
+      "remote_path": "/Liuzheng/omega_final/fy_avg_ω/doy_029.mat",
+      "name": "doy_029.mat",
+      "extension": ".mat",
+      "size_bytes": 3428278,
+      "size_human": "3.3 MB",
+      "categories": [
+        "其他"
+      ],
+      "depth": 3,
+      "modified": "2026-05-25T13:02:15.9591163+08:00",
+      "_temporal": "static",
+      "_china": true
+    },
+    {
+      "server": "nas",
+      "remote_path": "/Liuzheng/omega_final/fy_avg_ω/doy_030.mat",
+      "name": "doy_030.mat",
+      "extension": ".mat",
+      "size_bytes": 3428278,
+      "size_human": "3.3 MB",
+      "categories": [
+        "其他"
+      ],
+      "depth": 3,
+      "modified": "2026-05-25T13:02:15.9939178+08:00",
+      "_temporal": "static",
+      "_china": true
+    },
+    {
+      "server": "nas",
+      "remote_path": "/Liuzheng/omega_final/fy_avg_ω/doy_017.mat",
+      "name": "doy_017.mat",
+      "extension": ".mat",
+      "size_bytes": 3491576,
+      "size_human": "3.3 MB",
+      "categories": [
+        "其他"
+      ],
+      "depth": 3,
+      "modified": "2026-05-25T13:01:39.3175319+08:00",
+      "_temporal": "static",
+      "_china": true
+    },
+    {
+      "server": "nas",
+      "remote_path": "/Liuzheng/omega_final/fy_avg_ω/doy_018.mat",
+      "name": "doy_018.mat",
+      "extension": ".mat",
+      "size_bytes": 3491576,
+      "size_human": "3.3 MB",
+      "categories": [
+        "其他"
+      ],
+      "depth": 3,
+      "modified": "2026-05-25T13:01:39.5947794+08:00",
+      "_temporal": "static",
+      "_china": true
+    },
+    {
+      "server": "nas",
+      "remote_path": "/Liuzheng/omega_final/fy_avg_ω/doy_019.mat",
+      "name": "doy_019.mat",
+      "extension": ".mat",
+      "size_bytes": 3491576,
+      "size_human": "3.3 MB",
+      "categories": [
+        "其他"
+      ],
+      "depth": 3,
+      "modified": "2026-05-25T13:01:45.6179016+08:00",
+      "_temporal": "static",
+      "_china": true
+    },
+    {
+      "server": "nas",
+      "remote_path": "/Liuzheng/omega_final/fy_avg_ω/doy_020.mat",
+      "name": "doy_020.mat",
+      "extension": ".mat",
+      "size_bytes": 3491576,
+      "size_human": "3.3 MB",
+      "categories": [
+        "其他"
+      ],
+      "depth": 3,
+      "modified": "2026-05-25T13:01:45.5445946+08:00",
+      "_temporal": "static",
+      "_china": true
+    },
+    {
+      "server": "nas",
+      "remote_path": "/Liuzheng/omega_final/fy_avg_ω/doy_021.mat",
+      "name": "doy_021.mat",
+      "extension": ".mat",
+      "size_bytes": 3491576,
+      "size_human": "3.3 MB",
+      "categories": [
+        "其他"
+      ],
+      "depth": 3,
+      "modified": "2026-05-25T13:01:51.9955767+08:00",
+      "_temporal": "static",
+      "_china": true
+    },
+    {
+      "server": "nas",
+      "remote_path": "/Liuzheng/omega_final/fy_avg_ω/doy_022.mat",
+      "name": "doy_022.mat",
+      "extension": ".mat",
+      "size_bytes": 3491576,
+      "size_human": "3.3 MB",
+      "categories": [
+        "其他"
+      ],
+      "depth": 3,
+      "modified": "2026-05-25T13:01:52.0059782+08:00",
+      "_temporal": "static",
+      "_china": true
+    },
+    {
+      "server": "nas",
+      "remote_path": "/Liuzheng/omega_final/fy_avg_ω/doy_023.mat",
+      "name": "doy_023.mat",
+      "extension": ".mat",
+      "size_bytes": 3491576,
+      "size_human": "3.3 MB",
+      "categories": [
+        "其他"
+      ],
+      "depth": 3,
+      "modified": "2026-05-25T13:02:01.5157702+08:00",
+      "_temporal": "static",
+      "_china": true
+    },
+    {
+      "server": "nas",
+      "remote_path": "/Liuzheng/omega_final/fy_avg_ω/doy_024.mat",
+      "name": "doy_024.mat",
+      "extension": ".mat",
+      "size_bytes": 3491576,
+      "size_human": "3.3 MB",
+      "categories": [
+        "其他"
+      ],
+      "depth": 3,
+      "modified": "2026-05-25T13:02:01.416642+08:00",
+      "_temporal": "static",
+      "_china": true
+    },
+    {
+      "server": "nas",
+      "remote_path": "/Liuzheng/omega_final/smap_avg_ω/doy_009.mat",
+      "name": "doy_009.mat",
+      "extension": ".mat",
+      "size_bytes": 3566380,
+      "size_human": "3.4 MB",
+      "categories": [
+        "土壤水分"
+      ],
+      "depth": 3,
+      "modified": "2026-05-25T13:12:38.9626642+08:00",
+      "_temporal": "static",
+      "_china": true
+    },
+    {
+      "server": "nas",
+      "remote_path": "/Liuzheng/omega_final/smap_avg_ω/doy_010.mat",
+      "name": "doy_010.mat",
+      "extension": ".mat",
+      "size_bytes": 3566380,
+      "size_human": "3.4 MB",
+      "categories": [
+        "土壤水分"
+      ],
+      "depth": 3,
+      "modified": "2026-05-25T13:12:43.1154779+08:00",
+      "_temporal": "static",
+      "_china": true
+    },
+    {
+      "server": "nas",
+      "remote_path": "/Liuzheng/omega_final/smap_avg_ω/doy_011.mat",
+      "name": "doy_011.mat",
+      "extension": ".mat",
+      "size_bytes": 3566380,
+      "size_human": "3.4 MB",
+      "categories": [
+        "土壤水分"
+      ],
+      "depth": 3,
+      "modified": "2026-05-25T13:12:43.2420035+08:00",
+      "_temporal": "static",
+      "_china": true
+    },
+    {
+      "server": "nas",
+      "remote_path": "/Liuzheng/omega_final/smap_avg_ω/doy_012.mat",
+      "name": "doy_012.mat",
+      "extension": ".mat",
+      "size_bytes": 3566380,
+      "size_human": "3.4 MB",
+      "categories": [
+        "土壤水分"
+      ],
+      "depth": 3,
+      "modified": "2026-05-25T13:12:45.9738387+08:00",
+      "_temporal": "static",
+      "_china": true
+    },
+    {
+      "server": "nas",
+      "remote_path": "/Liuzheng/omega_final/smap_avg_ω/doy_013.mat",
+      "name": "doy_013.mat",
+      "extension": ".mat",
+      "size_bytes": 3566380,
+      "size_human": "3.4 MB",
+      "categories": [
+        "土壤水分"
+      ],
+      "depth": 3,
+      "modified": "2026-05-25T13:12:46.9284287+08:00",
+      "_temporal": "static",
+      "_china": true
+    },
+    {
+      "server": "nas",
+      "remote_path": "/Liuzheng/omega_final/smap_avg_ω/doy_014.mat",
+      "name": "doy_014.mat",
+      "extension": ".mat",
+      "size_bytes": 3566380,
+      "size_human": "3.4 MB",
+      "categories": [
+        "土壤水分"
+      ],
+      "depth": 3,
+      "modified": "2026-05-25T13:12:48.83045+08:00",
+      "_temporal": "static",
+      "_china": true
+    },
+    {
+      "server": "nas",
+      "remote_path": "/Liuzheng/omega_final/smap_avg_ω/doy_015.mat",
+      "name": "doy_015.mat",
+      "extension": ".mat",
+      "size_bytes": 3566380,
+      "size_human": "3.4 MB",
+      "categories": [
+        "土壤水分"
+      ],
+      "depth": 3,
+      "modified": "2026-05-25T13:12:50.1992656+08:00",
+      "_temporal": "static",
+      "_china": true
+    },
+    {
+      "server": "nas",
+      "remote_path": "/Liuzheng/omega_final/smap_avg_ω/doy_016.mat",
+      "name": "doy_016.mat",
+      "extension": ".mat",
+      "size_bytes": 3566380,
+      "size_human": "3.4 MB",
+      "categories": [
+        "土壤水分"
+      ],
+      "depth": 3,
+      "modified": "2026-05-25T13:12:51.5216183+08:00",
+      "_temporal": "static",
+      "_china": true
+    },
+    {
+      "server": "nas",
+      "remote_path": "/Liuzheng/omega_final/fy_avg_ω/doy_009.mat",
+      "name": "doy_009.mat",
+      "extension": ".mat",
+      "size_bytes": 3645214,
+      "size_human": "3.5 MB",
+      "categories": [
+        "其他"
+      ],
+      "depth": 3,
+      "modified": "2026-05-25T13:01:12.5353362+08:00",
+      "_temporal": "static",
+      "_china": true
+    },
+    {
+      "server": "nas",
+      "remote_path": "/Liuzheng/omega_final/fy_avg_ω/doy_010.mat",
+      "name": "doy_010.mat",
+      "extension": ".mat",
+      "size_bytes": 3645214,
+      "size_human": "3.5 MB",
+      "categories": [
+        "其他"
+      ],
+      "depth": 3,
+      "modified": "2026-05-25T13:01:17.3067705+08:00",
+      "_temporal": "static",
+      "_china": true
+    },
+    {
+      "server": "nas",
+      "remote_path": "/Liuzheng/omega_final/fy_avg_ω/doy_011.mat",
+      "name": "doy_011.mat",
+      "extension": ".mat",
+      "size_bytes": 3645214,
+      "size_human": "3.5 MB",
+      "categories": [
+        "其他"
+      ],
+      "depth": 3,
+      "modified": "2026-05-25T13:01:18.9412712+08:00",
+      "_temporal": "static",
+      "_china": true
+    },
+    {
+      "server": "nas",
+      "remote_path": "/Liuzheng/omega_final/fy_avg_ω/doy_012.mat",
+      "name": "doy_012.mat",
+      "extension": ".mat",
+      "size_bytes": 3645214,
+      "size_human": "3.5 MB",
+      "categories": [
+        "其他"
+      ],
+      "depth": 3,
+      "modified": "2026-05-25T13:01:23.5722755+08:00",
+      "_temporal": "static",
+      "_china": true
+    },
+    {
+      "server": "nas",
+      "remote_path": "/Liuzheng/omega_final/fy_avg_ω/doy_013.mat",
+      "name": "doy_013.mat",
+      "extension": ".mat",
+      "size_bytes": 3645214,
+      "size_human": "3.5 MB",
+      "categories": [
+        "其他"
+      ],
+      "depth": 3,
+      "modified": "2026-05-25T13:01:26.3141331+08:00",
+      "_temporal": "static",
+      "_china": true
+    },
+    {
+      "server": "nas",
+      "remote_path": "/Liuzheng/omega_final/fy_avg_ω/doy_014.mat",
+      "name": "doy_014.mat",
+      "extension": ".mat",
+      "size_bytes": 3645214,
+      "size_human": "3.5 MB",
+      "categories": [
+        "其他"
+      ],
+      "depth": 3,
+      "modified": "2026-05-25T13:01:28.2812461+08:00",
+      "_temporal": "static",
+      "_china": true
+    },
+    {
+      "server": "nas",
+      "remote_path": "/Liuzheng/omega_final/fy_avg_ω/doy_015.mat",
+      "name": "doy_015.mat",
+      "extension": ".mat",
+      "size_bytes": 3645214,
+      "size_human": "3.5 MB",
+      "categories": [
+        "其他"
+      ],
+      "depth": 3,
+      "modified": "2026-05-25T13:01:32.9565444+08:00",
+      "_temporal": "static",
+      "_china": true
+    },
+    {
+      "server": "nas",
+      "remote_path": "/Liuzheng/omega_final/fy_avg_ω/doy_016.mat",
+      "name": "doy_016.mat",
+      "extension": ".mat",
+      "size_bytes": 3645214,
+      "size_human": "3.5 MB",
+      "categories": [
+        "其他"
+      ],
+      "depth": 3,
+      "modified": "2026-05-25T13:01:33.9886924+08:00",
+      "_temporal": "static",
+      "_china": true
+    },
+    {
+      "server": "nas",
+      "remote_path": "/Liuzheng/omega_final/smap_avg_ω/doy_001.mat",
+      "name": "doy_001.mat",
+      "extension": ".mat",
+      "size_bytes": 3714673,
+      "size_human": "3.5 MB",
+      "categories": [
+        "土壤水分"
+      ],
+      "depth": 3,
+      "modified": "2026-05-25T13:12:28.0739291+08:00",
+      "_temporal": "static",
+      "_china": true
+    },
+    {
+      "server": "nas",
+      "remote_path": "/Liuzheng/omega_final/smap_avg_ω/doy_002.mat",
+      "name": "doy_002.mat",
+      "extension": ".mat",
+      "size_bytes": 3714673,
+      "size_human": "3.5 MB",
+      "categories": [
+        "土壤水分"
+      ],
+      "depth": 3,
+      "modified": "2026-05-25T13:12:27.6064002+08:00",
+      "_temporal": "static",
+      "_china": true
+    },
+    {
+      "server": "nas",
+      "remote_path": "/Liuzheng/omega_final/smap_avg_ω/doy_003.mat",
+      "name": "doy_003.mat",
+      "extension": ".mat",
+      "size_bytes": 3714673,
+      "size_human": "3.5 MB",
+      "categories": [
+        "土壤水分"
+      ],
+      "depth": 3,
+      "modified": "2026-05-25T13:12:30.0307201+08:00",
+      "_temporal": "static",
+      "_china": true
+    },
+    {
+      "server": "nas",
+      "remote_path": "/Liuzheng/omega_final/smap_avg_ω/doy_004.mat",
+      "name": "doy_004.mat",
+      "extension": ".mat",
+      "size_bytes": 3714673,
+      "size_human": "3.5 MB",
+      "categories": [
+        "土壤水分"
+      ],
+      "depth": 3,
+      "modified": "2026-05-25T13:12:31.9685967+08:00",
+      "_temporal": "static",
+      "_china": true
+    },
+    {
+      "server": "nas",
+      "remote_path": "/Liuzheng/omega_final/smap_avg_ω/doy_005.mat",
+      "name": "doy_005.mat",
+      "extension": ".mat",
+      "size_bytes": 3714673,
+      "size_human": "3.5 MB",
+      "categories": [
+        "土壤水分"
+      ],
+      "depth": 3,
+      "modified": "2026-05-25T13:12:33.2147184+08:00",
+      "_temporal": "static",
+      "_china": true
+    },
+    {
+      "server": "nas",
+      "remote_path": "/Liuzheng/omega_final/smap_avg_ω/doy_006.mat",
+      "name": "doy_006.mat",
+      "extension": ".mat",
+      "size_bytes": 3714673,
+      "size_human": "3.5 MB",
+      "categories": [
+        "土壤水分"
+      ],
+      "depth": 3,
+      "modified": "2026-05-25T13:12:35.3587921+08:00",
+      "_temporal": "static",
+      "_china": true
+    }
+  ]
+}

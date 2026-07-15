@@ -79,6 +79,11 @@ export function tileToLngLatBounds(z: number, x: number, y: number): LngLatBound
 /**
  * 获取指定经纬度边界内的所有瓦片坐标。
  *
+ * 处理反子午线穿越：当 bbox 经度跨度 > 180° 时，MapLibre 的 getBounds()
+ * 在 renderWorldCopies=true 下可能返回跨越 ±180° 的回绕值。此时实际视口
+ * 是从 bounds.east 向东到 bounds.west（穿过 180°经线），而非从 west 到 east
+ * 的长路径。本函数将此情况正确拆分为两组瓦片坐标。
+ *
  * @param buffer 视口外扩圈数（0 = 仅边界内，1 = 外扩一圈）
  * @returns 主世界瓦片坐标集合（经度已归一化到 [0, n)）
  */
@@ -88,20 +93,35 @@ export function tilesInBounds(
   buffer = 0,
 ): WeatherTileCoords[] {
   const clampedZ = Math.max(0, Math.min(12, Math.round(z)))
-  const sw = lngLatToTile(bounds.west, bounds.south, clampedZ)
-  const ne = lngLatToTile(bounds.east, bounds.north, clampedZ)
-
-  const minX = Math.min(sw.x, ne.x) - buffer
-  const maxX = Math.max(sw.x, ne.x) + buffer
-  const minY = Math.min(sw.y, ne.y) - buffer
-  const maxY = Math.max(sw.y, ne.y) + buffer
-
   const n = 2 ** clampedZ
+
+  // 检测反子午线穿越：经度跨度 > 180° 说明 MapLibre 返回了回绕的 bbox
+  let westLng = bounds.west
+  let eastLng = bounds.east
+  if (eastLng - westLng > 180) {
+    // 实际视口从 east 向东到 west（穿越 180°经线），取短路径
+    westLng = bounds.east
+    eastLng = bounds.west + 360
+  }
+
+  // 手动计算瓦片 x 坐标（不 clamp，允许 > n 以处理穿越后的回绕）
+  const westTileX = Math.floor(((westLng + 180) / 360) * n)
+  const eastTileX = Math.floor(((eastLng + 180) / 360) * n)
+
+  // y 坐标使用 lngLatToTile 确保 Web Mercator 投影正确
+  const southTileY = lngLatToTile(0, bounds.south, clampedZ).y
+  const northTileY = lngLatToTile(0, bounds.north, clampedZ).y
+
+  const minX = Math.min(westTileX, eastTileX) - buffer
+  const maxX = Math.max(westTileX, eastTileX) + buffer
+  const minY = Math.min(southTileY, northTileY) - buffer
+  const maxY = Math.max(southTileY, northTileY) + buffer
+
   const seen = new Set<string>()
   const tiles: WeatherTileCoords[] = []
 
   for (let x = minX; x <= maxX; x += 1) {
-    // 处理 renderWorldCopies：归一化到主世界 [0, n)
+    // 归一化到主世界 [0, n)
     const normalizedX = ((x % n) + n) % n
     for (let y = minY; y <= maxY; y += 1) {
       if (y < 0 || y >= n) continue

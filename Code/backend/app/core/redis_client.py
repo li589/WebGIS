@@ -56,7 +56,7 @@ def cache_get_json(key: str) -> Any | None:
         if raw is None:
             return None
         return json.loads(raw)
-    except Exception as exc:
+    except (redis.RedisError, json.JSONDecodeError) as exc:
         logger.debug("[RedisClient] cache_get_json error for key=%s: %s", key, exc)
         return None
 
@@ -69,7 +69,7 @@ def cache_set_json(key: str, value: Any, ttl_seconds: int) -> bool:
     try:
         client.setex(key, ttl_seconds, json.dumps(value, ensure_ascii=False))
         return True
-    except Exception as exc:
+    except (redis.RedisError, TypeError, ValueError) as exc:
         logger.debug("[RedisClient] cache_set_json error for key=%s: %s", key, exc)
         return False
 
@@ -86,7 +86,7 @@ def acquire_dedup_lock(key: str, ttl_seconds: int = 30) -> bool:
     try:
         result = client.set(key, "1", nx=True, ex=ttl_seconds)
         return result is not None
-    except Exception as exc:
+    except redis.RedisError as exc:
         logger.debug("[RedisClient] acquire_dedup_lock error for key=%s: %s", key, exc)
         return True  # On error, allow the request to proceed
 
@@ -98,7 +98,7 @@ def release_dedup_lock(key: str) -> None:
         return
     try:
         client.delete(key)
-    except Exception as exc:
+    except redis.RedisError as exc:
         logger.debug("[RedisClient] release_dedup_lock error for key=%s: %s", key, exc)
 
 
@@ -115,10 +115,61 @@ def wait_for_dedup(key: str, timeout_seconds: float = 30.0, poll_interval: float
         try:
             if client.get(key) is None:
                 return True
-        except Exception:
+        except redis.RedisError:
             return False
         time.sleep(poll_interval)
     return False
+
+
+# ─── Open-Meteo API 全局限流 ──────────────────────────────────────────────────
+
+_API_CONCURRENT_KEY = "weather:api_concurrent"
+_MAX_CONCURRENT_API_CALLS = 2
+_API_SLOT_TTL = 60  # 秒，防止 worker 崩溃后计数器卡住
+
+
+def acquire_api_slot(timeout: float = 30.0) -> bool:
+    """获取一个全局 API 调用槽位，限制跨 worker 的 Open-Meteo 并发请求数。
+
+    使用 Redis INCR 原子计数器实现分布式信号量。
+    当并发数超过 _MAX_CONCURRENT_API_CALLS 时，调用方会等待直到有槽位释放或超时。
+
+    Returns:
+        True 如果获得槽位（或 Redis 不可用时降级放行），
+        False 如果超时未获得槽位。
+    """
+    client = get_redis_client()
+    if client is None:
+        return True  # Redis 不可用时降级放行
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        try:
+            current = client.incr(_API_CONCURRENT_KEY)
+            if current == 1:
+                # 首个调用者设置 TTL，防止 worker 崩溃后计数器卡住
+                client.expire(_API_CONCURRENT_KEY, _API_SLOT_TTL)
+            if current <= _MAX_CONCURRENT_API_CALLS:
+                return True
+            # 超过限制，回退计数并等待
+            client.decr(_API_CONCURRENT_KEY)
+        except redis.RedisError:
+            return True  # Redis 出错时降级放行
+        time.sleep(0.5)
+    return False
+
+
+def release_api_slot() -> None:
+    """释放一个 API 调用槽位。"""
+    client = get_redis_client()
+    if client is None:
+        return
+    try:
+        current = client.decr(_API_CONCURRENT_KEY)
+        if current < 0:
+            # 计数器异常（如 TTL 过期后 DECR），重置为 0
+            client.set(_API_CONCURRENT_KEY, 0, ex=_API_SLOT_TTL)
+    except redis.RedisError:
+        pass
 
 
 # ─── 请求耗时指标 ─────────────────────────────────────────────────────────────
@@ -150,7 +201,7 @@ def record_request_metric(
         pipe.ltrim(key, 0, _METRICS_LIST_CAP - 1)
         pipe.expire(key, _METRICS_TTL_SECONDS)
         pipe.execute()
-    except Exception as exc:
+    except redis.RedisError as exc:
         logger.debug("[RedisClient] record_request_metric error: %s", exc)
 
 
@@ -210,5 +261,5 @@ def get_metrics_summary(date_str: str | None = None) -> dict[str, Any]:
             "date": date_str,
             "endpoints": endpoints,
         }
-    except Exception as exc:
+    except redis.RedisError as exc:
         return {"available": False, "error": str(exc)}

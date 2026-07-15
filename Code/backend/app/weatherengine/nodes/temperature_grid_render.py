@@ -86,7 +86,7 @@ class TemperatureGridRenderNode(BaseNode):
                     run_id=run_id,
                     result_id=f"temperature-geojson-{self.spec.node_id}",
                     result_kind=ResultKind.file,
-                    title="温度网格 GeoJSON",
+                    title="Temperature Grid GeoJSON",
                     mime_type="application/geo+json",
                     updated_at=datetime.now(timezone.utc),
                     payload=geojson,

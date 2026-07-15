@@ -115,7 +115,13 @@ def _grid_data_for_hour(grid_data: dict[str, Any], hour: int) -> dict[str, Any]:
     fetch_grid_forecast 返回的 grid_data 包含 current（当前小时）和 hourly（逐小时）。
     当 hour > 0 时，将 current 段替换为 hourly 段中对应小时的值，使 build_*_geojson_from_grid
     能直接复用。
+
+    注意：hourly 中每个字段的 values 是 total_points 个时间序列的列表，
+    需要为每个点取第 hour 个时间步，而不是取第 hour 个点的时间序列。
     """
+    # hour <= 0 时使用 current 数据（Open-Meteo current 段包含 wind_direction_10m
+    # 等完整字段，代表实时观测值）。
+    # hour > 0 时从 hourly 数据中提取对应小时的值替换 current 段。
     if hour <= 0:
         return grid_data
 
@@ -126,19 +132,34 @@ def _grid_data_for_hour(grid_data: dict[str, Any], hour: int) -> dict[str, Any]:
 
     # 检查 hourly 是否有足够时间步
     first_series = next(iter(hourly.values()), None)
-    if not isinstance(first_series, list) or hour >= len(first_series):
+    if not isinstance(first_series, list) or len(first_series) == 0:
         logger.warning(
-            "[WeatherTileService] hourly data only has %d steps, requested hour=%d, falling back to current",
-            len(first_series) if isinstance(first_series, list) else 0,
+            "[WeatherTileService] hourly data empty for hour=%d, falling back to current",
             hour,
         )
         return grid_data
 
-    # 构建 current 的副本，替换为指定小时的值
+    # 第一个点的时间序列长度表示可用时间步数
+    first_point_series = first_series[0]
+    if not isinstance(first_point_series, list) or hour >= len(first_point_series):
+        available_steps = len(first_point_series) if isinstance(first_point_series, list) else 0
+        logger.warning(
+            "[WeatherTileService] hourly data only has %d steps, requested hour=%d, falling back to current",
+            available_steps,
+            hour,
+        )
+        return grid_data
+
+    # 构建 current 的副本：为每个点取第 hour 个时间步的值
     new_current: dict[str, Any] = {}
     for key, values in hourly.items():
-        if isinstance(values, list) and hour < len(values):
-            new_current[key] = values[hour]
+        if isinstance(values, list):
+            new_current[key] = []
+            for point_values in values:
+                if isinstance(point_values, list) and hour < len(point_values):
+                    new_current[key].append(point_values[hour])
+                else:
+                    new_current[key].append(None)
         else:
             new_current[key] = values
 

@@ -29,11 +29,17 @@ import {
 } from '../services/weather-tile-utils'
 import type { WindGeoJSON } from '../components/map/types'
 
-const MAX_CONCURRENT_TILE_FETCH = 3
+const MAX_CONCURRENT_TILE_FETCH = 2
 const MAX_LAYER_CACHE_TILES = 128
 const PREFETCH_NEIGHBOR_DEPTH = 1
 const POLL_INTERVAL_MS = 700
-const BACKOFF_429_MS = 3000
+const BACKOFF_429_MS = 5000
+/** 429 退避后重试的最大次数，避免无限重试 */
+const MAX_429_RETRIES = 3
+/** 503（断路器/服务不可用）退避时间 */
+const BACKOFF_503_MS = 8000
+/** 503 重试最大次数 */
+const MAX_503_RETRIES = 3
 
 /** 默认气象模型；后端也使用 best_match，这里仅作为显式占位。 */
 const DEFAULT_WEATHER_MODEL = 'best_match'
@@ -56,6 +62,13 @@ interface TileRequest {
   runId?: string
   /** 是否已被 drainQueue 取出并进入 submitTile；用于取消时区分是否占用并发槽位。 */
   dispatched?: boolean
+  /** 429 重试计数 */
+  retry429Count?: number
+  /** 503 重试计数 */
+  retry503Count?: number
+  /** 该瓦片最早可重试的时间戳（ms）。drainQueue/pickNextRequest 会跳过未到期的瓦片，
+   *  确保单个瓦片的退避不被其他 drainQueue 调用绕过。 */
+  retryAfter?: number
 }
 
 interface LayerState {
@@ -71,6 +84,10 @@ interface LayerState {
   prefetchRing: WeatherTileCoords[]
   tiles: Map<string, WindGeoJSON>
   pending: Map<string, TileRequest>
+  /** 最近一次错误类型（null = 无错误）。UI 通过 statusVersion 触发响应式更新。 */
+  lastErrorType: WeatherTileErrorType | null
+  /** 错误信息（供 UI 展示） */
+  lastErrorMessage: string | null
 }
 
 export interface LayerTileStats {
@@ -79,9 +96,30 @@ export interface LayerTileStats {
   visible: number
 }
 
+/** 天气瓦片图层的运行时状态，供 UI 显示加载/错误反馈 */
+export type WeatherTileErrorType =
+  | 'circuit-open'
+  | 'rate-limited'
+  | 'workflow-failed'
+  | 'unknown'
+
+export interface WeatherTileLayerStatus {
+  /** 图层是否可见且需要瓦片 */
+  active: boolean
+  /** 视口内已缓存的瓦片数 */
+  cachedInViewport: number
+  /** 视口内瓦片总数 */
+  viewportTotal: number
+  /** 仍在加载的瓦片数 */
+  pending: number
+  /** 最近一次错误类型（null = 无错误） */
+  errorType: WeatherTileErrorType | null
+  /** 错误信息（供 UI 展示） */
+  errorMessage: string | null
+}
+
 let globalSequence = 0
 let activeFetchCount = 0
-let weatherPrefetchBackoffUntil = 0
 
 function debugLog(module: string, ...args: unknown[]) {
   console.log(`[${performance.now().toFixed(1)}ms] [WeatherTileManager:${module}]`, ...args)
@@ -139,7 +177,9 @@ function extractGeojsonFromRun(run: WorkflowRunStatusResponse): WindGeoJSON | nu
 export const useWeatherTileManager = defineStore('weatherTileManager', () => {
   // 全局数据版本号：瓦片缓存变化时递增，供组件 watch 触发重渲染
   const dataVersion = ref(0)
-  // 图层状态：使用普通 Map，依赖 dataVersion 触发响应式更新
+  // 状态版本号：错误/加载状态变化时递增，供 UI watch 触发重渲染
+  const statusVersion = ref(0)
+  // 图层状态：使用普通 Map，依赖 dataVersion/statusVersion 触发响应式更新
   const layerStates = new Map<string, LayerState>()
 
   function getOrCreateState(layerId: string): LayerState {
@@ -158,10 +198,30 @@ export const useWeatherTileManager = defineStore('weatherTileManager', () => {
         prefetchRing: [],
         tiles: new Map(),
         pending: new Map(),
+        lastErrorType: null,
+        lastErrorMessage: null,
       }
       layerStates.set(layerId, state)
     }
     return state
+  }
+
+  /** 设置图层错误状态并触发 UI 更新 */
+  function setLayerError(layerId: string, errorType: WeatherTileErrorType, message: string): void {
+    const state = layerStates.get(layerId)
+    if (!state) return
+    state.lastErrorType = errorType
+    state.lastErrorMessage = message
+    statusVersion.value += 1
+  }
+
+  /** 清除图层错误状态并触发 UI 更新 */
+  function clearLayerError(layerId: string): void {
+    const state = layerStates.get(layerId)
+    if (!state || !state.lastErrorType) return
+    state.lastErrorType = null
+    state.lastErrorMessage = null
+    statusVersion.value += 1
   }
 
   function setLayerActive(layerId: string, active: boolean): void {
@@ -232,6 +292,11 @@ export const useWeatherTileManager = defineStore('weatherTileManager', () => {
       if (!desiredKeys.has(key)) {
         cancelPendingRequest(request)
         state.pending.delete(key)
+      } else {
+        // 瓦片仍在视口内：无论是否已派发，都更新世代为当前值。
+        // 对于在途瓦片（dispatched=true），submitTile/pollTile 会动态读取
+        // request.generation 进行世代检查，更新后它们的结果不会被误判为过期而丢弃。
+        request.generation = generation
       }
     }
 
@@ -250,7 +315,9 @@ export const useWeatherTileManager = defineStore('weatherTileManager', () => {
       layerId,
       `gen=${generation}`,
       `z=${clampedZoom}`,
-      `viewport=${viewportTiles.length}`,
+      `hour=${hour}`,
+      `bbox=${state.bbox ? `${state.bbox.west.toFixed(1)},${state.bbox.south.toFixed(1)},${state.bbox.east.toFixed(1)},${state.bbox.north.toFixed(1)}` : 'null'}`,
+      `viewport=${viewportTiles.length}:[${viewportTiles.map((t) => `${t.x},${t.y}`).join('|')}]`,
       `prefetch=${prefetchRing.length}`,
       `pending=${state.pending.size}`,
       `cached=${state.tiles.size}`,
@@ -293,7 +360,6 @@ export const useWeatherTileManager = defineStore('weatherTileManager', () => {
   }
 
   function drainQueue(): void {
-    if (Date.now() < weatherPrefetchBackoffUntil) return
     while (activeFetchCount < MAX_CONCURRENT_TILE_FETCH) {
       const next = pickNextRequest()
       if (!next) break
@@ -304,12 +370,15 @@ export const useWeatherTileManager = defineStore('weatherTileManager', () => {
   }
 
   function pickNextRequest(): TileRequest | null {
+    const now = Date.now()
     let best: TileRequest | null = null
     for (const state of layerStates.values()) {
       if (!state.visible) continue
       for (const request of state.pending.values()) {
         // 已派发的请求仍在 pending 中（等待 submitTile finally 清理），避免重复调度
         if (request.dispatched) continue
+        // 跳过仍在退避期内的瓦片，确保单瓦片重试延迟不被其他 drainQueue 调用绕过
+        if (request.retryAfter && now < request.retryAfter) continue
         if (!best) {
           best = request
           continue
@@ -325,7 +394,7 @@ export const useWeatherTileManager = defineStore('weatherTileManager', () => {
   }
 
   async function submitTile(request: TileRequest): Promise<void> {
-    const { key, layerId, generation } = request
+    const { key, layerId } = request
     const state = layerStates.get(layerId)
     const cacheKey = tileCoordsToKey(
       { z: key.z, x: key.x, y: key.y },
@@ -335,12 +404,13 @@ export const useWeatherTileManager = defineStore('weatherTileManager', () => {
 
     try {
       // 调度前已过期：直接返回，pending 删除和槽位释放由 finally 统一处理，避免双重扣减
-      if (!state || state.generation !== generation) {
+      // 注意：动态读取 request.generation，因为 setViewport 可能已更新它
+      if (!state || state.generation !== request.generation) {
         debugLog('submitTile discard stale before submit', layerId, `z=${key.z} x=${key.x} y=${key.y}`)
         return
       }
 
-      debugLog('submitTile start', layerId, `z=${key.z} x=${key.x} y=${key.y}`, `gen=${generation}`, `priority=${request.priority}`)
+      debugLog('submitTile start', layerId, `z=${key.z} x=${key.x} y=${key.y}`, `gen=${request.generation}`, `priority=${request.priority}`)
       const { runId } = await submitWeatherTileWorkflow(
         layerId,
         key.z,
@@ -354,8 +424,8 @@ export const useWeatherTileManager = defineStore('weatherTileManager', () => {
       )
       request.runId = runId
 
-      // 提交完成后若世代已更新，立即取消并丢弃（finally 统一释放槽位）
-      if (state.generation !== generation) {
+      // 提交完成后若世代已更新且未被 setViewport 重新对齐，立即取消并丢弃
+      if (state.generation !== request.generation) {
         debugLog('submitTile discard stale after submit', layerId, `z=${key.z} x=${key.x} y=${key.y}`)
         void cancelWorkflowRun(runId).catch(() => {})
         return
@@ -366,24 +436,64 @@ export const useWeatherTileManager = defineStore('weatherTileManager', () => {
       if (isAbortError(err)) {
         debugLog('submitTile aborted', layerId, `z=${key.z} x=${key.x} y=${key.y}`)
       } else if (String(err).includes('429') || (err as Error).message?.includes('429')) {
-        debugLog('submitTile 429 backoff', layerId, `z=${key.z} x=${key.x} y=${key.y}`, `backoffUntil=${weatherPrefetchBackoffUntil}`)
-        weatherPrefetchBackoffUntil = Date.now() + BACKOFF_429_MS
-        // 429 仅设置退避并清空 runId；槽位由 finally 统一释放，避免双重扣减
+        const retryCount = (request.retry429Count ?? 0) + 1
+        request.retry429Count = retryCount
+        if (retryCount <= MAX_429_RETRIES) {
+          debugLog('submitTile 429 retry', layerId, `z=${key.z} x=${key.x} y=${key.y}`, `retry=${retryCount}/${MAX_429_RETRIES}`)
+          request.runId = undefined
+          // 释放槽位，但保留 pending 条目供后续重试
+          activeFetchCount = Math.max(0, activeFetchCount - 1)
+          // 重置 dispatched 标志，让 drainQueue 在退避过后重新调度
+          request.dispatched = false
+          // 设置单瓦片退避时间，pickNextRequest 会跳过未到期的瓦片
+          request.retryAfter = Date.now() + BACKOFF_429_MS
+          // 安排退避后重新 drain
+          setTimeout(() => drainQueue(), BACKOFF_429_MS + 100)
+          return
+        }
+        debugLog('submitTile 429 exhausted', layerId, `z=${key.z} x=${key.x} y=${key.y}`, `retries=${retryCount}`)
+        setLayerError(layerId, 'rate-limited', '天气 API 请求频率超限，请稍后重试')
+        request.runId = undefined
+      } else if (String(err).includes('503') || (err as Error).message?.includes('503')) {
+        const retryCount = (request.retry503Count ?? 0) + 1
+        request.retry503Count = retryCount
+        if (retryCount <= MAX_503_RETRIES) {
+          debugLog('submitTile 503 retry', layerId, `z=${key.z} x=${key.x} y=${key.y}`, `retry=${retryCount}/${MAX_503_RETRIES}`)
+          request.runId = undefined
+          activeFetchCount = Math.max(0, activeFetchCount - 1)
+          request.dispatched = false
+          request.retryAfter = Date.now() + BACKOFF_503_MS
+          setTimeout(() => drainQueue(), BACKOFF_503_MS + 100)
+          return
+        }
+        debugLog('submitTile 503 exhausted', layerId, `z=${key.z} x=${key.x} y=${key.y}`, `retries=${retryCount}`)
+        setLayerError(layerId, 'circuit-open', '天气服务暂时不可用（断路器保护中），请稍后重试')
         request.runId = undefined
       } else {
         console.error(`[WeatherTileManager] submitTile failed ${layerId} z=${key.z} x=${key.x} y=${key.y}:`, err)
+        setLayerError(layerId, 'unknown', (err as Error)?.message ?? '天气瓦片加载失败')
       }
     } finally {
-      state?.pending.delete(cacheKey)
-      activeFetchCount = Math.max(0, activeFetchCount - 1)
-      drainQueue()
+      // 429/503 重试时不清理 pending（dispatched=false 表示已重新入队等待重试）
+      if (request.dispatched !== false) {
+        const currentState = layerStates.get(layerId)
+        // 若世代已过期且瓦片不再被需要，清理 pending；若仍需要则由 setViewport 的重新入队逻辑处理
+        if (currentState && currentState.generation !== request.generation) {
+          // 世代不匹配但瓦片可能已被 setViewport 重新对齐 generation。
+          // 此时 request.generation 已被更新为 currentState.generation，不会进入此分支。
+          // 进入此分支说明瓦片确实过期了（不在新视口内），安全清理。
+        }
+        currentState?.pending.delete(cacheKey)
+        activeFetchCount = Math.max(0, activeFetchCount - 1)
+        drainQueue()
+      }
     }
   }
 
   async function pollTile(request: TileRequest, runId: string): Promise<void> {
-    const { key, layerId, generation } = request
+    const { key, layerId } = request
     const state = layerStates.get(layerId)
-    if (!state || state.generation !== generation) {
+    if (!state || state.generation !== request.generation) {
       void cancelWorkflowRun(runId).catch(() => {})
       return
     }
@@ -393,10 +503,10 @@ export const useWeatherTileManager = defineStore('weatherTileManager', () => {
       while (!isTerminalStatus(run.status)) {
         await new Promise((resolve) => setTimeout(resolve, POLL_INTERVAL_MS))
 
-        // 轮询过程中检查世代是否过期
+        // 轮询过程中检查世代是否过期（动态读取 request.generation）
         const currentState = layerStates.get(layerId)
-        if (!currentState || currentState.generation !== generation) {
-          debugLog('pollTile generation expired', layerId, `z=${key.z} x=${key.x} y=${key.y}`, `currentGen=${currentState?.generation}`, `reqGen=${generation}`)
+        if (!currentState || currentState.generation !== request.generation) {
+          debugLog('pollTile generation expired', layerId, `z=${key.z} x=${key.x} y=${key.y}`, `currentGen=${currentState?.generation}`, `reqGen=${request.generation}`)
           void cancelWorkflowRun(runId).catch(() => {})
           return
         }
@@ -412,13 +522,23 @@ export const useWeatherTileManager = defineStore('weatherTileManager', () => {
 
       // 最终检查世代
       const finalState = layerStates.get(layerId)
-      if (!finalState || finalState.generation !== generation) {
+      if (!finalState || finalState.generation !== request.generation) {
         debugLog('pollTile discard stale result', layerId, `z=${key.z} x=${key.x} y=${key.y}`)
         return
       }
 
       if (run.status === 'failed') {
         console.warn(`[WeatherTileManager] tile workflow failed ${layerId} z=${key.z} x=${key.x} y=${key.y}:`, run.message)
+        const msg = run.message || ''
+        if (msg.includes('budget exhausted')) {
+          setLayerError(layerId, 'circuit-open', '今日天气 API 调用额度已用尽，明天 UTC 0:00（北京时间 8:00）自动恢复')
+        } else if (msg.includes('503') || msg.includes('Circuit breaker')) {
+          setLayerError(layerId, 'circuit-open', '天气服务暂时不可用（断路器保护中），请稍后重试')
+        } else if (msg.includes('429')) {
+          setLayerError(layerId, 'rate-limited', '天气 API 请求频率超限，请稍后重试')
+        } else {
+          setLayerError(layerId, 'workflow-failed', msg || '天气瓦片工作流执行失败')
+        }
         return
       }
 
@@ -436,6 +556,8 @@ export const useWeatherTileManager = defineStore('weatherTileManager', () => {
       finalState.tiles.set(cacheKey, geojson)
       trimLayerCache(finalState)
       dataVersion.value += 1
+      // 瓦片成功缓存后清除之前的错误状态
+      clearLayerError(layerId)
 
       const cachedTiles: MergedWeatherTile[] = Array.from(finalState.tiles.entries()).map(([k, geojson]) => {
         const zMatch = /:z(\d+):/.exec(k)
@@ -454,7 +576,7 @@ export const useWeatherTileManager = defineStore('weatherTileManager', () => {
       debugLog('pollTile done', layerId, `z=${key.z} x=${key.x} y=${key.y}`, formatMergeStats(layerId, stats))
 
       // BFS 外扩：当前瓦片 8 邻居以低优先级入队（限制在当前视口外扩 1 圈内）
-      expandNeighbors(finalState, key, generation)
+      expandNeighbors(finalState, key, request.generation)
     } catch (err) {
       if (isAbortError(err)) {
         debugLog('pollTile aborted', layerId, `z=${key.z} x=${key.x} y=${key.y}`)
@@ -505,13 +627,24 @@ export const useWeatherTileManager = defineStore('weatherTileManager', () => {
 
   function getMergedGeojsonForViewport(layerId: string): WindGeoJSON | null {
     const state = layerStates.get(layerId)
-    if (!state || !state.visible) return null
+    if (!state || !state.visible) {
+      debugLog('getMergedGeojson', layerId, 'state=', !!state, 'visible=', state?.visible)
+      return null
+    }
 
     const clampedZoom = Math.max(0, Math.min(12, Math.round(state.zoom)))
     // bbox 可能为 null（addLayer 时未传 bbox），用 center+zoom 兜底计算
     const bounds = state.bbox ?? boundsFromCenter(state.center, clampedZoom)
     const viewportTiles = tilesInBounds(bounds, clampedZoom, 0)
     const mergedTiles: MergedWeatherTile[] = []
+
+    const cachedKeys = Array.from(state.tiles.keys()).map((k) => {
+      const zMatch = /:z(\d+):/.exec(k)
+      const xMatch = /:x(\d+):/.exec(k)
+      const yMatch = /:y(\d+):/.exec(k)
+      const hMatch = /:h(\d+)$/.exec(k)
+      return `z${zMatch?.[1]}:x${xMatch?.[1]}:y${yMatch?.[1]}:h${hMatch?.[1]}`
+    })
 
     for (const tile of viewportTiles) {
       const key = tileCoordsToKey(tile, layerId, state.hour)
@@ -527,6 +660,18 @@ export const useWeatherTileManager = defineStore('weatherTileManager', () => {
         })
       }
     }
+
+    debugLog(
+      'getMergedGeojson',
+      layerId,
+      `gen=${state.generation}`,
+      `zoom=${state.zoom}->${clampedZoom}`,
+      `hour=${state.hour}`,
+      `bbox=${state.bbox ? `${state.bbox.west.toFixed(1)},${state.bbox.south.toFixed(1)},${state.bbox.east.toFixed(1)},${state.bbox.north.toFixed(1)}` : 'null'}`,
+      `viewportTiles=${viewportTiles.map((t) => `${t.x},${t.y}`).join('|')}`,
+      `cached=${state.tiles.size}:[${cachedKeys.join(',')}]`,
+      `matched=${mergedTiles.length}`,
+    )
 
     if (!mergedTiles.length) return null
     return mergeWeatherTiles(mergedTiles)
@@ -550,13 +695,44 @@ export const useWeatherTileManager = defineStore('weatherTileManager', () => {
     }
   }
 
+  /** 获取图层当前的加载/错误状态，供 UI 展示反馈 */
+  function getLayerStatus(layerId: string): WeatherTileLayerStatus {
+    const state = layerStates.get(layerId)
+    if (!state || !state.visible) {
+      return {
+        active: false,
+        cachedInViewport: 0,
+        viewportTotal: 0,
+        pending: 0,
+        errorType: null,
+        errorMessage: null,
+      }
+    }
+    const viewportTotal = state.viewportTiles.length
+    let cachedInViewport = 0
+    for (const tile of state.viewportTiles) {
+      const tileKey = tileCoordsToKey(tile, layerId, state.hour)
+      if (state.tiles.has(tileKey)) cachedInViewport += 1
+    }
+    return {
+      active: true,
+      cachedInViewport,
+      viewportTotal,
+      pending: state.pending.size,
+      errorType: state.lastErrorType,
+      errorMessage: state.lastErrorMessage,
+    }
+  }
+
   return {
     dataVersion,
+    statusVersion,
     setLayerActive,
     clearLayer,
     setViewport,
     getMergedGeojsonForViewport,
     getDataVersion,
     getStats,
+    getLayerStatus,
   }
 })

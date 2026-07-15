@@ -11,6 +11,7 @@ from app.api.routers import (
     algorithm_router,
     artifact_router,
     health_router,
+    import_router,
     layer_router,
     provider_router,
     runtime_router,
@@ -139,6 +140,7 @@ def create_app() -> FastAPI:
     app.include_router(weather_router)
     app.include_router(provider_router)
     app.include_router(artifact_router)
+    app.include_router(import_router)
     app.include_router(unified_tile_router)
     app.include_router(tile_router)
     app.include_router(weather_tile_router)

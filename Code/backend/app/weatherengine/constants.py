@@ -6,9 +6,14 @@ from dataclasses import dataclass
 OPEN_METEO_BASE_URL = "https://api.open-meteo.com/v1/forecast"
 
 # 断路器参数：API 连续失败后打开断路器，RECOVERY_TIMEOUT 秒内直接返回 stale cache
-CIRCUIT_BREAKER_FAILURE_THRESHOLD = 5   # 连续失败次数阈值，达到后打开断路器
-CIRCUIT_BREAKER_RECOVERY_TIMEOUT = 60   # OPEN 状态持续时间（秒），超时后转为 HALF_OPEN
-CIRCUIT_BREAKER_HALF_OPEN_PROBES = 1    # HALF_OPEN 状态允许的探测请求数
+CIRCUIT_BREAKER_FAILURE_THRESHOLD = 10  # 连续失败次数阈值，达到后打开断路器（提高以减少误触发）
+CIRCUIT_BREAKER_RECOVERY_TIMEOUT = 30   # OPEN 状态持续时间（秒），超时后转为 HALF_OPEN（缩短恢复时间）
+CIRCUIT_BREAKER_HALF_OPEN_PROBES = 2    # HALF_OPEN 状态允许的探测请求数（增加探测机会）
+
+# 每日 API 预算：Open-Meteo 免费版每日限额 ~10000 次，预留 2000 次缓冲
+OPEN_METEO_DAILY_API_LIMIT = 8000
+# 软限制（80%）：超过后开始警告，前端可显示"接近限额"提示
+OPEN_METEO_DAILY_API_SOFT_LIMIT = 6400
 
 
 @dataclass(frozen=True, slots=True)
@@ -42,11 +47,11 @@ WEATHER_LAYER_SPECS: dict[str, WeatherLayerSpec] = {
         unit_label="m/s",
         summary_template="Current 10 m wind speed is {value} {unit}.",
         current_fields=("wind_speed_10m", "wind_direction_10m", "wind_gusts_10m"),
-        hourly_fields=("wind_speed_10m", "temperature_2m", "precipitation"),
-        legend_ticks=(0, 5, 10, 15, 20),
+        hourly_fields=("wind_speed_10m", "wind_direction_10m", "temperature_2m", "precipitation"),
+        legend_ticks=(0, 5, 10, 15, 20, 25, 30),
         notes=(
-            "Particle flow field: 800 particles animated along wind vectors with trailing fade.",
-            "Wind barbs at grid intersections; contour lines for isotachs at 5/10/15 m/s.",
+            "Particle flow field: 1000 particles animated along wind vectors with trailing fade.",
+            "Color scheme: blue->teal->green->yellow->red->purple (Windy-style).",
             "Falls back to point_symbol if canvas is unavailable.",
         ),
     ),
@@ -61,7 +66,7 @@ WEATHER_LAYER_SPECS: dict[str, WeatherLayerSpec] = {
         unit_label="m/s",
         summary_template="Current 80 m wind speed is {value} {unit}.",
         current_fields=("wind_speed_80m", "wind_direction_80m", "wind_gusts_10m"),
-        hourly_fields=("wind_speed_80m", "temperature_80m", "precipitation"),
+        hourly_fields=("wind_speed_80m", "wind_direction_80m", "temperature_80m", "precipitation"),
         legend_ticks=(0, 5, 10, 15, 20),
         notes=(
             "80 m AGL wind field — typical hub-height for modern wind turbines.",
@@ -79,7 +84,7 @@ WEATHER_LAYER_SPECS: dict[str, WeatherLayerSpec] = {
         unit_label="m/s",
         summary_template="Current 120 m wind speed is {value} {unit}.",
         current_fields=("wind_speed_120m", "wind_direction_120m", "wind_gusts_10m"),
-        hourly_fields=("wind_speed_120m", "temperature_120m", "precipitation"),
+        hourly_fields=("wind_speed_120m", "wind_direction_120m", "temperature_120m", "precipitation"),
         legend_ticks=(0, 5, 10, 15, 20, 25),
         notes=(
             "120 m AGL wind field — offshore / large turbine hub-height layer.",
@@ -97,7 +102,7 @@ WEATHER_LAYER_SPECS: dict[str, WeatherLayerSpec] = {
         unit_label="m/s",
         summary_template="Current 180 m wind speed is {value} {unit}.",
         current_fields=("wind_speed_180m", "wind_direction_180m", "wind_gusts_10m"),
-        hourly_fields=("wind_speed_180m", "temperature_180m", "precipitation"),
+        hourly_fields=("wind_speed_180m", "wind_direction_180m", "temperature_180m", "precipitation"),
         legend_ticks=(0, 7, 14, 21, 28, 35),
         notes=(
             "180 m AGL wind field — boundary-layer top reference wind.",

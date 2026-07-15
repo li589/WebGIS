@@ -1,0 +1,662 @@
+[
+  {
+    "label": "SMAP L3 SM P (HDF5)",
+    "file": "I:\\Geograph_DataSet\\SMAP\\SMAP_L3_SM_P_20230110_R18290_001.h5",
+    "status": "ok",
+    "format": "hdf5",
+    "variables": [
+      "Soil_Moisture_Retrieval_Data_AM/EASE_column_index",
+      "Soil_Moisture_Retrieval_Data_AM/EASE_row_index",
+      "Soil_Moisture_Retrieval_Data_AM/albedo",
+      "Soil_Moisture_Retrieval_Data_AM/albedo_scah",
+      "Soil_Moisture_Retrieval_Data_AM/albedo_scav",
+      "Soil_Moisture_Retrieval_Data_AM/boresight_incidence",
+      "Soil_Moisture_Retrieval_Data_AM/bulk_density",
+      "Soil_Moisture_Retrieval_Data_AM/clay_fraction",
+      "Soil_Moisture_Retrieval_Data_AM/freeze_thaw_fraction",
+      "Soil_Moisture_Retrieval_Data_AM/grid_surface_status",
+      "Soil_Moisture_Retrieval_Data_AM/landcover_class",
+      "Soil_Moisture_Retrieval_Data_AM/landcover_class_fraction",
+      "Soil_Moisture_Retrieval_Data_AM/latitude",
+      "Soil_Moisture_Retrieval_Data_AM/latitude_centroid",
+      "Soil_Moisture_Retrieval_Data_AM/longitude",
+      "Soil_Moisture_Retrieval_Data_AM/longitude_centroid",
+      "Soil_Moisture_Retrieval_Data_AM/radar_water_body_fraction",
+      "Soil_Moisture_Retrieval_Data_AM/retrieval_qual_flag",
+      "Soil_Moisture_Retrieval_Data_AM/retrieval_qual_flag_scah",
+      "Soil_Moisture_Retrieval_Data_AM/retrieval_qual_flag_scav"
+    ],
+    "var_name": "Soil_Moisture_Retrieval_Data_AM/soil_moisture",
+    "shape": [
+      121,
+      172
+    ],
+    "crs": "EPSG:4326",
+    "stats": {
+      "total_pixels": 20812,
+      "valid_pixels": 2559,
+      "nan_count": 18253,
+      "nan_ratio": 0.877,
+      "min": 0.02,
+      "max": 0.6388,
+      "mean": 0.2652,
+      "std": 0.1101
+    },
+    "lat_available": true,
+    "lat_shape": [
+      121,
+      172
+    ],
+    "lat_min": 15.2867,
+    "lat_max": 58.4849,
+    "lat_ndim": 2,
+    "lon_available": true,
+    "lon_shape": [
+      121,
+      172
+    ],
+    "lon_min": 73.0083,
+    "lon_max": 136.8672,
+    "lon_ndim": 2,
+    "time_available": false,
+    "attrs": {
+      "_FillValue": "-9999.0",
+      "coordinates": "b'/Soil_Moisture_Retrieval_Data_AM/latitude /Soil_Moisture_Retrieval_Data_AM/longitude'",
+      "long_name": "b'Representative DCA soil moisture measurement for the Earth based grid cell.'",
+      "units": "b'cm**3/cm**3'",
+      "valid_max": "0.5",
+      "valid_min": "0.02"
+    }
+  },
+  {
+    "label": "MCD12Q1 LandCover 2020 (GeoTIFF)",
+    "file": "I:\\Geograph_DataSet\\LandCover\\MCD12Q1_2020.tif",
+    "status": "ok",
+    "format": "geotiff",
+    "variables": [
+      "band_1"
+    ],
+    "var_name": "band_1",
+    "shape": [
+      10560,
+      22736
+    ],
+    "crs": "PROJCS[\"unnamed\",GEOGCS[\"Unknown datum based upon the custom spheroid\",DATUM[\"Not specified (based on custom spheroid)\",SPHEROID[\"Custom spheroid\",6371007.181,0]],PRIMEM[\"Greenwich\",0],UNIT[\"degree\",0.0174532925199433,AUTHORITY[\"EPSG\",\"9122\"]]],PROJECTION[\"Sinusoidal\"],PARAMETER[\"longitude_of_center\",0],PARAMETER[\"false_easting\",0],PARAMETER[\"false_northing\",0],UNIT[\"metre\",1,AUTHORITY[\"EPSG\",\"9001\"]],AXIS[\"Easting\",EAST],AXIS[\"Northing\",NORTH]]",
+    "stats": {
+      "total_pixels": 240092160,
+      "valid_pixels": 167710800,
+      "nan_count": 72381360,
+      "nan_ratio": 0.3015,
+      "min": 1.0,
+      "max": 17.0,
+      "mean": 12.2582,
+      "std": 4.4737
+    },
+    "lat_available": true,
+    "lat_shape": [
+      10560
+    ],
+    "lat_min": 1668389.0922,
+    "lat_max": 6560508.066,
+    "lat_ndim": 1,
+    "lon_available": true,
+    "lon_shape": [
+      22736
+    ],
+    "lon_min": 4180470.6412,
+    "lon_max": 14713885.2515,
+    "lon_ndim": 1,
+    "time_available": false,
+    "attrs": {
+      "width": "40800",
+      "height": "19201",
+      "count": "1",
+      "dtypes": "('uint8',)",
+      "nodata": "255.0",
+      "transform": "| 463.31, 0.00, 4180470.64|\n| 0.00,-463.31, 6560508.07|\n| 0.00, 0.00, 1.00|",
+      "res": "(463.3127165275, 463.3127165275)",
+      "window": "Window(col_off=16223, row_off=5041, width=22736, height=10560)"
+    }
+  },
+  {
+    "label": "HFP 2020 (GeoTIFF)",
+    "file": "I:\\Geograph_DataSet\\HumanFootprint\\hfp2020.tif",
+    "status": "ok",
+    "format": "geotiff",
+    "variables": [
+      "band_1"
+    ],
+    "var_name": "band_1",
+    "shape": [
+      4934,
+      8615
+    ],
+    "crs": "ESRI:54009",
+    "stats": {
+      "total_pixels": 42506410,
+      "valid_pixels": 26851291,
+      "nan_count": 15655119,
+      "nan_ratio": 0.3683,
+      "min": 0.0,
+      "max": 50.0,
+      "mean": 9.5164,
+      "std": 9.6387
+    },
+    "lat_available": true,
+    "lat_shape": [
+      4934
+    ],
+    "lat_min": 1847957.0528,
+    "lat_max": 6780957.0528,
+    "lat_ndim": 1,
+    "lon_available": true,
+    "lon_shape": [
+      8615
+    ],
+    "lon_min": 4823905.9025,
+    "lon_max": 13437905.9025,
+    "lon_ndim": 1,
+    "time_available": false,
+    "attrs": {
+      "width": "36081",
+      "height": "16382",
+      "count": "1",
+      "dtypes": "('float32',)",
+      "nodata": "nan",
+      "transform": "| 1000.00, 0.00, 4823905.90|\n| 0.00,-1000.00, 6780957.05|\n| 0.00, 0.00, 1.00|",
+      "res": "(1000.0, 1000.0)",
+      "window": "Window(col_off=22864, row_off=2238, width=8615, height=4934)"
+    }
+  },
+  {
+    "label": "InversionResults smap_avg doy_017 (MAT)",
+    "file": "I:\\Geograph_DataSet\\InversionResults\\smap_avg\\doy_017.mat",
+    "status": "error",
+    "format": "mat",
+    "variables": [
+      "OMEGA_AVG",
+      "count_grid",
+      "used_years"
+    ],
+    "error": "'变量 omega 不存在于 I:\\\\Geograph_DataSet\\\\InversionResults\\\\smap_avg\\\\doy_017.mat'",
+    "traceback": [
+      "    raise KeyError(f\"变量 {variable} 不存在于 {self.path}\")",
+      "KeyError: '变量 omega 不存在于 I:\\\\Geograph_DataSet\\\\InversionResults\\\\smap_avg\\\\doy_017.mat'",
+      ""
+    ]
+  },
+  {
+    "label": "GEBCO 2024 DEM (NetCDF)",
+    "file": "I:\\Geograph_DataSet\\DEM\\GEBCO_2024.nc",
+    "status": "ok",
+    "format": "netcdf",
+    "variables": [
+      "lon",
+      "lat",
+      "crs",
+      "elevation"
+    ],
+    "var_name": "elevation",
+    "shape": [
+      10560,
+      15361
+    ],
+    "crs": "EPSG:EPSG:4326",
+    "stats": {
+      "total_pixels": 162212160,
+      "valid_pixels": 162212160,
+      "nan_count": 0,
+      "nan_ratio": 0.0,
+      "min": -8403.0,
+      "max": 8627.0,
+      "mean": 495.1599,
+      "std": 2147.7186
+    },
+    "lat_available": true,
+    "lat_shape": [
+      10560
+    ],
+    "lat_min": 15.0021,
+    "lat_max": 58.9979,
+    "lat_ndim": 1,
+    "lon_available": true,
+    "lon_shape": [
+      15361
+    ],
+    "lon_min": 73.0021,
+    "lon_max": 137.0021,
+    "lon_ndim": 1,
+    "time_available": false,
+    "attrs": {
+      "standard_name": "height_above_mean_sea_level",
+      "long_name": "Elevation relative to sea level",
+      "units": "m",
+      "grid_mapping": "crs",
+      "sdn_parameter_urn": "SDN:P01::BATHHGHT",
+      "sdn_parameter_name": "Sea floor height (above mean sea level) {bathymetric height}",
+      "sdn_uom_urn": "SDN:P06::ULAA",
+      "sdn_uom_name": "Metres"
+    }
+  },
+  {
+    "label": "Italy DEM GEBCO2024 (GeoTIFF)",
+    "file": "I:\\Geograph_DataSet\\DEM\\Italy_GEBCO2024\\Italy_DEM_GEBCO2024.tif",
+    "status": "ok",
+    "format": "geotiff",
+    "variables": [
+      "band_1"
+    ],
+    "var_name": "band_1",
+    "shape": [
+      3000,
+      3120
+    ],
+    "crs": "EPSG:4326",
+    "stats": {
+      "total_pixels": 9360000,
+      "valid_pixels": 9360000,
+      "nan_count": 0,
+      "nan_ratio": 0.0,
+      "min": -4450.0,
+      "max": 4655.0,
+      "mean": -427.2958,
+      "std": 1453.1967
+    },
+    "lat_available": false,
+    "lon_available": false,
+    "time_available": false,
+    "attrs": {
+      "width": "3120",
+      "height": "3000",
+      "count": "1",
+      "dtypes": "('int16',)",
+      "nodata": "-9999.0",
+      "transform": "| 0.00, 0.00, 6.00|\n| 0.00,-0.00, 48.00|\n| 0.00, 0.00, 1.00|",
+      "res": "(0.004165331196581198, 0.004165277777777779)"
+    }
+  },
+  {
+    "label": "CMFD Precipitation 2002-01 (GeoTIFF)",
+    "file": "I:\\Geograph_DataSet\\Precipitation\\pre_2002_01.tif",
+    "status": "ok",
+    "format": "geotiff",
+    "variables": [
+      "band_1"
+    ],
+    "var_name": "band_1",
+    "shape": [
+      5146,
+      7644
+    ],
+    "crs": "EPSG:4326",
+    "stats": {
+      "total_pixels": 39336024,
+      "valid_pixels": 31691071,
+      "nan_count": 7644953,
+      "nan_ratio": 0.1943,
+      "min": 0.0,
+      "max": 4875.0,
+      "mean": 151.5496,
+      "std": 185.8984
+    },
+    "lat_available": true,
+    "lat_shape": [
+      5146
+    ],
+    "lat_min": 15.7605,
+    "lat_max": 58.6355,
+    "lat_ndim": 1,
+    "lon_available": true,
+    "lon_shape": [
+      7644
+    ],
+    "lon_min": 72.9942,
+    "lon_max": 136.6859,
+    "lon_ndim": 1,
+    "time_available": false,
+    "attrs": {
+      "width": "7849",
+      "height": "5146",
+      "count": "1",
+      "dtypes": "('int16',)",
+      "nodata": "None",
+      "transform": "| 0.01, 0.00, 72.99|\n| 0.00,-0.01, 58.64|\n| 0.00, 0.00, 1.00|",
+      "res": "(0.008333333333338078, 0.00833333333333286)",
+      "window": "Window(col_off=205, row_off=0, width=7644, height=5146)"
+    }
+  },
+  {
+    "label": "CMFD Precipitation 2002-02 (GeoTIFF)",
+    "file": "I:\\Geograph_DataSet\\Precipitation\\pre_2002_02.tif",
+    "status": "ok",
+    "format": "geotiff",
+    "variables": [
+      "band_1"
+    ],
+    "var_name": "band_1",
+    "shape": [
+      5146,
+      7644
+    ],
+    "crs": "EPSG:4326",
+    "stats": {
+      "total_pixels": 39336024,
+      "valid_pixels": 31691071,
+      "nan_count": 7644953,
+      "nan_ratio": 0.1943,
+      "min": 0.0,
+      "max": 3491.0,
+      "mean": 117.4399,
+      "std": 180.1331
+    },
+    "lat_available": true,
+    "lat_shape": [
+      5146
+    ],
+    "lat_min": 15.7605,
+    "lat_max": 58.6355,
+    "lat_ndim": 1,
+    "lon_available": true,
+    "lon_shape": [
+      7644
+    ],
+    "lon_min": 72.9942,
+    "lon_max": 136.6859,
+    "lon_ndim": 1,
+    "time_available": false,
+    "attrs": {
+      "width": "7849",
+      "height": "5146",
+      "count": "1",
+      "dtypes": "('int16',)",
+      "nodata": "None",
+      "transform": "| 0.01, 0.00, 72.99|\n| 0.00,-0.01, 58.64|\n| 0.00, 0.00, 1.00|",
+      "res": "(0.008333333333338078, 0.00833333333333286)",
+      "window": "Window(col_off=205, row_off=0, width=7644, height=5146)"
+    }
+  },
+  {
+    "label": "CLCD 1997 (GeoTIFF)",
+    "file": "I:\\Geograph_DataSet\\LandCover\\CLCD_v01_1997.tif",
+    "status": "error",
+    "format": "geotiff",
+    "variables": [
+      "band_1"
+    ],
+    "error": "Unable to allocate 224. GiB for an array with shape (131361, 228579) and data type float64",
+    "traceback": [
+      "             ^^^^^^^^^^^^^^^^^^^^^^^^^",
+      "numpy._core._exceptions._ArrayMemoryError: Unable to allocate 224. GiB for an array with shape (131361, 228579) and data type float64",
+      ""
+    ]
+  },
+  {
+    "label": "ESACCI BIOMASS 2020 (NetCDF, 17.3GB)",
+    "file": "I:\\Geograph_DataSet\\Biomass\\ESACCI-BIOMASS-L4-AGB-MERGED-100m-2020-fv6.0.nc",
+    "status": "error",
+    "format": "netcdf",
+    "variables": [
+      "lon",
+      "lat",
+      "time",
+      "agb",
+      "agb_sd",
+      "crs",
+      "lon_bnds",
+      "lat_bnds",
+      "time_bnds"
+    ],
+    "var_name": "agb",
+    "shape": [
+      1,
+      49500,
+      72001
+    ],
+    "crs": "latitude_longitude",
+    "error": "Unable to allocate 3.28 GiB for an array with shape (3519747000,) and data type bool",
+    "traceback": [
+      "           ~~~~~^^^^^^",
+      "numpy._core._exceptions._ArrayMemoryError: Unable to allocate 3.28 GiB for an array with shape (3519747000,) and data type bool",
+      ""
+    ]
+  },
+  {
+    "label": "ERA5 DWAA SMCI 2020 (GeoTIFF)",
+    "file": "I:\\Geograph_DataSet\\Hazards\\DWAA_result\\DW_T7\\ERA5_2020_DW_SMCI.tif",
+    "status": "ok",
+    "format": "geotiff",
+    "variables": [
+      "band_1"
+    ],
+    "var_name": "band_1",
+    "shape": [
+      176,
+      256
+    ],
+    "crs": "EPSG:4326",
+    "stats": {
+      "total_pixels": 45056,
+      "nan_count": 45056,
+      "nan_ratio": 1.0
+    },
+    "lat_available": true,
+    "lat_shape": [
+      176
+    ],
+    "lat_min": 15.25,
+    "lat_max": 59.0,
+    "lat_ndim": 1,
+    "lon_available": true,
+    "lon_shape": [
+      256
+    ],
+    "lon_min": 73.0,
+    "lon_max": 136.75,
+    "lon_ndim": 1,
+    "time_available": false,
+    "attrs": {
+      "width": "1440",
+      "height": "720",
+      "count": "366",
+      "dtypes": "('uint8', 'uint8', 'uint8', 'uint8', 'uint8', 'uint8', 'uint8', 'uint8', 'uint8', 'uint8', 'uint8', ",
+      "nodata": "255.0",
+      "transform": "| 0.25, 0.00, 73.00|\n| 0.00,-0.25, 59.00|\n| 0.00, 0.00, 1.00|",
+      "res": "(0.25, 0.25)",
+      "window": "Window(col_off=1012, row_off=124, width=256, height=176)"
+    }
+  },
+  {
+    "label": "ERA5 WDAA SMCI 2020 (GeoTIFF)",
+    "file": "I:\\Geograph_DataSet\\Hazards\\DWAA_result\\WD_T7\\ERA5_2020_WD_SMCI.tif",
+    "status": "ok",
+    "format": "geotiff",
+    "variables": [
+      "band_1"
+    ],
+    "var_name": "band_1",
+    "shape": [
+      176,
+      256
+    ],
+    "crs": "EPSG:4326",
+    "stats": {
+      "total_pixels": 45056,
+      "nan_count": 45056,
+      "nan_ratio": 1.0
+    },
+    "lat_available": true,
+    "lat_shape": [
+      176
+    ],
+    "lat_min": 15.25,
+    "lat_max": 59.0,
+    "lat_ndim": 1,
+    "lon_available": true,
+    "lon_shape": [
+      256
+    ],
+    "lon_min": 73.0,
+    "lon_max": 136.75,
+    "lon_ndim": 1,
+    "time_available": false,
+    "attrs": {
+      "width": "1440",
+      "height": "720",
+      "count": "366",
+      "dtypes": "('uint8', 'uint8', 'uint8', 'uint8', 'uint8', 'uint8', 'uint8', 'uint8', 'uint8', 'uint8', 'uint8', ",
+      "nodata": "255.0",
+      "transform": "| 0.25, 0.00, 73.00|\n| 0.00,-0.25, 59.00|\n| 0.00, 0.00, 1.00|",
+      "res": "(0.25, 0.25)",
+      "window": "Window(col_off=1012, row_off=124, width=256, height=176)"
+    }
+  },
+  {
+    "label": "MeanCarbonDioxide (GeoTIFF)",
+    "file": "I:\\Geograph_DataSet\\CO2\\MidLayerCO2Column\\TIF\\MeanCarbonDioxide.tif",
+    "status": "ok",
+    "format": "geotiff",
+    "variables": [
+      "band_1"
+    ],
+    "var_name": "band_1",
+    "shape": [
+      22,
+      26
+    ],
+    "crs": "EPSG:4326",
+    "stats": {
+      "total_pixels": 572,
+      "valid_pixels": 572,
+      "nan_count": 0,
+      "nan_ratio": 0.0,
+      "min": 386.38,
+      "max": 390.61,
+      "mean": 388.8458,
+      "std": 0.7587
+    },
+    "lat_available": true,
+    "lat_shape": [
+      22
+    ],
+    "lat_min": 18.0,
+    "lat_max": 60.0,
+    "lat_ndim": 1,
+    "lon_available": true,
+    "lon_shape": [
+      26
+    ],
+    "lon_min": 72.5,
+    "lon_max": 135.0,
+    "lon_ndim": 1,
+    "time_available": false,
+    "attrs": {
+      "width": "144",
+      "height": "76",
+      "count": "1",
+      "dtypes": "('float32',)",
+      "nodata": "None",
+      "transform": "| 2.50, 0.00, 72.50|\n| 0.00,-2.00, 60.00|\n| 0.00, 0.00, 1.00|",
+      "res": "(2.5, 2.0)",
+      "window": "Window(col_off=101, row_off=15, width=26, height=22)"
+    }
+  },
+  {
+    "label": "Soil DDCA 20150401 (MAT)",
+    "file": "I:\\Geograph_DataSet\\Soil_Ecological_Data\\DDCA\\DDCA_DH\\H\\20150401.mat",
+    "status": "ok",
+    "format": "mat",
+    "variables": [
+      "DH"
+    ],
+    "var_name": "DH",
+    "shape": [
+      1624,
+      3856
+    ],
+    "crs": null,
+    "stats": {
+      "total_pixels": 6262144,
+      "valid_pixels": 370561,
+      "nan_count": 5891583,
+      "nan_ratio": 0.9408,
+      "min": 0.0,
+      "max": 3.0,
+      "mean": 0.5873,
+      "std": 0.4412
+    },
+    "lat_available": false,
+    "lon_available": false,
+    "time_available": false,
+    "attrs": {
+      "mat_version": "v5/v6"
+    }
+  },
+  {
+    "label": "InversionResults fy_avg doy_025 (MAT)",
+    "file": "I:\\Geograph_DataSet\\InversionResults\\fy_avg\\doy_025.mat",
+    "status": "ok",
+    "format": "mat",
+    "variables": [
+      "OMEGA_AVG",
+      "count_grid",
+      "used_years"
+    ],
+    "var_name": "OMEGA_AVG",
+    "shape": [
+      1624,
+      3856
+    ],
+    "crs": null,
+    "stats": {
+      "total_pixels": 6262144,
+      "valid_pixels": 842449,
+      "nan_count": 5419695,
+      "nan_ratio": 0.8655,
+      "min": 0.0,
+      "max": 1.0,
+      "mean": 0.1338,
+      "std": 0.1461
+    },
+    "lat_available": false,
+    "lon_available": false,
+    "time_available": false,
+    "attrs": {
+      "mat_version": "v7.3",
+      "MATLAB_class": "b'single'"
+    }
+  },
+  {
+    "label": "Forest_Ratio_9KM_2020 (MAT)",
+    "file": "I:\\Geograph_DataSet\\InversionResults\\Forest_Ratio_9KM_2020.mat",
+    "status": "ok",
+    "format": "mat",
+    "variables": [
+      "Forest_Ratio",
+      "Resolution_meters",
+      "CRS",
+      "Transform"
+    ],
+    "var_name": "Forest_Ratio",
+    "shape": [
+      1624,
+      3856
+    ],
+    "crs": null,
+    "stats": {
+      "total_pixels": 6262144,
+      "valid_pixels": 1707318,
+      "nan_count": 4554826,
+      "nan_ratio": 0.7274,
+      "min": 0.0,
+      "max": 1.0,
+      "mean": 0.1682,
+      "std": 0.3171
+    },
+    "lat_available": false,
+    "lon_available": false,
+    "time_available": false,
+    "attrs": {
+      "mat_version": "v5/v6"
+    }
+  }
+]

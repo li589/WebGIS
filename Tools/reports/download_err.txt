@@ -1,0 +1,2 @@
+d:\temp_desktop\Proj\Comprehensive Geographic Data Analysis system\Tools\download_curated.py:2: SyntaxWarning: invalid escape sequence '\G'
+  """精选下载脚本：从远程服务器下载中国区域测试数据。

@@ -12,12 +12,14 @@ import {
 import type { ActiveLayerDisplay } from '../stores/layers/types'
 import { useLayersStore } from '../stores/layers'
 import { useUiStore } from '../stores/ui'
+import { useLogStore } from '../stores/log'
 import WorkflowStatusButton from './workflow/WorkflowStatusButton.vue'
+import DataImportMenu from './toolbar/DataImportMenu.vue'
 
 const layersStore = useLayersStore()
 const uiStore = useUiStore()
+const logStore = useLogStore()
 const { workflowSummary } = storeToRefs(layersStore)
-const { interactionMode } = storeToRefs(uiStore)
 
 const props = defineProps<{
   tileSourceId: TileSourceId
@@ -30,6 +32,7 @@ const emit = defineEmits<{
   changeTileSource: [sourceId: TileSourceId]
   openScreenshot: []
   openWorkflowStatus: []
+  openLog: []
 }>()
 
 const activeStyle = computed<BasemapStyle>(() => {
@@ -47,7 +50,6 @@ const sourcesByStyle = computed(() => {
     terrain: { label: '地形', icon: '⛰' },
   }
 
-  // Only show standard sources in the picker (non-standard need backend transform)
   for (const [style, sources] of TILE_SOURCES_BY_STYLE) {
     if (sources.some((s) => s.isStandard)) {
       result.push({
@@ -63,47 +65,124 @@ const sourcesByStyle = computed(() => {
 })
 
 const currentTileConfig = computed(() => TILE_SOURCES.find((s) => s.id === props.tileSourceId))
+
+// ── 主工具栏逻辑 ──────────────────────────────────────────────────────────
+
+const isAdminBoundaryActive = computed(() =>
+  layersStore.activeLayersDisplay.some((d) => d.isAdminBoundary),
+)
+
+function toggleAdminBoundary() {
+  if (isAdminBoundaryActive.value) {
+    const boundary = layersStore.activeLayersDisplay.find((d) => d.isAdminBoundary)
+    if (boundary) {
+      layersStore.removeLayer(boundary.instanceId)
+      logStore.logOperation('boundary-toggle', '关闭行政区边界')
+    }
+  } else {
+    layersStore.addLayer('admin-boundary', true)
+    logStore.logOperation('boundary-toggle', '开启行政区边界')
+  }
+}
+
+function setInteractionMode(mode: 'move' | 'select') {
+  uiStore.setInteractionMode(mode)
+  logStore.logOperation('mode-switch', `切换到${mode === 'move' ? '移动' : '选择'}模式`)
+}
+
+function handleScreenshot() {
+  emit('openScreenshot')
+  logStore.logOperation('screenshot', '打开截图导出')
+}
 </script>
 
 <template>
   <header class="toolbar">
-    <!-- Brand -->
-    <div class="brand">
-      <div class="brand-mark"></div>
-      <div class="brand-copy">
-        <p class="eyebrow">GeoFlow</p>
-        <h1>综合地理态势</h1>
-        <p class="subtitle">2D 演示台</p>
+    <!-- 左侧：主工具栏 -->
+    <div class="toolbar-primary">
+      <div class="brand">
+        <div class="brand-mark"></div>
+        <div class="brand-copy">
+          <p class="eyebrow">GeoFlow</p>
+          <h1>综合地理态势</h1>
+        </div>
+      </div>
+
+      <div class="primary-tools">
+        <!-- 数据导入 -->
+        <DataImportMenu />
+
+        <!-- 行政区边界开关 -->
+        <button
+          class="tool-btn"
+          :class="{ active: isAdminBoundaryActive }"
+          type="button"
+          :title="isAdminBoundaryActive ? '关闭行政区边界' : '开启行政区边界'"
+          @click="toggleAdminBoundary"
+        >
+          <span class="btn-icon" aria-hidden="true">▢</span>
+          <span class="btn-label">边界</span>
+        </button>
+
+        <!-- 移动 / 选择 模式 -->
+        <div class="mode-group">
+          <button
+            class="mode-btn"
+            :class="{ active: uiStore.interactionMode === 'move' }"
+            type="button"
+            title="移动模式（拖动平移地图）"
+            @click="setInteractionMode('move')"
+          >
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <polyline points="5 9 2 12 5 15"/>
+              <polyline points="9 5 12 2 15 5"/>
+              <polyline points="15 19 12 22 9 19"/>
+              <polyline points="19 9 22 12 19 15"/>
+              <line x1="2" y1="12" x2="22" y2="12"/>
+              <line x1="12" y1="2" x2="12" y2="22"/>
+            </svg>
+          </button>
+          <button
+            class="mode-btn"
+            :class="{ active: uiStore.interactionMode === 'select' }"
+            type="button"
+            title="选择模式（点击查询点信息）"
+            @click="setInteractionMode('select')"
+          >
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M3 3l7.07 16.97 2.51-7.39 7.39-2.51L3 3z"/>
+            </svg>
+          </button>
+        </div>
+
+        <!-- 截图 -->
+        <button
+          class="tool-btn"
+          type="button"
+          title="导出截图"
+          @click="handleScreenshot"
+        >
+          <span class="btn-icon" aria-hidden="true">◫</span>
+          <span class="btn-label">截图</span>
+        </button>
+
+        <!-- 日志 -->
+        <button
+          class="tool-btn"
+          type="button"
+          title="系统日志"
+          @click="emit('openLog')"
+        >
+          <span class="btn-icon" aria-hidden="true">📋</span>
+          <span class="btn-label">日志</span>
+          <span v-if="logStore.entries.length > 0" class="log-badge">{{ logStore.entries.length }}</span>
+        </button>
       </div>
     </div>
 
-    <!-- Interaction mode: 移动 / 选择 -->
-    <div class="interaction-mode" role="group" aria-label="交互模式">
-      <button
-        class="mode-btn"
-        :class="{ active: interactionMode === 'move' }"
-        :aria-pressed="interactionMode === 'move'"
-        title="移动模式：拖动地图视角"
-        @click="uiStore.setInteractionMode('move')"
-      >
-        <span class="mode-icon" aria-hidden="true">✥</span>
-        <span>移动</span>
-      </button>
-      <button
-        class="mode-btn"
-        :class="{ active: interactionMode === 'select' }"
-        :aria-pressed="interactionMode === 'select'"
-        title="选择模式：点击选择点或图层"
-        @click="uiStore.setInteractionMode('select')"
-      >
-        <span class="mode-icon" aria-hidden="true">⌖</span>
-        <span>选择</span>
-      </button>
-    </div>
-
-    <!-- Main toolbar -->
+    <!-- 右侧：保留元素 -->
     <div class="toolbar-main">
-      <!-- Style tabs -->
+      <!-- Row 1: style tabs + workflow status + availability + 2D -->
       <div class="toolbar-strip">
         <div class="style-tabs" role="tablist" aria-label="底图风格">
           <button
@@ -120,7 +199,28 @@ const currentTileConfig = computed(() => TILE_SOURCES.find((s) => s.id === props
           </button>
         </div>
 
-        <!-- Source selector (shows sources for current style) -->
+        <!-- Workflow status -->
+        <WorkflowStatusButton
+          :summary="workflowSummary"
+          @click="emit('openWorkflowStatus')"
+        />
+
+        <!-- Availability status chip -->
+        <div
+          v-if="activeLayerCount > 0"
+          class="status-chip"
+          :class="`availability-${activeLayer.availabilityState}`"
+          :title="activeLayer.availabilityDescription"
+        >
+          {{ activeLayer.availabilityLabel }}
+        </div>
+
+        <!-- 2D/3D dimension indicator -->
+        <div class="status-chip dim-mode">2D</div>
+      </div>
+
+      <!-- Row 2: source selector + time + layer info -->
+      <div class="toolbar-strip">
         <div v-if="activeStyle !== 'none'" class="source-pill">
           <button
             v-for="source in sourcesByStyle.find(g => g.style === activeStyle)?.sources ?? []"
@@ -134,43 +234,10 @@ const currentTileConfig = computed(() => TILE_SOURCES.find((s) => s.id === props
           </button>
         </div>
 
-        <!-- Screenshot export -->
-        <button
-          class="screenshot-btn"
-          title="导出截图"
-          @click="emit('openScreenshot')"
-        >
-          <span class="screenshot-icon" aria-hidden="true">◫</span>
-          <span>截图</span>
-        </button>
+        <div class="time-chip">{{ hourLabel }}</div>
 
-        <!-- Workflow status -->
-        <WorkflowStatusButton
-          :summary="workflowSummary"
-          @click="emit('openWorkflowStatus')"
-        />
-
-        <!-- Quick stats -->
-        <div class="quick-stats">
-          <div class="stat-pill">
-            <span class="label">时间</span>
-            <strong>{{ hourLabel }}</strong>
-          </div>
-          <div class="stat-pill compact">
-            <span class="label">状态</span>
-            <strong>{{ activeLayer.availabilityLabel }}</strong>
-          </div>
-        </div>
-      </div>
-
-      <!-- Status row -->
-      <div class="toolbar-strip">
-        <div class="status-chip">2D-first</div>
         <div v-if="activeLayerCount > 0" class="status-chip">{{ activeLayer.name }}</div>
         <div v-else class="status-chip">无图层</div>
-        <div v-if="activeLayerCount > 0" class="status-chip" :class="`availability-${activeLayer.availabilityState}`">
-          {{ activeLayer.availabilityLabel }}
-        </div>
         <div v-if="activeLayerCount > 0" class="status-chip">{{ activeLayerCount }} 个图层</div>
         <div v-if="currentTileConfig?.needsBackendTransform" class="status-chip warning">
           需坐标转换
@@ -190,12 +257,20 @@ const currentTileConfig = computed(() => TILE_SOURCES.find((s) => s.id === props
   border: 1px solid rgba(145, 197, 255, 0.14);
   border-radius: 1rem;
   background:
-    linear-gradient(180deg, rgba(8, 17, 31, 0.8), rgba(7, 15, 28, 0.72)),
-    rgba(8, 18, 33, 0.72);
+    linear-gradient(180deg, rgba(8, 17, 31, 0.52), rgba(7, 15, 28, 0.44)),
+    rgba(8, 18, 33, 0.42);
   backdrop-filter: blur(18px);
   box-shadow:
-    0 18px 42px rgba(1, 8, 16, 0.32),
+    0 18px 42px rgba(1, 8, 16, 0.22),
     inset 0 1px 0 rgba(255, 255, 255, 0.04);
+}
+
+/* ── 左侧主工具栏 ─────────────────────────────────────────────────── */
+.toolbar-primary {
+  display: flex;
+  align-items: center;
+  gap: 0.62rem;
+  min-width: 0;
 }
 
 .brand {
@@ -203,6 +278,7 @@ const currentTileConfig = computed(() => TILE_SOURCES.find((s) => s.id === props
   align-items: center;
   gap: 0.58rem;
   min-width: 0;
+  flex: none;
 }
 
 .brand-mark {
@@ -230,72 +306,111 @@ h1 {
   margin: 0;
   font-size: clamp(0.9rem, 1.5vw, 1.18rem);
   color: #f5fbff;
-}
-
-.subtitle {
-  margin: 0.1rem 0 0;
-  color: #93a4b8;
-  line-height: 1.35;
-  font-size: 0.68rem;
   white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  max-width: 16rem;
 }
 
-/* Interaction mode (移动 / 选择) */
-.interaction-mode {
+.primary-tools {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+  padding-left: 0.62rem;
+  border-left: 1px solid rgba(136, 192, 255, 0.1);
+}
+
+/* 统一工具按钮样式 */
+.tool-btn {
+  position: relative;
   display: inline-flex;
-  gap: 0.18rem;
-  padding: 0.16rem;
-  border: 1px solid rgba(136, 192, 255, 0.14);
+  align-items: center;
+  gap: 0.24rem;
+  border: 1px solid rgba(136, 192, 255, 0.1);
+  border-radius: 0.5rem;
+  padding: 0.3rem 0.46rem;
+  background: rgba(4, 12, 23, 0.6);
+  color: #9fb6cc;
+  cursor: pointer;
+  font: inherit;
+  font-size: 0.62rem;
+  font-weight: 500;
+  white-space: nowrap;
+  transition: border-color 0.18s ease, color 0.18s ease, background 0.18s ease;
+}
+
+.tool-btn:hover {
+  border-color: rgba(90, 213, 255, 0.3);
+  color: #5ad5ff;
+  background: rgba(10, 132, 255, 0.12);
+}
+
+.tool-btn.active {
+  border-color: rgba(90, 213, 255, 0.4);
+  color: #5ad5ff;
+  background: rgba(10, 132, 255, 0.2);
+  box-shadow: inset 0 0 0 1px rgba(90, 213, 255, 0.16);
+}
+
+.btn-icon { font-size: 0.72rem; opacity: 0.9; }
+.btn-label { font-size: 0.6rem; }
+
+.log-badge {
+  position: absolute;
+  top: -0.36rem;
+  right: -0.36rem;
+  min-width: 0.82rem;
+  height: 0.82rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 0.18rem;
   border-radius: 999px;
-  background: rgba(4, 12, 23, 0.82);
+  background: rgba(10, 132, 255, 0.8);
+  color: #fff;
+  font-size: 0.48rem;
+  font-weight: 700;
+}
+
+/* 移动 / 选择 模式按钮组 */
+.mode-group {
+  display: inline-flex;
+  gap: 0.12rem;
+  padding: 0.16rem;
+  border: 1px solid rgba(136, 192, 255, 0.1);
+  border-radius: 0.5rem;
+  background: rgba(4, 12, 23, 0.6);
 }
 
 .mode-btn {
-  display: inline-flex;
+  width: 1.56rem;
+  height: 1.56rem;
+  display: flex;
   align-items: center;
-  gap: 0.26rem;
-  border: none;
-  border-radius: 999px;
-  padding: 0.28rem 0.56rem;
+  justify-content: center;
+  border: 1px solid transparent;
+  border-radius: 0.36rem;
   background: transparent;
-  color: #8aa8bf;
+  color: #6e8ba0;
   cursor: pointer;
-  font: inherit;
-  font-size: 0.64rem;
-  transition: background-color 0.2s ease, color 0.2s ease, transform 0.2s ease;
-  white-space: nowrap;
+  transition: background 0.16s ease, color 0.16s ease, border-color 0.16s ease;
 }
 
 .mode-btn:hover {
-  color: #f0f8ff;
   background: rgba(136, 192, 255, 0.1);
-  transform: translateY(-1px);
+  color: #c8dff0;
 }
 
 .mode-btn.active {
-  background: rgba(10, 132, 255, 0.5);
-  color: #f0faff;
-  font-weight: 600;
-  box-shadow: inset 0 0 0 1px rgba(90, 213, 255, 0.2);
+  background: rgba(60, 120, 200, 0.32);
+  border-color: rgba(136, 192, 255, 0.38);
+  color: #f4fbff;
 }
 
-.mode-icon {
-  font-size: 0.72rem;
-  opacity: 0.7;
-}
-
-.mode-btn.active .mode-icon {
-  opacity: 1;
-}
-
+/* ── 右侧保留区 ───────────────────────────────────────────────────── */
 .toolbar-main {
   display: flex;
   flex-direction: column;
   align-items: flex-end;
   gap: 0.38rem;
+  flex: none;
 }
 
 .toolbar-strip {
@@ -355,9 +470,7 @@ h1 {
   opacity: 0.7;
 }
 
-.style-tab.active .style-icon {
-  opacity: 1;
-}
+.style-tab.active .style-icon { opacity: 1; }
 
 /* Source buttons */
 .source-pill {
@@ -406,105 +519,7 @@ h1 {
   box-shadow: inset 0 0 0 1px rgba(90, 213, 255, 0.3);
 }
 
-/* Admin overlay toggle */
-.overlay-toggle {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.28rem;
-  border: 1px solid rgba(136, 192, 255, 0.1);
-  border-radius: 999px;
-  padding: 0.26rem 0.52rem;
-  background: rgba(4, 12, 23, 0.6);
-  color: #6e8ba0;
-  cursor: pointer;
-  font: inherit;
-  font-size: 0.62rem;
-  font-weight: 500;
-  transition: border-color 0.18s ease, color 0.18s ease, background 0.18s ease;
-  white-space: nowrap;
-}
-
-.overlay-toggle:hover {
-  border-color: rgba(136, 192, 255, 0.24);
-  color: #c8dff0;
-  background: rgba(136, 192, 255, 0.08);
-}
-
-.overlay-toggle.active {
-  border-color: rgba(76, 136, 186, 0.4);
-  color: #7fd0f8;
-  background: rgba(60, 120, 170, 0.16);
-}
-
-.overlay-icon {
-  font-size: 0.7rem;
-  opacity: 0.8;
-}
-
-.overlay-toggle.active .overlay-icon {
-  opacity: 1;
-}
-
-/* Screenshot button */
-.screenshot-btn {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.28rem;
-  border: 1px solid rgba(136, 192, 255, 0.1);
-  border-radius: 999px;
-  padding: 0.26rem 0.52rem;
-  background: rgba(4, 12, 23, 0.6);
-  color: #6e8ba0;
-  cursor: pointer;
-  font: inherit;
-  font-size: 0.62rem;
-  font-weight: 500;
-  transition: border-color 0.18s ease, color 0.18s ease, background 0.18s ease;
-  white-space: nowrap;
-}
-
-.screenshot-btn:hover {
-  border-color: rgba(90, 213, 255, 0.3);
-  color: #5ad5ff;
-  background: rgba(10, 132, 255, 0.12);
-}
-
-.screenshot-icon {
-  font-size: 0.7rem;
-  opacity: 0.8;
-}
-
-/* Stats */
-.quick-stats {
-  display: flex;
-  gap: 0.28rem;
-  flex-wrap: wrap;
-  justify-content: flex-end;
-}
-
-.stat-pill {
-  display: grid;
-  gap: 0.15rem;
-  min-width: 4rem;
-  padding: 0.24rem 0.44rem;
-  border-radius: 0.68rem;
-  background: rgba(4, 12, 23, 0.42);
-  border: 1px solid rgba(136, 192, 255, 0.1);
-}
-
-.stat-pill.compact { min-width: 3rem; }
-
-.label {
-  color: #7f96ab;
-  font-size: 0.52rem;
-}
-
-.stat-pill strong {
-  color: #eff8ff;
-  font-size: 0.62rem;
-  font-weight: 600;
-}
-
+/* Status chips */
 .status-chip {
   display: inline-flex;
   align-items: center;
@@ -524,24 +539,37 @@ h1 {
 .availability-partial { color: #ffd38a; border-color: rgba(255, 196, 120, 0.18); background: rgba(255, 196, 120, 0.08); }
 .availability-empty { color: #d7c1ff; border-color: rgba(187, 137, 255, 0.2); background: rgba(187, 137, 255, 0.1); }
 .status-chip.warning { color: #ffc878; border-color: rgba(255, 180, 80, 0.2); background: rgba(255, 160, 60, 0.1); }
+.status-chip.dim-mode { color: #5ad5ff; border-color: rgba(90, 213, 255, 0.24); background: rgba(10, 132, 255, 0.12); font-weight: 600; }
 
-@media (max-width: 900px) {
+/* Time chip */
+.time-chip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 3.2rem;
+  padding: 0.24rem 0.56rem;
+  border-radius: 999px;
+  background: rgba(4, 12, 23, 0.42);
+  border: 1px solid rgba(136, 192, 255, 0.12);
+  color: #eff8ff;
+  font-size: 0.66rem;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.04em;
+  text-align: center;
+  white-space: nowrap;
+}
+
+@media (max-width: 1100px) {
   .toolbar {
     flex-direction: column;
     align-items: stretch;
-    padding: 0.72rem;
+    gap: 0.48rem;
   }
 
+  .toolbar-primary { flex-wrap: wrap; gap: 0.42rem; }
   .toolbar-main { align-items: stretch; }
-
-  .toolbar-strip,
-  .quick-stats {
-    justify-content: flex-start;
-  }
-
-  .style-tabs {
-    align-self: flex-start;
-    flex-wrap: wrap;
-  }
+  .toolbar-strip { justify-content: flex-start; }
+  .style-tabs { align-self: flex-start; flex-wrap: wrap; }
 }
 </style>

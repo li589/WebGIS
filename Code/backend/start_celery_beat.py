@@ -2,9 +2,13 @@
 import sys
 from pathlib import Path
 
-code_path = Path(__file__).parent.parent
-if str(code_path) not in sys.path:
-    sys.path.insert(0, str(code_path))
+backend_root = Path(__file__).parent
+code_path = backend_root.parent
+gee_src = backend_root / "app" / "gee" / "core" / "src"
+
+for p in (str(code_path), str(gee_src)):
+    if p not in sys.path:
+        sys.path.insert(0, str(p))
 
 from app.core.celery_app import celery_app
 

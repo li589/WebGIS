@@ -2,6 +2,16 @@
 REM ============================================================
 REM  CGDA 一键启动 (Windows)
 REM  调用跨平台 Python 启动器 launch.py
+REM
+REM  用法:
+REM    start.bat start [component] [options]
+REM    start.bat stop
+REM    start.bat status
+REM    start.bat restart [component] [options]
+REM    start.bat logs [component] [-n N]
+REM    start.bat flush
+REM
+REM  组件: all/docker/fastapi/beat/worker/worker:<name>/frontend
 REM ============================================================
 setlocal
 set "SCRIPT_DIR=%~dp0"

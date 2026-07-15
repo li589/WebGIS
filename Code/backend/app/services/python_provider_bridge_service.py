@@ -414,7 +414,7 @@ class PythonProviderBridgeService:
             WorkflowResultReference(
                 result_id=f"algorithm-result-{run_id[-8:]}",
                 result_kind=ResultKind.json,
-                title="算法任务结果",
+                title="Algorithm Task Result",
                 mime_type="application/json",
                 inline_data={
                     "workflow": {
@@ -436,7 +436,7 @@ class PythonProviderBridgeService:
                 WorkflowResultReference(
                     result_id=f"algorithm-summary-{run_id[-8:]}",
                     result_kind=ResultKind.text,
-                    title="算法任务摘要",
+                    title="Algorithm Task Summary",
                     mime_type="text/plain",
                     inline_data={"text": summary},
                     updated_at=requested_at,

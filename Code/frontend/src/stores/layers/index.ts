@@ -498,6 +498,12 @@ export const useLayersStore = defineStore('layers', () => {
   const viewportDebounceTimer = ref<number | null>(null)
   const VIEWPORT_DEBOUNCE_MS = 500  // 防抖延迟（毫秒）
 
+  // 天气瓦片 setViewport 防抖：用户连续移动时（每 ~400-550ms 触发一次 moveend），
+  // 避免每次都递增 generation、取消在途瓦片、重新入队，导致 cached 始终为 0。
+  // 防抖期间在途瓦片继续完成；用户停止移动后才提交新视口的瓦片请求。
+  const weatherViewportDebounceTimer = ref<number | null>(null)
+  const WEATHER_VIEWPORT_DEBOUNCE_MS = 350
+
   // ── 当前地图视口（中心点 + 可见范围）─────────────────────────────────────
   const currentMapCenter = ref<{ lng: number; lat: number }>({ lng: 113.2644, lat: 23.1291 })
   const currentMapBBox = ref<BoundingBox | null>(null)
@@ -648,7 +654,7 @@ export const useLayersStore = defineStore('layers', () => {
     if (!isAdminBoundary) {
       weatherTileManager.setLayerActive(catalogId, true)
       if (isWeatherEngineLayer(catalogId)) {
-        weatherTileManager.setViewport(catalogId, currentMapCenter.value, currentMapZoom.value, currentHour.value)
+        weatherTileManager.setViewport(catalogId, currentMapCenter.value, currentMapZoom.value, currentHour.value, undefined, currentMapBBox.value)
         // 天气图层（如 wind-field）支持粒子流渲染，自动启用
         if (supportsParticleFlow(catalogId) && !particleFlowCatalogId.value) {
           particleFlowCatalogId.value = catalogId
@@ -691,7 +697,7 @@ export const useLayersStore = defineStore('layers', () => {
       // 同步 tile manager 激活状态；重新可见时刷新当前视口
       weatherTileManager.setLayerActive(layer.catalogId, layer.visible)
       if (layer.visible && isWeatherEngineLayer(layer.catalogId)) {
-        weatherTileManager.setViewport(layer.catalogId, currentMapCenter.value, currentMapZoom.value, currentHour.value)
+        weatherTileManager.setViewport(layer.catalogId, currentMapCenter.value, currentMapZoom.value, currentHour.value, undefined, currentMapBBox.value)
       }
     }
   }
@@ -1422,11 +1428,28 @@ export const useLayersStore = defineStore('layers', () => {
       currentMapZoom.value = zoom
     }
 
-    // 天气图层：将新视口同步给 tile manager，由它按需提交瓦片 workflow
-    for (const layer of activeLayers.value) {
-      if (layer.visible && isWeatherEngineLayer(layer.catalogId)) {
-        weatherTileManager.setViewport(layer.catalogId, center, currentMapZoom.value, currentHour.value, undefined, bbox)
+    // 天气图层：将新视口同步给 tile manager（防抖处理）。
+    // 防抖期间在途瓦片继续完成，避免连续移动时每次都取消在途瓦片导致 cached 始终为 0。
+    const hasVisibleWeatherLayer = activeLayers.value.some(
+      (layer) => layer.visible && isWeatherEngineLayer(layer.catalogId),
+    )
+    if (hasVisibleWeatherLayer) {
+      if (weatherViewportDebounceTimer.value !== null) {
+        window.clearTimeout(weatherViewportDebounceTimer.value)
       }
+      // 捕获当前快照，避免定时器执行时引用被后续调用覆盖
+      const snapCenter = center
+      const snapZoom = currentMapZoom.value
+      const snapHour = currentHour.value
+      const snapBbox = bbox
+      weatherViewportDebounceTimer.value = window.setTimeout(() => {
+        weatherViewportDebounceTimer.value = null
+        for (const layer of activeLayers.value) {
+          if (layer.visible && isWeatherEngineLayer(layer.catalogId)) {
+            weatherTileManager.setViewport(layer.catalogId, snapCenter, snapZoom, snapHour, undefined, snapBbox)
+          }
+        }
+      }, WEATHER_VIEWPORT_DEBOUNCE_MS)
     }
 
     // 非天气的地图型工作流图层：视口变化时触发工作流刷新（防抖处理）
@@ -1440,11 +1463,16 @@ export const useLayersStore = defineStore('layers', () => {
     }
   }
 
-  // 时间轴小时变化时，通知 tile manager 刷新所有可见天气图层
+  // 时间轴小时变化时，通知 tile manager 刷新所有可见天气图层。
+  // 小时变化是离散用户操作，需立即执行；取消挂起的视口防抖，避免用旧 hour 覆盖。
   watch(currentHour, (hour) => {
+    if (weatherViewportDebounceTimer.value !== null) {
+      window.clearTimeout(weatherViewportDebounceTimer.value)
+      weatherViewportDebounceTimer.value = null
+    }
     for (const layer of activeLayers.value) {
       if (layer.visible && isWeatherEngineLayer(layer.catalogId)) {
-        weatherTileManager.setViewport(layer.catalogId, currentMapCenter.value, currentMapZoom.value, hour)
+        weatherTileManager.setViewport(layer.catalogId, currentMapCenter.value, currentMapZoom.value, hour, undefined, currentMapBBox.value)
       }
     }
   })

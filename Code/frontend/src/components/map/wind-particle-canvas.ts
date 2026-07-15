@@ -39,22 +39,22 @@ const MAX_TRAIL_LENGTH_PX = 80
 const PARTICLE_COUNT_CHANGE_THRESHOLD = 0.25
 
 /** 每个粒子的轨迹历史长度（点数），越大曲线越长越平滑 */
-const TRAIL_LENGTH = 20
+const TRAIL_LENGTH = 28
 
 /** 粒子默认配置（稀疏柔和风格：少量粒子 + 慢速流动 + 细线） */
 const DEFAULT_PARTICLE_OPTIONS = {
-  particleCount: 1500,
-  maxAge: 60,
-  speedScale: 0.008,
-  fadeAlpha: 0.028,
-  lineWidth: 1.0,
+  particleCount: 1000,
+  maxAge: 90,
+  speedScale: 0.035,
+  fadeAlpha: 0.018,
+  lineWidth: 1.4,
 } as const
 
 /** 粒子数量上限（防止过大网格导致性能问题） */
-const MAX_PARTICLE_COUNT = 4000
+const MAX_PARTICLE_COUNT = 2000
 
 /** 粒子数量下限 */
-const MIN_PARTICLE_COUNT = 500
+const MIN_PARTICLE_COUNT = 300
 
 /** DPI 上限（防止超高分屏幕创建过大 canvas） */
 const MAX_PIXEL_RATIO = 2
@@ -76,11 +76,24 @@ function computeParticleCountForGrid(grid: WindGrid): number {
 /** 粒子寿命随机上界增量（使寿命有随机分布） */
 const MAX_AGE_RANDOM_RANGE = 20
 
-/** 默认颜色梯度（风速从低到高） */
-const DEFAULT_PARTICLE_COLORS = ['#10314b', '#1d6fa5', '#4bb9ff', '#84ddff', '#c4f3ff']
+/** 默认颜色梯度（参考 Windy.com 风速色阶，蓝→青→绿→黄→红→紫） */
+const DEFAULT_PARTICLE_COLORS = [
+  '#6271b8', // 0 m/s   — 蓝
+  '#3d6ea3', // 2.5     — 深蓝
+  '#4a94aa', // 5       — 青蓝
+  '#4a9294', // 7.5     — 青
+  '#4d8e7c', // 10      — 青绿
+  '#4ca44c', // 12.5    — 绿
+  '#67a436', // 15      — 黄绿
+  '#a28740', // 17.5    — 黄
+  '#a26d5c', // 20      — 橙
+  '#8d3f5c', // 25      — 红
+  '#974b91', // 30      — 品红
+  '#5f64a0', // 35+     — 紫
+]
 
 /** 默认风速断点（m/s），与颜色梯度对应 */
-const DEFAULT_WIND_SPEED_STOPS = [0, 5, 10, 15, 20]
+const DEFAULT_WIND_SPEED_STOPS = [0, 2.5, 5, 7.5, 10, 12.5, 15, 17.5, 20, 25, 30, 35]
 
 // ── 类型 ─────────────────────────────────────────────────
 
@@ -226,45 +239,76 @@ function buildWindGridFromGeoJSON(geojson: WindGeoJSON): WindGrid | null {
     hasData[r][c] = true
   }
 
-  // ── 缺失单元最近邻填充（多源 BFS） ──────────────────────────────
-  // 多瓦片合并时，不同瓦片的纬度/经度覆盖范围不完全一致，会在并集网格中产生"孔洞"。
-  // 若用 0 填充，会在瓦片边界产生 speed=0 的"静风区"，视觉上表现为：
-  //   - 块状边界（每个瓦片轮廓清晰可见）
-  //   - 四瓦片交汇处的十字/菱形零速伪影
-  //   - 等值线绕零速区产生拼接状线条
-  //   - 粒子进入零速区后方向丢失、流线断裂
-  // 解决方案：用多源 BFS 将每个孔洞单元填充为最近的数据单元的值（曼哈顿距离）。
-  // 所有数据单元同时作为源点入队，BFS 同时向外扩展，最先到达孔洞的源即最近邻。
+  // ── 缺失单元反距离加权（IDW）填充 ──────────────────────────────
+  // 多瓦片合并时，不同瓦片的网格点不完全对齐，会在并集网格中产生"孔洞"。
+  // 最近邻填充会让大片孔洞继承同一数据源，形成规则的方向/速度斑块（看起来像竖直栅栏）。
+  // 改用局部 IDW（限制搜索半径 + 1/r^2 权重）对周围有数据单元加权插值，
+  // 既填补孔洞又保留瓦片内部的真实风向细节，避免远距离数据过度平滑。
   const MISSING_CELL_COUNT = rows * cols - rawPoints.length
   if (MISSING_CELL_COUNT > 0) {
-    // BFS 队列：[row, col, srcRow, srcCol]
-    const queue: Array<[number, number, number, number]> = []
-    const visited: boolean[][] = hasData // 复用：数据单元已"访问"
+    // 搜索半径：最多 8 个单元格；瓦片边界通常只偏移 0.5~1 个网格步长，
+    // 太大半径会让插值结果趋同，丢失局部风场特征。
+    const maxRadius = Math.min(8, Math.max(rows, cols))
     for (let r = 0; r < rows; r++) {
       for (let c = 0; c < cols; c++) {
-        if (visited[r][c]) {
-          queue.push([r, c, r, c])
+        if (hasData[r][c]) continue
+        let sumWeight = 0
+        let sumSpeed = 0
+        let sumUSin = 0
+        let sumUCos = 0
+        let found = false
+        const rStart = Math.max(0, r - maxRadius)
+        const rEnd = Math.min(rows, r + maxRadius + 1)
+        const cStart = Math.max(0, c - maxRadius)
+        const cEnd = Math.min(cols, c + maxRadius + 1)
+        for (let rr = rStart; rr < rEnd; rr++) {
+          for (let cc = cStart; cc < cEnd; cc++) {
+            if (!hasData[rr][cc]) continue
+            const dr = rr - r
+            const dc = cc - c
+            const dist = Math.sqrt(dr * dr + dc * dc)
+            if (dist === 0) continue
+            // 1/r^2 权重：近处点影响更大，远处快速衰减，保留局部特征
+            const weight = 1 / (dist * dist)
+            const src = points[rr][cc]
+            sumWeight += weight
+            sumSpeed += src.speed * weight
+            // 对 u/v 分量加权，避免角度平均的环绕问题
+            const dirRad = (src.direction + WIND_DIRECTION_OFFSET) * DEG_TO_RAD
+            sumUSin += Math.sin(dirRad) * src.speed * weight
+            sumUCos += Math.cos(dirRad) * src.speed * weight
+            found = true
+          }
+        }
+        if (found && sumWeight > 0) {
+          const avgSpeed = sumSpeed / sumWeight
+          const avgURad = Math.atan2(sumUSin / sumWeight, sumUCos / sumWeight)
+          const avgDirection = ((avgURad / DEG_TO_RAD) - WIND_DIRECTION_OFFSET + 360) % 360
+          points[r][c].speed = avgSpeed
+          points[r][c].direction = avgDirection
+          hasData[r][c] = true
         }
       }
     }
-    let head = 0
-    // 四邻域方向：上、下、左、右
-    const DIRS: ReadonlyArray<readonly [number, number]> = [[-1, 0], [1, 0], [0, -1], [0, 1]]
-    while (head < queue.length) {
-      const [r, c, srcR, srcC] = queue[head++]
-      for (const [dr, dc] of DIRS) {
-        const nr = r + dr
-        const nc = c + dc
-        if (nr < 0 || nr >= rows || nc < 0 || nc >= cols) continue
-        if (visited[nr][nc]) continue
-        visited[nr][nc] = true
-        // 用最近数据源的速度/方向填充（保留本单元的 lat/lon）
-        const src = points[srcR][srcC]
-        points[nr][nc].speed = src.speed
-        points[nr][nc].direction = src.direction
-        queue.push([nr, nc, srcR, srcC])
+  }
+
+  // ── 最终保护：IDW 无法填充的单元格（完全没有附近数据）清零 ──────
+  // 当大量瓦片加载失败时，网格中可能存在大范围"孤岛"——周围没有任何有效数据点。
+  // 这些单元格的 speed/direction 仍为 NaN，会导致 interpolateWind 产生 NaN 经纬度，
+  // 进而触发 map.project() 崩溃（Invalid LngLat object: (NaN, NaN)）。
+  // 将剩余 NaN 清零，使粒子在这些区域静止，避免崩溃。
+  let unfilledCount = 0
+  for (let r = 0; r < rows; r++) {
+    for (let c = 0; c < cols; c++) {
+      if (!hasData[r][c]) {
+        points[r][c].speed = 0
+        points[r][c].direction = 0
+        unfilledCount++
       }
     }
+  }
+  if (unfilledCount > 0) {
+    debugLog('WindParticleCanvas', 'buildWindGrid unfilled cells zeroed', unfilledCount)
   }
 
   const south = sortedLats[rows - 1] / GRID_COORD_QUANTIZE_FACTOR
@@ -304,6 +348,19 @@ function interpolateWind(grid: WindGrid, lat: number, lon: number): WindGridPoin
   const p10 = points[r1][c0]
   const p11 = points[r1][c1]
 
+  // NaN 保护：如果任一角点数据无效，回退到最近的有效角点
+  const isValid = (p: WindGridPoint) => Number.isFinite(p.speed) && Number.isFinite(p.direction)
+  const validPoints = [p00, p01, p10, p11].filter(isValid)
+  if (validPoints.length === 0) {
+    // 完全没有有效数据，返回零向量（静止），避免 NaN 传播导致 map.project 崩溃
+    return { lat: clampedLat, lon: clampedLon, speed: 0, direction: 0 }
+  }
+  if (validPoints.length < 4) {
+    // 部分角点无效：使用最近有效角点的值（非插值，避免 NaN 污染）
+    const ref = validPoints[0]
+    return { lat: clampedLat, lon: clampedLon, speed: ref.speed, direction: ref.direction }
+  }
+
   const speed = lerp(lerp(p00.speed, p01.speed, tc), lerp(p10.speed, p11.speed, tc), tr)
   const interpDir = (d1: number, d2: number, t: number) => {
     let diff = d2 - d1
@@ -317,7 +374,11 @@ function interpolateWind(grid: WindGrid, lat: number, lon: number): WindGridPoin
     tr,
   )
 
-  return { lat: clampedLat, lon: clampedLon, speed, direction }
+  // 最终保护：插值结果仍可能因浮点精度问题产生 NaN
+  const finalSpeed = Number.isFinite(speed) ? speed : 0
+  const finalDirection = Number.isFinite(direction) ? direction : 0
+
+  return { lat: clampedLat, lon: clampedLon, speed: finalSpeed, direction: finalDirection }
 }
 
 // ── 粒子数据结构 ─────────────────────────────────────────
@@ -521,7 +582,8 @@ export class WindParticleCanvas {
     const baseCount = computeParticleCountForGrid(this.grid)
     // 低缩放级别降级粒子数量，避免全球视图下视觉混乱和性能下降
     if (zoom < 2) return Math.min(baseCount, 200)
-    if (zoom < 3) return Math.min(baseCount, 500)
+    if (zoom < 3) return Math.min(baseCount, 400)
+    if (zoom < 5) return Math.min(baseCount, 800)
     return baseCount
   }
 
@@ -566,6 +628,18 @@ export class WindParticleCanvas {
     const y = (screen.y - offsetY) * dpr
     p.trail = [x, y]
     p.age = 0
+  }
+
+  /** 循环边界：粒子移出网格时从对面边界重新进入，保持流线连续。返回是否发生了 wrap。 */
+  private wrapParticle(p: Particle): boolean {
+    if (!this.grid) return false
+    const { south, north, west, east } = this.grid
+    let wrapped = false
+    if (p.lat < south) { p.lat = north - (south - p.lat); wrapped = true }
+    else if (p.lat > north) { p.lat = south + (p.lat - north); wrapped = true }
+    if (p.lon < west) { p.lon = east - (west - p.lon); wrapped = true }
+    else if (p.lon > east) { p.lon = west + (p.lon - east); wrapped = true }
+    return wrapped
   }
 
   private animate = (now: number): void => {
@@ -655,22 +729,30 @@ export class WindParticleCanvas {
       const wind = interpolateWind(grid, p.lat, p.lon)
       const [u, v] = windToUV(wind.speed, wind.direction)
 
-      p.lon += u * scaledSpeed
+      // 粒子在经纬度网格上运动：经向 1° 的地面距离随纬度变化（cos(lat)）。
+      // 这里对 u（东西向）按 cos(lat) 做补偿，使 Mercator 投影上的粒子轨迹
+      // 方向与真实风向一致，避免中高纬地区出现“竖直线条”。
+      const cosLat = Math.max(Math.cos(p.lat * DEG_TO_RAD), 0.1)
+      p.lon += (u / cosLat) * scaledSpeed
       p.lat += v * scaledSpeed
       p.age += dt
 
-      if (
-        p.age > p.maxAge ||
-        p.lat < grid.south || p.lat > grid.north ||
-        p.lon < grid.west || p.lon > grid.east
-      ) {
+      if (p.age > p.maxAge) {
         this.resetParticle(p)
         continue
       }
 
+      const wrapped = this.wrapParticle(p)
+
       const screen = project([p.lon + this.lonWrapOffset, p.lat])
       const cx = (screen.x - offsetX) * dpr
       const cy = (screen.y - offsetY) * dpr
+
+      // wrap 后重置轨迹，避免跨网格边界的连线
+      if (wrapped) {
+        p.trail = [cx, cy]
+        continue
+      }
 
       // 视口剔除
       if (cx < -VIEWPORT_CULLING_MARGIN_PX || cx > w + VIEWPORT_CULLING_MARGIN_PX ||
@@ -714,18 +796,18 @@ export class WindParticleCanvas {
     }
 
     // === 3. 按颜色分组批量绘制轨迹（每条轨迹是一条连续 polyline）===
+    // 风速越高透明度越高，使强风区域视觉上更突出
+    const bandAlpha = 0.55
     for (let i = 0; i < colorSubpaths.length; i++) {
       const subpaths = colorSubpaths[i]
       if (subpaths.length === 0) continue
 
-      const [r1, g1, b1] = this.colorRgbCache[i]
-      const [r2, g2, b2] = this.colorRgbCache[i + 1]
-      const r = ((r1 + r2) >> 1)
-      const g = ((g1 + g2) >> 1)
-      const b = ((b1 + b2) >> 1)
-
+      // 使用该频段的起始颜色（非平均色），使不同风速的视觉区分更清晰
+      const [r, g, b] = this.colorRgbCache[i]
       ctx.strokeStyle = `rgb(${r},${g},${b})`
-      ctx.globalAlpha = 0.75
+      // 高风速频段略微提高透明度，增强视觉冲击力
+      const speedRatio = i / Math.max(1, colorSubpaths.length - 1)
+      ctx.globalAlpha = bandAlpha + speedRatio * 0.25
 
       ctx.beginPath()
       let si = 0
@@ -771,8 +853,16 @@ export class WindParticleCanvas {
       const targetCount = this.resolveParticleCountForZoom(this.map.getZoom())
       if (!oldGrid) {
         this.initParticles()
-      } else {
+      } else if (oldGrid.rows !== this.grid.rows || oldGrid.cols !== this.grid.cols) {
+        // 网格尺寸变化（如新瓦片扩展了经纬度范围）：需要重置粒子以适配新边界
         this.updateParticlesForNewGrid(targetCount)
+      } else {
+        // 网格尺寸不变但数据变化（如瓦片补充了更多数据点）：仅更新网格引用，
+        // 保留粒子轨迹，避免频繁重置导致轨迹无法积累（"竖条线"的根本原因）
+        debugLog('WindParticleCanvas', 'updateGeoJSON same-size grid data updated, keeping particles')
+        if (this.particles.length !== targetCount) {
+          this.updateParticlesForNewGrid(targetCount)
+        }
       }
     } else {
       console.warn('[WindParticleCanvas] Failed to create grid from GeoJSON')
