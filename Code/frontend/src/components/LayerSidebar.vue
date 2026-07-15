@@ -582,27 +582,39 @@ const symbologyPanelLayer = computed(() => {
           :key="group.category.id"
           class="category-group"
         >
-          <button
-            class="category-header"
+          <div
+            class="category-header-row"
             :style="{ '--cat-color': getCategoryMeta(group.category.id)?.accentColor ?? '#88d8ff' }"
-            @click="toggleCategory(group.category.id)"
           >
-            <span class="cat-icon" aria-hidden="true">{{ getCategoryMeta(group.category.id)?.icon ?? '◈' }}</span>
-            <span class="cat-name">{{ getCategoryMeta(group.category.id)?.name ?? group.category.id }}</span>
-            <span class="cat-count">{{ group.items.length }}</span>
-            <span class="cat-arrow" :class="{ expanded: expandedCategories.has(group.category.id) }">▸</span>
-          </button>
-
-          <!-- 批量添加按钮（展开时显示） -->
-          <button
-            v-if="expandedCategories.has(group.category.id)"
-            class="cat-batch-add"
-            :style="{ '--cat-color': getCategoryMeta(group.category.id)?.accentColor ?? '#88d8ff' }"
-            title="添加此分类下所有图层"
-            @click.stop="addAllInCategory(group.items)"
-          >
-            + 全部添加
-          </button>
+            <button
+              class="category-header"
+              type="button"
+              @click="toggleCategory(group.category.id)"
+            >
+              <span class="cat-icon" aria-hidden="true">{{ getCategoryMeta(group.category.id)?.icon ?? '◈' }}</span>
+              <span class="cat-name">{{ getCategoryMeta(group.category.id)?.name ?? group.category.id }}</span>
+            </button>
+            <div class="cat-header-actions">
+              <span class="cat-count">{{ group.items.length }}</span>
+              <button
+                class="cat-batch-add"
+                type="button"
+                title="添加此分类下所有图层"
+                @click="addAllInCategory(group.items)"
+              >
+                +全部
+              </button>
+              <button
+                class="cat-expand"
+                type="button"
+                :aria-expanded="expandedCategories.has(group.category.id)"
+                :title="expandedCategories.has(group.category.id) ? '收起' : '展开'"
+                @click="toggleCategory(group.category.id)"
+              >
+                <span class="cat-arrow" :class="{ expanded: expandedCategories.has(group.category.id) }">▸</span>
+              </button>
+            </div>
+          </div>
 
           <div v-if="expandedCategories.has(group.category.id)" class="category-items">
             <div
@@ -1179,10 +1191,19 @@ h2 {
   gap: 0.18rem;
 }
 
+.category-header-row {
+  display: flex;
+  align-items: center;
+  gap: 0.28rem;
+  min-width: 0;
+}
+
 .category-header {
   display: flex;
   align-items: center;
   gap: 0.32rem;
+  flex: 1;
+  min-width: 0;
   padding: 0.3rem 0.42rem;
   border: none;
   border-radius: 0.6rem;
@@ -1201,9 +1222,30 @@ h2 {
   transform: translateX(2px);
 }
 
-.cat-icon { font-size: 0.7rem; }
+.cat-icon { font-size: 0.7rem; flex-shrink: 0; }
 
-.cat-name { flex: 1; }
+.cat-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cat-arrow {
+  display: inline-block;
+  transition: transform 0.18s ease;
+  font-size: 0.58rem;
+  flex-shrink: 0;
+}
+
+.cat-header-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.28rem;
+  flex-shrink: 0;
+  margin-left: auto;
+}
 
 .cat-count {
   padding: 0.05rem 0.22rem;
@@ -1211,34 +1253,49 @@ h2 {
   background: rgba(255, 255, 255, 0.06);
   color: #8ea3b8;
   font-size: 0.52rem;
+  flex-shrink: 0;
 }
 
-.cat-arrow {
-  display: inline-block;
-  transition: transform 0.18s ease;
-  font-size: 0.58rem;
-}
-
-/* ── Batch add button (per category) ─────────────────────────────────────── */
-.cat-batch-add {
-  display: block;
-  margin: 0.18rem 0 0.18rem 1.2rem;
-  padding: 0.18rem 0.5rem;
-  border: 1px dashed rgba(255, 255, 255, 0.14);
-  border-radius: 0.42rem;
+.cat-expand {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  margin: 0;
+  padding: 0.1rem 0.18rem;
+  border: none;
+  border-radius: 0.35rem;
   background: transparent;
+  color: inherit;
+  cursor: pointer;
+  font: inherit;
+  line-height: 1;
+}
+
+.cat-expand:hover {
+  background: rgba(255, 255, 255, 0.06);
+}
+
+/* 分类标题行内「+全部」小按键（在数量右侧） */
+.cat-batch-add {
+  flex-shrink: 0;
+  margin: 0;
+  padding: 0.14rem 0.36rem;
+  border: 1px solid color-mix(in srgb, var(--cat-color, #88d8ff) 35%, transparent);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--cat-color, #88d8ff) 10%, transparent);
   color: var(--cat-color, #88d8ff);
   cursor: pointer;
   font: inherit;
-  font-size: 0.56rem;
-  font-weight: 500;
-  transition: background 0.14s ease, border-color 0.14s ease;
+  font-size: 0.5rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+  transition: background 0.14s ease, border-color 0.14s ease, color 0.14s ease;
 }
 
 .cat-batch-add:hover {
-  background: rgba(255, 255, 255, 0.06);
-  border-color: var(--cat-color, #88d8ff);
-  border-style: solid;
+  background: color-mix(in srgb, var(--cat-color, #88d8ff) 22%, transparent);
+  border-color: color-mix(in srgb, var(--cat-color, #88d8ff) 55%, transparent);
 }
 
 /* ── Batch toolbar (active state) ────────────────────────────────────────── */
