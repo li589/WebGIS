@@ -1,4 +1,4 @@
-import { computed, ref, watch } from 'vue'
+import { computed, nextTick, ref, watch } from 'vue'
 import { defineStore } from 'pinia'
 
 import {
@@ -758,16 +758,26 @@ export const useLayersStore = defineStore('layers', () => {
       sidebarView.value = 'active'
     }
 
-    // 天气图层接入瓦片管理器，由 tile manager 按需拉取瓦片
+    // 天气图层接入瓦片管理器，由 tile manager 按需拉取瓦片。
+    // setLayerActive 是轻量操作（仅设置 visible 标志），同步执行以确保
+    // overlay watcher 和 map 事件处理器在同一 flush 周期内能看到图层已激活。
+    // setViewport 是重操作（计算瓦片 + 入队 + drainQueue），推迟到 nextTick
+    // 让 Vue 先完成 UI 更新（按钮状态、侧栏视图），避免主线程阻塞。
     if (!isAdminBoundary) {
       weatherTileManager.setLayerActive(catalogId, true)
       if (isWeatherEngineLayer(catalogId)) {
-        weatherTileManager.setViewport(catalogId, currentMapCenter.value, currentMapZoom.value, currentHour.value, undefined, currentMapBBox.value)
-        // 天气图层（如 wind-field）支持粒子流渲染，自动启用
-        if (supportsParticleFlow(catalogId) && !particleFlowCatalogId.value) {
-          particleFlowCatalogId.value = catalogId
-          debugLog('addLayer', 'auto-enable particle flow for', catalogId)
-        }
+        const cc = currentMapCenter.value
+        const cz = currentMapZoom.value
+        const ch = currentHour.value
+        const cb = currentMapBBox.value
+        nextTick(() => {
+          weatherTileManager.setViewport(catalogId, cc, cz, ch, undefined, cb)
+          // 天气图层（如 wind-field）支持粒子流渲染，自动启用
+          if (supportsParticleFlow(catalogId) && !particleFlowCatalogId.value) {
+            particleFlowCatalogId.value = catalogId
+            debugLog('addLayer', 'auto-enable particle flow for', catalogId)
+          }
+        })
       }
     }
   }

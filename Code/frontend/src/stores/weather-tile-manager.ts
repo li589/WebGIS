@@ -357,13 +357,19 @@ export const useWeatherTileManager = defineStore('weatherTileManager', () => {
     }
 
     // 对视口缺失瓦片以高优先级入队
+    // 批量入队后统一递增 activityVersion 一次，避免每瓦片触发响应式更新
+    let enqueuedAny = false
     for (const tile of viewportTiles) {
-      enqueueIfMissing(state, tile, 0, generation)
+      if (enqueueIfMissing(state, tile, 0, generation)) enqueuedAny = true
     }
 
     // 外扩候选以低优先级入队
     for (const tile of prefetchRing) {
-      enqueueIfMissing(state, tile, 1, generation)
+      if (enqueueIfMissing(state, tile, 1, generation)) enqueuedAny = true
+    }
+
+    if (enqueuedAny) {
+      activityVersion.value += 1
     }
 
     debugLog(
@@ -394,14 +400,20 @@ export const useWeatherTileManager = defineStore('weatherTileManager', () => {
     }
   }
 
+  /**
+   * 为缺失瓦片入队一个请求。
+   * 返回 true 表示新建了请求；false 表示瓦片已缓存或已在 pending 中（无变化）。
+   * 注意：本函数不再直接递增 activityVersion，由调用方在批量入队后统一递增一次，
+   * 避免在紧密循环中触发多次响应式更新（响应式风暴）。
+   */
   function enqueueIfMissing(
     state: LayerState,
     tile: WeatherTileCoords,
     priority: number,
     generation: number,
-  ): void {
+  ): boolean {
     const key = tileCoordsToKey(tile, state.layerId, state.hour)
-    if (state.tiles.has(key) || state.pending.has(key)) return
+    if (state.tiles.has(key) || state.pending.has(key)) return false
     const controller = new AbortController()
     const request: TileRequest = {
       key: { layerId: state.layerId, z: tile.z, x: tile.x, y: tile.y, hour: state.hour },
@@ -413,7 +425,7 @@ export const useWeatherTileManager = defineStore('weatherTileManager', () => {
       dispatched: false,
     }
     state.pending.set(key, request)
-    activityVersion.value += 1
+    return true
   }
 
   function drainQueue(): void {
@@ -583,18 +595,19 @@ export const useWeatherTileManager = defineStore('weatherTileManager', () => {
       [...state.viewportTiles, ...state.prefetchRing].map((t) => tileCoordsToKey(t, state.layerId, state.hour)),
     )
 
+    let enqueuedAny = false
     for (const [dx, dy] of deltas) {
       const nx = ((key.x + dx) % n + n) % n
       const ny = key.y + dy
       if (ny < 0 || ny >= n) continue
       const neighborKey = tileCoordsToKey({ z: key.z, x: nx, y: ny }, state.layerId, state.hour)
       if (!allowedKeys.has(neighborKey)) continue
-      enqueueIfMissing(
-        state,
-        { z: key.z, x: nx, y: ny },
-        1,
-        generation,
-      )
+      if (enqueueIfMissing(state, { z: key.z, x: nx, y: ny }, 1, generation)) {
+        enqueuedAny = true
+      }
+    }
+    if (enqueuedAny) {
+      activityVersion.value += 1
     }
     if (state.pending.size > 0) {
       drainQueue()

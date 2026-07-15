@@ -117,13 +117,24 @@ function addCatalogItem(catalogId: string, isAdminBoundary = false) {
   logStore.logOperation('layer-add', `添加图层「${catalogId}」`, isAdminBoundary ? '行政区边界' : undefined)
 }
 
-/** 批量添加某分类下所有未添加的图层 */
+/**
+ * 批量添加某分类下所有未添加的图层。
+ * 关键：在循环前一次性快照已添加的 catalogId 集合，避免在每次 addLayer 后
+ * 重新求值 activeLayersDisplay 计算属性（它会对每个天气图层调用
+ * weatherTileManager.getStats()，在紧密循环中会导致明显的卡顿）。
+ */
 function addAllInCategory(items: { catalogId: string; isAdminBoundary?: boolean }[]) {
+  const alreadyAdded = new Set<string>()
+  for (const d of activeLayersDisplay.value) {
+    if (!d.isAdminBoundary) alreadyAdded.add(d.catalogId)
+  }
+
   for (const item of items) {
-    if (!isAdded(item.catalogId) && !item.isAdminBoundary) {
-      // 统一走 addCatalogItem，保证自动运行工作流的逻辑一致
-      addCatalogItem(item.catalogId, !!item.isAdminBoundary)
-    }
+    if (item.isAdminBoundary) continue
+    if (alreadyAdded.has(item.catalogId)) continue
+    alreadyAdded.add(item.catalogId)
+    // 统一走 addCatalogItem，保证自动运行工作流的逻辑一致
+    addCatalogItem(item.catalogId, false)
   }
 }
 
