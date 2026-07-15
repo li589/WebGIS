@@ -141,6 +141,21 @@ export function createBasemapModule(options: CreateBasemapModuleOptions): Basema
   }
 
   function handleTileError(failedProvider: string | null) {
+    // 仅累计仍指向「当前选中底图」的错误，避免快速切换时旧 provider 迟到失败误伤
+    const currentSourceId = options.getCurrentTileSourceId()
+    const currentProvider = options.getTileConfig(currentSourceId)?.provider ?? null
+    // 无法归因的错误（常见于切换瞬间）不计入熔断阈值
+    if (!failedProvider) {
+      return
+    }
+    if (
+      currentProvider
+      && failedProvider !== currentProvider
+      && failedProvider !== currentSourceId
+    ) {
+      return
+    }
+
     const now = nowImpl()
     while (tileErrorTimestamps.length > 0 && now - tileErrorTimestamps[0] > TILE_ERROR_WINDOW_MS) {
       tileErrorTimestamps.shift()
@@ -150,7 +165,7 @@ export function createBasemapModule(options: CreateBasemapModuleOptions): Basema
     if (tileErrorTimestamps.length > TILE_ERROR_THRESHOLD) {
       options.setTileLoadFailed(true)
       options.setTileFailedProvider(
-        failedProvider ?? options.getTileConfig(options.getCurrentTileSourceId())?.provider ?? null,
+        failedProvider ?? currentProvider,
       )
       if (options.map.getLayer(TILE_LAYER_ID)) {
         options.map.setLayoutProperty(TILE_LAYER_ID, 'visibility', 'none')
@@ -175,7 +190,7 @@ export function createBasemapModule(options: CreateBasemapModuleOptions): Basema
     }
 
     const url = mapError.error?.url ?? ''
-    const match = url.match(/\/tiles\/([^/]+)\//)
+    const match = url.match(/\/(?:unified-)?tiles\/([^/]+)\//)
     const provider = match ? match[1] : null
     handleTileError(provider)
   }

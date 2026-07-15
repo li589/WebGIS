@@ -1,8 +1,10 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { storeToRefs } from 'pinia'
 
 import { useLayersStore } from '../stores/layers'
 import { useUiStore } from '../stores/ui'
+import { useLogStore } from '../stores/log'
 import { useWeatherTileManager } from '../stores/weather-tile-manager'
 import type { LayerHotspot } from '../stores/layers/types'
 import { createMapCanvasActionBridge } from './map/map-canvas-action-bridge'
@@ -12,7 +14,7 @@ import { createMapCanvasMapOptions } from './map/map-canvas-map-options'
 import { createMapCanvasModuleBundle } from './map/map-canvas-module-bundle'
 import { createOverlayImageModule } from './map/overlay-image-module'
 import { createImportedLayerModule } from './map/imported-layer-module'
-import { useImportStore } from '../stores/import'
+import { applyActiveLayerStackOrder } from './map/layer-stack-sync'
 import { createMapStagePresentationModule } from './map/map-stage-presentation-module'
 import { createMapCanvasState } from './map/map-canvas-state'
 import { createMapCanvasTeardownBinder } from './map/map-canvas-teardown-binder'
@@ -27,8 +29,9 @@ import { TILE_SOURCE_MAP, type TileSourceId } from '../services/api-config'
 
 const layersStore = useLayersStore()
 const uiStore = useUiStore()
+const logStore = useLogStore()
 const weatherTileManager = useWeatherTileManager()
-const importStore = useImportStore()
+const { statusVersion: weatherStatusVersion } = storeToRefs(weatherTileManager)
 
 const props = defineProps<{
   tileSourceId: TileSourceId
@@ -155,7 +158,7 @@ const stageStatusModel = computed(() => buildMapStageStatusModel({
 // 天气瓦片加载/错误状态：聚合所有可见天气图层的状态
 const weatherTileStatusModel = computed(() => {
   // 依赖 statusVersion 触发响应式更新
-  void weatherTileManager.statusVersion.value
+  void weatherStatusVersion.value
   const weatherLayers = layersStore.activeLayersDisplay.filter(
     (l) => l.visible && layersStore.isWeatherEngineLayer(l.catalogId),
   )
@@ -262,7 +265,7 @@ onMounted(async () => {
     getAdminBoundaryOpacity: () => adminBoundaryOpacity.value,
     syncAdminOverlay: actionBridge.syncAdminOverlay,
     debugLog,
-    weatherDebounceMs: 200,
+    weatherDebounceMs: 350,
   })
   state.resources.basemapModule = moduleBundle.basemapModule
   state.resources.adminBoundaryModule = moduleBundle.adminBoundaryModule
@@ -295,6 +298,8 @@ onMounted(async () => {
       moduleBundle.mapInteractionModule.syncViewportToStore()
       // 地图就绪后同步天气叠加层（之前 syncWeatherOverlay 在 mapReady=true 之前调用会被跳过）
       moduleBundle.weatherOverlayModule.runSyncNow()
+      // 同样补同步导入层：mapReady 前 addVectorLayer 会 no-op
+      syncImportedLayers({ fitNew: true })
       moduleBundle.mapInteractionModule.applyInteractionMode()
       presentationModule.revealMap()
     },
@@ -314,50 +319,105 @@ onMounted(async () => {
 
   async function syncOverlayLayers() {
     if (!overlayImageModule) return
-    const known = overlayImageModule.knownOverlayIds.value
-    if (known.length === 0) return
-    const activeVisible = layersStore.activeLayersDisplay
-      .filter((l) => l.visible && known.includes(l.catalogId))
-      .map((l) => l.catalogId)
-    await overlayImageModule.syncOverlays(activeVisible)
+    const known = new Set(overlayImageModule.knownOverlayIds.value)
+    const opacityByLayerId: Record<string, number> = {}
+    const activeVisible: string[] = []
+
+    for (const layer of layersStore.activeLayers) {
+      if (!layer.visible) continue
+      if (layer.importedRaster) {
+        const overlayId = layer.importedRaster.overlayLayerId
+        overlayImageModule.rememberOverlayId(overlayId)
+        known.add(overlayId)
+        activeVisible.push(overlayId)
+        opacityByLayerId[overlayId] = layer.opacity
+        continue
+      }
+      if (layer.importedVector || layer.isAdminBoundary) continue
+      if (known.has(layer.catalogId)) {
+        activeVisible.push(layer.catalogId)
+        opacityByLayerId[layer.catalogId] = layer.opacity
+      }
+    }
+
+    await overlayImageModule.syncOverlays(activeVisible, opacityByLayerId)
+    applyLayerStackOrder()
+  }
+
+  function applyLayerStackOrder() {
+    if (!mapReady.value || !mapInstance) return
+    applyActiveLayerStackOrder(mapInstance, layersStore.activeLayers, {
+      getImportedVectorLayerIds: (instanceId) => importedLayerModule?.getLayerIds(instanceId) ?? [],
+      getOverlayRasterLayerId: (overlayLayerId) =>
+        overlayImageModule?.getRasterLayerId(overlayLayerId) ?? null,
+    })
   }
 
   watch(
-    () => layersStore.activeLayersDisplay.map((l) => l.catalogId + ':' + l.visible).join(','),
+    () => layersStore.activeLayers
+      .filter((l) => l.visible && (l.importedRaster || (!l.importedVector && !l.isAdminBoundary)))
+      .map((l) => `${l.instanceId}:${l.catalogId}:${l.visible}:${l.opacity}:${l.importedRaster ? 'r' : 'c'}`)
+      .join(','),
     () => { void syncOverlayLayers() },
   )
 
-  // ─── Imported layer module (前端导入的矢量/栅格图层) ──────────────────────
+  watch(
+    () => layersStore.activeLayers
+      .map((l) => `${l.instanceId}:${l.order}`)
+      .join(','),
+    () => { applyLayerStackOrder() },
+  )
+
+  // ─── Imported layer module（本地导入矢量：挂接活动图层列表） ───────────────
   importedLayerModule = createImportedLayerModule({
     map: mapInstance,
     getMapReady: () => mapReady.value,
   })
 
-  // 同步导入的矢量图层到地图
+  /** 把 activeLayers 中的导入矢量同步到地图；fitNew 时对新加入图层做视野适配 */
+  function syncImportedLayers(opts: { fitNew?: boolean } = {}) {
+    if (!importedLayerModule) return
+    const imported = layersStore.activeLayers.filter((l) => l.importedVector)
+    const loadedIds = new Set(importedLayerModule.getLoadedIds())
+    const newlyAdded: string[] = []
+    for (const layer of imported) {
+      const payload = layer.importedVector!
+      if (payload.geojson && !loadedIds.has(layer.instanceId)) {
+        importedLayerModule.addVectorLayer(
+          layer.instanceId,
+          payload.geojson,
+          layer.name ?? payload.fileName ?? '导入图层',
+        )
+        // add 可能因 mapReady=false 失败；仅在实际加载成功后再记
+        if (importedLayerModule.getLoadedIds().includes(layer.instanceId)) {
+          newlyAdded.push(layer.instanceId)
+        }
+      }
+      loadedIds.delete(layer.instanceId)
+    }
+    for (const layer of imported) {
+      importedLayerModule.setLayerVisibility(layer.instanceId, layer.visible)
+      importedLayerModule.setLayerOpacity(layer.instanceId, layer.opacity)
+    }
+    for (const staleId of loadedIds) {
+      importedLayerModule.removeLayer(staleId)
+    }
+    if (opts.fitNew && newlyAdded.length > 0) {
+      importedLayerModule.fitLayers(newlyAdded)
+    }
+    applyLayerStackOrder()
+  }
+
+  // 同步「活动图层」里的导入矢量到地图：显隐 / 透明度 / 增删
   watch(
-    () => importStore.importedLayers.map((l) => l.id + ':' + l.visible + ':' + l.opacity).join(','),
+    () => layersStore.activeLayers
+      .filter((l) => l.importedVector)
+      .map((l) => `${l.instanceId}:${l.visible}:${l.opacity}:${l.importedVector!.featureCount}`)
+      .join(','),
     () => {
-      if (!importedLayerModule) return
-      const imported = importStore.importedLayers
-      const loadedIds = new Set(importedLayerModule.getLoadedIds())
-      // 添加新导入的矢量图层
-      for (const layer of imported) {
-        if (layer.type === 'vector' && layer.geojson && !loadedIds.has(layer.id)) {
-          importedLayerModule.addVectorLayer(layer.id, layer.geojson, layer.name)
-        }
-      }
-      // 同步可见性和透明度
-      for (const layer of imported) {
-        importedLayerModule.setLayerVisibility(layer.id, layer.visible)
-        importedLayerModule.setLayerOpacity(layer.id, layer.opacity)
-      }
-      // 移除已删除的图层
-      for (const id of loadedIds) {
-        if (!imported.some((l) => l.id === id)) {
-          importedLayerModule.removeLayer(id)
-        }
-      }
+      syncImportedLayers({ fitNew: true })
     },
+    { immediate: true },
   )
 
 })
@@ -365,7 +425,99 @@ onMounted(async () => {
 onBeforeUnmount(() => {
   teardownBinder.dispose()
   importedLayerModule?.dispose()
+  _clearLocationMarker()
 })
+
+// ── 自动定位 ──────────────────────────────────────────────────────────────
+const isLocating = ref(false)
+const locateError = ref<{ message: string; hint: string } | null>(null)
+let locationMarkerCleanup: (() => void) | null = null
+let locateErrorTimer: ReturnType<typeof setTimeout> | null = null
+
+function _showLocateError(message: string, hint: string) {
+  locateError.value = { message, hint }
+  if (locateErrorTimer) clearTimeout(locateErrorTimer)
+  locateErrorTimer = setTimeout(() => { locateError.value = null }, 6000)
+}
+
+function _clearLocationMarker() {
+  if (locationMarkerCleanup) {
+    locationMarkerCleanup()
+    locationMarkerCleanup = null
+  }
+}
+
+async function handleLocateMe() {
+  if (isLocating.value) return
+  locateError.value = null
+  if (!navigator.geolocation) {
+    _showLocateError('浏览器不支持地理定位', '请使用 Chrome、Edge 或 Firefox 等现代浏览器')
+    logStore.logOperation('locate-me', '定位失败：浏览器不支持地理定位')
+    return
+  }
+  isLocating.value = true
+  logStore.logOperation('locate-me', '正在获取当前位置…')
+
+  navigator.geolocation.getCurrentPosition(
+    async (position) => {
+      const { longitude, latitude } = position.coords
+      const mapInstance = state.resources.map
+      if (!mapInstance) {
+        isLocating.value = false
+        return
+      }
+
+      // 飞行到用户位置
+      mapInstance.flyTo({
+        center: [longitude, latitude],
+        zoom: Math.max(mapInstance.getZoom(), 10),
+        duration: 1500,
+      })
+
+      // 添加临时定位标记
+      _clearLocationMarker()
+      const { default: maplibregl } = await import('maplibre-gl')
+      const el = document.createElement('div')
+      el.className = 'geolocation-marker'
+      el.innerHTML = '<div class="geo-pulse"></div><div class="geo-dot"></div>'
+      const marker = new maplibregl.Marker({ element: el })
+        .setLngLat([longitude, latitude])
+        .addTo(mapInstance)
+      locationMarkerCleanup = () => marker.remove()
+
+      // 8 秒后自动移除标记
+      setTimeout(() => _clearLocationMarker(), 8000)
+
+      isLocating.value = false
+      logStore.logOperation('locate-me', `已定位到 (${longitude.toFixed(4)}, ${latitude.toFixed(4)})`)
+    },
+    (err) => {
+      isLocating.value = false
+      let message: string
+      let hint: string
+      switch (err.code) {
+        case 1:
+          message = '定位权限被拒绝'
+          hint = '请点击地址栏左侧的锁形图标，将位置权限改为"允许"后刷新页面'
+          break
+        case 2:
+          message = '位置不可用'
+          hint = '请检查网络连接，或确认系统定位服务（GPS/Wi-Fi）已开启'
+          break
+        case 3:
+          message = '定位超时'
+          hint = '请移动到开阔地带或检查网络后重试'
+          break
+        default:
+          message = `定位失败: ${err.message}`
+          hint = '请稍后重试，或检查浏览器定位设置'
+      }
+      _showLocateError(message, hint)
+      logStore.logOperation('locate-me', `${message}（${hint}）`)
+    },
+    { enableHighAccuracy: true, timeout: 10000, maximumAge: 30000 },
+  )
+}
 </script>
 
 <template>
@@ -507,6 +659,37 @@ onBeforeUnmount(() => {
         >›</button>
       </div>
     </div>
+
+    <!-- 自动定位按钮 -->
+    <button
+      class="locate-me-btn"
+      :class="{ locating: isLocating }"
+      type="button"
+      title="定位到当前位置"
+      :disabled="isLocating"
+      @click="handleLocateMe"
+    >
+      <svg v-if="!isLocating" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <circle cx="12" cy="12" r="4"/>
+        <line x1="12" y1="2" x2="12" y2="5"/>
+        <line x1="12" y1="19" x2="12" y2="22"/>
+        <line x1="2" y1="12" x2="5" y2="12"/>
+        <line x1="19" y1="12" x2="22" y2="12"/>
+      </svg>
+      <span v-else class="locate-spinner"></span>
+    </button>
+
+    <!-- 定位失败提示 -->
+    <Transition name="locate-error">
+      <div v-if="locateError" class="locate-error-tip">
+        <span class="locate-error-icon">⚠</span>
+        <div class="locate-error-body">
+          <p class="locate-error-msg">{{ locateError.message }}</p>
+          <p class="locate-error-hint">{{ locateError.hint }}</p>
+        </div>
+        <button class="locate-error-close" @click="locateError = null">×</button>
+      </div>
+    </Transition>
   </section>
 </template>
 
@@ -1158,5 +1341,163 @@ onBeforeUnmount(() => {
   .map-note { left: 0.75rem; right: 0.75rem; bottom: 8.3rem; max-width: none; }
   :deep(.maplibregl-ctrl-bottom-left) { left: 0.75rem; bottom: 0.75rem; }
   :deep(.maplibregl-ctrl-bottom-right) { right: 0.75rem; bottom: 0.75rem; }
+  .locate-me-btn { right: 3.55rem; bottom: 0.75rem; }
+}
+
+/* ── 自动定位按钮 ─────────────────────────────────────────────────────── */
+.locate-me-btn {
+  position: absolute;
+  right: 3.8rem;
+  bottom: 0.8rem;
+  z-index: 25;
+  width: 2.4rem;
+  height: 2.4rem;
+  border: 1px solid rgba(136, 192, 255, 0.18);
+  border-radius: 0.6rem;
+  background: rgba(4, 12, 23, 0.55);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  color: #9fb6cc;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: border-color 0.2s ease, color 0.2s ease, background 0.2s ease;
+  pointer-events: auto;
+}
+
+.locate-me-btn:hover:not(:disabled) {
+  border-color: rgba(90, 213, 255, 0.4);
+  color: #5ad5ff;
+  background: rgba(10, 132, 255, 0.15);
+}
+
+.locate-me-btn:active:not(:disabled) {
+  transform: scale(0.95);
+}
+
+.locate-me-btn.locating {
+  border-color: rgba(90, 213, 255, 0.3);
+  color: #5ad5ff;
+}
+
+.locate-spinner {
+  width: 1rem;
+  height: 1rem;
+  border: 2px solid rgba(90, 213, 255, 0.2);
+  border-top-color: #5ad5ff;
+  border-radius: 50%;
+  animation: locate-spin 0.8s linear infinite;
+}
+
+@keyframes locate-spin {
+  to { transform: rotate(360deg); }
+}
+
+/* ── 定位失败提示 ─────────────────────────────────────────────────────── */
+.locate-error-tip {
+  position: absolute;
+  right: 3.5rem;
+  bottom: 3.4rem;
+  z-index: 26;
+  display: flex;
+  align-items: flex-start;
+  gap: 0.5rem;
+  max-width: 18rem;
+  padding: 0.55rem 0.7rem;
+  border: 1px solid rgba(255, 138, 138, 0.28);
+  border-radius: 0.6rem;
+  background: rgba(40, 12, 18, 0.82);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+  pointer-events: auto;
+}
+
+.locate-error-icon {
+  color: #ff8a8a;
+  font-size: 0.85rem;
+  flex: none;
+  margin-top: 0.05rem;
+}
+
+.locate-error-body {
+  flex: 1;
+  min-width: 0;
+}
+
+.locate-error-msg {
+  margin: 0;
+  color: #ffb0b0;
+  font-size: 0.68rem;
+  font-weight: 600;
+  line-height: 1.3;
+}
+
+.locate-error-hint {
+  margin: 0.15rem 0 0;
+  color: #c8a0a0;
+  font-size: 0.58rem;
+  line-height: 1.4;
+}
+
+.locate-error-close {
+  border: none;
+  background: transparent;
+  color: #8a6060;
+  font-size: 0.9rem;
+  line-height: 1;
+  cursor: pointer;
+  flex: none;
+  padding: 0;
+  margin-top: -0.1rem;
+}
+
+.locate-error-close:hover { color: #ff8a8a; }
+
+.locate-error-enter-active,
+.locate-error-leave-active {
+  transition: opacity 0.25s ease, transform 0.25s ease;
+}
+
+.locate-error-enter-from,
+.locate-error-leave-to {
+  opacity: 0;
+  transform: translateY(0.4rem);
+}
+
+/* ── 定位标记 ─────────────────────────────────────────────────────────── */
+:deep(.geolocation-marker) {
+  pointer-events: none;
+}
+
+:deep(.geo-dot) {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 0.7rem;
+  height: 0.7rem;
+  border-radius: 50%;
+  background: #5ad5ff;
+  border: 2px solid #fff;
+  box-shadow: 0 0 6px rgba(90, 213, 255, 0.6);
+}
+
+:deep(.geo-pulse) {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 2rem;
+  height: 2rem;
+  border-radius: 50%;
+  background: rgba(90, 213, 255, 0.25);
+  animation: geo-pulse-anim 2s ease-out infinite;
+}
+
+@keyframes geo-pulse-anim {
+  0% { transform: translate(-50%, -50%) scale(0.5); opacity: 1; }
+  100% { transform: translate(-50%, -50%) scale(2.5); opacity: 0; }
 }
 </style>

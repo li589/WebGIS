@@ -11,7 +11,8 @@
 - `main` 只放相对稳定、可展示、可交付的代码
 - `dev` 用于日常开发和合并
 - 前端主要目录：`Code/frontend`
-- 后端主要目录：`Code/backend`、`Code/algorithms`、`Code/infra`
+- 后端主要目录：`Code/backend`、`Code/algorithms`
+- 说明：早期约定中的 `Code/infra` 当前不存在；基础设施见 `Code/backend/docker-compose.yml` 与根目录 `launch.py`
 - 共同维护目录：`Code/docs`、`Code/shared`、根目录 `README.md`
 
 ## Windows 和 Linux 下的 Git 安装与基础配置
@@ -256,7 +257,6 @@ git pull origin dev
 
 - `Code/backend`
 - `Code/algorithms`
-- `Code/infra`
 
 我如果要改这些公共目录，会先沟通：
 
@@ -273,7 +273,7 @@ git pull origin dev
 ```bash
 git checkout dev
 git fetch origin
-git restore --source origin/dev -- Code/backend Code/algorithms Code/infra
+git restore --source origin/dev -- Code/backend Code/algorithms
 git restore --source origin/dev -- Code/shared Code/docs README.md Code/README.md
 ```
 
@@ -319,7 +319,7 @@ git stash pop
 ```bash
 git checkout dev
 git fetch origin
-git restore --source origin/dev -- Code/backend Code/algorithms Code/infra
+git restore --source origin/dev -- Code/backend Code/algorithms
 git restore --source origin/dev -- Code/shared Code/docs README.md Code/README.md
 ```
 
@@ -402,7 +402,6 @@ git pull origin dev
 
 - `Code/backend`
 - `Code/algorithms`
-- `Code/infra`
 
 我尽量不主动改这些目录，除非已经和前端开发者确认：
 
@@ -473,7 +472,7 @@ git restore --source origin/dev -- Code/frontend
 git restore --source origin/dev -- Code/shared Code/docs README.md Code/README.md
 ```
 
-然后我在 `Code/backend`、`Code/algorithms`、`Code/infra` 中开发。
+然后我在 `Code/backend`、`Code/algorithms` 中开发。
 
 开发完成后，我执行：
 
@@ -599,5 +598,5 @@ git restore --source origin/dev -- Code/shared Code/docs README.md Code/README.m
 ## 最后一句话
 
 如果我是前端开发者，我重点维护 `Code/frontend`，同步时优先拿后端和共享目录。
-如果我是后端开发者，我重点维护 `Code/backend`、`Code/algorithms`、`Code/infra`，同步时优先拿前端和共享目录。
+如果我是后端开发者，我重点维护 `Code/backend`、`Code/algorithms`，同步时优先拿前端和共享目录。
 不管我是哪种角色，我都尽量避免在本地有重要未提交改动时直接执行 `git restore --source ...`。

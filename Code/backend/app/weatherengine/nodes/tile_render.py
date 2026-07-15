@@ -1,6 +1,7 @@
 """天气瓦片渲染节点。
 
 按标准 Web Mercator z/x/y 渲染单个瓦片 GeoJSON，供 workflow 使用。
+生成逻辑委托 WeatherTileService，与 /unified-tiles 热路径共用缓存与网格语义。
 """
 
 from __future__ import annotations
@@ -9,15 +10,11 @@ import logging
 from datetime import datetime, timezone
 from typing import Any
 
-from app.core.config import settings
 from app.services.result_storage import result_storage_service
 from app.workflow_engine.base import BaseNode
 from app.workflow_engine.enums import PortKind, RunStatus
 from app.workflow_engine.models import ArtifactRecord, NodeExecutionResult, NodeSpec, PortSpec
-from app.weatherengine.client import OpenMeteoClient
-from app.weatherengine.constants import WEATHER_LAYER_SPECS
-from app.weatherengine.nodes._utils import get_weather_engine_service
-from app.weatherengine.tile_service import _grid_data_for_hour, tile_bbox, zoom_to_resolution
+from app.weatherengine.tile_service import get_weather_tile_service
 from shared.contracts.api_contracts import ResultKind
 
 logger = logging.getLogger(__name__)
@@ -35,54 +32,32 @@ class WeatherTileRenderNode(BaseNode):
             x = int(inputs.get("x", 0))
             y = int(inputs.get("y", 0))
             hour = int(inputs.get("hour", 0))
-            model = inputs.get("model") or settings.weather_default_model
+            model = inputs.get("model")
 
-            spec = WEATHER_LAYER_SPECS.get(layer_id)
-            if spec is None:
-                return NodeExecutionResult(
-                    node_id=self.spec.node_id,
-                    status=RunStatus.failed,
-                    warnings=[f"Unsupported weather tile layer: {layer_id}"],
-                )
-
-            bbox = tile_bbox(z, x, y)
-            resolution = zoom_to_resolution(z)
-
-            # 直接调用 OpenMeteoClient 并传入固定分辨率，避免相邻瓦片网格不一致
-            client = OpenMeteoClient()
-            grid_data, cache_status = client.fetch_grid_forecast(
-                bbox=bbox,
-                resolution=resolution,
-                layer_spec=spec,
+            tile_service = get_weather_tile_service()
+            geojson, cache_status = tile_service.get_or_generate_tile_sync(
+                layer_id=layer_id,
+                z=z,
+                x=x,
+                y=y,
+                hour=hour,
                 model=model,
-                ttl_seconds=settings.weather_cache_ttl_seconds,
-                pressure_levels=spec.pressure_levels or None,
             )
-            grid_data = _grid_data_for_hour(grid_data, hour)
 
-            service = get_weather_engine_service()
-            geojson = service._build_geojson_from_grid(grid_data=grid_data, layer_id=layer_id)
-
-            # 注入完整瓦片元数据，便于前端调试与结果校验
-            geojson["_tile_meta"] = {
-                "layer_id": layer_id,
-                "z": z,
-                "x": x,
-                "y": y,
-                "hour": hour,
-                "model": model,
-                "resolution": resolution,
-                "bbox": bbox.model_dump(mode="json"),
-                "feature_count": len(geojson.get("features", [])),
-                "upstream_cache_status": cache_status,
-            }
+            tile_meta = dict(geojson.get("_tile_meta") or {})
+            tile_meta["service_cache_status"] = cache_status
 
             logger.info(
                 "[WeatherTileRenderNode] generated layer=%s z=%d x=%d y=%d hour=%d "
-                "resolution=%.2f features=%d cache=%s bbox=(%.4f,%.4f,%.4f,%.4f)",
-                layer_id, z, x, y, hour, resolution,
-                len(geojson.get("features", [])), cache_status,
-                bbox.west, bbox.south, bbox.east, bbox.north,
+                "features=%d cache=%s service_cache=%s",
+                layer_id,
+                z,
+                x,
+                y,
+                hour,
+                len(geojson.get("features", [])),
+                tile_meta.get("upstream_cache_status"),
+                cache_status,
             )
 
             artifact = self._store_geojson_artifact(geojson)
@@ -92,7 +67,7 @@ class WeatherTileRenderNode(BaseNode):
                 status=RunStatus.completed,
                 outputs={
                     "geojson": geojson,
-                    "tile_meta": geojson["_tile_meta"],
+                    "tile_meta": tile_meta,
                 },
                 artifacts=[artifact] if artifact else [],
             )

@@ -1,7 +1,8 @@
 import type { ImportedGeometryType } from '../../stores/import'
-import { Popup } from 'maplibre-gl'
+import { Popup, type MapLayerMouseEvent } from 'maplibre-gl'
 
 type MapInstance = import('maplibre-gl').Map
+type MapLayerEventType = 'click' | 'mouseenter' | 'mouseleave'
 
 export interface ImportedLayerStyle {
   color?: string
@@ -20,20 +21,65 @@ interface LoadedImportedLayer {
   sourceId: string
   layerIds: string[]
   geometryType: ImportedGeometryType
+  bounds: [number, number, number, number] | null
   /** 注册的事件监听器引用，用于 removeLayer 时精确移除 */
-  eventHandlers: Array<{ type: string; layerId: string; handler: (...args: any[]) => void }>
+  eventHandlers: Array<{ type: MapLayerEventType; layerId: string; handler: (e: MapLayerMouseEvent) => void }>
 }
 
-const DEFAULT_POINT_COLOR = '#5ad5ff'
-const DEFAULT_LINE_COLOR = '#5ad5ff'
-const DEFAULT_FILL_COLOR = '#5ad5ff'
+/** 与导入矢量 display accent（#7ee0a8）对齐 */
+const DEFAULT_POINT_COLOR = '#7ee0a8'
+const DEFAULT_LINE_COLOR = '#7ee0a8'
+const DEFAULT_FILL_COLOR = '#7ee0a8'
 
 function _safeId(id: string): string {
   return id.replace(/[^a-zA-Z0-9_-]/g, '-')
 }
 
+function escapeHtml(text: string): string {
+  return text
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;')
+}
+
 function _hasGeometryType(fc: GeoJSON.FeatureCollection, types: string[]): boolean {
-  return fc.features.some((f) => f.geometry && types.includes(f.geometry.type))
+  return fc.features.some((f: GeoJSON.Feature) => f.geometry && types.includes(f.geometry.type))
+}
+
+function _collectBounds(fc: GeoJSON.FeatureCollection): [number, number, number, number] | null {
+  let minLng = Infinity
+  let minLat = Infinity
+  let maxLng = -Infinity
+  let maxLat = -Infinity
+  const visitCoords = (coords: unknown): void => {
+    if (!Array.isArray(coords) || coords.length === 0) return
+    if (typeof coords[0] === 'number' && typeof coords[1] === 'number') {
+      const lng = coords[0] as number
+      const lat = coords[1] as number
+      if (!Number.isFinite(lng) || !Number.isFinite(lat)) return
+      minLng = Math.min(minLng, lng)
+      minLat = Math.min(minLat, lat)
+      maxLng = Math.max(maxLng, lng)
+      maxLat = Math.max(maxLat, lat)
+      return
+    }
+    for (const child of coords) visitCoords(child)
+  }
+  const visitGeometry = (geometry: GeoJSON.Geometry | null | undefined): void => {
+    if (!geometry) return
+    if (geometry.type === 'GeometryCollection') {
+      for (const child of geometry.geometries) visitGeometry(child)
+      return
+    }
+    visitCoords(geometry.coordinates)
+  }
+  for (const feature of fc.features) {
+    visitGeometry(feature.geometry)
+  }
+  if (!Number.isFinite(minLng) || !Number.isFinite(minLat)) return null
+  return [minLng, minLat, maxLng, maxLat]
 }
 
 export function createImportedLayerModule(options: CreateImportedLayerModuleOptions) {
@@ -60,6 +106,8 @@ export function createImportedLayerModule(options: CreateImportedLayerModuleOpti
       data: geojson,
     } as any)
 
+    const beforeAdmin = options.map.getLayer('admin-fill') ? 'admin-fill' : undefined
+
     // 根据几何类型添加对应的渲染图层
     // 面图层（Polygon / MultiPolygon）
     if (_hasGeometryType(geojson, ['Polygon', 'MultiPolygon'])) {
@@ -74,7 +122,7 @@ export function createImportedLayerModule(options: CreateImportedLayerModuleOpti
           'fill-opacity': 0.25,
         },
         layout: { visibility: 'visible' },
-      })
+      }, beforeAdmin)
       layerIds.push(fillId)
     }
 
@@ -91,7 +139,7 @@ export function createImportedLayerModule(options: CreateImportedLayerModuleOpti
           'line-opacity': 0.9,
         },
         layout: { visibility: 'visible' },
-      })
+      }, beforeAdmin)
       layerIds.push(lineId)
     }
 
@@ -111,7 +159,7 @@ export function createImportedLayerModule(options: CreateImportedLayerModuleOpti
           'circle-opacity': 0.9,
         },
         layout: { visibility: 'visible' },
-      })
+      }, beforeAdmin)
       layerIds.push(circleId)
 
       // 点标签
@@ -133,29 +181,29 @@ export function createImportedLayerModule(options: CreateImportedLayerModuleOpti
           'text-halo-color': '#0a1a2a',
           'text-halo-width': 1.5,
         },
-      })
+      }, beforeAdmin)
       layerIds.push(labelId)
     }
 
     // 推断主几何类型
-    const primaryType = geojson.features.find((f) => f.geometry)?.geometry?.type as ImportedGeometryType ?? 'Unknown'
+    const primaryType = geojson.features.find((f: GeoJSON.Feature) => f.geometry)?.geometry?.type as ImportedGeometryType ?? 'Unknown'
 
     // 注册事件监听器并保存引用，以便 removeLayer 时精确移除
     const eventHandlers: LoadedImportedLayer['eventHandlers'] = []
 
     for (const layerId of layerIds) {
-      const clickHandler = (e: any) => {
+      const clickHandler = (e: MapLayerMouseEvent) => {
         if (!e.features || e.features.length === 0) return
         const feature = e.features[0]
         const props = feature.properties ?? {}
         const propLines = Object.entries(props)
-          .map(([k, v]) => `<tr><td class="pk">${k}</td><td class="pv">${v}</td></tr>`)
+          .map(([k, v]) => `<tr><td class="pk">${escapeHtml(k)}</td><td class="pv">${escapeHtml(String(v ?? ''))}</td></tr>`)
           .join('')
-        const html = `<div class="imported-popup"><strong>${name}</strong><table>${propLines}</table></div>`
+        const html = `<div class="imported-popup"><strong>${escapeHtml(name)}</strong><table>${propLines}</table></div>`
         new Popup().setLngLat(e.lngLat).setHTML(html).addTo(options.map)
       }
-      const enterHandler = () => { options.map.getCanvas().style.cursor = 'pointer' }
-      const leaveHandler = () => { options.map.getCanvas().style.cursor = '' }
+      const enterHandler = (_e: MapLayerMouseEvent) => { options.map.getCanvas().style.cursor = 'pointer' }
+      const leaveHandler = (_e: MapLayerMouseEvent) => { options.map.getCanvas().style.cursor = '' }
 
       options.map.on('click', layerId, clickHandler)
       options.map.on('mouseenter', layerId, enterHandler)
@@ -172,6 +220,7 @@ export function createImportedLayerModule(options: CreateImportedLayerModuleOpti
       sourceId,
       layerIds,
       geometryType: primaryType,
+      bounds: _collectBounds(geojson),
       eventHandlers,
     })
   }
@@ -225,6 +274,42 @@ export function createImportedLayerModule(options: CreateImportedLayerModuleOpti
     return Array.from(loaded.keys())
   }
 
+  /** 返回某导入层当前在地图上的 MapLibre layer id（自下而上） */
+  function getLayerIds(id: string): string[] {
+    return loaded.get(id)?.layerIds.filter((layerId) => Boolean(options.map.getLayer(layerId))) ?? []
+  }
+
+  function fitLayers(ids: string[]): void {
+    if (!options.getMapReady()) return
+    let minLng = Infinity
+    let minLat = Infinity
+    let maxLng = -Infinity
+    let maxLat = -Infinity
+    for (const id of ids) {
+      const bounds = loaded.get(id)?.bounds
+      if (!bounds) continue
+      minLng = Math.min(minLng, bounds[0])
+      minLat = Math.min(minLat, bounds[1])
+      maxLng = Math.max(maxLng, bounds[2])
+      maxLat = Math.max(maxLat, bounds[3])
+    }
+    if (!Number.isFinite(minLng) || !Number.isFinite(minLat)) return
+    // 避免零面积包围盒导致 fitBounds 异常
+    const pad = 0.0001
+    if (maxLng - minLng < pad) {
+      minLng -= pad
+      maxLng += pad
+    }
+    if (maxLat - minLat < pad) {
+      minLat -= pad
+      maxLat += pad
+    }
+    options.map.fitBounds(
+      [[minLng, minLat], [maxLng, maxLat]],
+      { padding: 48, maxZoom: 14, duration: 600 },
+    )
+  }
+
   function dispose(): void {
     for (const id of Array.from(loaded.keys())) {
       removeLayer(id)
@@ -237,6 +322,8 @@ export function createImportedLayerModule(options: CreateImportedLayerModuleOpti
     setLayerVisibility,
     setLayerOpacity,
     getLoadedIds,
+    getLayerIds,
+    fitLayers,
     dispose,
   }
 }

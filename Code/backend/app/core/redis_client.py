@@ -1,8 +1,12 @@
 """Lightweight Redis client for caching and distributed locks.
 
 Provides a singleton Redis client with graceful degradation when Redis is
-unavailable. Used for weather data caching and cross-worker request
-deduplication.
+unavailable. Used for weather data caching, request metrics, and cross-worker
+request deduplication.
+
+When Redis flaps or goes down after a successful connect, a short circuit
+breaker skips further Redis calls for a cooldown window so HTTP middleware
+(and other hot paths) do not pay a full socket timeout on every request.
 """
 
 from __future__ import annotations
@@ -19,30 +23,71 @@ from app.core.config import settings
 logger = logging.getLogger(__name__)
 
 _client: redis.Redis | None = None
-_client_init_failed = False
+
+# Circuit breaker: after Redis errors, skip reconnect/ops until cooldown elapses.
+_circuit_open_until: float = 0.0
+_consecutive_failures: int = 0
+_CIRCUIT_FAILURE_THRESHOLD = 1
+_CIRCUIT_COOLDOWN_SECONDS = 30.0
+# Keep connect/read short so a single probe after cooldown cannot stall the API for long.
+_SOCKET_CONNECT_TIMEOUT = 0.5
+_SOCKET_TIMEOUT = 0.5
+
+
+def _circuit_is_open() -> bool:
+    return time.monotonic() < _circuit_open_until
+
+
+def _mark_redis_success() -> None:
+    global _consecutive_failures
+    _consecutive_failures = 0
+
+
+def _mark_redis_failure(reason: str) -> None:
+    """Invalidate sticky client and open the circuit after consecutive failures."""
+    global _client, _circuit_open_until, _consecutive_failures
+    _client = None
+    _consecutive_failures += 1
+    if _consecutive_failures < _CIRCUIT_FAILURE_THRESHOLD:
+        return
+    _circuit_open_until = time.monotonic() + _CIRCUIT_COOLDOWN_SECONDS
+    logger.warning(
+        "[RedisClient] circuit open for %.0fs after failure: %s",
+        _CIRCUIT_COOLDOWN_SECONDS,
+        reason,
+    )
+
+
+def reset_redis_client_state() -> None:
+    """Test helper: clear singleton client and circuit breaker state."""
+    global _client, _circuit_open_until, _consecutive_failures
+    _client = None
+    _circuit_open_until = 0.0
+    _consecutive_failures = 0
 
 
 def get_redis_client() -> redis.Redis | None:
-    """Return a singleton Redis client, or None if Redis is unavailable."""
-    global _client, _client_init_failed
+    """Return a singleton Redis client, or None if Redis is unavailable / circuit open."""
+    global _client
+    if _circuit_is_open():
+        return None
     if _client is not None:
         return _client
-    if _client_init_failed:
-        return None
     try:
         client = redis.Redis.from_url(
             settings.redis_url,
-            socket_connect_timeout=2,
-            socket_timeout=2,
+            socket_connect_timeout=_SOCKET_CONNECT_TIMEOUT,
+            socket_timeout=_SOCKET_TIMEOUT,
             decode_responses=True,
         )
         client.ping()
         _client = client
+        _mark_redis_success()
         logger.info("[RedisClient] connected to %s", settings.redis_url)
         return _client
     except Exception as exc:
-        _client_init_failed = True
-        logger.warning("[RedisClient] unavailable, falling back to file cache: %s", exc)
+        _mark_redis_failure(str(exc))
+        logger.warning("[RedisClient] unavailable, falling back to local cache: %s", exc)
         return None
 
 
@@ -55,8 +100,10 @@ def cache_get_json(key: str) -> Any | None:
         raw = client.get(key)
         if raw is None:
             return None
+        _mark_redis_success()
         return json.loads(raw)
     except (redis.RedisError, json.JSONDecodeError) as exc:
+        _mark_redis_failure(f"cache_get_json:{exc}")
         logger.debug("[RedisClient] cache_get_json error for key=%s: %s", key, exc)
         return None
 
@@ -68,8 +115,10 @@ def cache_set_json(key: str, value: Any, ttl_seconds: int) -> bool:
         return False
     try:
         client.setex(key, ttl_seconds, json.dumps(value, ensure_ascii=False))
+        _mark_redis_success()
         return True
     except (redis.RedisError, TypeError, ValueError) as exc:
+        _mark_redis_failure(f"cache_set_json:{exc}")
         logger.debug("[RedisClient] cache_set_json error for key=%s: %s", key, exc)
         return False
 
@@ -85,8 +134,10 @@ def acquire_dedup_lock(key: str, ttl_seconds: int = 30) -> bool:
         return True  # No Redis — allow the request to proceed
     try:
         result = client.set(key, "1", nx=True, ex=ttl_seconds)
+        _mark_redis_success()
         return result is not None
     except redis.RedisError as exc:
+        _mark_redis_failure(f"acquire_dedup_lock:{exc}")
         logger.debug("[RedisClient] acquire_dedup_lock error for key=%s: %s", key, exc)
         return True  # On error, allow the request to proceed
 
@@ -98,7 +149,9 @@ def release_dedup_lock(key: str) -> None:
         return
     try:
         client.delete(key)
+        _mark_redis_success()
     except redis.RedisError as exc:
+        _mark_redis_failure(f"release_dedup_lock:{exc}")
         logger.debug("[RedisClient] release_dedup_lock error for key=%s: %s", key, exc)
 
 
@@ -114,8 +167,10 @@ def wait_for_dedup(key: str, timeout_seconds: float = 30.0, poll_interval: float
     while time.monotonic() < deadline:
         try:
             if client.get(key) is None:
+                _mark_redis_success()
                 return True
-        except redis.RedisError:
+        except redis.RedisError as exc:
+            _mark_redis_failure(f"wait_for_dedup:{exc}")
             return False
         time.sleep(poll_interval)
     return False
@@ -149,10 +204,12 @@ def acquire_api_slot(timeout: float = 30.0) -> bool:
                 # 首个调用者设置 TTL，防止 worker 崩溃后计数器卡住
                 client.expire(_API_CONCURRENT_KEY, _API_SLOT_TTL)
             if current <= _MAX_CONCURRENT_API_CALLS:
+                _mark_redis_success()
                 return True
             # 超过限制，回退计数并等待
             client.decr(_API_CONCURRENT_KEY)
-        except redis.RedisError:
+        except redis.RedisError as exc:
+            _mark_redis_failure(f"acquire_api_slot:{exc}")
             return True  # Redis 出错时降级放行
         time.sleep(0.5)
     return False
@@ -168,8 +225,9 @@ def release_api_slot() -> None:
         if current < 0:
             # 计数器异常（如 TTL 过期后 DECR），重置为 0
             client.set(_API_CONCURRENT_KEY, 0, ex=_API_SLOT_TTL)
-    except redis.RedisError:
-        pass
+        _mark_redis_success()
+    except redis.RedisError as exc:
+        _mark_redis_failure(f"release_api_slot:{exc}")
 
 
 # ─── 请求耗时指标 ─────────────────────────────────────────────────────────────
@@ -188,8 +246,10 @@ def record_request_metric(
     """记录一次请求的耗时到 Redis（按天分桶、按端点分组）。
 
     使用 LPUSH + LTRIM 保持每端点每天最多 1000 条采样，TTL 25h。
-    Redis 不可用时静默跳过。
+    Redis 不可用或 circuit open 时立即跳过，不阻塞 HTTP 响应路径。
     """
+    if _circuit_is_open():
+        return
     client = get_redis_client()
     if client is None:
         return
@@ -201,7 +261,9 @@ def record_request_metric(
         pipe.ltrim(key, 0, _METRICS_LIST_CAP - 1)
         pipe.expire(key, _METRICS_TTL_SECONDS)
         pipe.execute()
+        _mark_redis_success()
     except redis.RedisError as exc:
+        _mark_redis_failure(f"record_request_metric:{exc}")
         logger.debug("[RedisClient] record_request_metric error: %s", exc)
 
 
@@ -256,10 +318,12 @@ def get_metrics_summary(date_str: str | None = None) -> dict[str, Any]:
                 "max_ms": round(timings[-1], 1),
             })
         endpoints.sort(key=lambda e: e["p95_ms"], reverse=True)
+        _mark_redis_success()
         return {
             "available": True,
             "date": date_str,
             "endpoints": endpoints,
         }
     except redis.RedisError as exc:
+        _mark_redis_failure(f"get_metrics_summary:{exc}")
         return {"available": False, "error": str(exc)}

@@ -2,6 +2,7 @@ import { WindBarbLayer } from './wind-barb-layer'
 import { WindContourLayer } from './wind-contour-layer'
 import { WindParticleCanvas } from './wind-particle-canvas'
 import { removeWeatherMapArtifacts } from './weather-overlay-maplibre'
+import { paletteToParticleColors } from './weather-render'
 import type { WeatherOverlayState } from './weather-overlay-registry'
 import type { WindGeoJSON } from './types'
 
@@ -20,6 +21,7 @@ export class WindParticleOverlayController {
   private lastWindGeojsonUrl: string | null = null
   private currentParticleFlowCatalogId: string | null = null
   private windParticleFetchToken = 0
+  private windParticleFetchAbort: AbortController | null = null
 
   constructor(map: MapInstance) {
     this.map = map
@@ -33,10 +35,18 @@ export class WindParticleOverlayController {
     this.currentParticleFlowCatalogId = catalogId
   }
 
+  private abortPendingGeojsonFetch() {
+    if (this.windParticleFetchAbort) {
+      this.windParticleFetchAbort.abort()
+      this.windParticleFetchAbort = null
+    }
+  }
+
   reset(options?: { invalidatePendingFetch?: boolean }) {
     debugLog('WindParticleController', 'reset', 'invalidatePendingFetch', options?.invalidatePendingFetch)
     if (options?.invalidatePendingFetch !== false) {
       this.windParticleFetchToken++
+      this.abortPendingGeojsonFetch()
     }
     if (this.windParticleCanvas) {
       this.windParticleCanvas.destroy()
@@ -96,11 +106,14 @@ export class WindParticleOverlayController {
     const urlChanged = this.lastWindGeojsonUrl !== overlayState.geojsonUrl
     const inlineGeojson = overlayState.geojsonData as WindGeoJSON | null
     let geojson: WindGeoJSON | null = inlineGeojson ?? (urlChanged ? null : this.currentWindGeojson)
+    this.abortPendingGeojsonFetch()
     const fetchToken = ++this.windParticleFetchToken
+    const fetchAbort = new AbortController()
+    this.windParticleFetchAbort = fetchAbort
 
     if (!inlineGeojson && urlChanged && overlayState.geojsonUrl) {
       try {
-        const resp = await fetch(overlayState.geojsonUrl)
+        const resp = await fetch(overlayState.geojsonUrl, { signal: fetchAbort.signal })
         if (!resp.ok) {
           console.warn('[WindParticleController] sync: fetch failed status=%d', resp.status)
           return
@@ -118,8 +131,16 @@ export class WindParticleOverlayController {
         this.currentWindGeojson = fetchedGeojson
         this.lastWindGeojsonUrl = overlayState.geojsonUrl
       } catch (err) {
+        if (err instanceof DOMException && err.name === 'AbortError') {
+          debugLog('WindParticleController', 'sync fetch aborted')
+          return
+        }
         console.error('[WindParticleController] sync: fetch error', err)
         return
+      } finally {
+        if (this.windParticleFetchAbort === fetchAbort) {
+          this.windParticleFetchAbort = null
+        }
       }
     }
 
@@ -199,6 +220,12 @@ export class WindParticleOverlayController {
       this.windParticleCanvas.start()
     } else {
       this.windParticleCanvas.updateGeoJSON(geojson)
+    }
+
+    // 应用配色方案到粒子色阶（支持用户自定义配色覆盖）
+    const particleColors = paletteToParticleColors(overlayState.renderHint.palette)
+    if (particleColors.length > 0) {
+      this.windParticleCanvas.setColors(particleColors)
     }
 
     if (enableBarbLayer) {

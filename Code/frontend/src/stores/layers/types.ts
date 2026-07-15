@@ -21,7 +21,7 @@ export interface LayerSource {
   /** 需要后端坐标转换 */
   needsBackendTransform: boolean
   /** 坐标系 */
-  coordSys: 'EPSG:3857' | 'GCJ-02' | 'BD-09'
+  coordSys: 'EPSG:3857' | 'EPSG:4326' | 'GCJ-02' | 'BD-09'
   /** 数据更新频率描述 */
   updateFrequency: string
   attribution?: string
@@ -112,6 +112,8 @@ export interface JobLayerItem {
   jobId: string
   /** 作业标签/名称 */
   name: string
+  /** 关联的图层目录 ID（用于面板列表展示与重试/取消操作） */
+  catalogId?: string
   commandType: string
   status: JobStatus
   /** 0-100 */
@@ -149,6 +151,8 @@ export interface ActiveLayer {
   /** 实例 ID (uuid)，用于列表 key 和唯一性 */
   instanceId: string
   catalogId: string
+  /** 显示名覆盖（导入图层等无 catalog 条目时使用） */
+  name?: string
   /** 是否可见 */
   visible: boolean
   /** 透明度 0-1 */
@@ -159,8 +163,14 @@ export interface ActiveLayer {
   isAdminBoundary: boolean
   /** 若来自作业，则关联作业信息 */
   jobLayer?: JobLayerItem
-  /** 数据状态：catalog | real */
-  dataState: 'catalog' | 'real'
+  /** 本地导入的矢量数据 */
+  importedVector?: import('./imported-vector').ImportedVectorPayload
+  /** 本地导入的栅格（后端 overlay_layer_id） */
+  importedRaster?: import('./imported-raster').ImportedRasterPayload
+  /** 数据状态：catalog | real | imported */
+  dataState: 'catalog' | 'real' | 'imported'
+  /** 用户自定义配色方案覆盖（覆盖默认 renderHint.palette） */
+  paletteOverride?: string | null
 }
 
 // ─── Layer sidebar view mode ──────────────────────────────────────────────────
@@ -207,11 +217,24 @@ export interface ActiveLayerDisplay {
   missingFieldsLabel: string
   hotspots: LayerHotspot[]
   isAdminBoundary: boolean
+  /** 是否为本地导入矢量图层 */
+  isImported: boolean
+  /** 是否为本地导入栅格图层 */
+  isImportedRaster: boolean
   jobLayer?: JobLayerItem
   visible: boolean
   opacity: number
   order: number
-  dataState: 'catalog' | 'real'
+  dataState: 'catalog' | 'real' | 'imported'
   /** 天气图层默认渲染提示（tile manager 路径下使用） */
   renderHint?: WeatherLayerRenderHint
+  /** 用户自定义配色方案覆盖 */
+  paletteOverride?: string | null
+  /** 导入矢量元信息（仅 isImported） */
+  importedGeometryType?: string
+  importedFeatureCount?: number
+  /** 导入栅格元信息（仅 isImportedRaster） */
+  importedRasterBounds?: [number, number, number, number]
+  /** 导入数据包围盒（矢量 / 栅格） */
+  importedBounds?: [number, number, number, number]
 }

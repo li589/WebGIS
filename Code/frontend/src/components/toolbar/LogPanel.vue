@@ -39,10 +39,6 @@ function toggleExpand(id: string) {
 function handleClearAll() {
   logStore.clearLogs()
 }
-
-function handleClearCategory(cat: LogCategory) {
-  logStore.clearCategory(cat)
-}
 </script>
 
 <template>

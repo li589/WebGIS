@@ -35,6 +35,47 @@ class _FakeOpenMeteoClient:
     ) -> tuple[dict[str, Any], str]:
         return (_build_mock_payload(), "miss")
 
+    def fetch_grid_forecast(
+        self,
+        *,
+        bbox,
+        resolution: float,
+        layer_spec,
+        model: str,
+        ttl_seconds: int,
+        pressure_levels: tuple[int, ...] | None = None,
+    ) -> tuple[dict[str, Any], str]:
+        return (
+            {
+                "grid": {
+                    "bbox": {
+                        "west": bbox.west,
+                        "south": bbox.south,
+                        "east": bbox.east,
+                        "north": bbox.north,
+                    },
+                    "rows": 2,
+                    "cols": 2,
+                    "resolution": resolution,
+                    "lats": [bbox.south + 0.25, bbox.south + 0.75],
+                    "lons": [bbox.west + 0.25, bbox.west + 0.75],
+                },
+                "data": {
+                    "current": {
+                        "temperature_2m": [26.1, 27.4, 28.2, 29.0],
+                        "precipitation": [0.3, 1.1, 2.4, 0.8],
+                        "relative_humidity_2m": [65.0, 72.0, 78.0, 81.0],
+                        "pressure_msl": [1008.5, 1009.1, 1010.2, 1011.4],
+                        "visibility": [9000.0, 8500.0, 7800.0, 7200.0],
+                        "wind_speed_10m": [8.2, 7.9, 7.3, 6.8],
+                        "wind_direction_10m": [154.0, 150.0, 148.0, 145.0],
+                        "wind_gusts_10m": [12.6, 11.8, 11.0, 10.2],
+                    }
+                },
+            },
+            "hit",
+        )
+
 
 def _build_mock_payload() -> dict[str, Any]:
     """构造模拟 Open-Meteo 响应 payload。"""

@@ -243,7 +243,7 @@ class WorkflowConcurrencyTests(unittest.TestCase):
         service._follow_up = MagicMock()
         service._lifecycle = MagicMock()
 
-        # 模拟已有 4 个活跃运行（达到上限）
+        # 模拟 business 池已有 4 个活跃运行（达到上限）
         service._repository.count_active_runs = MagicMock(return_value=4)
         service._persistence.get_effective_config_int = MagicMock(return_value=4)
 
@@ -267,6 +267,71 @@ class WorkflowConcurrencyTests(unittest.TestCase):
         # 所有 5 个线程都应抛出 ValueError（因为 count_active_runs=4 >= limit=4）
         rejected_count = sum(1 for r in results if r is not None and "capacity" in str(r).lower())
         self.assertEqual(rejected_count, 5, "All concurrent submissions should be rejected when at capacity")
+
+    def test_business_capacity_full_does_not_block_weather_tile_pool(self) -> None:
+        """business 池满时，weather_tile 提交仍可过闸。"""
+        from app.services.workflow.submission_service import WorkflowSubmissionService
+        from app.services.workflow.run_class import RUN_CLASS_BUSINESS, RUN_CLASS_WEATHER_TILE
+
+        service = WorkflowSubmissionService.__new__(WorkflowSubmissionService)
+        service._repository = MagicMock()
+        service._persistence = MagicMock()
+
+        def count_side_effect(run_class=None):
+            if run_class == RUN_CLASS_BUSINESS:
+                return 8
+            if run_class == RUN_CLASS_WEATHER_TILE:
+                return 0
+            return 8
+
+        def config_side_effect(scope, key, default):
+            if key == "max_active_runs":
+                return 8
+            if key == "max_active_weather_tile_runs":
+                return 16
+            return default
+
+        service._repository.count_active_runs = MagicMock(side_effect=count_side_effect)
+        service._persistence.get_effective_config_int = MagicMock(side_effect=config_side_effect)
+
+        with self.assertRaises(ValueError) as biz_ctx:
+            service._assert_workflow_capacity(RUN_CLASS_BUSINESS)
+        self.assertIn("Workflow capacity reached", str(biz_ctx.exception))
+
+        # weather_tile 池未满，不应抛错
+        service._assert_workflow_capacity(RUN_CLASS_WEATHER_TILE)
+
+    def test_weather_tile_capacity_full_does_not_block_business_pool(self) -> None:
+        """weather_tile 池满时，business 提交仍可过闸。"""
+        from app.services.workflow.submission_service import WorkflowSubmissionService
+        from app.services.workflow.run_class import RUN_CLASS_BUSINESS, RUN_CLASS_WEATHER_TILE
+
+        service = WorkflowSubmissionService.__new__(WorkflowSubmissionService)
+        service._repository = MagicMock()
+        service._persistence = MagicMock()
+
+        def count_side_effect(run_class=None):
+            if run_class == RUN_CLASS_WEATHER_TILE:
+                return 16
+            if run_class == RUN_CLASS_BUSINESS:
+                return 0
+            return 16
+
+        def config_side_effect(scope, key, default):
+            if key == "max_active_runs":
+                return 8
+            if key == "max_active_weather_tile_runs":
+                return 16
+            return default
+
+        service._repository.count_active_runs = MagicMock(side_effect=count_side_effect)
+        service._persistence.get_effective_config_int = MagicMock(side_effect=config_side_effect)
+
+        with self.assertRaises(ValueError) as tile_ctx:
+            service._assert_workflow_capacity(RUN_CLASS_WEATHER_TILE)
+        self.assertIn("Weather tile workflow capacity reached", str(tile_ctx.exception))
+
+        service._assert_workflow_capacity(RUN_CLASS_BUSINESS)
 
     def test_concurrent_tile_provider_registration_does_not_crash(self) -> None:
         """并发注册 provider 不应导致崩溃（list.append 在 CPython 下是原子的，但不保证线程安全）。"""

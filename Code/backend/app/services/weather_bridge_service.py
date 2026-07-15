@@ -112,7 +112,9 @@ class WeatherBridgeService:
                 workflow.inputs["viewport_bbox"] = viewport_bbox_dict
 
         # 瓦片 workflow 并发执行，不需要 lifecycle manager 的“每图层唯一”互斥替换
-        is_tile_workflow = self._is_tile_workflow(weather_request)
+        from app.services.workflow.run_class import is_weather_tile_workflow_request
+
+        is_tile_workflow = is_weather_tile_workflow_request(weather_request)
 
         # 注册工作流到生命周期管理器（自动替换旧工作流）
         workflow_id = weather_request.get("workflow_id") or f"wf-{layer_id}-{datetime.now().strftime('%Y%m%d%H%M%S')}"
@@ -464,13 +466,9 @@ class WeatherBridgeService:
     @staticmethod
     def _is_tile_workflow(weather_request: dict[str, Any]) -> bool:
         """判断是否为瓦片 workflow：包含 weather_tile_render 节点。"""
-        workflow = weather_request.get("workflow") or {}
-        nodes = workflow.get("nodes") or []
-        return any(
-            (node.get("node_type") if isinstance(node, dict) else getattr(node, "node_type", None))
-            == "weather_tile_render"
-            for node in nodes
-        )
+        from app.services.workflow.run_class import is_weather_tile_workflow_request
+
+        return is_weather_tile_workflow_request(weather_request)
 
     def _normalize_weather_request(self, value: WeatherWorkflowRequest | dict[str, Any] | Any) -> dict[str, Any]:
         if value is None:

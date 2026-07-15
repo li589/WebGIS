@@ -37,8 +37,9 @@ class WorkflowPersistenceService:
         *,
         run_status: WorkflowRunStatusResponse,
         request_json: str | None = None,
+        run_class: str | None = None,
     ) -> None:
-        self._repository.save_run(run_status, request_json=request_json)
+        self._repository.save_run(run_status, request_json=request_json, run_class=run_class)
 
     def record_event(
         self,

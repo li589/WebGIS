@@ -70,6 +70,8 @@ export function buildFallbackActiveLayerDisplay(): ActiveLayerDisplay {
     missingFieldsLabel: '—',
     hotspots: [],
     isAdminBoundary: false,
+    isImported: false,
+    isImportedRaster: false,
     visible: true,
     opacity: 1,
     order: 0,

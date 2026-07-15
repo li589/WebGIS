@@ -1,20 +1,24 @@
 # Backend
 
-`Code/backend/` 是本项目的后端服务根目录，当前已经从早期的接口原型演进为以工作流为中心的服务层。它负责承接前端请求、组织任务运行、管理状态与事件、回传结果，并作为 Python 算法包与 Web 平台之间的桥梁。
+`Code/backend/` 是本项目的后端服务根目录。它承接前端请求、组织工作流运行、管理状态与事件、回传结果，并作为 Python 算法包、天气引擎与 Web 平台之间的桥梁。
 
 ## 当前后端定位
 
-后端的核心职责已经不是单纯提供 CRUD API，而是组织一条稳定的任务执行链：
+核心不是 CRUD API，而是一条稳定的任务执行链：
 
 - 接收前端或外部系统请求
-- 校验并标准化工作流提交参数
+- 校验并标准化工作流提交参数（engine request registry）
 - 创建运行记录、状态流和事件流
 - 选择同步执行或 Celery 异步执行
-- 调用 Python provider bridge 执行算法任务
-- 管理 artifact、结果引用和日志输出
+- 经 bridge 调用 weather / Python provider / download / GEE
+- 管理 artifact、结果引用、预览图与统一瓦片
 - 向前端提供查询、元数据和结果读取接口
 
-## 当前可用能力
+工作流编排已从单体 `interaction_hub` 拆分为 `app/services/workflow/` 下的聚焦服务，经 `service_container.py` 对外暴露。
+
+## 当前可用能力（按域）
+
+### 系统 / 控制流
 
 - `GET /health`
 - `POST /workflow-runs`
@@ -24,143 +28,165 @@
 - `POST /workflow-runs/{run_id}/cancel`
 - `POST /workflow-runs/{run_id}/retry`
 - `GET /runtime/status`
-- `GET /artifacts/{artifact_id}`
-- `GET /artifacts/{artifact_id}/preview.png`
+- `GET /runtime/config` / `PATCH /runtime/config`
+- `GET /runtime/metrics`
+- `GET /runtime/api-config`（及 provider 变体）
+
+### 目录 / 图层 / 叠加
+
+- `GET /layers`
+- `GET /demo/layers/snapshots`、`GET /demo/layers/{layer_id}/snapshot`
+- `GET /geo/transform`
+- `GET /overlays`、`/overlay-preview/{layer_id}`、`/overlay-bounds/{layer_id}`、`/overlay-value/{layer_id}`
+
+### 天气
+
 - `GET /weather/point`
-- `GET /algorithm/workflows`
-- `GET /algorithm/workflows/{workflow_name}`
-- `GET /algorithm/workflows/{workflow_name}/panel-schema`
-- `GET /algorithm/workflows/{workflow_name}/ui-schema`
-- `GET /geo/transform`：用于私有坐标系到展示坐标的基础转换入口
-- 支持 `sync / celery` 两种工作流执行模式
-- 支持结构化日志、结果大对象落盘与旧 `/tasks` 桥接
+- `GET /weather/workflows`（及 diagnostics / 按名查询）
+- `GET /unified-tiles/{layer_id}/{z}/{x}/{y}`（**推荐**统一瓦片入口）
+- `GET /weather/tiles/{layer_id}/{z}/{x}/{y}`（已标记 deprecated，保留兼容）
 
-## 当前新增后端事实
+### 底图代理与缓存
 
-当前后端除了基础 workflow 主链，还已经稳定存在以下实现：
+- `GET /tiles/providers`
+- `GET /tiles/{provider}/{z}/{x}/{y}`（deprecated，优先走 unified-tiles）
+- `POST /tiles/cache/clear`、`GET /tiles/cache/stats`
+
+### 算法 / Provider / Artifact / 导入 / GEE
+
+- `GET /algorithm/workflows`（及 panel-schema / ui-schema / diagnostics）
+- `GET /provider/workflows`（及 diagnostics / 按名查询）
+- `GET /artifacts/{artifact_id}`、`GET /artifacts/{artifact_id}/preview.png`
+- `POST /import/raster`
+- `GET /gee/config`（及 limits / status / environment）
+- GEE 业务路由可按配置挂载
+
+执行模式：支持 `sync` / `celery`。旧 `/tasks` 仍经 `task_store` 软下线桥接到 `workflow-runs`，不再作为主叙事。
+
+## 工作流容量双池
+
+`POST /workflow-runs` 提交时按 payload 分类计入不同活跃 run 上限：
+
+| 池 | 判定 | 配置 | 默认 |
+|----|------|------|------|
+| business | 非瓦片 workflow（分析 / 课题组 / GEE / 非瓦片天气 DAG 等） | `BACKEND_MAX_ACTIVE_RUNS` / runtime `max_active_runs` | 8 |
+| weather_tile | `weather_request` DAG 含 `weather_tile_render` | `BACKEND_MAX_ACTIVE_WEATHER_TILE_RUNS` / runtime `max_active_weather_tile_runs` | 16 |
+
+前端视口天气瓦片热路径应走 `GET /unified-tiles/...`（`WeatherTileService`），不占上述任一 workflow 池。显式 tile workflow 仍可用，计入 `weather_tile` 池。
+
+## 当前实现事实
 
 - `retry_pending` 中间态与自动重试语义
 - `FailureCategory` 失败分类
 - `BridgeExecutionError` 作为 bridge 层统一失败协议
 - `source_fetcher` 驱动的真实下载抓取链
-- `weatherengine fallback` 与 `weather workflow DAG` 双路径天气执行面
+- `weatherengine` fallback 与 weather workflow DAG 双路径
+- 天气网格缓存、请求去重、断路器与统一瓦片 provider registry
 - artifact preview 路由，供前端以 PNG 方式读取 COG 结果
-
-## 当前实现备注
-
-- `python_provider_bridge_service.py` 已接入工作流主链，用于把 Python provider 的结果映射成统一结果引用
-- 坐标转换服务当前提供 `GCJ-02 / BD-09 / EPSG:3857` 的基础入口，后续如需精确投影应继续按数据源补充
+- OpenAPI 可供前端 `openapi-typescript` 生成类型
 
 ## 目录结构
 
 ```text
 backend/
 ├─ app/
-│  ├─ api/          # REST API 路由
-│  ├─ core/         # 配置、日志、异常处理、运行时基础能力
-│  ├─ services/     # 业务服务层、工作流编排、存储与桥接
-│  ├─ tasks/        # Celery 任务定义
-│  └─ main.py       # FastAPI 应用入口
-└─ tests/           # 后端测试
+│  ├─ api/                 # REST 路由（按域拆分）
+│  │  ├─ routers/          # health / workflow / runtime / layer / weather / …
+│  │  ├─ tile_routes.py
+│  │  ├─ weather_tile_routes.py
+│  │  └─ gee_config_routes.py
+│  ├─ core/                # 配置、Celery、日志、Redis
+│  ├─ services/            # 业务服务、桥接、目录、瓦片、存储
+│  │  └─ workflow/         # submission / lifecycle / runtime / persistence …
+│  ├─ tasks/               # Celery 任务
+│  ├─ weatherengine/       # 点查、网格、瓦片、天气 DAG 节点
+│  ├─ workflow_engine/     # 通用 DAG 执行器
+│  ├─ gee/                 # Earth Engine 嵌入模块
+│  └─ main.py
+├─ docker-compose.yml      # Redis + MinIO
+├─ requirements.txt
+└─ tests/
 ```
 
 ## 当前核心模块
 
 ### `app/api/`
-负责暴露 HTTP 接口，只处理参数接收、调用服务层和返回响应。
+
+只做参数接收、调用服务层和返回响应。按域拆分为多个 router，不再使用单体 `routes.py`。
 
 ### `app/core/`
-负责后端基础设施能力，包括配置、日志、异常处理和运行时相关设置。
 
-### `app/services/`
-这里是后端的主业务层，当前已经包含工作流执行、任务仓储、结果存储、对象存储、缓存、Python provider bridge、download/analysis workflow 等职责。
+配置、Celery app、日志、Redis 客户端等基础设施。
 
-其中最近变化较大的模块包括：
+### `app/services/workflow/`
 
-- `interaction_hub.py`：统一工作流状态流转，已支持失败分类和自动重试
-- `failure_classifier.py`：负责异常到 `FailureCategory` 的映射
-- `bridge_protocol.py`：定义 `BridgeExecutionError`
-- `source_fetcher.py`：提供 `http / minio / local file` 抓取实现
-- `download_service.py`：已支持 `partial_success`、`retry_pending` 和真实 artifact 抓取
-- `python_provider_bridge_service.py`：已开始消费 provider manifest / template 校验结果
-- `weather_bridge_service.py`：把 workflow 主链路由到天气 DAG
+替代原 `interaction_hub` 的工作流域服务：
+
+| 模块 | 职责 |
+|------|------|
+| `submission_service.py` | 提交、派发、容量校验 |
+| `lifecycle_service.py` | 取消、重试、超时与失败收口 |
+| `transition_builder.py` | 状态转换构建 |
+| `persistence_service.py` | 持久化与事件记录 |
+| `runtime_status_service.py` | runtime 配置 / 状态 / 前端命令 |
+| `follow_up_dispatch_service.py` | follow-up 派发与陈旧 run 清理 |
+| `service_container.py` | 模块级服务实例组装 |
+
+相关辅助：`engine_request_registry.py`、`workflow_request_resolver.py`、`failure_classifier.py`、`bridge_protocol.py`。
+
+### 其他重要服务
+
+- `python_provider_bridge_service.py` / `weather_bridge_service.py` / `gee_bridge_service.py`
+- `source_fetcher.py`、`download_service.py`、`cache_service.py`
+- `tile_provider_registry.py`、`tile_proxy_service.py`
+- `result_storage.py`、`result_view_service.py`、`object_store.py`
+- `layer_catalog.py`、`overlay_registry.py`
+
+### `app/weatherengine/`
+
+- `service.py`：`/weather/point` 与 fallback map_layer 产物
+- `tile_service.py`：z/x/y GeoJSON 瓦片
+- `workflow_service.py` + `nodes/*`：天气 DAG（风场、温湿降水气压能见度、tile_render 等）
+- `client.py`：网格预报拉取（Open-Meteo 风格）
 
 ### `app/tasks/`
-负责长耗时任务的 Celery 任务定义与调度入口。
 
-当前任务侧除了通用 workflow task，还已包含天气刷新等定时任务入口。
-
-### `tests/`
-覆盖后端服务、工作流、任务与集成路径的测试。
+通用 workflow task、download follow-up、weather 刷新等 Celery 入口。
 
 ## 后端运行模型
 
-当前后端采用“控制流 + 数据流”双通道模型：
+控制流 + 数据流双通道：
 
 1. 前端提交 workflow request
 2. 后端创建 run 记录与事件流
-3. 调用同步执行器或 Celery worker
-4. worker / service 调用 Python 算法包
-5. 运行状态通过 `workflow-runs/{run_id}` / `events` 这类控制流接口回传
-6. 展示结果通过 `workflow-runs/{run_id}/view` 这类数据流接口回传
-7. 大对象通过 artifact 接口按需访问
+3. 同步执行器或 Celery worker 执行
+4. bridge / provider / weatherengine 产出结果引用
+5. 控制流：`workflow-runs/{run_id}` / `events` 回传状态
+6. 数据流：`view`、artifact、preview、`unified-tiles` 按需读取
 
-控制流负责状态机与编排，数据流负责展示与资源访问，二者保持分离以降低耦合。
+补充：
 
-补充说明：
-
-- 控制流状态当前不止 `accepted/running/succeeded/failed`，还包含 `retry_pending`
-- 数据流不止有原始 artifact，还包含 `/artifacts/{artifact_id}/preview.png` 这种面向前端展示的预览接口
-- `ResultKind.map_layer` 已经成为天气图层、GeoJSON 和栅格预览链的重要数据面入口
-
-## 当前天气执行结构
-
-天气相关代码当前不是单点实现，而是两条路径并存：
-
-1. `weatherengine/service.py`
-   - 负责 `/weather/point`
-   - 负责 fallback `map_layer` 产物
-   - 负责 `GeoJSON / COG / preview` 资产组织
-2. `weatherengine/workflow_service.py` + `weatherengine/nodes/*`
-   - 负责天气 DAG
-   - 当前节点已覆盖风场、温度、降水、湿度、气压、能见度与摘要生成
-
-这两条路径通过 `weather_bridge_service.py` 与 `workflow_tasks.py` 接入现有 `workflow-runs` 主链。
-
-## 当前与 Python provider 契约层的关系
-
-后端现在不只是调用 provider 执行函数，还开始消费 provider 契约层：
-
-- `algorithms/providers/Python/contracts/provider_manifest.py`
-- `algorithms/providers/Python/contracts/template_deriver.py`
-
-这意味着 provider 的模板导出、请求校验和 list/describe 结果，正在从分散实现收口到统一入口。
-
-## 与 Python 算法包的关系
-
-后端并不直接承担科学计算本体，而是通过 provider bridge 和工作流服务调用 `Code/algorithms/providers/Python` 中的统一入口。这样可以让：
-
-- 前端保持轻量
-- 后端保持工作流编排清晰
-- 算法层保持独立演进
-- 结果模型保持一致
+- 控制流状态含 `retry_pending`
+- `ResultKind.map_layer` 是天气图层、GeoJSON 与栅格预览链的重要数据面入口
+- 推荐新前端消费 `/unified-tiles/...`，不要新增对 deprecated 天气/底图瓦片路径的依赖
 
 ## 运行与部署
 
-本地开发优先使用仓库内的环境脚本。后续若切换到 Celery、Redis 或 MinIO，需要与 `Env/backend/` 中的启动脚本和环境变量保持一致。
+- 本地一键：仓库根 `launch.py` / `start.bat`（编排 compose + API + 多队列 worker + 前端）
+- 基础设施：`docker-compose.yml` 提供 Redis `:6379`、MinIO `:9100/:9101`
+- 环境变量参考 `.env.example`
+- 亦可使用 `Env/backend/` 脚本做单项启动
 
 ## 推荐阅读顺序
 
-如果你在接手后端，建议按下面顺序阅读：
-
 1. `Code/backend/README.md`
 2. `Code/shared/contracts/README.md`
-3. `Code/algorithms/providers/Python/README.md`
-4. `Code/algorithms/providers/docs/backend_integration_contract.md`
-5. `Code/algorithms/providers/docs/detailed_design.md`
+3. `Code/docs/双通道接口设计总结.md`
+4. `Code/algorithms/providers/Python/README.md`
+5. `Code/algorithms/providers/docs/backend_integration_contract.md`
 
 ## 说明
 
-- 当前后端已经进入工作流化阶段，旧的“单接口任务模型”不再是主叙事
-- `workflow-runs` 是当前更重要的主线，`/tasks` 仅作为兼容桥接存在
-- 文档与代码需要持续保持一致，尤其是路由名称、任务模型和结果模型
+- `workflow-runs` 是主线；旧 `/tasks` 仅为兼容桥接
+- 文档与代码需持续对齐路由名称、任务模型与结果模型
+- 带日期的阶段快照不覆盖本 README 的现行结构描述

@@ -14,7 +14,7 @@ describe('map-canvas-map-options', () => {
       bearing: 0,
       attributionControl: false,
       renderWorldCopies: true,
-      cancelPendingTileRequestsWhileZooming: false,
+      cancelPendingTileRequestsWhileZooming: true,
       refreshExpiredTiles: false,
       canvasContextAttributes: {
         preserveDrawingBuffer: false,

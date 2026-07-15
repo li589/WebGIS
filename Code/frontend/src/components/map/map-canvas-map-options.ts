@@ -21,7 +21,7 @@ export function createMapCanvasMapOptions(
     attributionControl: false,
     // 允许全球浏览：世界在东西方向重复渲染，用户可拖动到任意经度
     renderWorldCopies: true,
-    cancelPendingTileRequestsWhileZooming: false,
+    cancelPendingTileRequestsWhileZooming: true,
     refreshExpiredTiles: false,
     canvasContextAttributes: {
       // preserveDrawingBuffer=false（默认）：不回读 framebuffer，大幅提升与 Canvas 2D 叠加层的合成性能

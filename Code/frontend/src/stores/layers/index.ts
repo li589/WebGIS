@@ -21,6 +21,8 @@ import { buildDefaultWeatherRenderHint } from '../../components/map/weather-rend
 import type { BoundingBox, RuntimeLayerDescriptor, WeatherPointResponse, WorkflowEvent } from '../../services/runtime-api'
 import { LAYER_CATEGORIES, LAYER_LIBRARY } from './catalog'
 import { buildJobLayer } from './result-adapter'
+import { buildImportedVectorPayload } from './imported-vector'
+import { buildImportedRasterPayload } from './imported-raster'
 import type {
   ActiveLayer,
   ActiveLayerDisplay,
@@ -35,6 +37,11 @@ import type {
 
 function genInstanceId() {
   return crypto.randomUUID()
+}
+
+/** 本地导入（矢量 / 栅格）不走 catalog / tile manager */
+function isLocalImport(layer: ActiveLayer): boolean {
+  return Boolean(layer.importedVector || layer.importedRaster)
 }
 
 function isTerminalStatus(status: string) {
@@ -241,7 +248,7 @@ function resolveCategory(descriptor: RuntimeLayerDescriptor, fallbackCategory?: 
   if (category && CATEGORY_INDEX_BY_ID.has(category)) {
     return category
   }
-  return fallbackCategory ?? 'runtime'
+  return fallbackCategory ?? 'research-group'
 }
 
 function buildUpdateLabel(descriptor: RuntimeLayerDescriptor, fallback?: Pick<LayerCatalogItem, 'updateLabel'> | null) {
@@ -299,9 +306,9 @@ function buildCatalogFallbackItem(item: RuntimeLayerLibraryItem | null, catalogI
   if (fallback) {
     return {
       ...fallback,
-      description: `${fallback.name} 运行时目录信息尚未返回。`,
+      description: `${fallback.name} 课题组数据信息尚未返回。`,
       runReadiness: 'unknown',
-      runReadinessSummary: '运行时目录加载中',
+      runReadinessSummary: '课题组数据加载中',
       runReadinessNotes: [],
       backendStatus: null,
       engine: null,
@@ -316,19 +323,19 @@ function buildCatalogFallbackItem(item: RuntimeLayerLibraryItem | null, catalogI
   return {
     catalogId,
     name: catalogId,
-    category: 'runtime',
-    description: '运行时目录尚未收录该图层。',
+    category: 'research-group',
+    description: '课题组数据尚未收录该图层。',
     metricLabel: '主指标',
     metricUnit: '',
     metricPrecision: 1,
     updateLabel: '待识别',
-    sourceLabel: '运行时目录',
+    sourceLabel: '课题组数据',
     accentColor: '#5a6a80',
     accentGlow: 'rgba(90, 106, 128, 0.3)',
     chipTone: 'rgba(90, 106, 128, 0.16)',
     sources: [],
     runReadiness: 'unknown',
-    runReadinessSummary: '运行时目录加载中',
+    runReadinessSummary: '课题组数据加载中',
     runReadinessNotes: [],
     backendStatus: null,
     engine: null,
@@ -436,9 +443,10 @@ export const useLayersStore = defineStore('layers', () => {
   const submittingCatalogIds = new Set<string>()
   const isSubmitting = computed(() => submittingCatalogIds.size > 0)
 
-  // ── 429 容量限制自动重试 ───────────────────────────────────────────────
-  // 后端 max_active_runs=4，打开多个天气图层时部分请求会收到 429。
-  // 这里记录重试定时器和次数，429 时创建 queued jobLayer 并自动重试。
+  // ── 429 容量限制自动重试（业务 workflow 池）────────────────────────────
+  // 后端 business 池默认 max_active_runs=8；天气瓦片热路径走 /unified-tiles，不占此池。
+  // 显式 weather_tile_render workflow 使用独立的 max_active_weather_tile_runs。
+  // 这里记录重试定时器和次数，business 池 429 时创建 queued jobLayer 并自动重试。
   const workflowRetryTimers = new Map<string, number>()
   const workflowRetryCounts = new Map<string, number>()
   const MAX_WORKFLOW_429_RETRIES = 6
@@ -497,12 +505,18 @@ export const useLayersStore = defineStore('layers', () => {
   // 地图移动/缩放时，使用防抖延迟避免频繁触发工作流更新
   const viewportDebounceTimer = ref<number | null>(null)
   const VIEWPORT_DEBOUNCE_MS = 500  // 防抖延迟（毫秒）
+  /** 视口驱动 workflow 刷新世代：防抖触发时递增；过期提交/轮询写回丢弃 */
+  let viewportRefreshEpoch = 0
 
   // 天气瓦片 setViewport 防抖：用户连续移动时（每 ~400-550ms 触发一次 moveend），
   // 避免每次都递增 generation、取消在途瓦片、重新入队，导致 cached 始终为 0。
   // 防抖期间在途瓦片继续完成；用户停止移动后才提交新视口的瓦片请求。
   const weatherViewportDebounceTimer = ref<number | null>(null)
   const WEATHER_VIEWPORT_DEBOUNCE_MS = 350
+
+  function isViewportRefreshStale(expectedEpoch: number | undefined): boolean {
+    return expectedEpoch !== undefined && expectedEpoch !== viewportRefreshEpoch
+  }
 
   // ── 当前地图视口（中心点 + 可见范围）─────────────────────────────────────
   const currentMapCenter = ref<{ lng: number; lat: number }>({ lng: 113.2644, lat: 23.1291 })
@@ -536,6 +550,93 @@ export const useLayersStore = defineStore('layers', () => {
       .slice()
       .sort((a, b) => a.order - b.order)
       .map((layer): ActiveLayerDisplay | null => {
+        if (layer.importedVector) {
+          const payload = layer.importedVector
+          const displayName = layer.name ?? payload.fileName ?? '导入图层'
+          return {
+            instanceId: layer.instanceId,
+            catalogId: layer.catalogId,
+            name: displayName,
+            category: 'imported',
+            description: `本地导入矢量（${payload.geometryType}）`,
+            engine: 'local',
+            supportsTime: false,
+            runReadiness: 'ready',
+            runReadinessSummary: '本地文件已加载',
+            summary: `${payload.featureCount} 个要素 · ${payload.geometryType}`,
+            metricLabel: '要素数',
+            metricValue: String(payload.featureCount),
+            trendLabel: '本地矢量叠加',
+            statusLabel: '已导入',
+            updateLabel: '本地文件',
+            sourceLabel: payload.fileName ?? '本地导入',
+            confidenceLabel: '本地数据',
+            accentColor: '#7ee0a8',
+            accentGlow: 'rgba(126, 224, 168, 0.28)',
+            chipTone: 'rgba(126, 224, 168, 0.16)',
+            availabilityState: 'ready',
+            availabilityLabel: '完整数据',
+            availabilityDescription: `已载入 ${payload.featureCount} 个要素，可在图层列表控制显隐与导出。`,
+            observationTimeLabel: '本地',
+            missingFieldsLabel: '无',
+            hotspots: [],
+            isAdminBoundary: false,
+            isImported: true,
+            isImportedRaster: false,
+            jobLayer: undefined,
+            visible: layer.visible,
+            opacity: layer.opacity,
+            order: layer.order,
+            dataState: 'imported',
+            importedGeometryType: payload.geometryType,
+            importedFeatureCount: payload.featureCount,
+            importedBounds: payload.bounds,
+          }
+        }
+
+        if (layer.importedRaster) {
+          const payload = layer.importedRaster
+          const displayName = layer.name ?? payload.fileName ?? '导入栅格'
+          return {
+            instanceId: layer.instanceId,
+            catalogId: layer.catalogId,
+            name: displayName,
+            category: 'imported',
+            description: '本地导入栅格（TIF overlay）',
+            engine: 'local',
+            supportsTime: false,
+            runReadiness: 'ready',
+            runReadinessSummary: '本地栅格已注册',
+            summary: '本地 TIF 栅格叠加',
+            metricLabel: '类型',
+            metricValue: '栅格',
+            trendLabel: '本地栅格叠加',
+            statusLabel: '已导入',
+            updateLabel: '本地文件',
+            sourceLabel: payload.fileName ?? '本地导入',
+            confidenceLabel: '本地数据',
+            accentColor: '#7eb8e0',
+            accentGlow: 'rgba(126, 184, 224, 0.28)',
+            chipTone: 'rgba(126, 184, 224, 0.16)',
+            availabilityState: 'ready',
+            availabilityLabel: '完整数据',
+            availabilityDescription: '已通过后端注册为 overlay，可在图层列表控制显隐与透明度。',
+            observationTimeLabel: '本地',
+            missingFieldsLabel: '无',
+            hotspots: [],
+            isAdminBoundary: false,
+            isImported: false,
+            isImportedRaster: true,
+            jobLayer: undefined,
+            visible: layer.visible,
+            opacity: layer.opacity,
+            order: layer.order,
+            dataState: 'imported',
+            importedRasterBounds: payload.bounds,
+            importedBounds: payload.bounds,
+          }
+        }
+
         const item = buildCatalogFallbackItem(layerLibraryMap.value.get(layer.catalogId) ?? null, layer.catalogId)
         const availability = buildAvailabilityState(layer, item, layer.jobLayer)
         const realDisplay = layer.jobLayer ? buildRealLayerDisplay(layer, item) : {}
@@ -543,9 +644,13 @@ export const useLayersStore = defineStore('layers', () => {
 
         const isWeatherLayer = !layer.isAdminBoundary && isWeatherLayerDescriptor(descriptor)
         const tileStats = isWeatherLayer && layer.visible ? weatherTileManager.getStats(layer.catalogId) : null
-        const weatherRenderHint = isWeatherLayer
+        const baseRenderHint = isWeatherLayer
           ? buildDefaultWeatherRenderHint(layer.catalogId, descriptor)
           : (layer.jobLayer?.mapLayerPayload?.renderHint ?? null)
+        // 应用用户自定义配色方案覆盖
+        const weatherRenderHint = baseRenderHint && layer.paletteOverride
+          ? { ...baseRenderHint, palette: layer.paletteOverride }
+          : baseRenderHint
         let finalAvailability = availability
         if (isWeatherLayer && tileStats) {
           if (tileStats.cached > 0 && tileStats.cached >= tileStats.visible && tileStats.pending === 0) {
@@ -575,7 +680,7 @@ export const useLayersStore = defineStore('layers', () => {
             ? '静态矢量边界叠加'
             : (isWeatherLayer
                 ? 'tile manager 已接入'
-                : (realDisplay.trendLabel ?? (item.backendStatus === 'sample' ? '样板 provider 链路已接入' : item.supportsTime ? '支持时间维度查询' : '运行时目录已接入'))),
+                : (realDisplay.trendLabel ?? (item.backendStatus === 'sample' ? '样板 provider 链路已接入' : item.supportsTime ? '支持时间维度查询' : '课题组数据已接入'))),
           statusLabel: layer.isAdminBoundary
             ? '静态数据'
             : (isWeatherLayer
@@ -583,7 +688,7 @@ export const useLayersStore = defineStore('layers', () => {
                 : (realDisplay.statusLabel ?? (item.backendStatus === 'sample' ? '样板 Provider' : item.backendStatus === 'placeholder' ? '占位图层' : '目录已接入'))),
           updateLabel: layer.isAdminBoundary ? '静态数据' : item.updateLabel,
           sourceLabel: layer.isAdminBoundary ? '广东省市级边界' : (realDisplay.sourceLabel ?? item.sourceLabel),
-          confidenceLabel: layer.isAdminBoundary ? '置信度 100%' : (realDisplay.confidenceLabel ?? '以运行时目录为准'),
+          confidenceLabel: layer.isAdminBoundary ? '置信度 100%' : (realDisplay.confidenceLabel ?? '以课题组数据为准'),
           accentColor: layer.isAdminBoundary ? '#88d8ff' : item.accentColor,
           accentGlow: layer.isAdminBoundary ? 'rgba(136, 216, 255, 0.3)' : item.accentGlow,
           chipTone: layer.isAdminBoundary ? 'rgba(136, 216, 255, 0.16)' : item.chipTone,
@@ -600,11 +705,14 @@ export const useLayersStore = defineStore('layers', () => {
           missingFieldsLabel: layer.isAdminBoundary ? '无' : (realDisplay.missingFieldsLabel ?? (item.runReadinessNotes[0] ?? '无')),
           hotspots: layer.isAdminBoundary ? [] : (realDisplay.hotspots ?? []),
           isAdminBoundary: layer.isAdminBoundary,
+          isImported: false,
+          isImportedRaster: false,
           jobLayer: layer.jobLayer,
           visible: layer.visible,
           opacity: layer.opacity,
           order: layer.order,
           dataState: layer.dataState,
+          paletteOverride: layer.paletteOverride ?? null,
         }
       })
       .filter((d): d is ActiveLayerDisplay => d !== null)
@@ -627,7 +735,7 @@ export const useLayersStore = defineStore('layers', () => {
   function addLayer(catalogId: string, isAdminBoundary = false, jobLayer?: JobLayerItem) {
     // 防止重复添加同 catalogId (除非来自不同 job)
     if (!isAdminBoundary && !jobLayer) {
-      if (activeLayers.value.some((l) => l.catalogId === catalogId && !l.jobLayer)) {
+      if (activeLayers.value.some((l) => l.catalogId === catalogId && !l.jobLayer && !isLocalImport(l))) {
         return
       }
     }
@@ -664,9 +772,69 @@ export const useLayersStore = defineStore('layers', () => {
     }
   }
 
+  /** 将本地 SHP / GeoJSON / CSV 矢量添加到活动图层列表，可在侧栏控制显隐并导出 */
+  function addImportedVectorLayer(name: string, geojson: GeoJSON.FeatureCollection): ActiveLayer {
+    const maxOrder = activeLayers.value.reduce((max, l) => Math.max(max, l.order), 0)
+    const instanceId = genInstanceId()
+    const catalogId = `imported-${instanceId}`
+    const payload = buildImportedVectorPayload(geojson, name)
+    const layer: ActiveLayer = {
+      instanceId,
+      catalogId,
+      name: name.replace(/\.(geojson|json|shp|zip|csv)$/i, '') || name,
+      visible: true,
+      opacity: 0.85,
+      order: maxOrder + 1,
+      isAdminBoundary: false,
+      importedVector: payload,
+      dataState: 'imported',
+    }
+    activeLayers.value.push(layer)
+    selectedInstanceId.value = layer.instanceId
+    if (sidebarView.value === 'empty' || sidebarView.value === 'library') {
+      sidebarView.value = 'active'
+    }
+    return layer
+  }
+
+  function getImportedVectorGeojson(instanceId: string): GeoJSON.FeatureCollection | null {
+    const layer = activeLayers.value.find((l) => l.instanceId === instanceId)
+    return layer?.importedVector?.geojson ?? null
+  }
+
+  /** 将后端已注册的 TIF overlay 挂入活动图层列表 */
+  function addImportedRasterLayer(
+    name: string,
+    overlayLayerId: string,
+    bounds?: [number, number, number, number],
+  ): ActiveLayer {
+    const maxOrder = activeLayers.value.reduce((max, l) => Math.max(max, l.order), 0)
+    const instanceId = genInstanceId()
+    const payload = buildImportedRasterPayload(overlayLayerId, { bounds, fileName: name })
+    const layer: ActiveLayer = {
+      instanceId,
+      // catalogId 与后端 overlay_layer_id 对齐，便于 overlay-image-module 加载
+      catalogId: overlayLayerId,
+      name: name.replace(/\.(tif|tiff)$/i, '') || name,
+      visible: true,
+      opacity: 0.7,
+      order: maxOrder + 1,
+      isAdminBoundary: false,
+      importedRaster: payload,
+      dataState: 'imported',
+    }
+    activeLayers.value.push(layer)
+    selectedInstanceId.value = layer.instanceId
+    if (sidebarView.value === 'empty' || sidebarView.value === 'library') {
+      sidebarView.value = 'active'
+    }
+    return layer
+  }
+
   function removeLayer(instanceId: string) {
     const idx = activeLayers.value.findIndex((l) => l.instanceId === instanceId)
     if (idx === -1) return
+    pendingVisibilitySync.delete(instanceId)
     // 修复：删除图层时停止对应工作流轮询，避免泄漏 setTimeout 句柄
     const layer = activeLayers.value[idx]
     if (layer.jobLayer?.jobId) {
@@ -680,7 +848,7 @@ export const useLayersStore = defineStore('layers', () => {
     }
     workflowRetryCounts.delete(layer.catalogId)
     // 清理 tile manager 中对应图层状态
-    if (!layer.isAdminBoundary) {
+    if (!layer.isAdminBoundary && !isLocalImport(layer)) {
       weatherTileManager.clearLayer(layer.catalogId)
     }
     activeLayers.value.splice(idx, 1)
@@ -690,29 +858,90 @@ export const useLayersStore = defineStore('layers', () => {
     }
   }
 
-  function toggleLayerVisibility(instanceId: string) {
-    const layer = activeLayers.value.find((l) => l.instanceId === instanceId)
-    if (layer) {
-      layer.visible = !layer.visible
-      // 同步 tile manager 激活状态；重新可见时刷新当前视口
-      weatherTileManager.setLayerActive(layer.catalogId, layer.visible)
-      if (layer.visible && isWeatherEngineLayer(layer.catalogId)) {
-        weatherTileManager.setViewport(layer.catalogId, currentMapCenter.value, currentMapZoom.value, currentHour.value, undefined, currentMapBBox.value)
+  /** 同帧内多次显隐：只把最终 visible 同步给 tile manager，避免狂点冲刷 generation */
+  const pendingVisibilitySync = new Map<string, ActiveLayer>()
+  let visibilitySyncRaf: number | null = null
+
+  function flushVisibilitySyncToTileManager() {
+    visibilitySyncRaf = null
+    const layers = Array.from(pendingVisibilitySync.values())
+    pendingVisibilitySync.clear()
+    for (const layer of layers) {
+      if (layer.isAdminBoundary) continue
+      // 以当前 activeLayers 中的真实状态为准，防止 flush 前图层已被移除
+      const live = activeLayers.value.find((item) => item.instanceId === layer.instanceId)
+      if (!live) {
+        if (!isLocalImport(layer)) {
+          weatherTileManager.clearLayer(layer.catalogId)
+        }
+        continue
+      }
+      if (isLocalImport(live)) continue
+      weatherTileManager.setLayerActive(live.catalogId, live.visible)
+      if (live.visible && isWeatherEngineLayer(live.catalogId)) {
+        weatherTileManager.setViewport(
+          live.catalogId,
+          currentMapCenter.value,
+          currentMapZoom.value,
+          currentHour.value,
+          undefined,
+          currentMapBBox.value,
+        )
       }
     }
   }
 
+  function scheduleVisibilitySyncToTileManager(layer: ActiveLayer) {
+    pendingVisibilitySync.set(layer.instanceId, layer)
+    if (visibilitySyncRaf !== null) return
+    visibilitySyncRaf = globalThis.requestAnimationFrame(() => {
+      flushVisibilitySyncToTileManager()
+    })
+  }
+
+  function toggleLayerVisibility(instanceId: string) {
+    const layer = activeLayers.value.find((l) => l.instanceId === instanceId)
+    if (!layer) return
+    layer.visible = !layer.visible
+    scheduleVisibilitySyncToTileManager(layer)
+  }
+
   /** 批量设置所有图层可见性 */
   function setAllLayerVisibility(visible: boolean) {
+    // 批量操作立即同步：取消同帧 toggle 排队，避免顺序颠倒
+    if (visibilitySyncRaf !== null) {
+      globalThis.cancelAnimationFrame(visibilitySyncRaf)
+      visibilitySyncRaf = null
+    }
+    pendingVisibilitySync.clear()
     for (const layer of activeLayers.value) {
       layer.visible = visible
+      if (layer.isAdminBoundary || isLocalImport(layer)) continue
+      weatherTileManager.setLayerActive(layer.catalogId, visible)
+      if (visible && isWeatherEngineLayer(layer.catalogId)) {
+        weatherTileManager.setViewport(
+          layer.catalogId,
+          currentMapCenter.value,
+          currentMapZoom.value,
+          currentHour.value,
+          undefined,
+          currentMapBBox.value,
+        )
+      }
     }
   }
 
   /** 批量移除所有图层（保留行政区边界） */
   function removeAllLayers(keepBoundary = true) {
-    const removedJobIds = activeLayers.value
-      .filter((layer) => !keepBoundary || !layer.isAdminBoundary)
+    if (visibilitySyncRaf !== null) {
+      globalThis.cancelAnimationFrame(visibilitySyncRaf)
+      visibilitySyncRaf = null
+    }
+    pendingVisibilitySync.clear()
+    const layersToRemove = activeLayers.value.filter(
+      (layer) => !keepBoundary || !layer.isAdminBoundary,
+    )
+    const removedJobIds = layersToRemove
       .map((layer) => layer.jobLayer?.jobId)
       .filter((jobId): jobId is string => Boolean(jobId))
     for (const jobId of removedJobIds) {
@@ -724,6 +953,15 @@ export const useLayersStore = defineStore('layers', () => {
     }
     workflowRetryTimers.clear()
     workflowRetryCounts.clear()
+    for (const layer of layersToRemove) {
+      if (!isLocalImport(layer)) {
+        weatherTileManager.clearLayer(layer.catalogId)
+      }
+      if (particleFlowCatalogId.value === layer.catalogId) {
+        particleFlowCatalogId.value = null
+      }
+      activeWorkflowCatalogIds.delete(layer.catalogId)
+    }
     if (keepBoundary) {
       activeLayers.value = activeLayers.value.filter((l) => l.isAdminBoundary)
     } else {
@@ -738,6 +976,14 @@ export const useLayersStore = defineStore('layers', () => {
     const layer = activeLayers.value.find((l) => l.instanceId === instanceId)
     if (layer) {
       layer.opacity = Math.max(0, Math.min(1, opacity))
+    }
+  }
+
+  /** 设置图层配色方案覆盖（null 恢复为默认配色） */
+  function setLayerPaletteOverride(instanceId: string, palette: string | null) {
+    const layer = activeLayers.value.find((l) => l.instanceId === instanceId)
+    if (layer) {
+      layer.paletteOverride = palette
     }
   }
 
@@ -851,13 +1097,15 @@ export const useLayersStore = defineStore('layers', () => {
   }
 
   function upsertJobLayer(catalogId: string, jobLayer: JobLayerItem) {
-    const existingIndex = jobLayers.value.findIndex((item) => item.jobId === jobLayer.jobId)
+    // 确保 catalogId 被记录在 jobLayer 上，便于面板列表展示孤儿工作流（无活跃图层时）
+    const enrichedJobLayer: JobLayerItem = jobLayer.catalogId ? jobLayer : { ...jobLayer, catalogId }
+    const existingIndex = jobLayers.value.findIndex((item) => item.jobId === enrichedJobLayer.jobId)
     if (existingIndex >= 0) {
-      jobLayers.value.splice(existingIndex, 1, jobLayer)
+      jobLayers.value.splice(existingIndex, 1, enrichedJobLayer)
     } else {
-      jobLayers.value.unshift(jobLayer)
+      jobLayers.value.unshift(enrichedJobLayer)
     }
-    syncJobLayerToActiveLayer(catalogId, jobLayer)
+    syncJobLayerToActiveLayer(catalogId, enrichedJobLayer)
   }
 
   function buildWorkflowPayloadForCatalog(
@@ -870,6 +1118,9 @@ export const useLayersStore = defineStore('layers', () => {
       command_type: 'analysis' as const,
       command_label: `运行 ${catalogName} 分析`,
       layer_id: catalogId,
+      priority: 'normal' as const,
+      resource_profile: 'standard' as const,
+      realtime_preferred: false,
       requested_outputs: requestedOutputs,
       parameters: {
         hour: currentHour.value,
@@ -929,7 +1180,18 @@ export const useLayersStore = defineStore('layers', () => {
     }
   }
 
-  async function syncWorkflowRunSnapshot(jobId: string, catalogId: string, force = false) {
+  async function syncWorkflowRunSnapshot(
+    jobId: string,
+    catalogId: string,
+    force = false,
+    expectedViewportEpoch?: number,
+  ) {
+    if (isViewportRefreshStale(expectedViewportEpoch)) {
+      stopWorkflowPolling(jobId)
+      activeWorkflowCatalogIds.delete(catalogId)
+      return true
+    }
+
     const now = Date.now()
     if (!force) {
       const lastSyncedAt = workflowLastStatusSyncAt.get(jobId) ?? 0
@@ -940,7 +1202,17 @@ export const useLayersStore = defineStore('layers', () => {
 
     const existingJobLayer = jobLayers.value.find((item) => item.jobId === jobId)
     const run = await getWorkflowRun(jobId)
+    if (isViewportRefreshStale(expectedViewportEpoch)) {
+      stopWorkflowPolling(jobId)
+      activeWorkflowCatalogIds.delete(catalogId)
+      return true
+    }
     const jobLayer = await buildJobLayer(run, catalogId, { previousJobLayer: existingJobLayer })
+    if (isViewportRefreshStale(expectedViewportEpoch)) {
+      stopWorkflowPolling(jobId)
+      activeWorkflowCatalogIds.delete(catalogId)
+      return true
+    }
     const mergedJobLayer =
       existingJobLayer && !isTerminalStatus(jobLayer.status)
         ? {
@@ -982,13 +1254,24 @@ export const useLayersStore = defineStore('layers', () => {
     return false
   }
 
-  async function pollWorkflowRun(jobId: string, catalogId: string, startTime = Date.now(), consecutiveErrors = 0) {
+  async function pollWorkflowRun(
+    jobId: string,
+    catalogId: string,
+    startTime = Date.now(),
+    consecutiveErrors = 0,
+    expectedViewportEpoch?: number,
+  ) {
+    if (isViewportRefreshStale(expectedViewportEpoch)) {
+      stopWorkflowPolling(jobId)
+      activeWorkflowCatalogIds.delete(catalogId)
+      return
+    }
     if (Date.now() - startTime > EVENT_POLL_MAX_DURATION_MS) {
       stopWorkflowPolling(jobId)
       activeWorkflowCatalogIds.delete(catalogId)
       workflowError.value = `工作流 ${jobId} 事件等待超时（${EVENT_POLL_MAX_DURATION_MS / 1000}s）`
       const existingJobLayer = jobLayers.value.find((item) => item.jobId === jobId)
-      if (existingJobLayer) {
+      if (existingJobLayer && !isViewportRefreshStale(expectedViewportEpoch)) {
         upsertJobLayer(catalogId, {
           ...existingJobLayer,
           status: 'failed',
@@ -1008,6 +1291,11 @@ export const useLayersStore = defineStore('layers', () => {
         afterEventId: existingJobLayer?.lastEventId,
         limit: 24,
       })
+      if (isViewportRefreshStale(expectedViewportEpoch)) {
+        stopWorkflowPolling(jobId)
+        activeWorkflowCatalogIds.delete(catalogId)
+        return
+      }
       const newItems = events.items ?? []
 
       if (existingJobLayer && newItems.length > 0) {
@@ -1019,11 +1307,16 @@ export const useLayersStore = defineStore('layers', () => {
       nextConsecutiveErrors = 0
 
       const shouldForceSync = newItems.some((event) => isRecognizedJobStatus(event.payload?.status) && isTerminalStatus(event.payload.status))
-      const didReachTerminal = await syncWorkflowRunSnapshot(jobId, catalogId, shouldForceSync)
+      const didReachTerminal = await syncWorkflowRunSnapshot(jobId, catalogId, shouldForceSync, expectedViewportEpoch)
       if (didReachTerminal) {
         return
       }
     } catch (error) {
+      if (isViewportRefreshStale(expectedViewportEpoch)) {
+        stopWorkflowPolling(jobId)
+        activeWorkflowCatalogIds.delete(catalogId)
+        return
+      }
       const errMsg = error instanceof Error ? error.message : String(error)
       if (errMsg.includes('404')) {
         stopWorkflowPolling(jobId)
@@ -1070,7 +1363,7 @@ export const useLayersStore = defineStore('layers', () => {
     // 页面不可见时延长轮询间隔，避免后台积压定时器导致回来后卡顿
     const effectiveDelay = document.hidden ? Math.max(nextDelayMs, 10000) : nextDelayMs
     const handle = window.setTimeout(() => {
-      void pollWorkflowRun(jobId, catalogId, startTime, nextConsecutiveErrors)
+      void pollWorkflowRun(jobId, catalogId, startTime, nextConsecutiveErrors, expectedViewportEpoch)
     }, effectiveDelay)
     workflowPollingHandles.set(jobId, handle)
   }
@@ -1097,7 +1390,10 @@ export const useLayersStore = defineStore('layers', () => {
     }
   }
 
-  async function runWorkflowForCatalog(catalogId: string) {
+  async function runWorkflowForCatalog(
+    catalogId: string,
+    options: { expectedViewportEpoch?: number } = {},
+  ) {
     if (submittingCatalogIds.has(catalogId)) {
       debugLog('runWorkflow', catalogId, 'skip: already submitting')
       return
@@ -1146,6 +1442,11 @@ export const useLayersStore = defineStore('layers', () => {
       const accepted = await submitWorkflow(
         buildWorkflowPayloadForCatalog(catalogId, catalogName, requestedOutputs, requestBBox),
       )
+      if (isViewportRefreshStale(options.expectedViewportEpoch)) {
+        debugLog('runWorkflow', catalogId, 'discard stale submit after accept', accepted.run_id)
+        void cancelWorkflowRun(accepted.run_id).catch(() => {})
+        return
+      }
       debugLog('runWorkflow', catalogId, 'submitted', accepted.run_id)
 
       upsertJobLayer(catalogId, {
@@ -1167,7 +1468,7 @@ export const useLayersStore = defineStore('layers', () => {
       activeWorkflowCatalogIds.add(catalogId)
       // 工作流提交成功，清除 429 重试计数
       workflowRetryCounts.delete(catalogId)
-      void pollWorkflowRun(accepted.run_id, catalogId)
+      void pollWorkflowRun(accepted.run_id, catalogId, Date.now(), 0, options.expectedViewportEpoch)
       return accepted.run_id
     } catch (error) {
       const errMsg = error instanceof Error ? error.message : '提交 workflow 失败'
@@ -1383,16 +1684,21 @@ export const useLayersStore = defineStore('layers', () => {
   }
 
   /** 刷新所有活跃的地图型工作流图层（视口变化时调用），天气图层由 tile manager 处理，不在此处刷新 */
-  async function refreshActiveWeatherWorkflows() {
+  async function refreshActiveWeatherWorkflows(expectedViewportEpoch?: number) {
+    const epoch = expectedViewportEpoch ?? viewportRefreshEpoch
     const activeMapLayers = activeLayers.value.filter(
       (layer) => layer.visible && supportsViewportDrivenRefresh(layer.catalogId) && !isWeatherEngineLayer(layer.catalogId) && layer.jobLayer,
     )
-    debugLog('refreshActive', 'layers', activeMapLayers.map(l => l.catalogId), 'bbox', currentMapBBox.value)
+    debugLog('refreshActive', 'layers', activeMapLayers.map(l => l.catalogId), 'bbox', currentMapBBox.value, 'epoch', epoch)
 
     for (const layer of activeMapLayers) {
+      if (isViewportRefreshStale(epoch)) {
+        debugLog('refreshActive', 'abort stale epoch', epoch, 'current', viewportRefreshEpoch)
+        return
+      }
       if (!canRunCatalog(layer.catalogId)) continue
       try {
-        await runWorkflowForCatalog(layer.catalogId)
+        await runWorkflowForCatalog(layer.catalogId, { expectedViewportEpoch: epoch })
       } catch (error) {
         // 单个图层失败不影响其他图层
         console.warn(`[LayersStore] Failed to refresh map workflow for ${layer.catalogId}:`, error)
@@ -1415,7 +1721,9 @@ export const useLayersStore = defineStore('layers', () => {
     // 设置新的防抖定时器
     viewportDebounceTimer.value = window.setTimeout(() => {
       viewportDebounceTimer.value = null
-      void refreshActiveWeatherWorkflows()
+      viewportRefreshEpoch += 1
+      const epoch = viewportRefreshEpoch
+      void refreshActiveWeatherWorkflows(epoch)
     }, VIEWPORT_DEBOUNCE_MS)
   }
 
@@ -1523,11 +1831,15 @@ export const useLayersStore = defineStore('layers', () => {
     layerCategories: LAYER_CATEGORIES,
     // Actions
     addLayer,
+    addImportedVectorLayer,
+    addImportedRasterLayer,
+    getImportedVectorGeojson,
     removeLayer,
     toggleLayerVisibility,
     setAllLayerVisibility,
     removeAllLayers,
     setLayerOpacity,
+    setLayerPaletteOverride,
     setLayerOrder,
     selectLayer,
     setSidebarView,

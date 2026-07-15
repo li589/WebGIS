@@ -39,15 +39,24 @@ const MAX_TRAIL_LENGTH_PX = 80
 const PARTICLE_COUNT_CHANGE_THRESHOLD = 0.25
 
 /** 每个粒子的轨迹历史长度（点数），越大曲线越长越平滑 */
-const TRAIL_LENGTH = 28
+const TRAIL_LENGTH = 32
+
+/**
+ * 粒子年龄阶段分界（相对 maxAge 的比例）。
+ * 新生粒子淡入、中期完整不透明、老化粒子淡出，避免粒子在台风眼、
+ * 汇流、发散流等交汇点突然出现/消失造成视觉混乱。
+ */
+const AGE_BAND_YOUNG_RATIO = 0.12
+const AGE_BAND_OLD_RATIO = 0.78
+const AGE_BAND_ALPHAS = [0.22, 1.0, 0.30] as const
 
 /** 粒子默认配置（稀疏柔和风格：少量粒子 + 慢速流动 + 细线） */
 const DEFAULT_PARTICLE_OPTIONS = {
-  particleCount: 1000,
-  maxAge: 90,
-  speedScale: 0.035,
-  fadeAlpha: 0.018,
-  lineWidth: 1.4,
+  particleCount: 800,
+  maxAge: 110,
+  speedScale: 0.028,
+  fadeAlpha: 0.024,
+  lineWidth: 1.2,
 } as const
 
 /** 粒子数量上限（防止过大网格导致性能问题） */
@@ -65,13 +74,18 @@ const MAX_ZOOM_FACTOR = 4
 /**
  * 根据网格面积动态计算粒子数量。
  * 面积越大粒子越多，但受上限约束。
- * 密度约为每平方度 7 个粒子，保持稀疏柔和的视觉效果。
+ * 密度约为每平方度 5 个粒子，保持稀疏柔和的视觉效果，
+ * 避免密集区域粒子轨迹互相交错造成视觉混乱。
  */
 function computeParticleCountForGrid(grid: WindGrid): number {
   const area = Math.abs(grid.north - grid.south) * Math.abs(grid.east - grid.west)
-  const count = Math.round(area * 7)
+  const count = Math.round(area * 5)
   return Math.min(MAX_PARTICLE_COUNT, Math.max(MIN_PARTICLE_COUNT, count))
 }
+
+/** 静风速度阈值（m/s）：低于此值视为静风区域，重置粒子以避免聚集。
+ *  海洋低风速区粒子易停滞堆积，重置后重新随机分布，使海域曲线更均匀。 */
+const MIN_WIND_SPEED_FOR_RENDER = 0.5
 
 /** 粒子寿命随机上界增量（使寿命有随机分布） */
 const MAX_AGE_RANDOM_RANGE = 20
@@ -581,9 +595,9 @@ export class WindParticleCanvas {
     if (!this.grid) return DEFAULT_PARTICLE_OPTIONS.particleCount
     const baseCount = computeParticleCountForGrid(this.grid)
     // 低缩放级别降级粒子数量，避免全球视图下视觉混乱和性能下降
-    if (zoom < 2) return Math.min(baseCount, 200)
-    if (zoom < 3) return Math.min(baseCount, 400)
-    if (zoom < 5) return Math.min(baseCount, 800)
+    if (zoom < 2) return Math.min(baseCount, 160)
+    if (zoom < 3) return Math.min(baseCount, 320)
+    if (zoom < 5) return Math.min(baseCount, 600)
     return baseCount
   }
 
@@ -718,15 +732,29 @@ export class WindParticleCanvas {
     const h = height * dpr
     const maxTrailPoints = TRAIL_LENGTH * 2
 
-    // 每个颜色分组收集粒子轨迹的多段子路径
-    // subpaths: [len0, x0,y0,x1,y1..., len1, x0,y0,...]
-    const colorSubpaths: number[][] = []
-    for (let i = 0; i < this.colorRgbCache.length - 1; i++) {
-      colorSubpaths.push([])
+    // 按年龄阶段 × 颜色分组收集粒子轨迹
+    // ageColorSubpaths[band][colorIdx] = [len0, x0,y0,..., len1, ...]
+    // 年龄阶段使粒子淡入/淡出，避免交汇点突然出现/消失造成视觉混乱
+    const ageBandCount = AGE_BAND_ALPHAS.length
+    const ageColorSubpaths: number[][][] = []
+    for (let bi = 0; bi < ageBandCount; bi++) {
+      const bandSubpaths: number[][] = []
+      for (let i = 0; i < this.colorRgbCache.length - 1; i++) {
+        bandSubpaths.push([])
+      }
+      ageColorSubpaths.push(bandSubpaths)
     }
 
     for (const p of this.particles) {
       const wind = interpolateWind(grid, p.lat, p.lon)
+
+      // 静风区域重置粒子：避免粒子在低风速区（如海洋静风带）停滞堆积，
+      // 重置后重新随机分布到网格内，使海域曲线分布更均匀，减少密集交错。
+      if (wind.speed < MIN_WIND_SPEED_FOR_RENDER) {
+        this.resetParticle(p)
+        continue
+      }
+
       const [u, v] = windToUV(wind.speed, wind.direction)
 
       // 粒子在经纬度网格上运动：经向 1° 的地面距离随纬度变化（cos(lat)）。
@@ -783,9 +811,11 @@ export class WindParticleCanvas {
       // 轨迹至少需要 2 个点才能画线
       if (trail.length < 4) continue
 
-      // 按风速分组收集
+      // 按风速分组收集，并根据粒子年龄选择透明度阶段（淡入/正常/淡出）
       const { idx } = speedToColorIndex(wind.speed, colorStops)
-      const subpaths = colorSubpaths[idx]
+      const ageRatio = p.age / p.maxAge
+      const bandIdx = ageRatio < AGE_BAND_YOUNG_RATIO ? 0 : ageRatio > AGE_BAND_OLD_RATIO ? ageBandCount - 1 : 1
+      const subpaths = ageColorSubpaths[bandIdx][idx]
       if (subpaths) {
         // 写入子路径：[点数, x0, y0, x1, y1, ...]
         subpaths.push(trail.length >> 1)  // 点数
@@ -795,34 +825,51 @@ export class WindParticleCanvas {
       }
     }
 
-    // === 3. 按颜色分组批量绘制轨迹（每条轨迹是一条连续 polyline）===
-    // 风速越高透明度越高，使强风区域视觉上更突出
+    // === 3. 按年龄阶段 × 颜色分组批量绘制轨迹（二次贝塞尔曲线平滑）===
+    // 年龄阶段透明度：新生粒子淡入、老化粒子淡出，避免台风眼、汇流、发散流等
+    // 交汇点处粒子突然出现/消失造成视觉混乱
+    // quadraticCurveTo 中点插值消除折线感，使旋转/交汇区域轨迹更流畅
     const bandAlpha = 0.55
-    for (let i = 0; i < colorSubpaths.length; i++) {
-      const subpaths = colorSubpaths[i]
-      if (subpaths.length === 0) continue
+    const colorCount = this.colorRgbCache.length - 1
+    for (let bi = 0; bi < ageBandCount; bi++) {
+      const ageAlpha = AGE_BAND_ALPHAS[bi]
+      for (let i = 0; i < colorCount; i++) {
+        const subpaths = ageColorSubpaths[bi][i]
+        if (subpaths.length === 0) continue
 
-      // 使用该频段的起始颜色（非平均色），使不同风速的视觉区分更清晰
-      const [r, g, b] = this.colorRgbCache[i]
-      ctx.strokeStyle = `rgb(${r},${g},${b})`
-      // 高风速频段略微提高透明度，增强视觉冲击力
-      const speedRatio = i / Math.max(1, colorSubpaths.length - 1)
-      ctx.globalAlpha = bandAlpha + speedRatio * 0.25
+        const [r, g, bl] = this.colorRgbCache[i]
+        ctx.strokeStyle = `rgb(${r},${g},${bl})`
+        const speedRatio = i / Math.max(1, colorCount - 1)
+        ctx.globalAlpha = (bandAlpha + speedRatio * 0.25) * ageAlpha
 
-      ctx.beginPath()
-      let si = 0
-      while (si < subpaths.length) {
-        const ptCount = subpaths[si]
-        si++
-        // moveTo 第一个点
-        ctx.moveTo(subpaths[si], subpaths[si + 1])
-        // lineTo 后续点
-        for (let k = 2; k < ptCount * 2; k += 2) {
-          ctx.lineTo(subpaths[si + k], subpaths[si + k + 1])
+        ctx.beginPath()
+        let si = 0
+        while (si < subpaths.length) {
+          const ptCount = subpaths[si]
+          si++
+          const x0 = subpaths[si]
+          const y0 = subpaths[si + 1]
+          ctx.moveTo(x0, y0)
+
+          if (ptCount <= 2) {
+            ctx.lineTo(subpaths[si + 2], subpaths[si + 3])
+          } else if (ptCount === 3) {
+            ctx.quadraticCurveTo(subpaths[si + 2], subpaths[si + 3], subpaths[si + 4], subpaths[si + 5])
+          } else {
+            const lastK = (ptCount - 1) * 2
+            for (let k = 2; k < lastK; k += 2) {
+              const pcx = subpaths[si + k]
+              const pcy = subpaths[si + k + 1]
+              const mx = (pcx + subpaths[si + k + 2]) / 2
+              const my = (pcy + subpaths[si + k + 3]) / 2
+              ctx.quadraticCurveTo(pcx, pcy, mx, my)
+            }
+            ctx.lineTo(subpaths[si + lastK], subpaths[si + lastK + 1])
+          }
+          si += ptCount * 2
         }
-        si += ptCount * 2
+        ctx.stroke()
       }
-      ctx.stroke()
     }
 
     ctx.globalAlpha = 1
@@ -837,6 +884,17 @@ export class WindParticleCanvas {
     if (this.rafId !== null) {
       cancelAnimationFrame(this.rafId)
       this.rafId = null
+    }
+  }
+
+  /** 动态更新粒子色阶（配色方案切换时调用） */
+  setColors(colors: string[]): void {
+    if (!colors.length) return
+    this.options.colors = colors
+    this.colorRgbCache = colors.map(hexToRgb)
+    // 清除画布以避免旧色阶残留
+    if (this.ctx) {
+      this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height)
     }
   }
 

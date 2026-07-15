@@ -38,33 +38,53 @@ class SQLiteWorkflowRepository:
         self._initialize_schema()
         self._migrate_schema()
 
-    def save_run(self, run_status: WorkflowRunStatusResponse, request_json: str | None = None) -> None:
+    def save_run(
+        self,
+        run_status: WorkflowRunStatusResponse,
+        request_json: str | None = None,
+        run_class: str | None = None,
+    ) -> None:
         payload = json.dumps(run_status.model_dump(mode="json"), ensure_ascii=False)
         with self._connect() as connection:
             if request_json is not None:
                 connection.execute(
                     """
-                    INSERT INTO workflow_runs (run_id, status, updated_at, payload_json, request_json)
+                    INSERT INTO workflow_runs (run_id, status, updated_at, payload_json, request_json, run_class)
+                    VALUES (?, ?, ?, ?, ?, ?)
+                    ON CONFLICT(run_id) DO UPDATE SET
+                        status = excluded.status,
+                        updated_at = excluded.updated_at,
+                        payload_json = excluded.payload_json,
+                        request_json = COALESCE(excluded.request_json, request_json),
+                        run_class = COALESCE(excluded.run_class, run_class)
+                    """,
+                    (
+                        run_status.run_id,
+                        run_status.status.value,
+                        run_status.updated_at.isoformat(),
+                        payload,
+                        request_json,
+                        run_class or "business",
+                    ),
+                )
+            else:
+                connection.execute(
+                    """
+                    INSERT INTO workflow_runs (run_id, status, updated_at, payload_json, run_class)
                     VALUES (?, ?, ?, ?, ?)
                     ON CONFLICT(run_id) DO UPDATE SET
                         status = excluded.status,
                         updated_at = excluded.updated_at,
                         payload_json = excluded.payload_json,
-                        request_json = COALESCE(excluded.request_json, request_json)
+                        run_class = COALESCE(workflow_runs.run_class, excluded.run_class)
                     """,
-                    (run_status.run_id, run_status.status.value, run_status.updated_at.isoformat(), payload, request_json),
-                )
-            else:
-                connection.execute(
-                    """
-                    INSERT INTO workflow_runs (run_id, status, updated_at, payload_json)
-                    VALUES (?, ?, ?, ?)
-                    ON CONFLICT(run_id) DO UPDATE SET
-                        status = excluded.status,
-                        updated_at = excluded.updated_at,
-                        payload_json = excluded.payload_json
-                    """,
-                    (run_status.run_id, run_status.status.value, run_status.updated_at.isoformat(), payload),
+                    (
+                        run_status.run_id,
+                        run_status.status.value,
+                        run_status.updated_at.isoformat(),
+                        payload,
+                        run_class or "business",
+                    ),
                 )
 
     def get_run_request_json(self, run_id: str) -> str | None:
@@ -165,21 +185,32 @@ class SQLiteWorkflowRepository:
             scope_snapshot[config_key] = json.loads(value_json)
         return config_snapshot
 
-    def count_active_runs(self) -> int:
+    def count_active_runs(self, run_class: str | None = None) -> int:
         active_statuses = (
             ExecutionStatus.accepted.value,
             ExecutionStatus.queued.value,
             ExecutionStatus.running.value,
         )
         with self._connect() as connection:
-            row = connection.execute(
-                """
-                SELECT COUNT(*)
-                FROM workflow_runs
-                WHERE status IN (?, ?, ?)
-                """,
-                active_statuses,
-            ).fetchone()
+            if run_class is None:
+                row = connection.execute(
+                    """
+                    SELECT COUNT(*)
+                    FROM workflow_runs
+                    WHERE status IN (?, ?, ?)
+                    """,
+                    active_statuses,
+                ).fetchone()
+            else:
+                row = connection.execute(
+                    """
+                    SELECT COUNT(*)
+                    FROM workflow_runs
+                    WHERE status IN (?, ?, ?)
+                      AND COALESCE(run_class, 'business') = ?
+                    """,
+                    (*active_statuses, run_class),
+                ).fetchone()
         return int(row[0]) if row is not None else 0
 
     def _ensure_layout(self) -> None:
@@ -194,7 +225,8 @@ class SQLiteWorkflowRepository:
                     status TEXT NOT NULL,
                     updated_at TEXT NOT NULL,
                     payload_json TEXT NOT NULL,
-                    request_json TEXT
+                    request_json TEXT,
+                    run_class TEXT NOT NULL DEFAULT 'business'
                 )
                 """
             )
@@ -240,6 +272,13 @@ class SQLiteWorkflowRepository:
             columns = {row[1] for row in cursor.fetchall()}
             if "request_json" not in columns:
                 connection.execute("ALTER TABLE workflow_runs ADD COLUMN request_json TEXT")
+            if "run_class" not in columns:
+                connection.execute(
+                    "ALTER TABLE workflow_runs ADD COLUMN run_class TEXT NOT NULL DEFAULT 'business'"
+                )
+            connection.execute(
+                "CREATE INDEX IF NOT EXISTS idx_workflow_runs_class_status ON workflow_runs(run_class, status)"
+            )
 
     @contextmanager
     def _connect(self):

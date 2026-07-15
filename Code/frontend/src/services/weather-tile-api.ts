@@ -164,7 +164,8 @@ export interface SubmitWeatherTileWorkflowOptions {
 
 /**
  * 提交单个天气瓦片的 workflow 渲染任务。
- * 项目约束：所有引擎模块统一走 /workflow-runs。
+ * 仅用于显式扩展 DAG / 调试；视口热路径请使用 fetchWeatherTile。
+ * 显式 tile workflow 计入后端 weather_tile 容量池（max_active_weather_tile_runs）。
  */
 export async function submitWeatherTileWorkflow(
   layerId: string,
@@ -177,6 +178,9 @@ export async function submitWeatherTileWorkflow(
   const payload: WorkflowSubmitRequest = {
     command_type: 'analysis',
     layer_id: layerId,
+    priority: 'normal',
+    resource_profile: 'standard',
+    realtime_preferred: false,
     requested_outputs: ['json'],
     parameters: { hour: options.hour ?? 0 },
     weather_request: {
@@ -205,9 +209,15 @@ export async function submitWeatherTileWorkflow(
   return { runId: resp.run_id }
 }
 
+/** 天气瓦片请求超时时间（毫秒）。后端 urlopen 超时为 20s，前端略宽以容纳排队延迟。 */
+const TILE_FETCH_TIMEOUT_MS = 25_000
+
 /**
- * 直接请求后端 /weather/tiles REST 接口（仅用于调试，前端 tile manager 不再调用）。
- * @deprecated 请使用 submitWeatherTileWorkflow。
+ * 视口热路径：直接请求 GET /unified-tiles/{layer}/{z}/{x}/{y}。
+ * 由 WeatherTileService 负责缓存与网格生成；不占用 workflow-runs 业务容量池。
+ *
+ * 内置 25 秒超时，避免后端排队或 Open-Meteo API 慢时前端并发槽位被无限占用。
+ * 超时抛出 Error（message 含 "timeout"），与外部 AbortSignal 取消区分。
  */
 export async function fetchWeatherTile(
   layerId: string,
@@ -224,14 +234,37 @@ export async function fetchWeatherTile(
   const suffix = search.toString() ? `?${search.toString()}` : ''
   const url = resolveApiUrl(`/unified-tiles/${layerId}/${z}/${x}/${y}${suffix}`)
 
-  const response = await fetch(url, {
-    signal: options.signal,
-  })
+  // 组合外部 signal 和超时 signal，任一触发都会 abort fetch
+  const timeoutController = new AbortController()
+  const timeoutId = setTimeout(() => timeoutController.abort(), TILE_FETCH_TIMEOUT_MS)
+  const externalSignal = options.signal
 
-  if (!response.ok) {
-    const detail = await response.text().catch(() => '')
-    throw new Error(`Weather tile request failed: ${response.status} ${url}${detail ? ` - ${detail}` : ''}`)
+  // 外部 abort 传播到 timeoutController，保持错误类型一致
+  if (externalSignal) {
+    if (externalSignal.aborted) {
+      clearTimeout(timeoutId)
+      timeoutController.abort(externalSignal.reason)
+    } else {
+      externalSignal.addEventListener('abort', () => timeoutController.abort(externalSignal.reason), { once: true })
+    }
   }
 
-  return (await response.json()) as WindGeoJSON
+  try {
+    const response = await fetch(url, { signal: timeoutController.signal })
+
+    if (!response.ok) {
+      const detail = await response.text().catch(() => '')
+      throw new Error(`Weather tile request failed: ${response.status} ${url}${detail ? ` - ${detail}` : ''}`)
+    }
+
+    return (await response.json()) as WindGeoJSON
+  } catch (err) {
+    // 区分超时和外部取消：超时时 externalSignal 未 abort，但 timeoutController 已 abort
+    if (err instanceof DOMException && err.name === 'AbortError' && !externalSignal?.aborted) {
+      throw new Error(`Weather tile request timeout after ${TILE_FETCH_TIMEOUT_MS / 1000}s: ${url}`)
+    }
+    throw err
+  } finally {
+    clearTimeout(timeoutId)
+  }
 }

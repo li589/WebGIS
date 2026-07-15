@@ -126,7 +126,7 @@ describe('basemap-module', () => {
     })
 
     for (let index = 0; index < 16; index += 1) {
-      module.handleTileError(null)
+      module.handleTileError('Esri')
     }
 
     expect(setTileLoadFailed).toHaveBeenLastCalledWith(true)
@@ -176,6 +176,7 @@ describe('basemap-module', () => {
       },
     })
 
+    // 迟到失败指向其它底图：忽略，不进入失败态
     for (let index = 0; index < 16; index += 1) {
       module.handleMapErrorEvent({
         sourceId: 'tile-base',
@@ -185,12 +186,13 @@ describe('basemap-module', () => {
         },
       })
     }
+    expect(setTileLoadFailed).not.toHaveBeenCalledWith(true)
 
     module.handleMapErrorEvent({
       sourceId: 'other-source',
       error: {
         status: 403,
-        url: 'https://example.com/tiles/ShouldIgnore/1/2/3.png',
+        url: 'https://example.com/tiles/Esri/1/2/3.png',
       },
     })
 
@@ -198,11 +200,22 @@ describe('basemap-module', () => {
       sourceId: 'tile-base',
       error: {
         status: 500,
-        url: 'https://example.com/tiles/AlsoIgnore/1/2/3.png',
+        url: 'https://example.com/tiles/Esri/1/2/3.png',
       },
     })
 
+    // 当前底图连续失败：计入阈值
+    for (let index = 0; index < 16; index += 1) {
+      module.handleMapErrorEvent({
+        sourceId: 'tile-base',
+        error: {
+          status: 403,
+          url: 'https://example.com/tiles/Esri/1/2/3.png',
+        },
+      })
+    }
+
     expect(setTileLoadFailed).toHaveBeenLastCalledWith(true)
-    expect(setTileFailedProvider).toHaveBeenLastCalledWith('Gaode')
+    expect(setTileFailedProvider).toHaveBeenLastCalledWith('Esri')
   })
 })

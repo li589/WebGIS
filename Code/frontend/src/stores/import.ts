@@ -67,6 +67,12 @@ function _flattenCoords(geom: GeoJSON.Geometry): number[] {
       for (const item of arr) walk(item)
     }
   }
+  if (geom.type === 'GeometryCollection') {
+    for (const child of geom.geometries) {
+      out.push(..._flattenCoords(child))
+    }
+    return out
+  }
   walk(geom.coordinates)
   return out
 }

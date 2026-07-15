@@ -215,6 +215,60 @@ class WeatherTileService:
 
         raise ValueError(f"Unsupported weather tile layer: {layer_id}")
 
+    def generate_tile_payload(
+        self,
+        layer_id: str,
+        layer_spec: WeatherLayerSpec,
+        z: int,
+        x: int,
+        y: int,
+        hour: int,
+        model: str | None,
+    ) -> dict[str, Any]:
+        """同步生成瓦片 GeoJSON（不含服务级缓存 / 并发闸）。
+
+        REST 热路径与 ``weather_tile_render`` 节点共用此实现，保证网格与元数据一致。
+        """
+        bbox = tile_bbox(z, x, y)
+        resolution = zoom_to_resolution(z)
+
+        logger.info(
+            "[WeatherTileService] generating tile layer=%s z=%d x=%d y=%d hour=%d resolution=%.2f bbox=(%.4f,%.4f,%.4f,%.4f)",
+            layer_id, z, x, y, hour, resolution,
+            bbox.west, bbox.south, bbox.east, bbox.north,
+        )
+
+        grid_data, cache_status = self._client.fetch_grid_forecast(
+            bbox=bbox,
+            resolution=resolution,
+            layer_spec=layer_spec,
+            model=model or settings.weather_default_model,
+            ttl_seconds=settings.weather_cache_ttl_seconds,
+            pressure_levels=layer_spec.pressure_levels if layer_spec else None,
+        )
+        grid_data_for_hour = _grid_data_for_hour(grid_data, hour)
+        geojson = self._build_geojson(grid_data_for_hour, layer_id, layer_spec)
+
+        geojson["_tile_meta"] = {
+            "layer_id": layer_id,
+            "z": z,
+            "x": x,
+            "y": y,
+            "hour": hour,
+            "model": model or settings.weather_default_model,
+            "resolution": resolution,
+            "bbox": bbox.model_dump(mode="json"),
+            "feature_count": len(geojson.get("features", [])),
+            "generated_at": datetime.now(timezone.utc).isoformat(),
+            "upstream_cache_status": cache_status,
+        }
+
+        logger.info(
+            "[WeatherTileService] tile generated layer=%s z=%d x=%d y=%d hour=%d features=%d upstream_cache=%s",
+            layer_id, z, x, y, hour, len(geojson.get("features", [])), cache_status,
+        )
+        return geojson
+
     async def _generate_tile(
         self,
         layer_id: str,
@@ -225,51 +279,68 @@ class WeatherTileService:
         hour: int,
         model: str | None,
     ) -> dict[str, Any]:
-        """实际生成瓦片（在 semaphore 保护下执行）。"""
-        bbox = tile_bbox(z, x, y)
-        resolution = zoom_to_resolution(z)
-
-        logger.info(
-            "[WeatherTileService] generating tile layer=%s z=%d x=%d y=%d hour=%d resolution=%.2f bbox=(%.4f,%.4f,%.4f,%.4f)",
-            layer_id, z, x, y, hour, resolution,
-            bbox.west, bbox.south, bbox.east, bbox.north,
-        )
-
-        # 在后台线程执行同步的网格获取与 GeoJSON 构建，避免阻塞事件循环
+        """在线程池中执行同步生成，避免阻塞事件循环。"""
         loop = asyncio.get_event_loop()
-
-        def _fetch_and_build() -> tuple[dict[str, Any], str]:
-            grid_data, cache_status = self._client.fetch_grid_forecast(
-                bbox=bbox,
-                resolution=resolution,
+        return await loop.run_in_executor(
+            None,
+            lambda: self.generate_tile_payload(
+                layer_id=layer_id,
                 layer_spec=layer_spec,
-                model=model or settings.weather_default_model,
-                ttl_seconds=settings.weather_cache_ttl_seconds,
-                pressure_levels=layer_spec.pressure_levels if layer_spec else None,
-            )
-            grid_data_for_hour = _grid_data_for_hour(grid_data, hour)
-            geojson = self._build_geojson(grid_data_for_hour, layer_id, layer_spec)
-            return geojson, cache_status
-
-        geojson, cache_status = await loop.run_in_executor(None, _fetch_and_build)
-
-        # 注入瓦片元数据，便于前端调试
-        geojson["_tile_meta"] = {
-            "layer_id": layer_id,
-            "z": z,
-            "x": x,
-            "y": y,
-            "hour": hour,
-            "model": model or settings.weather_default_model,
-            "generated_at": datetime.now(timezone.utc).isoformat(),
-            "upstream_cache_status": cache_status,
-        }
-
-        logger.info(
-            "[WeatherTileService] tile generated layer=%s z=%d x=%d y=%d hour=%d features=%d upstream_cache=%s",
-            layer_id, z, x, y, hour, len(geojson.get("features", [])), cache_status,
+                z=z,
+                x=x,
+                y=y,
+                hour=hour,
+                model=model,
+            ),
         )
-        return geojson
+
+    def get_or_generate_tile_sync(
+        self,
+        layer_id: str,
+        z: int,
+        x: int,
+        y: int,
+        *,
+        hour: int | None = None,
+        model: str | None = None,
+    ) -> tuple[dict[str, Any], str]:
+        """同步版 get_tile：供 workflow 节点复用同一套缓存与生成逻辑。"""
+        hour = _clamp_hour(hour)
+        model = model or settings.weather_default_model
+        key = tile_key(layer_id, z, x, y, hour, model)
+
+        layer_spec = WEATHER_LAYER_SPECS.get(layer_id)
+        if layer_spec is None:
+            raise ValueError(f"Unsupported weather layer: {layer_id}")
+
+        if not (_MIN_TILE_ZOOM <= z <= _MAX_TILE_ZOOM):
+            raise ValueError(f"Tile zoom must be between {_MIN_TILE_ZOOM} and {_MAX_TILE_ZOOM}")
+
+        n = 2 ** z
+        if not (0 <= x < n and 0 <= y < n):
+            raise ValueError("Invalid tile coordinates for zoom level")
+
+        cached = self._read_memory_cache(key)
+        if cached is not None:
+            return cached, "hit"
+
+        redis_cached = cache_get_json(key)
+        if redis_cached is not None:
+            self._write_memory_cache(key, redis_cached)
+            return redis_cached, "hit"
+
+        geojson = self.generate_tile_payload(
+            layer_id=layer_id,
+            layer_spec=layer_spec,
+            z=z,
+            x=x,
+            y=y,
+            hour=hour,
+            model=model,
+        )
+        self._write_memory_cache(key, geojson)
+        cache_set_json(key, geojson, settings.weather_cache_ttl_seconds)
+        return geojson, "miss"
 
     def _read_memory_cache(self, key: str) -> dict[str, Any] | None:
         if key in self._in_memory_cache:

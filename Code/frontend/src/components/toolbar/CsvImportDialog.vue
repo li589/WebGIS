@@ -73,8 +73,8 @@ async function parseCsv() {
     const xCandidates = ['lng', 'lon', 'long', 'longitude', 'x', '经度', '东经']
     const yCandidates = ['lat', 'latitude', 'y', '纬度', '北纬']
     const lowerCols = cols.map((c) => c.toLowerCase())
-    const xGuess = cols.find((c, i) => xCandidates.includes(lowerCols[i]))
-    const yGuess = cols.find((c, i) => yCandidates.includes(lowerCols[i]))
+    const xGuess = cols.find((_c, i) => xCandidates.includes(lowerCols[i]))
+    const yGuess = cols.find((_c, i) => yCandidates.includes(lowerCols[i]))
     xCol.value = xGuess ?? cols[0]
     yCol.value = yGuess ?? cols[1] ?? cols[0]
   } catch (err) {

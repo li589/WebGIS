@@ -16,8 +16,8 @@ function formatMetricValue(value: unknown, unit = '') {
   return unit ? `--${unit}` : '--'
 }
 
-function extractResultUrl(resultRefs: WorkflowResultReference[]) {
-  return resultRefs.find((item) => item.resource_url)?.resource_url
+function extractResultUrl(resultRefs: WorkflowResultReference[] | undefined) {
+  return resultRefs?.find((item) => item.resource_url)?.resource_url ?? undefined
 }
 
 function extractWorkflowEntryName(run: WorkflowRunStatusResponse) {
@@ -26,8 +26,8 @@ function extractWorkflowEntryName(run: WorkflowRunStatusResponse) {
   return typeof entryName === 'string' && entryName.trim() ? entryName : undefined
 }
 
-function extractReportSummary(resultRefs: WorkflowResultReference[], fallbackMessage: string) {
-  const textResult = resultRefs.find((item) => item.result_kind === 'text')
+function extractReportSummary(resultRefs: WorkflowResultReference[] | undefined, fallbackMessage: string) {
+  const textResult = resultRefs?.find((item) => item.result_kind === 'text')
   const textPayload = asRecord(textResult?.inline_data)
   const text = textPayload?.text
   return typeof text === 'string' && text.trim() ? text : fallbackMessage
@@ -35,7 +35,7 @@ function extractReportSummary(resultRefs: WorkflowResultReference[], fallbackMes
 
 function extractMetrics(run: WorkflowRunStatusResponse) {
   const metrics: Array<{ label: string; value: string }> = []
-  const jsonResult = run.result_refs.find((item) => item.result_kind === 'json')
+  const jsonResult = run.result_refs?.find((item) => item.result_kind === 'json')
   const jsonPayload = asRecord(jsonResult?.inline_data)
   const analysis = asRecord(jsonPayload?.analysis)
 
@@ -118,8 +118,8 @@ function extractDiagnosticNotes(run: WorkflowRunStatusResponse) {
   return notes
 }
 
-function extractMapLayerPayload(resultRefs: WorkflowResultReference[]): JobLayerMapLayerPayload | undefined {
-  const mapLayerResult = resultRefs.find((item) => item.result_kind === 'map_layer')
+function extractMapLayerPayload(resultRefs: WorkflowResultReference[] | undefined): JobLayerMapLayerPayload | undefined {
+  const mapLayerResult = resultRefs?.find((item) => item.result_kind === 'map_layer')
   const payload = asRecord(mapLayerResult?.inline_data)
   if (!payload) {
     return undefined
@@ -212,7 +212,7 @@ export async function buildJobLayer(
     reportSummary,
     resultDto: run.result_dto ?? undefined,
     resultView: resultView ?? undefined,
-    resultUrl,
+    resultUrl: resultUrl ?? undefined,
     mapLayerPayload,
     diagnostics: run.diagnostics ?? [],
     diagnosticNotes,

@@ -66,3 +66,13 @@ debug-*.md
 
 # Legacy review archives
 Code/frontend/legacy-review/
+
+# Root-level temp/debug scripts and data
+/analyze_*.py
+/test_wf_*.py
+/tmp_*.py
+/tmp_*.txt
+/tmp_*.json
+/temp_wf_*.json
+.trae/debug-*.png
+.trae/documents/旧对话*.md

@@ -13,13 +13,34 @@ import type { ActiveLayerDisplay } from '../stores/layers/types'
 import { useLayersStore } from '../stores/layers'
 import { useUiStore } from '../stores/ui'
 import { useLogStore } from '../stores/log'
+import { useWeatherTileManager } from '../stores/weather-tile-manager'
 import WorkflowStatusButton from './workflow/WorkflowStatusButton.vue'
 import DataImportMenu from './toolbar/DataImportMenu.vue'
 
 const layersStore = useLayersStore()
 const uiStore = useUiStore()
 const logStore = useLogStore()
+const weatherTileManager = useWeatherTileManager()
 const { workflowSummary } = storeToRefs(layersStore)
+const { activityVersion, statusVersion } = storeToRefs(weatherTileManager)
+
+/** 合并工作流摘要：天气瓦片 pending（/unified-tiles）计入 running 指示，不等于 workflow-runs 数 */
+const mergedWorkflowSummary = computed(() => {
+  // 引用 activityVersion 确保天气瓦片 pending 变化时触发重新计算
+  void activityVersion.value
+  void statusVersion.value
+  const base = workflowSummary.value
+  const tileActive = weatherTileManager.getGlobalActiveTileCount()
+  if (tileActive === 0) return base
+  // 天气瓦片 pending 计入 running，使标题栏显示"N 运行中"
+  return {
+    ...base,
+    running: base.running + tileActive,
+    total: Math.max(base.total, tileActive),
+    overall: 'active' as const,
+    tone: 'active' as const,
+  }
+})
 
 const props = defineProps<{
   tileSourceId: TileSourceId
@@ -66,25 +87,6 @@ const sourcesByStyle = computed(() => {
 
 const currentTileConfig = computed(() => TILE_SOURCES.find((s) => s.id === props.tileSourceId))
 
-// ── 主工具栏逻辑 ──────────────────────────────────────────────────────────
-
-const isAdminBoundaryActive = computed(() =>
-  layersStore.activeLayersDisplay.some((d) => d.isAdminBoundary),
-)
-
-function toggleAdminBoundary() {
-  if (isAdminBoundaryActive.value) {
-    const boundary = layersStore.activeLayersDisplay.find((d) => d.isAdminBoundary)
-    if (boundary) {
-      layersStore.removeLayer(boundary.instanceId)
-      logStore.logOperation('boundary-toggle', '关闭行政区边界')
-    }
-  } else {
-    layersStore.addLayer('admin-boundary', true)
-    logStore.logOperation('boundary-toggle', '开启行政区边界')
-  }
-}
-
 function setInteractionMode(mode: 'move' | 'select') {
   uiStore.setInteractionMode(mode)
   logStore.logOperation('mode-switch', `切换到${mode === 'move' ? '移动' : '选择'}模式`)
@@ -111,18 +113,6 @@ function handleScreenshot() {
       <div class="primary-tools">
         <!-- 数据导入 -->
         <DataImportMenu />
-
-        <!-- 行政区边界开关 -->
-        <button
-          class="tool-btn"
-          :class="{ active: isAdminBoundaryActive }"
-          type="button"
-          :title="isAdminBoundaryActive ? '关闭行政区边界' : '开启行政区边界'"
-          @click="toggleAdminBoundary"
-        >
-          <span class="btn-icon" aria-hidden="true">▢</span>
-          <span class="btn-label">边界</span>
-        </button>
 
         <!-- 移动 / 选择 模式 -->
         <div class="mode-group">
@@ -201,7 +191,7 @@ function handleScreenshot() {
 
         <!-- Workflow status -->
         <WorkflowStatusButton
-          :summary="workflowSummary"
+          :summary="mergedWorkflowSummary"
           @click="emit('openWorkflowStatus')"
         />
 

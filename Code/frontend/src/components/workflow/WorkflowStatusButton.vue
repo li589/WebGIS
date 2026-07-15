@@ -16,11 +16,10 @@ const label = computed(() => {
   const s = props.summary
   if (s.total === 0) return '工作流'
   const active = s.running + s.queued + s.retryPending
-  if (active > 0) return `${active} 运行中`
-  if (s.failed > 0 && s.succeeded > 0) return `${s.failed} 失败`
-  if (s.failed > 0) return `${s.failed} 失败`
-  if (s.succeeded > 0) return `${s.succeeded} 完成`
-  return `${s.total}`
+  if (active > 0) return '运行中'
+  if (s.failed > 0) return '失败'
+  if (s.succeeded > 0) return '完成'
+  return '工作流'
 })
 
 const showRunningBadge = computed(() => props.summary.running > 0)

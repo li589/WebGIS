@@ -20,7 +20,7 @@ export function buildResultDisplayModel(view: WorkflowRunViewResponse | null | u
     subtitle: view.subtitle,
     statusText: view.status_text,
     progressText: view.progress_text,
-    metricRows: view.metric_rows,
+    metricRows: view.metric_rows ?? [],
     canShowResultLink: view.can_show_link,
     resultUrl: view.result_url,
   }

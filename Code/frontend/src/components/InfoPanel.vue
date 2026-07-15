@@ -5,14 +5,39 @@ import type { ActiveLayerDisplay, LayerHotspot } from '../stores/layers/types'
 import type { WeatherPointResponse } from '../services/runtime-api'
 import { useLayersStore } from '../stores/layers'
 import { useUiStore } from '../stores/ui'
+import { useLogStore } from '../stores/log'
 import { useWeatherTileManager } from '../stores/weather-tile-manager'
 import IntegrationStatusPanel from './info-panel/IntegrationStatusPanel.vue'
-import { buildWeatherLegendStops } from './map/weather-render'
 import { buildResultDisplayModel } from './info-panel/result-adapter'
+import {
+  exportFeatureCollectionAsCsv,
+  exportFeatureCollectionAsGeoJson,
+} from '../stores/layers/imported-vector'
+import {
+  WEATHER_PALETTE_OPTIONS,
+  buildWeatherLegendStops,
+  hasRenderableSymbology,
+  isMapLinkedPalette,
+  resolveStyleRenderHint,
+} from './map/layer-symbology'
+import { useOverlaySymbologyStore } from '../stores/overlay-symbology'
 
 const layersStore = useLayersStore()
 const uiStore = useUiStore()
+const logStore = useLogStore()
 const weatherTileManager = useWeatherTileManager()
+const overlaySymbologyStore = useOverlaySymbologyStore()
+const importActionHint = ref('')
+let importHintTimer: number | null = null
+
+function flashImportHint(message: string) {
+  importActionHint.value = message
+  if (importHintTimer !== null) window.clearTimeout(importHintTimer)
+  importHintTimer = window.setTimeout(() => {
+    importActionHint.value = ''
+    importHintTimer = null
+  }, 3200)
+}
 
 const props = defineProps<{
   activeLayer: ActiveLayerDisplay
@@ -38,13 +63,82 @@ const emit = defineEmits<{
 const displayLayer = computed(() => props.selectedLayer ?? props.activeLayer)
 const jobLayer = computed(() => displayLayer.value?.jobLayer)
 const resultModel = computed(() => buildResultDisplayModel(jobLayer.value?.resultView ?? null))
-const analysisSummary = computed(() => displayLayer.value.summary || props.activeLayer.summary)
+const analysisSummary = computed(() => {
+  if (displayLayer.value.isImported) {
+    return `本地导入矢量 · ${displayLayer.value.importedGeometryType ?? '—'} · ${displayLayer.value.importedFeatureCount ?? 0} 个要素`
+  }
+  if (displayLayer.value.isImportedRaster) {
+    return '本地导入栅格（TIF）已注册为 overlay，可在此控制透明度。'
+  }
+  if (displayLayer.value.isAdminBoundary) {
+    return '行政区边界为静态矢量叠加，不参与分析工作流。'
+  }
+  return displayLayer.value.summary || props.activeLayer.summary
+})
 const jobReportSummary = computed(() => jobLayer.value?.resultView?.summary ?? jobLayer.value?.reportSummary ?? '')
 const isRealtimeWeatherLayer = computed(() => layersStore.isWeatherEngineLayer(displayLayer.value.catalogId))
 const weatherRenderHint = computed(
   () => displayLayer.value?.renderHint ?? jobLayer.value?.mapLayerPayload?.renderHint ?? props.pointWeather?.render_hint ?? null,
 )
-const weatherLegendStops = computed(() => (weatherRenderHint.value ? buildWeatherLegendStops(weatherRenderHint.value) : []))
+
+/** 侧栏同源 overlay meta + 可选 overlayTimeStates 兜底 */
+const overlayStyleMeta = computed(() => {
+  void overlaySymbologyStore.version
+  const fromStore = overlaySymbologyStore.getMeta(displayLayer.value.catalogId)
+  if (fromStore?.palette) return fromStore
+  const states = props.overlayTimeStates ?? []
+  const match = states.find((s) => s.layerId === displayLayer.value.catalogId)
+  if (!match) return fromStore
+  return {
+    palette: match.palette,
+    vmin: match.vmin,
+    vmax: match.vmax,
+    unit: match.unit,
+    opacity: match.opacity,
+  }
+})
+
+watch(
+  () => [displayLayer.value.catalogId, displayLayer.value.renderHint, displayLayer.value.isImported, displayLayer.value.isImportedRaster, displayLayer.value.isAdminBoundary] as const,
+  ([catalogId, renderHint, isImported, isImportedRaster, isAdminBoundary]) => {
+    if (!catalogId || isImported || isImportedRaster || isAdminBoundary || renderHint) return
+    void overlaySymbologyStore.ensureMeta(catalogId)
+  },
+  { immediate: true },
+)
+
+const styleRenderHint = computed(() =>
+  resolveStyleRenderHint({
+    paletteOverride: displayLayer.value.paletteOverride,
+    renderHint: weatherRenderHint.value,
+    overlayMeta: overlayStyleMeta.value,
+  }),
+)
+
+const weatherLegendStops = computed(() => (styleRenderHint.value ? buildWeatherLegendStops(styleRenderHint.value) : []))
+const currentPaletteId = computed(() => displayLayer.value?.paletteOverride ?? styleRenderHint.value?.palette ?? '')
+const paletteOptions = WEATHER_PALETTE_OPTIONS
+const paletteDropdownOpen = ref(false)
+const canEditPalette = computed(() =>
+  isMapLinkedPalette({
+    hasRenderHint: Boolean(weatherRenderHint.value),
+    isImportedRaster: displayLayer.value.isImportedRaster,
+  }),
+)
+
+function handleSelectPalette(paletteId: string) {
+  if (!canEditPalette.value) return
+  const defaultId = weatherRenderHint.value?.palette ?? ''
+  const target = paletteId === defaultId ? null : paletteId
+  if (displayLayer.value?.instanceId) {
+    layersStore.setLayerPaletteOverride(displayLayer.value.instanceId, target)
+  }
+  paletteDropdownOpen.value = false
+}
+function togglePaletteDropdown() {
+  if (!canEditPalette.value) return
+  paletteDropdownOpen.value = !paletteDropdownOpen.value
+}
 const tileStats = computed(() =>
   isRealtimeWeatherLayer.value ? weatherTileManager.getStats(displayLayer.value.catalogId) : null,
 )
@@ -53,18 +147,28 @@ const hasWeatherLayerAsset = computed(() => {
   return !!jobLayer.value?.mapLayerPayload?.layerAssets?.geojsonUrl
 })
 const jobEventNotes = computed(() => jobLayer.value?.eventMessages ?? jobLayer.value?.diagnosticNotes ?? [])
-const hasWeatherStyleSection = computed(
-  () => !!weatherRenderHint.value || canToggleParticleFlow.value || isRealtimeWeatherLayer.value,
-)
-const particleFlowButtonDisabled = computed(() => !hasWeatherLayerAsset.value && !isParticleFlowEnabled.value)
 
-// 粒子流切换：仅风场变体图层显示按钮，独占式启用
 const canToggleParticleFlow = computed(() => layersStore.supportsParticleFlow(displayLayer.value.catalogId))
 const isParticleFlowEnabled = computed(() => layersStore.particleFlowCatalogId === displayLayer.value.catalogId)
 function handleToggleParticleFlow() {
   if (particleFlowButtonDisabled.value) return
   layersStore.toggleParticleFlow(displayLayer.value.catalogId)
 }
+const particleFlowButtonDisabled = computed(() => !hasWeatherLayerAsset.value && !isParticleFlowEnabled.value)
+
+const hasLayerStyleSection = computed(() =>
+  hasRenderableSymbology({
+    renderHint: weatherRenderHint.value,
+    overlayMeta: overlayStyleMeta.value,
+    isAdminBoundary: displayLayer.value.isAdminBoundary,
+    isImported: displayLayer.value.isImported,
+    isImportedRaster: displayLayer.value.isImportedRaster,
+  })
+  || canToggleParticleFlow.value
+  || isRealtimeWeatherLayer.value,
+)
+
+/** 点天气仅在有查询态或当前确为天气层时展示（样式已拆出） */
 const hasPointWeatherSection = computed(
   () =>
     props.pointWeatherLoading ||
@@ -72,6 +176,56 @@ const hasPointWeatherSection = computed(
     !!props.pointWeather ||
     isRealtimeWeatherLayer.value,
 )
+
+const showCompactHero = computed(
+  () => displayLayer.value.isImported || displayLayer.value.isImportedRaster || displayLayer.value.isAdminBoundary,
+)
+
+const runBlockedHint = computed(() => {
+  if (displayLayer.value.isAdminBoundary) {
+    return '该图层仅用于边界展示，不支持任务运行'
+  }
+  if (displayLayer.value.isImported || displayLayer.value.isImportedRaster) {
+    return '本地导入图层不支持分析工作流，可在此控制显隐与透明度'
+  }
+  if (isRealtimeWeatherLayer.value) {
+    return '瓦片按视口自动加载，无需手动运行'
+  }
+  return '当前图层不支持任务运行'
+})
+
+function formatBounds(bounds?: [number, number, number, number] | null): string {
+  if (!bounds || bounds.length !== 4) return '—'
+  return `${bounds[0].toFixed(3)}, ${bounds[1].toFixed(3)} → ${bounds[2].toFixed(3)}, ${bounds[3].toFixed(3)}`
+}
+
+function exportImportedGeoJson() {
+  const id = displayLayer.value.instanceId
+  if (!id) return
+  const geojson = layersStore.getImportedVectorGeojson(id)
+  if (!geojson) {
+    flashImportHint('导出失败：未找到矢量数据')
+    logStore.logOperation('export-fail', '分析框导出 GeoJSON 失败：无数据')
+    return
+  }
+  exportFeatureCollectionAsGeoJson(geojson, displayLayer.value.name || 'export')
+  flashImportHint('已导出 GeoJSON')
+  logStore.logOperation('export-geojson', `导出 GeoJSON：${displayLayer.value.name || id}`)
+}
+
+function exportImportedCsv() {
+  const id = displayLayer.value.instanceId
+  if (!id) return
+  const geojson = layersStore.getImportedVectorGeojson(id)
+  if (!geojson) {
+    flashImportHint('导出失败：未找到矢量数据')
+    logStore.logOperation('export-fail', '分析框导出 CSV 失败：无数据')
+    return
+  }
+  exportFeatureCollectionAsCsv(geojson, displayLayer.value.name || 'export')
+  flashImportHint('已导出 CSV')
+  logStore.logOperation('export-csv', `导出 CSV：${displayLayer.value.name || id}`)
+}
 
 const WEATHER_METRIC_LABELS: Record<string, string> = {
   wind_speed_10m: '实时风速',
@@ -229,7 +383,7 @@ const pointWeatherRows = computed(() => {
 const pointWeatherHourlyRows = computed(() => {
   const weather = props.pointWeather
   if (!weather) return []
-  return weather.hourly.slice(0, 4).map((entry) => {
+  return (weather.hourly ?? []).slice(0, 4).map((entry) => {
     const metricValue =
       typeof entry.primary_value === 'number'
         ? entry.primary_value
@@ -241,7 +395,12 @@ const pointWeatherHourlyRows = computed(() => {
     }
   }).filter((entry) => entry.metric !== `-- ${pointWeatherMetric.value.unit}`.trim())
 })
-const canRunWorkflow = computed(() => !displayLayer.value?.isAdminBoundary && !isRealtimeWeatherLayer.value)
+const canRunWorkflow = computed(() =>
+  !displayLayer.value?.isAdminBoundary
+  && !displayLayer.value?.isImported
+  && !displayLayer.value?.isImportedRaster
+  && !isRealtimeWeatherLayer.value,
+)
 const isWorkflowRunning = computed(() => jobLayer.value?.status === 'running' || jobLayer.value?.status === 'queued')
 const runBlockedReason = computed(() => layersStore.getCatalogRunBlockReason(displayLayer.value.catalogId))
 const workflowStage = computed(() => {
@@ -261,7 +420,6 @@ const workflowStage = computed(() => {
 })
 const buttonDisabled = computed(() => Boolean(runBlockedReason.value) || isWorkflowRunning.value || props.isSubmitting)
 const buttonLabel = computed(() => {
-  if (isRealtimeWeatherLayer.value) return '瓦片自动加载'
   if (runBlockedReason.value) return '数据未就绪'
   if (props.isSubmitting) return '提交中...'
   if (isWorkflowRunning.value) return '任务进行中'
@@ -362,6 +520,11 @@ watch(
   (instanceId) => {
     scrollToTopSummary()
     if (!instanceId) return
+    // 导入层滚到专项；其余保持当前对象卡片，避免每次强制跳「图层样式」
+    if (displayLayer.value.isImported || displayLayer.value.isImportedRaster) {
+      void scrollAnalysisIntoView('#imported-layer')
+      return
+    }
     void scrollAnalysisIntoView(`#layer-${instanceId}`)
   },
   { immediate: true },
@@ -392,11 +555,15 @@ watch(
 onBeforeUnmount(() => {
   pendingTimers.forEach((t) => window.clearTimeout(t))
   pendingTimers.length = 0
+  if (importHintTimer !== null) {
+    window.clearTimeout(importHintTimer)
+    importHintTimer = null
+  }
 })
 </script>
 
 <template>
-  <aside class="panel" ref="analysisScrollEl">
+  <aside class="panel" ref="analysisScrollEl" :style="{ '--accent-color': displayLayer.accentColor }">
     <div class="panel-topline" ref="topSummaryEl">
       <div class="panel-header">
         <div>
@@ -421,7 +588,7 @@ onBeforeUnmount(() => {
         >
           {{ buttonLabel }}
         </button>
-        <span v-else class="run-workflow-hint">该图层仅用于边界展示，不支持任务运行</span>
+        <span v-else class="run-workflow-hint">{{ runBlockedHint }}</span>
       </div>
       <div v-if="runBlockedReason" class="run-block-hint">
         {{ runBlockedReason }}
@@ -447,8 +614,50 @@ onBeforeUnmount(() => {
     <div class="analysis-stream">
       <section class="analysis-section analysis-section--overview" id="global-overview">
         <div class="section-kicker">总览</div>
-        <h3>全图态势</h3>
+        <h3>{{ showCompactHero ? '图层说明' : '全图态势' }}</h3>
         <p>{{ analysisSummary }}</p>
+      </section>
+
+      <section
+        v-if="displayLayer.isImported || displayLayer.isImportedRaster"
+        class="analysis-section analysis-section--imported"
+        id="imported-layer"
+      >
+        <div class="section-kicker">导入</div>
+        <h3>本地数据</h3>
+        <dl class="meta-list imported-meta">
+          <div v-if="displayLayer.isImported">
+            <dt>几何类型</dt>
+            <dd>{{ displayLayer.importedGeometryType ?? '—' }}</dd>
+          </div>
+          <div v-if="displayLayer.isImported">
+            <dt>要素数</dt>
+            <dd>{{ displayLayer.importedFeatureCount ?? 0 }}</dd>
+          </div>
+          <div v-if="displayLayer.isImportedRaster">
+            <dt>类型</dt>
+            <dd>栅格 · TIF overlay</dd>
+          </div>
+          <div v-if="displayLayer.isImportedRaster">
+            <dt>Overlay ID</dt>
+            <dd class="mono">{{ displayLayer.catalogId }}</dd>
+          </div>
+          <div>
+            <dt>范围</dt>
+            <dd>{{ formatBounds(displayLayer.importedBounds ?? displayLayer.importedRasterBounds) }}</dd>
+          </div>
+          <div>
+            <dt>来源</dt>
+            <dd>{{ displayLayer.sourceLabel }}</dd>
+          </div>
+        </dl>
+        <div v-if="displayLayer.isImported" class="imported-export-row">
+          <button class="imported-export-btn" type="button" @click="exportImportedGeoJson">导出 GeoJSON</button>
+          <button class="imported-export-btn" type="button" @click="exportImportedCsv">导出 CSV</button>
+        </div>
+        <p v-if="importActionHint" class="imported-action-hint" :class="{ error: importActionHint.includes('失败') }">
+          {{ importActionHint }}
+        </p>
       </section>
 
       <section v-if="jobLayer" class="job-report-card job-report-card--summary" id="scheduler-status">
@@ -574,65 +783,127 @@ onBeforeUnmount(() => {
             </article>
           </div>
         </template>
+      </section>
 
-        <div v-if="hasWeatherStyleSection" class="weather-style-panel">
-          <div class="weather-style-head">
-            <strong>图层样式</strong>
-            <span class="analysis-chip">{{ weatherRenderHint?.paint_mode ?? (canToggleParticleFlow ? 'particle_flow' : '等待产物') }}</span>
+      <section
+        v-if="hasLayerStyleSection"
+        class="analysis-section analysis-section--style"
+        id="layer-style"
+      >
+        <div class="section-kicker">符号</div>
+        <div class="weather-style-head">
+          <div>
+            <h3>图层样式</h3>
+            <p>
+              {{
+                canEditPalette
+                  ? '图例与配色与地图符号化联动。'
+                  : '预渲染图例仅作对照，改配色不会重涂已生成的 PNG。'
+              }}
+            </p>
           </div>
+          <span class="analysis-chip">{{ styleRenderHint?.paint_mode ?? (canToggleParticleFlow ? 'particle_flow' : '样式') }}</span>
+        </div>
 
-          <div v-if="displayLayer.instanceId" class="weather-layer-controls">
-            <button class="weather-visibility-btn" @click="handleToggleLayerVisibility">
-              {{ displayLayer.visible ? '隐藏天气图层' : '显示天气图层' }}
+        <div v-if="displayLayer.instanceId && (isRealtimeWeatherLayer || canToggleParticleFlow)" class="weather-layer-controls">
+          <button class="weather-visibility-btn" type="button" @click="handleToggleLayerVisibility">
+            {{ displayLayer.visible ? '隐藏图层' : '显示图层' }}
+          </button>
+          <button
+            v-if="canToggleParticleFlow"
+            class="particle-flow-toggle-btn"
+            :class="{ active: isParticleFlowEnabled }"
+            :disabled="particleFlowButtonDisabled"
+            :title="
+              particleFlowButtonDisabled
+                ? '当前风场地图产物尚未就绪'
+                : isParticleFlowEnabled
+                  ? '关闭粒子流动画，释放 Canvas 资源'
+                  : '启用粒子流动画（独占式，同时只能一个图层启用）'
+            "
+            @click="handleToggleParticleFlow"
+          >
+            <span class="pf-icon" aria-hidden="true">≋</span>
+            {{ isParticleFlowEnabled ? '关闭粒子流' : '启用粒子流' }}
+          </button>
+        </div>
+
+        <div v-if="styleRenderHint" class="weather-legend-row">
+          <span class="weather-legend-label">图例</span>
+          <span class="weather-legend-meta">
+            {{ styleRenderHint.primary_metric }} · {{ styleRenderHint.unit_label }}
+          </span>
+        </div>
+        <div v-if="styleRenderHint" class="weather-legend-strip">
+          <div
+            v-for="stop in weatherLegendStops"
+            :key="`${stop.value}`"
+            class="weather-legend-stop"
+          >
+            <span class="weather-legend-swatch" :style="{ background: stop.color }"></span>
+            <span>{{ stop.label }}</span>
+          </div>
+        </div>
+
+        <div v-if="styleRenderHint" class="palette-selector" :class="{ 'is-readonly': !canEditPalette }">
+          <div v-if="paletteDropdownOpen && canEditPalette" class="palette-backdrop" @click="paletteDropdownOpen = false"></div>
+          <button
+            class="palette-trigger"
+            type="button"
+            :disabled="!canEditPalette"
+            :title="canEditPalette ? '切换地图配色' : '预渲染栅格图例，不支持前端改色'"
+            @click="togglePaletteDropdown"
+          >
+            <span class="palette-trigger-label">配色方案</span>
+            <span class="palette-trigger-preview">
+              <span
+                v-for="(c, i) in (paletteOptions.find(p => p.id === currentPaletteId)?.colors ?? [])"
+                :key="i"
+                class="palette-trigger-dot"
+                :style="{ background: c }"
+              ></span>
+            </span>
+            <span class="palette-trigger-name">{{ paletteOptions.find(p => p.id === currentPaletteId)?.label ?? '默认' }}</span>
+            <span v-if="canEditPalette" class="palette-trigger-arrow" :class="{ open: paletteDropdownOpen }">▾</span>
+          </button>
+          <div v-if="paletteDropdownOpen && canEditPalette" class="palette-dropdown">
+            <button
+              v-for="opt in paletteOptions"
+              :key="opt.id"
+              class="palette-option"
+              :class="{ active: opt.id === currentPaletteId }"
+              type="button"
+              @click="handleSelectPalette(opt.id)"
+            >
+              <span class="palette-option-gradient" :style="{ background: `linear-gradient(90deg, ${opt.colors.join(', ')})` }"></span>
+              <span class="palette-option-label">{{ opt.label }}</span>
+              <span class="palette-option-type">{{ opt.type === 'diverging' ? '发散' : opt.type === 'qualitative' ? '定性' : '递进' }}</span>
             </button>
             <button
-              v-if="canToggleParticleFlow"
-              class="particle-flow-toggle-btn"
-              :class="{ active: isParticleFlowEnabled }"
-              :disabled="particleFlowButtonDisabled"
-              :title="
-                particleFlowButtonDisabled
-                  ? '当前风场地图产物尚未就绪'
-                  : isParticleFlowEnabled
-                    ? '关闭粒子流动画，释放 Canvas 资源'
-                    : '启用粒子流动画（独占式，同时只能一个图层启用）'
-              "
-              @click="handleToggleParticleFlow"
+              v-if="displayLayer?.paletteOverride"
+              class="palette-option palette-reset"
+              type="button"
+              @click="handleSelectPalette(weatherRenderHint?.palette ?? '')"
             >
-              <span class="pf-icon" aria-hidden="true">≋</span>
-              {{ isParticleFlowEnabled ? '关闭粒子流' : '启用粒子流' }}
+              <span class="palette-option-label">恢复默认配色</span>
             </button>
           </div>
-
-          <div v-if="weatherRenderHint" class="weather-legend-row">
-            <span class="weather-legend-label">图例</span>
-            <span class="weather-legend-meta">
-              {{ weatherRenderHint.primary_metric }} · {{ weatherRenderHint.unit_label }}
-            </span>
-          </div>
-          <div v-if="weatherRenderHint" class="weather-legend-strip">
-            <div
-              v-for="stop in weatherLegendStops"
-              :key="`${stop.value}`"
-              class="weather-legend-stop"
-            >
-              <span class="weather-legend-swatch" :style="{ background: stop.color }"></span>
-              <span>{{ stop.label }}</span>
-            </div>
-          </div>
-
-          <div class="weather-style-meta">
-            <span v-if="isRealtimeWeatherLayer && tileStats">
-              瓦片：已缓存 {{ tileStats.cached }} / 可视 {{ tileStats.visible }} / 加载中 {{ tileStats.pending }}
-            </span>
-            <span v-else>{{ hasWeatherLayerAsset ? 'GeoJSON 已挂载' : '尚未生成地图产物' }}</span>
-            <span>{{ weatherRenderHint ? `默认不透明度 ${Math.round(weatherRenderHint.opacity * 100)}%` : '等待运行结果' }}</span>
-          </div>
-
-          <ul v-if="weatherRenderHint?.notes.length" class="weather-note-list">
-            <li v-for="note in weatherRenderHint.notes" :key="note">{{ note }}</li>
-          </ul>
+          <p v-if="!canEditPalette" class="palette-readonly-hint">预渲染产物，配色只读</p>
         </div>
+
+        <div class="weather-style-meta">
+          <span v-if="isRealtimeWeatherLayer && tileStats">
+            瓦片：已缓存 {{ tileStats.cached }} / 可视 {{ tileStats.visible }} / 加载中 {{ tileStats.pending }}
+          </span>
+          <span v-else-if="isRealtimeWeatherLayer || jobLayer">
+            {{ hasWeatherLayerAsset ? '地图产物已挂载' : '尚无地图产物' }}
+          </span>
+          <span v-if="styleRenderHint">默认不透明度 {{ Math.round(styleRenderHint.opacity * 100) }}%</span>
+        </div>
+
+        <ul v-if="styleRenderHint?.notes?.length" class="weather-note-list">
+          <li v-for="note in styleRenderHint.notes" :key="note">{{ note }}</li>
+        </ul>
       </section>
 
       <section v-if="visibleHotspots.length > 0" class="analysis-section analysis-section--hotspots" id="hotspot-section">
@@ -658,13 +929,13 @@ onBeforeUnmount(() => {
       </section>
     </div>
 
-    <section class="hero-metric" :style="{ '--accent-color': displayLayer.accentColor }">
+    <section v-if="!showCompactHero" class="hero-metric" :style="{ '--accent-color': displayLayer.accentColor }">
       <span>{{ displayLayer.metricLabel }}</span>
       <strong>{{ displayLayer.metricValue }}</strong>
       <p>{{ displayLayer.trendLabel }}</p>
     </section>
 
-    <div class="insight-grid">
+    <div v-if="!showCompactHero" class="insight-grid">
       <article class="insight-card">
         <span>更新频率</span>
         <strong>{{ displayLayer.updateLabel }}</strong>
@@ -683,7 +954,7 @@ onBeforeUnmount(() => {
       </article>
     </div>
 
-    <div class="learning-note">
+    <div v-if="!showCompactHero" class="learning-note">
       <h3>摘要</h3>
       <p>{{ displayLayer.summary }}</p>
     </div>
@@ -897,6 +1168,58 @@ onBeforeUnmount(() => {
 .weather-legend-strip { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.18rem 0.3rem; }
 .weather-legend-stop { display: flex; align-items: center; gap: 0.24rem; color: #c8dff0; font-size: 0.54rem; }
 .weather-legend-swatch { width: 0.72rem; height: 0.72rem; border-radius: 0.22rem; border: 1px solid rgba(255, 255, 255, 0.08); flex-shrink: 0; }
+
+/* 配色方案选择器 */
+.palette-selector { position: relative; margin-top: 0.2rem; }
+.palette-selector.is-readonly .palette-trigger { opacity: 0.72; cursor: not-allowed; }
+.palette-readonly-hint { margin: 0.28rem 0 0; color: #7f93a9; font-size: 0.5rem; line-height: 1.35; }
+.palette-backdrop { position: fixed; inset: 0; z-index: 19; background: transparent; cursor: default; }
+.palette-reset { color: #5ad5ff; font-style: italic; }
+.palette-trigger {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  width: 100%;
+  padding: 0.32rem 0.46rem;
+  border: 1px solid rgba(136, 192, 255, 0.18);
+  border-radius: 0.46rem;
+  background: rgba(8, 18, 33, 0.72);
+  color: #d8e6f5;
+  font: inherit;
+  font-size: 0.58rem;
+  cursor: pointer;
+  text-align: left;
+}
+.palette-trigger:hover:not(:disabled) { border-color: rgba(90, 213, 255, 0.3); }
+.palette-trigger:disabled {
+  opacity: 0.72;
+  cursor: not-allowed;
+}
+.palette-trigger-label { color: #7f93a9; flex-shrink: 0; }
+.palette-trigger-preview { display: flex; gap: 1px; flex-shrink: 0; }
+.palette-trigger-dot { width: 0.5rem; height: 0.72rem; display: inline-block; }
+.palette-trigger-name { flex: 1; text-align: left; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.palette-trigger-arrow { font-size: 0.6rem; color: #7f93a9; transition: transform 0.2s ease; }
+.palette-trigger-arrow.open { transform: rotate(180deg); }
+.palette-dropdown {
+  position: absolute; top: 100%; left: 0; right: 0; z-index: 20;
+  margin-top: 0.2rem; padding: 0.24rem; border: 1px solid rgba(136, 192, 255, 0.16); border-radius: 0.5rem;
+  background: rgba(6, 14, 26, 0.96); backdrop-filter: blur(12px);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.4); max-height: 240px; overflow-y: auto;
+  display: grid; gap: 0.16rem;
+}
+.palette-option {
+  display: flex; align-items: center; gap: 0.3rem; padding: 0.22rem 0.3rem;
+  border: 1px solid transparent; border-radius: 0.36rem; background: transparent;
+  color: #a8c4d8; font: inherit; font-size: 0.52rem; cursor: pointer; text-align: left;
+  transition: background 0.14s ease, border-color 0.14s ease;
+}
+.palette-option:hover { background: rgba(136, 192, 255, 0.08); }
+.palette-option.active { border-color: rgba(90, 213, 255, 0.3); background: rgba(10, 132, 255, 0.1); color: #f0faff; }
+.palette-option-gradient { width: 2.4rem; height: 0.6rem; border-radius: 0.16rem; flex-shrink: 0; border: 1px solid rgba(255, 255, 255, 0.06); }
+.palette-option-label { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.palette-option-type { color: #5a7080; font-size: 0.46rem; flex-shrink: 0; }
+
 .weather-style-meta { display: flex; justify-content: space-between; gap: 0.4rem; color: #7f93a9; font-size: 0.52rem; flex-wrap: wrap; }
 .weather-note-list { display: grid; gap: 0.16rem; margin: 0; padding-left: 1rem; color: #9eb3c8; font-size: 0.54rem; }
 .job-report-header { display: flex; justify-content: space-between; align-items: flex-start; gap: 0.4rem; }
@@ -976,6 +1299,34 @@ onBeforeUnmount(() => {
 .overlay-state.state-empty { background: rgba(148, 163, 184, 0.12); color: #b6c9da; }
 .overlay-point-value { color: #eaf3fb; font-size: 0.54rem; font-variant-numeric: tabular-nums; padding: 0.06rem 0.24rem; border-radius: 0.32rem; background: rgba(90, 162, 255, 0.12); }
 .overlay-point-value.na { color: #7f93a9; background: rgba(148, 163, 184, 0.08); }
+
+.imported-meta { margin-top: 0.35rem; }
+.imported-meta .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 0.52rem; word-break: break-all; }
+.imported-export-row { display: flex; flex-wrap: wrap; gap: 0.35rem; margin-top: 0.55rem; }
+.imported-export-btn {
+  border: 1px solid rgba(126, 224, 168, 0.28);
+  border-radius: 0.42rem;
+  background: rgba(126, 224, 168, 0.1);
+  color: #b8f0d0;
+  font: inherit;
+  font-size: 0.56rem;
+  padding: 0.28rem 0.5rem;
+  cursor: pointer;
+}
+.imported-export-btn:hover {
+  background: rgba(126, 224, 168, 0.18);
+}
+
+.imported-action-hint {
+  margin: 0.4rem 0 0;
+  color: #9ff0c4;
+  font-size: 0.52rem;
+}
+
+.imported-action-hint.error {
+  color: #ff9e9e;
+}
+
 @media (max-width: 560px) {
   .meta-list,
   .weather-row-grid,

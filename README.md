@@ -10,16 +10,21 @@
 - 多课题组算法模块化接入
 - 面向展示效果、交互流畅度与后续扩展性的工程化实现
 
-本仓库当前已经从“方案与原型阶段”进入“工程化落地阶段”，核心代码、协议、算法包和后端工作流都在持续完善中。
+本仓库已从“方案与原型阶段”进入“工程化落地阶段”：`workflow-runs` 主链、天气瓦片渲染、Celery/Redis/MinIO 基础设施与架构拆分均已具备可运行实现。
 
 ## 当前仓库结构
 
 ```text
 Comprehensive Geographic Data Analysis system/
-├─ Doc/        # 项目方案、技术介绍、架构图与协作文档
-├─ Env/        # 本地开发环境、启动脚本与依赖脚本
-├─ Code/       # 实际工程代码
-└─ README.md   # 仓库总入口
+├─ Doc/         # 项目方案、技术栈、规范与协作文档
+├─ Env/         # 本地开发环境与启停辅助脚本
+├─ Code/        # 实际工程代码
+├─ Tools/       # 数据下载、校验与辅助工具
+├─ Example/     # 外部参考材料（如 Windy）
+├─ launch.py    # 跨平台一键启动（Docker + FastAPI + Celery + 前端）
+├─ start.bat / start.sh
+├─ stop.bat / stop.sh
+└─ README.md
 ```
 
 ## 当前工程分层
@@ -28,77 +33,79 @@ Comprehensive Geographic Data Analysis system/
 
 ```text
 Code/
-├─ frontend/   # Web 前端：2D/3D 双模式展示与交互
-├─ backend/    # FastAPI 工作流服务、任务编排、结果与事件管理
+├─ frontend/   # Vue 3 WebGIS：MapLibre 2D 主舞台、天气叠加、工作流交互
+├─ backend/    # FastAPI + Celery：workflow 编排、天气引擎、瓦片、GEE
 ├─ algorithms/ # Python 算法包、数据接入、工作流与产品输出
 ├─ shared/     # 前后端共享协议与公共契约
-├─ infra/      # 部署配置、容器与网关相关内容
-├─ scripts/    # 初始化、导入、清洗、运维脚本
 └─ docs/       # 面向实现与协作的补充文档
 ```
+
+说明：根文档早期提到的 `Code/infra/`、`Code/scripts/` 目录当前不存在。基础设施以 `Code/backend/docker-compose.yml`（Redis + MinIO）与根目录 `launch.py` 为准。
 
 ## 系统总体能力
 
 ### 前端展示
 
-- `3D 地球模式`：用于地球、地形、实体和时间动画展示
-- `2D 平面地图模式`：用于底图、矢量瓦片、专题图层展示
-- `统一交互`：图层控制、时间轴、时空范围选择、任务入口与结果面板
+- `2D`（当前主路径）：MapLibre 底图、行政区边界、天气图层瓦片、风场 Canvas（粒子/风羽/等值线）
+- `3D`：Cesium / vue-cesium 已打包依赖，真实地球模式尚未作为默认主链启用
+- 统一交互：图层侧栏、时间轴、工具栏导入、截图导出、工作流状态面板、信息面板
 
 ### 后端与计算
 
 - `FastAPI` 作为统一 API 与工作流入口
-- `Celery + Redis` 作为异步任务执行通道
+- `Celery + Redis` 作为异步任务执行通道（多队列：realtime / weather / gee 等）
 - `Python` 算法包作为科学计算与产品生成核心
-- `GEE`、本地文件、对象存储等作为多源数据与结果承载方式
+- `weatherengine`：点查 + 网格预报 + 标准 z/x/y 天气瓦片
+- `GEE` 模块已嵌入后端，可按配置挂载
 
 ### 数据与存储
 
-- `PostgreSQL + PostGIS`：业务数据、空间元数据与空间查询
-- `MinIO + COG`：栅格历史数据与大体量时序影像
-- `Redis`：任务状态、热点结果与队列支撑
-- `本地磁盘 / NAS`：中间结果、调试输出与导出文件
+- 工作流状态：当前以 `SQLite` 持久化（`PostGIS` 仍为后续目标）
+- `MinIO`：对象/artifact 存储（compose 已提供，本地与 MinIO 双后端抽象）
+- `Redis`：队列、缓存、天气请求限流/断路器支撑
+- 本地磁盘 / `.data`：中间结果、调试输出与开发态数据
 
 ## 推荐技术栈
 
-- 前端：`Vue 3 + TypeScript + Vite + Pinia`
-- 3D：`CesiumJS + vue-cesium`
-- 2D：`MapLibre GL JS`
-- 高性能可视化：`deck.gl`
-- 后端 API：`FastAPI`
-- 异步任务：`Celery + Redis`
-- 算法集成：`Python + importlib`
-- GEE 集成：`Earth Engine Python API`
-- 空间数据库：`PostgreSQL + PostGIS`
-- 栅格切片：`TiTiler`
-- 矢量切片：`Martin`
-- 对象存储：`MinIO`
-- 网关与部署：`Nginx + Docker Compose`
+| 层级 | 技术 | 当前状态 |
+| ---- | ---- | ---- |
+| 前端 | Vue 3 + TypeScript + Vite + Pinia | 已落地 |
+| 2D | MapLibre GL JS + Canvas 叠加 | 已落地（主路径） |
+| 3D | CesiumJS + vue-cesium | 依赖已引入，模式未成为主链 |
+| 大数据叠加 | deck.gl | 规划中 |
+| API | FastAPI | 已落地 |
+| 异步任务 | Celery + Redis | 已落地（经 compose / launch 启动） |
+| 算法 | Python + importlib / provider bridge | 已落地第一层 |
+| GEE | Earth Engine Python API（服务端） | 模块已落地，产线仍在完善 |
+| 空间库 | PostgreSQL + PostGIS | 规划中（现状 SQLite） |
+| 瓦片服务 | unified-tiles（自研） / Martin + TiTiler（规划） | 统一瓦片入口已落地 |
+| 对象存储 | MinIO + 本地 | MinIO compose 已落地 |
+| 启动 | launch.py + Docker Compose | Redis/MinIO 已落地；全站 Nginx 仍属后续 |
 
 ## 当前阶段建议
 
-项目当前更适合按“先打通主链路，再逐步补齐能力”的顺序推进：
-
-1. 完成前端基础壳层与 2D/3D 模式切换
-2. 完成后端工作流入口、状态查询与结果回传
-3. 统一前后端共享协议
-4. 持续完善 Python 算法包与数据接入链路
-5. 补齐部署、监控、日志和协作规范
+1. 巩固天气瓦片与风场渲染体验（当前工作区主要推进项）
+2. 保持 `workflow-runs` / unified-tiles / artifact 契约稳定
+3. 继续完善课题组 Python 算法真实数据接入
+4. 按需推进 PostGIS、TiTiler/Martin、Cesium 3D 与 Nginx 部署
 
 ## 文档导航
 
-建议优先阅读以下文档，了解当前架构与开发边界：
+建议优先阅读：
 
 - `Code/README.md`：`Code` 目录工程总览
 - `Code/frontend/README.md`：前端工程说明
 - `Code/backend/README.md`：后端工作流与运行说明
 - `Code/shared/contracts/README.md`：共享协议说明
 - `Code/algorithms/providers/Python/README.md`：Python 算法包说明
-- `Code/algorithms/providers/docs/detailed_design.md`：Python 计算包详细设计
-- `Code/docs/双通道接口设计总结.md`：前后端控制流 / 数据流双通道设计总结
+- `Code/docs/双通道接口设计总结.md`：控制流 / 数据流双通道设计
+- `Doc/技术栈.md`：目标架构与落地状态对照
+- `Doc/规范文档.md`：字段与接口命名约定
+
+带明确日期的阶段快照与实施计划（如 `代码事实同步文档-2026-07-06.md`、`.trae/documents/*-2026-07-*.md`）作历史参考，不以它们覆盖上述活文档。
 
 ## 说明
 
 - `Env/Python312` 更接近本地开发环境，不建议直接作为长期交付依赖
-- 后续若进入多人协作阶段，建议统一以脚本与容器化方式管理运行环境
-- 当前仓库中的文档已经从“规划说明”逐步演进为“工程事实说明”，后续应持续与代码同步更新
+- 日常联调优先使用根目录 `launch.py` / `start.bat`，与 `Code/backend/docker-compose.yml` 配套
+- 活文档应随代码结构变化同步更新；带日期的记录文档可归档保留

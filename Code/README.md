@@ -1,28 +1,28 @@
 # Code 目录总览
 
-`Code/` 是本项目的工程代码根目录，负责承载前端应用、后端服务、算法计算包、共享协议与部署配置。当前项目已经从“方案规划”进入“工程落地”阶段，因此这里不再只是目录草案，而是整个仓库的开发导航中心。
+`Code/` 是本项目的工程代码根目录，负责承载前端应用、后端服务、算法计算包、共享协议与协作文档。当前项目已进入工程落地阶段，这里是整个仓库的开发导航中心。
 
 ## 设计目标
 
-- `前后端分离`：让展示层、服务层与计算层可以独立演进
+- `前后端分离`：展示层、服务层与计算层可独立演进
 - `协议先行`：用统一数据契约连接前端、后端和算法包
 - `算法插件化`：支持不同课题组在统一框架下接入算法
-- `工作流驱动`：后端以任务/运行/结果为主线组织业务
-- `部署独立`：把运行环境、容器和反向代理配置从业务代码中解耦
-- `先骨架后细化`：先固定责任边界，再持续补齐具体实现
+- `工作流驱动`：后端以 `workflow-runs` / 结果引用 / 事件流为主线组织业务
+- `数据面按需加载`：artifact、预览图、统一瓦片与控制流分离
+- `先主链后扩展`：先稳定 workflow / 天气瓦片 / provider 桥接，再补 PostGIS、3D、专用瓦片服务
 
 ## 当前工程结构
 
 ```text
 Code/
-├─ frontend/   # Web 前端：2D/3D 双模式展示与交互
-├─ backend/    # FastAPI 工作流服务、任务编排、结果与事件管理
+├─ frontend/   # Web 前端：MapLibre 2D 主舞台、天气叠加、图层与工作流交互
+├─ backend/    # FastAPI + Celery：workflow 编排、weatherengine、统一瓦片、GEE
 ├─ algorithms/ # Python 算法包、数据接入、工作流与产品输出
 ├─ shared/     # 前后端共享协议与公共契约
-├─ infra/      # Docker、Nginx、Compose 等部署配置
-├─ scripts/    # 初始化、导入、清洗、运维脚本
 └─ docs/       # 面向实现与协作的补充文档
 ```
+
+说明：早期草案中的 `infra/`、`scripts/` 目录当前不在 `Code/` 下。Redis / MinIO 配置位于 `backend/docker-compose.yml`；一键启停在仓库根目录 `launch.py`。
 
 ## 目录职责
 
@@ -30,30 +30,33 @@ Code/
 
 前端负责统一 WebGIS 壳层与用户交互，重点管理：
 
-- 2D / 3D 模式切换
-- 图层树与图层可见性
-- 时间轴与时空范围控制
-- 任务提交与结果展示
-- 地图容器与信息面板
+- MapLibre 地图主舞台与底图切换
+- 天气图层瓦片加载、风场 Canvas 叠加（粒子 / 风羽 / 等值线）
+- 图层树、时间轴、工具栏导入、截图导出
+- 工作流提交、状态面板与结果信息面板
 
-建议优先把前端理解为“展示层 + 交互层”，而不是单纯地图页面。
+建议优先把前端理解为“展示层 + 交互层”，而不是单纯地图页面。Cesium 依赖已引入，但默认主链仍是 `2D-first`。
 
 ### `backend`
 
-后端负责请求入口、工作流调度、运行状态、事件流与结果管理。当前后端已形成以 `workflow-runs` 为主线的执行模型，并兼容旧任务接口的迁移需求。
+后端负责请求入口、工作流调度、运行状态、事件流、结果与瓦片服务。主执行模型是：
+
+`API routers → workflow services → Celery tasks / bridges → providers`
 
 后端职责通常包括：
 
-- 接收并校验请求
-- 创建运行记录与事件流
+- 接收并校验 `workflow-runs` 请求
+- 创建运行记录与事件流（SQLite 持久化）
 - 调度同步或异步执行
-- 管理 artifact 与结果引用
-- 对接 Python 算法包
-- 向前端暴露查询和元数据接口
+- 管理 artifact、预览图与结果引用
+- 天气点查 / 网格 / 标准 z/x/y 瓦片（`/unified-tiles`）
+- 对接 Python 算法包与 GEE
+
+原单体 `interaction_hub.py` 已拆分为 `services/workflow/` 下多个聚焦服务；原单一 `routes.py` 已拆为 `api/routers/*` 域路由。
 
 ### `algorithms`
 
-算法目录是项目最关键的计算层。当前 Python 计算包已经演化为一套稳定的工程包，而不是零散脚本集合。它包含：
+算法目录是项目最关键的计算层。当前 Python 计算包已演化为一套稳定工程包，包含：
 
 - `contracts`：任务、数据、产品与事件契约
 - `interfaces`：调度器、数据源、日志、产品输出等适配接口
@@ -69,40 +72,18 @@ Code/
 
 ### `shared`
 
-共享协议负责统一前后端与算法之间的字段、对象和约定，避免“前端传什么、后端收什么、算法吃什么、结果回什么”各自为政。
-
-### `infra`
-
-部署目录只放运行环境相关内容，包括：
-
-- Dockerfile
-- Docker Compose
-- Nginx 配置
-- 依赖服务编排
-
-### `scripts`
-
-脚本目录用于初始化、导入、清洗、运维和辅助自动化，不承载核心业务逻辑。
+共享协议负责统一前后端与算法之间的字段、对象和约定。前端可通过 `openapi-typescript` 从后端 OpenAPI 生成 `src/types/api-contracts.ts`。
 
 ### `docs`
 
-这里放面向实现与协作的补充文档，比如：
-
-- 架构说明
-- 协作说明
-- 接口与协议说明
-- 阶段性设计文档
-- 阶段代码事实同步文档
+面向实现与协作的补充文档，例如双通道接口说明、协作说明、带日期的代码事实快照等。带日期文档作历史参考；日常以本 README 与各子工程 README 为准。
 
 ## 当前开发优先级
 
-建议当前按以下顺序继续推进：
-
-1. 完善 `shared/contracts` 的统一协议
-2. 对齐 `backend` 的工作流和结果模型
-3. 继续完善 `frontend` 的图层与任务交互
-4. 收敛 `algorithms` 的入口、工作流和数据接入方式
-5. 补齐 `infra` 与本地启动脚本
+1. 稳定天气瓦片渲染与风场交互体验
+2. 保持 `workflow-runs` / `unified-tiles` / artifact 契约清晰
+3. 完善课题组 Python 算法真实数据接入
+4. 按需推进 PostGIS、专用切片服务（TiTiler/Martin）、Cesium 3D 与 Nginx 部署层
 
 ## 需要避免的做法
 
@@ -110,16 +91,15 @@ Code/
 - 不要让前端直接依赖算法实现细节
 - 不要让每个课题组自定义一套请求和结果格式
 - 不要把 GEE、数据库、瓦片服务和算法逻辑混写在一起
+- 不要重新把工作流逻辑收回已删除的单体 hub / 巨型 routes
 
 ## 推荐阅读顺序
 
-如果你刚接手这个仓库，建议按下面顺序阅读：
-
-1. `README.md`
+1. 仓库根 `README.md`
 2. `Code/README.md`
-3. `Code/docs/代码事实同步文档-2026-07-06.md`
-4. `Code/backend/README.md`
-5. `Code/frontend/README.md`
-6. `Code/shared/contracts/README.md`
+3. `Code/backend/README.md`
+4. `Code/frontend/README.md`
+5. `Code/shared/contracts/README.md`
+6. `Code/docs/双通道接口设计总结.md`
 7. `Code/algorithms/providers/Python/README.md`
 8. `Code/algorithms/providers/docs/detailed_design.md`

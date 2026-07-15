@@ -17,9 +17,20 @@ export interface OverlayTimeState {
 
 export interface OverlayImageModule {
   /** 同步当前 activeLayerIds 与已加载的 overlay 图层（增/删）。 */
-  syncOverlays: (activeOverlayLayerIds: string[]) => Promise<void>
+  syncOverlays: (
+    activeOverlayLayerIds: string[],
+    opacityByLayerId?: Record<string, number>,
+  ) => Promise<void>
   /** 切换时间序列图层的时间标签。若 linkTimeEnabled 为 true，联动其他时间序列图层。 */
   setOverlayTime: (layerId: string, time: string) => Promise<void>
+  /** 设置已加载 overlay 的栅格透明度。 */
+  setOverlayOpacity: (layerId: string, opacity: number) => void
+  /** 设置已加载 overlay 的显隐。 */
+  setOverlayVisibility: (layerId: string, visible: boolean) => void
+  /** 返回已加载 overlay 的 MapLibre raster layer id（若存在）。 */
+  getRasterLayerId: (layerId: string) => string | null
+  /** 把动态注册的 overlay id 记入 known 列表（无需整表刷新）。 */
+  rememberOverlayId: (layerId: string) => void
   /** 获取所有已加载 overlay 图层的时间状态（用于时间控制 UI）。 */
   overlayTimeStates: import('vue').Ref<OverlayTimeState[]>
   /** 已注册的 overlay 图层 ID 集合（从后端 /overlays 获取）。 */
@@ -112,7 +123,7 @@ export function createOverlayImageModule(
     }
   }
 
-  async function _addOverlay(layerId: string): Promise<void> {
+  async function _addOverlay(layerId: string, initialOpacity?: number): Promise<void> {
     if (loadedOverlays.has(layerId)) return
     if (loadingOverlays.has(layerId)) return
     const { sourceId, rasterLayerId } = _ids(layerId)
@@ -135,9 +146,25 @@ export function createOverlayImageModule(
       }
       const bounds: [number, number, number, number] = boundsData.bounds
       const meta = boundsData.meta ?? {}
+      // 写回共享 symbology store（含 bounds 内存缓存命中路径）
+      try {
+        const { useOverlaySymbologyStore } = await import('../../stores/overlay-symbology')
+        useOverlaySymbologyStore().putMeta(layerId, {
+          palette: meta.palette,
+          vmin: meta.vmin ?? null,
+          vmax: meta.vmax ?? null,
+          unit: meta.unit,
+          opacity: typeof initialOpacity === 'number' ? initialOpacity : meta.opacity,
+        })
+      } catch {
+        // Pinia 未就绪时忽略
+      }
       const currentTime: string | null = meta.current_time ?? meta.default_time ?? null
       const timeList: string[] = meta.time_list ?? []
       const category: string = meta.category ?? 'static'
+      const opacity = typeof initialOpacity === 'number'
+        ? Math.max(0, Math.min(1, initialOpacity))
+        : (meta.opacity ?? 0.7)
 
       const url =
         category === 'time-series' && currentTime
@@ -161,10 +188,10 @@ export function createOverlayImageModule(
         source: sourceId,
         layout: { visibility: 'visible' },
         paint: {
-          'raster-opacity': meta.opacity ?? 0.7,
+          'raster-opacity': opacity,
           'raster-fade-duration': 300,
         },
-      })
+      }, options.map.getLayer('admin-fill') ? 'admin-fill' : undefined)
 
       loadedOverlays.set(layerId, {
         layerId,
@@ -184,7 +211,7 @@ export function createOverlayImageModule(
         unit: meta.unit ?? '',
         vmin: meta.vmin ?? null,
         vmax: meta.vmax ?? null,
-        opacity: meta.opacity ?? 0.7,
+        opacity,
         bounds,
       }
       overlayTimeStates.value = [...overlayTimeStates.value, state]
@@ -198,7 +225,10 @@ export function createOverlayImageModule(
     }
   }
 
-  async function syncOverlays(activeOverlayLayerIds: string[]): Promise<void> {
+  async function syncOverlays(
+    activeOverlayLayerIds: string[],
+    opacityByLayerId?: Record<string, number>,
+  ): Promise<void> {
     if (!options.getMapReady()) return
 
     // 移除不再 active 的
@@ -210,7 +240,9 @@ export function createOverlayImageModule(
     // 添加新 active 的
     for (const layerId of activeOverlayLayerIds) {
       if (!loadedOverlays.has(layerId)) {
-        await _addOverlay(layerId)
+        await _addOverlay(layerId, opacityByLayerId?.[layerId])
+      } else if (typeof opacityByLayerId?.[layerId] === 'number') {
+        setOverlayOpacity(layerId, opacityByLayerId[layerId])
       }
     }
   }
@@ -280,9 +312,43 @@ export function createOverlayImageModule(
     }
   }
 
+  function rememberOverlayId(layerId: string) {
+    if (!knownOverlayIds.value.includes(layerId)) {
+      knownOverlayIds.value = [...knownOverlayIds.value, layerId]
+    }
+  }
+
+  function setOverlayOpacity(layerId: string, opacity: number) {
+    const loaded = loadedOverlays.get(layerId)
+    if (!loaded) return
+    if (!options.map.getLayer(loaded.rasterLayerId)) return
+    const clamped = Math.max(0, Math.min(1, opacity))
+    options.map.setPaintProperty(loaded.rasterLayerId, 'raster-opacity', clamped)
+    overlayTimeStates.value = overlayTimeStates.value.map((s) =>
+      s.layerId === layerId ? { ...s, opacity: clamped } : s,
+    )
+  }
+
+  function setOverlayVisibility(layerId: string, visible: boolean) {
+    const loaded = loadedOverlays.get(layerId)
+    if (!loaded) return
+    if (!options.map.getLayer(loaded.rasterLayerId)) return
+    options.map.setLayoutProperty(loaded.rasterLayerId, 'visibility', visible ? 'visible' : 'none')
+  }
+
+  function getRasterLayerId(layerId: string): string | null {
+    const loaded = loadedOverlays.get(layerId)
+    if (!loaded) return null
+    return options.map.getLayer(loaded.rasterLayerId) ? loaded.rasterLayerId : null
+  }
+
   return {
     syncOverlays,
     setOverlayTime,
+    setOverlayOpacity,
+    setOverlayVisibility,
+    getRasterLayerId,
+    rememberOverlayId,
     overlayTimeStates,
     knownOverlayIds,
     init,

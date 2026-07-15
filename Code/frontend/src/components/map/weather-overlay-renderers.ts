@@ -24,7 +24,7 @@ export function syncWeatherCogOverlay(map: MapInstance, overlayState: WeatherOve
   const ids = buildWeatherOverlayIds(overlayState.catalogId)
   removeWeatherMapArtifacts(map, overlayState.catalogId, { preserveImageSource: true })
 
-  const ticks = overlayState.renderHint.legend_ticks.filter(
+  const ticks = (overlayState.renderHint.legend_ticks ?? []).filter(
     (tick: number | string): tick is number => typeof tick === 'number',
   )
   const minValue = ticks[0] ?? 0

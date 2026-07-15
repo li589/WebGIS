@@ -33,6 +33,7 @@ ALLOWED_RUNTIME_CONFIG_KEYS: dict[str, set[str]] = {
         "task_executor",
         "demo_snapshot_provider",
         "max_active_runs",
+        "max_active_weather_tile_runs",
         "max_requested_outputs",
         "weather_cache_ttl_seconds",
         "weather_refresh_forecast_hours",
@@ -46,6 +47,7 @@ ALLOWED_RUNTIME_CONFIG_KEYS: dict[str, set[str]] = {
 RUNTIME_CONFIG_VALUE_VALIDATORS: dict[str, dict[str, tuple]] = {
     "backend": {
         "max_active_runs": ("int", 1, 16),
+        "max_active_weather_tile_runs": ("int", 1, 64),
         "max_requested_outputs": ("int", 1, 20),
         "weather_cache_ttl_seconds": ("int", 60, 86400),
         "weather_refresh_forecast_hours": ("int", 1, 48),
@@ -64,6 +66,8 @@ class RuntimeStatusService:
     def get_runtime_status(self) -> RuntimeStatusResponse:
         now = datetime.now(timezone.utc)
         active_run_count = self._repository.count_active_runs()
+        active_business_run_count = self._repository.count_active_runs(run_class="business")
+        active_weather_tile_run_count = self._repository.count_active_runs(run_class="weather_tile")
         celery_details = get_celery_runtime_details()
         if use_celery_executor():
             if not celery_available:
@@ -96,10 +100,13 @@ class RuntimeStatusService:
                 updated_at=now,
                 details={
                     "active_run_count": active_run_count,
+                    "active_business_run_count": active_business_run_count,
+                    "active_weather_tile_run_count": active_weather_tile_run_count,
                     "executor": settings.workflow_executor,
                     "celery_available": celery_available,
                     "celery_probe": celery_details,
                     "max_active_runs": settings.max_active_runs,
+                    "max_active_weather_tile_runs": settings.max_active_weather_tile_runs,
                     "queues": {
                         "realtime": settings.workflow_queue_realtime,
                         "algorithm_realtime": settings.workflow_queue_algorithm_realtime,

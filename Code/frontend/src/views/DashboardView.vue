@@ -17,9 +17,11 @@ import type { OverlayTimeState } from '../components/map/overlay-image-module'
 import { getOverlayValue, type OverlayPointValue } from '../services/runtime-api'
 import { useUiStore } from '../stores/ui'
 import { useLayersStore } from '../stores/layers'
+import { useLogStore } from '../stores/log'
 
 const uiStore = useUiStore()
 const layersStore = useLayersStore()
+const logStore = useLogStore()
 void layersStore.ensureRuntimeLayerCatalog()
 
 const { tileSourceId, currentHour, hourLabel } = storeToRefs(uiStore)
@@ -106,18 +108,22 @@ const timelineSegments = computed(() => {
 
 function handleTileSourceChange(sourceId: TileSourceId) {
   uiStore.setTileSource(sourceId)
+  logStore.logOperation('tile-source-change', `切换底图源: ${sourceId}`)
 }
 
 function handleLayerSelect(layerId: string) {
   layersStore.selectLayer(layerId)
+  logStore.logOperation('layer-select', `选中图层: ${layerId}`)
 }
 
 function handleTimelineStep(delta: number) {
   uiStore.stepHour(delta)
+  logStore.logOperation('timeline-step', `时间轴${delta > 0 ? '前进' : '后退'} ${Math.abs(delta)} 小时`)
 }
 
 function handleTimelineChange(hour: number) {
   uiStore.setHour(hour)
+  logStore.logOperation('timeline-change', `时间轴跳转到 ${String(hour).padStart(2, '0')}:00`)
 }
 
 function handleVisibleHotspotsChange(hotspots: LayerHotspot[]) {
@@ -133,6 +139,7 @@ function handleHotspotSelect(hotspot: LayerHotspot | null) {
 
 function handleMapPointSelect(point: { lng: number; lat: number }) {
   selectedMapPoint.value = point
+  logStore.logOperation('map-point-select', `查询点 (${point.lng.toFixed(4)}, ${point.lat.toFixed(4)})`)
   void layersStore.fetchPointWeather(point.lng, point.lat, activeLayer.value.catalogId)
   void fetchOverlayPointValues(point.lng, point.lat)
 }
@@ -180,9 +187,12 @@ function handleCloseWorkflowStatus() {
 }
 
 async function handleRunWorkflow(catalogId: string) {
+  logStore.logWorkflow('workflow-submit', `提交工作流: ${catalogId}`)
   try {
     await layersStore.runWorkflowForCatalog(catalogId)
+    logStore.logWorkflow('workflow-accepted', `工作流已受理: ${catalogId}`)
   } catch (error) {
+    logStore.logWorkflow('workflow-error', `工作流提交失败: ${catalogId} — ${(error as Error)?.message ?? error}`)
     console.error('[DashboardView] workflow submit failed', error)
   }
 }
@@ -224,6 +234,8 @@ function buildFallbackActiveLayer(): ActiveLayerDisplay {
     missingFieldsLabel: '—',
     hotspots: [],
     isAdminBoundary: false,
+    isImported: false,
+    isImportedRaster: false,
     visible: true,
     opacity: 1,
     order: 0,

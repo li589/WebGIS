@@ -1,10 +1,10 @@
 <script setup lang="ts">
 import { onBeforeUnmount, ref, watch } from 'vue'
-import { useImportStore } from '../../stores/import'
+import { useLayersStore } from '../../stores/layers'
 import { useLogStore } from '../../stores/log'
 import CsvImportDialog from './CsvImportDialog.vue'
 
-const importStore = useImportStore()
+const layersStore = useLayersStore()
 const logStore = useLogStore()
 
 const menuOpen = ref(false)
@@ -80,6 +80,7 @@ async function handleVectorFile(e: Event) {
   try {
     const ext = file.name.toLowerCase().split('.').pop() ?? ''
     let geojson: GeoJSON.FeatureCollection
+    let multiLayerNote = ''
 
     if (ext === 'geojson' || ext === 'json') {
       const text = await file.text()
@@ -88,7 +89,11 @@ async function handleVectorFile(e: Event) {
       const arrayBuffer = await file.arrayBuffer()
       const shpjs = (await import('shpjs')).default
       const result = await shpjs(arrayBuffer)
-      geojson = Array.isArray(result) ? result[0] : result
+      const parsed = normalizeShpResult(result)
+      geojson = parsed.geojson
+      multiLayerNote = parsed.layerCount > 1
+        ? `已合并 ZIP 内 ${parsed.layerCount} 个图层，`
+        : ''
     } else {
       throw new Error(`不支持的文件格式: .${ext}，请使用 .shp / .zip / .geojson / .json`)
     }
@@ -97,8 +102,8 @@ async function handleVectorFile(e: Event) {
       throw new Error('文件解析后未找到有效的 features 数组')
     }
 
-    importStore.addVectorLayer(file.name, geojson)
-    importMsg.value = `已导入 ${geojson.features.length} 个要素`
+    layersStore.addImportedVectorLayer(file.name, geojson)
+    importMsg.value = `${multiLayerNote}已导入 ${geojson.features.length} 个要素（可在图层列表控制）`
     logStore.logOperation('import-vector-success', `矢量导入成功: ${file.name}`, `要素数: ${geojson.features.length}`)
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
@@ -108,6 +113,47 @@ async function handleVectorFile(e: Event) {
     importing.value = false
     setTimeout(() => { importMsg.value = '' }, 3000)
   }
+}
+
+/** shp.js 可能返回 FeatureCollection、数组或按文件名索引的对象 */
+function normalizeShpResult(result: unknown): { geojson: GeoJSON.FeatureCollection; layerCount: number } {
+  if (Array.isArray(result)) {
+    const collections = result.filter((item): item is GeoJSON.FeatureCollection =>
+      Boolean(item && typeof item === 'object' && Array.isArray((item as GeoJSON.FeatureCollection).features)),
+    )
+    if (collections.length === 0) {
+      throw new Error('ZIP/SHP 解析后未找到有效图层')
+    }
+    return {
+      layerCount: collections.length,
+      geojson: {
+        type: 'FeatureCollection',
+        features: collections.flatMap((c) => c.features),
+      },
+    }
+  }
+  if (result && typeof result === 'object' && Array.isArray((result as GeoJSON.FeatureCollection).features)) {
+    return { layerCount: 1, geojson: result as GeoJSON.FeatureCollection }
+  }
+  if (result && typeof result === 'object') {
+    const collections = Object.entries(result as Record<string, unknown>)
+      .filter(([key, value]) =>
+        !key.endsWith('_null')
+        && Boolean(value && typeof value === 'object' && Array.isArray((value as GeoJSON.FeatureCollection).features)),
+      )
+      .map(([, value]) => value as GeoJSON.FeatureCollection)
+    if (collections.length === 0) {
+      throw new Error('ZIP/SHP 解析后未找到有效图层')
+    }
+    return {
+      layerCount: collections.length,
+      geojson: {
+        type: 'FeatureCollection',
+        features: collections.flatMap((c) => c.features),
+      },
+    }
+  }
+  throw new Error('无法识别的 SHP 解析结果')
 }
 
 function handleCsvFile(e: Event) {
@@ -123,7 +169,7 @@ function handleCsvDialogClose() {
 }
 
 function handleCsvDialogConfirm(geojson: GeoJSON.FeatureCollection, name: string) {
-  importStore.addVectorLayer(name, geojson)
+  layersStore.addImportedVectorLayer(name, geojson)
   csvFile.value = null
 }
 
@@ -149,13 +195,17 @@ async function handleRasterFile(e: Event) {
       throw new Error(`后端返回 ${resp.status}: ${text}`)
     }
 
-    const data = await resp.json()
-    const layerId: string = data.layer_id
-    const bounds: [number, number, number, number] | undefined = data.bounds
+    const data = await resp.json() as {
+      layer_id: string
+      bounds?: [number, number, number, number]
+    }
+    if (!data.layer_id) {
+      throw new Error('后端未返回 layer_id')
+    }
 
-    importStore.addRasterLayer(file.name, layerId, bounds)
-    importMsg.value = '栅格导入成功'
-    logStore.logOperation('import-raster-success', `栅格导入成功: ${file.name}`, `Layer ID: ${layerId}`)
+    layersStore.addImportedRasterLayer(file.name, data.layer_id, data.bounds)
+    importMsg.value = '栅格已导入图层列表，可控制显隐与透明度'
+    logStore.logOperation('import-raster-success', `栅格导入成功: ${file.name}`, `Layer ID: ${data.layer_id}`)
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
     importMsg.value = `导入失败: ${msg}`
@@ -207,7 +257,7 @@ async function handleRasterFile(e: Event) {
           <span class="item-icon" aria-hidden="true">🗺</span>
           <span class="item-body">
             <span class="item-title">栅格（TIF）</span>
-            <span class="item-desc">上传后端转 COG 渲染</span>
+            <span class="item-desc">上传后端转 COG，写入图层列表</span>
           </span>
         </button>
       </div>
