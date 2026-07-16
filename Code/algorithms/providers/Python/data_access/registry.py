@@ -80,6 +80,7 @@ def build_default_source_registry() -> SourceRegistry:
     from data_access.sources.http import HttpSource
     from data_access.sources.local_fs import LocalFileSource
     from data_access.sources.minio import MinioSource
+    from data_access.sources.remote import RemoteSource
 
     registry = SourceRegistry()
     registry.register_many(
@@ -87,6 +88,7 @@ def build_default_source_registry() -> SourceRegistry:
             LocalFileSource(),
             HttpSource(),
             MinioSource(),
+            RemoteSource(),
             CacheSource(),
         ]
     )

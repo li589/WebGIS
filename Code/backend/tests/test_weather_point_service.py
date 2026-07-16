@@ -12,6 +12,8 @@ from typing import Any
 
 from app.weatherengine.constants import WEATHER_LAYER_SPECS
 from app.weatherengine.service import WeatherEngineService
+from app.weatherengine.provider_registry import get_registry
+from app.weatherengine.providers.open_meteo_provider import OpenMeteoProvider
 
 
 class _FakeOpenMeteoClient:
@@ -82,9 +84,28 @@ def _build_mock_payload(layer_spec) -> dict[str, Any]:
 class GetPointWeatherTests(unittest.TestCase):
     """验证 get_point_weather 对 3 个图层的解析逻辑。"""
 
+    def setUp(self) -> None:
+        # 注册带 fake client 的 OpenMeteoProvider，供 get_point_weather 通过 registry 路由
+        registry = get_registry()
+        registry.register(
+            OpenMeteoProvider(client=_FakeOpenMeteoClient()),
+            priority=0,
+            enabled=True,
+        )
+
+    def tearDown(self) -> None:
+        get_registry().clear()
+
     def _make_service(self, cache_status_sequence: list[str] | None = None) -> tuple[WeatherEngineService, _FakeOpenMeteoClient]:
         client = _FakeOpenMeteoClient(cache_status_sequence=cache_status_sequence)
-        return WeatherEngineService(client=client), client
+        # 覆盖 setUp 中的默认 provider，使用带特定 cache_status_sequence 的 fake client
+        # 确保 get_point_weather 通过 registry 路由到此 client（而非 setUp 的默认 client）
+        get_registry().register(
+            OpenMeteoProvider(client=client),
+            priority=0,
+            enabled=True,
+        )
+        return WeatherEngineService(), client
 
     def test_wind_field_layer(self) -> None:
         service, _ = self._make_service()

@@ -228,6 +228,227 @@
         }
       }
     },
+    "/overlay-preview/{layer_id}": {
+      "get": {
+        "tags": [
+          "overlay"
+        ],
+        "summary": "Get Overlay Preview",
+        "description": "返回图层的 PNG 预览图（地理配准），供前端 MapLibre image source 使用。\n\n对于时间序列图层，可通过 `?time=YYYYMMDD` 指定时间标签；\n未指定时使用 default_time。",
+        "operationId": "get_overlay_preview_overlay_preview__layer_id__get",
+        "parameters": [
+          {
+            "name": "layer_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Layer Id"
+            }
+          },
+          {
+            "name": "time",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Time"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/overlay-bounds/{layer_id}": {
+      "get": {
+        "tags": [
+          "overlay"
+        ],
+        "summary": "Get Overlay Bounds",
+        "description": "返回图层的地理边界信息 + 元数据，供前端 MapLibre image source 定位与时间控制使用。",
+        "operationId": "get_overlay_bounds_overlay_bounds__layer_id__get",
+        "parameters": [
+          {
+            "name": "layer_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Layer Id"
+            }
+          },
+          {
+            "name": "time",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Time"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Get Overlay Bounds Overlay Bounds  Layer Id  Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/overlays": {
+      "get": {
+        "tags": [
+          "overlay"
+        ],
+        "summary": "List Overlays",
+        "description": "列出所有已注册的叠加图层 ID（供前端发现可用 overlay 图层）。",
+        "operationId": "list_overlays_overlays_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object",
+                  "title": "Response List Overlays Overlays Get"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/overlay-value/{layer_id}": {
+      "get": {
+        "tags": [
+          "overlay"
+        ],
+        "summary": "Get Overlay Value",
+        "description": "查询 overlay 图层在指定点 (lng, lat) 的像素值。\n\n对于时间序列图层，可通过 ?time=YYYYMMDD 指定时间标签。\n返回 {\"value\": float | null, \"unit\": str, \"layer_id\": str, ...}。",
+        "operationId": "get_overlay_value_overlay_value__layer_id__get",
+        "parameters": [
+          {
+            "name": "layer_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Layer Id"
+            }
+          },
+          {
+            "name": "lng",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "number",
+              "title": "Lng"
+            }
+          },
+          {
+            "name": "lat",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "number",
+              "title": "Lat"
+            }
+          },
+          {
+            "name": "time",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Time"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Get Overlay Value Overlay Value  Layer Id  Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/workflow-runs": {
       "post": {
         "tags": [
@@ -721,7 +942,9 @@
           "frontend"
         ],
         "summary": "Submit Frontend Command",
+        "description": "已移除：前端控制指令为占位实现，无实际副作用。",
         "operationId": "submit_frontend_command_frontend_commands_post",
+        "deprecated": true,
         "parameters": [
           {
             "name": "x-api-key",
@@ -839,8 +1062,9 @@
           "runtime"
         ],
         "summary": "Update Provider Api Config",
-        "description": "更新指定 Provider 的 API 配置（如 API Key）。",
+        "description": "已移除：运行时密钥/配置请改用 /config/api-keys* 与 /config/weather/providers*。",
         "operationId": "update_provider_api_config_runtime_api_config__provider__post",
+        "deprecated": true,
         "parameters": [
           {
             "name": "provider",
@@ -927,6 +1151,104 @@
             "content": {
               "application/json": {
                 "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/runtime/tiles/providers": {
+      "get": {
+        "tags": [
+          "runtime"
+        ],
+        "summary": "List Runtime Tile Providers",
+        "description": "列出可用底图代理提供商（管理面，像素请求请走 /unified-tiles）。",
+        "operationId": "list_runtime_tile_providers_runtime_tiles_providers_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TileProvidersResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/runtime/tiles/cache/stats": {
+      "get": {
+        "tags": [
+          "runtime"
+        ],
+        "summary": "Get Runtime Tile Cache Stats",
+        "description": "底图代理进程内缓存统计。",
+        "operationId": "get_runtime_tile_cache_stats_runtime_tiles_cache_stats_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object",
+                  "title": "Response Get Runtime Tile Cache Stats Runtime Tiles Cache Stats Get"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/runtime/tiles/cache/clear": {
+      "post": {
+        "tags": [
+          "runtime"
+        ],
+        "summary": "Clear Runtime Tile Cache",
+        "description": "清空底图代理进程内缓存。",
+        "operationId": "clear_runtime_tile_cache_runtime_tiles_cache_clear_post",
+        "parameters": [
+          {
+            "name": "x-api-key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Api-Key"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Clear Runtime Tile Cache Runtime Tiles Cache Clear Post"
+                }
               }
             }
           },
@@ -1501,13 +1823,75 @@
         }
       }
     },
+    "/import/raster": {
+      "post": {
+        "tags": [
+          "import"
+        ],
+        "summary": "Import Raster",
+        "description": "上传栅格文件（TIF），转 COG 预览，动态注册为 overlay 图层。\n\n返回 ``{\"layer_id\": \"imported-xxx\", \"bounds\": [west, south, east, north]}``。",
+        "operationId": "import_raster_import_raster_post",
+        "parameters": [
+          {
+            "name": "x-api-key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Api-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/Body_import_raster_import_raster_post"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Import Raster Import Raster Post"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/unified-tiles/{layer_id}/{z}/{x}/{y}": {
       "get": {
         "tags": [
           "tiles"
         ],
         "summary": "Get Unified Tile",
-        "description": "获取指定图层的瓦片数据（底图栅格或天气 GeoJSON）。",
+        "description": "获取底图栅格瓦片。",
         "operationId": "get_unified_tile_unified_tiles__layer_id___z___x___y__get",
         "parameters": [
           {
@@ -1544,41 +1928,6 @@
             "schema": {
               "type": "integer",
               "title": "Y"
-            }
-          },
-          {
-            "name": "hour",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "integer",
-                  "maximum": 47,
-                  "minimum": 0
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "default": 0,
-              "title": "Hour"
-            }
-          },
-          {
-            "name": "model",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Model"
             }
           },
           {
@@ -1632,147 +1981,6 @@
         }
       }
     },
-    "/tiles/providers": {
-      "get": {
-        "tags": [
-          "tiles"
-        ],
-        "summary": "Get Tile Providers",
-        "description": "获取所有可用的底图提供商列表\n\nReturns:\n    底图提供商列表，包含每个提供商是否需要坐标转换等信息",
-        "operationId": "get_tile_providers_tiles_providers_get",
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/TileProvidersResponse"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/tiles/{provider}/{z}/{x}/{y}": {
-      "get": {
-        "tags": [
-          "tiles"
-        ],
-        "summary": "Get Tile",
-        "description": "获取底图 tile 图像\n\nArgs:\n    provider: 底图提供商 ID（如 'gaode-street', 'esri-street', 'tianditu-img' 等）\n    z: zoom 级别\n    x: tile x 坐标\n    y: tile y 坐标\n    use_cache: 是否使用缓存（默认 True）\n\nReturns:\n    tile 图像数据（PNG/JPEG）",
-        "operationId": "get_tile_tiles__provider___z___x___y__get",
-        "deprecated": true,
-        "parameters": [
-          {
-            "name": "provider",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "title": "Provider"
-            }
-          },
-          {
-            "name": "z",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "integer",
-              "title": "Z"
-            }
-          },
-          {
-            "name": "x",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "integer",
-              "title": "X"
-            }
-          },
-          {
-            "name": "y",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "integer",
-              "title": "Y"
-            }
-          },
-          {
-            "name": "use_cache",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "type": "boolean",
-              "default": true,
-              "title": "Use Cache"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/tiles/cache/clear": {
-      "post": {
-        "tags": [
-          "tiles"
-        ],
-        "summary": "Clear Tile Cache",
-        "description": "清空 tile 缓存",
-        "operationId": "clear_tile_cache_tiles_cache_clear_post",
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            }
-          }
-        }
-      }
-    },
-    "/tiles/cache/stats": {
-      "get": {
-        "tags": [
-          "tiles"
-        ],
-        "summary": "Get Cache Stats",
-        "description": "获取缓存统计信息",
-        "operationId": "get_cache_stats_tiles_cache_stats_get",
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            }
-          }
-        }
-      }
-    },
     "/weather/tiles/{layer_id}/{z}/{x}/{y}": {
       "get": {
         "tags": [
@@ -1781,7 +1989,6 @@
         "summary": "Get Weather Tile",
         "description": "获取指定图层的标准 Web Mercator GeoJSON 瓦片。",
         "operationId": "get_weather_tile_weather_tiles__layer_id___z___x___y__get",
-        "deprecated": true,
         "parameters": [
           {
             "name": "layer_id",
@@ -1967,6 +2174,1381 @@
         "summary": "Get Gee Environment",
         "description": "获取 GEE 环境变量配置（脱敏）\n\nReturns:\n    GEE 相关环境变量配置（不包含敏感信息）",
         "operationId": "get_gee_environment_gee_config_environment_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        }
+      }
+    },
+    "/config/general": {
+      "get": {
+        "tags": [
+          "config"
+        ],
+        "summary": "Get General Config",
+        "description": "获取常规配置（脱敏）。",
+        "operationId": "get_general_config_config_general_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        }
+      }
+    },
+    "/config/api-keys": {
+      "get": {
+        "tags": [
+          "config"
+        ],
+        "summary": "List Api Keys",
+        "description": "列出所有 API Key（脱敏）。",
+        "operationId": "list_api_keys_config_api_keys_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        }
+      }
+    },
+    "/config/api-keys/{key_name}": {
+      "put": {
+        "tags": [
+          "config"
+        ],
+        "summary": "Update Api Key",
+        "description": "新增或更新 API Key。",
+        "operationId": "update_api_key_config_api_keys__key_name__put",
+        "parameters": [
+          {
+            "name": "key_name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Key Name"
+            }
+          },
+          {
+            "name": "x-api-key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Api-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ApiKeyUpdateRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "config"
+        ],
+        "summary": "Delete Api Key",
+        "description": "删除 API Key。",
+        "operationId": "delete_api_key_config_api_keys__key_name__delete",
+        "parameters": [
+          {
+            "name": "key_name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Key Name"
+            }
+          },
+          {
+            "name": "x-api-key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Api-Key"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/config/api-keys/{key_name}/test": {
+      "post": {
+        "tags": [
+          "config"
+        ],
+        "summary": "Test Api Key",
+        "description": "测试 API Key 是否有效。",
+        "operationId": "test_api_key_config_api_keys__key_name__test_post",
+        "parameters": [
+          {
+            "name": "key_name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Key Name"
+            }
+          },
+          {
+            "name": "x-api-key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Api-Key"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TestResultResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/config/api-keys/{key_name}/toggle": {
+      "put": {
+        "tags": [
+          "config"
+        ],
+        "summary": "Toggle Api Key",
+        "description": "启用/禁用 API Key。",
+        "operationId": "toggle_api_key_config_api_keys__key_name__toggle_put",
+        "parameters": [
+          {
+            "name": "key_name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Key Name"
+            }
+          },
+          {
+            "name": "x-api-key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Api-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ApiKeyToggleRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/config/gee/accounts": {
+      "get": {
+        "tags": [
+          "config"
+        ],
+        "summary": "List Gee Accounts",
+        "description": "列出所有 GEE 账户（脱敏）。",
+        "operationId": "list_gee_accounts_config_gee_accounts_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "config"
+        ],
+        "summary": "Create Gee Account",
+        "description": "新增 GEE 账户。",
+        "operationId": "create_gee_account_config_gee_accounts_post",
+        "parameters": [
+          {
+            "name": "x-api-key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Api-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GeeAccountCreateRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/config/gee/accounts/{account_id}": {
+      "delete": {
+        "tags": [
+          "config"
+        ],
+        "summary": "Delete Gee Account",
+        "description": "删除 GEE 账户。",
+        "operationId": "delete_gee_account_config_gee_accounts__account_id__delete",
+        "parameters": [
+          {
+            "name": "account_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Account Id"
+            }
+          },
+          {
+            "name": "x-api-key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Api-Key"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/config/gee/accounts/{account_id}/test": {
+      "post": {
+        "tags": [
+          "config"
+        ],
+        "summary": "Test Gee Account",
+        "description": "测试 GEE 账户凭证是否有效。",
+        "operationId": "test_gee_account_config_gee_accounts__account_id__test_post",
+        "parameters": [
+          {
+            "name": "account_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Account Id"
+            }
+          },
+          {
+            "name": "x-api-key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Api-Key"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TestResultResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/config/gee/accounts/{account_id}/toggle": {
+      "put": {
+        "tags": [
+          "config"
+        ],
+        "summary": "Toggle Gee Account",
+        "description": "启用/禁用 GEE 账户。",
+        "operationId": "toggle_gee_account_config_gee_accounts__account_id__toggle_put",
+        "parameters": [
+          {
+            "name": "account_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Account Id"
+            }
+          },
+          {
+            "name": "x-api-key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Api-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GeeAccountToggleRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/config/gee/accounts/reload": {
+      "post": {
+        "tags": [
+          "config"
+        ],
+        "summary": "Reload Gee Accounts",
+        "description": "重载 GEE 账户池。",
+        "operationId": "reload_gee_accounts_config_gee_accounts_reload_post",
+        "parameters": [
+          {
+            "name": "x-api-key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Api-Key"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReloadResultResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/config/gee/runtime": {
+      "get": {
+        "tags": [
+          "config"
+        ],
+        "summary": "Get Gee Runtime Config",
+        "description": "获取 GEE 运行时配置。",
+        "operationId": "get_gee_runtime_config_config_gee_runtime_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        }
+      }
+    },
+    "/config/weather": {
+      "get": {
+        "tags": [
+          "config"
+        ],
+        "summary": "Get Weather Config",
+        "description": "获取天气 API 配置。",
+        "operationId": "get_weather_config_config_weather_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        }
+      }
+    },
+    "/config/weather/providers": {
+      "get": {
+        "tags": [
+          "config"
+        ],
+        "summary": "List Weather Providers",
+        "description": "列出所有天气源 Provider。",
+        "operationId": "list_weather_providers_config_weather_providers_get",
+        "parameters": [
+          {
+            "name": "include_disabled",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": true,
+              "title": "Include Disabled"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/config/weather/providers/{provider_id}": {
+      "get": {
+        "tags": [
+          "config"
+        ],
+        "summary": "Get Weather Provider",
+        "description": "获取单个天气源 Provider 详情。",
+        "operationId": "get_weather_provider_config_weather_providers__provider_id__get",
+        "parameters": [
+          {
+            "name": "provider_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Provider Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "config"
+        ],
+        "summary": "Update Weather Provider",
+        "description": "更新天气源 Provider 配置（enabled/priority/config）。",
+        "operationId": "update_weather_provider_config_weather_providers__provider_id__put",
+        "parameters": [
+          {
+            "name": "provider_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Provider Id"
+            }
+          },
+          {
+            "name": "x-api-key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Api-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WeatherProviderUpdateRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "config"
+        ],
+        "summary": "Delete Weather Provider",
+        "description": "删除天气源 Provider 的 DB 配置记录。\n\n注意：删除后内置 Provider 会回退到代码默认配置；如需彻底禁用请使用 toggle 端点。",
+        "operationId": "delete_weather_provider_config_weather_providers__provider_id__delete",
+        "parameters": [
+          {
+            "name": "provider_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Provider Id"
+            }
+          },
+          {
+            "name": "x-api-key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Api-Key"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/config/weather/providers/{provider_id}/test": {
+      "post": {
+        "tags": [
+          "config"
+        ],
+        "summary": "Test Weather Provider",
+        "description": "测试天气源 Provider 连通性。",
+        "operationId": "test_weather_provider_config_weather_providers__provider_id__test_post",
+        "parameters": [
+          {
+            "name": "provider_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Provider Id"
+            }
+          },
+          {
+            "name": "x-api-key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Api-Key"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WeatherProviderTestResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/config/weather/providers/{provider_id}/toggle": {
+      "put": {
+        "tags": [
+          "config"
+        ],
+        "summary": "Toggle Weather Provider",
+        "description": "启用/禁用天气源 Provider。",
+        "operationId": "toggle_weather_provider_config_weather_providers__provider_id__toggle_put",
+        "parameters": [
+          {
+            "name": "provider_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Provider Id"
+            }
+          },
+          {
+            "name": "x-api-key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Api-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WeatherProviderToggleRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/config/weather/providers/{provider_id}/priority": {
+      "put": {
+        "tags": [
+          "config"
+        ],
+        "summary": "Set Weather Provider Priority",
+        "description": "调整天气源 Provider 优先级。",
+        "operationId": "set_weather_provider_priority_config_weather_providers__provider_id__priority_put",
+        "parameters": [
+          {
+            "name": "provider_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Provider Id"
+            }
+          },
+          {
+            "name": "x-api-key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Api-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WeatherProviderPriorityRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/config/remote-storage": {
+      "get": {
+        "tags": [
+          "config"
+        ],
+        "summary": "List Remote Storage Profiles",
+        "operationId": "list_remote_storage_profiles_config_remote_storage_get",
+        "parameters": [
+          {
+            "name": "include_disabled",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": true,
+              "title": "Include Disabled"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/config/remote-storage/{profile_id}": {
+      "put": {
+        "tags": [
+          "config"
+        ],
+        "summary": "Upsert Remote Storage Profile",
+        "operationId": "upsert_remote_storage_profile_config_remote_storage__profile_id__put",
+        "parameters": [
+          {
+            "name": "profile_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Profile Id"
+            }
+          },
+          {
+            "name": "x-api-key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Api-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RemoteStorageUpsertRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "config"
+        ],
+        "summary": "Delete Remote Storage Profile",
+        "operationId": "delete_remote_storage_profile_config_remote_storage__profile_id__delete",
+        "parameters": [
+          {
+            "name": "profile_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Profile Id"
+            }
+          },
+          {
+            "name": "x-api-key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Api-Key"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/config/remote-storage/{profile_id}/toggle": {
+      "put": {
+        "tags": [
+          "config"
+        ],
+        "summary": "Toggle Remote Storage Profile",
+        "operationId": "toggle_remote_storage_profile_config_remote_storage__profile_id__toggle_put",
+        "parameters": [
+          {
+            "name": "profile_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Profile Id"
+            }
+          },
+          {
+            "name": "x-api-key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Api-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RemoteStorageToggleRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/config/remote-storage/{profile_id}/test": {
+      "post": {
+        "tags": [
+          "config"
+        ],
+        "summary": "Test Remote Storage Profile",
+        "operationId": "test_remote_storage_profile_config_remote_storage__profile_id__test_post",
+        "parameters": [
+          {
+            "name": "profile_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Profile Id"
+            }
+          },
+          {
+            "name": "x-api-key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Api-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/RemoteStorageTestRequest"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Request"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RemoteStorageTestResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/config/data-source": {
+      "get": {
+        "tags": [
+          "config"
+        ],
+        "summary": "Get Data Source Config",
+        "description": "获取数据源配置。",
+        "operationId": "get_data_source_config_config_data_source_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        }
+      }
+    },
+    "/config/about": {
+      "get": {
+        "tags": [
+          "config"
+        ],
+        "summary": "Get About Info",
+        "description": "获取项目信息。",
+        "operationId": "get_about_info_config_about_get",
         "responses": {
           "200": {
             "description": "Successful Response",
@@ -2365,6 +3947,59 @@
         "type": "object",
         "title": "AlgorithmWorkflowRequest"
       },
+      "ApiKeyToggleRequest": {
+        "properties": {
+          "enabled": {
+            "type": "boolean",
+            "title": "Enabled"
+          }
+        },
+        "type": "object",
+        "required": [
+          "enabled"
+        ],
+        "title": "ApiKeyToggleRequest"
+      },
+      "ApiKeyUpdateRequest": {
+        "properties": {
+          "key_value": {
+            "type": "string",
+            "title": "Key Value"
+          },
+          "display_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Display Name"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "enabled": {
+            "type": "boolean",
+            "title": "Enabled",
+            "default": true
+          }
+        },
+        "type": "object",
+        "required": [
+          "key_value"
+        ],
+        "title": "ApiKeyUpdateRequest"
+      },
       "BackendServiceStatus": {
         "properties": {
           "service_name": {
@@ -2397,6 +4032,20 @@
           "updated_at"
         ],
         "title": "BackendServiceStatus"
+      },
+      "Body_import_raster_import_raster_post": {
+        "properties": {
+          "file": {
+            "type": "string",
+            "format": "binary",
+            "title": "File"
+          }
+        },
+        "type": "object",
+        "required": [
+          "file"
+        ],
+        "title": "Body_import_raster_import_raster_post"
       },
       "BoundingBox": {
         "properties": {
@@ -3118,6 +4767,49 @@
         "title": "GEEStatusResponse",
         "description": "GEE 状态响应"
       },
+      "GeeAccountCreateRequest": {
+        "properties": {
+          "account_id": {
+            "type": "string",
+            "title": "Account Id"
+          },
+          "service_account_json": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Service Account Json"
+          },
+          "display_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Display Name"
+          }
+        },
+        "type": "object",
+        "required": [
+          "account_id",
+          "service_account_json"
+        ],
+        "title": "GeeAccountCreateRequest"
+      },
+      "GeeAccountToggleRequest": {
+        "properties": {
+          "enabled": {
+            "type": "boolean",
+            "title": "Enabled"
+          }
+        },
+        "type": "object",
+        "required": [
+          "enabled"
+        ],
+        "title": "GeeAccountToggleRequest"
+      },
       "GeeWorkflowRequest": {
         "properties": {
           "workflow": {
@@ -3773,6 +5465,195 @@
         ],
         "title": "PortSpec"
       },
+      "ReloadResultResponse": {
+        "properties": {
+          "success": {
+            "type": "boolean",
+            "title": "Success"
+          },
+          "account_count": {
+            "type": "integer",
+            "title": "Account Count"
+          },
+          "message": {
+            "type": "string",
+            "title": "Message"
+          }
+        },
+        "type": "object",
+        "required": [
+          "success",
+          "account_count",
+          "message"
+        ],
+        "title": "ReloadResultResponse"
+      },
+      "RemoteStorageTestRequest": {
+        "properties": {
+          "uri": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Uri"
+          }
+        },
+        "type": "object",
+        "title": "RemoteStorageTestRequest",
+        "description": "Optional probe URI; defaults to protocol://host/."
+      },
+      "RemoteStorageTestResponse": {
+        "properties": {
+          "profile_id": {
+            "type": "string",
+            "title": "Profile Id"
+          },
+          "success": {
+            "type": "boolean",
+            "title": "Success"
+          },
+          "message": {
+            "type": "string",
+            "title": "Message"
+          },
+          "tested_at": {
+            "type": "string",
+            "title": "Tested At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "profile_id",
+          "success",
+          "message",
+          "tested_at"
+        ],
+        "title": "RemoteStorageTestResponse"
+      },
+      "RemoteStorageToggleRequest": {
+        "properties": {
+          "enabled": {
+            "type": "boolean",
+            "title": "Enabled"
+          }
+        },
+        "type": "object",
+        "required": [
+          "enabled"
+        ],
+        "title": "RemoteStorageToggleRequest"
+      },
+      "RemoteStorageUpsertRequest": {
+        "properties": {
+          "protocol": {
+            "type": "string",
+            "title": "Protocol"
+          },
+          "host": {
+            "type": "string",
+            "title": "Host",
+            "default": ""
+          },
+          "port": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Port"
+          },
+          "username": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Username"
+          },
+          "secret": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Secret"
+          },
+          "private_key_pem": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Private Key Pem"
+          },
+          "domain": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Domain"
+          },
+          "extra": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Extra"
+          },
+          "display_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Display Name"
+          },
+          "enabled": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Enabled"
+          }
+        },
+        "type": "object",
+        "required": [
+          "protocol"
+        ],
+        "title": "RemoteStorageUpsertRequest"
+      },
       "ResultKind": {
         "type": "string",
         "enum": [
@@ -4184,6 +6065,24 @@
         ],
         "title": "TerminalPlanSummary"
       },
+      "TestResultResponse": {
+        "properties": {
+          "success": {
+            "type": "boolean",
+            "title": "Success"
+          },
+          "message": {
+            "type": "string",
+            "title": "Message"
+          }
+        },
+        "type": "object",
+        "required": [
+          "success",
+          "message"
+        ],
+        "title": "TestResultResponse"
+      },
       "TileProviderInfo": {
         "properties": {
           "id": {
@@ -4210,8 +6109,7 @@
           "requires_transform",
           "coord_system"
         ],
-        "title": "TileProviderInfo",
-        "description": "底图提供商信息"
+        "title": "TileProviderInfo"
       },
       "TileProvidersResponse": {
         "properties": {
@@ -4227,8 +6125,7 @@
         "required": [
           "providers"
         ],
-        "title": "TileProvidersResponse",
-        "description": "底图提供商列表响应"
+        "title": "TileProvidersResponse"
       },
       "TimeGranularity": {
         "type": "string",
@@ -4899,6 +6796,101 @@
           "render_hint"
         ],
         "title": "WeatherPointResponse"
+      },
+      "WeatherProviderPriorityRequest": {
+        "properties": {
+          "priority": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Priority"
+          }
+        },
+        "type": "object",
+        "required": [
+          "priority"
+        ],
+        "title": "WeatherProviderPriorityRequest"
+      },
+      "WeatherProviderTestResponse": {
+        "properties": {
+          "provider_id": {
+            "type": "string",
+            "title": "Provider Id"
+          },
+          "success": {
+            "type": "boolean",
+            "title": "Success"
+          },
+          "message": {
+            "type": "string",
+            "title": "Message"
+          },
+          "tested_at": {
+            "type": "string",
+            "title": "Tested At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "provider_id",
+          "success",
+          "message",
+          "tested_at"
+        ],
+        "title": "WeatherProviderTestResponse"
+      },
+      "WeatherProviderToggleRequest": {
+        "properties": {
+          "enabled": {
+            "type": "boolean",
+            "title": "Enabled"
+          }
+        },
+        "type": "object",
+        "required": [
+          "enabled"
+        ],
+        "title": "WeatherProviderToggleRequest"
+      },
+      "WeatherProviderUpdateRequest": {
+        "properties": {
+          "enabled": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Enabled"
+          },
+          "priority": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Priority"
+          },
+          "config": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Config"
+          }
+        },
+        "type": "object",
+        "title": "WeatherProviderUpdateRequest"
       },
       "WeatherWorkflowRequest": {
         "properties": {

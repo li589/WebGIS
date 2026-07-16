@@ -65,6 +65,7 @@ const {
 const teardownBinder = createMapCanvasTeardownBinder({
   getResources: () => state.resources,
   clearResources: state.clearResources,
+  getOverlayImageModule: () => overlayImageModule,
 })
 const actionBridge = createMapCanvasActionBridge({
   getMapReady: () => mapReady.value,
@@ -424,6 +425,7 @@ onMounted(async () => {
 
 onBeforeUnmount(() => {
   teardownBinder.dispose()
+  overlayImageModule = null
   importedLayerModule?.dispose()
   _clearLocationMarker()
 })

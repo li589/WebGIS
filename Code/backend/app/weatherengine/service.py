@@ -12,7 +12,6 @@ from app.core.config import settings
 from app.services.api_config import api_config_manager, ApiProvider, DataType
 from app.services.result_storage import result_storage_service
 from app.services.workflow_execution import WorkflowExecutionResult
-from app.weatherengine.client import OpenMeteoClient
 from app.weatherengine.constants import DEFAULT_LAYER_ID, DEFAULT_POINT, WEATHER_LAYER_SPECS
 from app.weatherengine.nodes._utils import compute_dynamic_resolution
 from shared.contracts.api_contracts import (
@@ -43,8 +42,7 @@ class WeatherEngineService:
     M15 增强：集成 api_config_manager，支持多数据源切换（Gee、百度、高德、天地图等）。
     """
 
-    def __init__(self, client: OpenMeteoClient | None = None) -> None:
-        self._client = client or OpenMeteoClient()
+    def __init__(self) -> None:
         self._active_provider = ApiProvider.OPEN_METEO
 
     def get_active_provider(self) -> ApiProvider:
@@ -76,18 +74,16 @@ class WeatherEngineService:
             raise ValueError(f"Unsupported weather layer: {layer_id}")
 
         resolved_model = model or settings.weather_default_model
-        ttl_seconds = cache_ttl_seconds or settings.weather_cache_ttl_seconds
+        from app.weatherengine.fetch_gateway import fetch_point_forecast
 
-        # M15: 根据 api_config_manager 选择最佳可用的 Provider
-        active_provider = self.get_active_provider()
-        payload, cache_status = self._client.fetch_point_forecast(
+        payload, cache_status, provider_label = fetch_point_forecast(
+            layer_id=layer_id,
             latitude=latitude,
             longitude=longitude,
-            layer_spec=spec,
             model=resolved_model,
             forecast_hours=forecast_hours,
-            ttl_seconds=ttl_seconds,
-            pressure_levels=spec.pressure_levels or None,
+            ttl_seconds=cache_ttl_seconds,
+            layer_spec=spec,
         )
 
         return self.parse_forecast_to_point(
@@ -99,7 +95,7 @@ class WeatherEngineService:
             resolved_model=resolved_model,
             forecast_hours=forecast_hours,
             place_name=place_name,
-            provider=active_provider.value,
+            provider=provider_label,
         )
 
     def parse_forecast_to_point(
@@ -473,14 +469,14 @@ class WeatherEngineService:
         return refreshed
 
     def _fetch_layer_grid_data(self, *, bbox: BoundingBox, spec) -> tuple[dict[str, Any], str, float]:
+        from app.weatherengine.fetch_gateway import fetch_grid_forecast
+
         resolution = compute_dynamic_resolution(bbox)
-        grid_data, cache_status = self._client.fetch_grid_forecast(
+        grid_data, cache_status, _provider_id = fetch_grid_forecast(
+            layer_id=spec.layer_id,
             bbox=bbox,
             resolution=resolution,
             layer_spec=spec,
-            model=settings.weather_default_model,
-            ttl_seconds=settings.weather_cache_ttl_seconds,
-            pressure_levels=spec.pressure_levels or None,
         )
         return grid_data, cache_status, resolution
 

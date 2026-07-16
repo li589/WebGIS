@@ -9,7 +9,7 @@
    - 取消已完成的 workflow
    - 重试不存在的 workflow
    - provider 抛出异常时 unified tile 端点的 503 响应
-4. SSE 速率限制器行为
+4. 工作流事件轮询速率限制器行为
 5. TileProviderRegistry 并发注册安全性
 
 运行方式：
@@ -378,20 +378,18 @@ class WorkflowConcurrencyTests(unittest.TestCase):
 
 
 class UnifiedTileRobustnessTests(unittest.TestCase):
-    """统一瓦片服务的异常处理鲁棒性。"""
+    """底图统一瓦片服务的异常处理鲁棒性（/unified-tiles 仅底图）。"""
 
     def test_unified_tile_returns_503_when_provider_raises(self) -> None:
-        """Provider 内部异常时，端点应返回 503 而非 500。"""
-        from app.services.tile_provider_registry import TileProviderRegistry, tile_provider_registry
-        from app.services.tile_provider_protocol import TileResponse
+        """已知底图 id 且 Provider 内部异常时，端点应返回 503 而非 500。"""
+        from app.services.tile_provider_registry import tile_provider_registry
 
-        # 创建一个会抛异常的 mock provider
         failing_provider = MagicMock()
-        failing_provider.matches = MagicMock(return_value=True)
+        failing_provider.matches = MagicMock(side_effect=lambda layer_id: layer_id == "esri-street")
         failing_provider.get_tile = AsyncMock(side_effect=RuntimeError("upstream service unavailable"))
 
-        # 临时注册到全局 registry
-        tile_provider_registry.register(failing_provider)
+        # 插入队首，确保先于 BaseMapTileProvider 匹配
+        tile_provider_registry._providers.insert(0, failing_provider)
         try:
             from fastapi.testclient import TestClient
             from app.main import create_app
@@ -399,15 +397,14 @@ class UnifiedTileRobustnessTests(unittest.TestCase):
             app = create_app()
             client = TestClient(app)
 
-            response = client.get("/unified-tiles/test-failing-layer/5/25/12")
+            response = client.get("/unified-tiles/esri-street/5/25/12")
             self.assertEqual(response.status_code, 503)
             self.assertIn("Tile unavailable", response.json()["detail"])
         finally:
-            # 清理：移除 mock provider
             tile_provider_registry._providers.remove(failing_provider)
 
     def test_unified_tile_returns_404_for_unknown_layer(self) -> None:
-        """未知 layer_id 应返回 404。"""
+        """未知底图 layer_id 应返回 404（并提示天气走 /weather/tiles）。"""
         from fastapi.testclient import TestClient
         from app.main import create_app
 
@@ -416,26 +413,25 @@ class UnifiedTileRobustnessTests(unittest.TestCase):
 
         response = client.get("/unified-tiles/totally-unknown-layer-id/5/25/12")
         self.assertEqual(response.status_code, 404)
-        self.assertIn("No tile provider matches", response.json()["detail"])
+        detail = response.json()["detail"]
+        self.assertIn("Unknown basemap layer_id", detail)
+        self.assertIn("/weather/tiles", detail)
 
-    def test_unified_tile_validates_hour_parameter(self) -> None:
-        """hour 参数超出范围 [0, 47] 应返回 422 验证错误。"""
+    def test_weather_tile_validates_hour_parameter(self) -> None:
+        """天气瓦片 hour 超出 [0, 47] 应返回 422。"""
         from fastapi.testclient import TestClient
         from app.main import create_app
 
         app = create_app()
         client = TestClient(app)
 
-        # hour=-1 应被拒绝
-        response = client.get("/unified-tiles/wind-field/5/25/12?hour=-1")
+        response = client.get("/weather/tiles/wind-field/5/25/12?hour=-1")
         self.assertEqual(response.status_code, 422)
 
-        # hour=48 应被拒绝
-        response = client.get("/unified-tiles/wind-field/5/25/12?hour=48")
+        response = client.get("/weather/tiles/wind-field/5/25/12?hour=48")
         self.assertEqual(response.status_code, 422)
 
-        # hour=47 应通过验证（可能 404 或 503，但不是 422）
-        response = client.get("/unified-tiles/wind-field/5/25/12?hour=47")
+        response = client.get("/weather/tiles/wind-field/5/25/12?hour=47")
         self.assertNotEqual(response.status_code, 422)
 
     def test_unified_tile_returns_correct_content_type_for_basemap(self) -> None:
@@ -462,22 +458,22 @@ class UnifiedTileRobustnessTests(unittest.TestCase):
             self.assertEqual(response.headers.get("content-type"), "image/jpeg")
 
 
-class SseRateLimiterTests(unittest.TestCase):
-    """SSE 速率限制器行为测试。"""
+class EventsPollRateLimiterTests(unittest.TestCase):
+    """工作流事件轮询速率限制器行为测试（每 IP / 窗口）。"""
 
     def test_rate_limiter_allows_under_limit(self) -> None:
         """速率限制以内应放行。"""
-        from app.api.routers.workflow_router import _SseRateLimiter
+        from app.api.routers.workflow_router import EventsPollRateLimiter
 
-        limiter = _SseRateLimiter(limit=5, window=timedelta(minutes=5))
+        limiter = EventsPollRateLimiter(limit=5, window=timedelta(minutes=1))
         for i in range(5):
             self.assertTrue(limiter.check("192.168.1.1"), f"Request {i+1} should be allowed")
 
     def test_rate_limiter_blocks_over_limit(self) -> None:
         """超过速率限制应拒绝。"""
-        from app.api.routers.workflow_router import _SseRateLimiter
+        from app.api.routers.workflow_router import EventsPollRateLimiter
 
-        limiter = _SseRateLimiter(limit=3, window=timedelta(minutes=5))
+        limiter = EventsPollRateLimiter(limit=3, window=timedelta(minutes=1))
         for i in range(3):
             self.assertTrue(limiter.check("10.0.0.1"))
 
@@ -486,9 +482,9 @@ class SseRateLimiterTests(unittest.TestCase):
 
     def test_rate_limiter_isolates_by_ip(self) -> None:
         """不同 IP 的限制应相互独立。"""
-        from app.api.routers.workflow_router import _SseRateLimiter
+        from app.api.routers.workflow_router import EventsPollRateLimiter
 
-        limiter = _SseRateLimiter(limit=2, window=timedelta(minutes=5))
+        limiter = EventsPollRateLimiter(limit=2, window=timedelta(minutes=1))
         self.assertTrue(limiter.check("1.1.1.1"))
         self.assertTrue(limiter.check("1.1.1.1"))
         self.assertFalse(limiter.check("1.1.1.1"))  # 1.1.1.1 达到上限
@@ -500,9 +496,9 @@ class SseRateLimiterTests(unittest.TestCase):
 
     def test_rate_limiter_window_expiry(self) -> None:
         """时间窗口过后应重置限制。"""
-        from app.api.routers.workflow_router import _SseRateLimiter
+        from app.api.routers.workflow_router import EventsPollRateLimiter
 
-        limiter = _SseRateLimiter(limit=2, window=timedelta(seconds=0))
+        limiter = EventsPollRateLimiter(limit=2, window=timedelta(seconds=0))
         self.assertTrue(limiter.check("3.3.3.3"))
         self.assertTrue(limiter.check("3.3.3.3"))
 
@@ -595,42 +591,46 @@ class CircuitBreakerRobustnessTests(unittest.TestCase):
         self.assertEqual(breaker.state, "open")
 
 
-class DeprecatedTileRoutesTests(unittest.TestCase):
-    """旧版 tile routes 的兼容性测试。"""
+class TileSurfaceSplitTests(unittest.TestCase):
+    """瓦片面：底图 /unified-tiles，天气 /weather/tiles，旧 /tiles 已移除。"""
 
-    def test_deprecated_tiles_endpoint_still_works(self) -> None:
-        """旧版 /tiles/{provider}/{z}/{x}/{y} 端点应仍然可用（deprecated 但不删除）。"""
+    def test_legacy_tiles_pixel_endpoint_removed(self) -> None:
         from fastapi.testclient import TestClient
         from app.main import create_app
 
         app = create_app()
         client = TestClient(app)
+        response = client.get("/tiles/esri-street/5/25/12")
+        self.assertEqual(response.status_code, 404)
 
-        with patch(
-            "app.services.tile_proxy_service.tile_proxy_service.fetch_tile",
-            new_callable=AsyncMock,
-            return_value=b"deprecated-tile-data",
-        ):
-            response = client.get("/tiles/esri-street/5/25/12")
-            self.assertEqual(response.status_code, 200)
-            self.assertEqual(response.content, b"deprecated-tile-data")
-            self.assertEqual(response.headers.get("X-Tile-Provider"), "esri-street")
-
-    def test_deprecated_tiles_validates_zoom_range(self) -> None:
-        """旧端点应验证 zoom 范围。"""
+    def test_unified_tiles_validates_zoom_range(self) -> None:
         from fastapi.testclient import TestClient
         from app.main import create_app
 
         app = create_app()
         client = TestClient(app)
+        self.assertEqual(client.get("/unified-tiles/esri-street/-1/25/12").status_code, 400)
+        self.assertEqual(client.get("/unified-tiles/esri-street/19/25/12").status_code, 400)
 
-        # zoom=-1 应返回 400
-        response = client.get("/tiles/esri-street/-1/25/12")
-        self.assertEqual(response.status_code, 400)
+    def test_unified_tiles_rejects_weather_layer_id(self) -> None:
+        from fastapi.testclient import TestClient
+        from app.main import create_app
 
-        # zoom=19 应返回 400
-        response = client.get("/tiles/esri-street/19/25/12")
-        self.assertEqual(response.status_code, 400)
+        app = create_app()
+        client = TestClient(app)
+        response = client.get("/unified-tiles/wind-field/5/25/12")
+        self.assertEqual(response.status_code, 404)
+        self.assertIn("/weather/tiles", response.json().get("detail", ""))
+
+    def test_runtime_tile_cache_stats(self) -> None:
+        from fastapi.testclient import TestClient
+        from app.main import create_app
+
+        app = create_app()
+        client = TestClient(app)
+        response = client.get("/runtime/tiles/cache/stats")
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("cached_tiles", response.json())
 
 
 if __name__ == "__main__":

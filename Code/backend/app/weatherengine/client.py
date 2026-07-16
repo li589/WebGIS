@@ -176,10 +176,16 @@ class OpenMeteoClient:
     # 进程内共享断路器：所有实例共用同一状态，协调 API 保护
     _shared_circuit = CircuitBreaker()
 
-    def __init__(self, cache_root: str | Path | None = None) -> None:
+    def __init__(
+        self,
+        cache_root: str | Path | None = None,
+        *,
+        base_url: str | None = None,
+    ) -> None:
         self._cache_root = Path(cache_root or settings.cache_dir) / "weatherengine"
         self._cache_root.mkdir(parents=True, exist_ok=True)
         self._circuit = self._shared_circuit
+        self._base_url = (base_url or OPEN_METEO_BASE_URL).rstrip("?")
 
     # ── 每日 API 预算管理 ──────────────────────────────────────────────
     # Open-Meteo 免费版每日限额 ~10000 次。使用 Redis 跨 worker 共享计数器，
@@ -203,6 +209,27 @@ class OpenMeteoClient:
             return max(0, OPEN_METEO_DAILY_API_LIMIT - used)
         except (ValueError, TypeError, redis_lib.RedisError):
             return None
+
+    # ── Public accessors（供 Provider 包装器使用，避免访问私有成员） ────────
+
+    @property
+    def circuit_state(self) -> str:
+        """断路器当前状态（closed / open / half_open）。"""
+        return self._circuit.state
+
+    @property
+    def base_url(self) -> str:
+        """API 基础 URL。"""
+        return self._base_url
+
+    @base_url.setter
+    def base_url(self, value: str) -> None:
+        """更新 API 基础 URL（运行时配置覆盖时使用）。"""
+        self._base_url = value.rstrip("?")
+
+    def budget_remaining(self) -> int | None:
+        """公开方法：返回今日剩余 API 调用次数。"""
+        return self._budget_remaining()
 
     def _budget_record_call(self) -> None:
         """记录一次 API 调用，递增 Redis 计数器"""
@@ -294,7 +321,7 @@ class OpenMeteoClient:
                 )
                 return cached_payload, "circuit-open-stale"
             if not self._circuit.wait_or_pass(timeout=30.0):
-                raise HTTPError(OPEN_METEO_BASE_URL, 503, "Circuit breaker open", None, None)
+                raise HTTPError(self._base_url, 503, "Circuit breaker open", None, None)
 
         # 3. Cross-worker request deduplication
         dedup_lock_key = f"{REDIS_CACHE_PREFIX}lock:point:{cache_key}"
@@ -317,7 +344,7 @@ class OpenMeteoClient:
             logger.warning("[OpenMeteoClient] daily API budget exhausted for point forecast: lat=%.4f lon=%.4f", latitude, longitude)
             if cached_payload is not None:
                 return cached_payload, "budget-exhausted-stale"
-            raise HTTPError(OPEN_METEO_BASE_URL, 503, "Daily API budget exhausted", None, None)
+            raise HTTPError(self._base_url, 503, "Daily API budget exhausted", None, None)
 
         query_dict: dict[str, str] = {
             "latitude": f"{latitude:.4f}",
@@ -338,7 +365,7 @@ class OpenMeteoClient:
         payload: dict[str, Any] | None = None
         for attempt in range(max_attempts):
             try:
-                with self._rate_limited_urlopen(f"{OPEN_METEO_BASE_URL}?{query}", timeout=20) as response:
+                with self._rate_limited_urlopen(f"{self._base_url}?{query}", timeout=20) as response:
                     payload = json.loads(response.read().decode("utf-8"))
                 self._circuit.record_success()
                 self._budget_record_call()
@@ -525,7 +552,7 @@ class OpenMeteoClient:
                     "[OpenMeteoClient] circuit breaker did not recover within timeout: layer=%s",
                     layer_spec.layer_id,
                 )
-                raise HTTPError(OPEN_METEO_BASE_URL, 503, "Circuit breaker open", None, None)
+                raise HTTPError(self._base_url, 503, "Circuit breaker open", None, None)
 
         # 3. Cross-worker request deduplication
         dedup_lock_key = f"{REDIS_CACHE_PREFIX}lock:grid:{cache_key}"
@@ -548,7 +575,7 @@ class OpenMeteoClient:
             logger.warning("[OpenMeteoClient] daily API budget exhausted for grid forecast: layer=%s", layer_spec.layer_id)
             if cached_payload is not None:
                 return cached_payload, "budget-exhausted-stale"
-            raise HTTPError(OPEN_METEO_BASE_URL, 503, "Daily API budget exhausted", None, None)
+            raise HTTPError(self._base_url, 503, "Daily API budget exhausted", None, None)
 
         rows = max(1, ceil(lat_span / resolution))
         cols = max(1, ceil(lon_span / resolution))
@@ -591,7 +618,7 @@ class OpenMeteoClient:
                 if cached_payload is not None:
                     return cached_payload, "circuit-open-stale"
                 if not self._circuit.wait_or_pass(timeout=30.0):
-                    raise HTTPError(OPEN_METEO_BASE_URL, 503, "Circuit breaker open during grid fetch", None, None)
+                    raise HTTPError(self._base_url, 503, "Circuit breaker open during grid fetch", None, None)
 
             # 从第二批开始添加延迟，避免 Open-Meteo 免费 API 限流 (429)
             if batch_idx > 0:
@@ -635,7 +662,7 @@ class OpenMeteoClient:
                         "[OpenMeteoClient] HTTP request: batch=%d-%d/%d points=%d url_len=%d attempt=%d",
                         batch_start, batch_end, total_points, len(batch_lats), len(query), attempt + 1,
                     )
-                    with self._rate_limited_urlopen(f"{OPEN_METEO_BASE_URL}?{query}", timeout=30) as response:
+                    with self._rate_limited_urlopen(f"{self._base_url}?{query}", timeout=30) as response:
                         raw_data = response.read().decode("utf-8")
                         batch_payload = json.loads(raw_data)
                     # [OpenMeteoClient] 调试：打印响应信息

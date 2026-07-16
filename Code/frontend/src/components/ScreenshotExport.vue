@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, onBeforeUnmount, ref } from 'vue'
 
 export type ScreenshotMode = 'shell' | 'bare' | 'clean' | 'pure'
 export type ScreenshotFormat = 'png' | 'pdf'
@@ -19,6 +19,15 @@ const emit = defineEmits<{
 
 const isCapturing = ref(false)
 const captureMsg = ref('')
+/** 跟踪 captureMsg 自动清除定时器，组件卸载时统一清理避免访问已销毁的 ref */
+let captureMsgTimer: ReturnType<typeof setTimeout> | null = null
+
+onBeforeUnmount(() => {
+  if (captureMsgTimer !== null) {
+    clearTimeout(captureMsgTimer)
+    captureMsgTimer = null
+  }
+})
 
 const MODES: Array<{ id: ScreenshotMode; label: string; icon: string; desc: string }> = [
   { id: 'shell', label: '带外壳', icon: '▣', desc: '当前界面，含外层背景与全部模块' },
@@ -242,8 +251,12 @@ async function capture() {
     captureMsg.value = '截图失败'
   } finally {
     isCapturing.value = false
-    setTimeout(() => {
+    if (captureMsgTimer !== null) {
+      clearTimeout(captureMsgTimer)
+    }
+    captureMsgTimer = setTimeout(() => {
       captureMsg.value = ''
+      captureMsgTimer = null
     }, 2000)
   }
 }

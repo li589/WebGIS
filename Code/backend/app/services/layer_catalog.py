@@ -481,8 +481,8 @@ def get_layer_catalog() -> LayerCatalogResponse:
         LayerDescriptor(
             layer_id="lab-output",
             dataset_key="smap_omega_cross_analysis",
-            display_name="SMAP/Omega 交叉分析（2023-01）",
-            description="中国区域 SMAP L3 土壤湿度与 Omega 反演产品多源交叉分析数据集（2023-01），含 14 天 SM 均值、Omega 反演产品（doy_017~030）、IGBP 分区统计、HFP/AI 辅助数据。",
+            display_name="SMAP/Omega 交叉分析（样板）",
+            description="样板 provider 链路（lab_output），仅用于联调/演示，不是生产算法主链。真实课题组计算请走 Python provider modules。",
             category="模拟结果",
             source_type=LayerSourceType.algorithm_output,
             render_type=LayerRenderType.heatmap,
@@ -496,11 +496,14 @@ def get_layer_catalog() -> LayerCatalogResponse:
             extent=extent,
             style=LayerStyleHint(palette="magenta-yellow", unit_label="m³/m³", opacity=0.9),
             capabilities=_workflow_map_capabilities(data_domain="soil_moisture", paint_mode="heatmap"),
-            tags=["smap", "omega", "cross-analysis", "soil-moisture", "frontend-aligned"],
+            tags=["sample", "lab-output", "compat", "not-production"],
             engine="provider",
             run_readiness="ready",
-            run_readiness_summary="SMAP/Omega 多源交叉分析数据集，含 14 天 SMAP SM 均值与 Omega 反演产品，数据已就绪。",
-            run_readiness_notes=["数据源: SMAP L3 HDF5 (13 天) + InversionResults/smap_avg (14 doy)，输出位于 ProjectOutput/2023-01_Omega_Inversion/。"],
+            run_readiness_summary="样板 provider 可运行，结果仅为合成演示，不代表正式生产数据。",
+            run_readiness_notes=[
+                "provider_tier=sample；默认注册仅用于兼容旧前端。",
+                "生产数据请接入 algorithms/providers/Python 模块与真实 data_access 源。",
+            ],
         ),
         # ─── 叠加图层（overlay image source）──────────────────────────────────
         LayerDescriptor(

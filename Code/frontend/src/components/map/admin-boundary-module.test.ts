@@ -10,7 +10,6 @@ describe('admin-boundary-module', () => {
     const setPaintProperty = vi.fn()
     const boundaryModuleData = {
       guangdongCityBoundaries: { type: 'FeatureCollection', features: [] as any[] },
-      guangdongCityCenters: { type: 'FeatureCollection', features: [] as any[] },
     }
     const loadBoundaryModule = vi.fn(async () => boundaryModuleData) as unknown as NonNullable<
       NonNullable<Parameters<typeof createAdminBoundaryModule>[0]['dependencies']>['loadBoundaryModule']
@@ -43,13 +42,17 @@ describe('admin-boundary-module', () => {
     expect(loadBoundaryModule).toHaveBeenCalledTimes(1)
     expect(setLoadingLabel).toHaveBeenCalledWith('正在载入行政区边界...')
     expect(sources.has('admin-boundaries')).toBe(true)
-    expect(sources.has('admin-centers')).toBe(true)
+    expect(sources.has('admin-centers')).toBe(false)
     expect(layers.has('admin-fill')).toBe(true)
     expect(layers.has('admin-line')).toBe(true)
-    expect(layers.has('admin-center-points')).toBe(true)
+    expect(layers.has('admin-center-points')).toBe(false)
     expect(setLayoutProperty).toHaveBeenCalledWith('admin-fill', 'visibility', 'visible')
     expect(setPaintProperty).toHaveBeenCalledWith('admin-fill', 'fill-opacity', 0.16)
     expect(setPaintProperty).toHaveBeenCalledWith('admin-line', 'line-opacity', 0.41)
-    expect(setPaintProperty).toHaveBeenCalledWith('admin-center-points', 'circle-opacity', 0.36)
+    expect(setPaintProperty).not.toHaveBeenCalledWith(
+      'admin-center-points',
+      'circle-opacity',
+      expect.anything(),
+    )
   })
 })

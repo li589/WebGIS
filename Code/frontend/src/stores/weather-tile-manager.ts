@@ -6,7 +6,7 @@
  * - 全局并发槽位（默认 4），与后端 WeatherTileService semaphore 对齐。
  * - 图层内优先级队列：视口瓦片 priority=0，BFS 外扩预取 priority=1。
  * - 移动/缩放时 generation++，丢弃过期结果并取消不在新视口内的请求。
- * - 每个瓦片通过 GET /unified-tiles 拉取 GeoJSON（服务端缓存/生成）。
+ * - 每个瓦片通过 GET /weather/tiles 拉取 GeoJSON（服务端缓存/生成）。
  */
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
@@ -170,13 +170,20 @@ export interface WeatherTileLayerStatus {
 
 let globalSequence = 0
 let activeFetchCount = 0
+/** 跟踪 429/503 重试定时器，在 clearLayer 时统一清理避免访问已销毁的图层状态 */
+const pendingRetryTimers = new Set<ReturnType<typeof setTimeout>>()
 
 function debugLog(module: string, ...args: unknown[]) {
   console.log(`[${performance.now().toFixed(1)}ms] [WeatherTileManager:${module}]`, ...args)
 }
 
-function tileCoordsToKey(coords: WeatherTileCoords, layerId: string, hour: number): string {
-  return buildTileKey(layerId, coords.z, coords.x, coords.y, hour)
+function tileCoordsToKey(
+  coords: WeatherTileCoords,
+  layerId: string,
+  hour: number,
+  model: string,
+): string {
+  return buildTileKey(layerId, coords.z, coords.x, coords.y, hour, model)
 }
 
 /**
@@ -204,6 +211,39 @@ export const useWeatherTileManager = defineStore('weatherTileManager', () => {
   const activityVersion = ref(0)
   // 图层状态：使用普通 Map，依赖 dataVersion/statusVersion 触发响应式更新
   const layerStates = new Map<string, LayerState>()
+  const MERGE_CACHE_MAX = 8
+  const mergeCache = new Map<string, WindGeoJSON | null>()
+  let dataVersionBumpScheduled = false
+
+  function scheduleDataVersionBump(): void {
+    if (dataVersionBumpScheduled) return
+    dataVersionBumpScheduled = true
+    queueMicrotask(() => {
+      dataVersionBumpScheduled = false
+      mergeCache.clear()
+      dataVersion.value += 1
+    })
+  }
+
+  function buildMergeCacheKey(
+    layerId: string,
+    state: LayerState,
+    clampedZoom: number,
+    bounds: LngLatBounds,
+  ): string {
+    return `${layerId}:${state.generation}:${state.hour}:${clampedZoom}:${bounds.west.toFixed(3)},${bounds.south.toFixed(3)},${bounds.east.toFixed(3)},${bounds.north.toFixed(3)}`
+  }
+
+  function rememberMergeCache(key: string, value: WindGeoJSON | null): WindGeoJSON | null {
+    mergeCache.set(key, value)
+    if (mergeCache.size > MERGE_CACHE_MAX) {
+      const firstKey = mergeCache.keys().next().value
+      if (firstKey !== undefined) {
+        mergeCache.delete(firstKey)
+      }
+    }
+    return value
+  }
 
   function getOrCreateState(layerId: string): LayerState {
     let state = layerStates.get(layerId)
@@ -279,8 +319,15 @@ export const useWeatherTileManager = defineStore('weatherTileManager', () => {
       cancelPendingRequest(request)
     }
     state.pending.clear()
+    // 清理所有挂起的 429/503 重试定时器，避免图层销毁后定时器回调仍触发 drainQueue
+    // 访问已删除的图层状态。其他图层在下次 setViewport 时会重新入队。
+    for (const timer of pendingRetryTimers) {
+      clearTimeout(timer)
+    }
+    pendingRetryTimers.clear()
     activityVersion.value += 1
     layerStates.delete(layerId)
+    mergeCache.clear()
     debugLog('clearLayer', layerId)
   }
 
@@ -329,6 +376,7 @@ export const useWeatherTileManager = defineStore('weatherTileManager', () => {
       return
     }
 
+    const modelChanged = state.model !== resolvedModel
     state.generation += 1
     const generation = state.generation
     state.center = center
@@ -339,8 +387,19 @@ export const useWeatherTileManager = defineStore('weatherTileManager', () => {
     state.viewportTiles = viewportTiles
     state.prefetchRing = prefetchRing
 
+    // Model is part of the cache key; drop prior-model tiles on change
+    if (modelChanged) {
+      state.tiles.clear()
+      for (const request of state.pending.values()) {
+        cancelPendingRequest(request)
+      }
+      state.pending.clear()
+    }
+
     const desiredKeys = new Set<string>(
-      [...viewportTiles, ...prefetchRing].map((t) => tileCoordsToKey(t, layerId, hour)),
+      [...viewportTiles, ...prefetchRing].map((t) =>
+        tileCoordsToKey(t, layerId, hour, resolvedModel),
+      ),
     )
 
     // 取消不在目标集合内的 pending 请求；槽位由 submitTile finally 统一释放
@@ -412,7 +471,7 @@ export const useWeatherTileManager = defineStore('weatherTileManager', () => {
     priority: number,
     generation: number,
   ): boolean {
-    const key = tileCoordsToKey(tile, state.layerId, state.hour)
+    const key = tileCoordsToKey(tile, state.layerId, state.hour, state.model)
     if (state.tiles.has(key) || state.pending.has(key)) return false
     const controller = new AbortController()
     const request: TileRequest = {
@@ -470,6 +529,7 @@ export const useWeatherTileManager = defineStore('weatherTileManager', () => {
       { z: key.z, x: key.x, y: key.y },
       layerId,
       key.hour,
+      state?.model ?? DEFAULT_WEATHER_MODEL,
     )
 
     try {
@@ -506,7 +566,7 @@ export const useWeatherTileManager = defineStore('weatherTileManager', () => {
 
       finalState.tiles.set(cacheKey, geojson)
       trimLayerCache(finalState)
-      dataVersion.value += 1
+      scheduleDataVersionBump()
       clearLayerError(layerId)
 
       const cachedTiles: MergedWeatherTile[] = Array.from(finalState.tiles.entries()).map(([k, tileGeojson]) => {
@@ -546,7 +606,11 @@ export const useWeatherTileManager = defineStore('weatherTileManager', () => {
           activeFetchCount = Math.max(0, activeFetchCount - 1)
           request.dispatched = false
           request.retryAfter = Date.now() + backoff
-          setTimeout(() => drainQueue(), backoff + 100)
+          const retryTimer = setTimeout(() => {
+            pendingRetryTimers.delete(retryTimer)
+            drainQueue()
+          }, backoff + 100)
+          pendingRetryTimers.add(retryTimer)
           return
         }
         debugLog('submitTile 429 exhausted', layerId, `z=${key.z} x=${key.x} y=${key.y}`, `retries=${retryCount}`)
@@ -561,7 +625,11 @@ export const useWeatherTileManager = defineStore('weatherTileManager', () => {
           activeFetchCount = Math.max(0, activeFetchCount - 1)
           request.dispatched = false
           request.retryAfter = Date.now() + backoff
-          setTimeout(() => drainQueue(), backoff + 100)
+          const retryTimer = setTimeout(() => {
+            pendingRetryTimers.delete(retryTimer)
+            drainQueue()
+          }, backoff + 100)
+          pendingRetryTimers.add(retryTimer)
           return
         }
         debugLog('submitTile 503 exhausted', layerId, `z=${key.z} x=${key.x} y=${key.y}`, `retries=${retryCount}`)
@@ -592,7 +660,9 @@ export const useWeatherTileManager = defineStore('weatherTileManager', () => {
 
     // 只预取当前视口外扩 1 圈内的邻居，避免无限外扩和移动后旧预取浪费
     const allowedKeys = new Set<string>(
-      [...state.viewportTiles, ...state.prefetchRing].map((t) => tileCoordsToKey(t, state.layerId, state.hour)),
+      [...state.viewportTiles, ...state.prefetchRing].map((t) =>
+        tileCoordsToKey(t, state.layerId, state.hour, state.model),
+      ),
     )
 
     let enqueuedAny = false
@@ -600,7 +670,12 @@ export const useWeatherTileManager = defineStore('weatherTileManager', () => {
       const nx = ((key.x + dx) % n + n) % n
       const ny = key.y + dy
       if (ny < 0 || ny >= n) continue
-      const neighborKey = tileCoordsToKey({ z: key.z, x: nx, y: ny }, state.layerId, state.hour)
+      const neighborKey = tileCoordsToKey(
+        { z: key.z, x: nx, y: ny },
+        state.layerId,
+        state.hour,
+        state.model,
+      )
       if (!allowedKeys.has(neighborKey)) continue
       if (enqueueIfMissing(state, { z: key.z, x: nx, y: ny }, 1, generation)) {
         enqueuedAny = true
@@ -630,8 +705,13 @@ export const useWeatherTileManager = defineStore('weatherTileManager', () => {
     }
 
     const clampedZoom = Math.max(0, Math.min(12, Math.round(state.zoom)))
-    // bbox 可能为 null（addLayer 时未传 bbox），用 center+zoom 兜底计算
     const bounds = state.bbox ?? boundsFromCenter(state.center, clampedZoom)
+    const cacheKey = buildMergeCacheKey(layerId, state, clampedZoom, bounds)
+    const cached = mergeCache.get(cacheKey)
+    if (cached !== undefined) {
+      return cached
+    }
+
     const viewportTiles = tilesInBounds(bounds, clampedZoom, 0)
     const mergedTiles: MergedWeatherTile[] = []
 
@@ -639,12 +719,12 @@ export const useWeatherTileManager = defineStore('weatherTileManager', () => {
       const zMatch = /:z(\d+):/.exec(k)
       const xMatch = /:x(\d+):/.exec(k)
       const yMatch = /:y(\d+):/.exec(k)
-      const hMatch = /:h(\d+)$/.exec(k)
+      const hMatch = /:h(\d+)/.exec(k)
       return `z${zMatch?.[1]}:x${xMatch?.[1]}:y${yMatch?.[1]}:h${hMatch?.[1]}`
     })
 
     for (const tile of viewportTiles) {
-      const key = tileCoordsToKey(tile, layerId, state.hour)
+      const key = tileCoordsToKey(tile, layerId, state.hour, state.model)
       const geojson = state.tiles.get(key)
       if (geojson) {
         mergedTiles.push({
@@ -670,8 +750,8 @@ export const useWeatherTileManager = defineStore('weatherTileManager', () => {
       `matched=${mergedTiles.length}`,
     )
 
-    if (!mergedTiles.length) return null
-    return mergeWeatherTiles(mergedTiles)
+    if (!mergedTiles.length) return rememberMergeCache(cacheKey, null)
+    return rememberMergeCache(cacheKey, mergeWeatherTiles(mergedTiles))
   }
 
   function getDataVersion(): number {
@@ -708,7 +788,7 @@ export const useWeatherTileManager = defineStore('weatherTileManager', () => {
     const viewportTotal = state.viewportTiles.length
     let cachedInViewport = 0
     for (const tile of state.viewportTiles) {
-      const tileKey = tileCoordsToKey(tile, layerId, state.hour)
+      const tileKey = tileCoordsToKey(tile, layerId, state.hour, state.model)
       if (state.tiles.has(tileKey)) cachedInViewport += 1
     }
     return {

@@ -1,3 +1,4 @@
+import os
 from datetime import datetime, timedelta, timezone
 from threading import Lock
 
@@ -19,11 +20,12 @@ from shared.contracts.api_contracts import (
 
 router = APIRouter()
 
-_SSE_RATE_LIMIT = 10
-_SSE_WINDOW = timedelta(minutes=5)
+# JSON 事件轮询限流：按「每 IP / 每分钟请求数」（非 SSE 连接数）
+_EVENTS_POLL_RATE_LIMIT = int(os.getenv("BACKEND_EVENTS_POLL_RATE_LIMIT_PER_MINUTE", "120"))
+_EVENTS_POLL_WINDOW = timedelta(minutes=1)
 
 
-class _SseRateLimiter:
+class EventsPollRateLimiter:
     def __init__(self, limit: int, window: timedelta) -> None:
         self._limit = limit
         self._window = window
@@ -45,7 +47,7 @@ class _SseRateLimiter:
             return True
 
 
-_sse_limiter = _SseRateLimiter(_SSE_RATE_LIMIT, _SSE_WINDOW)
+_events_poll_limiter = EventsPollRateLimiter(_EVENTS_POLL_RATE_LIMIT, _EVENTS_POLL_WINDOW)
 
 
 def _get_client_ip(request: Request) -> str:
@@ -101,10 +103,13 @@ def list_workflow_events(
     limit: int | None = None,
 ) -> WorkflowEventsResponse:
     client_ip = _get_client_ip(request)
-    if not _sse_limiter.check(client_ip):
+    if not _events_poll_limiter.check(client_ip):
         raise HTTPException(
             status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-            detail=f"Too many SSE connections from {client_ip}. Limit: {_SSE_RATE_LIMIT} per {_SSE_WINDOW}.",
+            detail=(
+                f"Too many workflow event poll requests from {client_ip}. "
+                f"Limit: {_EVENTS_POLL_RATE_LIMIT} per minute."
+            ),
         )
     events = submission_service.list_workflow_events(run_id, after_event_id=after_event_id, limit=limit)
     if events is None:

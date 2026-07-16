@@ -13,6 +13,7 @@ import hashlib
 import io
 import math
 import time
+from collections import OrderedDict
 from dataclasses import dataclass
 from enum import Enum
 from typing import Optional
@@ -217,10 +218,13 @@ TILE_URL_TEMPLATES: dict[str, TileUrlTemplate] = {
 class TileProxyService:
     """底图代理服务"""
 
+    _MAX_CACHE_ENTRIES = 512
+
     def __init__(self):
         self._http_client: Optional[httpx.AsyncClient] = None
-        self._cache: dict[str, tuple[bytes, float]] = {}  # url_hash -> (data, timestamp)
-        self._cache_ttl = 3600  # 缓存 1 小时
+        # OrderedDict LRU：url_hash -> (data, timestamp)
+        self._cache: OrderedDict[str, tuple[bytes, float]] = OrderedDict()
+        self._cache_ttl = int(getattr(settings, "tile_proxy_cache_ttl_seconds", 3600) or 3600)
 
     async def get_http_client(self) -> httpx.AsyncClient:
         if self._http_client is None:
@@ -347,18 +351,23 @@ class TileProxyService:
         if not template:
             raise HTTPException(status_code=400, detail=f"Unknown tile provider: {tile_id}")
 
+        from app.services.config_service import get_effective_api_key
+
+        tianditu_key = get_effective_api_key("tianditu") or ""
+        baidu_key = get_effective_api_key("baidu") or ""
+
         # 天地图需要 API Key（tk），未配置时返回明确错误
-        if template.provider == TileProvider.TIANDITU and not settings.tianditu_api_key:
+        if template.provider == TileProvider.TIANDITU and not tianditu_key:
             raise HTTPException(
                 status_code=503,
-                detail="天地图需要配置 BACKEND_TIANDITU_API_KEY 环境变量。请从 https://console.tianditu.gov.cn/ 申请 Key。",
+                detail="天地图需要配置 API Key（设置页或 BACKEND_TIANDITU_API_KEY）。请从 https://console.tianditu.gov.cn/ 申请 Key。",
             )
 
         # 百度需要 API Key（ak），未配置时返回明确错误（否则百度返回空白 tile）
-        if template.provider == TileProvider.BAIDU and not settings.baidu_api_key:
+        if template.provider == TileProvider.BAIDU and not baidu_key:
             raise HTTPException(
                 status_code=503,
-                detail="百度地图需要配置 BACKEND_BAIDU_API_KEY 环境变量。请从 https://lbsyun.baidu.com/ 申请 ak。",
+                detail="百度地图需要配置 API Key（设置页或 BACKEND_BAIDU_API_KEY）。请从 https://lbsyun.baidu.com/ 申请 ak。",
             )
 
         # 坐标转换
@@ -374,22 +383,24 @@ class TileProxyService:
             format_args = {"x": tx, "y": ty, "z": tz}
             # 只有天地图模板需要 tk 参数
             if "{tk}" in template.url_pattern:
-                format_args["tk"] = settings.tianditu_api_key
+                format_args["tk"] = tianditu_key
             # 百度模板需要 ak 参数
             if "{ak}" in template.url_pattern:
-                format_args["ak"] = settings.baidu_api_key
+                format_args["ak"] = baidu_key
             # 高德/百度模板需要 server 子域名编号（1-4），用于负载均衡
             if "{server}" in template.url_pattern:
                 # 修复：hexdigest()[0] 是字符串字符，必须先 int(..., 16) 转为整数才能取模
                 format_args["server"] = int(hashlib.md5(f"{tx}{ty}".encode()).hexdigest()[0], 16) % 4 + 1
             url = template.url_pattern.format(**format_args)
 
-        # 检查缓存
+        # 检查缓存（LRU）
         cache_key = self._get_cache_key(url)
         if use_cache and cache_key in self._cache:
             data, timestamp = self._cache[cache_key]
             if time.time() - timestamp < self._cache_ttl:
+                self._cache.move_to_end(cache_key)
                 return data
+            self._cache.pop(cache_key, None)
 
         # 请求 tile
         client = await self.get_http_client()
@@ -401,6 +412,9 @@ class TileProxyService:
             # 更新缓存
             if use_cache:
                 self._cache[cache_key] = (data, time.time())
+                self._cache.move_to_end(cache_key)
+                while len(self._cache) > self._MAX_CACHE_ENTRIES:
+                    self._cache.popitem(last=False)
 
             return data
         except httpx.HTTPStatusError as e:

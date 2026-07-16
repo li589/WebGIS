@@ -287,16 +287,16 @@ class ApiConfigManager:
         return self._configs.copy()
 
     def get_config_serializable(self, provider: ApiProvider) -> Optional[dict[str, Any]]:
-        """获取可直接 JSON 序列化的 provider 配置。"""
+        """获取可直接 JSON 序列化的 provider 配置（永不包含明文 api_key）。"""
         config = self._configs.get(provider)
         if config is None:
             return None
-        return _to_jsonable(config)
+        return _to_public_config(config)
 
     def get_all_configs_serializable(self) -> dict[str, dict[str, Any]]:
-        """获取所有可直接 JSON 序列化的配置。"""
+        """获取所有可直接 JSON 序列化的配置（永不包含明文 api_key）。"""
         return {
-            provider.value: _to_jsonable(config)
+            provider.value: _to_public_config(config)
             for provider, config in self._configs.items()
         }
 
@@ -346,6 +346,46 @@ def _to_jsonable(value: Any) -> Any:
     if isinstance(value, (list, tuple)):
         return [_to_jsonable(item) for item in value]
     return value
+
+
+def _resolve_api_key_source(config: ApiConfig) -> str:
+    """推断密钥来源展示字段：env | metadata | none（不含明文）。"""
+    if config.api_key and str(config.api_key).strip():
+        return "env"
+    credentials_path = config.metadata.get("credentials_path") if config.metadata else None
+    if isinstance(credentials_path, str) and credentials_path.strip():
+        return "metadata"
+    return "none"
+
+
+# 热路径真实接线能力（与 capability 登记可宽可窄分离；仅列已有调用方的能力）
+_HOT_PATH_WIRED: dict[ApiProvider, tuple[str, ...]] = {
+    ApiProvider.OPEN_METEO: ("weather",),
+    ApiProvider.TIANDITU: ("tile",),
+    ApiProvider.BAIDU: ("tile",),
+    ApiProvider.GAODE: ("tile",),  # CDN 瓦片代理可用；key 当前可不注入
+    ApiProvider.GEE: ("satellite", "elevation"),  # 经 gee_bridge，不含 weather 热路径
+}
+
+
+def _to_public_config(config: ApiConfig) -> dict[str, Any]:
+    """对外投影：剥离明文 api_key，仅暴露是否已配置与来源。"""
+    payload = _to_jsonable(config)
+    if not isinstance(payload, dict):
+        return {}
+    key_present = bool(config.api_key and str(config.api_key).strip())
+    credentials_path = config.metadata.get("credentials_path") if config.metadata else None
+    credentials_present = isinstance(credentials_path, str) and bool(credentials_path.strip())
+    payload.pop("api_key", None)
+    payload["api_key_configured"] = key_present or credentials_present
+    payload["api_key_source"] = _resolve_api_key_source(config) if key_present or credentials_present else "none"
+    wired = list(_HOT_PATH_WIRED.get(config.provider, ()))
+    payload["wired_in_hot_path"] = wired
+    payload["hot_path_notes"] = (
+        "Capabilities listed in endpoint may include planned features; "
+        "wired_in_hot_path is the actually invoked runtime surface."
+    )
+    return payload
 
 
 # 便捷函数

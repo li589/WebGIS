@@ -12,6 +12,7 @@ import type {
   WeatherPointResponse,
   WorkflowSubmitRequest,
 } from '../types/api-reexports'
+import { withWriteAuthHeaders } from './backend-auth'
 
 const DEBUG_RUNTIME_API_URL = 'http://127.0.0.1:7777/event'
 const DEBUG_RUNTIME_SESSION_ID = 'runtime-api-pending'
@@ -65,10 +66,14 @@ export function resolveApiUrl(pathOrUrl: string) {
 
 async function requestJson<T>(path: string, init?: RequestInit & { timeoutMs?: number }): Promise<T> {
   const { headers: initHeaders, timeoutMs, ...restInit } = init ?? {}
-  const mergedHeaders: Record<string, string> = {
-    'Content-Type': 'application/json',
-    ...(initHeaders as Record<string, string> | undefined),
-  }
+  const method = (restInit.method ?? 'GET').toString()
+  const mergedHeaders: Record<string, string> = withWriteAuthHeaders(
+    {
+      'Content-Type': 'application/json',
+      ...(initHeaders as Record<string, string> | undefined),
+    },
+    method,
+  )
 
   const controller = new AbortController()
   const timeoutId = window.setTimeout(

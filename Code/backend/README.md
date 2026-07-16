@@ -43,14 +43,27 @@
 
 - `GET /weather/point`
 - `GET /weather/workflows`（及 diagnostics / 按名查询）
-- `GET /unified-tiles/{layer_id}/{z}/{x}/{y}`（**推荐**统一瓦片入口）
-- `GET /weather/tiles/{layer_id}/{z}/{x}/{y}`（已标记 deprecated，保留兼容）
+- `GET /weather/tiles/{layer_id}/{z}/{x}/{y}`（**天气 GeoJSON 瓦片正式入口**）
 
 ### 底图代理与缓存
 
-- `GET /tiles/providers`
-- `GET /tiles/{provider}/{z}/{x}/{y}`（deprecated，优先走 unified-tiles）
-- `POST /tiles/cache/clear`、`GET /tiles/cache/stats`
+- `GET /unified-tiles/{layer_id}/{z}/{x}/{y}`（**底图栅格正式入口**；天气 layer 将 404）
+- `GET /runtime/tiles/providers`
+- `GET /runtime/tiles/cache/stats`、`POST /runtime/tiles/cache/clear`
+- 旧前缀 `/tiles/...` 已移除
+
+### 配置 / 设置面（`/config/*`）
+
+前端「系统设置」面板消费这些接口（开发态 Vite 需代理 `/config`）：
+
+- `GET /config/general`、`/config/about`、`/config/data-source`
+- `GET|PUT|DELETE /config/api-keys*`（天地图 / 百度等；运行真源 = DB 覆盖 env）
+- `GET|POST|DELETE /config/gee/accounts*`、`GET /config/gee/runtime`
+- `GET /config/weather`、`GET|PUT /config/weather/providers*`
+
+**安全（2026-07-16）**：所有 `/config/*` 写操作与 `POST /import/raster` 需 `X-API-Key`（development 且未启用 keys 时可旁路）。  
+鉴权密钥 = `backend_auth` DB 覆盖 env（`effective_config`）。非 development 必须配置 `BACKEND_GEE_CREDENTIALS_ENCRYPTION_KEY`。  
+开关：`BACKEND_LEGACY_WORKFLOW_HANDLERS_ENABLED`、`BACKEND_DEMO_ROUTES_ENABLED` 默认 `false`。
 
 ### 算法 / Provider / Artifact / 导入 / GEE
 
@@ -72,7 +85,7 @@
 | business | 非瓦片 workflow（分析 / 课题组 / GEE / 非瓦片天气 DAG 等） | `BACKEND_MAX_ACTIVE_RUNS` / runtime `max_active_runs` | 8 |
 | weather_tile | `weather_request` DAG 含 `weather_tile_render` | `BACKEND_MAX_ACTIVE_WEATHER_TILE_RUNS` / runtime `max_active_weather_tile_runs` | 16 |
 
-前端视口天气瓦片热路径应走 `GET /unified-tiles/...`（`WeatherTileService`），不占上述任一 workflow 池。显式 tile workflow 仍可用，计入 `weather_tile` 池。
+前端视口天气瓦片热路径应走 `GET /weather/tiles/...`（`WeatherTileService`），不占上述任一 workflow 池。显式 tile workflow 仍可用，计入 `weather_tile` 池。
 
 ## 当前实现事实
 

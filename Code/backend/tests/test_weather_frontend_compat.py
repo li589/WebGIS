@@ -12,10 +12,10 @@ import os
 import shutil
 import unittest
 from typing import Any
-from unittest.mock import patch
 
 from app.services.workflow.service_container import submission_service
-from app.weatherengine.service import weather_engine_service
+from app.weatherengine.provider_registry import get_registry
+from app.weatherengine.providers.open_meteo_provider import OpenMeteoProvider
 from shared.contracts.api_contracts import WorkflowSubmitRequest
 
 
@@ -111,16 +111,24 @@ class WeatherFrontendCompatTests(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls) -> None:
-        cls._original_client = weather_engine_service._client
+        # 全链路经 fetch_gateway / Registry；注入 Fake 底层 client
+        registry = get_registry()
+        registry.register(
+            OpenMeteoProvider(client=_FakeOpenMeteoClient()),
+            priority=0,
+            enabled=True,
+        )
 
     @classmethod
     def tearDownClass(cls) -> None:
-        weather_engine_service._client = cls._original_client
+        get_registry().clear()
 
     def setUp(self) -> None:
         cache_dir = os.path.join(os.getcwd(), ".data", "cache", "weatherengine")
         if os.path.exists(cache_dir):
             shutil.rmtree(cache_dir, ignore_errors=True)
+        # 确保每测用例仍启用 open-meteo（防止其他测试禁用后遗留）
+        get_registry().set_enabled("open-meteo", True)
 
     def _submit_fallback_workflow(self, layer_id: str) -> str:
         """模拟前端 runWorkflowForCatalog 提交（无 weather_request.workflow，走 fallback）。"""
@@ -137,7 +145,12 @@ class WeatherFrontendCompatTests(unittest.TestCase):
         return accepted.run_id
 
     def _find_map_layer_ref(self, result_refs) -> dict | None:
-        """从 result_refs 中找到 map_layer 类型的 ref，处理 spill 情况。"""
+        """从 result_refs 中找到 map_layer 类型的 ref，处理 spill 情况。
+
+        兼容本地文件存储和 MinIO 对象存储后端：
+        - 本地后端：artifact.file_path 指向磁盘文件
+        - MinIO 后端：file_path 为 None，需通过 fetch_artifact_bytes 读取
+        """
         from app.services.result_storage import result_storage_service
 
         for ref in result_refs:
@@ -146,22 +159,20 @@ class WeatherFrontendCompatTests(unittest.TestCase):
                 continue
             inline = ref_dict.get("inline_data") or {}
             if not inline:
-                # spill 到 artifact storage
+                # spill 到 artifact storage（兼容 local 和 minio 后端）
                 resource_key = ref_dict.get("resource_key")
                 if resource_key:
-                    artifact = result_storage_service.get_artifact(resource_key)
-                    if artifact and artifact.file_path:
-                        with open(artifact.file_path, "r", encoding="utf-8") as f:
-                            inline = json.load(f)
+                    raw_bytes = result_storage_service.fetch_artifact_bytes(resource_key)
+                    if raw_bytes is not None:
+                        inline = json.loads(raw_bytes.decode("utf-8"))
             if inline:
                 return inline
         return None
 
     def test_wind_field_map_layer_ref(self) -> None:
         """验证 wind-field 图层的 map_layer ref 格式。"""
-        with patch.object(weather_engine_service, "_client", _FakeOpenMeteoClient()):
-            run_id = self._submit_fallback_workflow("wind-field")
-            status_resp = submission_service.get_workflow_run(run_id)
+        run_id = self._submit_fallback_workflow("wind-field")
+        status_resp = submission_service.get_workflow_run(run_id)
 
         self.assertIn(status_resp.status, ("succeeded", "completed"))
 
@@ -194,9 +205,8 @@ class WeatherFrontendCompatTests(unittest.TestCase):
 
     def test_temperature_map_layer_ref(self) -> None:
         """验证 temperature 图层的 map_layer ref 格式（含 COG）。"""
-        with patch.object(weather_engine_service, "_client", _FakeOpenMeteoClient()):
-            run_id = self._submit_fallback_workflow("temperature")
-            status_resp = submission_service.get_workflow_run(run_id)
+        run_id = self._submit_fallback_workflow("temperature")
+        status_resp = submission_service.get_workflow_run(run_id)
 
         self.assertIn(status_resp.status, ("succeeded", "completed"))
 
@@ -223,9 +233,8 @@ class WeatherFrontendCompatTests(unittest.TestCase):
 
     def test_precipitation_map_layer_ref(self) -> None:
         """验证 precipitation 图层的 map_layer ref 格式（含 COG）。"""
-        with patch.object(weather_engine_service, "_client", _FakeOpenMeteoClient()):
-            run_id = self._submit_fallback_workflow("precipitation")
-            status_resp = submission_service.get_workflow_run(run_id)
+        run_id = self._submit_fallback_workflow("precipitation")
+        status_resp = submission_service.get_workflow_run(run_id)
 
         self.assertIn(status_resp.status, ("succeeded", "completed"))
 
@@ -254,9 +263,8 @@ class WeatherFrontendCompatTests(unittest.TestCase):
         expected_metric: str,
         expected_unit: str,
     ) -> None:
-        with patch.object(weather_engine_service, "_client", _FakeOpenMeteoClient()):
-            run_id = self._submit_fallback_workflow(layer_id)
-            status_resp = submission_service.get_workflow_run(run_id)
+        run_id = self._submit_fallback_workflow(layer_id)
+        status_resp = submission_service.get_workflow_run(run_id)
 
         self.assertIn(status_resp.status, ("succeeded", "completed"))
 
@@ -300,22 +308,21 @@ class WeatherFrontendCompatTests(unittest.TestCase):
 
     def test_all_weather_layers_succeed(self) -> None:
         """验证所有 weather 图层 fallback 路径全部成功。"""
-        with patch.object(weather_engine_service, "_client", _FakeOpenMeteoClient()):
-            for layer_id in ("wind-field", "temperature", "precipitation", "pressure", "humidity", "visibility"):
-                run_id = self._submit_fallback_workflow(layer_id)
-                status_resp = submission_service.get_workflow_run(run_id)
-                self.assertIn(
-                    status_resp.status, ("succeeded", "completed"),
-                    f"{layer_id} failed: {status_resp.status}",
-                )
-                self.assertEqual(status_resp.progress, 100)
+        for layer_id in ("wind-field", "temperature", "precipitation", "pressure", "humidity", "visibility"):
+            run_id = self._submit_fallback_workflow(layer_id)
+            status_resp = submission_service.get_workflow_run(run_id)
+            self.assertIn(
+                status_resp.status, ("succeeded", "completed"),
+                f"{layer_id} failed: {status_resp.status}",
+            )
+            self.assertEqual(status_resp.progress, 100)
 
-                # 验证 result_refs 含 map_layer
-                ref_kinds = []
-                for ref in status_resp.result_refs:
-                    ref_dict = ref.model_dump(mode="json") if hasattr(ref, "model_dump") else dict(ref)
-                    ref_kinds.append(ref_dict.get("result_kind"))
-                self.assertIn("map_layer", ref_kinds, f"{layer_id} missing map_layer ref")
+            # 验证 result_refs 含 map_layer
+            ref_kinds = []
+            for ref in status_resp.result_refs:
+                ref_dict = ref.model_dump(mode="json") if hasattr(ref, "model_dump") else dict(ref)
+                ref_kinds.append(ref_dict.get("result_kind"))
+            self.assertIn("map_layer", ref_kinds, f"{layer_id} missing map_layer ref")
 
 
 if __name__ == "__main__":

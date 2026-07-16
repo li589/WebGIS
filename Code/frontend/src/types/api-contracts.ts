@@ -89,6 +89,92 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/overlay-preview/{layer_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Overlay Preview
+         * @description 返回图层的 PNG 预览图（地理配准），供前端 MapLibre image source 使用。
+         *
+         *     对于时间序列图层，可通过 `?time=YYYYMMDD` 指定时间标签；
+         *     未指定时使用 default_time。
+         */
+        get: operations["get_overlay_preview_overlay_preview__layer_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/overlay-bounds/{layer_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Overlay Bounds
+         * @description 返回图层的地理边界信息 + 元数据，供前端 MapLibre image source 定位与时间控制使用。
+         */
+        get: operations["get_overlay_bounds_overlay_bounds__layer_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/overlays": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Overlays
+         * @description 列出所有已注册的叠加图层 ID（供前端发现可用 overlay 图层）。
+         */
+        get: operations["list_overlays_overlays_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/overlay-value/{layer_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Overlay Value
+         * @description 查询 overlay 图层在指定点 (lng, lat) 的像素值。
+         *
+         *     对于时间序列图层，可通过 ?time=YYYYMMDD 指定时间标签。
+         *     返回 {"value": float | null, "unit": str, "layer_id": str, ...}。
+         */
+        get: operations["get_overlay_value_overlay_value__layer_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/workflow-runs": {
         parameters: {
             query?: never;
@@ -261,7 +347,11 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Submit Frontend Command */
+        /**
+         * Submit Frontend Command
+         * @deprecated
+         * @description 已移除：前端控制指令为占位实现，无实际副作用。
+         */
         post: operations["submit_frontend_command_frontend_commands_post"];
         delete?: never;
         options?: never;
@@ -304,7 +394,8 @@ export interface paths {
         put?: never;
         /**
          * Update Provider Api Config
-         * @description 更新指定 Provider 的 API 配置（如 API Key）。
+         * @deprecated
+         * @description 已移除：运行时密钥/配置请改用 /config/api-keys* 与 /config/weather/providers*。
          */
         post: operations["update_provider_api_config_runtime_api_config__provider__post"];
         delete?: never;
@@ -327,6 +418,66 @@ export interface paths {
         get: operations["get_best_available_api_runtime_api_config__provider__best_get"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/runtime/tiles/providers": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Runtime Tile Providers
+         * @description 列出可用底图代理提供商（管理面，像素请求请走 /unified-tiles）。
+         */
+        get: operations["list_runtime_tile_providers_runtime_tiles_providers_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/runtime/tiles/cache/stats": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Runtime Tile Cache Stats
+         * @description 底图代理进程内缓存统计。
+         */
+        get: operations["get_runtime_tile_cache_stats_runtime_tiles_cache_stats_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/runtime/tiles/cache/clear": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Clear Runtime Tile Cache
+         * @description 清空底图代理进程内缓存。
+         */
+        post: operations["clear_runtime_tile_cache_runtime_tiles_cache_clear_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -571,81 +722,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/unified-tiles/{layer_id}/{z}/{x}/{y}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Get Unified Tile
-         * @description 获取指定图层的瓦片数据（底图栅格或天气 GeoJSON）。
-         */
-        get: operations["get_unified_tile_unified_tiles__layer_id___z___x___y__get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/tiles/providers": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Get Tile Providers
-         * @description 获取所有可用的底图提供商列表
-         *
-         *     Returns:
-         *         底图提供商列表，包含每个提供商是否需要坐标转换等信息
-         */
-        get: operations["get_tile_providers_tiles_providers_get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/tiles/{provider}/{z}/{x}/{y}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Get Tile
-         * @deprecated
-         * @description 获取底图 tile 图像
-         *
-         *     Args:
-         *         provider: 底图提供商 ID（如 'gaode-street', 'esri-street', 'tianditu-img' 等）
-         *         z: zoom 级别
-         *         x: tile x 坐标
-         *         y: tile y 坐标
-         *         use_cache: 是否使用缓存（默认 True）
-         *
-         *     Returns:
-         *         tile 图像数据（PNG/JPEG）
-         */
-        get: operations["get_tile_tiles__provider___z___x___y__get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/tiles/cache/clear": {
+    "/import/raster": {
         parameters: {
             query?: never;
             header?: never;
@@ -655,17 +732,19 @@ export interface paths {
         get?: never;
         put?: never;
         /**
-         * Clear Tile Cache
-         * @description 清空 tile 缓存
+         * Import Raster
+         * @description 上传栅格文件（TIF），转 COG 预览，动态注册为 overlay 图层。
+         *
+         *     返回 ``{"layer_id": "imported-xxx", "bounds": [west, south, east, north]}``。
          */
-        post: operations["clear_tile_cache_tiles_cache_clear_post"];
+        post: operations["import_raster_import_raster_post"];
         delete?: never;
         options?: never;
         head?: never;
         patch?: never;
         trace?: never;
     };
-    "/tiles/cache/stats": {
+    "/unified-tiles/{layer_id}/{z}/{x}/{y}": {
         parameters: {
             query?: never;
             header?: never;
@@ -673,10 +752,10 @@ export interface paths {
             cookie?: never;
         };
         /**
-         * Get Cache Stats
-         * @description 获取缓存统计信息
+         * Get Unified Tile
+         * @description 获取底图栅格瓦片。
          */
-        get: operations["get_cache_stats_tiles_cache_stats_get"];
+        get: operations["get_unified_tile_unified_tiles__layer_id___z___x___y__get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -694,7 +773,6 @@ export interface paths {
         };
         /**
          * Get Weather Tile
-         * @deprecated
          * @description 获取指定图层的标准 Web Mercator GeoJSON 瓦片。
          */
         get: operations["get_weather_tile_weather_tiles__layer_id___z___x___y__get"];
@@ -790,6 +868,473 @@ export interface paths {
          *         GEE 相关环境变量配置（不包含敏感信息）
          */
         get: operations["get_gee_environment_gee_config_environment_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/config/general": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get General Config
+         * @description 获取常规配置（脱敏）。
+         */
+        get: operations["get_general_config_config_general_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/config/api-keys": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Api Keys
+         * @description 列出所有 API Key（脱敏）。
+         */
+        get: operations["list_api_keys_config_api_keys_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/config/api-keys/{key_name}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Update Api Key
+         * @description 新增或更新 API Key。
+         */
+        put: operations["update_api_key_config_api_keys__key_name__put"];
+        post?: never;
+        /**
+         * Delete Api Key
+         * @description 删除 API Key。
+         */
+        delete: operations["delete_api_key_config_api_keys__key_name__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/config/api-keys/{key_name}/test": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Test Api Key
+         * @description 测试 API Key 是否有效。
+         */
+        post: operations["test_api_key_config_api_keys__key_name__test_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/config/api-keys/{key_name}/toggle": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Toggle Api Key
+         * @description 启用/禁用 API Key。
+         */
+        put: operations["toggle_api_key_config_api_keys__key_name__toggle_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/config/gee/accounts": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Gee Accounts
+         * @description 列出所有 GEE 账户（脱敏）。
+         */
+        get: operations["list_gee_accounts_config_gee_accounts_get"];
+        put?: never;
+        /**
+         * Create Gee Account
+         * @description 新增 GEE 账户。
+         */
+        post: operations["create_gee_account_config_gee_accounts_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/config/gee/accounts/{account_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Delete Gee Account
+         * @description 删除 GEE 账户。
+         */
+        delete: operations["delete_gee_account_config_gee_accounts__account_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/config/gee/accounts/{account_id}/test": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Test Gee Account
+         * @description 测试 GEE 账户凭证是否有效。
+         */
+        post: operations["test_gee_account_config_gee_accounts__account_id__test_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/config/gee/accounts/{account_id}/toggle": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Toggle Gee Account
+         * @description 启用/禁用 GEE 账户。
+         */
+        put: operations["toggle_gee_account_config_gee_accounts__account_id__toggle_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/config/gee/accounts/reload": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Reload Gee Accounts
+         * @description 重载 GEE 账户池。
+         */
+        post: operations["reload_gee_accounts_config_gee_accounts_reload_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/config/gee/runtime": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Gee Runtime Config
+         * @description 获取 GEE 运行时配置。
+         */
+        get: operations["get_gee_runtime_config_config_gee_runtime_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/config/weather": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Weather Config
+         * @description 获取天气 API 配置。
+         */
+        get: operations["get_weather_config_config_weather_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/config/weather/providers": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Weather Providers
+         * @description 列出所有天气源 Provider。
+         */
+        get: operations["list_weather_providers_config_weather_providers_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/config/weather/providers/{provider_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Weather Provider
+         * @description 获取单个天气源 Provider 详情。
+         */
+        get: operations["get_weather_provider_config_weather_providers__provider_id__get"];
+        /**
+         * Update Weather Provider
+         * @description 更新天气源 Provider 配置（enabled/priority/config）。
+         */
+        put: operations["update_weather_provider_config_weather_providers__provider_id__put"];
+        post?: never;
+        /**
+         * Delete Weather Provider
+         * @description 删除天气源 Provider 的 DB 配置记录。
+         *
+         *     注意：删除后内置 Provider 会回退到代码默认配置；如需彻底禁用请使用 toggle 端点。
+         */
+        delete: operations["delete_weather_provider_config_weather_providers__provider_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/config/weather/providers/{provider_id}/test": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Test Weather Provider
+         * @description 测试天气源 Provider 连通性。
+         */
+        post: operations["test_weather_provider_config_weather_providers__provider_id__test_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/config/weather/providers/{provider_id}/toggle": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Toggle Weather Provider
+         * @description 启用/禁用天气源 Provider。
+         */
+        put: operations["toggle_weather_provider_config_weather_providers__provider_id__toggle_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/config/weather/providers/{provider_id}/priority": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Set Weather Provider Priority
+         * @description 调整天气源 Provider 优先级。
+         */
+        put: operations["set_weather_provider_priority_config_weather_providers__provider_id__priority_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/config/remote-storage": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Remote Storage Profiles */
+        get: operations["list_remote_storage_profiles_config_remote_storage_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/config/remote-storage/{profile_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Upsert Remote Storage Profile */
+        put: operations["upsert_remote_storage_profile_config_remote_storage__profile_id__put"];
+        post?: never;
+        /** Delete Remote Storage Profile */
+        delete: operations["delete_remote_storage_profile_config_remote_storage__profile_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/config/remote-storage/{profile_id}/toggle": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Toggle Remote Storage Profile */
+        put: operations["toggle_remote_storage_profile_config_remote_storage__profile_id__toggle_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/config/remote-storage/{profile_id}/test": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Test Remote Storage Profile */
+        post: operations["test_remote_storage_profile_config_remote_storage__profile_id__test_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/config/data-source": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Data Source Config
+         * @description 获取数据源配置。
+         */
+        get: operations["get_data_source_config_config_data_source_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/config/about": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get About Info
+         * @description 获取项目信息。
+         */
+        get: operations["get_about_info_config_about_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -964,6 +1509,25 @@ export interface components {
             /** Priority */
             priority?: number | null;
         };
+        /** ApiKeyToggleRequest */
+        ApiKeyToggleRequest: {
+            /** Enabled */
+            enabled: boolean;
+        };
+        /** ApiKeyUpdateRequest */
+        ApiKeyUpdateRequest: {
+            /** Key Value */
+            key_value: string;
+            /** Display Name */
+            display_name?: string | null;
+            /** Description */
+            description?: string | null;
+            /**
+             * Enabled
+             * @default true
+             */
+            enabled: boolean;
+        };
         /** BackendServiceStatus */
         BackendServiceStatus: {
             /** Service Name */
@@ -980,6 +1544,14 @@ export interface components {
             details?: {
                 [key: string]: unknown;
             };
+        };
+        /** Body_import_raster_import_raster_post */
+        Body_import_raster_import_raster_post: {
+            /**
+             * File
+             * Format: binary
+             */
+            file: string;
         };
         /** BoundingBox */
         BoundingBox: {
@@ -1249,6 +1821,22 @@ export interface components {
             concurrency_stats: components["schemas"]["GEEConcurrencyStats"];
             task_limits: components["schemas"]["GEEConfigLimitsResponse"];
         };
+        /** GeeAccountCreateRequest */
+        GeeAccountCreateRequest: {
+            /** Account Id */
+            account_id: string;
+            /** Service Account Json */
+            service_account_json: {
+                [key: string]: unknown;
+            };
+            /** Display Name */
+            display_name?: string | null;
+        };
+        /** GeeAccountToggleRequest */
+        GeeAccountToggleRequest: {
+            /** Enabled */
+            enabled: boolean;
+        };
         /**
          * GeeWorkflowRequest
          * @description GEE 引擎工作流请求。
@@ -1515,6 +2103,67 @@ export interface components {
             /** Description */
             description?: string | null;
         };
+        /** ReloadResultResponse */
+        ReloadResultResponse: {
+            /** Success */
+            success: boolean;
+            /** Account Count */
+            account_count: number;
+            /** Message */
+            message: string;
+        };
+        /**
+         * RemoteStorageTestRequest
+         * @description Optional probe URI; defaults to protocol://host/.
+         */
+        RemoteStorageTestRequest: {
+            /** Uri */
+            uri?: string | null;
+        };
+        /** RemoteStorageTestResponse */
+        RemoteStorageTestResponse: {
+            /** Profile Id */
+            profile_id: string;
+            /** Success */
+            success: boolean;
+            /** Message */
+            message: string;
+            /** Tested At */
+            tested_at: string;
+        };
+        /** RemoteStorageToggleRequest */
+        RemoteStorageToggleRequest: {
+            /** Enabled */
+            enabled: boolean;
+        };
+        /** RemoteStorageUpsertRequest */
+        RemoteStorageUpsertRequest: {
+            /** Protocol */
+            protocol: string;
+            /**
+             * Host
+             * @default
+             */
+            host: string;
+            /** Port */
+            port?: number | null;
+            /** Username */
+            username?: string | null;
+            /** Secret */
+            secret?: string | null;
+            /** Private Key Pem */
+            private_key_pem?: string | null;
+            /** Domain */
+            domain?: string | null;
+            /** Extra */
+            extra?: {
+                [key: string]: unknown;
+            } | null;
+            /** Display Name */
+            display_name?: string | null;
+            /** Enabled */
+            enabled?: boolean | null;
+        };
         /**
          * ResultKind
          * @enum {string}
@@ -1707,10 +2356,14 @@ export interface components {
              */
             terminal_state: string;
         };
-        /**
-         * TileProviderInfo
-         * @description 底图提供商信息
-         */
+        /** TestResultResponse */
+        TestResultResponse: {
+            /** Success */
+            success: boolean;
+            /** Message */
+            message: string;
+        };
+        /** TileProviderInfo */
         TileProviderInfo: {
             /** Id */
             id: string;
@@ -1721,10 +2374,7 @@ export interface components {
             /** Coord System */
             coord_system: string;
         };
-        /**
-         * TileProvidersResponse
-         * @description 底图提供商列表响应
-         */
+        /** TileProvidersResponse */
         TileProvidersResponse: {
             /** Providers */
             providers: components["schemas"]["TileProviderInfo"][];
@@ -1903,6 +2553,38 @@ export interface components {
             render_hint: components["schemas"]["WeatherLayerRenderHint"];
             /** Diagnostics */
             diagnostics?: string[];
+        };
+        /** WeatherProviderPriorityRequest */
+        WeatherProviderPriorityRequest: {
+            /** Priority */
+            priority: number;
+        };
+        /** WeatherProviderTestResponse */
+        WeatherProviderTestResponse: {
+            /** Provider Id */
+            provider_id: string;
+            /** Success */
+            success: boolean;
+            /** Message */
+            message: string;
+            /** Tested At */
+            tested_at: string;
+        };
+        /** WeatherProviderToggleRequest */
+        WeatherProviderToggleRequest: {
+            /** Enabled */
+            enabled: boolean;
+        };
+        /** WeatherProviderUpdateRequest */
+        WeatherProviderUpdateRequest: {
+            /** Enabled */
+            enabled?: boolean | null;
+            /** Priority */
+            priority?: number | null;
+            /** Config */
+            config?: {
+                [key: string]: unknown;
+            } | null;
         };
         /**
          * WeatherWorkflowRequest
@@ -2542,6 +3224,133 @@ export interface operations {
             };
         };
     };
+    get_overlay_preview_overlay_preview__layer_id__get: {
+        parameters: {
+            query?: {
+                time?: string | null;
+            };
+            header?: never;
+            path: {
+                layer_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_overlay_bounds_overlay_bounds__layer_id__get: {
+        parameters: {
+            query?: {
+                time?: string | null;
+            };
+            header?: never;
+            path: {
+                layer_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_overlays_overlays_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+        };
+    };
+    get_overlay_value_overlay_value__layer_id__get: {
+        parameters: {
+            query: {
+                lng: number;
+                lat: number;
+                time?: string | null;
+            };
+            header?: never;
+            path: {
+                layer_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     submit_workflow_workflow_runs_post: {
         parameters: {
             query?: never;
@@ -3005,6 +3814,81 @@ export interface operations {
             };
         };
     };
+    list_runtime_tile_providers_runtime_tiles_providers_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TileProvidersResponse"];
+                };
+            };
+        };
+    };
+    get_runtime_tile_cache_stats_runtime_tiles_cache_stats_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+        };
+    };
+    clear_runtime_tile_cache_runtime_tiles_cache_clear_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                "x-api-key"?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     list_algorithm_workflows_algorithm_workflows_get: {
         parameters: {
             query?: never;
@@ -3384,11 +4268,46 @@ export interface operations {
             };
         };
     };
+    import_raster_import_raster_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                "x-api-key"?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "multipart/form-data": components["schemas"]["Body_import_raster_import_raster_post"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     get_unified_tile_unified_tiles__layer_id___z___x___y__get: {
         parameters: {
             query?: {
-                hour?: number | null;
-                model?: string | null;
                 use_cache?: boolean;
                 /** @description 客户端缓存 bust，不参与业务 */
                 t?: number | null;
@@ -3420,102 +4339,6 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    get_tile_providers_tiles_providers_get: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["TileProvidersResponse"];
-                };
-            };
-        };
-    };
-    get_tile_tiles__provider___z___x___y__get: {
-        parameters: {
-            query?: {
-                use_cache?: boolean;
-            };
-            header?: never;
-            path: {
-                provider: string;
-                z: number;
-                x: number;
-                y: number;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": unknown;
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    clear_tile_cache_tiles_cache_clear_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": unknown;
-                };
-            };
-        };
-    };
-    get_cache_stats_tiles_cache_stats_get: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": unknown;
                 };
             };
         };
@@ -3619,6 +4442,869 @@ export interface operations {
         };
     };
     get_gee_environment_gee_config_environment_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    get_general_config_config_general_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    list_api_keys_config_api_keys_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    update_api_key_config_api_keys__key_name__put: {
+        parameters: {
+            query?: never;
+            header?: {
+                "x-api-key"?: string | null;
+            };
+            path: {
+                key_name: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ApiKeyUpdateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_api_key_config_api_keys__key_name__delete: {
+        parameters: {
+            query?: never;
+            header?: {
+                "x-api-key"?: string | null;
+            };
+            path: {
+                key_name: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    test_api_key_config_api_keys__key_name__test_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                "x-api-key"?: string | null;
+            };
+            path: {
+                key_name: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TestResultResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    toggle_api_key_config_api_keys__key_name__toggle_put: {
+        parameters: {
+            query?: never;
+            header?: {
+                "x-api-key"?: string | null;
+            };
+            path: {
+                key_name: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ApiKeyToggleRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_gee_accounts_config_gee_accounts_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    create_gee_account_config_gee_accounts_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                "x-api-key"?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["GeeAccountCreateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_gee_account_config_gee_accounts__account_id__delete: {
+        parameters: {
+            query?: never;
+            header?: {
+                "x-api-key"?: string | null;
+            };
+            path: {
+                account_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    test_gee_account_config_gee_accounts__account_id__test_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                "x-api-key"?: string | null;
+            };
+            path: {
+                account_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TestResultResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    toggle_gee_account_config_gee_accounts__account_id__toggle_put: {
+        parameters: {
+            query?: never;
+            header?: {
+                "x-api-key"?: string | null;
+            };
+            path: {
+                account_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["GeeAccountToggleRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    reload_gee_accounts_config_gee_accounts_reload_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                "x-api-key"?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ReloadResultResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_gee_runtime_config_config_gee_runtime_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    get_weather_config_config_weather_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    list_weather_providers_config_weather_providers_get: {
+        parameters: {
+            query?: {
+                include_disabled?: boolean;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_weather_provider_config_weather_providers__provider_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                provider_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_weather_provider_config_weather_providers__provider_id__put: {
+        parameters: {
+            query?: never;
+            header?: {
+                "x-api-key"?: string | null;
+            };
+            path: {
+                provider_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["WeatherProviderUpdateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_weather_provider_config_weather_providers__provider_id__delete: {
+        parameters: {
+            query?: never;
+            header?: {
+                "x-api-key"?: string | null;
+            };
+            path: {
+                provider_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    test_weather_provider_config_weather_providers__provider_id__test_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                "x-api-key"?: string | null;
+            };
+            path: {
+                provider_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WeatherProviderTestResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    toggle_weather_provider_config_weather_providers__provider_id__toggle_put: {
+        parameters: {
+            query?: never;
+            header?: {
+                "x-api-key"?: string | null;
+            };
+            path: {
+                provider_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["WeatherProviderToggleRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    set_weather_provider_priority_config_weather_providers__provider_id__priority_put: {
+        parameters: {
+            query?: never;
+            header?: {
+                "x-api-key"?: string | null;
+            };
+            path: {
+                provider_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["WeatherProviderPriorityRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_remote_storage_profiles_config_remote_storage_get: {
+        parameters: {
+            query?: {
+                include_disabled?: boolean;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    upsert_remote_storage_profile_config_remote_storage__profile_id__put: {
+        parameters: {
+            query?: never;
+            header?: {
+                "x-api-key"?: string | null;
+            };
+            path: {
+                profile_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RemoteStorageUpsertRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_remote_storage_profile_config_remote_storage__profile_id__delete: {
+        parameters: {
+            query?: never;
+            header?: {
+                "x-api-key"?: string | null;
+            };
+            path: {
+                profile_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    toggle_remote_storage_profile_config_remote_storage__profile_id__toggle_put: {
+        parameters: {
+            query?: never;
+            header?: {
+                "x-api-key"?: string | null;
+            };
+            path: {
+                profile_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RemoteStorageToggleRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    test_remote_storage_profile_config_remote_storage__profile_id__test_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                "x-api-key"?: string | null;
+            };
+            path: {
+                profile_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["RemoteStorageTestRequest"] | null;
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RemoteStorageTestResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_data_source_config_config_data_source_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    get_about_info_config_about_get: {
         parameters: {
             query?: never;
             header?: never;

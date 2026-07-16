@@ -11,6 +11,7 @@ from datetime import datetime
 from typing import Any
 
 from app.core.config import settings
+from app.services.effective_config import get_task_executor
 from app.tasks.workflow_tasks import resolve_workflow_channel, resolve_workflow_queue
 from shared.contracts.api_contracts import (
     ExecutionStatus,
@@ -32,8 +33,13 @@ class SubmissionTransition:
 
 
 def use_celery_executor() -> bool:
-    """Check if Celery executor is configured. Shared utility used by multiple services."""
-    return settings.workflow_executor.lower() == "celery"
+    """Check if Celery executor is configured (env + runtime DB overlay)."""
+    try:
+        from app.services.effective_config import use_celery_executor_effective
+
+        return use_celery_executor_effective()
+    except Exception:
+        return settings.workflow_executor.lower() == "celery"
 
 
 class WorkflowTransitionBuilder:
@@ -88,7 +94,7 @@ class WorkflowTransitionBuilder:
             status_url=status_url,
             events_url=events_url,
             executor_metadata={
-                "executor": settings.workflow_executor,
+                "executor": get_task_executor(),
                 "dispatch_channel": resolve_workflow_channel(payload),
                 "queue_name": resolve_workflow_queue(payload),
             },
@@ -126,7 +132,7 @@ class WorkflowTransitionBuilder:
                         progress=12,
                         payload={
                             "status": ExecutionStatus.queued.value,
-                            "executor": settings.workflow_executor,
+                            "executor": get_task_executor(),
                             "dispatch_channel": resolve_workflow_channel(payload),
                             "queue_name": resolve_workflow_queue(payload),
                             "priority": payload.priority.value,

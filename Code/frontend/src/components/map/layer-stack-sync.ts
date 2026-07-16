@@ -12,7 +12,7 @@ export interface LayerStackResolveContext {
   getOverlayRasterLayerId: (overlayLayerId: string) => string | null
 }
 
-const ADMIN_STACK_IDS = ['admin-fill', 'admin-line', 'admin-center-points'] as const
+const ADMIN_STACK_IDS = ['admin-fill', 'admin-line'] as const
 
 function collectWeatherLayerIds(map: MapInstance, catalogId: string): string[] {
   const ids = buildWeatherOverlayIds(catalogId)

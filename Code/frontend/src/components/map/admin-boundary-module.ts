@@ -52,13 +52,6 @@ export function createAdminBoundaryModule(
       } as GeoJsonSourceSpecification)
     }
 
-    if (!options.map.getSource('admin-centers')) {
-      options.map.addSource('admin-centers', {
-        type: 'geojson',
-        data: loadedBoundaryModule.guangdongCityCenters,
-      } as GeoJsonSourceSpecification)
-    }
-
     if (!options.map.getLayer('admin-fill')) {
       options.map.addLayer({
         id: 'admin-fill',
@@ -83,27 +76,11 @@ export function createAdminBoundaryModule(
         },
       })
     }
-
-    if (!options.map.getLayer('admin-center-points')) {
-      options.map.addLayer({
-        id: 'admin-center-points',
-        type: 'circle',
-        source: 'admin-centers',
-        paint: {
-          'circle-radius': 2.2,
-          'circle-color': '#d8efff',
-          'circle-opacity': 0,
-          'circle-stroke-width': 1,
-          'circle-stroke-color': '#0a233a',
-        },
-      })
-    }
   }
 
   function syncOverlay(show: boolean, opacity: number) {
     const lineOpacity = show ? 0.82 * opacity : 0
     const fillOpacity = show ? 0.32 * opacity : 0
-    const centerOpacity = show ? 0.72 * opacity : 0
 
     if (options.map.getLayer('admin-fill')) {
       options.map.setLayoutProperty('admin-fill', 'visibility', 'visible')
@@ -112,10 +89,6 @@ export function createAdminBoundaryModule(
     if (options.map.getLayer('admin-line')) {
       options.map.setLayoutProperty('admin-line', 'visibility', 'visible')
       options.map.setPaintProperty('admin-line', 'line-opacity', lineOpacity)
-    }
-    if (options.map.getLayer('admin-center-points')) {
-      options.map.setLayoutProperty('admin-center-points', 'visibility', 'visible')
-      options.map.setPaintProperty('admin-center-points', 'circle-opacity', centerOpacity)
     }
   }
 

@@ -20,6 +20,7 @@ import { useWeatherTileManager } from '../weather-tile-manager'
 import { buildDefaultWeatherRenderHint } from '../../components/map/weather-render'
 import type { BoundingBox, RuntimeLayerDescriptor, WeatherPointResponse, WorkflowEvent } from '../../services/runtime-api'
 import { LAYER_CATEGORIES, LAYER_LIBRARY } from './catalog'
+import { isWeatherEngineCatalogId } from './weather-session'
 import { buildJobLayer } from './result-adapter'
 import { buildImportedVectorPayload } from './imported-vector'
 import { buildImportedRasterPayload } from './imported-raster'
@@ -444,7 +445,7 @@ export const useLayersStore = defineStore('layers', () => {
   const isSubmitting = computed(() => submittingCatalogIds.size > 0)
 
   // ── 429 容量限制自动重试（业务 workflow 池）────────────────────────────
-  // 后端 business 池默认 max_active_runs=8；天气瓦片热路径走 /unified-tiles，不占此池。
+  // 后端 business 池默认 max_active_runs=8；天气瓦片热路径走 /weather/tiles，不占此池。
   // 显式 weather_tile_render workflow 使用独立的 max_active_weather_tile_runs。
   // 这里记录重试定时器和次数，business 池 429 时创建 queued jobLayer 并自动重试。
   const workflowRetryTimers = new Map<string, number>()
@@ -642,7 +643,7 @@ export const useLayersStore = defineStore('layers', () => {
         const realDisplay = layer.jobLayer ? buildRealLayerDisplay(layer, item) : {}
         const descriptor = runtimeLayerCatalog.value[layer.catalogId] ?? null
 
-        const isWeatherLayer = !layer.isAdminBoundary && isWeatherLayerDescriptor(descriptor)
+        const isWeatherLayer = !layer.isAdminBoundary && isWeatherEngineLayer(layer.catalogId)
         const tileStats = isWeatherLayer && layer.visible ? weatherTileManager.getStats(layer.catalogId) : null
         const baseRenderHint = isWeatherLayer
           ? buildDefaultWeatherRenderHint(layer.catalogId, descriptor)
@@ -763,22 +764,19 @@ export const useLayersStore = defineStore('layers', () => {
     // overlay watcher 和 map 事件处理器在同一 flush 周期内能看到图层已激活。
     // setViewport 是重操作（计算瓦片 + 入队 + drainQueue），推迟到 nextTick
     // 让 Vue 先完成 UI 更新（按钮状态、侧栏视图），避免主线程阻塞。
-    if (!isAdminBoundary) {
+    if (isWeatherEngineLayer(catalogId)) {
       weatherTileManager.setLayerActive(catalogId, true)
-      if (isWeatherEngineLayer(catalogId)) {
-        const cc = currentMapCenter.value
-        const cz = currentMapZoom.value
-        const ch = currentHour.value
-        const cb = currentMapBBox.value
-        nextTick(() => {
-          weatherTileManager.setViewport(catalogId, cc, cz, ch, undefined, cb)
-          // 天气图层（如 wind-field）支持粒子流渲染，自动启用
-          if (supportsParticleFlow(catalogId) && !particleFlowCatalogId.value) {
-            particleFlowCatalogId.value = catalogId
-            debugLog('addLayer', 'auto-enable particle flow for', catalogId)
-          }
-        })
-      }
+      const cc = currentMapCenter.value
+      const cz = currentMapZoom.value
+      const ch = currentHour.value
+      const cb = currentMapBBox.value
+      nextTick(() => {
+        weatherTileManager.setViewport(catalogId, cc, cz, ch, undefined, cb)
+        if (supportsParticleFlow(catalogId) && !particleFlowCatalogId.value) {
+          particleFlowCatalogId.value = catalogId
+          debugLog('addLayer', 'auto-enable particle flow for', catalogId)
+        }
+      })
     }
   }
 
@@ -858,7 +856,7 @@ export const useLayersStore = defineStore('layers', () => {
     }
     workflowRetryCounts.delete(layer.catalogId)
     // 清理 tile manager 中对应图层状态
-    if (!layer.isAdminBoundary && !isLocalImport(layer)) {
+    if (!layer.isAdminBoundary && !isLocalImport(layer) && isWeatherEngineLayer(layer.catalogId)) {
       weatherTileManager.clearLayer(layer.catalogId)
     }
     activeLayers.value.splice(idx, 1)
@@ -881,12 +879,16 @@ export const useLayersStore = defineStore('layers', () => {
       // 以当前 activeLayers 中的真实状态为准，防止 flush 前图层已被移除
       const live = activeLayers.value.find((item) => item.instanceId === layer.instanceId)
       if (!live) {
-        if (!isLocalImport(layer)) {
+        if (!isLocalImport(layer) && isWeatherEngineLayer(layer.catalogId)) {
           weatherTileManager.clearLayer(layer.catalogId)
         }
         continue
       }
       if (isLocalImport(live)) continue
+      if (!isWeatherEngineLayer(live.catalogId)) {
+        weatherTileManager.clearLayer(live.catalogId)
+        continue
+      }
       weatherTileManager.setLayerActive(live.catalogId, live.visible)
       if (live.visible && isWeatherEngineLayer(live.catalogId)) {
         weatherTileManager.setViewport(
@@ -927,6 +929,11 @@ export const useLayersStore = defineStore('layers', () => {
     for (const layer of activeLayers.value) {
       layer.visible = visible
       if (layer.isAdminBoundary || isLocalImport(layer)) continue
+      if (!isWeatherEngineLayer(layer.catalogId)) {
+        if (visible) continue
+        weatherTileManager.clearLayer(layer.catalogId)
+        continue
+      }
       weatherTileManager.setLayerActive(layer.catalogId, visible)
       if (visible && isWeatherEngineLayer(layer.catalogId)) {
         weatherTileManager.setViewport(
@@ -964,7 +971,7 @@ export const useLayersStore = defineStore('layers', () => {
     workflowRetryTimers.clear()
     workflowRetryCounts.clear()
     for (const layer of layersToRemove) {
-      if (!isLocalImport(layer)) {
+      if (!isLocalImport(layer) && isWeatherEngineLayer(layer.catalogId)) {
         weatherTileManager.clearLayer(layer.catalogId)
       }
       if (particleFlowCatalogId.value === layer.catalogId) {
@@ -1042,6 +1049,7 @@ export const useLayersStore = defineStore('layers', () => {
       })
       .then((response) => {
         runtimeLayerCatalog.value = Object.fromEntries(response.items.map((item) => [item.layer_id, item]))
+        reconcileActiveWeatherLayers()
       })
       .catch((error) => {
         // 请求失败时清理状态，避免后续调用返回已拒绝的 Promise
@@ -1422,7 +1430,7 @@ export const useLayersStore = defineStore('layers', () => {
         await ensureRuntimeLayerCatalog()
         runtimeCatalogReady = true
       } catch (error) {
-        const canProceedWithoutCatalog = isWeatherEngineLayer(catalogId) || catalogId === 'lab-output'
+        const canProceedWithoutCatalog = isWeatherEngineLayer(catalogId)
         if (!canProceedWithoutCatalog) {
           throw error
         }
@@ -1599,7 +1607,27 @@ export const useLayersStore = defineStore('layers', () => {
 
   /** 判断 catalogId 是否由 weatherengine 后端支持（用于自动运行工作流） */
   function isWeatherEngineLayer(catalogId: string): boolean {
-    return isWeatherLayerDescriptor(getRuntimeLayerDescriptor(catalogId))
+    return isWeatherEngineCatalogId(catalogId, getRuntimeLayerDescriptor(catalogId))
+  }
+
+  function reconcileActiveWeatherLayers() {
+    const cc = currentMapCenter.value
+    const cz = currentMapZoom.value
+    const ch = currentHour.value
+    const cb = currentMapBBox.value
+
+    for (const layer of activeLayers.value) {
+      if (layer.isAdminBoundary || isLocalImport(layer)) continue
+      if (layer.visible && isWeatherEngineLayer(layer.catalogId)) {
+        weatherTileManager.setLayerActive(layer.catalogId, true)
+        weatherTileManager.setViewport(layer.catalogId, cc, cz, ch, undefined, cb)
+        if (supportsParticleFlow(layer.catalogId) && !particleFlowCatalogId.value) {
+          particleFlowCatalogId.value = layer.catalogId
+        }
+      } else if (!isWeatherEngineLayer(layer.catalogId)) {
+        weatherTileManager.clearLayer(layer.catalogId)
+      }
+    }
   }
 
   function supportsMapLayerResult(catalogId: string) {

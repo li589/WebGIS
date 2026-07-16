@@ -5,7 +5,7 @@
 1. 瓦片坐标与 EPSG:4326 bbox 转换。
 2. 瓦片级 Redis/内存缓存。
 3. 全局并发槽位控制（避免 Open-Meteo 限流）。
-4. 调用现有 WeatherEngineService / OpenMeteoClient 生成 GeoJSON。
+4. 经 fetch_gateway（WeatherProviderRegistry）拉取网格并生成 GeoJSON。
 """
 
 from __future__ import annotations
@@ -20,8 +20,9 @@ from typing import Any
 
 from app.core.config import settings
 from app.core.redis_client import cache_get_json, cache_set_json
-from app.weatherengine.client import OpenMeteoClient
+from app.services.effective_config import get_weather_cache_ttl_seconds
 from app.weatherengine.constants import WEATHER_LAYER_SPECS, WeatherLayerSpec
+from app.weatherengine.fetch_gateway import fetch_grid_forecast
 from shared.contracts.api_contracts import BoundingBox
 
 logger = logging.getLogger(__name__)
@@ -180,7 +181,6 @@ class WeatherTileService:
         self,
         *,
         engine_service: "WeatherEngineService" | None = None,
-        client: OpenMeteoClient | None = None,
         max_concurrent: int = _DEFAULT_MAX_CONCURRENT_TILE_REQUESTS,
         in_memory_cache_max: int = _IN_MEMORY_TILE_CACHE_MAX,
     ) -> None:
@@ -188,7 +188,6 @@ class WeatherTileService:
         from app.weatherengine.service import WeatherEngineService
 
         self._engine = engine_service or WeatherEngineService()
-        self._client = client or OpenMeteoClient()
         self._semaphore = asyncio.Semaphore(max_concurrent)
         self._in_memory_cache: OrderedDict[str, dict[str, Any]] = OrderedDict()
         self._in_memory_cache_max = in_memory_cache_max
@@ -238,13 +237,15 @@ class WeatherTileService:
             bbox.west, bbox.south, bbox.east, bbox.north,
         )
 
-        grid_data, cache_status = self._client.fetch_grid_forecast(
+        from app.weatherengine.fetch_gateway import fetch_grid_forecast
+
+        resolved_model = model or settings.weather_default_model
+        grid_data, cache_status, _provider_id = fetch_grid_forecast(
+            layer_id=layer_id,
             bbox=bbox,
             resolution=resolution,
+            model=resolved_model,
             layer_spec=layer_spec,
-            model=model or settings.weather_default_model,
-            ttl_seconds=settings.weather_cache_ttl_seconds,
-            pressure_levels=layer_spec.pressure_levels if layer_spec else None,
         )
         grid_data_for_hour = _grid_data_for_hour(grid_data, hour)
         geojson = self._build_geojson(grid_data_for_hour, layer_id, layer_spec)
@@ -255,7 +256,7 @@ class WeatherTileService:
             "x": x,
             "y": y,
             "hour": hour,
-            "model": model or settings.weather_default_model,
+            "model": resolved_model,
             "resolution": resolution,
             "bbox": bbox.model_dump(mode="json"),
             "feature_count": len(geojson.get("features", [])),
@@ -339,7 +340,7 @@ class WeatherTileService:
             model=model,
         )
         self._write_memory_cache(key, geojson)
-        cache_set_json(key, geojson, settings.weather_cache_ttl_seconds)
+        cache_set_json(key, geojson, get_weather_cache_ttl_seconds())
         return geojson, "miss"
 
     def _read_memory_cache(self, key: str) -> dict[str, Any] | None:
@@ -419,7 +420,7 @@ class WeatherTileService:
 
         # 4. 写入缓存
         self._write_memory_cache(key, geojson)
-        cache_set_json(key, geojson, settings.weather_cache_ttl_seconds)
+        cache_set_json(key, geojson, get_weather_cache_ttl_seconds())
 
         return geojson, "miss"
 

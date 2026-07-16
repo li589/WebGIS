@@ -27,11 +27,11 @@ from shared.contracts.api_contracts import (
 
 logger = logging.getLogger(__name__)
 
+# 仅允许已接线字段；幽灵 key（如 demo_snapshot_provider、default_queue）禁止写入。
 ALLOWED_RUNTIME_CONFIG_KEYS: dict[str, set[str]] = {
-    "frontend": {"demo_source_mode", "timeline_granularity", "ui_density"},
+    "frontend": {"timeline_granularity", "ui_density"},
     "backend": {
         "task_executor",
-        "demo_snapshot_provider",
         "max_active_runs",
         "max_active_weather_tile_runs",
         "max_requested_outputs",
@@ -39,7 +39,7 @@ ALLOWED_RUNTIME_CONFIG_KEYS: dict[str, set[str]] = {
         "weather_refresh_forecast_hours",
         "log_level",
     },
-    "workflow": {"default_queue", "result_retention"},
+    "workflow": set(),
 }
 
 # Value type/range validation for runtime config keys.
@@ -52,7 +52,7 @@ RUNTIME_CONFIG_VALUE_VALIDATORS: dict[str, dict[str, tuple]] = {
         "weather_cache_ttl_seconds": ("int", 60, 86400),
         "weather_refresh_forecast_hours": ("int", 1, 48),
         "log_level": ("choice", ["DEBUG", "INFO", "WARNING", "ERROR"]),
-        "task_executor": ("choice", ["celery", "in_memory", "sync"]),
+        "task_executor": ("choice", ["celery", "sync"]),
     },
 }
 
@@ -85,6 +85,17 @@ class RuntimeStatusService:
         else:
             dispatcher_health = ServiceHealth.busy if active_run_count > 0 else ServiceHealth.ok
             dispatcher_message = "当前使用本地同步任务编排器。"
+        try:
+            from app.services.effective_config import executor_honesty_details
+
+            honesty = executor_honesty_details()
+            if honesty.get("executor_worker_mismatch"):
+                dispatcher_health = ServiceHealth.degraded
+                dispatcher_message = honesty.get("message") or dispatcher_message
+            if honesty.get("secrets_insecure"):
+                dispatcher_message = f"{dispatcher_message} secrets_insecure=true"
+        except Exception:
+            logger.exception("Failed to compute executor honesty details")
         services = [
             BackendServiceStatus(
                 service_name="api",
@@ -232,6 +243,12 @@ class RuntimeStatusService:
         now = datetime.now(timezone.utc)
         self._validate_runtime_config(payload)
         applied_count = self._repository.apply_runtime_config(payload.items)
+        try:
+            from app.services.effective_config import hydrate_effective_config
+
+            hydrate_effective_config()
+        except Exception:
+            logger.exception("Failed to rehydrate effective config after runtime PATCH")
         return RuntimeConfigUpdateResponse(
             accepted=True,
             updated_at=now,
@@ -245,23 +262,9 @@ class RuntimeStatusService:
         return self._repository.get_config_snapshot()
 
     def submit_frontend_command(self, payload: FrontendCommandRequest) -> FrontendCommandResponse:
-        now = datetime.now(timezone.utc)
-        next_action = {
-            "preload": "schedule-prefetch",
-            "clear_cache": "clear-local-cache",
-            "cleanup": "release-preview-resources",
-            "cancel_run": "cancel-pending-run",
-            "reload_catalog": "refresh-layer-catalog",
-            "custom": "inspect-custom-command",
-        }.get(payload.command_type.value, "inspect-command")
-        return FrontendCommandResponse(
-            accepted=True,
-            command_type=payload.command_type,
-            target=payload.target,
-            created_at=now,
-            message="前端控制指令已接收。",
-            next_action=next_action,
-        )
+        """Deprecated — router returns HTTP 410. Kept for contract/type reference only."""
+        del payload
+        raise RuntimeError("submit_frontend_command is retired; use POST /frontend/commands which returns 410.")
 
     def _validate_runtime_config(self, payload: RuntimeConfigUpdateRequest) -> None:
         for item in payload.items:
@@ -340,8 +343,10 @@ class RuntimeStatusService:
         try:
             info = client.info(section="memory")
             dbsize = client.dbsize()
-            weather_keys = len(client.keys("weather:*"))
-            dedup_lock_keys = len(client.keys("weather:lock:*"))
+            from app.core.redis_client import scan_keys
+
+            weather_keys = len(scan_keys(client, "weather:*"))
+            dedup_lock_keys = len(scan_keys(client, "weather:lock:*"))
             return {
                 "available": True,
                 "url": settings.redis_url,

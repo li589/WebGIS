@@ -183,19 +183,51 @@ _MAX_CONCURRENT_API_CALLS = 2
 _API_SLOT_TTL = 60  # 秒，防止 worker 崩溃后计数器卡住
 
 
+# 进程内信号量：Redis 不可用时的有限降级（禁止 unconditional 放行打满上游）
+_local_api_slots = 0
+_local_api_slots_lock = None
+
+
+def _get_local_slot_lock():
+    global _local_api_slots_lock
+    if _local_api_slots_lock is None:
+        import threading
+
+        _local_api_slots_lock = threading.Lock()
+    return _local_api_slots_lock
+
+
+def _acquire_local_api_slot(timeout: float) -> bool:
+    global _local_api_slots
+    deadline = time.monotonic() + timeout
+    lock = _get_local_slot_lock()
+    while time.monotonic() < deadline:
+        with lock:
+            if _local_api_slots < _MAX_CONCURRENT_API_CALLS:
+                _local_api_slots += 1
+                return True
+        time.sleep(0.05)
+    return False
+
+
+def _release_local_api_slot() -> None:
+    global _local_api_slots
+    with _get_local_slot_lock():
+        _local_api_slots = max(0, _local_api_slots - 1)
+
+
 def acquire_api_slot(timeout: float = 30.0) -> bool:
     """获取一个全局 API 调用槽位，限制跨 worker 的 Open-Meteo 并发请求数。
 
     使用 Redis INCR 原子计数器实现分布式信号量。
-    当并发数超过 _MAX_CONCURRENT_API_CALLS 时，调用方会等待直到有槽位释放或超时。
+    Redis 不可用时回落到进程内有限信号量（不再 unconditional 放行）。
 
     Returns:
-        True 如果获得槽位（或 Redis 不可用时降级放行），
-        False 如果超时未获得槽位。
+        True 如果获得槽位，False 如果超时未获得槽位。
     """
     client = get_redis_client()
     if client is None:
-        return True  # Redis 不可用时降级放行
+        return _acquire_local_api_slot(timeout)
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
         try:
@@ -210,7 +242,7 @@ def acquire_api_slot(timeout: float = 30.0) -> bool:
             client.decr(_API_CONCURRENT_KEY)
         except redis.RedisError as exc:
             _mark_redis_failure(f"acquire_api_slot:{exc}")
-            return True  # Redis 出错时降级放行
+            return _acquire_local_api_slot(max(0.0, deadline - time.monotonic()))
         time.sleep(0.5)
     return False
 
@@ -219,6 +251,7 @@ def release_api_slot() -> None:
     """释放一个 API 调用槽位。"""
     client = get_redis_client()
     if client is None:
+        _release_local_api_slot()
         return
     try:
         current = client.decr(_API_CONCURRENT_KEY)
@@ -228,6 +261,19 @@ def release_api_slot() -> None:
         _mark_redis_success()
     except redis.RedisError as exc:
         _mark_redis_failure(f"release_api_slot:{exc}")
+        _release_local_api_slot()
+
+
+def scan_keys(client: redis.Redis, pattern: str, *, count: int = 200) -> list[str]:
+    """使用 SCAN 收集匹配 key，避免生产环境 KEYS 阻塞。"""
+    matched: list[str] = []
+    cursor: int | str = 0
+    while True:
+        cursor, batch = client.scan(cursor=cursor, match=pattern, count=count)
+        matched.extend(batch)
+        if cursor == 0 or cursor == "0":
+            break
+    return matched
 
 
 # ─── 请求耗时指标 ─────────────────────────────────────────────────────────────
@@ -284,7 +330,7 @@ def get_metrics_summary(date_str: str | None = None) -> dict[str, Any]:
         date_str = time.strftime("%Y-%m-%d", time.gmtime())
     try:
         pattern = f"{_METRICS_KEY_PREFIX}:{date_str}:*"
-        keys = sorted(client.keys(pattern))
+        keys = sorted(scan_keys(client, pattern))
         endpoints: list[dict[str, Any]] = []
         for key in keys:
             # 解析 key: metrics:{date}:{method}:{path}

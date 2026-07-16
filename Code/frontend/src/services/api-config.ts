@@ -129,10 +129,17 @@ export interface RuntimeApiProviderResponse {
     retry_count?: number
     capabilities?: string[]
   }
-  api_key?: string | null
+  /** Backend never returns plaintext keys; only configuration flags. */
+  api_key_configured?: boolean
+  api_key_source?: 'env' | 'db' | 'metadata' | 'none' | string
+  /** Capabilities actually invoked on hot paths (may be narrower than endpoint.capabilities). */
+  wired_in_hot_path?: string[]
+  hot_path_notes?: string
   enabled?: boolean
   priority?: number
   metadata?: Record<string, unknown>
+  /** @deprecated Backend no longer returns plaintext; kept for stale client cache only. */
+  api_key?: never
 }
 
 export interface GeeParallelConfigResponse {
@@ -230,7 +237,6 @@ export const BASEMAP_PROVIDER_CONFIGS: BasemapProviderConfig[] = [
     id: 'esri',
     label: 'Esri Basemaps',
     provider: 'Esri',
-    routePrefix: '/tiles',
     coordinateSystem: 'EPSG:3857',
     endpoints: [
       {
@@ -319,7 +325,6 @@ export const BASEMAP_PROVIDER_CONFIGS: BasemapProviderConfig[] = [
     id: 'osm',
     label: 'OSM Basemaps',
     provider: 'OSM',
-    routePrefix: '/tiles',
     coordinateSystem: 'EPSG:3857',
     endpoints: [
       {
@@ -361,7 +366,6 @@ export const BASEMAP_PROVIDER_CONFIGS: BasemapProviderConfig[] = [
     id: 'carto',
     label: 'CARTO Basemaps',
     provider: 'CARTO',
-    routePrefix: '/tiles',
     coordinateSystem: 'EPSG:3857',
     endpoints: [
       {
@@ -386,7 +390,6 @@ export const BASEMAP_PROVIDER_CONFIGS: BasemapProviderConfig[] = [
     id: 'bing',
     label: 'Bing Basemaps',
     provider: 'Bing',
-    routePrefix: '/tiles',
     coordinateSystem: 'EPSG:3857',
     endpoints: [
       {
@@ -404,7 +407,7 @@ export const BASEMAP_PROVIDER_CONFIGS: BasemapProviderConfig[] = [
         contrast: 0.05,
         isStandard: true,
         needsBackendTransform: true,
-        secretRef: { id: 'bing-maps-key', backend: 'backend-runtime', key: 'BING_MAPS_KEY' },
+        secretRef: { id: 'bing-maps-key', backend: 'config-api-keys', key: 'bing' },
       },
       {
         id: 'aerial',
@@ -421,7 +424,7 @@ export const BASEMAP_PROVIDER_CONFIGS: BasemapProviderConfig[] = [
         contrast: 0.08,
         isStandard: true,
         needsBackendTransform: true,
-        secretRef: { id: 'bing-maps-key', backend: 'backend-runtime', key: 'BING_MAPS_KEY' },
+        secretRef: { id: 'bing-maps-key', backend: 'config-api-keys', key: 'bing' },
       },
       {
         id: 'dark',
@@ -438,7 +441,7 @@ export const BASEMAP_PROVIDER_CONFIGS: BasemapProviderConfig[] = [
         contrast: 0.12,
         isStandard: true,
         needsBackendTransform: true,
-        secretRef: { id: 'bing-maps-key', backend: 'backend-runtime', key: 'BING_MAPS_KEY' },
+        secretRef: { id: 'bing-maps-key', backend: 'config-api-keys', key: 'bing' },
       },
     ],
   },
@@ -446,7 +449,6 @@ export const BASEMAP_PROVIDER_CONFIGS: BasemapProviderConfig[] = [
     id: 'gaode',
     label: 'Gaode Basemaps',
     provider: 'AutoNavi',
-    routePrefix: '/tiles',
     coordinateSystem: 'GCJ-02',
     endpoints: [
       {
@@ -464,7 +466,7 @@ export const BASEMAP_PROVIDER_CONFIGS: BasemapProviderConfig[] = [
         contrast: 0.05,
         isStandard: true,
         needsBackendTransform: true,
-        secretRef: { id: 'gaode-key', backend: 'backend-runtime', key: 'GAODE_API_KEY' },
+        secretRef: { id: 'gaode-key', backend: 'config-api-keys', key: 'gaode' },
       },
       {
         id: 'satellite',
@@ -481,7 +483,7 @@ export const BASEMAP_PROVIDER_CONFIGS: BasemapProviderConfig[] = [
         contrast: 0.08,
         isStandard: true,
         needsBackendTransform: true,
-        secretRef: { id: 'gaode-key', backend: 'backend-runtime', key: 'GAODE_API_KEY' },
+        secretRef: { id: 'gaode-key', backend: 'config-api-keys', key: 'gaode' },
       },
     ],
   },
@@ -489,7 +491,6 @@ export const BASEMAP_PROVIDER_CONFIGS: BasemapProviderConfig[] = [
     id: 'tianditu',
     label: 'Tianditu Basemaps',
     provider: 'Tianditu',
-    routePrefix: '/tiles',
     coordinateSystem: 'EPSG:3857',
     endpoints: [
       {
@@ -507,7 +508,7 @@ export const BASEMAP_PROVIDER_CONFIGS: BasemapProviderConfig[] = [
         contrast: 0.08,
         isStandard: true,
         needsBackendTransform: true,
-        secretRef: { id: 'tianditu-token', backend: 'backend-runtime', key: 'TIANDITU_TOKEN' },
+        secretRef: { id: 'tianditu-token', backend: 'config-api-keys', key: 'tianditu' },
       },
       {
         id: 'annotation',
@@ -524,7 +525,7 @@ export const BASEMAP_PROVIDER_CONFIGS: BasemapProviderConfig[] = [
         contrast: 0.02,
         isStandard: true,
         needsBackendTransform: true,
-        secretRef: { id: 'tianditu-token', backend: 'backend-runtime', key: 'TIANDITU_TOKEN' },
+        secretRef: { id: 'tianditu-token', backend: 'config-api-keys', key: 'tianditu' },
       },
     ],
   },
@@ -532,7 +533,6 @@ export const BASEMAP_PROVIDER_CONFIGS: BasemapProviderConfig[] = [
     id: 'baidu',
     label: 'Baidu Basemaps',
     provider: 'Baidu',
-    routePrefix: '/tiles',
     coordinateSystem: 'BD-09',
     endpoints: [
       {
@@ -550,7 +550,7 @@ export const BASEMAP_PROVIDER_CONFIGS: BasemapProviderConfig[] = [
         contrast: 0.05,
         isStandard: true,
         needsBackendTransform: true,
-        secretRef: { id: 'baidu-map-ak', backend: 'backend-runtime', key: 'BAIDU_MAP_AK' },
+        secretRef: { id: 'baidu-map-ak', backend: 'config-api-keys', key: 'baidu' },
       },
       {
         id: 'satellite',
@@ -567,7 +567,7 @@ export const BASEMAP_PROVIDER_CONFIGS: BasemapProviderConfig[] = [
         contrast: 0.08,
         isStandard: true,
         needsBackendTransform: true,
-        secretRef: { id: 'baidu-map-ak', backend: 'backend-runtime', key: 'BAIDU_MAP_AK' },
+        secretRef: { id: 'baidu-map-ak', backend: 'config-api-keys', key: 'baidu' },
       },
     ],
   },
@@ -756,10 +756,14 @@ async function requestConfigJson<T>(path: string, init?: RequestInit & { timeout
   }
 }
 
-function hasApiCredential(apiKey: string | null | undefined, metadata?: Record<string, unknown>) {
-  if (typeof apiKey === 'string' && apiKey.trim().length > 0) {
+function hasApiCredential(runtimeConfig: RuntimeApiProviderResponse) {
+  if (runtimeConfig.api_key_configured === true) {
     return true
   }
+  if (runtimeConfig.api_key_source && runtimeConfig.api_key_source !== 'none') {
+    return true
+  }
+  const metadata = runtimeConfig.metadata
   if (metadata && typeof metadata.credentials_path === 'string' && metadata.credentials_path.trim().length > 0) {
     return true
   }
@@ -798,7 +802,10 @@ function attachRuntimeProviderMetadata(
     runtimeRateLimit: runtimeConfig.endpoint?.rate_limit ?? null,
     runtimeTimeoutSeconds: runtimeConfig.endpoint?.timeout ?? null,
     runtimeRetryCount: runtimeConfig.endpoint?.retry_count ?? null,
-    runtimeAuthConfigured: hasApiCredential(runtimeConfig.api_key, runtimeConfig.metadata),
+    runtimeAuthConfigured: hasApiCredential(runtimeConfig),
+    runtimeApiKeySource: runtimeConfig.api_key_source ?? 'none',
+    runtimeWiredInHotPath: runtimeConfig.wired_in_hot_path ?? [],
+    runtimeHotPathNotes: runtimeConfig.hot_path_notes ?? null,
     runtimeSourceMetadata: runtimeConfig.metadata ?? {},
   }
 }
@@ -817,7 +824,7 @@ function mergeRuntimeApiConfigs(
           ...(endpoint.metadata ?? {}),
           runtimeProviderId: providerId,
           runtimeEnabled: config.enabled ?? true,
-          runtimeAuthConfigured: hasApiCredential(config.api_key, config.metadata),
+          runtimeAuthConfigured: hasApiCredential(config),
           upstreamBaseUrl: config.endpoint?.url ?? null,
         }
       }
@@ -836,7 +843,7 @@ function mergeRuntimeApiConfigs(
           ...(endpoint.metadata ?? {}),
           runtimeProviderId: providerId,
           runtimeEnabled: config.enabled ?? true,
-          runtimeAuthConfigured: hasApiCredential(config.api_key, config.metadata),
+          runtimeAuthConfigured: hasApiCredential(config),
         }
       }
     }

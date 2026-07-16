@@ -12,19 +12,18 @@ from app.workflow_engine.models import (
     NodeSpec,
     PortSpec,
 )
-from app.weatherengine.client import OpenMeteoClient
 from app.weatherengine.constants import WEATHER_LAYER_SPECS
+from app.weatherengine.fetch_gateway import fetch_point_forecast
 from app.weatherengine.nodes._utils import coerce_float, coerce_int
 
 
 class ForecastFetchNode(BaseNode):
-    """天气预测抓取节点，调用 Open-Meteo API 获取原始预报数据。"""
+    """天气预测抓取节点，经 fetch_gateway / Registry 获取原始预报数据。"""
 
     node_type: str = "weather_forecast_fetch"
 
     def __init__(self, spec: NodeSpec, context: ExecutionContext) -> None:
         super().__init__(spec, context)
-        self._client = OpenMeteoClient()
 
     def execute(self, inputs: dict[str, Any]) -> NodeExecutionResult:
         try:
@@ -38,8 +37,7 @@ class ForecastFetchNode(BaseNode):
 
             spec = WEATHER_LAYER_SPECS[layer_id]
 
-            # 修复：coerce_float(...) or default 会误判 0.0（赤道/本初子午线被替换为广州）
-            # 改为显式 None 检查，仅在 coerce 失败时使用默认值
+            # coerce_float(...) or default 会误判 0.0；仅在 coerce 失败时使用默认值
             latitude = coerce_float(inputs.get("latitude"))
             if latitude is None:
                 latitude = settings.weather_default_latitude
@@ -51,17 +49,13 @@ class ForecastFetchNode(BaseNode):
             if not forecast_hours:
                 forecast_hours = settings.weather_refresh_forecast_hours
 
-            # 修复：补传 pressure_levels，否则气压层风场（850hPa/500hPa/200hPa）在 workflow 路径下完全失效
-            pressure_levels = spec.pressure_levels or None
-
-            payload, cache_status = self._client.fetch_point_forecast(
+            payload, cache_status, _provider_id = fetch_point_forecast(
+                layer_id=layer_id,
                 latitude=latitude,
                 longitude=longitude,
-                layer_spec=spec,
                 model=model,
                 forecast_hours=forecast_hours,
-                ttl_seconds=settings.weather_cache_ttl_seconds,
-                pressure_levels=pressure_levels,
+                layer_spec=spec,
             )
 
             layer_spec_dict = asdict(spec)

@@ -62,9 +62,16 @@ class GeeCredentialsRepository:
         return conn
 
     def _encrypt(self, plaintext: str) -> tuple[str, str]:
-        """AES-GCM 加密，返回 (ciphertext_b64, iv_b64)。无 key 时返回明文+空 iv（开发模式）。"""
+        """AES-GCM 加密，返回 (ciphertext_b64, iv_b64)。无 key 时仅 development 允许明文。"""
         if not self._encryption_key:
-            logger.warning("GEE credentials encryption key not set, storing plaintext")
+            from app.services.effective_config import secrets_encryption_required
+
+            if secrets_encryption_required():
+                raise RuntimeError(
+                    "Cannot store GEE credentials without BACKEND_GEE_CREDENTIALS_ENCRYPTION_KEY "
+                    "outside development."
+                )
+            logger.error("GEE credentials encryption key not set, storing plaintext (development only)")
             return plaintext, ""
         try:
             from cryptography.hazmat.primitives.ciphers.aead import AESGCM  # type: ignore
@@ -77,9 +84,19 @@ class GeeCredentialsRepository:
             ct = aesgcm.encrypt(iv, plaintext.encode("utf-8"), None)
             return base64.b64encode(ct).decode("ascii"), base64.b64encode(iv).decode("ascii")
         except ImportError:
+            from app.services.effective_config import secrets_encryption_required
+
+            if secrets_encryption_required():
+                raise RuntimeError("cryptography package required to encrypt GEE credentials") from None
             logger.warning("cryptography not installed, storing plaintext")
             return plaintext, ""
+        except RuntimeError:
+            raise
         except Exception as e:
+            from app.services.effective_config import secrets_encryption_required
+
+            if secrets_encryption_required():
+                raise RuntimeError(f"Encryption failed for GEE credentials: {e}") from e
             logger.error("Encryption failed for account, storing plaintext: %s", e)
             return plaintext, ""
 

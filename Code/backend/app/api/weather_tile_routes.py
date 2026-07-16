@@ -1,17 +1,17 @@
-"""天气 GeoJSON 瓦片 REST 路由（已废弃，请使用 /unified-tiles/{layer_id}/{z}/{x}/{y}）。
+"""天气 GeoJSON 瓦片 REST 路由。
 
-标准 Web Mercator z/x/y 瓦片接口，供前端按瓦片请求天气数据。
-
-已废弃：请使用统一瓦片端点 ``GET /unified-tiles/{layer_id}/{z}/{x}/{y}``。
+正式入口：``GET /weather/tiles/{layer_id}/{z}/{x}/{y}``
+（底图栅格请使用 ``GET /unified-tiles/{layer_id}/{z}/{x}/{y}``）
 """
 
 from __future__ import annotations
 
+import json
 import logging
 
-from fastapi import APIRouter, HTTPException, Query, Request, Response
+from fastapi import APIRouter, HTTPException, Query, Response
 
-from app.core.config import settings
+from app.services.effective_config import get_weather_cache_ttl_seconds
 from app.weatherengine.tile_service import get_weather_tile_service
 
 logger = logging.getLogger(__name__)
@@ -19,9 +19,28 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/weather/tiles", tags=["weather"])
 
 
-@router.get("/{layer_id}/{z}/{x}/{y}", deprecated=True)
+def _classify_weather_tile_error(exc: ValueError) -> int:
+    """未知/不支持图层 → 404；无可用 Provider → 503；非法坐标或参数 → 400。"""
+    message = str(exc).lower()
+    if "no enabled weather provider" in message:
+        return 503
+    if any(
+        token in message
+        for token in (
+            "unknown",
+            "unsupported",
+            "not found",
+            "not supported",
+            "no weather",
+            "not a weather",
+        )
+    ):
+        return 404
+    return 400
+
+
+@router.get("/{layer_id}/{z}/{x}/{y}")
 async def get_weather_tile(
-    request: Request,
     layer_id: str,
     z: int,
     x: int,
@@ -41,24 +60,20 @@ async def get_weather_tile(
             model=model,
         )
     except ValueError as exc:
-        logger.warning("[WeatherTileRoutes] invalid request: %s", exc)
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
+        status_code = _classify_weather_tile_error(exc)
+        logger.warning("[WeatherTileRoutes] invalid request (%s): %s", status_code, exc)
+        raise HTTPException(status_code=status_code, detail=str(exc)) from exc
     except Exception as exc:
-        # 上游断路器打开且无 stale cache 时，OpenMeteoClient 会抛出异常
         logger.exception("[WeatherTileRoutes] failed to generate tile")
         raise HTTPException(status_code=503, detail=f"Weather tile unavailable: {exc}") from exc
 
     headers = {
         "X-Weather-Tile-Key": f"{layer_id}:z{z}:x{x}:y{y}:h{hour}",
         "X-Weather-Tile-Cache": cache_status,
-        "Cache-Control": f"public, max-age={settings.weather_cache_ttl_seconds}",
+        "Cache-Control": f"public, max-age={get_weather_cache_ttl_seconds()}",
     }
-
-    # 客户端传入 t 时，也把它回写便于调试
     if t is not None:
         headers["X-Weather-Tile-T"] = str(t)
-
-    import json
 
     return Response(
         content=json.dumps(geojson, ensure_ascii=False),

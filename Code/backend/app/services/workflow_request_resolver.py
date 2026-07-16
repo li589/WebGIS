@@ -252,7 +252,7 @@ def _resolve_data_access_source_uri(source: str) -> str | None:
     if not candidate:
         return None
     if "://" in candidate:
-        return candidate
+        return _resolve_scheme_uri(candidate)
     if Path(candidate).is_absolute():
         absolute_path = Path(candidate)
         return str(absolute_path) if absolute_path.exists() else None
@@ -263,6 +263,41 @@ def _resolve_data_access_source_uri(source: str) -> str | None:
 
     fallback_path = Path(settings.data_root) / Path(candidate)
     return str(fallback_path) if fallback_path.exists() else None
+
+
+def _resolve_scheme_uri(uri: str) -> str | None:
+    """Pass through http/minio/file; remote schemes require resolvable credentials."""
+    from urllib.parse import urlparse
+
+    from shared.remote_sources.uri import REMOTE_SCHEMES, parse_remote_uri
+
+    scheme = (urlparse(uri).scheme or "").lower()
+    if scheme == "gcs":
+        scheme = "gs"
+    if scheme not in REMOTE_SCHEMES:
+        return uri
+
+    try:
+        parse_remote_uri(uri)
+    except ValueError:
+        return None
+
+    try:
+        from app.services.remote_auth_resolver import resolve_remote_auth
+
+        auth = resolve_remote_auth(uri)
+    except Exception:
+        return None
+
+    if settings.remote_readiness_probe:
+        try:
+            from shared.remote_sources.download import probe_remote_connectivity
+
+            # Connectivity only — missing object must not block workflow readiness
+            probe_remote_connectivity(uri, auth)
+        except Exception:
+            return None
+    return uri
 
 
 @lru_cache(maxsize=128)

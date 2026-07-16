@@ -12,8 +12,9 @@ import uuid
 from pathlib import Path
 from typing import Any
 
-from fastapi import APIRouter, File, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 
+from app.api.deps import require_write_access
 from app.core.config import settings
 from app.services.overlay_registry import OverlaySpec, register_overlay
 from app.services.raster_preview_service import raster_preview_service
@@ -24,8 +25,26 @@ router = APIRouter(prefix="/import", tags=["import"])
 _OUTPUT_ROOT = Path(settings.output_root) if settings.output_root else Path.cwd() / "imports_output"
 _IMPORTS_DIR = _OUTPUT_ROOT / "imports"
 
+# 安全限额：单文件与总量
+_MAX_UPLOAD_BYTES = 100 * 1024 * 1024  # 100 MiB
+_MAX_IMPORTS_TOTAL_BYTES = 2 * 1024 * 1024 * 1024  # 2 GiB
+_ALLOWED_EXTENSIONS = frozenset({"tif", "tiff"})
 
-@router.post("/raster")
+
+def _dir_size_bytes(path: Path) -> int:
+    if not path.exists():
+        return 0
+    total = 0
+    for child in path.rglob("*"):
+        if child.is_file():
+            try:
+                total += child.stat().st_size
+            except OSError:
+                continue
+    return total
+
+
+@router.post("/raster", dependencies=[Depends(require_write_access)])
 async def import_raster(file: UploadFile = File(...)) -> dict[str, Any]:
     """上传栅格文件（TIF），转 COG 预览，动态注册为 overlay 图层。
 
@@ -36,19 +55,40 @@ async def import_raster(file: UploadFile = File(...)) -> dict[str, Any]:
 
     filename = Path(file.filename).name
     ext = filename.lower().rsplit(".", 1)[-1] if "." in filename else ""
-    if ext not in ("tif", "tiff"):
+    if ext not in _ALLOWED_EXTENSIONS:
         raise HTTPException(status_code=400, detail=f"仅支持 TIF/TIFF 文件，收到 .{ext}")
+
+    used = _dir_size_bytes(_IMPORTS_DIR)
+    if used >= _MAX_IMPORTS_TOTAL_BYTES:
+        raise HTTPException(
+            status_code=507,
+            detail="导入存储配额已满，请清理旧导入后再试",
+        )
 
     # 生成唯一 ID 和存储目录
     layer_id = f"imported-{uuid.uuid4().hex[:12]}"
     dest_dir = _IMPORTS_DIR / layer_id
     dest_dir.mkdir(parents=True, exist_ok=True)
 
-    # 保存上传文件
+    # 保存上传文件（带大小上限）
     src_path = dest_dir / filename
     try:
+        written = 0
         with src_path.open("wb") as f:
-            shutil.copyfileobj(file.file, f)
+            while True:
+                chunk = await file.read(1024 * 1024)
+                if not chunk:
+                    break
+                written += len(chunk)
+                if written > _MAX_UPLOAD_BYTES:
+                    raise HTTPException(
+                        status_code=413,
+                        detail=f"文件超过上限 {_MAX_UPLOAD_BYTES // (1024 * 1024)} MiB",
+                    )
+                f.write(chunk)
+    except HTTPException:
+        shutil.rmtree(dest_dir, ignore_errors=True)
+        raise
     finally:
         await file.close()
 

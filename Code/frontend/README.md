@@ -29,7 +29,7 @@
 - `src/stores/weather-tile-manager.ts`：天气瓦片并发、缓存与优先队列
 - `src/stores/import.ts` / `src/stores/log.ts`：数据导入与日志面板
 - `src/services/runtime-api.ts`：workflow / runtime API 客户端
-- `src/services/weather-tile-api.ts`：Mercator 瓦片数学与 `/unified-tiles` 请求
+- `src/services/weather-tile-api.ts`：Mercator 瓦片数学与 `/weather/tiles` 请求
 - `src/components/map/`：地图模块化实现（底图、天气 overlay、风场 Canvas 等）
 - `src/styles/main.css`：全局样式
 
@@ -66,7 +66,8 @@
 
 天气数据加载主路径已演进为标准瓦片：
 
-- `weather-tile-api.ts` → `GET /unified-tiles/{layer_id}/{z}/{x}/{y}`（热路径，不走 workflow 轮询）
+- `weather-tile-api.ts` → `GET /weather/tiles/{layer_id}/{z}/{x}/{y}`（热路径，不走 workflow 轮询）
+- 底图 MapLibre → `GET /unified-tiles/{layer_id}/{z}/{x}/{y}`
 - `weather-tile-manager.ts` 负责视口瓦片集合、并发与预取
 - `submitWeatherTileWorkflow` 仅保留给显式扩展 DAG / 调试；计入后端 `weather_tile` 容量池
 - 业务分析 workflow 使用独立的 `max_active_runs`（business 池）
@@ -92,7 +93,9 @@
 - `layer_assets.cog_preview_url`
 - `layer_assets.cog_bbox`
 
-控制流走 `runtime-api.ts`（`workflow-runs` / runtime）；瓦片数据面走 `weather-tile-api.ts`（`unified-tiles`）。类型优先与 `src/types/api-contracts.ts` 对齐。
+控制流走 `runtime-api.ts`（`workflow-runs` / runtime）；配置面走 `settings-api.ts`（`/config/*`，见工具栏「设置」）；天气瓦片面走 `weather-tile-api.ts`（`/weather/tiles`），底图走 `/unified-tiles`。类型优先与 `src/types/api-contracts.ts` 对齐。
+
+开发联调注意：`vite.config.ts` 必须代理 `/config`，否则设置面板会出现「配置加载失败 / unreachable」。
 
 ## 页面结构理解
 
@@ -132,4 +135,4 @@
 
 - 文档应优先服务当前实际组件、状态与服务结构
 - 扩展地图引擎或图层能力时，保持交互层与服务层分离
-- 不要新增对已 deprecated 的 `/weather/tiles` 直连依赖
+- 天气瓦片必须走 `/weather/tiles`；不要再把天气层挂到 `/unified-tiles`；旧 `/tiles` 前缀已删除

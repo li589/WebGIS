@@ -92,8 +92,12 @@ class WorkflowExecutor:
         try:
             canonical = node_cls.build_spec()
             return canonical.input_ports
-        except Exception:
-            return []
+        except (AttributeError, TypeError) as exc:
+            # build_spec() 不存在或签名不匹配 — 编程 bug，应暴露而非静默吞掉
+            raise RuntimeError(
+                f"Node class {node_cls.__name__}.build_spec() failed: {exc}. "
+                f"Ensure the node class implements a static build_spec() method."
+            ) from exc
 
     def _resolve_inputs(
         self,

@@ -5,6 +5,8 @@ import unittest
 
 from app.weatherengine.constants import WEATHER_LAYER_SPECS
 from app.weatherengine.service import WeatherEngineService
+from app.weatherengine.provider_registry import get_registry
+from app.weatherengine.providers.open_meteo_provider import OpenMeteoProvider
 from shared.contracts.api_contracts import ResultKind, RuntimeMapContext, WorkflowCommandType, WorkflowSubmitRequest
 
 
@@ -97,8 +99,21 @@ class _FakeOpenMeteoClient:
 
 
 class WeatherEngineServiceTests(unittest.TestCase):
+    def setUp(self) -> None:
+        # 注册带 fake client 的 OpenMeteoProvider，供 get_point_weather 通过 registry 路由
+        # （get_point_weather 不再使用 self._client，而是通过 provider registry 获取 provider）
+        registry = get_registry()
+        registry.register(
+            OpenMeteoProvider(client=_FakeOpenMeteoClient()),
+            priority=0,
+            enabled=True,
+        )
+
+    def tearDown(self) -> None:
+        get_registry().clear()
+
     def test_get_point_weather_builds_contract(self) -> None:
-        service = WeatherEngineService(client=_FakeOpenMeteoClient())
+        service = WeatherEngineService()
 
         weather = service.get_point_weather(
             layer_id="wind-field",
@@ -122,7 +137,7 @@ class WeatherEngineServiceTests(unittest.TestCase):
         self.assertAlmostEqual(weather.hourly[0].primary_value or 0.0, 8.2)
 
     def test_get_point_weather_exposes_layer_primary_metric_in_hourly_rows(self) -> None:
-        service = WeatherEngineService(client=_FakeOpenMeteoClient())
+        service = WeatherEngineService()
 
         weather = service.get_point_weather(
             layer_id="humidity",
@@ -138,7 +153,7 @@ class WeatherEngineServiceTests(unittest.TestCase):
         self.assertAlmostEqual(weather.hourly[0].primary_value or 0.0, 81.0)
 
     def test_execute_returns_workflow_outputs(self) -> None:
-        service = WeatherEngineService(client=_FakeOpenMeteoClient())
+        service = WeatherEngineService()
         payload = WorkflowSubmitRequest(
             command_type=WorkflowCommandType.analysis,
             layer_id="temperature",
@@ -173,7 +188,8 @@ class WeatherEngineServiceTests(unittest.TestCase):
 
     def test_execute_precipitation_returns_geojson_asset(self) -> None:
         client = _FakeOpenMeteoClient()
-        service = WeatherEngineService(client=client)
+        get_registry().register(OpenMeteoProvider(client=client), priority=0, enabled=True)
+        service = WeatherEngineService()
         payload = WorkflowSubmitRequest(
             command_type=WorkflowCommandType.analysis,
             layer_id="precipitation",
@@ -203,7 +219,7 @@ class WeatherEngineServiceTests(unittest.TestCase):
         self.assertGreaterEqual(client.grid_calls.count("precipitation"), 2)
 
     def test_execute_wind_returns_point_symbol_geojson_asset(self) -> None:
-        service = WeatherEngineService(client=_FakeOpenMeteoClient())
+        service = WeatherEngineService()
         payload = WorkflowSubmitRequest(
             command_type=WorkflowCommandType.analysis,
             layer_id="wind-field",
@@ -235,7 +251,8 @@ class WeatherEngineServiceTests(unittest.TestCase):
     def test_execute_scalar_layers_use_grid_fetch_in_fallback(self) -> None:
         for layer_id in ("temperature", "humidity", "pressure", "visibility"):
             client = _FakeOpenMeteoClient()
-            service = WeatherEngineService(client=client)
+            get_registry().register(OpenMeteoProvider(client=client), priority=0, enabled=True)
+            service = WeatherEngineService()
             payload = WorkflowSubmitRequest(
                 command_type=WorkflowCommandType.analysis,
                 layer_id=layer_id,
@@ -261,7 +278,8 @@ class WeatherEngineServiceTests(unittest.TestCase):
 
     def test_execute_temperature_uses_grid_for_geojson_and_cog(self) -> None:
         client = _FakeOpenMeteoClient()
-        service = WeatherEngineService(client=client)
+        get_registry().register(OpenMeteoProvider(client=client), priority=0, enabled=True)
+        service = WeatherEngineService()
         payload = WorkflowSubmitRequest(
             command_type=WorkflowCommandType.analysis,
             layer_id="temperature",

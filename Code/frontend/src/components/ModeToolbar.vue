@@ -24,7 +24,7 @@ const weatherTileManager = useWeatherTileManager()
 const { workflowSummary } = storeToRefs(layersStore)
 const { activityVersion, statusVersion } = storeToRefs(weatherTileManager)
 
-/** 合并工作流摘要：天气瓦片 pending（/unified-tiles）计入 running 指示，不等于 workflow-runs 数 */
+/** 合并工作流摘要：天气瓦片 pending（/weather/tiles）计入 running 指示，不等于 workflow-runs 数 */
 const mergedWorkflowSummary = computed(() => {
   // 引用 activityVersion 确保天气瓦片 pending 变化时触发重新计算
   void activityVersion.value
@@ -54,6 +54,7 @@ const emit = defineEmits<{
   openScreenshot: []
   openWorkflowStatus: []
   openLog: []
+  openSettings: []
 }>()
 
 const activeStyle = computed<BasemapStyle>(() => {
@@ -95,6 +96,11 @@ function setInteractionMode(mode: 'move' | 'select') {
 function handleScreenshot() {
   emit('openScreenshot')
   logStore.logOperation('screenshot', '打开截图导出')
+}
+
+function handleSettings() {
+  emit('openSettings')
+  logStore.logOperation('settings-open', '打开系统设置')
 }
 </script>
 
@@ -154,6 +160,17 @@ function handleScreenshot() {
         >
           <span class="btn-icon" aria-hidden="true">◫</span>
           <span class="btn-label">截图</span>
+        </button>
+
+        <!-- 设置 -->
+        <button
+          class="tool-btn"
+          type="button"
+          title="系统设置"
+          @click="handleSettings"
+        >
+          <span class="btn-icon" aria-hidden="true">⚙</span>
+          <span class="btn-label">设置</span>
         </button>
 
         <!-- 日志 -->

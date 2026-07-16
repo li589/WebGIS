@@ -19,9 +19,9 @@ from app.api.routers import (
     workflow_router,
 )
 from app.api.routers.unified_tile_router import router as unified_tile_router
-from app.api.tile_routes import router as tile_router
 from app.api.weather_tile_routes import router as weather_tile_router
 from app.api.gee_config_routes import router as gee_config_router
+from app.api.config_routes import router as config_router
 from app.core.config import settings
 from app.core.logging import ensure_logging_configured, log_context, set_request_id
 from app.core.redis_client import record_request_metric
@@ -61,6 +61,26 @@ async def lifespan(app: FastAPI):
         except Exception:
             logger.exception("Failed to warm up provider dataset helpers")
     threading.Thread(target=_warmup, daemon=True, name="provider-warmup").start()
+
+    # 注册默认天气源 Provider 到全局注册表
+    # 使 /config/weather/providers 端点能查询到已注册的天气源
+    try:
+        from app.weatherengine.provider_registry import register_default_providers
+        register_default_providers()
+        # 应用 DB 中持久化的覆盖配置（enabled/priority/config）
+        from app.services.config_service import apply_persisted_provider_overrides
+        apply_persisted_provider_overrides()
+    except Exception:
+        logger.exception("Failed to register default weather providers")
+
+    # 单一配置投影：env + DB api keys + runtime overrides
+    try:
+        from app.services.effective_config import hydrate_effective_config
+
+        hydrate_effective_config()
+    except Exception:
+        logger.exception("Failed to hydrate effective config on startup")
+        raise
 
     yield
 
@@ -142,9 +162,9 @@ def create_app() -> FastAPI:
     app.include_router(artifact_router)
     app.include_router(import_router)
     app.include_router(unified_tile_router)
-    app.include_router(tile_router)
     app.include_router(weather_tile_router)
     app.include_router(gee_config_router)
+    app.include_router(config_router)
 
     # 挂载 GEE engine router，使 /gee/* 路由正式接入 FastAPI
     # 路由前缀已在 create_gee_router 内部定义为 /gee

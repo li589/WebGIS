@@ -123,7 +123,8 @@ class MinioSourceFetcher(SourceFetcher):
 
     def supports(self, source_uri: str) -> bool:
         parsed = urlparse(source_uri)
-        return parsed.scheme == "minio"
+        # Align with Python MinioSource: accept both minio:// and s3://
+        return parsed.scheme in {"minio", "s3"}
 
     def fetch(
         self,
@@ -277,6 +278,70 @@ class LocalFileSourceFetcher(SourceFetcher):
         )
 
 
+class RemoteProtocolSourceFetcher(SourceFetcher):
+    """sftp/smb/ftp/ftps/gs 抓取器，委托 shared.remote_sources + 凭证库。"""
+
+    _SCHEMES = frozenset({"sftp", "smb", "ftp", "ftps", "gs", "gcs"})
+
+    def supports(self, source_uri: str) -> bool:
+        scheme = urlparse(source_uri).scheme.lower()
+        if scheme == "gcs":
+            scheme = "gs"
+        return scheme in self._SCHEMES
+
+    def fetch(
+        self,
+        *,
+        ref_id: str,
+        source_uri: str,
+        artifact_key_prefix: str,
+    ) -> FetchResult:
+        fetched_at = datetime.now(timezone.utc).isoformat()
+        try:
+            from app.services.remote_auth_resolver import resolve_remote_auth
+            from shared.remote_sources.download import download_remote_uri
+            from shared.remote_sources.limits import DEFAULT_MAX_REMOTE_BYTES
+
+            auth = resolve_remote_auth(source_uri)
+            cache_dir = Path(settings.cache_dir) / "remote_fetch"
+            local_path, _stat = download_remote_uri(
+                source_uri,
+                auth,
+                target_dir=cache_dir,
+                max_bytes=DEFAULT_MAX_REMOTE_BYTES,
+            )
+            data = local_path.read_bytes()
+        except Exception as exc:
+            logger.warning("Remote fetch failed for ref=%s uri=%s: %s", ref_id, source_uri, exc)
+            return FetchResult(
+                ref_id=ref_id,
+                success=False,
+                error=f"Remote fetch failed: {exc}",
+                fetched_at=fetched_at,
+            )
+
+        artifact_key = f"{artifact_key_prefix}/{ref_id}"
+        stored = object_store.put_bytes(
+            object_key=artifact_key,
+            data=data,
+            content_type="application/octet-stream",
+            metadata={
+                "source_uri": source_uri,
+                "ref_id": ref_id,
+                "fetched_at": fetched_at,
+            },
+        )
+        return FetchResult(
+            ref_id=ref_id,
+            success=True,
+            artifact_key=artifact_key,
+            fetched_bytes=stored.content_length,
+            content_type="application/octet-stream",
+            local_path=str(stored.file_path) if stored.file_path else None,
+            fetched_at=fetched_at,
+        )
+
+
 class DemoSourceFetcher(SourceFetcher):
     """demo:// scheme 兼容抓取器。
 
@@ -340,6 +405,7 @@ class SourceFetcherRegistry:
         self._fetchers = [
             HttpSourceFetcher(),
             MinioSourceFetcher(),
+            RemoteProtocolSourceFetcher(),
             LocalFileSourceFetcher(),
             DemoSourceFetcher(),
         ]

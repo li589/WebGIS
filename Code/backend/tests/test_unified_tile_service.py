@@ -102,7 +102,8 @@ class UnifiedTileEndpointTests(unittest.TestCase):
         self.assertEqual(response.headers.get("X-Tile-Provider"), "esri-street")
         self.assertEqual(response.content, b"fake-png-data")
 
-    def test_unified_endpoint_returns_weather_tile(self) -> None:
+    def test_weather_endpoint_returns_weather_tile(self) -> None:
+        """天气瓦片通过 /weather/tiles/ 端点提供（非 /unified-tiles/）。"""
         from fastapi.testclient import TestClient
         from app.main import create_app
 
@@ -121,7 +122,7 @@ class UnifiedTileEndpointTests(unittest.TestCase):
         }
 
         with patch(
-            "app.weatherengine.tile_service.get_weather_tile_service",
+            "app.api.weather_tile_routes.get_weather_tile_service",
             return_value=type(
                 "MockSvc",
                 (),
@@ -133,7 +134,7 @@ class UnifiedTileEndpointTests(unittest.TestCase):
             )(),
         ):
             response = client.get(
-                "/unified-tiles/wind-field/5/25/12",
+                "/weather/tiles/wind-field/5/25/12",
                 params={"hour": 0},
             )
 
@@ -143,6 +144,7 @@ class UnifiedTileEndpointTests(unittest.TestCase):
         self.assertIn(b"FeatureCollection", response.content)
 
     def test_unified_endpoint_returns_404_for_unknown_layer(self) -> None:
+        """未知 layer_id 在 /unified-tiles/ 端点返回 404，提示使用 /weather/tiles/。"""
         from fastapi.testclient import TestClient
         from app.main import create_app
 
@@ -152,7 +154,9 @@ class UnifiedTileEndpointTests(unittest.TestCase):
         response = client.get("/unified-tiles/totally-unknown-layer/5/25/12")
 
         self.assertEqual(response.status_code, 404)
-        self.assertIn("No tile provider matches", response.json()["detail"])
+        detail = response.json()["detail"]
+        # 架构变更后：unified-tiles 仅服务底图，非底图 layer_id 提示使用 /weather/tiles/
+        self.assertIn("Unknown basemap layer_id", detail)
 
 
 if __name__ == "__main__":

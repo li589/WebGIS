@@ -35,6 +35,31 @@ describe('map-canvas-teardown-binder', () => {
     expect(clearResources).toHaveBeenCalledTimes(1)
   })
 
+  it('disposes overlay image module when provided', () => {
+    const overlayImageModule = { dispose: vi.fn() }
+    const clearResources = vi.fn()
+    const binder = createMapCanvasTeardownBinder({
+      getResources: () => ({
+        mapStagePresentationModule: null,
+        basemapModule: null,
+        adminBoundaryModule: null,
+        selectedLayerFocusModule: null,
+        mapInteractionModule: null,
+        mapCanvasRuntimeModule: null,
+        hotspotPinsModule: null,
+        weatherOverlayModule: null,
+        map: null,
+      }),
+      clearResources,
+      getOverlayImageModule: () => overlayImageModule,
+    })
+
+    binder.dispose()
+
+    expect(overlayImageModule.dispose).toHaveBeenCalledTimes(1)
+    expect(clearResources).toHaveBeenCalledTimes(1)
+  })
+
   it('handles already-cleared resources', () => {
     const clearResources = vi.fn()
     const binder = createMapCanvasTeardownBinder({

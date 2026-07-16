@@ -44,7 +44,9 @@ const mapCanvasRef = ref<InstanceType<typeof MapCanvas> | null>(null)
 const screenshotOpen = ref(false)
 const workflowStatusOpen = ref(false)
 const logOpen = ref(false)
+const settingsOpen = ref(false)
 const ScreenshotExport = defineAsyncComponent(() => import('../components/ScreenshotExport.vue'))
+const SettingsPanel = defineAsyncComponent(() => import('../components/settings/SettingsPanel.vue'))
 
 const sidePanelDimensions = Object.freeze({
   defaultHeight: 372,
@@ -178,6 +180,14 @@ function handleCloseScreenshot() {
   screenshotOpen.value = false
 }
 
+function handleOpenSettings() {
+  settingsOpen.value = true
+}
+
+function handleCloseSettings() {
+  settingsOpen.value = false
+}
+
 function handleOpenWorkflowStatus() {
   workflowStatusOpen.value = true
 }
@@ -266,6 +276,7 @@ function buildFallbackActiveLayer(): ActiveLayerDisplay {
           :active-layer-count="activeLayerCount"
           @change-tile-source="handleTileSourceChange"
           @open-screenshot="handleOpenScreenshot"
+          @open-settings="handleOpenSettings"
           @open-workflow-status="handleOpenWorkflowStatus"
           @open-log="logOpen = true"
         />
@@ -369,6 +380,11 @@ function buildFallbackActiveLayer(): ActiveLayerDisplay {
     <LogPanel
       v-if="logOpen"
       @close="logOpen = false"
+    />
+
+    <SettingsPanel
+      v-if="settingsOpen"
+      @close="handleCloseSettings"
     />
   </main>
 </template>

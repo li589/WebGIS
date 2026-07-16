@@ -989,6 +989,13 @@ export const LAYER_LIBRARY: LayerCatalogItem[] = [
   },
 ]
 
+/** Static whitelist of catalog IDs backed by weatherengine (used before runtime catalog loads). */
+export const WEATHER_ENGINE_CATALOG_IDS = new Set(
+  LAYER_LIBRARY
+    .filter((item) => item.category === 'online-weather')
+    .map((item) => item.catalogId),
+)
+
 export const LAYER_LIBRARY_BY_CATEGORY = (() => {
   const map = new Map<string, LayerCatalogItem[]>()
   for (const item of LAYER_LIBRARY) {

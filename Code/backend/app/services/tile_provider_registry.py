@@ -22,6 +22,9 @@ class TileProviderRegistry:
     def register(self, provider: TileProvider) -> None:
         self._providers.append(provider)
 
+    def clear(self) -> None:
+        self._providers.clear()
+
     def resolve(self, layer_id: str) -> TileProvider | None:
         for provider in self._providers:
             if provider.matches(layer_id):

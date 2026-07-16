@@ -32,15 +32,16 @@ export interface FetchWeatherTileOptions {
 const _WEB_MERCATOR_MAX_LAT = 85.0511287798066
 const _TILE_KEY_PREFIX = 'weather:tile:'
 
-/** 与后端 tile_key 一致的前端缓存键（不含 model，前端缓存按默认 model 管理）。 */
+/** 与后端 tile_key 对齐的前端缓存键（含 model，避免换模型时命中脏缓存）。 */
 export function buildTileKey(
   layerId: string,
   z: number,
   x: number,
   y: number,
   hour: number,
+  model = 'best_match',
 ): string {
-  return `${_TILE_KEY_PREFIX}${layerId}:z${z}:x${x}:y${y}:h${hour}`
+  return `${_TILE_KEY_PREFIX}${layerId}:z${z}:x${x}:y${y}:h${hour}:m${model}`
 }
 
 /** 标准 Web Mercator：经纬度 → z/x/y 瓦片坐标。 */
@@ -213,7 +214,7 @@ export async function submitWeatherTileWorkflow(
 const TILE_FETCH_TIMEOUT_MS = 25_000
 
 /**
- * 视口热路径：直接请求 GET /unified-tiles/{layer}/{z}/{x}/{y}。
+ * 视口热路径：直接请求 GET /weather/tiles/{layer}/{z}/{x}/{y}。
  * 由 WeatherTileService 负责缓存与网格生成；不占用 workflow-runs 业务容量池。
  *
  * 内置 25 秒超时，避免后端排队或 Open-Meteo API 慢时前端并发槽位被无限占用。
@@ -232,7 +233,7 @@ export async function fetchWeatherTile(
   if (typeof options.t === 'number') search.set('t', String(options.t))
 
   const suffix = search.toString() ? `?${search.toString()}` : ''
-  const url = resolveApiUrl(`/unified-tiles/${layerId}/${z}/${x}/${y}${suffix}`)
+  const url = resolveApiUrl(`/weather/tiles/${layerId}/${z}/${x}/${y}${suffix}`)
 
   // 组合外部 signal 和超时 signal，任一触发都会 abort fetch
   const timeoutController = new AbortController()

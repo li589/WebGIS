@@ -41,6 +41,8 @@ export interface OverlayImageModule {
   linkTimeEnabled: import('vue').Ref<boolean>
   /** 切换联动开关。 */
   setLinkTime: (enabled: boolean) => void
+  /** 卸载时移除所有 overlay 源与图层。 */
+  dispose: () => void
 }
 
 interface CreateOverlayImageModuleOptions {
@@ -342,6 +344,17 @@ export function createOverlayImageModule(
     return options.map.getLayer(loaded.rasterLayerId) ? loaded.rasterLayerId : null
   }
 
+  function dispose() {
+    for (const layerId of Array.from(loadedOverlays.keys())) {
+      _removeOverlay(layerId)
+    }
+    loadingOverlays.clear()
+    boundsCache.clear()
+    knownOverlayIds.value = []
+    overlayTimeStates.value = []
+    linkTimeEnabled.value = false
+  }
+
   return {
     syncOverlays,
     setOverlayTime,
@@ -354,5 +367,6 @@ export function createOverlayImageModule(
     init,
     linkTimeEnabled,
     setLinkTime,
+    dispose,
   }
 }

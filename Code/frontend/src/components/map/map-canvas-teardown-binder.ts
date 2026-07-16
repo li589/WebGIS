@@ -25,6 +25,7 @@ export interface MapCanvasTeardownBinder {
 interface CreateMapCanvasTeardownBinderOptions {
   getResources: () => MapCanvasTeardownResources
   clearResources: () => void
+  getOverlayImageModule?: () => DisposableResource | null
 }
 
 export function createMapCanvasTeardownBinder(
@@ -40,6 +41,7 @@ export function createMapCanvasTeardownBinder(
     resources.mapCanvasRuntimeModule?.dispose()
     resources.hotspotPinsModule?.dispose()
     resources.weatherOverlayModule?.dispose()
+    options.getOverlayImageModule?.()?.dispose()
     resources.map?.remove()
 
     options.clearResources()

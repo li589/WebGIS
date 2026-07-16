@@ -58,19 +58,8 @@ const workflowItems = computed(() => {
   })
 })
 
-/** 合并工作流摘要：将天气瓦片活跃数合并到 layers store 的工作流摘要中 */
-const summary = computed(() => {
-  void activityVersion.value
-  void statusVersion.value
-  const base = layersStore.workflowSummary
-  const tileActive = weatherTileManager.getGlobalActiveTileCount()
-  if (tileActive === 0) return base
-  return {
-    ...base,
-    running: base.running + tileActive,
-    total: Math.max(base.total, tileActive),
-  }
-})
+/** 工作流摘要（不含天气瓦片调度） */
+const summary = computed(() => layersStore.workflowSummary)
 
 /** 衍生统计指标 */
 const derivedStats = computed(() => {
@@ -301,7 +290,7 @@ onBeforeUnmount(() => {
         <div class="wf-tile-bar">
           <span class="wf-tile-icon">🌀</span>
           <span class="wf-tile-text">
-            天气瓦片渲染中 — 并发 <strong>{{ tileConcurrency.active }}</strong> / <strong>{{ tileConcurrency.max }}</strong>
+            天气瓦片调度 — 在途 <strong>{{ tileConcurrency.active }}</strong> / 并发上限 <strong>{{ tileConcurrency.max }}</strong>
           </span>
           <span class="wf-tile-hint">自适应调节（CPU/内存/限流）</span>
         </div>

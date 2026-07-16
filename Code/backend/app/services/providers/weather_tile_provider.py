@@ -1,6 +1,9 @@
-"""天气瓦片提供者。
+"""DEPRECATED — 天气瓦片提供者（历史遗留）。
 
-包装 :mod:`app.weatherengine.tile_service`，匹配 ``layer_catalog`` 中 ``source_type=weather`` 的图层 ID。
+天气瓦片正式入口已迁移至 ``GET /weather/tiles/{layer_id}/{z}/{x}/{y}``，
+不再注册到 ``tile_provider_registry``（见 ``app.services.providers``）。
+
+保留本模块仅供单元测试引用；新代码请直接使用 ``app.weatherengine.tile_service``。
 """
 
 from __future__ import annotations

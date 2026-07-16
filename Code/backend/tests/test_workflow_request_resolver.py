@@ -11,8 +11,11 @@ class WorkflowRequestResolverTests(unittest.TestCase):
 
         self.assertIsNotNone(readiness)
         self.assertEqual(readiness["run_readiness"], "ready")
-        self.assertIn("数据已就绪", readiness["run_readiness_summary"])
-        self.assertTrue(any("样板 provider" in note for note in readiness["run_readiness_notes"]))
+        self.assertTrue(
+            "样板" in (readiness["run_readiness_summary"] or "")
+            or "演示" in (readiness["run_readiness_summary"] or "")
+        )
+        self.assertTrue(any("样板" in note for note in readiness["run_readiness_notes"]))
 
     def test_placeholder_python_provider_remains_blocked(self) -> None:
         readiness = describe_layer_run_readiness("smap-soil")

@@ -1,7 +1,7 @@
-"""统一瓦片服务路由。
+"""统一底图瓦片服务路由。
 
-提供单一端点 ``GET /unified-tiles/{layer_id}/{z}/{x}/{y}``，
-通过 :class:`TileProviderRegistry` 路由到底图代理服务或天气瓦片服务。
+正式入口：``GET /unified-tiles/{layer_id}/{z}/{x}/{y}``（仅底图栅格）。
+天气 GeoJSON 瓦片请使用 ``GET /weather/tiles/{layer_id}/{z}/{x}/{y}``。
 """
 
 from __future__ import annotations
@@ -11,6 +11,7 @@ import logging
 from fastapi import APIRouter, HTTPException, Query, Response
 
 from app.services.tile_provider_registry import tile_provider_registry
+from app.services.tile_proxy_service import TILE_URL_TEMPLATES
 
 logger = logging.getLogger(__name__)
 
@@ -23,24 +24,35 @@ async def get_unified_tile(
     z: int,
     x: int,
     y: int,
-    hour: int | None = Query(default=0, ge=0, le=47),
-    model: str | None = Query(default=None),
     use_cache: bool = True,
     t: int | None = Query(default=None, description="客户端缓存 bust，不参与业务"),
 ) -> Response:
-    """获取指定图层的瓦片数据（底图栅格或天气 GeoJSON）。"""
+    """获取底图栅格瓦片。"""
+    if layer_id not in TILE_URL_TEMPLATES:
+        raise HTTPException(
+            status_code=404,
+            detail=(
+                f"Unknown basemap layer_id: {layer_id}. "
+                "Weather layers use GET /weather/tiles/{layer_id}/{z}/{x}/{y}."
+            ),
+        )
+    if z < 0 or z > 18:
+        raise HTTPException(status_code=400, detail="Zoom level must be between 0 and 18")
+    if x < 0 or y < 0:
+        raise HTTPException(status_code=400, detail="Invalid tile coordinates")
+
     try:
         tile = await tile_provider_registry.get_tile(
             layer_id,
             z,
             x,
             y,
-            hour=hour,
-            model=model,
             use_cache=use_cache,
         )
     except ValueError as exc:
-        raise HTTPException(status_code=404, detail=str(exc)) from exc
+        message = str(exc).lower()
+        status_code = 404 if "unknown" in message or "not found" in message else 400
+        raise HTTPException(status_code=status_code, detail=str(exc)) from exc
     except Exception as exc:
         logger.exception("[UnifiedTileRoutes] failed to generate tile for layer=%s", layer_id)
         raise HTTPException(status_code=503, detail=f"Tile unavailable: {exc}") from exc
