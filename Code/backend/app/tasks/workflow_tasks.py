@@ -4,8 +4,6 @@ from typing import Any, Callable
 
 from app.core.celery_app import celery_app, celery_available
 from app.core.config import settings
-from app.services.analysis_workflow_service import analysis_workflow_service
-from app.services.download_workflow_service import download_workflow_service
 from app.services.gee_bridge_service import gee_bridge_service
 from app.services.provider_workflow_service import provider_workflow_service
 from app.services.python_provider_bridge_service import python_provider_bridge_service
@@ -13,16 +11,14 @@ from app.services.weather_bridge_service import weather_bridge_service
 from app.services.workflow_execution import WorkflowExecutionResult
 from app.weatherengine.service import weather_engine_service
 from shared.contracts.api_contracts import (
-    WorkflowCommandType,
     WorkflowPriority,
     WorkflowResourceProfile,
     WorkflowSubmitRequest,
 )
 
-_LEGACY_NO_BRIDGE_MESSAGE = (
+_NO_BRIDGE_MESSAGE = (
     "No workflow bridge matched this payload. "
-    "Provide gee_request, weather_request, algorithm_request, or provider_request, "
-    "or set BACKEND_LEGACY_WORKFLOW_HANDLERS_ENABLED=true to use legacy analysis/download handlers."
+    "Provide gee_request, weather_request, algorithm_request, or provider_request."
 )
 
 # m22 修复：统一的 bridge-channel 映射表
@@ -37,25 +33,6 @@ _BRIDGE_CHAIN: list[tuple[Any, str]] = [
     (weather_engine_service, "weather"),
 ]
 
-# Legacy handlers — only used when BACKEND_LEGACY_WORKFLOW_HANDLERS_ENABLED=true
-_LEGACY_HANDLER_MAP: dict[WorkflowCommandType, Callable[..., WorkflowExecutionResult]] = {
-    WorkflowCommandType.analysis: analysis_workflow_service.execute,
-    WorkflowCommandType.export: analysis_workflow_service.execute,
-    WorkflowCommandType.custom: analysis_workflow_service.execute,
-    WorkflowCommandType.layer_preview: download_workflow_service.execute,
-    WorkflowCommandType.refresh_data: download_workflow_service.execute,
-    WorkflowCommandType.sync_demo: download_workflow_service.execute,
-}
-
-_LEGACY_CHANNEL_MAP: dict[WorkflowCommandType, str] = {
-    WorkflowCommandType.analysis: "analysis",
-    WorkflowCommandType.export: "analysis",
-    WorkflowCommandType.custom: "analysis",
-    WorkflowCommandType.layer_preview: "download",
-    WorkflowCommandType.refresh_data: "download",
-    WorkflowCommandType.sync_demo: "download",
-}
-
 
 def _find_bridge_handler(payload: WorkflowSubmitRequest) -> tuple[Callable[..., WorkflowExecutionResult], str] | None:
     for bridge, channel in _BRIDGE_CHAIN:
@@ -69,11 +46,7 @@ def _resolve_workflow_handler(payload: WorkflowSubmitRequest) -> Callable[..., W
     if bridge_match is not None:
         handler, _channel = bridge_match
         return handler
-    if settings.legacy_workflow_handlers_enabled:
-        legacy_handler = _LEGACY_HANDLER_MAP.get(payload.command_type)
-        if legacy_handler is not None:
-            return legacy_handler
-    raise ValueError(_LEGACY_NO_BRIDGE_MESSAGE)
+    raise ValueError(_NO_BRIDGE_MESSAGE)
 
 
 def execute_workflow_task(*, run_id: str, payload: WorkflowSubmitRequest, requested_at, event_factory) -> WorkflowExecutionResult:
@@ -92,11 +65,7 @@ def resolve_workflow_channel(payload: WorkflowSubmitRequest) -> str:
     if bridge_match is not None:
         _handler, channel = bridge_match
         return channel
-    if settings.legacy_workflow_handlers_enabled:
-        legacy_channel = _LEGACY_CHANNEL_MAP.get(payload.command_type)
-        if legacy_channel is not None:
-            return legacy_channel
-    raise ValueError(_LEGACY_NO_BRIDGE_MESSAGE)
+    raise ValueError(_NO_BRIDGE_MESSAGE)
 
 
 # M14 修复：队列查表化，避免 18 个 if/elif 分支

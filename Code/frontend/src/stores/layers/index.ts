@@ -84,24 +84,24 @@ function buildRealLayerDisplay(layer: ActiveLayer, item: RuntimeLayerLibraryItem
     metricValue,
     summary: providerSummary ?? jobLayer.resultView?.summary ?? jobLayer.reportSummary ?? jobLayer.message ?? item.description,
     statusLabel: jobLayer.status === 'succeeded'
-      ? (isSampleProvider ? (providerStatusLabel ?? '样板结果') : '真实数据')
+      ? (isSampleProvider ? (providerStatusLabel ?? '实验结果') : '真实数据')
       : jobLayer.status === 'failed'
         ? '数据异常'
         : jobLayer.status === 'cancelled'
           ? '任务已取消'
           : '任务处理中',
     trendLabel: jobLayer.status === 'succeeded'
-      ? (isSampleProvider ? '样板 provider 已执行，可用于联调验收' : '最新工作流结果已接入')
+      ? (isSampleProvider ? '实验 provider 已执行，可用于联调验收' : '最新工作流结果已接入')
       : jobLayer.status === 'failed'
         ? '最近一次运行失败'
         : '等待工作流返回结果',
-    sourceLabel: isSampleProvider && providerKey ? `样板 Provider · ${providerKey}` : item.sourceLabel,
+    sourceLabel: isSampleProvider && providerKey ? `实验 Provider · ${providerKey}` : item.sourceLabel,
     confidenceLabel,
     availabilityState: jobLayer.status === 'succeeded' ? 'ready' : jobLayer.status === 'failed' ? 'empty' : 'partial',
     availabilityLabel: jobLayer.status === 'succeeded' ? '完整数据' : jobLayer.status === 'failed' ? '数据异常' : '加载中',
     availabilityDescription: jobLayer.status === 'succeeded'
       ? (isSampleProvider
-        ? '样板 provider 已生成结果，可用于联调与界面验收，但不代表正式生产数据。'
+        ? '实验 provider 已生成结果，可用于联调与界面验收。'
         : (jobLayer.message || '工作流结果已生成。'))
       : jobLayer.status === 'failed'
         ? (jobLayer.diagnosticNotes?.[0] ?? '数据加载失败')
@@ -254,7 +254,7 @@ function resolveCategory(descriptor: RuntimeLayerDescriptor, fallbackCategory?: 
 
 function buildUpdateLabel(descriptor: RuntimeLayerDescriptor, fallback?: Pick<LayerCatalogItem, 'updateLabel'> | null) {
   if (fallback?.updateLabel) return fallback.updateLabel
-  if (descriptor.status === 'sample') return '样板工作流'
+  if (descriptor.status === 'sample') return '实验工作流'
   if (descriptor.is_realtime) return '实时更新'
   if (descriptor.supports_time) return '按时间维度'
   if (descriptor.status === 'placeholder') return '占位图层'
@@ -398,8 +398,8 @@ function buildAvailabilityState(layer: ActiveLayer, item: RuntimeLayerLibraryIte
   if (item.backendStatus === 'sample') {
     return {
       state: 'partial' as const,
-      label: '样板可运行',
-      description: item.runReadinessSummary ?? item.runReadinessNotes[0] ?? '当前为样板 provider 链路，可运行但不代表正式生产数据。',
+      label: '实验可运行',
+      description: item.runReadinessSummary ?? item.runReadinessNotes[0] ?? '当前为实验 provider 链路，可用于算法联调与验收。',
     }
   }
 
@@ -407,7 +407,7 @@ function buildAvailabilityState(layer: ActiveLayer, item: RuntimeLayerLibraryIte
     return {
       state: 'partial' as const,
       label: '占位图层',
-      description: item.description || '该图层当前仍为占位或样板产物。',
+      description: item.description || '该图层当前仍为占位产物，待数据源接入。',
     }
   }
 
@@ -681,12 +681,12 @@ export const useLayersStore = defineStore('layers', () => {
             ? '静态矢量边界叠加'
             : (isWeatherLayer
                 ? 'tile manager 已接入'
-                : (realDisplay.trendLabel ?? (item.backendStatus === 'sample' ? '样板 provider 链路已接入' : item.supportsTime ? '支持时间维度查询' : '课题组数据已接入'))),
+                : (realDisplay.trendLabel ?? (item.backendStatus === 'sample' ? '实验 provider 链路已接入' : item.supportsTime ? '支持时间维度查询' : '课题组数据已接入'))),
           statusLabel: layer.isAdminBoundary
             ? '静态数据'
             : (isWeatherLayer
                 ? '瓦片数据'
-                : (realDisplay.statusLabel ?? (item.backendStatus === 'sample' ? '样板 Provider' : item.backendStatus === 'placeholder' ? '占位图层' : '目录已接入'))),
+                : (realDisplay.statusLabel ?? (item.backendStatus === 'sample' ? '实验 Provider' : item.backendStatus === 'placeholder' ? '占位图层' : '目录已接入'))),
           updateLabel: layer.isAdminBoundary ? '静态数据' : item.updateLabel,
           sourceLabel: layer.isAdminBoundary ? '广东省市级边界' : (realDisplay.sourceLabel ?? item.sourceLabel),
           confidenceLabel: layer.isAdminBoundary ? '置信度 100%' : (realDisplay.confidenceLabel ?? '以课题组数据为准'),

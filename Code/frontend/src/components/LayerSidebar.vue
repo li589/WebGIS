@@ -89,7 +89,7 @@ function getCatalogSemanticNote(catalogId: string): string | null {
   const item = getCatalogItem(catalogId)
   if (!item) return null
   if (item.backendStatus === 'sample') {
-    return item.runReadinessSummary ?? item.runReadinessNotes[0] ?? '样板 provider 链路，可运行但不代表正式生产数据。'
+    return item.runReadinessSummary ?? item.runReadinessNotes[0] ?? '实验 provider 链路，可用于算法联调与验收。'
   }
   if (item.backendStatus === 'placeholder') {
     return item.runReadinessSummary ?? item.runReadinessNotes[0] ?? '占位图层，默认数据源尚未接入。'

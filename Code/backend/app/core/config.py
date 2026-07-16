@@ -198,12 +198,6 @@ class Settings:
     celery_task_time_limit: int = int(os.getenv("BACKEND_CELERY_TASK_TIME_LIMIT", "360"))
 
     # ---- Phase 1 工程治理开关 ----
-    # 是否允许无 bridge 匹配时回退到 legacy analysis/download 工作流处理器（默认关闭）
-    legacy_workflow_handlers_enabled: bool = os.getenv(
-        "BACKEND_LEGACY_WORKFLOW_HANDLERS_ENABLED", "false"
-    ).lower() == "true"
-    # 是否暴露 /demo/* 演示路由（默认关闭，返回 404）
-    demo_routes_enabled: bool = os.getenv("BACKEND_DEMO_ROUTES_ENABLED", "false").lower() == "true"
     # 远端数据源就绪检查时是否短超时 probe（stat）；默认只校验凭证可解析
     remote_readiness_probe: bool = os.getenv("BACKEND_REMOTE_READINESS_PROBE", "false").lower() == "true"
 

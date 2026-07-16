@@ -299,6 +299,31 @@ DATASET_REGISTRY: dict[str, DatasetInfo] = {
         crs="EPSG:4326",
         tags=("landscape", "metrics", "fragmentation"),
     ),
+    # ---- 工作流中间产物（daily_bundle / timeseries_bundle 输出，作为反演工作流输入）----
+    "daily_bundle_mat": DatasetInfo(
+        name="单日合成数据 (daily_bundle 输出)",
+        logical_name="daily_bundle_mat",
+        relative_path="Soil_Ecological_Data/DDCA/DDCA_DH/H",
+        description="daily_bundle 模块输出的单日合成 .mat 文件（含 TB/SM 等矩阵），可作为 inversion_daily 输入",
+        file_format="mat",
+        variables=("TB", "SM", "DH"),
+        time_range=("2015-04-01", "2016-11-13"),
+        resolution="9km",
+        crs="EPSG:4326",
+        tags=("daily_bundle", "inversion_input", "soil_moisture"),
+    ),
+    "timeseries_bundle_mat": DatasetInfo(
+        name="时间序列合成数据 (timeseries_bundle 输出)",
+        logical_name="timeseries_bundle_mat",
+        relative_path="InversionResults/smap_avg",
+        description="timeseries_bundle 模块输出的时间序列 .mat 文件，可作为 block_inversion / omega_block 输入",
+        file_format="mat",
+        variables=("OMEGA_AVG", "count_grid"),
+        time_range=None,
+        resolution="9km",
+        crs="EPSG:4326",
+        tags=("timeseries_bundle", "inversion_input", "omega"),
+    ),
     # ---- 站点数据 ----
     "ISMN_FLUXNET_MATCH": DatasetInfo(
         name="ISMN 与 FLUXNET 站点匹配",

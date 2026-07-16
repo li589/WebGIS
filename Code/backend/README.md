@@ -62,8 +62,7 @@
 - `GET /config/weather`、`GET|PUT /config/weather/providers*`
 
 **安全（2026-07-16）**：所有 `/config/*` 写操作与 `POST /import/raster` 需 `X-API-Key`（development 且未启用 keys 时可旁路）。  
-鉴权密钥 = `backend_auth` DB 覆盖 env（`effective_config`）。非 development 必须配置 `BACKEND_GEE_CREDENTIALS_ENCRYPTION_KEY`。  
-开关：`BACKEND_LEGACY_WORKFLOW_HANDLERS_ENABLED`、`BACKEND_DEMO_ROUTES_ENABLED` 默认 `false`。
+鉴权密钥 = `backend_auth` DB 覆盖 env（`effective_config`）。非 development 必须配置 `BACKEND_GEE_CREDENTIALS_ENCRYPTION_KEY`。
 
 ### 算法 / Provider / Artifact / 导入 / GEE
 

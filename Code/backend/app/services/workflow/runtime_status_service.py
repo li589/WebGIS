@@ -141,21 +141,6 @@ class RuntimeStatusService:
                 },
             ),
             BackendServiceStatus(
-                service_name="analysis_workflow_service",
-                health=ServiceHealth.ok,
-                message="分析工作流服务可用。",
-                updated_at=now,
-                details={
-                    "execution_mode": "sync_or_provider",
-                    "result_inline_max_bytes": settings.result_inline_max_bytes,
-                    "provider_max_hotspots": settings.provider_max_hotspots,
-                    "provider_max_series_points": settings.provider_max_series_points,
-                    "provider_table_chunk_size": settings.provider_table_chunk_size,
-                    "provider_series_chunk_size": settings.provider_series_chunk_size,
-                    "object_store_backend": settings.object_store_backend,
-                },
-            ),
-            BackendServiceStatus(
                 service_name="python_provider_bridge_service",
                 health=ServiceHealth.ok,
                 message="Python 算法桥接服务可用。",
@@ -204,20 +189,6 @@ class RuntimeStatusService:
                         "heavy": settings.workflow_queue_weather_heavy,
                         "batch": settings.workflow_queue_weather_batch,
                     },
-                },
-            ),
-            BackendServiceStatus(
-                service_name="download_workflow_service",
-                health=ServiceHealth.ok,
-                message="下载工作流服务可用。",
-                updated_at=now,
-                details={
-                    "dispatch_channel": "download",
-                    "download_realtime_queue": settings.workflow_queue_download_realtime,
-                    "download_standard_queue": settings.workflow_queue_download_standard,
-                    "cache_dir": settings.cache_dir,
-                    "cache_default_ttl_seconds": settings.cache_default_ttl_seconds,
-                    "cache_stats": self._collect_cache_stats(),
                 },
             ),
             BackendServiceStatus(

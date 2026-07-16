@@ -28,6 +28,9 @@ export default defineConfig(({ mode }) => {
         '/overlays': { target: apiTarget, changeOrigin: true },
         '/import': { target: apiTarget, changeOrigin: true },
       },
+      allowedHosts: [
+        'geoflow.cgdas.dpdns.org'
+      ]
     },
     build: {
       // MapLibre is large even when isolated, so raise the warning threshold

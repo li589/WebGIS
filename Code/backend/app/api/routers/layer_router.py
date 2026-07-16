@@ -1,11 +1,9 @@
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Any
 
-from fastapi import APIRouter, HTTPException, Query, Response, status
+from fastapi import APIRouter, HTTPException, Query, Response
 
-from app.core.config import settings
 from app.services.coordinate_transform_service import transform_point
-from app.services.demo_snapshots import get_demo_layer_snapshot, list_demo_layer_snapshots
 from app.services.layer_catalog import get_layer_catalog
 from app.services.overlay_registry import (
     get_overlay_spec,
@@ -15,19 +13,10 @@ from app.services.overlay_registry import (
 )
 from app.services.workflow_request_resolver import describe_layer_run_readiness
 from shared.contracts.api_contracts import (
-    DemoLayerSnapshot,
-    DemoLayerSnapshotsResponse,
     LayerCatalogResponse,
 )
 
 router = APIRouter()
-
-
-def _mark_compat_response(response: Response, *, replacement: str, status_label: str) -> None:
-    response.headers["Deprecation"] = "true"
-    response.headers["X-Compat-Status"] = status_label
-    response.headers["X-Replacement-Path"] = replacement
-    response.headers["Warning"] = f'299 - "Deprecated compatibility endpoint. Prefer {replacement}."'
 
 
 @router.get("/layers", tags=["catalog"], response_model=LayerCatalogResponse)
@@ -58,28 +47,6 @@ def list_layers() -> LayerCatalogResponse:
             )
         )
     return LayerCatalogResponse(items=items)
-
-
-def _require_demo_routes_enabled() -> None:
-    if not settings.demo_routes_enabled:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Demo routes are disabled.")
-
-
-@router.get("/demo/layers/snapshots", tags=["demo"], response_model=DemoLayerSnapshotsResponse)
-def list_demo_snapshots(response: Response, hour: float = 12) -> DemoLayerSnapshotsResponse:
-    _require_demo_routes_enabled()
-    _mark_compat_response(response, replacement="/layers + /workflow-runs", status_label="soft-offline-demo")
-    return list_demo_layer_snapshots(hour)
-
-
-@router.get("/demo/layers/{layer_id}/snapshot", tags=["demo"], response_model=DemoLayerSnapshot)
-def get_demo_snapshot(response: Response, layer_id: str, hour: float = 12) -> DemoLayerSnapshot:
-    _require_demo_routes_enabled()
-    _mark_compat_response(response, replacement="/layers + /workflow-runs/{run_id}/view", status_label="soft-offline-demo")
-    snapshot = get_demo_layer_snapshot(layer_id, hour)
-    if snapshot is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Demo layer not found: {layer_id}")
-    return snapshot
 
 
 @router.get("/geo/transform", tags=["geo"])

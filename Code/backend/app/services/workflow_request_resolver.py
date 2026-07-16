@@ -144,6 +144,30 @@ def describe_layer_run_readiness(layer_id: str) -> dict[str, Any] | None:
     }
 
 
+@lru_cache(maxsize=1)
+def _load_module_template_map():
+    """加载 Python provider 的 module request templates（含手工表 + 自动推导）。
+
+    返回 {module_name: RequestTemplateSpec} 字典。若 provider root 不存在或导入失败返回空 dict。
+    """
+    provider_root = Path(settings.python_provider_root)
+    if not provider_root.exists():
+        return {}
+    try:
+        with _python_provider_import_path(provider_root):
+            deriver = importlib.import_module("contracts.template_deriver")
+            return deriver.list_module_templates()
+    except Exception:
+        logger.debug("Failed to load module templates from python provider", exc_info=True)
+        return {}
+
+
+def _get_module_request_template(module_name: str):
+    """获取指定 module 的 RequestTemplateSpec，未找到返回 None。"""
+    templates = _load_module_template_map()
+    return templates.get(module_name)
+
+
 def _populate_python_provider_request(*, payload: WorkflowSubmitRequest, descriptor) -> WorkflowSubmitRequest:
     if not descriptor.module_name:
         return payload
@@ -164,10 +188,30 @@ def _populate_python_provider_request(*, payload: WorkflowSubmitRequest, descrip
 
     datasource_selection = _normalize_request(algorithm_request.get("datasource_selection"))
     data_access_requests = _normalize_request(datasource_selection.get("_data_access_requests"))
-    for dataset_name, request_payload in _build_default_data_access_requests(descriptor.default_data_access_sources).items():
+    default_data_access = _build_default_data_access_requests(descriptor.default_data_access_sources)
+    for dataset_name, request_payload in default_data_access.items():
         data_access_requests.setdefault(dataset_name, request_payload)
     if data_access_requests:
         datasource_selection["_data_access_requests"] = data_access_requests
+
+    # 根据模板的 accepted_data_access_by_required_key 把 dataset URI 映射到 required_key
+    # 修复：模板验证检查 datasource_selection 中有 input_dir 等键，
+    # 但 _data_access_requests 中用的是 dataset_name（如 NDVI_16DAY_RASTER）。
+    # 需要把解析到的 URI 也设置到 datasource_selection[required_key] 中。
+    template = _get_module_request_template(descriptor.module_name)
+    if template is not None and template.accepted_data_access_by_required_key:
+        for required_key, accepted_datasets in template.accepted_data_access_by_required_key.items():
+            if datasource_selection.get(required_key) is not None:
+                continue  # 用户已显式提供
+            for dataset_name in accepted_datasets:
+                da_request = data_access_requests.get(dataset_name)
+                if da_request and isinstance(da_request, dict):
+                    selector = da_request.get("selector") or {}
+                    uris = selector.get("uris") or []
+                    if uris:
+                        datasource_selection[required_key] = uris[0]
+                        break
+
     if datasource_selection:
         algorithm_request["datasource_selection"] = datasource_selection
 

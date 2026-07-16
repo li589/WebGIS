@@ -149,9 +149,11 @@ class WorkflowServicesTests(unittest.TestCase):
             self.assertEqual(persisted_algorithm_request["task_type"], "ndvi_daily")
 
     def test_submit_workflow_auto_populates_python_provider_defaults_for_smap_and_fy_layers(self) -> None:
+        # P2.2 修复后 fy-mwri 的首个候选数据源从 “fy” 扩展为 “FY_MWRI_HDF”
+        # （见 layer_catalog.py 中 fy-mwri.default_data_access_sources）。
         expected_layers = {
             "smap-soil": ("smap_daily", "SMAP_SPL3SMP_E", "D:/prepared/SMAP_L3"),
-            "fy-mwri": ("fy_daily", "FY_MWRI_HDF", "D:/prepared/fy"),
+            "fy-mwri": ("fy_daily", "FY_MWRI_HDF", "D:/prepared/FY_MWRI_HDF"),
         }
 
         with tempfile.TemporaryDirectory() as tmpdir:

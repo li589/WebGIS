@@ -41,17 +41,17 @@ function readPersistedState(panelKey: string | undefined): PersistedPanelState |
 }
 
 const props = withDefaults(defineProps<PanelProps>(), {
-  draggable: true,
-  collapsible: true,
-  defaultCollapsed: false,
-  maxOffsetX: 140,
-  maxOffsetY: 70,
-  defaultWidth: 720,
-  defaultHeight: 190,
-  minWidth: 600,
-  minHeight: 170,
-  maxWidth: 980,
-  maxHeight: 248,
+  draggable: true,        // 允许拖拽
+  collapsible: true,      // 允许折叠
+  defaultCollapsed: false, // 默认展开
+  maxOffsetX: 140,        // 最大水平偏移
+  maxOffsetY: 70,         // 最大垂直偏移
+  defaultWidth: 720,      // 默认宽度
+  defaultHeight: 180,     // 默认高度（展开时）
+  minWidth: 600,          // 最小宽度
+  minHeight: 170,         // 最小高度
+  maxWidth: 980,          // 最大宽度
+  maxHeight: 240,         // 最大高度
 })
 
 const persistedState = readPersistedState(props.panelKey)
@@ -185,7 +185,7 @@ onBeforeUnmount(() => {
 </template>
 
 <style scoped>
-.timeline-anchor{position:relative;width:100%;height:100%;display:inline-block;pointer-events:auto;will-change:transform;transition:transform .18s cubic-bezier(.25,.46,.45,.94)}
+.timeline-anchor{position:relative;width:100%;height:100%;display:block;pointer-events:auto;will-change:transform;transition:transform .18s cubic-bezier(.25,.46,.45,.94)}
 .timeline-panel{display:flex;flex-direction:column;overflow:hidden;box-sizing:border-box;width:100%;border:1px solid rgba(155,180,210,.18);border-radius:1rem;background:linear-gradient(180deg, rgba(18, 28, 46, 0.72), rgba(8, 15, 28, 0.52)), radial-gradient(circle at top left, rgba(255,255,255,0.08), transparent 34%);box-shadow:inset 0 1px 0 rgba(255,255,255,.08), inset 0 -1px 0 rgba(255,255,255,.03), 0 14px 30px rgba(1,8,16,.14);backdrop-filter:blur(14px) saturate(1.08);-webkit-backdrop-filter:blur(14px) saturate(1.08)}
 .timeline-header{display:flex;align-items:center;justify-content:space-between;gap:.5rem;min-height:2.3rem;padding:.26rem .36rem;border-bottom:1px solid rgba(136,192,255,.12);background:linear-gradient(180deg, rgba(18, 28, 46, 0.74), rgba(8, 18, 33, 0.62));backdrop-filter:blur(12px) saturate(1.08);-webkit-backdrop-filter:blur(12px) saturate(1.08);box-shadow:inset 0 1px 0 rgba(255,255,255,.08);cursor:grab;user-select:none}
 .timeline-header-dragging{cursor:grabbing}

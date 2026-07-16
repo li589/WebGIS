@@ -24,7 +24,7 @@ const layersStore = useLayersStore()
 const logStore = useLogStore()
 void layersStore.ensureRuntimeLayerCatalog()
 
-const { tileSourceId, currentHour, hourLabel } = storeToRefs(uiStore)
+const { tileSourceId, currentHour, currentDate, hourLabel, isPlaying } = storeToRefs(uiStore)
 const { selectedLayerDisplay, activeLayerCount, workflowError, isSubmitting, pointWeather, pointWeatherLoading, pointWeatherError } = storeToRefs(layersStore)
 
 const activeLayer = computed(() => {
@@ -126,6 +126,19 @@ function handleTimelineStep(delta: number) {
 function handleTimelineChange(hour: number) {
   uiStore.setHour(hour)
   logStore.logOperation('timeline-change', `时间轴跳转到 ${String(hour).padStart(2, '0')}:00`)
+}
+
+function handleTimelineDateChange(date: Date) {
+  uiStore.setDate(date)
+  const y = date.getFullYear()
+  const m = String(date.getMonth() + 1).padStart(2, '0')
+  const d = String(date.getDate()).padStart(2, '0')
+  logStore.logOperation('timeline-date-change', `日期切换到 ${y}-${m}-${d}`)
+}
+
+function handleTimelineTogglePlay() {
+  uiStore.togglePlay()
+  logStore.logOperation('timeline-play', isPlaying.value ? '时间轴播放' : '时间轴暂停')
 }
 
 function handleVisibleHotspotsChange(hotspots: LayerHotspot[]) {
@@ -341,21 +354,25 @@ function buildFallbackActiveLayer(): ActiveLayerDisplay {
           :max-offset-x="140"
           :max-offset-y="70"
           :default-width="720"
-          :default-height="207"
+          :default-height="180"
           :min-width="460"
           :min-height="175"
           :max-width="980"
-          :max-height="248"
+          :max-height="220"
         >
           <TimelineScrubber
             :current-hour="currentHour"
+            :current-date="currentDate"
             :hour-label="hourLabel"
             :accent-color="activeLayer.accentColor"
             :availability-label="activeLayer.availabilityLabel"
             :observation-time-label="activeLayer.observationTimeLabel"
             :timeline-segments="timelineSegments"
+            :is-playing="isPlaying"
             @step="handleTimelineStep"
             @change-hour="handleTimelineChange"
+            @change-date="handleTimelineDateChange"
+            @toggle-play="handleTimelineTogglePlay"
           />
         </TimelinePanel>
       </div>

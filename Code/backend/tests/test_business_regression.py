@@ -346,24 +346,16 @@ def test_workflow_dispatch() -> None:
     check("Weather 调度 — batch queue=weather-batch",
           resolve_workflow_queue(weather_batch) == settings.workflow_queue_weather_batch)
 
-    # 4e. download 请求 — legacy 关闭时无 bridge 匹配，应拒绝
+    # 4e. download 请求 — 无 bridge 匹配，应拒绝
     download_payload = WorkflowSubmitRequest(
         command_type=WorkflowCommandType.layer_preview,
         client=ClientIdentity(),
     )
     try:
         resolve_workflow_channel(download_payload)
-        check("Download 调度 — legacy 关闭应拒绝", False, "expected ValueError")
+        check("Download 调度 — 无 bridge 匹配应拒绝", False, "expected ValueError")
     except ValueError:
-        check("Download 调度 — legacy 关闭应拒绝", True)
-
-    # 4e-legacy. download 请求 + legacy 开启 → channel=download
-    from dataclasses import replace
-    from unittest.mock import patch
-
-    legacy_settings = replace(settings, legacy_workflow_handlers_enabled=True)
-    with patch("app.tasks.workflow_tasks.settings", legacy_settings):
-        check("Download 调度 — channel=download (legacy)", resolve_workflow_channel(download_payload) == "download")
+        check("Download 调度 — 无 bridge 匹配应拒绝", True)
 
     # 4f. 优先级：GEE > Weather > algorithm > analysis
     # GEE 和 Weather 同时存在时，GEE 优先
