@@ -2,11 +2,10 @@
  * 工作流定义 API 服务
  *
  * 提供与后端 /workflow-definitions 端点的交互。
- * 遵循项目原生 fetch + resolveApiUrl 模式（不使用 axios）。
+ * 遵循项目原生 fetch + resolveApiUrl 模式（不使用 axios）Sprint 3.6 后由 _http.ts 统一实现。
  */
-import { resolveApiUrl } from './runtime-api'
-import { withWriteAuthHeaders } from './backend-auth'
-import { useUiLoadingStore } from '../stores/ui-loading'
+// Sprint 3.6: requestJson 已抽取到 _http.ts 统一维护
+import { requestJson } from './_http'
 
 // ─── 类型定义 ──────────────────────────────────────────────────────────────
 export interface NodePortSpec {
@@ -90,57 +89,8 @@ export interface WorkflowDefinition {
 }
 
 // ─── API 调用层 ─────────────────────────────────────────────────────────────
-// 复用 runtime-api.ts 中 requestJson 的实现模式：fetch + resolveApiUrl + withWriteAuthHeaders
+// Sprint 3.6: requestJson 实现已抽取到 _http.ts，此处直接复用
 const BASE = '/workflow-definitions'
-
-async function requestJson<T>(path: string, init?: RequestInit & { timeoutMs?: number; silent?: boolean }): Promise<T> {
-  const { headers: initHeaders, timeoutMs, silent, ...restInit } = init ?? {}
-  const method = (restInit.method ?? 'GET').toString()
-  const mergedHeaders = withWriteAuthHeaders(
-    {
-      'Content-Type': 'application/json',
-      ...(initHeaders as Record<string, string> | undefined),
-    },
-    method,
-  )
-
-  const controller = new AbortController()
-  const timeoutId = window.setTimeout(() => controller.abort(), timeoutMs ?? 30000)
-
-  // 全局 loading 管理：非 silent 请求触发 loading 动效
-  const loading = useUiLoadingStore()
-  if (!silent) {
-    loading.show()
-  }
-
-  try {
-    const response = await fetch(resolveApiUrl(path), {
-      ...restInit,
-      headers: mergedHeaders,
-      signal: restInit.signal ?? controller.signal,
-    })
-
-    if (!response.ok) {
-      let errorDetail = ''
-      try {
-        const errorBody = await response.json()
-        errorDetail = errorBody?.detail || errorBody?.error || JSON.stringify(errorBody)
-      } catch {
-        errorDetail = await response.text().catch(() => '')
-      }
-      throw new Error(`Request failed: ${response.status} ${path}${errorDetail ? ` - ${errorDetail}` : ''}`)
-    }
-
-    // 处理 204 No Content 等无响应体情况
-    if (response.status === 204) return undefined as T
-    return (await response.json()) as T
-  } finally {
-    window.clearTimeout(timeoutId)
-    if (!silent) {
-      loading.hide()
-    }
-  }
-}
 
 // ─── 公开 API 函数 ──────────────────────────────────────────────────────────
 
@@ -191,7 +141,8 @@ export async function updateWorkflowDefinition(
 }
 
 export async function deleteWorkflowDefinition(workflowId: string): Promise<void> {
-  await requestJson<void>(`${BASE}/${workflowId}`, { method: 'DELETE' })
+  // DELETE 端点返回 204 No Content；allowEmpty=true 显式声明允许空响应
+  await requestJson<void>(`${BASE}/${workflowId}`, { method: 'DELETE', allowEmpty: true })
 }
 
 export async function duplicateWorkflowDefinition(

@@ -12,74 +12,11 @@ import type {
   WeatherPointResponse,
   WorkflowSubmitRequest,
 } from '../types/api-reexports'
-import { withWriteAuthHeaders } from './backend-auth'
-import { useUiLoadingStore } from '../stores/ui-loading'
+// Sprint 3.6: requestJson / resolveApiUrl 已抽取到 _http.ts 统一维护
+import { requestJson, resolveApiUrl } from './_http'
 
-function getApiBaseUrl() {
-  // 开发模式走 Vite proxy（相对路径），避免 CORS 问题
-  if (import.meta.env.DEV) return ''
-  return import.meta.env.VITE_API_BASE_URL?.replace(/\/$/, '') ?? ''
-}
-
-export function resolveApiUrl(pathOrUrl: string) {
-  if (/^https?:\/\//i.test(pathOrUrl)) return pathOrUrl
-  const normalizedPath = pathOrUrl.startsWith('/') ? pathOrUrl : `/${pathOrUrl}`
-  return `${getApiBaseUrl()}${normalizedPath}`
-}
-
-async function requestJson<T>(path: string, init?: RequestInit & { timeoutMs?: number; silent?: boolean }): Promise<T> {
-  const { headers: initHeaders, timeoutMs, silent, ...restInit } = init ?? {}
-  const method = (restInit.method ?? 'GET').toString()
-  const mergedHeaders: Record<string, string> = withWriteAuthHeaders(
-    {
-      'Content-Type': 'application/json',
-      ...(initHeaders as Record<string, string> | undefined),
-    },
-    method,
-  )
-
-  const controller = new AbortController()
-  const timeoutId = window.setTimeout(
-    () => controller.abort(),
-    timeoutMs ?? 30000,
-  )
-
-  // 全局 loading 管理：非 silent 请求触发 loading 动效
-  // 300ms 延迟显示机制确保短请求不闪烁（在 store 内部实现）
-  const loading = useUiLoadingStore()
-  if (!silent) {
-    loading.show()
-  }
-
-  try {
-    const response = await fetch(resolveApiUrl(path), {
-      ...restInit,
-      headers: mergedHeaders,
-      signal: restInit.signal ?? controller.signal,
-    })
-
-    if (!response.ok) {
-      // 修复：解析结构化错误体，而非丢弃
-      let errorDetail = ''
-      try {
-        const errorBody = await response.json()
-        errorDetail = errorBody?.user_message || errorBody?.error || errorBody?.detail || JSON.stringify(errorBody)
-      } catch {
-        errorDetail = await response.text().catch(() => '')
-      }
-      throw new Error(`Request failed: ${response.status} ${path}${errorDetail ? ` - ${errorDetail}` : ''}`)
-    }
-
-    const body = (await response.json()) as T
-    return body
-  } finally {
-    window.clearTimeout(timeoutId)
-    // 对应 try 前的 loading.show()，非 silent 请求完成后隐藏 loading
-    if (!silent) {
-      loading.hide()
-    }
-  }
-}
+// 向后兼容：workflow-definition-api.ts / weather-tile-api.ts 等模块从此处导入 resolveApiUrl
+export { resolveApiUrl }
 
 export function submitWorkflow(payload: WorkflowSubmitRequest) {
   return requestJson<WorkflowAcceptedResponse>('/workflow-runs', {

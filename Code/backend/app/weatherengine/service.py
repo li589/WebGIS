@@ -540,24 +540,7 @@ class WeatherEngineService:
         spec,
         metric_value: float | int | str | None,
     ) -> tuple[list[WorkflowResultReference], list[str]]:
-        # Sprint 2.3: 先查 layer_outputs 策略注册表；命中且返回非 None 则直接用策略结果。
-        # 未命中或策略返回 None 时，fallback 到下面的原 if/elif 链（无行为变更）。
-        # Sprint 3 起逐个迁移分支到策略类，注册后即可替代原 if/elif 分支。
         from app.weatherengine.layer_outputs import get_strategy as _get_layer_output_strategy
-
-        _strategy = _get_layer_output_strategy(spec.layer_id)
-        if _strategy is not None:
-            _strategy_result = _strategy.build(
-                service=self,
-                run_id=run_id,
-                payload=payload,
-                requested_at=requested_at,
-                weather=weather,
-                spec=spec,
-                metric_value=metric_value,
-            )
-            if _strategy_result is not None:
-                return _strategy_result
 
         point_feature = {
             "type": "Feature",
@@ -573,148 +556,35 @@ class WeatherEngineService:
         diagnostics: list[str] = []
         geojson_ref: WorkflowResultReference | None = None
         cog_ref: WorkflowResultReference | None = None
+        bbox = None  # 由策略填充，公共尾部用于 cog_bbox 渲染
 
-        if spec.layer_id == "wind-field" or spec.layer_id.startswith("wind-field-"):
-            bbox = self._resolve_render_bbox(payload, weather.latitude, weather.longitude)
-            try:
-                grid_data, cache_status, resolution = self._fetch_layer_grid_data(bbox=bbox, spec=spec)
-                feature_collection = self.build_wind_geojson_from_grid(grid_data, spec.layer_id)
-                logger.info(
-                    "[WindDebug] build_wind_geojson_from_grid: layer=%s bbox=%s features=%d cache=%s resolution=%s",
-                    spec.layer_id, bbox, len(feature_collection['features']), cache_status, resolution,
-                )
-            except (HTTPError, URLError, OSError, KeyError, ValueError) as exc:
-                logger.warning("[WindDebug] Grid fetch failed, falling back to simulated data: %s", exc)
-                feature_collection = self.build_wind_geojson(weather, bbox)
-            geojson_ref = result_storage_service.create_artifact_result_ref(
+        # Sprint 3: 查询 layer_outputs 策略注册表（6 个 layer_id 均已注册）。
+        # 策略返回 LayerOutputResult 中间产物，service 负责公共前后逻辑（无行为变更）。
+        _strategy = _get_layer_output_strategy(spec.layer_id)
+        if _strategy is not None:
+            _result = _strategy.build(
+                service=self,
                 run_id=run_id,
-                result_id=f"wind-geojson-{uuid4().hex[:10]}",
-                result_kind=ResultKind.file,
-                title=f"{spec.display_name} GeoJSON Layer",
-                mime_type="application/geo+json",
-                updated_at=requested_at,
-                payload=feature_collection,
-            )
-            logger.info(
-                "[WindDebug] artifact created: result_id=%s resource_url=%s resource_key=%s",
-                geojson_ref.result_id, geojson_ref.resource_url, geojson_ref.resource_key,
-            )
-            result_refs.append(geojson_ref)
-            diagnostics.append(f"wind_geojson_points={len(feature_collection['features'])}")
-            diagnostics.append(f"wind_height={feature_collection['features'][0]['properties']['height'] if feature_collection['features'] else '10m'}")
-        elif spec.layer_id == "temperature" or spec.layer_id.startswith("temperature-"):
-            bbox = self._resolve_render_bbox(payload, weather.latitude, weather.longitude)
-            try:
-                grid_data, _, _ = self._fetch_layer_grid_data(bbox=bbox, spec=spec)
-                feature_collection = self.build_temperature_geojson_from_grid(grid_data, spec.layer_id)
-            except (HTTPError, URLError, OSError, KeyError, ValueError):
-                feature_collection = self.build_temperature_geojson(weather, bbox)
-            geojson_ref = result_storage_service.create_artifact_result_ref(
-                run_id=run_id,
-                result_id=f"temperature-geojson-{uuid4().hex[:10]}",
-                result_kind=ResultKind.file,
-                title=f"{spec.display_name} GeoJSON Layer",
-                mime_type="application/geo+json",
-                updated_at=requested_at,
-                payload=feature_collection,
-            )
-            result_refs.append(geojson_ref)
-            diagnostics.append(f"temperature_geojson_cells={len(feature_collection['features'])}")
-            diagnostics.append(f"temperature_height={feature_collection['features'][0]['properties'].get('height', '2m') if feature_collection['features'] else '2m'}")
-
-            cog_ref, cog_diagnostics = self._build_temperature_cog_artifact(
-                run_id=run_id,
+                payload=payload,
                 requested_at=requested_at,
                 weather=weather,
-                bbox=bbox,
                 spec=spec,
+                metric_value=metric_value,
             )
-            if cog_ref is not None:
-                result_refs.append(cog_ref)
-            diagnostics.extend(cog_diagnostics)
-        elif spec.layer_id == "precipitation":
-            bbox = self._resolve_render_bbox(payload, weather.latitude, weather.longitude)
-            try:
-                grid_data, _, _ = self._fetch_layer_grid_data(bbox=bbox, spec=spec)
-                feature_collection = self.build_precipitation_geojson_from_grid(grid_data, spec.layer_id)
-            except (HTTPError, URLError, OSError, KeyError, ValueError):
-                feature_collection = self.build_precipitation_geojson(weather, bbox)
-            geojson_ref = result_storage_service.create_artifact_result_ref(
-                run_id=run_id,
-                result_id=f"precipitation-geojson-{uuid4().hex[:10]}",
-                result_kind=ResultKind.file,
-                title=f"{spec.display_name} GeoJSON Layer",
-                mime_type="application/geo+json",
-                updated_at=requested_at,
-                payload=feature_collection,
-            )
-            result_refs.append(geojson_ref)
-            diagnostics.append(f"precipitation_geojson_cells={len(feature_collection['features'])}")
+            if _result is not None:
+                geojson_ref = _result.geojson_ref
+                cog_ref = _result.cog_ref
+                bbox = _result.bbox
+                diagnostics.extend(_result.diagnostics)
+                if geojson_ref is not None:
+                    result_refs.append(geojson_ref)
+                if cog_ref is not None:
+                    result_refs.append(cog_ref)
 
-            cog_ref, cog_diagnostics = self._build_precipitation_cog_artifact(
-                run_id=run_id,
-                requested_at=requested_at,
-                weather=weather,
-                bbox=bbox,
-                spec=spec,
-            )
-            if cog_ref is not None:
-                result_refs.append(cog_ref)
-            diagnostics.extend(cog_diagnostics)
-        elif spec.layer_id == "humidity":
-            bbox = self._resolve_render_bbox(payload, weather.latitude, weather.longitude)
-            try:
-                grid_data, _, _ = self._fetch_layer_grid_data(bbox=bbox, spec=spec)
-                feature_collection = self.build_humidity_geojson_from_grid(grid_data, spec.layer_id)
-            except (HTTPError, URLError, OSError, KeyError, ValueError):
-                feature_collection = self.build_humidity_geojson(weather, bbox)
-            geojson_ref = result_storage_service.create_artifact_result_ref(
-                run_id=run_id,
-                result_id=f"humidity-geojson-{uuid4().hex[:10]}",
-                result_kind=ResultKind.file,
-                title=f"{spec.display_name} GeoJSON Layer",
-                mime_type="application/geo+json",
-                updated_at=requested_at,
-                payload=feature_collection,
-            )
-            result_refs.append(geojson_ref)
-            diagnostics.append(f"humidity_geojson_cells={len(feature_collection['features'])}")
-        elif spec.layer_id == "pressure":
-            bbox = self._resolve_render_bbox(payload, weather.latitude, weather.longitude)
-            try:
-                grid_data, _, _ = self._fetch_layer_grid_data(bbox=bbox, spec=spec)
-                feature_collection = self.build_pressure_geojson_from_grid(grid_data, spec.layer_id)
-            except (HTTPError, URLError, OSError, KeyError, ValueError):
-                feature_collection = self.build_pressure_geojson(weather, bbox)
-            geojson_ref = result_storage_service.create_artifact_result_ref(
-                run_id=run_id,
-                result_id=f"pressure-geojson-{uuid4().hex[:10]}",
-                result_kind=ResultKind.file,
-                title=f"{spec.display_name} GeoJSON Layer",
-                mime_type="application/geo+json",
-                updated_at=requested_at,
-                payload=feature_collection,
-            )
-            result_refs.append(geojson_ref)
-            diagnostics.append(f"pressure_geojson_cells={len(feature_collection['features'])}")
-        elif spec.layer_id == "visibility":
-            bbox = self._resolve_render_bbox(payload, weather.latitude, weather.longitude)
-            try:
-                grid_data, _, _ = self._fetch_layer_grid_data(bbox=bbox, spec=spec)
-                feature_collection = self.build_visibility_geojson_from_grid(grid_data, spec.layer_id)
-            except (HTTPError, URLError, OSError, KeyError, ValueError):
-                feature_collection = self.build_visibility_geojson(weather, bbox)
-            geojson_ref = result_storage_service.create_artifact_result_ref(
-                run_id=run_id,
-                result_id=f"visibility-geojson-{uuid4().hex[:10]}",
-                result_kind=ResultKind.file,
-                title=f"{spec.display_name} GeoJSON Layer",
-                mime_type="application/geo+json",
-                updated_at=requested_at,
-                payload=feature_collection,
-            )
-            result_refs.append(geojson_ref)
-            diagnostics.append(f"visibility_geojson_cells={len(feature_collection['features'])}")
+        # Sprint 3: 原 6 个 if/elif 分支（wind-field/temperature/precipitation/
+        # humidity/pressure/visibility）已迁移到 layer_outputs 策略类，由上方
+        # _get_layer_output_strategy(spec.layer_id) 查询并构建。下方公共后部
+        # （result_refs.append weather-layer render hint + log + return）保持不变。
 
         result_refs.append(
             WorkflowResultReference(

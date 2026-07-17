@@ -33,6 +33,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Optional
 
+from app.services._sqlite_pool import SQLiteConnectionPool
+
 logger = logging.getLogger(__name__)
 
 
@@ -46,6 +48,9 @@ class WeatherProvidersRepository:
         self.db_path = Path(db_path)
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
         self._encryption_key = encryption_key
+        # Sprint 3.4: 使用连接池替代每次新建连接（WAL + busy_timeout + 连接复用）
+        # 原 _connect 中手动设置 PRAGMA journal_mode=WAL/synchronous=NORMAL 已由连接池统一管理
+        self._pool = SQLiteConnectionPool(self.db_path)
         self._init_schema()
 
     def _init_schema(self) -> None:
@@ -69,12 +74,9 @@ class WeatherProvidersRepository:
             )
             conn.commit()
 
-    def _connect(self) -> sqlite3.Connection:
-        conn = sqlite3.connect(str(self.db_path))
-        conn.row_factory = sqlite3.Row
-        conn.execute("PRAGMA journal_mode=WAL")
-        conn.execute("PRAGMA synchronous=NORMAL")
-        return conn
+    def _connect(self):
+        """获取连接上下文管理器（从连接池获取，自动 commit/rollback + 归还）。"""
+        return self._pool.connection()
 
     # ── 加密 / 解密（与 GeeCredentialsRepository 一致） ──────────────────────
 
