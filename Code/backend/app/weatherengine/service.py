@@ -68,6 +68,7 @@ class WeatherEngineService:
         forecast_hours: int = 6,
         place_name: str | None = None,
         cache_ttl_seconds: int | None = None,
+        provider_id: str | None = None,
     ) -> WeatherPointResponse:
         spec = WEATHER_LAYER_SPECS.get(layer_id)
         if spec is None:
@@ -84,6 +85,7 @@ class WeatherEngineService:
             forecast_hours=forecast_hours,
             ttl_seconds=cache_ttl_seconds,
             layer_spec=spec,
+            provider_id=provider_id,
         )
 
         return self.parse_forecast_to_point(
@@ -231,10 +233,10 @@ class WeatherEngineService:
         spec,
         error_message: str,
     ) -> WeatherPointResponse:
-        """当 Open-Meteo API 不可用时构建降级 WeatherPointResponse，保证网格渲染工作流可继续。"""
+        """当上游天气 API 不可用时构建降级 WeatherPointResponse，保证网格渲染工作流可继续。"""
         logger.info("[WeatherEngine] building fallback weather for layer=%s lat=%.4f lon=%.4f", layer_id, latitude, longitude)
         return WeatherPointResponse(
-            provider="open-meteo",
+            provider="unavailable",
             model=spec.default_model if hasattr(spec, 'default_model') else "icon_seamless",
             resolved_model=None,
             layer_id=layer_id,
@@ -292,7 +294,7 @@ class WeatherEngineService:
                 notes=list(spec.notes),
             ),
             diagnostics=[
-                f"provider=open-meteo",
+                "provider=unavailable",
                 f"layer_id={layer_id}",
                 f"cache_status=fallback",
                 f"render_mode={spec.paint_mode}",

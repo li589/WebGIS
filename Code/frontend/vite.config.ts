@@ -13,6 +13,8 @@ export default defineConfig(({ mode }) => {
         // 注意：前端 runtime-api.ts 中所有请求路径均无 /api 前缀，
         // 因此 proxy 改为拦截实际使用的路径（与 runtime-api.ts 保持一致）
         '/workflow-runs': { target: apiTarget, changeOrigin: true },
+        '/workflow-definitions': { target: apiTarget, changeOrigin: true },
+        '/workflow-node-templates': { target: apiTarget, changeOrigin: true },
         '/layers': { target: apiTarget, changeOrigin: true },
         '/weather': { target: apiTarget, changeOrigin: true },
         '/artifacts': { target: apiTarget, changeOrigin: true },

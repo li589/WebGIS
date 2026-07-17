@@ -1,3 +1,9 @@
+from __future__ import annotations
+
+import json
+import logging
+
+from app.core.config import settings
 from app.weatherengine.constants import WEATHER_LAYER_SPECS
 from shared.contracts.api_contracts import (
     BoundingBox,
@@ -10,6 +16,92 @@ from shared.contracts.api_contracts import (
     MapMode,
     TimeGranularity,
 )
+
+logger = logging.getLogger(__name__)
+
+
+def merge_remote_data_access_candidates(
+    sources: dict[str, list[str]],
+    remote_by_dataset: dict[str, list[str]],
+) -> dict[str, list[str]]:
+    """Prepend remote URIs ahead of local candidates (dedupe, preserve order)."""
+    if not remote_by_dataset:
+        return sources
+    merged: dict[str, list[str]] = {k: list(v) for k, v in sources.items()}
+    for dataset, uris in remote_by_dataset.items():
+        extras = [str(u).strip() for u in uris if str(u).strip()]
+        if not extras:
+            continue
+        existing = merged.get(dataset, [])
+        seen = set(extras)
+        merged[dataset] = extras + [c for c in existing if c not in seen]
+    return merged
+
+
+def _parse_remote_layer_data_uris() -> dict[str, dict[str, list[str]]]:
+    """Parse BACKEND_REMOTE_LAYER_DATA_URIS JSON → {layer_id: {dataset: [uri...]}}."""
+    raw = (settings.remote_layer_data_uris or "").strip()
+    if not raw:
+        return {}
+    try:
+        parsed = json.loads(raw)
+    except json.JSONDecodeError as exc:
+        logger.warning("Invalid BACKEND_REMOTE_LAYER_DATA_URIS JSON: %s", exc)
+        return {}
+    if not isinstance(parsed, dict):
+        logger.warning("BACKEND_REMOTE_LAYER_DATA_URIS must be a JSON object")
+        return {}
+    result: dict[str, dict[str, list[str]]] = {}
+    for layer_id, datasets in parsed.items():
+        if not isinstance(datasets, dict):
+            continue
+        cleaned: dict[str, list[str]] = {}
+        for dataset_name, uris in datasets.items():
+            if isinstance(uris, str):
+                uri_list = [uris]
+            elif isinstance(uris, list):
+                uri_list = [str(u) for u in uris]
+            else:
+                continue
+            cleaned[str(dataset_name)] = uri_list
+        if cleaned:
+            result[str(layer_id)] = cleaned
+    return result
+
+
+def _apply_remote_layer_data_uris(items: list[LayerDescriptor]) -> list[LayerDescriptor]:
+    """Inject env-configured SMB/SFTP URIs into matching layers without replacing local paths."""
+    overlay = _parse_remote_layer_data_uris()
+    if not overlay:
+        return items
+    updated: list[LayerDescriptor] = []
+    for item in items:
+        remote_by_dataset = overlay.get(item.layer_id)
+        if not remote_by_dataset:
+            updated.append(item)
+            continue
+        sources = merge_remote_data_access_candidates(
+            dict(item.default_data_access_sources or {}),
+            remote_by_dataset,
+        )
+        notes = list(item.run_readiness_notes or [])
+        note = (
+            f"已注入远端数据源候选（BACKEND_REMOTE_LAYER_DATA_URIS / {item.layer_id}）："
+            + ", ".join(
+                f"{ds}×{len(uris)}" for ds, uris in remote_by_dataset.items()
+            )
+        )
+        if note not in notes:
+            notes.insert(0, note)
+        updated.append(
+            item.model_copy(
+                update={
+                    "default_data_access_sources": sources,
+                    "run_readiness_notes": notes,
+                }
+            )
+        )
+    return updated
 
 
 def _layer_capabilities(
@@ -106,7 +198,7 @@ def get_layer_catalog() -> LayerCatalogResponse:
             layer_id="wind-field",
             dataset_key="wind_field",
             display_name="风场（10m）",
-            description="10 米高度风场粒子流图层，Open-Meteo 实时数据，支持时间轴联动与热点更新。",
+            description="10 米高度风场粒子流图层，天气引擎多源实时数据，支持时间轴联动与热点更新。",
             category="气象场",
             source_type=LayerSourceType.weather,
             render_type=LayerRenderType.vector,
@@ -239,7 +331,7 @@ def get_layer_catalog() -> LayerCatalogResponse:
             layer_id="precipitation",
             dataset_key="precipitation",
             display_name="降水",
-            description="小时降水图层，Open-Meteo 实时预报，可映射到 TiTiler、GEE 或融合降水产品。",
+            description="小时降水图层，天气引擎多源实时预报，可映射到 TiTiler、GEE 或融合降水产品。",
             category="灾害监测",
             source_type=LayerSourceType.weather,
             render_type=LayerRenderType.raster,
@@ -1028,7 +1120,7 @@ def get_layer_catalog() -> LayerCatalogResponse:
         ),
     ]
 
-    return LayerCatalogResponse(items=items)
+    return LayerCatalogResponse(items=_apply_remote_layer_data_uris(items))
 
 
 def get_layer_descriptor(layer_id: str) -> LayerDescriptor | None:

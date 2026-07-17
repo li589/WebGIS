@@ -2,11 +2,13 @@
 import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
 
 import type { ActiveLayerDisplay, LayerHotspot } from '../stores/layers/types'
-import type { WeatherPointResponse } from '../services/runtime-api'
+import type { WeatherPointResponse, WeatherProviderForLayer } from '../services/runtime-api'
+import { getWeatherProvidersForLayer } from '../services/runtime-api'
 import { useLayersStore } from '../stores/layers'
 import { useUiStore } from '../stores/ui'
 import { useLogStore } from '../stores/log'
 import { useWeatherTileManager } from '../stores/weather-tile-manager'
+import { useWeatherSourcePrefsStore } from '../stores/weather-source-prefs'
 import IntegrationStatusPanel from './info-panel/IntegrationStatusPanel.vue'
 import { buildResultDisplayModel } from './info-panel/result-adapter'
 import {
@@ -26,9 +28,15 @@ const layersStore = useLayersStore()
 const uiStore = useUiStore()
 const logStore = useLogStore()
 const weatherTileManager = useWeatherTileManager()
+const weatherSourcePrefs = useWeatherSourcePrefsStore()
 const overlaySymbologyStore = useOverlaySymbologyStore()
 const importActionHint = ref('')
 let importHintTimer: number | null = null
+
+const weatherProviderOptions = ref<WeatherProviderForLayer[]>([])
+const weatherProvidersLoading = ref(false)
+const weatherProvidersError = ref<string | null>(null)
+let weatherProvidersAbort: AbortController | null = null
 
 function flashImportHint(message: string) {
   importActionHint.value = message
@@ -77,6 +85,54 @@ const analysisSummary = computed(() => {
 })
 const jobReportSummary = computed(() => jobLayer.value?.resultView?.summary ?? jobLayer.value?.reportSummary ?? '')
 const isRealtimeWeatherLayer = computed(() => layersStore.isWeatherEngineLayer(displayLayer.value.catalogId))
+
+const selectedWeatherProvider = computed({
+  get: () => weatherSourcePrefs.getProvider(displayLayer.value.catalogId),
+  set: (value: string) => {
+    layersStore.applyWeatherProviderPreference(displayLayer.value.catalogId, value || 'auto')
+  },
+})
+
+watch(
+  () => (isRealtimeWeatherLayer.value ? displayLayer.value.catalogId : null),
+  async (catalogId) => {
+    if (weatherProvidersAbort) {
+      weatherProvidersAbort.abort()
+      weatherProvidersAbort = null
+    }
+    weatherProviderOptions.value = []
+    weatherProvidersError.value = null
+    if (!catalogId) return
+    weatherProvidersLoading.value = true
+    const controller = new AbortController()
+    weatherProvidersAbort = controller
+    try {
+      const resp = await getWeatherProvidersForLayer(catalogId, {
+        includeDisabled: true,
+        signal: controller.signal,
+      })
+      if (controller.signal.aborted) return
+      const providers = resp.providers ?? []
+      weatherProviderOptions.value = providers
+      // Drop stale pin: disabled / unsupported / unknown provider_id would 503 tiles.
+      const pref = weatherSourcePrefs.getProvider(catalogId)
+      if (pref && pref !== 'auto') {
+        const match = providers.find((p) => p.provider_id === pref)
+        if (!match || !match.enabled) {
+          layersStore.applyWeatherProviderPreference(catalogId, 'auto')
+        }
+      }
+    } catch (error) {
+      if (controller.signal.aborted) return
+      weatherProvidersError.value = error instanceof Error ? error.message : '无法加载天气源列表'
+    } finally {
+      if (!controller.signal.aborted) weatherProvidersLoading.value = false
+      if (weatherProvidersAbort === controller) weatherProvidersAbort = null
+    }
+  },
+  { immediate: true },
+)
+
 const weatherRenderHint = computed(
   () => displayLayer.value?.renderHint ?? jobLayer.value?.mapLayerPayload?.renderHint ?? props.pointWeather?.render_hint ?? null,
 )
@@ -426,6 +482,38 @@ const buttonLabel = computed(() => {
   return '运行工作流'
 })
 
+/** 从图层目录中查找关联的工作流名称和引擎 */
+const workflowMeta = computed(() => {
+  const cid = displayLayer.value.catalogId
+  if (!cid) return { name: '', engine: '', engineLabel: '', engineIcon: '' }
+  const libItem = layersStore.layerLibrary.find((l) => l.catalogId === cid)
+  const engine = libItem?.engine ?? displayLayer.value.engine ?? ''
+  const name = libItem?.workflowName ?? ''
+  const engineLabel = engine === 'weather' ? '天气引擎'
+    : engine === 'python_provider' ? 'Python 处理器'
+    : engine === 'gee' ? 'GEE'
+    : engine === 'general' ? '通用'
+    : ''
+  const engineIcon = engine === 'weather' ? '☀'
+    : engine === 'python_provider' ? '⚡'
+    : engine === 'gee' ? '🌍'
+    : '◈'
+  return { name, engine, engineLabel, engineIcon }
+})
+
+/** 工作流进度（0-100） */
+const workflowProgress = computed(() => {
+  if (!jobLayer.value) return 0
+  return Math.max(0, Math.min(100, jobLayer.value.progress ?? 0))
+})
+
+/** 最近事件消息 */
+const latestEventMessage = computed(() => {
+  const msgs = jobLayer.value?.eventMessages
+  if (!msgs || msgs.length === 0) return ''
+  return msgs[msgs.length - 1]
+})
+
 const analysisScrollEl = ref<HTMLElement | null>(null)
 const topSummaryEl = ref<HTMLElement | null>(null)
 // 待清理的 setTimeout 句柄（组件卸载时统一清理，避免回调在卸载后执行）
@@ -559,6 +647,10 @@ onBeforeUnmount(() => {
     window.clearTimeout(importHintTimer)
     importHintTimer = null
   }
+  if (weatherProvidersAbort) {
+    weatherProvidersAbort.abort()
+    weatherProvidersAbort = null
+  }
 })
 </script>
 
@@ -594,9 +686,30 @@ onBeforeUnmount(() => {
         {{ runBlockedReason }}
       </div>
 
+      <!-- 工作流元信息 -->
+      <div v-if="workflowMeta.engineLabel" class="workflow-meta-row">
+        <span class="wf-engine-icon" aria-hidden="true">{{ workflowMeta.engineIcon }}</span>
+        <span class="wf-engine-label">{{ workflowMeta.engineLabel }}</span>
+        <span v-if="workflowMeta.name" class="wf-name">{{ workflowMeta.name }}</span>
+      </div>
+
+      <!-- 工作流阶段 + 进度 -->
       <div class="workflow-stage-row">
         <span class="stage-pill" :class="workflowStage">{{ workflowStage }}</span>
-        <span class="stage-copy">逐步进入可用状态</span>
+        <span class="stage-copy">
+          {{ workflowStage === 'running' ? `${workflowProgress}%` : workflowStage === 'succeeded' ? '完成' : workflowStage === 'failed' ? '失败' : '逐步进入可用状态' }}
+        </span>
+      </div>
+
+      <!-- 进度条 -->
+      <div v-if="isWorkflowRunning || workflowStage === 'succeeded'" class="wf-progress-bar">
+        <div class="wf-progress-fill" :class="workflowStage" :style="{ width: workflowProgress + '%' }"></div>
+      </div>
+
+      <!-- 最近事件消息 -->
+      <div v-if="latestEventMessage" class="wf-event-msg">
+        <span class="wf-event-dot" :class="workflowStage"></span>
+        <span class="wf-event-text">{{ latestEventMessage }}</span>
       </div>
 
       <dl class="meta-list">
@@ -826,6 +939,28 @@ onBeforeUnmount(() => {
             <span class="pf-icon" aria-hidden="true">≋</span>
             {{ isParticleFlowEnabled ? '关闭粒子流' : '启用粒子流' }}
           </button>
+          <label v-if="isRealtimeWeatherLayer" class="weather-provider-row">
+            <span class="weather-provider-label">天气数据源</span>
+            <select
+              v-model="selectedWeatherProvider"
+              class="weather-provider-select"
+              :disabled="weatherProvidersLoading"
+              :title="weatherProvidersError || '自动按优先级选择已启用源；钉选后瓦片与点查均走该源'"
+            >
+              <option value="auto">自动（按优先级）</option>
+              <option
+                v-for="opt in weatherProviderOptions"
+                :key="opt.provider_id"
+                :value="opt.provider_id"
+                :disabled="!opt.enabled"
+              >
+                {{ opt.display_name }}{{ opt.enabled ? '' : '（未启用）' }}
+              </option>
+            </select>
+          </label>
+          <p v-if="isRealtimeWeatherLayer && weatherProvidersError" class="weather-provider-error">
+            {{ weatherProvidersError }}
+          </p>
         </div>
 
         <div v-if="styleRenderHint" class="weather-legend-row">
@@ -1053,7 +1188,8 @@ onBeforeUnmount(() => {
 .panel * { box-sizing: border-box; }
 .panel > *,
 .panel :is(.panel-topline,.panel-header,.workflow-error,.workflow-stage-row,.meta-list,.meta-list > div,.analysis-stream,.analysis-section,.job-report-card,.job-report-header,.job-progress-shell,.job-progress-row,.job-steps,.job-metrics,.job-metric-item,.weather-section-head,.weather-primary-card,.weather-row-grid,.weather-row-card,.weather-hourly-strip,.weather-hourly-card,.weather-style-panel,.weather-style-head,.weather-layer-controls,.weather-legend-row,.weather-legend-strip,.weather-style-meta,.hero-metric,.insight-grid,.insight-card,.learning-note,.protocol-details,.info-card,.info-card-head,.meta-grid,.meta-grid-row,.trend-body,.trend-current,.trend-indicator,.overlay-list li,.overlay-info,.hotspot-list li,.report-section-head) { min-width: 0; }
-.panel :is(p,span,strong,dd,dt,a,button,.job-message,.job-diagnostic-item,.trend-text,.overlay-name,.run-block-hint,.error-message,.job-report-copy,.weather-legend-stop,.weather-style-meta span) { overflow-wrap: anywhere; }
+.panel :is(p,span,strong,dd,dt,a,button,.job-message,.job-diagnostic-item,.trend-text,.overlay-name,.run-block-hint,.error-message,.job-report-copy,.weather-legend-stop,.weather-style-meta span,.wf-name,.wf-event-text) { overflow-wrap: anywhere; }
+.panel :is(.workflow-meta-row,.wf-progress-bar,.wf-event-msg) { min-width: 0; }
 .panel-topline { display: grid; gap: 0.38rem; padding: 0.12rem 0.06rem 0.02rem; min-width: 0; }
 .panel-header { display: flex; justify-content: space-between; align-items: flex-start; gap: 0.44rem; flex-wrap: wrap; min-width: 0; }
 .panel-header > div:first-child { flex: 1 1 8rem; min-width: 0; }
@@ -1071,6 +1207,23 @@ onBeforeUnmount(() => {
 .stage-pill.failed { background: rgba(255, 80, 80, 0.12); color: #ff9999; }
 .stage-pill.submitting { background: rgba(255, 196, 120, 0.12); color: #ffd38a; }
 .stage-copy { color: #7f93a9; font-size: 0.58rem; }
+.workflow-meta-row { display: flex; align-items: center; gap: 0.34rem; padding: 0.18rem 0.06rem; font-size: 0.58rem; color: #b6c9da; flex-wrap: wrap; }
+.wf-engine-icon { font-size: 0.72rem; line-height: 1; }
+.wf-engine-label { padding: 0.1rem 0.36rem; border-radius: 999px; background: rgba(90, 162, 255, 0.14); color: #d8f3ff; font-size: 0.55rem; }
+.wf-name { color: #9eb3c8; font-size: 0.56rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 100%; }
+.wf-progress-bar { position: relative; height: 4px; border-radius: 999px; background: rgba(148, 163, 184, 0.14); overflow: hidden; }
+.wf-progress-fill { position: absolute; inset: 0 auto 0 0; border-radius: 999px; transition: width 0.45s ease; background: rgba(148, 163, 184, 0.4); }
+.wf-progress-fill.running, .wf-progress-fill.queued { background: linear-gradient(90deg, rgba(90, 213, 255, 0.55), rgba(90, 213, 255, 0.95)); }
+.wf-progress-fill.succeeded { background: linear-gradient(90deg, rgba(114, 255, 207, 0.55), rgba(114, 255, 207, 0.95)); }
+.wf-progress-fill.failed { background: linear-gradient(90deg, rgba(255, 80, 80, 0.55), rgba(255, 80, 80, 0.95)); }
+.wf-progress-fill.submitting { background: linear-gradient(90deg, rgba(255, 196, 120, 0.55), rgba(255, 196, 120, 0.95)); }
+.wf-event-msg { display: flex; align-items: flex-start; gap: 0.32rem; padding: 0.18rem 0.06rem; font-size: 0.55rem; color: #8aa0b6; line-height: 1.4; }
+.wf-event-dot { flex: 0 0 auto; width: 6px; height: 6px; border-radius: 50%; margin-top: 0.22rem; background: rgba(148, 163, 184, 0.5); }
+.wf-event-dot.running, .wf-event-dot.queued { background: #5ad5ff; box-shadow: 0 0 6px rgba(90, 213, 255, 0.6); }
+.wf-event-dot.succeeded { background: #72ffcf; }
+.wf-event-dot.failed { background: #ff5050; }
+.wf-event-dot.submitting { background: #ffc478; }
+.wf-event-text { flex: 1 1 auto; min-width: 0; overflow-wrap: anywhere; }
 .meta-list { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.28rem 0.56rem; }
 .meta-list dt { color: #7f93a9; font-size: 0.56rem; }
 .meta-list dd { margin: 0.06rem 0 0; color: #eaf3fb; font-size: 0.66rem; }
@@ -1113,6 +1266,18 @@ onBeforeUnmount(() => {
 .weather-style-head { display: flex; justify-content: space-between; gap: 0.4rem; align-items: center; color: #eaf3fb; font-size: 0.58rem; }
 .weather-layer-controls { display: grid; gap: 0.24rem; }
 .weather-visibility-btn { border: 1px solid rgba(103, 212, 255, 0.2); border-radius: 999px; background: rgba(29, 78, 216, 0.14); color: #d8f3ff; font-size: 0.58rem; padding: 0.28rem 0.62rem; cursor: pointer; justify-self: start; }
+.weather-provider-row { display: grid; grid-template-columns: auto 1fr; gap: 0.36rem; align-items: center; color: #9eb3c8; font-size: 0.56rem; }
+.weather-provider-label { color: #dbeeff; white-space: nowrap; }
+.weather-provider-select {
+  min-width: 0;
+  border: 1px solid rgba(103, 212, 255, 0.22);
+  border-radius: 0.48rem;
+  background: rgba(8, 18, 33, 0.72);
+  color: #eaf3fb;
+  font-size: 0.56rem;
+  padding: 0.26rem 0.4rem;
+}
+.weather-provider-error { margin: 0; color: #ffb3b3; font-size: 0.52rem; }
 .particle-flow-toggle-btn {
   border: 1px solid rgba(103, 212, 255, 0.28);
   border-radius: 999px;

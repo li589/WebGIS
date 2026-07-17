@@ -42,15 +42,21 @@ class TestTileKey:
 
     def test_tile_key_format(self):
         key = tile_key("wind-field", 3, 2, 1, 12, "best_match")
-        assert key == "weather:tile:wind-field:z3:x2:y1:h12:mbest_match"
+        assert key == "weather:tile:wind-field:z3:x2:y1:h12:mbest_match:pauto"
 
     def test_tile_key_default_model(self):
         key = tile_key("temperature", 4, 7, 7, 0, None)
-        assert key == "weather:tile:temperature:z4:x7:y7:h0:mdefault"
+        assert key == "weather:tile:temperature:z4:x7:y7:h0:mdefault:pauto"
 
     def test_tile_key_special_chars_escaped(self):
         key = tile_key("wind-field-850hPa", 2, 1, 1, 6, "ecmwf/res:0.25")
-        assert key == "weather:tile:wind-field-850hPa:z2:x1:y1:h6:mecmwf_res_0.25"
+        assert key == "weather:tile:wind-field-850hPa:z2:x1:y1:h6:mecmwf_res_0.25:pauto"
+
+    def test_tile_key_includes_provider(self):
+        key = tile_key("wind-field", 3, 2, 1, 12, "best_match", "weatherapi")
+        assert key == "weather:tile:wind-field:z3:x2:y1:h12:mbest_match:pweatherapi"
+        assert tile_key("wind-field", 3, 2, 1, 12, "best_match", "auto") != key
+        assert tile_key("wind-field", 3, 2, 1, 12, "best_match", None) != key
 
 
 @pytest.fixture

@@ -24,6 +24,8 @@ export interface LngLatBounds {
 export interface FetchWeatherTileOptions {
   hour?: number
   model?: string
+  /** Weather provider id; omit or 'auto' for registry priority */
+  provider?: string
   signal?: AbortSignal
   /** 客户端缓存 bust 参数，不参与业务 */
   t?: number
@@ -32,7 +34,13 @@ export interface FetchWeatherTileOptions {
 const _WEB_MERCATOR_MAX_LAT = 85.0511287798066
 const _TILE_KEY_PREFIX = 'weather:tile:'
 
-/** 与后端 tile_key 对齐的前端缓存键（含 model，避免换模型时命中脏缓存）。 */
+function normalizeProviderPart(provider?: string): string {
+  const p = (provider ?? 'auto').trim()
+  if (!p || p.toLowerCase() === 'default') return 'auto'
+  return p.replace(/\//g, '_').replace(/:/g, '_')
+}
+
+/** 与后端 tile_key 对齐的前端缓存键（含 model + provider，避免换源脏缓存）。 */
 export function buildTileKey(
   layerId: string,
   z: number,
@@ -40,8 +48,11 @@ export function buildTileKey(
   y: number,
   hour: number,
   model = 'best_match',
+  provider = 'auto',
 ): string {
-  return `${_TILE_KEY_PREFIX}${layerId}:z${z}:x${x}:y${y}:h${hour}:m${model}`
+  const modelPart = model.replace(/\//g, '_').replace(/:/g, '_')
+  const providerPart = normalizeProviderPart(provider)
+  return `${_TILE_KEY_PREFIX}${layerId}:z${z}:x${x}:y${y}:h${hour}:m${modelPart}:p${providerPart}`
 }
 
 /** 标准 Web Mercator：经纬度 → z/x/y 瓦片坐标。 */
@@ -230,6 +241,7 @@ export async function fetchWeatherTile(
   const search = new URLSearchParams()
   if (typeof options.hour === 'number') search.set('hour', String(options.hour))
   if (options.model) search.set('model', options.model)
+  if (options.provider && options.provider !== 'auto') search.set('provider', options.provider)
   if (typeof options.t === 'number') search.set('t', String(options.t))
 
   const suffix = search.toString() ? `?${search.toString()}` : ''

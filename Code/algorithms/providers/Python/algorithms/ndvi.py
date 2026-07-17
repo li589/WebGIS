@@ -3,8 +3,25 @@ from __future__ import annotations
 from datetime import datetime, timedelta
 from typing import Any, Iterable
 
+# ─── Savitzky-Golay 滤波默认参数（无量纲） ───────────────────────────────────
+_SG_DEFAULT_POLYORDER = 6
+_SG_DEFAULT_WINDOW_LENGTH = 9
+_SG_DEFAULT_GAP_THRESHOLD_DAYS = 30
+_SG_DEFAULT_STEP_DAYS = 8
+_SG_MIN_VALID_POINTS = 4  # SG 滤波最少有效观测点数
+
+# ─── NDVI 有效范围（无量纲） ──────────────────────────────────────────────────
+_NDVI_VALID_MIN = 0.0
+_NDVI_VALID_MAX = 1.0
+
+# ─── 质量度量参数 ─────────────────────────────────────────────────────────────
+_NDVI_RANGE_PERCENTILE_LOW = 5.0
+_NDVI_RANGE_PERCENTILE_HIGH = 95.0
+_NDVI_MIN_VALID_OBS = 3  # 质量度量最少有效观测数
+
 
 def build_datetime_sequence(start: datetime, end: datetime, step_days: int) -> list[datetime]:
+    """构建等间距日期序列。输入 start/end 为 datetime，step_days 单位天，返回 datetime 列表。"""
     if step_days <= 0:
         raise ValueError("step_days must be positive")
     dates: list[datetime] = []
@@ -16,6 +33,7 @@ def build_datetime_sequence(start: datetime, end: datetime, step_days: int) -> l
 
 
 def to_day_numbers(dates: Iterable[datetime]) -> Any:
+    """将 datetime 序列转换为 ordinal 日数（浮点数组）。"""
     import numpy as np
 
     return np.array([value.toordinal() for value in dates], dtype=np.float64)
@@ -26,6 +44,7 @@ def _linear_interp_with_nan(
     source_y: Any,
     target_x: Any,
 ) -> Any:
+    """线性插值，超出源范围的点设为 NaN。"""
     import numpy as np
 
     if source_x.size == 0:
@@ -42,15 +61,20 @@ def vi_sg_interpolate(
     observation_days: Any,
     sg_days: Any,
     output_days: Any,
-    gap_threshold_days: int = 30,
-    sg_polyorder: int = 6,
-    sg_window_length: int = 9,
+    gap_threshold_days: int = _SG_DEFAULT_GAP_THRESHOLD_DAYS,
+    sg_polyorder: int = _SG_DEFAULT_POLYORDER,
+    sg_window_length: int = _SG_DEFAULT_WINDOW_LENGTH,
 ) -> Any:
+    """Savitzky-Golay 滤波插值，将观测 NDVI 序列重建为连续日序列。
+
+    量纲: data 无量纲（NDVI 0-1），observation_days/sg_days/output_days 为 ordinal 日数。
+    有效观测点少于 _SG_MIN_VALID_POINTS 时返回全 NaN。观测间隔超过 gap_threshold_days 的区段设为 NaN。
+    """
     import numpy as np
     from scipy.signal import savgol_filter
 
     valid_mask = ~np.isnan(data)
-    if valid_mask.sum() <= 4:
+    if valid_mask.sum() <= _SG_MIN_VALID_POINTS:
         return np.full(output_days.shape, np.nan, dtype=np.float64)
 
     interpolated_8day = _linear_interp_with_nan(
@@ -77,12 +101,18 @@ def process_ndvi_stack_to_daily(
     observation_dates: list[datetime],
     start_time: datetime,
     end_time: datetime,
-    sg_step_days: int = 8,
+    sg_step_days: int = _SG_DEFAULT_STEP_DAYS,
     daily_step_days: int = 1,
-    gap_threshold_days: int = 30,
-    sg_polyorder: int = 6,
-    sg_window_length: int = 9,
+    gap_threshold_days: int = _SG_DEFAULT_GAP_THRESHOLD_DAYS,
+    sg_polyorder: int = _SG_DEFAULT_POLYORDER,
+    sg_window_length: int = _SG_DEFAULT_WINDOW_LENGTH,
 ) -> tuple[Any, list[datetime]]:
+    """将多时相 NDVI 立方体重建为日序列。
+
+    量纲: ndvi_stack shape (rows, cols, time)，值无量纲 (NDVI 0-1)。
+    返回 (daily_stack, daily_dates)，daily_stack shape (rows, cols, days)，值无量纲 (0-1)。
+    超出有效范围的值设为 NaN。
+    """
     import numpy as np
 
     if ndvi_stack.ndim != 3:
@@ -112,7 +142,7 @@ def process_ndvi_stack_to_daily(
         )
 
     daily_stack = daily_flattened.reshape(rows, cols, output_days.size)
-    daily_stack[(daily_stack < 0.0) | (daily_stack > 1.0)] = np.nan
+    daily_stack[(daily_stack < _NDVI_VALID_MIN) | (daily_stack > _NDVI_VALID_MAX)] = np.nan
     return daily_stack, daily_dates
 
 
@@ -213,6 +243,13 @@ def build_ndvi_quality_metrics(
     dynamic_stack: Any,
     climatology_stack: Any | None = None,
 ) -> dict[str, Any]:
+    """计算 NDVI 质量度量指标。
+
+    量纲: dynamic_stack shape (rows, cols, time)，值无量纲 (NDVI 0-1)。
+    返回字典含: NDVI_v_mean/max/min（均值/最大/最小）、NDVI_v_range（P95-P5 极差）、
+    NDVI_v_vali（有效观测数，少于 _NDVI_MIN_VALID_OBS 设为 NaN）、
+    NDVI_v_diff_mean/std（与气候态差异均值/标准差）、NDVI_v_od（DTW 距离）。
+    """
     import numpy as np
 
     dynamic_stack = np.asarray(dynamic_stack, dtype=np.float64)
@@ -224,9 +261,9 @@ def build_ndvi_quality_metrics(
         "NDVI_v_mean": _safe_nanmean(dynamic_stack, axis=2),
         "NDVI_v_max": _safe_nanmax(dynamic_stack, axis=2),
         "NDVI_v_min": _safe_nanmin(dynamic_stack, axis=2),
-        "NDVI_v_range": _safe_nanpercentile(dynamic_stack, 95.0, axis=2)
-        - _safe_nanpercentile(dynamic_stack, 5.0, axis=2),
-        "NDVI_v_vali": np.where(pixel_valid_count >= 3, pixel_valid_count, np.nan),
+        "NDVI_v_range": _safe_nanpercentile(dynamic_stack, _NDVI_RANGE_PERCENTILE_HIGH, axis=2)
+        - _safe_nanpercentile(dynamic_stack, _NDVI_RANGE_PERCENTILE_LOW, axis=2),
+        "NDVI_v_vali": np.where(pixel_valid_count >= _NDVI_MIN_VALID_OBS, pixel_valid_count, np.nan),
     }
 
     if climatology_stack is None:
@@ -251,6 +288,11 @@ def build_ndvi_quality_metrics(
 
 
 def merge_ndvi_quality_metrics(metric_list: list[dict[str, Any]]) -> dict[str, Any]:
+    """合并多个 NDVI 质量度量字典（如多年度指标合并）。
+
+    量纲: metric_list 中各指标值无量纲 (NDVI 0-1) 或有效观测数。
+    返回合并后的字典，各指标按时间维度聚合（mean/max/min/sum）。
+    """
     import numpy as np
 
     if not metric_list:

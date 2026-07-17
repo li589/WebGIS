@@ -18,6 +18,9 @@ from algorithms.physics import (
 # Choudhury polarization mixing factor Q
 _POLARIZATION_MIXING_Q = 0.1771
 
+# tau 正则化系数（L2 惩罚强度），用于约束 tau_value 接近 tau_ini
+_TAU_REGULARIZATION_LAMBDA = 20.0
+
 
 def _is_nan(value: float) -> bool:
     return math.isnan(value)
@@ -29,25 +32,50 @@ class TbModelContext:
     fresnel: FresnelContext
 
 
+def _rough_reflectance_impl(
+    theta_cos_sq: float,
+    h_value: float,
+    rh: float,
+    rv: float,
+) -> tuple[float, float]:
+    """粗糙表面反射率公共实现。
+
+    量纲: 输入/输出均为无量纲反射率 (0-1)。
+    theta_cos_sq 为 cos(theta)^2，h_value 为粗糙度参数，rh/rv 为水平/垂直极化 Fresnel 反射率。
+    """
+    q_value = _POLARIZATION_MIXING_Q * h_value
+    exp_term = math.exp(-h_value * theta_cos_sq)
+    rh_r = ((1 - q_value) * rh + q_value * rv) * exp_term
+    rv_r = ((1 - q_value) * rv + q_value * rh) * exp_term
+    return rh_r, rv_r
+
+
 def rough_reflectance(theta_deg: float, h_value: float, rh: float, rv: float) -> tuple[float, float]:
-    import math
+    """粗糙表面反射率（从入射角角度计算）。
 
-    q_value = _POLARIZATION_MIXING_Q * h_value
-    exp_term = math.exp(-h_value * math.cos(math.radians(theta_deg)) ** 2)
-    rh_r = ((1 - q_value) * rh + q_value * rv) * exp_term
-    rv_r = ((1 - q_value) * rv + q_value * rh) * exp_term
-    return rh_r, rv_r
+    量纲: 输入 theta_deg 单位为度 (°)，h_value/rh/rv 无量纲；输出 rh_r/rv_r 无量纲 (0-1)。
+    """
+    return _rough_reflectance_impl(math.cos(math.radians(theta_deg)) ** 2, h_value, rh, rv)
 
 
-def rough_reflectance_from_context(context: TbModelContext, h_value: float, rh: float, rv: float) -> tuple[float, float]:
-    q_value = _POLARIZATION_MIXING_Q * h_value
-    exp_term = math.exp(-h_value * context.fresnel.cos_theta_sq)
-    rh_r = ((1 - q_value) * rh + q_value * rv) * exp_term
-    rv_r = ((1 - q_value) * rv + q_value * rh) * exp_term
-    return rh_r, rv_r
+def rough_reflectance_from_context(
+    context: TbModelContext,
+    h_value: float,
+    rh: float,
+    rv: float,
+) -> tuple[float, float]:
+    """粗糙表面反射率（从预计算 context 计算）。
+
+    量纲: 输入 h_value/rh/rv 无量纲；输出 rh_r/rv_r 无量纲 (0-1)。
+    """
+    return _rough_reflectance_impl(context.fresnel.cos_theta_sq, h_value, rh, rv)
 
 
 def build_tb_model_context(freq_ghz: float, clay_fraction: float, theta_deg: float) -> TbModelContext:
+    """构建 tau-omega 模型预计算上下文。
+
+    量纲: freq_ghz 单位 GHz，theta_deg 单位度 (°)，clay_fraction 无量纲 (0-1)。
+    """
     return TbModelContext(
         dielectric=build_mironov_context(freq_ghz, clay_fraction),
         fresnel=build_fresnel_context(theta_deg),
@@ -55,8 +83,6 @@ def build_tb_model_context(freq_ghz: float, clay_fraction: float, theta_deg: flo
 
 
 def tb_model(
-    tbv_obs: float,
-    tbh_obs: float,
     ts: float,
     tau_value: float,
     h_value: float,
@@ -67,7 +93,21 @@ def tb_model(
     soil_moisture: float,
     model_context: TbModelContext | None = None,
 ) -> tuple[float, float]:
+    """tau-omega 微波辐射传输模型，计算 V/H 极化亮温。
+
+    量纲: 输入 ts/tau_value/h_value/albedo/soil_moisture/clay_fraction 无量纲或 m³/m³；
+    freq_ghz 单位 GHz，theta_deg 单位度 (°)。输出 tbv_model/tbh_model 单位 K (开尔文)。
+
+    物理约束: soil_moisture ∈ [0, 0.6]，tau_value >= 0，h_value >= 0。
+    超出约束范围返回 (inf, inf) 以让优化器自然排除无效解。
+    """
     import math
+
+    # 物理约束检查：超出范围返回 inf，让优化器排除无效解
+    if not (0.0 <= soil_moisture <= 0.6):
+        return float('inf'), float('inf')
+    if tau_value < 0.0 or h_value < 0.0:
+        return float('inf'), float('inf')
 
     if model_context is None:
         epsilon = mironov_dielectric(freq_ghz, soil_moisture, clay_fraction)
@@ -80,7 +120,6 @@ def tb_model(
     gamma = math.exp(-tau_value)
     tbv_model = ts * ((1 - rv_r) * gamma + (1 - albedo) * (1 - gamma) * (1 + rv_r * gamma))
     tbh_model = ts * ((1 - rh_r) * gamma + (1 - albedo) * (1 - gamma) * (1 + rh_r * gamma))
-    _ = (tbv_obs, tbh_obs)
     return tbv_model, tbh_model
 
 
@@ -97,11 +136,17 @@ def f_sm_cost(
     theta_deg: float,
     model_context: TbModelContext | None = None,
 ) -> list[float]:
+    """土壤湿度反演残差函数（用于 least_squares 优化）。
+
+    量纲: 返回残差向量，前两项单位 K (亮温差)，第三项无量纲 (tau 正则化项)。
+    freq_ghz 应在 0.1-40 GHz 范围内，超出返回 inf 残差。
+    """
+    if not (0.1 <= freq_ghz <= 40.0):
+        return [float('inf'), float('inf'), float('inf')]
+
     soil_moisture = float(x[0])
     tau_value = float(x[1])
     tbv_model, tbh_model = tb_model(
-        tbv,
-        tbh,
         ts,
         tau_value,
         h_value,
@@ -112,11 +157,10 @@ def f_sm_cost(
         soil_moisture,
         model_context,
     )
-    lambda_value = 20.0
     return [
         tbv_model - tbv,
         tbh_model - tbh,
-        lambda_value * (tau_value - tau_ini),
+        _TAU_REGULARIZATION_LAMBDA * (tau_value - tau_ini),
     ]
 
 
@@ -132,11 +176,13 @@ def f_h_cost(
     theta_deg: float,
     model_context: TbModelContext | None = None,
 ) -> list[float]:
+    """粗糙度 h 反演残差函数（用于 least_squares 优化）。
+
+    量纲: 返回残差向量，两项均单位 K (亮温差)。
+    """
     soil_moisture = float(x[0])
     h_value = float(x[1])
     tbv_model, tbh_model = tb_model(
-        tbv,
-        tbh,
         ts,
         tau_ini,
         h_value,
@@ -206,6 +252,11 @@ def retrieve_dynamic_h_pixel(
     freq_ghz: float,
     theta_deg: float,
 ) -> float:
+    """单像素动态 h 粗糙度反演。
+
+    量纲: 输入 tbv/tbh/ts 单位 K，freq_ghz 单位 GHz，theta_deg 单位度 (°)，
+    其余无量纲。返回 h_value 无量纲（粗糙度参数）。
+    """
     from scipy.optimize import least_squares
 
     if any(

@@ -7,6 +7,15 @@ from typing import Any
 
 from ingest.station import StationRecord
 
+# ─── 站点数据质量标志 ─────────────────────────────────────────────────────────
+_QUALITY_FLAG_GOOD = 1
+
+# ─── 单位转换 ─────────────────────────────────────────────────────────────────
+_CM_TO_M = 0.01  # cm → m
+
+# ─── 日期格式 ─────────────────────────────────────────────────────────────────
+_DATE_KEY_FORMAT = "%Y%m%d"
+
 
 def filter_station_records(
     records: list[StationRecord],
@@ -18,6 +27,12 @@ def filter_station_records(
     require_good_quality: bool = True,
     hour_filter: int | None = None,
 ) -> list[StationRecord]:
+    """按时间/深度/质量/湿度范围过滤站点记录。
+
+    量纲: max_depth_cm 单位 cm（内部转为 m 比较），min_sm/max_sm 单位 m³/m³。
+    require_good_quality=True 时只保留 quality_flag == _QUALITY_FLAG_GOOD 的记录。
+    soil_moisture 为 NaN 的记录会被湿度过滤条件排除。
+    """
     filtered: list[StationRecord] = []
     for record in records:
         record_time = datetime(record.year, record.month, record.day)
@@ -25,21 +40,22 @@ def filter_station_records(
             continue
         if end_time is not None and record_time > end_time:
             continue
-        if max_depth_cm is not None and record.depth_lower >= max_depth_cm / 100.0:
+        if max_depth_cm is not None and record.depth_lower >= max_depth_cm * _CM_TO_M:
             continue
         if hour_filter is not None and record.hour != hour_filter:
             continue
-        if require_good_quality and record.quality_flag != 1:
+        if require_good_quality and record.quality_flag != _QUALITY_FLAG_GOOD:
             continue
-        if min_sm is not None and (record.soil_moisture != record.soil_moisture or record.soil_moisture <= min_sm):
+        if min_sm is not None and (math.isnan(record.soil_moisture) or record.soil_moisture <= min_sm):
             continue
-        if max_sm is not None and (record.soil_moisture != record.soil_moisture or record.soil_moisture > max_sm):
+        if max_sm is not None and (math.isnan(record.soil_moisture) or record.soil_moisture > max_sm):
             continue
         filtered.append(record)
     return filtered
 
 
 def aggregate_station_records_daily(records: list[StationRecord]) -> list[StationRecord]:
+    """按 (year, month, day, depth) 分组取 soil_moisture 均值，输出日尺度记录。"""
     groups: dict[tuple[int, int, int, float], list[StationRecord]] = defaultdict(list)
     for record in records:
         key = (record.year, record.month, record.day, record.depth_lower)
@@ -64,7 +80,7 @@ def aggregate_station_records_daily(records: list[StationRecord]) -> list[Statio
                 depth_upper=first.depth_upper,
                 depth_lower=first.depth_lower,
                 soil_moisture=mean_sm,
-                quality_flag=1,
+                quality_flag=_QUALITY_FLAG_GOOD,
                 site_id=first.site_id,
                 source=first.source,
             )
@@ -78,13 +94,18 @@ def build_site_time_series_matrix(
     start_time: datetime,
     end_time: datetime,
 ) -> dict[str, Any]:
+    """构建单站点时间序列矩阵。
+
+    量纲: soil_moisture 单位 m³/m³。返回 dict 含 date_axis（YYYYMMDD 字符串列表）
+    和 values（与 date_axis 等长的浮点列表，缺失日为 NaN）。
+    """
     date_axis: list[datetime] = []
     current = start_time
     while current <= end_time:
         date_axis.append(current)
         current = current.replace(hour=0) + timedelta(days=1)
 
-    date_to_index = {value.strftime("%Y%m%d"): index for index, value in enumerate(date_axis)}
+    date_to_index = {value.strftime(_DATE_KEY_FORMAT): index for index, value in enumerate(date_axis)}
     matrix = [float("nan")] * len(date_axis)
     for record in records:
         key = f"{record.year:04d}{record.month:02d}{record.day:02d}"
@@ -93,7 +114,7 @@ def build_site_time_series_matrix(
             continue
         matrix[idx] = record.soil_moisture
     return {
-        "date_axis": [value.strftime("%Y%m%d") for value in date_axis],
+        "date_axis": [value.strftime(_DATE_KEY_FORMAT) for value in date_axis],
         "values": matrix,
     }
 
@@ -128,6 +149,11 @@ def build_station_site_matrix(
     *,
     min_valid_days: int = 1,
 ) -> dict[str, Any]:
+    """构建多站点时间序列矩阵。
+
+    量纲: soil_moisture 单位 m³/m³，lat/lon 单位度，elev 单位 m，depth 单位 m。
+    返回 dict 含 site_matrix shape (n_sites, n_days)，有效观测天数少于 min_valid_days 的站点被剔除。
+    """
     import numpy as np
 
     site_ids: list[str] = []
@@ -197,6 +223,7 @@ def nearest_grid_indices(
     lat_grid: Any,
     lon_grid: Any,
 ) -> Any:
+    """为每个站点找最近的网格单元索引（欧氏距离最小）。返回 1-based 索引数组，无匹配处为 -1。"""
     import numpy as np
 
     site_lat = np.asarray(site_lat, dtype=np.float64).reshape(-1)
@@ -217,6 +244,7 @@ def sample_grid_values(
     sample_indices: Any,
     value_grid: Any,
 ) -> Any:
+    """按索引从网格中采样值。无效索引（<0 或 >= size）对应位置返回 NaN。"""
     import numpy as np
 
     indices = np.asarray(sample_indices, dtype=np.int64).reshape(-1)
@@ -231,6 +259,7 @@ def aggregate_matrix_by_group(
     values: Any,
     group_ids: Any,
 ) -> tuple[Any, Any, Any]:
+    """按分组 ID 聚合矩阵行（nanmean）。返回 (唯一分组数组, 聚合矩阵, 有效计数数组)。"""
     import numpy as np
 
     matrix = np.asarray(values, dtype=np.float64)
@@ -270,6 +299,12 @@ def build_station_validation_outputs(
     smap_landcover_grid: Any | None = None,
     network_map: dict[str, str] | None = None,
 ) -> dict[str, dict[str, Any]]:
+    """构建站点验证输出（站点级 + 网格级 + 网络级）。
+
+    量纲: smap_lat/smap_lon 单位度，soil_moisture 单位 m³/m³，landcover 为 IGBP 整数代码。
+    返回嵌套字典，含 site（站点级矩阵）、grid（网格级聚合）、network（网络级聚合）三组输出。
+    每组含时间序列矩阵、经纬度、有效观测数、土地覆盖、气候类型等字段。
+    """
     import numpy as np
 
     site_payload = build_station_site_matrix(

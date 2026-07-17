@@ -36,6 +36,35 @@ _ARTIFACT_MIME_TYPES = {
     "log": "text/plain",
 }
 
+# 已在节点模板中注册但尚未实现算法的模块。
+# 这些模块的 workflow 提交后会返回 pending_implementation 状态，而非调用 provider。
+_PENDING_IMPLEMENTATION_MODULES = frozenset({
+    "preprocess_reproject",
+    "preprocess_resample",
+    "preprocess_format_convert",
+    "preprocess_clip",
+    "preprocess_mask",
+    "stats_spatial_mean",
+    "stats_temporal_trend",
+    "stats_anomaly_detect",
+    "stats_correlation",
+    "stats_histogram",
+    "fusion_spatial_interpolate",
+    "fusion_multi_source_merge",
+    "viz_chart_generate",
+    "viz_report_export",
+    "viz_statistics_summary",
+    "gis_buffer_analysis",
+    "gis_zonal_statistics",
+    "gis_raster_calculator",
+    "gis_vector_to_raster",
+    "gis_raster_to_vector",
+    "gis_reclassify",
+    "gis_contour",
+    "gis_slope_aspect",
+    "gis_watershed",
+})
+
 
 @contextmanager
 def _python_provider_import_path(provider_root: Path) -> Iterator[None]:
@@ -82,6 +111,21 @@ class PythonProviderBridgeService:
         requested_at: datetime,
         event_factory,
     ) -> WorkflowExecutionResult:
+        # Stub 拦截：尚未实现的模块返回 pending_implementation 状态，不调用 provider
+        algorithm_request = self._normalize_algorithm_request(payload.algorithm_request)
+        module_name = (
+            algorithm_request.get("module_name")
+            or algorithm_request.get("workflow_name")
+            or ""
+        )
+        if module_name in _PENDING_IMPLEMENTATION_MODULES:
+            return self._build_pending_implementation_result(
+                run_id=run_id,
+                module_name=module_name,
+                requested_at=requested_at,
+                event_factory=event_factory,
+            )
+
         request_payload = self._build_job_request_payload(run_id=run_id, payload=payload)
         service = self._get_job_service()
 
@@ -220,6 +264,52 @@ class PythonProviderBridgeService:
             },
             diagnostics=diagnostics,
             events=events,
+        )
+
+    def _build_pending_implementation_result(
+        self,
+        *,
+        run_id: str,
+        module_name: str,
+        requested_at: datetime,
+        event_factory,
+    ) -> WorkflowExecutionResult:
+        """为尚未实现的模块返回 pending_implementation 状态结果。"""
+        message = f"模块 {module_name} 正在开发中，暂不可执行。"
+        return WorkflowExecutionResult(
+            message=message,
+            result_refs=[],
+            result_dto={
+                "workflow_entry_name": module_name,
+                "run_id": run_id,
+                "engine_run_id": None,
+                "job_id": None,
+                "job_status": "pending_implementation",
+                "manifest_loaded": False,
+                "manifest_summary": {},
+                "products": [],
+                "main_layers": [],
+                "qc_layers": [],
+                "tables": [],
+                "extra": {"pending_implementation": True, "module_name": module_name},
+                "artifacts": {},
+            },
+            diagnostics=[
+                f"module {module_name} is pending implementation",
+                f"run_id={run_id}",
+            ],
+            events=[
+                event_factory(
+                    channel="log",
+                    message=message,
+                    progress=100,
+                    payload={
+                        "module_name": module_name,
+                        "status": "pending_implementation",
+                        "run_id": run_id,
+                    },
+                ),
+            ],
         )
 
     def list_workflows_response(self):

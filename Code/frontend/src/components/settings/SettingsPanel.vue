@@ -2,6 +2,8 @@
 import { onMounted, ref, shallowRef, watch } from 'vue'
 
 import { useSettingsStore } from '../../stores/settings'
+import { useUiLoadingStore } from '../../stores/ui-loading'
+import { loadSettingsUiLocal, saveSettingsUiLocal } from '../../services/settings-local'
 import GeneralSettings from './GeneralSettings.vue'
 import ApiKeySettings from './ApiKeySettings.vue'
 import GeeAccountSettings from './GeeAccountSettings.vue'
@@ -25,7 +27,15 @@ type SettingsTab =
   | 'data-source'
   | 'about'
 
-const activeTab = ref<SettingsTab>('api-keys')
+const savedTab = loadSettingsUiLocal().activeTab as SettingsTab | undefined
+const activeTab = ref<SettingsTab>(
+  savedTab &&
+    ['general', 'api-keys', 'gee-accounts', 'weather-providers', 'remote-storage', 'data-source', 'about'].includes(
+      savedTab,
+    )
+    ? savedTab
+    : 'api-keys',
+)
 
 const tabComponents = shallowRef<Record<SettingsTab, typeof GeneralSettings>>({
   general: GeneralSettings,
@@ -47,12 +57,18 @@ const tabs: Array<{ id: SettingsTab; label: string; icon: string }> = [
   { id: 'about', label: '关于', icon: 'ⓘ' },
 ]
 
-onMounted(() => {
-  void settingsStore.loadAll()
+onMounted(async () => {
+  const loading = useUiLoadingStore()
+  try {
+    await settingsStore.loadAll()
+  } finally {
+    // 对应 DashboardView 中 settingsOpen watch 的 showImmediate
+    loading.hideImmediate()
+  }
 })
 
-// 切换标签时按需加载对应数据
 watch(activeTab, (tab) => {
+  saveSettingsUiLocal({ activeTab: tab })
   if (tab === 'api-keys' && settingsStore.apiKeys.length === 0) {
     void settingsStore.loadApiKeys()
   } else if (tab === 'gee-accounts' && settingsStore.geeAccounts.length === 0) {

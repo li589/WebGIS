@@ -1,39 +1,32 @@
 /**
  * Client write-auth for mutating backend endpoints (X-Api-Key).
- * Priority: sessionStorage paste > VITE_BACKEND_API_KEY.
+ * Priority: localStorage (via settings-local) > sessionStorage legacy > VITE_BACKEND_API_KEY.
  */
 
-const STORAGE_KEY = 'cgda.backend_write_api_key'
+import {
+  clearLocalWriteApiKey,
+  getLocalWriteApiKey,
+  hasLocalWriteApiKey,
+  setLocalWriteApiKey,
+} from './settings-local'
 
 export function getBackendWriteApiKey(): string | null {
-  try {
-    const fromSession = sessionStorage.getItem(STORAGE_KEY)?.trim()
-    if (fromSession) return fromSession
-  } catch {
-    // ignore storage errors (private mode)
-  }
+  const fromLocal = getLocalWriteApiKey()
+  if (fromLocal) return fromLocal
   const fromEnv = (import.meta.env.VITE_BACKEND_API_KEY as string | undefined)?.trim()
   return fromEnv || null
 }
 
 export function setBackendWriteApiKey(key: string | null): void {
-  try {
-    if (!key || !key.trim()) {
-      sessionStorage.removeItem(STORAGE_KEY)
-      return
-    }
-    sessionStorage.setItem(STORAGE_KEY, key.trim())
-  } catch {
-    // ignore
-  }
+  setLocalWriteApiKey(key)
 }
 
 export function clearBackendWriteApiKey(): void {
-  setBackendWriteApiKey(null)
+  clearLocalWriteApiKey()
 }
 
 export function hasBackendWriteApiKey(): boolean {
-  return Boolean(getBackendWriteApiKey())
+  return hasLocalWriteApiKey() || Boolean((import.meta.env.VITE_BACKEND_API_KEY as string | undefined)?.trim())
 }
 
 /** Attach X-Api-Key for mutating requests when a write key is available. */

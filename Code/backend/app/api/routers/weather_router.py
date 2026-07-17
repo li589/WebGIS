@@ -32,6 +32,7 @@ def get_weather_point(
     model: str | None = None,
     forecast_hours: int = 6,
     place_name: str | None = None,
+    provider: str | None = None,
 ) -> WeatherPointResponse:
     try:
         return weather_engine_service.get_point_weather(
@@ -41,12 +42,38 @@ def get_weather_point(
             model=model,
             forecast_hours=forecast_hours,
             place_name=place_name,
+            provider_id=provider,
         )
     except ValueError as exc:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+        detail = str(exc)
+        lower = detail.lower()
+        if any(
+            token in lower
+            for token in (
+                "no enabled weather provider",
+                "is disabled",
+                "is not registered",
+                "does not support layer",
+            )
+        ):
+            raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=detail) from exc
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=detail) from exc
     except (HTTPError, URLError) as exc:
-        detail = "Open-Meteo point forecast is temporarily unavailable."
+        detail = "Weather point forecast is temporarily unavailable."
         raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=detail) from exc
+
+
+@router.get("/weather/providers-for-layer/{layer_id}", tags=["weather"])
+def get_providers_for_layer(layer_id: str, include_disabled: bool = False):
+    """List weather providers that declare support for ``layer_id`` (for layer source dropdown)."""
+    from app.weatherengine.constants import WEATHER_LAYER_SPECS
+    from app.weatherengine.fetch_gateway import list_providers_for_layer
+    from app.services.config_service import _ensure_weather_providers_registered
+
+    if layer_id not in WEATHER_LAYER_SPECS:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Unknown weather layer: {layer_id}")
+    _ensure_weather_providers_registered()
+    return {"layer_id": layer_id, "providers": list_providers_for_layer(layer_id, include_disabled=include_disabled)}
 
 
 @router.get("/weather/workflows", tags=["weather"])

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import os
 from functools import lru_cache
 from typing import Any, Optional
 
@@ -20,6 +21,7 @@ def _get_api_keys_repository():
     return ApiKeysRepository(
         db_path=db_path,
         encryption_key=settings.gee_credentials_encryption_key,
+        history_limit=settings.api_key_history_limit,
     )
 
 
@@ -46,51 +48,96 @@ _API_KEY_META: dict[str, dict[str, str]] = {
         "display_name": "百度地图",
         "description": "百度地图底图服务 API Key，从 https://lbsyun.baidu.com/ 获取",
     },
+    "gaode": {
+        "display_name": "高德地图",
+        "description": "高德底图可选 Key（当前瓦片模板可不填；预留与设置页对齐）",
+    },
     "backend_auth": {
         "display_name": "后端认证",
-        "description": "后端 API 访问令牌，用于保护后端 API 端点",
+        "description": "后端 API 访问令牌，用于保护写接口（X-Api-Key）",
     },
 }
 
 
+def _env_api_key_value(key_name: str) -> str:
+    env_map = {
+        "tianditu": settings.tianditu_api_key,
+        "baidu": settings.baidu_api_key,
+        "backend_auth": settings.api_key,
+        "gaode": os.getenv("BACKEND_GAODE_API_KEY", ""),
+    }
+    return str(env_map.get(key_name) or "").strip()
+
+
+def _annotate_key_entry(entry: dict[str, Any], *, source: str) -> dict[str, Any]:
+    """Attach source / has_value for settings UI + basemap availability."""
+    annotated = dict(entry)
+    annotated["source"] = source
+    masked = str(annotated.get("masked_value") or "")
+    annotated["has_value"] = bool(masked)
+    return annotated
+
+
 def list_api_keys() -> list[dict[str, Any]]:
-    """列出所有 API Key（脱敏）。合并 DB 中的 key 和预定义的 key 元信息。"""
+    """列出所有 API Key（脱敏）。合并 DB、预定义元信息与 env 回退。"""
+    from app.services.api_keys_repository import _mask_value
+
     repo = _get_api_keys_repository()
     db_keys = {k["key_name"]: k for k in repo.list_keys(include_disabled=True)}
 
-    # 合并预定义 key 和 DB key
     result: list[dict[str, Any]] = []
-    seen = set()
+    seen: set[str] = set()
 
-    # 先添加预定义 key（保证顺序）
     for key_name, meta in _API_KEY_META.items():
         seen.add(key_name)
         if key_name in db_keys:
-            # DB 中存在，使用 DB 的值但保留预定义的 display_name/description
             entry = dict(db_keys[key_name])
             if not entry.get("display_name"):
                 entry["display_name"] = meta["display_name"]
             if not entry.get("description"):
                 entry["description"] = meta["description"]
-            result.append(entry)
-        else:
-            # DB 中不存在，显示为未配置
-            result.append({
-                "key_name": key_name,
-                "display_name": meta["display_name"],
-                "description": meta["description"],
-                "masked_value": "",
-                "enabled": False,
-                "created_at": None,
-                "updated_at": None,
-                "last_tested_at": None,
-                "last_test_status": None,
-            })
+            result.append(_annotate_key_entry(entry, source="db"))
+            continue
 
-    # 添加 DB 中存在但不在预定义列表中的 key
+        env_value = _env_api_key_value(key_name)
+        if env_value:
+            result.append(
+                _annotate_key_entry(
+                    {
+                        "key_name": key_name,
+                        "display_name": meta["display_name"],
+                        "description": meta["description"],
+                        "masked_value": _mask_value(env_value),
+                        "enabled": True,
+                        "created_at": None,
+                        "updated_at": None,
+                        "last_tested_at": None,
+                        "last_test_status": None,
+                    },
+                    source="env",
+                )
+            )
+        else:
+            result.append(
+                _annotate_key_entry(
+                    {
+                        "key_name": key_name,
+                        "display_name": meta["display_name"],
+                        "description": meta["description"],
+                        "masked_value": "",
+                        "enabled": False,
+                        "created_at": None,
+                        "updated_at": None,
+                        "last_tested_at": None,
+                        "last_test_status": None,
+                    },
+                    source="none",
+                )
+            )
+
     for key_name, entry in db_keys.items():
         if key_name not in seen:
-            result.append(entry)
+            result.append(_annotate_key_entry(dict(entry), source="db"))
 
     return result
 
@@ -100,11 +147,13 @@ def upsert_api_key(
     key_value: str,
     display_name: Optional[str] = None,
     description: Optional[str] = None,
+    enabled: bool = True,
+    history_label: Optional[str] = None,
+    history_source: str = "user",
 ) -> dict[str, Any]:
     """新增或更新 API Key。"""
     repo = _get_api_keys_repository()
 
-    # 使用预定义的 display_name/description 作为默认值
     meta = _API_KEY_META.get(key_name, {})
     resolved_display_name = display_name or meta.get("display_name", key_name)
     resolved_description = description or meta.get("description")
@@ -114,17 +163,53 @@ def upsert_api_key(
         key_value=key_value,
         display_name=resolved_display_name,
         description=resolved_description,
+        enabled=enabled,
+        history_label=history_label,
+        history_source=history_source,
     )
-    # 更新后清除 get_effective_api_key 的缓存，并同步状态投影 registry
     _get_effective_api_key_cached.cache_clear()
-    _sync_api_config_manager_key(key_name, key_value)
+    effective = get_effective_api_key(key_name) or ""
+    _sync_api_config_manager_key(key_name, effective)
     try:
         from app.services.effective_config import hydrate_effective_config
 
         hydrate_effective_config()
     except Exception:
         logger.exception("Failed to rehydrate effective config after api key upsert")
-    return result or {}
+    return _annotate_key_entry(result or {}, source="db")
+
+
+def list_api_key_history(key_name: str) -> list[dict[str, Any]]:
+    return _get_api_keys_repository().list_history(key_name)
+
+
+def restore_api_key_history(key_name: str, history_id: int) -> dict[str, Any]:
+    """Restore a historical value as the current key (archives current first)."""
+    repo = _get_api_keys_repository()
+    meta = _API_KEY_META.get(key_name, {})
+    info = repo.get_key_info(key_name)
+    if info is None:
+        raise ValueError(f"API Key '{key_name}' 不存在，无法恢复历史")
+    plaintext = repo.get_history_value(key_name, history_id)
+    if plaintext is None:
+        raise ValueError(f"历史记录 #{history_id} 不存在")
+    return upsert_api_key(
+        key_name=key_name,
+        key_value=plaintext,
+        display_name=info.get("display_name") or meta.get("display_name", key_name),
+        description=info.get("description") or meta.get("description"),
+        enabled=bool(info.get("enabled", True)),
+        history_label=f"restore#{history_id}",
+        history_source="restore",
+    )
+
+
+def delete_api_key_history_entry(key_name: str, history_id: int) -> bool:
+    return _get_api_keys_repository().delete_history_entry(key_name, history_id)
+
+
+def clear_api_key_history(key_name: str) -> int:
+    return _get_api_keys_repository().clear_history(key_name)
 
 
 def delete_api_key(key_name: str) -> bool:
@@ -144,22 +229,46 @@ def delete_api_key(key_name: str) -> bool:
     return deleted
 
 
-def toggle_api_key(key_name: str, enabled: bool) -> bool:
-    """启用/禁用 API Key。"""
-    repo = _get_api_keys_repository()
-    toggled = repo.set_enabled(key_name, enabled)
-    if toggled:
-        _get_effective_api_key_cached.cache_clear()
-        # Always re-resolve: disabled DB row falls back to env if present
-        effective = get_effective_api_key(key_name) or ""
-        _sync_api_config_manager_key(key_name, effective)
-        try:
-            from app.services.effective_config import hydrate_effective_config
+def toggle_api_key(key_name: str, enabled: bool) -> dict[str, Any]:
+    """启用/禁用 API Key。
 
-            hydrate_effective_config()
-        except Exception:
-            logger.exception("Failed to rehydrate effective config after api key toggle")
-    return toggled
+    - 已有 DB 行：直接改 enabled
+    - 仅有 env、无 DB 行：启用时物化到 DB；禁用时写入 DB 并 enabled=0（阻止再回落到 env）
+    - 无值：抛 ValueError，路由映射 400
+    """
+    repo = _get_api_keys_repository()
+    meta = _API_KEY_META.get(key_name, {})
+    info = repo.get_key_info(key_name)
+
+    if info is None:
+        env_value = _env_api_key_value(key_name)
+        if not env_value:
+            raise ValueError("请先保存 API Key 后再启用/禁用")
+        # Materialize env into DB so enable/disable has a durable row
+        repo.upsert_key(
+            key_name=key_name,
+            key_value=env_value,
+            display_name=meta.get("display_name", key_name),
+            description=meta.get("description"),
+            enabled=enabled,
+            history_source="env_materialize",
+            archive_previous=False,
+        )
+    else:
+        if not repo.set_enabled(key_name, enabled):
+            raise ValueError(f"API Key '{key_name}' 更新失败")
+
+    _get_effective_api_key_cached.cache_clear()
+    effective = get_effective_api_key(key_name) or ""
+    _sync_api_config_manager_key(key_name, effective)
+    try:
+        from app.services.effective_config import hydrate_effective_config
+
+        hydrate_effective_config()
+    except Exception:
+        logger.exception("Failed to rehydrate effective config after api key toggle")
+
+    return {"key_name": key_name, "enabled": enabled, "effective": bool(effective)}
 
 
 def _sync_api_config_manager_key(key_name: str, key_value: str) -> None:
@@ -187,25 +296,25 @@ def _sync_api_config_manager_key(key_name: str, key_value: str) -> None:
 
 @lru_cache(maxsize=32)
 def _get_effective_api_key_cached(key_name: str) -> Optional[str]:
-    """获取生效的 API Key（带缓存）。优先从 DB 读取，回退到环境变量。"""
+    """DB 行存在时仅在 enabled 时生效；无 DB 行才回退 env。"""
     repo = _get_api_keys_repository()
-    db_value = repo.get_key_value(key_name)
-    if db_value:
-        return db_value
+    info = repo.get_key_info(key_name)
+    if info is not None:
+        # Explicit DB row wins: disabled must NOT fall back to env
+        return repo.get_key_value(key_name)
 
-    # 回退到环境变量
-    env_map = {
-        "tianditu": settings.tianditu_api_key,
-        "baidu": settings.baidu_api_key,
-        "backend_auth": settings.api_key,
-    }
-    env_value = env_map.get(key_name, "")
-    return env_value if env_value else None
+    env_value = _env_api_key_value(key_name)
+    return env_value or None
 
 
 def get_effective_api_key(key_name: str) -> Optional[str]:
     """获取生效的 API Key（公开接口）。"""
     return _get_effective_api_key_cached(key_name)
+
+
+def is_basemap_key_available(key_name: str) -> bool:
+    """Whether a basemap provider key is currently effective (for UI gating)."""
+    return bool(get_effective_api_key(key_name))
 
 
 async def test_api_key(key_name: str) -> tuple[bool, str]:
@@ -557,15 +666,15 @@ def _provider_to_dict(
 
 
 def _ensure_weather_providers_registered() -> None:
-    """设置页/配置读路径：若启动注册失败或尚未完成，惰性补注册默认天气源。"""
+    """设置页/配置读路径：惰性补注册默认天气源（含后续新增的 commercial providers）。"""
     try:
         from app.weatherengine.provider_registry import get_registry, register_default_providers
 
-        registry = get_registry()
-        if registry.list_provider_entries():
-            return
         register_default_providers()
+        # 仅在 registry 刚从空变为有内容时应用一次 DB 覆盖；若已有 entries，
+        # 启动路径已 apply 过。这里对缺失 provider 的新注册再次 apply 是安全的。
         apply_persisted_provider_overrides()
+        _ = get_registry()
     except Exception:
         logger.exception("Lazy weather provider registration failed")
 
@@ -785,11 +894,51 @@ def _get_remote_storage_repository():
     return RemoteStorageCredentialsRepository(
         db_path=db_path,
         encryption_key=settings.gee_credentials_encryption_key,
+        history_limit=settings.remote_storage_history_limit,
     )
 
 
 def list_remote_storage_profiles(include_disabled: bool = True) -> list[dict[str, Any]]:
     return _get_remote_storage_repository().list_profiles(include_disabled=include_disabled)
+
+
+def list_remote_storage_history(profile_id: str) -> list[dict[str, Any]]:
+    return _get_remote_storage_repository().list_history(profile_id)
+
+
+def restore_remote_storage_history(profile_id: str, history_id: int) -> dict[str, Any]:
+    from app.services.remote_auth_resolver import clear_remote_auth_cache
+
+    repo = _get_remote_storage_repository()
+    info = repo.get_profile_info(profile_id)
+    if info is None:
+        raise ValueError(f"Profile not found: {profile_id}")
+    bundle = repo.get_history_bundle(profile_id, history_id)
+    if bundle is None:
+        raise ValueError(f"历史记录 #{history_id} 不存在")
+    result = repo.upsert(
+        profile_id=profile_id,
+        protocol=info["protocol"],
+        host=info.get("host") or "",
+        port=info.get("port"),
+        username=info.get("username"),
+        secret=bundle.get("secret") or "",
+        private_key_pem=bundle.get("private_key_pem"),
+        domain=info.get("domain"),
+        extra=info.get("extra"),
+        display_name=info.get("display_name"),
+        enabled=info.get("enabled"),
+    )
+    clear_remote_auth_cache()
+    return result
+
+
+def delete_remote_storage_history_entry(profile_id: str, history_id: int) -> bool:
+    return _get_remote_storage_repository().delete_history_entry(profile_id, history_id)
+
+
+def clear_remote_storage_history(profile_id: str) -> int:
+    return _get_remote_storage_repository().clear_history(profile_id)
 
 
 def upsert_remote_storage_profile(

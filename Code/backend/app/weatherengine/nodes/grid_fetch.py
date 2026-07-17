@@ -63,18 +63,20 @@ class GridFetchNode(BaseNode):
                 resolution = compute_dynamic_resolution(bbox)
 
             model = inputs.get("model") or settings.weather_default_model
+            provider_id = inputs.get("provider_id") or inputs.get("provider")
 
-            grid_data, cache_status, _provider_id = fetch_grid_forecast(
+            grid_data, cache_status, resolved_provider = fetch_grid_forecast(
                 layer_id=layer_id,
                 bbox=bbox,
                 resolution=resolution,
                 model=model,
                 layer_spec=layer_spec,
+                provider_id=provider_id,
             )
 
             logger.info(
                 "[GridFetchNode] Fetched grid data: layer=%s rows=%d cols=%d resolution=%.2f "
-                "bbox=(%.2f,%.2f,%.2f,%.2f) cache=%s",
+                "bbox=(%.2f,%.2f,%.2f,%.2f) cache=%s provider=%s",
                 layer_id,
                 grid_data["grid"]["rows"],
                 grid_data["grid"]["cols"],
@@ -84,6 +86,7 @@ class GridFetchNode(BaseNode):
                 bbox.east,
                 bbox.north,
                 cache_status,
+                resolved_provider,
             )
 
             return NodeExecutionResult(
@@ -96,6 +99,7 @@ class GridFetchNode(BaseNode):
                     "bbox": grid_data["grid"]["bbox"],
                     "cache_status": cache_status,
                     "layer_id": layer_id,
+                    "provider_id": resolved_provider,
                 },
             )
 
@@ -118,6 +122,7 @@ class GridFetchNode(BaseNode):
                 PortSpec(name="layer_id", kind=PortKind.value, description="图层类型"),
                 PortSpec(name="resolution", kind=PortKind.value, description="网格分辨率（度）"),
                 PortSpec(name="model", kind=PortKind.value, required=False, description="气象模型，可选"),
+                PortSpec(name="provider_id", kind=PortKind.value, required=False, description="天气源 Provider ID（钉源），可选"),
                 PortSpec(name="viewport_bbox", kind=PortKind.data, required=False, description="视口边界框"),
                 PortSpec(name="bbox", kind=PortKind.data, required=False, description="空间过滤器边界框"),
             ],
@@ -128,5 +133,6 @@ class GridFetchNode(BaseNode):
                 PortSpec(name="bbox", kind=PortKind.data, description="网格边界框"),
                 PortSpec(name="cache_status", kind=PortKind.value, description="缓存状态"),
                 PortSpec(name="layer_id", kind=PortKind.value, description="图层类型"),
+                PortSpec(name="provider_id", kind=PortKind.value, description="实际使用的天气源 Provider ID"),
             ],
         )

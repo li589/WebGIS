@@ -7,21 +7,64 @@ consistent. ``OpenMeteoClient`` remains an implementation detail behind
 """
 from __future__ import annotations
 
+import logging
 from typing import Any
 
 from app.core.config import settings
 from app.services.effective_config import get_weather_cache_ttl_seconds
 from app.weatherengine.constants import WEATHER_LAYER_SPECS, WeatherLayerSpec
+from app.weatherengine.provider_base import WeatherProvider
 from app.weatherengine.provider_registry import get_registry
 from shared.contracts.api_contracts import BoundingBox
+
+logger = logging.getLogger(__name__)
 
 
 class WeatherProviderUnavailableError(ValueError):
     """Raised when no enabled provider supports the requested layer."""
 
 
-def require_provider_for_layer(layer_id: str):
-    provider = get_registry().get_provider_for_layer(layer_id)
+def resolve_layer_spec(layer_id: str) -> WeatherLayerSpec:
+    spec = WEATHER_LAYER_SPECS.get(layer_id)
+    if spec is None:
+        raise ValueError(f"Unsupported weather layer: {layer_id}")
+    return spec
+
+
+def resolve_provider_for_layer(
+    layer_id: str,
+    *,
+    provider_id: str | None = None,
+    exclude: tuple[str, ...] = (),
+) -> WeatherProvider:
+    """Resolve an enabled provider for ``layer_id``.
+
+    - If ``provider_id`` is set: must be enabled and support the layer (no silent fallback).
+    - Else: registry priority order, honoring ``exclude``.
+    """
+    registry = get_registry()
+    if provider_id:
+        pid = str(provider_id).strip()
+        if not pid or pid.lower() in {"auto", "default"}:
+            provider_id = None
+        else:
+            provider = registry.get_provider(pid)
+            if provider is None:
+                raise WeatherProviderUnavailableError(
+                    f"Weather provider '{pid}' is not registered."
+                )
+            if not registry.is_enabled(pid):
+                raise WeatherProviderUnavailableError(
+                    f"Weather provider '{pid}' is disabled. "
+                    "Enable it in Settings → Weather Providers."
+                )
+            if not provider.supports_layer(layer_id):
+                raise WeatherProviderUnavailableError(
+                    f"Weather provider '{pid}' does not support layer '{layer_id}'."
+                )
+            return provider
+
+    provider = registry.get_provider_for_layer(layer_id, exclude=exclude)
     if provider is None:
         raise WeatherProviderUnavailableError(
             f"No enabled weather provider supports layer '{layer_id}'. "
@@ -30,11 +73,72 @@ def require_provider_for_layer(layer_id: str):
     return provider
 
 
-def resolve_layer_spec(layer_id: str) -> WeatherLayerSpec:
-    spec = WEATHER_LAYER_SPECS.get(layer_id)
-    if spec is None:
-        raise ValueError(f"Unsupported weather layer: {layer_id}")
-    return spec
+def require_provider_for_layer(layer_id: str, *, provider_id: str | None = None):
+    return resolve_provider_for_layer(layer_id, provider_id=provider_id)
+
+
+def list_providers_for_layer(layer_id: str, *, include_disabled: bool = False) -> list[dict[str, Any]]:
+    """UI helper: providers that declare support for ``layer_id``."""
+    registry = get_registry()
+    rows: list[dict[str, Any]] = []
+    for provider, priority, enabled in registry.list_provider_entries():
+        if not provider.supports_layer(layer_id):
+            continue
+        if not include_disabled and not enabled:
+            continue
+        rows.append(
+            {
+                "provider_id": provider.provider_id,
+                "display_name": provider.display_name,
+                "enabled": enabled,
+                "priority": priority,
+                "provider_type": str(provider.provider_type.value)
+                if hasattr(provider.provider_type, "value")
+                else str(provider.provider_type),
+            }
+        )
+    rows.sort(key=lambda r: (r["priority"], r["provider_id"]))
+    return rows
+
+
+def _call_point(
+    provider: WeatherProvider,
+    *,
+    latitude: float,
+    longitude: float,
+    spec: WeatherLayerSpec,
+    model: str,
+    forecast_hours: int,
+    ttl_seconds: int,
+) -> tuple[dict[str, Any], str]:
+    return provider.fetch_point_forecast(
+        latitude=latitude,
+        longitude=longitude,
+        layer_spec=spec,
+        model=model,
+        forecast_hours=forecast_hours,
+        ttl_seconds=ttl_seconds,
+        pressure_levels=spec.pressure_levels or None,
+    )
+
+
+def _call_grid(
+    provider: WeatherProvider,
+    *,
+    bbox: BoundingBox,
+    resolution: float,
+    spec: WeatherLayerSpec,
+    model: str,
+    ttl_seconds: int,
+) -> tuple[dict[str, Any], str]:
+    return provider.fetch_grid_forecast(
+        bbox=bbox,
+        resolution=resolution,
+        layer_spec=spec,
+        model=model,
+        ttl_seconds=ttl_seconds,
+        pressure_levels=spec.pressure_levels or None,
+    )
 
 
 def fetch_point_forecast(
@@ -46,6 +150,7 @@ def fetch_point_forecast(
     forecast_hours: int | None = None,
     ttl_seconds: int | None = None,
     layer_spec: WeatherLayerSpec | None = None,
+    provider_id: str | None = None,
 ) -> tuple[dict[str, Any], str, str]:
     """Fetch point forecast via registry.
 
@@ -53,20 +158,50 @@ def fetch_point_forecast(
         (payload, cache_status, provider_id)
     """
     spec = layer_spec or resolve_layer_spec(layer_id)
-    provider = require_provider_for_layer(layer_id)
+    pinned = bool(provider_id and str(provider_id).strip().lower() not in {"", "auto", "default"})
+    provider = resolve_provider_for_layer(layer_id, provider_id=provider_id)
     resolved_model = model or settings.weather_default_model
     resolved_hours = forecast_hours or settings.weather_refresh_forecast_hours
     resolved_ttl = ttl_seconds if ttl_seconds is not None else get_weather_cache_ttl_seconds()
-    payload, cache_status = provider.fetch_point_forecast(
-        latitude=latitude,
-        longitude=longitude,
-        layer_spec=spec,
-        model=resolved_model,
-        forecast_hours=resolved_hours,
-        ttl_seconds=resolved_ttl,
-        pressure_levels=spec.pressure_levels or None,
-    )
-    return payload, cache_status, provider.provider_id
+
+    try:
+        payload, cache_status = _call_point(
+            provider,
+            latitude=latitude,
+            longitude=longitude,
+            spec=spec,
+            model=resolved_model,
+            forecast_hours=resolved_hours,
+            ttl_seconds=resolved_ttl,
+        )
+        return payload, cache_status, provider.provider_id
+    except Exception as first_exc:
+        if pinned:
+            raise
+        logger.warning(
+            "Point fetch failed for provider=%s layer=%s: %s; trying fallback",
+            provider.provider_id,
+            layer_id,
+            first_exc,
+        )
+        try:
+            fallback = resolve_provider_for_layer(
+                layer_id,
+                exclude=(provider.provider_id,),
+            )
+        except WeatherProviderUnavailableError:
+            # No alternate source — surface the original upstream failure.
+            raise first_exc from first_exc
+        payload, cache_status = _call_point(
+            fallback,
+            latitude=latitude,
+            longitude=longitude,
+            spec=spec,
+            model=resolved_model,
+            forecast_hours=resolved_hours,
+            ttl_seconds=resolved_ttl,
+        )
+        return payload, cache_status, fallback.provider_id
 
 
 def fetch_grid_forecast(
@@ -77,6 +212,7 @@ def fetch_grid_forecast(
     model: str | None = None,
     ttl_seconds: int | None = None,
     layer_spec: WeatherLayerSpec | None = None,
+    provider_id: str | None = None,
 ) -> tuple[dict[str, Any], str, str]:
     """Fetch grid forecast via registry.
 
@@ -84,15 +220,43 @@ def fetch_grid_forecast(
         (grid_data, cache_status, provider_id)
     """
     spec = layer_spec or resolve_layer_spec(layer_id)
-    provider = require_provider_for_layer(layer_id)
+    pinned = bool(provider_id and str(provider_id).strip().lower() not in {"", "auto", "default"})
+    provider = resolve_provider_for_layer(layer_id, provider_id=provider_id)
     resolved_model = model or settings.weather_default_model
     resolved_ttl = ttl_seconds if ttl_seconds is not None else get_weather_cache_ttl_seconds()
-    grid_data, cache_status = provider.fetch_grid_forecast(
-        bbox=bbox,
-        resolution=resolution,
-        layer_spec=spec,
-        model=resolved_model,
-        ttl_seconds=resolved_ttl,
-        pressure_levels=spec.pressure_levels or None,
-    )
-    return grid_data, cache_status, provider.provider_id
+
+    try:
+        grid_data, cache_status = _call_grid(
+            provider,
+            bbox=bbox,
+            resolution=resolution,
+            spec=spec,
+            model=resolved_model,
+            ttl_seconds=resolved_ttl,
+        )
+        return grid_data, cache_status, provider.provider_id
+    except Exception as first_exc:
+        if pinned:
+            raise
+        logger.warning(
+            "Grid fetch failed for provider=%s layer=%s: %s; trying fallback",
+            provider.provider_id,
+            layer_id,
+            first_exc,
+        )
+        try:
+            fallback = resolve_provider_for_layer(
+                layer_id,
+                exclude=(provider.provider_id,),
+            )
+        except WeatherProviderUnavailableError:
+            raise first_exc from first_exc
+        grid_data, cache_status = _call_grid(
+            fallback,
+            bbox=bbox,
+            resolution=resolution,
+            spec=spec,
+            model=resolved_model,
+            ttl_seconds=resolved_ttl,
+        )
+        return grid_data, cache_status, fallback.provider_id

@@ -17,6 +17,7 @@ import {
   supportsViewportDrivenRefreshCapability,
 } from '../../services/layer-capabilities'
 import { useWeatherTileManager } from '../weather-tile-manager'
+import { useWeatherSourcePrefsStore } from '../weather-source-prefs'
 import { buildDefaultWeatherRenderHint } from '../../components/map/weather-render'
 import type { BoundingBox, RuntimeLayerDescriptor, WeatherPointResponse, WorkflowEvent } from '../../services/runtime-api'
 import { LAYER_CATEGORIES, LAYER_LIBRARY } from './catalog'
@@ -24,6 +25,7 @@ import { isWeatherEngineCatalogId } from './weather-session'
 import { buildJobLayer } from './result-adapter'
 import { buildImportedVectorPayload } from './imported-vector'
 import { buildImportedRasterPayload } from './imported-raster'
+import { useWorkflowOutputLayersStore } from '../workflow-output-layers'
 import type {
   ActiveLayer,
   ActiveLayerDisplay,
@@ -422,6 +424,17 @@ function buildAvailabilityState(layer: ActiveLayer, item: RuntimeLayerLibraryIte
 
 export const useLayersStore = defineStore('layers', () => {
   const weatherTileManager = useWeatherTileManager()
+  const weatherSourcePrefs = useWeatherSourcePrefsStore()
+
+  /** Resolve tile manager provider arg (always explicit: auto | provider_id). */
+  function weatherProviderArg(catalogId: string): string {
+    return weatherSourcePrefs.getProvider(catalogId) || 'auto'
+  }
+
+  /** Query param for APIs; undefined when auto so backend uses registry priority. */
+  function weatherProviderQuery(catalogId: string): string | undefined {
+    return weatherSourcePrefs.getProviderQuery(catalogId)
+  }
 
   // ── Active layers (已添加的图层实例) ──────────────────────────────────────
   const activeLayers = ref<ActiveLayer[]>([])
@@ -534,7 +547,32 @@ export const useLayersStore = defineStore('layers', () => {
         .filter((item) => !item.isAdminBoundary)
         .map((item) => buildCatalogFallbackItem(null, item.catalogId))
 
-    return items.slice().sort((a, b) => {
+    // 合并工作流产出图层（前端本地注册表）
+    const outputStore = useWorkflowOutputLayersStore()
+    const outputItems: RuntimeLayerLibraryItem[] = outputStore.entries.map((entry) => ({
+      catalogId: entry.localId,
+      name: entry.name,
+      category: 'workflow-output',
+      metricLabel: '产出',
+      metricUnit: '',
+      metricPrecision: 1,
+      updateLabel: '工作流驱动',
+      sourceLabel: `工作流: ${entry.sourceWorkflowId}`,
+      accentColor: '#ffb84d',
+      accentGlow: 'rgba(255, 184, 77, 0.28)',
+      chipTone: 'rgba(255, 184, 77, 0.16)',
+      sources: [],
+      description: `分组: ${entry.group} · 源图层: ${entry.sourceLayerId}`,
+      engine: entry.engine,
+      workflowName: entry.name,
+      runReadiness: 'ready',
+      runReadinessSummary: '工作流产出图层，可运行源工作流刷新数据',
+      runReadinessNotes: [],
+      backendStatus: 'sample',
+      supportsTime: false,
+    }))
+
+    return items.concat(outputItems).sort((a, b) => {
       const categoryOrderA = CATEGORY_INDEX_BY_ID.get(a.category) ?? Number.MAX_SAFE_INTEGER
       const categoryOrderB = CATEGORY_INDEX_BY_ID.get(b.category) ?? Number.MAX_SAFE_INTEGER
       if (categoryOrderA !== categoryOrderB) {
@@ -771,7 +809,7 @@ export const useLayersStore = defineStore('layers', () => {
       const ch = currentHour.value
       const cb = currentMapBBox.value
       nextTick(() => {
-        weatherTileManager.setViewport(catalogId, cc, cz, ch, undefined, cb)
+        weatherTileManager.setViewport(catalogId, cc, cz, ch, undefined, cb, weatherProviderArg(catalogId))
         if (supportsParticleFlow(catalogId) && !particleFlowCatalogId.value) {
           particleFlowCatalogId.value = catalogId
           debugLog('addLayer', 'auto-enable particle flow for', catalogId)
@@ -898,6 +936,7 @@ export const useLayersStore = defineStore('layers', () => {
           currentHour.value,
           undefined,
           currentMapBBox.value,
+          weatherProviderArg(live.catalogId),
         )
       }
     }
@@ -943,6 +982,7 @@ export const useLayersStore = defineStore('layers', () => {
           currentHour.value,
           undefined,
           currentMapBBox.value,
+          weatherProviderArg(layer.catalogId),
         )
       }
     }
@@ -1025,6 +1065,29 @@ export const useLayersStore = defineStore('layers', () => {
 
   function getRuntimeLayerDescriptor(catalogId: string) {
     return runtimeLayerCatalog.value[catalogId] ?? null
+  }
+
+  /**
+   * 对于工作流产出图层（catalogId 以 wf-out- 为前缀），返回其源 layer_id；
+   * 普通图层则返回自身 catalogId。用于后端提交时解析引擎请求。
+   */
+  function resolveBackendLayerId(catalogId: string): string {
+    if (!catalogId.startsWith('wf-out-')) return catalogId
+    const outputStore = useWorkflowOutputLayersStore()
+    const entry = outputStore.getByLocalId(catalogId)
+    return entry?.sourceLayerId ?? catalogId
+  }
+
+  /**
+   * 对于工作流产出图层，返回其源图层的 descriptor（用于能力判断）；
+   * 普通图层则返回自身 descriptor。
+   */
+  function resolveEffectiveDescriptor(catalogId: string): RuntimeLayerDescriptor | null {
+    if (!catalogId.startsWith('wf-out-')) {
+      return getRuntimeLayerDescriptor(catalogId)
+    }
+    const backendId = resolveBackendLayerId(catalogId)
+    return getRuntimeLayerDescriptor(backendId)
   }
 
   async function ensureRuntimeLayerCatalog(force = false) {
@@ -1131,11 +1194,13 @@ export const useLayersStore = defineStore('layers', () => {
     catalogName: string,
     requestedOutputs: string[],
     requestBBox: BoundingBox | null,
+    backendLayerId?: string,
   ) {
+    const layerId = backendLayerId ?? catalogId
     return {
       command_type: 'analysis' as const,
       command_label: `运行 ${catalogName} 分析`,
-      layer_id: catalogId,
+      layer_id: layerId,
       priority: 'normal' as const,
       resource_profile: 'standard' as const,
       realtime_preferred: false,
@@ -1420,8 +1485,11 @@ export const useLayersStore = defineStore('layers', () => {
     submittingCatalogIds.add(catalogId)
     debugLog('runWorkflow', catalogId, 'start')
     try {
+      // 工作流产出图层：使用源 layer_id 进行后端能力判断与提交，但用本地 catalogId 跟踪作业
+      const backendLayerId = resolveBackendLayerId(catalogId)
+      const isOutputLayer = backendLayerId !== catalogId
       // 天气图层统一由 tile manager 按需拉取瓦片，不走 analysis workflow
-      if (isWeatherEngineLayer(catalogId)) {
+      if (isWeatherEngineLayer(backendLayerId)) {
         submittingCatalogIds.delete(catalogId)
         return
       }
@@ -1430,20 +1498,22 @@ export const useLayersStore = defineStore('layers', () => {
         await ensureRuntimeLayerCatalog()
         runtimeCatalogReady = true
       } catch (error) {
-        const canProceedWithoutCatalog = isWeatherEngineLayer(catalogId)
+        const canProceedWithoutCatalog = isWeatherEngineLayer(backendLayerId)
         if (!canProceedWithoutCatalog) {
           throw error
         }
         console.warn('[LayersStore] runtime layer catalog unavailable, proceeding with static fallback for', catalogId, error)
       }
 
-      const blockedReason = runtimeCatalogReady ? getCatalogRunBlockReason(catalogId) : null
+      const blockedReason = runtimeCatalogReady && !isOutputLayer ? getCatalogRunBlockReason(backendLayerId) : null
       if (blockedReason) {
         throw new Error(blockedReason)
       }
 
-      const catalogName = runtimeLayerCatalog.value[catalogId]?.display_name ?? getCatalogDisplayName(catalogId)
-      const supportsMapLayer = supportsMapLayerResult(catalogId)
+      const catalogName = isOutputLayer
+        ? (layerLibrary.value.find((l) => l.catalogId === catalogId)?.name ?? catalogId)
+        : (runtimeLayerCatalog.value[catalogId]?.display_name ?? getCatalogDisplayName(catalogId))
+      const supportsMapLayer = supportsMapLayerResult(backendLayerId)
       const requestedOutputs = supportsMapLayer
         ? ['json', 'text', 'table', 'map_layer']
         : ['json', 'text', 'table']
@@ -1456,9 +1526,9 @@ export const useLayersStore = defineStore('layers', () => {
 
       interruptWorkflowForCatalog(catalogId)
 
-      debugLog('runWorkflow', catalogId, 'submitting new workflow', 'bbox', requestBBox)
+      debugLog('runWorkflow', catalogId, 'submitting new workflow', 'bbox', requestBBox, 'backendLayerId', backendLayerId)
       const accepted = await submitWorkflow(
-        buildWorkflowPayloadForCatalog(catalogId, catalogName, requestedOutputs, requestBBox),
+        buildWorkflowPayloadForCatalog(catalogId, catalogName, requestedOutputs, requestBBox, backendLayerId),
       )
       if (isViewportRefreshStale(options.expectedViewportEpoch)) {
         debugLog('runWorkflow', catalogId, 'discard stale submit after accept', accepted.run_id)
@@ -1620,13 +1690,37 @@ export const useLayersStore = defineStore('layers', () => {
       if (layer.isAdminBoundary || isLocalImport(layer)) continue
       if (layer.visible && isWeatherEngineLayer(layer.catalogId)) {
         weatherTileManager.setLayerActive(layer.catalogId, true)
-        weatherTileManager.setViewport(layer.catalogId, cc, cz, ch, undefined, cb)
+        weatherTileManager.setViewport(layer.catalogId, cc, cz, ch, undefined, cb, weatherProviderArg(layer.catalogId))
         if (supportsParticleFlow(layer.catalogId) && !particleFlowCatalogId.value) {
           particleFlowCatalogId.value = layer.catalogId
         }
       } else if (!isWeatherEngineLayer(layer.catalogId)) {
         weatherTileManager.clearLayer(layer.catalogId)
       }
+    }
+  }
+
+  /** After user changes per-layer weather provider preference, refresh tiles + point query. */
+  function applyWeatherProviderPreference(catalogId: string, providerId: string) {
+    weatherSourcePrefs.setProvider(catalogId, providerId === 'auto' ? 'auto' : providerId)
+    const layer = activeLayers.value.find((item) => item.catalogId === catalogId && item.visible)
+    if (layer && isWeatherEngineLayer(catalogId)) {
+      weatherTileManager.setViewport(
+        catalogId,
+        currentMapCenter.value,
+        currentMapZoom.value,
+        currentHour.value,
+        undefined,
+        currentMapBBox.value,
+        weatherProviderArg(catalogId),
+      )
+    }
+    const last = lastPointWeatherQuery.value
+    if (last && last.catalogId === catalogId) {
+      void fetchPointWeather(last.lng, last.lat, catalogId)
+    } else if (pointWeather.value) {
+      // Provider changed but no remembered click — clear stale point card.
+      clearPointWeather()
     }
   }
 
@@ -1666,6 +1760,7 @@ export const useLayersStore = defineStore('layers', () => {
   const pointWeather = ref<WeatherPointResponse | null>(null)
   const pointWeatherLoading = ref(false)
   const pointWeatherError = ref<string | null>(null)
+  const lastPointWeatherQuery = ref<{ lng: number; lat: number; catalogId: string } | null>(null)
   let pointWeatherAbortController: AbortController | null = null
 
   /** 清除点天气查询结果与状态 */
@@ -1677,6 +1772,7 @@ export const useLayersStore = defineStore('layers', () => {
     pointWeather.value = null
     pointWeatherError.value = null
     pointWeatherLoading.value = false
+    lastPointWeatherQuery.value = null
   }
 
   /**
@@ -1696,6 +1792,7 @@ export const useLayersStore = defineStore('layers', () => {
     pointWeatherAbortController = controller
     pointWeatherLoading.value = true
     pointWeatherError.value = null
+    lastPointWeatherQuery.value = { lng, lat, catalogId }
     try {
       const weather = await getWeatherPoint({
         layer_id: catalogId,
@@ -1703,6 +1800,7 @@ export const useLayersStore = defineStore('layers', () => {
         longitude: lng,
         forecast_hours: 6,
         place_name: `${lat.toFixed(3)}, ${lng.toFixed(3)}`,
+        provider: weatherProviderQuery(catalogId),
         signal: controller.signal,
       })
       if (controller.signal.aborted) return
@@ -1792,7 +1890,15 @@ export const useLayersStore = defineStore('layers', () => {
         weatherViewportDebounceTimer.value = null
         for (const layer of activeLayers.value) {
           if (layer.visible && isWeatherEngineLayer(layer.catalogId)) {
-            weatherTileManager.setViewport(layer.catalogId, snapCenter, snapZoom, snapHour, undefined, snapBbox)
+            weatherTileManager.setViewport(
+              layer.catalogId,
+              snapCenter,
+              snapZoom,
+              snapHour,
+              undefined,
+              snapBbox,
+              weatherProviderArg(layer.catalogId),
+            )
           }
         }
       }, WEATHER_VIEWPORT_DEBOUNCE_MS)
@@ -1818,7 +1924,15 @@ export const useLayersStore = defineStore('layers', () => {
     }
     for (const layer of activeLayers.value) {
       if (layer.visible && isWeatherEngineLayer(layer.catalogId)) {
-        weatherTileManager.setViewport(layer.catalogId, currentMapCenter.value, currentMapZoom.value, hour, undefined, currentMapBBox.value)
+        weatherTileManager.setViewport(
+          layer.catalogId,
+          currentMapCenter.value,
+          currentMapZoom.value,
+          hour,
+          undefined,
+          currentMapBBox.value,
+          weatherProviderArg(layer.catalogId),
+        )
       }
     }
   })
@@ -1898,6 +2012,9 @@ export const useLayersStore = defineStore('layers', () => {
     getLayerPrimaryMetric,
     toggleParticleFlow,
     setParticleFlow,
+    resolveBackendLayerId,
+    resolveEffectiveDescriptor,
+    applyWeatherProviderPreference,
     // 点天气查询（单工作流管理）
     pointWeather,
     pointWeatherLoading,

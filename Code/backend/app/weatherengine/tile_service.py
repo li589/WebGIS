@@ -44,6 +44,16 @@ _IN_MEMORY_TILE_CACHE_MAX = 256
 _TILE_REDIS_KEY_PREFIX = "weather:tile:"
 
 
+def normalize_provider_id(provider_id: str | None) -> str:
+    """Normalize provider for cache keys / query params (auto = registry priority)."""
+    if provider_id is None:
+        return "auto"
+    pid = str(provider_id).strip()
+    if not pid or pid.lower() in {"auto", "default"}:
+        return "auto"
+    return pid
+
+
 def tile_key(
     layer_id: str,
     z: int,
@@ -51,10 +61,15 @@ def tile_key(
     y: int,
     hour: int,
     model: str | None,
+    provider_id: str | None = None,
 ) -> str:
-    """生成瓦片缓存键（前后端保持一致）。"""
+    """生成瓦片缓存键（前后端保持一致；含 provider_id 避免换源脏缓存）。"""
     model_part = model.replace("/", "_").replace(":", "_") if model else "default"
-    return f"{_TILE_REDIS_KEY_PREFIX}{layer_id}:z{z}:x{x}:y{y}:h{hour}:m{model_part}"
+    provider_part = normalize_provider_id(provider_id).replace("/", "_").replace(":", "_")
+    return (
+        f"{_TILE_REDIS_KEY_PREFIX}{layer_id}:z{z}:x{x}:y{y}:h{hour}"
+        f":m{model_part}:p{provider_part}"
+    )
 
 
 def tile_bbox(z: int, x: int, y: int) -> BoundingBox:
@@ -223,6 +238,7 @@ class WeatherTileService:
         y: int,
         hour: int,
         model: str | None,
+        provider_id: str | None = None,
     ) -> dict[str, Any]:
         """同步生成瓦片 GeoJSON（不含服务级缓存 / 并发闸）。
 
@@ -232,20 +248,21 @@ class WeatherTileService:
         resolution = zoom_to_resolution(z)
 
         logger.info(
-            "[WeatherTileService] generating tile layer=%s z=%d x=%d y=%d hour=%d resolution=%.2f bbox=(%.4f,%.4f,%.4f,%.4f)",
-            layer_id, z, x, y, hour, resolution,
+            "[WeatherTileService] generating tile layer=%s z=%d x=%d y=%d hour=%d resolution=%.2f provider=%s bbox=(%.4f,%.4f,%.4f,%.4f)",
+            layer_id, z, x, y, hour, resolution, normalize_provider_id(provider_id),
             bbox.west, bbox.south, bbox.east, bbox.north,
         )
 
         from app.weatherengine.fetch_gateway import fetch_grid_forecast
 
         resolved_model = model or settings.weather_default_model
-        grid_data, cache_status, _provider_id = fetch_grid_forecast(
+        grid_data, cache_status, resolved_provider = fetch_grid_forecast(
             layer_id=layer_id,
             bbox=bbox,
             resolution=resolution,
             model=resolved_model,
             layer_spec=layer_spec,
+            provider_id=provider_id,
         )
         grid_data_for_hour = _grid_data_for_hour(grid_data, hour)
         geojson = self._build_geojson(grid_data_for_hour, layer_id, layer_spec)
@@ -257,6 +274,8 @@ class WeatherTileService:
             "y": y,
             "hour": hour,
             "model": resolved_model,
+            "provider_id": resolved_provider,
+            "requested_provider": normalize_provider_id(provider_id),
             "resolution": resolution,
             "bbox": bbox.model_dump(mode="json"),
             "feature_count": len(geojson.get("features", [])),
@@ -265,8 +284,8 @@ class WeatherTileService:
         }
 
         logger.info(
-            "[WeatherTileService] tile generated layer=%s z=%d x=%d y=%d hour=%d features=%d upstream_cache=%s",
-            layer_id, z, x, y, hour, len(geojson.get("features", [])), cache_status,
+            "[WeatherTileService] tile generated layer=%s z=%d x=%d y=%d hour=%d features=%d upstream_cache=%s provider=%s",
+            layer_id, z, x, y, hour, len(geojson.get("features", [])), cache_status, resolved_provider,
         )
         return geojson
 
@@ -279,6 +298,7 @@ class WeatherTileService:
         y: int,
         hour: int,
         model: str | None,
+        provider_id: str | None = None,
     ) -> dict[str, Any]:
         """在线程池中执行同步生成，避免阻塞事件循环。"""
         loop = asyncio.get_event_loop()
@@ -292,6 +312,7 @@ class WeatherTileService:
                 y=y,
                 hour=hour,
                 model=model,
+                provider_id=provider_id,
             ),
         )
 
@@ -304,11 +325,12 @@ class WeatherTileService:
         *,
         hour: int | None = None,
         model: str | None = None,
+        provider_id: str | None = None,
     ) -> tuple[dict[str, Any], str]:
         """同步版 get_tile：供 workflow 节点复用同一套缓存与生成逻辑。"""
         hour = _clamp_hour(hour)
         model = model or settings.weather_default_model
-        key = tile_key(layer_id, z, x, y, hour, model)
+        key = tile_key(layer_id, z, x, y, hour, model, provider_id)
 
         layer_spec = WEATHER_LAYER_SPECS.get(layer_id)
         if layer_spec is None:
@@ -338,6 +360,7 @@ class WeatherTileService:
             y=y,
             hour=hour,
             model=model,
+            provider_id=provider_id,
         )
         self._write_memory_cache(key, geojson)
         cache_set_json(key, geojson, get_weather_cache_ttl_seconds())
@@ -364,6 +387,7 @@ class WeatherTileService:
         *,
         hour: int | None = None,
         model: str | None = None,
+        provider_id: str | None = None,
     ) -> tuple[dict[str, Any], str]:
         """获取瓦片 GeoJSON，返回 (geojson, cache_status)。
 
@@ -373,7 +397,7 @@ class WeatherTileService:
         """
         hour = _clamp_hour(hour)
         model = model or settings.weather_default_model
-        key = tile_key(layer_id, z, x, y, hour, model)
+        key = tile_key(layer_id, z, x, y, hour, model, provider_id)
 
         layer_spec = WEATHER_LAYER_SPECS.get(layer_id)
         if layer_spec is None:
@@ -416,6 +440,7 @@ class WeatherTileService:
                 y=y,
                 hour=hour,
                 model=model,
+                provider_id=provider_id,
             )
 
         # 4. 写入缓存

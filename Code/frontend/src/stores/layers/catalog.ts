@@ -64,6 +64,13 @@ export const LAYER_CATEGORIES: LayerCategory[] = [
     accentColor: '#7ee0a8',
     chipTone: 'rgba(126, 224, 168, 0.16)',
   },
+  {
+    id: 'workflow-output',
+    name: '工作流产出',
+    icon: 'W',
+    accentColor: '#ffb84d',
+    chipTone: 'rgba(255, 184, 77, 0.16)',
+  },
 ]
 
 // ── 数据源定义 ──────────────────────────────────────────────────────────────
@@ -71,8 +78,8 @@ export const LAYER_CATEGORIES: LayerCategory[] = [
 
 const SOURCE_WEATHERENGINE_WIND: LayerSource = {
   id: 'weatherengine-wind',
-  name: 'Open-Meteo 风场（多模型）',
-  description: '由后端 weatherengine 路由的 Open-Meteo 站点风场数据，支持多模型选择。',
+  name: '天气引擎 · 风场（多模型）',
+  description: '由后端 weatherengine 多源路由的风场数据，支持钉选 Provider 与多模型。',
   urlTemplate: 'https://example.com/wind/{z}/{x}/{y}.png',
   needsAuth: false,
   needsBackendTransform: true,
@@ -82,8 +89,8 @@ const SOURCE_WEATHERENGINE_WIND: LayerSource = {
 
 const SOURCE_WEATHERENGINE_WIND_80M: LayerSource = {
   id: 'weatherengine-wind-80m',
-  name: 'Open-Meteo 80m 风场',
-  description: 'Open-Meteo 80 米高度风场数据，对应现代风机轮毂高度。',
+  name: '天气引擎 · 80m 风场',
+  description: '天气引擎 80 米高度风场，对应现代风机轮毂高度。',
   urlTemplate: 'https://example.com/wind-80m/{z}/{x}/{y}.png',
   needsAuth: false,
   needsBackendTransform: true,
@@ -93,8 +100,8 @@ const SOURCE_WEATHERENGINE_WIND_80M: LayerSource = {
 
 const SOURCE_WEATHERENGINE_WIND_120M: LayerSource = {
   id: 'weatherengine-wind-120m',
-  name: 'Open-Meteo 120m 风场',
-  description: 'Open-Meteo 120 米高度风场数据，大型/海上风机轮毂高度参考层。',
+  name: '天气引擎 · 120m 风场',
+  description: '天气引擎 120 米高度风场，大型/海上风机轮毂高度参考层。',
   urlTemplate: 'https://example.com/wind-120m/{z}/{x}/{y}.png',
   needsAuth: false,
   needsBackendTransform: true,
@@ -104,8 +111,8 @@ const SOURCE_WEATHERENGINE_WIND_120M: LayerSource = {
 
 const SOURCE_WEATHERENGINE_WIND_180M: LayerSource = {
   id: 'weatherengine-wind-180m',
-  name: 'Open-Meteo 180m 风场',
-  description: 'Open-Meteo 180 米高度风场数据，大气边界层顶部参考风场。',
+  name: '天气引擎 · 180m 风场',
+  description: '天气引擎 180 米高度风场，大气边界层顶部参考风场。',
   urlTemplate: 'https://example.com/wind-180m/{z}/{x}/{y}.png',
   needsAuth: false,
   needsBackendTransform: true,
@@ -115,8 +122,8 @@ const SOURCE_WEATHERENGINE_WIND_180M: LayerSource = {
 
 const SOURCE_WEATHERENGINE_WIND_850HPA: LayerSource = {
   id: 'weatherengine-wind-850hPa',
-  name: 'Open-Meteo 850hPa 风场',
-  description: 'Open-Meteo 850 hPa 气压层风场数据（约 1.5 km AGL），低空急流与对流 inflow 参考。',
+  name: '天气引擎 · 850hPa 风场',
+  description: '天气引擎 850 hPa 气压层风场（约 1.5 km AGL），低空急流与对流 inflow 参考。',
   urlTemplate: 'https://example.com/wind-850hpa/{z}/{x}/{y}.png',
   needsAuth: false,
   needsBackendTransform: true,
@@ -126,8 +133,8 @@ const SOURCE_WEATHERENGINE_WIND_850HPA: LayerSource = {
 
 const SOURCE_WEATHERENGINE_WIND_500HPA: LayerSource = {
   id: 'weatherengine-wind-500hPa',
-  name: 'Open-Meteo 500hPa 风场',
-  description: 'Open-Meteo 500 hPa 气压层风场数据（约 5.5 km AGL），中空天气尺度流场参考。',
+  name: '天气引擎 · 500hPa 风场',
+  description: '天气引擎 500 hPa 气压层风场（约 5.5 km AGL），中空天气尺度流场参考。',
   urlTemplate: 'https://example.com/wind-500hpa/{z}/{x}/{y}.png',
   needsAuth: false,
   needsBackendTransform: true,
@@ -137,8 +144,8 @@ const SOURCE_WEATHERENGINE_WIND_500HPA: LayerSource = {
 
 const SOURCE_WEATHERENGINE_WIND_200HPA: LayerSource = {
   id: 'weatherengine-wind-200hPa',
-  name: 'Open-Meteo 200hPa 风场',
-  description: 'Open-Meteo 200 hPa 气压层风场数据（约 12 km AGL），高空急流参考层。',
+  name: '天气引擎 · 200hPa 风场',
+  description: '天气引擎 200 hPa 气压层风场（约 12 km AGL），高空急流参考层。',
   urlTemplate: 'https://example.com/wind-200hpa/{z}/{x}/{y}.png',
   needsAuth: false,
   needsBackendTransform: true,
@@ -148,8 +155,8 @@ const SOURCE_WEATHERENGINE_WIND_200HPA: LayerSource = {
 
 const SOURCE_WEATHERENGINE_PRECIP: LayerSource = {
   id: 'weatherengine-precipitation',
-  name: 'Open-Meteo 降水量',
-  description: '由后端 weatherengine 路由的 Open-Meteo 站点降水量数据。',
+  name: '天气引擎 · 降水量',
+  description: '由后端 weatherengine 多源路由的降水量数据。',
   urlTemplate: 'https://example.com/precip/{z}/{x}/{y}.png',
   needsAuth: false,
   needsBackendTransform: true,
@@ -159,8 +166,8 @@ const SOURCE_WEATHERENGINE_PRECIP: LayerSource = {
 
 const SOURCE_WEATHERENGINE_TEMP: LayerSource = {
   id: 'weatherengine-temperature',
-  name: 'Open-Meteo 温度',
-  description: '由后端 weatherengine 路由的 Open-Meteo 站点温度数据。',
+  name: '天气引擎 · 温度',
+  description: '由后端 weatherengine 多源路由的温度数据。',
   urlTemplate: 'https://example.com/temperature/{z}/{x}/{y}.png',
   needsAuth: false,
   needsBackendTransform: true,
@@ -170,8 +177,8 @@ const SOURCE_WEATHERENGINE_TEMP: LayerSource = {
 
 const SOURCE_WEATHERENGINE_TEMP_80M: LayerSource = {
   id: 'weatherengine-temperature-80m',
-  name: 'Open-Meteo 80m 温度',
-  description: 'Open-Meteo 80 米高度温度数据，适用于风机结冰与尾流分析。',
+  name: '天气引擎 · 80m 温度',
+  description: '天气引擎 80 米高度温度，适用于风机结冰与尾流分析。',
   urlTemplate: 'https://example.com/temperature-80m/{z}/{x}/{y}.png',
   needsAuth: false,
   needsBackendTransform: true,
@@ -181,8 +188,8 @@ const SOURCE_WEATHERENGINE_TEMP_80M: LayerSource = {
 
 const SOURCE_WEATHERENGINE_TEMP_120M: LayerSource = {
   id: 'weatherengine-temperature-120m',
-  name: 'Open-Meteo 120m 温度',
-  description: 'Open-Meteo 120 米高度温度数据，大型风机轮毂高度热力参考。',
+  name: '天气引擎 · 120m 温度',
+  description: '天气引擎 120 米高度温度，大型风机轮毂高度热力参考。',
   urlTemplate: 'https://example.com/temperature-120m/{z}/{x}/{y}.png',
   needsAuth: false,
   needsBackendTransform: true,
@@ -192,8 +199,8 @@ const SOURCE_WEATHERENGINE_TEMP_120M: LayerSource = {
 
 const SOURCE_WEATHERENGINE_TEMP_180M: LayerSource = {
   id: 'weatherengine-temperature-180m',
-  name: 'Open-Meteo 180m 温度',
-  description: 'Open-Meteo 180 米高度温度数据，大气边界层顶部热力剖面。',
+  name: '天气引擎 · 180m 温度',
+  description: '天气引擎 180 米高度温度，大气边界层顶部热力剖面。',
   urlTemplate: 'https://example.com/temperature-180m/{z}/{x}/{y}.png',
   needsAuth: false,
   needsBackendTransform: true,
@@ -203,8 +210,8 @@ const SOURCE_WEATHERENGINE_TEMP_180M: LayerSource = {
 
 const SOURCE_WEATHERENGINE_PRESSURE: LayerSource = {
   id: 'weatherengine-pressure',
-  name: 'Open-Meteo 海平面气压',
-  description: '由后端 weatherengine 路由的 Open-Meteo 海平面气压数据。',
+  name: '天气引擎 · 海平面气压',
+  description: '由后端 weatherengine 多源路由的海平面气压数据。',
   urlTemplate: 'https://example.com/pressure/{z}/{x}/{y}.png',
   needsAuth: false,
   needsBackendTransform: true,
@@ -214,8 +221,8 @@ const SOURCE_WEATHERENGINE_PRESSURE: LayerSource = {
 
 const SOURCE_WEATHERENGINE_HUMIDITY: LayerSource = {
   id: 'weatherengine-humidity',
-  name: 'Open-Meteo 相对湿度',
-  description: '由后端 weatherengine 路由的 Open-Meteo 近地面相对湿度数据。',
+  name: '天气引擎 · 相对湿度',
+  description: '由后端 weatherengine 多源路由的近地面相对湿度数据。',
   urlTemplate: 'https://example.com/humidity/{z}/{x}/{y}.png',
   needsAuth: false,
   needsBackendTransform: true,
@@ -225,8 +232,8 @@ const SOURCE_WEATHERENGINE_HUMIDITY: LayerSource = {
 
 const SOURCE_WEATHERENGINE_VISIBILITY: LayerSource = {
   id: 'weatherengine-visibility',
-  name: 'Open-Meteo 能见度',
-  description: '由后端 weatherengine 路由的 Open-Meteo 地面能见度数据。',
+  name: '天气引擎 · 能见度',
+  description: '由后端 weatherengine 多源路由的地面能见度数据。',
   urlTemplate: 'https://example.com/visibility/{z}/{x}/{y}.png',
   needsAuth: false,
   needsBackendTransform: true,
@@ -476,7 +483,7 @@ export const LAYER_LIBRARY: LayerCatalogItem[] = [
     metricUnit: 'm/s',
     metricPrecision: 1,
     updateLabel: '每小时更新',
-    sourceLabel: 'Open-Meteo · weatherengine',
+    sourceLabel: '天气引擎（多源）',
     accentColor: '#67d4ff',
     accentGlow: 'rgba(103, 212, 255, 0.34)',
     chipTone: 'rgba(103, 212, 255, 0.18)',
@@ -490,7 +497,7 @@ export const LAYER_LIBRARY: LayerCatalogItem[] = [
     metricUnit: 'm/s',
     metricPrecision: 1,
     updateLabel: '每小时更新',
-    sourceLabel: 'Open-Meteo · weatherengine',
+    sourceLabel: '天气引擎（多源）',
     accentColor: '#7ec4ff',
     accentGlow: 'rgba(126, 196, 255, 0.34)',
     chipTone: 'rgba(126, 196, 255, 0.18)',
@@ -504,7 +511,7 @@ export const LAYER_LIBRARY: LayerCatalogItem[] = [
     metricUnit: 'm/s',
     metricPrecision: 1,
     updateLabel: '每小时更新',
-    sourceLabel: 'Open-Meteo · weatherengine',
+    sourceLabel: '天气引擎（多源）',
     accentColor: '#95b8ff',
     accentGlow: 'rgba(149, 184, 255, 0.34)',
     chipTone: 'rgba(149, 184, 255, 0.18)',
@@ -518,7 +525,7 @@ export const LAYER_LIBRARY: LayerCatalogItem[] = [
     metricUnit: 'm/s',
     metricPrecision: 1,
     updateLabel: '每小时更新',
-    sourceLabel: 'Open-Meteo · weatherengine',
+    sourceLabel: '天气引擎（多源）',
     accentColor: '#a8a8ff',
     accentGlow: 'rgba(168, 168, 255, 0.34)',
     chipTone: 'rgba(168, 168, 255, 0.18)',
@@ -532,7 +539,7 @@ export const LAYER_LIBRARY: LayerCatalogItem[] = [
     metricUnit: 'm/s',
     metricPrecision: 1,
     updateLabel: '每小时更新',
-    sourceLabel: 'Open-Meteo · weatherengine',
+    sourceLabel: '天气引擎（多源）',
     accentColor: '#8fb8ff',
     accentGlow: 'rgba(143, 184, 255, 0.34)',
     chipTone: 'rgba(143, 184, 255, 0.18)',
@@ -546,7 +553,7 @@ export const LAYER_LIBRARY: LayerCatalogItem[] = [
     metricUnit: 'm/s',
     metricPrecision: 1,
     updateLabel: '每小时更新',
-    sourceLabel: 'Open-Meteo · weatherengine',
+    sourceLabel: '天气引擎（多源）',
     accentColor: '#7ea0ff',
     accentGlow: 'rgba(126, 160, 255, 0.34)',
     chipTone: 'rgba(126, 160, 255, 0.18)',
@@ -560,7 +567,7 @@ export const LAYER_LIBRARY: LayerCatalogItem[] = [
     metricUnit: 'm/s',
     metricPrecision: 1,
     updateLabel: '每小时更新',
-    sourceLabel: 'Open-Meteo · weatherengine',
+    sourceLabel: '天气引擎（多源）',
     accentColor: '#6e88ff',
     accentGlow: 'rgba(110, 136, 255, 0.34)',
     chipTone: 'rgba(110, 136, 255, 0.18)',
@@ -574,7 +581,7 @@ export const LAYER_LIBRARY: LayerCatalogItem[] = [
     metricUnit: 'mm/h',
     metricPrecision: 0,
     updateLabel: '每小时更新',
-    sourceLabel: 'Open-Meteo · weatherengine',
+    sourceLabel: '天气引擎（多源）',
     accentColor: '#72ffcf',
     accentGlow: 'rgba(114, 255, 207, 0.3)',
     chipTone: 'rgba(114, 255, 207, 0.16)',
@@ -588,7 +595,7 @@ export const LAYER_LIBRARY: LayerCatalogItem[] = [
     metricUnit: '°C',
     metricPrecision: 1,
     updateLabel: '每小时更新',
-    sourceLabel: 'Open-Meteo · weatherengine',
+    sourceLabel: '天气引擎（多源）',
     accentColor: '#ffb65c',
     accentGlow: 'rgba(255, 182, 92, 0.3)',
     chipTone: 'rgba(255, 182, 92, 0.16)',
@@ -602,7 +609,7 @@ export const LAYER_LIBRARY: LayerCatalogItem[] = [
     metricUnit: '°C',
     metricPrecision: 1,
     updateLabel: '每小时更新',
-    sourceLabel: 'Open-Meteo · weatherengine',
+    sourceLabel: '天气引擎（多源）',
     accentColor: '#ffc97a',
     accentGlow: 'rgba(255, 201, 122, 0.3)',
     chipTone: 'rgba(255, 201, 122, 0.16)',
@@ -616,7 +623,7 @@ export const LAYER_LIBRARY: LayerCatalogItem[] = [
     metricUnit: '°C',
     metricPrecision: 1,
     updateLabel: '每小时更新',
-    sourceLabel: 'Open-Meteo · weatherengine',
+    sourceLabel: '天气引擎（多源）',
     accentColor: '#ffdc8a',
     accentGlow: 'rgba(255, 220, 138, 0.3)',
     chipTone: 'rgba(255, 220, 138, 0.16)',
@@ -630,7 +637,7 @@ export const LAYER_LIBRARY: LayerCatalogItem[] = [
     metricUnit: '°C',
     metricPrecision: 1,
     updateLabel: '每小时更新',
-    sourceLabel: 'Open-Meteo · weatherengine',
+    sourceLabel: '天气引擎（多源）',
     accentColor: '#ffe49a',
     accentGlow: 'rgba(255, 228, 154, 0.3)',
     chipTone: 'rgba(255, 228, 154, 0.16)',
@@ -644,7 +651,7 @@ export const LAYER_LIBRARY: LayerCatalogItem[] = [
     metricUnit: 'hPa',
     metricPrecision: 1,
     updateLabel: '每小时更新',
-    sourceLabel: 'Open-Meteo · weatherengine',
+    sourceLabel: '天气引擎（多源）',
     accentColor: '#c9a3ff',
     accentGlow: 'rgba(201, 163, 255, 0.3)',
     chipTone: 'rgba(201, 163, 255, 0.16)',
@@ -658,7 +665,7 @@ export const LAYER_LIBRARY: LayerCatalogItem[] = [
     metricUnit: '%',
     metricPrecision: 0,
     updateLabel: '每小时更新',
-    sourceLabel: 'Open-Meteo · weatherengine',
+    sourceLabel: '天气引擎（多源）',
     accentColor: '#a3d9b0',
     accentGlow: 'rgba(163, 217, 176, 0.3)',
     chipTone: 'rgba(163, 217, 176, 0.16)',
@@ -672,7 +679,7 @@ export const LAYER_LIBRARY: LayerCatalogItem[] = [
     metricUnit: 'm',
     metricPrecision: 0,
     updateLabel: '每小时更新',
-    sourceLabel: 'Open-Meteo · weatherengine',
+    sourceLabel: '天气引擎（多源）',
     accentColor: '#e8c87a',
     accentGlow: 'rgba(232, 200, 122, 0.3)',
     chipTone: 'rgba(232, 200, 122, 0.16)',

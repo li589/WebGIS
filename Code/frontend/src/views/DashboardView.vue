@@ -9,20 +9,28 @@ import MapCanvas from '../components/MapCanvas.vue'
 import ModeToolbar from '../components/ModeToolbar.vue'
 import LogPanel from '../components/toolbar/LogPanel.vue'
 import TimelinePanel from '../components/TimelinePanel.vue'
-import TimelineScrubber from '../components/TimelineScrubber.vue'
+import TimelineScrubber, { type TimelineWorkflowIndicator } from '../components/TimelineScrubber.vue'
 import WorkflowStatusPanel from '../components/workflow/WorkflowStatusPanel.vue'
 import type { TileSourceId } from '../services/api-config'
 import type { ActiveLayerDisplay, LayerHotspot } from '../stores/layers/types'
 import type { OverlayTimeState } from '../components/map/overlay-image-module'
 import { getOverlayValue, type OverlayPointValue } from '../services/runtime-api'
 import { useUiStore } from '../stores/ui'
+import { useUiLoadingStore } from '../stores/ui-loading'
 import { useLayersStore } from '../stores/layers'
 import { useLogStore } from '../stores/log'
 
 const uiStore = useUiStore()
 const layersStore = useLayersStore()
 const logStore = useLogStore()
-void layersStore.ensureRuntimeLayerCatalog()
+const uiLoading = useUiLoadingStore()
+const workflowOutputStore = useWorkflowOutputLayersStore()
+
+// 首次打开网页：立即显示 loading，图层目录加载完成后强制关闭（配对 showImmediate）
+uiLoading.showImmediate('初始化地图数据...')
+void layersStore.ensureRuntimeLayerCatalog().finally(() => {
+  uiLoading.hideImmediate()
+})
 
 const { tileSourceId, currentHour, currentDate, hourLabel, isPlaying } = storeToRefs(uiStore)
 const { selectedLayerDisplay, activeLayerCount, workflowError, isSubmitting, pointWeather, pointWeatherLoading, pointWeatherError } = storeToRefs(layersStore)
@@ -45,8 +53,29 @@ const screenshotOpen = ref(false)
 const workflowStatusOpen = ref(false)
 const logOpen = ref(false)
 const settingsOpen = ref(false)
+const workflowEditorOpen = ref(false)
 const ScreenshotExport = defineAsyncComponent(() => import('../components/ScreenshotExport.vue'))
 const SettingsPanel = defineAsyncComponent(() => import('../components/settings/SettingsPanel.vue'))
+const WorkflowEditorPanel = defineAsyncComponent(() => import('../components/workflow/WorkflowEditorPanel.vue'))
+import type { WorkflowRunTarget } from '../components/workflow/WorkflowRunDialog.vue'
+import { useWorkflowOutputLayersStore } from '../stores/workflow-output-layers'
+
+// 异步组件首次加载跟踪：仅首次打开时显示 loading（后续从缓存加载无需 loading）
+const _loadedAsyncPanels = new Set<string>()
+
+watch(settingsOpen, (open) => {
+  if (open && !_loadedAsyncPanels.has('settings')) {
+    _loadedAsyncPanels.add('settings')
+    uiLoading.showImmediate('加载设置面板...')
+  }
+})
+
+watch(workflowEditorOpen, (open) => {
+  if (open && !_loadedAsyncPanels.has('workflow-editor')) {
+    _loadedAsyncPanels.add('workflow-editor')
+    uiLoading.showImmediate('加载工作流编辑器...')
+  }
+})
 
 const sidePanelDimensions = Object.freeze({
   defaultHeight: 372,
@@ -104,6 +133,20 @@ const timelineSegments = computed(() => {
       label: `${String(hour).padStart(2, '0')}:00`,
       state,
       availabilityLabel,
+    }
+  })
+})
+
+const timelineWorkflowIndicators = computed<TimelineWorkflowIndicator[]>(() => {
+  return layersStore.jobLayers.map((job) => {
+    const libItem = job.catalogId
+      ? layersStore.layerLibrary.find((l) => l.catalogId === job.catalogId)
+      : undefined
+    return {
+      name: job.name || libItem?.name || job.jobId,
+      status: job.status,
+      progress: job.progress ?? 0,
+      engine: libItem?.engine ?? undefined,
     }
   })
 })
@@ -209,6 +252,43 @@ function handleCloseWorkflowStatus() {
   workflowStatusOpen.value = false
 }
 
+function handleOpenWorkflowEditor() {
+  workflowEditorOpen.value = true
+}
+
+function handleCloseWorkflowEditor() {
+  workflowEditorOpen.value = false
+}
+
+function handleRunWorkflowFromEditor(workflowId: string, linkedLayerId: string | null, target: WorkflowRunTarget) {
+  logStore.logWorkflow('workflow-editor-run', `从编辑器运行工作流: ${workflowId} (目标: ${target.mode})`)
+  if (!linkedLayerId) {
+    logStore.logWorkflow('workflow-editor-error', `工作流 ${workflowId} 未关联图层，无法运行`)
+    return
+  }
+  // 关闭编辑器面板，切换到工作流状态面板查看执行进度
+  workflowEditorOpen.value = false
+  workflowStatusOpen.value = true
+
+  if (target.mode === 'default') {
+    // 默认图层：直接使用源 layer_id 运行
+    void handleRunWorkflow(linkedLayerId)
+  } else {
+    // 新建图层：在前端注册表创建产出条目，再用本地 catalogId 运行
+    // runWorkflowForCatalog 会自动将本地 catalogId 解析回源 layer_id 提交后端
+    const engine = layersStore.layerLibrary.find((l) => l.catalogId === linkedLayerId)?.engine ?? 'general'
+    const entry = workflowOutputStore.createOutputLayer({
+      name: target.name ?? `产出 ${workflowId}`,
+      group: target.group ?? '默认分组',
+      sourceWorkflowId: workflowId,
+      sourceLayerId: linkedLayerId,
+      engine,
+    })
+    logStore.logWorkflow('workflow-output-create', `创建产出图层「${entry.name}」→ 分组「${entry.group}」`)
+    void handleRunWorkflow(entry.localId)
+  }
+}
+
 async function handleRunWorkflow(catalogId: string) {
   logStore.logWorkflow('workflow-submit', `提交工作流: ${catalogId}`)
   try {
@@ -291,6 +371,7 @@ function buildFallbackActiveLayer(): ActiveLayerDisplay {
           @open-screenshot="handleOpenScreenshot"
           @open-settings="handleOpenSettings"
           @open-workflow-status="handleOpenWorkflowStatus"
+          @open-workflow-editor="handleOpenWorkflowEditor"
           @open-log="logOpen = true"
         />
       </div>
@@ -369,6 +450,7 @@ function buildFallbackActiveLayer(): ActiveLayerDisplay {
             :observation-time-label="activeLayer.observationTimeLabel"
             :timeline-segments="timelineSegments"
             :is-playing="isPlaying"
+            :workflow-indicators="timelineWorkflowIndicators"
             @step="handleTimelineStep"
             @change-hour="handleTimelineChange"
             @change-date="handleTimelineDateChange"
@@ -402,6 +484,12 @@ function buildFallbackActiveLayer(): ActiveLayerDisplay {
     <SettingsPanel
       v-if="settingsOpen"
       @close="handleCloseSettings"
+    />
+
+    <WorkflowEditorPanel
+      v-if="workflowEditorOpen"
+      @close="handleCloseWorkflowEditor"
+      @run="handleRunWorkflowFromEditor"
     />
   </main>
 </template>

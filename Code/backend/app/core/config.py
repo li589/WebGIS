@@ -200,6 +200,15 @@ class Settings:
     # ---- Phase 1 工程治理开关 ----
     # 远端数据源就绪检查时是否短超时 probe（stat）；默认只校验凭证可解析
     remote_readiness_probe: bool = os.getenv("BACKEND_REMOTE_READINESS_PROBE", "false").lower() == "true"
+    # 远端单文件下载上限（字节）。NAS 上大 HDF/GeoTIFF 可调高，例如 8589934592（8 GiB）
+    remote_max_bytes: int = int(os.getenv("BACKEND_REMOTE_MAX_BYTES", str(512 * 1024 * 1024)))
+    # 图层远端数据源覆盖（JSON）。将 SMB/SFTP URI 插到对应 layer 的候选列表最前，不改本地已跑通路径。
+    # 例: {"smap-soil":{"SMAP_SPL3SMP_E":["smb://nas/share/SMAP/x.h5?cred=nas-lab"]}}
+    remote_layer_data_uris: str = os.getenv("BACKEND_REMOTE_LAYER_DATA_URIS", "")
+    # 每个 API Key 保留的历史版本上限
+    api_key_history_limit: int = int(os.getenv("BACKEND_API_KEY_HISTORY_LIMIT", "20"))
+    # 每个远程存储 profile 保留的密钥历史上限
+    remote_storage_history_limit: int = int(os.getenv("BACKEND_REMOTE_STORAGE_HISTORY_LIMIT", "20"))
 
 
 settings = Settings()

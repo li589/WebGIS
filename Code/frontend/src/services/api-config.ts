@@ -709,6 +709,22 @@ export function isSourceAvailable(sourceId: TileSourceId): boolean {
   return sourceId !== 'none' && TILE_SOURCE_MAP.has(sourceId)
 }
 
+/** Backend tile proxy currently requires these keys before serving tiles. */
+export const REQUIRED_BASEMAP_API_KEYS = new Set(['tianditu', 'baidu'])
+
+export function tileSourceRequiresApiKey(source: TileSourceConfig): boolean {
+  const key = source.secretRef?.key
+  return Boolean(key && REQUIRED_BASEMAP_API_KEYS.has(key))
+}
+
+export function isTileSourceUsable(
+  source: TileSourceConfig,
+  isKeyAvailable: (keyName: string) => boolean,
+): boolean {
+  if (!tileSourceRequiresApiKey(source)) return true
+  return isKeyAvailable(source.secretRef!.key)
+}
+
 export function listEnabledBasemapProviders(config: UnifiedIntegrationConfig) {
   return config.basemaps.filter((provider) => provider.endpoints.some((endpoint) => endpoint.enabled))
 }

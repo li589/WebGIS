@@ -48,14 +48,16 @@ class ForecastFetchNode(BaseNode):
             forecast_hours = coerce_int(inputs.get("forecast_hours"))
             if not forecast_hours:
                 forecast_hours = settings.weather_refresh_forecast_hours
+            provider_id = inputs.get("provider_id") or inputs.get("provider")
 
-            payload, cache_status, _provider_id = fetch_point_forecast(
+            payload, cache_status, resolved_provider = fetch_point_forecast(
                 layer_id=layer_id,
                 latitude=latitude,
                 longitude=longitude,
                 model=model,
                 forecast_hours=forecast_hours,
                 layer_spec=spec,
+                provider_id=provider_id,
             )
 
             layer_spec_dict = asdict(spec)
@@ -67,6 +69,7 @@ class ForecastFetchNode(BaseNode):
                     "forecast": payload,
                     "cache_status": cache_status,
                     "layer_spec": layer_spec_dict,
+                    "provider_id": resolved_provider,
                 },
             )
         except Exception as exc:
@@ -87,10 +90,12 @@ class ForecastFetchNode(BaseNode):
                 PortSpec(name="layer_id", kind=PortKind.value, description="天气图层标识"),
                 PortSpec(name="model", kind=PortKind.value, required=False, description="气象模型，可选"),
                 PortSpec(name="forecast_hours", kind=PortKind.value, required=False, description="预报小时数，可选"),
+                PortSpec(name="provider_id", kind=PortKind.value, required=False, description="天气源 Provider ID（钉源），可选"),
             ],
             output_ports=[
                 PortSpec(name="forecast", kind=PortKind.data, description="原始预报数据"),
                 PortSpec(name="cache_status", kind=PortKind.value, description="缓存状态（hit/miss）"),
                 PortSpec(name="layer_spec", kind=PortKind.data, description="图层规格字典"),
+                PortSpec(name="provider_id", kind=PortKind.value, description="实际使用的天气源 Provider ID"),
             ],
         )

@@ -8,6 +8,13 @@ type TimelineAvailabilitySegment = {
   availabilityLabel: string
 }
 
+export interface TimelineWorkflowIndicator {
+  name: string
+  status: 'running' | 'queued' | 'succeeded' | 'failed' | 'cancelled' | 'retry_pending'
+  progress: number
+  engine?: string
+}
+
 const props = defineProps<{
   currentHour: number
   currentDate: Date
@@ -17,6 +24,7 @@ const props = defineProps<{
   observationTimeLabel: string
   timelineSegments: TimelineAvailabilitySegment[]
   isPlaying?: boolean
+  workflowIndicators?: TimelineWorkflowIndicator[]
 }>()
 
 const emit = defineEmits<{
@@ -74,6 +82,31 @@ const nearestSegment = computed(() => {
     return Math.abs(segment.hour - props.currentHour) < Math.abs(closest.hour - props.currentHour) ? segment : closest
   }, props.timelineSegments[0] ?? { hour: 0, label: '00:00', state: 'empty' as const, availabilityLabel: '空状态' })
 })
+
+// ── 工作流指示 ──────────────────────────────────────────────────
+const activeWorkflowIndicators = computed(() => {
+  const indicators = props.workflowIndicators ?? []
+  // 只显示运行中/排队/重试中的工作流，最多 4 条
+  return indicators
+    .filter((w) => w.status === 'running' || w.status === 'queued' || w.status === 'retry_pending')
+    .slice(0, 4)
+})
+
+const workflowEngineIcon = (engine?: string): string => {
+  if (engine === 'weather') return '☀'
+  if (engine === 'python_provider') return '⚡'
+  if (engine === 'gee') return '🌍'
+  return '◈'
+}
+
+const workflowStatusLabel = (status: string): string => {
+  switch (status) {
+    case 'running': return '运行中'
+    case 'queued': return '排队'
+    case 'retry_pending': return '重试'
+    default: return status
+  }
+}
 
 const trackStyle = computed(() => ({
   '--track-progress': progressPercent.value,
@@ -241,6 +274,25 @@ function jumpToNow() {
       <span class="meta-text meta-text--left">阶段 <strong>{{ phaseLabel }}</strong></span>
       <span class="meta-text meta-text--center">进度 <strong>{{ progressPercent }}</strong></span>
       <span class="meta-text meta-text--right">观测时次 <strong>{{ observationTimeLabel }}</strong></span>
+    </div>
+
+    <!-- 工作流运行指示 -->
+    <div v-if="activeWorkflowIndicators.length > 0" class="timeline-workflow-row">
+      <span class="wf-row-label">工作流</span>
+      <div class="wf-row-pills">
+        <div
+          v-for="(wf, idx) in activeWorkflowIndicators"
+          :key="idx"
+          class="wf-pill"
+          :class="wf.status"
+          :title="`${wf.name} · ${workflowStatusLabel(wf.status)} · ${wf.progress}%`"
+        >
+          <span class="wf-pill-icon" aria-hidden="true">{{ workflowEngineIcon(wf.engine) }}</span>
+          <span class="wf-pill-name">{{ wf.name }}</span>
+          <span class="wf-pill-status">{{ workflowStatusLabel(wf.status) }}</span>
+          <span class="wf-pill-progress">{{ wf.progress }}%</span>
+        </div>
+      </div>
     </div>
   </section>
 </template>
@@ -646,5 +698,76 @@ function jumpToNow() {
   .meta-text--left,
   .meta-text--center,
   .meta-text--right { justify-self: start; text-align: left; }
+}
+
+/* ── 工作流运行指示 ─────────────────────────────────────────── */
+.timeline-workflow-row {
+  display: flex;
+  align-items: center;
+  gap: 0.32rem;
+  padding: 0.18rem 0.24rem 0.04rem;
+  margin-top: 0.1rem;
+  min-width: 0;
+  overflow: hidden;
+}
+.wf-row-label {
+  flex: 0 0 auto;
+  font-size: 0.5rem;
+  color: #7f93a9;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+.wf-row-pills {
+  flex: 1 1 auto;
+  display: flex;
+  gap: 0.22rem;
+  overflow-x: auto;
+  scrollbar-width: none;
+  min-width: 0;
+}
+.wf-row-pills::-webkit-scrollbar { display: none; }
+.wf-pill {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.2rem;
+  padding: 0.12rem 0.36rem;
+  border-radius: 999px;
+  border: 1px solid rgba(136, 192, 255, 0.16);
+  background: rgba(8, 18, 33, 0.6);
+  font-size: 0.52rem;
+  color: #bfd3e6;
+  white-space: nowrap;
+  max-width: 12rem;
+  overflow: hidden;
+}
+.wf-pill.running,
+.wf-pill.queued,
+.wf-pill.retry_pending {
+  border-color: rgba(90, 213, 255, 0.32);
+  background: rgba(90, 213, 255, 0.08);
+}
+.wf-pill-icon {
+  font-size: 0.6rem;
+  line-height: 1;
+}
+.wf-pill-name {
+  color: #eaf3fb;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 5rem;
+}
+.wf-pill-status {
+  color: #5ad5ff;
+  font-size: 0.5rem;
+}
+.wf-pill-progress {
+  color: #7f93a9;
+  font-size: 0.5rem;
+}
+.wf-pill.running .wf-pill-progress {
+  color: #5ad5ff;
 }
 </style>

@@ -8,6 +8,10 @@ import {
   deleteApiKey,
   testApiKey,
   toggleApiKey,
+  fetchApiKeyHistory,
+  restoreApiKeyHistory,
+  deleteApiKeyHistoryEntry,
+  clearApiKeyHistory,
   fetchGeeAccounts,
   createGeeAccount,
   deleteGeeAccount,
@@ -29,8 +33,13 @@ import {
   deleteRemoteStorageProfile,
   toggleRemoteStorageProfile,
   testRemoteStorageProfile,
+  fetchRemoteStorageHistory,
+  restoreRemoteStorageHistory,
+  deleteRemoteStorageHistoryEntry,
+  clearRemoteStorageHistory,
   type ApiKeyItem,
   type ApiKeyUpdateRequest,
+  type ApiKeyHistoryItem,
   type GeeAccountItem,
   type GeeAccountCreateRequest,
   type GeeRuntimeConfig,
@@ -45,6 +54,7 @@ import {
   type RemoteStorageProfile,
   type RemoteStorageUpsertRequest,
   type RemoteStorageTestResult,
+  type RemoteStorageHistoryItem,
 } from '../services/settings-api'
 
 type LoaderName =
@@ -82,6 +92,7 @@ async function settled<T>(name: LoaderName, fn: () => Promise<T>): Promise<{ nam
 
 export const useSettingsStore = defineStore('settings', () => {
   const apiKeys = ref<ApiKeyItem[]>([])
+  const apiKeyHistory = ref<Record<string, ApiKeyHistoryItem[]>>({})
   const geeAccounts = ref<GeeAccountItem[]>([])
   const geeRuntimeConfig = ref<GeeRuntimeConfig | null>(null)
   const weatherConfig = ref<WeatherConfig | null>(null)
@@ -89,6 +100,7 @@ export const useSettingsStore = defineStore('settings', () => {
   const generalConfig = ref<GeneralConfig | null>(null)
   const dataSourceConfig = ref<DataSourceConfig | null>(null)
   const remoteStorageProfiles = ref<RemoteStorageProfile[]>([])
+  const remoteStorageHistory = ref<Record<string, RemoteStorageHistoryItem[]>>({})
   const aboutInfo = ref<AboutInfo | null>(null)
   const loading = ref(false)
   /** 致命错误：核心配置不可用，界面阻断 */
@@ -216,6 +228,38 @@ export const useSettingsStore = defineStore('settings', () => {
     await loadApiKeys()
   }
 
+  async function loadApiKeyHistory(keyName: string) {
+    apiKeyHistory.value = {
+      ...apiKeyHistory.value,
+      [keyName]: await fetchApiKeyHistory(keyName),
+    }
+  }
+
+  async function restoreApiKeyFromHistory(keyName: string, historyId: number) {
+    const updated = await restoreApiKeyHistory(keyName, historyId)
+    await loadApiKeys()
+    await loadApiKeyHistory(keyName)
+    return updated
+  }
+
+  async function removeApiKeyHistoryEntry(keyName: string, historyId: number) {
+    await deleteApiKeyHistoryEntry(keyName, historyId)
+    await loadApiKeyHistory(keyName)
+  }
+
+  async function clearApiKeyHistoryFor(keyName: string) {
+    await clearApiKeyHistory(keyName)
+    await loadApiKeyHistory(keyName)
+  }
+
+  /** Effective basemap key available for tile proxy (enabled + has value). */
+  function isBasemapApiKeyAvailable(keyName: string): boolean {
+    const item = apiKeys.value.find((k) => k.key_name === keyName)
+    if (!item) return false
+    const hasValue = item.has_value ?? Boolean(item.masked_value)
+    return Boolean(item.enabled && hasValue)
+  }
+
   // ── GEE 账户 ─────────────────────────────────────────────────────────────
 
   async function loadGeeAccounts() {
@@ -327,8 +371,33 @@ export const useSettingsStore = defineStore('settings', () => {
     return result
   }
 
+  async function loadRemoteStorageHistory(profileId: string) {
+    remoteStorageHistory.value = {
+      ...remoteStorageHistory.value,
+      [profileId]: await fetchRemoteStorageHistory(profileId),
+    }
+  }
+
+  async function restoreRemoteStorageFromHistory(profileId: string, historyId: number) {
+    const updated = await restoreRemoteStorageHistory(profileId, historyId)
+    await loadRemoteStorageProfiles()
+    await loadRemoteStorageHistory(profileId)
+    return updated
+  }
+
+  async function removeRemoteStorageHistoryEntry(profileId: string, historyId: number) {
+    await deleteRemoteStorageHistoryEntry(profileId, historyId)
+    await loadRemoteStorageHistory(profileId)
+  }
+
+  async function clearRemoteStorageHistoryFor(profileId: string) {
+    await clearRemoteStorageHistory(profileId)
+    await loadRemoteStorageHistory(profileId)
+  }
+
   return {
     apiKeys,
+    apiKeyHistory,
     geeAccounts,
     geeRuntimeConfig,
     weatherConfig,
@@ -336,6 +405,7 @@ export const useSettingsStore = defineStore('settings', () => {
     generalConfig,
     dataSourceConfig,
     remoteStorageProfiles,
+    remoteStorageHistory,
     aboutInfo,
     loading,
     error,
@@ -347,6 +417,11 @@ export const useSettingsStore = defineStore('settings', () => {
     removeApiKey,
     runApiKeyTest,
     toggleApiKeyEnabled,
+    loadApiKeyHistory,
+    restoreApiKeyFromHistory,
+    removeApiKeyHistoryEntry,
+    clearApiKeyHistoryFor,
+    isBasemapApiKeyAvailable,
     loadGeeAccounts,
     addGeeAccount,
     removeGeeAccount,
@@ -364,5 +439,9 @@ export const useSettingsStore = defineStore('settings', () => {
     removeRemoteStorageProfile,
     toggleRemoteStorageProfileEnabled,
     runRemoteStorageTest,
+    loadRemoteStorageHistory,
+    restoreRemoteStorageFromHistory,
+    removeRemoteStorageHistoryEntry,
+    clearRemoteStorageHistoryFor,
   }
 })

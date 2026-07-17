@@ -244,12 +244,11 @@ def get_registry() -> WeatherProviderRegistry:
 def register_default_providers() -> None:
     """注册默认 Provider（应用启动时调用）。
 
-    目前仅注册 OpenMeteoProvider。后续可在 ``app.services.providers`` 模块中扩展。
+    - ``open-meteo`` priority=0，默认 enabled
+    - ``weatherapi`` / ``openweather`` priority=10/20，默认 enabled=False（无 Key 不抢路由）
+    已存在的 Provider 不会被覆盖（保留运行时/DB 覆盖）。
     """
     registry = get_registry()
-    if registry.get_provider("open-meteo") is not None:
-        # 已注册，避免重复
-        return
 
     try:
         import os
@@ -257,21 +256,44 @@ def register_default_providers() -> None:
         from app.weatherengine.providers.open_meteo_provider import OpenMeteoProvider
         from app.services.api_config import ApiProvider, api_config_manager
 
-        provider = OpenMeteoProvider()
-        # env / ApiConfigManager 中的 Open-Meteo URL 覆盖（与设置页 config 对齐）
-        openmeteo_url = os.getenv("BACKEND_OPEN_METEO_URL", "").strip()
-        if not openmeteo_url:
-            api_cfg = api_config_manager.get_config(ApiProvider.OPEN_METEO)
-            if api_cfg and api_cfg.endpoint.url:
-                openmeteo_url = str(api_cfg.endpoint.url).strip()
-        if openmeteo_url:
-            provider.apply_config({"base_url": openmeteo_url})
-
-        registry.register(
-            provider,
-            priority=0,    # 最高优先级（默认源）
-            enabled=True,
-        )
-        logger.info("Default weather providers registered: open-meteo")
+        if registry.get_provider("open-meteo") is None:
+            provider = OpenMeteoProvider()
+            openmeteo_url = os.getenv("BACKEND_OPEN_METEO_URL", "").strip()
+            if not openmeteo_url:
+                api_cfg = api_config_manager.get_config(ApiProvider.OPEN_METEO)
+                if api_cfg and api_cfg.endpoint.url:
+                    openmeteo_url = str(api_cfg.endpoint.url).strip()
+            if openmeteo_url:
+                provider.apply_config({"base_url": openmeteo_url})
+            registry.register(provider, priority=0, enabled=True)
+            logger.info("Registered weather provider: open-meteo")
     except Exception:
-        logger.exception("Failed to register default weather providers")
+        logger.exception("Failed to register OpenMeteoProvider")
+
+    try:
+        from app.weatherengine.providers.weatherapi_provider import (
+            WeatherApiProvider,
+            bootstrap_api_key_from_env as bootstrap_weatherapi,
+        )
+
+        if registry.get_provider("weatherapi") is None:
+            wapi = WeatherApiProvider()
+            bootstrap_weatherapi(wapi)
+            registry.register(wapi, priority=10, enabled=False)
+            logger.info("Registered weather provider: weatherapi (disabled by default)")
+    except Exception:
+        logger.exception("Failed to register WeatherApiProvider")
+
+    try:
+        from app.weatherengine.providers.openweather_provider import (
+            OpenWeatherProvider,
+            bootstrap_api_key_from_env as bootstrap_openweather,
+        )
+
+        if registry.get_provider("openweather") is None:
+            owm = OpenWeatherProvider()
+            bootstrap_openweather(owm)
+            registry.register(owm, priority=20, enabled=False)
+            logger.info("Registered weather provider: openweather (disabled by default)")
+    except Exception:
+        logger.exception("Failed to register OpenWeatherProvider")

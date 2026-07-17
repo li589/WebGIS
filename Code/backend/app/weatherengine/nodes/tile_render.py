@@ -33,6 +33,7 @@ class WeatherTileRenderNode(BaseNode):
             y = int(inputs.get("y", 0))
             hour = int(inputs.get("hour", 0))
             model = inputs.get("model")
+            provider_id = inputs.get("provider_id") or inputs.get("provider")
 
             tile_service = get_weather_tile_service()
             geojson, cache_status = tile_service.get_or_generate_tile_sync(
@@ -42,6 +43,7 @@ class WeatherTileRenderNode(BaseNode):
                 y=y,
                 hour=hour,
                 model=model,
+                provider_id=provider_id,
             )
 
             tile_meta = dict(geojson.get("_tile_meta") or {})
@@ -115,6 +117,7 @@ class WeatherTileRenderNode(BaseNode):
                 PortSpec(name="y", kind=PortKind.value, required=True),
                 PortSpec(name="hour", kind=PortKind.value, required=False),
                 PortSpec(name="model", kind=PortKind.value, required=False),
+                PortSpec(name="provider_id", kind=PortKind.value, required=False, description="天气源 Provider ID，可选"),
             ],
             output_ports=[
                 PortSpec(name="geojson", kind=PortKind.geojson),

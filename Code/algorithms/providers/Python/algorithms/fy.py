@@ -8,9 +8,27 @@ from typing import Any
 
 from ingest.fy import FyDailyJobPlan
 
+# ─── GDAL 地理坐标系常量 ─────────────────────────────────────────────────────
+_GDAL_SRS_EPSG4326 = "EPSG:4326"
+
+# ─── FY 数据默认 nodata 值 ───────────────────────────────────────────────────
+_FY_DEFAULT_SRC_NODATA = -32767.0
+_FY_LATLON_SRC_NODATA = 65535.0
+
+# ─── 默认重叠处理方式 ───────────────────────────────────────────────────────
+_FY_DEFAULT_OVERLAP = "average"
+
 
 @dataclass(frozen=True, slots=True)
 class FyDatasetProfile:
+    """风云卫星数据集配置档案。
+
+    各字段说明: satellite 卫星标识，tb_sds_path/lat_sds_path/lon_sds_path/zen_sds_path
+    为 HDF5 SDS 路径，tb_band_names 为亮温波段名元组，*_src_nodata 为源数据 nodata 值，
+    tb_scale/tb_offset 为亮温缩放/偏移，zen_scale/zen_offset 为天顶角缩放/偏移。
+    量纲: tb 亮温单位 K（经 scale/offset 转换后），lat/lon 单位度，zen 天顶角单位度。
+    """
+
     satellite: str
     tb_sds_path: str
     lat_sds_path: str
@@ -31,6 +49,7 @@ class FyDatasetProfile:
 
 @dataclass(frozen=True, slots=True)
 class FyCommandStep:
+    """GDAL 命令步骤描述。name 步骤名，command 命令字符串，outputs 输出文件路径元组。"""
     name: str
     command: str
     outputs: tuple[str, ...] = ()
@@ -87,6 +106,7 @@ def get_fy_profile(satellite: str) -> FyDatasetProfile:
 
 
 def resolve_gdal_bins(force_bin: str | None = None) -> dict[str, str]:
+    """查找 GDAL 可执行文件路径。优先 force_bin 指定目录，其次 PATH 环境变量。返回含 gdal_translate/gdalbuildvrt/gdalwarp/gdalinfo 的字典。"""
     import shutil
 
     candidates: list[Path] = []
@@ -123,18 +143,23 @@ def resolve_gdal_bins(force_bin: str | None = None) -> dict[str, str]:
 
 
 def hdf_sds_uri(hdf_path: str, sds_path: str) -> str:
+    """构造 HDF5 SDS 的 GDAL URI（HDF5:"path":sds_path 格式），路径中的双引号被 URL 编码。"""
     escaped = hdf_path.replace('"', "%22")
     return f'HDF5:"{escaped}":{sds_path}'
 
 
 def build_geoloc_metadata_block(lon_vrt_path: str, lat_vrt_path: str) -> str:
+    """构建 GDAL GEOLOCATION 元数据块（XML 字符串）。
+
+    使用 _GDAL_SRS_EPSG4326 坐标系，将经纬度 VRT 文件绑定为地理定位元数据。
+    """
     return (
         '<Metadata domain="GEOLOCATION">\n'
         '    <MDI key="LINE_OFFSET">0</MDI>\n'
         '    <MDI key="LINE_STEP">1</MDI>\n'
         '    <MDI key="PIXEL_OFFSET">0</MDI>\n'
         '    <MDI key="PIXEL_STEP">1</MDI>\n'
-        '    <MDI key="SRS">EPSG:4326</MDI>\n'
+        f'    <MDI key="SRS">{_GDAL_SRS_EPSG4326}</MDI>\n'
         '    <MDI key="X_BAND">1</MDI>\n'
         f'    <MDI key="X_DATASET">{lon_vrt_path}</MDI>\n'
         '    <MDI key="Y_BAND">1</MDI>\n'
@@ -146,10 +171,15 @@ def build_geoloc_metadata_block(lon_vrt_path: str, lat_vrt_path: str) -> str:
 def build_fy_daily_command_steps(
     plan: FyDailyJobPlan,
     band_ids: tuple[int, ...] = (1, 2),
-    overlap_option: str = "average",
+    overlap_option: str = _FY_DEFAULT_OVERLAP,
     spatial_mode: str = "global",
     gdal_bin: str | None = None,
 ) -> list[FyCommandStep]:
+    """构建风云卫星日处理 GDAL 命令步骤列表。
+
+    流程: HDF5 SDS 提取 → 地理定位 VRT → 重投影（gdalwarp）→ 拼接（gdalbuildvrt + gdal_translate）。
+    band_ids 指定处理的波段编号（1-based），overlap_option 控制重叠区处理方式，spatial_mode 控制空间范围。
+    """
     profile = get_fy_profile(plan.satellite)
     gdal_bins = resolve_gdal_bins(force_bin=gdal_bin)
     work_dir = Path(plan.work_dir)

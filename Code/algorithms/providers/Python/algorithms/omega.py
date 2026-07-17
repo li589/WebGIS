@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta
 from typing import Any
 
+from algorithms.inversion import _POLARIZATION_MIXING_Q
 from algorithms.physics import (
     _fresnel_reflectance_kernel,
     _mironov_dielectric_kernel,
@@ -22,15 +23,25 @@ from ingest.mat_bundle import get_first_available, normalize_aliases_param
 # 矿物土壤颗粒密度 (g/cm³)，用于孔隙度计算 porosity = 1 - bulk_density / particle_density
 _MINERAL_PARTICLE_DENSITY = 2.65
 
+# 日期键格式（YYYYMMDD 字符串），用于 make_date_blocks 解析
+_DATE_KEY_FORMAT = "%Y%m%d"
+
 
 @dataclass(frozen=True, slots=True)
 class OmegaConfig:
+    """Omega 反演算法配置参数。
+
+    量纲: freq_ghz 单位 GHz；alpha0/omega0/tau_rel_frac/lambda_*/qc_* 无量纲；
+    bounds_* 为对应参数的无量纲上下界；block_days 单位天；pixel_chunk_size 单位像素数。
+    alpha0 复用 inversion._POLARIZATION_MIXING_Q（极化混合系数，无量纲）。
+    """
+
     freq_ghz: float = 1.4
     temp_scheme: str = "ORIG_TS"
     exp_mode: str = "Exp0"
     tau_rel_frac: float = 0.05
     kmin: int = 2
-    alpha0: float = 0.1771
+    alpha0: float = _POLARIZATION_MIXING_Q
     lambda_alpha: float = 1.0
     bounds_h: tuple[float, float] = (0.0, 3.0)
     bounds_alpha: tuple[float, float] = (0.05, 0.35)
@@ -88,13 +99,14 @@ class OmegaFieldConfig:
 
 
 def build_omega_config(params: dict[str, Any]) -> OmegaConfig:
+    """从参数字典构建 OmegaConfig。输入 params 为 workflow 参数，返回 OmegaConfig 实例。"""
     return OmegaConfig(
         freq_ghz=float(params.get("freq_ghz", 1.4)),
         temp_scheme=str(params.get("temp_scheme", "ORIG_TS")),
         exp_mode=str(params.get("exp_mode", "Exp0")),
         tau_rel_frac=float(params.get("tau_rel_frac", 0.05)),
         kmin=int(params.get("kmin", 2)),
-        alpha0=float(params.get("alpha0", 0.1771)),
+        alpha0=float(params.get("alpha0", _POLARIZATION_MIXING_Q)),
         lambda_alpha=float(params.get("lambda_alpha", 1.0)),
         bounds_h=tuple(params.get("bounds_h", [0.0, 3.0])),
         bounds_alpha=tuple(params.get("bounds_alpha", [0.05, 0.35])),
@@ -116,6 +128,7 @@ def build_omega_config(params: dict[str, Any]) -> OmegaConfig:
 
 
 def build_omega_field_config(params: dict[str, Any]) -> OmegaFieldConfig:
+    """从参数字典构建 OmegaFieldConfig，配置 .mat 文件中各字段的别名。"""
     return OmegaFieldConfig(
         tbv_mat_aliases=normalize_aliases_param(params.get("tbv_mat_aliases"), ("TBv_mat",)),
         tbh_mat_aliases=normalize_aliases_param(params.get("tbh_mat_aliases"), ("TBh_mat",)),
@@ -181,6 +194,11 @@ def parse_lambda_list(value: object) -> tuple[float, ...]:
 
 
 def _rough_reflectance(theta_deg: float, h_value: float, alpha_value: float, rh: float, rv: float) -> tuple[float, float]:
+    """计算粗糙地表反射率（Choudhury 模型）。
+
+    量纲: theta_deg 单位度（入射角），h_value/alpha_value 无量纲（粗糙度/极化混合系数），
+    rh/rv 无量纲（Fresnel 反射率）。返回 (rh_r, rv_r) 无量纲粗糙反射率。
+    """
     import math
 
     q_value = alpha_value * h_value
@@ -201,6 +219,7 @@ def _rough_reflectance_from_context(
     rh: float,
     rv: float,
 ) -> tuple[float, float]:
+    """计算粗糙地表反射率（使用预计算 FresnelContext）。量纲同 _rough_reflectance。"""
     import math
 
     q_value = alpha_value * h_value
@@ -318,6 +337,12 @@ def tb_forward_single_temp(
     scale: float = 1.0,
     model_context: OmegaTbForwardContext | None = None,
 ) -> tuple[float, float]:
+    """tau-omega 模型正向算子（单温度方案）。
+
+    量纲: soil_moisture 单位 m³/m³，tau/h/alpha/omega 无量纲，ts_value 单位 K，
+    theta_deg 单位度，clay_fraction 无量纲 (0-1)，freq_ghz 单位 GHz。
+    返回 (tbv, tbh) 单位 K（亮温）。
+    """
     import math
 
     if model_context is None:
@@ -363,6 +388,12 @@ def tb_forward_dual_temp(
     scale: float = 1.0,
     model_context: OmegaTbForwardContext | None = None,
 ) -> tuple[float, float]:
+    """tau-omega 模型正向算子（双温度方案，冠层/地面温度分离）。
+
+    量纲: soil_moisture 单位 m³/m³，tau/h/alpha/omega 无量纲，tc_value/tg_value 单位 K，
+    theta_deg 单位度，clay_fraction 无量纲 (0-1)，freq_ghz 单位 GHz。
+    返回 (tbv, tbh) 单位 K（亮温）。
+    """
     import math
 
     if model_context is None:
@@ -838,6 +869,11 @@ def resid_halpha_single_temp(
     wh: float,
     model_contexts: tuple[OmegaTbForwardContext, ...] | None = None,
 ) -> Any:
+    """h-alpha 反演残差函数（单温度方案）。
+
+    量纲: x=[h_value, alpha_value] 无量纲，tbv/tbh/ts 单位 K，tau 无量纲，
+    sm_ref 单位 m³/m³，theta 单位度。返回加权残差向量（单位 K，亮温残差）。
+    """
     import numpy as np
 
     h_value = float(x[0])
@@ -886,6 +922,7 @@ def resid_halpha_dual_temp(
     wh: float,
     model_contexts: tuple[OmegaTbForwardContext, ...] | None = None,
 ) -> Any:
+    """h-alpha 反演残差函数（双温度方案）。量纲同 resid_halpha_single_temp，tc/tg 单位 K。"""
     import numpy as np
 
     h_value = float(x[0])
@@ -936,6 +973,11 @@ def resid_omega_block_single_temp(
     wh: float,
     model_contexts: tuple[OmegaTbForwardContext, ...] | None = None,
 ) -> Any:
+    """omega 块反演残差函数（单温度方案）。
+
+    量纲: omega_value/h_series/alpha_series/tau 无量纲，tbv/tbh/ts 单位 K，
+    sm_ref 单位 m³/m³，theta 单位度。返回残差向量（单位 K，含平滑正则项）。
+    """
     import numpy as np
 
     tbv = np.asarray(tbv, dtype=np.float64)
@@ -985,6 +1027,7 @@ def resid_omega_block_dual_temp(
     wh: float,
     model_contexts: tuple[OmegaTbForwardContext, ...] | None = None,
 ) -> Any:
+    """omega 块反演残差函数（双温度方案）。量纲同 resid_omega_block_single_temp，tc/tg 单位 K。"""
     import numpy as np
 
     tbv = np.asarray(tbv, dtype=np.float64)
@@ -1032,6 +1075,12 @@ def ddca_single_temp(
     lambda_tau: float,
     model_context: OmegaTbForwardContext | None = None,
 ) -> tuple[float, float]:
+    """DDCA 双通道反演（单温度方案）。
+
+    量纲: tbv/tbh/ts 单位 K，tau_ini/h_value/omega_value/alpha_value 无量纲，
+    clay_fraction/porosity 无量纲 (0-1)，freq_ghz 单位 GHz，theta_deg 单位度。
+    返回 (soil_moisture, vod)，sm 单位 m³/m³，vod 无量纲。
+    """
     from scipy.optimize import least_squares
 
     if model_context is None:
@@ -1081,6 +1130,12 @@ def ddca_dual_temp(
     lambda_tau: float,
     model_context: OmegaTbForwardContext | None = None,
 ) -> tuple[float, float]:
+    """DDCA 双通道反演（双温度方案，冠层/地面温度分离）。
+
+    量纲: tbv/tbh/tc/tg 单位 K，tau_ini/h_value/omega_value/alpha_value 无量纲，
+    clay_fraction/porosity 无量纲 (0-1)，freq_ghz 单位 GHz，theta_deg 单位度。
+    返回 (soil_moisture, vod)，sm 单位 m³/m³，vod 无量纲。
+    """
     from scipy.optimize import least_squares
 
     if model_context is None:
@@ -1116,9 +1171,14 @@ def ddca_dual_temp(
 
 
 def make_date_blocks(date_keys: list[str], block_days: int) -> tuple[list[list[int]], list[datetime]]:
+    """将日期键列表按 block_days 天为单位分块。
+
+    量纲: 输入 date_keys 为 YYYYMMDD 格式字符串列表（_DATE_KEY_FORMAT），
+    block_days 单位天。返回 (分块索引列表, 块起始日期列表)。
+    """
     if not date_keys:
         return [], []
-    dates = [datetime.strptime(key, "%Y%m%d") for key in date_keys]
+    dates = [datetime.strptime(key, _DATE_KEY_FORMAT) for key in date_keys]
     grouped: dict[datetime, list[int]] = {}
     block_starts: list[datetime] = []
     for idx, day in enumerate(dates):
@@ -1132,6 +1192,11 @@ def make_date_blocks(date_keys: list[str], block_days: int) -> tuple[list[list[i
 
 
 def pick_lcurve_corner(lambda_list: Any, misfit: Any, roughness: Any) -> float:
+    """L 曲线拐点选择算法，返回最优正则化参数 lambda。
+
+    量纲: lambda_list/misfit/roughness 无量纲（正则化参数/残差范数/解范数）。
+    算法: 通过最大曲率点定位 L 曲线拐角。
+    """
     import numpy as np
 
     lambda_arr = np.asarray(lambda_list, dtype=np.float64).reshape(-1)
@@ -1430,6 +1495,12 @@ def retrieve_omega_pixel_timeseries(
     precomputed_blocks: tuple[list[list[int]], list[datetime], list[Any]] | None = None,
     precomputed_modes: tuple[str, bool] | None = None,
 ) -> dict[str, Any]:
+    """单像素 Omega 时间序列反演主入口。
+
+    量纲: date_keys 为 YYYYMMDD 字符串列表，tbv/tbh/ts/tc/tg 单位 K，ia/theta 单位度，
+    sm_ref 单位 m³/m³，ndvi 无量纲 (0-1)，clay_fraction/porosity 无量纲 (0-1)，
+    freq_ghz 单位 GHz。返回字典含 omega/h/tau/sm/vod 时间序列（omega/h/tau/vod 无量纲，sm 单位 m³/m³）。
+    """
     import numpy as np
     from scipy.optimize import least_squares, minimize_scalar
 
@@ -2056,6 +2127,12 @@ def execute_omega_retrieval(
     config: OmegaConfig | None = None,
     field_config: OmegaFieldConfig | None = None,
 ) -> dict[str, Any]:
+    """Omega 批量反演主入口（处理整个 payload 的所有像素）。
+
+    量纲: payload 含 TBv_mat/TBh_mat（单位 K）、IA_mat（单位度）、Ts_mat（单位 K）、
+    NDVI_mat（无量纲）、CF（clay_fraction 无量纲）、BD（bulk_density 单位 g/cm³）等。
+    返回字典含 omega_mat/h_mat/tau_mat/sm_mat/vod_mat（omega/h/tau/vod 无量纲，sm 单位 m³/m³）。
+    """
     import numpy as np
 
     config = config or OmegaConfig()

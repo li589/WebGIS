@@ -1,10 +1,13 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, onMounted, watch } from 'vue'
 import { storeToRefs } from 'pinia'
 
 import {
   TILE_SOURCES,
   TILE_SOURCES_BY_STYLE,
+  getDefaultTileSource,
+  isTileSourceUsable,
+  tileSourceRequiresApiKey,
   type BasemapStyle,
   type TileSourceConfig,
   type TileSourceId,
@@ -13,6 +16,7 @@ import type { ActiveLayerDisplay } from '../stores/layers/types'
 import { useLayersStore } from '../stores/layers'
 import { useUiStore } from '../stores/ui'
 import { useLogStore } from '../stores/log'
+import { useSettingsStore } from '../stores/settings'
 import { useWeatherTileManager } from '../stores/weather-tile-manager'
 import WorkflowStatusButton from './workflow/WorkflowStatusButton.vue'
 import DataImportMenu from './toolbar/DataImportMenu.vue'
@@ -20,9 +24,19 @@ import DataImportMenu from './toolbar/DataImportMenu.vue'
 const layersStore = useLayersStore()
 const uiStore = useUiStore()
 const logStore = useLogStore()
+const settingsStore = useSettingsStore()
 const weatherTileManager = useWeatherTileManager()
 const { workflowSummary } = storeToRefs(layersStore)
 const { activityVersion, statusVersion } = storeToRefs(weatherTileManager)
+const { apiKeys } = storeToRefs(settingsStore)
+
+onMounted(() => {
+  if (apiKeys.value.length === 0) {
+    void settingsStore.loadApiKeys().catch(() => {
+      /* toolbar still works with free basemaps */
+    })
+  }
+})
 
 /** 合并工作流摘要：天气瓦片 pending（/weather/tiles）计入 running 指示，不等于 workflow-runs 数 */
 const mergedWorkflowSummary = computed(() => {
@@ -55,7 +69,13 @@ const emit = defineEmits<{
   openWorkflowStatus: []
   openLog: []
   openSettings: []
+  openWorkflowEditor: []
 }>()
+
+function sourceUsable(source: TileSourceConfig): boolean {
+  void apiKeys.value
+  return isTileSourceUsable(source, (key) => settingsStore.isBasemapApiKeyAvailable(key))
+}
 
 const activeStyle = computed<BasemapStyle>(() => {
   const cfg = TILE_SOURCES.find((s) => s.id === props.tileSourceId)
@@ -73,12 +93,14 @@ const sourcesByStyle = computed(() => {
   }
 
   for (const [style, sources] of TILE_SOURCES_BY_STYLE) {
-    if (sources.some((s) => s.isStandard)) {
+    const standard = sources.filter((s) => s.isStandard)
+    // Keep key-locked sources visible but marked unusable so users know to configure keys
+    if (standard.some((s) => s.isStandard)) {
       result.push({
         style,
         label: styleMeta[style]?.label ?? style,
         icon: styleMeta[style]?.icon ?? '▦',
-        sources: sources.filter((s) => s.isStandard),
+        sources: standard,
       })
     }
   }
@@ -87,6 +109,34 @@ const sourcesByStyle = computed(() => {
 })
 
 const currentTileConfig = computed(() => TILE_SOURCES.find((s) => s.id === props.tileSourceId))
+
+const currentSourceLocked = computed(() => {
+  const cfg = currentTileConfig.value
+  if (!cfg) return false
+  return tileSourceRequiresApiKey(cfg) && !sourceUsable(cfg)
+})
+
+watch(
+  () => [props.tileSourceId, apiKeys.value] as const,
+  () => {
+    const cfg = TILE_SOURCES.find((s) => s.id === props.tileSourceId)
+    if (cfg && !sourceUsable(cfg)) {
+      emit('changeTileSource', getDefaultTileSource())
+    }
+  },
+)
+
+function selectSource(source: TileSourceConfig) {
+  if (!sourceUsable(source)) {
+    logStore.logOperation(
+      'basemap-locked',
+      `${source.label} 需要在设置中配置并启用 ${source.secretRef?.key ?? 'API Key'}`,
+    )
+    emit('openSettings')
+    return
+  }
+  emit('changeTileSource', source.id)
+}
 
 function setInteractionMode(mode: 'move' | 'select') {
   uiStore.setInteractionMode(mode)
@@ -101,6 +151,11 @@ function handleScreenshot() {
 function handleSettings() {
   emit('openSettings')
   logStore.logOperation('settings-open', '打开系统设置')
+}
+
+function handleWorkflowEditor() {
+  emit('openWorkflowEditor')
+  logStore.logOperation('workflow-editor-open', '打开流配置编辑器')
 }
 </script>
 
@@ -162,6 +217,17 @@ function handleSettings() {
           <span class="btn-label">截图</span>
         </button>
 
+        <!-- 流配置 -->
+        <button
+          class="tool-btn"
+          type="button"
+          title="工作流配置编辑器"
+          @click="handleWorkflowEditor"
+        >
+          <span class="btn-icon" aria-hidden="true">⬡</span>
+          <span class="btn-label">流配置</span>
+        </button>
+
         <!-- 设置 -->
         <button
           class="tool-btn"
@@ -199,7 +265,7 @@ function handleSettings() {
             :class="{ active: activeStyle === group.style }"
             role="tab"
             :aria-selected="activeStyle === group.style"
-            @click="emit('changeTileSource', group.sources[0].id)"
+            @click="selectSource(group.sources.find((s) => sourceUsable(s)) ?? group.sources[0])"
           >
             <span class="style-icon" aria-hidden="true">{{ group.icon }}</span>
             <span>{{ group.label }}</span>
@@ -233,9 +299,16 @@ function handleSettings() {
             v-for="source in sourcesByStyle.find(g => g.style === activeStyle)?.sources ?? []"
             :key="source.id"
             class="source-btn"
-            :class="{ active: tileSourceId === source.id }"
-            :title="`${source.provider} · ${source.label}`"
-            @click="emit('changeTileSource', source.id)"
+            :class="{
+              active: tileSourceId === source.id,
+              locked: !sourceUsable(source),
+            }"
+            :title="
+              sourceUsable(source)
+                ? `${source.provider} · ${source.label}`
+                : `${source.label}（需配置 API Key：${source.secretRef?.key ?? ''}，点击打开设置）`
+            "
+            @click="selectSource(source)"
           >
             {{ source.provider[0] }}
           </button>
@@ -246,7 +319,8 @@ function handleSettings() {
         <div v-if="activeLayerCount > 0" class="status-chip">{{ activeLayer.name }}</div>
         <div v-else class="status-chip">无图层</div>
         <div v-if="activeLayerCount > 0" class="status-chip">{{ activeLayerCount }} 个图层</div>
-        <div v-if="currentTileConfig?.needsBackendTransform" class="status-chip warning">
+        <div v-if="currentSourceLocked" class="status-chip warning">需配置底图 Key</div>
+        <div v-else-if="currentTileConfig?.needsBackendTransform" class="status-chip warning">
           需坐标转换
         </div>
       </div>
@@ -524,6 +598,17 @@ h1 {
   background: rgba(10, 132, 255, 0.22);
   color: #5ad5ff;
   box-shadow: inset 0 0 0 1px rgba(90, 213, 255, 0.3);
+}
+
+.source-btn.locked {
+  opacity: 0.42;
+  color: #8a6a6a;
+  text-decoration: line-through;
+}
+
+.source-btn.locked:hover {
+  background: rgba(255, 140, 100, 0.12);
+  color: #ffb090;
 }
 
 /* Status chips */

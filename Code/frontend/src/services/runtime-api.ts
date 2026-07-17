@@ -13,6 +13,7 @@ import type {
   WorkflowSubmitRequest,
 } from '../types/api-reexports'
 import { withWriteAuthHeaders } from './backend-auth'
+import { useUiLoadingStore } from '../stores/ui-loading'
 
 const DEBUG_RUNTIME_API_URL = 'http://127.0.0.1:7777/event'
 const DEBUG_RUNTIME_SESSION_ID = 'runtime-api-pending'
@@ -64,8 +65,8 @@ export function resolveApiUrl(pathOrUrl: string) {
   return `${getApiBaseUrl()}${normalizedPath}`
 }
 
-async function requestJson<T>(path: string, init?: RequestInit & { timeoutMs?: number }): Promise<T> {
-  const { headers: initHeaders, timeoutMs, ...restInit } = init ?? {}
+async function requestJson<T>(path: string, init?: RequestInit & { timeoutMs?: number; silent?: boolean }): Promise<T> {
+  const { headers: initHeaders, timeoutMs, silent, ...restInit } = init ?? {}
   const method = (restInit.method ?? 'GET').toString()
   const mergedHeaders: Record<string, string> = withWriteAuthHeaders(
     {
@@ -81,6 +82,13 @@ async function requestJson<T>(path: string, init?: RequestInit & { timeoutMs?: n
     timeoutMs ?? 30000,
   )
   const shouldDebug = shouldReportRuntimeDebug(path)
+
+  // 全局 loading 管理：非 silent 请求触发 loading 动效
+  // 300ms 延迟显示机制确保短请求不闪烁（在 store 内部实现）
+  const loading = useUiLoadingStore()
+  if (!silent) {
+    loading.show()
+  }
 
   try {
     // #region debug-point B:request-json-start
@@ -160,6 +168,10 @@ async function requestJson<T>(path: string, init?: RequestInit & { timeoutMs?: n
     throw error
   } finally {
     window.clearTimeout(timeoutId)
+    // 对应 try 前的 loading.show()，非 silent 请求完成后隐藏 loading
+    if (!silent) {
+      loading.hide()
+    }
   }
 }
 
@@ -178,7 +190,8 @@ export function fetchLayerCatalog() {
 }
 
 export function getWorkflowRun(runId: string) {
-  return requestJson<WorkflowRunStatusResponse>(`/workflow-runs/${runId}`)
+  // 轮询请求：silent=true 跳过 loading 动效，避免频繁闪烁
+  return requestJson<WorkflowRunStatusResponse>(`/workflow-runs/${runId}`, { silent: true })
 }
 
 export function getWorkflowEvents(
@@ -192,11 +205,13 @@ export function getWorkflowEvents(
   if (options?.afterEventId) search.set('after_event_id', options.afterEventId)
   if (typeof options?.limit === 'number') search.set('limit', String(options.limit))
   const suffix = search.toString() ? `?${search.toString()}` : ''
-  return requestJson<WorkflowEventsResponse>(`/workflow-runs/${runId}/events${suffix}`)
+  // 轮询请求：silent=true
+  return requestJson<WorkflowEventsResponse>(`/workflow-runs/${runId}/events${suffix}`, { silent: true })
 }
 
 export function getWorkflowRunView(runId: string) {
-  return requestJson<WorkflowRunViewResponse>(`/workflow-runs/${runId}/view`)
+  // 轮询请求：silent=true
+  return requestJson<WorkflowRunViewResponse>(`/workflow-runs/${runId}/view`, { silent: true })
 }
 
 export function getWeatherPoint(params: {
@@ -206,6 +221,7 @@ export function getWeatherPoint(params: {
   model?: string
   forecast_hours?: number
   place_name?: string
+  provider?: string
   signal?: AbortSignal
 }) {
   const search = new URLSearchParams({
@@ -216,9 +232,31 @@ export function getWeatherPoint(params: {
   if (params.model) search.set('model', params.model)
   if (typeof params.forecast_hours === 'number') search.set('forecast_hours', String(params.forecast_hours))
   if (params.place_name) search.set('place_name', params.place_name)
+  if (params.provider && params.provider !== 'auto') search.set('provider', params.provider)
   return requestJson<WeatherPointResponse>(`/weather/point?${search.toString()}`, {
     signal: params.signal,
   })
+}
+
+export interface WeatherProviderForLayer {
+  provider_id: string
+  display_name: string
+  enabled: boolean
+  priority: number
+  provider_type: string
+}
+
+export function getWeatherProvidersForLayer(
+  layerId: string,
+  options?: { includeDisabled?: boolean; signal?: AbortSignal },
+) {
+  const search = new URLSearchParams()
+  if (options?.includeDisabled) search.set('include_disabled', 'true')
+  const suffix = search.toString() ? `?${search.toString()}` : ''
+  return requestJson<{ layer_id: string; providers: WeatherProviderForLayer[] }>(
+    `/weather/providers-for-layer/${encodeURIComponent(layerId)}${suffix}`,
+    { signal: options?.signal },
+  )
 }
 
 export interface OverlayPointValue {

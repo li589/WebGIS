@@ -13,13 +13,29 @@ from typing import Any, Optional
 logger = logging.getLogger(__name__)
 
 ALLOWED_PROTOCOLS = frozenset({"sftp", "smb", "ftp", "ftps", "gs"})
+DEFAULT_HISTORY_LIMIT = 20
+
+
+def _mask_secret(value: str) -> str:
+    if not value:
+        return ""
+    if len(value) <= 8:
+        return "****"
+    return f"{value[:4]}****{value[-4:]}"
 
 
 class RemoteStorageCredentialsRepository:
-    def __init__(self, db_path: str | Path, encryption_key: str = "") -> None:
+    def __init__(
+        self,
+        db_path: str | Path,
+        encryption_key: str = "",
+        *,
+        history_limit: int = DEFAULT_HISTORY_LIMIT,
+    ) -> None:
         self.db_path = Path(db_path)
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
         self._encryption_key = encryption_key
+        self._history_limit = max(1, int(history_limit))
         self._init_schema()
 
     def _init_schema(self) -> None:
@@ -46,6 +62,26 @@ class RemoteStorageCredentialsRepository:
                     last_test_status TEXT
                 )
                 """
+            )
+            conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS remote_storage_secret_history (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    profile_id TEXT NOT NULL,
+                    secret_encrypted TEXT NOT NULL,
+                    secret_iv TEXT NOT NULL,
+                    private_key_encrypted TEXT,
+                    private_key_iv TEXT,
+                    label TEXT,
+                    created_at TEXT NOT NULL,
+                    superseded_at TEXT NOT NULL,
+                    source TEXT NOT NULL DEFAULT 'user'
+                )
+                """
+            )
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_remote_secret_history_profile "
+                "ON remote_storage_secret_history(profile_id, superseded_at DESC)"
             )
             conn.commit()
 
@@ -134,6 +170,22 @@ class RemoteStorageCredentialsRepository:
             enabled_val = bool((existing or {}).get("enabled", True)) if existing else True
         else:
             enabled_val = bool(enabled)
+
+        # Archive previous secrets when plaintext changes
+        if existing is not None:
+            old_secret = existing.get("secret") or ""
+            old_key = existing.get("private_key_pem") or ""
+            if (secret is not None and secret != old_secret) or (
+                private_key_pem is not None and (private_key_pem or "") != old_key
+            ):
+                self._archive_secrets(
+                    profile_id=profile_id,
+                    secret=old_secret,
+                    private_key_pem=old_key or None,
+                    superseded_at=now,
+                    source="user",
+                )
+
         sec_ct, sec_iv = self._encrypt(secret_val)
         key_ct, key_iv = self._encrypt(key_val) if key_val else ("", "")
         with self._connect() as conn:
@@ -319,3 +371,116 @@ class RemoteStorageCredentialsRepository:
             "last_tested_at": row["last_tested_at"],
             "last_test_status": row["last_test_status"],
         }
+
+    def _archive_secrets(
+        self,
+        *,
+        profile_id: str,
+        secret: str,
+        private_key_pem: str | None,
+        superseded_at: str,
+        source: str,
+        label: str | None = None,
+    ) -> None:
+        sec_ct, sec_iv = self._encrypt(secret or "")
+        key_ct, key_iv = self._encrypt(private_key_pem) if private_key_pem else ("", "")
+        with self._connect() as conn:
+            conn.execute(
+                """
+                INSERT INTO remote_storage_secret_history (
+                    profile_id, secret_encrypted, secret_iv,
+                    private_key_encrypted, private_key_iv,
+                    label, created_at, superseded_at, source
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    profile_id,
+                    sec_ct,
+                    sec_iv,
+                    key_ct or None,
+                    key_iv or None,
+                    label,
+                    superseded_at,
+                    superseded_at,
+                    source,
+                ),
+            )
+            conn.execute(
+                """
+                DELETE FROM remote_storage_secret_history
+                WHERE profile_id=? AND id NOT IN (
+                    SELECT id FROM remote_storage_secret_history
+                    WHERE profile_id=?
+                    ORDER BY superseded_at DESC, id DESC
+                    LIMIT ?
+                )
+                """,
+                (profile_id, profile_id, self._history_limit),
+            )
+            conn.commit()
+
+    def list_history(self, profile_id: str) -> list[dict[str, Any]]:
+        with self._connect() as conn:
+            rows = conn.execute(
+                """
+                SELECT * FROM remote_storage_secret_history
+                WHERE profile_id=?
+                ORDER BY superseded_at DESC, id DESC
+                """,
+                (profile_id,),
+            ).fetchall()
+        result: list[dict[str, Any]] = []
+        for row in rows:
+            secret = self._decrypt(row["secret_encrypted"], row["secret_iv"] or "")
+            result.append(
+                {
+                    "id": int(row["id"]),
+                    "profile_id": row["profile_id"],
+                    "masked_secret": _mask_secret(secret),
+                    "has_private_key": bool(row["private_key_encrypted"]),
+                    "label": row["label"],
+                    "created_at": row["created_at"],
+                    "superseded_at": row["superseded_at"],
+                    "source": row["source"],
+                }
+            )
+        return result
+
+    def get_history_bundle(self, profile_id: str, history_id: int) -> Optional[dict[str, Any]]:
+        with self._connect() as conn:
+            row = conn.execute(
+                """
+                SELECT * FROM remote_storage_secret_history
+                WHERE profile_id=? AND id=?
+                """,
+                (profile_id, history_id),
+            ).fetchone()
+        if not row:
+            return None
+        return {
+            "secret": self._decrypt(row["secret_encrypted"], row["secret_iv"] or ""),
+            "private_key_pem": self._decrypt(
+                row["private_key_encrypted"] or "",
+                row["private_key_iv"] or "",
+            )
+            if row["private_key_encrypted"]
+            else None,
+        }
+
+    def delete_history_entry(self, profile_id: str, history_id: int) -> bool:
+        with self._connect() as conn:
+            cur = conn.execute(
+                "DELETE FROM remote_storage_secret_history WHERE profile_id=? AND id=?",
+                (profile_id, history_id),
+            )
+            conn.commit()
+            return cur.rowcount > 0
+
+    def clear_history(self, profile_id: str) -> int:
+        with self._connect() as conn:
+            cur = conn.execute(
+                "DELETE FROM remote_storage_secret_history WHERE profile_id=?",
+                (profile_id,),
+            )
+            conn.commit()
+            return int(cur.rowcount)

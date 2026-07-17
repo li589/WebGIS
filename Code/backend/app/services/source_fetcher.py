@@ -300,7 +300,7 @@ class RemoteProtocolSourceFetcher(SourceFetcher):
         try:
             from app.services.remote_auth_resolver import resolve_remote_auth
             from shared.remote_sources.download import download_remote_uri
-            from shared.remote_sources.limits import DEFAULT_MAX_REMOTE_BYTES
+            from shared.remote_sources.limits import get_max_remote_bytes
 
             auth = resolve_remote_auth(source_uri)
             cache_dir = Path(settings.cache_dir) / "remote_fetch"
@@ -308,7 +308,7 @@ class RemoteProtocolSourceFetcher(SourceFetcher):
                 source_uri,
                 auth,
                 target_dir=cache_dir,
-                max_bytes=DEFAULT_MAX_REMOTE_BYTES,
+                max_bytes=get_max_remote_bytes(settings.remote_max_bytes),
             )
             data = local_path.read_bytes()
         except Exception as exc:

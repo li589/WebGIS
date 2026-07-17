@@ -9,10 +9,27 @@ class ApiKeyUpdateRequest(BaseModel):
     display_name: str | None = None
     description: str | None = None
     enabled: bool = True
+    """Optional label stored on the archived previous version when rotating."""
+    history_label: str | None = None
 
 
 class ApiKeyToggleRequest(BaseModel):
     enabled: bool
+
+
+class ApiKeyHistoryItem(BaseModel):
+    id: int
+    key_name: str
+    masked_value: str
+    label: str | None = None
+    created_at: str
+    superseded_at: str
+    source: str
+
+
+class ApiKeyHistoryClearResponse(BaseModel):
+    key_name: str
+    deleted: int
 
 
 class GeeAccountCreateRequest(BaseModel):
@@ -87,3 +104,19 @@ class RemoteStorageTestResponse(BaseModel):
     success: bool
     message: str
     tested_at: str
+
+
+class RemoteStorageHistoryItem(BaseModel):
+    id: int
+    profile_id: str
+    masked_secret: str
+    has_private_key: bool = False
+    label: str | None = None
+    created_at: str
+    superseded_at: str
+    source: str
+
+
+class RemoteStorageHistoryClearResponse(BaseModel):
+    profile_id: str
+    deleted: int

@@ -6,7 +6,7 @@ from urllib.parse import urlparse
 
 from data_access.contracts import DataRequestV2, ResourceRef, build_resource_ref
 from shared.remote_sources.download import download_remote_uri
-from shared.remote_sources.limits import DEFAULT_MAX_REMOTE_BYTES
+from shared.remote_sources.limits import get_max_remote_bytes
 from shared.remote_sources.protocol import RemoteAuth
 from shared.remote_sources.uri import parse_remote_uri
 
@@ -82,7 +82,7 @@ class RemoteSource:
             resource.uri,
             auth,
             target_dir=destination,
-            max_bytes=DEFAULT_MAX_REMOTE_BYTES,
+            max_bytes=get_max_remote_bytes(),
         )
         staged = dict(resource.metadata)
         staged["materialization_status"] = "ready"

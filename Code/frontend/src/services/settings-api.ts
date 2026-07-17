@@ -13,6 +13,10 @@ export interface ApiKeyItem {
   description: string | null
   masked_value: string
   enabled: boolean
+  /** db = persisted, env = env fallback only, none = unset */
+  source?: 'db' | 'env' | 'none' | string
+  /** Whether a value exists (masked or effective) */
+  has_value?: boolean
   created_at: string | null
   updated_at: string | null
   last_tested_at: string | null
@@ -24,6 +28,17 @@ export interface ApiKeyUpdateRequest {
   display_name?: string | null
   description?: string | null
   enabled?: boolean
+  history_label?: string | null
+}
+
+export interface ApiKeyHistoryItem {
+  id: number
+  key_name: string
+  masked_value: string
+  label: string | null
+  created_at: string
+  superseded_at: string
+  source: string
 }
 
 export interface GeeAccountItem {
@@ -272,6 +287,33 @@ export function toggleApiKey(keyName: string, enabled: boolean): Promise<{ key_n
   })
 }
 
+export function fetchApiKeyHistory(keyName: string): Promise<ApiKeyHistoryItem[]> {
+  return settingsFetch(`/config/api-keys/${encodeURIComponent(keyName)}/history`)
+}
+
+export function restoreApiKeyHistory(keyName: string, historyId: number): Promise<ApiKeyItem> {
+  return settingsFetch(
+    `/config/api-keys/${encodeURIComponent(keyName)}/history/${historyId}/restore`,
+    { method: 'POST' },
+  )
+}
+
+export function deleteApiKeyHistoryEntry(
+  keyName: string,
+  historyId: number,
+): Promise<{ deleted: boolean }> {
+  return settingsFetch(
+    `/config/api-keys/${encodeURIComponent(keyName)}/history/${historyId}`,
+    { method: 'DELETE' },
+  )
+}
+
+export function clearApiKeyHistory(keyName: string): Promise<{ key_name: string; deleted: number }> {
+  return settingsFetch(`/config/api-keys/${encodeURIComponent(keyName)}/history`, {
+    method: 'DELETE',
+  })
+}
+
 // GEE 账户
 export function fetchGeeAccounts(): Promise<GeeAccountItem[]> {
   return settingsFetch('/config/gee/accounts')
@@ -456,6 +498,49 @@ export function testRemoteStorageProfile(
   return settingsFetch(`/config/remote-storage/${encodeURIComponent(profileId)}/test`, {
     method: 'POST',
     body: JSON.stringify({ uri: uri ?? null }),
+  })
+}
+
+export interface RemoteStorageHistoryItem {
+  id: number
+  profile_id: string
+  masked_secret: string
+  has_private_key: boolean
+  label: string | null
+  created_at: string
+  superseded_at: string
+  source: string
+}
+
+export function fetchRemoteStorageHistory(profileId: string): Promise<RemoteStorageHistoryItem[]> {
+  return settingsFetch(`/config/remote-storage/${encodeURIComponent(profileId)}/history`)
+}
+
+export function restoreRemoteStorageHistory(
+  profileId: string,
+  historyId: number,
+): Promise<RemoteStorageProfile> {
+  return settingsFetch(
+    `/config/remote-storage/${encodeURIComponent(profileId)}/history/${historyId}/restore`,
+    { method: 'POST' },
+  )
+}
+
+export function deleteRemoteStorageHistoryEntry(
+  profileId: string,
+  historyId: number,
+): Promise<{ deleted: boolean }> {
+  return settingsFetch(
+    `/config/remote-storage/${encodeURIComponent(profileId)}/history/${historyId}`,
+    { method: 'DELETE' },
+  )
+}
+
+export function clearRemoteStorageHistory(
+  profileId: string,
+): Promise<{ profile_id: string; deleted: number }> {
+  return settingsFetch(`/config/remote-storage/${encodeURIComponent(profileId)}/history`, {
+    method: 'DELETE',
   })
 }
 

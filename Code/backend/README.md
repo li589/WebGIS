@@ -42,8 +42,9 @@
 ### 天气
 
 - `GET /weather/point`
+- `GET /weather/providers-for-layer/{layer_id}`（图层可选天气源列表）
 - `GET /weather/workflows`（及 diagnostics / 按名查询）
-- `GET /weather/tiles/{layer_id}/{z}/{x}/{y}`（**天气 GeoJSON 瓦片正式入口**）
+- `GET /weather/tiles/{layer_id}/{z}/{x}/{y}`（**天气 GeoJSON 瓦片正式入口**；支持 `provider` 钉源）
 
 ### 底图代理与缓存
 
@@ -157,10 +158,12 @@ backend/
 ### `app/weatherengine/`
 
 - `service.py`：`/weather/point` 与 fallback map_layer 产物
-- `tile_service.py`：z/x/y GeoJSON 瓦片
-- `workflow_service.py` + `nodes/*`：天气 DAG（风场、温湿降水气压能见度、tile_render 等）
-- `client.py`：网格预报拉取（Open-Meteo 风格）
-
+- `tile_service.py`：z/x/y GeoJSON 瓦片（缓存键含 `provider_id`）
+- `fetch_gateway.py`：统一出站拉取（钉源 / 自动优先级 / 失败 fallback）
+- `providers/`：Open-Meteo（默认）、WeatherAPI、OpenWeather 等可插拔源
+- `field_mapping.py`：商业源字段映射到 Open-Meteo 风格契约名
+- `workflow_service.py` + `nodes/*`：天气 DAG（`provider_id` 可钉源；风场、温湿降水气压能见度、tile_render 等）
+- `client.py`：网格预报拉取（Open-Meteo 风格，经 Provider 封装）
 ### `app/tasks/`
 
 通用 workflow task、download follow-up、weather 刷新等 Celery 入口。

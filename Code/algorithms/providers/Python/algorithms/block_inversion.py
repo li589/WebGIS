@@ -5,12 +5,21 @@ from dataclasses import dataclass
 from typing import Any
 
 from algorithms.inversion import ddca_retrieve_grid, retrieve_dynamic_h_grid
-from algorithms.physics import tau_from_ndvi
+from algorithms.physics import _FREQ_GHZ_MAX, _FREQ_GHZ_MIN, tau_from_ndvi
 from ingest.mat_bundle import get_first_available, load_mat_file, normalize_aliases_param
 
 
 @dataclass(frozen=True, slots=True)
 class BlockFieldConfig:
+    """批量反演 .mat 字段别名配置。
+
+    各 aliases 字段对应 .mat 文件中的变量名，按优先级匹配。
+    量纲: TBv/TBh 单位 K（亮温），IA 单位度（入射角），Ts 单位 K（地表温度），
+    NDVI 无量纲 (0-1)，SF 单位 kg/m²（茎干因子），Albedo 无量纲，B 无量纲（经验系数），
+    CF 无量纲 (0-1)（黏粒含量），porosity 无量纲 (0-1)，LC 为 IGBP 类型代码（整数），
+    NDVI_v_max/NDVI_v_min 无量纲，H/DH 无量纲（粗糙度参数）。
+    """
+
     tbv_mat_aliases: tuple[str, ...] = ("TBv_mat",)
     tbh_mat_aliases: tuple[str, ...] = ("TBh_mat",)
     ia_mat_aliases: tuple[str, ...] = ("IA_mat",)
@@ -29,6 +38,7 @@ class BlockFieldConfig:
 
 
 def build_block_field_config(params: dict[str, Any]) -> BlockFieldConfig:
+    """从参数字典构建 BlockFieldConfig，允许覆盖各字段的默认别名。"""
     return BlockFieldConfig(
         tbv_mat_aliases=normalize_aliases_param(params.get("tbv_mat_aliases"), ("TBv_mat",)),
         tbh_mat_aliases=normalize_aliases_param(params.get("tbh_mat_aliases"), ("TBh_mat",)),
@@ -49,6 +59,7 @@ def build_block_field_config(params: dict[str, Any]) -> BlockFieldConfig:
 
 
 def normalize_date_keys(value: Any, fallback_count: int | None = None) -> list[str]:
+    """将输入规范化为日期字符串列表。输入可为 None/标量/数组，返回 YYYYMMDD 字符串列表。"""
     import numpy as np
 
     if value is None:
@@ -69,6 +80,7 @@ def normalize_date_keys(value: Any, fallback_count: int | None = None) -> list[s
 
 
 def _broadcast_matrix(value: Any, target_shape: tuple[int, int], *, name: str) -> Any:
+    """将标量/1D/2D 数组广播到 (nt, npix) 目标形状。"""
     import numpy as np
 
     array = np.asarray(value, dtype=np.float64)
@@ -92,6 +104,7 @@ def _broadcast_matrix(value: Any, target_shape: tuple[int, int], *, name: str) -
 
 
 def _as_time_pixel_matrix(value: Any, *, name: str, target_shape: tuple[int, int] | None = None) -> Any:
+    """将输入规范化为 (nt, npix) 时间-像素矩阵。标量→(1,1)，1D→(1,N)，2D 直接使用。"""
     import numpy as np
 
     array = np.asarray(value, dtype=np.float64)
@@ -107,6 +120,7 @@ def _as_time_pixel_matrix(value: Any, *, name: str, target_shape: tuple[int, int
 
 
 def _as_static_vector(value: Any, pixel_count: int, *, name: str) -> Any:
+    """将输入规范化为长度 pixel_count 的静态向量。标量广播为全 1 向量。"""
     import numpy as np
 
     array = np.asarray(value, dtype=np.float64).reshape(-1)
@@ -125,6 +139,11 @@ def load_h_matrix(
     fallback_h: Any | None = None,
     nt: int | None = None,
 ) -> Any:
+    """加载粗糙度参数 H 矩阵（无量纲）。
+
+    优先级: dh_mat_path 指定的文件 > payload 中的 DH 字段 > fallback_h 静态值。
+    若提供 fallback_h 且 nt 已指定，则将静态向量沿时间维度重复。
+    """
     import numpy as np
 
     if dh_mat_path is not None:
@@ -151,7 +170,21 @@ def execute_block_inversion(
     dh_mat_path: str | Path | None = None,
     field_config: BlockFieldConfig | None = None,
 ) -> dict[str, Any]:
+    """批量反演主入口。
+
+    量纲: payload 含 TBv_mat/TBh_mat（单位 K）、IA_mat（单位度）、Ts_mat（单位 K）、
+    NDVI_mat（无量纲 0-1）、Albedo（无量纲）、B（无量纲经验系数）、CF（黏粒含量无量纲 0-1）、
+    porosity（无量纲 0-1）、LC（IGBP 整数代码）。freq_ghz 单位 GHz。
+    mode 为 "dh"（动态 H 反演）或 "ddca"（双通道反演）。
+    返回字典含 SM_mat（单位 m³/m³）、VOD_mat（无量纲）、DH_mat/H_used_mat（无量纲）、
+    Tau_ini_mat（无量纲）、date_keys（YYYYMMDD 字符串列表）。
+    """
     import numpy as np
+
+    if not (_FREQ_GHZ_MIN <= freq_ghz <= _FREQ_GHZ_MAX):
+        raise ValueError(
+            f"freq_ghz must be in [{_FREQ_GHZ_MIN}, {_FREQ_GHZ_MAX}] GHz, got {freq_ghz}"
+        )
 
     field_config = field_config or BlockFieldConfig()
 

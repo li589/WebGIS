@@ -49,7 +49,7 @@ Code/
 - 创建运行记录与事件流（SQLite 持久化）
 - 调度同步或异步执行
 - 管理 artifact、预览图与结果引用
-- 天气点查 / 网格 / 标准 z/x/y 瓦片（`/unified-tiles`）
+- 天气点查 / 网格 / 标准 z/x/y 瓦片（`/unified-tiles`）；天气引擎支持多 Provider（Open-Meteo / WeatherAPI / OpenWeather），图层可钉源
 - 对接 Python 算法包与 GEE
 
 原单体 `interaction_hub.py` 已拆分为 `services/workflow/` 下多个聚焦服务；原单一 `routes.py` 已拆为 `api/routers/*` 域路由。

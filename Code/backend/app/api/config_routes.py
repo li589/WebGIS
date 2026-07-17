@@ -8,6 +8,10 @@
 - DELETE /config/api-keys/{key_name} — 删除 API Key
 - POST /config/api-keys/{key_name}/test — 测试 API Key
 - PUT /config/api-keys/{key_name}/toggle — 启用/禁用
+- GET /config/api-keys/{key_name}/history — 密钥历史（脱敏）
+- POST /config/api-keys/{key_name}/history/{history_id}/restore — 恢复历史版本
+- DELETE /config/api-keys/{key_name}/history/{history_id} — 删除单条历史
+- DELETE /config/api-keys/{key_name}/history — 清空历史
 - GET /config/gee/accounts — 列出 GEE 账户
 - POST /config/gee/accounts — 新增 GEE 账户
 - DELETE /config/gee/accounts/{account_id} — 删除 GEE 账户
@@ -39,11 +43,15 @@ from fastapi import APIRouter, Depends, HTTPException
 from app.api.deps import require_gee_account_management_enabled, require_write_access
 from app.services import config_service
 from shared.contracts.config_contracts import (
+    ApiKeyHistoryClearResponse,
+    ApiKeyHistoryItem,
     ApiKeyToggleRequest,
     ApiKeyUpdateRequest,
     GeeAccountCreateRequest,
     GeeAccountToggleRequest,
     ReloadResultResponse,
+    RemoteStorageHistoryClearResponse,
+    RemoteStorageHistoryItem,
     RemoteStorageTestRequest,
     RemoteStorageTestResponse,
     RemoteStorageToggleRequest,
@@ -87,6 +95,8 @@ async def update_api_key(key_name: str, request: ApiKeyUpdateRequest):
         key_value=request.key_value.strip(),
         display_name=request.display_name,
         description=request.description,
+        enabled=request.enabled,
+        history_label=request.history_label,
     )
     if not result:
         raise HTTPException(status_code=500, detail="保存失败")
@@ -115,11 +125,54 @@ async def test_api_key(key_name: str):
 
 @router.put("/api-keys/{key_name}/toggle", dependencies=[Depends(require_write_access)])
 async def toggle_api_key(key_name: str, request: ApiKeyToggleRequest):
-    """启用/禁用 API Key。"""
-    toggled = config_service.toggle_api_key(key_name, request.enabled)
-    if not toggled:
-        raise HTTPException(status_code=404, detail=f"API Key '{key_name}' 不存在")
-    return {"key_name": key_name, "enabled": request.enabled}
+    """启用/禁用 API Key。无值时返回 400；env-only 会物化到 DB。"""
+    try:
+        return config_service.toggle_api_key(key_name, request.enabled)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.get(
+    "/api-keys/{key_name}/history",
+    response_model=list[ApiKeyHistoryItem],
+    dependencies=[Depends(require_write_access)],
+)
+async def list_api_key_history(key_name: str):
+    """列出密钥历史版本（脱敏）。"""
+    return config_service.list_api_key_history(key_name)
+
+
+@router.post(
+    "/api-keys/{key_name}/history/{history_id}/restore",
+    dependencies=[Depends(require_write_access)],
+)
+async def restore_api_key_history(key_name: str, history_id: int):
+    """将历史版本恢复为当前密钥。"""
+    try:
+        return config_service.restore_api_key_history(key_name, history_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@router.delete(
+    "/api-keys/{key_name}/history/{history_id}",
+    dependencies=[Depends(require_write_access)],
+)
+async def delete_api_key_history_entry(key_name: str, history_id: int):
+    deleted = config_service.delete_api_key_history_entry(key_name, history_id)
+    if not deleted:
+        raise HTTPException(status_code=404, detail=f"历史记录 #{history_id} 不存在")
+    return {"deleted": True, "key_name": key_name, "history_id": history_id}
+
+
+@router.delete(
+    "/api-keys/{key_name}/history",
+    response_model=ApiKeyHistoryClearResponse,
+    dependencies=[Depends(require_write_access)],
+)
+async def clear_api_key_history(key_name: str):
+    deleted = config_service.clear_api_key_history(key_name)
+    return ApiKeyHistoryClearResponse(key_name=key_name, deleted=deleted)
 
 
 # ── GEE 账户管理 ──────────────────────────────────────────────────────────────
@@ -386,6 +439,47 @@ async def test_remote_storage_profile(
     uri = request.uri if request else None
     result = config_service.test_remote_storage_profile(profile_id, uri=uri)
     return RemoteStorageTestResponse(**result)
+
+
+@router.get(
+    "/remote-storage/{profile_id}/history",
+    response_model=list[RemoteStorageHistoryItem],
+    dependencies=[Depends(require_write_access)],
+)
+async def list_remote_storage_history(profile_id: str):
+    return config_service.list_remote_storage_history(profile_id)
+
+
+@router.post(
+    "/remote-storage/{profile_id}/history/{history_id}/restore",
+    dependencies=[Depends(require_write_access)],
+)
+async def restore_remote_storage_history(profile_id: str, history_id: int):
+    try:
+        return config_service.restore_remote_storage_history(profile_id, history_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@router.delete(
+    "/remote-storage/{profile_id}/history/{history_id}",
+    dependencies=[Depends(require_write_access)],
+)
+async def delete_remote_storage_history_entry(profile_id: str, history_id: int):
+    deleted = config_service.delete_remote_storage_history_entry(profile_id, history_id)
+    if not deleted:
+        raise HTTPException(status_code=404, detail=f"历史记录 #{history_id} 不存在")
+    return {"deleted": True, "profile_id": profile_id, "history_id": history_id}
+
+
+@router.delete(
+    "/remote-storage/{profile_id}/history",
+    response_model=RemoteStorageHistoryClearResponse,
+    dependencies=[Depends(require_write_access)],
+)
+async def clear_remote_storage_history(profile_id: str):
+    deleted = config_service.clear_remote_storage_history(profile_id)
+    return RemoteStorageHistoryClearResponse(profile_id=profile_id, deleted=deleted)
 
 
 # ── 数据源配置 ────────────────────────────────────────────────────────────────

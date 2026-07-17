@@ -128,6 +128,8 @@ interface LayerState {
   zoom: number
   hour: number
   model: string
+  /** Weather provider preference (auto | provider_id); part of tile cache key */
+  provider: string
   bbox: LngLatBounds | null
   viewportTiles: WeatherTileCoords[]
   prefetchRing: WeatherTileCoords[]
@@ -182,8 +184,9 @@ function tileCoordsToKey(
   layerId: string,
   hour: number,
   model: string,
+  provider = 'auto',
 ): string {
-  return buildTileKey(layerId, coords.z, coords.x, coords.y, hour, model)
+  return buildTileKey(layerId, coords.z, coords.x, coords.y, hour, model, provider)
 }
 
 /**
@@ -256,6 +259,7 @@ export const useWeatherTileManager = defineStore('weatherTileManager', () => {
         zoom: 0,
         hour: 0,
         model: DEFAULT_WEATHER_MODEL,
+        provider: 'auto',
         bbox: null,
         viewportTiles: [],
         prefetchRing: [],
@@ -344,11 +348,18 @@ export const useWeatherTileManager = defineStore('weatherTileManager', () => {
     hour: number,
     model?: string,
     bbox?: BoundingBox | null,
+    provider?: string,
   ): void {
     const state = getOrCreateState(layerId)
     if (!state.visible) return
 
     const resolvedModel = model || DEFAULT_WEATHER_MODEL
+    // Explicit provider string required to change source; omit/undefined keeps current
+    // (avoids accidental reset to auto when a caller forgets the 7th arg).
+    const resolvedProvider =
+      provider === undefined
+        ? (state.provider || 'auto')
+        : (provider.trim() || 'auto')
     const clampedZoom = Math.max(0, Math.min(12, Math.round(zoom)))
     const nextBbox = bbox
       ? {
@@ -364,10 +375,11 @@ export const useWeatherTileManager = defineStore('weatherTileManager', () => {
       (t) => !viewportTiles.some((vt) => vt.x === t.x && vt.y === t.y && vt.z === t.z),
     )
 
-    // 视口/小时/模型未变时跳过，避免重复 moveend 抬世代、冲刷并发槽
+    // 视口/小时/模型/源未变时跳过，避免重复 moveend 抬世代、冲刷并发槽
     if (
       state.hour === hour
       && state.model === resolvedModel
+      && state.provider === resolvedProvider
       && Math.round(state.zoom) === clampedZoom
       && tileKeySetEqual(state.viewportTiles, viewportTiles)
       && tileKeySetEqual(state.prefetchRing, prefetchRing)
@@ -377,18 +389,20 @@ export const useWeatherTileManager = defineStore('weatherTileManager', () => {
     }
 
     const modelChanged = state.model !== resolvedModel
+    const providerChanged = state.provider !== resolvedProvider
     state.generation += 1
     const generation = state.generation
     state.center = center
     state.zoom = zoom
     state.hour = hour
     state.model = resolvedModel
+    state.provider = resolvedProvider
     state.bbox = nextBbox
     state.viewportTiles = viewportTiles
     state.prefetchRing = prefetchRing
 
-    // Model is part of the cache key; drop prior-model tiles on change
-    if (modelChanged) {
+    // Model/provider are part of the cache key; drop prior tiles on change
+    if (modelChanged || providerChanged) {
       state.tiles.clear()
       for (const request of state.pending.values()) {
         cancelPendingRequest(request)
@@ -398,7 +412,7 @@ export const useWeatherTileManager = defineStore('weatherTileManager', () => {
 
     const desiredKeys = new Set<string>(
       [...viewportTiles, ...prefetchRing].map((t) =>
-        tileCoordsToKey(t, layerId, hour, resolvedModel),
+        tileCoordsToKey(t, layerId, hour, resolvedModel, resolvedProvider),
       ),
     )
 
@@ -471,7 +485,7 @@ export const useWeatherTileManager = defineStore('weatherTileManager', () => {
     priority: number,
     generation: number,
   ): boolean {
-    const key = tileCoordsToKey(tile, state.layerId, state.hour, state.model)
+    const key = tileCoordsToKey(tile, state.layerId, state.hour, state.model, state.provider)
     if (state.tiles.has(key) || state.pending.has(key)) return false
     const controller = new AbortController()
     const request: TileRequest = {
@@ -530,6 +544,7 @@ export const useWeatherTileManager = defineStore('weatherTileManager', () => {
       layerId,
       key.hour,
       state?.model ?? DEFAULT_WEATHER_MODEL,
+      state?.provider ?? 'auto',
     )
 
     try {
@@ -549,6 +564,7 @@ export const useWeatherTileManager = defineStore('weatherTileManager', () => {
         {
           hour: key.hour,
           model: state.model,
+          provider: state.provider,
           signal: request.controller.signal,
         },
       )
@@ -661,7 +677,7 @@ export const useWeatherTileManager = defineStore('weatherTileManager', () => {
     // 只预取当前视口外扩 1 圈内的邻居，避免无限外扩和移动后旧预取浪费
     const allowedKeys = new Set<string>(
       [...state.viewportTiles, ...state.prefetchRing].map((t) =>
-        tileCoordsToKey(t, state.layerId, state.hour, state.model),
+        tileCoordsToKey(t, state.layerId, state.hour, state.model, state.provider),
       ),
     )
 
@@ -675,6 +691,7 @@ export const useWeatherTileManager = defineStore('weatherTileManager', () => {
         state.layerId,
         state.hour,
         state.model,
+        state.provider,
       )
       if (!allowedKeys.has(neighborKey)) continue
       if (enqueueIfMissing(state, { z: key.z, x: nx, y: ny }, 1, generation)) {
@@ -724,7 +741,7 @@ export const useWeatherTileManager = defineStore('weatherTileManager', () => {
     })
 
     for (const tile of viewportTiles) {
-      const key = tileCoordsToKey(tile, layerId, state.hour, state.model)
+      const key = tileCoordsToKey(tile, layerId, state.hour, state.model, state.provider)
       const geojson = state.tiles.get(key)
       if (geojson) {
         mergedTiles.push({
@@ -788,7 +805,7 @@ export const useWeatherTileManager = defineStore('weatherTileManager', () => {
     const viewportTotal = state.viewportTiles.length
     let cachedInViewport = 0
     for (const tile of state.viewportTiles) {
-      const tileKey = tileCoordsToKey(tile, layerId, state.hour, state.model)
+      const tileKey = tileCoordsToKey(tile, layerId, state.hour, state.model, state.provider)
       if (state.tiles.has(tileKey)) cachedInViewport += 1
     }
     return {
