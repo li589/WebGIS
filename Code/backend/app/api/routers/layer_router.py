@@ -1,7 +1,7 @@
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Any
 
-from fastapi import APIRouter, HTTPException, Query, Response
+from fastapi import APIRouter, HTTPException, Query, Response, status
 
 from app.services.coordinate_transform_service import transform_point
 from app.services.layer_catalog import get_layer_catalog

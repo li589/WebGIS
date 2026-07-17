@@ -155,7 +155,6 @@ class OmegaBlockModule(BaseModule):
                 "temp_scheme": config.temp_scheme,
                 "exp_mode": config.exp_mode,
                 "block_days": config.block_days,
-                "pixel_chunk_size": config.pixel_chunk_size,
             },
         )
         return _store_manifest(ctx, module_name=self.name, manifest=manifest, metadata={"product_count": len(products)})

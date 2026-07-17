@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
+from typing import Any
 import importlib
 import logging
 import math
@@ -539,6 +540,25 @@ class WeatherEngineService:
         spec,
         metric_value: float | int | str | None,
     ) -> tuple[list[WorkflowResultReference], list[str]]:
+        # Sprint 2.3: 先查 layer_outputs 策略注册表；命中且返回非 None 则直接用策略结果。
+        # 未命中或策略返回 None 时，fallback 到下面的原 if/elif 链（无行为变更）。
+        # Sprint 3 起逐个迁移分支到策略类，注册后即可替代原 if/elif 分支。
+        from app.weatherengine.layer_outputs import get_strategy as _get_layer_output_strategy
+
+        _strategy = _get_layer_output_strategy(spec.layer_id)
+        if _strategy is not None:
+            _strategy_result = _strategy.build(
+                service=self,
+                run_id=run_id,
+                payload=payload,
+                requested_at=requested_at,
+                weather=weather,
+                spec=spec,
+                metric_value=metric_value,
+            )
+            if _strategy_result is not None:
+                return _strategy_result
+
         point_feature = {
             "type": "Feature",
             "geometry": {"type": "Point", "coordinates": [weather.longitude, weather.latitude]},

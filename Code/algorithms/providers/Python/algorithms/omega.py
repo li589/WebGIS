@@ -1,8 +1,11 @@
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from typing import Any
+
+logger = logging.getLogger(__name__)
 
 from algorithms.inversion import _POLARIZATION_MIXING_Q
 from algorithms.physics import (
@@ -23,6 +26,14 @@ from ingest.mat_bundle import get_first_available, normalize_aliases_param
 # 矿物土壤颗粒密度 (g/cm³)，用于孔隙度计算 porosity = 1 - bulk_density / particle_density
 _MINERAL_PARTICLE_DENSITY = 2.65
 
+# ─── 反演边界与有效性阈值（无量纲） ─────────────────────────────────────────
+# 残余/最小土壤含水率下限（m³/m³），least_squares lower_bound
+_SOIL_MOISTURE_LOWER_BOUND = 0.02
+# 茂密森林 tau 上限（无量纲），least_squares upper_bound
+_TAU_UPPER_BOUND = 5.0
+# 孔隙度物理下限（无量纲），低于此值视为 bulk_density 异常，跳过像素
+_POROSITY_MIN_REASONABLE = 0.02
+
 # 日期键格式（YYYYMMDD 字符串），用于 make_date_blocks 解析
 _DATE_KEY_FORMAT = "%Y%m%d"
 
@@ -32,7 +43,7 @@ class OmegaConfig:
     """Omega 反演算法配置参数。
 
     量纲: freq_ghz 单位 GHz；alpha0/omega0/tau_rel_frac/lambda_*/qc_* 无量纲；
-    bounds_* 为对应参数的无量纲上下界；block_days 单位天；pixel_chunk_size 单位像素数。
+    bounds_* 为对应参数的无量纲上下界；block_days 单位天。
     alpha0 复用 inversion._POLARIZATION_MIXING_Q（极化混合系数，无量纲）。
     """
 
@@ -51,7 +62,6 @@ class OmegaConfig:
     lambda_tau: float = 20.0
     lambda_list: tuple[float, ...] = (1.0, 10.0, 100.0, 1000.0, 10000.0, 100000.0, 1000000.0)
     block_days: int = 8
-    pixel_chunk_size: int = 256
     use_fixed_omega_for_halpha: bool = False
     use_fixed_omega_in_blocks: bool = False
     fixed_omega_fallback: float | None = None
@@ -116,7 +126,6 @@ def build_omega_config(params: dict[str, Any]) -> OmegaConfig:
         lambda_tau=float(params.get("lambda_tau", 20.0)),
         lambda_list=parse_lambda_list(params.get("lambda_list")),
         block_days=int(params.get("block_days", 8)),
-        pixel_chunk_size=int(params.get("pixel_chunk_size", 256)),
         use_fixed_omega_for_halpha=bool(params.get("use_fixed_omega_for_halpha", False)),
         use_fixed_omega_in_blocks=bool(params.get("use_fixed_omega_in_blocks", False)),
         fixed_omega_fallback=params.get("fixed_omega_fallback"),
@@ -1082,6 +1091,7 @@ def ddca_single_temp(
     返回 (soil_moisture, vod)，sm 单位 m³/m³，vod 无量纲。
     """
     from scipy.optimize import least_squares
+    import numpy as np
 
     if model_context is None:
         model_context = _build_tb_forward_context(freq_ghz, clay_fraction, theta_deg)
@@ -1103,8 +1113,11 @@ def ddca_single_temp(
         )
         return np.array([tbv_m - tbv, tbh_m - tbh, lambda_tau * (tau_value - tau_ini)], dtype=np.float64)
 
-    lower_bounds = (0.02, 0.0)
-    upper_bounds = (porosity, 5.0)
+    if not np.isfinite(porosity) or porosity <= _SOIL_MOISTURE_LOWER_BOUND:
+        # 孔隙度无效时 least_squares 会因 bounds 不合理抛 ValueError，直接返回 NaN
+        return float("nan"), float("nan")
+    lower_bounds = (_SOIL_MOISTURE_LOWER_BOUND, 0.0)
+    upper_bounds = (porosity, _TAU_UPPER_BOUND)
     result = least_squares(
         cost_func,
         x0=[0.20, tau_ini],
@@ -2036,7 +2049,14 @@ def retrieve_omega_pixel_timeseries(
                 )
             )
 
-        porosity = 1.0 - float(bulk_density_value) / _MINERAL_PARTICLE_DENSITY
+        if not np.isfinite(bulk_density_value) or bulk_density_value <= 0:
+            logger.debug("Skip porosity computation: invalid bulk_density=%r", bulk_density_value)
+            porosity = float("nan")
+        else:
+            porosity = 1.0 - float(bulk_density_value) / _MINERAL_PARTICLE_DENSITY
+            if porosity <= _POROSITY_MIN_REASONABLE:
+                logger.debug("Unrealistic porosity=%r (bulk_density=%r)", porosity, bulk_density_value)
+                porosity = float("nan")
         retrieved_indices = np.flatnonzero(valid_tau & np.isfinite(omega))
         for k in retrieved_indices:
             model_context = all_model_contexts[int(k)]
@@ -2234,75 +2254,72 @@ def execute_omega_retrieval(
         else None
     )
 
-    chunk = max(1, int(config.pixel_chunk_size))
-    for start in range(0, npix, chunk):
-        end = min(start + chunk, npix)
-        for j in range(start, end):
-            result = retrieve_omega_pixel_timeseries(
-                date_keys=date_keys,
-                tbv=tbv_mat[:, j],
-                tbh=tbh_mat[:, j],
-                ts=ts_mat[:, j],
-                tc=None if tc_mat is None else tc_mat[:, j],
-                tg=None if tg_mat is None else tg_mat[:, j],
-                ia=ia_mat[:, j],
-                sm_ref=smref_mat[:, j],
-                ndvi=ndvi_mat[:, j],
-                sf_col=sf_mat[:, j],
-                ndvi_max_value=float(ndvi_v_max[j]),
-                ndvi_min_value=float(ndvi_v_min[j]),
-                albedo_value=float(albedo[j]),
-                b_value=float(b_param[j]),
-                landcover_value=float(landcover[j]),
-                clay_fraction_value=float(clay_fraction[j]),
-                bulk_density_value=float(bulk_density[j]),
-                h_static_value=float(h_static[j]),
-                fixed_omega_value=float(fixed_omega_vec[j]) if np.isfinite(fixed_omega_vec[j]) else float("nan"),
-                exp0_h_value=float(h_exp0_vec[j]) if np.isfinite(h_exp0_vec[j]) else float("nan"),
-                exp0_alpha_value=float(alpha_exp0_vec[j]) if np.isfinite(alpha_exp0_vec[j]) else float("nan"),
-                config=config,
-                precomputed_blocks=precomputed_blocks,
-                precomputed_modes=precomputed_modes,
-            )
-            omega_mat[:, j] = result["OMEGA"]
-            tau_star_mat[:, j] = result["Tau_star"]
-            sm_ret_mat[:, j] = result["SM_RET"]
-            vod_ret_mat[:, j] = result["VOD_RET"]
-            h_series_mat[:, j] = result["h_series"]
-            alpha_series_mat[:, j] = result["alpha_series"]
-            h_star_vec[j] = result["h_star"]
-            alpha_star_vec[j] = result["alpha_star"]
-            tbv_mod_mat[:, j] = result["TBv_mod"]
-            tbh_mod_mat[:, j] = result["TBh_mod"]
-            rv_mat[:, j] = result["rV"]
-            rh_mat[:, j] = result["rH"]
-            n_low_tau_vec[j] = result["n_low_tau"]
-            n_use_vec[j] = result["n_use"]
-            omega_fixed_used_vec[j] = result["omega_fixed_used"]
-            diag_n_use_mat[:, j] = result["diag"]["n_use"]
-            diag_exitflag_mat[:, j] = result["diag"]["exitflag"]
-            diag_iter_mat[:, j] = result["diag"]["iter"]
-            diag_damping_mat[:, j] = result["diag"]["damping"]
-            diag_final_cost_mat[:, j] = result["diag"]["final_cost"]
-            diag_firstorderopt_mat[:, j] = result["diag"]["firstorderopt"]
-            diag_tb_rmse_v_mat[:, j] = result["diag"]["Tb_RMSE_V"]
-            diag_tb_rmse_h_mat[:, j] = result["diag"]["Tb_RMSE_H"]
-            diag_tb_rmse_hv_mat[:, j] = result["diag"]["Tb_RMSE_HV"]
-            diag_jopt_norm2_mat[:, j] = result["diag"]["Jopt_norm2"]
-            diag_jtb_norm2_mat[:, j] = result["diag"]["Jtb_norm2"]
-            diag_jtb_rms_mat[:, j] = result["diag"]["Jtb_rms"]
-            diag_jtb_maxabs_mat[:, j] = result["diag"]["Jtb_maxabs"]
-            diag_jtb_minabs_mat[:, j] = result["diag"]["Jtb_minabs"]
-            qc_flag_mat[:, j] = result["qc"]["flag"]
-            qc_condk_mat[:, j] = result["qc"]["condK"]
-            qc_sratio_mat[:, j] = result["qc"]["sratio"]
-            lambda_star_vec[j] = result["exp2"]["lambda_star"]
-            if lambda_list_arr.size > 0:
-                exp2_misfit_mat[:, j] = np.asarray(result["exp2"]["misfit"], dtype=np.float64).reshape(-1)
-                exp2_roughness_mat[:, j] = np.asarray(result["exp2"]["roughness"], dtype=np.float64).reshape(-1)
-                exp2_rmse_mat[:, j] = np.asarray(result["exp2"]["rmse"], dtype=np.float64).reshape(-1)
-                if exp2_omega_by_lambda_block is not None and np.asarray(result["exp2"]["omega_by_lambda_block"]).size > 0:
-                    exp2_omega_by_lambda_block[:, :, j] = np.asarray(result["exp2"]["omega_by_lambda_block"], dtype=np.float64)
+    for j in range(npix):
+        result = retrieve_omega_pixel_timeseries(
+            date_keys=date_keys,
+            tbv=tbv_mat[:, j],
+            tbh=tbh_mat[:, j],
+            ts=ts_mat[:, j],
+            tc=None if tc_mat is None else tc_mat[:, j],
+            tg=None if tg_mat is None else tg_mat[:, j],
+            ia=ia_mat[:, j],
+            sm_ref=smref_mat[:, j],
+            ndvi=ndvi_mat[:, j],
+            sf_col=sf_mat[:, j],
+            ndvi_max_value=float(ndvi_v_max[j]),
+            ndvi_min_value=float(ndvi_v_min[j]),
+            albedo_value=float(albedo[j]),
+            b_value=float(b_param[j]),
+            landcover_value=float(landcover[j]),
+            clay_fraction_value=float(clay_fraction[j]),
+            bulk_density_value=float(bulk_density[j]),
+            h_static_value=float(h_static[j]),
+            fixed_omega_value=float(fixed_omega_vec[j]) if np.isfinite(fixed_omega_vec[j]) else float("nan"),
+            exp0_h_value=float(h_exp0_vec[j]) if np.isfinite(h_exp0_vec[j]) else float("nan"),
+            exp0_alpha_value=float(alpha_exp0_vec[j]) if np.isfinite(alpha_exp0_vec[j]) else float("nan"),
+            config=config,
+            precomputed_blocks=precomputed_blocks,
+            precomputed_modes=precomputed_modes,
+        )
+        omega_mat[:, j] = result["OMEGA"]
+        tau_star_mat[:, j] = result["Tau_star"]
+        sm_ret_mat[:, j] = result["SM_RET"]
+        vod_ret_mat[:, j] = result["VOD_RET"]
+        h_series_mat[:, j] = result["h_series"]
+        alpha_series_mat[:, j] = result["alpha_series"]
+        h_star_vec[j] = result["h_star"]
+        alpha_star_vec[j] = result["alpha_star"]
+        tbv_mod_mat[:, j] = result["TBv_mod"]
+        tbh_mod_mat[:, j] = result["TBh_mod"]
+        rv_mat[:, j] = result["rV"]
+        rh_mat[:, j] = result["rH"]
+        n_low_tau_vec[j] = result["n_low_tau"]
+        n_use_vec[j] = result["n_use"]
+        omega_fixed_used_vec[j] = result["omega_fixed_used"]
+        diag_n_use_mat[:, j] = result["diag"]["n_use"]
+        diag_exitflag_mat[:, j] = result["diag"]["exitflag"]
+        diag_iter_mat[:, j] = result["diag"]["iter"]
+        diag_damping_mat[:, j] = result["diag"]["damping"]
+        diag_final_cost_mat[:, j] = result["diag"]["final_cost"]
+        diag_firstorderopt_mat[:, j] = result["diag"]["firstorderopt"]
+        diag_tb_rmse_v_mat[:, j] = result["diag"]["Tb_RMSE_V"]
+        diag_tb_rmse_h_mat[:, j] = result["diag"]["Tb_RMSE_H"]
+        diag_tb_rmse_hv_mat[:, j] = result["diag"]["Tb_RMSE_HV"]
+        diag_jopt_norm2_mat[:, j] = result["diag"]["Jopt_norm2"]
+        diag_jtb_norm2_mat[:, j] = result["diag"]["Jtb_norm2"]
+        diag_jtb_rms_mat[:, j] = result["diag"]["Jtb_rms"]
+        diag_jtb_maxabs_mat[:, j] = result["diag"]["Jtb_maxabs"]
+        diag_jtb_minabs_mat[:, j] = result["diag"]["Jtb_minabs"]
+        qc_flag_mat[:, j] = result["qc"]["flag"]
+        qc_condk_mat[:, j] = result["qc"]["condK"]
+        qc_sratio_mat[:, j] = result["qc"]["sratio"]
+        lambda_star_vec[j] = result["exp2"]["lambda_star"]
+        if lambda_list_arr.size > 0:
+            exp2_misfit_mat[:, j] = np.asarray(result["exp2"]["misfit"], dtype=np.float64).reshape(-1)
+            exp2_roughness_mat[:, j] = np.asarray(result["exp2"]["roughness"], dtype=np.float64).reshape(-1)
+            exp2_rmse_mat[:, j] = np.asarray(result["exp2"]["rmse"], dtype=np.float64).reshape(-1)
+            if exp2_omega_by_lambda_block is not None and np.asarray(result["exp2"]["omega_by_lambda_block"]).size > 0:
+                exp2_omega_by_lambda_block[:, :, j] = np.asarray(result["exp2"]["omega_by_lambda_block"], dtype=np.float64)
 
     return {
         "date_keys": date_keys,

@@ -265,7 +265,6 @@ def main() -> None:
     parser.add_argument("--trial-count", type=int, default=5, help="Number of repeated timing trials for each profile section.")
     parser.add_argument("--warmup", type=int, default=1, help="Warmup runs before timing trials.")
     parser.add_argument("--block-days", type=int, default=8, help="Block size in days.")
-    parser.add_argument("--pixel-chunk-size", type=int, default=256, help="Chunk size for execute_omega_retrieval.")
     parser.add_argument("--temp-scheme", choices=("ORIG_TS", "DUAL"), default="ORIG_TS", help="Temperature scheme.")
     parser.add_argument("--exp-mode", choices=("Exp0", "Exp1A", "Exp1B", "Exp2"), default="Exp2", help="Experiment mode.")
     parser.add_argument("--lambda-list", type=str, default="1,10,100,1000", help="Comma-separated lambda candidates.")
@@ -283,7 +282,6 @@ def main() -> None:
         temp_scheme=args.temp_scheme,
         exp_mode=args.exp_mode,
         block_days=int(args.block_days),
-        pixel_chunk_size=int(args.pixel_chunk_size),
         lambda_list=lambda_list,
     )
 
@@ -295,7 +293,6 @@ def main() -> None:
             "temp_scheme": config.temp_scheme,
             "exp_mode": config.exp_mode,
             "block_days": config.block_days,
-            "pixel_chunk_size": config.pixel_chunk_size,
             "lambda_list": config.lambda_list,
             "seed": args.seed,
         },
