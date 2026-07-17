@@ -10,6 +10,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Optional
 
+from app.services._sqlite_pool import SQLiteConnectionPool
+
 logger = logging.getLogger(__name__)
 
 ALLOWED_PROTOCOLS = frozenset({"sftp", "smb", "ftp", "ftps", "gs"})
@@ -36,6 +38,9 @@ class RemoteStorageCredentialsRepository:
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
         self._encryption_key = encryption_key
         self._history_limit = max(1, int(history_limit))
+        # Sprint 4.5: 使用连接池替代每次新建连接（WAL + busy_timeout + 连接复用）
+        # _archive_secrets 接受 conn 参数以保持与主 upsert 同事务，连接池对此透明
+        self._pool = SQLiteConnectionPool(self.db_path)
         self._init_schema()
 
     def _init_schema(self) -> None:
@@ -85,10 +90,9 @@ class RemoteStorageCredentialsRepository:
             )
             conn.commit()
 
-    def _connect(self) -> sqlite3.Connection:
-        conn = sqlite3.connect(str(self.db_path))
-        conn.row_factory = sqlite3.Row
-        return conn
+    def _connect(self):
+        """获取连接上下文管理器（从连接池获取，自动 commit/rollback + 归还）。"""
+        return self._pool.connection()
 
     def _encrypt(self, plaintext: str) -> tuple[str, str]:
         if not plaintext:

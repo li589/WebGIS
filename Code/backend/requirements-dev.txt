@@ -1,0 +1,15 @@
+# 开发工具依赖（Sprint 4.1/4.2）
+# 安装：pip install -r requirements-dev.txt
+# 与运行时 requirements.txt 分离，避免生产镜像膨胀
+
+-r requirements.txt
+
+# 类型检查
+mypy>=1.10.0
+types-requests>=2.31.0
+
+# Lint + 格式化
+ruff>=0.5.0
+
+# Git 钩子管理
+pre-commit>=3.7.0

@@ -9,7 +9,12 @@
     "preview": "vite preview",
     "test": "vitest run",
     "gen:types": "openapi-typescript ./openapi.json -o ./src/types/api-contracts.ts",
-    "check:openapi": "python ../backend/scripts/check_openapi_drift.py"
+    "check:openapi": "python ../backend/scripts/check_openapi_drift.py",
+    "lint": "eslint src",
+    "lint:strict": "eslint src --max-warnings=0",
+    "lint:fix": "eslint src --fix",
+    "format": "prettier --write \"src/**/*.{ts,tsx,vue,js,jsx,css,scss}\"",
+    "format:check": "prettier --check \"src/**/*.{ts,tsx,vue,js,jsx,css,scss}\""
   },
   "dependencies": {
     "@datapool/guangdong.geojson": "file:datapool-guangdong.geojson-1.0.1.tgz",
@@ -29,13 +34,21 @@
     "vue-router": "^5.1.0"
   },
   "devDependencies": {
+    "@eslint/js": "^10.0.1",
     "@types/node": "^24.12.3",
     "@vitejs/plugin-vue": "^6.0.6",
     "@vue/tsconfig": "^0.9.1",
+    "eslint": "^10.7.0",
+    "eslint-config-prettier": "^10.1.8",
+    "eslint-plugin-vue": "^10.9.2",
+    "globals": "^17.7.0",
     "openapi-typescript": "^7.5.0",
+    "prettier": "^3.9.5",
     "typescript": "~6.0.2",
+    "typescript-eslint": "^8.64.0",
     "vite": "^8.0.12",
     "vitest": "^4.1.10",
+    "vue-eslint-parser": "^10.4.1",
     "vue-tsc": "^3.2.8"
   }
 }
