@@ -71,14 +71,16 @@ repos:
         name: frontend eslint
         # 使用 npm run lint（仅 errors 阻止提交，warnings 不阻止）
         # 待代码清理完成后可切换到 npm run lint:strict
-        entry: bash -c 'cd Code/frontend && npm run lint'
+        # npm --prefix 跨平台兼容（Windows 无需 bash）
+        entry: npm --prefix Code/frontend run lint
         language: system
         files: ^Code/frontend/src/.*\.(ts|tsx|vue|js|jsx)$
         pass_filenames: false
         stages: [pre-commit]
       - id: frontend-prettier
         name: frontend prettier check
-        entry: bash -c 'cd Code/frontend && npm run format:check'
+        # npm --prefix 跨平台兼容（Windows 无需 bash）
+        entry: npm --prefix Code/frontend run format:check
         language: system
         files: ^Code/frontend/src/.*\.(ts|tsx|vue|js|jsx|css|scss)$
         pass_filenames: false

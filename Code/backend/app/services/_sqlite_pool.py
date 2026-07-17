@@ -42,18 +42,26 @@ class SQLiteConnectionPool:
         self._created = 0
 
     def _create_connection(self) -> sqlite3.Connection:
-        """创建新连接并配置 WAL + busy_timeout。"""
+        """创建新连接并配置 WAL + busy_timeout。
+
+        若 PRAGMA 配置失败（如磁盘满、DB 损坏），已建立的连接会被关闭以避免泄漏。
+        """
         conn = sqlite3.connect(
             self.db_path,
             timeout=self._busy_timeout_ms / 1000.0,
             check_same_thread=False,
         )
-        if self._row_factory is not None:
-            conn.row_factory = self._row_factory
-        conn.execute("PRAGMA journal_mode=WAL")
-        conn.execute("PRAGMA synchronous=NORMAL")
-        conn.execute(f"PRAGMA busy_timeout={self._busy_timeout_ms}")
-        return conn
+        try:
+            if self._row_factory is not None:
+                conn.row_factory = self._row_factory
+            conn.execute("PRAGMA journal_mode=WAL")
+            conn.execute("PRAGMA synchronous=NORMAL")
+            conn.execute(f"PRAGMA busy_timeout={self._busy_timeout_ms}")
+            return conn
+        except Exception:
+            # PRAGMA 失败时关闭已建立的连接，避免文件句柄泄漏
+            conn.close()
+            raise
 
     @contextmanager
     def connection(self) -> Iterator[sqlite3.Connection]:
@@ -81,11 +89,23 @@ class SQLiteConnectionPool:
         except Exception:
             pass  # 队列空
 
-        # 2. 队列空 — 若未达上限则创建新连接
+        # 2. 队列空 — 若未达上限则创建新连接。
+        #    仅在锁内读取/递增计数器，连接创建在锁外执行（避免阻塞其他线程）。
         with self._lock:
             if self._created < self._max_size:
                 self._created += 1
+                should_create = True
+            else:
+                should_create = False
+
+        if should_create:
+            try:
                 return self._create_connection()
+            except Exception:
+                # 创建失败时回退计数器，避免 _created 虚高导致池永久阻塞
+                with self._lock:
+                    self._created -= 1
+                raise
 
         # 3. 已达上限 — 阻塞等待归还
         return self._pool.get()
@@ -93,8 +113,12 @@ class SQLiteConnectionPool:
     def _release(self, conn: sqlite3.Connection) -> None:
         self._pool.put(conn)
 
-    def close_all(self) -> None:
-        """关闭池中所有空闲连接（用于优雅关闭）。"""
+    def close_all(self, *, quiet: bool = False) -> None:
+        """关闭池中所有空闲连接（用于优雅关闭）。
+
+        quiet=True 时跳过日志记录（用于 __del__ 期间，避免解释器关闭时
+        logging 模块的 stream 已关闭导致 I/O 错误输出到 stderr）。
+        """
         closed = 0
         while not self._pool.empty():
             try:
@@ -106,13 +130,14 @@ class SQLiteConnectionPool:
                 break
         with self._lock:
             self._created = 0
-        logger.info(
-            "SQLiteConnectionPool closed %d idle connections for %s", closed, self.db_path
-        )
+        if not quiet:
+            logger.info(
+                "SQLiteConnectionPool closed %d idle connections for %s", closed, self.db_path
+            )
 
     def __del__(self) -> None:
         """析构时尝试关闭空闲连接（best-effort，避免资源泄漏）。"""
         try:
-            self.close_all()
+            self.close_all(quiet=True)
         except Exception:
             pass

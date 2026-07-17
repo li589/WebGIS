@@ -113,3 +113,8 @@ export async function requestJson<T>(
   } finally {
     window.clearTimeout(timeoutId)
     // 对应 try 前的 loading.show()，非 silent 请求完成后隐藏 loading
+    if (!silent) {
+      loading.hide()
+    }
+  }
+}

@@ -353,18 +353,19 @@ async def test_api_key(key_name: str) -> tuple[bool, str]:
                 if resp.status_code == 200:
                     repo.update_test_status(key_name, "ok")
                     return True, "百度地图 API Key 有效"
+                elif resp.status_code == 403:
+                    # 百度可能返回 403 但 key 仍然有效（只是瓦片限制）。
+                    # httpx 不像 urllib 那样在 4xx 时抛异常，需显式检查 status_code。
+                    repo.update_test_status(key_name, "ok")
+                    return True, "百度地图 API Key 格式有效（瓦片访问受限但 key 已配置）"
                 else:
                     msg = f"百度地图 API 返回 HTTP {resp.status_code}"
                     repo.update_test_status(key_name, "failed")
                     return False, msg
             except httpx.HTTPError as e:
-                # 百度可能返回 403 但 key 仍然有效（只是瓦片限制），检查错误类型
-                msg = str(e)
-                if "403" in msg or "Forbidden" in msg:
-                    repo.update_test_status(key_name, "ok")
-                    return True, "百度地图 API Key 格式有效（瓦片访问受限但 key 已配置）"
+                # 仅捕获网络/超时错误（httpx 不在 4xx/5xx 时抛 HTTPError）
                 repo.update_test_status(key_name, "failed")
-                return False, f"百度地图 API 测试失败: {msg}"
+                return False, f"百度地图 API 测试失败: {e}"
         elif key_name == "backend_auth":
             # 后端认证 key 无法直接测试，只检查格式
             if len(key_value) >= 8:
