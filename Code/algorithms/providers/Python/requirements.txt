@@ -11,3 +11,4 @@ joblib
 loguru
 pydantic
 typing_extensions
+psutil>=5.9.0

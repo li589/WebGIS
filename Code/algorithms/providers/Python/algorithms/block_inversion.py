@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 from dataclasses import dataclass
 from typing import Any
@@ -7,6 +8,8 @@ from typing import Any
 from algorithms.inversion import ddca_retrieve_grid, retrieve_dynamic_h_grid
 from algorithms.physics import _FREQ_GHZ_MAX, _FREQ_GHZ_MIN, tau_from_ndvi
 from ingest.mat_bundle import get_first_available, load_mat_file, normalize_aliases_param
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True, slots=True)
@@ -161,6 +164,184 @@ def load_h_matrix(
         return np.repeat(base[None, :], nt, axis=0)
 
 
+# ─── 多进程并行化：chunk 级 worker 与分发函数 ────────────────────────────────
+# Sprint 3.7: ThreadPoolExecutor 基准测试证实 GIL 争用导致负加速（0.52x-0.79x）。
+# 改用 ProcessPoolExecutor + spawn 上下文绕过 GIL；以下函数全部模块级以支持 pickle。
+
+
+def _process_chunk(
+    start: int,
+    end: int,
+    *,
+    mode: str,
+    nt: int,
+    ndvi_mat_chunk: Any,
+    ndvi_v_max_chunk: Any,
+    ndvi_v_min_chunk: Any,
+    landcover_chunk: Any,
+    b_param_chunk: Any,
+    sf_mat_chunk: Any,
+    ia_mat_chunk: Any,
+    tbv_mat_chunk: Any,
+    tbh_mat_chunk: Any,
+    ts_mat_chunk: Any,
+    clay_fraction_chunk: Any,
+    albedo_chunk: Any,
+    porosity_chunk: Any,
+    h_mat_chunk: Any,
+    freq_ghz: float,
+) -> dict[str, Any]:
+    """处理单个像素分块（模块级函数，可被 pickle 到子进程）。
+
+    量纲: 输入 tbv_mat_chunk/tbh_mat_chunk/ts_mat_chunk 单位 K，freq_ghz 单位 GHz，
+    ia_mat_chunk 单位度 (°)，其余无量纲。返回 dict 含 tau_ini/dh/sm/vod chunk 矩阵。
+    """
+    import numpy as np
+
+    chunk_npix = end - start
+    tau_chunk = tau_from_ndvi(
+        ndvi=ndvi_mat_chunk,
+        ndvi_max=ndvi_v_max_chunk,
+        ndvi_min=ndvi_v_min_chunk,
+        landcover=landcover_chunk,
+        b_param=b_param_chunk,
+        stem_factor=sf_mat_chunk,
+        theta_deg=ia_mat_chunk,
+    )
+
+    out: dict[str, Any] = {"start": start, "end": end, "tau_ini": tau_chunk}
+
+    if mode == "dh":
+        dh_chunk = np.full((nt, chunk_npix), np.nan, dtype=np.float64)
+        for day_index in range(nt):
+            dh_chunk[day_index, :] = retrieve_dynamic_h_grid(
+                tbv_mat_chunk[day_index, :],
+                tbh_mat_chunk[day_index, :],
+                ts_mat_chunk[day_index, :],
+                tau_chunk[day_index, :],
+                clay_fraction_chunk,
+                albedo_chunk,
+                porosity_chunk,
+                freq_ghz,
+                ia_mat_chunk[day_index, :],
+            )
+        out["dh"] = dh_chunk
+    else:  # ddca
+        sm_chunk = np.full((nt, chunk_npix), np.nan, dtype=np.float64)
+        vod_chunk = np.full((nt, chunk_npix), np.nan, dtype=np.float64)
+        for day_index in range(nt):
+            sm_day, vod_day = ddca_retrieve_grid(
+                tbv_mat_chunk[day_index, :],
+                tbh_mat_chunk[day_index, :],
+                ts_mat_chunk[day_index, :],
+                tau_chunk[day_index, :],
+                h_mat_chunk[day_index, :],
+                clay_fraction_chunk,
+                albedo_chunk,
+                porosity_chunk,
+                freq_ghz,
+                ia_mat_chunk[day_index, :],
+            )
+            sm_chunk[day_index, :] = sm_day
+            vod_chunk[day_index, :] = vod_day
+        out["sm"] = sm_chunk
+        out["vod"] = vod_chunk
+
+    return out
+
+
+def _prepare_chunk_kwargs(
+    matrices: dict[str, Any],
+    cols: slice,
+    mode: str,
+) -> dict[str, Any]:
+    """从主矩阵切出一个 chunk 所需的全部参数字典。"""
+    return {
+        "ndvi_mat_chunk": matrices["ndvi_mat"][:, cols],
+        "ndvi_v_max_chunk": matrices["ndvi_v_max"][cols],
+        "ndvi_v_min_chunk": matrices["ndvi_v_min"][cols],
+        "landcover_chunk": matrices["landcover"][cols],
+        "b_param_chunk": matrices["b_param"][cols],
+        "sf_mat_chunk": matrices["sf_mat"][:, cols],
+        "ia_mat_chunk": matrices["ia_mat"][:, cols],
+        "tbv_mat_chunk": matrices["tbv_mat"][:, cols],
+        "tbh_mat_chunk": matrices["tbh_mat"][:, cols],
+        "ts_mat_chunk": matrices["ts_mat"][:, cols],
+        "clay_fraction_chunk": matrices["clay_fraction"][cols],
+        "albedo_chunk": matrices["albedo"][cols],
+        "porosity_chunk": matrices["porosity"][cols],
+        "h_mat_chunk": (
+            matrices["h_mat"][:, cols]
+            if mode == "ddca" and matrices.get("h_mat") is not None
+            else None
+        ),
+    }
+
+
+def _run_chunks_serial(
+    chunks: list[tuple[int, int]],
+    *,
+    mode: str,
+    nt: int,
+    matrices: dict[str, Any],
+    freq_ghz: float,
+) -> list[dict[str, Any]]:
+    """串行执行所有 chunk（与原循环等价）。"""
+    results: list[dict[str, Any]] = []
+    for start, end in chunks:
+        cols = slice(start, end)
+        sub_kwargs = _prepare_chunk_kwargs(matrices, cols, mode)
+        results.append(
+            _process_chunk(start, end, mode=mode, nt=nt, freq_ghz=freq_ghz, **sub_kwargs)
+        )
+    return results
+
+
+def _run_chunks_parallel(
+    chunks: list[tuple[int, int]],
+    *,
+    mode: str,
+    nt: int,
+    matrices: dict[str, Any],
+    freq_ghz: float,
+    process_count: int,
+) -> list[dict[str, Any]]:
+    """使用 ProcessPoolExecutor 并行执行所有 chunk。
+
+    任何异常向上抛出，由调用方 catch 后回退到串行。使用 spawn 上下文以兼容
+    Celery prefork worker（避免 fork-after-thread 死锁）。
+    """
+    from concurrent.futures import ProcessPoolExecutor
+
+    from algorithms._parallel import get_spawn_context
+
+    ctx = get_spawn_context()
+
+    # 按提交顺序构造 future 列表，保证结果顺序与 chunks 一致
+    submissions = [
+        (start, end, _prepare_chunk_kwargs(matrices, slice(start, end), mode))
+        for start, end in chunks
+    ]
+
+    results: list[dict[str, Any]] = []
+    with ProcessPoolExecutor(max_workers=process_count, mp_context=ctx) as ex:
+        futures = [
+            ex.submit(
+                _process_chunk,
+                start,
+                end,
+                mode=mode,
+                nt=nt,
+                freq_ghz=freq_ghz,
+                **sub_kwargs,
+            )
+            for start, end, sub_kwargs in submissions
+        ]
+        for fut in futures:
+            results.append(fut.result())  # 顺序与提交一致
+    return results
+
+
 def execute_block_inversion(
     payload: dict[str, Any],
     *,
@@ -169,6 +350,7 @@ def execute_block_inversion(
     pixel_chunk_size: int = 2000,
     dh_mat_path: str | Path | None = None,
     field_config: BlockFieldConfig | None = None,
+    max_workers: int | None = None,
 ) -> dict[str, Any]:
     """批量反演主入口。
 
@@ -178,6 +360,12 @@ def execute_block_inversion(
     mode 为 "dh"（动态 H 反演）或 "ddca"（双通道反演）。
     返回字典含 SM_mat（单位 m³/m³）、VOD_mat（无量纲）、DH_mat/H_used_mat（无量纲）、
     Tau_ini_mat（无量纲）、date_keys（YYYYMMDD 字符串列表）。
+
+    Args:
+        max_workers: 并行进程数上限；None 表示根据 CPU 物理核数与可用内存自动计算
+            （由 algorithms._parallel.auto_process_count 决定）。=1 或自动计算结果为 1
+            时走串行路径。任何并行基础设施失败（pickle/spawn/memory）都回退到串行，
+            不抛出给上层调用方。
     """
     import numpy as np
 
@@ -260,49 +448,94 @@ def execute_block_inversion(
     else:
         raise ValueError(f"Unsupported block inversion mode: {mode}")
 
-    chunk_size = max(1, int(pixel_chunk_size))
-    for start in range(0, npix, chunk_size):
-        end = min(start + chunk_size, npix)
-        cols = slice(start, end)
+    # ─── 并行化决策（Sprint 3.7）─────────────────────────────────
+    # 估算 chunk 数并决定进程数；chunk_size 可能被自动缩小以产生足够 chunk 支持并行。
+    from algorithms._parallel import (
+        adjust_chunk_size_for_parallelism,
+        auto_process_count,
+    )
 
-        tau_chunk = tau_from_ndvi(
-            ndvi=ndvi_mat[:, cols],
-            ndvi_max=ndvi_v_max[cols],
-            ndvi_min=ndvi_v_min[cols],
-            landcover=landcover[cols],
-            b_param=b_param[cols],
-            stem_factor=sf_mat[:, cols],
-            theta_deg=ia_mat[:, cols],
+    matrices: dict[str, Any] = {
+        "ndvi_mat": ndvi_mat,
+        "ndvi_v_max": ndvi_v_max,
+        "ndvi_v_min": ndvi_v_min,
+        "landcover": landcover,
+        "b_param": b_param,
+        "sf_mat": sf_mat,
+        "ia_mat": ia_mat,
+        "tbv_mat": tbv_mat,
+        "tbh_mat": tbh_mat,
+        "ts_mat": ts_mat,
+        "clay_fraction": clay_fraction,
+        "albedo": albedo,
+        "porosity": porosity,
+        "h_mat": results.get("H_used_mat"),
+    }
+
+    initial_chunk_size = max(1, int(pixel_chunk_size))
+    initial_chunk_count = (npix + initial_chunk_size - 1) // initial_chunk_size
+    process_count = auto_process_count(
+        chunk_count=initial_chunk_count,
+        max_workers=max_workers,
+    )
+
+    chunk_size = adjust_chunk_size_for_parallelism(
+        initial_chunk_size,
+        npix,
+        process_count,
+    )
+    chunks = [(s, min(s + chunk_size, npix)) for s in range(0, npix, chunk_size)]
+
+    use_parallel = process_count > 1 and len(chunks) >= 2
+
+    if use_parallel:
+        try:
+            chunk_results = _run_chunks_parallel(
+                chunks,
+                mode=mode,
+                nt=nt,
+                matrices=matrices,
+                freq_ghz=freq_ghz,
+                process_count=process_count,
+            )
+        except Exception as exc:
+            # 关键降级：编程 bug（AttributeError/NameError/TypeError/ImportError/SyntaxError）
+            # 必须向上传播避免被掩盖；其余运行时异常（pickle/spawn/memory/网络）回退串行。
+            if isinstance(
+                exc, (AttributeError, NameError, TypeError, ImportError, SyntaxError)
+            ):
+                raise
+            logger.warning(
+                "Parallel chunk execution failed (%s: %s); falling back to serial",
+                type(exc).__name__,
+                exc,
+            )
+            chunk_results = _run_chunks_serial(
+                chunks,
+                mode=mode,
+                nt=nt,
+                matrices=matrices,
+                freq_ghz=freq_ghz,
+            )
+    else:
+        chunk_results = _run_chunks_serial(
+            chunks,
+            mode=mode,
+            nt=nt,
+            matrices=matrices,
+            freq_ghz=freq_ghz,
         )
-        tau_ini_mat[:, cols] = tau_chunk
 
-        for day_index in range(nt):
-            if mode == "dh":
-                results["DH_mat"][day_index, cols] = retrieve_dynamic_h_grid(
-                    tbv_mat[day_index, cols],
-                    tbh_mat[day_index, cols],
-                    ts_mat[day_index, cols],
-                    tau_chunk[day_index, :],
-                    clay_fraction[cols],
-                    albedo[cols],
-                    porosity[cols],
-                    freq_ghz,
-                    ia_mat[day_index, cols],
-                )
-            else:
-                sm_day, vod_day = ddca_retrieve_grid(
-                    tbv_mat[day_index, cols],
-                    tbh_mat[day_index, cols],
-                    ts_mat[day_index, cols],
-                    tau_chunk[day_index, :],
-                    results["H_used_mat"][day_index, cols],
-                    clay_fraction[cols],
-                    albedo[cols],
-                    porosity[cols],
-                    freq_ghz,
-                    ia_mat[day_index, cols],
-                )
-                results["SM_mat"][day_index, cols] = sm_day
-                results["VOD_mat"][day_index, cols] = vod_day
+    # ─── 合并 chunk 结果到 result 矩阵 ─────────────────────────────
+    for cr in chunk_results:
+        start = cr["start"]
+        end = cr["end"]
+        cols = slice(start, end)
+        tau_ini_mat[:, cols] = cr["tau_ini"]
+        if mode == "dh":
+            results["DH_mat"][:, cols] = cr["dh"]
+        else:
+            results["SM_mat"][:, cols] = cr["sm"]
+            results["VOD_mat"][:, cols] = cr["vod"]
 
     return results
