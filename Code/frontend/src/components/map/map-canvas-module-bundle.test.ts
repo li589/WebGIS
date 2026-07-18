@@ -19,6 +19,7 @@ describe('map-canvas-module-bundle', () => {
       onAdminBoundaryOverlayChange?: () => void
     } = {}
     const selectedLayerFocusModule = {}
+    const measureModule = { applyMeasureMode: vi.fn() }
     const syncAdminOverlay = vi.fn()
 
     const bundle = createMapCanvasModuleBundle({
@@ -57,6 +58,12 @@ describe('map-canvas-module-bundle', () => {
       syncAdminOverlay,
       debugLog: vi.fn(),
       weatherDebounceMs: 200,
+      getMeasureState: () => ({ points: [], isDrawing: false, hoverPoint: null }),
+      addMeasurePoint: vi.fn(),
+      undoLastMeasurePoint: vi.fn(),
+      completeMeasure: vi.fn(),
+      setHoverPoint: vi.fn(),
+      clearMeasure: vi.fn(),
       dependencies: {
         createBasemapModule: vi.fn(() => basemapModule as any),
         createAdminBoundaryModule: vi.fn(() => adminBoundaryModule as any),
@@ -70,6 +77,7 @@ describe('map-canvas-module-bundle', () => {
           return {} as any
         }),
         createSelectedLayerFocusModule: vi.fn(() => selectedLayerFocusModule as any),
+        createMeasureModule: vi.fn(() => measureModule as any),
       },
     })
 
@@ -83,8 +91,10 @@ describe('map-canvas-module-bundle', () => {
     expect(bundle.hotspotPinsModule).toBe(hotspotPinsModule)
     expect(bundle.mapInteractionModule).toBe(mapInteractionModule)
     expect(bundle.selectedLayerFocusModule).toBe(selectedLayerFocusModule)
+    expect(bundle.measureModule).toBe(measureModule)
     expect(basemapModule.scheduleTileSourceSwitch).toHaveBeenCalledWith('esri-street')
     expect(mapInteractionModule.applyInteractionMode).toHaveBeenCalledTimes(1)
+    expect(measureModule.applyMeasureMode).toHaveBeenCalledTimes(1)
     expect(syncAdminOverlay).toHaveBeenCalledTimes(1)
   })
 })

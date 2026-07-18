@@ -267,6 +267,12 @@ onMounted(async () => {
     syncAdminOverlay: actionBridge.syncAdminOverlay,
     debugLog,
     weatherDebounceMs: 350,
+    getMeasureState: () => uiStore.measureState,
+    addMeasurePoint: (p) => uiStore.addMeasurePoint(p),
+    undoLastMeasurePoint: () => uiStore.undoLastMeasurePoint(),
+    completeMeasure: () => uiStore.completeMeasure(),
+    setHoverPoint: (p) => uiStore.setHoverPoint(p),
+    clearMeasure: () => uiStore.clearMeasure(),
   })
   state.resources.basemapModule = moduleBundle.basemapModule
   state.resources.adminBoundaryModule = moduleBundle.adminBoundaryModule
@@ -275,10 +281,12 @@ onMounted(async () => {
   state.resources.mapInteractionModule = moduleBundle.mapInteractionModule
   state.resources.mapCanvasRuntimeModule = moduleBundle.mapCanvasRuntimeModule
   state.resources.selectedLayerFocusModule = moduleBundle.selectedLayerFocusModule
+  state.resources.measureModule = moduleBundle.measureModule
   moduleBundle.weatherOverlayModule.setupWatchers()
   moduleBundle.mapInteractionModule.bindEvents()
   moduleBundle.mapCanvasRuntimeModule.setupWatchers()
   moduleBundle.selectedLayerFocusModule.setupWatchers()
+  moduleBundle.measureModule.bindEvents()
 
   createMapCanvasLifecycleBinder({
     map: mapInstance,
@@ -302,6 +310,8 @@ onMounted(async () => {
       // 同样补同步导入层：mapReady 前 addVectorLayer 会 no-op
       syncImportedLayers({ fitNew: true })
       moduleBundle.mapInteractionModule.applyInteractionMode()
+      // 测量模式初始状态同步（mapInteractionModule 已处理 dragPan，measureModule 处理 doubleClickZoom/boxZoom + Canvas show）
+      moduleBundle.measureModule.applyMeasureMode()
       presentationModule.revealMap()
     },
     scheduleNavigationThemeSync: () => {

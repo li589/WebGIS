@@ -5,8 +5,21 @@ import type { TileSourceId } from '../services/api-config'
 
 export type { TileSourceId } from '../services/api-config'
 
-/** 地图交互模式：移动（拖动视角）/ 选择（点击选择点或图层） */
-export type InteractionMode = 'move' | 'select'
+/** 地图交互模式：移动（拖动视角）/ 选择（点击查询点气象）/ 测量（路径规划与测距） */
+export type InteractionMode = 'move' | 'select' | 'measure'
+
+/** 测量路径点 */
+export interface MeasurePoint {
+  lng: number
+  lat: number
+}
+
+/** 测量状态：路径点列表 + 绘制中标志 + 鼠标悬停点（用于动态预览） */
+export interface MeasureState {
+  points: MeasurePoint[]
+  isDrawing: boolean
+  hoverPoint: MeasurePoint | null
+}
 
 export const useUiStore = defineStore('ui', () => {
   const tileSourceId = ref<TileSourceId>('esri-street')
@@ -20,6 +33,13 @@ export const useUiStore = defineStore('ui', () => {
 
   // 地图交互模式：默认为移动模式
   const interactionMode = ref<InteractionMode>('move')
+
+  // 测量模式状态
+  const measureState = ref<MeasureState>({
+    points: [],
+    isDrawing: false,
+    hoverPoint: null,
+  })
 
   const hourLabel = computed(() => `${String(currentHour.value).padStart(2, '0')}:00`)
 
@@ -86,6 +106,32 @@ export const useUiStore = defineStore('ui', () => {
     interactionMode.value = mode
   }
 
+  // ── 测量模式操作 ──
+  function addMeasurePoint(p: MeasurePoint) {
+    measureState.value.points.push(p)
+    measureState.value.isDrawing = true
+  }
+
+  function undoLastMeasurePoint() {
+    measureState.value.points.pop()
+    if (measureState.value.points.length === 0) {
+      measureState.value.isDrawing = false
+    }
+  }
+
+  function completeMeasure() {
+    measureState.value.isDrawing = false
+    measureState.value.hoverPoint = null
+  }
+
+  function setHoverPoint(p: MeasurePoint | null) {
+    measureState.value.hoverPoint = p
+  }
+
+  function clearMeasure() {
+    measureState.value = { points: [], isDrawing: false, hoverPoint: null }
+  }
+
   function requestAnalysisFocus(ids: string[]) {
     const normalizedIds = ids.map((id) => id.trim()).filter(Boolean)
     if (!normalizedIds.length) return
@@ -110,6 +156,7 @@ export const useUiStore = defineStore('ui', () => {
     isPlaying,
     currentDate,
     interactionMode,
+    measureState,
     setTileSource,
     setHour,
     stepHour,
@@ -118,6 +165,11 @@ export const useUiStore = defineStore('ui', () => {
     togglePlay,
     setDate,
     setInteractionMode,
+    addMeasurePoint,
+    undoLastMeasurePoint,
+    completeMeasure,
+    setHoverPoint,
+    clearMeasure,
     requestAnalysisFocus,
     clearAnalysisFocusRequest,
   }

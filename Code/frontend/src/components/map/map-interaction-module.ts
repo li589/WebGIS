@@ -1,6 +1,7 @@
 import { buildMapViewportSnapshot } from './map-viewport-sync'
 
 type MapInstance = import('maplibre-gl').Map
+type InteractionMode = import('../../stores/ui').InteractionMode
 
 interface MapViewportStoreLike {
   setMapViewport: (
@@ -20,7 +21,7 @@ export interface MapInteractionModule {
 interface CreateMapInteractionModuleOptions {
   map: MapInstance
   layersStore: MapViewportStoreLike
-  getInteractionMode: () => 'select' | 'move'
+  getInteractionMode: () => InteractionMode
   setIsMapInteracting: (interacting: boolean) => void
   scheduleHotspotSync: () => void
   emitMapPointSelect: (point: { lng: number; lat: number }) => void
@@ -43,7 +44,11 @@ export function createMapInteractionModule(
   }
 
   function applyInteractionMode() {
-    if (options.getInteractionMode() === 'select') {
+    const mode = options.getInteractionMode()
+    // measure 与 select 模式都需要禁用 dragPan：
+    // - select：点击查询点信息，拖动会与单击冲突
+    // - measure：点击打点，拖动会与单击冲突
+    if (mode === 'select' || mode === 'measure') {
       options.map.dragPan.disable()
     } else {
       options.map.dragPan.enable()

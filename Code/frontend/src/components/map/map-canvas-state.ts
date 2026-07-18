@@ -6,6 +6,7 @@ import { createHotspotPinsModule } from './hotspot-pins-module'
 import { createMapInteractionModule } from './map-interaction-module'
 import { createMapCanvasRuntimeModule } from './map-canvas-runtime-module'
 import { createMapStagePresentationModule } from './map-stage-presentation-module'
+import { createMeasureModule } from './measure-module'
 import { createSelectedLayerFocusModule } from './selected-layer-focus-module'
 import type { WeatherOverlayModule } from './weather-overlay-module'
 
@@ -41,6 +42,7 @@ export interface MapCanvasState {
     mapInteractionModule: ReturnType<typeof createMapInteractionModule> | null
     mapCanvasRuntimeModule: ReturnType<typeof createMapCanvasRuntimeModule> | null
     selectedLayerFocusModule: ReturnType<typeof createSelectedLayerFocusModule> | null
+    measureModule: ReturnType<typeof createMeasureModule> | null
   }
   clearResources: () => void
 }
@@ -69,6 +71,7 @@ export function createMapCanvasState(): MapCanvasState {
       mapInteractionModule: null,
       mapCanvasRuntimeModule: null,
       selectedLayerFocusModule: null,
+      measureModule: null,
     },
     clearResources: () => {
       state.resources.map = null
@@ -80,6 +83,7 @@ export function createMapCanvasState(): MapCanvasState {
       state.resources.mapInteractionModule = null
       state.resources.mapCanvasRuntimeModule = null
       state.resources.selectedLayerFocusModule = null
+      state.resources.measureModule = null
     },
   }
 
