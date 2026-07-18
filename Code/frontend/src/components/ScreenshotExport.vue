@@ -142,7 +142,6 @@ async function capture() {
     return
   }
 
-  let saved = false
   try {
     const { default: html2canvas } = await import('html2canvas')
     const { default: jsPDF } = await import('jspdf')
@@ -230,7 +229,6 @@ async function capture() {
       link.download = `${filename}.png`
       link.href = finalCanvas.toDataURL('image/png')
       link.click()
-      saved = true
     } else {
       const imgData = finalCanvas.toDataURL('image/png')
       const pdfWidth = finalCanvas.width
@@ -242,10 +240,9 @@ async function capture() {
       })
       pdf.addImage(imgData, 'PNG', 0, 0, pdfWidth, pdfHeight)
       pdf.save(`${filename}.pdf`)
-      saved = true
     }
 
-    captureMsg.value = saved ? '已保存' : '保存失败'
+    captureMsg.value = '已保存'
   } catch (err) {
     console.error('[ScreenshotExport] Capture failed:', err)
     captureMsg.value = '截图失败'

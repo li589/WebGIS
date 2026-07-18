@@ -238,11 +238,12 @@ async function settingsFetch<T>(
     return response.json() as Promise<T>
   } catch (err) {
     if (err instanceof DOMException && err.name === 'AbortError') {
-      throw new Error(`Settings API timeout: ${path}`)
+      throw new Error(`Settings API timeout: ${path}`, { cause: err })
     }
     if (err instanceof TypeError) {
       throw new Error(
         `Settings API unreachable: ${path}（请确认后端已启动，开发环境 Vite 需代理 /config）`,
+        { cause: err },
       )
     }
     throw err

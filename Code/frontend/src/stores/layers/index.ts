@@ -11,7 +11,6 @@ import {
   getWeatherPoint,
 } from '../../services/runtime-api'
 import {
-  isWeatherLayerDescriptor,
   supportsMapLayerCapability,
   supportsParticleFlowCapability,
   supportsViewportDrivenRefreshCapability,

@@ -58,7 +58,7 @@ export function buildTileKey(
 /** 标准 Web Mercator：经纬度 → z/x/y 瓦片坐标。 */
 export function lngLatToTile(lng: number, lat: number, z: number): WeatherTileCoords {
   const n = 2 ** z
-  let x = Math.floor(((lng + 180) / 360) * n)
+  const x = Math.floor(((lng + 180) / 360) * n)
   // 纬度 clamp 到 Web Mercator 有效范围
   const clampedLat = Math.max(-_WEB_MERCATOR_MAX_LAT, Math.min(_WEB_MERCATOR_MAX_LAT, lat))
   const latRad = (clampedLat * Math.PI) / 180
@@ -274,7 +274,7 @@ export async function fetchWeatherTile(
   } catch (err) {
     // 区分超时和外部取消：超时时 externalSignal 未 abort，但 timeoutController 已 abort
     if (err instanceof DOMException && err.name === 'AbortError' && !externalSignal?.aborted) {
-      throw new Error(`Weather tile request timeout after ${TILE_FETCH_TIMEOUT_MS / 1000}s: ${url}`)
+      throw new Error(`Weather tile request timeout after ${TILE_FETCH_TIMEOUT_MS / 1000}s: ${url}`, { cause: err })
     }
     throw err
   } finally {
