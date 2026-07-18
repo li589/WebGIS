@@ -656,6 +656,10 @@ def run_job(
         scheduler_adapter.complete(result)
         return result
     except Exception as exc:
+        # Sprint 3.5: 编程 bug（AttributeError/NameError/TypeError/ImportError/SyntaxError）
+        # 必须向上传播，避免被掩盖为 job 失败；其余运行时异常（网络/数据/IO）降级为 JobResult(failed)。
+        if isinstance(exc, (AttributeError, NameError, TypeError, ImportError, SyntaxError)):
+            raise
         logger_adapter.emit_error(
             error_stage,
             str(exc),

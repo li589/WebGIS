@@ -229,6 +229,9 @@ class WorkflowLifecycleManager:
                 else:
                     loop.run_until_complete(workflow.cancel_callback())
             except Exception as e:
+                # Sprint 3.5: 编程 bug 必须向上传播；cancel_callback 中的网络/API 失败降级为 warning。
+                if isinstance(e, (AttributeError, NameError, TypeError, ImportError, SyntaxError)):
+                    raise
                 logger.warning(f"[WorkflowLifecycleManager] Cancel callback failed: {e}")
 
     async def _cancel_workflow_async(self, workflow: ManagedWorkflow) -> None:
@@ -246,6 +249,9 @@ class WorkflowLifecycleManager:
             try:
                 await workflow.cancel_callback()
             except Exception as e:
+                # Sprint 3.5: 编程 bug 必须向上传播；cancel_callback 中的网络/API 失败降级为 warning。
+                if isinstance(e, (AttributeError, NameError, TypeError, ImportError, SyntaxError)):
+                    raise
                 logger.warning(f"[WorkflowLifecycleManager] Cancel callback failed: {e}")
 
     def cancel_workflow(self, layer_id: str) -> bool:
