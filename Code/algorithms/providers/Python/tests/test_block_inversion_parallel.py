@@ -262,5 +262,130 @@ class TestEdgeCases(unittest.TestCase):
         self.assertEqual(result["DH_mat"].shape, (2, 100))
 
 
+class TestProcessChunkDirect(unittest.TestCase):
+    """直接测试 _process_chunk 模块级 worker（不经过 execute_block_inversion）。
+
+    验证 chunk 切片后的输入能被正确处理，以及 mode 分支返回字段正确。
+    """
+
+    @staticmethod
+    def _make_chunk_inputs(nt: int, chunk_npix: int, seed: int = 42) -> dict:
+        rng = np.random.default_rng(seed)
+        return {
+            "ndvi_mat_chunk": rng.uniform(0.1, 0.8, (nt, chunk_npix)),
+            "ndvi_v_max_chunk": np.full(chunk_npix, 0.8),
+            "ndvi_v_min_chunk": np.full(chunk_npix, 0.1),
+            "landcover_chunk": np.full(chunk_npix, 6, dtype=int),
+            "b_param_chunk": np.full(chunk_npix, 1.0),
+            "sf_mat_chunk": rng.uniform(0.5, 3.0, (nt, chunk_npix)),
+            "ia_mat_chunk": rng.uniform(35.0, 45.0, (nt, chunk_npix)),
+            "tbv_mat_chunk": rng.uniform(220.0, 280.0, (nt, chunk_npix)),
+            "tbh_mat_chunk": rng.uniform(200.0, 260.0, (nt, chunk_npix)),
+            "ts_mat_chunk": rng.uniform(280.0, 305.0, (nt, chunk_npix)),
+            "clay_fraction_chunk": rng.uniform(0.1, 0.5, chunk_npix),
+            "albedo_chunk": rng.uniform(0.05, 0.15, chunk_npix),
+            "porosity_chunk": rng.uniform(0.4, 0.5, chunk_npix),
+        }
+
+    def test_dh_mode_returns_dh_chunk(self) -> None:
+        from algorithms.block_inversion import _process_chunk
+
+        nt, chunk_npix = 2, 5
+        inputs = self._make_chunk_inputs(nt, chunk_npix)
+        result = _process_chunk(
+            10, 15, mode="dh", nt=nt, freq_ghz=1.26,
+            h_mat_chunk=None, **inputs,
+        )
+        self.assertEqual(result["start"], 10)
+        self.assertEqual(result["end"], 15)
+        self.assertEqual(result["tau_ini"].shape, (nt, chunk_npix))
+        self.assertEqual(result["dh"].shape, (nt, chunk_npix))
+        self.assertNotIn("sm", result)
+        self.assertNotIn("vod", result)
+        # tau_ini 应有有效值（非全 NaN）
+        self.assertTrue(np.any(~np.isnan(result["tau_ini"])))
+
+    def test_ddca_mode_returns_sm_vod_chunk(self) -> None:
+        from algorithms.block_inversion import _process_chunk
+
+        nt, chunk_npix = 2, 5
+        inputs = self._make_chunk_inputs(nt, chunk_npix)
+        result = _process_chunk(
+            0, chunk_npix, mode="ddca", nt=nt, freq_ghz=1.26,
+            h_mat_chunk=np.full((nt, chunk_npix), 0.3), **inputs,
+        )
+        self.assertEqual(result["sm"].shape, (nt, chunk_npix))
+        self.assertEqual(result["vod"].shape, (nt, chunk_npix))
+        self.assertNotIn("dh", result)
+
+    def test_pickle_roundtrip(self) -> None:
+        """_process_chunk 必须可 pickle（spawn 子进程要求）。"""
+        import pickle
+
+        from algorithms.block_inversion import _process_chunk
+
+        data = pickle.dumps(_process_chunk)
+        restored = pickle.loads(data)
+        self.assertIs(restored, _process_chunk)
+
+
+class TestPrepareChunkKwargsDirect(unittest.TestCase):
+    """直接测试 _prepare_chunk_kwargs 切片逻辑。"""
+
+    @staticmethod
+    def _make_matrices(nt: int, npix: int) -> dict:
+        return {
+            "ndvi_mat": np.zeros((nt, npix)),
+            "ndvi_v_max": np.ones(npix),
+            "ndvi_v_min": np.zeros(npix),
+            "landcover": np.full(npix, 6, dtype=int),
+            "b_param": np.ones(npix),
+            "sf_mat": np.ones((nt, npix)),
+            "ia_mat": np.full((nt, npix), 40.0),
+            "tbv_mat": np.full((nt, npix), 250.0),
+            "tbh_mat": np.full((nt, npix), 230.0),
+            "ts_mat": np.full((nt, npix), 290.0),
+            "clay_fraction": np.full(npix, 0.3),
+            "albedo": np.full(npix, 0.1),
+            "porosity": np.full(npix, 0.45),
+            "h_mat": None,
+        }
+
+    def test_dh_mode_h_mat_chunk_is_none(self) -> None:
+        from algorithms.block_inversion import _prepare_chunk_kwargs
+
+        matrices = self._make_matrices(nt=3, npix=10)
+        kwargs = _prepare_chunk_kwargs(matrices, slice(2, 5), "dh")
+        self.assertIsNone(kwargs["h_mat_chunk"])
+        # 验证 2D 矩阵切片形状 (nt, 3)
+        self.assertEqual(kwargs["ndvi_mat_chunk"].shape, (3, 3))
+        self.assertEqual(kwargs["tbv_mat_chunk"].shape, (3, 3))
+        # 验证 1D 向量切片形状 (3,)
+        self.assertEqual(kwargs["ndvi_v_max_chunk"].shape, (3,))
+        self.assertEqual(kwargs["clay_fraction_chunk"].shape, (3,))
+
+    def test_ddca_mode_h_mat_chunk_sliced(self) -> None:
+        from algorithms.block_inversion import _prepare_chunk_kwargs
+
+        nt, npix = 3, 10
+        matrices = self._make_matrices(nt, npix)
+        matrices["h_mat"] = np.full((nt, npix), 0.3)
+        kwargs = _prepare_chunk_kwargs(matrices, slice(2, 5), "ddca")
+        self.assertEqual(kwargs["h_mat_chunk"].shape, (nt, 3))
+        # 验证切片值正确
+        np.testing.assert_array_equal(
+            kwargs["h_mat_chunk"], np.full((nt, 3), 0.3)
+        )
+
+    def test_ddca_mode_h_mat_none_fallback(self) -> None:
+        """ddca 模式但 h_mat 为 None 时，h_mat_chunk 应为 None（不崩）。"""
+        from algorithms.block_inversion import _prepare_chunk_kwargs
+
+        matrices = self._make_matrices(nt=2, npix=8)
+        # h_mat 已为 None
+        kwargs = _prepare_chunk_kwargs(matrices, slice(0, 4), "ddca")
+        self.assertIsNone(kwargs["h_mat_chunk"])
+
+
 if __name__ == "__main__":
     unittest.main()

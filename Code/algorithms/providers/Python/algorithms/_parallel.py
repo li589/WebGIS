@@ -2,6 +2,30 @@
 
 专为 Celery prefork worker 内调用设计：使用 spawn 上下文避免 fork-after-thread 死锁。
 所有函数都有合理的降级行为，确保主任务不会因并行基础设施失败而失败。
+
+跨平台兼容性：
+- Windows: spawn 是唯一可用的多进程启动方式，行为一致。
+- Linux: 默认 fork，但本模块显式用 spawn 以兼容 Celery prefork worker
+  （Celery worker 已是 fork 出的子进程，task 内再 fork 可能触发
+  fork-after-thread 死锁）。spawn 启动较慢（需重新 import 模块），
+  但功能正确且跨平台一致。
+- macOS: 与 Linux 类似，默认 fork 但本模块用 spawn。
+
+Celery 部署注意事项（进程爆炸防护）：
+    Celery worker 默认 ``worker_concurrency = os.cpu_count()``（逻辑核数），
+    ``worker_prefetch_multiplier = 4``。若每个 task 内 ``auto_process_count``
+    返回较大值（如 22），32 个并发 task × 22 子进程 = 704 子进程，导致
+    CPU 严重过订阅。
+
+    推荐部署配置（任选其一）：
+    1. 设置环境变量 ``CGDA_MAX_PARALLEL_WORKERS=2`` 或 ``3``，限制每个 task
+       的子进程数（推荐：物理核数 / worker_concurrency）。
+    2. 降低 Celery ``worker_concurrency`` 到物理核数的一半。
+    3. 降低 ``worker_prefetch_multiplier=1`` 避免预取过多 task。
+
+    示例 .env 配置：
+        CGDA_MAX_PARALLEL_WORKERS=3
+        CGDA_PARALLEL_TIMEOUT_PER_CHUNK=120
 """
 from __future__ import annotations
 
@@ -53,8 +77,20 @@ def auto_process_count(
     算法:
         cpu_based    = max(1, physical_cores - cpu_reserve)
         mem_based    = max(1, floor((avail_mb - reserve) / per_worker))
-        env_cap      = $CGDA_MAX_PARALLEL_WORKERS (若设置)
-        final        = max(1, min(cpu_based, mem_based, env_cap, chunk_count, max_workers))
+        env_cap      = $CGDA_MAX_PARALLEL_WORKERS (若设置，未设置时为 inf 不限制)
+        final        = max(1, int(min(cpu_based, mem_based, env_cap, chunk_count)))
+        若 max_workers 非 None，final 进一步 min(final, max_workers)
+
+    Celery 部署警告:
+        在 Celery prefork worker 内调用时，``worker_concurrency`` 个子进程可能
+        同时执行本函数。若不设置 ``CGDA_MAX_PARALLEL_WORKERS``，每个 task 可能
+        创建 ``physical_cores - 2`` 个子进程，导致 CPU 严重过订阅
+        （32 task × 22 子进程 = 704 子进程）。
+
+        推荐在 Celery worker 的 .env 中设置::
+            CGDA_MAX_PARALLEL_WORKERS = max(1, physical_cores // worker_concurrency)
+
+        例如 24 物理核 / 8 worker_concurrency → CGDA_MAX_PARALLEL_WORKERS=3。
     """
     if max_workers is not None and max_workers <= 1:
         return 1
@@ -79,19 +115,21 @@ def auto_process_count(
     else:
         mem_based = cpu_based
 
-    # 环境变量硬上限（运维逃生通道）
+    # 环境变量硬上限（运维逃生通道）；未设置时为 inf 表示不限制
     env_cap_str = os.environ.get("CGDA_MAX_PARALLEL_WORKERS")
-    env_cap = int(env_cap_str) if env_cap_str and env_cap_str.isdigit() else cpu_based
+    env_cap: float | int = (
+        int(env_cap_str) if env_cap_str and env_cap_str.isdigit() else float("inf")
+    )
 
     # chunk 数约束：进程数不应超过 chunk 数（否则有 worker 闲置）
     chunk_cap = max(1, chunk_count)
 
-    final = max(1, min(cpu_based, mem_based, env_cap, chunk_cap))
+    final = max(1, int(min(cpu_based, mem_based, env_cap, chunk_cap)))
     if max_workers is not None:
         final = max(1, min(final, max_workers))
 
     logger.debug(
-        "auto_process_count: physical=%d cpu_based=%d mem_based=%d env_cap=%d "
+        "auto_process_count: physical=%d cpu_based=%d mem_based=%d env_cap=%s "
         "chunk_cap=%d max_workers=%s -> final=%d",
         physical,
         cpu_based,

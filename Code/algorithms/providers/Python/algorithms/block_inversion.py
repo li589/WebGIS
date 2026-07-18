@@ -305,15 +305,46 @@ def _run_chunks_parallel(
     matrices: dict[str, Any],
     freq_ghz: float,
     process_count: int,
+    timeout_per_chunk: float | None = None,
 ) -> list[dict[str, Any]]:
     """使用 ProcessPoolExecutor 并行执行所有 chunk。
 
     任何异常向上抛出，由调用方 catch 后回退到串行。使用 spawn 上下文以兼容
     Celery prefork worker（避免 fork-after-thread 死锁）。
+
+    Args:
+        timeout_per_chunk: 每个 chunk 允许的最大耗时（秒）；None 表示通过环境变量
+            ``CGDA_PARALLEL_TIMEOUT_PER_CHUNK`` 读取（默认 300s）。总超时为
+            ``timeout_per_chunk * len(chunks)``。超时后取消未开始的 future 并抛出
+            ``TimeoutError``，由调用方回退串行；运行中的子进程由 OS 回收。
+            目的：防止子进程 scipy 死循环导致主进程永久阻塞。
+
+    Celery time_limit 交互:
+        Celery 默认 ``task_time_limit=360s``（硬超时 SIGKILL）、
+        ``task_soft_time_limit=300s``（软超时抛 ``SoftTimeLimitExceeded``）。
+        若 ``timeout_per_chunk * len(chunks)`` 超过 ``task_soft_time_limit``，
+        Celery 会先触发软超时。建议部署时确保::
+
+            timeout_per_chunk * chunk_count < task_soft_time_limit
+
+        例如 chunk_count=4 时，``CGDA_PARALLEL_TIMEOUT_PER_CHUNK=60``（总 240s < 300s）。
+        Celery 软超时异常继承 ``Exception``，会被本模块的串行回退捕获。
     """
-    from concurrent.futures import ProcessPoolExecutor
+    import os
+    from concurrent.futures import (
+        ALL_COMPLETED,
+        ProcessPoolExecutor,
+        wait,
+    )
 
     from algorithms._parallel import get_spawn_context
+
+    if timeout_per_chunk is None:
+        env_val = os.environ.get("CGDA_PARALLEL_TIMEOUT_PER_CHUNK")
+        try:
+            timeout_per_chunk = float(env_val) if env_val else 300.0
+        except ValueError:
+            timeout_per_chunk = 300.0
 
     ctx = get_spawn_context()
 
@@ -323,8 +354,12 @@ def _run_chunks_parallel(
         for start, end in chunks
     ]
 
-    results: list[dict[str, Any]] = []
-    with ProcessPoolExecutor(max_workers=process_count, mp_context=ctx) as ex:
+    # 总超时：per_chunk × chunk 数（保守估计，假设最慢 chunk 耗时 per_chunk）
+    total_timeout = max(1.0, timeout_per_chunk) * len(chunks)
+
+    # 不用 with 语句：超时后需要 shutdown(wait=False) 避免阻塞在运行中的子进程
+    ex = ProcessPoolExecutor(max_workers=process_count, mp_context=ctx)
+    try:
         futures = [
             ex.submit(
                 _process_chunk,
@@ -337,9 +372,28 @@ def _run_chunks_parallel(
             )
             for start, end, sub_kwargs in submissions
         ]
+        done, not_done = wait(futures, timeout=total_timeout, return_when=ALL_COMPLETED)
+
+        if not_done:
+            # 取消未开始的 future；运行中的子进程由 shutdown(wait=False) 处理
+            for fut in not_done:
+                fut.cancel()
+            raise TimeoutError(
+                f"Parallel chunk execution timed out after {total_timeout:.0f}s "
+                f"({len(not_done)}/{len(futures)} chunks unfinished)"
+            )
+
+        results: list[dict[str, Any]] = []
         for fut in futures:
             results.append(fut.result())  # 顺序与提交一致
-    return results
+        return results
+    finally:
+        # wait=False：不等待运行中的子进程；cancel_futures 取消队列中的
+        # （Python 3.9+；旧版本忽略 cancel_futures 参数）
+        try:
+            ex.shutdown(wait=False, cancel_futures=True)
+        except TypeError:
+            ex.shutdown(wait=False)
 
 
 def execute_block_inversion(

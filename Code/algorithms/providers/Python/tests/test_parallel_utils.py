@@ -86,14 +86,15 @@ class TestAutoProcessCount(unittest.TestCase):
 
         cpu_based = max(1, 16-2) = 14
         mem_based = floor((2300 - 2048) / 200) = floor(1.26) = 1
-        final = min(14, 1, 14, chunk_cap) = 1
+        final = min(14, 1, inf, chunk_cap) = 1
         """
         fake_psutil = mock.MagicMock()
         fake_psutil.cpu_count.return_value = 16
         fake_psutil.virtual_memory().available = 2300 * 1024 * 1024
         with mock.patch("algorithms._parallel._get_psutil_safely", return_value=fake_psutil):
-            os.environ.pop("CGDA_MAX_PARALLEL_WORKERS", None)
-            result = auto_process_count(chunk_count=100, max_workers=None)
+            with mock.patch.dict(os.environ):
+                os.environ.pop("CGDA_MAX_PARALLEL_WORKERS", None)
+                result = auto_process_count(chunk_count=100, max_workers=None)
         self.assertEqual(result, 1)
 
     def test_psutil_virtual_memory_failure_falls_back_to_cpu(self) -> None:
@@ -101,9 +102,10 @@ class TestAutoProcessCount(unittest.TestCase):
         fake_psutil.cpu_count.return_value = 8
         fake_psutil.virtual_memory.side_effect = RuntimeError("access denied")
         with mock.patch("algorithms._parallel._get_psutil_safely", return_value=fake_psutil):
-            os.environ.pop("CGDA_MAX_PARALLEL_WORKERS", None)
-            result = auto_process_count(chunk_count=100, max_workers=None)
-        # cpu_based=6, mem_based=cpu_based=6, env_cap=6, chunk_cap=100 → 6
+            with mock.patch.dict(os.environ):
+                os.environ.pop("CGDA_MAX_PARALLEL_WORKERS", None)
+                result = auto_process_count(chunk_count=100, max_workers=None)
+        # cpu_based=6, mem_based=cpu_based=6, env_cap=inf, chunk_cap=100 → 6
         self.assertEqual(result, 6)
 
     def test_cpu_count_zero_falls_back_to_one(self) -> None:
@@ -119,9 +121,10 @@ class TestAutoProcessCount(unittest.TestCase):
         fake_psutil.cpu_count.return_value = 16
         fake_psutil.virtual_memory().available = 32768 * 1024 * 1024
         with mock.patch("algorithms._parallel._get_psutil_safely", return_value=fake_psutil):
-            os.environ.pop("CGDA_MAX_PARALLEL_WORKERS", None)
-            result = auto_process_count(chunk_count=100, max_workers=None, cpu_reserve=4)
-        # cpu_based=max(1,16-4)=12, mem_based=floor((32768-2048)/200)=153, env_cap=12 → 12
+            with mock.patch.dict(os.environ):
+                os.environ.pop("CGDA_MAX_PARALLEL_WORKERS", None)
+                result = auto_process_count(chunk_count=100, max_workers=None, cpu_reserve=4)
+        # cpu_based=max(1,16-4)=12, mem_based=floor((32768-2048)/200)=153, env_cap=inf → 12
         self.assertEqual(result, 12)
 
 
