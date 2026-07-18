@@ -4,6 +4,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 import tempfile
 import unittest
+from contextlib import contextmanager
+from typing import Iterator
 from unittest.mock import patch
 
 from app.core.config import settings
@@ -46,6 +48,21 @@ def _build_services(repository: SQLiteWorkflowRepository):
     return submission, lifecycle, runtime_status
 
 
+@contextmanager
+def _temp_repository() -> Iterator[SQLiteWorkflowRepository]:
+    """创建临时 SQLiteWorkflowRepository，退出时关闭连接池。
+
+    Windows 上 SQLite 连接池持有的文件句柄会阻止 TemporaryDirectory 清理，
+    必须在 __exit__ 前调用 repository.close() 释放句柄。
+    """
+    with tempfile.TemporaryDirectory() as tmpdir:
+        repository = SQLiteWorkflowRepository(state_dir=Path(tmpdir))
+        try:
+            yield repository
+        finally:
+            repository.close()
+
+
 class WorkflowServicesTests(unittest.TestCase):
     def _build_payload(self, command_type: WorkflowCommandType, *, layer_id: str = "wind-field") -> WorkflowSubmitRequest:
         return WorkflowSubmitRequest(
@@ -62,8 +79,7 @@ class WorkflowServicesTests(unittest.TestCase):
         return value if isinstance(value, dict) else value.model_dump(mode="json")
 
     def test_submit_workflow_creates_accepted_run(self) -> None:
-        with tempfile.TemporaryDirectory() as tmpdir:
-            repository = SQLiteWorkflowRepository(state_dir=Path(tmpdir))
+        with _temp_repository() as repository:
             submission, lifecycle, runtime_status = _build_services(repository)
             with patch(
                 "app.services.workflow.submission_service.execute_workflow_task",
@@ -79,8 +95,7 @@ class WorkflowServicesTests(unittest.TestCase):
             self.assertEqual(run.events_url, f"/workflow-runs/{response.run_id}/events")
 
     def test_cancel_workflow_marks_terminal_cancelled(self) -> None:
-        with tempfile.TemporaryDirectory() as tmpdir:
-            repository = SQLiteWorkflowRepository(state_dir=Path(tmpdir))
+        with _temp_repository() as repository:
             submission, lifecycle, runtime_status = _build_services(repository)
             with patch(
                 "app.services.workflow.submission_service.execute_workflow_task",
@@ -91,8 +106,7 @@ class WorkflowServicesTests(unittest.TestCase):
                 lifecycle.cancel_workflow_run(response.run_id)
 
     def test_runtime_status_reports_services(self) -> None:
-        with tempfile.TemporaryDirectory() as tmpdir:
-            repository = SQLiteWorkflowRepository(state_dir=Path(tmpdir))
+        with _temp_repository() as repository:
             submission, lifecycle, runtime_status = _build_services(repository)
             status = runtime_status.get_runtime_status()
 
@@ -100,8 +114,7 @@ class WorkflowServicesTests(unittest.TestCase):
             self.assertGreaterEqual(len(status.services), 3)
 
     def test_schedule_retry_passes_countdown_and_attempt(self) -> None:
-        with tempfile.TemporaryDirectory() as tmpdir:
-            repository = SQLiteWorkflowRepository(state_dir=Path(tmpdir))
+        with _temp_repository() as repository:
             submission, lifecycle, runtime_status = _build_services(repository)
             payload = self._build_payload(WorkflowCommandType.analysis)
 
@@ -120,8 +133,7 @@ class WorkflowServicesTests(unittest.TestCase):
             self.assertEqual(call_kwargs["payload"].retry_attempt, 2)
 
     def test_submit_workflow_auto_populates_algorithm_request_from_layer_catalog(self) -> None:
-        with tempfile.TemporaryDirectory() as tmpdir:
-            repository = SQLiteWorkflowRepository(state_dir=Path(tmpdir))
+        with _temp_repository() as repository:
             submission, lifecycle, runtime_status = _build_services(repository)
 
             with patch(
@@ -156,8 +168,7 @@ class WorkflowServicesTests(unittest.TestCase):
             "fy-mwri": ("fy_daily", "FY_MWRI_HDF", "D:/prepared/FY_MWRI_HDF"),
         }
 
-        with tempfile.TemporaryDirectory() as tmpdir:
-            repository = SQLiteWorkflowRepository(state_dir=Path(tmpdir))
+        with _temp_repository() as repository:
             submission, lifecycle, runtime_status = _build_services(repository)
             with patch(
                 "app.services.workflow_request_resolver._resolve_data_access_source_uri",
@@ -182,8 +193,7 @@ class WorkflowServicesTests(unittest.TestCase):
                     )
 
     def test_submit_workflow_keeps_python_provider_datasource_missing_when_default_sources_are_unavailable(self) -> None:
-        with tempfile.TemporaryDirectory() as tmpdir:
-            repository = SQLiteWorkflowRepository(state_dir=Path(tmpdir))
+        with _temp_repository() as repository:
             submission, lifecycle, runtime_status = _build_services(repository)
 
             with patch(
@@ -201,8 +211,7 @@ class WorkflowServicesTests(unittest.TestCase):
             self.assertFalse(datasource_selection.get("_data_access_requests"))
 
     def test_submit_workflow_surfaces_validation_failure_message(self) -> None:
-        with tempfile.TemporaryDirectory() as tmpdir:
-            repository = SQLiteWorkflowRepository(state_dir=Path(tmpdir))
+        with _temp_repository() as repository:
             submission, lifecycle, runtime_status = _build_services(repository)
 
             with patch(
@@ -221,8 +230,7 @@ class WorkflowServicesTests(unittest.TestCase):
             self.assertIn("Provider template validation failed", run.message)
 
     def test_submit_workflow_persists_resolution_diagnostics_for_validation_failure(self) -> None:
-        with tempfile.TemporaryDirectory() as tmpdir:
-            repository = SQLiteWorkflowRepository(state_dir=Path(tmpdir))
+        with _temp_repository() as repository:
             submission, lifecycle, runtime_status = _build_services(repository)
 
             with patch(
@@ -260,8 +268,7 @@ class WorkflowServicesTests(unittest.TestCase):
             )
 
     def test_submit_workflow_auto_populates_gee_request_from_layer_catalog(self) -> None:
-        with tempfile.TemporaryDirectory() as tmpdir:
-            repository = SQLiteWorkflowRepository(state_dir=Path(tmpdir))
+        with _temp_repository() as repository:
             submission, lifecycle, runtime_status = _build_services(repository)
             with patch("app.services.workflow.submission_service.execute_workflow_task") as execute_mock:
                 response = submission.submit_workflow(self._build_payload(WorkflowCommandType.analysis, layer_id="remote-sensing"))

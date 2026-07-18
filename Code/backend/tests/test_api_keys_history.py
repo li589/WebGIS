@@ -27,6 +27,11 @@ def _repo(tmp_path, monkeypatch, *, limit: int = 20):
     object.__setattr__(config_service.settings, "gee_credentials_encryption_key", "")
     object.__setattr__(config_service.settings, "api_key_history_limit", limit)
     monkeypatch.setattr(config_service, "_env_api_key_value", lambda _n: "")
+
+    # 关闭上一个 lru_cache 中的 repository 连接池，避免 Windows 文件句柄泄漏
+    # 导致 tmp_path 清理时 PermissionError [WinError 5]
+    if config_service._get_api_keys_repository.cache_info().currsize > 0:
+        config_service._get_api_keys_repository().close()
     config_service._get_api_keys_repository.cache_clear()
     config_service._get_effective_api_key_cached.cache_clear()
     return config_service

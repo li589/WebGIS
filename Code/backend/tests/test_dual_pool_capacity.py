@@ -78,34 +78,41 @@ class DualPoolRepositoryTests(unittest.TestCase):
     def test_count_active_runs_filters_by_run_class(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             repository = SQLiteWorkflowRepository(state_dir=Path(tmpdir))
-            repository.save_run(_status("run-biz-1"), request_json="{}", run_class=RUN_CLASS_BUSINESS)
-            repository.save_run(_status("run-biz-2"), request_json="{}", run_class=RUN_CLASS_BUSINESS)
-            repository.save_run(
-                _status("run-tile-1"),
-                request_json="{}",
-                run_class=RUN_CLASS_WEATHER_TILE,
-            )
-            repository.save_run(
-                _status("run-done", status=ExecutionStatus.succeeded),
-                request_json="{}",
-                run_class=RUN_CLASS_BUSINESS,
-            )
+            try:
+                repository.save_run(_status("run-biz-1"), request_json="{}", run_class=RUN_CLASS_BUSINESS)
+                repository.save_run(_status("run-biz-2"), request_json="{}", run_class=RUN_CLASS_BUSINESS)
+                repository.save_run(
+                    _status("run-tile-1"),
+                    request_json="{}",
+                    run_class=RUN_CLASS_WEATHER_TILE,
+                )
+                repository.save_run(
+                    _status("run-done", status=ExecutionStatus.succeeded),
+                    request_json="{}",
+                    run_class=RUN_CLASS_BUSINESS,
+                )
 
-            self.assertEqual(repository.count_active_runs(), 3)
-            self.assertEqual(repository.count_active_runs(run_class=RUN_CLASS_BUSINESS), 2)
-            self.assertEqual(repository.count_active_runs(run_class=RUN_CLASS_WEATHER_TILE), 1)
+                self.assertEqual(repository.count_active_runs(), 3)
+                self.assertEqual(repository.count_active_runs(run_class=RUN_CLASS_BUSINESS), 2)
+                self.assertEqual(repository.count_active_runs(run_class=RUN_CLASS_WEATHER_TILE), 1)
+            finally:
+                # Windows: 必须在 TemporaryDirectory 清理前关闭连接池，否则文件句柄占用导致 PermissionError
+                repository.close()
 
     def test_status_update_preserves_run_class(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             repository = SQLiteWorkflowRepository(state_dir=Path(tmpdir))
-            repository.save_run(
-                _status("run-tile"),
-                request_json="{}",
-                run_class=RUN_CLASS_WEATHER_TILE,
-            )
-            repository.save_run(_status("run-tile", status=ExecutionStatus.running))
-            self.assertEqual(repository.count_active_runs(run_class=RUN_CLASS_WEATHER_TILE), 1)
-            self.assertEqual(repository.count_active_runs(run_class=RUN_CLASS_BUSINESS), 0)
+            try:
+                repository.save_run(
+                    _status("run-tile"),
+                    request_json="{}",
+                    run_class=RUN_CLASS_WEATHER_TILE,
+                )
+                repository.save_run(_status("run-tile", status=ExecutionStatus.running))
+                self.assertEqual(repository.count_active_runs(run_class=RUN_CLASS_WEATHER_TILE), 1)
+                self.assertEqual(repository.count_active_runs(run_class=RUN_CLASS_BUSINESS), 0)
+            finally:
+                repository.close()
 
 
 if __name__ == "__main__":

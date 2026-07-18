@@ -78,6 +78,20 @@ class WeatherProvidersRepository:
         """获取连接上下文管理器（从连接池获取，自动 commit/rollback + 归还）。"""
         return self._pool.connection()
 
+    def close(self) -> None:
+        """关闭连接池中所有空闲连接。
+
+        测试场景下必须在删除 db 文件前调用（Windows 不允许删除被占用文件）。
+        生产场景下连接池生命周期与进程一致，通常无需显式调用。
+        """
+        self._pool.close_all()
+
+    def __del__(self) -> None:
+        try:
+            self._pool.close_all(quiet=True)
+        except Exception:
+            pass
+
     # ── 加密 / 解密（与 GeeCredentialsRepository 一致） ──────────────────────
 
     def _encrypt(self, plaintext: str) -> tuple[str, str]:
@@ -120,7 +134,16 @@ class WeatherProvidersRepository:
             return plaintext, ""
 
     def _decrypt(self, ciphertext_b64: str, iv_b64: str) -> str:
+        # Sprint 3.3: 无 key 时记录 warning，避免静默返回密文。
+        # dev 模式下 _encrypt 存储明文 + 空 IV（secrets_encryption_required()=False），
+        # 此处返回 ciphertext_b64（即明文）以保持 round-trip；
+        # 生产模式下 assert_encryption_policy() 会在启动时拒绝无 key 状态，故此分支不会在生产路径触发。
+        # 与 api_keys_repository / gee_credentials_repository 保持一致的降级策略。
         if not self._encryption_key or not iv_b64:
+            if ciphertext_b64:
+                logger.warning(
+                    "Decrypting weather provider config without encryption key (dev-mode plaintext round-trip)"
+                )
             return ciphertext_b64
         try:
             from cryptography.hazmat.primitives.ciphers.aead import AESGCM  # type: ignore

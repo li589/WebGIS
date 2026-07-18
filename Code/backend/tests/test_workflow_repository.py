@@ -28,96 +28,106 @@ class WorkflowRepositoryTests(unittest.TestCase):
     def test_save_and_load_workflow_run_round_trip(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             repository = SQLiteWorkflowRepository(state_dir=Path(tmpdir))
-            now = datetime.now(timezone.utc)
-            payload = WorkflowRunStatusResponse(
-                run_id="run-test",
-                status_url="/workflow-runs/run-test",
-                events_url="/workflow-runs/run-test/events",
-                command_type=WorkflowCommandType.analysis,
-                layer_id="wind-field",
-                priority=WorkflowPriority.normal,
-                status=ExecutionStatus.running,
-                progress=35,
-                message="running",
-                created_at=now,
-                updated_at=now,
-                client=ClientIdentity(client_id="client-1"),
-                map_context=RuntimeMapContext(active_layer_id="wind-field"),
-                result_dto=WorkflowAnalysisResultDto(
-                    workflow_entry_name="analysis_workflow",
+            try:
+                now = datetime.now(timezone.utc)
+                payload = WorkflowRunStatusResponse(
+                    run_id="run-test",
+                    status_url="/workflow-runs/run-test",
+                    events_url="/workflow-runs/run-test/events",
+                    command_type=WorkflowCommandType.analysis,
                     layer_id="wind-field",
-                    requested_hour=12.0,
-                    metric_label="NDVI",
-                    metric_value=0.7,
-                    metric_unit="index",
-                    hotspot_count=2,
-                ),
-                result_refs=[
-                    WorkflowResultReference(
-                        result_id="ref-1",
-                        result_kind=ResultKind.json,
-                        title="result",
-                        mime_type="application/json",
-                        inline_data={"ok": True},
-                        updated_at=now,
-                    )
-                ],
-                diagnostics=["ok"],
-            )
+                    priority=WorkflowPriority.normal,
+                    status=ExecutionStatus.running,
+                    progress=35,
+                    message="running",
+                    created_at=now,
+                    updated_at=now,
+                    client=ClientIdentity(client_id="client-1"),
+                    map_context=RuntimeMapContext(active_layer_id="wind-field"),
+                    result_dto=WorkflowAnalysisResultDto(
+                        workflow_entry_name="analysis_workflow",
+                        layer_id="wind-field",
+                        requested_hour=12.0,
+                        metric_label="NDVI",
+                        metric_value=0.7,
+                        metric_unit="index",
+                        hotspot_count=2,
+                    ),
+                    result_refs=[
+                        WorkflowResultReference(
+                            result_id="ref-1",
+                            result_kind=ResultKind.json,
+                            title="result",
+                            mime_type="application/json",
+                            inline_data={"ok": True},
+                            updated_at=now,
+                        )
+                    ],
+                    diagnostics=["ok"],
+                )
 
-            repository.save_run(payload, request_json="{}")
-            loaded = repository.get_run("run-test")
-            self.assertIsNotNone(loaded)
-            self.assertEqual(loaded.run_id, payload.run_id)
-            self.assertEqual(loaded.status, payload.status)
-            self.assertEqual(loaded.result_dto.workflow_entry_name, "analysis_workflow")
-            self.assertEqual(repository.get_run_request_json("run-test"), "{}")
+                repository.save_run(payload, request_json="{}")
+                loaded = repository.get_run("run-test")
+                self.assertIsNotNone(loaded)
+                self.assertEqual(loaded.run_id, payload.run_id)
+                self.assertEqual(loaded.status, payload.status)
+                self.assertEqual(loaded.result_dto.workflow_entry_name, "analysis_workflow")
+                self.assertEqual(repository.get_run_request_json("run-test"), "{}")
+            finally:
+                # Windows: 必须在 TemporaryDirectory 清理前关闭连接池，否则文件句柄占用导致 PermissionError
+                repository.close()
 
     def test_append_and_list_events(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             repository = SQLiteWorkflowRepository(state_dir=Path(tmpdir))
-            now = datetime.now(timezone.utc)
-            event = WorkflowEvent(
-                event_id="evt-1",
-                run_id="run-test",
-                channel=EventChannel.status,
-                message="created",
-                created_at=now,
-            )
-            repository.append_event(event)
+            try:
+                now = datetime.now(timezone.utc)
+                event = WorkflowEvent(
+                    event_id="evt-1",
+                    run_id="run-test",
+                    channel=EventChannel.status,
+                    message="created",
+                    created_at=now,
+                )
+                repository.append_event(event)
 
-            events = repository.list_events("run-test")
-            self.assertIsNotNone(events)
-            self.assertEqual(len(events), 1)
-            self.assertEqual(events[0].event_id, "evt-1")
-            self.assertEqual(events[0].channel, EventChannel.status)
+                events = repository.list_events("run-test")
+                self.assertIsNotNone(events)
+                self.assertEqual(len(events), 1)
+                self.assertEqual(events[0].event_id, "evt-1")
+                self.assertEqual(events[0].channel, EventChannel.status)
+            finally:
+                repository.close()
 
     def test_list_events_supports_after_event_id_cursor(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             repository = SQLiteWorkflowRepository(state_dir=Path(tmpdir))
-            now = datetime.now(timezone.utc)
-            repository.append_event(
-                WorkflowEvent(
-                    event_id="evt-1",
-                    run_id="run-test",
-                    channel=EventChannel.status,
-                    message="accepted",
-                    created_at=now,
+            try:
+                now = datetime.now(timezone.utc)
+                repository.append_event(
+                    WorkflowEvent(
+                        event_id="evt-1",
+                        run_id="run-test",
+                        channel=EventChannel.status,
+                        message="accepted",
+                        created_at=now,
+                    )
                 )
-            )
-            repository.append_event(
-                WorkflowEvent(
-                    event_id="evt-2",
-                    run_id="run-test",
-                    channel=EventChannel.system,
-                    message="running",
-                    created_at=now,
+                repository.append_event(
+                    WorkflowEvent(
+                        event_id="evt-2",
+                        run_id="run-test",
+                        channel=EventChannel.system,
+                        message="running",
+                        created_at=now,
+                    )
                 )
-            )
 
-            events = repository.list_events("run-test", after_event_id="evt-1")
-            self.assertEqual(len(events), 1)
-            self.assertEqual(events[0].event_id, "evt-2")
+                events = repository.list_events("run-test", after_event_id="evt-1")
+                self.assertEqual(len(events), 1)
+                self.assertEqual(events[0].event_id, "evt-2")
+            finally:
+                repository.close()
 
 
 if __name__ == "__main__":

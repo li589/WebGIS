@@ -33,6 +33,10 @@ def _fresh_repo(tmp_path, monkeypatch, *, env_keys: dict[str, str] | None = None
         lambda name: str(env.get(name) or "").strip(),
     )
 
+    # 关闭上一个 lru_cache 中的 repository 连接池，避免 Windows 文件句柄泄漏
+    # 导致 tmp_path 清理时 PermissionError [WinError 5]
+    if config_service._get_api_keys_repository.cache_info().currsize > 0:
+        config_service._get_api_keys_repository().close()
     config_service._get_api_keys_repository.cache_clear()
     config_service._get_effective_api_key_cached.cache_clear()
     return config_service

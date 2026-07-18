@@ -292,6 +292,20 @@ class SQLiteWorkflowRepository:
         """
         return self._pool.connection()
 
+    def close(self) -> None:
+        """关闭连接池中所有空闲连接。
+
+        测试场景下必须在删除 db 文件前调用（Windows 不允许删除被占用文件）。
+        生产场景下连接池生命周期与进程一致，通常无需显式调用。
+        """
+        self._pool.close_all()
+
+    def __del__(self) -> None:
+        try:
+            self._pool.close_all(quiet=True)
+        except Exception:
+            pass
+
     def _clone_default_config(self) -> dict[str, dict[str, object]]:
         import copy
         return copy.deepcopy(DEFAULT_CONFIG_SNAPSHOT)
