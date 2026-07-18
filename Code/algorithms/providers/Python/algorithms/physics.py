@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass
 from typing import Any
 
@@ -56,6 +57,17 @@ _FREQ_GHZ_MAX = 40.0
 # 黏粒含量有效范围（无量纲，0-1）
 _CLAY_FRACTION_MIN = 0.0
 _CLAY_FRACTION_MAX = 1.0
+
+
+def _safe_sqrt(x: float) -> float:
+    """非负开方，负值或 NaN 返回 0.0。
+
+    介电常数的实部/虚部物理上应非负；浮点精度损失可能产生 -1e-20，
+    math.sqrt 会抛 ValueError 而非返回 NaN，需显式 clamp。
+    """
+    if not math.isfinite(x) or x < 0:
+        return 0.0
+    return math.sqrt(x)
 
 
 @dataclass(frozen=True, slots=True)
@@ -354,10 +366,12 @@ def build_mironov_context(freq_ghz: float, clay_fraction: float) -> MironovConte
     epwux = _WATER_HIGH_FREQ_DIELECTRIC + cxu
     epwuy = cxu * (2 * math.pi * freq_hz * ztauu) + zsigmau / (2 * math.pi * _VACUUM_PERMITTIVITY * freq_hz)
 
-    znb = math.sqrt((math.sqrt(epwbx**2 + epwby**2) + epwbx) / 2)
-    zkb = math.sqrt((math.sqrt(epwbx**2 + epwby**2) - epwbx) / 2)
-    znu = math.sqrt((math.sqrt(epwux**2 + epwuy**2) + epwux) / 2)
-    zku = math.sqrt((math.sqrt(epwux**2 + epwuy**2) - epwux) / 2)
+    mag_b = math.sqrt(epwbx * epwbx + epwby * epwby)  # 复数模长，非负
+    znb = _safe_sqrt((mag_b + epwbx) / 2)
+    zkb = _safe_sqrt((mag_b - epwbx) / 2)
+    mag_u = math.sqrt(epwux * epwux + epwuy * epwuy)  # 复数模长，非负
+    znu = _safe_sqrt((mag_u + epwux) / 2)
+    zku = _safe_sqrt((mag_u - epwux) / 2)
 
     return MironovContext(
         znd=znd,

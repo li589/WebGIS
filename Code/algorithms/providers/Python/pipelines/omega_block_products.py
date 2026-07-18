@@ -110,6 +110,5 @@ class OmegaBlockPipeline(BasePipeline):
                 "temp_scheme": config.temp_scheme,
                 "exp_mode": config.exp_mode,
                 "block_days": config.block_days,
-                "pixel_chunk_size": config.pixel_chunk_size,
             },
         )

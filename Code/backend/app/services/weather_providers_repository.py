@@ -33,6 +33,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Optional
 
+from app.services._sqlite_pool import SQLiteConnectionPool
+
 logger = logging.getLogger(__name__)
 
 
@@ -46,6 +48,9 @@ class WeatherProvidersRepository:
         self.db_path = Path(db_path)
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
         self._encryption_key = encryption_key
+        # Sprint 3.4: 使用连接池替代每次新建连接（WAL + busy_timeout + 连接复用）
+        # 原 _connect 中手动设置 PRAGMA journal_mode=WAL/synchronous=NORMAL 已由连接池统一管理
+        self._pool = SQLiteConnectionPool(self.db_path)
         self._init_schema()
 
     def _init_schema(self) -> None:
@@ -69,15 +74,23 @@ class WeatherProvidersRepository:
             )
             conn.commit()
 
-    def _connect(self) -> sqlite3.Connection:
-        conn = sqlite3.connect(str(self.db_path))
-        conn.row_factory = sqlite3.Row
-        return conn
+    def _connect(self):
+        """获取连接上下文管理器（从连接池获取，自动 commit/rollback + 归还）。"""
+        return self._pool.connection()
 
     # ── 加密 / 解密（与 GeeCredentialsRepository 一致） ──────────────────────
 
     def _encrypt(self, plaintext: str) -> tuple[str, str]:
+        """AES-GCM 加密，返回 (ciphertext_b64, iv_b64)。无 key 时仅 development 允许明文。"""
         if not self._encryption_key:
+            from app.services.effective_config import secrets_encryption_required
+
+            if secrets_encryption_required():
+                raise RuntimeError(
+                    "Cannot store weather provider config without BACKEND_GEE_CREDENTIALS_ENCRYPTION_KEY "
+                    "outside development."
+                )
+            logger.error("Weather provider encryption key not set, storing plaintext (development only)")
             return plaintext, ""
         try:
             from cryptography.hazmat.primitives.ciphers.aead import AESGCM  # type: ignore
@@ -90,10 +103,20 @@ class WeatherProvidersRepository:
             ct = aesgcm.encrypt(iv, plaintext.encode("utf-8"), None)
             return base64.b64encode(ct).decode("ascii"), base64.b64encode(iv).decode("ascii")
         except ImportError:
-            logger.warning("cryptography not installed, storing weather provider config as plaintext")
+            from app.services.effective_config import secrets_encryption_required
+
+            if secrets_encryption_required():
+                raise RuntimeError("cryptography package required to encrypt weather provider config") from None
+            logger.warning("cryptography not installed, storing plaintext")
             return plaintext, ""
+        except RuntimeError:
+            raise
         except Exception as e:
-            logger.error("Encryption failed for weather provider config: %s", e)
+            from app.services.effective_config import secrets_encryption_required
+
+            if secrets_encryption_required():
+                raise RuntimeError(f"Encryption failed for weather provider config: {e}") from e
+            logger.error("Encryption failed for weather provider config, storing plaintext: %s", e)
             return plaintext, ""
 
     def _decrypt(self, ciphertext_b64: str, iv_b64: str) -> str:

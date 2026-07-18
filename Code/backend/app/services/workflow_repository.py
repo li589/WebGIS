@@ -1,11 +1,11 @@
 from __future__ import annotations
 
-from contextlib import contextmanager
 import json
 from pathlib import Path
 import sqlite3
 
 from app.core.config import settings
+from app.services._sqlite_pool import SQLiteConnectionPool
 from shared.contracts.api_contracts import (
     ExecutionStatus,
     RuntimeConfigPatch,
@@ -35,6 +35,10 @@ class SQLiteWorkflowRepository:
         self._state_dir = Path(state_dir or settings.workflow_state_dir)
         self._db_path = self._state_dir / "workflow_state.sqlite3"
         self._ensure_layout()
+        # Sprint 3.5: 使用连接池替代每次新建连接（WAL + busy_timeout + 连接复用）。
+        # row_factory=None 保持原有 tuple-style 行访问（row[0]/row[1]），避免破坏
+        # get_run/list_events/get_config_snapshot 等依赖位置索引的代码。
+        self._pool = SQLiteConnectionPool(self._db_path, row_factory=None)
         self._initialize_schema()
         self._migrate_schema()
 
@@ -280,19 +284,13 @@ class SQLiteWorkflowRepository:
                 "CREATE INDEX IF NOT EXISTS idx_workflow_runs_class_status ON workflow_runs(run_class, status)"
             )
 
-    @contextmanager
     def _connect(self):
-        connection = sqlite3.connect(self._db_path)
-        connection.execute("PRAGMA journal_mode=WAL")
-        connection.execute("PRAGMA synchronous=NORMAL")
-        try:
-            yield connection
-            connection.commit()
-        except Exception:
-            connection.rollback()
-            raise
-        finally:
-            connection.close()
+        """获取连接上下文管理器（从连接池获取，自动 commit/rollback + 归还）。
+
+        原 _connect 手动管理连接生命周期（connect + commit/rollback + close），
+        Sprint 3.5 后改为从连接池获取并归还。row_factory=None 保持 tuple-style 行访问。
+        """
+        return self._pool.connection()
 
     def _clone_default_config(self) -> dict[str, dict[str, object]]:
         import copy

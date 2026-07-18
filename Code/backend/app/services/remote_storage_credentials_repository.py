@@ -10,6 +10,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Optional
 
+from app.services._sqlite_pool import SQLiteConnectionPool
+
 logger = logging.getLogger(__name__)
 
 ALLOWED_PROTOCOLS = frozenset({"sftp", "smb", "ftp", "ftps", "gs"})
@@ -36,6 +38,9 @@ class RemoteStorageCredentialsRepository:
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
         self._encryption_key = encryption_key
         self._history_limit = max(1, int(history_limit))
+        # Sprint 4.5: 使用连接池替代每次新建连接（WAL + busy_timeout + 连接复用）
+        # _archive_secrets 接受 conn 参数以保持与主 upsert 同事务，连接池对此透明
+        self._pool = SQLiteConnectionPool(self.db_path)
         self._init_schema()
 
     def _init_schema(self) -> None:
@@ -85,10 +90,9 @@ class RemoteStorageCredentialsRepository:
             )
             conn.commit()
 
-    def _connect(self) -> sqlite3.Connection:
-        conn = sqlite3.connect(str(self.db_path))
-        conn.row_factory = sqlite3.Row
-        return conn
+    def _connect(self):
+        """获取连接上下文管理器（从连接池获取，自动 commit/rollback + 归还）。"""
+        return self._pool.connection()
 
     def _encrypt(self, plaintext: str) -> tuple[str, str]:
         if not plaintext:
@@ -171,24 +175,25 @@ class RemoteStorageCredentialsRepository:
         else:
             enabled_val = bool(enabled)
 
-        # Archive previous secrets when plaintext changes
-        if existing is not None:
-            old_secret = existing.get("secret") or ""
-            old_key = existing.get("private_key_pem") or ""
-            if (secret is not None and secret != old_secret) or (
-                private_key_pem is not None and (private_key_pem or "") != old_key
-            ):
-                self._archive_secrets(
-                    profile_id=profile_id,
-                    secret=old_secret,
-                    private_key_pem=old_key or None,
-                    superseded_at=now,
-                    source="user",
-                )
-
         sec_ct, sec_iv = self._encrypt(secret_val)
         key_ct, key_iv = self._encrypt(key_val) if key_val else ("", "")
         with self._connect() as conn:
+            # Archive previous secrets in the SAME transaction as the main upsert
+            # to ensure atomicity (avoid orphaned archive rows if main upsert fails).
+            if existing is not None:
+                old_secret = existing.get("secret") or ""
+                old_key = existing.get("private_key_pem") or ""
+                if (secret is not None and secret != old_secret) or (
+                    private_key_pem is not None and (private_key_pem or "") != old_key
+                ):
+                    self._archive_secrets(
+                        conn,
+                        profile_id=profile_id,
+                        secret=old_secret,
+                        private_key_pem=old_key or None,
+                        superseded_at=now,
+                        source="user",
+                    )
             conn.execute(
                 """
                 INSERT INTO remote_storage_credentials (
@@ -374,6 +379,7 @@ class RemoteStorageCredentialsRepository:
 
     def _archive_secrets(
         self,
+        conn: sqlite3.Connection,
         *,
         profile_id: str,
         secret: str,
@@ -382,42 +388,46 @@ class RemoteStorageCredentialsRepository:
         source: str,
         label: str | None = None,
     ) -> None:
+        """将旧密钥归档到 history 表。必须在调用方的事务内调用，不自行 commit。
+
+        Args:
+            conn: 由调用方传入的 sqlite3.Connection，确保与主 upsert 在同一事务内。
+            其余参数同旧签名。
+        """
         sec_ct, sec_iv = self._encrypt(secret or "")
         key_ct, key_iv = self._encrypt(private_key_pem) if private_key_pem else ("", "")
-        with self._connect() as conn:
-            conn.execute(
-                """
-                INSERT INTO remote_storage_secret_history (
-                    profile_id, secret_encrypted, secret_iv,
-                    private_key_encrypted, private_key_iv,
-                    label, created_at, superseded_at, source
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-                """,
-                (
-                    profile_id,
-                    sec_ct,
-                    sec_iv,
-                    key_ct or None,
-                    key_iv or None,
-                    label,
-                    superseded_at,
-                    superseded_at,
-                    source,
-                ),
+        conn.execute(
+            """
+            INSERT INTO remote_storage_secret_history (
+                profile_id, secret_encrypted, secret_iv,
+                private_key_encrypted, private_key_iv,
+                label, created_at, superseded_at, source
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                profile_id,
+                sec_ct,
+                sec_iv,
+                key_ct or None,
+                key_iv or None,
+                label,
+                superseded_at,
+                superseded_at,
+                source,
+            ),
+        )
+        conn.execute(
+            """
+            DELETE FROM remote_storage_secret_history
+            WHERE profile_id=? AND id NOT IN (
+                SELECT id FROM remote_storage_secret_history
+                WHERE profile_id=?
+                ORDER BY superseded_at DESC, id DESC
+                LIMIT ?
             )
-            conn.execute(
-                """
-                DELETE FROM remote_storage_secret_history
-                WHERE profile_id=? AND id NOT IN (
-                    SELECT id FROM remote_storage_secret_history
-                    WHERE profile_id=?
-                    ORDER BY superseded_at DESC, id DESC
-                    LIMIT ?
-                )
-                """,
-                (profile_id, profile_id, self._history_limit),
-            )
-            conn.commit()
+            """,
+            (profile_id, profile_id, self._history_limit),
+        )
 
     def list_history(self, profile_id: str) -> list[dict[str, Any]]:
         with self._connect() as conn:

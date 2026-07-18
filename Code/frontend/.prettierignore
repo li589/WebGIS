@@ -1,0 +1,18 @@
+# Sprint 4.3: Prettier 忽略列表
+# 与 eslint.config.js ignores 保持一致
+
+dist/**
+node_modules/**
+
+# OpenAPI 自动生成的类型文件（不手动格式化）
+src/types/api-contracts.ts
+src/types/api-reexports.ts
+
+# 构建产物
+*.min.js
+*.min.css
+
+# 包文件
+package-lock.json
+pnpm-lock.yaml
+yarn.lock

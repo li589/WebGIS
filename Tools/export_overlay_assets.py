@@ -455,11 +455,9 @@ def export_clcd() -> None:
                         resampling=Resampling.mode).astype(np.float64)
         # CLCD: 0=填充, 1-9 分类
         data[data == 0] = np.nan
-        from rasterio.transform import xy
-        x0, y0 = xy(src.transform, win.row_off, win.col_off, offset="ll")
-        x1, y1 = xy(src.transform, win.row_off + win.height, win.col_off + win.width, offset="ur")
-        actual_bounds = (float(min(x0, x1)), float(min(y0, y1)),
-                         float(max(x0, x1)), float(max(y0, y1)))
+        # 使用 window_bounds 获取窗口的地理边界 (west, south, east, north)
+        # 注意: 不能用 xy(offset="ll")/xy(offset="ur"), 那样会取像素内边沿导致整体偏移 1 个像素
+        actual_bounds = tuple(float(v) for v in src.window_bounds(win))
 
     print(f"  Data shape: {data.shape}, classes: {np.nanmin(data):.0f} to {np.nanmax(data):.0f}")
     _render_png(data, out_dir / "clcd_overlay.png", cmap="tab10",
@@ -551,11 +549,9 @@ def export_era5_dwaa() -> None:
             data = src.read(band, window=win)
             event_count[data == 1] += 1
         event_count[event_count == 0] = np.nan
-        from rasterio.transform import xy
-        x0, y0 = xy(src.transform, win.row_off, win.col_off, offset="ll")
-        x1, y1 = xy(src.transform, win.row_off + win.height, win.col_off + win.width, offset="ur")
-        actual_bounds = (float(min(x0, x1)), float(min(y0, y1)),
-                         float(max(x0, x1)), float(max(y0, y1)))
+        # 使用 window_bounds 获取窗口的地理边界 (west, south, east, north)
+        # 注意: 不能用 xy(offset="ll")/xy(offset="ur"), 那样会取像素内边沿导致整体偏移 1 个像素
+        actual_bounds = tuple(float(v) for v in src.window_bounds(win))
 
     print(f"  Event count shape: {event_count.shape}, max events: {np.nanmax(event_count):.0f}")
     vmax = float(np.nanmax(event_count)) if np.isfinite(np.nanmax(event_count)) else 10
@@ -584,11 +580,9 @@ def export_era5_wdaa() -> None:
             data = src.read(band, window=win)
             event_count[data == 1] += 1
         event_count[event_count == 0] = np.nan
-        from rasterio.transform import xy
-        x0, y0 = xy(src.transform, win.row_off, win.col_off, offset="ll")
-        x1, y1 = xy(src.transform, win.row_off + win.height, win.col_off + win.width, offset="ur")
-        actual_bounds = (float(min(x0, x1)), float(min(y0, y1)),
-                         float(max(x0, x1)), float(max(y0, y1)))
+        # 使用 window_bounds 获取窗口的地理边界 (west, south, east, north)
+        # 注意: 不能用 xy(offset="ll")/xy(offset="ur"), 那样会取像素内边沿导致整体偏移 1 个像素
+        actual_bounds = tuple(float(v) for v in src.window_bounds(win))
 
     print(f"  Event count shape: {event_count.shape}, max events: {np.nanmax(event_count):.0f}")
     vmax = float(np.nanmax(event_count)) if np.isfinite(np.nanmax(event_count)) else 10

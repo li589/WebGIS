@@ -1,0 +1,95 @@
+# Sprint 4.2: pre-commit 钩子配置
+#
+# 安装：
+#   pip install pre-commit
+#   pre-commit install
+#
+# 手动运行：
+#   pre-commit run --all-files
+#
+# 跳过个别钩子（紧急情况）：
+#   git commit --no-verify  # 不推荐，仅在紧急修复时使用
+
+repos:
+  # ── Python lint + 格式化 ──────────────────────────────────────────────
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.5.0
+    hooks:
+      - id: ruff
+        args: [--fix, --exit-non-zero-on-fix]
+        files: ^(Code/backend/app|Code/algorithms/providers/Python/algorithms)/.+\.py$
+      - id: ruff-format
+        files: ^(Code/backend/app|Code/algorithms/providers/Python/algorithms)/.+\.py$
+
+  # ── Python 类型检查 ──────────────────────────────────────────────────
+  - repo: https://github.com/pre-commit/mirrors-mypy
+    rev: v1.10.0
+    hooks:
+      - id: mypy
+        # 仅检查核心业务模块（app/*, algorithms/*），避免 noise
+        files: ^(Code/backend/app|Code/algorithms/providers/Python/algorithms)/.+\.py$
+        # 排除测试与脚本目录（mypy.ini 中已配置 disallow_untyped_defs=False）
+        exclude: |
+          (?x)^(
+              Code/backend/app/tests/.*|
+              Code/backend/app/.*/scripts/.*|
+              Code/backend/_sprint\d+_test\.py
+          )$
+        args: [--config-file=Code/backend/mypy.ini]
+        additional_dependencies:
+          - types-requests>=2.31.0
+          - numpy>=1.26.0
+          - scipy>=1.13.0
+
+  # ── 通用代码质量钩子 ─────────────────────────────────────────────────
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v4.6.0
+    hooks:
+      - id: trailing-whitespace
+        # 不自动修前端文件（Prettier 负责）
+        exclude: \.(vue|ts|tsx|js|jsx|css|scss|md)$
+      - id: end-of-file-fixer
+        exclude: \.(vue|ts|tsx|js|jsx|css|scss|md)$
+      - id: check-yaml
+        files: \.(yaml|yml)$
+      - id: check-toml
+      - id: check-json
+        # 排除 frontend 生成的 tsconfig.*.json（含注释，非严格 JSON）
+        exclude: Code/frontend/tsconfig.*\.json$
+      - id: check-merge-conflict
+      - id: check-added-large-files
+        args: [--maxkb=1024]  # 1MB 上限，避免误提交大数据文件
+      - id: detect-private-key
+        # 检测 SSH/PGP 私钥误提交
+      - id: check-ast
+        # Python 语法检查（早于 ruff/mypy，快速失败）
+
+  # ── 前端 lint + 格式化（仅 .ts/.vue 文件） ──────────────────────────
+  - repo: local
+    hooks:
+      - id: frontend-eslint
+        name: frontend eslint
+        # 使用 npm run lint（仅 errors 阻止提交，warnings 不阻止）
+        # 待代码清理完成后可切换到 npm run lint:strict
+        # npm --prefix 跨平台兼容（Windows 无需 bash）
+        entry: npm --prefix Code/frontend run lint
+        language: system
+        files: ^Code/frontend/src/.*\.(ts|tsx|vue|js|jsx)$
+        pass_filenames: false
+        stages: [pre-commit]
+      - id: frontend-prettier
+        name: frontend prettier check
+        # npm --prefix 跨平台兼容（Windows 无需 bash）
+        entry: npm --prefix Code/frontend run format:check
+        language: system
+        files: ^Code/frontend/src/.*\.(ts|tsx|vue|js|jsx|css|scss)$
+        pass_filenames: false
+        stages: [pre-commit]
+
+  # ── 提交信息规范 ─────────────────────────────────────────────────────
+  - repo: https://github.com/compilerla/conventional-pre-commit
+    rev: v3.2.0
+    hooks:
+      - id: conventional-pre-commit
+        stages: [commit-msg]
+        # 允许的 type：feat / fix / refactor / perf / chore / docs / test / style / build / ci

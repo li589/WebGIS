@@ -251,11 +251,13 @@ def retrieve_dynamic_h_pixel(
     porosity: float,
     freq_ghz: float,
     theta_deg: float,
+    model_context: TbModelContext | None = None,
 ) -> float:
     """单像素动态 h 粗糙度反演。
 
     量纲: 输入 tbv/tbh/ts 单位 K，freq_ghz 单位 GHz，theta_deg 单位度 (°)，
     其余无量纲。返回 h_value 无量纲（粗糙度参数）。
+    可选 model_context 由调用方预计算以避免重复开销（grid 版本使用）。
     """
     from scipy.optimize import least_squares
 
@@ -265,7 +267,8 @@ def retrieve_dynamic_h_pixel(
     ):
         return float("nan")
 
-    model_context = build_tb_model_context(freq_ghz, clay_fraction, theta_deg)
+    if model_context is None:
+        model_context = build_tb_model_context(freq_ghz, clay_fraction, theta_deg)
     residual = lambda x: f_h_cost(x, tbv, tbh, ts, tau_ini, clay_fraction, albedo, freq_ghz, theta_deg, model_context)
     lower_bounds = (0.02, 0.0)
     upper_bounds = (porosity, 3.0)
@@ -291,6 +294,7 @@ def ddca_retrieve_pixel(
     porosity: float,
     freq_ghz: float,
     theta_deg: float,
+    model_context: TbModelContext | None = None,
 ) -> tuple[float, float]:
     from scipy.optimize import least_squares
 
@@ -300,7 +304,8 @@ def ddca_retrieve_pixel(
     ):
         return float("nan"), float("nan")
 
-    model_context = build_tb_model_context(freq_ghz, clay_fraction, theta_deg)
+    if model_context is None:
+        model_context = build_tb_model_context(freq_ghz, clay_fraction, theta_deg)
     residual = lambda x: f_sm_cost(
         x, tbv, tbh, ts, tau_ini, h_value, clay_fraction, albedo, freq_ghz, theta_deg, model_context
     )
