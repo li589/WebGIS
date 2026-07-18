@@ -332,26 +332,31 @@ onMounted(async () => {
     if (!overlayImageModule) return
     const known = new Set(overlayImageModule.knownOverlayIds.value)
     const opacityByLayerId: Record<string, number> = {}
-    const activeVisible: string[] = []
+    // activeList: 应保持加载的图层（含 hidden 的，即仍在 activeLayers 列表中）
+    // visibleList: 应可见的子集（visible=true）
+    // 分离两个列表，让 hidden 图层保留在地图上仅切 visibility，避免重复 fetch PNG
+    const activeList: string[] = []
+    const visibleList: string[] = []
 
     for (const layer of layersStore.activeLayers) {
-      if (!layer.visible) continue
       if (layer.importedRaster) {
         const overlayId = layer.importedRaster.overlayLayerId
         overlayImageModule.rememberOverlayId(overlayId)
         known.add(overlayId)
-        activeVisible.push(overlayId)
+        activeList.push(overlayId)
         opacityByLayerId[overlayId] = layer.opacity
+        if (layer.visible) visibleList.push(overlayId)
         continue
       }
       if (layer.importedVector || layer.isAdminBoundary) continue
       if (known.has(layer.catalogId)) {
-        activeVisible.push(layer.catalogId)
+        activeList.push(layer.catalogId)
         opacityByLayerId[layer.catalogId] = layer.opacity
+        if (layer.visible) visibleList.push(layer.catalogId)
       }
     }
 
-    await overlayImageModule.syncOverlays(activeVisible, opacityByLayerId)
+    await overlayImageModule.syncOverlays(activeList, visibleList, opacityByLayerId)
     applyLayerStackOrder()
   }
 
@@ -366,7 +371,9 @@ onMounted(async () => {
 
   watch(
     () => layersStore.activeLayers
-      .filter((l) => l.visible && (l.importedRaster || (!l.importedVector && !l.isAdminBoundary)))
+      // 重要：不再过滤 visible=false 的图层。hidden 图层也需要进入 watch 源，
+      // 这样显隐切换才能触发 syncOverlayLayers（同步仅切 visibility，不重载 PNG）。
+      .filter((l) => l.importedRaster || (!l.importedVector && !l.isAdminBoundary))
       .map((l) => `${l.instanceId}:${l.catalogId}:${l.visible}:${l.opacity}:${l.importedRaster ? 'r' : 'c'}`)
       .join(','),
     () => { void syncOverlayLayers() },

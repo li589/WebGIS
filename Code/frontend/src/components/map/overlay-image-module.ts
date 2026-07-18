@@ -16,9 +16,19 @@ export interface OverlayTimeState {
 }
 
 export interface OverlayImageModule {
-  /** 同步当前 activeLayerIds 与已加载的 overlay 图层（增/删）。 */
+  /**
+   * 同步当前 activeLayerIds 与已加载的 overlay 图层（增/删/显隐）。
+   *
+   * 重要：为避免隐藏/显示时重复 fetch PNG，hidden 图层保留在地图上但 layout.visibility='none'。
+   * 仅当图层从 activeOverlayLayerIds 中消失（用户从图层列表移除）时才真正卸载。
+   *
+   * @param activeOverlayLayerIds 应保持加载的图层（含 hidden 的，即仍在 activeLayers 列表中）
+   * @param visibleOverlayLayerIds 应可见的子集（active 中 visible=true 的）
+   * @param opacityByLayerId 透明度映射
+   */
   syncOverlays: (
     activeOverlayLayerIds: string[],
+    visibleOverlayLayerIds: string[],
     opacityByLayerId?: Record<string, number>,
   ) => Promise<void>
   /** 切换时间序列图层的时间标签。若 linkTimeEnabled 为 true，联动其他时间序列图层。 */
@@ -125,7 +135,11 @@ export function createOverlayImageModule(
     }
   }
 
-  async function _addOverlay(layerId: string, initialOpacity?: number): Promise<void> {
+  async function _addOverlay(
+    layerId: string,
+    initialOpacity?: number,
+    initiallyVisible: boolean = true,
+  ): Promise<void> {
     if (loadedOverlays.has(layerId)) return
     if (loadingOverlays.has(layerId)) return
     const { sourceId, rasterLayerId } = _ids(layerId)
@@ -188,10 +202,12 @@ export function createOverlayImageModule(
         id: rasterLayerId,
         type: 'raster',
         source: sourceId,
-        layout: { visibility: 'visible' },
+        // 隐藏的图层以 visibility='none' 加入，避免显示时再触发 addLayer 流程
+        layout: { visibility: initiallyVisible ? 'visible' : 'none' },
         paint: {
           'raster-opacity': opacity,
-          'raster-fade-duration': 300,
+          // 降低 fade duration 让显隐切换更跟手（原 300ms 显得迟钝）
+          'raster-fade-duration': 100,
         },
       }, options.map.getLayer('admin-fill') ? 'admin-fill' : undefined)
 
@@ -229,23 +245,44 @@ export function createOverlayImageModule(
 
   async function syncOverlays(
     activeOverlayLayerIds: string[],
+    visibleOverlayLayerIds: string[],
     opacityByLayerId?: Record<string, number>,
   ): Promise<void> {
     if (!options.getMapReady()) return
 
-    // 移除不再 active 的
+    const visibleSet = new Set(visibleOverlayLayerIds)
+
+    // 1) 移除真正从 activeLayers 列表消失的图层（用户删除图层）
     for (const layerId of Array.from(loadedOverlays.keys())) {
       if (!activeOverlayLayerIds.includes(layerId)) {
         _removeOverlay(layerId)
       }
     }
-    // 添加新 active 的
+
+    // 2) 添加新 active 的图层（首次加载）；对已加载的仅切换 visibility，避免重复 fetch PNG
+    //    并行加载多个新图层，缩短多图层同时显示时的等待
+    const newLayerIds: string[] = []
     for (const layerId of activeOverlayLayerIds) {
       if (!loadedOverlays.has(layerId)) {
-        await _addOverlay(layerId, opacityByLayerId?.[layerId])
-      } else if (typeof opacityByLayerId?.[layerId] === 'number') {
-        setOverlayOpacity(layerId, opacityByLayerId[layerId])
+        newLayerIds.push(layerId)
+      } else {
+        // 已加载：仅切 visibility + opacity，不重新 fetch
+        setOverlayVisibility(layerId, visibleSet.has(layerId))
+        if (typeof opacityByLayerId?.[layerId] === 'number') {
+          setOverlayOpacity(layerId, opacityByLayerId[layerId])
+        }
       }
+    }
+    if (newLayerIds.length > 0) {
+      await Promise.all(
+        newLayerIds.map((layerId) =>
+          _addOverlay(
+            layerId,
+            opacityByLayerId?.[layerId],
+            visibleSet.has(layerId),
+          ),
+        ),
+      )
     }
   }
 

@@ -31,6 +31,7 @@ describe('map-canvas-state', () => {
     state.resources.mapInteractionModule = {} as any
     state.resources.mapCanvasRuntimeModule = {} as any
     state.resources.selectedLayerFocusModule = {} as any
+    state.resources.measureModule = {} as any
 
     state.clearResources()
 
@@ -44,6 +45,7 @@ describe('map-canvas-state', () => {
       mapInteractionModule: null,
       mapCanvasRuntimeModule: null,
       selectedLayerFocusModule: null,
+      measureModule: null,
     })
   })
 })

@@ -114,8 +114,10 @@ def _bounds_from_centers(lat_1d, lon_1d):
 
 
 # EASE-Grid 2.0 9km 标准定义（NSIDC）
+# 注意：500m 网格的像素尺寸 = 500.4475m；9km 标称 = 18 × 500.4475 = 9008.0552m
+# 早期硬编码 9000.879 是错误的（差 7.18m/像素，1624 行累计偏差 11.6km）
 _EASE_GRID_9K_CRS = "EPSG:6933"
-_EASE_GRID_9K_PIXEL_SIZE = 9000.879  # 米（NSIDC 标准）
+_EASE_GRID_9K_PIXEL_SIZE = 9008.0552  # 米（= 18 × 500.4475，NSIDC 标准）
 _EASE_GRID_9K_UL_X = -17367530.45  # 上左角 x（米）
 _EASE_GRID_9K_UL_Y = 7314540.83    # 上左角 y（米）
 
@@ -127,16 +129,64 @@ def _ease_grid_9k_transform():
                        _EASE_GRID_9K_PIXEL_SIZE, _EASE_GRID_9K_PIXEL_SIZE)
 
 
-def _reproject_ease_to_wgs84(data, target_resolution=0.1):
-    """将 EASE-Grid 2.0 9km 数据重投影到 WGS84 等经纬度网格。
+def _ease_grid_9k_transform_from_mat(mat_dict):
+    """从 .mat 元数据构建 EASE-Grid transform（优先用 .mat 提供的真实参数）。
+
+    .mat 中 Transform 是 6 元素 [a, b, c, d, e, f]（仿射）：
+      x = a*col + b*row + c
+      y = d*col + e*row + f
+    .mat 中像素尺寸 500.4475m（500m 网格），但数据是 9km 重采样后的产品。
+    实际 9km 像素 = 18 × 500.4475 = 9008.0552m（与 _EASE_GRID_9K_PIXEL_SIZE 一致）。
+
+    Args:
+        mat_dict: _read_mat_auto() 返回的字典
+
+    Returns:
+        rasterio.Affine 或 None（无元数据时）
+    """
+    if "Transform" not in mat_dict or "CRS" not in mat_dict:
+        return None
+    try:
+        from rasterio.transform import Affine
+        t = np.asarray(mat_dict["Transform"]).ravel()
+        if len(t) < 6:
+            return None
+        # 优先使用 .mat 中的真实像素尺寸（500.4475 × 18 = 9008.0552）
+        # 但 .mat Transform 给的是 500m 网格参数，9km 数据需要 × 18
+        # 检测：如果像素尺寸接近 500m，则 × 18 转为 9km
+        pixel_x = abs(float(t[1]))
+        if 400 < pixel_x < 600:  # 500m 网格
+            scale = 18
+            a = float(t[1]) * scale
+            e = float(t[5]) * scale
+            c = float(t[0])  # 上左 x
+            f = float(t[3])  # 上左 y
+            return Affine(a, 0.0, c, 0.0, e, f)
+        # 否则按原样使用
+        return Affine(float(t[1]), float(t[2]), float(t[0]),
+                      float(t[4]), float(t[5]), float(t[3]))
+    except Exception:
+        return None
+
+
+def _reproject_ease_to_wgs84(data, target_resolution=0.1, clip_bounds=_CHINA_BBOX,
+                             mat_dict=None):
+    """将 EASE-Grid 2.0 9km 数据重投影到 WGS84 等经纬度网格，并裁剪到指定区域。
 
     EASE-Grid 2.0 9km 是圆柱等积投影（EPSG:6933），行间距随纬度变化。
     直接当作经纬度会导致高纬度地区偏移上百公里。本函数使用 rasterio.warp
     重采样到等经纬度网格，确保地理定位准确。
 
+    重要：全球 EASE-Grid 数据 (-180,-84,180,85) 通过 MapLibre image source 渲染时，
+    4 角线性插值在 Web Mercator 投影下高纬度严重拉伸（南北方向）。
+    因此重投影后必须裁剪到中国区域 (73,15,137,59)，避免高纬度 Mercator 拉伸。
+
     Args:
         data: (n_lat, n_lon) 2D array，EASE-Grid 2.0 9km 数据
         target_resolution: 目标分辨率（度），默认 0.1°
+        clip_bounds: (west, south, east, north) 裁剪边界，默认中国区域；
+                     None 表示不裁剪（保留全球范围，仅用于诊断）
+        mat_dict: 可选，.mat 元数据字典（用于读取真实 Transform）
 
     Returns:
         (reprojected_data, bounds) — bounds = (west, south, east, north)
@@ -144,7 +194,13 @@ def _reproject_ease_to_wgs84(data, target_resolution=0.1):
     from rasterio.warp import reproject, calculate_default_transform
     from rasterio.enums import Resampling
 
-    src_transform = _ease_grid_9k_transform()
+    # 优先使用 .mat 提供的真实 Transform
+    src_transform = None
+    if mat_dict is not None:
+        src_transform = _ease_grid_9k_transform_from_mat(mat_dict)
+    if src_transform is None:
+        src_transform = _ease_grid_9k_transform()
+
     src_crs = _EASE_GRID_9K_CRS
     dst_crs = "EPSG:4326"
 
@@ -175,7 +231,75 @@ def _reproject_ease_to_wgs84(data, target_resolution=0.1):
     north = dst_transform[5]
     south = dst_transform[5] + dst_transform[4] * dst_height
 
+    # 裁剪到指定区域（默认中国），避免高纬度 Web Mercator 拉伸
+    if clip_bounds is not None:
+        dst_data, west, south, east, north = _clip_wgs84_array(
+            dst_data, dst_transform,
+            west=west, south=south, east=east, north=north,
+            clip_bounds=clip_bounds,
+        )
+
     return dst_data, (float(west), float(south), float(east), float(north))
+
+
+def _clip_wgs84_array(data, transform, west, south, east, north, clip_bounds):
+    """裁剪 WGS84 网格数组到指定边界。
+
+    Args:
+        data: (n_lat, n_lon) 2D array
+        transform: rasterio Affine transform
+        west, south, east, north: 当前数据的地理边界
+        clip_bounds: (west, south, east, north) 目标裁剪边界
+
+    Returns:
+        (clipped_data, new_west, new_south, new_east, new_north)
+    """
+    cw, cs, ce, cn = clip_bounds
+    # 求交集（避免裁剪到数据范围外）
+    cw = max(cw, west)
+    cs = max(cs, south)
+    ce = min(ce, east)
+    cn = min(cn, north)
+    if cw >= ce or cs >= cn:
+        # 无交集，返回原数据
+        return data, west, south, east, north
+
+    pixel_w = abs(transform[0])
+    pixel_h = abs(transform[4])
+    if pixel_w <= 0 or pixel_h <= 0:
+        return data, west, south, east, north
+
+    # 计算裁剪后的像素索引（按行列计算）
+    # transform: x = a*col + c; y = e*row + f
+    # 假设 a > 0, e < 0（北朝上，西朝左）
+    a = transform[0]
+    c = transform[2]
+    e = transform[4]
+    f = transform[5]
+    if a > 0 and e < 0:
+        col_w = int(np.floor((cw - c) / a))
+        col_e = int(np.ceil((ce - c) / a))
+        row_n = int(np.floor((cn - f) / e))
+        row_s = int(np.ceil((cs - f) / e))
+    else:
+        # 不支持的 transform 方向，跳过裁剪
+        return data, west, south, east, north
+
+    n_lat, n_lon = data.shape
+    col_w = max(0, min(col_w, n_lon))
+    col_e = max(0, min(col_e, n_lon))
+    row_n = max(0, min(row_n, n_lat))
+    row_s = max(0, min(row_s, n_lat))
+    if col_w >= col_e or row_n >= row_s:
+        return data, west, south, east, north
+
+    clipped = data[row_n:row_s, col_w:col_e]
+    # 裁剪后的边界：用像素外边沿
+    new_west = c + col_w * a
+    new_east = c + col_e * a
+    new_north = f + row_n * e
+    new_south = f + row_s * e
+    return clipped, new_west, new_south, new_east, new_north
 
 
 def _ease_grid_9k_transform_bounds(transform, width, height):
@@ -313,9 +437,9 @@ def export_omega() -> None:
         data[count == 0] = np.nan
 
     print(f"  omega: {data.shape}, range: {np.nanmin(data):.4f}-{np.nanmax(data):.4f}")
-    # 修复：EASE-Grid 2.0 9km 重投影到 WGS84，避免高纬度偏移
+    # 修复：EASE-Grid 2.0 9km 重投影到 WGS84 + 裁剪到中国区域，避免高纬度 Mercator 拉伸
     try:
-        data, bounds = _reproject_ease_to_wgs84(data, target_resolution=0.1)
+        data, bounds = _reproject_ease_to_wgs84(data, target_resolution=0.1, mat_dict=m)
         print(f"  omega reprojected: {data.shape}, bounds={bounds}")
     except Exception as e:
         print(f"  [WARN] EASE-Grid reproject failed, falling back to global bounds: {e}")
@@ -761,9 +885,9 @@ def export_soil_ddca() -> None:
     data[data < 0] = np.nan
 
     print(f"  Data shape: {data.shape}, range: {np.nanmin(data):.2f} to {np.nanmax(data):.2f}")
-    # 修复：EASE-Grid 2.0 9km 重投影到 WGS84
+    # 修复：EASE-Grid 2.0 9km 重投影到 WGS84 + 裁剪到中国区域
     try:
-        data, bounds = _reproject_ease_to_wgs84(data, target_resolution=0.1)
+        data, bounds = _reproject_ease_to_wgs84(data, target_resolution=0.1, mat_dict=m)
         print(f"  soil_ddca reprojected: {data.shape}, bounds={bounds}")
     except Exception as e:
         print(f"  [WARN] EASE-Grid reproject failed, falling back to global bounds: {e}")
@@ -799,9 +923,9 @@ def export_omega_fy() -> None:
         data[count == 0] = np.nan
 
     print(f"  Data shape: {data.shape}, range: {np.nanmin(data):.4f} to {np.nanmax(data):.4f}")
-    # 修复：EASE-Grid 2.0 9km 重投影到 WGS84
+    # 修复：EASE-Grid 2.0 9km 重投影到 WGS84 + 裁剪到中国区域
     try:
-        data, bounds = _reproject_ease_to_wgs84(data, target_resolution=0.1)
+        data, bounds = _reproject_ease_to_wgs84(data, target_resolution=0.1, mat_dict=m)
         print(f"  omega_fy reprojected: {data.shape}, bounds={bounds}")
     except Exception as e:
         print(f"  [WARN] EASE-Grid reproject failed, falling back to global bounds: {e}")
@@ -834,9 +958,9 @@ def export_forest_ratio() -> None:
     data[data < 0] = np.nan
 
     print(f"  Data shape: {data.shape}, range: {np.nanmin(data):.3f} to {np.nanmax(data):.3f}")
-    # 修复：EASE-Grid 2.0 9km 重投影到 WGS84
+    # 修复：EASE-Grid 2.0 9km 重投影到 WGS84 + 裁剪到中国区域（避免全球 Mercator 拉伸）
     try:
-        data, bounds = _reproject_ease_to_wgs84(data, target_resolution=0.1)
+        data, bounds = _reproject_ease_to_wgs84(data, target_resolution=0.1, mat_dict=m)
         print(f"  forest_ratio reprojected: {data.shape}, bounds={bounds}")
     except Exception as e:
         print(f"  [WARN] EASE-Grid reproject failed, falling back to global bounds: {e}")
