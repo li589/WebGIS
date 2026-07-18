@@ -4,7 +4,9 @@ from datetime import datetime, timedelta
 from typing import Any, Iterable
 
 # ─── Savitzky-Golay 滤波默认参数（无量纲） ───────────────────────────────────
-_SG_DEFAULT_POLYORDER = 6
+# Sprint 3.2 (D1): polyorder 从 6 降为 3。window=9 + polyorder=6 自由度仅 2（过拟合），
+# polyorder=3 自由度 5，拟合更稳健。历史反演结果会有微小差异，无法严格复现。
+_SG_DEFAULT_POLYORDER = 3
 _SG_DEFAULT_WINDOW_LENGTH = 9
 _SG_DEFAULT_GAP_THRESHOLD_DAYS = 30
 _SG_DEFAULT_STEP_DAYS = 8
