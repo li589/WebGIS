@@ -5,14 +5,30 @@
 为后端 overlay_registry.py 中注册的每个图层生成地理配准 PNG 预览图。
 输出目录: I:\\Geograph_DataSet\\ProjectOutput\\2023-01_Omega_Inversion\\_overlays\\
 
-支持的图层:
-  1. dem-etopo      — ETOPO_2022 bed topography (global, terrain)
-  2. landcover-cn   — MCD12Q1 landcover (China 0.25deg, IGBP)
-  3. hfp-cn         — Human Footprint (China 0.25deg, hot)
-  4. aridity-cn     — Aridity Index (China 0.25deg, BrBG)
-  5. omega-output   — Omega inversion avg (global EASE-Grid 9km, plasma)
-  6. smap-sm-ts     — SMAP soil moisture time series (China, 13 days)
-  7. gpcp-precip-ts — GPCP monthly precipitation (global, 24 months)
+支持的图层（Phase 1.6 扩展后）:
+  1. dem-etopo           — ETOPO_2022 bed topography (global, terrain)
+  2. landcover-cn        — MCD12Q1 landcover (China 0.25deg, IGBP)
+  3. hfp-cn              — Human Footprint (China 0.25deg, hot)
+  4. aridity-cn          — Aridity Index (China 0.25deg, BrBG)
+  5. omega-output [TS]   — Omega inversion avg 时间序列 (doy 017-030, 14 天, plasma)
+  6. smap-sm-ts [TS]     — SMAP soil moisture 时间序列 (China, 13 days)
+  7. gpcp-precip-ts [TS] — GPCP monthly precipitation 时间序列 (global, 24 months)
+  8. gebco-dem-cn        — GEBCO 2024 DEM (China)
+  9. cmfd-precip-cn      — CMFD 降水 (China 1km, 2002-01)
+ 10. clcd-cn             — CLCD 1997 土地覆盖 (China)
+ 11. biomass-cn          — ESACCI BIOMASS 2020 (China)
+ 12. era5-dwaa-cn        — ERA5 白天热浪事件 (China, 2020)
+ 13. era5-wdaa-cn        — ERA5 夜间热浪事件 (China, 2020)
+ 14. co2-cn              — GOSAT 中层 CO2 柱浓度 (China)
+ 15. soil-ddca [TS]      — Soil DDCA DH 时间序列 (2015-04 ~ 2022-12, 采样 60 天)
+ 16. omega-fy-output [TS]— Omega FY avg 时间序列 (doy 025-030, 6 天, magma)
+ 17. forest-ratio        — Forest Ratio 9KM 2020 (global EASE-Grid 9km, YlGn)
+  18. landscape-metrics-9km — Shannon 多样性指数 SHDI (global EASE-Grid 9km, cividis) [Phase 1.6 新增]
+  19. vod-dec2025 [TS]    — VOD 植被光学厚度时间序列 (2025-12, 31 天, magma) [Phase 2 新增]
+  20. sm-dec2025 [TS]     — SM 土壤湿度时间序列 (2025-12, 31 天, YlGnBu) [Phase 2 新增]
+  21. omega-dec2025 [TS]  — Omega 反演时间序列 (2025-12, 31 天, plasma) [Phase 2 新增]
+
+[TS] = 时间序列图层，输出多张按时间索引的 PNG + bounds JSON。
 """
 from __future__ import annotations
 
@@ -36,6 +52,82 @@ import matplotlib.colors as mcolors
 _OUT_ROOT = Path(r"I:\Geograph_DataSet\ProjectOutput\2023-01_Omega_Inversion\_overlays")
 _CHINA_BBOX = (73.0, 15.0, 137.0, 59.0)
 
+# ── Phase 1.6: 课题组时间序列源数据目录（与 overlay_registry.py 同步）──────────
+_INVERSION_RESULTS_ROOT = Path(r"I:\Geograph_DataSet\InversionResults")
+_OMEGA_SMAP_AVG_DIR = _INVERSION_RESULTS_ROOT / "smap_avg"
+_OMEGA_FY_AVG_DIR = _INVERSION_RESULTS_ROOT / "fy_avg"
+_SOIL_DDCA_H_DIR = Path(r"I:\Geograph_DataSet\Soil_Ecological_Data\DDCA\DDCA_DH\H")
+_LANDSCAPE_METRICS_MAT = _INVERSION_RESULTS_ROOT / "Landscape_Metrics_LandOnly_9KM_2020.mat"
+
+# ── Phase 2: 课题组 VOD/SM 产品族（2025-12 时间序列，EASE-Grid 9km）──────────
+# SmapSoil_VOD_SM/YYYYMMDD.mat (v7.3 HDF5) 含 OMEGA / SM / VOD 三个变量，shape (1624, 3856)
+_SMAP_SOIL_VOD_SM_DIR = Path(r"I:\Geograph_DataSet\Soil_Ecological_Data\SmapSoil_VOD_SM")
+
+
+def _doy_time_list(directory: Path, prefix: str = "doy_") -> list[str]:
+    """从 InversionResults/smap_avg|fy_avg 目录推断 doy 时间序列标签。
+
+    文件名形如 ``doy_017.mat`` → 标签 ``'017'``。
+    与 overlay_registry.py 中的同名 helper 保持一致，确保导出的 PNG 时间标签
+    与运行时 time_list 完全匹配。
+    """
+    if not directory.exists():
+        return []
+    tags: list[str] = []
+    for f in sorted(directory.glob(f"{prefix}*.mat")):
+        stem = f.stem  # 'doy_017'
+        if stem.startswith(prefix):
+            tag = stem[len(prefix):]
+            if tag.isdigit():
+                tags.append(tag)
+    return tags
+
+
+def _soil_ddca_time_list(limit: int = 60) -> list[str]:
+    """从 Soil_Ecological_Data/DDCA/DDCA_DH/H 目录推断日期时间序列标签。
+
+    文件名形如 ``20150401.mat`` → 标签 ``'20150401'``。
+    限制最多 limit 个标签（均匀采样），与 overlay_registry.py 中的同名 helper 一致。
+    实际数据范围：2015-04-01 ~ 2022-12-31（~2747 天），采样后约 60 个时间点。
+    """
+    if not _SOIL_DDCA_H_DIR.exists():
+        return []
+    tags: list[str] = []
+    for f in sorted(_SOIL_DDCA_H_DIR.glob("*.mat")):
+        stem = f.stem
+        if len(stem) == 8 and stem.isdigit():
+            tags.append(stem)
+    if len(tags) > limit:
+        step = max(1, len(tags) // limit)
+        tags = tags[::step][:limit]
+    return tags
+
+
+def _date8_time_list(directory: Path, limit: int | None = None) -> list[str]:
+    """通用 8 位日期时间序列标签扫描：YYYYMMDD.mat → 'YYYYMMDD'。
+
+    与 ``_soil_ddca_time_list`` 逻辑一致，但接受任意目录参数，且 ``limit=None``
+    时不采样（返回全部日期）。供 Phase 2 VOD/SM 产品族使用。
+
+    Args:
+        directory: 包含 YYYYMMDD.mat 文件的目录
+        limit: 可选，最大标签数（均匀采样）；None 表示返回全部
+
+    Returns:
+        排序后的 8 位日期字符串列表
+    """
+    if not directory.exists():
+        return []
+    tags: list[str] = []
+    for f in sorted(directory.glob("*.mat")):
+        stem = f.stem
+        if len(stem) == 8 and stem.isdigit():
+            tags.append(stem)
+    if limit is not None and len(tags) > limit:
+        step = max(1, len(tags) // limit)
+        tags = tags[::step][:limit]
+    return tags
+
 
 def _render_png(
     data: np.ndarray,
@@ -45,7 +137,20 @@ def _render_png(
     vmax: float | None = None,
     transparent: bool = True,
 ) -> None:
-    """Render 2D array to a borderless PNG (no axes, no colorbar)."""
+    """Render 2D array to a borderless PNG (no axes, no colorbar).
+
+    写入策略（绕过外部 HDD 上的 PIL ``open(filename, "w+b")`` 权限问题）：
+    1. matplotlib 输出到 ``io.BytesIO`` 内存缓冲（不触碰磁盘）
+    2. 用 ``Path.write_bytes()`` 直接写文件（Python 内置 open "wb" 模式，
+       比 PIL 的 "w+b" 模式兼容性更好，能绕过 Windows 文件锁/杀软扫描）
+    3. 若目标已存在且被锁，``write_bytes`` 会先 unlink 再写；失败则退避重试
+
+    经验：外部 HDD (I:) 上 PIL ``Image.save()`` 偶发 PermissionError，
+    即使是新文件也会失败；改用 ``write_bytes`` 后稳定通过。
+    """
+    import io
+    import time
+
     png_path.parent.mkdir(parents=True, exist_ok=True)
     data = np.asarray(data, dtype=np.float64)
     if data.ndim != 2:
@@ -61,20 +166,72 @@ def _render_png(
     # Mask NaN as transparent
     masked = np.ma.masked_invalid(data)
     ax.imshow(masked, cmap=cmap, vmin=vmin, vmax=vmax, aspect="auto", origin="upper", interpolation="nearest")
-    fig.savefig(png_path, dpi=100, transparent=transparent, pad_inches=0)
+
+    # 渲染到内存缓冲（matplotlib 输出 PNG 字节流）
+    buf = io.BytesIO()
+    fig.savefig(buf, format="png", dpi=100, transparent=transparent, pad_inches=0)
     plt.close(fig)
+    png_bytes = buf.getvalue()
+
+    # 写入磁盘（带重试，处理外部 HDD 瞬时锁）
+    max_attempts = 5
+    last_err: Exception | None = None
+    for attempt in range(1, max_attempts + 1):
+        try:
+            # write_bytes 内部用 open("wb")，比 PIL 的 open("w+b") 兼容性更好
+            # 若目标已存在且被锁，write_bytes 会失败 → 进入重试
+            png_path.write_bytes(png_bytes)
+            break
+        except PermissionError as e:
+            last_err = e
+            if attempt < max_attempts:
+                wait = 0.5 * attempt  # 0.5s, 1s, 1.5s, 2s, 2.5s
+                print(f"  [RETRY {attempt}/{max_attempts}] {png_path.name} locked, waiting {wait:.1f}s...")
+                time.sleep(wait)
+            else:
+                # 最后一次尝试：写临时文件 + os.replace 原子替换
+                import os
+                tmp_path = png_path.parent / f"{png_path.name}.tmp_{os.getpid()}.png"
+                try:
+                    tmp_path.write_bytes(png_bytes)
+                    os.replace(tmp_path, png_path)
+                    break
+                except PermissionError:
+                    raise
+    if last_err is not None:
+        print(f"  [WARN] {png_path.name} saved after retries (last_err={last_err})")
     print(f"  [OK] PNG saved: {png_path.name} ({n_lat}x{n_lon})")
 
 
 def _write_bounds(bounds_path: Path, layer_id: str, bounds: tuple[float, float, float, float]) -> None:
-    """Write bounds JSON file."""
+    """Write bounds JSON file (临时文件 + 原子替换，处理外部 HDD 文件锁)."""
+    import os
+    import time
+
     bounds_path.parent.mkdir(parents=True, exist_ok=True)
     data = {
         "layer_id": layer_id,
         "bounds": list(bounds),  # [west, south, east, north]
         "crs": "EPSG:4326",
     }
-    bounds_path.write_text(json.dumps(data, indent=2), encoding="utf-8")
+    text = json.dumps(data, indent=2)
+    tmp_path = bounds_path.parent / f"{bounds_path.name}.tmp_{os.getpid()}.json"
+    max_attempts = 5
+    for attempt in range(1, max_attempts + 1):
+        try:
+            tmp_path.write_text(text, encoding="utf-8")
+            os.replace(tmp_path, bounds_path)
+            break
+        except PermissionError:
+            if tmp_path.exists():
+                try:
+                    tmp_path.unlink()
+                except PermissionError:
+                    pass
+            if attempt < max_attempts:
+                time.sleep(0.5 * attempt)
+            else:
+                raise
     print(f"  [OK] bounds saved: {bounds_path.name} (W{bounds[0]:.1f} S{bounds[1]:.1f} E{bounds[2]:.1f} N{bounds[3]:.1f})")
 
 
@@ -416,39 +573,71 @@ def export_thematic_layers() -> None:
 
 
 # ──────────────────────────────────────────────────────────────────────────────
-# 5. Omega inversion result
+# 5. Omega inversion result 时间序列（doy 017-030，14 天）
 # ──────────────────────────────────────────────────────────────────────────────
 
-def export_omega() -> None:
-    print("\n=== Omega inversion ===")
-    omega_path = Path(r"I:\Geograph_DataSet\InversionResults\smap_avg\doy_017.mat")
-    if not omega_path.exists():
-        print("  [SKIP] File not found")
+def export_omega_ts() -> None:
+    """导出 omega-output 时间序列：每个 doy 一个 PNG + bounds JSON。
+
+    输出文件：
+      - ``_OVERLAY_PNG_ROOT/omega_ts/omega_avg_{tag}.png``（tag = '017', '018', ...）
+      - ``_OVERLAY_PNG_ROOT/omega_ts/omega_avg_{tag}_bounds.json``
+      - ``_OVERLAY_PNG_ROOT/omega_ts/omega_avg_overlay_bounds.json``（通用备用 bounds）
+
+    与 overlay_registry.py 中 ``omega-output`` OverlaySpec 的 time_pattern / bounds_pattern
+    严格对齐，确保运行时按 time_list 索引到的 PNG 都存在。
+    """
+    print("\n=== Omega inversion time series (doy 017-030) ===")
+    if not _OMEGA_SMAP_AVG_DIR.exists():
+        print(f"  [SKIP] Directory not found: {_OMEGA_SMAP_AVG_DIR}")
         return
 
-    out_dir = _OUT_ROOT / "omega"
-    m = _read_mat_auto(omega_path)
-    data = m["OMEGA_AVG"].astype(np.float64)
-    # Replace 0 / invalid with NaN
-    data[data <= 0] = np.nan
-    # Also mask count_grid == 0 if available
-    if "count_grid" in m:
-        count = m["count_grid"]
-        data[count == 0] = np.nan
+    out_dir = _OUT_ROOT / "omega_ts"
+    times = _doy_time_list(_OMEGA_SMAP_AVG_DIR)
+    if not times:
+        print("  [SKIP] No doy_*.mat files found")
+        return
 
-    print(f"  omega: {data.shape}, range: {np.nanmin(data):.4f}-{np.nanmax(data):.4f}")
-    # 修复：EASE-Grid 2.0 9km 重投影到 WGS84 + 裁剪到中国区域，避免高纬度 Mercator 拉伸
-    try:
-        data, bounds = _reproject_ease_to_wgs84(data, target_resolution=0.1, mat_dict=m)
-        print(f"  omega reprojected: {data.shape}, bounds={bounds}")
-    except Exception as e:
-        print(f"  [WARN] EASE-Grid reproject failed, falling back to global bounds: {e}")
-        bounds = (-180.0, -90.0, 180.0, 90.0)
-    # Clip extreme values for visualization
-    vmax = float(np.nanpercentile(data, 99))
-    _render_png(data, out_dir / "omega_avg_overlay.png", cmap="plasma",
-                vmin=0, vmax=vmax)
-    _write_bounds(out_dir / "omega_avg_overlay_bounds.json", "omega-output", bounds)
+    print(f"  Found {len(times)} doy files: {times[0]}-{times[-1]}")
+    generic_bounds: tuple[float, float, float, float] | None = None
+
+    for tag in times:
+        mat_path = _OMEGA_SMAP_AVG_DIR / f"doy_{tag}.mat"
+        if not mat_path.exists():
+            print(f"  [SKIP] doy_{tag}.mat not found")
+            continue
+
+        m = _read_mat_auto(mat_path)
+        if "OMEGA_AVG" not in m:
+            print(f"  [SKIP] doy_{tag}.mat: OMEGA_AVG not found, keys={list(m.keys())}")
+            continue
+        data = m["OMEGA_AVG"].astype(np.float64)
+        data[data <= 0] = np.nan
+        if "count_grid" in m:
+            count = m["count_grid"]
+            data[count == 0] = np.nan
+
+        try:
+            data, bounds = _reproject_ease_to_wgs84(data, target_resolution=0.1, mat_dict=m)
+        except Exception as e:
+            print(f"  [WARN] doy_{tag} reproject failed, fallback to global: {e}")
+            bounds = (-180.0, -90.0, 180.0, 90.0)
+
+        if generic_bounds is None:
+            generic_bounds = bounds
+
+        vmax = float(np.nanpercentile(data, 99))
+        print(f"  doy_{tag}: range={np.nanmin(data):.4f}-{np.nanmax(data):.4f}, "
+              f"vmax={vmax:.4f}, bounds={bounds}")
+        _render_png(data, out_dir / f"omega_avg_{tag}.png", cmap="plasma",
+                    vmin=0, vmax=vmax)
+        _write_bounds(out_dir / f"omega_avg_{tag}_bounds.json", "omega-output",
+                      bounds)
+
+    # 通用 bounds 备用（overlay_registry 中 bounds_filename 指向此文件）
+    if generic_bounds is not None:
+        _write_bounds(out_dir / "omega_avg_overlay_bounds.json", "omega-output",
+                      generic_bounds)
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -865,76 +1054,131 @@ def export_co2() -> None:
 
 
 # ──────────────────────────────────────────────────────────────────────────────
-# 14. Soil DDCA (MAT, 中国 9km)
+# 14. Soil DDCA 时间序列（中国 9km，2015-04 ~ 2022-12，采样 60 天）
 # ──────────────────────────────────────────────────────────────────────────────
 
-def export_soil_ddca() -> None:
-    print("\n=== Soil DDCA (China 9km) ===")
-    mat_path = Path(r"I:\Geograph_DataSet\Soil_Ecological_Data\DDCA\DDCA_DH\H\20150401.mat")
-    if not mat_path.exists():
-        print("  [SKIP] File not found")
+def export_soil_ddca_ts() -> None:
+    """导出 soil-ddca 时间序列：每个采样日期一个 PNG + bounds JSON。
+
+    输出文件：
+      - ``_OVERLAY_PNG_ROOT/soil_ddca_ts/soil_ddca_{tag}.png``（tag = '20150401', ...）
+      - ``_OVERLAY_PNG_ROOT/soil_ddca_ts/soil_ddca_{tag}_bounds.json``
+      - ``_OVERLAY_PNG_ROOT/soil_ddca_ts/soil_ddca_overlay_bounds.json``（通用备用 bounds）
+
+    采样逻辑与 overlay_registry.py 中 ``_soil_ddca_time_list(limit=60)`` 完全一致：
+    从 2747 个日文件中均匀采样 60 个时间点，避免时间轴过长。
+    """
+    print("\n=== Soil DDCA time series (2015-04 ~ 2022-12, sampled 60) ===")
+    if not _SOIL_DDCA_H_DIR.exists():
+        print(f"  [SKIP] Directory not found: {_SOIL_DDCA_H_DIR}")
         return
 
-    out_dir = _OUT_ROOT / "soil_ddca"
-
-    m = _read_mat_auto(mat_path)
-    if "DH" not in m:
-        print(f"  [SKIP] Variable DH not found, keys: {list(m.keys())}")
+    out_dir = _OUT_ROOT / "soil_ddca_ts"
+    times = _soil_ddca_time_list(limit=60)
+    if not times:
+        print("  [SKIP] No YYYYMMDD.mat files found")
         return
-    data = m["DH"].astype(np.float64)
-    data[data < 0] = np.nan
 
-    print(f"  Data shape: {data.shape}, range: {np.nanmin(data):.2f} to {np.nanmax(data):.2f}")
-    # 修复：EASE-Grid 2.0 9km 重投影到 WGS84 + 裁剪到中国区域
-    try:
-        data, bounds = _reproject_ease_to_wgs84(data, target_resolution=0.1, mat_dict=m)
-        print(f"  soil_ddca reprojected: {data.shape}, bounds={bounds}")
-    except Exception as e:
-        print(f"  [WARN] EASE-Grid reproject failed, falling back to global bounds: {e}")
-        bounds = (-180.0, -90.0, 180.0, 90.0)
-    vmax = float(np.nanpercentile(data, 99))
-    _render_png(data, out_dir / "soil_ddca_overlay.png", cmap="viridis",
-                vmin=0, vmax=max(vmax, 1))
-    _write_bounds(out_dir / "soil_ddca_overlay_bounds.json", "soil-ddca",
-                  bounds)
+    print(f"  Found {len(times)} sampled dates: {times[0]}-{times[-1]}")
+    generic_bounds: tuple[float, float, float, float] | None = None
+
+    for tag in times:
+        mat_path = _SOIL_DDCA_H_DIR / f"{tag}.mat"
+        if not mat_path.exists():
+            print(f"  [SKIP] {tag}.mat not found")
+            continue
+
+        m = _read_mat_auto(mat_path)
+        if "DH" not in m:
+            print(f"  [SKIP] {tag}.mat: DH not found, keys={list(m.keys())}")
+            continue
+        data = m["DH"].astype(np.float64)
+        data[data < 0] = np.nan
+
+        try:
+            data, bounds = _reproject_ease_to_wgs84(data, target_resolution=0.1, mat_dict=m)
+        except Exception as e:
+            print(f"  [WARN] {tag} reproject failed, fallback to global: {e}")
+            bounds = (-180.0, -90.0, 180.0, 90.0)
+
+        if generic_bounds is None:
+            generic_bounds = bounds
+
+        vmax = float(np.nanpercentile(data, 99))
+        print(f"  {tag}: range={np.nanmin(data):.2f}-{np.nanmax(data):.2f}, "
+              f"vmax={vmax:.2f}, bounds={bounds}")
+        _render_png(data, out_dir / f"soil_ddca_{tag}.png", cmap="viridis",
+                    vmin=0, vmax=max(vmax, 1))
+        _write_bounds(out_dir / f"soil_ddca_{tag}_bounds.json", "soil-ddca",
+                      bounds)
+
+    if generic_bounds is not None:
+        _write_bounds(out_dir / "soil_ddca_overlay_bounds.json", "soil-ddca",
+                      generic_bounds)
 
 
 # ──────────────────────────────────────────────────────────────────────────────
-# 15. InversionResults fy_avg omega (MAT, 全球 9km)
+# 15. Omega FY avg 时间序列（doy 025-030，6 天）
 # ──────────────────────────────────────────────────────────────────────────────
 
-def export_omega_fy() -> None:
-    print("\n=== Omega FY avg (doy 025) ===")
-    mat_path = Path(r"I:\Geograph_DataSet\InversionResults\fy_avg\doy_025.mat")
-    if not mat_path.exists():
-        print("  [SKIP] File not found")
+def export_omega_fy_ts() -> None:
+    """导出 omega-fy-output 时间序列：每个 doy 一个 PNG + bounds JSON。
+
+    输出文件：
+      - ``_OVERLAY_PNG_ROOT/omega_fy_ts/omega_fy_{tag}.png``（tag = '025', '026', ...）
+      - ``_OVERLAY_PNG_ROOT/omega_fy_ts/omega_fy_{tag}_bounds.json``
+      - ``_OVERLAY_PNG_ROOT/omega_fy_ts/omega_fy_overlay_bounds.json``（通用备用 bounds）
+    """
+    print("\n=== Omega FY avg time series (doy 025-030) ===")
+    if not _OMEGA_FY_AVG_DIR.exists():
+        print(f"  [SKIP] Directory not found: {_OMEGA_FY_AVG_DIR}")
         return
 
-    out_dir = _OUT_ROOT / "omega_fy"
-
-    m = _read_mat_auto(mat_path)
-    if "OMEGA_AVG" not in m:
-        print(f"  [SKIP] Variable OMEGA_AVG not found")
+    out_dir = _OUT_ROOT / "omega_fy_ts"
+    times = _doy_time_list(_OMEGA_FY_AVG_DIR)
+    if not times:
+        print("  [SKIP] No doy_*.mat files found")
         return
-    data = m["OMEGA_AVG"].astype(np.float64)
-    data[data <= 0] = np.nan
-    if "count_grid" in m:
-        count = m["count_grid"]
-        data[count == 0] = np.nan
 
-    print(f"  Data shape: {data.shape}, range: {np.nanmin(data):.4f} to {np.nanmax(data):.4f}")
-    # 修复：EASE-Grid 2.0 9km 重投影到 WGS84 + 裁剪到中国区域
-    try:
-        data, bounds = _reproject_ease_to_wgs84(data, target_resolution=0.1, mat_dict=m)
-        print(f"  omega_fy reprojected: {data.shape}, bounds={bounds}")
-    except Exception as e:
-        print(f"  [WARN] EASE-Grid reproject failed, falling back to global bounds: {e}")
-        bounds = (-180.0, -90.0, 180.0, 90.0)
-    vmax = float(np.nanpercentile(data, 99))
-    _render_png(data, out_dir / "omega_fy_overlay.png", cmap="magma",
-                vmin=0, vmax=vmax)
-    _write_bounds(out_dir / "omega_fy_overlay_bounds.json", "omega-fy-output",
-                  bounds)
+    print(f"  Found {len(times)} doy files: {times[0]}-{times[-1]}")
+    generic_bounds: tuple[float, float, float, float] | None = None
+
+    for tag in times:
+        mat_path = _OMEGA_FY_AVG_DIR / f"doy_{tag}.mat"
+        if not mat_path.exists():
+            print(f"  [SKIP] doy_{tag}.mat not found")
+            continue
+
+        m = _read_mat_auto(mat_path)
+        if "OMEGA_AVG" not in m:
+            print(f"  [SKIP] doy_{tag}.mat: OMEGA_AVG not found, keys={list(m.keys())}")
+            continue
+        data = m["OMEGA_AVG"].astype(np.float64)
+        data[data <= 0] = np.nan
+        if "count_grid" in m:
+            count = m["count_grid"]
+            data[count == 0] = np.nan
+
+        try:
+            data, bounds = _reproject_ease_to_wgs84(data, target_resolution=0.1, mat_dict=m)
+        except Exception as e:
+            print(f"  [WARN] doy_{tag} reproject failed, fallback to global: {e}")
+            bounds = (-180.0, -90.0, 180.0, 90.0)
+
+        if generic_bounds is None:
+            generic_bounds = bounds
+
+        vmax = float(np.nanpercentile(data, 99))
+        print(f"  doy_{tag}: range={np.nanmin(data):.4f}-{np.nanmax(data):.4f}, "
+              f"vmax={vmax:.4f}, bounds={bounds}")
+        _render_png(data, out_dir / f"omega_fy_{tag}.png", cmap="magma",
+                    vmin=0, vmax=vmax)
+        _write_bounds(out_dir / f"omega_fy_{tag}_bounds.json", "omega-fy-output",
+                      bounds)
+
+    if generic_bounds is not None:
+        _write_bounds(out_dir / "omega_fy_overlay_bounds.json", "omega-fy-output",
+                      generic_bounds)
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -972,6 +1216,176 @@ def export_forest_ratio() -> None:
 
 
 # ──────────────────────────────────────────────────────────────────────────────
+# 17. Landscape Metrics 9km 2020 — SHDI（Phase 1.6 新增）
+# ──────────────────────────────────────────────────────────────────────────────
+
+def export_landscape_metrics() -> None:
+    """导出 landscape-metrics-9km 静态图层：Shannon 多样性指数 SHDI。
+
+    输出文件：
+      - ``_OVERLAY_PNG_ROOT/landscape_metrics/landscape_metrics_overlay.png``
+      - ``_OVERLAY_PNG_ROOT/landscape_metrics/landscape_metrics_overlay_bounds.json``
+
+    数据源 ``Landscape_Metrics_LandOnly_9KM_2020.mat`` 含 4 个景观指数
+    (PD/ED/SHDI/CONTAG) + Forest_Ratio + 元数据 (Transform/CRS/Resolution_meters)。
+    Phase 1 仅暴露 SHDI；其余 3 个可后续通过相似方式扩展（修改 source_variable 即可）。
+    """
+    print("\n=== Landscape Metrics 9km 2020 (SHDI) ===")
+    if not _LANDSCAPE_METRICS_MAT.exists():
+        print(f"  [SKIP] File not found: {_LANDSCAPE_METRICS_MAT}")
+        return
+
+    out_dir = _OUT_ROOT / "landscape_metrics"
+
+    m = _read_mat_auto(_LANDSCAPE_METRICS_MAT)
+    if "SHDI" not in m:
+        print(f"  [SKIP] Variable SHDI not found, keys={list(m.keys())}")
+        return
+    data = m["SHDI"].astype(np.float64)
+    # SHDI 理论范围 [0, ~2.22]；负值或 NaN 视为无效
+    data[data < 0] = np.nan
+
+    print(f"  Data shape: {data.shape}, range: {np.nanmin(data):.4f} to {np.nanmax(data):.4f}")
+    # EASE-Grid 2.0 9km 重投影到 WGS84 + 裁剪到中国区域
+    # .mat 含 Transform (500m 网格，需 × 18 = 9008.0552m) + CRS (EPSG:6933)
+    try:
+        data, bounds = _reproject_ease_to_wgs84(data, target_resolution=0.1, mat_dict=m)
+        print(f"  landscape_metrics reprojected: {data.shape}, bounds={bounds}")
+    except Exception as e:
+        print(f"  [WARN] EASE-Grid reproject failed, falling back to global bounds: {e}")
+        bounds = (-180.0, -90.0, 180.0, 90.0)
+    # SHDI 取 99 分位作为 vmax，避免极端值压缩色彩
+    vmax = float(np.nanpercentile(data, 99))
+    _render_png(data, out_dir / "landscape_metrics_overlay.png", cmap="cividis",
+                vmin=0, vmax=max(vmax, 1.0))
+    _write_bounds(out_dir / "landscape_metrics_overlay_bounds.json",
+                  "landscape-metrics-9km", bounds)
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# 18-20. Phase 2: VOD / SM / Omega 2025-12 时间序列（SmapSoil_VOD_SM 产品族）
+# ──────────────────────────────────────────────────────────────────────────────
+
+def _export_smap_soil_vod_sm_ts(varname: str, layer_id: str, out_subdir: str,
+                                cmap: str, vmin: float, vmax: float | None,
+                                unit: str, label: str) -> None:
+    """通用导出器：从 SmapSoil_VOD_SM/YYYYMMDD.mat 读取指定变量并导出时间序列。
+
+    Phase 2 共用逻辑，供 VOD / SM / OMEGA 三个变量复用。每个变量导出 31 天
+    （2025-12-01 ~ 2025-12-31）的 PNG + bounds JSON + 通用 bounds。
+
+    数据源 .mat 为 v7.3 HDF5 格式，shape (3856, 1624) → h5py 读取后转置为
+    (1624, 3856)，与 EASE-Grid 9km 标准一致。文件无 Transform/CRS 元数据，
+    使用默认 EASE-Grid 9km transform 重投影到 WGS84 + 裁剪到中国区域。
+
+    Args:
+        varname: .mat 中的变量名（'VOD' / 'SM' / 'OMEGA'）
+        layer_id: 图层 ID（'vod-dec2025' / 'sm-dec2025' / 'omega-dec2025'）
+        out_subdir: 输出子目录名（'vod_ts' / 'sm_ts' / 'omega_2025_ts'）
+        cmap: matplotlib colormap 名称
+        vmin: 色彩映射下界
+        vmax: 色彩映射上界；None 表示用 99 分位
+        unit: 变量单位（用于元数据）
+        label: 人类可读标签（用于日志）
+    """
+    print(f"\n=== {label} time series (2025-12, SmapSoil_VOD_SM/{varname}) ===")
+    if not _SMAP_SOIL_VOD_SM_DIR.exists():
+        print(f"  [SKIP] Directory not found: {_SMAP_SOIL_VOD_SM_DIR}")
+        return
+
+    out_dir = _OUT_ROOT / out_subdir
+    times = _date8_time_list(_SMAP_SOIL_VOD_SM_DIR, limit=None)
+    if not times:
+        print("  [SKIP] No YYYYMMDD.mat files found")
+        return
+
+    print(f"  Found {len(times)} daily files: {times[0]}-{times[-1]}")
+    generic_bounds: tuple[float, float, float, float] | None = None
+
+    for tag in times:
+        mat_path = _SMAP_SOIL_VOD_SM_DIR / f"{tag}.mat"
+        if not mat_path.exists():
+            print(f"  [SKIP] {tag}.mat not found")
+            continue
+
+        m = _read_mat_auto(mat_path)
+        if varname not in m:
+            print(f"  [SKIP] {tag}.mat: {varname} not found, keys={list(m.keys())}")
+            continue
+        data = m[varname].astype(np.float64)
+        # VOD/SM/OMEGA 负值视为无效（物理上无意义）
+        data[data < 0] = np.nan
+
+        try:
+            data, bounds = _reproject_ease_to_wgs84(data, target_resolution=0.1, mat_dict=m)
+        except Exception as e:
+            print(f"  [WARN] {tag} reproject failed, fallback to global: {e}")
+            bounds = (-180.0, -90.0, 180.0, 90.0)
+
+        if generic_bounds is None:
+            generic_bounds = bounds
+
+        # vmax 自适应（若未指定）
+        eff_vmax = vmax
+        if eff_vmax is None:
+            eff_vmax = float(np.nanpercentile(data, 99))
+        print(f"  {tag}: range={np.nanmin(data):.4f}-{np.nanmax(data):.4f}, "
+              f"vmax={eff_vmax:.4f}, bounds={bounds}")
+        _render_png(data, out_dir / f"{out_subdir}_{tag}.png", cmap=cmap,
+                    vmin=vmin, vmax=eff_vmax)
+        _write_bounds(out_dir / f"{out_subdir}_{tag}_bounds.json", layer_id, bounds)
+
+    if generic_bounds is not None:
+        _write_bounds(out_dir / f"{out_subdir}_overlay_bounds.json", layer_id,
+                      generic_bounds)
+
+
+def export_vod_ts() -> None:
+    """导出 vod-dec2025 时间序列：植被光学厚度 VOD（2025-12，31 天）。
+
+    输出文件：
+      - ``_OVERLAY_PNG_ROOT/vod_ts/vod_ts_{tag}.png``（tag = '20251201', ...）
+      - ``_OVERLAY_PNG_ROOT/vod_ts/vod_ts_{tag}_bounds.json``
+      - ``_OVERLAY_PNG_ROOT/vod_ts/vod_ts_overlay_bounds.json``（通用 bounds）
+    """
+    _export_smap_soil_vod_sm_ts(
+        varname="VOD", layer_id="vod-dec2025", out_subdir="vod_ts",
+        cmap="magma", vmin=0, vmax=None, unit="", label="VOD",
+    )
+
+
+def export_sm_dec2025_ts() -> None:
+    """导出 sm-dec2025 时间序列：土壤湿度 SM（2025-12，31 天）。
+
+    输出文件：
+      - ``_OVERLAY_PNG_ROOT/sm_ts/sm_ts_{tag}.png``（tag = '20251201', ...）
+      - ``_OVERLAY_PNG_ROOT/sm_ts/sm_ts_{tag}_bounds.json``
+      - ``_OVERLAY_PNG_ROOT/sm_ts/sm_ts_overlay_bounds.json``（通用 bounds）
+    """
+    _export_smap_soil_vod_sm_ts(
+        varname="SM", layer_id="sm-dec2025", out_subdir="sm_ts",
+        cmap="YlGnBu", vmin=0, vmax=0.6, unit="m³/m³", label="Soil Moisture",
+    )
+
+
+def export_omega_2025_ts() -> None:
+    """导出 omega-dec2025 时间序列：Omega 植被光学厚度（2025-12，31 天）。
+
+    与现有 ``omega-output`` (doy 017-030 多年均值) 互补，提供 2025 年 12 月
+    每日的 Omega 反演结果，可用于季节性对比与近期监测。
+
+    输出文件：
+      - ``_OVERLAY_PNG_ROOT/omega_2025_ts/omega_2025_ts_{tag}.png``
+      - ``_OVERLAY_PNG_ROOT/omega_2025_ts/omega_2025_ts_{tag}_bounds.json``
+      - ``_OVERLAY_PNG_ROOT/omega_2025_ts/omega_2025_ts_overlay_bounds.json``
+    """
+    _export_smap_soil_vod_sm_ts(
+        varname="OMEGA", layer_id="omega-dec2025", out_subdir="omega_2025_ts",
+        cmap="plasma", vmin=0, vmax=None, unit="Omega", label="Omega 2025-12",
+    )
+
+
+# ──────────────────────────────────────────────────────────────────────────────
 # Main
 # ──────────────────────────────────────────────────────────────────────────────
 
@@ -985,7 +1399,7 @@ def main() -> int:
     tasks = [
         ("DEM ETOPO", export_dem_etopo),
         ("Thematic", export_thematic_layers),
-        ("Omega", export_omega),
+        ("Omega TS", export_omega_ts),
         ("SMAP TS", export_smap_ts),
         ("GPCP TS", export_gpcp_ts),
         ("GEBCO DEM", export_gebco_dem),
@@ -995,9 +1409,14 @@ def main() -> int:
         ("ERA5 DWAA", export_era5_dwaa),
         ("ERA5 WDAA", export_era5_wdaa),
         ("CO2", export_co2),
-        ("Soil DDCA", export_soil_ddca),
-        ("Omega FY", export_omega_fy),
+        ("Soil DDCA TS", export_soil_ddca_ts),
+        ("Omega FY TS", export_omega_fy_ts),
         ("Forest Ratio", export_forest_ratio),
+        ("Landscape Metrics", export_landscape_metrics),
+        # ── Phase 2: 课题组 VOD/SM/Omega 2025-12 产品族 ──
+        ("VOD TS", export_vod_ts),
+        ("SM Dec2025 TS", export_sm_dec2025_ts),
+        ("Omega 2025 TS", export_omega_2025_ts),
     ]
 
     results = {}
