@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 from datetime import datetime, timezone
 import unittest
@@ -124,7 +124,7 @@ class WeatherEngineServiceTests(unittest.TestCase):
             place_name="Guangzhou",
         )
 
-        self.assertEqual(weather.provider, "open-meteo")
+        self.assertEqual(weather.provider, "open-meteo-online")
         self.assertEqual(weather.layer_id, "wind-field")
         self.assertEqual(weather.place_name, "Guangzhou")
         self.assertEqual(weather.cache_status, "hit")
