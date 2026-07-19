@@ -1,47 +1,56 @@
 import type { LayerCatalogItem, LayerCategory, LayerSource } from './types'
 
+// 注意：category id 必须与后端 `layer_catalog.py` 中的 `category=` 字段保持一致。
+// 任何新增/重命名都需要后端同步更新。前端独有类别（boundary/imported/workflow-output）除外。
 export const LAYER_CATEGORIES: LayerCategory[] = [
   {
-    id: 'online-weather',
-    name: '在线天气',
+    id: '气象场',
+    name: '在线气象',
     icon: 'W',
     accentColor: '#67d4ff',
     chipTone: 'rgba(103, 212, 255, 0.18)',
   },
   {
-    id: 'climate',
-    name: '气候与历史',
-    icon: 'C',
-    accentColor: '#5b8def',
-    chipTone: 'rgba(91, 141, 239, 0.16)',
-  },
-  {
-    id: 'disaster',
-    name: '灾害监测',
-    icon: 'D',
-    accentColor: '#72ffcf',
-    chipTone: 'rgba(114, 255, 207, 0.16)',
-  },
-  {
-    id: 'atmosphere',
+    id: '大气环境',
     name: '大气环境',
     icon: 'A',
     accentColor: '#c9a3ff',
     chipTone: 'rgba(201, 163, 255, 0.16)',
   },
   {
-    id: 'vegetation',
-    name: '植被与土地',
+    id: '热环境',
+    name: '热环境',
+    icon: 'H',
+    accentColor: '#ff9d6c',
+    chipTone: 'rgba(255, 157, 108, 0.16)',
+  },
+  {
+    id: '植被监测',
+    name: '植被监测',
     icon: 'V',
     accentColor: '#7fd99a',
     chipTone: 'rgba(127, 217, 154, 0.16)',
   },
   {
-    id: 'terrain',
-    name: '地形与遥感',
+    id: '遥感产品',
+    name: '遥感产品',
     icon: 'T',
     accentColor: '#bb89ff',
     chipTone: 'rgba(187, 137, 255, 0.16)',
+  },
+  {
+    id: '灾害监测',
+    name: '灾害监测',
+    icon: 'D',
+    accentColor: '#72ffcf',
+    chipTone: 'rgba(114, 255, 207, 0.16)',
+  },
+  {
+    id: '模拟结果',
+    name: '算法模拟结果',
+    icon: 'M',
+    accentColor: '#5b8def',
+    chipTone: 'rgba(91, 141, 239, 0.16)',
   },
   {
     id: 'research-group',
@@ -67,7 +76,7 @@ export const LAYER_CATEGORIES: LayerCategory[] = [
   {
     id: 'workflow-output',
     name: '工作流产出',
-    icon: 'W',
+    icon: 'O',
     accentColor: '#ffb84d',
     chipTone: 'rgba(255, 184, 77, 0.16)',
   },
@@ -546,7 +555,7 @@ export const LAYER_LIBRARY: LayerCatalogItem[] = [
   {
     catalogId: 'wind-field',
     name: '风场（10m）',
-    category: 'online-weather',
+    category: '气象场',
     metricLabel: '风速',
     metricUnit: 'm/s',
     metricPrecision: 1,
@@ -560,7 +569,7 @@ export const LAYER_LIBRARY: LayerCatalogItem[] = [
   {
     catalogId: 'wind-field-80m',
     name: '风场（80m）',
-    category: 'online-weather',
+    category: '气象场',
     metricLabel: '风速',
     metricUnit: 'm/s',
     metricPrecision: 1,
@@ -574,7 +583,7 @@ export const LAYER_LIBRARY: LayerCatalogItem[] = [
   {
     catalogId: 'wind-field-120m',
     name: '风场（120m）',
-    category: 'online-weather',
+    category: '气象场',
     metricLabel: '风速',
     metricUnit: 'm/s',
     metricPrecision: 1,
@@ -588,7 +597,7 @@ export const LAYER_LIBRARY: LayerCatalogItem[] = [
   {
     catalogId: 'wind-field-180m',
     name: '风场（180m）',
-    category: 'online-weather',
+    category: '气象场',
     metricLabel: '风速',
     metricUnit: 'm/s',
     metricPrecision: 1,
@@ -602,7 +611,7 @@ export const LAYER_LIBRARY: LayerCatalogItem[] = [
   {
     catalogId: 'wind-field-850hPa',
     name: '风场（850hPa）',
-    category: 'online-weather',
+    category: '气象场',
     metricLabel: '850hPa 风速',
     metricUnit: 'm/s',
     metricPrecision: 1,
@@ -616,7 +625,7 @@ export const LAYER_LIBRARY: LayerCatalogItem[] = [
   {
     catalogId: 'wind-field-500hPa',
     name: '风场（500hPa）',
-    category: 'online-weather',
+    category: '气象场',
     metricLabel: '500hPa 风速',
     metricUnit: 'm/s',
     metricPrecision: 1,
@@ -630,7 +639,7 @@ export const LAYER_LIBRARY: LayerCatalogItem[] = [
   {
     catalogId: 'wind-field-200hPa',
     name: '风场（200hPa）',
-    category: 'online-weather',
+    category: '气象场',
     metricLabel: '200hPa 风速',
     metricUnit: 'm/s',
     metricPrecision: 1,
@@ -644,7 +653,7 @@ export const LAYER_LIBRARY: LayerCatalogItem[] = [
   {
     catalogId: 'precipitation',
     name: '降水',
-    category: 'online-weather',
+    category: '气象场',
     metricLabel: '峰值降水',
     metricUnit: 'mm/h',
     metricPrecision: 0,
@@ -658,7 +667,7 @@ export const LAYER_LIBRARY: LayerCatalogItem[] = [
   {
     catalogId: 'temperature',
     name: '温度',
-    category: 'online-weather',
+    category: '气象场',
     metricLabel: '区域均温',
     metricUnit: '°C',
     metricPrecision: 1,
@@ -672,7 +681,7 @@ export const LAYER_LIBRARY: LayerCatalogItem[] = [
   {
     catalogId: 'temperature-80m',
     name: '温度（80m）',
-    category: 'online-weather',
+    category: '气象场',
     metricLabel: '80m 温度',
     metricUnit: '°C',
     metricPrecision: 1,
@@ -686,7 +695,7 @@ export const LAYER_LIBRARY: LayerCatalogItem[] = [
   {
     catalogId: 'temperature-120m',
     name: '温度（120m）',
-    category: 'online-weather',
+    category: '气象场',
     metricLabel: '120m 温度',
     metricUnit: '°C',
     metricPrecision: 1,
@@ -700,7 +709,7 @@ export const LAYER_LIBRARY: LayerCatalogItem[] = [
   {
     catalogId: 'temperature-180m',
     name: '温度（180m）',
-    category: 'online-weather',
+    category: '气象场',
     metricLabel: '180m 温度',
     metricUnit: '°C',
     metricPrecision: 1,
@@ -714,7 +723,7 @@ export const LAYER_LIBRARY: LayerCatalogItem[] = [
   {
     catalogId: 'pressure',
     name: '气压',
-    category: 'online-weather',
+    category: '气象场',
     metricLabel: '海平面气压',
     metricUnit: 'hPa',
     metricPrecision: 1,
@@ -728,7 +737,7 @@ export const LAYER_LIBRARY: LayerCatalogItem[] = [
   {
     catalogId: 'humidity',
     name: '湿度',
-    category: 'online-weather',
+    category: '气象场',
     metricLabel: '相对湿度',
     metricUnit: '%',
     metricPrecision: 0,
@@ -742,7 +751,7 @@ export const LAYER_LIBRARY: LayerCatalogItem[] = [
   {
     catalogId: 'visibility',
     name: '能见度',
-    category: 'online-weather',
+    category: '气象场',
     metricLabel: '能见度',
     metricUnit: 'm',
     metricPrecision: 0,
@@ -756,7 +765,7 @@ export const LAYER_LIBRARY: LayerCatalogItem[] = [
   {
     catalogId: 'cloud-cover',
     name: '云量',
-    category: 'online-weather',
+    category: '气象场',
     metricLabel: '云量',
     metricUnit: '%',
     metricPrecision: 0,
@@ -770,7 +779,7 @@ export const LAYER_LIBRARY: LayerCatalogItem[] = [
   {
     catalogId: 'dewpoint',
     name: '露点温度',
-    category: 'online-weather',
+    category: '气象场',
     metricLabel: '露点',
     metricUnit: '°C',
     metricPrecision: 1,
@@ -784,7 +793,7 @@ export const LAYER_LIBRARY: LayerCatalogItem[] = [
   {
     catalogId: 'ndvi',
     name: '植被指数（NDVI）',
-    category: 'vegetation',
+    category: '植被监测',
     metricLabel: '植被指数',
     metricUnit: '',
     metricPrecision: 2,
@@ -798,7 +807,7 @@ export const LAYER_LIBRARY: LayerCatalogItem[] = [
   {
     catalogId: 'remote-sensing',
     name: '遥感反演产品',
-    category: 'terrain',
+    category: '遥感产品',
     metricLabel: '反演指数',
     metricUnit: '',
     metricPrecision: 2,
@@ -826,7 +835,7 @@ export const LAYER_LIBRARY: LayerCatalogItem[] = [
   {
     catalogId: 'dem-etopo',
     name: 'ETOPO 2022 全球地形',
-    category: 'terrain',
+    category: '遥感产品',
     metricLabel: '高程',
     metricUnit: 'm',
     metricPrecision: 0,
@@ -840,7 +849,7 @@ export const LAYER_LIBRARY: LayerCatalogItem[] = [
   {
     catalogId: 'landcover-cn',
     name: 'MCD12Q1 土地覆盖',
-    category: 'vegetation',
+    category: '植被监测',
     metricLabel: 'IGBP 分类',
     metricUnit: '',
     metricPrecision: 0,
@@ -854,7 +863,7 @@ export const LAYER_LIBRARY: LayerCatalogItem[] = [
   {
     catalogId: 'hfp-cn',
     name: '人类足迹指数 HFP',
-    category: 'terrain',
+    category: '遥感产品',
     metricLabel: 'HFP',
     metricUnit: '',
     metricPrecision: 1,
@@ -868,7 +877,7 @@ export const LAYER_LIBRARY: LayerCatalogItem[] = [
   {
     catalogId: 'aridity-cn',
     name: '干旱指数 AI',
-    category: 'climate',
+    category: '热环境',
     metricLabel: 'AI',
     metricUnit: '',
     metricPrecision: 2,
@@ -915,7 +924,7 @@ export const LAYER_LIBRARY: LayerCatalogItem[] = [
   {
     catalogId: 'gpcp-precip-ts',
     name: 'GPCP 月降水时间序列',
-    category: 'climate',
+    category: '气象场',
     metricLabel: '降水',
     metricUnit: 'mm/month',
     metricPrecision: 1,
@@ -929,7 +938,7 @@ export const LAYER_LIBRARY: LayerCatalogItem[] = [
   {
     catalogId: 'gebco-dem-cn',
     name: 'GEBCO 2024 海底地形（中国）',
-    category: 'terrain',
+    category: '遥感产品',
     metricLabel: '高程',
     metricUnit: 'm',
     metricPrecision: 0,
@@ -943,7 +952,7 @@ export const LAYER_LIBRARY: LayerCatalogItem[] = [
   {
     catalogId: 'cmfd-precip-cn',
     name: 'CMFD 中国区域降水',
-    category: 'climate',
+    category: '气象场',
     metricLabel: '降水',
     metricUnit: 'mm',
     metricPrecision: 1,
@@ -957,7 +966,7 @@ export const LAYER_LIBRARY: LayerCatalogItem[] = [
   {
     catalogId: 'clcd-cn',
     name: 'CLCD 中国土地覆盖',
-    category: 'vegetation',
+    category: '植被监测',
     metricLabel: '土地覆盖',
     metricUnit: 'class',
     metricPrecision: 0,
@@ -971,7 +980,7 @@ export const LAYER_LIBRARY: LayerCatalogItem[] = [
   {
     catalogId: 'biomass-cn',
     name: 'ESA BIOMASS 2020（中国）',
-    category: 'vegetation',
+    category: '植被监测',
     metricLabel: '地上生物量',
     metricUnit: 'Mg/ha',
     metricPrecision: 1,
@@ -985,7 +994,7 @@ export const LAYER_LIBRARY: LayerCatalogItem[] = [
   {
     catalogId: 'era5-dwaa-cn',
     name: 'ERA5 白天热浪事件（2020）',
-    category: 'disaster',
+    category: '灾害监测',
     metricLabel: '事件次数',
     metricUnit: 'events',
     metricPrecision: 0,
@@ -999,7 +1008,7 @@ export const LAYER_LIBRARY: LayerCatalogItem[] = [
   {
     catalogId: 'era5-wdaa-cn',
     name: 'ERA5 夜间热浪事件（2020）',
-    category: 'disaster',
+    category: '灾害监测',
     metricLabel: '事件次数',
     metricUnit: 'events',
     metricPrecision: 0,
@@ -1013,7 +1022,7 @@ export const LAYER_LIBRARY: LayerCatalogItem[] = [
   {
     catalogId: 'co2-cn',
     name: 'GOSAT 中层 CO₂ 柱浓度',
-    category: 'atmosphere',
+    category: '大气环境',
     metricLabel: 'CO₂',
     metricUnit: 'ppm',
     metricPrecision: 2,
@@ -1175,7 +1184,7 @@ export const LAYER_LIBRARY: LayerCatalogItem[] = [
 /** Static whitelist of catalog IDs backed by weatherengine (used before runtime catalog loads). */
 export const WEATHER_ENGINE_CATALOG_IDS = new Set(
   LAYER_LIBRARY
-    .filter((item) => item.category === 'online-weather')
+    .filter((item) => item.category === '气象场')
     .map((item) => item.catalogId),
 )
 

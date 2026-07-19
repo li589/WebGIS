@@ -114,7 +114,7 @@ const filteredLibraryByCategory = computed(() => {
 
 function prefetchVisibleWeatherProviders() {
   for (const group of filteredLibraryByCategory.value) {
-    if (group.category.id !== 'online-weather') continue
+    if (group.category.id !== '气象场') continue
     for (const item of group.items) {
       void ensureWeatherProviders(item.catalogId)
     }
@@ -725,7 +725,7 @@ const symbologyPanelLayer = computed(() => {
 
               <!-- 数据源区域：天气图层用运行时 Provider；其它图层仍用目录静态 sources -->
               <div class="source-area">
-                <template v-if="item.category === 'online-weather'">
+                <template v-if="item.category === '气象场'">
                   <div class="source-weather-live">
                     <label class="weather-src-label">
                       <span class="src-dot" :style="{ background: item.accentColor }"></span>

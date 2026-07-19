@@ -14,7 +14,7 @@ export function isWeatherEngineCatalogId(
     return isWeatherLayerDescriptor(descriptor)
   }
   const staticItem = LAYER_LIBRARY.find((item) => item.catalogId === catalogId)
-  if (staticItem?.category === 'online-weather') {
+  if (staticItem?.category === '气象场') {
     return true
   }
   return WEATHER_ENGINE_CATALOG_IDS.has(catalogId)

@@ -1986,6 +1986,12 @@ export interface components {
             run_readiness_summary?: string | null;
             /** Run Readiness Notes */
             run_readiness_notes?: string[];
+            /** Data Owner */
+            data_owner?: string | null;
+            /** Temporal Coverage */
+            temporal_coverage?: string | null;
+            /** Source Reference */
+            source_reference?: string | null;
         };
         /**
          * LayerRenderType

@@ -141,7 +141,7 @@ const weatherTileLayers = computed(() => {
   void activityVersion.value
   void statusVersion.value
   return layersStore.activeLayersDisplay
-    .filter((layer) => layer.category === 'online-weather' && layer.visible)
+    .filter((layer) => layer.category === '气象场' && layer.visible)
     .map((layer) => {
       const status = weatherTileManager.getLayerStatus(layer.catalogId)
       return {
