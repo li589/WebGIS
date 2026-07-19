@@ -2,8 +2,15 @@
 # CGDA 后端基础设施
 #   - Redis: Celery broker & result backend
 #   - MinIO: S3-compatible 对象存储（artifact 持久化 / GEE 导出）
+#   - Open-Meteo (profile: open-meteo): 按需自建天气 API
+#
+# 日常（仅 Redis + MinIO）:
+#   docker compose -p backend up -d
+#
+# 按需启用 Open-Meteo:
+#   docker compose -p backend --profile open-meteo up -d
+#   docker compose -p backend --profile open-meteo run --rm open-meteo-sync
 # ============================================================
-version: "3.8"
 
 services:
   # ----------------------------------------------------------
@@ -70,6 +77,43 @@ services:
       "
     restart: "no"
 
+  # ----------------------------------------------------------
+  # Open-Meteo API — 按需（--profile open-meteo）
+  #   http://127.0.0.1:8080/v1/forecast
+  #   气象库用 Docker named volume（落在 I:\Docker\DockerDesktop 的 VHDX 内）。
+  #   勿改用 Windows 路径 bind：NTFS/virtiofs 会触发 errno 95（Operation not supported）。
+  #   清空数据: docker volume rm backend_open-meteo-data
+  # ----------------------------------------------------------
+  open-meteo:
+    profiles: ["open-meteo"]
+    # Prefer AWS Public ECR mirror; GHCR (ghcr.io/open-meteo/open-meteo) is equivalent if reachable
+    image: public.ecr.aws/w5w8t1y7/openmeteo:latest
+    container_name: cgda-open-meteo
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    volumes:
+      - open-meteo-data:/app/data
+
+  # ----------------------------------------------------------
+  # Open-Meteo sync — 一次性从 AWS Open Data 拉取最小模型/变量
+  #   刷新: docker compose -p backend --profile open-meteo run --rm open-meteo-sync
+  # ----------------------------------------------------------
+  open-meteo-sync:
+    profiles: ["open-meteo"]
+    image: public.ecr.aws/w5w8t1y7/openmeteo:latest
+    container_name: cgda-open-meteo-sync
+    restart: "no"
+    volumes:
+      - open-meteo-data:/app/data
+    # Official image entrypoint accepts: sync <domains> <variables>
+    # Override via host env or Code/backend/.env (see .env.open-meteo.example)
+    command:
+      - sync
+      - ${OPEN_METEO_SYNC_DOMAINS:-ecmwf_ifs025}
+      - ${OPEN_METEO_SYNC_VARIABLES:-temperature_2m,temperature_80m,temperature_120m,temperature_180m,relative_humidity_2m,dew_point_2m,precipitation,weather_code,cloud_cover,pressure_msl,visibility,wind_u_component_10m,wind_v_component_10m,wind_speed_10m,wind_direction_10m,wind_u_component_80m,wind_v_component_80m,wind_speed_80m,wind_direction_80m,wind_u_component_120m,wind_v_component_120m,wind_speed_120m,wind_direction_120m,wind_u_component_180m,wind_v_component_180m,wind_speed_180m,wind_direction_180m,wind_u_component_850hPa,wind_v_component_850hPa,wind_speed_850hPa,wind_direction_850hPa,wind_u_component_500hPa,wind_v_component_500hPa,wind_speed_500hPa,wind_direction_500hPa,wind_u_component_200hPa,wind_v_component_200hPa,wind_speed_200hPa,wind_direction_200hPa}
+
 volumes:
   redis-data:
   minio-data:
+  open-meteo-data:

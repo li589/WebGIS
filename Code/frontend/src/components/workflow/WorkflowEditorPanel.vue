@@ -103,7 +103,11 @@ onMounted(async () => {
 })
 
 onBeforeUnmount(() => {
-  // 清理运行状态恢复定时器，避免组件销毁后修改已卸载的 ref
+  // 先清 LiteGraph 浮动输入框，再卸面板（避免未保存关闭时泄漏到主地图）
+  try {
+    ;(canvasRef.value as { disposeLiteGraphFloatingUi?: () => void } | null)
+      ?.disposeLiteGraphFloatingUi?.()
+  } catch { /* ignore */ }
   if (_runStatusTimer1 !== null) {
     clearTimeout(_runStatusTimer1)
     _runStatusTimer1 = null
@@ -324,6 +328,11 @@ function handleClose() {
   if (dirty.value && !isReadonly.value) {
     if (!confirm('有未保存的修改，确定要关闭吗？')) return
   }
+  // emit 前主动清理：widget 编辑框可能挂在 document.body，晚一拍卸载会闪到主界面
+  try {
+    ;(canvasRef.value as { disposeLiteGraphFloatingUi?: () => void } | null)
+      ?.disposeLiteGraphFloatingUi?.()
+  } catch { /* ignore */ }
   emit('close')
 }
 </script>

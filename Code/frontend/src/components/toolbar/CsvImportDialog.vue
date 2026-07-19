@@ -1,6 +1,8 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import { useLogStore } from '../../stores/log'
+import { fetchCrsOptions } from '../../services/data-import'
+import { transformPoint, type CRSOption } from '@/services/crs'
 
 const props = defineProps<{
   file: File
@@ -25,17 +27,20 @@ const yCol = ref('')
 const crs = ref('EPSG:4326')
 const parseError = ref('')
 const converting = ref(false)
+/** handleConfirm 中转换失败的行数（per-row try/catch 容错） */
+const failedCount = ref(0)
 
-const CRS_OPTIONS = [
-  { value: 'EPSG:4326', label: 'EPSG:4326 (WGS84 经纬度)' },
-  { value: 'EPSG:3857', label: 'EPSG:3857 (Web Mercator)' },
-  { value: 'EPSG:32649', label: 'EPSG:32649 (UTM 49N)' },
-  { value: 'EPSG:32650', label: 'EPSG:32650 (UTM 50N)' },
-  { value: 'EPSG:4490', label: 'EPSG:4490 (CGCS2000)' },
-  { value: 'EPSG:4527', label: 'EPSG:4527 (CGCS2000 / 3-degree Gauss 117E)' },
-  { value: 'EPSG:4528', label: 'EPSG:4528 (CGCS2000 / 3-degree Gauss 120E)' },
-  { value: 'EPSG:4529', label: 'EPSG:4529 (CGCS2000 / 3-degree Gauss 123E)' },
-]
+const CRS_OPTIONS = ref<CRSOption[]>([])
+
+// 拉取后端 13 项 CRS 选项（含 GCJ02/BD09/4258/6933/3034 等）
+onMounted(async () => {
+  try {
+    const data = await fetchCrsOptions()
+    CRS_OPTIONS.value = data.items
+  } catch (err) {
+    console.warn('[CsvImport] fetchCrsOptions 失败，下拉列表为空', err)
+  }
+})
 
 // 解析 CSV
 async function parseCsv() {
@@ -84,55 +89,37 @@ async function parseCsv() {
 
 watch(() => props.file, () => { void parseCsv() }, { immediate: true })
 
-let _proj4Lib: typeof import('proj4')['default'] | null = null
-async function _ensureProj4() {
-  if (!_proj4Lib) {
-    _proj4Lib = (await import('proj4')).default
-  }
-  return _proj4Lib
+// 同步点转换：调 services/crs 的 transformPoint（proj4 静态 import，加密系走 gcj-bd.ts）
+function _convertPoint(x: number, y: number): [number, number] {
+  return transformPoint(x, y, crs.value, 'EPSG:4326')
 }
 
-async function _proj4Convert(x: number, y: number): Promise<[number, number]> {
-  const proj4 = await _ensureProj4()
-  return proj4(crs.value, 'EPSG:4326', [x, y])
-}
-
-// 预览转换后的坐标（proj4 转换是异步的，使用异步预览）
-const previewCoordsAsync = ref<Array<[number, number] | null>>([])
-watch([previewRows, xCol, yCol, crs], async () => {
-  if (!xCol.value || !yCol.value) {
-    previewCoordsAsync.value = []
-    return
-  }
-  const results: Array<[number, number] | null> = []
-  for (const row of previewRows.value) {
+// 预览转换后的坐标（transformPoint 同步，用 computed 即可）
+const previewCoords = computed<Array<[number, number] | null>>(() => {
+  if (!xCol.value || !yCol.value) return []
+  return previewRows.value.map((row) => {
     const x = parseFloat(row[xCol.value])
     const y = parseFloat(row[yCol.value])
-    if (!Number.isFinite(x) || !Number.isFinite(y)) {
-      results.push(null)
-      continue
+    if (!Number.isFinite(x) || !Number.isFinite(y)) return null
+    if (crs.value === 'EPSG:4326') return [x, y]
+    try {
+      return _convertPoint(x, y)
+    } catch {
+      return [x, y]
     }
-    if (crs.value === 'EPSG:4326') {
-      results.push([x, y])
-    } else {
-      try {
-        results.push(await _proj4Convert(x, y))
-      } catch {
-        results.push([x, y])
-      }
-    }
-  }
-  previewCoordsAsync.value = results
-}, { immediate: true })
+  })
+})
 
 const canConfirm = computed(() => !!xCol.value && !!yCol.value && allRows.value.length > 0 && !parseError.value && !converting.value)
 
 async function handleConfirm() {
   if (!canConfirm.value) return
   converting.value = true
+  failedCount.value = 0
   try {
     const features: GeoJSON.Feature[] = []
-    for (const row of allRows.value) {
+    for (let i = 0; i < allRows.value.length; i++) {
+      const row = allRows.value[i]
       const x = parseFloat(row[xCol.value])
       const y = parseFloat(row[yCol.value])
       if (!Number.isFinite(x) || !Number.isFinite(y)) continue
@@ -140,13 +127,26 @@ async function handleConfirm() {
       if (crs.value === 'EPSG:4326') {
         coord = [x, y]
       } else {
-        coord = await _proj4Convert(x, y)
+        // per-row 容错：单行 proj4 异常不杀死整批导入，跳过该行并计数
+        // 与 previewCoords computed 的 try/catch + fallback 行为一致
+        try {
+          coord = _convertPoint(x, y)
+        } catch (err) {
+          failedCount.value++
+          if (failedCount.value === 1) {
+            // 只记录第一行失败的详细信息（避免日志爆炸）
+            console.warn(`[CsvImport] 第 ${i + 1} 行转换失败:`, err, { x, y, crs: crs.value })
+          }
+          continue
+        }
       }
       features.push({
         type: 'Feature',
         geometry: { type: 'Point', coordinates: coord },
         properties: { ...row },
       })
+      // 每 500 行 yield 一次，避免大 CSV 阻塞 UI
+      if (i > 0 && i % 500 === 0) await Promise.resolve()
     }
 
     const geojson: GeoJSON.FeatureCollection = {
@@ -156,7 +156,16 @@ async function handleConfirm() {
 
     const name = props.file.name.replace(/\.csv$/i, '')
     emit('confirm', geojson, name)
-    logStore.logOperation('import-csv-success', `CSV 导入成功: ${name}`, `点数: ${features.length}, 坐标系: ${crs.value}`)
+    const detailParts = [`点数: ${features.length}`, `坐标系: ${crs.value}`]
+    if (failedCount.value > 0) detailParts.push(`跳过失败行: ${failedCount.value}`)
+    logStore.logOperation('import-csv-success', `CSV 导入成功: ${name}`, detailParts.join(', '))
+    if (failedCount.value > 0) {
+      logStore.logOperation(
+        'import-csv-warn',
+        `CSV 部分行转换失败: ${name}`,
+        `跳过 ${failedCount.value} 行（CRS: ${crs.value} 转换异常），已导入 ${features.length} 个点`,
+      )
+    }
   } catch (err) {
     logStore.logOperation('import-csv-fail', `CSV 导入失败: ${props.file.name}`, err instanceof Error ? err.message : String(err))
   } finally {
@@ -204,7 +213,7 @@ function formatCoord(c: [number, number] | null): string {
           <label class="col-field">
             <span class="col-label">坐标系</span>
             <select v-model="crs" class="col-select crs-select">
-              <option v-for="opt in CRS_OPTIONS" :key="opt.value" :value="opt.value">{{ opt.label }}</option>
+              <option v-for="opt in CRS_OPTIONS" :key="opt.code" :value="opt.code">{{ opt.label }}</option>
             </select>
           </label>
         </div>
@@ -227,7 +236,7 @@ function formatCoord(c: [number, number] | null): string {
                 <td class="row-num">{{ i + 1 }}</td>
                 <td>{{ row[xCol] }}</td>
                 <td>{{ row[yCol] }}</td>
-                <td class="coord-cell">{{ formatCoord(previewCoordsAsync[i] ?? null) }}</td>
+                <td class="coord-cell">{{ formatCoord(previewCoords[i] ?? null) }}</td>
                 <td v-for="col in columns.filter(c => c !== xCol && c !== yCol).slice(0, 3)" :key="col">{{ row[col] }}</td>
               </tr>
             </tbody>
@@ -237,6 +246,7 @@ function formatCoord(c: [number, number] | null): string {
         <div class="info-row">
           <span>共 {{ allRows.length }} 行数据</span>
           <span v-if="crs !== 'EPSG:4326'" class="convert-hint">将从 {{ crs }} 转换为 WGS84</span>
+          <span v-if="failedCount > 0" class="failed-hint">⚠ {{ failedCount }} 行转换失败已跳过</span>
         </div>
 
         <!-- 操作按钮 -->
@@ -396,6 +406,7 @@ function formatCoord(c: [number, number] | null): string {
 }
 
 .convert-hint { color: #ffc878; }
+.failed-hint { color: #ffb070; }
 
 .action-row {
   display: flex;

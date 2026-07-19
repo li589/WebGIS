@@ -11,13 +11,15 @@ from typing import Any
 
 from shared.contracts.api_contracts import BoundingBox
 
-# First-wave commercial layers (surface only; no 80m / pressure levels).
+# First-wave commercial layers (surface only; no AGL / pressure-level winds).
 SURFACE_LAYER_IDS: frozenset[str] = frozenset(
     {
         "wind-field",
         "temperature",
         "precipitation",
         "humidity",
+        "pressure",
+        "visibility",
     }
 )
 

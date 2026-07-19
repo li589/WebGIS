@@ -116,7 +116,7 @@ backend/
 │  ├─ workflow_engine/     # 通用 DAG 执行器
 │  ├─ gee/                 # Earth Engine 嵌入模块
 │  └─ main.py
-├─ docker-compose.yml      # Redis + MinIO
+├─ docker-compose.yml      # Redis + MinIO；Open-Meteo（--profile open-meteo）
 ├─ requirements.txt
 └─ tests/
 ```
@@ -160,7 +160,7 @@ backend/
 - `service.py`：`/weather/point` 与 fallback map_layer 产物
 - `tile_service.py`：z/x/y GeoJSON 瓦片（缓存键含 `provider_id`）
 - `fetch_gateway.py`：统一出站拉取（钉源 / 自动优先级 / 失败 fallback）
-- `providers/`：Open-Meteo（默认）、WeatherAPI、OpenWeather 等可插拔源
+- `providers/`：Open-Meteo online/local（默认双源）、WeatherAPI、OpenWeather 等可插拔源
 - `field_mapping.py`：商业源字段映射到 Open-Meteo 风格契约名
 - `workflow_service.py` + `nodes/*`：天气 DAG（`provider_id` 可钉源；风场、温湿降水气压能见度、tile_render 等）
 - `client.py`：网格预报拉取（Open-Meteo 风格，经 Provider 封装）
@@ -189,6 +189,8 @@ backend/
 
 - 本地一键：仓库根 `launch.py` / `start.bat`（编排 compose + API + 多队列 worker + 前端）
 - 基础设施：`docker-compose.yml` 提供 Redis `:6379`、MinIO `:9100/:9101`
+- Open-Meteo 自建（按需）：`docker compose -p backend --profile open-meteo up -d`，再 `run --rm open-meteo-sync`；API `:8080`；气象库为 named volume `backend_open-meteo-data`（落在 `I:\Docker\DockerDesktop` 的 VHDX 内，勿用 Windows 路径 bind）。图层选源：`open-meteo-online`（公网）与 `open-meteo-local`（`BACKEND_OPEN_METEO_LOCAL_URL`，默认 `http://127.0.0.1:8080/v1/forecast`）。详见 `.env.open-meteo.example`。
+- Docker Desktop 数据盘建议在 `I:\Docker\DockerDesktop`（镜像/容器与气象库分离）
 - 环境变量参考 `.env.example`
 - 亦可使用 `Env/backend/` 脚本做单项启动
 

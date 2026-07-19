@@ -75,11 +75,9 @@ function shouldShowLabel(p1Screen: ScreenPoint, p2Screen: ScreenPoint): boolean 
 }
 
 /**
- * 计算 Canvas 布局：尺寸 + 偏移量。
+ * 计算 Canvas 布局尺寸。
  *
- * MapLibre 在 renderWorldCopies=true 时，地图容器可能比视口宽（多世界副本），
- * 但 canvas 只需覆盖视口区域。offsetX/Y 用于将地图坐标 (pageX/Y) 转换为
- * canvas 内坐标。
+ * Canvas 挂在 map container 内且 top/left=0，map.project() 已是容器坐标，无需再减 page offset。
  */
 function computeCanvasLayout(map: MaplibreMap): CanvasLayout {
   const container = map.getContainer()
@@ -87,8 +85,8 @@ function computeCanvasLayout(map: MaplibreMap): CanvasLayout {
   return {
     width: rect.width,
     height: rect.height,
-    offsetX: rect.left,
-    offsetY: rect.top,
+    offsetX: 0,
+    offsetY: 0,
   }
 }
 
@@ -199,12 +197,12 @@ export class MeasureCanvas {
     })
   }
 
-  /** 将地理坐标投影到 canvas 内坐标（相对于 canvas 左上角） */
+  /** 将地理坐标投影到 canvas 内坐标（map.project 相对 map container，与 canvas 同源） */
   private projectToCanvas(lng: number, lat: number): ScreenPoint {
     const screen = this.map.project([lng, lat])
     return {
-      x: screen.x - this.layout.offsetX,
-      y: screen.y - this.layout.offsetY,
+      x: screen.x,
+      y: screen.y,
     }
   }
 

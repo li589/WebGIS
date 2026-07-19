@@ -223,7 +223,7 @@ class OpenWeatherProvider(WeatherProvider):
         if not self._api_key:
             raise RuntimeError("OpenWeather API Key is not configured")
 
-        lats, lons, res = compute_grid_axes(bbox, resolution, max_points=16)
+        lats, lons, res = compute_grid_axes(bbox, resolution, max_points=49)
         cache_key = (
             f"grid:{bbox.west:.2f},{bbox.south:.2f},{bbox.east:.2f},{bbox.north:.2f}"
             f":r{res:.3f}:{layer_spec.layer_id}"

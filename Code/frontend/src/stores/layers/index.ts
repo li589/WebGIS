@@ -24,6 +24,7 @@ import { isWeatherEngineCatalogId } from './weather-session'
 import { buildJobLayer } from './result-adapter'
 import { buildImportedVectorPayload } from './imported-vector'
 import { buildImportedRasterPayload } from './imported-raster'
+import { deleteImportedRaster } from '../../services/data-import'
 import { useWorkflowOutputLayersStore } from '../workflow-output-layers'
 import type {
   ActiveLayer,
@@ -765,7 +766,8 @@ export const useLayersStore = defineStore('layers', () => {
   const sidebarViewLabel = computed(() => {
     if (sidebarView.value === 'empty') return '图层'
     if (sidebarView.value === 'library') return '图层库'
-    return `图层 (${activeLayerCount.value})`
+    // 数量由右上角 badge 展示，标题不再重复写「图层 (N)」
+    return '已添加图层'
   })
 
   // ─────────────────────────────────────────────────────────────────────────────
@@ -792,15 +794,17 @@ export const useLayersStore = defineStore('layers', () => {
     activeLayers.value.push(layer)
     selectedInstanceId.value = layer.instanceId
 
-    if (sidebarView.value === 'empty' || sidebarView.value === 'library') {
+    // 仅从空态进入「已添加」；从图层库添加时留在库页，立刻显示「已添加 ✓」
+    // （若立刻切走，风场瓦片调度又会卡住主线程，库卡片状态看起来像没加上）
+    if (sidebarView.value === 'empty') {
       sidebarView.value = 'active'
     }
 
     // 天气图层接入瓦片管理器，由 tile manager 按需拉取瓦片。
     // setLayerActive 是轻量操作（仅设置 visible 标志），同步执行以确保
     // overlay watcher 和 map 事件处理器在同一 flush 周期内能看到图层已激活。
-    // setViewport 是重操作（计算瓦片 + 入队 + drainQueue），推迟到 nextTick
-    // 让 Vue 先完成 UI 更新（按钮状态、侧栏视图），避免主线程阻塞。
+    // setViewport 是重操作（计算瓦片 + 入队 + drainQueue），推迟到下一宏任务，
+    // 让 Vue 先完成「已添加 ✓」与角标刷新。
     if (isWeatherEngineLayer(catalogId)) {
       weatherTileManager.setLayerActive(catalogId, true)
       const cc = currentMapCenter.value
@@ -808,11 +812,13 @@ export const useLayersStore = defineStore('layers', () => {
       const ch = currentHour.value
       const cb = currentMapBBox.value
       nextTick(() => {
-        weatherTileManager.setViewport(catalogId, cc, cz, ch, undefined, cb, weatherProviderArg(catalogId))
-        if (supportsParticleFlow(catalogId) && !particleFlowCatalogId.value) {
-          particleFlowCatalogId.value = catalogId
-          debugLog('addLayer', 'auto-enable particle flow for', catalogId)
-        }
+        window.setTimeout(() => {
+          weatherTileManager.setViewport(catalogId, cc, cz, ch, undefined, cb, weatherProviderArg(catalogId))
+          if (supportsParticleFlow(catalogId) && !particleFlowCatalogId.value) {
+            particleFlowCatalogId.value = catalogId
+            debugLog('addLayer', 'auto-enable particle flow for', catalogId)
+          }
+        }, 0)
       })
     }
   }
@@ -852,10 +858,21 @@ export const useLayersStore = defineStore('layers', () => {
     name: string,
     overlayLayerId: string,
     bounds?: [number, number, number, number],
+    options?: {
+      sourceCrs?: string
+      lngOffset?: number
+      latOffset?: number
+    },
   ): ActiveLayer {
     const maxOrder = activeLayers.value.reduce((max, l) => Math.max(max, l.order), 0)
     const instanceId = genInstanceId()
-    const payload = buildImportedRasterPayload(overlayLayerId, { bounds, fileName: name })
+    const payload = buildImportedRasterPayload(overlayLayerId, {
+      bounds,
+      fileName: name,
+      sourceCrs: options?.sourceCrs,
+      lngOffset: options?.lngOffset,
+      latOffset: options?.latOffset,
+    })
     const layer: ActiveLayer = {
       instanceId,
       // catalogId 与后端 overlay_layer_id 对齐，便于 overlay-image-module 加载
@@ -895,6 +912,13 @@ export const useLayersStore = defineStore('layers', () => {
     // 清理 tile manager 中对应图层状态
     if (!layer.isAdminBoundary && !isLocalImport(layer) && isWeatherEngineLayer(layer.catalogId)) {
       weatherTileManager.clearLayer(layer.catalogId)
+    }
+    // 导入栅格：best-effort 清理后端 overlay 与磁盘文件
+    const overlayId = layer.importedRaster?.overlayLayerId
+    if (overlayId) {
+      void deleteImportedRaster(overlayId).catch((err) => {
+        console.warn('[layers] deleteImportedRaster failed', overlayId, err)
+      })
     }
     activeLayers.value.splice(idx, 1)
 
@@ -1127,8 +1151,30 @@ export const useLayersStore = defineStore('layers', () => {
     return runtimeLayerCatalogRequest
   }
 
-  function getCatalogRunBlockReason(catalogId: string) {
+  /** 可走 /workflow-runs 分析桥的图层引擎（天气瓦片层走 tile manager，不算在内） */
+  function getCatalogWorkflowEngine(catalogId: string): string | null {
     const descriptor = getRuntimeLayerDescriptor(catalogId)
+    if (descriptor?.engine) return descriptor.engine
+    const libItem = layerLibraryMap.value.get(catalogId)
+    return libItem?.engine ?? null
+  }
+
+  function supportsAnalysisWorkflow(catalogId: string): boolean {
+    const backendLayerId = resolveBackendLayerId(catalogId)
+    if (isWeatherEngineLayer(backendLayerId) || isWeatherEngineLayer(catalogId)) return false
+    return Boolean(getCatalogWorkflowEngine(backendLayerId) || getCatalogWorkflowEngine(catalogId))
+  }
+
+  function getCatalogRunBlockReason(catalogId: string) {
+    const backendLayerId = resolveBackendLayerId(catalogId)
+    if (isWeatherEngineLayer(backendLayerId) || isWeatherEngineLayer(catalogId)) {
+      return null
+    }
+    if (!supportsAnalysisWorkflow(catalogId)) {
+      return `${getCatalogDisplayName(catalogId)} 未配置分析工作流引擎（静态叠加请直接加载图层）`
+    }
+
+    const descriptor = getRuntimeLayerDescriptor(backendLayerId) ?? getRuntimeLayerDescriptor(catalogId)
     if (!descriptor || !isBlockedRunReadiness(descriptor.run_readiness)) {
       return null
     }
@@ -1142,6 +1188,17 @@ export const useLayersStore = defineStore('layers', () => {
 
   function canRunCatalog(catalogId: string) {
     return !getCatalogRunBlockReason(catalogId)
+  }
+
+  function localSubmitJobId(catalogId: string) {
+    return `local-submit-${catalogId}`
+  }
+
+  function removeJobLayerById(jobId: string) {
+    const idx = jobLayers.value.findIndex((item) => item.jobId === jobId)
+    if (idx >= 0) {
+      jobLayers.value.splice(idx, 1)
+    }
   }
 
   function setJobLayers(jobs: JobLayerItem[]) {
@@ -1483,13 +1540,20 @@ export const useLayersStore = defineStore('layers', () => {
     workflowError.value = null
     submittingCatalogIds.add(catalogId)
     debugLog('runWorkflow', catalogId, 'start')
+
+    const backendLayerId = resolveBackendLayerId(catalogId)
+    const isOutputLayer = backendLayerId !== catalogId
+    const catalogName = isOutputLayer
+      ? (layerLibrary.value.find((l) => l.catalogId === catalogId)?.name ?? catalogId)
+      : (runtimeLayerCatalog.value[catalogId]?.display_name
+        ?? runtimeLayerCatalog.value[backendLayerId]?.display_name
+        ?? getCatalogDisplayName(catalogId))
+    const submitJobId = localSubmitJobId(catalogId)
+    const submitStartedAt = new Date().toISOString()
+
     try {
-      // 工作流产出图层：使用源 layer_id 进行后端能力判断与提交，但用本地 catalogId 跟踪作业
-      const backendLayerId = resolveBackendLayerId(catalogId)
-      const isOutputLayer = backendLayerId !== catalogId
       // 天气图层统一由 tile manager 按需拉取瓦片，不走 analysis workflow
       if (isWeatherEngineLayer(backendLayerId)) {
-        submittingCatalogIds.delete(catalogId)
         return
       }
       let runtimeCatalogReady = false
@@ -1508,10 +1572,10 @@ export const useLayersStore = defineStore('layers', () => {
       if (blockedReason) {
         throw new Error(blockedReason)
       }
+      if (!isOutputLayer && !supportsAnalysisWorkflow(backendLayerId)) {
+        throw new Error(`${catalogName} 未配置分析工作流引擎，无法提交 /workflow-runs`)
+      }
 
-      const catalogName = isOutputLayer
-        ? (layerLibrary.value.find((l) => l.catalogId === catalogId)?.name ?? catalogId)
-        : (runtimeLayerCatalog.value[catalogId]?.display_name ?? getCatalogDisplayName(catalogId))
       const supportsMapLayer = supportsMapLayerResult(backendLayerId)
       const requestedOutputs = supportsMapLayer
         ? ['json', 'text', 'table', 'map_layer']
@@ -1525,19 +1589,39 @@ export const useLayersStore = defineStore('layers', () => {
 
       interruptWorkflowForCatalog(catalogId)
 
+      // 提交一开始就写入 jobLayer，使标题栏/状态面板立即显示「排队」，不依赖天气瓦片路径
+      upsertJobLayer(catalogId, {
+        jobId: submitJobId,
+        catalogId,
+        name: catalogName,
+        commandType: 'analysis',
+        status: 'queued',
+        progress: 5,
+        createdAt: submitStartedAt,
+        updatedAt: new Date().toISOString(),
+        message: '正在提交工作流…',
+        metrics: [],
+        reportSummary: '正在提交工作流…',
+        resultUrl: undefined,
+        mapLayerPayload: previousJobLayer?.mapLayerPayload,
+      })
+
       debugLog('runWorkflow', catalogId, 'submitting new workflow', 'bbox', requestBBox, 'backendLayerId', backendLayerId)
       const accepted = await submitWorkflow(
         buildWorkflowPayloadForCatalog(catalogId, catalogName, requestedOutputs, requestBBox, backendLayerId),
       )
       if (isViewportRefreshStale(options.expectedViewportEpoch)) {
         debugLog('runWorkflow', catalogId, 'discard stale submit after accept', accepted.run_id)
+        removeJobLayerById(submitJobId)
         void cancelWorkflowRun(accepted.run_id).catch(() => {})
         return
       }
       debugLog('runWorkflow', catalogId, 'submitted', accepted.run_id)
 
+      removeJobLayerById(submitJobId)
       upsertJobLayer(catalogId, {
         jobId: accepted.run_id,
+        catalogId,
         name: catalogName,
         commandType: 'analysis',
         status: 'queued',
@@ -1563,12 +1647,13 @@ export const useLayersStore = defineStore('layers', () => {
         workflowError.value = '工作流并发数已达上限，正在等待空闲后自动重试…'
         // 429 时创建 queued jobLayer 让用户看到状态指示，并调度自动重试
         upsertJobLayer(catalogId, {
-          jobId: `retry-${catalogId}-${Date.now()}`,
-          name: getCatalogDisplayName(catalogId),
+          jobId: submitJobId,
+          catalogId,
+          name: catalogName,
           commandType: 'analysis',
           status: 'queued',
           progress: 5,
-          createdAt: new Date().toISOString(),
+          createdAt: submitStartedAt,
           updatedAt: new Date().toISOString(),
           message: '等待工作流容量，自动重试中…',
           metrics: [],
@@ -1578,6 +1663,21 @@ export const useLayersStore = defineStore('layers', () => {
         scheduleWorkflowRetry(catalogId)
       } else {
         workflowError.value = errMsg
+        upsertJobLayer(catalogId, {
+          jobId: submitJobId,
+          catalogId,
+          name: catalogName,
+          commandType: 'analysis',
+          status: 'failed',
+          progress: 0,
+          createdAt: submitStartedAt,
+          updatedAt: new Date().toISOString(),
+          message: errMsg,
+          metrics: [],
+          reportSummary: errMsg,
+          diagnosticNotes: [errMsg],
+          resultUrl: undefined,
+        })
       }
       throw error
     } finally {
@@ -2004,6 +2104,7 @@ export const useLayersStore = defineStore('layers', () => {
     stopWorkflowPolling,
     getCatalogRunBlockReason,
     canRunCatalog,
+    supportsAnalysisWorkflow,
     isWeatherEngineLayer,
     supportsMapLayerResult,
     supportsViewportDrivenRefresh,

@@ -87,6 +87,8 @@ export interface WeatherProviderForLayer {
   enabled: boolean
   priority: number
   provider_type: string
+  /** dense = native multi-point grid; sparse = commercial point-sampled */
+  grid_mode?: 'dense' | 'sparse' | string
 }
 
 export function getWeatherProvidersForLayer(

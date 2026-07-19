@@ -241,6 +241,28 @@ const SOURCE_WEATHERENGINE_VISIBILITY: LayerSource = {
   updateFrequency: '每小时更新',
 }
 
+const SOURCE_WEATHERENGINE_CLOUD: LayerSource = {
+  id: 'weatherengine-cloud-cover',
+  name: '天气引擎 · 云量',
+  description: 'Open-Meteo online/local 总云量。',
+  urlTemplate: 'https://example.com/cloud-cover/{z}/{x}/{y}.png',
+  needsAuth: false,
+  needsBackendTransform: true,
+  coordSys: 'EPSG:3857',
+  updateFrequency: '每小时更新',
+}
+
+const SOURCE_WEATHERENGINE_DEWPOINT: LayerSource = {
+  id: 'weatherengine-dewpoint',
+  name: '天气引擎 · 露点',
+  description: 'Open-Meteo online/local 2 米露点温度。',
+  urlTemplate: 'https://example.com/dewpoint/{z}/{x}/{y}.png',
+  needsAuth: false,
+  needsBackendTransform: true,
+  coordSys: 'EPSG:3857',
+  updateFrequency: '每小时更新',
+}
+
 const SOURCE_NDVI: LayerSource = {
   id: 'ndvi-satellite',
   name: 'Landsat / Sentinel-2 NDVI 产品',
@@ -730,6 +752,34 @@ export const LAYER_LIBRARY: LayerCatalogItem[] = [
     accentGlow: 'rgba(232, 200, 122, 0.3)',
     chipTone: 'rgba(232, 200, 122, 0.16)',
     sources: [SOURCE_WEATHERENGINE_VISIBILITY],
+  },
+  {
+    catalogId: 'cloud-cover',
+    name: '云量',
+    category: 'online-weather',
+    metricLabel: '云量',
+    metricUnit: '%',
+    metricPrecision: 0,
+    updateLabel: '每小时更新',
+    sourceLabel: 'Open-Meteo（多端点）',
+    accentColor: '#9aa7b5',
+    accentGlow: 'rgba(154, 167, 181, 0.3)',
+    chipTone: 'rgba(154, 167, 181, 0.16)',
+    sources: [SOURCE_WEATHERENGINE_CLOUD],
+  },
+  {
+    catalogId: 'dewpoint',
+    name: '露点温度',
+    category: 'online-weather',
+    metricLabel: '露点',
+    metricUnit: '°C',
+    metricPrecision: 1,
+    updateLabel: '每小时更新',
+    sourceLabel: 'Open-Meteo（多端点）',
+    accentColor: '#f0a070',
+    accentGlow: 'rgba(240, 160, 112, 0.3)',
+    chipTone: 'rgba(240, 160, 112, 0.16)',
+    sources: [SOURCE_WEATHERENGINE_DEWPOINT],
   },
   {
     catalogId: 'ndvi',

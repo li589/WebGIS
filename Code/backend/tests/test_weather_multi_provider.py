@@ -1,4 +1,4 @@
-"""Multi-weather-provider: field mapping, pin/fallback, tile cache key."""
+﻿"""Multi-weather-provider: field mapping, pin/fallback, tile cache key."""
 
 from __future__ import annotations
 
@@ -105,7 +105,7 @@ class TestResolvePin:
 class TestFetchPointFallback:
     def test_auto_fallback_on_primary_failure(self):
         primary = MagicMock()
-        primary.provider_id = "open-meteo"
+        primary.provider_id = "open-meteo-online"
         primary.fetch_point_forecast.side_effect = RuntimeError("upstream down")
 
         fallback = MagicMock()
@@ -141,7 +141,7 @@ class TestFetchPointFallback:
         from app.weatherengine.fetch_gateway import WeatherProviderUnavailableError
 
         primary = MagicMock()
-        primary.provider_id = "open-meteo"
+        primary.provider_id = "open-meteo-online"
         primary.fetch_point_forecast.side_effect = RuntimeError("upstream down")
         spec = MagicMock()
         spec.pressure_levels = None

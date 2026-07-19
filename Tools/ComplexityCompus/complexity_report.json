@@ -1,0 +1,925 @@
+{
+  "summary": {
+    "total_files": 316,
+    "total_functions": 3196,
+    "grade_distribution": {
+      "C": 156,
+      "B": 389,
+      "A": 2613,
+      "F": 8,
+      "D": 26,
+      "E": 4
+    },
+    "dangerous_count": 82
+  },
+  "top30_complex_functions": [
+    {
+      "complexity": 60,
+      "rank": "F",
+      "file": "Code\\backend\\app\\weatherengine\\client.py",
+      "line": 473,
+      "name": "fetch_grid_forecast"
+    },
+    {
+      "complexity": 60,
+      "rank": "F",
+      "file": "Code\\backend\\app\\services\\download_service.py",
+      "line": 171,
+      "name": "complete_follow_up_task"
+    },
+    {
+      "complexity": 52,
+      "rank": "F",
+      "file": "Code\\algorithms\\providers\\Python\\data_access\\prepared_input.py",
+      "line": 108,
+      "name": "_summarize_loaded_value"
+    },
+    {
+      "complexity": 45,
+      "rank": "F",
+      "file": "Code\\algorithms\\providers\\Python\\workflow\\panel_schema.py",
+      "line": 36,
+      "name": "build_workflow_input_panel_schema"
+    },
+    {
+      "complexity": 45,
+      "rank": "F",
+      "file": "Code\\algorithms\\providers\\Python\\modules\\statistics.py",
+      "line": 106,
+      "name": "StatisticsModule"
+    },
+    {
+      "complexity": 45,
+      "rank": "F",
+      "file": "Code\\algorithms\\providers\\Python\\data_access\\universal_reader.py",
+      "line": 218,
+      "name": "_read_netcdf"
+    },
+    {
+      "complexity": 44,
+      "rank": "F",
+      "file": "Code\\algorithms\\providers\\Python\\modules\\statistics.py",
+      "line": 117,
+      "name": "execute"
+    },
+    {
+      "complexity": 41,
+      "rank": "F",
+      "file": "Code\\algorithms\\providers\\Python\\algorithms\\omega.py",
+      "line": 1484,
+      "name": "retrieve_omega_pixel_timeseries"
+    },
+    {
+      "complexity": 40,
+      "rank": "E",
+      "file": "Tools\\select_download_candidates.py",
+      "line": 117,
+      "name": "select_candidates"
+    },
+    {
+      "complexity": 32,
+      "rank": "E",
+      "file": "Code\\backend\\app\\weatherengine\\client.py",
+      "line": 280,
+      "name": "fetch_point_forecast"
+    },
+    {
+      "complexity": 31,
+      "rank": "E",
+      "file": "Code\\backend\\app\\services\\remote_storage_credentials_repository.py",
+      "line": 152,
+      "name": "upsert"
+    },
+    {
+      "complexity": 31,
+      "rank": "E",
+      "file": "Code\\algorithms\\providers\\Python\\modules\\export.py",
+      "line": 165,
+      "name": "DataExportModule"
+    },
+    {
+      "complexity": 30,
+      "rank": "D",
+      "file": "Code\\backend\\app\\weatherengine\\service.py",
+      "line": 678,
+      "name": "build_wind_geojson_from_grid"
+    },
+    {
+      "complexity": 30,
+      "rank": "D",
+      "file": "Code\\algorithms\\providers\\Python\\modules\\export.py",
+      "line": 176,
+      "name": "execute"
+    },
+    {
+      "complexity": 29,
+      "rank": "D",
+      "file": "Code\\backend\\app\\gee\\core\\src\\webgis_gee\\workflow\\versioning.py",
+      "line": 387,
+      "name": "_apply_schema_upgrade_step"
+    },
+    {
+      "complexity": 28,
+      "rank": "D",
+      "file": "Code\\shared\\remote_sources\\uri.py",
+      "line": 69,
+      "name": "parse_remote_uri"
+    },
+    {
+      "complexity": 27,
+      "rank": "D",
+      "file": "Code\\algorithms\\providers\\Python\\data_access\\prepared_input.py",
+      "line": 214,
+      "name": "_build_loaded_value_highlights"
+    },
+    {
+      "complexity": 27,
+      "rank": "D",
+      "file": "Code\\algorithms\\providers\\Python\\algorithms\\station.py",
+      "line": 285,
+      "name": "build_station_validation_outputs"
+    },
+    {
+      "complexity": 27,
+      "rank": "D",
+      "file": "Code\\algorithms\\providers\\Python\\algorithms\\omega.py",
+      "line": 2144,
+      "name": "execute_omega_retrieval"
+    },
+    {
+      "complexity": 26,
+      "rank": "D",
+      "file": "Code\\backend\\app\\gee\\core\\src\\webgis_gee\\workflow\\versioning.py",
+      "line": 1449,
+      "name": "_build_node_compatibility_contract"
+    },
+    {
+      "complexity": 24,
+      "rank": "D",
+      "file": "Code\\backend\\app\\services\\failure_classifier.py",
+      "line": 40,
+      "name": "classify"
+    },
+    {
+      "complexity": 24,
+      "rank": "D",
+      "file": "Code\\algorithms\\providers\\Python\\algorithms\\omega.py",
+      "line": 1240,
+      "name": "qc_block_jacobian_cond"
+    },
+    {
+      "complexity": 23,
+      "rank": "D",
+      "file": "Code\\backend\\app\\services\\weather_bridge_service.py",
+      "line": 82,
+      "name": "_execute_workflow"
+    },
+    {
+      "complexity": 23,
+      "rank": "D",
+      "file": "Code\\algorithms\\providers\\Python\\modules\\station.py",
+      "line": 72,
+      "name": "StationDailyModule"
+    },
+    {
+      "complexity": 23,
+      "rank": "D",
+      "file": "Code\\algorithms\\providers\\Python\\modules\\omega.py",
+      "line": 46,
+      "name": "OmegaBlockModule"
+    },
+    {
+      "complexity": 22,
+      "rank": "D",
+      "file": "Tools\\inspect_all_data.py",
+      "line": 190,
+      "name": "check_geotiff"
+    },
+    {
+      "complexity": 22,
+      "rank": "D",
+      "file": "Tools\\SyncData.py",
+      "line": 494,
+      "name": "_sync_single_file"
+    },
+    {
+      "complexity": 22,
+      "rank": "D",
+      "file": "Code\\algorithms\\providers\\Python\\service\\result_dto.py",
+      "line": 447,
+      "name": "_build_storage_fields"
+    },
+    {
+      "complexity": 22,
+      "rank": "D",
+      "file": "Code\\algorithms\\providers\\Python\\runner\\dispatch.py",
+      "line": 503,
+      "name": "run_job"
+    },
+    {
+      "complexity": 22,
+      "rank": "D",
+      "file": "Code\\algorithms\\providers\\Python\\modules\\station.py",
+      "line": 82,
+      "name": "execute"
+    }
+  ],
+  "top20_complex_files": [
+    {
+      "total_complexity": 385,
+      "func_count": 42,
+      "max_complexity": 29,
+      "file": "Code\\backend\\app\\gee\\core\\src\\webgis_gee\\workflow\\versioning.py"
+    },
+    {
+      "total_complexity": 243,
+      "func_count": 41,
+      "max_complexity": 30,
+      "file": "Code\\backend\\app\\weatherengine\\service.py"
+    },
+    {
+      "total_complexity": 242,
+      "func_count": 54,
+      "max_complexity": 18,
+      "file": "Code\\backend\\app\\gee\\core\\src\\webgis_gee\\gee\\nodes.py"
+    },
+    {
+      "total_complexity": 208,
+      "func_count": 41,
+      "max_complexity": 41,
+      "file": "Code\\algorithms\\providers\\Python\\algorithms\\omega.py"
+    },
+    {
+      "total_complexity": 188,
+      "func_count": 46,
+      "max_complexity": 22,
+      "file": "Tools\\SyncData.py"
+    },
+    {
+      "total_complexity": 188,
+      "func_count": 34,
+      "max_complexity": 22,
+      "file": "Code\\algorithms\\providers\\Python\\service\\result_dto.py"
+    },
+    {
+      "total_complexity": 183,
+      "func_count": 42,
+      "max_complexity": 19,
+      "file": "launch.py"
+    },
+    {
+      "total_complexity": 166,
+      "func_count": 51,
+      "max_complexity": 15,
+      "file": "Code\\backend\\app\\services\\config_service.py"
+    },
+    {
+      "total_complexity": 159,
+      "func_count": 45,
+      "max_complexity": 19,
+      "file": "Code\\algorithms\\providers\\Python\\service\\job_api.py"
+    },
+    {
+      "total_complexity": 157,
+      "func_count": 27,
+      "max_complexity": 60,
+      "file": "Code\\backend\\app\\weatherengine\\client.py"
+    },
+    {
+      "total_complexity": 149,
+      "func_count": 36,
+      "max_complexity": 21,
+      "file": "Code\\backend\\app\\services\\workflow_request_resolver.py"
+    },
+    {
+      "total_complexity": 146,
+      "func_count": 25,
+      "max_complexity": 21,
+      "file": "Code\\backend\\app\\services\\python_provider_bridge_service.py"
+    },
+    {
+      "total_complexity": 144,
+      "func_count": 43,
+      "max_complexity": 15,
+      "file": "Code\\backend\\app\\gee\\core\\src\\webgis_gee\\nodes\\sample_nodes.py"
+    },
+    {
+      "total_complexity": 141,
+      "func_count": 17,
+      "max_complexity": 45,
+      "file": "Code\\algorithms\\providers\\Python\\data_access\\universal_reader.py"
+    },
+    {
+      "total_complexity": 136,
+      "func_count": 19,
+      "max_complexity": 60,
+      "file": "Code\\backend\\app\\services\\download_service.py"
+    },
+    {
+      "total_complexity": 134,
+      "func_count": 38,
+      "max_complexity": 21,
+      "file": "Code\\algorithms\\providers\\Python\\output\\__init__.py"
+    },
+    {
+      "total_complexity": 130,
+      "func_count": 26,
+      "max_complexity": 22,
+      "file": "Code\\algorithms\\providers\\Python\\runner\\dispatch.py"
+    },
+    {
+      "total_complexity": 127,
+      "func_count": 29,
+      "max_complexity": 15,
+      "file": "Code\\algorithms\\providers\\Python\\ingest\\daily_bundle.py"
+    },
+    {
+      "total_complexity": 127,
+      "func_count": 11,
+      "max_complexity": 52,
+      "file": "Code\\algorithms\\providers\\Python\\data_access\\prepared_input.py"
+    },
+    {
+      "total_complexity": 119,
+      "func_count": 55,
+      "max_complexity": 9,
+      "file": "Code\\backend\\app\\gee\\core\\src\\webgis_gee\\runtime\\resources.py"
+    }
+  ],
+  "dangerous_functions": [
+    {
+      "complexity": 60,
+      "rank": "F",
+      "file": "Code\\backend\\app\\weatherengine\\client.py",
+      "line": 473,
+      "name": "fetch_grid_forecast"
+    },
+    {
+      "complexity": 60,
+      "rank": "F",
+      "file": "Code\\backend\\app\\services\\download_service.py",
+      "line": 171,
+      "name": "complete_follow_up_task"
+    },
+    {
+      "complexity": 52,
+      "rank": "F",
+      "file": "Code\\algorithms\\providers\\Python\\data_access\\prepared_input.py",
+      "line": 108,
+      "name": "_summarize_loaded_value"
+    },
+    {
+      "complexity": 45,
+      "rank": "F",
+      "file": "Code\\algorithms\\providers\\Python\\workflow\\panel_schema.py",
+      "line": 36,
+      "name": "build_workflow_input_panel_schema"
+    },
+    {
+      "complexity": 45,
+      "rank": "F",
+      "file": "Code\\algorithms\\providers\\Python\\modules\\statistics.py",
+      "line": 106,
+      "name": "StatisticsModule"
+    },
+    {
+      "complexity": 45,
+      "rank": "F",
+      "file": "Code\\algorithms\\providers\\Python\\data_access\\universal_reader.py",
+      "line": 218,
+      "name": "_read_netcdf"
+    },
+    {
+      "complexity": 44,
+      "rank": "F",
+      "file": "Code\\algorithms\\providers\\Python\\modules\\statistics.py",
+      "line": 117,
+      "name": "execute"
+    },
+    {
+      "complexity": 41,
+      "rank": "F",
+      "file": "Code\\algorithms\\providers\\Python\\algorithms\\omega.py",
+      "line": 1484,
+      "name": "retrieve_omega_pixel_timeseries"
+    },
+    {
+      "complexity": 40,
+      "rank": "E",
+      "file": "Tools\\select_download_candidates.py",
+      "line": 117,
+      "name": "select_candidates"
+    },
+    {
+      "complexity": 32,
+      "rank": "E",
+      "file": "Code\\backend\\app\\weatherengine\\client.py",
+      "line": 280,
+      "name": "fetch_point_forecast"
+    },
+    {
+      "complexity": 31,
+      "rank": "E",
+      "file": "Code\\backend\\app\\services\\remote_storage_credentials_repository.py",
+      "line": 152,
+      "name": "upsert"
+    },
+    {
+      "complexity": 31,
+      "rank": "E",
+      "file": "Code\\algorithms\\providers\\Python\\modules\\export.py",
+      "line": 165,
+      "name": "DataExportModule"
+    },
+    {
+      "complexity": 30,
+      "rank": "D",
+      "file": "Code\\backend\\app\\weatherengine\\service.py",
+      "line": 678,
+      "name": "build_wind_geojson_from_grid"
+    },
+    {
+      "complexity": 30,
+      "rank": "D",
+      "file": "Code\\algorithms\\providers\\Python\\modules\\export.py",
+      "line": 176,
+      "name": "execute"
+    },
+    {
+      "complexity": 29,
+      "rank": "D",
+      "file": "Code\\backend\\app\\gee\\core\\src\\webgis_gee\\workflow\\versioning.py",
+      "line": 387,
+      "name": "_apply_schema_upgrade_step"
+    },
+    {
+      "complexity": 28,
+      "rank": "D",
+      "file": "Code\\shared\\remote_sources\\uri.py",
+      "line": 69,
+      "name": "parse_remote_uri"
+    },
+    {
+      "complexity": 27,
+      "rank": "D",
+      "file": "Code\\algorithms\\providers\\Python\\data_access\\prepared_input.py",
+      "line": 214,
+      "name": "_build_loaded_value_highlights"
+    },
+    {
+      "complexity": 27,
+      "rank": "D",
+      "file": "Code\\algorithms\\providers\\Python\\algorithms\\station.py",
+      "line": 285,
+      "name": "build_station_validation_outputs"
+    },
+    {
+      "complexity": 27,
+      "rank": "D",
+      "file": "Code\\algorithms\\providers\\Python\\algorithms\\omega.py",
+      "line": 2144,
+      "name": "execute_omega_retrieval"
+    },
+    {
+      "complexity": 26,
+      "rank": "D",
+      "file": "Code\\backend\\app\\gee\\core\\src\\webgis_gee\\workflow\\versioning.py",
+      "line": 1449,
+      "name": "_build_node_compatibility_contract"
+    },
+    {
+      "complexity": 24,
+      "rank": "D",
+      "file": "Code\\backend\\app\\services\\failure_classifier.py",
+      "line": 40,
+      "name": "classify"
+    },
+    {
+      "complexity": 24,
+      "rank": "D",
+      "file": "Code\\algorithms\\providers\\Python\\algorithms\\omega.py",
+      "line": 1240,
+      "name": "qc_block_jacobian_cond"
+    },
+    {
+      "complexity": 23,
+      "rank": "D",
+      "file": "Code\\backend\\app\\services\\weather_bridge_service.py",
+      "line": 82,
+      "name": "_execute_workflow"
+    },
+    {
+      "complexity": 23,
+      "rank": "D",
+      "file": "Code\\algorithms\\providers\\Python\\modules\\station.py",
+      "line": 72,
+      "name": "StationDailyModule"
+    },
+    {
+      "complexity": 23,
+      "rank": "D",
+      "file": "Code\\algorithms\\providers\\Python\\modules\\omega.py",
+      "line": 46,
+      "name": "OmegaBlockModule"
+    },
+    {
+      "complexity": 22,
+      "rank": "D",
+      "file": "Tools\\inspect_all_data.py",
+      "line": 190,
+      "name": "check_geotiff"
+    },
+    {
+      "complexity": 22,
+      "rank": "D",
+      "file": "Tools\\SyncData.py",
+      "line": 494,
+      "name": "_sync_single_file"
+    },
+    {
+      "complexity": 22,
+      "rank": "D",
+      "file": "Code\\algorithms\\providers\\Python\\service\\result_dto.py",
+      "line": 447,
+      "name": "_build_storage_fields"
+    },
+    {
+      "complexity": 22,
+      "rank": "D",
+      "file": "Code\\algorithms\\providers\\Python\\runner\\dispatch.py",
+      "line": 503,
+      "name": "run_job"
+    },
+    {
+      "complexity": 22,
+      "rank": "D",
+      "file": "Code\\algorithms\\providers\\Python\\modules\\station.py",
+      "line": 82,
+      "name": "execute"
+    },
+    {
+      "complexity": 22,
+      "rank": "D",
+      "file": "Code\\algorithms\\providers\\Python\\modules\\omega.py",
+      "line": 62,
+      "name": "execute"
+    },
+    {
+      "complexity": 21,
+      "rank": "D",
+      "file": "Code\\backend\\app\\weatherengine\\field_mapping.py",
+      "line": 108,
+      "name": "assemble_grid_from_point_payloads"
+    },
+    {
+      "complexity": 21,
+      "rank": "D",
+      "file": "Code\\backend\\app\\services\\workflow_request_resolver.py",
+      "line": 171,
+      "name": "_populate_python_provider_request"
+    },
+    {
+      "complexity": 21,
+      "rank": "D",
+      "file": "Code\\backend\\app\\services\\python_provider_bridge_service.py",
+      "line": 106,
+      "name": "execute"
+    },
+    {
+      "complexity": 21,
+      "rank": "D",
+      "file": "Code\\algorithms\\providers\\Python\\publish\\raster_writer.py",
+      "line": 321,
+      "name": "generate_bytes"
+    },
+    {
+      "complexity": 21,
+      "rank": "D",
+      "file": "Code\\algorithms\\providers\\Python\\output\\__init__.py",
+      "line": 254,
+      "name": "publish"
+    },
+    {
+      "complexity": 21,
+      "rank": "D",
+      "file": "Code\\algorithms\\providers\\Python\\data_access\\universal_reader.py",
+      "line": 134,
+      "name": "_read_hdf5"
+    },
+    {
+      "complexity": 21,
+      "rank": "D",
+      "file": "Code\\algorithms\\providers\\Python\\data_access\\prepared_input.py",
+      "line": 186,
+      "name": "_build_loaded_value_title"
+    },
+    {
+      "complexity": 20,
+      "rank": "C",
+      "file": "Code\\algorithms\\providers\\Python\\workflow\\ui_metadata.py",
+      "line": 215,
+      "name": "_control_type"
+    },
+    {
+      "complexity": 20,
+      "rank": "C",
+      "file": "Code\\algorithms\\providers\\Python\\pipelines\\station_products.py",
+      "line": 62,
+      "name": "execute"
+    },
+    {
+      "complexity": 20,
+      "rank": "C",
+      "file": "Code\\algorithms\\providers\\Python\\modules\\block_inversion.py",
+      "line": 45,
+      "name": "BlockInversionModule"
+    },
+    {
+      "complexity": 20,
+      "rank": "C",
+      "file": "Code\\algorithms\\providers\\Python\\data_access\\sources\\minio.py",
+      "line": 40,
+      "name": "materialize"
+    },
+    {
+      "complexity": 19,
+      "rank": "C",
+      "file": "launch.py",
+      "line": 872,
+      "name": "cmd_logs"
+    },
+    {
+      "complexity": 19,
+      "rank": "C",
+      "file": "Tools\\verify_overlays_api.py",
+      "line": 21,
+      "name": "main"
+    },
+    {
+      "complexity": 19,
+      "rank": "C",
+      "file": "Tools\\reorganize_local_data.py",
+      "line": 37,
+      "name": "main"
+    },
+    {
+      "complexity": 19,
+      "rank": "C",
+      "file": "Tools\\SyncData.py",
+      "line": 638,
+      "name": "run"
+    },
+    {
+      "complexity": 19,
+      "rank": "C",
+      "file": "Tools\\SyncData.py",
+      "line": 422,
+      "name": "resolve_paths"
+    },
+    {
+      "complexity": 19,
+      "rank": "C",
+      "file": "Code\\backend\\app\\services\\tile_proxy_service.py",
+      "line": 331,
+      "name": "fetch_tile"
+    },
+    {
+      "complexity": 19,
+      "rank": "C",
+      "file": "Code\\backend\\app\\services\\overlay_registry.py",
+      "line": 162,
+      "name": "resolve_value"
+    },
+    {
+      "complexity": 19,
+      "rank": "C",
+      "file": "Code\\backend\\app\\gee\\core\\src\\webgis_gee\\workflow\\versioning.py",
+      "line": 751,
+      "name": "_update_compatibility_snapshot"
+    },
+    {
+      "complexity": 19,
+      "rank": "C",
+      "file": "Code\\backend\\app\\gee\\core\\src\\webgis_gee\\workflow\\validator.py",
+      "line": 23,
+      "name": "validate"
+    },
+    {
+      "complexity": 19,
+      "rank": "C",
+      "file": "Code\\algorithms\\providers\\Python\\service\\job_api.py",
+      "line": 672,
+      "name": "_merge_panel_field_group"
+    },
+    {
+      "complexity": 19,
+      "rank": "C",
+      "file": "Code\\algorithms\\providers\\Python\\modules\\block_inversion.py",
+      "line": 61,
+      "name": "execute"
+    },
+    {
+      "complexity": 19,
+      "rank": "C",
+      "file": "Code\\algorithms\\providers\\Python\\contracts\\template_deriver.py",
+      "line": 117,
+      "name": "validate_request_against_template"
+    },
+    {
+      "complexity": 19,
+      "rank": "C",
+      "file": "Code\\algorithms\\providers\\Python\\contracts\\api_errors.py",
+      "line": 98,
+      "name": "_build_suggested_fix"
+    },
+    {
+      "complexity": 18,
+      "rank": "C",
+      "file": "Code\\backend\\app\\services\\remote_auth_resolver.py",
+      "line": 31,
+      "name": "resolve_remote_auth"
+    },
+    {
+      "complexity": 18,
+      "rank": "C",
+      "file": "Code\\backend\\app\\gee\\core\\src\\webgis_gee\\gee\\nodes.py",
+      "line": 367,
+      "name": "execute"
+    },
+    {
+      "complexity": 18,
+      "rank": "C",
+      "file": "Code\\algorithms\\providers\\Python\\ingest\\timeseries_bundle.py",
+      "line": 22,
+      "name": "build_timeseries_bundle"
+    },
+    {
+      "complexity": 18,
+      "rank": "C",
+      "file": "Code\\algorithms\\providers\\Python\\algorithms\\station.py",
+      "line": 20,
+      "name": "filter_station_records"
+    },
+    {
+      "complexity": 17,
+      "rank": "C",
+      "file": "Tools\\run_project_omega.py",
+      "line": 223,
+      "name": "stage4_cross_analysis"
+    },
+    {
+      "complexity": 17,
+      "rank": "C",
+      "file": "Code\\backend\\app\\gee\\core\\src\\webgis_gee\\workflow\\versioning.py",
+      "line": 1522,
+      "name": "_build_node_saveback_action"
+    },
+    {
+      "complexity": 17,
+      "rank": "C",
+      "file": "Code\\algorithms\\providers\\Python\\service\\result_dto.py",
+      "line": 152,
+      "name": "_build_conversion_trace_panel_dataset"
+    },
+    {
+      "complexity": 17,
+      "rank": "C",
+      "file": "Code\\algorithms\\providers\\Python\\service\\job_api.py",
+      "line": 593,
+      "name": "_merge_request_templates"
+    },
+    {
+      "complexity": 17,
+      "rank": "C",
+      "file": "Code\\algorithms\\providers\\Python\\ingest\\station.py",
+      "line": 48,
+      "name": "parse_ismn_stm_file"
+    },
+    {
+      "complexity": 16,
+      "rank": "C",
+      "file": "launch.py",
+      "line": 717,
+      "name": "cmd_start"
+    },
+    {
+      "complexity": 16,
+      "rank": "C",
+      "file": "Tools\\run_project_omega.py",
+      "line": 376,
+      "name": "stage5_station_sampling"
+    },
+    {
+      "complexity": 16,
+      "rank": "C",
+      "file": "Tools\\remote_data_scanner.py",
+      "line": 536,
+      "name": "download_files"
+    },
+    {
+      "complexity": 16,
+      "rank": "C",
+      "file": "Tools\\remote_data_scanner.py",
+      "line": 313,
+      "name": "_scan_dir"
+    },
+    {
+      "complexity": 16,
+      "rank": "C",
+      "file": "Tools\\inspect_all_data.py",
+      "line": 21,
+      "name": "check_smap"
+    },
+    {
+      "complexity": 16,
+      "rank": "C",
+      "file": "Tools\\download_remaining.py",
+      "line": 134,
+      "name": "main"
+    },
+    {
+      "complexity": 16,
+      "rank": "C",
+      "file": "Code\\backend\\app\\weatherengine\\service.py",
+      "line": 533,
+      "name": "_build_map_layer_outputs"
+    },
+    {
+      "complexity": 16,
+      "rank": "C",
+      "file": "Code\\backend\\app\\services\\workflow_request_resolver.py",
+      "line": 102,
+      "name": "describe_layer_run_readiness"
+    },
+    {
+      "complexity": 16,
+      "rank": "C",
+      "file": "Code\\backend\\app\\services\\workflow\\runtime_status_service.py",
+      "line": 66,
+      "name": "get_runtime_status"
+    },
+    {
+      "complexity": 16,
+      "rank": "C",
+      "file": "Code\\backend\\app\\services\\workflow\\persistence_service.py",
+      "line": 94,
+      "name": "extract_exception_diagnostics"
+    },
+    {
+      "complexity": 16,
+      "rank": "C",
+      "file": "Code\\backend\\app\\gee\\core\\src\\webgis_gee\\workflow\\versioning.py",
+      "line": 131,
+      "name": "validate_compatibility"
+    },
+    {
+      "complexity": 16,
+      "rank": "C",
+      "file": "Code\\backend\\app\\gee\\core\\src\\webgis_gee\\workflow\\versioning.py",
+      "line": 1332,
+      "name": "_update_saveback_terminal_plan"
+    },
+    {
+      "complexity": 16,
+      "rank": "C",
+      "file": "Code\\backend\\app\\gee\\core\\src\\webgis_gee\\workflow\\versioning.py",
+      "line": 670,
+      "name": "_normalize_node_metadata_defaults"
+    },
+    {
+      "complexity": 16,
+      "rank": "C",
+      "file": "Code\\backend\\app\\gee\\core\\src\\webgis_gee\\application\\services.py",
+      "line": 150,
+      "name": "execute_workflow"
+    },
+    {
+      "complexity": 16,
+      "rank": "C",
+      "file": "Code\\algorithms\\providers\\Python\\modules\\ndvi.py",
+      "line": 134,
+      "name": "NdviDailyModule"
+    },
+    {
+      "complexity": 16,
+      "rank": "C",
+      "file": "Code\\algorithms\\providers\\Python\\modules\\fitting.py",
+      "line": 50,
+      "name": "_load_input_array"
+    },
+    {
+      "complexity": 16,
+      "rank": "C",
+      "file": "Code\\algorithms\\providers\\Python\\data_access\\universal_reader.py",
+      "line": 450,
+      "name": "_read_mat"
+    },
+    {
+      "complexity": 16,
+      "rank": "C",
+      "file": "Code\\algorithms\\providers\\Python\\contracts\\validation.py",
+      "line": 91,
+      "name": "_validate_template"
+    }
+  ]
+}

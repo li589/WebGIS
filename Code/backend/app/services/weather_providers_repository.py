@@ -20,7 +20,7 @@
 
 注意：
 - Provider 实例本身由代码定义（如 ``OpenMeteoProvider`` 类），数据库仅存"覆盖配置"
-- 内置 Provider（如 open-meteo）的 display_name/type 在代码中已声明，DB 字段仅作冗余展示
+- 内置 Provider（如 open-meteo-online / open-meteo-local）的 display_name/type 在代码中已声明，DB 字段仅作冗余展示
 - 第三方 Provider 的元数据完全由 DB 提供（未来扩展）
 """
 

@@ -48,66 +48,81 @@ const TRAIL_LENGTH = 32
  */
 const AGE_BAND_YOUNG_RATIO = 0.12
 const AGE_BAND_OLD_RATIO = 0.78
-const AGE_BAND_ALPHAS = [0.22, 1.0, 0.30] as const
+const AGE_BAND_ALPHAS = [0.45, 1.0, 0.42] as const
 
-/** 粒子默认配置（稀疏柔和风格：少量粒子 + 慢速流动 + 细线） */
+/**
+ * 粒子默认配置（对照 Windy.app WindMap.js）：
+ * - 近白统一粒子色（色场交给底层 heatmap，避免彩虹拖尾「乱」）
+ * - particlesPerMegapixel≈700 → 折合视口约 6/°²，勿过密
+ * - trailFade≈0.96 → 较慢衰减、线条更干净
+ */
 const DEFAULT_PARTICLE_OPTIONS = {
-  particleCount: 800,
+  particleCount: 900,
   maxAge: 110,
-  speedScale: 0.028,
-  fadeAlpha: 0.024,
-  lineWidth: 1.2,
+  speedScale: 0.026,
+  fadeAlpha: 0.018,
+  lineWidth: 1.35,
 } as const
 
 /** 粒子数量上限（防止过大网格导致性能问题） */
-const MAX_PARTICLE_COUNT = 2000
+const MAX_PARTICLE_COUNT = 2200
 
 /** 粒子数量下限 */
-const MIN_PARTICLE_COUNT = 300
+const MIN_PARTICLE_COUNT = 320
+
+/** 对照 WindMap dropRate / dropRateBump：高风速区更频繁重生 */
+const PARTICLE_DROP_RATE = 0.004
+const PARTICLE_DROP_RATE_BUMP = 0.014
+const PARTICLE_DROP_SPEED_REF = 25
 
 /** DPI 上限（防止超高分屏幕创建过大 canvas） */
 const MAX_PIXEL_RATIO = 2
 
 /** zoomFactor 上限，防止低缩放级别下粒子速度过快导致视觉混乱（线条抽搐） */
-const MAX_ZOOM_FACTOR = 4
+const MAX_ZOOM_FACTOR = 3.2
 
 /**
  * 根据网格面积动态计算粒子数量。
- * 面积越大粒子越多，但受上限约束。
- * 密度约为每平方度 5 个粒子，保持稀疏柔和的视觉效果，
- * 避免密集区域粒子轨迹互相交错造成视觉混乱。
+ * 密度约每平方度 6 个（对照 Windy ~700/MP 的观感），受上下限约束。
  */
 function computeParticleCountForGrid(grid: WindGrid): number {
   const area = Math.abs(grid.north - grid.south) * Math.abs(grid.east - grid.west)
-  const count = Math.round(area * 5)
+  const count = Math.round(area * 6)
   return Math.min(MAX_PARTICLE_COUNT, Math.max(MIN_PARTICLE_COUNT, count))
 }
 
-/** 静风速度阈值（m/s）：低于此值视为静风区域，重置粒子以避免聚集。
- *  海洋低风速区粒子易停滞堆积，重置后重新随机分布，使海域曲线更均匀。 */
-const MIN_WIND_SPEED_FOR_RENDER = 0.5
+/** 供单测读取密度计算（不导出内部网格构建细节） */
+export function __testComputeParticleCountForArea(areaDeg2: number): number {
+  const count = Math.round(areaDeg2 * 6)
+  return Math.min(MAX_PARTICLE_COUNT, Math.max(MIN_PARTICLE_COUNT, count))
+}
+
+/**
+ * 真静风 / 无数据阈值（m/s）。
+ * 旧值 0.5 会把大片海洋「弱风」当成静风并不断 resetParticle，
+ * 粒子被反复踢出海域 → 海面几乎无线条，但 heatmap 色底仍显示「已加载」。
+ * 仅对接近 0 的格子跳过绘制；弱风用下方视觉下限保证短迹可见。
+ */
+const MIN_WIND_SPEED_FOR_RENDER = 0.05
+/** 弱风平流视觉下限（m/s）：略抬位移保证海面可见，但勿过高以免「假风」乱线 */
+const MIN_ADVECT_SPEED_FOR_TRAIL = 0.35
 
 /** 粒子寿命随机上界增量（使寿命有随机分布） */
 const MAX_AGE_RANDOM_RANGE = 20
 
-/** 默认颜色梯度（参考 Windy.com 风速色阶，蓝→青→绿→黄→红→紫） */
+/**
+ * 默认近白粒子（对照 Windy particleColor [1,1,1,0.8]）。
+ * 风速着色交给底层 heatmap；粒子只表达流向。
+ */
 const DEFAULT_PARTICLE_COLORS = [
-  '#6271b8', // 0 m/s   — 蓝
-  '#3d6ea3', // 2.5     — 深蓝
-  '#4a94aa', // 5       — 青蓝
-  '#4a9294', // 7.5     — 青
-  '#4d8e7c', // 10      — 青绿
-  '#4ca44c', // 12.5    — 绿
-  '#67a436', // 15      — 黄绿
-  '#a28740', // 17.5    — 黄
-  '#a26d5c', // 20      — 橙
-  '#8d3f5c', // 25      — 红
-  '#974b91', // 30      — 品红
-  '#5f64a0', // 35+     — 紫
+  '#f2f6ff',
+  '#f2f6ff',
+  '#ffffff',
+  '#ffffff',
 ]
 
-/** 默认风速断点（m/s），与颜色梯度对应 */
-const DEFAULT_WIND_SPEED_STOPS = [0, 2.5, 5, 7.5, 10, 12.5, 15, 17.5, 20, 25, 30, 35]
+/** 默认风速断点（m/s），与近白色阶对应（色差极小，仅作插值锚点） */
+const DEFAULT_WIND_SPEED_STOPS = [0, 8, 20, 35]
 
 // ── 类型 ─────────────────────────────────────────────────
 
@@ -483,8 +498,7 @@ export class WindParticleCanvas {
     this.movestartHandler = () => {
       this.isMapInteracting = true
       debugLog('WindParticleCanvas', 'movestart')
-      // 缩放/平移开始时立即清除画布，防止动画期间旧尺寸的轨迹残留（旧 canvas 位置/大小已不匹配新视图）
-      this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height)
+      // 不再 clearRect：平移时由 move 重投影 + animate 继续画，避免「已加载区域闪空」
     }
     this.moveHandler = () => {
       // 用独立的 rAF 节流，避免与 animate 循环的 rafId 冲突
@@ -492,36 +506,21 @@ export class WindParticleCanvas {
       this.moveRafId = requestAnimationFrame(() => {
         this.moveRafId = null
         if (!this.isMapInteracting || !this.grid) return
-        // 平移/缩放期间持续更新 canvas 位置，使粒子跟随地图移动
-        this.updateCanvasBounds()
-        // 重新投影粒子到新位置（只保留最后一个点，避免轨迹拉伸）
-        const { offsetX, offsetY } = this.layout
-        const dpr = this.pixelRatio
-        for (const p of this.particles) {
-          const screen = this.map.project([p.lon + this.lonWrapOffset, p.lat])
-          const x = (screen.x - offsetX) * dpr
-          const y = (screen.y - offsetY) * dpr
-          p.trail = [x, y]
-        }
+        const sizeChanged = this.updateCanvasBounds()
+        this.reprojectParticleTrailsForInteract()
+        // 清旧屏坐标残影后立刻重画一帧（dt=0：不推进、不淡化），避免缩放期间整幅空白
         this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height)
+        this.draw(0)
+        void sizeChanged
       })
     }
     this.moveendHandler = () => {
       this.isMapInteracting = false
       debugLog('WindParticleCanvas', 'moveend')
       this.updateCanvasBounds()
-      // 地图交互结束后清除 canvas，避免旧位置的轨迹残留
-      this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height)
-      // 重置所有粒子的轨迹，避免跨帧拖尾跳变
+      // 重置为可画的短迹（≥2 点），下一帧 animate 再积累；勿只留单点导致短暂空白
       if (this.grid) {
-        const { offsetX, offsetY } = this.layout
-        const dpr = this.pixelRatio
-        for (const p of this.particles) {
-          const screen = this.map.project([p.lon + this.lonWrapOffset, p.lat])
-          const x = (screen.x - offsetX) * dpr
-          const y = (screen.y - offsetY) * dpr
-          p.trail = [x, y]
-        }
+        this.reprojectParticleTrailsForInteract()
       }
       const zoom = this.map.getZoom()
       const targetCount = this.resolveParticleCountForZoom(zoom)
@@ -545,60 +544,100 @@ export class WindParticleCanvas {
     this.map.on(MAP_EVENT_RESIZE, this.resizeHandler)
   }
 
-  private updateCanvasBounds(): void {
-    const oldLayout = this.layout
-    if (!this.grid) {
-      const container = this.map.getContainer()
-      this.layout = {
-        width: container.clientWidth,
-        height: container.clientHeight,
-        offsetX: 0,
-        offsetY: 0,
-        lonWrapOffset: 0,
-      }
-      this.lonWrapOffset = 0
-      if (oldLayout.width !== this.layout.width || oldLayout.height !== this.layout.height) {
-        debugLog('WindParticleCanvas', 'updateCanvasBounds (no grid)', `${this.layout.width}x${this.layout.height}`)
-      }
-      this.resizeCanvas()
-      return
+  /**
+   * 粒子层使用全视口 canvas（仅从 computeCanvasLayout 取 lonWrapOffset）。
+   * 若按数据 bbox 裁切，平移时 width/height 每帧变化 → 重建缓冲区 → 已加载区域闪空。
+   */
+  private updateCanvasBounds(): boolean {
+    const container = this.map.getContainer()
+    const vw = container.clientWidth
+    const vh = container.clientHeight
+    let lonWrapOffset = 0
+    if (this.grid) {
+      lonWrapOffset = computeCanvasLayout(
+        this.map,
+        this.grid.west,
+        this.grid.east,
+        this.grid.south,
+        this.grid.north,
+      ).lonWrapOffset
     }
-    this.layout = computeCanvasLayout(
-      this.map,
-      this.grid.west,
-      this.grid.east,
-      this.grid.south,
-      this.grid.north,
-    )
-    // 同步 lonWrapOffset，供 initParticles/resetParticle/draw 中的 project 调用使用
-    this.lonWrapOffset = this.layout.lonWrapOffset
-    if (oldLayout.width !== this.layout.width || oldLayout.height !== this.layout.height || oldLayout.offsetX !== this.layout.offsetX || oldLayout.offsetY !== this.layout.offsetY || oldLayout.lonWrapOffset !== this.layout.lonWrapOffset) {
-      debugLog('WindParticleCanvas', 'updateCanvasBounds', `${oldLayout.width}x${oldLayout.height}@${oldLayout.offsetX},${oldLayout.offsetY}`, '->', `${this.layout.width}x${this.layout.height}@${this.layout.offsetX},${this.layout.offsetY}`, 'wrap', this.lonWrapOffset)
+    const old = this.layout
+    this.layout = {
+      width: vw,
+      height: vh,
+      offsetX: 0,
+      offsetY: 0,
+      lonWrapOffset,
     }
-    this.resizeCanvas()
+    this.lonWrapOffset = lonWrapOffset
+    if (
+      old.width !== vw
+      || old.height !== vh
+      || old.lonWrapOffset !== lonWrapOffset
+    ) {
+      debugLog('WindParticleCanvas', 'updateCanvasBounds', `${vw}x${vh}`, 'wrap', lonWrapOffset)
+    }
+    return this.resizeCanvas()
   }
 
-  private resizeCanvas(): void {
+  /** @returns 是否因尺寸变化而重建了 canvas 缓冲区 */
+  private resizeCanvas(): boolean {
     const { width, height, offsetX, offsetY } = this.layout
     const dpr = this.pixelRatio
-    this.canvas.width = Math.round(width * dpr)
-    this.canvas.height = Math.round(height * dpr)
+    const nextW = Math.round(width * dpr)
+    const nextH = Math.round(height * dpr)
+    const sizeChanged = this.canvas.width !== nextW || this.canvas.height !== nextH
+    // 赋值 canvas.width/height 会清空缓冲区；尺寸不变时只改 CSS 位移，避免平移闪空
+    if (sizeChanged) {
+      this.canvas.width = nextW
+      this.canvas.height = nextH
+    }
     this.canvas.style.width = `${width}px`
     this.canvas.style.height = `${height}px`
     this.canvas.style.left = `${offsetX}px`
     this.canvas.style.top = `${offsetY}px`
-    // 清除画布（尺寸变化后内容已失效）
-    this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height)
+    return sizeChanged
   }
 
   private resolveParticleCountForZoom(zoom: number): number {
     if (!this.grid) return DEFAULT_PARTICLE_OPTIONS.particleCount
     const baseCount = computeParticleCountForGrid(this.grid)
-    // 低缩放级别降级粒子数量，避免全球视图下视觉混乱和性能下降
-    if (zoom < 2) return Math.min(baseCount, 160)
-    if (zoom < 3) return Math.min(baseCount, 320)
-    if (zoom < 5) return Math.min(baseCount, 600)
+    // 低缩放降密度，避免全球/大范围视图线条糊成一片
+    if (zoom < 2) return Math.min(baseCount, 280)
+    if (zoom < 3) return Math.min(baseCount, 480)
+    if (zoom < 5) return Math.min(baseCount, 900)
     return baseCount
+  }
+
+  /**
+   * 交互（平移/缩放）时把粒子轨迹重投影为「当前位置 + 沿风向短 stub」。
+   * 单点 trail 画不出线；缩放中若只留 [x,y] 会看起来像闪空后消失。
+   */
+  private reprojectParticleTrailsForInteract(): void {
+    if (!this.grid) return
+    const { offsetX, offsetY } = this.layout
+    const dpr = this.pixelRatio
+    const stubDeg = 0.04
+    for (const p of this.particles) {
+      const wind = interpolateWind(this.grid, p.lat, p.lon)
+      const screen0 = this.map.project([p.lon + this.lonWrapOffset, p.lat])
+      const x0 = (screen0.x - offsetX) * dpr
+      const y0 = (screen0.y - offsetY) * dpr
+      if (!Number.isFinite(wind.speed) || wind.speed < MIN_WIND_SPEED_FOR_RENDER) {
+        p.trail = [x0, y0, x0 + 1, y0]
+        continue
+      }
+      const advectSpeed = Math.max(wind.speed, MIN_ADVECT_SPEED_FOR_TRAIL)
+      const [u, v] = windToUV(advectSpeed, wind.direction)
+      const cosLat = Math.max(Math.cos(p.lat * DEG_TO_RAD), 0.1)
+      const lon1 = p.lon + (u / cosLat) * stubDeg
+      const lat1 = p.lat + v * stubDeg
+      const screen1 = this.map.project([lon1 + this.lonWrapOffset, lat1])
+      const x1 = (screen1.x - offsetX) * dpr
+      const y1 = (screen1.y - offsetY) * dpr
+      p.trail = [x0, y0, x1, y1]
+    }
   }
 
   private createRandomParticle(): Particle {
@@ -613,7 +652,7 @@ export class WindParticleCanvas {
     return {
       lat,
       lon,
-      trail: [x, y],
+      trail: [x, y, x + 1, y],
       age: Math.floor(Math.random() * this.options.maxAge),
       maxAge: this.options.maxAge + Math.floor(Math.random() * MAX_AGE_RANDOM_RANGE),
     }
@@ -640,7 +679,7 @@ export class WindParticleCanvas {
     const screen = this.map.project([p.lon + this.lonWrapOffset, p.lat])
     const x = (screen.x - offsetX) * dpr
     const y = (screen.y - offsetY) * dpr
-    p.trail = [x, y]
+    p.trail = [x, y, x + 1, y]
     p.age = 0
   }
 
@@ -667,10 +706,11 @@ export class WindParticleCanvas {
     }
 
     if (this.isMapInteracting) {
+      // 交互中仍保持可见：重投影短迹后清屏重画（避免 alpha 叠加以致糊成一片）
       this.lastDrawTime = now
-      if (this.debugFrame % 60 === 0) {
-        debugLog('WindParticleCanvas', 'animate interacting', 'frame', this.debugFrame)
-      }
+      this.reprojectParticleTrailsForInteract()
+      this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height)
+      this.draw(0)
       this.rafId = requestAnimationFrame(this.animate)
       return
     }
@@ -711,16 +751,18 @@ export class WindParticleCanvas {
       return
     }
 
-    // 根据缩放级别动态调整速度比例：低 zoom 时粒子经纬度移动量需更大
-    // 使用更温和的指数（5-zoom 而非 6-zoom），配合 MAX_ZOOM_FACTOR=4 防止低 zoom 时速度过快导致线条抽搐
-    const zoomFactor = Math.min(Math.pow(2, 5 - zoom), MAX_ZOOM_FACTOR)
+    // 根据缩放级别动态调整速度比例：低 zoom 时粒子经纬度移动量需更大，但封顶更严以防抽搐
+    const zoomFactor = Math.min(Math.pow(2, Math.max(0, 4.2 - zoom)), 2.4)
     const scaledSpeed = speedScale * zoomFactor * dt
+    const freezeFrame = dt <= 0
 
-    // === 1. 拖尾衰减：destination-out 模式淡化旧轨迹 ===
-    ctx.globalCompositeOperation = 'destination-out'
-    ctx.globalAlpha = Math.min(fadeAlpha * dt, 0.15)
-    ctx.fillStyle = '#000'
-    ctx.fillRect(0, 0, this.canvas.width, this.canvas.height)
+    // === 1. 拖尾衰减：destination-out 模式淡化旧轨迹（冻结帧不淡化，避免缩放时被擦光）===
+    if (!freezeFrame) {
+      ctx.globalCompositeOperation = 'destination-out'
+      ctx.globalAlpha = Math.min(fadeAlpha * dt, 0.15)
+      ctx.fillStyle = '#000'
+      ctx.fillRect(0, 0, this.canvas.width, this.canvas.height)
+    }
 
     // === 2. 更新粒子位置 & 收集轨迹到颜色分组 ===
     ctx.globalCompositeOperation = 'source-over'
@@ -748,67 +790,72 @@ export class WindParticleCanvas {
     for (const p of this.particles) {
       const wind = interpolateWind(grid, p.lat, p.lon)
 
-      // 静风区域重置粒子：避免粒子在低风速区（如海洋静风带）停滞堆积，
-      // 重置后重新随机分布到网格内，使海域曲线分布更均匀，减少密集交错。
-      if (wind.speed < MIN_WIND_SPEED_FOR_RENDER) {
-        this.resetParticle(p)
+      // 仅真静风/无数据才跳过；弱风（常见于海洋）仍绘制，否则粒子会被「吸」到陆上风区
+      if (!Number.isFinite(wind.speed) || wind.speed < MIN_WIND_SPEED_FOR_RENDER) {
+        if (!freezeFrame) this.resetParticle(p)
         continue
       }
 
-      const [u, v] = windToUV(wind.speed, wind.direction)
+      if (!freezeFrame) {
+        const advectSpeed = Math.max(wind.speed, MIN_ADVECT_SPEED_FOR_TRAIL)
+        const [u, v] = windToUV(advectSpeed, wind.direction)
 
-      // 粒子在经纬度网格上运动：经向 1° 的地面距离随纬度变化（cos(lat)）。
-      // 这里对 u（东西向）按 cos(lat) 做补偿，使 Mercator 投影上的粒子轨迹
-      // 方向与真实风向一致，避免中高纬地区出现“竖直线条”。
-      const cosLat = Math.max(Math.cos(p.lat * DEG_TO_RAD), 0.1)
-      p.lon += (u / cosLat) * scaledSpeed
-      p.lat += v * scaledSpeed
-      p.age += dt
+        // 粒子在经纬度网格上运动：经向 1° 的地面距离随纬度变化（cos(lat)）。
+        // 这里对 u（东西向）按 cos(lat) 做补偿，使 Mercator 投影上的粒子轨迹
+        // 方向与真实风向一致，避免中高纬地区出现“竖直线条”。
+        const cosLat = Math.max(Math.cos(p.lat * DEG_TO_RAD), 0.1)
+        p.lon += (u / cosLat) * scaledSpeed
+        p.lat += v * scaledSpeed
+        p.age += dt
 
-      if (p.age > p.maxAge) {
-        this.resetParticle(p)
-        continue
-      }
+        // 高风速区提高重生概率，拖尾更“活”（对照 Windy dropRateBump）
+        const dropChance = (PARTICLE_DROP_RATE + PARTICLE_DROP_RATE_BUMP * Math.min(1, wind.speed / PARTICLE_DROP_SPEED_REF)) * dt
+        if (p.age > p.maxAge || Math.random() < dropChance) {
+          this.resetParticle(p)
+          continue
+        }
 
-      const wrapped = this.wrapParticle(p)
+        const wrapped = this.wrapParticle(p)
 
-      const screen = project([p.lon + this.lonWrapOffset, p.lat])
-      const cx = (screen.x - offsetX) * dpr
-      const cy = (screen.y - offsetY) * dpr
+        const screen = project([p.lon + this.lonWrapOffset, p.lat])
+        const cx = (screen.x - offsetX) * dpr
+        const cy = (screen.y - offsetY) * dpr
 
-      // wrap 后重置轨迹，避免跨网格边界的连线
-      if (wrapped) {
-        p.trail = [cx, cy]
-        continue
-      }
-
-      // 视口剔除
-      if (cx < -VIEWPORT_CULLING_MARGIN_PX || cx > w + VIEWPORT_CULLING_MARGIN_PX ||
-          cy < -VIEWPORT_CULLING_MARGIN_PX || cy > h + VIEWPORT_CULLING_MARGIN_PX) {
-        p.trail = [cx, cy]
-        continue
-      }
-
-      // 跳帧保护：如果新点与上一个点距离过大，重置轨迹
-      const trail = p.trail
-      const lastIdx = trail.length - 2
-      if (lastIdx >= 0) {
-        const dx = cx - trail[lastIdx]
-        const dy = cy - trail[lastIdx + 1]
-        if (Math.abs(dx) > MAX_TRAIL_LENGTH_PX || Math.abs(dy) > MAX_TRAIL_LENGTH_PX) {
+        // wrap 后重置轨迹，避免跨网格边界的连线
+        if (wrapped) {
           p.trail = [cx, cy]
           continue
         }
-      }
 
-      // 追加新点到轨迹
-      trail.push(cx, cy)
-      // 限制轨迹长度（保留最新的 TRAIL_LENGTH 个点）
-      if (trail.length > maxTrailPoints) {
-        trail.splice(0, trail.length - maxTrailPoints)
+        // 视口剔除
+        if (cx < -VIEWPORT_CULLING_MARGIN_PX || cx > w + VIEWPORT_CULLING_MARGIN_PX ||
+            cy < -VIEWPORT_CULLING_MARGIN_PX || cy > h + VIEWPORT_CULLING_MARGIN_PX) {
+          p.trail = [cx, cy]
+          continue
+        }
+
+        // 跳帧保护：如果新点与上一个点距离过大，重置轨迹
+        const trail = p.trail
+        const lastIdx = trail.length - 2
+        if (lastIdx >= 0) {
+          const dx = cx - trail[lastIdx]
+          const dy = cy - trail[lastIdx + 1]
+          if (Math.abs(dx) > MAX_TRAIL_LENGTH_PX || Math.abs(dy) > MAX_TRAIL_LENGTH_PX) {
+            p.trail = [cx, cy]
+            continue
+          }
+        }
+
+        // 追加新点到轨迹
+        trail.push(cx, cy)
+        // 限制轨迹长度（保留最新的 TRAIL_LENGTH 个点）
+        if (trail.length > maxTrailPoints) {
+          trail.splice(0, trail.length - maxTrailPoints)
+        }
       }
 
       // 轨迹至少需要 2 个点才能画线
+      const trail = p.trail
       if (trail.length < 4) continue
 
       // 按风速分组收集，并根据粒子年龄选择透明度阶段（淡入/正常/淡出）
@@ -829,7 +876,7 @@ export class WindParticleCanvas {
     // 年龄阶段透明度：新生粒子淡入、老化粒子淡出，避免台风眼、汇流、发散流等
     // 交汇点处粒子突然出现/消失造成视觉混乱
     // quadraticCurveTo 中点插值消除折线感，使旋转/交汇区域轨迹更流畅
-    const bandAlpha = 0.55
+    const bandAlpha = 0.78
     const colorCount = this.colorRgbCache.length - 1
     for (let bi = 0; bi < ageBandCount; bi++) {
       const ageAlpha = AGE_BAND_ALPHAS[bi]
@@ -840,7 +887,7 @@ export class WindParticleCanvas {
         const [r, g, bl] = this.colorRgbCache[i]
         ctx.strokeStyle = `rgb(${r},${g},${bl})`
         const speedRatio = i / Math.max(1, colorCount - 1)
-        ctx.globalAlpha = (bandAlpha + speedRatio * 0.25) * ageAlpha
+        ctx.globalAlpha = (bandAlpha + speedRatio * 0.22) * ageAlpha
 
         ctx.beginPath()
         let si = 0
@@ -890,40 +937,59 @@ export class WindParticleCanvas {
   /** 动态更新粒子色阶（配色方案切换时调用） */
   setColors(colors: string[]): void {
     if (!colors.length) return
+    const nextKey = colors.join('|')
+    const prevKey = (this.options.colors ?? []).join('|')
+    if (nextKey === prevKey && this.colorRgbCache.length === colors.length) {
+      return
+    }
     this.options.colors = colors
     this.colorRgbCache = colors.map(hexToRgb)
-    // 清除画布以避免旧色阶残留
+    // 色阶段数必须与 colorStops 对齐，否则 speedToColorIndex 会越界丢线
+    if (colors.length >= 2) {
+      const maxSpeed = DEFAULT_WIND_SPEED_STOPS[DEFAULT_WIND_SPEED_STOPS.length - 1]
+      this.options.colorStops = Array.from(
+        { length: colors.length },
+        (_, i) => (maxSpeed * i) / (colors.length - 1),
+      )
+    }
+    // 仅在色阶真正变化时清屏，避免瓦片流式到达时反复闪空
     if (this.ctx) {
       this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height)
+    }
+    // 立刻补一帧，避免 clear 后等到下一节流帧才出现「空白一段时间」
+    if (this.grid && this.particles.length > 0) {
+      this.draw(0)
     }
   }
 
   updateGeoJSON(geojson: WindGeoJSON): void {
     const oldGrid = this.grid
-    this.grid = buildWindGridFromGeoJSON(geojson)
-    debugLog('WindParticleCanvas', 'updateGeoJSON', 'oldGrid', oldGrid ? `${oldGrid.rows}x${oldGrid.cols}@${oldGrid.checksum}` : 'null', 'newGrid', this.grid ? `${this.grid.rows}x${this.grid.cols}@${this.grid.checksum}` : 'null', 'features', geojson.features?.length)
-    if (this.grid) {
-      if (oldGrid && oldGrid.rows === this.grid.rows && oldGrid.cols === this.grid.cols && oldGrid.checksum === this.grid.checksum) {
-        debugLog('WindParticleCanvas', 'updateGeoJSON skip identical grid')
-        return
-      }
-      this.updateCanvasBounds()
-      const targetCount = this.resolveParticleCountForZoom(this.map.getZoom())
-      if (!oldGrid) {
-        this.initParticles()
-      } else if (oldGrid.rows !== this.grid.rows || oldGrid.cols !== this.grid.cols) {
-        // 网格尺寸变化（如新瓦片扩展了经纬度范围）：需要重置粒子以适配新边界
-        this.updateParticlesForNewGrid(targetCount)
-      } else {
-        // 网格尺寸不变但数据变化（如瓦片补充了更多数据点）：仅更新网格引用，
-        // 保留粒子轨迹，避免频繁重置导致轨迹无法积累（"竖条线"的根本原因）
-        debugLog('WindParticleCanvas', 'updateGeoJSON same-size grid data updated, keeping particles')
-        if (this.particles.length !== targetCount) {
-          this.updateParticlesForNewGrid(targetCount)
-        }
-      }
+    const nextGrid = buildWindGridFromGeoJSON(geojson)
+    debugLog('WindParticleCanvas', 'updateGeoJSON', 'oldGrid', oldGrid ? `${oldGrid.rows}x${oldGrid.cols}@${oldGrid.checksum}` : 'null', 'newGrid', nextGrid ? `${nextGrid.rows}x${nextGrid.cols}@${nextGrid.checksum}` : 'null', 'features', geojson.features?.length)
+    if (!nextGrid) {
+      // 缩放换瓦瞬间合并结果可能过稀建不出网格：保留旧网格，避免粒子整层消失
+      console.warn('[WindParticleCanvas] Failed to create grid from GeoJSON; keeping previous grid')
+      return
+    }
+    this.grid = nextGrid
+    if (oldGrid && oldGrid.rows === this.grid.rows && oldGrid.cols === this.grid.cols && oldGrid.checksum === this.grid.checksum) {
+      debugLog('WindParticleCanvas', 'updateGeoJSON skip identical grid')
+      return
+    }
+    this.updateCanvasBounds()
+    const targetCount = this.resolveParticleCountForZoom(this.map.getZoom())
+    if (!oldGrid) {
+      this.initParticles()
+    } else if (oldGrid.rows !== this.grid.rows || oldGrid.cols !== this.grid.cols) {
+      // 网格尺寸变化（如新瓦片扩展了经纬度范围）：需要重置粒子以适配新边界
+      this.updateParticlesForNewGrid(targetCount)
     } else {
-      console.warn('[WindParticleCanvas] Failed to create grid from GeoJSON')
+      // 网格尺寸不变但数据变化（如瓦片补充了更多数据点）：仅更新网格引用，
+      // 保留粒子轨迹，避免频繁重置导致轨迹无法积累（"竖条线"的根本原因）
+      debugLog('WindParticleCanvas', 'updateGeoJSON same-size grid data updated, keeping particles')
+      if (this.particles.length !== targetCount) {
+        this.updateParticlesForNewGrid(targetCount)
+      }
     }
   }
 
@@ -948,7 +1014,7 @@ export class WindParticleCanvas {
         const screen = this.map.project([p.lon + this.lonWrapOffset, p.lat])
         const x = (screen.x - offsetX) * dpr
         const y = (screen.y - offsetY) * dpr
-        p.trail = [x, y]
+        p.trail = [x, y, x + 1, y]
         p.age = 0
         keptCount++
       }

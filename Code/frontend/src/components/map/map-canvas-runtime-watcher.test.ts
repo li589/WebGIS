@@ -5,6 +5,7 @@ import {
   watchAdminBoundaryOverlay,
   watchBasemapSource,
   watchInteractionMode,
+  watchMeasureState,
 } from './map-canvas-runtime-watcher'
 
 describe('map-canvas-runtime-watcher', () => {
@@ -73,6 +74,32 @@ describe('map-canvas-runtime-watcher', () => {
     mapReady.value = true
     await nextTick()
     expect(onAdminBoundaryOverlayChange).toHaveBeenCalledTimes(1)
+
+    stop()
+  })
+
+  it('syncs measure visuals when measure sync key changes and map is ready', async () => {
+    const syncKey = ref('0:0')
+    const mapReady = ref(false)
+    const onMeasureStateChange = vi.fn()
+
+    const stop = watchMeasureState({
+      getMeasureSyncKey: () => syncKey.value,
+      getMapReady: () => mapReady.value,
+      onMeasureStateChange,
+    })
+
+    syncKey.value = '2:1'
+    await nextTick()
+    expect(onMeasureStateChange).not.toHaveBeenCalled()
+
+    mapReady.value = true
+    await nextTick()
+    expect(onMeasureStateChange).toHaveBeenCalledTimes(1)
+
+    syncKey.value = '0:0'
+    await nextTick()
+    expect(onMeasureStateChange).toHaveBeenCalledTimes(2)
 
     stop()
   })

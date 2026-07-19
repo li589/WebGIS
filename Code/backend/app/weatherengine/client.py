@@ -173,8 +173,8 @@ class _RateLimitedResponse:
 
 
 class OpenMeteoClient:
-    # 进程内共享断路器：所有实例共用同一状态，协调 API 保护
-    _shared_circuit = CircuitBreaker()
+    # 按 base_url 隔离断路器：online / local 互不影响
+    _circuits: dict[str, CircuitBreaker] = {}
 
     def __init__(
         self,
@@ -184,8 +184,11 @@ class OpenMeteoClient:
     ) -> None:
         self._cache_root = Path(cache_root or settings.cache_dir) / "weatherengine"
         self._cache_root.mkdir(parents=True, exist_ok=True)
-        self._circuit = self._shared_circuit
         self._base_url = (base_url or OPEN_METEO_BASE_URL).rstrip("?")
+        circuit_key = self._base_url
+        if circuit_key not in OpenMeteoClient._circuits:
+            OpenMeteoClient._circuits[circuit_key] = CircuitBreaker()
+        self._circuit = OpenMeteoClient._circuits[circuit_key]
 
     # ── 每日 API 预算管理 ──────────────────────────────────────────────
     # Open-Meteo 免费版每日限额 ~10000 次。使用 Redis 跨 worker 共享计数器，
@@ -226,6 +229,10 @@ class OpenMeteoClient:
     def base_url(self, value: str) -> None:
         """更新 API 基础 URL（运行时配置覆盖时使用）。"""
         self._base_url = value.rstrip("?")
+        circuit_key = self._base_url
+        if circuit_key not in OpenMeteoClient._circuits:
+            OpenMeteoClient._circuits[circuit_key] = CircuitBreaker()
+        self._circuit = OpenMeteoClient._circuits[circuit_key]
 
     def budget_remaining(self) -> int | None:
         """公开方法：返回今日剩余 API 调用次数。"""
@@ -277,6 +284,29 @@ class OpenMeteoClient:
         except (json.JSONDecodeError, KeyError, TypeError, ValueError):
             return None, False
 
+    @staticmethod
+    def _series_has_values(values: Any) -> bool:
+        if not isinstance(values, list):
+            return values is not None
+        return any(v is not None for v in values)
+
+    def _payload_looks_empty(self, payload: dict[str, Any], fields: list[str]) -> bool:
+        """True when current/hourly primary fields are all null (e.g. wrong local model)."""
+        current = payload.get("current") or {}
+        hourly = payload.get("hourly") or {}
+        checked = False
+        for field in fields:
+            if field in current:
+                checked = True
+                if current.get(field) is not None:
+                    return False
+            series = hourly.get(field)
+            if series is not None:
+                checked = True
+                if self._series_has_values(series):
+                    return False
+        return checked
+
     def fetch_point_forecast(
         self,
         *,
@@ -312,7 +342,8 @@ class OpenMeteoClient:
             cache_set_json(redis_key, cached_payload, max(60, ttl_seconds))
             return cached_payload, "hit"
 
-        # Circuit breaker: if OPEN, wait for recovery instead of failing immediately
+        # Circuit OPEN：有 stale 立刻返回。无缓存时点查是用户交互（低频），
+        # 先短等半开，仍阻断则 soft-bypass 一次，避免瓦片风暴导致点击永远 503。
         if not self._circuit.can_pass():
             if cached_payload is not None:
                 logger.warning(
@@ -320,8 +351,17 @@ class OpenMeteoClient:
                     latitude, longitude, layer_spec.layer_id,
                 )
                 return cached_payload, "circuit-open-stale"
-            if not self._circuit.wait_or_pass(timeout=30.0):
-                raise HTTPError(self._base_url, 503, "Circuit breaker open", None, None)
+            if self._circuit.wait_or_pass(timeout=8.0):
+                logger.info(
+                    "[OpenMeteoClient] circuit recovered for point probe: lat=%.4f lon=%.4f layer=%s",
+                    latitude, longitude, layer_spec.layer_id,
+                )
+            else:
+                logger.warning(
+                    "[OpenMeteoClient] circuit still open — soft-bypass interactive point: "
+                    "lat=%.4f lon=%.4f layer=%s",
+                    latitude, longitude, layer_spec.layer_id,
+                )
 
         # 3. Cross-worker request deduplication
         dedup_lock_key = f"{REDIS_CACHE_PREFIX}lock:point:{cache_key}"
@@ -359,13 +399,13 @@ class OpenMeteoClient:
         if pressure_levels:
             query_dict["pressure_levels"] = ",".join(str(level) for level in pressure_levels)
         query = urlencode(query_dict)
-        # HTTP 错误处理 + 瞬态失败重试：429/5xx 与 URLError 重试，4xx(非429) 立即抛出
-        max_attempts = 5
-        backoff = 2
+        # 点查是交互请求：短重试，避免与瓦片风暴抢 429 退避把用户拖死（旧逻辑可等 32s+64s）
+        max_attempts = 2
+        backoff = 1.5
         payload: dict[str, Any] | None = None
         for attempt in range(max_attempts):
             try:
-                with self._rate_limited_urlopen(f"{self._base_url}?{query}", timeout=20) as response:
+                with self._rate_limited_urlopen(f"{self._base_url}?{query}", timeout=15) as response:
                     payload = json.loads(response.read().decode("utf-8"))
                 self._circuit.record_success()
                 self._budget_record_call()
@@ -375,19 +415,20 @@ class OpenMeteoClient:
                 if exc.code == 429 or exc.code >= 500:
                     self._circuit.record_failure()
                 if exc.code == 429:
-                    # 限流：优先使用 stale cache，否则指数退避重试
+                    # 限流：优先 stale；否则短等一次后交给 gateway fallback / 瓦片采样
                     if cached_payload is not None:
                         logger.warning(
                             "[OpenMeteoClient] point forecast 429 falling back to stale cache: lat=%.4f lon=%.4f layer=%s",
                             latitude, longitude, layer_spec.layer_id,
                         )
                         return cached_payload, "stale-hit"
-                    retry_wait = max(backoff * 2, 5)
-                    logger.info("[OpenMeteoClient] point forecast rate limited (429), waiting %ds... attempt=%d/%d", retry_wait, attempt + 1, max_attempts)
                     if attempt == max_attempts - 1:
                         raise
-                    time.sleep(retry_wait)
-                    backoff *= 2
+                    logger.info(
+                        "[OpenMeteoClient] point forecast rate limited (429), short wait %.1fs... attempt=%d/%d",
+                        backoff, attempt + 1, max_attempts,
+                    )
+                    time.sleep(backoff)
                     continue
                 if cached_payload is not None and exc.code >= 500:
                     logger.warning(
@@ -402,7 +443,6 @@ class OpenMeteoClient:
                 if exc.code < 500 or attempt == max_attempts - 1:
                     raise
                 time.sleep(backoff)
-                backoff *= 2
             except URLError:
                 self._circuit.record_failure()
                 if cached_payload is not None:
@@ -416,9 +456,26 @@ class OpenMeteoClient:
                 if attempt == max_attempts - 1:
                     raise
                 time.sleep(backoff)
-                backoff *= 2
         # payload 在 break 后必已赋值；此处仅为类型检查兜底
         assert payload is not None
+
+        # 自建源请求 best_match 等会 200 全 null：勿当成功缓存，否则地图空白且污染 cache
+        check_fields = sorted(set(list(layer_spec.current_fields) + list(layer_spec.hourly_fields)))
+        if self._payload_looks_empty(payload, check_fields):
+            self._circuit.record_failure()
+            logger.error(
+                "[OpenMeteoClient] empty payload (all-null fields) model=%s layer=%s url=%s — not caching",
+                model,
+                layer_spec.layer_id,
+                self._base_url,
+            )
+            raise HTTPError(
+                self._base_url,
+                502,
+                f"Open-Meteo returned all-null values for model={model}",
+                None,
+                None,
+            )
 
         # 原子写入缓存：先写临时文件再 rename，避免半写文件被并发读取
         cache_tmp_path = cache_path.with_suffix(".tmp")
@@ -461,7 +518,8 @@ class OpenMeteoClient:
         - urlopen 失败 → 立即释放槽位并 re-raise
         - urlopen 成功 → 槽位在 _RateLimitedResponse 的 __exit__ 中释放
         """
-        if not acquire_api_slot(timeout=30.0):
+        # 槽位等待过长会拖垮前端瓦片超时；拿不到就快速 503 让客户端退避
+        if not acquire_api_slot(timeout=8.0):
             raise HTTPError(url, 503, "API rate limit: too many concurrent requests", None, None)
         try:
             resp = urlopen(url, timeout=timeout)
@@ -536,9 +594,7 @@ class OpenMeteoClient:
             cache_set_json(redis_key, cached_payload, max(60, ttl_seconds))
             return cached_payload, "hit"
 
-        # Circuit breaker: if OPEN, wait for recovery instead of failing immediately.
-        # 使用 wait_or_pass 而非 can_pass 避免断路器打开时大面积瓦片请求同时失败，
-        # 给 API 恢复留出时间。有 stale cache 时仍直接返回。
+        # Circuit OPEN：stale 立刻返回；无缓存快速 503（前端退避），禁止 wait 30s 堵死 tile 信号量
         if not self._circuit.can_pass():
             if cached_payload is not None:
                 logger.warning(
@@ -546,18 +602,16 @@ class OpenMeteoClient:
                     layer_spec.layer_id,
                 )
                 return cached_payload, "circuit-open-stale"
-            # 无缓存时等待断路器恢复（最多 30 秒），避免立即失败
-            if not self._circuit.wait_or_pass(timeout=30.0):
-                logger.error(
-                    "[OpenMeteoClient] circuit breaker did not recover within timeout: layer=%s",
-                    layer_spec.layer_id,
-                )
-                raise HTTPError(self._base_url, 503, "Circuit breaker open", None, None)
+            logger.error(
+                "[OpenMeteoClient] circuit open, fail-fast grid (no stale): layer=%s",
+                layer_spec.layer_id,
+            )
+            raise HTTPError(self._base_url, 503, "Circuit breaker open", None, None)
 
-        # 3. Cross-worker request deduplication
+        # 3. Cross-worker request deduplication（等待上限收紧，避免瓦片请求挂死）
         dedup_lock_key = f"{REDIS_CACHE_PREFIX}lock:grid:{cache_key}"
         if not acquire_dedup_lock(dedup_lock_key, ttl_seconds=120):
-            if wait_for_dedup(dedup_lock_key, timeout_seconds=60.0):
+            if wait_for_dedup(dedup_lock_key, timeout_seconds=15.0):
                 redis_payload = cache_get_json(redis_key)
                 if redis_payload is not None:
                     return redis_payload, "dedup-hit"
@@ -609,16 +663,15 @@ class OpenMeteoClient:
 
         # 分批请求
         for batch_idx, batch_start in enumerate(range(0, total_points, batch_limit)):
-            # Circuit breaker: 如果 API 在批次中途打开断路器，等待恢复而非立即失败
+            # Circuit OPEN 中途：有 stale / 已有部分结果则立刻返回，否则 fail-fast
             if not self._circuit.can_pass():
                 logger.warning(
-                    "[OpenMeteoClient] circuit open during grid fetch, waiting at batch %d",
+                    "[OpenMeteoClient] circuit open during grid fetch at batch %d",
                     batch_idx,
                 )
                 if cached_payload is not None:
                     return cached_payload, "circuit-open-stale"
-                if not self._circuit.wait_or_pass(timeout=30.0):
-                    raise HTTPError(self._base_url, 503, "Circuit breaker open during grid fetch", None, None)
+                raise HTTPError(self._base_url, 503, "Circuit breaker open during grid fetch", None, None)
 
             # 从第二批开始添加延迟，避免 Open-Meteo 免费 API 限流 (429)
             if batch_idx > 0:
@@ -757,6 +810,25 @@ class OpenMeteoClient:
                 "hourly": all_hourly_data,
             },
         }
+
+        primary = layer_spec.primary_metric
+        primary_series = all_current_data.get(primary) or []
+        if primary_series and not any(v is not None for v in primary_series):
+            self._circuit.record_failure()
+            logger.error(
+                "[OpenMeteoClient] empty grid (all-null %s) model=%s layer=%s url=%s — not caching",
+                primary,
+                model,
+                layer_spec.layer_id,
+                self._base_url,
+            )
+            raise HTTPError(
+                self._base_url,
+                502,
+                f"Open-Meteo grid returned all-null {primary} for model={model}",
+                None,
+                None,
+            )
 
         # 写入缓存
         cache_tmp_path = cache_path.with_suffix(".tmp")

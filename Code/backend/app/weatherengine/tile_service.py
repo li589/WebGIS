@@ -98,6 +98,17 @@ def tile_bbox(z: int, x: int, y: int) -> BoundingBox:
     )
 
 
+def lonlat_to_tile(z: int, longitude: float, latitude: float) -> tuple[int, int]:
+    """EPSG:4326 → Web Mercator 瓦片坐标 (x, y)。"""
+    n = 2 ** z
+    lon = ((longitude + 180.0) % 360.0 + 360.0) % 360.0 - 180.0
+    lat = max(-_WEB_MERCATOR_MAX_LAT, min(_WEB_MERCATOR_MAX_LAT, latitude))
+    x = int((lon + 180.0) / 360.0 * n)
+    lat_rad = math.radians(lat)
+    y = int((1.0 - math.log(math.tan(lat_rad) + (1.0 / math.cos(lat_rad))) / math.pi) / 2.0 * n)
+    return x % n, max(0, min(n - 1, y))
+
+
 def zoom_to_resolution(z: int) -> float:
     """根据瓦片 zoom 固定分辨率，保证相邻瓦片分辨率一致。
 
@@ -371,6 +382,140 @@ class WeatherTileService:
             self._in_memory_cache.move_to_end(key)
             return self._in_memory_cache[key]
         return None
+
+    def peek_cached_tile(
+        self,
+        layer_id: str,
+        z: int,
+        x: int,
+        y: int,
+        *,
+        hour: int = 0,
+        model: str | None = None,
+        provider_id: str | None = None,
+    ) -> dict[str, Any] | None:
+        """只读缓存（内存 / Redis），不触发上游拉取。供点查询降级采样。"""
+        model = model or settings.weather_default_model
+        key = tile_key(
+            layer_id=layer_id,
+            z=z,
+            x=x,
+            y=y,
+            hour=_clamp_hour(hour),
+            model=model,
+            provider_id=provider_id,
+        )
+        cached = self._read_memory_cache(key)
+        if cached is not None:
+            return cached
+        redis_cached = cache_get_json(key)
+        if redis_cached is not None:
+            self._write_memory_cache(key, redis_cached)
+            return redis_cached
+        return None
+
+    def peek_any_hour_cached_tile(
+        self,
+        layer_id: str,
+        z: int,
+        x: int,
+        y: int,
+        *,
+        model: str | None = None,
+        provider_id: str | None = None,
+    ) -> dict[str, Any] | None:
+        """优先 hour=0；否则扫描 Redis 同 z/x/y 任意 hour 的缓存瓦片。"""
+        hit = self.peek_cached_tile(
+            layer_id, z, x, y, hour=0, model=model, provider_id=provider_id,
+        )
+        if hit is not None:
+            return hit
+
+        model = model or settings.weather_default_model
+        model_part = model.replace("/", "_").replace(":", "_")
+        provider_part = normalize_provider_id(provider_id).replace("/", "_").replace(":", "_")
+        pattern = (
+            f"{_TILE_REDIS_KEY_PREFIX}{layer_id}:z{z}:x{x}:y{y}:h*"
+            f":m{model_part}:p{provider_part}"
+        )
+        client = None
+        try:
+            from app.core.redis_client import get_redis_client
+
+            client = get_redis_client()
+        except Exception:  # noqa: BLE001
+            client = None
+        if client is None:
+            # 退回内存：任意 hour 匹配前缀
+            prefix = f"{_TILE_REDIS_KEY_PREFIX}{layer_id}:z{z}:x{x}:y{y}:h"
+            suffix = f":m{model_part}:p{provider_part}"
+            for key, value in self._in_memory_cache.items():
+                if key.startswith(prefix) and key.endswith(suffix):
+                    return value
+            return None
+
+        try:
+            for key in client.scan_iter(match=pattern, count=32):
+                key_str = key.decode() if isinstance(key, (bytes, bytearray)) else str(key)
+                redis_cached = cache_get_json(key_str)
+                if redis_cached is not None:
+                    self._write_memory_cache(key_str, redis_cached)
+                    return redis_cached
+        except Exception as exc:  # noqa: BLE001
+            logger.debug("[WeatherTileService] peek_any_hour scan failed: %s", exc)
+        return None
+
+    def sample_nearest_feature(
+        self,
+        *,
+        layer_id: str,
+        latitude: float,
+        longitude: float,
+        model: str | None = None,
+        provider_id: str | None = None,
+        zooms: tuple[int, ...] = (5, 6, 7, 4),
+    ) -> dict[str, Any] | None:
+        """从已缓存瓦片中取距点击点最近的要素属性（无上游请求）。"""
+        best: dict[str, Any] | None = None
+        best_dist = float("inf")
+        for z in zooms:
+            x, y = lonlat_to_tile(z, longitude, latitude)
+            for dx in (-1, 0, 1):
+                for dy in (-1, 0, 1):
+                    geojson = self.peek_any_hour_cached_tile(
+                        layer_id,
+                        z,
+                        x + dx,
+                        y + dy,
+                        model=model,
+                        provider_id=provider_id,
+                    )
+                    if not geojson:
+                        continue
+                    for feature in geojson.get("features") or []:
+                        geom = feature.get("geometry") or {}
+                        coords = geom.get("coordinates")
+                        gtype = geom.get("type")
+                        if gtype == "Point" and coords and len(coords) >= 2:
+                            flon, flat = float(coords[0]), float(coords[1])
+                        elif gtype == "Polygon" and coords and coords[0]:
+                            ring = coords[0]
+                            if not ring:
+                                continue
+                            flon = sum(float(p[0]) for p in ring) / len(ring)
+                            flat = sum(float(p[1]) for p in ring) / len(ring)
+                        else:
+                            continue
+                        dist = (flon - longitude) ** 2 + (flat - latitude) ** 2
+                        if dist < best_dist:
+                            best_dist = dist
+                            props = dict(feature.get("properties") or {})
+                            props["_sample_lon"] = flon
+                            props["_sample_lat"] = flat
+                            best = props
+            if best is not None:
+                break
+        return best
 
     def _write_memory_cache(self, key: str, value: dict[str, Any]) -> None:
         self._in_memory_cache[key] = value

@@ -8,3 +8,6 @@ smbprotocol>=1.13.0
 google-cloud-storage>=2.14.0
 cryptography>=42.0.0
 httpx>=0.27.0
+# CRS 转换：app.services.crs._crs_transformer 依赖 pyproj（rasterio 传递依赖，
+# 此处显式 pin 以避免 rasterio 卸载/降级时丢失）
+pyproj>=3.6,<4

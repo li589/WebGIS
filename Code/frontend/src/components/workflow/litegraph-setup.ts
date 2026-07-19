@@ -66,36 +66,101 @@ export type {
 
 // ─── 节点类型注册 ──────────────────────────────────────────────────────────
 
-let _nodeTypesRegistered = false
+/** 已注册过的类型集合；允许后续用更新后的模板覆盖注册 */
+const _registeredTypes = new Set<string>()
+
+/**
+ * 将可调参数提升为可选输入端口，使参数也能用连线驱动（widget 仍保留作默认值）。
+ */
+export function mapParamTypeToPortType(paramType: string): string | null {
+  switch (paramType) {
+    case 'number':
+    case 'integer':
+    case 'float':
+      return 'value:number'
+    case 'boolean':
+      return 'value:boolean'
+    case 'string':
+    case 'enum':
+    case 'option':
+    case 'array':
+      return 'value:string'
+    default:
+      return null
+  }
+}
+
+/** 按端口类型给出建议连接的节点类型（用于检查器/提示） */
+export function suggestConnectorsForPortType(portType: string): string[] {
+  switch (portType) {
+    case 'value:time_range':
+      return ['data/time_range']
+    case 'geometry:bbox':
+      return ['data/bbox', 'data/map_viewport']
+    case 'value:number':
+      return ['data/number', 'data/latlng']
+    case 'value:string':
+      return ['data/string']
+    case 'value:boolean':
+      return ['data/boolean']
+    case 'data:source':
+      return ['data/source']
+    case 'data:raster':
+      return ['weather/grid_fetch', 'gee/image', 'preprocess/reproject']
+    case 'data:mat':
+      return ['module/smap_daily', 'module/ndvi_daily', 'module/daily_bundle']
+    case 'data:timeseries':
+      return ['module/timeseries_bundle']
+    case 'data:geojson':
+      return ['weather/wind_field_render', 'gis/buffer_analysis']
+    default:
+      if (portType.startsWith('data:')) return ['data/source']
+      return []
+  }
+}
 
 /**
  * 注册所有自定义节点类型。
  *
  * 每个节点类型对应后端 NodeTemplate 中的一种 type。
- * 节点类型的注册是幂等的，重复注册会被 LiteGraph 忽略。
+ * 可重复调用：未注册的类型会新增，已注册类型会覆盖（便于模板热更新）。
  */
 export function registerWorkflowNodeTypes(
   templates: Array<{
     type: string
     title: string
-    inputs: Array<{ name: string; type: string }>
-    outputs: Array<{ name: string; type: string }>
-    params?: Array<{ key: string; type: string; default?: unknown; options?: string[] }>
+    engine?: string
+    inputs: Array<{ name: string; type: string; description?: string; required?: boolean }>
+    outputs: Array<{ name: string; type: string; description?: string }>
+    params?: Array<{ key: string; type: string; default?: unknown; options?: string[]; description?: string }>
   }>,
 ): void {
-  if (_nodeTypesRegistered) return
   if (!LiteGraph) {
     console.warn('[litegraph-setup] LiteGraph not available, skipping node registration')
     return
   }
 
   for (const template of templates) {
-    // 跳过已注册的类型
-    if (LiteGraph.registered_node_types[template.type]) continue
-
     const tpl = template
-    // 按引擎类别确定节点颜色
-    const engineColor = getEngineColor(tpl.type)
+    const engineColor = getEngineColor(tpl.type, tpl.engine)
+
+    // 合并：显式 inputs + 由 params 提升的可选参数端口（同名不重复）
+    const existingNames = new Set(tpl.inputs.map((i) => i.name))
+    const promotedParamInputs = (tpl.params ?? [])
+      .map((param) => {
+        const portType = mapParamTypeToPortType(param.type)
+        if (!portType || existingNames.has(param.key)) return null
+        existingNames.add(param.key)
+        return {
+          name: param.key,
+          type: portType,
+          required: false,
+          description: param.description ?? '可调参数：连线可覆盖，未连接时用节点内控件默认值',
+        }
+      })
+      .filter((item): item is { name: string; type: string; required: boolean; description: string } => item !== null)
+
+    const allInputs = [...tpl.inputs, ...promotedParamInputs]
 
     class WorkflowNode extends (LGraphNode as unknown as typeof LGraphNodeClass) {
       static title = tpl.title
@@ -105,37 +170,39 @@ export function registerWorkflowNodeTypes(
         super(title ?? tpl.title)
         this.type = tpl.type
 
-        // 按引擎类别设置节点颜色
         this.color = engineColor.nodeBg
         this.bgcolor = engineColor.nodeHeader
         this.boxcolor = engineColor.accent
 
-        // 显式启用交互属性：允许拖动、允许右下角缩放
         this.resizable = true
-        // allow_interaction 不在 flags 类型定义中但运行时 LiteGraph 会读取，用 as 断言
         ;(this.flags as Record<string, unknown>).allow_interaction = true
 
-        // 添加输入端口（带类型颜色）
-        for (const input of tpl.inputs) {
+        for (const input of allInputs) {
           this.addInput(input.name, input.type)
           const slot = this.inputs[this.inputs.length - 1]
-          if (slot) (slot as Record<string, unknown>).color = getPortColor(input.type)
+          if (slot) {
+            const slotAny = slot as Record<string, unknown>
+            slotAny.color = getPortColor(input.type)
+            // 详细说明挂在 _help，供悬停提示框读取；不要写进 label（会挤占节点宽度）
+            if (input.description) slotAny._help = input.description
+            if (input.required === false) slotAny._optional = true
+          }
         }
 
-        // 添加输出端口（带类型颜色）
         for (const output of tpl.outputs) {
           this.addOutput(output.name, output.type)
           const slot = this.outputs[this.outputs.length - 1]
-          if (slot) (slot as Record<string, unknown>).color = getPortColor(output.type)
+          if (slot) {
+            const slotAny = slot as Record<string, unknown>
+            slotAny.color = getPortColor(output.type)
+            if (output.description) slotAny._help = output.description
+          }
         }
 
-        // 添加参数 widgets
         if (tpl.params) {
           for (const param of tpl.params) {
             const widgetType = mapParamTypeToWidget(param.type)
-            // 根据 param.type 决定默认值，避免 number widget 得到空字符串
             let defaultValue: unknown = param.default ?? getDefaultForType(param.type)
-            // array 类型：数组转逗号分隔字符串（widget 为 text）
             if (param.type === 'array' && Array.isArray(defaultValue)) {
               defaultValue = (defaultValue as unknown[]).join(',')
             }
@@ -153,14 +220,12 @@ export function registerWorkflowNodeTypes(
           }
         }
 
-        // 设置合理尺寸：标题栏 + 输入/输出插槽 + 参数 widget
-        const slotCount = Math.max(tpl.inputs.length, tpl.outputs.length)
+        const slotCount = Math.max(allInputs.length, tpl.outputs.length)
         const widgetCount = tpl.params?.length ?? 0
         const minHeight = 40 + slotCount * 22 + widgetCount * 20
-        this.size = [220, Math.max(80, minHeight)]
+        this.size = [240, Math.max(80, minHeight)]
       }
 
-      /** 端口连接类型校验：拒绝类型不兼容的连接 */
       onConnectInput(
         inputIndex: number,
         outputType: string,
@@ -175,9 +240,8 @@ export function registerWorkflowNodeTypes(
     }
 
     LiteGraph.registerNodeType(template.type, WorkflowNode as unknown as { new (): LGraphNodeClass })
+    _registeredTypes.add(template.type)
   }
-
-  _nodeTypesRegistered = true
 }
 
 /** 引擎颜色配置 */
@@ -187,18 +251,31 @@ interface EngineColor {
   accent: string      // 强调色（选中边框等）
 }
 
-/** 按节点类型前缀返回引擎配色 */
-function getEngineColor(nodeType: string): EngineColor {
-  if (nodeType.startsWith('weather/')) {
+/**
+ * 解析节点所属引擎。优先用模板 engine 字段；否则按 type 前缀推断。
+ * 注意：Python 模块类型是 `module/*`，不是 `python_provider/*`。
+ */
+export function resolveNodeEngine(nodeType: string, templateEngine?: string | null): string {
+  const fromTpl = (templateEngine ?? '').trim()
+  if (fromTpl) return fromTpl
+  if (nodeType.startsWith('weather/')) return 'weather'
+  if (nodeType.startsWith('gee/')) return 'gee'
+  if (nodeType.startsWith('module/') || nodeType.startsWith('python_provider/')) return 'python_provider'
+  return 'common'
+}
+
+/** 按引擎返回节点配色 */
+function getEngineColor(nodeType: string, templateEngine?: string | null): EngineColor {
+  const engine = resolveNodeEngine(nodeType, templateEngine)
+  if (engine === 'weather') {
     return { nodeBg: '#1a2230', nodeHeader: '#2a4a5a', accent: '#ffb84d' }
   }
-  if (nodeType.startsWith('python_provider/')) {
+  if (engine === 'python_provider') {
     return { nodeBg: '#1a2a1e', nodeHeader: '#2a4a38', accent: '#78ffa0' }
   }
-  if (nodeType.startsWith('gee/')) {
+  if (engine === 'gee') {
     return { nodeBg: '#1a2030', nodeHeader: '#3a2e5a', accent: '#5ad5ff' }
   }
-  // general / common
   return { nodeBg: '#1a2740', nodeHeader: '#1a2540', accent: '#88dfff' }
 }
 
@@ -227,18 +304,16 @@ function mapParamTypeToWidget(paramType: string): string {
  * 规则:
  *   - 相同类型：允许
  *   - data (通用) <-> data:* (具体子类型)：允许（向后兼容）
- *   - data:* 之间不同子类型：禁止
- *   - value:* / geometry:* 不同子类型：禁止
- *   - 其他不同类型：禁止
+ *   - 通配 *：允许
+ *   - 其余不同类型：禁止（含 value/geometry 互串、data 串到 value）
  */
 export function checkConnectionValid(inputType: string, outputType: string): boolean {
+  if (!inputType || !outputType) return true
+  if (inputType === '*' || outputType === '*') return true
   if (inputType === outputType) return true
-  // data 通用类型与 data:* 子类型互连（向后兼容）
-  if (inputType === 'data' || outputType === 'data') return true
-  // 同前缀但不同子类型：禁止
-  if (inputType.startsWith('data:') && outputType.startsWith('data:')) return false
-  if (inputType.startsWith('value:') && outputType.startsWith('value:')) return false
-  if (inputType.startsWith('geometry:') && outputType.startsWith('geometry:')) return false
+  // 仅允许通用 data 与 data:* 子类型互连，禁止 data 接到 value/geometry
+  if (inputType === 'data' && outputType.startsWith('data:')) return true
+  if (outputType === 'data' && inputType.startsWith('data:')) return true
   return false
 }
 
@@ -251,10 +326,30 @@ export function getPortColor(type: string): string {
   if (type === 'data:raster') return '#5ad5ff' // 蓝色
   if (type === 'data:geojson') return '#78ffa0' // 绿色
   if (type === 'data:timeseries') return '#c084fc' // 紫色
-  if (type === 'value:number' || type === 'value:string') return '#ffd5a8' // 浅黄
+  if (type === 'value:number') return '#ffd5a8' // 浅黄
+  if (type === 'value:string') return '#ffe08a' // 金黄
+  if (type === 'value:boolean') return '#9ae6b4' // 浅绿
   if (type === 'value:time_range') return '#ff8fb1' // 粉色
   if (type === 'geometry:bbox') return '#ff6b6b' // 红色
   return '#6e8ba0' // 默认灰
+}
+
+/** 端口类型中文说明（检查器/面板用） */
+export function getPortTypeLabel(type: string): string {
+  switch (type) {
+    case 'value:time_range': return '时间范围'
+    case 'geometry:bbox': return '空间范围 (bbox)'
+    case 'value:number': return '数值'
+    case 'value:string': return '文本'
+    case 'value:boolean': return '开关'
+    case 'data:source': return '数据源路径'
+    case 'data:raster': return '栅格'
+    case 'data:mat': return 'MAT 数据'
+    case 'data:timeseries': return '时间序列'
+    case 'data:geojson': return '矢量 GeoJSON'
+    case 'data': return '通用数据'
+    default: return type
+  }
 }
 
 /**
@@ -271,6 +366,76 @@ function getDefaultForType(paramType: string): unknown {
       return false
     default:
       return ''
+  }
+}
+
+/**
+ * 按最新模板给已有节点补齐缺失的输入/输出端口（旧工作流打开后也能看到 time_range/bbox 等）。
+ * 不删除已有端口，避免破坏已保存连线。
+ */
+export function syncGraphSlotsWithTemplates(
+  graph: LGraphClass,
+  templates: Array<{
+    type: string
+    inputs: Array<{ name: string; type: string; description?: string; required?: boolean }>
+    outputs: Array<{ name: string; type: string; description?: string }>
+    params?: Array<{ key: string; type: string; description?: string }>
+  }>,
+): void {
+  const byType = new Map(templates.map((t) => [t.type, t]))
+  for (const node of graph._nodes ?? []) {
+    const tpl = byType.get(node.type ?? '')
+    if (!tpl) continue
+
+    const existingIn = new Set((node.inputs ?? []).map((s) => s.name))
+    const existingOut = new Set((node.outputs ?? []).map((s) => s.name))
+
+    const promoted = (tpl.params ?? [])
+      .map((param) => {
+        const portType = mapParamTypeToPortType(param.type)
+        if (!portType || existingIn.has(param.key) || tpl.inputs.some((i) => i.name === param.key)) {
+          return null
+        }
+        return {
+          name: param.key,
+          type: portType,
+          required: false,
+          description: param.description ?? '可调参数',
+        }
+      })
+      .filter((x): x is { name: string; type: string; required: boolean; description: string } => x !== null)
+
+    for (const input of [...tpl.inputs, ...promoted]) {
+      if (existingIn.has(input.name)) continue
+      node.addInput(input.name, input.type)
+      const slot = node.inputs[node.inputs.length - 1]
+      if (slot) {
+        const slotAny = slot as Record<string, unknown>
+        slotAny.color = getPortColor(input.type)
+        if (input.description) slotAny._help = input.description
+        if (input.required === false) slotAny._optional = true
+      }
+      existingIn.add(input.name)
+    }
+
+    for (const output of tpl.outputs) {
+      if (existingOut.has(output.name)) continue
+      node.addOutput(output.name, output.type)
+      const slot = node.outputs[node.outputs.length - 1]
+      if (slot) {
+        const slotAny = slot as Record<string, unknown>
+        slotAny.color = getPortColor(output.type)
+        if (output.description) slotAny._help = output.description
+      }
+      existingOut.add(output.name)
+    }
+
+    const slotCount = Math.max(node.inputs?.length ?? 0, node.outputs?.length ?? 0)
+    const widgetCount = node.widgets?.length ?? 0
+    const minHeight = 40 + slotCount * 22 + widgetCount * 20
+    const curW = node.size?.[0] ?? 240
+    const curH = node.size?.[1] ?? 80
+    node.size = [Math.max(curW, 240), Math.max(curH, minHeight)]
   }
 }
 

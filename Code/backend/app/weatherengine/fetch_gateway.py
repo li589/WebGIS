@@ -13,7 +13,7 @@ from typing import Any
 from app.core.config import settings
 from app.services.effective_config import get_weather_cache_ttl_seconds
 from app.weatherengine.constants import WEATHER_LAYER_SPECS, WeatherLayerSpec
-from app.weatherengine.provider_base import WeatherProvider
+from app.weatherengine.provider_base import ProviderType, WeatherProvider
 from app.weatherengine.provider_registry import get_registry
 from shared.contracts.api_contracts import BoundingBox
 
@@ -31,6 +31,9 @@ def resolve_layer_spec(layer_id: str) -> WeatherLayerSpec:
     return spec
 
 
+from app.weatherengine.provider_ids import normalize_provider_id, provider_grid_mode
+
+
 def resolve_provider_for_layer(
     layer_id: str,
     *,
@@ -41,10 +44,11 @@ def resolve_provider_for_layer(
 
     - If ``provider_id`` is set: must be enabled and support the layer (no silent fallback).
     - Else: registry priority order, honoring ``exclude``.
+    Legacy ``open-meteo`` is normalized to ``open-meteo-online``.
     """
     registry = get_registry()
     if provider_id:
-        pid = str(provider_id).strip()
+        pid = normalize_provider_id(str(provider_id).strip())
         if not pid or pid.lower() in {"auto", "default"}:
             provider_id = None
         else:
@@ -95,6 +99,7 @@ def list_providers_for_layer(layer_id: str, *, include_disabled: bool = False) -
                 "provider_type": str(provider.provider_type.value)
                 if hasattr(provider.provider_type, "value")
                 else str(provider.provider_type),
+                "grid_mode": provider_grid_mode(provider.provider_id),
             }
         )
     rows.sort(key=lambda r: (r["priority"], r["provider_id"]))
@@ -204,6 +209,13 @@ def fetch_point_forecast(
         return payload, cache_status, fallback.provider_id
 
 
+def _is_sparse_grid_provider(provider: WeatherProvider) -> bool:
+    """商业点采样源不适合地图瓦片网格（点数极少，视觉上像「只加载了一部分」）。"""
+    ptype = provider.provider_type
+    ptype_str = ptype.value if hasattr(ptype, "value") else str(ptype)
+    return ptype_str == ProviderType.COMMERCIAL_API
+
+
 def fetch_grid_forecast(
     *,
     layer_id: str,
@@ -216,12 +228,38 @@ def fetch_grid_forecast(
 ) -> tuple[dict[str, Any], str, str]:
     """Fetch grid forecast via registry.
 
+    Map tiles need dense grids. Commercial providers (WeatherAPI / OpenWeather)
+    only sample a handful of points per tile — so for grid/tile paths we prefer
+    free dense sources (Open-Meteo) even when the UI has pinned a commercial
+    provider. Point forecasts still honor the pin.
+
     Returns:
         (grid_data, cache_status, provider_id)
     """
     spec = layer_spec or resolve_layer_spec(layer_id)
     pinned = bool(provider_id and str(provider_id).strip().lower() not in {"", "auto", "default"})
     provider = resolve_provider_for_layer(layer_id, provider_id=provider_id)
+
+    # 瓦片网格：商业源钉选时改走 registry 优先级中的密集源
+    if pinned and _is_sparse_grid_provider(provider):
+        try:
+            dense = resolve_provider_for_layer(layer_id, exclude=(provider.provider_id,))
+            if not _is_sparse_grid_provider(dense):
+                logger.info(
+                    "Grid tile prefers dense provider=%s over pinned commercial=%s for layer=%s",
+                    dense.provider_id,
+                    provider.provider_id,
+                    layer_id,
+                )
+                provider = dense
+                pinned = False
+        except WeatherProviderUnavailableError:
+            logger.warning(
+                "Pinned commercial provider=%s for grid layer=%s; no dense fallback available",
+                provider.provider_id,
+                layer_id,
+            )
+
     resolved_model = model or settings.weather_default_model
     resolved_ttl = ttl_seconds if ttl_seconds is not None else get_weather_cache_ttl_seconds()
 

@@ -46,6 +46,13 @@ export interface LayerCatalogItem {
   sources: LayerSource[]
   /** 是否内置行政区边界图层 */
   isAdminBoundary?: boolean
+  // ── 课题组数据集元数据扩展（Phase 1：扩展和细化）────────────────────────────
+  /** 数据归属（课题组成员 / Lab / 留空表示外部公开数据）；与 NAS 顶级目录对齐 */
+  dataOwner?: string
+  /** 时间覆盖范围的人类可读描述，如 '2023-01' / '2018-2020' / 'doy 017-030' */
+  temporalCoverage?: string
+  /** 数据源引用（DOI / URL / 官方页面），用于学术溯源 */
+  sourceReference?: string
 }
 
 export interface RuntimeLayerLibraryItem extends LayerCatalogItem {

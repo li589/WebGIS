@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, defineAsyncComponent, ref, watch } from 'vue'
 import { storeToRefs } from 'pinia'
+import { useDataImportFlow } from '../composables/useDataImportFlow'
 
 import ControlPanel from '../components/ControlPanel.vue'
 import InfoPanel from '../components/InfoPanel.vue'
@@ -59,6 +60,42 @@ const SettingsPanel = defineAsyncComponent(() => import('../components/settings/
 const WorkflowEditorPanel = defineAsyncComponent(() => import('../components/workflow/WorkflowEditorPanel.vue'))
 import type { WorkflowRunTarget } from '../components/workflow/WorkflowRunDialog.vue'
 import { useWorkflowOutputLayersStore } from '../stores/workflow-output-layers'
+
+const { processFiles: processImportFiles, dropActive, importing: importBusy } = useDataImportFlow()
+
+function isFileDrag(e: DragEvent): boolean {
+  return Array.from(e.dataTransfer?.types ?? []).includes('Files')
+}
+
+function onMapShellDragEnter(e: DragEvent) {
+  if (workflowEditorOpen.value || settingsOpen.value || importBusy.value) return
+  if (!isFileDrag(e)) return
+  e.preventDefault()
+  dropActive.value = true
+}
+
+function onMapShellDragOver(e: DragEvent) {
+  if (workflowEditorOpen.value || settingsOpen.value || importBusy.value) return
+  if (!isFileDrag(e)) return
+  e.preventDefault()
+  if (e.dataTransfer) e.dataTransfer.dropEffect = 'copy'
+  dropActive.value = true
+}
+
+function onMapShellDragLeave(e: DragEvent) {
+  const related = e.relatedTarget as Node | null
+  if (related && mapShellRef.value?.contains(related)) return
+  dropActive.value = false
+}
+
+async function onMapShellDrop(e: DragEvent) {
+  dropActive.value = false
+  if (workflowEditorOpen.value || settingsOpen.value || importBusy.value) return
+  if (!isFileDrag(e)) return
+  e.preventDefault()
+  e.stopPropagation()
+  await processImportFiles(e.dataTransfer?.files)
+}
 
 // 异步组件首次加载跟踪：仅首次打开时显示 loading（后续从缓存加载无需 loading）
 const _loadedAsyncPanels = new Set<string>()
@@ -349,7 +386,15 @@ function buildFallbackActiveLayer(): ActiveLayerDisplay {
 
 <template>
   <main ref="dashboardRef" class="dashboard">
-    <section ref="mapShellRef" class="map-shell">
+    <section
+      ref="mapShellRef"
+      class="map-shell"
+      :class="{ 'drop-active': dropActive }"
+      @dragenter="onMapShellDragEnter"
+      @dragover="onMapShellDragOver"
+      @dragleave="onMapShellDragLeave"
+      @drop="onMapShellDrop"
+    >
       <MapCanvas
         ref="mapCanvasRef"
         :tile-source-id="tileSourceId"
@@ -360,6 +405,13 @@ function buildFallbackActiveLayer(): ActiveLayerDisplay {
         @map-point-select="handleMapPointSelect"
         @overlay-time-update="handleOverlayTimeUpdate"
       />
+
+      <div v-if="dropActive" class="import-drop-overlay" aria-hidden="true">
+        <div class="import-drop-card">
+          <span class="import-drop-title">释放以导入数据</span>
+          <span class="import-drop-desc">SHP / GeoJSON / CSV / TIF</span>
+        </div>
+      </div>
 
       <div class="overlay overlay-top">
         <ModeToolbar
@@ -505,6 +557,44 @@ function buildFallbackActiveLayer(): ActiveLayerDisplay {
   border-radius: 1.4rem;
   overflow: hidden;
   isolation: isolate;
+}
+
+.map-shell.drop-active {
+  outline: 2px solid rgba(90, 213, 255, 0.55);
+  outline-offset: -2px;
+}
+
+.import-drop-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 40;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(4, 12, 22, 0.55);
+  pointer-events: none;
+}
+
+.import-drop-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 1.1rem 1.6rem;
+  border-radius: 0.75rem;
+  border: 1px dashed rgba(90, 213, 255, 0.55);
+  background: rgba(8, 20, 36, 0.9);
+  color: #d5e8f8;
+}
+
+.import-drop-title {
+  font-size: 0.92rem;
+  font-weight: 600;
+}
+
+.import-drop-desc {
+  font-size: 0.68rem;
+  color: #8aa8bf;
 }
 
 .overlay {

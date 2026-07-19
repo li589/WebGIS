@@ -18,21 +18,32 @@ interface WeatherPaletteDefinition {
 }
 
 const WEATHER_PALETTES: Record<string, WeatherPaletteDefinition> = {
+  /** 更多停点 → MapLibre interpolate / 图例更平滑（对照 Windy LUT） */
   'thermal-orange': {
-    colors: ['#315dff', '#36c5ff', '#7ce7b0', '#ffd166', '#ff7b54', '#ff4d4d'],
-    lineColor: 'rgba(255,255,255,0.18)',
+    colors: [
+      '#1b3cff', '#2f6bff', '#36c5ff', '#5ad9c4', '#7ce7b0',
+      '#c8e86a', '#ffd166', '#ff9f4a', '#ff7b54', '#ff4d4d', '#e02060',
+    ],
+    lineColor: 'rgba(255,255,255,0.10)',
     label: '热力橙红',
     type: 'sequential',
   },
   'precip-cyan': {
-    colors: ['#16324f', '#1c6dd0', '#1ec8ff', '#70f0ff', '#b7fff5', '#f5ffff'],
-    lineColor: 'rgba(150, 236, 255, 0.22)',
+    colors: [
+      '#0b1c30', '#16324f', '#1c6dd0', '#1ec8ff',
+      '#70f0ff', '#b7fff5', '#e8ffff', '#ffffff',
+    ],
+    lineColor: 'rgba(150, 236, 255, 0.14)',
     label: '降水青蓝',
     type: 'sequential',
   },
+  /** 对齐 Windy.com 风速色阶：蓝→青→绿→黄→橙→红→紫 */
   'wind-blue': {
-    colors: ['#10314b', '#1d6fa5', '#4bb9ff', '#84ddff', '#c4f3ff'],
-    lineColor: 'rgba(170, 228, 255, 0.22)',
+    colors: [
+      '#6271b8', '#3d6ea3', '#4a94aa', '#4a9294', '#4d8e7c',
+      '#6b9148', '#a89438', '#d07a3a', '#c94e4e', '#a83d7a', '#7a3d9e', '#5c4d6e',
+    ],
+    lineColor: 'rgba(170, 228, 255, 0.12)',
     label: '风场蓝',
     type: 'sequential',
   },
@@ -116,24 +127,44 @@ export const WEATHER_PALETTE_OPTIONS: WeatherPaletteOption[] = Object.entries(WE
   ([id, def]) => ({ id, label: def.label, type: def.type, colors: def.colors }),
 )
 
-/** 将配色方案转换为粒子流色阶（12 色插值） */
+/** 将配色方案转换为粒子流色阶（12 色；提亮后适合深色底图描线） */
 export function paletteToParticleColors(paletteId: string): string[] {
-  const def = WEATHER_PALETTES[paletteId]
+  const resolved = resolvePaletteId(paletteId)
+  const def = WEATHER_PALETTES[resolved]
   if (!def) return []
   const src = def.colors
   const target = 12
-  if (src.length >= target) return src.slice(0, target)
-  // 线性插值扩展到 12 色
-  const result: string[] = []
-  for (let i = 0; i < target; i++) {
-    const ratio = i / (target - 1)
-    const srcIdx = ratio * (src.length - 1)
-    const lo = Math.floor(srcIdx)
-    const hi = Math.min(lo + 1, src.length - 1)
-    const frac = srcIdx - lo
-    result.push(lerpHexColor(src[lo], src[hi], frac))
+  const expanded: string[] = []
+  if (src.length >= target) {
+    for (let i = 0; i < target; i++) expanded.push(src[i])
+  } else {
+    for (let i = 0; i < target; i++) {
+      const ratio = i / (target - 1)
+      const srcIdx = ratio * (src.length - 1)
+      const lo = Math.floor(srcIdx)
+      const hi = Math.min(lo + 1, src.length - 1)
+      const frac = srcIdx - lo
+      expanded.push(lerpHexColor(src[lo], src[hi], frac))
+    }
   }
-  return result
+  // heatmap 色带偏暗；粒子是 1px 线，必须抬亮度否则在卫星/深色底图上等于「没显示」
+  return expanded.map((c, i) => lightenForParticleStroke(c, 0.52 + (i / (target - 1)) * 0.18))
+}
+
+/** 向白混合并抬最低亮度，保证粒子描边在深色底图上可见且仍保留色相 */
+function lightenForParticleStroke(hex: string, amount: number): string {
+  const rgb = parseHex(hex)
+  if (!rgb) return '#e8f4ff'
+  const [r0, g0, b0] = rgb
+  const r = Math.round(r0 + (255 - r0) * amount)
+  const g = Math.round(g0 + (255 - g0) * amount)
+  const b = Math.round(b0 + (255 - b0) * amount)
+  // 最低亮度约 160，避免仍偏暗
+  const lift = Math.max(0, 160 - Math.max(r, g, b))
+  const rr = Math.min(255, r + lift)
+  const gg = Math.min(255, g + lift)
+  const bb = Math.min(255, b + lift)
+  return `#${rr.toString(16).padStart(2, '0')}${gg.toString(16).padStart(2, '0')}${bb.toString(16).padStart(2, '0')}`
 }
 
 function lerpHexColor(a: string, b: string, t: number): string {
@@ -153,8 +184,40 @@ function parseHex(hex: string): [number, number, number] | null {
   return [(n >> 16) & 255, (n >> 8) & 255, n & 255]
 }
 
+/** 后端目录/历史命名 → 前端色带 ID（避免未知 ID 回落暗色 wind-blue 导致“看不见”） */
+const PALETTE_ALIASES: Record<string, string> = {
+  'orange-red': 'thermal-orange',
+  'blue-cyan': 'wind-blue',
+  'teal-blue': 'precip-cyan',
+  'purple-seq': 'magenta-yellow',
+  'green-seq': 'greens',
+  'amber-gray': 'yellow-red',
+  'pressure-purple': 'magenta-yellow',
+  'humidity-green': 'greens',
+  'visibility-amber': 'yellow-red',
+}
+
+function resolvePaletteId(palette: string): string {
+  const key = PALETTE_ALIASES[palette] ?? palette
+  if (WEATHER_PALETTES[key]) return key
+  // 未知色带用高对比热力色，避免暗底图上看起来像“没图层”
+  return 'thermal-orange'
+}
+
+/** 规范化色带 ID（别名 → 前端 canonical），供选择器高亮对齐 */
+export function resolveCanonicalPaletteId(palette: string | null | undefined): string {
+  if (!palette) return ''
+  return resolvePaletteId(palette)
+}
+
+/** 判断两个色带 ID 是否同一条（含别名） */
+export function paletteIdsEqual(a: string | null | undefined, b: string | null | undefined): boolean {
+  if (!a || !b) return false
+  return resolvePaletteId(a) === resolvePaletteId(b)
+}
+
 function getPaletteDefinition(palette: string): WeatherPaletteDefinition {
-  return WEATHER_PALETTES[palette] ?? WEATHER_PALETTES['wind-blue']
+  return WEATHER_PALETTES[resolvePaletteId(palette)]
 }
 
 /** 供侧栏 / InfoPanel 读取色带颜色 */
@@ -164,14 +227,14 @@ export function getPaletteColors(paletteId: string): string[] {
 
 // ── 渲染参数常量 ─────────────────────────────────────────
 
-/** 天气图层填充不透明度范围（柔和低调：上限压低，不抢底图视觉焦点） */
-const FILL_OPACITY_MIN = 0.06
-const FILL_OPACITY_MAX = 0.7
+/** 天气图层填充不透明度范围（连续色场可略提高，仍保留底图可读） */
+const FILL_OPACITY_MIN = 0.08
+const FILL_OPACITY_MAX = 0.82
 
-/** 天气图层线条不透明度范围及相对填充的折扣系数 */
-const LINE_OPACITY_MIN = 0.06
-const LINE_OPACITY_MAX = 0.32
-const LINE_OPACITY_RATIO = 0.46
+/** 网格描边尽量弱，避免色块感 */
+const LINE_OPACITY_MIN = 0.02
+const LINE_OPACITY_MAX = 0.12
+const LINE_OPACITY_RATIO = 0.18
 
 /** 天气点半径映射范围（像素） */
 const POINT_RADIUS_MIN = 3.0
@@ -192,7 +255,7 @@ const WEATHER_RENDER_HINTS: Record<string, WeatherLayerRenderHint> = {
     primary_metric: 'wind_speed_10m',
     unit_label: 'm/s',
     opacity: 0.82,
-    legend_ticks: [0, 5, 10, 15, 20],
+    legend_ticks: [0, 5, 10, 15, 20, 25, 30],
     notes: ['10 m 风场粒子流'],
   },
   'wind-field-80m': {
@@ -241,7 +304,7 @@ const WEATHER_RENDER_HINTS: Record<string, WeatherLayerRenderHint> = {
     palette: 'wind-blue',
     primary_metric: 'wind_speed_500hPa',
     unit_label: 'm/s',
-    opacity: 0.78,
+    opacity: 0.74,
     legend_ticks: [0, 15, 30, 45, 60, 75],
     notes: ['500 hPa 风场粒子流'],
   },
@@ -251,7 +314,7 @@ const WEATHER_RENDER_HINTS: Record<string, WeatherLayerRenderHint> = {
     palette: 'wind-blue',
     primary_metric: 'wind_speed_200hPa',
     unit_label: 'm/s',
-    opacity: 0.78,
+    opacity: 0.7,
     legend_ticks: [0, 20, 40, 60, 80, 100],
     notes: ['200 hPa 风场粒子流'],
   },
@@ -261,9 +324,9 @@ const WEATHER_RENDER_HINTS: Record<string, WeatherLayerRenderHint> = {
     palette: 'thermal-orange',
     primary_metric: 'temperature_2m',
     unit_label: '°C',
-    opacity: 0.7,
+    opacity: 0.78,
     legend_ticks: [-10, 0, 10, 20, 30, 40],
-    notes: ['2 m 气温填充'],
+    notes: ['2 m 气温连续色场（网格填充）'],
   },
   'temperature-80m': {
     layer_id: 'temperature-80m',
@@ -271,9 +334,9 @@ const WEATHER_RENDER_HINTS: Record<string, WeatherLayerRenderHint> = {
     palette: 'thermal-orange',
     primary_metric: 'temperature_80m',
     unit_label: '°C',
-    opacity: 0.7,
+    opacity: 0.78,
     legend_ticks: [-10, 0, 10, 20, 30, 40],
-    notes: ['80 m 气温填充'],
+    notes: ['80 m 气温连续色场（网格填充）'],
   },
   'temperature-120m': {
     layer_id: 'temperature-120m',
@@ -281,9 +344,9 @@ const WEATHER_RENDER_HINTS: Record<string, WeatherLayerRenderHint> = {
     palette: 'thermal-orange',
     primary_metric: 'temperature_120m',
     unit_label: '°C',
-    opacity: 0.7,
+    opacity: 0.78,
     legend_ticks: [-10, 0, 10, 20, 30, 40],
-    notes: ['120 m 气温填充'],
+    notes: ['120 m 气温连续色场（网格填充）'],
   },
   'temperature-180m': {
     layer_id: 'temperature-180m',
@@ -291,9 +354,9 @@ const WEATHER_RENDER_HINTS: Record<string, WeatherLayerRenderHint> = {
     palette: 'thermal-orange',
     primary_metric: 'temperature_180m',
     unit_label: '°C',
-    opacity: 0.7,
+    opacity: 0.78,
     legend_ticks: [-10, 0, 10, 20, 30, 40],
-    notes: ['180 m 气温填充'],
+    notes: ['180 m 气温连续色场（网格填充）'],
   },
   'precipitation': {
     layer_id: 'precipitation',
@@ -301,9 +364,9 @@ const WEATHER_RENDER_HINTS: Record<string, WeatherLayerRenderHint> = {
     palette: 'precip-cyan',
     primary_metric: 'precipitation',
     unit_label: 'mm',
-    opacity: 0.72,
-    legend_ticks: [0, 1, 5, 10, 20, 50],
-    notes: ['降水量填充'],
+    opacity: 0.78,
+    legend_ticks: [0, 1, 5, 10, 25, 50],
+    notes: ['降水量连续色场（网格填充）'],
   },
   'pressure': {
     layer_id: 'pressure',
@@ -311,29 +374,49 @@ const WEATHER_RENDER_HINTS: Record<string, WeatherLayerRenderHint> = {
     palette: 'magenta-yellow',
     primary_metric: 'pressure_msl',
     unit_label: 'hPa',
-    opacity: 0.68,
-    legend_ticks: [960, 980, 1000, 1020, 1040],
-    notes: ['海平面气压填充'],
+    opacity: 0.7,
+    legend_ticks: [980, 1000, 1010, 1020, 1040],
+    notes: ['海平面气压连续色场'],
   },
   'humidity': {
     layer_id: 'humidity',
     paint_mode: 'grid_fill',
-    palette: 'precip-cyan',
+    palette: 'greens',
     primary_metric: 'relative_humidity_2m',
     unit_label: '%',
-    opacity: 0.68,
+    opacity: 0.7,
     legend_ticks: [0, 20, 40, 60, 80, 100],
-    notes: ['相对湿度填充'],
+    notes: ['相对湿度连续色场'],
   },
   'visibility': {
     layer_id: 'visibility',
     paint_mode: 'grid_fill',
-    palette: 'thermal-orange',
+    palette: 'yellow-red',
     primary_metric: 'visibility',
     unit_label: 'm',
-    opacity: 0.68,
-    legend_ticks: [0, 5000, 10000, 20000, 30000],
-    notes: ['能见度填充'],
+    opacity: 0.7,
+    legend_ticks: [0, 1000, 5000, 10000, 20000, 30000],
+    notes: ['能见度连续色场'],
+  },
+  'cloud-cover': {
+    layer_id: 'cloud-cover',
+    paint_mode: 'grid_fill',
+    palette: 'greens',
+    primary_metric: 'cloud_cover',
+    unit_label: '%',
+    opacity: 0.72,
+    legend_ticks: [0, 20, 40, 60, 80, 100],
+    notes: ['总云量连续色场'],
+  },
+  'dewpoint': {
+    layer_id: 'dewpoint',
+    paint_mode: 'grid_fill',
+    palette: 'thermal-orange',
+    primary_metric: 'dew_point_2m',
+    unit_label: 'C',
+    opacity: 0.78,
+    legend_ticks: [-10, 0, 10, 15, 20, 25],
+    notes: ['露点温度连续色场（网格填充）'],
   },
 }
 
@@ -343,6 +426,7 @@ export function buildDefaultWeatherRenderHint(
   descriptor?: RuntimeLayerDescriptor | null,
 ): WeatherLayerRenderHint | null {
   if (!layerId) return null
+  const local = WEATHER_RENDER_HINTS[layerId] ?? null
   const capabilityHint = descriptor?.capabilities
   const styleHint = descriptor?.style
   if (
@@ -351,45 +435,91 @@ export function buildDefaultWeatherRenderHint(
     && styleHint?.palette
     && styleHint.unit_label
   ) {
+    const legendFromCap = capabilityHint.legend_ticks ?? []
     return {
       layer_id: layerId,
       paint_mode: capabilityHint.paint_mode,
-      palette: styleHint.palette,
+      // 本地 canonical palette 优先；目录别名（blue-cyan 等）仅作回落，经 alias 解析
+      palette: local?.palette || styleHint.palette || 'thermal-orange',
       primary_metric: capabilityHint.primary_metric,
-      unit_label: styleHint.unit_label,
-      opacity: typeof styleHint.opacity === 'number' ? styleHint.opacity : 1,
-      legend_ticks: capabilityHint.legend_ticks ?? [],
-      notes: capabilityHint.notes ?? [],
+      // 单位同样优先本地（°C / mm），避免目录 degC / mm/h 与图例文案不一致
+      unit_label: local?.unit_label || styleHint.unit_label,
+      opacity: typeof local?.opacity === 'number'
+        ? local.opacity
+        : (typeof styleHint.opacity === 'number' ? styleHint.opacity : 0.7),
+      // 刻度优先后端能力（与 WEATHER_LAYER_SPECS 同源）；空则回落本地
+      legend_ticks: legendFromCap.length > 0
+        ? legendFromCap
+        : (local?.legend_ticks ?? DEFAULT_LEGEND_TICKS),
+      notes: capabilityHint.notes?.length ? capabilityHint.notes : (local?.notes ?? []),
     }
   }
-  return WEATHER_RENDER_HINTS[layerId] ?? null
+  return local
+}
+
+/** 按 0~1 比例从色带采样（连续图例 / 填色共用） */
+export function samplePaletteColor(paletteId: string, ratio: number): string {
+  const colors = getPaletteDefinition(paletteId).colors
+  if (colors.length === 0) return '#4bb9ff'
+  if (colors.length === 1) return colors[0]
+  const t = Math.max(0, Math.min(1, ratio))
+  const srcIdx = t * (colors.length - 1)
+  const lo = Math.floor(srcIdx)
+  const hi = Math.min(lo + 1, colors.length - 1)
+  return lerpHexColor(colors[lo], colors[hi], srcIdx - lo)
 }
 
 export function buildWeatherLegendStops(hint: WeatherLayerRenderHint): WeatherLegendStop[] {
-  const palette = getPaletteDefinition(hint.palette)
   const legendTicks = hint.legend_ticks ?? []
   const ticks = legendTicks.length > 0 ? legendTicks : DEFAULT_LEGEND_TICKS
-  return ticks.map((tick, index) => ({
-    value: tick,
-    label: typeof tick === 'number' ? `${tick} ${hint.unit_label}`.trim() : String(tick),
-    color: palette.colors[Math.min(index, palette.colors.length - 1)],
-  }))
+  const numericTicks = ticks.filter((tick): tick is number => typeof tick === 'number')
+  const minTick = numericTicks[0] ?? 0
+  const maxTick = numericTicks[numericTicks.length - 1] ?? 1
+  const span = maxTick - minTick || 1
+  return ticks.map((tick, index) => {
+    const ratio = typeof tick === 'number'
+      ? (tick - minTick) / span
+      : index / Math.max(1, ticks.length - 1)
+    return {
+      value: tick,
+      label: typeof tick === 'number' ? `${tick} ${hint.unit_label}`.trim() : String(tick),
+      color: samplePaletteColor(hint.palette, ratio),
+    }
+  })
+}
+
+/** CSS linear-gradient：与填色 / 图例刻度同一套 samplePaletteColor，避免色条与地图色阶错位 */
+export function buildWeatherLegendGradient(hint: WeatherLayerRenderHint): string {
+  const stops = buildWeatherLegendStops(hint)
+  const colors = stops.map((stop) => stop.color).filter(Boolean)
+  if (colors.length === 0) {
+    const fallback = getPaletteDefinition(hint.palette).colors
+    if (fallback.length === 0) return 'linear-gradient(90deg, #4bb9ff, #ff7b54)'
+    return `linear-gradient(90deg, ${fallback.join(', ')})`
+  }
+  if (colors.length === 1) {
+    return `linear-gradient(90deg, ${colors[0]}, ${colors[0]})`
+  }
+  return `linear-gradient(90deg, ${colors.join(', ')})`
 }
 
 export function buildWeatherFillColorExpression(hint: WeatherLayerRenderHint): ExpressionSpecification {
   const legendStops = buildWeatherLegendStops(hint)
   const metricKey = hint.primary_metric
-  const baseColor = legendStops[0]?.color ?? '#4bb9ff'
   const expression: Array<string | number | ExpressionSpecification> = [
-    'step',
+    'interpolate',
+    ['linear'],
     ['coalesce', ['to-number', ['get', metricKey]], 0] as unknown as ExpressionSpecification,
-    baseColor,
   ]
 
-  for (let index = 1; index < legendStops.length; index += 1) {
-    const stop = legendStops[index]
+  let pushed = 0
+  for (const stop of legendStops) {
     if (typeof stop.value !== 'number') continue
     expression.push(stop.value, stop.color)
+    pushed += 1
+  }
+  if (pushed === 0) {
+    expression.push(0, legendStops[0]?.color ?? '#4bb9ff')
   }
   return expression as ExpressionSpecification
 }
@@ -459,7 +589,11 @@ export function getWeatherLineColor(hint: WeatherLayerRenderHint) {
 }
 
 export function getWeatherFillOpacity(hint: WeatherLayerRenderHint, layerOpacity: number) {
-  return Math.max(FILL_OPACITY_MIN, Math.min(FILL_OPACITY_MAX, hint.opacity * layerOpacity))
+  const hintOpacity = typeof hint.opacity === 'number' && Number.isFinite(hint.opacity) ? hint.opacity : 0.7
+  const layerOp = typeof layerOpacity === 'number' && Number.isFinite(layerOpacity) ? layerOpacity : 1
+  const raw = hintOpacity * layerOp
+  if (!Number.isFinite(raw)) return 0.55
+  return Math.max(FILL_OPACITY_MIN, Math.min(FILL_OPACITY_MAX, raw))
 }
 
 export function getWeatherLineOpacity(hint: WeatherLayerRenderHint, layerOpacity: number) {

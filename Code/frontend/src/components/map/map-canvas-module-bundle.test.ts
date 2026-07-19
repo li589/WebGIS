@@ -13,14 +13,15 @@ describe('map-canvas-module-bundle', () => {
     const mapInteractionModule = {
       applyInteractionMode: vi.fn(),
     }
+    const selectedLayerFocusModule = {}
+    const measureModule = { applyMeasureMode: vi.fn(), syncFromStore: vi.fn() }
+    const syncAdminOverlay = vi.fn()
     const runtimeOptions: {
       onTileSourceChange?: (sourceId: 'esri-street') => void
       onInteractionModeChange?: () => void
       onAdminBoundaryOverlayChange?: () => void
+      onMeasureStateChange?: () => void
     } = {}
-    const selectedLayerFocusModule = {}
-    const measureModule = { applyMeasureMode: vi.fn() }
-    const syncAdminOverlay = vi.fn()
 
     const bundle = createMapCanvasModuleBundle({
       map: {} as any,
@@ -74,6 +75,7 @@ describe('map-canvas-module-bundle', () => {
           runtimeOptions.onTileSourceChange = options.onTileSourceChange
           runtimeOptions.onInteractionModeChange = options.onInteractionModeChange
           runtimeOptions.onAdminBoundaryOverlayChange = options.onAdminBoundaryOverlayChange
+          runtimeOptions.onMeasureStateChange = options.onMeasureStateChange
           return {} as any
         }),
         createSelectedLayerFocusModule: vi.fn(() => selectedLayerFocusModule as any),
@@ -84,6 +86,7 @@ describe('map-canvas-module-bundle', () => {
     runtimeOptions.onTileSourceChange?.('esri-street')
     runtimeOptions.onInteractionModeChange?.()
     runtimeOptions.onAdminBoundaryOverlayChange?.()
+    runtimeOptions.onMeasureStateChange?.()
 
     expect(bundle.basemapModule).toBe(basemapModule)
     expect(bundle.adminBoundaryModule).toBe(adminBoundaryModule)
@@ -95,6 +98,7 @@ describe('map-canvas-module-bundle', () => {
     expect(basemapModule.scheduleTileSourceSwitch).toHaveBeenCalledWith('esri-street')
     expect(mapInteractionModule.applyInteractionMode).toHaveBeenCalledTimes(1)
     expect(measureModule.applyMeasureMode).toHaveBeenCalledTimes(1)
+    expect(measureModule.syncFromStore).toHaveBeenCalledTimes(1)
     expect(syncAdminOverlay).toHaveBeenCalledTimes(1)
   })
 })

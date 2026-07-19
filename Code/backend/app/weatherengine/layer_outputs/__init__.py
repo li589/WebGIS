@@ -30,6 +30,7 @@ from app.weatherengine.layer_outputs import (  # noqa: F401
     humidity,
     precipitation,
     pressure,
+    scalar_layers,
     temperature,
     visibility,
     wind_field,

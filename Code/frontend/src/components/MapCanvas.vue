@@ -156,31 +156,50 @@ const stageStatusModel = computed(() => buildMapStageStatusModel({
   tileFailedProvider: tileFailedProvider.value,
 }))
 
-// 天气瓦片加载/错误状态：聚合所有可见天气图层的状态
+// 天气瓦片加载/错误/半覆盖状态：聚合所有可见天气图层
 const weatherTileStatusModel = computed(() => {
   // 依赖 statusVersion 触发响应式更新
   void weatherStatusVersion.value
   const weatherLayers = layersStore.activeLayersDisplay.filter(
     (l) => l.visible && layersStore.isWeatherEngineLayer(l.catalogId),
   )
-  if (weatherLayers.length === 0) return { show: false, isLoading: false, error: null }
+  if (weatherLayers.length === 0) {
+    return { show: false, isLoading: false, error: null as string | null, partial: null as string | null }
+  }
 
   for (const layer of weatherLayers) {
     const status = weatherTileManager.getLayerStatus(layer.catalogId)
     if (!status.active) continue
-    // 错误优先级最高
-    if (status.errorType) {
-      return { show: true, isLoading: false, error: status.errorMessage ?? '天气数据加载失败' }
+    // 视口全空时才盖错误横幅
+    if (status.errorType && status.cachedInViewport === 0) {
+      return {
+        show: true,
+        isLoading: false,
+        error: status.errorMessage ?? '天气数据加载失败',
+        partial: null,
+      }
     }
   }
-  // 检查是否有图层正在加载（pending > 0 且视口内无缓存）
+  // 全空且仍在拉取
   for (const layer of weatherLayers) {
     const status = weatherTileManager.getLayerStatus(layer.catalogId)
     if (status.active && status.pending > 0 && status.cachedInViewport === 0) {
-      return { show: true, isLoading: true, error: null }
+      return { show: true, isLoading: true, error: null, partial: null }
     }
   }
-  return { show: false, isLoading: false, error: null }
+  // 半覆盖：已有内容但视口仍有空洞（pending=0 时提示补洞，避免误以为加载结束）
+  for (const layer of weatherLayers) {
+    const status = weatherTileManager.getLayerStatus(layer.catalogId)
+    if (!status.active) continue
+    if (status.cachedInViewport > 0 && status.missingInViewport > 0 && status.pending === 0) {
+      const progress = `${status.cachedInViewport}/${status.viewportTotal}`
+      const partial = status.gapSweepActive
+        ? `已加载 ${progress}，正在补全空洞…`
+        : `已加载 ${progress}，部分区域待重试`
+      return { show: true, isLoading: false, error: null, partial }
+    }
+  }
+  return { show: false, isLoading: false, error: null, partial: null }
 })
 const stageAppearanceModel = computed(() => buildMapStageAppearanceModel({
   basemapStyle: currentTileConfig.value.style,
@@ -588,6 +607,12 @@ async function handleLocateMe() {
     <div v-if="weatherTileStatusModel.show && weatherTileStatusModel.isLoading" class="weather-loading">
       <span class="weather-loading-dot"></span>
       <span>正在加载天气数据…</span>
+    </div>
+
+    <!-- Weather tile partial coverage (holes being refilled) -->
+    <div v-if="weatherTileStatusModel.show && weatherTileStatusModel.partial" class="weather-load-partial">
+      <span class="weather-loading-dot"></span>
+      <span>{{ weatherTileStatusModel.partial }}</span>
     </div>
 
     <!-- Weather tile error banner -->
@@ -1133,6 +1158,25 @@ async function handleLocateMe() {
 @keyframes weather-pulse {
   0%, 100% { opacity: 0.5; }
   50% { opacity: 1; }
+}
+
+/* 天气瓦片半覆盖 / 补洞提示 */
+.weather-load-partial {
+  position: absolute;
+  top: 110px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 3;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.38rem;
+  padding: 0.38rem 0.7rem;
+  border-radius: 999px;
+  background: rgba(18, 28, 22, 0.9);
+  border: 1px solid rgba(120, 200, 160, 0.28);
+  color: #b8e6c8;
+  font-size: 0.64rem;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.24);
 }
 
 /* 天气瓦片错误横幅 */

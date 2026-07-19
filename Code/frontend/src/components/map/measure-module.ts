@@ -52,6 +52,8 @@ const LAYER_PREVIEW = 'measure-preview-layer'
 export interface MeasureModule {
   bindEvents: () => void
   applyMeasureMode: () => void
+  /** 根据 store 状态重绘 GeoJSON + 标注（工具栏清除等外部变更后调用） */
+  syncFromStore: () => void
   dispose: () => void
 }
 
@@ -243,6 +245,10 @@ export function createMeasureModule(
   function onDblClick(e: MapMouseEvent): void {
     if (options.getInteractionMode() !== 'measure') return
     e.preventDefault() // 阻止默认双击缩放
+    // 浏览器/MapLibre 会先触发 click 再 dblclick，末次 click 会多落一个点，先撤销再结束
+    if (options.getMeasureState().points.length > 0) {
+      options.undoLastMeasurePoint()
+    }
     options.completeMeasure()
     syncAll()
   }
@@ -329,6 +335,7 @@ export function createMeasureModule(
   return {
     bindEvents,
     applyMeasureMode,
+    syncFromStore: syncAll,
     dispose,
   }
 }

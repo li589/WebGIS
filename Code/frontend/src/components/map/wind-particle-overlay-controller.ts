@@ -2,7 +2,8 @@ import { WindBarbLayer } from './wind-barb-layer'
 import { WindContourLayer } from './wind-contour-layer'
 import { WindParticleCanvas } from './wind-particle-canvas'
 import { removeWeatherMapArtifacts } from './weather-overlay-maplibre'
-import { paletteToParticleColors } from './weather-render'
+import { syncWeatherSpeedUnderlay } from './weather-overlay-renderers'
+import { paletteToParticleColors, resolveCanonicalPaletteId } from './weather-render'
 import type { WeatherOverlayState } from './weather-overlay-registry'
 import type { WindGeoJSON } from './types'
 
@@ -94,7 +95,6 @@ export class WindParticleOverlayController {
     )
 
     const catalogId = overlayState.catalogId
-    removeWeatherMapArtifacts(this.map, catalogId)
 
     if (
       options.overlayToken !== options.getSyncWeatherToken()
@@ -191,6 +191,12 @@ export class WindParticleOverlayController {
       && (!enableBarbLayer || this.windBarbLayer)
     ) {
       debugLog('WindParticleController', 'sync skip redundant update')
+      // 仍刷新风速色底（避免其它路径清掉 MapLibre 层后粒子仍在却无底色）
+      syncWeatherSpeedUnderlay(this.map, {
+        ...overlayState,
+        geojsonData: geojson,
+        opacity: overlayState.opacity,
+      })
       return
     }
 
@@ -209,11 +215,18 @@ export class WindParticleOverlayController {
       geojson.features?.length,
     )
 
+    // 仅首次建层时清掉 fill/point 等冲突层；更新时就地 setData，避免色底闪空
+    if (!this.windParticleCanvas || !this.windContourLayer) {
+      removeWeatherMapArtifacts(this.map, catalogId)
+    }
+
     if (!this.windContourLayer) {
       this.windContourLayer = new WindContourLayer(this.map, geojson)
     } else {
       this.windContourLayer.updateGeoJSON(geojson)
     }
+    // 等值线仅作极淡结构参考；主色场交给 heatmap，避免与粒子抢视觉
+    this.windContourLayer.setOpacity(0.06)
 
     if (!this.windParticleCanvas) {
       this.windParticleCanvas = new WindParticleCanvas(this.map, geojson)
@@ -222,11 +235,19 @@ export class WindParticleOverlayController {
       this.windParticleCanvas.updateGeoJSON(geojson)
     }
 
-    // 应用配色方案到粒子色阶（支持用户自定义配色覆盖）
-    const particleColors = paletteToParticleColors(overlayState.renderHint.palette)
-    if (particleColors.length > 0) {
+    // 粒子用提亮后的 palette 色（深色底图可见）；风速色场仍由 heatmap 承担
+    const paletteId = resolveCanonicalPaletteId(overlayState.renderHint?.palette) || 'wind-blue'
+    const particleColors = paletteToParticleColors(paletteId)
+    if (particleColors.length >= 2) {
       this.windParticleCanvas.setColors(particleColors)
     }
+
+    // 风速色底（MapLibre heatmap），粒子 Canvas 叠在其上
+    syncWeatherSpeedUnderlay(this.map, {
+      ...overlayState,
+      geojsonData: geojson,
+      opacity: overlayState.opacity,
+    })
 
     if (enableBarbLayer) {
       if (!this.windBarbLayer) {

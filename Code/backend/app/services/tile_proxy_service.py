@@ -22,13 +22,8 @@ import httpx
 from fastapi import HTTPException
 
 from app.core.config import settings
-from app.services.coordinate_transform_service import (
-    bd09_to_gcj02,
-    gcj02_to_wgs84,
-    wgs84_to_bd09,
-    wgs84_to_gcj02,
-    CoordinatePoint,
-)
+from app.services.crs import CoordinatePoint
+from app.services.crs._gcj_bd import wgs84_to_bd09, wgs84_to_gcj02
 
 
 class TileProvider(Enum):

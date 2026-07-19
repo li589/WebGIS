@@ -58,19 +58,47 @@ const workflowItems = computed(() => {
   })
 })
 
-/** 工作流摘要（不含天气瓦片调度） */
-const summary = computed(() => layersStore.workflowSummary)
+/** 纯业务工作流摘要（不含天气瓦片） */
+const jobSummary = computed(() => layersStore.workflowSummary)
+
+/**
+ * 与 ModeToolbar 口径一致：天气瓦片 pending 计入 running，
+ * 避免工具栏显示「N 运行中」而面板内仍是 0。
+ */
+const summary = computed(() => {
+  void activityVersion.value
+  void statusVersion.value
+  const base = jobSummary.value
+  const tileActive = weatherTileManager.getGlobalActiveTileCount()
+  if (tileActive === 0) return base
+  return {
+    ...base,
+    running: base.running + tileActive,
+    total: Math.max(base.total, tileActive),
+    overall: 'active' as const,
+    tone: 'active' as const,
+  }
+})
 
 /** 衍生统计指标 */
 const derivedStats = computed(() => {
   void tick.value
   const s = summary.value
+  const jobs = jobSummary.value
   const active = s.running + s.queued + s.retryPending
-  const completed = s.succeeded + s.failed + s.cancelled
-  const successRate = completed > 0 ? Math.round((s.succeeded / completed) * 100) : null
-  const overallProgress = s.total > 0 ? Math.round((completed / s.total) * 100) : 0
+  const completed = jobs.succeeded + jobs.failed + jobs.cancelled
+  const successRate = completed > 0 ? Math.round((jobs.succeeded / completed) * 100) : null
+  const overallProgress = jobs.total > 0 ? Math.round((completed / jobs.total) * 100) : 0
   return { active, completed, successRate, overallProgress }
 })
+
+const tileErrorLabel: Record<string, string> = {
+  timeout: '请求超时',
+  'rate-limited': '频率超限',
+  'circuit-open': '服务暂不可用',
+  'workflow-failed': '工作流失败',
+  unknown: '加载失败',
+}
 
 /** 按分类分组统计工作流 */
 const categoryBreakdown = computed(() => {
@@ -226,7 +254,7 @@ onBeforeUnmount(() => {
           <p class="wf-panel-eyebrow">WORKFLOW STATUS</p>
           <h2>工作流状态总览</h2>
         </div>
-        <div class="wf-header-stats" v-if="summary.total > 0">
+        <div class="wf-header-stats" v-if="summary.total > 0 || globalTileStats.totalPending > 0">
           <span class="wf-header-stat">
             <span class="wf-header-stat-value">{{ summary.total }}</span>
             <span class="wf-header-stat-label">总计</span>
@@ -235,7 +263,7 @@ onBeforeUnmount(() => {
             <span class="wf-header-stat-value" style="color: #5ad5ff">{{ derivedStats.active }}</span>
             <span class="wf-header-stat-label">活跃</span>
           </span>
-          <span class="wf-header-stat" v-if="derivedStats.successRate !== null">
+          <span class="wf-header-stat" v-if="jobSummary.total > 0 && derivedStats.successRate !== null">
             <span class="wf-header-stat-value" :style="{ color: derivedStats.successRate >= 80 ? '#9ff8cf' : derivedStats.successRate >= 50 ? '#ffd38a' : '#ff8a8a' }">{{ derivedStats.successRate }}%</span>
             <span class="wf-header-stat-label">成功率</span>
           </span>
@@ -249,11 +277,12 @@ onBeforeUnmount(() => {
         <span>{{ layersStore.workflowError }}</span>
       </div>
 
-      <!-- 汇总卡片 -->
+      <!-- 汇总卡片（运行中含天气瓦片在途，与工具栏一致；其余为业务工作流） -->
       <section class="wf-summary-grid">
         <div class="wf-summary-card" :class="{ active: summary.running > 0 }">
           <span class="wf-summary-count" style="color: #5ad5ff">{{ summary.running }}</span>
           <span class="wf-summary-label">运行中</span>
+          <span v-if="globalTileStats.totalPending > 0" class="wf-summary-sub">含瓦片 {{ globalTileStats.totalPending }}</span>
         </div>
         <div class="wf-summary-card" :class="{ active: summary.queued > 0 }">
           <span class="wf-summary-count" style="color: #88dfff">{{ summary.queued }}</span>
@@ -277,8 +306,8 @@ onBeforeUnmount(() => {
         </div>
       </section>
 
-      <!-- 整体进度条 -->
-      <div v-if="summary.total > 0" class="wf-overall-progress">
+      <!-- 整体进度条（仅业务工作流，不含天气瓦片） -->
+      <div v-if="jobSummary.total > 0" class="wf-overall-progress">
         <div class="wf-overall-progress-bar">
           <div class="wf-overall-progress-fill" :style="{ width: `${derivedStats.overallProgress}%` }"></div>
         </div>
@@ -314,9 +343,21 @@ onBeforeUnmount(() => {
             <span class="wf-tile-layer-stats">
               {{ layer.status.cachedInViewport }}/{{ layer.status.viewportTotal }}
               <template v-if="layer.status.pending > 0"> · 待{{ layer.status.pending }}</template>
+              <template v-else-if="layer.status.missingInViewport > 0"> · 缺{{ layer.status.missingInViewport }}</template>
             </span>
-            <span v-if="layer.status.errorType" class="wf-tile-layer-error" :title="layer.status.errorMessage ?? ''">
-              {{ layer.status.errorType }}
+            <span
+              v-if="layer.status.missingInViewport > 0 && layer.status.gapSweepActive"
+              class="wf-tile-layer-gap"
+              title="视口仍有空洞，后台低频补拉中"
+            >
+              补洞中
+            </span>
+            <span
+              v-else-if="layer.status.errorType"
+              class="wf-tile-layer-error"
+              :title="layer.status.errorMessage ?? ''"
+            >
+              {{ tileErrorLabel[layer.status.errorType] ?? layer.status.errorType }}
             </span>
           </div>
         </div>
@@ -698,6 +739,15 @@ onBeforeUnmount(() => {
   cursor: help;
 }
 
+.wf-tile-layer-gap {
+  color: #9ff8cf;
+  font-size: 0.5rem;
+  padding: 0 0.3rem;
+  border: 1px solid rgba(159, 248, 207, 0.28);
+  border-radius: 999px;
+  cursor: help;
+}
+
 /* 分类统计 */
 .wf-category-stats {
   display: flex;
@@ -772,6 +822,14 @@ onBeforeUnmount(() => {
   color: #7f96ab;
   font-size: 0.55rem;
   letter-spacing: 0.04em;
+}
+
+.wf-summary-sub {
+  display: block;
+  margin-top: 2px;
+  color: #5a7a90;
+  font-size: 0.5rem;
+  letter-spacing: 0.02em;
 }
 
 /* 列表区 */

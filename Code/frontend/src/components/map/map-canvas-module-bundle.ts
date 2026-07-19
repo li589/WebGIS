@@ -174,6 +174,10 @@ export function createMapCanvasModuleBundle(
     getInteractionMode: options.getInteractionMode,
     getHasAdminBoundary: options.getHasAdminBoundary,
     getAdminBoundaryOpacity: options.getAdminBoundaryOpacity,
+    getMeasureSyncKey: () => {
+      const s = options.getMeasureState()
+      return `${s.points.length}:${s.isDrawing ? 1 : 0}`
+    },
     onTileSourceChange: (sourceId) => {
       basemapModule.scheduleTileSourceSwitch(sourceId)
     },
@@ -182,6 +186,9 @@ export function createMapCanvasModuleBundle(
       measureModule.applyMeasureMode()
     },
     onAdminBoundaryOverlayChange: options.syncAdminOverlay,
+    onMeasureStateChange: () => {
+      measureModule.syncFromStore()
+    },
   })
 
   const selectedLayerFocusModule = createSelectedLayerFocusModuleImpl({

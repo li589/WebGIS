@@ -84,11 +84,11 @@ class ApiConfigManager:
         # Open-Meteo（无需 API Key）
         self.register_config(ApiConfig(
             provider=ApiProvider.OPEN_METEO,
-            name="Open-Meteo",
+            name="Open-Meteo (Online)",
             endpoint=ApiEndpoint(
                 url="https://api.open-meteo.com/v1/forecast",
                 requires_auth=False,
-                rate_limit=10000,  # 官方文档说无限制
+                rate_limit=10000,
                 timeout=15,
                 capabilities={DataType.WEATHER},
             ),
@@ -181,13 +181,13 @@ class ApiConfigManager:
                 config.metadata["credentials_path"] = gee_credentials
                 logger.info("[ApiConfigManager] Loaded GEE credentials path from environment")
 
-        # 加载 Open-Meteo 自定义端点（如果有）
-        openmeteo_url = os.getenv("BACKEND_OPEN_METEO_URL", "")
+        # Open-Meteo online 默认端点（local 由 weather provider registry 管理）
+        openmeteo_url = os.getenv("BACKEND_OPEN_METEO_ONLINE_URL", "").strip()
         if openmeteo_url:
             config = self.get_config(ApiProvider.OPEN_METEO)
             if config:
                 config.endpoint.url = openmeteo_url
-                logger.info(f"[ApiConfigManager] Updated Open-Meteo URL to {openmeteo_url}")
+                logger.info(f"[ApiConfigManager] Updated Open-Meteo online URL to {openmeteo_url}")
 
     def register_config(self, config: ApiConfig):
         """注册 API 配置"""

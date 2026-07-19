@@ -1,4 +1,4 @@
-"""weatherengine get_point_weather 单元测试。
+﻿"""weatherengine get_point_weather 单元测试。
 
 验证 3 个图层（wind-field/temperature/precipitation）的 forecast 解析、
 render_hint 构造、缓存 miss→hit 转换逻辑，mock Open-Meteo API 避免网络依赖。
@@ -117,7 +117,7 @@ class GetPointWeatherTests(unittest.TestCase):
             forecast_hours=6,
             place_name="Guangzhou",
         )
-        self.assertEqual(response.provider, "open-meteo")
+        self.assertEqual(response.provider, "open-meteo-online")
         self.assertEqual(response.layer_id, "wind-field")
         self.assertEqual(response.place_name, "Guangzhou")
         self.assertEqual(response.cache_status, "miss")
@@ -145,7 +145,7 @@ class GetPointWeatherTests(unittest.TestCase):
             forecast_hours=3,
         )
         spec = WEATHER_LAYER_SPECS["temperature"]
-        self.assertEqual(response.render_hint.paint_mode, "grid_fill")
+        self.assertEqual(response.render_hint.paint_mode, spec.paint_mode)
         self.assertEqual(response.render_hint.palette, "thermal-orange")
         self.assertEqual(response.render_hint.unit_label, "C")
         self.assertAlmostEqual(response.current.temperature_2m or 0.0, 25.7)
@@ -162,7 +162,7 @@ class GetPointWeatherTests(unittest.TestCase):
             forecast_hours=4,
         )
         spec = WEATHER_LAYER_SPECS["precipitation"]
-        self.assertEqual(response.render_hint.paint_mode, "grid_fill")
+        self.assertEqual(response.render_hint.paint_mode, spec.paint_mode)
         self.assertEqual(response.render_hint.palette, "precip-cyan")
         self.assertEqual(response.render_hint.unit_label, "mm")
         self.assertAlmostEqual(response.current.precipitation or 0.0, 0.2)
@@ -213,7 +213,7 @@ class GetPointWeatherTests(unittest.TestCase):
             model="best_match",
         )
         diag_text = "\n".join(response.diagnostics)
-        self.assertIn("provider=open-meteo", diag_text)
+        self.assertIn("provider=open-meteo-online", diag_text)
         self.assertIn("layer_id=wind-field", diag_text)
         self.assertIn("model=best_match", diag_text)
         self.assertIn("cache_status=", diag_text)

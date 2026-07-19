@@ -8,10 +8,18 @@ import { useLogStore } from '../stores/log'
 import type { RuntimeLayerLibraryItem } from '../stores/layers/types'
 import {
   WEATHER_PALETTE_OPTIONS,
+  buildWeatherLegendGradient,
   isMapLinkedPalette,
+  resolveCanonicalPaletteId,
+  resolveStyleRenderHint,
   resolveSymbologyColors,
 } from './map/layer-symbology'
 import { useOverlaySymbologyStore } from '../stores/overlay-symbology'
+import { useWeatherSourcePrefsStore } from '../stores/weather-source-prefs'
+import {
+  getWeatherProvidersForLayer,
+  type WeatherProviderForLayer,
+} from '../services/runtime-api'
 
 const emit = defineEmits<{
   selectLayer: [instanceId: string]
@@ -21,9 +29,49 @@ const layersStore = useLayersStore()
 const uiStore = useUiStore()
 const logStore = useLogStore()
 const overlaySymbologyStore = useOverlaySymbologyStore()
+const weatherSourcePrefs = useWeatherSourcePrefsStore()
+
+const weatherProvidersCache = ref<Record<string, WeatherProviderForLayer[]>>({})
+const weatherProvidersLoading = ref<Record<string, boolean>>({})
+
+async function ensureWeatherProviders(catalogId: string) {
+  if (weatherProvidersCache.value[catalogId] || weatherProvidersLoading.value[catalogId]) return
+  weatherProvidersLoading.value = { ...weatherProvidersLoading.value, [catalogId]: true }
+  try {
+    const res = await getWeatherProvidersForLayer(catalogId)
+    weatherProvidersCache.value = {
+      ...weatherProvidersCache.value,
+      [catalogId]: res.providers ?? [],
+    }
+  } catch (error) {
+    logStore.push(
+      'warn',
+      `天气源列表加载失败 (${catalogId}): ${error instanceof Error ? error.message : String(error)}`,
+    )
+    weatherProvidersCache.value = { ...weatherProvidersCache.value, [catalogId]: [] }
+  } finally {
+    weatherProvidersLoading.value = { ...weatherProvidersLoading.value, [catalogId]: false }
+  }
+}
+
+function weatherProvidersFor(catalogId: string): WeatherProviderForLayer[] {
+  return weatherProvidersCache.value[catalogId] ?? []
+}
+
+function onWeatherSourceChange(catalogId: string, value: string) {
+  layersStore.applyWeatherProviderPreference(catalogId, value || 'auto')
+}
+
+function weatherSourceSparseHint(catalogId: string): boolean {
+  const pref = weatherSourcePrefs.getProvider(catalogId)
+  if (!pref || pref === 'auto') return false
+  const row = weatherProvidersFor(catalogId).find((p) => p.provider_id === pref)
+  return row?.grid_mode === 'sparse'
+}
 
 // Use storeToRefs only for reactive state
 const {
+  activeLayers,
   activeLayersDisplay,
   selectedInstanceId,
   sidebarView,
@@ -64,10 +112,29 @@ const filteredLibraryByCategory = computed(() => {
   return Array.from(map.values()).filter((g) => g.items.length > 0)
 })
 
+function prefetchVisibleWeatherProviders() {
+  for (const group of filteredLibraryByCategory.value) {
+    if (group.category.id !== 'online-weather') continue
+    for (const item of group.items) {
+      void ensureWeatherProviders(item.catalogId)
+    }
+  }
+}
+
+watch(filteredLibraryByCategory, () => prefetchVisibleWeatherProviders(), { deep: true })
+
 // ── Check if layer already added ───────────────────────────────────────────────
+/** 轻量已添加集合：只读 activeLayers，避开 activeLayersDisplay（含瓦片 stats，风场加载时会卡住） */
+const addedCatalogIds = computed(() => {
+  const ids = new Set<string>()
+  for (const layer of activeLayers.value) {
+    if (!layer.isAdminBoundary) ids.add(layer.catalogId)
+  }
+  return ids
+})
 
 function isAdded(catalogId: string): boolean {
-  return activeLayersDisplay.value.some((d) => d.catalogId === catalogId && !d.isAdminBoundary)
+  return addedCatalogIds.value.has(catalogId)
 }
 
 /** 获取 catalogId 对应的工作流状态（用于 library 卡片自动运行反馈） */
@@ -108,10 +175,14 @@ function openLibrary() {
 }
 
 function openActive() {
+  // 显式切到已添加列表；即使当前已是 active 也再写一次，避免偶发状态不同步
   layersStore.setSidebarView('active')
 }
 
 function addCatalogItem(catalogId: string, isAdminBoundary = false) {
+  if (!isAdminBoundary && isAdded(catalogId)) {
+    return
+  }
   // 天气图层由 tile manager 按需拉取瓦片，不再自动提交 analysis workflow
   layersStore.addLayer(catalogId, isAdminBoundary)
   logStore.logOperation('layer-add', `添加图层「${catalogId}」`, isAdminBoundary ? '行政区边界' : undefined)
@@ -124,16 +195,12 @@ function addCatalogItem(catalogId: string, isAdminBoundary = false) {
  * weatherTileManager.getStats()，在紧密循环中会导致明显的卡顿）。
  */
 function addAllInCategory(items: { catalogId: string; isAdminBoundary?: boolean }[]) {
-  const alreadyAdded = new Set<string>()
-  for (const d of activeLayersDisplay.value) {
-    if (!d.isAdminBoundary) alreadyAdded.add(d.catalogId)
-  }
+  const alreadyAdded = new Set(addedCatalogIds.value)
 
   for (const item of items) {
     if (item.isAdminBoundary) continue
     if (alreadyAdded.has(item.catalogId)) continue
     alreadyAdded.add(item.catalogId)
-    // 统一走 addCatalogItem，保证自动运行工作流的逻辑一致
     addCatalogItem(item.catalogId, false)
   }
 }
@@ -396,6 +463,7 @@ function onGlobalKeydown(event: KeyboardEvent) {
 onMounted(() => {
   document.addEventListener('click', onGlobalClick)
   document.addEventListener('keydown', onGlobalKeydown)
+  prefetchVisibleWeatherProviders()
 })
 onUnmounted(() => {
   document.removeEventListener('click', onGlobalClick)
@@ -424,16 +492,6 @@ function hasColorSymbology(layer: ActiveLayerDisplayLike): boolean {
   void overlaySymbologyStore.version
   const meta = overlaySymbologyStore.getMeta(layer.catalogId)
   return !!meta?.palette
-}
-
-function getSymbologyColors(layer: ActiveLayerDisplayLike): string[] {
-  void overlaySymbologyStore.version
-  return resolveSymbologyColors({
-    paletteOverride: layer.paletteOverride,
-    renderHint: layer.renderHint,
-    overlayMeta: overlaySymbologyStore.getMeta(layer.catalogId),
-    fallbackAccent: layer.accentColor,
-  })
 }
 
 function getSymbologyVmin(layer: ActiveLayerDisplayLike): string {
@@ -491,7 +549,22 @@ function handleSymbologyPalette(instanceId: string, paletteId: string) {
 }
 
 function getColorRampStyle(layer: ActiveLayerDisplayLike): Record<string, string> {
-  const colors = getSymbologyColors(layer)
+  void overlaySymbologyStore.version
+  // 与 InfoPanel 同源：resolveStyleRenderHint + buildWeatherLegendGradient
+  const hint = resolveStyleRenderHint({
+    paletteOverride: layer.paletteOverride,
+    renderHint: layer.renderHint ?? null,
+    overlayMeta: overlaySymbologyStore.getMeta(layer.catalogId),
+  })
+  if (hint) {
+    return { background: buildWeatherLegendGradient(hint) }
+  }
+  const colors = resolveSymbologyColors({
+    paletteOverride: layer.paletteOverride,
+    renderHint: layer.renderHint,
+    overlayMeta: overlaySymbologyStore.getMeta(layer.catalogId),
+    fallbackAccent: layer.accentColor,
+  })
   return {
     background: `linear-gradient(90deg, ${colors.join(', ')})`,
   }
@@ -499,10 +572,12 @@ function getColorRampStyle(layer: ActiveLayerDisplayLike): Record<string, string
 
 function currentSymbologyPaletteId(layer: ActiveLayerDisplayLike): string {
   void overlaySymbologyStore.version
-  return layer.paletteOverride
-    ?? layer.renderHint?.palette
-    ?? overlaySymbologyStore.getMeta(layer.catalogId)?.palette
-    ?? ''
+  return resolveCanonicalPaletteId(
+    layer.paletteOverride
+      ?? layer.renderHint?.palette
+      ?? overlaySymbologyStore.getMeta(layer.catalogId)?.palette
+      ?? '',
+  )
 }
 
 // 类型别名：对齐 WeatherLayerRenderHint 实际 schema（legend_ticks 而非 vmin/vmax）
@@ -538,7 +613,9 @@ const symbologyPanelLayer = computed(() => {
       <div class="panel-header">
         <div class="header-copy">
           <h2>{{ sidebarViewLabel }}</h2>
-          <p class="panel-subtitle">{{ sidebarView === 'empty' ? '开始添加图层' : sidebarView === 'library' ? '从库中选择' : `${activeLayerCount} 个图层已加载` }}</p>
+          <p v-if="sidebarView !== 'active'" class="panel-subtitle">
+            {{ sidebarView === 'empty' ? '开始添加图层' : '从库中选择' }}
+          </p>
         </div>
         <div class="header-actions">
           <span v-if="activeLayerCount > 0" class="badge">{{ activeLayerCount }}</span>
@@ -646,56 +723,86 @@ const symbologyPanelLayer = computed(() => {
                 <p class="card-source">{{ item.sourceLabel }}</p>
               </div>
 
-              <!-- 数据源区域：按源数量切换显示策略 -->
+              <!-- 数据源区域：天气图层用运行时 Provider；其它图层仍用目录静态 sources -->
               <div class="source-area">
-                <!-- 0 数据源 -->
-                <div v-if="item.sources.length === 0" class="source-empty" :title="'该图层暂未接入数据源'">
-                  <span class="src-empty-icon" aria-hidden="true">ⓘ</span>
-                  <span>暂无可用数据源</span>
-                </div>
-
-                <!-- 单数据源：直接展示信息 -->
-                <div v-else-if="item.sources.length === 1" class="source-single">
-                  <div class="src-line">
-                    <span class="src-dot" :style="{ background: item.accentColor }"></span>
-                    <span class="src-name">{{ item.sources[0].name }}</span>
-                  </div>
-                  <div class="src-meta">
-                    <span class="src-badge">{{ item.sources[0].updateFrequency }}</span>
-                    <span class="src-coord">{{ item.sources[0].coordSys }}</span>
-                    <span v-if="item.sources[0].needsAuth" class="src-auth" title="需要认证">🔒</span>
-                    <span v-if="item.sources[0].needsBackendTransform" class="src-tfm" title="后端转换">⚙</span>
-                  </div>
-                </div>
-
-                <!-- 多数据源：只读展示（前端切换未接入，避免假按钮） -->
-                <div v-else class="source-multi">
-                  <div
-                    class="source-summary"
-                    :title="getCatalogSourceSummary(item.catalogId)"
-                  >
-                    <span class="src-dot" :style="{ background: item.accentColor }"></span>
-                    <span class="src-current">{{ getPrimarySourceName(item.catalogId) }}</span>
-                    <span class="src-count">{{ item.sources.length }} 个候选源</span>
-                  </div>
-                  <div class="source-list source-list-static">
-                    <div
-                      v-for="src in item.sources"
-                      :key="src.id"
-                      class="source-option source-option-static"
-                      :title="src.description"
+                <template v-if="item.category === 'online-weather'">
+                  <div class="source-weather-live">
+                    <label class="weather-src-label">
+                      <span class="src-dot" :style="{ background: item.accentColor }"></span>
+                      <select
+                        class="weather-src-select"
+                        :value="weatherSourcePrefs.getProvider(item.catalogId)"
+                        :disabled="!!weatherProvidersLoading[item.catalogId]"
+                        @focus="ensureWeatherProviders(item.catalogId)"
+                        @change="onWeatherSourceChange(item.catalogId, ($event.target as HTMLSelectElement).value)"
+                      >
+                        <option value="auto">自动（按优先级）</option>
+                        <option
+                          v-for="p in weatherProvidersFor(item.catalogId)"
+                          :key="p.provider_id"
+                          :value="p.provider_id"
+                          :disabled="!p.enabled"
+                        >
+                          {{ p.display_name }}{{ p.enabled ? '' : '（未启用）' }}{{ p.grid_mode === 'sparse' ? ' · 稀疏网格' : '' }}
+                        </option>
+                      </select>
+                    </label>
+                    <p v-if="weatherSourceSparseHint(item.catalogId)" class="src-sparse-hint">
+                      点查可用；瓦片将回落 dense 源（Open-Meteo）
+                    </p>
+                    <p
+                      v-else-if="!weatherProvidersLoading[item.catalogId] && weatherProvidersFor(item.catalogId).length === 0"
+                      class="src-sparse-hint"
                     >
-                      <div class="src-opt-top">
-                        <span class="src-name">{{ src.name }}</span>
-                      </div>
-                      <div class="src-meta">
-                        <span class="src-badge">{{ src.updateFrequency }}</span>
-                        <span class="src-coord">{{ src.coordSys }}</span>
-                        <span v-if="src.needsAuth" class="src-auth" title="需要认证">🔒</span>
+                      展开或聚焦时加载可用源…
+                    </p>
+                  </div>
+                </template>
+                <template v-else>
+                  <div v-if="item.sources.length === 0" class="source-empty" :title="'该图层暂未接入数据源'">
+                    <span class="src-empty-icon" aria-hidden="true">ⓘ</span>
+                    <span>暂无可用数据源</span>
+                  </div>
+                  <div v-else-if="item.sources.length === 1" class="source-single">
+                    <div class="src-line">
+                      <span class="src-dot" :style="{ background: item.accentColor }"></span>
+                      <span class="src-name">{{ item.sources[0].name }}</span>
+                    </div>
+                    <div class="src-meta">
+                      <span class="src-badge">{{ item.sources[0].updateFrequency }}</span>
+                      <span class="src-coord">{{ item.sources[0].coordSys }}</span>
+                      <span v-if="item.sources[0].needsAuth" class="src-auth" title="需要认证">🔒</span>
+                      <span v-if="item.sources[0].needsBackendTransform" class="src-tfm" title="后端转换">⚙</span>
+                    </div>
+                  </div>
+                  <div v-else class="source-multi">
+                    <div
+                      class="source-summary"
+                      :title="getCatalogSourceSummary(item.catalogId)"
+                    >
+                      <span class="src-dot" :style="{ background: item.accentColor }"></span>
+                      <span class="src-current">{{ getPrimarySourceName(item.catalogId) }}</span>
+                      <span class="src-count">{{ item.sources.length }} 个候选源</span>
+                    </div>
+                    <div class="source-list source-list-static">
+                      <div
+                        v-for="src in item.sources"
+                        :key="src.id"
+                        class="source-option source-option-static"
+                        :title="src.description"
+                      >
+                        <div class="src-opt-top">
+                          <span class="src-name">{{ src.name }}</span>
+                        </div>
+                        <div class="src-meta">
+                          <span class="src-badge">{{ src.updateFrequency }}</span>
+                          <span class="src-coord">{{ src.coordSys }}</span>
+                          <span v-if="src.needsAuth" class="src-auth" title="需要认证">🔒</span>
+                        </div>
                       </div>
                     </div>
                   </div>
-                </div>
+                </template>
               </div>
 
               <div class="card-actions">
@@ -1010,6 +1117,9 @@ const symbologyPanelLayer = computed(() => {
   flex-direction: column;
   gap: 0.28rem;
   padding: 0.08rem;
+  flex: 0 0 auto;
+  /* 不要 sticky 实色底：会盖住面板顶部圆角，看起来像直角 */
+  background: transparent;
 }
 
 .panel-header {
@@ -1017,17 +1127,20 @@ const symbologyPanelLayer = computed(() => {
   justify-content: space-between;
   align-items: center;
   gap: 0.5rem;
+  min-width: 0;
 }
 
 .header-copy {
   min-width: 0;
+  flex: 1 1 auto;
 }
 
 .header-actions {
   display: inline-flex;
   align-items: center;
   gap: 0.42rem;
-  flex-wrap: wrap;
+  flex: 0 0 auto;
+  flex-wrap: nowrap;
   justify-content: flex-end;
 }
 
@@ -1035,12 +1148,18 @@ h2 {
   margin: 0;
   color: #eef6ff;
   font-size: 0.76rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .panel-subtitle {
   margin: 0.14rem 0 0;
   color: #7f93a9;
   font-size: 0.62rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .badge {
@@ -1051,6 +1170,7 @@ h2 {
   color: #8fe7ff;
   text-align: center;
   font-size: 0.58rem;
+  flex: 0 0 auto;
 }
 
 /* ── View tabs ──────────────────────────────────────────────────────────── */
@@ -1062,6 +1182,8 @@ h2 {
   border-radius: 999px;
   background: rgba(4, 12, 23, 0.6);
   align-self: flex-start;
+  flex: 0 0 auto;
+  min-width: max-content;
 }
 
 .view-tab {
@@ -1070,6 +1192,9 @@ h2 {
   justify-content: center;
   width: 1.6rem;
   height: 1.6rem;
+  min-width: 1.6rem;
+  min-height: 1.6rem;
+  flex: 0 0 auto;
   border: none;
   border-radius: 999px;
   background: transparent;
@@ -1422,6 +1547,36 @@ h2 {
   border: 1px solid rgba(136, 192, 255, 0.06);
   border-radius: var(--sidebar-soft-radius);
   background: rgba(4, 12, 23, 0.32);
+}
+
+.source-weather-live {
+  display: grid;
+  gap: 0.2rem;
+}
+
+.weather-src-label {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  min-width: 0;
+}
+
+.weather-src-select {
+  flex: 1;
+  min-width: 0;
+  font-size: 0.68rem;
+  padding: 0.18rem 0.32rem;
+  border-radius: 6px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(0, 0, 0, 0.28);
+  color: inherit;
+}
+
+.src-sparse-hint {
+  margin: 0;
+  font-size: 0.58rem;
+  opacity: 0.72;
+  line-height: 1.3;
 }
 
 .source-empty {

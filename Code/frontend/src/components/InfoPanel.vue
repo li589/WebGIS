@@ -17,9 +17,12 @@ import {
 } from '../stores/layers/imported-vector'
 import {
   WEATHER_PALETTE_OPTIONS,
+  buildWeatherLegendGradient,
   buildWeatherLegendStops,
   hasRenderableSymbology,
   isMapLinkedPalette,
+  paletteIdsEqual,
+  resolveCanonicalPaletteId,
   resolveStyleRenderHint,
 } from './map/layer-symbology'
 import { useOverlaySymbologyStore } from '../stores/overlay-symbology'
@@ -91,6 +94,13 @@ const selectedWeatherProvider = computed({
   set: (value: string) => {
     layersStore.applyWeatherProviderPreference(displayLayer.value.catalogId, value || 'auto')
   },
+})
+
+const selectedWeatherProviderSparse = computed(() => {
+  const pref = selectedWeatherProvider.value
+  if (!pref || pref === 'auto') return false
+  const row = weatherProviderOptions.value.find((p) => p.provider_id === pref)
+  return row?.grid_mode === 'sparse'
 })
 
 watch(
@@ -172,7 +182,14 @@ const styleRenderHint = computed(() =>
 )
 
 const weatherLegendStops = computed(() => (styleRenderHint.value ? buildWeatherLegendStops(styleRenderHint.value) : []))
-const currentPaletteId = computed(() => displayLayer.value?.paletteOverride ?? styleRenderHint.value?.palette ?? '')
+const weatherLegendGradient = computed(() => (
+  styleRenderHint.value ? buildWeatherLegendGradient(styleRenderHint.value) : ''
+))
+const currentPaletteId = computed(() =>
+  resolveCanonicalPaletteId(
+    displayLayer.value?.paletteOverride ?? styleRenderHint.value?.palette ?? '',
+  ),
+)
 const paletteOptions = WEATHER_PALETTE_OPTIONS
 const paletteDropdownOpen = ref(false)
 const canEditPalette = computed(() =>
@@ -181,11 +198,21 @@ const canEditPalette = computed(() =>
     isImportedRaster: displayLayer.value.isImportedRaster,
   }),
 )
+const legendExplainer = computed(() => {
+  const mode = styleRenderHint.value?.paint_mode
+  if (mode === 'particle_flow' || canToggleParticleFlow.value) {
+    return '色带对应风速网格底色；粒子线表示流向（颜色随风速提亮）。'
+  }
+  if (mode === 'grid_fill' || mode === 'heatmap') {
+    return '色带对应网格单元量级；相邻单元接壤形成连续色场。'
+  }
+  return ''
+})
 
 function handleSelectPalette(paletteId: string) {
   if (!canEditPalette.value) return
-  const defaultId = weatherRenderHint.value?.palette ?? ''
-  const target = paletteId === defaultId ? null : paletteId
+  const defaultId = resolveCanonicalPaletteId(weatherRenderHint.value?.palette ?? '')
+  const target = paletteIdsEqual(paletteId, defaultId) ? null : paletteId
   if (displayLayer.value?.instanceId) {
     layersStore.setLayerPaletteOverride(displayLayer.value.instanceId, target)
   }
@@ -455,7 +482,8 @@ const canRunWorkflow = computed(() =>
   !displayLayer.value?.isAdminBoundary
   && !displayLayer.value?.isImported
   && !displayLayer.value?.isImportedRaster
-  && !isRealtimeWeatherLayer.value,
+  && !isRealtimeWeatherLayer.value
+  && layersStore.supportsAnalysisWorkflow(displayLayer.value.catalogId),
 )
 const isWorkflowRunning = computed(() => jobLayer.value?.status === 'running' || jobLayer.value?.status === 'queued')
 const runBlockedReason = computed(() => layersStore.getCatalogRunBlockReason(displayLayer.value.catalogId))
@@ -476,7 +504,9 @@ const workflowStage = computed(() => {
 })
 const buttonDisabled = computed(() => Boolean(runBlockedReason.value) || isWorkflowRunning.value || props.isSubmitting)
 const buttonLabel = computed(() => {
-  if (runBlockedReason.value) return '数据未就绪'
+  if (runBlockedReason.value) {
+    return runBlockedReason.value.includes('工作流引擎') ? '不支持工作流' : '数据未就绪'
+  }
   if (props.isSubmitting) return '提交中...'
   if (isWorkflowRunning.value) return '任务进行中'
   return '运行工作流'
@@ -919,25 +949,41 @@ onBeforeUnmount(() => {
         </div>
 
         <div v-if="displayLayer.instanceId && (isRealtimeWeatherLayer || canToggleParticleFlow)" class="weather-layer-controls">
-          <button class="weather-visibility-btn" type="button" @click="handleToggleLayerVisibility">
-            {{ displayLayer.visible ? '隐藏图层' : '显示图层' }}
-          </button>
+          <div v-if="canToggleParticleFlow" class="weather-layer-btn-row">
+            <button
+              class="weather-layer-btn particle-flow-toggle-btn"
+              :class="{ active: isParticleFlowEnabled }"
+              :disabled="particleFlowButtonDisabled"
+              type="button"
+              :title="
+                particleFlowButtonDisabled
+                  ? '当前风场地图产物尚未就绪'
+                  : isParticleFlowEnabled
+                    ? '关闭粒子流动画，释放 Canvas 资源'
+                    : '启用粒子流动画（独占式，同时只能一个图层启用）'
+              "
+              @click="handleToggleParticleFlow"
+            >
+              <span class="pf-icon" aria-hidden="true">≋</span>
+              <span class="weather-layer-btn-text">{{ isParticleFlowEnabled ? '关闭粒子流' : '启用粒子流' }}</span>
+            </button>
+            <button
+              class="weather-layer-btn weather-visibility-btn"
+              type="button"
+              :title="displayLayer.visible ? '隐藏当前图层' : '显示当前图层'"
+              @click="handleToggleLayerVisibility"
+            >
+              <span class="weather-layer-btn-text">{{ displayLayer.visible ? '隐藏图层' : '显示图层' }}</span>
+            </button>
+          </div>
           <button
-            v-if="canToggleParticleFlow"
-            class="particle-flow-toggle-btn"
-            :class="{ active: isParticleFlowEnabled }"
-            :disabled="particleFlowButtonDisabled"
-            :title="
-              particleFlowButtonDisabled
-                ? '当前风场地图产物尚未就绪'
-                : isParticleFlowEnabled
-                  ? '关闭粒子流动画，释放 Canvas 资源'
-                  : '启用粒子流动画（独占式，同时只能一个图层启用）'
-            "
-            @click="handleToggleParticleFlow"
+            v-else
+            class="weather-layer-btn weather-visibility-btn"
+            type="button"
+            :title="displayLayer.visible ? '隐藏当前图层' : '显示当前图层'"
+            @click="handleToggleLayerVisibility"
           >
-            <span class="pf-icon" aria-hidden="true">≋</span>
-            {{ isParticleFlowEnabled ? '关闭粒子流' : '启用粒子流' }}
+            <span class="weather-layer-btn-text">{{ displayLayer.visible ? '隐藏图层' : '显示图层' }}</span>
           </button>
           <label v-if="isRealtimeWeatherLayer" class="weather-provider-row">
             <span class="weather-provider-label">天气数据源</span>
@@ -954,10 +1000,13 @@ onBeforeUnmount(() => {
                 :value="opt.provider_id"
                 :disabled="!opt.enabled"
               >
-                {{ opt.display_name }}{{ opt.enabled ? '' : '（未启用）' }}
+                {{ opt.display_name }}{{ opt.enabled ? '' : '（未启用）' }}{{ opt.grid_mode === 'sparse' ? ' · 稀疏网格' : '' }}
               </option>
             </select>
           </label>
+          <p v-if="isRealtimeWeatherLayer && selectedWeatherProviderSparse" class="weather-provider-error">
+            点查可用；瓦片将回落 dense 源（Open-Meteo）
+          </p>
           <p v-if="isRealtimeWeatherLayer && weatherProvidersError" class="weather-provider-error">
             {{ weatherProvidersError }}
           </p>
@@ -969,7 +1018,18 @@ onBeforeUnmount(() => {
             {{ styleRenderHint.primary_metric }} · {{ styleRenderHint.unit_label }}
           </span>
         </div>
-        <div v-if="styleRenderHint" class="weather-legend-strip">
+        <div v-if="styleRenderHint && weatherLegendGradient" class="weather-legend-gradient-wrap">
+          <div class="weather-legend-gradient" :style="{ background: weatherLegendGradient }"></div>
+          <div class="weather-legend-gradient-ticks">
+            <span
+              v-for="stop in weatherLegendStops"
+              :key="`tick-${stop.value}`"
+              class="weather-legend-tick"
+            >{{ stop.label }}</span>
+          </div>
+          <p v-if="legendExplainer" class="weather-legend-explainer">{{ legendExplainer }}</p>
+        </div>
+        <div v-else-if="styleRenderHint" class="weather-legend-strip">
           <div
             v-for="stop in weatherLegendStops"
             :key="`${stop.value}`"
@@ -1006,7 +1066,7 @@ onBeforeUnmount(() => {
               v-for="opt in paletteOptions"
               :key="opt.id"
               class="palette-option"
-              :class="{ active: opt.id === currentPaletteId }"
+              :class="{ active: paletteIdsEqual(opt.id, currentPaletteId) }"
               type="button"
               @click="handleSelectPalette(opt.id)"
             >
@@ -1265,7 +1325,44 @@ onBeforeUnmount(() => {
 .weather-style-panel { display: grid; gap: 0.28rem; margin-top: 0.36rem; padding-top: 0.34rem; border-top: 1px solid rgba(136, 192, 255, 0.08); }
 .weather-style-head { display: flex; justify-content: space-between; gap: 0.4rem; align-items: center; color: #eaf3fb; font-size: 0.58rem; }
 .weather-layer-controls { display: grid; gap: 0.24rem; }
-.weather-visibility-btn { border: 1px solid rgba(103, 212, 255, 0.2); border-radius: 999px; background: rgba(29, 78, 216, 0.14); color: #d8f3ff; font-size: 0.58rem; padding: 0.28rem 0.62rem; cursor: pointer; justify-self: start; }
+.weather-layer-btn-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.28rem;
+  align-items: stretch;
+}
+.weather-layer-btn {
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 1.78rem;
+  border: 1px solid rgba(103, 212, 255, 0.22);
+  border-radius: 999px;
+  background: rgba(29, 78, 216, 0.14);
+  color: #d8f3ff;
+  font: inherit;
+  font-size: 0.56rem;
+  font-weight: 500;
+  letter-spacing: 0.01em;
+  line-height: 1.15;
+  padding: 0.34rem 0.42rem;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.22rem;
+  min-width: 0;
+  white-space: nowrap;
+  transition: border-color 0.18s ease, background 0.18s ease, color 0.18s ease, box-shadow 0.18s ease;
+}
+.weather-layer-btn-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.weather-visibility-btn:hover {
+  border-color: rgba(103, 212, 255, 0.42);
+  background: rgba(29, 78, 216, 0.22);
+  color: #eaf8ff;
+}
 .weather-provider-row { display: grid; grid-template-columns: auto 1fr; gap: 0.36rem; align-items: center; color: #9eb3c8; font-size: 0.56rem; }
 .weather-provider-label { color: #dbeeff; white-space: nowrap; }
 .weather-provider-select {
@@ -1279,21 +1376,12 @@ onBeforeUnmount(() => {
 }
 .weather-provider-error { margin: 0; color: #ffb3b3; font-size: 0.52rem; }
 .particle-flow-toggle-btn {
-  border: 1px solid rgba(103, 212, 255, 0.28);
-  border-radius: 999px;
   background: rgba(15, 23, 42, 0.5);
+  border-color: rgba(103, 212, 255, 0.28);
   color: #b8d4ff;
-  font-size: 0.58rem;
-  padding: 0.3rem 0.72rem;
-  cursor: pointer;
-  justify-self: start;
-  display: inline-flex;
-  align-items: center;
-  gap: 0.3rem;
-  transition: all 0.18s ease;
 }
-.particle-flow-toggle-btn .pf-icon { font-size: 0.72rem; line-height: 1; }
-.particle-flow-toggle-btn:hover {
+.particle-flow-toggle-btn .pf-icon { font-size: 0.72rem; line-height: 1; flex: 0 0 auto; }
+.particle-flow-toggle-btn:hover:not(:disabled) {
   border-color: rgba(103, 212, 255, 0.5);
   background: rgba(29, 78, 216, 0.22);
   color: #e8f3ff;
@@ -1330,6 +1418,29 @@ onBeforeUnmount(() => {
 .weather-legend-row { display: flex; justify-content: space-between; gap: 0.4rem; color: #9eb3c8; font-size: 0.54rem; }
 .weather-legend-label { color: #dbeeff; }
 .weather-legend-meta { color: #7f93a9; }
+.weather-legend-gradient-wrap { display: flex; flex-direction: column; gap: 0.28rem; }
+.weather-legend-gradient {
+  height: 0.72rem;
+  border-radius: 0.28rem;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.12);
+}
+.weather-legend-gradient-ticks {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.2rem;
+  color: #c8dff0;
+  font-size: 0.5rem;
+}
+.weather-legend-explainer {
+  margin: 0;
+  color: #7f93a9;
+  font-size: 0.5rem;
+  line-height: 1.4;
+}
+.weather-legend-tick { flex: 1; text-align: center; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.weather-legend-tick:first-child { text-align: left; }
+.weather-legend-tick:last-child { text-align: right; }
 .weather-legend-strip { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.18rem 0.3rem; }
 .weather-legend-stop { display: flex; align-items: center; gap: 0.24rem; color: #c8dff0; font-size: 0.54rem; }
 .weather-legend-swatch { width: 0.72rem; height: 0.72rem; border-radius: 0.22rem; border: 1px solid rgba(255, 255, 255, 0.08); flex-shrink: 0; }

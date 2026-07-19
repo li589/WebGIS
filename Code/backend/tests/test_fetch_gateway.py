@@ -1,4 +1,4 @@
-"""fetch_gateway 统一取数路径单测。"""
+﻿"""fetch_gateway 统一取数路径单测。"""
 from __future__ import annotations
 
 import unittest
@@ -61,7 +61,7 @@ class FetchGatewayTests(unittest.TestCase):
             forecast_hours=1,
         )
         self.assertEqual(status, "miss")
-        self.assertEqual(provider_id, "open-meteo")
+        self.assertEqual(provider_id, "open-meteo-online")
         self.assertIn("current", payload)
         self.assertEqual(self.client.calls, ["point"])
 
@@ -71,12 +71,12 @@ class FetchGatewayTests(unittest.TestCase):
             resolution=0.25,
         )
         self.assertEqual(gstatus, "miss")
-        self.assertEqual(gpid, "open-meteo")
+        self.assertEqual(gpid, "open-meteo-online")
         self.assertIn("grid", grid)
         self.assertEqual(self.client.calls, ["point", "grid"])
 
     def test_disabled_provider_blocks_outbound(self) -> None:
-        get_registry().set_enabled("open-meteo", False)
+        get_registry().set_enabled("open-meteo-online", False)
         with self.assertRaises(WeatherProviderUnavailableError):
             fetch_point_forecast(layer_id="wind-field", latitude=1.0, longitude=1.0)
         with self.assertRaises(WeatherProviderUnavailableError):

@@ -15,6 +15,41 @@ export interface OverlayTimeState {
   bounds: [number, number, number, number] | null
 }
 
+/**
+ * 防御性 bounds 校验：后端 CRS 重投影/检测可能产生 NaN、跨 ±180° 包围盒、
+ * 顺序错乱等异常 bounds。直接 addSource 会让 MapLibre 渲染出错误覆盖
+ * （或北极/太平洋上的鬼影），并在 console 留下晦涩错误。这里集中拦截，
+ * 返回带原因的失败结果，便于上层日志定位。
+ *
+ * 导出为顶级函数以便单元测试覆盖各异常分支。
+ *
+ * 注意：image source 的 4 个角点不支持真正"跨子午线"渲染（如 `[170,..,-170,..]`），
+ * 但这种情况会被下面的 `w >= e` 检查拦截。`[-180,..,180,..]`（全球）和
+ * `[-100,..,100,..]`（宽 200°）都能正常渲染为单张拉伸图片，故不限制东西跨度。
+ */
+export function validateOverlayBounds(raw: unknown):
+  | { ok: true; bounds: [number, number, number, number] }
+  | { ok: false; reason: string } {
+  if (!Array.isArray(raw) || raw.length !== 4) {
+    return { ok: false, reason: `bounds 不是 4 元素数组（实际: ${JSON.stringify(raw)}）` }
+  }
+  const [w, s, e, n] = raw as number[]
+  if (![w, s, e, n].every(Number.isFinite)) {
+    return { ok: false, reason: `bounds 含非有限值: [${w}, ${s}, ${e}, ${n}]` }
+  }
+  // WGS84 经纬度范围（overlay 渲染坐标空间）
+  if (w < -180 || e > 180 || s < -90 || n > 90) {
+    return { ok: false, reason: `bounds 超出 WGS84 范围: [${w}, ${s}, ${e}, ${n}]` }
+  }
+  if (w >= e) {
+    return { ok: false, reason: `bounds west >= east: [${w}, ${s}, ${e}, ${n}]` }
+  }
+  if (s >= n) {
+    return { ok: false, reason: `bounds south >= north: [${w}, ${s}, ${e}, ${n}]` }
+  }
+  return { ok: true, bounds: [w, s, e, n] }
+}
+
 export interface OverlayImageModule {
   /**
    * 同步当前 activeLayerIds 与已加载的 overlay 图层（增/删/显隐）。
@@ -160,7 +195,12 @@ export function createOverlayImageModule(
         boundsData = await boundsResp.json()
         boundsCache.set(layerId, { bounds: boundsData.bounds, meta: boundsData.meta ?? {} })
       }
-      const bounds: [number, number, number, number] = boundsData.bounds
+      const boundsValidation = validateOverlayBounds(boundsData.bounds)
+      if (!boundsValidation.ok) {
+        console.warn(`[Overlay] Invalid bounds for ${layerId}: ${boundsValidation.reason}`)
+        return
+      }
+      const bounds: [number, number, number, number] = boundsValidation.bounds
       const meta = boundsData.meta ?? {}
       // 写回共享 symbology store（含 bounds 内存缓存命中路径）
       try {

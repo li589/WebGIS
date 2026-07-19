@@ -221,14 +221,18 @@ export async function submitWeatherTileWorkflow(
   return { runId: resp.run_id }
 }
 
-/** 天气瓦片请求超时时间（毫秒）。后端 urlopen 超时为 20s，前端略宽以容纳排队延迟。 */
-const TILE_FETCH_TIMEOUT_MS = 25_000
+/**
+ * 天气瓦片请求超时（毫秒）。
+ * 后端热路径可能经历：tile 信号量排队 + API 槽位等待(≤30s) + urlopen(≤30s) + 429 退避，
+ * 25s 前端中止会误判为永久失败并清空图层；放宽到 75s 与后端最坏排队对齐。
+ */
+const TILE_FETCH_TIMEOUT_MS = 75_000
 
 /**
  * 视口热路径：直接请求 GET /weather/tiles/{layer}/{z}/{x}/{y}。
  * 由 WeatherTileService 负责缓存与网格生成；不占用 workflow-runs 业务容量池。
  *
- * 内置 25 秒超时，避免后端排队或 Open-Meteo API 慢时前端并发槽位被无限占用。
+ * 内置超时，避免后端排队或 Open-Meteo API 慢时前端并发槽位被无限占用。
  * 超时抛出 Error（message 含 "timeout"），与外部 AbortSignal 取消区分。
  */
 export async function fetchWeatherTile(

@@ -1,0 +1,1135 @@
+const windyAppLayer = {
+    id: 'highlight',
+    type: 'custom',
+    gl: false,
+    dataCanvas: [],
+    dataCtx: false,
+    images: {},
+    loading: {},
+    loaded: {},
+    drawn: {},
+    dataZoom: 0,
+    prevDataZoom: 0,
+    defaultDataZoom: 3,
+    dataZooms: [0, 0, 1, 2, 3],
+    texTimeout: false,
+    transitionDurationMs: 180,
+    transitionStartTs: 0,
+    transitioning: false,
+    mixFactor: 1,
+    hasDataTexture: false,
+    smoothTransitionsEnabled: true,
+    smoothTransitionsAutoDisabled: false,
+    smoothTransitionsPerfChecked: false,
+    smoothTransitionsPerfActive: false,
+    smoothTransitionsPerfLast: 0,
+    smoothTransitionsPerfSum: 0,
+    smoothTransitionsPerfCount: 0,
+    smoothTransitionsMinFps: 38,
+    url: 'https://api.windyapp.co/v10/tiles',
+    ts: 1,
+    prevTs: 0,
+    map: false,
+    leafletMap: false,
+    setCallback: false,
+    releaseCallback: false,
+    model: false,
+    dataType: false,
+    hourly: 0,
+    playing: false,
+    dragging: false,
+    
+    getDataZoom() {
+        const zoomMap = (this.leafletMap && typeof this.leafletMap.getZoom === 'function')
+            ? this.leafletMap
+            : ((this.map && typeof this.map.getZoom === 'function') ? this.map : this.leafletMap);
+        if (!zoomMap || typeof zoomMap.getZoom !== 'function') {
+            return this.defaultDataZoom;
+        }
+        const mapZ = Math.floor(zoomMap.getZoom()),
+              dataZoom = this.dataZooms[mapZ] !== undefined ? this.dataZooms[mapZ] : this.defaultDataZoom;
+        if (this.dataType === 'pradars') {
+            if (mapZ >= 7) {
+                return 4;
+            }
+            if (mapZ >= 5) {
+                return 3;
+            }
+            return Math.min(dataZoom, 2);
+        }
+        return (dataZoom == 3 && this.model == 'GFS27') ? 2 : dataZoom;
+    },
+
+    getTilesUrl(model, defaultUrl) {
+        // TEMP: test ECMWF tiles from a separate domain, other models keep their current domain
+        if (model === 'ECMWF' || model === 'NAM' || model === 'GFS27') {
+            return 'https://tiles-web.windyapp.co/v10/tiles';
+        }
+        return defaultUrl;
+    },
+
+    cancelLoading() {
+        // cancel loading tiles not related to the current zoom and ts
+        // TODO: cancel all tiles not related to the current BOUNDS
+        Object.entries(this.images).forEach((el) => {
+            const idx = el[0],
+                  z = idx.split('/')[1],
+                  ts = idx.split('/')[0];
+
+            if(!this.loaded[idx] && (z != this.getDataZoom() || ts != this.ts)) {
+                this.images[idx].src = '';
+                delete this.images[idx];
+                if(this.loading[idx]) {
+                    delete this.loading[idx];
+                    this.delLoading();
+                }
+                
+            }
+        });
+    },
+    
+    requestData() {
+        // console.time('requestData');
+        if(!this.map || !this.setCallback || !this.releaseCallback) return;
+        
+        this.setCallback('windyAppLayer', () => this.setData());
+        
+        this.dataCtx = this.dataCanvas[this.getDataZoom()].getContext('2d');
+        // this.dataCtx.filter = "blur(0.4px)";
+        
+        const boundsMap = (this.leafletMap && typeof this.leafletMap.getBounds === 'function')
+                ? this.leafletMap
+                : (this.map || this.leafletMap),
+              b = boundsMap.getBounds(),
+              sw = b.getSouthWest ? b.getSouthWest() : (b._sw || b._southWest),
+              ne = b.getNorthEast ? b.getNorthEast() : (b._ne || b._northEast),
+              z = this.getDataZoom(),
+              grid = Math.pow(2, z),
+              minLat = sw.lat < -85 ? -85 : sw.lat,
+              maxLat = ne.lat > 85 ? 85 : ne.lat,
+              tileHeight = 180 / grid,
+              tilePad = 1,
+              minY = Math.max(0, Math.floor((90 - ne.lat) / tileHeight) - tilePad),
+              maxY = Math.min(grid - 1, Math.floor((90 - sw.lat) / tileHeight) + tilePad),
+              // mult = Math.pow(2, 3 - z);
+              mult = 1;
+
+        let minLng, maxLng, minX, maxX, sides;
+
+        if(!this.dragging) {
+            this.cancelLoading();
+        }
+
+        // reset drawn images on change zoom
+        if(this.getDataZoom() != this.prevDataZoom) {
+            this.clearDataCanvases();
+            this.prevDataZoom = this.getDataZoom();
+        }
+
+        // load needed data tiles
+        let toSetData = false,
+            url = this.config.params[this.dataType].url || this.url;
+        const bindActiveTileHandlers = (idx, x, y) => {
+            this.images[idx].onload = () => {
+                delete this.loading[idx];
+                this.delLoading();
+                if(!this.loading()) {
+                    this.releaseCallback('windyAppLayer');
+                }
+                this.loaded[idx] = true;
+                if(idx.split('/')[0] == this.ts) {
+                    this.dataCtx.drawImage(this.images[idx], 360 * x * mult, 180 * y * mult, 360 * mult, 180 * mult);
+                    this.drawn[idx] = true;
+                }
+            };
+            this.images[idx].onerror = () => {
+                if(this.loading[idx]) {
+                    delete this.loading[idx];
+                    this.delLoading();
+                }
+                delete this.images[idx];
+                delete this.loaded[idx];
+                if(!this.loading()) {
+                    this.releaseCallback('windyAppLayer');
+                }
+            };
+        };
+        for(let y = minY; y <= maxY; y++) {
+
+            // for continuous world
+            sides = sw.lng < -180 || ne.lng > 180;
+            for(let side = 0; side <= sides; side++) {
+
+                if(side == 0 && sw.lng < -180) {
+                    minLng = 180 - (-sw.lng-180);
+                    maxLng = 180;
+                } else if(side == 1 && ne.lng > 180) {
+                    minLng = -180;
+                    maxLng = -180 + (ne.lng-180);
+                } else {
+                    minLng = Math.max(-180, sw.lng);
+                    maxLng = Math.min(180, ne.lng);
+                }
+
+                minX = Math.max(0, Math.min(grid - 1, Math.floor((minLng + 180) / 360 * grid) - tilePad));
+                maxX = Math.max(0, Math.min(grid - 1, Math.floor((maxLng + 180) / 360 * grid) + tilePad));
+
+                for(let x = minX; x <= maxX; x++) {
+                    let idx = this.ts+'/'+z+'/'+x+'/'+y;
+                    // if the image has already been requested
+                    if(this.images[idx]) {
+                        // draw image only if it's loaded & not being drawn before
+                        if(	this.loaded[idx] && !this.drawn[idx]) {
+                            this.dataCtx.drawImage(this.images[idx], 360 * x * mult, 180 * y * mult, 360 * mult, 180 * mult);
+                            toSetData = true;
+                            this.drawn[idx] = true;
+                        } else if(!this.loaded[idx] && !this.loading[idx]) {
+                            // The tile may be in preload state (requested without loading counters).
+                            // Re-attach it as active frame loading so progress/callbacks work correctly.
+                            this.addLoading();
+                            this.loading[idx] = true;
+                            bindActiveTileHandlers(idx, x, y);
+                            if(this.images[idx].complete) {
+                                if(this.images[idx].naturalWidth > 0) {
+                                    this.images[idx].onload();
+                                } else {
+                                    this.images[idx].onerror();
+                                }
+                            }
+                        }
+                    } else {
+                        this.addLoading();
+                        // otherwise - request the image
+                        this.images[idx] = new Image();
+                        this.images[idx].crossOrigin='anonymous';
+                        bindActiveTileHandlers(idx, x, y);
+                        const isHourly = this.hourly === 1;
+                        const isRadars = this.dataType === 'pradars';
+                        const dataType = isRadars
+                            ? 'PREC_RATE'
+                            : (this.dataType === 'prate_3h' && isHourly ? 'prate' : this.dataType);
+                        const model = isRadars ? 'radars_world' : this.model;
+                        const tileUrl = this.getTilesUrl(model, url);
+                        this.images[idx].src = `${tileUrl}/${model}/${dataType}/${this.ts}/${z}/${x}/${y}`;
+                        this.loading[idx] = true;
+                        // document.querySelector(`.windy-map-2__hour[data-ts='${this.ts}']`).classList.add('loading');
+                    }
+                }
+            }
+        }
+        if(toSetData && !this.loading()) {
+            setTimeout(() => {
+                this.releaseCallback('windyAppLayer');
+            }, this.playing ? 250 : 0);
+        }
+        // console.timeEnd('requestData');
+    },
+    
+    setAddDelLoadingFunc(add, del) {
+        this.addLoadingFunc = add;
+        this.delLoadingFunc = del;
+    },
+    
+    delLoading() {
+        if(this.delLoadingFunc) {
+            this.delLoadingFunc();
+        }
+    },
+    
+    addLoading() {
+        if(this.addLoadingFunc) {
+            this.addLoadingFunc();
+        }
+    },
+
+    loading() {
+        return Object.entries(this.loading).length > 0;
+    },
+
+    getSmoothTransitionsOverride() {
+        try {
+            const params = new URLSearchParams(window.location.search || '');
+            const queryValue = params.get('smooth');
+            if (queryValue === '0' || queryValue === 'false') {
+                return false;
+            }
+            if (queryValue === '1' || queryValue === 'true') {
+                return true;
+            }
+
+            const storageValue = window.localStorage.getItem('widget3_smooth_transitions');
+            if (storageValue === '0' || storageValue === 'false') {
+                return false;
+            }
+            if (storageValue === '1' || storageValue === 'true') {
+                return true;
+            }
+        } catch (e) {}
+
+        return null;
+    },
+
+    isWeakDevice() {
+        try {
+            if (window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+                return true;
+            }
+        } catch (e) {}
+
+        if (typeof navigator === 'undefined') {
+            return false;
+        }
+
+        const cpu = Number(navigator.hardwareConcurrency || 0);
+        const mem = Number(navigator.deviceMemory || 0);
+        const ua = String(navigator.userAgent || '').toLowerCase();
+        const isMobile = /android|iphone|ipad|ipod|mobile/.test(ua);
+
+        if (mem && mem <= 4) {
+            return true;
+        }
+        if (cpu && cpu <= 4) {
+            return true;
+        }
+        if (isMobile && cpu && cpu <= 6) {
+            return true;
+        }
+
+        return false;
+    },
+
+    initSmoothTransitions() {
+        const override = this.getSmoothTransitionsOverride();
+        if (override !== null) {
+            this.smoothTransitionsEnabled = override;
+            this.smoothTransitionsPerfChecked = true;
+            this.smoothTransitionsAutoDisabled = !override;
+            return;
+        }
+
+        const weakDevice = this.isWeakDevice();
+        this.smoothTransitionsEnabled = !weakDevice;
+        this.smoothTransitionsAutoDisabled = weakDevice;
+        this.smoothTransitionsPerfChecked = weakDevice;
+    },
+
+    startSmoothTransitionPerfProbe() {
+        if (this.smoothTransitionsPerfChecked || !this.smoothTransitionsEnabled) {
+            return;
+        }
+        this.smoothTransitionsPerfActive = true;
+        this.smoothTransitionsPerfLast = 0;
+        this.smoothTransitionsPerfSum = 0;
+        this.smoothTransitionsPerfCount = 0;
+    },
+
+    recordSmoothTransitionPerf(now) {
+        if (!this.smoothTransitionsPerfActive) {
+            return;
+        }
+
+        if (this.smoothTransitionsPerfLast > 0) {
+            const delta = now - this.smoothTransitionsPerfLast;
+            if (delta > 0 && delta < 200) {
+                this.smoothTransitionsPerfSum += delta;
+                this.smoothTransitionsPerfCount++;
+            }
+        }
+        this.smoothTransitionsPerfLast = now;
+    },
+
+    finishSmoothTransitionPerfProbe() {
+        if (!this.smoothTransitionsPerfActive) {
+            return;
+        }
+
+        this.smoothTransitionsPerfActive = false;
+        this.smoothTransitionsPerfChecked = true;
+
+        if (this.smoothTransitionsPerfCount < 4) {
+            return;
+        }
+
+        const avgFrameMs = this.smoothTransitionsPerfSum / this.smoothTransitionsPerfCount;
+        const avgFps = avgFrameMs > 0 ? (1000 / avgFrameMs) : 0;
+        if (avgFps > 0 && avgFps < this.smoothTransitionsMinFps) {
+            this.smoothTransitionsEnabled = false;
+            this.smoothTransitionsAutoDisabled = true;
+            this.transitioning = false;
+            this.mixFactor = 1;
+        }
+    },
+    
+    setData() {
+        // console.time("setData");
+        clearTimeout(this.texTimeout);
+        // this timeout prevents from Safari-expensive texImage2D calling multiple times in sequence
+        this.texTimeout = setTimeout(() => {
+            // console.time("texImage2D");
+            if(this.gl) {
+                if (this.pendingColorUpdate) {
+                    this.pendingColorUpdate = false;
+                    this.applyColors();
+                }
+                this.gl.useProgram(this.program);
+
+                const shouldTransition = this.smoothTransitionsEnabled && this.hasDataTexture && this.prevTs !== this.ts;
+                if (shouldTransition && this.texDataPrev) {
+                    const nextTex = this.texDataPrev;
+                    this.texDataPrev = this.texData;
+                    this.texData = nextTex;
+                    this.transitioning = true;
+                    this.transitionStartTs = (typeof performance !== 'undefined' && performance.now)
+                        ? performance.now()
+                        : Date.now();
+                    this.mixFactor = 0;
+                    this.startSmoothTransitionPerfProbe();
+                } else {
+                    this.transitioning = false;
+                    this.mixFactor = 1;
+                }
+
+                this.gl.uniform1i(this.u_imageLoc, 0);  // texture unit 0
+                this.gl.activeTexture(this.gl.TEXTURE0);
+                this.gl.bindTexture(this.gl.TEXTURE_2D, this.texData);
+                this.gl.texImage2D(this.gl.TEXTURE_2D, 0, this.gl.RGBA, this.gl.RGBA, this.gl.UNSIGNED_BYTE, this.dataCanvas[this.getDataZoom()]);
+                this.hasDataTexture = true;
+                this.prevTs = this.ts;
+                this.map.triggerRepaint();
+            }
+            dispatchEvent(new CustomEvent('windyapp_map_data_applied', {detail: {type: this.dataType}}));
+            // console.timeEnd("texImage2D");
+        }, 20);
+        // console.timeEnd("setData");
+    },
+    
+    createCanvas(width, height) {
+        const canvas = document.createElement('canvas');
+        canvas.setAttribute('width', width);
+        canvas.setAttribute('height', height);
+        // document.body.appendChild(canvas);
+        return canvas;
+    },
+
+    // method called when the layer is added to the map
+    // https://maplibre.org/maplibre-gl-js-docs/api/properties/#styleimageinterface#onadd
+    onAdd(map, gl) {
+        this.gl = gl;
+        this.initSmoothTransitions();
+        var vertexSource = `
+        #define PI 3.14159265358
+        #define PI4 0.78539816339
+        uniform float latFrom;
+        uniform float latLen;
+        attribute float vertexId;
+        varying vec4 v_texcoord;
+        uniform mat4 u_matrix;
+
+        void main() {
+            float lat = floor(vertexId / 2. - 90. + latFrom);
+            float y_tex = (360. / PI) * (atan(exp(2. * PI * lat / 180.)) - PI4) / 90.;
+            float x = 1. - mod(vertexId, 2.);
+            float y = 1. - floor(vertexId / 2.) / 180.;
+            gl_Position = u_matrix * vec4(x, y, 0, 1);
+
+            v_texcoord = vec4(x, 1. - (y_tex + 1.) / 2., 0, 0);
+        }
+        `;
+
+        var fragmentSource = `
+        precision mediump float;
+
+        uniform sampler2D u_image;
+        uniform sampler2D u_image_prev;
+        uniform sampler2D u_color;
+        uniform float u_mix;
+        uniform float u_use_transition;
+        varying vec4 v_texcoord;
+        #define border 0.7
+
+        void main() {
+            float value_cur = texture2D(u_image, v_texcoord.xy).r;
+            float a_cur = texture2D(u_image, v_texcoord.xy).a;
+            vec4 c_cur = texture2D(u_color, vec2(value_cur, 0.0));
+            vec4 rgba_cur = vec4(
+                a_cur < border ? 0.0 : c_cur.r,
+                a_cur < border ? 0.0 : c_cur.g,
+                a_cur < border ? 0.0 : c_cur.b,
+                a_cur < border ? 0.0 : c_cur.a
+            );
+
+            if (u_use_transition < 0.5) {
+                gl_FragColor = rgba_cur;
+                return;
+            }
+
+            float value_prev = texture2D(u_image_prev, v_texcoord.xy).r;
+            float a_prev = texture2D(u_image_prev, v_texcoord.xy).a;
+            vec4 c_prev = texture2D(u_color, vec2(value_prev, 0.0));
+            vec4 rgba_prev = vec4(
+                a_prev < border ? 0.0 : c_prev.r,
+                a_prev < border ? 0.0 : c_prev.g,
+                a_prev < border ? 0.0 : c_prev.b,
+                a_prev < border ? 0.0 : c_prev.a
+            );
+
+            gl_FragColor = mix(rgba_prev, rgba_cur, u_mix);
+        }
+        `;
+
+        gl.enable(gl.BLEND);
+        gl.clear(gl.DEPTH_BUFFER_BIT);
+        gl.enable(gl.DEPTH_TEST);
+        gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
+        gl.blendFunc(gl.SRC_ALPHA, gl.ZERO);
+        gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, true); // TODO: deprecated
+
+        // create a vertex shader
+        var vertexShader = gl.createShader(gl.VERTEX_SHADER);
+        gl.shaderSource(vertexShader, vertexSource);
+        gl.compileShader(vertexShader);
+
+        // create a fragment shader
+        var fragmentShader = gl.createShader(gl.FRAGMENT_SHADER);
+        gl.shaderSource(fragmentShader, fragmentSource);
+        gl.compileShader(fragmentShader);
+
+        // link the two shaders into a WebGL program
+        this.program = gl.createProgram();
+        gl.attachShader(this.program, vertexShader);
+        gl.attachShader(this.program, fragmentShader);
+        gl.linkProgram(this.program);
+
+        // get attrib locations
+        this.vertexIdLoc = gl.getAttribLocation(this.program, 'vertexId');
+        this.u_imageLoc = gl.getUniformLocation(this.program, 'u_image');
+        this.u_imagePrevLoc = gl.getUniformLocation(this.program, 'u_image_prev');
+        this.u_colorLoc = gl.getUniformLocation(this.program, 'u_color');
+        this.u_mixLoc = gl.getUniformLocation(this.program, 'u_mix');
+        this.u_useTransitionLoc = gl.getUniformLocation(this.program, 'u_use_transition');
+        this.latFromLoc = gl.getUniformLocation(this.program, 'latFrom');
+        this.latLenLoc = gl.getUniformLocation(this.program, 'latLen');
+
+        this.colors = this.getColors();
+        
+        this.texColors = gl.createTexture();
+        gl.useProgram(this.program);
+        gl.uniform1i(this.u_colorLoc, 1);  // texture unit 1
+        gl.activeTexture(gl.TEXTURE1);
+        gl.bindTexture(gl.TEXTURE_2D, this.texColors);
+        gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, this.colors.length / 4, 1, 0, gl.RGBA, gl.UNSIGNED_BYTE, this.colors);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+
+        this.texDataPrev = gl.createTexture();
+        gl.uniform1i(this.u_imagePrevLoc, 2); // texture unit 2
+        gl.activeTexture(gl.TEXTURE2);
+        gl.bindTexture(gl.TEXTURE_2D, this.texDataPrev);
+        gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA,
+                    1, 1, 0, gl.RGBA, gl.UNSIGNED_BYTE,
+                    new Uint8Array([0, 0, 255, 255]));
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+        gl.uniform1f(this.u_mixLoc, 1.0);
+        gl.uniform1f(this.u_useTransitionLoc, 0.0);
+
+        const latFrom = 0; // 0 is latitude -90
+        const latLen = 180;
+        const arrLen = latLen * 2 + 2;
+        this.idBuffer = gl.createBuffer();
+        this.vertexIds = new Float32Array(Array.from({ length: arrLen}, (v, i) => i + latFrom * 2));
+        gl.bindBuffer(gl.ARRAY_BUFFER, this.idBuffer);
+        gl.bufferData(gl.ARRAY_BUFFER, this.vertexIds, gl.STATIC_DRAW);
+        gl.enableVertexAttribArray(this.vertexIdLoc);
+        gl.vertexAttribPointer(this.vertexIdLoc, 1, gl.FLOAT, false, 0, 0);
+        gl.uniform1f(this.latFromLoc, latFrom);
+        gl.uniform1f(this.latLenLoc, latLen);
+
+        this.texData = gl.createTexture();
+        gl.uniform1i(this.u_imageLoc, 0);  // texture unit 0
+        gl.activeTexture(gl.TEXTURE0);
+        gl.bindTexture(gl.TEXTURE_2D, this.texData);
+
+        gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA,
+                    1, 1, 0, gl.RGBA, gl.UNSIGNED_BYTE,
+                    new Uint8Array([0, 0, 255, 255]));
+
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+
+        this.dataCanvasSize = {
+            0: [720, 360],
+            1: [720, 360],
+            2: [1440, 720],
+            3: [2880, 1440],
+            4: [5760, 2880]
+        };
+        const dataCanvas1 = this.createCanvas(720, 360);
+        this.dataCanvas = [
+            dataCanvas1,
+            dataCanvas1,
+            this.createCanvas(1440, 720),
+            this.createCanvas(2880, 1440),
+            this.createCanvas(5760, 2880)
+        ];
+
+        // Re-add after setStyle: dataCanvas is recreated empty, so reset drawn
+        // to allow already-loaded tile images to be redrawn onto the new canvas.
+        this.drawn = {};
+
+        this.requestData();
+
+        this.map.on('move', () => {
+            this.requestData();
+        });
+
+        // this.map.addControl(new maplibregl.FullscreenControl());
+        // this.map.addControl(new maplibregl.NavigationControl());
+    },
+    
+    // method fired on each animation frame
+    // https://maplibre.org/maplibre-gl-js-docs/api/map/#this.map.event:render
+    render(gl, matrix) {
+        gl.useProgram(this.program);
+        const uMatrixLoc = gl.getUniformLocation(this.program, 'u_matrix');
+        gl.bindBuffer(gl.ARRAY_BUFFER, this.idBuffer);
+        gl.enableVertexAttribArray(this.vertexIdLoc);
+        gl.vertexAttribPointer(this.vertexIdLoc, 1, gl.FLOAT, false, 0, 0);
+        gl.uniformMatrix4fv(gl.getUniformLocation(this.program, 'u_matrix'), false, matrix);
+
+        // Custom layers share one GL context. Rebind both textures each frame,
+        // so other layers (e.g. fog overlay) can't override active texture units.
+        gl.uniform1i(this.u_imageLoc, 0);
+        gl.activeTexture(gl.TEXTURE0);
+        gl.bindTexture(gl.TEXTURE_2D, this.texData);
+        gl.uniform1i(this.u_imagePrevLoc, 2);
+        gl.activeTexture(gl.TEXTURE2);
+        gl.bindTexture(gl.TEXTURE_2D, this.texDataPrev || this.texData);
+        gl.uniform1i(this.u_colorLoc, 1);
+        gl.activeTexture(gl.TEXTURE1);
+        gl.bindTexture(gl.TEXTURE_2D, this.texColors);
+
+        if (this.transitioning) {
+            const now = (typeof performance !== 'undefined' && performance.now)
+                ? performance.now()
+                : Date.now();
+            this.recordSmoothTransitionPerf(now);
+            const progress = Math.max(0, Math.min(1, (now - this.transitionStartTs) / this.transitionDurationMs));
+            this.mixFactor = progress;
+            if (progress >= 1) {
+                this.transitioning = false;
+                this.mixFactor = 1;
+                this.finishSmoothTransitionPerfProbe();
+            } else if (this.map && typeof this.map.triggerRepaint === 'function') {
+                this.map.triggerRepaint();
+            }
+        }
+        gl.uniform1f(this.u_mixLoc, this.mixFactor);
+        gl.uniform1f(this.u_useTransitionLoc, this.transitioning ? 1.0 : 0.0);
+
+        const dx = matrix[0];
+        for (let i = -1; i <= 1; i++) {
+            const m = matrix.slice();
+            m[12] += i * dx;
+            gl.uniformMatrix4fv(uMatrixLoc, false, m);
+            gl.drawArrays(gl.TRIANGLE_STRIP, 0, this.vertexIds.length);
+        }
+
+        if (this.dataType == 'swell' && this.hasDataTexture) {
+            this.renderSwell(gl, matrix);
+        }
+    },
+    
+    renderSwell(gl, matrix) {
+        const mapForSwell = (this.map && typeof this.map.getZoom === 'function' && typeof this.map.getBounds === 'function')
+            ? this.map
+            : ((this.leafletMap && typeof this.leafletMap.getZoom === 'function' && typeof this.leafletMap.getBounds === 'function')
+                ? this.leafletMap
+                : null);
+        if (!mapForSwell) return;
+
+        if (!this.dotsProgram) {
+            var dotsVertexSource = `
+        attribute float a_vertex;
+        attribute vec2 a_position;
+
+        uniform mat4 u_matrix;
+        uniform float u_size;
+        uniform sampler2D u_image;
+
+        void main() {
+            float y = 1.0 - a_position.y;
+            float lat = 90.0 - y * 180.0;
+            float sinLat = sin(lat * 3.14159265358 / 180.0);
+            float y_proj = 1.0 - (0.5 - log((1.0 + sinLat) / (1.0 - sinLat)) / (4.0 * 3.14159265358));
+            vec2 projected = vec2(a_position.x, y_proj);
+
+            vec4 tex = texture2D(u_image, a_position);
+            if (tex.a < 0.7) {
+                gl_Position = vec4(0.0);
+                return;
+            }
+
+            float angle = mod(tex.g * 6.2831853 - 1.5707963, 6.2831853);
+
+            vec2 offset;
+            if (a_vertex == 0.0) offset = vec2(0.0, 1.0);
+            else if (a_vertex == 1.0) offset = vec2(-0.5, -1.0);
+            else offset = vec2(0.5, -1.0);
+
+            float c = cos(angle), s = sin(angle);
+            vec2 dir = vec2(c, s);
+            vec2 ortho = vec2(-s, c);
+            vec2 final = projected + u_size * (offset.x * ortho + offset.y * dir);
+            gl_Position = u_matrix * vec4(final, 0.0, 1.0);
+        }
+            `;
+
+            var dotsFragmentSource = `
+        precision mediump float;
+        void main() {
+            gl_FragColor = vec4(1.0, 1.0, 1.0, 0.5);
+        }
+            `;
+
+            // dots shader program
+            const dotVs = gl.createShader(gl.VERTEX_SHADER);
+            gl.shaderSource(dotVs, dotsVertexSource);
+            gl.compileShader(dotVs);
+
+            const dotFs = gl.createShader(gl.FRAGMENT_SHADER);
+            gl.shaderSource(dotFs, dotsFragmentSource);
+            gl.compileShader(dotFs);
+
+            this.dotsProgram = gl.createProgram();
+            gl.attachShader(this.dotsProgram, dotVs);
+            gl.attachShader(this.dotsProgram, dotFs);
+            gl.linkProgram(this.dotsProgram);
+            this.ext = gl.getExtension('ANGLE_instanced_arrays');
+
+            this.dotsPosLoc = gl.getAttribLocation(this.dotsProgram, 'a_position');
+            this.dotsVertexLoc = gl.getAttribLocation(this.dotsProgram, 'a_vertex');
+            this.dotsAngleLoc = gl.getAttribLocation(this.dotsProgram, 'a_angle');
+            this.dotsMatrixLoc = gl.getUniformLocation(this.dotsProgram, 'u_matrix');
+            this.dotsSizeLoc = gl.getUniformLocation(this.dotsProgram, 'u_size');
+            this.dotsImageLoc = gl.getUniformLocation(this.dotsProgram, 'u_image');
+
+            this.dotsBuffer = gl.createBuffer();
+            this.arrowBuffer = gl.createBuffer();
+            this.dotsCount = 0;
+            this.dotsLngLat = [];
+
+            this.arrowProgram = gl.createProgram();
+            gl.attachShader(this.arrowProgram, dotVs);
+            gl.attachShader(this.arrowProgram, dotFs);
+            gl.linkProgram(this.arrowProgram);
+            this.arrowPosLoc = gl.getAttribLocation(this.arrowProgram, 'a_pos');
+            this.arrowVertexLoc = gl.getAttribLocation(this.arrowProgram, 'a_vertex');
+            this.arrowMatrixLoc = gl.getUniformLocation(this.arrowProgram, 'u_matrix');
+            this.arrowSizeLoc = gl.getUniformLocation(this.arrowProgram, 'u_size');
+            this.arrowImageLoc = gl.getUniformLocation(this.arrowProgram, 'u_image');
+
+            // triangle buffer
+            this.triangleBuffer = gl.createBuffer();
+            gl.bindBuffer(gl.ARRAY_BUFFER, this.triangleBuffer);
+            gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([0, 1, 2]), gl.STATIC_DRAW);
+
+            this.arrowPosBuffer = gl.createBuffer();
+            this.arrowPositions = [];
+            this.swellArrowGridKey = '';
+        }
+
+        const zoomForGrid = Math.round(mapForSwell.getZoom());
+        const zoomFactor = Math.pow(2, zoomForGrid);
+        const spacingLat = 10 / zoomFactor;
+        const spacingLng = 15 / zoomFactor;
+        const bounds = mapForSwell.getBounds();
+        const sw = bounds.getSouthWest ? bounds.getSouthWest() : (bounds._sw || bounds._southWest);
+        const ne = bounds.getNorthEast ? bounds.getNorthEast() : (bounds._ne || bounds._northEast);
+        if (!sw || !ne) return;
+        const minLat = Math.max(-90, sw.lat);
+        const maxLat = Math.min(90, ne.lat);
+
+        const minLatSnap = Math.floor(minLat / spacingLat) * spacingLat;
+        const maxLatSnap = Math.ceil(maxLat / spacingLat) * spacingLat;
+
+        const lngRanges = [];
+        const sides = sw.lng < -180 || ne.lng > 180;
+        for (let side = 0; side <= sides; side++) {
+            let minLng;
+            let maxLng;
+            if (side === 0 && sw.lng < -180) {
+                minLng = 180 - (-sw.lng - 180);
+                maxLng = 180;
+            } else if (side === 1 && ne.lng > 180) {
+                minLng = -180;
+                maxLng = -180 + (ne.lng - 180);
+            } else {
+                minLng = Math.max(-180, sw.lng);
+                maxLng = Math.min(180, ne.lng);
+            }
+            if (maxLng > minLng) {
+                lngRanges.push({ west: minLng, east: maxLng });
+            }
+        }
+        if (!lngRanges.length) {
+            lngRanges.push({ west: -180, east: 180 });
+        }
+        const isZoomAnimating = !!mapForSwell._animatingZoom;
+        const lngRangesKey = lngRanges.map((r) => `${r.west}:${r.east}`).join('|');
+        const arrowGridKey = `${zoomForGrid}|${minLatSnap}|${maxLatSnap}|${lngRangesKey}`;
+
+        function yToLat(y) {
+            const n = Math.PI - 2 * Math.PI * y;
+            return (180 / Math.PI) * Math.atan(0.5 * (Math.exp(n) - Math.exp(-n)));
+        }
+
+        if ((!isZoomAnimating || !this.arrowPositions || !this.arrowPositions.length) && this.swellArrowGridKey !== arrowGridKey) {
+            this.arrowPositions = [];
+            const stepY = 10 / 180 / zoomFactor;
+            for (let y = 0; y <= 1; y += stepY) {
+                const lat = yToLat(y);
+                if (lat < minLatSnap || lat > maxLatSnap) continue;
+                for (let ri = 0; ri < lngRanges.length; ri++) {
+                    const range = lngRanges[ri];
+                    const minLngSnap = Math.floor(range.west / spacingLng) * spacingLng;
+                    const maxLngSnap = Math.ceil(range.east / spacingLng) * spacingLng;
+                    const edgeEps = spacingLng * 0.01;
+                    const skipRightEdge = range.east >= 180 - edgeEps;
+                    for (let lon = minLngSnap; lon <= maxLngSnap; lon += spacingLng) {
+                        if (lon < range.west || lon > range.east) continue;
+                        if (skipRightEdge && lon >= range.east - edgeEps) continue;
+                        const x = (lon + 180) / 360;
+                        const yNorm = 1 - (lat + 90) / 180;
+                        this.arrowPositions.push(x, yNorm);
+                    }
+                }
+            }
+            gl.bindBuffer(gl.ARRAY_BUFFER, this.arrowPosBuffer);
+            gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(this.arrowPositions), gl.STATIC_DRAW);
+            this.swellArrowGridKey = arrowGridKey;
+        }
+
+        gl.useProgram(this.dotsProgram);
+
+        // arrow - 3 vertices
+        gl.bindBuffer(gl.ARRAY_BUFFER, this.triangleBuffer);
+        gl.enableVertexAttribArray(this.dotsVertexLoc);
+        gl.vertexAttribPointer(this.dotsVertexLoc, 1, gl.FLOAT, false, 0, 0);
+        this.ext.vertexAttribDivisorANGLE(this.dotsVertexLoc, 0);
+
+        // positions
+        gl.bindBuffer(gl.ARRAY_BUFFER, this.arrowPosBuffer);
+        gl.enableVertexAttribArray(this.dotsPosLoc);
+        gl.vertexAttribPointer(this.dotsPosLoc, 2, gl.FLOAT, false, 0, 0);
+        this.ext.vertexAttribDivisorANGLE(this.dotsPosLoc, 1);
+
+        // uniforms
+        gl.uniformMatrix4fv(this.dotsMatrixLoc, false, matrix);
+        gl.activeTexture(gl.TEXTURE0);
+        gl.bindTexture(gl.TEXTURE_2D, this.texData);
+        gl.uniform1i(this.dotsImageLoc, 0);
+        gl.uniform1f(this.dotsSizeLoc, 0.01 / Math.pow(2, zoomForGrid));
+        gl.bindTexture(gl.TEXTURE_2D, this.texData);
+
+        // render
+        gl.enable(gl.BLEND);
+        gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
+        const dx = matrix[0];
+        for (let i = -1; i <= 1; i++) {
+            const m = matrix.slice();
+            m[12] += i * dx;
+            gl.uniformMatrix4fv(this.dotsMatrixLoc, false, m);
+            this.ext.drawArraysInstancedANGLE(gl.TRIANGLES, 0, 3, this.arrowPositions.length / 2);
+        }
+    },
+
+    setTs(ts) {
+        this.prevTs = this.ts;
+        this.ts = ts;
+        this.clearDataCanvases();
+    },
+
+    preloadTs(ts) {
+        if(!this.map || !ts) return;
+
+        const boundsMap = (this.leafletMap && typeof this.leafletMap.getBounds === 'function')
+                ? this.leafletMap
+                : (this.map || this.leafletMap),
+              b = boundsMap.getBounds(),
+              sw = b.getSouthWest ? b.getSouthWest() : (b._sw || b._southWest),
+              ne = b.getNorthEast ? b.getNorthEast() : (b._ne || b._northEast),
+              z = this.getDataZoom(),
+              grid = Math.pow(2, z),
+              tileHeight = 180 / grid,
+              tilePad = 1,
+              minY = Math.max(0, Math.floor((90 - ne.lat) / tileHeight) - tilePad),
+              maxY = Math.min(grid - 1, Math.floor((90 - sw.lat) / tileHeight) + tilePad);
+
+        let minLng, maxLng, minX, maxX, sides,
+            url = ((this.config.params[this.dataType] && this.config.params[this.dataType].url) || this.url);
+
+        for(let y = minY; y <= maxY; y++) {
+            sides = sw.lng < -180 || ne.lng > 180;
+            for(let side = 0; side <= sides; side++) {
+                if(side == 0 && sw.lng < -180) {
+                    minLng = 180 - (-sw.lng-180);
+                    maxLng = 180;
+                } else if(side == 1 && ne.lng > 180) {
+                    minLng = -180;
+                    maxLng = -180 + (ne.lng-180);
+                } else {
+                    minLng = Math.max(-180, sw.lng);
+                    maxLng = Math.min(180, ne.lng);
+                }
+
+                minX = Math.max(0, Math.min(grid - 1, Math.floor((minLng + 180) / 360 * grid) - tilePad));
+                maxX = Math.max(0, Math.min(grid - 1, Math.floor((maxLng + 180) / 360 * grid) + tilePad));
+
+                for(let x = minX; x <= maxX; x++) {
+                    let idx = ts+'/'+z+'/'+x+'/'+y;
+                    if(this.images[idx]) continue;
+
+                    this.images[idx] = new Image();
+                    this.images[idx].crossOrigin='anonymous';
+                    this.images[idx].onload = () => {
+                        this.loaded[idx] = true;
+                    };
+                    this.images[idx].onerror = () => {
+                        delete this.images[idx];
+                        delete this.loaded[idx];
+                    };
+
+                    const isHourly = this.hourly === 1;
+                    const isRadars = this.dataType === 'pradars';
+                    const dataType = isRadars
+                        ? 'PREC_RATE'
+                        : (this.dataType === 'prate_3h' && isHourly ? 'prate' : this.dataType);
+                    const model = isRadars ? 'radars_world' : this.model;
+                    const tileUrl = this.getTilesUrl(model, url);
+                    this.images[idx].src = `${tileUrl}/${model}/${dataType}/${ts}/${z}/${x}/${y}`;
+                }
+            }
+        }
+    },
+
+    getCurTs() {
+        return Math.floor(Date.now() / 1000);
+    },
+    
+    setMap(map) {
+        this.map = map;
+    },
+
+    setLeafletMap(map) {
+        this.leafletMap = map;
+    },
+    
+    setModel(model) {
+        this.model = model;
+        this.transitioning = false;
+        this.mixFactor = 1;
+        this.hasDataTexture = false;
+        this.smoothTransitionsPerfActive = false;
+        this.loaded = {};
+        this.clearDataCanvases();
+        Object.entries(this.images).forEach((el) => {
+            const idx = el[0],
+                  z = idx.split('/')[1],
+                  ts = idx.split('/')[0];
+
+            this.images[idx].src = '';
+            delete this.images[idx];
+            if(this.loading[idx]) {
+                delete this.loading[idx];
+                this.delLoading();
+            }
+        });
+    },
+
+    getColorConfig(type = this.dataType) {
+        const cColors = this.config.colors.data.type;
+        const typeColor = Object.keys(cColors).find(item => RegExp(item).test(type));
+        return cColors[typeColor] ? cColors[typeColor] : cColors.wind;
+    },
+
+    getColorStops(type = this.dataType) {
+        const colorConfig = this.getColorConfig(type);
+        const colors = (colorConfig && colorConfig.colors) ? colorConfig.colors : {};
+        return Object.keys(colors)
+            .map(Number)
+            .sort((a, b) => a - b)
+            .map((key) => ({
+                key,
+                color: colors[key]
+            }));
+    },
+
+    decodeValueFromByte(byte, type = this.dataType) {
+        const colorStops = this.getColorStops(type);
+        if (!colorStops.length) {
+            return 0;
+        }
+
+        const min = colorStops[0].key;
+        const max = colorStops[colorStops.length - 1].key;
+        const encoding = this.getColorConfig(type).encoding;
+
+        if (encoding && encoding.type === 'log10') {
+            const encMin = typeof encoding.min === 'number' ? encoding.min : min;
+            const encMax = typeof encoding.max === 'number' ? encoding.max : max;
+            if (encMax <= encMin) {
+                return encMin;
+            }
+            // Match iOS data-tile decoding (WndMapPng.Scaling.log10).
+            return Math.pow(10, (byte / 255) * Math.log10(1 + encMax - encMin)) - 1 + encMin;
+        }
+
+        if (max <= min) {
+            return min;
+        }
+
+        return (byte / 255) * (max - min) + min;
+    },
+
+    getColorForValue(value, colorStops) {
+        if (!colorStops.length) {
+            return [0, 0, 0, 0];
+        }
+        if (value <= colorStops[0].key) {
+            return colorStops[0].color;
+        }
+        if (value >= colorStops[colorStops.length - 1].key) {
+            return colorStops[colorStops.length - 1].color;
+        }
+
+        for (let i = 0; i < colorStops.length - 1; i++) {
+            const lower = colorStops[i];
+            const upper = colorStops[i + 1];
+            if (value >= lower.key && value <= upper.key) {
+                if (upper.key === lower.key) {
+                    return lower.color;
+                }
+                const t = (value - lower.key) / (upper.key - lower.key);
+                return [
+                    lower.color[0] + (upper.color[0] - lower.color[0]) * t,
+                    lower.color[1] + (upper.color[1] - lower.color[1]) * t,
+                    lower.color[2] + (upper.color[2] - lower.color[2]) * t,
+                    lower.color[3] + (upper.color[3] - lower.color[3]) * t
+                ];
+            }
+        }
+
+        return colorStops[colorStops.length - 1].color;
+    },
+
+    getColors() {
+        const colorStops = this.getColorStops();
+        let colorsArr = [];
+
+        for (let pixel = 0; pixel <= 255; pixel++) {
+            const value = this.decodeValueFromByte(pixel, this.dataType);
+            const color = this.getColorForValue(value, colorStops);
+            colorsArr.push(...color);
+        }
+        
+        return new Uint8Array(colorsArr.map(v =>
+            Math.round((v !== v || v == undefined ? 1 : v) * 255) // v !== v is a weird&short way to check for NaN
+        ));
+    },
+
+    clearDataCanvases() {
+        Object.keys(this.dataCanvas).forEach(key => {
+            this.dataCanvas[key].getContext('2d').clearRect(0, 0, this.dataCanvasSize[key][0], this.dataCanvasSize[key][1]);
+        });
+        this.drawn = {};
+    },
+    
+    applyColors() {
+        this.colors = this.getColors();
+        if(this.gl) {
+            if (!this.texColors) {
+                this.texColors = this.gl.createTexture();
+            }
+            if(this.dataType != 'sst') { // TODO: ?
+                this.gl.pixelStorei(this.gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, true); // TODO: deprecated
+            }
+            this.gl.useProgram(this.program);
+            this.gl.uniform1i(this.u_colorLoc, 1);  // texture unit 1
+            this.gl.activeTexture(this.gl.TEXTURE1);
+            this.gl.bindTexture(this.gl.TEXTURE_2D, this.texColors);
+            this.gl.texImage2D(this.gl.TEXTURE_2D, 0, this.gl.RGBA, this.colors.length / 4, 1, 0, this.gl.RGBA, this.gl.UNSIGNED_BYTE, this.colors);
+            this.gl.texParameteri(this.gl.TEXTURE_2D, this.gl.TEXTURE_WRAP_S, this.gl.CLAMP_TO_EDGE);
+            this.gl.texParameteri(this.gl.TEXTURE_2D, this.gl.TEXTURE_WRAP_T, this.gl.CLAMP_TO_EDGE);
+            this.gl.texParameteri(this.gl.TEXTURE_2D, this.gl.TEXTURE_MIN_FILTER, this.gl.LINEAR);
+        }
+    },
+
+    setType(type, options = {}) {
+        // if(this.dataType == type) return;
+        this.dataType = type;
+        this.transitioning = false;
+        this.mixFactor = 1;
+        this.hasDataTexture = false;
+        this.smoothTransitionsPerfActive = false;
+
+        if (options.deferColors) {
+            this.pendingColorUpdate = true;
+        } else {
+            this.pendingColorUpdate = false;
+            this.applyColors();
+        }
+
+        this.clearDataCanvases();
+
+        this.loaded = {};
+        Object.entries(this.images).forEach((el) => {
+            const idx = el[0],
+                  z = idx.split('/')[1],
+                  ts = idx.split('/')[0];
+
+            this.images[idx].src = '';
+            delete this.images[idx];
+            if(this.loading[idx]) {
+                delete this.loading[idx];
+                this.delLoading();
+            }
+        });
+
+
+    },
+    
+    setCallbacks(callbacks) {
+        this.setCallback = callbacks.setCallback;
+        this.releaseCallback = callbacks.releaseCallback;
+    },
+    
+    setPlaying(playing) {
+        this.playing = playing;
+    },
+
+    setDragging(dragging) {
+        this.dragging = dragging;
+    },
+    
+    getDataForLatLng(lat, lng) {
+        const canvas = this.dataCanvas[this.getDataZoom()];
+        if (!canvas) {
+            return [0, 0, 0, 0];
+        }
+        const ctx = canvas.getContext('2d');
+        if (!ctx) {
+            return [0, 0, 0, 0];
+        }
+        const width = canvas.getAttribute('width');
+        const height = canvas.getAttribute('height');
+        const x = ((lng + 180) / 360) * width;
+        const y = ((90 - lat) / 180) * height;
+        const data = ctx.getImageData(x, y, 1, 1).data;
+        return [data[0], data[1], data[2], data[3]];
+    }
+
+};

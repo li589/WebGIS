@@ -9,6 +9,16 @@ export type WeatherProviderPref = 'auto' | string
 
 const STORAGE_KEY = 'qingtian.weather-source-prefs.v1'
 
+/** Legacy open-meteo → open-meteo-online */
+const PROVIDER_ALIASES: Record<string, string> = {
+  'open-meteo': 'open-meteo-online',
+}
+
+function normalizeProviderId(id: string): string {
+  const trimmed = id.trim()
+  return PROVIDER_ALIASES[trimmed] ?? trimmed
+}
+
 function loadPrefs(): Record<string, WeatherProviderPref> {
   try {
     const raw = localStorage.getItem(STORAGE_KEY)
@@ -16,7 +26,7 @@ function loadPrefs(): Record<string, WeatherProviderPref> {
     const parsed = JSON.parse(raw) as Record<string, unknown>
     const out: Record<string, WeatherProviderPref> = {}
     for (const [k, v] of Object.entries(parsed)) {
-      if (typeof v === 'string' && v.trim()) out[k] = v.trim()
+      if (typeof v === 'string' && v.trim()) out[k] = normalizeProviderId(v.trim())
     }
     return out
   } catch {
@@ -40,7 +50,9 @@ export const useWeatherSourcePrefsStore = defineStore('weatherSourcePrefs', () =
   )
 
   function getProvider(catalogId: string): WeatherProviderPref {
-    return prefs.value[catalogId] ?? 'auto'
+    const pref = prefs.value[catalogId] ?? 'auto'
+    if (!pref || pref === 'auto') return 'auto'
+    return normalizeProviderId(pref)
   }
 
   /** Query value for tile/point APIs; undefined when auto. */
@@ -55,7 +67,7 @@ export const useWeatherSourcePrefsStore = defineStore('weatherSourcePrefs', () =
     if (!providerId || providerId === 'auto') {
       delete next[catalogId]
     } else {
-      next[catalogId] = providerId
+      next[catalogId] = normalizeProviderId(providerId)
     }
     prefs.value = next
   }
