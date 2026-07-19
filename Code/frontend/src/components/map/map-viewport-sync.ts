@@ -40,7 +40,11 @@ export function buildMapViewportSnapshot(map: MapViewportReader): MapViewportSna
     west = wrapLongitude(west)
     east = wrapLongitude(east)
     if (east < west) {
-      ;[west, east] = [east, west]
+      // 视口跨 ±180° 经线（如 west=170, east=-175）。
+      // 旧实现简单交换 west/east 会把视口映射到地球反面（-175→170，跨度 345°）。
+      // 改为把 east 扩展到 (180, 360) 区间（170→185），保留"从 west 向东穿越 180°到 east"
+      // 的短路径语义。下游 tilesInBounds 通过 ((x % n) + n) % n 归一化处理跨子午线瓦片索引。
+      east += 360
     }
   }
 
