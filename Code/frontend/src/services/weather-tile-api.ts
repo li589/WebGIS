@@ -91,10 +91,15 @@ export function tileToLngLatBounds(z: number, x: number, y: number): LngLatBound
 /**
  * 获取指定经纬度边界内的所有瓦片坐标。
  *
- * 处理反子午线穿越：当 bbox 经度跨度 > 180° 时，MapLibre 的 getBounds()
- * 在 renderWorldCopies=true 下可能返回跨越 ±180° 的回绕值。此时实际视口
- * 是从 bounds.east 向东到 bounds.west（穿过 180°经线），而非从 west 到 east
- * 的长路径。本函数将此情况正确拆分为两组瓦片坐标。
+ * 反子午线穿越处理：
+ * 主数据流（buildMapViewportSnapshot → store → weather-tile-manager）已通过
+ * normalizeLngBounds 将跨 ±180° 的 bbox 转为 `east += 360` 短路径形式
+ *（如 west=170, east=185），此时 `east - west ≤ 180`，下方 `> 180` 块不触发。
+ * 函数仍通过 `((x % n) + n) % n` 归一化正确处理跨子午线瓦片索引。
+ *
+ * 下方 `> 180` 块为向后兼容保留：若旧式 swap 形式（west=-175, east=170，
+ * 跨度 345°）的 bbox 被直接传入，仍能正确转为短路径。当前主数据流不会
+ * 产生此形式，但保留以防直接调用方（如 tilesInViewport）传入原始 MapLibre bounds。
  *
  * @param buffer 视口外扩圈数（0 = 仅边界内，1 = 外扩一圈）
  * @returns 主世界瓦片坐标集合（经度已归一化到 [0, n)）
@@ -107,11 +112,10 @@ export function tilesInBounds(
   const clampedZ = Math.max(0, Math.min(12, Math.round(z)))
   const n = 2 ** clampedZ
 
-  // 检测反子午线穿越：经度跨度 > 180° 说明 MapLibre 返回了回绕的 bbox
+  // 向后兼容：旧式 swap 形式（east - west > 180°）转为短路径
   let westLng = bounds.west
   let eastLng = bounds.east
   if (eastLng - westLng > 180) {
-    // 实际视口从 east 向东到 west（穿越 180°经线），取短路径
     westLng = bounds.east
     eastLng = bounds.west + 360
   }

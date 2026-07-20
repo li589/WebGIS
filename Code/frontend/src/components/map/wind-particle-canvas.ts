@@ -11,6 +11,7 @@ import type { Map as MaplibreMap } from 'maplibre-gl'
 import type { WindGeoJSON } from './types'
 import { DEFAULT_HEIGHT_SUFFIX, MAP_EVENT_MOVE, MAP_EVENT_MOVESTART, MAP_EVENT_MOVEEND, MAP_EVENT_RESIZE, MIN_VISIBLE_ZOOM } from './types'
 import { computeCanvasLayout, type CanvasLayout } from './canvas-utils'
+import { normalizeLngBounds } from './map-viewport-sync'
 
 // ── 渲染参数常量 ─────────────────────────────────────────
 
@@ -462,8 +463,13 @@ export interface WindRoamBounds {
 
 /**
  * 从 MapLibre-style bounds 计算视口 bbox。
- * 跨 ±180° 经线时（east < west，跨度小于半圈时）将 east 扩展到 (180, 360) 区间，
- * 保留"从 west 向东穿越 180° 到 east"的短路径语义，便于下游 tilesInBounds 归一化。
+ *
+ * 经度归一化与反子午线处理复用 map-viewport-sync 的 normalizeLngBounds，
+ * 避免两处独立维护相同逻辑。
+ *
+ * 纬度钳制到 [-85, 85]：Web Mercator 投影在 ±85.05° 以外无法表示，
+ * 粒子 canvas 基于 Mercator 渲染，钳制避免极地区域投影奇异。
+ *（map-viewport-sync 保留 [-90, 90] 因其 bbox 也用于点查询等非渲染用途。）
  *
  * 抽离为纯函数以便单测；类方法 updateViewportBBox 是它的薄包装。
  */
@@ -473,19 +479,7 @@ export function computeViewportBBoxFromBounds(bounds: {
   getSouth: () => number
   getNorth: () => number
 }): WindRoamBounds {
-  let west = bounds.getWest()
-  let east = bounds.getEast()
-  // 归一化到 [-180, 180]（MapLibre 偶尔返回 > 180 的 east）
-  while (west > 180) west -= 360
-  while (west < -180) west += 360
-  while (east > 180) east -= 360
-  while (east < -180) east += 360
-  if (east < west) {
-    // 跨 ±180° 经线：MapLibre renderWorldCopies=true 时 east < west。
-    // 把 east 扩展到 (180, 360) 使 east > west，保留"从 west 向东穿越 180°到 east"
-    // 的短路径语义，与 map-viewport-sync.ts 保持一致。
-    east += 360
-  }
+  const { west, east } = normalizeLngBounds(bounds.getWest(), bounds.getEast())
   return {
     south: Math.max(-85, bounds.getSouth()),
     north: Math.min(85, bounds.getNorth()),
@@ -558,7 +552,7 @@ export class WindParticleCanvas {
    * 若粒子被锁在旧 grid 边界内（resetParticle/wrapParticle），新区域会视觉空白。
    * 通过 getEffectiveRoamBounds() 取 grid 与 viewport 的外包络解决此问题。
    */
-  private viewportBBox: { south: number; north: number; west: number; east: number } | null = null
+  private viewportBBox: WindRoamBounds | null = null
 
   /** 预解析的颜色 RGB 数组（避免每帧字符串解析） */
   private colorRgbCache: [number, number, number][] = []
@@ -783,18 +777,18 @@ export class WindParticleCanvas {
    * - viewport 未初始化时返回 grid（旧行为，仅 grid 范围）
    * - 两者都有时返回并集（让粒子在视口已平移到 grid 外时仍能分布到新区域，
    *   用 grid 边缘格点的风场做外推；新瓦片到达后 grid 重建，范围自然收紧）
+   *
+   * 直接传 this.grid 给 mergeRoamBounds：WindGrid 结构兼容 WindRoamBounds
+   *（均有 south/north/west/east），避免每次调用分配临时对象（wrapParticle 每帧每粒子调用）。
    */
   private getEffectiveRoamBounds(): WindRoamBounds | null {
-    const gridBounds = this.grid
-      ? { south: this.grid.south, north: this.grid.north, west: this.grid.west, east: this.grid.east }
-      : null
-    return mergeRoamBounds(gridBounds, this.viewportBBox)
+    return mergeRoamBounds(this.grid, this.viewportBBox)
   }
 
   private createRandomParticle(): Particle {
     const bounds = this.getEffectiveRoamBounds()
     if (!bounds) {
-      // 兜底：grid 与 viewport 都未初始化时返回零粒子（不应到达此处）
+      // 兜底：grid 与 viewport 都未初始化时返回原点占位粒子（不应到达此处）
       return { lat: 0, lon: 0, trail: [0, 0, 1, 0], age: 0, maxAge: this.options.maxAge }
     }
     const { south, north, west, east } = bounds
