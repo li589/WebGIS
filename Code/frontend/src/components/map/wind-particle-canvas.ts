@@ -9,17 +9,22 @@
  */
 import type { Map as MaplibreMap } from 'maplibre-gl'
 import type { WindGeoJSON } from './types'
-import { DEFAULT_HEIGHT_SUFFIX, MAP_EVENT_MOVE, MAP_EVENT_MOVESTART, MAP_EVENT_MOVEEND, MAP_EVENT_RESIZE, MIN_VISIBLE_ZOOM } from './types'
+import { MAP_EVENT_MOVE, MAP_EVENT_MOVESTART, MAP_EVENT_MOVEEND, MAP_EVENT_RESIZE, MIN_VISIBLE_ZOOM } from './types'
 import { computeCanvasLayout, type CanvasLayout } from './canvas-utils'
 import { normalizeLngBounds } from './map-viewport-sync'
+import { unwrapLonIntoGridFrame } from './weather-grid-lattice'
+import {
+  buildWindGridFromGeoJSON,
+  windToUV,
+  uvToSpeedDirection,
+  type WindGrid,
+  type WindGridPoint,
+} from './wind-grid'
 
 // ── 渲染参数常量 ─────────────────────────────────────────
 
 /** 弧度转换常数（Math.PI / 180） */
 const DEG_TO_RAD = Math.PI / 180
-
-/** 气象风向偏移量：气象风向是风来向，需加 180° 转为数学风向（风去向） */
-const WIND_DIRECTION_OFFSET = 180
 
 /** 节流帧间隔，约 30fps（ms） */
 const TARGET_FRAME_INTERVAL_MS = 33
@@ -52,24 +57,24 @@ const AGE_BAND_OLD_RATIO = 0.78
 const AGE_BAND_ALPHAS = [0.45, 1.0, 0.42] as const
 
 /**
- * 粒子默认配置（对照 Windy.app WindMap.js）：
- * - 近白统一粒子色（色场交给底层 heatmap，避免彩虹拖尾「乱」）
- * - particlesPerMegapixel≈700 → 折合视口约 6/°²，勿过密
- * - trailFade≈0.96 → 较慢衰减、线条更干净
+ * 粒子默认配置（对照 Windy.app WindMap.js，商业密度加码）：
+ * - 近白统一粒子色（色场交给底层色底）
+ * - 约 10/°²，远景更满
+ * - trailFade 更慢 → 线条更连贯
  */
 const DEFAULT_PARTICLE_OPTIONS = {
-  particleCount: 900,
+  particleCount: 1200,
   maxAge: 110,
   speedScale: 0.026,
-  fadeAlpha: 0.018,
-  lineWidth: 1.35,
+  fadeAlpha: 0.012,
+  lineWidth: 1.9,
 } as const
 
 /** 粒子数量上限（防止过大网格导致性能问题） */
-const MAX_PARTICLE_COUNT = 2200
+const MAX_PARTICLE_COUNT = 3600
 
 /** 粒子数量下限 */
-const MIN_PARTICLE_COUNT = 320
+const MIN_PARTICLE_COUNT = 400
 
 /** 对照 WindMap dropRate / dropRateBump：高风速区更频繁重生 */
 const PARTICLE_DROP_RATE = 0.004
@@ -82,19 +87,22 @@ const MAX_PIXEL_RATIO = 2
 /** zoomFactor 上限，防止低缩放级别下粒子速度过快导致视觉混乱（线条抽搐） */
 const MAX_ZOOM_FACTOR = 3.2
 
+/** 面积密度：每平方度粒子数 */
+const PARTICLES_PER_DEG2 = 10
+
 /**
  * 根据网格面积动态计算粒子数量。
- * 密度约每平方度 6 个（对照 Windy ~700/MP 的观感），受上下限约束。
+ * 密度约每平方度 10 个，受上下限约束。
  */
 function computeParticleCountForGrid(grid: WindGrid): number {
   const area = Math.abs(grid.north - grid.south) * Math.abs(grid.east - grid.west)
-  const count = Math.round(area * 6)
+  const count = Math.round(area * PARTICLES_PER_DEG2)
   return Math.min(MAX_PARTICLE_COUNT, Math.max(MIN_PARTICLE_COUNT, count))
 }
 
 /** 供单测读取密度计算（不导出内部网格构建细节） */
 export function __testComputeParticleCountForArea(areaDeg2: number): number {
-  const count = Math.round(areaDeg2 * 6)
+  const count = Math.round(areaDeg2 * PARTICLES_PER_DEG2)
   return Math.min(MAX_PARTICLE_COUNT, Math.max(MIN_PARTICLE_COUNT, count))
 }
 
@@ -126,24 +134,6 @@ const DEFAULT_PARTICLE_COLORS = [
 const DEFAULT_WIND_SPEED_STOPS = [0, 8, 20, 35]
 
 // ── 类型 ─────────────────────────────────────────────────
-
-interface WindGridPoint {
-  lat: number
-  lon: number
-  speed: number
-  direction: number
-}
-
-interface WindGrid {
-  rows: number
-  cols: number
-  south: number
-  north: number
-  west: number
-  east: number
-  points: WindGridPoint[][]
-  checksum: number
-}
 
 export interface WindParticleOptions {
   particleCount?: number
@@ -186,197 +176,12 @@ function debugLog(module: string, ...args: unknown[]) {
   console.log(`[${performance.now().toFixed(1)}ms] [${module}]`, ...args)
 }
 
-function windToUV(speed: number, directionDeg: number): [number, number] {
-  // 气象风向是风来向，加 180° 转为风去向 θ
-  // u = speed * sin(θ)（东为正），v = speed * cos(θ)（北为正）
-  const rad = (directionDeg + WIND_DIRECTION_OFFSET) * DEG_TO_RAD
-  const u = speed * Math.sin(rad)
-  const v = speed * Math.cos(rad)
-  return [u, v]
-}
-
-/**
- * windToUV 的反函数：由 (u, v) 分量反推 (speed, direction)。
- *
- * 用于 interpolateWind 中将双线性插值后的 (u, v) 转回 (speed, direction)。
- * 在涡旋中心 (u, v) → (0, 0) 时返回 speed=0、direction=0（静风，方向无定义但不影响渲染）。
- */
-function uvToSpeedDirection(u: number, v: number): { speed: number; direction: number } {
-  const speed = Math.sqrt(u * u + v * v)
-  if (speed < 1e-6) return { speed: 0, direction: 0 }
-  // windToUV: u = speed * sin(θ), v = speed * cos(θ) → θ = atan2(u, v)
-  const dirRad = Math.atan2(u, v)
-  const direction = ((dirRad / DEG_TO_RAD) - WIND_DIRECTION_OFFSET + 360) % 360
-  return { speed, direction }
-}
-
-// ── GeoJSON → 风场网格 ──────────────────────────────────
-
-/** 经纬度量化精度（0.001°，约 100m），用于合并浮点误差导致的微小差异 */
-const GRID_COORD_QUANTIZE_FACTOR = 1000
-
-function buildWindGridFromGeoJSON(geojson: WindGeoJSON): WindGrid | null {
-  const features = geojson?.features || []
-  if (features.length === 0) return null
-
-  const firstProps = features[0]?.properties || {}
-  const heightSuffix: string = firstProps.height ?? DEFAULT_HEIGHT_SUFFIX
-  const speedKey = `wind_speed_${heightSuffix}`
-  const directionKey = `wind_direction_${heightSuffix}`
-
-  // 收集所有点的数据和量化后的唯一经纬度
-  // 不依赖后端的 row/col 属性 —— 多瓦片合并时各瓦片的 row/col 是相对内部的，会互相冲突覆盖
-  interface RawPoint { lat: number; lon: number; speed: number; direction: number }
-  const rawPoints: RawPoint[] = []
-  const latQuantSet = new Set<number>()
-  const lonQuantSet = new Set<number>()
-
-  for (const f of features) {
-    const coords = f.geometry?.coordinates
-    if (!coords || f.geometry?.type !== 'Point') continue
-    const lon = coords[0]
-    const lat = coords[1]
-    const props = f.properties || {}
-    const speed = (props[speedKey] ?? props.wind_speed_10m ?? 0) as number
-    const direction = (props[directionKey] ?? props.wind_direction_10m ?? 0) as number
-    rawPoints.push({ lat, lon, speed, direction })
-    latQuantSet.add(Math.round(lat * GRID_COORD_QUANTIZE_FACTOR))
-    lonQuantSet.add(Math.round(lon * GRID_COORD_QUANTIZE_FACTOR))
-  }
-
-  if (rawPoints.length === 0) return null
-
-  // 排序：lat 降序（北→南，row 0 = 最北），lon 升序（西→东，col 0 = 最西）
-  const sortedLats = Array.from(latQuantSet).sort((a, b) => b - a)
-  const sortedLons = Array.from(lonQuantSet).sort((a, b) => a - b)
-  const rows = sortedLats.length
-  const cols = sortedLons.length
-  if (rows < 2 || cols < 2) return null
-
-  // 量化值 → 网格索引映射
-  const latIndex = new Map<number, number>()
-  sortedLats.forEach((q, i) => latIndex.set(q, i))
-  const lonIndex = new Map<number, number>()
-  sortedLons.forEach((q, i) => lonIndex.set(q, i))
-
-  // 构建二维网格，先初始化所有点的坐标（值占位为 NaN 标记"无数据"）
-  const NO_DATA = Number.NaN
-  const points: WindGridPoint[][] = []
-  const hasData: boolean[][] = []
-  for (let r = 0; r < rows; r++) {
-    points[r] = []
-    hasData[r] = []
-    for (let c = 0; c < cols; c++) {
-      points[r][c] = {
-        lat: sortedLats[r] / GRID_COORD_QUANTIZE_FACTOR,
-        lon: sortedLons[c] / GRID_COORD_QUANTIZE_FACTOR,
-        speed: NO_DATA,
-        direction: NO_DATA,
-      }
-      hasData[r][c] = false
-    }
-  }
-  // 填入实际数据点
-  for (const p of rawPoints) {
-    const r = latIndex.get(Math.round(p.lat * GRID_COORD_QUANTIZE_FACTOR))!
-    const c = lonIndex.get(Math.round(p.lon * GRID_COORD_QUANTIZE_FACTOR))!
-    points[r][c] = { lat: p.lat, lon: p.lon, speed: p.speed, direction: p.direction }
-    hasData[r][c] = true
-  }
-
-  // ── 缺失单元反距离加权（IDW）填充 ──────────────────────────────
-  // 多瓦片合并时，不同瓦片的网格点不完全对齐，会在并集网格中产生"孔洞"。
-  // 最近邻填充会让大片孔洞继承同一数据源，形成规则的方向/速度斑块（看起来像竖直栅栏）。
-  // 改用局部 IDW（限制搜索半径 + 1/r^2 权重）对周围有数据单元加权插值，
-  // 既填补孔洞又保留瓦片内部的真实风向细节，避免远距离数据过度平滑。
-  const MISSING_CELL_COUNT = rows * cols - rawPoints.length
-  if (MISSING_CELL_COUNT > 0) {
-    // 搜索半径：最多 8 个单元格；瓦片边界通常只偏移 0.5~1 个网格步长，
-    // 太大半径会让插值结果趋同，丢失局部风场特征。
-    const maxRadius = Math.min(8, Math.max(rows, cols))
-    for (let r = 0; r < rows; r++) {
-      for (let c = 0; c < cols; c++) {
-        if (hasData[r][c]) continue
-        let sumWeight = 0
-        let sumSpeed = 0
-        let sumUSin = 0
-        let sumUCos = 0
-        let found = false
-        const rStart = Math.max(0, r - maxRadius)
-        const rEnd = Math.min(rows, r + maxRadius + 1)
-        const cStart = Math.max(0, c - maxRadius)
-        const cEnd = Math.min(cols, c + maxRadius + 1)
-        for (let rr = rStart; rr < rEnd; rr++) {
-          for (let cc = cStart; cc < cEnd; cc++) {
-            if (!hasData[rr][cc]) continue
-            const dr = rr - r
-            const dc = cc - c
-            const dist = Math.sqrt(dr * dr + dc * dc)
-            if (dist === 0) continue
-            // 1/r^2 权重：近处点影响更大，远处快速衰减，保留局部特征
-            const weight = 1 / (dist * dist)
-            const src = points[rr][cc]
-            sumWeight += weight
-            sumSpeed += src.speed * weight
-            // 对 u/v 分量加权，避免角度平均的环绕问题
-            const dirRad = (src.direction + WIND_DIRECTION_OFFSET) * DEG_TO_RAD
-            sumUSin += Math.sin(dirRad) * src.speed * weight
-            sumUCos += Math.cos(dirRad) * src.speed * weight
-            found = true
-          }
-        }
-        if (found && sumWeight > 0) {
-          const avgSpeed = sumSpeed / sumWeight
-          const avgURad = Math.atan2(sumUSin / sumWeight, sumUCos / sumWeight)
-          const avgDirection = ((avgURad / DEG_TO_RAD) - WIND_DIRECTION_OFFSET + 360) % 360
-          points[r][c].speed = avgSpeed
-          points[r][c].direction = avgDirection
-          hasData[r][c] = true
-        }
-      }
-    }
-  }
-
-  // ── 最终保护：IDW 无法填充的单元格（完全没有附近数据）清零 ──────
-  // 当大量瓦片加载失败时，网格中可能存在大范围"孤岛"——周围没有任何有效数据点。
-  // 这些单元格的 speed/direction 仍为 NaN，会导致 interpolateWind 产生 NaN 经纬度，
-  // 进而触发 map.project() 崩溃（Invalid LngLat object: (NaN, NaN)）。
-  // 将剩余 NaN 清零，使粒子在这些区域静止，避免崩溃。
-  let unfilledCount = 0
-  for (let r = 0; r < rows; r++) {
-    for (let c = 0; c < cols; c++) {
-      if (!hasData[r][c]) {
-        points[r][c].speed = 0
-        points[r][c].direction = 0
-        unfilledCount++
-      }
-    }
-  }
-  if (unfilledCount > 0) {
-    debugLog('WindParticleCanvas', 'buildWindGrid unfilled cells zeroed', unfilledCount)
-  }
-
-  const south = sortedLats[rows - 1] / GRID_COORD_QUANTIZE_FACTOR
-  const north = sortedLats[0] / GRID_COORD_QUANTIZE_FACTOR
-  const west = sortedLons[0] / GRID_COORD_QUANTIZE_FACTOR
-  const east = sortedLons[cols - 1] / GRID_COORD_QUANTIZE_FACTOR
-
-  let checksum = 0
-  for (let r = 0; r < rows; r++) {
-    for (let c = 0; c < cols; c++) {
-      const p = points[r][c]
-      checksum += p.speed + p.direction
-    }
-  }
-
-  debugLog('WindParticleCanvas', 'buildWindGrid', 'rows', rows, 'cols', cols, 'rawPoints', rawPoints.length, 'missing', MISSING_CELL_COUNT, 'bounds', { west, south, east, north }, 'checksum', checksum)
-  return { rows, cols, south, north, west, east, points, checksum }
-}
-
-function interpolateWind(grid: WindGrid, lat: number, lon: number): WindGridPoint {
+export function interpolateWind(grid: WindGrid, lat: number, lon: number): WindGridPoint {
   const { rows, cols, south, north, west, east, points } = grid
   const clampedLat = Math.max(south, Math.min(north, lat))
-  const clampedLon = Math.max(west, Math.min(east, lon))
+  // 网格可能处于解包经度框（east>180）；查询 lon 常在 [-180,180]
+  const framedLon = unwrapLonIntoGridFrame(lon, west, east)
+  const clampedLon = Math.max(west, Math.min(east, framedLon))
   // buildWindGridFromGeoJSON 按 lat 降序排序（row 0 = 最北，row rows-1 = 最南）
   // 所以 fy 应该用 (north - lat) / (north - south)
   const fy = ((north - clampedLat) / (north - south)) * (rows - 1)
@@ -407,10 +212,6 @@ function interpolateWind(grid: WindGrid, lat: number, lon: number): WindGridPoin
   }
 
   // 对 (u, v) 分量做双线性插值，而非对 speed/direction 分别插值。
-  // 数学动机：direction 是角度量，在涡旋中心（4 角点方向如 0°/90°/180°/270°）
-  // 的最短角度插值是病态的——可能取到任意方向。改在向量空间 (u, v) 上插值，
-  // 涡旋中心会自然给出 (u, v) ≈ (0, 0)（静风），与物理一致。
-  // 复用 buildWindGridFromGeoJSON 中 IDW 填充 (L304-317) 的同款 sin/cos 模式。
   const [u00, v00] = windToUV(p00.speed, p00.direction)
   const [u01, v01] = windToUV(p01.speed, p01.direction)
   const [u10, v10] = windToUV(p10.speed, p10.direction)
@@ -495,7 +296,8 @@ export function computeViewportBBoxFromBounds(bounds: {
  * - 两者都有时返回并集（让粒子在视口已平移到 grid 外时仍能分布到新区域，
  *   用 grid 边缘格点的风场做外推；新瓦片到达后 grid 重建，范围自然收紧）
  *
- * 抽离为纯函数以便单测；类方法 getEffectiveRoamBounds 是它的薄包装。
+ * 当 grid 使用解包经度（east&gt;180）时，把 viewport 经度卷入同一连续框，
+ * 避免 Math.min/max 把跨日界线并成「穿过美洲」的假跨度 → 半屏空白。
  */
 export function mergeRoamBounds(
   grid: WindRoamBounds | null,
@@ -503,11 +305,19 @@ export function mergeRoamBounds(
 ): WindRoamBounds | null {
   if (!grid) return viewport
   if (!viewport) return grid
+  const vw = unwrapLonIntoGridFrame(viewport.west, grid.west, grid.east)
+  const ve = unwrapLonIntoGridFrame(viewport.east, grid.west, grid.east)
+  // east 可能被卷到 west 西侧（短路径视口）；保证 east>=west 供粒子均匀撒点
+  let west = Math.min(grid.west, vw, ve)
+  let east = Math.max(grid.east, vw, ve)
+  if (east < west) {
+    east += 360
+  }
   return {
     south: Math.min(grid.south, viewport.south),
     north: Math.max(grid.north, viewport.north),
-    west: Math.min(grid.west, viewport.west),
-    east: Math.max(grid.east, viewport.east),
+    west,
+    east,
   }
 }
 
@@ -631,19 +441,21 @@ export class WindParticleCanvas {
       // 视口 bbox 必须在 reprojectParticleTrailsForInteract 之前更新，
       // 让 reset/getEffectiveRoamBounds 拿到最新视口范围
       this.updateViewportBBox()
-      // 重置为可画的短迹（≥2 点），下一帧 animate 再积累；勿只留单点导致短暂空白
-      if (this.grid) {
-        this.reprojectParticleTrailsForInteract()
-      }
       const zoom = this.map.getZoom()
       const targetCount = this.resolveParticleCountForZoom(zoom)
       const currentCount = this.particles.length
-      const countChanged = this.lastParticleZoom === 0 || Math.abs(targetCount - currentCount) / Math.max(currentCount, 1) > PARTICLE_COUNT_CHANGE_THRESHOLD
-      debugLog('WindParticleCanvas', 'moveend', 'zoom', zoom, 'targetCount', targetCount, 'currentCount', currentCount, 'countChanged', countChanged)
-      if (countChanged) {
+      const zoomDelta = this.lastParticleZoom === 0 ? 99 : Math.abs(zoom - this.lastParticleZoom)
+      // 缩放后旧粒子仍聚在原先地理范围 → 画面上只剩「缩放前那一块」；
+      // 显著变焦时按新视口∪grid 重撒，避免画布像被裁切。
+      const countChanged = Math.abs(targetCount - currentCount) / Math.max(currentCount, 1) > PARTICLE_COUNT_CHANGE_THRESHOLD
+      const shouldReseed = zoomDelta >= 0.35 || countChanged || this.particles.length === 0
+      debugLog('WindParticleCanvas', 'moveend', 'zoom', zoom, 'targetCount', targetCount, 'currentCount', currentCount, 'zoomDelta', zoomDelta, 'reseed', shouldReseed)
+      if (shouldReseed && this.grid) {
         this.options.particleCount = targetCount
         this.initParticles()
         this.lastParticleZoom = zoom
+      } else if (this.grid) {
+        this.reprojectParticleTrailsForInteract()
       }
     }
     this.resizeHandler = () => {
@@ -654,6 +466,8 @@ export class WindParticleCanvas {
     this.map.on(MAP_EVENT_MOVESTART, this.movestartHandler)
     this.map.on(MAP_EVENT_MOVE, this.moveHandler)
     this.map.on(MAP_EVENT_MOVEEND, this.moveendHandler)
+    // zoomend：部分手势路径 moveend 与 zoom 不同步；保证缩放后重投影与粒子密度
+    this.map.on('zoomend', this.moveendHandler)
     this.map.on(MAP_EVENT_RESIZE, this.resizeHandler)
   }
 
@@ -717,9 +531,9 @@ export class WindParticleCanvas {
     if (!this.grid) return DEFAULT_PARTICLE_OPTIONS.particleCount
     const baseCount = computeParticleCountForGrid(this.grid)
     // 低缩放降密度，避免全球/大范围视图线条糊成一片
-    if (zoom < 2) return Math.min(baseCount, 280)
-    if (zoom < 3) return Math.min(baseCount, 480)
-    if (zoom < 5) return Math.min(baseCount, 900)
+    if (zoom < 2) return Math.min(baseCount, 480)
+    if (zoom < 3) return Math.min(baseCount, 900)
+    if (zoom < 5) return Math.min(baseCount, 1800)
     return baseCount
   }
 
@@ -1209,7 +1023,11 @@ export class WindParticleCanvas {
     if (this.moveRafId !== null) { cancelAnimationFrame(this.moveRafId); this.moveRafId = null }
     if (this.movestartHandler) { this.map.off(MAP_EVENT_MOVESTART, this.movestartHandler); this.movestartHandler = null }
     if (this.moveHandler) { this.map.off(MAP_EVENT_MOVE, this.moveHandler); this.moveHandler = null }
-    if (this.moveendHandler) { this.map.off(MAP_EVENT_MOVEEND, this.moveendHandler); this.moveendHandler = null }
+    if (this.moveendHandler) {
+      this.map.off(MAP_EVENT_MOVEEND, this.moveendHandler)
+      this.map.off('zoomend', this.moveendHandler)
+      this.moveendHandler = null
+    }
     if (this.resizeHandler) { this.map.off(MAP_EVENT_RESIZE, this.resizeHandler); this.resizeHandler = null }
     if (this.resizeObserver) { this.resizeObserver.disconnect(); this.resizeObserver = null }
     if (this.canvas.parentElement) {

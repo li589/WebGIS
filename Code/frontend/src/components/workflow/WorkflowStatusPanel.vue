@@ -3,22 +3,36 @@ import { computed, ref, onMounted, onBeforeUnmount } from 'vue'
 import { storeToRefs } from 'pinia'
 import { useLayersStore } from '../../stores/layers'
 import { useWeatherTileManager } from '../../stores/weather-tile-manager'
+import { useWeatherSyncStatusStore } from '../../stores/weather-sync-status'
+import { mergeWorkflowSummaryWithWeather } from '../../utils/workflow-status-merge'
 import type { JobStatus } from '../../stores/layers/types'
 
 const layersStore = useLayersStore()
 const weatherTileManager = useWeatherTileManager()
+const weatherSyncStatus = useWeatherSyncStatusStore()
 const { activityVersion, statusVersion } = storeToRefs(weatherTileManager)
+const { syncInProgress, modelEmpty } = storeToRefs(weatherSyncStatus)
 const emit = defineEmits<{ close: [] }>()
 
 // 每秒刷新 tick，用于运行中工作流的时长动态更新
 const tick = ref(0)
 let tickTimer: number | null = null
 
+const weatherContribution = computed(() => {
+  void activityVersion.value
+  void statusVersion.value
+  void syncInProgress.value
+  void modelEmpty.value
+  void tick.value
+  return weatherTileManager.deriveWeatherWorkflowContribution({
+    syncInProgress: syncInProgress.value,
+    modelEmpty: modelEmpty.value,
+  })
+})
+
 // 从 activeLayersDisplay 中提取有 jobLayer 的条目，并合并 jobLayers 中的孤儿工作流
-// （活跃图层已被移除但工作流记录仍在的失败/排队/已完成工作流）
 const workflowItems = computed(() => {
   void tick.value
-  // 1. 从活跃图层中提取有 jobLayer 的条目
   const fromActive = layersStore.activeLayersDisplay
     .filter((layer) => layer.jobLayer)
     .map((layer) => ({
@@ -27,9 +41,9 @@ const workflowItems = computed(() => {
       accentColor: layer.accentColor,
       category: layer.category,
       jobLayer: layer.jobLayer!,
+      synthetic: false as const,
     }))
 
-  // 2. 从 jobLayers 中提取不在活跃图层中的孤儿工作流（失败/排队/取消等）
   const activeJobIds = new Set(fromActive.map((item) => item.jobLayer.jobId))
   const catalogMeta = new Map(
     layersStore.layerLibrary.map((item) => [item.catalogId, item]),
@@ -46,11 +60,11 @@ const workflowItems = computed(() => {
         accentColor: meta?.accentColor ?? cat?.accentColor ?? '#5a7080',
         category: meta?.category ?? 'research-group',
         jobLayer: job,
+        synthetic: false as const,
       }
     })
 
   return [...fromActive, ...fromOrphan].sort((a, b) => {
-    // 运行中优先，然后按更新时间倒序
     const order: Record<string, number> = { running: 0, queued: 1, retry_pending: 2, failed: 3, cancelled: 4, succeeded: 5 }
     const diff = (order[a.jobLayer.status] ?? 9) - (order[b.jobLayer.status] ?? 9)
     if (diff !== 0) return diff
@@ -58,26 +72,36 @@ const workflowItems = computed(() => {
   })
 })
 
+/** 天气瓦片合成行（非 workflow-runs） */
+const weatherSyntheticItems = computed(() => {
+  const catalogMeta = new Map(
+    layersStore.layerLibrary.map((item) => [item.catalogId, item]),
+  )
+  return weatherContribution.value.items.map((item) => {
+    const meta = catalogMeta.get(item.catalogId)
+    const active = layersStore.activeLayersDisplay.find((l) => l.catalogId === item.catalogId)
+    return {
+      catalogId: item.catalogId,
+      name: active?.name ?? meta?.name ?? item.catalogId,
+      accentColor: active?.accentColor ?? meta?.accentColor ?? '#5ad5ff',
+      category: active?.category ?? meta?.category ?? 'weather',
+      status: item.status,
+      message: item.message,
+      errorType: item.errorType,
+      pending: item.pending,
+      missingInViewport: item.missingInViewport,
+    }
+  })
+})
+
 /** 纯业务工作流摘要（不含天气瓦片） */
 const jobSummary = computed(() => layersStore.workflowSummary)
 
-/**
- * 与 ModeToolbar 口径一致：天气瓦片 pending 计入 running，
- * 避免工具栏显示「N 运行中」而面板内仍是 0。
- */
+/** 与 ModeToolbar 口径一致：合并天气合成六态 */
 const summary = computed(() => {
   void activityVersion.value
   void statusVersion.value
-  const base = jobSummary.value
-  const tileActive = weatherTileManager.getGlobalActiveTileCount()
-  if (tileActive === 0) return base
-  return {
-    ...base,
-    running: base.running + tileActive,
-    total: Math.max(base.total, tileActive),
-    overall: 'active' as const,
-    tone: 'active' as const,
-  }
+  return mergeWorkflowSummaryWithWeather(jobSummary.value, weatherContribution.value)
 })
 
 /** 衍生统计指标 */
@@ -96,9 +120,20 @@ const tileErrorLabel: Record<string, string> = {
   timeout: '请求超时',
   'rate-limited': '频率超限',
   'circuit-open': '服务暂不可用',
+  'data-empty': '本地无数据',
   'workflow-failed': '工作流失败',
   unknown: '加载失败',
 }
+
+const weatherStatusMeta: Record<string, { label: string; color: string; bg: string }> = {
+  running: { label: '运行中', color: '#5ad5ff', bg: 'rgba(90, 213, 255, 0.12)' },
+  queued: { label: '排队中', color: '#88dfff', bg: 'rgba(136, 223, 255, 0.1)' },
+  succeeded: { label: '已完成', color: '#9ff8cf', bg: 'rgba(159, 248, 207, 0.1)' },
+  failed: { label: '失败', color: '#ff8a8a', bg: 'rgba(255, 138, 138, 0.1)' },
+  cancelled: { label: '已取消', color: '#8aa8bf', bg: 'rgba(138, 168, 191, 0.1)' },
+  retry_pending: { label: '等待重试', color: '#ffd38a', bg: 'rgba(255, 211, 138, 0.1)' },
+}
+
 
 /** 按分类分组统计工作流 */
 const categoryBreakdown = computed(() => {
@@ -141,7 +176,7 @@ const weatherTileLayers = computed(() => {
   void activityVersion.value
   void statusVersion.value
   return layersStore.activeLayersDisplay
-    .filter((layer) => layer.category === '气象场' && layer.visible)
+    .filter((layer) => layer.visible && layersStore.isWeatherEngineLayer(layer.catalogId))
     .map((layer) => {
       const status = weatherTileManager.getLayerStatus(layer.catalogId)
       return {
@@ -167,6 +202,30 @@ const globalTileStats = computed(() => {
   }
   const hitRate = totalViewport > 0 ? Math.round((totalCached / totalViewport) * 100) : null
   return { totalCached, totalViewport, totalPending, hitRate }
+})
+
+/** 与工具栏徽章同色的六态汇总（业务 job + 天气瓦片） */
+const summaryCards = computed(() => {
+  const s = summary.value
+  const tilePending = globalTileStats.value.totalPending
+  const tileCached = globalTileStats.value.totalCached
+  const tileViewport = globalTileStats.value.totalViewport
+  return [
+    { key: 'running', label: '运行中', count: s.running, color: '#5ad5ff', sub: tilePending > 0 ? `含瓦片 ${tilePending}` : '' },
+    { key: 'queued', label: '排队中', count: s.queued, color: '#88dfff', sub: '' },
+    { key: 'retryPending', label: '等待重试', count: s.retryPending, color: '#ffd38a', sub: '' },
+    {
+      key: 'succeeded',
+      label: '已完成',
+      count: s.succeeded,
+      color: '#9ff8cf',
+      sub: tileCached > 0
+        ? (tileViewport > 0 ? `含瓦片 ${tileCached}/${tileViewport}` : `含瓦片 ${tileCached}`)
+        : '',
+    },
+    { key: 'failed', label: '失败', count: s.failed, color: '#ff8a8a', sub: '' },
+    { key: 'cancelled', label: '已取消', count: s.cancelled, color: '#8aa8bf', sub: '' },
+  ] as const
 })
 
 /** 展开的诊断/事件面板 */
@@ -225,6 +284,19 @@ function handleRetry(jobId: string, catalogId: string) {
   void layersStore.retryWorkflowRunForJob(jobId, catalogId)
 }
 
+function handleWeatherRetry(catalogId: string) {
+  weatherTileManager.retryLayerTiles(catalogId)
+}
+
+async function handleWeatherSync(catalogId: string) {
+  try {
+    await weatherSyncStatus.triggerSync()
+    weatherTileManager.retryLayerTiles(catalogId)
+  } catch (err) {
+    console.warn('[WorkflowStatusPanel] trigger sync failed', err)
+  }
+}
+
 function handleKeydown(e: KeyboardEvent) {
   if (e.key === 'Escape') emit('close')
 }
@@ -234,6 +306,7 @@ onMounted(() => {
   tickTimer = window.setInterval(() => {
     tick.value++
   }, 1000)
+  void weatherSyncStatus.refreshOverview()
 })
 
 onBeforeUnmount(() => {
@@ -277,32 +350,17 @@ onBeforeUnmount(() => {
         <span>{{ layersStore.workflowError }}</span>
       </div>
 
-      <!-- 汇总卡片（运行中含天气瓦片在途，与工具栏一致；其余为业务工作流） -->
-      <section class="wf-summary-grid">
-        <div class="wf-summary-card" :class="{ active: summary.running > 0 }">
-          <span class="wf-summary-count" style="color: #5ad5ff">{{ summary.running }}</span>
-          <span class="wf-summary-label">运行中</span>
-          <span v-if="globalTileStats.totalPending > 0" class="wf-summary-sub">含瓦片 {{ globalTileStats.totalPending }}</span>
-        </div>
-        <div class="wf-summary-card" :class="{ active: summary.queued > 0 }">
-          <span class="wf-summary-count" style="color: #88dfff">{{ summary.queued }}</span>
-          <span class="wf-summary-label">排队中</span>
-        </div>
-        <div class="wf-summary-card" :class="{ active: summary.retryPending > 0 }">
-          <span class="wf-summary-count" style="color: #ffd38a">{{ summary.retryPending }}</span>
-          <span class="wf-summary-label">等待重试</span>
-        </div>
-        <div class="wf-summary-card" :class="{ active: summary.succeeded > 0 }">
-          <span class="wf-summary-count" style="color: #9ff8cf">{{ summary.succeeded }}</span>
-          <span class="wf-summary-label">已完成</span>
-        </div>
-        <div class="wf-summary-card" :class="{ active: summary.failed > 0 }">
-          <span class="wf-summary-count" style="color: #ff8a8a">{{ summary.failed }}</span>
-          <span class="wf-summary-label">失败</span>
-        </div>
-        <div class="wf-summary-card">
-          <span class="wf-summary-count" style="color: #8aa8bf">{{ summary.cancelled }}</span>
-          <span class="wf-summary-label">已取消</span>
+      <!-- 汇总卡片（运行中含天气瓦片在途，与工具栏徽章同色同口径） -->
+      <section class="wf-summary-grid" aria-label="工作流状态汇总">
+        <div
+          v-for="card in summaryCards"
+          :key="card.key"
+          class="wf-summary-card"
+          :class="{ active: card.count > 0, idle: card.count === 0 }"
+        >
+          <span class="wf-summary-count" :style="{ color: card.count > 0 ? card.color : undefined }">{{ card.count }}</span>
+          <span class="wf-summary-label">{{ card.label }}</span>
+          <span v-if="card.sub" class="wf-summary-sub">{{ card.sub }}</span>
         </div>
       </section>
 
@@ -378,13 +436,61 @@ onBeforeUnmount(() => {
 
       <!-- 工作流列表 -->
       <section class="wf-list-section">
-        <div v-if="workflowItems.length === 0 && !tileConcurrency" class="wf-empty">
+        <div v-if="workflowItems.length === 0 && weatherSyntheticItems.length === 0 && !tileConcurrency" class="wf-empty">
           <span class="wf-empty-icon">◇</span>
           <p>当前没有运行中的工作流</p>
           <p class="wf-empty-hint">从左侧面板添加图层并运行工作流后，状态将显示在这里</p>
         </div>
 
         <div v-else class="wf-list">
+          <!-- 天气瓦片合成行 -->
+          <div
+            v-for="item in weatherSyntheticItems"
+            :key="`weather-${item.catalogId}`"
+            class="wf-item"
+          >
+            <div class="wf-item-header">
+              <div class="wf-item-name">
+                <span class="wf-item-dot" :style="{ background: item.accentColor }"></span>
+                <span class="wf-item-title">{{ item.name }}</span>
+                <span class="wf-item-cmd">天气瓦片</span>
+              </div>
+              <span
+                class="wf-item-status"
+                :style="{ color: weatherStatusMeta[item.status].color, background: weatherStatusMeta[item.status].bg }"
+              >
+                {{ weatherStatusMeta[item.status].label }}
+              </span>
+            </div>
+            <p v-if="item.message" class="wf-item-message">{{ item.message }}</p>
+            <div class="wf-item-footer">
+              <div class="wf-item-time-info">
+                <span v-if="item.errorType" class="wf-item-duration">
+                  {{ tileErrorLabel[item.errorType] ?? item.errorType }}
+                </span>
+                <span v-if="item.missingInViewport > 0" class="wf-item-duration">
+                  · 缺 {{ item.missingInViewport }} 瓦片
+                </span>
+              </div>
+              <div class="wf-item-actions">
+                <button
+                  v-if="item.status === 'failed' || item.status === 'retry_pending'"
+                  class="wf-action-btn retry"
+                  @click="handleWeatherRetry(item.catalogId)"
+                >
+                  重试
+                </button>
+                <button
+                  v-if="item.errorType === 'data-empty' || item.status === 'failed'"
+                  class="wf-action-btn retry"
+                  @click="handleWeatherSync(item.catalogId)"
+                >
+                  触发同步
+                </button>
+              </div>
+            </div>
+          </div>
+
           <div
             v-for="item in workflowItems"
             :key="item.jobLayer.jobId"
@@ -412,6 +518,12 @@ onBeforeUnmount(() => {
 
             <!-- 消息 -->
             <p v-if="item.jobLayer.message" class="wf-item-message">{{ item.jobLayer.message }}</p>
+            <p
+              v-if="item.jobLayer.reportSummary && item.jobLayer.reportSummary !== item.jobLayer.message"
+              class="wf-item-summary"
+            >
+              {{ item.jobLayer.reportSummary }}
+            </p>
 
             <!-- 指标 -->
             <div v-if="item.jobLayer.metrics?.length" class="wf-item-metrics">
@@ -788,48 +900,73 @@ onBeforeUnmount(() => {
   margin-left: 0.15rem;
 }
 
-/* 汇总卡片网格 */
+/* 汇总卡片网格：宽屏 6 列，窄屏自动折行，与工具栏徽章色一致 */
 .wf-summary-grid {
   display: grid;
-  grid-template-columns: repeat(6, 1fr);
-  gap: 0.5rem;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 0.4rem;
   padding: 0.8rem 1.2rem 0.4rem;
+}
+
+@media (max-width: 720px) {
+  .wf-summary-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
 }
 
 .wf-summary-card {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 0.2rem;
-  padding: 0.5rem 0.3rem;
+  justify-content: center;
+  gap: 0.18rem;
+  min-width: 0;
+  padding: 0.48rem 0.28rem;
   border: 1px solid rgba(136, 192, 255, 0.08);
   border-radius: 0.6rem;
   background: rgba(4, 12, 23, 0.42);
-  transition: border-color 0.2s ease;
+  transition: border-color 0.2s ease, background-color 0.2s ease, opacity 0.2s ease;
 }
 
 .wf-summary-card.active {
   border-color: rgba(136, 192, 255, 0.22);
+  background: rgba(8, 20, 36, 0.55);
+}
+
+.wf-summary-card.idle {
+  opacity: 0.55;
 }
 
 .wf-summary-count {
-  font-size: 1.1rem;
+  font-size: clamp(0.92rem, 2.2vw, 1.1rem);
   font-weight: 700;
   line-height: 1;
+  font-variant-numeric: tabular-nums;
+  color: #5a7080;
 }
 
 .wf-summary-label {
   color: #7f96ab;
-  font-size: 0.55rem;
+  font-size: 0.52rem;
   letter-spacing: 0.04em;
+  text-align: center;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
 }
 
 .wf-summary-sub {
   display: block;
-  margin-top: 2px;
+  margin-top: 1px;
   color: #5a7a90;
-  font-size: 0.5rem;
+  font-size: 0.48rem;
   letter-spacing: 0.02em;
+  text-align: center;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
 }
 
 /* 列表区 */
@@ -943,6 +1080,15 @@ onBeforeUnmount(() => {
   color: #a8c4d8;
   font-size: 0.6rem;
   line-height: 1.4;
+}
+
+.wf-item-summary {
+  margin: 0.25rem 0 0;
+  color: #d5e6f5;
+  font-size: 0.58rem;
+  line-height: 1.45;
+  white-space: pre-wrap;
+  word-break: break-word;
 }
 
 /* 指标 */

@@ -11,6 +11,7 @@ import logging
 from typing import Any
 
 from app.core.config import settings
+from app.weatherengine.default_model import weather_default_model
 from app.services.effective_config import get_weather_cache_ttl_seconds
 from app.weatherengine.constants import WEATHER_LAYER_SPECS, WeatherLayerSpec
 from app.weatherengine.provider_base import ProviderType, WeatherProvider
@@ -83,6 +84,12 @@ def require_provider_for_layer(layer_id: str, *, provider_id: str | None = None)
 
 def list_providers_for_layer(layer_id: str, *, include_disabled: bool = False) -> list[dict[str, Any]]:
     """UI helper: providers that declare support for ``layer_id``."""
+    from app.weatherengine.field_mapping import (
+        COMMERCIAL_LAYER_IDS,
+        commercial_data_quality,
+        commercial_layer_hint,
+    )
+
     registry = get_registry()
     rows: list[dict[str, Any]] = []
     for provider, priority, enabled in registry.list_provider_entries():
@@ -90,18 +97,20 @@ def list_providers_for_layer(layer_id: str, *, include_disabled: bool = False) -
             continue
         if not include_disabled and not enabled:
             continue
-        rows.append(
-            {
-                "provider_id": provider.provider_id,
-                "display_name": provider.display_name,
-                "enabled": enabled,
-                "priority": priority,
-                "provider_type": str(provider.provider_type.value)
-                if hasattr(provider.provider_type, "value")
-                else str(provider.provider_type),
-                "grid_mode": provider_grid_mode(provider.provider_id),
-            }
-        )
+        row: dict[str, Any] = {
+            "provider_id": provider.provider_id,
+            "display_name": provider.display_name,
+            "enabled": enabled,
+            "priority": priority,
+            "provider_type": str(provider.provider_type.value)
+            if hasattr(provider.provider_type, "value")
+            else str(provider.provider_type),
+            "grid_mode": provider_grid_mode(provider.provider_id),
+        }
+        if layer_id in COMMERCIAL_LAYER_IDS and provider.provider_id in ("weatherapi", "openweather"):
+            row["data_quality"] = commercial_data_quality(layer_id)
+            row["hint"] = commercial_layer_hint(layer_id)
+        rows.append(row)
     rows.sort(key=lambda r: (r["priority"], r["provider_id"]))
     return rows
 
@@ -165,7 +174,7 @@ def fetch_point_forecast(
     spec = layer_spec or resolve_layer_spec(layer_id)
     pinned = bool(provider_id and str(provider_id).strip().lower() not in {"", "auto", "default"})
     provider = resolve_provider_for_layer(layer_id, provider_id=provider_id)
-    resolved_model = model or settings.weather_default_model
+    resolved_model = model or weather_default_model()
     resolved_hours = forecast_hours or settings.weather_refresh_forecast_hours
     resolved_ttl = ttl_seconds if ttl_seconds is not None else get_weather_cache_ttl_seconds()
 
@@ -260,7 +269,7 @@ def fetch_grid_forecast(
                 layer_id,
             )
 
-    resolved_model = model or settings.weather_default_model
+    resolved_model = model or weather_default_model()
     resolved_ttl = ttl_seconds if ttl_seconds is not None else get_weather_cache_ttl_seconds()
 
     try:

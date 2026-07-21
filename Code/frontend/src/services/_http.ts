@@ -6,7 +6,9 @@
  * 本模块统一这些差异，通过 options 暴露可选行为：
  *
  *   - `timeoutMs`：超时毫秒数，默认 30000。超时通过 AbortController.abort() 触发。
- *   - `silent`：true 时跳过全局 ui-loading 动效（适用于轮询、热路径请求）。
+ *   - `silent`：true 时跳过全局 ui-loading（轮询/热路径）。
+ *   - 非 silent 默认走 compact 顶栏，不挡全屏地球动画。
+ *   - 大面板首开请用 ui-loading.showImmediate（hero）。
  *   - `allowEmpty`：true 时 204 No Content 返回 undefined（适用于 DELETE 等无响应体端点）。
  *
  * 不纳入本模块的场景：
@@ -65,11 +67,12 @@ export async function requestJson<T>(
     method,
   )
 
+  const effectiveTimeout = timeoutMs ?? 30000
   const controller = new AbortController()
-  const timeoutId = window.setTimeout(
-    () => controller.abort(),
-    timeoutMs ?? 30000,
-  )
+  const timeoutId = window.setTimeout(() => {
+    // 带 reason，避免浏览器默认文案 “signal is aborted without reason”
+    controller.abort(new DOMException(`请求超时（${effectiveTimeout}ms）`, 'AbortError'))
+  }, effectiveTimeout)
 
   // 全局 loading 管理：非 silent 请求触发 loading 动效
   // 300ms 延迟显示机制确保短请求不闪烁（在 store 内部实现）
@@ -110,6 +113,25 @@ export async function requestJson<T>(
       // 对端返回 204 但调用方期望 JSON 时会抛出 SyntaxError，暴露契约不一致）
     }
     return (await response.json()) as T
+  } catch (err) {
+    // 超时 Abort → 可读错误；外部主动 abort 仍抛原始 AbortError
+    if (err instanceof DOMException && err.name === 'AbortError') {
+      if (restInit.signal?.aborted) throw err
+      const reason = controller.signal.reason
+      const reasonMsg =
+        reason instanceof DOMException
+          ? reason.message
+          : typeof reason === 'string'
+            ? reason
+            : ''
+      throw new Error(
+        reasonMsg || `请求超时（${effectiveTimeout}ms）：${path}`,
+      )
+    }
+    if (err instanceof TypeError && /fetch|network|Failed to fetch/i.test(err.message)) {
+      throw new Error(`网络不可用或服务未启动：${path}`)
+    }
+    throw err
   } finally {
     window.clearTimeout(timeoutId)
     // 对应 try 前的 loading.show()，非 silent 请求完成后隐藏 loading

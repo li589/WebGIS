@@ -1,6 +1,6 @@
 /**
  * Per-layer weather provider preference (auto | provider_id).
- * Persisted in localStorage; default auto keeps registry priority behavior.
+ * Persisted in localStorage; unset layers default to local Open-Meteo.
  */
 import { defineStore } from 'pinia'
 import { ref, watch } from 'vue'
@@ -8,6 +8,8 @@ import { ref, watch } from 'vue'
 export type WeatherProviderPref = 'auto' | string
 
 const STORAGE_KEY = 'qingtian.weather-source-prefs.v1'
+/** 产品默认气象源：本机 Open-Meteo */
+export const DEFAULT_WEATHER_PROVIDER: WeatherProviderPref = 'open-meteo-local'
 
 /** Legacy open-meteo → open-meteo-online */
 const PROVIDER_ALIASES: Record<string, string> = {
@@ -50,8 +52,9 @@ export const useWeatherSourcePrefsStore = defineStore('weatherSourcePrefs', () =
   )
 
   function getProvider(catalogId: string): WeatherProviderPref {
-    const pref = prefs.value[catalogId] ?? 'auto'
-    if (!pref || pref === 'auto') return 'auto'
+    const pref = prefs.value[catalogId]
+    if (!pref) return DEFAULT_WEATHER_PROVIDER
+    if (pref === 'auto') return 'auto'
     return normalizeProviderId(pref)
   }
 
@@ -65,7 +68,8 @@ export const useWeatherSourcePrefsStore = defineStore('weatherSourcePrefs', () =
   function setProvider(catalogId: string, providerId: WeatherProviderPref) {
     const next = { ...prefs.value }
     if (!providerId || providerId === 'auto') {
-      delete next[catalogId]
+      // 显式写入 auto，避免回退到默认 local（用户主动选自动）
+      next[catalogId] = 'auto'
     } else {
       next[catalogId] = normalizeProviderId(providerId)
     }

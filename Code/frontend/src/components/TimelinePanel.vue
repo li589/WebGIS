@@ -160,7 +160,6 @@ onBeforeUnmount(() => {
           <span class="timeline-grip" aria-hidden="true">
             <i></i><i></i><i></i>
           </span>
-          <span class="timeline-kicker">时间控制</span>
           <strong>{{ panelLabel }}</strong>
         </div>
         <div class="timeline-actions">
@@ -189,10 +188,9 @@ onBeforeUnmount(() => {
 .timeline-panel{display:flex;flex-direction:column;overflow:hidden;box-sizing:border-box;width:100%;border:1px solid rgba(155,180,210,.18);border-radius:1rem;background:linear-gradient(180deg, rgba(18, 28, 46, 0.72), rgba(8, 15, 28, 0.52)), radial-gradient(circle at top left, rgba(255,255,255,0.08), transparent 34%);box-shadow:inset 0 1px 0 rgba(255,255,255,.08), inset 0 -1px 0 rgba(255,255,255,.03), 0 14px 30px rgba(1,8,16,.14);backdrop-filter:blur(14px) saturate(1.08);-webkit-backdrop-filter:blur(14px) saturate(1.08)}
 .timeline-header{display:flex;align-items:center;justify-content:space-between;gap:.5rem;min-height:2.3rem;padding:.26rem .36rem;border-bottom:1px solid rgba(136,192,255,.12);background:linear-gradient(180deg, rgba(18, 28, 46, 0.74), rgba(8, 18, 33, 0.62));backdrop-filter:blur(12px) saturate(1.08);-webkit-backdrop-filter:blur(12px) saturate(1.08);box-shadow:inset 0 1px 0 rgba(255,255,255,.08);cursor:grab;user-select:none}
 .timeline-header-dragging{cursor:grabbing}
-.timeline-title{display:grid;grid-template-columns:auto 1fr;grid-template-rows:auto auto;column-gap:.34rem;row-gap:.02rem;align-items:center;min-width:0}
-.timeline-grip{grid-row:1 / span 2;display:grid;gap:.14rem;align-content:center;padding:.1rem 0}
+.timeline-title{display:flex;align-items:center;gap:.34rem;min-width:0}
+.timeline-grip{display:grid;gap:.14rem;align-content:center;padding:.1rem 0;flex:none}
 .timeline-grip i{display:block;width:.22rem;height:.22rem;border-radius:999px;background:rgba(141,178,214,.72);box-shadow:0 0 0 1px rgba(255,255,255,.05)}
-.timeline-kicker{color:#7f93a9;font-size:.5rem;letter-spacing:.08em;text-transform:uppercase}
 .timeline-title strong{color:#eef6ff;font-size:.68rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .timeline-actions{display:inline-flex;gap:.22rem;flex:0 0 auto}
 .tool-button{border:1px solid rgba(136,192,255,.12);border-radius:.62rem;background:rgba(8,18,33,.58);color:#d5e5f5;cursor:pointer;font:inherit;padding:.24rem .38rem;transition:border-color .18s ease,color .18s ease,background-color .18s ease,transform .18s ease,box-shadow .18s ease}.tool-button:hover{border-color:rgba(136,192,255,.28);color:#f3fbff;background:rgba(12,24,42,.72);transform:translateY(-1px);box-shadow:0 8px 18px rgba(1,8,16,.12)}

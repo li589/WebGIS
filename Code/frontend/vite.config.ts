@@ -24,6 +24,8 @@ export default defineConfig(({ mode }) => {
         '/workflow-runs': { target: apiTarget, changeOrigin: true },
         '/workflow-definitions': { target: apiTarget, changeOrigin: true },
         '/workflow-node-templates': { target: apiTarget, changeOrigin: true },
+        '/workflow-timers': { target: apiTarget, changeOrigin: true },
+        '/cleanup': { target: apiTarget, changeOrigin: true },
         '/layers': { target: apiTarget, changeOrigin: true },
         '/weather': { target: apiTarget, changeOrigin: true },
         '/artifacts': { target: apiTarget, changeOrigin: true },

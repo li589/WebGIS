@@ -19,7 +19,14 @@ if celery_available:
         "cgda_backend",
         broker=settings.celery_broker_url,
         backend=settings.celery_result_backend,
-        include=["app.tasks.workflow_tasks", "app.tasks.download_tasks", "app.tasks.weather_tasks"],
+        include=[
+            "app.tasks.workflow_tasks",
+            "app.tasks.download_tasks",
+            "app.tasks.weather_tasks",
+            "app.tasks.open_meteo_sync_tasks",
+            "app.tasks.workflow_timer_tasks",
+            "app.tasks.cleanup_tasks",
+        ],
     )
     celery_app.conf.update(
         task_serializer="json",
@@ -39,14 +46,77 @@ if celery_available:
         # time_limit：硬超时，直接 SIGKILL，不可捕获
         task_soft_time_limit=settings.celery_task_soft_time_limit,
         task_time_limit=settings.celery_task_time_limit,
+        # 显式设置结果过期时间：Redis backend 会在 TTL 到期后自动删除
+        # 避免长期运行后 Celery 结果在 Redis 中无限累积
+        result_expires=86400,  # 1 天
+        result_persistent=False,
+        # Beat / 运维任务必须落到 launch.py 实际监听的队列（勿用默认 celery）
+        task_routes={
+            "app.tasks.open_meteo_sync_tasks.sync_open_meteo_data": {
+                "queue": settings.workflow_queue_weather_batch,
+            },
+            "app.tasks.weather_tasks.refresh_weather_layers_hourly": {
+                "queue": settings.workflow_queue_weather_standard,
+            },
+            "app.tasks.workflow_timer_tasks.tick_workflow_timers": {
+                "queue": settings.workflow_queue_standard,
+            },
+            "app.tasks.cleanup_tasks.cleanup_workflow_runs": {
+                "queue": settings.workflow_queue_batch,
+            },
+            "app.tasks.cleanup_tasks.cleanup_cache_files": {
+                "queue": settings.workflow_queue_batch,
+            },
+        },
     )
+    beat_schedule: dict[str, dict[str, Any]] = {}
     if settings.weather_schedule_enabled and crontab is not None:
-        celery_app.conf.beat_schedule = {
-            "refresh-weather-layers-hourly": {
-                "task": "app.tasks.weather_tasks.refresh_weather_layers_hourly",
-                "schedule": crontab(minute=0),
-            }
+        beat_schedule["refresh-weather-layers-hourly"] = {
+            "task": "app.tasks.weather_tasks.refresh_weather_layers_hourly",
+            "schedule": crontab(minute=0),
+            "options": {"queue": settings.workflow_queue_weather_standard},
         }
+    # Phase 2: Open-Meteo 本地数据自动同步
+    # 默认每 6 小时在 30 分触发（UTC），避开 ECMWF 00/06/12/18 UTC 发布时刻
+    if settings.open_meteo_sync_enabled and crontab is not None:
+        beat_schedule["sync-open-meteo-data"] = {
+            "task": "app.tasks.open_meteo_sync_tasks.sync_open_meteo_data",
+            "schedule": crontab(
+                minute=settings.open_meteo_sync_cron_minute,
+                hour=settings.open_meteo_sync_cron_hour,
+            ),
+            "options": {
+                "queue": settings.workflow_queue_weather_batch,
+                # 覆盖全局 300/360s；全球 sync 可达数十分钟
+                "soft_time_limit": 3600,
+                "time_limit": 3900,
+            },
+        }
+    # Phase 4: 工作流定时器扫描（每分钟触发）
+    # 事件触发器由 emit_event API 同步执行，不依赖此 beat 任务
+    if crontab is not None:
+        beat_schedule["tick-workflow-timers"] = {
+            "task": "app.tasks.workflow_timer_tasks.tick_workflow_timers",
+            "schedule": crontab(minute="*"),
+            "options": {"queue": settings.workflow_queue_standard},
+        }
+    # 长期运行清理任务：避免 SQLite 与缓存文件无限增长
+    # - workflow runs 保留 30 天，每天 03:00 UTC 清理
+    # - 缓存文件每天 03:30 UTC 清理（仅删除已过期项）
+    if crontab is not None:
+        beat_schedule["cleanup-workflow-runs"] = {
+            "task": "app.tasks.cleanup_tasks.cleanup_workflow_runs",
+            "schedule": crontab(minute=0, hour=3),
+            "kwargs": {"retention_days": 30, "vacuum": False},
+            "options": {"queue": settings.workflow_queue_batch},
+        }
+        beat_schedule["cleanup-cache-files"] = {
+            "task": "app.tasks.cleanup_tasks.cleanup_cache_files",
+            "schedule": crontab(minute=30, hour=3),
+            "options": {"queue": settings.workflow_queue_batch},
+        }
+    if beat_schedule:
+        celery_app.conf.beat_schedule = beat_schedule
 else:  # pragma: no cover - exercised only when Celery is unavailable
     celery_app = None
 

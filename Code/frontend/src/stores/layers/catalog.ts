@@ -2,48 +2,39 @@ import type { LayerCatalogItem, LayerCategory, LayerSource } from './types'
 
 // 注意：category id 必须与后端 `layer_catalog.py` 中的 `category=` 字段保持一致。
 // 任何新增/重命名都需要后端同步更新。前端独有类别（boundary/imported/workflow-output）除外。
+//
+// 分组约定：
+// - 气象场 / 在线天气：天气引擎实时图层（wind/temp/precip/…）
+// - 气候产品 / 气候与灾害：历史气候、热浪、CO₂、干旱指数等离线产品
+// - 植被监测 / 植被与土地；遥感产品 / 遥感与地形；其余为课题组 / 模拟 / 本地类
 export const LAYER_CATEGORIES: LayerCategory[] = [
   {
     id: '气象场',
-    name: '在线气象',
+    name: '在线天气',
     icon: 'W',
     accentColor: '#67d4ff',
     chipTone: 'rgba(103, 212, 255, 0.18)',
   },
   {
-    id: '大气环境',
-    name: '大气环境',
-    icon: 'A',
-    accentColor: '#c9a3ff',
-    chipTone: 'rgba(201, 163, 255, 0.16)',
-  },
-  {
-    id: '热环境',
-    name: '热环境',
-    icon: 'H',
+    id: '气候产品',
+    name: '气候与灾害',
+    icon: 'C',
     accentColor: '#ff9d6c',
     chipTone: 'rgba(255, 157, 108, 0.16)',
   },
   {
     id: '植被监测',
-    name: '植被监测',
+    name: '植被与土地',
     icon: 'V',
     accentColor: '#7fd99a',
     chipTone: 'rgba(127, 217, 154, 0.16)',
   },
   {
     id: '遥感产品',
-    name: '遥感产品',
+    name: '遥感与地形',
     icon: 'T',
     accentColor: '#bb89ff',
     chipTone: 'rgba(187, 137, 255, 0.16)',
-  },
-  {
-    id: '灾害监测',
-    name: '灾害监测',
-    icon: 'D',
-    accentColor: '#72ffcf',
-    chipTone: 'rgba(114, 255, 207, 0.16)',
   },
   {
     id: '模拟结果',
@@ -770,7 +761,7 @@ export const LAYER_LIBRARY: LayerCatalogItem[] = [
     metricUnit: '%',
     metricPrecision: 0,
     updateLabel: '每小时更新',
-    sourceLabel: 'Open-Meteo（多端点）',
+    sourceLabel: '天气引擎（多源）',
     accentColor: '#9aa7b5',
     accentGlow: 'rgba(154, 167, 181, 0.3)',
     chipTone: 'rgba(154, 167, 181, 0.16)',
@@ -784,7 +775,7 @@ export const LAYER_LIBRARY: LayerCatalogItem[] = [
     metricUnit: '°C',
     metricPrecision: 1,
     updateLabel: '每小时更新',
-    sourceLabel: 'Open-Meteo（多端点）',
+    sourceLabel: '天气引擎（多源）',
     accentColor: '#f0a070',
     accentGlow: 'rgba(240, 160, 112, 0.3)',
     chipTone: 'rgba(240, 160, 112, 0.16)',
@@ -877,7 +868,7 @@ export const LAYER_LIBRARY: LayerCatalogItem[] = [
   {
     catalogId: 'aridity-cn',
     name: '干旱指数 AI',
-    category: '热环境',
+    category: '气候产品',
     metricLabel: 'AI',
     metricUnit: '',
     metricPrecision: 2,
@@ -924,7 +915,7 @@ export const LAYER_LIBRARY: LayerCatalogItem[] = [
   {
     catalogId: 'gpcp-precip-ts',
     name: 'GPCP 月降水时间序列',
-    category: '气象场',
+    category: '气候产品',
     metricLabel: '降水',
     metricUnit: 'mm/month',
     metricPrecision: 1,
@@ -952,7 +943,7 @@ export const LAYER_LIBRARY: LayerCatalogItem[] = [
   {
     catalogId: 'cmfd-precip-cn',
     name: 'CMFD 中国区域降水',
-    category: '气象场',
+    category: '气候产品',
     metricLabel: '降水',
     metricUnit: 'mm',
     metricPrecision: 1,
@@ -994,7 +985,7 @@ export const LAYER_LIBRARY: LayerCatalogItem[] = [
   {
     catalogId: 'era5-dwaa-cn',
     name: 'ERA5 白天热浪事件（2020）',
-    category: '灾害监测',
+    category: '气候产品',
     metricLabel: '事件次数',
     metricUnit: 'events',
     metricPrecision: 0,
@@ -1008,7 +999,7 @@ export const LAYER_LIBRARY: LayerCatalogItem[] = [
   {
     catalogId: 'era5-wdaa-cn',
     name: 'ERA5 夜间热浪事件（2020）',
-    category: '灾害监测',
+    category: '气候产品',
     metricLabel: '事件次数',
     metricUnit: 'events',
     metricPrecision: 0,
@@ -1022,7 +1013,7 @@ export const LAYER_LIBRARY: LayerCatalogItem[] = [
   {
     catalogId: 'co2-cn',
     name: 'GOSAT 中层 CO₂ 柱浓度',
-    category: '大气环境',
+    category: '气候产品',
     metricLabel: 'CO₂',
     metricUnit: 'ppm',
     metricPrecision: 2,
@@ -1184,7 +1175,7 @@ export const LAYER_LIBRARY: LayerCatalogItem[] = [
 /** Static whitelist of catalog IDs backed by weatherengine (used before runtime catalog loads). */
 export const WEATHER_ENGINE_CATALOG_IDS = new Set(
   LAYER_LIBRARY
-    .filter((item) => item.category === '气象场')
+    .filter((item) => item.sources.some((s) => s.id.startsWith('weatherengine')))
     .map((item) => item.catalogId),
 )
 

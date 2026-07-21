@@ -19,14 +19,23 @@ const label = computed(() => {
   if (active > 0) return '运行中'
   if (s.failed > 0) return '失败'
   if (s.succeeded > 0) return '完成'
+  if (s.cancelled > 0) return '已取消'
   return '工作流'
 })
 
 const showRunningBadge = computed(() => props.summary.running > 0)
 const showQueuedBadge = computed(() => props.summary.queued > 0)
+const showRetryBadge = computed(() => props.summary.retryPending > 0)
 const showFailedBadge = computed(() => props.summary.failed > 0)
-const showDoneBadge = computed(() =>
-  props.summary.succeeded > 0 && props.summary.running === 0,
+/** 已完成数量（含天气视口瓦片填满的图层）始终展示，便于与运行中并存对照 */
+const showDoneBadge = computed(() => props.summary.succeeded > 0)
+const showCancelledBadge = computed(() =>
+  props.summary.cancelled > 0
+  && props.summary.running === 0
+  && props.summary.queued === 0
+  && props.summary.retryPending === 0
+  && props.summary.failed === 0
+  && props.summary.succeeded === 0,
 )
 </script>
 
@@ -41,8 +50,10 @@ const showDoneBadge = computed(() =>
     <span class="wf-label">{{ label }}</span>
     <span v-if="showRunningBadge" class="wf-badge badge-running" title="运行中">{{ summary.running }}</span>
     <span v-if="showQueuedBadge" class="wf-badge badge-queued" title="排队中">{{ summary.queued }}</span>
+    <span v-if="showRetryBadge" class="wf-badge badge-retry" title="等待重试">{{ summary.retryPending }}</span>
     <span v-if="showFailedBadge" class="wf-badge badge-failed" title="失败">{{ summary.failed }}</span>
     <span v-if="showDoneBadge" class="wf-badge badge-done" title="已完成">{{ summary.succeeded }}</span>
+    <span v-if="showCancelledBadge" class="wf-badge badge-cancelled" title="已取消">{{ summary.cancelled }}</span>
   </button>
 </template>
 
@@ -107,9 +118,15 @@ const showDoneBadge = computed(() =>
 }
 
 .badge-queued {
+  background: rgba(136, 223, 255, 0.18);
+  color: #88dfff;
+  border: 1px solid rgba(136, 223, 255, 0.28);
+}
+
+.badge-retry {
   background: rgba(255, 211, 138, 0.18);
   color: #ffd38a;
-  border: 1px solid rgba(255, 196, 120, 0.24);
+  border: 1px solid rgba(255, 196, 120, 0.28);
 }
 
 .badge-failed {
@@ -122,6 +139,12 @@ const showDoneBadge = computed(() =>
   background: rgba(159, 248, 207, 0.16);
   color: #9ff8cf;
   border: 1px solid rgba(114, 255, 207, 0.24);
+}
+
+.badge-cancelled {
+  background: rgba(138, 168, 191, 0.16);
+  color: #8aa8bf;
+  border: 1px solid rgba(138, 168, 191, 0.28);
 }
 
 /* ── Tone: idle ─────────────────────────────────────────────────────────── */

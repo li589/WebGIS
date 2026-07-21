@@ -20,6 +20,7 @@ import {
   reloadGeeAccounts,
   fetchGeeRuntimeConfig,
   fetchWeatherConfig,
+  updateWeatherDefaultModel,
   fetchWeatherProviders,
   updateWeatherProvider,
   testWeatherProvider,
@@ -395,6 +396,12 @@ export const useSettingsStore = defineStore('settings', () => {
     await loadRemoteStorageHistory(profileId)
   }
 
+  async function saveWeatherDefaultModel(defaultModel: string) {
+    const updated = await updateWeatherDefaultModel(defaultModel)
+    weatherConfig.value = { ...(weatherConfig.value ?? {} as WeatherConfig), ...updated }
+    return updated
+  }
+
   return {
     apiKeys,
     apiKeyHistory,
@@ -434,6 +441,7 @@ export const useSettingsStore = defineStore('settings', () => {
     toggleWeatherProviderEnabled,
     updateWeatherProviderPriority,
     removeWeatherProvider,
+    saveWeatherDefaultModel,
     loadRemoteStorageProfiles,
     saveRemoteStorageProfile,
     removeRemoteStorageProfile,

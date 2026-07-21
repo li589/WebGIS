@@ -1196,7 +1196,16 @@ async function handleLocateMe() {
   color: #ffcb80;
   font-size: 0.64rem;
   box-shadow: 0 4px 16px rgba(0, 0, 0, 0.24);
-  max-width: 80%;
+  max-width: min(80%, 36rem);
+  max-height: 2.6rem;
+  overflow: hidden;
+}
+
+.weather-load-error > span:last-child {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .weather-error-icon {

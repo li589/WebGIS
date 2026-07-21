@@ -10,6 +10,7 @@ from urllib.error import HTTPError, URLError
 from uuid import uuid4
 
 from app.core.config import settings
+from app.weatherengine.default_model import weather_default_model
 from app.services.api_config import api_config_manager, ApiProvider, DataType
 from app.services.result_storage import result_storage_service
 from app.services.workflow_execution import WorkflowExecutionResult
@@ -75,7 +76,7 @@ class WeatherEngineService:
         if spec is None:
             raise ValueError(f"Unsupported weather layer: {layer_id}")
 
-        resolved_model = model or settings.weather_default_model
+        resolved_model = model or weather_default_model()
         from urllib.error import HTTPError, URLError
 
         from app.weatherengine.fetch_gateway import WeatherProviderUnavailableError, fetch_point_forecast
@@ -572,7 +573,7 @@ class WeatherEngineService:
                 latitude=settings.weather_default_latitude,
                 longitude=settings.weather_default_longitude,
                 place_name=settings.weather_default_place_name,
-                model=settings.weather_default_model,
+                model=weather_default_model(),
                 forecast_hours=settings.weather_refresh_forecast_hours,
                 cache_ttl_seconds=settings.weather_cache_ttl_seconds,
             )
@@ -825,27 +826,58 @@ class WeatherEngineService:
         api_direction_attr = direction_attr.replace("-", "_")
 
         # 从 API 响应中提取数据（数组格式，按索引对应）
-        speed_values = current.get(api_speed_attr, current.get("wind_speed_10m", []))
-        direction_values = current.get(api_direction_attr, current.get("wind_direction_10m", []))
+        speed_values = list(current.get(api_speed_attr) or [])
+        direction_values = list(current.get(api_direction_attr) or [])
 
-        # 风向数据缺失时的 fallback：使用随机方向避免所有粒子同向
-        # 触发条件：列表为空，或所有值均为 None（缓存过期/字段缺失时可能出现）
-        _dir_valid_count = sum(1 for v in direction_values if v is not None)
-        if _dir_valid_count == 0:
-            import random
-            random.seed(42)  # 固定种子保证可复现
-            total_points = rows * cols
-            if len(speed_values) > 0:
-                direction_values = [random.uniform(0, 360) for _ in range(len(speed_values))]
-            else:
-                # 风速和风向都缺失：生成完整的模拟数据，避免所有点 speed=0 direction=0
-                # 导致前端所有粒子静止（竖直线条）
-                speed_values = [random.uniform(3, 15) for _ in range(total_points)]
-                direction_values = [random.uniform(0, 360) for _ in range(total_points)]
+        # 轮毂高度缺测：用 10m + Hellmann 幂律外推（与 field_mapping 网格补全一致）
+        speed_valid = sum(1 for v in speed_values if v is not None)
+        if speed_valid == 0 and height_suffix.endswith("m") and height_suffix != "10m":
+            try:
+                target_h = float(height_suffix.rstrip("m"))
+            except ValueError:
+                target_h = 0.0
+            base_speed = current.get("wind_speed_10m") or []
+            base_dir = current.get("wind_direction_10m") or []
+            if target_h > 0 and any(v is not None for v in base_speed):
+                from app.weatherengine.field_mapping import extrapolate_wind_speed_power_law
+
+                speed_values = [
+                    extrapolate_wind_speed_power_law(
+                        base_speed[i] if i < len(base_speed) else None,
+                        target_height_m=target_h,
+                    )
+                    for i in range(len(base_speed))
+                ]
+                if not any(v is not None for v in direction_values):
+                    direction_values = list(base_dir)
+                logger.info(
+                    "[WeatherEngine] build_wind_geojson_from_grid: extrapolated %s from 10m layer=%s",
+                    api_speed_attr,
+                    layer_id,
+                )
+
+        if not speed_values:
+            speed_values = list(current.get("wind_speed_10m") or [])
+        if not direction_values:
+            direction_values = list(current.get("wind_direction_10m") or [])
+
+        speed_valid = sum(1 for v in speed_values if v is not None)
+        dir_valid = sum(1 for v in direction_values if v is not None)
+        if speed_valid == 0:
+            # 禁止随机伪造气象场：无数据就返回空要素（与温度层跳过 null 一致）
             logger.warning(
-                "[WeatherEngine] build_wind_geojson_from_grid: wind data missing or incomplete "
-                "(speed_values=%d direction_values=%d), using random fallback",
-                len(speed_values), len(direction_values),
+                "[WeatherEngine] build_wind_geojson_from_grid: no usable wind speed "
+                "layer=%s speed_values=%d dir_values=%d — empty FeatureCollection",
+                layer_id,
+                len(speed_values),
+                len(direction_values),
+            )
+            return {"type": "FeatureCollection", "features": []}
+        if dir_valid == 0:
+            logger.warning(
+                "[WeatherEngine] build_wind_geojson_from_grid: wind direction missing "
+                "layer=%s — features will use direction=0 (no random fill)",
+                layer_id,
             )
 
         # [WeatherEngine] 调试：打印网格数据概要
@@ -866,15 +898,19 @@ class WeatherEngineService:
                 lat = lats[i] if i < len(lats) else 0
                 lon = lons[j] if j < len(lons) else 0
 
-                speed = speed_values[idx] if idx < len(speed_values) else 0
-                direction = direction_values[idx] if idx < len(direction_values) else 0
+                speed = speed_values[idx] if idx < len(speed_values) else None
+                if speed is None:
+                    continue
+                direction = direction_values[idx] if idx < len(direction_values) else None
+                if direction is None:
+                    direction = 0.0
 
                 features.append({
                     "type": "Feature",
                     "geometry": {"type": "Point", "coordinates": [lon, lat]},
                     "properties": {
-                        speed_attr: round(speed, 2) if speed is not None else 0,
-                        direction_attr: round(direction, 1) if direction is not None else 0,
+                        speed_attr: round(float(speed), 2),
+                        direction_attr: round(float(direction), 1),
                         "height": height_suffix,
                         "unit": "m/s",
                         "row": i,

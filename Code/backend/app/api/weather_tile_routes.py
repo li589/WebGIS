@@ -12,7 +12,11 @@ import logging
 from fastapi import APIRouter, HTTPException, Query, Response
 
 from app.services.effective_config import get_weather_cache_ttl_seconds
-from app.weatherengine.tile_service import get_weather_tile_service, normalize_provider_id
+from app.weatherengine.tile_service import (
+    TileDataEmptyError,
+    get_weather_tile_service,
+    normalize_provider_id,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -73,6 +77,12 @@ async def get_weather_tile(
         status_code = _classify_weather_tile_error(exc)
         logger.warning("[WeatherTileRoutes] invalid request (%s): %s", status_code, exc)
         raise HTTPException(status_code=status_code, detail=str(exc)) from exc
+    except TileDataEmptyError as exc:
+        # 上游主变量全 null（本地库未 sync / 模型不支持）：透传 422，
+        # 前端 classifyTileError 识别为 data-empty 后停止重排。
+        # detail 需含 "no usable data" 以命中前端正则。
+        logger.warning("[WeatherTileRoutes] tile data empty: %s", exc)
+        raise HTTPException(status_code=422, detail=f"no usable data: {exc}") from exc
     except Exception as exc:
         logger.exception("[WeatherTileRoutes] failed to generate tile")
         raise HTTPException(status_code=503, detail=f"Weather tile unavailable: {exc}") from exc

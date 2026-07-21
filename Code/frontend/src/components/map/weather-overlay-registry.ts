@@ -19,6 +19,8 @@ export interface WeatherOverlayRenderContext {
   syncWeatherHeatmapOverlay: (state: WeatherOverlayState) => void
   syncWeatherPointOverlay: (state: WeatherOverlayState) => void
   syncWindParticleFlow: (state: WeatherOverlayState, overlayToken: number) => Promise<void>
+  /** WebGL 标量场；返回 true 表示已渲染，false 应回退 fill */
+  syncScalarFieldWebGL: (state: WeatherOverlayState, overlayToken: number) => boolean
 }
 
 interface WeatherOverlayRenderer {
@@ -64,10 +66,10 @@ const WEATHER_OVERLAY_RENDERERS: Record<string, WeatherOverlayRenderer> = {
   },
   grid_fill: {
     canRender: (state) => hasGeojsonSource(state) || hasCogPreview(state),
-    render: (state, context) => {
+    render: (state, context, overlayToken) => {
       if (hasCogPreview(state)) {
         context.syncWeatherCogOverlay(state)
-      } else {
+      } else if (!context.syncScalarFieldWebGL(state, overlayToken)) {
         context.syncWeatherGridFillOverlay(state)
       }
       context.markRendered(state.catalogId)

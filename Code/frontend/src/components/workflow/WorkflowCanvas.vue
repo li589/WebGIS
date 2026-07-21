@@ -14,6 +14,7 @@
  *   />
  */
 import { computed, onMounted, onBeforeUnmount, ref, shallowRef, watch } from 'vue'
+import InlineLoader from '../common/InlineLoader.vue'
 import {
   LGraph,
   LGraphCanvas,
@@ -120,6 +121,72 @@ let _clipboard: ClipboardItem[] = []
 
 // keydown 监听句柄（组件销毁时需移除）
 let _keydownHandlerRef: ((e: KeyboardEvent) => void) | null = null
+let _floatingUiObserver: MutationObserver | null = null
+let _floatingPointerDownRef: ((e: PointerEvent) => void) | null = null
+let _globalEscRef: ((e: KeyboardEvent) => void) | null = null
+
+/** 将 canvas 容器内的 graphdialog 挪到 body，并用 viewport 坐标固定，避免 overflow 裁切 */
+function rehomeGraphDialog(el: HTMLElement) {
+  if (el.dataset.wfRehomed === '1') return
+  const rect = el.getBoundingClientRect()
+  if (el.parentElement !== document.body) {
+    document.body.appendChild(el)
+  }
+  el.style.position = 'fixed'
+  const w = rect.width || 160
+  const h = rect.height || 36
+  const left = Math.max(8, Math.min(rect.left, window.innerWidth - w - 8))
+  const top = Math.max(8, Math.min(rect.top, window.innerHeight - h - 8))
+  el.style.left = `${left}px`
+  el.style.top = `${top}px`
+  el.style.zIndex = '11000'
+  el.dataset.wfRehomed = '1'
+}
+
+function setupLiteGraphFloatingUiGuards() {
+  const container = canvasContainerRef.value
+  if (!container || _floatingUiObserver) return
+
+  _floatingUiObserver = new MutationObserver((mutations) => {
+    for (const m of mutations) {
+      m.addedNodes.forEach((node) => {
+        if (!(node instanceof HTMLElement)) return
+        if (node.classList.contains('graphdialog') || node.classList.contains('dialog')) {
+          rehomeGraphDialog(node)
+        }
+        node.querySelectorAll?.('.graphdialog, .litegraph.dialog').forEach((child) => {
+          rehomeGraphDialog(child as HTMLElement)
+        })
+      })
+    }
+  })
+  _floatingUiObserver.observe(container, { childList: true, subtree: true })
+
+  // 点击菜单/对话框外部 → 关闭
+  _floatingPointerDownRef = (e: PointerEvent) => {
+    const t = e.target as HTMLElement | null
+    if (!t) return
+    if (t.closest('.litecontextmenu, .graphdialog, .litesearchbox, .param-combo-menu, .param-combobox')) {
+      return
+    }
+    const hasMenu = document.querySelector('.litecontextmenu, .graphdialog, .litesearchbox')
+    if (hasMenu) {
+      disposeLiteGraphFloatingUi()
+    }
+  }
+  document.addEventListener('pointerdown', _floatingPointerDownRef, true)
+
+  // 全局 Esc（只读画布也能关浮层）
+  _globalEscRef = (e: KeyboardEvent) => {
+    if (e.key !== 'Escape') return
+    const hasMenu = document.querySelector('.litecontextmenu, .graphdialog, .litesearchbox')
+    if (hasMenu) {
+      e.stopPropagation()
+      disposeLiteGraphFloatingUi()
+    }
+  }
+  document.addEventListener('keydown', _globalEscRef, true)
+}
 
 // mouseup 监听句柄（用于清空对齐辅助线）
 let _mouseupHandlerRef: (() => void) | null = null
@@ -479,6 +546,8 @@ function configureCanvas(canvas: LGraphCanvasClass) {
           e.preventDefault()
           duplicateSelectedNodes()
         } else if (e.key === 'Escape') {
+          // 先关掉 LiteGraph 浮动菜单/输入框，再清选中
+          disposeLiteGraphFloatingUi()
           clearAlignmentGuides(canvas)
           hidePortTooltip()
           if (graphInstance.value) {
@@ -496,6 +565,9 @@ function configureCanvas(canvas: LGraphCanvasClass) {
 
   // 启用画布交互：左键空白框选 + 右键空白平移 + 右键节点菜单
   enableCanvasInteractions(canvas)
+
+  // 将 graphdialog 挪到 body + fixed，避免被 canvas overflow 裁切；Esc/点外关闭
+  setupLiteGraphFloatingUiGuards()
 
   // 监听节点删除：触发 emitChange 通知父组件
   // LiteGraph 的 graph.remove(node) 会自动清理该节点相关的所有连线
@@ -1458,6 +1530,18 @@ onMounted(() => {
 
 onBeforeUnmount(() => {
   disposeLiteGraphFloatingUi()
+  if (_floatingUiObserver) {
+    _floatingUiObserver.disconnect()
+    _floatingUiObserver = null
+  }
+  if (_floatingPointerDownRef) {
+    document.removeEventListener('pointerdown', _floatingPointerDownRef, true)
+    _floatingPointerDownRef = null
+  }
+  if (_globalEscRef) {
+    document.removeEventListener('keydown', _globalEscRef, true)
+    _globalEscRef = null
+  }
   if (resizeObserver) {
     resizeObserver.disconnect()
     resizeObserver = null
@@ -1602,8 +1686,7 @@ watch(
       <span class="error-text">画布初始化失败：{{ errorMsg }}</span>
     </div>
     <div v-else-if="!isReady" class="canvas-loading">
-      <span class="loading-spinner"></span>
-      <span>正在加载画布...</span>
+      <InlineLoader label="正在加载画布..." />
     </div>
 
     <canvas
@@ -1685,21 +1768,6 @@ watch(
 .error-icon {
   font-size: 1.6rem;
   color: #ff6b6b;
-}
-
-.loading-spinner {
-  width: 1.6rem;
-  height: 1.6rem;
-  border: 2px solid rgba(90, 213, 255, 0.2);
-  border-top-color: #5ad5ff;
-  border-radius: 50%;
-  animation: spin 0.8s linear infinite;
-}
-
-@keyframes spin {
-  to {
-    transform: rotate(360deg);
-  }
 }
 
 /* ── 连接点悬停提示（Teleport 到 body，需 :global）──────────────── */

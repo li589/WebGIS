@@ -89,6 +89,10 @@ export interface WeatherProviderForLayer {
   provider_type: string
   /** dense = native multi-point grid; sparse = commercial point-sampled */
   grid_mode?: 'dense' | 'sparse' | string
+  /** Commercial coverage quality for this layer */
+  data_quality?: 'observed' | 'extrapolated' | 'sparse' | string
+  /** Short Chinese hint for UI (外推 / 稀疏 / 近地面) */
+  hint?: string
 }
 
 export function getWeatherProvidersForLayer(
@@ -102,6 +106,135 @@ export function getWeatherProvidersForLayer(
     `/weather/providers-for-layer/${encodeURIComponent(layerId)}${suffix}`,
     { signal: options?.signal },
   )
+}
+
+/** 本地 Open-Meteo 数据覆盖范围（与瓦片 hour 索引对齐） */
+export interface WeatherCoverage {
+  model: string
+  source: string
+  data_start_iso: string
+  data_end_iso: string
+  hour_count: number
+  /** temperature 非空时次数量 */
+  valid_hour_count?: number
+  /** 与 tile hour 对齐的完整 ISO 时次（可含空值） */
+  times?: string[]
+  /** 非空温度时次；时间轴着色优先使用 */
+  valid_times?: string[]
+  max_tile_hour?: number
+  probe_ts: number
+}
+
+/**
+ * 查询本地 Open-Meteo 数据覆盖范围。
+ *
+ * 用于前端时间轴限制可选时段，避免显示"有数据但瓦片空白"。
+ * 本地容器未启动时抛错；调用方应捕获并降级。
+ */
+export function getWeatherCoverage(model?: string, signal?: AbortSignal) {
+  const search = new URLSearchParams()
+  if (model) search.set('model', model)
+  const suffix = search.toString() ? `?${search.toString()}` : ''
+  return requestJson<WeatherCoverage>(`/weather/coverage${suffix}`, {
+    signal,
+    timeoutMs: 8000,
+    silent: true,
+  })
+}
+
+/** Phase 2: Open-Meteo 同步任务触发响应 */
+export interface WeatherSyncTriggerResponse {
+  status: string
+  task_id: string
+  message: string
+  /** celery | local_thread */
+  mode?: string
+}
+
+/** Phase 2: Open-Meteo 同步任务状态 */
+export interface WeatherSyncStatus {
+  task_id: string
+  state: string // PENDING | STARTED | SUCCESS | FAILURE | RETRY
+  info: unknown
+  mode?: string
+  error?: string
+  finished_at?: string | null
+}
+
+/** 手动触发 Open-Meteo 数据同步（异步任务；派发应秒级返回） */
+export function triggerWeatherSync() {
+  return requestJson<WeatherSyncTriggerResponse>('/weather/sync/trigger', {
+    method: 'POST',
+    timeoutMs: 15000,
+    silent: true,
+  })
+}
+
+/** 查询同步任务状态（轮询用） */
+export function getWeatherSyncStatus(taskId: string, signal?: AbortSignal) {
+  return requestJson<WeatherSyncStatus>(
+    `/weather/sync/status?task_id=${encodeURIComponent(taskId)}`,
+    { signal, silent: true, timeoutMs: 8000 },
+  )
+}
+
+export interface WeatherSyncOverview {
+  local_reachable: boolean
+  domains: string[]
+  variables?: string[]
+  models_meta?: Array<{
+    id: string
+    label: string
+    region: string
+    update_interval: string
+    native_resolution?: string
+    forecast_horizon?: string
+  }>
+  data_mode?: 'forecast' | string
+  spatial?: {
+    scope: string
+    native_resolution: string
+    regions?: string[]
+    resolutions?: string[]
+  }
+  temporal?: {
+    kind: string
+    probe_forecast_days: number
+    tile_hour_cap: number
+    runtime_forecast_days: number
+    cron: { minute: string; hour: string; timezone: string }
+    last_success_at?: string | null
+  }
+  coverage?: {
+    model?: string
+    data_start_iso?: string
+    data_end_iso?: string
+    hour_count?: number
+    valid_hour_count?: number
+    max_tile_hour?: number
+  } | null
+  coverage_error?: string | null
+  sync_in_progress?: boolean
+  enabled: boolean
+  cron: { minute: string; hour: string; timezone: string }
+  compose_project?: string
+  compose_dir?: string
+  compose_file_exists?: boolean
+  docker_cli_available?: boolean
+  last_success_at?: string | null
+  last_failure_at?: string | null
+  last_message?: string
+  last_ok?: boolean | null
+  last_finished_at?: string | null
+  compose_hint?: string
+}
+
+export function getWeatherSyncOverview(signal?: AbortSignal) {
+  return requestJson<WeatherSyncOverview>('/weather/sync/overview', {
+    signal,
+    silent: true,
+    timeoutMs: 8000,
+  })
 }
 
 export interface OverlayPointValue {

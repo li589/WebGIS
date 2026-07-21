@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, defineAsyncComponent, ref, watch } from 'vue'
+import { computed, defineAsyncComponent, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { storeToRefs } from 'pinia'
 import { useDataImportFlow } from '../composables/useDataImportFlow'
 
@@ -10,31 +10,42 @@ import MapCanvas from '../components/MapCanvas.vue'
 import ModeToolbar from '../components/ModeToolbar.vue'
 import LogPanel from '../components/toolbar/LogPanel.vue'
 import TimelinePanel from '../components/TimelinePanel.vue'
-import TimelineScrubber, { type TimelineWorkflowIndicator } from '../components/TimelineScrubber.vue'
+import TimelineScrubber from '../components/TimelineScrubber.vue'
 import WorkflowStatusPanel from '../components/workflow/WorkflowStatusPanel.vue'
 import type { TileSourceId } from '../services/api-config'
 import type { ActiveLayerDisplay, LayerHotspot } from '../stores/layers/types'
 import type { OverlayTimeState } from '../components/map/overlay-image-module'
-import { getOverlayValue, type OverlayPointValue } from '../services/runtime-api'
+import { getOverlayValue, type OverlayPointValue, getWeatherCoverage, type WeatherCoverage } from '../services/runtime-api'
 import { useUiStore } from '../stores/ui'
 import { useUiLoadingStore } from '../stores/ui-loading'
 import { useLayersStore } from '../stores/layers'
 import { useLogStore } from '../stores/log'
+import { useWeatherTileManager } from '../stores/weather-tile-manager'
+import { useWeatherSyncStatusStore } from '../stores/weather-sync-status'
+import {
+  buildClockDayTimelineSegments,
+  dateHourToTileHour,
+  findLatestValidCoverageInstant,
+} from '../utils/weather-timeline'
 
 const uiStore = useUiStore()
 const layersStore = useLayersStore()
 const logStore = useLogStore()
 const uiLoading = useUiLoadingStore()
+const weatherTileManager = useWeatherTileManager()
+const weatherSyncStatus = useWeatherSyncStatusStore()
 const workflowOutputStore = useWorkflowOutputLayersStore()
 
-// 首次打开网页：立即显示 loading，图层目录加载完成后强制关闭（配对 showImmediate）
+// 首次打开网页：全屏地球+卫星；目录就绪后关闭
 uiLoading.showImmediate('初始化地图数据...')
 void layersStore.ensureRuntimeLayerCatalog().finally(() => {
   uiLoading.hideImmediate()
 })
 
-const { tileSourceId, currentHour, currentDate, hourLabel, isPlaying } = storeToRefs(uiStore)
+const { tileSourceId, currentHour, currentDate, hourLabel, isPlaying, unifiedTimeLock } = storeToRefs(uiStore)
 const { selectedLayerDisplay, activeLayerCount, workflowError, isSubmitting, pointWeather, pointWeatherLoading, pointWeatherError } = storeToRefs(layersStore)
+// 引用 tile_manager 的版本号，使 timelineSegments 在瓦片状态变化时重新计算
+const { statusVersion: weatherStatusVersion, activityVersion: weatherActivityVersion } = storeToRefs(weatherTileManager)
 
 const activeLayer = computed(() => {
   if (selectedLayerDisplay.value) return selectedLayerDisplay.value
@@ -54,7 +65,133 @@ const screenshotOpen = ref(false)
 const workflowStatusOpen = ref(false)
 const logOpen = ref(false)
 const settingsOpen = ref(false)
+
+// 本地 Open-Meteo 覆盖范围：按「日期+钟点」着色；瓦片 hour 由日期映射得出
+const weatherCoverage = ref<WeatherCoverage | null>(null)
+let coverageAbort: AbortController | null = null
+
+async function refreshWeatherCoverage() {
+  if (coverageAbort) coverageAbort.abort()
+  const ac = new AbortController()
+  coverageAbort = ac
+  try {
+    const cov = await getWeatherCoverage(undefined, ac.signal)
+    if (!ac.signal.aborted) weatherCoverage.value = cov
+  } catch (err) {
+    if (!(err instanceof DOMException && err.name === 'AbortError')) {
+      console.warn('[DashboardView] weather coverage probe failed', err)
+      if (!ac.signal.aborted) weatherCoverage.value = null
+    }
+  } finally {
+    if (coverageAbort === ac) coverageAbort = null
+  }
+}
+
+onMounted(() => {
+  void refreshWeatherCoverage()
+  void weatherSyncStatus.refreshOverview()
+  const intervalId = window.setInterval(() => {
+    void refreshWeatherCoverage()
+    void weatherSyncStatus.refreshOverview()
+  }, 600_000)
+  onBeforeUnmount(() => window.clearInterval(intervalId))
+})
+
+const coverageSourceLabel = computed(() => {
+  const mode = unifiedTimeLock.value ? '统一时间' : '分图层'
+  const layerName = activeLayer.value?.name
+  const base = layerName ? `${mode} · ${layerName}` : mode
+  if (weatherSyncStatus.syncInProgress) return `${base} · 同步中`
+  if (!weatherCoverage.value && weatherSyncStatus.modelEmpty) return `${base} · 本地无数据`
+  return base
+})
+
+/** 瓦片 API 用的预报偏移：由所选日期+钟点映射，不限制 UI 拖动 */
+const tileForecastHour = computed(() =>
+  dateHourToTileHour(weatherCoverage.value, currentDate.value, currentHour.value),
+)
+
+watch(
+  tileForecastHour,
+  (hour) => {
+    layersStore.setCurrentHour(hour)
+  },
+  { immediate: true },
+)
+
+/** 当前选中图层 catalogId（用于记忆 / 可用性同步） */
+const selectedCatalogId = computed(() => selectedLayerDisplay.value?.catalogId ?? null)
+
+/** 新加天气图层：跳过切层记忆恢复（由 snap 对齐最新有效时次） */
+const pendingSnapCatalogIds = new Set<string>()
+const knownActiveInstanceIds = new Set<string>()
+let layerTimeTrackingReady = false
+
+function snapTimelineToLatestValid(reason: string) {
+  const latest = findLatestValidCoverageInstant(weatherCoverage.value, new Date())
+  if (!latest) return
+  uiStore.applyDateHour(latest.date, latest.hour)
+  if (selectedCatalogId.value) {
+    uiStore.rememberLayerTime(selectedCatalogId.value)
+  }
+  logStore.logOperation('timeline-snap-latest', reason)
+}
+
+// 拖动/改日期时记住当前图层时刻（不含切层，避免把旧时刻写进新图层）
+watch(
+  [currentHour, currentDate],
+  () => {
+    if (unifiedTimeLock.value) return
+    uiStore.rememberLayerTime(selectedCatalogId.value)
+  },
+)
+
+// 仅「新加」天气图层：非统一模式对齐最新有效数据时次（须先于切层 watch 登记 pending）
+watch(
+  () => layersStore.activeLayers.map((l) => l.instanceId),
+  (ids) => {
+    if (!layerTimeTrackingReady) {
+      for (const id of ids) knownActiveInstanceIds.add(id)
+      layerTimeTrackingReady = true
+      return
+    }
+    const added = ids.filter((id) => !knownActiveInstanceIds.has(id))
+    for (const id of ids) knownActiveInstanceIds.add(id)
+    for (const id of Array.from(knownActiveInstanceIds)) {
+      if (!ids.includes(id)) knownActiveInstanceIds.delete(id)
+    }
+    if (unifiedTimeLock.value || added.length === 0) return
+    for (const instanceId of added) {
+      const layer = layersStore.activeLayers.find((l) => l.instanceId === instanceId)
+      if (!layer) continue
+      if (!layersStore.isWeatherEngineLayer(layer.catalogId)) continue
+      pendingSnapCatalogIds.add(layer.catalogId)
+      snapTimelineToLatestValid(`新加图层 ${layer.catalogId} → 最新有效时次`)
+      break
+    }
+  },
+  { immediate: true },
+)
+
+// 切层：非统一模式先记住上一层，再恢复目标层记忆；统一模式保持共享时刻
+watch(selectedCatalogId, (catalogId, previous) => {
+  if (!catalogId || catalogId === previous) return
+  if (unifiedTimeLock.value) return
+  if (previous) {
+    uiStore.rememberLayerTime(previous)
+  }
+  if (pendingSnapCatalogIds.has(catalogId)) {
+    pendingSnapCatalogIds.delete(catalogId)
+    return
+  }
+  const restored = uiStore.restoreLayerTime(catalogId)
+  if (restored) {
+    logStore.logOperation('timeline-restore-layer', `恢复图层 ${catalogId} 记忆时刻`)
+  }
+})
+
 const workflowEditorOpen = ref(false)
+const workflowEditorRef = ref<{ notifyRunOutcome?: (ok: boolean, message?: string) => void } | null>(null)
 const ScreenshotExport = defineAsyncComponent(() => import('../components/ScreenshotExport.vue'))
 const SettingsPanel = defineAsyncComponent(() => import('../components/settings/SettingsPanel.vue'))
 const WorkflowEditorPanel = defineAsyncComponent(() => import('../components/workflow/WorkflowEditorPanel.vue'))
@@ -132,59 +269,31 @@ const analysisPanelDimensions = Object.freeze({
   defaultWidth: 304,
 })
 
-watch(currentHour, (hour) => {
-  layersStore.setCurrentHour(hour)
-}, { immediate: true })
-
+/**
+ * 时间轴色段：按「当前所选日期」判断各钟点是否有覆盖。
+ * 绿=有数据，黄=加载中，紫=无数据。
+ */
 const timelineSegments = computed(() => {
+  void weatherStatusVersion.value
+  void weatherActivityVersion.value
+  void currentHour.value
+  void currentDate.value
+  void weatherCoverage.value
+
   const layer = activeLayer.value
-  return Array.from({ length: 8 }, (_, index) => {
-    const hour = index * 3
-    let state: ActiveLayerDisplay['availabilityState'] = 'empty'
-    let availabilityLabel = '空状态'
+  const catalogId = layer.catalogId
+  const isWeatherLayer = catalogId ? layersStore.isWeatherEngineLayer(catalogId) : false
+  const currentStatus = isWeatherLayer && catalogId
+    ? weatherTileManager.getLayerStatus(catalogId)
+    : null
 
-    if (layer.catalogId) {
-      const nearestSlot = Math.round(currentHour.value / 3) * 3
-      const distance = Math.abs(hour - nearestSlot)
-      if (layer.runReadiness === 'blocked') {
-        state = 'empty'
-        availabilityLabel = '数据未就绪'
-      } else if (layer.dataState === 'real') {
-        state = distance <= 3
-          ? layer.availabilityState
-          : layer.availabilityState === 'ready'
-            ? 'partial'
-            : layer.availabilityState
-        availabilityLabel = distance <= 3 ? layer.availabilityLabel : '可继续查询'
-      } else if (layer.supportsTime) {
-        state = distance <= 6 ? 'partial' : 'empty'
-        availabilityLabel = distance <= 6 ? '待运行' : '可请求'
-      } else {
-        state = layer.availabilityState
-        availabilityLabel = layer.availabilityLabel
-      }
-    }
-
-    return {
-      hour,
-      label: `${String(hour).padStart(2, '0')}:00`,
-      state,
-      availabilityLabel,
-    }
-  })
-})
-
-const timelineWorkflowIndicators = computed<TimelineWorkflowIndicator[]>(() => {
-  return layersStore.jobLayers.map((job) => {
-    const libItem = job.catalogId
-      ? layersStore.layerLibrary.find((l) => l.catalogId === job.catalogId)
-      : undefined
-    return {
-      name: job.name || libItem?.name || job.jobId,
-      status: job.status,
-      progress: job.progress ?? 0,
-      engine: libItem?.engine ?? undefined,
-    }
+  return buildClockDayTimelineSegments({
+    selectedDate: currentDate.value,
+    currentHour: currentHour.value,
+    coverage: weatherCoverage.value,
+    currentStatus,
+    isWeatherLayer,
+    runReadiness: layer.runReadiness,
   })
 })
 
@@ -200,16 +309,19 @@ function handleLayerSelect(layerId: string) {
 
 function handleTimelineStep(delta: number) {
   uiStore.stepHour(delta)
+  if (!unifiedTimeLock.value) uiStore.rememberLayerTime(selectedCatalogId.value)
   logStore.logOperation('timeline-step', `时间轴${delta > 0 ? '前进' : '后退'} ${Math.abs(delta)} 小时`)
 }
 
 function handleTimelineChange(hour: number) {
   uiStore.setHour(hour)
-  logStore.logOperation('timeline-change', `时间轴跳转到 ${String(hour).padStart(2, '0')}:00`)
+  if (!unifiedTimeLock.value) uiStore.rememberLayerTime(selectedCatalogId.value)
+  logStore.logOperation('timeline-change', `时间轴跳转到 ${hourLabel.value}`)
 }
 
 function handleTimelineDateChange(date: Date) {
   uiStore.setDate(date)
+  if (!unifiedTimeLock.value) uiStore.rememberLayerTime(selectedCatalogId.value)
   const y = date.getFullYear()
   const m = String(date.getMonth() + 1).padStart(2, '0')
   const d = String(date.getDate()).padStart(2, '0')
@@ -219,6 +331,16 @@ function handleTimelineDateChange(date: Date) {
 function handleTimelineTogglePlay() {
   uiStore.togglePlay()
   logStore.logOperation('timeline-play', isPlaying.value ? '时间轴播放' : '时间轴暂停')
+}
+
+function handleTimelineToggleUnified() {
+  uiStore.toggleUnifiedTimeLock()
+  const on = unifiedTimeLock.value
+  if (on && selectedCatalogId.value) {
+    // 开启统一时间时，以当前选中层时刻作为共享基准并写入各天气层记忆
+    uiStore.rememberLayerTime(selectedCatalogId.value)
+  }
+  logStore.logOperation('timeline-unified', on ? '开启统一时间' : '关闭统一时间（分图层记忆）')
 }
 
 function handleVisibleHotspotsChange(hotspots: LayerHotspot[]) {
@@ -297,22 +419,22 @@ function handleCloseWorkflowEditor() {
   workflowEditorOpen.value = false
 }
 
-function handleRunWorkflowFromEditor(workflowId: string, linkedLayerId: string | null, target: WorkflowRunTarget) {
+async function handleRunWorkflowFromEditor(
+  workflowId: string,
+  linkedLayerId: string | null,
+  target: WorkflowRunTarget,
+  canvasGraph?: { nodes: import('../services/workflow-definition-api').WorkflowDefinitionNode[]; links: import('../services/workflow-definition-api').WorkflowDefinitionLink[] } | null,
+) {
   logStore.logWorkflow('workflow-editor-run', `从编辑器运行工作流: ${workflowId} (目标: ${target.mode})`)
   if (!linkedLayerId) {
-    logStore.logWorkflow('workflow-editor-error', `工作流 ${workflowId} 未关联图层，无法运行`)
+    const msg = `工作流 ${workflowId} 未关联图层，无法运行`
+    logStore.logWorkflow('workflow-editor-error', msg)
+    workflowEditorRef.value?.notifyRunOutcome?.(false, msg)
     return
   }
-  // 关闭编辑器面板，切换到工作流状态面板查看执行进度
-  workflowEditorOpen.value = false
-  workflowStatusOpen.value = true
 
-  if (target.mode === 'default') {
-    // 默认图层：直接使用源 layer_id 运行
-    void handleRunWorkflow(linkedLayerId)
-  } else {
-    // 新建图层：在前端注册表创建产出条目，再用本地 catalogId 运行
-    // runWorkflowForCatalog 会自动将本地 catalogId 解析回源 layer_id 提交后端
+  let catalogId = linkedLayerId
+  if (target.mode === 'new') {
     const engine = layersStore.layerLibrary.find((l) => l.catalogId === linkedLayerId)?.engine ?? 'general'
     const entry = workflowOutputStore.createOutputLayer({
       name: target.name ?? `产出 ${workflowId}`,
@@ -322,7 +444,49 @@ function handleRunWorkflowFromEditor(workflowId: string, linkedLayerId: string |
       engine,
     })
     logStore.logWorkflow('workflow-output-create', `创建产出图层「${entry.name}」→ 分组「${entry.group}」`)
-    void handleRunWorkflow(entry.localId)
+    catalogId = entry.localId
+  }
+
+  try {
+    let algorithmRequest: Record<string, unknown> | undefined
+    const nodes = canvasGraph?.nodes ?? []
+    const links = canvasGraph?.links ?? []
+    if (nodes.length > 0) {
+      const { compileWorkflowGraph } = await import('../services/workflow-definition-api')
+      const compiled = await compileWorkflowGraph({
+        workflow_id: workflowId,
+        name: workflowId,
+        nodes,
+        links,
+      })
+      algorithmRequest = {
+        workflow_definition: compiled.workflow_definition,
+        workflow_entry_name: workflowId,
+        datasource_selection: {},
+        algorithm_params: {},
+        output_spec: {},
+        tags: { source: 'workflow_editor', workflow_id: workflowId },
+      }
+      logStore.logWorkflow(
+        'workflow-editor-compile',
+        `画布已编译: nodes=${(compiled.workflow_definition.nodes as unknown[] | undefined)?.length ?? 0}`,
+      )
+    }
+    await layersStore.runWorkflowForCatalog(catalogId, {
+      algorithmRequest,
+      commandLabel: `运行画布工作流 ${workflowId}`,
+    })
+    workflowEditorRef.value?.notifyRunOutcome?.(true)
+    // 成功后再切到状态面板，便于看进度与结果摘要
+    workflowEditorOpen.value = false
+    workflowStatusOpen.value = true
+  } catch (error) {
+    const msg = (error as Error)?.message ?? String(error)
+    workflowEditorRef.value?.notifyRunOutcome?.(false, msg)
+    // 天气瓦片刷新也打开状态面板看瓦片进度
+    if (/天气引擎|瓦片/.test(msg)) {
+      workflowStatusOpen.value = true
+    }
   }
 }
 
@@ -332,8 +496,14 @@ async function handleRunWorkflow(catalogId: string) {
     await layersStore.runWorkflowForCatalog(catalogId)
     logStore.logWorkflow('workflow-accepted', `工作流已受理: ${catalogId}`)
   } catch (error) {
-    logStore.logWorkflow('workflow-error', `工作流提交失败: ${catalogId} — ${(error as Error)?.message ?? error}`)
+    const msg = (error as Error)?.message ?? String(error)
+    if (/天气引擎图层|瓦片按需加载/.test(msg)) {
+      logStore.logWorkflow('workflow-weather-refresh', msg)
+    } else {
+      logStore.logWorkflow('workflow-error', `工作流提交失败: ${catalogId} — ${msg}`)
+    }
     console.error('[DashboardView] workflow submit failed', error)
+    throw error
   }
 }
 
@@ -501,12 +671,14 @@ function buildFallbackActiveLayer(): ActiveLayerDisplay {
             :availability-label="activeLayer.availabilityLabel"
             :observation-time-label="activeLayer.observationTimeLabel"
             :timeline-segments="timelineSegments"
+            :coverage-source-label="coverageSourceLabel"
+            :unified-time-lock="unifiedTimeLock"
             :is-playing="isPlaying"
-            :workflow-indicators="timelineWorkflowIndicators"
             @step="handleTimelineStep"
             @change-hour="handleTimelineChange"
             @change-date="handleTimelineDateChange"
             @toggle-play="handleTimelineTogglePlay"
+            @toggle-unified-time="handleTimelineToggleUnified"
           />
         </TimelinePanel>
       </div>
@@ -540,6 +712,7 @@ function buildFallbackActiveLayer(): ActiveLayerDisplay {
 
     <WorkflowEditorPanel
       v-if="workflowEditorOpen"
+      ref="workflowEditorRef"
       @close="handleCloseWorkflowEditor"
       @run="handleRunWorkflowFromEditor"
     />

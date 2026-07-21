@@ -8,6 +8,7 @@ import GeneralSettings from './GeneralSettings.vue'
 import ApiKeySettings from './ApiKeySettings.vue'
 import GeeAccountSettings from './GeeAccountSettings.vue'
 import WeatherProviderSettings from './WeatherProviderSettings.vue'
+import OpenMeteoSyncSettings from './OpenMeteoSyncSettings.vue'
 import DataSourceSettings from './DataSourceSettings.vue'
 import RemoteStorageSettings from './RemoteStorageSettings.vue'
 import AboutSettings from './AboutSettings.vue'
@@ -23,6 +24,7 @@ type SettingsTab =
   | 'api-keys'
   | 'gee-accounts'
   | 'weather-providers'
+  | 'open-meteo-sync'
   | 'remote-storage'
   | 'data-source'
   | 'about'
@@ -30,7 +32,7 @@ type SettingsTab =
 const savedTab = loadSettingsUiLocal().activeTab as SettingsTab | undefined
 const activeTab = ref<SettingsTab>(
   savedTab &&
-    ['general', 'api-keys', 'gee-accounts', 'weather-providers', 'remote-storage', 'data-source', 'about'].includes(
+    ['general', 'api-keys', 'gee-accounts', 'weather-providers', 'open-meteo-sync', 'remote-storage', 'data-source', 'about'].includes(
       savedTab,
     )
     ? savedTab
@@ -42,6 +44,7 @@ const tabComponents = shallowRef<Record<SettingsTab, typeof GeneralSettings>>({
   'api-keys': ApiKeySettings,
   'gee-accounts': GeeAccountSettings,
   'weather-providers': WeatherProviderSettings,
+  'open-meteo-sync': OpenMeteoSyncSettings,
   'remote-storage': RemoteStorageSettings,
   'data-source': DataSourceSettings,
   about: AboutSettings,
@@ -52,6 +55,7 @@ const tabs: Array<{ id: SettingsTab; label: string; icon: string }> = [
   { id: 'api-keys', label: 'API管理', icon: '🔑' },
   { id: 'gee-accounts', label: 'GEE账户', icon: '🌍' },
   { id: 'weather-providers', label: '天气源', icon: '🌦' },
+  { id: 'open-meteo-sync', label: 'Open-Meteo', icon: '🌩' },
   { id: 'remote-storage', label: '远程存储', icon: '🖧' },
   { id: 'data-source', label: '数据源', icon: '⚱' },
   { id: 'about', label: '关于', icon: 'ⓘ' },

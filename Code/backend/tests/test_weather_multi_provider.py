@@ -1,4 +1,4 @@
-﻿"""Multi-weather-provider: field mapping, pin/fallback, tile cache key."""
+"""Multi-weather-provider: field mapping, pin/fallback, tile cache key."""
 
 from __future__ import annotations
 
@@ -6,7 +6,15 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+from shared.contracts.api_contracts import BoundingBox
+
+from app.weatherengine.constants import WEATHER_LAYER_SPECS
 from app.weatherengine.field_mapping import (
+    COMMERCIAL_LAYER_IDS,
+    apply_commercial_height_extrapolation,
+    build_empty_pressure_grid,
+    commercial_data_quality,
+    extrapolate_wind_speed_power_law,
     kph_to_ms,
     openweather_current_to_om,
     weatherapi_current_to_om,
@@ -56,6 +64,75 @@ class TestFieldMapping:
         assert mapped["wind_direction_10m"] == 90
         assert mapped["visibility"] == 8000
         assert mapped["time"] is not None
+        assert mapped["cloud_cover"] == 40
+
+    def test_commercial_layer_ids_cover_catalog(self):
+        assert COMMERCIAL_LAYER_IDS == frozenset(WEATHER_LAYER_SPECS)
+        assert commercial_data_quality("temperature") == "observed"
+        assert commercial_data_quality("wind-field-120m") == "extrapolated"
+        assert commercial_data_quality("wind-field-500hPa") == "sparse"
+
+    def test_power_law_wind_extrapolation(self):
+        assert extrapolate_wind_speed_power_law(10.0, target_height_m=80.0) == pytest.approx(
+            10.0 * (8.0**0.14)
+        )
+        payload = {
+            "current": {"wind_speed_10m": 10.0, "wind_direction_10m": 90, "temperature_2m": 20.0},
+            "hourly": {
+                "time": ["2024-01-01T00:00"],
+                "wind_speed_10m": [10.0],
+                "wind_direction_10m": [90],
+                "temperature_2m": [20.0],
+            },
+        }
+        apply_commercial_height_extrapolation(payload, "wind-field-80m")
+        assert payload["data_quality"] == "extrapolated"
+        assert payload["current"]["wind_speed_80m"] == pytest.approx(10.0 * (8.0**0.14))
+        assert payload["current"]["wind_direction_80m"] == 90
+
+        apply_commercial_height_extrapolation(payload, "temperature-120m")
+        assert payload["current"]["temperature_120m"] == 20.0
+
+    def test_ensure_hub_height_wind_fills_null_grid_arrays(self):
+        from app.weatherengine.field_mapping import ensure_hub_height_wind_in_grid_arrays
+
+        current = {
+            "wind_speed_80m": [None, None, None, None],
+            "wind_direction_80m": [None, None, None, None],
+            "wind_speed_10m": [10.0, 12.0, 8.0, 9.0],
+            "wind_direction_10m": [90, 100, 80, 85],
+        }
+        hourly: dict = {
+            "wind_speed_10m": [[10.0, 11.0], [12.0, 13.0], [8.0, 9.0], [9.0, 10.0]],
+            "wind_direction_10m": [[90, 91], [100, 101], [80, 81], [85, 86]],
+            "wind_speed_80m": [[None, None], [None, None], [None, None], [None, None]],
+        }
+        assert ensure_hub_height_wind_in_grid_arrays(current, hourly, "wind-field-80m") is True
+        assert current["wind_speed_80m"][0] == pytest.approx(10.0 * (8.0**0.14))
+        assert current["wind_direction_80m"][1] == 100
+        assert hourly["wind_speed_80m"][0][0] == pytest.approx(10.0 * (8.0**0.14))
+        assert hourly["wind_direction_80m"][1][1] == 101
+
+    def test_ensure_hub_height_skips_when_native_present(self):
+        from app.weatherengine.field_mapping import ensure_hub_height_wind_in_grid_arrays
+
+        current = {
+            "wind_speed_80m": [15.0, 16.0],
+            "wind_speed_10m": [10.0, 11.0],
+        }
+        hourly: dict = {}
+        assert ensure_hub_height_wind_in_grid_arrays(current, hourly, "wind-field-80m") is False
+        assert current["wind_speed_80m"] == [15.0, 16.0]
+
+    def test_empty_pressure_grid_marks_sparse(self):
+        grid = build_empty_pressure_grid(
+            bbox=BoundingBox(west=110.0, south=20.0, east=112.0, north=22.0),
+            resolution=0.5,
+            layer_spec=WEATHER_LAYER_SPECS["wind-field-850hPa"],
+        )
+        assert grid["data_quality"] == "sparse"
+        assert grid["coverage"] == "sparse_unavailable"
+        assert grid["grid"]["rows"] * grid["grid"]["cols"] >= 1
 
 
 class TestNormalizeProvider:

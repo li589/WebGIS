@@ -13,15 +13,19 @@ from __future__ import annotations
 import asyncio
 import logging
 import math
+import threading
 from collections import OrderedDict
 from datetime import datetime, timezone
 from functools import lru_cache
 from typing import Any
+from urllib.error import HTTPError
 
 from app.core.config import settings
+from app.weatherengine.default_model import weather_default_model
 from app.core.redis_client import cache_get_json, cache_set_json
 from app.services.effective_config import get_weather_cache_ttl_seconds
 from app.weatherengine.constants import WEATHER_LAYER_SPECS, WeatherLayerSpec
+from app.weatherengine.field_mapping import point_in_tile_half_open
 from app.weatherengine.fetch_gateway import fetch_grid_forecast
 from shared.contracts.api_contracts import BoundingBox
 
@@ -42,6 +46,14 @@ _IN_MEMORY_TILE_CACHE_MAX = 256
 
 # 瓦片 Redis 缓存键前缀
 _TILE_REDIS_KEY_PREFIX = "weather:tile:"
+
+
+class TileDataEmptyError(Exception):
+    """上游网格主变量全 null（本地库未 sync 该变量 / 模型不支持该变量）。
+
+    与 503（服务不可达，前端应退避重试）区分：路由层返回 422，
+    前端识别为 data-empty 后停止重排，避免「无数据图层一直加载」。
+    """
 
 
 def normalize_provider_id(provider_id: str | None) -> str:
@@ -129,6 +141,45 @@ def zoom_to_resolution(z: int) -> float:
     return 0.25
 
 
+def _stamp_and_clip_tile_geojson(
+    geojson: dict[str, Any],
+    *,
+    bbox: BoundingBox,
+    resolution: float,
+) -> dict[str, Any]:
+    """为要素写入 resolution，并按半开 bbox 裁掉越界点（防旧缓存/上游越界）。"""
+    features = geojson.get("features")
+    if not isinstance(features, list):
+        return geojson
+    clipped: list[Any] = []
+    for feature in features:
+        if not isinstance(feature, dict):
+            continue
+        geom = feature.get("geometry") or {}
+        coords = geom.get("coordinates") if isinstance(geom, dict) else None
+        if geom.get("type") == "Point" and isinstance(coords, (list, tuple)) and len(coords) >= 2:
+            lon = float(coords[0])
+            lat = float(coords[1])
+            if not point_in_tile_half_open(
+                lon,
+                lat,
+                west=bbox.west,
+                south=bbox.south,
+                east=bbox.east,
+                north=bbox.north,
+            ):
+                continue
+        props = feature.get("properties")
+        if not isinstance(props, dict):
+            props = {}
+            feature["properties"] = props
+        props["resolution"] = resolution
+        props["grid_resolution"] = resolution
+        clipped.append(feature)
+    geojson["features"] = clipped
+    return geojson
+
+
 def _clamp_hour(hour: int | None, max_hours: int = 47) -> int:
     """将 hour 限制在有效预报小时范围内。"""
     if hour is None:
@@ -146,13 +197,29 @@ def _grid_data_for_hour(grid_data: dict[str, Any], hour: int) -> dict[str, Any]:
     注意：hourly 中每个字段的 values 是 total_points 个时间序列的列表，
     需要为每个点取第 hour 个时间步，而不是取第 hour 个点的时间序列。
     """
-    # hour <= 0 时使用 current 数据（Open-Meteo current 段包含 wind_direction_10m
-    # 等完整字段，代表实时观测值）。
-    # hour > 0 时从 hourly 数据中提取对应小时的值替换 current 段。
-    if hour <= 0:
-        return grid_data
-
+    # hour <= 0 时使用 current；若 current 目标字段全 null（气压层偶发只在 hourly），
+    # 提升 hourly[0]。hour > 0 时从 hourly 取对应时间步替换 current。
     hourly = grid_data.get("data", {}).get("hourly", {})
+    current = grid_data.get("data", {}).get("current", {})
+    if hour <= 0:
+        needs_backfill = False
+        if isinstance(current, dict) and hourly:
+            for key, values in current.items():
+                if (
+                    isinstance(values, list)
+                    and values
+                    and not any(v is not None for v in values)
+                    and key in hourly
+                ):
+                    needs_backfill = True
+                    break
+        if not needs_backfill:
+            return grid_data
+        hour = 0
+        logger.info(
+            "[WeatherTileService] current all-null for some fields — promoting hourly[0]",
+        )
+
     if not hourly:
         logger.warning("[WeatherTileService] hourly data not available for hour=%d, falling back to current", hour)
         return grid_data
@@ -215,6 +282,9 @@ class WeatherTileService:
 
         self._engine = engine_service or WeatherEngineService()
         self._semaphore = asyncio.Semaphore(max_concurrent)
+        # sync workflow（weather_tile_render）与 async REST 共用同一并发上限，避免绕过闸
+        self._sync_semaphore = threading.Semaphore(max_concurrent)
+        self._max_concurrent = max_concurrent
         self._in_memory_cache: OrderedDict[str, dict[str, Any]] = OrderedDict()
         self._in_memory_cache_max = in_memory_cache_max
 
@@ -266,17 +336,35 @@ class WeatherTileService:
 
         from app.weatherengine.fetch_gateway import fetch_grid_forecast
 
-        resolved_model = model or settings.weather_default_model
-        grid_data, cache_status, resolved_provider = fetch_grid_forecast(
-            layer_id=layer_id,
-            bbox=bbox,
-            resolution=resolution,
-            model=resolved_model,
-            layer_spec=layer_spec,
-            provider_id=provider_id,
-        )
+        # 与 /grid、DAG grid_fetch 共用 OpenMeteoClient grid Redis/文件缓存；
+        # 同 bbox+resolution 命中时不会连环打上游。
+        resolved_model = model or weather_default_model()
+        try:
+            grid_data, cache_status, resolved_provider = fetch_grid_forecast(
+                layer_id=layer_id,
+                bbox=bbox,
+                resolution=resolution,
+                model=resolved_model,
+                layer_spec=layer_spec,
+                provider_id=provider_id,
+            )
+        except HTTPError as exc:
+            # client 的「主变量全 null」422 → 转为专用异常，让路由层透传 422，
+            # 避免被统一包成 503 导致前端无限重试。
+            if exc.code == 422:
+                raise TileDataEmptyError(str(exc)) from exc
+            raise
         grid_data_for_hour = _grid_data_for_hour(grid_data, hour)
         geojson = self._build_geojson(grid_data_for_hour, layer_id, layer_spec)
+        effective_res = float(
+            (grid_data.get("grid") or {}).get("resolution")
+            or resolution
+        )
+        geojson = _stamp_and_clip_tile_geojson(
+            geojson,
+            bbox=bbox,
+            resolution=effective_res,
+        )
 
         geojson["_tile_meta"] = {
             "layer_id": layer_id,
@@ -287,7 +375,7 @@ class WeatherTileService:
             "model": resolved_model,
             "provider_id": resolved_provider,
             "requested_provider": normalize_provider_id(provider_id),
-            "resolution": resolution,
+            "resolution": effective_res,
             "bbox": bbox.model_dump(mode="json"),
             "feature_count": len(geojson.get("features", [])),
             "generated_at": datetime.now(timezone.utc).isoformat(),
@@ -340,7 +428,7 @@ class WeatherTileService:
     ) -> tuple[dict[str, Any], str]:
         """同步版 get_tile：供 workflow 节点复用同一套缓存与生成逻辑。"""
         hour = _clamp_hour(hour)
-        model = model or settings.weather_default_model
+        model = model or weather_default_model()
         key = tile_key(layer_id, z, x, y, hour, model, provider_id)
 
         layer_spec = WEATHER_LAYER_SPECS.get(layer_id)
@@ -363,16 +451,34 @@ class WeatherTileService:
             self._write_memory_cache(key, redis_cached)
             return redis_cached, "hit"
 
-        geojson = self.generate_tile_payload(
-            layer_id=layer_id,
-            layer_spec=layer_spec,
-            z=z,
-            x=x,
-            y=y,
-            hour=hour,
-            model=model,
-            provider_id=provider_id,
-        )
+        acquired = self._sync_semaphore.acquire(timeout=60.0)
+        if not acquired:
+            raise TimeoutError(
+                f"Tile sync semaphore timeout (max_concurrent={self._max_concurrent})"
+            )
+        try:
+            # 双重检查：进入闸后可能其他线程已写入缓存（含 grid 上游缓存命中）
+            cached = self._read_memory_cache(key)
+            if cached is not None:
+                return cached, "hit"
+            redis_cached = cache_get_json(key)
+            if redis_cached is not None:
+                self._write_memory_cache(key, redis_cached)
+                return redis_cached, "hit"
+
+            geojson = self.generate_tile_payload(
+                layer_id=layer_id,
+                layer_spec=layer_spec,
+                z=z,
+                x=x,
+                y=y,
+                hour=hour,
+                model=model,
+                provider_id=provider_id,
+            )
+        finally:
+            self._sync_semaphore.release()
+
         self._write_memory_cache(key, geojson)
         cache_set_json(key, geojson, get_weather_cache_ttl_seconds())
         return geojson, "miss"
@@ -395,7 +501,7 @@ class WeatherTileService:
         provider_id: str | None = None,
     ) -> dict[str, Any] | None:
         """只读缓存（内存 / Redis），不触发上游拉取。供点查询降级采样。"""
-        model = model or settings.weather_default_model
+        model = model or weather_default_model()
         key = tile_key(
             layer_id=layer_id,
             z=z,
@@ -431,7 +537,7 @@ class WeatherTileService:
         if hit is not None:
             return hit
 
-        model = model or settings.weather_default_model
+        model = model or weather_default_model()
         model_part = model.replace("/", "_").replace(":", "_")
         provider_part = normalize_provider_id(provider_id).replace("/", "_").replace(":", "_")
         pattern = (
@@ -541,7 +647,7 @@ class WeatherTileService:
         - "miss": 未命中，已生成
         """
         hour = _clamp_hour(hour)
-        model = model or settings.weather_default_model
+        model = model or weather_default_model()
         key = tile_key(layer_id, z, x, y, hour, model, provider_id)
 
         layer_spec = WEATHER_LAYER_SPECS.get(layer_id)

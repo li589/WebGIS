@@ -73,10 +73,39 @@ class Settings:
     provider_max_series_points: int = int(os.getenv("BACKEND_PROVIDER_MAX_SERIES_POINTS", "240"))
     provider_table_chunk_size: int = int(os.getenv("BACKEND_PROVIDER_TABLE_CHUNK_SIZE", "100"))
     provider_series_chunk_size: int = int(os.getenv("BACKEND_PROVIDER_SERIES_CHUNK_SIZE", "120"))
-    weather_default_model: str = os.getenv("BACKEND_WEATHER_DEFAULT_MODEL", "best_match")
+    weather_default_model: str = os.getenv("BACKEND_WEATHER_DEFAULT_MODEL", "ecmwf_ifs025")
     weather_cache_ttl_seconds: int = int(os.getenv("BACKEND_WEATHER_CACHE_TTL_SECONDS", "3600"))
     weather_refresh_forecast_hours: int = int(os.getenv("BACKEND_WEATHER_REFRESH_FORECAST_HOURS", "6"))
     weather_schedule_enabled: bool = os.getenv("BACKEND_WEATHER_SCHEDULE_ENABLED", "true").lower() == "true"
+    # Phase 2: Open-Meteo 本地数据自动同步（Celery Beat）
+    # ECMWF IFS 每 6 小时更新初始场（00/06/12/18 UTC），同步在更新后 1-2 小时触发
+    open_meteo_sync_enabled: bool = os.getenv("BACKEND_OPEN_METEO_SYNC_ENABLED", "true").lower() == "true"
+    # cron 表达式（UTC），默认每 6 小时在 30 分触发（避开 ECMWF 发布时刻）
+    open_meteo_sync_cron_minute: str = os.getenv("BACKEND_OPEN_METEO_SYNC_CRON_MINUTE", "30")
+    open_meteo_sync_cron_hour: str = os.getenv("BACKEND_OPEN_METEO_SYNC_CRON_HOUR", "*/6")
+    # 同步的气象模型（逗号分隔），支持 ecmwf_ifs025, gfs_global, icon_global, etc.
+    open_meteo_sync_domains: str = os.getenv("OPEN_METEO_SYNC_DOMAINS", "ecmwf_ifs025")
+    # 同步变量列表（逗号分隔）；与 Code/infra/data-sync/.env 保持一致即可
+    open_meteo_sync_variables: str = os.getenv(
+        "OPEN_METEO_SYNC_VARIABLES",
+        "temperature_2m,temperature_80m,temperature_120m,temperature_180m,temperature_850hPa,temperature_500hPa,temperature_200hPa,apparent_temperature,relative_humidity_2m,dew_point_2m,precipitation,rain,weather_code,cloud_cover,pressure_msl,surface_pressure,visibility,wind_u_component_10m,wind_v_component_10m,wind_speed_10m,wind_direction_10m,wind_gusts_10m,wind_u_component_80m,wind_v_component_80m,wind_speed_80m,wind_direction_80m,wind_u_component_120m,wind_v_component_120m,wind_speed_120m,wind_direction_120m,wind_u_component_180m,wind_v_component_180m,wind_speed_180m,wind_direction_180m,wind_u_component_850hPa,wind_v_component_850hPa,wind_speed_850hPa,wind_direction_850hPa,wind_u_component_500hPa,wind_v_component_500hPa,wind_speed_500hPa,wind_direction_500hPa,wind_u_component_200hPa,wind_v_component_200hPa,wind_speed_200hPa,wind_direction_200hPa",
+    )
+    # docker compose 项目名（数据同步栈；与 -p 一致）
+    open_meteo_sync_compose_project: str = os.getenv(
+        "BACKEND_OPEN_METEO_SYNC_COMPOSE_PROJECT", "data-sync"
+    )
+    # docker compose 工作目录（Code/infra/data-sync；仅 sync run，API 在 backend）
+    open_meteo_sync_compose_dir: str = os.getenv(
+        "BACKEND_OPEN_METEO_SYNC_COMPOSE_DIR",
+        os.path.normpath(
+            os.path.join(
+                os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
+                "..",
+                "infra",
+                "data-sync",
+            )
+        ),
+    )
     weather_default_latitude: float = float(os.getenv("BACKEND_WEATHER_DEFAULT_LATITUDE", "23.1291"))
     weather_default_longitude: float = float(os.getenv("BACKEND_WEATHER_DEFAULT_LONGITUDE", "113.2644"))
     weather_default_place_name: str = os.getenv("BACKEND_WEATHER_DEFAULT_PLACE_NAME", "Guangzhou")

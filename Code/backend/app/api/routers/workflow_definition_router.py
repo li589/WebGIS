@@ -22,6 +22,10 @@ from app.services.workflow_definition_service import (
     WorkflowNotFoundError,
 )
 from app.services.node_template_registry import get_all_node_templates
+from app.services.workflow_graph_compiler import (
+    WorkflowGraphCompileError,
+    compile_litegraph_to_workflow_definition,
+)
 
 router = APIRouter(prefix="/workflow-definitions", tags=["workflow-definition"])
 
@@ -32,6 +36,31 @@ def list_node_templates() -> dict[str, Any]:
     """获取所有可用的节点模板，供前端节点面板展示。"""
     templates = get_all_node_templates()
     return {"templates": templates, "count": len(templates)}
+
+
+@router.post(
+    "/compile",
+    dependencies=[Depends(require_write_access)],
+    tags=["workflow-definition"],
+)
+def compile_graph(payload: dict[str, Any]) -> dict[str, Any]:
+    """将 LiteGraph 画布编译为 Python provider 可执行的 workflow_definition。"""
+    try:
+        definition = compile_litegraph_to_workflow_definition(
+            workflow_id=str(payload.get("workflow_id") or "canvas_workflow"),
+            name=payload.get("name"),
+            description=payload.get("description"),
+            nodes=payload.get("nodes") if isinstance(payload.get("nodes"), list) else [],
+            links=payload.get("links") if isinstance(payload.get("links"), list) else [],
+        )
+    except WorkflowGraphCompileError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"编译失败: {exc}",
+        ) from exc
+    return {"workflow_definition": definition, "ok": True}
 
 
 # ─── 工作流定义 CRUD ──────────────────────────────────────────────────────────

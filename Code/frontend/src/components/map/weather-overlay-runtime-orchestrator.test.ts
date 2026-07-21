@@ -39,6 +39,7 @@ describe('weather-overlay-runtime-orchestrator', () => {
       syncWeatherHeatmapOverlay: vi.fn(),
       syncWeatherPointOverlay: vi.fn(),
       syncWindParticleFlow: vi.fn(),
+      syncScalarFieldWebGL: vi.fn(() => false),
     }))
     const createRenderContext = vi.fn(() => ({ context: true }) as any)
     const renderBatch = vi.fn()

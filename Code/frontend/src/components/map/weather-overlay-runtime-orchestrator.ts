@@ -4,10 +4,13 @@ import {
   reconcileParticleFlowController,
   renderWeatherOverlayBatch,
 } from './weather-overlay-coordinator'
+import { isPerfEnabled, perfIncSync, perfMark } from '../../utils/perf-probe'
 import type { WeatherOverlayResolver } from './weather-overlay-resolver'
 import { createWeatherOverlayServices } from './weather-overlay-services'
 import type { WeatherOverlaySession } from './weather-overlay-session'
-import { WindParticleOverlayController } from './wind-particle-overlay-controller'
+import type { WindParticleControllerContract } from './wind-particle-controller-contract'
+import type { ScalarFieldWebGLController } from './scalar-field-webgl-controller'
+import type { WindDisplayMode } from './wind-display-mode'
 
 type MapInstance = import('maplibre-gl').Map
 type DebugLogger = (module: string, ...args: unknown[]) => void
@@ -24,8 +27,10 @@ interface CreateWeatherOverlayRuntimeOrchestratorOptions {
   map: MapInstance
   resolver: WeatherOverlayResolver
   session: WeatherOverlaySession
-  windParticleController: WindParticleOverlayController
+  windParticleController: WindParticleControllerContract
+  scalarFieldController?: ScalarFieldWebGLController | null
   getEnabledParticleFlowCatalogId: () => string | null
+  getWindDisplayMode?: () => WindDisplayMode
   getSyncWeatherToken: () => number
   debugLog: DebugLogger
   dependencies?: WeatherOverlayRuntimeOrchestratorDependencies
@@ -46,6 +51,8 @@ export function createWeatherOverlayRuntimeOrchestrator(
 
   return {
     sync(overlayToken: number) {
+      const syncStartedAt = isPerfEnabled() ? performance.now() : 0
+      perfIncSync()
       const targetStates = options.resolver.resolveStates()
       const enabledFlowId = options.getEnabledParticleFlowCatalogId()
       const targetCatalogIds = new Set(targetStates.map((state) => state.catalogId))
@@ -82,8 +89,10 @@ export function createWeatherOverlayRuntimeOrchestrator(
       const overlayServices = createOverlayServicesImpl({
         map: options.map,
         windParticleController: options.windParticleController,
+        scalarFieldController: options.scalarFieldController ?? null,
         getSyncWeatherToken: options.getSyncWeatherToken,
         getEnabledParticleFlowCatalogId: options.getEnabledParticleFlowCatalogId,
+        getWindDisplayMode: options.getWindDisplayMode,
       })
 
       renderBatchImpl({
@@ -96,6 +105,15 @@ export function createWeatherOverlayRuntimeOrchestrator(
           ...overlayServices,
         }),
       })
+
+      if (isPerfEnabled()) {
+        perfMark('overlay.syncMs', {
+          ms: Math.round(performance.now() - syncStartedAt),
+          token: overlayToken,
+          targets: targetStates.length,
+          wind: enabledFlowId,
+        })
+      }
     },
   }
 }

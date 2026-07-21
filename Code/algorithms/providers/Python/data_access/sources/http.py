@@ -90,5 +90,6 @@ class HttpSource:
             format=resource.format,
             logical_type=resource.logical_type,
             storage_backend="local",
+            local_path=str(local_path),
             metadata=staged_metadata,
         )

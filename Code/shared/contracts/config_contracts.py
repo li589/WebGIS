@@ -74,6 +74,12 @@ class WeatherProviderTestResponse(BaseModel):
     tested_at: str
 
 
+class WeatherModelUpdateRequest(BaseModel):
+    """全局默认天气模型（持久化到 DB，影响 coverage / 瓦片 / 点预报）。"""
+
+    default_model: str = Field(..., min_length=1, description="如 ecmwf_ifs025")
+
+
 class RemoteStorageUpsertRequest(BaseModel):
     protocol: str
     host: str = ""

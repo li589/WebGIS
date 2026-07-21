@@ -6,6 +6,7 @@ import logging
 from typing import Any
 
 from app.core.config import settings
+from app.weatherengine.default_model import weather_default_model
 from app.weatherengine.constants import WEATHER_LAYER_SPECS
 from app.weatherengine.fetch_gateway import fetch_grid_forecast
 from app.workflow_engine.base import BaseNode
@@ -62,7 +63,7 @@ class GridFetchNode(BaseNode):
             else:
                 resolution = compute_dynamic_resolution(bbox)
 
-            model = inputs.get("model") or settings.weather_default_model
+            model = inputs.get("model") or weather_default_model()
             provider_id = inputs.get("provider_id") or inputs.get("provider")
 
             grid_data, cache_status, resolved_provider = fetch_grid_forecast(

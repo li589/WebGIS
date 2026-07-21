@@ -18,6 +18,8 @@ import { useUiStore } from '../stores/ui'
 import { useLogStore } from '../stores/log'
 import { useSettingsStore } from '../stores/settings'
 import { useWeatherTileManager } from '../stores/weather-tile-manager'
+import { useWeatherSyncStatusStore } from '../stores/weather-sync-status'
+import { mergeWorkflowSummaryWithWeather } from '../utils/workflow-status-merge'
 import WorkflowStatusButton from './workflow/WorkflowStatusButton.vue'
 import DataImportMenu from './toolbar/DataImportMenu.vue'
 
@@ -26,9 +28,11 @@ const uiStore = useUiStore()
 const logStore = useLogStore()
 const settingsStore = useSettingsStore()
 const weatherTileManager = useWeatherTileManager()
+const weatherSyncStatus = useWeatherSyncStatusStore()
 const { workflowSummary } = storeToRefs(layersStore)
 const { activityVersion, statusVersion } = storeToRefs(weatherTileManager)
 const { apiKeys } = storeToRefs(settingsStore)
+const { syncInProgress, modelEmpty } = storeToRefs(weatherSyncStatus)
 
 onMounted(() => {
   if (apiKeys.value.length === 0) {
@@ -36,24 +40,20 @@ onMounted(() => {
       /* toolbar still works with free basemaps */
     })
   }
+  void weatherSyncStatus.refreshOverview()
 })
 
-/** 合并工作流摘要：天气瓦片 pending（/weather/tiles）计入 running 指示，不等于 workflow-runs 数 */
+/** 合并业务 job + 天气瓦片合成态（含 data-empty → 失败/等待重试） */
 const mergedWorkflowSummary = computed(() => {
-  // 引用 activityVersion 确保天气瓦片 pending 变化时触发重新计算
   void activityVersion.value
   void statusVersion.value
-  const base = workflowSummary.value
-  const tileActive = weatherTileManager.getGlobalActiveTileCount()
-  if (tileActive === 0) return base
-  // 天气瓦片 pending 计入 running，使标题栏显示"N 运行中"
-  return {
-    ...base,
-    running: base.running + tileActive,
-    total: Math.max(base.total, tileActive),
-    overall: 'active' as const,
-    tone: 'active' as const,
-  }
+  void syncInProgress.value
+  void modelEmpty.value
+  const contribution = weatherTileManager.deriveWeatherWorkflowContribution({
+    syncInProgress: syncInProgress.value,
+    modelEmpty: modelEmpty.value,
+  })
+  return mergeWorkflowSummaryWithWeather(workflowSummary.value, contribution)
 })
 
 const props = defineProps<{
@@ -255,7 +255,7 @@ function handleWorkflowEditor() {
         <button
           class="tool-btn"
           type="button"
-          title="工作流配置编辑器"
+          title="工作流配置编辑器（含定时器）"
           @click="handleWorkflowEditor"
         >
           <span class="btn-icon" aria-hidden="true">⬡</span>

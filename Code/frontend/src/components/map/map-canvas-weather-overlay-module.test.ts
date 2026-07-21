@@ -17,6 +17,7 @@ describe('map-canvas-weather-overlay-module', () => {
       layersStore: {
         activeLayersDisplay: [],
         particleFlowCatalogId: 'weather.wind',
+        windDisplayMode: 'particle',
         isWeatherEngineLayer: (catalogId: string) => catalogId === 'weather.wind',
       },
       weatherTileManager: {

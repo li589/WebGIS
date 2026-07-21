@@ -19,10 +19,11 @@ Code/
 ├─ backend/    # FastAPI + Celery：workflow 编排、weatherengine、统一瓦片、GEE
 ├─ algorithms/ # Python 算法包、数据接入、工作流与产品输出
 ├─ shared/     # 前后端共享协议与公共契约
+├─ infra/      # 数据面 compose（data-sync；与运行栈隔离）
 └─ docs/       # 面向实现与协作的补充文档
 ```
 
-说明：早期草案中的 `infra/`、`scripts/` 目录当前不在 `Code/` 下。Redis / MinIO 配置位于 `backend/docker-compose.yml`；一键启停在仓库根目录 `launch.py`。
+说明：早期草案中的 `scripts/` 目录当前不在 `Code/` 下。运行栈见 `backend/docker-compose.yml`；数据同步见 `infra/data-sync/`；一键启停在仓库根目录 `launch.py`。
 
 ## 目录职责
 
@@ -34,6 +35,7 @@ Code/
 - 天气图层瓦片加载、风场 Canvas 叠加（粒子 / 风羽 / 等值线）
 - 图层树、时间轴、工具栏导入、截图导出
 - 工作流提交、状态面板与结果信息面板
+- LiteGraph 工作流编辑器：画布 Run 会编译为 `workflow_definition` 提交（课题组数据下载/解析节点可执行）
 
 建议优先把前端理解为“展示层 + 交互层”，而不是单纯地图页面。Cesium 依赖已引入，但默认主链仍是 `2D-first`。
 
@@ -82,7 +84,7 @@ Code/
 
 1. 稳定天气瓦片渲染与风场交互体验
 2. 保持 `workflow-runs` / `unified-tiles` / artifact 契约清晰
-3. 完善课题组 Python 算法真实数据接入
+3. 完善课题组 Python 算法真实数据接入（画布编译执行 + 下载/解压/变量提取节点已落地，见 `docs/课题组数据全链路-2026-07-21.md`）
 4. 按需推进 PostGIS、专用切片服务（TiTiler/Martin）、Cesium 3D 与 Nginx 部署层
 
 ## 需要避免的做法
@@ -103,3 +105,4 @@ Code/
 6. `Code/docs/双通道接口设计总结.md`
 7. `Code/algorithms/providers/Python/README.md`
 8. `Code/algorithms/providers/docs/detailed_design.md`
+9. `Code/docs/课题组数据全链路-2026-07-21.md`（画布编译 + 数据获取节点）

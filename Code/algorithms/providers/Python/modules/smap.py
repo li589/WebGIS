@@ -54,6 +54,15 @@ class SmapDailyModule(BaseModule):
     def execute(self, inputs: dict[str, object], params: dict[str, object], ctx: NodeExecutionContext) -> dict[str, object]:
         _ = params
         datasource_selection = dict(inputs.get("datasource_selection", {}))
+        # Canvas LiteGraph binds template port ``input_dir`` (path string or data_source dict)
+        raw_input = inputs.get("input_dir")
+        if raw_input is not None:
+            if isinstance(raw_input, dict):
+                datasource_selection = {**dict(raw_input), **datasource_selection}
+                if datasource_selection.get("path") and not datasource_selection.get("input_dir"):
+                    datasource_selection["input_dir"] = datasource_selection["path"]
+            else:
+                datasource_selection.setdefault("input_dir", str(raw_input))
         output_spec_extra = dict(inputs.get("output_spec_extra", {}))
 
         input_dir = _resolve_smap_input_dir(datasource_selection)
@@ -94,4 +103,7 @@ class SmapDailyModule(BaseModule):
                 "count": len(outputs),
             },
         )
-        return _store_manifest(ctx, module_name=self.name, manifest=manifest, metadata={"product_count": len(outputs)})
+        result = _store_manifest(ctx, module_name=self.name, manifest=manifest, metadata={"product_count": len(outputs)})
+        # Alias for LiteGraph template output port name
+        result["smap_daily_mat"] = result["manifest"]
+        return result

@@ -3,6 +3,7 @@ import type { WatchStopHandle } from 'vue'
 import { createWeatherOverlayFacade, type WeatherOverlayFacade } from './weather-overlay-facade'
 import { createWeatherOverlayResolver, type WeatherOverlayResolver } from './weather-overlay-resolver'
 import { watchWeatherOverlayInputs } from './weather-overlay-watcher'
+import type { WindDisplayMode } from './wind-display-mode'
 
 type MapInstance = import('maplibre-gl').Map
 type DebugLogger = (module: string, ...args: unknown[]) => void
@@ -24,6 +25,7 @@ interface WeatherOverlayModuleDependencies {
     getMapReady: () => boolean
     resolver: WeatherOverlayResolver
     getEnabledParticleFlowCatalogId: () => string | null
+    getWindDisplayMode?: () => WindDisplayMode
     debugLog: DebugLogger
     debounceMs?: number
   }) => WeatherOverlayFacade
@@ -39,6 +41,7 @@ interface CreateWeatherOverlayModuleOptions {
   buildDefaultWeatherRenderHint: (catalogId: string) => WeatherLayerRenderHint | null
   resolveApiUrl: (url: string) => string
   getEnabledParticleFlowCatalogId: () => string | null
+  getWindDisplayMode?: () => WindDisplayMode
   getDataVersion: () => number
   getCurrentHour: () => number
   debugLog: DebugLogger
@@ -74,6 +77,7 @@ export function createWeatherOverlayModule(
     getMapReady: options.getMapReady,
     resolver,
     getEnabledParticleFlowCatalogId: options.getEnabledParticleFlowCatalogId,
+    getWindDisplayMode: options.getWindDisplayMode,
     debugLog: options.debugLog,
     debounceMs: options.debounceMs,
   })
@@ -86,6 +90,7 @@ export function createWeatherOverlayModule(
       stopWeatherWatcher = watchInputsImpl({
         getActiveLayers: options.getActiveLayers,
         getParticleFlowCatalogId: options.getEnabledParticleFlowCatalogId,
+        getWindDisplayMode: options.getWindDisplayMode,
         getDataVersion: options.getDataVersion,
         getCurrentHour: options.getCurrentHour,
         scheduleSync: facade.scheduleSync,

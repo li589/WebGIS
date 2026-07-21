@@ -44,7 +44,12 @@ def resolve_open_meteo_model(model: str | None, *, provider_id: str | None = Non
     resolved = (model or "best_match").strip() or "best_match"
     pid = normalize_provider_id(provider_id) or provider_id
     if pid == OPEN_METEO_LOCAL_ID and resolved in _LOCAL_ENSEMBLE_ALIASES:
-        return OPEN_METEO_LOCAL_DEFAULT_MODEL
+        try:
+            from app.services.weather_engine_settings import get_effective_weather_default_model
+
+            return get_effective_weather_default_model()
+        except Exception:
+            return OPEN_METEO_LOCAL_DEFAULT_MODEL
     return resolved
 
 

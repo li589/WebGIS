@@ -28,6 +28,7 @@ describe('map-canvas-module-bundle', () => {
       layersStore: {
         activeLayersDisplay: [],
         particleFlowCatalogId: null,
+        windDisplayMode: 'off',
         isWeatherEngineLayer: () => false,
         setMapViewport: vi.fn(),
       },

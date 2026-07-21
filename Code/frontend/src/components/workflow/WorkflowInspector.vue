@@ -12,6 +12,7 @@ import { useWorkflowDefinitionsStore } from '../../stores/workflow-definitions'
 import type { LGraphNodeClass, INodeInputSlot, INodeOutputSlot } from './litegraph-setup'
 import { getPortColor, getPortTypeLabel, suggestConnectorsForPortType } from './litegraph-setup'
 import { buildPortTooltip } from './port-tooltip'
+import ParamField from './ParamField.vue'
 
 const props = defineProps<{
   selectedNode: LGraphNodeClass | null
@@ -423,80 +424,18 @@ function handleTitleChange() {
                 >↺</button>
               </label>
 
-              <!-- enum: 有 options 的参数用 select 下拉框 -->
-              <select
-                v-if="getParamMeta(key)?.options?.length"
-                class="form-input"
-                :value="String(value ?? '')"
-                :disabled="readonly"
-                @change="handlePropertyChange(key, ($event.target as HTMLSelectElement).value)"
-              >
-                <option v-for="opt in getParamMeta(key)?.options" :key="opt" :value="opt">{{ opt }}</option>
-              </select>
-
-              <!-- boolean: toggle 开关 -->
-              <label
-                v-else-if="typeof value === 'boolean'"
-                class="toggle-switch"
-                :class="{ disabled: readonly }"
-              >
-                <input
-                  type="checkbox"
-                  :checked="value"
-                  :disabled="readonly"
-                  @change="handlePropertyChange(key, ($event.target as HTMLInputElement).checked)"
-                />
-                <span class="toggle-slider"></span>
-              </label>
-
-              <!-- number: 带 min/max/step -->
-              <input
-                v-else-if="typeof value === 'number'"
-                type="number"
-                class="form-input"
-                :class="{ error: validationErrors[key] }"
+              <ParamField
+                :param-key="key"
                 :value="value"
-                :min="getParamMeta(key)?.min"
-                :max="getParamMeta(key)?.max"
-                :step="getParamMeta(key)?.step"
+                :meta="getParamMeta(key)"
                 :readonly="readonly"
-                @input="handlePropertyChange(key, Number(($event.target as HTMLInputElement).value))"
-              />
-
-              <!-- array: chip 编辑器 -->
-              <div
-                v-else-if="getParamMeta(key)?.type === 'array'"
-                class="array-editor"
-              >
-                <span v-for="(item, idx) in parseArrayValue(value)" :key="idx" class="array-chip">
-                  {{ item }}
-                  <button
-                    v-if="!readonly"
-                    class="chip-remove"
-                    type="button"
-                    @click="removeArrayItem(key, idx)"
-                  >✕</button>
-                </span>
-                <input
-                  v-if="!readonly"
-                  v-model="arrayInputBuffer[key]"
-                  type="text"
-                  class="array-input"
-                  placeholder="输入值后按回车添加"
-                  @keydown.enter="addArrayItem(key, $event)"
-                />
-              </div>
-
-              <!-- string / fallback: text input with placeholder -->
-              <input
-                v-else
-                type="text"
-                class="form-input"
-                :class="{ error: validationErrors[key] }"
-                :value="String(value ?? '')"
+                :error="Boolean(validationErrors[key])"
                 :placeholder="getParamPlaceholder(key)"
-                :readonly="readonly"
-                @input="handlePropertyChange(key, ($event.target as HTMLInputElement).value)"
+                :array-buffer="arrayInputBuffer[key]"
+                @change="handlePropertyChange(key, $event)"
+                @update:array-buffer="arrayInputBuffer[key] = $event"
+                @add-array="addArrayItem(key, $event)"
+                @remove-array="removeArrayItem(key, $event)"
               />
 
               <!-- 验证错误提示 -->
@@ -528,75 +467,18 @@ function handleTitleChange() {
                 >↺</button>
               </label>
 
-              <select
-                v-if="getParamMeta(key)?.options?.length"
-                class="form-input"
-                :value="String(value ?? '')"
-                :disabled="readonly"
-                @change="handlePropertyChange(key, ($event.target as HTMLSelectElement).value)"
-              >
-                <option v-for="opt in getParamMeta(key)?.options" :key="opt" :value="opt">{{ opt }}</option>
-              </select>
-
-              <label
-                v-else-if="typeof value === 'boolean'"
-                class="toggle-switch"
-                :class="{ disabled: readonly }"
-              >
-                <input
-                  type="checkbox"
-                  :checked="value"
-                  :disabled="readonly"
-                  @change="handlePropertyChange(key, ($event.target as HTMLInputElement).checked)"
-                />
-                <span class="toggle-slider"></span>
-              </label>
-
-              <input
-                v-else-if="typeof value === 'number'"
-                type="number"
-                class="form-input"
-                :class="{ error: validationErrors[key] }"
+              <ParamField
+                :param-key="key"
                 :value="value"
-                :min="getParamMeta(key)?.min"
-                :max="getParamMeta(key)?.max"
-                :step="getParamMeta(key)?.step"
+                :meta="getParamMeta(key)"
                 :readonly="readonly"
-                @input="handlePropertyChange(key, Number(($event.target as HTMLInputElement).value))"
-              />
-
-              <div
-                v-else-if="getParamMeta(key)?.type === 'array'"
-                class="array-editor"
-              >
-                <span v-for="(item, idx) in parseArrayValue(value)" :key="idx" class="array-chip">
-                  {{ item }}
-                  <button
-                    v-if="!readonly"
-                    class="chip-remove"
-                    type="button"
-                    @click="removeArrayItem(key, idx)"
-                  >✕</button>
-                </span>
-                <input
-                  v-if="!readonly"
-                  v-model="arrayInputBuffer[key]"
-                  type="text"
-                  class="array-input"
-                  placeholder="输入值后按回车添加"
-                  @keydown.enter="addArrayItem(key, $event)"
-                />
-              </div>
-
-              <input
-                v-else
-                type="text"
-                class="form-input"
-                :class="{ error: validationErrors[key] }"
-                :value="String(value ?? '')"
+                :error="Boolean(validationErrors[key])"
                 :placeholder="getParamPlaceholder(key)"
-                :readonly="readonly"
-                @input="handlePropertyChange(key, ($event.target as HTMLInputElement).value)"
+                :array-buffer="arrayInputBuffer[key]"
+                @change="handlePropertyChange(key, $event)"
+                @update:array-buffer="arrayInputBuffer[key] = $event"
+                @add-array="addArrayItem(key, $event)"
+                @remove-array="removeArrayItem(key, $event)"
               />
 
               <span v-if="validationErrors[key]" class="param-error">
@@ -627,75 +509,18 @@ function handleTitleChange() {
                 >↺</button>
               </label>
 
-              <select
-                v-if="getParamMeta(key)?.options?.length"
-                class="form-input"
-                :value="String(value ?? '')"
-                :disabled="readonly"
-                @change="handlePropertyChange(key, ($event.target as HTMLSelectElement).value)"
-              >
-                <option v-for="opt in getParamMeta(key)?.options" :key="opt" :value="opt">{{ opt }}</option>
-              </select>
-
-              <label
-                v-else-if="typeof value === 'boolean'"
-                class="toggle-switch"
-                :class="{ disabled: readonly }"
-              >
-                <input
-                  type="checkbox"
-                  :checked="value"
-                  :disabled="readonly"
-                  @change="handlePropertyChange(key, ($event.target as HTMLInputElement).checked)"
-                />
-                <span class="toggle-slider"></span>
-              </label>
-
-              <input
-                v-else-if="typeof value === 'number'"
-                type="number"
-                class="form-input"
-                :class="{ error: validationErrors[key] }"
+              <ParamField
+                :param-key="key"
                 :value="value"
-                :min="getParamMeta(key)?.min"
-                :max="getParamMeta(key)?.max"
-                :step="getParamMeta(key)?.step"
+                :meta="getParamMeta(key)"
                 :readonly="readonly"
-                @input="handlePropertyChange(key, Number(($event.target as HTMLInputElement).value))"
-              />
-
-              <div
-                v-else-if="getParamMeta(key)?.type === 'array'"
-                class="array-editor"
-              >
-                <span v-for="(item, idx) in parseArrayValue(value)" :key="idx" class="array-chip">
-                  {{ item }}
-                  <button
-                    v-if="!readonly"
-                    class="chip-remove"
-                    type="button"
-                    @click="removeArrayItem(key, idx)"
-                  >✕</button>
-                </span>
-                <input
-                  v-if="!readonly"
-                  v-model="arrayInputBuffer[key]"
-                  type="text"
-                  class="array-input"
-                  placeholder="输入值后按回车添加"
-                  @keydown.enter="addArrayItem(key, $event)"
-                />
-              </div>
-
-              <input
-                v-else
-                type="text"
-                class="form-input"
-                :class="{ error: validationErrors[key] }"
-                :value="String(value ?? '')"
+                :error="Boolean(validationErrors[key])"
                 :placeholder="getParamPlaceholder(key)"
-                :readonly="readonly"
-                @input="handlePropertyChange(key, ($event.target as HTMLInputElement).value)"
+                :array-buffer="arrayInputBuffer[key]"
+                @change="handlePropertyChange(key, $event)"
+                @update:array-buffer="arrayInputBuffer[key] = $event"
+                @add-array="addArrayItem(key, $event)"
+                @remove-array="removeArrayItem(key, $event)"
               />
 
               <span v-if="validationErrors[key]" class="param-error">

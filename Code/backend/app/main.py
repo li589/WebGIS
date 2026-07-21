@@ -23,6 +23,8 @@ from app.api.weather_tile_routes import router as weather_tile_router
 from app.api.gee_config_routes import router as gee_config_router
 from app.api.config_routes import router as config_router
 from app.api.routers.workflow_definition_router import router as workflow_definition_router
+from app.api.routers.workflow_timer_router import router as workflow_timer_router
+from app.api.routers.cleanup_router import router as cleanup_router
 from app.core.config import settings
 from app.core.logging import ensure_logging_configured, log_context, set_request_id
 from app.core.redis_client import record_request_metric
@@ -167,6 +169,8 @@ def create_app() -> FastAPI:
     app.include_router(gee_config_router)
     app.include_router(config_router)
     app.include_router(workflow_definition_router)
+    app.include_router(workflow_timer_router)
+    app.include_router(cleanup_router)
 
     # 挂载 GEE engine router，使 /gee/* 路由正式接入 FastAPI
     # 路由前缀已在 create_gee_router 内部定义为 /gee

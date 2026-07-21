@@ -17,6 +17,10 @@ import {
 import { useOverlaySymbologyStore } from '../stores/overlay-symbology'
 import { useWeatherSourcePrefsStore } from '../stores/weather-source-prefs'
 import {
+  DEFAULT_WEATHER_MODEL as DEFAULT_TILE_MODEL,
+  isWeatherLayerUnsupportedByModel,
+} from '../stores/weather-tile-manager'
+import {
   getWeatherProvidersForLayer,
   type WeatherProviderForLayer,
 } from '../services/runtime-api'
@@ -38,13 +42,22 @@ async function ensureWeatherProviders(catalogId: string) {
   if (weatherProvidersCache.value[catalogId] || weatherProvidersLoading.value[catalogId]) return
   weatherProvidersLoading.value = { ...weatherProvidersLoading.value, [catalogId]: true }
   try {
-    const res = await getWeatherProvidersForLayer(catalogId)
+    const res = await getWeatherProvidersForLayer(catalogId, { includeDisabled: true })
+    const providers = res.providers ?? []
     weatherProvidersCache.value = {
       ...weatherProvidersCache.value,
-      [catalogId]: res.providers ?? [],
+      [catalogId]: providers,
+    }
+    // 与 InfoPanel 一致：禁用/未知钉源回退 auto，避免瓦片 503
+    const pref = weatherSourcePrefs.getProvider(catalogId)
+    if (pref && pref !== 'auto') {
+      const match = providers.find((p) => p.provider_id === pref)
+      if (!match || !match.enabled) {
+        layersStore.applyWeatherProviderPreference(catalogId, 'auto')
+      }
     }
   } catch (error) {
-    logStore.push(
+    logStore.logOperation(
       'warn',
       `天气源列表加载失败 (${catalogId}): ${error instanceof Error ? error.message : String(error)}`,
     )
@@ -66,7 +79,24 @@ function weatherSourceSparseHint(catalogId: string): boolean {
   const pref = weatherSourcePrefs.getProvider(catalogId)
   if (!pref || pref === 'auto') return false
   const row = weatherProvidersFor(catalogId).find((p) => p.provider_id === pref)
-  return row?.grid_mode === 'sparse'
+  return row?.grid_mode === 'sparse' || row?.data_quality === 'sparse'
+}
+
+function weatherSourceQualityHint(catalogId: string): string | null {
+  const pref = weatherSourcePrefs.getProvider(catalogId)
+  if (!pref || pref === 'auto') return null
+  const row = weatherProvidersFor(catalogId).find((p) => p.provider_id === pref)
+  if (!row?.hint) return null
+  if (row.data_quality === 'observed') return null
+  return row.hint
+}
+
+function weatherProviderOptionLabel(p: WeatherProviderForLayer): string {
+  const bits = [p.display_name]
+  if (!p.enabled) bits.push('（未启用）')
+  if (p.data_quality === 'extrapolated') bits.push(' · 外推')
+  else if (p.data_quality === 'sparse' || p.grid_mode === 'sparse') bits.push(' · 稀疏')
+  return bits.join('')
 }
 
 // Use storeToRefs only for reactive state
@@ -153,6 +183,11 @@ function getCatalogItem(catalogId: string) {
 function getCatalogSemanticNote(catalogId: string): string | null {
   const blockReason = getCatalogRunBlockReason(catalogId)
   if (blockReason) return blockReason
+  // 模型 × 图层 结构性不支持（如 visibility × ecmwf_ifs025）：目录直接标注，
+  // 与瓦片链路的 data-empty 短路同一语义
+  if (isWeatherLayerUnsupportedByModel(catalogId, DEFAULT_TILE_MODEL)) {
+    return `当前模型（${DEFAULT_TILE_MODEL}）不提供该图层变量，请切换其他气象模型。`
+  }
   const item = getCatalogItem(catalogId)
   if (!item) return null
   if (item.backendStatus === 'sample') {
@@ -736,18 +771,21 @@ const symbologyPanelLayer = computed(() => {
                         @focus="ensureWeatherProviders(item.catalogId)"
                         @change="onWeatherSourceChange(item.catalogId, ($event.target as HTMLSelectElement).value)"
                       >
-                        <option value="auto">自动（按优先级）</option>
+                        <option value="auto">自动（优先本地 Open-Meteo）</option>
                         <option
                           v-for="p in weatherProvidersFor(item.catalogId)"
                           :key="p.provider_id"
                           :value="p.provider_id"
                           :disabled="!p.enabled"
                         >
-                          {{ p.display_name }}{{ p.enabled ? '' : '（未启用）' }}{{ p.grid_mode === 'sparse' ? ' · 稀疏网格' : '' }}
+                          {{ weatherProviderOptionLabel(p) }}
                         </option>
                       </select>
                     </label>
-                    <p v-if="weatherSourceSparseHint(item.catalogId)" class="src-sparse-hint">
+                    <p v-if="weatherSourceQualityHint(item.catalogId)" class="src-sparse-hint">
+                      {{ weatherSourceQualityHint(item.catalogId) }}
+                    </p>
+                    <p v-else-if="weatherSourceSparseHint(item.catalogId)" class="src-sparse-hint">
                       点查可用；瓦片将回落 dense 源（Open-Meteo）
                     </p>
                     <p
@@ -831,6 +869,9 @@ const symbologyPanelLayer = computed(() => {
                 </span>
                 <span v-else-if="getCatalogJobStatus(item.catalogId) === 'failed'" class="job-status-chip job-status-failed">
                   运行失败
+                </span>
+                <span v-else-if="getCatalogJobStatus(item.catalogId) === 'cancelled'" class="job-status-chip job-status-cancelled">
+                  已取消
                 </span>
                 <span v-else class="added-label">已添加 ✓</span>
               </div>
@@ -931,7 +972,15 @@ const symbologyPanelLayer = computed(() => {
               <span v-else-if="layer.isImportedRaster" class="admin-tip-inline">导入 · 栅格 · TIF</span>
               <template v-if="layer.jobLayer">
                 <span class="job-status-badge" :class="`job-${layer.jobLayer.status}`">
-                  {{ layer.jobLayer.status === 'running' ? `运行中 ${layer.jobLayer.progress}%` : layer.jobLayer.status === 'succeeded' ? '已完成' : layer.jobLayer.status === 'failed' ? '失败' : layer.jobLayer.status }}
+                  {{
+                    layer.jobLayer.status === 'running' ? `运行中 ${layer.jobLayer.progress}%`
+                    : layer.jobLayer.status === 'queued' ? '排队中'
+                    : layer.jobLayer.status === 'retry_pending' ? '等待重试'
+                    : layer.jobLayer.status === 'succeeded' ? '已完成'
+                    : layer.jobLayer.status === 'failed' ? '失败'
+                    : layer.jobLayer.status === 'cancelled' ? '已取消'
+                    : layer.jobLayer.status
+                  }}
                 </span>
                 <button
                   v-if="layer.jobLayer.reportSummary"
@@ -1812,6 +1861,12 @@ h2 {
   border-color: rgba(255, 80, 80, 0.18);
 }
 
+.job-status-cancelled {
+  color: #8aa8bf;
+  background: rgba(138, 168, 191, 0.1);
+  border-color: rgba(138, 168, 191, 0.18);
+}
+
 .spin-dot {
   display: inline-block;
   width: 0.5rem;
@@ -2087,6 +2142,12 @@ h2 {
   color: #d7c1ff;
   background: rgba(187, 137, 255, 0.08);
   border: 1px solid rgba(187, 137, 255, 0.14);
+}
+
+.job-retry_pending {
+  color: #ffd38a;
+  background: rgba(255, 211, 138, 0.1);
+  border: 1px solid rgba(255, 196, 120, 0.18);
 }
 
 .job-report-hint {

@@ -250,15 +250,16 @@ class OpenMeteoProvider(WeatherProvider):
             layer_spec = WEATHER_LAYER_SPECS.get("wind-field")
             if layer_spec is None:
                 layer_spec = next(iter(WEATHER_LAYER_SPECS.values()))
+            model = resolve_open_meteo_model("best_match", provider_id=self._provider_id)
             self._client.fetch_point_forecast(
                 latitude=23.1291,
                 longitude=113.2644,
                 layer_spec=layer_spec,
-                model="best_match",
+                model=model,
                 forecast_hours=1,
                 ttl_seconds=60,
             )
-            return True, f"Connection OK (base_url={self.base_url})"
+            return True, f"Connection OK (base_url={self.base_url}, model={model})"
         except Exception as exc:
             return False, f"Connection failed: {exc}"
 

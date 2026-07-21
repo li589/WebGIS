@@ -23,6 +23,7 @@ def _param(
     min_val: float | None = None,
     max_val: float | None = None,
     step: float | None = None,
+    allow_custom: bool | None = None,
 ) -> dict[str, Any]:
     """构造参数描述字典。
 
@@ -36,6 +37,7 @@ def _param(
         min_val: 数值下限
         max_val: 数值上限
         step: 数值步长
+        allow_custom: 有 options 时是否允许自定义输入；None 时由前端推断
     """
     p: dict[str, Any] = {"key": key, "type": kind, "default": default, "description": description}
     if options:
@@ -48,6 +50,8 @@ def _param(
         p["max"] = max_val
     if step is not None:
         p["step"] = step
+    if allow_custom is not None:
+        p["allow_custom"] = allow_custom
     return p
 
 
@@ -136,6 +140,154 @@ _NODE_TEMPLATES: list[dict[str, Any]] = [
             _param("crs", "string", default="EPSG:4326", description="数据坐标系。"),
         ],
         "node_class": "data_source",
+    },
+    # ═══ 数据获取与解析 ════════════════════════════════════════════════════════
+    {
+        "type": "download/remote_fetch",
+        "engine": "common",
+        "category": "数据获取与解析",
+        "title": "远程拉取",
+        "description": "将 smb/sftp/ftp/http/https/gs/local URI materialize 到长期缓存目录；凭证可用 ?cred=profile。",
+        "inputs": [
+            _port("uri", "value:string", required=False, description="远程或本地 URI。"),
+            _port("data", "data:source", required=False, description="上游数据源引用。"),
+        ],
+        "outputs": [
+            _port("path", "value:string", description="本地落盘路径。"),
+            _port("manifest", "data", description="产物清单。"),
+        ],
+        "params": [
+            _param("uri", "string", description="URI（也可由上游端口提供）。"),
+            _param("cred_profile", "string", description="远程存储凭证 profile（可选，等价 ?cred=）。"),
+        ],
+        "node_class": "remote_fetch",
+    },
+    {
+        "type": "download/http_open_data",
+        "engine": "common",
+        "category": "数据获取与解析",
+        "title": "开放数据 HTTP",
+        "description": "按 NOAA/NASA/ESA 预设 base URL + 相对路径下载开放数据。",
+        "inputs": [
+            _port("path", "value:string", required=False, description="相对路径覆盖。"),
+        ],
+        "outputs": [
+            _port("path", "value:string", description="下载后的本地路径。"),
+            _port("manifest", "data", description="产物清单。"),
+        ],
+        "params": [
+            _param(
+                "preset",
+                "string",
+                default="noaa_nomads",
+                options=["noaa_nomads", "noaa_goes", "nasa_earthdata", "esa_copernicus"],
+                description="开放数据预设。",
+            ),
+            _param("base_url", "string", description="自定义 base URL（优先于预设）。"),
+            _param("relative_path", "string", description="相对路径或对象键。"),
+            _param("query", "string", description="可选 query string。"),
+            _param("token_header", "string", description="可选鉴权头名称（如 Authorization）。"),
+            _param("token_value", "string", description="可选鉴权头值 / Bearer token。"),
+        ],
+        "node_class": "http_open_data",
+    },
+    {
+        "type": "archive/extract",
+        "engine": "common",
+        "category": "数据获取与解析",
+        "title": "解压归档",
+        "description": "解压 zip / tar / gz / tgz 到输出目录。",
+        "inputs": [
+            _port("path", "value:string", required=False, description="归档文件路径。"),
+            _port("data", "data:source", required=False, description="上游数据源。"),
+        ],
+        "outputs": [
+            _port("path", "value:string", description="解压目录。"),
+            _port("extract_dir", "value:string", description="解压目录（同 path）。"),
+            _port("manifest", "data", description="产物清单。"),
+        ],
+        "params": [
+            _param("archive_path", "string", description="归档路径（也可由上游提供）。"),
+            _param("output_dirname", "string", default="extracted", description="输出子目录名。"),
+        ],
+        "node_class": "archive_extract",
+    },
+    {
+        "type": "config/read",
+        "engine": "common",
+        "category": "数据获取与解析",
+        "title": "读取配置",
+        "description": "读取 JSON / YAML / INI / XML 配置为字典。",
+        "inputs": [
+            _port("path", "value:string", required=False, description="配置文件路径。"),
+            _port("data", "data:source", required=False, description="上游数据源。"),
+        ],
+        "outputs": [
+            _port("config", "data", description="配置字典。"),
+            _port("path", "value:string", description="源文件路径。"),
+            _port("manifest", "data", description="产物清单。"),
+        ],
+        "params": [
+            _param("path", "string", description="配置文件路径。"),
+            _param("format", "string", default="auto", options=["auto", "json", "yaml", "ini", "xml"], description="配置格式。"),
+        ],
+        "node_class": "config_read",
+    },
+    {
+        "type": "extract/variable",
+        "engine": "common",
+        "category": "数据获取与解析",
+        "title": "提取变量",
+        "description": "用 UniversalDataReader 提取变量，支持 bbox / time_index。",
+        "inputs": [
+            _port("path", "value:string", required=False, description="数据文件或目录。"),
+            _port("data", "data:source", required=False, description="上游数据源。"),
+            _port("bbox", "geometry:bbox", required=False, description="空间裁剪。"),
+        ],
+        "outputs": [
+            _port("path", "value:string", description="提取结果落盘路径。"),
+            _port("array", "data:raster", description="变量摘要。"),
+            _port("manifest", "data", description="产物清单。"),
+        ],
+        "params": [
+            _param("path", "string", description="文件路径（也可由上游提供）。"),
+            _param("variable", "string", description="变量名（HDF5/NetCDF/MAT 路径）。"),
+            _param("west", "number", description="bbox west。", min_val=-180, max_val=180, step=0.01),
+            _param("south", "number", description="bbox south。", min_val=-90, max_val=90, step=0.01),
+            _param("east", "number", description="bbox east。", min_val=-180, max_val=180, step=0.01),
+            _param("north", "number", description="bbox north。", min_val=-90, max_val=90, step=0.01),
+            _param("time_index", "number", description="时间层索引（可选）。", min_val=0, max_val=100000, step=1),
+        ],
+        "node_class": "variable_extract",
+    },
+    {
+        "type": "format/convert",
+        "engine": "common",
+        "category": "数据获取与解析",
+        "title": "格式转换",
+        "description": "通过 FormatRegistry / UniversalDataReader 转换 MAT/HDF/NetCDF/TIFF/CSV 等。",
+        "inputs": [
+            _port("path", "value:string", required=False, description="源文件路径。"),
+            _port("data", "data:source", required=False, description="上游数据源。"),
+            _port("raster", "data:raster", required=False, description="上游栅格。"),
+        ],
+        "outputs": [
+            _port("path", "value:string", description="转换后路径。"),
+            _port("raster", "data:raster", description="转换结果引用。"),
+            _port("manifest", "data", description="产物清单。"),
+        ],
+        "params": [
+            _param("path", "string", description="源路径。"),
+            _param(
+                "target_format",
+                "string",
+                default="mat",
+                options=["mat", "npy", "npz", "csv", "json"],
+                description="目标格式。",
+            ),
+            _param("variable", "string", description="源变量名（科学格式需要）。"),
+        ],
+        "node_class": "format_convert",
     },
     {
         "type": "data/time_range",
@@ -385,7 +537,7 @@ _NODE_TEMPLATES: list[dict[str, Any]] = [
             _param("input_format", "string", default="auto", options=["auto", "netcdf", "hdf5", "geotiff", "mat"], description="输入格式（auto 自动检测）。"),
             _param("output_format", "string", default="geotiff", options=["geotiff", "cog", "mat", "json"], description="输出格式。"),
         ],
-        "node_class": "preprocess_format_convert",
+        "node_class": "format_convert",
     },
     {
         "type": "preprocess/clip",

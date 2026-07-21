@@ -34,6 +34,31 @@ export interface FetchWeatherTileOptions {
 const _WEB_MERCATOR_MAX_LAT = 85.0511287798066
 const _TILE_KEY_PREFIX = 'weather:tile:'
 
+/**
+ * 将 HTTP 错误响应体压成短文案。
+ * Cloudflare / 反向代理 502 常返回整页 HTML；若原样拼进 Error.message，
+ * 地图错误横幅会铺满黄字 HTML，看起来像「中间浮了一块黑底地球展开图」。
+ */
+export function summarizeHttpErrorDetail(status: number, body: string, maxLen = 160): string {
+  const trimmed = (body || '').trim()
+  if (!trimmed) return `HTTP ${status}`
+  const looksHtml =
+    /<!DOCTYPE\s+html|<html[\s>]|<head[\s>]|<body[\s>]/i.test(trimmed) || trimmed.startsWith('<')
+  if (looksHtml) {
+    const titleMatch = /<title[^>]*>([^<]+)<\/title>/i.exec(trimmed)
+    const title = titleMatch?.[1]?.replace(/\s+/g, ' ').trim()
+    if (title) {
+      const short = title.length > 80 ? `${title.slice(0, 80)}…` : title
+      return `HTTP ${status}: ${short}`
+    }
+    if (status === 502) return 'HTTP 502: Bad gateway'
+    if (status === 504) return 'HTTP 504: Gateway timeout'
+    return `HTTP ${status}: 上游网关错误`
+  }
+  const oneLine = trimmed.replace(/\s+/g, ' ')
+  return oneLine.length > maxLen ? `${oneLine.slice(0, maxLen)}…` : oneLine
+}
+
 function normalizeProviderPart(provider?: string): string {
   const p = (provider ?? 'auto').trim()
   if (!p || p.toLowerCase() === 'default') return 'auto'
@@ -47,7 +72,7 @@ export function buildTileKey(
   x: number,
   y: number,
   hour: number,
-  model = 'best_match',
+  model = 'ecmwf_ifs025',
   provider = 'auto',
 ): string {
   const modelPart = model.replace(/\//g, '_').replace(/:/g, '_')
@@ -91,15 +116,14 @@ export function tileToLngLatBounds(z: number, x: number, y: number): LngLatBound
 /**
  * 获取指定经纬度边界内的所有瓦片坐标。
  *
- * 反子午线穿越处理：
- * 主数据流（buildMapViewportSnapshot → store → weather-tile-manager）已通过
- * normalizeLngBounds 将跨 ±180° 的 bbox 转为 `east += 360` 短路径形式
- *（如 west=170, east=185），此时 `east - west ≤ 180`，下方 `> 180` 块不触发。
- * 函数仍通过 `((x % n) + n) % n` 归一化正确处理跨子午线瓦片索引。
+ * 反子午线 / 宽视口约定（与 ``normalizeLngBounds`` 对齐）：
+ * - ``east >= west``：按从 west 向东到 east 的路径枚举（east 可 >180，如 170→185）
+ * - ``east < west``：旧式「未展开」跨日界线形式，将 east += 360
+ * - 跨度 >= 360°：退化为全球 [-180, 180]
  *
- * 下方 `> 180` 块为向后兼容保留：若旧式 swap 形式（west=-175, east=170，
- * 跨度 345°）的 bbox 被直接传入，仍能正确转为短路径。当前主数据流不会
- * 产生此形式，但保留以防直接调用方（如 tilesInViewport）传入原始 MapLibre bounds。
+ * **禁止**在 ``east - west > 180`` 时改走短路径：亚洲–太平洋等宽视口
+ *（如 west=-20, east=200）是合法长路径；旧逻辑会错取美洲一侧，
+ * 表现为「屏幕两侧有瓦片、亚洲中部整片空白」。
  *
  * @param buffer 视口外扩圈数（0 = 仅边界内，1 = 外扩一圈）
  * @returns 主世界瓦片坐标集合（经度已归一化到 [0, n)）
@@ -112,12 +136,16 @@ export function tilesInBounds(
   const clampedZ = Math.max(0, Math.min(12, Math.round(z)))
   const n = 2 ** clampedZ
 
-  // 向后兼容：旧式 swap 形式（east - west > 180°）转为短路径
   let westLng = bounds.west
   let eastLng = bounds.east
-  if (eastLng - westLng > 180) {
-    westLng = bounds.east
-    eastLng = bounds.west + 360
+  // 旧式未展开跨日界线：east < west（如 west=170, east=-175）
+  if (eastLng < westLng) {
+    eastLng += 360
+  }
+  // 全屏 / 异常超大跨度
+  if (eastLng - westLng >= 360) {
+    westLng = -180
+    eastLng = 180
   }
 
   // 手动计算瓦片 x 坐标（不 clamp，允许 > n 以处理穿越后的回绕）
@@ -275,7 +303,8 @@ export async function fetchWeatherTile(
 
     if (!response.ok) {
       const detail = await response.text().catch(() => '')
-      throw new Error(`Weather tile request failed: ${response.status} ${url}${detail ? ` - ${detail}` : ''}`)
+      const summary = summarizeHttpErrorDetail(response.status, detail)
+      throw new Error(`Weather tile request failed: ${response.status} ${url} - ${summary}`)
     }
 
     return (await response.json()) as WindGeoJSON

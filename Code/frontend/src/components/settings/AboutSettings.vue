@@ -4,7 +4,7 @@ import { storeToRefs } from 'pinia'
 import { useSettingsStore } from '../../stores/settings'
 
 const settingsStore = useSettingsStore()
-const { aboutInfo, weatherConfig, geeRuntimeConfig } = storeToRefs(settingsStore)
+const { aboutInfo, weatherConfig, geeRuntimeConfig, dataSourceConfig } = storeToRefs(settingsStore)
 
 const selectedNode = ref<string | null>(null)
 
@@ -175,9 +175,13 @@ function selectNode(name: string) {
           <span class="engine-name">GEE 引擎</span>
           <span class="engine-state">{{ geeRuntimeConfig?.gee_enabled ? '启用' : '禁用' }}</span>
         </div>
-        <div class="engine-card active">
+        <div class="engine-card" :class="{ active: !!weatherConfig }">
           <span class="engine-name">天气引擎</span>
           <span class="engine-state">{{ weatherConfig ? '启用' : '加载中' }}</span>
+        </div>
+        <div class="engine-card" :class="{ active: !!dataSourceConfig }">
+          <span class="engine-name">数据引擎</span>
+          <span class="engine-state">{{ dataSourceConfig ? '启用' : '加载中' }}</span>
         </div>
       </div>
     </section>

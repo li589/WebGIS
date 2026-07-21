@@ -6,7 +6,7 @@ import {
   type WeatherOverlayRenderContext,
   type WeatherOverlayState,
 } from './weather-overlay-registry'
-import { WindParticleOverlayController } from './wind-particle-overlay-controller'
+import type { WindParticleControllerContract } from './wind-particle-controller-contract'
 
 type DebugLogger = (module: string, ...args: unknown[]) => void
 
@@ -47,7 +47,7 @@ export function resolveWeatherOverlayStates(
 interface ReconcileParticleFlowControllerOptions {
   enabledParticleFlowCatalogId: string | null
   targetCatalogIds: Set<string>
-  windParticleController: WindParticleOverlayController | null
+  windParticleController: WindParticleControllerContract | null
   removeCatalogOverlay: (catalogId: string) => void
 }
 
@@ -93,6 +93,7 @@ interface CreateWeatherOverlayRenderContextOptions {
   syncWeatherHeatmapOverlay: WeatherOverlayRenderContext['syncWeatherHeatmapOverlay']
   syncWeatherPointOverlay: WeatherOverlayRenderContext['syncWeatherPointOverlay']
   syncWindParticleFlow: WeatherOverlayRenderContext['syncWindParticleFlow']
+  syncScalarFieldWebGL: WeatherOverlayRenderContext['syncScalarFieldWebGL']
 }
 
 export function createWeatherOverlayRenderContext(
@@ -106,6 +107,7 @@ export function createWeatherOverlayRenderContext(
     syncWeatherHeatmapOverlay: options.syncWeatherHeatmapOverlay,
     syncWeatherPointOverlay: options.syncWeatherPointOverlay,
     syncWindParticleFlow: options.syncWindParticleFlow,
+    syncScalarFieldWebGL: options.syncScalarFieldWebGL,
   }
 }
 

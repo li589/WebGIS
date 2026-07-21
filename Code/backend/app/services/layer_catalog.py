@@ -38,18 +38,9 @@ def merge_remote_data_access_candidates(
     return merged
 
 
-def _parse_remote_layer_data_uris() -> dict[str, dict[str, list[str]]]:
-    """Parse BACKEND_REMOTE_LAYER_DATA_URIS JSON → {layer_id: {dataset: [uri...]}}."""
-    raw = (settings.remote_layer_data_uris or "").strip()
-    if not raw:
-        return {}
-    try:
-        parsed = json.loads(raw)
-    except json.JSONDecodeError as exc:
-        logger.warning("Invalid BACKEND_REMOTE_LAYER_DATA_URIS JSON: %s", exc)
-        return {}
+def _normalize_remote_layer_overlay(parsed: object) -> dict[str, dict[str, list[str]]]:
+    """Normalize overlay JSON → {layer_id: {dataset: [uri...]}}."""
     if not isinstance(parsed, dict):
-        logger.warning("BACKEND_REMOTE_LAYER_DATA_URIS must be a JSON object")
         return {}
     result: dict[str, dict[str, list[str]]] = {}
     for layer_id, datasets in parsed.items():
@@ -60,17 +51,58 @@ def _parse_remote_layer_data_uris() -> dict[str, dict[str, list[str]]]:
             if isinstance(uris, str):
                 uri_list = [uris]
             elif isinstance(uris, list):
-                uri_list = [str(u) for u in uris]
+                uri_list = [str(u) for u in uris if str(u).strip()]
             else:
                 continue
-            cleaned[str(dataset_name)] = uri_list
+            if uri_list:
+                cleaned[str(dataset_name)] = uri_list
         if cleaned:
             result[str(layer_id)] = cleaned
     return result
 
 
+def _load_db_remote_layer_data_uris() -> dict[str, dict[str, list[str]]]:
+    """Load DB-persisted overlay (settings UI). Empty on any failure."""
+    try:
+        from app.services.config_service import _research_data_repo
+
+        raw = _research_data_repo().get_json("remote_layer_data_uris", None)
+        return _normalize_remote_layer_overlay(raw)
+    except Exception as exc:  # noqa: BLE001
+        logger.debug("research_data remote_layer_data_uris unavailable: %s", exc)
+        return {}
+
+
+def _parse_remote_layer_data_uris() -> dict[str, dict[str, list[str]]]:
+    """Merge layer URI overlays: DB overrides env (plan: DB 优先于 env)."""
+    env_overlay = _normalize_remote_layer_overlay({})
+    raw = (settings.remote_layer_data_uris or "").strip()
+    if raw:
+        try:
+            env_overlay = _normalize_remote_layer_overlay(json.loads(raw))
+        except json.JSONDecodeError as exc:
+            logger.warning("Invalid BACKEND_REMOTE_LAYER_DATA_URIS JSON: %s", exc)
+            env_overlay = {}
+
+    db_overlay = _load_db_remote_layer_data_uris()
+    if not db_overlay:
+        return env_overlay
+    if not env_overlay:
+        return db_overlay
+
+    # Deep merge: DB layer/dataset wins; env fills gaps
+    merged: dict[str, dict[str, list[str]]] = {k: dict(v) for k, v in env_overlay.items()}
+    for layer_id, datasets in db_overlay.items():
+        if layer_id not in merged:
+            merged[layer_id] = dict(datasets)
+            continue
+        for dataset_name, uris in datasets.items():
+            merged[layer_id][dataset_name] = list(uris)
+    return merged
+
+
 def _apply_remote_layer_data_uris(items: list[LayerDescriptor]) -> list[LayerDescriptor]:
-    """Inject env-configured SMB/SFTP URIs into matching layers without replacing local paths."""
+    """Inject SMB/SFTP URIs into matching layers (DB overlay preferred over env)."""
     overlay = _parse_remote_layer_data_uris()
     if not overlay:
         return items
@@ -86,7 +118,7 @@ def _apply_remote_layer_data_uris(items: list[LayerDescriptor]) -> list[LayerDes
         )
         notes = list(item.run_readiness_notes or [])
         note = (
-            f"已注入远端数据源候选（BACKEND_REMOTE_LAYER_DATA_URIS / {item.layer_id}）："
+            f"已注入远端数据源候选（remote_layer_data_uris / {item.layer_id}）："
             + ", ".join(
                 f"{ds}×{len(uris)}" for ds, uris in remote_by_dataset.items()
             )
@@ -332,7 +364,7 @@ def get_layer_catalog() -> LayerCatalogResponse:
             dataset_key="precipitation",
             display_name="降水",
             description="小时降水图层，天气引擎多源实时预报，可映射到 TiTiler、GEE 或融合降水产品。",
-            category="灾害监测",
+            category="气象场",
             source_type=LayerSourceType.weather,
             render_type=LayerRenderType.raster,
             supported_map_modes=[MapMode.mode_2d],
@@ -350,8 +382,8 @@ def get_layer_catalog() -> LayerCatalogResponse:
             layer_id="temperature",
             dataset_key="temperature",
             display_name="温度",
-            description="2 米气温热环境图层，可接遥感反演、站点订正与历史栅格。",
-            category="热环境",
+            description="2 米气温图层，天气引擎多源实时数据，可接遥感反演、站点订正与历史栅格。",
+            category="气象场",
             source_type=LayerSourceType.weather,
             render_type=LayerRenderType.raster,
             supported_map_modes=[MapMode.mode_2d],
@@ -370,7 +402,7 @@ def get_layer_catalog() -> LayerCatalogResponse:
             dataset_key="temperature_80m",
             display_name="温度（80m）",
             description="80 米高度温度图层，适用于风机结冰与尾流分析。",
-            category="热环境",
+            category="气象场",
             source_type=LayerSourceType.weather,
             render_type=LayerRenderType.raster,
             supported_map_modes=[MapMode.mode_2d],
@@ -389,7 +421,7 @@ def get_layer_catalog() -> LayerCatalogResponse:
             dataset_key="temperature_120m",
             display_name="温度（120m）",
             description="120 米高度温度图层，大型风机轮毂高度热力参考。",
-            category="热环境",
+            category="气象场",
             source_type=LayerSourceType.weather,
             render_type=LayerRenderType.raster,
             supported_map_modes=[MapMode.mode_2d],
@@ -408,7 +440,7 @@ def get_layer_catalog() -> LayerCatalogResponse:
             dataset_key="temperature_180m",
             display_name="温度（180m）",
             description="180 米高度温度图层，大气边界层顶部热力剖面。",
-            category="热环境",
+            category="气象场",
             source_type=LayerSourceType.weather,
             render_type=LayerRenderType.raster,
             supported_map_modes=[MapMode.mode_2d],
@@ -427,7 +459,7 @@ def get_layer_catalog() -> LayerCatalogResponse:
             dataset_key="pressure",
             display_name="气压",
             description="海平面气压图层，支持等压线分析与低压中心追踪。",
-            category="大气环境",
+            category="气象场",
             source_type=LayerSourceType.weather,
             render_type=LayerRenderType.raster,
             supported_map_modes=[MapMode.mode_2d],
@@ -446,7 +478,7 @@ def get_layer_catalog() -> LayerCatalogResponse:
             dataset_key="humidity",
             display_name="湿度",
             description="2 米相对湿度图层，反映大气水汽含量与体感舒适度。",
-            category="大气环境",
+            category="气象场",
             source_type=LayerSourceType.weather,
             render_type=LayerRenderType.raster,
             supported_map_modes=[MapMode.mode_2d],
@@ -465,7 +497,7 @@ def get_layer_catalog() -> LayerCatalogResponse:
             dataset_key="visibility",
             display_name="能见度",
             description="地面能见度图层，用于航空预警与雾/霾监测。",
-            category="大气环境",
+            category="气象场",
             source_type=LayerSourceType.weather,
             render_type=LayerRenderType.raster,
             supported_map_modes=[MapMode.mode_2d],
@@ -484,7 +516,7 @@ def get_layer_catalog() -> LayerCatalogResponse:
             dataset_key="cloud-cover",
             display_name="云量",
             description="总云量百分比图层（Open-Meteo online/local）。",
-            category="大气环境",
+            category="气象场",
             source_type=LayerSourceType.weather,
             render_type=LayerRenderType.raster,
             supported_map_modes=[MapMode.mode_2d],
@@ -503,7 +535,7 @@ def get_layer_catalog() -> LayerCatalogResponse:
             dataset_key="dewpoint",
             display_name="露点温度",
             description="2 米露点温度图层（Open-Meteo online/local）。",
-            category="大气环境",
+            category="气象场",
             source_type=LayerSourceType.weather,
             render_type=LayerRenderType.raster,
             supported_map_modes=[MapMode.mode_2d],
@@ -709,7 +741,7 @@ def get_layer_catalog() -> LayerCatalogResponse:
             dataset_key="aridity_index_cn",
             display_name="干旱指数 AI",
             description="Aridity Index 干旱指数（P/PET），中国区域 0.25°。",
-            category="热环境",
+            category="气候产品",
             source_type=LayerSourceType.cog,
             render_type=LayerRenderType.raster,
             supported_map_modes=[MapMode.mode_2d],
@@ -778,7 +810,7 @@ def get_layer_catalog() -> LayerCatalogResponse:
             dataset_key="gpcp_precip_timeseries",
             display_name="GPCP 月降水时间序列",
             description="GPCP 月平均降水卫星-雨量计合成产品（V3.2），全球 0.5°，采样 24 个月。",
-            category="气象场",
+            category="气候产品",
             source_type=LayerSourceType.cog,
             render_type=LayerRenderType.raster,
             supported_map_modes=[MapMode.mode_2d],
@@ -821,7 +853,7 @@ def get_layer_catalog() -> LayerCatalogResponse:
             dataset_key="cmfd_precip_cn",
             display_name="CMFD 中国区域降水",
             description="中国区域高精度格点降水数据集（CMFD），2002 年 1 月月降水。",
-            category="气象场",
+            category="气候产品",
             source_type=LayerSourceType.cog,
             render_type=LayerRenderType.raster,
             supported_map_modes=[MapMode.mode_2d],
@@ -881,7 +913,7 @@ def get_layer_catalog() -> LayerCatalogResponse:
             dataset_key="era5_dwaa_smci_2020",
             display_name="ERA5 白天热浪事件（2020）",
             description="ERA5 基于 SMCI 指标的白天热浪事件累积计数（2020 全年 366 天）。",
-            category="灾害监测",
+            category="气候产品",
             source_type=LayerSourceType.cog,
             render_type=LayerRenderType.raster,
             supported_map_modes=[MapMode.mode_2d],
@@ -901,7 +933,7 @@ def get_layer_catalog() -> LayerCatalogResponse:
             dataset_key="era5_wdaa_smci_2020",
             display_name="ERA5 夜间热浪事件（2020）",
             description="ERA5 基于 SMCI 指标的夜间热浪事件累积计数（2020 全年 366 天）。",
-            category="灾害监测",
+            category="气候产品",
             source_type=LayerSourceType.cog,
             render_type=LayerRenderType.raster,
             supported_map_modes=[MapMode.mode_2d],
@@ -921,7 +953,7 @@ def get_layer_catalog() -> LayerCatalogResponse:
             dataset_key="gosat_co2_mean",
             display_name="GOSAT 中层 CO₂ 柱浓度",
             description="GOSAT 卫星中层大气 CO₂ 柱浓度均值产品（MeanCarbonDioxide）。",
-            category="大气环境",
+            category="气候产品",
             source_type=LayerSourceType.cog,
             render_type=LayerRenderType.raster,
             supported_map_modes=[MapMode.mode_2d],

@@ -2,8 +2,8 @@
 /**
  * App.vue — 应用根组件
  *
- * 挂载全局 RouterView 和 LoadingOverlay（等高线波纹加载动效）。
- * LoadingOverlay 由 useUiLoadingStore 驱动，无需手动控制。
+ * 挂载 RouterView + LoadingOverlay（hero 全屏地球卫星 / compact 顶栏）。
+ * 由 useUiLoadingStore 驱动；组件内等待请用 InlineLoader。
  */
 import LoadingOverlay from './components/LoadingOverlay.vue'
 </script>

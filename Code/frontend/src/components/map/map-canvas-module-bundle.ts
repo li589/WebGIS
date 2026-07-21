@@ -21,6 +21,7 @@ type DebugLogger = (module: string, ...args: unknown[]) => void
 interface LayersStoreLike {
   activeLayersDisplay: ActiveLayerDisplay[]
   particleFlowCatalogId: string | null
+  windDisplayMode: import('./wind-display-mode').WindDisplayMode
   isWeatherEngineLayer: (catalogId: string) => boolean
   setMapViewport: (
     center: { lng: number; lat: number },

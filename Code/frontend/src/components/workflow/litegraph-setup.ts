@@ -5,6 +5,7 @@
  * 该库使用 IIFE + CommonJS 模式，需要特殊处理才能在 ESM 环境中工作。
  */
 import 'litegraph.js/css/litegraph.css'
+import './litegraph-ui-overrides.css'
 import * as litegraphCore from 'litegraph.js/build/litegraph.core.js'
 
 // 类型导入（仅用于类型检查，不参与运行时）
@@ -201,7 +202,7 @@ export function registerWorkflowNodeTypes(
 
         if (tpl.params) {
           for (const param of tpl.params) {
-            const widgetType = mapParamTypeToWidget(param.type)
+            const widgetType = mapParamTypeToWidget(param.type, param.options)
             let defaultValue: unknown = param.default ?? getDefaultForType(param.type)
             if (param.type === 'array' && Array.isArray(defaultValue)) {
               defaultValue = (defaultValue as unknown[]).join(',')
@@ -222,8 +223,8 @@ export function registerWorkflowNodeTypes(
 
         const slotCount = Math.max(allInputs.length, tpl.outputs.length)
         const widgetCount = tpl.params?.length ?? 0
-        const minHeight = 40 + slotCount * 22 + widgetCount * 20
-        this.size = [240, Math.max(80, minHeight)]
+        const minHeight = 36 + slotCount * 20 + widgetCount * 18
+        this.size = [220, Math.max(72, minHeight)]
       }
 
       onConnectInput(
@@ -279,7 +280,11 @@ function getEngineColor(nodeType: string, templateEngine?: string | null): Engin
   return { nodeBg: '#1a2740', nodeHeader: '#1a2540', accent: '#88dfff' }
 }
 
-function mapParamTypeToWidget(paramType: string): string {
+function mapParamTypeToWidget(paramType: string, options?: string[]): string {
+  // 有可选项时优先 combo（后端多为 string+options，而非 enum）
+  if (options && options.length > 0) {
+    return 'combo'
+  }
   switch (paramType) {
     case 'number':
     case 'integer':

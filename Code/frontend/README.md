@@ -41,8 +41,9 @@
 - `InfoPanel.vue`：态势摘要、workflow 状态、天气图例/数据源钉选、选中图层/热点信息
 - `TimelineScrubber.vue` / `TimelinePanel.vue`：时间轴
 - `ScreenshotExport.vue`：截图导出
-- `workflow/`：全局工作流状态按钮与面板
+- `workflow/`：全局工作流状态按钮与面板；`WorkflowEditorPanel` 画布 Run 提交编译后的 `workflow_definition`
 - `toolbar/`：数据导入菜单、CSV 对话框、日志面板
+- `settings/`：系统设置（含数据源扫描、开放数据预设、静态缓存清理、远程存储 profile）
 - `MapCanvas.vue`：地图运行时总入口（编排各 map 模块）
 
 ## 当前地图与天气渲染事实

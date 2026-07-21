@@ -58,9 +58,20 @@
 前端「系统设置」面板消费这些接口（开发态 Vite 需代理 `/config`）：
 
 - `GET /config/general`、`/config/about`、`/config/data-source`
+- `GET /config/data-cache/overview`、`POST /config/data-cache/evict`（静态 materialize 缓存）
+- `PUT /config/data-source/open-data-presets`、`PUT /config/data-source/remote-layer-uris`（DB 覆盖；图层 URI 优先于 env）
 - `GET|PUT|DELETE /config/api-keys*`（天地图 / 百度等；运行真源 = DB 覆盖 env）
 - `GET|POST|DELETE /config/gee/accounts*`、`GET /config/gee/runtime`
 - `GET /config/weather`、`GET|PUT /config/weather/providers*`
+- `GET|PUT|DELETE /config/remote-storage*`
+
+### 工作流定义 / 节点模板
+
+- `GET /workflow-definitions`、CRUD / duplicate
+- `GET /workflow-definitions/node-templates`
+- `POST /workflow-definitions/compile`：LiteGraph 画布 → Python `workflow_definition`（编辑器 Run 主路径）
+
+详见 `Code/docs/课题组数据全链路-2026-07-21.md`。
 
 **安全（2026-07-16）**：所有 `/config/*` 写操作与 `POST /import/raster` 需 `X-API-Key`（development 且未启用 keys 时可旁路）。  
 鉴权密钥 = `backend_auth` DB 覆盖 env（`effective_config`）。非 development 必须配置 `BACKEND_GEE_CREDENTIALS_ENCRYPTION_KEY`。
@@ -147,6 +158,9 @@ backend/
 
 相关辅助：`engine_request_registry.py`、`workflow_request_resolver.py`、`failure_classifier.py`、`bridge_protocol.py`。
 
+- `workflow_graph_compiler.py`：LiteGraph → Python provider `workflow_definition`
+- `data_cache_service.py` / `research_data_settings_repository.py`：静态缓存与开放数据/图层 URI 设置
+
 ### 其他重要服务
 
 - `python_provider_bridge_service.py` / `weather_bridge_service.py` / `gee_bridge_service.py`
@@ -188,8 +202,8 @@ backend/
 ## 运行与部署
 
 - 本地一键：仓库根 `launch.py` / `start.bat`（编排 compose + API + 多队列 worker + 前端）
-- 基础设施：`docker-compose.yml` 提供 Redis `:6379`、MinIO `:9100/:9101`
-- Open-Meteo 自建（按需）：`docker compose -p backend --profile open-meteo up -d`，再 `run --rm open-meteo-sync`；API `:8080`；气象库为 named volume `backend_open-meteo-data`（落在 `I:\Docker\DockerDesktop` 的 VHDX 内，勿用 Windows 路径 bind）。图层选源：`open-meteo-online`（公网）与 `open-meteo-local`（`BACKEND_OPEN_METEO_LOCAL_URL`，默认 `http://127.0.0.1:8080/v1/forecast`）。详见 `.env.open-meteo.example`。
+- 基础设施：`docker-compose.yml` 提供 Redis `:6379`、MinIO `:9100/:9101`、Open-Meteo API `cgda-open-meteo` `:8080`
+- Open-Meteo：**API 在 backend 运行栈**；**同步在** `Code/infra/data-sync`（`-p data-sync`，`run --rm open-meteo-sync`）。气象库为 named volume `backend_open-meteo-data`（落在 `I:\Docker\DockerDesktop` 的 VHDX 内，勿用 Windows 路径 bind）。图层选源：`open-meteo-online`（公网）与 `open-meteo-local`（`BACKEND_OPEN_METEO_LOCAL_URL`，默认 `http://127.0.0.1:8080/v1/forecast`）。详见 `.env.open-meteo.example` 与 `Code/infra/data-sync/README.md`。
 - Docker Desktop 数据盘建议在 `I:\Docker\DockerDesktop`（镜像/容器与气象库分离）
 - 环境变量参考 `.env.example`
 - 亦可使用 `Env/backend/` 脚本做单项启动

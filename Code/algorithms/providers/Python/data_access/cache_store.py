@@ -1,10 +1,25 @@
+"""CacheStore with optional TTL for static materialize entries.
+
+BACKEND_STATIC_CACHE_TTL_SECONDS=0 (default) means never expire.
+"""
+
 from __future__ import annotations
 
+import os
+import shutil
+import time
 from hashlib import sha256
 from pathlib import Path
-import shutil
 
 from data_access.contracts import ResourceRef, build_resource_ref
+
+
+def _ttl_seconds() -> int:
+    raw = os.getenv("BACKEND_STATIC_CACHE_TTL_SECONDS", "0").strip()
+    try:
+        return max(0, int(raw))
+    except ValueError:
+        return 0
 
 
 class CacheStore:
@@ -22,12 +37,25 @@ class CacheStore:
     def resolve_cache_path(self, resource: ResourceRef) -> Path:
         return self.root_dir / self.build_cache_key(resource)
 
+    def _is_fresh(self, cache_path: Path) -> bool:
+        if not cache_path.exists():
+            return False
+        ttl = _ttl_seconds()
+        if ttl <= 0:
+            return True
+        try:
+            age = time.time() - cache_path.stat().st_mtime
+        except OSError:
+            return False
+        return age <= ttl
+
     def has(self, resource: ResourceRef) -> bool:
-        return self.resolve_cache_path(resource).exists()
+        path = self.resolve_cache_path(resource)
+        return self._is_fresh(path)
 
     def get(self, resource: ResourceRef) -> ResourceRef | None:
         cache_path = self.resolve_cache_path(resource)
-        if not cache_path.exists():
+        if not self._is_fresh(cache_path):
             return None
         return build_resource_ref(
             uri=f"cache://materialized/{cache_path.name}",

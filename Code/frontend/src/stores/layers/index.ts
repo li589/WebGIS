@@ -18,6 +18,7 @@ import {
 import { useWeatherTileManager } from '../weather-tile-manager'
 import { useWeatherSourcePrefsStore } from '../weather-source-prefs'
 import { buildDefaultWeatherRenderHint } from '../../components/map/weather-render'
+import type { WindDisplayMode } from '../../components/map/wind-display-mode'
 import type { BoundingBox, RuntimeLayerDescriptor, WeatherPointResponse, WorkflowEvent } from '../../services/runtime-api'
 import { LAYER_CATEGORIES, LAYER_LIBRARY } from './catalog'
 import { isWeatherEngineCatalogId } from './weather-session'
@@ -510,10 +511,13 @@ export const useLayersStore = defineStore('layers', () => {
   const runtimeLayerCatalogLoading = ref(false)
   let runtimeLayerCatalogRequest: Promise<void> | null = null
 
-  // ── 粒子流独占启用状态 ───────────────────────────────────────────────────
-  // particle_flow 是 Canvas 叠加层，性能开销大且视觉冲突，同一时间只允许一个图层启用
-  // null 表示未启用任何粒子流；值为 catalogId 时该图层独占粒子流渲染
+  // ── 风场可视化独占状态 ───────────────────────────────────────────────────
+  // 粒子流 / 动画流线性能开销大且视觉冲突，同一时间只允许一个图层启用
+  // particleFlowCatalogId：当前风场三态所属图层（含 mode=off 时仍保留，便于再切换）
+  // 实际是否渲染：windDisplayMode !== 'off' 时由 overlay 的 getEnabled… 过滤
+  // windDisplayMode：particle | streamline | off
   const particleFlowCatalogId = ref<string | null>(null)
+  const windDisplayMode = ref<WindDisplayMode>('off')
 
   // ── 视口变化防抖 ───────────────────────────────────────────────────────
   // 地图移动/缩放时，使用防抖延迟避免频繁触发工作流更新
@@ -526,7 +530,7 @@ export const useLayersStore = defineStore('layers', () => {
   // 避免每次都递增 generation、取消在途瓦片、重新入队，导致 cached 始终为 0。
   // 防抖期间在途瓦片继续完成；用户停止移动后才提交新视口的瓦片请求。
   const weatherViewportDebounceTimer = ref<number | null>(null)
-  const WEATHER_VIEWPORT_DEBOUNCE_MS = 350
+  const WEATHER_VIEWPORT_DEBOUNCE_MS = 200
 
   function isViewportRefreshStale(expectedEpoch: number | undefined): boolean {
     return expectedEpoch !== undefined && expectedEpoch !== viewportRefreshEpoch
@@ -692,8 +696,26 @@ export const useLayersStore = defineStore('layers', () => {
           : baseRenderHint
         let finalAvailability = availability
         if (isWeatherLayer && tileStats) {
-          if (tileStats.cached > 0 && tileStats.cached >= tileStats.visible && tileStats.pending === 0) {
-            finalAvailability = { state: 'ready' as const, label: '完整数据', description: `已缓存全部 ${tileStats.visible} 个可视瓦片` }
+          const layerStatus = weatherTileManager.getLayerStatus(layer.catalogId)
+          if (layerStatus.errorType === 'data-empty') {
+            finalAvailability = {
+              state: 'empty' as const,
+              label: '无有效数据',
+              description: layerStatus.errorMessage || '本地模型无数据，请同步 Open-Meteo',
+            }
+          } else if (tileStats.cached > 0 && tileStats.cached >= tileStats.visible && tileStats.pending === 0) {
+            // 空 GeoJSON 被缓存时不应显示「完整数据」
+            const merged = weatherTileManager.getMergedGeojsonForViewport(layer.catalogId)
+            const featureCount = merged?.features?.length ?? 0
+            if (featureCount === 0) {
+              finalAvailability = {
+                state: 'empty' as const,
+                label: '无有效数据',
+                description: '视口瓦片已缓存但无要素，可能模型未同步或时段无数据',
+              }
+            } else {
+              finalAvailability = { state: 'ready' as const, label: '完整数据', description: `已缓存全部 ${tileStats.visible} 个可视瓦片` }
+            }
           } else if (tileStats.cached > 0 || tileStats.pending > 0) {
             finalAvailability = { state: 'partial' as const, label: '加载中', description: `已缓存 ${tileStats.cached} / 可视 ${tileStats.visible} / 加载中 ${tileStats.pending}` }
           } else {
@@ -816,6 +838,7 @@ export const useLayersStore = defineStore('layers', () => {
           weatherTileManager.setViewport(catalogId, cc, cz, ch, undefined, cb, weatherProviderArg(catalogId))
           if (supportsParticleFlow(catalogId) && !particleFlowCatalogId.value) {
             particleFlowCatalogId.value = catalogId
+            windDisplayMode.value = 'particle'
             debugLog('addLayer', 'auto-enable particle flow for', catalogId)
           }
         }, 0)
@@ -919,6 +942,10 @@ export const useLayersStore = defineStore('layers', () => {
       void deleteImportedRaster(overlayId).catch((err) => {
         console.warn('[layers] deleteImportedRaster failed', overlayId, err)
       })
+    }
+    if (particleFlowCatalogId.value === layer.catalogId) {
+      particleFlowCatalogId.value = null
+      windDisplayMode.value = 'off'
     }
     activeLayers.value.splice(idx, 1)
 
@@ -1039,6 +1066,7 @@ export const useLayersStore = defineStore('layers', () => {
       }
       if (particleFlowCatalogId.value === layer.catalogId) {
         particleFlowCatalogId.value = null
+        windDisplayMode.value = 'off'
       }
       activeWorkflowCatalogIds.delete(layer.catalogId)
     }
@@ -1251,9 +1279,10 @@ export const useLayersStore = defineStore('layers', () => {
     requestedOutputs: string[],
     requestBBox: BoundingBox | null,
     backendLayerId?: string,
+    algorithmRequest?: Record<string, unknown>,
   ) {
     const layerId = backendLayerId ?? catalogId
-    return {
+    const payload: Record<string, unknown> = {
       command_type: 'analysis' as const,
       command_label: `运行 ${catalogName} 分析`,
       layer_id: layerId,
@@ -1276,6 +1305,10 @@ export const useLayersStore = defineStore('layers', () => {
         viewport_bbox: requestBBox ?? undefined,
       },
     }
+    if (algorithmRequest && Object.keys(algorithmRequest).length > 0) {
+      payload.algorithm_request = algorithmRequest
+    }
+    return payload
   }
 
   function applyWorkflowEventsToJobLayer(jobLayer: JobLayerItem, events: WorkflowEvent[]): JobLayerItem {
@@ -1378,6 +1411,7 @@ export const useLayersStore = defineStore('layers', () => {
         && !hasRenderableMapLayerAsset(mergedJobLayer)
       ) {
         particleFlowCatalogId.value = null
+        windDisplayMode.value = 'off'
       }
       if (
         mergedJobLayer.status === 'succeeded'
@@ -1386,6 +1420,7 @@ export const useLayersStore = defineStore('layers', () => {
         && !particleFlowCatalogId.value
       ) {
         particleFlowCatalogId.value = catalogId
+        windDisplayMode.value = 'particle'
       }
       return true
     }
@@ -1531,11 +1566,15 @@ export const useLayersStore = defineStore('layers', () => {
 
   async function runWorkflowForCatalog(
     catalogId: string,
-    options: { expectedViewportEpoch?: number } = {},
+    options: {
+      expectedViewportEpoch?: number
+      algorithmRequest?: Record<string, unknown>
+      commandLabel?: string
+    } = {},
   ) {
     if (submittingCatalogIds.has(catalogId)) {
       debugLog('runWorkflow', catalogId, 'skip: already submitting')
-      return
+      throw new Error('该图层工作流正在提交中，请稍候再试')
     }
     workflowError.value = null
     submittingCatalogIds.add(catalogId)
@@ -1552,9 +1591,21 @@ export const useLayersStore = defineStore('layers', () => {
     const submitStartedAt = new Date().toISOString()
 
     try {
-      // 天气图层统一由 tile manager 按需拉取瓦片，不走 analysis workflow
+      // 天气图层走瓦片管道，不提交 /workflow-runs（此前 silent return 导致「运行无反应」）
       if (isWeatherEngineLayer(backendLayerId)) {
-        return
+        weatherTileManager.setLayerActive(catalogId, true)
+        weatherTileManager.setViewport(
+          catalogId,
+          currentMapCenter.value,
+          currentMapZoom.value,
+          currentHour.value,
+          undefined,
+          currentMapBBox.value,
+          weatherProviderArg(catalogId),
+        )
+        throw new Error(
+          `${catalogName} 为天气引擎图层：由瓦片按需加载，已触发当前视口刷新。请查看地图与「工作流状态」中的天气瓦片进度，无需提交分析工作流。`,
+        )
       }
       let runtimeCatalogReady = false
       try {
@@ -1568,11 +1619,17 @@ export const useLayersStore = defineStore('layers', () => {
         console.warn('[LayersStore] runtime layer catalog unavailable, proceeding with static fallback for', catalogId, error)
       }
 
-      const blockedReason = runtimeCatalogReady && !isOutputLayer ? getCatalogRunBlockReason(backendLayerId) : null
+      const hasCanvasDefinition = Boolean(
+        options.algorithmRequest
+        && (options.algorithmRequest.workflow_definition || options.algorithmRequest.workflow_name),
+      )
+      const blockedReason = runtimeCatalogReady && !isOutputLayer && !hasCanvasDefinition
+        ? getCatalogRunBlockReason(backendLayerId)
+        : null
       if (blockedReason) {
         throw new Error(blockedReason)
       }
-      if (!isOutputLayer && !supportsAnalysisWorkflow(backendLayerId)) {
+      if (!isOutputLayer && !hasCanvasDefinition && !supportsAnalysisWorkflow(backendLayerId)) {
         throw new Error(`${catalogName} 未配置分析工作流引擎，无法提交 /workflow-runs`)
       }
 
@@ -1607,9 +1664,18 @@ export const useLayersStore = defineStore('layers', () => {
       })
 
       debugLog('runWorkflow', catalogId, 'submitting new workflow', 'bbox', requestBBox, 'backendLayerId', backendLayerId)
-      const accepted = await submitWorkflow(
-        buildWorkflowPayloadForCatalog(catalogId, catalogName, requestedOutputs, requestBBox, backendLayerId),
+      const payload = buildWorkflowPayloadForCatalog(
+        catalogId,
+        catalogName,
+        requestedOutputs,
+        requestBBox,
+        backendLayerId,
+        options.algorithmRequest,
       )
+      if (options.commandLabel) {
+        payload.command_label = options.commandLabel
+      }
+      const accepted = await submitWorkflow(payload as Parameters<typeof submitWorkflow>[0])
       if (isViewportRefreshStale(options.expectedViewportEpoch)) {
         debugLog('runWorkflow', catalogId, 'discard stale submit after accept', accepted.run_id)
         removeJobLayerById(submitJobId)
@@ -1643,6 +1709,11 @@ export const useLayersStore = defineStore('layers', () => {
       return accepted.run_id
     } catch (error) {
       const errMsg = error instanceof Error ? error.message : '提交 workflow 失败'
+      // 天气瓦片路径：已触发刷新，不算失败作业
+      if (/天气引擎图层|瓦片按需加载/.test(errMsg)) {
+        workflowError.value = errMsg
+        throw error
+      }
       if (errMsg.includes('429')) {
         workflowError.value = '工作流并发数已达上限，正在等待空闲后自动重试…'
         // 429 时创建 queued jobLayer 让用户看到状态指示，并调度自动重试
@@ -1792,6 +1863,7 @@ export const useLayersStore = defineStore('layers', () => {
         weatherTileManager.setViewport(layer.catalogId, cc, cz, ch, undefined, cb, weatherProviderArg(layer.catalogId))
         if (supportsParticleFlow(layer.catalogId) && !particleFlowCatalogId.value) {
           particleFlowCatalogId.value = layer.catalogId
+          windDisplayMode.value = 'particle'
         }
       } else if (!isWeatherEngineLayer(layer.catalogId)) {
         weatherTileManager.clearLayer(layer.catalogId)
@@ -1841,18 +1913,32 @@ export const useLayersStore = defineStore('layers', () => {
     return getRuntimeLayerDescriptor(catalogId)?.capabilities?.primary_metric ?? null
   }
 
-  /** 切换粒子流启用状态：再次点击同一图层会关闭，点击新图层会切换 */
+  /** 设置风场显示三态。
+   * off 仍保留 particleFlowCatalogId（归属该层），便于 UI 再切回 particle/streamline；
+   * 实际是否渲染由 getEnabledParticleFlowCatalogId（mode≠off）决定。
+   */
+  function setWindDisplayMode(catalogId: string, mode: WindDisplayMode) {
+    particleFlowCatalogId.value = catalogId
+    windDisplayMode.value = mode
+  }
+
+  /** 切换粒子流：兼容薄封装（on→particle，off→off） */
   function toggleParticleFlow(catalogId: string) {
-    if (particleFlowCatalogId.value === catalogId) {
-      particleFlowCatalogId.value = null
+    if (particleFlowCatalogId.value === catalogId && windDisplayMode.value !== 'off') {
+      setWindDisplayMode(catalogId, 'off')
     } else {
-      particleFlowCatalogId.value = catalogId
+      setWindDisplayMode(catalogId, 'particle')
     }
   }
 
-  /** 直接设置粒子流启用图层（设为 null 关闭） */
+  /** 直接设置粒子流启用图层（设为 null 关闭）；开启时默认 particle */
   function setParticleFlow(catalogId: string | null) {
-    particleFlowCatalogId.value = catalogId
+    if (!catalogId) {
+      particleFlowCatalogId.value = null
+      windDisplayMode.value = 'off'
+      return
+    }
+    setWindDisplayMode(catalogId, 'particle')
   }
 
   // ─── 点天气查询（单工作流管理：同一时间只允许一个点查询运行） ──────────────
@@ -2039,6 +2125,10 @@ export const useLayersStore = defineStore('layers', () => {
   /** catalogId → 工作流状态映射，用于 library 卡片显示自动运行反馈 */
   const catalogJobStatus = computed(() => {
     const map = new Map<string, JobStatus>()
+    // 先写入全局 jobLayers（含孤儿/已完成），再以活跃图层上的 jobLayer 覆盖，保证最新
+    for (const job of jobLayers.value) {
+      if (job.catalogId) map.set(job.catalogId, job.status)
+    }
     for (const layer of activeLayers.value) {
       if (layer.jobLayer) {
         map.set(layer.catalogId, layer.jobLayer.status)
@@ -2067,6 +2157,7 @@ export const useLayersStore = defineStore('layers', () => {
     workflowSummary,
     runtimeLayerCatalogLoading,
     particleFlowCatalogId,
+    windDisplayMode,
     currentMapCenter,
     currentMapBBox,
     currentMapZoom,
@@ -2110,6 +2201,7 @@ export const useLayersStore = defineStore('layers', () => {
     supportsViewportDrivenRefresh,
     supportsParticleFlow,
     getLayerPrimaryMetric,
+    setWindDisplayMode,
     toggleParticleFlow,
     setParticleFlow,
     resolveBackendLayerId,

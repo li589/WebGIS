@@ -3,13 +3,14 @@ import { describe, expect, it } from 'vitest'
 import {
   buildDefaultWeatherRenderHint,
   buildWeatherFillColorExpression,
+  buildWeatherFillOpacityExpression,
   buildWeatherLegendGradient,
   buildWeatherLegendStops,
   paletteToParticleColors,
   samplePaletteColor,
 } from './weather-render'
 import { __testComputeParticleCountForArea } from './wind-particle-canvas'
-import { geojsonPointsToGridCells, geojsonToHeatmapPoints } from './weather-overlay-renderers'
+import { geojsonPointsToGridCells } from './weather-overlay-renderers'
 
 describe('weather-render continuous palette', () => {
   it('buildWeatherFillColorExpression uses interpolate not step', () => {
@@ -62,35 +63,6 @@ describe('weather-render continuous palette', () => {
   })
 })
 
-describe('geojsonToHeatmapPoints', () => {
-  it('converts polygon cells to point centroids', () => {
-    const input = {
-      type: 'FeatureCollection' as const,
-      features: [
-        {
-          type: 'Feature',
-          properties: { precipitation: 3 },
-          geometry: {
-            type: 'Polygon',
-            coordinates: [[
-              [110, 20],
-              [112, 20],
-              [112, 22],
-              [110, 22],
-              [110, 20],
-            ]],
-          },
-        },
-      ],
-    }
-    const out = geojsonToHeatmapPoints(input) as typeof input
-    expect(out.features[0].geometry.type).toBe('Point')
-    const [lng, lat] = out.features[0].geometry.coordinates as number[]
-    expect(lng).toBeCloseTo(110.8, 5)
-    expect(lat).toBeCloseTo(20.8, 5)
-  })
-})
-
 describe('geojsonPointsToGridCells', () => {
   it('turns a regular point lattice into abutting polygons', () => {
     const input = {
@@ -106,17 +78,46 @@ describe('geojsonPointsToGridCells', () => {
     expect(out.features).toHaveLength(4)
     expect(out.features[0].geometry.type).toBe('Polygon')
     const ring = (out.features[0].geometry as any).coordinates[0] as number[][]
-    // half-step 0.25 → cell width/height 0.5, abutting neighbors
-    expect(ring[0][0]).toBeCloseTo(109.75, 5)
-    expect(ring[1][0]).toBeCloseTo(110.25, 5)
+    // 点 110 吸附到格心 110.25（step=0.5）→ 格元 [110, 110.5]
+    expect(ring[0][0]).toBeCloseTo(110, 5)
+    expect(ring[1][0]).toBeCloseTo(110.5, 5)
+  })
+
+  it('uses fixed zoom resolution when provided', () => {
+    const input = {
+      type: 'FeatureCollection' as const,
+      features: [
+        { type: 'Feature', properties: {}, geometry: { type: 'Point', coordinates: [120.25, 30.25] } },
+      ],
+    }
+    const out = geojsonPointsToGridCells(input as any, { zoom: 6 }) as typeof input
+    const ring = (out.features[0].geometry as any).coordinates[0] as number[][]
+    // z6 → 0.5° step，格心 120.25 → 宽 0.5
+    expect(ring[1][0] - ring[0][0]).toBeCloseTo(0.5, 5)
   })
 })
 
 describe('particle density', () => {
   it('scales with area and respects caps', () => {
-    expect(__testComputeParticleCountForArea(10)).toBe(Math.max(320, Math.min(2200, 60)))
-    expect(__testComputeParticleCountForArea(1000)).toBe(2200)
-    expect(__testComputeParticleCountForArea(0.01)).toBe(320)
+    expect(__testComputeParticleCountForArea(10)).toBe(400) // 100 → min 400
+    expect(__testComputeParticleCountForArea(1000)).toBe(3600) // 10000 → max 3600
+    expect(__testComputeParticleCountForArea(0.01)).toBe(400)
+  })
+})
+
+describe('buildWeatherFillOpacityExpression', () => {
+  it('uses value-dependent alpha for precipitation', () => {
+    const hint = buildDefaultWeatherRenderHint('precipitation')!
+    const expr = buildWeatherFillOpacityExpression(hint, 1) as unknown[]
+    expect(expr[0]).toBe('interpolate')
+    expect(expr).toContain(0.04)
+  })
+
+  it('keeps constant opacity for temperature', () => {
+    const hint = buildDefaultWeatherRenderHint('temperature')!
+    const opacity = buildWeatherFillOpacityExpression(hint, 1)
+    expect(typeof opacity).toBe('number')
+    expect(opacity as number).toBeGreaterThan(0.5)
   })
 })
 

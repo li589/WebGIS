@@ -20,6 +20,7 @@
 - POST /config/gee/accounts/reload — 重载账户池
 - GET /config/gee/runtime — GEE 运行时配置
 - GET /config/weather — 天气 API 配置
+- PUT /config/weather/model — 更新全局默认天气模型（DB 持久化）
 - GET /config/weather/providers — 列出天气源 Provider
 - GET /config/weather/providers/{provider_id} — 获取单个 Provider 详情
 - PUT /config/weather/providers/{provider_id} — 更新 Provider 配置
@@ -37,6 +38,7 @@
 """
 
 import logging
+from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException
 
@@ -61,6 +63,7 @@ from shared.contracts.config_contracts import (
     WeatherProviderTestResponse,
     WeatherProviderToggleRequest,
     WeatherProviderUpdateRequest,
+    WeatherModelUpdateRequest,
 )
 
 
@@ -279,6 +282,18 @@ async def get_weather_config():
     return config_service.get_weather_config()
 
 
+@router.put(
+    "/weather/model",
+    dependencies=[Depends(require_write_access)],
+)
+async def update_weather_default_model(request: WeatherModelUpdateRequest):
+    """更新全局默认天气模型（SQLite 持久化，立即影响无参 coverage / 瓦片默认 model）。"""
+    try:
+        return config_service.set_weather_default_model(request.default_model)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+
+
 # ── 天气源 Provider 管理 ──────────────────────────────────────────────────────
 
 @router.get("/weather/providers")
@@ -488,6 +503,40 @@ async def clear_remote_storage_history(profile_id: str):
 async def get_data_source_config():
     """获取数据源配置。"""
     return config_service.get_data_source_config()
+
+
+@router.get("/data-cache/overview")
+async def get_data_cache_overview():
+    """静态 materialize 缓存概览。"""
+    return config_service.get_data_cache_overview_api()
+
+
+@router.post("/data-cache/evict", dependencies=[Depends(require_write_access)])
+async def evict_data_cache(payload: dict[str, Any] | None = None):
+    """清理静态缓存（按 URI/名称或过期时间）。"""
+    body = payload or {}
+    return config_service.evict_data_cache_api(
+        uri_or_name=body.get("uri_or_name"),
+        older_than_seconds=body.get("older_than_seconds"),
+    )
+
+
+@router.put("/data-source/open-data-presets", dependencies=[Depends(require_write_access)])
+async def update_open_data_presets(payload: dict[str, Any]):
+    """更新 NOAA/NASA/ESA 开放数据 base URL 预设。"""
+    presets = payload.get("open_data_presets") or payload
+    if not isinstance(presets, dict):
+        raise HTTPException(status_code=400, detail="open_data_presets must be an object")
+    return config_service.update_open_data_presets(presets)
+
+
+@router.put("/data-source/remote-layer-uris", dependencies=[Depends(require_write_access)])
+async def update_remote_layer_uris(payload: dict[str, Any]):
+    """更新图层 URI 覆盖（等价 BACKEND_REMOTE_LAYER_DATA_URIS）。"""
+    uris = payload.get("remote_layer_data_uris") or payload
+    if not isinstance(uris, dict):
+        raise HTTPException(status_code=400, detail="remote_layer_data_uris must be an object")
+    return config_service.update_remote_layer_data_uris(uris)
 
 
 # ── 关于 ──────────────────────────────────────────────────────────────────────

@@ -59,11 +59,17 @@ Python/
 
 ## 当前关键能力
 
+- 原生模块：SMAP / NDVI / FY / station / inversion / omega / bundles 等
+- **数据链路模块**（2026-07-21）：`remote_fetch`、`http_open_data`、`archive_extract`、`config_read`、`variable_extract`、`format_convert`，以及画布参数节点 `data_source` / `output_map_layer` 等（见 `modules/data_access_nodes.py`、`modules/graph_io.py`）
+- `data_access`：本地 / HTTP / remote(SMB/SFTP) / MinIO / CacheStore（支持 `BACKEND_STATIC_CACHE_TTL_SECONDS`）
+- 平台侧 LiteGraph 画布经后端编译后以 `workflow_definition` 进入本包 `WorkflowRunner`
 - 支持 Job / Workflow / Module 的统一调度思路
 - 支持本地执行与平台化执行两种接入方式
 - 支持数据接入、格式适配、结果落盘与 manifest 输出
 - 支持原生模块与兼容 pipeline 并存
 - 支持平台队列、worker、HTTP 服务和 mock 测试路径
+
+更多：`Code/docs/课题组数据全链路-2026-07-21.md`、`docs/unified_data_access_design.md`、`docs/workflow_extension_design.md`。
 
 ## 典型执行链路
 

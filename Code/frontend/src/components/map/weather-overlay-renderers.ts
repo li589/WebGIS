@@ -1,6 +1,12 @@
 import {
+  boundsToPolygonRing,
+  latticeCellBounds,
+  latticeIndex,
+} from './weather-grid-lattice'
+import {
   buildWeatherArrowSizeExpression,
   buildWeatherFillColorExpression,
+  buildWeatherFillOpacityExpression,
   buildWeatherPointColorExpression,
   buildWeatherPointRadiusExpression,
   getWeatherFillOpacity,
@@ -15,7 +21,8 @@ type GeoJSONSource = import('maplibre-gl').GeoJSONSource
 type ImageSourceSpecification = import('maplibre-gl').ImageSourceSpecification
 type ImageSource = import('maplibre-gl').ImageSource
 
-type HeatmapFeatureCollection = {
+/** FeatureCollection 宽松类型（grid_fill / 连续色场） */
+type FieldFeatureCollection = {
   type: 'FeatureCollection'
   features: Array<{
     type: string
@@ -23,53 +30,6 @@ type HeatmapFeatureCollection = {
     properties?: Record<string, unknown> | null
     [key: string]: unknown
   }>
-}
-
-/** Polygon/MultiPolygon → 点质心，供 MapLibre heatmap 使用 */
-export function geojsonToHeatmapPoints(
-  data: HeatmapFeatureCollection | WindGeoJSON | string,
-): HeatmapFeatureCollection | WindGeoJSON | string {
-  if (typeof data === 'string') return data
-  if (!data || data.type !== 'FeatureCollection' || !Array.isArray(data.features)) return data
-
-  const features = data.features.map((feature) => {
-    const geom = feature.geometry as { type: string; coordinates: number[][] | number[][][] | number[][][][] } | undefined
-    if (!geom) return feature
-    if (geom.type === 'Point') return feature
-    if (geom.type === 'Polygon') {
-      const ring = (geom.coordinates as number[][])[0] ?? []
-      if (ring.length === 0) return feature
-      let sx = 0
-      let sy = 0
-      for (const pt of ring) {
-        sx += pt[0]
-        sy += pt[1]
-      }
-      const n = ring.length
-      return {
-        ...feature,
-        geometry: { type: 'Point' as const, coordinates: [sx / n, sy / n] },
-      }
-    }
-    if (geom.type === 'MultiPolygon') {
-      const ring = (geom.coordinates as number[][][])[0]?.[0] ?? []
-      if (ring.length === 0) return feature
-      let sx = 0
-      let sy = 0
-      for (const pt of ring) {
-        sx += pt[0]
-        sy += pt[1]
-      }
-      const n = ring.length
-      return {
-        ...feature,
-        geometry: { type: 'Point' as const, coordinates: [sx / n, sy / n] },
-      }
-    }
-    return feature
-  })
-
-  return { type: 'FeatureCollection', features }
 }
 
 function medianPositive(values: number[]): number | null {
@@ -80,12 +40,56 @@ function medianPositive(values: number[]): number | null {
 }
 
 /**
+ * 与后端 `zoom_to_resolution` 对齐的固定格点步长（度）。
+ * 用于 fill 单元尺寸，避免跨瓦片中位 gap 失真导致细缝。
+ */
+export function weatherZoomToResolution(z: number): number {
+  const zoom = Math.max(0, Math.min(12, Math.round(z)))
+  if (zoom <= 1) return 10.0
+  if (zoom <= 2) return 5.0
+  if (zoom <= 3) return 2.5
+  if (zoom <= 5) return 1.0
+  if (zoom <= 7) return 0.5
+  return 0.25
+}
+
+/** 从 feature props / 中位 gap / zoom 推断格点步长 */
+function resolveGridStepDegrees(
+  points: Array<{ lon: number; lat: number; feature: { properties?: Record<string, unknown> | null } }>,
+  axis: 'lon' | 'lat',
+  options?: { zoom?: number; stepDegrees?: number },
+): number {
+  if (typeof options?.stepDegrees === 'number' && options.stepDegrees > 0) {
+    return options.stepDegrees
+  }
+  for (const p of points) {
+    const props = p.feature.properties
+    if (!props) continue
+    const fromProp =
+      Number(props.resolution)
+      || Number(props.grid_resolution)
+      || Number(props.step)
+      || Number(props.cell_size)
+    if (Number.isFinite(fromProp) && fromProp > 0) return fromProp
+  }
+  if (typeof options?.zoom === 'number' && Number.isFinite(options.zoom)) {
+    return weatherZoomToResolution(options.zoom)
+  }
+  const coords = points.map((p) => (axis === 'lon' ? p.lon : p.lat))
+  const unique = Array.from(new Set(coords.map((v) => Math.round(v * 1e6) / 1e6))).sort((a, b) => a - b)
+  const gaps = unique.slice(1).map((v, i) => v - unique[i])
+  return medianPositive(gaps) ?? 0.25
+}
+
+/**
  * 规则点阵 → 矩形网格单元，供 fill 连续色场使用。
- * 避免 heatmap 在放大后变成「一坨一坨晕点」。
+ * 格心吸附全球 (i+0.5)*res；瓦片半开只决定谁发出该格心，格元不裁进瓦片框，
+ * 以免格网边与 Mercator 瓦片边错位时留下横/纵空隙。
  */
 export function geojsonPointsToGridCells(
-  data: HeatmapFeatureCollection | WindGeoJSON,
-): HeatmapFeatureCollection | WindGeoJSON {
+  data: FieldFeatureCollection | WindGeoJSON,
+  options?: { zoom?: number; stepDegrees?: number },
+): FieldFeatureCollection | WindGeoJSON {
   if (!data || data.type !== 'FeatureCollection' || !Array.isArray(data.features)) return data
 
   const points: Array<{ lon: number; lat: number; feature: (typeof data.features)[number] }> = []
@@ -108,38 +112,53 @@ export function geojsonPointsToGridCells(
   if (polygonCount > 0 && points.length === 0) return data
   if (points.length === 0) return data
 
-  const lonSet = Array.from(new Set(points.map((p) => Math.round(p.lon * 1e6) / 1e6))).sort((a, b) => a - b)
-  const latSet = Array.from(new Set(points.map((p) => Math.round(p.lat * 1e6) / 1e6))).sort((a, b) => a - b)
-  const lonGaps = lonSet.slice(1).map((v, i) => v - lonSet[i])
-  const latGaps = latSet.slice(1).map((v, i) => v - latSet[i])
-  const lonStep = medianPositive(lonGaps) ?? 0.25
-  const latStep = medianPositive(latGaps) ?? 0.25
-  const halfLon = lonStep / 2
-  const halfLat = latStep / 2
+  const lonStep = resolveGridStepDegrees(points, 'lon', options)
+  const latStep = resolveGridStepDegrees(points, 'lat', options)
+  const fallbackStep = lonStep > 0 ? lonStep : latStep
 
-  const features = points.map(({ lon, lat, feature }) => ({
-    ...feature,
-    geometry: {
-      type: 'Polygon' as const,
-      coordinates: [[
-        [lon - halfLon, lat - halfLat],
-        [lon + halfLon, lat - halfLat],
-        [lon + halfLon, lat + halfLat],
-        [lon - halfLon, lat + halfLat],
-        [lon - halfLon, lat - halfLat],
-      ]],
-    },
-  }))
+  const seenCells = new Set<string>()
+  const features: Array<(typeof data.features)[number]> = []
+
+  for (const { lon, lat, feature } of points) {
+    const props = feature.properties ?? {}
+    const fromProp =
+      Number(props.resolution) ||
+      Number(props.grid_resolution) ||
+      Number(props.step) ||
+      Number(props.cell_size)
+    // 每点用自身分辨率建格元，避免跨赤道父子 z 混用时被首点粗分辨率拉大留下空带
+    const step =
+      Number.isFinite(fromProp) && fromProp > 0 ? fromProp : fallbackStep
+    const ix = latticeIndex(lon, step)
+    const iy = latticeIndex(lat, step)
+    const key = `${step}:${ix}:${iy}`
+    if (seenCells.has(key)) continue
+    seenCells.add(key)
+
+    const cell = latticeCellBounds(lon, lat, step)
+    const nextProps = { ...props }
+    delete (nextProps as Record<string, unknown>)._tile_bounds
+
+    features.push({
+      ...feature,
+      properties: nextProps,
+      geometry: {
+        type: 'Polygon' as const,
+        coordinates: [boundsToPolygonRing(cell)],
+      },
+    })
+  }
 
   return { type: 'FeatureCollection', features }
 }
 
 /** 连续色场用 GeoJSON：多边形原样；点阵转成网格单元 */
 export function prepareContinuousFieldGeojson(
-  data: HeatmapFeatureCollection | WindGeoJSON | string | null | undefined,
-): HeatmapFeatureCollection | WindGeoJSON | string | null {
+  data: FieldFeatureCollection | WindGeoJSON | string | null | undefined,
+  options?: { zoom?: number; stepDegrees?: number },
+): FieldFeatureCollection | WindGeoJSON | string | null {
   if (!data || typeof data === 'string') return data ?? null
-  return geojsonPointsToGridCells(data)
+  return geojsonPointsToGridCells(data, options)
 }
 
 export function syncWeatherCogOverlay(map: MapInstance, overlayState: WeatherOverlayState) {
@@ -199,9 +218,10 @@ export function syncWeatherCogOverlay(map: MapInstance, overlayState: WeatherOve
 export function syncWeatherGridFillOverlay(map: MapInstance, overlayState: WeatherOverlayState) {
   const rawSource = overlayState.geojsonData ?? overlayState.geojsonUrl
   if (!rawSource) return
+  const zoom = typeof map.getZoom === 'function' ? map.getZoom() : undefined
   const geojsonSource = typeof rawSource === 'string'
     ? rawSource
-    : prepareContinuousFieldGeojson(rawSource as HeatmapFeatureCollection | WindGeoJSON)
+    : prepareContinuousFieldGeojson(rawSource as FieldFeatureCollection | WindGeoJSON, { zoom })
 
   if (!geojsonSource) return
 
@@ -218,7 +238,7 @@ export function syncWeatherGridFillOverlay(map: MapInstance, overlayState: Weath
   if (map.getSource(ids.bloomSourceId)) map.removeSource(ids.bloomSourceId)
 
   const existingSource = map.getSource(ids.sourceId) as GeoJSONSource | undefined
-  const fillOpacity = getWeatherFillOpacity(overlayState.renderHint, overlayState.opacity)
+  const fillOpacity = buildWeatherFillOpacityExpression(overlayState.renderHint, overlayState.opacity)
   const fillColor = buildWeatherFillColorExpression(overlayState.renderHint)
 
   if (!existingSource) {
@@ -256,6 +276,7 @@ export function syncWeatherGridFillOverlay(map: MapInstance, overlayState: Weath
   }
 }
 
+/** @deprecated 名称保留兼容；实现已统一为 grid_fill（见 syncWeatherGridFillOverlay）。 */
 export function syncWeatherHeatmapOverlay(map: MapInstance, overlayState: WeatherOverlayState) {
   // 连续气象场统一走网格 fill：heatmap 放大后必然「一坨坨晕点」，观感差
   syncWeatherGridFillOverlay(map, {
@@ -311,7 +332,17 @@ export function syncWeatherPointOverlay(map: MapInstance, overlayState: WeatherO
         'text-size': ['*', 15, arrowSize],
         'text-allow-overlap': true,
         'text-ignore-placement': true,
-        'text-rotate': ['coalesce', ['to-number', ['get', 'wind_direction_10m']], 0],
+        'text-rotate': [
+          'coalesce',
+          ['to-number', ['get', 'wind_direction_10m']],
+          ['to-number', ['get', 'wind_direction_80m']],
+          ['to-number', ['get', 'wind_direction_120m']],
+          ['to-number', ['get', 'wind_direction_180m']],
+          ['to-number', ['get', 'wind_direction_850hPa']],
+          ['to-number', ['get', 'wind_direction_500hPa']],
+          ['to-number', ['get', 'wind_direction_200hPa']],
+          0,
+        ],
         'text-rotation-alignment': 'map',
       },
       paint: {

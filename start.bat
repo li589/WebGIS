@@ -4,32 +4,30 @@ REM  CGDA 一键启动 (Windows)
 REM  调用跨平台 Python 启动器 launch.py
 REM
 REM  用法:
-REM    start.bat start [component] [options]
-REM    start.bat stop
-REM    start.bat status
-REM    start.bat restart [component] [options]
-REM    start.bat logs [component] [-n N]
-REM    start.bat flush
-REM
-REM  组件: all/docker/fastapi/beat/worker/worker:<name>/frontend
+REM    start.bat                         → start all
+REM    start.bat start [component] ...
+REM    start.bat stop | status | restart | logs | flush | sync
 REM ============================================================
 setlocal
 set "SCRIPT_DIR=%~dp0"
 
-REM 检测 Python
-python --version >nul 2>&1
+where python >nul 2>&1
 if errorlevel 1 (
     echo [ERROR] Python 未找到，请确保 Python 在 PATH 中
     pause
     exit /b 1
 )
 
-REM 转发所有参数给 launch.py
-python "%SCRIPT_DIR%launch.py" %*
+if "%~1"=="" (
+    python "%SCRIPT_DIR%launch.py" start
+) else (
+    python "%SCRIPT_DIR%launch.py" %*
+)
 
-if errorlevel 1 (
+set "ERR=%ERRORLEVEL%"
+if not "%ERR%"=="0" (
     echo.
-    echo [ERROR] 启动器返回错误码 %errorlevel%
+    echo [ERROR] 启动器返回错误码 %ERR%
     pause
 )
-endlocal
+endlocal & exit /b %ERR%
