@@ -1,4 +1,4 @@
-"""weather workflow 5 节点 DAG 端到端测试。
+﻿"""weather workflow 5 节点 DAG 端到端测试。
 
 构造 fetch → parse → 3 个 render (fan-out) 完整 DAG，
 通过 submission_service.submit_workflow 走完整主链路，
@@ -146,7 +146,7 @@ class WeatherWorkflowDagTests(unittest.TestCase):
         cache_dir = os.path.join(os.getcwd(), ".data", "cache", "weatherengine")
         if os.path.exists(cache_dir):
             shutil.rmtree(cache_dir, ignore_errors=True)
-        get_registry().set_enabled("open-meteo", True)
+        get_registry().set_enabled("open-meteo-online", True)
 
     def _submit_workflow(self) -> str:
         """提交 5 节点 DAG workflow，返回 run_id。"""
@@ -269,7 +269,7 @@ class WeatherWorkflowDagTests(unittest.TestCase):
 
     def test_disabled_provider_fails_forecast_fetch(self) -> None:
         """禁用 Provider 后 forecast_fetch 必须失败，不能旁路打上游。"""
-        get_registry().set_enabled("open-meteo", False)
+        get_registry().set_enabled("open-meteo-online", False)
         run_id = self._submit_workflow()
         status_resp = submission_service.get_workflow_run(run_id)
         self.assertIsNotNone(status_resp)

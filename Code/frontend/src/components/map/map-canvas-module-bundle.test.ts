@@ -13,19 +13,22 @@ describe('map-canvas-module-bundle', () => {
     const mapInteractionModule = {
       applyInteractionMode: vi.fn(),
     }
+    const selectedLayerFocusModule = {}
+    const measureModule = { applyMeasureMode: vi.fn(), syncFromStore: vi.fn() }
+    const syncAdminOverlay = vi.fn()
     const runtimeOptions: {
       onTileSourceChange?: (sourceId: 'esri-street') => void
       onInteractionModeChange?: () => void
       onAdminBoundaryOverlayChange?: () => void
+      onMeasureStateChange?: () => void
     } = {}
-    const selectedLayerFocusModule = {}
-    const syncAdminOverlay = vi.fn()
 
     const bundle = createMapCanvasModuleBundle({
       map: {} as any,
       layersStore: {
         activeLayersDisplay: [],
         particleFlowCatalogId: null,
+        windDisplayMode: 'off',
         isWeatherEngineLayer: () => false,
         setMapViewport: vi.fn(),
       },
@@ -57,6 +60,12 @@ describe('map-canvas-module-bundle', () => {
       syncAdminOverlay,
       debugLog: vi.fn(),
       weatherDebounceMs: 200,
+      getMeasureState: () => ({ points: [], isDrawing: false, hoverPoint: null }),
+      addMeasurePoint: vi.fn(),
+      undoLastMeasurePoint: vi.fn(),
+      completeMeasure: vi.fn(),
+      setHoverPoint: vi.fn(),
+      clearMeasure: vi.fn(),
       dependencies: {
         createBasemapModule: vi.fn(() => basemapModule as any),
         createAdminBoundaryModule: vi.fn(() => adminBoundaryModule as any),
@@ -67,15 +76,18 @@ describe('map-canvas-module-bundle', () => {
           runtimeOptions.onTileSourceChange = options.onTileSourceChange
           runtimeOptions.onInteractionModeChange = options.onInteractionModeChange
           runtimeOptions.onAdminBoundaryOverlayChange = options.onAdminBoundaryOverlayChange
+          runtimeOptions.onMeasureStateChange = options.onMeasureStateChange
           return {} as any
         }),
         createSelectedLayerFocusModule: vi.fn(() => selectedLayerFocusModule as any),
+        createMeasureModule: vi.fn(() => measureModule as any),
       },
     })
 
     runtimeOptions.onTileSourceChange?.('esri-street')
     runtimeOptions.onInteractionModeChange?.()
     runtimeOptions.onAdminBoundaryOverlayChange?.()
+    runtimeOptions.onMeasureStateChange?.()
 
     expect(bundle.basemapModule).toBe(basemapModule)
     expect(bundle.adminBoundaryModule).toBe(adminBoundaryModule)
@@ -83,8 +95,11 @@ describe('map-canvas-module-bundle', () => {
     expect(bundle.hotspotPinsModule).toBe(hotspotPinsModule)
     expect(bundle.mapInteractionModule).toBe(mapInteractionModule)
     expect(bundle.selectedLayerFocusModule).toBe(selectedLayerFocusModule)
+    expect(bundle.measureModule).toBe(measureModule)
     expect(basemapModule.scheduleTileSourceSwitch).toHaveBeenCalledWith('esri-street')
     expect(mapInteractionModule.applyInteractionMode).toHaveBeenCalledTimes(1)
+    expect(measureModule.applyMeasureMode).toHaveBeenCalledTimes(1)
+    expect(measureModule.syncFromStore).toHaveBeenCalledTimes(1)
     expect(syncAdminOverlay).toHaveBeenCalledTimes(1)
   })
 })

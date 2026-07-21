@@ -98,12 +98,14 @@ function handleClearAll() {
             <span class="entry-cat" :class="`cat-badge-${entry.category}`">
               {{ entry.category === 'operation' ? '操作' : '工作流' }}
             </span>
+            <span class="entry-type">{{ logStore.typeLabel(entry.type) }}</span>
             <span class="entry-message">{{ entry.message }}</span>
             <span v-if="entry.details" class="entry-expand" aria-hidden="true">
               {{ expandedId === entry.id ? '▾' : '▸' }}
             </span>
           </div>
           <div v-if="entry.details && expandedId === entry.id" class="entry-details">
+            <div class="entry-details-hint">详细信息</div>
             {{ entry.details }}
           </div>
         </div>
@@ -271,6 +273,16 @@ function handleClearAll() {
   color: #c9a3ff;
 }
 
+.entry-type {
+  flex: none;
+  max-width: 4.2rem;
+  color: #7f96ab;
+  font-size: 0.5rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .entry-message {
   flex: 1;
   min-width: 0;
@@ -297,5 +309,12 @@ function handleClearAll() {
   line-height: 1.5;
   white-space: pre-wrap;
   word-break: break-all;
+}
+
+.entry-details-hint {
+  margin-bottom: 0.18rem;
+  color: #5a7080;
+  font-size: 0.48rem;
+  letter-spacing: 0.04em;
 }
 </style>

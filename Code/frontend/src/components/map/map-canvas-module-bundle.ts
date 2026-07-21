@@ -4,6 +4,7 @@ import { createHotspotPinsModule } from './hotspot-pins-module'
 import { createMapInteractionModule } from './map-interaction-module'
 import { createMapCanvasRuntimeModule } from './map-canvas-runtime-module'
 import { createMapCanvasWeatherOverlayModule } from './map-canvas-weather-overlay-module'
+import { createMeasureModule } from './measure-module'
 import { createSelectedLayerFocusModule } from './selected-layer-focus-module'
 import type { WeatherOverlayModule } from './weather-overlay-module'
 import type { TileSourceConfig } from '../../services/api-config'
@@ -13,11 +14,14 @@ type TileSourceId = import('../../services/api-config').TileSourceId
 type LayerHotspot = import('../../stores/layers/types').LayerHotspot
 type ActiveLayerDisplay = import('../../stores/layers/types').ActiveLayerDisplay
 type InteractionMode = import('../../stores/ui').InteractionMode
+type MeasureState = import('../../stores/ui').MeasureState
+type MeasurePoint = import('../../stores/ui').MeasurePoint
 type DebugLogger = (module: string, ...args: unknown[]) => void
 
 interface LayersStoreLike {
   activeLayersDisplay: ActiveLayerDisplay[]
   particleFlowCatalogId: string | null
+  windDisplayMode: import('./wind-display-mode').WindDisplayMode
   isWeatherEngineLayer: (catalogId: string) => boolean
   setMapViewport: (
     center: { lng: number; lat: number },
@@ -39,6 +43,7 @@ export interface MapCanvasModuleBundle {
   mapInteractionModule: ReturnType<typeof createMapInteractionModule>
   mapCanvasRuntimeModule: ReturnType<typeof createMapCanvasRuntimeModule>
   selectedLayerFocusModule: ReturnType<typeof createSelectedLayerFocusModule>
+  measureModule: ReturnType<typeof createMeasureModule>
 }
 
 interface CreateMapCanvasModuleBundleOptions {
@@ -69,6 +74,13 @@ interface CreateMapCanvasModuleBundleOptions {
   syncAdminOverlay: () => void
   debugLog: DebugLogger
   weatherDebounceMs?: number
+  // ── 测量模式相关 ──
+  getMeasureState: () => MeasureState
+  addMeasurePoint: (p: MeasurePoint) => void
+  undoLastMeasurePoint: () => void
+  completeMeasure: () => void
+  setHoverPoint: (p: MeasurePoint | null) => void
+  clearMeasure: () => void
   dependencies?: {
     createBasemapModule?: typeof createBasemapModule
     createAdminBoundaryModule?: typeof createAdminBoundaryModule
@@ -77,6 +89,7 @@ interface CreateMapCanvasModuleBundleOptions {
     createMapInteractionModule?: typeof createMapInteractionModule
     createMapCanvasRuntimeModule?: typeof createMapCanvasRuntimeModule
     createSelectedLayerFocusModule?: typeof createSelectedLayerFocusModule
+    createMeasureModule?: typeof createMeasureModule
   }
 }
 
@@ -96,6 +109,8 @@ export function createMapCanvasModuleBundle(
     options.dependencies?.createMapCanvasRuntimeModule ?? createMapCanvasRuntimeModule
   const createSelectedLayerFocusModuleImpl =
     options.dependencies?.createSelectedLayerFocusModule ?? createSelectedLayerFocusModule
+  const createMeasureModuleImpl =
+    options.dependencies?.createMeasureModule ?? createMeasureModule
 
   const basemapModule = createBasemapModuleImpl({
     map: options.map,
@@ -141,19 +156,40 @@ export function createMapCanvasModuleBundle(
     emitMapPointSelect: options.emitMapPointSelect,
   })
 
+  // measureModule 在 mapCanvasRuntimeModule 之前创建，
+  // 以便 onInteractionModeChange 回调能引用它（避免 TDZ）
+  const measureModule = createMeasureModuleImpl({
+    map: options.map,
+    getInteractionMode: options.getInteractionMode,
+    getMeasureState: options.getMeasureState,
+    addMeasurePoint: options.addMeasurePoint,
+    undoLastMeasurePoint: options.undoLastMeasurePoint,
+    completeMeasure: options.completeMeasure,
+    setHoverPoint: options.setHoverPoint,
+    clearMeasure: options.clearMeasure,
+  })
+
   const mapCanvasRuntimeModule = createMapCanvasRuntimeModuleImpl({
     getTileSourceId: options.getCurrentTileSourceId,
     getMapReady: options.getMapReady,
     getInteractionMode: options.getInteractionMode,
     getHasAdminBoundary: options.getHasAdminBoundary,
     getAdminBoundaryOpacity: options.getAdminBoundaryOpacity,
+    getMeasureSyncKey: () => {
+      const s = options.getMeasureState()
+      return `${s.points.length}:${s.isDrawing ? 1 : 0}`
+    },
     onTileSourceChange: (sourceId) => {
       basemapModule.scheduleTileSourceSwitch(sourceId)
     },
     onInteractionModeChange: () => {
       mapInteractionModule.applyInteractionMode()
+      measureModule.applyMeasureMode()
     },
     onAdminBoundaryOverlayChange: options.syncAdminOverlay,
+    onMeasureStateChange: () => {
+      measureModule.syncFromStore()
+    },
   })
 
   const selectedLayerFocusModule = createSelectedLayerFocusModuleImpl({
@@ -171,5 +207,6 @@ export function createMapCanvasModuleBundle(
     mapInteractionModule,
     mapCanvasRuntimeModule,
     selectedLayerFocusModule,
+    measureModule,
   }
 }

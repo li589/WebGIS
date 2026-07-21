@@ -519,12 +519,14 @@ def get_gee_runtime_config() -> dict[str, Any]:
 # ── 天气 API 配置 ─────────────────────────────────────────────────────────────
 
 def get_weather_config() -> dict[str, Any]:
-    """获取天气 API 配置（含 runtime effective 覆盖）。"""
+    """获取天气 API 配置（含 runtime effective 覆盖 + 模型/同步真源）。"""
     from app.services.effective_config import get_runtime_snapshot, get_weather_cache_ttl_seconds
+    from app.services.weather_engine_settings import get_weather_engine_public_config
 
     snap = get_runtime_snapshot()
+    engine = get_weather_engine_public_config()
     return {
-        "default_model": settings.weather_default_model,
+        **engine,
         "cache_ttl_seconds": get_weather_cache_ttl_seconds(),
         "refresh_forecast_hours": settings.weather_refresh_forecast_hours,
         "schedule_enabled": settings.weather_schedule_enabled,
@@ -535,10 +537,58 @@ def get_weather_config() -> dict[str, Any]:
     }
 
 
+def set_weather_default_model(model: str) -> dict[str, Any]:
+    """持久化全局默认天气模型（P1 DB）。"""
+    from app.services.weather_engine_settings import set_weather_default_model as _set
+
+    return _set(model)
+
+
+def get_effective_weather_default_model() -> str:
+    from app.services.weather_engine_settings import get_effective_weather_default_model as _get
+
+    return _get()
+
+
+def get_weather_sync_overview() -> dict[str, Any]:
+    from app.services.weather_engine_settings import get_weather_sync_overview as _overview
+
+    return _overview()
+
+
 # ── 数据源配置 ────────────────────────────────────────────────────────────────
 
+def _research_data_repo():
+    from functools import lru_cache
+    from pathlib import Path
+
+    @lru_cache(maxsize=1)
+    def _inner():
+        from app.services.research_data_settings_repository import ResearchDataSettingsRepository
+
+        db_path = Path(settings.gee_credentials_db_path).parent / "research_data_settings.sqlite3"
+        return ResearchDataSettingsRepository(db_path=db_path)
+
+    return _inner()
+
+
 def get_data_source_config() -> dict[str, Any]:
-    """获取数据源配置。"""
+    """获取数据源配置（含数据根扫描、开放数据预设、静态缓存概览）。"""
+    from app.services.data_cache_service import (
+        DEFAULT_OPEN_DATA_PRESETS,
+        get_data_cache_overview,
+        scan_data_root_datasets,
+    )
+
+    repo = _research_data_repo()
+    presets = repo.get_json("open_data_presets", None)
+    if not isinstance(presets, dict) or not presets:
+        presets = dict(DEFAULT_OPEN_DATA_PRESETS)
+    layer_uris = repo.get_json("remote_layer_data_uris", {})
+    if not isinstance(layer_uris, dict):
+        layer_uris = {}
+
+    overview = get_data_cache_overview()
     return {
         "storage_backend": settings.storage_backend,
         "data_root": settings.data_root,
@@ -552,7 +602,59 @@ def get_data_source_config() -> dict[str, Any]:
             "bucket": settings.minio_bucket,
             "secure": settings.minio_secure,
         } if settings.storage_backend == "minio" else None,
+        "discovered_datasets": scan_data_root_datasets(),
+        "open_data_presets": presets,
+        "remote_layer_data_uris": layer_uris,
+        "static_cache": {
+            "cache_root": overview["cache_root"],
+            "ttl_seconds": overview["ttl_seconds"],
+            "ttl_unlimited": overview["ttl_unlimited"],
+            "entry_count": overview["entry_count"],
+            "total_bytes": overview["total_bytes"],
+        },
+        "workflow_hint": (
+            "在工作流「远程拉取」节点中填写 URI，并可用 ?cred=profile 或 cred_profile 参数"
+            "引用「远程存储」设置中的凭证 profile。"
+        ),
     }
+
+
+def update_open_data_presets(presets: dict[str, Any]) -> dict[str, Any]:
+    cleaned = {str(k): str(v) for k, v in presets.items() if str(k).strip() and str(v).strip()}
+    _research_data_repo().set_json("open_data_presets", cleaned)
+    return {"open_data_presets": cleaned}
+
+
+def update_remote_layer_data_uris(uris: dict[str, Any]) -> dict[str, Any]:
+    """Persist nested overlay: {layer_id: {dataset: uri|[uri...]}}."""
+    cleaned: dict[str, dict[str, list[str]]] = {}
+    for layer_id, datasets in uris.items():
+        if not str(layer_id).strip() or not isinstance(datasets, dict):
+            continue
+        ds_map: dict[str, list[str]] = {}
+        for dataset_name, raw_uris in datasets.items():
+            if isinstance(raw_uris, str) and raw_uris.strip():
+                ds_map[str(dataset_name)] = [raw_uris.strip()]
+            elif isinstance(raw_uris, list):
+                vals = [str(u).strip() for u in raw_uris if str(u).strip()]
+                if vals:
+                    ds_map[str(dataset_name)] = vals
+        if ds_map:
+            cleaned[str(layer_id)] = ds_map
+    _research_data_repo().set_json("remote_layer_data_uris", cleaned)
+    return {"remote_layer_data_uris": cleaned}
+
+
+def get_data_cache_overview_api() -> dict[str, Any]:
+    from app.services.data_cache_service import get_data_cache_overview
+
+    return get_data_cache_overview()
+
+
+def evict_data_cache_api(*, uri_or_name: str | None = None, older_than_seconds: int | None = None) -> dict[str, Any]:
+    from app.services.data_cache_service import evict_data_cache
+
+    return evict_data_cache(uri_or_name=uri_or_name, older_than_seconds=older_than_seconds)
 
 
 # ── 关于信息 ──────────────────────────────────────────────────────────────────
@@ -715,9 +817,32 @@ def list_weather_providers(*, include_disabled: bool = True) -> list[dict[str, A
         )
         seen_ids.add(provider.provider_id)
 
-    # DB 中存在但 registry 中未注册的 Provider（理论上不会出现，但为完整性保留）
+    # DB 中存在但 registry 中未注册的 Provider（过滤遗留 open-meteo，避免 UI 出现第三条幽灵行）
+    from app.weatherengine.provider_ids import OPEN_METEO_LEGACY_ID, OPEN_METEO_ONLINE_ID
+
+    legacy = db_records.get(OPEN_METEO_LEGACY_ID)
+    if legacy is not None and OPEN_METEO_LEGACY_ID not in seen_ids:
+        # 一次性清理：遗留 id 合并到 online 后删除 DB 行
+        try:
+            online_existing = db_records.get(OPEN_METEO_ONLINE_ID)
+            if online_existing is None:
+                repo.upsert_provider(
+                    provider_id=OPEN_METEO_ONLINE_ID,
+                    display_name=legacy.get("display_name") or "Open-Meteo (Online)",
+                    provider_type=legacy.get("provider_type") or "free_api",
+                    enabled=bool(legacy.get("enabled", True)),
+                    priority=int(legacy.get("priority", 1)),
+                    config=legacy.get("config") or {},
+                )
+            repo.delete_provider(OPEN_METEO_LEGACY_ID)
+            logger.info("Migrated/removed legacy weather provider id %s", OPEN_METEO_LEGACY_ID)
+        except Exception as exc:
+            logger.warning("Failed to purge legacy open-meteo DB row: %s", exc)
+
     for pid, db_record in db_records.items():
         if pid in seen_ids:
+            continue
+        if pid == OPEN_METEO_LEGACY_ID:
             continue
         result.append({
             "provider_id": pid,
@@ -1076,6 +1201,8 @@ def apply_persisted_provider_overrides() -> None:
 
     在 ``register_default_providers`` 之后调用，使 DB 中的 enabled/priority/config 覆盖生效。
     """
+    from app.weatherengine.provider_ids import OPEN_METEO_LOCAL_ID, OPEN_METEO_ONLINE_ID
+
     registry = _get_weather_registry()
     repo = _get_weather_providers_repository()
 
@@ -1084,6 +1211,62 @@ def apply_persisted_provider_overrides() -> None:
     except Exception as e:
         logger.warning("Failed to load weather provider overrides from DB: %s", e)
         return
+
+    by_id = {r["provider_id"]: r for r in records}
+    online_rec = by_id.get(OPEN_METEO_ONLINE_ID)
+    local_rec = by_id.get(OPEN_METEO_LOCAL_ID)
+
+    # 清理遗留 open-meteo DB 行（合并到 online）
+    legacy_rec = by_id.get("open-meteo")
+    if legacy_rec is not None:
+        try:
+            if online_rec is None:
+                repo.upsert_provider(
+                    provider_id=OPEN_METEO_ONLINE_ID,
+                    display_name=legacy_rec.get("display_name") or "Open-Meteo (Online)",
+                    provider_type=legacy_rec.get("provider_type") or "free_api",
+                    enabled=bool(legacy_rec.get("enabled", True)),
+                    priority=int(legacy_rec.get("priority", 1)),
+                    config=legacy_rec.get("config") or {},
+                )
+            repo.delete_provider("open-meteo")
+            logger.info("Purged legacy weather provider id open-meteo on startup")
+            records = repo.list_providers(include_disabled=True)
+            by_id = {r["provider_id"]: r for r in records}
+            online_rec = by_id.get(OPEN_METEO_ONLINE_ID)
+            local_rec = by_id.get(OPEN_METEO_LOCAL_ID)
+        except Exception as e:
+            logger.warning("Failed to purge legacy open-meteo row: %s", e)
+
+    # 一次性迁移：旧默认 online=0 / local=1 → 产品默认 local=0 / online=1
+    if (
+        online_rec is not None
+        and local_rec is not None
+        and int(online_rec.get("priority", 99)) == 0
+        and int(local_rec.get("priority", 99)) == 1
+    ):
+        try:
+            repo.upsert_provider(
+                provider_id=OPEN_METEO_LOCAL_ID,
+                enabled=bool(local_rec.get("enabled", True)),
+                priority=0,
+                config=local_rec.get("config") or {},
+            )
+            repo.upsert_provider(
+                provider_id=OPEN_METEO_ONLINE_ID,
+                enabled=bool(online_rec.get("enabled", True)),
+                priority=1,
+                config=online_rec.get("config") or {},
+            )
+            local_rec["priority"] = 0
+            online_rec["priority"] = 1
+            logger.info(
+                "Migrated weather provider priorities to local-first "
+                "(open-meteo-local=0, open-meteo-online=1)"
+            )
+            records = repo.list_providers(include_disabled=True)
+        except Exception as e:
+            logger.warning("Failed to migrate open-meteo priorities to local-first: %s", e)
 
     for record in records:
         pid = record["provider_id"]

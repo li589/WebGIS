@@ -17,10 +17,15 @@ from shared.contracts.api_contracts import BoundingBox
 
 from app.weatherengine.constants import WeatherLayerSpec
 from app.weatherengine.field_mapping import (
-    SURFACE_LAYER_IDS,
+    COMMERCIAL_LAYER_IDS,
+    HEIGHT_LAYER_IDS,
+    PRESSURE_LAYER_IDS,
     append_hourly_series,
+    apply_commercial_height_extrapolation,
     assemble_grid_from_point_payloads,
     build_empty_om_point_payload,
+    build_empty_pressure_grid,
+    commercial_data_quality,
     compute_grid_axes,
     merge_current_fields,
     weatherapi_current_to_om,
@@ -44,8 +49,9 @@ class WeatherApiProvider(WeatherProvider):
     DISPLAY_NAME = "WeatherAPI.com"
     HOMEPAGE_URL = "https://www.weatherapi.com/"
     DESCRIPTION = (
-        "WeatherAPI.com 商业天气 API。首批支持近地面风场、温度、降水与湿度"
-        "（点查 + 网格采样）。需在设置中配置 API Key 并启用。"
+        "WeatherAPI.com 商业天气 API。覆盖 catalog 全部图层："
+        "近地面真值网格、高度层近地面外推、气压层稀疏不可用提示。"
+        "需在设置中配置 API Key 并启用。"
     )
     VERSION = "1.0.0"
 
@@ -76,7 +82,7 @@ class WeatherApiProvider(WeatherProvider):
 
     @property
     def supported_capabilities(self) -> frozenset[str]:
-        return frozenset(SURFACE_LAYER_IDS)
+        return frozenset(COMMERCIAL_LAYER_IDS)
 
     @property
     def version(self) -> str:
@@ -179,13 +185,20 @@ class WeatherApiProvider(WeatherProvider):
         ttl_seconds: int,
         pressure_levels: tuple[int, ...] | None = None,
     ) -> tuple[dict[str, Any], str]:
-        del model, pressure_levels  # unused — surface-only provider
-        if layer_spec.layer_id not in SURFACE_LAYER_IDS:
-            raise ValueError(f"WeatherAPI does not support layer '{layer_spec.layer_id}'")
+        del model, pressure_levels
+        layer_id = layer_spec.layer_id
+        if layer_id not in COMMERCIAL_LAYER_IDS:
+            raise ValueError(f"WeatherAPI does not support layer '{layer_id}'")
+        if layer_id in PRESSURE_LAYER_IDS:
+            # No true pressure-level winds on WeatherAPI — empty OM-style point.
+            empty = build_empty_om_point_payload()
+            empty["data_quality"] = "sparse"
+            empty["coverage"] = "sparse_unavailable"
+            return empty, "miss"
         if not self._api_key:
             raise RuntimeError("WeatherAPI API Key is not configured")
 
-        cache_key = f"point:{latitude:.4f},{longitude:.4f}:h{forecast_hours}"
+        cache_key = f"point:{latitude:.4f},{longitude:.4f}:h{forecast_hours}:{layer_id}"
         cached = self._cache_get(cache_key)
         if cached is not None:
             self._cache_hits += 1
@@ -203,6 +216,10 @@ class WeatherApiProvider(WeatherProvider):
             },
         )
         payload = self._map_forecast_payload(raw, forecast_hours=forecast_hours)
+        if layer_id in HEIGHT_LAYER_IDS:
+            apply_commercial_height_extrapolation(payload, layer_id)
+        else:
+            payload["data_quality"] = commercial_data_quality(layer_id)
         self._cache_set(cache_key, payload, ttl_seconds)
         self._cache_misses += 1
         return payload, "miss"
@@ -218,15 +235,21 @@ class WeatherApiProvider(WeatherProvider):
         pressure_levels: tuple[int, ...] | None = None,
     ) -> tuple[dict[str, Any], str]:
         del model, pressure_levels
-        if layer_spec.layer_id not in SURFACE_LAYER_IDS:
-            raise ValueError(f"WeatherAPI does not support layer '{layer_spec.layer_id}'")
-        if not self._api_key:
+        layer_id = layer_spec.layer_id
+        if layer_id not in COMMERCIAL_LAYER_IDS:
+            raise ValueError(f"WeatherAPI does not support layer '{layer_id}'")
+        if not self._api_key and layer_id not in PRESSURE_LAYER_IDS:
             raise RuntimeError("WeatherAPI API Key is not configured")
 
-        lats, lons, res = compute_grid_axes(bbox, resolution, max_points=25)
+        if layer_id in PRESSURE_LAYER_IDS:
+            empty = build_empty_pressure_grid(bbox=bbox, resolution=resolution, layer_spec=layer_spec)
+            return empty, "miss"
+
+        max_points = 36 if layer_id in HEIGHT_LAYER_IDS else 64
+        lats, lons, res = compute_grid_axes(bbox, resolution, max_points=max_points)
         cache_key = (
             f"grid:{bbox.west:.2f},{bbox.south:.2f},{bbox.east:.2f},{bbox.north:.2f}"
-            f":r{res:.3f}:{layer_spec.layer_id}"
+            f":r{res:.3f}:{layer_id}"
         )
         cached = self._cache_get(cache_key)
         if cached is not None:
@@ -259,6 +282,9 @@ class WeatherApiProvider(WeatherProvider):
             current_fields=tuple(layer_spec.current_fields),
             hourly_fields=tuple(layer_spec.hourly_fields),
         )
+        grid["data_quality"] = commercial_data_quality(layer_id)
+        if layer_id in HEIGHT_LAYER_IDS:
+            grid["proxy_from"] = "surface"
         self._cache_set(cache_key, grid, ttl_seconds)
         self._cache_misses += 1
         return grid, "miss"
@@ -279,6 +305,10 @@ class WeatherApiProvider(WeatherProvider):
             "relative_humidity_2m": [],
             "wind_speed_10m": [],
             "wind_direction_10m": [],
+            "cloud_cover": [],
+            "pressure_msl": [],
+            "visibility": [],
+            "dew_point_2m": [],
         }
         for hour in hours:
             mapped = weatherapi_hour_to_om(hour)

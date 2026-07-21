@@ -1,9 +1,14 @@
 # ============================================================
-# CGDA 后端基础设施
-#   - Redis: Celery broker & result backend
-#   - MinIO: S3-compatible 对象存储（artifact 持久化 / GEE 导出）
+# CGDA 后端运行栈（长期运行）
+#   - Redis / MinIO
+#   - Open-Meteo API (cgda-open-meteo) — 读 named volume，不跑 sync
+#
+# 数据同步（一次性 run）在独立 compose：
+#   Code/infra/data-sync/  →  docker compose -p data-sync --profile sync run --rm open-meteo-sync
+#
+# 日常:
+#   docker compose -p backend up -d
 # ============================================================
-version: "3.8"
 
 services:
   # ----------------------------------------------------------
@@ -70,6 +75,25 @@ services:
       "
     restart: "no"
 
+  # ----------------------------------------------------------
+  # Open-Meteo API — 运行态（与 Redis/MinIO 同栈）
+  #   http://127.0.0.1:8080/v1/forecast
+  #   数据在 Docker named volume（I:\Docker\DockerDesktop / Linux /var/lib/docker）。
+  #   勿 bind Windows/项目路径（errno 95）。同步见 Code/infra/data-sync。
+  # ----------------------------------------------------------
+  open-meteo:
+    image: ${OPEN_METEO_IMAGE:-public.ecr.aws/w5w8t1y7/openmeteo:latest}
+    container_name: cgda-open-meteo
+    restart: unless-stopped
+    ports:
+      - "${OPEN_METEO_HOST_PORT:-8080}:8080"
+    volumes:
+      - open-meteo-data:/app/data
+
 volumes:
   redis-data:
   minio-data:
+  # Shared with Code/infra/data-sync (sync jobs write; API reads).
+  # Lives inside Docker Desktop (this PC: I:\Docker\DockerDesktop), not the repo.
+  open-meteo-data:
+    name: ${OPEN_METEO_DATA_VOLUME:-backend_open-meteo-data}

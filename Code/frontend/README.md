@@ -5,7 +5,7 @@
 ## 当前前端定位
 
 - `2D-first`：MapLibre 为当前主地图引擎
-- 天气图层：标准 z/x/y 瓦片加载 + Canvas 风场叠加；支持多 Provider 钉源（InfoPanel「天气数据源」，偏好存 localStorage）
+- 天气图层：标准 z/x/y 瓦片加载 + Canvas 风场叠加；支持多 Provider 钉源（侧栏与 InfoPanel，偏好存 localStorage；`open-meteo-online` / `open-meteo-local` / 商业源）
 - 图层面板、时间轴、工具栏导入、截图导出、工作流状态
 - Cesium / vue-cesium 已在依赖中，尚未成为默认主界面模式
 
@@ -27,7 +27,7 @@
 - `src/stores/ui.ts`：底图瓦片源、时间轴、交互模式等 UI 状态
 - `src/stores/layers/`：图层目录、workflow 编排、result-adapter
 - `src/stores/weather-tile-manager.ts`：天气瓦片并发、缓存与优先队列（缓存键含 provider）
-- `src/stores/weather-source-prefs.ts`：每图层天气源偏好（auto / provider_id）
+- `src/stores/weather-source-prefs.ts`：每图层天气源偏好（auto / provider_id；旧 `open-meteo` 映射为 `open-meteo-online`）
 - `src/stores/import.ts` / `src/stores/log.ts`：数据导入与日志面板
 - `src/services/runtime-api.ts`：workflow / runtime / weather providers-for-layer API 客户端
 - `src/services/weather-tile-api.ts`：Mercator 瓦片数学与 `/weather/tiles` 请求（支持 `provider`）
@@ -37,12 +37,13 @@
 ## 当前界面补充说明
 
 - `ModeToolbar.vue`：标题栏工具（底图风格、行政区、导入、截图、工作流入口等）
-- `LayerSidebar.vue`：分类、搜索、批量显隐/移除、拖拽排序、多数据源选择
+- `LayerSidebar.vue`：分类、搜索、批量显隐/移除、拖拽排序；`online-weather` 卡片接入运行时 `providers-for-layer` 选源
 - `InfoPanel.vue`：态势摘要、workflow 状态、天气图例/数据源钉选、选中图层/热点信息
 - `TimelineScrubber.vue` / `TimelinePanel.vue`：时间轴
 - `ScreenshotExport.vue`：截图导出
-- `workflow/`：全局工作流状态按钮与面板
+- `workflow/`：全局工作流状态按钮与面板；`WorkflowEditorPanel` 画布 Run 提交编译后的 `workflow_definition`
 - `toolbar/`：数据导入菜单、CSV 对话框、日志面板
+- `settings/`：系统设置（含数据源扫描、开放数据预设、静态缓存清理、远程存储 profile）
 - `MapCanvas.vue`：地图运行时总入口（编排各 map 模块）
 
 ## 当前地图与天气渲染事实

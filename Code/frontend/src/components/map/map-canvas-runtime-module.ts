@@ -6,6 +6,7 @@ import {
   watchAdminBoundaryOverlay,
   watchBasemapSource,
   watchInteractionMode,
+  watchMeasureState,
 } from './map-canvas-runtime-watcher'
 
 export interface MapCanvasRuntimeModule {
@@ -19,13 +20,16 @@ interface CreateMapCanvasRuntimeModuleOptions {
   getInteractionMode: () => InteractionMode
   getHasAdminBoundary: () => boolean
   getAdminBoundaryOpacity: () => number
+  getMeasureSyncKey: () => string
   onTileSourceChange: (sourceId: TileSourceId) => void
   onInteractionModeChange: () => void
   onAdminBoundaryOverlayChange: () => void
+  onMeasureStateChange: () => void
   dependencies?: {
     watchBasemapSource?: typeof watchBasemapSource
     watchInteractionMode?: typeof watchInteractionMode
     watchAdminBoundaryOverlay?: typeof watchAdminBoundaryOverlay
+    watchMeasureState?: typeof watchMeasureState
   }
 }
 
@@ -36,6 +40,7 @@ export function createMapCanvasRuntimeModule(
   const watchInteractionModeImpl = options.dependencies?.watchInteractionMode ?? watchInteractionMode
   const watchAdminBoundaryOverlayImpl =
     options.dependencies?.watchAdminBoundaryOverlay ?? watchAdminBoundaryOverlay
+  const watchMeasureStateImpl = options.dependencies?.watchMeasureState ?? watchMeasureState
 
   const stopHandles: WatchStopHandle[] = []
 
@@ -64,6 +69,14 @@ export function createMapCanvasRuntimeModule(
         getAdminBoundaryOpacity: options.getAdminBoundaryOpacity,
         getMapReady: options.getMapReady,
         onAdminBoundaryOverlayChange: options.onAdminBoundaryOverlayChange,
+      }),
+    )
+
+    stopHandles.push(
+      watchMeasureStateImpl({
+        getMeasureSyncKey: options.getMeasureSyncKey,
+        getMapReady: options.getMapReady,
+        onMeasureStateChange: options.onMeasureStateChange,
       }),
     )
   }

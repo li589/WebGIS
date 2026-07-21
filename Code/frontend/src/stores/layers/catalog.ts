@@ -1,47 +1,47 @@
 import type { LayerCatalogItem, LayerCategory, LayerSource } from './types'
 
+// 注意：category id 必须与后端 `layer_catalog.py` 中的 `category=` 字段保持一致。
+// 任何新增/重命名都需要后端同步更新。前端独有类别（boundary/imported/workflow-output）除外。
+//
+// 分组约定：
+// - 气象场 / 在线天气：天气引擎实时图层（wind/temp/precip/…）
+// - 气候产品 / 气候与灾害：历史气候、热浪、CO₂、干旱指数等离线产品
+// - 植被监测 / 植被与土地；遥感产品 / 遥感与地形；其余为课题组 / 模拟 / 本地类
 export const LAYER_CATEGORIES: LayerCategory[] = [
   {
-    id: 'online-weather',
+    id: '气象场',
     name: '在线天气',
     icon: 'W',
     accentColor: '#67d4ff',
     chipTone: 'rgba(103, 212, 255, 0.18)',
   },
   {
-    id: 'climate',
-    name: '气候与历史',
+    id: '气候产品',
+    name: '气候与灾害',
     icon: 'C',
-    accentColor: '#5b8def',
-    chipTone: 'rgba(91, 141, 239, 0.16)',
+    accentColor: '#ff9d6c',
+    chipTone: 'rgba(255, 157, 108, 0.16)',
   },
   {
-    id: 'disaster',
-    name: '灾害监测',
-    icon: 'D',
-    accentColor: '#72ffcf',
-    chipTone: 'rgba(114, 255, 207, 0.16)',
-  },
-  {
-    id: 'atmosphere',
-    name: '大气环境',
-    icon: 'A',
-    accentColor: '#c9a3ff',
-    chipTone: 'rgba(201, 163, 255, 0.16)',
-  },
-  {
-    id: 'vegetation',
+    id: '植被监测',
     name: '植被与土地',
     icon: 'V',
     accentColor: '#7fd99a',
     chipTone: 'rgba(127, 217, 154, 0.16)',
   },
   {
-    id: 'terrain',
-    name: '地形与遥感',
+    id: '遥感产品',
+    name: '遥感与地形',
     icon: 'T',
     accentColor: '#bb89ff',
     chipTone: 'rgba(187, 137, 255, 0.16)',
+  },
+  {
+    id: '模拟结果',
+    name: '算法模拟结果',
+    icon: 'M',
+    accentColor: '#5b8def',
+    chipTone: 'rgba(91, 141, 239, 0.16)',
   },
   {
     id: 'research-group',
@@ -67,7 +67,7 @@ export const LAYER_CATEGORIES: LayerCategory[] = [
   {
     id: 'workflow-output',
     name: '工作流产出',
-    icon: 'W',
+    icon: 'O',
     accentColor: '#ffb84d',
     chipTone: 'rgba(255, 184, 77, 0.16)',
   },
@@ -241,6 +241,28 @@ const SOURCE_WEATHERENGINE_VISIBILITY: LayerSource = {
   updateFrequency: '每小时更新',
 }
 
+const SOURCE_WEATHERENGINE_CLOUD: LayerSource = {
+  id: 'weatherengine-cloud-cover',
+  name: '天气引擎 · 云量',
+  description: 'Open-Meteo online/local 总云量。',
+  urlTemplate: 'https://example.com/cloud-cover/{z}/{x}/{y}.png',
+  needsAuth: false,
+  needsBackendTransform: true,
+  coordSys: 'EPSG:3857',
+  updateFrequency: '每小时更新',
+}
+
+const SOURCE_WEATHERENGINE_DEWPOINT: LayerSource = {
+  id: 'weatherengine-dewpoint',
+  name: '天气引擎 · 露点',
+  description: 'Open-Meteo online/local 2 米露点温度。',
+  urlTemplate: 'https://example.com/dewpoint/{z}/{x}/{y}.png',
+  needsAuth: false,
+  needsBackendTransform: true,
+  coordSys: 'EPSG:3857',
+  updateFrequency: '每小时更新',
+}
+
 const SOURCE_NDVI: LayerSource = {
   id: 'ndvi-satellite',
   name: 'Landsat / Sentinel-2 NDVI 产品',
@@ -320,8 +342,8 @@ const SOURCE_ARIDITY_CN: LayerSource = {
 
 const SOURCE_OMEGA: LayerSource = {
   id: 'omega-output',
-  name: 'Omega 植被光学厚度反演（doy 017）',
-  description: 'SMAP Omega 植被光学厚度反演结果（全球 EASE-Grid 9km，doy 017 多年均值）。',
+  name: 'Omega 植被光学厚度反演（doy 017-030 时间序列）',
+  description: 'SMAP Omega 植被光学厚度反演结果（全球 EASE-Grid 9km，doy 017-030 多年均值时间序列，14 天）。',
   urlTemplate: '',
   needsAuth: false,
   needsBackendTransform: false,
@@ -432,24 +454,36 @@ const SOURCE_CO2_CN: LayerSource = {
 
 const SOURCE_SOIL_DDCA: LayerSource = {
   id: 'soil-ddca',
-  name: '土壤生态 DDCA（2015-04-01）',
-  description: '中国 9km 土壤生态数据集 DDCA 产品（变量 DH，2015-04-01）。',
+  name: '土壤生态 DDCA（2015-2022 时间序列）',
+  description: '中国 9km 土壤生态数据集 DDCA 产品（变量 DH，2015-04-01 至 2022-12-31 时间序列，采样 60 个时间点）。',
   urlTemplate: '',
   needsAuth: false,
   needsBackendTransform: false,
   coordSys: 'EPSG:4326',
-  updateFrequency: '静态数据',
+  updateFrequency: '每日更新',
 }
 
 const SOURCE_OMEGA_FY_OUTPUT: LayerSource = {
   id: 'omega-fy-output',
-  name: 'Omega FY 反演均值（doy 025）',
-  description: 'SMAP Omega 多年均值反演结果（fy_avg 目录，doy 025）。',
+  name: 'Omega FY 反演均值（doy 025-030 时间序列）',
+  description: 'SMAP Omega 多年均值反演结果（fy_avg 目录，doy 025-030 时间序列，6 天）。',
   urlTemplate: '',
   needsAuth: false,
   needsBackendTransform: false,
   coordSys: 'EPSG:4326',
   updateFrequency: '按工作流运行',
+}
+
+// ── Phase 1.4 新增：课题组 9km EASE-Grid 派生景观指数 ──────────────────────────
+const SOURCE_LANDSCAPE_METRICS: LayerSource = {
+  id: 'landscape-metrics-9km',
+  name: '景观多样性指数 SHDI（9km，2020）',
+  description: '全球 9km 景观格局指数（Shannon 多样性指数 SHDI），基于 EASE-Grid 9km 与 IGBP 土地覆盖派生。',
+  urlTemplate: '',
+  needsAuth: false,
+  needsBackendTransform: false,
+  coordSys: 'EPSG:4326',
+  updateFrequency: '静态数据',
 }
 
 const SOURCE_FOREST_RATIO: LayerSource = {
@@ -461,6 +495,40 @@ const SOURCE_FOREST_RATIO: LayerSource = {
   needsBackendTransform: false,
   coordSys: 'EPSG:4326',
   updateFrequency: '静态数据',
+}
+
+// ── Phase 2 新增：课题组 VOD/SM/Omega 2025-12 产品族（EASE-Grid 9km）─────────────
+const SOURCE_VOD_DEC2025: LayerSource = {
+  id: 'vod-dec2025',
+  name: 'VOD 植被光学厚度（2025-12）',
+  description: 'SMAP 植被光学厚度 VOD 反演结果（2025-12-01 至 2025-12-31 时间序列，31 天，EASE-Grid 9km）。',
+  urlTemplate: '',
+  needsAuth: false,
+  needsBackendTransform: false,
+  coordSys: 'EPSG:4326',
+  updateFrequency: '每日更新',
+}
+
+const SOURCE_SM_DEC2025: LayerSource = {
+  id: 'sm-dec2025',
+  name: 'SM 土壤湿度（2025-12）',
+  description: 'SMAP 土壤湿度 SM 反演结果（2025-12-01 至 2025-12-31 时间序列，31 天，EASE-Grid 9km）。',
+  urlTemplate: '',
+  needsAuth: false,
+  needsBackendTransform: false,
+  coordSys: 'EPSG:4326',
+  updateFrequency: '每日更新',
+}
+
+const SOURCE_OMEGA_DEC2025: LayerSource = {
+  id: 'omega-dec2025',
+  name: 'Omega 反演（2025-12）',
+  description: 'SMAP Omega 植被光学厚度反演结果（2025-12-01 至 2025-12-31 时间序列，31 天，EASE-Grid 9km）；与 omega-output（doy 017-030 多年均值）互补。',
+  urlTemplate: '',
+  needsAuth: false,
+  needsBackendTransform: false,
+  coordSys: 'EPSG:4326',
+  updateFrequency: '每日更新',
 }
 
 const SOURCE_GD_BOUNDARY: LayerSource = {
@@ -478,7 +546,7 @@ export const LAYER_LIBRARY: LayerCatalogItem[] = [
   {
     catalogId: 'wind-field',
     name: '风场（10m）',
-    category: 'online-weather',
+    category: '气象场',
     metricLabel: '风速',
     metricUnit: 'm/s',
     metricPrecision: 1,
@@ -492,7 +560,7 @@ export const LAYER_LIBRARY: LayerCatalogItem[] = [
   {
     catalogId: 'wind-field-80m',
     name: '风场（80m）',
-    category: 'online-weather',
+    category: '气象场',
     metricLabel: '风速',
     metricUnit: 'm/s',
     metricPrecision: 1,
@@ -506,7 +574,7 @@ export const LAYER_LIBRARY: LayerCatalogItem[] = [
   {
     catalogId: 'wind-field-120m',
     name: '风场（120m）',
-    category: 'online-weather',
+    category: '气象场',
     metricLabel: '风速',
     metricUnit: 'm/s',
     metricPrecision: 1,
@@ -520,7 +588,7 @@ export const LAYER_LIBRARY: LayerCatalogItem[] = [
   {
     catalogId: 'wind-field-180m',
     name: '风场（180m）',
-    category: 'online-weather',
+    category: '气象场',
     metricLabel: '风速',
     metricUnit: 'm/s',
     metricPrecision: 1,
@@ -534,7 +602,7 @@ export const LAYER_LIBRARY: LayerCatalogItem[] = [
   {
     catalogId: 'wind-field-850hPa',
     name: '风场（850hPa）',
-    category: 'online-weather',
+    category: '气象场',
     metricLabel: '850hPa 风速',
     metricUnit: 'm/s',
     metricPrecision: 1,
@@ -548,7 +616,7 @@ export const LAYER_LIBRARY: LayerCatalogItem[] = [
   {
     catalogId: 'wind-field-500hPa',
     name: '风场（500hPa）',
-    category: 'online-weather',
+    category: '气象场',
     metricLabel: '500hPa 风速',
     metricUnit: 'm/s',
     metricPrecision: 1,
@@ -562,7 +630,7 @@ export const LAYER_LIBRARY: LayerCatalogItem[] = [
   {
     catalogId: 'wind-field-200hPa',
     name: '风场（200hPa）',
-    category: 'online-weather',
+    category: '气象场',
     metricLabel: '200hPa 风速',
     metricUnit: 'm/s',
     metricPrecision: 1,
@@ -576,7 +644,7 @@ export const LAYER_LIBRARY: LayerCatalogItem[] = [
   {
     catalogId: 'precipitation',
     name: '降水',
-    category: 'online-weather',
+    category: '气象场',
     metricLabel: '峰值降水',
     metricUnit: 'mm/h',
     metricPrecision: 0,
@@ -590,7 +658,7 @@ export const LAYER_LIBRARY: LayerCatalogItem[] = [
   {
     catalogId: 'temperature',
     name: '温度',
-    category: 'online-weather',
+    category: '气象场',
     metricLabel: '区域均温',
     metricUnit: '°C',
     metricPrecision: 1,
@@ -604,7 +672,7 @@ export const LAYER_LIBRARY: LayerCatalogItem[] = [
   {
     catalogId: 'temperature-80m',
     name: '温度（80m）',
-    category: 'online-weather',
+    category: '气象场',
     metricLabel: '80m 温度',
     metricUnit: '°C',
     metricPrecision: 1,
@@ -618,7 +686,7 @@ export const LAYER_LIBRARY: LayerCatalogItem[] = [
   {
     catalogId: 'temperature-120m',
     name: '温度（120m）',
-    category: 'online-weather',
+    category: '气象场',
     metricLabel: '120m 温度',
     metricUnit: '°C',
     metricPrecision: 1,
@@ -632,7 +700,7 @@ export const LAYER_LIBRARY: LayerCatalogItem[] = [
   {
     catalogId: 'temperature-180m',
     name: '温度（180m）',
-    category: 'online-weather',
+    category: '气象场',
     metricLabel: '180m 温度',
     metricUnit: '°C',
     metricPrecision: 1,
@@ -646,7 +714,7 @@ export const LAYER_LIBRARY: LayerCatalogItem[] = [
   {
     catalogId: 'pressure',
     name: '气压',
-    category: 'online-weather',
+    category: '气象场',
     metricLabel: '海平面气压',
     metricUnit: 'hPa',
     metricPrecision: 1,
@@ -660,7 +728,7 @@ export const LAYER_LIBRARY: LayerCatalogItem[] = [
   {
     catalogId: 'humidity',
     name: '湿度',
-    category: 'online-weather',
+    category: '气象场',
     metricLabel: '相对湿度',
     metricUnit: '%',
     metricPrecision: 0,
@@ -674,7 +742,7 @@ export const LAYER_LIBRARY: LayerCatalogItem[] = [
   {
     catalogId: 'visibility',
     name: '能见度',
-    category: 'online-weather',
+    category: '气象场',
     metricLabel: '能见度',
     metricUnit: 'm',
     metricPrecision: 0,
@@ -686,9 +754,37 @@ export const LAYER_LIBRARY: LayerCatalogItem[] = [
     sources: [SOURCE_WEATHERENGINE_VISIBILITY],
   },
   {
+    catalogId: 'cloud-cover',
+    name: '云量',
+    category: '气象场',
+    metricLabel: '云量',
+    metricUnit: '%',
+    metricPrecision: 0,
+    updateLabel: '每小时更新',
+    sourceLabel: '天气引擎（多源）',
+    accentColor: '#9aa7b5',
+    accentGlow: 'rgba(154, 167, 181, 0.3)',
+    chipTone: 'rgba(154, 167, 181, 0.16)',
+    sources: [SOURCE_WEATHERENGINE_CLOUD],
+  },
+  {
+    catalogId: 'dewpoint',
+    name: '露点温度',
+    category: '气象场',
+    metricLabel: '露点',
+    metricUnit: '°C',
+    metricPrecision: 1,
+    updateLabel: '每小时更新',
+    sourceLabel: '天气引擎（多源）',
+    accentColor: '#f0a070',
+    accentGlow: 'rgba(240, 160, 112, 0.3)',
+    chipTone: 'rgba(240, 160, 112, 0.16)',
+    sources: [SOURCE_WEATHERENGINE_DEWPOINT],
+  },
+  {
     catalogId: 'ndvi',
     name: '植被指数（NDVI）',
-    category: 'vegetation',
+    category: '植被监测',
     metricLabel: '植被指数',
     metricUnit: '',
     metricPrecision: 2,
@@ -702,7 +798,7 @@ export const LAYER_LIBRARY: LayerCatalogItem[] = [
   {
     catalogId: 'remote-sensing',
     name: '遥感反演产品',
-    category: 'terrain',
+    category: '遥感产品',
     metricLabel: '反演指数',
     metricUnit: '',
     metricPrecision: 2,
@@ -730,7 +826,7 @@ export const LAYER_LIBRARY: LayerCatalogItem[] = [
   {
     catalogId: 'dem-etopo',
     name: 'ETOPO 2022 全球地形',
-    category: 'terrain',
+    category: '遥感产品',
     metricLabel: '高程',
     metricUnit: 'm',
     metricPrecision: 0,
@@ -744,7 +840,7 @@ export const LAYER_LIBRARY: LayerCatalogItem[] = [
   {
     catalogId: 'landcover-cn',
     name: 'MCD12Q1 土地覆盖',
-    category: 'vegetation',
+    category: '植被监测',
     metricLabel: 'IGBP 分类',
     metricUnit: '',
     metricPrecision: 0,
@@ -758,7 +854,7 @@ export const LAYER_LIBRARY: LayerCatalogItem[] = [
   {
     catalogId: 'hfp-cn',
     name: '人类足迹指数 HFP',
-    category: 'terrain',
+    category: '遥感产品',
     metricLabel: 'HFP',
     metricUnit: '',
     metricPrecision: 1,
@@ -772,7 +868,7 @@ export const LAYER_LIBRARY: LayerCatalogItem[] = [
   {
     catalogId: 'aridity-cn',
     name: '干旱指数 AI',
-    category: 'climate',
+    category: '气候产品',
     metricLabel: 'AI',
     metricUnit: '',
     metricPrecision: 2,
@@ -790,12 +886,14 @@ export const LAYER_LIBRARY: LayerCatalogItem[] = [
     metricLabel: 'Omega',
     metricUnit: '',
     metricPrecision: 3,
-    updateLabel: '按工作流运行',
+    updateLabel: '按时间维度',
     sourceLabel: 'SMAP InversionResults',
     accentColor: '#9d4edd',
     accentGlow: 'rgba(157, 78, 221, 0.3)',
     chipTone: 'rgba(157, 78, 221, 0.16)',
     sources: [SOURCE_OMEGA],
+    dataOwner: 'Lab',
+    temporalCoverage: 'doy 017-030 (multi-year mean)',
   },
   {
     catalogId: 'smap-sm-ts',
@@ -810,11 +908,14 @@ export const LAYER_LIBRARY: LayerCatalogItem[] = [
     accentGlow: 'rgba(78, 205, 196, 0.3)',
     chipTone: 'rgba(78, 205, 196, 0.16)',
     sources: [SOURCE_SMAP_TS],
+    dataOwner: 'Lab',
+    temporalCoverage: '2023-01 (13 days)',
+    sourceReference: 'https://nsidc.org/data/SPL3SMP',
   },
   {
     catalogId: 'gpcp-precip-ts',
     name: 'GPCP 月降水时间序列',
-    category: 'climate',
+    category: '气候产品',
     metricLabel: '降水',
     metricUnit: 'mm/month',
     metricPrecision: 1,
@@ -828,7 +929,7 @@ export const LAYER_LIBRARY: LayerCatalogItem[] = [
   {
     catalogId: 'gebco-dem-cn',
     name: 'GEBCO 2024 海底地形（中国）',
-    category: 'terrain',
+    category: '遥感产品',
     metricLabel: '高程',
     metricUnit: 'm',
     metricPrecision: 0,
@@ -842,7 +943,7 @@ export const LAYER_LIBRARY: LayerCatalogItem[] = [
   {
     catalogId: 'cmfd-precip-cn',
     name: 'CMFD 中国区域降水',
-    category: 'climate',
+    category: '气候产品',
     metricLabel: '降水',
     metricUnit: 'mm',
     metricPrecision: 1,
@@ -856,7 +957,7 @@ export const LAYER_LIBRARY: LayerCatalogItem[] = [
   {
     catalogId: 'clcd-cn',
     name: 'CLCD 中国土地覆盖',
-    category: 'vegetation',
+    category: '植被监测',
     metricLabel: '土地覆盖',
     metricUnit: 'class',
     metricPrecision: 0,
@@ -870,7 +971,7 @@ export const LAYER_LIBRARY: LayerCatalogItem[] = [
   {
     catalogId: 'biomass-cn',
     name: 'ESA BIOMASS 2020（中国）',
-    category: 'vegetation',
+    category: '植被监测',
     metricLabel: '地上生物量',
     metricUnit: 'Mg/ha',
     metricPrecision: 1,
@@ -884,7 +985,7 @@ export const LAYER_LIBRARY: LayerCatalogItem[] = [
   {
     catalogId: 'era5-dwaa-cn',
     name: 'ERA5 白天热浪事件（2020）',
-    category: 'disaster',
+    category: '气候产品',
     metricLabel: '事件次数',
     metricUnit: 'events',
     metricPrecision: 0,
@@ -898,7 +999,7 @@ export const LAYER_LIBRARY: LayerCatalogItem[] = [
   {
     catalogId: 'era5-wdaa-cn',
     name: 'ERA5 夜间热浪事件（2020）',
-    category: 'disaster',
+    category: '气候产品',
     metricLabel: '事件次数',
     metricUnit: 'events',
     metricPrecision: 0,
@@ -912,7 +1013,7 @@ export const LAYER_LIBRARY: LayerCatalogItem[] = [
   {
     catalogId: 'co2-cn',
     name: 'GOSAT 中层 CO₂ 柱浓度',
-    category: 'atmosphere',
+    category: '气候产品',
     metricLabel: 'CO₂',
     metricUnit: 'ppm',
     metricPrecision: 2,
@@ -930,12 +1031,14 @@ export const LAYER_LIBRARY: LayerCatalogItem[] = [
     metricLabel: 'DH',
     metricUnit: '',
     metricPrecision: 2,
-    updateLabel: '静态数据',
-    sourceLabel: 'Soil DDCA 2015-04-01',
+    updateLabel: '按时间维度',
+    sourceLabel: 'Soil DDCA 2015-04 to 2022-12 (sampled 60)',
     accentColor: '#5e4fa2',
     accentGlow: 'rgba(94, 79, 162, 0.3)',
     chipTone: 'rgba(94, 79, 162, 0.16)',
     sources: [SOURCE_SOIL_DDCA],
+    dataOwner: 'Lab',
+    temporalCoverage: '2015-04-01 to 2022-12-31 (sampled 60 dates)',
   },
   {
     catalogId: 'omega-fy-output',
@@ -944,17 +1047,19 @@ export const LAYER_LIBRARY: LayerCatalogItem[] = [
     metricLabel: 'Omega',
     metricUnit: '',
     metricPrecision: 3,
-    updateLabel: '按工作流运行',
+    updateLabel: '按时间维度',
     sourceLabel: 'SMAP InversionResults fy_avg',
     accentColor: '#b35806',
     accentGlow: 'rgba(179, 88, 6, 0.3)',
     chipTone: 'rgba(179, 88, 6, 0.16)',
     sources: [SOURCE_OMEGA_FY_OUTPUT],
+    dataOwner: 'Lab',
+    temporalCoverage: 'doy 025-030 (multi-year mean)',
   },
   {
     catalogId: 'forest-ratio',
     name: '全球森林比例（9km，2020）',
-    category: 'vegetation',
+    category: 'research-group',
     metricLabel: '森林比例',
     metricUnit: 'ratio',
     metricPrecision: 2,
@@ -964,6 +1069,74 @@ export const LAYER_LIBRARY: LayerCatalogItem[] = [
     accentGlow: 'rgba(27, 158, 119, 0.3)',
     chipTone: 'rgba(27, 158, 119, 0.16)',
     sources: [SOURCE_FOREST_RATIO],
+    dataOwner: 'Liuzheng',
+    temporalCoverage: '2020',
+    sourceReference: 'https://doi.org/10.5281/zenodo.4708837',
+  },
+  {
+    catalogId: 'landscape-metrics-9km',
+    name: '景观多样性指数 SHDI（9km，2020）',
+    category: 'research-group',
+    metricLabel: 'SHDI',
+    metricUnit: '',
+    metricPrecision: 2,
+    updateLabel: '静态数据',
+    sourceLabel: 'Landscape_Metrics_LandOnly_9KM_2020',
+    accentColor: '#8c6bb1',
+    accentGlow: 'rgba(140, 107, 177, 0.3)',
+    chipTone: 'rgba(140, 107, 177, 0.16)',
+    sources: [SOURCE_LANDSCAPE_METRICS],
+    dataOwner: 'Liuzheng',
+    temporalCoverage: '2020',
+  },
+  // ── Phase 2 新增：课题组 VOD/SM/Omega 2025-12 产品族 ──────────────────────────
+  {
+    catalogId: 'vod-dec2025',
+    name: 'VOD 植被光学厚度（2025-12）',
+    category: 'research-group',
+    metricLabel: 'VOD',
+    metricUnit: '',
+    metricPrecision: 3,
+    updateLabel: '每日更新',
+    sourceLabel: 'SmapSoil_VOD_SM v7.3',
+    accentColor: '#fc8d62',
+    accentGlow: 'rgba(252, 141, 98, 0.3)',
+    chipTone: 'rgba(252, 141, 98, 0.16)',
+    sources: [SOURCE_VOD_DEC2025],
+    dataOwner: 'Lab',
+    temporalCoverage: '2025-12-01 to 2025-12-31 (31 days)',
+  },
+  {
+    catalogId: 'sm-dec2025',
+    name: 'SM 土壤湿度（2025-12）',
+    category: 'research-group',
+    metricLabel: '土壤湿度',
+    metricUnit: 'm³/m³',
+    metricPrecision: 3,
+    updateLabel: '每日更新',
+    sourceLabel: 'SmapSoil_VOD_SM v7.3',
+    accentColor: '#66c2a5',
+    accentGlow: 'rgba(102, 194, 165, 0.3)',
+    chipTone: 'rgba(102, 194, 165, 0.16)',
+    sources: [SOURCE_SM_DEC2025],
+    dataOwner: 'Lab',
+    temporalCoverage: '2025-12-01 to 2025-12-31 (31 days)',
+  },
+  {
+    catalogId: 'omega-dec2025',
+    name: 'Omega 反演（2025-12）',
+    category: 'research-group',
+    metricLabel: 'Omega',
+    metricUnit: '',
+    metricPrecision: 3,
+    updateLabel: '每日更新',
+    sourceLabel: 'SmapSoil_VOD_SM v7.3',
+    accentColor: '#e78ac3',
+    accentGlow: 'rgba(231, 138, 195, 0.3)',
+    chipTone: 'rgba(231, 138, 195, 0.16)',
+    sources: [SOURCE_OMEGA_DEC2025],
+    dataOwner: 'Lab',
+    temporalCoverage: '2025-12-01 to 2025-12-31 (31 days)',
   },
   {
     catalogId: 'smap-soil',
@@ -978,6 +1151,9 @@ export const LAYER_LIBRARY: LayerCatalogItem[] = [
     accentGlow: 'rgba(168, 230, 163, 0.3)',
     chipTone: 'rgba(168, 230, 163, 0.16)',
     sources: [],
+    dataOwner: 'Lab',
+    temporalCoverage: '2023-01 to 2023-09 (19 days, gap-filled)',
+    sourceReference: 'https://nsidc.org/data/SPL3SMP',
   },
   {
     catalogId: 'admin-boundary',
@@ -999,7 +1175,7 @@ export const LAYER_LIBRARY: LayerCatalogItem[] = [
 /** Static whitelist of catalog IDs backed by weatherengine (used before runtime catalog loads). */
 export const WEATHER_ENGINE_CATALOG_IDS = new Set(
   LAYER_LIBRARY
-    .filter((item) => item.category === 'online-weather')
+    .filter((item) => item.sources.some((s) => s.id.startsWith('weatherengine')))
     .map((item) => item.catalogId),
 )
 

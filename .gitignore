@@ -10,6 +10,7 @@ __pycache__/
 *.pyo
 *.pyd
 .pytest_cache/
+.pytest_tmp/
 .mypy_cache/
 .ruff_cache/
 .coverage
@@ -39,7 +40,10 @@ Desktop.ini
 *.db
 tmp/
 temp/
+# Root-level runtime data (workflow defs, pytest tmp, user imports output)
+/.data/
 Code/backend/.data/
+Code/backend/imports_output/
 Code/frontend/.tmp_guangdong_pkg/
 Code/frontend/.tmp/
 Code/frontend/*.tgz

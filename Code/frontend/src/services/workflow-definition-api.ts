@@ -21,6 +21,12 @@ export interface NodeParamSpec {
   default?: unknown
   description?: string
   options?: string[]
+  /** 有 options 时是否允许输入不在列表中的自定义值；默认 true（enum/option 类型默认 false） */
+  allow_custom?: boolean
+  unit?: string
+  min?: number
+  max?: number
+  step?: number
 }
 
 export interface NodeTemplate {
@@ -153,5 +159,18 @@ export async function duplicateWorkflowDefinition(
   return requestJson<WorkflowDefinition>(`${BASE}/${workflowId}/duplicate`, {
     method: 'POST',
     body: JSON.stringify({ new_id: newId, new_name: newName }),
+  })
+}
+
+export async function compileWorkflowGraph(payload: {
+  workflow_id: string
+  name?: string
+  description?: string | null
+  nodes: unknown[]
+  links: unknown[]
+}): Promise<{ ok: boolean; workflow_definition: Record<string, unknown> }> {
+  return requestJson(`${BASE}/compile`, {
+    method: 'POST',
+    body: JSON.stringify(payload),
   })
 }

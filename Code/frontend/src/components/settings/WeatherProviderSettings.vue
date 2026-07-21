@@ -30,6 +30,26 @@ function typeMeta(t: WeatherProviderType) {
   return providerTypeMeta[t] ?? { label: t, icon: '❓', class: 'type-unknown' }
 }
 
+/** Open-Meteo 通道标签（避免三条同名混淆） */
+function channelBadge(p: WeatherProviderItem): { text: string; class: string } | null {
+  if (p.provider_id === 'open-meteo-local') return { text: '本地', class: 'channel-local' }
+  if (p.provider_id === 'open-meteo-online') return { text: 'Online', class: 'channel-online' }
+  if (p.provider_id === 'open-meteo') return { text: '遗留', class: 'channel-legacy' }
+  return null
+}
+
+const sortedProviders = computed(() => {
+  const rank = (id: string) => {
+    if (id === 'open-meteo-local') return 0
+    if (id === 'open-meteo-online') return 1
+    if (id === 'open-meteo') return 99
+    return 10
+  }
+  return [...weatherProviders.value]
+    .filter((p) => p.provider_id !== 'open-meteo')
+    .sort((a, b) => rank(a.provider_id) - rank(b.provider_id) || a.priority - b.priority)
+})
+
 // ── 状态徽章 ───────────────────────────────────────────────────────────────
 
 function statusBadge(p: WeatherProviderItem): { text: string; class: string } {
@@ -205,12 +225,14 @@ const healthyCount = computed(() => weatherProviders.value.filter((p) => p.statu
       </div>
 
       <p class="section-hint">
-        系统按 Provider 优先级（数字越小越优先）路由天气请求。每个 Provider 声明支持的能力（点查询/网格查询），
-        禁用某源后系统将自动回退到下一个可用源。
+        系统按 Provider 优先级（数字越小越优先）路由天气请求。
+        Open-Meteo 仅应出现两条：<strong>本地</strong>（open-meteo-local）与
+        <strong>Online</strong>（open-meteo-online）。模型与 Docker 同步请到「Open-Meteo」页。
+        保存配置后立即作用于后端 registry（可点「测试连通性」验证）。
       </p>
 
       <!-- 空状态 -->
-      <div v-if="weatherProviders.length === 0" class="empty-state">
+      <div v-if="sortedProviders.length === 0" class="empty-state">
         <span class="empty-icon">🌦</span>
         <span>暂无天气源 Provider，请检查后端是否正确注册</span>
       </div>
@@ -218,7 +240,7 @@ const healthyCount = computed(() => weatherProviders.value.filter((p) => p.statu
       <!-- Provider 卡片列表 -->
       <div class="provider-list">
         <div
-          v-for="p in weatherProviders"
+          v-for="p in sortedProviders"
           :key="p.provider_id"
           class="provider-card"
           :class="{ disabled: !p.enabled, expanded: expandedId === p.provider_id }"
@@ -228,6 +250,9 @@ const healthyCount = computed(() => weatherProviders.value.filter((p) => p.statu
             <div class="provider-info">
               <div class="provider-title-row">
                 <span class="provider-name">{{ p.display_name }}</span>
+                <span v-if="channelBadge(p)" class="channel-badge" :class="channelBadge(p)?.class">
+                  {{ channelBadge(p)?.text }}
+                </span>
                 <span class="type-badge" :class="typeMeta(p.provider_type).class">
                   {{ typeMeta(p.provider_type).icon }} {{ typeMeta(p.provider_type).label }}
                 </span>
@@ -895,6 +920,30 @@ const healthyCount = computed(() => weatherProviders.value.filter((p) => p.statu
 .type-unknown {
   background: rgba(136, 192, 255, 0.12);
   color: #8aa8bf;
+}
+
+.channel-badge {
+  padding: 0.1rem 0.36rem;
+  border-radius: 0.26rem;
+  font-size: 0.5rem;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  white-space: nowrap;
+}
+
+.channel-local {
+  background: rgba(90, 213, 255, 0.14);
+  color: #5ad5ff;
+}
+
+.channel-online {
+  background: rgba(201, 163, 255, 0.14);
+  color: #c9a3ff;
+}
+
+.channel-legacy {
+  background: rgba(255, 138, 138, 0.14);
+  color: #ff8a8a;
 }
 
 /* 状态徽章 */

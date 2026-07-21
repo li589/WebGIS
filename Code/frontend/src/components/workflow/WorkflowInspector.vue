@@ -10,7 +10,9 @@
 import { computed, watch, ref, reactive } from 'vue'
 import { useWorkflowDefinitionsStore } from '../../stores/workflow-definitions'
 import type { LGraphNodeClass, INodeInputSlot, INodeOutputSlot } from './litegraph-setup'
-import { getPortColor } from './litegraph-setup'
+import { getPortColor, getPortTypeLabel, suggestConnectorsForPortType } from './litegraph-setup'
+import { buildPortTooltip } from './port-tooltip'
+import ParamField from './ParamField.vue'
 
 const props = defineProps<{
   selectedNode: LGraphNodeClass | null
@@ -66,17 +68,33 @@ const nodeTemplate = computed(() => {
 const nodeDescription = computed(() => nodeTemplate.value?.description ?? '')
 const nodeEngine = computed(() => {
   const type = props.selectedNode?.type ?? ''
-  if (type.startsWith('weather/')) return '天气引擎'
-  if (type.startsWith('python_provider/')) return 'Python 处理器'
-  if (type.startsWith('gee/')) return 'GEE'
+  const engine = nodeTemplate.value?.engine
+    ?? (type.startsWith('module/') || type.startsWith('python_provider/')
+      ? 'python_provider'
+      : type.startsWith('weather/')
+        ? 'weather'
+        : type.startsWith('gee/')
+          ? 'gee'
+          : 'common')
+  if (engine === 'weather') return '天气引擎'
+  if (engine === 'python_provider') return 'Python 处理器'
+  if (engine === 'gee') return 'GEE'
   return '通用'
 })
 
 const nodeEngineIcon = computed(() => {
   const type = props.selectedNode?.type ?? ''
-  if (type.startsWith('weather/')) return '☀'
-  if (type.startsWith('python_provider/')) return '⚡'
-  if (type.startsWith('gee/')) return '🌍'
+  const engine = nodeTemplate.value?.engine
+    ?? (type.startsWith('module/') || type.startsWith('python_provider/')
+      ? 'python_provider'
+      : type.startsWith('weather/')
+        ? 'weather'
+        : type.startsWith('gee/')
+          ? 'gee'
+          : 'common')
+  if (engine === 'weather') return '☀'
+  if (engine === 'python_provider') return '⚡'
+  if (engine === 'gee') return '🌍'
   return '◈'
 })
 
@@ -233,6 +251,21 @@ function validateParam(key: string, value: unknown): string | null {
 
 const validationErrors = ref<Record<string, string>>({})
 
+function buildInspectorPortTitle(name: string, type: string, direction: 'input' | 'output'): string {
+  const fromTpl = direction === 'input'
+    ? nodeTemplate.value?.inputs?.find((p) => p.name === name)?.description
+    : nodeTemplate.value?.outputs?.find((p) => p.name === name)?.description
+  const model = buildPortTooltip({
+    direction,
+    name,
+    type,
+    description: fromTpl || getParamMeta(name)?.description,
+    suggestTitles: suggestConnectorsForPortType(type)
+      .map((t) => store.nodeTemplates.find((n) => n.type === t)?.title ?? t),
+  })
+  return [model.typeLabel, model.body, ...model.tips].filter(Boolean).join('\n')
+}
+
 function handlePropertyChange(key: string, value: unknown) {
   const err = validateParam(key, value)
   if (err) validationErrors.value[key] = err
@@ -325,14 +358,20 @@ function handleTitleChange() {
         </div>
       </section>
 
-      <!-- 输入端口 -->
+      <!-- 输入端口：详细说明请在画布上悬停连接点查看 -->
       <section v-if="nodeInputs.length" class="inspector-section">
         <h3 class="section-title">输入端口 ({{ nodeInputs.length }})</h3>
+        <p class="ports-hint">在画布上把鼠标移到连接点上，可查看详细说明与推荐连线。</p>
         <div class="port-list">
-          <div v-for="(input, idx) in nodeInputs" :key="`in-${idx}`" class="port-item">
+          <div
+            v-for="(input, idx) in nodeInputs"
+            :key="`in-${idx}`"
+            class="port-item"
+            :title="buildInspectorPortTitle(input.name, String(input.type), 'input')"
+          >
             <span class="port-color-dot" :style="{ background: getPortColor(String(input.type)) }"></span>
             <span class="port-name">{{ input.name }}</span>
-            <span class="port-type">{{ input.type }}</span>
+            <span class="port-type">{{ getPortTypeLabel(String(input.type)) }}</span>
             <span class="port-status" :class="{ connected: input.link !== null }">
               {{ input.link !== null ? '已连接' : '未连接' }}
             </span>
@@ -344,10 +383,15 @@ function handleTitleChange() {
       <section v-if="nodeOutputs.length" class="inspector-section">
         <h3 class="section-title">输出端口 ({{ nodeOutputs.length }})</h3>
         <div class="port-list">
-          <div v-for="(output, idx) in nodeOutputs" :key="`out-${idx}`" class="port-item">
+          <div
+            v-for="(output, idx) in nodeOutputs"
+            :key="`out-${idx}`"
+            class="port-item"
+            :title="buildInspectorPortTitle(output.name, String(output.type), 'output')"
+          >
             <span class="port-color-dot" :style="{ background: getPortColor(String(output.type)) }"></span>
             <span class="port-name">{{ output.name }}</span>
-            <span class="port-type">{{ output.type }}</span>
+            <span class="port-type">{{ getPortTypeLabel(String(output.type)) }}</span>
             <span class="port-status" :class="{ connected: output.links && output.links.length > 0 }">
               {{ output.links && output.links.length > 0 ? `${output.links.length} 连接` : '未连接' }}
             </span>
@@ -380,80 +424,18 @@ function handleTitleChange() {
                 >↺</button>
               </label>
 
-              <!-- enum: 有 options 的参数用 select 下拉框 -->
-              <select
-                v-if="getParamMeta(key)?.options?.length"
-                class="form-input"
-                :value="String(value ?? '')"
-                :disabled="readonly"
-                @change="handlePropertyChange(key, ($event.target as HTMLSelectElement).value)"
-              >
-                <option v-for="opt in getParamMeta(key)?.options" :key="opt" :value="opt">{{ opt }}</option>
-              </select>
-
-              <!-- boolean: toggle 开关 -->
-              <label
-                v-else-if="typeof value === 'boolean'"
-                class="toggle-switch"
-                :class="{ disabled: readonly }"
-              >
-                <input
-                  type="checkbox"
-                  :checked="value"
-                  :disabled="readonly"
-                  @change="handlePropertyChange(key, ($event.target as HTMLInputElement).checked)"
-                />
-                <span class="toggle-slider"></span>
-              </label>
-
-              <!-- number: 带 min/max/step -->
-              <input
-                v-else-if="typeof value === 'number'"
-                type="number"
-                class="form-input"
-                :class="{ error: validationErrors[key] }"
+              <ParamField
+                :param-key="key"
                 :value="value"
-                :min="getParamMeta(key)?.min"
-                :max="getParamMeta(key)?.max"
-                :step="getParamMeta(key)?.step"
+                :meta="getParamMeta(key)"
                 :readonly="readonly"
-                @input="handlePropertyChange(key, Number(($event.target as HTMLInputElement).value))"
-              />
-
-              <!-- array: chip 编辑器 -->
-              <div
-                v-else-if="getParamMeta(key)?.type === 'array'"
-                class="array-editor"
-              >
-                <span v-for="(item, idx) in parseArrayValue(value)" :key="idx" class="array-chip">
-                  {{ item }}
-                  <button
-                    v-if="!readonly"
-                    class="chip-remove"
-                    type="button"
-                    @click="removeArrayItem(key, idx)"
-                  >✕</button>
-                </span>
-                <input
-                  v-if="!readonly"
-                  v-model="arrayInputBuffer[key]"
-                  type="text"
-                  class="array-input"
-                  placeholder="输入值后按回车添加"
-                  @keydown.enter="addArrayItem(key, $event)"
-                />
-              </div>
-
-              <!-- string / fallback: text input with placeholder -->
-              <input
-                v-else
-                type="text"
-                class="form-input"
-                :class="{ error: validationErrors[key] }"
-                :value="String(value ?? '')"
+                :error="Boolean(validationErrors[key])"
                 :placeholder="getParamPlaceholder(key)"
-                :readonly="readonly"
-                @input="handlePropertyChange(key, ($event.target as HTMLInputElement).value)"
+                :array-buffer="arrayInputBuffer[key]"
+                @change="handlePropertyChange(key, $event)"
+                @update:array-buffer="arrayInputBuffer[key] = $event"
+                @add-array="addArrayItem(key, $event)"
+                @remove-array="removeArrayItem(key, $event)"
               />
 
               <!-- 验证错误提示 -->
@@ -485,75 +467,18 @@ function handleTitleChange() {
                 >↺</button>
               </label>
 
-              <select
-                v-if="getParamMeta(key)?.options?.length"
-                class="form-input"
-                :value="String(value ?? '')"
-                :disabled="readonly"
-                @change="handlePropertyChange(key, ($event.target as HTMLSelectElement).value)"
-              >
-                <option v-for="opt in getParamMeta(key)?.options" :key="opt" :value="opt">{{ opt }}</option>
-              </select>
-
-              <label
-                v-else-if="typeof value === 'boolean'"
-                class="toggle-switch"
-                :class="{ disabled: readonly }"
-              >
-                <input
-                  type="checkbox"
-                  :checked="value"
-                  :disabled="readonly"
-                  @change="handlePropertyChange(key, ($event.target as HTMLInputElement).checked)"
-                />
-                <span class="toggle-slider"></span>
-              </label>
-
-              <input
-                v-else-if="typeof value === 'number'"
-                type="number"
-                class="form-input"
-                :class="{ error: validationErrors[key] }"
+              <ParamField
+                :param-key="key"
                 :value="value"
-                :min="getParamMeta(key)?.min"
-                :max="getParamMeta(key)?.max"
-                :step="getParamMeta(key)?.step"
+                :meta="getParamMeta(key)"
                 :readonly="readonly"
-                @input="handlePropertyChange(key, Number(($event.target as HTMLInputElement).value))"
-              />
-
-              <div
-                v-else-if="getParamMeta(key)?.type === 'array'"
-                class="array-editor"
-              >
-                <span v-for="(item, idx) in parseArrayValue(value)" :key="idx" class="array-chip">
-                  {{ item }}
-                  <button
-                    v-if="!readonly"
-                    class="chip-remove"
-                    type="button"
-                    @click="removeArrayItem(key, idx)"
-                  >✕</button>
-                </span>
-                <input
-                  v-if="!readonly"
-                  v-model="arrayInputBuffer[key]"
-                  type="text"
-                  class="array-input"
-                  placeholder="输入值后按回车添加"
-                  @keydown.enter="addArrayItem(key, $event)"
-                />
-              </div>
-
-              <input
-                v-else
-                type="text"
-                class="form-input"
-                :class="{ error: validationErrors[key] }"
-                :value="String(value ?? '')"
+                :error="Boolean(validationErrors[key])"
                 :placeholder="getParamPlaceholder(key)"
-                :readonly="readonly"
-                @input="handlePropertyChange(key, ($event.target as HTMLInputElement).value)"
+                :array-buffer="arrayInputBuffer[key]"
+                @change="handlePropertyChange(key, $event)"
+                @update:array-buffer="arrayInputBuffer[key] = $event"
+                @add-array="addArrayItem(key, $event)"
+                @remove-array="removeArrayItem(key, $event)"
               />
 
               <span v-if="validationErrors[key]" class="param-error">
@@ -584,75 +509,18 @@ function handleTitleChange() {
                 >↺</button>
               </label>
 
-              <select
-                v-if="getParamMeta(key)?.options?.length"
-                class="form-input"
-                :value="String(value ?? '')"
-                :disabled="readonly"
-                @change="handlePropertyChange(key, ($event.target as HTMLSelectElement).value)"
-              >
-                <option v-for="opt in getParamMeta(key)?.options" :key="opt" :value="opt">{{ opt }}</option>
-              </select>
-
-              <label
-                v-else-if="typeof value === 'boolean'"
-                class="toggle-switch"
-                :class="{ disabled: readonly }"
-              >
-                <input
-                  type="checkbox"
-                  :checked="value"
-                  :disabled="readonly"
-                  @change="handlePropertyChange(key, ($event.target as HTMLInputElement).checked)"
-                />
-                <span class="toggle-slider"></span>
-              </label>
-
-              <input
-                v-else-if="typeof value === 'number'"
-                type="number"
-                class="form-input"
-                :class="{ error: validationErrors[key] }"
+              <ParamField
+                :param-key="key"
                 :value="value"
-                :min="getParamMeta(key)?.min"
-                :max="getParamMeta(key)?.max"
-                :step="getParamMeta(key)?.step"
+                :meta="getParamMeta(key)"
                 :readonly="readonly"
-                @input="handlePropertyChange(key, Number(($event.target as HTMLInputElement).value))"
-              />
-
-              <div
-                v-else-if="getParamMeta(key)?.type === 'array'"
-                class="array-editor"
-              >
-                <span v-for="(item, idx) in parseArrayValue(value)" :key="idx" class="array-chip">
-                  {{ item }}
-                  <button
-                    v-if="!readonly"
-                    class="chip-remove"
-                    type="button"
-                    @click="removeArrayItem(key, idx)"
-                  >✕</button>
-                </span>
-                <input
-                  v-if="!readonly"
-                  v-model="arrayInputBuffer[key]"
-                  type="text"
-                  class="array-input"
-                  placeholder="输入值后按回车添加"
-                  @keydown.enter="addArrayItem(key, $event)"
-                />
-              </div>
-
-              <input
-                v-else
-                type="text"
-                class="form-input"
-                :class="{ error: validationErrors[key] }"
-                :value="String(value ?? '')"
+                :error="Boolean(validationErrors[key])"
                 :placeholder="getParamPlaceholder(key)"
-                :readonly="readonly"
-                @input="handlePropertyChange(key, ($event.target as HTMLInputElement).value)"
+                :array-buffer="arrayInputBuffer[key]"
+                @change="handlePropertyChange(key, $event)"
+                @update:array-buffer="arrayInputBuffer[key] = $event"
+                @add-array="addArrayItem(key, $event)"
+                @remove-array="removeArrayItem(key, $event)"
               />
 
               <span v-if="validationErrors[key]" class="param-error">
@@ -920,6 +788,13 @@ function handleTitleChange() {
   display: flex;
   flex-direction: column;
   gap: 0.18rem;
+}
+
+.ports-hint {
+  margin: 0 0 0.4rem;
+  font-size: 0.55rem;
+  line-height: 1.4;
+  color: #7f96ad;
 }
 
 .port-item {

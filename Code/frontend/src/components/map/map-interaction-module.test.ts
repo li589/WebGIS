@@ -13,6 +13,7 @@ describe('map-interaction-module', () => {
     const emitMapPointSelect = vi.fn()
     let interactionMode: 'select' | 'move' = 'select'
 
+    const canvasStyle = { cursor: '' }
     const map = {
       getCenter: () => ({ lng: 190, lat: 22 }),
       getBounds: () => ({
@@ -22,6 +23,7 @@ describe('map-interaction-module', () => {
         getEast: () => 200,
       }),
       getZoom: () => 6.2,
+      getCanvas: () => ({ style: canvasStyle }),
       dragPan: {
         disable: dragPanDisable,
         enable: dragPanEnable,
@@ -45,6 +47,7 @@ describe('map-interaction-module', () => {
 
     module.bindEvents()
     module.applyInteractionMode()
+    expect(canvasStyle.cursor).toBe('default')
 
     handlers.get('movestart')?.()
     handlers.get('move')?.()
@@ -58,6 +61,7 @@ describe('map-interaction-module', () => {
 
     interactionMode = 'move'
     module.applyInteractionMode()
+    expect(canvasStyle.cursor).toBe('')
     handlers.get('click')?.({ lngLat: { lng: 120, lat: 30 } })
 
     expect(dragPanDisable).toHaveBeenCalledTimes(1)

@@ -103,7 +103,7 @@ class WeatherProvider(ABC):
     并通过 ``WeatherProviderRegistry.register`` 注册，供系统按图层能力路由调用。
 
     实现要点：
-    - ``provider_id`` 必须全局唯一，建议用小写连字符格式（如 ``"open-meteo"``）
+    - ``provider_id`` 必须全局唯一，建议用小写连字符格式（如 ``"open-meteo-online"``）
     - ``supported_capabilities`` 决定了哪些图层会路由到本 Provider
     - ``fetch_point_forecast`` 和 ``fetch_grid_forecast`` 必须线程安全
     - 失败时应抛出异常，由调用方决定降级策略（如 fallback 到其他 Provider 或 stale cache）
@@ -114,7 +114,7 @@ class WeatherProvider(ABC):
     @property
     @abstractmethod
     def provider_id(self) -> str:
-        """Provider 唯一标识，如 ``"open-meteo"``、``"noaa-gfs"``、``"accuweather"``。"""
+        """Provider 唯一标识，如 ``"open-meteo-online"``、``"weatherapi"``、``"openweather"``。"""
 
     @property
     @abstractmethod

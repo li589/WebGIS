@@ -8,13 +8,6 @@ type TimelineAvailabilitySegment = {
   availabilityLabel: string
 }
 
-export interface TimelineWorkflowIndicator {
-  name: string
-  status: 'running' | 'queued' | 'succeeded' | 'failed' | 'cancelled' | 'retry_pending'
-  progress: number
-  engine?: string
-}
-
 const props = defineProps<{
   currentHour: number
   currentDate: Date
@@ -23,8 +16,11 @@ const props = defineProps<{
   availabilityLabel: string
   observationTimeLabel: string
   timelineSegments: TimelineAvailabilitySegment[]
+  /** 覆盖来源短说明（单行） */
+  coverageSourceLabel?: string
+  /** 统一时间：切层不改时刻 */
+  unifiedTimeLock?: boolean
   isPlaying?: boolean
-  workflowIndicators?: TimelineWorkflowIndicator[]
 }>()
 
 const emit = defineEmits<{
@@ -32,6 +28,7 @@ const emit = defineEmits<{
   changeHour: [hour: number]
   changeDate: [date: Date]
   togglePlay: []
+  toggleUnifiedTime: []
 }>()
 
 // ── 日期格式化 ────────────────────────────────────────────────
@@ -59,9 +56,10 @@ const isToday = computed(() => {
   )
 })
 
-// ── 时间/进度 ─────────────────────────────────────────────────
+// ── 时间/进度（当日 0–23，自由拖动）──────────────────────────
 const progressPercent = computed(() => `${((props.currentHour / 23) * 100).toFixed(1)}%`)
 const liveLabel = computed(() => `${props.availabilityLabel}`)
+const coverageCaption = computed(() => props.coverageSourceLabel?.trim() || '数据覆盖')
 const phaseLabel = computed(() => {
   if (props.currentHour < 6) return '夜间'
   if (props.currentHour < 11) return '上午'
@@ -80,33 +78,8 @@ const phaseIcon = computed(() => {
 const nearestSegment = computed(() => {
   return props.timelineSegments.reduce((closest, segment) => {
     return Math.abs(segment.hour - props.currentHour) < Math.abs(closest.hour - props.currentHour) ? segment : closest
-  }, props.timelineSegments[0] ?? { hour: 0, label: '00:00', state: 'empty' as const, availabilityLabel: '空状态' })
+  }, props.timelineSegments[0] ?? { hour: 0, label: '00:00', state: 'empty' as const, availabilityLabel: '无数据' })
 })
-
-// ── 工作流指示 ──────────────────────────────────────────────────
-const activeWorkflowIndicators = computed(() => {
-  const indicators = props.workflowIndicators ?? []
-  // 只显示运行中/排队/重试中的工作流，最多 4 条
-  return indicators
-    .filter((w) => w.status === 'running' || w.status === 'queued' || w.status === 'retry_pending')
-    .slice(0, 4)
-})
-
-const workflowEngineIcon = (engine?: string): string => {
-  if (engine === 'weather') return '☀'
-  if (engine === 'python_provider') return '⚡'
-  if (engine === 'gee') return '🌍'
-  return '◈'
-}
-
-const workflowStatusLabel = (status: string): string => {
-  switch (status) {
-    case 'running': return '运行中'
-    case 'queued': return '排队'
-    case 'retry_pending': return '重试'
-    default: return status
-  }
-}
 
 const trackStyle = computed(() => ({
   '--track-progress': progressPercent.value,
@@ -195,6 +168,38 @@ function jumpToNow() {
 
       <div class="top-actions">
         <button
+          class="sync-time-btn"
+          type="button"
+          :class="{ 'sync-time-btn--on': unifiedTimeLock }"
+          :aria-pressed="unifiedTimeLock ? 'true' : 'false'"
+          :aria-label="unifiedTimeLock ? '统一时间（已开启）' : '分图层记忆（已开启）'"
+          :title="unifiedTimeLock
+            ? '统一时间：切层保持同一时刻（点击切换为分图层）'
+            : '分图层：按图层记忆时刻（点击切换为统一时间）'"
+          @click="emit('toggleUnifiedTime')"
+        >
+          <!-- 统一：链条锁定同一时刻 -->
+          <svg v-if="unifiedTimeLock" viewBox="0 0 16 16" aria-hidden="true">
+            <path
+              fill="none"
+              stroke="currentColor"
+              stroke-width="1.4"
+              stroke-linecap="round"
+              d="M6.2 9.8 9.8 6.2M5.4 7.1a2.2 2.2 0 0 1 0-3.1l1.1-1.1a2.2 2.2 0 0 1 3.1 0M10.6 8.9a2.2 2.2 0 0 1 0 3.1l-1.1 1.1a2.2 2.2 0 0 1-3.1 0"
+            />
+          </svg>
+          <!-- 分图层：错位图层叠放 -->
+          <svg v-else viewBox="0 0 16 16" aria-hidden="true">
+            <path
+              fill="none"
+              stroke="currentColor"
+              stroke-width="1.35"
+              stroke-linejoin="round"
+              d="M2.5 5.2 8 2.8l5.5 2.4L8 7.6 2.5 5.2zm0 3.2L8 6l5.5 2.4L8 10.8 2.5 8.4zm0 3.2L8 9.2l5.5 2.4L8 14 2.5 11.6z"
+            />
+          </svg>
+        </button>
+        <button
           class="play-btn"
           :class="{ 'play-btn--playing': playing }"
           type="button"
@@ -217,9 +222,9 @@ function jumpToNow() {
 
     <!-- 中部：数据可用性 + 滑块 + 刻度 -->
     <div class="timeline-track">
-      <div class="availability-caption">
-        <span>数据可用性</span>
-        <strong>{{ nearestSegment.label }} · {{ nearestSegment.availabilityLabel }}</strong>
+      <div class="availability-caption" :title="`${coverageCaption} · ${nearestSegment.availabilityLabel}`">
+        <span class="availability-caption-main">{{ coverageCaption }}</span>
+        <strong class="availability-caption-status">{{ nearestSegment.availabilityLabel }}</strong>
         <span class="availability-live">{{ liveLabel }}</span>
       </div>
       <div class="availability-strip" aria-hidden="true">
@@ -228,6 +233,7 @@ function jumpToNow() {
           :key="segment.hour"
           class="availability-segment"
           :class="`availability-${segment.state}`"
+          :title="`${segment.label} · ${segment.availabilityLabel}`"
         ></span>
       </div>
       <div class="track-interactive">
@@ -260,7 +266,7 @@ function jumpToNow() {
           :key="tick.hour"
           class="tick-button"
           type="button"
-          :class="[`tick-${tick.state}`, { active: Math.abs(currentHour - tick.hour) < 0.5 }]"
+          :class="[`tick-${tick.state}`, { active: Math.abs(currentHour - tick.hour) < 1.5 }]"
           :title="`${tick.label} · ${tick.availabilityLabel}`"
           @click="emit('changeHour', tick.hour)"
         >
@@ -274,25 +280,6 @@ function jumpToNow() {
       <span class="meta-text meta-text--left">阶段 <strong>{{ phaseLabel }}</strong></span>
       <span class="meta-text meta-text--center">进度 <strong>{{ progressPercent }}</strong></span>
       <span class="meta-text meta-text--right">观测时次 <strong>{{ observationTimeLabel }}</strong></span>
-    </div>
-
-    <!-- 工作流运行指示 -->
-    <div v-if="activeWorkflowIndicators.length > 0" class="timeline-workflow-row">
-      <span class="wf-row-label">工作流</span>
-      <div class="wf-row-pills">
-        <div
-          v-for="(wf, idx) in activeWorkflowIndicators"
-          :key="idx"
-          class="wf-pill"
-          :class="wf.status"
-          :title="`${wf.name} · ${workflowStatusLabel(wf.status)} · ${wf.progress}%`"
-        >
-          <span class="wf-pill-icon" aria-hidden="true">{{ workflowEngineIcon(wf.engine) }}</span>
-          <span class="wf-pill-name">{{ wf.name }}</span>
-          <span class="wf-pill-status">{{ workflowStatusLabel(wf.status) }}</span>
-          <span class="wf-pill-progress">{{ wf.progress }}%</span>
-        </div>
-      </div>
     </div>
   </section>
 </template>
@@ -464,6 +451,35 @@ function jumpToNow() {
   transition: all 0.2s ease;
   box-shadow: 0 4px 12px rgba(1, 8, 16, 0.1);
 }
+.sync-time-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.7rem;
+  height: 1.7rem;
+  padding: 0;
+  border: 1px solid rgba(136, 192, 255, 0.18);
+  border-radius: 999px;
+  background: rgba(8, 18, 33, 0.45);
+  color: #9bb0c4;
+  cursor: pointer;
+  transition: color 0.18s ease, border-color 0.18s ease, background-color 0.18s ease, box-shadow 0.18s ease;
+}
+.sync-time-btn:hover {
+  color: #eaf3fb;
+  border-color: rgba(136, 192, 255, 0.4);
+  transform: translateY(-1px);
+}
+.sync-time-btn--on {
+  color: #b7f5d8;
+  border-color: rgba(114, 255, 207, 0.4);
+  background: rgba(114, 255, 207, 0.12);
+  box-shadow: 0 0 0 3px rgba(114, 255, 207, 0.1);
+}
+.sync-time-btn svg {
+  width: 0.82rem;
+  height: 0.82rem;
+}
 .play-btn:hover {
   border-color: rgba(136, 192, 255, 0.4);
   color: #f4fbff;
@@ -527,22 +543,42 @@ function jumpToNow() {
   background: linear-gradient(180deg, rgba(6, 14, 26, 0.18), rgba(255, 255, 255, 0.02));
 }
 .availability-caption {
-  display: flex;
-  justify-content: space-between;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
   align-items: center;
-  gap: 0.4rem;
+  column-gap: 0.4rem;
   margin-bottom: 0.12rem;
   color: #8da3b8;
   font-size: 0.5rem;
   letter-spacing: 0.06em;
+  white-space: nowrap;
+  overflow: hidden;
 }
-.availability-caption strong {
+.availability-caption-main,
+.availability-caption-status,
+.availability-live {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.availability-caption-main {
+  justify-self: start;
+  min-width: 0;
+}
+.availability-caption strong,
+.availability-caption-status {
+  justify-self: center;
+  text-align: center;
   font-size: 0.52rem;
   color: #cfe0f2;
+  max-width: 40%;
 }
 .availability-live {
+  justify-self: end;
+  text-align: right;
   color: #91aac0;
   font-size: 0.5rem;
+  min-width: 0;
 }
 .availability-strip {
   display: grid;
@@ -638,6 +674,9 @@ function jumpToNow() {
   font: inherit;
   font-size: 0.54rem;
   text-align: center;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
   transition: color 0.2s ease, border-color 0.2s ease, background-color 0.2s ease, transform 0.2s ease;
 }
 .tick-button.active, .tick-button:hover {
@@ -698,76 +737,5 @@ function jumpToNow() {
   .meta-text--left,
   .meta-text--center,
   .meta-text--right { justify-self: start; text-align: left; }
-}
-
-/* ── 工作流运行指示 ─────────────────────────────────────────── */
-.timeline-workflow-row {
-  display: flex;
-  align-items: center;
-  gap: 0.32rem;
-  padding: 0.18rem 0.24rem 0.04rem;
-  margin-top: 0.1rem;
-  min-width: 0;
-  overflow: hidden;
-}
-.wf-row-label {
-  flex: 0 0 auto;
-  font-size: 0.5rem;
-  color: #7f93a9;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-  white-space: nowrap;
-}
-.wf-row-pills {
-  flex: 1 1 auto;
-  display: flex;
-  gap: 0.22rem;
-  overflow-x: auto;
-  scrollbar-width: none;
-  min-width: 0;
-}
-.wf-row-pills::-webkit-scrollbar { display: none; }
-.wf-pill {
-  flex: 0 0 auto;
-  display: inline-flex;
-  align-items: center;
-  gap: 0.2rem;
-  padding: 0.12rem 0.36rem;
-  border-radius: 999px;
-  border: 1px solid rgba(136, 192, 255, 0.16);
-  background: rgba(8, 18, 33, 0.6);
-  font-size: 0.52rem;
-  color: #bfd3e6;
-  white-space: nowrap;
-  max-width: 12rem;
-  overflow: hidden;
-}
-.wf-pill.running,
-.wf-pill.queued,
-.wf-pill.retry_pending {
-  border-color: rgba(90, 213, 255, 0.32);
-  background: rgba(90, 213, 255, 0.08);
-}
-.wf-pill-icon {
-  font-size: 0.6rem;
-  line-height: 1;
-}
-.wf-pill-name {
-  color: #eaf3fb;
-  font-weight: 600;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  max-width: 5rem;
-}
-.wf-pill-status {
-  color: #5ad5ff;
-  font-size: 0.5rem;
-}
-.wf-pill-progress {
-  color: #7f93a9;
-  font-size: 0.5rem;
-}
-.wf-pill.running .wf-pill-progress {
-  color: #5ad5ff;
 }
 </style>

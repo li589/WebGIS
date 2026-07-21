@@ -1,6 +1,7 @@
 import { buildMapViewportSnapshot } from './map-viewport-sync'
 
 type MapInstance = import('maplibre-gl').Map
+type InteractionMode = import('../../stores/ui').InteractionMode
 
 interface MapViewportStoreLike {
   setMapViewport: (
@@ -20,7 +21,7 @@ export interface MapInteractionModule {
 interface CreateMapInteractionModuleOptions {
   map: MapInstance
   layersStore: MapViewportStoreLike
-  getInteractionMode: () => 'select' | 'move'
+  getInteractionMode: () => InteractionMode
   setIsMapInteracting: (interacting: boolean) => void
   scheduleHotspotSync: () => void
   emitMapPointSelect: (point: { lng: number; lat: number }) => void
@@ -43,10 +44,23 @@ export function createMapInteractionModule(
   }
 
   function applyInteractionMode() {
-    if (options.getInteractionMode() === 'select') {
+    const mode = options.getInteractionMode()
+    const canvas = options.map.getCanvas?.()
+    // measure 与 select 模式都需要禁用 dragPan：
+    // - select：点击查询点信息，拖动会与单击冲突
+    // - measure：点击打点，拖动会与单击冲突
+    if (mode === 'select' || mode === 'measure') {
       options.map.dragPan.disable()
+      // select 用箭头（非抓手）；measure 用十字准星
+      if (canvas?.style) {
+        canvas.style.cursor = mode === 'select' ? 'default' : 'crosshair'
+      }
     } else {
       options.map.dragPan.enable()
+      // 交还 MapLibre 默认抓手光标
+      if (canvas?.style) {
+        canvas.style.cursor = ''
+      }
     }
   }
 

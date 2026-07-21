@@ -244,31 +244,43 @@ def get_registry() -> WeatherProviderRegistry:
 def register_default_providers() -> None:
     """注册默认 Provider（应用启动时调用）。
 
-    - ``open-meteo`` priority=0，默认 enabled
-    - ``weatherapi`` / ``openweather`` priority=10/20，默认 enabled=False（无 Key 不抢路由）
+    - ``open-meteo-local`` priority=0，默认 enabled（本机 Docker，产品默认气象源）
+    - ``open-meteo-online`` priority=1，默认 enabled（公网回退）
+    - ``weatherapi`` / ``openweather`` priority=10/20，默认 enabled=False
     已存在的 Provider 不会被覆盖（保留运行时/DB 覆盖）。
+    遗留 ``open-meteo`` 注册项会被移除（由 online 替代）。
     """
     registry = get_registry()
+
+    # Drop legacy single open-meteo entry so UI does not list a duplicate.
+    if registry.get_provider("open-meteo") is not None:
+        registry.unregister("open-meteo")
 
     try:
         import os
 
         from app.weatherengine.providers.open_meteo_provider import OpenMeteoProvider
-        from app.services.api_config import ApiProvider, api_config_manager
+        from app.weatherengine.provider_ids import OPEN_METEO_LOCAL_ID, OPEN_METEO_ONLINE_ID
 
-        if registry.get_provider("open-meteo") is None:
-            provider = OpenMeteoProvider()
-            openmeteo_url = os.getenv("BACKEND_OPEN_METEO_URL", "").strip()
-            if not openmeteo_url:
-                api_cfg = api_config_manager.get_config(ApiProvider.OPEN_METEO)
-                if api_cfg and api_cfg.endpoint.url:
-                    openmeteo_url = str(api_cfg.endpoint.url).strip()
-            if openmeteo_url:
-                provider.apply_config({"base_url": openmeteo_url})
-            registry.register(provider, priority=0, enabled=True)
-            logger.info("Registered weather provider: open-meteo")
+        if registry.get_provider(OPEN_METEO_LOCAL_ID) is None:
+            local_url = (
+                os.getenv("BACKEND_OPEN_METEO_LOCAL_URL", "").strip()
+                or os.getenv("BACKEND_OPEN_METEO_URL", "").strip()
+            )
+            local = OpenMeteoProvider.create_local(base_url=local_url or None)
+            registry.register(local, priority=0, enabled=True)
+            logger.info(
+                "Registered weather provider: %s (base_url=%s, priority=0)",
+                OPEN_METEO_LOCAL_ID,
+                local.base_url,
+            )
+
+        if registry.get_provider(OPEN_METEO_ONLINE_ID) is None:
+            online = OpenMeteoProvider.create_online()
+            registry.register(online, priority=1, enabled=True)
+            logger.info("Registered weather provider: %s (priority=1)", OPEN_METEO_ONLINE_ID)
     except Exception:
-        logger.exception("Failed to register OpenMeteoProvider")
+        logger.exception("Failed to register OpenMeteoProvider(s)")
 
     try:
         from app.weatherengine.providers.weatherapi_provider import (

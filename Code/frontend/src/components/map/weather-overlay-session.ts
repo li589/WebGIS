@@ -1,10 +1,12 @@
-import { WindParticleOverlayController } from './wind-particle-overlay-controller'
+import type { WindParticleControllerContract } from './wind-particle-controller-contract'
+import type { ScalarFieldWebGLController } from './scalar-field-webgl-controller'
 
 type MapInstance = import('maplibre-gl').Map
 
 interface CreateWeatherOverlaySessionOptions {
   map: MapInstance
-  windParticleController: WindParticleOverlayController | null
+  windParticleController: WindParticleControllerContract | null
+  scalarFieldController?: ScalarFieldWebGLController | null
 }
 
 export interface WeatherOverlaySession {
@@ -21,6 +23,7 @@ export function createWeatherOverlaySession(
 
   function removeCatalogOverlay(catalogId: string) {
     options.windParticleController?.removeCatalogArtifacts(catalogId)
+    options.scalarFieldController?.removeCatalogArtifacts(catalogId)
     renderedCatalogIds.delete(catalogId)
   }
 
@@ -29,6 +32,7 @@ export function createWeatherOverlaySession(
       removeCatalogOverlay(catalogId)
     }
     options.windParticleController?.destroy()
+    options.scalarFieldController?.destroy()
   }
 
   return {

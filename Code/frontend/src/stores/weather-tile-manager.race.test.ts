@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createPinia, setActivePinia } from 'pinia'
 
 const fetchWeatherTile = vi.fn()
@@ -66,5 +66,68 @@ describe('weather-tile-manager race guards', () => {
 
     manager.setViewport('wind-field', center, 5, 0, undefined, bbox)
     expect(manager.getLayerStatus('wind-field').pending).toBe(pendingAfterFirst)
+  })
+})
+
+describe('weather-tile-manager gap sweep', () => {
+  beforeEach(() => {
+    setActivePinia(createPinia())
+    fetchWeatherTile.mockReset()
+    vi.useFakeTimers()
+  })
+
+  afterEach(() => {
+    vi.useRealTimers()
+  })
+
+  it('reports missingInViewport and keeps gapSweepActive while holes remain', async () => {
+    let calls = 0
+    fetchWeatherTile.mockImplementation(async () => {
+      calls += 1
+      // 仅前 2 次成功，其余失败 → 视口留下空洞
+      if (calls <= 2) {
+        return { type: 'FeatureCollection', features: [] }
+      }
+      throw new Error('Weather tile request timeout after 75s: /weather/tiles/x')
+    })
+
+    const manager = useWeatherTileManager()
+    manager.setLayerActive('temperature', true)
+    manager.setViewport('temperature', center, 5, 0, undefined, bbox)
+
+    for (let i = 0; i < 20; i += 1) {
+      await vi.advanceTimersByTimeAsync(5_000)
+      await Promise.resolve()
+    }
+
+    const status = manager.getLayerStatus('temperature')
+    expect(status.active).toBe(true)
+    expect(status.viewportTotal).toBeGreaterThan(0)
+    expect(status.cachedInViewport).toBeGreaterThan(0)
+    expect(status.missingInViewport).toBeGreaterThan(0)
+    expect(status.gapSweepActive).toBe(true)
+
+    // 补洞扫描可安全重入（不抛错）；有空洞时应继续挂着定时器
+    manager.__testRunGapSweepNow('temperature')
+    expect(manager.getLayerStatus('temperature').gapSweepActive).toBe(true)
+    expect(manager.getLayerStatus('temperature').missingInViewport).toBeGreaterThan(0)
+  })
+
+  it('clears gap sweep when layer is hidden', async () => {
+    fetchWeatherTile.mockRejectedValue(new Error('Weather tile request timeout after 75s: x'))
+
+    const manager = useWeatherTileManager()
+    manager.setLayerActive('temperature', true)
+    manager.setViewport('temperature', center, 5, 0, undefined, bbox)
+
+    for (let i = 0; i < 30; i += 1) {
+      await vi.advanceTimersByTimeAsync(5_000)
+      await Promise.resolve()
+    }
+    expect(manager.getLayerStatus('temperature').gapSweepActive).toBe(true)
+
+    manager.setLayerActive('temperature', false)
+    expect(manager.getLayerStatus('temperature').gapSweepActive).toBe(false)
+    expect(manager.getLayerStatus('temperature').active).toBe(false)
   })
 })

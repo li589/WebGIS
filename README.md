@@ -37,10 +37,11 @@ Code/
 ├─ backend/    # FastAPI + Celery：workflow 编排、天气引擎、瓦片、GEE
 ├─ algorithms/ # Python 算法包、数据接入、工作流与产品输出
 ├─ shared/     # 前后端共享协议与公共契约
+├─ infra/      # 数据面 compose（data-sync；与运行栈隔离）
 └─ docs/       # 面向实现与协作的补充文档
 ```
 
-说明：根文档早期提到的 `Code/infra/`、`Code/scripts/` 目录当前不存在。基础设施以 `Code/backend/docker-compose.yml`（Redis + MinIO）与根目录 `launch.py` 为准。
+说明：基础设施分两栈——**运行** `Code/backend/docker-compose.yml`（Redis / MinIO / `cgda-open-meteo`）；**数据** `Code/infra/data-sync/`（一次性 sync，如 `open-meteo-sync`）。一键启停与同步见仓库根目录 `launch.py`。
 
 ## 系统总体能力
 
@@ -49,6 +50,7 @@ Code/
 - `2D`（当前主路径）：MapLibre 底图、行政区边界、天气图层瓦片、风场 Canvas（粒子/风羽/等值线）
 - `3D`：Cesium / vue-cesium 已打包依赖，真实地球模式尚未作为默认主链启用
 - 统一交互：图层侧栏、时间轴、工具栏导入、截图导出、工作流状态面板、信息面板
+- 工作流编辑器：LiteGraph 画布可编译执行；支持课题组数据下载 / 解压 / 配置读取 / 变量提取节点（见 `Code/docs/课题组数据全链路-2026-07-21.md`）
 
 ### 后端与计算
 
@@ -80,7 +82,7 @@ Code/
 | 空间库 | PostgreSQL + PostGIS | 规划中（现状 SQLite） |
 | 瓦片服务 | unified-tiles（自研） / Martin + TiTiler（规划） | 统一瓦片入口已落地 |
 | 对象存储 | MinIO + 本地 | MinIO compose 已落地 |
-| 启动 | launch.py + Docker Compose | Redis/MinIO 已落地；全站 Nginx 仍属后续 |
+| 启动 | launch.py + Docker Compose | 运行栈 Redis/MinIO/Open-Meteo API；数据同步 `infra/data-sync` |
 
 ## 当前阶段建议
 
@@ -107,5 +109,8 @@ Code/
 ## 说明
 
 - `Env/Python312` 更接近本地开发环境，不建议直接作为长期交付依赖
-- 日常联调优先使用根目录 `launch.py` / `start.bat`，与 `Code/backend/docker-compose.yml` 配套
+- 日常联调优先使用根目录 `launch.py` / `start.bat`（Windows）或 `./start.sh`（Linux）：
+  - `python launch.py start` — 运行栈 + FastAPI + Workers + 前端
+  - `python launch.py sync` — 数据面 Open-Meteo 同步（`Code/infra/data-sync`）
+  - `python launch.py stop` / `status` / `flush`
 - 活文档应随代码结构变化同步更新；带日期的记录文档可归档保留

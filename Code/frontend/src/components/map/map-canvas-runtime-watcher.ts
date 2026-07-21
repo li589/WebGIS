@@ -22,6 +22,13 @@ interface WatchAdminBoundaryOverlayOptions {
   onAdminBoundaryOverlayChange: () => void
 }
 
+interface WatchMeasureStateOptions {
+  /** 轻量版本号：点数变化 / 结束绘制 / 清除时变化即可 */
+  getMeasureSyncKey: () => string
+  getMapReady: () => boolean
+  onMeasureStateChange: () => void
+}
+
 export function watchBasemapSource(
   options: WatchBasemapSourceOptions,
 ): WatchStopHandle {
@@ -64,6 +71,21 @@ export function watchAdminBoundaryOverlay(
     ({ mapReady }) => {
       if (!mapReady) return
       options.onAdminBoundaryOverlayChange()
+    },
+  )
+}
+
+export function watchMeasureState(
+  options: WatchMeasureStateOptions,
+): WatchStopHandle {
+  return watch(
+    () => ({
+      key: options.getMeasureSyncKey(),
+      mapReady: options.getMapReady(),
+    }),
+    ({ mapReady }) => {
+      if (!mapReady) return
+      options.onMeasureStateChange()
     },
   )
 }

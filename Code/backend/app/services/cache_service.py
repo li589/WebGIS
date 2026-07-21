@@ -4,11 +4,15 @@ from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 import hashlib
 import json
+import logging
 from pathlib import Path
 import threading
 from typing import Any
 
 from app.core.config import settings
+
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -172,6 +176,43 @@ class CacheService:
             scopes=scopes,
             hit_rate=round(hit_rate, 4),
         )
+
+    def cleanup_expired(self, *, now: datetime | None = None) -> dict[str, int]:
+        """扫描缓存目录，删除所有已过期的缓存文件，回收磁盘空间。
+
+        Args:
+            now: 用于判断过期的基准时间（默认当前 UTC 时间）
+
+        Returns:
+            {"deleted": N, "skipped": M, "errors": K}
+        """
+        now = now or datetime.now(timezone.utc)
+        stats = {"deleted": 0, "skipped": 0, "errors": 0}
+
+        for entry_file in self._cache_dir.glob("*.json"):
+            try:
+                payload = json.loads(entry_file.read_text(encoding="utf-8"))
+                expires_at = datetime.fromisoformat(payload["expires_at"])
+                if expires_at > now:
+                    stats["skipped"] += 1
+                    continue
+                entry_file.unlink(missing_ok=True)
+                stats["deleted"] += 1
+            except (json.JSONDecodeError, KeyError, ValueError):
+                # 损坏的缓存文件：直接删除避免持续报错
+                try:
+                    entry_file.unlink(missing_ok=True)
+                    stats["deleted"] += 1
+                except OSError:
+                    stats["errors"] += 1
+            except OSError:
+                stats["errors"] += 1
+
+        logger.info(
+            "cleanup_expired: deleted %d, skipped %d fresh, errors %d",
+            stats["deleted"], stats["skipped"], stats["errors"],
+        )
+        return stats
 
 
 cache_service = CacheService()

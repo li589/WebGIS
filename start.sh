@@ -4,19 +4,13 @@
 #  调用跨平台 Python 启动器 launch.py
 #
 #  用法:
-#    start.sh start [component] [options]
-#    start.sh stop
-#    start.sh status
-#    start.sh restart [component] [options]
-#    start.sh logs [component] [-n N]
-#    start.sh flush
-#
-#  组件: all/docker/fastapi/beat/worker/worker:<name>/frontend
+#    ./start.sh                         → start all
+#    ./start.sh start [component] ...
+#    ./start.sh stop|status|restart|logs|flush|sync ...
 # ============================================================
 set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-# 检测 Python3
 PYTHON=""
 for cmd in python3 python; do
     if command -v "$cmd" &>/dev/null; then
@@ -29,5 +23,8 @@ if [ -z "$PYTHON" ]; then
     exit 1
 fi
 
-# 转发所有参数给 launch.py
+if [ "$#" -eq 0 ]; then
+    set -- start
+fi
+
 exec "$PYTHON" "${SCRIPT_DIR}/launch.py" "$@"

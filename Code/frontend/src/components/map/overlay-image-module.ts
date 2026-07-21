@@ -15,10 +15,55 @@ export interface OverlayTimeState {
   bounds: [number, number, number, number] | null
 }
 
+/**
+ * 防御性 bounds 校验：后端 CRS 重投影/检测可能产生 NaN、跨 ±180° 包围盒、
+ * 顺序错乱等异常 bounds。直接 addSource 会让 MapLibre 渲染出错误覆盖
+ * （或北极/太平洋上的鬼影），并在 console 留下晦涩错误。这里集中拦截，
+ * 返回带原因的失败结果，便于上层日志定位。
+ *
+ * 导出为顶级函数以便单元测试覆盖各异常分支。
+ *
+ * 注意：image source 的 4 个角点不支持真正"跨子午线"渲染（如 `[170,..,-170,..]`），
+ * 但这种情况会被下面的 `w >= e` 检查拦截。`[-180,..,180,..]`（全球）和
+ * `[-100,..,100,..]`（宽 200°）都能正常渲染为单张拉伸图片，故不限制东西跨度。
+ */
+export function validateOverlayBounds(raw: unknown):
+  | { ok: true; bounds: [number, number, number, number] }
+  | { ok: false; reason: string } {
+  if (!Array.isArray(raw) || raw.length !== 4) {
+    return { ok: false, reason: `bounds 不是 4 元素数组（实际: ${JSON.stringify(raw)}）` }
+  }
+  const [w, s, e, n] = raw as number[]
+  if (![w, s, e, n].every(Number.isFinite)) {
+    return { ok: false, reason: `bounds 含非有限值: [${w}, ${s}, ${e}, ${n}]` }
+  }
+  // WGS84 经纬度范围（overlay 渲染坐标空间）
+  if (w < -180 || e > 180 || s < -90 || n > 90) {
+    return { ok: false, reason: `bounds 超出 WGS84 范围: [${w}, ${s}, ${e}, ${n}]` }
+  }
+  if (w >= e) {
+    return { ok: false, reason: `bounds west >= east: [${w}, ${s}, ${e}, ${n}]` }
+  }
+  if (s >= n) {
+    return { ok: false, reason: `bounds south >= north: [${w}, ${s}, ${e}, ${n}]` }
+  }
+  return { ok: true, bounds: [w, s, e, n] }
+}
+
 export interface OverlayImageModule {
-  /** 同步当前 activeLayerIds 与已加载的 overlay 图层（增/删）。 */
+  /**
+   * 同步当前 activeLayerIds 与已加载的 overlay 图层（增/删/显隐）。
+   *
+   * 重要：为避免隐藏/显示时重复 fetch PNG，hidden 图层保留在地图上但 layout.visibility='none'。
+   * 仅当图层从 activeOverlayLayerIds 中消失（用户从图层列表移除）时才真正卸载。
+   *
+   * @param activeOverlayLayerIds 应保持加载的图层（含 hidden 的，即仍在 activeLayers 列表中）
+   * @param visibleOverlayLayerIds 应可见的子集（active 中 visible=true 的）
+   * @param opacityByLayerId 透明度映射
+   */
   syncOverlays: (
     activeOverlayLayerIds: string[],
+    visibleOverlayLayerIds: string[],
     opacityByLayerId?: Record<string, number>,
   ) => Promise<void>
   /** 切换时间序列图层的时间标签。若 linkTimeEnabled 为 true，联动其他时间序列图层。 */
@@ -125,7 +170,11 @@ export function createOverlayImageModule(
     }
   }
 
-  async function _addOverlay(layerId: string, initialOpacity?: number): Promise<void> {
+  async function _addOverlay(
+    layerId: string,
+    initialOpacity?: number,
+    initiallyVisible: boolean = true,
+  ): Promise<void> {
     if (loadedOverlays.has(layerId)) return
     if (loadingOverlays.has(layerId)) return
     const { sourceId, rasterLayerId } = _ids(layerId)
@@ -146,7 +195,12 @@ export function createOverlayImageModule(
         boundsData = await boundsResp.json()
         boundsCache.set(layerId, { bounds: boundsData.bounds, meta: boundsData.meta ?? {} })
       }
-      const bounds: [number, number, number, number] = boundsData.bounds
+      const boundsValidation = validateOverlayBounds(boundsData.bounds)
+      if (!boundsValidation.ok) {
+        console.warn(`[Overlay] Invalid bounds for ${layerId}: ${boundsValidation.reason}`)
+        return
+      }
+      const bounds: [number, number, number, number] = boundsValidation.bounds
       const meta = boundsData.meta ?? {}
       // 写回共享 symbology store（含 bounds 内存缓存命中路径）
       try {
@@ -188,10 +242,12 @@ export function createOverlayImageModule(
         id: rasterLayerId,
         type: 'raster',
         source: sourceId,
-        layout: { visibility: 'visible' },
+        // 隐藏的图层以 visibility='none' 加入，避免显示时再触发 addLayer 流程
+        layout: { visibility: initiallyVisible ? 'visible' : 'none' },
         paint: {
           'raster-opacity': opacity,
-          'raster-fade-duration': 300,
+          // 降低 fade duration 让显隐切换更跟手（原 300ms 显得迟钝）
+          'raster-fade-duration': 100,
         },
       }, options.map.getLayer('admin-fill') ? 'admin-fill' : undefined)
 
@@ -229,23 +285,44 @@ export function createOverlayImageModule(
 
   async function syncOverlays(
     activeOverlayLayerIds: string[],
+    visibleOverlayLayerIds: string[],
     opacityByLayerId?: Record<string, number>,
   ): Promise<void> {
     if (!options.getMapReady()) return
 
-    // 移除不再 active 的
+    const visibleSet = new Set(visibleOverlayLayerIds)
+
+    // 1) 移除真正从 activeLayers 列表消失的图层（用户删除图层）
     for (const layerId of Array.from(loadedOverlays.keys())) {
       if (!activeOverlayLayerIds.includes(layerId)) {
         _removeOverlay(layerId)
       }
     }
-    // 添加新 active 的
+
+    // 2) 添加新 active 的图层（首次加载）；对已加载的仅切换 visibility，避免重复 fetch PNG
+    //    并行加载多个新图层，缩短多图层同时显示时的等待
+    const newLayerIds: string[] = []
     for (const layerId of activeOverlayLayerIds) {
       if (!loadedOverlays.has(layerId)) {
-        await _addOverlay(layerId, opacityByLayerId?.[layerId])
-      } else if (typeof opacityByLayerId?.[layerId] === 'number') {
-        setOverlayOpacity(layerId, opacityByLayerId[layerId])
+        newLayerIds.push(layerId)
+      } else {
+        // 已加载：仅切 visibility + opacity，不重新 fetch
+        setOverlayVisibility(layerId, visibleSet.has(layerId))
+        if (typeof opacityByLayerId?.[layerId] === 'number') {
+          setOverlayOpacity(layerId, opacityByLayerId[layerId])
+        }
       }
+    }
+    if (newLayerIds.length > 0) {
+      await Promise.all(
+        newLayerIds.map((layerId) =>
+          _addOverlay(
+            layerId,
+            opacityByLayerId?.[layerId],
+            visibleSet.has(layerId),
+          ),
+        ),
+      )
     }
   }
 

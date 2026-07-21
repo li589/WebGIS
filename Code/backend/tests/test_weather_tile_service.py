@@ -3,11 +3,14 @@
 from __future__ import annotations
 
 import asyncio
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
+from urllib.error import HTTPError
 
 import pytest
 
+from app.weatherengine.constants import WEATHER_LAYER_SPECS
 from app.weatherengine.tile_service import (
+    TileDataEmptyError,
     WeatherTileService,
     _grid_data_for_hour,
     tile_bbox,
@@ -189,6 +192,51 @@ async def test_concurrent_generation_respects_semaphore(
 
     assert len(results) == 6
     assert max_active <= 4
+
+
+class TestGenerateTilePayloadDataEmpty:
+    """generate_tile_payload 对上游「全 null 422」的转换行为。"""
+
+    @staticmethod
+    def _http_error(code: int, msg: str) -> HTTPError:
+        return HTTPError("http://127.0.0.1:8080/v1/forecast", code, msg, None, None)
+
+    def test_all_null_422_becomes_tile_data_empty(self, service):
+        layer_spec = WEATHER_LAYER_SPECS["temperature"]
+        with patch(
+            "app.weatherengine.fetch_gateway.fetch_grid_forecast",
+            side_effect=self._http_error(422, "all-null temperature_2m"),
+        ):
+            with pytest.raises(TileDataEmptyError, match="all-null"):
+                service.generate_tile_payload(
+                    layer_id="temperature",
+                    layer_spec=layer_spec,
+                    z=3,
+                    x=2,
+                    y=1,
+                    hour=0,
+                    model="ecmwf_ifs025",
+                    provider_id="open-meteo-local",
+                )
+
+    def test_other_http_error_reraises(self, service):
+        layer_spec = WEATHER_LAYER_SPECS["temperature"]
+        with patch(
+            "app.weatherengine.fetch_gateway.fetch_grid_forecast",
+            side_effect=self._http_error(503, "Circuit breaker open"),
+        ):
+            with pytest.raises(HTTPError) as exc_info:
+                service.generate_tile_payload(
+                    layer_id="temperature",
+                    layer_spec=layer_spec,
+                    z=3,
+                    x=2,
+                    y=1,
+                    hour=0,
+                    model="ecmwf_ifs025",
+                    provider_id="open-meteo-local",
+                )
+        assert exc_info.value.code == 503
 
 
 class TestGridDataForHour:

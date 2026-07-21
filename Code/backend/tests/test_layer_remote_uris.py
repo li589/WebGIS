@@ -1,6 +1,7 @@
 """Unit tests for remote URI catalog injection + download limits."""
 from __future__ import annotations
 
+import json
 import sys
 from pathlib import Path
 
@@ -44,6 +45,28 @@ def test_merge_remote_data_access_candidates_prepends_and_dedupes():
         "SMAP_L3",
         "smap",
     ]
+
+
+def test_parse_remote_layer_data_uris_db_overrides_env(monkeypatch):
+    from app.services import layer_catalog
+
+    env_payload = {
+        "smap-soil": {
+            "SMAP_SPL3SMP_E": ["smb://env-nas/share/a.h5?cred=env"],
+        }
+    }
+    db_payload = {
+        "smap-soil": {
+            "SMAP_SPL3SMP_E": ["smb://db-nas/share/b.h5?cred=db"],
+        }
+    }
+    monkeypatch.setattr(
+        "app.services.layer_catalog.settings",
+        type("S", (), {"remote_layer_data_uris": json.dumps(env_payload)})(),
+    )
+    monkeypatch.setattr(layer_catalog, "_load_db_remote_layer_data_uris", lambda: db_payload)
+    merged = layer_catalog._parse_remote_layer_data_uris()
+    assert merged["smap-soil"]["SMAP_SPL3SMP_E"] == ["smb://db-nas/share/b.h5?cred=db"]
 
 
 def test_apply_remote_layer_data_uris_injects_smap(monkeypatch):

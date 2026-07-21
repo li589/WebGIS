@@ -434,6 +434,46 @@ class UnifiedTileRobustnessTests(unittest.TestCase):
         response = client.get("/weather/tiles/wind-field/5/25/12?hour=47")
         self.assertNotEqual(response.status_code, 422)
 
+    def test_weather_tile_data_empty_returns_422_not_503(self) -> None:
+        """上游主变量全 null（TileDataEmptyError）应透传 422，而非统一包成 503。"""
+        from fastapi.testclient import TestClient
+
+        from app.main import create_app
+        from app.weatherengine.tile_service import TileDataEmptyError
+
+        empty_service = MagicMock()
+        empty_service.get_tile = AsyncMock(
+            side_effect=TileDataEmptyError("all-null temperature_2m for model=ecmwf_ifs025")
+        )
+
+        app = create_app()
+        client = TestClient(app)
+        with patch(
+            "app.api.weather_tile_routes.get_weather_tile_service",
+            return_value=empty_service,
+        ):
+            response = client.get("/weather/tiles/temperature/5/25/12?provider=open-meteo-local")
+        self.assertEqual(response.status_code, 422)
+        self.assertIn("no usable data", response.json()["detail"])
+
+    def test_weather_tile_generic_error_still_503(self) -> None:
+        """其它内部异常仍应包成 503（服务不可达，前端退避重试）。"""
+        from fastapi.testclient import TestClient
+
+        from app.main import create_app
+
+        failing_service = MagicMock()
+        failing_service.get_tile = AsyncMock(side_effect=RuntimeError("upstream boom"))
+
+        app = create_app()
+        client = TestClient(app)
+        with patch(
+            "app.api.weather_tile_routes.get_weather_tile_service",
+            return_value=failing_service,
+        ):
+            response = client.get("/weather/tiles/wind-field/5/25/12")
+        self.assertEqual(response.status_code, 503)
+
     def test_unified_tile_returns_correct_content_type_for_basemap(self) -> None:
         """底图瓦片应返回正确的 content_type（image/jpeg 或 image/png）。"""
         from fastapi.testclient import TestClient

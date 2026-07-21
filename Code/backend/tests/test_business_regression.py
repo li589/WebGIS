@@ -1,4 +1,4 @@
-"""端到端业务回归验证脚本。
+﻿"""端到端业务回归验证脚本。
 
 覆盖：
 1. 共享工作流引擎 DAG 执行（真实节点拓扑、输入传递、错误处理）
@@ -199,7 +199,7 @@ def test_weather_workflow_e2e() -> None:
         ],
         "inputs": {
             "weather_point": {
-                "provider": "open-meteo",
+                "provider": "open-meteo-online",
                 "layer_id": "wind-field",
                 "model": "icon_seamless",
                 "cache_status": "miss",
@@ -253,7 +253,7 @@ def test_weather_point_upstream_consumption() -> None:
     from app.weatherengine.nodes.wind_field_render import WindFieldRenderNode as WF
 
     mock_weather_point = {
-        "provider": "open-meteo",
+        "provider": "open-meteo-online",
         "layer_id": "wind-field",
         "model": "icon_seamless",
         "cache_status": "hit",
@@ -486,7 +486,7 @@ def test_weather_bridge_e2e() -> None:
                 ],
                 "inputs": {
                     "weather_point": {
-                        "provider": "open-meteo",
+                        "provider": "open-meteo-online",
                         "layer_id": "wind-field",
                         "model": "test",
                         "cache_status": "hit",

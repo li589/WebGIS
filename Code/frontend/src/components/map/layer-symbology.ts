@@ -3,12 +3,22 @@
  */
 import type { WeatherLayerRenderHint } from '../../services/runtime-api'
 import {
+  buildWeatherLegendGradient,
   buildWeatherLegendStops,
   getPaletteColors,
+  paletteIdsEqual,
+  resolveCanonicalPaletteId,
   WEATHER_PALETTE_OPTIONS,
 } from './weather-render'
 
-export { WEATHER_PALETTE_OPTIONS, buildWeatherLegendStops, getPaletteColors }
+export {
+  WEATHER_PALETTE_OPTIONS,
+  buildWeatherLegendGradient,
+  buildWeatherLegendStops,
+  getPaletteColors,
+  paletteIdsEqual,
+  resolveCanonicalPaletteId,
+}
 
 export interface OverlaySymbologyMeta {
   palette?: string

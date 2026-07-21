@@ -3,7 +3,8 @@ from typing import Any
 
 from fastapi import APIRouter, HTTPException, Query, Response, status
 
-from app.services.coordinate_transform_service import transform_point
+from app.services.crs import crs_transformer
+from app.services.crs.crs_registry import normalize_crs_code
 from app.services.layer_catalog import get_layer_catalog
 from app.services.overlay_registry import (
     get_overlay_spec,
@@ -52,7 +53,11 @@ def list_layers() -> LayerCatalogResponse:
 @router.get("/geo/transform", tags=["geo"])
 def transform_geo_point(lng: float, lat: float, source: str, target: str = "EPSG:3857") -> dict[str, float | str]:
     try:
-        point = transform_point(lng, lat, source=source, target=target)
+        # 归一化旧码连字符写法（'GCJ-02' → 'GCJ02'，'BD-09' → 'BD09'），
+        # 保持与旧垫片 transform_point 相同的向后兼容行为
+        src = normalize_crs_code(source)
+        tgt = normalize_crs_code(target)
+        point = crs_transformer.transform_point(lng, lat, src, tgt)
         return {"lng": point.lng, "lat": point.lat, "source": source, "target": target}
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc

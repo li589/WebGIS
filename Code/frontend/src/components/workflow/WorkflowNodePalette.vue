@@ -72,15 +72,26 @@ const ENGINE_FILTERS: Array<{ key: string; label: string; color: string }> = [
   { key: 'common', label: '通用', color: '#88dfff' },
 ]
 
-function getEngineOfNode(type: string): string {
+const PORT_LEGEND = [
+  { color: '#ff8fb1', label: '时间范围' },
+  { color: '#ff6b6b', label: '空间范围' },
+  { color: '#ffd5a8', label: '数值' },
+  { color: '#ffe08a', label: '文本' },
+  { color: '#5ad5ff', label: '数据流' },
+]
+
+function getEngineOfNode(type: string, templateEngine?: string | null): string {
+  const fromTpl = (templateEngine ?? '').trim()
+  if (fromTpl) return fromTpl
   if (type.startsWith('weather/')) return 'weather'
-  if (type.startsWith('python_provider/')) return 'python_provider'
   if (type.startsWith('gee/')) return 'gee'
+  // Python Provider 节点类型前缀是 module/，不是 python_provider/
+  if (type.startsWith('module/') || type.startsWith('python_provider/')) return 'python_provider'
   return 'common'
 }
 
-function getEngineAccentColor(nodeType: string): string {
-  const engine = getEngineOfNode(nodeType)
+function getEngineAccentColor(nodeType: string, templateEngine?: string | null): string {
+  const engine = getEngineOfNode(nodeType, templateEngine)
   const found = ENGINE_FILTERS.find((f) => f.key === engine)
   return found?.color ?? '#88dfff'
 }
@@ -93,8 +104,8 @@ const filteredTemplatesByCategory = computed(() => {
 
   for (const [category, templates] of Object.entries(templatesByCategory.value)) {
     const filtered = templates.filter((t) => {
-      // 引擎过滤
-      if (engineFilter !== 'all' && getEngineOfNode(t.type) !== engineFilter) return false
+      // 引擎过滤（用模板 engine 字段，避免 module/* 被误判为 common）
+      if (engineFilter !== 'all' && getEngineOfNode(t.type, t.engine) !== engineFilter) return false
       // 搜索过滤
       if (query) {
         const matched =
@@ -225,6 +236,14 @@ function isFavorite(type: string): boolean {
       </button>
     </div>
 
+    <div class="port-legend" title="同色端口可连线；优先从「参数与范围」拖入时间/空间/数值模块">
+      <span v-for="item in PORT_LEGEND" :key="item.label" class="port-legend-item">
+        <i class="port-legend-dot" :style="{ background: item.color }" />
+        {{ item.label }}
+      </span>
+    </div>
+    <p class="flow-tip">推荐流：参数与范围 → 算法模块 → 输出</p>
+
     <div class="palette-content">
       <!-- 收藏夹分区 -->
       <div v-if="favoriteTemplates.length && !searchQuery && activeEngineFilter === 'all'" class="category-group favorites-group">
@@ -244,7 +263,7 @@ function isFavorite(type: string): boolean {
             :key="tpl.type"
             class="node-item"
             type="button"
-            :style="{ borderLeftColor: getEngineAccentColor(tpl.type) }"
+            :style="{ borderLeftColor: getEngineAccentColor(tpl.type, tpl.engine) }"
             :title="tpl.description"
             @click="handleAddNode(tpl)"
           >
@@ -279,7 +298,7 @@ function isFavorite(type: string): boolean {
             :key="tpl.type"
             class="node-item"
             type="button"
-            :style="{ borderLeftColor: getEngineAccentColor(tpl.type) }"
+            :style="{ borderLeftColor: getEngineAccentColor(tpl.type, tpl.engine) }"
             :title="tpl.description"
             @click="handleAddNode(tpl)"
           >
@@ -328,7 +347,7 @@ function isFavorite(type: string): boolean {
             :key="tpl.type"
             class="node-item"
             type="button"
-            :style="{ borderLeftColor: getEngineAccentColor(tpl.type) }"
+            :style="{ borderLeftColor: getEngineAccentColor(tpl.type, tpl.engine) }"
             :title="tpl.description"
             @click="handleAddNode(tpl)"
           >
@@ -426,6 +445,36 @@ function isFavorite(type: string): boolean {
   flex-wrap: wrap;
   gap: 0.22rem;
   padding: 0.32rem 0.62rem;
+  border-bottom: 1px solid rgba(136, 192, 255, 0.06);
+}
+
+.port-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem 0.55rem;
+  padding: 0.28rem 0.62rem 0.1rem;
+}
+
+.port-legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.22rem;
+  font-size: 0.5rem;
+  color: #7f96ad;
+}
+
+.port-legend-dot {
+  width: 0.4rem;
+  height: 0.4rem;
+  border-radius: 50%;
+  display: inline-block;
+}
+
+.flow-tip {
+  margin: 0;
+  padding: 0.1rem 0.62rem 0.35rem;
+  font-size: 0.5rem;
+  color: #ffb84d;
   border-bottom: 1px solid rgba(136, 192, 255, 0.06);
 }
 

@@ -4,6 +4,7 @@ from dataclasses import asdict
 from typing import Any
 
 from app.core.config import settings
+from app.weatherengine.default_model import weather_default_model
 from app.workflow_engine.base import BaseNode
 from app.workflow_engine.enums import PortKind, RunStatus
 from app.workflow_engine.models import (
@@ -44,7 +45,7 @@ class ForecastFetchNode(BaseNode):
             longitude = coerce_float(inputs.get("longitude"))
             if longitude is None:
                 longitude = settings.weather_default_longitude
-            model = inputs.get("model") or settings.weather_default_model
+            model = inputs.get("model") or weather_default_model()
             forecast_hours = coerce_int(inputs.get("forecast_hours"))
             if not forecast_hours:
                 forecast_hours = settings.weather_refresh_forecast_hours

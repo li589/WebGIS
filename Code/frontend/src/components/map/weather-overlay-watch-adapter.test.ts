@@ -63,9 +63,17 @@ describe('weather-overlay-watch-adapter', () => {
 
     expect(diffWeatherOverlayWatchInputs(next, previous)).toEqual({
       flowIdChanged: true,
+      windDisplayModeChanged: false,
       layersHashChanged: true,
       dataVersionChanged: true,
       hourChanged: true,
     })
+  })
+
+  it('detects wind display mode changes', () => {
+    const previous = buildWeatherOverlayWatchInputs([createLayer()], 'weather.wind', 7, 12, 'particle')
+    const next = buildWeatherOverlayWatchInputs([createLayer()], 'weather.wind', 7, 12, 'streamline')
+    expect(diffWeatherOverlayWatchInputs(next, previous).windDisplayModeChanged).toBe(true)
+    expect(next.windDisplayMode).toBe('streamline')
   })
 })

@@ -1,8 +1,11 @@
 import { WindBarbLayer } from './wind-barb-layer'
 import { WindContourLayer } from './wind-contour-layer'
 import { WindParticleCanvas } from './wind-particle-canvas'
+import { WindStreamlineLayer } from './wind-streamline-layer'
+import type { WindDisplayMode } from './wind-display-mode'
 import { removeWeatherMapArtifacts } from './weather-overlay-maplibre'
-import { paletteToParticleColors } from './weather-render'
+import { syncWeatherSpeedUnderlay } from './weather-overlay-renderers'
+import { paletteToParticleColors, resolveCanonicalPaletteId } from './weather-render'
 import type { WeatherOverlayState } from './weather-overlay-registry'
 import type { WindGeoJSON } from './types'
 
@@ -15,6 +18,7 @@ function debugLog(module: string, ...args: unknown[]) {
 export class WindParticleOverlayController {
   private map: MapInstance
   private windParticleCanvas: WindParticleCanvas | null = null
+  private windStreamlineLayer: WindStreamlineLayer | null = null
   private windBarbLayer: WindBarbLayer | null = null
   private windContourLayer: WindContourLayer | null = null
   private currentWindGeojson: WindGeoJSON | null = null
@@ -22,6 +26,7 @@ export class WindParticleOverlayController {
   private currentParticleFlowCatalogId: string | null = null
   private windParticleFetchToken = 0
   private windParticleFetchAbort: AbortController | null = null
+  private lastDisplayMode: WindDisplayMode = 'particle'
 
   constructor(map: MapInstance) {
     this.map = map
@@ -42,16 +47,21 @@ export class WindParticleOverlayController {
     }
   }
 
-  reset(options?: { invalidatePendingFetch?: boolean }) {
-    debugLog('WindParticleController', 'reset', 'invalidatePendingFetch', options?.invalidatePendingFetch)
-    if (options?.invalidatePendingFetch !== false) {
-      this.windParticleFetchToken++
-      this.abortPendingGeojsonFetch()
-    }
+  private destroyParticleCanvas() {
     if (this.windParticleCanvas) {
       this.windParticleCanvas.destroy()
       this.windParticleCanvas = null
     }
+  }
+
+  private destroyStreamlineLayer() {
+    if (this.windStreamlineLayer) {
+      this.windStreamlineLayer.destroy()
+      this.windStreamlineLayer = null
+    }
+  }
+
+  private destroyAuxLayers() {
     if (this.windBarbLayer) {
       this.windBarbLayer.destroy()
       this.windBarbLayer = null
@@ -60,6 +70,17 @@ export class WindParticleOverlayController {
       this.windContourLayer.destroy()
       this.windContourLayer = null
     }
+  }
+
+  reset(options?: { invalidatePendingFetch?: boolean }) {
+    debugLog('WindParticleController', 'reset', 'invalidatePendingFetch', options?.invalidatePendingFetch)
+    if (options?.invalidatePendingFetch !== false) {
+      this.windParticleFetchToken++
+      this.abortPendingGeojsonFetch()
+    }
+    this.destroyParticleCanvas()
+    this.destroyStreamlineLayer()
+    this.destroyAuxLayers()
     this.currentWindGeojson = null
     this.lastWindGeojsonUrl = null
   }
@@ -74,173 +95,176 @@ export class WindParticleOverlayController {
     return false
   }
 
+  private stillCurrent(
+    options: {
+      overlayToken: number
+      getSyncWeatherToken: () => number
+      getEnabledParticleFlowCatalogId: () => string | null
+    },
+    catalogId: string,
+    fetchToken?: number,
+  ) {
+    if (options.overlayToken !== options.getSyncWeatherToken()) return false
+    if (this.currentParticleFlowCatalogId !== catalogId) return false
+    if (options.getEnabledParticleFlowCatalogId() !== catalogId) return false
+    if (fetchToken !== undefined && fetchToken !== this.windParticleFetchToken) return false
+    return true
+  }
+
+  /** 比较两次 inline geojson 是否需要重绘（避免引用相同但内容已变时漏更） */
+  private geojsonNeedsUpdate(next: WindGeoJSON | null): boolean {
+    const prev = this.currentWindGeojson
+    if (!next) return !!prev
+    if (!prev) return true
+    if (prev === next) return false
+    const prevN = Array.isArray(prev.features) ? prev.features.length : 0
+    const nextN = Array.isArray(next.features) ? next.features.length : 0
+    return prevN !== nextN || prev !== next
+  }
+
   async sync(
     overlayState: WeatherOverlayState,
     options: {
       overlayToken: number
       getSyncWeatherToken: () => number
       getEnabledParticleFlowCatalogId: () => string | null
+      getWindDisplayMode?: () => WindDisplayMode
     },
   ) {
-    debugLog(
-      'WindParticleController',
-      'sync start',
-      'catalogId',
-      overlayState.catalogId,
-      'geojsonUrl',
-      overlayState.geojsonUrl,
-      'hasInlineGeojson',
-      !!overlayState.geojsonData,
-    )
-
     const catalogId = overlayState.catalogId
-    removeWeatherMapArtifacts(this.map, catalogId)
+    const displayMode: WindDisplayMode = options.getWindDisplayMode?.() ?? 'particle'
 
-    if (
-      options.overlayToken !== options.getSyncWeatherToken()
-      || this.currentParticleFlowCatalogId !== catalogId
-    ) {
+    if (!this.stillCurrent(options, catalogId)) return
+
+    const inlineGeojson = (overlayState.geojsonData && typeof overlayState.geojsonData === 'object'
+      && 'features' in overlayState.geojsonData)
+      ? overlayState.geojsonData as WindGeoJSON
+      : null
+
+    // 视口切换后 merge 可能短暂为 null：清掉旧画面，等待新瓦片，避免旧区域「粘住」
+    if (!inlineGeojson && !overlayState.geojsonUrl) {
+      if (this.currentWindGeojson || this.windParticleCanvas || this.windStreamlineLayer) {
+        this.destroyParticleCanvas()
+        this.destroyStreamlineLayer()
+        this.destroyAuxLayers()
+        this.currentWindGeojson = null
+        this.lastWindGeojsonUrl = null
+        removeWeatherMapArtifacts(this.map, catalogId)
+      }
       return
     }
 
-    const urlChanged = this.lastWindGeojsonUrl !== overlayState.geojsonUrl
-    const inlineGeojson = overlayState.geojsonData as WindGeoJSON | null
-    let geojson: WindGeoJSON | null = inlineGeojson ?? (urlChanged ? null : this.currentWindGeojson)
-    this.abortPendingGeojsonFetch()
-    const fetchToken = ++this.windParticleFetchToken
-    const fetchAbort = new AbortController()
-    this.windParticleFetchAbort = fetchAbort
-
-    if (!inlineGeojson && urlChanged && overlayState.geojsonUrl) {
-      try {
-        const resp = await fetch(overlayState.geojsonUrl, { signal: fetchAbort.signal })
-        if (!resp.ok) {
-          console.warn('[WindParticleController] sync: fetch failed status=%d', resp.status)
-          return
-        }
-        const fetchedGeojson = (await resp.json()) as WindGeoJSON
-        if (
-          options.overlayToken !== options.getSyncWeatherToken()
-          || fetchToken !== this.windParticleFetchToken
-          || this.currentParticleFlowCatalogId !== catalogId
-          || options.getEnabledParticleFlowCatalogId() !== catalogId
-        ) {
-          return
-        }
-        geojson = fetchedGeojson
-        this.currentWindGeojson = fetchedGeojson
-        this.lastWindGeojsonUrl = overlayState.geojsonUrl
-      } catch (err) {
-        if (err instanceof DOMException && err.name === 'AbortError') {
-          debugLog('WindParticleController', 'sync fetch aborted')
-          return
-        }
-        console.error('[WindParticleController] sync: fetch error', err)
-        return
-      } finally {
-        if (this.windParticleFetchAbort === fetchAbort) {
-          this.windParticleFetchAbort = null
-        }
-      }
-    }
+    let geojson = this.currentWindGeojson
+    let dataChanged = false
 
     if (inlineGeojson) {
+      dataChanged = this.geojsonNeedsUpdate(inlineGeojson)
+      geojson = inlineGeojson
       this.currentWindGeojson = inlineGeojson
       this.lastWindGeojsonUrl = overlayState.geojsonUrl
+    } else if (overlayState.geojsonUrl && overlayState.geojsonUrl !== this.lastWindGeojsonUrl) {
+      dataChanged = true
+      this.lastWindGeojsonUrl = overlayState.geojsonUrl
+      const fetchToken = ++this.windParticleFetchToken
+      this.abortPendingGeojsonFetch()
+      const abort = new AbortController()
+      this.windParticleFetchAbort = abort
+      try {
+        const resp = await fetch(overlayState.geojsonUrl, { signal: abort.signal })
+        if (!resp.ok) throw new Error(`wind geojson ${resp.status}`)
+        geojson = await resp.json() as WindGeoJSON
+      } catch (err) {
+        if ((err as Error)?.name === 'AbortError') return
+        debugLog('WindParticleController', 'fetch failed', err)
+        return
+      } finally {
+        if (this.windParticleFetchAbort === abort) this.windParticleFetchAbort = null
+      }
+      if (!this.stillCurrent(options, catalogId, fetchToken)) return
+      this.currentWindGeojson = geojson
     }
 
-    if (
-      options.overlayToken !== options.getSyncWeatherToken()
-      || fetchToken !== this.windParticleFetchToken
-      || this.currentParticleFlowCatalogId !== catalogId
-      || options.getEnabledParticleFlowCatalogId() !== catalogId
-    ) {
-      return
-    }
+    if (!this.stillCurrent(options, catalogId)) return
+    if (!geojson) return
 
-    if (!geojson) {
-      debugLog('WindParticleController', 'sync no geojson, skip')
+    const modeChanged = displayMode !== this.lastDisplayMode
+    this.lastDisplayMode = displayMode
+
+    // ── 关闭：仅风速色底，无粒子/流线/等值线 ────────────────────────────
+    if (displayMode === 'off') {
+      this.destroyParticleCanvas()
+      this.destroyStreamlineLayer()
+      this.destroyAuxLayers()
+      syncWeatherSpeedUnderlay(this.map, {
+        ...overlayState,
+        geojsonData: geojson,
+        opacity: Math.min(1, Math.max(0.55, overlayState.opacity * 1.05)),
+      })
       return
     }
 
     const enableBarbLayer = overlayState.renderHint.paint_mode === 'barb'
-    debugLog(
-      'WindParticleController',
-      'sync data ready',
-      'urlChanged',
-      urlChanged,
-      'inlineGeojson',
-      !!inlineGeojson,
-      'currentWindGeojson',
-      !!this.currentWindGeojson,
-      'contour',
-      !!this.windContourLayer,
-      'particle',
-      !!this.windParticleCanvas,
-      'barb',
-      !!this.windBarbLayer,
-      'enableBarb',
-      enableBarbLayer,
-    )
+    const useStreamline = displayMode === 'streamline'
+    const useParticle = displayMode === 'particle'
 
+    if (useStreamline) this.destroyParticleCanvas()
+    if (useParticle) this.destroyStreamlineLayer()
+
+    const hasVisualLayer = useParticle ? !!this.windParticleCanvas : !!this.windStreamlineLayer
+
+    // 粒子/流量场：不叠风速底色；数据未变且层已就绪时可跳过
     if (
-      !urlChanged
-      && !inlineGeojson
-      && this.windParticleCanvas
+      !dataChanged
+      && !modeChanged
+      && hasVisualLayer
       && this.windContourLayer
       && (!enableBarbLayer || this.windBarbLayer)
     ) {
-      debugLog('WindParticleController', 'sync skip redundant update')
       return
     }
 
-    debugLog(
-      'WindParticleController',
-      'sync updating layers',
-      'createContour',
-      !this.windContourLayer,
-      'createParticle',
-      !this.windParticleCanvas,
-      'createBarb',
-      !this.windBarbLayer,
-      'enableBarb',
-      enableBarbLayer,
-      'features',
-      geojson.features?.length,
-    )
+    if (!hasVisualLayer || !this.windContourLayer || modeChanged) {
+      removeWeatherMapArtifacts(this.map, catalogId)
+    }
 
     if (!this.windContourLayer) {
       this.windContourLayer = new WindContourLayer(this.map, geojson)
     } else {
       this.windContourLayer.updateGeoJSON(geojson)
     }
+    this.windContourLayer.setOpacity(useStreamline ? 0.1 : 0.06)
 
-    if (!this.windParticleCanvas) {
-      this.windParticleCanvas = new WindParticleCanvas(this.map, geojson)
-      this.windParticleCanvas.start()
-    } else {
-      this.windParticleCanvas.updateGeoJSON(geojson)
+    if (useParticle) {
+      if (!this.windParticleCanvas) {
+        this.windParticleCanvas = new WindParticleCanvas(this.map, geojson)
+        this.windParticleCanvas.start()
+      } else {
+        this.windParticleCanvas.updateGeoJSON(geojson)
+      }
+      const paletteId = resolveCanonicalPaletteId(overlayState.renderHint?.palette) || 'wind-blue'
+      const particleColors = paletteToParticleColors(paletteId)
+      if (particleColors.length >= 2) {
+        this.windParticleCanvas.setColors(particleColors)
+      }
+    } else if (useStreamline) {
+      if (!this.windStreamlineLayer) {
+        this.windStreamlineLayer = new WindStreamlineLayer(this.map, geojson)
+        this.windStreamlineLayer.start()
+      } else {
+        this.windStreamlineLayer.updateGeoJSON(geojson)
+      }
     }
 
-    // 应用配色方案到粒子色阶（支持用户自定义配色覆盖）
-    const particleColors = paletteToParticleColors(overlayState.renderHint.palette)
-    if (particleColors.length > 0) {
-      this.windParticleCanvas.setColors(particleColors)
-    }
-
-    if (enableBarbLayer) {
+    if (enableBarbLayer && useParticle) {
       if (!this.windBarbLayer) {
         this.windBarbLayer = new WindBarbLayer(this.map, geojson)
       } else {
         this.windBarbLayer.updateGeoJSON(geojson)
       }
     } else if (this.windBarbLayer) {
-      debugLog('WindParticleController', 'destroy unused barb layer')
       this.windBarbLayer.destroy()
       this.windBarbLayer = null
     }
-
-    debugLog('WindParticleController', 'sync layers updated', 'barbPresent', !!this.windBarbLayer)
   }
 
   destroy() {

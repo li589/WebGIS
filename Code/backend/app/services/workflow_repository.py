@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import json
+import logging
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 import sqlite3
 
@@ -28,6 +30,20 @@ DEFAULT_CONFIG_SNAPSHOT: dict[str, dict[str, object]] = {
         "result_retention": "session",
     },
 }
+
+
+logger = logging.getLogger(__name__)
+
+
+# 已完成的终态状态：这些状态的 run 可被清理
+_TERMINAL_STATUSES = (
+    ExecutionStatus.succeeded.value,
+    ExecutionStatus.failed.value,
+    ExecutionStatus.cancelled.value,
+)
+
+# 默认保留期：30 天前的已完成 run 将被清理
+_DEFAULT_RETENTION_DAYS = 30
 
 
 class SQLiteWorkflowRepository:
@@ -216,6 +232,79 @@ class SQLiteWorkflowRepository:
                     (*active_statuses, run_class),
                 ).fetchone()
         return int(row[0]) if row is not None else 0
+
+    def cleanup_old_runs(
+        self,
+        *,
+        retention_days: int = _DEFAULT_RETENTION_DAYS,
+        vacuum: bool = False,
+    ) -> dict[str, int]:
+        """清理超过保留期的已完成 run 及其 events，回收磁盘空间。
+
+        仅清理终态状态（completed/failed/cancelled）且 updated_at 早于
+        retention_days 天前的 run。对应的 workflow_events 会一并删除。
+
+        Args:
+            retention_days: 保留天数（默认 30）
+            vacuum: 是否执行 VACUUM 回收磁盘空间（耗时，建议低峰期执行）
+
+        Returns:
+            {"runs_deleted": N, "events_deleted": M, "vacuumed": 0|1}
+        """
+        cutoff = (datetime.now(timezone.utc) - timedelta(days=retention_days)).isoformat()
+        stats = {"runs_deleted": 0, "events_deleted": 0, "vacuumed": 0}
+
+        with self._connect() as connection:
+            # 1. 先找出待删除的 run_id（用于级联删除 events）
+            cursor = connection.execute(
+                """
+                SELECT run_id FROM workflow_runs
+                WHERE status IN (?, ?, ?)
+                  AND updated_at < ?
+                """,
+                (*_TERMINAL_STATUSES, cutoff),
+            )
+            run_ids = [row[0] for row in cursor.fetchall()]
+
+            if not run_ids:
+                logger.info(
+                    "cleanup_old_runs: no runs older than %d days to delete", retention_days,
+                )
+                return stats
+
+            # 2. 删除 events（批量 IN 查询，分批避免 SQL 参数上限）
+            placeholders = ",".join("?" * len(run_ids))
+            events_cursor = connection.execute(
+                f"DELETE FROM workflow_events WHERE run_id IN ({placeholders})",
+                run_ids,
+            )
+            stats["events_deleted"] = events_cursor.rowcount or 0
+
+            # 3. 删除 runs
+            runs_cursor = connection.execute(
+                f"DELETE FROM workflow_runs WHERE run_id IN ({placeholders})",
+                run_ids,
+            )
+            stats["runs_deleted"] = runs_cursor.rowcount or 0
+
+            logger.info(
+                "cleanup_old_runs: deleted %d runs and %d events (retention=%d days)",
+                stats["runs_deleted"], stats["events_deleted"], retention_days,
+            )
+
+        # 4. VACUUM 必须在事务外执行（SQLite 限制）
+        if vacuum:
+            try:
+                # WAL checkpoint + VACUUM 回收磁盘空间
+                with self._connect() as connection:
+                    connection.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+                    connection.execute("VACUUM")
+                stats["vacuumed"] = 1
+                logger.info("cleanup_old_runs: VACUUM completed")
+            except Exception:
+                logger.exception("cleanup_old_runs: VACUUM failed")
+
+        return stats
 
     def _ensure_layout(self) -> None:
         self._state_dir.mkdir(parents=True, exist_ok=True)

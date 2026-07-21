@@ -1,4 +1,4 @@
-import type { ImportedGeometryType } from '../../stores/import'
+import type { ImportedGeometryType } from '../../stores/layers/imported-vector'
 import { Popup, type MapLayerMouseEvent } from 'maplibre-gl'
 
 type MapInstance = import('maplibre-gl').Map

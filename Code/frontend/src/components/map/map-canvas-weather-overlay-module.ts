@@ -13,6 +13,7 @@ type WeatherOverlayGeojsonData = import('./weather-overlay-registry').WeatherOve
 interface MapCanvasLayersStoreLike {
   activeLayersDisplay: ActiveLayerDisplay[]
   particleFlowCatalogId: string | null
+  windDisplayMode: import('./wind-display-mode').WindDisplayMode
   isWeatherEngineLayer: (catalogId: string) => boolean
 }
 
@@ -49,6 +50,7 @@ export function createMapCanvasWeatherOverlayModule(
     buildDefaultWeatherRenderHint,
     resolveApiUrl,
     getEnabledParticleFlowCatalogId: () => options.layersStore.particleFlowCatalogId,
+    getWindDisplayMode: () => options.layersStore.windDisplayMode,
     getDataVersion: () => options.weatherTileManager.dataVersion,
     getCurrentHour: options.getCurrentHour,
     debugLog: options.debugLog,

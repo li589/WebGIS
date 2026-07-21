@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 from datetime import datetime, timezone
 import unittest
@@ -84,7 +84,7 @@ class WeatherBridgeServiceTests(unittest.TestCase):
     def test_execute_workflow_returns_mapped_result(self) -> None:
         service = WeatherBridgeService()
         fake_result = _FakeRunResult(
-            outputs={"n1.summary": "风速 5.2 m/s", "n1.diagnostics": ["provider=open-meteo"]},
+            outputs={"n1.summary": "风速 5.2 m/s", "n1.diagnostics": ["provider=open-meteo-online"]},
             node_results=[_FakeNodeResult(node_id="n1", outputs={"summary": "风速 5.2 m/s"})],
         )
         fake_service = type("FakeService", (), {

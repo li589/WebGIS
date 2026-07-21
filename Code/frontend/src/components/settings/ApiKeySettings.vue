@@ -15,7 +15,7 @@ import {
 } from '../../services/settings-local'
 
 const settingsStore = useSettingsStore()
-const { apiKeys, weatherConfig, apiKeyHistory } = storeToRefs(settingsStore)
+const { apiKeys, apiKeyHistory } = storeToRefs(settingsStore)
 
 const writeKeyDraft = ref('')
 const writeKeyLocalSet = ref(hasBackendWriteApiKey())
@@ -218,21 +218,6 @@ function sourceLabel(source: string): string {
 const apiKeyItems = computed(() => apiKeys.value.filter((k) => k.key_name !== 'backend_auth'))
 const backendAuthItem = computed(() => apiKeys.value.find((k) => k.key_name === 'backend_auth'))
 
-const weatherItems = computed(() => {
-  if (!weatherConfig.value) return []
-  const cfg = weatherConfig.value
-  return [
-    { label: '天气模型', value: cfg.default_model },
-    { label: '缓存 TTL', value: `${cfg.cache_ttl_seconds} 秒` },
-    { label: '刷新周期', value: `${cfg.refresh_forecast_hours} 小时` },
-    { label: '定时刷新', value: cfg.schedule_enabled ? '启用' : '禁用' },
-    { label: '默认纬度', value: cfg.default_latitude.toString() },
-    { label: '默认经度', value: cfg.default_longitude.toString() },
-    { label: '默认地名', value: cfg.default_place_name },
-    { label: '最大并发瓦片', value: cfg.max_active_weather_tile_runs.toString() },
-  ]
-})
-
 function statusBadge(item: ApiKeyItem): { text: string; class: string } | null {
   if (!item.last_tested_at) return null
   if (item.last_test_status === 'ok') return { text: '已验证', class: 'badge-ok' }
@@ -369,17 +354,6 @@ function statusBadge(item: ApiKeyItem): { text: string; class: string } | null {
           </div>
         </div>
       </div>
-    </section>
-
-    <section class="settings-section">
-      <h3 class="section-title">Open-Meteo 天气 API</h3>
-      <div class="info-grid">
-        <div v-for="row in weatherItems" :key="row.label" class="info-row">
-          <span class="info-label">{{ row.label }}</span>
-          <span class="info-value">{{ row.value }}</span>
-        </div>
-      </div>
-      <p class="section-hint">Open-Meteo 为免费 API，无需 Key。限流参数通过环境变量配置。</p>
     </section>
 
     <section v-if="backendAuthItem" class="settings-section">

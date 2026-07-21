@@ -13,17 +13,17 @@ describe('ui-loading store', () => {
 
     loading.showImmediate('初始化地图数据...')
     expect(loading.isVisible).toBe(true)
+    expect(loading.mode).toBe('hero')
 
-    // catalog requestJson also calls show()
     loading.show()
-    // request finishes quickly
     loading.hide()
     expect(loading.isVisible).toBe(true)
+    expect(loading.mode).toBe('hero')
 
-    // Dashboard finally — must clear overlay even if a delayed timer existed
     loading.hide()
     expect(loading.isVisible).toBe(false)
     expect(loading.message).toBe('')
+    expect(loading.mode).toBe('compact')
   })
 
   it('hideImmediate clears overlay regardless of counter', () => {
@@ -39,6 +39,16 @@ describe('ui-loading store', () => {
     loading.show('短暂请求')
     loading.hide()
     vi.advanceTimersByTime(500)
+    expect(loading.isVisible).toBe(false)
+  })
+
+  it('delayed show uses compact mode by default', () => {
+    const loading = useUiLoadingStore()
+    loading.show('拉取配置')
+    vi.advanceTimersByTime(300)
+    expect(loading.isVisible).toBe(true)
+    expect(loading.mode).toBe('compact')
+    loading.hide()
     expect(loading.isVisible).toBe(false)
   })
 })

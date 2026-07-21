@@ -41,7 +41,7 @@ _ARTIFACT_MIME_TYPES = {
 _PENDING_IMPLEMENTATION_MODULES = frozenset({
     "preprocess_reproject",
     "preprocess_resample",
-    "preprocess_format_convert",
+    # preprocess_format_convert implemented as format_convert (alias)
     "preprocess_clip",
     "preprocess_mask",
     "stats_spatial_mean",
@@ -436,6 +436,20 @@ class PythonProviderBridgeService:
             request_payload["tags"].setdefault("workflow_command_type", payload.command_type.value)
             if payload.layer_id:
                 request_payload["tags"].setdefault("workflow_layer_id", payload.layer_id)
+
+        # Inject open-data presets for http_open_data nodes (canvas / research pipeline)
+        try:
+            from app.services.config_service import get_data_source_config
+
+            presets = get_data_source_config().get("open_data_presets") or {}
+            if isinstance(presets, dict) and presets:
+                ds = request_payload.get("datasource_selection")
+                if not isinstance(ds, dict):
+                    ds = {}
+                    request_payload["datasource_selection"] = ds
+                ds.setdefault("open_data_presets", presets)
+        except Exception:  # noqa: BLE001
+            pass
 
         if payload.time_range is not None and "time_range" not in request_payload:
             request_payload["time_range"] = {

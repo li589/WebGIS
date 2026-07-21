@@ -105,6 +105,20 @@ class LayerDescriptor(BaseModel):
     run_readiness: str = "ready"
     run_readiness_summary: str | None = None
     run_readiness_notes: list[str] = Field(default_factory=list)
+    # ── 课题组数据集元数据扩展（Phase 1：扩展和细化）──────────────────────────────
+    # 用于课题组数据集的归属、时间范围与数据源引用追踪；其他图层可留空。
+    data_owner: str | None = None
+    """数据归属（课题组成员：Wangc / Wangxd / Liuzheng / Chenhaojun / LiuSJ / Wangxy / Lab）。
+    课题组派生数据集填写组员名（与 NAS 顶级目录对齐）；本机派生数据填 'Lab'；外部公开数据留空。
+    """
+    temporal_coverage: str | None = None
+    """时间覆盖范围的人类可读描述，例如 '2023-01' / '2018-2020' / '1985-2023' / 'doy 017-030'。
+    用于图层信息面板展示；时间序列图层也应填写以表明整体覆盖区间。
+    """
+    source_reference: str | None = None
+    """数据源引用（DOI / URL / 数据集官方页面）。
+    例如 'https://doi.org/10.5281/zenodo.4417810' (CLCD)；用于学术引用与溯源。
+    """
 
 
 class LayerCatalogResponse(BaseModel):

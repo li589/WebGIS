@@ -9,6 +9,7 @@ import { ref, computed } from 'vue'
 import { storeToRefs } from 'pinia'
 import { useWorkflowDefinitionsStore } from '../../stores/workflow-definitions'
 import type { WorkflowDefinitionSummary } from '../../services/workflow-definition-api'
+import InlineLoader from '../common/InlineLoader.vue'
 
 const emit = defineEmits<{
   select: [workflowId: string]
@@ -147,10 +148,7 @@ function formatTime(iso: string | null): string {
       </button>
     </div>
 
-    <div v-if="loading" class="list-loading">
-      <span class="loading-spinner"></span>
-      <span>加载中...</span>
-    </div>
+    <InlineLoader v-if="loading" label="加载中..." size="sm" />
 
     <div v-else class="list-content">
       <!-- 模板工作流 -->
@@ -384,7 +382,6 @@ function formatTime(iso: string | null): string {
   background: rgba(10, 132, 255, 0.24);
 }
 
-.list-loading,
 .list-empty {
   display: flex;
   flex-direction: column;
@@ -549,19 +546,6 @@ function formatTime(iso: string | null): string {
   background: rgba(136, 192, 255, 0.06);
   color: #5ad5ff;
   font-family: 'Consolas', 'Monaco', monospace;
-}
-
-.loading-spinner {
-  width: 1.4rem;
-  height: 1.4rem;
-  border: 2px solid rgba(90, 213, 255, 0.2);
-  border-top-color: #5ad5ff;
-  border-radius: 50%;
-  animation: spin 0.8s linear infinite;
-}
-
-@keyframes spin {
-  to { transform: rotate(360deg); }
 }
 
 /* ── 对话框 ──────────────────────────────────────────────────────── */

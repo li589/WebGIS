@@ -5,6 +5,10 @@
  * 用于风场粒子流/等值线/风羽等 Canvas 叠加层统一渲染。
  */
 import type { WindGeoJSON, WindGeoJSONFeature } from '../components/map/types'
+import {
+  pointInTileHalfOpen,
+  type LngLatBounds as LatticeBounds,
+} from '../components/map/weather-grid-lattice'
 
 export interface MergedWeatherTile {
   layerId: string
@@ -22,12 +26,7 @@ export interface MergeStats {
   duplicates: number
 }
 
-interface LngLatBounds {
-  west: number
-  south: number
-  east: number
-  north: number
-}
+export type LngLatBounds = LatticeBounds
 
 const DEFAULT_QUANTIZE_FACTOR = 1000
 
@@ -54,6 +53,61 @@ function buildDedupKey(
   const [lon, lat] = coord
   const height = String(feature.properties?.height ?? '_')
   return `${quantize(lon, quantizeFactor)}:${quantize(lat, quantizeFactor)}:${height}`
+}
+
+function pointInBounds(lon: number, lat: number, bounds: LngLatBounds): boolean {
+  // 与瓦片半开归属一致：勿把南/东边界算作「已覆盖」，否则赤道/瓦片缝上的点
+  // 既不在本级半开结果里、又被父级 underlay 裁掉 → 跨南北半球出现整条空白带
+  return pointInTileHalfOpen(lon, lat, bounds, { includeEast: false, includeSouth: false })
+}
+
+/** 点是否落在任一覆盖矩形内（用于父级 underlay 裁剪）。 */
+export function isPointCoveredByBounds(
+  lon: number,
+  lat: number,
+  covered: readonly LngLatBounds[],
+): boolean {
+  for (const bounds of covered) {
+    if (pointInBounds(lon, lat, bounds)) return true
+  }
+  return false
+}
+
+/**
+ * 去掉已落在本级瓦片覆盖区内的父级点，避免不同分辨率格点叠绘成规律重影。
+ * 非 Point 特征原样保留（少见）。
+ */
+export function filterGeojsonOutsideCoverage(
+  geojson: WindGeoJSON,
+  covered: readonly LngLatBounds[],
+): WindGeoJSON {
+  if (!geojson?.features?.length || covered.length === 0) return geojson
+  const features = geojson.features.filter((feature) => {
+    const coord = extractPointCoord(feature)
+    if (!coord) return true
+    const [lon, lat] = coord
+    return !isPointCoveredByBounds(lon, lat, covered)
+  })
+  return { type: 'FeatureCollection', features }
+}
+
+/**
+ * 将点裁到所属瓦片半开区间（与后端 point_in_tile_half_open 一致）。
+ * 只决定格心归属；格元矩形由全球格网生成，不在此裁多边形。
+ */
+export function filterGeojsonInsideTileBounds(
+  geojson: WindGeoJSON,
+  bounds: LngLatBounds,
+  options?: { includeEast?: boolean; includeSouth?: boolean },
+): WindGeoJSON {
+  if (!geojson?.features?.length) return geojson
+  const features = geojson.features.filter((feature) => {
+    const coord = extractPointCoord(feature)
+    if (!coord) return true
+    const [lon, lat] = coord
+    return pointInTileHalfOpen(lon, lat, bounds, options)
+  })
+  return { type: 'FeatureCollection', features }
 }
 
 /**

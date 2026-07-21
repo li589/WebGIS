@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 from datetime import datetime, timezone
 from typing import Any
@@ -10,6 +10,7 @@ from urllib.error import HTTPError, URLError
 from uuid import uuid4
 
 from app.core.config import settings
+from app.weatherengine.default_model import weather_default_model
 from app.services.api_config import api_config_manager, ApiProvider, DataType
 from app.services.result_storage import result_storage_service
 from app.services.workflow_execution import WorkflowExecutionResult
@@ -75,19 +76,40 @@ class WeatherEngineService:
         if spec is None:
             raise ValueError(f"Unsupported weather layer: {layer_id}")
 
-        resolved_model = model or settings.weather_default_model
-        from app.weatherengine.fetch_gateway import fetch_point_forecast
+        resolved_model = model or weather_default_model()
+        from urllib.error import HTTPError, URLError
 
-        payload, cache_status, provider_label = fetch_point_forecast(
-            layer_id=layer_id,
-            latitude=latitude,
-            longitude=longitude,
-            model=resolved_model,
-            forecast_hours=forecast_hours,
-            ttl_seconds=cache_ttl_seconds,
-            layer_spec=spec,
-            provider_id=provider_id,
-        )
+        from app.weatherengine.fetch_gateway import WeatherProviderUnavailableError, fetch_point_forecast
+
+        try:
+            payload, cache_status, provider_label = fetch_point_forecast(
+                layer_id=layer_id,
+                latitude=latitude,
+                longitude=longitude,
+                model=resolved_model,
+                forecast_hours=forecast_hours,
+                ttl_seconds=cache_ttl_seconds,
+                layer_spec=spec,
+                provider_id=provider_id,
+            )
+        except (HTTPError, URLError, WeatherProviderUnavailableError) as exc:
+            sampled = self._try_point_from_tile_cache(
+                layer_id=layer_id,
+                latitude=latitude,
+                longitude=longitude,
+                resolved_model=resolved_model,
+                forecast_hours=forecast_hours,
+                place_name=place_name,
+                provider_id=provider_id,
+                spec=spec,
+            )
+            if sampled is not None:
+                logger.warning(
+                    "[WeatherEngine] point upstream unavailable (%s); using tile-cache sample",
+                    exc,
+                )
+                return sampled
+            raise
 
         return self.parse_forecast_to_point(
             payload=payload,
@@ -101,6 +123,100 @@ class WeatherEngineService:
             provider=provider_label,
         )
 
+    def _try_point_from_tile_cache(
+        self,
+        *,
+        layer_id: str,
+        latitude: float,
+        longitude: float,
+        resolved_model: str,
+        forecast_hours: int,
+        place_name: str | None,
+        provider_id: str | None,
+        spec,
+    ) -> WeatherPointResponse | None:
+        """上游点查失败时，从已加载瓦片缓存采样最近格点，保证点击仍有可读结果。"""
+        try:
+            from app.weatherengine.tile_service import get_weather_tile_service
+
+            tile_svc = get_weather_tile_service()
+            props = None
+            for pid in (provider_id, "auto", None):
+                props = tile_svc.sample_nearest_feature(
+                    layer_id=layer_id,
+                    latitude=latitude,
+                    longitude=longitude,
+                    model=resolved_model,
+                    provider_id=pid,
+                )
+                if props:
+                    break
+        except Exception as exc:  # noqa: BLE001 — 降级路径不可再抛
+            logger.debug("[WeatherEngine] tile-cache sample failed: %s", exc)
+            return None
+        if not props:
+            return None
+
+        current_fields: dict[str, Any] = {}
+        for key, value in props.items():
+            if key.startswith("_"):
+                continue
+            if isinstance(value, (int, float)) and math.isfinite(float(value)):
+                current_fields[key] = float(value)
+
+        metric = spec.primary_metric
+        if metric not in current_fields:
+            # 风场 GeoJSON 可能用 wind_speed_120m 等；尝试 height 后缀拼装
+            height = props.get("height")
+            if isinstance(height, str):
+                speed_key = f"wind_speed_{height}"
+                dir_key = f"wind_direction_{height}"
+                if speed_key in props:
+                    current_fields[speed_key] = props[speed_key]
+                    current_fields.setdefault(metric, props[speed_key])
+                if dir_key in props:
+                    current_fields[dir_key] = props[dir_key]
+
+        metric_value = current_fields.get(metric)
+        summary = spec.summary_template.format(
+            value=metric_value if metric_value is not None else "--",
+            unit=spec.unit_label,
+        )
+        sample_note = (
+            f"tile-cache sample @ "
+            f"{props.get('_sample_lat', latitude):.3f},"
+            f"{props.get('_sample_lon', longitude):.3f}"
+        )
+        return self.parse_forecast_to_point(
+            payload={
+                "timezone": None,
+                "current": {
+                    "time": datetime.now(timezone.utc).isoformat(),
+                    **current_fields,
+                },
+                "hourly": {"time": []},
+                "model": resolved_model,
+            },
+            cache_status="tile-cache-sample",
+            layer_id=layer_id,
+            latitude=latitude,
+            longitude=longitude,
+            resolved_model=resolved_model,
+            forecast_hours=forecast_hours,
+            place_name=place_name,
+            provider="tile-cache",
+        ).model_copy(
+            update={
+                "summary": f"{summary}（{sample_note}）",
+                "diagnostics": [
+                    "provider=tile-cache",
+                    f"layer_id={layer_id}",
+                    sample_note,
+                    "upstream point temporarily unavailable",
+                ],
+            },
+        )
+
     def parse_forecast_to_point(
         self,
         *,
@@ -112,7 +228,7 @@ class WeatherEngineService:
         resolved_model: str,
         forecast_hours: int = 6,
         place_name: str | None = None,
-        provider: str = "open-meteo",
+        provider: str = "open-meteo-online",
     ) -> WeatherPointResponse:
         """M11 修复：将 forecast payload 解析为 WeatherPointResponse，无需再次调用 API。
 
@@ -457,7 +573,7 @@ class WeatherEngineService:
                 latitude=settings.weather_default_latitude,
                 longitude=settings.weather_default_longitude,
                 place_name=settings.weather_default_place_name,
-                model=settings.weather_default_model,
+                model=weather_default_model(),
                 forecast_hours=settings.weather_refresh_forecast_hours,
                 cache_ttl_seconds=settings.weather_cache_ttl_seconds,
             )
@@ -710,27 +826,58 @@ class WeatherEngineService:
         api_direction_attr = direction_attr.replace("-", "_")
 
         # 从 API 响应中提取数据（数组格式，按索引对应）
-        speed_values = current.get(api_speed_attr, current.get("wind_speed_10m", []))
-        direction_values = current.get(api_direction_attr, current.get("wind_direction_10m", []))
+        speed_values = list(current.get(api_speed_attr) or [])
+        direction_values = list(current.get(api_direction_attr) or [])
 
-        # 风向数据缺失时的 fallback：使用随机方向避免所有粒子同向
-        # 触发条件：列表为空，或所有值均为 None（缓存过期/字段缺失时可能出现）
-        _dir_valid_count = sum(1 for v in direction_values if v is not None)
-        if _dir_valid_count == 0:
-            import random
-            random.seed(42)  # 固定种子保证可复现
-            total_points = rows * cols
-            if len(speed_values) > 0:
-                direction_values = [random.uniform(0, 360) for _ in range(len(speed_values))]
-            else:
-                # 风速和风向都缺失：生成完整的模拟数据，避免所有点 speed=0 direction=0
-                # 导致前端所有粒子静止（竖直线条）
-                speed_values = [random.uniform(3, 15) for _ in range(total_points)]
-                direction_values = [random.uniform(0, 360) for _ in range(total_points)]
+        # 轮毂高度缺测：用 10m + Hellmann 幂律外推（与 field_mapping 网格补全一致）
+        speed_valid = sum(1 for v in speed_values if v is not None)
+        if speed_valid == 0 and height_suffix.endswith("m") and height_suffix != "10m":
+            try:
+                target_h = float(height_suffix.rstrip("m"))
+            except ValueError:
+                target_h = 0.0
+            base_speed = current.get("wind_speed_10m") or []
+            base_dir = current.get("wind_direction_10m") or []
+            if target_h > 0 and any(v is not None for v in base_speed):
+                from app.weatherengine.field_mapping import extrapolate_wind_speed_power_law
+
+                speed_values = [
+                    extrapolate_wind_speed_power_law(
+                        base_speed[i] if i < len(base_speed) else None,
+                        target_height_m=target_h,
+                    )
+                    for i in range(len(base_speed))
+                ]
+                if not any(v is not None for v in direction_values):
+                    direction_values = list(base_dir)
+                logger.info(
+                    "[WeatherEngine] build_wind_geojson_from_grid: extrapolated %s from 10m layer=%s",
+                    api_speed_attr,
+                    layer_id,
+                )
+
+        if not speed_values:
+            speed_values = list(current.get("wind_speed_10m") or [])
+        if not direction_values:
+            direction_values = list(current.get("wind_direction_10m") or [])
+
+        speed_valid = sum(1 for v in speed_values if v is not None)
+        dir_valid = sum(1 for v in direction_values if v is not None)
+        if speed_valid == 0:
+            # 禁止随机伪造气象场：无数据就返回空要素（与温度层跳过 null 一致）
             logger.warning(
-                "[WeatherEngine] build_wind_geojson_from_grid: wind data missing or incomplete "
-                "(speed_values=%d direction_values=%d), using random fallback",
-                len(speed_values), len(direction_values),
+                "[WeatherEngine] build_wind_geojson_from_grid: no usable wind speed "
+                "layer=%s speed_values=%d dir_values=%d — empty FeatureCollection",
+                layer_id,
+                len(speed_values),
+                len(direction_values),
+            )
+            return {"type": "FeatureCollection", "features": []}
+        if dir_valid == 0:
+            logger.warning(
+                "[WeatherEngine] build_wind_geojson_from_grid: wind direction missing "
+                "layer=%s — features will use direction=0 (no random fill)",
+                layer_id,
             )
 
         # [WeatherEngine] 调试：打印网格数据概要
@@ -751,15 +898,19 @@ class WeatherEngineService:
                 lat = lats[i] if i < len(lats) else 0
                 lon = lons[j] if j < len(lons) else 0
 
-                speed = speed_values[idx] if idx < len(speed_values) else 0
-                direction = direction_values[idx] if idx < len(direction_values) else 0
+                speed = speed_values[idx] if idx < len(speed_values) else None
+                if speed is None:
+                    continue
+                direction = direction_values[idx] if idx < len(direction_values) else None
+                if direction is None:
+                    direction = 0.0
 
                 features.append({
                     "type": "Feature",
                     "geometry": {"type": "Point", "coordinates": [lon, lat]},
                     "properties": {
-                        speed_attr: round(speed, 2) if speed is not None else 0,
-                        direction_attr: round(direction, 1) if direction is not None else 0,
+                        speed_attr: round(float(speed), 2),
+                        direction_attr: round(float(direction), 1),
                         "height": height_suffix,
                         "unit": "m/s",
                         "row": i,
@@ -1258,9 +1409,11 @@ class WeatherEngineService:
 
         # 从 API 响应中提取数据
         temp_values = current.get(api_temp_attr, current.get("temperature_2m", []))
+        if not isinstance(temp_values, list):
+            temp_values = []
 
-        lat_step = (grid["bbox"]["north"] - grid["bbox"]["south"]) / rows
-        lon_step = (grid["bbox"]["east"] - grid["bbox"]["west"]) / cols
+        lat_step = (grid["bbox"]["north"] - grid["bbox"]["south"]) / max(rows, 1)
+        lon_step = (grid["bbox"]["east"] - grid["bbox"]["west"]) / max(cols, 1)
 
         for i in range(rows):
             for j in range(cols):
@@ -1268,12 +1421,18 @@ class WeatherEngineService:
                 if idx >= len(temp_values):
                     continue
 
+                value = temp_values[idx]
+                if value is None:
+                    continue
+                try:
+                    numeric = float(value)
+                except (TypeError, ValueError):
+                    continue
+
                 south = grid["bbox"]["south"] + i * lat_step
                 north = south + lat_step
                 west = grid["bbox"]["west"] + j * lon_step
                 east = west + lon_step
-
-                value = temp_values[idx]
 
                 features.append({
                     "type": "Feature",
@@ -1288,13 +1447,20 @@ class WeatherEngineService:
                         ]],
                     },
                     "properties": {
-                        temp_attr: round(value, 2) if value is not None else 0,
+                        temp_attr: round(numeric, 2),
                         "height": height_suffix,
                         "unit": "C",
                         "row": i,
                         "col": j,
                     }
                 })
+
+        if not features:
+            logger.warning(
+                "[WeatherEngine] build_temperature_geojson_from_grid: empty features "
+                "layer=%s rows=%d cols=%d temp_len=%d attr=%s",
+                layer_id, rows, cols, len(temp_values), api_temp_attr,
+            )
 
         return {"type": "FeatureCollection", "features": features}
 
@@ -1544,6 +1710,110 @@ class WeatherEngineService:
                     }
                 })
 
+        return {"type": "FeatureCollection", "features": features}
+
+    def build_scalar_geojson_from_grid(
+        self,
+        grid_data: dict[str, Any],
+        *,
+        metric_key: str,
+        unit: str,
+    ) -> dict[str, object]:
+        """Build polygon GeoJSON from a single current metric on an OM-style grid."""
+        grid = grid_data["grid"]
+        current = grid_data["data"]["current"]
+        rows, cols = grid["rows"], grid["cols"]
+        values = current.get(metric_key, [])
+        features: list[dict[str, object]] = []
+        lat_step = (grid["bbox"]["north"] - grid["bbox"]["south"]) / rows
+        lon_step = (grid["bbox"]["east"] - grid["bbox"]["west"]) / cols
+        for i in range(rows):
+            for j in range(cols):
+                idx = i * cols + j
+                if idx >= len(values):
+                    continue
+                value = values[idx]
+                south = grid["bbox"]["south"] + i * lat_step
+                north = south + lat_step
+                west = grid["bbox"]["west"] + j * lon_step
+                east = west + lon_step
+                features.append({
+                    "type": "Feature",
+                    "geometry": {
+                        "type": "Polygon",
+                        "coordinates": [[
+                            [west, south],
+                            [east, south],
+                            [east, north],
+                            [west, north],
+                            [west, south],
+                        ]],
+                    },
+                    "properties": {
+                        metric_key: round(value, 2) if value is not None else 0,
+                        "unit": unit,
+                        "row": i,
+                        "col": j,
+                    },
+                })
+        return {"type": "FeatureCollection", "features": features}
+
+    def build_scalar_geojson_from_point(
+        self,
+        weather: WeatherPointResponse,
+        bbox: BoundingBox,
+        *,
+        metric_key: str,
+        unit: str,
+        base_value: float,
+        rows: int | None = None,
+        cols: int | None = None,
+    ) -> dict[str, object]:
+        """Fallback scalar field from a single point (gentle spatial variation)."""
+        features: list[dict[str, object]] = []
+        lat_span = max(0.1, bbox.north - bbox.south)
+        lon_span = max(0.1, bbox.east - bbox.west)
+        resolved_rows = rows if rows is not None else max(18, min(120, int(lat_span / 0.4)))
+        resolved_cols = cols if cols is not None else max(18, min(120, int(lon_span / 0.4)))
+        lat_step = lat_span / resolved_rows
+        lon_step = lon_span / resolved_cols
+        for row in range(resolved_rows):
+            for col in range(resolved_cols):
+                south = bbox.south + row * lat_step
+                north = south + lat_step
+                west = bbox.west + col * lon_step
+                east = west + lon_step
+                cell_lat = south + lat_step / 2
+                cell_lon = west + lon_step / 2
+                # Reuse humidity-style soft falloff for any scalar point fallback
+                value = self._humidity_value_for_location(
+                    base_humidity=base_value,
+                    center_lat=weather.latitude,
+                    center_lon=weather.longitude,
+                    lat=cell_lat,
+                    lon=cell_lon,
+                    lat_span=lat_span,
+                    lon_span=lon_span,
+                )
+                features.append({
+                    "type": "Feature",
+                    "geometry": {
+                        "type": "Polygon",
+                        "coordinates": [[
+                            [west, south],
+                            [east, south],
+                            [east, north],
+                            [west, north],
+                            [west, south],
+                        ]],
+                    },
+                    "properties": {
+                        metric_key: round(value, 2),
+                        "unit": unit,
+                        "row": row,
+                        "col": col,
+                    },
+                })
         return {"type": "FeatureCollection", "features": features}
 
     def _resolve_render_bbox(

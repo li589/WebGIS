@@ -1,0 +1,57 @@
+# Data plane (one-shot sync/download jobs) — isolated from runtime.
+#
+# Runtime (long-lived): Code/backend/docker-compose.yml
+#   Redis / MinIO / cgda-open-meteo API  →  -p backend
+#
+# Data (ephemeral run --rm): this file
+#   Today:  open-meteo-sync  →  containers like data-sync-open-meteo-sync-run-*
+#   Later:  add more one-shot services below (same pattern; shared or new named volumes)
+#
+# Never put long-running APIs here. Never bind-mount project/D: paths into data dirs
+# (Windows errno 95). Volumes live in Docker Desktop (this PC: I:\Docker\DockerDesktop).
+#
+# Examples:
+#   docker compose -p data-sync --env-file .env --profile sync run --rm open-meteo-sync
+#   .\sync.ps1                  # default job
+#   .\sync.ps1 open-meteo-sync  # explicit job name
+#   .\list-jobs.ps1
+
+name: data-sync
+
+services:
+  # -------------------------------------------------------------------------
+  # Job: open-meteo-sync
+  # Writes AWS Open Data forecast DB into shared volume; cgda-open-meteo reads it.
+  # -------------------------------------------------------------------------
+  open-meteo-sync:
+    image: ${OPEN_METEO_IMAGE:-public.ecr.aws/w5w8t1y7/openmeteo:latest}
+    profiles: ["sync"]
+    volumes:
+      - open-meteo-data:/app/data
+    restart: "no"
+    command:
+      - sync
+      - ${OPEN_METEO_SYNC_DOMAINS:-ecmwf_ifs025}
+      - ${OPEN_METEO_SYNC_VARIABLES:-temperature_2m,temperature_80m,temperature_120m,temperature_180m,temperature_850hPa,temperature_500hPa,temperature_200hPa,apparent_temperature,relative_humidity_2m,dew_point_2m,precipitation,rain,weather_code,cloud_cover,pressure_msl,surface_pressure,visibility,wind_u_component_10m,wind_v_component_10m,wind_speed_10m,wind_direction_10m,wind_gusts_10m,wind_u_component_80m,wind_v_component_80m,wind_speed_80m,wind_direction_80m,wind_u_component_120m,wind_v_component_120m,wind_speed_120m,wind_direction_120m,wind_u_component_180m,wind_v_component_180m,wind_speed_180m,wind_direction_180m,wind_u_component_850hPa,wind_v_component_850hPa,wind_speed_850hPa,wind_direction_850hPa,wind_u_component_500hPa,wind_v_component_500hPa,wind_speed_500hPa,wind_direction_500hPa,wind_u_component_200hPa,wind_v_component_200hPa,wind_speed_200hPa,wind_direction_200hPa}
+
+  # -------------------------------------------------------------------------
+  # Template for a future data job (copy, uncomment, rename):
+  #
+  # my-dataset-sync:
+  #   image: my-sync-image:tag
+  #   profiles: ["sync"]
+  #   volumes:
+  #     - my-dataset-data:/data
+  #   restart: "no"
+  #   command: ["sync", "--out", "/data"]
+  #
+  # volumes:
+  #   my-dataset-data:
+  #     name: ${MY_DATASET_DATA_VOLUME:-cgda_my_dataset_data}
+  # -------------------------------------------------------------------------
+
+volumes:
+  open-meteo-data:
+    # Same named volume as backend `open-meteo` service (API reads; sync writes).
+    name: ${OPEN_METEO_DATA_VOLUME:-backend_open-meteo-data}
+    external: true

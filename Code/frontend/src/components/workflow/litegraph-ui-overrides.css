@@ -1,0 +1,59 @@
+/**
+ * 流编辑器内 LiteGraph 浮动 UI 覆盖样式：
+ * - 缩小 ContextMenu / graphdialog
+ * - 提高 z-index，避免被侧栏遮挡
+ * - 取消强制 min-height:100
+ */
+.litegraph.litecontextmenu,
+.litecontextmenu {
+  min-height: 0 !important;
+  max-height: min(240px, 45vh) !important;
+  overflow-y: auto !important;
+  z-index: 11000 !important;
+  font-size: 11px !important;
+  font-family: ui-sans-serif, system-ui, sans-serif !important;
+  padding: 2px 0 !important;
+  border-radius: 6px !important;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.45) !important;
+}
+
+.litegraph.litecontextmenu .litemenu-entry,
+.litecontextmenu .litemenu-entry,
+.litemenu-entry {
+  padding: 3px 8px !important;
+  font-size: 11px !important;
+  line-height: 1.3 !important;
+  min-height: 0 !important;
+}
+
+.graphdialog,
+.litegraph.graphdialog,
+.litegraph.dialog {
+  font-size: 12px !important;
+  padding: 4px 6px !important;
+  z-index: 11000 !important;
+  border-radius: 6px !important;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.4) !important;
+  max-width: min(280px, 90vw) !important;
+}
+
+.graphdialog .name,
+.litegraph.graphdialog .name {
+  font-size: 11px !important;
+  margin-right: 6px !important;
+}
+
+.graphdialog input,
+.graphdialog textarea,
+.litegraph.graphdialog input,
+.litegraph.graphdialog textarea {
+  font-size: 12px !important;
+  padding: 2px 5px !important;
+  min-width: 110px !important;
+  max-width: 200px !important;
+}
+
+.litegraph.litesearchbox {
+  z-index: 11000 !important;
+  font-size: 12px !important;
+}

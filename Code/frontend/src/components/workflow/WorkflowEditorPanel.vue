@@ -25,13 +25,19 @@ import WorkflowCanvas from './WorkflowCanvas.vue'
 import WorkflowLeftSidebar from './WorkflowLeftSidebar.vue'
 import WorkflowRightSidebar from './WorkflowRightSidebar.vue'
 import WorkflowRunDialog, { type WorkflowRunTarget } from './WorkflowRunDialog.vue'
+import WorkflowTimerPanel from './WorkflowTimerPanel.vue'
 
 import type { LGraphNodeClass } from './litegraph-setup'
 import type { NodeTemplate, WorkflowDefinitionNode, WorkflowDefinitionLink } from '../../services/workflow-definition-api'
 
 const emit = defineEmits<{
   close: []
-  run: [workflowId: string, linkedLayerId: string | null, target: WorkflowRunTarget]
+  run: [
+    workflowId: string,
+    linkedLayerId: string | null,
+    target: WorkflowRunTarget,
+    canvasGraph?: { nodes: WorkflowDefinitionNode[]; links: WorkflowDefinitionLink[] } | null,
+  ]
 }>()
 
 const store = useWorkflowDefinitionsStore()
@@ -43,6 +49,9 @@ const selectedNode = shallowRef<LGraphNodeClass | null>(null)
 
 // 画布组件引用
 const canvasRef = ref<InstanceType<typeof WorkflowCanvas> | null>(null)
+
+/** 流配置内视图：画布 | 定时器 */
+const editorView = ref<'canvas' | 'timers'>('canvas')
 
 // 保存状态
 const saving = ref(false)
@@ -103,15 +112,12 @@ onMounted(async () => {
 })
 
 onBeforeUnmount(() => {
-  // 清理运行状态恢复定时器，避免组件销毁后修改已卸载的 ref
-  if (_runStatusTimer1 !== null) {
-    clearTimeout(_runStatusTimer1)
-    _runStatusTimer1 = null
-  }
-  if (_runStatusTimer2 !== null) {
-    clearTimeout(_runStatusTimer2)
-    _runStatusTimer2 = null
-  }
+  // 先清 LiteGraph 浮动输入框，再卸面板（避免未保存关闭时泄漏到主地图）
+  try {
+    ;(canvasRef.value as { disposeLiteGraphFloatingUi?: () => void } | null)
+      ?.disposeLiteGraphFloatingUi?.()
+  } catch { /* ignore */ }
+  clearRunStatusTimers()
 })
 
 // ─── 事件处理 ───────────────────────────────────────────────────────────────
@@ -233,27 +239,52 @@ function handleRun() {
   if (!currentDefinition.value || running.value) return
   const linkedLayerId = currentDefinition.value._meta?.linked_layer_id ?? null
   if (!linkedLayerId) {
-    logStore.logWorkflow('workflow-editor-error', `工作流 ${currentDefinition.value.workflow_id} 未关联图层，无法运行`)
+    const msg = `工作流 ${currentDefinition.value.workflow_id} 未关联图层，无法运行`
+    logStore.logWorkflow('workflow-editor-error', msg)
+    saveError.value = msg
+    runStatus.value = 'error'
     return
   }
+  saveError.value = null
   // 显示产出目标选择对话框
   showRunDialog.value = true
 }
 
 function handleRunConfirm(target: WorkflowRunTarget) {
   if (!currentDefinition.value) return
+  clearRunStatusTimers()
   const linkedLayerId = currentDefinition.value._meta?.linked_layer_id ?? null
   showRunDialog.value = false
   running.value = true
   runStatus.value = 'submitting'
-  emit('run', currentDefinition.value.workflow_id, linkedLayerId, target)
-  // 1.5s 后恢复按钮状态（实际进度由 WorkflowStatusPanel 显示）
-  // 保存 timer 句柄，组件销毁时清理避免内存泄漏
-  _runStatusTimer1 = setTimeout(() => {
-    running.value = false
+  const graphData = canvasRef.value?.getSerializedGraph() ?? null
+  emit('run', currentDefinition.value.workflow_id, linkedLayerId, target, graphData)
+}
+
+/** 由 Dashboard 在提交结束（成功/失败）后回调，同步按钮与错误条 */
+function notifyRunOutcome(ok: boolean, message?: string) {
+  clearRunStatusTimers()
+  running.value = false
+  if (ok) {
     runStatus.value = 'submitted'
-    _runStatusTimer2 = setTimeout(() => { runStatus.value = 'idle' }, 2000)
-  }, 1500)
+    saveError.value = null
+    _runStatusTimer2 = setTimeout(() => { runStatus.value = 'idle' }, 2500)
+  } else {
+    runStatus.value = 'error'
+    if (message) saveError.value = message
+    _runStatusTimer2 = setTimeout(() => { runStatus.value = 'idle' }, 4000)
+  }
+}
+
+function clearRunStatusTimers() {
+  if (_runStatusTimer1 !== null) {
+    clearTimeout(_runStatusTimer1)
+    _runStatusTimer1 = null
+  }
+  if (_runStatusTimer2 !== null) {
+    clearTimeout(_runStatusTimer2)
+    _runStatusTimer2 = null
+  }
 }
 
 function handleRunCancel() {
@@ -324,8 +355,17 @@ function handleClose() {
   if (dirty.value && !isReadonly.value) {
     if (!confirm('有未保存的修改，确定要关闭吗？')) return
   }
+  // emit 前主动清理：widget 编辑框可能挂在 document.body，晚一拍卸载会闪到主界面
+  try {
+    ;(canvasRef.value as { disposeLiteGraphFloatingUi?: () => void } | null)
+      ?.disposeLiteGraphFloatingUi?.()
+  } catch { /* ignore */ }
   emit('close')
 }
+
+defineExpose({
+  notifyRunOutcome,
+})
 </script>
 
 <template>
@@ -402,6 +442,17 @@ function handleClose() {
           />
           <span class="action-divider"></span>
           <button
+            class="header-btn"
+            type="button"
+            :class="{ active: editorView === 'timers' }"
+            @click="editorView = editorView === 'timers' ? 'canvas' : 'timers'"
+            title="工作流定时器（Cron / 间隔 / 事件）"
+          >
+            <span aria-hidden="true">⏰</span>
+            <span>{{ editorView === 'timers' ? '返回画布' : '定时器' }}</span>
+          </button>
+          <span class="action-divider"></span>
+          <button
             class="header-btn primary"
             type="button"
             :disabled="!canSave"
@@ -444,8 +495,14 @@ function handleClose() {
           @create="handleCreateWorkflow"
         />
 
-        <!-- 中间：画布 -->
-        <main class="editor-canvas-area">
+        <!-- 中间：画布 或 定时器 -->
+        <main v-if="editorView === 'timers'" class="editor-timers-area">
+          <WorkflowTimerPanel
+            embedded
+            :default-workflow-id="currentDefinition?.workflow_id ?? ''"
+          />
+        </main>
+        <main v-else class="editor-canvas-area">
           <div v-if="!hasDefinition" class="canvas-placeholder">
             <div class="placeholder-content">
               <span class="placeholder-icon" aria-hidden="true">⬡</span>
@@ -465,8 +522,9 @@ function handleClose() {
           />
         </main>
 
-        <!-- 右侧：节点库 + 属性检查器（独立组件） -->
+        <!-- 右侧：节点库 + 属性检查器（画布模式才显示） -->
         <WorkflowRightSidebar
+          v-if="editorView === 'canvas'"
           v-model:collapsed="rightSidebarCollapsed"
           :selected-node="selectedNode"
           :readonly="isReadonly"
@@ -743,6 +801,22 @@ function handleClose() {
   overflow: hidden;
   background: #0a0f1c;
   min-width: 0;
+}
+
+.editor-timers-area {
+  flex: 1;
+  min-width: 0;
+  position: relative;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  background: rgba(4, 12, 23, 0.28);
+}
+
+.header-btn.active {
+  border-color: rgba(90, 213, 255, 0.4);
+  color: #5ad5ff;
+  background: rgba(10, 132, 255, 0.16);
 }
 
 .canvas-placeholder {

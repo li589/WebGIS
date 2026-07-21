@@ -18,6 +18,8 @@ import { useUiStore } from '../stores/ui'
 import { useLogStore } from '../stores/log'
 import { useSettingsStore } from '../stores/settings'
 import { useWeatherTileManager } from '../stores/weather-tile-manager'
+import { useWeatherSyncStatusStore } from '../stores/weather-sync-status'
+import { mergeWorkflowSummaryWithWeather } from '../utils/workflow-status-merge'
 import WorkflowStatusButton from './workflow/WorkflowStatusButton.vue'
 import DataImportMenu from './toolbar/DataImportMenu.vue'
 
@@ -26,9 +28,11 @@ const uiStore = useUiStore()
 const logStore = useLogStore()
 const settingsStore = useSettingsStore()
 const weatherTileManager = useWeatherTileManager()
+const weatherSyncStatus = useWeatherSyncStatusStore()
 const { workflowSummary } = storeToRefs(layersStore)
 const { activityVersion, statusVersion } = storeToRefs(weatherTileManager)
 const { apiKeys } = storeToRefs(settingsStore)
+const { syncInProgress, modelEmpty } = storeToRefs(weatherSyncStatus)
 
 onMounted(() => {
   if (apiKeys.value.length === 0) {
@@ -36,24 +40,20 @@ onMounted(() => {
       /* toolbar still works with free basemaps */
     })
   }
+  void weatherSyncStatus.refreshOverview()
 })
 
-/** 合并工作流摘要：天气瓦片 pending（/weather/tiles）计入 running 指示，不等于 workflow-runs 数 */
+/** 合并业务 job + 天气瓦片合成态（含 data-empty → 失败/等待重试） */
 const mergedWorkflowSummary = computed(() => {
-  // 引用 activityVersion 确保天气瓦片 pending 变化时触发重新计算
   void activityVersion.value
   void statusVersion.value
-  const base = workflowSummary.value
-  const tileActive = weatherTileManager.getGlobalActiveTileCount()
-  if (tileActive === 0) return base
-  // 天气瓦片 pending 计入 running，使标题栏显示"N 运行中"
-  return {
-    ...base,
-    running: base.running + tileActive,
-    total: Math.max(base.total, tileActive),
-    overall: 'active' as const,
-    tone: 'active' as const,
-  }
+  void syncInProgress.value
+  void modelEmpty.value
+  const contribution = weatherTileManager.deriveWeatherWorkflowContribution({
+    syncInProgress: syncInProgress.value,
+    modelEmpty: modelEmpty.value,
+  })
+  return mergeWorkflowSummaryWithWeather(workflowSummary.value, contribution)
 })
 
 const props = defineProps<{
@@ -138,9 +138,15 @@ function selectSource(source: TileSourceConfig) {
   emit('changeTileSource', source.id)
 }
 
-function setInteractionMode(mode: 'move' | 'select') {
+function setInteractionMode(mode: 'move' | 'select' | 'measure') {
   uiStore.setInteractionMode(mode)
-  logStore.logOperation('mode-switch', `切换到${mode === 'move' ? '移动' : '选择'}模式`)
+  const label = mode === 'move' ? '移动' : mode === 'select' ? '选择' : '测量'
+  logStore.logOperation('mode-switch', `切换到${label}模式`)
+}
+
+function clearMeasure() {
+  uiStore.clearMeasure()
+  logStore.logOperation('measure-clear', '清除测量路径')
 }
 
 function handleScreenshot() {
@@ -204,6 +210,34 @@ function handleWorkflowEditor() {
               <path d="M3 3l7.07 16.97 2.51-7.39 7.39-2.51L3 3z"/>
             </svg>
           </button>
+          <button
+            class="mode-btn"
+            :class="{ active: uiStore.interactionMode === 'measure' }"
+            type="button"
+            title="测量模式（点击打点，双击完成，右键撤销）"
+            @click="setInteractionMode('measure')"
+          >
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                 stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M21 3L3 21"/>
+              <circle cx="21" cy="3" r="2" fill="currentColor"/>
+              <circle cx="3" cy="21" r="2" fill="currentColor"/>
+            </svg>
+          </button>
+          <button
+            v-if="uiStore.interactionMode === 'measure' && uiStore.measureState.points.length > 0"
+            class="mode-btn clear-btn"
+            type="button"
+            title="清除测量路径"
+            @click="clearMeasure"
+          >
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                 stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M3 6h18"/>
+              <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/>
+              <path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>
+            </svg>
+          </button>
         </div>
 
         <!-- 截图 -->
@@ -221,7 +255,7 @@ function handleWorkflowEditor() {
         <button
           class="tool-btn"
           type="button"
-          title="工作流配置编辑器"
+          title="工作流配置编辑器（含定时器）"
           @click="handleWorkflowEditor"
         >
           <span class="btn-icon" aria-hidden="true">⬡</span>
@@ -483,6 +517,18 @@ h1 {
   background: rgba(60, 120, 200, 0.32);
   border-color: rgba(136, 192, 255, 0.38);
   color: #f4fbff;
+}
+
+/* 清除测量路径按钮（仅在 measure 模式且有路径时显示） */
+.mode-btn.clear-btn {
+  background: rgba(180, 60, 60, 0.18);
+  border-color: rgba(255, 120, 120, 0.32);
+  color: #ff9a9a;
+}
+
+.mode-btn.clear-btn:hover {
+  background: rgba(220, 80, 80, 0.28);
+  color: #ffb0b0;
 }
 
 /* ── 右侧保留区 ───────────────────────────────────────────────────── */

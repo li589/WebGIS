@@ -34,6 +34,31 @@ export interface FetchWeatherTileOptions {
 const _WEB_MERCATOR_MAX_LAT = 85.0511287798066
 const _TILE_KEY_PREFIX = 'weather:tile:'
 
+/**
+ * 将 HTTP 错误响应体压成短文案。
+ * Cloudflare / 反向代理 502 常返回整页 HTML；若原样拼进 Error.message，
+ * 地图错误横幅会铺满黄字 HTML，看起来像「中间浮了一块黑底地球展开图」。
+ */
+export function summarizeHttpErrorDetail(status: number, body: string, maxLen = 160): string {
+  const trimmed = (body || '').trim()
+  if (!trimmed) return `HTTP ${status}`
+  const looksHtml =
+    /<!DOCTYPE\s+html|<html[\s>]|<head[\s>]|<body[\s>]/i.test(trimmed) || trimmed.startsWith('<')
+  if (looksHtml) {
+    const titleMatch = /<title[^>]*>([^<]+)<\/title>/i.exec(trimmed)
+    const title = titleMatch?.[1]?.replace(/\s+/g, ' ').trim()
+    if (title) {
+      const short = title.length > 80 ? `${title.slice(0, 80)}…` : title
+      return `HTTP ${status}: ${short}`
+    }
+    if (status === 502) return 'HTTP 502: Bad gateway'
+    if (status === 504) return 'HTTP 504: Gateway timeout'
+    return `HTTP ${status}: 上游网关错误`
+  }
+  const oneLine = trimmed.replace(/\s+/g, ' ')
+  return oneLine.length > maxLen ? `${oneLine.slice(0, maxLen)}…` : oneLine
+}
+
 function normalizeProviderPart(provider?: string): string {
   const p = (provider ?? 'auto').trim()
   if (!p || p.toLowerCase() === 'default') return 'auto'
@@ -47,7 +72,7 @@ export function buildTileKey(
   x: number,
   y: number,
   hour: number,
-  model = 'best_match',
+  model = 'ecmwf_ifs025',
   provider = 'auto',
 ): string {
   const modelPart = model.replace(/\//g, '_').replace(/:/g, '_')
@@ -91,10 +116,14 @@ export function tileToLngLatBounds(z: number, x: number, y: number): LngLatBound
 /**
  * 获取指定经纬度边界内的所有瓦片坐标。
  *
- * 处理反子午线穿越：当 bbox 经度跨度 > 180° 时，MapLibre 的 getBounds()
- * 在 renderWorldCopies=true 下可能返回跨越 ±180° 的回绕值。此时实际视口
- * 是从 bounds.east 向东到 bounds.west（穿过 180°经线），而非从 west 到 east
- * 的长路径。本函数将此情况正确拆分为两组瓦片坐标。
+ * 反子午线 / 宽视口约定（与 ``normalizeLngBounds`` 对齐）：
+ * - ``east >= west``：按从 west 向东到 east 的路径枚举（east 可 >180，如 170→185）
+ * - ``east < west``：旧式「未展开」跨日界线形式，将 east += 360
+ * - 跨度 >= 360°：退化为全球 [-180, 180]
+ *
+ * **禁止**在 ``east - west > 180`` 时改走短路径：亚洲–太平洋等宽视口
+ *（如 west=-20, east=200）是合法长路径；旧逻辑会错取美洲一侧，
+ * 表现为「屏幕两侧有瓦片、亚洲中部整片空白」。
  *
  * @param buffer 视口外扩圈数（0 = 仅边界内，1 = 外扩一圈）
  * @returns 主世界瓦片坐标集合（经度已归一化到 [0, n)）
@@ -107,13 +136,16 @@ export function tilesInBounds(
   const clampedZ = Math.max(0, Math.min(12, Math.round(z)))
   const n = 2 ** clampedZ
 
-  // 检测反子午线穿越：经度跨度 > 180° 说明 MapLibre 返回了回绕的 bbox
   let westLng = bounds.west
   let eastLng = bounds.east
-  if (eastLng - westLng > 180) {
-    // 实际视口从 east 向东到 west（穿越 180°经线），取短路径
-    westLng = bounds.east
-    eastLng = bounds.west + 360
+  // 旧式未展开跨日界线：east < west（如 west=170, east=-175）
+  if (eastLng < westLng) {
+    eastLng += 360
+  }
+  // 全屏 / 异常超大跨度
+  if (eastLng - westLng >= 360) {
+    westLng = -180
+    eastLng = 180
   }
 
   // 手动计算瓦片 x 坐标（不 clamp，允许 > n 以处理穿越后的回绕）
@@ -221,14 +253,18 @@ export async function submitWeatherTileWorkflow(
   return { runId: resp.run_id }
 }
 
-/** 天气瓦片请求超时时间（毫秒）。后端 urlopen 超时为 20s，前端略宽以容纳排队延迟。 */
-const TILE_FETCH_TIMEOUT_MS = 25_000
+/**
+ * 天气瓦片请求超时（毫秒）。
+ * 后端热路径可能经历：tile 信号量排队 + API 槽位等待(≤30s) + urlopen(≤30s) + 429 退避，
+ * 25s 前端中止会误判为永久失败并清空图层；放宽到 75s 与后端最坏排队对齐。
+ */
+const TILE_FETCH_TIMEOUT_MS = 75_000
 
 /**
  * 视口热路径：直接请求 GET /weather/tiles/{layer}/{z}/{x}/{y}。
  * 由 WeatherTileService 负责缓存与网格生成；不占用 workflow-runs 业务容量池。
  *
- * 内置 25 秒超时，避免后端排队或 Open-Meteo API 慢时前端并发槽位被无限占用。
+ * 内置超时，避免后端排队或 Open-Meteo API 慢时前端并发槽位被无限占用。
  * 超时抛出 Error（message 含 "timeout"），与外部 AbortSignal 取消区分。
  */
 export async function fetchWeatherTile(
@@ -267,7 +303,8 @@ export async function fetchWeatherTile(
 
     if (!response.ok) {
       const detail = await response.text().catch(() => '')
-      throw new Error(`Weather tile request failed: ${response.status} ${url}${detail ? ` - ${detail}` : ''}`)
+      const summary = summarizeHttpErrorDetail(response.status, detail)
+      throw new Error(`Weather tile request failed: ${response.status} ${url} - ${summary}`)
     }
 
     return (await response.json()) as WindGeoJSON

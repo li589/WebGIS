@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import Any
 
 from app.core.config import settings
+from app.weatherengine.default_model import weather_default_model
 from app.workflow_engine.base import BaseNode
 from app.workflow_engine.enums import PortKind, RunStatus
 from app.workflow_engine.models import (
@@ -43,7 +44,7 @@ class PointParseNode(BaseNode):
             forecast = inputs.get("forecast")
             if isinstance(forecast, dict) and forecast:
                 cache_status = inputs.get("cache_status") or "upstream"
-                resolved_model = inputs.get("model") or settings.weather_default_model
+                resolved_model = inputs.get("model") or weather_default_model()
                 weather = weather_engine_service.parse_forecast_to_point(
                     payload=forecast,
                     cache_status=cache_status,

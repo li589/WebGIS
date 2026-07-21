@@ -28,7 +28,10 @@ describe('map-viewport-sync', () => {
     })
   })
 
-  it('reorders wrapped dateline bounds when east becomes smaller than west', () => {
+  it('preserves antimeridian-crossing viewport via +360 east extension', () => {
+    // 视口实际跨越 170° → 180° → -180° → -175°（短路径，跨 ±180° 经线）
+    // 旧实现错误交换为 west=-175/east=170（映射到地球反面，跨度 345°）
+    // 新实现保留 west=170，east 扩展为 185（短路径语义，便于 tilesInBounds 归一化）
     const snapshot = buildMapViewportSnapshot({
       getCenter: () => ({ lng: -181, lat: 10 }),
       getBounds: () => ({
@@ -42,9 +45,9 @@ describe('map-viewport-sync', () => {
 
     expect(snapshot.center.lng).toBe(179)
     expect(snapshot.bbox).toEqual({
-      west: -175,
+      west: 170,
       south: -10,
-      east: 170,
+      east: 185,
       north: 20,
       crs: 'EPSG:4326',
     })

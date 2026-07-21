@@ -74,6 +74,8 @@ workflow.executor     workflow 执行
 
 当平台需要完全自定义节点、边和输入绑定时，可以直接提供 `WorkflowDefinition`。
 
+**平台侧（2026-07-21）**：LiteGraph 编辑器通过 `POST /workflow-definitions/compile` 将画布编译为该结构，再经 `algorithm_request.workflow_definition` 提交；数据链路节点（`remote_fetch` 等）以 `node_type=module` 执行。详见 `Code/docs/课题组数据全链路-2026-07-21.md`。
+
 ## 6. 扩展目标
 
 ### 6.1 更复杂的图表达

@@ -38,18 +38,9 @@ def merge_remote_data_access_candidates(
     return merged
 
 
-def _parse_remote_layer_data_uris() -> dict[str, dict[str, list[str]]]:
-    """Parse BACKEND_REMOTE_LAYER_DATA_URIS JSON → {layer_id: {dataset: [uri...]}}."""
-    raw = (settings.remote_layer_data_uris or "").strip()
-    if not raw:
-        return {}
-    try:
-        parsed = json.loads(raw)
-    except json.JSONDecodeError as exc:
-        logger.warning("Invalid BACKEND_REMOTE_LAYER_DATA_URIS JSON: %s", exc)
-        return {}
+def _normalize_remote_layer_overlay(parsed: object) -> dict[str, dict[str, list[str]]]:
+    """Normalize overlay JSON → {layer_id: {dataset: [uri...]}}."""
     if not isinstance(parsed, dict):
-        logger.warning("BACKEND_REMOTE_LAYER_DATA_URIS must be a JSON object")
         return {}
     result: dict[str, dict[str, list[str]]] = {}
     for layer_id, datasets in parsed.items():
@@ -60,17 +51,58 @@ def _parse_remote_layer_data_uris() -> dict[str, dict[str, list[str]]]:
             if isinstance(uris, str):
                 uri_list = [uris]
             elif isinstance(uris, list):
-                uri_list = [str(u) for u in uris]
+                uri_list = [str(u) for u in uris if str(u).strip()]
             else:
                 continue
-            cleaned[str(dataset_name)] = uri_list
+            if uri_list:
+                cleaned[str(dataset_name)] = uri_list
         if cleaned:
             result[str(layer_id)] = cleaned
     return result
 
 
+def _load_db_remote_layer_data_uris() -> dict[str, dict[str, list[str]]]:
+    """Load DB-persisted overlay (settings UI). Empty on any failure."""
+    try:
+        from app.services.config_service import _research_data_repo
+
+        raw = _research_data_repo().get_json("remote_layer_data_uris", None)
+        return _normalize_remote_layer_overlay(raw)
+    except Exception as exc:  # noqa: BLE001
+        logger.debug("research_data remote_layer_data_uris unavailable: %s", exc)
+        return {}
+
+
+def _parse_remote_layer_data_uris() -> dict[str, dict[str, list[str]]]:
+    """Merge layer URI overlays: DB overrides env (plan: DB 优先于 env)."""
+    env_overlay = _normalize_remote_layer_overlay({})
+    raw = (settings.remote_layer_data_uris or "").strip()
+    if raw:
+        try:
+            env_overlay = _normalize_remote_layer_overlay(json.loads(raw))
+        except json.JSONDecodeError as exc:
+            logger.warning("Invalid BACKEND_REMOTE_LAYER_DATA_URIS JSON: %s", exc)
+            env_overlay = {}
+
+    db_overlay = _load_db_remote_layer_data_uris()
+    if not db_overlay:
+        return env_overlay
+    if not env_overlay:
+        return db_overlay
+
+    # Deep merge: DB layer/dataset wins; env fills gaps
+    merged: dict[str, dict[str, list[str]]] = {k: dict(v) for k, v in env_overlay.items()}
+    for layer_id, datasets in db_overlay.items():
+        if layer_id not in merged:
+            merged[layer_id] = dict(datasets)
+            continue
+        for dataset_name, uris in datasets.items():
+            merged[layer_id][dataset_name] = list(uris)
+    return merged
+
+
 def _apply_remote_layer_data_uris(items: list[LayerDescriptor]) -> list[LayerDescriptor]:
-    """Inject env-configured SMB/SFTP URIs into matching layers without replacing local paths."""
+    """Inject SMB/SFTP URIs into matching layers (DB overlay preferred over env)."""
     overlay = _parse_remote_layer_data_uris()
     if not overlay:
         return items
@@ -86,7 +118,7 @@ def _apply_remote_layer_data_uris(items: list[LayerDescriptor]) -> list[LayerDes
         )
         notes = list(item.run_readiness_notes or [])
         note = (
-            f"已注入远端数据源候选（BACKEND_REMOTE_LAYER_DATA_URIS / {item.layer_id}）："
+            f"已注入远端数据源候选（remote_layer_data_uris / {item.layer_id}）："
             + ", ".join(
                 f"{ds}×{len(uris)}" for ds, uris in remote_by_dataset.items()
             )
@@ -332,7 +364,7 @@ def get_layer_catalog() -> LayerCatalogResponse:
             dataset_key="precipitation",
             display_name="降水",
             description="小时降水图层，天气引擎多源实时预报，可映射到 TiTiler、GEE 或融合降水产品。",
-            category="灾害监测",
+            category="气象场",
             source_type=LayerSourceType.weather,
             render_type=LayerRenderType.raster,
             supported_map_modes=[MapMode.mode_2d],
@@ -350,8 +382,8 @@ def get_layer_catalog() -> LayerCatalogResponse:
             layer_id="temperature",
             dataset_key="temperature",
             display_name="温度",
-            description="2 米气温热环境图层，可接遥感反演、站点订正与历史栅格。",
-            category="热环境",
+            description="2 米气温图层，天气引擎多源实时数据，可接遥感反演、站点订正与历史栅格。",
+            category="气象场",
             source_type=LayerSourceType.weather,
             render_type=LayerRenderType.raster,
             supported_map_modes=[MapMode.mode_2d],
@@ -370,7 +402,7 @@ def get_layer_catalog() -> LayerCatalogResponse:
             dataset_key="temperature_80m",
             display_name="温度（80m）",
             description="80 米高度温度图层，适用于风机结冰与尾流分析。",
-            category="热环境",
+            category="气象场",
             source_type=LayerSourceType.weather,
             render_type=LayerRenderType.raster,
             supported_map_modes=[MapMode.mode_2d],
@@ -389,7 +421,7 @@ def get_layer_catalog() -> LayerCatalogResponse:
             dataset_key="temperature_120m",
             display_name="温度（120m）",
             description="120 米高度温度图层，大型风机轮毂高度热力参考。",
-            category="热环境",
+            category="气象场",
             source_type=LayerSourceType.weather,
             render_type=LayerRenderType.raster,
             supported_map_modes=[MapMode.mode_2d],
@@ -408,7 +440,7 @@ def get_layer_catalog() -> LayerCatalogResponse:
             dataset_key="temperature_180m",
             display_name="温度（180m）",
             description="180 米高度温度图层，大气边界层顶部热力剖面。",
-            category="热环境",
+            category="气象场",
             source_type=LayerSourceType.weather,
             render_type=LayerRenderType.raster,
             supported_map_modes=[MapMode.mode_2d],
@@ -427,7 +459,7 @@ def get_layer_catalog() -> LayerCatalogResponse:
             dataset_key="pressure",
             display_name="气压",
             description="海平面气压图层，支持等压线分析与低压中心追踪。",
-            category="大气环境",
+            category="气象场",
             source_type=LayerSourceType.weather,
             render_type=LayerRenderType.raster,
             supported_map_modes=[MapMode.mode_2d],
@@ -446,7 +478,7 @@ def get_layer_catalog() -> LayerCatalogResponse:
             dataset_key="humidity",
             display_name="湿度",
             description="2 米相对湿度图层，反映大气水汽含量与体感舒适度。",
-            category="大气环境",
+            category="气象场",
             source_type=LayerSourceType.weather,
             render_type=LayerRenderType.raster,
             supported_map_modes=[MapMode.mode_2d],
@@ -465,7 +497,7 @@ def get_layer_catalog() -> LayerCatalogResponse:
             dataset_key="visibility",
             display_name="能见度",
             description="地面能见度图层，用于航空预警与雾/霾监测。",
-            category="大气环境",
+            category="气象场",
             source_type=LayerSourceType.weather,
             render_type=LayerRenderType.raster,
             supported_map_modes=[MapMode.mode_2d],
@@ -478,6 +510,44 @@ def get_layer_catalog() -> LayerCatalogResponse:
             style=LayerStyleHint(palette="amber-gray", unit_label="m", opacity=0.7),
             capabilities=_weather_capabilities("visibility"),
             tags=["visibility", "atmosphere", "frontend-aligned"],
+        ),
+        LayerDescriptor(
+            layer_id="cloud-cover",
+            dataset_key="cloud-cover",
+            display_name="云量",
+            description="总云量百分比图层（Open-Meteo online/local）。",
+            category="气象场",
+            source_type=LayerSourceType.weather,
+            render_type=LayerRenderType.raster,
+            supported_map_modes=[MapMode.mode_2d],
+            supports_time=True,
+            is_realtime=True,
+            default_visible=False,
+            time_granularity=TimeGranularity.hour,
+            default_time_offset=0,
+            extent=extent,
+            style=LayerStyleHint(palette="cloud-gray", unit_label="%", opacity=0.72),
+            capabilities=_weather_capabilities("cloud-cover"),
+            tags=["cloud", "atmosphere", "frontend-aligned"],
+        ),
+        LayerDescriptor(
+            layer_id="dewpoint",
+            dataset_key="dewpoint",
+            display_name="露点温度",
+            description="2 米露点温度图层（Open-Meteo online/local）。",
+            category="气象场",
+            source_type=LayerSourceType.weather,
+            render_type=LayerRenderType.raster,
+            supported_map_modes=[MapMode.mode_2d],
+            supports_time=True,
+            is_realtime=True,
+            default_visible=False,
+            time_granularity=TimeGranularity.hour,
+            default_time_offset=0,
+            extent=extent,
+            style=LayerStyleHint(palette="thermal-orange", unit_label="C", opacity=0.78),
+            capabilities=_weather_capabilities("dewpoint"),
+            tags=["dewpoint", "atmosphere", "frontend-aligned"],
         ),
         LayerDescriptor(
             layer_id="ndvi",
@@ -581,7 +651,7 @@ def get_layer_catalog() -> LayerCatalogResponse:
             dataset_key="smap_omega_cross_analysis",
             display_name="SMAP/Omega 交叉分析（实验）",
             description="实验 provider 链路（lab_output），用于算法联调与验收。生产算法请走 Python provider modules。",
-            category="模拟结果",
+            category="research-group",
             source_type=LayerSourceType.algorithm_output,
             render_type=LayerRenderType.heatmap,
             supported_map_modes=[MapMode.mode_2d],
@@ -602,6 +672,8 @@ def get_layer_catalog() -> LayerCatalogResponse:
                 "provider_tier=sample；用于兼容旧前端与算法联调。",
                 "生产数据请接入 algorithms/providers/Python 模块与真实 data_access 源。",
             ],
+            data_owner="Lab",
+            temporal_coverage="2023-01",
         ),
         # ─── 叠加图层（overlay image source）──────────────────────────────────
         LayerDescriptor(
@@ -669,7 +741,7 @@ def get_layer_catalog() -> LayerCatalogResponse:
             dataset_key="aridity_index_cn",
             display_name="干旱指数 AI",
             description="Aridity Index 干旱指数（P/PET），中国区域 0.25°。",
-            category="热环境",
+            category="气候产品",
             source_type=LayerSourceType.cog,
             render_type=LayerRenderType.raster,
             supported_map_modes=[MapMode.mode_2d],
@@ -688,28 +760,32 @@ def get_layer_catalog() -> LayerCatalogResponse:
             layer_id="omega-output",
             dataset_key="omega_inversion_smap",
             display_name="Omega 植被光学厚度",
-            description="SMAP Omega 植被光学厚度反演结果（全球 EASE-Grid 9km，doy 017 多年均值）。",
-            category="模拟结果",
+            description="SMAP Omega 植被光学厚度反演结果（全球 EASE-Grid 9km，doy 017-030 多年均值时间序列）。",
+            category="research-group",
             source_type=LayerSourceType.cog,
             render_type=LayerRenderType.raster,
             supported_map_modes=[MapMode.mode_2d],
-            supports_time=False,
+            supports_time=True,
             is_realtime=False,
             default_visible=False,
             status="sample",
+            time_granularity=TimeGranularity.day,
+            default_time_offset=0,
             extent=global_extent,
             style=LayerStyleHint(palette="plasma", unit_label="Omega", opacity=0.75),
             tags=["omega", "inversion", "vod", "overlay"],
             run_readiness="ready",
-            run_readiness_summary="Omega 反演结果已就绪。",
-            run_readiness_notes=["数据源: InversionResults/smap_avg/doy_017.mat"],
+            run_readiness_summary="Omega 反演结果已就绪（doy 017-030，14 天时间序列）。",
+            run_readiness_notes=["数据源: InversionResults/smap_avg/doy_{017..030}.mat (14 files)"],
+            data_owner="Lab",
+            temporal_coverage="doy 017-030 (multi-year mean)",
         ),
         LayerDescriptor(
             layer_id="smap-sm-ts",
             dataset_key="smap_sm_timeseries",
             display_name="SMAP 土壤湿度时间序列",
             description="SMAP L3 土壤湿度日数据时间序列（2023 年 1 月，13 天，中国区域），支持时间维度切换。",
-            category="热环境",
+            category="research-group",
             source_type=LayerSourceType.cog,
             render_type=LayerRenderType.raster,
             supported_map_modes=[MapMode.mode_2d],
@@ -725,13 +801,16 @@ def get_layer_catalog() -> LayerCatalogResponse:
             run_readiness="ready",
             run_readiness_summary="SMAP 土壤湿度时间序列数据已就绪（13 天）。",
             run_readiness_notes=["数据源: stage1_smap_mat/SMAP_L3_SM_P_*.mat (13 files)"],
+            data_owner="Lab",
+            temporal_coverage="2023-01 (13 days)",
+            source_reference="https://nsidc.org/data/SPL3SMP",
         ),
         LayerDescriptor(
             layer_id="gpcp-precip-ts",
             dataset_key="gpcp_precip_timeseries",
             display_name="GPCP 月降水时间序列",
             description="GPCP 月平均降水卫星-雨量计合成产品（V3.2），全球 0.5°，采样 24 个月。",
-            category="气象场",
+            category="气候产品",
             source_type=LayerSourceType.cog,
             render_type=LayerRenderType.raster,
             supported_map_modes=[MapMode.mode_2d],
@@ -774,7 +853,7 @@ def get_layer_catalog() -> LayerCatalogResponse:
             dataset_key="cmfd_precip_cn",
             display_name="CMFD 中国区域降水",
             description="中国区域高精度格点降水数据集（CMFD），2002 年 1 月月降水。",
-            category="气象场",
+            category="气候产品",
             source_type=LayerSourceType.cog,
             render_type=LayerRenderType.raster,
             supported_map_modes=[MapMode.mode_2d],
@@ -834,7 +913,7 @@ def get_layer_catalog() -> LayerCatalogResponse:
             dataset_key="era5_dwaa_smci_2020",
             display_name="ERA5 白天热浪事件（2020）",
             description="ERA5 基于 SMCI 指标的白天热浪事件累积计数（2020 全年 366 天）。",
-            category="灾害监测",
+            category="气候产品",
             source_type=LayerSourceType.cog,
             render_type=LayerRenderType.raster,
             supported_map_modes=[MapMode.mode_2d],
@@ -854,7 +933,7 @@ def get_layer_catalog() -> LayerCatalogResponse:
             dataset_key="era5_wdaa_smci_2020",
             display_name="ERA5 夜间热浪事件（2020）",
             description="ERA5 基于 SMCI 指标的夜间热浪事件累积计数（2020 全年 366 天）。",
-            category="灾害监测",
+            category="气候产品",
             source_type=LayerSourceType.cog,
             render_type=LayerRenderType.raster,
             supported_map_modes=[MapMode.mode_2d],
@@ -874,7 +953,7 @@ def get_layer_catalog() -> LayerCatalogResponse:
             dataset_key="gosat_co2_mean",
             display_name="GOSAT 中层 CO₂ 柱浓度",
             description="GOSAT 卫星中层大气 CO₂ 柱浓度均值产品（MeanCarbonDioxide）。",
-            category="大气环境",
+            category="气候产品",
             source_type=LayerSourceType.cog,
             render_type=LayerRenderType.raster,
             supported_map_modes=[MapMode.mode_2d],
@@ -893,48 +972,56 @@ def get_layer_catalog() -> LayerCatalogResponse:
             layer_id="soil-ddca",
             dataset_key="soil_ddca_2015",
             display_name="土壤生态 DDCA",
-            description="中国 9km 土壤生态数据集 DDCA 产品（变量 DH，2015-04-01）。",
-            category="热环境",
+            description="中国 9km 土壤生态数据集 DDCA 产品（变量 DH，2015-04-01 至 2022-12-31 时间序列，采样 60 个时间点）。",
+            category="research-group",
             source_type=LayerSourceType.cog,
             render_type=LayerRenderType.raster,
             supported_map_modes=[MapMode.mode_2d],
-            supports_time=False,
+            supports_time=True,
             is_realtime=False,
             default_visible=False,
             status="sample",
+            time_granularity=TimeGranularity.day,
+            default_time_offset=0,
             extent=global_extent,
             style=LayerStyleHint(palette="viridis", unit_label="", opacity=0.8),
             tags=["soil", "ecology", "ddca", "overlay"],
             run_readiness="ready",
-            run_readiness_summary="土壤生态 DDCA 数据已就绪（2015-04-01）。",
-            run_readiness_notes=["数据源: I:/Geograph_DataSet/Soil_Ecological_Data/DDCA/DDCA_DH/H/20150401.mat"],
+            run_readiness_summary="土壤生态 DDCA 数据已就绪（2015-04-01 至 2022-12-31，采样 60 天）。",
+            run_readiness_notes=["数据源: I:/Geograph_DataSet/Soil_Ecological_Data/DDCA/DDCA_DH/H/YYYYMMDD.mat (2747 files, sampled 60)"],
+            data_owner="Lab",
+            temporal_coverage="2015-04-01 to 2022-12-31 (sampled 60 dates)",
         ),
         LayerDescriptor(
             layer_id="omega-fy-output",
             dataset_key="omega_fy_avg",
             display_name="Omega FY 反演均值",
-            description="SMAP Omega 多年均值反演结果（fy_avg 目录，doy 025）。",
-            category="模拟结果",
+            description="SMAP Omega 多年均值反演结果（fy_avg 目录，doy 025-030 时间序列）。",
+            category="research-group",
             source_type=LayerSourceType.cog,
             render_type=LayerRenderType.raster,
             supported_map_modes=[MapMode.mode_2d],
-            supports_time=False,
+            supports_time=True,
             is_realtime=False,
             default_visible=False,
             status="sample",
+            time_granularity=TimeGranularity.day,
+            default_time_offset=0,
             extent=global_extent,
             style=LayerStyleHint(palette="magma", unit_label="Omega", opacity=0.75),
             tags=["omega", "inversion", "fy", "overlay"],
             run_readiness="ready",
-            run_readiness_summary="Omega FY 反演均值数据已就绪（doy 025）。",
-            run_readiness_notes=["数据源: I:/Geograph_DataSet/InversionResults/fy_avg/doy_025.mat"],
+            run_readiness_summary="Omega FY 反演均值数据已就绪（doy 025-030，6 天时间序列）。",
+            run_readiness_notes=["数据源: I:/Geograph_DataSet/InversionResults/fy_avg/doy_{025..030}.mat (6 files)"],
+            data_owner="Lab",
+            temporal_coverage="doy 025-030 (multi-year mean)",
         ),
         LayerDescriptor(
             layer_id="forest-ratio",
             dataset_key="forest_ratio_9km_2020",
             display_name="全球森林比例（9km，2020）",
-            description="全球 9km 森林比例数据（Forest_Ratio_9KM_2020），值域 0-1。",
-            category="植被监测",
+            description="全球 9km 森林比例数据（Forest_Ratio_9KM_2020），值域 0-1，基于 EASE-Grid 9km 派生。",
+            category="research-group",
             source_type=LayerSourceType.cog,
             render_type=LayerRenderType.raster,
             supported_map_modes=[MapMode.mode_2d],
@@ -944,17 +1031,120 @@ def get_layer_catalog() -> LayerCatalogResponse:
             status="sample",
             extent=global_extent,
             style=LayerStyleHint(palette="ylgn", unit_label="ratio", opacity=0.85),
-            tags=["forest", "vegetation", "overlay"],
+            tags=["forest", "vegetation", "overlay", "ease-9km"],
             run_readiness="ready",
             run_readiness_summary="全球森林比例数据已就绪（2020）。",
             run_readiness_notes=["数据源: I:/Geograph_DataSet/InversionResults/Forest_Ratio_9KM_2020.mat"],
+            data_owner="Liuzheng",
+            temporal_coverage="2020",
+            source_reference="https://doi.org/10.5281/zenodo.4708837",
+        ),
+        LayerDescriptor(
+            layer_id="landscape-metrics-9km",
+            dataset_key="landscape_shdi_9km_2020",
+            display_name="景观多样性指数 SHDI（9km，2020）",
+            description="全球 9km 景观格局指数（Shannon 多样性指数 SHDI），基于 EASE-Grid 9km 与 IGBP 土地覆盖派生；"
+            "同一 .mat 文件还包含 PD/ED/CONTAG 指数（Phase 1 仅暴露 SHDI）。",
+            category="research-group",
+            source_type=LayerSourceType.cog,
+            render_type=LayerRenderType.raster,
+            supported_map_modes=[MapMode.mode_2d],
+            supports_time=False,
+            is_realtime=False,
+            default_visible=False,
+            status="sample",
+            extent=global_extent,
+            style=LayerStyleHint(palette="cividis", unit_label="SHDI", opacity=0.8),
+            tags=["landscape", "ecology", "shdi", "overlay", "ease-9km"],
+            run_readiness="ready",
+            run_readiness_summary="景观多样性指数 SHDI 数据已就绪（2020）。",
+            run_readiness_notes=["数据源: I:/Geograph_DataSet/InversionResults/Landscape_Metrics_LandOnly_9KM_2020.mat#SHDI"],
+            data_owner="Liuzheng",
+            temporal_coverage="2020",
+        ),
+        # ── Phase 2: 课题组 VOD/SM/Omega 2025-12 产品族 ──────────────────────────
+        LayerDescriptor(
+            layer_id="vod-dec2025",
+            dataset_key="vod_smap_dec2025",
+            display_name="VOD 植被光学厚度（2025-12）",
+            description="SMAP 植被光学厚度 VOD 反演结果（2025-12-01 至 2025-12-31 时间序列，31 天，"
+            "EASE-Grid 9km，源自 SmapSoil_VOD_SM v7.3 产品族）。",
+            category="research-group",
+            source_type=LayerSourceType.cog,
+            render_type=LayerRenderType.raster,
+            supported_map_modes=[MapMode.mode_2d],
+            supports_time=True,
+            is_realtime=False,
+            default_visible=False,
+            status="sample",
+            time_granularity=TimeGranularity.day,
+            default_time_offset=0,
+            extent=global_extent,
+            style=LayerStyleHint(palette="magma", unit_label="VOD", opacity=0.8),
+            tags=["vod", "vegetation", "smap", "overlay", "ease-9km", "dec2025"],
+            run_readiness="ready",
+            run_readiness_summary="VOD 植被光学厚度数据已就绪（2025-12，31 天）。",
+            run_readiness_notes=["数据源: I:/Geograph_DataSet/Soil_Ecological_Data/SmapSoil_VOD_SM/YYYYMMDD.mat#VOD (31 files, v7.3 HDF5)"],
+            data_owner="Lab",
+            temporal_coverage="2025-12-01 to 2025-12-31 (31 days)",
+        ),
+        LayerDescriptor(
+            layer_id="sm-dec2025",
+            dataset_key="sm_smap_dec2025",
+            display_name="SM 土壤湿度（2025-12）",
+            description="SMAP 土壤湿度 SM 反演结果（2025-12-01 至 2025-12-31 时间序列，31 天，"
+            "EASE-Grid 9km，源自 SmapSoil_VOD_SM v7.3 产品族）。",
+            category="research-group",
+            source_type=LayerSourceType.cog,
+            render_type=LayerRenderType.raster,
+            supported_map_modes=[MapMode.mode_2d],
+            supports_time=True,
+            is_realtime=False,
+            default_visible=False,
+            status="sample",
+            time_granularity=TimeGranularity.day,
+            default_time_offset=0,
+            extent=global_extent,
+            style=LayerStyleHint(palette="ylgnbu", unit_label="m³/m³", opacity=0.8),
+            tags=["sm", "soil-moisture", "smap", "overlay", "ease-9km", "dec2025"],
+            run_readiness="ready",
+            run_readiness_summary="SM 土壤湿度数据已就绪（2025-12，31 天）。",
+            run_readiness_notes=["数据源: I:/Geograph_DataSet/Soil_Ecological_Data/SmapSoil_VOD_SM/YYYYMMDD.mat#SM (31 files, v7.3 HDF5)"],
+            data_owner="Lab",
+            temporal_coverage="2025-12-01 to 2025-12-31 (31 days)",
+        ),
+        LayerDescriptor(
+            layer_id="omega-dec2025",
+            dataset_key="omega_smap_dec2025",
+            display_name="Omega 反演（2025-12）",
+            description="SMAP Omega 植被光学厚度反演结果（2025-12-01 至 2025-12-31 时间序列，31 天，"
+            "EASE-Grid 9km，源自 SmapSoil_VOD_SM v7.3 产品族）；"
+            "与 omega-output（doy 017-030 多年均值）互补，提供 2025-12 每日反演结果。",
+            category="research-group",
+            source_type=LayerSourceType.cog,
+            render_type=LayerRenderType.raster,
+            supported_map_modes=[MapMode.mode_2d],
+            supports_time=True,
+            is_realtime=False,
+            default_visible=False,
+            status="sample",
+            time_granularity=TimeGranularity.day,
+            default_time_offset=0,
+            extent=global_extent,
+            style=LayerStyleHint(palette="plasma", unit_label="Omega", opacity=0.75),
+            tags=["omega", "inversion", "smap", "overlay", "ease-9km", "dec2025"],
+            run_readiness="ready",
+            run_readiness_summary="Omega 2025-12 反演数据已就绪（31 天）。",
+            run_readiness_notes=["数据源: I:/Geograph_DataSet/Soil_Ecological_Data/SmapSoil_VOD_SM/YYYYMMDD.mat#OMEGA (31 files, v7.3 HDF5)"],
+            data_owner="Lab",
+            temporal_coverage="2025-12-01 to 2025-12-31 (31 days)",
         ),
         LayerDescriptor(
             layer_id="smap-soil",
             dataset_key="smap_l3",
             display_name="SMAP 土壤湿度",
             description="NASA SMAP L3 土壤湿度反演产品，含 TB 亮温、植被光学厚度(VOD)与 DCA/SCA 反演土壤湿度。",
-            category="遥感产品",
+            category="research-group",
             source_type=LayerSourceType.algorithm_output,
             render_type=LayerRenderType.raster,
             supported_map_modes=[MapMode.mode_2d],
@@ -976,6 +1166,9 @@ def get_layer_catalog() -> LayerCatalogResponse:
             },
             run_readiness_summary="SMAP L3 HDF5 数据已就绪（19 个 .h5 文件）。",
             run_readiness_notes=["数据源: I:/Geograph_DataSet/SMAP/SMAP_L3_SM_P_*.h5 (19 files)"],
+            data_owner="Lab",
+            temporal_coverage="2023-01 to 2023-09 (19 days, gap-filled)",
+            source_reference="https://nsidc.org/data/SPL3SMP",
         ),
         LayerDescriptor(
             layer_id="fy-mwri",

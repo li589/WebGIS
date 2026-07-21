@@ -199,6 +199,7 @@ async function deleteHistory(profileId: string, historyId: number) {
         <code>smb://host/share/path/file.h5?cred=profile_id</code>
         或
         <code>sftp://host/path?cred=profile_id</code>。
+        工作流「远程拉取」节点也可填 <code>cred_profile</code> 参数引用本页 profile。
         算法取数与下载链共用；凭证落在本机加密库，多机需同步 DB +
         <code>BACKEND_GEE_CREDENTIALS_ENCRYPTION_KEY</code>。
       </p>

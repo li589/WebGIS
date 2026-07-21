@@ -73,6 +73,12 @@ export interface GeeRuntimeConfig {
 
 export interface WeatherConfig {
   default_model: string
+  default_model_source?: 'db' | 'env'
+  sync_domains?: string[]
+  sync_enabled?: boolean
+  sync_cron?: { minute: string; hour: string; timezone: string }
+  supported_models?: Array<{ id: string; label: string; region: string; update_interval: string }>
+  model_in_sync_domains?: boolean
   cache_ttl_seconds: number
   refresh_forecast_hours: number
   schedule_enabled: boolean
@@ -80,6 +86,7 @@ export interface WeatherConfig {
   default_longitude: number
   default_place_name: string
   max_active_weather_tile_runs: number
+  warning?: string | null
 }
 
 // ── 天气源 Provider 类型 ────────────────────────────────────────────────────
@@ -174,6 +181,35 @@ export interface DataSourceConfig {
     bucket: string
     secure: boolean
   } | null
+  discovered_datasets?: Array<{ name: string; path: string; file_count: number }>
+  open_data_presets?: Record<string, string>
+  remote_layer_data_uris?: Record<string, Record<string, string | string[]>>
+  static_cache?: {
+    cache_root: string
+    ttl_seconds: number
+    ttl_unlimited: boolean
+    entry_count: number
+    total_bytes: number
+  }
+  workflow_hint?: string
+}
+
+export interface DataCacheOverview {
+  cache_root: string
+  ttl_seconds: number
+  ttl_unlimited: boolean
+  entry_count: number
+  total_bytes: number
+  entries: Array<{
+    name: string
+    path: string
+    size_bytes: number
+    mtime: number
+    age_seconds: number
+  }>
+  data_root: string
+  output_root: string
+  discovered_datasets: Array<{ name: string; path: string; file_count: number }>
 }
 
 export interface AboutModule {
@@ -362,6 +398,13 @@ export function fetchWeatherConfig(): Promise<WeatherConfig> {
   return settingsFetch('/config/weather')
 }
 
+export function updateWeatherDefaultModel(defaultModel: string): Promise<WeatherConfig> {
+  return settingsFetch('/config/weather/model', {
+    method: 'PUT',
+    body: JSON.stringify({ default_model: defaultModel }),
+  })
+}
+
 // 天气源 Provider 管理
 export function fetchWeatherProviders(includeDisabled = true): Promise<WeatherProviderItem[]> {
   const query = includeDisabled ? '' : '?include_disabled=false'
@@ -417,6 +460,38 @@ export function deleteWeatherProvider(providerId: string): Promise<{ deleted: bo
 // 数据源配置
 export function fetchDataSourceConfig(): Promise<DataSourceConfig> {
   return settingsFetch('/config/data-source')
+}
+
+export function fetchDataCacheOverview(): Promise<DataCacheOverview> {
+  return settingsFetch('/config/data-cache/overview')
+}
+
+export function evictDataCache(payload: {
+  uri_or_name?: string
+  older_than_seconds?: number
+}): Promise<{ removed: string[]; removed_count?: number; cache_root: string }> {
+  return settingsFetch('/config/data-cache/evict', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  })
+}
+
+export function updateOpenDataPresets(
+  open_data_presets: Record<string, string>,
+): Promise<{ open_data_presets: Record<string, string> }> {
+  return settingsFetch('/config/data-source/open-data-presets', {
+    method: 'PUT',
+    body: JSON.stringify({ open_data_presets }),
+  })
+}
+
+export function updateRemoteLayerUris(
+  remote_layer_data_uris: Record<string, Record<string, string | string[]>>,
+): Promise<{ remote_layer_data_uris: Record<string, Record<string, string[]>> }> {
+  return settingsFetch('/config/data-source/remote-layer-uris', {
+    method: 'PUT',
+    body: JSON.stringify({ remote_layer_data_uris }),
+  })
 }
 
 // 远程存储凭证

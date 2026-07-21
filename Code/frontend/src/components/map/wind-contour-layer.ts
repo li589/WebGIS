@@ -76,6 +76,8 @@ export class WindContourLayer {
     this.canvas.style.left = '0'
     this.canvas.style.pointerEvents = 'none'
     this.canvas.style.zIndex = '4'
+    // 默认弱化等值线，避免抢粒子主体（Windy 风格以粒子+色底为主）
+    this.canvas.style.opacity = '0.32'
     this.canvas.className = 'wind-contour-canvas'
     container.appendChild(this.canvas)
 
@@ -97,6 +99,12 @@ export class WindContourLayer {
     map.on(MAP_EVENT_MOVE, this.moveHandler)
     map.on(MAP_EVENT_MOVEEND, this.moveHandler)
     map.on(MAP_EVENT_RESIZE, this.resizeHandler)
+  }
+
+  /** 调整等值线整体透明度（0~1） */
+  setOpacity(opacity: number): void {
+    const clamped = Math.max(0, Math.min(1, opacity))
+    this.canvas.style.opacity = String(clamped)
   }
 
   /** 计算 canvas 尺寸/位置，使用共享的 computeCanvasLayout */

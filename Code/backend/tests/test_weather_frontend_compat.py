@@ -1,4 +1,4 @@
-"""weather 前端 dataState 兼容性测试。
+﻿"""weather 前端 dataState 兼容性测试。
 
 模拟前端 runWorkflowForCatalog 的 payload（不带 weather_request.workflow，走 fallback 路径），
 验证 result_refs 包含 map_layer 类型，且 inline_data 含前端期望的
@@ -127,8 +127,8 @@ class WeatherFrontendCompatTests(unittest.TestCase):
         cache_dir = os.path.join(os.getcwd(), ".data", "cache", "weatherengine")
         if os.path.exists(cache_dir):
             shutil.rmtree(cache_dir, ignore_errors=True)
-        # 确保每测用例仍启用 open-meteo（防止其他测试禁用后遗留）
-        get_registry().set_enabled("open-meteo", True)
+        # 确保每测用例仍启用 open-meteo-online（防止其他测试禁用后遗留）
+        get_registry().set_enabled("open-meteo-online", True)
 
     def _submit_fallback_workflow(self, layer_id: str) -> str:
         """模拟前端 runWorkflowForCatalog 提交（无 weather_request.workflow，走 fallback）。"""
@@ -214,7 +214,7 @@ class WeatherFrontendCompatTests(unittest.TestCase):
         self.assertIsNotNone(inline, "未找到 map_layer ref 的 inline_data")
 
         render_hint = inline.get("render_hint") or {}
-        self.assertEqual(render_hint.get("paint_mode"), "grid_fill")
+        self.assertEqual(render_hint.get("paint_mode"), "heatmap")
         self.assertEqual(render_hint.get("palette"), "thermal-orange")
         self.assertEqual(render_hint.get("primary_metric"), "temperature_2m")
         self.assertEqual(render_hint.get("unit_label"), "C")
@@ -242,7 +242,7 @@ class WeatherFrontendCompatTests(unittest.TestCase):
         self.assertIsNotNone(inline, "未找到 map_layer ref 的 inline_data")
 
         render_hint = inline.get("render_hint") or {}
-        self.assertEqual(render_hint.get("paint_mode"), "grid_fill")
+        self.assertEqual(render_hint.get("paint_mode"), "heatmap")
         self.assertEqual(render_hint.get("palette"), "precip-cyan")
         self.assertEqual(render_hint.get("primary_metric"), "precipitation")
         self.assertEqual(render_hint.get("unit_label"), "mm")

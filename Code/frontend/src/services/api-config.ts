@@ -575,8 +575,8 @@ export const BASEMAP_PROVIDER_CONFIGS: BasemapProviderConfig[] = [
 
 export const EXTERNAL_API_CONFIGS: ExternalApiConfig[] = [
   {
-    id: 'open-meteo',
-    label: 'Open-Meteo',
+    id: 'open-meteo-online',
+    label: 'Open-Meteo (Online)',
     domain: 'data-source',
     capabilities: ['weather', 'forecast'],
     endpoints: [
@@ -584,6 +584,22 @@ export const EXTERNAL_API_CONFIGS: ExternalApiConfig[] = [
         id: 'forecast',
         label: 'Forecast API',
         url: 'https://api.open-meteo.com/v1/forecast',
+        authMode: 'none',
+        enabled: true,
+        timeoutMs: 30000,
+      },
+    ],
+  },
+  {
+    id: 'open-meteo-local',
+    label: 'Open-Meteo (Local)',
+    domain: 'data-source',
+    capabilities: ['weather', 'forecast'],
+    endpoints: [
+      {
+        id: 'forecast',
+        label: 'Local Docker API',
+        url: 'http://127.0.0.1:8080/v1/forecast',
         authMode: 'none',
         enabled: true,
         timeoutMs: 30000,

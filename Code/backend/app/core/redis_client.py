@@ -176,16 +176,35 @@ def wait_for_dedup(key: str, timeout_seconds: float = 30.0, poll_interval: float
     return False
 
 
-# ─── Open-Meteo API 全局限流 ──────────────────────────────────────────────────
+# ─── Weather API 限流（按 pool 隔离：online / local / commercial 互不抢槽）────
 
-_API_CONCURRENT_KEY = "weather:api_concurrent"
-_MAX_CONCURRENT_API_CALLS = 2
+_API_CONCURRENT_KEY_PREFIX = "weather:api_concurrent:"
+# 商业源更严；Open-Meteo 与前端瓦片并发 cap(=4) / tile semaphore 对齐
+_MAX_CONCURRENT_API_CALLS_DEFAULT = 2
+_MAX_CONCURRENT_API_CALLS_OPEN_METEO = 4
 _API_SLOT_TTL = 60  # 秒，防止 worker 崩溃后计数器卡住
 
+# 兼容旧测试/引用名
+_MAX_CONCURRENT_API_CALLS = _MAX_CONCURRENT_API_CALLS_DEFAULT
 
-# 进程内信号量：Redis 不可用时的有限降级（禁止 unconditional 放行打满上游）
-_local_api_slots = 0
+
+# 进程内信号量：按 pool 隔离；Redis 不可用时的有限降级
+_local_api_slots: dict[str, int] = {}
 _local_api_slots_lock = None
+
+
+def _normalize_api_pool(pool: str | None) -> str:
+    raw = (pool or "default").strip() or "default"
+    # Redis key 安全：去掉空白与控制字符
+    return "".join(ch if ch.isalnum() or ch in "-_.:/" else "_" for ch in raw)[:180]
+
+
+def _max_concurrent_for_pool(pool: str) -> int:
+    """Open-Meteo（含 base_url / provider id）放宽到 4；其余池保持 2。"""
+    lowered = pool.lower()
+    if "open-meteo" in lowered or "openmeteo" in lowered:
+        return _MAX_CONCURRENT_API_CALLS_OPEN_METEO
+    return _MAX_CONCURRENT_API_CALLS_DEFAULT
 
 
 def _get_local_slot_lock():
@@ -197,27 +216,27 @@ def _get_local_slot_lock():
     return _local_api_slots_lock
 
 
-def _acquire_local_api_slot(timeout: float) -> bool:
-    global _local_api_slots
+def _acquire_local_api_slot(timeout: float, pool: str) -> bool:
     deadline = time.monotonic() + timeout
     lock = _get_local_slot_lock()
+    limit = _max_concurrent_for_pool(pool)
     while time.monotonic() < deadline:
         with lock:
-            if _local_api_slots < _MAX_CONCURRENT_API_CALLS:
-                _local_api_slots += 1
+            used = _local_api_slots.get(pool, 0)
+            if used < limit:
+                _local_api_slots[pool] = used + 1
                 return True
         time.sleep(0.05)
     return False
 
 
-def _release_local_api_slot() -> None:
-    global _local_api_slots
+def _release_local_api_slot(pool: str) -> None:
     with _get_local_slot_lock():
-        _local_api_slots = max(0, _local_api_slots - 1)
+        _local_api_slots[pool] = max(0, _local_api_slots.get(pool, 0) - 1)
 
 
-def acquire_api_slot(timeout: float = 30.0) -> bool:
-    """获取一个全局 API 调用槽位，限制跨 worker 的 Open-Meteo 并发请求数。
+def acquire_api_slot(timeout: float = 30.0, *, pool: str | None = None) -> bool:
+    """获取一个 API 调用槽位（按 ``pool`` 隔离，默认 ``default``）。
 
     使用 Redis INCR 原子计数器实现分布式信号量。
     Redis 不可用时回落到进程内有限信号量（不再 unconditional 放行）。
@@ -225,43 +244,48 @@ def acquire_api_slot(timeout: float = 30.0) -> bool:
     Returns:
         True 如果获得槽位，False 如果超时未获得槽位。
     """
+    pool_key = _normalize_api_pool(pool)
+    redis_key = f"{_API_CONCURRENT_KEY_PREFIX}{pool_key}"
+    limit = _max_concurrent_for_pool(pool_key)
     client = get_redis_client()
     if client is None:
-        return _acquire_local_api_slot(timeout)
+        return _acquire_local_api_slot(timeout, pool_key)
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
         try:
-            current = client.incr(_API_CONCURRENT_KEY)
+            current = client.incr(redis_key)
             if current == 1:
                 # 首个调用者设置 TTL，防止 worker 崩溃后计数器卡住
-                client.expire(_API_CONCURRENT_KEY, _API_SLOT_TTL)
-            if current <= _MAX_CONCURRENT_API_CALLS:
+                client.expire(redis_key, _API_SLOT_TTL)
+            if current <= limit:
                 _mark_redis_success()
                 return True
             # 超过限制，回退计数并等待
-            client.decr(_API_CONCURRENT_KEY)
+            client.decr(redis_key)
         except redis.RedisError as exc:
             _mark_redis_failure(f"acquire_api_slot:{exc}")
-            return _acquire_local_api_slot(max(0.0, deadline - time.monotonic()))
+            return _acquire_local_api_slot(max(0.0, deadline - time.monotonic()), pool_key)
         time.sleep(0.5)
     return False
 
 
-def release_api_slot() -> None:
-    """释放一个 API 调用槽位。"""
+def release_api_slot(*, pool: str | None = None) -> None:
+    """释放一个 API 调用槽位（须与 acquire 使用同一 ``pool``）。"""
+    pool_key = _normalize_api_pool(pool)
+    redis_key = f"{_API_CONCURRENT_KEY_PREFIX}{pool_key}"
     client = get_redis_client()
     if client is None:
-        _release_local_api_slot()
+        _release_local_api_slot(pool_key)
         return
     try:
-        current = client.decr(_API_CONCURRENT_KEY)
+        current = client.decr(redis_key)
         if current < 0:
             # 计数器异常（如 TTL 过期后 DECR），重置为 0
-            client.set(_API_CONCURRENT_KEY, 0, ex=_API_SLOT_TTL)
+            client.set(redis_key, 0, ex=_API_SLOT_TTL)
         _mark_redis_success()
     except redis.RedisError as exc:
         _mark_redis_failure(f"release_api_slot:{exc}")
-        _release_local_api_slot()
+        _release_local_api_slot(pool_key)
 
 
 def scan_keys(client: redis.Redis, pattern: str, *, count: int = 200) -> list[str]:

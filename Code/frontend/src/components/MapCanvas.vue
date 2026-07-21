@@ -156,31 +156,50 @@ const stageStatusModel = computed(() => buildMapStageStatusModel({
   tileFailedProvider: tileFailedProvider.value,
 }))
 
-// 天气瓦片加载/错误状态：聚合所有可见天气图层的状态
+// 天气瓦片加载/错误/半覆盖状态：聚合所有可见天气图层
 const weatherTileStatusModel = computed(() => {
   // 依赖 statusVersion 触发响应式更新
   void weatherStatusVersion.value
   const weatherLayers = layersStore.activeLayersDisplay.filter(
     (l) => l.visible && layersStore.isWeatherEngineLayer(l.catalogId),
   )
-  if (weatherLayers.length === 0) return { show: false, isLoading: false, error: null }
+  if (weatherLayers.length === 0) {
+    return { show: false, isLoading: false, error: null as string | null, partial: null as string | null }
+  }
 
   for (const layer of weatherLayers) {
     const status = weatherTileManager.getLayerStatus(layer.catalogId)
     if (!status.active) continue
-    // 错误优先级最高
-    if (status.errorType) {
-      return { show: true, isLoading: false, error: status.errorMessage ?? '天气数据加载失败' }
+    // 视口全空时才盖错误横幅
+    if (status.errorType && status.cachedInViewport === 0) {
+      return {
+        show: true,
+        isLoading: false,
+        error: status.errorMessage ?? '天气数据加载失败',
+        partial: null,
+      }
     }
   }
-  // 检查是否有图层正在加载（pending > 0 且视口内无缓存）
+  // 全空且仍在拉取
   for (const layer of weatherLayers) {
     const status = weatherTileManager.getLayerStatus(layer.catalogId)
     if (status.active && status.pending > 0 && status.cachedInViewport === 0) {
-      return { show: true, isLoading: true, error: null }
+      return { show: true, isLoading: true, error: null, partial: null }
     }
   }
-  return { show: false, isLoading: false, error: null }
+  // 半覆盖：已有内容但视口仍有空洞（pending=0 时提示补洞，避免误以为加载结束）
+  for (const layer of weatherLayers) {
+    const status = weatherTileManager.getLayerStatus(layer.catalogId)
+    if (!status.active) continue
+    if (status.cachedInViewport > 0 && status.missingInViewport > 0 && status.pending === 0) {
+      const progress = `${status.cachedInViewport}/${status.viewportTotal}`
+      const partial = status.gapSweepActive
+        ? `已加载 ${progress}，正在补全空洞…`
+        : `已加载 ${progress}，部分区域待重试`
+      return { show: true, isLoading: false, error: null, partial }
+    }
+  }
+  return { show: false, isLoading: false, error: null, partial: null }
 })
 const stageAppearanceModel = computed(() => buildMapStageAppearanceModel({
   basemapStyle: currentTileConfig.value.style,
@@ -267,6 +286,12 @@ onMounted(async () => {
     syncAdminOverlay: actionBridge.syncAdminOverlay,
     debugLog,
     weatherDebounceMs: 350,
+    getMeasureState: () => uiStore.measureState,
+    addMeasurePoint: (p) => uiStore.addMeasurePoint(p),
+    undoLastMeasurePoint: () => uiStore.undoLastMeasurePoint(),
+    completeMeasure: () => uiStore.completeMeasure(),
+    setHoverPoint: (p) => uiStore.setHoverPoint(p),
+    clearMeasure: () => uiStore.clearMeasure(),
   })
   state.resources.basemapModule = moduleBundle.basemapModule
   state.resources.adminBoundaryModule = moduleBundle.adminBoundaryModule
@@ -275,10 +300,12 @@ onMounted(async () => {
   state.resources.mapInteractionModule = moduleBundle.mapInteractionModule
   state.resources.mapCanvasRuntimeModule = moduleBundle.mapCanvasRuntimeModule
   state.resources.selectedLayerFocusModule = moduleBundle.selectedLayerFocusModule
+  state.resources.measureModule = moduleBundle.measureModule
   moduleBundle.weatherOverlayModule.setupWatchers()
   moduleBundle.mapInteractionModule.bindEvents()
   moduleBundle.mapCanvasRuntimeModule.setupWatchers()
   moduleBundle.selectedLayerFocusModule.setupWatchers()
+  moduleBundle.measureModule.bindEvents()
 
   createMapCanvasLifecycleBinder({
     map: mapInstance,
@@ -302,6 +329,8 @@ onMounted(async () => {
       // 同样补同步导入层：mapReady 前 addVectorLayer 会 no-op
       syncImportedLayers({ fitNew: true })
       moduleBundle.mapInteractionModule.applyInteractionMode()
+      // 测量模式初始状态同步（mapInteractionModule 已处理 dragPan，measureModule 处理 doubleClickZoom/boxZoom + Canvas show）
+      moduleBundle.measureModule.applyMeasureMode()
       presentationModule.revealMap()
     },
     scheduleNavigationThemeSync: () => {
@@ -322,26 +351,31 @@ onMounted(async () => {
     if (!overlayImageModule) return
     const known = new Set(overlayImageModule.knownOverlayIds.value)
     const opacityByLayerId: Record<string, number> = {}
-    const activeVisible: string[] = []
+    // activeList: 应保持加载的图层（含 hidden 的，即仍在 activeLayers 列表中）
+    // visibleList: 应可见的子集（visible=true）
+    // 分离两个列表，让 hidden 图层保留在地图上仅切 visibility，避免重复 fetch PNG
+    const activeList: string[] = []
+    const visibleList: string[] = []
 
     for (const layer of layersStore.activeLayers) {
-      if (!layer.visible) continue
       if (layer.importedRaster) {
         const overlayId = layer.importedRaster.overlayLayerId
         overlayImageModule.rememberOverlayId(overlayId)
         known.add(overlayId)
-        activeVisible.push(overlayId)
+        activeList.push(overlayId)
         opacityByLayerId[overlayId] = layer.opacity
+        if (layer.visible) visibleList.push(overlayId)
         continue
       }
       if (layer.importedVector || layer.isAdminBoundary) continue
       if (known.has(layer.catalogId)) {
-        activeVisible.push(layer.catalogId)
+        activeList.push(layer.catalogId)
         opacityByLayerId[layer.catalogId] = layer.opacity
+        if (layer.visible) visibleList.push(layer.catalogId)
       }
     }
 
-    await overlayImageModule.syncOverlays(activeVisible, opacityByLayerId)
+    await overlayImageModule.syncOverlays(activeList, visibleList, opacityByLayerId)
     applyLayerStackOrder()
   }
 
@@ -356,7 +390,9 @@ onMounted(async () => {
 
   watch(
     () => layersStore.activeLayers
-      .filter((l) => l.visible && (l.importedRaster || (!l.importedVector && !l.isAdminBoundary)))
+      // 重要：不再过滤 visible=false 的图层。hidden 图层也需要进入 watch 源，
+      // 这样显隐切换才能触发 syncOverlayLayers（同步仅切 visibility，不重载 PNG）。
+      .filter((l) => l.importedRaster || (!l.importedVector && !l.isAdminBoundary))
       .map((l) => `${l.instanceId}:${l.catalogId}:${l.visible}:${l.opacity}:${l.importedRaster ? 'r' : 'c'}`)
       .join(','),
     () => { void syncOverlayLayers() },
@@ -571,6 +607,12 @@ async function handleLocateMe() {
     <div v-if="weatherTileStatusModel.show && weatherTileStatusModel.isLoading" class="weather-loading">
       <span class="weather-loading-dot"></span>
       <span>正在加载天气数据…</span>
+    </div>
+
+    <!-- Weather tile partial coverage (holes being refilled) -->
+    <div v-if="weatherTileStatusModel.show && weatherTileStatusModel.partial" class="weather-load-partial">
+      <span class="weather-loading-dot"></span>
+      <span>{{ weatherTileStatusModel.partial }}</span>
     </div>
 
     <!-- Weather tile error banner -->
@@ -1118,6 +1160,25 @@ async function handleLocateMe() {
   50% { opacity: 1; }
 }
 
+/* 天气瓦片半覆盖 / 补洞提示 */
+.weather-load-partial {
+  position: absolute;
+  top: 110px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 3;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.38rem;
+  padding: 0.38rem 0.7rem;
+  border-radius: 999px;
+  background: rgba(18, 28, 22, 0.9);
+  border: 1px solid rgba(120, 200, 160, 0.28);
+  color: #b8e6c8;
+  font-size: 0.64rem;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.24);
+}
+
 /* 天气瓦片错误横幅 */
 .weather-load-error {
   position: absolute;
@@ -1135,7 +1196,16 @@ async function handleLocateMe() {
   color: #ffcb80;
   font-size: 0.64rem;
   box-shadow: 0 4px 16px rgba(0, 0, 0, 0.24);
-  max-width: 80%;
+  max-width: min(80%, 36rem);
+  max-height: 2.6rem;
+  overflow: hidden;
+}
+
+.weather-load-error > span:last-child {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .weather-error-icon {

@@ -34,6 +34,37 @@ _BRIDGE_CHAIN: list[tuple[Any, str]] = [
 ]
 
 
+def _explain_no_bridge(payload: WorkflowSubmitRequest) -> str:
+    """给无 bridge 匹配的请求补充可读原因（图层无引擎 / 引擎字段未组装）。"""
+    layer_id = payload.layer_id or getattr(payload.map_context, "active_layer_id", None)
+    if not layer_id:
+        return _NO_BRIDGE_MESSAGE
+
+    try:
+        from app.services.layer_catalog import get_layer_descriptor
+
+        descriptor = get_layer_descriptor(str(layer_id))
+    except Exception:
+        descriptor = None
+
+    if descriptor is None:
+        return (
+            f"Unknown layer '{layer_id}' — no workflow bridge matched. "
+            f"{_NO_BRIDGE_MESSAGE}"
+        )
+    if not descriptor.engine:
+        display = descriptor.display_name or layer_id
+        return (
+            f"Layer '{display}' ({layer_id}) has no workflow engine. "
+            "Static overlays load directly; weather layers use the tile service. "
+            f"{_NO_BRIDGE_MESSAGE}"
+        )
+    return (
+        f"Layer '{descriptor.display_name or layer_id}' (engine={descriptor.engine}) "
+        f"did not match any workflow bridge. {_NO_BRIDGE_MESSAGE}"
+    )
+
+
 def _find_bridge_handler(payload: WorkflowSubmitRequest) -> tuple[Callable[..., WorkflowExecutionResult], str] | None:
     for bridge, channel in _BRIDGE_CHAIN:
         if bridge.supports(payload):
@@ -46,7 +77,7 @@ def _resolve_workflow_handler(payload: WorkflowSubmitRequest) -> Callable[..., W
     if bridge_match is not None:
         handler, _channel = bridge_match
         return handler
-    raise ValueError(_NO_BRIDGE_MESSAGE)
+    raise ValueError(_explain_no_bridge(payload))
 
 
 def execute_workflow_task(*, run_id: str, payload: WorkflowSubmitRequest, requested_at, event_factory) -> WorkflowExecutionResult:
@@ -65,7 +96,7 @@ def resolve_workflow_channel(payload: WorkflowSubmitRequest) -> str:
     if bridge_match is not None:
         _handler, channel = bridge_match
         return channel
-    raise ValueError(_NO_BRIDGE_MESSAGE)
+    raise ValueError(_explain_no_bridge(payload))
 
 
 # M14 修复：队列查表化，避免 18 个 if/elif 分支
