@@ -87,7 +87,13 @@ async function parseCsv() {
   }
 }
 
-watch(() => props.file, () => { void parseCsv() }, { immediate: true })
+watch(
+  () => props.file,
+  () => {
+    void parseCsv()
+  },
+  { immediate: true },
+)
 
 // 同步点转换：调 services/crs 的 transformPoint（proj4 静态 import，加密系走 gcj-bd.ts）
 function _convertPoint(x: number, y: number): [number, number] {
@@ -110,7 +116,14 @@ const previewCoords = computed<Array<[number, number] | null>>(() => {
   })
 })
 
-const canConfirm = computed(() => !!xCol.value && !!yCol.value && allRows.value.length > 0 && !parseError.value && !converting.value)
+const canConfirm = computed(
+  () =>
+    !!xCol.value &&
+    !!yCol.value &&
+    allRows.value.length > 0 &&
+    !parseError.value &&
+    !converting.value,
+)
 
 async function handleConfirm() {
   if (!canConfirm.value) return
@@ -167,7 +180,11 @@ async function handleConfirm() {
       )
     }
   } catch (err) {
-    logStore.logOperation('import-csv-fail', `CSV 导入失败: ${props.file.name}`, err instanceof Error ? err.message : String(err))
+    logStore.logOperation(
+      'import-csv-fail',
+      `CSV 导入失败: ${props.file.name}`,
+      err instanceof Error ? err.message : String(err),
+    )
   } finally {
     converting.value = false
   }
@@ -190,9 +207,7 @@ function formatCoord(c: [number, number] | null): string {
         </button>
       </div>
 
-      <div v-if="parseError" class="error-banner">
-        ⚠ {{ parseError }}
-      </div>
+      <div v-if="parseError" class="error-banner">⚠ {{ parseError }}</div>
 
       <template v-else>
         <!-- 列选择 -->
@@ -213,7 +228,9 @@ function formatCoord(c: [number, number] | null): string {
           <label class="col-field">
             <span class="col-label">坐标系</span>
             <select v-model="crs" class="col-select crs-select">
-              <option v-for="opt in CRS_OPTIONS" :key="opt.code" :value="opt.code">{{ opt.label }}</option>
+              <option v-for="opt in CRS_OPTIONS" :key="opt.code" :value="opt.code">
+                {{ opt.label }}
+              </option>
             </select>
           </label>
         </div>
@@ -228,7 +245,12 @@ function formatCoord(c: [number, number] | null): string {
                 <th>{{ xCol }}</th>
                 <th>{{ yCol }}</th>
                 <th>转换后 (WGS84)</th>
-                <th v-for="col in columns.filter(c => c !== xCol && c !== yCol).slice(0, 3)" :key="col">{{ col }}</th>
+                <th
+                  v-for="col in columns.filter((c) => c !== xCol && c !== yCol).slice(0, 3)"
+                  :key="col"
+                >
+                  {{ col }}
+                </th>
               </tr>
             </thead>
             <tbody>
@@ -237,7 +259,12 @@ function formatCoord(c: [number, number] | null): string {
                 <td>{{ row[xCol] }}</td>
                 <td>{{ row[yCol] }}</td>
                 <td class="coord-cell">{{ formatCoord(previewCoords[i] ?? null) }}</td>
-                <td v-for="col in columns.filter(c => c !== xCol && c !== yCol).slice(0, 3)" :key="col">{{ row[col] }}</td>
+                <td
+                  v-for="col in columns.filter((c) => c !== xCol && c !== yCol).slice(0, 3)"
+                  :key="col"
+                >
+                  {{ row[col] }}
+                </td>
               </tr>
             </tbody>
           </table>
@@ -246,7 +273,9 @@ function formatCoord(c: [number, number] | null): string {
         <div class="info-row">
           <span>共 {{ allRows.length }} 行数据</span>
           <span v-if="crs !== 'EPSG:4326'" class="convert-hint">将从 {{ crs }} 转换为 WGS84</span>
-          <span v-if="failedCount > 0" class="failed-hint">⚠ {{ failedCount }} 行转换失败已跳过</span>
+          <span v-if="failedCount > 0" class="failed-hint"
+            >⚠ {{ failedCount }} 行转换失败已跳过</span
+          >
         </div>
 
         <!-- 操作按钮 -->
@@ -299,7 +328,10 @@ function formatCoord(c: [number, number] | null): string {
   font-weight: 600;
 }
 
-.panel-icon { font-size: 0.8rem; color: #5ad5ff; }
+.panel-icon {
+  font-size: 0.8rem;
+  color: #5ad5ff;
+}
 
 .close-btn {
   margin-left: auto;
@@ -312,7 +344,10 @@ function formatCoord(c: [number, number] | null): string {
   cursor: pointer;
   font-size: 0.7rem;
 }
-.close-btn:hover { background: rgba(136, 192, 255, 0.1); color: #d8e6f5; }
+.close-btn:hover {
+  background: rgba(136, 192, 255, 0.1);
+  color: #d8e6f5;
+}
 
 .section-label {
   color: #5a7080;
@@ -335,7 +370,9 @@ function formatCoord(c: [number, number] | null): string {
   min-width: 7rem;
 }
 
-.crs-select { flex: 1.4; }
+.crs-select {
+  flex: 1.4;
+}
 
 .col-label {
   color: #8aa8bf;
@@ -393,10 +430,18 @@ function formatCoord(c: [number, number] | null): string {
   max-width: 7rem;
 }
 
-.preview-table tr:hover td { background: rgba(136, 192, 255, 0.04); }
+.preview-table tr:hover td {
+  background: rgba(136, 192, 255, 0.04);
+}
 
-.row-num { color: #5a7080; text-align: right; }
-.coord-cell { color: #5ad5ff; font-variant-numeric: tabular-nums; }
+.row-num {
+  color: #5a7080;
+  text-align: right;
+}
+.coord-cell {
+  color: #5ad5ff;
+  font-variant-numeric: tabular-nums;
+}
 
 .info-row {
   display: flex;
@@ -405,8 +450,12 @@ function formatCoord(c: [number, number] | null): string {
   font-size: 0.56rem;
 }
 
-.convert-hint { color: #ffc878; }
-.failed-hint { color: #ffb070; }
+.convert-hint {
+  color: #ffc878;
+}
+.failed-hint {
+  color: #ffb070;
+}
 
 .action-row {
   display: flex;
@@ -426,7 +475,10 @@ function formatCoord(c: [number, number] | null): string {
   font: inherit;
   font-size: 0.64rem;
 }
-.cancel-btn:hover { background: rgba(136, 192, 255, 0.08); color: #d8e6f5; }
+.cancel-btn:hover {
+  background: rgba(136, 192, 255, 0.08);
+  color: #d8e6f5;
+}
 
 .confirm-btn {
   padding: 0.42rem 0.72rem;
@@ -439,11 +491,24 @@ function formatCoord(c: [number, number] | null): string {
   font-size: 0.64rem;
   font-weight: 600;
 }
-.confirm-btn:hover:not(:disabled) { background: rgba(10, 132, 255, 0.48); color: #d0f0ff; }
-.confirm-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+.confirm-btn:hover:not(:disabled) {
+  background: rgba(10, 132, 255, 0.48);
+  color: #d0f0ff;
+}
+.confirm-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
 
-.spinning { display: inline-block; animation: spin 0.8s linear infinite; }
-@keyframes spin { to { transform: rotate(360deg); } }
+.spinning {
+  display: inline-block;
+  animation: spin 0.8s linear infinite;
+}
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
 
 .error-banner {
   padding: 0.52rem;

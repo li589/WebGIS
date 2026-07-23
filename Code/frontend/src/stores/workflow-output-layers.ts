@@ -68,13 +68,17 @@ export const useWorkflowOutputLayersStore = defineStore('workflow-output-layers'
   // 频繁调用 saveToStorage 会同步阻塞主线程（localStorage.setItem 是同步操作）。
   // 300ms 防抖确保连续修改只保存一次。
   let _saveTimer: ReturnType<typeof setTimeout> | null = null
-  watch(entries, (value) => {
-    if (_saveTimer !== null) clearTimeout(_saveTimer)
-    _saveTimer = setTimeout(() => {
-      _saveTimer = null
-      saveToStorage(value)
-    }, 300)
-  }, { deep: true })
+  watch(
+    entries,
+    (value) => {
+      if (_saveTimer !== null) clearTimeout(_saveTimer)
+      _saveTimer = setTimeout(() => {
+        _saveTimer = null
+        saveToStorage(value)
+      }, 300)
+    },
+    { deep: true },
+  )
 
   /** 所有已注册的产出图层条目 */
   const allEntries = computed(() => entries.value)

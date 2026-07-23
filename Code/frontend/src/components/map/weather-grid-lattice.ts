@@ -74,8 +74,13 @@ export function unwrapLonIntoGridFrame(lon: number, west: number, east: number):
   // 仅解包框（east>180 或跨度很大）才 ±360 卷入；普通区域略越界交给 clamp，
   // 避免 lon 稍小于 west 时跳到 west+360 采样到错误边缘。
   if (east > 180 || east - west > 180) {
-    while (x < west) x += 360
-    while (x >= west + 360) x -= 360
+    // 以网格中心为参考：将 x 解包到 [center-180, center+180] 范围内，
+    // 即取距网格中心最近的等价经度。旧逻辑 `while(x<west) x+=360` 会把
+    // 仅略偏 grid.west 西侧的经度（如 150° vs west=160°）跳到 510°，
+    // 导致 mergeRoamBounds 产出跨 350° 的假跨度 → 粒子只覆盖一个半球。
+    const center = (west + east) / 2
+    while (x < center - 180) x += 360
+    while (x > center + 180) x -= 360
   }
   return x
 }
@@ -100,14 +105,9 @@ export function latticeIndex(value: number, resolution: number): number {
  * 取「小间隙」的中位数，忽略缺瓦造成的大洞（例如跨赤道未加载时南北点相距数倍 res），
  * 否则步长被拉大 → 格元无法贴合 → 赤道附近整条空白带。
  */
-export function detectLatticeResolution(
-  values: readonly number[],
-  fallback = 0.25,
-): number {
+export function detectLatticeResolution(values: readonly number[], fallback = 0.25): number {
   const unique = Array.from(
-    new Set(
-      values.filter((v) => Number.isFinite(v)).map((v) => Math.round(v * 1e6) / 1e6),
-    ),
+    new Set(values.filter((v) => Number.isFinite(v)).map((v) => Math.round(v * 1e6) / 1e6)),
   ).sort((a, b) => a - b)
   if (unique.length < 2) return fallback
   const gaps: number[] = []
@@ -140,9 +140,9 @@ export function buildRegularLatticeAxis(
 ): number[] {
   const finite = values.filter((v) => Number.isFinite(v))
   if (finite.length === 0) return []
-  const unique = Array.from(
-    new Set(finite.map((v) => Math.round(v * 1e6) / 1e6)),
-  ).sort((a, b) => a - b)
+  const unique = Array.from(new Set(finite.map((v) => Math.round(v * 1e6) / 1e6))).sort(
+    (a, b) => a - b,
+  )
   if (unique.length === 1) return [...unique]
 
   const res = Math.max(

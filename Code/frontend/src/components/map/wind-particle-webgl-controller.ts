@@ -19,7 +19,10 @@ import { WindParticleWebGLLayer } from './wind-particle-webgl-renderer'
 import { removeWeatherMapArtifacts } from './weather-overlay-maplibre'
 import { paletteToParticleColors, resolveCanonicalPaletteId } from './weather-render'
 import type { WeatherOverlayState } from './weather-overlay-registry'
-import type { WindParticleControllerContract, WindParticleSyncOptions } from './wind-particle-controller-contract'
+import type {
+  WindParticleControllerContract,
+  WindParticleSyncOptions,
+} from './wind-particle-controller-contract'
 import type { WindGeoJSON } from './types'
 
 type MapInstance = import('maplibre-gl').Map
@@ -61,15 +64,20 @@ export class WindParticleWebGLOverlayController implements WindParticleControlle
   private ensureCanvasFallback(reason: 'gl-failure' | 'streamline'): WindParticleOverlayController {
     if (!this.canvasFallback) {
       debugLog('WindParticleWebGL', 'falling back to Canvas 2D', reason)
-      this.destroyWebGLLayer()
-      if (this.windBarbLayer) {
-        this.windBarbLayer.destroy()
-        this.windBarbLayer = null
+      if (reason === 'gl-failure') {
+        // GL 不可用：立即销毁 WebGL 层和辅助层
+        this.destroyWebGLLayer()
+        if (this.windBarbLayer) {
+          this.windBarbLayer.destroy()
+          this.windBarbLayer = null
+        }
+        if (this.windContourLayer) {
+          this.windContourLayer.destroy()
+          this.windContourLayer = null
+        }
       }
-      if (this.windContourLayer) {
-        this.windContourLayer.destroy()
-        this.windContourLayer = null
-      }
+      // streamline 模式：不在此处销毁 WebGL 层，由 sync() 在 Canvas
+      // 渲染就绪后调用 destroyWebGLLayerAndAuxiliaries() 销毁，消除视觉空窗
       this.canvasFallback = new WindParticleOverlayController(this.map)
       this.canvasFallback.activeCatalogId = this.currentParticleFlowCatalogId
       this.fallbackReason = reason
@@ -79,6 +87,21 @@ export class WindParticleWebGLOverlayController implements WindParticleControlle
       this.fallbackReason = reason
     }
     return this.canvasFallback
+  }
+
+  /** 销毁 WebGL 粒子层和辅助层（barb/contour），用于 streamline 切换或数据清空 */
+  private destroyWebGLLayerAndAuxiliaries() {
+    if (this.webglLayer) {
+      this.destroyWebGLLayer()
+    }
+    if (this.windBarbLayer) {
+      this.windBarbLayer.destroy()
+      this.windBarbLayer = null
+    }
+    if (this.windContourLayer) {
+      this.windContourLayer.destroy()
+      this.windContourLayer = null
+    }
   }
 
   private clearStreamlineFallbackIfNeeded() {
@@ -101,7 +124,12 @@ export class WindParticleWebGLOverlayController implements WindParticleControlle
   }
 
   reset(options?: { invalidatePendingFetch?: boolean }) {
-    debugLog('WindParticleWebGL', 'reset', 'invalidatePendingFetch', options?.invalidatePendingFetch)
+    debugLog(
+      'WindParticleWebGL',
+      'reset',
+      'invalidatePendingFetch',
+      options?.invalidatePendingFetch,
+    )
     if (this.canvasFallback) {
       this.canvasFallback.reset(options)
       return
@@ -203,22 +231,26 @@ export class WindParticleWebGLOverlayController implements WindParticleControlle
         this.map.removeLayer(this.webglLayer.id) // 触发 onRemove → teardown
       }
     } catch (err) {
-      debugLog('WindParticleWebGL', 'destroyWebGLLayer: map already destroyed or layer missing', err)
+      debugLog(
+        'WindParticleWebGL',
+        'destroyWebGLLayer: map already destroyed or layer missing',
+        err,
+      )
     }
     this.webglLayer.dispose() // 幂等兜底
     this.webglLayer = null
   }
 
-  async sync(
-    overlayState: WeatherOverlayState,
-    options: WindParticleSyncOptions,
-  ) {
+  async sync(overlayState: WeatherOverlayState, options: WindParticleSyncOptions) {
     const displayMode = options.getWindDisplayMode?.() ?? 'particle'
     this.lastDisplayMode = displayMode
 
     if (displayMode === 'off' || displayMode === 'streamline') {
       // 关闭（仅色底）与流量场均走 Canvas 控制器
       await this.ensureCanvasFallback('streamline').sync(overlayState, options)
+      // Canvas 渲染就绪后销毁 WebGL 粒子层和辅助层，消除视觉空窗：
+      // 粒子 → 粒子+流线（瞬间）→ 流线
+      this.destroyWebGLLayerAndAuxiliaries()
       return
     }
 
@@ -244,28 +276,22 @@ export class WindParticleWebGLOverlayController implements WindParticleControlle
     const catalogId = overlayState.catalogId
 
     if (
-      options.overlayToken !== options.getSyncWeatherToken()
-      || this.currentParticleFlowCatalogId !== catalogId
+      options.overlayToken !== options.getSyncWeatherToken() ||
+      this.currentParticleFlowCatalogId !== catalogId
     ) {
       return
     }
 
-    const inlineGeojson = (overlayState.geojsonData && typeof overlayState.geojsonData === 'object'
-      && 'features' in overlayState.geojsonData)
-      ? overlayState.geojsonData as WindGeoJSON
-      : null
+    const inlineGeojson =
+      overlayState.geojsonData &&
+      typeof overlayState.geojsonData === 'object' &&
+      'features' in overlayState.geojsonData
+        ? (overlayState.geojsonData as WindGeoJSON)
+        : null
 
     // 视口切换后 merge 为空：清掉 WebGL 粒子，避免旧视口残留
     if (!inlineGeojson && !overlayState.geojsonUrl) {
-      this.destroyWebGLLayer()
-      if (this.windBarbLayer) {
-        this.windBarbLayer.destroy()
-        this.windBarbLayer = null
-      }
-      if (this.windContourLayer) {
-        this.windContourLayer.destroy()
-        this.windContourLayer = null
-      }
+      this.destroyWebGLLayerAndAuxiliaries()
       this.currentWindGeojson = null
       this.lastWindGeojsonUrl = null
       removeWeatherMapArtifacts(this.map, catalogId)
@@ -288,10 +314,10 @@ export class WindParticleWebGLOverlayController implements WindParticleControlle
         }
         const fetchedGeojson = (await resp.json()) as WindGeoJSON
         if (
-          options.overlayToken !== options.getSyncWeatherToken()
-          || fetchToken !== this.windParticleFetchToken
-          || this.currentParticleFlowCatalogId !== catalogId
-          || options.getEnabledParticleFlowCatalogId() !== catalogId
+          options.overlayToken !== options.getSyncWeatherToken() ||
+          fetchToken !== this.windParticleFetchToken ||
+          this.currentParticleFlowCatalogId !== catalogId ||
+          options.getEnabledParticleFlowCatalogId() !== catalogId
         ) {
           return
         }
@@ -318,10 +344,10 @@ export class WindParticleWebGLOverlayController implements WindParticleControlle
     }
 
     if (
-      options.overlayToken !== options.getSyncWeatherToken()
-      || fetchToken !== this.windParticleFetchToken
-      || this.currentParticleFlowCatalogId !== catalogId
-      || options.getEnabledParticleFlowCatalogId() !== catalogId
+      options.overlayToken !== options.getSyncWeatherToken() ||
+      fetchToken !== this.windParticleFetchToken ||
+      this.currentParticleFlowCatalogId !== catalogId ||
+      options.getEnabledParticleFlowCatalogId() !== catalogId
     ) {
       return
     }
@@ -335,11 +361,11 @@ export class WindParticleWebGLOverlayController implements WindParticleControlle
 
     // 冗余更新短路：数据未变且各层就绪时跳过（粒子模式不叠风速底色）
     if (
-      !urlChanged
-      && !inlineGeojson
-      && this.webglLayer
-      && this.windContourLayer
-      && (!enableBarbLayer || this.windBarbLayer)
+      !urlChanged &&
+      !inlineGeojson &&
+      this.webglLayer &&
+      this.windContourLayer &&
+      (!enableBarbLayer || this.windBarbLayer)
     ) {
       return
     }

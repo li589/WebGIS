@@ -125,7 +125,7 @@ export class MeasureCanvas {
     this.canvas.style.pointerEvents = 'none'
     this.canvas.className = 'measure-canvas'
     this.canvas.style.zIndex = '6'
-    this.canvas.style.display = 'none'  // 初始隐藏
+    this.canvas.style.display = 'none' // 初始隐藏
     map.getContainer().appendChild(this.canvas)
 
     const ctx = this.canvas.getContext('2d', { alpha: true })

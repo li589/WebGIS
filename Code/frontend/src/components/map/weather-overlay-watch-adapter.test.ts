@@ -39,12 +39,7 @@ function createLayer(overrides: Record<string, unknown> = {}) {
 
 describe('weather-overlay-watch-adapter', () => {
   it('builds stable watch inputs for weather overlay dependencies', () => {
-    const inputs = buildWeatherOverlayWatchInputs(
-      [createLayer()],
-      'weather.wind',
-      7,
-      12,
-    )
+    const inputs = buildWeatherOverlayWatchInputs([createLayer()], 'weather.wind', 7, 12)
 
     expect(inputs.particleFlowCatalogId).toBe('weather.wind')
     expect(inputs.dataVersion).toBe(7)
@@ -67,13 +62,47 @@ describe('weather-overlay-watch-adapter', () => {
       layersHashChanged: true,
       dataVersionChanged: true,
       hourChanged: true,
+      smoothRenderingChanged: false,
     })
   })
 
   it('detects wind display mode changes', () => {
-    const previous = buildWeatherOverlayWatchInputs([createLayer()], 'weather.wind', 7, 12, 'particle')
-    const next = buildWeatherOverlayWatchInputs([createLayer()], 'weather.wind', 7, 12, 'streamline')
+    const previous = buildWeatherOverlayWatchInputs(
+      [createLayer()],
+      'weather.wind',
+      7,
+      12,
+      'particle',
+    )
+    const next = buildWeatherOverlayWatchInputs(
+      [createLayer()],
+      'weather.wind',
+      7,
+      12,
+      'streamline',
+    )
     expect(diffWeatherOverlayWatchInputs(next, previous).windDisplayModeChanged).toBe(true)
     expect(next.windDisplayMode).toBe('streamline')
+  })
+
+  it('detects smoothRendering changes', () => {
+    const previous = buildWeatherOverlayWatchInputs(
+      [createLayer()],
+      'weather.wind',
+      7,
+      12,
+      'particle',
+      true,
+    )
+    const next = buildWeatherOverlayWatchInputs(
+      [createLayer()],
+      'weather.wind',
+      7,
+      12,
+      'particle',
+      false,
+    )
+    expect(diffWeatherOverlayWatchInputs(next, previous).smoothRenderingChanged).toBe(true)
+    expect(next.smoothRendering).toBe(false)
   })
 })

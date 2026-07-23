@@ -19,15 +19,18 @@ import type {
   UpdateTimerPayload,
 } from '../../services/workflow-timer-api'
 
-const props = withDefaults(defineProps<{
-  /** 嵌入流配置面板时使用（无全屏遮罩） */
-  embedded?: boolean
-  /** 默认按该 workflow 过滤 */
-  defaultWorkflowId?: string
-}>(), {
-  embedded: false,
-  defaultWorkflowId: '',
-})
+const props = withDefaults(
+  defineProps<{
+    /** 嵌入流配置面板时使用（无全屏遮罩） */
+    embedded?: boolean
+    /** 默认按该 workflow 过滤 */
+    defaultWorkflowId?: string
+  }>(),
+  {
+    embedded: false,
+    defaultWorkflowId: '',
+  },
+)
 
 const emit = defineEmits<{ close: [] }>()
 
@@ -123,8 +126,8 @@ async function saveEditor() {
     trigger_config = { cron: editorForm.value.cron_expr.trim() }
   } else if (trigger_type === 'interval') {
     if (
-      !Number.isFinite(editorForm.value.interval_seconds)
-      || editorForm.value.interval_seconds < 60
+      !Number.isFinite(editorForm.value.interval_seconds) ||
+      editorForm.value.interval_seconds < 60
     ) {
       editorError.value = 'interval 秒数必须 >= 60'
       return
@@ -139,11 +142,14 @@ async function saveEditor() {
   }
 
   // 解析 payload_overrides JSON
-  let payload_overrides: Record<string, unknown> = {}
+  let payload_overrides: Record<string, unknown>
   try {
     payload_overrides = JSON.parse(editorForm.value.payload_overrides_json || '{}')
-    if (payload_overrides === null || typeof payload_overrides !== 'object'
-      || Array.isArray(payload_overrides)) {
+    if (
+      payload_overrides === null ||
+      typeof payload_overrides !== 'object' ||
+      Array.isArray(payload_overrides)
+    ) {
       throw new Error('not an object')
     }
   } catch (err) {
@@ -225,7 +231,7 @@ async function emitEvent() {
     alert('event_type 必填')
     return
   }
-  let payload: Record<string, unknown> = {}
+  let payload: Record<string, unknown>
   try {
     payload = JSON.parse(eventForm.value.payload_json || '{}')
   } catch (err) {
@@ -302,15 +308,15 @@ const friendlyError = computed(() => {
 
 // ─── 生命周期 ────────────────────────────────────────────────────────────────
 onMounted(async () => {
-  await Promise.all([
-    timersStore.loadTimers(),
-    definitionsStore.loadSummaries(),
-  ])
+  await Promise.all([timersStore.loadTimers(), definitionsStore.loadSummaries()])
 })
 </script>
 
 <template>
-  <div :class="embedded ? 'timer-embedded' : 'timer-overlay'" @click.self="!embedded && emit('close')">
+  <div
+    :class="embedded ? 'timer-embedded' : 'timer-overlay'"
+    @click.self="!embedded && emit('close')"
+  >
     <div class="timer-panel" :class="{ 'timer-panel--embedded': embedded }">
       <div class="panel-header">
         <span class="header-icon" aria-hidden="true">⏰</span>
@@ -334,7 +340,13 @@ onMounted(async () => {
             发射事件
           </button>
           <button class="header-btn primary" type="button" @click="openCreate">+ 新建</button>
-          <button v-if="!embedded" class="close-btn" type="button" @click="emit('close')" title="关闭">
+          <button
+            v-if="!embedded"
+            class="close-btn"
+            type="button"
+            @click="emit('close')"
+            title="关闭"
+          >
             <span aria-hidden="true">✕</span>
           </button>
         </div>
@@ -363,19 +375,25 @@ onMounted(async () => {
         <!-- 错误提示 -->
         <div v-if="error" class="error-banner">
           <div>{{ friendlyError }}</div>
-          <button class="header-btn" type="button" style="margin-top:0.4rem" @click="timersStore.loadTimers()">重试</button>
+          <button
+            class="header-btn"
+            type="button"
+            style="margin-top: 0.4rem"
+            @click="timersStore.loadTimers()"
+          >
+            重试
+          </button>
         </div>
 
         <!-- 扫描结果 -->
         <div v-if="tickResult" class="info-banner">
-          扫描完成: 检查 {{ tickResult.checked }} 个，触发 {{ tickResult.fired }} 个，
-          失败 {{ tickResult.failed }} 个。
+          扫描完成: 检查 {{ tickResult.checked }} 个，触发 {{ tickResult.fired }} 个， 失败
+          {{ tickResult.failed }} 个。
         </div>
 
         <!-- 手动触发结果 -->
         <div v-if="lastTriggerResult" class="info-banner">
-          定时器 {{ lastTriggerResult.timer_id }} 已触发：
-          run_id = {{ lastTriggerResult.run_id }}
+          定时器 {{ lastTriggerResult.timer_id }} 已触发： run_id = {{ lastTriggerResult.run_id }}
         </div>
 
         <!-- 空状态 -->
@@ -452,7 +470,9 @@ onMounted(async () => {
                 {{ runningTimerIds.has(timer.timer_id) ? '运行中...' : '▶ 立即运行' }}
               </button>
               <button class="action-btn" type="button" @click="openEdit(timer)">⚙ 编辑</button>
-              <button class="action-btn danger" type="button" @click="askDelete(timer)">✕ 删除</button>
+              <button class="action-btn danger" type="button" @click="askDelete(timer)">
+                ✕ 删除
+              </button>
             </div>
           </div>
         </div>
@@ -467,7 +487,11 @@ onMounted(async () => {
           <div class="dialog-form">
             <div class="form-row">
               <label class="form-label">工作流 *</label>
-              <select v-model="editorForm.workflow_id" class="form-input" :disabled="!!editingTimer">
+              <select
+                v-model="editorForm.workflow_id"
+                class="form-input"
+                :disabled="!!editingTimer"
+              >
                 <option value="" disabled>请选择工作流</option>
                 <option v-for="s in summaries" :key="s.workflow_id" :value="s.workflow_id">
                   {{ s.name }} ({{ s.workflow_id }})
@@ -476,33 +500,26 @@ onMounted(async () => {
             </div>
             <div class="form-row">
               <label class="form-label">名称 *</label>
-              <input v-model="editorForm.name" type="text" class="form-input" placeholder="例如：每天 8 点运行" />
+              <input
+                v-model="editorForm.name"
+                type="text"
+                class="form-input"
+                placeholder="例如：每天 8 点运行"
+              />
             </div>
             <div class="form-row">
               <label class="form-label">触发类型</label>
               <div class="radio-group">
                 <label class="radio-label">
-                  <input
-                    v-model="editorForm.trigger_type"
-                    type="radio"
-                    value="cron"
-                  />
+                  <input v-model="editorForm.trigger_type" type="radio" value="cron" />
                   <span>Cron 表达式</span>
                 </label>
                 <label class="radio-label">
-                  <input
-                    v-model="editorForm.trigger_type"
-                    type="radio"
-                    value="interval"
-                  />
+                  <input v-model="editorForm.trigger_type" type="radio" value="interval" />
                   <span>固定间隔</span>
                 </label>
                 <label class="radio-label">
-                  <input
-                    v-model="editorForm.trigger_type"
-                    type="radio"
-                    value="event"
-                  />
+                  <input v-model="editorForm.trigger_type" type="radio" value="event" />
                   <span>事件触发</span>
                 </label>
               </div>
@@ -510,9 +527,16 @@ onMounted(async () => {
             <div v-if="editorForm.trigger_type === 'cron'" class="form-row">
               <label class="form-label">
                 Cron 表达式 *
-                <span class="form-hint">（5 字段：分 时 日 月 周，例如 "0 8 * * *" 每天 8 点）</span>
+                <span class="form-hint"
+                  >（5 字段：分 时 日 月 周，例如 "0 8 * * *" 每天 8 点）</span
+                >
               </label>
-              <input v-model="editorForm.cron_expr" type="text" class="form-input mono" placeholder="0 8 * * *" />
+              <input
+                v-model="editorForm.cron_expr"
+                type="text"
+                class="form-input mono"
+                placeholder="0 8 * * *"
+              />
             </div>
             <div v-else-if="editorForm.trigger_type === 'interval'" class="form-row">
               <label class="form-label">
@@ -529,9 +553,16 @@ onMounted(async () => {
             <div v-else class="form-row">
               <label class="form-label">
                 事件类型 *
-                <span class="form-hint">（例如 "data_ready"、"user_login"，调用 /workflow-timers/events 触发）</span>
+                <span class="form-hint"
+                  >（例如 "data_ready"、"user_login"，调用 /workflow-timers/events 触发）</span
+                >
               </label>
-              <input v-model="editorForm.event_type" type="text" class="form-input" placeholder="data_ready" />
+              <input
+                v-model="editorForm.event_type"
+                type="text"
+                class="form-input"
+                placeholder="data_ready"
+              />
             </div>
             <div class="form-row">
               <label class="form-label">
@@ -554,7 +585,9 @@ onMounted(async () => {
           </div>
           <div v-if="editorError" class="dialog-error">❌ {{ editorError }}</div>
           <div class="dialog-actions">
-            <button class="dialog-btn cancel" type="button" @click="showEditor = false">取消</button>
+            <button class="dialog-btn cancel" type="button" @click="showEditor = false">
+              取消
+            </button>
             <button
               class="dialog-btn primary"
               type="button"
@@ -571,11 +604,11 @@ onMounted(async () => {
       <div v-if="confirmDeleteId" class="dialog-overlay" @click.self="confirmDeleteId = null">
         <div class="dialog">
           <h3 class="dialog-title">确认删除</h3>
-          <p class="dialog-text">
-            确定要删除定时器 "{{ confirmDeleteId }}" 吗？此操作无法撤销。
-          </p>
+          <p class="dialog-text">确定要删除定时器 "{{ confirmDeleteId }}" 吗？此操作无法撤销。</p>
           <div class="dialog-actions">
-            <button class="dialog-btn cancel" type="button" @click="confirmDeleteId = null">取消</button>
+            <button class="dialog-btn cancel" type="button" @click="confirmDeleteId = null">
+              取消
+            </button>
             <button class="dialog-btn danger" type="button" @click="confirmDelete">删除</button>
           </div>
         </div>
@@ -591,7 +624,12 @@ onMounted(async () => {
           <div class="dialog-form">
             <div class="form-row">
               <label class="form-label">事件类型 *</label>
-              <input v-model="eventForm.event_type" type="text" class="form-input" placeholder="data_ready" />
+              <input
+                v-model="eventForm.event_type"
+                type="text"
+                class="form-input"
+                placeholder="data_ready"
+              />
             </div>
             <div class="form-row">
               <label class="form-label">
@@ -607,10 +645,13 @@ onMounted(async () => {
             </div>
           </div>
           <div v-if="eventResult" class="dialog-info">
-            匹配 {{ eventResult.matched }} 个，触发 {{ eventResult.fired }} 个，失败 {{ eventResult.failed }} 个。
+            匹配 {{ eventResult.matched }} 个，触发 {{ eventResult.fired }} 个，失败
+            {{ eventResult.failed }} 个。
           </div>
           <div class="dialog-actions">
-            <button class="dialog-btn cancel" type="button" @click="showEventDialog = false">关闭</button>
+            <button class="dialog-btn cancel" type="button" @click="showEventDialog = false">
+              关闭
+            </button>
             <button
               class="dialog-btn primary"
               type="button"
@@ -675,8 +716,13 @@ onMounted(async () => {
   font-weight: 600;
 }
 
-.header-icon { font-size: 0.88rem; color: #5ad5ff; }
-.header-title { flex: 1; }
+.header-icon {
+  font-size: 0.88rem;
+  color: #5ad5ff;
+}
+.header-title {
+  flex: 1;
+}
 
 .header-actions {
   display: flex;
@@ -852,9 +898,18 @@ onMounted(async () => {
   font-weight: 600;
 }
 
-.badge-cron { background: rgba(126, 224, 168, 0.16); color: #a0e8c0; }
-.badge-interval { background: rgba(90, 213, 255, 0.16); color: #5ad5ff; }
-.badge-event { background: rgba(255, 180, 90, 0.16); color: #ffd9a8; }
+.badge-cron {
+  background: rgba(126, 224, 168, 0.16);
+  color: #a0e8c0;
+}
+.badge-interval {
+  background: rgba(90, 213, 255, 0.16);
+  color: #5ad5ff;
+}
+.badge-event {
+  background: rgba(255, 180, 90, 0.16);
+  color: #ffd9a8;
+}
 
 .disabled-badge {
   padding: 0.12rem 0.4rem;
@@ -897,7 +952,9 @@ onMounted(async () => {
   word-break: break-all;
 }
 
-.mono { font-family: ui-monospace, "Cascadia Code", Consolas, monospace; }
+.mono {
+  font-family: ui-monospace, 'Cascadia Code', Consolas, monospace;
+}
 
 .card-actions {
   display: flex;

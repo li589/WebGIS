@@ -30,11 +30,16 @@ interface CreateHotspotPinsModuleOptions {
   }
 }
 
-export function createHotspotPinsModule(options: CreateHotspotPinsModuleOptions): HotspotPinsModule {
-  const requestAnimationFrameImpl = options.dependencies?.requestAnimationFrame
-    ?? ((callback: FrameRequestCallback) => globalThis.setTimeout(() => callback(Date.now()), 16) as unknown as number)
-  const cancelAnimationFrameImpl = options.dependencies?.cancelAnimationFrame
-    ?? ((handle: number) => globalThis.clearTimeout(handle))
+export function createHotspotPinsModule(
+  options: CreateHotspotPinsModuleOptions,
+): HotspotPinsModule {
+  const requestAnimationFrameImpl =
+    options.dependencies?.requestAnimationFrame ??
+    ((callback: FrameRequestCallback) =>
+      globalThis.setTimeout(() => callback(Date.now()), 16) as unknown as number)
+  const cancelAnimationFrameImpl =
+    options.dependencies?.cancelAnimationFrame ??
+    ((handle: number) => globalThis.clearTimeout(handle))
 
   let animationFrameId: number | null = null
 

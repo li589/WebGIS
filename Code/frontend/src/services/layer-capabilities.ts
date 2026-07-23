@@ -32,6 +32,11 @@ const RENDER_STRATEGY_REGISTRY: Record<string, RenderStrategyBehavior> = {
   },
 }
 
+/**
+ * Catalog paint_mode → 默认渲染行为。
+ * 与 UI WindDisplayMode（particle|streamline|off）是不同轴：
+ * `barb` 等仅出现在此 registry，不会出现在 WindDisplayMode。
+ */
 const PAINT_MODE_REGISTRY: Record<string, PaintModeBehavior> = {
   particle_flow: { supportsParticleFlow: true },
   grid_fill: { supportsParticleFlow: false },
@@ -41,7 +46,9 @@ const PAINT_MODE_REGISTRY: Record<string, PaintModeBehavior> = {
   barb: { supportsParticleFlow: false },
 }
 
-export function getLayerCapabilities(descriptor?: RuntimeLayerDescriptor | null): RuntimeLayerCapabilities | null {
+export function getLayerCapabilities(
+  descriptor?: RuntimeLayerDescriptor | null,
+): RuntimeLayerCapabilities | null {
   return descriptor?.capabilities ?? null
 }
 
@@ -50,7 +57,10 @@ export function resolveRenderStrategy(descriptor?: RuntimeLayerDescriptor | null
 }
 
 export function getRenderStrategyBehavior(descriptor?: RuntimeLayerDescriptor | null) {
-  return RENDER_STRATEGY_REGISTRY[resolveRenderStrategy(descriptor)] ?? RENDER_STRATEGY_REGISTRY.workflow_result
+  return (
+    RENDER_STRATEGY_REGISTRY[resolveRenderStrategy(descriptor)] ??
+    RENDER_STRATEGY_REGISTRY.workflow_result
+  )
 }
 
 export function resolvePaintMode(descriptor?: RuntimeLayerDescriptor | null) {
@@ -89,7 +99,9 @@ export function supportsMapLayerCapability(descriptor?: RuntimeLayerDescriptor |
   return getRenderStrategyBehavior(descriptor).supportsMapLayer
 }
 
-export function supportsViewportDrivenRefreshCapability(descriptor?: RuntimeLayerDescriptor | null) {
+export function supportsViewportDrivenRefreshCapability(
+  descriptor?: RuntimeLayerDescriptor | null,
+) {
   const capabilities = getLayerCapabilities(descriptor)
   if (typeof capabilities?.supports_viewport_refresh === 'boolean') {
     return capabilities.supports_viewport_refresh

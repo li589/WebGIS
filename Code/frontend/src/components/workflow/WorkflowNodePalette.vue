@@ -109,9 +109,9 @@ const filteredTemplatesByCategory = computed(() => {
       // 搜索过滤
       if (query) {
         const matched =
-          t.title.toLowerCase().includes(query)
-          || t.type.toLowerCase().includes(query)
-          || t.description.toLowerCase().includes(query)
+          t.title.toLowerCase().includes(query) ||
+          t.type.toLowerCase().includes(query) ||
+          t.description.toLowerCase().includes(query)
         if (!matched) return false
       }
       return true
@@ -155,21 +155,21 @@ function getCategoryLabel(category: string): string {
 
 // 功能分类图标映射（category 字段已是人类可读中文，无需 label 映射）
 const CATEGORY_ICONS: Record<string, string> = {
-  '数据输入': '📂',
-  '数据预处理': '🔧',
-  '遥感处理': '🛰',
-  '合成': '🔀',
-  '反演': '📐',
-  '统计分析': '📊',
-  '数据融合': '🔗',
-  '可视化': '📈',
+  数据输入: '📂',
+  数据预处理: '🔧',
+  遥感处理: '🛰',
+  合成: '🔀',
+  反演: '📐',
+  统计分析: '📊',
+  数据融合: '🔗',
+  可视化: '📈',
   '天气-数据抓取': '☀',
   '天气-渲染': '🎨',
   '天气-处理': '⚙',
   'GEE-数据': '🌍',
   'GEE-处理': '🛠',
-  'GIS工具': '🗺',
-  '输出': '📤',
+  GIS工具: '🗺',
+  输出: '📤',
 }
 
 function getCategoryIcon(category: string): string {
@@ -228,7 +228,11 @@ function isFavorite(type: string): boolean {
         :key="filter.key"
         class="engine-filter-btn"
         :class="{ active: activeEngineFilter === filter.key }"
-        :style="activeEngineFilter === filter.key ? { borderColor: filter.color, color: filter.color, background: filter.color + '20' } : {}"
+        :style="
+          activeEngineFilter === filter.key
+            ? { borderColor: filter.color, color: filter.color, background: filter.color + '20' }
+            : {}
+        "
         type="button"
         @click="activeEngineFilter = filter.key"
       >
@@ -246,16 +250,19 @@ function isFavorite(type: string): boolean {
 
     <div class="palette-content">
       <!-- 收藏夹分区 -->
-      <div v-if="favoriteTemplates.length && !searchQuery && activeEngineFilter === 'all'" class="category-group favorites-group">
-        <button
-          class="category-header"
-          type="button"
-          @click="toggleCategory('__favorites__')"
-        >
+      <div
+        v-if="favoriteTemplates.length && !searchQuery && activeEngineFilter === 'all'"
+        class="category-group favorites-group"
+      >
+        <button class="category-header" type="button" @click="toggleCategory('__favorites__')">
           <span class="category-icon" aria-hidden="true">★</span>
           <span class="category-label">收藏</span>
           <span class="category-count">{{ favoriteTemplates.length }}</span>
-          <span class="category-toggle" :class="{ collapsed: collapsedCategories.has('__favorites__') }">▾</span>
+          <span
+            class="category-toggle"
+            :class="{ collapsed: collapsedCategories.has('__favorites__') }"
+            >▾</span
+          >
         </button>
         <div v-if="!collapsedCategories.has('__favorites__')" class="category-items">
           <button
@@ -269,28 +276,38 @@ function isFavorite(type: string): boolean {
           >
             <div class="node-item-header">
               <span class="node-item-title">{{ tpl.title }}</span>
-              <span class="node-item-favorite-btn favorited" title="取消收藏" @click.stop="toggleFavorite(tpl.type)">★</span>
+              <span
+                class="node-item-favorite-btn favorited"
+                title="取消收藏"
+                @click.stop="toggleFavorite(tpl.type)"
+                >★</span
+              >
             </div>
             <div v-if="tpl.description" class="node-item-desc">{{ tpl.description }}</div>
             <div class="node-item-ports">
               <span v-if="tpl.inputs.length" class="port-count in">{{ tpl.inputs.length }} 入</span>
-              <span v-if="tpl.outputs.length" class="port-count out">{{ tpl.outputs.length }} 出</span>
+              <span v-if="tpl.outputs.length" class="port-count out"
+                >{{ tpl.outputs.length }} 出</span
+              >
             </div>
           </button>
         </div>
       </div>
 
       <!-- 最近使用分区 -->
-      <div v-if="recentTemplates.length && !searchQuery && activeEngineFilter === 'all'" class="category-group recent-group">
-        <button
-          class="category-header"
-          type="button"
-          @click="toggleCategory('__recent__')"
-        >
+      <div
+        v-if="recentTemplates.length && !searchQuery && activeEngineFilter === 'all'"
+        class="category-group recent-group"
+      >
+        <button class="category-header" type="button" @click="toggleCategory('__recent__')">
           <span class="category-icon" aria-hidden="true">🕐</span>
           <span class="category-label">最近使用</span>
           <span class="category-count">{{ recentTemplates.length }}</span>
-          <span class="category-toggle" :class="{ collapsed: collapsedCategories.has('__recent__') }">▾</span>
+          <span
+            class="category-toggle"
+            :class="{ collapsed: collapsedCategories.has('__recent__') }"
+            >▾</span
+          >
         </button>
         <div v-if="!collapsedCategories.has('__recent__')" class="category-items">
           <button
@@ -309,12 +326,15 @@ function isFavorite(type: string): boolean {
                 :class="{ favorited: isFavorite(tpl.type) }"
                 :title="isFavorite(tpl.type) ? '取消收藏' : '加入收藏'"
                 @click.stop="toggleFavorite(tpl.type)"
-              >{{ isFavorite(tpl.type) ? '★' : '☆' }}</span>
+                >{{ isFavorite(tpl.type) ? '★' : '☆' }}</span
+              >
             </div>
             <div v-if="tpl.description" class="node-item-desc">{{ tpl.description }}</div>
             <div class="node-item-ports">
               <span v-if="tpl.inputs.length" class="port-count in">{{ tpl.inputs.length }} 入</span>
-              <span v-if="tpl.outputs.length" class="port-count out">{{ tpl.outputs.length }} 出</span>
+              <span v-if="tpl.outputs.length" class="port-count out"
+                >{{ tpl.outputs.length }} 出</span
+              >
             </div>
           </button>
         </div>
@@ -330,15 +350,17 @@ function isFavorite(type: string): boolean {
         :key="category"
         class="category-group"
       >
-        <button
-          class="category-header"
-          type="button"
-          @click="toggleCategory(String(category))"
-        >
-          <span class="category-icon" aria-hidden="true">{{ getCategoryIcon(String(category)) }}</span>
+        <button class="category-header" type="button" @click="toggleCategory(String(category))">
+          <span class="category-icon" aria-hidden="true">{{
+            getCategoryIcon(String(category))
+          }}</span>
           <span class="category-label">{{ getCategoryLabel(String(category)) }}</span>
           <span class="category-count">{{ templates.length }}</span>
-          <span class="category-toggle" :class="{ collapsed: collapsedCategories.has(String(category)) }">▾</span>
+          <span
+            class="category-toggle"
+            :class="{ collapsed: collapsedCategories.has(String(category)) }"
+            >▾</span
+          >
         </button>
 
         <div v-if="!collapsedCategories.has(String(category))" class="category-items">
@@ -358,13 +380,16 @@ function isFavorite(type: string): boolean {
                 :class="{ favorited: isFavorite(tpl.type) }"
                 :title="isFavorite(tpl.type) ? '取消收藏' : '加入收藏'"
                 @click.stop="toggleFavorite(tpl.type)"
-              >{{ isFavorite(tpl.type) ? '★' : '☆' }}</span>
+                >{{ isFavorite(tpl.type) ? '★' : '☆' }}</span
+              >
             </div>
             <div class="node-item-type">{{ tpl.type }}</div>
             <div v-if="tpl.description" class="node-item-desc">{{ tpl.description }}</div>
             <div class="node-item-ports">
               <span v-if="tpl.inputs.length" class="port-count in">{{ tpl.inputs.length }} 入</span>
-              <span v-if="tpl.outputs.length" class="port-count out">{{ tpl.outputs.length }} 出</span>
+              <span v-if="tpl.outputs.length" class="port-count out"
+                >{{ tpl.outputs.length }} 出</span
+              >
             </div>
           </button>
         </div>
@@ -539,7 +564,9 @@ function isFavorite(type: string): boolean {
   font-size: 0.62rem;
   font-weight: 600;
   text-align: left;
-  transition: background 0.16s ease, color 0.16s ease;
+  transition:
+    background 0.16s ease,
+    color 0.16s ease;
 }
 
 .category-header:hover {
@@ -593,7 +620,10 @@ function isFavorite(type: string): boolean {
   cursor: pointer;
   font: inherit;
   text-align: left;
-  transition: border-color 0.16s ease, background 0.16s ease, transform 0.12s ease;
+  transition:
+    border-color 0.16s ease,
+    background 0.16s ease,
+    transform 0.12s ease;
 }
 
 .node-item:hover {
@@ -633,7 +663,9 @@ function isFavorite(type: string): boolean {
   cursor: pointer;
   font-size: 0.72rem;
   line-height: 1;
-  transition: color 0.16s ease, transform 0.12s ease;
+  transition:
+    color 0.16s ease,
+    transform 0.12s ease;
 }
 
 .node-item-favorite-btn:hover {

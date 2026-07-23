@@ -64,12 +64,12 @@ export interface WorkflowDefinitionNode {
 }
 
 export interface WorkflowDefinitionLink {
-  0: number  // link_id
-  1: number  // from_node_id
-  2: number  // from_slot
-  3: number  // to_node_id
-  4: number  // to_slot
-  5: string  // type
+  0: number // link_id
+  1: number // from_node_id
+  2: number // from_slot
+  3: number // to_node_id
+  4: number // to_slot
+  5: string // type
 }
 
 export interface WorkflowDefinitionMeta {

@@ -5,7 +5,7 @@
 import ParamCombobox from './ParamCombobox.vue'
 import type { NodeParamSpec } from '../../services/workflow-definition-api'
 
-const props = defineProps<{
+defineProps<{
   paramKey: string
   value: unknown
   meta?: NodeParamSpec | null
@@ -42,6 +42,7 @@ const CLOSED_OPTION_KEYS = new Set([
   'z_unit',
   'native_resolution_unit',
   'method',
+  'preset',
 ])
 
 function allowCustom(meta?: NodeParamSpec | null, paramKey?: string): boolean {
@@ -109,18 +110,21 @@ function onCombo(v: string) {
     @input="onNumberInput"
   />
 
-  <div
-    v-else-if="meta?.type === 'array'"
-    class="array-editor"
-  >
-    <span v-for="(item, idx) in (Array.isArray(value) ? value.map(String) : String(value ?? '').split(',').map(s => s.trim()).filter(Boolean))" :key="idx" class="array-chip">
+  <div v-else-if="meta?.type === 'array'" class="array-editor">
+    <span
+      v-for="(item, idx) in Array.isArray(value)
+        ? value.map(String)
+        : String(value ?? '')
+            .split(',')
+            .map((s) => s.trim())
+            .filter(Boolean)"
+      :key="idx"
+      class="array-chip"
+    >
       {{ item }}
-      <button
-        v-if="!readonly"
-        class="chip-remove"
-        type="button"
-        @click="emit('removeArray', idx)"
-      >✕</button>
+      <button v-if="!readonly" class="chip-remove" type="button" @click="emit('removeArray', idx)">
+        ✕
+      </button>
     </span>
     <input
       v-if="!readonly"

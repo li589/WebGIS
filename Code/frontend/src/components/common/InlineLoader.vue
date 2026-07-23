@@ -20,7 +20,13 @@ withDefaults(
 </script>
 
 <template>
-  <div class="inline-loader" :class="[`size-${size}`, { block }]" role="status" aria-live="polite" aria-busy="true">
+  <div
+    class="inline-loader"
+    :class="[`size-${size}`, { block }]"
+    role="status"
+    aria-live="polite"
+    aria-busy="true"
+  >
     <span class="inline-spinner" aria-hidden="true"></span>
     <span v-if="label" class="inline-label">{{ label }}</span>
   </div>
@@ -67,6 +73,8 @@ withDefaults(
 }
 
 @keyframes inline-spin {
-  to { transform: rotate(360deg); }
+  to {
+    transform: rotate(360deg);
+  }
 }
 </style>

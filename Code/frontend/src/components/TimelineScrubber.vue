@@ -76,9 +76,19 @@ const phaseIcon = computed(() => {
 })
 
 const nearestSegment = computed(() => {
-  return props.timelineSegments.reduce((closest, segment) => {
-    return Math.abs(segment.hour - props.currentHour) < Math.abs(closest.hour - props.currentHour) ? segment : closest
-  }, props.timelineSegments[0] ?? { hour: 0, label: '00:00', state: 'empty' as const, availabilityLabel: '无数据' })
+  return props.timelineSegments.reduce(
+    (closest, segment) => {
+      return Math.abs(segment.hour - props.currentHour) < Math.abs(closest.hour - props.currentHour)
+        ? segment
+        : closest
+    },
+    props.timelineSegments[0] ?? {
+      hour: 0,
+      label: '00:00',
+      state: 'empty' as const,
+      availabilityLabel: '无数据',
+    },
+  )
 })
 
 const trackStyle = computed(() => ({
@@ -155,8 +165,16 @@ function jumpToNow() {
         <button class="nav-btn" type="button" title="后一天" @click="shiftDate(1)">
           <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M6 3l5 5-5 5" /></svg>
         </button>
-        <button class="nav-btn nav-btn--now" type="button" title="跳转到当前时刻" @click="jumpToNow">
-          <svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="5.5" /><path d="M8 5v3l2 1.5" /></svg>
+        <button
+          class="nav-btn nav-btn--now"
+          type="button"
+          title="跳转到当前时刻"
+          @click="jumpToNow"
+        >
+          <svg viewBox="0 0 16 16" aria-hidden="true">
+            <circle cx="8" cy="8" r="5.5" />
+            <path d="M8 5v3l2 1.5" />
+          </svg>
         </button>
       </div>
 
@@ -173,9 +191,11 @@ function jumpToNow() {
           :class="{ 'sync-time-btn--on': unifiedTimeLock }"
           :aria-pressed="unifiedTimeLock ? 'true' : 'false'"
           :aria-label="unifiedTimeLock ? '统一时间（已开启）' : '分图层记忆（已开启）'"
-          :title="unifiedTimeLock
-            ? '统一时间：切层保持同一时刻（点击切换为分图层）'
-            : '分图层：按图层记忆时刻（点击切换为统一时间）'"
+          :title="
+            unifiedTimeLock
+              ? '统一时间：切层保持同一时刻（点击切换为分图层）'
+              : '分图层：按图层记忆时刻（点击切换为统一时间）'
+          "
           @click="emit('toggleUnifiedTime')"
         >
           <!-- 统一：链条锁定同一时刻 -->
@@ -206,8 +226,13 @@ function jumpToNow() {
           :title="playing ? '暂停' : '播放'"
           @click="emit('togglePlay')"
         >
-          <svg v-if="!playing" viewBox="0 0 16 16" aria-hidden="true"><path d="M4 2.5v11l9-5.5z" /></svg>
-          <svg v-else viewBox="0 0 16 16" aria-hidden="true"><rect x="3.5" y="3" width="3" height="10" rx="0.5" /><rect x="9.5" y="3" width="3" height="10" rx="0.5" /></svg>
+          <svg v-if="!playing" viewBox="0 0 16 16" aria-hidden="true">
+            <path d="M4 2.5v11l9-5.5z" />
+          </svg>
+          <svg v-else viewBox="0 0 16 16" aria-hidden="true">
+            <rect x="3.5" y="3" width="3" height="10" rx="0.5" />
+            <rect x="9.5" y="3" width="3" height="10" rx="0.5" />
+          </svg>
         </button>
         <div class="step-group">
           <button class="step-btn" type="button" title="前 1 小时" @click="emit('step', -1)">
@@ -222,7 +247,10 @@ function jumpToNow() {
 
     <!-- 中部：数据可用性 + 滑块 + 刻度 -->
     <div class="timeline-track">
-      <div class="availability-caption" :title="`${coverageCaption} · ${nearestSegment.availabilityLabel}`">
+      <div
+        class="availability-caption"
+        :title="`${coverageCaption} · ${nearestSegment.availabilityLabel}`"
+      >
         <span class="availability-caption-main">{{ coverageCaption }}</span>
         <strong class="availability-caption-status">{{ nearestSegment.availabilityLabel }}</strong>
         <span class="availability-live">{{ liveLabel }}</span>
@@ -277,9 +305,15 @@ function jumpToNow() {
 
     <!-- 底部：元信息 -->
     <div class="timeline-meta">
-      <span class="meta-text meta-text--left">阶段 <strong>{{ phaseLabel }}</strong></span>
-      <span class="meta-text meta-text--center">进度 <strong>{{ progressPercent }}</strong></span>
-      <span class="meta-text meta-text--right">观测时次 <strong>{{ observationTimeLabel }}</strong></span>
+      <span class="meta-text meta-text--left"
+        >阶段 <strong>{{ phaseLabel }}</strong></span
+      >
+      <span class="meta-text meta-text--center"
+        >进度 <strong>{{ progressPercent }}</strong></span
+      >
+      <span class="meta-text meta-text--right"
+        >观测时次 <strong>{{ observationTimeLabel }}</strong></span
+      >
     </div>
   </section>
 </template>
@@ -289,8 +323,8 @@ function jumpToNow() {
   padding: 0.22rem 0.28rem 0.18rem;
   border-radius: 0.9rem;
   background:
-    radial-gradient(circle at 18% 0%, rgba(90,162,255,.12), transparent 34%),
-    linear-gradient(180deg, rgba(255,255,255,.025), rgba(255,255,255,0));
+    radial-gradient(circle at 18% 0%, rgba(90, 162, 255, 0.12), transparent 34%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.025), rgba(255, 255, 255, 0));
   width: 100%;
   max-width: none;
   margin: 0;
@@ -329,7 +363,10 @@ function jumpToNow() {
   background: transparent;
   color: #b0c4d8;
   cursor: pointer;
-  transition: color 0.18s ease, background-color 0.18s ease, border-color 0.18s ease;
+  transition:
+    color 0.18s ease,
+    background-color 0.18s ease,
+    border-color 0.18s ease;
 }
 .nav-btn:hover {
   color: #f4fbff;
@@ -463,7 +500,11 @@ function jumpToNow() {
   background: rgba(8, 18, 33, 0.45);
   color: #9bb0c4;
   cursor: pointer;
-  transition: color 0.18s ease, border-color 0.18s ease, background-color 0.18s ease, box-shadow 0.18s ease;
+  transition:
+    color 0.18s ease,
+    border-color 0.18s ease,
+    background-color 0.18s ease,
+    box-shadow 0.18s ease;
 }
 .sync-time-btn:hover {
   color: #eaf3fb;
@@ -490,7 +531,9 @@ function jumpToNow() {
   background: linear-gradient(180deg, rgba(90, 162, 255, 0.3), rgba(45, 110, 212, 0.18));
   border-color: rgba(90, 162, 255, 0.5);
   color: #f4fbff;
-  box-shadow: 0 0 0 3px rgba(90, 162, 255, 0.12), 0 4px 12px rgba(1, 8, 16, 0.1);
+  box-shadow:
+    0 0 0 3px rgba(90, 162, 255, 0.12),
+    0 4px 12px rgba(1, 8, 16, 0.1);
 }
 .play-btn svg {
   width: 0.76rem;
@@ -592,9 +635,15 @@ function jumpToNow() {
   opacity: 0.9;
   box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.04);
 }
-.availability-ready { background: rgba(114, 255, 207, 0.92); }
-.availability-partial { background: rgba(255, 196, 120, 0.9); }
-.availability-empty { background: rgba(187, 137, 255, 0.82); }
+.availability-ready {
+  background: rgba(114, 255, 207, 0.92);
+}
+.availability-partial {
+  background: rgba(255, 196, 120, 0.9);
+}
+.availability-empty {
+  background: rgba(187, 137, 255, 0.82);
+}
 
 .track-interactive {
   position: relative;
@@ -609,7 +658,9 @@ function jumpToNow() {
   background: rgba(255, 255, 255, 0.06);
   border: 1px solid rgba(136, 192, 255, 0.12);
 }
-.track-fill, .track-buffer, .track-thumb {
+.track-fill,
+.track-buffer,
+.track-thumb {
   position: absolute;
   top: 0;
   bottom: 0;
@@ -677,9 +728,14 @@ function jumpToNow() {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  transition: color 0.2s ease, border-color 0.2s ease, background-color 0.2s ease, transform 0.2s ease;
+  transition:
+    color 0.2s ease,
+    border-color 0.2s ease,
+    background-color 0.2s ease,
+    transform 0.2s ease;
 }
-.tick-button.active, .tick-button:hover {
+.tick-button.active,
+.tick-button:hover {
   color: #f3fbff;
   transform: translateY(-1px);
 }
@@ -688,9 +744,15 @@ function jumpToNow() {
   background: rgba(90, 162, 255, 0.12);
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05);
 }
-.tick-ready { color: #a6f4d1; }
-.tick-partial { color: #ffd38a; }
-.tick-empty { color: #d5c0ff; }
+.tick-ready {
+  color: #a6f4d1;
+}
+.tick-partial {
+  color: #ffd38a;
+}
+.tick-empty {
+  color: #d5c0ff;
+}
 
 /* ── 底部元信息 ────────────────────────────────────────────── */
 .timeline-meta {
@@ -715,27 +777,47 @@ function jumpToNow() {
   font-weight: 600;
   white-space: nowrap;
 }
-.meta-text--left { justify-self: start; }
-.meta-text--center { justify-self: center; text-align: center; }
-.meta-text--right { justify-self: end; }
+.meta-text--left {
+  justify-self: start;
+}
+.meta-text--center {
+  justify-self: center;
+  text-align: center;
+}
+.meta-text--right {
+  justify-self: end;
+}
 
 /* ── 响应式 ────────────────────────────────────────────────── */
 @media (max-width: 700px) {
-  .timeline { padding: 0.16rem 0.16rem 0.2rem; }
+  .timeline {
+    padding: 0.16rem 0.16rem 0.2rem;
+  }
   .timeline-top {
     grid-template-columns: 1fr;
     gap: 0.3rem;
   }
-  .time-heading { justify-content: flex-start; }
-  .top-actions { justify-self: flex-start; }
-  .timeline-track { padding: 0.42rem 0.38rem 0.46rem; }
-  .timeline-ticks { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+  .time-heading {
+    justify-content: flex-start;
+  }
+  .top-actions {
+    justify-self: flex-start;
+  }
+  .timeline-track {
+    padding: 0.42rem 0.38rem 0.46rem;
+  }
+  .timeline-ticks {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
   .timeline-meta {
     grid-template-columns: 1fr;
     gap: 0.16rem;
   }
   .meta-text--left,
   .meta-text--center,
-  .meta-text--right { justify-self: start; text-align: left; }
+  .meta-text--right {
+    justify-self: start;
+    text-align: left;
+  }
 }
 </style>

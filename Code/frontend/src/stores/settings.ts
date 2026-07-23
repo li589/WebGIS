@@ -29,6 +29,7 @@ import {
   deleteWeatherProvider,
   fetchDataSourceConfig,
   fetchAboutInfo,
+  updateRuntimeConfig,
   fetchRemoteStorageProfiles,
   upsertRemoteStorageProfile,
   deleteRemoteStorageProfile,
@@ -52,6 +53,7 @@ import {
   type DataSourceConfig,
   type AboutInfo,
   type TestResult,
+  type RuntimeConfigPatch,
   type RemoteStorageProfile,
   type RemoteStorageUpsertRequest,
   type RemoteStorageTestResult,
@@ -81,7 +83,10 @@ const LOADER_LABELS: Record<LoaderName, string> = {
   about: '关于',
 }
 
-async function settled<T>(name: LoaderName, fn: () => Promise<T>): Promise<{ name: LoaderName; value?: T; error?: string }> {
+async function settled<T>(
+  name: LoaderName,
+  fn: () => Promise<T>,
+): Promise<{ name: LoaderName; value?: T; error?: string }> {
   try {
     return { name, value: await fn() }
   } catch (err) {
@@ -116,17 +121,18 @@ export const useSettingsStore = defineStore('settings', () => {
     partialError.value = null
     failedLoaders.value = []
 
-    const runBatch = () => Promise.all([
-      settled('general', fetchGeneralConfig),
-      settled('api-keys', fetchApiKeys),
-      settled('gee-accounts', fetchGeeAccounts),
-      settled('gee-runtime', fetchGeeRuntimeConfig),
-      settled('weather', fetchWeatherConfig),
-      settled('weather-providers', fetchWeatherProviders),
-      settled('data-source', fetchDataSourceConfig),
-      settled('remote-storage', fetchRemoteStorageProfiles),
-      settled('about', fetchAboutInfo),
-    ])
+    const runBatch = () =>
+      Promise.all([
+        settled('general', fetchGeneralConfig),
+        settled('api-keys', fetchApiKeys),
+        settled('gee-accounts', fetchGeeAccounts),
+        settled('gee-runtime', fetchGeeRuntimeConfig),
+        settled('weather', fetchWeatherConfig),
+        settled('weather-providers', fetchWeatherProviders),
+        settled('data-source', fetchDataSourceConfig),
+        settled('remote-storage', fetchRemoteStorageProfiles),
+        settled('about', fetchAboutInfo),
+      ])
 
     let results = await runBatch()
 
@@ -135,20 +141,22 @@ export const useSettingsStore = defineStore('settings', () => {
     if (failedOnce.length > 0) {
       await new Promise((resolve) => window.setTimeout(resolve, 350))
       const retryMap = new Map<LoaderName, Awaited<ReturnType<typeof settled>>>()
-      await Promise.all(failedOnce.map(async (item) => {
-        const loader = {
-          general: () => settled('general', fetchGeneralConfig),
-          'api-keys': () => settled('api-keys', fetchApiKeys),
-          'gee-accounts': () => settled('gee-accounts', fetchGeeAccounts),
-          'gee-runtime': () => settled('gee-runtime', fetchGeeRuntimeConfig),
-          weather: () => settled('weather', fetchWeatherConfig),
-          'weather-providers': () => settled('weather-providers', fetchWeatherProviders),
-          'data-source': () => settled('data-source', fetchDataSourceConfig),
-          'remote-storage': () => settled('remote-storage', fetchRemoteStorageProfiles),
-          about: () => settled('about', fetchAboutInfo),
-        }[item.name]
-        retryMap.set(item.name, await loader())
-      }))
+      await Promise.all(
+        failedOnce.map(async (item) => {
+          const loader = {
+            general: () => settled('general', fetchGeneralConfig),
+            'api-keys': () => settled('api-keys', fetchApiKeys),
+            'gee-accounts': () => settled('gee-accounts', fetchGeeAccounts),
+            'gee-runtime': () => settled('gee-runtime', fetchGeeRuntimeConfig),
+            weather: () => settled('weather', fetchWeatherConfig),
+            'weather-providers': () => settled('weather-providers', fetchWeatherProviders),
+            'data-source': () => settled('data-source', fetchDataSourceConfig),
+            'remote-storage': () => settled('remote-storage', fetchRemoteStorageProfiles),
+            about: () => settled('about', fetchAboutInfo),
+          }[item.name]
+          retryMap.set(item.name, await loader())
+        }),
+      )
       results = results.map((r) => retryMap.get(r.name) ?? r)
     }
 
@@ -194,8 +202,9 @@ export const useSettingsStore = defineStore('settings', () => {
 
     // 仅当常规配置也失败时阻断主内容区
     if (!generalConfig.value) {
-      error.value = failures.find((f) => f.name === 'general')?.error
-        ?? '无法连接配置服务（请确认后端已启动，且 Vite 已代理 /config）'
+      error.value =
+        failures.find((f) => f.name === 'general')?.error ??
+        '无法连接配置服务（请确认后端已启动，且 Vite 已代理 /config）'
     }
 
     loading.value = false
@@ -309,15 +318,15 @@ export const useSettingsStore = defineStore('settings', () => {
       weatherProviders.value = await fetchWeatherProviders()
       return true
     } catch (err) {
-      console.warn('[settings] refresh weather providers failed (operation may have succeeded):', err)
+      console.warn(
+        '[settings] refresh weather providers failed (operation may have succeeded):',
+        err,
+      )
       return false
     }
   }
 
-  async function saveWeatherProvider(
-    providerId: string,
-    request: WeatherProviderUpdateRequest,
-  ) {
+  async function saveWeatherProvider(providerId: string, request: WeatherProviderUpdateRequest) {
     const updated = await updateWeatherProvider(providerId, request)
     await _refreshProvidersSilently()
     return updated
@@ -366,7 +375,10 @@ export const useSettingsStore = defineStore('settings', () => {
     await loadRemoteStorageProfiles()
   }
 
-  async function runRemoteStorageTest(profileId: string, uri?: string | null): Promise<RemoteStorageTestResult> {
+  async function runRemoteStorageTest(
+    profileId: string,
+    uri?: string | null,
+  ): Promise<RemoteStorageTestResult> {
     const result = await testRemoteStorageProfile(profileId, uri)
     await loadRemoteStorageProfiles()
     return result
@@ -398,7 +410,13 @@ export const useSettingsStore = defineStore('settings', () => {
 
   async function saveWeatherDefaultModel(defaultModel: string) {
     const updated = await updateWeatherDefaultModel(defaultModel)
-    weatherConfig.value = { ...(weatherConfig.value ?? {} as WeatherConfig), ...updated }
+    weatherConfig.value = { ...(weatherConfig.value ?? ({} as WeatherConfig)), ...updated }
+    return updated
+  }
+
+  async function saveRuntimeConfig(patch: RuntimeConfigPatch | RuntimeConfigPatch[]) {
+    const items = Array.isArray(patch) ? patch : [patch]
+    const updated = await updateRuntimeConfig(items)
     return updated
   }
 
@@ -442,6 +460,7 @@ export const useSettingsStore = defineStore('settings', () => {
     updateWeatherProviderPriority,
     removeWeatherProvider,
     saveWeatherDefaultModel,
+    saveRuntimeConfig,
     loadRemoteStorageProfiles,
     saveRemoteStorageProfile,
     removeRemoteStorageProfile,

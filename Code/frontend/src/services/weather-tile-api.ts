@@ -87,9 +87,7 @@ export function lngLatToTile(lng: number, lat: number, z: number): WeatherTileCo
   // 纬度 clamp 到 Web Mercator 有效范围
   const clampedLat = Math.max(-_WEB_MERCATOR_MAX_LAT, Math.min(_WEB_MERCATOR_MAX_LAT, lat))
   const latRad = (clampedLat * Math.PI) / 180
-  const y = Math.floor(
-    ((1 - Math.log(Math.tan(latRad) + 1 / Math.cos(latRad)) / Math.PI) / 2) * n,
-  )
+  const y = Math.floor(((1 - Math.log(Math.tan(latRad) + 1 / Math.cos(latRad)) / Math.PI) / 2) * n)
   return {
     z,
     x: Math.max(0, Math.min(n - 1, x)),
@@ -128,11 +126,7 @@ export function tileToLngLatBounds(z: number, x: number, y: number): LngLatBound
  * @param buffer 视口外扩圈数（0 = 仅边界内，1 = 外扩一圈）
  * @returns 主世界瓦片坐标集合（经度已归一化到 [0, n)）
  */
-export function tilesInBounds(
-  bounds: LngLatBounds,
-  z: number,
-  buffer = 0,
-): WeatherTileCoords[] {
+export function tilesInBounds(bounds: LngLatBounds, z: number, buffer = 0): WeatherTileCoords[] {
   const clampedZ = Math.max(0, Math.min(12, Math.round(z)))
   const n = 2 ** clampedZ
 
@@ -294,7 +288,11 @@ export async function fetchWeatherTile(
       clearTimeout(timeoutId)
       timeoutController.abort(externalSignal.reason)
     } else {
-      externalSignal.addEventListener('abort', () => timeoutController.abort(externalSignal.reason), { once: true })
+      externalSignal.addEventListener(
+        'abort',
+        () => timeoutController.abort(externalSignal.reason),
+        { once: true },
+      )
     }
   }
 
@@ -311,7 +309,10 @@ export async function fetchWeatherTile(
   } catch (err) {
     // 区分超时和外部取消：超时时 externalSignal 未 abort，但 timeoutController 已 abort
     if (err instanceof DOMException && err.name === 'AbortError' && !externalSignal?.aborted) {
-      throw new Error(`Weather tile request timeout after ${TILE_FETCH_TIMEOUT_MS / 1000}s: ${url}`, { cause: err })
+      throw new Error(
+        `Weather tile request timeout after ${TILE_FETCH_TIMEOUT_MS / 1000}s: ${url}`,
+        { cause: err },
+      )
     }
     throw err
   } finally {

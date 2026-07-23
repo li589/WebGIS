@@ -37,7 +37,8 @@ export function createMapCanvasRuntimeModule(
   options: CreateMapCanvasRuntimeModuleOptions,
 ): MapCanvasRuntimeModule {
   const watchBasemapSourceImpl = options.dependencies?.watchBasemapSource ?? watchBasemapSource
-  const watchInteractionModeImpl = options.dependencies?.watchInteractionMode ?? watchInteractionMode
+  const watchInteractionModeImpl =
+    options.dependencies?.watchInteractionMode ?? watchInteractionMode
   const watchAdminBoundaryOverlayImpl =
     options.dependencies?.watchAdminBoundaryOverlay ?? watchAdminBoundaryOverlay
   const watchMeasureStateImpl = options.dependencies?.watchMeasureState ?? watchMeasureState

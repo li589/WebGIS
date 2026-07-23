@@ -4,6 +4,10 @@ import { createHotspotPinsModule } from './hotspot-pins-module'
 import { createMapInteractionModule } from './map-interaction-module'
 import { createMapCanvasRuntimeModule } from './map-canvas-runtime-module'
 import { createMapCanvasWeatherOverlayModule } from './map-canvas-weather-overlay-module'
+import {
+  createMapCanvasNonWeatherLayerSyncModule,
+  type MapCanvasNonWeatherLayerSyncModule,
+} from './map-canvas-non-weather-layer-sync-module'
 import { createMeasureModule } from './measure-module'
 import { createSelectedLayerFocusModule } from './selected-layer-focus-module'
 import type { WeatherOverlayModule } from './weather-overlay-module'
@@ -13,12 +17,14 @@ type MapInstance = import('maplibre-gl').Map
 type TileSourceId = import('../../services/api-config').TileSourceId
 type LayerHotspot = import('../../stores/layers/types').LayerHotspot
 type ActiveLayerDisplay = import('../../stores/layers/types').ActiveLayerDisplay
+type ActiveLayer = import('../../stores/layers/types').ActiveLayer
 type InteractionMode = import('../../stores/ui').InteractionMode
 type MeasureState = import('../../stores/ui').MeasureState
 type MeasurePoint = import('../../stores/ui').MeasurePoint
 type DebugLogger = (module: string, ...args: unknown[]) => void
 
 interface LayersStoreLike {
+  activeLayers: ActiveLayer[]
   activeLayersDisplay: ActiveLayerDisplay[]
   particleFlowCatalogId: string | null
   windDisplayMode: import('./wind-display-mode').WindDisplayMode
@@ -31,7 +37,12 @@ interface LayersStoreLike {
 }
 
 interface WeatherTileManagerLike {
-  getMergedGeojsonForViewport: (catalogId: string) => import('./weather-overlay-registry').WeatherOverlayState['geojsonData']
+  getMergedGeojsonForViewport: (
+    catalogId: string,
+  ) => import('./weather-overlay-registry').WeatherOverlayState['geojsonData']
+  getViewportBounds: (
+    catalogId: string,
+  ) => import('./weather-overlay-registry').WeatherOverlayState['viewportBounds']
   dataVersion: number
 }
 
@@ -39,6 +50,7 @@ export interface MapCanvasModuleBundle {
   basemapModule: ReturnType<typeof createBasemapModule>
   adminBoundaryModule: ReturnType<typeof createAdminBoundaryModule>
   weatherOverlayModule: WeatherOverlayModule
+  nonWeatherLayerSyncModule: MapCanvasNonWeatherLayerSyncModule
   hotspotPinsModule: ReturnType<typeof createHotspotPinsModule>
   mapInteractionModule: ReturnType<typeof createMapInteractionModule>
   mapCanvasRuntimeModule: ReturnType<typeof createMapCanvasRuntimeModule>
@@ -64,7 +76,16 @@ interface CreateMapCanvasModuleBundleOptions {
   setSelectedHotspotId: (hotspotId: string | null) => void
   emitVisibleHotspotsChange: (hotspots: LayerHotspot[]) => void
   emitHotspotSelect: (hotspot: LayerHotspot | null) => void
-  setHotspotPins: (pins: Array<{ id: string; name: string; value: string; left: string; top: string; selected: boolean }>) => void
+  setHotspotPins: (
+    pins: Array<{
+      id: string
+      name: string
+      value: string
+      left: string
+      top: string
+      selected: boolean
+    }>,
+  ) => void
   getInteractionMode: () => InteractionMode
   setIsMapInteracting: (interacting: boolean) => void
   scheduleHotspotSync: () => void
@@ -85,6 +106,7 @@ interface CreateMapCanvasModuleBundleOptions {
     createBasemapModule?: typeof createBasemapModule
     createAdminBoundaryModule?: typeof createAdminBoundaryModule
     createMapCanvasWeatherOverlayModule?: typeof createMapCanvasWeatherOverlayModule
+    createMapCanvasNonWeatherLayerSyncModule?: typeof createMapCanvasNonWeatherLayerSyncModule
     createHotspotPinsModule?: typeof createHotspotPinsModule
     createMapInteractionModule?: typeof createMapInteractionModule
     createMapCanvasRuntimeModule?: typeof createMapCanvasRuntimeModule
@@ -101,6 +123,9 @@ export function createMapCanvasModuleBundle(
     options.dependencies?.createAdminBoundaryModule ?? createAdminBoundaryModule
   const createMapCanvasWeatherOverlayModuleImpl =
     options.dependencies?.createMapCanvasWeatherOverlayModule ?? createMapCanvasWeatherOverlayModule
+  const createMapCanvasNonWeatherLayerSyncModuleImpl =
+    options.dependencies?.createMapCanvasNonWeatherLayerSyncModule ??
+    createMapCanvasNonWeatherLayerSyncModule
   const createHotspotPinsModuleImpl =
     options.dependencies?.createHotspotPinsModule ?? createHotspotPinsModule
   const createMapInteractionModuleImpl =
@@ -109,8 +134,7 @@ export function createMapCanvasModuleBundle(
     options.dependencies?.createMapCanvasRuntimeModule ?? createMapCanvasRuntimeModule
   const createSelectedLayerFocusModuleImpl =
     options.dependencies?.createSelectedLayerFocusModule ?? createSelectedLayerFocusModule
-  const createMeasureModuleImpl =
-    options.dependencies?.createMeasureModule ?? createMeasureModule
+  const createMeasureModuleImpl = options.dependencies?.createMeasureModule ?? createMeasureModule
 
   const basemapModule = createBasemapModuleImpl({
     map: options.map,
@@ -135,6 +159,14 @@ export function createMapCanvasModuleBundle(
     getCurrentHour: options.getCurrentHour,
     debugLog: options.debugLog,
     debounceMs: options.weatherDebounceMs,
+  })
+
+  const nonWeatherLayerSyncModule = createMapCanvasNonWeatherLayerSyncModuleImpl({
+    map: options.map,
+    getMapReady: options.getMapReady,
+    getActiveLayers: () => options.layersStore.activeLayers,
+    getActiveVisibleCatalogIds: () =>
+      options.layersStore.activeLayersDisplay.filter((l) => l.visible).map((l) => l.catalogId),
   })
 
   const hotspotPinsModule = createHotspotPinsModuleImpl({
@@ -203,6 +235,7 @@ export function createMapCanvasModuleBundle(
     basemapModule,
     adminBoundaryModule,
     weatherOverlayModule,
+    nonWeatherLayerSyncModule,
     hotspotPinsModule,
     mapInteractionModule,
     mapCanvasRuntimeModule,

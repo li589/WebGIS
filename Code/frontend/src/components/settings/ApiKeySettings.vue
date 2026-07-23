@@ -19,7 +19,9 @@ const { apiKeys, apiKeyHistory } = storeToRefs(settingsStore)
 
 const writeKeyDraft = ref('')
 const writeKeyLocalSet = ref(hasBackendWriteApiKey())
-const writeKeyFromEnv = computed(() => Boolean((import.meta.env.VITE_BACKEND_API_KEY as string | undefined)?.trim()))
+const writeKeyFromEnv = computed(() =>
+  Boolean((import.meta.env.VITE_BACKEND_API_KEY as string | undefined)?.trim()),
+)
 const writeKeyStatus = computed(() => {
   if (writeKeyLocalSet.value) return '已保存到本机 localStorage'
   if (writeKeyFromEnv.value) return '可用环境变量 VITE_BACKEND_API_KEY'
@@ -231,8 +233,9 @@ function statusBadge(item: ApiKeyItem): { text: string; class: string } | null {
     <section class="settings-section">
       <h3 class="section-title">底图服务 API Key</h3>
       <p class="section-hint">
-        天地图 / 百度需配置并<strong>启用</strong>后，工具栏对应底图才会可切换。
-        轮换 Key 时旧值会进入服务端加密历史，可一键恢复。本机偏好（折叠状态、最近备注）保存在浏览器 localStorage。
+        天地图 / 百度需配置并<strong>启用</strong>后，工具栏对应底图才会可切换。 轮换 Key
+        时旧值会进入服务端加密历史，可一键恢复。本机偏好（折叠状态、最近备注）保存在浏览器
+        localStorage。
       </p>
       <div class="key-card-list">
         <div
@@ -244,7 +247,9 @@ function statusBadge(item: ApiKeyItem): { text: string; class: string } | null {
           <div class="key-card-header">
             <span class="key-name">{{ item.display_name }}</span>
             <div class="key-badges">
-              <span v-if="sourceBadge(item)" class="key-badge badge-source">{{ sourceBadge(item) }}</span>
+              <span v-if="sourceBadge(item)" class="key-badge badge-source">{{
+                sourceBadge(item)
+              }}</span>
               <span v-if="statusBadge(item)" class="key-badge" :class="statusBadge(item)?.class">
                 {{ statusBadge(item)?.text }}
               </span>
@@ -252,7 +257,9 @@ function statusBadge(item: ApiKeyItem): { text: string; class: string } | null {
                 class="toggle-switch"
                 :class="{ on: item.enabled, locked: !canToggle(item) }"
                 :disabled="!canToggle(item)"
-                :title="!canToggle(item) ? '请先保存 API Key' : (item.enabled ? '点击禁用' : '点击启用')"
+                :title="
+                  !canToggle(item) ? '请先保存 API Key' : item.enabled ? '点击禁用' : '点击启用'
+                "
                 @click="toggleKey(item)"
               >
                 <span class="toggle-knob"></span>
@@ -279,7 +286,9 @@ function statusBadge(item: ApiKeyItem): { text: string; class: string } | null {
               />
               <button
                 class="action-btn save"
-                :disabled="getEditState(item.key_name).saving || !getEditState(item.key_name).value.trim()"
+                :disabled="
+                  getEditState(item.key_name).saving || !getEditState(item.key_name).value.trim()
+                "
                 @click="saveKey(item)"
               >
                 {{ getEditState(item.key_name).saving ? '保存中...' : '保存并启用' }}
@@ -307,7 +316,10 @@ function statusBadge(item: ApiKeyItem): { text: string; class: string } | null {
           <div
             v-if="testResults[item.key_name]"
             class="test-result"
-            :class="{ success: testResults[item.key_name].success, fail: !testResults[item.key_name].success }"
+            :class="{
+              success: testResults[item.key_name].success,
+              fail: !testResults[item.key_name].success,
+            }"
           >
             {{ testResults[item.key_name].message }}
           </div>
@@ -324,7 +336,9 @@ function statusBadge(item: ApiKeyItem): { text: string; class: string } | null {
               </button>
             </div>
             <p v-if="historyLoading[item.key_name]" class="history-empty">加载中…</p>
-            <p v-else-if="historyRows(item.key_name).length === 0" class="history-empty">暂无历史版本</p>
+            <p v-else-if="historyRows(item.key_name).length === 0" class="history-empty">
+              暂无历史版本
+            </p>
             <ul v-else class="history-list">
               <li v-for="row in historyRows(item.key_name)" :key="row.id" class="history-row">
                 <div class="history-meta">
@@ -365,7 +379,13 @@ function statusBadge(item: ApiKeyItem): { text: string; class: string } | null {
             class="toggle-switch"
             :class="{ on: backendAuthItem.enabled, locked: !canToggle(backendAuthItem) }"
             :disabled="!canToggle(backendAuthItem)"
-            :title="!canToggle(backendAuthItem) ? '请先保存认证 Key' : (backendAuthItem.enabled ? '点击禁用' : '点击启用')"
+            :title="
+              !canToggle(backendAuthItem)
+                ? '请先保存认证 Key'
+                : backendAuthItem.enabled
+                  ? '点击禁用'
+                  : '点击启用'
+            "
             @click="toggleKey(backendAuthItem)"
           >
             <span class="toggle-knob"></span>
@@ -383,12 +403,17 @@ function statusBadge(item: ApiKeyItem): { text: string; class: string } | null {
             />
             <button
               class="action-btn save"
-              :disabled="getEditState(backendAuthItem.key_name).saving || !getEditState(backendAuthItem.key_name).value.trim()"
+              :disabled="
+                getEditState(backendAuthItem.key_name).saving ||
+                !getEditState(backendAuthItem.key_name).value.trim()
+              "
               @click="saveKey(backendAuthItem)"
             >
               {{ getEditState(backendAuthItem.key_name).saving ? '保存中...' : '保存' }}
             </button>
-            <button class="action-btn cancel" @click="cancelEdit(backendAuthItem.key_name)">取消</button>
+            <button class="action-btn cancel" @click="cancelEdit(backendAuthItem.key_name)">
+              取消
+            </button>
           </template>
           <template v-else>
             <span class="key-value" :class="{ empty: !backendAuthItem.masked_value }">
@@ -402,16 +427,26 @@ function statusBadge(item: ApiKeyItem): { text: string; class: string } | null {
         </div>
         <div v-if="historyOpen[backendAuthItem.key_name]" class="history-panel">
           <p v-if="historyLoading[backendAuthItem.key_name]" class="history-empty">加载中…</p>
-          <p v-else-if="historyRows(backendAuthItem.key_name).length === 0" class="history-empty">暂无历史版本</p>
+          <p v-else-if="historyRows(backendAuthItem.key_name).length === 0" class="history-empty">
+            暂无历史版本
+          </p>
           <ul v-else class="history-list">
-            <li v-for="row in historyRows(backendAuthItem.key_name)" :key="row.id" class="history-row">
+            <li
+              v-for="row in historyRows(backendAuthItem.key_name)"
+              :key="row.id"
+              class="history-row"
+            >
               <div class="history-meta">
                 <code>{{ row.masked_value }}</code>
                 <span>{{ row.superseded_at }}</span>
               </div>
               <div class="history-actions">
-                <button class="action-btn save" @click="restoreHistory(backendAuthItem, row.id)">恢复</button>
-                <button class="action-btn cancel" @click="deleteHistory(backendAuthItem, row.id)">删除</button>
+                <button class="action-btn save" @click="restoreHistory(backendAuthItem, row.id)">
+                  恢复
+                </button>
+                <button class="action-btn cancel" @click="deleteHistory(backendAuthItem, row.id)">
+                  删除
+                </button>
               </div>
             </li>
           </ul>
@@ -422,8 +457,8 @@ function statusBadge(item: ApiKeyItem): { text: string; class: string } | null {
     <section class="settings-section">
       <h3 class="section-title">浏览器写请求密钥</h3>
       <p class="section-hint">
-        设置页与工作流写接口需要带 <code>X-Api-Key</code>。值保存在本机 <code>localStorage</code>（兼容旧 sessionStorage）。
-        当前：{{ writeKeyStatus }}
+        设置页与工作流写接口需要带 <code>X-Api-Key</code>。值保存在本机
+        <code>localStorage</code>（兼容旧 sessionStorage）。 当前：{{ writeKeyStatus }}
       </p>
       <div class="key-card">
         <div class="key-input-area">
@@ -434,8 +469,12 @@ function statusBadge(item: ApiKeyItem): { text: string; class: string } | null {
             autocomplete="new-password"
             placeholder="粘贴与后端 BACKEND_API_KEY / backend_auth 一致的密钥"
           />
-          <button class="action-btn save" :disabled="!writeKeyDraft.trim()" @click="saveWriteKey">保存到本机</button>
-          <button class="action-btn cancel" :disabled="!writeKeyLocalSet" @click="clearWriteKey">清除本机密钥</button>
+          <button class="action-btn save" :disabled="!writeKeyDraft.trim()" @click="saveWriteKey">
+            保存到本机
+          </button>
+          <button class="action-btn cancel" :disabled="!writeKeyLocalSet" @click="clearWriteKey">
+            清除本机密钥
+          </button>
           <button class="action-btn edit" @click="clearLocalPrefsOnly">清除本机偏好</button>
         </div>
       </div>

@@ -83,7 +83,12 @@ const activeStyle = computed<BasemapStyle>(() => {
 })
 
 const sourcesByStyle = computed(() => {
-  const result: Array<{ style: BasemapStyle; label: string; icon: string; sources: TileSourceConfig[] }> = []
+  const result: Array<{
+    style: BasemapStyle
+    label: string
+    icon: string
+    sources: TileSourceConfig[]
+  }> = []
   const styleMeta: Record<BasemapStyle, { label: string; icon: string }> = {
     none: { label: '空图', icon: '◇' },
     satellite: { label: '影像', icon: '◆' },
@@ -190,13 +195,22 @@ function handleWorkflowEditor() {
             title="移动模式（拖动平移地图）"
             @click="setInteractionMode('move')"
           >
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <polyline points="5 9 2 12 5 15"/>
-              <polyline points="9 5 12 2 15 5"/>
-              <polyline points="15 19 12 22 9 19"/>
-              <polyline points="19 9 22 12 19 15"/>
-              <line x1="2" y1="12" x2="22" y2="12"/>
-              <line x1="12" y1="2" x2="12" y2="22"/>
+            <svg
+              width="14"
+              height="14"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            >
+              <polyline points="5 9 2 12 5 15" />
+              <polyline points="9 5 12 2 15 5" />
+              <polyline points="15 19 12 22 9 19" />
+              <polyline points="19 9 22 12 19 15" />
+              <line x1="2" y1="12" x2="22" y2="12" />
+              <line x1="12" y1="2" x2="12" y2="22" />
             </svg>
           </button>
           <button
@@ -206,8 +220,17 @@ function handleWorkflowEditor() {
             title="选择模式（点击查询点信息）"
             @click="setInteractionMode('select')"
           >
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <path d="M3 3l7.07 16.97 2.51-7.39 7.39-2.51L3 3z"/>
+            <svg
+              width="14"
+              height="14"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            >
+              <path d="M3 3l7.07 16.97 2.51-7.39 7.39-2.51L3 3z" />
             </svg>
           </button>
           <button
@@ -217,11 +240,19 @@ function handleWorkflowEditor() {
             title="测量模式（点击打点，双击完成，右键撤销）"
             @click="setInteractionMode('measure')"
           >
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-                 stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <path d="M21 3L3 21"/>
-              <circle cx="21" cy="3" r="2" fill="currentColor"/>
-              <circle cx="3" cy="21" r="2" fill="currentColor"/>
+            <svg
+              width="14"
+              height="14"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            >
+              <path d="M21 3L3 21" />
+              <circle cx="21" cy="3" r="2" fill="currentColor" />
+              <circle cx="3" cy="21" r="2" fill="currentColor" />
             </svg>
           </button>
           <button
@@ -231,22 +262,25 @@ function handleWorkflowEditor() {
             title="清除测量路径"
             @click="clearMeasure"
           >
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-                 stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <path d="M3 6h18"/>
-              <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/>
-              <path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>
+            <svg
+              width="14"
+              height="14"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            >
+              <path d="M3 6h18" />
+              <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6" />
+              <path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
             </svg>
           </button>
         </div>
 
         <!-- 截图 -->
-        <button
-          class="tool-btn"
-          type="button"
-          title="导出截图"
-          @click="handleScreenshot"
-        >
+        <button class="tool-btn" type="button" title="导出截图" @click="handleScreenshot">
           <span class="btn-icon" aria-hidden="true">◫</span>
           <span class="btn-label">截图</span>
         </button>
@@ -263,26 +297,18 @@ function handleWorkflowEditor() {
         </button>
 
         <!-- 设置 -->
-        <button
-          class="tool-btn"
-          type="button"
-          title="系统设置"
-          @click="handleSettings"
-        >
+        <button class="tool-btn" type="button" title="系统设置" @click="handleSettings">
           <span class="btn-icon" aria-hidden="true">⚙</span>
           <span class="btn-label">设置</span>
         </button>
 
         <!-- 日志 -->
-        <button
-          class="tool-btn"
-          type="button"
-          title="系统日志"
-          @click="emit('openLog')"
-        >
+        <button class="tool-btn" type="button" title="系统日志" @click="emit('openLog')">
           <span class="btn-icon" aria-hidden="true">📋</span>
           <span class="btn-label">日志</span>
-          <span v-if="logStore.entries.length > 0" class="log-badge">{{ logStore.entries.length }}</span>
+          <span v-if="logStore.entries.length > 0" class="log-badge">{{
+            logStore.entries.length
+          }}</span>
         </button>
       </div>
     </div>
@@ -330,7 +356,7 @@ function handleWorkflowEditor() {
       <div class="toolbar-strip">
         <div v-if="activeStyle !== 'none'" class="source-pill">
           <button
-            v-for="source in sourcesByStyle.find(g => g.style === activeStyle)?.sources ?? []"
+            v-for="source in sourcesByStyle.find((g) => g.style === activeStyle)?.sources ?? []"
             :key="source.id"
             class="source-btn"
             :class="{
@@ -372,8 +398,7 @@ function handleWorkflowEditor() {
   border: 1px solid rgba(145, 197, 255, 0.14);
   border-radius: 1rem;
   background:
-    linear-gradient(180deg, rgba(8, 17, 31, 0.52), rgba(7, 15, 28, 0.44)),
-    rgba(8, 18, 33, 0.42);
+    linear-gradient(180deg, rgba(8, 17, 31, 0.52), rgba(7, 15, 28, 0.44)), rgba(8, 18, 33, 0.42);
   backdrop-filter: blur(18px);
   box-shadow:
     0 18px 42px rgba(1, 8, 16, 0.22),
@@ -404,10 +429,14 @@ function handleWorkflowEditor() {
   background:
     radial-gradient(circle at 30% 30%, rgba(255, 255, 255, 0.32), transparent 42%),
     linear-gradient(135deg, #5ad5ff, #2f7eff 58%, #7d7dff);
-  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.06), 0 12px 30px rgba(47, 126, 255, 0.28);
+  box-shadow:
+    0 0 0 1px rgba(255, 255, 255, 0.06),
+    0 12px 30px rgba(47, 126, 255, 0.28);
 }
 
-.brand-copy { min-width: 0; }
+.brand-copy {
+  min-width: 0;
+}
 
 .eyebrow {
   margin: 0 0 0.08rem;
@@ -448,7 +477,10 @@ h1 {
   font-size: 0.62rem;
   font-weight: 500;
   white-space: nowrap;
-  transition: border-color 0.18s ease, color 0.18s ease, background 0.18s ease;
+  transition:
+    border-color 0.18s ease,
+    color 0.18s ease,
+    background 0.18s ease;
 }
 
 .tool-btn:hover {
@@ -464,8 +496,13 @@ h1 {
   box-shadow: inset 0 0 0 1px rgba(90, 213, 255, 0.16);
 }
 
-.btn-icon { font-size: 0.72rem; opacity: 0.9; }
-.btn-label { font-size: 0.6rem; }
+.btn-icon {
+  font-size: 0.72rem;
+  opacity: 0.9;
+}
+.btn-label {
+  font-size: 0.6rem;
+}
 
 .log-badge {
   position: absolute;
@@ -505,7 +542,10 @@ h1 {
   background: transparent;
   color: #6e8ba0;
   cursor: pointer;
-  transition: background 0.16s ease, color 0.16s ease, border-color 0.16s ease;
+  transition:
+    background 0.16s ease,
+    color 0.16s ease,
+    border-color 0.16s ease;
 }
 
 .mode-btn:hover {
@@ -575,7 +615,10 @@ h1 {
   cursor: pointer;
   font: inherit;
   font-size: 0.64rem;
-  transition: background-color 0.2s ease, color 0.2s ease, transform 0.2s ease;
+  transition:
+    background-color 0.2s ease,
+    color 0.2s ease,
+    transform 0.2s ease;
   white-space: nowrap;
 }
 
@@ -597,7 +640,9 @@ h1 {
   opacity: 0.7;
 }
 
-.style-tab.active .style-icon { opacity: 1; }
+.style-tab.active .style-icon {
+  opacity: 1;
+}
 
 /* Source buttons */
 .source-pill {
@@ -631,7 +676,10 @@ h1 {
   font-size: 0.58rem;
   font-weight: 600;
   letter-spacing: 0.01em;
-  transition: background 0.16s ease, color 0.16s ease, transform 0.16s ease;
+  transition:
+    background 0.16s ease,
+    color 0.16s ease,
+    transform 0.16s ease;
 }
 
 .source-btn:hover {
@@ -673,11 +721,32 @@ h1 {
   text-overflow: ellipsis;
 }
 
-.availability-ready { color: #9ff8cf; border-color: rgba(114, 255, 207, 0.18); background: rgba(114, 255, 207, 0.1); }
-.availability-partial { color: #ffd38a; border-color: rgba(255, 196, 120, 0.18); background: rgba(255, 196, 120, 0.08); }
-.availability-empty { color: #d7c1ff; border-color: rgba(187, 137, 255, 0.2); background: rgba(187, 137, 255, 0.1); }
-.status-chip.warning { color: #ffc878; border-color: rgba(255, 180, 80, 0.2); background: rgba(255, 160, 60, 0.1); }
-.status-chip.dim-mode { color: #5ad5ff; border-color: rgba(90, 213, 255, 0.24); background: rgba(10, 132, 255, 0.12); font-weight: 600; }
+.availability-ready {
+  color: #9ff8cf;
+  border-color: rgba(114, 255, 207, 0.18);
+  background: rgba(114, 255, 207, 0.1);
+}
+.availability-partial {
+  color: #ffd38a;
+  border-color: rgba(255, 196, 120, 0.18);
+  background: rgba(255, 196, 120, 0.08);
+}
+.availability-empty {
+  color: #d7c1ff;
+  border-color: rgba(187, 137, 255, 0.2);
+  background: rgba(187, 137, 255, 0.1);
+}
+.status-chip.warning {
+  color: #ffc878;
+  border-color: rgba(255, 180, 80, 0.2);
+  background: rgba(255, 160, 60, 0.1);
+}
+.status-chip.dim-mode {
+  color: #5ad5ff;
+  border-color: rgba(90, 213, 255, 0.24);
+  background: rgba(10, 132, 255, 0.12);
+  font-weight: 600;
+}
 
 /* Time chip */
 .time-chip {
@@ -705,9 +774,19 @@ h1 {
     gap: 0.48rem;
   }
 
-  .toolbar-primary { flex-wrap: wrap; gap: 0.42rem; }
-  .toolbar-main { align-items: stretch; }
-  .toolbar-strip { justify-content: flex-start; }
-  .style-tabs { align-self: flex-start; flex-wrap: wrap; }
+  .toolbar-primary {
+    flex-wrap: wrap;
+    gap: 0.42rem;
+  }
+  .toolbar-main {
+    align-items: stretch;
+  }
+  .toolbar-strip {
+    justify-content: flex-start;
+  }
+  .style-tabs {
+    align-self: flex-start;
+    flex-wrap: wrap;
+  }
 }
 </style>

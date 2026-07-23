@@ -177,9 +177,10 @@ export function buildClockDayTimelineSegments(options: {
 }): TimelineAvailabilitySegment[] {
   const hours = [0, 3, 6, 9, 12, 15, 18, 21]
   const currentStatus = options.currentStatus
-  const currentRatio = currentStatus && currentStatus.viewportTotal > 0
-    ? currentStatus.cachedInViewport / currentStatus.viewportTotal
-    : 0
+  const currentRatio =
+    currentStatus && currentStatus.viewportTotal > 0
+      ? currentStatus.cachedInViewport / currentStatus.viewportTotal
+      : 0
   const currentBucket = Math.round(options.currentHour / 3) * 3
 
   return hours.map((hour) => {
@@ -190,15 +191,16 @@ export function buildClockDayTimelineSegments(options: {
       state = 'empty'
       availabilityLabel = '数据未就绪'
     } else if (
-      options.isWeatherLayer
-      && hour === currentBucket
-      && currentStatus
-      && (currentStatus.pending > 0 || currentRatio > 0 && currentRatio < 0.5)
+      options.isWeatherLayer &&
+      hour === currentBucket &&
+      currentStatus &&
+      (currentStatus.pending > 0 || (currentRatio > 0 && currentRatio < 0.5))
     ) {
       state = 'partial'
-      availabilityLabel = currentStatus.pending > 0
-        ? '加载中'
-        : `加载中 ${currentStatus.cachedInViewport}/${currentStatus.viewportTotal}`
+      availabilityLabel =
+        currentStatus.pending > 0
+          ? '加载中'
+          : `加载中 ${currentStatus.cachedInViewport}/${currentStatus.viewportTotal}`
     } else if (options.isWeatherLayer) {
       const within = isDateHourWithinCoverage(options.coverage, options.selectedDate, hour)
       if (within) {

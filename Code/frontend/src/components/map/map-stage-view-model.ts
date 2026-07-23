@@ -39,7 +39,10 @@ export interface MapStageTimeVisualState {
   hotspotLabelOpacity: string
 }
 
-function timeBandValue<T extends string>(hour: number, entries: Array<{ threshold: number; value: T }>): T {
+function timeBandValue<T extends string>(
+  hour: number,
+  entries: Array<{ threshold: number; value: T }>,
+): T {
   for (const { threshold, value } of entries) {
     if (hour < threshold) return value
   }

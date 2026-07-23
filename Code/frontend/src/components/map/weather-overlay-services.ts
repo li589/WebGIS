@@ -8,6 +8,7 @@ import {
 import type { WindParticleControllerContract } from './wind-particle-controller-contract'
 import type { ScalarFieldWebGLController } from './scalar-field-webgl-controller'
 import type { WindDisplayMode } from './wind-display-mode'
+import { shouldYieldScalarWebGLToWind } from './weather-overlay-compositing'
 
 type MapInstance = import('maplibre-gl').Map
 
@@ -18,6 +19,7 @@ interface CreateWeatherOverlayServicesOptions {
   getSyncWeatherToken: () => number
   getEnabledParticleFlowCatalogId: () => string | null
   getWindDisplayMode?: () => WindDisplayMode
+  getSmoothRendering?: () => boolean
 }
 
 export interface WeatherOverlayServices {
@@ -56,9 +58,16 @@ export function createWeatherOverlayServices(
     },
     syncScalarFieldWebGL(overlayState: WeatherOverlayState, overlayToken: number) {
       if (!options.scalarFieldController) return false
-      // 风场动画（粒子/流线）激活时标量回退 MapLibre fill；关闭态仅色底不占用 WebGL
+      // 用户关闭平滑渲染时，跳过 WebGL 路径，回退 MapLibre fill（网格色块）
+      if (!(options.getSmoothRendering?.() ?? true)) return false
       const windMode = options.getWindDisplayMode?.() ?? 'particle'
-      if (options.getEnabledParticleFlowCatalogId() && windMode !== 'off') {
+      if (
+        shouldYieldScalarWebGLToWind({
+          enabledParticleFlowCatalogId: options.getEnabledParticleFlowCatalogId(),
+          windDisplayMode: windMode,
+          smoothRendering: options.getSmoothRendering?.() ?? true,
+        })
+      ) {
         options.scalarFieldController.removeCatalogArtifacts(overlayState.catalogId)
         return false
       }

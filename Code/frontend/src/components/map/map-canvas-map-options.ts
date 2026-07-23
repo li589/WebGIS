@@ -4,9 +4,7 @@ interface CreateMapCanvasMapOptionsOptions {
   container: HTMLElement
 }
 
-export function createMapCanvasMapOptions(
-  options: CreateMapCanvasMapOptionsOptions,
-): MapOptions {
+export function createMapCanvasMapOptions(options: CreateMapCanvasMapOptionsOptions): MapOptions {
   return {
     container: options.container,
     style: {

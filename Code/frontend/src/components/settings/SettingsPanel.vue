@@ -32,9 +32,16 @@ type SettingsTab =
 const savedTab = loadSettingsUiLocal().activeTab as SettingsTab | undefined
 const activeTab = ref<SettingsTab>(
   savedTab &&
-    ['general', 'api-keys', 'gee-accounts', 'weather-providers', 'open-meteo-sync', 'remote-storage', 'data-source', 'about'].includes(
-      savedTab,
-    )
+    [
+      'general',
+      'api-keys',
+      'gee-accounts',
+      'weather-providers',
+      'open-meteo-sync',
+      'remote-storage',
+      'data-source',
+      'about',
+    ].includes(savedTab)
     ? savedTab
     : 'api-keys',
 )
@@ -115,19 +122,21 @@ watch(activeTab, (tab) => {
             <span class="loading-spinner"></span>
             <span>加载配置中...</span>
           </div>
-          <div v-else-if="settingsStore.error && !settingsStore.generalConfig" class="content-error">
+          <div
+            v-else-if="settingsStore.error && !settingsStore.generalConfig"
+            class="content-error"
+          >
             <span>{{ settingsStore.error }}</span>
             <button type="button" class="retry-btn" @click="settingsStore.loadAll()">重试</button>
           </div>
           <template v-else>
             <div v-if="settingsStore.partialError" class="content-partial-error">
               <span>{{ settingsStore.partialError }}</span>
-              <button type="button" class="retry-btn" @click="settingsStore.loadAll()">重试失败项</button>
+              <button type="button" class="retry-btn" @click="settingsStore.loadAll()">
+                重试失败项
+              </button>
             </div>
-            <component
-              :is="tabComponents[activeTab]"
-              @close="emit('close')"
-            />
+            <component :is="tabComponents[activeTab]" @close="emit('close')" />
           </template>
         </div>
       </div>
@@ -298,7 +307,9 @@ watch(activeTab, (tab) => {
 }
 
 @keyframes spin {
-  to { transform: rotate(360deg); }
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 .retry-btn {

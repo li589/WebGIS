@@ -14,8 +14,12 @@
  */
 import proj4 from 'proj4'
 import {
-  gcj02ToWgs84, wgs84ToGcj02, bd09ToGcj02, gcj02ToBd09,
-  bd09ToWgs84, wgs84ToBd09,
+  gcj02ToWgs84,
+  wgs84ToGcj02,
+  bd09ToGcj02,
+  gcj02ToBd09,
+  bd09ToWgs84,
+  wgs84ToBd09,
 } from './gcj-bd'
 import type { TransformOptions } from './crs-types'
 
@@ -36,8 +40,10 @@ function normalizeCode(code: string): string {
  * 偏移在 CRS 转换**后**应用（与后端一致）。
  */
 export function transformPoint(
-  lng: number, lat: number,
-  sourceCode: string, targetCode: string,
+  lng: number,
+  lat: number,
+  sourceCode: string,
+  targetCode: string,
   opts: TransformOptions = {},
 ): [number, number] {
   const src = normalizeCode(sourceCode)
@@ -56,10 +62,16 @@ export function transformPoint(
 /** bounds 四角点转换（投影系精确，加密系四角分别转换） */
 export function transformBounds(
   bounds: [number, number, number, number], // [west, south, east, north]
-  sourceCode: string, targetCode: string,
+  sourceCode: string,
+  targetCode: string,
 ): [number, number, number, number] {
   const [w, s, e, n] = bounds
-  const corners: Array<[number, number]> = [[w, s], [e, s], [e, n], [w, n]]
+  const corners: Array<[number, number]> = [
+    [w, s],
+    [e, s],
+    [e, n],
+    [w, n],
+  ]
   const transformed = corners.map(([lng, lat]) => transformPoint(lng, lat, sourceCode, targetCode))
   const lngs = transformed.map((p) => p[0])
   const lats = transformed.map((p) => p[1])
@@ -69,7 +81,8 @@ export function transformBounds(
 /** 批量点转换（CSV/POI 提交时用） */
 export function transformPointsBatch(
   points: Array<[number, number]>,
-  sourceCode: string, targetCode: string,
+  sourceCode: string,
+  targetCode: string,
   opts: TransformOptions = {},
 ): Array<[number, number]> {
   return points.map(([lng, lat]) => transformPoint(lng, lat, sourceCode, targetCode, opts))

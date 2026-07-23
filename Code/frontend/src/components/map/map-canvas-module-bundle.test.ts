@@ -9,6 +9,7 @@ describe('map-canvas-module-bundle', () => {
     }
     const adminBoundaryModule = {}
     const weatherOverlayModule = {}
+    const nonWeatherLayerSyncModule = {}
     const hotspotPinsModule = {}
     const mapInteractionModule = {
       applyInteractionMode: vi.fn(),
@@ -26,6 +27,7 @@ describe('map-canvas-module-bundle', () => {
     const bundle = createMapCanvasModuleBundle({
       map: {} as any,
       layersStore: {
+        activeLayers: [],
         activeLayersDisplay: [],
         particleFlowCatalogId: null,
         windDisplayMode: 'off',
@@ -34,6 +36,7 @@ describe('map-canvas-module-bundle', () => {
       },
       weatherTileManager: {
         getMergedGeojsonForViewport: () => null,
+        getViewportBounds: () => null,
         dataVersion: 1,
       },
       getCurrentHour: () => 12,
@@ -70,6 +73,7 @@ describe('map-canvas-module-bundle', () => {
         createBasemapModule: vi.fn(() => basemapModule as any),
         createAdminBoundaryModule: vi.fn(() => adminBoundaryModule as any),
         createMapCanvasWeatherOverlayModule: vi.fn(() => weatherOverlayModule as any),
+        createMapCanvasNonWeatherLayerSyncModule: vi.fn(() => nonWeatherLayerSyncModule as any),
         createHotspotPinsModule: vi.fn(() => hotspotPinsModule as any),
         createMapInteractionModule: vi.fn(() => mapInteractionModule as any),
         createMapCanvasRuntimeModule: vi.fn((options) => {
@@ -92,6 +96,7 @@ describe('map-canvas-module-bundle', () => {
     expect(bundle.basemapModule).toBe(basemapModule)
     expect(bundle.adminBoundaryModule).toBe(adminBoundaryModule)
     expect(bundle.weatherOverlayModule).toBe(weatherOverlayModule)
+    expect(bundle.nonWeatherLayerSyncModule).toBe(nonWeatherLayerSyncModule)
     expect(bundle.hotspotPinsModule).toBe(hotspotPinsModule)
     expect(bundle.mapInteractionModule).toBe(mapInteractionModule)
     expect(bundle.selectedLayerFocusModule).toBe(selectedLayerFocusModule)

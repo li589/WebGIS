@@ -71,7 +71,8 @@ export interface RuntimeLayerLibraryItem extends LayerCatalogItem {
 
 // ─── Job layer item (作业生产数据) ───────────────────────────────────────────
 
-export type JobStatus = 'running' | 'succeeded' | 'failed' | 'queued' | 'cancelled' | 'retry_pending'
+export type JobStatus =
+  'running' | 'succeeded' | 'failed' | 'queued' | 'cancelled' | 'retry_pending'
 
 // ─── Workflow summary (全局工作流状态汇总) ──────────────────────────────────
 
@@ -90,7 +91,11 @@ export interface WorkflowSummary {
   hasError: boolean
 }
 
-import type { WeatherLayerRenderHint, WorkflowResultDto, WorkflowRunViewResponse } from '../../types/api-reexports'
+import type {
+  WeatherLayerRenderHint,
+  WorkflowResultDto,
+  WorkflowRunViewResponse,
+} from '../../types/api-reexports'
 
 export type { WeatherLayerRenderHint }
 

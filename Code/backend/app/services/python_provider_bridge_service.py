@@ -38,32 +38,34 @@ _ARTIFACT_MIME_TYPES = {
 
 # 已在节点模板中注册但尚未实现算法的模块。
 # 这些模块的 workflow 提交后会返回 pending_implementation 状态，而非调用 provider。
-_PENDING_IMPLEMENTATION_MODULES = frozenset({
-    "preprocess_reproject",
-    "preprocess_resample",
-    # preprocess_format_convert implemented as format_convert (alias)
-    "preprocess_clip",
-    "preprocess_mask",
-    "stats_spatial_mean",
-    "stats_temporal_trend",
-    "stats_anomaly_detect",
-    "stats_correlation",
-    "stats_histogram",
-    "fusion_spatial_interpolate",
-    "fusion_multi_source_merge",
-    "viz_chart_generate",
-    "viz_report_export",
-    "viz_statistics_summary",
-    "gis_buffer_analysis",
-    "gis_zonal_statistics",
-    "gis_raster_calculator",
-    "gis_vector_to_raster",
-    "gis_raster_to_vector",
-    "gis_reclassify",
-    "gis_contour",
-    "gis_slope_aspect",
-    "gis_watershed",
-})
+_PENDING_IMPLEMENTATION_MODULES = frozenset(
+    {
+        "preprocess_reproject",
+        "preprocess_resample",
+        # preprocess_format_convert implemented as format_convert (alias)
+        "preprocess_clip",
+        "preprocess_mask",
+        "stats_spatial_mean",
+        "stats_temporal_trend",
+        "stats_anomaly_detect",
+        "stats_correlation",
+        "stats_histogram",
+        "fusion_spatial_interpolate",
+        "fusion_multi_source_merge",
+        "viz_chart_generate",
+        "viz_report_export",
+        "viz_statistics_summary",
+        "gis_buffer_analysis",
+        "gis_zonal_statistics",
+        "gis_raster_calculator",
+        "gis_vector_to_raster",
+        "gis_raster_to_vector",
+        "gis_reclassify",
+        "gis_contour",
+        "gis_slope_aspect",
+        "gis_watershed",
+    }
+)
 
 
 @contextmanager
@@ -91,8 +93,12 @@ def _load_python_job_service():
     workspace.mkdir(parents=True, exist_ok=True)
     with _python_provider_import_path(provider_root):
         job_api_module = importlib.import_module("service.job_api")
-        build_local_persistent_job_service = getattr(job_api_module, "build_local_persistent_job_service")
-        return build_local_persistent_job_service(workspace=workspace, start_worker=False)
+        build_local_persistent_job_service = getattr(
+            job_api_module, "build_local_persistent_job_service"
+        )
+        return build_local_persistent_job_service(
+            workspace=workspace, start_worker=False
+        )
 
 
 class PythonProviderBridgeService:
@@ -126,7 +132,9 @@ class PythonProviderBridgeService:
                 event_factory=event_factory,
             )
 
-        request_payload = self._build_job_request_payload(run_id=run_id, payload=payload)
+        request_payload = self._build_job_request_payload(
+            run_id=run_id, payload=payload
+        )
         service = self._get_job_service()
 
         # Provider 标准契约模板修复：在 submit_job 前调用 validate_job 做语义校验
@@ -320,7 +328,9 @@ class PythonProviderBridgeService:
     def describe_workflow_response(self, workflow_name: str):
         # m25 修复：归一化返回结构，确保包含 name/node_type/category/source 字段
         response = self._get_job_service().describe_workflow_response(workflow_name)
-        return self._normalize_describe_response(response, source="python_provider", workflow_name=workflow_name)
+        return self._normalize_describe_response(
+            response, source="python_provider", workflow_name=workflow_name
+        )
 
     @staticmethod
     def _normalize_list_response(response: dict, *, source: str) -> dict:
@@ -333,11 +343,13 @@ class PythonProviderBridgeService:
         normalized_workflows = []
         for item in workflows:
             if isinstance(item, str):
-                normalized_workflows.append({
-                    "name": item,
-                    "node_type": item,
-                    "category": "algorithm",
-                })
+                normalized_workflows.append(
+                    {
+                        "name": item,
+                        "node_type": item,
+                        "category": "algorithm",
+                    }
+                )
             elif isinstance(item, dict):
                 if "name" not in item and "workflow_name" in item:
                     item = {**item, "name": item["workflow_name"]}
@@ -347,7 +359,9 @@ class PythonProviderBridgeService:
                     item = {**item, "category": "algorithm"}
                 normalized_workflows.append(item)
             else:
-                normalized_workflows.append({"name": str(item), "node_type": str(item), "category": "algorithm"})
+                normalized_workflows.append(
+                    {"name": str(item), "node_type": str(item), "category": "algorithm"}
+                )
         return {
             "status_code": response.get("status_code", 200),
             "body": {
@@ -358,7 +372,9 @@ class PythonProviderBridgeService:
         }
 
     @staticmethod
-    def _normalize_describe_response(response: dict, *, source: str, workflow_name: str) -> dict:
+    def _normalize_describe_response(
+        response: dict, *, source: str, workflow_name: str
+    ) -> dict:
         """归一化 describe_workflow_response 返回结构。"""
         if not isinstance(response, dict) or "status_code" not in response:
             return response
@@ -383,7 +399,7 @@ class PythonProviderBridgeService:
         """返回 Python provider 诊断信息。"""
         try:
             from app.core.config import settings as app_settings
-            service = self._get_job_service()
+
             return {
                 "status_code": 200,
                 "body": {
@@ -416,7 +432,9 @@ class PythonProviderBridgeService:
                 f"Failed to initialize Python provider job service: {exc}"
             ) from exc
 
-    def _build_job_request_payload(self, *, run_id: str, payload: WorkflowSubmitRequest) -> dict[str, Any]:
+    def _build_job_request_payload(
+        self, *, run_id: str, payload: WorkflowSubmitRequest
+    ) -> dict[str, Any]:
         algorithm_request = self._normalize_algorithm_request(payload.algorithm_request)
         if not any(key in algorithm_request for key in _ALGORITHM_REQUEST_ENTRY_KEYS):
             raise ValueError(
@@ -426,28 +444,43 @@ class PythonProviderBridgeService:
         request_payload = dict(algorithm_request)
         request_payload.setdefault("job_id", run_id)
         request_payload.setdefault("pipeline_name", "workflow")
-        request_payload.setdefault("task_type", algorithm_request.get("task_type") or payload.command_type.value)
+        request_payload.setdefault(
+            "task_type",
+            algorithm_request.get("task_type") or payload.command_type.value,
+        )
         request_payload.setdefault("datasource_selection", {})
         request_payload.setdefault("algorithm_params", {})
-        request_payload.setdefault("output_spec", {"include_manifest": True, "extra": {}})
+        request_payload.setdefault(
+            "output_spec", {"include_manifest": True, "extra": {}}
+        )
         request_payload.setdefault("tags", {})
         if isinstance(request_payload["tags"], dict):
             request_payload["tags"].setdefault("workflow_run_id", run_id)
-            request_payload["tags"].setdefault("workflow_command_type", payload.command_type.value)
+            request_payload["tags"].setdefault(
+                "workflow_command_type", payload.command_type.value
+            )
             if payload.layer_id:
-                request_payload["tags"].setdefault("workflow_layer_id", payload.layer_id)
+                request_payload["tags"].setdefault(
+                    "workflow_layer_id", payload.layer_id
+                )
 
-        # Inject open-data presets for http_open_data nodes (canvas / research pipeline)
+        # Inject open-data presets + portal credentials for http_open_data nodes
         try:
-            from app.services.config_service import get_data_source_config
+            from app.services.config_service import (
+                get_data_source_config,
+            )
 
             presets = get_data_source_config().get("open_data_presets") or {}
+            ds = request_payload.get("datasource_selection")
+            if not isinstance(ds, dict):
+                ds = {}
+                request_payload["datasource_selection"] = ds
             if isinstance(presets, dict) and presets:
-                ds = request_payload.get("datasource_selection")
-                if not isinstance(ds, dict):
-                    ds = {}
-                    request_payload["datasource_selection"] = ds
                 ds.setdefault("open_data_presets", presets)
+            # Do NOT embed plaintext portal tokens in the job payload (persisted /
+            # logged). Nodes resolve secrets lazily via portal_credentials_resolve.
+            ds.setdefault("portal_credentials_resolve", True)
+            ds.pop("portal_credentials", None)
         except Exception:  # noqa: BLE001
             pass
 
@@ -461,7 +494,9 @@ class PythonProviderBridgeService:
             request_payload["region"] = self._build_region_payload(payload)
 
         if request_payload.get("priority") is None:
-            request_payload["priority"] = _ALGORITHM_PRIORITY_MAP[payload.priority.value]
+            request_payload["priority"] = _ALGORITHM_PRIORITY_MAP[
+                payload.priority.value
+            ]
 
         algorithm_params = request_payload.get("algorithm_params")
         if not isinstance(algorithm_params, dict):
@@ -535,7 +570,11 @@ class PythonProviderBridgeService:
         ]
 
         if ResultKind.text.value in requested_output_kinds:
-            summary = self._build_text_summary(request_payload=request_payload, job_result=job_result, result_dto=result_dto)
+            summary = self._build_text_summary(
+                request_payload=request_payload,
+                job_result=job_result,
+                result_dto=result_dto,
+            )
             result_refs.append(
                 WorkflowResultReference(
                     result_id=f"algorithm-summary-{run_id[-8:]}",
@@ -607,7 +646,7 @@ class PythonProviderBridgeService:
         artifact_name: str,
         artifact_view: dict[str, Any],
     ) -> WorkflowResultReference | None:
-        title = f"算法 {artifact_name}"
+        title = f"Algorithm {artifact_name}"
         uri = str(
             artifact_view.get("download_url")
             or artifact_view.get("preview_url")
@@ -631,7 +670,9 @@ class PythonProviderBridgeService:
             )
 
         parsed = urlparse(uri)
-        resource_backend = str(artifact_view.get("storage_backend") or parsed.scheme or "external")
+        resource_backend = str(
+            artifact_view.get("storage_backend") or parsed.scheme or "external"
+        )
         resource_key = str(artifact_view.get("object_key") or parsed.path or uri)
         if resource_backend == "file" and not resource_key.startswith("/"):
             resource_key = f"/{resource_key.lstrip('/')}"
@@ -665,7 +706,9 @@ class PythonProviderBridgeService:
             return dict(value)
         return {}
 
-    def _normalize_algorithm_request(self, value: AlgorithmWorkflowRequest | dict[str, Any] | Any) -> dict[str, Any]:
+    def _normalize_algorithm_request(
+        self, value: AlgorithmWorkflowRequest | dict[str, Any] | Any
+    ) -> dict[str, Any]:
         if isinstance(value, AlgorithmWorkflowRequest):
             return value.model_dump(mode="json", exclude_none=True)
         if isinstance(value, dict):
@@ -682,7 +725,9 @@ class PythonProviderBridgeService:
         if not resolution_diagnostics:
             return base_message
 
-        unresolved_datasets = resolution_diagnostics.get("unresolved_default_datasets") or []
+        unresolved_datasets = (
+            resolution_diagnostics.get("unresolved_default_datasets") or []
+        )
         if not unresolved_datasets:
             return base_message
 
@@ -698,7 +743,9 @@ class PythonProviderBridgeService:
             f"(module={module_name}, status={layer_status}): {dataset_text}"
         )
 
-    def _validate_algorithm_request_shape(self, request_payload: dict[str, Any]) -> None:
+    def _validate_algorithm_request_shape(
+        self, request_payload: dict[str, Any]
+    ) -> None:
         if not isinstance(request_payload.get("datasource_selection"), dict):
             raise ValueError("algorithm_request.datasource_selection 必须为 object。")
         if not isinstance(request_payload.get("algorithm_params"), dict):
@@ -730,8 +777,13 @@ class PythonProviderBridgeService:
                     "algorithm_request.region 必须包含 'kind' 和 'value' 字段。"
                 )
 
-        if request_payload.get("workflow_definition") is not None and request_payload.get("module_name") is not None:
-            raise ValueError("algorithm_request.workflow_definition 与 module_name 不能同时出现。")
+        if (
+            request_payload.get("workflow_definition") is not None
+            and request_payload.get("module_name") is not None
+        ):
+            raise ValueError(
+                "algorithm_request.workflow_definition 与 module_name 不能同时出现。"
+            )
 
 
 python_provider_bridge_service = PythonProviderBridgeService()

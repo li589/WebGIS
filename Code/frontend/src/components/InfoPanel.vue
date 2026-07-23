@@ -91,8 +91,12 @@ const analysisSummary = computed(() => {
   }
   return displayLayer.value.summary || props.activeLayer.summary
 })
-const jobReportSummary = computed(() => jobLayer.value?.resultView?.summary ?? jobLayer.value?.reportSummary ?? '')
-const isRealtimeWeatherLayer = computed(() => layersStore.isWeatherEngineLayer(displayLayer.value.catalogId))
+const jobReportSummary = computed(
+  () => jobLayer.value?.resultView?.summary ?? jobLayer.value?.reportSummary ?? '',
+)
+const isRealtimeWeatherLayer = computed(() =>
+  layersStore.isWeatherEngineLayer(displayLayer.value.catalogId),
+)
 
 const selectedWeatherProvider = computed({
   get: () => weatherSourcePrefs.getProvider(displayLayer.value.catalogId),
@@ -165,7 +169,11 @@ watch(
 )
 
 const weatherRenderHint = computed(
-  () => displayLayer.value?.renderHint ?? jobLayer.value?.mapLayerPayload?.renderHint ?? props.pointWeather?.render_hint ?? null,
+  () =>
+    displayLayer.value?.renderHint ??
+    jobLayer.value?.mapLayerPayload?.renderHint ??
+    props.pointWeather?.render_hint ??
+    null,
 )
 
 /** 侧栏同源 overlay meta + 可选 overlayTimeStates 兜底 */
@@ -186,7 +194,14 @@ const overlayStyleMeta = computed(() => {
 })
 
 watch(
-  () => [displayLayer.value.catalogId, displayLayer.value.renderHint, displayLayer.value.isImported, displayLayer.value.isImportedRaster, displayLayer.value.isAdminBoundary] as const,
+  () =>
+    [
+      displayLayer.value.catalogId,
+      displayLayer.value.renderHint,
+      displayLayer.value.isImported,
+      displayLayer.value.isImportedRaster,
+      displayLayer.value.isAdminBoundary,
+    ] as const,
   ([catalogId, renderHint, isImported, isImportedRaster, isAdminBoundary]) => {
     if (!catalogId || isImported || isImportedRaster || isAdminBoundary || renderHint) return
     void overlaySymbologyStore.ensureMeta(catalogId)
@@ -202,10 +217,12 @@ const styleRenderHint = computed(() =>
   }),
 )
 
-const weatherLegendStops = computed(() => (styleRenderHint.value ? buildWeatherLegendStops(styleRenderHint.value) : []))
-const weatherLegendGradient = computed(() => (
-  styleRenderHint.value ? buildWeatherLegendGradient(styleRenderHint.value) : ''
-))
+const weatherLegendStops = computed(() =>
+  styleRenderHint.value ? buildWeatherLegendStops(styleRenderHint.value) : [],
+)
+const weatherLegendGradient = computed(() =>
+  styleRenderHint.value ? buildWeatherLegendGradient(styleRenderHint.value) : '',
+)
 const currentPaletteId = computed(() =>
   resolveCanonicalPaletteId(
     displayLayer.value?.paletteOverride ?? styleRenderHint.value?.palette ?? '',
@@ -250,13 +267,16 @@ const hasWeatherLayerAsset = computed(() => {
   if (isRealtimeWeatherLayer.value) return (tileStats.value?.cached ?? 0) > 0
   return !!jobLayer.value?.mapLayerPayload?.layerAssets?.geojsonUrl
 })
-const jobEventNotes = computed(() => jobLayer.value?.eventMessages ?? jobLayer.value?.diagnosticNotes ?? [])
+const jobEventNotes = computed(
+  () => jobLayer.value?.eventMessages ?? jobLayer.value?.diagnosticNotes ?? [],
+)
 
-const canToggleParticleFlow = computed(() => layersStore.supportsParticleFlow(displayLayer.value.catalogId))
+const canToggleParticleFlow = computed(() =>
+  layersStore.supportsParticleFlow(displayLayer.value.catalogId),
+)
 /** 该层是否持有风场三态控件归属（含「关闭」态） */
-const ownsWindDisplay = computed(() => layersStore.particleFlowCatalogId === displayLayer.value.catalogId)
-const isParticleFlowEnabled = computed(() =>
-  ownsWindDisplay.value && layersStore.windDisplayMode !== 'off',
+const ownsWindDisplay = computed(
+  () => layersStore.particleFlowCatalogId === displayLayer.value.catalogId,
 )
 const currentWindDisplayMode = computed<WindDisplayMode>(() => {
   if (!ownsWindDisplay.value) return 'off'
@@ -277,16 +297,17 @@ const windStyleChipLabel = computed(() => {
   return windDisplayModeChip(currentWindDisplayMode.value)
 })
 
-const hasLayerStyleSection = computed(() =>
-  hasRenderableSymbology({
-    renderHint: weatherRenderHint.value,
-    overlayMeta: overlayStyleMeta.value,
-    isAdminBoundary: displayLayer.value.isAdminBoundary,
-    isImported: displayLayer.value.isImported,
-    isImportedRaster: displayLayer.value.isImportedRaster,
-  })
-  || canToggleParticleFlow.value
-  || isRealtimeWeatherLayer.value,
+const hasLayerStyleSection = computed(
+  () =>
+    hasRenderableSymbology({
+      renderHint: weatherRenderHint.value,
+      overlayMeta: overlayStyleMeta.value,
+      isAdminBoundary: displayLayer.value.isAdminBoundary,
+      isImported: displayLayer.value.isImported,
+      isImportedRaster: displayLayer.value.isImportedRaster,
+    }) ||
+    canToggleParticleFlow.value ||
+    isRealtimeWeatherLayer.value,
 )
 
 /** 点天气仅在有查询态或当前确为天气层时展示（样式已拆出） */
@@ -299,7 +320,10 @@ const hasPointWeatherSection = computed(
 )
 
 const showCompactHero = computed(
-  () => displayLayer.value.isImported || displayLayer.value.isImportedRaster || displayLayer.value.isAdminBoundary,
+  () =>
+    displayLayer.value.isImported ||
+    displayLayer.value.isImportedRaster ||
+    displayLayer.value.isAdminBoundary,
 )
 
 const runBlockedHint = computed(() => {
@@ -370,10 +394,13 @@ const WEATHER_METRIC_LABELS: Record<string, string> = {
 }
 
 function asWeatherRecord(value: unknown): Record<string, unknown> | null {
-  return value !== null && typeof value === 'object' ? value as Record<string, unknown> : null
+  return value !== null && typeof value === 'object' ? (value as Record<string, unknown>) : null
 }
 
-function readWeatherMetricValue(source: unknown, metricKey: string | null | undefined): number | null {
+function readWeatherMetricValue(
+  source: unknown,
+  metricKey: string | null | undefined,
+): number | null {
   if (!metricKey) return null
   const record = asWeatherRecord(source)
   const value = record?.[metricKey]
@@ -387,14 +414,12 @@ function normalizeWeatherUnit(unit: string | null | undefined): string {
 
 const pointWeatherMetric = computed(() => {
   const metricKey =
-    props.pointWeather?.render_hint?.primary_metric
-    ?? weatherRenderHint.value?.primary_metric
-    ?? layersStore.getLayerPrimaryMetric(displayLayer.value.catalogId)
-    ?? 'temperature_2m'
+    props.pointWeather?.render_hint?.primary_metric ??
+    weatherRenderHint.value?.primary_metric ??
+    layersStore.getLayerPrimaryMetric(displayLayer.value.catalogId) ??
+    'temperature_2m'
   const unit =
-    props.pointWeather?.render_hint?.unit_label
-    ?? weatherRenderHint.value?.unit_label
-    ?? ''
+    props.pointWeather?.render_hint?.unit_label ?? weatherRenderHint.value?.unit_label ?? ''
   return {
     key: metricKey,
     label: WEATHER_METRIC_LABELS[metricKey] ?? '实时指标',
@@ -430,9 +455,7 @@ const layerMetadata = computed(() => {
 
 // ── 叠加图层列表 ────────────────────────────────────────────────────────────
 const overlayLayers = computed(() => {
-  const timeStateMap = new Map(
-    (props.overlayTimeStates ?? []).map((s) => [s.layerId, s]),
-  )
+  const timeStateMap = new Map((props.overlayTimeStates ?? []).map((s) => [s.layerId, s]))
   return layersStore.activeLayersDisplay
     .filter((l) => l.instanceId !== displayLayer.value.instanceId && l.visible)
     .map((l) => {
@@ -492,39 +515,54 @@ const pointWeatherRows = computed(() => {
     pointWeatherMetric.value.unit,
   )
   return [
-    { label: 'Point', value: weather.place_name ?? `${weather.latitude.toFixed(3)}, ${weather.longitude.toFixed(3)}` },
+    {
+      label: 'Point',
+      value:
+        weather.place_name ?? `${weather.latitude.toFixed(3)}, ${weather.longitude.toFixed(3)}`,
+    },
     { label: 'Model', value: weather.model },
     {
       label: pointWeatherMetric.value.label,
       value: primaryValue,
     },
-    { label: 'Observed', value: weather.observation_time ? formatTime(weather.observation_time) : '--' },
+    {
+      label: 'Observed',
+      value: weather.observation_time ? formatTime(weather.observation_time) : '--',
+    },
   ]
 })
 const pointWeatherHourlyRows = computed(() => {
   const weather = props.pointWeather
   if (!weather) return []
-  return (weather.hourly ?? []).slice(0, 4).map((entry) => {
-    const metricValue =
-      typeof entry.primary_value === 'number'
-        ? entry.primary_value
-        : readWeatherMetricValue(entry, pointWeatherMetric.value.key)
-    const metric = formatMetric(metricValue, pointWeatherMetric.value.unit)
-    return {
-      time: formatHour(entry.time),
-      metric,
-    }
-  }).filter((entry) => entry.metric !== `-- ${pointWeatherMetric.value.unit}`.trim())
+  return (weather.hourly ?? [])
+    .slice(0, 4)
+    .map((entry) => {
+      const metricValue =
+        typeof entry.primary_value === 'number'
+          ? entry.primary_value
+          : readWeatherMetricValue(entry, pointWeatherMetric.value.key)
+      const metric = formatMetric(metricValue, pointWeatherMetric.value.unit)
+      return {
+        time: formatHour(entry.time),
+        metric,
+      }
+    })
+    .filter((entry) => entry.metric !== `-- ${pointWeatherMetric.value.unit}`.trim())
 })
-const canRunWorkflow = computed(() =>
-  !displayLayer.value?.isAdminBoundary
-  && !displayLayer.value?.isImported
-  && !displayLayer.value?.isImportedRaster
-  && !isRealtimeWeatherLayer.value
-  && layersStore.supportsAnalysisWorkflow(displayLayer.value.catalogId),
+const canRunWorkflow = computed(
+  () =>
+    !displayLayer.value?.isAdminBoundary &&
+    !displayLayer.value?.isImported &&
+    !displayLayer.value?.isImportedRaster &&
+    !isRealtimeWeatherLayer.value &&
+    layersStore.supportsAnalysisWorkflow(displayLayer.value.catalogId),
 )
-const isWorkflowRunning = computed(() => jobLayer.value?.status === 'running' || jobLayer.value?.status === 'queued')
-const runBlockedReason = computed(() => layersStore.getCatalogRunBlockReason(displayLayer.value.catalogId))
+const isWorkflowRunning = computed(
+  () => jobLayer.value?.status === 'running' || jobLayer.value?.status === 'queued',
+)
+const runBlockedReason = computed(() =>
+  layersStore.getCatalogRunBlockReason(displayLayer.value.catalogId),
+)
 const workflowStage = computed(() => {
   if (props.isSubmitting) return 'submitting'
   if (isRealtimeWeatherLayer.value) {
@@ -540,7 +578,9 @@ const workflowStage = computed(() => {
   if (jobLayer.value?.status === 'failed') return 'failed'
   return 'idle'
 })
-const buttonDisabled = computed(() => Boolean(runBlockedReason.value) || isWorkflowRunning.value || props.isSubmitting)
+const buttonDisabled = computed(
+  () => Boolean(runBlockedReason.value) || isWorkflowRunning.value || props.isSubmitting,
+)
 const buttonLabel = computed(() => {
   if (runBlockedReason.value) {
     return runBlockedReason.value.includes('工作流引擎') ? '不支持工作流' : '数据未就绪'
@@ -557,15 +597,18 @@ const workflowMeta = computed(() => {
   const libItem = layersStore.layerLibrary.find((l) => l.catalogId === cid)
   const engine = libItem?.engine ?? displayLayer.value.engine ?? ''
   const name = libItem?.workflowName ?? ''
-  const engineLabel = engine === 'weather' ? '天气引擎'
-    : engine === 'python_provider' ? 'Python 处理器'
-    : engine === 'gee' ? 'GEE'
-    : engine === 'general' ? '通用'
-    : ''
-  const engineIcon = engine === 'weather' ? '☀'
-    : engine === 'python_provider' ? '⚡'
-    : engine === 'gee' ? '🌍'
-    : '◈'
+  const engineLabel =
+    engine === 'weather'
+      ? '天气引擎'
+      : engine === 'python_provider'
+        ? 'Python 处理器'
+        : engine === 'gee'
+          ? 'GEE'
+          : engine === 'general'
+            ? '通用'
+            : ''
+  const engineIcon =
+    engine === 'weather' ? '☀' : engine === 'python_provider' ? '⚡' : engine === 'gee' ? '🌍' : '◈'
   return { name, engine, engineLabel, engineIcon }
 })
 
@@ -723,7 +766,11 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <aside class="panel" ref="analysisScrollEl" :style="{ '--accent-color': displayLayer.accentColor }">
+  <aside
+    class="panel"
+    ref="analysisScrollEl"
+    :style="{ '--accent-color': displayLayer.accentColor }"
+  >
     <div class="panel-topline" ref="topSummaryEl">
       <div class="panel-header">
         <div>
@@ -765,13 +812,25 @@ onBeforeUnmount(() => {
       <div class="workflow-stage-row">
         <span class="stage-pill" :class="workflowStage">{{ workflowStage }}</span>
         <span class="stage-copy">
-          {{ workflowStage === 'running' ? `${workflowProgress}%` : workflowStage === 'succeeded' ? '完成' : workflowStage === 'failed' ? '失败' : '逐步进入可用状态' }}
+          {{
+            workflowStage === 'running'
+              ? `${workflowProgress}%`
+              : workflowStage === 'succeeded'
+                ? '完成'
+                : workflowStage === 'failed'
+                  ? '失败'
+                  : '逐步进入可用状态'
+          }}
         </span>
       </div>
 
       <!-- 进度条 -->
       <div v-if="isWorkflowRunning || workflowStage === 'succeeded'" class="wf-progress-bar">
-        <div class="wf-progress-fill" :class="workflowStage" :style="{ width: workflowProgress + '%' }"></div>
+        <div
+          class="wf-progress-fill"
+          :class="workflowStage"
+          :style="{ width: workflowProgress + '%' }"
+        ></div>
       </div>
 
       <!-- 最近事件消息 -->
@@ -825,7 +884,9 @@ onBeforeUnmount(() => {
           </div>
           <div>
             <dt>范围</dt>
-            <dd>{{ formatBounds(displayLayer.importedBounds ?? displayLayer.importedRasterBounds) }}</dd>
+            <dd>
+              {{ formatBounds(displayLayer.importedBounds ?? displayLayer.importedRasterBounds) }}
+            </dd>
           </div>
           <div>
             <dt>来源</dt>
@@ -833,15 +894,27 @@ onBeforeUnmount(() => {
           </div>
         </dl>
         <div v-if="displayLayer.isImported" class="imported-export-row">
-          <button class="imported-export-btn" type="button" @click="exportImportedGeoJson">导出 GeoJSON</button>
-          <button class="imported-export-btn" type="button" @click="exportImportedCsv">导出 CSV</button>
+          <button class="imported-export-btn" type="button" @click="exportImportedGeoJson">
+            导出 GeoJSON
+          </button>
+          <button class="imported-export-btn" type="button" @click="exportImportedCsv">
+            导出 CSV
+          </button>
         </div>
-        <p v-if="importActionHint" class="imported-action-hint" :class="{ error: importActionHint.includes('失败') }">
+        <p
+          v-if="importActionHint"
+          class="imported-action-hint"
+          :class="{ error: importActionHint.includes('失败') }"
+        >
           {{ importActionHint }}
         </p>
       </section>
 
-      <section v-if="jobLayer" class="job-report-card job-report-card--summary" id="scheduler-status">
+      <section
+        v-if="jobLayer"
+        class="job-report-card job-report-card--summary"
+        id="scheduler-status"
+      >
         <div class="job-report-header">
           <div>
             <div class="section-kicker">调度器</div>
@@ -869,13 +942,20 @@ onBeforeUnmount(() => {
           </div>
           <p class="job-message">{{ jobLayer.message || '作业正在处理中...' }}</p>
           <ul v-if="jobEventNotes.length" class="job-diagnostic-list">
-            <li v-for="note in jobEventNotes" :key="note" class="job-diagnostic-item">{{ note }}</li>
+            <li v-for="note in jobEventNotes" :key="note" class="job-diagnostic-item">
+              {{ note }}
+            </li>
           </ul>
         </div>
 
         <div class="job-steps">
           <div class="job-step">1. 提交任务</div>
-          <div class="job-step" :class="{ active: workflowStage === 'queued' || workflowStage === 'running' }">2. 等待运行结果</div>
+          <div
+            class="job-step"
+            :class="{ active: workflowStage === 'queued' || workflowStage === 'running' }"
+          >
+            2. 等待运行结果
+          </div>
           <div class="job-step" :class="{ active: !!resultModel }">3. 读取视图</div>
         </div>
 
@@ -887,7 +967,11 @@ onBeforeUnmount(() => {
         </div>
       </section>
 
-      <section v-if="jobLayer && jobReportSummary" class="analysis-section analysis-section--report" id="report-section">
+      <section
+        v-if="jobLayer && jobReportSummary"
+        class="analysis-section analysis-section--report"
+        id="report-section"
+      >
         <div class="section-kicker">报告</div>
         <div class="report-section-head">
           <div>
@@ -907,7 +991,10 @@ onBeforeUnmount(() => {
         <p class="job-report-copy">{{ jobReportSummary }}</p>
       </section>
 
-      <section class="analysis-section analysis-section--layer" :id="`layer-${displayLayer.instanceId || 'default'}`">
+      <section
+        class="analysis-section analysis-section--layer"
+        :id="`layer-${displayLayer.instanceId || 'default'}`"
+      >
         <div class="section-kicker">当前对象</div>
         <h3>选中图层</h3>
         <p>{{ displayLayer.name }} · {{ displayLayer.availabilityLabel }}</p>
@@ -925,7 +1012,11 @@ onBeforeUnmount(() => {
         </div>
       </section>
 
-      <section v-if="hasPointWeatherSection" class="analysis-section analysis-section--weather" id="point-weather">
+      <section
+        v-if="hasPointWeatherSection"
+        class="analysis-section analysis-section--weather"
+        id="point-weather"
+      >
         <div class="section-kicker">点天气</div>
         <div class="weather-section-head">
           <div>
@@ -958,7 +1049,11 @@ onBeforeUnmount(() => {
           </div>
 
           <div v-if="pointWeatherHourlyRows.length" class="weather-hourly-strip">
-            <article v-for="row in pointWeatherHourlyRows" :key="row.time" class="weather-hourly-card">
+            <article
+              v-for="row in pointWeatherHourlyRows"
+              :key="row.time"
+              class="weather-hourly-card"
+            >
               <span>{{ row.time }}</span>
               <strong>{{ row.metric }}</strong>
             </article>
@@ -986,18 +1081,20 @@ onBeforeUnmount(() => {
           <span class="analysis-chip">{{ windStyleChipLabel }}</span>
         </div>
 
-        <div v-if="displayLayer.instanceId && (isRealtimeWeatherLayer || canToggleParticleFlow)" class="weather-layer-controls">
+        <div
+          v-if="displayLayer.instanceId && (isRealtimeWeatherLayer || canToggleParticleFlow)"
+          class="weather-layer-controls"
+        >
           <div v-if="canToggleParticleFlow" class="weather-layer-btn-row wind-mode-layout">
-            <div
-              class="wind-display-mode-seg"
-              role="group"
-              aria-label="风场显示模式"
-            >
+            <div class="wind-display-mode-seg" role="group" aria-label="风场显示模式">
               <button
-                v-for="mode in (['particle', 'streamline', 'off'] as const)"
+                v-for="mode in ['particle', 'streamline', 'off'] as const"
                 :key="mode"
                 class="wind-mode-seg-btn"
-                :class="{ active: currentWindDisplayMode === mode, off: mode === 'off' && currentWindDisplayMode === 'off' }"
+                :class="{
+                  active: currentWindDisplayMode === mode,
+                  off: mode === 'off' && currentWindDisplayMode === 'off',
+                }"
                 :data-mode="mode"
                 type="button"
                 :disabled="mode !== 'off' && particleFlowButtonDisabled"
@@ -1017,7 +1114,9 @@ onBeforeUnmount(() => {
               :title="displayLayer.visible ? '隐藏当前图层' : '显示当前图层'"
               @click="handleToggleLayerVisibility"
             >
-              <span class="weather-layer-btn-text">{{ displayLayer.visible ? '隐藏图层' : '显示图层' }}</span>
+              <span class="weather-layer-btn-text">{{
+                displayLayer.visible ? '隐藏图层' : '显示图层'
+              }}</span>
             </button>
           </div>
           <button
@@ -1027,7 +1126,9 @@ onBeforeUnmount(() => {
             :title="displayLayer.visible ? '隐藏当前图层' : '显示当前图层'"
             @click="handleToggleLayerVisibility"
           >
-            <span class="weather-layer-btn-text">{{ displayLayer.visible ? '隐藏图层' : '显示图层' }}</span>
+            <span class="weather-layer-btn-text">{{
+              displayLayer.visible ? '隐藏图层' : '显示图层'
+            }}</span>
           </button>
           <label v-if="isRealtimeWeatherLayer" class="weather-provider-row">
             <span class="weather-provider-label">天气数据源</span>
@@ -1048,15 +1149,38 @@ onBeforeUnmount(() => {
               </option>
             </select>
           </label>
-          <p v-if="isRealtimeWeatherLayer && selectedWeatherProviderHint" class="weather-provider-error">
+          <p
+            v-if="isRealtimeWeatherLayer && selectedWeatherProviderHint"
+            class="weather-provider-error"
+          >
             {{ selectedWeatherProviderHint }}
           </p>
-          <p v-else-if="isRealtimeWeatherLayer && selectedWeatherProviderSparse" class="weather-provider-error">
+          <p
+            v-else-if="isRealtimeWeatherLayer && selectedWeatherProviderSparse"
+            class="weather-provider-error"
+          >
             点查可用；瓦片将回落 dense 源（Open-Meteo）
           </p>
           <p v-if="isRealtimeWeatherLayer && weatherProvidersError" class="weather-provider-error">
             {{ weatherProvidersError }}
           </p>
+          <div v-if="isRealtimeWeatherLayer" class="weather-layer-btn-row smooth-render-row">
+            <span class="smooth-render-label">平滑渲染</span>
+            <button
+              class="smooth-toggle-switch"
+              :class="{ active: layersStore.smoothRendering }"
+              type="button"
+              role="switch"
+              :aria-checked="layersStore.smoothRendering"
+              title="启用后天气色场使用双线性插值平滑过渡（需 WebGL）"
+              @click="layersStore.setSmoothRendering(!layersStore.smoothRendering)"
+            >
+              <span class="smooth-toggle-knob"></span>
+            </button>
+            <span class="smooth-render-hint">{{
+              layersStore.smoothRendering ? '平滑过渡' : '网格色块'
+            }}</span>
+          </div>
         </div>
 
         <div v-if="styleRenderHint" class="weather-legend-row">
@@ -1072,7 +1196,8 @@ onBeforeUnmount(() => {
               v-for="stop in weatherLegendStops"
               :key="`tick-${stop.value}`"
               class="weather-legend-tick"
-            >{{ stop.label }}</span>
+              >{{ stop.label }}</span
+            >
           </div>
           <p v-if="legendExplainer" class="weather-legend-explainer">{{ legendExplainer }}</p>
         </div>
@@ -1087,8 +1212,16 @@ onBeforeUnmount(() => {
           </div>
         </div>
 
-        <div v-if="styleRenderHint" class="palette-selector" :class="{ 'is-readonly': !canEditPalette }">
-          <div v-if="paletteDropdownOpen && canEditPalette" class="palette-backdrop" @click="paletteDropdownOpen = false"></div>
+        <div
+          v-if="styleRenderHint"
+          class="palette-selector"
+          :class="{ 'is-readonly': !canEditPalette }"
+        >
+          <div
+            v-if="paletteDropdownOpen && canEditPalette"
+            class="palette-backdrop"
+            @click="paletteDropdownOpen = false"
+          ></div>
           <button
             class="palette-trigger"
             type="button"
@@ -1099,14 +1232,22 @@ onBeforeUnmount(() => {
             <span class="palette-trigger-label">配色方案</span>
             <span class="palette-trigger-preview">
               <span
-                v-for="(c, i) in (paletteOptions.find(p => p.id === currentPaletteId)?.colors ?? [])"
+                v-for="(c, i) in paletteOptions.find((p) => p.id === currentPaletteId)?.colors ??
+                []"
                 :key="i"
                 class="palette-trigger-dot"
                 :style="{ background: c }"
               ></span>
             </span>
-            <span class="palette-trigger-name">{{ paletteOptions.find(p => p.id === currentPaletteId)?.label ?? '默认' }}</span>
-            <span v-if="canEditPalette" class="palette-trigger-arrow" :class="{ open: paletteDropdownOpen }">▾</span>
+            <span class="palette-trigger-name">{{
+              paletteOptions.find((p) => p.id === currentPaletteId)?.label ?? '默认'
+            }}</span>
+            <span
+              v-if="canEditPalette"
+              class="palette-trigger-arrow"
+              :class="{ open: paletteDropdownOpen }"
+              >▾</span
+            >
           </button>
           <div v-if="paletteDropdownOpen && canEditPalette" class="palette-dropdown">
             <button
@@ -1117,9 +1258,14 @@ onBeforeUnmount(() => {
               type="button"
               @click="handleSelectPalette(opt.id)"
             >
-              <span class="palette-option-gradient" :style="{ background: `linear-gradient(90deg, ${opt.colors.join(', ')})` }"></span>
+              <span
+                class="palette-option-gradient"
+                :style="{ background: `linear-gradient(90deg, ${opt.colors.join(', ')})` }"
+              ></span>
               <span class="palette-option-label">{{ opt.label }}</span>
-              <span class="palette-option-type">{{ opt.type === 'diverging' ? '发散' : opt.type === 'qualitative' ? '定性' : '递进' }}</span>
+              <span class="palette-option-type">{{
+                opt.type === 'diverging' ? '发散' : opt.type === 'qualitative' ? '定性' : '递进'
+              }}</span>
             </button>
             <button
               v-if="displayLayer?.paletteOverride"
@@ -1135,12 +1281,15 @@ onBeforeUnmount(() => {
 
         <div class="weather-style-meta">
           <span v-if="isRealtimeWeatherLayer && tileStats">
-            瓦片：已缓存 {{ tileStats.cached }} / 可视 {{ tileStats.visible }} / 加载中 {{ tileStats.pending }}
+            瓦片：已缓存 {{ tileStats.cached }} / 可视 {{ tileStats.visible }} / 加载中
+            {{ tileStats.pending }}
           </span>
           <span v-else-if="isRealtimeWeatherLayer || jobLayer">
             {{ hasWeatherLayerAsset ? '地图产物已挂载' : '尚无地图产物' }}
           </span>
-          <span v-if="styleRenderHint">默认不透明度 {{ Math.round(styleRenderHint.opacity * 100) }}%</span>
+          <span v-if="styleRenderHint"
+            >默认不透明度 {{ Math.round(styleRenderHint.opacity * 100) }}%</span
+          >
         </div>
 
         <ul v-if="styleRenderHint?.notes?.length" class="weather-note-list">
@@ -1148,7 +1297,11 @@ onBeforeUnmount(() => {
         </ul>
       </section>
 
-      <section v-if="visibleHotspots.length > 0" class="analysis-section analysis-section--hotspots" id="hotspot-section">
+      <section
+        v-if="visibleHotspots.length > 0"
+        class="analysis-section analysis-section--hotspots"
+        id="hotspot-section"
+      >
         <div class="section-kicker">热点</div>
         <h3>点位列表</h3>
         <ul class="hotspot-list">
@@ -1164,14 +1317,22 @@ onBeforeUnmount(() => {
         </ul>
       </section>
 
-      <section v-if="resultModel" class="analysis-section analysis-section--result" id="result-section">
+      <section
+        v-if="resultModel"
+        class="analysis-section analysis-section--result"
+        id="result-section"
+      >
         <div class="section-kicker">结果</div>
         <h3>结果视图</h3>
         <p>{{ resultModel.title }}</p>
       </section>
     </div>
 
-    <section v-if="!showCompactHero" class="hero-metric" :style="{ '--accent-color': displayLayer.accentColor }">
+    <section
+      v-if="!showCompactHero"
+      class="hero-metric"
+      :style="{ '--accent-color': displayLayer.accentColor }"
+    >
       <span>{{ displayLayer.metricLabel }}</span>
       <strong>{{ displayLayer.metricValue }}</strong>
       <p>{{ displayLayer.trendLabel }}</p>
@@ -1228,7 +1389,11 @@ onBeforeUnmount(() => {
     </section>
 
     <!-- ── 历史趋势对比 ───────────────────────────────────────────────────── -->
-    <section v-if="displayLayer.trendLabel" class="info-card trend-card" :style="{ '--accent-color': displayLayer.accentColor }">
+    <section
+      v-if="displayLayer.trendLabel"
+      class="info-card trend-card"
+      :style="{ '--accent-color': displayLayer.accentColor }"
+    >
       <div class="info-card-head">
         <span class="info-kicker">历史对比</span>
         <span class="info-card-tag trend">{{ displayLayer.metricLabel }}</span>
@@ -1272,15 +1437,19 @@ onBeforeUnmount(() => {
             </span>
           </div>
           <div class="overlay-value-col">
-            <span class="overlay-state" :class="`state-${layer.availabilityState}`">{{ layer.availabilityState }}</span>
+            <span class="overlay-state" :class="`state-${layer.availabilityState}`">{{
+              layer.availabilityState
+            }}</span>
             <span
               v-if="overlayPointValueMap.get(layer.catalogId)"
               class="overlay-point-value"
               :class="{ na: overlayPointValueMap.get(layer.catalogId)?.value === null }"
             >
-              {{ overlayPointValueMap.get(layer.catalogId)?.value !== null
+              {{
+                overlayPointValueMap.get(layer.catalogId)?.value !== null
                   ? formatOverlayValue(overlayPointValueMap.get(layer.catalogId)!)
-                  : 'N/A' }}
+                  : 'N/A'
+              }}
             </span>
           </div>
         </li>
@@ -1290,88 +1459,507 @@ onBeforeUnmount(() => {
 </template>
 
 <style scoped>
-.panel { --info-card-radius: 0.82rem; --info-card-padding-y: 0.46rem; --info-card-padding-x: 0.5rem; --info-soft-gap: 0.34rem; display: grid; gap: 0.52rem; width: 100%; max-width: 100%; padding: 0.56rem 0.48rem 0.5rem; border-radius: 0.88rem; border: 1px solid rgba(148, 163, 184, 0.15); background: linear-gradient(180deg, rgba(13, 21, 36, 0.72), rgba(8, 15, 28, 0.6)); box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.03), 0 12px 26px rgba(1, 8, 16, 0.14); min-height: 100%; overflow: hidden; contain: layout style; }
+.panel {
+  --info-card-radius: 0.82rem;
+  --info-card-padding-y: 0.46rem;
+  --info-card-padding-x: 0.5rem;
+  --info-soft-gap: 0.34rem;
+  display: grid;
+  gap: 0.52rem;
+  width: 100%;
+  max-width: 100%;
+  padding: 0.56rem 0.48rem 0.5rem;
+  border-radius: 0.88rem;
+  border: 1px solid rgba(148, 163, 184, 0.15);
+  background: linear-gradient(180deg, rgba(13, 21, 36, 0.72), rgba(8, 15, 28, 0.6));
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.03),
+    0 12px 26px rgba(1, 8, 16, 0.14);
+  min-height: 100%;
+  overflow: hidden;
+  contain: layout style;
+}
 .panel,
-.panel * { box-sizing: border-box; }
+.panel * {
+  box-sizing: border-box;
+}
 .panel > *,
-.panel :is(.panel-topline,.panel-header,.workflow-error,.workflow-stage-row,.meta-list,.meta-list > div,.analysis-stream,.analysis-section,.job-report-card,.job-report-header,.job-progress-shell,.job-progress-row,.job-steps,.job-metrics,.job-metric-item,.weather-section-head,.weather-primary-card,.weather-row-grid,.weather-row-card,.weather-hourly-strip,.weather-hourly-card,.weather-style-panel,.weather-style-head,.weather-layer-controls,.weather-legend-row,.weather-legend-strip,.weather-style-meta,.hero-metric,.insight-grid,.insight-card,.learning-note,.protocol-details,.info-card,.info-card-head,.meta-grid,.meta-grid-row,.trend-body,.trend-current,.trend-indicator,.overlay-list li,.overlay-info,.hotspot-list li,.report-section-head) { min-width: 0; }
-.panel :is(p,span,strong,dd,dt,a,button,.job-message,.job-diagnostic-item,.trend-text,.overlay-name,.run-block-hint,.error-message,.job-report-copy,.weather-legend-stop,.weather-style-meta span,.wf-name,.wf-event-text) { overflow-wrap: anywhere; }
-.panel :is(.workflow-meta-row,.wf-progress-bar,.wf-event-msg) { min-width: 0; }
-.panel-topline { display: grid; gap: 0.38rem; padding: 0.12rem 0.06rem 0.02rem; min-width: 0; }
-.panel-header { display: flex; justify-content: space-between; align-items: flex-start; gap: 0.44rem; flex-wrap: wrap; min-width: 0; }
-.panel-header > div:first-child { flex: 1 1 8rem; min-width: 0; }
-.readiness { padding: 0.16rem 0.36rem; border-radius: 999px; background: rgba(90, 162, 255, 0.16); color: #cfeaff; font-size: 0.58rem; flex: 0 1 auto; min-width: 0; max-width: 100%; align-self: flex-start; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.action-row { display: flex; justify-content: flex-start; }
-.workflow-error { display: flex; align-items: center; gap: 0.4rem; padding: 0.34rem 0.48rem; border-radius: 0.62rem; background: rgba(255, 80, 80, 0.12); border: 1px solid rgba(255, 80, 80, 0.22); color: #ff9999; font-size: 0.58rem; }
-.error-icon { font-size: 0.72rem; }
-.run-workflow-btn { border: 1px solid rgba(103, 212, 255, 0.24); border-radius: 999px; background: rgba(29, 78, 216, 0.18); color: #d8f3ff; font-size: 0.62rem; padding: 0.34rem 0.7rem; cursor: pointer; }
-.run-workflow-btn:disabled { opacity: 0.58; cursor: not-allowed; }
-.run-block-hint { color: #ffd38a; font-size: 0.56rem; line-height: 1.4; }
-.workflow-stage-row { display: flex; align-items: center; gap: 0.4rem; }
-.stage-pill { padding: 0.18rem 0.44rem; border-radius: 999px; font-size: 0.56rem; background: rgba(148, 163, 184, 0.12); color: #bfd3e6; }
-.stage-pill.running, .stage-pill.queued { background: rgba(90, 213, 255, 0.14); color: #bcefff; }
-.stage-pill.succeeded { background: rgba(114, 255, 207, 0.12); color: #9ff8cf; }
-.stage-pill.failed { background: rgba(255, 80, 80, 0.12); color: #ff9999; }
-.stage-pill.submitting { background: rgba(255, 196, 120, 0.12); color: #ffd38a; }
-.stage-copy { color: #7f93a9; font-size: 0.58rem; }
-.workflow-meta-row { display: flex; align-items: center; gap: 0.34rem; padding: 0.18rem 0.06rem; font-size: 0.58rem; color: #b6c9da; flex-wrap: wrap; }
-.wf-engine-icon { font-size: 0.72rem; line-height: 1; }
-.wf-engine-label { padding: 0.1rem 0.36rem; border-radius: 999px; background: rgba(90, 162, 255, 0.14); color: #d8f3ff; font-size: 0.55rem; }
-.wf-name { color: #9eb3c8; font-size: 0.56rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 100%; }
-.wf-progress-bar { position: relative; height: 4px; border-radius: 999px; background: rgba(148, 163, 184, 0.14); overflow: hidden; }
-.wf-progress-fill { position: absolute; inset: 0 auto 0 0; border-radius: 999px; transition: width 0.45s ease; background: rgba(148, 163, 184, 0.4); }
-.wf-progress-fill.running, .wf-progress-fill.queued { background: linear-gradient(90deg, rgba(90, 213, 255, 0.55), rgba(90, 213, 255, 0.95)); }
-.wf-progress-fill.succeeded { background: linear-gradient(90deg, rgba(114, 255, 207, 0.55), rgba(114, 255, 207, 0.95)); }
-.wf-progress-fill.failed { background: linear-gradient(90deg, rgba(255, 80, 80, 0.55), rgba(255, 80, 80, 0.95)); }
-.wf-progress-fill.submitting { background: linear-gradient(90deg, rgba(255, 196, 120, 0.55), rgba(255, 196, 120, 0.95)); }
-.wf-event-msg { display: flex; align-items: flex-start; gap: 0.32rem; padding: 0.18rem 0.06rem; font-size: 0.55rem; color: #8aa0b6; line-height: 1.4; }
-.wf-event-dot { flex: 0 0 auto; width: 6px; height: 6px; border-radius: 50%; margin-top: 0.22rem; background: rgba(148, 163, 184, 0.5); }
-.wf-event-dot.running, .wf-event-dot.queued { background: #5ad5ff; box-shadow: 0 0 6px rgba(90, 213, 255, 0.6); }
-.wf-event-dot.succeeded { background: #72ffcf; }
-.wf-event-dot.failed { background: #ff5050; }
-.wf-event-dot.submitting { background: #ffc478; }
-.wf-event-text { flex: 1 1 auto; min-width: 0; overflow-wrap: anywhere; }
-.meta-list { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.28rem 0.56rem; }
-.meta-list dt { color: #7f93a9; font-size: 0.56rem; }
-.meta-list dd { margin: 0.06rem 0 0; color: #eaf3fb; font-size: 0.66rem; }
-.analysis-stream { display: grid; gap: var(--info-soft-gap); overflow-x: hidden; overflow-y: visible; scrollbar-width: thin; scrollbar-color: rgba(136,192,255,.22) rgba(255,255,255,.05); }
-.analysis-stream::-webkit-scrollbar { width: 4px; }
-.analysis-stream::-webkit-scrollbar-thumb { background: rgba(136,192,255,.22); border-radius: 999px; }
-.analysis-stream::-webkit-scrollbar-track { background: rgba(255,255,255,.05); }
-.analysis-section, .job-report-card { background: rgba(8, 18, 33, 0.56); border: 1px solid rgba(136, 192, 255, 0.1); border-radius: var(--info-card-radius); padding: var(--info-card-padding-y) var(--info-card-padding-x); }
-.analysis-section--overview { background: linear-gradient(180deg, rgba(12, 25, 43, 0.82), rgba(8, 18, 33, 0.62)); border-color: rgba(103, 212, 255, 0.16); }
-.analysis-section--layer { border-color: rgba(136, 192, 255, 0.14); }
-.analysis-section--weather { border-color: rgba(103, 212, 255, 0.18); background: linear-gradient(180deg, rgba(8, 23, 42, 0.78), rgba(8, 18, 33, 0.62)); }
-.analysis-section--hotspots { border-color: rgba(114, 255, 207, 0.14); }
-.analysis-section--report { border-color: rgba(126, 168, 255, 0.18); background: linear-gradient(180deg, rgba(10, 22, 39, 0.72), rgba(8, 18, 33, 0.56)); }
-.analysis-section--result { border-color: rgba(126, 168, 255, 0.16); }
-.report-section-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 0.5rem; }
-.job-report-copy { margin-top: 0.32rem !important; color: #d7e6f5 !important; }
-.analysis-section h3 { margin: 0.1rem 0 0.18rem; font-size: 0.68rem; color: #f0f7ff; }
-.analysis-section p { margin: 0; color: #9eb3c8; font-size: 0.58rem; line-height: 1.45; }
-.section-kicker { color: #7f93a9; font-size: 0.52rem; letter-spacing: 0.08em; text-transform: uppercase; }
-.analysis-chip-row { display: flex; gap: 0.28rem; flex-wrap: wrap; margin-bottom: 0.2rem; }
-.analysis-chip { padding: 0.14rem 0.36rem; border-radius: 999px; background: rgba(90, 162, 255, 0.14); color: #dff1ff; font-size: 0.55rem; }
-.analysis-chip.muted { background: rgba(148, 163, 184, 0.12); color: #b6c9da; }
-.weather-section-head { display: flex; justify-content: space-between; gap: 0.5rem; align-items: flex-start; }
-.weather-primary-card { display: grid; gap: 0.14rem; margin-top: 0.34rem; padding: 0.4rem 0.44rem; border-radius: 0.7rem; background: rgba(90, 162, 255, 0.1); border: 1px solid rgba(90, 162, 255, 0.16); }
-.weather-primary-card span { color: #9bc8e9; font-size: 0.54rem; }
-.weather-primary-card strong { color: #f4fbff; font-size: 0.86rem; }
-.weather-primary-card p { color: #c8dff0; }
-.weather-row-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.26rem; margin-top: 0.34rem; }
-.weather-row-card { display: grid; gap: 0.08rem; padding: 0.3rem 0.34rem; border-radius: 0.56rem; background: rgba(148, 163, 184, 0.08); border: 1px solid rgba(148, 163, 184, 0.08); }
-.weather-row-card span { color: #7f93a9; font-size: 0.54rem; }
-.weather-row-card strong { color: #edf6ff; font-size: 0.6rem; }
-.weather-hourly-strip { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 0.24rem; margin-top: 0.34rem; }
-.weather-hourly-card { display: grid; gap: 0.08rem; padding: 0.28rem 0.24rem; border-radius: 0.56rem; background: rgba(8, 18, 33, 0.56); border: 1px solid rgba(136, 192, 255, 0.1); text-align: center; }
-.weather-hourly-card span { color: #7f93a9; font-size: 0.52rem; }
-.weather-hourly-card strong { color: #eaf3fb; font-size: 0.58rem; }
-.weather-state { margin-top: 0.34rem; padding: 0.34rem 0.42rem; border-radius: 0.62rem; font-size: 0.58rem; }
-.weather-state-loading { background: rgba(90, 162, 255, 0.1); color: #cfeaff; border: 1px solid rgba(90, 162, 255, 0.14); }
-.weather-state-error { background: rgba(255, 80, 80, 0.1); color: #ffb3b3; border: 1px solid rgba(255, 80, 80, 0.16); }
-.weather-style-panel { display: grid; gap: 0.28rem; margin-top: 0.36rem; padding-top: 0.34rem; border-top: 1px solid rgba(136, 192, 255, 0.08); }
-.weather-style-head { display: flex; justify-content: space-between; gap: 0.4rem; align-items: center; color: #eaf3fb; font-size: 0.58rem; }
-.weather-layer-controls { display: grid; gap: 0.24rem; }
+.panel
+  :is(
+    .panel-topline,
+    .panel-header,
+    .workflow-error,
+    .workflow-stage-row,
+    .meta-list,
+    .meta-list > div,
+    .analysis-stream,
+    .analysis-section,
+    .job-report-card,
+    .job-report-header,
+    .job-progress-shell,
+    .job-progress-row,
+    .job-steps,
+    .job-metrics,
+    .job-metric-item,
+    .weather-section-head,
+    .weather-primary-card,
+    .weather-row-grid,
+    .weather-row-card,
+    .weather-hourly-strip,
+    .weather-hourly-card,
+    .weather-style-panel,
+    .weather-style-head,
+    .weather-layer-controls,
+    .weather-legend-row,
+    .weather-legend-strip,
+    .weather-style-meta,
+    .hero-metric,
+    .insight-grid,
+    .insight-card,
+    .learning-note,
+    .protocol-details,
+    .info-card,
+    .info-card-head,
+    .meta-grid,
+    .meta-grid-row,
+    .trend-body,
+    .trend-current,
+    .trend-indicator,
+    .overlay-list li,
+    .overlay-info,
+    .hotspot-list li,
+    .report-section-head
+  ) {
+  min-width: 0;
+}
+.panel
+  :is(
+    p,
+    span,
+    strong,
+    dd,
+    dt,
+    a,
+    button,
+    .job-message,
+    .job-diagnostic-item,
+    .trend-text,
+    .overlay-name,
+    .run-block-hint,
+    .error-message,
+    .job-report-copy,
+    .weather-legend-stop,
+    .weather-style-meta span,
+    .wf-name,
+    .wf-event-text
+  ) {
+  overflow-wrap: anywhere;
+}
+.panel :is(.workflow-meta-row, .wf-progress-bar, .wf-event-msg) {
+  min-width: 0;
+}
+.panel-topline {
+  display: grid;
+  gap: 0.38rem;
+  padding: 0.12rem 0.06rem 0.02rem;
+  min-width: 0;
+}
+.panel-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 0.44rem;
+  flex-wrap: wrap;
+  min-width: 0;
+}
+.panel-header > div:first-child {
+  flex: 1 1 8rem;
+  min-width: 0;
+}
+.readiness {
+  padding: 0.16rem 0.36rem;
+  border-radius: 999px;
+  background: rgba(90, 162, 255, 0.16);
+  color: #cfeaff;
+  font-size: 0.58rem;
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: 100%;
+  align-self: flex-start;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.action-row {
+  display: flex;
+  justify-content: flex-start;
+}
+.workflow-error {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.34rem 0.48rem;
+  border-radius: 0.62rem;
+  background: rgba(255, 80, 80, 0.12);
+  border: 1px solid rgba(255, 80, 80, 0.22);
+  color: #ff9999;
+  font-size: 0.58rem;
+}
+.error-icon {
+  font-size: 0.72rem;
+}
+.run-workflow-btn {
+  border: 1px solid rgba(103, 212, 255, 0.24);
+  border-radius: 999px;
+  background: rgba(29, 78, 216, 0.18);
+  color: #d8f3ff;
+  font-size: 0.62rem;
+  padding: 0.34rem 0.7rem;
+  cursor: pointer;
+}
+.run-workflow-btn:disabled {
+  opacity: 0.58;
+  cursor: not-allowed;
+}
+.run-block-hint {
+  color: #ffd38a;
+  font-size: 0.56rem;
+  line-height: 1.4;
+}
+.workflow-stage-row {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+.stage-pill {
+  padding: 0.18rem 0.44rem;
+  border-radius: 999px;
+  font-size: 0.56rem;
+  background: rgba(148, 163, 184, 0.12);
+  color: #bfd3e6;
+}
+.stage-pill.running,
+.stage-pill.queued {
+  background: rgba(90, 213, 255, 0.14);
+  color: #bcefff;
+}
+.stage-pill.succeeded {
+  background: rgba(114, 255, 207, 0.12);
+  color: #9ff8cf;
+}
+.stage-pill.failed {
+  background: rgba(255, 80, 80, 0.12);
+  color: #ff9999;
+}
+.stage-pill.submitting {
+  background: rgba(255, 196, 120, 0.12);
+  color: #ffd38a;
+}
+.stage-copy {
+  color: #7f93a9;
+  font-size: 0.58rem;
+}
+.workflow-meta-row {
+  display: flex;
+  align-items: center;
+  gap: 0.34rem;
+  padding: 0.18rem 0.06rem;
+  font-size: 0.58rem;
+  color: #b6c9da;
+  flex-wrap: wrap;
+}
+.wf-engine-icon {
+  font-size: 0.72rem;
+  line-height: 1;
+}
+.wf-engine-label {
+  padding: 0.1rem 0.36rem;
+  border-radius: 999px;
+  background: rgba(90, 162, 255, 0.14);
+  color: #d8f3ff;
+  font-size: 0.55rem;
+}
+.wf-name {
+  color: #9eb3c8;
+  font-size: 0.56rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 100%;
+}
+.wf-progress-bar {
+  position: relative;
+  height: 4px;
+  border-radius: 999px;
+  background: rgba(148, 163, 184, 0.14);
+  overflow: hidden;
+}
+.wf-progress-fill {
+  position: absolute;
+  inset: 0 auto 0 0;
+  border-radius: 999px;
+  transition: width 0.45s ease;
+  background: rgba(148, 163, 184, 0.4);
+}
+.wf-progress-fill.running,
+.wf-progress-fill.queued {
+  background: linear-gradient(90deg, rgba(90, 213, 255, 0.55), rgba(90, 213, 255, 0.95));
+}
+.wf-progress-fill.succeeded {
+  background: linear-gradient(90deg, rgba(114, 255, 207, 0.55), rgba(114, 255, 207, 0.95));
+}
+.wf-progress-fill.failed {
+  background: linear-gradient(90deg, rgba(255, 80, 80, 0.55), rgba(255, 80, 80, 0.95));
+}
+.wf-progress-fill.submitting {
+  background: linear-gradient(90deg, rgba(255, 196, 120, 0.55), rgba(255, 196, 120, 0.95));
+}
+.wf-event-msg {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.32rem;
+  padding: 0.18rem 0.06rem;
+  font-size: 0.55rem;
+  color: #8aa0b6;
+  line-height: 1.4;
+}
+.wf-event-dot {
+  flex: 0 0 auto;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  margin-top: 0.22rem;
+  background: rgba(148, 163, 184, 0.5);
+}
+.wf-event-dot.running,
+.wf-event-dot.queued {
+  background: #5ad5ff;
+  box-shadow: 0 0 6px rgba(90, 213, 255, 0.6);
+}
+.wf-event-dot.succeeded {
+  background: #72ffcf;
+}
+.wf-event-dot.failed {
+  background: #ff5050;
+}
+.wf-event-dot.submitting {
+  background: #ffc478;
+}
+.wf-event-text {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.meta-list {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.28rem 0.56rem;
+}
+.meta-list dt {
+  color: #7f93a9;
+  font-size: 0.56rem;
+}
+.meta-list dd {
+  margin: 0.06rem 0 0;
+  color: #eaf3fb;
+  font-size: 0.66rem;
+}
+.analysis-stream {
+  display: grid;
+  gap: var(--info-soft-gap);
+  overflow-x: hidden;
+  overflow-y: visible;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(136, 192, 255, 0.22) rgba(255, 255, 255, 0.05);
+}
+.analysis-stream::-webkit-scrollbar {
+  width: 4px;
+}
+.analysis-stream::-webkit-scrollbar-thumb {
+  background: rgba(136, 192, 255, 0.22);
+  border-radius: 999px;
+}
+.analysis-stream::-webkit-scrollbar-track {
+  background: rgba(255, 255, 255, 0.05);
+}
+.analysis-section,
+.job-report-card {
+  background: rgba(8, 18, 33, 0.56);
+  border: 1px solid rgba(136, 192, 255, 0.1);
+  border-radius: var(--info-card-radius);
+  padding: var(--info-card-padding-y) var(--info-card-padding-x);
+}
+.analysis-section--overview {
+  background: linear-gradient(180deg, rgba(12, 25, 43, 0.82), rgba(8, 18, 33, 0.62));
+  border-color: rgba(103, 212, 255, 0.16);
+}
+.analysis-section--layer {
+  border-color: rgba(136, 192, 255, 0.14);
+}
+.analysis-section--weather {
+  border-color: rgba(103, 212, 255, 0.18);
+  background: linear-gradient(180deg, rgba(8, 23, 42, 0.78), rgba(8, 18, 33, 0.62));
+}
+.analysis-section--hotspots {
+  border-color: rgba(114, 255, 207, 0.14);
+}
+.analysis-section--report {
+  border-color: rgba(126, 168, 255, 0.18);
+  background: linear-gradient(180deg, rgba(10, 22, 39, 0.72), rgba(8, 18, 33, 0.56));
+}
+.analysis-section--result {
+  border-color: rgba(126, 168, 255, 0.16);
+}
+.report-section-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 0.5rem;
+}
+.job-report-copy {
+  margin-top: 0.32rem !important;
+  color: #d7e6f5 !important;
+}
+.analysis-section h3 {
+  margin: 0.1rem 0 0.18rem;
+  font-size: 0.68rem;
+  color: #f0f7ff;
+}
+.analysis-section p {
+  margin: 0;
+  color: #9eb3c8;
+  font-size: 0.58rem;
+  line-height: 1.45;
+}
+.section-kicker {
+  color: #7f93a9;
+  font-size: 0.52rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.analysis-chip-row {
+  display: flex;
+  gap: 0.28rem;
+  flex-wrap: wrap;
+  margin-bottom: 0.2rem;
+}
+.analysis-chip {
+  padding: 0.14rem 0.36rem;
+  border-radius: 999px;
+  background: rgba(90, 162, 255, 0.14);
+  color: #dff1ff;
+  font-size: 0.55rem;
+}
+.analysis-chip.muted {
+  background: rgba(148, 163, 184, 0.12);
+  color: #b6c9da;
+}
+.weather-section-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.5rem;
+  align-items: flex-start;
+}
+.weather-primary-card {
+  display: grid;
+  gap: 0.14rem;
+  margin-top: 0.34rem;
+  padding: 0.4rem 0.44rem;
+  border-radius: 0.7rem;
+  background: rgba(90, 162, 255, 0.1);
+  border: 1px solid rgba(90, 162, 255, 0.16);
+}
+.weather-primary-card span {
+  color: #9bc8e9;
+  font-size: 0.54rem;
+}
+.weather-primary-card strong {
+  color: #f4fbff;
+  font-size: 0.86rem;
+}
+.weather-primary-card p {
+  color: #c8dff0;
+}
+.weather-row-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.26rem;
+  margin-top: 0.34rem;
+}
+.weather-row-card {
+  display: grid;
+  gap: 0.08rem;
+  padding: 0.3rem 0.34rem;
+  border-radius: 0.56rem;
+  background: rgba(148, 163, 184, 0.08);
+  border: 1px solid rgba(148, 163, 184, 0.08);
+}
+.weather-row-card span {
+  color: #7f93a9;
+  font-size: 0.54rem;
+}
+.weather-row-card strong {
+  color: #edf6ff;
+  font-size: 0.6rem;
+}
+.weather-hourly-strip {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0.24rem;
+  margin-top: 0.34rem;
+}
+.weather-hourly-card {
+  display: grid;
+  gap: 0.08rem;
+  padding: 0.28rem 0.24rem;
+  border-radius: 0.56rem;
+  background: rgba(8, 18, 33, 0.56);
+  border: 1px solid rgba(136, 192, 255, 0.1);
+  text-align: center;
+}
+.weather-hourly-card span {
+  color: #7f93a9;
+  font-size: 0.52rem;
+}
+.weather-hourly-card strong {
+  color: #eaf3fb;
+  font-size: 0.58rem;
+}
+.weather-state {
+  margin-top: 0.34rem;
+  padding: 0.34rem 0.42rem;
+  border-radius: 0.62rem;
+  font-size: 0.58rem;
+}
+.weather-state-loading {
+  background: rgba(90, 162, 255, 0.1);
+  color: #cfeaff;
+  border: 1px solid rgba(90, 162, 255, 0.14);
+}
+.weather-state-error {
+  background: rgba(255, 80, 80, 0.1);
+  color: #ffb3b3;
+  border: 1px solid rgba(255, 80, 80, 0.16);
+}
+.weather-style-panel {
+  display: grid;
+  gap: 0.28rem;
+  margin-top: 0.36rem;
+  padding-top: 0.34rem;
+  border-top: 1px solid rgba(136, 192, 255, 0.08);
+}
+.weather-style-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.4rem;
+  align-items: center;
+  color: #eaf3fb;
+  font-size: 0.58rem;
+}
+.weather-layer-controls {
+  display: grid;
+  gap: 0.24rem;
+}
 .weather-layer-btn-row {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -1404,9 +1992,14 @@ onBeforeUnmount(() => {
   cursor: pointer;
   min-width: 0;
   white-space: nowrap;
-  transition: background 0.16s ease, color 0.16s ease, box-shadow 0.16s ease;
+  transition:
+    background 0.16s ease,
+    color 0.16s ease,
+    box-shadow 0.16s ease;
 }
-.wind-mode-seg-btn:last-child { border-right: none; }
+.wind-mode-seg-btn:last-child {
+  border-right: none;
+}
 .wind-mode-seg-btn:hover:not(:disabled):not(.active) {
   background: rgba(29, 78, 216, 0.14);
   color: #e8f3ff;
@@ -1448,7 +2041,11 @@ onBeforeUnmount(() => {
   gap: 0.22rem;
   min-width: 0;
   white-space: nowrap;
-  transition: border-color 0.18s ease, background 0.18s ease, color 0.18s ease, box-shadow 0.18s ease;
+  transition:
+    border-color 0.18s ease,
+    background 0.18s ease,
+    color 0.18s ease,
+    box-shadow 0.18s ease;
 }
 .weather-layer-btn-text {
   overflow: hidden;
@@ -1459,8 +2056,18 @@ onBeforeUnmount(() => {
   background: rgba(29, 78, 216, 0.22);
   color: #eaf8ff;
 }
-.weather-provider-row { display: grid; grid-template-columns: auto 1fr; gap: 0.36rem; align-items: center; color: #9eb3c8; font-size: 0.56rem; }
-.weather-provider-label { color: #dbeeff; white-space: nowrap; }
+.weather-provider-row {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 0.36rem;
+  align-items: center;
+  color: #9eb3c8;
+  font-size: 0.56rem;
+}
+.weather-provider-label {
+  color: #dbeeff;
+  white-space: nowrap;
+}
 .weather-provider-select {
   min-width: 0;
   border: 1px solid rgba(103, 212, 255, 0.22);
@@ -1470,20 +2077,141 @@ onBeforeUnmount(() => {
   font-size: 0.56rem;
   padding: 0.26rem 0.4rem;
 }
-.weather-provider-error { margin: 0; color: #ffb3b3; font-size: 0.52rem; }
-.weather-opacity-row { display: grid; grid-template-columns: auto 1fr auto; gap: 0.3rem; align-items: center; color: #9eb3c8; font-size: 0.56rem; }
-.weather-opacity-slider { width: 100%; }
-.layer-opacity-row { display: grid; grid-template-columns: auto 1fr auto; gap: 0.3rem; align-items: center; margin-top: 0.34rem; color: #9eb3c8; font-size: 0.56rem; }
-.layer-opacity-slider { width: 100%; -webkit-appearance: none; appearance: none; height: 1.4rem; background: transparent; outline: none; cursor: pointer; }
-.layer-opacity-slider::-webkit-slider-runnable-track { height: 5px; border-radius: 999px; background: rgba(136, 192, 255, 0.18); }
-.layer-opacity-slider::-moz-range-track { height: 5px; border-radius: 999px; background: rgba(136, 192, 255, 0.18); }
-.layer-opacity-slider::-webkit-slider-thumb { -webkit-appearance: none; appearance: none; width: 0.9rem; height: 0.9rem; margin-top: -0.4rem; border-radius: 50%; background: var(--accent-color, #5ad5ff); box-shadow: 0 0 6px var(--accent-color, #5ad5ff); cursor: pointer; transition: transform 0.14s ease; }
-.layer-opacity-slider::-webkit-slider-thumb:hover { transform: scale(1.15); }
-.layer-opacity-slider::-moz-range-thumb { width: 0.9rem; height: 0.9rem; border: none; border-radius: 50%; background: var(--accent-color, #5ad5ff); box-shadow: 0 0 6px var(--accent-color, #5ad5ff); cursor: pointer; }
-.weather-legend-row { display: flex; justify-content: space-between; gap: 0.4rem; color: #9eb3c8; font-size: 0.54rem; }
-.weather-legend-label { color: #dbeeff; }
-.weather-legend-meta { color: #7f93a9; }
-.weather-legend-gradient-wrap { display: flex; flex-direction: column; gap: 0.28rem; }
+.weather-provider-error {
+  margin: 0;
+  color: #ffb3b3;
+  font-size: 0.52rem;
+}
+.smooth-render-row {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  margin-top: 0.3rem;
+}
+.smooth-render-label {
+  color: #dbeeff;
+  font-size: 0.56rem;
+  white-space: nowrap;
+}
+.smooth-render-hint {
+  color: #7f93a9;
+  font-size: 0.5rem;
+}
+.smooth-toggle-switch {
+  position: relative;
+  width: 2rem;
+  height: 1.1rem;
+  border: 1px solid rgba(103, 212, 255, 0.28);
+  border-radius: 999px;
+  background: rgba(8, 18, 33, 0.72);
+  cursor: pointer;
+  transition:
+    background 0.2s ease,
+    border-color 0.2s ease;
+  flex: none;
+}
+.smooth-toggle-switch.active {
+  background: rgba(10, 132, 255, 0.32);
+  border-color: rgba(90, 213, 255, 0.55);
+}
+.smooth-toggle-knob {
+  position: absolute;
+  top: 0.14rem;
+  left: 0.14rem;
+  width: 0.72rem;
+  height: 0.72rem;
+  border-radius: 50%;
+  background: #8aa8bf;
+  transition:
+    transform 0.18s ease,
+    background 0.18s ease;
+}
+.smooth-toggle-switch.active .smooth-toggle-knob {
+  transform: translateX(0.9rem);
+  background: #5ad5ff;
+  box-shadow: 0 0 6px rgba(90, 213, 255, 0.5);
+}
+.weather-opacity-row {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  gap: 0.3rem;
+  align-items: center;
+  color: #9eb3c8;
+  font-size: 0.56rem;
+}
+.weather-opacity-slider {
+  width: 100%;
+}
+.layer-opacity-row {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  gap: 0.3rem;
+  align-items: center;
+  margin-top: 0.34rem;
+  color: #9eb3c8;
+  font-size: 0.56rem;
+}
+.layer-opacity-slider {
+  width: 100%;
+  -webkit-appearance: none;
+  appearance: none;
+  height: 1.4rem;
+  background: transparent;
+  outline: none;
+  cursor: pointer;
+}
+.layer-opacity-slider::-webkit-slider-runnable-track {
+  height: 5px;
+  border-radius: 999px;
+  background: rgba(136, 192, 255, 0.18);
+}
+.layer-opacity-slider::-moz-range-track {
+  height: 5px;
+  border-radius: 999px;
+  background: rgba(136, 192, 255, 0.18);
+}
+.layer-opacity-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 0.9rem;
+  height: 0.9rem;
+  margin-top: -0.4rem;
+  border-radius: 50%;
+  background: var(--accent-color, #5ad5ff);
+  box-shadow: 0 0 6px var(--accent-color, #5ad5ff);
+  cursor: pointer;
+  transition: transform 0.14s ease;
+}
+.layer-opacity-slider::-webkit-slider-thumb:hover {
+  transform: scale(1.15);
+}
+.layer-opacity-slider::-moz-range-thumb {
+  width: 0.9rem;
+  height: 0.9rem;
+  border: none;
+  border-radius: 50%;
+  background: var(--accent-color, #5ad5ff);
+  box-shadow: 0 0 6px var(--accent-color, #5ad5ff);
+  cursor: pointer;
+}
+.weather-legend-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.4rem;
+  color: #9eb3c8;
+  font-size: 0.54rem;
+}
+.weather-legend-label {
+  color: #dbeeff;
+}
+.weather-legend-meta {
+  color: #7f93a9;
+}
+.weather-legend-gradient-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 0.28rem;
+}
 .weather-legend-gradient {
   height: 0.72rem;
   border-radius: 0.28rem;
@@ -1503,19 +2231,66 @@ onBeforeUnmount(() => {
   font-size: 0.5rem;
   line-height: 1.4;
 }
-.weather-legend-tick { flex: 1; text-align: center; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.weather-legend-tick:first-child { text-align: left; }
-.weather-legend-tick:last-child { text-align: right; }
-.weather-legend-strip { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.18rem 0.3rem; }
-.weather-legend-stop { display: flex; align-items: center; gap: 0.24rem; color: #c8dff0; font-size: 0.54rem; }
-.weather-legend-swatch { width: 0.72rem; height: 0.72rem; border-radius: 0.22rem; border: 1px solid rgba(255, 255, 255, 0.08); flex-shrink: 0; }
+.weather-legend-tick {
+  flex: 1;
+  text-align: center;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.weather-legend-tick:first-child {
+  text-align: left;
+}
+.weather-legend-tick:last-child {
+  text-align: right;
+}
+.weather-legend-strip {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.18rem 0.3rem;
+}
+.weather-legend-stop {
+  display: flex;
+  align-items: center;
+  gap: 0.24rem;
+  color: #c8dff0;
+  font-size: 0.54rem;
+}
+.weather-legend-swatch {
+  width: 0.72rem;
+  height: 0.72rem;
+  border-radius: 0.22rem;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  flex-shrink: 0;
+}
 
 /* 配色方案选择器 */
-.palette-selector { position: relative; margin-top: 0.2rem; }
-.palette-selector.is-readonly .palette-trigger { opacity: 0.72; cursor: not-allowed; }
-.palette-readonly-hint { margin: 0.28rem 0 0; color: #7f93a9; font-size: 0.5rem; line-height: 1.35; }
-.palette-backdrop { position: fixed; inset: 0; z-index: 19; background: transparent; cursor: default; }
-.palette-reset { color: #5ad5ff; font-style: italic; }
+.palette-selector {
+  position: relative;
+  margin-top: 0.2rem;
+}
+.palette-selector.is-readonly .palette-trigger {
+  opacity: 0.72;
+  cursor: not-allowed;
+}
+.palette-readonly-hint {
+  margin: 0.28rem 0 0;
+  color: #7f93a9;
+  font-size: 0.5rem;
+  line-height: 1.35;
+}
+.palette-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 19;
+  background: transparent;
+  cursor: default;
+}
+.palette-reset {
+  color: #5ad5ff;
+  font-style: italic;
+}
 .palette-trigger {
   display: flex;
   align-items: center;
@@ -1531,119 +2306,525 @@ onBeforeUnmount(() => {
   cursor: pointer;
   text-align: left;
 }
-.palette-trigger:hover:not(:disabled) { border-color: rgba(90, 213, 255, 0.3); }
+.palette-trigger:hover:not(:disabled) {
+  border-color: rgba(90, 213, 255, 0.3);
+}
 .palette-trigger:disabled {
   opacity: 0.72;
   cursor: not-allowed;
 }
-.palette-trigger-label { color: #7f93a9; flex-shrink: 0; }
-.palette-trigger-preview { display: flex; gap: 1px; flex-shrink: 0; }
-.palette-trigger-dot { width: 0.5rem; height: 0.72rem; display: inline-block; }
-.palette-trigger-name { flex: 1; text-align: left; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.palette-trigger-arrow { font-size: 0.6rem; color: #7f93a9; transition: transform 0.2s ease; }
-.palette-trigger-arrow.open { transform: rotate(180deg); }
+.palette-trigger-label {
+  color: #7f93a9;
+  flex-shrink: 0;
+}
+.palette-trigger-preview {
+  display: flex;
+  gap: 1px;
+  flex-shrink: 0;
+}
+.palette-trigger-dot {
+  width: 0.5rem;
+  height: 0.72rem;
+  display: inline-block;
+}
+.palette-trigger-name {
+  flex: 1;
+  text-align: left;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.palette-trigger-arrow {
+  font-size: 0.6rem;
+  color: #7f93a9;
+  transition: transform 0.2s ease;
+}
+.palette-trigger-arrow.open {
+  transform: rotate(180deg);
+}
 .palette-dropdown {
-  position: absolute; top: 100%; left: 0; right: 0; z-index: 20;
-  margin-top: 0.2rem; padding: 0.24rem; border: 1px solid rgba(136, 192, 255, 0.16); border-radius: 0.5rem;
-  background: rgba(6, 14, 26, 0.96); backdrop-filter: blur(12px);
-  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.4); max-height: 240px; overflow-y: auto;
-  display: grid; gap: 0.16rem;
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  z-index: 20;
+  margin-top: 0.2rem;
+  padding: 0.24rem;
+  border: 1px solid rgba(136, 192, 255, 0.16);
+  border-radius: 0.5rem;
+  background: rgba(6, 14, 26, 0.96);
+  backdrop-filter: blur(12px);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.4);
+  max-height: 240px;
+  overflow-y: auto;
+  display: grid;
+  gap: 0.16rem;
 }
 .palette-option {
-  display: flex; align-items: center; gap: 0.3rem; padding: 0.22rem 0.3rem;
-  border: 1px solid transparent; border-radius: 0.36rem; background: transparent;
-  color: #a8c4d8; font: inherit; font-size: 0.52rem; cursor: pointer; text-align: left;
-  transition: background 0.14s ease, border-color 0.14s ease;
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 0.22rem 0.3rem;
+  border: 1px solid transparent;
+  border-radius: 0.36rem;
+  background: transparent;
+  color: #a8c4d8;
+  font: inherit;
+  font-size: 0.52rem;
+  cursor: pointer;
+  text-align: left;
+  transition:
+    background 0.14s ease,
+    border-color 0.14s ease;
 }
-.palette-option:hover { background: rgba(136, 192, 255, 0.08); }
-.palette-option.active { border-color: rgba(90, 213, 255, 0.3); background: rgba(10, 132, 255, 0.1); color: #f0faff; }
-.palette-option-gradient { width: 2.4rem; height: 0.6rem; border-radius: 0.16rem; flex-shrink: 0; border: 1px solid rgba(255, 255, 255, 0.06); }
-.palette-option-label { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.palette-option-type { color: #5a7080; font-size: 0.46rem; flex-shrink: 0; }
+.palette-option:hover {
+  background: rgba(136, 192, 255, 0.08);
+}
+.palette-option.active {
+  border-color: rgba(90, 213, 255, 0.3);
+  background: rgba(10, 132, 255, 0.1);
+  color: #f0faff;
+}
+.palette-option-gradient {
+  width: 2.4rem;
+  height: 0.6rem;
+  border-radius: 0.16rem;
+  flex-shrink: 0;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+}
+.palette-option-label {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.palette-option-type {
+  color: #5a7080;
+  font-size: 0.46rem;
+  flex-shrink: 0;
+}
 
-.weather-style-meta { display: flex; justify-content: space-between; gap: 0.4rem; color: #7f93a9; font-size: 0.52rem; flex-wrap: wrap; }
-.weather-note-list { display: grid; gap: 0.16rem; margin: 0; padding-left: 1rem; color: #9eb3c8; font-size: 0.54rem; }
-.job-report-header { display: flex; justify-content: space-between; align-items: flex-start; gap: 0.4rem; }
-.job-report-title { color: #eaf3fb; font-size: 0.66rem; font-weight: 700; }
-.job-status-chip { padding: 0.12rem 0.34rem; border-radius: 999px; font-size: 0.54rem; background: rgba(148, 163, 184, 0.12); color: #bfd3e6; }
-.job-report-card--summary { background: linear-gradient(180deg, rgba(10, 22, 39, 0.72), rgba(8, 18, 33, 0.56)); }
-.job-progress-shell { display: grid; gap: 0.24rem; }
-.job-progress-row { display: flex; align-items: center; gap: 0.4rem; }
-.job-progress-bar { flex: 1; height: 0.26rem; border-radius: 999px; background: rgba(148, 163, 184, 0.14); overflow: hidden; }
-.job-progress-fill { height: 100%; background: linear-gradient(90deg, #5ad5ff, #7ea8ff); }
-.job-progress-label { width: 2rem; text-align: right; color: #8ea3b8; font-size: 0.54rem; }
-.job-message { margin: 0; color: #c8dff0; font-size: 0.58rem; line-height: 1.4; }
-.job-diagnostic-list { display: grid; gap: 0.12rem; margin: 0; padding-left: 1rem; color: #ffcf99; font-size: 0.54rem; }
-.job-diagnostic-item { line-height: 1.35; }
-.job-steps { display: flex; flex-direction: column; gap: 0.18rem; }
-.job-step { padding: 0.18rem 0.34rem; border-radius: 0.52rem; background: rgba(148, 163, 184, 0.08); color: #7f93a9; font-size: 0.56rem; }
-.job-step.active { background: rgba(90, 213, 255, 0.12); color: #bcefff; }
-.job-metrics { display: grid; gap: 0.28rem; grid-template-columns: repeat(2, minmax(0, 1fr)); }
-.job-metric-item { display: grid; gap: 0.06rem; padding: 0.28rem 0.34rem; border-radius: 0.56rem; background: rgba(148, 163, 184, 0.08); }
-.jm-label { color: #7f93a9; font-size: 0.54rem; }
-.jm-value { color: #edf6ff; font-size: 0.62rem; margin: 0; }
-.hero-metric, .insight-card, .learning-note, .protocol-details { border-radius: var(--info-card-radius); background: rgba(8, 18, 33, 0.56); border: 1px solid rgba(136, 192, 255, 0.1); padding: 0.5rem 0.56rem; }
-.hero-metric span, .insight-card span { color: #7f93a9; font-size: 0.56rem; }
-.hero-metric strong { display: block; font-size: 0.96rem; color: #f4fbff; }
-.hero-metric p { margin: 0.16rem 0 0; color: #8ea3b8; font-size: 0.56rem; }
-.insight-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.34rem; }
-.insight-card strong { display: block; color: #edf6ff; font-size: 0.64rem; margin-top: 0.12rem; }
-.protocol-details summary { cursor: pointer; color: #cfeaff; font-size: 0.58rem; }
-.protocol-details p { margin: 0.18rem 0 0; color: #9eb3c8; font-size: 0.56rem; }
-.hotspot-list { display: grid; gap: 0.18rem; padding: 0; margin: 0; list-style: none; }
-.hotspot-list li { display: flex; justify-content: space-between; gap: 0.4rem; color: #eaf3fb; font-size: 0.58rem; padding: 0.22rem 0.32rem; border-radius: 0.52rem; background: rgba(148, 163, 184, 0.05); border: 1px solid rgba(148, 163, 184, 0.08); }
-.hotspot-list li.selected { background: rgba(90, 213, 255, 0.16); border-color: rgba(90, 213, 255, 0.28); box-shadow: 0 0 0 1px rgba(90, 213, 255, 0.08) inset; transform: translateX(2px); }
-.hotspot-list li.selected span, .hotspot-list li.selected strong { color: #f4fbff; }
-.job-result-link { color: #5ad5ff; font-size: 0.58rem; text-decoration: none; }
+.weather-style-meta {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.4rem;
+  color: #7f93a9;
+  font-size: 0.52rem;
+  flex-wrap: wrap;
+}
+.weather-note-list {
+  display: grid;
+  gap: 0.16rem;
+  margin: 0;
+  padding-left: 1rem;
+  color: #9eb3c8;
+  font-size: 0.54rem;
+}
+.job-report-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 0.4rem;
+}
+.job-report-title {
+  color: #eaf3fb;
+  font-size: 0.66rem;
+  font-weight: 700;
+}
+.job-status-chip {
+  padding: 0.12rem 0.34rem;
+  border-radius: 999px;
+  font-size: 0.54rem;
+  background: rgba(148, 163, 184, 0.12);
+  color: #bfd3e6;
+}
+.job-report-card--summary {
+  background: linear-gradient(180deg, rgba(10, 22, 39, 0.72), rgba(8, 18, 33, 0.56));
+}
+.job-progress-shell {
+  display: grid;
+  gap: 0.24rem;
+}
+.job-progress-row {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+.job-progress-bar {
+  flex: 1;
+  height: 0.26rem;
+  border-radius: 999px;
+  background: rgba(148, 163, 184, 0.14);
+  overflow: hidden;
+}
+.job-progress-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #5ad5ff, #7ea8ff);
+}
+.job-progress-label {
+  width: 2rem;
+  text-align: right;
+  color: #8ea3b8;
+  font-size: 0.54rem;
+}
+.job-message {
+  margin: 0;
+  color: #c8dff0;
+  font-size: 0.58rem;
+  line-height: 1.4;
+}
+.job-diagnostic-list {
+  display: grid;
+  gap: 0.12rem;
+  margin: 0;
+  padding-left: 1rem;
+  color: #ffcf99;
+  font-size: 0.54rem;
+}
+.job-diagnostic-item {
+  line-height: 1.35;
+}
+.job-steps {
+  display: flex;
+  flex-direction: column;
+  gap: 0.18rem;
+}
+.job-step {
+  padding: 0.18rem 0.34rem;
+  border-radius: 0.52rem;
+  background: rgba(148, 163, 184, 0.08);
+  color: #7f93a9;
+  font-size: 0.56rem;
+}
+.job-step.active {
+  background: rgba(90, 213, 255, 0.12);
+  color: #bcefff;
+}
+.job-metrics {
+  display: grid;
+  gap: 0.28rem;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+.job-metric-item {
+  display: grid;
+  gap: 0.06rem;
+  padding: 0.28rem 0.34rem;
+  border-radius: 0.56rem;
+  background: rgba(148, 163, 184, 0.08);
+}
+.jm-label {
+  color: #7f93a9;
+  font-size: 0.54rem;
+}
+.jm-value {
+  color: #edf6ff;
+  font-size: 0.62rem;
+  margin: 0;
+}
+.hero-metric,
+.insight-card,
+.learning-note,
+.protocol-details {
+  border-radius: var(--info-card-radius);
+  background: rgba(8, 18, 33, 0.56);
+  border: 1px solid rgba(136, 192, 255, 0.1);
+  padding: 0.5rem 0.56rem;
+}
+.hero-metric span,
+.insight-card span {
+  color: #7f93a9;
+  font-size: 0.56rem;
+}
+.hero-metric strong {
+  display: block;
+  font-size: 0.96rem;
+  color: #f4fbff;
+}
+.hero-metric p {
+  margin: 0.16rem 0 0;
+  color: #8ea3b8;
+  font-size: 0.56rem;
+}
+.insight-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.34rem;
+}
+.insight-card strong {
+  display: block;
+  color: #edf6ff;
+  font-size: 0.64rem;
+  margin-top: 0.12rem;
+}
+.protocol-details summary {
+  cursor: pointer;
+  color: #cfeaff;
+  font-size: 0.58rem;
+}
+.protocol-details p {
+  margin: 0.18rem 0 0;
+  color: #9eb3c8;
+  font-size: 0.56rem;
+}
+.hotspot-list {
+  display: grid;
+  gap: 0.18rem;
+  padding: 0;
+  margin: 0;
+  list-style: none;
+}
+.hotspot-list li {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.4rem;
+  color: #eaf3fb;
+  font-size: 0.58rem;
+  padding: 0.22rem 0.32rem;
+  border-radius: 0.52rem;
+  background: rgba(148, 163, 184, 0.05);
+  border: 1px solid rgba(148, 163, 184, 0.08);
+}
+.hotspot-list li.selected {
+  background: rgba(90, 213, 255, 0.16);
+  border-color: rgba(90, 213, 255, 0.28);
+  box-shadow: 0 0 0 1px rgba(90, 213, 255, 0.08) inset;
+  transform: translateX(2px);
+}
+.hotspot-list li.selected span,
+.hotspot-list li.selected strong {
+  color: #f4fbff;
+}
+.job-result-link {
+  color: #5ad5ff;
+  font-size: 0.58rem;
+  text-decoration: none;
+}
 
 /* ── 增强信息展示：元数据 / 历史对比 / 叠加分析 ─────────────────────────── */
-.info-card { display: grid; gap: 0.32rem; padding: var(--info-card-padding-y) var(--info-card-padding-x); border-radius: var(--info-card-radius); background: rgba(8, 18, 33, 0.56); border: 1px solid rgba(136, 192, 255, 0.1); }
-.info-card-head { display: flex; justify-content: space-between; align-items: center; gap: 0.4rem; }
-.info-kicker { color: #7f93a9; font-size: 0.52rem; letter-spacing: 0.08em; text-transform: uppercase; }
-.info-card-tag { padding: 0.12rem 0.34rem; border-radius: 999px; background: rgba(148, 163, 184, 0.12); color: #bfd3e6; font-size: 0.52rem; }
-.info-card-tag.real { background: rgba(114, 255, 207, 0.12); color: #9ff8cf; }
-.info-card-tag.trend { background: rgba(126, 168, 255, 0.14); color: #c8d8ff; }
+.info-card {
+  display: grid;
+  gap: 0.32rem;
+  padding: var(--info-card-padding-y) var(--info-card-padding-x);
+  border-radius: var(--info-card-radius);
+  background: rgba(8, 18, 33, 0.56);
+  border: 1px solid rgba(136, 192, 255, 0.1);
+}
+.info-card-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.4rem;
+}
+.info-kicker {
+  color: #7f93a9;
+  font-size: 0.52rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.info-card-tag {
+  padding: 0.12rem 0.34rem;
+  border-radius: 999px;
+  background: rgba(148, 163, 184, 0.12);
+  color: #bfd3e6;
+  font-size: 0.52rem;
+}
+.info-card-tag.real {
+  background: rgba(114, 255, 207, 0.12);
+  color: #9ff8cf;
+}
+.info-card-tag.trend {
+  background: rgba(126, 168, 255, 0.14);
+  color: #c8d8ff;
+}
 
 /* 元数据网格 */
-.meta-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.22rem 0.5rem; margin: 0; }
-.meta-grid-row { display: grid; gap: 0.04rem; }
-.meta-grid dt { color: #7f93a9; font-size: 0.52rem; }
-.meta-grid dd { margin: 0; color: #eaf3fb; font-size: 0.6rem; word-break: break-word; }
+.meta-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.22rem 0.5rem;
+  margin: 0;
+}
+.meta-grid-row {
+  display: grid;
+  gap: 0.04rem;
+}
+.meta-grid dt {
+  color: #7f93a9;
+  font-size: 0.52rem;
+}
+.meta-grid dd {
+  margin: 0;
+  color: #eaf3fb;
+  font-size: 0.6rem;
+  word-break: break-word;
+}
 
 /* 历史趋势卡片 */
-.trend-card { border-color: rgba(126, 168, 255, 0.18); background: linear-gradient(180deg, rgba(10, 20, 38, 0.72), rgba(8, 18, 33, 0.56)); }
-.trend-body { display: flex; align-items: center; gap: 0.56rem; }
-.trend-current { display: grid; gap: 0.04rem; min-width: 4.4rem; }
-.trend-current-label { color: #7f93a9; font-size: 0.52rem; }
-.trend-current-value { color: var(--accent-color, #f4fbff); font-size: 0.86rem; }
-.trend-indicator { display: flex; align-items: center; gap: 0.3rem; flex: 1; padding: 0.2rem 0.34rem; border-radius: 0.56rem; background: rgba(148, 163, 184, 0.06); }
-.trend-arrow { font-size: 0.78rem; line-height: 1; }
-.trend-arrow.up { color: #ff8aa7; }
-.trend-arrow.down { color: #5ad5ff; }
-.trend-arrow.flat { color: #9eb3c8; }
-.trend-text { color: #c8dff0; font-size: 0.56rem; line-height: 1.35; }
+.trend-card {
+  border-color: rgba(126, 168, 255, 0.18);
+  background: linear-gradient(180deg, rgba(10, 20, 38, 0.72), rgba(8, 18, 33, 0.56));
+}
+.trend-body {
+  display: flex;
+  align-items: center;
+  gap: 0.56rem;
+}
+.trend-current {
+  display: grid;
+  gap: 0.04rem;
+  min-width: 4.4rem;
+}
+.trend-current-label {
+  color: #7f93a9;
+  font-size: 0.52rem;
+}
+.trend-current-value {
+  color: var(--accent-color, #f4fbff);
+  font-size: 0.86rem;
+}
+.trend-indicator {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+  flex: 1;
+  padding: 0.2rem 0.34rem;
+  border-radius: 0.56rem;
+  background: rgba(148, 163, 184, 0.06);
+}
+.trend-arrow {
+  font-size: 0.78rem;
+  line-height: 1;
+}
+.trend-arrow.up {
+  color: #ff8aa7;
+}
+.trend-arrow.down {
+  color: #5ad5ff;
+}
+.trend-arrow.flat {
+  color: #9eb3c8;
+}
+.trend-text {
+  color: #c8dff0;
+  font-size: 0.56rem;
+  line-height: 1.35;
+}
 
 /* 叠加图层列表 */
-.overlay-list { display: grid; gap: 0.18rem; padding: 0; margin: 0; list-style: none; }
-.overlay-list li { display: flex; align-items: center; gap: 0.34rem; padding: 0.24rem 0.3rem; border-radius: 0.56rem; background: rgba(148, 163, 184, 0.05); border: 1px solid rgba(148, 163, 184, 0.08); }
-.overlay-dot { width: 0.5rem; height: 0.5rem; border-radius: 999px; background: var(--layer-accent, #88d8ff); box-shadow: 0 0 6px var(--layer-accent, rgba(136, 216, 255, 0.6)); flex-shrink: 0; }
-.overlay-info { display: grid; gap: 0.04rem; flex: 1; min-width: 0; }
-.overlay-name { color: #eaf3fb; font-size: 0.6rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.overlay-category { color: #7f93a9; font-size: 0.52rem; display: flex; align-items: center; gap: 0.2rem; flex-wrap: wrap; }
-.overlay-palette-tag { padding: 0.04rem 0.22rem; border-radius: 0.28rem; background: rgba(126, 168, 255, 0.14); color: #c8d8ff; font-size: 0.46rem; }
-.overlay-range { color: #9eb3c8; font-size: 0.5rem; }
-.overlay-time-tag { color: #ffd38a; font-size: 0.5rem; font-variant-numeric: tabular-nums; }
-.overlay-value-col { display: grid; gap: 0.08rem; align-items: end; justify-items: end; flex-shrink: 0; }
-.overlay-state { padding: 0.1rem 0.3rem; border-radius: 999px; font-size: 0.5rem; text-transform: uppercase; letter-spacing: 0.04em; }
-.overlay-state.state-ready { background: rgba(114, 255, 207, 0.12); color: #9ff8cf; }
-.overlay-state.state-partial { background: rgba(255, 196, 120, 0.12); color: #ffd38a; }
-.overlay-state.state-empty { background: rgba(148, 163, 184, 0.12); color: #b6c9da; }
-.overlay-point-value { color: #eaf3fb; font-size: 0.54rem; font-variant-numeric: tabular-nums; padding: 0.06rem 0.24rem; border-radius: 0.32rem; background: rgba(90, 162, 255, 0.12); }
-.overlay-point-value.na { color: #7f93a9; background: rgba(148, 163, 184, 0.08); }
+.overlay-list {
+  display: grid;
+  gap: 0.18rem;
+  padding: 0;
+  margin: 0;
+  list-style: none;
+}
+.overlay-list li {
+  display: flex;
+  align-items: center;
+  gap: 0.34rem;
+  padding: 0.24rem 0.3rem;
+  border-radius: 0.56rem;
+  background: rgba(148, 163, 184, 0.05);
+  border: 1px solid rgba(148, 163, 184, 0.08);
+}
+.overlay-dot {
+  width: 0.5rem;
+  height: 0.5rem;
+  border-radius: 999px;
+  background: var(--layer-accent, #88d8ff);
+  box-shadow: 0 0 6px var(--layer-accent, rgba(136, 216, 255, 0.6));
+  flex-shrink: 0;
+}
+.overlay-info {
+  display: grid;
+  gap: 0.04rem;
+  flex: 1;
+  min-width: 0;
+}
+.overlay-name {
+  color: #eaf3fb;
+  font-size: 0.6rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.overlay-category {
+  color: #7f93a9;
+  font-size: 0.52rem;
+  display: flex;
+  align-items: center;
+  gap: 0.2rem;
+  flex-wrap: wrap;
+}
+.overlay-palette-tag {
+  padding: 0.04rem 0.22rem;
+  border-radius: 0.28rem;
+  background: rgba(126, 168, 255, 0.14);
+  color: #c8d8ff;
+  font-size: 0.46rem;
+}
+.overlay-range {
+  color: #9eb3c8;
+  font-size: 0.5rem;
+}
+.overlay-time-tag {
+  color: #ffd38a;
+  font-size: 0.5rem;
+  font-variant-numeric: tabular-nums;
+}
+.overlay-value-col {
+  display: grid;
+  gap: 0.08rem;
+  align-items: end;
+  justify-items: end;
+  flex-shrink: 0;
+}
+.overlay-state {
+  padding: 0.1rem 0.3rem;
+  border-radius: 999px;
+  font-size: 0.5rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.overlay-state.state-ready {
+  background: rgba(114, 255, 207, 0.12);
+  color: #9ff8cf;
+}
+.overlay-state.state-partial {
+  background: rgba(255, 196, 120, 0.12);
+  color: #ffd38a;
+}
+.overlay-state.state-empty {
+  background: rgba(148, 163, 184, 0.12);
+  color: #b6c9da;
+}
+.overlay-point-value {
+  color: #eaf3fb;
+  font-size: 0.54rem;
+  font-variant-numeric: tabular-nums;
+  padding: 0.06rem 0.24rem;
+  border-radius: 0.32rem;
+  background: rgba(90, 162, 255, 0.12);
+}
+.overlay-point-value.na {
+  color: #7f93a9;
+  background: rgba(148, 163, 184, 0.08);
+}
 
-.imported-meta { margin-top: 0.35rem; }
-.imported-meta .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 0.52rem; word-break: break-all; }
-.imported-export-row { display: flex; flex-wrap: wrap; gap: 0.35rem; margin-top: 0.55rem; }
+.imported-meta {
+  margin-top: 0.35rem;
+}
+.imported-meta .mono {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.52rem;
+  word-break: break-all;
+}
+.imported-export-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  margin-top: 0.55rem;
+}
 .imported-export-btn {
   border: 1px solid rgba(126, 224, 168, 0.28);
   border-radius: 0.42rem;

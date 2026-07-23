@@ -87,11 +87,7 @@ function selectNode(name: string) {
     <section v-if="aboutInfo" class="settings-section">
       <h3 class="section-title">技术栈</h3>
       <div class="tech-stack">
-        <span
-          v-for="tech in aboutInfo.tech_stack"
-          :key="tech"
-          class="tech-tag"
-        >
+        <span v-for="tech in aboutInfo.tech_stack" :key="tech" class="tech-tag">
           {{ tech }}
         </span>
       </div>
@@ -101,11 +97,7 @@ function selectNode(name: string) {
     <section class="settings-section">
       <h3 class="section-title">系统架构图</h3>
       <div class="arch-diagram">
-        <div
-          v-for="rootNode in archTree"
-          :key="rootNode.name"
-          class="arch-node-container"
-        >
+        <div v-for="rootNode in archTree" :key="rootNode.name" class="arch-node-container">
           <!-- 根节点 -->
           <div
             class="arch-node root"
@@ -120,11 +112,7 @@ function selectNode(name: string) {
 
           <!-- 子节点 -->
           <div class="arch-children">
-            <div
-              v-for="child in rootNode.children"
-              :key="child.name"
-              class="arch-branch"
-            >
+            <div v-for="child in rootNode.children" :key="child.name" class="arch-branch">
               <div
                 class="arch-node level-1"
                 :class="{ selected: selectedNode === child.name }"

@@ -17,15 +17,24 @@ import type { CRSDetectionResult } from './crs-types'
 /** 客户端 bounds 启发式（与后端 _crs_detector.detect_from_bounds 一致，含 GK/Lambert 增强） */
 export function detectFromBounds(bounds: [number, number, number, number]): CRSDetectionResult {
   const [w, s, e, n] = bounds
-  const isGeographic = (
-    w >= -180 && w <= 180 && e >= -180 && e <= 180 &&
-    s >= -90 && s <= 90 && n >= -90 && n <= 90 &&
-    w < e && s < n
-  )
+  const isGeographic =
+    w >= -180 &&
+    w <= 180 &&
+    e >= -180 &&
+    e <= 180 &&
+    s >= -90 &&
+    s <= 90 &&
+    n >= -90 &&
+    n <= 90 &&
+    w < e &&
+    s < n
   if (isGeographic) {
     return {
-      sourceCrs: 'EPSG:4326', confidence: 0.5, method: 'bounds_heuristic',
-      suggestedCrs: 'EPSG:4326', needsUserConfirm: true,
+      sourceCrs: 'EPSG:4326',
+      confidence: 0.5,
+      method: 'bounds_heuristic',
+      suggestedCrs: 'EPSG:4326',
+      needsUserConfirm: true,
       notes: `bounds (${w},${s},${e},${n}) 在 ±180/±90 内，推断为地理坐标系`,
     }
   }
@@ -36,8 +45,11 @@ export function detectFromBounds(bounds: [number, number, number, number]): CRSD
       const zone = Math.floor(midX / 1000000)
       const suggested = zone === 40 ? 'EPSG:4528' : zone === 41 ? 'EPSG:4529' : 'EPSG:4527'
       return {
-        sourceCrs: suggested, confidence: 0.5, method: 'bounds_heuristic',
-        suggestedCrs: suggested, needsUserConfirm: true,
+        sourceCrs: suggested,
+        confidence: 0.5,
+        method: 'bounds_heuristic',
+        suggestedCrs: suggested,
+        needsUserConfirm: true,
         notes: `bounds 匹配高斯-克吕格 3 度带（zone ${zone}），建议 ${suggested}`,
       }
     }
@@ -46,20 +58,29 @@ export function detectFromBounds(bounds: [number, number, number, number]): CRSD
     // 对应 EPSG:3034 (ETRS89 / LCC Europe)。
     if (w > 1000000 && w < 8000000 && e > 1000000 && e < 8000000) {
       return {
-        sourceCrs: 'EPSG:3034', confidence: 0.3, method: 'bounds_heuristic',
-        suggestedCrs: 'EPSG:3034', needsUserConfirm: true,
+        sourceCrs: 'EPSG:3034',
+        confidence: 0.3,
+        method: 'bounds_heuristic',
+        suggestedCrs: 'EPSG:3034',
+        needsUserConfirm: true,
         notes: 'bounds 在 Lambert Europe 范围内，建议 EPSG:3034',
       }
     }
     return {
-      sourceCrs: 'EPSG:32650', confidence: 0.3, method: 'bounds_heuristic',
-      suggestedCrs: 'EPSG:32650', needsUserConfirm: true,
+      sourceCrs: 'EPSG:32650',
+      confidence: 0.3,
+      method: 'bounds_heuristic',
+      suggestedCrs: 'EPSG:32650',
+      needsUserConfirm: true,
       notes: 'bounds 数值超出 ±180，推断为投影坐标系（默认建议 UTM 50N）',
     }
   }
   return {
-    sourceCrs: 'EPSG:4326', confidence: 0.3, method: 'bounds_heuristic',
-    suggestedCrs: 'EPSG:4326', needsUserConfirm: true,
+    sourceCrs: 'EPSG:4326',
+    confidence: 0.3,
+    method: 'bounds_heuristic',
+    suggestedCrs: 'EPSG:4326',
+    needsUserConfirm: true,
     notes: 'bounds 无法明确分类，默认 WGS84',
   }
 }

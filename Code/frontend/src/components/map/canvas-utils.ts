@@ -60,8 +60,14 @@ export function computeCanvasLayout(
     // 计算将 gridCenter 对齐到 visibleCenter 附近所需的偏移量（±360 的倍数）
     let offset = 0
     let adjusted = gridCenterLon
-    while (adjusted < visibleCenterLon - 180) { adjusted += 360; offset += 360 }
-    while (adjusted > visibleCenterLon + 180) { adjusted -= 360; offset -= 360 }
+    while (adjusted < visibleCenterLon - 180) {
+      adjusted += 360
+      offset += 360
+    }
+    while (adjusted > visibleCenterLon + 180) {
+      adjusted -= 360
+      offset -= 360
+    }
 
     if (offset !== 0) {
       lonWrapOffset = offset

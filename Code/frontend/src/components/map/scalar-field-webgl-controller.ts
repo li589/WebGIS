@@ -4,17 +4,16 @@
  */
 import { removeWeatherMapArtifacts, buildWeatherOverlayIds } from './weather-overlay-maplibre'
 import type { WeatherOverlayState } from './weather-overlay-registry'
-import {
-  buildScalarGridFromGeoJSON,
-  resolveScalarValueRange,
-} from './scalar-field-grid'
-import {
-  ScalarFieldWebGLLayer,
-  probeScalarFieldWebGLSupport,
-} from './scalar-field-webgl-renderer'
+import { buildScalarGridFromGeoJSON, resolveScalarValueRange } from './scalar-field-grid'
+import { ScalarFieldWebGLLayer, probeScalarFieldWebGLSupport } from './scalar-field-webgl-renderer'
 import { buildPaletteLUT, encodeScalarGridToRGBA } from './scalar-field-webgl-texture'
 import { getPaletteColors, getWeatherFillOpacity } from './weather-render'
-import { ScalarContourLayer, buildPressureIsobarLevels, buildWeakScalarContourLevels, isWeakContourLayerId } from './scalar-contour-layer'
+import {
+  ScalarContourLayer,
+  buildPressureIsobarLevels,
+  buildWeakScalarContourLevels,
+  isWeakContourLayerId,
+} from './scalar-contour-layer'
 import type { WindGeoJSON } from './types'
 
 type MapInstance = import('maplibre-gl').Map
@@ -46,6 +45,11 @@ export class ScalarFieldWebGLController {
   private contours = new Map<string, ScalarContourLayer>()
   private styleHandlers = new Map<string, () => void>()
   private lastChecksum = new Map<string, number>()
+  /** 各 catalog 最近一次上传的 grid bounds；bounds 变化（覆盖扩张/收缩）时不做 crossfade */
+  private lastBounds = new Map<
+    string,
+    { west: number; south: number; east: number; north: number }
+  >()
   private webglOk: boolean | null = null
 
   constructor(map: MapInstance) {
@@ -67,8 +71,22 @@ export class ScalarFieldWebGLController {
     if (!this.isAvailable()) return false
     if (state.cogPreviewUrl && state.cogBbox) return false
 
+    const opacity = getWeatherFillOpacity(state.renderHint, state.opacity)
     const geojson = asWindGeoJSON(state.geojsonData)
-    if (!geojson) return false
+
+    // 灰底占位：无数据（首次加载/快照之外）但知道目标视口 → 仅画淡灰底，渐填颜色
+    if (!geojson) {
+      if (!state.viewportBounds) return false
+      const layer = this.ensureLayer(state.catalogId)
+      if (!layer || !layer.isUsable()) {
+        this.removeCatalogArtifacts(state.catalogId)
+        return false
+      }
+      layer.setOpacity(opacity)
+      layer.setViewportBounds(state.viewportBounds)
+      this.hideMapLibreFill(state.catalogId)
+      return true
+    }
 
     const metric = state.renderHint.primary_metric
     if (!metric) return false
@@ -84,7 +102,6 @@ export class ScalarFieldWebGLController {
     const range = resolveScalarValueRange(state.renderHint.legend_ticks, grid)
     const encoded = encodeScalarGridToRGBA(grid, range.min, range.max)
     const lut = buildPaletteLUT(getPaletteColors(state.renderHint.palette))
-    const opacity = getWeatherFillOpacity(state.renderHint, state.opacity)
 
     const layer = this.ensureLayer(state.catalogId)
     if (!layer || !layer.isUsable()) {
@@ -94,6 +111,7 @@ export class ScalarFieldWebGLController {
 
     layer.setOpacity(opacity)
     layer.setPaletteLUT(lut)
+    layer.setViewportBounds(state.viewportBounds ?? null)
 
     const prevChecksum = this.lastChecksum.get(state.catalogId)
     if (prevChecksum === grid.checksum) {
@@ -101,12 +119,27 @@ export class ScalarFieldWebGLController {
       return true
     }
 
-    const crossfadeMs = prevChecksum !== undefined ? CROSSFADE_MS : 0
+    // 跨淡入仅用于「同一网格布局下的数值更新」（如时次切换）；
+    // bounds 变化（瓦片覆盖扩张/收缩）直接硬切，避免流式到达期反复淡入闪烁
+    const prevBounds = this.lastBounds.get(state.catalogId)
+    const boundsChanged =
+      !prevBounds ||
+      prevBounds.west !== encoded.west ||
+      prevBounds.east !== encoded.east ||
+      prevBounds.south !== encoded.south ||
+      prevBounds.north !== encoded.north
+    const crossfadeMs = prevChecksum !== undefined && !boundsChanged ? CROSSFADE_MS : 0
     // 仅取消其它 token 的淡入；保留当前 token
     layer.cancelBlend(options.overlayToken)
     if (options.overlayToken !== options.getSyncWeatherToken()) return true
     layer.setFieldData(encoded, { crossfadeMs, token: options.overlayToken })
     this.lastChecksum.set(state.catalogId, grid.checksum)
+    this.lastBounds.set(state.catalogId, {
+      west: encoded.west,
+      south: encoded.south,
+      east: encoded.east,
+      north: encoded.north,
+    })
 
     // 隐藏同 catalog 的 MapLibre fill，避免双绘
     this.hideMapLibreFill(state.catalogId)
@@ -139,6 +172,7 @@ export class ScalarFieldWebGLController {
     this.destroyContour(catalogId)
     this.clearStyleHandler(catalogId)
     this.lastChecksum.delete(catalogId)
+    this.lastBounds.delete(catalogId)
     removeWeatherMapArtifacts(this.map, catalogId)
     return Boolean(layer)
   }

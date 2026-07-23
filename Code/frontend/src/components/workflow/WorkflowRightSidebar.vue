@@ -96,10 +96,7 @@ function toggleCollapsed() {
       >
         <span class="resizer-handle" aria-hidden="true"></span>
       </div>
-      <div
-        class="sidebar-inspector"
-        :style="{ height: inspectorHeightPx + 'px', flex: 'none' }"
-      >
+      <div class="sidebar-inspector" :style="{ height: inspectorHeightPx + 'px', flex: 'none' }">
         <WorkflowInspector
           :selected-node="selectedNode"
           :readonly="readonly"
@@ -144,7 +141,10 @@ function toggleCollapsed() {
   display: flex;
   align-items: center;
   justify-content: center;
-  transition: color 0.16s ease, border-color 0.16s ease, background 0.16s ease;
+  transition:
+    color 0.16s ease,
+    border-color 0.16s ease,
+    background 0.16s ease;
 }
 
 .sidebar-toggle:hover {

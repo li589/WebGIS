@@ -27,9 +27,9 @@ export interface OverlayTimeState {
  * 但这种情况会被下面的 `w >= e` 检查拦截。`[-180,..,180,..]`（全球）和
  * `[-100,..,100,..]`（宽 200°）都能正常渲染为单张拉伸图片，故不限制东西跨度。
  */
-export function validateOverlayBounds(raw: unknown):
-  | { ok: true; bounds: [number, number, number, number] }
-  | { ok: false; reason: string } {
+export function validateOverlayBounds(
+  raw: unknown,
+): { ok: true; bounds: [number, number, number, number] } | { ok: false; reason: string } {
   if (!Array.isArray(raw) || raw.length !== 4) {
     return { ok: false, reason: `bounds 不是 4 元素数组（实际: ${JSON.stringify(raw)}）` }
   }
@@ -148,9 +148,7 @@ export function createOverlayImageModule(
     }
     loadedOverlays.delete(layerId)
     // 移除时间状态
-    overlayTimeStates.value = overlayTimeStates.value.filter(
-      (s) => s.layerId !== layerId,
-    )
+    overlayTimeStates.value = overlayTimeStates.value.filter((s) => s.layerId !== layerId)
   }
 
   function _fitBoundsIfOutside(bounds: [number, number, number, number]) {
@@ -158,11 +156,13 @@ export function createOverlayImageModule(
       const center = options.map.getCenter()
       const [west, south, east, north] = bounds
       const inside =
-        center.lng >= west && center.lng <= east &&
-        center.lat >= south && center.lat <= north
+        center.lng >= west && center.lng <= east && center.lat >= south && center.lat <= north
       if (inside) return
       options.map.fitBounds(
-        [[west, south], [east, north]],
+        [
+          [west, south],
+          [east, north],
+        ],
         { padding: 60, duration: 800, essential: true },
       )
     } catch {
@@ -218,9 +218,10 @@ export function createOverlayImageModule(
       const currentTime: string | null = meta.current_time ?? meta.default_time ?? null
       const timeList: string[] = meta.time_list ?? []
       const category: string = meta.category ?? 'static'
-      const opacity = typeof initialOpacity === 'number'
-        ? Math.max(0, Math.min(1, initialOpacity))
-        : (meta.opacity ?? 0.7)
+      const opacity =
+        typeof initialOpacity === 'number'
+          ? Math.max(0, Math.min(1, initialOpacity))
+          : (meta.opacity ?? 0.7)
 
       const url =
         category === 'time-series' && currentTime
@@ -238,18 +239,21 @@ export function createOverlayImageModule(
         ],
       } as any)
 
-      options.map.addLayer({
-        id: rasterLayerId,
-        type: 'raster',
-        source: sourceId,
-        // 隐藏的图层以 visibility='none' 加入，避免显示时再触发 addLayer 流程
-        layout: { visibility: initiallyVisible ? 'visible' : 'none' },
-        paint: {
-          'raster-opacity': opacity,
-          // 降低 fade duration 让显隐切换更跟手（原 300ms 显得迟钝）
-          'raster-fade-duration': 100,
+      options.map.addLayer(
+        {
+          id: rasterLayerId,
+          type: 'raster',
+          source: sourceId,
+          // 隐藏的图层以 visibility='none' 加入，避免显示时再触发 addLayer 流程
+          layout: { visibility: initiallyVisible ? 'visible' : 'none' },
+          paint: {
+            'raster-opacity': opacity,
+            // 降低 fade duration 让显隐切换更跟手（原 300ms 显得迟钝）
+            'raster-fade-duration': 100,
+          },
         },
-      }, options.map.getLayer('admin-fill') ? 'admin-fill' : undefined)
+        options.map.getLayer('admin-fill') ? 'admin-fill' : undefined,
+      )
 
       loadedOverlays.set(layerId, {
         layerId,
@@ -316,11 +320,7 @@ export function createOverlayImageModule(
     if (newLayerIds.length > 0) {
       await Promise.all(
         newLayerIds.map((layerId) =>
-          _addOverlay(
-            layerId,
-            opacityByLayerId?.[layerId],
-            visibleSet.has(layerId),
-          ),
+          _addOverlay(layerId, opacityByLayerId?.[layerId], visibleSet.has(layerId)),
         ),
       )
     }

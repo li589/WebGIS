@@ -19,7 +19,11 @@ function makeMockMap() {
     triggerRepaint: vi.fn(),
     getZoom: vi.fn(() => 5),
     getCanvasContainer: vi.fn(() => ({ appendChild: vi.fn() })),
-    getCanvas: vi.fn(() => ({ width: 800, height: 600, style: { width: '800px', height: '600px' } })),
+    getCanvas: vi.fn(() => ({
+      width: 800,
+      height: 600,
+      style: { width: '800px', height: '600px' },
+    })),
     getContainer: vi.fn(() => ({ clientWidth: 800, clientHeight: 600 })),
   }
 }

@@ -6,7 +6,8 @@ import {
   type SelectedLayerFocusWatchInputs,
 } from './selected-layer-focus-watch-adapter'
 
-type SelectedLayerGetter = () => import('../../stores/layers/types').ActiveLayerDisplay | null | undefined
+type SelectedLayerGetter = () =>
+  import('../../stores/layers/types').ActiveLayerDisplay | null | undefined
 type DebugLogger = (module: string, ...args: unknown[]) => void
 
 interface WatchSelectedLayerFocusOptions {
@@ -15,9 +16,7 @@ interface WatchSelectedLayerFocusOptions {
   debugLog: DebugLogger
 }
 
-export function watchSelectedLayerFocus(
-  options: WatchSelectedLayerFocusOptions,
-): WatchStopHandle {
+export function watchSelectedLayerFocus(options: WatchSelectedLayerFocusOptions): WatchStopHandle {
   return watch(
     () => buildSelectedLayerFocusWatchInputs(options.getSelectedLayer()),
     (next: SelectedLayerFocusWatchInputs, previous?: SelectedLayerFocusWatchInputs) => {

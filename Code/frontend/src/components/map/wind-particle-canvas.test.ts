@@ -30,7 +30,10 @@ function vortexCorners(): {
 }
 
 /** 均匀流场：四角 speed/direction 相同 */
-function uniformCorners(speed: number, direction: number): {
+function uniformCorners(
+  speed: number,
+  direction: number,
+): {
   nw: WindGridPoint
   ne: WindGridPoint
   sw: WindGridPoint
@@ -95,7 +98,7 @@ describe('interpolateWind U/V bilinear (Part A1+A2)', () => {
       const w = __testInterpolateWindUV(corners, bounds, eulerLat, eulerLon)
       if (w.speed < 1e-6) break
       const advectSpeed = Math.max(w.speed, 0.5)
-      const rad = (w.direction + 180) * Math.PI / 180
+      const rad = ((w.direction + 180) * Math.PI) / 180
       const u = advectSpeed * Math.sin(rad)
       const v = advectSpeed * Math.cos(rad)
       eulerLon += u * stepSize
@@ -109,14 +112,14 @@ describe('interpolateWind U/V bilinear (Part A1+A2)', () => {
       const w0 = __testInterpolateWindUV(corners, bounds, rk2Lat, rk2Lon)
       if (w0.speed < 1e-6) break
       const advectSpeed0 = Math.max(w0.speed, 0.5)
-      const rad0 = (w0.direction + 180) * Math.PI / 180
+      const rad0 = ((w0.direction + 180) * Math.PI) / 180
       const u0 = advectSpeed0 * Math.sin(rad0)
       const v0 = advectSpeed0 * Math.cos(rad0)
       const midLat = rk2Lat + v0 * stepSize * 0.5
       const midLon = rk2Lon + u0 * stepSize * 0.5
       const wMid = __testInterpolateWindUV(corners, bounds, midLat, midLon)
       const advectSpeedMid = Math.max(wMid.speed, 0.5)
-      const radMid = (wMid.direction + 180) * Math.PI / 180
+      const radMid = ((wMid.direction + 180) * Math.PI) / 180
       const uMid = advectSpeedMid * Math.sin(radMid)
       const vMid = advectSpeedMid * Math.cos(radMid)
       rk2Lon += uMid * stepSize

@@ -26,7 +26,9 @@ export const useWeatherSyncStatusStore = defineStore('weatherSyncStatus', () => 
   })
 
   const coverageError = computed(() => overview.value?.coverage_error ?? null)
-  const modelEmpty = computed(() => coverageError.value === 'model_empty' || coverageError.value === 'local_unreachable')
+  const modelEmpty = computed(
+    () => coverageError.value === 'model_empty' || coverageError.value === 'local_unreachable',
+  )
 
   function stopPolling() {
     if (pollTimer !== null) {

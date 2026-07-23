@@ -29,9 +29,7 @@ interface WatchMeasureStateOptions {
   onMeasureStateChange: () => void
 }
 
-export function watchBasemapSource(
-  options: WatchBasemapSourceOptions,
-): WatchStopHandle {
+export function watchBasemapSource(options: WatchBasemapSourceOptions): WatchStopHandle {
   return watch(
     () => ({
       sourceId: options.getTileSourceId(),
@@ -44,9 +42,7 @@ export function watchBasemapSource(
   )
 }
 
-export function watchInteractionMode(
-  options: WatchInteractionModeOptions,
-): WatchStopHandle {
+export function watchInteractionMode(options: WatchInteractionModeOptions): WatchStopHandle {
   return watch(
     () => ({
       interactionMode: options.getInteractionMode(),
@@ -75,9 +71,7 @@ export function watchAdminBoundaryOverlay(
   )
 }
 
-export function watchMeasureState(
-  options: WatchMeasureStateOptions,
-): WatchStopHandle {
+export function watchMeasureState(options: WatchMeasureStateOptions): WatchStopHandle {
   return watch(
     () => ({
       key: options.getMeasureSyncKey(),

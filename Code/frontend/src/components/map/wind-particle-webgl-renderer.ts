@@ -98,12 +98,25 @@ function linkProgram(
 ): WebGLProgram | null {
   const vs = compileShader(gl, gl.VERTEX_SHADER, vertexSource)
   const fs = compileShader(gl, gl.FRAGMENT_SHADER, fragmentSource)
-  if (!vs || !fs) return null
+  if (!vs || !fs) {
+    if (vs) gl.deleteShader(vs)
+    if (fs) gl.deleteShader(fs)
+    return null
+  }
   const program = gl.createProgram()
-  if (!program) return null
+  if (!program) {
+    gl.deleteShader(vs)
+    gl.deleteShader(fs)
+    return null
+  }
   gl.attachShader(program, vs)
   gl.attachShader(program, fs)
   gl.linkProgram(program)
+  // 链接成功后 detach 并释放 shader 对象，减少 GPU 内存占用
+  gl.detachShader(program, vs)
+  gl.detachShader(program, fs)
+  gl.deleteShader(vs)
+  gl.deleteShader(fs)
   if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
     console.error('[WindParticleWebGL] program link failed:', gl.getProgramInfoLog(program))
     gl.deleteProgram(program)
@@ -191,15 +204,17 @@ export function extractMercatorProjectionMatrix(
 ): ArrayLike<number> | null {
   if (!options) return null
   // 旧版签名：第二参直接是 Float32Array 矩阵
-  if (typeof (options as ArrayLike<number>)[0] === 'number' && (options as ArrayLike<number>).length >= 16) {
+  if (
+    typeof (options as ArrayLike<number>)[0] === 'number' &&
+    (options as ArrayLike<number>).length >= 16
+  ) {
     return options as ArrayLike<number>
   }
   const opts = options as CustomRenderMethodInput & {
     defaultProjectionData?: { mainMatrix?: ArrayLike<number>; projectionMatrix?: ArrayLike<number> }
   }
   const fromDefault =
-    opts.defaultProjectionData?.mainMatrix
-    ?? opts.defaultProjectionData?.projectionMatrix
+    opts.defaultProjectionData?.mainMatrix ?? opts.defaultProjectionData?.projectionMatrix
   if (fromDefault && typeof fromDefault[0] === 'number') return fromDefault
   // 不再回退到 modelViewProjectionMatrix：该矩阵与 lngLatToMercator 不兼容，
   // 会导致粒子投影到屏外（只剩色底可见）。返回 null 让上层走 matrixMissFrames 失败检测。
@@ -308,14 +323,16 @@ export class WindParticleWebGLLayer {
       return
     }
     const now = performance.now()
-    const idle = !this.mapMoving && this.lastMoveEndAt > 0 && (now - this.lastMoveEndAt) >= IDLE_AFTER_MOVE_MS
+    const idle =
+      !this.mapMoving && this.lastMoveEndAt > 0 && now - this.lastMoveEndAt >= IDLE_AFTER_MOVE_MS
     const minFrameMs = idle ? MS_PER_30FPS_FRAME : MS_PER_60FPS_FRAME
     if (this.lastFrameTime > 0 && now - this.lastFrameTime < minFrameMs - 1) {
       return
     }
-    const dt = this.lastFrameTime > 0
-      ? Math.min((now - this.lastFrameTime) / MS_PER_60FPS_FRAME, MAX_DT_FRAMES)
-      : 1
+    const dt =
+      this.lastFrameTime > 0
+        ? Math.min((now - this.lastFrameTime) / MS_PER_60FPS_FRAME, MAX_DT_FRAMES)
+        : 1
     this.lastFrameTime = now
     this.frameCounter += 1
     if (isPerfEnabled() && this.frameCounter % 30 === 0) {
@@ -409,11 +426,9 @@ export class WindParticleWebGLLayer {
       premultipliedAlpha: false,
     } as const
     // 优先 WebGL2（FBO/readPixels 更稳）；再回退 WebGL1
-    const gl = (
-      canvas.getContext('webgl2', glAttrs)
-      || canvas.getContext('webgl', glAttrs)
-      || canvas.getContext('experimental-webgl', glAttrs)
-    ) as WebGLRenderingContext | null
+    const gl = (canvas.getContext('webgl2', glAttrs) ||
+      canvas.getContext('webgl', glAttrs) ||
+      canvas.getContext('experimental-webgl', glAttrs)) as WebGLRenderingContext | null
     if (!gl) {
       this.failInit('WebGL context unavailable')
       if (canvas.parentNode) canvas.parentNode.removeChild(canvas)
@@ -505,13 +520,15 @@ export class WindParticleWebGLLayer {
    * custom layer render 时序），其次沿用 render() 缓存。
    */
   private refreshProjectionMatrix(): boolean {
-    const transform = (this.map as MaplibreMap & {
-      transform?: {
-        getProjectionDataForCustomLayer?: (applyGlobe?: boolean) => {
-          mainMatrix?: ArrayLike<number>
+    const transform = (
+      this.map as MaplibreMap & {
+        transform?: {
+          getProjectionDataForCustomLayer?: (applyGlobe?: boolean) => {
+            mainMatrix?: ArrayLike<number>
+          }
         }
       }
-    })?.transform
+    )?.transform
     const fromTransform = transform?.getProjectionDataForCustomLayer?.(false)?.mainMatrix
     if (fromTransform && typeof fromTransform[0] === 'number') {
       this.matrix.set(fromTransform)
@@ -562,12 +579,18 @@ export class WindParticleWebGLLayer {
       return
     }
     const encoded = encodeWindGridToRGBA(grid)
-    const newBounds = { west: encoded.west, south: encoded.south, east: encoded.east, north: encoded.north }
-    const boundsChanged = !this.windBounds
-      || this.windBounds.west !== newBounds.west
-      || this.windBounds.east !== newBounds.east
-      || this.windBounds.south !== newBounds.south
-      || this.windBounds.north !== newBounds.north
+    const newBounds = {
+      west: encoded.west,
+      south: encoded.south,
+      east: encoded.east,
+      north: encoded.north,
+    }
+    const boundsChanged =
+      !this.windBounds ||
+      this.windBounds.west !== newBounds.west ||
+      this.windBounds.east !== newBounds.east ||
+      this.windBounds.south !== newBounds.south ||
+      this.windBounds.north !== newBounds.north
     if (boundsChanged) {
       const old = this.windBounds
       if (!old) {
@@ -611,10 +634,17 @@ export class WindParticleWebGLLayer {
   // ── B3 粒子系统初始化 ─────────────────────────────────────────────
 
   private initParticlePrograms(gl: WebGLRenderingContext): void {
-    this.updateProgram = linkProgram(gl, PARTICLE_UPDATE_VERTEX_SHADER, PARTICLE_UPDATE_FRAGMENT_SHADER)
+    this.updateProgram = linkProgram(
+      gl,
+      PARTICLE_UPDATE_VERTEX_SHADER,
+      PARTICLE_UPDATE_FRAGMENT_SHADER,
+    )
     if (this.updateProgram) {
       this.updateAttribPos = gl.getAttribLocation(this.updateProgram, 'a_pos')
-      this.updateUniformParticleTexture = gl.getUniformLocation(this.updateProgram, 'u_particleTexture')
+      this.updateUniformParticleTexture = gl.getUniformLocation(
+        this.updateProgram,
+        'u_particleTexture',
+      )
       this.updateUniformWindTexture = gl.getUniformLocation(this.updateProgram, 'u_windTexture')
       this.updateUniformWindBounds = gl.getUniformLocation(this.updateProgram, 'u_windBounds')
       this.updateUniformMaxWind = gl.getUniformLocation(this.updateProgram, 'u_maxWind')
@@ -622,11 +652,18 @@ export class WindParticleWebGLLayer {
       this.updateUniformDt = gl.getUniformLocation(this.updateProgram, 'u_dt')
       this.updateUniformFrameSeed = gl.getUniformLocation(this.updateProgram, 'u_frameSeed')
       this.updateUniformResetAll = gl.getUniformLocation(this.updateProgram, 'u_resetAll')
-      this.updateUniformPrevWindBounds = gl.getUniformLocation(this.updateProgram, 'u_prevWindBounds')
+      this.updateUniformPrevWindBounds = gl.getUniformLocation(
+        this.updateProgram,
+        'u_prevWindBounds',
+      )
       this.updateUniformRemap = gl.getUniformLocation(this.updateProgram, 'u_remap')
     }
 
-    this.drawProgram = linkProgram(gl, PARTICLE_DRAW_CLIP_VERTEX_SHADER, PARTICLE_DRAW_SOFT_FRAGMENT_SHADER)
+    this.drawProgram = linkProgram(
+      gl,
+      PARTICLE_DRAW_CLIP_VERTEX_SHADER,
+      PARTICLE_DRAW_SOFT_FRAGMENT_SHADER,
+    )
     if (this.drawProgram) {
       this.drawAttribClipSpeed = gl.getAttribLocation(this.drawProgram, 'a_clipSpeed')
       this.drawUniformPointSize = gl.getUniformLocation(this.drawProgram, 'u_pointSize')
@@ -676,6 +713,8 @@ export class WindParticleWebGLLayer {
     const tex0 = this.createParticleTexture(initialData)
     const tex1 = this.createParticleTexture(initialData)
     if (!tex0 || !tex1) {
+      if (tex0) gl.deleteTexture(tex0)
+      if (tex1) gl.deleteTexture(tex1)
       console.warn('[WindParticleWebGL] 粒子位置纹理创建失败')
       return
     }
@@ -716,7 +755,11 @@ export class WindParticleWebGLLayer {
       this.fadeUniformTexture = gl.getUniformLocation(this.fadeProgram, 'u_texture')
       this.fadeUniformFade = gl.getUniformLocation(this.fadeProgram, 'u_fade')
     }
-    this.screenProgram = linkProgram(gl, PARTICLE_UPDATE_VERTEX_SHADER, TRAIL_SCREEN_FRAGMENT_SHADER)
+    this.screenProgram = linkProgram(
+      gl,
+      PARTICLE_UPDATE_VERTEX_SHADER,
+      TRAIL_SCREEN_FRAGMENT_SHADER,
+    )
     if (this.screenProgram) {
       this.screenAttribPos = gl.getAttribLocation(this.screenProgram, 'a_pos')
       this.screenUniformTexture = gl.getUniformLocation(this.screenProgram, 'u_texture')
@@ -752,6 +795,8 @@ export class WindParticleWebGLLayer {
     const t0 = this.createTrailTexture(w, h)
     const t1 = this.createTrailTexture(w, h)
     if (!t0 || !t1) {
+      if (t0) gl.deleteTexture(t0)
+      if (t1) gl.deleteTexture(t1)
       this.trailTextures = []
       return
     }
@@ -813,9 +858,15 @@ export class WindParticleWebGLLayer {
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR)
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR)
     gl.texImage2D(
-      gl.TEXTURE_2D, 0, gl.RGBA,
-      encoded.width, encoded.height, 0,
-      gl.RGBA, gl.UNSIGNED_BYTE, encoded.data,
+      gl.TEXTURE_2D,
+      0,
+      gl.RGBA,
+      encoded.width,
+      encoded.height,
+      0,
+      gl.RGBA,
+      gl.UNSIGNED_BYTE,
+      encoded.data,
     )
 
     // 场 quad：覆盖风场 bbox 的 4 角点（TRIANGLE_STRIP：NW, SW, NE, SE）
@@ -887,7 +938,8 @@ export class WindParticleWebGLLayer {
       // B4：拖尾系统就绪时用 ping-pong trail FBO；否则直接画点。
       // 交互（平移/缩放）期间不累积拖尾：拖尾是屏幕空间纹理，底图移动时
       // 旧轨迹会与新位置粒子错位叠加；交互只画点，结束后重新累积。
-      const canTrail = !!(this.fadeProgram && this.screenProgram && this.trailFBO) && !this.mapMoving
+      const canTrail =
+        !!(this.fadeProgram && this.screenProgram && this.trailFBO) && !this.mapMoving
       if (canTrail) {
         this.ensureTrailTextures()
       }
@@ -913,7 +965,13 @@ export class WindParticleWebGLLayer {
     const nextIndex = 1 - this.currentParticleIndex
 
     gl.bindFramebuffer(gl.FRAMEBUFFER, this.particleFBO)
-    gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, this.particleTextures[nextIndex], 0)
+    gl.framebufferTexture2D(
+      gl.FRAMEBUFFER,
+      gl.COLOR_ATTACHMENT0,
+      gl.TEXTURE_2D,
+      this.particleTextures[nextIndex],
+      0,
+    )
     gl.viewport(0, 0, this.particleResolution, this.particleResolution)
     gl.disable(gl.BLEND)
 
@@ -926,7 +984,10 @@ export class WindParticleWebGLLayer {
     gl.uniform1i(this.updateUniformWindTexture, 1)
     gl.uniform4f(
       this.updateUniformWindBounds,
-      this.windBounds.west, this.windBounds.south, this.windBounds.east, this.windBounds.north,
+      this.windBounds.west,
+      this.windBounds.south,
+      this.windBounds.east,
+      this.windBounds.north,
     )
     gl.uniform1f(this.updateUniformMaxWind, WIND_TEXTURE_MAX_WIND)
     gl.uniform1f(this.updateUniformScaledSpeed, scaledSpeed)
@@ -934,10 +995,7 @@ export class WindParticleWebGLLayer {
     gl.uniform1f(this.updateUniformFrameSeed, this.frameSeed)
     gl.uniform1f(this.updateUniformResetAll, this.particleResetAll ? 1 : 0)
     const prev = this.prevWindBounds ?? this.windBounds
-    gl.uniform4f(
-      this.updateUniformPrevWindBounds,
-      prev.west, prev.south, prev.east, prev.north,
-    )
+    gl.uniform4f(this.updateUniformPrevWindBounds, prev.west, prev.south, prev.east, prev.north)
     gl.uniform1f(this.updateUniformRemap, this.pendingRemap && !this.particleResetAll ? 1 : 0)
 
     gl.bindBuffer(gl.ARRAY_BUFFER, this.fullscreenQuadBuffer)
@@ -961,7 +1019,13 @@ export class WindParticleWebGLLayer {
 
     // 1. 衰减旧 trail 到 nextTrail FBO（覆盖写，不混合）
     gl.bindFramebuffer(gl.FRAMEBUFFER, this.trailFBO)
-    gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, this.trailTextures[nextTrail], 0)
+    gl.framebufferTexture2D(
+      gl.FRAMEBUFFER,
+      gl.COLOR_ATTACHMENT0,
+      gl.TEXTURE_2D,
+      this.trailTextures[nextTrail],
+      0,
+    )
     gl.viewport(0, 0, this.trailWidth, this.trailHeight)
     gl.disable(gl.BLEND)
     gl.useProgram(this.fadeProgram)
@@ -1081,7 +1145,10 @@ export class WindParticleWebGLLayer {
     gl.uniform1i(this.fieldUniformWindTexture, 0)
     gl.uniform4f(
       this.fieldUniformWindBounds,
-      this.windBounds.west, this.windBounds.south, this.windBounds.east, this.windBounds.north,
+      this.windBounds.west,
+      this.windBounds.south,
+      this.windBounds.east,
+      this.windBounds.north,
     )
     gl.uniform1f(this.fieldUniformMaxWind, WIND_TEXTURE_MAX_WIND)
     gl.uniform1f(this.fieldUniformOpacity, FIELD_OPACITY)
@@ -1180,11 +1247,9 @@ export function probeWindParticleWebGLSupport(doc: Document = document): {
 } {
   try {
     const canvas = doc.createElement('canvas')
-    const gl = (
-      canvas.getContext('webgl2', { alpha: true })
-      || canvas.getContext('webgl', { alpha: true })
-      || canvas.getContext('experimental-webgl', { alpha: true })
-    ) as WebGLRenderingContext | null
+    const gl = (canvas.getContext('webgl2', { alpha: true }) ||
+      canvas.getContext('webgl', { alpha: true }) ||
+      canvas.getContext('experimental-webgl', { alpha: true })) as WebGLRenderingContext | null
     if (!gl) return { ok: false, reason: 'no-webgl' }
     // 绘制已改为 readPixels + CPU 投影，不再依赖顶点纹理采样
     return { ok: true }

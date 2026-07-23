@@ -168,11 +168,15 @@ const enabledCount = computed(() => geeAccounts.value.filter((a) => a.enabled).l
         </div>
         <div class="info-row">
           <span class="info-label">加密存储</span>
-          <span class="info-value">{{ geeRuntimeConfig.credentials_encryption_enabled ? '已启用' : '未启用' }}</span>
+          <span class="info-value">{{
+            geeRuntimeConfig.credentials_encryption_enabled ? '已启用' : '未启用'
+          }}</span>
         </div>
         <div class="info-row">
           <span class="info-label">API 管理</span>
-          <span class="info-value">{{ geeRuntimeConfig.api_account_management_enabled ? '允许' : '禁止' }}</span>
+          <span class="info-value">{{
+            geeRuntimeConfig.api_account_management_enabled ? '允许' : '禁止'
+          }}</span>
         </div>
       </div>
     </section>
@@ -195,7 +199,11 @@ const enabledCount = computed(() => geeAccounts.value.filter((a) => a.enabled).l
       </div>
 
       <!-- 重载结果 -->
-      <div v-if="reloadResult" class="test-result" :class="{ success: reloadResult.success, fail: !reloadResult.success }">
+      <div
+        v-if="reloadResult"
+        class="test-result"
+        :class="{ success: reloadResult.success, fail: !reloadResult.success }"
+      >
         {{ reloadResult.message }}
       </div>
 
@@ -224,7 +232,7 @@ const enabledCount = computed(() => geeAccounts.value.filter((a) => a.enabled).l
           <textarea
             v-model="addForm.sa_json_text"
             class="form-textarea"
-            placeholder='粘贴 service_account JSON 内容，或点击下方上传文件...'
+            placeholder="粘贴 service_account JSON 内容，或点击下方上传文件..."
             rows="8"
           ></textarea>
         </div>
@@ -262,7 +270,9 @@ const enabledCount = computed(() => geeAccounts.value.filter((a) => a.enabled).l
           <div class="account-header">
             <div class="account-info">
               <span class="account-id">{{ account.account_id }}</span>
-              <span v-if="account.display_name" class="account-email">{{ account.display_name }}</span>
+              <span v-if="account.display_name" class="account-email">{{
+                account.display_name
+              }}</span>
             </div>
             <div class="account-badges">
               <span class="key-badge" :class="statusBadge(account).class">
@@ -311,7 +321,14 @@ const enabledCount = computed(() => geeAccounts.value.filter((a) => a.enabled).l
             </template>
           </div>
 
-          <div v-if="testResults[account.account_id]" class="test-result" :class="{ success: testResults[account.account_id].success, fail: !testResults[account.account_id].success }">
+          <div
+            v-if="testResults[account.account_id]"
+            class="test-result"
+            :class="{
+              success: testResults[account.account_id].success,
+              fail: !testResults[account.account_id].success,
+            }"
+          >
             {{ testResults[account.account_id].message }}
           </div>
         </div>
@@ -667,7 +684,9 @@ const enabledCount = computed(() => geeAccounts.value.filter((a) => a.enabled).l
   background: rgba(4, 12, 23, 0.8);
   cursor: pointer;
   padding: 0;
-  transition: background 0.2s ease, border-color 0.2s ease;
+  transition:
+    background 0.2s ease,
+    border-color 0.2s ease;
   flex: none;
 }
 
@@ -685,7 +704,9 @@ const enabledCount = computed(() => geeAccounts.value.filter((a) => a.enabled).l
   border-radius: 50%;
   background: #8aa8bf;
   transform: translateY(-50%);
-  transition: left 0.2s ease, background 0.2s ease;
+  transition:
+    left 0.2s ease,
+    background 0.2s ease;
 }
 
 .toggle-switch.on .toggle-knob {

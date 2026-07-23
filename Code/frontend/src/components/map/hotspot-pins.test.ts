@@ -20,7 +20,12 @@ describe('hotspot-pins', () => {
     expect(getVisibleHotspotsForZoom(HOTSPOTS, 5.3).map((item) => item.id)).toEqual(['a'])
     expect(getVisibleHotspotsForZoom(HOTSPOTS, 6.1).map((item) => item.id)).toEqual(['a', 'b'])
     expect(getVisibleHotspotsForZoom(HOTSPOTS, 6.8).map((item) => item.id)).toEqual(['a', 'b', 'c'])
-    expect(getVisibleHotspotsForZoom(HOTSPOTS, 7.1).map((item) => item.id)).toEqual(['a', 'b', 'c', 'd'])
+    expect(getVisibleHotspotsForZoom(HOTSPOTS, 7.1).map((item) => item.id)).toEqual([
+      'a',
+      'b',
+      'c',
+      'd',
+    ])
   })
 
   it('projects pins and preserves selected priority during placement', () => {

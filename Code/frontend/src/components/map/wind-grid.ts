@@ -13,7 +13,6 @@ import {
   buildRegularLatticeAxis,
   detectLatticeResolution,
   nearestLatticeAxisIndex,
-  unwrapLonIntoGridFrame,
   unwrapLonsToMinimalSpan,
 } from './weather-grid-lattice'
 
@@ -54,7 +53,7 @@ export function uvToSpeedDirection(u: number, v: number): { speed: number; direc
   const speed = Math.sqrt(u * u + v * v)
   if (speed < 1e-6) return { speed: 0, direction: 0 }
   const dirRad = Math.atan2(u, v)
-  const direction = ((dirRad / DEG_TO_RAD) - WIND_DIRECTION_OFFSET + 360) % 360
+  const direction = (dirRad / DEG_TO_RAD - WIND_DIRECTION_OFFSET + 360) % 360
   return { speed, direction }
 }
 
@@ -88,7 +87,12 @@ export function buildWindGridFromGeoJSON(geojson: WindGeoJSON): WindGrid | null 
 
   // 收集所有点的数据（经度稍后解包再量化）
   // 不依赖后端的 row/col 属性 —— 多瓦片合并时各瓦片的 row/col 是相对内部的，会互相冲突覆盖
-  interface RawPoint { lat: number; lon: number; speed: number; direction: number }
+  interface RawPoint {
+    lat: number
+    lon: number
+    speed: number
+    direction: number
+  }
   const rawPoints: RawPoint[] = []
   let propRes: number | null = null
 
@@ -203,7 +207,7 @@ export function buildWindGridFromGeoJSON(geojson: WindGeoJSON): WindGrid | null 
         if (found && sumWeight > 0) {
           const avgSpeed = sumSpeed / sumWeight
           const avgURad = Math.atan2(sumUSin / sumWeight, sumUCos / sumWeight)
-          const avgDirection = ((avgURad / DEG_TO_RAD) - WIND_DIRECTION_OFFSET + 360) % 360
+          const avgDirection = (avgURad / DEG_TO_RAD - WIND_DIRECTION_OFFSET + 360) % 360
           points[r]![c]!.speed = avgSpeed
           points[r]![c]!.direction = avgDirection
           hasData[r]![c] = true

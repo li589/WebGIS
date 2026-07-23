@@ -27,8 +27,13 @@ export function inferGeometryType(fc: GeoJSON.FeatureCollection): ImportedGeomet
   return 'Unknown'
 }
 
-export function computeBounds(fc: GeoJSON.FeatureCollection): [number, number, number, number] | undefined {
-  let minLng = Infinity, minLat = Infinity, maxLng = -Infinity, maxLat = -Infinity
+export function computeBounds(
+  fc: GeoJSON.FeatureCollection,
+): [number, number, number, number] | undefined {
+  let minLng = Infinity,
+    minLat = Infinity,
+    maxLng = -Infinity,
+    maxLat = -Infinity
   let hasCoord = false
   for (const f of fc.features) {
     if (!f.geometry) continue
@@ -91,20 +96,14 @@ function downloadBlob(filename: string, blob: Blob) {
   URL.revokeObjectURL(url)
 }
 
-export function exportFeatureCollectionAsGeoJson(
-  fc: GeoJSON.FeatureCollection,
-  baseName: string,
-) {
+export function exportFeatureCollectionAsGeoJson(fc: GeoJSON.FeatureCollection, baseName: string) {
   const safe = baseName.replace(/\.(geojson|json|shp|zip|csv)$/i, '') || 'export'
   const blob = new Blob([JSON.stringify(fc, null, 2)], { type: 'application/geo+json' })
   downloadBlob(`${safe}.geojson`, blob)
 }
 
 /** 将要素属性导出为 CSV；点要素附带 lon/lat 列 */
-export function exportFeatureCollectionAsCsv(
-  fc: GeoJSON.FeatureCollection,
-  baseName: string,
-) {
+export function exportFeatureCollectionAsCsv(fc: GeoJSON.FeatureCollection, baseName: string) {
   const safe = baseName.replace(/\.(geojson|json|shp|zip|csv)$/i, '') || 'export'
   const propKeys = new Set<string>()
   for (const f of fc.features) {
@@ -114,7 +113,9 @@ export function exportFeatureCollectionAsCsv(
     }
   }
   const keys = Array.from(propKeys)
-  const hasPoint = fc.features.some((f) => f.geometry?.type === 'Point' || f.geometry?.type === 'MultiPoint')
+  const hasPoint = fc.features.some(
+    (f) => f.geometry?.type === 'Point' || f.geometry?.type === 'MultiPoint',
+  )
   const header = [...(hasPoint ? ['lon', 'lat'] : []), ...keys]
 
   const escapeCell = (value: unknown) => {

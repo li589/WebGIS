@@ -11,7 +11,9 @@ export interface ResultDisplayModel {
   resultUrl?: string | null
 }
 
-export function buildResultDisplayModel(view: WorkflowRunViewResponse | null | undefined): ResultDisplayModel | null {
+export function buildResultDisplayModel(
+  view: WorkflowRunViewResponse | null | undefined,
+): ResultDisplayModel | null {
   if (!view) return null
 
   return {

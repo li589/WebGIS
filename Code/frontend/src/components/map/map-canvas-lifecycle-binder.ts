@@ -35,10 +35,7 @@ export function createMapCanvasLifecycleBinder(
       new options.controls.NavigationControl({ visualizePitch: true }),
       'bottom-right',
     )
-    options.map.addControl(
-      new options.controls.ScaleControl({ unit: 'metric' }),
-      'bottom-left',
-    )
+    options.map.addControl(new options.controls.ScaleControl({ unit: 'metric' }), 'bottom-left')
     options.scheduleNavigationThemeSync()
 
     options.map.on('error', (event) => {

@@ -32,24 +32,24 @@ import type {
 const _globalThis = globalThis as unknown as Record<string, unknown>
 
 export const LiteGraph: typeof LiteGraphStatic =
-  (litegraphCore as unknown as { LiteGraph?: typeof LiteGraphStatic }).LiteGraph
-  ?? (_globalThis.LiteGraph as typeof LiteGraphStatic)
+  (litegraphCore as unknown as { LiteGraph?: typeof LiteGraphStatic }).LiteGraph ??
+  (_globalThis.LiteGraph as typeof LiteGraphStatic)
 
 export const LGraph: typeof LGraphClass =
-  (litegraphCore as unknown as { LGraph?: typeof LGraphClass }).LGraph
-  ?? (_globalThis.LGraph as typeof LGraphClass)
+  (litegraphCore as unknown as { LGraph?: typeof LGraphClass }).LGraph ??
+  (_globalThis.LGraph as typeof LGraphClass)
 
 export const LGraphCanvas: typeof LGraphCanvasClass =
-  (litegraphCore as unknown as { LGraphCanvas?: typeof LGraphCanvasClass }).LGraphCanvas
-  ?? (_globalThis.LGraphCanvas as typeof LGraphCanvasClass)
+  (litegraphCore as unknown as { LGraphCanvas?: typeof LGraphCanvasClass }).LGraphCanvas ??
+  (_globalThis.LGraphCanvas as typeof LGraphCanvasClass)
 
 export const LGraphNode: typeof LGraphNodeClass =
-  (litegraphCore as unknown as { LGraphNode?: typeof LGraphNodeClass }).LGraphNode
-  ?? (_globalThis.LGraphNode as typeof LGraphNodeClass)
+  (litegraphCore as unknown as { LGraphNode?: typeof LGraphNodeClass }).LGraphNode ??
+  (_globalThis.LGraphNode as typeof LGraphNodeClass)
 
 export const LLink: typeof LLinkClass =
-  (litegraphCore as unknown as { LLink?: typeof LLinkClass }).LLink
-  ?? (_globalThis.LLink as typeof LLinkClass)
+  (litegraphCore as unknown as { LLink?: typeof LLinkClass }).LLink ??
+  (_globalThis.LLink as typeof LLinkClass)
 
 // 重新导出类型供其他模块使用
 export type {
@@ -133,7 +133,13 @@ export function registerWorkflowNodeTypes(
     engine?: string
     inputs: Array<{ name: string; type: string; description?: string; required?: boolean }>
     outputs: Array<{ name: string; type: string; description?: string }>
-    params?: Array<{ key: string; type: string; default?: unknown; options?: string[]; description?: string }>
+    params?: Array<{
+      key: string
+      type: string
+      default?: unknown
+      options?: string[]
+      description?: string
+    }>
   }>,
 ): void {
   if (!LiteGraph) {
@@ -159,7 +165,10 @@ export function registerWorkflowNodeTypes(
           description: param.description ?? '可调参数：连线可覆盖，未连接时用节点内控件默认值',
         }
       })
-      .filter((item): item is { name: string; type: string; required: boolean; description: string } => item !== null)
+      .filter(
+        (item): item is { name: string; type: string; required: boolean; description: string } =>
+          item !== null,
+      )
 
     const allInputs = [...tpl.inputs, ...promotedParamInputs]
 
@@ -240,16 +249,19 @@ export function registerWorkflowNodeTypes(
       }
     }
 
-    LiteGraph.registerNodeType(template.type, WorkflowNode as unknown as { new (): LGraphNodeClass })
+    LiteGraph.registerNodeType(
+      template.type,
+      WorkflowNode as unknown as { new (): LGraphNodeClass },
+    )
     _registeredTypes.add(template.type)
   }
 }
 
 /** 引擎颜色配置 */
 interface EngineColor {
-  nodeBg: string      // 节点背景色
-  nodeHeader: string  // 节点标题栏色
-  accent: string      // 强调色（选中边框等）
+  nodeBg: string // 节点背景色
+  nodeHeader: string // 节点标题栏色
+  accent: string // 强调色（选中边框等）
 }
 
 /**
@@ -261,7 +273,8 @@ export function resolveNodeEngine(nodeType: string, templateEngine?: string | nu
   if (fromTpl) return fromTpl
   if (nodeType.startsWith('weather/')) return 'weather'
   if (nodeType.startsWith('gee/')) return 'gee'
-  if (nodeType.startsWith('module/') || nodeType.startsWith('python_provider/')) return 'python_provider'
+  if (nodeType.startsWith('module/') || nodeType.startsWith('python_provider/'))
+    return 'python_provider'
   return 'common'
 }
 
@@ -342,18 +355,30 @@ export function getPortColor(type: string): string {
 /** 端口类型中文说明（检查器/面板用） */
 export function getPortTypeLabel(type: string): string {
   switch (type) {
-    case 'value:time_range': return '时间范围'
-    case 'geometry:bbox': return '空间范围 (bbox)'
-    case 'value:number': return '数值'
-    case 'value:string': return '文本'
-    case 'value:boolean': return '开关'
-    case 'data:source': return '数据源路径'
-    case 'data:raster': return '栅格'
-    case 'data:mat': return 'MAT 数据'
-    case 'data:timeseries': return '时间序列'
-    case 'data:geojson': return '矢量 GeoJSON'
-    case 'data': return '通用数据'
-    default: return type
+    case 'value:time_range':
+      return '时间范围'
+    case 'geometry:bbox':
+      return '空间范围 (bbox)'
+    case 'value:number':
+      return '数值'
+    case 'value:string':
+      return '文本'
+    case 'value:boolean':
+      return '开关'
+    case 'data:source':
+      return '数据源路径'
+    case 'data:raster':
+      return '栅格'
+    case 'data:mat':
+      return 'MAT 数据'
+    case 'data:timeseries':
+      return '时间序列'
+    case 'data:geojson':
+      return '矢量 GeoJSON'
+    case 'data':
+      return '通用数据'
+    default:
+      return type
   }
 }
 
@@ -398,7 +423,11 @@ export function syncGraphSlotsWithTemplates(
     const promoted = (tpl.params ?? [])
       .map((param) => {
         const portType = mapParamTypeToPortType(param.type)
-        if (!portType || existingIn.has(param.key) || tpl.inputs.some((i) => i.name === param.key)) {
+        if (
+          !portType ||
+          existingIn.has(param.key) ||
+          tpl.inputs.some((i) => i.name === param.key)
+        ) {
           return null
         }
         return {
@@ -408,7 +437,10 @@ export function syncGraphSlotsWithTemplates(
           description: param.description ?? '可调参数',
         }
       })
-      .filter((x): x is { name: string; type: string; required: boolean; description: string } => x !== null)
+      .filter(
+        (x): x is { name: string; type: string; required: boolean; description: string } =>
+          x !== null,
+      )
 
     for (const input of [...tpl.inputs, ...promoted]) {
       if (existingIn.has(input.name)) continue
@@ -456,8 +488,8 @@ export function syncGraphSlotsWithTemplates(
 export function workflowDefinitionToGraphData(def: WorkflowDefinition): serializedLGraph {
   // links 格式: [link_id, from_node, from_slot, to_node, to_slot, type]
   // 先构建 slot -> link_id 的映射
-  const inputLinkMap = new Map<string, number>()     // "nodeId:slotIdx" -> link_id
-  const outputLinksMap = new Map<string, number[]>()  // "nodeId:slotIdx" -> [link_id, ...]
+  const inputLinkMap = new Map<string, number>() // "nodeId:slotIdx" -> link_id
+  const outputLinksMap = new Map<string, number[]>() // "nodeId:slotIdx" -> [link_id, ...]
   for (const l of def.links) {
     const linkId = l[0]
     const fromNode = l[1]
@@ -493,9 +525,14 @@ export function workflowDefinitionToGraphData(def: WorkflowDefinition): serializ
   }))
 
   // LiteGraph 链接格式：[link_id, from_node, from_slot, to_node, to_slot, type]
-  const links: Array<[number, number, number, number, number, string]> = def.links.map(
-    (l) => [l[0], l[1], l[2], l[3], l[4], l[5]],
-  )
+  const links: Array<[number, number, number, number, number, string]> = def.links.map((l) => [
+    l[0],
+    l[1],
+    l[2],
+    l[3],
+    l[4],
+    l[5],
+  ])
 
   const maxNodeId = def.nodes.reduce((max, n) => Math.max(max, n.id), 0)
   const maxLinkId = def.links.reduce((max, l) => Math.max(max, l[0]), 0)
@@ -514,9 +551,10 @@ export function workflowDefinitionToGraphData(def: WorkflowDefinition): serializ
 /**
  * 将 LiteGraph 序列化数据转换回后端 WorkflowDefinition 格式。
  */
-export function graphDataToWorkflowNodes(
-  graphData: serializedLGraph,
-): { nodes: WorkflowDefinitionNode[]; links: WorkflowDefinitionLink[] } {
+export function graphDataToWorkflowNodes(graphData: serializedLGraph): {
+  nodes: WorkflowDefinitionNode[]
+  links: WorkflowDefinitionLink[]
+} {
   const nodes: WorkflowDefinitionNode[] = graphData.nodes.map((n) => ({
     id: n.id,
     type: n.type ?? '',

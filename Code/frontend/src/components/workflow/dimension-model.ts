@@ -52,14 +52,7 @@
  * 工作流运行对话框指定的主窗口为准（后续可做多轴）。
  */
 
-export const TIME_RESOLUTION_UNITS = [
-  'minute',
-  'hour',
-  'day',
-  'month',
-  'year',
-  'custom',
-] as const
+export const TIME_RESOLUTION_UNITS = ['minute', 'hour', 'day', 'month', 'year', 'custom'] as const
 
 export type TimeResolutionUnit = (typeof TIME_RESOLUTION_UNITS)[number]
 
@@ -118,9 +111,16 @@ export function nodeTypeWantsTimeRange(nodeType: string): boolean {
 }
 
 export function parseTimeFields(raw: unknown): string[] {
-  if (Array.isArray(raw)) return raw.map(String).map((s) => s.trim()).filter(Boolean)
+  if (Array.isArray(raw))
+    return raw
+      .map(String)
+      .map((s) => s.trim())
+      .filter(Boolean)
   if (typeof raw !== 'string' || !raw.trim()) return []
-  return raw.split(/[,，]/).map((s) => s.trim()).filter(Boolean)
+  return raw
+    .split(/[,，]/)
+    .map((s) => s.trim())
+    .filter(Boolean)
 }
 
 /** 从节点 properties / 连线结果拼装运行时 time_range 对象 */

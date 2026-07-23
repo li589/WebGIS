@@ -6,7 +6,13 @@ import {
   encodeWindGridToRGBA,
   WIND_TEXTURE_MAX_WIND,
 } from './wind-particle-webgl-texture'
-import { encodePositionBytes, decodePositionBytes, computeWorldWrapOffsets, extractMercatorProjectionMatrix, sampleEncodedWindSpeedK } from './wind-particle-webgl-renderer'
+import {
+  encodePositionBytes,
+  decodePositionBytes,
+  computeWorldWrapOffsets,
+  extractMercatorProjectionMatrix,
+  sampleEncodedWindSpeedK,
+} from './wind-particle-webgl-renderer'
 import type { WindGeoJSON } from './types'
 
 function makeWindGrid(): WindGrid {
@@ -61,10 +67,26 @@ describe('wind-grid buildWindGridFromGeoJSON', () => {
   const geojson: WindGeoJSON = {
     type: 'FeatureCollection',
     features: [
-      { type: 'Feature', geometry: { type: 'Point', coordinates: [100, 10] }, properties: { wind_speed_10m: 5, wind_direction_10m: 0 } },
-      { type: 'Feature', geometry: { type: 'Point', coordinates: [110, 10] }, properties: { wind_speed_10m: 6, wind_direction_10m: 90 } },
-      { type: 'Feature', geometry: { type: 'Point', coordinates: [100, 0] }, properties: { wind_speed_10m: 7, wind_direction_10m: 180 } },
-      { type: 'Feature', geometry: { type: 'Point', coordinates: [110, 0] }, properties: { wind_speed_10m: 8, wind_direction_10m: 270 } },
+      {
+        type: 'Feature',
+        geometry: { type: 'Point', coordinates: [100, 10] },
+        properties: { wind_speed_10m: 5, wind_direction_10m: 0 },
+      },
+      {
+        type: 'Feature',
+        geometry: { type: 'Point', coordinates: [110, 10] },
+        properties: { wind_speed_10m: 6, wind_direction_10m: 90 },
+      },
+      {
+        type: 'Feature',
+        geometry: { type: 'Point', coordinates: [100, 0] },
+        properties: { wind_speed_10m: 7, wind_direction_10m: 180 },
+      },
+      {
+        type: 'Feature',
+        geometry: { type: 'Point', coordinates: [110, 0] },
+        properties: { wind_speed_10m: 8, wind_direction_10m: 270 },
+      },
     ],
   }
 
@@ -96,8 +118,16 @@ describe('wind-grid buildWindGridFromGeoJSON', () => {
     const twoPoints: WindGeoJSON = {
       type: 'FeatureCollection',
       features: [
-        { type: 'Feature', geometry: { type: 'Point', coordinates: [100, 10] }, properties: { wind_speed_10m: 5, wind_direction_10m: 0 } },
-        { type: 'Feature', geometry: { type: 'Point', coordinates: [110, 10] }, properties: { wind_speed_10m: 5, wind_direction_10m: 0 } },
+        {
+          type: 'Feature',
+          geometry: { type: 'Point', coordinates: [100, 10] },
+          properties: { wind_speed_10m: 5, wind_direction_10m: 0 },
+        },
+        {
+          type: 'Feature',
+          geometry: { type: 'Point', coordinates: [110, 10] },
+          properties: { wind_speed_10m: 5, wind_direction_10m: 0 },
+        },
       ],
     }
     expect(buildWindGridFromGeoJSON(twoPoints)).toBeNull()
@@ -107,14 +137,46 @@ describe('wind-grid buildWindGridFromGeoJSON', () => {
     const crossEq: WindGeoJSON = {
       type: 'FeatureCollection',
       features: [
-        { type: 'Feature', geometry: { type: 'Point', coordinates: [120, 38.75] }, properties: { wind_speed_10m: 5, wind_direction_10m: 0, resolution: 2.5 } },
-        { type: 'Feature', geometry: { type: 'Point', coordinates: [122.5, 38.75] }, properties: { wind_speed_10m: 5, wind_direction_10m: 0, resolution: 2.5 } },
-        { type: 'Feature', geometry: { type: 'Point', coordinates: [120, 1.25] }, properties: { wind_speed_10m: 6, wind_direction_10m: 0, resolution: 2.5 } },
-        { type: 'Feature', geometry: { type: 'Point', coordinates: [122.5, 1.25] }, properties: { wind_speed_10m: 6, wind_direction_10m: 0, resolution: 2.5 } },
-        { type: 'Feature', geometry: { type: 'Point', coordinates: [120, -1.25] }, properties: { wind_speed_10m: 7, wind_direction_10m: 0, resolution: 2.5 } },
-        { type: 'Feature', geometry: { type: 'Point', coordinates: [122.5, -1.25] }, properties: { wind_speed_10m: 7, wind_direction_10m: 0, resolution: 2.5 } },
-        { type: 'Feature', geometry: { type: 'Point', coordinates: [120, -38.75] }, properties: { wind_speed_10m: 8, wind_direction_10m: 0, resolution: 2.5 } },
-        { type: 'Feature', geometry: { type: 'Point', coordinates: [122.5, -38.75] }, properties: { wind_speed_10m: 8, wind_direction_10m: 0, resolution: 2.5 } },
+        {
+          type: 'Feature',
+          geometry: { type: 'Point', coordinates: [120, 38.75] },
+          properties: { wind_speed_10m: 5, wind_direction_10m: 0, resolution: 2.5 },
+        },
+        {
+          type: 'Feature',
+          geometry: { type: 'Point', coordinates: [122.5, 38.75] },
+          properties: { wind_speed_10m: 5, wind_direction_10m: 0, resolution: 2.5 },
+        },
+        {
+          type: 'Feature',
+          geometry: { type: 'Point', coordinates: [120, 1.25] },
+          properties: { wind_speed_10m: 6, wind_direction_10m: 0, resolution: 2.5 },
+        },
+        {
+          type: 'Feature',
+          geometry: { type: 'Point', coordinates: [122.5, 1.25] },
+          properties: { wind_speed_10m: 6, wind_direction_10m: 0, resolution: 2.5 },
+        },
+        {
+          type: 'Feature',
+          geometry: { type: 'Point', coordinates: [120, -1.25] },
+          properties: { wind_speed_10m: 7, wind_direction_10m: 0, resolution: 2.5 },
+        },
+        {
+          type: 'Feature',
+          geometry: { type: 'Point', coordinates: [122.5, -1.25] },
+          properties: { wind_speed_10m: 7, wind_direction_10m: 0, resolution: 2.5 },
+        },
+        {
+          type: 'Feature',
+          geometry: { type: 'Point', coordinates: [120, -38.75] },
+          properties: { wind_speed_10m: 8, wind_direction_10m: 0, resolution: 2.5 },
+        },
+        {
+          type: 'Feature',
+          geometry: { type: 'Point', coordinates: [122.5, -38.75] },
+          properties: { wind_speed_10m: 8, wind_direction_10m: 0, resolution: 2.5 },
+        },
       ],
     }
     const grid = buildWindGridFromGeoJSON(crossEq)!
@@ -143,8 +205,8 @@ describe('encodeWindGridToRGBA（R=u, G=v, B=speed, A=mask）', () => {
     const encoded = encodeWindGridToRGBA(makeWindGrid())
     // 西北角 speed=10, direction=0 → u≈0, v=-10
     const [u, v] = windToUV(10, 0)
-    const expectR = Math.round(((u / WIND_TEXTURE_MAX_WIND + 1) * 0.5) * 255)
-    const expectG = Math.round(((v / WIND_TEXTURE_MAX_WIND + 1) * 0.5) * 255)
+    const expectR = Math.round((u / WIND_TEXTURE_MAX_WIND + 1) * 0.5 * 255)
+    const expectG = Math.round((v / WIND_TEXTURE_MAX_WIND + 1) * 0.5 * 255)
     expect(encoded.data[0]).toBe(expectR) // R = u
     expect(encoded.data[1]).toBe(expectG) // G = v
     expect(encoded.data[2]).toBe(Math.round((10 / WIND_TEXTURE_MAX_WIND) * 255)) // B = speed
@@ -203,7 +265,11 @@ describe('B3 位置编解码往返（encodePositionBytes / decodePositionBytes�
   })
 
   it('任意值往返精度 ~1/65025', () => {
-    for (const [x, y] of [[0.5, 0.25], [0.123, 0.987], [0.3333, 0.6666]]) {
+    for (const [x, y] of [
+      [0.5, 0.25],
+      [0.123, 0.987],
+      [0.3333, 0.6666],
+    ]) {
       const [r, g, b, a] = encodePositionBytes(x, y)
       const [nx, ny] = decodePositionBytes(r, g, b, a)
       expect(nx).toBeCloseTo(x, 4)

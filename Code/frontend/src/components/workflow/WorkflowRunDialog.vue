@@ -178,7 +178,10 @@ watch(
                 v-if="outputStore.groups.length > 0"
                 class="toggle-group-btn"
                 type="button"
-                @click="creatingNewGroup = false; selectedGroup = outputStore.groups[0]"
+                @click="
+                  creatingNewGroup = false
+                  selectedGroup = outputStore.groups[0]
+                "
               >
                 选择已有
               </button>
@@ -189,7 +192,12 @@ watch(
 
       <footer class="dialog-actions">
         <button class="action-btn cancel" type="button" @click="handleCancel">取消</button>
-        <button class="action-btn confirm" type="button" :disabled="!canConfirm" @click="handleConfirm">
+        <button
+          class="action-btn confirm"
+          type="button"
+          :disabled="!canConfirm"
+          @click="handleConfirm"
+        >
           {{ mode === 'default' ? '运行' : '创建并运行' }}
         </button>
       </footer>
@@ -256,7 +264,9 @@ watch(
   border: 1px solid rgba(136, 192, 255, 0.12);
   background: rgba(8, 18, 33, 0.5);
   cursor: pointer;
-  transition: border-color 0.18s ease, background 0.18s ease;
+  transition:
+    border-color 0.18s ease,
+    background 0.18s ease;
 }
 .mode-option:hover {
   border-color: rgba(136, 192, 255, 0.24);
@@ -395,7 +405,10 @@ watch(
   color: #bfd3e6;
   font-size: 0.62rem;
   cursor: pointer;
-  transition: border-color 0.18s ease, background 0.18s ease, color 0.18s ease;
+  transition:
+    border-color 0.18s ease,
+    background 0.18s ease,
+    color 0.18s ease;
 }
 .action-btn.cancel:hover {
   border-color: rgba(136, 192, 255, 0.36);

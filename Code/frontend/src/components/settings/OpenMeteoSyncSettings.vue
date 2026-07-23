@@ -26,9 +26,11 @@ const FALLBACK_MODELS = [
   { id: 'gem_seamless', label: 'GEM', region: 'global', update_interval: '6h' },
 ]
 
-const modelOptions = computed(() => weatherConfig.value?.supported_models?.length
-  ? weatherConfig.value.supported_models
-  : FALLBACK_MODELS)
+const modelOptions = computed(() =>
+  weatherConfig.value?.supported_models?.length
+    ? weatherConfig.value.supported_models
+    : FALLBACK_MODELS,
+)
 
 const selectedModel = ref('ecmwf_ifs025')
 const coverage = ref<WeatherCoverage | null>(null)
@@ -48,8 +50,8 @@ const selectedModelMeta = computed(() =>
   modelOptions.value.find((m) => m.id === selectedModel.value),
 )
 
-const syncDomains = computed(() =>
-  overview.value?.domains ?? weatherConfig.value?.sync_domains ?? [],
+const syncDomains = computed(
+  () => overview.value?.domains ?? weatherConfig.value?.sync_domains ?? [],
 )
 
 const modelInSync = computed(() => syncDomains.value.includes(selectedModel.value))
@@ -83,7 +85,9 @@ const coverageValidLabel = computed(() => {
 })
 
 const dataModeLabel = computed(() =>
-  overview.value?.data_mode === 'forecast' ? '预报（非历史）' : (overview.value?.data_mode ?? '预报'),
+  overview.value?.data_mode === 'forecast'
+    ? '预报（非历史）'
+    : (overview.value?.data_mode ?? '预报'),
 )
 
 const spatialLabel = computed(() => {
@@ -196,9 +200,10 @@ async function triggerSync() {
     syncStatus.value = {
       task_id: resp.task_id,
       state: 'STARTED',
-      info: resp.mode === 'local_thread'
-        ? '已在本进程后台启动（Celery 不可用或超时降级）'
-        : '已派发 Celery 任务',
+      info:
+        resp.mode === 'local_thread'
+          ? '已在本进程后台启动（Celery 不可用或超时降级）'
+          : '已派发 Celery 任务',
       mode: resp.mode,
     }
     overview.value = weatherSyncStatusStore.overview
@@ -230,9 +235,9 @@ function startPolling() {
           await refreshOverview()
         } else if (syncStatus.value?.state === 'FAILURE') {
           const errText =
-            syncStatus.value.error
-            || (typeof syncStatus.value.info === 'string' ? syncStatus.value.info : null)
-            || '同步失败'
+            syncStatus.value.error ||
+            (typeof syncStatus.value.info === 'string' ? syncStatus.value.info : null) ||
+            '同步失败'
           syncStatus.value = { ...syncStatus.value, info: errText }
         }
       }
@@ -262,7 +267,9 @@ onMounted(async () => {
   if (!weatherConfig.value) {
     try {
       await settingsStore.loadAll()
-    } catch { /* ignore */ }
+    } catch {
+      /* ignore */
+    }
   }
   const fromConfig = (weatherConfig.value?.default_model || '').trim()
   // 本地 coverage 不接受 best_match/auto；映射为具体域
@@ -334,10 +341,10 @@ onBeforeUnmount(() => {
         <h3>Docker Open-Meteo</h3>
       </div>
       <p class="channel-desc">
-        Provider：<code>open-meteo-local</code>（默认优先）。
-        需 backend 已启动 <code>cgda-open-meteo</code>（<code>docker compose -p backend up -d</code>）；
-        同步任务在 <code>Code/infra/data-sync</code>（设置页或 <code>.\sync.ps1</code>）。
-        同步域由环境变量 <code>OPEN_METEO_SYNC_DOMAINS</code> 决定。
+        Provider：<code>open-meteo-local</code>（默认优先）。 需 backend 已启动
+        <code>cgda-open-meteo</code>（<code>docker compose -p backend up -d</code>）； 同步任务在
+        <code>Code/infra/data-sync</code>（设置页或 <code>.\sync.ps1</code>）。 同步域由环境变量
+        <code>OPEN_METEO_SYNC_DOMAINS</code> 决定。
       </p>
 
       <div class="setting-block">
@@ -357,7 +364,9 @@ onBeforeUnmount(() => {
           <div class="coverage-row">
             <span class="coverage-label">定时</span>
             <span class="coverage-value">
-              {{ overview.enabled ? `${overview.cron.hour} ${overview.cron.minute} UTC` : '已关闭' }}
+              {{
+                overview.enabled ? `${overview.cron.hour} ${overview.cron.minute} UTC` : '已关闭'
+              }}
             </span>
           </div>
           <div class="coverage-row">
@@ -366,7 +375,9 @@ onBeforeUnmount(() => {
           </div>
           <div v-if="overview.last_failure_at" class="coverage-row">
             <span class="coverage-label">上次失败</span>
-            <span class="coverage-value">{{ overview.last_message || overview.last_failure_at }}</span>
+            <span class="coverage-value">{{
+              overview.last_message || overview.last_failure_at
+            }}</span>
           </div>
         </div>
         <div v-else class="coverage-loading">状态未知（overview 不可用）</div>
@@ -392,7 +403,9 @@ onBeforeUnmount(() => {
           <div class="coverage-row">
             <span class="coverage-label">覆盖范围</span>
             <span class="coverage-value">
-              <template v-if="overview.coverage_error">无数据（{{ overview.coverage_error }}）</template>
+              <template v-if="overview.coverage_error"
+                >无数据（{{ overview.coverage_error }}）</template
+              >
               <template v-else>{{ overviewCoverageRangeLabel }}</template>
             </span>
           </div>
@@ -411,7 +424,8 @@ onBeforeUnmount(() => {
             </span>
           </div>
           <p class="coverage-hint meta-hint">
-            同步可拉取模型原生预报时效，但前端瓦片 hour 上限与运行时请求窗口更短；时间轴绿/紫以本地探针有效时次为准。
+            同步可拉取模型原生预报时效，但前端瓦片 hour
+            上限与运行时请求窗口更短；时间轴绿/紫以本地探针有效时次为准。
           </p>
         </div>
         <div v-else class="coverage-loading">刷新 overview 后显示</div>
@@ -420,7 +434,12 @@ onBeforeUnmount(() => {
       <div class="setting-block">
         <div class="block-title">
           <span>数据覆盖（本地探针）</span>
-          <button type="button" class="refresh-btn" :disabled="coverageLoading" @click="refreshCoverage">
+          <button
+            type="button"
+            class="refresh-btn"
+            :disabled="coverageLoading"
+            @click="refreshCoverage"
+          >
             {{ coverageLoading ? '刷新中...' : '刷新' }}
           </button>
         </div>
@@ -461,8 +480,8 @@ onBeforeUnmount(() => {
           </div>
         </div>
         <p class="sync-hint">
-          优先 Celery；broker 卡住时自动降级为本进程后台线程。需本机 Docker。
-          同步约 10–30 分钟，期间旧数据仍可用。断网或 Docker 不可用时会显示失败原因。
+          优先 Celery；broker 卡住时自动降级为本进程后台线程。需本机 Docker。 同步约 10–30
+          分钟，期间旧数据仍可用。断网或 Docker 不可用时会显示失败原因。
         </p>
       </div>
     </div>
@@ -475,8 +494,8 @@ onBeforeUnmount(() => {
       </div>
       <p class="channel-desc">
         Provider：<code>open-meteo-online</code>（api.open-meteo.com）。
-        <strong>无需 API Key</strong>。启停 / 优先级 / 连通性测试请到「天气源」页。
-        Online 支持 <code>best_match</code>；本地不支持，会自动映射为默认模型。
+        <strong>无需 API Key</strong>。启停 / 优先级 / 连通性测试请到「天气源」页。 Online 支持
+        <code>best_match</code>；本地不支持，会自动映射为默认模型。
       </p>
       <ul class="online-list">
         <li>免费额度约每日 1 万次请求（官方限额，以 open-meteo.com 为准）</li>
@@ -641,8 +660,13 @@ onBeforeUnmount(() => {
   font-size: 0.58rem;
 }
 
-.info-label { color: #8aa8bf; }
-.info-value { color: #e8f3fc; font-variant-numeric: tabular-nums; }
+.info-label {
+  color: #8aa8bf;
+}
+.info-value {
+  color: #e8f3fc;
+  font-variant-numeric: tabular-nums;
+}
 
 .setting-block {
   padding: 0.55rem 0 0;
@@ -671,8 +695,13 @@ onBeforeUnmount(() => {
   font-size: 0.56rem;
 }
 
-.refresh-btn:hover:not(:disabled) { background: rgba(10, 132, 255, 0.2); }
-.refresh-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+.refresh-btn:hover:not(:disabled) {
+  background: rgba(10, 132, 255, 0.2);
+}
+.refresh-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
 
 .coverage-error {
   padding: 0.42rem 0.55rem;
@@ -715,9 +744,17 @@ onBeforeUnmount(() => {
   font-size: 0.62rem;
 }
 
-.coverage-label { color: #8aa8bf; }
-.coverage-value { color: #e8f3fc; font-family: monospace; }
-.coverage-loading { font-size: 0.6rem; color: #6e8ba0; }
+.coverage-label {
+  color: #8aa8bf;
+}
+.coverage-value {
+  color: #e8f3fc;
+  font-family: monospace;
+}
+.coverage-loading {
+  font-size: 0.6rem;
+  color: #6e8ba0;
+}
 
 .sync-control {
   display: flex;
@@ -736,15 +773,40 @@ onBeforeUnmount(() => {
   font-size: 0.62rem;
 }
 
-.sync-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+.sync-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
 
-.sync-status { display: flex; flex-direction: column; gap: 0.15rem; font-size: 0.58rem; }
-.sync-state { color: #b8cce0; }
-.state-success { color: #9ff8cf; }
-.state-failure { color: #ff8a8a; }
-.state-started, .state-pending, .state-retry { color: #5ad5ff; }
-.sync-error { color: #ffb0b0; }
-.sync-hint { margin: 0.45rem 0 0; font-size: 0.54rem; color: #6e8ba0; line-height: 1.45; }
+.sync-status {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  font-size: 0.58rem;
+}
+.sync-state {
+  color: #b8cce0;
+}
+.state-success {
+  color: #9ff8cf;
+}
+.state-failure {
+  color: #ff8a8a;
+}
+.state-started,
+.state-pending,
+.state-retry {
+  color: #5ad5ff;
+}
+.sync-error {
+  color: #ffb0b0;
+}
+.sync-hint {
+  margin: 0.45rem 0 0;
+  font-size: 0.54rem;
+  color: #6e8ba0;
+  line-height: 1.45;
+}
 
 .online-list {
   margin: 0;

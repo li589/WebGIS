@@ -68,9 +68,7 @@ export interface CreateMeasureModuleOptions {
   clearMeasure: () => void
 }
 
-export function createMeasureModule(
-  options: CreateMeasureModuleOptions,
-): MeasureModule {
+export function createMeasureModule(options: CreateMeasureModuleOptions): MeasureModule {
   const { map } = options
   const canvas = new MeasureCanvas(map)
 

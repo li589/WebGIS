@@ -11,10 +11,11 @@ describe('selected-layer-focus-module', () => {
 
     const module = createSelectedLayerFocusModule({
       map: {} as any,
-      getSelectedLayer: () => ({
-        instanceId: 'layer-1',
-        hotspots: [{ id: 'a', name: 'A', lng: 113, lat: 23, value: '1' }],
-      } as any),
+      getSelectedLayer: () =>
+        ({
+          instanceId: 'layer-1',
+          hotspots: [{ id: 'a', name: 'A', lng: 113, lat: 23, value: '1' }],
+        }) as any,
       scheduleHotspotSync,
       debugLog: vi.fn(),
       dependencies: {

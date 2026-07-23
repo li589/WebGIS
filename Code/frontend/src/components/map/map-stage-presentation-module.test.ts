@@ -13,9 +13,10 @@ describe('map-stage-presentation-module', () => {
     const button = { style: {} as Record<string, string> }
 
     const module = createMapStagePresentationModule({
-      getMapContainer: () => ({
-        querySelectorAll: () => [button] as any,
-      } as unknown as HTMLElement),
+      getMapContainer: () =>
+        ({
+          querySelectorAll: () => [button] as any,
+        }) as unknown as HTMLElement,
       getUsesLightNavigationTheme: () => true,
       setLoadingLabel,
       setMapVisible,

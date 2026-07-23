@@ -9,9 +9,7 @@ describe('selected-layer-focus', () => {
       fitBounds: vi.fn(),
     } as any
 
-    focusMapOnHotspots(map, [
-      { id: 'a', name: 'A', lng: 113.2, lat: 23.1, value: '1' },
-    ])
+    focusMapOnHotspots(map, [{ id: 'a', name: 'A', lng: 113.2, lat: 23.1, value: '1' }])
 
     expect(map.easeTo).toHaveBeenCalledWith({
       center: [113.2, 23.1],
@@ -34,7 +32,10 @@ describe('selected-layer-focus', () => {
     ])
 
     expect(map.fitBounds).toHaveBeenCalledWith(
-      [[110, 20], [120, 30]],
+      [
+        [110, 20],
+        [120, 30],
+      ],
       {
         padding: { top: 120, right: 220, bottom: 120, left: 220 },
         maxZoom: 6.8,

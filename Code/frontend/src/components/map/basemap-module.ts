@@ -120,8 +120,16 @@ export function createBasemapModule(options: CreateBasemapModuleOptions): Basema
       options.map.setLayoutProperty(TILE_LAYER_ID, 'visibility', 'visible')
       options.map.setPaintProperty(TILE_LAYER_ID, 'raster-opacity', 0.88)
       options.map.setPaintProperty(TILE_LAYER_ID, 'raster-saturation', cfg.saturation)
-      options.map.setPaintProperty(TILE_LAYER_ID, 'raster-brightness-max', Math.min(1.0, 1.0 + cfg.brightness))
-      options.map.setPaintProperty(TILE_LAYER_ID, 'raster-brightness-min', Math.max(0.0, Math.min(1.0, cfg.brightness)))
+      options.map.setPaintProperty(
+        TILE_LAYER_ID,
+        'raster-brightness-max',
+        Math.min(1.0, 1.0 + cfg.brightness),
+      )
+      options.map.setPaintProperty(
+        TILE_LAYER_ID,
+        'raster-brightness-min',
+        Math.max(0.0, Math.min(1.0, cfg.brightness)),
+      )
       options.map.setPaintProperty(TILE_LAYER_ID, 'raster-contrast', cfg.contrast)
     }
   }
@@ -149,9 +157,9 @@ export function createBasemapModule(options: CreateBasemapModuleOptions): Basema
       return
     }
     if (
-      currentProvider
-      && failedProvider !== currentProvider
-      && failedProvider !== currentSourceId
+      currentProvider &&
+      failedProvider !== currentProvider &&
+      failedProvider !== currentSourceId
     ) {
       return
     }
@@ -164,9 +172,7 @@ export function createBasemapModule(options: CreateBasemapModuleOptions): Basema
 
     if (tileErrorTimestamps.length > TILE_ERROR_THRESHOLD) {
       options.setTileLoadFailed(true)
-      options.setTileFailedProvider(
-        failedProvider ?? currentProvider,
-      )
+      options.setTileFailedProvider(failedProvider ?? currentProvider)
       if (options.map.getLayer(TILE_LAYER_ID)) {
         options.map.setLayoutProperty(TILE_LAYER_ID, 'visibility', 'none')
       }
@@ -185,7 +191,13 @@ export function createBasemapModule(options: CreateBasemapModuleOptions): Basema
     if (mapError.sourceId !== TILE_SOURCE_ID && mapError.sourceId !== undefined) return
 
     const status = mapError.error?.status
-    if (status !== undefined && status !== 0 && status !== 403 && status !== 404 && status !== 503) {
+    if (
+      status !== undefined &&
+      status !== 0 &&
+      status !== 403 &&
+      status !== 404 &&
+      status !== 503
+    ) {
       return
     }
 

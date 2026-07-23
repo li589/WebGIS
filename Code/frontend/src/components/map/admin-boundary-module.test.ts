@@ -12,7 +12,9 @@ describe('admin-boundary-module', () => {
       guangdongCityBoundaries: { type: 'FeatureCollection', features: [] as any[] },
     }
     const loadBoundaryModule = vi.fn(async () => boundaryModuleData) as unknown as NonNullable<
-      NonNullable<Parameters<typeof createAdminBoundaryModule>[0]['dependencies']>['loadBoundaryModule']
+      NonNullable<
+        Parameters<typeof createAdminBoundaryModule>[0]['dependencies']
+      >['loadBoundaryModule']
     >
     const setLoadingLabel = vi.fn()
 

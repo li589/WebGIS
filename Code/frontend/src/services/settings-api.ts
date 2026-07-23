@@ -166,6 +166,26 @@ export interface GeneralConfig {
   redis_url: string
   storage_backend: string
   reload: boolean
+  // 扩展字段（后端已返回）
+  max_active_weather_tile_runs?: number
+  weather_cache_ttl_seconds?: number
+  weather_refresh_forecast_hours?: number
+  cache_default_ttl_seconds?: number
+  provider_max_hotspots?: number
+  provider_max_series_points?: number
+  provider_table_chunk_size?: number
+  provider_series_chunk_size?: number
+  result_inline_max_bytes?: number
+  celery_task_soft_time_limit?: number
+  celery_task_time_limit?: number
+  celery_task_always_eager?: boolean
+  cors_origins?: string[]
+  object_store_backend?: string
+  object_store_public_base?: string
+  result_artifact_dir?: string
+  workflow_state_dir?: string
+  python_provider_root?: string
+  python_provider_workspace?: string
 }
 
 export interface DataSourceConfig {
@@ -183,6 +203,8 @@ export interface DataSourceConfig {
   } | null
   discovered_datasets?: Array<{ name: string; path: string; file_count: number }>
   open_data_presets?: Record<string, string>
+  open_data_preset_labels?: Record<string, string>
+  portal_credentials?: Record<string, PortalCredentialPublic>
   remote_layer_data_uris?: Record<string, Record<string, string | string[]>>
   static_cache?: {
     cache_root: string
@@ -192,6 +214,18 @@ export interface DataSourceConfig {
     total_bytes: number
   }
   workflow_hint?: string
+}
+
+export interface PortalCredentialPublic {
+  enabled: boolean
+  auth_type: string
+  username: string
+  has_token: boolean
+  has_password: boolean
+  source?: string
+  use_for_nsidc?: boolean
+  use_earthdata?: boolean
+  client_id?: string
 }
 
 export interface DataCacheOverview {
@@ -242,10 +276,7 @@ export interface ReloadResult {
 import { resolveApiUrl } from './runtime-api'
 import { withWriteAuthHeaders } from './backend-auth'
 
-async function settingsFetch<T>(
-  path: string,
-  init?: RequestInit,
-): Promise<T> {
+async function settingsFetch<T>(path: string, init?: RequestInit): Promise<T> {
   const url = resolveApiUrl(path)
   const method = (init?.method ?? 'GET').toUpperCase()
   let headers: Record<string, string> = {
@@ -317,7 +348,10 @@ export function testApiKey(keyName: string): Promise<TestResult> {
   })
 }
 
-export function toggleApiKey(keyName: string, enabled: boolean): Promise<{ key_name: string; enabled: boolean }> {
+export function toggleApiKey(
+  keyName: string,
+  enabled: boolean,
+): Promise<{ key_name: string; enabled: boolean }> {
   return settingsFetch(`/config/api-keys/${encodeURIComponent(keyName)}/toggle`, {
     method: 'PUT',
     body: JSON.stringify({ enabled }),
@@ -339,13 +373,14 @@ export function deleteApiKeyHistoryEntry(
   keyName: string,
   historyId: number,
 ): Promise<{ deleted: boolean }> {
-  return settingsFetch(
-    `/config/api-keys/${encodeURIComponent(keyName)}/history/${historyId}`,
-    { method: 'DELETE' },
-  )
+  return settingsFetch(`/config/api-keys/${encodeURIComponent(keyName)}/history/${historyId}`, {
+    method: 'DELETE',
+  })
 }
 
-export function clearApiKeyHistory(keyName: string): Promise<{ key_name: string; deleted: number }> {
+export function clearApiKeyHistory(
+  keyName: string,
+): Promise<{ key_name: string; deleted: number }> {
   return settingsFetch(`/config/api-keys/${encodeURIComponent(keyName)}/history`, {
     method: 'DELETE',
   })
@@ -375,7 +410,10 @@ export function testGeeAccount(accountId: string): Promise<TestResult> {
   })
 }
 
-export function toggleGeeAccount(accountId: string, enabled: boolean): Promise<{ account_id: string; enabled: boolean }> {
+export function toggleGeeAccount(
+  accountId: string,
+  enabled: boolean,
+): Promise<{ account_id: string; enabled: boolean }> {
   return settingsFetch(`/config/gee/accounts/${encodeURIComponent(accountId)}/toggle`, {
     method: 'PUT',
     body: JSON.stringify({ enabled }),
@@ -485,6 +523,24 @@ export function updateOpenDataPresets(
   })
 }
 
+export function upsertPortalCredential(
+  portalId: string,
+  payload: Record<string, unknown>,
+): Promise<{ portal_credentials: Record<string, PortalCredentialPublic> }> {
+  return settingsFetch(`/config/data-source/portal-credentials/${encodeURIComponent(portalId)}`, {
+    method: 'PUT',
+    body: JSON.stringify(payload),
+  })
+}
+
+export function deletePortalCredential(
+  portalId: string,
+): Promise<{ portal_credentials: Record<string, PortalCredentialPublic> }> {
+  return settingsFetch(`/config/data-source/portal-credentials/${encodeURIComponent(portalId)}`, {
+    method: 'DELETE',
+  })
+}
+
 export function updateRemoteLayerUris(
   remote_layer_data_uris: Record<string, Record<string, string | string[]>>,
 ): Promise<{ remote_layer_data_uris: Record<string, Record<string, string[]>> }> {
@@ -537,7 +593,9 @@ export interface RemoteStorageTestResult {
   tested_at: string
 }
 
-export function fetchRemoteStorageProfiles(includeDisabled = true): Promise<RemoteStorageProfile[]> {
+export function fetchRemoteStorageProfiles(
+  includeDisabled = true,
+): Promise<RemoteStorageProfile[]> {
   return settingsFetch(`/config/remote-storage?include_disabled=${includeDisabled}`)
 }
 
@@ -623,4 +681,36 @@ export function clearRemoteStorageHistory(
 // 关于
 export function fetchAboutInfo(): Promise<AboutInfo> {
   return settingsFetch('/config/about')
+}
+
+// ── Runtime Config（热修改运行时参数） ─────────────────────────────────────
+
+export type RuntimeConfigScope = 'frontend' | 'backend' | 'provider' | 'workflow' | 'system'
+
+export interface RuntimeConfigPatch {
+  scope: RuntimeConfigScope
+  key: string
+  value: string | number | boolean
+  description?: string
+}
+
+export interface RuntimeConfigUpdateResponse {
+  accepted: boolean
+  updated_at: string
+  applied_count: number
+  message: string
+  config_snapshot: Record<string, Record<string, unknown>>
+}
+
+export function fetchRuntimeConfig(): Promise<Record<string, Record<string, unknown>>> {
+  return settingsFetch('/runtime/config')
+}
+
+export async function updateRuntimeConfig(
+  items: RuntimeConfigPatch[],
+): Promise<RuntimeConfigUpdateResponse> {
+  return settingsFetch('/runtime/config', {
+    method: 'PATCH',
+    body: JSON.stringify({ items, client: { client_type: 'settings-ui', client_id: 'web' } }),
+  })
 }

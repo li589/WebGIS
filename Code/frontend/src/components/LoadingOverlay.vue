@@ -155,8 +155,13 @@ const { isVisible, message, mode } = storeToRefs(uiLoading)
   inset: 0;
   border-radius: 50%;
   overflow: hidden;
-  background:
-    radial-gradient(circle at 32% 28%, #7fd4ff 0%, #2a7fbf 38%, #0d3a62 78%, #071e36 100%);
+  background: radial-gradient(
+    circle at 32% 28%,
+    #7fd4ff 0%,
+    #2a7fbf 38%,
+    #0d3a62 78%,
+    #071e36 100%
+  );
   box-shadow:
     inset -10px -6px 18px rgba(0, 0, 0, 0.35),
     0 0 18px rgba(90, 213, 255, 0.25);
@@ -172,9 +177,16 @@ const { isVisible, message, mode } = storeToRefs(uiLoading)
   border-radius: 1px;
 }
 
-.lat-a { top: 28%; }
-.lat-b { top: 50%; background: rgba(200, 236, 255, 0.38); }
-.lat-c { top: 72%; }
+.lat-a {
+  top: 28%;
+}
+.lat-b {
+  top: 50%;
+  background: rgba(200, 236, 255, 0.38);
+}
+.lat-c {
+  top: 72%;
+}
 
 .meridian {
   position: absolute;
@@ -247,8 +259,12 @@ const { isVisible, message, mode } = storeToRefs(uiLoading)
   box-shadow: 0 0 6px rgba(90, 213, 255, 0.5);
 }
 
-.sat-wing.left { left: 0; }
-.sat-wing.right { right: 0; }
+.sat-wing.left {
+  left: 0;
+}
+.sat-wing.right {
+  right: 0;
+}
 
 .sat-beam {
   position: absolute;
@@ -291,10 +307,12 @@ const { isVisible, message, mode } = storeToRefs(uiLoading)
   position: absolute;
   inset: 0 auto 0 0;
   width: 40%;
-  background: linear-gradient(90deg,
+  background: linear-gradient(
+    90deg,
     rgba(90, 213, 255, 0) 0%,
     rgba(90, 213, 255, 0.85) 50%,
-    rgba(255, 184, 77, 0) 100%);
+    rgba(255, 184, 77, 0) 100%
+  );
   animation: progress-slide 1.6s ease-in-out infinite;
 }
 
@@ -320,11 +338,13 @@ const { isVisible, message, mode } = storeToRefs(uiLoading)
 .compact-glow {
   height: 100%;
   width: 28%;
-  background: linear-gradient(90deg,
+  background: linear-gradient(
+    90deg,
     transparent,
     rgba(90, 213, 255, 0.95),
     rgba(255, 184, 77, 0.8),
-    transparent);
+    transparent
+  );
   animation: progress-slide 1.1s ease-in-out infinite;
 }
 
@@ -349,41 +369,80 @@ const { isVisible, message, mode } = storeToRefs(uiLoading)
 }
 
 @keyframes earth-spin {
-  from { transform: rotate(0deg); }
-  to { transform: rotate(360deg); }
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 @keyframes sat-orbit {
-  from { transform: rotate(0deg); }
-  to { transform: rotate(360deg); }
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 @keyframes pulse-glow {
-  0%, 100% { opacity: 0.55; transform: scale(1); }
-  50% { opacity: 1; transform: scale(1.06); }
+  0%,
+  100% {
+    opacity: 0.55;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1.06);
+  }
 }
 
 @keyframes beam-pulse {
-  0%, 100% { opacity: 0.35; }
-  50% { opacity: 0.95; }
+  0%,
+  100% {
+    opacity: 0.35;
+  }
+  50% {
+    opacity: 0.95;
+  }
 }
 
 @keyframes twinkle {
-  0%, 100% { opacity: 0.45; }
-  50% { opacity: 0.85; }
+  0%,
+  100% {
+    opacity: 0.45;
+  }
+  50% {
+    opacity: 0.85;
+  }
 }
 
 @keyframes progress-slide {
-  0% { transform: translateX(-120%); }
-  100% { transform: translateX(380%); }
+  0% {
+    transform: translateX(-120%);
+  }
+  100% {
+    transform: translateX(380%);
+  }
 }
 
 @keyframes loading-dots {
-  0% { content: ''; }
-  25% { content: '.'; }
-  50% { content: '..'; }
-  75% { content: '...'; }
-  100% { content: ''; }
+  0% {
+    content: '';
+  }
+  25% {
+    content: '.';
+  }
+  50% {
+    content: '..';
+  }
+  75% {
+    content: '...';
+  }
+  100% {
+    content: '';
+  }
 }
 
 .loading-fade-enter-active,

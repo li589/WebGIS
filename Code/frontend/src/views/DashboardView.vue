@@ -15,7 +15,12 @@ import WorkflowStatusPanel from '../components/workflow/WorkflowStatusPanel.vue'
 import type { TileSourceId } from '../services/api-config'
 import type { ActiveLayerDisplay, LayerHotspot } from '../stores/layers/types'
 import type { OverlayTimeState } from '../components/map/overlay-image-module'
-import { getOverlayValue, type OverlayPointValue, getWeatherCoverage, type WeatherCoverage } from '../services/runtime-api'
+import {
+  getOverlayValue,
+  type OverlayPointValue,
+  getWeatherCoverage,
+  type WeatherCoverage,
+} from '../services/runtime-api'
 import { useUiStore } from '../stores/ui'
 import { useUiLoadingStore } from '../stores/ui-loading'
 import { useLayersStore } from '../stores/layers'
@@ -41,18 +46,32 @@ uiLoading.showImmediate('初始化地图数据...')
 void layersStore.ensureRuntimeLayerCatalog().finally(() => {
   uiLoading.hideImmediate()
 })
+// 恢复后端活跃工作流（跨会话 / 定时器触发 / 其他客户端提交）
+void layersStore.restoreActiveWorkflows()
 
-const { tileSourceId, currentHour, currentDate, hourLabel, isPlaying, unifiedTimeLock } = storeToRefs(uiStore)
-const { selectedLayerDisplay, activeLayerCount, workflowError, isSubmitting, pointWeather, pointWeatherLoading, pointWeatherError } = storeToRefs(layersStore)
+const { tileSourceId, currentHour, currentDate, hourLabel, isPlaying, unifiedTimeLock } =
+  storeToRefs(uiStore)
+const {
+  selectedLayerDisplay,
+  activeLayerCount,
+  workflowError,
+  isSubmitting,
+  pointWeather,
+  pointWeatherLoading,
+  pointWeatherError,
+} = storeToRefs(layersStore)
 // 引用 tile_manager 的版本号，使 timelineSegments 在瓦片状态变化时重新计算
-const { statusVersion: weatherStatusVersion, activityVersion: weatherActivityVersion } = storeToRefs(weatherTileManager)
+const { statusVersion: weatherStatusVersion, activityVersion: weatherActivityVersion } =
+  storeToRefs(weatherTileManager)
 
 const activeLayer = computed(() => {
   if (selectedLayerDisplay.value) return selectedLayerDisplay.value
   return buildFallbackActiveLayer()
 })
 
-const stageLabel = computed(() => (activeLayer.value.dataState === 'real' ? '运行时工作流' : '运行时目录'))
+const stageLabel = computed(() =>
+  activeLayer.value.dataState === 'real' ? '运行时工作流' : '运行时目录',
+)
 const visibleHotspots = ref<LayerHotspot[]>([])
 const selectedHotspot = ref<LayerHotspot | null>(null)
 const selectedMapPoint = ref<{ lng: number; lat: number } | null>(null)
@@ -138,13 +157,10 @@ function snapTimelineToLatestValid(reason: string) {
 }
 
 // 拖动/改日期时记住当前图层时刻（不含切层，避免把旧时刻写进新图层）
-watch(
-  [currentHour, currentDate],
-  () => {
-    if (unifiedTimeLock.value) return
-    uiStore.rememberLayerTime(selectedCatalogId.value)
-  },
-)
+watch([currentHour, currentDate], () => {
+  if (unifiedTimeLock.value) return
+  uiStore.rememberLayerTime(selectedCatalogId.value)
+})
 
 // 仅「新加」天气图层：非统一模式对齐最新有效数据时次（须先于切层 watch 登记 pending）
 watch(
@@ -191,10 +207,14 @@ watch(selectedCatalogId, (catalogId, previous) => {
 })
 
 const workflowEditorOpen = ref(false)
-const workflowEditorRef = ref<{ notifyRunOutcome?: (ok: boolean, message?: string) => void } | null>(null)
+const workflowEditorRef = ref<{
+  notifyRunOutcome?: (ok: boolean, message?: string) => void
+} | null>(null)
 const ScreenshotExport = defineAsyncComponent(() => import('../components/ScreenshotExport.vue'))
 const SettingsPanel = defineAsyncComponent(() => import('../components/settings/SettingsPanel.vue'))
-const WorkflowEditorPanel = defineAsyncComponent(() => import('../components/workflow/WorkflowEditorPanel.vue'))
+const WorkflowEditorPanel = defineAsyncComponent(
+  () => import('../components/workflow/WorkflowEditorPanel.vue'),
+)
 import type { WorkflowRunTarget } from '../components/workflow/WorkflowRunDialog.vue'
 import { useWorkflowOutputLayersStore } from '../stores/workflow-output-layers'
 
@@ -283,9 +303,8 @@ const timelineSegments = computed(() => {
   const layer = activeLayer.value
   const catalogId = layer.catalogId
   const isWeatherLayer = catalogId ? layersStore.isWeatherEngineLayer(catalogId) : false
-  const currentStatus = isWeatherLayer && catalogId
-    ? weatherTileManager.getLayerStatus(catalogId)
-    : null
+  const currentStatus =
+    isWeatherLayer && catalogId ? weatherTileManager.getLayerStatus(catalogId) : null
 
   return buildClockDayTimelineSegments({
     selectedDate: currentDate.value,
@@ -310,7 +329,10 @@ function handleLayerSelect(layerId: string) {
 function handleTimelineStep(delta: number) {
   uiStore.stepHour(delta)
   if (!unifiedTimeLock.value) uiStore.rememberLayerTime(selectedCatalogId.value)
-  logStore.logOperation('timeline-step', `时间轴${delta > 0 ? '前进' : '后退'} ${Math.abs(delta)} 小时`)
+  logStore.logOperation(
+    'timeline-step',
+    `时间轴${delta > 0 ? '前进' : '后退'} ${Math.abs(delta)} 小时`,
+  )
 }
 
 function handleTimelineChange(hour: number) {
@@ -345,7 +367,10 @@ function handleTimelineToggleUnified() {
 
 function handleVisibleHotspotsChange(hotspots: LayerHotspot[]) {
   visibleHotspots.value = hotspots
-  if (selectedHotspot.value && !hotspots.some((hotspot) => hotspot.id === selectedHotspot.value?.id)) {
+  if (
+    selectedHotspot.value &&
+    !hotspots.some((hotspot) => hotspot.id === selectedHotspot.value?.id)
+  ) {
     selectedHotspot.value = null
   }
 }
@@ -356,7 +381,10 @@ function handleHotspotSelect(hotspot: LayerHotspot | null) {
 
 function handleMapPointSelect(point: { lng: number; lat: number }) {
   selectedMapPoint.value = point
-  logStore.logOperation('map-point-select', `查询点 (${point.lng.toFixed(4)}, ${point.lat.toFixed(4)})`)
+  logStore.logOperation(
+    'map-point-select',
+    `查询点 (${point.lng.toFixed(4)}, ${point.lat.toFixed(4)})`,
+  )
   void layersStore.fetchPointWeather(point.lng, point.lat, activeLayer.value.catalogId)
   void fetchOverlayPointValues(point.lng, point.lat)
 }
@@ -423,9 +451,15 @@ async function handleRunWorkflowFromEditor(
   workflowId: string,
   linkedLayerId: string | null,
   target: WorkflowRunTarget,
-  canvasGraph?: { nodes: import('../services/workflow-definition-api').WorkflowDefinitionNode[]; links: import('../services/workflow-definition-api').WorkflowDefinitionLink[] } | null,
+  canvasGraph?: {
+    nodes: import('../services/workflow-definition-api').WorkflowDefinitionNode[]
+    links: import('../services/workflow-definition-api').WorkflowDefinitionLink[]
+  } | null,
 ) {
-  logStore.logWorkflow('workflow-editor-run', `从编辑器运行工作流: ${workflowId} (目标: ${target.mode})`)
+  logStore.logWorkflow(
+    'workflow-editor-run',
+    `从编辑器运行工作流: ${workflowId} (目标: ${target.mode})`,
+  )
   if (!linkedLayerId) {
     const msg = `工作流 ${workflowId} 未关联图层，无法运行`
     logStore.logWorkflow('workflow-editor-error', msg)
@@ -435,7 +469,8 @@ async function handleRunWorkflowFromEditor(
 
   let catalogId = linkedLayerId
   if (target.mode === 'new') {
-    const engine = layersStore.layerLibrary.find((l) => l.catalogId === linkedLayerId)?.engine ?? 'general'
+    const engine =
+      layersStore.layerLibrary.find((l) => l.catalogId === linkedLayerId)?.engine ?? 'general'
     const entry = workflowOutputStore.createOutputLayer({
       name: target.name ?? `产出 ${workflowId}`,
       group: target.group ?? '默认分组',
@@ -443,7 +478,10 @@ async function handleRunWorkflowFromEditor(
       sourceLayerId: linkedLayerId,
       engine,
     })
-    logStore.logWorkflow('workflow-output-create', `创建产出图层「${entry.name}」→ 分组「${entry.group}」`)
+    logStore.logWorkflow(
+      'workflow-output-create',
+      `创建产出图层「${entry.name}」→ 分组「${entry.group}」`,
+    )
     catalogId = entry.localId
   }
 
@@ -515,7 +553,11 @@ watch(
       return
     }
     if (selectedMapPoint.value) {
-      void layersStore.fetchPointWeather(selectedMapPoint.value.lng, selectedMapPoint.value.lat, catalogId)
+      void layersStore.fetchPointWeather(
+        selectedMapPoint.value.lng,
+        selectedMapPoint.value.lat,
+        catalogId,
+      )
     }
   },
 )
@@ -695,20 +737,11 @@ function buildFallbackActiveLayer(): ActiveLayerDisplay {
       @close="handleCloseScreenshot"
     />
 
-    <WorkflowStatusPanel
-      v-if="workflowStatusOpen"
-      @close="handleCloseWorkflowStatus"
-    />
+    <WorkflowStatusPanel v-if="workflowStatusOpen" @close="handleCloseWorkflowStatus" />
 
-    <LogPanel
-      v-if="logOpen"
-      @close="logOpen = false"
-    />
+    <LogPanel v-if="logOpen" @close="logOpen = false" />
 
-    <SettingsPanel
-      v-if="settingsOpen"
-      @close="handleCloseSettings"
-    />
+    <SettingsPanel v-if="settingsOpen" @close="handleCloseSettings" />
 
     <WorkflowEditorPanel
       v-if="workflowEditorOpen"

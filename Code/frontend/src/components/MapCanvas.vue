@@ -12,12 +12,10 @@ import { createMapCanvasExposeBridge } from './map/map-canvas-expose-bridge'
 import { createMapCanvasLifecycleBinder } from './map/map-canvas-lifecycle-binder'
 import { createMapCanvasMapOptions } from './map/map-canvas-map-options'
 import { createMapCanvasModuleBundle } from './map/map-canvas-module-bundle'
-import { createOverlayImageModule } from './map/overlay-image-module'
-import { createImportedLayerModule } from './map/imported-layer-module'
-import { applyActiveLayerStackOrder } from './map/layer-stack-sync'
 import { createMapStagePresentationModule } from './map/map-stage-presentation-module'
 import { createMapCanvasState } from './map/map-canvas-state'
 import { createMapCanvasTeardownBinder } from './map/map-canvas-teardown-binder'
+import type { OverlayTimeState } from './map/overlay-image-module'
 import {
   buildMapStageAppearanceModel,
   buildMapStageDisplayModel,
@@ -43,7 +41,7 @@ const emit = defineEmits<{
   visibleHotspotsChange: [hotspots: LayerHotspot[]]
   hotspotSelect: [hotspot: LayerHotspot | null]
   mapPointSelect: [point: { lng: number; lat: number }]
-  overlayTimeUpdate: [states: import('./map/overlay-image-module').OverlayTimeState[]]
+  overlayTimeUpdate: [states: OverlayTimeState[]]
 }>()
 
 const state = createMapCanvasState()
@@ -65,7 +63,6 @@ const {
 const teardownBinder = createMapCanvasTeardownBinder({
   getResources: () => state.resources,
   clearResources: state.clearResources,
-  getOverlayImageModule: () => overlayImageModule,
 })
 const actionBridge = createMapCanvasActionBridge({
   getMapReady: () => mapReady.value,
@@ -82,9 +79,10 @@ const exposeBridge = createMapCanvasExposeBridge({
 
 defineExpose(exposeBridge)
 
-// ─── Overlay image module (generalized raster overlay) ──────────────────────
-let overlayImageModule: ReturnType<typeof createOverlayImageModule> | null = null
-let importedLayerModule: ReturnType<typeof createImportedLayerModule> | null = null
+// ─── Overlay image module (via non-weather sync module) ──────────────────────
+let overlayImageModule:
+  | ReturnType<NonNullable<typeof state.resources.nonWeatherLayerSyncModule>>['overlayImageModule']
+  | null = null
 const overlayTimeStates = computed(() => overlayImageModule?.overlayTimeStates.value ?? [])
 const activeTimeSeriesOverlays = computed(() =>
   overlayTimeStates.value.filter((s) => s.category === 'time-series'),
@@ -94,7 +92,9 @@ const overlayLinkTimeEnabled = computed(() => overlayImageModule?.linkTimeEnable
 // 透传 overlay 时间状态到父组件
 watch(
   overlayTimeStates,
-  (states) => { emit('overlayTimeUpdate', states) },
+  (states) => {
+    emit('overlayTimeUpdate', states)
+  },
   { deep: true },
 )
 
@@ -130,12 +130,16 @@ function debugLog(module: string, ...args: unknown[]) {
   console.log(`[${performance.now().toFixed(1)}ms] [${module}]`, ...args)
 }
 
-const currentTileConfig = computed(() => TILE_SOURCE_MAP.get(props.tileSourceId) ?? TILE_SOURCE_MAP.get('esri-street')!)
+const currentTileConfig = computed(
+  () => TILE_SOURCE_MAP.get(props.tileSourceId) ?? TILE_SOURCE_MAP.get('esri-street')!,
+)
 
 // ── Derived from layersStore ──────────────────────────────────────────────────
 
 const selectedLayer = computed(() => layersStore.selectedLayerDisplay)
-const hasAdminBoundary = computed(() => layersStore.activeLayersDisplay.some((d) => d.isAdminBoundary))
+const hasAdminBoundary = computed(() =>
+  layersStore.activeLayersDisplay.some((d) => d.isAdminBoundary),
+)
 const adminBoundaryOpacity = computed(() => {
   const layer = layersStore.activeLayersDisplay.find((d) => d.isAdminBoundary)
   return layer ? layer.opacity : 1
@@ -143,18 +147,22 @@ const adminBoundaryOpacity = computed(() => {
 
 // Safe fallback for template (no selected layer = dark atmospheric state)
 const activeLayer = computed(() => selectedLayer.value ?? buildFallbackActiveLayerDisplay())
-const stageDisplayModel = computed(() => buildMapStageDisplayModel({
-  basemapProvider: currentTileConfig.value.provider,
-  basemapLabel: currentTileConfig.value.label,
-  hourLabel: props.hourLabel,
-  activeLayer: activeLayer.value,
-}))
-const stageStatusModel = computed(() => buildMapStageStatusModel({
-  mapReady: mapReady.value,
-  loadingLabel: loadingLabel.value,
-  tileLoadFailed: tileLoadFailed.value,
-  tileFailedProvider: tileFailedProvider.value,
-}))
+const stageDisplayModel = computed(() =>
+  buildMapStageDisplayModel({
+    basemapProvider: currentTileConfig.value.provider,
+    basemapLabel: currentTileConfig.value.label,
+    hourLabel: props.hourLabel,
+    activeLayer: activeLayer.value,
+  }),
+)
+const stageStatusModel = computed(() =>
+  buildMapStageStatusModel({
+    mapReady: mapReady.value,
+    loadingLabel: loadingLabel.value,
+    tileLoadFailed: tileLoadFailed.value,
+    tileFailedProvider: tileFailedProvider.value,
+  }),
+)
 
 // 天气瓦片加载/错误/半覆盖状态：聚合所有可见天气图层
 const weatherTileStatusModel = computed(() => {
@@ -164,7 +172,12 @@ const weatherTileStatusModel = computed(() => {
     (l) => l.visible && layersStore.isWeatherEngineLayer(l.catalogId),
   )
   if (weatherLayers.length === 0) {
-    return { show: false, isLoading: false, error: null as string | null, partial: null as string | null }
+    return {
+      show: false,
+      isLoading: false,
+      error: null as string | null,
+      partial: null as string | null,
+    }
   }
 
   for (const layer of weatherLayers) {
@@ -201,15 +214,17 @@ const weatherTileStatusModel = computed(() => {
   }
   return { show: false, isLoading: false, error: null, partial: null }
 })
-const stageAppearanceModel = computed(() => buildMapStageAppearanceModel({
-  basemapStyle: currentTileConfig.value.style,
-  activeLayer: activeLayer.value,
-  timeVisualState: timeVisualState.value,
-  isMapInteracting: isMapInteracting.value,
-  isSourceTransitioning: isSourceTransitioning.value,
-  mapVisible: mapVisible.value,
-  skeletonVisible: skeletonVisible.value,
-}))
+const stageAppearanceModel = computed(() =>
+  buildMapStageAppearanceModel({
+    basemapStyle: currentTileConfig.value.style,
+    activeLayer: activeLayer.value,
+    timeVisualState: timeVisualState.value,
+    isMapInteracting: isMapInteracting.value,
+    isSourceTransitioning: isSourceTransitioning.value,
+    mapVisible: mapVisible.value,
+    skeletonVisible: skeletonVisible.value,
+  }),
+)
 
 // ─── Time-of-day visual vars ─────────────────────────────────────────────────
 
@@ -220,250 +235,145 @@ const timeVisualState = computed(() => buildMapStageTimeVisualState(props.curren
 onMounted(async () => {
   if (!mapContainer.value) return
 
-  const presentationModule = createMapStagePresentationModule({
-    getMapContainer: () => mapContainer.value,
-    getUsesLightNavigationTheme: () => stageAppearanceModel.value.usesLightNavigationTheme,
-    setLoadingLabel: (label) => {
-      loadingLabel.value = label
-    },
-    setMapVisible: (visible) => {
-      mapVisible.value = visible
-    },
-    setSkeletonVisible: (visible) => {
-      skeletonVisible.value = visible
-    },
-  })
-  state.resources.mapStagePresentationModule = presentationModule
-  await presentationModule.prepareMount()
-
-  const { default: maplibregl } = await import('maplibre-gl')
-
-  const mapInstance = new maplibregl.Map(createMapCanvasMapOptions({
-    container: mapContainer.value,
-  }))
-  state.resources.map = mapInstance
-  const moduleBundle = createMapCanvasModuleBundle({
-    map: mapInstance,
-    layersStore,
-    weatherTileManager,
-    getCurrentHour: () => props.currentHour,
-    getMapReady: () => mapReady.value,
-    getTileConfig: (sourceId) => TILE_SOURCE_MAP.get(sourceId),
-    getCurrentTileSourceId: () => props.tileSourceId,
-    setTileLoadFailed: (failed) => {
-      tileLoadFailed.value = failed
-    },
-    setTileFailedProvider: (provider) => {
-      tileFailedProvider.value = provider
-    },
-    setSourceTransitioning: (transitioning) => {
-      isSourceTransitioning.value = transitioning
-    },
-    onAfterSourceSwitch: () => {
-      presentationModule.scheduleNavigationThemeSync()
-    },
-    setLoadingLabel: (label) => {
-      presentationModule.setLoadingLabel(label)
-    },
-    getSelectedLayer: () => selectedLayer.value,
-    getSelectedHotspotId: () => selectedHotspotId.value,
-    setSelectedHotspotId: (hotspotId) => {
-      selectedHotspotId.value = hotspotId
-    },
-    emitVisibleHotspotsChange: (hotspots) => emit('visibleHotspotsChange', hotspots),
-    emitHotspotSelect: (hotspot) => emit('hotspotSelect', hotspot),
-    setHotspotPins: (pins) => {
-      hotspotPins.value = pins
-    },
-    getInteractionMode: () => uiStore.interactionMode,
-    setIsMapInteracting: (interacting) => {
-      isMapInteracting.value = interacting
-    },
-    scheduleHotspotSync: actionBridge.scheduleHotspotSync,
-    emitMapPointSelect: (point) => emit('mapPointSelect', point),
-    getHasAdminBoundary: () => hasAdminBoundary.value,
-    getAdminBoundaryOpacity: () => adminBoundaryOpacity.value,
-    syncAdminOverlay: actionBridge.syncAdminOverlay,
-    debugLog,
-    weatherDebounceMs: 350,
-    getMeasureState: () => uiStore.measureState,
-    addMeasurePoint: (p) => uiStore.addMeasurePoint(p),
-    undoLastMeasurePoint: () => uiStore.undoLastMeasurePoint(),
-    completeMeasure: () => uiStore.completeMeasure(),
-    setHoverPoint: (p) => uiStore.setHoverPoint(p),
-    clearMeasure: () => uiStore.clearMeasure(),
-  })
-  state.resources.basemapModule = moduleBundle.basemapModule
-  state.resources.adminBoundaryModule = moduleBundle.adminBoundaryModule
-  state.resources.weatherOverlayModule = moduleBundle.weatherOverlayModule
-  state.resources.hotspotPinsModule = moduleBundle.hotspotPinsModule
-  state.resources.mapInteractionModule = moduleBundle.mapInteractionModule
-  state.resources.mapCanvasRuntimeModule = moduleBundle.mapCanvasRuntimeModule
-  state.resources.selectedLayerFocusModule = moduleBundle.selectedLayerFocusModule
-  state.resources.measureModule = moduleBundle.measureModule
-  moduleBundle.weatherOverlayModule.setupWatchers()
-  moduleBundle.mapInteractionModule.bindEvents()
-  moduleBundle.mapCanvasRuntimeModule.setupWatchers()
-  moduleBundle.selectedLayerFocusModule.setupWatchers()
-  moduleBundle.measureModule.bindEvents()
-
-  createMapCanvasLifecycleBinder({
-    map: mapInstance,
-    controls: {
-      NavigationControl: maplibregl.NavigationControl,
-      ScaleControl: maplibregl.ScaleControl,
-    },
-    onMapError: (event) => {
-      moduleBundle.basemapModule.handleMapErrorEvent(event)
-    },
-    onMapLoad: async () => {
-      moduleBundle.basemapModule.switchTileSource(props.tileSourceId)
-      await moduleBundle.adminBoundaryModule.ensureLayers()
-      mapReady.value = true
-      actionBridge.syncAdminOverlay()
-      moduleBundle.selectedLayerFocusModule.handleMapLoad()
-      // 初始化 store 的地图视口，使首次工作流提交时能拿到正确中心点和 bbox
-      moduleBundle.mapInteractionModule.syncViewportToStore()
-      // 地图就绪后同步天气叠加层（之前 syncWeatherOverlay 在 mapReady=true 之前调用会被跳过）
-      moduleBundle.weatherOverlayModule.runSyncNow()
-      // 同样补同步导入层：mapReady 前 addVectorLayer 会 no-op
-      syncImportedLayers({ fitNew: true })
-      moduleBundle.mapInteractionModule.applyInteractionMode()
-      // 测量模式初始状态同步（mapInteractionModule 已处理 dragPan，measureModule 处理 doubleClickZoom/boxZoom + Canvas show）
-      moduleBundle.measureModule.applyMeasureMode()
-      presentationModule.revealMap()
-    },
-    scheduleNavigationThemeSync: () => {
-      presentationModule.scheduleNavigationThemeSync()
-    },
-  }).bind()
-
-  // ─── Generalized raster image overlay module ───────────────────────────────
-  overlayImageModule = createOverlayImageModule({
-    map: mapInstance,
-    getMapReady: () => mapReady.value,
-    getActiveVisibleLayerIds: () =>
-      layersStore.activeLayersDisplay.filter((l) => l.visible).map((l) => l.catalogId),
-  })
-  overlayImageModule.init().then(() => { void syncOverlayLayers() })
-
-  async function syncOverlayLayers() {
-    if (!overlayImageModule) return
-    const known = new Set(overlayImageModule.knownOverlayIds.value)
-    const opacityByLayerId: Record<string, number> = {}
-    // activeList: 应保持加载的图层（含 hidden 的，即仍在 activeLayers 列表中）
-    // visibleList: 应可见的子集（visible=true）
-    // 分离两个列表，让 hidden 图层保留在地图上仅切 visibility，避免重复 fetch PNG
-    const activeList: string[] = []
-    const visibleList: string[] = []
-
-    for (const layer of layersStore.activeLayers) {
-      if (layer.importedRaster) {
-        const overlayId = layer.importedRaster.overlayLayerId
-        overlayImageModule.rememberOverlayId(overlayId)
-        known.add(overlayId)
-        activeList.push(overlayId)
-        opacityByLayerId[overlayId] = layer.opacity
-        if (layer.visible) visibleList.push(overlayId)
-        continue
-      }
-      if (layer.importedVector || layer.isAdminBoundary) continue
-      if (known.has(layer.catalogId)) {
-        activeList.push(layer.catalogId)
-        opacityByLayerId[layer.catalogId] = layer.opacity
-        if (layer.visible) visibleList.push(layer.catalogId)
-      }
-    }
-
-    await overlayImageModule.syncOverlays(activeList, visibleList, opacityByLayerId)
-    applyLayerStackOrder()
-  }
-
-  function applyLayerStackOrder() {
-    if (!mapReady.value || !mapInstance) return
-    applyActiveLayerStackOrder(mapInstance, layersStore.activeLayers, {
-      getImportedVectorLayerIds: (instanceId) => importedLayerModule?.getLayerIds(instanceId) ?? [],
-      getOverlayRasterLayerId: (overlayLayerId) =>
-        overlayImageModule?.getRasterLayerId(overlayLayerId) ?? null,
+  try {
+    const presentationModule = createMapStagePresentationModule({
+      getMapContainer: () => mapContainer.value,
+      getUsesLightNavigationTheme: () => stageAppearanceModel.value.usesLightNavigationTheme,
+      setLoadingLabel: (label) => {
+        loadingLabel.value = label
+      },
+      setMapVisible: (visible) => {
+        mapVisible.value = visible
+      },
+      setSkeletonVisible: (visible) => {
+        skeletonVisible.value = visible
+      },
     })
+    state.resources.mapStagePresentationModule = presentationModule
+    await presentationModule.prepareMount()
+
+    const { default: maplibregl } = await import('maplibre-gl')
+
+    const mapInstance = new maplibregl.Map(
+      createMapCanvasMapOptions({
+        container: mapContainer.value,
+      }),
+    )
+    state.resources.map = mapInstance
+    const moduleBundle = createMapCanvasModuleBundle({
+      map: mapInstance,
+      layersStore,
+      weatherTileManager,
+      getCurrentHour: () => props.currentHour,
+      getMapReady: () => mapReady.value,
+      getTileConfig: (sourceId) => TILE_SOURCE_MAP.get(sourceId),
+      getCurrentTileSourceId: () => props.tileSourceId,
+      setTileLoadFailed: (failed) => {
+        tileLoadFailed.value = failed
+      },
+      setTileFailedProvider: (provider) => {
+        tileFailedProvider.value = provider
+      },
+      setSourceTransitioning: (transitioning) => {
+        isSourceTransitioning.value = transitioning
+      },
+      onAfterSourceSwitch: () => {
+        presentationModule.scheduleNavigationThemeSync()
+      },
+      setLoadingLabel: (label) => {
+        presentationModule.setLoadingLabel(label)
+      },
+      getSelectedLayer: () => selectedLayer.value,
+      getSelectedHotspotId: () => selectedHotspotId.value,
+      setSelectedHotspotId: (hotspotId) => {
+        selectedHotspotId.value = hotspotId
+      },
+      emitVisibleHotspotsChange: (hotspots) => emit('visibleHotspotsChange', hotspots),
+      emitHotspotSelect: (hotspot) => emit('hotspotSelect', hotspot),
+      setHotspotPins: (pins) => {
+        hotspotPins.value = pins
+      },
+      getInteractionMode: () => uiStore.interactionMode,
+      setIsMapInteracting: (interacting) => {
+        isMapInteracting.value = interacting
+      },
+      scheduleHotspotSync: actionBridge.scheduleHotspotSync,
+      emitMapPointSelect: (point) => emit('mapPointSelect', point),
+      getHasAdminBoundary: () => hasAdminBoundary.value,
+      getAdminBoundaryOpacity: () => adminBoundaryOpacity.value,
+      syncAdminOverlay: actionBridge.syncAdminOverlay,
+      debugLog,
+      weatherDebounceMs: 350,
+      getMeasureState: () => uiStore.measureState,
+      addMeasurePoint: (p) => uiStore.addMeasurePoint(p),
+      undoLastMeasurePoint: () => uiStore.undoLastMeasurePoint(),
+      completeMeasure: () => uiStore.completeMeasure(),
+      setHoverPoint: (p) => uiStore.setHoverPoint(p),
+      clearMeasure: () => uiStore.clearMeasure(),
+    })
+    state.resources.basemapModule = moduleBundle.basemapModule
+    state.resources.adminBoundaryModule = moduleBundle.adminBoundaryModule
+    state.resources.weatherOverlayModule = moduleBundle.weatherOverlayModule
+    state.resources.nonWeatherLayerSyncModule = moduleBundle.nonWeatherLayerSyncModule
+    state.resources.hotspotPinsModule = moduleBundle.hotspotPinsModule
+    state.resources.mapInteractionModule = moduleBundle.mapInteractionModule
+    state.resources.mapCanvasRuntimeModule = moduleBundle.mapCanvasRuntimeModule
+    state.resources.selectedLayerFocusModule = moduleBundle.selectedLayerFocusModule
+    state.resources.measureModule = moduleBundle.measureModule
+    overlayImageModule = moduleBundle.nonWeatherLayerSyncModule.overlayImageModule
+    moduleBundle.weatherOverlayModule.setupWatchers()
+    moduleBundle.nonWeatherLayerSyncModule.setupWatchers()
+    void moduleBundle.nonWeatherLayerSyncModule.init()
+    moduleBundle.mapInteractionModule.bindEvents()
+    moduleBundle.mapCanvasRuntimeModule.setupWatchers()
+    moduleBundle.selectedLayerFocusModule.setupWatchers()
+    moduleBundle.measureModule.bindEvents()
+
+    createMapCanvasLifecycleBinder({
+      map: mapInstance,
+      controls: {
+        NavigationControl: maplibregl.NavigationControl,
+        ScaleControl: maplibregl.ScaleControl,
+      },
+      onMapError: (event) => {
+        moduleBundle.basemapModule.handleMapErrorEvent(event)
+      },
+      onMapLoad: async () => {
+        moduleBundle.basemapModule.switchTileSource(props.tileSourceId)
+        await moduleBundle.adminBoundaryModule.ensureLayers()
+        mapReady.value = true
+        actionBridge.syncAdminOverlay()
+        moduleBundle.selectedLayerFocusModule.handleMapLoad()
+        // 初始化 store 的地图视口，使首次工作流提交时能拿到正确中心点和 bbox
+        moduleBundle.mapInteractionModule.syncViewportToStore()
+        // 地图就绪后同步天气叠加层（之前 syncWeatherOverlay 在 mapReady=true 之前调用会被跳过）
+        moduleBundle.weatherOverlayModule.runSyncNow()
+        // 同样补同步导入层：mapReady 前 addVectorLayer 会 no-op
+        moduleBundle.nonWeatherLayerSyncModule.syncImportedLayers({ fitNew: true })
+        moduleBundle.mapInteractionModule.applyInteractionMode()
+        // 测量模式初始状态同步（mapInteractionModule 已处理 dragPan，measureModule 处理 doubleClickZoom/boxZoom + Canvas show）
+        moduleBundle.measureModule.applyMeasureMode()
+        presentationModule.revealMap()
+      },
+      scheduleNavigationThemeSync: () => {
+        presentationModule.scheduleNavigationThemeSync()
+      },
+    }).bind()
+  } catch (err) {
+    console.error('[MapCanvas] initialization failed:', err)
+    logStore.logOperation('map-init-error', `地图初始化失败: ${err}`)
+    skeletonVisible.value = false
   }
-
-  watch(
-    () => layersStore.activeLayers
-      // 重要：不再过滤 visible=false 的图层。hidden 图层也需要进入 watch 源，
-      // 这样显隐切换才能触发 syncOverlayLayers（同步仅切 visibility，不重载 PNG）。
-      .filter((l) => l.importedRaster || (!l.importedVector && !l.isAdminBoundary))
-      .map((l) => `${l.instanceId}:${l.catalogId}:${l.visible}:${l.opacity}:${l.importedRaster ? 'r' : 'c'}`)
-      .join(','),
-    () => { void syncOverlayLayers() },
-  )
-
-  watch(
-    () => layersStore.activeLayers
-      .map((l) => `${l.instanceId}:${l.order}`)
-      .join(','),
-    () => { applyLayerStackOrder() },
-  )
-
-  // ─── Imported layer module（本地导入矢量：挂接活动图层列表） ───────────────
-  importedLayerModule = createImportedLayerModule({
-    map: mapInstance,
-    getMapReady: () => mapReady.value,
-  })
-
-  /** 把 activeLayers 中的导入矢量同步到地图；fitNew 时对新加入图层做视野适配 */
-  function syncImportedLayers(opts: { fitNew?: boolean } = {}) {
-    if (!importedLayerModule) return
-    const imported = layersStore.activeLayers.filter((l) => l.importedVector)
-    const loadedIds = new Set(importedLayerModule.getLoadedIds())
-    const newlyAdded: string[] = []
-    for (const layer of imported) {
-      const payload = layer.importedVector!
-      if (payload.geojson && !loadedIds.has(layer.instanceId)) {
-        importedLayerModule.addVectorLayer(
-          layer.instanceId,
-          payload.geojson,
-          layer.name ?? payload.fileName ?? '导入图层',
-        )
-        // add 可能因 mapReady=false 失败；仅在实际加载成功后再记
-        if (importedLayerModule.getLoadedIds().includes(layer.instanceId)) {
-          newlyAdded.push(layer.instanceId)
-        }
-      }
-      loadedIds.delete(layer.instanceId)
-    }
-    for (const layer of imported) {
-      importedLayerModule.setLayerVisibility(layer.instanceId, layer.visible)
-      importedLayerModule.setLayerOpacity(layer.instanceId, layer.opacity)
-    }
-    for (const staleId of loadedIds) {
-      importedLayerModule.removeLayer(staleId)
-    }
-    if (opts.fitNew && newlyAdded.length > 0) {
-      importedLayerModule.fitLayers(newlyAdded)
-    }
-    applyLayerStackOrder()
-  }
-
-  // 同步「活动图层」里的导入矢量到地图：显隐 / 透明度 / 增删
-  watch(
-    () => layersStore.activeLayers
-      .filter((l) => l.importedVector)
-      .map((l) => `${l.instanceId}:${l.visible}:${l.opacity}:${l.importedVector!.featureCount}`)
-      .join(','),
-    () => {
-      syncImportedLayers({ fitNew: true })
-    },
-    { immediate: true },
-  )
-
 })
 
 onBeforeUnmount(() => {
   teardownBinder.dispose()
   overlayImageModule = null
-  importedLayerModule?.dispose()
   _clearLocationMarker()
+  if (locateErrorTimer) {
+    clearTimeout(locateErrorTimer)
+    locateErrorTimer = null
+  }
 })
 
 // ── 自动定位 ──────────────────────────────────────────────────────────────
@@ -471,14 +381,21 @@ const isLocating = ref(false)
 const locateError = ref<{ message: string; hint: string } | null>(null)
 let locationMarkerCleanup: (() => void) | null = null
 let locateErrorTimer: ReturnType<typeof setTimeout> | null = null
+let locationMarkerTimer: ReturnType<typeof setTimeout> | null = null
 
 function _showLocateError(message: string, hint: string) {
   locateError.value = { message, hint }
   if (locateErrorTimer) clearTimeout(locateErrorTimer)
-  locateErrorTimer = setTimeout(() => { locateError.value = null }, 6000)
+  locateErrorTimer = setTimeout(() => {
+    locateError.value = null
+  }, 6000)
 }
 
 function _clearLocationMarker() {
+  if (locationMarkerTimer) {
+    clearTimeout(locationMarkerTimer)
+    locationMarkerTimer = null
+  }
   if (locationMarkerCleanup) {
     locationMarkerCleanup()
     locationMarkerCleanup = null
@@ -524,10 +441,14 @@ async function handleLocateMe() {
       locationMarkerCleanup = () => marker.remove()
 
       // 8 秒后自动移除标记
-      setTimeout(() => _clearLocationMarker(), 8000)
+      if (locationMarkerTimer) clearTimeout(locationMarkerTimer)
+      locationMarkerTimer = setTimeout(() => _clearLocationMarker(), 8000)
 
       isLocating.value = false
-      logStore.logOperation('locate-me', `已定位到 (${longitude.toFixed(4)}, ${latitude.toFixed(4)})`)
+      logStore.logOperation(
+        'locate-me',
+        `已定位到 (${longitude.toFixed(4)}, ${latitude.toFixed(4)})`,
+      )
     },
     (err) => {
       isLocating.value = false
@@ -593,35 +514,66 @@ async function handleLocateMe() {
     <!-- Tile error banner -->
     <div v-if="stageStatusModel.showTileError" class="tile-load-error">
       <span class="tile-error-icon">
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <circle cx="12" cy="12" r="10"/>
-          <line x1="12" y1="8" x2="12" y2="12"/>
-          <line x1="12" y1="16" x2="12.01" y2="16"/>
+        <svg
+          width="14"
+          height="14"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="2"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+        >
+          <circle cx="12" cy="12" r="10" />
+          <line x1="12" y1="8" x2="12" y2="12" />
+          <line x1="12" y1="16" x2="12.01" y2="16" />
         </svg>
       </span>
       <span>{{ stageStatusModel.tileErrorMessage }}</span>
-      <button class="tile-retry-btn" @click="actionBridge.retryTileLoad">{{ stageStatusModel.retryButtonLabel }}</button>
+      <button class="tile-retry-btn" @click="actionBridge.retryTileLoad">
+        {{ stageStatusModel.retryButtonLabel }}
+      </button>
     </div>
 
     <!-- Weather tile loading indicator -->
-    <div v-if="weatherTileStatusModel.show && weatherTileStatusModel.isLoading" class="weather-loading">
+    <div
+      v-if="weatherTileStatusModel.show && weatherTileStatusModel.isLoading"
+      class="weather-loading"
+    >
       <span class="weather-loading-dot"></span>
       <span>正在加载天气数据…</span>
     </div>
 
     <!-- Weather tile partial coverage (holes being refilled) -->
-    <div v-if="weatherTileStatusModel.show && weatherTileStatusModel.partial" class="weather-load-partial">
+    <div
+      v-if="weatherTileStatusModel.show && weatherTileStatusModel.partial"
+      class="weather-load-partial"
+    >
       <span class="weather-loading-dot"></span>
       <span>{{ weatherTileStatusModel.partial }}</span>
     </div>
 
     <!-- Weather tile error banner -->
-    <div v-if="weatherTileStatusModel.show && weatherTileStatusModel.error" class="weather-load-error">
+    <div
+      v-if="weatherTileStatusModel.show && weatherTileStatusModel.error"
+      class="weather-load-error"
+    >
       <span class="weather-error-icon">
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/>
-          <line x1="12" y1="9" x2="12" y2="13"/>
-          <line x1="12" y1="17" x2="12.01" y2="17"/>
+        <svg
+          width="14"
+          height="14"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="2"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+        >
+          <path
+            d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"
+          />
+          <line x1="12" y1="9" x2="12" y2="13" />
+          <line x1="12" y1="17" x2="12.01" y2="17" />
         </svg>
       </span>
       <span>{{ weatherTileStatusModel.error }}</span>
@@ -669,10 +621,7 @@ async function handleLocateMe() {
     </div>
 
     <!-- Overlay time control (time-series raster overlays) -->
-    <div
-      v-if="activeTimeSeriesOverlays.length > 0"
-      class="overlay-time-bar"
-    >
+    <div v-if="activeTimeSeriesOverlays.length > 0" class="overlay-time-bar">
       <button
         v-if="activeTimeSeriesOverlays.length > 1"
         class="overlay-link-btn"
@@ -680,7 +629,9 @@ async function handleLocateMe() {
         type="button"
         :title="overlayLinkTimeEnabled ? '取消联动' : '多图层时间联动'"
         @click="overlayToggleLinkTime"
-      >{{ overlayLinkTimeEnabled ? '🔗' : '⛓' }}</button>
+      >
+        {{ overlayLinkTimeEnabled ? '🔗' : '⛓' }}
+      </button>
       <div
         v-for="state in activeTimeSeriesOverlays"
         :key="'overlay-time-' + state.layerId"
@@ -692,7 +643,9 @@ async function handleLocateMe() {
           :disabled="state.timeList.indexOf(state.currentTime ?? '') <= 0"
           @click="overlayStepTime(state.layerId, -1)"
           aria-label="上一个时间"
-        >‹</button>
+        >
+          ‹
+        </button>
         <span class="overlay-time-label">{{ overlayFormatTime(state.currentTime) }}</span>
         <button
           class="overlay-time-btn"
@@ -700,7 +653,9 @@ async function handleLocateMe() {
           :disabled="state.timeList.indexOf(state.currentTime ?? '') >= state.timeList.length - 1"
           @click="overlayStepTime(state.layerId, 1)"
           aria-label="下一个时间"
-        >›</button>
+        >
+          ›
+        </button>
       </div>
     </div>
 
@@ -713,12 +668,22 @@ async function handleLocateMe() {
       :disabled="isLocating"
       @click="handleLocateMe"
     >
-      <svg v-if="!isLocating" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-        <circle cx="12" cy="12" r="4"/>
-        <line x1="12" y1="2" x2="12" y2="5"/>
-        <line x1="12" y1="19" x2="12" y2="22"/>
-        <line x1="2" y1="12" x2="5" y2="12"/>
-        <line x1="19" y1="12" x2="22" y2="12"/>
+      <svg
+        v-if="!isLocating"
+        width="18"
+        height="18"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        stroke-width="2"
+        stroke-linecap="round"
+        stroke-linejoin="round"
+      >
+        <circle cx="12" cy="12" r="4" />
+        <line x1="12" y1="2" x2="12" y2="5" />
+        <line x1="12" y1="19" x2="12" y2="22" />
+        <line x1="2" y1="12" x2="5" y2="12" />
+        <line x1="19" y1="12" x2="22" y2="12" />
       </svg>
       <span v-else class="locate-spinner"></span>
     </button>
@@ -800,7 +765,12 @@ async function handleLocateMe() {
 .skeleton-sweep {
   position: absolute;
   inset: 0;
-  background: linear-gradient(110deg, transparent 26%, rgba(255, 255, 255, 0.08) 50%, transparent 74%);
+  background: linear-gradient(
+    110deg,
+    transparent 26%,
+    rgba(255, 255, 255, 0.08) 50%,
+    transparent 74%
+  );
   transform: translateX(-100%);
   animation: sweep 2.4s linear infinite;
   /* 性能优化：GPU 加速 */
@@ -815,8 +785,14 @@ async function handleLocateMe() {
   box-shadow: 0 0 0 10px rgba(82, 134, 255, 0.08);
 }
 
-.skeleton-node-a { top: 34%; left: 28%; }
-.skeleton-node-b { top: 56%; left: 64%; }
+.skeleton-node-a {
+  top: 34%;
+  left: 28%;
+}
+.skeleton-node-b {
+  top: 56%;
+  left: 64%;
+}
 
 .skeleton-strip {
   height: 0.7rem;
@@ -824,8 +800,16 @@ async function handleLocateMe() {
   background: rgba(255, 255, 255, 0.06);
 }
 
-.skeleton-strip-a { left: 1rem; bottom: 5rem; width: 10rem; }
-.skeleton-strip-b { right: 1rem; bottom: 4.9rem; width: 7.6rem; }
+.skeleton-strip-a {
+  left: 1rem;
+  bottom: 5rem;
+  width: 10rem;
+}
+.skeleton-strip-b {
+  right: 1rem;
+  bottom: 4.9rem;
+  width: 7.6rem;
+}
 
 .map-fog {
   z-index: 1;
@@ -938,16 +922,38 @@ async function handleLocateMe() {
   filter: saturate(0.92) brightness(0.92);
 }
 
-.map-stage-ready .weather-overlay { opacity: 0.28; }
-.map-stage-ready .time-sheen { opacity: 1; }
-.map-stage-ready .time-band { opacity: 1; }
-.map-stage-partial .weather-overlay { opacity: 0.16; }
-.map-stage-partial .grid-overlay { opacity: 0.32; }
-.map-stage-empty .map-fog { background: radial-gradient(circle at 20% 18%, rgba(3, 12, 24, 0.12), transparent 18rem), linear-gradient(180deg, rgba(4, 11, 20, 0.08), rgba(4, 11, 20, 0.34)); }
-.map-stage-empty .time-sheen { opacity: 0.38; }
-.map-stage-empty .time-band { opacity: 0.46; }
-.map-stage-empty .weather-overlay { opacity: 0.08; }
-.map-stage-empty .grid-overlay { opacity: 0.2; }
+.map-stage-ready .weather-overlay {
+  opacity: 0.28;
+}
+.map-stage-ready .time-sheen {
+  opacity: 1;
+}
+.map-stage-ready .time-band {
+  opacity: 1;
+}
+.map-stage-partial .weather-overlay {
+  opacity: 0.16;
+}
+.map-stage-partial .grid-overlay {
+  opacity: 0.32;
+}
+.map-stage-empty .map-fog {
+  background:
+    radial-gradient(circle at 20% 18%, rgba(3, 12, 24, 0.12), transparent 18rem),
+    linear-gradient(180deg, rgba(4, 11, 20, 0.08), rgba(4, 11, 20, 0.34));
+}
+.map-stage-empty .time-sheen {
+  opacity: 0.38;
+}
+.map-stage-empty .time-band {
+  opacity: 0.46;
+}
+.map-stage-empty .weather-overlay {
+  opacity: 0.08;
+}
+.map-stage-empty .grid-overlay {
+  opacity: 0.2;
+}
 
 .map-overlay {
   position: absolute;
@@ -978,9 +984,21 @@ async function handleLocateMe() {
   background: rgba(36, 90, 170, 0.16);
 }
 
-.chip-ready { color: #9ff8cf; border-color: rgba(114, 255, 207, 0.2); background: rgba(114, 255, 207, 0.08); }
-.chip-partial { color: #ffd38a; border-color: rgba(255, 196, 120, 0.18); background: rgba(255, 196, 120, 0.08); }
-.chip-empty { color: #d7c1ff; border-color: rgba(187, 137, 255, 0.18); background: rgba(187, 137, 255, 0.08); }
+.chip-ready {
+  color: #9ff8cf;
+  border-color: rgba(114, 255, 207, 0.2);
+  background: rgba(114, 255, 207, 0.08);
+}
+.chip-partial {
+  color: #ffd38a;
+  border-color: rgba(255, 196, 120, 0.18);
+  background: rgba(255, 196, 120, 0.08);
+}
+.chip-empty {
+  color: #d7c1ff;
+  border-color: rgba(187, 137, 255, 0.18);
+  background: rgba(187, 137, 255, 0.08);
+}
 
 .map-note {
   position: absolute;
@@ -996,9 +1014,22 @@ async function handleLocateMe() {
   border: 1px solid rgba(90, 162, 255, 0.12);
 }
 
-.map-note h2 { margin: 0; font-size: 0.76rem; color: #f3fbff; }
-.map-note p { margin: 0; color: #96a8bb; font-size: 0.64rem; line-height: 1.32; }
-.map-note-meta { color: #bfd3e6; font-size: 0.58rem; letter-spacing: 0.02em; }
+.map-note h2 {
+  margin: 0;
+  font-size: 0.76rem;
+  color: #f3fbff;
+}
+.map-note p {
+  margin: 0;
+  color: #96a8bb;
+  font-size: 0.64rem;
+  line-height: 1.32;
+}
+.map-note-meta {
+  color: #bfd3e6;
+  font-size: 0.58rem;
+  letter-spacing: 0.02em;
+}
 
 .time-indicator {
   position: relative;
@@ -1016,10 +1047,19 @@ async function handleLocateMe() {
   background: rgba(90, 106, 128, 0.25);
 }
 
-.hotspot-layer { z-index: 2; pointer-events: none; }
-.hotspot-layer-ready .hotspot-pin { opacity: 1; }
-.hotspot-layer-partial .hotspot-pin { opacity: 0.76; }
-.hotspot-layer-empty .hotspot-pin { opacity: 0.38; }
+.hotspot-layer {
+  z-index: 2;
+  pointer-events: none;
+}
+.hotspot-layer-ready .hotspot-pin {
+  opacity: 1;
+}
+.hotspot-layer-partial .hotspot-pin {
+  opacity: 0.76;
+}
+.hotspot-layer-empty .hotspot-pin {
+  opacity: 0.38;
+}
 
 .hotspot-pin {
   position: absolute;
@@ -1048,7 +1088,9 @@ async function handleLocateMe() {
     0 0 0 0 rgba(255, 255, 255, 0.08),
     0 0 0 var(--hotspot-halo-size) rgba(90, 106, 128, 0.3);
   /* 性能优化：仅 GPU 属性过渡 */
-  transition: transform 0.28s cubic-bezier(0.25, 0.46, 0.45, 0.94), box-shadow 0.28s ease;
+  transition:
+    transform 0.28s cubic-bezier(0.25, 0.46, 0.45, 0.94),
+    box-shadow 0.28s ease;
 }
 
 .hotspot-label {
@@ -1107,7 +1149,11 @@ async function handleLocateMe() {
   box-shadow: 0 4px 16px rgba(0, 0, 0, 0.24);
 }
 
-.tile-error-icon { display: flex; align-items: center; color: #ff9090; }
+.tile-error-icon {
+  display: flex;
+  align-items: center;
+  color: #ff9090;
+}
 
 .tile-retry-btn {
   margin-left: 0.18rem;
@@ -1119,7 +1165,9 @@ async function handleLocateMe() {
   font-size: 0.6rem;
   font-family: inherit;
   cursor: pointer;
-  transition: background 0.18s ease, color 0.18s ease;
+  transition:
+    background 0.18s ease,
+    color 0.18s ease;
 }
 
 .tile-retry-btn:hover {
@@ -1156,8 +1204,13 @@ async function handleLocateMe() {
 }
 
 @keyframes weather-pulse {
-  0%, 100% { opacity: 0.5; }
-  50% { opacity: 1; }
+  0%,
+  100% {
+    opacity: 0.5;
+  }
+  50% {
+    opacity: 1;
+  }
 }
 
 /* 天气瓦片半覆盖 / 补洞提示 */
@@ -1219,8 +1272,14 @@ async function handleLocateMe() {
 .hotspot-label span {
   display: block;
 }
-.hotspot-label strong { font-size: 0.64rem; }
-.hotspot-label span { margin-top: 0.15rem; color: #99afc3; font-size: 0.6rem; }
+.hotspot-label strong {
+  font-size: 0.64rem;
+}
+.hotspot-label span {
+  margin-top: 0.15rem;
+  color: #99afc3;
+  font-size: 0.6rem;
+}
 
 /* Overlay time-series control */
 .overlay-time-bar {
@@ -1259,7 +1318,10 @@ async function handleLocateMe() {
   display: flex;
   align-items: center;
   justify-content: center;
-  transition: background 0.18s ease, color 0.18s ease, border-color 0.18s ease;
+  transition:
+    background 0.18s ease,
+    color 0.18s ease,
+    border-color 0.18s ease;
 }
 
 .overlay-link-btn.active {
@@ -1286,7 +1348,9 @@ async function handleLocateMe() {
   display: flex;
   align-items: center;
   justify-content: center;
-  transition: background 0.18s ease, color 0.18s ease;
+  transition:
+    background 0.18s ease,
+    color 0.18s ease;
 }
 
 .overlay-time-btn:hover:not(:disabled) {
@@ -1363,7 +1427,8 @@ async function handleLocateMe() {
   color: #ffffff;
 }
 
-.map-stage-light :deep(.maplibregl-ctrl-bottom-right .maplibregl-ctrl-group button .maplibregl-ctrl-icon) {
+.map-stage-light
+  :deep(.maplibregl-ctrl-bottom-right .maplibregl-ctrl-group button .maplibregl-ctrl-icon) {
   filter: brightness(1.15) contrast(1.08);
 }
 
@@ -1388,7 +1453,8 @@ async function handleLocateMe() {
   color: #10233a;
 }
 
-.map-stage-dark :deep(.maplibregl-ctrl-bottom-right .maplibregl-ctrl-group button .maplibregl-ctrl-icon) {
+.map-stage-dark
+  :deep(.maplibregl-ctrl-bottom-right .maplibregl-ctrl-group button .maplibregl-ctrl-icon) {
   filter: brightness(0.42) contrast(1.15);
 }
 :deep(.maplibregl-ctrl-bottom-right .maplibregl-ctrl-scale) {
@@ -1403,17 +1469,43 @@ async function handleLocateMe() {
   box-shadow: 0 8px 24px rgba(3, 10, 20, 0.18);
   box-sizing: border-box;
 }
-:deep(.maplibregl-ctrl-attrib) { background: rgba(255, 255, 255, 0.8); }
+:deep(.maplibregl-ctrl-attrib) {
+  background: rgba(255, 255, 255, 0.8);
+}
 
-@keyframes sweep { to { transform: translateX(100%); } }
+@keyframes sweep {
+  to {
+    transform: translateX(100%);
+  }
+}
 
 @media (max-width: 820px) {
-  .map-stage { min-height: calc(100vh - 1rem); }
-  .map-overlay { top: 0; left: 0; padding: 0.75rem 0.75rem 0; }
-  .map-note { left: 0.75rem; right: 0.75rem; bottom: 8.3rem; max-width: none; }
-  :deep(.maplibregl-ctrl-bottom-left) { left: 0.75rem; bottom: 0.75rem; }
-  :deep(.maplibregl-ctrl-bottom-right) { right: 0.75rem; bottom: 0.75rem; }
-  .locate-me-btn { right: 3.55rem; bottom: 0.75rem; }
+  .map-stage {
+    min-height: calc(100vh - 1rem);
+  }
+  .map-overlay {
+    top: 0;
+    left: 0;
+    padding: 0.75rem 0.75rem 0;
+  }
+  .map-note {
+    left: 0.75rem;
+    right: 0.75rem;
+    bottom: 8.3rem;
+    max-width: none;
+  }
+  :deep(.maplibregl-ctrl-bottom-left) {
+    left: 0.75rem;
+    bottom: 0.75rem;
+  }
+  :deep(.maplibregl-ctrl-bottom-right) {
+    right: 0.75rem;
+    bottom: 0.75rem;
+  }
+  .locate-me-btn {
+    right: 3.55rem;
+    bottom: 0.75rem;
+  }
 }
 
 /* ── 自动定位按钮 ─────────────────────────────────────────────────────── */
@@ -1434,7 +1526,10 @@ async function handleLocateMe() {
   display: flex;
   align-items: center;
   justify-content: center;
-  transition: border-color 0.2s ease, color 0.2s ease, background 0.2s ease;
+  transition:
+    border-color 0.2s ease,
+    color 0.2s ease,
+    background 0.2s ease;
   pointer-events: auto;
 }
 
@@ -1463,7 +1558,9 @@ async function handleLocateMe() {
 }
 
 @keyframes locate-spin {
-  to { transform: rotate(360deg); }
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 /* ── 定位失败提示 ─────────────────────────────────────────────────────── */
@@ -1525,11 +1622,15 @@ async function handleLocateMe() {
   margin-top: -0.1rem;
 }
 
-.locate-error-close:hover { color: #ff8a8a; }
+.locate-error-close:hover {
+  color: #ff8a8a;
+}
 
 .locate-error-enter-active,
 .locate-error-leave-active {
-  transition: opacity 0.25s ease, transform 0.25s ease;
+  transition:
+    opacity 0.25s ease,
+    transform 0.25s ease;
 }
 
 .locate-error-enter-from,
@@ -1569,7 +1670,13 @@ async function handleLocateMe() {
 }
 
 @keyframes geo-pulse-anim {
-  0% { transform: translate(-50%, -50%) scale(0.5); opacity: 1; }
-  100% { transform: translate(-50%, -50%) scale(2.5); opacity: 0; }
+  0% {
+    transform: translate(-50%, -50%) scale(0.5);
+    opacity: 1;
+  }
+  100% {
+    transform: translate(-50%, -50%) scale(2.5);
+    opacity: 0;
+  }
 }
 </style>

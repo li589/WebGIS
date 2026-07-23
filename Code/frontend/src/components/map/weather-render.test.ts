@@ -68,10 +68,26 @@ describe('geojsonPointsToGridCells', () => {
     const input = {
       type: 'FeatureCollection' as const,
       features: [
-        { type: 'Feature', properties: { wind_speed_10m: 4 }, geometry: { type: 'Point', coordinates: [110, 20] } },
-        { type: 'Feature', properties: { wind_speed_10m: 5 }, geometry: { type: 'Point', coordinates: [110.5, 20] } },
-        { type: 'Feature', properties: { wind_speed_10m: 6 }, geometry: { type: 'Point', coordinates: [110, 20.5] } },
-        { type: 'Feature', properties: { wind_speed_10m: 7 }, geometry: { type: 'Point', coordinates: [110.5, 20.5] } },
+        {
+          type: 'Feature',
+          properties: { wind_speed_10m: 4 },
+          geometry: { type: 'Point', coordinates: [110, 20] },
+        },
+        {
+          type: 'Feature',
+          properties: { wind_speed_10m: 5 },
+          geometry: { type: 'Point', coordinates: [110.5, 20] },
+        },
+        {
+          type: 'Feature',
+          properties: { wind_speed_10m: 6 },
+          geometry: { type: 'Point', coordinates: [110, 20.5] },
+        },
+        {
+          type: 'Feature',
+          properties: { wind_speed_10m: 7 },
+          geometry: { type: 'Point', coordinates: [110.5, 20.5] },
+        },
       ],
     }
     const out = geojsonPointsToGridCells(input as any) as typeof input
@@ -87,7 +103,11 @@ describe('geojsonPointsToGridCells', () => {
     const input = {
       type: 'FeatureCollection' as const,
       features: [
-        { type: 'Feature', properties: {}, geometry: { type: 'Point', coordinates: [120.25, 30.25] } },
+        {
+          type: 'Feature',
+          properties: {},
+          geometry: { type: 'Point', coordinates: [120.25, 30.25] },
+        },
       ],
     }
     const out = geojsonPointsToGridCells(input as any, { zoom: 6 }) as typeof input

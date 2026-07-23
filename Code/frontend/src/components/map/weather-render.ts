@@ -21,10 +21,23 @@ const WEATHER_PALETTES: Record<string, WeatherPaletteDefinition> = {
   /** 更多停点 → MapLibre interpolate / 图例更平滑（对照 Windy LUT） */
   'thermal-orange': {
     colors: [
-      '#0b1a6e', '#1b3cff', '#2a5fff', '#2f8cff', '#36c5ff',
-      '#4ad4d0', '#5ad9c4', '#7ce7b0', '#a8e87a', '#c8e86a',
-      '#ffe066', '#ffd166', '#ff9f4a', '#ff7b54', '#ff4d4d',
-      '#e83070', '#c01888',
+      '#0b1a6e',
+      '#1b3cff',
+      '#2a5fff',
+      '#2f8cff',
+      '#36c5ff',
+      '#4ad4d0',
+      '#5ad9c4',
+      '#7ce7b0',
+      '#a8e87a',
+      '#c8e86a',
+      '#ffe066',
+      '#ffd166',
+      '#ff9f4a',
+      '#ff7b54',
+      '#ff4d4d',
+      '#e83070',
+      '#c01888',
     ],
     lineColor: 'rgba(255,255,255,0.08)',
     label: '热力橙红',
@@ -32,9 +45,21 @@ const WEATHER_PALETTES: Record<string, WeatherPaletteDefinition> = {
   },
   'precip-cyan': {
     colors: [
-      '#061018', '#0b1c30', '#123048', '#16324f', '#1a4a7a',
-      '#1c6dd0', '#1ea0ef', '#1ec8ff', '#48e0ff', '#70f0ff',
-      '#9af8f0', '#b7fff5', '#d8fffb', '#e8ffff', '#ffffff',
+      '#061018',
+      '#0b1c30',
+      '#123048',
+      '#16324f',
+      '#1a4a7a',
+      '#1c6dd0',
+      '#1ea0ef',
+      '#1ec8ff',
+      '#48e0ff',
+      '#70f0ff',
+      '#9af8f0',
+      '#b7fff5',
+      '#d8fffb',
+      '#e8ffff',
+      '#ffffff',
     ],
     lineColor: 'rgba(150, 236, 255, 0.12)',
     label: '降水青蓝',
@@ -43,8 +68,18 @@ const WEATHER_PALETTES: Record<string, WeatherPaletteDefinition> = {
   /** 对齐 Windy.com 风速色阶：蓝→青→绿→黄→橙→红→紫 */
   'wind-blue': {
     colors: [
-      '#6271b8', '#3d6ea3', '#4a94aa', '#4a9294', '#4d8e7c',
-      '#6b9148', '#a89438', '#d07a3a', '#c94e4e', '#a83d7a', '#7a3d9e', '#5c4d6e',
+      '#6271b8',
+      '#3d6ea3',
+      '#4a94aa',
+      '#4a9294',
+      '#4d8e7c',
+      '#6b9148',
+      '#a89438',
+      '#d07a3a',
+      '#c94e4e',
+      '#a83d7a',
+      '#7a3d9e',
+      '#5c4d6e',
     ],
     lineColor: 'rgba(170, 228, 255, 0.12)',
     label: '风场蓝',
@@ -56,39 +91,85 @@ const WEATHER_PALETTES: Record<string, WeatherPaletteDefinition> = {
     label: '品红黄',
     type: 'diverging',
   },
-  'viridis': {
+  viridis: {
     colors: ['#440154', '#414487', '#2a788e', '#22a884', '#7ad151', '#fde725'],
     lineColor: 'rgba(200, 220, 100, 0.20)',
     label: 'Viridis 科学',
     type: 'sequential',
   },
-  'spectral': {
-    colors: ['#9e0142', '#d53e4f', '#f46d43', '#fdae61', '#fee08b', '#e6f598', '#abdda4', '#66c2a5', '#3288bd'],
+  spectral: {
+    colors: [
+      '#9e0142',
+      '#d53e4f',
+      '#f46d43',
+      '#fdae61',
+      '#fee08b',
+      '#e6f598',
+      '#abdda4',
+      '#66c2a5',
+      '#3288bd',
+    ],
     lineColor: 'rgba(255, 255, 255, 0.18)',
     label: '光谱彩虹',
     type: 'diverging',
   },
-  'blues': {
-    colors: ['#f7fbff', '#deebf7', '#c6dbef', '#9ecae1', '#6baed6', '#4292c6', '#2171b5', '#084594'],
+  blues: {
+    colors: [
+      '#f7fbff',
+      '#deebf7',
+      '#c6dbef',
+      '#9ecae1',
+      '#6baed6',
+      '#4292c6',
+      '#2171b5',
+      '#084594',
+    ],
     lineColor: 'rgba(150, 200, 255, 0.22)',
     label: '渐变蓝',
     type: 'sequential',
   },
-  'reds': {
-    colors: ['#fff5f0', '#fee0d2', '#fcbba1', '#fc9272', '#fb6a4a', '#ef3b2c', '#cb181d', '#99000d'],
+  reds: {
+    colors: [
+      '#fff5f0',
+      '#fee0d2',
+      '#fcbba1',
+      '#fc9272',
+      '#fb6a4a',
+      '#ef3b2c',
+      '#cb181d',
+      '#99000d',
+    ],
     lineColor: 'rgba(255, 180, 150, 0.22)',
     label: '渐变红',
     type: 'sequential',
   },
-  'greens': {
+  greens: {
     // 低端加深，深色底图上低湿度/云量仍可见（避免近白糊底）
-    colors: ['#0d2818', '#1a4d2e', '#2d6a4f', '#40916c', '#52b788', '#74c69d', '#95d5b2', '#b7e4c7'],
+    colors: [
+      '#0d2818',
+      '#1a4d2e',
+      '#2d6a4f',
+      '#40916c',
+      '#52b788',
+      '#74c69d',
+      '#95d5b2',
+      '#b7e4c7',
+    ],
     lineColor: 'rgba(150, 230, 150, 0.22)',
     label: '渐变绿',
     type: 'sequential',
   },
   'yellow-red': {
-    colors: ['#ffffcc', '#ffeda0', '#fed976', '#feb24c', '#fd8d3c', '#fc4e2a', '#e31a1c', '#b10026'],
+    colors: [
+      '#ffffcc',
+      '#ffeda0',
+      '#fed976',
+      '#feb24c',
+      '#fd8d3c',
+      '#fc4e2a',
+      '#e31a1c',
+      '#b10026',
+    ],
     lineColor: 'rgba(255, 200, 100, 0.22)',
     label: '黄红外推',
     type: 'sequential',
@@ -215,7 +296,10 @@ export function resolveCanonicalPaletteId(palette: string | null | undefined): s
 }
 
 /** 判断两个色带 ID 是否同一条（含别名） */
-export function paletteIdsEqual(a: string | null | undefined, b: string | null | undefined): boolean {
+export function paletteIdsEqual(
+  a: string | null | undefined,
+  b: string | null | undefined,
+): boolean {
   if (!a || !b) return false
   return resolvePaletteId(a) === resolvePaletteId(b)
 }
@@ -233,7 +317,7 @@ export function getPaletteColors(paletteId: string): string[] {
 
 /** 天气图层填充不透明度范围（连续色场可略提高，仍保留底图可读） */
 const FILL_OPACITY_MIN = 0.08
-const FILL_OPACITY_MAX = 0.90
+const FILL_OPACITY_MAX = 0.9
 
 /** 网格描边尽量弱，避免色块感 */
 const LINE_OPACITY_MIN = 0.02
@@ -322,7 +406,7 @@ const WEATHER_RENDER_HINTS: Record<string, WeatherLayerRenderHint> = {
     legend_ticks: [0, 20, 40, 60, 80, 100],
     notes: ['200 hPa 风场粒子流'],
   },
-  'temperature': {
+  temperature: {
     layer_id: 'temperature',
     paint_mode: 'grid_fill',
     palette: 'thermal-orange',
@@ -362,7 +446,7 @@ const WEATHER_RENDER_HINTS: Record<string, WeatherLayerRenderHint> = {
     legend_ticks: [-10, 0, 10, 20, 30, 40],
     notes: ['180 m 气温连续色场（网格填充）'],
   },
-  'precipitation': {
+  precipitation: {
     layer_id: 'precipitation',
     paint_mode: 'grid_fill',
     palette: 'precip-cyan',
@@ -372,7 +456,7 @@ const WEATHER_RENDER_HINTS: Record<string, WeatherLayerRenderHint> = {
     legend_ticks: [0, 1, 5, 10, 25, 50],
     notes: ['降水量连续色场（网格填充）'],
   },
-  'pressure': {
+  pressure: {
     layer_id: 'pressure',
     paint_mode: 'grid_fill',
     palette: 'magenta-yellow',
@@ -382,7 +466,7 @@ const WEATHER_RENDER_HINTS: Record<string, WeatherLayerRenderHint> = {
     legend_ticks: [980, 1000, 1010, 1020, 1040],
     notes: ['海平面气压连续色场'],
   },
-  'humidity': {
+  humidity: {
     layer_id: 'humidity',
     paint_mode: 'grid_fill',
     palette: 'greens',
@@ -392,7 +476,7 @@ const WEATHER_RENDER_HINTS: Record<string, WeatherLayerRenderHint> = {
     legend_ticks: [0, 20, 40, 60, 80, 100],
     notes: ['相对湿度连续色场'],
   },
-  'visibility': {
+  visibility: {
     layer_id: 'visibility',
     paint_mode: 'grid_fill',
     palette: 'yellow-red',
@@ -412,7 +496,7 @@ const WEATHER_RENDER_HINTS: Record<string, WeatherLayerRenderHint> = {
     legend_ticks: [0, 20, 40, 60, 80, 100],
     notes: ['总云量连续色场'],
   },
-  'dewpoint': {
+  dewpoint: {
     layer_id: 'dewpoint',
     paint_mode: 'grid_fill',
     palette: 'thermal-orange',
@@ -434,10 +518,10 @@ export function buildDefaultWeatherRenderHint(
   const capabilityHint = descriptor?.capabilities
   const styleHint = descriptor?.style
   if (
-    capabilityHint?.paint_mode
-    && capabilityHint.primary_metric
-    && styleHint?.palette
-    && styleHint.unit_label
+    capabilityHint?.paint_mode &&
+    capabilityHint.primary_metric &&
+    styleHint?.palette &&
+    styleHint.unit_label
   ) {
     const legendFromCap = capabilityHint.legend_ticks ?? []
     return {
@@ -448,13 +532,15 @@ export function buildDefaultWeatherRenderHint(
       primary_metric: capabilityHint.primary_metric,
       // 单位同样优先本地（°C / mm），避免目录 degC / mm/h 与图例文案不一致
       unit_label: local?.unit_label || styleHint.unit_label,
-      opacity: typeof local?.opacity === 'number'
-        ? local.opacity
-        : (typeof styleHint.opacity === 'number' ? styleHint.opacity : 0.7),
+      opacity:
+        typeof local?.opacity === 'number'
+          ? local.opacity
+          : typeof styleHint.opacity === 'number'
+            ? styleHint.opacity
+            : 0.7,
       // 刻度优先后端能力（与 WEATHER_LAYER_SPECS 同源）；空则回落本地
-      legend_ticks: legendFromCap.length > 0
-        ? legendFromCap
-        : (local?.legend_ticks ?? DEFAULT_LEGEND_TICKS),
+      legend_ticks:
+        legendFromCap.length > 0 ? legendFromCap : (local?.legend_ticks ?? DEFAULT_LEGEND_TICKS),
       notes: capabilityHint.notes?.length ? capabilityHint.notes : (local?.notes ?? []),
     }
   }
@@ -481,9 +567,8 @@ export function buildWeatherLegendStops(hint: WeatherLayerRenderHint): WeatherLe
   const maxTick = numericTicks[numericTicks.length - 1] ?? 1
   const span = maxTick - minTick || 1
   return ticks.map((tick, index) => {
-    const ratio = typeof tick === 'number'
-      ? (tick - minTick) / span
-      : index / Math.max(1, ticks.length - 1)
+    const ratio =
+      typeof tick === 'number' ? (tick - minTick) / span : index / Math.max(1, ticks.length - 1)
     return {
       value: tick,
       label: typeof tick === 'number' ? `${tick} ${hint.unit_label}`.trim() : String(tick),
@@ -507,7 +592,9 @@ export function buildWeatherLegendGradient(hint: WeatherLayerRenderHint): string
   return `linear-gradient(90deg, ${colors.join(', ')})`
 }
 
-export function buildWeatherFillColorExpression(hint: WeatherLayerRenderHint): ExpressionSpecification {
+export function buildWeatherFillColorExpression(
+  hint: WeatherLayerRenderHint,
+): ExpressionSpecification {
   const legendStops = buildWeatherLegendStops(hint)
   const metricKey = hint.primary_metric
   const expression: Array<string | number | ExpressionSpecification> = [
@@ -528,11 +615,15 @@ export function buildWeatherFillColorExpression(hint: WeatherLayerRenderHint): E
   return expression as ExpressionSpecification
 }
 
-export function buildWeatherPointColorExpression(hint: WeatherLayerRenderHint): ExpressionSpecification {
+export function buildWeatherPointColorExpression(
+  hint: WeatherLayerRenderHint,
+): ExpressionSpecification {
   return buildWeatherFillColorExpression(hint)
 }
 
-export function buildWeatherPointRadiusExpression(hint: WeatherLayerRenderHint): ExpressionSpecification {
+export function buildWeatherPointRadiusExpression(
+  hint: WeatherLayerRenderHint,
+): ExpressionSpecification {
   const ticks = (hint.legend_ticks ?? []).filter((tick): tick is number => typeof tick === 'number')
   const minTick = ticks[0] ?? 0
   const maxTick = ticks[ticks.length - 1] ?? 20
@@ -540,12 +631,16 @@ export function buildWeatherPointRadiusExpression(hint: WeatherLayerRenderHint):
     'interpolate',
     ['linear'],
     ['coalesce', ['to-number', ['get', hint.primary_metric]], 0],
-    minTick, POINT_RADIUS_MIN,
-    maxTick, POINT_RADIUS_MAX,
+    minTick,
+    POINT_RADIUS_MIN,
+    maxTick,
+    POINT_RADIUS_MAX,
   ] as unknown as ExpressionSpecification
 }
 
-export function buildWeatherHeatmapColorExpression(hint: WeatherLayerRenderHint): ExpressionSpecification {
+export function buildWeatherHeatmapColorExpression(
+  hint: WeatherLayerRenderHint,
+): ExpressionSpecification {
   const palette = getPaletteDefinition(hint.palette).colors
   const lastIndex = Math.max(1, palette.length - 1)
   const expression: Array<string | number> = [
@@ -562,7 +657,9 @@ export function buildWeatherHeatmapColorExpression(hint: WeatherLayerRenderHint)
   return expression as unknown as ExpressionSpecification
 }
 
-export function buildWeatherHeatmapWeightExpression(hint: WeatherLayerRenderHint): ExpressionSpecification {
+export function buildWeatherHeatmapWeightExpression(
+  hint: WeatherLayerRenderHint,
+): ExpressionSpecification {
   const ticks = (hint.legend_ticks ?? []).filter((tick): tick is number => typeof tick === 'number')
   const minTick = ticks[0] ?? 0
   const maxTick = ticks[ticks.length - 1] ?? 100
@@ -570,12 +667,16 @@ export function buildWeatherHeatmapWeightExpression(hint: WeatherLayerRenderHint
     'interpolate',
     ['linear'],
     ['coalesce', ['to-number', ['get', hint.primary_metric]], 0],
-    minTick, 0,
-    maxTick, 1,
+    minTick,
+    0,
+    maxTick,
+    1,
   ] as unknown as ExpressionSpecification
 }
 
-export function buildWeatherArrowSizeExpression(hint: WeatherLayerRenderHint): ExpressionSpecification {
+export function buildWeatherArrowSizeExpression(
+  hint: WeatherLayerRenderHint,
+): ExpressionSpecification {
   const ticks = (hint.legend_ticks ?? []).filter((tick): tick is number => typeof tick === 'number')
   const minTick = ticks[0] ?? 0
   const maxTick = ticks[ticks.length - 1] ?? 20
@@ -583,8 +684,10 @@ export function buildWeatherArrowSizeExpression(hint: WeatherLayerRenderHint): E
     'interpolate',
     ['linear'],
     ['coalesce', ['to-number', ['get', hint.primary_metric]], 0],
-    minTick, ARROW_SIZE_MIN,
-    maxTick, ARROW_SIZE_MAX,
+    minTick,
+    ARROW_SIZE_MIN,
+    maxTick,
+    ARROW_SIZE_MAX,
   ] as unknown as ExpressionSpecification
 }
 
@@ -593,8 +696,10 @@ export function getWeatherLineColor(hint: WeatherLayerRenderHint) {
 }
 
 export function getWeatherFillOpacity(hint: WeatherLayerRenderHint, layerOpacity: number) {
-  const hintOpacity = typeof hint.opacity === 'number' && Number.isFinite(hint.opacity) ? hint.opacity : 0.7
-  const layerOp = typeof layerOpacity === 'number' && Number.isFinite(layerOpacity) ? layerOpacity : 1
+  const hintOpacity =
+    typeof hint.opacity === 'number' && Number.isFinite(hint.opacity) ? hint.opacity : 0.7
+  const layerOp =
+    typeof layerOpacity === 'number' && Number.isFinite(layerOpacity) ? layerOpacity : 1
   const raw = hintOpacity * layerOp
   if (!Number.isFinite(raw)) return 0.55
   return Math.max(FILL_OPACITY_MIN, Math.min(FILL_OPACITY_MAX, raw))
@@ -610,9 +715,7 @@ export function buildWeatherFillOpacityExpression(
   const base = getWeatherFillOpacity(hint, layerOpacity)
   const metric = hint.primary_metric || ''
   const isPrecip =
-    hint.layer_id === 'precipitation'
-    || metric.includes('precip')
-    || metric.includes('rain')
+    hint.layer_id === 'precipitation' || metric.includes('precip') || metric.includes('rain')
   if (!isPrecip) return base
 
   const ticks = (hint.legend_ticks ?? []).filter((t): t is number => typeof t === 'number')
@@ -622,13 +725,20 @@ export function buildWeatherFillOpacityExpression(
     'interpolate',
     ['linear'],
     ['coalesce', ['to-number', ['get', hint.primary_metric]], 0],
-    0, 0.04,
-    lightRain * 0.25, 0.18,
-    lightRain, Math.max(0.35, base * 0.55),
-    midRain, base,
+    0,
+    0.04,
+    lightRain * 0.25,
+    0.18,
+    lightRain,
+    Math.max(0.35, base * 0.55),
+    midRain,
+    base,
   ] as unknown as ExpressionSpecification
 }
 
 export function getWeatherLineOpacity(hint: WeatherLayerRenderHint, layerOpacity: number) {
-  return Math.max(LINE_OPACITY_MIN, Math.min(LINE_OPACITY_MAX, hint.opacity * layerOpacity * LINE_OPACITY_RATIO))
+  return Math.max(
+    LINE_OPACITY_MIN,
+    Math.min(LINE_OPACITY_MAX, hint.opacity * layerOpacity * LINE_OPACITY_RATIO),
+  )
 }

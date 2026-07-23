@@ -34,10 +34,7 @@ export function resolveEffectivePalette(options: {
   renderHintPalette?: string | null
   overlayMetaPalette?: string | null
 }): string | null {
-  return options.paletteOverride
-    ?? options.renderHintPalette
-    ?? options.overlayMetaPalette
-    ?? null
+  return options.paletteOverride ?? options.renderHintPalette ?? options.overlayMetaPalette ?? null
 }
 
 /**
@@ -103,9 +100,7 @@ export function resolveStyleRenderHint(options: {
       paletteOverride,
       renderHintPalette: renderHint.palette,
     })
-    return palette && palette !== renderHint.palette
-      ? { ...renderHint, palette }
-      : renderHint
+    return palette && palette !== renderHint.palette ? { ...renderHint, palette } : renderHint
   }
   if (!overlayMeta?.palette) return null
   const base = buildLegendHintFromOverlayMeta(overlayMeta)

@@ -87,10 +87,19 @@ const titleBarClass = computed(() => {
   if (props.panelKey === 'analysis') base.push('panel-tools--analysis')
   return base
 })
-const resizeHandleClass = computed(() => ['resize-handle', `resize-handle--${props.handlePosition}`, `resize-handle--${props.panelKey ?? 'generic'}`])
-const bodyClass = computed(() => ['panel-body', { 'panel-body--mobile': isMobile.value, 'panel-body--hidden': props.bodyOverflow === 'hidden' }])
+const resizeHandleClass = computed(() => [
+  'resize-handle',
+  `resize-handle--${props.handlePosition}`,
+  `resize-handle--${props.panelKey ?? 'generic'}`,
+])
+const bodyClass = computed(() => [
+  'panel-body',
+  { 'panel-body--mobile': isMobile.value, 'panel-body--hidden': props.bodyOverflow === 'hidden' },
+])
 const anchorRef = ref<HTMLElement | null>(null)
-const collapsedHeight = computed(() => (collapsed.value ? 'var(--panel-collapsed-height)' : undefined))
+const collapsedHeight = computed(() =>
+  collapsed.value ? 'var(--panel-collapsed-height)' : undefined,
+)
 const mobileDockClass = computed(() => ({
   'control-panel--mobile': isMobile.value,
   'control-panel--timeline': props.panelKey === 'timeline',
@@ -117,7 +126,9 @@ let baseHeight = 0
 let baseRightEdge = 0
 let resizing = false
 
-const frameStyle = computed(() => ({ transform: `translate(${offsetX.value}px, ${offsetY.value}px)` }))
+const frameStyle = computed(() => ({
+  transform: `translate(${offsetX.value}px, ${offsetY.value}px)`,
+}))
 const panelSizeStyle = computed(() => {
   const style: Record<string, string> = {}
   if (collapsed.value) {
@@ -206,8 +217,10 @@ function handleResizeMove(event: PointerEvent) {
   userResized.value = true
   const deltaX = event.clientX - resizeStartX
   const deltaY = event.clientY - resizeStartY
-  const resizingFromLeft = props.handlePosition === 'bottom-left' || props.handlePosition === 'top-left'
-  const resizingFromTop = props.handlePosition === 'top-left' || props.handlePosition === 'top-right'
+  const resizingFromLeft =
+    props.handlePosition === 'bottom-left' || props.handlePosition === 'top-left'
+  const resizingFromTop =
+    props.handlePosition === 'top-left' || props.handlePosition === 'top-right'
   const nextWidth = resizingFromLeft ? baseWidth - deltaX : baseWidth + deltaX
   const nextHeight = resizingFromTop ? baseHeight - deltaY : baseHeight + deltaY
   const clampedHeight = clampPanelHeight(nextHeight)
@@ -296,21 +309,71 @@ defineExpose({ showPanel, hidePanel, resetPanel, toggleCollapsed })
 <template>
   <div ref="anchorRef" class="panel-anchor" :style="frameStyle">
     <button v-if="!visible" class="restore-pill" type="button" @click="showPanel">
-      <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2 8s2.2-3.5 6-3.5S14 8 14 8s-2.2 3.5-6 3.5S2 8 2 8Zm6 1.8A1.8 1.8 0 1 0 8 6.2a1.8 1.8 0 0 0 0 3.6Z" /></svg>
+      <svg viewBox="0 0 16 16" aria-hidden="true">
+        <path
+          d="M2 8s2.2-3.5 6-3.5S14 8 14 8s-2.2 3.5-6 3.5S2 8 2 8Zm6 1.8A1.8 1.8 0 1 0 8 6.2a1.8 1.8 0 0 0 0 3.6Z"
+        />
+      </svg>
       <span>{{ panelLabel }}</span>
     </button>
 
-    <BasePanel v-else class="control-panel" :class="[mobileDockClass, { collapsed }]" :style="[panelSizeStyle, panelDockStyle, collapsedHeight ? { height: collapsedHeight } : {}]">
+    <BasePanel
+      v-else
+      class="control-panel"
+      :class="[mobileDockClass, { collapsed }]"
+      :style="[panelSizeStyle, panelDockStyle, collapsedHeight ? { height: collapsedHeight } : {}]"
+    >
       <header :class="titleBarClass">
-        <button v-if="draggable" class="drag-handle" type="button" title="拖动" @pointerdown.prevent="startDragging"><span></span><span></span><span></span></button>
+        <button
+          v-if="draggable"
+          class="drag-handle"
+          type="button"
+          title="拖动"
+          @pointerdown.prevent="startDragging"
+        >
+          <span></span><span></span><span></span>
+        </button>
         <span class="panel-label">{{ panelLabel }}</span>
         <div class="tool-actions">
-          <button v-if="collapsible" class="tool-button icon-button" type="button" :title="collapsed ? '展开' : '收起'" :aria-label="collapsed ? '展开' : '收起'" @click="toggleCollapsed">
-            <svg v-if="collapsed" viewBox="0 0 16 16" aria-hidden="true"><path d="M3 8h10M8 3l5 5-5 5" /></svg>
-            <svg v-else viewBox="0 0 16 16" aria-hidden="true"><path d="M3 8h10M8 13 3 8l5-5" /></svg>
+          <button
+            v-if="collapsible"
+            class="tool-button icon-button"
+            type="button"
+            :title="collapsed ? '展开' : '收起'"
+            :aria-label="collapsed ? '展开' : '收起'"
+            @click="toggleCollapsed"
+          >
+            <svg v-if="collapsed" viewBox="0 0 16 16" aria-hidden="true">
+              <path d="M3 8h10M8 3l5 5-5 5" />
+            </svg>
+            <svg v-else viewBox="0 0 16 16" aria-hidden="true">
+              <path d="M3 8h10M8 13 3 8l5-5" />
+            </svg>
           </button>
-          <button class="tool-button icon-button" type="button" title="复位" aria-label="复位" @click="resetPanel"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3 8a5 5 0 1 0 1.5-3.6M3 3v3.4h3.4" /></svg></button>
-          <button class="tool-button icon-button" type="button" title="隐藏" aria-label="隐藏" @click="hidePanel"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="m2.4 2.4 11.2 11.2M6.2 6.2A2.6 2.6 0 0 0 10 9.8M3 8s2.2-3.5 5-3.5c.8 0 1.5.1 2.2.4M13 8s-1.1 1.8-3 2.8" /></svg></button>
+          <button
+            class="tool-button icon-button"
+            type="button"
+            title="复位"
+            aria-label="复位"
+            @click="resetPanel"
+          >
+            <svg viewBox="0 0 16 16" aria-hidden="true">
+              <path d="M3 8a5 5 0 1 0 1.5-3.6M3 3v3.4h3.4" />
+            </svg>
+          </button>
+          <button
+            class="tool-button icon-button"
+            type="button"
+            title="隐藏"
+            aria-label="隐藏"
+            @click="hidePanel"
+          >
+            <svg viewBox="0 0 16 16" aria-hidden="true">
+              <path
+                d="m2.4 2.4 11.2 11.2M6.2 6.2A2.6 2.6 0 0 0 10 9.8M3 8s2.2-3.5 5-3.5c.8 0 1.5.1 2.2.4M13 8s-1.1 1.8-3 2.8"
+              />
+            </svg>
+          </button>
         </div>
       </header>
 
@@ -332,51 +395,325 @@ defineExpose({ showPanel, hidePanel, resetPanel, toggleCollapsed })
 </template>
 
 <style scoped>
-.panel-anchor{position:relative;pointer-events:auto;will-change:transform;transition:transform .18s cubic-bezier(.25,.46,.45,.94);width:100%;height:100%;display:inline-block;min-width:200px}
-.restore-pill{display:inline-flex;align-items:center;gap:.42rem;border:1px solid rgba(136,192,255,.16);border-radius:999px;padding:.42rem .68rem;background:rgba(8,18,33,.88);color:#dfeefe;cursor:pointer;font:inherit;font-size:.72rem}
-.control-panel{position:relative;min-width:0;display:flex;flex-direction:column;transition:opacity .2s ease,box-shadow .2s ease;overflow:visible;min-height:0;border-color:transparent;background:transparent;box-shadow:none;backdrop-filter:none;-webkit-backdrop-filter:none}
-.control-panel:hover{opacity:1;box-shadow:none}
-.control-panel.collapsed{background:transparent;box-shadow:none}
-.control-panel.collapsed .panel-tools{border-radius:.86rem;border-bottom-color:rgba(136,192,255,.12)}
-.control-panel--mobile{width:100%!important;max-width:none!important;min-width:0!important}
-.control-panel--timeline{max-width:none}
-.control-panel--timeline .panel-tools{justify-content:space-between}
-.control-panel--timeline .panel-body{overflow:hidden}
-.panel-tools{position:relative;z-index:2;display:flex;align-items:center;gap:.45rem;padding:.34rem .38rem;border:1px solid rgba(136,192,255,.12);border-bottom-color:rgba(136,192,255,.07);border-radius:.86rem .86rem 0 0;background:linear-gradient(180deg, rgba(13, 23, 39, 0.88), rgba(5, 13, 25, 0.78));min-height:var(--panel-title-height);backdrop-filter: blur(var(--panel-backdrop-blur)) saturate(1.08);-webkit-backdrop-filter: blur(var(--panel-backdrop-blur)) saturate(1.08);box-shadow:inset 0 1px 0 rgba(255,255,255,.075),0 8px 18px rgba(1,8,16,.08)}
-.panel-tools--analysis{padding-left:.34rem;padding-right:.34rem;justify-content:space-between}
-.panel-tools--analysis .panel-label{letter-spacing:.03em}
-.panel-tools--analysis .tool-actions{gap:.2rem}
-.panel-tools--analysis .tool-button{padding:.3rem .44rem}
-.panel-tools--analysis .drag-handle{padding:.34rem .38rem}
-.drag-handle,.tool-button{border:1px solid rgba(136,192,255,.12);border-radius:.68rem;background:rgba(8,18,33,.58);color:#d5e5f5;cursor:pointer;font:inherit}
-.drag-handle{display:inline-flex;align-items:center;gap:.16rem;padding:.38rem .46rem;touch-action:none;flex:0 0 auto}
-.drag-handle span{width:.2rem;height:.2rem;border-radius:999px;background:#8cb5d9}
-.panel-label{min-width:0;margin-right:0;color:#d9ebfb;font-size:.72rem;letter-spacing:.04em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.tool-actions{display:inline-flex;gap:.26rem;margin-left:auto;flex:0 0 auto}
-.tool-button{padding:.34rem .52rem;font-size:.7rem;transition:border-color .18s ease,color .18s ease,background-color .18s ease;flex:0 0 auto}
-.tool-button:hover,.drag-handle:hover{border-color:rgba(136,192,255,.28);color:#f3fbff}
-.panel-body{margin-top:0;flex:1;min-height:0;overflow-y:auto;position:relative;z-index:1;padding:var(--panel-body-padding) calc(var(--panel-body-padding) - .07rem) var(--panel-body-padding);border:1px solid rgba(136,192,255,.08);border-top:0;border-radius:0 0 .92rem .92rem;background:linear-gradient(180deg, rgba(8,18,33,.4), rgba(6,14,26,.28));box-shadow:inset 0 1px 0 rgba(255,255,255,.02),0 8px 18px rgba(1,8,16,.055);scrollbar-width:thin;scrollbar-color:var(--panel-scrollbar-thumb) var(--panel-scrollbar-track)}
-.panel-body::-webkit-scrollbar{width:4px}
-.panel-body::-webkit-scrollbar-track{background:var(--panel-scrollbar-track)}
-.panel-body::-webkit-scrollbar-thumb{background:var(--panel-scrollbar-thumb);border-radius:999px}
-.panel-body--mobile{overflow-y:auto;-webkit-overflow-scrolling:touch}
-.panel-body--hidden{overflow:hidden}
-.icon-button{display:inline-flex;align-items:center;justify-content:center;width:1.95rem;height:1.95rem;padding:0}
-.resize-handle{position:absolute;width:1rem;height:1rem;border:none;background:transparent;opacity:0;transition:opacity .16s ease,transform .16s ease;z-index:10;padding:0;display:grid;place-items:center;cursor:nwse-resize}
-.control-panel:hover .resize-handle,.panel-anchor:focus-within .resize-handle{opacity:.86}
-.resize-handle--bottom-right{right:-.02rem;bottom:-.02rem}
-.resize-handle--bottom-left{left:-.02rem;bottom:-.02rem;cursor:nesw-resize}
-.resize-handle--top-right{right:-.02rem;top:-.02rem;cursor:nesw-resize;transform:rotate(180deg)}
-.resize-handle--top-left{left:-.02rem;top:-.02rem;cursor:nwse-resize}
-.resize-handle--layers .resize-corner--one{right:.04rem;bottom:.18rem;width:.66rem;height:2px;transform:rotate(45deg);transform-origin:right bottom}
-.resize-handle--layers .resize-corner--two{right:.18rem;bottom:.04rem;width:2px;height:.66rem;transform:rotate(45deg);transform-origin:right bottom}
-.resize-handle--analysis .resize-corner--one{left:.04rem;bottom:.18rem;width:.66rem;height:2px;transform:rotate(-45deg);transform-origin:left bottom}
-.resize-handle--analysis .resize-corner--two{left:.18rem;bottom:.04rem;width:2px;height:.66rem;transform:rotate(-45deg);transform-origin:left bottom}
-.resize-corner{position:absolute;background:rgba(90,162,255,.72);border-radius:999px;box-shadow:0 0 0 1px rgba(255,255,255,.04) inset}
-.resize-corner--one{right:.12rem;bottom:.24rem;width:.42rem;height:2px}
-.resize-corner--two{right:.24rem;bottom:.12rem;width:2px;height:.42rem}
-.panel-anchor:hover .resize-handle{transform:scale(1.02)}
-.restore-pill svg,.icon-button svg{width:.9rem;height:.9rem;fill:none;stroke:currentColor;stroke-width:1.5;stroke-linecap:round;stroke-linejoin:round}
-.restore-pill svg{width:.86rem;height:.86rem}
-@media (max-width:900px){.panel-anchor{transform:none!important}.drag-handle{display:none}.panel-tools{padding:.38rem .44rem}.panel-body{padding:.4rem}.resize-handle{display:none}}
+.panel-anchor {
+  position: relative;
+  pointer-events: auto;
+  will-change: transform;
+  transition: transform 0.18s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+  width: 100%;
+  height: 100%;
+  display: inline-block;
+  min-width: 200px;
+}
+.restore-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.42rem;
+  border: 1px solid rgba(136, 192, 255, 0.16);
+  border-radius: 999px;
+  padding: 0.42rem 0.68rem;
+  background: rgba(8, 18, 33, 0.88);
+  color: #dfeefe;
+  cursor: pointer;
+  font: inherit;
+  font-size: 0.72rem;
+}
+.control-panel {
+  position: relative;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  transition:
+    opacity 0.2s ease,
+    box-shadow 0.2s ease;
+  overflow: visible;
+  min-height: 0;
+  border-color: transparent;
+  background: transparent;
+  box-shadow: none;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+.control-panel:hover {
+  opacity: 1;
+  box-shadow: none;
+}
+.control-panel.collapsed {
+  background: transparent;
+  box-shadow: none;
+}
+.control-panel.collapsed .panel-tools {
+  border-radius: 0.86rem;
+  border-bottom-color: rgba(136, 192, 255, 0.12);
+}
+.control-panel--mobile {
+  width: 100% !important;
+  max-width: none !important;
+  min-width: 0 !important;
+}
+.control-panel--timeline {
+  max-width: none;
+}
+.control-panel--timeline .panel-tools {
+  justify-content: space-between;
+}
+.control-panel--timeline .panel-body {
+  overflow: hidden;
+}
+.panel-tools {
+  position: relative;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  padding: 0.34rem 0.38rem;
+  border: 1px solid rgba(136, 192, 255, 0.12);
+  border-bottom-color: rgba(136, 192, 255, 0.07);
+  border-radius: 0.86rem 0.86rem 0 0;
+  background: linear-gradient(180deg, rgba(13, 23, 39, 0.88), rgba(5, 13, 25, 0.78));
+  min-height: var(--panel-title-height);
+  backdrop-filter: blur(var(--panel-backdrop-blur)) saturate(1.08);
+  -webkit-backdrop-filter: blur(var(--panel-backdrop-blur)) saturate(1.08);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.075),
+    0 8px 18px rgba(1, 8, 16, 0.08);
+}
+.panel-tools--analysis {
+  padding-left: 0.34rem;
+  padding-right: 0.34rem;
+  justify-content: space-between;
+}
+.panel-tools--analysis .panel-label {
+  letter-spacing: 0.03em;
+}
+.panel-tools--analysis .tool-actions {
+  gap: 0.2rem;
+}
+.panel-tools--analysis .tool-button {
+  padding: 0.3rem 0.44rem;
+}
+.panel-tools--analysis .drag-handle {
+  padding: 0.34rem 0.38rem;
+}
+.drag-handle,
+.tool-button {
+  border: 1px solid rgba(136, 192, 255, 0.12);
+  border-radius: 0.68rem;
+  background: rgba(8, 18, 33, 0.58);
+  color: #d5e5f5;
+  cursor: pointer;
+  font: inherit;
+}
+.drag-handle {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.16rem;
+  padding: 0.38rem 0.46rem;
+  touch-action: none;
+  flex: 0 0 auto;
+}
+.drag-handle span {
+  width: 0.2rem;
+  height: 0.2rem;
+  border-radius: 999px;
+  background: #8cb5d9;
+}
+.panel-label {
+  min-width: 0;
+  margin-right: 0;
+  color: #d9ebfb;
+  font-size: 0.72rem;
+  letter-spacing: 0.04em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.tool-actions {
+  display: inline-flex;
+  gap: 0.26rem;
+  margin-left: auto;
+  flex: 0 0 auto;
+}
+.tool-button {
+  padding: 0.34rem 0.52rem;
+  font-size: 0.7rem;
+  transition:
+    border-color 0.18s ease,
+    color 0.18s ease,
+    background-color 0.18s ease;
+  flex: 0 0 auto;
+}
+.tool-button:hover,
+.drag-handle:hover {
+  border-color: rgba(136, 192, 255, 0.28);
+  color: #f3fbff;
+}
+.panel-body {
+  margin-top: 0;
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  position: relative;
+  z-index: 1;
+  padding: var(--panel-body-padding) calc(var(--panel-body-padding) - 0.07rem)
+    var(--panel-body-padding);
+  border: 1px solid rgba(136, 192, 255, 0.08);
+  border-top: 0;
+  border-radius: 0 0 0.92rem 0.92rem;
+  background: linear-gradient(180deg, rgba(8, 18, 33, 0.4), rgba(6, 14, 26, 0.28));
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.02),
+    0 8px 18px rgba(1, 8, 16, 0.055);
+  scrollbar-width: thin;
+  scrollbar-color: var(--panel-scrollbar-thumb) var(--panel-scrollbar-track);
+}
+.panel-body::-webkit-scrollbar {
+  width: 4px;
+}
+.panel-body::-webkit-scrollbar-track {
+  background: var(--panel-scrollbar-track);
+}
+.panel-body::-webkit-scrollbar-thumb {
+  background: var(--panel-scrollbar-thumb);
+  border-radius: 999px;
+}
+.panel-body--mobile {
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+}
+.panel-body--hidden {
+  overflow: hidden;
+}
+.icon-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.95rem;
+  height: 1.95rem;
+  padding: 0;
+}
+.resize-handle {
+  position: absolute;
+  width: 1rem;
+  height: 1rem;
+  border: none;
+  background: transparent;
+  opacity: 0;
+  transition:
+    opacity 0.16s ease,
+    transform 0.16s ease;
+  z-index: 10;
+  padding: 0;
+  display: grid;
+  place-items: center;
+  cursor: nwse-resize;
+}
+.control-panel:hover .resize-handle,
+.panel-anchor:focus-within .resize-handle {
+  opacity: 0.86;
+}
+.resize-handle--bottom-right {
+  right: -0.02rem;
+  bottom: -0.02rem;
+}
+.resize-handle--bottom-left {
+  left: -0.02rem;
+  bottom: -0.02rem;
+  cursor: nesw-resize;
+}
+.resize-handle--top-right {
+  right: -0.02rem;
+  top: -0.02rem;
+  cursor: nesw-resize;
+  transform: rotate(180deg);
+}
+.resize-handle--top-left {
+  left: -0.02rem;
+  top: -0.02rem;
+  cursor: nwse-resize;
+}
+.resize-handle--layers .resize-corner--one {
+  right: 0.04rem;
+  bottom: 0.18rem;
+  width: 0.66rem;
+  height: 2px;
+  transform: rotate(45deg);
+  transform-origin: right bottom;
+}
+.resize-handle--layers .resize-corner--two {
+  right: 0.18rem;
+  bottom: 0.04rem;
+  width: 2px;
+  height: 0.66rem;
+  transform: rotate(45deg);
+  transform-origin: right bottom;
+}
+.resize-handle--analysis .resize-corner--one {
+  left: 0.04rem;
+  bottom: 0.18rem;
+  width: 0.66rem;
+  height: 2px;
+  transform: rotate(-45deg);
+  transform-origin: left bottom;
+}
+.resize-handle--analysis .resize-corner--two {
+  left: 0.18rem;
+  bottom: 0.04rem;
+  width: 2px;
+  height: 0.66rem;
+  transform: rotate(-45deg);
+  transform-origin: left bottom;
+}
+.resize-corner {
+  position: absolute;
+  background: rgba(90, 162, 255, 0.72);
+  border-radius: 999px;
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.04) inset;
+}
+.resize-corner--one {
+  right: 0.12rem;
+  bottom: 0.24rem;
+  width: 0.42rem;
+  height: 2px;
+}
+.resize-corner--two {
+  right: 0.24rem;
+  bottom: 0.12rem;
+  width: 2px;
+  height: 0.42rem;
+}
+.panel-anchor:hover .resize-handle {
+  transform: scale(1.02);
+}
+.restore-pill svg,
+.icon-button svg {
+  width: 0.9rem;
+  height: 0.9rem;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.restore-pill svg {
+  width: 0.86rem;
+  height: 0.86rem;
+}
+@media (max-width: 900px) {
+  .panel-anchor {
+    transform: none !important;
+  }
+  .drag-handle {
+    display: none;
+  }
+  .panel-tools {
+    padding: 0.38rem 0.44rem;
+  }
+  .panel-body {
+    padding: 0.4rem;
+  }
+  .resize-handle {
+    display: none;
+  }
+}
 </style>

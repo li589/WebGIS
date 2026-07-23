@@ -48,13 +48,7 @@ declare namespace GeoJSON {
   }
 
   type Geometry =
-    | Point
-    | MultiPoint
-    | LineString
-    | MultiLineString
-    | Polygon
-    | MultiPolygon
-    | GeometryCollection
+    Point | MultiPoint | LineString | MultiLineString | Polygon | MultiPolygon | GeometryCollection
 
   interface Feature<G extends Geometry | null = Geometry, P = Record<string, unknown> | null> {
     type: 'Feature'
@@ -64,7 +58,10 @@ declare namespace GeoJSON {
     bbox?: number[]
   }
 
-  interface FeatureCollection<G extends Geometry | null = Geometry, P = Record<string, unknown> | null> {
+  interface FeatureCollection<
+    G extends Geometry | null = Geometry,
+    P = Record<string, unknown> | null,
+  > {
     type: 'FeatureCollection'
     features: Array<Feature<G, P>>
     bbox?: number[]

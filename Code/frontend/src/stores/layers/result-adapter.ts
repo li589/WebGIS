@@ -1,5 +1,10 @@
 import { getWorkflowRunView, resolveApiUrl } from '../../services/runtime-api'
-import type { WeatherLayerRenderHint, WorkflowResultReference, WorkflowRunStatusResponse, WorkflowRunViewResponse } from '../../services/runtime-api'
+import type {
+  WeatherLayerRenderHint,
+  WorkflowResultReference,
+  WorkflowRunStatusResponse,
+  WorkflowRunViewResponse,
+} from '../../services/runtime-api'
 import type { JobLayerItem, JobLayerMapLayerPayload } from './types'
 
 function asRecord(value: unknown): Record<string, unknown> | null {
@@ -26,7 +31,10 @@ function extractWorkflowEntryName(run: WorkflowRunStatusResponse) {
   return typeof entryName === 'string' && entryName.trim() ? entryName : undefined
 }
 
-function extractReportSummary(resultRefs: WorkflowResultReference[] | undefined, fallbackMessage: string) {
+function extractReportSummary(
+  resultRefs: WorkflowResultReference[] | undefined,
+  fallbackMessage: string,
+) {
   const textResult = resultRefs?.find((item) => item.result_kind === 'text')
   const textPayload = asRecord(textResult?.inline_data)
   const text = textPayload?.text
@@ -118,7 +126,9 @@ function extractDiagnosticNotes(run: WorkflowRunStatusResponse) {
   return notes
 }
 
-function extractMapLayerPayload(resultRefs: WorkflowResultReference[] | undefined): JobLayerMapLayerPayload | undefined {
+function extractMapLayerPayload(
+  resultRefs: WorkflowResultReference[] | undefined,
+): JobLayerMapLayerPayload | undefined {
   const mapLayerResult = resultRefs?.find((item) => item.result_kind === 'map_layer')
   const payload = asRecord(mapLayerResult?.inline_data)
   if (!payload) {
@@ -131,17 +141,25 @@ function extractMapLayerPayload(resultRefs: WorkflowResultReference[] | undefine
     pointFeature: asRecord(payload.point_feature) ?? undefined,
     layerAssets: layerAssets
       ? {
-          geojsonUrl: typeof layerAssets.geojson_url === 'string' ? layerAssets.geojson_url : undefined,
+          geojsonUrl:
+            typeof layerAssets.geojson_url === 'string' ? layerAssets.geojson_url : undefined,
           cogUrl: typeof layerAssets.cog_url === 'string' ? layerAssets.cog_url : undefined,
-          cogPreviewUrl: typeof layerAssets.cog_preview_url === 'string' ? layerAssets.cog_preview_url : undefined,
+          cogPreviewUrl:
+            typeof layerAssets.cog_preview_url === 'string'
+              ? layerAssets.cog_preview_url
+              : undefined,
           cogBbox:
-            asRecord(layerAssets.cog_bbox) && typeof asRecord(layerAssets.cog_bbox)?.west === 'number'
+            asRecord(layerAssets.cog_bbox) &&
+            typeof asRecord(layerAssets.cog_bbox)?.west === 'number'
               ? {
                   west: Number(asRecord(layerAssets.cog_bbox)?.west),
                   south: Number(asRecord(layerAssets.cog_bbox)?.south),
                   east: Number(asRecord(layerAssets.cog_bbox)?.east),
                   north: Number(asRecord(layerAssets.cog_bbox)?.north),
-                  crs: typeof asRecord(layerAssets.cog_bbox)?.crs === 'string' ? String(asRecord(layerAssets.cog_bbox)?.crs) : undefined,
+                  crs:
+                    typeof asRecord(layerAssets.cog_bbox)?.crs === 'string'
+                      ? String(asRecord(layerAssets.cog_bbox)?.crs)
+                      : undefined,
                 }
               : undefined,
         }
@@ -158,7 +176,7 @@ async function fetchGeojsonData(geojsonUrl: string): Promise<Record<string, unkn
     })
     if (!response.ok) return undefined
     const payload = await response.json()
-    return payload && typeof payload === 'object' ? payload as Record<string, unknown> : undefined
+    return payload && typeof payload === 'object' ? (payload as Record<string, unknown>) : undefined
   } catch {
     return undefined
   } finally {
@@ -186,10 +204,14 @@ export async function buildJobLayer(
   const resultView: WorkflowRunViewResponse | null = shouldFetchWorkflowRunView(run)
     ? await getWorkflowRunView(run.run_id).catch(() => previousJobLayer?.resultView ?? null)
     : (previousJobLayer?.resultView ?? null)
-  const resultUrl = resultView?.result_url ?? previousJobLayer?.resultUrl ?? extractResultUrl(run.result_refs)
+  const resultUrl =
+    resultView?.result_url ?? previousJobLayer?.resultUrl ?? extractResultUrl(run.result_refs)
   const reportSummary =
-    resultView?.summary ?? previousJobLayer?.reportSummary ?? extractReportSummary(run.result_refs, diagnosticNotes[0] ?? run.message)
-  const mapLayerPayload = extractMapLayerPayload(run.result_refs) ?? previousJobLayer?.mapLayerPayload
+    resultView?.summary ??
+    previousJobLayer?.reportSummary ??
+    extractReportSummary(run.result_refs, diagnosticNotes[0] ?? run.message)
+  const mapLayerPayload =
+    extractMapLayerPayload(run.result_refs) ?? previousJobLayer?.mapLayerPayload
   if (mapLayerPayload?.layerAssets?.geojsonUrl && !mapLayerPayload.layerAssets.geojsonData) {
     const geojsonData = await fetchGeojsonData(mapLayerPayload.layerAssets.geojsonUrl)
     if (geojsonData) {

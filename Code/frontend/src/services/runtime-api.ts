@@ -37,6 +37,13 @@ export function getWorkflowRun(runId: string) {
   return requestJson<WorkflowRunStatusResponse>(`/workflow-runs/${runId}`, { silent: true })
 }
 
+/** 列出后端活跃工作流 run（非终态），供启动恢复与跨会话状态同步。 */
+export function listActiveWorkflowRuns() {
+  return requestJson<WorkflowRunStatusResponse[]>('/workflow-runs?active_only=true', {
+    silent: true,
+  })
+}
+
 export function getWorkflowEvents(
   runId: string,
   options?: {
@@ -49,7 +56,9 @@ export function getWorkflowEvents(
   if (typeof options?.limit === 'number') search.set('limit', String(options.limit))
   const suffix = search.toString() ? `?${search.toString()}` : ''
   // 轮询请求：silent=true
-  return requestJson<WorkflowEventsResponse>(`/workflow-runs/${runId}/events${suffix}`, { silent: true })
+  return requestJson<WorkflowEventsResponse>(`/workflow-runs/${runId}/events${suffix}`, {
+    silent: true,
+  })
 }
 
 export function getWorkflowRunView(runId: string) {
@@ -73,7 +82,8 @@ export function getWeatherPoint(params: {
     longitude: String(params.longitude),
   })
   if (params.model) search.set('model', params.model)
-  if (typeof params.forecast_hours === 'number') search.set('forecast_hours', String(params.forecast_hours))
+  if (typeof params.forecast_hours === 'number')
+    search.set('forecast_hours', String(params.forecast_hours))
   if (params.place_name) search.set('place_name', params.place_name)
   if (params.provider && params.provider !== 'auto') search.set('provider', params.provider)
   return requestJson<WeatherPointResponse>(`/weather/point?${search.toString()}`, {

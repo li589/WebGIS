@@ -109,10 +109,10 @@ export function buildWeakScalarContourLevels(
 export function isWeakContourLayerId(layerId: string | null | undefined): boolean {
   if (!layerId) return false
   return (
-    layerId === 'temperature'
-    || layerId.startsWith('temperature-')
-    || layerId === 'precipitation'
-    || layerId.startsWith('precipitation')
+    layerId === 'temperature' ||
+    layerId.startsWith('temperature-') ||
+    layerId === 'precipitation' ||
+    layerId.startsWith('precipitation')
   )
 }
 
@@ -160,8 +160,7 @@ export class ScalarContourLayer {
     const container = map.getContainer()
     this.canvas = document.createElement('canvas')
     this.canvas.className = 'scalar-contour-canvas'
-    this.canvas.style.cssText =
-      `position:absolute;top:0;left:0;pointer-events:none;z-index:5;opacity:${options.opacity ?? 0.42}`
+    this.canvas.style.cssText = `position:absolute;top:0;left:0;pointer-events:none;z-index:5;opacity:${options.opacity ?? 0.42}`
     container.appendChild(this.canvas)
     this.ctx = this.canvas.getContext('2d', { alpha: true })!
 
@@ -182,10 +181,7 @@ export class ScalarContourLayer {
     map.on(MAP_EVENT_RESIZE, this.resizeHandler)
   }
 
-  setData(
-    geojson: WindGeoJSON,
-    options?: { metric?: string; levels?: ContourLevelSpec[] },
-  ): void {
+  setData(geojson: WindGeoJSON, options?: { metric?: string; levels?: ContourLevelSpec[] }): void {
     if (options?.metric) this.metric = options.metric
     if (options?.levels) this.levels = options.levels
     this.loadData(geojson)
@@ -285,7 +281,12 @@ export class ScalarContourLayer {
       }
     }
     let head = 0
-    const DIRS: Array<[number, number]> = [[-1, 0], [1, 0], [0, -1], [0, 1]]
+    const DIRS: Array<[number, number]> = [
+      [-1, 0],
+      [1, 0],
+      [0, -1],
+      [0, 1],
+    ]
     while (head < queue.length) {
       const [r, c, sr, sc] = queue[head++]
       for (const [dr, dc] of DIRS) {
@@ -335,26 +336,46 @@ export class ScalarContourLayer {
         const br = values[r + 1][c + 1]
         const bl = values[r + 1][c]
         const code =
-          (tl >= level ? 1 : 0)
-          | (tr >= level ? 2 : 0)
-          | (br >= level ? 4 : 0)
-          | (bl >= level ? 8 : 0)
+          (tl >= level ? 1 : 0) |
+          (tr >= level ? 2 : 0) |
+          (br >= level ? 4 : 0) |
+          (bl >= level ? 8 : 0)
         const top = (): [number, number] => [r, c + interp(tl, tr)]
         const right = (): [number, number] => [r + interp(tr, br), c + 1]
         const bottom = (): [number, number] => [r + 1, c + interp(bl, br)]
         const left = (): [number, number] => [r + interp(tl, bl), c]
         const toLL = (g: [number, number]) => this.gridToLngLat(g[0], g[1])
         switch (code) {
-          case 0: case 15: break
-          case 1: case 14: segments.push([toLL(left()), toLL(top())]); break
-          case 2: case 13: segments.push([toLL(top()), toLL(right())]); break
-          case 3: case 12: segments.push([toLL(left()), toLL(right())]); break
-          case 4: case 11: segments.push([toLL(right()), toLL(bottom())]); break
+          case 0:
+          case 15:
+            break
+          case 1:
+          case 14:
+            segments.push([toLL(left()), toLL(top())])
+            break
+          case 2:
+          case 13:
+            segments.push([toLL(top()), toLL(right())])
+            break
+          case 3:
+          case 12:
+            segments.push([toLL(left()), toLL(right())])
+            break
+          case 4:
+          case 11:
+            segments.push([toLL(right()), toLL(bottom())])
+            break
           case 5:
             segments.push([toLL(left()), toLL(top())], [toLL(right()), toLL(bottom())])
             break
-          case 6: case 9: segments.push([toLL(top()), toLL(bottom())]); break
-          case 7: case 8: segments.push([toLL(left()), toLL(bottom())]); break
+          case 6:
+          case 9:
+            segments.push([toLL(top()), toLL(bottom())])
+            break
+          case 7:
+          case 8:
+            segments.push([toLL(left()), toLL(bottom())])
+            break
           case 10:
             segments.push([toLL(left()), toLL(bottom())], [toLL(top()), toLL(right())])
             break
@@ -384,11 +405,12 @@ export class ScalarContourLayer {
         const p1 = this.map.project([seg[0][0] + this.lonWrapOffset, seg[0][1]])
         const p2 = this.map.project([seg[1][0] + this.lonWrapOffset, seg[1][1]])
         if (
-          (p1.x < ox - CULL_MARGIN && p2.x < ox - CULL_MARGIN)
-          || (p1.x > ox + cw + CULL_MARGIN && p2.x > ox + cw + CULL_MARGIN)
-          || (p1.y < oy - CULL_MARGIN && p2.y < oy - CULL_MARGIN)
-          || (p1.y > oy + ch + CULL_MARGIN && p2.y > oy + ch + CULL_MARGIN)
-        ) continue
+          (p1.x < ox - CULL_MARGIN && p2.x < ox - CULL_MARGIN) ||
+          (p1.x > ox + cw + CULL_MARGIN && p2.x > ox + cw + CULL_MARGIN) ||
+          (p1.y < oy - CULL_MARGIN && p2.y < oy - CULL_MARGIN) ||
+          (p1.y > oy + ch + CULL_MARGIN && p2.y > oy + ch + CULL_MARGIN)
+        )
+          continue
         ctx.beginPath()
         ctx.moveTo((p1.x - ox) * dpr, (p1.y - oy) * dpr)
         ctx.lineTo((p2.x - ox) * dpr, (p2.y - oy) * dpr)

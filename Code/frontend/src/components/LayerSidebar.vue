@@ -20,10 +20,7 @@ import {
   DEFAULT_WEATHER_MODEL as DEFAULT_TILE_MODEL,
   isWeatherLayerUnsupportedByModel,
 } from '../stores/weather-tile-manager'
-import {
-  getWeatherProvidersForLayer,
-  type WeatherProviderForLayer,
-} from '../services/runtime-api'
+import { getWeatherProvidersForLayer, type WeatherProviderForLayer } from '../services/runtime-api'
 
 const emit = defineEmits<{
   selectLayer: [instanceId: string]
@@ -133,7 +130,9 @@ const filteredLibrary = computed(() => {
 })
 
 const filteredLibraryByCategory = computed(() => {
-  const map = new Map(layerCategories.map((c) => [c.id, { category: c, items: [] as RuntimeLayerLibraryItem[] }]))
+  const map = new Map(
+    layerCategories.map((c) => [c.id, { category: c, items: [] as RuntimeLayerLibraryItem[] }]),
+  )
   for (const item of filteredLibrary.value) {
     if (map.has(item.category)) {
       map.get(item.category)!.items.push(item)
@@ -191,7 +190,11 @@ function getCatalogSemanticNote(catalogId: string): string | null {
   const item = getCatalogItem(catalogId)
   if (!item) return null
   if (item.backendStatus === 'sample') {
-    return item.runReadinessSummary ?? item.runReadinessNotes[0] ?? '实验 provider 链路，可用于算法联调与验收。'
+    return (
+      item.runReadinessSummary ??
+      item.runReadinessNotes[0] ??
+      '实验 provider 链路，可用于算法联调与验收。'
+    )
   }
   if (item.backendStatus === 'placeholder') {
     return item.runReadinessSummary ?? item.runReadinessNotes[0] ?? '占位图层，默认数据源尚未接入。'
@@ -200,7 +203,9 @@ function getCatalogSemanticNote(catalogId: string): string | null {
 }
 
 function catalogSemanticNoteClass(catalogId: string) {
-  return getCatalogItem(catalogId)?.backendStatus === 'sample' ? 'catalog-note-sample' : 'catalog-note-blocked'
+  return getCatalogItem(catalogId)?.backendStatus === 'sample'
+    ? 'catalog-note-sample'
+    : 'catalog-note-blocked'
 }
 
 // ── Actions ───────────────────────────────────────────────────────────────────
@@ -220,7 +225,11 @@ function addCatalogItem(catalogId: string, isAdminBoundary = false) {
   }
   // 天气图层由 tile manager 按需拉取瓦片，不再自动提交 analysis workflow
   layersStore.addLayer(catalogId, isAdminBoundary)
-  logStore.logOperation('layer-add', `添加图层「${catalogId}」`, isAdminBoundary ? '行政区边界' : undefined)
+  logStore.logOperation(
+    'layer-add',
+    `添加图层「${catalogId}」`,
+    isAdminBoundary ? '行政区边界' : undefined,
+  )
 }
 
 /**
@@ -359,7 +368,9 @@ function getPrimarySourceId(catalogId: string): string {
 function getPrimarySourceName(catalogId: string): string {
   const sources = getCatalogSources(catalogId)
   const id = getPrimarySourceId(catalogId)
-  return sources.find((s) => s.id === id)?.name ?? (sources.length === 0 ? '暂无可用数据源' : '未选择')
+  return (
+    sources.find((s) => s.id === id)?.name ?? (sources.length === 0 ? '暂无可用数据源' : '未选择')
+  )
 }
 
 function getCatalogSourceSummary(catalogId: string): string {
@@ -383,7 +394,9 @@ const symbologyPanel = ref<ContextMenuState | null>(null)
 
 const contextMenuLayer = computed(() => {
   if (!contextMenu.value) return null
-  return activeLayersDisplay.value.find((l) => l.instanceId === contextMenu.value!.instanceId) ?? null
+  return (
+    activeLayersDisplay.value.find((l) => l.instanceId === contextMenu.value!.instanceId) ?? null
+  )
 })
 
 /** 右键图层条目时弹出上下文菜单 */
@@ -419,8 +432,16 @@ function openSymbologyFromMenu() {
     y: Math.max(8, y),
   }
   // 异步获取 overlay 元数据
-  const layer = activeLayersDisplay.value.find((l) => l.instanceId === contextMenu.value!.instanceId)
-  if (layer && !layer.isImported && !layer.isImportedRaster && !layer.isAdminBoundary && !layer.renderHint) {
+  const layer = activeLayersDisplay.value.find(
+    (l) => l.instanceId === contextMenu.value!.instanceId,
+  )
+  if (
+    layer &&
+    !layer.isImported &&
+    !layer.isImportedRaster &&
+    !layer.isAdminBoundary &&
+    !layer.renderHint
+  ) {
     void overlaySymbologyStore.ensureMeta(layer.catalogId)
   }
   closeContextMenu()
@@ -451,7 +472,11 @@ function exportImportedGeoJsonFromMenu() {
   }
   void import('../stores/layers/imported-vector').then(({ exportFeatureCollectionAsGeoJson }) => {
     exportFeatureCollectionAsGeoJson(geojson, layer.name)
-    logStore.logOperation('export-geojson', `导出 GeoJSON「${layer.name}」`, `要素数: ${geojson.features.length}`)
+    logStore.logOperation(
+      'export-geojson',
+      `导出 GeoJSON「${layer.name}」`,
+      `要素数: ${geojson.features.length}`,
+    )
   })
   closeContextMenu()
 }
@@ -467,7 +492,11 @@ function exportImportedCsvFromMenu() {
   }
   void import('../stores/layers/imported-vector').then(({ exportFeatureCollectionAsCsv }) => {
     exportFeatureCollectionAsCsv(geojson, layer.name)
-    logStore.logOperation('export-csv', `导出 CSV「${layer.name}」`, `要素数: ${geojson.features.length}`)
+    logStore.logOperation(
+      'export-csv',
+      `导出 CSV「${layer.name}」`,
+      `要素数: ${geojson.features.length}`,
+    )
   })
   closeContextMenu()
 }
@@ -608,10 +637,10 @@ function getColorRampStyle(layer: ActiveLayerDisplayLike): Record<string, string
 function currentSymbologyPaletteId(layer: ActiveLayerDisplayLike): string {
   void overlaySymbologyStore.version
   return resolveCanonicalPaletteId(
-    layer.paletteOverride
-      ?? layer.renderHint?.palette
-      ?? overlaySymbologyStore.getMeta(layer.catalogId)?.palette
-      ?? '',
+    layer.paletteOverride ??
+      layer.renderHint?.palette ??
+      overlaySymbologyStore.getMeta(layer.catalogId)?.palette ??
+      '',
   )
 }
 
@@ -637,7 +666,9 @@ type ActiveLayerDisplayLike = {
 /** 符号系统浮窗当前关联的图层 */
 const symbologyPanelLayer = computed(() => {
   if (!symbologyPanel.value) return null
-  return activeLayersDisplay.value.find((l) => l.instanceId === symbologyPanel.value!.instanceId) ?? null
+  return (
+    activeLayersDisplay.value.find((l) => l.instanceId === symbologyPanel.value!.instanceId) ?? null
+  )
 })
 </script>
 
@@ -661,7 +692,9 @@ const symbologyPanelLayer = computed(() => {
               role="tab"
               title="图层库"
               @click="openLibrary"
-            >+</button>
+            >
+              +
+            </button>
             <button
               class="view-tab"
               :class="{ active: sidebarView === 'active' }"
@@ -669,7 +702,9 @@ const symbologyPanelLayer = computed(() => {
               :aria-selected="sidebarView === 'active'"
               title="已添加图层"
               @click="openActive"
-            >≡</button>
+            >
+              ≡
+            </button>
           </div>
         </div>
       </div>
@@ -679,7 +714,7 @@ const symbologyPanelLayer = computed(() => {
     <div v-if="sidebarView === 'empty'" class="empty-state">
       <div class="empty-icon" aria-hidden="true">◇</div>
       <p class="empty-title">图层为空</p>
-      <p class="empty-hint">点击下方按钮打开图层库，<br>添加气象、遥感或边界图层。</p>
+      <p class="empty-hint">点击下方按钮打开图层库，<br />添加气象、遥感或边界图层。</p>
       <button class="empty-cta" @click="openLibrary">
         <span aria-hidden="true">+</span>
         打开图层库
@@ -690,12 +725,7 @@ const symbologyPanelLayer = computed(() => {
     <template v-else-if="sidebarView === 'library'">
       <!-- Search -->
       <div class="search-row">
-        <input
-          v-model="searchQuery"
-          class="search-input"
-          placeholder="搜索图层..."
-          type="search"
-        />
+        <input v-model="searchQuery" class="search-input" placeholder="搜索图层..." type="search" />
       </div>
 
       <!-- Category groups -->
@@ -714,8 +744,12 @@ const symbologyPanelLayer = computed(() => {
               type="button"
               @click="toggleCategory(group.category.id)"
             >
-              <span class="cat-icon" aria-hidden="true">{{ getCategoryMeta(group.category.id)?.icon ?? '◈' }}</span>
-              <span class="cat-name">{{ getCategoryMeta(group.category.id)?.name ?? group.category.id }}</span>
+              <span class="cat-icon" aria-hidden="true">{{
+                getCategoryMeta(group.category.id)?.icon ?? '◈'
+              }}</span>
+              <span class="cat-name">{{
+                getCategoryMeta(group.category.id)?.name ?? group.category.id
+              }}</span>
             </button>
             <div class="cat-header-actions">
               <span class="cat-count">{{ group.items.length }}</span>
@@ -734,7 +768,11 @@ const symbologyPanelLayer = computed(() => {
                 :title="expandedCategories.has(group.category.id) ? '收起' : '展开'"
                 @click="toggleCategory(group.category.id)"
               >
-                <span class="cat-arrow" :class="{ expanded: expandedCategories.has(group.category.id) }">▸</span>
+                <span
+                  class="cat-arrow"
+                  :class="{ expanded: expandedCategories.has(group.category.id) }"
+                  >▸</span
+                >
               </button>
             </div>
           </div>
@@ -753,7 +791,9 @@ const symbologyPanelLayer = computed(() => {
               <div class="card-top">
                 <div class="card-title-row">
                   <strong>{{ item.name }}</strong>
-                  <span class="card-chip" :style="{ background: item.chipTone }">{{ getCategoryName(item.category) }}</span>
+                  <span class="card-chip" :style="{ background: item.chipTone }">{{
+                    getCategoryName(item.category)
+                  }}</span>
                 </div>
                 <p class="card-source">{{ item.sourceLabel }}</p>
               </div>
@@ -769,7 +809,12 @@ const symbologyPanelLayer = computed(() => {
                         :value="weatherSourcePrefs.getProvider(item.catalogId)"
                         :disabled="!!weatherProvidersLoading[item.catalogId]"
                         @focus="ensureWeatherProviders(item.catalogId)"
-                        @change="onWeatherSourceChange(item.catalogId, ($event.target as HTMLSelectElement).value)"
+                        @change="
+                          onWeatherSourceChange(
+                            item.catalogId,
+                            ($event.target as HTMLSelectElement).value,
+                          )
+                        "
                       >
                         <option value="auto">自动（优先本地 Open-Meteo）</option>
                         <option
@@ -789,7 +834,10 @@ const symbologyPanelLayer = computed(() => {
                       点查可用；瓦片将回落 dense 源（Open-Meteo）
                     </p>
                     <p
-                      v-else-if="!weatherProvidersLoading[item.catalogId] && weatherProvidersFor(item.catalogId).length === 0"
+                      v-else-if="
+                        !weatherProvidersLoading[item.catalogId] &&
+                        weatherProvidersFor(item.catalogId).length === 0
+                      "
                       class="src-sparse-hint"
                     >
                       展开或聚焦时加载可用源…
@@ -797,7 +845,11 @@ const symbologyPanelLayer = computed(() => {
                   </div>
                 </template>
                 <template v-else>
-                  <div v-if="item.sources.length === 0" class="source-empty" :title="'该图层暂未接入数据源'">
+                  <div
+                    v-if="item.sources.length === 0"
+                    class="source-empty"
+                    :title="'该图层暂未接入数据源'"
+                  >
                     <span class="src-empty-icon" aria-hidden="true">ⓘ</span>
                     <span>暂无可用数据源</span>
                   </div>
@@ -809,15 +861,19 @@ const symbologyPanelLayer = computed(() => {
                     <div class="src-meta">
                       <span class="src-badge">{{ item.sources[0].updateFrequency }}</span>
                       <span class="src-coord">{{ item.sources[0].coordSys }}</span>
-                      <span v-if="item.sources[0].needsAuth" class="src-auth" title="需要认证">🔒</span>
-                      <span v-if="item.sources[0].needsBackendTransform" class="src-tfm" title="后端转换">⚙</span>
+                      <span v-if="item.sources[0].needsAuth" class="src-auth" title="需要认证"
+                        >🔒</span
+                      >
+                      <span
+                        v-if="item.sources[0].needsBackendTransform"
+                        class="src-tfm"
+                        title="后端转换"
+                        >⚙</span
+                      >
                     </div>
                   </div>
                   <div v-else class="source-multi">
-                    <div
-                      class="source-summary"
-                      :title="getCatalogSourceSummary(item.catalogId)"
-                    >
+                    <div class="source-summary" :title="getCatalogSourceSummary(item.catalogId)">
                       <span class="src-dot" :style="{ background: item.accentColor }"></span>
                       <span class="src-current">{{ getPrimarySourceName(item.catalogId) }}</span>
                       <span class="src-count">{{ item.sources.length }} 个候选源</span>
@@ -855,27 +911,49 @@ const symbologyPanelLayer = computed(() => {
                   + 添加
                 </button>
                 <!-- 已添加：显示工作流状态徽标 -->
-                <span v-else-if="getCatalogJobStatus(item.catalogId) === 'running'" class="job-status-chip job-status-running">
+                <span
+                  v-else-if="getCatalogJobStatus(item.catalogId) === 'running'"
+                  class="job-status-chip job-status-running"
+                >
                   <span class="spin-dot" aria-hidden="true"></span>运行中
                 </span>
-                <span v-else-if="getCatalogJobStatus(item.catalogId) === 'queued'" class="job-status-chip job-status-queued">
+                <span
+                  v-else-if="getCatalogJobStatus(item.catalogId) === 'queued'"
+                  class="job-status-chip job-status-queued"
+                >
                   排队中
                 </span>
-                <span v-else-if="getCatalogJobStatus(item.catalogId) === 'retry_pending'" class="job-status-chip job-status-queued">
+                <span
+                  v-else-if="getCatalogJobStatus(item.catalogId) === 'retry_pending'"
+                  class="job-status-chip job-status-queued"
+                >
                   等待重试
                 </span>
-                <span v-else-if="getCatalogJobStatus(item.catalogId) === 'succeeded'" class="job-status-chip job-status-succeeded">
+                <span
+                  v-else-if="getCatalogJobStatus(item.catalogId) === 'succeeded'"
+                  class="job-status-chip job-status-succeeded"
+                >
                   已就绪 ✓
                 </span>
-                <span v-else-if="getCatalogJobStatus(item.catalogId) === 'failed'" class="job-status-chip job-status-failed">
+                <span
+                  v-else-if="getCatalogJobStatus(item.catalogId) === 'failed'"
+                  class="job-status-chip job-status-failed"
+                >
                   运行失败
                 </span>
-                <span v-else-if="getCatalogJobStatus(item.catalogId) === 'cancelled'" class="job-status-chip job-status-cancelled">
+                <span
+                  v-else-if="getCatalogJobStatus(item.catalogId) === 'cancelled'"
+                  class="job-status-chip job-status-cancelled"
+                >
                   已取消
                 </span>
                 <span v-else class="added-label">已添加 ✓</span>
               </div>
-              <div v-if="getCatalogSemanticNote(item.catalogId)" class="run-block-note" :class="catalogSemanticNoteClass(item.catalogId)">
+              <div
+                v-if="getCatalogSemanticNote(item.catalogId)"
+                class="run-block-note"
+                :class="catalogSemanticNoteClass(item.catalogId)"
+              >
                 {{ getCatalogSemanticNote(item.catalogId) }}
               </div>
             </div>
@@ -900,7 +978,11 @@ const symbologyPanelLayer = computed(() => {
           <button class="batch-btn" title="隐藏所有图层" @click="hideAllLayers">
             <span aria-hidden="true">◯</span> 全部隐藏
           </button>
-          <button class="batch-btn batch-btn-danger" title="移除所有图层（边界除外）" @click="removeAllLayers">
+          <button
+            class="batch-btn batch-btn-danger"
+            title="移除所有图层（边界除外）"
+            @click="removeAllLayers"
+          >
             <span aria-hidden="true">✕</span> 全部移除
           </button>
         </div>
@@ -940,9 +1022,15 @@ const symbologyPanelLayer = computed(() => {
               >
                 <span aria-hidden="true">{{ layer.visible ? '◉' : '◯' }}</span>
               </button>
-              <span class="layer-color-dot" :style="{ background: layer.accentColor }" aria-hidden="true"></span>
+              <span
+                class="layer-color-dot"
+                :style="{ background: layer.accentColor }"
+                aria-hidden="true"
+              ></span>
               <strong class="layer-name">{{ layer.name }}</strong>
-              <span class="layer-chip" :style="{ background: layer.chipTone }">{{ getCategoryName(layer.category) }}</span>
+              <span class="layer-chip" :style="{ background: layer.chipTone }">{{
+                getCategoryName(layer.category)
+              }}</span>
               <button
                 class="del-btn"
                 title="移除图层"
@@ -968,18 +1056,29 @@ const symbologyPanelLayer = computed(() => {
                 {{ layer.availabilityLabel }}
               </span>
               <span v-if="layer.isAdminBoundary" class="admin-tip-inline">边界 · 静态矢量</span>
-              <span v-else-if="layer.isImported" class="admin-tip-inline">导入 · {{ layer.importedGeometryType }} · {{ layer.importedFeatureCount }} 要素</span>
-              <span v-else-if="layer.isImportedRaster" class="admin-tip-inline">导入 · 栅格 · TIF</span>
+              <span v-else-if="layer.isImported" class="admin-tip-inline"
+                >导入 · {{ layer.importedGeometryType }} ·
+                {{ layer.importedFeatureCount }} 要素</span
+              >
+              <span v-else-if="layer.isImportedRaster" class="admin-tip-inline"
+                >导入 · 栅格 · TIF</span
+              >
               <template v-if="layer.jobLayer">
                 <span class="job-status-badge" :class="`job-${layer.jobLayer.status}`">
                   {{
-                    layer.jobLayer.status === 'running' ? `运行中 ${layer.jobLayer.progress}%`
-                    : layer.jobLayer.status === 'queued' ? '排队中'
-                    : layer.jobLayer.status === 'retry_pending' ? '等待重试'
-                    : layer.jobLayer.status === 'succeeded' ? '已完成'
-                    : layer.jobLayer.status === 'failed' ? '失败'
-                    : layer.jobLayer.status === 'cancelled' ? '已取消'
-                    : layer.jobLayer.status
+                    layer.jobLayer.status === 'running'
+                      ? `运行中 ${layer.jobLayer.progress}%`
+                      : layer.jobLayer.status === 'queued'
+                        ? '排队中'
+                        : layer.jobLayer.status === 'retry_pending'
+                          ? '等待重试'
+                          : layer.jobLayer.status === 'succeeded'
+                            ? '已完成'
+                            : layer.jobLayer.status === 'failed'
+                              ? '失败'
+                              : layer.jobLayer.status === 'cancelled'
+                                ? '已取消'
+                                : layer.jobLayer.status
                   }}
                 </span>
                 <button
@@ -991,7 +1090,9 @@ const symbologyPanelLayer = computed(() => {
                   查看报告
                 </button>
               </template>
-              <span class="order-hint">顺序 {{ index + 1 }} / {{ activeLayersDisplay.length }}</span>
+              <span class="order-hint"
+                >顺序 {{ index + 1 }} / {{ activeLayersDisplay.length }}</span
+              >
             </div>
           </li>
         </ul>
@@ -1056,7 +1157,9 @@ const symbologyPanelLayer = computed(() => {
         @click.stop
       >
         <div class="sym-popover-header">
-          <span class="sym-popover-title">{{ hasColorSymbology(symbologyPanelLayer) ? '符号系统' : '透明度' }}</span>
+          <span class="sym-popover-title">{{
+            hasColorSymbology(symbologyPanelLayer) ? '符号系统' : '透明度'
+          }}</span>
           <button class="sym-popover-close" type="button" @click="closeSymbologyPanel">✕</button>
         </div>
         <div class="sym-popover-body">
@@ -1082,7 +1185,10 @@ const symbologyPanelLayer = computed(() => {
 
             <!-- 配色方案：仅地图会跟随 palette 的图层可改；预渲染 overlay 只读 -->
             <div
-              v-if="symbologyPanelLayer.renderHint || overlaySymbologyStore.getMeta(symbologyPanelLayer.catalogId)?.palette"
+              v-if="
+                symbologyPanelLayer.renderHint ||
+                overlaySymbologyStore.getMeta(symbologyPanelLayer.catalogId)?.palette
+              "
               class="sym-palette-row"
             >
               <span class="sym-field-label">配色</span>
@@ -1090,20 +1196,29 @@ const symbologyPanelLayer = computed(() => {
                 class="sym-palette-select"
                 :value="currentSymbologyPaletteId(symbologyPanelLayer)"
                 :disabled="!canEditSymbologyPalette(symbologyPanelLayer)"
-                :title="canEditSymbologyPalette(symbologyPanelLayer) ? '切换地图配色' : '预渲染栅格图例，改配色不会重涂 PNG'"
-                @change="handleSymbologyPalette(symbologyPanelLayer.instanceId, ($event.target as HTMLSelectElement).value)"
+                :title="
+                  canEditSymbologyPalette(symbologyPanelLayer)
+                    ? '切换地图配色'
+                    : '预渲染栅格图例，改配色不会重涂 PNG'
+                "
+                @change="
+                  handleSymbologyPalette(
+                    symbologyPanelLayer.instanceId,
+                    ($event.target as HTMLSelectElement).value,
+                  )
+                "
               >
-                <option
-                  v-for="opt in WEATHER_PALETTE_OPTIONS"
-                  :key="opt.id"
-                  :value="opt.id"
-                >
+                <option v-for="opt in WEATHER_PALETTE_OPTIONS" :key="opt.id" :value="opt.id">
                   {{ opt.label }}
                 </option>
               </select>
             </div>
             <p
-              v-if="!canEditSymbologyPalette(symbologyPanelLayer) && (symbologyPanelLayer.renderHint || overlaySymbologyStore.getMeta(symbologyPanelLayer.catalogId)?.palette)"
+              v-if="
+                !canEditSymbologyPalette(symbologyPanelLayer) &&
+                (symbologyPanelLayer.renderHint ||
+                  overlaySymbologyStore.getMeta(symbologyPanelLayer.catalogId)?.palette)
+              "
               class="sym-palette-hint"
             >
               预渲染图例，不支持前端改色
@@ -1250,7 +1365,9 @@ h2 {
   color: #6e8ba0;
   cursor: pointer;
   font-size: 0.64rem;
-  transition: background-color 0.18s ease, color 0.18s ease;
+  transition:
+    background-color 0.18s ease,
+    color 0.18s ease;
 }
 
 .view-tab:hover {
@@ -1280,8 +1397,15 @@ h2 {
 }
 
 @keyframes pulse-glow {
-  0%, 100% { opacity: 0.4; transform: scale(1); }
-  50% { opacity: 0.8; transform: scale(1.08); }
+  0%,
+  100% {
+    opacity: 0.4;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.8;
+    transform: scale(1.08);
+  }
 }
 
 .empty-title {
@@ -1315,7 +1439,11 @@ h2 {
   align-self: center;
   margin-top: 0.2rem;
   /* 性能优化：GPU 动画，移除内联阴影计算 */
-  transition: background 0.2s ease, border-color 0.2s ease, color 0.2s ease, transform 0.18s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+  transition:
+    background 0.2s ease,
+    border-color 0.2s ease,
+    color 0.2s ease,
+    transform 0.18s cubic-bezier(0.25, 0.46, 0.45, 0.94);
 }
 
 .empty-cta:hover {
@@ -1345,18 +1473,24 @@ h2 {
   font: inherit;
   font-size: 0.66rem;
   outline: none;
-  transition: border-color 0.18s ease, background 0.18s ease;
+  transition:
+    border-color 0.18s ease,
+    background 0.18s ease;
   box-sizing: border-box;
 }
 
-.search-input::placeholder { color: #5a7080; }
+.search-input::placeholder {
+  color: #5a7080;
+}
 
 .search-input:focus {
   border-color: rgba(90, 213, 255, 0.3);
   background: rgba(4, 12, 23, 0.7);
 }
 
-.search-input::-webkit-search-cancel-button { cursor: pointer; }
+.search-input::-webkit-search-cancel-button {
+  cursor: pointer;
+}
 
 /* ── Library scroll area ────────────────────────────────────────────────── */
 .library-scroll {
@@ -1398,7 +1532,9 @@ h2 {
   font: inherit;
   font-size: 0.62rem;
   font-weight: 600;
-  transition: background 0.16s ease, transform 0.14s ease;
+  transition:
+    background 0.16s ease,
+    transform 0.14s ease;
   text-align: left;
 }
 
@@ -1407,7 +1543,10 @@ h2 {
   transform: translateX(2px);
 }
 
-.cat-icon { font-size: 0.7rem; flex-shrink: 0; }
+.cat-icon {
+  font-size: 0.7rem;
+  flex-shrink: 0;
+}
 
 .cat-name {
   flex: 1;
@@ -1475,7 +1614,10 @@ h2 {
   font-weight: 600;
   letter-spacing: 0.02em;
   white-space: nowrap;
-  transition: background 0.14s ease, border-color 0.14s ease, color 0.14s ease;
+  transition:
+    background 0.14s ease,
+    border-color 0.14s ease,
+    color 0.14s ease;
 }
 
 .cat-batch-add:hover {
@@ -1509,7 +1651,10 @@ h2 {
   font: inherit;
   font-size: 0.58rem;
   font-weight: 500;
-  transition: background 0.14s ease, border-color 0.14s ease, color 0.14s ease;
+  transition:
+    background 0.14s ease,
+    border-color 0.14s ease,
+    color 0.14s ease;
 }
 
 .batch-btn:hover {
@@ -1524,7 +1669,9 @@ h2 {
   color: #ffb0c0;
 }
 
-.cat-arrow.expanded { transform: rotate(90deg); }
+.cat-arrow.expanded {
+  transform: rotate(90deg);
+}
 
 .category-items {
   display: grid;
@@ -1540,7 +1687,10 @@ h2 {
   border: 1px solid rgba(136, 192, 255, 0.08);
   border-radius: var(--sidebar-card-radius);
   background: linear-gradient(135deg, rgba(8, 18, 33, 0.6), rgba(8, 18, 33, 0.4));
-  transition: border-color 0.18s ease, box-shadow 0.18s ease, transform 0.18s ease;
+  transition:
+    border-color 0.18s ease,
+    box-shadow 0.18s ease,
+    transform 0.18s ease;
 }
 
 .library-card:hover {
@@ -1648,7 +1798,10 @@ h2 {
   font-size: 0.62rem;
 }
 
-.source-single { display: grid; gap: 0.18rem; }
+.source-single {
+  display: grid;
+  gap: 0.18rem;
+}
 
 .src-line {
   display: flex;
@@ -1692,12 +1845,16 @@ h2 {
   font-family: ui-monospace, 'SF Mono', monospace;
 }
 
-.src-auth, .src-tfm {
+.src-auth,
+.src-tfm {
   color: #8a9eb0;
   font-size: 0.56rem;
 }
 
-.source-multi { display: grid; gap: 0.18rem; }
+.source-multi {
+  display: grid;
+  gap: 0.18rem;
+}
 
 .source-summary {
   display: flex;
@@ -1805,7 +1962,10 @@ h2 {
   font: inherit;
   font-size: 0.58rem;
   font-weight: 600;
-  transition: background 0.18s ease, border-color 0.18s ease, transform 0.16s ease;
+  transition:
+    background 0.18s ease,
+    border-color 0.18s ease,
+    transform 0.16s ease;
 }
 
 .add-btn:hover:not(:disabled) {
@@ -1878,7 +2038,9 @@ h2 {
 }
 
 @keyframes spin {
-  to { transform: rotate(360deg); }
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 /* ── Active state ───────────────────────────────────────────────────────── */
@@ -1930,7 +2092,11 @@ h2 {
   color: #d8e4ef;
   font: inherit;
   font-size: 0.66rem;
-  transition: border-color 0.2s ease, background-color 0.2s ease, box-shadow 0.2s ease, opacity 0.2s ease;
+  transition:
+    border-color 0.2s ease,
+    background-color 0.2s ease,
+    box-shadow 0.2s ease,
+    opacity 0.2s ease;
   user-select: none;
 }
 
@@ -1942,7 +2108,9 @@ h2 {
 .layer-item.active {
   background: rgba(90, 162, 255, 0.12);
   border-color: rgba(90, 162, 255, 0.5);
-  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.02), 0 12px 22px -20px rgba(90, 106, 128, 0.3);
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 255, 255, 0.02),
+    0 12px 22px -20px rgba(90, 106, 128, 0.3);
 }
 
 .layer-item.hidden {
@@ -1952,7 +2120,9 @@ h2 {
 .layer-item.drag-over {
   border-color: rgba(90, 213, 255, 0.6);
   background: rgba(10, 132, 255, 0.08);
-  transition: border-color 0.08s ease, background-color 0.08s ease;
+  transition:
+    border-color 0.08s ease,
+    background-color 0.08s ease;
 }
 
 /* ── Layer row top (主行紧凑布局) ──────────────────────────────────────── */
@@ -1970,8 +2140,12 @@ h2 {
   transition: color 0.16s ease;
 }
 
-.drag-handle:hover { color: #8ea3b8; }
-.drag-handle:active { cursor: grabbing; }
+.drag-handle:hover {
+  color: #8ea3b8;
+}
+.drag-handle:active {
+  cursor: grabbing;
+}
 
 .vis-btn {
   display: flex;
@@ -1986,7 +2160,9 @@ h2 {
   cursor: pointer;
   font-size: 0.62rem;
   flex-shrink: 0;
-  transition: color 0.16s ease, background 0.16s ease;
+  transition:
+    color 0.16s ease,
+    background 0.16s ease;
   padding: 0;
 }
 
@@ -2034,7 +2210,9 @@ h2 {
   cursor: pointer;
   font-size: 0.56rem;
   flex-shrink: 0;
-  transition: color 0.16s ease, background 0.16s ease;
+  transition:
+    color 0.16s ease,
+    background 0.16s ease;
   padding: 0;
 }
 
@@ -2097,9 +2275,21 @@ h2 {
   font-size: 0.5rem;
 }
 
-.availability-ready { color: #9ff8cf; border-color: rgba(114, 255, 207, 0.2); background: rgba(114, 255, 207, 0.1); }
-.availability-partial { color: #ffd38a; border-color: rgba(255, 196, 120, 0.18); background: rgba(255, 196, 120, 0.08); }
-.availability-empty { color: #cbb8ff; border-color: rgba(187, 137, 255, 0.18); background: rgba(187, 137, 255, 0.08); }
+.availability-ready {
+  color: #9ff8cf;
+  border-color: rgba(114, 255, 207, 0.2);
+  background: rgba(114, 255, 207, 0.1);
+}
+.availability-partial {
+  color: #ffd38a;
+  border-color: rgba(255, 196, 120, 0.18);
+  background: rgba(255, 196, 120, 0.08);
+}
+.availability-empty {
+  color: #cbb8ff;
+  border-color: rgba(187, 137, 255, 0.18);
+  background: rgba(187, 137, 255, 0.08);
+}
 
 .order-hint {
   color: #5a7080;
@@ -2138,7 +2328,8 @@ h2 {
   border: 1px solid rgba(255, 80, 80, 0.18);
 }
 
-.job-queued, .job-cancelled {
+.job-queued,
+.job-cancelled {
   color: #d7c1ff;
   background: rgba(187, 137, 255, 0.08);
   border: 1px solid rgba(187, 137, 255, 0.14);
@@ -2181,14 +2372,22 @@ h2 {
   border-radius: 0.5rem;
   background: rgba(10, 20, 36, 0.96);
   backdrop-filter: blur(12px);
-  box-shadow: 0 12px 32px -12px rgba(0, 0, 0, 0.6), 0 0 0 1px rgba(136, 192, 255, 0.04);
+  box-shadow:
+    0 12px 32px -12px rgba(0, 0, 0, 0.6),
+    0 0 0 1px rgba(136, 192, 255, 0.04);
   font-size: 0.6rem;
   animation: ctx-fade-in 0.12s ease;
 }
 
 @keyframes ctx-fade-in {
-  from { opacity: 0; transform: translateY(-4px); }
-  to { opacity: 1; transform: translateY(0); }
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
 .ctx-item {
@@ -2205,7 +2404,9 @@ h2 {
   font: inherit;
   font-size: 0.6rem;
   text-align: left;
-  transition: background 0.12s ease, color 0.12s ease;
+  transition:
+    background 0.12s ease,
+    color 0.12s ease;
 }
 
 .ctx-item:hover {
@@ -2240,14 +2441,22 @@ h2 {
   border-radius: 0.6rem;
   background: rgba(8, 18, 33, 0.97);
   backdrop-filter: blur(14px);
-  box-shadow: 0 16px 40px -16px rgba(0, 0, 0, 0.7), 0 0 0 1px rgba(136, 192, 255, 0.04);
+  box-shadow:
+    0 16px 40px -16px rgba(0, 0, 0, 0.7),
+    0 0 0 1px rgba(136, 192, 255, 0.04);
   overflow: hidden;
   animation: sym-pop-in 0.16s ease;
 }
 
 @keyframes sym-pop-in {
-  from { opacity: 0; transform: scale(0.96) translateY(-6px); }
-  to { opacity: 1; transform: scale(1) translateY(0); }
+  from {
+    opacity: 0;
+    transform: scale(0.96) translateY(-6px);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
 }
 
 .sym-popover-header {
@@ -2278,7 +2487,9 @@ h2 {
   color: #6e8ba0;
   cursor: pointer;
   font-size: 0.56rem;
-  transition: background 0.12s ease, color 0.12s ease;
+  transition:
+    background 0.12s ease,
+    color 0.12s ease;
 }
 
 .sym-popover-close:hover {
