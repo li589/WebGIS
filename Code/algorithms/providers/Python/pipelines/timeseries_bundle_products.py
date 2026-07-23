@@ -24,7 +24,9 @@ _TIMESERIES_PREPARED_KEY_MAP: dict[str, tuple[str, ...]] = {
 }
 
 
-def _resolve_timeseries_datasource_selection(datasource_selection: dict[str, object]) -> dict[str, object]:
+def _resolve_timeseries_datasource_selection(
+    datasource_selection: dict[str, object],
+) -> dict[str, object]:
     resolved = dict(datasource_selection)
     for target_key, dataset_names in _TIMESERIES_PREPARED_KEY_MAP.items():
         if target_key in resolved:
@@ -45,7 +47,20 @@ class TimeSeriesBundlePipeline(BasePipeline):
     def plan(self, request: JobRequest, ctx: RuntimeContext) -> PipelinePlan:
         return PipelinePlan(
             required_datasets=["daily_mat_sources", "ancillary_mat"],
-            required_variables=["TBv", "TBh", "IA", "Ts", "sm_dca", "NDVI", "SF", "Albedo", "B", "CF", "BD", "H"],
+            required_variables=[
+                "TBv",
+                "TBh",
+                "IA",
+                "Ts",
+                "sm_dca",
+                "NDVI",
+                "SF",
+                "Albedo",
+                "B",
+                "CF",
+                "BD",
+                "H",
+            ],
             estimated_outputs=["timeseries_bundle_mat"],
             parallelizable=True,
             chunk_strategy="pixel_subset_or_timerange",
@@ -55,15 +70,23 @@ class TimeSeriesBundlePipeline(BasePipeline):
     def execute(self, request: JobRequest, ctx: RuntimeContext) -> ProductManifest:
         from scipy.io import savemat
 
-        datasource_selection = _resolve_timeseries_datasource_selection(request.datasource_selection)
+        datasource_selection = _resolve_timeseries_datasource_selection(
+            request.datasource_selection
+        )
         config = build_daily_bundle_config(request.algorithm_params)
-        output_dir = Path(request.output_spec.extra.get("output_dir", ctx.workspace / "products" / "timeseries_bundle"))
+        output_dir = Path(
+            request.output_spec.extra.get(
+                "output_dir", ctx.workspace / "products" / "timeseries_bundle"
+            )
+        )
         output_dir.mkdir(parents=True, exist_ok=True)
 
         lin_pix = load_lin_pix_selection(
             lin_pix=request.algorithm_params.get("lin_pix"),
             lin_pix_mat=datasource_selection.get("lin_pix_mat"),
-            variable_name=str(request.algorithm_params.get("lin_pix_varname", "lin_pix")),
+            variable_name=str(
+                request.algorithm_params.get("lin_pix_varname", "lin_pix")
+            ),
         )
 
         if self.logger_adapter is not None:
@@ -89,15 +112,28 @@ class TimeSeriesBundlePipeline(BasePipeline):
         savemat(output_path, payload, do_compression=True)
 
         if self.logger_adapter is not None:
-            self.logger_adapter.emit_artifact("timeseries_bundle", str(output_path), "timeseries_bundle_mat")
+            self.logger_adapter.emit_artifact(
+                "timeseries_bundle", str(output_path), "timeseries_bundle_mat"
+            )
             self.logger_adapter.emit_stage_end(
                 "timeseries_bundle",
                 f"Generated bundle with {len(bundle.date_keys)} days and {bundle.pixel_count} pixels",
             )
 
-        main_layers = ["TBv_mat", "TBh_mat", "IA_mat", "Ts_mat", "SMref_mat", "NDVI_mat", "SF_mat", "vwc_mat"]
+        main_layers = [
+            "TBv_mat",
+            "TBh_mat",
+            "IA_mat",
+            "Ts_mat",
+            "SMref_mat",
+            "NDVI_mat",
+            "SF_mat",
+            "vwc_mat",
+        ]
         if str(config.temp_scheme).upper() == "DUAL":
-            main_layers.extend(["TC_mat", "Tsoil1_mat", "Tsoil2_mat", "Ct_mat", "TG_mat"])
+            main_layers.extend(
+                ["TC_mat", "Tsoil1_mat", "Tsoil2_mat", "Ct_mat", "TG_mat"]
+            )
             if config.save_match_info:
                 main_layers.extend(
                     [

@@ -92,11 +92,35 @@ class DataAccessFormatAdapterTests(unittest.TestCase):
 
         self.assertEqual(
             registry.registered_names(),
-            ("csv", "excel", "hdf5", "json", "mat", "netcdf", "shapefile", "text", "tiff", "xml"),
+            (
+                "csv",
+                "excel",
+                "hdf5",
+                "json",
+                "mat",
+                "netcdf",
+                "shapefile",
+                "text",
+                "tiff",
+                "xml",
+            ),
         )
         self.assertEqual(
             registry.registered_formats(),
-            ("csv", "excel", "h5", "hdf", "json", "mat", "nc", "shp", "tif", "tiff", "txt", "xml"),
+            (
+                "csv",
+                "excel",
+                "h5",
+                "hdf",
+                "json",
+                "mat",
+                "nc",
+                "shp",
+                "tif",
+                "tiff",
+                "txt",
+                "xml",
+            ),
         )
 
     def test_text_adapter_probes_loads_and_materializes(self) -> None:
@@ -109,7 +133,9 @@ class DataAccessFormatAdapterTests(unittest.TestCase):
 
             self.assertTrue(registry.probe(resource))
             loaded = registry.load(resource)
-            materialized = registry.materialize(resource, target_dir=root / "materialized")
+            materialized = registry.materialize(
+                resource, target_dir=root / "materialized"
+            )
 
             self.assertEqual(loaded["text"], "line-1\nline-2\n")
             self.assertEqual(loaded["lines"], ("line-1", "line-2"))
@@ -120,7 +146,9 @@ class DataAccessFormatAdapterTests(unittest.TestCase):
         registry = build_default_format_registry()
         with tempfile.TemporaryDirectory() as tmp_dir:
             source_path = Path(tmp_dir) / "stations.csv"
-            source_path.write_text("site_id,network_id\nA,NET1\nB,NET2\n", encoding="utf-8")
+            source_path.write_text(
+                "site_id,network_id\nA,NET1\nB,NET2\n", encoding="utf-8"
+            )
             resource = build_resource_ref(str(source_path))
 
             loaded = registry.load(resource)
@@ -138,7 +166,9 @@ class DataAccessFormatAdapterTests(unittest.TestCase):
         registry = build_default_format_registry()
         with tempfile.TemporaryDirectory() as tmp_dir:
             source_path = Path(tmp_dir) / "payload.json"
-            source_path.write_text('{"name": "demo", "values": [1, 2]}', encoding="utf-8")
+            source_path.write_text(
+                '{"name": "demo", "values": [1, 2]}', encoding="utf-8"
+            )
             resource = build_resource_ref(str(source_path))
 
             loaded = registry.load(resource)
@@ -209,14 +239,18 @@ class DataAccessFormatAdapterTests(unittest.TestCase):
             loaded = registry.load(resource)
 
             self.assertIn("tb", loaded["variable_names"])
-            self.assertTrue(any(variable["name"] == "tb" for variable in loaded["variables"]))
+            self.assertTrue(
+                any(variable["name"] == "tb" for variable in loaded["variables"])
+            )
 
     def test_hdf_adapter_loads_dataset_metadata(self) -> None:
         registry = build_default_format_registry()
         with tempfile.TemporaryDirectory() as tmp_dir:
             source_path = Path(tmp_dir) / "payload.h5"
             with h5py.File(source_path, "w") as handle:
-                handle.create_dataset("tb", data=np.arange(6, dtype=np.float32).reshape(2, 3))
+                handle.create_dataset(
+                    "tb", data=np.arange(6, dtype=np.float32).reshape(2, 3)
+                )
             resource = build_resource_ref(str(source_path))
 
             self.assertTrue(registry.probe(resource))

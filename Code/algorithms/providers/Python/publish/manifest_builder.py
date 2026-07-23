@@ -15,6 +15,7 @@ from typing import Any, Optional
 # ManifestBuilder
 # ---------------------------------------------------------------------------
 
+
 class ManifestBuilder:
     """产物清单构建器。
 

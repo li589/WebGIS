@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import json
-from datetime import datetime
 from pathlib import Path
 from typing import Any
 from urllib.parse import unquote, urlparse
@@ -19,7 +18,9 @@ def build_job_result_dto(result: JobResult) -> dict[str, Any]:
     artifacts = _build_artifacts_view(
         manifest_uri=result.manifest_uri,
         log_uri=result.log_uri,
-        metadata_uri=None if manifest_payload is None else manifest_payload.get("metadata_uri"),
+        metadata_uri=None
+        if manifest_payload is None
+        else manifest_payload.get("metadata_uri"),
     )
 
     return {
@@ -34,13 +35,21 @@ def build_job_result_dto(result: JobResult) -> dict[str, Any]:
         "manifest_loaded": manifest_loaded,
         "manifest_summary": manifest_summary,
         "products": products,
-        "main_layers": [] if manifest_payload is None else list(manifest_payload.get("main_layers") or []),
-        "qc_layers": [] if manifest_payload is None else list(manifest_payload.get("qc_layers") or []),
-        "tables": [] if manifest_payload is None else list(manifest_payload.get("tables") or []),
+        "main_layers": []
+        if manifest_payload is None
+        else list(manifest_payload.get("main_layers") or []),
+        "qc_layers": []
+        if manifest_payload is None
+        else list(manifest_payload.get("qc_layers") or []),
+        "tables": []
+        if manifest_payload is None
+        else list(manifest_payload.get("tables") or []),
         "metrics": dict(result.metrics),
         "conversion_trace": conversion_trace,
         "conversion_trace_panel": conversion_trace_panel,
-        "extra": {} if manifest_payload is None else dict(manifest_payload.get("extra") or {}),
+        "extra": {}
+        if manifest_payload is None
+        else dict(manifest_payload.get("extra") or {}),
     }
 
 
@@ -64,24 +73,44 @@ def _load_manifest_payload(manifest_uri: str | None) -> dict[str, Any] | None:
     return payload
 
 
-def _build_manifest_summary(manifest_uri: str | None, manifest_payload: dict[str, Any] | None) -> dict[str, Any]:
-    products = [] if manifest_payload is None else list(manifest_payload.get("products") or [])
-    extra = {} if manifest_payload is None else dict(manifest_payload.get("extra") or {})
+def _build_manifest_summary(
+    manifest_uri: str | None, manifest_payload: dict[str, Any] | None
+) -> dict[str, Any]:
+    products = (
+        [] if manifest_payload is None else list(manifest_payload.get("products") or [])
+    )
+    extra = (
+        {} if manifest_payload is None else dict(manifest_payload.get("extra") or {})
+    )
     conversion_trace = extra.get("conversion_trace")
     return {
         "manifest_uri": manifest_uri,
         "loaded": manifest_payload is not None,
         "product_count": len(products),
-        "main_layer_count": 0 if manifest_payload is None else len(list(manifest_payload.get("main_layers") or [])),
-        "qc_layer_count": 0 if manifest_payload is None else len(list(manifest_payload.get("qc_layers") or [])),
-        "table_count": 0 if manifest_payload is None else len(list(manifest_payload.get("tables") or [])),
-        "created_at": None if manifest_payload is None else manifest_payload.get("created_at"),
-        "conversion_trace_dataset_count": _extract_conversion_trace_dataset_count(conversion_trace),
-        "conversion_trace_resource_count": _extract_conversion_trace_entry_count(conversion_trace),
+        "main_layer_count": 0
+        if manifest_payload is None
+        else len(list(manifest_payload.get("main_layers") or [])),
+        "qc_layer_count": 0
+        if manifest_payload is None
+        else len(list(manifest_payload.get("qc_layers") or [])),
+        "table_count": 0
+        if manifest_payload is None
+        else len(list(manifest_payload.get("tables") or [])),
+        "created_at": None
+        if manifest_payload is None
+        else manifest_payload.get("created_at"),
+        "conversion_trace_dataset_count": _extract_conversion_trace_dataset_count(
+            conversion_trace
+        ),
+        "conversion_trace_resource_count": _extract_conversion_trace_entry_count(
+            conversion_trace
+        ),
     }
 
 
-def _resolve_conversion_trace_payload(result: JobResult, manifest_payload: dict[str, Any] | None) -> dict[str, Any]:
+def _resolve_conversion_trace_payload(
+    result: JobResult, manifest_payload: dict[str, Any] | None
+) -> dict[str, Any]:
     if manifest_payload is not None:
         extra = manifest_payload.get("extra")
         if isinstance(extra, dict):
@@ -167,13 +196,23 @@ def _build_conversion_trace_panel_dataset(value: object) -> dict[str, Any] | Non
 
     adapters = _coerce_text_list(value.get("adapters"))
     if not adapters:
-        adapters = sorted({str(item["adapter"]) for item in resources if item.get("adapter")})
+        adapters = sorted(
+            {str(item["adapter"]) for item in resources if item.get("adapter")}
+        )
     formats = _coerce_text_list(value.get("formats"))
     if not formats:
-        formats = sorted({str(item["format"]) for item in resources if item.get("format")})
+        formats = sorted(
+            {str(item["format"]) for item in resources if item.get("format")}
+        )
     logical_types = _coerce_text_list(value.get("logical_types"))
     if not logical_types:
-        logical_types = sorted({str(item["logical_type"]) for item in resources if item.get("logical_type")})
+        logical_types = sorted(
+            {
+                str(item["logical_type"])
+                for item in resources
+                if item.get("logical_type")
+            }
+        )
 
     dataset_name = _coerce_text(value.get("dataset_name")) or "dataset"
     resource_count = _coerce_nonnegative_int(value.get("resource_count"))
@@ -208,7 +247,9 @@ def _build_conversion_trace_panel_resource(value: object) -> dict[str, Any] | No
 
     loaded_summary = value.get("loaded_summary")
     summary = loaded_summary if isinstance(loaded_summary, dict) else {}
-    title = _coerce_text(summary.get("title")) or _build_conversion_trace_panel_resource_title(value)
+    title = _coerce_text(
+        summary.get("title")
+    ) or _build_conversion_trace_panel_resource_title(value)
 
     return {
         "title": title,
@@ -238,11 +279,19 @@ def _build_conversion_trace_panel_dataset_highlights(
 ) -> list[dict[str, Any]]:
     highlights = [_build_panel_highlight("resource_count", "Resources", resource_count)]
     if adapters:
-        highlights.append(_build_panel_highlight("adapters", "Adapters", ", ".join(adapters)))
+        highlights.append(
+            _build_panel_highlight("adapters", "Adapters", ", ".join(adapters))
+        )
     if formats:
-        highlights.append(_build_panel_highlight("formats", "Formats", ", ".join(formats)))
+        highlights.append(
+            _build_panel_highlight("formats", "Formats", ", ".join(formats))
+        )
     if logical_types:
-        highlights.append(_build_panel_highlight("logical_types", "Logical Types", ", ".join(logical_types)))
+        highlights.append(
+            _build_panel_highlight(
+                "logical_types", "Logical Types", ", ".join(logical_types)
+            )
+        )
     return highlights
 
 
@@ -391,7 +440,9 @@ def _extract_conversion_trace_entry_count(value: object) -> int:
     return 0
 
 
-def _build_products_view(manifest_payload: dict[str, Any] | None) -> list[dict[str, Any]]:
+def _build_products_view(
+    manifest_payload: dict[str, Any] | None,
+) -> list[dict[str, Any]]:
     if manifest_payload is None:
         return []
     products = manifest_payload.get("products") or []
@@ -436,7 +487,9 @@ def _normalize_tags(value: object) -> dict[str, Any]:
     return dict(value)
 
 
-def _build_uri_view(uri: str | None, *, tags: dict[str, Any] | None = None) -> dict[str, Any]:
+def _build_uri_view(
+    uri: str | None, *, tags: dict[str, Any] | None = None
+) -> dict[str, Any]:
     normalized_tags = {} if tags is None else dict(tags)
     return {
         "uri": uri,
@@ -446,11 +499,15 @@ def _build_uri_view(uri: str | None, *, tags: dict[str, Any] | None = None) -> d
 
 def _build_storage_fields(item: dict[str, Any], tags: dict[str, Any]) -> dict[str, Any]:
     uri = _coerce_text(item.get("uri"))
-    storage_backend = _first_nonempty_text(item.get("storage_backend"), tags.get("storage_backend"))
+    storage_backend = _first_nonempty_text(
+        item.get("storage_backend"), tags.get("storage_backend")
+    )
     bucket = _first_nonempty_text(item.get("bucket"), tags.get("bucket"))
     object_key = _first_nonempty_text(item.get("object_key"), tags.get("object_key"))
     preview_url = _first_nonempty_text(item.get("preview_url"), tags.get("preview_url"))
-    download_url = _first_nonempty_text(item.get("download_url"), tags.get("download_url"))
+    download_url = _first_nonempty_text(
+        item.get("download_url"), tags.get("download_url")
+    )
 
     if not uri:
         return {
@@ -577,6 +634,11 @@ def _is_previewable_product(item: dict[str, Any]) -> bool:
     product_type = str(item.get("type") or "").lower()
     if uri.startswith(("http://", "https://", "s3://", "minio://")):
         return True
-    if product_type in {"raster", "platform_raster", "omega_block_mat", "omega_daily_mat"}:
+    if product_type in {
+        "raster",
+        "platform_raster",
+        "omega_block_mat",
+        "omega_daily_mat",
+    }:
         return True
     return False

@@ -71,35 +71,73 @@ def build_daily_bundle_config(params: Mapping[str, Any]) -> DailyBundleConfig:
         dual_tg_mode=str(params_dict.get("dual_tg_mode", DualTgMode.PAPER_CT.value)),
         ct_smref=float(params_dict.get("ct_smref", 0.30)),
         ct_exp=float(params_dict.get("ct_exp", 0.30)),
-        tbv_aliases=normalize_aliases_param(params_dict.get("tbv_aliases"), ("TBv", "tbv", "tb_v_corrected")),
-        tbh_aliases=normalize_aliases_param(params_dict.get("tbh_aliases"), ("TBh", "tbh", "tb_h_corrected")),
-        ia_aliases=normalize_aliases_param(params_dict.get("ia_aliases"), ("IA", "Theta", "theta")),
-        ts_aliases=normalize_aliases_param(params_dict.get("ts_aliases"), ("Ts", "ts", "surface_temperature")),
-        vwc_aliases=normalize_aliases_param(params_dict.get("vwc_aliases"), ("vwc", "vegetation_water_content")),
-        smap_sm_aliases=normalize_aliases_param(params_dict.get("smap_sm_aliases"), ("sm_dca", "SM", "sm", "soil_moisture")),
-        ddca_sm_aliases=normalize_aliases_param(params_dict.get("ddca_sm_aliases"), ("SM", "sm_dca", "sm")),
-        ndvi_daily_aliases=normalize_aliases_param(params_dict.get("ndvi_daily_aliases"), ("NDVI",)),
-        landcover_aliases=normalize_aliases_param(params_dict.get("landcover_aliases"), ("IGBP_9km_12",)),
-        lat_aliases=normalize_aliases_param(params_dict.get("lat_aliases"), ("lat_9km", "lat", "latitude")),
-        lon_aliases=normalize_aliases_param(params_dict.get("lon_aliases"), ("lon_9km", "lon", "longitude")),
-        albedo_aliases=normalize_aliases_param(params_dict.get("albedo_aliases"), ("ALBEDO", "Albedo")),
+        tbv_aliases=normalize_aliases_param(
+            params_dict.get("tbv_aliases"), ("TBv", "tbv", "tb_v_corrected")
+        ),
+        tbh_aliases=normalize_aliases_param(
+            params_dict.get("tbh_aliases"), ("TBh", "tbh", "tb_h_corrected")
+        ),
+        ia_aliases=normalize_aliases_param(
+            params_dict.get("ia_aliases"), ("IA", "Theta", "theta")
+        ),
+        ts_aliases=normalize_aliases_param(
+            params_dict.get("ts_aliases"), ("Ts", "ts", "surface_temperature")
+        ),
+        vwc_aliases=normalize_aliases_param(
+            params_dict.get("vwc_aliases"), ("vwc", "vegetation_water_content")
+        ),
+        smap_sm_aliases=normalize_aliases_param(
+            params_dict.get("smap_sm_aliases"), ("sm_dca", "SM", "sm", "soil_moisture")
+        ),
+        ddca_sm_aliases=normalize_aliases_param(
+            params_dict.get("ddca_sm_aliases"), ("SM", "sm_dca", "sm")
+        ),
+        ndvi_daily_aliases=normalize_aliases_param(
+            params_dict.get("ndvi_daily_aliases"), ("NDVI",)
+        ),
+        landcover_aliases=normalize_aliases_param(
+            params_dict.get("landcover_aliases"), ("IGBP_9km_12",)
+        ),
+        lat_aliases=normalize_aliases_param(
+            params_dict.get("lat_aliases"), ("lat_9km", "lat", "latitude")
+        ),
+        lon_aliases=normalize_aliases_param(
+            params_dict.get("lon_aliases"), ("lon_9km", "lon", "longitude")
+        ),
+        albedo_aliases=normalize_aliases_param(
+            params_dict.get("albedo_aliases"), ("ALBEDO", "Albedo")
+        ),
         b_aliases=normalize_aliases_param(params_dict.get("b_aliases"), ("B", "b")),
-        sf_static_aliases=normalize_aliases_param(params_dict.get("sf_static_aliases"), ("SF_smap", "SF")),
-        bulk_density_aliases=normalize_aliases_param(params_dict.get("bulk_density_aliases"), ("BD",)),
+        sf_static_aliases=normalize_aliases_param(
+            params_dict.get("sf_static_aliases"), ("SF_smap", "SF")
+        ),
+        bulk_density_aliases=normalize_aliases_param(
+            params_dict.get("bulk_density_aliases"), ("BD",)
+        ),
         h_aliases=normalize_aliases_param(params_dict.get("h_aliases"), ("H",)),
-        clay_fraction_aliases=normalize_aliases_param(params_dict.get("clay_fraction_aliases"), ("CF", "clay_fraction")),
-        ndvi_v_max_aliases=normalize_aliases_param(params_dict.get("ndvi_v_max_aliases"), ("NDVI_v_max",)),
-        ndvi_v_min_aliases=normalize_aliases_param(params_dict.get("ndvi_v_min_aliases"), ("NDVI_v_min",)),
+        clay_fraction_aliases=normalize_aliases_param(
+            params_dict.get("clay_fraction_aliases"), ("CF", "clay_fraction")
+        ),
+        ndvi_v_max_aliases=normalize_aliases_param(
+            params_dict.get("ndvi_v_max_aliases"), ("NDVI_v_max",)
+        ),
+        ndvi_v_min_aliases=normalize_aliases_param(
+            params_dict.get("ndvi_v_min_aliases"), ("NDVI_v_min",)
+        ),
         gldas_tc_aliases=normalize_aliases_param(
             params_dict.get("gldas_tc_aliases", params_dict.get("gldas_var_tc")),
             ("Ts_gldas", "TC"),
         ),
         gldas_tsoil1_aliases=normalize_aliases_param(
-            params_dict.get("gldas_tsoil1_aliases", params_dict.get("gldas_var_tsoil1")),
+            params_dict.get(
+                "gldas_tsoil1_aliases", params_dict.get("gldas_var_tsoil1")
+            ),
             ("Tsoil1_gldas", "Tsoil1"),
         ),
         gldas_tsoil2_aliases=normalize_aliases_param(
-            params_dict.get("gldas_tsoil2_aliases", params_dict.get("gldas_var_tsoil2")),
+            params_dict.get(
+                "gldas_tsoil2_aliases", params_dict.get("gldas_var_tsoil2")
+            ),
             ("Tsoil2_gldas", "Tsoil2"),
         ),
         gldas_template_slot_index_aliases=normalize_aliases_param(
@@ -113,7 +151,9 @@ def build_daily_bundle_config(params: Mapping[str, Any]) -> DailyBundleConfig:
         use_gldas_template=bool(params_dict.get("use_gldas_template", False)),
         save_match_info=bool(params_dict.get("save_match_info", False)),
         fy3d_desc_local_hour=float(params_dict.get("fy3d_desc_local_hour", 2.0)),
-        fy3b_desc_local_hour=float(params_dict.get("fy3b_desc_local_hour", 1 + 40 / 60)),
+        fy3b_desc_local_hour=float(
+            params_dict.get("fy3b_desc_local_hour", 1 + 40 / 60)
+        ),
         smap_desc_local_hour=float(params_dict.get("smap_desc_local_hour", 6.0)),
         gldas_time_tol_hours=float(params_dict.get("gldas_time_tol_hours", 1.6)),
     )
@@ -135,7 +175,9 @@ def _load_mat_payload(file_path: str | Path) -> dict[str, Any]:
     return load_mat_file(file_path)
 
 
-def _pick_field(payload: dict[str, Any], aliases: list[str], *, required: bool = True) -> Any:
+def _pick_field(
+    payload: dict[str, Any], aliases: list[str], *, required: bool = True
+) -> Any:
     for alias in aliases:
         if alias in payload:
             return payload[alias]
@@ -144,7 +186,9 @@ def _pick_field(payload: dict[str, Any], aliases: list[str], *, required: bool =
     return None
 
 
-def _pick_field_or_attr(container: Any, aliases: list[str], *, required: bool = True) -> Any:
+def _pick_field_or_attr(
+    container: Any, aliases: list[str], *, required: bool = True
+) -> Any:
     if isinstance(container, dict):
         return _pick_field(container, aliases, required=required)
     for alias in aliases:
@@ -178,7 +222,11 @@ def _subset_grid(grid: Any, lin_pix: list[int] | None = None) -> Any:
     array = np.asarray(grid)
     selection = _normalize_selection(lin_pix)
     if selection is None:
-        return array.astype(np.float64, copy=False) if array.dtype.kind in {"i", "u", "f"} else array
+        return (
+            array.astype(np.float64, copy=False)
+            if array.dtype.kind in {"i", "u", "f"}
+            else array
+        )
     flat = array.reshape(-1)
     return flat[selection]
 
@@ -243,12 +291,10 @@ def build_sf_row_daily(
         den[is_other] = (ndvi_clim_max_row[is_other] - 0.1) / 0.9
     elif mode_sf == "NDVIMIN":
         den[is_crop_grass] = (
-            (ndvi_clim_row[is_crop_grass] - ndvi_clim_min_row[is_crop_grass])
-            / (1 - ndvi_clim_min_row[is_crop_grass])
-        )
-        den[is_other] = (
-            (ndvi_clim_max_row[is_other] - ndvi_clim_min_row[is_other])
-            / (1 - ndvi_clim_min_row[is_other])
+            ndvi_clim_row[is_crop_grass] - ndvi_clim_min_row[is_crop_grass]
+        ) / (1 - ndvi_clim_min_row[is_crop_grass])
+        den[is_other] = (ndvi_clim_max_row[is_other] - ndvi_clim_min_row[is_other]) / (
+            1 - ndvi_clim_min_row[is_other]
         )
     else:
         raise ValueError(f"Unsupported SF invert mode: {mode_sf}")
@@ -283,19 +329,35 @@ def load_static_ancillary_bundle(
     lat_grid = _pick_field(landcover_payload, list(config.lat_aliases), required=False)
     lon_grid = _pick_field(landcover_payload, list(config.lon_aliases), required=False)
 
-    albedo = _load_selected_mat_var(anc_root / "Albedo.mat", list(config.albedo_aliases), lin_pix)
-    b_param = _load_selected_mat_var(anc_root / "B.mat", list(config.b_aliases), lin_pix)
-    sf_static = _load_selected_mat_var(anc_root / "SF.mat", list(config.sf_static_aliases), lin_pix)
-    bulk_density = _load_selected_mat_var(anc_root / "BD.mat", list(config.bulk_density_aliases), lin_pix)
-    h_static = _load_selected_mat_var(anc_root / "H.mat", list(config.h_aliases), lin_pix)
-    clay_fraction = _load_selected_mat_var(anc_root / "CF.mat", list(config.clay_fraction_aliases), lin_pix)
+    albedo = _load_selected_mat_var(
+        anc_root / "Albedo.mat", list(config.albedo_aliases), lin_pix
+    )
+    b_param = _load_selected_mat_var(
+        anc_root / "B.mat", list(config.b_aliases), lin_pix
+    )
+    sf_static = _load_selected_mat_var(
+        anc_root / "SF.mat", list(config.sf_static_aliases), lin_pix
+    )
+    bulk_density = _load_selected_mat_var(
+        anc_root / "BD.mat", list(config.bulk_density_aliases), lin_pix
+    )
+    h_static = _load_selected_mat_var(
+        anc_root / "H.mat", list(config.h_aliases), lin_pix
+    )
+    clay_fraction = _load_selected_mat_var(
+        anc_root / "CF.mat", list(config.clay_fraction_aliases), lin_pix
+    )
 
     if ndvi_extrema_mat is None:
         ndvi_v_max = None
         ndvi_v_min = None
     else:
-        ndvi_v_max = _load_selected_mat_var(ndvi_extrema_mat, list(config.ndvi_v_max_aliases), lin_pix)
-        ndvi_v_min = _load_selected_mat_var(ndvi_extrema_mat, list(config.ndvi_v_min_aliases), lin_pix)
+        ndvi_v_max = _load_selected_mat_var(
+            ndvi_extrema_mat, list(config.ndvi_v_max_aliases), lin_pix
+        )
+        ndvi_v_min = _load_selected_mat_var(
+            ndvi_extrema_mat, list(config.ndvi_v_min_aliases), lin_pix
+        )
 
     landcover_selected = _subset_grid(landcover, lin_pix)
     porosity = 1.0 - bulk_density / _MINERAL_PARTICLE_DENSITY
@@ -326,7 +388,11 @@ def load_ndvi_row_for_day(
     day_dt = datetime.strptime(date_key, "%Y%m%d")
     ndvi_mode = str(config.ndvi_mode).upper()
     if ndvi_mode == "DAILY_FILE":
-        return _load_selected_mat_var(Path(ndvi_folder) / f"{date_key}.mat", list(config.ndvi_daily_aliases), lin_pix)
+        return _load_selected_mat_var(
+            Path(ndvi_folder) / f"{date_key}.mat",
+            list(config.ndvi_daily_aliases),
+            lin_pix,
+        )
     if ndvi_mode == "DOY_CLIM":
         doy = day_dt.timetuple().tm_yday
         return _load_selected_mat_var(
@@ -374,7 +440,9 @@ def build_gldas_file_index(folder: str) -> dict[str, Any]:
         if parsed is not None:
             matches.append((parsed, file_path))
     if not matches:
-        raise FileNotFoundError(f"No GLDAS MAT files with YYYYMMDD_HHMM names found under {folder_path}")
+        raise FileNotFoundError(
+            f"No GLDAS MAT files with YYYYMMDD_HHMM names found under {folder_path}"
+        )
     matches.sort(key=lambda item: item[0])
     return {
         "times": [item[0] for item in matches],
@@ -398,7 +466,9 @@ def build_gldas_day_slot_table(folder: str) -> dict[datetime.date, list[int]]:
     return day_slots
 
 
-def local_overpass_to_utc_vec(day_dt: datetime, lon_vec: Any, local_hour: float) -> list[datetime | None]:
+def local_overpass_to_utc_vec(
+    day_dt: datetime, lon_vec: Any, local_hour: float
+) -> list[datetime | None]:
     import numpy as np
 
     lon_values = np.asarray(lon_vec, dtype=np.float64).reshape(-1)
@@ -406,7 +476,9 @@ def local_overpass_to_utc_vec(day_dt: datetime, lon_vec: Any, local_hour: float)
     target_times: list[datetime | None] = []
     for lon_value in lon_values:
         if np.isfinite(lon_value):
-            target_times.append(base_day + timedelta(hours=float(local_hour) - float(lon_value) / 15.0))
+            target_times.append(
+                base_day + timedelta(hours=float(local_hour) - float(lon_value) / 15.0)
+            )
         else:
             target_times.append(None)
     return target_times
@@ -475,18 +547,29 @@ def _select_gldas_indices_from_template(
 ) -> tuple[list[int | None], Any, Any]:
     import numpy as np
 
-    gldas_template_path = datasource_selection.get("gldas_template_file") or datasource_selection.get("gldas_template_mat")
+    gldas_template_path = datasource_selection.get(
+        "gldas_template_file"
+    ) or datasource_selection.get("gldas_template_mat")
     if gldas_template_path is None:
-        raise ValueError("gldas_template_file or gldas_template_mat is required when use_gldas_template=True")
+        raise ValueError(
+            "gldas_template_file or gldas_template_mat is required when use_gldas_template=True"
+        )
 
     template_container = _load_gldas_template_container(
         gldas_template_path,
         config,
         template_name=datasource_selection.get("gldas_template_name"),
     )
-    slot_index = _subset_grid(_pick_field_or_attr(template_container, list(config.gldas_template_slot_index_aliases)), lin_pix)
+    slot_index = _subset_grid(
+        _pick_field_or_attr(
+            template_container, list(config.gldas_template_slot_index_aliases)
+        ),
+        lin_pix,
+    )
     slot_day_offset = _subset_grid(
-        _pick_field_or_attr(template_container, list(config.gldas_template_day_offset_aliases)),
+        _pick_field_or_attr(
+            template_container, list(config.gldas_template_day_offset_aliases)
+        ),
         lin_pix,
     )
 
@@ -496,7 +579,10 @@ def _select_gldas_indices_from_template(
     if slot_index.size != lon_values.size or slot_day_offset.size != lon_values.size:
         raise ValueError("GLDAS template size does not match selected pixel count")
 
-    gldas_folder = str(datasource_selection.get("gldas_folder") or datasource_selection.get("gldas_mat_folder"))
+    gldas_folder = str(
+        datasource_selection.get("gldas_folder")
+        or datasource_selection.get("gldas_mat_folder")
+    )
     day_slots = build_gldas_day_slot_table(gldas_folder)
     base_day = datetime.strptime(date_key, "%Y%m%d")
     picked_indices: list[int | None] = []
@@ -506,7 +592,9 @@ def _select_gldas_indices_from_template(
         if not np.isfinite(slot_value) or not np.isfinite(day_offset_value):
             picked_indices.append(None)
             continue
-        target_day = (base_day + timedelta(days=int(round(float(day_offset_value))))).date()
+        target_day = (
+            base_day + timedelta(days=int(round(float(day_offset_value))))
+        ).date()
         slot_list = day_slots.get(target_day, [])
         slot_position = int(round(float(slot_value))) - 1
         if 0 <= slot_position < len(slot_list):
@@ -526,14 +614,23 @@ def _select_gldas_indices_by_local_overpass(
 
     base_day = datetime.strptime(date_key, "%Y%m%d")
     if config.tb_source.upper() == "FY":
-        local_hour = config.fy3b_desc_local_hour if config.fy_platform.upper() == "3B" else config.fy3d_desc_local_hour
+        local_hour = (
+            config.fy3b_desc_local_hour
+            if config.fy_platform.upper() == "3B"
+            else config.fy3d_desc_local_hour
+        )
     else:
         local_hour = config.smap_desc_local_hour
 
-    gldas_folder = str(datasource_selection.get("gldas_folder") or datasource_selection.get("gldas_mat_folder"))
+    gldas_folder = str(
+        datasource_selection.get("gldas_folder")
+        or datasource_selection.get("gldas_mat_folder")
+    )
     gldas_index = build_gldas_file_index(gldas_folder)
     target_times = local_overpass_to_utc_vec(base_day, lon_values, local_hour)
-    picked_indices = pick_gldas_file_indices(gldas_index["times"], target_times, config.gldas_time_tol_hours)
+    picked_indices = pick_gldas_file_indices(
+        gldas_index["times"], target_times, config.gldas_time_tol_hours
+    )
     pixel_count = np.asarray(lon_values, dtype=np.float64).reshape(-1).size
     return (
         picked_indices,
@@ -560,18 +657,27 @@ def _load_dual_temperature_by_gldas_indices(
     if source_indices is None:
         source_indices = np.arange(pixel_count, dtype=np.int64)
 
-    gldas_folder = str(datasource_selection.get("gldas_folder") or datasource_selection.get("gldas_mat_folder"))
+    gldas_folder = str(
+        datasource_selection.get("gldas_folder")
+        or datasource_selection.get("gldas_mat_folder")
+    )
     gldas_index = build_gldas_file_index(gldas_folder)
     unique_indices = sorted({index for index in picked_indices if index is not None})
 
     for gldas_file_index in unique_indices:
-        positions = [pos for pos, index in enumerate(picked_indices) if index == gldas_file_index]
+        positions = [
+            pos for pos, index in enumerate(picked_indices) if index == gldas_file_index
+        ]
         if not positions:
             continue
         payload = _load_mat_payload(gldas_index["files"][gldas_file_index])
         tc_flat = _pick_field(payload, list(config.gldas_tc_aliases), required=False)
-        tsoil1_flat = _pick_field(payload, list(config.gldas_tsoil1_aliases), required=False)
-        tsoil2_flat = _pick_field(payload, list(config.gldas_tsoil2_aliases), required=False)
+        tsoil1_flat = _pick_field(
+            payload, list(config.gldas_tsoil1_aliases), required=False
+        )
+        tsoil2_flat = _pick_field(
+            payload, list(config.gldas_tsoil2_aliases), required=False
+        )
 
         if tc_flat is not None:
             tc_values = np.asarray(tc_flat, dtype=np.float64).reshape(-1)
@@ -598,9 +704,13 @@ def load_dual_temperature_row_for_day(
 ) -> tuple[Any, Any, Any, dict[str, Any]]:
     import numpy as np
 
-    gldas_folder = datasource_selection.get("gldas_folder") or datasource_selection.get("gldas_mat_folder")
+    gldas_folder = datasource_selection.get("gldas_folder") or datasource_selection.get(
+        "gldas_mat_folder"
+    )
     if gldas_folder is None:
-        raise ValueError("gldas_folder or gldas_mat_folder is required when TEMP_SCHEME=DUAL")
+        raise ValueError(
+            "gldas_folder or gldas_mat_folder is required when TEMP_SCHEME=DUAL"
+        )
 
     lon_values = _load_selected_mat_var(
         Path(datasource_selection["anc_root"]) / "IGBP_9km_12.mat",
@@ -618,21 +728,29 @@ def load_dual_temperature_row_for_day(
             lin_pix=lin_pix,
         )
     else:
-        picked_indices, slot_index, day_offset = _select_gldas_indices_by_local_overpass(
-            date_key,
-            lon_values,
-            datasource_selection,
-            config,
+        picked_indices, slot_index, day_offset = (
+            _select_gldas_indices_by_local_overpass(
+                date_key,
+                lon_values,
+                datasource_selection,
+                config,
+            )
         )
-    match_diagnostics["match_slot_index"] = np.asarray(slot_index, dtype=np.float64).reshape(-1)
-    match_diagnostics["match_day_offset"] = np.asarray(day_offset, dtype=np.float64).reshape(-1)
+    match_diagnostics["match_slot_index"] = np.asarray(
+        slot_index, dtype=np.float64
+    ).reshape(-1)
+    match_diagnostics["match_day_offset"] = np.asarray(
+        day_offset, dtype=np.float64
+    ).reshape(-1)
 
     if any(index is not None for index in picked_indices):
-        tc, tsoil1, tsoil2, picked_diagnostics = _load_dual_temperature_by_gldas_indices(
-            picked_indices,
-            datasource_selection,
-            config,
-            lin_pix=lin_pix,
+        tc, tsoil1, tsoil2, picked_diagnostics = (
+            _load_dual_temperature_by_gldas_indices(
+                picked_indices,
+                datasource_selection,
+                config,
+                lin_pix=lin_pix,
+            )
         )
         match_diagnostics["match_picked_file"] = picked_diagnostics["match_picked_file"]
         match_diagnostics["match_picked_utc"] = picked_diagnostics["match_picked_utc"]
@@ -718,17 +836,28 @@ def build_daily_bundle_for_date(
 
     tbv = _subset_grid(_pick_field(tb_payload, list(config.tbv_aliases)), lin_pix)
     tbh = _subset_grid(_pick_field(tb_payload, list(config.tbh_aliases)), lin_pix)
-    ia = _subset_grid(_pick_field(tb_payload, list(config.ia_aliases), required=False), lin_pix)
-    ts = _subset_grid(_pick_field(smap_payload, list(config.ts_aliases), required=False), lin_pix)
-    vwc = _subset_grid(_pick_field(smap_payload, list(config.vwc_aliases), required=False), lin_pix)
+    ia = _subset_grid(
+        _pick_field(tb_payload, list(config.ia_aliases), required=False), lin_pix
+    )
+    ts = _subset_grid(
+        _pick_field(smap_payload, list(config.ts_aliases), required=False), lin_pix
+    )
+    vwc = _subset_grid(
+        _pick_field(smap_payload, list(config.vwc_aliases), required=False), lin_pix
+    )
 
     if sm_source == "SMAP":
-        sm_ref = _subset_grid(_pick_field(smap_payload, list(config.smap_sm_aliases), required=False), lin_pix)
+        sm_ref = _subset_grid(
+            _pick_field(smap_payload, list(config.smap_sm_aliases), required=False),
+            lin_pix,
+        )
     elif sm_source == "DDCA":
         if ddca_sm_folder is None:
             raise ValueError("ddca_sm_folder is required when SM_SOURCE=DDCA")
         ddca_payload = _load_mat_payload(Path(ddca_sm_folder) / f"{date_key}.mat")
-        sm_ref = _subset_grid(_pick_field(ddca_payload, list(config.ddca_sm_aliases)), lin_pix)
+        sm_ref = _subset_grid(
+            _pick_field(ddca_payload, list(config.ddca_sm_aliases)), lin_pix
+        )
     else:
         raise ValueError(f"Unsupported SM source: {sm_source}")
 
@@ -781,7 +910,12 @@ def build_daily_bundle_for_date(
             match_day_offset = match_diagnostics["match_day_offset"]
             match_picked_file = match_diagnostics["match_picked_file"]
             match_picked_utc = match_diagnostics["match_picked_utc"]
-        if tc is not None and tsoil1 is not None and tsoil2 is not None and sm_ref is not None:
+        if (
+            tc is not None
+            and tsoil1 is not None
+            and tsoil2 is not None
+            and sm_ref is not None
+        ):
             ct, tg = build_effective_soil_temperature_scheme(
                 sm_ref,
                 tsoil1,

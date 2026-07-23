@@ -3,11 +3,19 @@ from __future__ import annotations
 from dataclasses import dataclass
 from functools import lru_cache
 
-from workflow.panel_schema import WorkflowInputPanelSchema, WorkflowPanelField, build_workflow_input_panel_schema
+from workflow.panel_schema import (
+    WorkflowInputPanelSchema,
+    WorkflowPanelField,
+    build_workflow_input_panel_schema,
+)
 
 
 _SECTION_METADATA = (
-    ("datasource_selection", "数据源输入", "用于填写文件、目录、MAT 或其他外部数据输入。"),
+    (
+        "datasource_selection",
+        "数据源输入",
+        "用于填写文件、目录、MAT 或其他外部数据输入。",
+    ),
     ("algorithm_params", "算法参数", "用于填写算法模式、数值参数和实验开关。"),
     ("request", "请求对象", "用于说明 workflow 直接读取的请求级对象。"),
 )
@@ -136,7 +144,9 @@ def build_workflow_input_panel_ui_schema(value: object) -> WorkflowInputPanelUiS
     return enhance_panel_schema_with_ui_metadata(schema)
 
 
-def enhance_panel_schema_with_ui_metadata(schema: WorkflowInputPanelSchema) -> WorkflowInputPanelUiSchema:
+def enhance_panel_schema_with_ui_metadata(
+    schema: WorkflowInputPanelSchema,
+) -> WorkflowInputPanelUiSchema:
     section_fields = {
         "datasource_selection": schema.datasource_fields,
         "algorithm_params": schema.algorithm_param_fields,
@@ -241,7 +251,9 @@ def _control_type(
         return "json_editor"
     if key.endswith("_start") or key.endswith("_end"):
         return "datetime_input"
-    if any(token in key for token in ("days", "hour", "size", "ghz", "length", "order")):
+    if any(
+        token in key for token in ("days", "hour", "size", "ghz", "length", "order")
+    ):
         return "number_input"
     return "text_input"
 
@@ -252,7 +264,9 @@ def _placeholder(key: str) -> str | None:
 
 
 @lru_cache(maxsize=None)
-def _example_value(key: str, entry_names: tuple[str, ...], allowed_values: tuple[str, ...]) -> str | None:
+def _example_value(
+    key: str, entry_names: tuple[str, ...], allowed_values: tuple[str, ...]
+) -> str | None:
     if key == "mode":
         return "omega" if "omega_block" in entry_names else "dh"
     example = _FIELD_EXAMPLE_OVERRIDES.get(key)

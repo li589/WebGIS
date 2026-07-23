@@ -1,4 +1,5 @@
 """Remote scheme adapter (sftp/smb/ftp/ftps/gs) backed by shared.remote_sources."""
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -25,7 +26,9 @@ def _resolve_auth(uri: str, metadata: dict[str, object] | None) -> RemoteAuth:
         return RemoteAuth(
             username=str(meta["username"]) if meta.get("username") else None,
             password=str(meta["password"]) if meta.get("password") else None,
-            private_key_pem=str(meta["private_key_pem"]) if meta.get("private_key_pem") else None,
+            private_key_pem=str(meta["private_key_pem"])
+            if meta.get("private_key_pem")
+            else None,
             domain=str(meta["domain"]) if meta.get("domain") else None,
             port=port,
             extra={str(k): str(v) for k, v in extra.items()},
@@ -76,7 +79,11 @@ class RemoteSource:
         *,
         target_dir: Path | None = None,
     ) -> ResourceRef:
-        destination = Path(target_dir) if target_dir is not None else Path.cwd() / ".data" / "remote_cache"
+        destination = (
+            Path(target_dir)
+            if target_dir is not None
+            else Path.cwd() / ".data" / "remote_cache"
+        )
         auth = _resolve_auth(resource.uri, resource.metadata)
         local_path, stat = download_remote_uri(
             resource.uri,

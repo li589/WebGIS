@@ -36,7 +36,9 @@ class ShapefileFormatAdapter(LocalFileFormatAdapter):
         return {
             "path": str(local_path),
             "feature_count": feature_count,
-            "geometry_type": _SHAPE_TYPE_NAMES.get(shape_type_code, f"shape_type_{shape_type_code}"),
+            "geometry_type": _SHAPE_TYPE_NAMES.get(
+                shape_type_code, f"shape_type_{shape_type_code}"
+            ),
             "bbox": bbox,
         }
 

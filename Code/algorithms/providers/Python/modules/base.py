@@ -32,7 +32,10 @@ class BaseModule(ABC):
             input_ports=list(self.input_ports),
             output_ports=list(self.output_ports),
             default_params=dict(self.default_params),
-            mode_required_inputs={mode: tuple(inputs) for mode, inputs in self.mode_required_inputs.items()},
+            mode_required_inputs={
+                mode: tuple(inputs)
+                for mode, inputs in self.mode_required_inputs.items()
+            },
         )
 
     def resolve_params(self, params: dict[str, object]) -> dict[str, object]:
@@ -41,5 +44,10 @@ class BaseModule(ABC):
         return resolved
 
     @abstractmethod
-    def execute(self, inputs: dict[str, object], params: dict[str, object], ctx: NodeExecutionContext) -> dict[str, object]:
+    def execute(
+        self,
+        inputs: dict[str, object],
+        params: dict[str, object],
+        ctx: NodeExecutionContext,
+    ) -> dict[str, object]:
         raise NotImplementedError

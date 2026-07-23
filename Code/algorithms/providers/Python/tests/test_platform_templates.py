@@ -38,7 +38,9 @@ class _SchedulerTemplate(PlatformSchedulerAdapterTemplate):
     def build_run_context(self, request: JobRequest) -> dict[str, object]:
         return {"job_id": request.job_id, "tenant": "demo"}
 
-    def push_status(self, *, job_id: str, run_id: str, status: str, detail=None) -> None:
+    def push_status(
+        self, *, job_id: str, run_id: str, status: str, detail=None
+    ) -> None:
         self.statuses.append((job_id, run_id, status, detail))
 
     def push_completion(self, result: JobResult) -> None:
@@ -67,7 +69,9 @@ class _LoggerTemplate(PlatformLoggerAdapterTemplate):
 
 class _ProductSinkTemplate(PlatformProductSinkTemplate):
     def persist_raster(self, product: RasterProduct) -> ProductRef:
-        return ProductRef(name=product.name, type="raster", uri=product.uri, variable=product.variable)
+        return ProductRef(
+            name=product.name, type="raster", uri=product.uri, variable=product.variable
+        )
 
     def persist_table(self, product: TableProduct) -> ProductRef:
         return ProductRef(name=product.name, type="table", uri=product.uri)
@@ -89,7 +93,9 @@ class PlatformTemplateTests(unittest.TestCase):
         )
 
         context = adapter.get_run_context(request)
-        adapter.update_status(request.job_id, "run-template-001", "planning", {"node_count": 1})
+        adapter.update_status(
+            request.job_id, "run-template-001", "planning", {"node_count": 1}
+        )
         adapter.complete(result)
 
         self.assertEqual(context["tenant"], "demo")
@@ -110,9 +116,15 @@ class PlatformTemplateTests(unittest.TestCase):
         bundle = datasource.materialize(bundle)
         logger.bind_context("job-template-001", "run-template-002")
         logger.emit_stage_start("dispatch", "start")
-        raster = sink.write_raster(RasterProduct(name="r", uri="memory://r.tif", variable="R"))
-        table = sink.write_table(TableProduct(name="t", uri="memory://t.parquet", table_type="table"))
-        manifest_uri = sink.write_manifest(ProductManifest(job_id="job-template-001", run_id="run-template-002"))
+        raster = sink.write_raster(
+            RasterProduct(name="r", uri="memory://r.tif", variable="R")
+        )
+        table = sink.write_table(
+            TableProduct(name="t", uri="memory://t.parquet", table_type="table")
+        )
+        manifest_uri = sink.write_manifest(
+            ProductManifest(job_id="job-template-001", run_id="run-template-002")
+        )
 
         self.assertTrue(bundle.is_materialized)
         self.assertEqual(logger.events[1].event_type, "stage_start")

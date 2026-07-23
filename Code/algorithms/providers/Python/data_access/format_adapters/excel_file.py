@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from pathlib import Path
 import re
-from typing import Any
 import xml.etree.ElementTree as ET
 import zipfile
 
@@ -20,7 +19,11 @@ class ExcelFormatAdapter(LocalFileFormatAdapter):
     def load(self, resource: ResourceRef) -> dict[str, object]:
         local_path = self._require_local_path(resource)
         workbook = _load_xlsx_workbook(local_path)
-        first_sheet = workbook["worksheets"][0] if workbook["worksheets"] else {"headers": (), "rows": ()}
+        first_sheet = (
+            workbook["worksheets"][0]
+            if workbook["worksheets"]
+            else {"headers": (), "rows": ()}
+        )
         return {
             "path": str(local_path),
             "sheet_names": workbook["sheet_names"],
@@ -36,7 +39,9 @@ def _load_xlsx_workbook(local_path: Path) -> dict[str, object]:
         workbook_root = ET.fromstring(archive.read("xl/workbook.xml"))
         sheet_names = tuple(
             str(sheet.attrib.get("name", f"Sheet{index + 1}"))
-            for index, sheet in enumerate(workbook_root.findall("s:sheets/s:sheet", _SPREADSHEET_NS))
+            for index, sheet in enumerate(
+                workbook_root.findall("s:sheets/s:sheet", _SPREADSHEET_NS)
+            )
         )
         worksheets: list[dict[str, object]] = []
         for index, sheet_name in enumerate(sheet_names, start=1):
@@ -44,7 +49,10 @@ def _load_xlsx_workbook(local_path: Path) -> dict[str, object]:
             if worksheet_path not in archive.namelist():
                 continue
             rows = _read_sheet_rows(archive.read(worksheet_path), shared_strings)
-            headers = tuple("" if value is None else str(value) for value in (rows[0] if rows else ()))
+            headers = tuple(
+                "" if value is None else str(value)
+                for value in (rows[0] if rows else ())
+            )
             row_dicts = tuple(
                 {
                     headers[column_index]: "" if value is None else str(value)
@@ -72,12 +80,16 @@ def _read_shared_strings(archive: zipfile.ZipFile) -> tuple[str, ...]:
     root = ET.fromstring(archive.read("xl/sharedStrings.xml"))
     values: list[str] = []
     for item in root.findall("s:si", _SPREADSHEET_NS):
-        text_parts = [node.text or "" for node in item.findall(".//s:t", _SPREADSHEET_NS)]
+        text_parts = [
+            node.text or "" for node in item.findall(".//s:t", _SPREADSHEET_NS)
+        ]
         values.append("".join(text_parts))
     return tuple(values)
 
 
-def _read_sheet_rows(raw_xml: bytes, shared_strings: tuple[str, ...]) -> tuple[tuple[str | None, ...], ...]:
+def _read_sheet_rows(
+    raw_xml: bytes, shared_strings: tuple[str, ...]
+) -> tuple[tuple[str | None, ...], ...]:
     root = ET.fromstring(raw_xml)
     rows: list[tuple[str | None, ...]] = []
     for row in root.findall("s:sheetData/s:row", _SPREADSHEET_NS):
@@ -98,7 +110,9 @@ def _read_sheet_rows(raw_xml: bytes, shared_strings: tuple[str, ...]) -> tuple[t
 def _read_cell_value(cell: ET.Element, shared_strings: tuple[str, ...]) -> str | None:
     cell_type = cell.attrib.get("t")
     if cell_type == "inlineStr":
-        text_parts = [node.text or "" for node in cell.findall(".//s:t", _SPREADSHEET_NS)]
+        text_parts = [
+            node.text or "" for node in cell.findall(".//s:t", _SPREADSHEET_NS)
+        ]
         return "".join(text_parts)
     value_node = cell.find("s:v", _SPREADSHEET_NS)
     if value_node is None or value_node.text is None:

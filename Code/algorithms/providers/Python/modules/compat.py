@@ -14,21 +14,37 @@ from workflow.schemas import ArtifactRef, NodeExecutionContext, PortSpec
 class PipelineBackedModule(BaseModule):
     description = "Compatibility module that wraps an existing pipeline."
     input_ports = [
-        PortSpec(name="datasource_selection", kind="config", data_class="dict", required=False),
-        PortSpec(name="algorithm_params", kind="config", data_class="dict", required=False),
-        PortSpec(name="output_spec_extra", kind="config", data_class="dict", required=False),
+        PortSpec(
+            name="datasource_selection",
+            kind="config",
+            data_class="dict",
+            required=False,
+        ),
+        PortSpec(
+            name="algorithm_params", kind="config", data_class="dict", required=False
+        ),
+        PortSpec(
+            name="output_spec_extra", kind="config", data_class="dict", required=False
+        ),
     ]
     output_ports = [
         PortSpec(name="manifest", kind="artifact", data_class="product_manifest"),
     ]
 
-    def __init__(self, name: str, pipeline_name: str, description: str | None = None) -> None:
+    def __init__(
+        self, name: str, pipeline_name: str, description: str | None = None
+    ) -> None:
         self.name = name
         self.pipeline_name = pipeline_name
         if description is not None:
             self.description = description
 
-    def execute(self, inputs: dict[str, object], params: dict[str, object], ctx: NodeExecutionContext) -> dict[str, object]:
+    def execute(
+        self,
+        inputs: dict[str, object],
+        params: dict[str, object],
+        ctx: NodeExecutionContext,
+    ) -> dict[str, object]:
         resolved_params = self.resolve_params(params)
         forbid_shim_pipeline_reentry(self.pipeline_name)
         pipeline_cls = get_pipeline(self.pipeline_name)
@@ -46,7 +62,9 @@ class PipelineBackedModule(BaseModule):
             datasource_selection.update(dict(inputs["datasource_selection"]))
 
         algorithm_params = dict(resolved_params.get("algorithm_params", {}))
-        algorithm_param_bindings = dict(resolved_params.get("algorithm_param_bindings", {}))
+        algorithm_param_bindings = dict(
+            resolved_params.get("algorithm_param_bindings", {})
+        )
         for target_key, input_name in algorithm_param_bindings.items():
             algorithm_params[str(target_key)] = inputs[str(input_name)]
         if "algorithm_params" in inputs:
@@ -77,21 +95,31 @@ class PipelineBackedModule(BaseModule):
 
         with push_runtime_call(ctx.runtime_context, f"pipeline:{self.pipeline_name}"):
             plan = pipeline.plan(child_request, ctx.runtime_context)
-            prepared_bundle_payloads, prepared_input_payloads = _prepare_required_datasets(
-                child_request,
-                ctx.datasource_adapter,
-                ctx.logger_adapter,
-                plan.required_datasets,
-                plan.required_variables,
-                acquire_mode=plan.cache_requirement,
-                cache_root=ctx.runtime_context.cache_dir,
+            prepared_bundle_payloads, prepared_input_payloads = (
+                _prepare_required_datasets(
+                    child_request,
+                    ctx.datasource_adapter,
+                    ctx.logger_adapter,
+                    plan.required_datasets,
+                    plan.required_variables,
+                    acquire_mode=plan.cache_requirement,
+                    cache_root=ctx.runtime_context.cache_dir,
+                )
             )
             if prepared_bundle_payloads:
-                child_request.datasource_selection = dict(child_request.datasource_selection)
-                child_request.datasource_selection["_prepared_bundles"] = prepared_bundle_payloads
+                child_request.datasource_selection = dict(
+                    child_request.datasource_selection
+                )
+                child_request.datasource_selection["_prepared_bundles"] = (
+                    prepared_bundle_payloads
+                )
             if prepared_input_payloads:
-                child_request.datasource_selection = dict(child_request.datasource_selection)
-                child_request.datasource_selection["_prepared_inputs"] = prepared_input_payloads
+                child_request.datasource_selection = dict(
+                    child_request.datasource_selection
+                )
+                child_request.datasource_selection["_prepared_inputs"] = (
+                    prepared_input_payloads
+                )
             manifest = pipeline.execute(child_request, ctx.runtime_context)
         artifact = ArtifactRef(
             artifact_id=f"{ctx.runtime_context.run_id}:{ctx.node_id}:manifest",
@@ -126,4 +154,6 @@ def register_default_compat_modules() -> None:
     for name, pipeline_name in _shims:
         if name in MODULE_REGISTRY:
             continue
-        register_module(PipelineBackedModule(name, pipeline_name), aliases=[pipeline_name])
+        register_module(
+            PipelineBackedModule(name, pipeline_name), aliases=[pipeline_name]
+        )

@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from pathlib import Path
 
 from data_access.cache_store import CacheStore
 from data_access.contracts import DataRequestV2, ResourceRef
@@ -10,7 +9,9 @@ class Fetcher:
     def __init__(self, cache_store: CacheStore) -> None:
         self.cache_store = cache_store
 
-    def fetch(self, request: DataRequestV2, resource: ResourceRef) -> tuple[ResourceRef, bool]:
+    def fetch(
+        self, request: DataRequestV2, resource: ResourceRef
+    ) -> tuple[ResourceRef, bool]:
         if resource.local_path:
             return resource, False
 

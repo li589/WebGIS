@@ -15,6 +15,7 @@
     # 导出 manifest（供 /workflows API 展示）
     manifest = provider_manifest.export_manifest()
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass, field
@@ -23,7 +24,6 @@ from typing import Any
 from contracts.job import JobRequest
 from contracts.request_templates import RequestTemplateSpec
 from contracts.template_deriver import (
-    derive_template_from_module,
     get_module_request_template,
     list_module_templates,
     validate_request_against_template,
@@ -107,7 +107,9 @@ class ProviderManifest:
         if entry_name is None:
             return ValidationResult(
                 is_valid=False,
-                errors=["Cannot determine entry_name from request (module_name/workflow_name/pipeline_name all empty)"],
+                errors=[
+                    "Cannot determine entry_name from request (module_name/workflow_name/pipeline_name all empty)"
+                ],
             )
 
         # 查找 template：先查 module，再查 workflow preset
@@ -157,7 +159,9 @@ class ProviderManifest:
                     "allowed_algorithm_values": {
                         k: list(v) for k, v in template.allowed_algorithm_values.items()
                     },
-                    "accepted_data_access_datasets": list(template.accepted_data_access_datasets),
+                    "accepted_data_access_datasets": list(
+                        template.accepted_data_access_datasets
+                    ),
                     "notes": template.notes,
                 }
             )

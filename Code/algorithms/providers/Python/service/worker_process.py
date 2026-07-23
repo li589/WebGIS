@@ -3,7 +3,11 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 
-from service.job_api import build_local_job_service, build_local_persistent_job_service, build_worker
+from service.job_api import (
+    build_local_job_service,
+    build_local_persistent_job_service,
+    build_worker,
+)
 from service.job_queue import FileJobQueue
 from service.platform_service_factory import build_platform_http_job_service
 from service.worker import PlatformWorkerLoop
@@ -61,9 +65,13 @@ def build_worker_service(
 
 
 def _build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description="Run a standalone mat2py queue worker.")
+    parser = argparse.ArgumentParser(
+        description="Run a standalone mat2py queue worker."
+    )
     parser.add_argument("--workspace", required=True)
-    parser.add_argument("--queue-backend", choices=("memory", "file", "platform"), default="file")
+    parser.add_argument(
+        "--queue-backend", choices=("memory", "file", "platform"), default="file"
+    )
     parser.add_argument("--persistent-state", action="store_true")
     parser.add_argument("--poll-timeout", type=float, default=0.5)
     return parser

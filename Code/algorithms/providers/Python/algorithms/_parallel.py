@@ -27,6 +27,7 @@ Celery 部署注意事项（进程爆炸防护）：
         CGDA_MAX_PARALLEL_WORKERS=3
         CGDA_PARALLEL_TIMEOUT_PER_CHUNK=120
 """
+
 from __future__ import annotations
 
 import logging
@@ -108,7 +109,9 @@ def auto_process_count(
     if psutil is not None:
         try:
             avail_mb = psutil.virtual_memory().available // (1024 * 1024)
-            mem_based = max(1, floor((avail_mb - _SYSTEM_RESERVE_MB) / _MEM_PER_WORKER_MB))
+            mem_based = max(
+                1, floor((avail_mb - _SYSTEM_RESERVE_MB) / _MEM_PER_WORKER_MB)
+            )
         except Exception:
             logger.debug("psutil.virtual_memory() failed; skipping memory cap")
             mem_based = cpu_based

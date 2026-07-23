@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import UTC, datetime
+from datetime import UTC
 from threading import Lock
 from typing import Any
 
@@ -56,7 +56,9 @@ class PlatformClientMock:
         with self._lock:
             self.queued_submissions.append(_copy_submission(item))
 
-    def claim_submission(self, *, timeout: float | None = None) -> QueuedJobSubmission | None:
+    def claim_submission(
+        self, *, timeout: float | None = None
+    ) -> QueuedJobSubmission | None:
         _ = timeout
         with self._lock:
             if not self.queued_submissions:
@@ -123,7 +125,12 @@ class PlatformClientMock:
             self.log_events.append(event)
 
     def persist_raster(self, product: RasterProduct) -> ProductRef:
-        ref = ProductRef(name=product.name, type="platform_raster", uri=product.uri, variable=product.variable)
+        ref = ProductRef(
+            name=product.name,
+            type="platform_raster",
+            uri=product.uri,
+            variable=product.variable,
+        )
         with self._lock:
             self.persisted_products.append(ref)
         return ref
@@ -159,7 +166,9 @@ def _copy_submission(item: QueuedJobSubmission) -> QueuedJobSubmission:
     return QueuedJobSubmission(
         submission_id=item.submission_id,
         request=_copy_job_request(item.request),
-        enqueued_at=item.enqueued_at.astimezone(UTC) if item.enqueued_at.tzinfo is not None else item.enqueued_at,
+        enqueued_at=item.enqueued_at.astimezone(UTC)
+        if item.enqueued_at.tzinfo is not None
+        else item.enqueued_at,
     )
 
 
@@ -175,7 +184,9 @@ def _copy_job_request(request: JobRequest) -> JobRequest:
         output_spec=request.output_spec,
         resource_hint=request.resource_hint,
         cache_policy=request.cache_policy,
-        resume_policy=None if request.resume_policy is None else dict(request.resume_policy),
+        resume_policy=None
+        if request.resume_policy is None
+        else dict(request.resume_policy),
         priority=request.priority,
         tags=dict(request.tags),
         module_name=request.module_name,

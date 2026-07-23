@@ -17,7 +17,9 @@ class HdfFormatAdapter(LocalFileFormatAdapter):
         group_names: list[str] = []
         datasets: list[dict[str, Any]] = []
         with h5py.File(local_path, "r") as handle:
-            handle.visititems(lambda name, node: _collect_hdf_item(name, node, group_names, datasets))
+            handle.visititems(
+                lambda name, node: _collect_hdf_item(name, node, group_names, datasets)
+            )
         return {
             "path": str(local_path),
             "group_names": tuple(group_names),

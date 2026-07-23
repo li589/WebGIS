@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from typing import Any
 
 from data_access.contracts import ResourceRef
 from data_access.format_adapters.base import LocalFileFormatAdapter
@@ -22,7 +21,9 @@ def _load_with_netcdf4(local_path) -> dict[str, object]:
     from netCDF4 import Dataset
 
     with Dataset(local_path) as dataset:
-        dimensions = {name: len(dimension) for name, dimension in dataset.dimensions.items()}
+        dimensions = {
+            name: len(dimension) for name, dimension in dataset.dimensions.items()
+        }
         variables = tuple(
             {
                 "name": str(name),
@@ -49,8 +50,12 @@ def _load_with_scipy(local_path) -> dict[str, object]:
         variables = tuple(
             {
                 "name": str(name),
-                "dimensions": tuple(str(value) for value in getattr(variable, "dimensions", ())),
-                "shape": tuple(int(value) for value in getattr(variable.data, "shape", ())),
+                "dimensions": tuple(
+                    str(value) for value in getattr(variable, "dimensions", ())
+                ),
+                "shape": tuple(
+                    int(value) for value in getattr(variable.data, "shape", ())
+                ),
                 "dtype": str(getattr(variable.data, "dtype", "")),
             }
             for name, variable in dataset.variables.items()

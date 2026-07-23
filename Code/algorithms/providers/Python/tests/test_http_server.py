@@ -37,7 +37,9 @@ class _FakeJobService:
         return ServiceResponse(200, {"valid": True})
 
     def get_job_status(self, submission_id: str) -> ServiceResponse:
-        return ServiceResponse(200, {"submission_id": submission_id, "state": "completed"})
+        return ServiceResponse(
+            200, {"submission_id": submission_id, "state": "completed"}
+        )
 
     def list_modules_response(self) -> ServiceResponse:
         return ServiceResponse(200, {"modules": [{"name": "omega_block"}], "count": 1})
@@ -46,13 +48,19 @@ class _FakeJobService:
         return ServiceResponse(200, {"name": module_name, "entry_kind": "module"})
 
     def list_workflows_response(self) -> ServiceResponse:
-        return ServiceResponse(200, {"workflows": [{"name": "retrieval_workflow"}], "count": 1})
+        return ServiceResponse(
+            200, {"workflows": [{"name": "retrieval_workflow"}], "count": 1}
+        )
 
     def describe_workflow_response(self, workflow_name: str) -> ServiceResponse:
-        return ServiceResponse(200, {"name": workflow_name, "workflow_id": workflow_name})
+        return ServiceResponse(
+            200, {"name": workflow_name, "workflow_id": workflow_name}
+        )
 
     def get_workflow_panel_schema_response(self, workflow_name: str) -> ServiceResponse:
-        return ServiceResponse(200, {"workflow_id": workflow_name, "datasource_fields": []})
+        return ServiceResponse(
+            200, {"workflow_id": workflow_name, "datasource_fields": []}
+        )
 
     def get_workflow_ui_schema_response(self, workflow_name: str) -> ServiceResponse:
         return ServiceResponse(200, {"workflow_id": workflow_name, "sections": []})
@@ -61,7 +69,9 @@ class _FakeJobService:
 class HttpServerTests(unittest.TestCase):
     def setUp(self) -> None:
         self.job_service = _FakeJobService()
-        self.server = create_server(host="127.0.0.1", port=0, job_service=self.job_service)
+        self.server = create_server(
+            host="127.0.0.1", port=0, job_service=self.job_service
+        )
         self.thread = threading.Thread(target=self.server.serve_forever, daemon=True)
         self.thread.start()
 
@@ -117,9 +127,15 @@ class HttpServerTests(unittest.TestCase):
         modules_status, modules_body = self._request("GET", "/api/v1/modules")
         module_status, module_body = self._request("GET", "/api/v1/modules/omega_block")
         workflows_status, workflows_body = self._request("GET", "/api/v1/workflows")
-        workflow_status, workflow_body = self._request("GET", "/api/v1/workflows/retrieval_workflow")
-        panel_status, panel_body = self._request("GET", "/api/v1/workflows/retrieval_workflow/panel-schema")
-        ui_status, ui_body = self._request("GET", "/api/v1/workflows/retrieval_workflow/ui-schema")
+        workflow_status, workflow_body = self._request(
+            "GET", "/api/v1/workflows/retrieval_workflow"
+        )
+        panel_status, panel_body = self._request(
+            "GET", "/api/v1/workflows/retrieval_workflow/panel-schema"
+        )
+        ui_status, ui_body = self._request(
+            "GET", "/api/v1/workflows/retrieval_workflow/ui-schema"
+        )
 
         self.assertEqual(modules_status, 200)
         self.assertEqual(modules_body["count"], 1)
@@ -134,8 +150,12 @@ class HttpServerTests(unittest.TestCase):
         self.assertEqual(ui_status, 200)
         self.assertEqual(ui_body["workflow_id"], "retrieval_workflow")
 
-    def _request(self, method: str, path: str, body: str | None = None) -> tuple[int, dict[str, object]]:
-        connection = http.client.HTTPConnection(self.server.server_address[0], self.server.server_address[1], timeout=5)
+    def _request(
+        self, method: str, path: str, body: str | None = None
+    ) -> tuple[int, dict[str, object]]:
+        connection = http.client.HTTPConnection(
+            self.server.server_address[0], self.server.server_address[1], timeout=5
+        )
         try:
             headers = {}
             if body is not None:

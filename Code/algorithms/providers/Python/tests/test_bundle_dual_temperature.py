@@ -1,4 +1,5 @@
 """Bundle-02: DUAL temperature scheme and match_info diagnostics in manifest."""
+
 from __future__ import annotations
 
 import tempfile
@@ -8,7 +9,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 import numpy as np
-from scipy.io import loadmat, savemat
+from scipy.io import savemat
 
 from contracts.job import JobRequest
 from contracts.product import OutputSpec
@@ -34,7 +35,9 @@ class BundleDUALTemperatureTests(unittest.TestCase):
                 job_id="bundle-dual",
                 pipeline_name="daily_bundle_pipeline",
                 task_type="bundle",
-                time_range=TimeRange(start=datetime(2020, 1, 1), end=datetime(2020, 1, 1)),
+                time_range=TimeRange(
+                    start=datetime(2020, 1, 1), end=datetime(2020, 1, 1)
+                ),
                 region=RegionSpec(kind="global", value={}),
                 datasource_selection={
                     "smap_daily_mat": str(self._make_mat(root, "smap")),
@@ -52,8 +55,15 @@ class BundleDUALTemperatureTests(unittest.TestCase):
                 cache_dir=root / "cache",
             )
 
-            with patch("pipelines.daily_bundle_products.load_lin_pix_selection", return_value=None), \
-                 patch("pipelines.daily_bundle_products.build_daily_bundle_for_date") as mock_bundle:
+            with (
+                patch(
+                    "pipelines.daily_bundle_products.load_lin_pix_selection",
+                    return_value=None,
+                ),
+                patch(
+                    "pipelines.daily_bundle_products.build_daily_bundle_for_date"
+                ) as mock_bundle,
+            ):
                 mock_bundle.return_value = {
                     "TBv": np.zeros((1, 3)),
                     "TC": np.zeros((1, 3)),
@@ -91,7 +101,9 @@ class BundleDUALTemperatureTests(unittest.TestCase):
                 job_id="bundle-single",
                 pipeline_name="daily_bundle_pipeline",
                 task_type="bundle",
-                time_range=TimeRange(start=datetime(2020, 1, 1), end=datetime(2020, 1, 1)),
+                time_range=TimeRange(
+                    start=datetime(2020, 1, 1), end=datetime(2020, 1, 1)
+                ),
                 region=RegionSpec(kind="global", value={}),
                 datasource_selection={
                     "smap_daily_mat": str(self._make_mat(root, "smap")),
@@ -109,8 +121,15 @@ class BundleDUALTemperatureTests(unittest.TestCase):
                 cache_dir=root / "cache",
             )
 
-            with patch("pipelines.daily_bundle_products.load_lin_pix_selection", return_value=None), \
-                 patch("pipelines.daily_bundle_products.build_daily_bundle_for_date") as mock_bundle:
+            with (
+                patch(
+                    "pipelines.daily_bundle_products.load_lin_pix_selection",
+                    return_value=None,
+                ),
+                patch(
+                    "pipelines.daily_bundle_products.build_daily_bundle_for_date"
+                ) as mock_bundle,
+            ):
                 mock_bundle.return_value = {
                     "TBv": np.zeros((1, 3)),
                     "Ts": np.zeros((1, 3)),

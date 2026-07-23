@@ -15,9 +15,24 @@ class PipelineBridgeNodeExecutor:
 
     def get_input_ports(self) -> list[PortSpec]:
         return [
-            PortSpec(name="datasource_selection", kind="config", data_class="dict", required=False),
-            PortSpec(name="algorithm_params", kind="config", data_class="dict", required=False),
-            PortSpec(name="output_spec_extra", kind="config", data_class="dict", required=False),
+            PortSpec(
+                name="datasource_selection",
+                kind="config",
+                data_class="dict",
+                required=False,
+            ),
+            PortSpec(
+                name="algorithm_params",
+                kind="config",
+                data_class="dict",
+                required=False,
+            ),
+            PortSpec(
+                name="output_spec_extra",
+                kind="config",
+                data_class="dict",
+                required=False,
+            ),
         ]
 
     def get_output_ports(self) -> list[PortSpec]:
@@ -25,7 +40,12 @@ class PipelineBridgeNodeExecutor:
             PortSpec(name="manifest", kind="artifact", data_class="product_manifest"),
         ]
 
-    def execute(self, inputs: dict[str, object], params: dict[str, object], ctx: NodeExecutionContext) -> dict[str, object]:
+    def execute(
+        self,
+        inputs: dict[str, object],
+        params: dict[str, object],
+        ctx: NodeExecutionContext,
+    ) -> dict[str, object]:
         pipeline_name = str(params["pipeline_name"])
         forbid_shim_pipeline_reentry(pipeline_name)
         pipeline_cls = get_pipeline(pipeline_name)
@@ -74,21 +94,31 @@ class PipelineBridgeNodeExecutor:
 
         with push_runtime_call(ctx.runtime_context, f"pipeline:{pipeline_name}"):
             plan = pipeline.plan(child_request, ctx.runtime_context)
-            prepared_bundle_payloads, prepared_input_payloads = _prepare_required_datasets(
-                child_request,
-                ctx.datasource_adapter,
-                ctx.logger_adapter,
-                plan.required_datasets,
-                plan.required_variables,
-                acquire_mode=plan.cache_requirement,
-                cache_root=ctx.runtime_context.cache_dir,
+            prepared_bundle_payloads, prepared_input_payloads = (
+                _prepare_required_datasets(
+                    child_request,
+                    ctx.datasource_adapter,
+                    ctx.logger_adapter,
+                    plan.required_datasets,
+                    plan.required_variables,
+                    acquire_mode=plan.cache_requirement,
+                    cache_root=ctx.runtime_context.cache_dir,
+                )
             )
             if prepared_bundle_payloads:
-                child_request.datasource_selection = dict(child_request.datasource_selection)
-                child_request.datasource_selection["_prepared_bundles"] = prepared_bundle_payloads
+                child_request.datasource_selection = dict(
+                    child_request.datasource_selection
+                )
+                child_request.datasource_selection["_prepared_bundles"] = (
+                    prepared_bundle_payloads
+                )
             if prepared_input_payloads:
-                child_request.datasource_selection = dict(child_request.datasource_selection)
-                child_request.datasource_selection["_prepared_inputs"] = prepared_input_payloads
+                child_request.datasource_selection = dict(
+                    child_request.datasource_selection
+                )
+                child_request.datasource_selection["_prepared_inputs"] = (
+                    prepared_input_payloads
+                )
             manifest = pipeline.execute(child_request, ctx.runtime_context)
         artifact = ArtifactRef(
             artifact_id=f"{ctx.runtime_context.run_id}:{ctx.node_id}:manifest",

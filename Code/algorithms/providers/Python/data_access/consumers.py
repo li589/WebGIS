@@ -28,7 +28,9 @@ def resolve_prepared_local_directory(
     if prepared_input is None:
         return None
 
-    for resource in _iter_prepared_resources(prepared_input, preferred_resource_keys=preferred_resource_keys):
+    for resource in _iter_prepared_resources(
+        prepared_input, preferred_resource_keys=preferred_resource_keys
+    ):
         if not isinstance(resource, dict):
             continue
         local_path = resource.get("local_path")
@@ -53,7 +55,9 @@ def resolve_prepared_local_path(
     if prepared_input is None:
         return None
 
-    for resource in _iter_prepared_resources(prepared_input, preferred_resource_keys=preferred_resource_keys):
+    for resource in _iter_prepared_resources(
+        prepared_input, preferred_resource_keys=preferred_resource_keys
+    ):
         if not isinstance(resource, dict):
             continue
         local_path = resource.get("local_path")
@@ -69,21 +73,28 @@ def _iter_prepared_resources(
 ) -> tuple[dict[str, Any], ...]:
     resources = tuple(
         resource
-        for resource in list(prepared_input.get("materialized_resources", ())) + list(prepared_input.get("resources", ()))
+        for resource in list(prepared_input.get("materialized_resources", ()))
+        + list(prepared_input.get("resources", ()))
         if isinstance(resource, dict)
     )
     if not preferred_resource_keys:
         return resources
     preferred = tuple(
-        resource for resource in resources if _matches_preferred_resource_key(resource, preferred_resource_keys)
+        resource
+        for resource in resources
+        if _matches_preferred_resource_key(resource, preferred_resource_keys)
     )
     if preferred:
-        remaining = tuple(resource for resource in resources if resource not in preferred)
+        remaining = tuple(
+            resource for resource in resources if resource not in preferred
+        )
         return preferred + remaining
     return resources
 
 
-def _matches_preferred_resource_key(resource: dict[str, Any], preferred_resource_keys: tuple[str, ...]) -> bool:
+def _matches_preferred_resource_key(
+    resource: dict[str, Any], preferred_resource_keys: tuple[str, ...]
+) -> bool:
     metadata = resource.get("metadata")
     if not isinstance(metadata, dict):
         return False

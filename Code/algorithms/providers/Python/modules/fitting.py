@@ -14,6 +14,7 @@
   - variable: 待拟合变量名 (默认取第一个非坐标变量)
   - output_dir: 输出目录 (默认 ctx.workspace / "products" / "fitting")
 """
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -47,7 +48,9 @@ def _store_manifest(
     return {"manifest": artifact}
 
 
-def _load_input_array(inputs: dict[str, object], ctx: NodeExecutionContext, variable: str | None) -> tuple[np.ndarray, str]:
+def _load_input_array(
+    inputs: dict[str, object], ctx: NodeExecutionContext, variable: str | None
+) -> tuple[np.ndarray, str]:
     """从 manifest 或 datasource_selection 加载待拟合的一维时间序列。"""
     # 从 datasource_selection 加载
     datasource_selection = dict(inputs.get("datasource_selection", {}))
@@ -58,7 +61,9 @@ def _load_input_array(inputs: dict[str, object], ctx: NodeExecutionContext, vari
         manifest_artifact = inputs.get("manifest")
         if manifest_artifact is not None:
             try:
-                loaded = ctx.artifact_store.load(getattr(manifest_artifact, "artifact_id", ""))
+                loaded = ctx.artifact_store.load(
+                    getattr(manifest_artifact, "artifact_id", "")
+                )
                 if isinstance(loaded, ProductManifest) and loaded.products:
                     input_path = loaded.products[0].uri
                     if variable is None:
@@ -67,7 +72,9 @@ def _load_input_array(inputs: dict[str, object], ctx: NodeExecutionContext, vari
                 pass
 
     if input_path is None:
-        raise ValueError("curve_fitting: 需要提供 datasource_selection.input_path 或 manifest")
+        raise ValueError(
+            "curve_fitting: 需要提供 datasource_selection.input_path 或 manifest"
+        )
 
     reader = UniversalDataReader(Path(str(input_path)))
     available_vars = reader.list_variables()
@@ -80,7 +87,9 @@ def _load_input_array(inputs: dict[str, object], ctx: NodeExecutionContext, vari
                 variable = v
                 break
     if variable is None or variable not in available_vars:
-        raise ValueError(f"curve_fitting: 无法确定拟合变量 (available: {available_vars})")
+        raise ValueError(
+            f"curve_fitting: 无法确定拟合变量 (available: {available_vars})"
+        )
 
     da = reader.read_variable(variable=variable)
     values = da.values
@@ -101,6 +110,7 @@ def _load_input_array(inputs: dict[str, object], ctx: NodeExecutionContext, vari
 
 def _fit_linear(values: np.ndarray) -> dict[str, object]:
     from analysis.timeseries_analysis import TrendAnalysis
+
     ta = TrendAnalysis()
     result = ta.linear_trend(values)
     # 生成拟合曲线
@@ -118,7 +128,9 @@ def _fit_polynomial(values: np.ndarray, degree: int) -> dict[str, object]:
     time = np.arange(values.size, dtype=np.float64)
     valid = np.isfinite(values) & np.isfinite(time)
     if valid.sum() < degree + 1:
-        raise ValueError(f"curve_fitting: 有效样本不足 ({valid.sum()}) 进行 {degree} 阶多项式拟合")
+        raise ValueError(
+            f"curve_fitting: 有效样本不足 ({valid.sum()}) 进行 {degree} 阶多项式拟合"
+        )
     coeffs = np.polyfit(time[valid], values[valid], degree)
     poly = np.poly1d(coeffs)
     fitted = poly(time)
@@ -143,7 +155,9 @@ def _fit_exponential(values: np.ndarray) -> dict[str, object]:
         return a * np.exp(b * x)
 
     try:
-        popt, _ = curve_fit(_exp_func, time[valid], values[valid], p0=(1.0, 0.01), maxfev=5000)
+        popt, _ = curve_fit(
+            _exp_func, time[valid], values[valid], p0=(1.0, 0.01), maxfev=5000
+        )
         fitted = _exp_func(time, *popt)
         return {
             "params": {"a": float(popt[0]), "b": float(popt[1])},
@@ -158,16 +172,39 @@ def _fit_exponential(values: np.ndarray) -> dict[str, object]:
 @register_module_decorator(name="curve_fitting", aliases=["curve_fitting_pipeline"])
 class CurveFittingModule(BaseModule):
     name = "curve_fitting"
-    description = "Curve fitting (linear / polynomial / exponential) on time-series data."
+    description = (
+        "Curve fitting (linear / polynomial / exponential) on time-series data."
+    )
     input_ports = [
-        PortSpec(name="manifest", kind="artifact", data_class="product_manifest", required=False),
-        PortSpec(name="datasource_selection", kind="config", data_class="dict", required=False),
-        PortSpec(name="algorithm_params", kind="config", data_class="dict", required=False),
-        PortSpec(name="output_spec_extra", kind="config", data_class="dict", required=False),
+        PortSpec(
+            name="manifest",
+            kind="artifact",
+            data_class="product_manifest",
+            required=False,
+        ),
+        PortSpec(
+            name="datasource_selection",
+            kind="config",
+            data_class="dict",
+            required=False,
+        ),
+        PortSpec(
+            name="algorithm_params", kind="config", data_class="dict", required=False
+        ),
+        PortSpec(
+            name="output_spec_extra", kind="config", data_class="dict", required=False
+        ),
     ]
-    output_ports = [PortSpec(name="manifest", kind="artifact", data_class="product_manifest")]
+    output_ports = [
+        PortSpec(name="manifest", kind="artifact", data_class="product_manifest")
+    ]
 
-    def execute(self, inputs: dict[str, object], params: dict[str, object], ctx: NodeExecutionContext) -> dict[str, object]:
+    def execute(
+        self,
+        inputs: dict[str, object],
+        params: dict[str, object],
+        ctx: NodeExecutionContext,
+    ) -> dict[str, object]:
         from scipy.io import savemat
 
         algorithm_params = dict(inputs.get("algorithm_params", {}))
@@ -179,13 +216,19 @@ class CurveFittingModule(BaseModule):
         if isinstance(variable, str) and not variable.strip():
             variable = None
 
-        output_dir = Path(output_spec_extra.get("output_dir", ctx.workspace / "products" / "fitting"))
+        output_dir = Path(
+            output_spec_extra.get("output_dir", ctx.workspace / "products" / "fitting")
+        )
         output_dir.mkdir(parents=True, exist_ok=True)
 
         if ctx.logger_adapter is not None:
-            ctx.logger_adapter.emit_stage_start("curve_fitting", f"Fit {method} (degree={degree})")
+            ctx.logger_adapter.emit_stage_start(
+                "curve_fitting", f"Fit {method} (degree={degree})"
+            )
 
-        values, var_name = _load_input_array(inputs, ctx, variable if isinstance(variable, str) else None)
+        values, var_name = _load_input_array(
+            inputs, ctx, variable if isinstance(variable, str) else None
+        )
 
         if method == "linear":
             result = _fit_linear(values)
@@ -194,33 +237,52 @@ class CurveFittingModule(BaseModule):
         elif method == "exponential":
             result = _fit_exponential(values)
         else:
-            raise ValueError(f"不支持的拟合方法: {method} (可选 linear|polynomial|exponential)")
+            raise ValueError(
+                f"不支持的拟合方法: {method} (可选 linear|polynomial|exponential)"
+            )
 
         # 输出 MAT + CSV
         out_name = f"fitting_{method}_{var_name}"
         mat_path = output_dir / f"{out_name}.mat"
         csv_path = output_dir / f"{out_name}.csv"
 
-        savemat(mat_path, {
-            "original": values,
-            "fitted": result["fitted_curve"],
-            "params": result["params"],
-            "method": method,
-            "equation": result["equation"],
-        }, do_compression=True)
+        savemat(
+            mat_path,
+            {
+                "original": values,
+                "fitted": result["fitted_curve"],
+                "params": result["params"],
+                "method": method,
+                "equation": result["equation"],
+            },
+            do_compression=True,
+        )
 
         # CSV: 原始值 + 拟合值
         import csv
+
         with open(csv_path, "w", newline="", encoding="utf-8") as f:
             writer = csv.writer(f)
             writer.writerow(["index", "original", "fitted"])
             for i, (orig, fit) in enumerate(zip(values, result["fitted_curve"])):
-                writer.writerow([i, float(orig) if np.isfinite(orig) else "", float(fit) if np.isfinite(fit) else ""])
+                writer.writerow(
+                    [
+                        i,
+                        float(orig) if np.isfinite(orig) else "",
+                        float(fit) if np.isfinite(fit) else "",
+                    ]
+                )
 
         if ctx.logger_adapter is not None:
-            ctx.logger_adapter.emit_artifact("curve_fitting", str(mat_path), "fitting_mat")
-            ctx.logger_adapter.emit_artifact("curve_fitting", str(csv_path), "fitting_csv")
-            ctx.logger_adapter.emit_stage_end("curve_fitting", f"Method={method}, equation={result['equation']}")
+            ctx.logger_adapter.emit_artifact(
+                "curve_fitting", str(mat_path), "fitting_mat"
+            )
+            ctx.logger_adapter.emit_artifact(
+                "curve_fitting", str(csv_path), "fitting_csv"
+            )
+            ctx.logger_adapter.emit_stage_end(
+                "curve_fitting", f"Method={method}, equation={result['equation']}"
+            )
 
         manifest = ProductManifest(
             job_id=ctx.request.job_id,
@@ -230,7 +292,7 @@ class CurveFittingModule(BaseModule):
                     name=out_name,
                     type="fitting_result",
                     uri=str(mat_path),
-                    variable=f"original,fitted,params",
+                    variable="original,fitted,params",
                     tags={"method": method, "variable": var_name},
                 ),
             ],
@@ -245,8 +307,13 @@ class CurveFittingModule(BaseModule):
                 "params": result["params"],
             },
         )
-        return _store_manifest(ctx, module_name=self.name, manifest=manifest, metadata={
-            "method": method,
-            "variable": var_name,
-            "equation": result["equation"],
-        })
+        return _store_manifest(
+            ctx,
+            module_name=self.name,
+            manifest=manifest,
+            metadata={
+                "method": method,
+                "variable": var_name,
+                "equation": result["equation"],
+            },
+        )

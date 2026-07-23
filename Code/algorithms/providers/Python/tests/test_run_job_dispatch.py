@@ -151,7 +151,9 @@ class _AcceptancePipeline(BasePipeline):
         assert "mock_dataset" in prepared_inputs
         assert prepared["mock_dataset"]["request"]["acquire_mode"] == "partial"
         assert prepared["mock_dataset"]["bundle"]["is_materialized"] is True
-        assert prepared_inputs["mock_dataset"]["request"]["dataset_name"] == "mock_dataset"
+        assert (
+            prepared_inputs["mock_dataset"]["request"]["dataset_name"] == "mock_dataset"
+        )
         assert len(prepared_inputs["mock_dataset"]["materialized_resources"]) >= 1
         return ProductManifest(
             job_id=request.job_id,
@@ -177,7 +179,9 @@ class _FailingPipeline(BasePipeline):
 
     def plan(self, request: JobRequest, ctx: RuntimeContext) -> PipelinePlan:
         _ = (request, ctx)
-        return PipelinePlan(required_datasets=[], required_variables=[], estimated_outputs=["none"])
+        return PipelinePlan(
+            required_datasets=[], required_variables=[], estimated_outputs=["none"]
+        )
 
     def execute(self, request: JobRequest, ctx: RuntimeContext) -> ProductManifest:
         _ = (request, ctx)
@@ -187,7 +191,12 @@ class _FailingPipeline(BasePipeline):
 class _AcceptanceModule(BaseModule):
     name = "acceptance_module"
 
-    def execute(self, inputs: dict[str, object], params: dict[str, object], ctx: NodeExecutionContext) -> dict[str, object]:
+    def execute(
+        self,
+        inputs: dict[str, object],
+        params: dict[str, object],
+        ctx: NodeExecutionContext,
+    ) -> dict[str, object]:
         _ = params
         datasource_selection = dict(inputs.get("datasource_selection", {}))
         algorithm_params = dict(inputs.get("algorithm_params", {}))
@@ -230,7 +239,10 @@ class RunJobDispatchTests(unittest.TestCase):
         value: object,
     ) -> None:
         self.assertTrue(
-            any(item.get("key") == key and item.get("value") == value for item in highlights),
+            any(
+                item.get("key") == key and item.get("value") == value
+                for item in highlights
+            ),
             msg=f"Expected highlight {key}={value!r} in {highlights!r}",
         )
 
@@ -291,7 +303,9 @@ class RunJobDispatchTests(unittest.TestCase):
             self.assertEqual(result.status, "success")
             self.assertIsNotNone(result.manifest_uri)
             self.assertTrue(Path(result.manifest_uri).exists())
-            self.assertEqual([status for status, _ in scheduler.statuses], ["running", "planning"])
+            self.assertEqual(
+                [status for status, _ in scheduler.statuses], ["running", "planning"]
+            )
             self.assertEqual(
                 datasource.events,
                 [
@@ -308,7 +322,9 @@ class RunJobDispatchTests(unittest.TestCase):
             self.assertEqual(payload["extra"]["prepared_dataset_count"], 1)
             self.assertEqual(payload["extra"]["prepared_input_count"], 1)
 
-    def test_run_job_uses_data_access_requests_when_explicit_sources_are_provided(self) -> None:
+    def test_run_job_uses_data_access_requests_when_explicit_sources_are_provided(
+        self,
+    ) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
             workspace = Path(tmp_dir)
             remote_file = workspace / "stations.xlsx"
@@ -317,7 +333,9 @@ class RunJobDispatchTests(unittest.TestCase):
             datasource = _RecordingDataSource()
             logger = _RecordingLogger()
             sink = LocalProductSink(workspace / "products" / "manifests")
-            request = self._build_request(_AcceptancePipeline.name, "job-success-data-access")
+            request = self._build_request(
+                _AcceptancePipeline.name, "job-success-data-access"
+            )
             request.datasource_selection["_data_access_requests"] = {
                 "mock_dataset": {
                     "selector": {
@@ -362,16 +380,25 @@ class RunJobDispatchTests(unittest.TestCase):
             self.assertEqual(resource_trace["adapter"], "excel")
             self.assertEqual(resource_trace["format"], "excel")
             self.assertEqual(resource_trace["logical_type"], "table")
-            self.assertEqual(resource_trace["origin_uri"], "https://example.com/data/mock_dataset.xlsx")
-            self.assertTrue(str(resource_trace["uri"]).startswith("cache://materialized/"))
+            self.assertEqual(
+                resource_trace["origin_uri"],
+                "https://example.com/data/mock_dataset.xlsx",
+            )
+            self.assertTrue(
+                str(resource_trace["uri"]).startswith("cache://materialized/")
+            )
             self.assertTrue(str(resource_trace["local_path"]).endswith(".excel"))
-            self.assertEqual(resource_trace["loaded_summary"]["counts"]["worksheet_count"], 1)
+            self.assertEqual(
+                resource_trace["loaded_summary"]["counts"]["worksheet_count"], 1
+            )
             self.assertEqual(resource_trace["loaded_summary"]["counts"]["row_count"], 1)
             self.assertEqual(
                 resource_trace["loaded_summary"]["schema"]["headers"],
                 ["site_id", "network_id"],
             )
-            self.assertEqual(resource_trace["loaded_summary"]["title"], "Excel workbook")
+            self.assertEqual(
+                resource_trace["loaded_summary"]["title"], "Excel workbook"
+            )
             self._assert_highlight_present(
                 resource_trace["loaded_summary"]["highlights"],
                 key="sheet_name",
@@ -381,15 +408,20 @@ class RunJobDispatchTests(unittest.TestCase):
             self.assertIn("conversion_trace", result.metrics)
             self.assertEqual(result.metrics["conversion_trace"]["dataset_count"], 1)
             self.assertEqual(result.metrics["conversion_trace"]["entry_count"], 1)
-            self.assertEqual(result.metrics["conversion_trace"]["datasets"][0]["resource_count"], 1)
             self.assertEqual(
-                result.metrics["conversion_trace"]["datasets"][0]["resources"][0]["origin_uri"],
+                result.metrics["conversion_trace"]["datasets"][0]["resource_count"], 1
+            )
+            self.assertEqual(
+                result.metrics["conversion_trace"]["datasets"][0]["resources"][0][
+                    "origin_uri"
+                ],
                 "https://example.com/data/mock_dataset.xlsx",
             )
             self.assertTrue(
                 any(
                     extra is not None
-                    and extra.get("conversion_trace", {}).get("dataset_name") == "mock_dataset"
+                    and extra.get("conversion_trace", {}).get("dataset_name")
+                    == "mock_dataset"
                     and extra.get("conversion_trace", {}).get("adapters") == ["excel"]
                     for extra in logger.warning_extras
                 )
@@ -434,13 +466,19 @@ class RunJobDispatchTests(unittest.TestCase):
                         params={"module_name": "acceptance_module"},
                     )
                 ],
-                outputs=[WorkflowOutputSpec(name="final_manifest", source="node:module_node.manifest")],
+                outputs=[
+                    WorkflowOutputSpec(
+                        name="final_manifest", source="node:module_node.manifest"
+                    )
+                ],
             )
             request = JobRequest(
                 job_id="job-workflow",
                 pipeline_name="workflow",
                 task_type="workflow",
-                time_range=TimeRange(start=datetime(2020, 1, 1), end=datetime(2020, 1, 1)),
+                time_range=TimeRange(
+                    start=datetime(2020, 1, 1), end=datetime(2020, 1, 1)
+                ),
                 region=RegionSpec(kind="global", value={}),
                 datasource_selection={"source_value": "demo-workflow"},
                 algorithm_params={},
@@ -463,13 +501,19 @@ class RunJobDispatchTests(unittest.TestCase):
             payload = json.loads(Path(result.manifest_uri).read_text(encoding="utf-8"))
             self.assertEqual(payload["products"][0]["type"], "workflow_mock_product")
             self.assertEqual(payload["extra"]["input_value"], "demo-workflow")
-            self.assertEqual([status for status, _ in scheduler.statuses], ["running", "planning"])
+            self.assertEqual(
+                [status for status, _ in scheduler.statuses], ["running", "planning"]
+            )
 
-    def test_run_job_workflow_metrics_include_conversion_trace_for_explicit_data_access(self) -> None:
+    def test_run_job_workflow_metrics_include_conversion_trace_for_explicit_data_access(
+        self,
+    ) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
             workspace = Path(tmp_dir)
             xml_file = workspace / "payload.xml"
-            xml_file.write_text("<root><station id='A'>demo</station></root>", encoding="utf-8")
+            xml_file.write_text(
+                "<root><station id='A'>demo</station></root>", encoding="utf-8"
+            )
             scheduler = _RecordingScheduler()
             datasource = _RecordingDataSource()
             logger = _RecordingLogger()
@@ -484,13 +528,19 @@ class RunJobDispatchTests(unittest.TestCase):
                         params={"module_name": "acceptance_module"},
                     )
                 ],
-                outputs=[WorkflowOutputSpec(name="final_manifest", source="node:module_node.manifest")],
+                outputs=[
+                    WorkflowOutputSpec(
+                        name="final_manifest", source="node:module_node.manifest"
+                    )
+                ],
             )
             request = JobRequest(
                 job_id="job-workflow-trace",
                 pipeline_name="workflow",
                 task_type="workflow",
-                time_range=TimeRange(start=datetime(2020, 1, 1), end=datetime(2020, 1, 1)),
+                time_range=TimeRange(
+                    start=datetime(2020, 1, 1), end=datetime(2020, 1, 1)
+                ),
                 region=RegionSpec(kind="global", value={}),
                 datasource_selection={
                     "source_value": "demo-workflow-trace",
@@ -541,24 +591,36 @@ class RunJobDispatchTests(unittest.TestCase):
             self.assertEqual(resource_trace["adapter"], "xml")
             self.assertEqual(resource_trace["format"], "xml")
             self.assertEqual(resource_trace["logical_type"], "document")
-            self.assertEqual(resource_trace["origin_uri"], "https://example.com/data/mock_dataset.xml")
-            self.assertTrue(str(resource_trace["uri"]).startswith("cache://materialized/"))
+            self.assertEqual(
+                resource_trace["origin_uri"],
+                "https://example.com/data/mock_dataset.xml",
+            )
+            self.assertTrue(
+                str(resource_trace["uri"]).startswith("cache://materialized/")
+            )
             self.assertTrue(str(resource_trace["local_path"]).endswith(".xml"))
-            self.assertEqual(resource_trace["loaded_summary"]["document"]["root_tag"], "root")
-            self.assertEqual(resource_trace["loaded_summary"]["title"], "XML document root")
+            self.assertEqual(
+                resource_trace["loaded_summary"]["document"]["root_tag"], "root"
+            )
+            self.assertEqual(
+                resource_trace["loaded_summary"]["title"], "XML document root"
+            )
             self._assert_highlight_present(
                 resource_trace["loaded_summary"]["highlights"],
                 key="root_tag",
                 value="root",
             )
             self.assertEqual(
-                result.metrics["conversion_trace"]["datasets"][0]["resources"][0]["origin_uri"],
+                result.metrics["conversion_trace"]["datasets"][0]["resources"][0][
+                    "origin_uri"
+                ],
                 "https://example.com/data/mock_dataset.xml",
             )
             self.assertTrue(
                 any(
                     extra is not None
-                    and extra.get("conversion_trace", {}).get("dataset_name") == "mock_dataset"
+                    and extra.get("conversion_trace", {}).get("dataset_name")
+                    == "mock_dataset"
                     and extra.get("conversion_trace", {}).get("formats") == ["xml"]
                     for extra in logger.warning_extras
                 )
@@ -589,7 +651,9 @@ class RunJobDispatchTests(unittest.TestCase):
                 job_id="job-workflow-json",
                 pipeline_name="workflow",
                 task_type="workflow",
-                time_range=TimeRange(start=datetime(2020, 1, 1), end=datetime(2020, 1, 1)),
+                time_range=TimeRange(
+                    start=datetime(2020, 1, 1), end=datetime(2020, 1, 1)
+                ),
                 region=RegionSpec(kind="global", value={}),
                 datasource_selection={"source_value": "demo-workflow-json"},
                 algorithm_params={},
@@ -629,14 +693,18 @@ class RunJobDispatchTests(unittest.TestCase):
                 ],
                 outputs=[
                     WorkflowOutputSpec(name="debug_value", source="input:source_value"),
-                    WorkflowOutputSpec(name="final_manifest", source="node:module_node.manifest"),
+                    WorkflowOutputSpec(
+                        name="final_manifest", source="node:module_node.manifest"
+                    ),
                 ],
             )
             request = JobRequest(
                 job_id="job-workflow-output-selection",
                 pipeline_name="workflow",
                 task_type="workflow",
-                time_range=TimeRange(start=datetime(2020, 1, 1), end=datetime(2020, 1, 1)),
+                time_range=TimeRange(
+                    start=datetime(2020, 1, 1), end=datetime(2020, 1, 1)
+                ),
                 region=RegionSpec(kind="global", value={}),
                 datasource_selection={"source_value": "demo-nonfirst-manifest"},
                 algorithm_params={},
@@ -676,14 +744,18 @@ class RunJobDispatchTests(unittest.TestCase):
                 ],
                 outputs=[
                     WorkflowOutputSpec(name="manifest", source="input:source_value"),
-                    WorkflowOutputSpec(name="report_manifest", source="node:module_node.manifest"),
+                    WorkflowOutputSpec(
+                        name="report_manifest", source="node:module_node.manifest"
+                    ),
                 ],
             )
             request = JobRequest(
                 job_id="job-workflow-manifest-name-collision",
                 pipeline_name="workflow",
                 task_type="workflow",
-                time_range=TimeRange(start=datetime(2020, 1, 1), end=datetime(2020, 1, 1)),
+                time_range=TimeRange(
+                    start=datetime(2020, 1, 1), end=datetime(2020, 1, 1)
+                ),
                 region=RegionSpec(kind="global", value={}),
                 datasource_selection={"source_value": "demo-name-collision"},
                 algorithm_params={},
@@ -729,7 +801,9 @@ class RunJobDispatchTests(unittest.TestCase):
                 job_id="job-invalid-workflow-binding",
                 pipeline_name="workflow",
                 task_type="workflow",
-                time_range=TimeRange(start=datetime(2020, 1, 1), end=datetime(2020, 1, 1)),
+                time_range=TimeRange(
+                    start=datetime(2020, 1, 1), end=datetime(2020, 1, 1)
+                ),
                 region=RegionSpec(kind="global", value={}),
                 datasource_selection={"source_value": "unused"},
                 algorithm_params={},
@@ -761,9 +835,14 @@ class RunJobDispatchTests(unittest.TestCase):
                 pipeline_name="workflow",
                 module_name="acceptance_module",
                 task_type="workflow",
-                time_range=TimeRange(start=datetime(2020, 1, 1), end=datetime(2020, 1, 1)),
+                time_range=TimeRange(
+                    start=datetime(2020, 1, 1), end=datetime(2020, 1, 1)
+                ),
                 region=RegionSpec(kind="global", value={}),
-                datasource_selection={"source_value": "unused", "dataset_name": "demo-dataset"},
+                datasource_selection={
+                    "source_value": "unused",
+                    "dataset_name": "demo-dataset",
+                },
                 algorithm_params={"threshold": 3},
                 output_spec=OutputSpec(extra={"publish": False}),
             )
@@ -781,7 +860,9 @@ class RunJobDispatchTests(unittest.TestCase):
             self.assertIsNotNone(result.manifest_uri)
             payload = json.loads(Path(result.manifest_uri).read_text(encoding="utf-8"))
             self.assertEqual(payload["products"][0]["type"], "workflow_mock_product")
-            self.assertEqual(payload["extra"]["datasource_selection"]["dataset_name"], "demo-dataset")
+            self.assertEqual(
+                payload["extra"]["datasource_selection"]["dataset_name"], "demo-dataset"
+            )
             self.assertEqual(payload["extra"]["algorithm_params"]["threshold"], 3)
             self.assertIsNone(request.workflow_name)
             self.assertIsNone(request.workflow_definition)
@@ -799,9 +880,11 @@ class RunJobDispatchTests(unittest.TestCase):
                 pipeline_name="workflow",
                 workflow_name="retrieval_workflow",
                 task_type="workflow",
-                time_range=TimeRange(start=datetime(2020, 1, 1), end=datetime(2020, 1, 2)),
+                time_range=TimeRange(
+                    start=datetime(2020, 1, 1), end=datetime(2020, 1, 2)
+                ),
                 region=RegionSpec(kind="global", value={}),
-                datasource_selection={},
+                datasource_selection={"dh_mat": str(workspace / "dh.mat")},
                 algorithm_params={"mode": "ddca", "write_daily_files": True},
                 output_spec=OutputSpec(extra={"output_dir": str(output_dir)}),
             )
@@ -821,18 +904,27 @@ class RunJobDispatchTests(unittest.TestCase):
                 "H_used_mat": np.array([[0.15], [0.17]], dtype=np.float64),
             }
 
-            with patch("modules.bundles.load_lin_pix_selection", return_value=None), patch(
-                "modules.bundles.build_timeseries_bundle_from_range",
-                return_value=bundle,
-            ), patch(
-                "modules.block_inversion.load_mat_file",
-                return_value={"date_keys": block_result["date_keys"], "TBv_mat": bundle.data["TBv_mat"]},
-            ), patch(
-                "algorithms.block_inversion.build_block_field_config",
-                return_value=object(),
-            ), patch(
-                "algorithms.block_inversion.execute_block_inversion",
-                return_value=block_result,
+            with (
+                patch("modules.bundles.load_lin_pix_selection", return_value=None),
+                patch(
+                    "modules.bundles.build_timeseries_bundle_from_range",
+                    return_value=bundle,
+                ),
+                patch(
+                    "modules.block_inversion.load_mat_file",
+                    return_value={
+                        "date_keys": block_result["date_keys"],
+                        "TBv_mat": bundle.data["TBv_mat"],
+                    },
+                ),
+                patch(
+                    "algorithms.block_inversion.build_block_field_config",
+                    return_value=object(),
+                ),
+                patch(
+                    "algorithms.block_inversion.execute_block_inversion",
+                    return_value=block_result,
+                ),
             ):
                 result = run_job(
                     request,
@@ -853,9 +945,13 @@ class RunJobDispatchTests(unittest.TestCase):
             self.assertEqual(payload["extra"]["module_name"], "block_inversion")
             self.assertEqual(payload["extra"]["mode"], "ddca")
             self.assertIsNone(request.workflow_definition)
-            self.assertEqual([status for status, _ in scheduler.statuses], ["running", "planning"])
+            self.assertEqual(
+                [status for status, _ in scheduler.statuses], ["running", "planning"]
+            )
 
-    def test_run_job_promotes_legacy_retrieval_pipeline_name_to_workflow_preset(self) -> None:
+    def test_run_job_promotes_legacy_retrieval_pipeline_name_to_workflow_preset(
+        self,
+    ) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
             workspace = Path(tmp_dir)
             scheduler = _RecordingScheduler()
@@ -867,7 +963,9 @@ class RunJobDispatchTests(unittest.TestCase):
                 job_id="job-retrieval-legacy",
                 pipeline_name="retrieval_workflow_pipeline",
                 task_type="workflow",
-                time_range=TimeRange(start=datetime(2020, 1, 1), end=datetime(2020, 1, 2)),
+                time_range=TimeRange(
+                    start=datetime(2020, 1, 1), end=datetime(2020, 1, 2)
+                ),
                 region=RegionSpec(kind="global", value={}),
                 datasource_selection={},
                 algorithm_params={"mode": "dh", "write_daily_files": False},
@@ -887,18 +985,27 @@ class RunJobDispatchTests(unittest.TestCase):
                 "DH_mat": np.array([[0.2], [0.3]], dtype=np.float64),
             }
 
-            with patch("modules.bundles.load_lin_pix_selection", return_value=None), patch(
-                "modules.bundles.build_timeseries_bundle_from_range",
-                return_value=bundle,
-            ), patch(
-                "modules.block_inversion.load_mat_file",
-                return_value={"date_keys": block_result["date_keys"], "TBv_mat": bundle.data["TBv_mat"]},
-            ), patch(
-                "algorithms.block_inversion.build_block_field_config",
-                return_value=object(),
-            ), patch(
-                "algorithms.block_inversion.execute_block_inversion",
-                return_value=block_result,
+            with (
+                patch("modules.bundles.load_lin_pix_selection", return_value=None),
+                patch(
+                    "modules.bundles.build_timeseries_bundle_from_range",
+                    return_value=bundle,
+                ),
+                patch(
+                    "modules.block_inversion.load_mat_file",
+                    return_value={
+                        "date_keys": block_result["date_keys"],
+                        "TBv_mat": bundle.data["TBv_mat"],
+                    },
+                ),
+                patch(
+                    "algorithms.block_inversion.build_block_field_config",
+                    return_value=object(),
+                ),
+                patch(
+                    "algorithms.block_inversion.execute_block_inversion",
+                    return_value=block_result,
+                ),
             ):
                 result = run_job(
                     request,
@@ -925,11 +1032,15 @@ class RunJobDispatchTests(unittest.TestCase):
                 job_id="job-retrieval-shim",
                 pipeline_name="retrieval_workflow_pipeline",
                 task_type="workflow",
-                time_range=TimeRange(start=datetime(2020, 1, 1), end=datetime(2020, 1, 2)),
+                time_range=TimeRange(
+                    start=datetime(2020, 1, 1), end=datetime(2020, 1, 2)
+                ),
                 region=RegionSpec(kind="global", value={}),
                 datasource_selection={},
                 algorithm_params={"mode": "ddca"},
-                output_spec=OutputSpec(extra={"output_dir": str(workspace / "shim-out")}),
+                output_spec=OutputSpec(
+                    extra={"output_dir": str(workspace / "shim-out")}
+                ),
             )
             runtime_context = RuntimeContext(
                 job_id=request.job_id,
@@ -974,12 +1085,18 @@ class RunJobDispatchTests(unittest.TestCase):
             fake_result = type(
                 "_FakeWorkflowResult",
                 (),
-                {"outputs": {"final_manifest": fake_artifact}, "execution_order": ["timeseries_bundle", "block_inversion"]},
+                {
+                    "outputs": {"final_manifest": fake_artifact},
+                    "execution_order": ["timeseries_bundle", "block_inversion"],
+                },
             )()
 
-            with patch("workflow.presets.build_retrieval_workflow_definition") as builder, patch(
-                "workflow.executor.WorkflowRunner"
-            ) as runner_cls:
+            with (
+                patch(
+                    "workflow.presets.build_retrieval_workflow_definition"
+                ) as builder,
+                patch("workflow.executor.WorkflowRunner") as runner_cls,
+            ):
                 runner = runner_cls.return_value
                 runner.run.return_value = fake_result
                 runner.artifact_store = fake_store
@@ -987,7 +1104,9 @@ class RunJobDispatchTests(unittest.TestCase):
                 manifest = pipeline.execute(request, runtime_context)
 
             self.assertIs(manifest, fake_manifest)
-            self.assertEqual(manifest.extra["compat_pipeline_name"], "retrieval_workflow_pipeline")
+            self.assertEqual(
+                manifest.extra["compat_pipeline_name"], "retrieval_workflow_pipeline"
+            )
             self.assertEqual(fake_store.loaded_artifact_id, "artifact:manifest")
             self.assertEqual(builder.call_args.args[0], request)
             self.assertTrue(

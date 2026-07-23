@@ -14,6 +14,7 @@
         output_dir="I:/Geograph_DataSet/SMAP/mat",
     )
 """
+
 from __future__ import annotations
 
 import re
@@ -164,7 +165,9 @@ class DataPreprocessor:
         for idx in indices:
             day_data = values[idx]
             # 时间标签 (优先日期字符串，否则用索引)
-            date_label = date_strings[idx] if idx < len(date_strings) else f"day{idx:04d}"
+            date_label = (
+                date_strings[idx] if idx < len(date_strings) else f"day{idx:04d}"
+            )
 
             mat_dict: dict[str, np.ndarray] = {
                 "SMCI": day_data,
@@ -260,7 +263,11 @@ class DataPreprocessor:
         for h5_file in smap_files:
             # 按文件名中的日期筛选
             smap_date = self._extract_date_from_filename(h5_file.name)
-            if smap_date is not None and date_start is not None and date_end is not None:
+            if (
+                smap_date is not None
+                and date_start is not None
+                and date_end is not None
+            ):
                 if not (date_start <= smap_date <= date_end):
                     continue
             try:
@@ -297,7 +304,9 @@ class DataPreprocessor:
         if lc_path is not None:
             try:
                 self.convert_geotiff_to_mat(
-                    lc_path, static_out / "landcover.mat", bbox=bbox,
+                    lc_path,
+                    static_out / "landcover.mat",
+                    bbox=bbox,
                     variable_name="landcover",
                 )
                 result["static"].append(static_out / "landcover.mat")
@@ -358,7 +367,8 @@ class DataPreprocessor:
                 return indices
             try:
                 times = num2date(
-                    time_var[:], time_var.units,
+                    time_var[:],
+                    time_var.units,
                     getattr(time_var, "calendar", "standard"),
                 )
                 time_strings = [str(t) for t in times]
@@ -382,9 +392,7 @@ class DataPreprocessor:
         output_dir.mkdir(parents=True, exist_ok=True)
 
         reader = UniversalDataReader(smap_h5_path)
-        data = reader.read_variable(
-            f"{_SMAP_AM_GROUP}/clay_fraction", bbox=bbox
-        )
+        data = reader.read_variable(f"{_SMAP_AM_GROUP}/clay_fraction", bbox=bbox)
         mat_dict: dict[str, np.ndarray] = {
             "CF": np.asarray(data.values, dtype=np.float64),
         }
@@ -415,5 +423,7 @@ if __name__ == "__main__":
     # 独立运行: 打印基本信息与可用方法
     pre = DataPreprocessor()
     print("DataPreprocessor 已就绪, data_root =", pre.data_root)
-    print("可用方法: convert_smap_to_mat, convert_era5_to_daily_mat, "
-          "convert_geotiff_to_mat, build_retrieval_inputs")
+    print(
+        "可用方法: convert_smap_to_mat, convert_era5_to_daily_mat, "
+        "convert_geotiff_to_mat, build_retrieval_inputs"
+    )

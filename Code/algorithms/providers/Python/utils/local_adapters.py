@@ -96,7 +96,13 @@ class ConsoleLoggerAdapter:
         self._emit("error", stage, message, extra=extra or {})
 
     def emit_artifact(self, stage: str, artifact_uri: str, artifact_type: str) -> None:
-        self._emit("artifact", stage, "Artifact emitted", artifact_uri=artifact_uri, artifact_type=artifact_type)
+        self._emit(
+            "artifact",
+            stage,
+            "Artifact emitted",
+            artifact_uri=artifact_uri,
+            artifact_type=artifact_type,
+        )
 
     def emit_stage_end(self, stage: str, message: str) -> None:
         self._emit("stage_end", stage, message)
@@ -108,7 +114,9 @@ class LocalProductSink:
         self.manifest_dir.mkdir(parents=True, exist_ok=True)
 
     def write_raster(self, product: Any) -> ProductRef:
-        return ProductRef(name=product.name, type="raster", uri=product.uri, variable=product.variable)
+        return ProductRef(
+            name=product.name, type="raster", uri=product.uri, variable=product.variable
+        )
 
     def write_table(self, product: Any) -> ProductRef:
         return ProductRef(name=product.name, type="table", uri=product.uri)

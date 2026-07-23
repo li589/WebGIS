@@ -38,14 +38,22 @@ class _FakePlatformClient:
     def build_run_context(self, request: JobRequest) -> dict[str, object]:
         return {"trace_id": request.job_id, "platform": "demo"}
 
-    def update_job_status(self, job_id: str, run_id: str, status: str, detail=None) -> None:
+    def update_job_status(
+        self, job_id: str, run_id: str, status: str, detail=None
+    ) -> None:
         self.statuses.append((job_id, run_id, status, detail))
 
     def complete_job(self, result: JobResult) -> None:
         self.completions.append(result.run_id)
 
     def discover_assets(self, request: DataRequest) -> list[DataAsset]:
-        return [DataAsset(uri="memory://asset-001", dataset_name=request.dataset_name, variables=list(request.variables))]
+        return [
+            DataAsset(
+                uri="memory://asset-001",
+                dataset_name=request.dataset_name,
+                variables=list(request.variables),
+            )
+        ]
 
     def resolve_bundle(self, request: DataRequest) -> DataBundle:
         return DataBundle(
@@ -69,7 +77,12 @@ class _FakePlatformClient:
         self.events.append(event)
 
     def persist_raster(self, product: RasterProduct) -> ProductRef:
-        return ProductRef(name=product.name, type="platform_raster", uri=product.uri, variable=product.variable)
+        return ProductRef(
+            name=product.name,
+            type="platform_raster",
+            uri=product.uri,
+            variable=product.variable,
+        )
 
     def persist_table(self, product: TableProduct) -> ProductRef:
         return ProductRef(name=product.name, type="platform_table", uri=product.uri)
@@ -103,8 +116,14 @@ class PlatformRealAdapterTests(unittest.TestCase):
         statuses = []
         completed = []
         adapter = PlatformSchedulerAdapter(
-            run_context_provider=lambda request: {"job_id": request.job_id, "source": "callable"},
-            status_publisher=lambda job_id, run_id, status, detail=None: statuses.append((job_id, status)),
+            run_context_provider=lambda request: {
+                "job_id": request.job_id,
+                "source": "callable",
+            },
+            status_publisher=lambda job_id,
+            run_id,
+            status,
+            detail=None: statuses.append((job_id, status)),
             completion_publisher=lambda result: completed.append(result.status),
         )
         request = _build_request()
@@ -124,7 +143,9 @@ class PlatformRealAdapterTests(unittest.TestCase):
         self.assertEqual(statuses[0][1], "running")
         self.assertEqual(completed, ["success"])
 
-    def test_platform_datasource_logger_and_product_adapters_support_platform_client(self) -> None:
+    def test_platform_datasource_logger_and_product_adapters_support_platform_client(
+        self,
+    ) -> None:
         client = _FakePlatformClient()
         datasource = PlatformDataSourceAdapter(platform_client=client)
         logger = PlatformLoggerAdapter(platform_client=client)
@@ -141,9 +162,15 @@ class PlatformRealAdapterTests(unittest.TestCase):
         bundle = datasource.materialize(bundle)
         logger.bind_context("job-real-001", "run-real-003")
         logger.emit_stage_start("dispatch", "start")
-        raster_ref = sink.write_raster(RasterProduct(name="r", uri="memory://r.tif", variable="R"))
-        table_ref = sink.write_table(TableProduct(name="t", uri="memory://t.parquet", table_type="table"))
-        manifest_uri = sink.write_manifest(ProductManifest(job_id="job-real-001", run_id="run-real-003"))
+        raster_ref = sink.write_raster(
+            RasterProduct(name="r", uri="memory://r.tif", variable="R")
+        )
+        table_ref = sink.write_table(
+            TableProduct(name="t", uri="memory://t.parquet", table_type="table")
+        )
+        manifest_uri = sink.write_manifest(
+            ProductManifest(job_id="job-real-001", run_id="run-real-003")
+        )
 
         self.assertEqual(assets[0].dataset_name, "demo")
         self.assertTrue(bundle.metadata["acquired"])
@@ -153,20 +180,35 @@ class PlatformRealAdapterTests(unittest.TestCase):
         self.assertEqual(table_ref.type, "platform_table")
         self.assertEqual(manifest_uri, "memory://manifest/run-real-003.json")
 
-    def test_platform_logger_and_product_adapters_support_direct_callables(self) -> None:
+    def test_platform_logger_and_product_adapters_support_direct_callables(
+        self,
+    ) -> None:
         events = []
         logger = PlatformLoggerAdapter(emit_event_fn=lambda event: events.append(event))
         sink = PlatformProductSink(
-            persist_raster_fn=lambda product: ProductRef(name=product.name, type="direct_raster", uri=product.uri, variable=product.variable),
-            persist_table_fn=lambda product: ProductRef(name=product.name, type="direct_table", uri=product.uri),
+            persist_raster_fn=lambda product: ProductRef(
+                name=product.name,
+                type="direct_raster",
+                uri=product.uri,
+                variable=product.variable,
+            ),
+            persist_table_fn=lambda product: ProductRef(
+                name=product.name, type="direct_table", uri=product.uri
+            ),
             persist_manifest_fn=lambda manifest: f"direct://{manifest.run_id}.json",
         )
 
         logger.bind_context("job-real-002", "run-real-004")
         logger.emit_artifact("dispatch", "memory://artifact", "job_manifest")
-        raster_ref = sink.write_raster(RasterProduct(name="r2", uri="memory://r2.tif", variable="R2"))
-        table_ref = sink.write_table(TableProduct(name="t2", uri="memory://t2.parquet", table_type="table"))
-        manifest_uri = sink.write_manifest(ProductManifest(job_id="job-real-002", run_id="run-real-004"))
+        raster_ref = sink.write_raster(
+            RasterProduct(name="r2", uri="memory://r2.tif", variable="R2")
+        )
+        table_ref = sink.write_table(
+            TableProduct(name="t2", uri="memory://t2.parquet", table_type="table")
+        )
+        manifest_uri = sink.write_manifest(
+            ProductManifest(job_id="job-real-002", run_id="run-real-004")
+        )
 
         self.assertEqual(events[1].event_type, "artifact")
         self.assertEqual(raster_ref.type, "direct_raster")

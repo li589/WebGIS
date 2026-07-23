@@ -109,7 +109,10 @@ class DataAccessPipelineTests(unittest.TestCase):
         value: object,
     ) -> None:
         self.assertTrue(
-            any(item.get("key") == key and item.get("value") == value for item in highlights),
+            any(
+                item.get("key") == key and item.get("value") == value
+                for item in highlights
+            ),
             msg=f"Expected highlight {key}={value!r} in {highlights!r}",
         )
 
@@ -121,7 +124,10 @@ class DataAccessPipelineTests(unittest.TestCase):
         severity: str,
     ) -> None:
         self.assertTrue(
-            any(item.get("code") == code and item.get("severity") == severity for item in warnings),
+            any(
+                item.get("code") == code and item.get("severity") == severity
+                for item in warnings
+            ),
             msg=f"Expected warning {code}/{severity} in {warnings!r}",
         )
 
@@ -143,7 +149,9 @@ class DataAccessPipelineTests(unittest.TestCase):
             self.assertEqual(len(prepared.resources), 1)
             self.assertEqual(len(prepared.materialized_resources), 1)
             self.assertEqual(prepared.resources[0].source_kind, "local_file")
-            self.assertEqual(prepared.materialized_resources[0].local_path, str(local_file.resolve()))
+            self.assertEqual(
+                prepared.materialized_resources[0].local_path, str(local_file.resolve())
+            )
             self.assertEqual(prepared.cache_hits, ())
 
     def test_http_resource_fetches_into_cache_and_materializes(self) -> None:
@@ -170,7 +178,9 @@ class DataAccessPipelineTests(unittest.TestCase):
 
             self.assertEqual(prepared.resources[0].source_kind, "online")
             self.assertEqual(prepared.materialized_resources[0].source_kind, "cache")
-            self.assertTrue(Path(prepared.materialized_resources[0].local_path).exists())
+            self.assertTrue(
+                Path(prepared.materialized_resources[0].local_path).exists()
+            )
             self.assertEqual(prepared.cache_hits, ())
 
     def test_minio_resource_uses_cache_on_second_prepare(self) -> None:
@@ -248,17 +258,29 @@ class DataAccessPipelineTests(unittest.TestCase):
             )
             self.assertEqual(len(prepared_text.conversion_trace), 1)
             self.assertEqual(prepared_text.conversion_trace[0]["adapter"], "text")
-            self.assertEqual(prepared_text.conversion_trace[0]["loaded_summary"]["counts"]["line_count"], 2)
-            self.assertEqual(prepared_text.conversion_trace[0]["loaded_summary"]["title"], "Text resource")
+            self.assertEqual(
+                prepared_text.conversion_trace[0]["loaded_summary"]["counts"][
+                    "line_count"
+                ],
+                2,
+            )
+            self.assertEqual(
+                prepared_text.conversion_trace[0]["loaded_summary"]["title"],
+                "Text resource",
+            )
             self._assert_highlight_present(
                 prepared_text.conversion_trace[0]["loaded_summary"]["highlights"],
                 key="line_count",
                 value=2,
             )
-            self.assertEqual(prepared_text.conversion_trace[0]["loaded_summary"]["warnings"], [])
+            self.assertEqual(
+                prepared_text.conversion_trace[0]["loaded_summary"]["warnings"], []
+            )
 
             csv_file = root / "stations.csv"
-            csv_file.write_text("site_id,network_id\nA,NET1\nB,NET2\n", encoding="utf-8")
+            csv_file.write_text(
+                "site_id,network_id\nA,NET1\nB,NET2\n", encoding="utf-8"
+            )
             prepared_csv = coordinator.prepare(
                 DataRequestV2(
                     dataset_name="demo_csv",
@@ -268,12 +290,20 @@ class DataAccessPipelineTests(unittest.TestCase):
             )
             self.assertEqual(len(prepared_csv.conversion_trace), 1)
             self.assertEqual(prepared_csv.conversion_trace[0]["adapter"], "csv")
-            self.assertEqual(prepared_csv.conversion_trace[0]["loaded_summary"]["counts"]["row_count"], 2)
+            self.assertEqual(
+                prepared_csv.conversion_trace[0]["loaded_summary"]["counts"][
+                    "row_count"
+                ],
+                2,
+            )
             self.assertEqual(
                 prepared_csv.conversion_trace[0]["loaded_summary"]["schema"]["headers"],
                 ("site_id", "network_id"),
             )
-            self.assertEqual(prepared_csv.conversion_trace[0]["loaded_summary"]["title"], "Tabular resource")
+            self.assertEqual(
+                prepared_csv.conversion_trace[0]["loaded_summary"]["title"],
+                "Tabular resource",
+            )
             self._assert_highlight_present(
                 prepared_csv.conversion_trace[0]["loaded_summary"]["highlights"],
                 key="row_count",
@@ -307,9 +337,22 @@ class DataAccessPipelineTests(unittest.TestCase):
             )
             self.assertEqual(len(prepared_excel.conversion_trace), 1)
             self.assertEqual(prepared_excel.conversion_trace[0]["adapter"], "excel")
-            self.assertEqual(prepared_excel.conversion_trace[0]["loaded_summary"]["counts"]["worksheet_count"], 1)
-            self.assertEqual(prepared_excel.conversion_trace[0]["loaded_summary"]["counts"]["row_count"], 2)
-            self.assertEqual(prepared_excel.conversion_trace[0]["loaded_summary"]["title"], "Excel workbook")
+            self.assertEqual(
+                prepared_excel.conversion_trace[0]["loaded_summary"]["counts"][
+                    "worksheet_count"
+                ],
+                1,
+            )
+            self.assertEqual(
+                prepared_excel.conversion_trace[0]["loaded_summary"]["counts"][
+                    "row_count"
+                ],
+                2,
+            )
+            self.assertEqual(
+                prepared_excel.conversion_trace[0]["loaded_summary"]["title"],
+                "Excel workbook",
+            )
             self._assert_highlight_present(
                 prepared_excel.conversion_trace[0]["loaded_summary"]["highlights"],
                 key="sheet_name",
@@ -317,7 +360,9 @@ class DataAccessPipelineTests(unittest.TestCase):
             )
 
             xml_file = root / "payload.xml"
-            xml_file.write_text("<root><station id='A'>demo</station></root>", encoding="utf-8")
+            xml_file.write_text(
+                "<root><station id='A'>demo</station></root>", encoding="utf-8"
+            )
             prepared_xml = coordinator.prepare(
                 DataRequestV2(
                     dataset_name="demo_xml",
@@ -327,12 +372,20 @@ class DataAccessPipelineTests(unittest.TestCase):
             )
             self.assertEqual(len(prepared_xml.conversion_trace), 1)
             self.assertEqual(prepared_xml.conversion_trace[0]["adapter"], "xml")
-            self.assertEqual(prepared_xml.conversion_trace[0]["loaded_summary"]["document"]["root_tag"], "root")
+            self.assertEqual(
+                prepared_xml.conversion_trace[0]["loaded_summary"]["document"][
+                    "root_tag"
+                ],
+                "root",
+            )
             self.assertEqual(
                 prepared_xml.conversion_trace[0]["loaded_summary"]["document"]["keys"],
                 ("root",),
             )
-            self.assertEqual(prepared_xml.conversion_trace[0]["loaded_summary"]["title"], "XML document root")
+            self.assertEqual(
+                prepared_xml.conversion_trace[0]["loaded_summary"]["title"],
+                "XML document root",
+            )
             self._assert_highlight_present(
                 prepared_xml.conversion_trace[0]["loaded_summary"]["highlights"],
                 key="root_tag",
@@ -349,11 +402,18 @@ class DataAccessPipelineTests(unittest.TestCase):
                 )
             )
             self.assertEqual(prepared_mat.conversion_trace[0]["adapter"], "mat")
-            self.assertEqual(prepared_mat.conversion_trace[0]["loaded_summary"]["counts"]["variable_count"], 1)
+            self.assertEqual(
+                prepared_mat.conversion_trace[0]["loaded_summary"]["counts"][
+                    "variable_count"
+                ],
+                1,
+            )
 
             h5_file = root / "payload.h5"
             with h5py.File(h5_file, "w") as handle:
-                handle.create_dataset("tb", data=np.arange(6, dtype=np.float32).reshape(2, 3))
+                handle.create_dataset(
+                    "tb", data=np.arange(6, dtype=np.float32).reshape(2, 3)
+                )
             prepared_h5 = coordinator.prepare(
                 DataRequestV2(
                     dataset_name="demo_h5",
@@ -362,7 +422,12 @@ class DataAccessPipelineTests(unittest.TestCase):
                 )
             )
             self.assertEqual(prepared_h5.conversion_trace[0]["adapter"], "hdf5")
-            self.assertEqual(prepared_h5.conversion_trace[0]["loaded_summary"]["counts"]["dataset_count"], 1)
+            self.assertEqual(
+                prepared_h5.conversion_trace[0]["loaded_summary"]["counts"][
+                    "dataset_count"
+                ],
+                1,
+            )
 
             nc_file = root / "payload.nc"
             _write_minimal_netcdf(nc_file)
@@ -374,9 +439,22 @@ class DataAccessPipelineTests(unittest.TestCase):
                 )
             )
             self.assertEqual(prepared_nc.conversion_trace[0]["adapter"], "netcdf")
-            self.assertEqual(prepared_nc.conversion_trace[0]["loaded_summary"]["counts"]["dimension_count"], 2)
-            self.assertEqual(prepared_nc.conversion_trace[0]["loaded_summary"]["counts"]["variable_count"], 1)
-            self.assertEqual(prepared_nc.conversion_trace[0]["loaded_summary"]["title"], "NetCDF dataset")
+            self.assertEqual(
+                prepared_nc.conversion_trace[0]["loaded_summary"]["counts"][
+                    "dimension_count"
+                ],
+                2,
+            )
+            self.assertEqual(
+                prepared_nc.conversion_trace[0]["loaded_summary"]["counts"][
+                    "variable_count"
+                ],
+                1,
+            )
+            self.assertEqual(
+                prepared_nc.conversion_trace[0]["loaded_summary"]["title"],
+                "NetCDF dataset",
+            )
 
             tif_file = root / "payload.tif"
             _write_minimal_tiff(tif_file)
@@ -388,15 +466,28 @@ class DataAccessPipelineTests(unittest.TestCase):
                 )
             )
             self.assertEqual(prepared_tif.conversion_trace[0]["adapter"], "tiff")
-            self.assertEqual(prepared_tif.conversion_trace[0]["loaded_summary"]["counts"]["band_count"], 1)
-            self.assertEqual(prepared_tif.conversion_trace[0]["loaded_summary"]["spatial"]["crs"], "EPSG:4326")
-            self.assertEqual(prepared_tif.conversion_trace[0]["loaded_summary"]["title"], "Raster resource")
+            self.assertEqual(
+                prepared_tif.conversion_trace[0]["loaded_summary"]["counts"][
+                    "band_count"
+                ],
+                1,
+            )
+            self.assertEqual(
+                prepared_tif.conversion_trace[0]["loaded_summary"]["spatial"]["crs"],
+                "EPSG:4326",
+            )
+            self.assertEqual(
+                prepared_tif.conversion_trace[0]["loaded_summary"]["title"],
+                "Raster resource",
+            )
             self._assert_highlight_present(
                 prepared_tif.conversion_trace[0]["loaded_summary"]["highlights"],
                 key="crs",
                 value="EPSG:4326",
             )
-            self.assertEqual(prepared_tif.conversion_trace[0]["loaded_summary"]["warnings"], [])
+            self.assertEqual(
+                prepared_tif.conversion_trace[0]["loaded_summary"]["warnings"], []
+            )
 
             tif_without_crs_file = root / "payload_no_crs.tif"
             _write_minimal_tiff_without_crs(tif_without_crs_file)
@@ -407,9 +498,14 @@ class DataAccessPipelineTests(unittest.TestCase):
                     selector={"uris": [str(tif_without_crs_file)]},
                 )
             )
-            self.assertEqual(prepared_tif_without_crs.conversion_trace[0]["loaded_summary"]["title"], "Raster resource")
+            self.assertEqual(
+                prepared_tif_without_crs.conversion_trace[0]["loaded_summary"]["title"],
+                "Raster resource",
+            )
             self._assert_warning_present(
-                prepared_tif_without_crs.conversion_trace[0]["loaded_summary"]["warnings"],
+                prepared_tif_without_crs.conversion_trace[0]["loaded_summary"][
+                    "warnings"
+                ],
                 code="missing_crs",
                 severity="warning",
             )
@@ -424,9 +520,22 @@ class DataAccessPipelineTests(unittest.TestCase):
                 )
             )
             self.assertEqual(prepared_shp.conversion_trace[0]["adapter"], "shapefile")
-            self.assertEqual(prepared_shp.conversion_trace[0]["loaded_summary"]["counts"]["feature_count"], 2)
-            self.assertEqual(prepared_shp.conversion_trace[0]["loaded_summary"]["spatial"]["geometry_type"], "point")
-            self.assertEqual(prepared_shp.conversion_trace[0]["loaded_summary"]["title"], "Vector point")
+            self.assertEqual(
+                prepared_shp.conversion_trace[0]["loaded_summary"]["counts"][
+                    "feature_count"
+                ],
+                2,
+            )
+            self.assertEqual(
+                prepared_shp.conversion_trace[0]["loaded_summary"]["spatial"][
+                    "geometry_type"
+                ],
+                "point",
+            )
+            self.assertEqual(
+                prepared_shp.conversion_trace[0]["loaded_summary"]["title"],
+                "Vector point",
+            )
             self._assert_highlight_present(
                 prepared_shp.conversion_trace[0]["loaded_summary"]["highlights"],
                 key="geometry_type",

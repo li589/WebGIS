@@ -17,11 +17,11 @@
     # 或直接运行：
     python tests/test_e2e_output_pipeline.py
 """
+
 from __future__ import annotations
 
 import json
 import os
-import shutil
 import sys
 import tempfile
 import unittest
@@ -96,19 +96,25 @@ class TestOutputCoordinatorRasterOutput(unittest.TestCase):
 
             # 验证 preview PNG 存在
             preview_path = Path(result["preview_path"])
-            self.assertTrue(preview_path.exists(), f"Preview PNG 不存在: {preview_path}")
+            self.assertTrue(
+                preview_path.exists(), f"Preview PNG 不存在: {preview_path}"
+            )
             self.assertGreater(preview_path.stat().st_size, 0, "Preview PNG 为空")
 
             # 验证 manifest 中有对应条目
             manifest = coordinator.build_manifest()
             self.assertIn("products", manifest)
-            raster_products = [p for p in manifest["products"] if p.get("name") == "test_ndvi"]
+            raster_products = [
+                p for p in manifest["products"] if p.get("name") == "test_ndvi"
+            ]
             self.assertEqual(len(raster_products), 1)
             self.assertEqual(raster_products[0]["format"], "COG")
             self.assertEqual(raster_products[0]["type"], "raster")
             self.assertIn("preview", raster_products[0])
 
-            print(f"  [OK] COG + preview 输出正常: {cog_path.name}, {preview_path.name}")
+            print(
+                f"  [OK] COG + preview 输出正常: {cog_path.name}, {preview_path.name}"
+            )
 
     def test_write_raster_with_nodata_mask(self):
         from output import OutputCoordinator
@@ -197,7 +203,11 @@ class TestOutputCoordinatorTableOutput(unittest.TestCase):
 
             # 验证 manifest 条目
             coordinator.build_manifest()
-            table_products = [p for p in coordinator.manifest_products if p.get("name") == "test_station_sm"]
+            table_products = [
+                p
+                for p in coordinator.manifest_products
+                if p.get("name") == "test_station_sm"
+            ]
             self.assertEqual(len(table_products), 1)
             self.assertEqual(table_products[0]["format"], result["format"])
             self.assertEqual(table_products[0]["type"], "table")
@@ -254,7 +264,9 @@ class TestOutputCoordinatorManifestBuilding(unittest.TestCase):
             coordinator.add_diagnostic("status", "success")
 
             # 构建 manifest
-            manifest = coordinator.build_manifest(extra={"custom_field": "custom_value"})
+            manifest = coordinator.build_manifest(
+                extra={"custom_field": "custom_value"}
+            )
 
             # 验证 manifest 结构
             self.assertIn("job_id", manifest)
@@ -263,13 +275,17 @@ class TestOutputCoordinatorManifestBuilding(unittest.TestCase):
             self.assertEqual(len(manifest["products"]), 2)
 
             # 验证栅格条目
-            raster_entry = next((p for p in manifest["products"] if p["name"] == "test_raster"), None)
+            raster_entry = next(
+                (p for p in manifest["products"] if p["name"] == "test_raster"), None
+            )
             self.assertIsNotNone(raster_entry)
             self.assertEqual(raster_entry["format"], "COG")
             self.assertEqual(raster_entry["type"], "raster")
 
             # 验证 MAT 条目
-            mat_entry = next((p for p in manifest["products"] if p["name"] == "test_mat"), None)
+            mat_entry = next(
+                (p for p in manifest["products"] if p["name"] == "test_mat"), None
+            )
             self.assertIsNotNone(mat_entry)
             self.assertEqual(mat_entry["format"], "MAT")
             self.assertEqual(mat_entry["type"], "mat")
@@ -286,7 +302,9 @@ class TestOutputCoordinatorManifestBuilding(unittest.TestCase):
 
             # 验证 manifest.json 文件写出
             manifest_path = Path(manifest["manifest_path"])
-            self.assertTrue(manifest_path.exists(), f"manifest.json 未写出: {manifest_path}")
+            self.assertTrue(
+                manifest_path.exists(), f"manifest.json 未写出: {manifest_path}"
+            )
             with open(manifest_path, "r", encoding="utf-8") as f:
                 manifest_loaded = json.load(f)
             self.assertEqual(manifest_loaded["job_id"], "test-job-manifest")
@@ -324,12 +342,18 @@ class TestNdviModuleWithOutputCoordinator(unittest.TestCase):
                 datetime(2023, 3, 6),
             ]
             ndvi_stack = np.stack(
-                [np.random.uniform(0.1, 0.8, size=(5, 10)).astype(np.float64) for _ in observation_dates],
+                [
+                    np.random.uniform(0.1, 0.8, size=(5, 10)).astype(np.float64)
+                    for _ in observation_dates
+                ],
                 axis=2,
             )
             daily_dates = [datetime(2023, 1, i) for i in range(1, 11)]
             daily_stack = np.stack(
-                [np.random.uniform(0.1, 0.8, size=(5, 10)).astype(np.float64) for _ in daily_dates],
+                [
+                    np.random.uniform(0.1, 0.8, size=(5, 10)).astype(np.float64)
+                    for _ in daily_dates
+                ],
                 axis=2,
             )
 
@@ -337,7 +361,9 @@ class TestNdviModuleWithOutputCoordinator(unittest.TestCase):
                 job_id="job-ndvi-e2e",
                 pipeline_name="ndvi_daily_pipeline",
                 task_type="extract",
-                time_range=TimeRange(start=datetime(2023, 1, 1), end=datetime(2023, 1, 10)),
+                time_range=TimeRange(
+                    start=datetime(2023, 1, 1), end=datetime(2023, 1, 10)
+                ),
                 region=RegionSpec(kind="global", value={}),
                 datasource_selection={"input_dir": str(input_dir)},
                 algorithm_params={"emit_quality_products": False},
@@ -367,9 +393,15 @@ class TestNdviModuleWithOutputCoordinator(unittest.TestCase):
                 product_sink=MagicMock(),
             )
 
-            with patch("modules.ndvi.load_ndvi_stack", return_value=(ndvi_stack, observation_dates)), patch(
-                "modules.ndvi.process_ndvi_stack_to_daily",
-                return_value=(daily_stack, daily_dates),
+            with (
+                patch(
+                    "modules.ndvi.load_ndvi_stack",
+                    return_value=(ndvi_stack, observation_dates),
+                ),
+                patch(
+                    "modules.ndvi.process_ndvi_stack_to_daily",
+                    return_value=(daily_stack, daily_dates),
+                ),
             ):
                 result = NdviDailyModule().execute(
                     inputs={
@@ -391,22 +423,33 @@ class TestNdviModuleWithOutputCoordinator(unittest.TestCase):
             if manifest_path and Path(manifest_path).exists():
                 with open(Path(manifest_path), "r", encoding="utf-8") as f:
                     manifest_data = json.load(f)
-                raster_products = [p for p in manifest_data.get("products", []) if p.get("type") == "raster"]
+                raster_products = [
+                    p
+                    for p in manifest_data.get("products", [])
+                    if p.get("type") == "raster"
+                ]
                 if raster_products:
                     for rp in raster_products:
                         cog_path = Path(rp.get("path", ""))
-                        self.assertTrue(cog_path.exists(), f"COG 文件不存在: {cog_path}")
+                        self.assertTrue(
+                            cog_path.exists(), f"COG 文件不存在: {cog_path}"
+                        )
                     print(f"  [OK] 生成了 {len(raster_products)} 个 COG 栅格文件")
                 else:
                     print("  [INFO] 无栅格产物（可能是合成数据无 transform）")
 
             # 验证 manifest.json 存在
             if manifest_path:
-                self.assertTrue(Path(manifest_path).exists(), f"manifest.json 不存在: {manifest_path}")
+                self.assertTrue(
+                    Path(manifest_path).exists(),
+                    f"manifest.json 不存在: {manifest_path}",
+                )
                 print(f"  [OK] manifest.json 已生成: {Path(manifest_path).name}")
 
             # 验证 logger 调用
-            self.assertTrue(mock_logger.emit_stage_start.called, "emit_stage_start 未调用")
+            self.assertTrue(
+                mock_logger.emit_stage_start.called, "emit_stage_start 未调用"
+            )
             self.assertTrue(mock_logger.emit_stage_end.called, "emit_stage_end 未调用")
 
 
@@ -437,7 +480,9 @@ class TestStationModuleWithOutputCoordinator(unittest.TestCase):
                 job_id="job-station-e2e",
                 pipeline_name="station_daily_pipeline",
                 task_type="extract",
-                time_range=TimeRange(start=datetime(2023, 1, 1), end=datetime(2023, 1, 5)),
+                time_range=TimeRange(
+                    start=datetime(2023, 1, 1), end=datetime(2023, 1, 5)
+                ),
                 region=RegionSpec(kind="global", value={}),
                 datasource_selection={"input_dir": str(input_dir)},
                 algorithm_params={
@@ -469,11 +514,81 @@ class TestStationModuleWithOutputCoordinator(unittest.TestCase):
             from ingest.station import StationRecord
 
             records = [
-                StationRecord(2023, 1, 1, 6, 30.6, 113.5, 10.0, 0.01, 0.02, 0.35, 1, "SITE001", "ISMN"),
-                StationRecord(2023, 1, 2, 6, 30.6, 113.5, 10.0, 0.01, 0.02, 0.36, 1, "SITE001", "ISMN"),
-                StationRecord(2023, 1, 3, 6, 30.6, 113.5, 10.0, 0.01, 0.02, 0.37, 1, "SITE001", "ISMN"),
-                StationRecord(2023, 1, 4, 6, 30.6, 113.5, 10.0, 0.01, 0.02, 0.38, 1, "SITE001", "ISMN"),
-                StationRecord(2023, 1, 5, 6, 30.6, 113.5, 10.0, 0.01, 0.02, 0.39, 1, "SITE001", "ISMN"),
+                StationRecord(
+                    2023,
+                    1,
+                    1,
+                    6,
+                    30.6,
+                    113.5,
+                    10.0,
+                    0.01,
+                    0.02,
+                    0.35,
+                    1,
+                    "SITE001",
+                    "ISMN",
+                ),
+                StationRecord(
+                    2023,
+                    1,
+                    2,
+                    6,
+                    30.6,
+                    113.5,
+                    10.0,
+                    0.01,
+                    0.02,
+                    0.36,
+                    1,
+                    "SITE001",
+                    "ISMN",
+                ),
+                StationRecord(
+                    2023,
+                    1,
+                    3,
+                    6,
+                    30.6,
+                    113.5,
+                    10.0,
+                    0.01,
+                    0.02,
+                    0.37,
+                    1,
+                    "SITE001",
+                    "ISMN",
+                ),
+                StationRecord(
+                    2023,
+                    1,
+                    4,
+                    6,
+                    30.6,
+                    113.5,
+                    10.0,
+                    0.01,
+                    0.02,
+                    0.38,
+                    1,
+                    "SITE001",
+                    "ISMN",
+                ),
+                StationRecord(
+                    2023,
+                    1,
+                    5,
+                    6,
+                    30.6,
+                    113.5,
+                    10.0,
+                    0.01,
+                    0.02,
+                    0.39,
+                    1,
+                    "SITE001",
+                    "ISMN",
+                ),
             ]
 
             with patch("modules.station.parse_ismn_stm_file", return_value=records):
@@ -521,7 +636,11 @@ class TestStationModuleWithOutputCoordinator(unittest.TestCase):
             if manifest_path and Path(manifest_path).exists():
                 with open(Path(manifest_path), "r", encoding="utf-8") as f:
                     manifest_data = json.load(f)
-                table_products = [p for p in manifest_data.get("products", []) if p.get("type") == "table"]
+                table_products = [
+                    p
+                    for p in manifest_data.get("products", [])
+                    if p.get("type") == "table"
+                ]
                 if table_products:
                     print(f"  [OK] manifest 中包含 {len(table_products)} 个表格条目")
 
@@ -605,7 +724,9 @@ class TestIngestNdviTransform(unittest.TestCase):
                 self.assertGreater(len(result.dates), 0)
                 self.assertEqual(len(result.stack.shape), 3)  # (H, W, T)
 
-                print(f"  [OK] load_ndvi_stack_full 返回正确结构: shape={result.stack.shape}, transform={result.transform}")
+                print(
+                    f"  [OK] load_ndvi_stack_full 返回正确结构: shape={result.stack.shape}, transform={result.transform}"
+                )
 
 
 class TestDataFormatConversion(unittest.TestCase):
@@ -641,7 +762,9 @@ class TestDataFormatConversion(unittest.TestCase):
                 overwrite=True,
             )
 
-            transform = from_bounds(73, 18, 135, 53, ndvi_array.shape[1], ndvi_array.shape[0])
+            transform = from_bounds(
+                73, 18, 135, 53, ndvi_array.shape[1], ndvi_array.shape[0]
+            )
             result = coordinator.write_raster(
                 name="ndvi_from_mat",
                 data=ndvi_array,
@@ -662,7 +785,7 @@ class TestDataFormatConversion(unittest.TestCase):
                     self.assertEqual(ds.crs.to_epsg(), 4326)
                     self.assertEqual(ds.width, ndvi_array.shape[1])
                     self.assertEqual(ds.height, ndvi_array.shape[0])
-                print(f"  [OK] MAT → numpy → COG 链路正常，COG 可被 rasterio 读取")
+                print("  [OK] MAT → numpy → COG 链路正常，COG 可被 rasterio 读取")
             except ImportError:
                 print("  [OK] MAT → numpy → COG 链路正常（rasterio 不可用于验证 CRS）")
 

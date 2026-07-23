@@ -62,9 +62,13 @@ class PlatformHttpClient:
         self._headers = {} if headers is None else dict(headers)
 
     def publish_submission(self, item: QueuedJobSubmission) -> None:
-        self._post(self._routes.publish_submission_path, _queued_submission_to_payload(item))
+        self._post(
+            self._routes.publish_submission_path, _queued_submission_to_payload(item)
+        )
 
-    def claim_submission(self, *, timeout: float | None = None) -> QueuedJobSubmission | None:
+    def claim_submission(
+        self, *, timeout: float | None = None
+    ) -> QueuedJobSubmission | None:
         payload = self._post(
             self._routes.claim_submission_path,
             {} if timeout is None else {"timeout": timeout},
@@ -118,7 +122,9 @@ class PlatformHttpClient:
             return []
         if not isinstance(payload, list):
             raise TypeError("discover_assets response must be a list")
-        return [_data_asset_from_payload(item) for item in payload if isinstance(item, dict)]
+        return [
+            _data_asset_from_payload(item) for item in payload if isinstance(item, dict)
+        ]
 
     def resolve_bundle(self, request: DataRequest) -> DataBundle:
         payload = self._post(self._routes.resolve_bundle_path, _to_jsonable(request))
@@ -161,7 +167,9 @@ class PlatformHttpClient:
             uri = payload.get("uri")
             if isinstance(uri, str) and uri.strip():
                 return uri
-        raise TypeError("persist_manifest response must be a non-empty string or an object containing uri")
+        raise TypeError(
+            "persist_manifest response must be a non-empty string or an object containing uri"
+        )
 
     def _post(self, path: str, payload: object) -> Any:
         request = Request(
@@ -176,9 +184,13 @@ class PlatformHttpClient:
         except HTTPError as exc:
             body = exc.read()
             message = _decode_error_body(body)
-            raise RuntimeError(f"Platform HTTP request failed: {exc.code} {request.full_url} {message}") from exc
+            raise RuntimeError(
+                f"Platform HTTP request failed: {exc.code} {request.full_url} {message}"
+            ) from exc
         except URLError as exc:
-            raise RuntimeError(f"Platform HTTP request failed: {request.full_url} {exc.reason}") from exc
+            raise RuntimeError(
+                f"Platform HTTP request failed: {request.full_url} {exc.reason}"
+            ) from exc
         if not body:
             return None
         try:
@@ -224,7 +236,10 @@ def build_platform_http_client_from_env(
             "MAT2PY_PLATFORM_ACK_SUBMISSION_PATH",
             DEFAULT_PLATFORM_HTTP_ROUTES.ack_submission_path,
         ),
-        run_context_path=os.getenv("MAT2PY_PLATFORM_RUN_CONTEXT_PATH", DEFAULT_PLATFORM_HTTP_ROUTES.run_context_path),
+        run_context_path=os.getenv(
+            "MAT2PY_PLATFORM_RUN_CONTEXT_PATH",
+            DEFAULT_PLATFORM_HTTP_ROUTES.run_context_path,
+        ),
         update_status_path=os.getenv(
             "MAT2PY_PLATFORM_UPDATE_STATUS_PATH",
             DEFAULT_PLATFORM_HTTP_ROUTES.update_status_path,
@@ -339,7 +354,10 @@ def _product_ref_from_payload(payload: dict[str, Any]) -> ProductRef:
         type=str(payload["type"]),
         uri=str(payload["uri"]),
         variable=None if payload.get("variable") is None else str(payload["variable"]),
-        tags={str(key): str(value) for key, value in dict(payload.get("tags") or {}).items()},
+        tags={
+            str(key): str(value)
+            for key, value in dict(payload.get("tags") or {}).items()
+        },
     )
 
 

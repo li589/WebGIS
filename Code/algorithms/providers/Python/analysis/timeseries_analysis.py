@@ -83,7 +83,7 @@ class TrendAnalysis:
         # 计算 S 统计量
         s = 0
         for i in range(n - 1):
-            s += int(np.sum(np.sign(x[i + 1:] - x[i])))
+            s += int(np.sum(np.sign(x[i + 1 :] - x[i])))
 
         # 方差修正 (考虑并列值 ties)
         unique, counts = np.unique(x, return_counts=True)
@@ -138,7 +138,11 @@ class TrendAnalysis:
 
         # 确定气候态 (均值参考)
         if climatology is None:
-            mean_val = float(np.mean(values[valid_mask])) if valid_mask.sum() > 0 else float("nan")
+            mean_val = (
+                float(np.mean(values[valid_mask]))
+                if valid_mask.sum() > 0
+                else float("nan")
+            )
             mean_array = np.full(values.shape, mean_val, dtype=np.float64)
         else:
             climatology = np.asarray(climatology, dtype=np.float64)
@@ -149,7 +153,11 @@ class TrendAnalysis:
         with warnings.catch_warnings():
             warnings.simplefilter("ignore", category=RuntimeWarning)
             if method == "standardized":
-                std_val = float(np.std(values[valid_mask], ddof=0)) if valid_mask.sum() > 0 else float("nan")
+                std_val = (
+                    float(np.std(values[valid_mask], ddof=0))
+                    if valid_mask.sum() > 0
+                    else float("nan")
+                )
                 if not np.isfinite(std_val) or std_val == 0:
                     return np.full(values.shape, np.nan, dtype=np.float64)
                 return (values - mean_array) / std_val

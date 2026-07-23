@@ -69,7 +69,9 @@ class JobRequestSerializationTests(unittest.TestCase):
         self.assertIsInstance(request.workflow_definition, WorkflowDefinition)
         self.assertEqual(request.workflow_definition.workflow_id, "wf-http-demo")
 
-    def test_coerce_job_request_accepts_json_string_and_parses_runtime_options(self) -> None:
+    def test_coerce_job_request_accepts_json_string_and_parses_runtime_options(
+        self,
+    ) -> None:
         payload = json.dumps(
             {
                 "job_id": "job-http-002",

@@ -27,6 +27,7 @@ if TYPE_CHECKING:
 # OutputManager
 # ---------------------------------------------------------------------------
 
+
 class OutputManager:
     """统一输出管理器。
 
@@ -136,6 +137,7 @@ class OutputManager:
         # 延迟导入内部组件
         if self._cog_writer is None:
             from .raster_writer import COGWriter
+
             self._cog_writer = COGWriter(self.job_dir, overwrite=True)
 
         # 写出 COG bytes
@@ -171,6 +173,7 @@ class OutputManager:
         if generate_preview:
             if self._preview_gen is None:
                 from .raster_writer import PreviewGenerator
+
                 self._preview_gen = PreviewGenerator(self.job_dir, preview_size)
 
             png_bytes, png_meta = self._preview_gen.generate_bytes(
@@ -198,7 +201,9 @@ class OutputManager:
                 preview_result["remote_uri"] = remote_png_uri
 
         # 添加 manifest 条目
-        self._add_manifest_raster(name, raster_result, preview_result, unit, description)
+        self._add_manifest_raster(
+            name, raster_result, preview_result, unit, description
+        )
 
         return {
             "raster": raster_result,
@@ -231,6 +236,7 @@ class OutputManager:
         # 延迟导入
         if self._table_writer is None:
             from .table_writer import TableWriter
+
             self._table_writer = TableWriter(self.job_dir, overwrite=True)
 
         parquet_bytes, parquet_meta = self._table_writer.write_bytes(

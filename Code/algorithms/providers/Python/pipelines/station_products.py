@@ -34,13 +34,25 @@ _STATION_PREPARED_DATASET_MAP: dict[str, tuple[str, ...]] = {
 }
 
 
-def _resolve_station_datasource_selection(datasource_selection: dict[str, object]) -> dict[str, object]:
+def _resolve_station_datasource_selection(
+    datasource_selection: dict[str, object],
+) -> dict[str, object]:
     resolved = dict(datasource_selection)
-    input_dir = resolve_prepared_local_directory(resolved, _STATION_PREPARED_DATASET_MAP["input_dir"])
+    input_dir = resolve_prepared_local_directory(
+        resolved, _STATION_PREPARED_DATASET_MAP["input_dir"]
+    )
     if input_dir is not None:
         resolved["input_dir"] = str(input_dir)
-    for key in ("site_info_csv", "smap_grid_mat", "landcover_mat", "climate_mat", "network_map_csv"):
-        local_path = resolve_prepared_local_path(resolved, _STATION_PREPARED_DATASET_MAP[key])
+    for key in (
+        "site_info_csv",
+        "smap_grid_mat",
+        "landcover_mat",
+        "climate_mat",
+        "network_map_csv",
+    ):
+        local_path = resolve_prepared_local_path(
+            resolved, _STATION_PREPARED_DATASET_MAP[key]
+        )
         if local_path is not None:
             resolved[key] = str(local_path)
     return resolved
@@ -62,15 +74,29 @@ class StationDailyPipeline(BasePipeline):
     def execute(self, request: JobRequest, ctx: RuntimeContext) -> ProductManifest:
         from scipy.io import savemat
 
-        datasource_selection = _resolve_station_datasource_selection(request.datasource_selection)
+        datasource_selection = _resolve_station_datasource_selection(
+            request.datasource_selection
+        )
         source_type = request.algorithm_params.get("source_type", "ISMN").upper()
         input_dir = Path(datasource_selection["input_dir"])
-        output_dir = Path(request.output_spec.extra.get("output_dir", ctx.workspace / "products" / "station_daily"))
+        output_dir = Path(
+            request.output_spec.extra.get(
+                "output_dir", ctx.workspace / "products" / "station_daily"
+            )
+        )
         output_dir.mkdir(parents=True, exist_ok=True)
-        emit_validation_products = bool(request.algorithm_params.get("emit_validation_products", True))
-        validation_start = _coerce_datetime(request.algorithm_params.get("validation_start", request.time_range.start))
-        validation_end = _coerce_datetime(request.algorithm_params.get("validation_end", request.time_range.end))
-        min_valid_days = int(request.algorithm_params.get("validation_min_valid_days", 30))
+        emit_validation_products = bool(
+            request.algorithm_params.get("emit_validation_products", True)
+        )
+        validation_start = _coerce_datetime(
+            request.algorithm_params.get("validation_start", request.time_range.start)
+        )
+        validation_end = _coerce_datetime(
+            request.algorithm_params.get("validation_end", request.time_range.end)
+        )
+        min_valid_days = int(
+            request.algorithm_params.get("validation_min_valid_days", 30)
+        )
         validation_hour = int(request.algorithm_params.get("validation_hour", 6))
         max_depth_cm = float(
             request.algorithm_params.get(
@@ -83,7 +109,10 @@ class StationDailyPipeline(BasePipeline):
         validation_records_by_site: dict[str, list] = {}
 
         if self.logger_adapter is not None:
-            self.logger_adapter.emit_stage_start("station_daily", f"Process {source_type} station records from {input_dir}")
+            self.logger_adapter.emit_stage_start(
+                "station_daily",
+                f"Process {source_type} station records from {input_dir}",
+            )
 
         product_refs: list[ProductRef] = []
         if source_type == "ISMN":
@@ -113,7 +142,9 @@ class StationDailyPipeline(BasePipeline):
                         hour_filter=validation_hour,
                     )
                 )
-                validation_records_by_site[file_path.stem] = am6_records or daily_records
+                validation_records_by_site[file_path.stem] = (
+                    am6_records or daily_records
+                )
                 if not daily_records and not am6_records:
                     continue
                 site_output = output_dir / file_path.stem
@@ -121,11 +152,33 @@ class StationDailyPipeline(BasePipeline):
                 daily_path = site_output / "daily.mat"
                 am6_path = site_output / "am6.mat"
                 if daily_records:
-                    savemat(daily_path, {"ismn": station_records_to_rows(daily_records)}, do_compression=True)
-                    product_refs.append(ProductRef(name=f"{file_path.stem}_daily", type="station_daily_mat", uri=str(daily_path), variable="soil_moisture"))
+                    savemat(
+                        daily_path,
+                        {"ismn": station_records_to_rows(daily_records)},
+                        do_compression=True,
+                    )
+                    product_refs.append(
+                        ProductRef(
+                            name=f"{file_path.stem}_daily",
+                            type="station_daily_mat",
+                            uri=str(daily_path),
+                            variable="soil_moisture",
+                        )
+                    )
                 if am6_records:
-                    savemat(am6_path, {"ismn": station_records_to_rows(am6_records)}, do_compression=True)
-                    product_refs.append(ProductRef(name=f"{file_path.stem}_am6", type="station_am6_mat", uri=str(am6_path), variable="soil_moisture"))
+                    savemat(
+                        am6_path,
+                        {"ismn": station_records_to_rows(am6_records)},
+                        do_compression=True,
+                    )
+                    product_refs.append(
+                        ProductRef(
+                            name=f"{file_path.stem}_am6",
+                            type="station_am6_mat",
+                            uri=str(am6_path),
+                            variable="soil_moisture",
+                        )
+                    )
 
         elif source_type == "CASMOS":
             site_info_path = datasource_selection.get("site_info_csv")
@@ -156,7 +209,9 @@ class StationDailyPipeline(BasePipeline):
                         hour_filter=validation_hour,
                     )
                 )
-                validation_records_by_site[file_path.stem] = am6_records or daily_records
+                validation_records_by_site[file_path.stem] = (
+                    am6_records or daily_records
+                )
                 if not daily_records and not am6_records:
                     continue
                 site_output = output_dir / file_path.stem
@@ -164,11 +219,33 @@ class StationDailyPipeline(BasePipeline):
                 daily_path = site_output / "daily.mat"
                 am6_path = site_output / "am6.mat"
                 if daily_records:
-                    savemat(daily_path, {"china_10cm": station_records_to_rows(daily_records)}, do_compression=True)
-                    product_refs.append(ProductRef(name=f"{file_path.stem}_daily", type="station_daily_mat", uri=str(daily_path), variable="soil_moisture"))
+                    savemat(
+                        daily_path,
+                        {"china_10cm": station_records_to_rows(daily_records)},
+                        do_compression=True,
+                    )
+                    product_refs.append(
+                        ProductRef(
+                            name=f"{file_path.stem}_daily",
+                            type="station_daily_mat",
+                            uri=str(daily_path),
+                            variable="soil_moisture",
+                        )
+                    )
                 if am6_records:
-                    savemat(am6_path, {"china_10cm": station_records_to_rows(am6_records)}, do_compression=True)
-                    product_refs.append(ProductRef(name=f"{file_path.stem}_am6", type="station_am6_mat", uri=str(am6_path), variable="soil_moisture"))
+                    savemat(
+                        am6_path,
+                        {"china_10cm": station_records_to_rows(am6_records)},
+                        do_compression=True,
+                    )
+                    product_refs.append(
+                        ProductRef(
+                            name=f"{file_path.stem}_am6",
+                            type="station_am6_mat",
+                            uri=str(am6_path),
+                            variable="soil_moisture",
+                        )
+                    )
         else:
             raise ValueError(f"Unsupported station source_type: {source_type}")
 
@@ -186,8 +263,12 @@ class StationDailyPipeline(BasePipeline):
 
         if self.logger_adapter is not None:
             for product in product_refs:
-                self.logger_adapter.emit_artifact("station_daily", product.uri, product.type)
-            self.logger_adapter.emit_stage_end("station_daily", f"Generated {len(product_refs)} station products")
+                self.logger_adapter.emit_artifact(
+                    "station_daily", product.uri, product.type
+                )
+            self.logger_adapter.emit_stage_end(
+                "station_daily", f"Generated {len(product_refs)} station products"
+            )
 
         return ProductManifest(
             job_id=request.job_id,
@@ -226,34 +307,96 @@ class StationDailyPipeline(BasePipeline):
 
         if not enabled or not records_by_site:
             return []
-        datasource_selection = _resolve_station_datasource_selection(request.datasource_selection)
+        datasource_selection = _resolve_station_datasource_selection(
+            request.datasource_selection
+        )
         ancillary_path = datasource_selection.get("smap_grid_mat")
         if ancillary_path is None:
             return []
 
         smap_payload = load_mat_file(ancillary_path)
-        smap_lat = _pick_first_available(smap_payload, _alias_list(request.algorithm_params, "smap_lat_aliases", ["lat_smap", "lat", "lat_9km"]))
-        smap_lon = _pick_first_available(smap_payload, _alias_list(request.algorithm_params, "smap_lon_aliases", ["lon_smap", "lon", "lon_9km"]))
+        smap_lat = _pick_first_available(
+            smap_payload,
+            _alias_list(
+                request.algorithm_params,
+                "smap_lat_aliases",
+                ["lat_smap", "lat", "lat_9km"],
+            ),
+        )
+        smap_lon = _pick_first_available(
+            smap_payload,
+            _alias_list(
+                request.algorithm_params,
+                "smap_lon_aliases",
+                ["lon_smap", "lon", "lon_9km"],
+            ),
+        )
 
         landcover_grid = landcover_lat = landcover_lon = None
         landcover_mat = datasource_selection.get("landcover_mat")
         if landcover_mat is not None:
             payload = load_mat_file(landcover_mat)
-            landcover_grid = _pick_first_available(payload, _alias_list(request.algorithm_params, "landcover_aliases", ["IGBP_9km_12", "LC"]), required=False)
-            landcover_lat = _pick_first_available(payload, _alias_list(request.algorithm_params, "landcover_lat_aliases", ["lat_9km", "lat"]), required=False)
-            landcover_lon = _pick_first_available(payload, _alias_list(request.algorithm_params, "landcover_lon_aliases", ["lon_9km", "lon"]), required=False)
+            landcover_grid = _pick_first_available(
+                payload,
+                _alias_list(
+                    request.algorithm_params, "landcover_aliases", ["IGBP_9km_12", "LC"]
+                ),
+                required=False,
+            )
+            landcover_lat = _pick_first_available(
+                payload,
+                _alias_list(
+                    request.algorithm_params,
+                    "landcover_lat_aliases",
+                    ["lat_9km", "lat"],
+                ),
+                required=False,
+            )
+            landcover_lon = _pick_first_available(
+                payload,
+                _alias_list(
+                    request.algorithm_params,
+                    "landcover_lon_aliases",
+                    ["lon_9km", "lon"],
+                ),
+                required=False,
+            )
 
         climate_grid = climate_lat = climate_lon = None
         climate_mat = datasource_selection.get("climate_mat")
         if climate_mat is not None:
             payload = load_mat_file(climate_mat)
-            climate_grid = _pick_first_available(payload, _alias_list(request.algorithm_params, "climate_aliases", ["Koppen_present_083", "Koppen", "climate"]), required=False)
-            climate_lat = _pick_first_available(payload, _alias_list(request.algorithm_params, "climate_lat_aliases", ["lat_kop", "lat"]), required=False)
-            climate_lon = _pick_first_available(payload, _alias_list(request.algorithm_params, "climate_lon_aliases", ["lon_kop", "lon"]), required=False)
+            climate_grid = _pick_first_available(
+                payload,
+                _alias_list(
+                    request.algorithm_params,
+                    "climate_aliases",
+                    ["Koppen_present_083", "Koppen", "climate"],
+                ),
+                required=False,
+            )
+            climate_lat = _pick_first_available(
+                payload,
+                _alias_list(
+                    request.algorithm_params, "climate_lat_aliases", ["lat_kop", "lat"]
+                ),
+                required=False,
+            )
+            climate_lon = _pick_first_available(
+                payload,
+                _alias_list(
+                    request.algorithm_params, "climate_lon_aliases", ["lon_kop", "lon"]
+                ),
+                required=False,
+            )
 
         smap_landcover_grid = _pick_first_available(
             smap_payload,
-            _alias_list(request.algorithm_params, "smap_landcover_aliases", ["IGBP_9km_12", "lc_smap", "site_lc_smap"]),
+            _alias_list(
+                request.algorithm_params,
+                "smap_landcover_aliases",
+                ["IGBP_9km_12", "lc_smap", "site_lc_smap"],
+            ),
             required=False,
         )
         network_map = None
@@ -318,7 +461,9 @@ def _load_network_map(csv_path: str | Path) -> dict[str, str]:
     import csv
 
     mapping: dict[str, str] = {}
-    with Path(csv_path).open("r", encoding="utf-8", errors="ignore", newline="") as handle:
+    with Path(csv_path).open(
+        "r", encoding="utf-8", errors="ignore", newline=""
+    ) as handle:
         reader = csv.DictReader(handle)
         for row in reader:
             site_id = str(row.get("site_id", "")).strip()

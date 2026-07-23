@@ -50,7 +50,9 @@ def build_api_error_response(
             request=request,
             workflow_definition=workflow_definition,
         )
-        http_status, error_code, retryable, user_message = _classify_validation_feedback(feedback.error_type)
+        http_status, error_code, retryable, user_message = (
+            _classify_validation_feedback(feedback.error_type)
+        )
         return ApiErrorResponse(
             error_type=feedback.error_type,
             error_code=error_code,
@@ -76,17 +78,39 @@ def build_api_error_response(
 
 def _classify_validation_feedback(error_type: str) -> tuple[int, str, bool, str]:
     if error_type == "job_request_decode":
-        return 400, "job_request_decode_failed", False, "请求体格式不正确，无法解析为 JobRequest。"
+        return (
+            400,
+            "job_request_decode_failed",
+            False,
+            "请求体格式不正确，无法解析为 JobRequest。",
+        )
     if error_type == "workflow_definition_decode":
-        return 400, "workflow_definition_decode_failed", False, "workflow_definition 格式不正确，无法完成反序列化。"
+        return (
+            400,
+            "workflow_definition_decode_failed",
+            False,
+            "workflow_definition 格式不正确，无法完成反序列化。",
+        )
     if error_type == "job_request_validation":
-        return 422, "job_request_validation_failed", False, "请求参数未通过业务校验，请检查表单字段。"
+        return (
+            422,
+            "job_request_validation_failed",
+            False,
+            "请求参数未通过业务校验，请检查表单字段。",
+        )
     if error_type == "workflow_definition_validation":
-        return 422, "workflow_definition_validation_failed", False, "workflow_definition 未通过静态校验，请检查节点和连线配置。"
+        return (
+            422,
+            "workflow_definition_validation_failed",
+            False,
+            "workflow_definition 未通过静态校验，请检查节点和连线配置。",
+        )
     return 400, "validation_failed", False, "请求未通过校验。"
 
 
-def _build_suggested_fixes(issues: tuple[ValidationIssue, ...]) -> tuple[ApiSuggestedFix, ...]:
+def _build_suggested_fixes(
+    issues: tuple[ValidationIssue, ...],
+) -> tuple[ApiSuggestedFix, ...]:
     fixes: list[ApiSuggestedFix] = []
     for issue in issues:
         fix = _build_suggested_fix(issue)

@@ -103,14 +103,23 @@ class PlatformLoggerAdapterTemplate:
     def emit_progress(self, stage: str, progress: float, message: str) -> None:
         self._emit(stage, "progress", message, progress=progress)
 
-    def emit_warning(self, stage: str, message: str, extra: dict[str, Any] | None = None) -> None:
+    def emit_warning(
+        self, stage: str, message: str, extra: dict[str, Any] | None = None
+    ) -> None:
         self._emit(stage, "warning", message, extra=extra or {})
 
-    def emit_error(self, stage: str, message: str, extra: dict[str, Any] | None = None) -> None:
+    def emit_error(
+        self, stage: str, message: str, extra: dict[str, Any] | None = None
+    ) -> None:
         self._emit(stage, "error", message, extra=extra or {})
 
     def emit_artifact(self, stage: str, artifact_uri: str, artifact_type: str) -> None:
-        self._emit(stage, "artifact", "Artifact emitted", extra={"artifact_uri": artifact_uri, "artifact_type": artifact_type})
+        self._emit(
+            stage,
+            "artifact",
+            "Artifact emitted",
+            extra={"artifact_uri": artifact_uri, "artifact_type": artifact_type},
+        )
 
     def emit_stage_end(self, stage: str, message: str) -> None:
         self._emit(stage, "stage_end", message)

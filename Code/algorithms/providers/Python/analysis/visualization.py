@@ -159,11 +159,17 @@ class DataVisualization:
                 shading="auto",
             )
             ax.set_extent(
-                [float(np.min(lon)), float(np.max(lon)),
-                 float(np.min(lat)), float(np.max(lat))],
+                [
+                    float(np.min(lon)),
+                    float(np.max(lon)),
+                    float(np.min(lat)),
+                    float(np.max(lat)),
+                ],
                 crs=ccrs.PlateCarree(),
             )
-            gl = ax.gridlines(draw_labels=True, linewidth=0.5, alpha=0.5, linestyle="--")
+            gl = ax.gridlines(
+                draw_labels=True, linewidth=0.5, alpha=0.5, linestyle="--"
+            )
             gl.top_labels = False
             gl.right_labels = False
         else:

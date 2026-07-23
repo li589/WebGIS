@@ -15,6 +15,8 @@ print("Token count:", len(first_tokens))
 recs = parse_ismn_stm_file(p)
 print("Parsed records:", len(recs))
 for r in recs:
-    print(f"  {r.year}-{r.month:02d}-{r.day:02d} h={r.hour}: sm={r.soil_moisture}, depth={r.depth_lower}, lat={r.lat}, flag={r.quality_flag}")
+    print(
+        f"  {r.year}-{r.month:02d}-{r.day:02d} h={r.hour}: sm={r.soil_moisture}, depth={r.depth_lower}, lat={r.lat}, flag={r.quality_flag}"
+    )
 
 p.unlink()

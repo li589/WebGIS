@@ -5,8 +5,6 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta
 from typing import Any
 
-logger = logging.getLogger(__name__)
-
 from algorithms.inversion import _POLARIZATION_MIXING_Q
 from algorithms.physics import (
     _fresnel_reflectance_kernel,
@@ -22,6 +20,8 @@ from algorithms.physics import (
     tau_from_ndvi,
 )
 from ingest.mat_bundle import get_first_available, normalize_aliases_param
+
+logger = logging.getLogger(__name__)
 
 # 矿物土壤颗粒密度 (g/cm³)，用于孔隙度计算 porosity = 1 - bulk_density / particle_density
 _MINERAL_PARTICLE_DENSITY = 2.65
@@ -60,7 +60,15 @@ class OmegaConfig:
     bounds_omega: tuple[float, float] = (0.0, 1.0)
     lambda_smooth: float = 1.0
     lambda_tau: float = 20.0
-    lambda_list: tuple[float, ...] = (1.0, 10.0, 100.0, 1000.0, 10000.0, 100000.0, 1000000.0)
+    lambda_list: tuple[float, ...] = (
+        1.0,
+        10.0,
+        100.0,
+        1000.0,
+        10000.0,
+        100000.0,
+        1000000.0,
+    )
     block_days: int = 8
     use_fixed_omega_for_halpha: bool = False
     use_fixed_omega_in_blocks: bool = False
@@ -98,7 +106,13 @@ class OmegaFieldConfig:
         "omega_fixed_map",
     )
     omega_pft_aliases: tuple[str, ...] = ("omega_pft", "omega_pft_vec")
-    exp0_h_aliases: tuple[str, ...] = ("h_exp0_vec", "h_star_exp0_vec", "h_star_vec_exp0", "h_star_vec", "h_star_map")
+    exp0_h_aliases: tuple[str, ...] = (
+        "h_exp0_vec",
+        "h_star_exp0_vec",
+        "h_star_vec_exp0",
+        "h_star_vec",
+        "h_star_map",
+    )
     exp0_alpha_aliases: tuple[str, ...] = (
         "alpha_exp0_vec",
         "alpha_star_exp0_vec",
@@ -126,7 +140,9 @@ def build_omega_config(params: dict[str, Any]) -> OmegaConfig:
         lambda_tau=float(params.get("lambda_tau", 20.0)),
         lambda_list=parse_lambda_list(params.get("lambda_list")),
         block_days=int(params.get("block_days", 8)),
-        use_fixed_omega_for_halpha=bool(params.get("use_fixed_omega_for_halpha", False)),
+        use_fixed_omega_for_halpha=bool(
+            params.get("use_fixed_omega_for_halpha", False)
+        ),
         use_fixed_omega_in_blocks=bool(params.get("use_fixed_omega_in_blocks", False)),
         fixed_omega_fallback=params.get("fixed_omega_fallback"),
         save_exp2_omega_by_lambda=bool(params.get("save_exp2_omega_by_lambda", False)),
@@ -139,35 +155,87 @@ def build_omega_config(params: dict[str, Any]) -> OmegaConfig:
 def build_omega_field_config(params: dict[str, Any]) -> OmegaFieldConfig:
     """从参数字典构建 OmegaFieldConfig，配置 .mat 文件中各字段的别名。"""
     return OmegaFieldConfig(
-        tbv_mat_aliases=normalize_aliases_param(params.get("tbv_mat_aliases"), ("TBv_mat",)),
-        tbh_mat_aliases=normalize_aliases_param(params.get("tbh_mat_aliases"), ("TBh_mat",)),
-        ia_mat_aliases=normalize_aliases_param(params.get("ia_mat_aliases"), ("IA_mat",)),
-        ts_mat_aliases=normalize_aliases_param(params.get("ts_mat_aliases"), ("Ts_mat",)),
-        tc_mat_aliases=normalize_aliases_param(params.get("tc_mat_aliases"), ("TC_mat",)),
-        tg_mat_aliases=normalize_aliases_param(params.get("tg_mat_aliases"), ("TG_mat",)),
-        smref_mat_aliases=normalize_aliases_param(params.get("smref_mat_aliases"), ("SMref_mat",)),
-        ndvi_mat_aliases=normalize_aliases_param(params.get("ndvi_mat_aliases"), ("NDVI_mat",)),
-        sf_mat_aliases=normalize_aliases_param(params.get("sf_mat_aliases"), ("SF_mat",)),
-        albedo_aliases=normalize_aliases_param(params.get("albedo_aliases"), ("Albedo", "ALBEDO")),
+        tbv_mat_aliases=normalize_aliases_param(
+            params.get("tbv_mat_aliases"), ("TBv_mat",)
+        ),
+        tbh_mat_aliases=normalize_aliases_param(
+            params.get("tbh_mat_aliases"), ("TBh_mat",)
+        ),
+        ia_mat_aliases=normalize_aliases_param(
+            params.get("ia_mat_aliases"), ("IA_mat",)
+        ),
+        ts_mat_aliases=normalize_aliases_param(
+            params.get("ts_mat_aliases"), ("Ts_mat",)
+        ),
+        tc_mat_aliases=normalize_aliases_param(
+            params.get("tc_mat_aliases"), ("TC_mat",)
+        ),
+        tg_mat_aliases=normalize_aliases_param(
+            params.get("tg_mat_aliases"), ("TG_mat",)
+        ),
+        smref_mat_aliases=normalize_aliases_param(
+            params.get("smref_mat_aliases"), ("SMref_mat",)
+        ),
+        ndvi_mat_aliases=normalize_aliases_param(
+            params.get("ndvi_mat_aliases"), ("NDVI_mat",)
+        ),
+        sf_mat_aliases=normalize_aliases_param(
+            params.get("sf_mat_aliases"), ("SF_mat",)
+        ),
+        albedo_aliases=normalize_aliases_param(
+            params.get("albedo_aliases"), ("Albedo", "ALBEDO")
+        ),
         b_aliases=normalize_aliases_param(params.get("b_aliases"), ("B", "b")),
-        clay_fraction_aliases=normalize_aliases_param(params.get("clay_fraction_aliases"), ("CF",)),
-        bulk_density_aliases=normalize_aliases_param(params.get("bulk_density_aliases"), ("BD",)),
-        h_static_aliases=normalize_aliases_param(params.get("h_static_aliases"), ("H", "h")),
-        landcover_aliases=normalize_aliases_param(params.get("landcover_aliases"), ("LC", "IGBP_9km_12")),
-        ndvi_v_max_aliases=normalize_aliases_param(params.get("ndvi_v_max_aliases"), ("NDVI_v_max",)),
-        ndvi_v_min_aliases=normalize_aliases_param(params.get("ndvi_v_min_aliases"), ("NDVI_v_min",)),
+        clay_fraction_aliases=normalize_aliases_param(
+            params.get("clay_fraction_aliases"), ("CF",)
+        ),
+        bulk_density_aliases=normalize_aliases_param(
+            params.get("bulk_density_aliases"), ("BD",)
+        ),
+        h_static_aliases=normalize_aliases_param(
+            params.get("h_static_aliases"), ("H", "h")
+        ),
+        landcover_aliases=normalize_aliases_param(
+            params.get("landcover_aliases"), ("LC", "IGBP_9km_12")
+        ),
+        ndvi_v_max_aliases=normalize_aliases_param(
+            params.get("ndvi_v_max_aliases"), ("NDVI_v_max",)
+        ),
+        ndvi_v_min_aliases=normalize_aliases_param(
+            params.get("ndvi_v_min_aliases"), ("NDVI_v_min",)
+        ),
         omega_fixed_aliases=normalize_aliases_param(
             params.get("omega_fixed_aliases"),
-            ("omega_fixed_vec", "omega_fixed", "omega_pix_map", "omega_pixel", "omega_fixed_map"),
+            (
+                "omega_fixed_vec",
+                "omega_fixed",
+                "omega_pix_map",
+                "omega_pixel",
+                "omega_fixed_map",
+            ),
         ),
-        omega_pft_aliases=normalize_aliases_param(params.get("omega_pft_aliases"), ("omega_pft", "omega_pft_vec")),
+        omega_pft_aliases=normalize_aliases_param(
+            params.get("omega_pft_aliases"), ("omega_pft", "omega_pft_vec")
+        ),
         exp0_h_aliases=normalize_aliases_param(
             params.get("exp0_h_aliases"),
-            ("h_exp0_vec", "h_star_exp0_vec", "h_star_vec_exp0", "h_star_vec", "h_star_map"),
+            (
+                "h_exp0_vec",
+                "h_star_exp0_vec",
+                "h_star_vec_exp0",
+                "h_star_vec",
+                "h_star_map",
+            ),
         ),
         exp0_alpha_aliases=normalize_aliases_param(
             params.get("exp0_alpha_aliases"),
-            ("alpha_exp0_vec", "alpha_star_exp0_vec", "alpha_star_vec_exp0", "alpha_star_vec", "alpha_star_map"),
+            (
+                "alpha_exp0_vec",
+                "alpha_star_exp0_vec",
+                "alpha_star_vec_exp0",
+                "alpha_star_vec",
+                "alpha_star_map",
+            ),
         ),
     )
 
@@ -178,8 +246,13 @@ class OmegaTbForwardContext:
     fresnel: FresnelContext
 
 
-def _build_tb_forward_contexts(theta_values: Any, freq_ghz: float, clay_fraction: float) -> tuple[OmegaTbForwardContext, ...]:
-    return tuple(_build_tb_forward_context(freq_ghz, clay_fraction, float(theta_value)) for theta_value in theta_values)
+def _build_tb_forward_contexts(
+    theta_values: Any, freq_ghz: float, clay_fraction: float
+) -> tuple[OmegaTbForwardContext, ...]:
+    return tuple(
+        _build_tb_forward_context(freq_ghz, clay_fraction, float(theta_value))
+        for theta_value in theta_values
+    )
 
 
 def _select_tb_forward_contexts(
@@ -188,7 +261,10 @@ def _select_tb_forward_contexts(
 ) -> tuple[OmegaTbForwardContext, ...]:
     import numpy as np
 
-    return tuple(all_model_contexts[int(idx)] for idx in np.asarray(indices, dtype=np.int64).reshape(-1))
+    return tuple(
+        all_model_contexts[int(idx)]
+        for idx in np.asarray(indices, dtype=np.int64).reshape(-1)
+    )
 
 
 def parse_lambda_list(value: object) -> tuple[float, ...]:
@@ -202,7 +278,9 @@ def parse_lambda_list(value: object) -> tuple[float, ...]:
     return (float(value),)
 
 
-def _rough_reflectance(theta_deg: float, h_value: float, alpha_value: float, rh: float, rv: float) -> tuple[float, float]:
+def _rough_reflectance(
+    theta_deg: float, h_value: float, alpha_value: float, rh: float, rv: float
+) -> tuple[float, float]:
     """计算粗糙地表反射率（Choudhury 模型）。
 
     量纲: theta_deg 单位度（入射角），h_value/alpha_value 无量纲（粗糙度/极化混合系数），
@@ -241,7 +319,9 @@ def _rough_reflectance_from_context(
     return rh_r, rv_r
 
 
-def _build_tb_forward_context(freq_ghz: float, clay_fraction: float, theta_deg: float) -> OmegaTbForwardContext:
+def _build_tb_forward_context(
+    freq_ghz: float, clay_fraction: float, theta_deg: float
+) -> OmegaTbForwardContext:
     return OmegaTbForwardContext(
         dielectric=build_mironov_context(freq_ghz, clay_fraction),
         fresnel=build_fresnel_context(theta_deg),
@@ -258,7 +338,9 @@ def _finite_difference_jacobian(
 
     x = np.asarray(x, dtype=np.float64)
     base = np.asarray(residual_func(x), dtype=np.float64).reshape(-1)
-    return _finite_difference_jacobian_from_base(x, base, residual_func, lower_bounds, upper_bounds)
+    return _finite_difference_jacobian_from_base(
+        x, base, residual_func, lower_bounds, upper_bounds
+    )
 
 
 def _finite_difference_jacobian_from_base(
@@ -288,19 +370,27 @@ def _finite_difference_jacobian_from_base(
         if forward > x_value and backward < x_value:
             x_forward[idx] = forward
             x_backward[idx] = backward
-            f_forward = np.asarray(residual_func(x_forward), dtype=np.float64).reshape(-1)
-            f_backward = np.asarray(residual_func(x_backward), dtype=np.float64).reshape(-1)
+            f_forward = np.asarray(residual_func(x_forward), dtype=np.float64).reshape(
+                -1
+            )
+            f_backward = np.asarray(
+                residual_func(x_backward), dtype=np.float64
+            ).reshape(-1)
             jac[:, idx] = (f_forward - f_backward) / (forward - backward)
             x_forward[idx] = x_value
             x_backward[idx] = x_value
         elif forward > x_value:
             x_forward[idx] = forward
-            f_forward = np.asarray(residual_func(x_forward), dtype=np.float64).reshape(-1)
+            f_forward = np.asarray(residual_func(x_forward), dtype=np.float64).reshape(
+                -1
+            )
             jac[:, idx] = (f_forward - base) / (forward - x_value)
             x_forward[idx] = x_value
         elif backward < x_value:
             x_backward[idx] = backward
-            f_backward = np.asarray(residual_func(x_backward), dtype=np.float64).reshape(-1)
+            f_backward = np.asarray(
+                residual_func(x_backward), dtype=np.float64
+            ).reshape(-1)
             jac[:, idx] = (base - f_backward) / (x_value - backward)
             x_backward[idx] = x_value
         else:
@@ -309,7 +399,9 @@ def _finite_difference_jacobian_from_base(
     return jac
 
 
-def _finite_difference_scalar_jacobian(x_value: float, residual_func: Any, lower_bound: float, upper_bound: float) -> Any:
+def _finite_difference_scalar_jacobian(
+    x_value: float, residual_func: Any, lower_bound: float, upper_bound: float
+) -> Any:
     import numpy as np
 
     base = np.asarray(residual_func(x_value), dtype=np.float64).reshape(-1)
@@ -363,7 +455,9 @@ def tb_forward_single_temp(
         cos_theta = math.cos(math.radians(theta_deg))
         attenuation = math.exp(-h_value * cos_theta * cos_theta)
     else:
-        epsilon = mironov_dielectric_from_context(soil_moisture, model_context.dielectric)
+        epsilon = mironov_dielectric_from_context(
+            soil_moisture, model_context.dielectric
+        )
         rh, rv = fresnel_reflectance_from_context(epsilon, model_context.fresnel)
         q_value = alpha_value * h_value
         if q_value < 0.0:
@@ -414,7 +508,9 @@ def tb_forward_dual_temp(
         cos_theta = math.cos(math.radians(theta_deg))
         attenuation = math.exp(-h_value * cos_theta * cos_theta)
     else:
-        epsilon = mironov_dielectric_from_context(soil_moisture, model_context.dielectric)
+        epsilon = mironov_dielectric_from_context(
+            soil_moisture, model_context.dielectric
+        )
         rh, rv = fresnel_reflectance_from_context(epsilon, model_context.fresnel)
         q_value = alpha_value * h_value
         if q_value < 0.0:
@@ -430,8 +526,12 @@ def tb_forward_dual_temp(
     rh_gamma = rh_r * gamma
     scale_tg = scale * tg_value
     scale_tc = scale * tc_value
-    tbv_m = scale_tg * ((1.0 - rv_r) * gamma) + scale_tc * (canopy_factor * (1.0 + rv_gamma))
-    tbh_m = scale_tg * ((1.0 - rh_r) * gamma) + scale_tc * (canopy_factor * (1.0 + rh_gamma))
+    tbv_m = scale_tg * ((1.0 - rv_r) * gamma) + scale_tc * (
+        canopy_factor * (1.0 + rv_gamma)
+    )
+    tbh_m = scale_tg * ((1.0 - rh_r) * gamma) + scale_tc * (
+        canopy_factor * (1.0 + rh_gamma)
+    )
     return tbv_m, tbh_m
 
 
@@ -610,8 +710,12 @@ def _tb_forward_dual_temp_kernel(
     rh_gamma = rh_r * gamma
     scale_tg = scale * tg_value
     scale_tc = scale * tc_value
-    tbv_m = scale_tg * ((1.0 - rv_r) * gamma) + scale_tc * (canopy_factor * (1.0 + rv_gamma))
-    tbh_m = scale_tg * ((1.0 - rh_r) * gamma) + scale_tc * (canopy_factor * (1.0 + rh_gamma))
+    tbv_m = scale_tg * ((1.0 - rv_r) * gamma) + scale_tc * (
+        canopy_factor * (1.0 + rv_gamma)
+    )
+    tbh_m = scale_tg * ((1.0 - rh_r) * gamma) + scale_tc * (
+        canopy_factor * (1.0 + rh_gamma)
+    )
     return tbv_m, tbh_m
 
 
@@ -1111,7 +1215,10 @@ def ddca_single_temp(
             1.0,
             model_context,
         )
-        return np.array([tbv_m - tbv, tbh_m - tbh, lambda_tau * (tau_value - tau_ini)], dtype=np.float64)
+        return np.array(
+            [tbv_m - tbv, tbh_m - tbh, lambda_tau * (tau_value - tau_ini)],
+            dtype=np.float64,
+        )
 
     if not np.isfinite(porosity) or porosity <= _SOIL_MOISTURE_LOWER_BOUND:
         # 孔隙度无效时 least_squares 会因 bounds 不合理抛 ValueError，直接返回 NaN
@@ -1122,7 +1229,9 @@ def ddca_single_temp(
         cost_func,
         x0=[0.20, tau_ini],
         bounds=(lower_bounds, upper_bounds),
-        jac=lambda x: _finite_difference_jacobian(x, cost_func, lower_bounds, upper_bounds),
+        jac=lambda x: _finite_difference_jacobian(
+            x, cost_func, lower_bounds, upper_bounds
+        ),
     )
     return float(result.x[0]), float(result.x[1])
 
@@ -1170,7 +1279,10 @@ def ddca_dual_temp(
             1.0,
             model_context,
         )
-        return np.array([tbv_m - tbv, tbh_m - tbh, lambda_tau * (tau_value - tau_ini)], dtype=np.float64)
+        return np.array(
+            [tbv_m - tbv, tbh_m - tbh, lambda_tau * (tau_value - tau_ini)],
+            dtype=np.float64,
+        )
 
     lower_bounds = (0.02, 0.0)
     upper_bounds = (porosity, 5.0)
@@ -1178,12 +1290,16 @@ def ddca_dual_temp(
         cost_func,
         x0=[0.20, tau_ini],
         bounds=(lower_bounds, upper_bounds),
-        jac=lambda x: _finite_difference_jacobian(x, cost_func, lower_bounds, upper_bounds),
+        jac=lambda x: _finite_difference_jacobian(
+            x, cost_func, lower_bounds, upper_bounds
+        ),
     )
     return float(result.x[0]), float(result.x[1])
 
 
-def make_date_blocks(date_keys: list[str], block_days: int) -> tuple[list[list[int]], list[datetime]]:
+def make_date_blocks(
+    date_keys: list[str], block_days: int
+) -> tuple[list[list[int]], list[datetime]]:
     """将日期键列表按 block_days 天为单位分块。
 
     量纲: 输入 date_keys 为 YYYYMMDD 格式字符串列表（_DATE_KEY_FORMAT），
@@ -1196,7 +1312,9 @@ def make_date_blocks(date_keys: list[str], block_days: int) -> tuple[list[list[i
     block_starts: list[datetime] = []
     for idx, day in enumerate(dates):
         doy = day.timetuple().tm_yday
-        block_start = datetime(day.year, 1, 1) + timedelta(days=int(block_days) * ((doy - 1) // int(block_days)))
+        block_start = datetime(day.year, 1, 1) + timedelta(
+            days=int(block_days) * ((doy - 1) // int(block_days))
+        )
         if block_start not in grouped:
             grouped[block_start] = []
             block_starts.append(block_start)
@@ -1215,7 +1333,13 @@ def pick_lcurve_corner(lambda_list: Any, misfit: Any, roughness: Any) -> float:
     lambda_arr = np.asarray(lambda_list, dtype=np.float64).reshape(-1)
     misfit_arr = np.asarray(misfit, dtype=np.float64).reshape(-1)
     rough_arr = np.asarray(roughness, dtype=np.float64).reshape(-1)
-    ok = np.isfinite(lambda_arr) & np.isfinite(misfit_arr) & np.isfinite(rough_arr) & (misfit_arr > 0) & (rough_arr > 0)
+    ok = (
+        np.isfinite(lambda_arr)
+        & np.isfinite(misfit_arr)
+        & np.isfinite(rough_arr)
+        & (misfit_arr > 0)
+        & (rough_arr > 0)
+    )
     if np.count_nonzero(ok) < 3:
         return float("nan")
 
@@ -1267,9 +1391,21 @@ def qc_block_jacobian_cond(
     sm_values = np.asarray(block_payload["sm_ref"], dtype=np.float64).reshape(-1)
     ia_values = np.asarray(block_payload["ia"], dtype=np.float64).reshape(-1)
     model_contexts = block_payload.get("model_contexts")
-    ts_values = None if is_dual else np.asarray(block_payload["ts"], dtype=np.float64).reshape(-1)
-    tc_values = np.asarray(block_payload["tc"], dtype=np.float64).reshape(-1) if is_dual else None
-    tg_values = np.asarray(block_payload["tg"], dtype=np.float64).reshape(-1) if is_dual else None
+    ts_values = (
+        None
+        if is_dual
+        else np.asarray(block_payload["ts"], dtype=np.float64).reshape(-1)
+    )
+    tc_values = (
+        np.asarray(block_payload["tc"], dtype=np.float64).reshape(-1)
+        if is_dual
+        else None
+    )
+    tg_values = (
+        np.asarray(block_payload["tg"], dtype=np.float64).reshape(-1)
+        if is_dual
+        else None
+    )
     eps = float(np.finfo(np.float64).eps)
 
     omega_column = None
@@ -1281,8 +1417,12 @@ def qc_block_jacobian_cond(
     op = min(max(float(omega0) + float(domega), bounds_omega[0]), bounds_omega[1])
     om = min(max(float(omega0) - float(domega), bounds_omega[0]), bounds_omega[1])
     if op == om:
-        op = min(max(float(omega0) + 2.0 * float(domega), bounds_omega[0]), bounds_omega[1])
-        om = min(max(float(omega0) - 2.0 * float(domega), bounds_omega[0]), bounds_omega[1])
+        op = min(
+            max(float(omega0) + 2.0 * float(domega), bounds_omega[0]), bounds_omega[1]
+        )
+        om = min(
+            max(float(omega0) - 2.0 * float(domega), bounds_omega[0]), bounds_omega[1]
+        )
     omega_denominator = max(eps, op - om)
 
     for row_index, k in enumerate(use):
@@ -1307,18 +1447,46 @@ def qc_block_jacobian_cond(
         if is_dual:
             tc_k = float(tc_values[row_index])
             tg_k = float(tg_values[row_index])
-            model_context = None if model_contexts is None else model_contexts[row_index]
+            model_context = (
+                None if model_contexts is None else model_contexts[row_index]
+            )
             if omega_column is None:
                 if model_context is None:
                     tbv_p, tbh_p = tb_forward_dual_temp(
-                        smk, tauk, hk, ak, op, tc_k, tg_k, thk, clay_fraction, freq_ghz, 1.0, None
+                        smk,
+                        tauk,
+                        hk,
+                        ak,
+                        op,
+                        tc_k,
+                        tg_k,
+                        thk,
+                        clay_fraction,
+                        freq_ghz,
+                        1.0,
+                        None,
                     )
                     tbv_m, tbh_m = tb_forward_dual_temp(
-                        smk, tauk, hk, ak, om, tc_k, tg_k, thk, clay_fraction, freq_ghz, 1.0, None
+                        smk,
+                        tauk,
+                        hk,
+                        ak,
+                        om,
+                        tc_k,
+                        tg_k,
+                        thk,
+                        clay_fraction,
+                        freq_ghz,
+                        1.0,
+                        None,
                     )
                 else:
-                    tbv_p, tbh_p = _tb_forward_dual_temp_with_context(smk, tauk, hk, ak, op, tc_k, tg_k, 1.0, model_context)
-                    tbv_m, tbh_m = _tb_forward_dual_temp_with_context(smk, tauk, hk, ak, om, tc_k, tg_k, 1.0, model_context)
+                    tbv_p, tbh_p = _tb_forward_dual_temp_with_context(
+                        smk, tauk, hk, ak, op, tc_k, tg_k, 1.0, model_context
+                    )
+                    tbv_m, tbh_m = _tb_forward_dual_temp_with_context(
+                        smk, tauk, hk, ak, om, tc_k, tg_k, 1.0, model_context
+                    )
                 d_tb_domega_v = (tbv_p - tbv_m) / omega_denominator
                 d_tb_domega_h = (tbh_p - tbh_m) / omega_denominator
             else:
@@ -1327,32 +1495,122 @@ def qc_block_jacobian_cond(
                 d_tb_domega_h = float(omega_column[base_row + 1]) / sh
 
             if model_context is None:
-                tbv_p, tbh_p = tb_forward_dual_temp(smk, tp, hk, ak, omega0, tc_k, tg_k, thk, clay_fraction, freq_ghz, 1.0, None)
-                tbv_m, tbh_m = tb_forward_dual_temp(smk, tm, hk, ak, omega0, tc_k, tg_k, thk, clay_fraction, freq_ghz, 1.0, None)
+                tbv_p, tbh_p = tb_forward_dual_temp(
+                    smk,
+                    tp,
+                    hk,
+                    ak,
+                    omega0,
+                    tc_k,
+                    tg_k,
+                    thk,
+                    clay_fraction,
+                    freq_ghz,
+                    1.0,
+                    None,
+                )
+                tbv_m, tbh_m = tb_forward_dual_temp(
+                    smk,
+                    tm,
+                    hk,
+                    ak,
+                    omega0,
+                    tc_k,
+                    tg_k,
+                    thk,
+                    clay_fraction,
+                    freq_ghz,
+                    1.0,
+                    None,
+                )
             else:
-                tbv_p, tbh_p = _tb_forward_dual_temp_with_context(smk, tp, hk, ak, omega0, tc_k, tg_k, 1.0, model_context)
-                tbv_m, tbh_m = _tb_forward_dual_temp_with_context(smk, tm, hk, ak, omega0, tc_k, tg_k, 1.0, model_context)
+                tbv_p, tbh_p = _tb_forward_dual_temp_with_context(
+                    smk, tp, hk, ak, omega0, tc_k, tg_k, 1.0, model_context
+                )
+                tbv_m, tbh_m = _tb_forward_dual_temp_with_context(
+                    smk, tm, hk, ak, omega0, tc_k, tg_k, 1.0, model_context
+                )
             d_tb_dtau_v = (tbv_p - tbv_m) / max(eps, tp - tm)
             d_tb_dtau_h = (tbh_p - tbh_m) / max(eps, tp - tm)
 
             if model_context is None:
-                tbv_p, tbh_p = tb_forward_dual_temp(smk, tauk, hp, ak, omega0, tc_k, tg_k, thk, clay_fraction, freq_ghz, 1.0, None)
-                tbv_m, tbh_m = tb_forward_dual_temp(smk, tauk, hm, ak, omega0, tc_k, tg_k, thk, clay_fraction, freq_ghz, 1.0, None)
+                tbv_p, tbh_p = tb_forward_dual_temp(
+                    smk,
+                    tauk,
+                    hp,
+                    ak,
+                    omega0,
+                    tc_k,
+                    tg_k,
+                    thk,
+                    clay_fraction,
+                    freq_ghz,
+                    1.0,
+                    None,
+                )
+                tbv_m, tbh_m = tb_forward_dual_temp(
+                    smk,
+                    tauk,
+                    hm,
+                    ak,
+                    omega0,
+                    tc_k,
+                    tg_k,
+                    thk,
+                    clay_fraction,
+                    freq_ghz,
+                    1.0,
+                    None,
+                )
             else:
-                tbv_p, tbh_p = _tb_forward_dual_temp_with_context(smk, tauk, hp, ak, omega0, tc_k, tg_k, 1.0, model_context)
-                tbv_m, tbh_m = _tb_forward_dual_temp_with_context(smk, tauk, hm, ak, omega0, tc_k, tg_k, 1.0, model_context)
+                tbv_p, tbh_p = _tb_forward_dual_temp_with_context(
+                    smk, tauk, hp, ak, omega0, tc_k, tg_k, 1.0, model_context
+                )
+                tbv_m, tbh_m = _tb_forward_dual_temp_with_context(
+                    smk, tauk, hm, ak, omega0, tc_k, tg_k, 1.0, model_context
+                )
             d_tb_dh_v = (tbv_p - tbv_m) / max(eps, hp - hm)
             d_tb_dh_h = (tbh_p - tbh_m) / max(eps, hp - hm)
         else:
             ts_k = float(ts_values[row_index])
-            model_context = None if model_contexts is None else model_contexts[row_index]
+            model_context = (
+                None if model_contexts is None else model_contexts[row_index]
+            )
             if omega_column is None:
                 if model_context is None:
-                    tbv_p, tbh_p = tb_forward_single_temp(smk, tauk, hk, ak, op, ts_k, thk, clay_fraction, freq_ghz, 1.0, None)
-                    tbv_m, tbh_m = tb_forward_single_temp(smk, tauk, hk, ak, om, ts_k, thk, clay_fraction, freq_ghz, 1.0, None)
+                    tbv_p, tbh_p = tb_forward_single_temp(
+                        smk,
+                        tauk,
+                        hk,
+                        ak,
+                        op,
+                        ts_k,
+                        thk,
+                        clay_fraction,
+                        freq_ghz,
+                        1.0,
+                        None,
+                    )
+                    tbv_m, tbh_m = tb_forward_single_temp(
+                        smk,
+                        tauk,
+                        hk,
+                        ak,
+                        om,
+                        ts_k,
+                        thk,
+                        clay_fraction,
+                        freq_ghz,
+                        1.0,
+                        None,
+                    )
                 else:
-                    tbv_p, tbh_p = _tb_forward_single_temp_with_context(smk, tauk, hk, ak, op, ts_k, 1.0, model_context)
-                    tbv_m, tbh_m = _tb_forward_single_temp_with_context(smk, tauk, hk, ak, om, ts_k, 1.0, model_context)
+                    tbv_p, tbh_p = _tb_forward_single_temp_with_context(
+                        smk, tauk, hk, ak, op, ts_k, 1.0, model_context
+                    )
+                    tbv_m, tbh_m = _tb_forward_single_temp_with_context(
+                        smk, tauk, hk, ak, om, ts_k, 1.0, model_context
+                    )
                 d_tb_domega_v = (tbv_p - tbv_m) / omega_denominator
                 d_tb_domega_h = (tbh_p - tbh_m) / omega_denominator
             else:
@@ -1361,20 +1619,76 @@ def qc_block_jacobian_cond(
                 d_tb_domega_h = float(omega_column[base_row + 1]) / sh
 
             if model_context is None:
-                tbv_p, tbh_p = tb_forward_single_temp(smk, tp, hk, ak, omega0, ts_k, thk, clay_fraction, freq_ghz, 1.0, None)
-                tbv_m, tbh_m = tb_forward_single_temp(smk, tm, hk, ak, omega0, ts_k, thk, clay_fraction, freq_ghz, 1.0, None)
+                tbv_p, tbh_p = tb_forward_single_temp(
+                    smk,
+                    tp,
+                    hk,
+                    ak,
+                    omega0,
+                    ts_k,
+                    thk,
+                    clay_fraction,
+                    freq_ghz,
+                    1.0,
+                    None,
+                )
+                tbv_m, tbh_m = tb_forward_single_temp(
+                    smk,
+                    tm,
+                    hk,
+                    ak,
+                    omega0,
+                    ts_k,
+                    thk,
+                    clay_fraction,
+                    freq_ghz,
+                    1.0,
+                    None,
+                )
             else:
-                tbv_p, tbh_p = _tb_forward_single_temp_with_context(smk, tp, hk, ak, omega0, ts_k, 1.0, model_context)
-                tbv_m, tbh_m = _tb_forward_single_temp_with_context(smk, tm, hk, ak, omega0, ts_k, 1.0, model_context)
+                tbv_p, tbh_p = _tb_forward_single_temp_with_context(
+                    smk, tp, hk, ak, omega0, ts_k, 1.0, model_context
+                )
+                tbv_m, tbh_m = _tb_forward_single_temp_with_context(
+                    smk, tm, hk, ak, omega0, ts_k, 1.0, model_context
+                )
             d_tb_dtau_v = (tbv_p - tbv_m) / max(eps, tp - tm)
             d_tb_dtau_h = (tbh_p - tbh_m) / max(eps, tp - tm)
 
             if model_context is None:
-                tbv_p, tbh_p = tb_forward_single_temp(smk, tauk, hp, ak, omega0, ts_k, thk, clay_fraction, freq_ghz, 1.0, None)
-                tbv_m, tbh_m = tb_forward_single_temp(smk, tauk, hm, ak, omega0, ts_k, thk, clay_fraction, freq_ghz, 1.0, None)
+                tbv_p, tbh_p = tb_forward_single_temp(
+                    smk,
+                    tauk,
+                    hp,
+                    ak,
+                    omega0,
+                    ts_k,
+                    thk,
+                    clay_fraction,
+                    freq_ghz,
+                    1.0,
+                    None,
+                )
+                tbv_m, tbh_m = tb_forward_single_temp(
+                    smk,
+                    tauk,
+                    hm,
+                    ak,
+                    omega0,
+                    ts_k,
+                    thk,
+                    clay_fraction,
+                    freq_ghz,
+                    1.0,
+                    None,
+                )
             else:
-                tbv_p, tbh_p = _tb_forward_single_temp_with_context(smk, tauk, hp, ak, omega0, ts_k, 1.0, model_context)
-                tbv_m, tbh_m = _tb_forward_single_temp_with_context(smk, tauk, hm, ak, omega0, ts_k, 1.0, model_context)
+                tbv_p, tbh_p = _tb_forward_single_temp_with_context(
+                    smk, tauk, hp, ak, omega0, ts_k, 1.0, model_context
+                )
+                tbv_m, tbh_m = _tb_forward_single_temp_with_context(
+                    smk, tauk, hm, ak, omega0, ts_k, 1.0, model_context
+                )
             d_tb_dh_v = (tbv_p - tbv_m) / max(eps, hp - hm)
             d_tb_dh_h = (tbh_p - tbh_m) / max(eps, hp - hm)
 
@@ -1399,7 +1713,9 @@ def qc_block_jacobian_cond(
     return condk, smin, sratio
 
 
-def _resolve_payload_vector(payload: dict[str, Any], aliases: list[str], pixel_count: int) -> Any:
+def _resolve_payload_vector(
+    payload: dict[str, Any], aliases: list[str], pixel_count: int
+) -> Any:
     import numpy as np
 
     for alias in aliases:
@@ -1414,7 +1730,9 @@ def _resolve_payload_vector(payload: dict[str, Any], aliases: list[str], pixel_c
     return np.full(pixel_count, np.nan, dtype=np.float64)
 
 
-def _resolve_fixed_omega_vector(payload: dict[str, Any], landcover: Any, field_config: OmegaFieldConfig) -> Any:
+def _resolve_fixed_omega_vector(
+    payload: dict[str, Any], landcover: Any, field_config: OmegaFieldConfig
+) -> Any:
     import numpy as np
 
     landcover = np.asarray(landcover, dtype=np.float64).reshape(-1)
@@ -1424,10 +1742,14 @@ def _resolve_fixed_omega_vector(payload: dict[str, Any], landcover: Any, field_c
         list(field_config.omega_fixed_aliases),
         pixel_count,
     )
-    if np.asarray(direct).reshape(-1).size == pixel_count and np.any(np.isfinite(direct)):
+    if np.asarray(direct).reshape(-1).size == pixel_count and np.any(
+        np.isfinite(direct)
+    ):
         return np.asarray(direct, dtype=np.float64).reshape(-1)
 
-    pft_values = _resolve_payload_vector(payload, list(field_config.omega_pft_aliases), pixel_count)
+    pft_values = _resolve_payload_vector(
+        payload, list(field_config.omega_pft_aliases), pixel_count
+    )
     pft_values = np.asarray(pft_values, dtype=np.float64).reshape(-1)
     if pft_values.size == pixel_count:
         return pft_values
@@ -1477,7 +1799,9 @@ def _build_empty_exp2_info(config: OmegaConfig) -> dict[str, Any]:
         "roughness": np.full(lambda_list.shape, np.nan, dtype=np.float64),
         "rmse": np.full(lambda_list.shape, np.nan, dtype=np.float64),
         "lambda_star": float("nan"),
-        "omega_by_lambda_block": np.full((0, lambda_list.size), np.nan, dtype=np.float64),
+        "omega_by_lambda_block": np.full(
+            (0, lambda_list.size), np.nan, dtype=np.float64
+        ),
     }
 
 
@@ -1525,15 +1849,29 @@ def retrieve_omega_pixel_timeseries(
     tbv = np.asarray(tbv, dtype=np.float64).reshape(-1)
     tbh = np.asarray(tbh, dtype=np.float64).reshape(-1)
     ts = np.asarray(ts, dtype=np.float64).reshape(-1)
-    tc = np.asarray(tc, dtype=np.float64).reshape(-1) if tc is not None else np.full_like(ts, np.nan)
-    tg = np.asarray(tg, dtype=np.float64).reshape(-1) if tg is not None else np.full_like(ts, np.nan)
+    tc = (
+        np.asarray(tc, dtype=np.float64).reshape(-1)
+        if tc is not None
+        else np.full_like(ts, np.nan)
+    )
+    tg = (
+        np.asarray(tg, dtype=np.float64).reshape(-1)
+        if tg is not None
+        else np.full_like(ts, np.nan)
+    )
     ia = np.asarray(ia, dtype=np.float64).reshape(-1)
     sm_ref = np.asarray(sm_ref, dtype=np.float64).reshape(-1)
     ndvi = np.asarray(ndvi, dtype=np.float64).reshape(-1)
     sf_col = np.asarray(sf_col, dtype=np.float64).reshape(-1)
     nt = tbv.size
-    omega_fixed = float(fixed_omega_value) if np.isfinite(fixed_omega_value) else (
-        float(config.fixed_omega_fallback) if config.fixed_omega_fallback is not None else float("nan")
+    omega_fixed = (
+        float(fixed_omega_value)
+        if np.isfinite(fixed_omega_value)
+        else (
+            float(config.fixed_omega_fallback)
+            if config.fixed_omega_fallback is not None
+            else float("nan")
+        )
     )
     if precomputed_blocks is None:
         blocks, block_start_dates = make_date_blocks(date_keys, config.block_days)
@@ -1615,8 +1953,13 @@ def retrieve_omega_pixel_timeseries(
     low_tau = valid_tau & (tau_star <= tau_thr)
     n_low_tau = int(np.count_nonzero(low_tau))
     n_use = int(np.count_nonzero(valid_tau))
-    all_model_contexts = _build_tb_forward_contexts(ia, config.freq_ghz, clay_fraction_value)
-    block_valid_indices = [block_index_array[valid_tau[block_index_array]] for block_index_array in block_index_arrays]
+    all_model_contexts = _build_tb_forward_contexts(
+        ia, config.freq_ghz, clay_fraction_value
+    )
+    block_valid_indices = [
+        block_index_array[valid_tau[block_index_array]]
+        for block_index_array in block_index_arrays
+    ]
     block_payloads: list[dict[str, Any]] = []
     for use in block_valid_indices:
         payload_entry: dict[str, Any] = {
@@ -1741,9 +2084,21 @@ def retrieve_omega_pixel_timeseries(
                 )
             res_v[ii] = block_payload["tbv"][ii] - tbv_mod_k
             res_h[ii] = block_payload["tbh"][ii] - tbh_mod_k
-        rmse_v = float(np.sqrt(np.nanmean(res_v**2))) if np.any(np.isfinite(res_v)) else float("nan")
-        rmse_h = float(np.sqrt(np.nanmean(res_h**2))) if np.any(np.isfinite(res_h)) else float("nan")
-        rmse_hv = float(np.sqrt(np.nanmean(np.concatenate([res_v, res_h]) ** 2))) if np.any(np.isfinite(res_v) | np.isfinite(res_h)) else float("nan")
+        rmse_v = (
+            float(np.sqrt(np.nanmean(res_v**2)))
+            if np.any(np.isfinite(res_v))
+            else float("nan")
+        )
+        rmse_h = (
+            float(np.sqrt(np.nanmean(res_h**2)))
+            if np.any(np.isfinite(res_h))
+            else float("nan")
+        )
+        rmse_hv = (
+            float(np.sqrt(np.nanmean(np.concatenate([res_v, res_h]) ** 2)))
+            if np.any(np.isfinite(res_v) | np.isfinite(res_h))
+            else float("nan")
+        )
         return rmse_v, rmse_h, rmse_hv
 
     def solve_block_omega(
@@ -1791,7 +2146,9 @@ def retrieve_omega_pixel_timeseries(
         )
         omega_hat = float(result.x if np.isfinite(result.x) else omega_seed)
         residual = residual_fun(omega_hat)
-        jac = _finite_difference_scalar_jacobian(omega_hat, residual_fun, lower_omega, upper_omega)
+        jac = _finite_difference_scalar_jacobian(
+            omega_hat, residual_fun, lower_omega, upper_omega
+        )
         gradient = float(2.0 * np.dot(jac.reshape(-1), residual))
         exitflag = 1.0 if bool(result.success) else 0.0
         return {
@@ -1830,7 +2187,10 @@ def retrieve_omega_pixel_timeseries(
                 use = block_payload["use"]
                 if use.size == 0:
                     continue
-                if prev_trial_start is not None and (block_start - prev_trial_start).days > config.block_days + 2:
+                if (
+                    prev_trial_start is not None
+                    and (block_start - prev_trial_start).days > config.block_days + 2
+                ):
                     trial_prev = float("nan")
                 lambda_seed = previous_lambda_series[block_index]
                 block_result = solve_block_omega(
@@ -1844,7 +2204,9 @@ def retrieve_omega_pixel_timeseries(
                 trial_prev = block_result["omega"]
                 prev_trial_start = block_start
                 residual_no_smooth = np.asarray(
-                    block_residual_function(block_payload, 0.0, float("nan"))(trial_prev),
+                    block_residual_function(block_payload, 0.0, float("nan"))(
+                        trial_prev
+                    ),
                     dtype=np.float64,
                 ).reshape(-1)
                 residual_stack.append(residual_no_smooth)
@@ -1881,12 +2243,20 @@ def retrieve_omega_pixel_timeseries(
         h0 = min(max(h_static_value, config.bounds_h[0]), config.bounds_h[1])
         if exp_mode == "EXP1A":
             if not (np.isfinite(exp0_h_value) and np.isfinite(exp0_alpha_value)):
-                raise ValueError("Exp1a requires finite Exp0 calibration values for each processed pixel")
+                raise ValueError(
+                    "Exp1a requires finite Exp0 calibration values for each processed pixel"
+                )
             h_star = float(exp0_h_value)
             alpha_star = float(exp0_alpha_value)
         else:
-            use_fixed_halpha = bool(config.use_fixed_omega_for_halpha) or exp_mode == "EXP1B"
-            omega_low = omega_fixed if use_fixed_halpha and np.isfinite(omega_fixed) else albedo_value
+            use_fixed_halpha = (
+                bool(config.use_fixed_omega_for_halpha) or exp_mode == "EXP1B"
+            )
+            omega_low = (
+                omega_fixed
+                if use_fixed_halpha and np.isfinite(omega_fixed)
+                else albedo_value
+            )
             if is_dual:
                 halpha_tc = tc[idx]
                 halpha_tg = tg[idx]
@@ -1933,11 +2303,20 @@ def retrieve_omega_pixel_timeseries(
                         halpha_sh,
                         halpha_contexts,
                     )
-            halpha_lower_bounds = (float(config.bounds_h[0]), float(config.bounds_alpha[0]))
-            halpha_upper_bounds = (float(config.bounds_h[1]), float(config.bounds_alpha[1]))
+
+            halpha_lower_bounds = (
+                float(config.bounds_h[0]),
+                float(config.bounds_alpha[0]),
+            )
+            halpha_upper_bounds = (
+                float(config.bounds_h[1]),
+                float(config.bounds_alpha[1]),
+            )
 
             def halpha_jac(x: Any) -> Any:
-                return _finite_difference_jacobian(x, halpha_fun, halpha_lower_bounds, halpha_upper_bounds)
+                return _finite_difference_jacobian(
+                    x, halpha_fun, halpha_lower_bounds, halpha_upper_bounds
+                )
 
             xhat = least_squares(
                 halpha_fun,
@@ -1985,10 +2364,20 @@ def retrieve_omega_pixel_timeseries(
             exp2_info = scan_exp2_lambda()
         omega_prev = float("nan")
         prev_block_start: datetime | None = None
-        use_fixed_blocks = bool(config.use_fixed_omega_in_blocks) or exp_mode in {"EXP1A", "EXP1B"}
-        lambda_star = float(exp2_info["lambda_star"]) if np.isfinite(exp2_info["lambda_star"]) else float(config.lambda_smooth)
+        use_fixed_blocks = bool(config.use_fixed_omega_in_blocks) or exp_mode in {
+            "EXP1A",
+            "EXP1B",
+        }
+        lambda_star = (
+            float(exp2_info["lambda_star"])
+            if np.isfinite(exp2_info["lambda_star"])
+            else float(config.lambda_smooth)
+        )
         for block_index, block_start in enumerate(block_start_dates):
-            if prev_block_start is not None and (block_start - prev_block_start).days > config.block_days + 2:
+            if (
+                prev_block_start is not None
+                and (block_start - prev_block_start).days > config.block_days + 2
+            ):
                 omega_prev = float("nan")
             block_payload = block_payloads[block_index]
             use = block_payload["use"]
@@ -1996,7 +2385,9 @@ def retrieve_omega_pixel_timeseries(
             if use.size == 0:
                 prev_block_start = block_start
                 continue
-            lam_smooth = lambda_star if exp_mode == "EXP2" else float(config.lambda_smooth)
+            lam_smooth = (
+                lambda_star if exp_mode == "EXP2" else float(config.lambda_smooth)
+            )
             block_result = solve_block_omega(
                 block_payload,
                 lam_smooth,
@@ -2009,7 +2400,9 @@ def retrieve_omega_pixel_timeseries(
             prev_block_start = block_start
             diag["exitflag"][block_index] = block_result["exitflag"]
             diag["algorithm"][block_index] = block_result["algorithm"]
-            diag["iter"][block_index] = np.uint16(max(0, int(block_result["iterations"])))
+            diag["iter"][block_index] = np.uint16(
+                max(0, int(block_result["iterations"]))
+            )
             diag["damping"][block_index] = block_result["damping"]
             diag["final_cost"][block_index] = block_result["final_cost"]
             diag["firstorderopt"][block_index] = block_result["firstorderopt"]
@@ -2026,21 +2419,25 @@ def retrieve_omega_pixel_timeseries(
                 diag["Jtb_rms"][block_index] = float(np.sqrt(np.nanmean(jac_tb**2)))
                 diag["Jtb_maxabs"][block_index] = float(np.nanmax(np.abs(jac_tb)))
                 diag["Jtb_minabs"][block_index] = float(np.nanmin(np.abs(jac_tb)))
-            qc["condK"][block_index], _, qc["sratio"][block_index] = qc_block_jacobian_cond(
-                om_hat,
-                block_payload,
-                h_series,
-                alpha_series,
-                clay_fraction_value,
-                config.freq_ghz,
-                config.temp_scheme,
-                config.qc_domega,
-                config.qc_dtau,
-                config.qc_dh,
-                config.bounds_omega,
-                1.0,
-                1.0,
-                jac[: min(jac.shape[0], 2 * use.size), 0] if jac.ndim == 2 and jac.size > 0 else None,
+            qc["condK"][block_index], _, qc["sratio"][block_index] = (
+                qc_block_jacobian_cond(
+                    om_hat,
+                    block_payload,
+                    h_series,
+                    alpha_series,
+                    clay_fraction_value,
+                    config.freq_ghz,
+                    config.temp_scheme,
+                    config.qc_domega,
+                    config.qc_dtau,
+                    config.qc_dh,
+                    config.bounds_omega,
+                    1.0,
+                    1.0,
+                    jac[: min(jac.shape[0], 2 * use.size), 0]
+                    if jac.ndim == 2 and jac.size > 0
+                    else None,
+                )
             )
             qc["flag"][block_index] = np.uint8(
                 not (
@@ -2050,12 +2447,18 @@ def retrieve_omega_pixel_timeseries(
             )
 
         if not np.isfinite(bulk_density_value) or bulk_density_value <= 0:
-            logger.debug("Skip porosity computation: invalid bulk_density=%r", bulk_density_value)
+            logger.debug(
+                "Skip porosity computation: invalid bulk_density=%r", bulk_density_value
+            )
             porosity = float("nan")
         else:
             porosity = 1.0 - float(bulk_density_value) / _MINERAL_PARTICLE_DENSITY
             if porosity <= _POROSITY_MIN_REASONABLE:
-                logger.debug("Unrealistic porosity=%r (bulk_density=%r)", porosity, bulk_density_value)
+                logger.debug(
+                    "Unrealistic porosity=%r (bulk_density=%r)",
+                    porosity,
+                    bulk_density_value,
+                )
                 porosity = float("nan")
         retrieved_indices = np.flatnonzero(valid_tau & np.isfinite(omega))
         for k in retrieved_indices:
@@ -2157,34 +2560,78 @@ def execute_omega_retrieval(
 
     config = config or OmegaConfig()
     field_config = field_config or OmegaFieldConfig()
-    date_keys = [str(value) for value in np.asarray(payload.get("date_keys", [])).reshape(-1).tolist()]
+    date_keys = [
+        str(value)
+        for value in np.asarray(payload.get("date_keys", [])).reshape(-1).tolist()
+    ]
 
-    tbv_mat = _coerce_timeseries_matrix(get_first_available(payload, list(field_config.tbv_mat_aliases)), "TBv_mat")
-    tbh_mat = _coerce_timeseries_matrix(get_first_available(payload, list(field_config.tbh_mat_aliases)), "TBh_mat")
-    ia_mat = _coerce_timeseries_matrix(get_first_available(payload, list(field_config.ia_mat_aliases)), "IA_mat")
-    ts_mat = _coerce_timeseries_matrix(get_first_available(payload, list(field_config.ts_mat_aliases)), "Ts_mat")
+    tbv_mat = _coerce_timeseries_matrix(
+        get_first_available(payload, list(field_config.tbv_mat_aliases)), "TBv_mat"
+    )
+    tbh_mat = _coerce_timeseries_matrix(
+        get_first_available(payload, list(field_config.tbh_mat_aliases)), "TBh_mat"
+    )
+    ia_mat = _coerce_timeseries_matrix(
+        get_first_available(payload, list(field_config.ia_mat_aliases)), "IA_mat"
+    )
+    ts_mat = _coerce_timeseries_matrix(
+        get_first_available(payload, list(field_config.ts_mat_aliases)), "Ts_mat"
+    )
     tc_mat = (
-        _coerce_timeseries_matrix(get_first_available(payload, list(field_config.tc_mat_aliases)), "TC_mat")
+        _coerce_timeseries_matrix(
+            get_first_available(payload, list(field_config.tc_mat_aliases)), "TC_mat"
+        )
         if any(alias in payload for alias in field_config.tc_mat_aliases)
         else None
     )
     tg_mat = (
-        _coerce_timeseries_matrix(get_first_available(payload, list(field_config.tg_mat_aliases)), "TG_mat")
+        _coerce_timeseries_matrix(
+            get_first_available(payload, list(field_config.tg_mat_aliases)), "TG_mat"
+        )
         if any(alias in payload for alias in field_config.tg_mat_aliases)
         else None
     )
-    smref_mat = _coerce_timeseries_matrix(get_first_available(payload, list(field_config.smref_mat_aliases)), "SMref_mat")
-    ndvi_mat = _coerce_timeseries_matrix(get_first_available(payload, list(field_config.ndvi_mat_aliases)), "NDVI_mat")
-    sf_mat = _coerce_timeseries_matrix(get_first_available(payload, list(field_config.sf_mat_aliases)), "SF_mat")
+    smref_mat = _coerce_timeseries_matrix(
+        get_first_available(payload, list(field_config.smref_mat_aliases)), "SMref_mat"
+    )
+    ndvi_mat = _coerce_timeseries_matrix(
+        get_first_available(payload, list(field_config.ndvi_mat_aliases)), "NDVI_mat"
+    )
+    sf_mat = _coerce_timeseries_matrix(
+        get_first_available(payload, list(field_config.sf_mat_aliases)), "SF_mat"
+    )
 
-    albedo = np.asarray(get_first_available(payload, list(field_config.albedo_aliases)), dtype=np.float64).reshape(-1)
-    b_param = np.asarray(get_first_available(payload, list(field_config.b_aliases)), dtype=np.float64).reshape(-1)
-    clay_fraction = np.asarray(get_first_available(payload, list(field_config.clay_fraction_aliases)), dtype=np.float64).reshape(-1)
-    bulk_density = np.asarray(get_first_available(payload, list(field_config.bulk_density_aliases)), dtype=np.float64).reshape(-1)
-    h_static = np.asarray(get_first_available(payload, list(field_config.h_static_aliases)), dtype=np.float64).reshape(-1)
-    landcover = np.asarray(get_first_available(payload, list(field_config.landcover_aliases)), dtype=np.float64).reshape(-1)
-    ndvi_v_max = np.asarray(get_first_available(payload, list(field_config.ndvi_v_max_aliases)), dtype=np.float64).reshape(-1)
-    ndvi_v_min = np.asarray(get_first_available(payload, list(field_config.ndvi_v_min_aliases)), dtype=np.float64).reshape(-1)
+    albedo = np.asarray(
+        get_first_available(payload, list(field_config.albedo_aliases)),
+        dtype=np.float64,
+    ).reshape(-1)
+    b_param = np.asarray(
+        get_first_available(payload, list(field_config.b_aliases)), dtype=np.float64
+    ).reshape(-1)
+    clay_fraction = np.asarray(
+        get_first_available(payload, list(field_config.clay_fraction_aliases)),
+        dtype=np.float64,
+    ).reshape(-1)
+    bulk_density = np.asarray(
+        get_first_available(payload, list(field_config.bulk_density_aliases)),
+        dtype=np.float64,
+    ).reshape(-1)
+    h_static = np.asarray(
+        get_first_available(payload, list(field_config.h_static_aliases)),
+        dtype=np.float64,
+    ).reshape(-1)
+    landcover = np.asarray(
+        get_first_available(payload, list(field_config.landcover_aliases)),
+        dtype=np.float64,
+    ).reshape(-1)
+    ndvi_v_max = np.asarray(
+        get_first_available(payload, list(field_config.ndvi_v_max_aliases)),
+        dtype=np.float64,
+    ).reshape(-1)
+    ndvi_v_min = np.asarray(
+        get_first_available(payload, list(field_config.ndvi_v_min_aliases)),
+        dtype=np.float64,
+    ).reshape(-1)
 
     nt, npix = tbv_mat.shape
     for field_name, field_value in (
@@ -2205,7 +2652,10 @@ def execute_omega_retrieval(
     kb = len(blocks)
     block_index_arrays = [np.asarray(block, dtype=np.int64) for block in blocks]
     precomputed_blocks = (blocks, block_start_dates, block_index_arrays)
-    precomputed_modes = (str(config.exp_mode).upper(), str(config.temp_scheme).upper() == "DUAL")
+    precomputed_modes = (
+        str(config.exp_mode).upper(),
+        str(config.temp_scheme).upper() == "DUAL",
+    )
     omega_mat = np.full((nt, npix), np.nan, dtype=np.float64)
     tau_star_mat = np.full((nt, npix), np.nan, dtype=np.float64)
     sm_ret_mat = np.full((nt, npix), np.nan, dtype=np.float64)
@@ -2239,10 +2689,16 @@ def execute_omega_retrieval(
     qc_condk_mat = np.full((kb, npix), np.nan, dtype=np.float64)
     qc_sratio_mat = np.full((kb, npix), np.nan, dtype=np.float64)
     fixed_omega_vec = _resolve_fixed_omega_vector(payload, landcover, field_config)
-    h_exp0_vec, alpha_exp0_vec = _resolve_exp0_calib_vectors(payload, npix, field_config)
+    h_exp0_vec, alpha_exp0_vec = _resolve_exp0_calib_vectors(
+        payload, npix, field_config
+    )
     if str(config.exp_mode).upper() == "EXP1A":
-        if not np.any(np.isfinite(h_exp0_vec)) or not np.any(np.isfinite(alpha_exp0_vec)):
-            raise ValueError("Exp1a requires Exp0 calibration inputs, but no finite calibration vectors were found")
+        if not np.any(np.isfinite(h_exp0_vec)) or not np.any(
+            np.isfinite(alpha_exp0_vec)
+        ):
+            raise ValueError(
+                "Exp1a requires Exp0 calibration inputs, but no finite calibration vectors were found"
+            )
     lambda_star_vec = np.full(npix, np.nan, dtype=np.float64)
     lambda_list_arr = np.asarray(config.lambda_list, dtype=np.float64).reshape(-1)
     exp2_misfit_mat = np.full((lambda_list_arr.size, npix), np.nan, dtype=np.float64)
@@ -2274,9 +2730,15 @@ def execute_omega_retrieval(
             clay_fraction_value=float(clay_fraction[j]),
             bulk_density_value=float(bulk_density[j]),
             h_static_value=float(h_static[j]),
-            fixed_omega_value=float(fixed_omega_vec[j]) if np.isfinite(fixed_omega_vec[j]) else float("nan"),
-            exp0_h_value=float(h_exp0_vec[j]) if np.isfinite(h_exp0_vec[j]) else float("nan"),
-            exp0_alpha_value=float(alpha_exp0_vec[j]) if np.isfinite(alpha_exp0_vec[j]) else float("nan"),
+            fixed_omega_value=float(fixed_omega_vec[j])
+            if np.isfinite(fixed_omega_vec[j])
+            else float("nan"),
+            exp0_h_value=float(h_exp0_vec[j])
+            if np.isfinite(h_exp0_vec[j])
+            else float("nan"),
+            exp0_alpha_value=float(alpha_exp0_vec[j])
+            if np.isfinite(alpha_exp0_vec[j])
+            else float("nan"),
             config=config,
             precomputed_blocks=precomputed_blocks,
             precomputed_modes=precomputed_modes,
@@ -2315,11 +2777,22 @@ def execute_omega_retrieval(
         qc_sratio_mat[:, j] = result["qc"]["sratio"]
         lambda_star_vec[j] = result["exp2"]["lambda_star"]
         if lambda_list_arr.size > 0:
-            exp2_misfit_mat[:, j] = np.asarray(result["exp2"]["misfit"], dtype=np.float64).reshape(-1)
-            exp2_roughness_mat[:, j] = np.asarray(result["exp2"]["roughness"], dtype=np.float64).reshape(-1)
-            exp2_rmse_mat[:, j] = np.asarray(result["exp2"]["rmse"], dtype=np.float64).reshape(-1)
-            if exp2_omega_by_lambda_block is not None and np.asarray(result["exp2"]["omega_by_lambda_block"]).size > 0:
-                exp2_omega_by_lambda_block[:, :, j] = np.asarray(result["exp2"]["omega_by_lambda_block"], dtype=np.float64)
+            exp2_misfit_mat[:, j] = np.asarray(
+                result["exp2"]["misfit"], dtype=np.float64
+            ).reshape(-1)
+            exp2_roughness_mat[:, j] = np.asarray(
+                result["exp2"]["roughness"], dtype=np.float64
+            ).reshape(-1)
+            exp2_rmse_mat[:, j] = np.asarray(
+                result["exp2"]["rmse"], dtype=np.float64
+            ).reshape(-1)
+            if (
+                exp2_omega_by_lambda_block is not None
+                and np.asarray(result["exp2"]["omega_by_lambda_block"]).size > 0
+            ):
+                exp2_omega_by_lambda_block[:, :, j] = np.asarray(
+                    result["exp2"]["omega_by_lambda_block"], dtype=np.float64
+                )
 
     return {
         "date_keys": date_keys,
@@ -2379,6 +2852,10 @@ def _coerce_timeseries_matrix(value: Any, field_name: str):
     raise ValueError(f"{field_name} must be a 1D or 2D numeric array")
 
 
-def _require_timeseries_shape(matrix, expected_shape: tuple[int, int], field_name: str) -> None:
+def _require_timeseries_shape(
+    matrix, expected_shape: tuple[int, int], field_name: str
+) -> None:
     if matrix.shape != expected_shape:
-        raise ValueError(f"{field_name} shape {matrix.shape} does not match expected timeseries shape {expected_shape}")
+        raise ValueError(
+            f"{field_name} shape {matrix.shape} does not match expected timeseries shape {expected_shape}"
+        )

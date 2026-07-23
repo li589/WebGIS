@@ -22,9 +22,13 @@ def forbid_shim_pipeline_reentry(pipeline_name: str) -> None:
 def push_runtime_call(runtime_context: RuntimeContext, entry: str):
     chain = runtime_context.call_chain
     if entry in chain:
-        raise RuntimeError(f"Recursive runtime call detected: {' -> '.join([*chain, entry])}")
+        raise RuntimeError(
+            f"Recursive runtime call detected: {' -> '.join([*chain, entry])}"
+        )
     if len(chain) >= MAX_CALL_DEPTH:
-        raise RuntimeError(f"Runtime call depth exceeds limit {MAX_CALL_DEPTH}: {' -> '.join(chain)}")
+        raise RuntimeError(
+            f"Runtime call depth exceeds limit {MAX_CALL_DEPTH}: {' -> '.join(chain)}"
+        )
     chain.append(entry)
     try:
         yield

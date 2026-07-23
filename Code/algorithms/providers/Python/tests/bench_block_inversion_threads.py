@@ -20,6 +20,7 @@ Sprint 3.7: ProcessPoolExecutor 评估（多进程绕过 GIL）
     cd Code/algorithms/providers/Python
     python -m tests.bench_block_inversion_threads
 """
+
 from __future__ import annotations
 
 import sys
@@ -35,7 +36,6 @@ if str(algo_root) not in sys.path:
     sys.path.insert(0, str(algo_root))
 
 from algorithms._parallel import get_spawn_context  # noqa: E402
-from algorithms.block_inversion import _process_chunk  # noqa: E402
 from algorithms.inversion import retrieve_dynamic_h_grid  # noqa: E402
 
 
@@ -58,13 +58,20 @@ def make_synthetic_data(nt: int, npix: int, seed: int = 42) -> dict:
     # theta_deg ~ 35-45（入射角，SMAP ~ 40°）
     theta = rng.uniform(35.0, 45.0, size=(nt, npix))
     return {
-        "tbv": tbv, "tbh": tbh, "ts": ts, "tau": tau,
-        "clay": clay, "albedo": albedo, "porosity": porosity,
+        "tbv": tbv,
+        "tbh": tbh,
+        "ts": ts,
+        "tau": tau,
+        "clay": clay,
+        "albedo": albedo,
+        "porosity": porosity,
         "theta": theta,
     }
 
 
-def run_serial(data: dict, nt: int, npix: int, chunk_size: int, freq_ghz: float) -> np.ndarray:
+def run_serial(
+    data: dict, nt: int, npix: int, chunk_size: int, freq_ghz: float
+) -> np.ndarray:
     """串行 chunk 循环（与 execute_block_inversion 内部逻辑一致）。
 
     结构：外层 chunk 循环 → 内层 day 循环 → retrieve_dynamic_h_grid(1D per day)。
@@ -89,7 +96,11 @@ def run_serial(data: dict, nt: int, npix: int, chunk_size: int, freq_ghz: float)
 
 
 def run_threaded(
-    data: dict, nt: int, npix: int, chunk_size: int, freq_ghz: float,
+    data: dict,
+    nt: int,
+    npix: int,
+    chunk_size: int,
+    freq_ghz: float,
     max_workers: int,
 ) -> np.ndarray:
     """ThreadPoolExecutor 并行 chunk 循环。
@@ -125,7 +136,11 @@ def run_threaded(
 
 
 def _bench_process_chunk_worker(
-    start: int, end: int, data: dict, nt: int, freq_ghz: float,
+    start: int,
+    end: int,
+    data: dict,
+    nt: int,
+    freq_ghz: float,
 ) -> tuple[int, int, np.ndarray]:
     """ProcessPoolExecutor worker：处理单个 chunk（模块级，可 pickle）。
 
@@ -149,7 +164,11 @@ def _bench_process_chunk_worker(
 
 
 def run_process_pool(
-    data: dict, nt: int, npix: int, chunk_size: int, freq_ghz: float,
+    data: dict,
+    nt: int,
+    npix: int,
+    chunk_size: int,
+    freq_ghz: float,
     max_workers: int,
 ) -> np.ndarray:
     """ProcessPoolExecutor + spawn 上下文并行 chunk 循环。
@@ -172,7 +191,11 @@ def run_process_pool(
 
 
 def run_via_execute_block_inversion(
-    data: dict, nt: int, npix: int, chunk_size: int, freq_ghz: float,
+    data: dict,
+    nt: int,
+    npix: int,
+    chunk_size: int,
+    freq_ghz: float,
     max_workers: int | None,
 ) -> np.ndarray:
     """端到端通过 execute_block_inversion(max_workers=...) 运行。
@@ -198,8 +221,11 @@ def run_via_execute_block_inversion(
         "H": np.full(npix, 0.3),
     }
     result = execute_block_inversion(
-        payload, mode="dh", freq_ghz=freq_ghz,
-        pixel_chunk_size=chunk_size, max_workers=max_workers,
+        payload,
+        mode="dh",
+        freq_ghz=freq_ghz,
+        pixel_chunk_size=chunk_size,
+        max_workers=max_workers,
     )
     return result["DH_mat"]
 
@@ -248,8 +274,14 @@ def main() -> None:
     for workers in (2, 4, 8):
         print(f"【ThreadPoolExecutor max_workers={workers}】（Sprint 3.6 对照）")
         t, r = bench_once(
-            f"threaded x{workers}", run_threaded,
-            data, nt, npix, chunk_size, freq_ghz, workers,
+            f"threaded x{workers}",
+            run_threaded,
+            data,
+            nt,
+            npix,
+            chunk_size,
+            freq_ghz,
+            workers,
         )
         thread_results[workers] = t
         max_diff = np.nanmax(np.abs(r - serial_result))
@@ -261,8 +293,14 @@ def main() -> None:
     for workers in (2, 4, 8):
         print(f"【ProcessPoolExecutor max_workers={workers}】（Sprint 3.7 新增）")
         t, r = bench_once(
-            f"process x{workers}", run_process_pool,
-            data, nt, npix, chunk_size, freq_ghz, workers,
+            f"process x{workers}",
+            run_process_pool,
+            data,
+            nt,
+            npix,
+            chunk_size,
+            freq_ghz,
+            workers,
         )
         proc_results[workers] = t
         max_diff = np.nanmax(np.abs(r - serial_result))
@@ -275,21 +313,36 @@ def main() -> None:
     t, _ = bench_once(
         "execute_block_inversion(max_workers=1)",
         run_via_execute_block_inversion,
-        data, nt, npix, chunk_size, freq_ghz, 1,
+        data,
+        nt,
+        npix,
+        chunk_size,
+        freq_ghz,
+        1,
     )
     e2e_results["serial"] = t
     for w in (2, 4, 8):
         t, _ = bench_once(
             f"execute_block_inversion(max_workers={w})",
             run_via_execute_block_inversion,
-            data, nt, npix, chunk_size, freq_ghz, w,
+            data,
+            nt,
+            npix,
+            chunk_size,
+            freq_ghz,
+            w,
         )
         e2e_results[f"parallel_{w}"] = t
     # 自动模式
     t, _ = bench_once(
         "execute_block_inversion(max_workers=None 自动)",
         run_via_execute_block_inversion,
-        data, nt, npix, chunk_size, freq_ghz, None,
+        data,
+        nt,
+        npix,
+        chunk_size,
+        freq_ghz,
+        None,
     )
     e2e_results["auto"] = t
     print()
@@ -319,15 +372,21 @@ def main() -> None:
     best_w = min(proc_results, key=proc_results.get)
     best_speedup = serial_time / proc_results[best_w]
     if best_speedup > 1.5:
-        print(f"  ✅ ProcessPoolExecutor 收益显著 (最佳 {best_w} 进程, {best_speedup:.2f}x 加速)")
-        print(f"  建议: execute_block_inversion 默认启用 max_workers=None 自动分配")
-        print(f"  约束: spawn 上下文 + 串行回退保证已在 Sprint 3.7 实现")
+        print(
+            f"  ✅ ProcessPoolExecutor 收益显著 (最佳 {best_w} 进程, {best_speedup:.2f}x 加速)"
+        )
+        print("  建议: execute_block_inversion 默认启用 max_workers=None 自动分配")
+        print("  约束: spawn 上下文 + 串行回退保证已在 Sprint 3.7 实现")
     elif best_speedup > 1.1:
-        print(f"  ⚠️ ProcessPoolExecutor 收益有限 (最佳 {best_w} 进程, {best_speedup:.2f}x 加速)")
-        print(f"  建议: 可选优化，需权衡 spawn/pickle 开销与计算量")
+        print(
+            f"  ⚠️ ProcessPoolExecutor 收益有限 (最佳 {best_w} 进程, {best_speedup:.2f}x 加速)"
+        )
+        print("  建议: 可选优化，需权衡 spawn/pickle 开销与计算量")
     else:
-        print(f"  ❌ ProcessPoolExecutor 无收益 (最佳 {best_w} 进程, {best_speedup:.2f}x 加速)")
-        print(f"  建议: spawn/pickle 开销大于 GIL 绕过收益，保持串行")
+        print(
+            f"  ❌ ProcessPoolExecutor 无收益 (最佳 {best_w} 进程, {best_speedup:.2f}x 加速)"
+        )
+        print("  建议: spawn/pickle 开销大于 GIL 绕过收益，保持串行")
 
 
 if __name__ == "__main__":

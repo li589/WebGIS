@@ -58,7 +58,9 @@ _BACKEND_DATA_ROOT_ENV = os.getenv("BACKEND_DATA_ROOT", _BACKEND_DATA_ROOT_DEFAU
 
 # 产物输出根目录
 _BACKEND_OUTPUT_ROOT_DEFAULT = r"I:\GeoOutput"
-_BACKEND_OUTPUT_ROOT_ENV = os.getenv("BACKEND_OUTPUT_ROOT", _BACKEND_OUTPUT_ROOT_DEFAULT)
+_BACKEND_OUTPUT_ROOT_ENV = os.getenv(
+    "BACKEND_OUTPUT_ROOT", _BACKEND_OUTPUT_ROOT_DEFAULT
+)
 
 # 存储后端类型
 _BACKEND_STORAGE_BACKEND = os.getenv("BACKEND_STORAGE_BACKEND", "local")
@@ -94,7 +96,9 @@ _BACKEND_PROJECTBACKUP_ROOT_DEFAULT = r"I:\ProjectBackup\GeoPaper"
 
 def _get_projectbackup_root() -> Path:
     """获取 ProjectBackup 根目录，优先使用环境变量，否则使用默认值。"""
-    root = Path(os.getenv("BACKEND_PROJECTBACKUP_ROOT", _BACKEND_PROJECTBACKUP_ROOT_DEFAULT))
+    root = Path(
+        os.getenv("BACKEND_PROJECTBACKUP_ROOT", _BACKEND_PROJECTBACKUP_ROOT_DEFAULT)
+    )
     if root.exists():
         return root
     # Fallback: 尝试默认路径
@@ -144,8 +148,15 @@ DATASET_REGISTRY: dict[str, DatasetInfo] = {
         relative_path="SMAP",
         description="NASA SMAP L3 土壤水分被动微波遥感产品（HDF5 格式），2023-01 两周序列 + 2022-09",
         file_format="hdf5",
-        variables=("soil_moisture", "surface_temperature", "tb_h_corrected", "tb_v_corrected",
-                   "vegetation_water_content", "clay_fraction", "vegetation_opacity"),
+        variables=(
+            "soil_moisture",
+            "surface_temperature",
+            "tb_h_corrected",
+            "tb_v_corrected",
+            "vegetation_water_content",
+            "clay_fraction",
+            "vegetation_opacity",
+        ),
         time_range=("2022-09-20", "2023-01-31"),
         resolution="9km",
         crs="EPSG:4326",
@@ -331,7 +342,16 @@ DATASET_REGISTRY: dict[str, DatasetInfo] = {
         relative_path="Station",
         description="ISMN 与 FLUXNET2015 站点匹配表（CSV 格式），101 个站点，31 列属性",
         file_format="csv",
-        variables=("network", "station", "latitude", "longitude", "MAP", "MAT", "AI", "IGBP_Fluxnet"),
+        variables=(
+            "network",
+            "station",
+            "latitude",
+            "longitude",
+            "MAP",
+            "MAT",
+            "AI",
+            "IGBP_Fluxnet",
+        ),
         time_range=None,
         resolution="point",
         crs="EPSG:4326",
@@ -617,15 +637,17 @@ def get_dataset_summary() -> list[dict[str, str | bool]]:
     results = []
     for logical_name, info in sorted(DATASET_REGISTRY.items()):
         path = resolve_dataset_path(logical_name)
-        results.append({
-            "name": info.name,
-            "logical_name": logical_name,
-            "available": path is not None,
-            "path": str(path) if path else "",
-            "description": info.description,
-            "file_format": info.file_format,
-            "resolution": info.resolution or "",
-        })
+        results.append(
+            {
+                "name": info.name,
+                "logical_name": logical_name,
+                "available": path is not None,
+                "path": str(path) if path else "",
+                "description": info.description,
+                "file_format": info.file_format,
+                "resolution": info.resolution or "",
+            }
+        )
     return results
 
 
@@ -643,6 +665,7 @@ def get_storage_backend() -> "StorageBackend | None":
     """
     try:
         from mat2py.core.storage import get_storage_backend as _get
+
         return _get()
     except ImportError:
         # Storage 模块尚未安装依赖，返回 None
@@ -658,6 +681,7 @@ def get_output_storage_backend() -> "StorageBackend | None":
     """
     try:
         from mat2py.core.storage import get_output_storage_backend as _get
+
         return _get()
     except ImportError:
         return None

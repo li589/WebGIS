@@ -7,8 +7,8 @@ from contracts.job import JobRequest
 from contracts.runtime import RuntimeContext
 from workflow.artifact_store import ArtifactStore, InMemoryArtifactStore
 from workflow.graph import WorkflowDefinition, WorkflowEdge
-from workflow.registry import get_node_executor, register_node_executor
-from workflow.schemas import ArtifactRef, NodeExecutionContext
+from workflow.registry import get_node_executor
+from workflow.schemas import NodeExecutionContext
 
 
 @dataclass(slots=True)
@@ -34,13 +34,22 @@ class WorkflowRunner:
         self.logger_adapter = logger_adapter
         self.product_sink = product_sink
 
-    def run(self, definition: WorkflowDefinition, request: JobRequest, runtime_context: RuntimeContext) -> WorkflowResult:
+    def run(
+        self,
+        definition: WorkflowDefinition,
+        request: JobRequest,
+        runtime_context: RuntimeContext,
+    ) -> WorkflowResult:
         from runner.call_guard import push_runtime_call
 
         with push_runtime_call(runtime_context, f"workflow:{definition.workflow_id}"):
             node_map = {node.node_id: node for node in definition.nodes if node.enabled}
-            if len(node_map) != len([node for node in definition.nodes if node.enabled]):
-                raise ValueError("Duplicate enabled node_id detected in workflow definition")
+            if len(node_map) != len(
+                [node for node in definition.nodes if node.enabled]
+            ):
+                raise ValueError(
+                    "Duplicate enabled node_id detected in workflow definition"
+                )
 
             execution_order = self._topological_sort(node_map, definition.edges)
             node_outputs: dict[str, dict[str, object]] = {}
@@ -70,11 +79,15 @@ class WorkflowRunner:
                 )
                 stage_name = f"workflow.node.{node.node_id}"
                 if self.logger_adapter is not None:
-                    self.logger_adapter.emit_stage_start(stage_name, f"Execute node {node.node_id} ({node.node_type})")
+                    self.logger_adapter.emit_stage_start(
+                        stage_name, f"Execute node {node.node_id} ({node.node_type})"
+                    )
                 try:
                     outputs = executor.execute(inputs, dict(node.params), node_ctx)
                 except Exception as exc:
                     if self.logger_adapter is not None:
+                        import traceback as _tb
+
                         self.logger_adapter.emit_error(
                             stage_name,
                             str(exc),
@@ -83,6 +96,7 @@ class WorkflowRunner:
                                 "node_id": node.node_id,
                                 "node_type": node.node_type,
                                 "exception_type": type(exc).__name__,
+                                "traceback": _tb.format_exc()[-1200:],
                             },
                         )
                     raise
@@ -92,11 +106,15 @@ class WorkflowRunner:
                         index / total_nodes,
                         f"Completed node {node.node_id} ({index}/{total_nodes})",
                     )
-                    self.logger_adapter.emit_stage_end(stage_name, f"Finished node {node.node_id}")
+                    self.logger_adapter.emit_stage_end(
+                        stage_name, f"Finished node {node.node_id}"
+                    )
                 node_outputs[node.node_id] = outputs
 
             resolved_outputs = {
-                output_spec.name: self._resolve_binding(output_spec.source, request=request, node_outputs=node_outputs)
+                output_spec.name: self._resolve_binding(
+                    output_spec.source, request=request, node_outputs=node_outputs
+                )
                 for output_spec in definition.outputs
             }
             return WorkflowResult(
@@ -129,29 +147,52 @@ class WorkflowRunner:
                     else:
                         resolved[port_name] = [existing_value, value]
                     return
-                raise ValueError(f"Workflow input port received multiple bindings: {node.node_id}.{port_name}")
+                raise ValueError(
+                    f"Workflow input port received multiple bindings: {node.node_id}.{port_name}"
+                )
             if port_spec is not None and port_spec.multi_input:
                 resolved[port_name] = [value]
                 return
             resolved[port_name] = value
 
         for port_name, binding in node.input_bindings.items():
-            bind_input(port_name, self._resolve_binding(binding, request=request, node_outputs=node_outputs))
+            bind_input(
+                port_name,
+                self._resolve_binding(
+                    binding, request=request, node_outputs=node_outputs
+                ),
+            )
         for edge in edges:
             if edge.to_node != node.node_id:
                 continue
             binding = f"node:{edge.from_node}.{edge.from_port}"
-            bind_input(edge.to_port, self._resolve_binding(binding, request=request, node_outputs=node_outputs))
+            bind_input(
+                edge.to_port,
+                self._resolve_binding(
+                    binding, request=request, node_outputs=node_outputs
+                ),
+            )
         for port_name, port_spec in port_specs.items():
             if port_spec.required and port_name not in resolved:
-                raise ValueError(f"Workflow required input port not bound: {node.node_id}.{port_name}")
+                raise ValueError(
+                    f"Workflow required input port not bound: {node.node_id}.{port_name}"
+                )
         return resolved
 
-    def _resolve_binding(self, binding: str, *, request: JobRequest, node_outputs: dict[str, dict[str, object]]) -> object:
+    def _resolve_binding(
+        self,
+        binding: str,
+        *,
+        request: JobRequest,
+        node_outputs: dict[str, dict[str, object]],
+    ) -> object:
         if binding.startswith("input:"):
             input_name = binding.split(":", 1)[1]
             if input_name not in request.datasource_selection:
-                raise KeyError(f"Workflow input not found: {input_name}")
+                # Return None for optional inputs not in datasource_selection.
+                # This allows mode_required_inputs to be bound even when they
+                # will be resolved from _prepared_inputs at runtime.
+                return None
             return request.datasource_selection[input_name]
         if binding.startswith("request:"):
             request_key = binding.split(":", 1)[1]
@@ -178,12 +219,16 @@ class WorkflowRunner:
             return node_outputs[node_id][port_name]
         raise ValueError(f"Unsupported binding syntax: {binding}")
 
-    def _topological_sort(self, node_map: dict[str, object], edges: list[WorkflowEdge]) -> list[str]:
+    def _topological_sort(
+        self, node_map: dict[str, object], edges: list[WorkflowEdge]
+    ) -> list[str]:
         indegree = {node_id: 0 for node_id in node_map}
         adjacency: dict[str, list[str]] = {node_id: [] for node_id in node_map}
         for edge in edges:
             if edge.from_node not in node_map or edge.to_node not in node_map:
-                raise KeyError(f"Workflow edge references unknown node: {edge.from_node} -> {edge.to_node}")
+                raise KeyError(
+                    f"Workflow edge references unknown node: {edge.from_node} -> {edge.to_node}"
+                )
             adjacency[edge.from_node].append(edge.to_node)
             indegree[edge.to_node] += 1
 

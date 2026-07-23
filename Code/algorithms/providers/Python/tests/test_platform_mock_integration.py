@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import tempfile
-import time
 import unittest
 from datetime import UTC, datetime
 
@@ -36,9 +35,18 @@ class PlatformMockIntegrationTests(unittest.TestCase):
     def test_platform_mock_service_runs_async_job_end_to_end(self) -> None:
         workspace = tempfile.mkdtemp()
 
-        def fake_run_job(request, scheduler_adapter, datasource_adapter, logger_adapter, product_sink=None, workspace=None):
+        def fake_run_job(
+            request,
+            scheduler_adapter,
+            datasource_adapter,
+            logger_adapter,
+            product_sink=None,
+            workspace=None,
+        ):
             scheduler_adapter.get_run_context(request)
-            scheduler_adapter.update_status(request.job_id, "run-mock-001", "planning", {"queue": "mock"})
+            scheduler_adapter.update_status(
+                request.job_id, "run-mock-001", "planning", {"queue": "mock"}
+            )
             result = JobResult(
                 job_id=request.job_id,
                 run_id="run-mock-001",
@@ -60,7 +68,9 @@ class PlatformMockIntegrationTests(unittest.TestCase):
         self.assertEqual(response.status_code, 202)
         submission_id = response.body["submission_id"]
         self.assertEqual(len(platform_client.queued_submissions), 1)
-        self.assertEqual(platform_client.queued_submissions[0].submission_id, submission_id)
+        self.assertEqual(
+            platform_client.queued_submissions[0].submission_id, submission_id
+        )
 
         processed = worker.process_next(timeout=0.01)
         self.assertTrue(processed)
@@ -94,7 +104,9 @@ class PlatformMockIntegrationTests(unittest.TestCase):
                 bundle_id="bundle-demo",
                 dataset_name="demo_dataset",
                 variables=["v1"],
-                time_range=TimeRange(start=datetime(2025, 1, 1), end=datetime(2025, 1, 2)),
+                time_range=TimeRange(
+                    start=datetime(2025, 1, 1), end=datetime(2025, 1, 2)
+                ),
                 storage_mode="lazy",
             ),
         )
@@ -106,7 +118,9 @@ class PlatformMockIntegrationTests(unittest.TestCase):
                 {
                     "dataset_name": "demo_dataset",
                     "variables": ["v1"],
-                    "time_range": TimeRange(start=datetime(2025, 1, 1), end=datetime(2025, 1, 2)),
+                    "time_range": TimeRange(
+                        start=datetime(2025, 1, 1), end=datetime(2025, 1, 2)
+                    ),
                     "acquire_mode": "lazy",
                 },
             )()
@@ -114,7 +128,9 @@ class PlatformMockIntegrationTests(unittest.TestCase):
 
         self.assertEqual(bundle.bundle_id, "bundle-demo")
 
-    def test_platform_job_service_can_disable_platform_queue_and_fall_back_to_in_memory(self) -> None:
+    def test_platform_job_service_can_disable_platform_queue_and_fall_back_to_in_memory(
+        self,
+    ) -> None:
         service, worker, platform_client = build_platform_mock_service(
             workspace=tempfile.mkdtemp(),
             run_job_fn=lambda *args, **kwargs: JobResult(

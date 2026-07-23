@@ -77,7 +77,9 @@ class PlatformJobQueueTemplate:
     def publish_submission(self, item: QueuedJobSubmission) -> None:
         raise NotImplementedError
 
-    def claim_submission(self, *, timeout: float | None = None) -> QueuedJobSubmission | None:
+    def claim_submission(
+        self, *, timeout: float | None = None
+    ) -> QueuedJobSubmission | None:
         raise NotImplementedError
 
     def ack_submission(self, item: QueuedJobSubmission) -> None:
@@ -103,15 +105,23 @@ class PlatformJobQueue(PlatformJobQueueTemplate):
         if self._publish_submission_fn is not None:
             self._publish_submission_fn(item)
             return
-        if self._platform_client is not None and hasattr(self._platform_client, "publish_submission"):
+        if self._platform_client is not None and hasattr(
+            self._platform_client, "publish_submission"
+        ):
             self._platform_client.publish_submission(item)
             return
-        raise NotImplementedError("PlatformJobQueue requires publish_submission support.")
+        raise NotImplementedError(
+            "PlatformJobQueue requires publish_submission support."
+        )
 
-    def claim_submission(self, *, timeout: float | None = None) -> QueuedJobSubmission | None:
+    def claim_submission(
+        self, *, timeout: float | None = None
+    ) -> QueuedJobSubmission | None:
         if self._claim_submission_fn is not None:
             return self._claim_submission_fn(timeout)
-        if self._platform_client is not None and hasattr(self._platform_client, "claim_submission"):
+        if self._platform_client is not None and hasattr(
+            self._platform_client, "claim_submission"
+        ):
             return self._platform_client.claim_submission(timeout=timeout)
         raise NotImplementedError("PlatformJobQueue requires claim_submission support.")
 
@@ -119,5 +129,7 @@ class PlatformJobQueue(PlatformJobQueueTemplate):
         if self._ack_submission_fn is not None:
             self._ack_submission_fn(item)
             return
-        if self._platform_client is not None and hasattr(self._platform_client, "ack_submission"):
+        if self._platform_client is not None and hasattr(
+            self._platform_client, "ack_submission"
+        ):
             self._platform_client.ack_submission(item)

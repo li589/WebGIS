@@ -50,12 +50,16 @@ def _rough_reflectance_impl(
     return rh_r, rv_r
 
 
-def rough_reflectance(theta_deg: float, h_value: float, rh: float, rv: float) -> tuple[float, float]:
+def rough_reflectance(
+    theta_deg: float, h_value: float, rh: float, rv: float
+) -> tuple[float, float]:
     """粗糙表面反射率（从入射角角度计算）。
 
     量纲: 输入 theta_deg 单位为度 (°)，h_value/rh/rv 无量纲；输出 rh_r/rv_r 无量纲 (0-1)。
     """
-    return _rough_reflectance_impl(math.cos(math.radians(theta_deg)) ** 2, h_value, rh, rv)
+    return _rough_reflectance_impl(
+        math.cos(math.radians(theta_deg)) ** 2, h_value, rh, rv
+    )
 
 
 def rough_reflectance_from_context(
@@ -71,7 +75,9 @@ def rough_reflectance_from_context(
     return _rough_reflectance_impl(context.fresnel.cos_theta_sq, h_value, rh, rv)
 
 
-def build_tb_model_context(freq_ghz: float, clay_fraction: float, theta_deg: float) -> TbModelContext:
+def build_tb_model_context(
+    freq_ghz: float, clay_fraction: float, theta_deg: float
+) -> TbModelContext:
     """构建 tau-omega 模型预计算上下文。
 
     量纲: freq_ghz 单位 GHz，theta_deg 单位度 (°)，clay_fraction 无量纲 (0-1)。
@@ -105,21 +111,27 @@ def tb_model(
 
     # 物理约束检查：超出范围返回 inf，让优化器排除无效解
     if not (0.0 <= soil_moisture <= 0.6):
-        return float('inf'), float('inf')
+        return float("inf"), float("inf")
     if tau_value < 0.0 or h_value < 0.0:
-        return float('inf'), float('inf')
+        return float("inf"), float("inf")
 
     if model_context is None:
         epsilon = mironov_dielectric(freq_ghz, soil_moisture, clay_fraction)
         rh, rv = fresnel_reflectance(theta_deg, epsilon)
         rh_r, rv_r = rough_reflectance(theta_deg, h_value, rh, rv)
     else:
-        epsilon = mironov_dielectric_from_context(soil_moisture, model_context.dielectric)
+        epsilon = mironov_dielectric_from_context(
+            soil_moisture, model_context.dielectric
+        )
         rh, rv = fresnel_reflectance_from_context(epsilon, model_context.fresnel)
         rh_r, rv_r = rough_reflectance_from_context(model_context, h_value, rh, rv)
     gamma = math.exp(-tau_value)
-    tbv_model = ts * ((1 - rv_r) * gamma + (1 - albedo) * (1 - gamma) * (1 + rv_r * gamma))
-    tbh_model = ts * ((1 - rh_r) * gamma + (1 - albedo) * (1 - gamma) * (1 + rh_r * gamma))
+    tbv_model = ts * (
+        (1 - rv_r) * gamma + (1 - albedo) * (1 - gamma) * (1 + rv_r * gamma)
+    )
+    tbh_model = ts * (
+        (1 - rh_r) * gamma + (1 - albedo) * (1 - gamma) * (1 + rh_r * gamma)
+    )
     return tbv_model, tbh_model
 
 
@@ -142,7 +154,7 @@ def f_sm_cost(
     freq_ghz 应在 0.1-40 GHz 范围内，超出返回 inf 残差。
     """
     if not (0.1 <= freq_ghz <= 40.0):
-        return [float('inf'), float('inf'), float('inf')]
+        return [float("inf"), float("inf"), float("inf")]
 
     soil_moisture = float(x[0])
     tau_value = float(x[1])
@@ -222,18 +234,26 @@ def _finite_difference_jacobian(
             x_backward = x.copy()
             x_forward[idx] = forward
             x_backward[idx] = backward
-            f_forward = np.asarray(residual_func(x_forward), dtype=np.float64).reshape(-1)
-            f_backward = np.asarray(residual_func(x_backward), dtype=np.float64).reshape(-1)
+            f_forward = np.asarray(residual_func(x_forward), dtype=np.float64).reshape(
+                -1
+            )
+            f_backward = np.asarray(
+                residual_func(x_backward), dtype=np.float64
+            ).reshape(-1)
             jac[:, idx] = (f_forward - f_backward) / (forward - backward)
         elif forward > x[idx]:
             x_forward = x.copy()
             x_forward[idx] = forward
-            f_forward = np.asarray(residual_func(x_forward), dtype=np.float64).reshape(-1)
+            f_forward = np.asarray(residual_func(x_forward), dtype=np.float64).reshape(
+                -1
+            )
             jac[:, idx] = (f_forward - base) / (forward - float(x[idx]))
         elif backward < x[idx]:
             x_backward = x.copy()
             x_backward[idx] = backward
-            f_backward = np.asarray(residual_func(x_backward), dtype=np.float64).reshape(-1)
+            f_backward = np.asarray(
+                residual_func(x_backward), dtype=np.float64
+            ).reshape(-1)
             jac[:, idx] = (base - f_backward) / (float(x[idx]) - backward)
         else:
             jac[:, idx] = 0.0
@@ -269,7 +289,21 @@ def retrieve_dynamic_h_pixel(
 
     if model_context is None:
         model_context = build_tb_model_context(freq_ghz, clay_fraction, theta_deg)
-    residual = lambda x: f_h_cost(x, tbv, tbh, ts, tau_ini, clay_fraction, albedo, freq_ghz, theta_deg, model_context)
+
+    def residual(x):
+        return f_h_cost(
+            x,
+            tbv,
+            tbh,
+            ts,
+            tau_ini,
+            clay_fraction,
+            albedo,
+            freq_ghz,
+            theta_deg,
+            model_context,
+        )
+
     lower_bounds = (0.02, 0.0)
     upper_bounds = (porosity, 3.0)
     if porosity <= 0.02:
@@ -278,7 +312,9 @@ def retrieve_dynamic_h_pixel(
         residual,
         x0=[0.2, 0.5],
         bounds=(lower_bounds, upper_bounds),
-        jac=lambda x: _finite_difference_jacobian(x, residual, lower_bounds, upper_bounds),
+        jac=lambda x: _finite_difference_jacobian(
+            x, residual, lower_bounds, upper_bounds
+        ),
     )
     return float(result.x[1])
 
@@ -300,22 +336,47 @@ def ddca_retrieve_pixel(
 
     if any(
         _is_nan(value)
-        for value in [tbv, tbh, ts, tau_ini, h_value, clay_fraction, albedo, porosity, theta_deg]
+        for value in [
+            tbv,
+            tbh,
+            ts,
+            tau_ini,
+            h_value,
+            clay_fraction,
+            albedo,
+            porosity,
+            theta_deg,
+        ]
     ):
         return float("nan"), float("nan")
 
     if model_context is None:
         model_context = build_tb_model_context(freq_ghz, clay_fraction, theta_deg)
-    residual = lambda x: f_sm_cost(
-        x, tbv, tbh, ts, tau_ini, h_value, clay_fraction, albedo, freq_ghz, theta_deg, model_context
-    )
+
+    def residual(x):
+        return f_sm_cost(
+            x,
+            tbv,
+            tbh,
+            ts,
+            tau_ini,
+            h_value,
+            clay_fraction,
+            albedo,
+            freq_ghz,
+            theta_deg,
+            model_context,
+        )
+
     lower_bounds = (0.02, 0.0)
     upper_bounds = (porosity, 5.0)
     result = least_squares(
         residual,
         x0=[0.2, 0.5],
         bounds=(lower_bounds, upper_bounds),
-        jac=lambda x: _finite_difference_jacobian(x, residual, lower_bounds, upper_bounds),
+        jac=lambda x: _finite_difference_jacobian(
+            x, residual, lower_bounds, upper_bounds
+        ),
     )
     return float(result.x[0]), float(result.x[1])
 
@@ -353,9 +414,15 @@ def retrieve_dynamic_h_grid(
     output_flat = output.reshape(-1)
 
     valid_mask = ~(
-        np.isnan(tbv) | np.isnan(tbh) | np.isnan(ts) | np.isnan(tau_ini)
-        | np.isnan(clay_fraction) | np.isnan(albedo) | np.isnan(porosity)
-        | np.isnan(theta_deg) | (porosity <= 0.02)
+        np.isnan(tbv)
+        | np.isnan(tbh)
+        | np.isnan(ts)
+        | np.isnan(tau_ini)
+        | np.isnan(clay_fraction)
+        | np.isnan(albedo)
+        | np.isnan(porosity)
+        | np.isnan(theta_deg)
+        | (porosity <= 0.02)
     )
     if not np.any(valid_mask):
         return output
@@ -433,9 +500,15 @@ def ddca_retrieve_grid(
     vod_flat = vod.reshape(-1)
 
     valid_mask = ~(
-        np.isnan(tbv) | np.isnan(tbh) | np.isnan(ts) | np.isnan(tau_ini)
-        | np.isnan(h_value) | np.isnan(clay_fraction) | np.isnan(albedo)
-        | np.isnan(porosity) | np.isnan(theta_deg)
+        np.isnan(tbv)
+        | np.isnan(tbh)
+        | np.isnan(ts)
+        | np.isnan(tau_ini)
+        | np.isnan(h_value)
+        | np.isnan(clay_fraction)
+        | np.isnan(albedo)
+        | np.isnan(porosity)
+        | np.isnan(theta_deg)
     )
     if not np.any(valid_mask):
         return sm, vod

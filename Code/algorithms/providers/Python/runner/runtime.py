@@ -23,6 +23,7 @@ def _build_storage_backend() -> "Any | None":
     if backend_type == "minio":
         try:
             from storage.factory import get_output_storage_backend
+
             return get_output_storage_backend()
         except Exception:
             return None
@@ -36,6 +37,7 @@ def _build_storage_backend() -> "Any | None":
             root = Path.home() / ".geooutput"
         root.mkdir(parents=True, exist_ok=True)
         from storage.local_fs import LocalFileSystemStorage
+
         return LocalFileSystemStorage(root)
     except Exception:
         return None

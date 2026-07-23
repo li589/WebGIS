@@ -29,7 +29,9 @@ def create_handler(job_service: JobService):
                 self._send_response(job_service.get_job_request_schema_response())
                 return
             if path == "/schemas/workflow-definition":
-                self._send_response(job_service.get_workflow_definition_schema_response())
+                self._send_response(
+                    job_service.get_workflow_definition_schema_response()
+                )
                 return
             if path == "/api/v1/modules":
                 self._send_response(job_service.list_modules_response())
@@ -40,22 +42,34 @@ def create_handler(job_service: JobService):
             if path.startswith("/api/v1/modules/"):
                 module_name = path.removeprefix("/api/v1/modules/").strip("/")
                 if module_name:
-                    self._send_response(job_service.describe_module_response(module_name))
+                    self._send_response(
+                        job_service.describe_module_response(module_name)
+                    )
                     return
             if path.startswith("/api/v1/workflows/"):
                 workflow_path = path.removeprefix("/api/v1/workflows/").strip("/")
                 if workflow_path.endswith("/panel-schema"):
-                    workflow_name = workflow_path.removesuffix("/panel-schema").strip("/")
+                    workflow_name = workflow_path.removesuffix("/panel-schema").strip(
+                        "/"
+                    )
                     if workflow_name:
-                        self._send_response(job_service.get_workflow_panel_schema_response(workflow_name))
+                        self._send_response(
+                            job_service.get_workflow_panel_schema_response(
+                                workflow_name
+                            )
+                        )
                         return
                 if workflow_path.endswith("/ui-schema"):
                     workflow_name = workflow_path.removesuffix("/ui-schema").strip("/")
                     if workflow_name:
-                        self._send_response(job_service.get_workflow_ui_schema_response(workflow_name))
+                        self._send_response(
+                            job_service.get_workflow_ui_schema_response(workflow_name)
+                        )
                         return
                 if workflow_path:
-                    self._send_response(job_service.describe_workflow_response(workflow_path))
+                    self._send_response(
+                        job_service.describe_workflow_response(workflow_path)
+                    )
                     return
             if path.startswith("/jobs/"):
                 submission_id = path.removeprefix("/jobs/").strip("/")
@@ -103,7 +117,9 @@ def create_handler(job_service: JobService):
                 )
                 return None
 
-            payload_bytes = self.rfile.read(content_length) if content_length > 0 else b""
+            payload_bytes = (
+                self.rfile.read(content_length) if content_length > 0 else b""
+            )
             try:
                 return payload_bytes.decode("utf-8")
             except UnicodeDecodeError:
@@ -188,7 +204,9 @@ def build_http_job_service(
     if queue_backend == "memory":
         if persistent_state:
             if resolved_workspace is None:
-                raise ValueError("workspace is required when persistent_state is enabled.")
+                raise ValueError(
+                    "workspace is required when persistent_state is enabled."
+                )
             return build_local_persistent_job_service(
                 workspace=resolved_workspace,
                 start_worker=start_worker,
@@ -224,7 +242,9 @@ def _not_found_response(path: str) -> ServiceResponse:
 def _encode_json_bytes(payload: dict[str, Any]) -> bytes:
     import json
 
-    return json.dumps(payload, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
+    return json.dumps(payload, ensure_ascii=False, separators=(",", ":")).encode(
+        "utf-8"
+    )
 
 
 def _build_parser() -> argparse.ArgumentParser:
@@ -232,7 +252,9 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=8000)
     parser.add_argument("--workspace", default=None)
-    parser.add_argument("--queue-backend", choices=("memory", "file", "platform"), default="memory")
+    parser.add_argument(
+        "--queue-backend", choices=("memory", "file", "platform"), default="memory"
+    )
     parser.add_argument("--persistent-state", action="store_true")
     parser.add_argument("--no-worker", action="store_true")
     return parser

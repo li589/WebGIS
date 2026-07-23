@@ -46,15 +46,21 @@ def filter_station_records(
             continue
         if require_good_quality and record.quality_flag != _QUALITY_FLAG_GOOD:
             continue
-        if min_sm is not None and (math.isnan(record.soil_moisture) or record.soil_moisture <= min_sm):
+        if min_sm is not None and (
+            math.isnan(record.soil_moisture) or record.soil_moisture <= min_sm
+        ):
             continue
-        if max_sm is not None and (math.isnan(record.soil_moisture) or record.soil_moisture > max_sm):
+        if max_sm is not None and (
+            math.isnan(record.soil_moisture) or record.soil_moisture > max_sm
+        ):
             continue
         filtered.append(record)
     return filtered
 
 
-def aggregate_station_records_daily(records: list[StationRecord]) -> list[StationRecord]:
+def aggregate_station_records_daily(
+    records: list[StationRecord],
+) -> list[StationRecord]:
     """按 (year, month, day, depth) 分组取 soil_moisture 均值，输出日尺度记录。"""
     groups: dict[tuple[int, int, int, float], list[StationRecord]] = defaultdict(list)
     for record in records:
@@ -64,7 +70,9 @@ def aggregate_station_records_daily(records: list[StationRecord]) -> list[Statio
     aggregated: list[StationRecord] = []
     for (_, _, _, _), values in groups.items():
         first = values[0]
-        valid_values = [item.soil_moisture for item in values if not math.isnan(item.soil_moisture)]
+        valid_values = [
+            item.soil_moisture for item in values if not math.isnan(item.soil_moisture)
+        ]
         if not valid_values:
             continue
         mean_sm = sum(valid_values) / len(valid_values)
@@ -85,7 +93,9 @@ def aggregate_station_records_daily(records: list[StationRecord]) -> list[Statio
                 source=first.source,
             )
         )
-    aggregated.sort(key=lambda item: (item.year, item.month, item.day, item.depth_lower))
+    aggregated.sort(
+        key=lambda item: (item.year, item.month, item.day, item.depth_lower)
+    )
     return aggregated
 
 
@@ -105,7 +115,9 @@ def build_site_time_series_matrix(
         date_axis.append(current)
         current = current.replace(hour=0) + timedelta(days=1)
 
-    date_to_index = {value.strftime(_DATE_KEY_FORMAT): index for index, value in enumerate(date_axis)}
+    date_to_index = {
+        value.strftime(_DATE_KEY_FORMAT): index for index, value in enumerate(date_axis)
+    }
     matrix = [float("nan")] * len(date_axis)
     for record in records:
         key = f"{record.year:04d}{record.month:02d}{record.day:02d}"
@@ -119,7 +131,9 @@ def build_site_time_series_matrix(
     }
 
 
-def station_records_to_rows(records: list[StationRecord]) -> list[list[float | int | str]]:
+def station_records_to_rows(
+    records: list[StationRecord],
+) -> list[list[float | int | str]]:
     rows: list[list[float | int | str]] = []
     for record in records:
         rows.append(
@@ -185,7 +199,9 @@ def build_station_site_matrix(
             date_axis = list(matrix_info["date_axis"])
 
     if not site_matrix_rows:
-        empty_axis = build_site_time_series_matrix([], start_time, end_time)["date_axis"]
+        empty_axis = build_site_time_series_matrix([], start_time, end_time)[
+            "date_axis"
+        ]
         return {
             "date_axis": empty_axis,
             "site_matrix": np.empty((0, len(empty_axis)), dtype=np.float64),
@@ -233,7 +249,9 @@ def nearest_grid_indices(
     lat_flat = lat_grid.reshape(-1)
     lon_flat = lon_grid.reshape(-1)
     result = np.full(site_lat.shape, -1, dtype=np.int64)
-    for index, (lat_value, lon_value) in enumerate(zip(site_lat, site_lon, strict=False)):
+    for index, (lat_value, lon_value) in enumerate(
+        zip(site_lat, site_lon, strict=False)
+    ):
         distance = (lat_flat - lat_value) ** 2 + (lon_flat - lon_value) ** 2
         if np.isfinite(distance).any():
             result[index] = int(np.nanargmin(distance))
@@ -270,7 +288,9 @@ def aggregate_matrix_by_group(
             continue
         if item not in unique_groups:
             unique_groups.append(item)
-    aggregated = np.full((len(unique_groups), matrix.shape[1]), np.nan, dtype=np.float64)
+    aggregated = np.full(
+        (len(unique_groups), matrix.shape[1]), np.nan, dtype=np.float64
+    )
     valid_counts = np.zeros((len(unique_groups),), dtype=np.int32)
     for group_index, group_id in enumerate(unique_groups):
         rows = np.asarray(group_ids == group_id)
@@ -317,30 +337,47 @@ def build_station_validation_outputs(
     if site_matrix.size == 0:
         return {}
 
-    site_mesh_idx = nearest_grid_indices(site_payload["site_lat"], site_payload["site_lon"], smap_lat, smap_lon)
+    site_mesh_idx = nearest_grid_indices(
+        site_payload["site_lat"], site_payload["site_lon"], smap_lat, smap_lon
+    )
     site_payload["site"] = site_matrix
     site_payload["site_mesh"] = site_mesh_idx + 1
 
     if landcover_grid is not None:
         lc_idx = (
-            nearest_grid_indices(site_payload["site_lat"], site_payload["site_lon"], landcover_lat, landcover_lon)
+            nearest_grid_indices(
+                site_payload["site_lat"],
+                site_payload["site_lon"],
+                landcover_lat,
+                landcover_lon,
+            )
             if landcover_lat is not None and landcover_lon is not None
             else site_mesh_idx
         )
         site_payload["site_lc"] = sample_grid_values(lc_idx, landcover_grid)
     if climate_grid is not None:
         climate_idx = (
-            nearest_grid_indices(site_payload["site_lat"], site_payload["site_lon"], climate_lat, climate_lon)
+            nearest_grid_indices(
+                site_payload["site_lat"],
+                site_payload["site_lon"],
+                climate_lat,
+                climate_lon,
+            )
             if climate_lat is not None and climate_lon is not None
             else site_mesh_idx
         )
         site_payload["site_kop"] = sample_grid_values(climate_idx, climate_grid)
 
     if smap_landcover_grid is not None:
-        site_payload["site_lc_smap"] = sample_grid_values(site_mesh_idx, smap_landcover_grid)
+        site_payload["site_lc_smap"] = sample_grid_values(
+            site_mesh_idx, smap_landcover_grid
+        )
 
     network_source = (
-        [network_map.get(site_id, derive_network_ids([site_id])[0]) for site_id in site_payload["site_id"]]
+        [
+            network_map.get(site_id, derive_network_ids([site_id])[0])
+            for site_id in site_payload["site_id"]
+        ]
         if network_map is not None
         else derive_network_ids(site_payload["site_id"])
     )
@@ -376,16 +413,26 @@ def build_station_validation_outputs(
     site_lat = np.asarray(site_payload["site_lat"], dtype=np.float64)
     site_lon = np.asarray(site_payload["site_lon"], dtype=np.float64)
     site_elev = np.asarray(site_payload["site_elev"], dtype=np.float64)
-    site_lc = np.asarray(site_payload.get("site_lc", np.full(site_lat.shape, np.nan, dtype=np.float64)), dtype=np.float64)
-    site_kop = np.asarray(site_payload.get("site_kop", np.full(site_lat.shape, np.nan, dtype=np.float64)), dtype=np.float64)
+    site_lc = np.asarray(
+        site_payload.get("site_lc", np.full(site_lat.shape, np.nan, dtype=np.float64)),
+        dtype=np.float64,
+    )
+    site_kop = np.asarray(
+        site_payload.get("site_kop", np.full(site_lat.shape, np.nan, dtype=np.float64)),
+        dtype=np.float64,
+    )
     site_lc_smap = np.asarray(
-        site_payload.get("site_lc_smap", np.full(site_lat.shape, np.nan, dtype=np.float64)),
+        site_payload.get(
+            "site_lc_smap", np.full(site_lat.shape, np.nan, dtype=np.float64)
+        ),
         dtype=np.float64,
     )
     site_mesh_1based = np.asarray(site_payload["site_mesh"], dtype=np.int64).reshape(-1)
 
     for network_label in net_id:
-        network_rows_mask = np.asarray([label == network_label for label in network_source], dtype=bool)
+        network_rows_mask = np.asarray(
+            [label == network_label for label in network_source], dtype=bool
+        )
         network_meshes: list[int] = []
         for mesh_value in site_mesh_1based[network_rows_mask].tolist():
             if mesh_value not in network_meshes:
@@ -428,7 +475,9 @@ def build_station_validation_outputs(
 
     grid_payload: dict[str, Any] = {
         "date_axis": site_payload["date_axis"],
-        "grid": np.vstack(grid_rows).astype(np.float64, copy=False) if grid_rows else np.empty((0, site_matrix.shape[1]), dtype=np.float64),
+        "grid": np.vstack(grid_rows).astype(np.float64, copy=False)
+        if grid_rows
+        else np.empty((0, site_matrix.shape[1]), dtype=np.float64),
         "grid_mesh": np.asarray(grid_mesh, dtype=np.int64),
         "grid_vali": np.asarray(grid_vali, dtype=np.int32),
         "grid_id": np.asarray(grid_id, dtype=object),
@@ -445,7 +494,9 @@ def build_station_validation_outputs(
 
     net_payload: dict[str, Any] = {
         "date_axis": site_payload["date_axis"],
-        "net": np.vstack(net_rows).astype(np.float64, copy=False) if net_rows else np.empty((0, site_matrix.shape[1]), dtype=np.float64),
+        "net": np.vstack(net_rows).astype(np.float64, copy=False)
+        if net_rows
+        else np.empty((0, site_matrix.shape[1]), dtype=np.float64),
         "net_id": np.asarray(net_id, dtype=object),
         "net_grid": np.asarray(net_grid, dtype=np.int32),
     }

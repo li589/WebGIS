@@ -23,9 +23,13 @@ def _validate_module_name(module_name: str) -> None:
         )
 
 
-def resolve_algorithm_callable(entrypoint: str) -> Callable[[ProviderExecutionPayload], Any]:
+def resolve_algorithm_callable(
+    entrypoint: str,
+) -> Callable[[ProviderExecutionPayload], Any]:
     if ":" not in entrypoint:
-        raise ValueError("Algorithm entrypoint must use 'module.path:function_name' format.")
+        raise ValueError(
+            "Algorithm entrypoint must use 'module.path:function_name' format."
+        )
 
     module_name, function_name = entrypoint.split(":", 1)
     _validate_module_name(module_name)

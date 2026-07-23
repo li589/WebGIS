@@ -8,6 +8,7 @@
 
 不直接断言性能加速比（性能由 bench_block_inversion_threads.py 单独验证）。
 """
+
 from __future__ import annotations
 
 import sys
@@ -139,10 +140,15 @@ class TestFallbackBehavior(unittest.TestCase):
         """ProcessPoolExecutor 抛出 OSError 时应回退到串行，主任务仍成功。"""
         payload = _make_synthetic_payload(nt=2, npix=40)
 
+        # Force process_count > 1 so the parallel path is taken regardless of
+        # available system memory (auto_process_count may return 1 on low-mem hosts).
         # Mock _run_chunks_parallel 抛出运行时异常（非编程 bug）
-        with mock.patch(
-            "algorithms.block_inversion._run_chunks_parallel",
-            side_effect=OSError("simulated spawn failure"),
+        with (
+            mock.patch("algorithms._parallel.auto_process_count", return_value=4),
+            mock.patch(
+                "algorithms.block_inversion._run_chunks_parallel",
+                side_effect=OSError("simulated spawn failure"),
+            ),
         ):
             result = execute_block_inversion(
                 payload, mode="dh", freq_ghz=1.26, pixel_chunk_size=10, max_workers=4
@@ -157,10 +163,15 @@ class TestFallbackBehavior(unittest.TestCase):
         """编程 bug（AttributeError 等）不应被串行回退掩盖，必须向上抛出。"""
         payload = _make_synthetic_payload(nt=2, npix=40)
 
+        # Force process_count > 1 so the parallel path is taken regardless of
+        # available system memory (auto_process_count may return 1 on low-mem hosts).
         # Mock _run_chunks_parallel 抛 AttributeError（编程 bug）
-        with mock.patch(
-            "algorithms.block_inversion._run_chunks_parallel",
-            side_effect=AttributeError("'NoneType' object has no attribute 'foo'"),
+        with (
+            mock.patch("algorithms._parallel.auto_process_count", return_value=4),
+            mock.patch(
+                "algorithms.block_inversion._run_chunks_parallel",
+                side_effect=AttributeError("'NoneType' object has no attribute 'foo'"),
+            ),
         ):
             with self.assertRaises(AttributeError):
                 execute_block_inversion(
@@ -177,9 +188,14 @@ class TestFallbackBehavior(unittest.TestCase):
 
         payload = _make_synthetic_payload(nt=2, npix=40)
 
-        with mock.patch(
-            "algorithms.block_inversion._run_chunks_parallel",
-            side_effect=BrokenProcessPool("worker died"),
+        # Force process_count > 1 so the parallel path is taken regardless of
+        # available system memory (auto_process_count may return 1 on low-mem hosts).
+        with (
+            mock.patch("algorithms._parallel.auto_process_count", return_value=4),
+            mock.patch(
+                "algorithms.block_inversion._run_chunks_parallel",
+                side_effect=BrokenProcessPool("worker died"),
+            ),
         ):
             result = execute_block_inversion(
                 payload, mode="dh", freq_ghz=1.26, pixel_chunk_size=10, max_workers=4
@@ -195,7 +211,10 @@ class TestAutoWorkersDefault(unittest.TestCase):
     def test_auto_workers_completes_successfully_dh(self) -> None:
         payload = _make_synthetic_payload(nt=3, npix=200)
         result = execute_block_inversion(
-            payload, mode="dh", freq_ghz=1.26, pixel_chunk_size=50  # max_workers=None
+            payload,
+            mode="dh",
+            freq_ghz=1.26,
+            pixel_chunk_size=50,  # max_workers=None
         )
         self.assertEqual(result["DH_mat"].shape, (3, 200))
         # 应该有大量有效结果
@@ -222,7 +241,9 @@ class TestAutoWorkersDefault(unittest.TestCase):
         serial = execute_block_inversion(
             payload, mode="dh", freq_ghz=1.26, pixel_chunk_size=30, max_workers=1
         )
-        np.testing.assert_array_almost_equal(auto["DH_mat"], serial["DH_mat"], decimal=10)
+        np.testing.assert_array_almost_equal(
+            auto["DH_mat"], serial["DH_mat"], decimal=10
+        )
 
 
 class TestEdgeCases(unittest.TestCase):
@@ -293,8 +314,13 @@ class TestProcessChunkDirect(unittest.TestCase):
         nt, chunk_npix = 2, 5
         inputs = self._make_chunk_inputs(nt, chunk_npix)
         result = _process_chunk(
-            10, 15, mode="dh", nt=nt, freq_ghz=1.26,
-            h_mat_chunk=None, **inputs,
+            10,
+            15,
+            mode="dh",
+            nt=nt,
+            freq_ghz=1.26,
+            h_mat_chunk=None,
+            **inputs,
         )
         self.assertEqual(result["start"], 10)
         self.assertEqual(result["end"], 15)
@@ -311,8 +337,13 @@ class TestProcessChunkDirect(unittest.TestCase):
         nt, chunk_npix = 2, 5
         inputs = self._make_chunk_inputs(nt, chunk_npix)
         result = _process_chunk(
-            0, chunk_npix, mode="ddca", nt=nt, freq_ghz=1.26,
-            h_mat_chunk=np.full((nt, chunk_npix), 0.3), **inputs,
+            0,
+            chunk_npix,
+            mode="ddca",
+            nt=nt,
+            freq_ghz=1.26,
+            h_mat_chunk=np.full((nt, chunk_npix), 0.3),
+            **inputs,
         )
         self.assertEqual(result["sm"].shape, (nt, chunk_npix))
         self.assertEqual(result["vod"].shape, (nt, chunk_npix))
@@ -373,9 +404,7 @@ class TestPrepareChunkKwargsDirect(unittest.TestCase):
         kwargs = _prepare_chunk_kwargs(matrices, slice(2, 5), "ddca")
         self.assertEqual(kwargs["h_mat_chunk"].shape, (nt, 3))
         # 验证切片值正确
-        np.testing.assert_array_equal(
-            kwargs["h_mat_chunk"], np.full((nt, 3), 0.3)
-        )
+        np.testing.assert_array_equal(kwargs["h_mat_chunk"], np.full((nt, 3), 0.3))
 
     def test_ddca_mode_h_mat_none_fallback(self) -> None:
         """ddca 模式但 h_mat 为 None 时，h_mat_chunk 应为 None（不崩）。"""

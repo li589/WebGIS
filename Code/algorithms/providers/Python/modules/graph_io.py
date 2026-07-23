@@ -48,9 +48,13 @@ def _path_manifest(
 @register_module_decorator(name="data_source")
 class DataSourceModule(BaseModule):
     name = "data_source"
-    description = "Package dataset path/URI into a datasource reference for downstream modules."
+    description = (
+        "Package dataset path/URI into a datasource reference for downstream modules."
+    )
     input_ports = [
-        PortSpec(name="time_range", kind="value", data_class="time_range", required=False),
+        PortSpec(
+            name="time_range", kind="value", data_class="time_range", required=False
+        ),
         PortSpec(name="bbox", kind="geometry", data_class="bbox", required=False),
     ]
     output_ports = [
@@ -65,7 +69,12 @@ class DataSourceModule(BaseModule):
         "format": "auto",
     }
 
-    def execute(self, inputs: dict[str, object], params: dict[str, object], ctx: NodeExecutionContext) -> dict[str, object]:
+    def execute(
+        self,
+        inputs: dict[str, object],
+        params: dict[str, object],
+        ctx: NodeExecutionContext,
+    ) -> dict[str, object]:
         path = str(params.get("path") or "").strip()
         dataset_key = str(params.get("dataset_key") or "").strip()
         payload: dict[str, object] = {
@@ -101,9 +110,19 @@ class TimeRangeModule(BaseModule):
     description = "Emit a time_range value object."
     input_ports = []
     output_ports = [PortSpec(name="time_range", kind="value", data_class="time_range")]
-    default_params = {"start_at": "", "end_at": "", "resolution_unit": "day", "resolution_step": 1}
+    default_params = {
+        "start_at": "",
+        "end_at": "",
+        "resolution_unit": "day",
+        "resolution_step": 1,
+    }
 
-    def execute(self, inputs: dict[str, object], params: dict[str, object], ctx: NodeExecutionContext) -> dict[str, object]:
+    def execute(
+        self,
+        inputs: dict[str, object],
+        params: dict[str, object],
+        ctx: NodeExecutionContext,
+    ) -> dict[str, object]:
         _ = inputs, ctx
         return {
             "time_range": {
@@ -121,9 +140,20 @@ class BBoxModule(BaseModule):
     description = "Emit a bbox geometry object."
     input_ports = []
     output_ports = [PortSpec(name="bbox", kind="geometry", data_class="bbox")]
-    default_params = {"west": 73.0, "south": 15.0, "east": 137.0, "north": 59.0, "crs": "EPSG:4326"}
+    default_params = {
+        "west": 73.0,
+        "south": 15.0,
+        "east": 137.0,
+        "north": 59.0,
+        "crs": "EPSG:4326",
+    }
 
-    def execute(self, inputs: dict[str, object], params: dict[str, object], ctx: NodeExecutionContext) -> dict[str, object]:
+    def execute(
+        self,
+        inputs: dict[str, object],
+        params: dict[str, object],
+        ctx: NodeExecutionContext,
+    ) -> dict[str, object]:
         _ = inputs, ctx
         return {
             "bbox": {
@@ -143,7 +173,12 @@ class NumberConstModule(BaseModule):
     output_ports = [PortSpec(name="value", kind="value", data_class="number")]
     default_params = {"value": 0}
 
-    def execute(self, inputs: dict[str, object], params: dict[str, object], ctx: NodeExecutionContext) -> dict[str, object]:
+    def execute(
+        self,
+        inputs: dict[str, object],
+        params: dict[str, object],
+        ctx: NodeExecutionContext,
+    ) -> dict[str, object]:
         _ = inputs, ctx
         return {"value": float(params.get("value", 0))}
 
@@ -155,7 +190,12 @@ class StringConstModule(BaseModule):
     output_ports = [PortSpec(name="value", kind="value", data_class="string")]
     default_params = {"value": ""}
 
-    def execute(self, inputs: dict[str, object], params: dict[str, object], ctx: NodeExecutionContext) -> dict[str, object]:
+    def execute(
+        self,
+        inputs: dict[str, object],
+        params: dict[str, object],
+        ctx: NodeExecutionContext,
+    ) -> dict[str, object]:
         _ = inputs, ctx
         return {"value": str(params.get("value") or "")}
 
@@ -167,7 +207,12 @@ class BooleanConstModule(BaseModule):
     output_ports = [PortSpec(name="value", kind="value", data_class="boolean")]
     default_params = {"value": False}
 
-    def execute(self, inputs: dict[str, object], params: dict[str, object], ctx: NodeExecutionContext) -> dict[str, object]:
+    def execute(
+        self,
+        inputs: dict[str, object],
+        params: dict[str, object],
+        ctx: NodeExecutionContext,
+    ) -> dict[str, object]:
         _ = inputs, ctx
         return {"value": bool(params.get("value", False))}
 
@@ -179,7 +224,12 @@ class LatLngModule(BaseModule):
     output_ports = [PortSpec(name="point", kind="geometry", data_class="point")]
     default_params = {"latitude": 23.1, "longitude": 113.3}
 
-    def execute(self, inputs: dict[str, object], params: dict[str, object], ctx: NodeExecutionContext) -> dict[str, object]:
+    def execute(
+        self,
+        inputs: dict[str, object],
+        params: dict[str, object],
+        ctx: NodeExecutionContext,
+    ) -> dict[str, object]:
         _ = inputs, ctx
         return {
             "point": {
@@ -196,13 +246,26 @@ class MapViewportModule(BaseModule):
     output_ports = [PortSpec(name="bbox", kind="geometry", data_class="bbox")]
     default_params = {}
 
-    def execute(self, inputs: dict[str, object], params: dict[str, object], ctx: NodeExecutionContext) -> dict[str, object]:
+    def execute(
+        self,
+        inputs: dict[str, object],
+        params: dict[str, object],
+        ctx: NodeExecutionContext,
+    ) -> dict[str, object]:
         _ = inputs, params
         region = ctx.request.region
         if region is not None and getattr(region, "value", None):
             value = region.value if isinstance(region.value, dict) else {}
             return {"bbox": dict(value)}
-        return {"bbox": {"west": -180, "south": -90, "east": 180, "north": 90, "crs": "EPSG:4326"}}
+        return {
+            "bbox": {
+                "west": -180,
+                "south": -90,
+                "east": 180,
+                "north": 90,
+                "crs": "EPSG:4326",
+            }
+        }
 
 
 @register_module_decorator(name="output_map_layer")
@@ -212,7 +275,12 @@ class OutputMapLayerModule(BaseModule):
     input_ports = [
         PortSpec(name="data", kind="data", data_class="any", required=False),
         PortSpec(name="path", kind="value", data_class="string", required=False),
-        PortSpec(name="manifest", kind="artifact", data_class="product_manifest", required=False),
+        PortSpec(
+            name="manifest",
+            kind="artifact",
+            data_class="product_manifest",
+            required=False,
+        ),
     ]
     output_ports = [
         PortSpec(name="manifest", kind="artifact", data_class="product_manifest"),
@@ -220,7 +288,12 @@ class OutputMapLayerModule(BaseModule):
     ]
     default_params = {"layer_id": "", "display_name": ""}
 
-    def execute(self, inputs: dict[str, object], params: dict[str, object], ctx: NodeExecutionContext) -> dict[str, object]:
+    def execute(
+        self,
+        inputs: dict[str, object],
+        params: dict[str, object],
+        ctx: NodeExecutionContext,
+    ) -> dict[str, object]:
         if inputs.get("manifest") is not None:
             artifact = inputs["manifest"]
             map_layer = {
@@ -264,7 +337,12 @@ class OutputFileModule(BaseModule):
     input_ports = [
         PortSpec(name="data", kind="data", data_class="any", required=False),
         PortSpec(name="path", kind="value", data_class="string", required=False),
-        PortSpec(name="manifest", kind="artifact", data_class="product_manifest", required=False),
+        PortSpec(
+            name="manifest",
+            kind="artifact",
+            data_class="product_manifest",
+            required=False,
+        ),
     ]
     output_ports = [
         PortSpec(name="path", kind="value", data_class="string"),
@@ -272,7 +350,12 @@ class OutputFileModule(BaseModule):
     ]
     default_params = {"format": "json", "filename": "output"}
 
-    def execute(self, inputs: dict[str, object], params: dict[str, object], ctx: NodeExecutionContext) -> dict[str, object]:
+    def execute(
+        self,
+        inputs: dict[str, object],
+        params: dict[str, object],
+        ctx: NodeExecutionContext,
+    ) -> dict[str, object]:
         fmt = str(params.get("format") or "json")
         filename = str(params.get("filename") or "output")
         out_dir = Path(ctx.workspace) / "products" / "files"
@@ -287,7 +370,10 @@ class OutputFileModule(BaseModule):
             shutil.copy2(str(src), out_path)
         elif isinstance(data, dict):
             out_path = out_path.with_suffix(".json")
-            out_path.write_text(json.dumps(data, default=str, ensure_ascii=False, indent=2), encoding="utf-8")
+            out_path.write_text(
+                json.dumps(data, default=str, ensure_ascii=False, indent=2),
+                encoding="utf-8",
+            )
         elif inputs.get("manifest") is not None:
             out_path.write_text(
                 json.dumps({"manifest_ref": str(inputs["manifest"])}, default=str),
@@ -296,4 +382,6 @@ class OutputFileModule(BaseModule):
         else:
             raise ValueError("output_file requires data/path/manifest input")
 
-        return _path_manifest(ctx, module_name=self.name, path=str(out_path), product_type="output_file")
+        return _path_manifest(
+            ctx, module_name=self.name, path=str(out_path), product_type="output_file"
+        )

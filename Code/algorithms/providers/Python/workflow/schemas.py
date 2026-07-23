@@ -77,5 +77,10 @@ class NodeExecutor(Protocol):
     def get_output_ports(self) -> list[PortSpec]:
         raise NotImplementedError
 
-    def execute(self, inputs: dict[str, object], params: dict[str, object], ctx: NodeExecutionContext) -> dict[str, object]:
+    def execute(
+        self,
+        inputs: dict[str, object],
+        params: dict[str, object],
+        ctx: NodeExecutionContext,
+    ) -> dict[str, object]:
         raise NotImplementedError

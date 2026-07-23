@@ -14,13 +14,12 @@ import numpy as np
 
 if TYPE_CHECKING:
     import pandas as pd
-    import pyarrow as pa
-    import pyarrow.parquet as pq
 
 
 # ---------------------------------------------------------------------------
 # 内部延迟导入（用于运行时检查）
 # ---------------------------------------------------------------------------
+
 
 def _check_dependencies() -> tuple[Any, Any, Any]:
     """检查并导入 pandas / pyarrow 依赖，失败时给出友好提示。"""
@@ -28,16 +27,14 @@ def _check_dependencies() -> tuple[Any, Any, Any]:
         import pandas as pd
     except ImportError as e:
         raise ImportError(
-            "pandas 未安装，无法使用 TableWriter。"
-            " 请运行: pip install pandas"
+            "pandas 未安装，无法使用 TableWriter。" " 请运行: pip install pandas"
         ) from e
 
     try:
         import pyarrow as pa
     except ImportError as e:
         raise ImportError(
-            "pyarrow 未安装，无法使用 TableWriter。"
-            " 请运行: pip install pyarrow"
+            "pyarrow 未安装，无法使用 TableWriter。" " 请运行: pip install pyarrow"
         ) from e
 
     try:
@@ -54,6 +51,7 @@ def _check_dependencies() -> tuple[Any, Any, Any]:
 # ---------------------------------------------------------------------------
 # TableWriter
 # ---------------------------------------------------------------------------
+
 
 class TableWriter:
     """表格数据写出器，支持 Parquet 格式。
@@ -208,6 +206,7 @@ class TableWriter:
 # ---------------------------------------------------------------------------
 # write_timeseries - 时序数据写出辅助函数
 # ---------------------------------------------------------------------------
+
 
 def write_timeseries(
     times: list[str] | np.ndarray,

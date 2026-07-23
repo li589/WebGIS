@@ -10,7 +10,11 @@ from contracts.product import OutputSpec
 from contracts.runtime import RegionSpec, TimeRange
 from contracts.validation import JobRequestValidationError, validate_job_request
 from runner.dispatch import run_job
-from tests.test_run_job_dispatch import _RecordingDataSource, _RecordingLogger, _RecordingScheduler
+from tests.test_run_job_dispatch import (
+    _RecordingDataSource,
+    _RecordingLogger,
+    _RecordingScheduler,
+)
 from utils.local_adapters import LocalProductSink
 
 
@@ -27,7 +31,9 @@ class JobRequestValidationTests(unittest.TestCase):
             output_spec=OutputSpec(),
         )
 
-    def test_validate_job_request_rejects_module_name_with_workflow_definition(self) -> None:
+    def test_validate_job_request_rejects_module_name_with_workflow_definition(
+        self,
+    ) -> None:
         request = self._build_request()
         request.module_name = "ndvi_daily"
         request.workflow_definition = {
@@ -41,7 +47,9 @@ class JobRequestValidationTests(unittest.TestCase):
 
         self.assertIn("cannot be combined", str(ctx.exception))
 
-    def test_validate_job_request_allows_workflow_name_as_module_workflow_alias(self) -> None:
+    def test_validate_job_request_allows_workflow_name_as_module_workflow_alias(
+        self,
+    ) -> None:
         request = self._build_request()
         request.task_type = "ndvi_daily"
         request.module_name = "ndvi_daily"
@@ -52,7 +60,9 @@ class JobRequestValidationTests(unittest.TestCase):
 
         self.assertIs(validated, request)
 
-    def test_validate_job_request_rejects_workflow_placeholder_without_selector(self) -> None:
+    def test_validate_job_request_rejects_workflow_placeholder_without_selector(
+        self,
+    ) -> None:
         request = self._build_request(pipeline_name="workflow")
 
         with self.assertRaises(JobRequestValidationError) as ctx:
@@ -60,7 +70,9 @@ class JobRequestValidationTests(unittest.TestCase):
 
         self.assertIn("placeholder", str(ctx.exception))
 
-    def test_validate_job_request_rejects_real_pipeline_name_when_module_name_is_used(self) -> None:
+    def test_validate_job_request_rejects_real_pipeline_name_when_module_name_is_used(
+        self,
+    ) -> None:
         request = self._build_request(pipeline_name="ndvi_daily_pipeline")
         request.module_name = "ndvi_daily"
 
@@ -94,7 +106,9 @@ class JobRequestValidationTests(unittest.TestCase):
 
         self.assertIs(validated, request)
 
-    def test_validate_job_request_rejects_missing_required_module_datasource_key(self) -> None:
+    def test_validate_job_request_rejects_missing_required_module_datasource_key(
+        self,
+    ) -> None:
         request = self._build_request()
         request.task_type = "smap_daily"
         request.module_name = "smap_daily"
@@ -105,7 +119,9 @@ class JobRequestValidationTests(unittest.TestCase):
         self.assertIn("requires datasource_selection keys", str(ctx.exception))
         self.assertIn("input_dir", str(ctx.exception))
 
-    def test_validate_job_request_accepts_smap_module_with_data_access_request(self) -> None:
+    def test_validate_job_request_accepts_smap_module_with_data_access_request(
+        self,
+    ) -> None:
         request = self._build_request()
         request.task_type = "smap_daily"
         request.module_name = "smap_daily"
@@ -121,7 +137,9 @@ class JobRequestValidationTests(unittest.TestCase):
 
         self.assertIs(validated, request)
 
-    def test_validate_job_request_accepts_ndvi_module_with_data_access_request(self) -> None:
+    def test_validate_job_request_accepts_ndvi_module_with_data_access_request(
+        self,
+    ) -> None:
         request = self._build_request()
         request.task_type = "ndvi_daily"
         request.module_name = "ndvi_daily"
@@ -137,7 +155,9 @@ class JobRequestValidationTests(unittest.TestCase):
 
         self.assertIs(validated, request)
 
-    def test_validate_job_request_accepts_fy_module_with_data_access_request(self) -> None:
+    def test_validate_job_request_accepts_fy_module_with_data_access_request(
+        self,
+    ) -> None:
         request = self._build_request()
         request.task_type = "fy_daily"
         request.module_name = "fy_daily"
@@ -153,7 +173,9 @@ class JobRequestValidationTests(unittest.TestCase):
 
         self.assertIs(validated, request)
 
-    def test_validate_job_request_accepts_station_module_with_data_access_request(self) -> None:
+    def test_validate_job_request_accepts_station_module_with_data_access_request(
+        self,
+    ) -> None:
         request = self._build_request()
         request.task_type = "station_daily"
         request.module_name = "station_daily"
@@ -169,7 +191,9 @@ class JobRequestValidationTests(unittest.TestCase):
 
         self.assertIs(validated, request)
 
-    def test_validate_job_request_accepts_inversion_module_with_data_access_request(self) -> None:
+    def test_validate_job_request_accepts_inversion_module_with_data_access_request(
+        self,
+    ) -> None:
         request = self._build_request()
         request.task_type = "inversion_daily"
         request.module_name = "inversion_daily"
@@ -185,7 +209,9 @@ class JobRequestValidationTests(unittest.TestCase):
 
         self.assertIs(validated, request)
 
-    def test_validate_job_request_accepts_block_inversion_module_with_data_access_request(self) -> None:
+    def test_validate_job_request_accepts_block_inversion_module_with_data_access_request(
+        self,
+    ) -> None:
         request = self._build_request()
         request.task_type = "block_inversion"
         request.module_name = "block_inversion"
@@ -201,7 +227,9 @@ class JobRequestValidationTests(unittest.TestCase):
 
         self.assertIs(validated, request)
 
-    def test_validate_job_request_accepts_omega_block_module_with_data_access_request(self) -> None:
+    def test_validate_job_request_accepts_omega_block_module_with_data_access_request(
+        self,
+    ) -> None:
         request = self._build_request()
         request.task_type = "omega_block"
         request.module_name = "omega_block"
@@ -240,7 +268,9 @@ class JobRequestValidationTests(unittest.TestCase):
 
         self.assertIn("rejects task_type", str(ctx.exception))
 
-    def test_validate_job_request_rejects_missing_retrieval_workflow_inputs_for_omega_mode(self) -> None:
+    def test_validate_job_request_rejects_missing_retrieval_workflow_inputs_for_omega_mode(
+        self,
+    ) -> None:
         request = self._build_request()
         request.task_type = "retrieval"
         request.workflow_name = "retrieval_workflow"
@@ -252,26 +282,37 @@ class JobRequestValidationTests(unittest.TestCase):
         self.assertIn("omega_fixed_mat", str(ctx.exception))
         self.assertIn("exp0_calib_mat", str(ctx.exception))
 
-    def test_validate_job_request_accepts_retrieval_workflow_inputs_for_omega_mode(self) -> None:
+    def test_validate_job_request_accepts_retrieval_workflow_inputs_for_omega_mode(
+        self,
+    ) -> None:
         request = self._build_request()
         request.task_type = "retrieval"
         request.workflow_name = "retrieval_workflow"
         request.algorithm_params = {"mode": "omega"}
-        request.datasource_selection = {"omega_fixed_mat": "a.mat", "exp0_calib_mat": "b.mat"}
+        request.datasource_selection = {
+            "omega_fixed_mat": "a.mat",
+            "exp0_calib_mat": "b.mat",
+        }
 
         validated = validate_job_request(request)
 
         self.assertIs(validated, request)
 
-    def test_validate_job_request_accepts_retrieval_workflow_data_access_inputs_for_omega_mode(self) -> None:
+    def test_validate_job_request_accepts_retrieval_workflow_data_access_inputs_for_omega_mode(
+        self,
+    ) -> None:
         request = self._build_request()
         request.task_type = "retrieval"
         request.workflow_name = "retrieval_workflow"
         request.algorithm_params = {"mode": "omega"}
         request.datasource_selection = {
             "_data_access_requests": {
-                "omega_fixed_mat": {"selector": {"uris": ["D:/prepared/omega_fixed.mat"]}},
-                "exp0_calib_mat": {"selector": {"uris": ["D:/prepared/exp0_calib.mat"]}},
+                "omega_fixed_mat": {
+                    "selector": {"uris": ["D:/prepared/omega_fixed.mat"]}
+                },
+                "exp0_calib_mat": {
+                    "selector": {"uris": ["D:/prepared/exp0_calib.mat"]}
+                },
             }
         }
 
@@ -279,14 +320,18 @@ class JobRequestValidationTests(unittest.TestCase):
 
         self.assertIs(validated, request)
 
-    def test_validate_job_request_rejects_partial_retrieval_workflow_data_access_inputs_for_omega_mode(self) -> None:
+    def test_validate_job_request_rejects_partial_retrieval_workflow_data_access_inputs_for_omega_mode(
+        self,
+    ) -> None:
         request = self._build_request()
         request.task_type = "retrieval"
         request.workflow_name = "retrieval_workflow"
         request.algorithm_params = {"mode": "omega"}
         request.datasource_selection = {
             "_data_access_requests": {
-                "omega_fixed_mat": {"selector": {"uris": ["D:/prepared/omega_fixed.mat"]}},
+                "omega_fixed_mat": {
+                    "selector": {"uris": ["D:/prepared/omega_fixed.mat"]}
+                },
             }
         }
 
@@ -295,7 +340,9 @@ class JobRequestValidationTests(unittest.TestCase):
 
         self.assertIn("exp0_calib_mat", str(ctx.exception))
 
-    def test_validate_job_request_rejects_explicit_workflow_missing_required_input_binding(self) -> None:
+    def test_validate_job_request_rejects_explicit_workflow_missing_required_input_binding(
+        self,
+    ) -> None:
         request = self._build_request()
         request.workflow_definition = {
             "workflow_id": "wf-inline-required-input",
@@ -307,7 +354,9 @@ class JobRequestValidationTests(unittest.TestCase):
                     "params": {"module_name": "daily_bundle"},
                 }
             ],
-            "outputs": [{"name": "final_manifest", "source": "node:module_node.manifest"}],
+            "outputs": [
+                {"name": "final_manifest", "source": "node:module_node.manifest"}
+            ],
         }
 
         with self.assertRaises(JobRequestValidationError) as ctx:
@@ -316,7 +365,9 @@ class JobRequestValidationTests(unittest.TestCase):
         self.assertIn("requires datasource_selection keys", str(ctx.exception))
         self.assertIn("source_value", str(ctx.exception))
 
-    def test_validate_job_request_accepts_explicit_workflow_data_access_request_for_required_input(self) -> None:
+    def test_validate_job_request_accepts_explicit_workflow_data_access_request_for_required_input(
+        self,
+    ) -> None:
         request = self._build_request()
         request.workflow_definition = {
             "workflow_id": "wf-inline-data-access",
@@ -328,7 +379,9 @@ class JobRequestValidationTests(unittest.TestCase):
                     "params": {"module_name": "block_inversion"},
                 }
             ],
-            "outputs": [{"name": "final_manifest", "source": "node:module_node.manifest"}],
+            "outputs": [
+                {"name": "final_manifest", "source": "node:module_node.manifest"}
+            ],
         }
         request.datasource_selection = {
             "_data_access_requests": {

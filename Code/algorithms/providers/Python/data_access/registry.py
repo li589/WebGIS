@@ -5,7 +5,12 @@ import re
 from typing import Iterable
 from urllib.parse import urlparse
 
-from data_access.contracts import DataRequestV2, ResourceRef, SourceAdapter, is_probable_windows_path
+from data_access.contracts import (
+    DataRequestV2,
+    ResourceRef,
+    SourceAdapter,
+    is_probable_windows_path,
+)
 
 
 _SCHEME_PATTERN = re.compile(r"^(?P<scheme>[a-zA-Z][a-zA-Z0-9+.\-]*):")

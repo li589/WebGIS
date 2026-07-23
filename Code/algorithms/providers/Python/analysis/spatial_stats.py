@@ -126,7 +126,9 @@ class ZonalStats:
             zone_mask = zones_arr == zone_value
             zone_data = data[zone_mask]
             valid = zone_data[np.isfinite(zone_data)]
-            result[int(zone_value)] = float(np.mean(valid)) if valid.size > 0 else float("nan")
+            result[int(zone_value)] = (
+                float(np.mean(valid)) if valid.size > 0 else float("nan")
+            )
         return result
 
     def compute_landcover_stats(
@@ -160,7 +162,11 @@ class ZonalStats:
             lc_int = int(lc_value)
             lc_mask = lc == lc_value
             lc_pixel_count = float(np.sum(lc_mask))
-            area_pct = lc_pixel_count / total_valid_pixels * 100.0 if total_valid_pixels > 0 else 0.0
+            area_pct = (
+                lc_pixel_count / total_valid_pixels * 100.0
+                if total_valid_pixels > 0
+                else 0.0
+            )
             zone_data = data[lc_mask]
             valid = zone_data[np.isfinite(zone_data)]
             count = float(valid.size)

@@ -2,7 +2,12 @@ from __future__ import annotations
 
 from contracts.job import JobRequest
 from contracts.modes import RetrievalMode
-from workflow.graph import WorkflowDefinition, WorkflowEdge, WorkflowNodeSpec, WorkflowOutputSpec
+from workflow.graph import (
+    WorkflowDefinition,
+    WorkflowEdge,
+    WorkflowNodeSpec,
+    WorkflowOutputSpec,
+)
 
 
 def build_retrieval_workflow_definition(request: JobRequest) -> WorkflowDefinition:
@@ -50,8 +55,19 @@ def build_retrieval_workflow_definition(request: JobRequest) -> WorkflowDefiniti
             ),
             retrieval_node,
         ],
-        edges=[WorkflowEdge(from_node="timeseries_bundle", from_port="output_path", to_node=retrieval_node.node_id, to_port="input_mat")],
-        outputs=[WorkflowOutputSpec(name="final_manifest", source=f"node:{retrieval_node.node_id}.manifest")],
+        edges=[
+            WorkflowEdge(
+                from_node="timeseries_bundle",
+                from_port="output_path",
+                to_node=retrieval_node.node_id,
+                to_port="input_mat",
+            )
+        ],
+        outputs=[
+            WorkflowOutputSpec(
+                name="final_manifest", source=f"node:{retrieval_node.node_id}.manifest"
+            )
+        ],
         metadata={"generated_from": "workflow.presets", "mode": mode},
     )
 

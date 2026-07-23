@@ -1,5 +1,9 @@
 from data_access.cache_store import CacheStore
-from data_access.consumers import get_prepared_input_payload, resolve_prepared_local_directory, resolve_prepared_local_path
+from data_access.consumers import (
+    get_prepared_input_payload,
+    resolve_prepared_local_directory,
+    resolve_prepared_local_path,
+)
 from data_access.contracts import (
     DataRequestV2,
     PreparedInput,

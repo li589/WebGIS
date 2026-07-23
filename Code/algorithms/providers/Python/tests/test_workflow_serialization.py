@@ -34,9 +34,13 @@ class WorkflowSerializationTests(unittest.TestCase):
 
         self.assertIsInstance(definition, WorkflowDefinition)
         self.assertEqual(definition.workflow_id, "wf-json-string")
-        self.assertEqual(definition.nodes[0].input_bindings["input_value"], "input:source_value")
+        self.assertEqual(
+            definition.nodes[0].input_bindings["input_value"], "input:source_value"
+        )
 
-    def test_coerce_workflow_definition_rejects_non_string_binding_payload(self) -> None:
+    def test_coerce_workflow_definition_rejects_non_string_binding_payload(
+        self,
+    ) -> None:
         payload = {
             "workflow_id": "wf-invalid-binding",
             "nodes": [
@@ -55,7 +59,10 @@ class WorkflowSerializationTests(unittest.TestCase):
         with self.assertRaises(WorkflowDefinitionDecodeError) as ctx:
             coerce_workflow_definition(payload)
 
-        self.assertIn("workflow_definition.nodes[0].input_bindings.input_value", str(ctx.exception))
+        self.assertIn(
+            "workflow_definition.nodes[0].input_bindings.input_value",
+            str(ctx.exception),
+        )
 
     def test_coerce_workflow_definition_rejects_unknown_top_level_field(self) -> None:
         payload = {

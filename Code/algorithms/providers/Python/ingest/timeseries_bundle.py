@@ -94,21 +94,33 @@ def build_timeseries_bundle(
         if tc_value is not None:
             tc_mat[index, :] = np.asarray(tc_value, dtype=np.float64).reshape(-1)
         if tsoil1_value is not None:
-            tsoil1_mat[index, :] = np.asarray(tsoil1_value, dtype=np.float64).reshape(-1)
+            tsoil1_mat[index, :] = np.asarray(tsoil1_value, dtype=np.float64).reshape(
+                -1
+            )
         if tsoil2_value is not None:
-            tsoil2_mat[index, :] = np.asarray(tsoil2_value, dtype=np.float64).reshape(-1)
+            tsoil2_mat[index, :] = np.asarray(tsoil2_value, dtype=np.float64).reshape(
+                -1
+            )
         if ct_value is not None:
             ct_mat[index, :] = np.asarray(ct_value, dtype=np.float64).reshape(-1)
         if tg_value is not None:
             tg_mat[index, :] = np.asarray(tg_value, dtype=np.float64).reshape(-1)
         if match_slot_index_value is not None:
-            match_slot_index_mat[index, :] = np.asarray(match_slot_index_value, dtype=np.float64).reshape(-1)
+            match_slot_index_mat[index, :] = np.asarray(
+                match_slot_index_value, dtype=np.float64
+            ).reshape(-1)
         if match_day_offset_value is not None:
-            match_day_offset_mat[index, :] = np.asarray(match_day_offset_value, dtype=np.float64).reshape(-1)
+            match_day_offset_mat[index, :] = np.asarray(
+                match_day_offset_value, dtype=np.float64
+            ).reshape(-1)
         if match_picked_file_value is not None:
-            match_picked_file_mat[index, :] = np.asarray(match_picked_file_value, dtype=object).reshape(-1)
+            match_picked_file_mat[index, :] = np.asarray(
+                match_picked_file_value, dtype=object
+            ).reshape(-1)
         if match_picked_utc_value is not None:
-            match_picked_utc_mat[index, :] = np.asarray(match_picked_utc_value, dtype=object).reshape(-1)
+            match_picked_utc_mat[index, :] = np.asarray(
+                match_picked_utc_value, dtype=object
+            ).reshape(-1)
         if smref_value is not None:
             smref_mat[index, :] = np.asarray(smref_value, dtype=np.float64).reshape(-1)
         if ndvi_value is not None:

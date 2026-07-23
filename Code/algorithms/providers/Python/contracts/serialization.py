@@ -42,7 +42,9 @@ JOB_REQUEST_JSON_SCHEMA: dict[str, object] = {
             "additionalProperties": True,
         },
         "output_spec": {"$ref": "#/$defs/OutputSpec"},
-        "resource_hint": {"anyOf": [{"$ref": "#/$defs/ResourceHint"}, {"type": "null"}]},
+        "resource_hint": {
+            "anyOf": [{"$ref": "#/$defs/ResourceHint"}, {"type": "null"}]
+        },
         "cache_policy": {"anyOf": [{"$ref": "#/$defs/CachePolicy"}, {"type": "null"}]},
         "resume_policy": {
             "type": ["object", "null"],
@@ -142,13 +144,19 @@ def coerce_job_request(value: object) -> JobRequest:
         try:
             payload = json.loads(value)
         except json.JSONDecodeError as exc:
-            raise JobRequestDecodeError(f"job_request JSON decode failed: {exc.msg}") from exc
+            raise JobRequestDecodeError(
+                f"job_request JSON decode failed: {exc.msg}"
+            ) from exc
         if not isinstance(payload, Mapping):
-            raise JobRequestDecodeError("job_request JSON payload must decode to an object")
+            raise JobRequestDecodeError(
+                "job_request JSON payload must decode to an object"
+            )
         return job_request_from_mapping(payload)
     if isinstance(value, Mapping):
         return job_request_from_mapping(value)
-    raise TypeError("job_request must be a JobRequest, a JSON object mapping, or a JSON string payload")
+    raise TypeError(
+        "job_request must be a JobRequest, a JSON object mapping, or a JSON string payload"
+    )
 
 
 def job_request_from_mapping(payload: Mapping[str, object]) -> JobRequest:
@@ -179,40 +187,64 @@ def job_request_from_mapping(payload: Mapping[str, object]) -> JobRequest:
         job_id=_require_string(payload, "job_id", "job_request"),
         pipeline_name=_require_string(payload, "pipeline_name", "job_request"),
         task_type=_require_string(payload, "task_type", "job_request"),
-        time_range=_parse_time_range(_require_mapping(payload, "time_range", "job_request"), path="job_request.time_range"),
-        region=_parse_region_spec(_require_mapping(payload, "region", "job_request"), path="job_request.region"),
+        time_range=_parse_time_range(
+            _require_mapping(payload, "time_range", "job_request"),
+            path="job_request.time_range",
+        ),
+        region=_parse_region_spec(
+            _require_mapping(payload, "region", "job_request"),
+            path="job_request.region",
+        ),
         datasource_selection=dict(
             _require_mapping(payload, "datasource_selection", "job_request")
         ),
-        algorithm_params=dict(_require_mapping(payload, "algorithm_params", "job_request")),
+        algorithm_params=dict(
+            _require_mapping(payload, "algorithm_params", "job_request")
+        ),
         output_spec=_parse_output_spec(
-            _optional_mapping(payload, "output_spec", "job_request.output_spec", default={}),
+            _optional_mapping(
+                payload, "output_spec", "job_request.output_spec", default={}
+            ),
             path="job_request.output_spec",
         ),
         resource_hint=_parse_resource_hint(
-            _optional_mapping_or_none(payload, "resource_hint", "job_request.resource_hint"),
+            _optional_mapping_or_none(
+                payload, "resource_hint", "job_request.resource_hint"
+            ),
             path="job_request.resource_hint",
         ),
         cache_policy=_parse_cache_policy(
-            _optional_mapping_or_none(payload, "cache_policy", "job_request.cache_policy"),
+            _optional_mapping_or_none(
+                payload, "cache_policy", "job_request.cache_policy"
+            ),
             path="job_request.cache_policy",
         ),
-        resume_policy=_optional_mapping_or_none(payload, "resume_policy", "job_request.resume_policy"),
+        resume_policy=_optional_mapping_or_none(
+            payload, "resume_policy", "job_request.resume_policy"
+        ),
         priority=_optional_int(payload, "priority", "job_request.priority"),
         tags=_as_string_mapping(
             _optional_mapping(payload, "tags", "job_request.tags", default={}),
             path="job_request.tags",
         ),
         module_name=_optional_string(payload, "module_name", "job_request.module_name"),
-        workflow_name=_optional_string(payload, "workflow_name", "job_request.workflow_name"),
-        workflow_definition=_parse_workflow_definition(payload.get("workflow_definition")),
-        workflow_entry_name=_optional_string(payload, "workflow_entry_name", "job_request.workflow_entry_name"),
+        workflow_name=_optional_string(
+            payload, "workflow_name", "job_request.workflow_name"
+        ),
+        workflow_definition=_parse_workflow_definition(
+            payload.get("workflow_definition")
+        ),
+        workflow_entry_name=_optional_string(
+            payload, "workflow_entry_name", "job_request.workflow_entry_name"
+        ),
     )
 
 
 def _parse_time_range(payload: Mapping[str, object], *, path: str) -> TimeRange:
     _reject_unknown_fields(payload, {"start", "end", "step"}, path=path)
-    start = _parse_datetime(_require_string(payload, "start", path), path=f"{path}.start")
+    start = _parse_datetime(
+        _require_string(payload, "start", path), path=f"{path}.start"
+    )
     end = _parse_datetime(_require_string(payload, "end", path), path=f"{path}.end")
     step = _optional_string(payload, "step", f"{path}.step")
     if (start.tzinfo is None) != (end.tzinfo is None):
@@ -239,15 +271,25 @@ def _parse_output_spec(payload: Mapping[str, object], *, path: str) -> OutputSpe
         path=path,
     )
     return OutputSpec(
-        raster_format=_optional_string(payload, "raster_format", f"{path}.raster_format") or "COG",
-        table_format=_optional_string(payload, "table_format", f"{path}.table_format") or "parquet",
-        include_qc=_optional_bool(payload, "include_qc", f"{path}.include_qc", default=True),
-        include_manifest=_optional_bool(payload, "include_manifest", f"{path}.include_manifest", default=True),
+        raster_format=_optional_string(
+            payload, "raster_format", f"{path}.raster_format"
+        )
+        or "COG",
+        table_format=_optional_string(payload, "table_format", f"{path}.table_format")
+        or "parquet",
+        include_qc=_optional_bool(
+            payload, "include_qc", f"{path}.include_qc", default=True
+        ),
+        include_manifest=_optional_bool(
+            payload, "include_manifest", f"{path}.include_manifest", default=True
+        ),
         extra=dict(_optional_mapping(payload, "extra", f"{path}.extra", default={})),
     )
 
 
-def _parse_resource_hint(payload: Mapping[str, object] | None, *, path: str) -> ResourceHint | None:
+def _parse_resource_hint(
+    payload: Mapping[str, object] | None, *, path: str
+) -> ResourceHint | None:
     if payload is None:
         return None
     _reject_unknown_fields(
@@ -260,11 +302,15 @@ def _parse_resource_hint(payload: Mapping[str, object] | None, *, path: str) -> 
         memory_gb=_optional_number(payload, "memory_gb", f"{path}.memory_gb"),
         gpu_count=_optional_int(payload, "gpu_count", f"{path}.gpu_count"),
         tmp_disk_gb=_optional_number(payload, "tmp_disk_gb", f"{path}.tmp_disk_gb"),
-        preferred_chunk_size=_optional_int(payload, "preferred_chunk_size", f"{path}.preferred_chunk_size"),
+        preferred_chunk_size=_optional_int(
+            payload, "preferred_chunk_size", f"{path}.preferred_chunk_size"
+        ),
     )
 
 
-def _parse_cache_policy(payload: Mapping[str, object] | None, *, path: str) -> CachePolicy | None:
+def _parse_cache_policy(
+    payload: Mapping[str, object] | None, *, path: str
+) -> CachePolicy | None:
     if payload is None:
         return None
     _reject_unknown_fields(payload, {"mode", "enabled"}, path=path)
@@ -287,7 +333,9 @@ def _parse_datetime(value: str, *, path: str) -> datetime:
     try:
         return datetime.fromisoformat(candidate)
     except ValueError as exc:
-        raise JobRequestDecodeError(f"Field must be an ISO datetime string: {path}") from exc
+        raise JobRequestDecodeError(
+            f"Field must be an ISO datetime string: {path}"
+        ) from exc
 
 
 def _require_string(payload: Mapping[str, object], key: str, path: str) -> str:
@@ -308,7 +356,9 @@ def _optional_string(payload: Mapping[str, object], key: str, path: str) -> str 
     return value
 
 
-def _optional_bool(payload: Mapping[str, object], key: str, path: str, *, default: bool) -> bool:
+def _optional_bool(
+    payload: Mapping[str, object], key: str, path: str, *, default: bool
+) -> bool:
     if key not in payload:
         return default
     value = payload[key]
@@ -326,7 +376,9 @@ def _optional_int(payload: Mapping[str, object], key: str, path: str) -> int | N
     return value
 
 
-def _optional_number(payload: Mapping[str, object], key: str, path: str) -> float | None:
+def _optional_number(
+    payload: Mapping[str, object], key: str, path: str
+) -> float | None:
     if key not in payload or payload[key] is None:
         return None
     value = payload[key]
@@ -335,7 +387,9 @@ def _optional_number(payload: Mapping[str, object], key: str, path: str) -> floa
     return float(value)
 
 
-def _require_mapping(payload: Mapping[str, object], key: str, path: str) -> Mapping[str, object]:
+def _require_mapping(
+    payload: Mapping[str, object], key: str, path: str
+) -> Mapping[str, object]:
     if key not in payload:
         raise JobRequestDecodeError(f"Missing required field: {path}.{key}")
     return _as_mapping(payload[key], f"{path}.{key}")
@@ -381,8 +435,12 @@ def _as_string_mapping(value: Mapping[str, object], *, path: str) -> dict[str, s
     return result
 
 
-def _reject_unknown_fields(payload: Mapping[str, object], allowed_keys: set[str], *, path: str) -> None:
+def _reject_unknown_fields(
+    payload: Mapping[str, object], allowed_keys: set[str], *, path: str
+) -> None:
     unknown_keys = sorted(key for key in payload.keys() if key not in allowed_keys)
     if unknown_keys:
         unknown_text = ", ".join(unknown_keys)
-        raise JobRequestDecodeError(f"Unknown field(s) not allowed: {path} -> {unknown_text}")
+        raise JobRequestDecodeError(
+            f"Unknown field(s) not allowed: {path} -> {unknown_text}"
+        )

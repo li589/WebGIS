@@ -16,11 +16,16 @@ class CallbackSchedulerAdapter:
         self,
         *,
         get_run_context: Callable[[JobRequest], dict[str, Any]] | None = None,
-        update_status: Callable[[str, str, str, dict[str, Any] | None], None] | None = None,
+        update_status: Callable[[str, str, str, dict[str, Any] | None], None]
+        | None = None,
         complete: Callable[[JobResult], None] | None = None,
     ) -> None:
-        self._get_run_context = get_run_context or (lambda request: {"job_id": request.job_id})
-        self._update_status = update_status or (lambda job_id, run_id, status, detail=None: None)
+        self._get_run_context = get_run_context or (
+            lambda request: {"job_id": request.job_id}
+        )
+        self._update_status = update_status or (
+            lambda job_id, run_id, status, detail=None: None
+        )
         self._complete = complete or (lambda result: None)
 
     def get_run_context(self, request: JobRequest) -> dict[str, Any]:
@@ -48,7 +53,9 @@ class TrackingSchedulerAdapter:
         on_complete: Callable[[JobResult], None] | None = None,
     ) -> None:
         self._delegate = delegate
-        self._on_status = on_status or (lambda job_id, run_id, status, detail=None: None)
+        self._on_status = on_status or (
+            lambda job_id, run_id, status, detail=None: None
+        )
         self._on_complete = on_complete or (lambda result: None)
 
     def get_run_context(self, request: JobRequest) -> dict[str, Any]:
@@ -80,7 +87,9 @@ class CallbackDataSourceAdapter:
     ) -> None:
         self._discover = discover or (lambda request: [])
         if resolve is None:
-            raise ValueError("resolve callback is required for CallbackDataSourceAdapter")
+            raise ValueError(
+                "resolve callback is required for CallbackDataSourceAdapter"
+            )
         self._resolve = resolve
         self._acquire = acquire or (lambda bundle: bundle)
         self._materialize = materialize or self._default_materialize
@@ -141,7 +150,12 @@ class CallbackLoggerAdapter:
         self._emit_event("error", stage, message, extra=extra or {})
 
     def emit_artifact(self, stage: str, artifact_uri: str, artifact_type: str) -> None:
-        self._emit_event("artifact", stage, "Artifact emitted", extra={"artifact_uri": artifact_uri, "artifact_type": artifact_type})
+        self._emit_event(
+            "artifact",
+            stage,
+            "Artifact emitted",
+            extra={"artifact_uri": artifact_uri, "artifact_type": artifact_type},
+        )
 
     def emit_stage_end(self, stage: str, message: str) -> None:
         self._emit_event("stage_end", stage, message)
@@ -178,13 +192,20 @@ class CallbackProductSink:
         write_manifest: Callable[[ProductManifest], str] | None = None,
     ) -> None:
         self._write_raster = write_raster or (
-            lambda product: ProductRef(name=product.name, type="raster", uri=product.uri, variable=product.variable)
+            lambda product: ProductRef(
+                name=product.name,
+                type="raster",
+                uri=product.uri,
+                variable=product.variable,
+            )
         )
         self._write_table = write_table or (
             lambda product: ProductRef(name=product.name, type="table", uri=product.uri)
         )
         if write_manifest is None:
-            raise ValueError("write_manifest callback is required for CallbackProductSink")
+            raise ValueError(
+                "write_manifest callback is required for CallbackProductSink"
+            )
         self._write_manifest = write_manifest
 
     def write_raster(self, product: RasterProduct) -> ProductRef:

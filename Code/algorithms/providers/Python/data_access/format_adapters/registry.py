@@ -15,7 +15,9 @@ from data_access.format_adapters.xml_file import XmlFormatAdapter
 
 
 class FormatRegistry:
-    def __init__(self, adapters: tuple[FormatAdapter, ...] | list[FormatAdapter] = ()) -> None:
+    def __init__(
+        self, adapters: tuple[FormatAdapter, ...] | list[FormatAdapter] = ()
+    ) -> None:
         self._adapters = tuple(adapters)
 
     def register(self, adapter: FormatAdapter) -> "FormatRegistry":
@@ -27,7 +29,9 @@ class FormatRegistry:
     def registered_formats(self) -> tuple[str, ...]:
         formats: set[str] = set()
         for adapter in self._adapters:
-            formats.update(normalize_format(value) for value in adapter.supported_formats)
+            formats.update(
+                normalize_format(value) for value in adapter.supported_formats
+            )
         return tuple(sorted(value for value in formats if value is not None))
 
     def find_for_resource(self, resource: ResourceRef) -> FormatAdapter:
@@ -45,7 +49,9 @@ class FormatRegistry:
         *,
         target_dir: str | None = None,
     ) -> ResourceRef:
-        return self.find_for_resource(resource).materialize(resource, target_dir=target_dir)
+        return self.find_for_resource(resource).materialize(
+            resource, target_dir=target_dir
+        )
 
     def probe(self, resource: ResourceRef) -> bool:
         try:

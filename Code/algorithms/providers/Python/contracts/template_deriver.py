@@ -12,9 +12,9 @@ RequestTemplateSpec，消除 contracts/request_templates.py 中 MODULE_REQUEST_T
 - allowed_task_types = (module_name, "workflow")
 - accepted_data_access_datasets / allowed_algorithm_values / notes 由 template_overrides 提供
 """
+
 from __future__ import annotations
 
-from typing import Any
 
 from contracts.job import JobRequest
 from contracts.request_templates import RequestTemplateSpec
@@ -50,6 +50,14 @@ def derive_template_from_module(module_name: str) -> RequestTemplateSpec | None:
 
     # 推导 required/optional algorithm keys
     # mode_required_inputs 展开后的是 required，default_params 中的是 optional
+    #
+    # 已知问题：所有 module 的 mode_required_inputs 实际存的是数据源路径键
+    # （如 input_mat / omega_block_dir / predicted_path），而非算法参数。
+    # 此处将它们放入 required_algorithm_keys 会导致 validate_request_against_template
+    # 在 algorithm_params 中查找路径键而误报 "Missing required algorithm param"。
+    # 当前缓解：为每个 module 在 MODULE_REQUEST_TEMPLATES 中提供手工 template
+    # （手工表优先于自动推导），正确将路径键归入 required_datasource_keys。
+    # 根因修复应改为将 mode_required_inputs 键放入 required_datasource_keys。
     required_algorithm_keys: set[str] = set()
     for mode_inputs in spec.mode_required_inputs.values():
         for key in mode_inputs:
@@ -67,12 +75,18 @@ def derive_template_from_module(module_name: str) -> RequestTemplateSpec | None:
         entry_kind="module",
         entry_name=spec.name,
         required_datasource_keys=tuple(required_datasource_keys),
-        accepted_data_access_datasets=tuple(overrides.get("accepted_data_access_datasets", ())),
-        accepted_data_access_by_required_key=dict(overrides.get("accepted_data_access_by_required_key", {})),
+        accepted_data_access_datasets=tuple(
+            overrides.get("accepted_data_access_datasets", ())
+        ),
+        accepted_data_access_by_required_key=dict(
+            overrides.get("accepted_data_access_by_required_key", {})
+        ),
         optional_datasource_keys=tuple(optional_datasource_keys),
         required_algorithm_keys=tuple(sorted(required_algorithm_keys)),
         optional_algorithm_keys=tuple(optional_algorithm_keys),
-        allowed_task_types=tuple(overrides.get("allowed_task_types", default_allowed_task_types)),
+        allowed_task_types=tuple(
+            overrides.get("allowed_task_types", default_allowed_task_types)
+        ),
         allowed_algorithm_values=dict(overrides.get("allowed_algorithm_values", {})),
         notes=overrides.get("notes"),
     )
@@ -126,7 +140,10 @@ def validate_request_against_template(
     errors: list[str] = []
 
     # 1. 校验 allowed_task_types
-    if template.allowed_task_types and request.task_type not in template.allowed_task_types:
+    if (
+        template.allowed_task_types
+        and request.task_type not in template.allowed_task_types
+    ):
         errors.append(
             f"task_type '{request.task_type}' not allowed for entry '{template.entry_name}'. "
             f"Allowed: {list(template.allowed_task_types)}"
@@ -160,7 +177,9 @@ def validate_request_against_template(
 
     # 5. 校验 accepted_data_access_datasets
     if template.accepted_data_access_datasets:
-        data_access_requests = request.datasource_selection.get("_data_access_requests", {})
+        data_access_requests = request.datasource_selection.get(
+            "_data_access_requests", {}
+        )
         if isinstance(data_access_requests, dict):
             for dataset_name in data_access_requests:
                 if dataset_name not in template.accepted_data_access_datasets:

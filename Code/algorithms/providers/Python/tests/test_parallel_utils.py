@@ -3,6 +3,7 @@
 验证 auto_process_count / adjust_chunk_size_for_parallelism / get_spawn_context
 的边界条件与组合行为。所有用例不依赖具体硬件（用 monkeypatch 替换 psutil 调用）。
 """
+
 from __future__ import annotations
 
 import os
@@ -50,7 +51,9 @@ class TestAutoProcessCount(unittest.TestCase):
     def test_env_cap_respected(self) -> None:
         # 设置环境变量硬上限 = 2
         with mock.patch.dict(os.environ, {"CGDA_MAX_PARALLEL_WORKERS": "2"}):
-            with mock.patch("algorithms._parallel._get_psutil_safely", return_value=None):
+            with mock.patch(
+                "algorithms._parallel._get_psutil_safely", return_value=None
+            ):
                 with mock.patch("os.cpu_count", return_value=24):
                     result = auto_process_count(chunk_count=100, max_workers=None)
         self.assertLessEqual(result, 2)
@@ -58,7 +61,9 @@ class TestAutoProcessCount(unittest.TestCase):
     def test_env_cap_invalid_value_ignored(self) -> None:
         # 非数字环境变量应被忽略，回退到 cpu_based
         with mock.patch.dict(os.environ, {"CGDA_MAX_PARALLEL_WORKERS": "not-a-number"}):
-            with mock.patch("algorithms._parallel._get_psutil_safely", return_value=None):
+            with mock.patch(
+                "algorithms._parallel._get_psutil_safely", return_value=None
+            ):
                 with mock.patch("os.cpu_count", return_value=8):
                     result = auto_process_count(chunk_count=100, max_workers=None)
         # cpu_based = max(1, 8-2) = 6
@@ -75,7 +80,9 @@ class TestAutoProcessCount(unittest.TestCase):
         fake_psutil = mock.MagicMock()
         fake_psutil.cpu_count.return_value = 8
         fake_psutil.virtual_memory().available = 4096 * 1024 * 1024
-        with mock.patch("algorithms._parallel._get_psutil_safely", return_value=fake_psutil):
+        with mock.patch(
+            "algorithms._parallel._get_psutil_safely", return_value=fake_psutil
+        ):
             with mock.patch.dict(os.environ, {}, clear=False):
                 os.environ.pop("CGDA_MAX_PARALLEL_WORKERS", None)
                 result = auto_process_count(chunk_count=100, max_workers=None)
@@ -91,7 +98,9 @@ class TestAutoProcessCount(unittest.TestCase):
         fake_psutil = mock.MagicMock()
         fake_psutil.cpu_count.return_value = 16
         fake_psutil.virtual_memory().available = 2300 * 1024 * 1024
-        with mock.patch("algorithms._parallel._get_psutil_safely", return_value=fake_psutil):
+        with mock.patch(
+            "algorithms._parallel._get_psutil_safely", return_value=fake_psutil
+        ):
             with mock.patch.dict(os.environ):
                 os.environ.pop("CGDA_MAX_PARALLEL_WORKERS", None)
                 result = auto_process_count(chunk_count=100, max_workers=None)
@@ -101,7 +110,9 @@ class TestAutoProcessCount(unittest.TestCase):
         fake_psutil = mock.MagicMock()
         fake_psutil.cpu_count.return_value = 8
         fake_psutil.virtual_memory.side_effect = RuntimeError("access denied")
-        with mock.patch("algorithms._parallel._get_psutil_safely", return_value=fake_psutil):
+        with mock.patch(
+            "algorithms._parallel._get_psutil_safely", return_value=fake_psutil
+        ):
             with mock.patch.dict(os.environ):
                 os.environ.pop("CGDA_MAX_PARALLEL_WORKERS", None)
                 result = auto_process_count(chunk_count=100, max_workers=None)
@@ -120,10 +131,14 @@ class TestAutoProcessCount(unittest.TestCase):
         fake_psutil = mock.MagicMock()
         fake_psutil.cpu_count.return_value = 16
         fake_psutil.virtual_memory().available = 32768 * 1024 * 1024
-        with mock.patch("algorithms._parallel._get_psutil_safely", return_value=fake_psutil):
+        with mock.patch(
+            "algorithms._parallel._get_psutil_safely", return_value=fake_psutil
+        ):
             with mock.patch.dict(os.environ):
                 os.environ.pop("CGDA_MAX_PARALLEL_WORKERS", None)
-                result = auto_process_count(chunk_count=100, max_workers=None, cpu_reserve=4)
+                result = auto_process_count(
+                    chunk_count=100, max_workers=None, cpu_reserve=4
+                )
         # cpu_based=max(1,16-4)=12, mem_based=floor((32768-2048)/200)=153, env_cap=inf → 12
         self.assertEqual(result, 12)
 

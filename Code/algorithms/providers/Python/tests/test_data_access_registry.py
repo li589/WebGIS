@@ -14,11 +14,25 @@ class DataAccessRegistryTests(unittest.TestCase):
 
         self.assertEqual(
             registry.registered_names(),
-            ("cache", "http", "local_fs", "minio"),
+            ("cache", "http", "local_fs", "minio", "remote"),
         )
         self.assertEqual(
             registry.registered_schemes(),
-            ("cache", "file", "http", "https", "local", "minio", "s3"),
+            (
+                "cache",
+                "file",
+                "ftp",
+                "ftps",
+                "gcs",
+                "gs",
+                "http",
+                "https",
+                "local",
+                "minio",
+                "s3",
+                "sftp",
+                "smb",
+            ),
         )
 
     def test_registry_locates_local_file_and_materializes_it(self) -> None:
@@ -27,7 +41,9 @@ class DataAccessRegistryTests(unittest.TestCase):
             local_file = Path(tmp_dir) / "input.mat"
             local_file.write_text("content", encoding="utf-8")
 
-            resource = registry.locate(str(local_file), request=DataRequestV2(dataset_name="demo"))
+            resource = registry.locate(
+                str(local_file), request=DataRequestV2(dataset_name="demo")
+            )
             materialized = registry.materialize(resource)
 
             self.assertEqual(resource.source_kind, "local_file")
@@ -40,7 +56,9 @@ class DataAccessRegistryTests(unittest.TestCase):
 
         http_resource = registry.locate("https://example.com/data/test.json")
         minio_resource = registry.locate("minio://bucket-a/path/to/file.nc")
-        cache_resource = registry.locate("cache://prepared/demo.csv", metadata={"local_path": "C:/cache/demo.csv"})
+        cache_resource = registry.locate(
+            "cache://prepared/demo.csv", metadata={"local_path": "C:/cache/demo.csv"}
+        )
 
         self.assertEqual(http_resource.source_kind, "online")
         self.assertEqual(http_resource.storage_backend, "https")

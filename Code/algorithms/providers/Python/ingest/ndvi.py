@@ -36,7 +36,9 @@ def discover_ndvi_rasters(
         if start_time <= date <= end_time:
             records.append(NdviRasterRecord(file_path=file_path, date=date))
     if not records:
-        raise FileNotFoundError(f"No NDVI rasters found in {input_dir} for {start_time:%Y-%m-%d} to {end_time:%Y-%m-%d}")
+        raise FileNotFoundError(
+            f"No NDVI rasters found in {input_dir} for {start_time:%Y-%m-%d} to {end_time:%Y-%m-%d}"
+        )
     return records
 
 
@@ -61,13 +63,11 @@ def load_ndvi_stack(
     records = discover_ndvi_rasters(input_dir, start_time, end_time, pattern=pattern)
     arrays: list[np.ndarray] = []
     first_transform = None
-    first_crs = None
     for record in records:
         with rasterio.open(record.file_path) as dataset:
             arrays.append(dataset.read(1).astype(np.float64))
             if first_transform is None:
                 first_transform = dataset.transform
-                first_crs = dataset.crs
     stack = np.stack(arrays, axis=2)
     return stack, [record.date for record in records]
 
@@ -75,6 +75,7 @@ def load_ndvi_stack(
 @dataclass(frozen=True, slots=True)
 class NdviStackInfo:
     """NDVI 栅格堆叠的完整信息，包含地理参考"""
+
     stack: Any  # numpy.ndarray (height, width, time)
     dates: list[datetime]
     transform: Any  # rasterio.Affine 地理变换

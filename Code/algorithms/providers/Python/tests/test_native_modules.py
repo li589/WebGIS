@@ -51,15 +51,21 @@ class _NoopDataSource:
 
     def resolve(self, request):
         _ = request
-        raise AssertionError("daily_bundle native module should not call datasource adapter directly")
+        raise AssertionError(
+            "daily_bundle native module should not call datasource adapter directly"
+        )
 
     def acquire(self, bundle):
         _ = bundle
-        raise AssertionError("daily_bundle native module should not call datasource adapter directly")
+        raise AssertionError(
+            "daily_bundle native module should not call datasource adapter directly"
+        )
 
     def materialize(self, bundle):
         _ = bundle
-        raise AssertionError("daily_bundle native module should not call datasource adapter directly")
+        raise AssertionError(
+            "daily_bundle native module should not call datasource adapter directly"
+        )
 
 
 class _RecordingLogger:
@@ -98,12 +104,16 @@ class NativeModuleTests(unittest.TestCase):
         self.assertIsInstance(module, DailyBundleModule)
         self.assertEqual(module.name, "daily_bundle")
 
-    def test_get_module_resolves_native_timeseries_bundle_for_pipeline_alias(self) -> None:
+    def test_get_module_resolves_native_timeseries_bundle_for_pipeline_alias(
+        self,
+    ) -> None:
         module = get_module("timeseries_bundle_pipeline")
         self.assertIsInstance(module, TimeSeriesBundleModule)
         self.assertEqual(module.name, "timeseries_bundle")
 
-    def test_get_module_resolves_native_block_inversion_for_pipeline_alias(self) -> None:
+    def test_get_module_resolves_native_block_inversion_for_pipeline_alias(
+        self,
+    ) -> None:
         module = get_module("block_inversion_pipeline")
         self.assertIsInstance(module, BlockInversionModule)
         self.assertEqual(module.name, "block_inversion")
@@ -150,7 +160,9 @@ class NativeModuleTests(unittest.TestCase):
                 pipeline_name="workflow",
                 module_name="daily_bundle",
                 task_type="workflow",
-                time_range=TimeRange(start=datetime(2020, 1, 1), end=datetime(2020, 1, 1)),
+                time_range=TimeRange(
+                    start=datetime(2020, 1, 1), end=datetime(2020, 1, 1)
+                ),
                 region=RegionSpec(kind="global", value={}),
                 datasource_selection={"anc_root": "mock-anc"},
                 algorithm_params={},
@@ -168,10 +180,13 @@ class NativeModuleTests(unittest.TestCase):
                 "vwc": np.array([0.8, 0.9], dtype=np.float64),
             }
 
-            with patch("modules.bundles.load_lin_pix_selection", return_value=None), patch(
-                "modules.bundles.build_daily_bundle_for_date",
-                return_value=fake_bundle,
-            ) as bundle_builder:
+            with (
+                patch("modules.bundles.load_lin_pix_selection", return_value=None),
+                patch(
+                    "modules.bundles.build_daily_bundle_for_date",
+                    return_value=fake_bundle,
+                ) as bundle_builder,
+            ):
                 result = run_job(
                     request,
                     scheduler,
@@ -185,14 +200,22 @@ class NativeModuleTests(unittest.TestCase):
             self.assertIsNotNone(result.manifest_uri)
             bundle_builder.assert_called_once()
 
-            manifest_payload = json.loads(Path(result.manifest_uri).read_text(encoding="utf-8"))
-            self.assertEqual(manifest_payload["products"][0]["type"], "daily_bundle_mat")
+            manifest_payload = json.loads(
+                Path(result.manifest_uri).read_text(encoding="utf-8")
+            )
+            self.assertEqual(
+                manifest_payload["products"][0]["type"], "daily_bundle_mat"
+            )
             self.assertEqual(manifest_payload["extra"]["module_name"], "daily_bundle")
             self.assertEqual(manifest_payload["extra"]["count"], 1)
             self.assertTrue(Path(manifest_payload["products"][0]["uri"]).exists())
-            self.assertEqual([status for status, _ in scheduler.statuses], ["running", "planning"])
+            self.assertEqual(
+                [status for status, _ in scheduler.statuses], ["running", "planning"]
+            )
 
-    def test_run_job_executes_native_daily_bundle_module_from_prepared_inputs(self) -> None:
+    def test_run_job_executes_native_daily_bundle_module_from_prepared_inputs(
+        self,
+    ) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
             workspace = Path(tmp_dir)
             scheduler = _RecordingScheduler()
@@ -206,7 +229,9 @@ class NativeModuleTests(unittest.TestCase):
                 pipeline_name="workflow",
                 module_name="daily_bundle",
                 task_type="workflow",
-                time_range=TimeRange(start=datetime(2020, 1, 1), end=datetime(2020, 1, 1)),
+                time_range=TimeRange(
+                    start=datetime(2020, 1, 1), end=datetime(2020, 1, 1)
+                ),
                 region=RegionSpec(kind="global", value={}),
                 datasource_selection={
                     "_data_access_requests": {
@@ -216,7 +241,9 @@ class NativeModuleTests(unittest.TestCase):
                     }
                 },
                 algorithm_params={},
-                output_spec=OutputSpec(extra={"output_dir": str(workspace / "daily_prepared")}),
+                output_spec=OutputSpec(
+                    extra={"output_dir": str(workspace / "daily_prepared")}
+                ),
             )
 
             fake_bundle = {
@@ -230,16 +257,23 @@ class NativeModuleTests(unittest.TestCase):
                 "vwc": np.array([0.8, 0.9], dtype=np.float64),
             }
 
-            def fake_build_daily_bundle_for_date(*, date_key, config, datasource_selection, lin_pix):
+            def fake_build_daily_bundle_for_date(
+                *, date_key, config, datasource_selection, lin_pix
+            ):
                 _ = (date_key, config, lin_pix)
-                self.assertEqual(datasource_selection["anc_root"], str(expected_anc_root))
+                self.assertEqual(
+                    datasource_selection["anc_root"], str(expected_anc_root)
+                )
                 return fake_bundle
 
             expected_anc_root = anc_root
-            with patch("modules.bundles.load_lin_pix_selection", return_value=None), patch(
-                "modules.bundles.build_daily_bundle_for_date",
-                side_effect=fake_build_daily_bundle_for_date,
-            ) as bundle_builder:
+            with (
+                patch("modules.bundles.load_lin_pix_selection", return_value=None),
+                patch(
+                    "modules.bundles.build_daily_bundle_for_date",
+                    side_effect=fake_build_daily_bundle_for_date,
+                ) as bundle_builder,
+            ):
                 result = run_job(
                     request,
                     scheduler,
@@ -252,8 +286,12 @@ class NativeModuleTests(unittest.TestCase):
             self.assertEqual(result.status, "success")
             self.assertIsNotNone(result.manifest_uri)
             bundle_builder.assert_called_once()
-            manifest_payload = json.loads(Path(result.manifest_uri).read_text(encoding="utf-8"))
-            self.assertEqual(manifest_payload["products"][0]["type"], "daily_bundle_mat")
+            manifest_payload = json.loads(
+                Path(result.manifest_uri).read_text(encoding="utf-8")
+            )
+            self.assertEqual(
+                manifest_payload["products"][0]["type"], "daily_bundle_mat"
+            )
             self.assertEqual(manifest_payload["extra"]["module_name"], "daily_bundle")
             self.assertEqual(manifest_payload["extra"]["count"], 1)
 
@@ -274,7 +312,9 @@ class NativeModuleTests(unittest.TestCase):
                 job_id="job-pipeline-daily-prepared",
                 pipeline_name="daily_bundle_pipeline",
                 task_type="daily_bundle",
-                time_range=TimeRange(start=datetime(2020, 1, 1), end=datetime(2020, 1, 1)),
+                time_range=TimeRange(
+                    start=datetime(2020, 1, 1), end=datetime(2020, 1, 1)
+                ),
                 region=RegionSpec(kind="global", value={}),
                 datasource_selection={
                     "_data_access_requests": {
@@ -284,7 +324,9 @@ class NativeModuleTests(unittest.TestCase):
                     }
                 },
                 algorithm_params={},
-                output_spec=OutputSpec(extra={"output_dir": str(workspace / "daily_pipeline_prepared")}),
+                output_spec=OutputSpec(
+                    extra={"output_dir": str(workspace / "daily_pipeline_prepared")}
+                ),
             )
 
             fake_bundle = {
@@ -298,20 +340,34 @@ class NativeModuleTests(unittest.TestCase):
                 "vwc": np.array([0.8, 0.9], dtype=np.float64),
             }
 
-            def fake_build_daily_bundle_for_date(*, date_key, config, datasource_selection, lin_pix):
+            def fake_build_daily_bundle_for_date(
+                *, date_key, config, datasource_selection, lin_pix
+            ):
                 _ = (date_key, config, lin_pix)
-                self.assertEqual(datasource_selection["anc_root"], str(expected_anc_root))
-                self.assertEqual(datasource_selection["smap_folder"], str(expected_smap_root))
-                self.assertEqual(datasource_selection["ndvi_folder"], str(expected_ndvi_root))
+                self.assertEqual(
+                    datasource_selection["anc_root"], str(expected_anc_root)
+                )
+                self.assertEqual(
+                    datasource_selection["smap_folder"], str(expected_smap_root)
+                )
+                self.assertEqual(
+                    datasource_selection["ndvi_folder"], str(expected_ndvi_root)
+                )
                 return fake_bundle
 
             expected_anc_root = ancillary_root
             expected_smap_root = smap_root
             expected_ndvi_root = ndvi_root
-            with patch("pipelines.daily_bundle_products.load_lin_pix_selection", return_value=None), patch(
-                "pipelines.daily_bundle_products.build_daily_bundle_for_date",
-                side_effect=fake_build_daily_bundle_for_date,
-            ) as bundle_builder:
+            with (
+                patch(
+                    "pipelines.daily_bundle_products.load_lin_pix_selection",
+                    return_value=None,
+                ),
+                patch(
+                    "pipelines.daily_bundle_products.build_daily_bundle_for_date",
+                    side_effect=fake_build_daily_bundle_for_date,
+                ) as bundle_builder,
+            ):
                 result = run_job(
                     request,
                     scheduler,
@@ -324,9 +380,15 @@ class NativeModuleTests(unittest.TestCase):
             self.assertEqual(result.status, "success")
             self.assertIsNotNone(result.manifest_uri)
             bundle_builder.assert_called_once()
-            manifest_payload = json.loads(Path(result.manifest_uri).read_text(encoding="utf-8"))
-            self.assertEqual(manifest_payload["products"][0]["type"], "daily_bundle_mat")
-            self.assertEqual(manifest_payload["extra"]["pipeline_name"], "daily_bundle_pipeline")
+            manifest_payload = json.loads(
+                Path(result.manifest_uri).read_text(encoding="utf-8")
+            )
+            self.assertEqual(
+                manifest_payload["products"][0]["type"], "daily_bundle_mat"
+            )
+            self.assertEqual(
+                manifest_payload["extra"]["pipeline_name"], "daily_bundle_pipeline"
+            )
             self.assertEqual(manifest_payload["extra"]["count"], 1)
 
     def test_run_job_executes_native_ndvi_module(self) -> None:
@@ -346,11 +408,18 @@ class NativeModuleTests(unittest.TestCase):
                 pipeline_name="workflow",
                 module_name="ndvi_daily",
                 task_type="workflow",
-                time_range=TimeRange(start=datetime(2019, 12, 20), end=datetime(2021, 1, 1)),
+                time_range=TimeRange(
+                    start=datetime(2019, 12, 20), end=datetime(2021, 1, 1)
+                ),
                 region=RegionSpec(kind="global", value={}),
                 datasource_selection={"input_dir": str(input_dir)},
                 algorithm_params={"emit_quality_products": True},
-                output_spec=OutputSpec(extra={"output_dir": str(output_dir), "quality_output_dir": str(quality_dir)}),
+                output_spec=OutputSpec(
+                    extra={
+                        "output_dir": str(output_dir),
+                        "quality_output_dir": str(quality_dir),
+                    }
+                ),
             )
 
             observation_dates = [
@@ -385,9 +454,15 @@ class NativeModuleTests(unittest.TestCase):
                 axis=2,
             )
 
-            with patch("modules.ndvi.load_ndvi_stack", return_value=(ndvi_stack, observation_dates)), patch(
-                "modules.ndvi.process_ndvi_stack_to_daily",
-                return_value=(daily_stack, daily_dates),
+            with (
+                patch(
+                    "modules.ndvi.load_ndvi_stack",
+                    return_value=(ndvi_stack, observation_dates),
+                ),
+                patch(
+                    "modules.ndvi.process_ndvi_stack_to_daily",
+                    return_value=(daily_stack, daily_dates),
+                ),
             ):
                 result = run_job(
                     request,
@@ -400,8 +475,12 @@ class NativeModuleTests(unittest.TestCase):
 
             self.assertEqual(result.status, "success")
             self.assertIsNotNone(result.manifest_uri)
-            manifest_payload = json.loads(Path(result.manifest_uri).read_text(encoding="utf-8"))
-            product_types = [product["type"] for product in manifest_payload["products"]]
+            manifest_payload = json.loads(
+                Path(result.manifest_uri).read_text(encoding="utf-8")
+            )
+            product_types = [
+                product["type"] for product in manifest_payload["products"]
+            ]
             self.assertEqual(product_types.count("daily_ndvi_mat"), 5)
             self.assertEqual(product_types.count("ndvi_yearly_qa_mat"), 3)
             self.assertIn("ndvi_multi_year_qa_mat", product_types)
@@ -426,7 +505,9 @@ class NativeModuleTests(unittest.TestCase):
                 pipeline_name="workflow",
                 module_name="ndvi_daily",
                 task_type="workflow",
-                time_range=TimeRange(start=datetime(2020, 1, 1), end=datetime(2020, 1, 2)),
+                time_range=TimeRange(
+                    start=datetime(2020, 1, 1), end=datetime(2020, 1, 2)
+                ),
                 region=RegionSpec(kind="global", value={}),
                 datasource_selection={
                     "_data_access_requests": {
@@ -436,7 +517,12 @@ class NativeModuleTests(unittest.TestCase):
                     }
                 },
                 algorithm_params={"emit_quality_products": False},
-                output_spec=OutputSpec(extra={"output_dir": str(output_dir), "quality_output_dir": str(quality_dir)}),
+                output_spec=OutputSpec(
+                    extra={
+                        "output_dir": str(output_dir),
+                        "quality_output_dir": str(quality_dir),
+                    }
+                ),
             )
 
             observation_dates = [datetime(2020, 1, 1)]
@@ -456,9 +542,12 @@ class NativeModuleTests(unittest.TestCase):
                 return ndvi_stack, observation_dates
 
             expected_input_dir = input_dir
-            with patch("modules.ndvi.load_ndvi_stack", side_effect=fake_load_ndvi_stack), patch(
-                "modules.ndvi.process_ndvi_stack_to_daily",
-                return_value=(daily_stack, daily_dates),
+            with (
+                patch("modules.ndvi.load_ndvi_stack", side_effect=fake_load_ndvi_stack),
+                patch(
+                    "modules.ndvi.process_ndvi_stack_to_daily",
+                    return_value=(daily_stack, daily_dates),
+                ),
             ):
                 result = run_job(
                     request,
@@ -471,8 +560,12 @@ class NativeModuleTests(unittest.TestCase):
 
             self.assertEqual(result.status, "success")
             self.assertIsNotNone(result.manifest_uri)
-            manifest_payload = json.loads(Path(result.manifest_uri).read_text(encoding="utf-8"))
-            product_types = [product["type"] for product in manifest_payload["products"]]
+            manifest_payload = json.loads(
+                Path(result.manifest_uri).read_text(encoding="utf-8")
+            )
+            product_types = [
+                product["type"] for product in manifest_payload["products"]
+            ]
             self.assertEqual(product_types.count("daily_ndvi_mat"), 2)
             self.assertEqual(manifest_payload["extra"]["module_name"], "ndvi_daily")
             self.assertEqual(manifest_payload["extra"]["count"], 2)
@@ -495,7 +588,9 @@ class NativeModuleTests(unittest.TestCase):
                 job_id="job-pipeline-ndvi-prepared",
                 pipeline_name="ndvi_daily_pipeline",
                 task_type="ndvi_daily",
-                time_range=TimeRange(start=datetime(2020, 6, 1), end=datetime(2020, 6, 1)),
+                time_range=TimeRange(
+                    start=datetime(2020, 6, 1), end=datetime(2020, 6, 1)
+                ),
                 region=RegionSpec(kind="global", value={}),
                 datasource_selection={
                     "_data_access_requests": {
@@ -504,7 +599,12 @@ class NativeModuleTests(unittest.TestCase):
                     }
                 },
                 algorithm_params={"emit_quality_products": True},
-                output_spec=OutputSpec(extra={"output_dir": str(output_dir), "quality_output_dir": str(quality_dir)}),
+                output_spec=OutputSpec(
+                    extra={
+                        "output_dir": str(output_dir),
+                        "quality_output_dir": str(quality_dir),
+                    }
+                ),
             )
 
             observation_dates = [datetime(2020, 6, 1)]
@@ -524,12 +624,19 @@ class NativeModuleTests(unittest.TestCase):
 
             expected_input_dir = input_dir
             expected_clim_dir = clim_dir
-            with patch("pipelines.ndvi_products.load_ndvi_stack", side_effect=fake_load_ndvi_stack), patch(
-                "pipelines.ndvi_products.process_ndvi_stack_to_daily",
-                return_value=(daily_stack, daily_dates),
-            ), patch(
-                "pipelines.ndvi_products._load_daily_climatology_stack",
-                side_effect=fake_load_daily_climatology_stack,
+            with (
+                patch(
+                    "pipelines.ndvi_products.load_ndvi_stack",
+                    side_effect=fake_load_ndvi_stack,
+                ),
+                patch(
+                    "pipelines.ndvi_products.process_ndvi_stack_to_daily",
+                    return_value=(daily_stack, daily_dates),
+                ),
+                patch(
+                    "pipelines.ndvi_products._load_daily_climatology_stack",
+                    side_effect=fake_load_daily_climatology_stack,
+                ),
             ):
                 result = run_job(
                     request,
@@ -542,12 +649,18 @@ class NativeModuleTests(unittest.TestCase):
 
             self.assertEqual(result.status, "success")
             self.assertIsNotNone(result.manifest_uri)
-            manifest_payload = json.loads(Path(result.manifest_uri).read_text(encoding="utf-8"))
-            product_types = [product["type"] for product in manifest_payload["products"]]
+            manifest_payload = json.loads(
+                Path(result.manifest_uri).read_text(encoding="utf-8")
+            )
+            product_types = [
+                product["type"] for product in manifest_payload["products"]
+            ]
             self.assertIn("daily_ndvi_mat", product_types)
             self.assertIn("ndvi_yearly_qa_mat", product_types)
             self.assertIn("ndvi_multi_year_qa_mat", product_types)
-            self.assertEqual(manifest_payload["extra"]["pipeline_name"], "ndvi_daily_pipeline")
+            self.assertEqual(
+                manifest_payload["extra"]["pipeline_name"], "ndvi_daily_pipeline"
+            )
 
     def test_run_job_executes_native_smap_module(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
@@ -564,7 +677,9 @@ class NativeModuleTests(unittest.TestCase):
                 pipeline_name="workflow",
                 module_name="smap_daily",
                 task_type="workflow",
-                time_range=TimeRange(start=datetime(2020, 1, 1), end=datetime(2020, 1, 2)),
+                time_range=TimeRange(
+                    start=datetime(2020, 1, 1), end=datetime(2020, 1, 2)
+                ),
                 region=RegionSpec(kind="global", value={}),
                 datasource_selection={"input_dir": str(input_dir)},
                 algorithm_params={},
@@ -580,7 +695,10 @@ class NativeModuleTests(unittest.TestCase):
                     path.write_bytes(b"MAT")
                 return fake_outputs
 
-            with patch("modules.smap.convert_smap_l3_directory_to_mat", side_effect=fake_convert) as converter:
+            with patch(
+                "modules.smap.convert_smap_l3_directory_to_mat",
+                side_effect=fake_convert,
+            ) as converter:
                 result = run_job(
                     request,
                     scheduler,
@@ -593,13 +711,19 @@ class NativeModuleTests(unittest.TestCase):
             self.assertEqual(result.status, "success")
             self.assertIsNotNone(result.manifest_uri)
             converter.assert_called_once()
-            manifest_payload = json.loads(Path(result.manifest_uri).read_text(encoding="utf-8"))
+            manifest_payload = json.loads(
+                Path(result.manifest_uri).read_text(encoding="utf-8")
+            )
             self.assertEqual(len(manifest_payload["products"]), 2)
             self.assertEqual(manifest_payload["products"][0]["type"], "smap_daily_mat")
-            self.assertEqual(manifest_payload["products"][0]["tags"]["date_key"], "20200101")
+            self.assertEqual(
+                manifest_payload["products"][0]["tags"]["date_key"], "20200101"
+            )
             self.assertEqual(manifest_payload["extra"]["module_name"], "smap_daily")
             self.assertEqual(manifest_payload["extra"]["count"], 2)
-            self.assertEqual([status for status, _ in scheduler.statuses], ["running", "planning"])
+            self.assertEqual(
+                [status for status, _ in scheduler.statuses], ["running", "planning"]
+            )
 
     def test_run_job_executes_native_smap_module_from_prepared_inputs(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
@@ -616,7 +740,9 @@ class NativeModuleTests(unittest.TestCase):
                 pipeline_name="workflow",
                 module_name="smap_daily",
                 task_type="workflow",
-                time_range=TimeRange(start=datetime(2020, 1, 1), end=datetime(2020, 1, 2)),
+                time_range=TimeRange(
+                    start=datetime(2020, 1, 1), end=datetime(2020, 1, 2)
+                ),
                 region=RegionSpec(kind="global", value={}),
                 datasource_selection={
                     "_data_access_requests": {
@@ -641,7 +767,10 @@ class NativeModuleTests(unittest.TestCase):
                 return fake_outputs
 
             input_dir_path = input_dir
-            with patch("modules.smap.convert_smap_l3_directory_to_mat", side_effect=fake_convert) as converter:
+            with patch(
+                "modules.smap.convert_smap_l3_directory_to_mat",
+                side_effect=fake_convert,
+            ) as converter:
                 result = run_job(
                     request,
                     scheduler,
@@ -654,12 +783,16 @@ class NativeModuleTests(unittest.TestCase):
             self.assertEqual(result.status, "success")
             self.assertIsNotNone(result.manifest_uri)
             converter.assert_called_once()
-            manifest_payload = json.loads(Path(result.manifest_uri).read_text(encoding="utf-8"))
+            manifest_payload = json.loads(
+                Path(result.manifest_uri).read_text(encoding="utf-8")
+            )
             self.assertEqual(len(manifest_payload["products"]), 2)
             self.assertEqual(manifest_payload["products"][0]["type"], "smap_daily_mat")
             self.assertEqual(manifest_payload["extra"]["module_name"], "smap_daily")
             self.assertEqual(manifest_payload["extra"]["count"], 2)
-            self.assertEqual([status for status, _ in scheduler.statuses], ["running", "planning"])
+            self.assertEqual(
+                [status for status, _ in scheduler.statuses], ["running", "planning"]
+            )
 
     def test_run_job_executes_smap_pipeline_from_prepared_inputs(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
@@ -675,7 +808,9 @@ class NativeModuleTests(unittest.TestCase):
                 job_id="job-pipeline-smap-prepared",
                 pipeline_name="smap_daily_pipeline",
                 task_type="smap_daily",
-                time_range=TimeRange(start=datetime(2020, 1, 1), end=datetime(2020, 1, 2)),
+                time_range=TimeRange(
+                    start=datetime(2020, 1, 1), end=datetime(2020, 1, 2)
+                ),
                 region=RegionSpec(kind="global", value={}),
                 datasource_selection={
                     "_data_access_requests": {
@@ -699,7 +834,10 @@ class NativeModuleTests(unittest.TestCase):
                 return fake_outputs
 
             expected_input_dir = input_dir
-            with patch("pipelines.smap_products.convert_smap_l3_directory_to_mat", side_effect=fake_convert) as converter:
+            with patch(
+                "pipelines.smap_products.convert_smap_l3_directory_to_mat",
+                side_effect=fake_convert,
+            ) as converter:
                 result = run_job(
                     request,
                     scheduler,
@@ -712,14 +850,22 @@ class NativeModuleTests(unittest.TestCase):
             self.assertEqual(result.status, "success")
             self.assertIsNotNone(result.manifest_uri)
             converter.assert_called_once()
-            manifest_payload = json.loads(Path(result.manifest_uri).read_text(encoding="utf-8"))
+            manifest_payload = json.loads(
+                Path(result.manifest_uri).read_text(encoding="utf-8")
+            )
             self.assertEqual(len(manifest_payload["products"]), 2)
             self.assertEqual(manifest_payload["products"][0]["type"], "smap_daily_mat")
-            self.assertEqual(manifest_payload["extra"]["pipeline_name"], "smap_daily_pipeline")
+            self.assertEqual(
+                manifest_payload["extra"]["pipeline_name"], "smap_daily_pipeline"
+            )
             self.assertEqual(manifest_payload["extra"]["count"], 2)
-            self.assertEqual([status for status, _ in scheduler.statuses], ["running", "planning"])
+            self.assertEqual(
+                [status for status, _ in scheduler.statuses], ["running", "planning"]
+            )
 
-    def test_run_job_executes_native_timeseries_bundle_module_from_prepared_inputs(self) -> None:
+    def test_run_job_executes_native_timeseries_bundle_module_from_prepared_inputs(
+        self,
+    ) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
             workspace = Path(tmp_dir)
             scheduler = _RecordingScheduler()
@@ -733,7 +879,9 @@ class NativeModuleTests(unittest.TestCase):
                 pipeline_name="workflow",
                 module_name="timeseries_bundle",
                 task_type="workflow",
-                time_range=TimeRange(start=datetime(2020, 1, 1), end=datetime(2020, 1, 2)),
+                time_range=TimeRange(
+                    start=datetime(2020, 1, 1), end=datetime(2020, 1, 2)
+                ),
                 region=RegionSpec(kind="global", value={}),
                 datasource_selection={
                     "_data_access_requests": {
@@ -743,7 +891,9 @@ class NativeModuleTests(unittest.TestCase):
                     }
                 },
                 algorithm_params={},
-                output_spec=OutputSpec(extra={"output_dir": str(workspace / "timeseries_prepared")}),
+                output_spec=OutputSpec(
+                    extra={"output_dir": str(workspace / "timeseries_prepared")}
+                ),
             )
 
             fake_bundle = SimpleNamespace(
@@ -753,16 +903,23 @@ class NativeModuleTests(unittest.TestCase):
                 pixel_count=1,
             )
 
-            def fake_build_timeseries_bundle_from_range(start_time, end_time, config, datasource_selection, *, lin_pix=None):
+            def fake_build_timeseries_bundle_from_range(
+                start_time, end_time, config, datasource_selection, *, lin_pix=None
+            ):
                 _ = (start_time, end_time, config, lin_pix)
-                self.assertEqual(datasource_selection["anc_root"], str(expected_anc_root))
+                self.assertEqual(
+                    datasource_selection["anc_root"], str(expected_anc_root)
+                )
                 return fake_bundle
 
             expected_anc_root = ancillary_root
-            with patch("modules.bundles.load_lin_pix_selection", return_value=None), patch(
-                "modules.bundles.build_timeseries_bundle_from_range",
-                side_effect=fake_build_timeseries_bundle_from_range,
-            ) as builder:
+            with (
+                patch("modules.bundles.load_lin_pix_selection", return_value=None),
+                patch(
+                    "modules.bundles.build_timeseries_bundle_from_range",
+                    side_effect=fake_build_timeseries_bundle_from_range,
+                ) as builder,
+            ):
                 result = run_job(
                     request,
                     scheduler,
@@ -775,12 +932,20 @@ class NativeModuleTests(unittest.TestCase):
             self.assertEqual(result.status, "success")
             self.assertIsNotNone(result.manifest_uri)
             builder.assert_called_once()
-            manifest_payload = json.loads(Path(result.manifest_uri).read_text(encoding="utf-8"))
-            self.assertEqual(manifest_payload["products"][0]["type"], "timeseries_bundle_mat")
-            self.assertEqual(manifest_payload["extra"]["module_name"], "timeseries_bundle")
+            manifest_payload = json.loads(
+                Path(result.manifest_uri).read_text(encoding="utf-8")
+            )
+            self.assertEqual(
+                manifest_payload["products"][0]["type"], "timeseries_bundle_mat"
+            )
+            self.assertEqual(
+                manifest_payload["extra"]["module_name"], "timeseries_bundle"
+            )
             self.assertEqual(manifest_payload["extra"]["pixel_count"], 1)
 
-    def test_run_job_executes_timeseries_bundle_pipeline_from_prepared_inputs(self) -> None:
+    def test_run_job_executes_timeseries_bundle_pipeline_from_prepared_inputs(
+        self,
+    ) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
             workspace = Path(tmp_dir)
             scheduler = _RecordingScheduler()
@@ -795,7 +960,9 @@ class NativeModuleTests(unittest.TestCase):
                 job_id="job-pipeline-timeseries-prepared",
                 pipeline_name="timeseries_bundle_pipeline",
                 task_type="timeseries_bundle",
-                time_range=TimeRange(start=datetime(2020, 1, 1), end=datetime(2020, 1, 2)),
+                time_range=TimeRange(
+                    start=datetime(2020, 1, 1), end=datetime(2020, 1, 2)
+                ),
                 region=RegionSpec(kind="global", value={}),
                 datasource_selection={
                     "_data_access_requests": {
@@ -804,7 +971,11 @@ class NativeModuleTests(unittest.TestCase):
                     }
                 },
                 algorithm_params={},
-                output_spec=OutputSpec(extra={"output_dir": str(workspace / "timeseries_pipeline_prepared")}),
+                output_spec=OutputSpec(
+                    extra={
+                        "output_dir": str(workspace / "timeseries_pipeline_prepared")
+                    }
+                ),
             )
 
             fake_bundle = SimpleNamespace(
@@ -814,19 +985,33 @@ class NativeModuleTests(unittest.TestCase):
                 pixel_count=1,
             )
 
-            def fake_build_timeseries_bundle_from_range(start_time, end_time, config, datasource_selection, *, lin_pix=None):
+            def fake_build_timeseries_bundle_from_range(
+                start_time, end_time, config, datasource_selection, *, lin_pix=None
+            ):
                 _ = (start_time, end_time, config, lin_pix)
-                self.assertEqual(datasource_selection["anc_root"], str(expected_anc_root))
-                self.assertEqual(datasource_selection["smap_folder"], str(expected_daily_root))
-                self.assertEqual(datasource_selection["ndvi_folder"], str(expected_daily_root))
+                self.assertEqual(
+                    datasource_selection["anc_root"], str(expected_anc_root)
+                )
+                self.assertEqual(
+                    datasource_selection["smap_folder"], str(expected_daily_root)
+                )
+                self.assertEqual(
+                    datasource_selection["ndvi_folder"], str(expected_daily_root)
+                )
                 return fake_bundle
 
             expected_anc_root = ancillary_root
             expected_daily_root = daily_root
-            with patch("pipelines.timeseries_bundle_products.load_lin_pix_selection", return_value=None), patch(
-                "pipelines.timeseries_bundle_products.build_timeseries_bundle_from_range",
-                side_effect=fake_build_timeseries_bundle_from_range,
-            ) as builder:
+            with (
+                patch(
+                    "pipelines.timeseries_bundle_products.load_lin_pix_selection",
+                    return_value=None,
+                ),
+                patch(
+                    "pipelines.timeseries_bundle_products.build_timeseries_bundle_from_range",
+                    side_effect=fake_build_timeseries_bundle_from_range,
+                ) as builder,
+            ):
                 result = run_job(
                     request,
                     scheduler,
@@ -839,12 +1024,20 @@ class NativeModuleTests(unittest.TestCase):
             self.assertEqual(result.status, "success")
             self.assertIsNotNone(result.manifest_uri)
             builder.assert_called_once()
-            manifest_payload = json.loads(Path(result.manifest_uri).read_text(encoding="utf-8"))
-            self.assertEqual(manifest_payload["products"][0]["type"], "timeseries_bundle_mat")
-            self.assertEqual(manifest_payload["extra"]["pipeline_name"], "timeseries_bundle_pipeline")
+            manifest_payload = json.loads(
+                Path(result.manifest_uri).read_text(encoding="utf-8")
+            )
+            self.assertEqual(
+                manifest_payload["products"][0]["type"], "timeseries_bundle_mat"
+            )
+            self.assertEqual(
+                manifest_payload["extra"]["pipeline_name"], "timeseries_bundle_pipeline"
+            )
             self.assertEqual(manifest_payload["extra"]["pixel_count"], 1)
 
-    def test_timeseries_bundle_pipeline_execute_uses_matching_multi_resource_prepared_inputs(self) -> None:
+    def test_timeseries_bundle_pipeline_execute_uses_matching_multi_resource_prepared_inputs(
+        self,
+    ) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
             workspace = Path(tmp_dir)
             logger = _RecordingLogger()
@@ -858,13 +1051,18 @@ class NativeModuleTests(unittest.TestCase):
                 job_id="job-pipeline-timeseries-multi-prepared",
                 pipeline_name="timeseries_bundle_pipeline",
                 task_type="timeseries_bundle",
-                time_range=TimeRange(start=datetime(2020, 1, 1), end=datetime(2020, 1, 2)),
+                time_range=TimeRange(
+                    start=datetime(2020, 1, 1), end=datetime(2020, 1, 2)
+                ),
                 region=RegionSpec(kind="global", value={}),
                 datasource_selection={
                     "_prepared_inputs": {
                         "ancillary_mat": {
                             "materialized_resources": [
-                                {"local_path": str(ancillary_root), "source_kind": "local_dir"},
+                                {
+                                    "local_path": str(ancillary_root),
+                                    "source_kind": "local_dir",
+                                },
                             ]
                         },
                         "daily_mat_sources": {
@@ -884,7 +1082,13 @@ class NativeModuleTests(unittest.TestCase):
                     }
                 },
                 algorithm_params={},
-                output_spec=OutputSpec(extra={"output_dir": str(workspace / "timeseries_pipeline_multi_prepared")}),
+                output_spec=OutputSpec(
+                    extra={
+                        "output_dir": str(
+                            workspace / "timeseries_pipeline_multi_prepared"
+                        )
+                    }
+                ),
             )
             ctx = RuntimeContext(
                 job_id=request.job_id,
@@ -901,7 +1105,9 @@ class NativeModuleTests(unittest.TestCase):
                 pixel_count=1,
             )
 
-            def fake_build_timeseries_bundle_from_range(start_time, end_time, config, datasource_selection, *, lin_pix=None):
+            def fake_build_timeseries_bundle_from_range(
+                start_time, end_time, config, datasource_selection, *, lin_pix=None
+            ):
                 _ = (start_time, end_time, config, lin_pix)
                 self.assertEqual(datasource_selection["anc_root"], str(ancillary_root))
                 self.assertEqual(datasource_selection["smap_folder"], str(smap_root))
@@ -909,15 +1115,23 @@ class NativeModuleTests(unittest.TestCase):
                 return fake_bundle
 
             pipeline = TimeSeriesBundlePipeline(logger_adapter=logger)
-            with patch("pipelines.timeseries_bundle_products.load_lin_pix_selection", return_value=None), patch(
-                "pipelines.timeseries_bundle_products.build_timeseries_bundle_from_range",
-                side_effect=fake_build_timeseries_bundle_from_range,
-            ) as builder:
+            with (
+                patch(
+                    "pipelines.timeseries_bundle_products.load_lin_pix_selection",
+                    return_value=None,
+                ),
+                patch(
+                    "pipelines.timeseries_bundle_products.build_timeseries_bundle_from_range",
+                    side_effect=fake_build_timeseries_bundle_from_range,
+                ) as builder,
+            ):
                 manifest = pipeline.execute(request, ctx)
 
             builder.assert_called_once()
             self.assertEqual(manifest.products[0].type, "timeseries_bundle_mat")
-            self.assertEqual(manifest.extra["pipeline_name"], "timeseries_bundle_pipeline")
+            self.assertEqual(
+                manifest.extra["pipeline_name"], "timeseries_bundle_pipeline"
+            )
             self.assertEqual(manifest.extra["pixel_count"], 1)
 
     def test_run_job_executes_native_station_module(self) -> None:
@@ -934,11 +1148,18 @@ class NativeModuleTests(unittest.TestCase):
                 pipeline_name="workflow",
                 module_name="station_daily",
                 task_type="workflow",
-                time_range=TimeRange(start=datetime(2020, 1, 1), end=datetime(2020, 1, 2)),
+                time_range=TimeRange(
+                    start=datetime(2020, 1, 1), end=datetime(2020, 1, 2)
+                ),
                 region=RegionSpec(kind="global", value={}),
                 datasource_selection={"input_dir": str(input_dir)},
-                algorithm_params={"source_type": "ISMN", "emit_validation_products": False},
-                output_spec=OutputSpec(extra={"output_dir": str(workspace / "station_daily")}),
+                algorithm_params={
+                    "source_type": "ISMN",
+                    "emit_validation_products": False,
+                },
+                output_spec=OutputSpec(
+                    extra={"output_dir": str(workspace / "station_daily")}
+                ),
             )
 
             records = [
@@ -977,9 +1198,14 @@ class NativeModuleTests(unittest.TestCase):
             fake_file = input_dir / "site_a.stm"
             fake_file.write_text("dummy", encoding="utf-8")
 
-            with patch("modules.station.discover_ismn_stm_files", return_value=[fake_file]), patch(
-                "modules.station.parse_ismn_stm_file",
-                return_value=records,
+            with (
+                patch(
+                    "modules.station.discover_ismn_stm_files", return_value=[fake_file]
+                ),
+                patch(
+                    "modules.station.parse_ismn_stm_file",
+                    return_value=records,
+                ),
             ):
                 result = run_job(
                     request,
@@ -992,13 +1218,19 @@ class NativeModuleTests(unittest.TestCase):
 
             self.assertEqual(result.status, "success")
             self.assertIsNotNone(result.manifest_uri)
-            manifest_payload = json.loads(Path(result.manifest_uri).read_text(encoding="utf-8"))
-            product_types = [product["type"] for product in manifest_payload["products"]]
+            manifest_payload = json.loads(
+                Path(result.manifest_uri).read_text(encoding="utf-8")
+            )
+            product_types = [
+                product["type"] for product in manifest_payload["products"]
+            ]
             self.assertIn("station_daily_mat", product_types)
             self.assertIn("station_am6_mat", product_types)
             self.assertEqual(manifest_payload["extra"]["module_name"], "station_daily")
             self.assertEqual(manifest_payload["extra"]["source_type"], "ISMN")
-            self.assertEqual([status for status, _ in scheduler.statuses], ["running", "planning"])
+            self.assertEqual(
+                [status for status, _ in scheduler.statuses], ["running", "planning"]
+            )
 
     def test_run_job_executes_native_station_module_from_prepared_inputs(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
@@ -1019,25 +1251,37 @@ class NativeModuleTests(unittest.TestCase):
             smap_grid_mat.write_bytes(b"MAT")
             landcover_mat.write_bytes(b"MAT")
             climate_mat.write_bytes(b"MAT")
-            network_map_csv.write_text("site_id,network_id\nCOSMOS001,NET-A\n", encoding="utf-8")
+            network_map_csv.write_text(
+                "site_id,network_id\nCOSMOS001,NET-A\n", encoding="utf-8"
+            )
             request = JobRequest(
                 job_id="job-native-station-prepared",
                 pipeline_name="workflow",
                 module_name="station_daily",
                 task_type="workflow",
-                time_range=TimeRange(start=datetime(2020, 1, 1), end=datetime(2020, 1, 2)),
+                time_range=TimeRange(
+                    start=datetime(2020, 1, 1), end=datetime(2020, 1, 2)
+                ),
                 region=RegionSpec(kind="global", value={}),
                 datasource_selection={
                     "_data_access_requests": {
-                        "ISMN_STM_OR_CASMOS_TXT": {"selector": {"uris": [str(input_dir)]}},
+                        "ISMN_STM_OR_CASMOS_TXT": {
+                            "selector": {"uris": [str(input_dir)]}
+                        },
                         "site_info_csv": {"selector": {"uris": [str(site_info_csv)]}},
                         "smap_grid_mat": {"selector": {"uris": [str(smap_grid_mat)]}},
                         "landcover_mat": {"selector": {"uris": [str(landcover_mat)]}},
                         "climate_mat": {"selector": {"uris": [str(climate_mat)]}},
-                        "network_map_csv": {"selector": {"uris": [str(network_map_csv)]}},
+                        "network_map_csv": {
+                            "selector": {"uris": [str(network_map_csv)]}
+                        },
                     }
                 },
-                algorithm_params={"source_type": "CASMOS", "emit_validation_products": True, "validation_min_valid_days": 1},
+                algorithm_params={
+                    "source_type": "CASMOS",
+                    "emit_validation_products": True,
+                    "validation_min_valid_days": 1,
+                },
                 output_spec=OutputSpec(extra={"output_dir": str(output_dir)}),
             )
 
@@ -1132,18 +1376,27 @@ class NativeModuleTests(unittest.TestCase):
             expected_smap_grid_mat = smap_grid_mat
             expected_landcover_mat = landcover_mat
             expected_climate_mat = climate_mat
-            with patch("modules.station.discover_casmos_txt_files", side_effect=fake_discover_casmos_txt_files), patch(
-                "modules.station.load_casmos_site_info",
-                side_effect=fake_load_casmos_site_info,
-            ), patch(
-                "modules.station.parse_casmos_txt_file",
-                side_effect=fake_parse_casmos_txt_file,
-            ), patch(
-                "modules.station.load_mat_file",
-                side_effect=fake_load_mat_file,
-            ), patch(
-                "modules.station.build_station_validation_outputs",
-                side_effect=fake_build_station_validation_outputs,
+            with (
+                patch(
+                    "modules.station.discover_casmos_txt_files",
+                    side_effect=fake_discover_casmos_txt_files,
+                ),
+                patch(
+                    "modules.station.load_casmos_site_info",
+                    side_effect=fake_load_casmos_site_info,
+                ),
+                patch(
+                    "modules.station.parse_casmos_txt_file",
+                    side_effect=fake_parse_casmos_txt_file,
+                ),
+                patch(
+                    "modules.station.load_mat_file",
+                    side_effect=fake_load_mat_file,
+                ),
+                patch(
+                    "modules.station.build_station_validation_outputs",
+                    side_effect=fake_build_station_validation_outputs,
+                ),
             ):
                 result = run_job(
                     request,
@@ -1156,14 +1409,20 @@ class NativeModuleTests(unittest.TestCase):
 
             self.assertEqual(result.status, "success")
             self.assertIsNotNone(result.manifest_uri)
-            manifest_payload = json.loads(Path(result.manifest_uri).read_text(encoding="utf-8"))
-            product_types = [product["type"] for product in manifest_payload["products"]]
+            manifest_payload = json.loads(
+                Path(result.manifest_uri).read_text(encoding="utf-8")
+            )
+            product_types = [
+                product["type"] for product in manifest_payload["products"]
+            ]
             self.assertIn("station_daily_mat", product_types)
             self.assertIn("station_am6_mat", product_types)
             self.assertIn("station_summary_validation_mat", product_types)
             self.assertEqual(manifest_payload["extra"]["module_name"], "station_daily")
             self.assertEqual(manifest_payload["extra"]["source_type"], "CASMOS")
-            self.assertEqual([status for status, _ in scheduler.statuses], ["running", "planning"])
+            self.assertEqual(
+                [status for status, _ in scheduler.statuses], ["running", "planning"]
+            )
 
     def test_run_job_executes_station_pipeline_from_prepared_inputs(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
@@ -1184,24 +1443,36 @@ class NativeModuleTests(unittest.TestCase):
             smap_grid_mat.write_bytes(b"MAT")
             landcover_mat.write_bytes(b"MAT")
             climate_mat.write_bytes(b"MAT")
-            network_map_csv.write_text("site_id,network_id\nCOSMOS001,NET-B\n", encoding="utf-8")
+            network_map_csv.write_text(
+                "site_id,network_id\nCOSMOS001,NET-B\n", encoding="utf-8"
+            )
             request = JobRequest(
                 job_id="job-pipeline-station-prepared",
                 pipeline_name="station_daily_pipeline",
                 task_type="station_daily",
-                time_range=TimeRange(start=datetime(2020, 1, 1), end=datetime(2020, 1, 2)),
+                time_range=TimeRange(
+                    start=datetime(2020, 1, 1), end=datetime(2020, 1, 2)
+                ),
                 region=RegionSpec(kind="global", value={}),
                 datasource_selection={
                     "_data_access_requests": {
-                        "ISMN_STM_OR_CASMOS_TXT": {"selector": {"uris": [str(input_dir)]}},
+                        "ISMN_STM_OR_CASMOS_TXT": {
+                            "selector": {"uris": [str(input_dir)]}
+                        },
                         "site_info_csv": {"selector": {"uris": [str(site_info_csv)]}},
                         "smap_grid_mat": {"selector": {"uris": [str(smap_grid_mat)]}},
                         "landcover_mat": {"selector": {"uris": [str(landcover_mat)]}},
                         "climate_mat": {"selector": {"uris": [str(climate_mat)]}},
-                        "network_map_csv": {"selector": {"uris": [str(network_map_csv)]}},
+                        "network_map_csv": {
+                            "selector": {"uris": [str(network_map_csv)]}
+                        },
                     }
                 },
-                algorithm_params={"source_type": "CASMOS", "emit_validation_products": True, "validation_min_valid_days": 1},
+                algorithm_params={
+                    "source_type": "CASMOS",
+                    "emit_validation_products": True,
+                    "validation_min_valid_days": 1,
+                },
                 output_spec=OutputSpec(extra={"output_dir": str(output_dir)}),
             )
 
@@ -1296,18 +1567,27 @@ class NativeModuleTests(unittest.TestCase):
             expected_smap_grid_mat = smap_grid_mat
             expected_landcover_mat = landcover_mat
             expected_climate_mat = climate_mat
-            with patch("pipelines.station_products.discover_casmos_txt_files", side_effect=fake_discover_casmos_txt_files), patch(
-                "pipelines.station_products.load_casmos_site_info",
-                side_effect=fake_load_casmos_site_info,
-            ), patch(
-                "pipelines.station_products.parse_casmos_txt_file",
-                side_effect=fake_parse_casmos_txt_file,
-            ), patch(
-                "pipelines.station_products.load_mat_file",
-                side_effect=fake_load_mat_file,
-            ), patch(
-                "pipelines.station_products.build_station_validation_outputs",
-                side_effect=fake_build_station_validation_outputs,
+            with (
+                patch(
+                    "pipelines.station_products.discover_casmos_txt_files",
+                    side_effect=fake_discover_casmos_txt_files,
+                ),
+                patch(
+                    "pipelines.station_products.load_casmos_site_info",
+                    side_effect=fake_load_casmos_site_info,
+                ),
+                patch(
+                    "pipelines.station_products.parse_casmos_txt_file",
+                    side_effect=fake_parse_casmos_txt_file,
+                ),
+                patch(
+                    "pipelines.station_products.load_mat_file",
+                    side_effect=fake_load_mat_file,
+                ),
+                patch(
+                    "pipelines.station_products.build_station_validation_outputs",
+                    side_effect=fake_build_station_validation_outputs,
+                ),
             ):
                 result = run_job(
                     request,
@@ -1320,14 +1600,22 @@ class NativeModuleTests(unittest.TestCase):
 
             self.assertEqual(result.status, "success")
             self.assertIsNotNone(result.manifest_uri)
-            manifest_payload = json.loads(Path(result.manifest_uri).read_text(encoding="utf-8"))
-            product_types = [product["type"] for product in manifest_payload["products"]]
+            manifest_payload = json.loads(
+                Path(result.manifest_uri).read_text(encoding="utf-8")
+            )
+            product_types = [
+                product["type"] for product in manifest_payload["products"]
+            ]
             self.assertIn("station_daily_mat", product_types)
             self.assertIn("station_am6_mat", product_types)
             self.assertIn("station_summary_validation_mat", product_types)
-            self.assertEqual(manifest_payload["extra"]["pipeline_name"], "station_daily_pipeline")
+            self.assertEqual(
+                manifest_payload["extra"]["pipeline_name"], "station_daily_pipeline"
+            )
             self.assertEqual(manifest_payload["extra"]["source_type"], "CASMOS")
-            self.assertEqual([status for status, _ in scheduler.statuses], ["running", "planning"])
+            self.assertEqual(
+                [status for status, _ in scheduler.statuses], ["running", "planning"]
+            )
 
     def test_run_job_executes_native_fy_module_in_plan_only_mode(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
@@ -1344,7 +1632,9 @@ class NativeModuleTests(unittest.TestCase):
                 pipeline_name="workflow",
                 module_name="fy_daily",
                 task_type="workflow",
-                time_range=TimeRange(start=datetime(2020, 1, 1), end=datetime(2020, 1, 1)),
+                time_range=TimeRange(
+                    start=datetime(2020, 1, 1), end=datetime(2020, 1, 1)
+                ),
                 region=RegionSpec(kind="global", value={}),
                 datasource_selection={"input_dir": str(input_dir)},
                 algorithm_params={"orbit_mode": "MWRID", "execute_commands": False},
@@ -1352,17 +1642,27 @@ class NativeModuleTests(unittest.TestCase):
             )
 
             class _Plan:
-                def __init__(self, date_key: str, orbit_type: str, satellite: str, output_root: Path) -> None:
+                def __init__(
+                    self,
+                    date_key: str,
+                    orbit_type: str,
+                    satellite: str,
+                    output_root: Path,
+                ) -> None:
                     self.date_key = date_key
                     self.orbit_type = orbit_type
                     self.satellite = satellite
                     self.output_dir = str(output_root)
                     self.work_dir = str(output_root / "_work" / date_key)
-                    self.output_prefix = f"{satellite}_GBAL_L1_10V10H_{date_key}_{orbit_type}"
+                    self.output_prefix = (
+                        f"{satellite}_GBAL_L1_10V10H_{date_key}_{orbit_type}"
+                    )
 
             fake_plan = _Plan("20200101", "MWRID", "FY3D", output_dir)
             fake_plan_json = output_dir / "fy_daily_plan.json"
-            fake_command_json = output_dir / "_work" / "20200101" / "fy_daily_commands.json"
+            fake_command_json = (
+                output_dir / "_work" / "20200101" / "fy_daily_commands.json"
+            )
 
             def fake_write_plan_json(plans, output_path):
                 _ = plans
@@ -1376,15 +1676,20 @@ class NativeModuleTests(unittest.TestCase):
                 output_path.write_text("[]", encoding="utf-8")
                 return output_path
 
-            with patch("modules.fy.build_fy_daily_job_plans", return_value=[fake_plan]), patch(
-                "modules.fy.write_fy_daily_plan_json",
-                side_effect=fake_write_plan_json,
-            ), patch(
-                "modules.fy.build_fy_daily_command_steps",
-                return_value=[],
-            ), patch(
-                "modules.fy.write_fy_command_plan_json",
-                side_effect=fake_write_command_json,
+            with (
+                patch("modules.fy.build_fy_daily_job_plans", return_value=[fake_plan]),
+                patch(
+                    "modules.fy.write_fy_daily_plan_json",
+                    side_effect=fake_write_plan_json,
+                ),
+                patch(
+                    "modules.fy.build_fy_daily_command_steps",
+                    return_value=[],
+                ),
+                patch(
+                    "modules.fy.write_fy_command_plan_json",
+                    side_effect=fake_write_command_json,
+                ),
             ):
                 result = run_job(
                     request,
@@ -1397,8 +1702,12 @@ class NativeModuleTests(unittest.TestCase):
 
             self.assertEqual(result.status, "success")
             self.assertIsNotNone(result.manifest_uri)
-            manifest_payload = json.loads(Path(result.manifest_uri).read_text(encoding="utf-8"))
-            product_types = [product["type"] for product in manifest_payload["products"]]
+            manifest_payload = json.loads(
+                Path(result.manifest_uri).read_text(encoding="utf-8")
+            )
+            product_types = [
+                product["type"] for product in manifest_payload["products"]
+            ]
             self.assertIn("fy_daily_job_plan", product_types)
             self.assertIn("fy_daily_command_plan", product_types)
             self.assertEqual(manifest_payload["extra"]["module_name"], "fy_daily")
@@ -1422,7 +1731,9 @@ class NativeModuleTests(unittest.TestCase):
                 pipeline_name="workflow",
                 module_name="fy_daily",
                 task_type="workflow",
-                time_range=TimeRange(start=datetime(2020, 1, 1), end=datetime(2020, 1, 1)),
+                time_range=TimeRange(
+                    start=datetime(2020, 1, 1), end=datetime(2020, 1, 1)
+                ),
                 region=RegionSpec(kind="global", value={}),
                 datasource_selection={
                     "_data_access_requests": {
@@ -1436,19 +1747,31 @@ class NativeModuleTests(unittest.TestCase):
             )
 
             class _Plan:
-                def __init__(self, date_key: str, orbit_type: str, satellite: str, output_root: Path) -> None:
+                def __init__(
+                    self,
+                    date_key: str,
+                    orbit_type: str,
+                    satellite: str,
+                    output_root: Path,
+                ) -> None:
                     self.date_key = date_key
                     self.orbit_type = orbit_type
                     self.satellite = satellite
                     self.output_dir = str(output_root)
                     self.work_dir = str(output_root / "_work" / date_key)
-                    self.output_prefix = f"{satellite}_GBAL_L1_10V10H_{date_key}_{orbit_type}"
+                    self.output_prefix = (
+                        f"{satellite}_GBAL_L1_10V10H_{date_key}_{orbit_type}"
+                    )
 
             fake_plan = _Plan("20200101", "MWRID", "FY3D", output_dir)
             fake_plan_json = output_dir / "fy_daily_plan.json"
-            fake_command_json = output_dir / "_work" / "20200101" / "fy_daily_commands.json"
+            fake_command_json = (
+                output_dir / "_work" / "20200101" / "fy_daily_commands.json"
+            )
 
-            def fake_build_fy_daily_job_plans(*, input_dir, output_root, start_time, end_time, orbit_mode):
+            def fake_build_fy_daily_job_plans(
+                *, input_dir, output_root, start_time, end_time, orbit_mode
+            ):
                 _ = (output_root, start_time, end_time)
                 self.assertEqual(Path(input_dir), expected_input_dir)
                 self.assertEqual(orbit_mode, "MWRID")
@@ -1467,15 +1790,23 @@ class NativeModuleTests(unittest.TestCase):
                 return output_path
 
             expected_input_dir = input_dir
-            with patch("modules.fy.build_fy_daily_job_plans", side_effect=fake_build_fy_daily_job_plans), patch(
-                "modules.fy.write_fy_daily_plan_json",
-                side_effect=fake_write_plan_json,
-            ), patch(
-                "modules.fy.build_fy_daily_command_steps",
-                return_value=[],
-            ), patch(
-                "modules.fy.write_fy_command_plan_json",
-                side_effect=fake_write_command_json,
+            with (
+                patch(
+                    "modules.fy.build_fy_daily_job_plans",
+                    side_effect=fake_build_fy_daily_job_plans,
+                ),
+                patch(
+                    "modules.fy.write_fy_daily_plan_json",
+                    side_effect=fake_write_plan_json,
+                ),
+                patch(
+                    "modules.fy.build_fy_daily_command_steps",
+                    return_value=[],
+                ),
+                patch(
+                    "modules.fy.write_fy_command_plan_json",
+                    side_effect=fake_write_command_json,
+                ),
             ):
                 result = run_job(
                     request,
@@ -1488,8 +1819,12 @@ class NativeModuleTests(unittest.TestCase):
 
             self.assertEqual(result.status, "success")
             self.assertIsNotNone(result.manifest_uri)
-            manifest_payload = json.loads(Path(result.manifest_uri).read_text(encoding="utf-8"))
-            product_types = [product["type"] for product in manifest_payload["products"]]
+            manifest_payload = json.loads(
+                Path(result.manifest_uri).read_text(encoding="utf-8")
+            )
+            product_types = [
+                product["type"] for product in manifest_payload["products"]
+            ]
             self.assertIn("fy_daily_job_plan", product_types)
             self.assertIn("fy_daily_command_plan", product_types)
             self.assertEqual(manifest_payload["extra"]["module_name"], "fy_daily")
@@ -1512,7 +1847,9 @@ class NativeModuleTests(unittest.TestCase):
                 job_id="job-pipeline-fy-prepared",
                 pipeline_name="fy_daily_pipeline",
                 task_type="fy_daily",
-                time_range=TimeRange(start=datetime(2020, 1, 1), end=datetime(2020, 1, 1)),
+                time_range=TimeRange(
+                    start=datetime(2020, 1, 1), end=datetime(2020, 1, 1)
+                ),
                 region=RegionSpec(kind="global", value={}),
                 datasource_selection={
                     "_data_access_requests": {
@@ -1526,19 +1863,31 @@ class NativeModuleTests(unittest.TestCase):
             )
 
             class _Plan:
-                def __init__(self, date_key: str, orbit_type: str, satellite: str, output_root: Path) -> None:
+                def __init__(
+                    self,
+                    date_key: str,
+                    orbit_type: str,
+                    satellite: str,
+                    output_root: Path,
+                ) -> None:
                     self.date_key = date_key
                     self.orbit_type = orbit_type
                     self.satellite = satellite
                     self.output_dir = str(output_root)
                     self.work_dir = str(output_root / "_work" / date_key)
-                    self.output_prefix = f"{satellite}_GBAL_L1_10V10H_{date_key}_{orbit_type}"
+                    self.output_prefix = (
+                        f"{satellite}_GBAL_L1_10V10H_{date_key}_{orbit_type}"
+                    )
 
             fake_plan = _Plan("20200101", "MWRID", "FY3D", output_dir)
             fake_plan_json = output_dir / "fy_daily_plan.json"
-            fake_command_json = output_dir / "_work" / "20200101" / "fy_daily_commands.json"
+            fake_command_json = (
+                output_dir / "_work" / "20200101" / "fy_daily_commands.json"
+            )
 
-            def fake_build_fy_daily_job_plans(*, input_dir, output_root, start_time, end_time, orbit_mode):
+            def fake_build_fy_daily_job_plans(
+                *, input_dir, output_root, start_time, end_time, orbit_mode
+            ):
                 _ = (output_root, start_time, end_time)
                 self.assertEqual(Path(input_dir), expected_input_dir)
                 self.assertEqual(orbit_mode, "MWRID")
@@ -1557,15 +1906,23 @@ class NativeModuleTests(unittest.TestCase):
                 return output_path
 
             expected_input_dir = input_dir
-            with patch("pipelines.fy_products.build_fy_daily_job_plans", side_effect=fake_build_fy_daily_job_plans), patch(
-                "pipelines.fy_products.write_fy_daily_plan_json",
-                side_effect=fake_write_plan_json,
-            ), patch(
-                "pipelines.fy_products.build_fy_daily_command_steps",
-                return_value=[],
-            ), patch(
-                "pipelines.fy_products.write_fy_command_plan_json",
-                side_effect=fake_write_command_json,
+            with (
+                patch(
+                    "pipelines.fy_products.build_fy_daily_job_plans",
+                    side_effect=fake_build_fy_daily_job_plans,
+                ),
+                patch(
+                    "pipelines.fy_products.write_fy_daily_plan_json",
+                    side_effect=fake_write_plan_json,
+                ),
+                patch(
+                    "pipelines.fy_products.build_fy_daily_command_steps",
+                    return_value=[],
+                ),
+                patch(
+                    "pipelines.fy_products.write_fy_command_plan_json",
+                    side_effect=fake_write_command_json,
+                ),
             ):
                 result = run_job(
                     request,
@@ -1578,11 +1935,17 @@ class NativeModuleTests(unittest.TestCase):
 
             self.assertEqual(result.status, "success")
             self.assertIsNotNone(result.manifest_uri)
-            manifest_payload = json.loads(Path(result.manifest_uri).read_text(encoding="utf-8"))
-            product_types = [product["type"] for product in manifest_payload["products"]]
+            manifest_payload = json.loads(
+                Path(result.manifest_uri).read_text(encoding="utf-8")
+            )
+            product_types = [
+                product["type"] for product in manifest_payload["products"]
+            ]
             self.assertIn("fy_daily_job_plan", product_types)
             self.assertIn("fy_daily_command_plan", product_types)
-            self.assertEqual(manifest_payload["extra"]["pipeline_name"], "fy_daily_pipeline")
+            self.assertEqual(
+                manifest_payload["extra"]["pipeline_name"], "fy_daily_pipeline"
+            )
             self.assertEqual(manifest_payload["extra"]["artifact_mode"], "plan_only")
             self.assertEqual(manifest_payload["extra"]["plan_count"], 1)
             self.assertTrue(fake_plan_json.exists())
@@ -1603,7 +1966,9 @@ class NativeModuleTests(unittest.TestCase):
                 pipeline_name="workflow",
                 module_name="inversion_daily",
                 task_type="workflow",
-                time_range=TimeRange(start=datetime(2020, 1, 1), end=datetime(2020, 1, 1)),
+                time_range=TimeRange(
+                    start=datetime(2020, 1, 1), end=datetime(2020, 1, 1)
+                ),
                 region=RegionSpec(kind="global", value={}),
                 datasource_selection={"input_mat": str(input_mat)},
                 algorithm_params={"mode": "ddca", "freq_ghz": 1.4},
@@ -1623,14 +1988,18 @@ class NativeModuleTests(unittest.TestCase):
                 "theta_deg": np.array([[40.0]], dtype=np.float64),
             }
 
-            with patch("modules.inversion.load_mat_file", return_value=payload), patch(
-                "modules.inversion.extract_ddca_inputs",
-                return_value=ddca_inputs,
-            ), patch(
-                "algorithms.inversion.ddca_retrieve_grid",
-                return_value=(
-                    np.array([[0.21]], dtype=np.float64),
-                    np.array([[0.87]], dtype=np.float64),
+            with (
+                patch("modules.inversion.load_mat_file", return_value=payload),
+                patch(
+                    "modules.inversion.extract_ddca_inputs",
+                    return_value=ddca_inputs,
+                ),
+                patch(
+                    "algorithms.inversion.ddca_retrieve_grid",
+                    return_value=(
+                        np.array([[0.21]], dtype=np.float64),
+                        np.array([[0.87]], dtype=np.float64),
+                    ),
                 ),
             ):
                 result = run_job(
@@ -1644,15 +2013,23 @@ class NativeModuleTests(unittest.TestCase):
 
             self.assertEqual(result.status, "success")
             self.assertIsNotNone(result.manifest_uri)
-            manifest_payload = json.loads(Path(result.manifest_uri).read_text(encoding="utf-8"))
-            product_types = [product["type"] for product in manifest_payload["products"]]
+            manifest_payload = json.loads(
+                Path(result.manifest_uri).read_text(encoding="utf-8")
+            )
+            product_types = [
+                product["type"] for product in manifest_payload["products"]
+            ]
             self.assertIn("sm_mat", product_types)
             self.assertIn("vod_mat", product_types)
-            self.assertEqual(manifest_payload["extra"]["module_name"], "inversion_daily")
+            self.assertEqual(
+                manifest_payload["extra"]["module_name"], "inversion_daily"
+            )
             self.assertEqual(manifest_payload["extra"]["mode"], "ddca")
             self.assertTrue(Path(manifest_payload["extra"]["output_path"]).exists())
 
-    def test_run_job_executes_native_inversion_module_from_prepared_inputs(self) -> None:
+    def test_run_job_executes_native_inversion_module_from_prepared_inputs(
+        self,
+    ) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
             workspace = Path(tmp_dir)
             scheduler = _RecordingScheduler()
@@ -1667,7 +2044,9 @@ class NativeModuleTests(unittest.TestCase):
                 pipeline_name="workflow",
                 module_name="inversion_daily",
                 task_type="workflow",
-                time_range=TimeRange(start=datetime(2020, 1, 1), end=datetime(2020, 1, 1)),
+                time_range=TimeRange(
+                    start=datetime(2020, 1, 1), end=datetime(2020, 1, 1)
+                ),
                 region=RegionSpec(kind="global", value={}),
                 datasource_selection={
                     "_data_access_requests": {
@@ -1698,14 +2077,20 @@ class NativeModuleTests(unittest.TestCase):
                 return payload
 
             expected_input_mat = input_mat
-            with patch("modules.inversion.load_mat_file", side_effect=fake_load_mat_file), patch(
-                "modules.inversion.extract_ddca_inputs",
-                return_value=ddca_inputs,
-            ), patch(
-                "algorithms.inversion.ddca_retrieve_grid",
-                return_value=(
-                    np.array([[0.21]], dtype=np.float64),
-                    np.array([[0.87]], dtype=np.float64),
+            with (
+                patch(
+                    "modules.inversion.load_mat_file", side_effect=fake_load_mat_file
+                ),
+                patch(
+                    "modules.inversion.extract_ddca_inputs",
+                    return_value=ddca_inputs,
+                ),
+                patch(
+                    "algorithms.inversion.ddca_retrieve_grid",
+                    return_value=(
+                        np.array([[0.21]], dtype=np.float64),
+                        np.array([[0.87]], dtype=np.float64),
+                    ),
                 ),
             ):
                 result = run_job(
@@ -1719,11 +2104,17 @@ class NativeModuleTests(unittest.TestCase):
 
             self.assertEqual(result.status, "success")
             self.assertIsNotNone(result.manifest_uri)
-            manifest_payload = json.loads(Path(result.manifest_uri).read_text(encoding="utf-8"))
-            product_types = [product["type"] for product in manifest_payload["products"]]
+            manifest_payload = json.loads(
+                Path(result.manifest_uri).read_text(encoding="utf-8")
+            )
+            product_types = [
+                product["type"] for product in manifest_payload["products"]
+            ]
             self.assertIn("sm_mat", product_types)
             self.assertIn("vod_mat", product_types)
-            self.assertEqual(manifest_payload["extra"]["module_name"], "inversion_daily")
+            self.assertEqual(
+                manifest_payload["extra"]["module_name"], "inversion_daily"
+            )
             self.assertEqual(manifest_payload["extra"]["mode"], "ddca")
 
     def test_run_job_executes_inversion_pipeline_from_prepared_inputs(self) -> None:
@@ -1740,7 +2131,9 @@ class NativeModuleTests(unittest.TestCase):
                 job_id="job-pipeline-inversion-prepared",
                 pipeline_name="inversion_daily_pipeline",
                 task_type="inversion_daily",
-                time_range=TimeRange(start=datetime(2020, 1, 1), end=datetime(2020, 1, 1)),
+                time_range=TimeRange(
+                    start=datetime(2020, 1, 1), end=datetime(2020, 1, 1)
+                ),
                 region=RegionSpec(kind="global", value={}),
                 datasource_selection={
                     "_data_access_requests": {
@@ -1770,12 +2163,19 @@ class NativeModuleTests(unittest.TestCase):
                 return payload
 
             expected_input_mat = input_mat
-            with patch("pipelines.inversion_products.load_mat_file", side_effect=fake_load_mat_file), patch(
-                "pipelines.inversion_products.extract_inversion_inputs",
-                return_value=dh_inputs,
-            ), patch(
-                "algorithms.inversion.retrieve_dynamic_h_grid",
-                return_value=np.array([[0.11]], dtype=np.float64),
+            with (
+                patch(
+                    "pipelines.inversion_products.load_mat_file",
+                    side_effect=fake_load_mat_file,
+                ),
+                patch(
+                    "pipelines.inversion_products.extract_inversion_inputs",
+                    return_value=dh_inputs,
+                ),
+                patch(
+                    "algorithms.inversion.retrieve_dynamic_h_grid",
+                    return_value=np.array([[0.11]], dtype=np.float64),
+                ),
             ):
                 result = run_job(
                     request,
@@ -1788,10 +2188,16 @@ class NativeModuleTests(unittest.TestCase):
 
             self.assertEqual(result.status, "success")
             self.assertIsNotNone(result.manifest_uri)
-            manifest_payload = json.loads(Path(result.manifest_uri).read_text(encoding="utf-8"))
-            product_types = [product["type"] for product in manifest_payload["products"]]
+            manifest_payload = json.loads(
+                Path(result.manifest_uri).read_text(encoding="utf-8")
+            )
+            product_types = [
+                product["type"] for product in manifest_payload["products"]
+            ]
             self.assertIn("dh_mat", product_types)
-            self.assertEqual(manifest_payload["extra"]["pipeline_name"], "inversion_daily_pipeline")
+            self.assertEqual(
+                manifest_payload["extra"]["pipeline_name"], "inversion_daily_pipeline"
+            )
             self.assertEqual(manifest_payload["extra"]["mode"], "dh")
 
     def test_run_job_executes_native_block_inversion_module(self) -> None:
@@ -1809,9 +2215,14 @@ class NativeModuleTests(unittest.TestCase):
                 pipeline_name="workflow",
                 module_name="block_inversion",
                 task_type="workflow",
-                time_range=TimeRange(start=datetime(2020, 1, 1), end=datetime(2020, 1, 2)),
+                time_range=TimeRange(
+                    start=datetime(2020, 1, 1), end=datetime(2020, 1, 2)
+                ),
                 region=RegionSpec(kind="global", value={}),
-                datasource_selection={"input_mat": str(input_mat)},
+                datasource_selection={
+                    "input_mat": str(input_mat),
+                    "dh_mat": str(input_mat),
+                },
                 algorithm_params={"mode": "ddca", "write_daily_files": True},
                 output_spec=OutputSpec(extra={"output_dir": str(output_dir)}),
             )
@@ -1825,12 +2236,19 @@ class NativeModuleTests(unittest.TestCase):
                 "H_used_mat": np.array([[0.15, 0.16], [0.17, 0.18]], dtype=np.float64),
             }
 
-            with patch("modules.block_inversion.load_mat_file", return_value={"date_keys": fake_result["date_keys"]}), patch(
-                "algorithms.block_inversion.build_block_field_config",
-                return_value=object(),
-            ), patch(
-                "algorithms.block_inversion.execute_block_inversion",
-                return_value=fake_result,
+            with (
+                patch(
+                    "modules.block_inversion.load_mat_file",
+                    return_value={"date_keys": fake_result["date_keys"]},
+                ),
+                patch(
+                    "algorithms.block_inversion.build_block_field_config",
+                    return_value=object(),
+                ),
+                patch(
+                    "algorithms.block_inversion.execute_block_inversion",
+                    return_value=fake_result,
+                ),
             ):
                 result = run_job(
                     request,
@@ -1843,17 +2261,25 @@ class NativeModuleTests(unittest.TestCase):
 
             self.assertEqual(result.status, "success")
             self.assertIsNotNone(result.manifest_uri)
-            manifest_payload = json.loads(Path(result.manifest_uri).read_text(encoding="utf-8"))
-            product_types = [product["type"] for product in manifest_payload["products"]]
+            manifest_payload = json.loads(
+                Path(result.manifest_uri).read_text(encoding="utf-8")
+            )
+            product_types = [
+                product["type"] for product in manifest_payload["products"]
+            ]
             self.assertIn("tau_block_mat", product_types)
             self.assertIn("sm_vod_block_mat", product_types)
             self.assertIn("sm_daily_mat", product_types)
             self.assertIn("vod_daily_mat", product_types)
-            self.assertEqual(manifest_payload["extra"]["module_name"], "block_inversion")
+            self.assertEqual(
+                manifest_payload["extra"]["module_name"], "block_inversion"
+            )
             self.assertEqual(manifest_payload["extra"]["mode"], "ddca")
             self.assertEqual(manifest_payload["extra"]["missing_dates"], ["20200103"])
 
-    def test_run_job_executes_native_block_inversion_module_from_prepared_inputs(self) -> None:
+    def test_run_job_executes_native_block_inversion_module_from_prepared_inputs(
+        self,
+    ) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
             workspace = Path(tmp_dir)
             scheduler = _RecordingScheduler()
@@ -1870,11 +2296,15 @@ class NativeModuleTests(unittest.TestCase):
                 pipeline_name="workflow",
                 module_name="block_inversion",
                 task_type="workflow",
-                time_range=TimeRange(start=datetime(2020, 1, 1), end=datetime(2020, 1, 2)),
+                time_range=TimeRange(
+                    start=datetime(2020, 1, 1), end=datetime(2020, 1, 2)
+                ),
                 region=RegionSpec(kind="global", value={}),
                 datasource_selection={
                     "_data_access_requests": {
-                        "timeseries_bundle_mat": {"selector": {"uris": [str(input_mat)]}},
+                        "timeseries_bundle_mat": {
+                            "selector": {"uris": [str(input_mat)]}
+                        },
                         "dh_mat": {"selector": {"uris": [str(dh_mat)]}},
                     }
                 },
@@ -1893,7 +2323,9 @@ class NativeModuleTests(unittest.TestCase):
                 self.assertEqual(Path(path), expected_input_mat)
                 return {"date_keys": fake_result["date_keys"]}
 
-            def fake_execute_block_inversion(payload, *, mode, freq_ghz, pixel_chunk_size, dh_mat_path, field_config):
+            def fake_execute_block_inversion(
+                payload, *, mode, freq_ghz, pixel_chunk_size, dh_mat_path, field_config
+            ):
                 _ = (payload, freq_ghz, pixel_chunk_size, field_config)
                 self.assertEqual(mode, "dh")
                 self.assertEqual(Path(str(dh_mat_path)), expected_dh_mat)
@@ -1901,12 +2333,19 @@ class NativeModuleTests(unittest.TestCase):
 
             expected_input_mat = input_mat
             expected_dh_mat = dh_mat
-            with patch("modules.block_inversion.load_mat_file", side_effect=fake_load_mat_file), patch(
-                "algorithms.block_inversion.build_block_field_config",
-                return_value=object(),
-            ), patch(
-                "algorithms.block_inversion.execute_block_inversion",
-                side_effect=fake_execute_block_inversion,
+            with (
+                patch(
+                    "modules.block_inversion.load_mat_file",
+                    side_effect=fake_load_mat_file,
+                ),
+                patch(
+                    "algorithms.block_inversion.build_block_field_config",
+                    return_value=object(),
+                ),
+                patch(
+                    "algorithms.block_inversion.execute_block_inversion",
+                    side_effect=fake_execute_block_inversion,
+                ),
             ):
                 result = run_job(
                     request,
@@ -1919,15 +2358,23 @@ class NativeModuleTests(unittest.TestCase):
 
             self.assertEqual(result.status, "success")
             self.assertIsNotNone(result.manifest_uri)
-            manifest_payload = json.loads(Path(result.manifest_uri).read_text(encoding="utf-8"))
-            product_types = [product["type"] for product in manifest_payload["products"]]
+            manifest_payload = json.loads(
+                Path(result.manifest_uri).read_text(encoding="utf-8")
+            )
+            product_types = [
+                product["type"] for product in manifest_payload["products"]
+            ]
             self.assertIn("tau_block_mat", product_types)
             self.assertIn("dh_block_mat", product_types)
             self.assertIn("dh_daily_mat", product_types)
-            self.assertEqual(manifest_payload["extra"]["module_name"], "block_inversion")
+            self.assertEqual(
+                manifest_payload["extra"]["module_name"], "block_inversion"
+            )
             self.assertEqual(manifest_payload["extra"]["mode"], "dh")
 
-    def test_run_job_executes_block_inversion_pipeline_from_prepared_inputs(self) -> None:
+    def test_run_job_executes_block_inversion_pipeline_from_prepared_inputs(
+        self,
+    ) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
             workspace = Path(tmp_dir)
             scheduler = _RecordingScheduler()
@@ -1943,11 +2390,15 @@ class NativeModuleTests(unittest.TestCase):
                 job_id="job-pipeline-block-prepared",
                 pipeline_name="block_inversion_pipeline",
                 task_type="block_inversion",
-                time_range=TimeRange(start=datetime(2020, 1, 1), end=datetime(2020, 1, 2)),
+                time_range=TimeRange(
+                    start=datetime(2020, 1, 1), end=datetime(2020, 1, 2)
+                ),
                 region=RegionSpec(kind="global", value={}),
                 datasource_selection={
                     "_data_access_requests": {
-                        "timeseries_bundle_mat": {"selector": {"uris": [str(input_mat)]}},
+                        "timeseries_bundle_mat": {
+                            "selector": {"uris": [str(input_mat)]}
+                        },
                         "dh_mat": {"selector": {"uris": [str(dh_mat)]}},
                     }
                 },
@@ -1966,7 +2417,9 @@ class NativeModuleTests(unittest.TestCase):
                 self.assertEqual(Path(path), expected_input_mat)
                 return {"date_keys": fake_result["date_keys"]}
 
-            def fake_execute_block_inversion(payload, *, mode, freq_ghz, pixel_chunk_size, dh_mat_path, field_config):
+            def fake_execute_block_inversion(
+                payload, *, mode, freq_ghz, pixel_chunk_size, dh_mat_path, field_config
+            ):
                 _ = (payload, freq_ghz, pixel_chunk_size, field_config)
                 self.assertEqual(mode, "dh")
                 self.assertEqual(Path(str(dh_mat_path)), expected_dh_mat)
@@ -1974,12 +2427,19 @@ class NativeModuleTests(unittest.TestCase):
 
             expected_input_mat = input_mat
             expected_dh_mat = dh_mat
-            with patch("pipelines.block_inversion_products.load_mat_file", side_effect=fake_load_mat_file), patch(
-                "algorithms.block_inversion.build_block_field_config",
-                return_value=object(),
-            ), patch(
-                "algorithms.block_inversion.execute_block_inversion",
-                side_effect=fake_execute_block_inversion,
+            with (
+                patch(
+                    "pipelines.block_inversion_products.load_mat_file",
+                    side_effect=fake_load_mat_file,
+                ),
+                patch(
+                    "algorithms.block_inversion.build_block_field_config",
+                    return_value=object(),
+                ),
+                patch(
+                    "algorithms.block_inversion.execute_block_inversion",
+                    side_effect=fake_execute_block_inversion,
+                ),
             ):
                 result = run_job(
                     request,
@@ -1992,15 +2452,23 @@ class NativeModuleTests(unittest.TestCase):
 
             self.assertEqual(result.status, "success")
             self.assertIsNotNone(result.manifest_uri)
-            manifest_payload = json.loads(Path(result.manifest_uri).read_text(encoding="utf-8"))
-            product_types = [product["type"] for product in manifest_payload["products"]]
+            manifest_payload = json.loads(
+                Path(result.manifest_uri).read_text(encoding="utf-8")
+            )
+            product_types = [
+                product["type"] for product in manifest_payload["products"]
+            ]
             self.assertIn("tau_block_mat", product_types)
             self.assertIn("dh_block_mat", product_types)
             self.assertIn("dh_daily_mat", product_types)
-            self.assertEqual(manifest_payload["extra"]["pipeline_name"], "block_inversion_pipeline")
+            self.assertEqual(
+                manifest_payload["extra"]["pipeline_name"], "block_inversion_pipeline"
+            )
             self.assertEqual(manifest_payload["extra"]["mode"], "dh")
 
-    def test_run_job_executes_native_omega_block_module_from_prepared_inputs(self) -> None:
+    def test_run_job_executes_native_omega_block_module_from_prepared_inputs(
+        self,
+    ) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
             workspace = Path(tmp_dir)
             scheduler = _RecordingScheduler()
@@ -2019,12 +2487,18 @@ class NativeModuleTests(unittest.TestCase):
                 pipeline_name="workflow",
                 module_name="omega_block",
                 task_type="workflow",
-                time_range=TimeRange(start=datetime(2020, 1, 1), end=datetime(2020, 1, 2)),
+                time_range=TimeRange(
+                    start=datetime(2020, 1, 1), end=datetime(2020, 1, 2)
+                ),
                 region=RegionSpec(kind="global", value={}),
                 datasource_selection={
                     "_data_access_requests": {
-                        "timeseries_bundle_mat": {"selector": {"uris": [str(input_mat)]}},
-                        "omega_fixed_mat": {"selector": {"uris": [str(omega_fixed_mat)]}},
+                        "timeseries_bundle_mat": {
+                            "selector": {"uris": [str(input_mat)]}
+                        },
+                        "omega_fixed_mat": {
+                            "selector": {"uris": [str(omega_fixed_mat)]}
+                        },
                         "exp0_calib_mat": {"selector": {"uris": [str(exp0_calib_mat)]}},
                     }
                 },
@@ -2051,7 +2525,10 @@ class NativeModuleTests(unittest.TestCase):
             def fake_load_mat_file(path):
                 current_path = Path(path)
                 if current_path == expected_input_mat:
-                    return {"date_keys": fake_result["date_keys"], "TBv_mat": np.array([[1.0]])}
+                    return {
+                        "date_keys": fake_result["date_keys"],
+                        "TBv_mat": np.array([[1.0]]),
+                    }
                 if current_path == expected_omega_fixed_mat:
                     return {"omega_fixed_vec": np.array([0.12, 0.13], dtype=np.float64)}
                 if current_path == expected_exp0_calib_mat:
@@ -2074,9 +2551,12 @@ class NativeModuleTests(unittest.TestCase):
             expected_input_mat = input_mat
             expected_omega_fixed_mat = omega_fixed_mat
             expected_exp0_calib_mat = exp0_calib_mat
-            with patch("modules.omega.load_mat_file", side_effect=fake_load_mat_file), patch(
-                "algorithms.omega.execute_omega_retrieval",
-                side_effect=fake_execute,
+            with (
+                patch("modules.omega.load_mat_file", side_effect=fake_load_mat_file),
+                patch(
+                    "algorithms.omega.execute_omega_retrieval",
+                    side_effect=fake_execute,
+                ),
             ):
                 result = run_job(
                     request,
@@ -2089,8 +2569,12 @@ class NativeModuleTests(unittest.TestCase):
 
             self.assertEqual(result.status, "success")
             self.assertIsNotNone(result.manifest_uri)
-            manifest_payload = json.loads(Path(result.manifest_uri).read_text(encoding="utf-8"))
-            product_types = [product["type"] for product in manifest_payload["products"]]
+            manifest_payload = json.loads(
+                Path(result.manifest_uri).read_text(encoding="utf-8")
+            )
+            product_types = [
+                product["type"] for product in manifest_payload["products"]
+            ]
             self.assertIn("omega_block_mat", product_types)
             self.assertIn("omega_daily_mat", product_types)
             self.assertEqual(manifest_payload["extra"]["module_name"], "omega_block")
@@ -2115,12 +2599,18 @@ class NativeModuleTests(unittest.TestCase):
                 job_id="job-pipeline-omega-prepared",
                 pipeline_name="omega_block_pipeline",
                 task_type="omega_block",
-                time_range=TimeRange(start=datetime(2020, 1, 1), end=datetime(2020, 1, 2)),
+                time_range=TimeRange(
+                    start=datetime(2020, 1, 1), end=datetime(2020, 1, 2)
+                ),
                 region=RegionSpec(kind="global", value={}),
                 datasource_selection={
                     "_data_access_requests": {
-                        "timeseries_bundle_mat": {"selector": {"uris": [str(input_mat)]}},
-                        "omega_fixed_mat": {"selector": {"uris": [str(omega_fixed_mat)]}},
+                        "timeseries_bundle_mat": {
+                            "selector": {"uris": [str(input_mat)]}
+                        },
+                        "omega_fixed_mat": {
+                            "selector": {"uris": [str(omega_fixed_mat)]}
+                        },
                         "exp0_calib_mat": {"selector": {"uris": [str(exp0_calib_mat)]}},
                     }
                 },
@@ -2147,7 +2637,10 @@ class NativeModuleTests(unittest.TestCase):
             def fake_load_mat_file(path):
                 current_path = Path(path)
                 if current_path == expected_input_mat:
-                    return {"date_keys": fake_result["date_keys"], "TBv_mat": np.array([[1.0]])}
+                    return {
+                        "date_keys": fake_result["date_keys"],
+                        "TBv_mat": np.array([[1.0]]),
+                    }
                 if current_path == expected_omega_fixed_mat:
                     return {"omega_fixed_vec": np.array([0.12, 0.13], dtype=np.float64)}
                 if current_path == expected_exp0_calib_mat:
@@ -2170,9 +2663,15 @@ class NativeModuleTests(unittest.TestCase):
             expected_input_mat = input_mat
             expected_omega_fixed_mat = omega_fixed_mat
             expected_exp0_calib_mat = exp0_calib_mat
-            with patch("pipelines.omega_block_products.load_mat_file", side_effect=fake_load_mat_file), patch(
-                "algorithms.omega.execute_omega_retrieval",
-                side_effect=fake_execute,
+            with (
+                patch(
+                    "pipelines.omega_block_products.load_mat_file",
+                    side_effect=fake_load_mat_file,
+                ),
+                patch(
+                    "algorithms.omega.execute_omega_retrieval",
+                    side_effect=fake_execute,
+                ),
             ):
                 result = run_job(
                     request,
@@ -2185,11 +2684,17 @@ class NativeModuleTests(unittest.TestCase):
 
             self.assertEqual(result.status, "success")
             self.assertIsNotNone(result.manifest_uri)
-            manifest_payload = json.loads(Path(result.manifest_uri).read_text(encoding="utf-8"))
-            product_types = [product["type"] for product in manifest_payload["products"]]
+            manifest_payload = json.loads(
+                Path(result.manifest_uri).read_text(encoding="utf-8")
+            )
+            product_types = [
+                product["type"] for product in manifest_payload["products"]
+            ]
             self.assertIn("omega_block_mat", product_types)
             self.assertIn("omega_daily_mat", product_types)
-            self.assertEqual(manifest_payload["extra"]["pipeline_name"], "omega_block_pipeline")
+            self.assertEqual(
+                manifest_payload["extra"]["pipeline_name"], "omega_block_pipeline"
+            )
             self.assertEqual(manifest_payload["extra"]["temp_scheme"], "DUAL")
             self.assertEqual(manifest_payload["extra"]["exp_mode"], "Exp2")
 
@@ -2212,7 +2717,9 @@ class NativeModuleTests(unittest.TestCase):
                 pipeline_name="workflow",
                 module_name="omega_block",
                 task_type="workflow",
-                time_range=TimeRange(start=datetime(2020, 1, 1), end=datetime(2020, 1, 2)),
+                time_range=TimeRange(
+                    start=datetime(2020, 1, 1), end=datetime(2020, 1, 2)
+                ),
                 region=RegionSpec(kind="global", value={}),
                 datasource_selection={
                     "input_mat": str(input_mat),
@@ -2244,7 +2751,10 @@ class NativeModuleTests(unittest.TestCase):
             def fake_load_mat_file(path):
                 path = Path(path)
                 if path == input_mat:
-                    return {"date_keys": fake_result["date_keys"], "TBv_mat": np.array([[1.0]])}
+                    return {
+                        "date_keys": fake_result["date_keys"],
+                        "TBv_mat": np.array([[1.0]]),
+                    }
                 if path == omega_fixed_mat:
                     return {"omega_fixed_vec": np.array([0.12, 0.13], dtype=np.float64)}
                 if path == exp0_calib_mat:
@@ -2264,9 +2774,12 @@ class NativeModuleTests(unittest.TestCase):
                 self.assertIsNotNone(field_config)
                 return fake_result
 
-            with patch("modules.omega.load_mat_file", side_effect=fake_load_mat_file), patch(
-                "algorithms.omega.execute_omega_retrieval",
-                side_effect=fake_execute,
+            with (
+                patch("modules.omega.load_mat_file", side_effect=fake_load_mat_file),
+                patch(
+                    "algorithms.omega.execute_omega_retrieval",
+                    side_effect=fake_execute,
+                ),
             ):
                 result = run_job(
                     request,
@@ -2279,15 +2792,24 @@ class NativeModuleTests(unittest.TestCase):
 
             self.assertEqual(result.status, "success")
             self.assertIsNotNone(result.manifest_uri)
-            manifest_payload = json.loads(Path(result.manifest_uri).read_text(encoding="utf-8"))
-            product_types = [product["type"] for product in manifest_payload["products"]]
+            manifest_payload = json.loads(
+                Path(result.manifest_uri).read_text(encoding="utf-8")
+            )
+            product_types = [
+                product["type"] for product in manifest_payload["products"]
+            ]
             self.assertIn("omega_block_mat", product_types)
             self.assertIn("omega_daily_mat", product_types)
             self.assertEqual(manifest_payload["extra"]["module_name"], "omega_block")
             self.assertEqual(manifest_payload["extra"]["temp_scheme"], "DUAL")
             self.assertEqual(manifest_payload["extra"]["exp_mode"], "Exp2")
-            self.assertEqual(manifest_payload["qc_layers"], ["qc_flag_mat", "qc_condk_mat", "qc_sratio_mat"])
-            self.assertEqual([status for status, _ in scheduler.statuses], ["running", "planning"])
+            self.assertEqual(
+                manifest_payload["qc_layers"],
+                ["qc_flag_mat", "qc_condk_mat", "qc_sratio_mat"],
+            )
+            self.assertEqual(
+                [status for status, _ in scheduler.statuses], ["running", "planning"]
+            )
 
 
 if __name__ == "__main__":

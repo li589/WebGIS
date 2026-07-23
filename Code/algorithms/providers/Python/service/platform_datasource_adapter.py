@@ -4,7 +4,10 @@ from typing import Any, Callable
 
 from contracts.data import DataBundle, DataRequest
 from interfaces.datasource import DataAsset
-from service.platform_scheduler_adapter import _resolve_optional_callable, _resolve_required_callable
+from service.platform_scheduler_adapter import (
+    _resolve_optional_callable,
+    _resolve_required_callable,
+)
 from service.platform_templates import PlatformDataSourceAdapterTemplate
 
 
@@ -38,9 +41,12 @@ class PlatformDataSourceAdapter(PlatformDataSourceAdapterTemplate):
             platform_client,
             "acquire_bundle",
         )
-        self._materialize_bundle_fn = materialize_bundle_fn or _resolve_optional_callable(
-            platform_client,
-            "materialize_bundle",
+        self._materialize_bundle_fn = (
+            materialize_bundle_fn
+            or _resolve_optional_callable(
+                platform_client,
+                "materialize_bundle",
+            )
         )
 
     def discover_assets(self, request: DataRequest) -> list[DataAsset]:

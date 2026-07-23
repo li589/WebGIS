@@ -2,7 +2,13 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from data_access.contracts import DataRequestV2, ResourceRef, build_resource_ref, is_probable_windows_path, normalize_local_path
+from data_access.contracts import (
+    DataRequestV2,
+    ResourceRef,
+    build_resource_ref,
+    is_probable_windows_path,
+    normalize_local_path,
+)
 
 
 class LocalFileSource:
@@ -10,7 +16,11 @@ class LocalFileSource:
     supported_schemes = ("local", "file")
 
     def can_handle(self, uri: str) -> bool:
-        return is_probable_windows_path(uri) or uri.startswith("file://") or "://" not in uri
+        return (
+            is_probable_windows_path(uri)
+            or uri.startswith("file://")
+            or "://" not in uri
+        )
 
     def locate(
         self,
@@ -21,7 +31,9 @@ class LocalFileSource:
     ) -> ResourceRef:
         _ = request
         local_path = Path(normalize_local_path(uri))
-        source_kind = "local_dir" if self._looks_like_directory(local_path) else "local_file"
+        source_kind = (
+            "local_dir" if self._looks_like_directory(local_path) else "local_file"
+        )
         return build_resource_ref(
             uri=str(local_path),
             source_kind=source_kind,
