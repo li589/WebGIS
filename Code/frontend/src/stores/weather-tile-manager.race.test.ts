@@ -20,7 +20,10 @@ vi.mock('./log', () => ({
   }),
 }))
 
-import { useWeatherTileManager } from './weather-tile-manager'
+import {
+  useWeatherTileManager,
+  __testResetWeatherTileManagerModuleState,
+} from './weather-tile-manager'
 
 const bbox = { west: 110, south: 20, east: 115, north: 25, crs: 'EPSG:4326' }
 const center = { lng: 112.5, lat: 22.5 }
@@ -28,6 +31,7 @@ const center = { lng: 112.5, lat: 22.5 }
 describe('weather-tile-manager race guards', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
+    __testResetWeatherTileManagerModuleState()
     fetchWeatherTile.mockReset()
   })
 
@@ -72,6 +76,7 @@ describe('weather-tile-manager race guards', () => {
 describe('weather-tile-manager gap sweep', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
+    __testResetWeatherTileManagerModuleState()
     fetchWeatherTile.mockReset()
     vi.useFakeTimers()
   })
@@ -81,11 +86,15 @@ describe('weather-tile-manager gap sweep', () => {
   })
 
   it('reports missingInViewport and keeps gapSweepActive while holes remain', async () => {
-    let calls = 0
-    fetchWeatherTile.mockImplementation(async () => {
-      calls += 1
-      // 仅前 2 次成功，其余失败 → 视口留下空洞
-      if (calls <= 2) {
+    let successLeft = 2
+    fetchWeatherTile.mockImplementation(async (_layerId, _z, _x, _y, opts) => {
+      // 仅当前 hour 的前 2 个视口请求成功，避免邻域/邻小时预取抢掉成功配额
+      const hour = (opts as { hour?: number } | undefined)?.hour ?? 0
+      if (hour !== 0) {
+        throw new Error('Weather tile request timeout after 75s: prefetch')
+      }
+      if (successLeft > 0) {
+        successLeft -= 1
         return { type: 'FeatureCollection', features: [] }
       }
       throw new Error('Weather tile request timeout after 75s: /weather/tiles/x')

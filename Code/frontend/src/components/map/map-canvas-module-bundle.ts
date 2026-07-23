@@ -28,6 +28,7 @@ interface LayersStoreLike {
   activeLayersDisplay: ActiveLayerDisplay[]
   particleFlowCatalogId: string | null
   windDisplayMode: import('./wind-display-mode').WindDisplayMode
+  smoothRendering: boolean
   isWeatherEngineLayer: (catalogId: string) => boolean
   setMapViewport: (
     center: { lng: number; lat: number },

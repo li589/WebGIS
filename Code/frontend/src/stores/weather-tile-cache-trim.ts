@@ -1,9 +1,9 @@
 /**
- * Layer tile cache trim: drop far-zoom tiles, then FIFO-evict non-viewport keys.
+ * Layer tile cache trim: drop far-zoom tiles, then LRU-evict non-viewport keys.
  * Viewport (pinned) tiles are never evicted — prevents evict↔refetch oscillation.
  */
 
-export const MAX_LAYER_CACHE_TILES = 96
+export const MAX_LAYER_CACHE_TILES = 128
 
 export interface WeatherTileCacheTrimState {
   zoom: number
@@ -13,6 +13,14 @@ export interface WeatherTileCacheTrimState {
   hour: number
   model: string
   provider: string
+}
+
+function readLastAccess(value: unknown): number {
+  if (value && typeof value === 'object' && 'lastAccess' in value) {
+    const n = Number((value as { lastAccess: unknown }).lastAccess)
+    return Number.isFinite(n) ? n : 0
+  }
+  return 0
 }
 
 export function trimWeatherLayerTileCache(
@@ -46,13 +54,17 @@ export function trimWeatherLayerTileCache(
   let guard = 0
   while (state.tiles.size > maxTiles && guard < state.tiles.size + 1) {
     guard += 1
-    let evicted = false
-    for (const key of state.tiles.keys()) {
+    let victim: string | null = null
+    let oldest = Number.POSITIVE_INFINITY
+    for (const [key, value] of state.tiles.entries()) {
       if (pinnedKeys.has(key)) continue
-      state.tiles.delete(key)
-      evicted = true
-      break
+      const access = readLastAccess(value)
+      if (access < oldest) {
+        oldest = access
+        victim = key
+      }
     }
-    if (!evicted) break
+    if (!victim) break
+    state.tiles.delete(victim)
   }
 }

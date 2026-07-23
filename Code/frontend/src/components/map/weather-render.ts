@@ -599,7 +599,7 @@ export function buildWeatherFillColorExpression(
   const metricKey = hint.primary_metric
   const expression: Array<string | number | ExpressionSpecification> = [
     'interpolate',
-    ['linear'],
+    ['linear'] as unknown as ExpressionSpecification,
     ['coalesce', ['to-number', ['get', metricKey]], 0] as unknown as ExpressionSpecification,
   ]
 

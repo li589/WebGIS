@@ -2,6 +2,7 @@
 import { computed, reactive, ref } from 'vue'
 import { storeToRefs } from 'pinia'
 import { useSettingsStore } from '../../stores/settings'
+import { useWeatherTileManager } from '../../stores/weather-tile-manager'
 import {
   fetchDataCacheOverview,
   evictDataCache,
@@ -14,6 +15,7 @@ import {
 } from '../../services/settings-api'
 
 const settingsStore = useSettingsStore()
+const weatherTileManager = useWeatherTileManager()
 const { dataSourceConfig } = storeToRefs(settingsStore)
 
 const cacheOverview = ref<DataCacheOverview | null>(null)
@@ -145,6 +147,7 @@ async function handleEvictAll() {
   try {
     const result = await evictDataCache({})
     statusMsg.value = `已清理 ${result.removed_count ?? result.removed?.length ?? 0} 项`
+    weatherTileManager.invalidateAllTileCaches()
     await refreshCache()
     await settingsStore.loadAll()
   } catch (e) {

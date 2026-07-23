@@ -12,6 +12,7 @@ import { createMapCanvasExposeBridge } from './map/map-canvas-expose-bridge'
 import { createMapCanvasLifecycleBinder } from './map/map-canvas-lifecycle-binder'
 import { createMapCanvasMapOptions } from './map/map-canvas-map-options'
 import { createMapCanvasModuleBundle } from './map/map-canvas-module-bundle'
+import type { MapCanvasNonWeatherLayerSyncModule } from './map/map-canvas-non-weather-layer-sync-module'
 import { createMapStagePresentationModule } from './map/map-stage-presentation-module'
 import { createMapCanvasState } from './map/map-canvas-state'
 import { createMapCanvasTeardownBinder } from './map/map-canvas-teardown-binder'
@@ -80,12 +81,10 @@ const exposeBridge = createMapCanvasExposeBridge({
 defineExpose(exposeBridge)
 
 // ─── Overlay image module (via non-weather sync module) ──────────────────────
-let overlayImageModule:
-  | ReturnType<NonNullable<typeof state.resources.nonWeatherLayerSyncModule>>['overlayImageModule']
-  | null = null
+let overlayImageModule: MapCanvasNonWeatherLayerSyncModule['overlayImageModule'] | null = null
 const overlayTimeStates = computed(() => overlayImageModule?.overlayTimeStates.value ?? [])
 const activeTimeSeriesOverlays = computed(() =>
-  overlayTimeStates.value.filter((s) => s.category === 'time-series'),
+  overlayTimeStates.value.filter((s: { category: string }) => s.category === 'time-series'),
 )
 const overlayLinkTimeEnabled = computed(() => overlayImageModule?.linkTimeEnabled.value ?? false)
 
@@ -100,7 +99,7 @@ watch(
 
 function overlayStepTime(layerId: string, delta: number) {
   if (!overlayImageModule) return
-  const state = overlayTimeStates.value.find((s) => s.layerId === layerId)
+  const state = overlayTimeStates.value.find((s: { layerId: string }) => s.layerId === layerId)
   if (!state || !state.currentTime) return
   const idx = state.timeList.indexOf(state.currentTime)
   if (idx < 0) return

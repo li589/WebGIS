@@ -17,7 +17,7 @@ const togglingIds = ref<Set<string>>(new Set())
 const savingConfigId = ref<string | null>(null)
 const savingPriorityId = ref<string | null>(null)
 const expandedId = ref<string | null>(null)
-const editingConfig = reactive<Record<string, Record<string, unknown>>>({})
+const editingConfig = reactive<Record<string, Record<string, string | number | boolean>>>({})
 const confirmResetId = ref<string | null>(null)
 
 // ── 类型显示映射 ───────────────────────────────────────────────────────────
@@ -134,7 +134,9 @@ function startEditConfig(p: WeatherProviderItem) {
   }
   expandedId.value = p.provider_id
   // 初始化编辑状态：用 current_config 作为初始值
-  editingConfig[p.provider_id] = { ...(p.persisted_config ?? p.current_config) }
+  editingConfig[p.provider_id] = {
+    ...(p.persisted_config ?? p.current_config),
+  } as Record<string, string | number | boolean>
 }
 
 function cancelEditConfig(providerId: string) {
@@ -180,7 +182,7 @@ function formatPercent(used: number | null, quota: number | null): string {
   return `${((used / quota) * 100).toFixed(1)}%`
 }
 
-function formatTime(iso: string | null): string {
+function formatTime(iso: string | null | undefined): string {
   if (!iso) return '—'
   try {
     const d = new Date(iso)
@@ -455,7 +457,7 @@ const healthyCount = computed(() => weatherProviders.value.filter((p) => p.statu
                 </select>
                 <textarea
                   v-else
-                  v-model="editingConfig[p.provider_id][field.key]"
+                  v-model="editingConfig[p.provider_id][field.key] as string"
                   class="form-textarea"
                   rows="2"
                 ></textarea>

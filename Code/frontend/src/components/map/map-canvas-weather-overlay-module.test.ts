@@ -33,8 +33,12 @@ describe('map-canvas-weather-overlay-module', () => {
     } as any)
 
     expect(createWeatherOverlayModule).toHaveBeenCalledTimes(1)
-    expect(module).toBe(createWeatherOverlayModule.mock.results[0].value)
-    const args = createWeatherOverlayModule.mock.calls[0][0]
+    expect(module).toBe(createWeatherOverlayModule.mock.results[0]?.value)
+    const args = (
+      createWeatherOverlayModule.mock.calls as unknown as Array<
+        [{ getEnabledParticleFlowCatalogId: () => string | null }]
+      >
+    )[0][0]
     expect(args.getEnabledParticleFlowCatalogId()).toBe('weather.wind')
   })
 
@@ -66,7 +70,11 @@ describe('map-canvas-weather-overlay-module', () => {
       dependencies: { createWeatherOverlayModule },
     } as any)
 
-    const args = createWeatherOverlayModule.mock.calls[0][0]
+    const args = (
+      createWeatherOverlayModule.mock.calls as unknown as Array<
+        [{ getEnabledParticleFlowCatalogId: () => string | null }]
+      >
+    )[0][0]
     // wind "off" 模式仍返回 catalogId，由粒子控制器内部处理 off → 风速底色渲染
     expect(args.getEnabledParticleFlowCatalogId()).toBe('weather.wind')
   })

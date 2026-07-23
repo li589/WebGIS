@@ -65,6 +65,44 @@ export type {
   serializedLGraph,
 }
 
+/** Runtime extensions missing from @types/litegraph.js */
+export type LGraphNodeRuntime = LGraphNodeClass & {
+  selected?: boolean
+  widgets?: unknown[]
+}
+
+export type LGraphRuntime = LGraphClass & {
+  _nodes: LGraphNodeRuntime[]
+}
+
+export type LGraphCanvasRuntime = LGraphCanvasClass & {
+  bindKey?: unknown
+}
+
+export type LiteGraphTheme = typeof LiteGraphStatic & {
+  NODE_SELECTED_TITLE_COLOR?: string
+  NODE_BOX_OUTLINE_COLOR?: string
+  LINK_WIDTH?: number
+  LINK_HOVER_COLOR?: string
+}
+
+export function getGraphNodes(graph: LGraphClass): LGraphNodeRuntime[] {
+  const nodes = (graph as unknown as { _nodes?: LGraphNodeClass[] })._nodes ?? []
+  return nodes as LGraphNodeRuntime[]
+}
+
+export function liteGraphTheme(): LiteGraphTheme {
+  return LiteGraph as LiteGraphTheme
+}
+
+export function asLGraphCanvasRuntime(canvas: LGraphCanvasClass): LGraphCanvasRuntime {
+  return canvas as LGraphCanvasRuntime
+}
+
+function slotRecord(slot: INodeInputSlot | INodeOutputSlot): Record<string, unknown> {
+  return slot as unknown as Record<string, unknown>
+}
+
 // ─── 节点类型注册 ──────────────────────────────────────────────────────────
 
 /** 已注册过的类型集合；允许后续用更新后的模板覆盖注册 */
@@ -191,7 +229,7 @@ export function registerWorkflowNodeTypes(
           this.addInput(input.name, input.type)
           const slot = this.inputs[this.inputs.length - 1]
           if (slot) {
-            const slotAny = slot as Record<string, unknown>
+            const slotAny = slotRecord(slot)
             slotAny.color = getPortColor(input.type)
             // 详细说明挂在 _help，供悬停提示框读取；不要写进 label（会挤占节点宽度）
             if (input.description) slotAny._help = input.description
@@ -203,7 +241,7 @@ export function registerWorkflowNodeTypes(
           this.addOutput(output.name, output.type)
           const slot = this.outputs[this.outputs.length - 1]
           if (slot) {
-            const slotAny = slot as Record<string, unknown>
+            const slotAny = slotRecord(slot)
             slotAny.color = getPortColor(output.type)
             if (output.description) slotAny._help = output.description
           }
@@ -413,7 +451,7 @@ export function syncGraphSlotsWithTemplates(
   }>,
 ): void {
   const byType = new Map(templates.map((t) => [t.type, t]))
-  for (const node of graph._nodes ?? []) {
+  for (const node of getGraphNodes(graph)) {
     const tpl = byType.get(node.type ?? '')
     if (!tpl) continue
 
@@ -447,7 +485,7 @@ export function syncGraphSlotsWithTemplates(
       node.addInput(input.name, input.type)
       const slot = node.inputs[node.inputs.length - 1]
       if (slot) {
-        const slotAny = slot as Record<string, unknown>
+        const slotAny = slotRecord(slot)
         slotAny.color = getPortColor(input.type)
         if (input.description) slotAny._help = input.description
         if (input.required === false) slotAny._optional = true
@@ -460,7 +498,7 @@ export function syncGraphSlotsWithTemplates(
       node.addOutput(output.name, output.type)
       const slot = node.outputs[node.outputs.length - 1]
       if (slot) {
-        const slotAny = slot as Record<string, unknown>
+        const slotAny = slotRecord(slot)
         slotAny.color = getPortColor(output.type)
         if (output.description) slotAny._help = output.description
       }
@@ -468,7 +506,7 @@ export function syncGraphSlotsWithTemplates(
     }
 
     const slotCount = Math.max(node.inputs?.length ?? 0, node.outputs?.length ?? 0)
-    const widgetCount = node.widgets?.length ?? 0
+    const widgetCount = (node as LGraphNodeRuntime).widgets?.length ?? 0
     const minHeight = 40 + slotCount * 22 + widgetCount * 20
     const curW = node.size?.[0] ?? 240
     const curH = node.size?.[1] ?? 80
@@ -507,7 +545,7 @@ export function workflowDefinitionToGraphData(def: WorkflowDefinition): serializ
     id: n.id,
     type: n.type,
     pos: n.pos,
-    // 不设置 size — 让节点构造函数根据 inputs/outputs/widgets 数量自适应计算
+    size: [220, 72] as [number, number],
     flags: {},
     mode: 0,
     inputs: (n.inputs ?? []).map((p, idx) => ({

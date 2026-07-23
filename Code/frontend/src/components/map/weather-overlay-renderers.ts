@@ -155,7 +155,7 @@ export function geojsonPointsToGridCells(
     })
   }
 
-  return { type: 'FeatureCollection', features }
+  return { type: 'FeatureCollection', features } as FieldFeatureCollection | WindGeoJSON
 }
 
 /** 连续色场用 GeoJSON：多边形原样；点阵转成网格单元 */

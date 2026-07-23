@@ -276,8 +276,6 @@ export class WindParticleWebGLLayer {
   private particleSystemReady = false
   private particleResetAll = true
   private frameSeed = 0
-  /** 最近一次上传的风场编码 */
-  private lastEncodedWind: EncodedWindTexture | null = null
   private matrixMissFrames = 0
   private matrixReadyLogged = false
 
@@ -568,7 +566,6 @@ export class WindParticleWebGLLayer {
     if (!geojson) {
       this.hasWindData = false
       this.pendingWindTexture = null
-      this.lastEncodedWind = null
       return
     }
     const grid = buildWindGridFromGeoJSON(geojson)
@@ -615,7 +612,6 @@ export class WindParticleWebGLLayer {
     this.pendingWindTexture = encoded
     this.windBounds = newBounds
     this.hasWindData = true
-    this.lastEncodedWind = encoded
   }
 
   /** 更新调色板：构建 256×1 LUT（上传延迟到 drawFrame，确保 GL 就绪） */
@@ -1231,7 +1227,6 @@ export class WindParticleWebGLLayer {
     this.hasMatrix = false
     this.hasWindData = false
     this.pendingWindTexture = null
-    this.lastEncodedWind = null
     this.windBounds = null
     this.matrixMissFrames = 0
     this.matrixReadyLogged = false

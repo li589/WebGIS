@@ -157,7 +157,9 @@ export const useSettingsStore = defineStore('settings', () => {
           retryMap.set(item.name, await loader())
         }),
       )
-      results = results.map((r) => retryMap.get(r.name) ?? r)
+      results = results.map((r) => retryMap.get(r.name) ?? r) as Awaited<
+        ReturnType<typeof runBatch>
+      >
     }
 
     for (const r of results) {
@@ -414,6 +416,12 @@ export const useSettingsStore = defineStore('settings', () => {
     return updated
   }
 
+  /** 重新拉取天气引擎公开配置（含 effective cache_ttl_seconds） */
+  async function reloadWeatherConfig() {
+    weatherConfig.value = await fetchWeatherConfig()
+    return weatherConfig.value
+  }
+
   async function saveRuntimeConfig(patch: RuntimeConfigPatch | RuntimeConfigPatch[]) {
     const items = Array.isArray(patch) ? patch : [patch]
     const updated = await updateRuntimeConfig(items)
@@ -460,6 +468,7 @@ export const useSettingsStore = defineStore('settings', () => {
     updateWeatherProviderPriority,
     removeWeatherProvider,
     saveWeatherDefaultModel,
+    reloadWeatherConfig,
     saveRuntimeConfig,
     loadRemoteStorageProfiles,
     saveRemoteStorageProfile,

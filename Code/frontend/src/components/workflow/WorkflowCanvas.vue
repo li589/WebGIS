@@ -25,6 +25,9 @@ import {
   syncGraphSlotsWithTemplates,
   getPortColor,
   suggestConnectorsForPortType,
+  getGraphNodes,
+  liteGraphTheme,
+  asLGraphCanvasRuntime,
 } from './litegraph-setup'
 import type {
   LGraphClass,
@@ -78,8 +81,6 @@ const alignmentGuides = ref<AlignmentGuide[]>([])
 const SNAP_GRID_SIZE = 20
 /** 边缘对齐吸附阈值（graph 坐标） */
 const ALIGN_SNAP_THRESHOLD = 8
-/** 拖动过程中是否正在吸附（避免重复 emit） */
-let _dragSnapActive = false
 
 /** 连接点悬停提示 */
 const portTooltip = ref<{
@@ -322,6 +323,7 @@ function configureCanvas(canvas: LGraphCanvasClass) {
 
   // 主题色适配深色 UI
   if (LiteGraph) {
+    const lg = liteGraphTheme()
     // 节点默认颜色
     LiteGraph.NODE_DEFAULT_COLOR = '#1a2740'
     LiteGraph.NODE_DEFAULT_BGCOLOR = '#0f1828'
@@ -329,8 +331,8 @@ function configureCanvas(canvas: LGraphCanvasClass) {
     LiteGraph.NODE_DEFAULT_SHAPE = 'round'
     LiteGraph.NODE_TITLE_COLOR = '#d8e6f5'
     LiteGraph.NODE_TEXT_COLOR = '#c4d6e8'
-    LiteGraph.NODE_SELECTED_TITLE_COLOR = '#ffb84d'
-    LiteGraph.NODE_BOX_OUTLINE_COLOR = '#5ad5ff'
+    lg.NODE_SELECTED_TITLE_COLOR = '#ffb84d'
+    lg.NODE_BOX_OUTLINE_COLOR = '#5ad5ff'
     // 连线颜色 — 不同数据类型不同颜色
     LiteGraph.LINK_COLOR = '#5ad5ff' // 默认（青色）
     LiteGraph.CONNECTING_LINK_COLOR = '#ffb84d' // 正在连接（橙色）
@@ -340,9 +342,9 @@ function configureCanvas(canvas: LGraphCanvasClass) {
     LiteGraph.NODE_SLOT_HEIGHT = 20
     LiteGraph.NODE_WIDGET_HEIGHT = 20
     // 连线宽度
-    LiteGraph.LINK_WIDTH = 2.2
+    lg.LINK_WIDTH = 2.2
     // 鼠标悬停连接线时的高亮颜色（降级方案：依赖 LiteGraph 内置 hover 绘制）
-    LiteGraph.LINK_HOVER_COLOR = '#ffd38a'
+    lg.LINK_HOVER_COLOR = '#ffd38a'
   }
 
   // 选区回调
@@ -353,9 +355,9 @@ function configureCanvas(canvas: LGraphCanvasClass) {
   }
 
   const origOnNodeDeselected = canvas.onNodeDeselected?.bind(canvas)
-  canvas.onNodeDeselected = () => {
+  canvas.onNodeDeselected = (node: LGraphNodeClass) => {
     emit('nodeSelect', null)
-    if (origOnNodeDeselected) origOnNodeDeselected()
+    if (origOnNodeDeselected) origOnNodeDeselected(node)
   }
 
   // 图变更后通知父组件
@@ -390,7 +392,6 @@ function configureCanvas(canvas: LGraphCanvasClass) {
       const result = origProcessMouseMove(e)
       const dragged = canvasAny.node_dragged
       if (dragged && !props.readonly) {
-        _dragSnapActive = true
         applySnapWhileDragging(dragged, canvasAny.selected_nodes ?? { [dragged.id]: dragged })
         computeAlignmentGuides(dragged)
         canvas.setDirty(true, true)
@@ -418,7 +419,7 @@ function configureCanvas(canvas: LGraphCanvasClass) {
       }
       updatePortTooltipFromEvent(e, canvasInstance.value)
     }
-    tipHost.addEventListener('mousemove', _portMousemoveHandlerRef, {
+    tipHost.addEventListener('mousemove', _portMousemoveHandlerRef as EventListener, {
       passive: true,
       capture: true,
     })
@@ -431,7 +432,6 @@ function configureCanvas(canvas: LGraphCanvasClass) {
     applySnapWhileDragging(node, canvasAny.selected_nodes ?? { [node.id]: node }, true)
     alignmentGuides.value = []
     emitChange()
-    _dragSnapActive = false
     if (origOnNodeMoved) origOnNodeMoved(node)
   }
 
@@ -517,7 +517,6 @@ function configureCanvas(canvas: LGraphCanvasClass) {
   // 松手即清除辅助线（仅拖动过程中显示）
   if (canvasRef.value) {
     _mouseupHandlerRef = () => {
-      _dragSnapActive = false
       if (alignmentGuides.value.length) {
         alignmentGuides.value = []
         canvas.setDirty(true, true)
@@ -529,7 +528,7 @@ function configureCanvas(canvas: LGraphCanvasClass) {
 
   // 键盘快捷键：Delete 删除 + Ctrl+A/C/V/D 编辑快捷键 + Escape 取消选中
   if (!props.readonly) {
-    canvas.bindKey = undefined // 不覆盖 LiteGraph 默认绑定
+    asLGraphCanvasRuntime(canvas).bindKey = undefined // 不覆盖 LiteGraph 默认绑定
     const canvasEl = canvasRef.value
     if (canvasEl) {
       const keydownHandler = (e: KeyboardEvent) => {
@@ -564,7 +563,7 @@ function configureCanvas(canvas: LGraphCanvasClass) {
           clearAlignmentGuides(canvas)
           hidePortTooltip()
           if (graphInstance.value) {
-            for (const n of graphInstance.value._nodes) {
+            for (const n of getGraphNodes(graphInstance.value)) {
               n.selected = false
             }
             canvas.setDirty(true, true)
@@ -770,7 +769,7 @@ function drawMinimap() {
   ctx.fillStyle = 'rgba(8, 15, 28, 0.6)'
   ctx.fillRect(0, 0, W, H)
 
-  const nodes = graph._nodes
+  const nodes = getGraphNodes(graph)
   if (nodes.length === 0) return
 
   // 计算所有节点的边界框
@@ -887,7 +886,7 @@ function syncMinimapToViewport(e: MouseEvent) {
   const py = e.clientY - rect.top
 
   // 反推 graph 坐标（与 drawMinimap 中的计算对应）
-  const nodes = graph._nodes
+  const nodes = getGraphNodes(graph)
   if (nodes.length === 0) return
   let minX = Infinity,
     minY = Infinity,
@@ -984,14 +983,16 @@ function updatePortTooltipFromEvent(e: MouseEvent, canvas: LGraphCanvasClass) {
   const scale = Math.max(ds?.scale ?? 1, 0.35)
   // 连接点常在节点外缘，不能先 getNodeOnPos；扫描全部节点的 slot
   const hit = 22 / scale
-  let best: {
-    node: LGraphNodeClass
-    direction: 'input' | 'output'
-    slotIndex: number
-    dist: number
-  } | null = null
+  const hitState: {
+    best: {
+      node: LGraphNodeClass
+      direction: 'input' | 'output'
+      slotIndex: number
+      dist: number
+    } | null
+  } = { best: null }
 
-  for (const node of graphInstance.value._nodes ?? []) {
+  for (const node of getGraphNodes(graphInstance.value)) {
     const probe = (isInput: boolean, count: number) => {
       for (let i = 0; i < count; i++) {
         const out = new Float32Array(2)
@@ -1006,8 +1007,8 @@ function updatePortTooltipFromEvent(e: MouseEvent, canvas: LGraphCanvasClass) {
         ).getConnectionPos?.(isInput, i, out)
         if (!pos) continue
         const dist = Math.hypot(graphPos.x - pos[0], graphPos.y - pos[1])
-        if (dist <= hit && (!best || dist < best.dist)) {
-          best = {
+        if (dist <= hit && (!hitState.best || dist < hitState.best.dist)) {
+          hitState.best = {
             node,
             direction: isInput ? 'input' : 'output',
             slotIndex: i,
@@ -1020,19 +1021,19 @@ function updatePortTooltipFromEvent(e: MouseEvent, canvas: LGraphCanvasClass) {
     probe(false, node.outputs?.length ?? 0)
   }
 
-  if (!best) {
+  if (!hitState.best) {
     hidePortTooltip()
     return
   }
 
-  const { node, direction, slotIndex } = best
+  const { node, direction, slotIndex } = hitState.best
   const slot = direction === 'input' ? node.inputs?.[slotIndex] : node.outputs?.[slotIndex]
   if (!slot) {
     hidePortTooltip()
     return
   }
 
-  const slotAny = slot as Record<string, unknown>
+  const slotAny = slot as unknown as Record<string, unknown>
   const portType = String(slot.type ?? '')
   const key = `${node.id}:${direction}:${slotIndex}`
   // Teleport 到 body 时用 client 坐标做 fixed 定位
@@ -1116,7 +1117,9 @@ function applySnapWhileDragging(
   const movers = selected.length > 0 ? selected : [draggedNode]
   const primary = draggedNode
   const pb = nodeBounds(primary)
-  const others = graphInstance.value._nodes.filter((n) => !movers.some((m) => m.id === n.id))
+  const others = getGraphNodes(graphInstance.value).filter(
+    (n) => !movers.some((m) => m.id === n.id),
+  )
 
   let bestDx: number | null = null
   let bestDy: number | null = null
@@ -1174,7 +1177,7 @@ function applySnapWhileDragging(
 function computeAlignmentGuides(draggedNode: LGraphNodeClass) {
   if (!graphInstance.value) return
   const guides: AlignmentGuide[] = []
-  const others = graphInstance.value._nodes.filter((n) => n.id !== draggedNode.id)
+  const others = getGraphNodes(graphInstance.value).filter((n) => n.id !== draggedNode.id)
   const threshold = ALIGN_SNAP_THRESHOLD
   const db = nodeBounds(draggedNode)
   const pad = 24
@@ -1223,7 +1226,7 @@ function computeAlignmentGuides(draggedNode: LGraphNodeClass) {
 
 function selectAllNodes() {
   if (!graphInstance.value) return
-  for (const n of graphInstance.value._nodes) {
+  for (const n of getGraphNodes(graphInstance.value)) {
     n.selected = true
   }
   canvasInstance.value?.setDirty(true, true)
@@ -1231,7 +1234,7 @@ function selectAllNodes() {
 
 function copySelectedNodes() {
   if (!graphInstance.value) return
-  _clipboard = graphInstance.value._nodes
+  _clipboard = getGraphNodes(graphInstance.value)
     .filter((n) => n.selected)
     .map((n) => ({
       type: n.type ?? '',
@@ -1260,7 +1263,7 @@ function pasteNodes() {
 
 function duplicateSelectedNodes() {
   if (!graphInstance.value) return
-  const selected = graphInstance.value._nodes.filter((n) => n.selected)
+  const selected = getGraphNodes(graphInstance.value).filter((n) => n.selected)
   for (const n of selected) {
     try {
       if (!LiteGraph) continue
@@ -1413,7 +1416,7 @@ function arrangeNodes() {
 function fitView() {
   if (!canvasInstance.value || !graphInstance.value) return
   const canvas = canvasInstance.value
-  const nodes = graphInstance.value._nodes
+  const nodes = getGraphNodes(graphInstance.value)
   if (!nodes || nodes.length === 0) return
 
   // 计算所有节点的边界框
@@ -1477,7 +1480,7 @@ function addNodeByType(nodeType: string, pos?: [number, number]): LGraphNodeClas
           const cx = (rect.width / 2 - ds.offset[0]) / ds.scale
           const cy = (rect.height / 2 - ds.offset[1]) / ds.scale
           // 叠加偏移避免新节点完全重叠
-          const offset = graphInstance.value._nodes?.length ?? 0
+          const offset = getGraphNodes(graphInstance.value).length ?? 0
           node.pos = [cx + (offset % 5) * 30, cy + (offset % 5) * 30]
         } else {
           node.pos = [200, 200]
@@ -1639,7 +1642,7 @@ onBeforeUnmount(() => {
   const tipHost = canvasContainerRef.value ?? canvasEl
   if (tipHost) {
     if (_portMousemoveHandlerRef) {
-      tipHost.removeEventListener('mousemove', _portMousemoveHandlerRef, true)
+      tipHost.removeEventListener('mousemove', _portMousemoveHandlerRef as EventListener, true)
       _portMousemoveHandlerRef = null
     }
     tipHost.removeEventListener('mouseleave', hidePortTooltip)

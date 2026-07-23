@@ -16,7 +16,7 @@ import { resolveApiUrl } from './runtime-api'
 export type IntegrationDomain = 'basemap' | 'data-source' | 'gee' | 'credential' | 'certificate'
 export type IntegrationEnv = 'local' | 'dev' | 'staging' | 'prod'
 export type AuthMode = 'none' | 'api-key' | 'bearer' | 'service-account' | 'certificate'
-export type SecretBackend = 'env' | 'vault' | 'backend-runtime' | 'manual'
+export type SecretBackend = 'env' | 'vault' | 'backend-runtime' | 'manual' | 'config-api-keys'
 export type BasemapStyle = 'none' | 'street' | 'satellite' | 'dark' | 'terrain'
 export type TileSourceId =
   | 'none'

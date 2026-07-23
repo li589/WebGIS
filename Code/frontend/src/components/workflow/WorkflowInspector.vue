@@ -61,8 +61,9 @@ const nodeOutputs = computed<INodeOutputSlot[]>(() => props.selectedNode?.output
 
 // 从节点模板中查找当前节点的描述和参数信息
 const nodeTemplate = computed(() => {
-  if (!props.selectedNode?.type) return null
-  return store.nodeTemplates.find((t) => t.type === props.selectedNode.type) ?? null
+  const nodeType = props.selectedNode?.type
+  if (!nodeType) return null
+  return store.nodeTemplates.find((t) => t.type === nodeType) ?? null
 })
 
 const nodeDescription = computed(() => nodeTemplate.value?.description ?? '')

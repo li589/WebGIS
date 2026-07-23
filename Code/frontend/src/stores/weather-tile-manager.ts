@@ -2,17 +2,17 @@
  * 天气瓦片调度管理器。
  *
  * 职责：
- * - 按图层维护瓦片缓存、视口、世代号。
+ * - 按图层维护瓦片缓存（fetchedAt/lastAccess + TTL SWR）、视口、世代号。
  * - 全局并发槽位（上限 4），与后端 WeatherTileService semaphore 对齐。
- * - 图层内优先级队列：视口瓦片 priority=0，BFS 外扩预取 priority=1。
- * - 移动/缩放时 generation++，丢弃过期结果并取消不在新视口内的请求。
+ * - 图层内优先级：0=视口@H → 1=邻域 depth3/父级@H → 2=子级 z+1@H → 3=视口@H±1。
+ * - 移动/缩放时 generation++，丢弃过期结果并取消不在目标集合内的请求。
  * - 每个瓦片通过 GET /weather/tiles 拉取 GeoJSON（服务端缓存/生成）。
  */
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
 
-import type { BoundingBox } from '../services/runtime-api'
 import { useLogStore } from './log'
+import { useSettingsStore } from './settings'
 import {
   buildTileKey,
   fetchWeatherTile,
@@ -37,12 +37,27 @@ import {
   getWeatherTileMaxConcurrent,
   recordWeatherTileFailure,
   recordWeatherTileSuccess,
+  resetWeatherTileConcurrencyForTests,
   setWeatherTileConcurrencyDebugLog,
 } from './weather-tile-concurrency'
 import { trimWeatherLayerTileCache } from './weather-tile-cache-trim'
 
-/** 视口外扩预取圈数：1→2，减少平移时「风场只显示一块」的空洞感 */
-const PREFETCH_NEIGHBOR_DEPTH = 2
+/** 视口外扩预取圈数：同级邻居提前缓存，减少平移空洞 */
+const PREFETCH_NEIGHBOR_DEPTH = 3
+/** 邻小时预取优先级（仅 viewport，不扩环） */
+const ADJACENT_HOUR_PRIORITY = 3
+/** 预报 hour 合法范围（与后端 Query ge=0,le=47 对齐） */
+const HOUR_MIN = 0
+const HOUR_MAX = 47
+/** 默认与后端 weather_cache_ttl_seconds 一致 */
+const DEFAULT_TILE_TTL_MS = 3600_000
+
+/** 单瓦片缓存条目：SWR 用 fetchedAt，LRU trim 用 lastAccess */
+export interface CachedTileEntry {
+  geojson: WindGeoJSON
+  fetchedAt: number
+  lastAccess: number
+}
 /** 单视口瓦片上限；超出则降 tile z，避免亚洲–太平洋宽视野瞬间打爆上游 */
 const MAX_VIEWPORT_TILES = 36
 /** dataVersion 短窗合并，避免每到一块瓦片就全量重算 */
@@ -137,7 +152,7 @@ interface LayerState {
   bbox: LngLatBounds | null
   viewportTiles: WeatherTileCoords[]
   prefetchRing: WeatherTileCoords[]
-  tiles: Map<string, WindGeoJSON>
+  tiles: Map<string, CachedTileEntry>
   pending: Map<string, TileRequest>
   /** 最近一次成功合并的 GeoJSON；视口换小时/缩放时暂无可匹配瓦片则沿用，避免闪空 */
   lastMergedGeojson: WindGeoJSON | null
@@ -217,6 +232,18 @@ const pendingRetryTimers = new Set<ReturnType<typeof setTimeout>>()
 const softRequeueCounts = new Map<string, number>()
 /** 图层级视口补洞定时器（layerId → timer） */
 const gapSweepTimers = new Map<string, ReturnType<typeof setTimeout>>()
+
+/** 单测：重置模块级并发/定时器状态（多文件并行时避免串扰） */
+export function __testResetWeatherTileManagerModuleState(): void {
+  globalSequence = 0
+  activeFetchCount = 0
+  for (const timer of pendingRetryTimers) clearTimeout(timer)
+  pendingRetryTimers.clear()
+  softRequeueCounts.clear()
+  for (const timer of gapSweepTimers.values()) clearTimeout(timer)
+  gapSweepTimers.clear()
+  resetWeatherTileConcurrencyForTests()
+}
 
 function parseTileCoordsFromCacheKey(cacheKey: string): WeatherTileCoords | null {
   const zMatch = /:z(\d+):/.exec(cacheKey)
@@ -312,6 +339,31 @@ function tileCoordsToKey(
   provider = 'auto',
 ): string {
   return buildTileKey(layerId, coords.z, coords.x, coords.y, hour, model, provider)
+}
+
+function getWeatherTileTtlMs(): number {
+  try {
+    const ttlSec = useSettingsStore().weatherConfig?.cache_ttl_seconds
+    if (typeof ttlSec === 'number' && Number.isFinite(ttlSec) && ttlSec > 0) {
+      return Math.floor(ttlSec * 1000)
+    }
+  } catch {
+    // Pinia 未就绪（单测早期）时回退默认
+  }
+  return DEFAULT_TILE_TTL_MS
+}
+
+function isTileFresh(entry: CachedTileEntry, now = Date.now()): boolean {
+  return now - entry.fetchedAt < getWeatherTileTtlMs()
+}
+
+function touchTileEntry(entry: CachedTileEntry, now = Date.now()): WindGeoJSON {
+  entry.lastAccess = now
+  return entry.geojson
+}
+
+function makeTileEntry(geojson: WindGeoJSON, now = Date.now()): CachedTileEntry {
+  return { geojson, fetchedAt: now, lastAccess: now }
 }
 
 /**
@@ -476,12 +528,14 @@ export const useWeatherTileManager = defineStore('weatherTileManager', () => {
     let missingAfter = 0
     for (const tile of state.viewportTiles) {
       const cacheKey = tileCoordsToKey(tile, layerId, state.hour, state.model, state.provider)
-      if (state.tiles.has(cacheKey)) continue
-      missingAfter += 1
+      const cached = state.tiles.get(cacheKey)
+      if (cached && isTileFresh(cached)) continue
+      if (!cached) missingAfter += 1
       if (state.pending.has(cacheKey)) continue
-      // 重置 soft 计数，允许再走一轮快路径重试
+      // 重置 soft 计数，允许再走一轮快路径重试；stale 走 priority≥1 SWR
       softRequeueCounts.delete(cacheKey)
-      if (enqueueIfMissing(state, tile, 0, generation)) enqueuedAny = true
+      const priority = cached ? 1 : 0
+      if (enqueueIfMissing(state, tile, priority, generation)) enqueuedAny = true
     }
 
     if (enqueuedAny) {
@@ -700,7 +754,7 @@ export const useWeatherTileManager = defineStore('weatherTileManager', () => {
     zoom: number,
     hour: number,
     model?: string,
-    bbox?: BoundingBox | null,
+    bbox?: { west: number; south: number; east: number; north: number } | null,
     provider?: string,
   ): void {
     const state = getOrCreateState(layerId)
@@ -855,6 +909,13 @@ export const useWeatherTileManager = defineStore('weatherTileManager', () => {
         tileCoordsToKey(t, layerId, hour, resolvedModel, resolvedProvider),
       ),
     )
+    // 邻小时视口预取 keys 也纳入 desired，避免平移后旧邻小时请求占坑
+    for (const adjHour of [hour - 1, hour + 1]) {
+      if (adjHour < HOUR_MIN || adjHour > HOUR_MAX) continue
+      for (const t of viewportTiles) {
+        desiredKeys.add(tileCoordsToKey(t, layerId, adjHour, resolvedModel, resolvedProvider))
+      }
+    }
 
     // 瓦片仍在目标集合内：抬世代，并清退避，避免「等待重试」卡死新视口缺口
     for (const [key, request] of state.pending.entries()) {
@@ -879,7 +940,7 @@ export const useWeatherTileManager = defineStore('weatherTileManager', () => {
     }
 
     // 限流/断路期间跳过预取，优先填满视口，避免把 API 槽位打满导致持续超时
-    // 优先级：视口=0 → 邻域/父级=1 → child z+1=2（压力大时不入队）
+    // 优先级：视口=0 → 邻域/父级=1 → child z+1=2 → 邻小时视口=3
     if (!anyLayerUnderWeatherPressure()) {
       for (const tile of prefetchRing) {
         if (enqueueIfMissing(state, tile, 1, generation)) enqueuedAny = true
@@ -890,6 +951,14 @@ export const useWeatherTileManager = defineStore('weatherTileManager', () => {
       if (!shouldPauseChildPrefetch()) {
         for (const tile of childPrefetch) {
           if (enqueueIfMissing(state, tile, 2, generation)) enqueuedAny = true
+        }
+      }
+      for (const adjHour of [hour - 1, hour + 1]) {
+        if (adjHour < HOUR_MIN || adjHour > HOUR_MAX) continue
+        for (const tile of viewportTiles) {
+          if (enqueueIfMissing(state, tile, ADJACENT_HOUR_PRIORITY, generation, adjHour)) {
+            enqueuedAny = true
+          }
         }
       }
     }
@@ -934,24 +1003,34 @@ export const useWeatherTileManager = defineStore('weatherTileManager', () => {
   }
 
   /**
-   * 为缺失瓦片入队一个请求。
-   * 返回 true 表示新建了请求；false 表示瓦片已缓存或已在 pending 中（无变化）。
-   * 注意：本函数不再直接递增 activityVersion，由调用方在批量入队后统一递增一次，
-   * 避免在紧密循环中触发多次响应式更新（响应式风暴）。
+   * 为缺失或过期瓦片入队。
+   * - fresh 缓存：跳过
+   * - stale 缓存：SWR，以 priority≥1 后台重拉（避免指示器一直「运行中」）
+   * - hourOverride：邻小时预取
+   * 返回 true 表示新建了请求。
    */
   function enqueueIfMissing(
     state: LayerState,
     tile: WeatherTileCoords,
     priority: number,
     generation: number,
+    hourOverride?: number,
   ): boolean {
     // 无数据图层短路：一个 422 即说明当前 model/provider 缺该变量，不再入队
     if (isLayerDataEmpty(state)) return false
-    const key = tileCoordsToKey(tile, state.layerId, state.hour, state.model, state.provider)
-    if (state.tiles.has(key) || state.pending.has(key)) return false
+    const hour = hourOverride ?? state.hour
+    const key = tileCoordsToKey(tile, state.layerId, hour, state.model, state.provider)
+    const existing = state.tiles.get(key)
+    if (existing) {
+      existing.lastAccess = Date.now()
+      if (isTileFresh(existing)) return false
+      // SWR：过期条目仍可渲染，后台以低优先级刷新
+      priority = Math.max(priority, 1)
+    }
+    if (state.pending.has(key)) return false
     const controller = new AbortController()
     const request: TileRequest = {
-      key: { layerId: state.layerId, z: tile.z, x: tile.x, y: tile.y, hour: state.hour },
+      key: { layerId: state.layerId, z: tile.z, x: tile.x, y: tile.y, hour },
       layerId: state.layerId,
       priority,
       generation,
@@ -990,8 +1069,8 @@ export const useWeatherTileManager = defineStore('weatherTileManager', () => {
         if (request.retryAfter && now < request.retryAfter) continue
         // 压力期只拉视口瓦片（priority=0）
         if (pausePrefetch && request.priority > 0) continue
-        // pending 高时暂停 child z+1（priority≥2）
-        if (pauseChild && request.priority >= 2) continue
+        // pending 高时仅暂停 child z+1（priority===2），邻小时 priority=3 仍可在视口填满后调度
+        if (pauseChild && request.priority === 2) continue
         if (!best) {
           best = request
           continue
@@ -1065,7 +1144,7 @@ export const useWeatherTileManager = defineStore('weatherTileManager', () => {
         return
       }
 
-      finalState.tiles.set(cacheKey, geojson)
+      finalState.tiles.set(cacheKey, makeTileEntry(geojson))
       softRequeueCounts.delete(cacheKey)
       trimLayerCache(finalState)
       clearLayerError(layerId)
@@ -1085,7 +1164,7 @@ export const useWeatherTileManager = defineStore('weatherTileManager', () => {
       }
 
       const cachedTiles: MergedWeatherTile[] = Array.from(finalState.tiles.entries()).map(
-        ([k, tileGeojson]) => {
+        ([k, entry]) => {
           const zMatch = /:z(\d+):/.exec(k)
           const xMatch = /:x(\d+):/.exec(k)
           const yMatch = /:y(\d+):/.exec(k)
@@ -1095,7 +1174,7 @@ export const useWeatherTileManager = defineStore('weatherTileManager', () => {
             x: Number(xMatch?.[1] ?? key.x),
             y: Number(yMatch?.[1] ?? key.y),
             hour: key.hour,
-            geojson: tileGeojson,
+            geojson: entry.geojson,
           }
         },
       )
@@ -1265,14 +1344,14 @@ export const useWeatherTileManager = defineStore('weatherTileManager', () => {
     }
   }
 
-  /** 限流/断路耗尽后，过一会再把仍缺的视口瓦片拉回队列（避免永久空洞） */
+  /** 限流/断路耗尽后，过一会再把仍缺的瓦片拉回队列（避免永久空洞） */
   function scheduleSoftRequeue(layerId: string, key: TileKey, generation: number) {
     const state = layerStates.get(layerId)
     const countKey = state
       ? tileCoordsToKey(
           { z: key.z, x: key.x, y: key.y },
           layerId,
-          state.hour,
+          key.hour,
           state.model,
           state.provider,
         )
@@ -1283,6 +1362,7 @@ export const useWeatherTileManager = defineStore('weatherTileManager', () => {
         'softRequeue skipped (cap)',
         layerId,
         `z=${key.z} x=${key.x} y=${key.y}`,
+        `h=${key.hour}`,
         `count=${prev}`,
       )
       return
@@ -1293,10 +1373,18 @@ export const useWeatherTileManager = defineStore('weatherTileManager', () => {
       const current = layerStates.get(layerId)
       if (!current || !current.visible || current.generation !== generation) return
       const tile = { z: key.z, x: key.x, y: key.y }
-      const cacheKey = tileCoordsToKey(tile, layerId, current.hour, current.model, current.provider)
+      const cacheKey = tileCoordsToKey(tile, layerId, key.hour, current.model, current.provider)
       if (current.tiles.has(cacheKey) || current.pending.has(cacheKey)) return
-      debugLog('softRequeue', layerId, `z=${key.z} x=${key.x} y=${key.y}`, `attempt=${prev + 1}`)
-      if (enqueueIfMissing(current, tile, 0, generation)) {
+      debugLog(
+        'softRequeue',
+        layerId,
+        `z=${key.z} x=${key.x} y=${key.y}`,
+        `h=${key.hour}`,
+        `attempt=${prev + 1}`,
+      )
+      // 邻小时失败重试保持低优先级，避免挤占标题栏「运行中」计数
+      const priority = key.hour === current.hour ? 0 : ADJACENT_HOUR_PRIORITY
+      if (enqueueIfMissing(current, tile, priority, generation, key.hour)) {
         activityVersion.value += 1
         drainQueue()
       }
@@ -1383,8 +1471,9 @@ export const useWeatherTileManager = defineStore('weatherTileManager', () => {
     const hitTiles: WeatherTileCoords[] = []
     for (const tile of viewportTiles) {
       const key = tileCoordsToKey(tile, layerId, state.hour, state.model, state.provider)
-      const raw = state.tiles.get(key)
-      if (!raw) continue
+      const entry = state.tiles.get(key)
+      if (!entry) continue
+      const raw = touchTileEntry(entry)
       const tileBounds = tileToLngLatBounds(tile.z, tile.x, tile.y)
       const geojson = filterGeojsonInsideTileBounds(raw, tileBounds, {
         includeEast: tile.x >= nAtZoom - 1,
@@ -1425,8 +1514,9 @@ export const useWeatherTileManager = defineStore('weatherTileManager', () => {
       const parentTiles = tilesInBounds(bounds, parentZ, 0)
       for (const tile of parentTiles) {
         const key = tileCoordsToKey(tile, layerId, state.hour, state.model, state.provider)
-        const raw = state.tiles.get(key)
-        if (!raw) continue
+        const entry = state.tiles.get(key)
+        if (!entry) continue
+        const raw = touchTileEntry(entry)
         const tileBounds = tileToLngLatBounds(tile.z, tile.x, tile.y)
         const clippedToParent = filterGeojsonInsideTileBounds(raw, tileBounds, {
           includeEast: tile.x >= nParent - 1,
@@ -1450,7 +1540,7 @@ export const useWeatherTileManager = defineStore('weatherTileManager', () => {
 
       // 邻近 z 缓存垫底（尤其 zoom-out 后仍保留的更高 z 瓦片）
       const nearby: Array<{ z: number; x: number; y: number; raw: WindGeoJSON; dz: number }> = []
-      for (const [cacheKey, raw] of state.tiles.entries()) {
+      for (const [cacheKey, entry] of state.tiles.entries()) {
         if (!cacheKey.startsWith(`${layerId}:`)) continue
         const coords = parseTileCoordsFromCacheKey(cacheKey)
         if (!coords) continue
@@ -1462,7 +1552,7 @@ export const useWeatherTileManager = defineStore('weatherTileManager', () => {
         if (!cacheKey.includes(`:h${state.hour}`)) continue
         const tileBounds = tileToLngLatBounds(z, x, y)
         if (!tileBoundsOverlapViewport(tileBounds, bounds)) continue
-        nearby.push({ z, x, y, raw, dz })
+        nearby.push({ z, x, y, raw: touchTileEntry(entry), dz })
       }
       nearby.sort((a, b) => a.dz - b.dz || a.z - b.z)
       for (const c of nearby) {
@@ -1754,10 +1844,8 @@ export const useWeatherTileManager = defineStore('weatherTileManager', () => {
         errorType: statusInfo.errorType,
       })
       if (mapped === 'running') counts.running += 1
-      else if (mapped === 'queued') counts.queued += 1
       else if (mapped === 'retry_pending') counts.retryPending += 1
       else if (mapped === 'failed') counts.failed += 1
-      else if (mapped === 'cancelled') counts.cancelled += 1
       else if (mapped === 'succeeded') counts.succeeded += 1
     }
 
@@ -1788,6 +1876,48 @@ export const useWeatherTileManager = defineStore('weatherTileManager', () => {
     activityVersion.value += 1
   }
 
+  /**
+   * 清空全部图层瓦片/合并缓存（保留可见状态与视口）。
+   * 用于设置页改 TTL、清理数据缓存后与后端真相对齐。
+   */
+  function invalidateAllTileCaches(): void {
+    for (const state of layerStates.values()) {
+      for (const request of state.pending.values()) {
+        cancelPendingRequest(request)
+      }
+      state.pending.clear()
+      state.tiles.clear()
+      state.lastMergedGeojson = null
+      state.lastMergedFeatureCount = 0
+      state.generation += 1
+      // 清空视口快照，避免随后 setViewport 走 noop 早退而不重新入队
+      state.viewportTiles = []
+      state.prefetchRing = []
+    }
+    mergeCache.clear()
+    softRequeueCounts.clear()
+    for (const layerId of Array.from(gapSweepTimers.keys())) {
+      clearGapSweep(layerId)
+    }
+    dataVersion.value += 1
+    statusVersion.value += 1
+    activityVersion.value += 1
+    // 对仍可见图层按当前视口重新调度
+    for (const [layerId, state] of layerStates.entries()) {
+      if (!state.visible) continue
+      setViewport(
+        layerId,
+        state.center,
+        state.mapZoom || state.zoom,
+        state.hour,
+        state.model,
+        state.bbox ?? undefined,
+        state.provider,
+      )
+    }
+    debugLog('invalidateAllTileCaches')
+  }
+
   /** 获取当前自适应并发信息，供 UI 监控显示 */
   function getConcurrencyInfo(): { active: number; max: number } {
     return { active: activeFetchCount, max: getWeatherTileMaxConcurrent() }
@@ -1808,6 +1938,7 @@ export const useWeatherTileManager = defineStore('weatherTileManager', () => {
     getGlobalActiveTileCount,
     deriveWeatherWorkflowContribution,
     retryLayerTiles,
+    invalidateAllTileCaches,
     getConcurrencyInfo,
     /** 单测：立刻跑一轮视口补洞（绕过 GAP_SWEEP_MS 等待） */
     __testRunGapSweepNow: runGapSweep,

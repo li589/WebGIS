@@ -46,7 +46,6 @@ export class WindParticleWebGLOverlayController implements WindParticleControlle
   private canvasFallback: WindParticleOverlayController | null = null
   /** 回退原因：gl 失败需常驻；streamline 可切回 WebGL particle */
   private fallbackReason: 'gl-failure' | 'streamline' | null = null
-  private lastDisplayMode: import('./wind-display-mode').WindDisplayMode = 'particle'
 
   constructor(map: MapInstance) {
     this.map = map
@@ -243,7 +242,6 @@ export class WindParticleWebGLOverlayController implements WindParticleControlle
 
   async sync(overlayState: WeatherOverlayState, options: WindParticleSyncOptions) {
     const displayMode = options.getWindDisplayMode?.() ?? 'particle'
-    this.lastDisplayMode = displayMode
 
     if (displayMode === 'off' || displayMode === 'streamline') {
       // 关闭（仅色底）与流量场均走 Canvas 控制器

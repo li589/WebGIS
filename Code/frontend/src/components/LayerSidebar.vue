@@ -5,7 +5,7 @@ import { storeToRefs } from 'pinia'
 import { useLayersStore } from '../stores/layers'
 import { useUiStore } from '../stores/ui'
 import { useLogStore } from '../stores/log'
-import type { RuntimeLayerLibraryItem } from '../stores/layers/types'
+import type { RuntimeLayerLibraryItem, WeatherLayerRenderHint } from '../stores/layers/types'
 import {
   WEATHER_PALETTE_OPTIONS,
   buildWeatherLegendGradient,
@@ -617,7 +617,7 @@ function getColorRampStyle(layer: ActiveLayerDisplayLike): Record<string, string
   // 与 InfoPanel 同源：resolveStyleRenderHint + buildWeatherLegendGradient
   const hint = resolveStyleRenderHint({
     paletteOverride: layer.paletteOverride,
-    renderHint: layer.renderHint ?? null,
+    renderHint: (layer.renderHint ?? null) as WeatherLayerRenderHint | null,
     overlayMeta: overlaySymbologyStore.getMeta(layer.catalogId),
   })
   if (hint) {

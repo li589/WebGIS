@@ -5,7 +5,7 @@ import {
   computeViewportBBoxFromBounds,
   mergeRoamBounds,
 } from './wind-particle-canvas'
-import type { WindGridPoint } from './wind-particle-canvas'
+import type { WindGridPoint } from './wind-grid'
 
 // ─── 测试夹具 ────────────────────────────────────────────────
 

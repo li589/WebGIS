@@ -118,7 +118,7 @@ function formatNum(n: number, digits = 4): string {
   return n.toFixed(digits)
 }
 
-function formatBounds(b: [number, number, number, number] | null): string {
+function formatBounds(b: [number, number, number, number] | null | undefined): string {
   if (!b) return '—'
   return `[${formatNum(b[0])}, ${formatNum(b[1])}, ${formatNum(b[2])}, ${formatNum(b[3])}]`
 }

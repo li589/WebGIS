@@ -2,9 +2,11 @@
 import { computed, ref, watch } from 'vue'
 import { storeToRefs } from 'pinia'
 import { useSettingsStore } from '../../stores/settings'
+import { useWeatherTileManager } from '../../stores/weather-tile-manager'
 import type { RuntimeConfigPatch } from '../../services/settings-api'
 
 const settingsStore = useSettingsStore()
+const weatherTileManager = useWeatherTileManager()
 const { generalConfig } = storeToRefs(settingsStore)
 
 // ── 只读系统信息 ──────────────────────────────────────────────────────────
@@ -266,6 +268,11 @@ async function saveParam(param: EditableParam) {
       },
     ]
     const result = await settingsStore.saveRuntimeConfig(patch)
+    if (param.key === 'weather_cache_ttl_seconds') {
+      // 与 getWeatherTileTtlMs() 读取的 weatherConfig.cache_ttl_seconds 对齐
+      await settingsStore.reloadWeatherConfig()
+      weatherTileManager.invalidateAllTileCaches()
+    }
     saveSuccess.value = `${param.label}已更新（${result.applied_count} 项生效）`
     setTimeout(() => {
       saveSuccess.value = null
