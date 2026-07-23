@@ -11,9 +11,9 @@ import {
   buildWeatherLegendGradient,
   isMapLinkedPalette,
   resolveCanonicalPaletteId,
-  resolveStyleRenderHint,
   resolveSymbologyColors,
 } from './map/layer-symbology'
+import { resolveEffectiveLayerSymbology } from './map/effective-layer-symbology'
 import { useOverlaySymbologyStore } from '../stores/overlay-symbology'
 import { useWeatherSourcePrefsStore } from '../stores/weather-source-prefs'
 import {
@@ -614,8 +614,8 @@ function handleSymbologyPalette(instanceId: string, paletteId: string) {
 
 function getColorRampStyle(layer: ActiveLayerDisplayLike): Record<string, string> {
   void overlaySymbologyStore.version
-  // 与 InfoPanel 同源：resolveStyleRenderHint + buildWeatherLegendGradient
-  const hint = resolveStyleRenderHint({
+  // 与 InfoPanel 同源：resolveEffectiveLayerSymbology + buildWeatherLegendGradient
+  const { hint } = resolveEffectiveLayerSymbology({
     paletteOverride: layer.paletteOverride,
     renderHint: (layer.renderHint ?? null) as WeatherLayerRenderHint | null,
     overlayMeta: overlaySymbologyStore.getMeta(layer.catalogId),

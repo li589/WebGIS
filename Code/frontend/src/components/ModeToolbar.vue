@@ -32,7 +32,7 @@ const weatherSyncStatus = useWeatherSyncStatusStore()
 const { workflowSummary } = storeToRefs(layersStore)
 const { activityVersion, statusVersion } = storeToRefs(weatherTileManager)
 const { apiKeys } = storeToRefs(settingsStore)
-const { syncInProgress, modelEmpty } = storeToRefs(weatherSyncStatus)
+const { syncInProgress } = storeToRefs(weatherSyncStatus)
 
 onMounted(() => {
   if (apiKeys.value.length === 0) {
@@ -48,10 +48,8 @@ const mergedWorkflowSummary = computed(() => {
   void activityVersion.value
   void statusVersion.value
   void syncInProgress.value
-  void modelEmpty.value
   const contribution = weatherTileManager.deriveWeatherWorkflowContribution({
     syncInProgress: syncInProgress.value,
-    modelEmpty: modelEmpty.value,
   })
   return mergeWorkflowSummaryWithWeather(workflowSummary.value, contribution)
 })

@@ -1725,7 +1725,8 @@ export const useWeatherTileManager = defineStore('weatherTileManager', () => {
       const tileKey = tileCoordsToKey(tile, layerId, state.hour, state.model, state.provider)
       if (state.tiles.has(tileKey)) cachedInViewport += 1
     }
-    const missingInViewport = Math.max(0, viewportTotal - cachedInViewport)
+    // 与 countViewportMissing / gap-sweep 对齐：data-empty 层不再报视口缺口
+    const missingInViewport = countViewportMissing(state)
     return {
       active: true,
       cachedInViewport,
@@ -1755,14 +1756,13 @@ export const useWeatherTileManager = defineStore('weatherTileManager', () => {
 
   /**
    * 将瓦片层状态映射为与 job 同构的六态贡献（不写入 JobLayerItem）。
-   * 规则 2B：data-empty / model_empty 在 sync 进行中 → retry_pending，否则 → failed。
+   * 无数据仅认本层 errorType === 'data-empty'（不因全局 modelEmpty 连坐其它层）。
+   * sync 进行中：本层 data-empty → retry_pending，否则 → failed。
    */
   function deriveWeatherWorkflowContribution(options?: {
     syncInProgress?: boolean
-    modelEmpty?: boolean
   }): WeatherWorkflowContribution {
     const syncInProgress = !!options?.syncInProgress
-    const modelEmpty = !!options?.modelEmpty
     const now = Date.now()
     const items: WeatherWorkflowContributionItem[] = []
     const counts = {
@@ -1795,9 +1795,7 @@ export const useWeatherTileManager = defineStore('weatherTileManager', () => {
       let mapped: WeatherWorkflowMappedStatus | null = null
       let message = ''
 
-      const emptySignal =
-        statusInfo.errorType === 'data-empty' ||
-        (modelEmpty && statusInfo.cachedInViewport === 0 && statusInfo.pending === 0)
+      const emptySignal = statusInfo.errorType === 'data-empty'
 
       if (running > 0) {
         mapped = 'running'
@@ -1860,7 +1858,12 @@ export const useWeatherTileManager = defineStore('weatherTileManager', () => {
       if (key.startsWith(`${layerId}:`)) softRequeueCounts.delete(key)
     }
     clearLayerError(layerId)
+    // 手动重试须解除 422 短路，否则 enqueueIfMissing 仍会跳过
+    state.dataEmptyScope = null
     state.generation += 1
+    // 清空视口快照，避免 setViewport 因集合未变 noop 而不重新入队
+    state.viewportTiles = []
+    state.prefetchRing = []
     // 重新以当前视口调度
     setViewport(
       layerId,

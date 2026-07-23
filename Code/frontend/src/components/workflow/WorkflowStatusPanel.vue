@@ -11,7 +11,7 @@ const layersStore = useLayersStore()
 const weatherTileManager = useWeatherTileManager()
 const weatherSyncStatus = useWeatherSyncStatusStore()
 const { activityVersion, statusVersion } = storeToRefs(weatherTileManager)
-const { syncInProgress, modelEmpty } = storeToRefs(weatherSyncStatus)
+const { syncInProgress } = storeToRefs(weatherSyncStatus)
 const emit = defineEmits<{ close: [] }>()
 
 // 每秒刷新 tick，用于运行中工作流的时长动态更新
@@ -22,11 +22,9 @@ const weatherContribution = computed(() => {
   void activityVersion.value
   void statusVersion.value
   void syncInProgress.value
-  void modelEmpty.value
   void tick.value
   return weatherTileManager.deriveWeatherWorkflowContribution({
     syncInProgress: syncInProgress.value,
-    modelEmpty: modelEmpty.value,
   })
 })
 

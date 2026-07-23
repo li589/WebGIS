@@ -23,8 +23,11 @@ import {
   isMapLinkedPalette,
   paletteIdsEqual,
   resolveCanonicalPaletteId,
-  resolveStyleRenderHint,
 } from './map/layer-symbology'
+import {
+  resolveEffectiveLayerSymbology,
+  buildLegendExplainer,
+} from './map/effective-layer-symbology'
 import { useOverlaySymbologyStore } from '../stores/overlay-symbology'
 import {
   windDisplayModeChip,
@@ -209,13 +212,20 @@ watch(
   { immediate: true },
 )
 
-const styleRenderHint = computed(() =>
-  resolveStyleRenderHint({
+const styleSymbology = computed(() => {
+  void weatherTileManager.dataVersion
+  const viewportGeojson =
+    isRealtimeWeatherLayer.value && displayLayer.value.catalogId
+      ? weatherTileManager.getMergedGeojsonForViewport(displayLayer.value.catalogId)
+      : null
+  return resolveEffectiveLayerSymbology({
     paletteOverride: displayLayer.value.paletteOverride,
     renderHint: weatherRenderHint.value,
     overlayMeta: overlayStyleMeta.value,
-  }),
-)
+    viewportGeojson,
+  })
+})
+const styleRenderHint = computed(() => styleSymbology.value.hint)
 
 const weatherLegendStops = computed(() =>
   styleRenderHint.value ? buildWeatherLegendStops(styleRenderHint.value) : [],
@@ -236,16 +246,6 @@ const canEditPalette = computed(() =>
     isImportedRaster: displayLayer.value.isImportedRaster,
   }),
 )
-const legendExplainer = computed(() => {
-  const mode = styleRenderHint.value?.paint_mode
-  if (mode === 'particle_flow' || canToggleParticleFlow.value) {
-    return '色带对应风速网格底色；粒子线表示流向（颜色随风速提亮）。'
-  }
-  if (mode === 'grid_fill' || mode === 'heatmap') {
-    return '色带对应网格单元量级；相邻单元接壤形成连续色场。'
-  }
-  return ''
-})
 
 function handleSelectPalette(paletteId: string) {
   if (!canEditPalette.value) return
@@ -282,6 +282,13 @@ const currentWindDisplayMode = computed<WindDisplayMode>(() => {
   if (!ownsWindDisplay.value) return 'off'
   return layersStore.windDisplayMode
 })
+const legendExplainer = computed(() =>
+  buildLegendExplainer({
+    hint: styleRenderHint.value,
+    windDisplayMode: canToggleParticleFlow.value ? currentWindDisplayMode.value : null,
+    canToggleParticleFlow: canToggleParticleFlow.value,
+  }),
+)
 function handleSetWindDisplayMode(mode: WindDisplayMode) {
   // 本层已归属时可自由三态切换；其它层需等瓦片就绪才能抢占
   if (mode !== 'off' && particleFlowButtonDisabled.value) return

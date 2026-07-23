@@ -120,4 +120,54 @@ describe('weather-tile-manager cache + prefetch', () => {
     // noop path: no new network for same fresh tiles
     expect(fetchWeatherTile.mock.calls.length).toBe(callsAfterFill)
   })
+
+  it('isolates data-empty: sibling with tiles stays succeeded', async () => {
+    fetchWeatherTile.mockImplementation(async (layerId: string) => {
+      if (layerId === 'cloud_cover') {
+        throw new Error('Weather tile HTTP 422: variable missing')
+      }
+      return emptyFc
+    })
+
+    const manager = useWeatherTileManager()
+    manager.setLayerActive('cloud_cover', true)
+    manager.setLayerActive('temperature', true)
+    manager.setViewport('cloud_cover', center, 5, 0, undefined, bbox)
+    manager.setViewport('temperature', center, 5, 0, undefined, bbox)
+
+    for (let i = 0; i < 80; i += 1) {
+      await Promise.resolve()
+    }
+
+    expect(manager.getLayerStatus('cloud_cover').errorType).toBe('data-empty')
+    expect(manager.getLayerStatus('temperature').errorType).not.toBe('data-empty')
+    expect(manager.getLayerStatus('temperature').cachedInViewport).toBeGreaterThan(0)
+
+    const contrib = manager.deriveWeatherWorkflowContribution({ syncInProgress: false })
+    const cloud = contrib.items.find((i) => i.catalogId === 'cloud_cover')
+    const temp = contrib.items.find((i) => i.catalogId === 'temperature')
+    expect(cloud?.status).toBe('failed')
+    expect(temp?.status).toBe('succeeded')
+  })
+
+  it('retryLayerTiles clears dataEmptyScope so requests can resume', async () => {
+    fetchWeatherTile.mockRejectedValue(new Error('HTTP 422 empty variable'))
+    const manager = useWeatherTileManager()
+    // 使用默认模型支持的图层，避免 UNSUPPORTED_LAYER_MODELS 短路
+    manager.setLayerActive('temperature', true)
+    manager.setViewport('temperature', center, 5, 0, undefined, bbox)
+    for (let i = 0; i < 60; i += 1) {
+      await Promise.resolve()
+    }
+    expect(manager.getLayerStatus('temperature').errorType).toBe('data-empty')
+    const callsAfterEmpty = fetchWeatherTile.mock.calls.length
+    expect(callsAfterEmpty).toBeGreaterThan(0)
+
+    fetchWeatherTile.mockResolvedValue(emptyFc)
+    manager.retryLayerTiles('temperature')
+    for (let i = 0; i < 60; i += 1) {
+      await Promise.resolve()
+    }
+    expect(fetchWeatherTile.mock.calls.length).toBeGreaterThan(callsAfterEmpty)
+  })
 })

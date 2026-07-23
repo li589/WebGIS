@@ -24,6 +24,7 @@ import {
   buildMapStageStatusModel,
   buildMapStageTimeVisualState,
 } from './map/map-stage-view-model'
+import { aggregateWeatherTileBanner } from './map/weather-tile-banner'
 import { TILE_SOURCE_MAP, type TileSourceId } from '../services/api-config'
 
 const layersStore = useLayersStore()
@@ -163,55 +164,27 @@ const stageStatusModel = computed(() =>
   }),
 )
 
-// 天气瓦片加载/错误/半覆盖状态：聚合所有可见天气图层
+// 天气瓦片加载/错误/半覆盖状态：按层隔离聚合（单层无数据不盖住健康层）
 const weatherTileStatusModel = computed(() => {
-  // 依赖 statusVersion 触发响应式更新
   void weatherStatusVersion.value
   const weatherLayers = layersStore.activeLayersDisplay.filter(
     (l) => l.visible && layersStore.isWeatherEngineLayer(l.catalogId),
   )
-  if (weatherLayers.length === 0) {
-    return {
-      show: false,
-      isLoading: false,
-      error: null as string | null,
-      partial: null as string | null,
-    }
-  }
-
-  for (const layer of weatherLayers) {
-    const status = weatherTileManager.getLayerStatus(layer.catalogId)
-    if (!status.active) continue
-    // 视口全空时才盖错误横幅
-    if (status.errorType && status.cachedInViewport === 0) {
+  return aggregateWeatherTileBanner(
+    weatherLayers.map((layer) => {
+      const status = weatherTileManager.getLayerStatus(layer.catalogId)
       return {
-        show: true,
-        isLoading: false,
-        error: status.errorMessage ?? '天气数据加载失败',
-        partial: null,
+        label: layer.metricLabel || layer.name || layer.catalogId,
+        active: status.active,
+        cachedInViewport: status.cachedInViewport,
+        missingInViewport: status.missingInViewport,
+        pending: status.pending,
+        gapSweepActive: status.gapSweepActive,
+        errorType: status.errorType,
+        errorMessage: status.errorMessage,
       }
-    }
-  }
-  // 全空且仍在拉取
-  for (const layer of weatherLayers) {
-    const status = weatherTileManager.getLayerStatus(layer.catalogId)
-    if (status.active && status.pending > 0 && status.cachedInViewport === 0) {
-      return { show: true, isLoading: true, error: null, partial: null }
-    }
-  }
-  // 半覆盖：已有内容但视口仍有空洞（pending=0 时提示补洞，避免误以为加载结束）
-  for (const layer of weatherLayers) {
-    const status = weatherTileManager.getLayerStatus(layer.catalogId)
-    if (!status.active) continue
-    if (status.cachedInViewport > 0 && status.missingInViewport > 0 && status.pending === 0) {
-      const progress = `${status.cachedInViewport}/${status.viewportTotal}`
-      const partial = status.gapSweepActive
-        ? `已加载 ${progress}，正在补全空洞…`
-        : `已加载 ${progress}，部分区域待重试`
-      return { show: true, isLoading: false, error: null, partial }
-    }
-  }
-  return { show: false, isLoading: false, error: null, partial: null }
+    }),
+  )
 })
 const stageAppearanceModel = computed(() =>
   buildMapStageAppearanceModel({
