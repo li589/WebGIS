@@ -1,4 +1,5 @@
 """Remote URI parsing + transport registry + config route auth."""
+
 from __future__ import annotations
 
 import sys
@@ -60,7 +61,9 @@ def test_redact_uri_strips_cred():
 def test_connectivity_probe_uri_uses_share_and_port():
     from shared.remote_sources.uri import build_connectivity_probe_uri
 
-    uri = build_connectivity_probe_uri("smb://files/datasets/a.tif?cred=p1", default_port=445)
+    uri = build_connectivity_probe_uri(
+        "smb://files/datasets/a.tif?cred=p1", default_port=445
+    )
     assert uri.startswith("smb://files:445/datasets/")
     assert "cred=p1" in uri
 
@@ -93,9 +96,18 @@ def test_data_access_registers_remote_schemes():
 def test_source_fetcher_supports_remote_and_s3():
     from app.services.source_fetcher import source_fetcher_registry
 
-    assert source_fetcher_registry.resolve("sftp://h/p").__class__.__name__ == "RemoteProtocolSourceFetcher"
-    assert source_fetcher_registry.resolve("smb://h/share/p").__class__.__name__ == "RemoteProtocolSourceFetcher"
-    assert source_fetcher_registry.resolve("s3://bucket/key").__class__.__name__ == "MinioSourceFetcher"
+    assert (
+        source_fetcher_registry.resolve("sftp://h/p").__class__.__name__
+        == "RemoteProtocolSourceFetcher"
+    )
+    assert (
+        source_fetcher_registry.resolve("smb://h/share/p").__class__.__name__
+        == "RemoteProtocolSourceFetcher"
+    )
+    assert (
+        source_fetcher_registry.resolve("s3://bucket/key").__class__.__name__
+        == "MinioSourceFetcher"
+    )
 
 
 def test_remote_storage_routes_require_write_access():
@@ -111,15 +123,23 @@ def test_remote_storage_routes_require_write_access():
     ]
     assert mutating
     for route in mutating:
-        calls = [d.call for d in (route.dependant.dependencies or []) if getattr(d, "call", None)]
+        calls = [
+            d.call
+            for d in (route.dependant.dependencies or [])
+            if getattr(d, "call", None)
+        ]
         assert require_write_access in calls, route.path
 
 
 def test_upsert_preserves_secret_extra_enabled(tmp_path, monkeypatch):
-    from app.services.remote_storage_credentials_repository import RemoteStorageCredentialsRepository
+    from app.services.remote_storage_credentials_repository import (
+        RemoteStorageCredentialsRepository,
+    )
 
     monkeypatch.setenv("BACKEND_ENVIRONMENT", "development")
-    repo = RemoteStorageCredentialsRepository(tmp_path / "remote.sqlite3", encryption_key="")
+    repo = RemoteStorageCredentialsRepository(
+        tmp_path / "remote.sqlite3", encryption_key=""
+    )
     repo.upsert(
         profile_id="nas",
         protocol="sftp",

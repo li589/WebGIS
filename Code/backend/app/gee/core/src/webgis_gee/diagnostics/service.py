@@ -6,7 +6,10 @@ from webgis_gee.accounts.pool import InMemoryAccountPool
 from webgis_gee.config.settings import Settings
 from webgis_gee.domain.models import DiagnosticsReport
 from webgis_gee.nodes.registry import NodeRegistry
-from webgis_gee.runtime.observability import InMemoryMetricsCollector, StructuredEventSink
+from webgis_gee.runtime.observability import (
+    InMemoryMetricsCollector,
+    StructuredEventSink,
+)
 from webgis_gee.runtime.resources import RuntimeResourceController
 from webgis_gee.storage.factory import create_storage_backend
 from webgis_gee.workflow.versioning import WorkflowDefinitionMigrator
@@ -59,12 +62,20 @@ class DiagnosticsService:
 
         warnings: list[str] = []
         if checks["gee_dependency"]["status"] == "ok":
-            warnings.append("earthengine-api is available but runtime authentication may still be required")
+            warnings.append(
+                "earthengine-api is available but runtime authentication may still be required"
+            )
         if checks["storage"]["status"] != "ok":
             warnings.append("storage backend is not ready")
 
-        overall_status = "ok" if all(self._status_ok(value) for value in checks.values()) else "degraded"
-        return DiagnosticsReport(status=overall_status, checks=checks, warnings=warnings)
+        overall_status = (
+            "ok"
+            if all(self._status_ok(value) for value in checks.values())
+            else "degraded"
+        )
+        return DiagnosticsReport(
+            status=overall_status, checks=checks, warnings=warnings
+        )
 
     def _check_storage(self) -> dict[str, Any]:
         try:
@@ -100,7 +111,9 @@ class DiagnosticsService:
     def _check_observability(self) -> dict[str, Any]:
         return {
             "status": "ok",
-            "structured_event_sink": self._event_sink.describe() if self._event_sink is not None else None,
+            "structured_event_sink": self._event_sink.describe()
+            if self._event_sink is not None
+            else None,
             "metrics_sink": (
                 self._metrics_collector.snapshot().get("external_metrics_sink")
                 if self._metrics_collector is not None

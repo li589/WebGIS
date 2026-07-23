@@ -4,6 +4,7 @@ Handles workflow submission, execution dispatch, and capacity validation.
 Uses late binding to access lifecycle service (for finalize/handle methods)
 to break the circular dependency: submission → lifecycle → submission.
 """
+
 from __future__ import annotations
 
 from datetime import datetime, timezone
@@ -16,11 +17,13 @@ from celery.exceptions import SoftTimeLimitExceeded
 
 from app.core.config import settings
 from app.core.logging import ensure_logging_configured, log_context
-from app.services.result_storage import result_storage_service
 from app.services.workflow_request_resolver import normalize_workflow_submit_request
 from app.services.workflow_repository import SQLiteWorkflowRepository
 from app.services.workflow.persistence_service import WorkflowPersistenceService
-from app.services.workflow.transition_builder import WorkflowTransitionBuilder, use_celery_executor
+from app.services.workflow.transition_builder import (
+    WorkflowTransitionBuilder,
+    use_celery_executor,
+)
 from app.services.workflow.follow_up_dispatch_service import FollowUpDispatchService
 from app.services.workflow.run_class import (
     RUN_CLASS_BUSINESS,
@@ -63,7 +66,9 @@ class WorkflowSubmissionService:
         self._repository = repository or SQLiteWorkflowRepository()
         self._persistence = persistence or WorkflowPersistenceService(self._repository)
         self._transitions = transitions or WorkflowTransitionBuilder()
-        self._follow_up = follow_up or FollowUpDispatchService(self._repository, self._persistence, self._transitions)
+        self._follow_up = follow_up or FollowUpDispatchService(
+            self._repository, self._persistence, self._transitions
+        )
         self._lifecycle: "WorkflowLifecycleService | None" = None
 
     def set_lifecycle_service(self, lifecycle: "WorkflowLifecycleService") -> None:
@@ -73,10 +78,14 @@ class WorkflowSubmissionService:
     @property
     def lifecycle(self) -> "WorkflowLifecycleService":
         if self._lifecycle is None:
-            raise RuntimeError("Lifecycle service not set. Call set_lifecycle_service() first.")
+            raise RuntimeError(
+                "Lifecycle service not set. Call set_lifecycle_service() first."
+            )
         return self._lifecycle
 
-    def submit_workflow(self, payload: WorkflowSubmitRequest) -> WorkflowAcceptedResponse:
+    def submit_workflow(
+        self, payload: WorkflowSubmitRequest
+    ) -> WorkflowAcceptedResponse:
         payload = normalize_workflow_submit_request(payload)
         now = datetime.now(timezone.utc)
         run_id = f"run-{uuid4().hex[:12]}"
@@ -140,7 +149,11 @@ class WorkflowSubmissionService:
                         status_url=self._transitions.workflow_status_url(run_id),
                         events_url=self._transitions.workflow_events_url(run_id),
                         executor_metadata={
-                            **(current_run.executor_metadata if current_run is not None else {}),
+                            **(
+                                current_run.executor_metadata
+                                if current_run is not None
+                                else {}
+                            ),
                             "started_at": running_at.isoformat(),
                             "worker_task_name": "app.tasks.workflow_tasks.process_workflow_run",
                         },
@@ -151,7 +164,9 @@ class WorkflowSubmissionService:
                     channel=EventChannel.system,
                     message="任务层开始调用业务服务。",
                     progress=35,
-                    payload={"executor": "app.tasks.workflow_tasks.execute_workflow_task"},
+                    payload={
+                        "executor": "app.tasks.workflow_tasks.execute_workflow_task"
+                    },
                     created_at=running_at,
                 )
 
@@ -159,7 +174,9 @@ class WorkflowSubmissionService:
                     run_id=run_id,
                     payload=payload,
                     requested_at=running_at,
-                    event_factory=lambda **kwargs: self._persistence.make_event(run_id=run_id, **kwargs),
+                    event_factory=lambda **kwargs: self._persistence.make_event(
+                        run_id=run_id, **kwargs
+                    ),
                 )
                 self.lifecycle.finalize_workflow_success(
                     run_id=run_id,
@@ -196,10 +213,14 @@ class WorkflowSubmissionService:
     ) -> WorkflowEventsResponse | None:
         if self._repository.get_run(run_id) is None:
             return None
-        events = self._repository.list_events(run_id, after_event_id=after_event_id, limit=limit)
+        events = self._repository.list_events(
+            run_id, after_event_id=after_event_id, limit=limit
+        )
         return WorkflowEventsResponse(run_id=run_id, items=events)
 
-    def _dispatch_async_workflow(self, run_id: str, payload: WorkflowSubmitRequest) -> None:
+    def _dispatch_async_workflow(
+        self, run_id: str, payload: WorkflowSubmitRequest
+    ) -> None:
         dispatch_at = datetime.now(timezone.utc)
         queue_name = resolve_workflow_queue(payload)
         dispatch_channel = resolve_workflow_channel(payload)
@@ -214,12 +235,18 @@ class WorkflowSubmissionService:
                         status=ExecutionStatus.queued,
                         progress=18,
                         message="工作流已成功派发到 Celery，等待 worker 消费。",
-                        created_at=current_run.created_at if current_run else dispatch_at,
+                        created_at=current_run.created_at
+                        if current_run
+                        else dispatch_at,
                         updated_at=dispatch_at,
                         result_refs=current_run.result_refs if current_run else None,
                         diagnostics=current_run.diagnostics if current_run else None,
                         executor_metadata={
-                            **(current_run.executor_metadata if current_run is not None else {}),
+                            **(
+                                current_run.executor_metadata
+                                if current_run is not None
+                                else {}
+                            ),
                             "executor": settings.workflow_executor,
                             "dispatch_channel": dispatch_channel,
                             "queue_name": queue_name,
@@ -252,10 +279,16 @@ class WorkflowSubmissionService:
                         status=ExecutionStatus.failed,
                         progress=100,
                         message="工作流派发失败，请检查 worker 与 broker 状态。",
-                        created_at=current_run.created_at if current_run else dispatch_at,
+                        created_at=current_run.created_at
+                        if current_run
+                        else dispatch_at,
                         updated_at=dispatch_at,
                         executor_metadata={
-                            **(current_run.executor_metadata if current_run is not None else {}),
+                            **(
+                                current_run.executor_metadata
+                                if current_run is not None
+                                else {}
+                            ),
                             "executor": settings.workflow_executor,
                             "dispatch_channel": dispatch_channel,
                             "queue_name": queue_name,
@@ -304,7 +337,9 @@ class WorkflowSubmissionService:
             )
 
     def _validate_requested_outputs(self, payload: WorkflowSubmitRequest) -> None:
-        limit = self._persistence.get_effective_config_int("backend", "max_requested_outputs", settings.max_requested_outputs)
+        limit = self._persistence.get_effective_config_int(
+            "backend", "max_requested_outputs", settings.max_requested_outputs
+        )
         if len(payload.requested_outputs) > limit:
             raise ValueError(
                 f"Requested outputs exceed limit: count={len(payload.requested_outputs)}, limit={limit}"

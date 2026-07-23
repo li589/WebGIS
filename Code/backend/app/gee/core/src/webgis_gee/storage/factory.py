@@ -18,7 +18,9 @@ def create_storage_backend(
     settings = settings or Settings()
     effective_backend = backend_type or settings.storage_backend
     if effective_backend == "local":
-        return LocalStorageBackend(base_path=local_storage_root or settings.local_storage_root)
+        return LocalStorageBackend(
+            base_path=local_storage_root or settings.local_storage_root
+        )
     if effective_backend == "minio":
         if not all(
             [
@@ -28,7 +30,9 @@ def create_storage_backend(
                 settings.minio_bucket,
             ]
         ):
-            raise ValueError("minio backend requires endpoint, access key, secret key and bucket")
+            raise ValueError(
+                "minio backend requires endpoint, access key, secret key and bucket"
+            )
         return MinioStorageBackend(
             endpoint=settings.minio_endpoint,
             access_key=settings.minio_access_key,

@@ -1,2 +1,1 @@
 """WebGIS GEE core package."""
-

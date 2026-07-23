@@ -14,6 +14,7 @@
 注意：旧 ``app.services.coordinate_transform_service`` 已转为 deprecated 垫片，
 新代码应直接 ``from app.services.crs import crs_transformer`` 使用。
 """
+
 from __future__ import annotations
 
 from .crs_registry import CRS_REGISTRY, get_crs, list_crs, to_api_payload
@@ -44,8 +45,10 @@ def __getattr__(name: str):
     """
     if name == "crs_transformer":
         from ._crs_transformer import crs_transformer
+
         return crs_transformer
     if name == "crs_detector":
         from ._crs_detector import crs_detector
+
         return crs_detector
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

@@ -1,0 +1,74 @@
+{
+  "_meta": {
+    "kind": "system",
+    "engine": "python_provider",
+    "name": "avg-ω 逐日反演（SMAP 在线拉取 + ORIG_TS）",
+    "description": "目的：在线拉取 SMAP L3 SM P（NSIDC）.h5 → 解压 → D2 avg-omega 逐日反演（SMAP_SINGLE + ORIG_TS 单温度方案）。前置：earthdata 凭证（cred_profile=earthdata，可访问 NSIDC）；D1 omega_block 已产出；anc/NDVI 本地就绪。产出：目标年逐日 SM/VOD/OMEGA .mat。本种子为模板：relative_path 用 YYYY.MM.DD 占位符，运行前替换。注意：SMAP .h5 → .mat 预处理（对应 B1_SMAPL3.m）当前不在 D2 主链，需用户在实例化时补 h5→mat 转换节点或预先落盘 .mat。",
+    "author": "system",
+    "readonly": true,
+    "is_template": true,
+    "linked_layer_id": "omega-avg-daily"
+  },
+  "workflow_id": "omega_avg_daily_smap_online",
+  "name": "avg-ω 逐日反演（SMAP 在线拉取 + ORIG_TS）",
+  "description": "nsidc_data 在线拉取 + earthdata 凭证 → archive_extract → D2 avg-omega 逐日反演（ORIG_TS）。",
+  "nodes": [
+    {
+      "id": 1,
+      "type": "download/http_open_data",
+      "pos": [80, 140],
+      "properties": {
+        "preset": "nsidc_data",
+        "relative_path": "SMAP/L3_SM_P/YYYY.MM.DD/",
+        "cred_profile": "earthdata",
+        "force_refresh": false
+      }
+    },
+    {
+      "id": 2,
+      "type": "archive/extract",
+      "pos": [400, 140],
+      "properties": {
+        "member_glob": "*.h5",
+        "recurse_once": true,
+        "output_dirname": "smap_extracted"
+      }
+    },
+    {
+      "id": 3,
+      "type": "algorithm/omega_avg_daily",
+      "pos": [720, 140],
+      "properties": {
+        "module_name": "omega_avg_daily",
+        "task_type": "omega_avg_daily",
+        "algorithm_params": {
+          "target_year": 2023,
+          "tb_source": "SMAP",
+          "sm_source": "SMAP",
+          "temp_scheme": "ORIG_TS",
+          "ndvi_mode": "DAILY_FILE",
+          "sf_mode": "STATIC",
+          "avg_build_start_year": 2015,
+          "avg_build_end_year": 2025,
+          "freq_ghz": 1.4,
+          "lambda_tau": 20.0,
+          "pixel_chunk_size": 200000,
+          "enable_parallel": true
+        }
+      }
+    }
+  ],
+  "links": [
+    {"0": 1, "1": 1, "2": 0, "3": 2, "4": 0, "5": "value:string"},
+    {"0": 2, "1": 2, "2": 0, "3": 3, "4": 0, "5": "value:string"}
+  ],
+  "extra": {
+    "purpose": "online_smap_pipeline",
+    "scheme": "SMAP_SINGLE_ORIG_TS_ONLINE_SMAP",
+    "portal": "nsidc_data",
+    "cred_profile": "earthdata",
+    "pipeline": "online SMAP L3 download → extract → D2 DDCA (ORIG_TS, Ts from SMAP IA)",
+    "prerequisite": "earthdata 凭证 + D1 omega_block + 本地 anc/NDVI .mat",
+    "notes": "模板种子：relative_path 含 YYYY.MM.DD 占位符，运行前替换。SMAP .h5 需转 .mat（B1_SMAPL3.m 预处理）方可被 build_daily_bundle_for_date 读取；当前 D2 主链假定 smap_folder 已含 YYYYMMDD.mat（含 TBv/TBh/IA/Ts/vwc/SM）。"
+  }
+}

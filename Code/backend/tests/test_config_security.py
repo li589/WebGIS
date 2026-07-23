@@ -1,4 +1,5 @@
 """Phase0：配置写保护与有效配置投影。"""
+
 from __future__ import annotations
 
 import sys
@@ -39,7 +40,9 @@ def test_config_api_key_write_requires_auth_when_enabled():
     assert mutating, "expected mutating config routes"
     for route in mutating:
         dep_calls = _route_dependency_callables(route)
-        assert require_write_access in dep_calls, f"route {route.path} missing require_write_access"
+        assert (
+            require_write_access in dep_calls
+        ), f"route {route.path} missing require_write_access"
 
 
 def test_import_raster_requires_write_access():
@@ -60,7 +63,9 @@ def test_import_raster_requires_write_access():
 def test_runtime_ghost_keys_rejected():
     from app.services.workflow.runtime_status_service import ALLOWED_RUNTIME_CONFIG_KEYS
 
-    assert "demo_snapshot_provider" not in ALLOWED_RUNTIME_CONFIG_KEYS.get("backend", set())
+    assert "demo_snapshot_provider" not in ALLOWED_RUNTIME_CONFIG_KEYS.get(
+        "backend", set()
+    )
     assert "demo_source_mode" not in ALLOWED_RUNTIME_CONFIG_KEYS.get("frontend", set())
     assert not ALLOWED_RUNTIME_CONFIG_KEYS.get("workflow")
 

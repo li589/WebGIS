@@ -4,15 +4,26 @@ from pathlib import Path
 
 import pytest
 
-from webgis_gee.api.contracts import SavebackTerminalPlanPayload, WorkflowContractAdapter
+from webgis_gee.api.contracts import (
+    SavebackTerminalPlanPayload,
+    WorkflowContractAdapter,
+)
 from webgis_gee.api.facade import create_default_facade
 from webgis_gee.accounts.pool import InMemoryAccountPool
 from webgis_gee.application.services import WorkflowService
 from webgis_gee.config.settings import Settings
-from webgis_gee.domain.models import EdgeSpec, ExecutionContext, NodeSpec, WorkflowDefinition
+from webgis_gee.domain.models import (
+    EdgeSpec,
+    ExecutionContext,
+    NodeSpec,
+    WorkflowDefinition,
+)
 from webgis_gee.runtime.observability import InMemoryStructuredEventSink
 from webgis_gee.runtime.exceptions import ResourceExhaustedError
-from webgis_gee.runtime.resources import RedisResourceQuotaCoordinator, RuntimeResourceController
+from webgis_gee.runtime.resources import (
+    RedisResourceQuotaCoordinator,
+    RuntimeResourceController,
+)
 from webgis_gee.storage.local import LocalStorageBackend
 from webgis_gee.workflow.schema import CURRENT_SCHEMA_VERSION
 
@@ -70,7 +81,9 @@ class FakeRedisClient:
         self.values: dict[str, str] = {}
         self.expiry: dict[str, int] = {}
 
-    def set(self, key: str, value: str, nx: bool = False, ex: int | None = None) -> bool:
+    def set(
+        self, key: str, value: str, nx: bool = False, ex: int | None = None
+    ) -> bool:
         if nx and key in self.values:
             return False
         self.values[key] = value
@@ -120,7 +133,12 @@ class FailOnceRenewingRedisQuotaCoordinator(RedisResourceQuotaCoordinator):
 
 class SequencedFakeEeData:
     def __init__(self, default_states: list[str] | None = None) -> None:
-        self._default_states = default_states or ["READY", "RUNNING", "RUNNING", "COMPLETED"]
+        self._default_states = default_states or [
+            "READY",
+            "RUNNING",
+            "RUNNING",
+            "COMPLETED",
+        ]
         self._states_by_task_id: dict[str, list[str]] = {}
         self._poll_count_by_task_id: dict[str, int] = {}
 
@@ -247,14 +265,20 @@ class FakeAnalysisImage:
     def multiply(self, value: float):
         return FakeAnalysisImage(
             f"{self.name}:multiply",
-            band_values={band: band_value * value for band, band_value in self.band_values.items()},
+            band_values={
+                band: band_value * value
+                for band, band_value in self.band_values.items()
+            },
             properties=dict(self.properties),
         )
 
     def add(self, value: float):
         return FakeAnalysisImage(
             f"{self.name}:add",
-            band_values={band: band_value + value for band, band_value in self.band_values.items()},
+            band_values={
+                band: band_value + value
+                for band, band_value in self.band_values.items()
+            },
             properties=dict(self.properties),
         )
 
@@ -300,7 +324,9 @@ class FakeAnalysisImage:
         )
 
     def where(self, condition, value: float):
-        condition_values = condition.band_values if isinstance(condition, FakeAnalysisImage) else {}
+        condition_values = (
+            condition.band_values if isinstance(condition, FakeAnalysisImage) else {}
+        )
         return FakeAnalysisImage(
             f"{self.name}:where",
             band_values={
@@ -371,7 +397,10 @@ def assert_export_diagnostics_snapshot(
     if quota_coordinator_type is not None:
         assert resource_control["quota_coordinator"]["type"] == quota_coordinator_type
     if expected_degraded_shared_quotas is not None:
-        assert resource_control["degraded_shared_quotas"] == expected_degraded_shared_quotas
+        assert (
+            resource_control["degraded_shared_quotas"]
+            == expected_degraded_shared_quotas
+        )
 
     assert workflow_schema["current_schema_version"] == CURRENT_SCHEMA_VERSION
     assert workflow_schema["saveback_terminal_plan_summary"] == {
@@ -380,9 +409,17 @@ def assert_export_diagnostics_snapshot(
         "description": "terminal audit writeback summary for API consumers",
         "subfields": ["action", "reasons", "summary"],
     }
-    assert workflow_schema["saveback_terminal_plan_response_schema"]["schema_version"] == CURRENT_SCHEMA_VERSION
-    assert workflow_schema["saveback_terminal_plan_response_schema"]["field"] == "saveback_terminal_plan"
-    assert workflow_schema["saveback_terminal_plan_response_schema"]["response_fields"] == [
+    assert (
+        workflow_schema["saveback_terminal_plan_response_schema"]["schema_version"]
+        == CURRENT_SCHEMA_VERSION
+    )
+    assert (
+        workflow_schema["saveback_terminal_plan_response_schema"]["field"]
+        == "saveback_terminal_plan"
+    )
+    assert workflow_schema["saveback_terminal_plan_response_schema"][
+        "response_fields"
+    ] == [
         "action",
         "reasons",
         "summary",
@@ -402,7 +439,9 @@ def test_export_workflow_writes_manifest_artifact(tmp_path) -> None:
     workflow = WorkflowDefinition(
         workflow_id="export-demo",
         nodes=[
-            NodeSpec(node_id="source", node_type="literal", params={"value": "fake-image"}),
+            NodeSpec(
+                node_id="source", node_type="literal", params={"value": "fake-image"}
+            ),
             NodeSpec(
                 node_id="export",
                 node_type="gee_export_image",
@@ -564,7 +603,10 @@ def test_batch_preparation_and_export_polling_work_together(tmp_path) -> None:
 
     assert len(manifest_uris) == 2
     assert all(uri.startswith("file://") for uri in manifest_uris)
-    assert [result["status"] for result in poll_results] == ["manifest_created", "manifest_created"]
+    assert [result["status"] for result in poll_results] == [
+        "manifest_created",
+        "manifest_created",
+    ]
     assert [result["state"] for result in poll_results] == ["LOCAL_ONLY", "LOCAL_ONLY"]
 
     manifest_payloads = [
@@ -575,10 +617,14 @@ def test_batch_preparation_and_export_polling_work_together(tmp_path) -> None:
         "export-r1",
         "export-r3",
     ]
-    assert all(payload["task_status"]["state"] == "LOCAL_ONLY" for payload in manifest_payloads)
+    assert all(
+        payload["task_status"]["state"] == "LOCAL_ONLY" for payload in manifest_payloads
+    )
 
 
-def test_export_task_status_flow_updates_manifest_from_submitted_to_completed(tmp_path) -> None:
+def test_export_task_status_flow_updates_manifest_from_submitted_to_completed(
+    tmp_path,
+) -> None:
     storage_backend = LocalStorageBackend(base_path=str(tmp_path))
     service = WorkflowService(
         settings=Settings(storage_backend="local", local_storage_root=str(tmp_path)),
@@ -595,7 +641,9 @@ def test_export_task_status_flow_updates_manifest_from_submitted_to_completed(tm
     export_workflow = WorkflowDefinition(
         workflow_id="export-status-flow-demo",
         nodes=[
-            NodeSpec(node_id="image", node_type="literal", params={"value": "fake-image"}),
+            NodeSpec(
+                node_id="image", node_type="literal", params={"value": "fake-image"}
+            ),
             NodeSpec(
                 node_id="export",
                 node_type="gee_export_image",
@@ -636,10 +684,15 @@ def test_export_task_status_flow_updates_manifest_from_submitted_to_completed(tm
         update_manifest=True,
     )
 
-    manifest_payload = json.loads(storage_backend.get(manifest_uri.removeprefix("file://")).decode("utf-8"))
+    manifest_payload = json.loads(
+        storage_backend.get(manifest_uri.removeprefix("file://")).decode("utf-8")
+    )
     assert run_result.status == "completed"
     assert submit_gee.batch.Export.image.calls[0]["description"] == "export-status-flow"
-    assert submit_gee.batch.Export.image.calls[0]["fileNamePrefix"] == "image_export_status_flow"
+    assert (
+        submit_gee.batch.Export.image.calls[0]["fileNamePrefix"]
+        == "image_export_status_flow"
+    )
     assert run_result.outputs["export.task_ref"]["started"] is True
     assert run_result.outputs["export.task_ref"]["task_id"] == "task-1"
     assert running_result["status"] == "running"
@@ -674,7 +727,9 @@ def test_export_task_status_flow_updates_manifest_for_failed_terminal_states(
     export_workflow = WorkflowDefinition(
         workflow_id=f"export-{gee_state.lower()}-demo",
         nodes=[
-            NodeSpec(node_id="image", node_type="literal", params={"value": "fake-image"}),
+            NodeSpec(
+                node_id="image", node_type="literal", params={"value": "fake-image"}
+            ),
             NodeSpec(
                 node_id="export",
                 node_type="gee_export_image",
@@ -710,18 +765,28 @@ def test_export_task_status_flow_updates_manifest_for_failed_terminal_states(
         update_manifest=True,
     )
 
-    manifest_payload = json.loads(storage_backend.get(manifest_uri.removeprefix("file://")).decode("utf-8"))
+    manifest_payload = json.loads(
+        storage_backend.get(manifest_uri.removeprefix("file://")).decode("utf-8")
+    )
     assert run_result.status == "completed"
     assert failed_result["status"] == "failed"
     assert failed_result["state"] == expected_state
     assert failed_result["error_message"] == "gee export terminal failure"
     assert manifest_payload["task_ref"]["status"] == "failed"
     assert manifest_payload["task_status"]["state"] == expected_state
-    assert manifest_payload["task_status"]["error_message"] == "gee export terminal failure"
-    assert manifest_payload["task_status"]["raw"]["error_message"] == "gee export terminal failure"
+    assert (
+        manifest_payload["task_status"]["error_message"]
+        == "gee export terminal failure"
+    )
+    assert (
+        manifest_payload["task_status"]["raw"]["error_message"]
+        == "gee export terminal failure"
+    )
 
 
-def test_export_task_status_manifest_write_respects_local_write_budget_and_preserves_original_file(tmp_path) -> None:
+def test_export_task_status_manifest_write_respects_local_write_budget_and_preserves_original_file(
+    tmp_path,
+) -> None:
     manifest_path = tmp_path / "exports" / "budget-guard.json"
     manifest_path.parent.mkdir(parents=True, exist_ok=True)
     manifest_payload = {
@@ -753,7 +818,9 @@ def test_export_task_status_manifest_write_respects_local_write_budget_and_prese
     )
     adapter = WorkflowContractAdapter(service)
 
-    with pytest.raises(ResourceExhaustedError, match="local storage write budget exceeded"):
+    with pytest.raises(
+        ResourceExhaustedError, match="local storage write budget exceeded"
+    ):
         adapter.get_export_task_status(
             f"file://{manifest_path}",
             gee_module=OversizedStatusEeModule(payload_size=512),
@@ -761,7 +828,9 @@ def test_export_task_status_manifest_write_respects_local_write_budget_and_prese
         )
 
     assert manifest_path.read_text(encoding="utf-8") == original_content
-    assert not any(path.suffix == ".tmp" for path in Path(manifest_path.parent).iterdir())
+    assert not any(
+        path.suffix == ".tmp" for path in Path(manifest_path.parent).iterdir()
+    )
 
 
 def test_analysis_nodes_can_chain_into_export_workflow(tmp_path) -> None:
@@ -787,8 +856,14 @@ def test_analysis_nodes_can_chain_into_export_workflow(tmp_path) -> None:
     workflow = WorkflowDefinition(
         workflow_id="analysis-export-demo",
         nodes=[
-            NodeSpec(node_id="collection", node_type="literal", params={"value": collection}),
-            NodeSpec(node_id="geometry", node_type="literal", params={"value": {"type": "Polygon"}}),
+            NodeSpec(
+                node_id="collection", node_type="literal", params={"value": collection}
+            ),
+            NodeSpec(
+                node_id="geometry",
+                node_type="literal",
+                params={"value": {"type": "Polygon"}},
+            ),
             NodeSpec(
                 node_id="composite",
                 node_type="gee_image_collection_composite",
@@ -853,9 +928,13 @@ def test_analysis_nodes_can_chain_into_export_workflow(tmp_path) -> None:
     )
 
     manifest_uri = result.outputs["export.manifest_uri"]
-    manifest_payload = json.loads(storage_backend.get(manifest_uri.removeprefix("file://")).decode("utf-8"))
+    manifest_payload = json.loads(
+        storage_backend.get(manifest_uri.removeprefix("file://")).decode("utf-8")
+    )
     assert result.status == "completed"
-    assert result.outputs["region_stats.stats"] == pytest.approx({"ndvi": 0.45454545454545453})
+    assert result.outputs["region_stats.stats"] == pytest.approx(
+        {"ndvi": 0.45454545454545453}
+    )
     assert manifest_payload["task_ref"]["status"] == "manifest_created"
     assert manifest_payload["task_ref"]["description"] == "analysis-export"
 
@@ -879,7 +958,11 @@ def test_raster_algebra_node_can_chain_into_export_workflow(tmp_path) -> None:
             NodeSpec(
                 node_id="image",
                 node_type="literal",
-                params={"value": FakeAnalysisImage("img-1", band_values={"B4": 0.3, "B8": 0.8})},
+                params={
+                    "value": FakeAnalysisImage(
+                        "img-1", band_values={"B4": 0.3, "B8": 0.8}
+                    )
+                },
             ),
             NodeSpec(
                 node_id="algebra",
@@ -921,9 +1004,13 @@ def test_raster_algebra_node_can_chain_into_export_workflow(tmp_path) -> None:
     )
 
     manifest_uri = result.outputs["export.manifest_uri"]
-    manifest_payload = json.loads(storage_backend.get(manifest_uri.removeprefix("file://")).decode("utf-8"))
+    manifest_payload = json.loads(
+        storage_backend.get(manifest_uri.removeprefix("file://")).decode("utf-8")
+    )
     assert result.status == "completed"
-    assert result.outputs["algebra.image"].band_values == pytest.approx({"ndvi_like": 0.45454545454545453})
+    assert result.outputs["algebra.image"].band_values == pytest.approx(
+        {"ndvi_like": 0.45454545454545453}
+    )
     assert manifest_payload["task_ref"]["status"] == "manifest_created"
     assert manifest_payload["task_ref"]["description"] == "raster-algebra-export"
 
@@ -947,7 +1034,9 @@ def test_threshold_classify_node_can_chain_into_export_workflow(tmp_path) -> Non
             NodeSpec(
                 node_id="image",
                 node_type="literal",
-                params={"value": FakeAnalysisImage("img-1", band_values={"ndvi": 0.45})},
+                params={
+                    "value": FakeAnalysisImage("img-1", band_values={"ndvi": 0.45})
+                },
             ),
             NodeSpec(
                 node_id="classify",
@@ -990,7 +1079,9 @@ def test_threshold_classify_node_can_chain_into_export_workflow(tmp_path) -> Non
     )
 
     manifest_uri = result.outputs["export.manifest_uri"]
-    manifest_payload = json.loads(storage_backend.get(manifest_uri.removeprefix("file://")).decode("utf-8"))
+    manifest_payload = json.loads(
+        storage_backend.get(manifest_uri.removeprefix("file://")).decode("utf-8")
+    )
     assert result.status == "completed"
     assert result.outputs["classify.image"].band_values == {"ndvi_class": 3.0}
     assert manifest_payload["task_ref"]["status"] == "manifest_created"
@@ -1016,7 +1107,9 @@ def test_reclassify_node_can_chain_into_export_workflow(tmp_path) -> None:
             NodeSpec(
                 node_id="image",
                 node_type="literal",
-                params={"value": FakeAnalysisImage("img-1", band_values={"landcover": 0.45})},
+                params={
+                    "value": FakeAnalysisImage("img-1", band_values={"landcover": 0.45})
+                },
             ),
             NodeSpec(
                 node_id="reclassify",
@@ -1062,7 +1155,9 @@ def test_reclassify_node_can_chain_into_export_workflow(tmp_path) -> None:
     )
 
     manifest_uri = result.outputs["export.manifest_uri"]
-    manifest_payload = json.loads(storage_backend.get(manifest_uri.removeprefix("file://")).decode("utf-8"))
+    manifest_payload = json.loads(
+        storage_backend.get(manifest_uri.removeprefix("file://")).decode("utf-8")
+    )
     assert result.status == "completed"
     assert result.outputs["reclassify.image"].band_values == {"landcover_class": 20.0}
     assert manifest_payload["task_ref"]["status"] == "manifest_created"
@@ -1141,7 +1236,9 @@ def test_repeated_analysis_export_runs_do_not_leak_resource_slots(tmp_path) -> N
     )
 
 
-def test_multi_account_batch_polling_pressure_stays_consistent_with_shared_redis_quota(tmp_path) -> None:
+def test_multi_account_batch_polling_pressure_stays_consistent_with_shared_redis_quota(
+    tmp_path,
+) -> None:
     storage_backend = LocalStorageBackend(base_path=str(tmp_path))
     redis_client = FakeRedisClient()
     shared_quota = RedisResourceQuotaCoordinator(
@@ -1278,10 +1375,14 @@ def test_multi_account_batch_polling_pressure_stays_consistent_with_shared_redis
         assert run_result.outputs["export.task_ref"]["status"] == "submitted"
         manifest_uris.append(run_result.outputs["export.manifest_uri"])
 
-    poll_histories: dict[str, list[str]] = {manifest_uri: [] for manifest_uri in manifest_uris}
+    poll_histories: dict[str, list[str]] = {
+        manifest_uri: [] for manifest_uri in manifest_uris
+    }
     for round_index in range(4):
         for manifest_index, manifest_uri in enumerate(manifest_uris):
-            adapter = adapter_a if (round_index + manifest_index) % 2 == 0 else adapter_b
+            adapter = (
+                adapter_a if (round_index + manifest_index) % 2 == 0 else adapter_b
+            )
             status_payload = adapter.get_export_task_status(
                 manifest_uri,
                 gee_module=gee_module,
@@ -1290,7 +1391,9 @@ def test_multi_account_batch_polling_pressure_stays_consistent_with_shared_redis
             poll_histories[manifest_uri].append(status_payload["state"])
 
     manifest_payloads = [
-        json.loads(storage_backend.get(manifest_uri.removeprefix("file://")).decode("utf-8"))
+        json.loads(
+            storage_backend.get(manifest_uri.removeprefix("file://")).decode("utf-8")
+        )
         for manifest_uri in manifest_uris
     ]
     events = event_sink.snapshot()
@@ -1305,9 +1408,16 @@ def test_multi_account_batch_polling_pressure_stays_consistent_with_shared_redis
 
     assert len(batch_items) == 4
     assert len(manifest_uris) == 4
-    assert all(history == ["READY", "RUNNING", "RUNNING", "COMPLETED"] for history in poll_histories.values())
-    assert all(payload["task_ref"]["status"] == "completed" for payload in manifest_payloads)
-    assert all(payload["task_status"]["state"] == "COMPLETED" for payload in manifest_payloads)
+    assert all(
+        history == ["READY", "RUNNING", "RUNNING", "COMPLETED"]
+        for history in poll_histories.values()
+    )
+    assert all(
+        payload["task_ref"]["status"] == "completed" for payload in manifest_payloads
+    )
+    assert all(
+        payload["task_status"]["state"] == "COMPLETED" for payload in manifest_payloads
+    )
     assert account_ids == {"acc-1", "acc-2"}
     assert_export_diagnostics_snapshot(
         diagnostics_a,
@@ -1439,7 +1549,11 @@ def test_cross_worker_recovery_window_blocks_other_service_until_shared_redis_qu
     export_workflow = WorkflowDefinition(
         workflow_id="shared-recovery-window-demo",
         nodes=[
-            NodeSpec(node_id="image", node_type="literal", params={"value": FakeAnalysisImage("img-shared")}),
+            NodeSpec(
+                node_id="image",
+                node_type="literal",
+                params={"value": FakeAnalysisImage("img-shared")},
+            ),
             NodeSpec(
                 node_id="export",
                 node_type="gee_export_image",
@@ -1469,7 +1583,11 @@ def test_cross_worker_recovery_window_blocks_other_service_until_shared_redis_qu
         workflow_id=f"shared-recovery-window-demo-blocked-{scenario_name}",
         metadata={
             "storage_backend": storage_backend,
-            "gee_module": SequencedFakeEeModule(default_states=["RUNNING", "FAILED"] if recovery_mode == "double" else ["RUNNING", "COMPLETED"]),
+            "gee_module": SequencedFakeEeModule(
+                default_states=["RUNNING", "FAILED"]
+                if recovery_mode == "double"
+                else ["RUNNING", "COMPLETED"]
+            ),
         },
     )
     blocked_result = adapter_b.run_workflow_job_response(
@@ -1525,8 +1643,13 @@ def test_cross_worker_recovery_window_blocks_other_service_until_shared_redis_qu
         quota_coordinator_type="RedisResourceQuotaCoordinator",
         expected_degraded_shared_quotas={},
     )
-    assert recovered_result.outputs["export.task_ref"]["task_id"].startswith("sequenced-task-")
-    assert recovered_result.saveback_terminal_plans["export"].action == expected_terminal_action
+    assert recovered_result.outputs["export.task_ref"]["task_id"].startswith(
+        "sequenced-task-"
+    )
+    assert (
+        recovered_result.saveback_terminal_plans["export"].action
+        == expected_terminal_action
+    )
     assert SavebackTerminalPlanPayload.model_validate(
         recovered_result.saveback_terminal_plans["export"].model_dump(mode="python")
     ).summary.terminal_state in {

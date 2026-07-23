@@ -35,7 +35,9 @@ class WorkflowExecutor:
             raise ValueError("workflow contains cyclic dependencies")
         return list(nx.topological_sort(graph))
 
-    def execute(self, workflow: WorkflowDefinition, context: ExecutionContext) -> RunResult:
+    def execute(
+        self, workflow: WorkflowDefinition, context: ExecutionContext
+    ) -> RunResult:
         """执行完整工作流，返回执行结果。"""
         node_map = {n.node_id: n for n in workflow.nodes}
         order = self.topological_sort(workflow.nodes, workflow.edges)
@@ -51,12 +53,20 @@ class WorkflowExecutor:
                 node_cls = self._registry.get(node_spec.node_type)
                 input_ports = self._resolve_input_ports(node_spec, node_cls)
                 inputs = self._resolve_inputs(
-                    node_spec, input_ports, workflow.inputs, node_outputs, workflow.edges
+                    node_spec,
+                    input_ports,
+                    workflow.inputs,
+                    node_outputs,
+                    workflow.edges,
                 )
                 node = node_cls(node_spec, context)
                 result = node.execute(inputs)
             except Exception as exc:
-                logger.exception("Node execution failed: %s (node_id=%s)", node_spec.node_type, node_id)
+                logger.exception(
+                    "Node execution failed: %s (node_id=%s)",
+                    node_spec.node_type,
+                    node_id,
+                )
                 result = NodeExecutionResult(
                     node_id=node_id,
                     status=RunStatus.failed,
@@ -66,11 +76,18 @@ class WorkflowExecutor:
             all_artifacts.extend(result.artifacts)
             all_warnings.extend(result.warnings)
             node_results.append(result)
-            if result.status == RunStatus.failed and not workflow.runtime_policy.continue_on_error:
-                all_errors.append(f"Node {node_id} ({node_spec.node_type}) failed: {result.warnings}")
+            if (
+                result.status == RunStatus.failed
+                and not workflow.runtime_policy.continue_on_error
+            ):
+                all_errors.append(
+                    f"Node {node_id} ({node_spec.node_type}) failed: {result.warnings}"
+                )
                 break
             if result.status == RunStatus.failed:
-                all_errors.append(f"Node {node_id} ({node_spec.node_type}) failed: {result.warnings}")
+                all_errors.append(
+                    f"Node {node_id} ({node_spec.node_type}) failed: {result.warnings}"
+                )
 
         status = RunStatus.failed if all_errors else RunStatus.completed
         global_outputs = self._collect_global_outputs(node_outputs)
@@ -126,7 +143,9 @@ class WorkflowExecutor:
         inputs = {**node_spec.params, **inputs}
         return inputs
 
-    def _collect_global_outputs(self, node_outputs: dict[str, dict[str, Any]]) -> dict[str, Any]:
+    def _collect_global_outputs(
+        self, node_outputs: dict[str, dict[str, Any]]
+    ) -> dict[str, Any]:
         """收集全局输出，扁平化为 {"node_id.port": value} 形式。"""
         result: dict[str, Any] = {}
         for node_id, outputs in node_outputs.items():

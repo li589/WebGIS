@@ -4,6 +4,7 @@ Handles workflow cancel, retry, timeout, failure, and success finalization.
 Uses late binding to access submission service (for retry → submit_workflow)
 to break the circular dependency: lifecycle → submission → lifecycle.
 """
+
 from __future__ import annotations
 
 from datetime import datetime, timezone
@@ -12,12 +13,14 @@ from typing import TYPE_CHECKING
 
 from app.core.celery_app import revoke_task
 from app.core.config import settings
-from app.core.logging import log_context
 from app.services.failure_classifier import FailureClassifier
 from app.services.result_storage import result_storage_service
 from app.services.workflow_repository import SQLiteWorkflowRepository
 from app.services.workflow.persistence_service import WorkflowPersistenceService
-from app.services.workflow.transition_builder import WorkflowTransitionBuilder, use_celery_executor
+from app.services.workflow.transition_builder import (
+    WorkflowTransitionBuilder,
+    use_celery_executor,
+)
 from app.services.workflow.follow_up_dispatch_service import FollowUpDispatchService
 from app.tasks.workflow_tasks import dispatch_workflow_task
 from shared.contracts.api_contracts import (
@@ -49,7 +52,9 @@ class WorkflowLifecycleService:
         self._repository = repository or SQLiteWorkflowRepository()
         self._persistence = persistence or WorkflowPersistenceService(self._repository)
         self._transitions = transitions or WorkflowTransitionBuilder()
-        self._follow_up = follow_up or FollowUpDispatchService(self._repository, self._persistence, self._transitions)
+        self._follow_up = follow_up or FollowUpDispatchService(
+            self._repository, self._persistence, self._transitions
+        )
         self._submission: "WorkflowSubmissionService | None" = None
 
     def set_submission_service(self, submission: "WorkflowSubmissionService") -> None:
@@ -59,7 +64,9 @@ class WorkflowLifecycleService:
     @property
     def submission(self) -> "WorkflowSubmissionService":
         if self._submission is None:
-            raise RuntimeError("Submission service not set. Call set_submission_service() first.")
+            raise RuntimeError(
+                "Submission service not set. Call set_submission_service() first."
+            )
         return self._submission
 
     def cancel_workflow_run(self, run_id: str) -> WorkflowRunStatusResponse:
@@ -68,8 +75,14 @@ class WorkflowLifecycleService:
         if current_run is None:
             raise ValueError(f"Workflow run not found: {run_id}")
 
-        if current_run.status in (ExecutionStatus.succeeded, ExecutionStatus.failed, ExecutionStatus.cancelled):
-            raise ValueError(f"Cannot cancel workflow in terminal state: {current_run.status.value}")
+        if current_run.status in (
+            ExecutionStatus.succeeded,
+            ExecutionStatus.failed,
+            ExecutionStatus.cancelled,
+        ):
+            raise ValueError(
+                f"Cannot cancel workflow in terminal state: {current_run.status.value}"
+            )
 
         if use_celery_executor() and current_run.executor_metadata:
             task_id = current_run.executor_metadata.get("task_id")
@@ -279,12 +292,17 @@ class WorkflowLifecycleService:
         )
         logger.info(
             "[LifecycleService] materialize_result_refs: run_id=%s result_refs_count=%d spill_count=%d",
-            run_id, len(result_refs), len(spill_diagnostics),
+            run_id,
+            len(result_refs),
+            len(spill_diagnostics),
         )
         for r in result_refs:
             logger.info(
                 "[LifecycleService] result_ref: result_id=%s result_kind=%s resource_url=%s inline_data=%s",
-                r.result_id, r.result_kind, r.resource_url, "present" if r.inline_data else "None",
+                r.result_id,
+                r.result_kind,
+                r.resource_url,
+                "present" if r.inline_data else "None",
             )
         diagnostics = [*execution.diagnostics, *spill_diagnostics]
         result_dto = self._persistence.augment_result_dto(
@@ -350,7 +368,7 @@ class WorkflowLifecycleService:
         failed_at = datetime.now(timezone.utc)
         diagnostics = [
             "workflow-runs 已进入服务编排链，但本次执行失败。",
-            f"error_code=workflow_execution_failed",
+            "error_code=workflow_execution_failed",
             f"attempt_count={attempt_count}",
         ]
         if category is not None:

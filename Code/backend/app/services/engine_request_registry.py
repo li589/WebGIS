@@ -38,7 +38,9 @@ class EngineRequestPopulator(Protocol):
         """按 descriptor 元数据补齐 payload 中 engine-specific 请求字段。"""
         ...
 
-    def describe_resolution(self, payload: WorkflowSubmitRequest) -> dict[str, Any] | None:
+    def describe_resolution(
+        self, payload: WorkflowSubmitRequest
+    ) -> dict[str, Any] | None:
         """返回该 payload 的解析诊断信息，不适用时返回 None。"""
         ...
 

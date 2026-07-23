@@ -20,7 +20,10 @@ class WorkflowGraphCompilerTests(unittest.TestCase):
                     "id": 1,
                     "type": "data/source",
                     "title": "数据源",
-                    "properties": {"path": "I:/Geograph_DataSet/SMAP", "dataset_key": "SMAP_L3"},
+                    "properties": {
+                        "path": "I:/Geograph_DataSet/SMAP",
+                        "dataset_key": "SMAP_L3",
+                    },
                 },
                 {
                     "id": 2,
@@ -34,7 +37,9 @@ class WorkflowGraphCompilerTests(unittest.TestCase):
         self.assertEqual(definition["workflow_id"], "wf_test")
         self.assertEqual(len(definition["nodes"]), 2)
         self.assertEqual(definition["nodes"][0]["params"]["module_name"], "data_source")
-        self.assertEqual(definition["nodes"][1]["params"]["module_name"], "remote_fetch")
+        self.assertEqual(
+            definition["nodes"][1]["params"]["module_name"], "remote_fetch"
+        )
         self.assertEqual(len(definition["edges"]), 1)
         self.assertEqual(definition["edges"][0]["from_port"], "data")
         self.assertEqual(definition["edges"][0]["to_port"], "data")
@@ -70,7 +75,9 @@ class WorkflowGraphCompilerTests(unittest.TestCase):
 
     def test_empty_graph(self) -> None:
         with self.assertRaises(WorkflowGraphCompileError):
-            compile_litegraph_to_workflow_definition(workflow_id="x", nodes=[], links=[])
+            compile_litegraph_to_workflow_definition(
+                workflow_id="x", nodes=[], links=[]
+            )
 
 
 if __name__ == "__main__":

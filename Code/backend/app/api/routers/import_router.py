@@ -26,13 +26,21 @@ from app.api.deps import require_write_access
 from app.core.config import settings
 from app.services.crs import crs_detector, crs_transformer
 from app.services.crs.crs_registry import to_api_payload
-from app.services.overlay_registry import OverlaySpec, register_overlay, unregister_overlay
+from app.services.overlay_registry import (
+    OverlaySpec,
+    register_overlay,
+    unregister_overlay,
+)
 from app.services.raster_preview_service import raster_preview_service
 
 router = APIRouter(prefix="/import", tags=["import"])
 
 # 导入文件存储根目录
-_OUTPUT_ROOT = Path(settings.output_root) if settings.output_root else Path.cwd() / "imports_output"
+_OUTPUT_ROOT = (
+    Path(settings.output_root)
+    if settings.output_root
+    else Path.cwd() / "imports_output"
+)
 _IMPORTS_DIR = _OUTPUT_ROOT / "imports"
 
 # 安全限额：单文件与总量
@@ -131,7 +139,9 @@ async def import_raster(file: UploadFile = File(...)) -> dict[str, Any]:
     filename = Path(file.filename).name
     ext = filename.lower().rsplit(".", 1)[-1] if "." in filename else ""
     if ext not in _ALLOWED_EXTENSIONS:
-        raise HTTPException(status_code=400, detail=f"仅支持 TIF/TIFF 文件，收到 .{ext}")
+        raise HTTPException(
+            status_code=400, detail=f"仅支持 TIF/TIFF 文件，收到 .{ext}"
+        )
 
     used = _dir_size_bytes(_IMPORTS_DIR)
     if used >= _MAX_IMPORTS_TOTAL_BYTES:
@@ -184,7 +194,6 @@ async def import_raster(file: UploadFile = File(...)) -> dict[str, Any]:
     try:
         with rasterio.open(src_path) as dataset:
             west, south, east, north = dataset.bounds
-            crs = dataset.crs
             width = dataset.width
             height = dataset.height
             count = dataset.count
@@ -247,7 +256,9 @@ async def import_raster(file: UploadFile = File(...)) -> dict[str, Any]:
         },
     }
     bounds_path = dest_dir / "bounds.json"
-    bounds_path.write_text(json.dumps(bounds_data, ensure_ascii=False, indent=2), encoding="utf-8")
+    bounds_path.write_text(
+        json.dumps(bounds_data, ensure_ascii=False, indent=2), encoding="utf-8"
+    )
 
     # 动态注册到 overlay_registry（crs 字段保留源 CRS；confirm 后会重新注册为 WGS84）
     register_overlay(
@@ -342,13 +353,15 @@ async def confirm_imported_raster(body: ConfirmRequest) -> dict[str, Any]:
 
     # 重投影到 WGS84 并生成新 PNG
     try:
-        png_bytes, target_bounds = raster_preview_service.render_cog_preview_reprojected(
-            cog_path=src_path,
-            palette="wind-blue",
-            width=1024,
-            height=1024,
-            source_crs=body.source_crs,
-            target_crs="EPSG:4326",
+        png_bytes, target_bounds = (
+            raster_preview_service.render_cog_preview_reprojected(
+                cog_path=src_path,
+                palette="wind-blue",
+                width=1024,
+                height=1024,
+                source_crs=body.source_crs,
+                target_crs="EPSG:4326",
+            )
         )
     except Exception as exc:
         raise HTTPException(
@@ -375,7 +388,9 @@ async def confirm_imported_raster(body: ConfirmRequest) -> dict[str, Any]:
     meta["applied_lng_offset"] = body.lng_offset
     meta["applied_lat_offset"] = body.lat_offset
     bounds_data["meta"] = meta
-    bounds_path.write_text(json.dumps(bounds_data, ensure_ascii=False, indent=2), encoding="utf-8")
+    bounds_path.write_text(
+        json.dumps(bounds_data, ensure_ascii=False, indent=2), encoding="utf-8"
+    )
 
     # 重新注册 overlay（更新 crs 字段为 WGS84）
     unregister_overlay(body.layer_id)
@@ -450,8 +465,12 @@ async def transform_bounds_endpoint(body: TransformBoundsRequest) -> dict[str, A
     west, south, east, north = body.bounds
     try:
         target_w, target_s, target_e, target_n = crs_transformer.transform_bounds(
-            west, south, east, north,
-            body.source_crs, body.target_crs,
+            west,
+            south,
+            east,
+            north,
+            body.source_crs,
+            body.target_crs,
         )
     except Exception as exc:
         raise HTTPException(

@@ -3,6 +3,7 @@
 每分钟调用 workflow_timer_service.tick() 检查到期定时器并提交对应工作流。
 事件触发器不依赖此任务，由 emit_event 接口同步触发。
 """
+
 from __future__ import annotations
 
 import logging
@@ -33,7 +34,13 @@ if celery_available and celery_app is not None:
             return execute_timer_tick()
         except Exception:
             logger.exception("workflow timer tick failed")
-            return {"checked": 0, "fired": 0, "failed": 0, "skipped": 0, "error": "tick_failed"}
+            return {
+                "checked": 0,
+                "fired": 0,
+                "failed": 0,
+                "skipped": 0,
+                "error": "tick_failed",
+            }
 
 else:
 

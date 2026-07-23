@@ -132,7 +132,9 @@ def log_structured_event(
     **fields: Any,
 ) -> None:
     payload = {"event": event, **fields}
-    logger.log(level, json.dumps(payload, ensure_ascii=True, sort_keys=True, default=str))
+    logger.log(
+        level, json.dumps(payload, ensure_ascii=True, sort_keys=True, default=str)
+    )
     if sink is not None:
         try:
             sink.emit(payload, level=level, logger_name=logger.name)
@@ -194,5 +196,7 @@ class InMemoryMetricsCollector:
             "status": "ok",
             "counters": counters,
             "timers": timers,
-            "external_metrics_sink": self._metrics_sink.describe() if self._metrics_sink is not None else None,
+            "external_metrics_sink": self._metrics_sink.describe()
+            if self._metrics_sink is not None
+            else None,
         }

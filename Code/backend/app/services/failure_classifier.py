@@ -10,9 +10,9 @@
         category = FailureClassifier.classify(exc)
         raise BridgeExecutionError(category=category, message=str(exc), cause=exc) from exc
 """
+
 from __future__ import annotations
 
-from typing import Any
 
 from shared.contracts.api_contracts import FailureCategory
 
@@ -54,17 +54,27 @@ class FailureClassifier:
         message = str(exc).lower()
         if any(kw in message for kw in ("timeout", "timed out", "超时")):
             return FailureCategory.timeout
-        if any(kw in message for kw in ("rate limit", "429", "too many requests", "限流")):
+        if any(
+            kw in message for kw in ("rate limit", "429", "too many requests", "限流")
+        ):
             return FailureCategory.rate_limited
         if any(kw in message for kw in ("not found", "404", "不存在")):
             return FailureCategory.not_found
-        if any(kw in message for kw in ("permission", "forbidden", "403", "unauthorized", "401", "权限")):
+        if any(
+            kw in message
+            for kw in ("permission", "forbidden", "403", "unauthorized", "401", "权限")
+        ):
             return FailureCategory.permission_denied
-        if any(kw in message for kw in ("validation", "invalid", "参数错误", "校验失败")):
+        if any(
+            kw in message for kw in ("validation", "invalid", "参数错误", "校验失败")
+        ):
             return FailureCategory.validation_error
         if any(kw in message for kw in ("contract", "decode", "协议", "schema")):
             return FailureCategory.contract_violation
-        if any(kw in message for kw in ("connection", "network", "unreachable", "网络", "连接")):
+        if any(
+            kw in message
+            for kw in ("connection", "network", "unreachable", "网络", "连接")
+        ):
             return FailureCategory.transient_network
         if any(kw in message for kw in ("upstream", "502", "503", "504", "上游")):
             return FailureCategory.transient_upstream

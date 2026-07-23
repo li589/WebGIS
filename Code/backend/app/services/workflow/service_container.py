@@ -7,6 +7,7 @@ repositories via constructor parameters.
 Late binding is used to break the circular dependency between submission_service
 and lifecycle_service (retry → submit → process → finalize).
 """
+
 from __future__ import annotations
 
 from app.services.workflow_repository import SQLiteWorkflowRepository
@@ -26,7 +27,9 @@ persistence_service = WorkflowPersistenceService(_repository)
 runtime_status_service = RuntimeStatusService(_repository)
 
 # Services with deps on transition_builder + persistence
-follow_up_dispatch_service = FollowUpDispatchService(_repository, persistence_service, transition_builder)
+follow_up_dispatch_service = FollowUpDispatchService(
+    _repository, persistence_service, transition_builder
+)
 
 # Services with circular dep — created first, then late-bound
 submission_service = WorkflowSubmissionService(

@@ -210,7 +210,9 @@ class CacheService:
 
         logger.info(
             "cleanup_expired: deleted %d, skipped %d fresh, errors %d",
-            stats["deleted"], stats["skipped"], stats["errors"],
+            stats["deleted"],
+            stats["skipped"],
+            stats["errors"],
         )
         return stats
 

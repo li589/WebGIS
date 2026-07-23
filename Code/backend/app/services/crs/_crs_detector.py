@@ -18,14 +18,14 @@
         # 弹前端确认框
         ...
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from .crs_registry import CRS_REGISTRY, get_crs
-from .crs_types import CRSCategory
+from .crs_registry import get_crs
 
 
 # 置信度阈值：低于此值时前端必须弹确认框

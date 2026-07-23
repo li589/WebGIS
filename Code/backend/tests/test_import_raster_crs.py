@@ -9,12 +9,11 @@
 
 合成 GeoTIFF 用 rasterio + tmp_path fixture（已重定向到项目内 .pytest_tmp）。
 """
+
 from __future__ import annotations
 
-import io
 import json
 from pathlib import Path
-from unittest.mock import patch
 
 import pytest
 from fastapi.testclient import TestClient
@@ -101,9 +100,21 @@ class TestCrsOptions:
         assert data["count"] == 13
         codes = {item["code"] for item in data["items"]}
         # 应包含 Phase 1 扩展版全部 13 个 CRS
-        expected = {"EPSG:4326", "EPSG:4490", "EPSG:4258", "GCJ02", "BD09",
-                    "EPSG:3857", "EPSG:6933", "EPSG:32649", "EPSG:32650",
-                    "EPSG:4527", "EPSG:4528", "EPSG:4529", "EPSG:3034"}
+        expected = {
+            "EPSG:4326",
+            "EPSG:4490",
+            "EPSG:4258",
+            "GCJ02",
+            "BD09",
+            "EPSG:3857",
+            "EPSG:6933",
+            "EPSG:32649",
+            "EPSG:32650",
+            "EPSG:4527",
+            "EPSG:4528",
+            "EPSG:4529",
+            "EPSG:3034",
+        }
         assert codes == expected
 
     def test_items_have_required_fields(self, client: TestClient) -> None:
@@ -232,7 +243,9 @@ class TestTransformBounds:
 class TestImportRaster:
     """``POST /import/raster`` 上传端点。"""
 
-    def test_upload_wgs84_no_confirm(self, client: TestClient, wgs84_geotiff: Path) -> None:
+    def test_upload_wgs84_no_confirm(
+        self, client: TestClient, wgs84_geotiff: Path
+    ) -> None:
         """上传 WGS84 TIF：needs_confirm=False，bounds 在 ±180/±90 内。"""
         try:
             with wgs84_geotiff.open("rb") as f:
@@ -253,7 +266,9 @@ class TestImportRaster:
             if layer_id:
                 client.delete(f"/import/raster/{layer_id}")
 
-    def test_upload_utm50_needs_confirm(self, client: TestClient, utm50_geotiff: Path) -> None:
+    def test_upload_utm50_needs_confirm(
+        self, client: TestClient, utm50_geotiff: Path
+    ) -> None:
         """上传 EPSG:32650 TIF：needs_confirm=True，suggested_crs='EPSG:32650'。"""
         layer_id = None
         try:
@@ -322,7 +337,12 @@ class TestRasterConfirm:
 
             # 4. 验证 bounds.json 已更新
             from app.core.config import settings
-            output_root = Path(settings.output_root) if settings.output_root else Path.cwd() / "imports_output"
+
+            output_root = (
+                Path(settings.output_root)
+                if settings.output_root
+                else Path.cwd() / "imports_output"
+            )
             bounds_path = output_root / "imports" / layer_id / "bounds.json"
             bounds_data = json.loads(bounds_path.read_text(encoding="utf-8"))
             assert bounds_data["meta"]["crs"] == "EPSG:4326"
@@ -332,9 +352,7 @@ class TestRasterConfirm:
                 unregister_overlay(layer_id)
                 client.delete(f"/import/raster/{layer_id}")
 
-    def test_confirm_with_offset(
-        self, client: TestClient, wgs84_geotiff: Path
-    ) -> None:
+    def test_confirm_with_offset(self, client: TestClient, wgs84_geotiff: Path) -> None:
         """confirm 带偏移：bounds 应在原 WGS84 基础上加 offset。"""
         layer_id = None
         try:

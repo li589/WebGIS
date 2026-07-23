@@ -5,6 +5,7 @@ Celery Beat 调度：
 - cleanup_cache_files:   每天凌晨 3:30 UTC，删除已过期的缓存文件
 - celery.backend_cleanup: Celery 默认任务，每天 3:30 清理过期结果（result_expires 控制）
 """
+
 from __future__ import annotations
 
 import logging
@@ -16,7 +17,9 @@ from app.core.config import settings
 logger = logging.getLogger(__name__)
 
 
-def execute_workflow_runs_cleanup(*, retention_days: int = 30, vacuum: bool = False) -> dict[str, Any]:
+def execute_workflow_runs_cleanup(
+    *, retention_days: int = 30, vacuum: bool = False
+) -> dict[str, Any]:
     """执行 workflow_runs/events 清理（非 Celery 入口，可供 API 直接调用）。"""
     from app.services.workflow_repository import SQLiteWorkflowRepository
 
@@ -44,10 +47,14 @@ if celery_available and celery_app is not None:
         name="app.tasks.cleanup_tasks.cleanup_workflow_runs",
         queue=settings.workflow_queue_batch,
     )
-    def cleanup_workflow_runs(retention_days: int = 30, vacuum: bool = False) -> dict[str, Any]:
+    def cleanup_workflow_runs(
+        retention_days: int = 30, vacuum: bool = False
+    ) -> dict[str, Any]:
         """Celery 任务入口：清理过期 workflow runs。"""
         try:
-            return execute_workflow_runs_cleanup(retention_days=retention_days, vacuum=vacuum)
+            return execute_workflow_runs_cleanup(
+                retention_days=retention_days, vacuum=vacuum
+            )
         except Exception:
             logger.exception("workflow runs cleanup task failed")
             return {"error": "cleanup_failed", "retention_days": retention_days}
@@ -66,7 +73,9 @@ if celery_available and celery_app is not None:
 
 else:
 
-    def cleanup_workflow_runs(retention_days: int = 30, vacuum: bool = False) -> dict[str, Any]:
+    def cleanup_workflow_runs(
+        retention_days: int = 30, vacuum: bool = False
+    ) -> dict[str, Any]:
         raise RuntimeError(
             "Celery is not installed. Install backend dependencies before using cleanup tasks."
         )

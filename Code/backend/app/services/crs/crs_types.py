@@ -6,6 +6,7 @@
 - ``CoordinatePoint`` 字段与旧 ``coordinate_transform_service.CoordinatePoint``
   完全一致（lng/lat），保证二进制兼容的 re-export
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass

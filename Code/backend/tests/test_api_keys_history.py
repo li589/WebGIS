@@ -1,4 +1,5 @@
 """API key history archive / restore / trim."""
+
 from __future__ import annotations
 
 import sys
@@ -119,6 +120,8 @@ def test_remote_storage_secret_history(tmp_path, monkeypatch):
     assert "****" in hist[0]["masked_secret"]
     hid = hist[0]["id"]
     config_service.restore_remote_storage_history("nas-lab", hid)
-    bundle = config_service._get_remote_storage_repository().get_secret_bundle("nas-lab")
+    bundle = config_service._get_remote_storage_repository().get_secret_bundle(
+        "nas-lab"
+    )
     assert bundle is not None
     assert bundle["secret"] == "secret-one"

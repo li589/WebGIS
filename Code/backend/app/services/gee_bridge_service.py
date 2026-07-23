@@ -70,7 +70,9 @@ def _build_account_pool_from_repository(
                 creds = credentials_loader_cls.load_service_account_credentials(
                     sa_json, project_id=project_id
                 )
-            display_name = sa_json.get("client_email") if isinstance(sa_json, dict) else account_id
+            display_name = (
+                sa_json.get("client_email") if isinstance(sa_json, dict) else account_id
+            )
             configs.append(
                 account_config_cls(
                     account_id=account_id,
@@ -80,7 +82,7 @@ def _build_account_pool_from_repository(
                     display_name=display_name,
                 )
             )
-        except Exception as exc:
+        except Exception:
             logger.exception(
                 "Failed to load credentials for GEE account %s",
                 account_id,
@@ -100,6 +102,7 @@ def _is_account_unavailable_error(exc: BaseException) -> bool:
         return isinstance(exc, _AccountUnavailableError_cls)
     try:
         from webgis_gee.runtime.exceptions import AccountUnavailableError as _cls
+
         _AccountUnavailableError_cls = _cls
         return isinstance(exc, _cls)
     except Exception:
@@ -174,15 +177,21 @@ def _load_gee_facade():
         account_count = 0
         try:
             pool_module = importlib.import_module("webgis_gee.accounts.pool")
-            credentials_module = importlib.import_module("webgis_gee.accounts.credentials")
+            credentials_module = importlib.import_module(
+                "webgis_gee.accounts.credentials"
+            )
             pool, account_count = _build_account_pool_from_repository(
                 nullcontext(),
                 pool_cls=getattr(pool_module, "InMemoryAccountPool"),
                 account_config_cls=getattr(pool_module, "AccountConfig"),
-                credentials_loader_cls=getattr(credentials_module, "GeeCredentialsLoader"),
+                credentials_loader_cls=getattr(
+                    credentials_module, "GeeCredentialsLoader"
+                ),
             )
         except Exception as exc:
-            logger.warning("Failed to build GEE account pool (%s); continuing without pool", exc)
+            logger.warning(
+                "Failed to build GEE account pool (%s); continuing without pool", exc
+            )
             pool = None
             account_count = 0
         logger.info("GEE account pool prepared: %d account(s) loaded", account_count)
@@ -257,7 +266,9 @@ class GeeBridgeService:
     ) -> WorkflowExecutionResult:
         facade = self._get_facade()
         workflow = gee_request.get("workflow")
-        context = gee_request.get("context") or self._build_default_context(payload, run_id)
+        context = gee_request.get("context") or self._build_default_context(
+            payload, run_id
+        )
 
         try:
             response = facade.submit_workflow(workflow, context)
@@ -278,7 +289,9 @@ class GeeBridgeService:
             requested_at=requested_at,
             response=response,
         )
-        entry_name = response.workflow_id or gee_request.get("workflow_id") or "gee_workflow"
+        entry_name = (
+            response.workflow_id or gee_request.get("workflow_id") or "gee_workflow"
+        )
         # C3 修复：run_id 统一为 outer-side（主链 run_id），engine-side 用 engine_run_id
         # 与 weather_bridge_service 保持一致语义
         result_dto = {
@@ -497,7 +510,9 @@ class GeeBridgeService:
             "body": report.model_dump(mode="json"),
         }
 
-    def get_export_status_response(self, manifest_uri: str, update_manifest: bool = False):
+    def get_export_status_response(
+        self, manifest_uri: str, update_manifest: bool = False
+    ):
         facade = self._get_facade()
         response = facade.get_export_task_status(
             manifest_uri=manifest_uri,
@@ -560,7 +575,9 @@ class GeeBridgeService:
             events=events,
         )
 
-    def _build_default_context(self, payload: WorkflowSubmitRequest, run_id: str) -> dict[str, Any]:
+    def _build_default_context(
+        self, payload: WorkflowSubmitRequest, run_id: str
+    ) -> dict[str, Any]:
         gee_request = self._normalize_gee_request(payload.gee_request)
         metadata: dict[str, Any] = {
             "request_id": run_id,
@@ -591,7 +608,7 @@ class GeeBridgeService:
             WorkflowResultReference(
                 result_id=f"gee-result-{run_id[-8:]}",
                 result_kind=ResultKind.json,
-                title="GEE 工作流结果",
+                title="GEE Workflow Result",
                 mime_type="application/json",
                 inline_data={
                     "workflow": {
@@ -613,8 +630,14 @@ class GeeBridgeService:
 
         # artifacts 映射为 file 引用
         for index, artifact in enumerate(response.artifacts):
-            artifact_dict = artifact if isinstance(artifact, dict) else artifact.model_dump(mode="python")
-            storage_uri = str(artifact_dict.get("storage_uri") or artifact_dict.get("uri") or "")
+            artifact_dict = (
+                artifact
+                if isinstance(artifact, dict)
+                else artifact.model_dump(mode="python")
+            )
+            storage_uri = str(
+                artifact_dict.get("storage_uri") or artifact_dict.get("uri") or ""
+            )
             if not storage_uri:
                 continue
             result_refs.append(
@@ -622,7 +645,9 @@ class GeeBridgeService:
                     result_id=f"gee-artifact-{run_id[-8:]}-{index}",
                     result_kind=ResultKind.file,
                     title=f"GEE artifact {artifact_dict.get('artifact_type', index)}",
-                    mime_type=str(artifact_dict.get("content_type") or "application/octet-stream"),
+                    mime_type=str(
+                        artifact_dict.get("content_type") or "application/octet-stream"
+                    ),
                     resource_url=storage_uri,
                     resource_backend=settings.gee_storage_backend,
                     resource_key=str(artifact_dict.get("artifact_id") or storage_uri),
@@ -632,7 +657,9 @@ class GeeBridgeService:
             )
         return result_refs
 
-    def _normalize_gee_request(self, value: GeeWorkflowRequest | dict[str, Any] | Any) -> dict[str, Any]:
+    def _normalize_gee_request(
+        self, value: GeeWorkflowRequest | dict[str, Any] | Any
+    ) -> dict[str, Any]:
         if value is None:
             return {}
         if isinstance(value, GeeWorkflowRequest):

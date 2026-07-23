@@ -54,7 +54,11 @@ class GeeCredentialsLoader:
         try:
             creds = ee.ServiceAccountCredentials(email, key)
             if project_id:
-                logger.debug("Loaded service account credentials for %s (project=%s)", email, project_id)
+                logger.debug(
+                    "Loaded service account credentials for %s (project=%s)",
+                    email,
+                    project_id,
+                )
             return creds
         except Exception as exc:
             logger.warning(
@@ -94,7 +98,9 @@ class GeeCredentialsLoader:
         return creds, email, project_id
 
     @staticmethod
-    def test_credentials(credentials: Any, project_id: Optional[str] = None) -> tuple[bool, str]:
+    def test_credentials(
+        credentials: Any, project_id: Optional[str] = None
+    ) -> tuple[bool, str]:
         """测试凭证是否可用，返回 (success, message)。
 
         注意：此方法会调用 ee.Initialize 并请求一个简单 API，可能产生网络请求。

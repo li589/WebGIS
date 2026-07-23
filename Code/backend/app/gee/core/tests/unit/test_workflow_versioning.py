@@ -4,7 +4,12 @@ from webgis_gee.api.contracts import WorkflowContractAdapter
 from webgis_gee.application.services import WorkflowService
 from webgis_gee.config.settings import Settings
 from webgis_gee.domain.enums import PortKind, RunStatus
-from webgis_gee.domain.models import ExecutionContext, NodeExecutionResult, NodeSpec, WorkflowDefinition
+from webgis_gee.domain.models import (
+    ExecutionContext,
+    NodeExecutionResult,
+    NodeSpec,
+    WorkflowDefinition,
+)
 from webgis_gee.nodes.base import BaseNode
 from webgis_gee.nodes.registry import NodeRegistry
 from webgis_gee.nodes.sample_nodes import IdentityNode
@@ -44,7 +49,9 @@ class DeprecatedTestNode(BaseNode):
         )
 
     def execute(self, inputs):
-        return NodeExecutionResult(node_id=self.spec.node_id, outputs={"value": "deprecated"})
+        return NodeExecutionResult(
+            node_id=self.spec.node_id, outputs={"value": "deprecated"}
+        )
 
 
 class ConfiguredReplacementNode(BaseNode):
@@ -66,7 +73,9 @@ class ConfiguredReplacementNode(BaseNode):
         )
 
     def execute(self, inputs):
-        return NodeExecutionResult(node_id=self.spec.node_id, outputs={"value": inputs.get("value")})
+        return NodeExecutionResult(
+            node_id=self.spec.node_id, outputs={"value": inputs.get("value")}
+        )
 
 
 class DeprecatedConfiguredNode(BaseNode):
@@ -97,7 +106,9 @@ class DeprecatedConfiguredNode(BaseNode):
         )
 
     def execute(self, inputs):
-        return NodeExecutionResult(node_id=self.spec.node_id, outputs={"value": "deprecated-configured"})
+        return NodeExecutionResult(
+            node_id=self.spec.node_id, outputs={"value": "deprecated-configured"}
+        )
 
 
 SCHEMA_VERSION_SEQUENCE = [
@@ -123,7 +134,9 @@ def expected_upgrade_path(from_version: str) -> list[str]:
     return SCHEMA_VERSION_SEQUENCE[start_index:]
 
 
-def assert_schema_upgrade_notes(migration_notes: list[dict[str, object]], from_version: str) -> None:
+def assert_schema_upgrade_notes(
+    migration_notes: list[dict[str, object]], from_version: str
+) -> None:
     for source_version, target_version in zip(
         expected_upgrade_path(from_version),
         expected_upgrade_path(from_version)[1:],
@@ -151,50 +164,78 @@ def test_normalize_workflow_definition_auto_migrates_legacy_payload(tmp_path) ->
     )
 
     assert normalized.schema_version == CURRENT_SCHEMA_VERSION
-    assert normalized.metadata["auto_migrated_from_schema_version"] == LEGACY_SCHEMA_VERSION
+    assert (
+        normalized.metadata["auto_migrated_from_schema_version"]
+        == LEGACY_SCHEMA_VERSION
+    )
     assert normalized.metadata["schema_version"] == CURRENT_SCHEMA_VERSION
-    assert normalized.metadata["schema_upgrade_path"] == expected_upgrade_path(LEGACY_SCHEMA_VERSION)
+    assert normalized.metadata["schema_upgrade_path"] == expected_upgrade_path(
+        LEGACY_SCHEMA_VERSION
+    )
     assert normalized.metadata["compatibility_mode"] == "migrated"
     assert normalized.metadata["source"] == "workflow_definition_migrator"
-    assert_schema_upgrade_notes(normalized.metadata["migration_notes"], LEGACY_SCHEMA_VERSION)
+    assert_schema_upgrade_notes(
+        normalized.metadata["migration_notes"], LEGACY_SCHEMA_VERSION
+    )
     assert normalized.nodes[0].metadata["schema_version"] == CURRENT_SCHEMA_VERSION
     assert normalized.nodes[0].metadata["canonical_node_type"] == "literal"
     assert normalized.nodes[0].metadata["canonical_node_version"] == "1.0.0"
     assert normalized.metadata["normalization_summary_schema"] == SCHEMA_VERSION_1_2
     assert normalized.metadata["normalization_summary"]["total_nodes"] == 1
     assert normalized.metadata["compatibility_snapshot_schema"] == SCHEMA_VERSION_1_3
-    assert normalized.metadata["compatibility_snapshot"]["canonical_node_types"] == ["literal"]
+    assert normalized.metadata["compatibility_snapshot"]["canonical_node_types"] == [
+        "literal"
+    ]
     assert normalized.metadata["resave_hint_schema"] == SCHEMA_VERSION_1_4
     assert normalized.metadata["resave_hint"]["resave_recommended"] is True
     assert normalized.metadata["resave_hint"]["auto_migrated"] is True
     assert "schema_upgraded" in normalized.metadata["resave_hint"]["reasons"]
     assert normalized.metadata["compatibility_contract_schema"] == SCHEMA_VERSION_1_5
-    assert normalized.metadata["compatibility_contract"]["upgrade_path"] == expected_upgrade_path(
-        LEGACY_SCHEMA_VERSION
-    )
+    assert normalized.metadata["compatibility_contract"][
+        "upgrade_path"
+    ] == expected_upgrade_path(LEGACY_SCHEMA_VERSION)
     assert normalized.metadata["saveback_policy_schema"] == SCHEMA_VERSION_1_6
-    assert normalized.metadata["saveback_policy"]["recommended_mode"] == "canonical_writeback"
+    assert (
+        normalized.metadata["saveback_policy"]["recommended_mode"]
+        == "canonical_writeback"
+    )
     assert normalized.metadata["saveback_decision_schema"] == SCHEMA_VERSION_1_7
     assert normalized.metadata["saveback_decision"]["highest_severity"] == "none"
     assert normalized.metadata["auto_fix_plan_schema"] == SCHEMA_VERSION_1_8
     assert normalized.metadata["auto_fix_plan"]["schema_version"] == SCHEMA_VERSION_1_8
     assert normalized.metadata["auto_fix_plan"]["plan_mode"] == "no_op"
     assert normalized.metadata["saveback_commit_plan_schema"] == SCHEMA_VERSION_1_9
-    assert normalized.metadata["saveback_commit_plan"]["schema_version"] == SCHEMA_VERSION_1_9
+    assert (
+        normalized.metadata["saveback_commit_plan"]["schema_version"]
+        == SCHEMA_VERSION_1_9
+    )
     assert normalized.metadata["saveback_audit_plan_schema"] == SCHEMA_VERSION_1_10
-    assert normalized.metadata["saveback_audit_plan"]["schema_version"] == SCHEMA_VERSION_1_10
+    assert (
+        normalized.metadata["saveback_audit_plan"]["schema_version"]
+        == SCHEMA_VERSION_1_10
+    )
     assert normalized.metadata["saveback_closure_plan_schema"] == SCHEMA_VERSION_1_11
-    assert normalized.metadata["saveback_closure_plan"]["schema_version"] == SCHEMA_VERSION_1_11
+    assert (
+        normalized.metadata["saveback_closure_plan"]["schema_version"]
+        == SCHEMA_VERSION_1_11
+    )
     assert normalized.metadata["saveback_terminal_plan_schema"] == SCHEMA_VERSION_1_12
-    assert normalized.metadata["saveback_terminal_plan"]["schema_version"] == SCHEMA_VERSION_1_12
+    assert (
+        normalized.metadata["saveback_terminal_plan"]["schema_version"]
+        == SCHEMA_VERSION_1_12
+    )
 
 
 def test_submit_workflow_rejects_unsupported_schema_version(tmp_path) -> None:
     adapter = WorkflowContractAdapter(
-        WorkflowService(settings=Settings(storage_backend="local", local_storage_root=str(tmp_path)))
+        WorkflowService(
+            settings=Settings(storage_backend="local", local_storage_root=str(tmp_path))
+        )
     )
 
-    with pytest.raises(WorkflowValidationError, match="unsupported workflow schema_version: 9.9"):
+    with pytest.raises(
+        WorkflowValidationError, match="unsupported workflow schema_version: 9.9"
+    ):
         adapter.submit_workflow(
             workflow={
                 "workflow_id": "unsupported-schema-demo",
@@ -206,7 +247,9 @@ def test_submit_workflow_rejects_unsupported_schema_version(tmp_path) -> None:
         )
 
 
-def test_normalize_workflow_definition_auto_migrates_1_0_payload_to_current_schema(tmp_path) -> None:
+def test_normalize_workflow_definition_auto_migrates_1_0_payload_to_current_schema(
+    tmp_path,
+) -> None:
     service = WorkflowService(
         settings=Settings(storage_backend="local", local_storage_root=str(tmp_path))
     )
@@ -227,10 +270,16 @@ def test_normalize_workflow_definition_auto_migrates_1_0_payload_to_current_sche
     )
 
     assert normalized.schema_version == CURRENT_SCHEMA_VERSION
-    assert normalized.metadata["auto_migrated_from_schema_version"] == SCHEMA_VERSION_1_0
-    assert normalized.metadata["schema_upgrade_path"] == expected_upgrade_path(SCHEMA_VERSION_1_0)
+    assert (
+        normalized.metadata["auto_migrated_from_schema_version"] == SCHEMA_VERSION_1_0
+    )
+    assert normalized.metadata["schema_upgrade_path"] == expected_upgrade_path(
+        SCHEMA_VERSION_1_0
+    )
     assert normalized.metadata["node_metadata_schema"] == SCHEMA_VERSION_1_1
-    assert_schema_upgrade_notes(normalized.metadata["migration_notes"], SCHEMA_VERSION_1_0)
+    assert_schema_upgrade_notes(
+        normalized.metadata["migration_notes"], SCHEMA_VERSION_1_0
+    )
     assert any(
         note["migration"] == "node_metadata_normalized"
         and note["schema_version"] == CURRENT_SCHEMA_VERSION
@@ -257,7 +306,9 @@ def test_normalize_workflow_definition_auto_migrates_1_0_payload_to_current_sche
     assert normalized.metadata["saveback_terminal_plan_schema"] == SCHEMA_VERSION_1_12
 
 
-def test_normalize_workflow_definition_auto_migrates_1_1_payload_to_current_schema(tmp_path) -> None:
+def test_normalize_workflow_definition_auto_migrates_1_1_payload_to_current_schema(
+    tmp_path,
+) -> None:
     service = WorkflowService(
         settings=Settings(storage_backend="local", local_storage_root=str(tmp_path))
     )
@@ -280,17 +331,25 @@ def test_normalize_workflow_definition_auto_migrates_1_1_payload_to_current_sche
     )
 
     assert normalized.schema_version == CURRENT_SCHEMA_VERSION
-    assert normalized.metadata["auto_migrated_from_schema_version"] == SCHEMA_VERSION_1_1
-    assert normalized.metadata["schema_upgrade_path"] == expected_upgrade_path(SCHEMA_VERSION_1_1)
+    assert (
+        normalized.metadata["auto_migrated_from_schema_version"] == SCHEMA_VERSION_1_1
+    )
+    assert normalized.metadata["schema_upgrade_path"] == expected_upgrade_path(
+        SCHEMA_VERSION_1_1
+    )
     assert normalized.metadata["normalization_summary_schema"] == SCHEMA_VERSION_1_2
-    assert_schema_upgrade_notes(normalized.metadata["migration_notes"], SCHEMA_VERSION_1_1)
+    assert_schema_upgrade_notes(
+        normalized.metadata["migration_notes"], SCHEMA_VERSION_1_1
+    )
     assert normalized.nodes[0].metadata["schema_version"] == CURRENT_SCHEMA_VERSION
     assert normalized.nodes[0].metadata["canonical_node_type"] == "identity"
     assert normalized.nodes[0].metadata["canonical_node_version"] == "1.0.0"
     assert normalized.metadata["normalization_summary"]["total_nodes"] == 1
     assert normalized.metadata["normalization_summary"]["defaulted_nodes"] == 0
     assert normalized.metadata["compatibility_snapshot_schema"] == SCHEMA_VERSION_1_3
-    assert normalized.metadata["compatibility_snapshot"]["canonical_node_types"] == ["identity"]
+    assert normalized.metadata["compatibility_snapshot"]["canonical_node_types"] == [
+        "identity"
+    ]
     assert normalized.metadata["resave_hint_schema"] == SCHEMA_VERSION_1_4
     assert {"schema_upgraded", "workflow_defaults_filled"} <= set(
         normalized.metadata["resave_hint"]["reasons"]
@@ -305,7 +364,9 @@ def test_normalize_workflow_definition_auto_migrates_1_1_payload_to_current_sche
     assert normalized.metadata["saveback_terminal_plan_schema"] == SCHEMA_VERSION_1_12
 
 
-def test_normalize_workflow_definition_auto_migrates_1_2_payload_to_current_schema(tmp_path) -> None:
+def test_normalize_workflow_definition_auto_migrates_1_2_payload_to_current_schema(
+    tmp_path,
+) -> None:
     service = WorkflowService(
         settings=Settings(storage_backend="local", local_storage_root=str(tmp_path))
     )
@@ -334,12 +395,20 @@ def test_normalize_workflow_definition_auto_migrates_1_2_payload_to_current_sche
     )
 
     assert normalized.schema_version == CURRENT_SCHEMA_VERSION
-    assert normalized.metadata["auto_migrated_from_schema_version"] == SCHEMA_VERSION_1_2
-    assert normalized.metadata["schema_upgrade_path"] == expected_upgrade_path(SCHEMA_VERSION_1_2)
-    assert_schema_upgrade_notes(normalized.metadata["migration_notes"], SCHEMA_VERSION_1_2)
+    assert (
+        normalized.metadata["auto_migrated_from_schema_version"] == SCHEMA_VERSION_1_2
+    )
+    assert normalized.metadata["schema_upgrade_path"] == expected_upgrade_path(
+        SCHEMA_VERSION_1_2
+    )
+    assert_schema_upgrade_notes(
+        normalized.metadata["migration_notes"], SCHEMA_VERSION_1_2
+    )
     assert normalized.metadata["normalization_summary_schema"] == SCHEMA_VERSION_1_2
     assert normalized.metadata["compatibility_snapshot_schema"] == SCHEMA_VERSION_1_3
-    assert normalized.metadata["compatibility_snapshot"]["canonical_node_types"] == ["gee_export_image"]
+    assert normalized.metadata["compatibility_snapshot"]["canonical_node_types"] == [
+        "gee_export_image"
+    ]
     assert normalized.metadata["compatibility_snapshot"]["defaulted_node_ids"] == ["n1"]
     assert normalized.metadata["resave_hint_schema"] == SCHEMA_VERSION_1_4
     assert {
@@ -357,7 +426,9 @@ def test_normalize_workflow_definition_auto_migrates_1_2_payload_to_current_sche
     assert normalized.metadata["saveback_terminal_plan_schema"] == SCHEMA_VERSION_1_12
 
 
-def test_normalize_workflow_definition_auto_migrates_1_3_payload_to_current_schema(tmp_path) -> None:
+def test_normalize_workflow_definition_auto_migrates_1_3_payload_to_current_schema(
+    tmp_path,
+) -> None:
     service = WorkflowService(
         settings=Settings(storage_backend="local", local_storage_root=str(tmp_path))
     )
@@ -387,9 +458,15 @@ def test_normalize_workflow_definition_auto_migrates_1_3_payload_to_current_sche
     )
 
     assert normalized.schema_version == CURRENT_SCHEMA_VERSION
-    assert normalized.metadata["auto_migrated_from_schema_version"] == SCHEMA_VERSION_1_3
-    assert normalized.metadata["schema_upgrade_path"] == expected_upgrade_path(SCHEMA_VERSION_1_3)
-    assert_schema_upgrade_notes(normalized.metadata["migration_notes"], SCHEMA_VERSION_1_3)
+    assert (
+        normalized.metadata["auto_migrated_from_schema_version"] == SCHEMA_VERSION_1_3
+    )
+    assert normalized.metadata["schema_upgrade_path"] == expected_upgrade_path(
+        SCHEMA_VERSION_1_3
+    )
+    assert_schema_upgrade_notes(
+        normalized.metadata["migration_notes"], SCHEMA_VERSION_1_3
+    )
     assert normalized.metadata["compatibility_snapshot_schema"] == SCHEMA_VERSION_1_3
     assert normalized.metadata["resave_hint_schema"] == SCHEMA_VERSION_1_4
     assert normalized.metadata["resave_hint"]["resave_recommended"] is True
@@ -401,7 +478,9 @@ def test_normalize_workflow_definition_auto_migrates_1_3_payload_to_current_sche
     assert normalized.metadata["resave_hint"]["affected_node_ids"] == ["n1"]
     assert normalized.metadata["resave_hint"]["auto_migrated"] is True
     assert normalized.metadata["compatibility_contract_schema"] == SCHEMA_VERSION_1_5
-    assert normalized.metadata["compatibility_contract"]["nodes_requiring_resave"] == ["n1"]
+    assert normalized.metadata["compatibility_contract"]["nodes_requiring_resave"] == [
+        "n1"
+    ]
     assert normalized.metadata["saveback_policy_schema"] == SCHEMA_VERSION_1_6
     assert normalized.metadata["saveback_decision_schema"] == SCHEMA_VERSION_1_7
     assert normalized.metadata["auto_fix_plan_schema"] == SCHEMA_VERSION_1_8
@@ -411,7 +490,9 @@ def test_normalize_workflow_definition_auto_migrates_1_3_payload_to_current_sche
     assert normalized.metadata["saveback_terminal_plan_schema"] == SCHEMA_VERSION_1_12
 
 
-def test_normalize_workflow_definition_auto_migrates_1_4_payload_to_current_schema(tmp_path) -> None:
+def test_normalize_workflow_definition_auto_migrates_1_4_payload_to_current_schema(
+    tmp_path,
+) -> None:
     service = WorkflowService(
         settings=Settings(storage_backend="local", local_storage_root=str(tmp_path))
     )
@@ -445,9 +526,15 @@ def test_normalize_workflow_definition_auto_migrates_1_4_payload_to_current_sche
     )
 
     assert normalized.schema_version == CURRENT_SCHEMA_VERSION
-    assert normalized.metadata["auto_migrated_from_schema_version"] == SCHEMA_VERSION_1_4
-    assert normalized.metadata["schema_upgrade_path"] == expected_upgrade_path(SCHEMA_VERSION_1_4)
-    assert_schema_upgrade_notes(normalized.metadata["migration_notes"], SCHEMA_VERSION_1_4)
+    assert (
+        normalized.metadata["auto_migrated_from_schema_version"] == SCHEMA_VERSION_1_4
+    )
+    assert normalized.metadata["schema_upgrade_path"] == expected_upgrade_path(
+        SCHEMA_VERSION_1_4
+    )
+    assert_schema_upgrade_notes(
+        normalized.metadata["migration_notes"], SCHEMA_VERSION_1_4
+    )
     assert normalized.metadata["resave_hint_schema"] == SCHEMA_VERSION_1_4
     assert normalized.metadata["compatibility_contract_schema"] == SCHEMA_VERSION_1_5
     assert normalized.metadata["saveback_policy_schema"] == SCHEMA_VERSION_1_6
@@ -458,15 +545,21 @@ def test_normalize_workflow_definition_auto_migrates_1_4_payload_to_current_sche
     assert normalized.metadata["saveback_closure_plan_schema"] == SCHEMA_VERSION_1_11
     assert normalized.metadata["saveback_terminal_plan_schema"] == SCHEMA_VERSION_1_12
     assert normalized.nodes[0].params["band_map"] == {"nir": "B8", "red": "B4"}
-    assert normalized.metadata["compatibility_contract"]["node_types_with_alias_support"] == [
-        "gee_raster_algebra"
+    assert normalized.metadata["compatibility_contract"][
+        "node_types_with_alias_support"
+    ] == ["gee_raster_algebra"]
+    assert normalized.metadata["compatibility_contract"]["nodes_requiring_resave"] == [
+        "n1"
     ]
-    assert normalized.metadata["compatibility_contract"]["nodes_requiring_resave"] == ["n1"]
-    assert normalized.metadata["saveback_policy"]["nodes_requiring_canonical_writeback"] == ["n1"]
+    assert normalized.metadata["saveback_policy"][
+        "nodes_requiring_canonical_writeback"
+    ] == ["n1"]
     assert normalized.metadata["saveback_decision"]["recommended_node_ids"] == ["n1"]
 
 
-def test_normalize_workflow_definition_auto_migrates_1_5_payload_to_current_schema(tmp_path) -> None:
+def test_normalize_workflow_definition_auto_migrates_1_5_payload_to_current_schema(
+    tmp_path,
+) -> None:
     service = WorkflowService(
         settings=Settings(storage_backend="local", local_storage_root=str(tmp_path))
     )
@@ -501,9 +594,15 @@ def test_normalize_workflow_definition_auto_migrates_1_5_payload_to_current_sche
     )
 
     assert normalized.schema_version == CURRENT_SCHEMA_VERSION
-    assert normalized.metadata["auto_migrated_from_schema_version"] == SCHEMA_VERSION_1_5
-    assert normalized.metadata["schema_upgrade_path"] == expected_upgrade_path(SCHEMA_VERSION_1_5)
-    assert_schema_upgrade_notes(normalized.metadata["migration_notes"], SCHEMA_VERSION_1_5)
+    assert (
+        normalized.metadata["auto_migrated_from_schema_version"] == SCHEMA_VERSION_1_5
+    )
+    assert normalized.metadata["schema_upgrade_path"] == expected_upgrade_path(
+        SCHEMA_VERSION_1_5
+    )
+    assert_schema_upgrade_notes(
+        normalized.metadata["migration_notes"], SCHEMA_VERSION_1_5
+    )
     assert normalized.metadata["compatibility_contract_schema"] == SCHEMA_VERSION_1_5
     assert normalized.metadata["saveback_policy_schema"] == SCHEMA_VERSION_1_6
     assert normalized.metadata["saveback_decision_schema"] == SCHEMA_VERSION_1_7
@@ -512,11 +611,18 @@ def test_normalize_workflow_definition_auto_migrates_1_5_payload_to_current_sche
     assert normalized.metadata["saveback_audit_plan_schema"] == SCHEMA_VERSION_1_10
     assert normalized.metadata["saveback_closure_plan_schema"] == SCHEMA_VERSION_1_11
     assert normalized.metadata["saveback_terminal_plan_schema"] == SCHEMA_VERSION_1_12
-    assert normalized.metadata["saveback_policy"]["recommended_mode"] == "canonical_writeback"
-    assert normalized.metadata["saveback_policy"]["nodes_requiring_canonical_writeback"] == ["n1"]
+    assert (
+        normalized.metadata["saveback_policy"]["recommended_mode"]
+        == "canonical_writeback"
+    )
+    assert normalized.metadata["saveback_policy"][
+        "nodes_requiring_canonical_writeback"
+    ] == ["n1"]
 
 
-def test_normalize_workflow_definition_auto_migrates_1_6_payload_to_current_schema(tmp_path) -> None:
+def test_normalize_workflow_definition_auto_migrates_1_6_payload_to_current_schema(
+    tmp_path,
+) -> None:
     service = WorkflowService(
         settings=Settings(storage_backend="local", local_storage_root=str(tmp_path))
     )
@@ -553,9 +659,15 @@ def test_normalize_workflow_definition_auto_migrates_1_6_payload_to_current_sche
     )
 
     assert normalized.schema_version == CURRENT_SCHEMA_VERSION
-    assert normalized.metadata["auto_migrated_from_schema_version"] == SCHEMA_VERSION_1_6
-    assert normalized.metadata["schema_upgrade_path"] == expected_upgrade_path(SCHEMA_VERSION_1_6)
-    assert_schema_upgrade_notes(normalized.metadata["migration_notes"], SCHEMA_VERSION_1_6)
+    assert (
+        normalized.metadata["auto_migrated_from_schema_version"] == SCHEMA_VERSION_1_6
+    )
+    assert normalized.metadata["schema_upgrade_path"] == expected_upgrade_path(
+        SCHEMA_VERSION_1_6
+    )
+    assert_schema_upgrade_notes(
+        normalized.metadata["migration_notes"], SCHEMA_VERSION_1_6
+    )
     assert normalized.metadata["saveback_policy_schema"] == SCHEMA_VERSION_1_6
     assert normalized.metadata["saveback_decision_schema"] == SCHEMA_VERSION_1_7
     assert normalized.metadata["auto_fix_plan_schema"] == SCHEMA_VERSION_1_8
@@ -568,7 +680,9 @@ def test_normalize_workflow_definition_auto_migrates_1_6_payload_to_current_sche
     assert normalized.metadata["saveback_decision"]["required_node_ids"] == []
 
 
-def test_normalize_workflow_definition_auto_migrates_1_7_payload_to_current_schema(tmp_path) -> None:
+def test_normalize_workflow_definition_auto_migrates_1_7_payload_to_current_schema(
+    tmp_path,
+) -> None:
     service = WorkflowService(
         settings=Settings(storage_backend="local", local_storage_root=str(tmp_path))
     )
@@ -605,20 +719,30 @@ def test_normalize_workflow_definition_auto_migrates_1_7_payload_to_current_sche
     )
 
     assert normalized.schema_version == CURRENT_SCHEMA_VERSION
-    assert normalized.metadata["auto_migrated_from_schema_version"] == SCHEMA_VERSION_1_7
-    assert normalized.metadata["schema_upgrade_path"] == expected_upgrade_path(SCHEMA_VERSION_1_7)
-    assert_schema_upgrade_notes(normalized.metadata["migration_notes"], SCHEMA_VERSION_1_7)
+    assert (
+        normalized.metadata["auto_migrated_from_schema_version"] == SCHEMA_VERSION_1_7
+    )
+    assert normalized.metadata["schema_upgrade_path"] == expected_upgrade_path(
+        SCHEMA_VERSION_1_7
+    )
+    assert_schema_upgrade_notes(
+        normalized.metadata["migration_notes"], SCHEMA_VERSION_1_7
+    )
     assert normalized.metadata["saveback_decision_schema"] == SCHEMA_VERSION_1_7
     assert normalized.metadata["auto_fix_plan_schema"] == SCHEMA_VERSION_1_8
     assert normalized.metadata["saveback_commit_plan_schema"] == SCHEMA_VERSION_1_9
     assert normalized.metadata["saveback_audit_plan_schema"] == SCHEMA_VERSION_1_10
     assert normalized.metadata["saveback_closure_plan_schema"] == SCHEMA_VERSION_1_11
     assert normalized.metadata["saveback_terminal_plan_schema"] == SCHEMA_VERSION_1_12
-    assert normalized.metadata["auto_fix_plan"]["plan_mode"] == "batch_canonical_writeback"
+    assert (
+        normalized.metadata["auto_fix_plan"]["plan_mode"] == "batch_canonical_writeback"
+    )
     assert normalized.metadata["auto_fix_plan"]["auto_fixable_node_ids"] == ["n1"]
 
 
-def test_normalize_workflow_definition_auto_migrates_1_8_payload_to_current_schema(tmp_path) -> None:
+def test_normalize_workflow_definition_auto_migrates_1_8_payload_to_current_schema(
+    tmp_path,
+) -> None:
     service = WorkflowService(
         settings=Settings(storage_backend="local", local_storage_root=str(tmp_path))
     )
@@ -656,9 +780,15 @@ def test_normalize_workflow_definition_auto_migrates_1_8_payload_to_current_sche
     )
 
     assert normalized.schema_version == CURRENT_SCHEMA_VERSION
-    assert normalized.metadata["auto_migrated_from_schema_version"] == SCHEMA_VERSION_1_8
-    assert normalized.metadata["schema_upgrade_path"] == expected_upgrade_path(SCHEMA_VERSION_1_8)
-    assert_schema_upgrade_notes(normalized.metadata["migration_notes"], SCHEMA_VERSION_1_8)
+    assert (
+        normalized.metadata["auto_migrated_from_schema_version"] == SCHEMA_VERSION_1_8
+    )
+    assert normalized.metadata["schema_upgrade_path"] == expected_upgrade_path(
+        SCHEMA_VERSION_1_8
+    )
+    assert_schema_upgrade_notes(
+        normalized.metadata["migration_notes"], SCHEMA_VERSION_1_8
+    )
     assert normalized.metadata["auto_fix_plan_schema"] == SCHEMA_VERSION_1_8
     assert normalized.metadata["saveback_commit_plan_schema"] == SCHEMA_VERSION_1_9
     assert normalized.metadata["saveback_audit_plan_schema"] == SCHEMA_VERSION_1_10
@@ -666,7 +796,9 @@ def test_normalize_workflow_definition_auto_migrates_1_8_payload_to_current_sche
     assert normalized.metadata["saveback_terminal_plan_schema"] == SCHEMA_VERSION_1_12
 
 
-def test_normalize_workflow_definition_auto_migrates_1_9_payload_to_current_schema(tmp_path) -> None:
+def test_normalize_workflow_definition_auto_migrates_1_9_payload_to_current_schema(
+    tmp_path,
+) -> None:
     service = WorkflowService(
         settings=Settings(storage_backend="local", local_storage_root=str(tmp_path))
     )
@@ -705,16 +837,24 @@ def test_normalize_workflow_definition_auto_migrates_1_9_payload_to_current_sche
     )
 
     assert normalized.schema_version == CURRENT_SCHEMA_VERSION
-    assert normalized.metadata["auto_migrated_from_schema_version"] == SCHEMA_VERSION_1_9
-    assert normalized.metadata["schema_upgrade_path"] == expected_upgrade_path(SCHEMA_VERSION_1_9)
-    assert_schema_upgrade_notes(normalized.metadata["migration_notes"], SCHEMA_VERSION_1_9)
+    assert (
+        normalized.metadata["auto_migrated_from_schema_version"] == SCHEMA_VERSION_1_9
+    )
+    assert normalized.metadata["schema_upgrade_path"] == expected_upgrade_path(
+        SCHEMA_VERSION_1_9
+    )
+    assert_schema_upgrade_notes(
+        normalized.metadata["migration_notes"], SCHEMA_VERSION_1_9
+    )
     assert normalized.metadata["saveback_commit_plan_schema"] == SCHEMA_VERSION_1_9
     assert normalized.metadata["saveback_audit_plan_schema"] == SCHEMA_VERSION_1_10
     assert normalized.metadata["saveback_closure_plan_schema"] == SCHEMA_VERSION_1_11
     assert normalized.metadata["saveback_terminal_plan_schema"] == SCHEMA_VERSION_1_12
 
 
-def test_normalize_workflow_definition_auto_migrates_1_10_payload_to_current_schema(tmp_path) -> None:
+def test_normalize_workflow_definition_auto_migrates_1_10_payload_to_current_schema(
+    tmp_path,
+) -> None:
     service = WorkflowService(
         settings=Settings(storage_backend="local", local_storage_root=str(tmp_path))
     )
@@ -754,15 +894,23 @@ def test_normalize_workflow_definition_auto_migrates_1_10_payload_to_current_sch
     )
 
     assert normalized.schema_version == CURRENT_SCHEMA_VERSION
-    assert normalized.metadata["auto_migrated_from_schema_version"] == SCHEMA_VERSION_1_10
-    assert normalized.metadata["schema_upgrade_path"] == expected_upgrade_path(SCHEMA_VERSION_1_10)
-    assert_schema_upgrade_notes(normalized.metadata["migration_notes"], SCHEMA_VERSION_1_10)
+    assert (
+        normalized.metadata["auto_migrated_from_schema_version"] == SCHEMA_VERSION_1_10
+    )
+    assert normalized.metadata["schema_upgrade_path"] == expected_upgrade_path(
+        SCHEMA_VERSION_1_10
+    )
+    assert_schema_upgrade_notes(
+        normalized.metadata["migration_notes"], SCHEMA_VERSION_1_10
+    )
     assert normalized.metadata["saveback_audit_plan_schema"] == SCHEMA_VERSION_1_10
     assert normalized.metadata["saveback_closure_plan_schema"] == SCHEMA_VERSION_1_11
     assert normalized.metadata["saveback_terminal_plan_schema"] == SCHEMA_VERSION_1_12
 
 
-def test_normalize_workflow_definition_auto_migrates_1_11_payload_to_current_schema(tmp_path) -> None:
+def test_normalize_workflow_definition_auto_migrates_1_11_payload_to_current_schema(
+    tmp_path,
+) -> None:
     service = WorkflowService(
         settings=Settings(storage_backend="local", local_storage_root=str(tmp_path))
     )
@@ -803,14 +951,22 @@ def test_normalize_workflow_definition_auto_migrates_1_11_payload_to_current_sch
     )
 
     assert normalized.schema_version == CURRENT_SCHEMA_VERSION
-    assert normalized.metadata["auto_migrated_from_schema_version"] == SCHEMA_VERSION_1_11
-    assert normalized.metadata["schema_upgrade_path"] == expected_upgrade_path(SCHEMA_VERSION_1_11)
-    assert_schema_upgrade_notes(normalized.metadata["migration_notes"], SCHEMA_VERSION_1_11)
+    assert (
+        normalized.metadata["auto_migrated_from_schema_version"] == SCHEMA_VERSION_1_11
+    )
+    assert normalized.metadata["schema_upgrade_path"] == expected_upgrade_path(
+        SCHEMA_VERSION_1_11
+    )
+    assert_schema_upgrade_notes(
+        normalized.metadata["migration_notes"], SCHEMA_VERSION_1_11
+    )
     assert normalized.metadata["saveback_closure_plan_schema"] == SCHEMA_VERSION_1_11
     assert normalized.metadata["saveback_terminal_plan_schema"] == SCHEMA_VERSION_1_12
 
 
-def test_workflow_migrator_rejects_deprecated_node_type_in_compatibility_check() -> None:
+def test_workflow_migrator_rejects_deprecated_node_type_in_compatibility_check() -> (
+    None
+):
     registry = NodeRegistry()
     registry.register(DeprecatedTestNode)
     registry.register(IdentityNode)
@@ -870,9 +1026,15 @@ def test_diagnostics_exposes_workflow_schema_support(tmp_path) -> None:
     report = service.diagnose()
 
     assert report.checks["workflow_schema"]["status"] == "ok"
-    assert report.checks["workflow_schema"]["current_schema_version"] == CURRENT_SCHEMA_VERSION
+    assert (
+        report.checks["workflow_schema"]["current_schema_version"]
+        == CURRENT_SCHEMA_VERSION
+    )
     assert report.checks["workflow_schema"]["auto_replace_deprecated_nodes"] is True
-    assert CURRENT_SCHEMA_VERSION in report.checks["workflow_schema"]["supported_schema_versions"]
+    assert (
+        CURRENT_SCHEMA_VERSION
+        in report.checks["workflow_schema"]["supported_schema_versions"]
+    )
     for source_version in [
         LEGACY_SCHEMA_VERSION,
         SCHEMA_VERSION_1_0,
@@ -937,9 +1099,10 @@ def test_diagnostics_exposes_workflow_schema_support(tmp_path) -> None:
         "deprecated node types may be auto-replaced when a canonical replacement is registered",
         "schema_version 1.12 adds a terminal writeback plan for audit closure",
     ]
-    assert {"schema_version": SCHEMA_VERSION_1_2, "field": "normalization_summary"} in report.checks[
-        "workflow_schema"
-    ]["workflow_metadata_features"]
+    assert {
+        "schema_version": SCHEMA_VERSION_1_2,
+        "field": "normalization_summary",
+    } in report.checks["workflow_schema"]["workflow_metadata_features"]
     assert {
         "group": "saveback_terminal_closure",
         "schema_versions": [SCHEMA_VERSION_1_11, CURRENT_SCHEMA_VERSION],
@@ -951,53 +1114,74 @@ def test_diagnostics_exposes_workflow_schema_support(tmp_path) -> None:
         "description": "terminal audit writeback summary for API consumers",
         "subfields": ["action", "reasons", "summary"],
     }
-    response_schema = report.checks["workflow_schema"]["saveback_terminal_plan_response_schema"]
+    response_schema = report.checks["workflow_schema"][
+        "saveback_terminal_plan_response_schema"
+    ]
     assert response_schema["schema_version"] == CURRENT_SCHEMA_VERSION
     assert response_schema["field"] == "saveback_terminal_plan"
     assert response_schema["response_fields"] == ["action", "reasons", "summary"]
     assert response_schema["response_model"]["title"] == "TerminalPlanResponse"
-    assert response_schema["response_model"]["properties"]["summary"]["$ref"] == "#/$defs/TerminalPlanSummary"
-    assert response_schema["response_model"]["$defs"]["TerminalPlanSummary"]["title"] == "TerminalPlanSummary"
-    assert {"schema_version": SCHEMA_VERSION_1_3, "field": "compatibility_snapshot"} in report.checks[
-        "workflow_schema"
-    ]["workflow_metadata_features"]
-    assert {"schema_version": SCHEMA_VERSION_1_4, "field": "resave_hint"} in report.checks[
-        "workflow_schema"
-    ]["workflow_metadata_features"]
-    assert {"schema_version": SCHEMA_VERSION_1_5, "field": "compatibility_contract"} in report.checks[
-        "workflow_schema"
-    ]["workflow_metadata_features"]
-    assert {"schema_version": SCHEMA_VERSION_1_6, "field": "saveback_policy"} in report.checks[
-        "workflow_schema"
-    ]["workflow_metadata_features"]
-    assert {"schema_version": SCHEMA_VERSION_1_7, "field": "saveback_decision"} in report.checks[
-        "workflow_schema"
-    ]["workflow_metadata_features"]
-    assert {"schema_version": SCHEMA_VERSION_1_8, "field": "auto_fix_plan"} in report.checks[
-        "workflow_schema"
-    ]["workflow_metadata_features"]
-    assert {"schema_version": SCHEMA_VERSION_1_9, "field": "saveback_commit_plan"} in report.checks[
-        "workflow_schema"
-    ]["workflow_metadata_features"]
-    assert {"schema_version": SCHEMA_VERSION_1_10, "field": "saveback_audit_plan"} in report.checks[
-        "workflow_schema"
-    ]["workflow_metadata_features"]
-    assert {"schema_version": SCHEMA_VERSION_1_11, "field": "saveback_closure_plan"} in report.checks[
-        "workflow_schema"
-    ]["workflow_metadata_features"]
-    assert {"schema_version": SCHEMA_VERSION_1_12, "field": "saveback_terminal_plan"} in report.checks[
-        "workflow_schema"
-    ]["workflow_metadata_features"]
+    assert (
+        response_schema["response_model"]["properties"]["summary"]["$ref"]
+        == "#/$defs/TerminalPlanSummary"
+    )
+    assert (
+        response_schema["response_model"]["$defs"]["TerminalPlanSummary"]["title"]
+        == "TerminalPlanSummary"
+    )
+    assert {
+        "schema_version": SCHEMA_VERSION_1_3,
+        "field": "compatibility_snapshot",
+    } in report.checks["workflow_schema"]["workflow_metadata_features"]
+    assert {
+        "schema_version": SCHEMA_VERSION_1_4,
+        "field": "resave_hint",
+    } in report.checks["workflow_schema"]["workflow_metadata_features"]
+    assert {
+        "schema_version": SCHEMA_VERSION_1_5,
+        "field": "compatibility_contract",
+    } in report.checks["workflow_schema"]["workflow_metadata_features"]
+    assert {
+        "schema_version": SCHEMA_VERSION_1_6,
+        "field": "saveback_policy",
+    } in report.checks["workflow_schema"]["workflow_metadata_features"]
+    assert {
+        "schema_version": SCHEMA_VERSION_1_7,
+        "field": "saveback_decision",
+    } in report.checks["workflow_schema"]["workflow_metadata_features"]
+    assert {
+        "schema_version": SCHEMA_VERSION_1_8,
+        "field": "auto_fix_plan",
+    } in report.checks["workflow_schema"]["workflow_metadata_features"]
+    assert {
+        "schema_version": SCHEMA_VERSION_1_9,
+        "field": "saveback_commit_plan",
+    } in report.checks["workflow_schema"]["workflow_metadata_features"]
+    assert {
+        "schema_version": SCHEMA_VERSION_1_10,
+        "field": "saveback_audit_plan",
+    } in report.checks["workflow_schema"]["workflow_metadata_features"]
+    assert {
+        "schema_version": SCHEMA_VERSION_1_11,
+        "field": "saveback_closure_plan",
+    } in report.checks["workflow_schema"]["workflow_metadata_features"]
+    assert {
+        "schema_version": SCHEMA_VERSION_1_12,
+        "field": "saveback_terminal_plan",
+    } in report.checks["workflow_schema"]["workflow_metadata_features"]
     assert any(
         item["schema_version"] == CURRENT_SCHEMA_VERSION
-        and item["fields"] == ["saveback_terminal_plan", "saveback_terminal_plan_schema"]
+        and item["fields"]
+        == ["saveback_terminal_plan", "saveback_terminal_plan_schema"]
         for item in report.checks["workflow_schema"]["workflow_metadata_feature_matrix"]
     )
 
 
 def test_submit_workflow_accepts_legacy_payload_and_executes(tmp_path) -> None:
     adapter = WorkflowContractAdapter(
-        WorkflowService(settings=Settings(storage_backend="local", local_storage_root=str(tmp_path)))
+        WorkflowService(
+            settings=Settings(storage_backend="local", local_storage_root=str(tmp_path))
+        )
     )
 
     result = adapter.submit_workflow(
@@ -1055,7 +1239,9 @@ def test_migrator_rewrites_legacy_node_type_and_alias_params(tmp_path) -> None:
     )
 
 
-def test_migrator_applies_second_batch_replacement_rules_for_real_legacy_nodes(tmp_path) -> None:
+def test_migrator_applies_second_batch_replacement_rules_for_real_legacy_nodes(
+    tmp_path,
+) -> None:
     service = WorkflowService(
         settings=Settings(storage_backend="local", local_storage_root=str(tmp_path))
     )
@@ -1184,7 +1370,9 @@ def test_migrator_rewrites_current_node_parameter_aliases(tmp_path) -> None:
     )
 
 
-def test_workflow_migrator_reports_legacy_parameter_aliases_in_compatibility_check(tmp_path) -> None:
+def test_workflow_migrator_reports_legacy_parameter_aliases_in_compatibility_check(
+    tmp_path,
+) -> None:
     service = WorkflowService(
         settings=Settings(storage_backend="local", local_storage_root=str(tmp_path))
     )
@@ -1211,7 +1399,9 @@ def test_workflow_migrator_reports_legacy_parameter_aliases_in_compatibility_che
         migrator.validate_compatibility(workflow)
 
 
-def test_normalize_workflow_definition_applies_deprecated_replacement_parameter_rules(tmp_path) -> None:
+def test_normalize_workflow_definition_applies_deprecated_replacement_parameter_rules(
+    tmp_path,
+) -> None:
     registry = NodeRegistry()
     registry.register(ConfiguredReplacementNode)
     registry.register(DeprecatedConfiguredNode)
@@ -1271,7 +1461,9 @@ def test_normalize_workflow_definition_applies_deprecated_replacement_parameter_
     )
 
 
-def test_migrator_fills_workflow_and_node_defaults_from_canonical_specs(tmp_path) -> None:
+def test_migrator_fills_workflow_and_node_defaults_from_canonical_specs(
+    tmp_path,
+) -> None:
     service = WorkflowService(
         settings=Settings(storage_backend="local", local_storage_root=str(tmp_path))
     )
@@ -1310,7 +1502,8 @@ def test_migrator_fills_workflow_and_node_defaults_from_canonical_specs(tmp_path
     assert export_node.params["start_task"] is False
     assert any(
         note["migration"] == "workflow_defaults_filled"
-        and set(note["fields"]) == {"version", "inputs", "edges", "runtime_policy", "storage_policy"}
+        and set(note["fields"])
+        == {"version", "inputs", "edges", "runtime_policy", "storage_policy"}
         for note in normalized.metadata["migration_notes"]
     )
     assert any(
@@ -1322,12 +1515,15 @@ def test_migrator_fills_workflow_and_node_defaults_from_canonical_specs(tmp_path
     assert any(
         note.get("node_id") == "n2"
         and note["migration"] == "default_params_filled"
-        and set(note["fields"]) == {"description", "file_name_prefix", "scale", "start_task"}
+        and set(note["fields"])
+        == {"description", "file_name_prefix", "scale", "start_task"}
         for note in normalized.metadata["migration_notes"]
     )
 
 
-def test_migrator_rewrites_second_batch_aliases_for_batch_and_export_nodes(tmp_path) -> None:
+def test_migrator_rewrites_second_batch_aliases_for_batch_and_export_nodes(
+    tmp_path,
+) -> None:
     service = WorkflowService(
         settings=Settings(storage_backend="local", local_storage_root=str(tmp_path))
     )
@@ -1463,9 +1659,15 @@ def test_compatibility_contract_exposes_real_node_alias_surface(tmp_path) -> Non
     assert compatibility_contract["nodes_requiring_resave"] == ["n1", "n2", "n3"]
 
     node_contracts = {item["node_id"]: item for item in compatibility_contract["nodes"]}
-    assert node_contracts["n1"]["supported_parameter_aliases"] == {"variables": "band_map"}
-    assert node_contracts["n1"]["applied_parameter_aliases"] == [{"from": "variables", "to": "band_map"}]
-    assert node_contracts["n2"]["supported_parameter_aliases"] == {"fallback_value": "default_value"}
+    assert node_contracts["n1"]["supported_parameter_aliases"] == {
+        "variables": "band_map"
+    }
+    assert node_contracts["n1"]["applied_parameter_aliases"] == [
+        {"from": "variables", "to": "band_map"}
+    ]
+    assert node_contracts["n2"]["supported_parameter_aliases"] == {
+        "fallback_value": "default_value"
+    }
     assert node_contracts["n2"]["applied_parameter_aliases"] == [
         {"from": "fallback_value", "to": "default_value"}
     ]
@@ -1548,7 +1750,9 @@ def test_saveback_policy_exposes_canonical_writeback_actions(tmp_path) -> None:
     }
 
 
-def test_saveback_decision_distinguishes_required_and_recommended_nodes(tmp_path) -> None:
+def test_saveback_decision_distinguishes_required_and_recommended_nodes(
+    tmp_path,
+) -> None:
     service = WorkflowService(
         settings=Settings(storage_backend="local", local_storage_root=str(tmp_path))
     )
@@ -1595,7 +1799,9 @@ def test_saveback_decision_distinguishes_required_and_recommended_nodes(tmp_path
     assert saveback_decision["recommended_editor_mode"] == "block_save_until_writeback"
     assert saveback_decision["can_execute_without_saveback"] is True
 
-    node_decisions = {item["node_id"]: item for item in saveback_decision["node_decisions"]}
+    node_decisions = {
+        item["node_id"]: item for item in saveback_decision["node_decisions"]
+    }
     assert node_decisions["n1"]["severity"] == "required"
     assert node_decisions["n1"]["reason_codes"] == [
         "node_type_rewritten",
@@ -1709,7 +1915,9 @@ def test_auto_fix_plan_exposes_batch_canonical_writeback_steps(tmp_path) -> None
     }
 
 
-def test_saveback_commit_plan_exposes_confirmation_and_review_barriers(tmp_path) -> None:
+def test_saveback_commit_plan_exposes_confirmation_and_review_barriers(
+    tmp_path,
+) -> None:
     service = WorkflowService(
         settings=Settings(storage_backend="local", local_storage_root=str(tmp_path))
     )
@@ -1779,7 +1987,9 @@ def test_saveback_commit_plan_exposes_confirmation_and_review_barriers(tmp_path)
         },
     ]
 
-    node_commits = {item["node_id"]: item for item in saveback_commit_plan["node_commits"]}
+    node_commits = {
+        item["node_id"]: item for item in saveback_commit_plan["node_commits"]
+    }
     assert node_commits["n1"] == {
         "node_id": "n1",
         "severity": "required",
@@ -1944,7 +2154,9 @@ def test_saveback_audit_plan_exposes_audit_receipts_and_fields(tmp_path) -> None
     }
 
 
-def test_saveback_closure_plan_exposes_batch_writeback_and_closure_status(tmp_path) -> None:
+def test_saveback_closure_plan_exposes_batch_writeback_and_closure_status(
+    tmp_path,
+) -> None:
     service = WorkflowService(
         settings=Settings(storage_backend="local", local_storage_root=str(tmp_path))
     )
@@ -2035,7 +2247,9 @@ def test_saveback_closure_plan_exposes_batch_writeback_and_closure_status(tmp_pa
         },
     ]
 
-    node_closures = {item["node_id"]: item for item in saveback_closure_plan["node_closures"]}
+    node_closures = {
+        item["node_id"]: item for item in saveback_closure_plan["node_closures"]
+    }
     assert node_closures["n1"] == {
         "node_id": "n1",
         "severity": "required",
@@ -2095,7 +2309,9 @@ def test_saveback_closure_plan_exposes_batch_writeback_and_closure_status(tmp_pa
     }
 
 
-def test_saveback_terminal_plan_exposes_audit_summary_and_terminal_writeback_strategy(tmp_path) -> None:
+def test_saveback_terminal_plan_exposes_audit_summary_and_terminal_writeback_strategy(
+    tmp_path,
+) -> None:
     service = WorkflowService(
         settings=Settings(storage_backend="local", local_storage_root=str(tmp_path))
     )
@@ -2204,7 +2420,9 @@ def test_saveback_terminal_plan_exposes_audit_summary_and_terminal_writeback_str
         },
     ]
 
-    node_terminals = {item["node_id"]: item for item in saveback_terminal_plan["node_terminals"]}
+    node_terminals = {
+        item["node_id"]: item for item in saveback_terminal_plan["node_terminals"]
+    }
     assert node_terminals["n1"] == {
         "node_id": "n1",
         "severity": "required",
@@ -2248,7 +2466,11 @@ def test_saveback_terminal_plan_exposes_audit_summary_and_terminal_writeback_str
         ],
         "receipt_summary": "confirmation_receipt_recorded",
         "writeback_summary": "terminal_writeback_required",
-        "terminal_summary_fields": ["receipt_summary", "writeback_summary", "terminal_state"],
+        "terminal_summary_fields": [
+            "receipt_summary",
+            "writeback_summary",
+            "terminal_state",
+        ],
         "terminal_checks": [
             "canonical_payload_consistency",
             "fields_written_match_plan",
@@ -2300,7 +2522,11 @@ def test_saveback_terminal_plan_exposes_audit_summary_and_terminal_writeback_str
         ],
         "receipt_summary": "review_receipt_recorded",
         "writeback_summary": "terminal_writeback_required",
-        "terminal_summary_fields": ["receipt_summary", "writeback_summary", "terminal_state"],
+        "terminal_summary_fields": [
+            "receipt_summary",
+            "writeback_summary",
+            "terminal_state",
+        ],
         "terminal_checks": [
             "canonical_payload_consistency",
             "fields_written_match_plan",
@@ -2310,7 +2536,9 @@ def test_saveback_terminal_plan_exposes_audit_summary_and_terminal_writeback_str
     }
 
 
-def test_saveback_terminal_plan_does_not_require_writeback_for_monitor_only_nodes(tmp_path) -> None:
+def test_saveback_terminal_plan_does_not_require_writeback_for_monitor_only_nodes(
+    tmp_path,
+) -> None:
     service = WorkflowService(
         settings=Settings(storage_backend="local", local_storage_root=str(tmp_path))
     )
@@ -2334,11 +2562,18 @@ def test_saveback_terminal_plan_does_not_require_writeback_for_monitor_only_node
     assert saveback_terminal_plan["requires_terminal_writeback"] is False
     assert saveback_terminal_plan["terminal_writeback_node_ids"] == []
     assert saveback_terminal_plan["terminal_state"] == "no_terminal_writeback_required"
-    assert saveback_terminal_plan["terminal_state_writeback_strategy"]["completed_terminal_state"] == (
-        "no_terminal_writeback_required"
+    assert saveback_terminal_plan["terminal_state_writeback_strategy"][
+        "completed_terminal_state"
+    ] == ("no_terminal_writeback_required")
+    assert (
+        saveback_terminal_plan["audit_result_summary"][
+            "terminal_writeback_required_count"
+        ]
+        == 0
     )
-    assert saveback_terminal_plan["audit_result_summary"]["terminal_writeback_required_count"] == 0
-    node_terminals = {item["node_id"]: item for item in saveback_terminal_plan["node_terminals"]}
+    node_terminals = {
+        item["node_id"]: item for item in saveback_terminal_plan["node_terminals"]
+    }
     assert node_terminals["n1"] == {
         "node_id": "n1",
         "severity": "none",
@@ -2378,7 +2613,11 @@ def test_saveback_terminal_plan_does_not_require_writeback_for_monitor_only_node
         ],
         "receipt_summary": "no_receipt_recorded",
         "writeback_summary": "no_terminal_writeback_required",
-        "terminal_summary_fields": ["receipt_summary", "writeback_summary", "terminal_state"],
+        "terminal_summary_fields": [
+            "receipt_summary",
+            "writeback_summary",
+            "terminal_state",
+        ],
         "terminal_checks": [
             "canonical_payload_consistency",
         ],

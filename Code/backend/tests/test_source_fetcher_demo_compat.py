@@ -15,7 +15,9 @@ class DemoSourceFetcherCompatTests(unittest.TestCase):
 
         with patch(
             "app.services.source_fetcher.object_store.put_bytes",
-            return_value=SimpleNamespace(content_length=128, file_path=Path("demo-artifact.json")),
+            return_value=SimpleNamespace(
+                content_length=128, file_path=Path("demo-artifact.json")
+            ),
         ) as put_bytes_mock:
             result = fetcher.fetch(
                 ref_id="demo-ref",

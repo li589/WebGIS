@@ -9,6 +9,7 @@
 - POST   /workflow-definitions/{id}/duplicate  复制工作流
 - GET    /workflow-node-templates         获取所有可用节点模板
 """
+
 from __future__ import annotations
 
 from typing import Any
@@ -50,11 +51,17 @@ def compile_graph(payload: dict[str, Any]) -> dict[str, Any]:
             workflow_id=str(payload.get("workflow_id") or "canvas_workflow"),
             name=payload.get("name"),
             description=payload.get("description"),
-            nodes=payload.get("nodes") if isinstance(payload.get("nodes"), list) else [],
-            links=payload.get("links") if isinstance(payload.get("links"), list) else [],
+            nodes=payload.get("nodes")
+            if isinstance(payload.get("nodes"), list)
+            else [],
+            links=payload.get("links")
+            if isinstance(payload.get("links"), list)
+            else [],
         )
     except WorkflowGraphCompileError as exc:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)
+        ) from exc
     except Exception as exc:  # noqa: BLE001
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -76,7 +83,10 @@ def get_definition(workflow_id: str) -> dict[str, Any]:
     """获取单个工作流定义的完整内容。"""
     definition = wds.get_definition(workflow_id)
     if definition is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Workflow definition not found: {workflow_id}")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Workflow definition not found: {workflow_id}",
+        )
     return definition
 
 
@@ -91,9 +101,13 @@ def create_definition(payload: dict[str, Any]) -> dict[str, Any]:
     try:
         return wds.create_definition(payload)
     except WorkflowExistsError as exc:
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT, detail=str(exc)
+        ) from exc
     except ValueError as exc:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)
+        ) from exc
 
 
 @router.put(
@@ -106,9 +120,13 @@ def update_definition(workflow_id: str, payload: dict[str, Any]) -> dict[str, An
     try:
         return wds.update_definition(workflow_id, payload)
     except WorkflowNotFoundError as exc:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)
+        ) from exc
     except ValueError as exc:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)
+        ) from exc
 
 
 @router.delete(
@@ -122,9 +140,13 @@ def delete_definition(workflow_id: str) -> dict[str, Any]:
     try:
         wds.delete_definition(workflow_id)
     except WorkflowNotFoundError as exc:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)
+        ) from exc
     except ValueError as exc:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)
+        ) from exc
     return {"deleted": workflow_id}
 
 
@@ -138,15 +160,27 @@ def duplicate_definition(workflow_id: str, payload: dict[str, Any]) -> dict[str,
     new_id = payload.get("new_id")
     new_name = payload.get("new_name")
     if not new_id or not isinstance(new_id, str):
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="new_id is required and must be a string")
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="new_id is required and must be a string",
+        )
     # new_name 可选，但若提供则必须是字符串（防止数字等类型污染数据）
     if new_name is not None and not isinstance(new_name, str):
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="new_name must be a string if provided")
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="new_name must be a string if provided",
+        )
     try:
         return wds.duplicate_definition(workflow_id, new_id, new_name)
     except WorkflowNotFoundError as exc:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)
+        ) from exc
     except WorkflowExistsError as exc:
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT, detail=str(exc)
+        ) from exc
     except ValueError as exc:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)
+        ) from exc

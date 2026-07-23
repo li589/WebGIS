@@ -9,6 +9,7 @@
     0 = 全部通过
     1 = 有失败项
 """
+
 from __future__ import annotations
 
 import argparse
@@ -42,7 +43,9 @@ class E2EReport:
 
     def summary(self) -> int:
         print("\n" + "=" * 60)
-        print(f"通过: {len(self.passed)}  失败: {len(self.failed)}  跳过: {len(self.skipped)}")
+        print(
+            f"通过: {len(self.passed)}  失败: {len(self.failed)}  跳过: {len(self.skipped)}"
+        )
         if self.failed:
             print("失败项:")
             for name, reason in self.failed:
@@ -80,7 +83,9 @@ def test_runtime_status(base_url: str, report: E2EReport) -> dict[str, Any] | No
         overall = data.get("overall_health")
         active = data.get("active_run_count")
         services = data.get("services", [])
-        print(f"   overall_health={overall}  active_run_count={active}  services={len(services)}")
+        print(
+            f"   overall_health={overall}  active_run_count={active}  services={len(services)}"
+        )
         for svc in services:
             svc_name = svc.get("service_name")
             health = svc.get("health")
@@ -91,7 +96,10 @@ def test_runtime_status(base_url: str, report: E2EReport) -> dict[str, Any] | No
         if "redis_cache" in svc_names:
             report.ok("redis_cache service present")
         else:
-            report.skip("redis_cache service present", "redis_cache 条目未出现（可能 Redis 未启用）")
+            report.skip(
+                "redis_cache service present",
+                "redis_cache 条目未出现（可能 Redis 未启用）",
+            )
         report.ok(name)
         return data
     except Exception as exc:
@@ -170,7 +178,9 @@ def test_workflow_submit_and_poll(
     try:
         resp = _request("POST", f"{base_url}/workflow-runs", json=payload)
         if resp.status_code != 202:
-            report.fail(name, f"submit status={resp.status_code} body={resp.text[:200]}")
+            report.fail(
+                name, f"submit status={resp.status_code} body={resp.text[:200]}"
+            )
             return None
         accepted = resp.json()
         run_id = accepted["run_id"]
@@ -269,17 +279,23 @@ def test_redis_cache_stats(base_url: str, report: E2EReport) -> None:
             report.fail(name, f"status={resp.status_code}")
             return
         services = resp.json().get("services", [])
-        redis_svc = next((s for s in services if s.get("service_name") == "redis_cache"), None)
+        redis_svc = next(
+            (s for s in services if s.get("service_name") == "redis_cache"), None
+        )
         if redis_svc is None:
             report.skip(name, "redis_cache 服务条目不存在")
             return
         details = redis_svc.get("details", {})
         available = details.get("available")
-        print(f"   available={available}  db_size={details.get('db_size')}  weather_keys={details.get('weather_cache_keys')}")
+        print(
+            f"   available={available}  db_size={details.get('db_size')}  weather_keys={details.get('weather_cache_keys')}"
+        )
         if available:
             report.ok(name)
         else:
-            report.skip(name, f"Redis 不可用: {details.get('reason') or details.get('error')}")
+            report.skip(
+                name, f"Redis 不可用: {details.get('reason') or details.get('error')}"
+            )
     except Exception as exc:
         report.fail(name, str(exc))
 
@@ -330,7 +346,7 @@ def test_minio_object_store(report: E2EReport) -> None:
         if fetched != data:
             report.fail(name, f"GET 数据不一致 (len={len(fetched) if fetched else 0})")
             return
-        print(f"   GET ok: match=True")
+        print("   GET ok: match=True")
         # Cleanup
         if isinstance(object_store, MinioObjectStore):
             object_store._client.remove_object(object_store._bucket, key)

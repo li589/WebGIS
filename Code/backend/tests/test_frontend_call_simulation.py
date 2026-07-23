@@ -19,7 +19,6 @@
 
 from __future__ import annotations
 
-import asyncio
 import threading
 import time
 import unittest
@@ -43,7 +42,11 @@ from shared.contracts.api_contracts import (
 )
 
 
-def _build_payload(*, layer_id: str = "ndvi", command_type: WorkflowCommandType = WorkflowCommandType.analysis) -> WorkflowSubmitRequest:
+def _build_payload(
+    *,
+    layer_id: str = "ndvi",
+    command_type: WorkflowCommandType = WorkflowCommandType.analysis,
+) -> WorkflowSubmitRequest:
     """构造一个合法的 WorkflowSubmitRequest，模拟前端 submitWorkflow() 的负载。"""
     return WorkflowSubmitRequest(
         command_type=command_type,
@@ -115,14 +118,22 @@ class FrontendCallFlowTests(unittest.TestCase):
             created_at=datetime.now(timezone.utc),
             message="工作流已提交",
         )
-        with patch("app.api.routers.workflow_router.submission_service.submit_workflow", return_value=accepted):
+        with patch(
+            "app.api.routers.workflow_router.submission_service.submit_workflow",
+            return_value=accepted,
+        ):
             result = submit_workflow(payload)
         self.assertEqual(result.run_id, run_id)
         self.assertEqual(result.status, ExecutionStatus.accepted)
 
         # 2. Poll status
-        running_status = _build_run_status(run_id=run_id, status=ExecutionStatus.running, progress=50)
-        with patch("app.api.routers.workflow_router.submission_service.get_workflow_run", return_value=running_status):
+        running_status = _build_run_status(
+            run_id=run_id, status=ExecutionStatus.running, progress=50
+        )
+        with patch(
+            "app.api.routers.workflow_router.submission_service.get_workflow_run",
+            return_value=running_status,
+        ):
             status_result = get_workflow_run(run_id)
         self.assertIsNotNone(status_result)
         self.assertEqual(status_result.status, ExecutionStatus.running)
@@ -145,14 +156,20 @@ class FrontendCallFlowTests(unittest.TestCase):
         request_mock.headers = {}
         request_mock.client = MagicMock()
         request_mock.client.host = "127.0.0.1"
-        with patch("app.api.routers.workflow_router.submission_service.list_workflow_events", return_value=events_response):
+        with patch(
+            "app.api.routers.workflow_router.submission_service.list_workflow_events",
+            return_value=events_response,
+        ):
             events_result = list_workflow_events(request_mock, run_id)
         self.assertEqual(events_result.run_id, run_id)
         self.assertEqual(len(events_result.items), 1)
 
         # 4. Get view (via result_view_service)
         from app.api.routers.workflow_router import get_workflow_run_view
-        from shared.contracts.api_contracts import WorkflowRunViewResponse, WorkflowRunViewSummaryRow
+        from shared.contracts.api_contracts import (
+            WorkflowRunViewResponse,
+            WorkflowRunViewSummaryRow,
+        )
 
         view_response = WorkflowRunViewResponse(
             run_id=run_id,
@@ -165,14 +182,22 @@ class FrontendCallFlowTests(unittest.TestCase):
             can_show_link=False,
             updated_at=datetime.now(timezone.utc),
         )
-        with patch("app.api.routers.workflow_router.result_view_service.get_workflow_run_view", return_value=view_response):
+        with patch(
+            "app.api.routers.workflow_router.result_view_service.get_workflow_run_view",
+            return_value=view_response,
+        ):
             view_result = get_workflow_run_view(run_id)
         self.assertEqual(view_result.run_id, run_id)
         self.assertEqual(view_result.title, "Test Workflow")
 
         # 5. Cancel
-        cancelled_status = _build_run_status(run_id=run_id, status=ExecutionStatus.cancelled, progress=100)
-        with patch("app.api.routers.workflow_router.lifecycle_service.cancel_workflow_run", return_value=cancelled_status):
+        cancelled_status = _build_run_status(
+            run_id=run_id, status=ExecutionStatus.cancelled, progress=100
+        )
+        with patch(
+            "app.api.routers.workflow_router.lifecycle_service.cancel_workflow_run",
+            return_value=cancelled_status,
+        ):
             cancel_result = cancel_workflow_run(run_id)
         self.assertEqual(cancel_result.status, ExecutionStatus.cancelled)
 
@@ -184,7 +209,10 @@ class FrontendCallFlowTests(unittest.TestCase):
         payload = _build_payload()
         error_msg = "Workflow capacity reached: active_runs=4, limit=4"
 
-        with patch("app.api.routers.workflow_router.submission_service.submit_workflow", side_effect=ValueError(error_msg)):
+        with patch(
+            "app.api.routers.workflow_router.submission_service.submit_workflow",
+            side_effect=ValueError(error_msg),
+        ):
             with self.assertRaises(HTTPException) as ctx:
                 submit_workflow(payload)
             self.assertEqual(ctx.exception.status_code, 429)
@@ -195,7 +223,10 @@ class FrontendCallFlowTests(unittest.TestCase):
         from app.api.routers.workflow_router import get_workflow_run
         from fastapi import HTTPException
 
-        with patch("app.api.routers.workflow_router.submission_service.get_workflow_run", return_value=None):
+        with patch(
+            "app.api.routers.workflow_router.submission_service.get_workflow_run",
+            return_value=None,
+        ):
             with self.assertRaises(HTTPException) as ctx:
                 get_workflow_run("run-nonexistent")
             self.assertEqual(ctx.exception.status_code, 404)
@@ -206,7 +237,10 @@ class FrontendCallFlowTests(unittest.TestCase):
         from fastapi import HTTPException
 
         error_msg = "Cannot cancel workflow in terminal state: succeeded"
-        with patch("app.api.routers.workflow_router.lifecycle_service.cancel_workflow_run", side_effect=ValueError(error_msg)):
+        with patch(
+            "app.api.routers.workflow_router.lifecycle_service.cancel_workflow_run",
+            side_effect=ValueError(error_msg),
+        ):
             with self.assertRaises(HTTPException) as ctx:
                 cancel_workflow_run("run-done-1")
             self.assertEqual(ctx.exception.status_code, 400)
@@ -217,7 +251,10 @@ class FrontendCallFlowTests(unittest.TestCase):
         from app.api.routers.workflow_router import retry_workflow_run
         from fastapi import HTTPException
 
-        with patch("app.api.routers.workflow_router.lifecycle_service.retry_workflow_run", side_effect=ValueError("Cannot retry: no request found")):
+        with patch(
+            "app.api.routers.workflow_router.lifecycle_service.retry_workflow_run",
+            side_effect=ValueError("Cannot retry: no request found"),
+        ):
             with self.assertRaises(HTTPException) as ctx:
                 retry_workflow_run("run-nonexistent")
             self.assertEqual(ctx.exception.status_code, 400)
@@ -265,13 +302,22 @@ class WorkflowConcurrencyTests(unittest.TestCase):
             t.join(timeout=10)
 
         # 所有 5 个线程都应抛出 ValueError（因为 count_active_runs=4 >= limit=4）
-        rejected_count = sum(1 for r in results if r is not None and "capacity" in str(r).lower())
-        self.assertEqual(rejected_count, 5, "All concurrent submissions should be rejected when at capacity")
+        rejected_count = sum(
+            1 for r in results if r is not None and "capacity" in str(r).lower()
+        )
+        self.assertEqual(
+            rejected_count,
+            5,
+            "All concurrent submissions should be rejected when at capacity",
+        )
 
     def test_business_capacity_full_does_not_block_weather_tile_pool(self) -> None:
         """business 池满时，weather_tile 提交仍可过闸。"""
         from app.services.workflow.submission_service import WorkflowSubmissionService
-        from app.services.workflow.run_class import RUN_CLASS_BUSINESS, RUN_CLASS_WEATHER_TILE
+        from app.services.workflow.run_class import (
+            RUN_CLASS_BUSINESS,
+            RUN_CLASS_WEATHER_TILE,
+        )
 
         service = WorkflowSubmissionService.__new__(WorkflowSubmissionService)
         service._repository = MagicMock()
@@ -292,7 +338,9 @@ class WorkflowConcurrencyTests(unittest.TestCase):
             return default
 
         service._repository.count_active_runs = MagicMock(side_effect=count_side_effect)
-        service._persistence.get_effective_config_int = MagicMock(side_effect=config_side_effect)
+        service._persistence.get_effective_config_int = MagicMock(
+            side_effect=config_side_effect
+        )
 
         with self.assertRaises(ValueError) as biz_ctx:
             service._assert_workflow_capacity(RUN_CLASS_BUSINESS)
@@ -304,7 +352,10 @@ class WorkflowConcurrencyTests(unittest.TestCase):
     def test_weather_tile_capacity_full_does_not_block_business_pool(self) -> None:
         """weather_tile 池满时，business 提交仍可过闸。"""
         from app.services.workflow.submission_service import WorkflowSubmissionService
-        from app.services.workflow.run_class import RUN_CLASS_BUSINESS, RUN_CLASS_WEATHER_TILE
+        from app.services.workflow.run_class import (
+            RUN_CLASS_BUSINESS,
+            RUN_CLASS_WEATHER_TILE,
+        )
 
         service = WorkflowSubmissionService.__new__(WorkflowSubmissionService)
         service._repository = MagicMock()
@@ -325,7 +376,9 @@ class WorkflowConcurrencyTests(unittest.TestCase):
             return default
 
         service._repository.count_active_runs = MagicMock(side_effect=count_side_effect)
-        service._persistence.get_effective_config_int = MagicMock(side_effect=config_side_effect)
+        service._persistence.get_effective_config_int = MagicMock(
+            side_effect=config_side_effect
+        )
 
         with self.assertRaises(ValueError) as tile_ctx:
             service._assert_workflow_capacity(RUN_CLASS_WEATHER_TILE)
@@ -367,7 +420,9 @@ class WorkflowConcurrencyTests(unittest.TestCase):
             def call_matches(idx: int) -> bool:
                 return provider.matches(f"layer-{idx}")
 
-            threads = [threading.Thread(target=call_matches, args=(i,)) for i in range(10)]
+            threads = [
+                threading.Thread(target=call_matches, args=(i,)) for i in range(10)
+            ]
             for t in threads:
                 t.start()
             for t in threads:
@@ -385,8 +440,12 @@ class UnifiedTileRobustnessTests(unittest.TestCase):
         from app.services.tile_provider_registry import tile_provider_registry
 
         failing_provider = MagicMock()
-        failing_provider.matches = MagicMock(side_effect=lambda layer_id: layer_id == "esri-street")
-        failing_provider.get_tile = AsyncMock(side_effect=RuntimeError("upstream service unavailable"))
+        failing_provider.matches = MagicMock(
+            side_effect=lambda layer_id: layer_id == "esri-street"
+        )
+        failing_provider.get_tile = AsyncMock(
+            side_effect=RuntimeError("upstream service unavailable")
+        )
 
         # 插入队首，确保先于 BaseMapTileProvider 匹配
         tile_provider_registry._providers.insert(0, failing_provider)
@@ -443,7 +502,9 @@ class UnifiedTileRobustnessTests(unittest.TestCase):
 
         empty_service = MagicMock()
         empty_service.get_tile = AsyncMock(
-            side_effect=TileDataEmptyError("all-null temperature_2m for model=ecmwf_ifs025")
+            side_effect=TileDataEmptyError(
+                "all-null temperature_2m for model=ecmwf_ifs025"
+            )
         )
 
         app = create_app()
@@ -452,7 +513,9 @@ class UnifiedTileRobustnessTests(unittest.TestCase):
             "app.api.weather_tile_routes.get_weather_tile_service",
             return_value=empty_service,
         ):
-            response = client.get("/weather/tiles/temperature/5/25/12?provider=open-meteo-local")
+            response = client.get(
+                "/weather/tiles/temperature/5/25/12?provider=open-meteo-local"
+            )
         self.assertEqual(response.status_code, 422)
         self.assertIn("no usable data", response.json()["detail"])
 
@@ -507,7 +570,9 @@ class EventsPollRateLimiterTests(unittest.TestCase):
 
         limiter = EventsPollRateLimiter(limit=5, window=timedelta(minutes=1))
         for i in range(5):
-            self.assertTrue(limiter.check("192.168.1.1"), f"Request {i+1} should be allowed")
+            self.assertTrue(
+                limiter.check("192.168.1.1"), f"Request {i+1} should be allowed"
+            )
 
     def test_rate_limiter_blocks_over_limit(self) -> None:
         """超过速率限制应拒绝。"""
@@ -621,7 +686,9 @@ class CircuitBreakerRobustnessTests(unittest.TestCase):
             for _ in range(count):
                 breaker.record_failure()
 
-        threads = [threading.Thread(target=record_failures, args=(50,)) for _ in range(4)]
+        threads = [
+            threading.Thread(target=record_failures, args=(50,)) for _ in range(4)
+        ]
         for t in threads:
             t.start()
         for t in threads:
@@ -649,8 +716,12 @@ class TileSurfaceSplitTests(unittest.TestCase):
 
         app = create_app()
         client = TestClient(app)
-        self.assertEqual(client.get("/unified-tiles/esri-street/-1/25/12").status_code, 400)
-        self.assertEqual(client.get("/unified-tiles/esri-street/19/25/12").status_code, 400)
+        self.assertEqual(
+            client.get("/unified-tiles/esri-street/-1/25/12").status_code, 400
+        )
+        self.assertEqual(
+            client.get("/unified-tiles/esri-street/19/25/12").status_code, 400
+        )
 
     def test_unified_tiles_rejects_weather_layer_id(self) -> None:
         from fastapi.testclient import TestClient

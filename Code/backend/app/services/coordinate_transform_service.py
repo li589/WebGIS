@@ -12,6 +12,7 @@
 - ``transform_point`` 旧签名的 ``source``/``target`` 字面量（``'GCJ-02'``/``'BD-09'``）
   在垫片内归一化为新 code（``'GCJ02'``/``'BD09'``）
 """
+
 from __future__ import annotations
 
 import warnings
@@ -27,7 +28,7 @@ from app.services.crs._gcj_bd import (
 )
 
 # 旧 Literal 类型保留（tile_proxy_service.py 用 ``"GCJ-02"`` 字面量做比较）
-CoordinateSystem = Literal['EPSG:3857', 'GCJ-02', 'BD-09']
+CoordinateSystem = Literal["EPSG:3857", "GCJ-02", "BD-09"]
 
 # re-export 类型（二进制兼容：字段同为 lng/lat frozen dataclass）
 CoordinatePoint = _NewPoint
@@ -75,14 +76,14 @@ def wgs84_to_epsg3857(lng: float, lat: float) -> CoordinatePoint:
     _warn()
     from app.services.crs import crs_transformer
 
-    return crs_transformer.transform_point(lng, lat, 'EPSG:4326', 'EPSG:3857')
+    return crs_transformer.transform_point(lng, lat, "EPSG:4326", "EPSG:3857")
 
 
 def transform_point(
     lng: float,
     lat: float,
     source: CoordinateSystem,
-    target: CoordinateSystem = 'EPSG:3857',
+    target: CoordinateSystem = "EPSG:3857",
 ) -> CoordinatePoint:
     """[Deprecated] 旧签名兼容：``source``/``target`` 用 ``'GCJ-02'``/``'BD-09'``/``'EPSG:3857'`` 字面量。
 
@@ -94,6 +95,6 @@ def transform_point(
     from app.services.crs import crs_transformer
 
     # 旧字面量 → 新 code
-    src = 'GCJ02' if source == 'GCJ-02' else source
-    tgt = 'BD09' if target == 'BD-09' else target
+    src = "GCJ02" if source == "GCJ-02" else source
+    tgt = "BD09" if target == "BD-09" else target
     return crs_transformer.transform_point(lng, lat, src, tgt)

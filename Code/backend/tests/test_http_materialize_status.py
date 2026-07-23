@@ -1,4 +1,5 @@
 """Ensure HTTP/MinIO materialize never returns deferred-as-ready without a local file."""
+
 from __future__ import annotations
 
 import sys
@@ -13,7 +14,9 @@ if str(PYTHON_PROVIDER) not in sys.path:
     sys.path.insert(0, str(PYTHON_PROVIDER))
 
 
-def test_http_materialize_marks_ready_after_download(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_http_materialize_marks_ready_after_download(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     from data_access.contracts import build_resource_ref
     from data_access.sources import http as http_mod
 
@@ -27,8 +30,14 @@ def test_http_materialize_marks_ready_after_download(tmp_path: Path, monkeypatch
     fake_body = b"GEOTIFF-BYTES"
 
     class _Resp:
+        """最小 urlopen 响应：真实响应总有 .headers（HTTPMessage），mock 用 dict 模拟 .get。"""
+
         def __init__(self) -> None:
             self._buf = fake_body
+            self.headers = {
+                "ETag": '"v1"',
+                "Last-Modified": "Wed, 01 Jan 2025 00:00:00 GMT",
+            }
 
         def read(self, n: int = -1):
             if n < 0 or n >= len(self._buf):
@@ -50,9 +59,19 @@ def test_http_materialize_marks_ready_after_download(tmp_path: Path, monkeypatch
     local = Path(str(out.metadata["local_path"]))
     assert local.exists()
     assert local.read_bytes() == fake_body
+    # 响应头写入 sidecar（ETag / Last-Modified 供后续条件请求复用）
+    sidecar = local.with_suffix(local.suffix + ".httpmeta.json")
+    assert sidecar.is_file()
+    import json
+
+    sidecar_payload = json.loads(sidecar.read_text(encoding="utf-8"))
+    assert sidecar_payload.get("etag") == '"v1"'
+    assert sidecar_payload.get("last_modified") == "Wed, 01 Jan 2025 00:00:00 GMT"
 
 
-def test_minio_materialize_refuses_without_credentials(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_minio_materialize_refuses_without_credentials(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     from data_access.contracts import build_resource_ref
     from data_access.sources.minio import MinioSource
 

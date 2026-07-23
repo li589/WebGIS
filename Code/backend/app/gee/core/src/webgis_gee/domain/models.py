@@ -115,7 +115,11 @@ class AccountLease(BaseModel):
         now = now or datetime.now(timezone.utc)
         if self.state == AccountState.AVAILABLE:
             return True
-        if self.state == AccountState.COOLDOWN and self.cooldown_until and self.cooldown_until <= now:
+        if (
+            self.state == AccountState.COOLDOWN
+            and self.cooldown_until
+            and self.cooldown_until <= now
+        ):
             self.mark_available()
             return True
         return False

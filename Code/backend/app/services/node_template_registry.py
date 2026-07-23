@@ -3,14 +3,22 @@
 汇聚天气引擎、Python Provider、GEE 三个引擎的节点模板，
 为前端 ComfyUI 风格编辑器提供可拖拽的节点目录。
 """
+
 from __future__ import annotations
 
 from typing import Any
 
 
 # ─── 端口规格工具 ────────────────────────────────────────────────────────────
-def _port(name: str, kind: str, required: bool = True, description: str = "") -> dict[str, Any]:
-    return {"name": name, "type": kind, "required": required, "description": description}
+def _port(
+    name: str, kind: str, required: bool = True, description: str = ""
+) -> dict[str, Any]:
+    return {
+        "name": name,
+        "type": kind,
+        "required": required,
+        "description": description,
+    }
 
 
 def _param(
@@ -39,7 +47,12 @@ def _param(
         step: 数值步长
         allow_custom: 有 options 时是否允许自定义输入；None 时由前端推断
     """
-    p: dict[str, Any] = {"key": key, "type": kind, "default": default, "description": description}
+    p: dict[str, Any] = {
+        "key": key,
+        "type": kind,
+        "default": default,
+        "description": description,
+    }
     if options:
         p["options"] = options
     if unit:
@@ -77,7 +90,6 @@ def _param(
 #   数据源声明「原生」时间/空间字段；time_range/bbox 输入表示「本次运行的过滤窗口」。
 
 _NODE_TEMPLATES: list[dict[str, Any]] = [
-
     # ═══ 参数与范围（用连线驱动下游算法）═══════════════════════════════════════
     {
         "type": "data/source",
@@ -86,21 +98,44 @@ _NODE_TEMPLATES: list[dict[str, Any]] = [
         "title": "数据源",
         "description": "外部数据路径/URI，并声明原生时间与空间字段；可接入过滤用的时间范围与空间范围。",
         "inputs": [
-            _port("time_range", "value:time_range", required=False, description="读取时的时间过滤窗口。"),
-            _port("bbox", "geometry:bbox", required=False, description="读取时的空间过滤窗口。"),
+            _port(
+                "time_range",
+                "value:time_range",
+                required=False,
+                description="读取时的时间过滤窗口。",
+            ),
+            _port(
+                "bbox",
+                "geometry:bbox",
+                required=False,
+                description="读取时的空间过滤窗口。",
+            ),
         ],
         "outputs": [
             _port("data", "data:source", description="带上下文的数据源引用。"),
         ],
         "params": [
-            _param("dataset_key", "string", description="数据集标识符（如 SMAP_SPL3SMP_E）。"),
+            _param(
+                "dataset_key",
+                "string",
+                description="数据集标识符（如 SMAP_SPL3SMP_E）。",
+            ),
             _param("path", "string", description="数据路径或 URI。"),
             _param("pattern", "string", default="*", description="文件匹配模式。"),
             _param(
                 "format",
                 "string",
                 default="auto",
-                options=["auto", "hdf5", "netcdf", "geotiff", "geojson", "csv", "mat", "grib"],
+                options=[
+                    "auto",
+                    "hdf5",
+                    "netcdf",
+                    "geotiff",
+                    "geojson",
+                    "csv",
+                    "mat",
+                    "grib",
+                ],
                 description="数据格式（auto 自动检测）。",
             ),
             _param(
@@ -147,10 +182,14 @@ _NODE_TEMPLATES: list[dict[str, Any]] = [
         "engine": "common",
         "category": "数据获取与解析",
         "title": "远程拉取",
-        "description": "将 smb/sftp/ftp/http/https/gs/local URI materialize 到长期缓存目录；凭证可用 ?cred=profile。",
+        "description": "将任意 URI（smb/sftp/ftp/http/https/gs/local）物化到长期缓存；开放门户下载请优先用「门户数据下载」。凭证可用 ?cred=profile。",
         "inputs": [
-            _port("uri", "value:string", required=False, description="远程或本地 URI。"),
-            _port("data", "data:source", required=False, description="上游数据源引用。"),
+            _port(
+                "uri", "value:string", required=False, description="远程或本地 URI。"
+            ),
+            _port(
+                "data", "data:source", required=False, description="上游数据源引用。"
+            ),
         ],
         "outputs": [
             _port("path", "value:string", description="本地落盘路径。"),
@@ -158,7 +197,11 @@ _NODE_TEMPLATES: list[dict[str, Any]] = [
         ],
         "params": [
             _param("uri", "string", description="URI（也可由上游端口提供）。"),
-            _param("cred_profile", "string", description="远程存储凭证 profile（可选，等价 ?cred=）。"),
+            _param(
+                "cred_profile",
+                "string",
+                description="远程存储凭证 profile（可选，等价 ?cred=）。",
+            ),
         ],
         "node_class": "remote_fetch",
     },
@@ -166,13 +209,14 @@ _NODE_TEMPLATES: list[dict[str, Any]] = [
         "type": "download/http_open_data",
         "engine": "common",
         "category": "数据获取与解析",
-        "title": "开放数据 HTTP",
-        "description": "按 NOAA/NASA/ESA 预设 base URL + 相对路径下载开放数据。",
+        "title": "门户数据下载",
+        "description": "按 NOAA/NASA/NSIDC/ESA 预设 base URL + 相对路径下载并缓存；不负责产品检索。支持 cred_profile（earthdata/nsidc/copernicus）与 force_refresh。",
         "inputs": [
             _port("path", "value:string", required=False, description="相对路径覆盖。"),
         ],
         "outputs": [
             _port("path", "value:string", description="下载后的本地路径。"),
+            _port("url", "value:string", description="解析后的完整 URL。"),
             _port("manifest", "data", description="产物清单。"),
         ],
         "params": [
@@ -180,14 +224,40 @@ _NODE_TEMPLATES: list[dict[str, Any]] = [
                 "preset",
                 "string",
                 default="noaa_nomads",
-                options=["noaa_nomads", "noaa_goes", "nasa_earthdata", "esa_copernicus"],
-                description="开放数据预设。",
+                options=[
+                    "noaa_nomads",
+                    "noaa_goes",
+                    "nasa_earthdata",
+                    "nasa_cmr",
+                    "nsidc_data",
+                    "esa_copernicus",
+                    "esa_download",
+                ],
+                description="开放门户预设键（与设置页 open_data_presets 对齐）。",
+                allow_custom=False,
             ),
             _param("base_url", "string", description="自定义 base URL（优先于预设）。"),
-            _param("relative_path", "string", description="相对路径或对象键。"),
+            _param("relative_path", "string", description="相对路径或对象键（必填）。"),
             _param("query", "string", description="可选 query string。"),
-            _param("token_header", "string", description="可选鉴权头名称（如 Authorization）。"),
-            _param("token_value", "string", description="可选鉴权头值 / Bearer token。"),
+            _param(
+                "cred_profile",
+                "string",
+                description="门户凭证 profile：earthdata / nsidc / copernicus（设置页配置）。",
+                options=["", "earthdata", "nsidc", "copernicus"],
+            ),
+            _param(
+                "token_header", "string", description="可选鉴权头名称（覆盖 profile）。"
+            ),
+            _param(
+                "token_value", "string", description="可选鉴权头值 / Bearer token。"
+            ),
+            _param(
+                "force_refresh",
+                "boolean",
+                default=False,
+                description="忽略缓存强制重下。",
+            ),
+            _param("accept", "string", description="可选 Accept 请求头。"),
         ],
         "node_class": "http_open_data",
     },
@@ -196,19 +266,39 @@ _NODE_TEMPLATES: list[dict[str, Any]] = [
         "engine": "common",
         "category": "数据获取与解析",
         "title": "解压归档",
-        "description": "解压 zip / tar / gz / tgz 到输出目录。",
+        "description": "解压 zip/tar/gz/tgz；支持 member_glob、recurse_once、Sentinel SAFE 识别。不支持 7z/rar。",
         "inputs": [
             _port("path", "value:string", required=False, description="归档文件路径。"),
             _port("data", "data:source", required=False, description="上游数据源。"),
         ],
         "outputs": [
-            _port("path", "value:string", description="解压目录。"),
-            _port("extract_dir", "value:string", description="解压目录（同 path）。"),
+            _port(
+                "path",
+                "value:string",
+                description="解压结果路径（SAFE 时指向 SAFE 根）。",
+            ),
+            _port("extract_dir", "value:string", description="解压根目录。"),
             _port("manifest", "data", description="产物清单。"),
         ],
         "params": [
-            _param("archive_path", "string", description="归档路径（也可由上游提供）。"),
-            _param("output_dirname", "string", default="extracted", description="输出子目录名。"),
+            _param(
+                "archive_path", "string", description="归档路径（也可由上游提供）。"
+            ),
+            _param(
+                "output_dirname",
+                "string",
+                default="extracted",
+                description="输出子目录名。",
+            ),
+            _param(
+                "member_glob", "string", description="可选成员过滤，如 *.nc / *.h5。"
+            ),
+            _param(
+                "recurse_once",
+                "boolean",
+                default=False,
+                description="对解压出的内层 zip/gz 再解一层。",
+            ),
         ],
         "node_class": "archive_extract",
     },
@@ -217,7 +307,7 @@ _NODE_TEMPLATES: list[dict[str, Any]] = [
         "engine": "common",
         "category": "数据获取与解析",
         "title": "读取配置",
-        "description": "读取 JSON / YAML / INI / XML 配置为字典。",
+        "description": "读取 JSON/YAML/INI/XML 配置为字典，供下游参数或清单使用。",
         "inputs": [
             _port("path", "value:string", required=False, description="配置文件路径。"),
             _port("data", "data:source", required=False, description="上游数据源。"),
@@ -229,7 +319,13 @@ _NODE_TEMPLATES: list[dict[str, Any]] = [
         ],
         "params": [
             _param("path", "string", description="配置文件路径。"),
-            _param("format", "string", default="auto", options=["auto", "json", "yaml", "ini", "xml"], description="配置格式。"),
+            _param(
+                "format",
+                "string",
+                default="auto",
+                options=["auto", "json", "yaml", "ini", "xml"],
+                description="配置格式。",
+            ),
         ],
         "node_class": "config_read",
     },
@@ -238,9 +334,11 @@ _NODE_TEMPLATES: list[dict[str, Any]] = [
         "engine": "common",
         "category": "数据获取与解析",
         "title": "提取变量",
-        "description": "用 UniversalDataReader 提取变量，支持 bbox / time_index。",
+        "description": "用 UniversalDataReader 从 HDF5/NetCDF/GeoTIFF/MAT/GRIB 提取变量，支持 bbox/time_index。",
         "inputs": [
-            _port("path", "value:string", required=False, description="数据文件或目录。"),
+            _port(
+                "path", "value:string", required=False, description="数据文件或目录。"
+            ),
             _port("data", "data:source", required=False, description="上游数据源。"),
             _port("bbox", "geometry:bbox", required=False, description="空间裁剪。"),
         ],
@@ -251,12 +349,49 @@ _NODE_TEMPLATES: list[dict[str, Any]] = [
         ],
         "params": [
             _param("path", "string", description="文件路径（也可由上游提供）。"),
-            _param("variable", "string", description="变量名（HDF5/NetCDF/MAT 路径）。"),
-            _param("west", "number", description="bbox west。", min_val=-180, max_val=180, step=0.01),
-            _param("south", "number", description="bbox south。", min_val=-90, max_val=90, step=0.01),
-            _param("east", "number", description="bbox east。", min_val=-180, max_val=180, step=0.01),
-            _param("north", "number", description="bbox north。", min_val=-90, max_val=90, step=0.01),
-            _param("time_index", "number", description="时间层索引（可选）。", min_val=0, max_val=100000, step=1),
+            _param(
+                "variable", "string", description="变量名（HDF5/NetCDF/MAT/GRIB）。"
+            ),
+            _param(
+                "west",
+                "number",
+                description="bbox west。",
+                min_val=-180,
+                max_val=180,
+                step=0.01,
+            ),
+            _param(
+                "south",
+                "number",
+                description="bbox south。",
+                min_val=-90,
+                max_val=90,
+                step=0.01,
+            ),
+            _param(
+                "east",
+                "number",
+                description="bbox east。",
+                min_val=-180,
+                max_val=180,
+                step=0.01,
+            ),
+            _param(
+                "north",
+                "number",
+                description="bbox north。",
+                min_val=-90,
+                max_val=90,
+                step=0.01,
+            ),
+            _param(
+                "time_index",
+                "number",
+                description="时间层索引（可选）。",
+                min_val=0,
+                max_val=100000,
+                step=1,
+            ),
         ],
         "node_class": "variable_extract",
     },
@@ -265,7 +400,7 @@ _NODE_TEMPLATES: list[dict[str, Any]] = [
         "engine": "common",
         "category": "数据获取与解析",
         "title": "格式转换",
-        "description": "通过 FormatRegistry / UniversalDataReader 转换 MAT/HDF/NetCDF/TIFF/CSV 等。",
+        "description": "转为课题组常用 mat/npy/geotiff/csv/json（经 UniversalDataReader / FormatRegistry）。",
         "inputs": [
             _port("path", "value:string", required=False, description="源文件路径。"),
             _port("data", "data:source", required=False, description="上游数据源。"),
@@ -300,7 +435,12 @@ _NODE_TEMPLATES: list[dict[str, Any]] = [
             _port("time_range", "value:time_range", description="时间窗口输出"),
         ],
         "params": [
-            _param("start_at", "string", default="", description="起始时间 ISO 8601（如 2023-01-01T00:00:00）。"),
+            _param(
+                "start_at",
+                "string",
+                default="",
+                description="起始时间 ISO 8601（如 2023-01-01T00:00:00）。",
+            ),
             _param("end_at", "string", default="", description="结束时间 ISO 8601。"),
             _param(
                 "resolution_unit",
@@ -331,8 +471,18 @@ _NODE_TEMPLATES: list[dict[str, Any]] = [
                 default="",
                 description="可选：覆盖下游解析所用的时间字段列表（逗号分隔）。",
             ),
-            _param("field_format", "string", default="", description="可选：时间字段格式提示。"),
-            _param("timezone", "string", default="UTC", description="时区（如 UTC、Asia/Shanghai）。"),
+            _param(
+                "field_format",
+                "string",
+                default="",
+                description="可选：时间字段格式提示。",
+            ),
+            _param(
+                "timezone",
+                "string",
+                default="UTC",
+                description="时区（如 UTC、Asia/Shanghai）。",
+            ),
             _param(
                 "bind_timeline",
                 "boolean",
@@ -353,10 +503,46 @@ _NODE_TEMPLATES: list[dict[str, Any]] = [
             _port("bbox", "geometry:bbox", description="空间范围输出"),
         ],
         "params": [
-            _param("west", "number", default=73.0, description="西边界经度。", unit="度", min_val=-180, max_val=180, step=0.01),
-            _param("south", "number", default=18.0, description="南边界纬度。", unit="度", min_val=-90, max_val=90, step=0.01),
-            _param("east", "number", default=135.0, description="东边界经度。", unit="度", min_val=-180, max_val=180, step=0.01),
-            _param("north", "number", default=54.0, description="北边界纬度。", unit="度", min_val=-90, max_val=90, step=0.01),
+            _param(
+                "west",
+                "number",
+                default=73.0,
+                description="西边界经度。",
+                unit="度",
+                min_val=-180,
+                max_val=180,
+                step=0.01,
+            ),
+            _param(
+                "south",
+                "number",
+                default=18.0,
+                description="南边界纬度。",
+                unit="度",
+                min_val=-90,
+                max_val=90,
+                step=0.01,
+            ),
+            _param(
+                "east",
+                "number",
+                default=135.0,
+                description="东边界经度。",
+                unit="度",
+                min_val=-180,
+                max_val=180,
+                step=0.01,
+            ),
+            _param(
+                "north",
+                "number",
+                default=54.0,
+                description="北边界纬度。",
+                unit="度",
+                min_val=-90,
+                max_val=90,
+                step=0.01,
+            ),
             _param("crs", "string", default="EPSG:4326", description="坐标系。"),
             _param(
                 "spatial_fields",
@@ -376,10 +562,23 @@ _NODE_TEMPLATES: list[dict[str, Any]] = [
         "inputs": [],
         "outputs": [
             _port("bbox", "geometry:bbox", description="当前视口 bbox。"),
-            _port("viewport_bbox", "geometry:bbox", description="同 bbox，便于接到 viewport_bbox 端口。"),
+            _port(
+                "viewport_bbox",
+                "geometry:bbox",
+                description="同 bbox，便于接到 viewport_bbox 端口。",
+            ),
         ],
         "params": [
-            _param("padding_deg", "number", default=0.0, description="视口外扩。", unit="度", min_val=0, max_val=10, step=0.01),
+            _param(
+                "padding_deg",
+                "number",
+                default=0.0,
+                description="视口外扩。",
+                unit="度",
+                min_val=0,
+                max_val=10,
+                step=0.01,
+            ),
             _param("crs", "string", default="EPSG:4326", description="坐标系。"),
         ],
         "node_class": "map_viewport",
@@ -444,8 +643,26 @@ _NODE_TEMPLATES: list[dict[str, Any]] = [
             _port("longitude", "value:number", description=""),
         ],
         "params": [
-            _param("latitude", "number", default=23.1, description="纬度。", unit="度", min_val=-90, max_val=90, step=0.0001),
-            _param("longitude", "number", default=113.3, description="经度。", unit="度", min_val=-180, max_val=180, step=0.0001),
+            _param(
+                "latitude",
+                "number",
+                default=23.1,
+                description="纬度。",
+                unit="度",
+                min_val=-90,
+                max_val=90,
+                step=0.0001,
+            ),
+            _param(
+                "longitude",
+                "number",
+                default=113.3,
+                description="经度。",
+                unit="度",
+                min_val=-180,
+                max_val=180,
+                step=0.0001,
+            ),
         ],
         "node_class": "latlng",
     },
@@ -476,12 +693,17 @@ _NODE_TEMPLATES: list[dict[str, Any]] = [
         ],
         "outputs": [],
         "params": [
-            _param("format", "string", default="mat", options=["mat", "geojson", "geotiff", "json", "csv"], description="输出文件格式。"),
+            _param(
+                "format",
+                "string",
+                default="mat",
+                options=["mat", "geojson", "geotiff", "json", "csv"],
+                description="输出文件格式。",
+            ),
             _param("filename", "string", description="输出文件名。"),
         ],
         "node_class": "output_file",
     },
-
     # ═══ 数据预处理模块 ════════════════════════════════════════════════════════
     {
         "type": "preprocess/reproject",
@@ -491,14 +713,24 @@ _NODE_TEMPLATES: list[dict[str, Any]] = [
         "description": "将栅格数据重投影到目标坐标系。",
         "inputs": [
             _port("raster", "data:raster", description="输入栅格。"),
-            _port("bbox", "geometry:bbox", required=False, description="可选空间范围。"),
+            _port(
+                "bbox", "geometry:bbox", required=False, description="可选空间范围。"
+            ),
         ],
         "outputs": [
             _port("raster", "data:raster", description="重投影后栅格。"),
         ],
         "params": [
-            _param("target_crs", "string", default="EPSG:4326", description="目标坐标系。"),
-            _param("resampling", "string", default="nearest", options=["nearest", "bilinear", "cubic"], description="重采样方法。"),
+            _param(
+                "target_crs", "string", default="EPSG:4326", description="目标坐标系。"
+            ),
+            _param(
+                "resampling",
+                "string",
+                default="nearest",
+                options=["nearest", "bilinear", "cubic"],
+                description="重采样方法。",
+            ),
         ],
         "node_class": "preprocess_reproject",
     },
@@ -515,9 +747,30 @@ _NODE_TEMPLATES: list[dict[str, Any]] = [
             _port("raster", "data:raster", description="重采样后栅格。"),
         ],
         "params": [
-            _param("target_resolution", "number", default=1000, description="目标分辨率。", unit="米", min_val=1, max_val=100000, step=1),
-            _param("resampling", "string", default="nearest", options=["nearest", "bilinear", "cubic"], description="重采样方法。"),
-            _param("unit", "string", default="meters", options=["meters", "degrees"], description="分辨率单位。"),
+            _param(
+                "target_resolution",
+                "number",
+                default=1000,
+                description="目标分辨率。",
+                unit="米",
+                min_val=1,
+                max_val=100000,
+                step=1,
+            ),
+            _param(
+                "resampling",
+                "string",
+                default="nearest",
+                options=["nearest", "bilinear", "cubic"],
+                description="重采样方法。",
+            ),
+            _param(
+                "unit",
+                "string",
+                default="meters",
+                options=["meters", "degrees"],
+                description="分辨率单位。",
+            ),
         ],
         "node_class": "preprocess_resample",
     },
@@ -534,8 +787,20 @@ _NODE_TEMPLATES: list[dict[str, Any]] = [
             _port("data", "data", description="转换后数据。"),
         ],
         "params": [
-            _param("input_format", "string", default="auto", options=["auto", "netcdf", "hdf5", "geotiff", "mat"], description="输入格式（auto 自动检测）。"),
-            _param("output_format", "string", default="geotiff", options=["geotiff", "cog", "mat", "json"], description="输出格式。"),
+            _param(
+                "input_format",
+                "string",
+                default="auto",
+                options=["auto", "netcdf", "hdf5", "geotiff", "mat"],
+                description="输入格式（auto 自动检测）。",
+            ),
+            _param(
+                "output_format",
+                "string",
+                default="geotiff",
+                options=["geotiff", "cog", "mat", "json"],
+                description="输出格式。",
+            ),
         ],
         "node_class": "format_convert",
     },
@@ -553,7 +818,16 @@ _NODE_TEMPLATES: list[dict[str, Any]] = [
             _port("raster", "data:raster", description="裁剪后栅格。"),
         ],
         "params": [
-            _param("buffer_meters", "number", default=0, description="缓冲区大小。", unit="米", min_val=0, max_val=10000, step=10),
+            _param(
+                "buffer_meters",
+                "number",
+                default=0,
+                description="缓冲区大小。",
+                unit="米",
+                min_val=0,
+                max_val=10000,
+                step=10,
+            ),
         ],
         "node_class": "preprocess_clip",
     },
@@ -571,12 +845,16 @@ _NODE_TEMPLATES: list[dict[str, Any]] = [
             _port("raster", "data:raster", description="掩膜后栅格。"),
         ],
         "params": [
-            _param("mask_value", "number", default=0, description="掩膜值（等于此值的像元被遮蔽）。"),
+            _param(
+                "mask_value",
+                "number",
+                default=0,
+                description="掩膜值（等于此值的像元被遮蔽）。",
+            ),
             _param("invert", "boolean", default=False, description="是否反转掩膜。"),
         ],
         "node_class": "preprocess_mask",
     },
-
     # ═══ 统计分析模块 ══════════════════════════════════════════════════════════
     {
         "type": "stats/spatial_mean",
@@ -591,8 +869,22 @@ _NODE_TEMPLATES: list[dict[str, Any]] = [
             _port("value", "value:number", description="统计值。"),
         ],
         "params": [
-            _param("statistic", "string", default="mean", options=["mean", "median", "min", "max", "std"], description="统计量类型。"),
-            _param("band", "number", default=0, description="波段索引。", min_val=0, max_val=100, step=1),
+            _param(
+                "statistic",
+                "string",
+                default="mean",
+                options=["mean", "median", "min", "max", "std"],
+                description="统计量类型。",
+            ),
+            _param(
+                "band",
+                "number",
+                default=0,
+                description="波段索引。",
+                min_val=0,
+                max_val=100,
+                step=1,
+            ),
         ],
         "node_class": "stats_spatial_mean",
     },
@@ -609,8 +901,22 @@ _NODE_TEMPLATES: list[dict[str, Any]] = [
             _port("result", "data:geojson", description="趋势分析结果 GeoJSON。"),
         ],
         "params": [
-            _param("trend_method", "string", default="linear", options=["linear", "theil_sen", "mann_kendall"], description="趋势分析方法。"),
-            _param("confidence_level", "number", default=0.95, description="置信水平。", min_val=0.5, max_val=0.999, step=0.01),
+            _param(
+                "trend_method",
+                "string",
+                default="linear",
+                options=["linear", "theil_sen", "mann_kendall"],
+                description="趋势分析方法。",
+            ),
+            _param(
+                "confidence_level",
+                "number",
+                default=0.95,
+                description="置信水平。",
+                min_val=0.5,
+                max_val=0.999,
+                step=0.01,
+            ),
         ],
         "node_class": "stats_temporal_trend",
     },
@@ -627,8 +933,22 @@ _NODE_TEMPLATES: list[dict[str, Any]] = [
             _port("anomalies", "data:geojson", description="异常点 GeoJSON。"),
         ],
         "params": [
-            _param("method", "string", default="zscore", options=["zscore", "iqr", "dbscan"], description="异常检测方法。"),
-            _param("threshold", "number", default=2.0, description="阈值（Z-score 标准差倍数）。", min_val=1.0, max_val=5.0, step=0.1),
+            _param(
+                "method",
+                "string",
+                default="zscore",
+                options=["zscore", "iqr", "dbscan"],
+                description="异常检测方法。",
+            ),
+            _param(
+                "threshold",
+                "number",
+                default=2.0,
+                description="阈值（Z-score 标准差倍数）。",
+                min_val=1.0,
+                max_val=5.0,
+                step=0.1,
+            ),
         ],
         "node_class": "stats_anomaly_detect",
     },
@@ -646,8 +966,23 @@ _NODE_TEMPLATES: list[dict[str, Any]] = [
             _port("coefficient", "value:number", description="相关系数 [-1, 1]。"),
         ],
         "params": [
-            _param("method", "string", default="pearson", options=["pearson", "spearman", "kendall"], description="相关系数方法。"),
-            _param("lag_days", "number", default=0, description="滞后天数。", unit="天", min_val=0, max_val=365, step=1),
+            _param(
+                "method",
+                "string",
+                default="pearson",
+                options=["pearson", "spearman", "kendall"],
+                description="相关系数方法。",
+            ),
+            _param(
+                "lag_days",
+                "number",
+                default=0,
+                description="滞后天数。",
+                unit="天",
+                min_val=0,
+                max_val=365,
+                step=1,
+            ),
         ],
         "node_class": "stats_correlation",
     },
@@ -664,13 +999,33 @@ _NODE_TEMPLATES: list[dict[str, Any]] = [
             _port("histogram", "data:geojson", description="直方图 GeoJSON。"),
         ],
         "params": [
-            _param("bins", "number", default=50, description="分箱数量。", min_val=5, max_val=500, step=1),
-            _param("band", "number", default=0, description="波段索引。", min_val=0, max_val=100, step=1),
-            _param("density", "boolean", default=False, description="是否归一化为概率密度。"),
+            _param(
+                "bins",
+                "number",
+                default=50,
+                description="分箱数量。",
+                min_val=5,
+                max_val=500,
+                step=1,
+            ),
+            _param(
+                "band",
+                "number",
+                default=0,
+                description="波段索引。",
+                min_val=0,
+                max_val=100,
+                step=1,
+            ),
+            _param(
+                "density",
+                "boolean",
+                default=False,
+                description="是否归一化为概率密度。",
+            ),
         ],
         "node_class": "stats_histogram",
     },
-
     # ═══ 数据融合与可视化模块 ═══════════════════════════════════════════════════
     {
         "type": "fusion/spatial_interpolate",
@@ -686,9 +1041,32 @@ _NODE_TEMPLATES: list[dict[str, Any]] = [
             _port("raster", "data:raster", description="插值结果栅格。"),
         ],
         "params": [
-            _param("method", "string", default="idw", options=["idw", "kriging", "nearest"], description="插值方法。"),
-            _param("power", "number", default=2.0, description="IDW 幂参数。", min_val=1.0, max_val=6.0, step=0.5),
-            _param("resolution", "number", default=1000, description="输出分辨率。", unit="米", min_val=10, max_val=50000, step=10),
+            _param(
+                "method",
+                "string",
+                default="idw",
+                options=["idw", "kriging", "nearest"],
+                description="插值方法。",
+            ),
+            _param(
+                "power",
+                "number",
+                default=2.0,
+                description="IDW 幂参数。",
+                min_val=1.0,
+                max_val=6.0,
+                step=0.5,
+            ),
+            _param(
+                "resolution",
+                "number",
+                default=1000,
+                description="输出分辨率。",
+                unit="米",
+                min_val=10,
+                max_val=50000,
+                step=10,
+            ),
         ],
         "node_class": "fusion_spatial_interpolate",
     },
@@ -706,8 +1084,22 @@ _NODE_TEMPLATES: list[dict[str, Any]] = [
             _port("merged", "data:raster", description="融合结果。"),
         ],
         "params": [
-            _param("method", "string", default="weighted", options=["weighted", "pca", "bayesian"], description="融合方法。"),
-            _param("weight_primary", "number", default=0.6, description="主数据源权重。", min_val=0.0, max_val=1.0, step=0.05),
+            _param(
+                "method",
+                "string",
+                default="weighted",
+                options=["weighted", "pca", "bayesian"],
+                description="融合方法。",
+            ),
+            _param(
+                "weight_primary",
+                "number",
+                default=0.6,
+                description="主数据源权重。",
+                min_val=0.0,
+                max_val=1.0,
+                step=0.05,
+            ),
         ],
         "node_class": "fusion_multi_source_merge",
     },
@@ -724,12 +1116,36 @@ _NODE_TEMPLATES: list[dict[str, Any]] = [
             _port("chart", "value:string", description="Base64 编码的 PNG 图像。"),
         ],
         "params": [
-            _param("chart_type", "string", default="line", options=["line", "bar", "scatter", "heatmap", "boxplot"], description="图表类型。"),
+            _param(
+                "chart_type",
+                "string",
+                default="line",
+                options=["line", "bar", "scatter", "heatmap", "boxplot"],
+                description="图表类型。",
+            ),
             _param("title", "string", default="", description="图表标题。"),
             _param("x_label", "string", default="", description="X 轴标签。"),
             _param("y_label", "string", default="", description="Y 轴标签。"),
-            _param("width", "number", default=800, description="图表宽度。", unit="像素", min_val=200, max_val=4000, step=50),
-            _param("height", "number", default=600, description="图表高度。", unit="像素", min_val=200, max_val=4000, step=50),
+            _param(
+                "width",
+                "number",
+                default=800,
+                description="图表宽度。",
+                unit="像素",
+                min_val=200,
+                max_val=4000,
+                step=50,
+            ),
+            _param(
+                "height",
+                "number",
+                default=600,
+                description="图表高度。",
+                unit="像素",
+                min_val=200,
+                max_val=4000,
+                step=50,
+            ),
         ],
         "node_class": "viz_chart_generate",
     },
@@ -746,9 +1162,19 @@ _NODE_TEMPLATES: list[dict[str, Any]] = [
             _port("filepath", "value:string", description="输出文件路径。"),
         ],
         "params": [
-            _param("format", "string", default="html", options=["pdf", "html", "docx", "markdown"], description="报表格式。"),
-            _param("template", "string", default="default", description="报表模板名称。"),
-            _param("include_charts", "boolean", default=True, description="是否包含图表。"),
+            _param(
+                "format",
+                "string",
+                default="html",
+                options=["pdf", "html", "docx", "markdown"],
+                description="报表格式。",
+            ),
+            _param(
+                "template", "string", default="default", description="报表模板名称。"
+            ),
+            _param(
+                "include_charts", "boolean", default=True, description="是否包含图表。"
+            ),
         ],
         "node_class": "viz_report_export",
     },
@@ -767,12 +1193,21 @@ _NODE_TEMPLATES: list[dict[str, Any]] = [
         "params": [
             _param("include_mean", "boolean", default=True, description="包含均值。"),
             _param("include_std", "boolean", default=True, description="包含标准差。"),
-            _param("include_percentiles", "boolean", default=True, description="包含分位数。"),
-            _param("percentile_list", "string", default="25,50,75", description="分位数列表（逗号分隔）。"),
+            _param(
+                "include_percentiles",
+                "boolean",
+                default=True,
+                description="包含分位数。",
+            ),
+            _param(
+                "percentile_list",
+                "string",
+                default="25,50,75",
+                description="分位数列表（逗号分隔）。",
+            ),
         ],
         "node_class": "viz_statistics_summary",
     },
-
     # ═══ 天气引擎节点 ══════════════════════════════════════════════════════════
     {
         "type": "weather/forecast_fetch",
@@ -784,10 +1219,25 @@ _NODE_TEMPLATES: list[dict[str, Any]] = [
             _port("latitude", "value:number", description="中心纬度。"),
             _port("longitude", "value:number", description="中心经度。"),
             _port("layer_id", "value:string", description="天气图层标识。"),
-            _port("time_range", "value:time_range", required=False, description="可选时间范围。"),
+            _port(
+                "time_range",
+                "value:time_range",
+                required=False,
+                description="可选时间范围。",
+            ),
             _port("model", "value:string", required=False, description="气象模型。"),
-            _port("forecast_hours", "value:number", required=False, description="预报小时数。"),
-            _port("provider_id", "value:string", required=False, description="钉选天气源：open-meteo-online | open-meteo-local | weatherapi | openweather；空=自动。"),
+            _port(
+                "forecast_hours",
+                "value:number",
+                required=False,
+                description="预报小时数。",
+            ),
+            _port(
+                "provider_id",
+                "value:string",
+                required=False,
+                description="钉选天气源：open-meteo-online | open-meteo-local | weatherapi | openweather；空=自动。",
+            ),
         ],
         "outputs": [
             _port("forecast", "data", description="原始预报数据。"),
@@ -796,8 +1246,18 @@ _NODE_TEMPLATES: list[dict[str, Any]] = [
             _port("provider_id", "value:string", description="实际使用的天气源。"),
         ],
         "params": [
-            _param("default_model", "string", default="icon_seamless", description="默认气象模型。"),
-            _param("provider_id", "string", default="", description="钉选天气源 Provider ID（空=自动）：open-meteo-online | open-meteo-local | weatherapi | openweather。"),
+            _param(
+                "default_model",
+                "string",
+                default="icon_seamless",
+                description="默认气象模型。",
+            ),
+            _param(
+                "provider_id",
+                "string",
+                default="",
+                description="钉选天气源 Provider ID（空=自动）：open-meteo-online | open-meteo-local | weatherapi | openweather。",
+            ),
         ],
         "node_class": "weather_forecast_fetch",
     },
@@ -811,11 +1271,31 @@ _NODE_TEMPLATES: list[dict[str, Any]] = [
             _port("layer_id", "value:string", description="天气图层标识。"),
             _port("latitude", "value:number", description="中心纬度。"),
             _port("longitude", "value:number", description="中心经度。"),
-            _port("time_range", "value:time_range", required=False, description="可选时间范围。"),
-            _port("forecast_hours", "value:number", required=False, description="预报小时数。"),
+            _port(
+                "time_range",
+                "value:time_range",
+                required=False,
+                description="可选时间范围。",
+            ),
+            _port(
+                "forecast_hours",
+                "value:number",
+                required=False,
+                description="预报小时数。",
+            ),
             _port("bbox", "geometry:bbox", required=False, description="空间范围。"),
-            _port("provider_id", "value:string", required=False, description="钉选天气源：open-meteo-online | open-meteo-local | weatherapi | openweather；空=自动。"),
-            _port("model", "value:string", required=False, description="预报模型（如 best_match）。"),
+            _port(
+                "provider_id",
+                "value:string",
+                required=False,
+                description="钉选天气源：open-meteo-online | open-meteo-local | weatherapi | openweather；空=自动。",
+            ),
+            _port(
+                "model",
+                "value:string",
+                required=False,
+                description="预报模型（如 best_match）。",
+            ),
         ],
         "outputs": [
             _port("grid_data", "data:raster", description="网格化天气数据。"),
@@ -823,7 +1303,12 @@ _NODE_TEMPLATES: list[dict[str, Any]] = [
             _port("provider_id", "value:string", description="实际使用的天气源。"),
         ],
         "params": [
-            _param("provider_id", "string", default="", description="钉选天气源 Provider ID（空=自动）：open-meteo-online | open-meteo-local | weatherapi | openweather。"),
+            _param(
+                "provider_id",
+                "string",
+                default="",
+                description="钉选天气源 Provider ID（空=自动）：open-meteo-online | open-meteo-local | weatherapi | openweather。",
+            ),
             _param("model", "string", default="best_match", description="预报模型。"),
         ],
         "node_class": "weather_grid_fetch",
@@ -835,16 +1320,40 @@ _NODE_TEMPLATES: list[dict[str, Any]] = [
         "title": "风场渲染",
         "description": "基于预报数据生成风场矢量 GeoJSON，支持粒子流动画。",
         "inputs": [
-            _port("weather_point", "data", required=False, description="上游点位数据，未提供时自行获取。"),
+            _port(
+                "weather_point",
+                "data",
+                required=False,
+                description="上游点位数据，未提供时自行获取。",
+            ),
             _port("latitude", "value:number", description="中心纬度。"),
             _port("longitude", "value:number", description="中心经度。"),
-            _port("grid_data", "data:raster", required=False, description="上游网格数据（优先）。"),
-            _port("layer_id", "value:string", required=False, description="目标图层标识，默认 wind-field。"),
-            _port("viewport_bbox", "geometry:bbox", required=False, description="前端视口。"),
+            _port(
+                "grid_data",
+                "data:raster",
+                required=False,
+                description="上游网格数据（优先）。",
+            ),
+            _port(
+                "layer_id",
+                "value:string",
+                required=False,
+                description="目标图层标识，默认 wind-field。",
+            ),
+            _port(
+                "viewport_bbox",
+                "geometry:bbox",
+                required=False,
+                description="前端视口。",
+            ),
             _port("bbox", "geometry:bbox", required=False, description="空间过滤。"),
         ],
         "outputs": [
-            _port("geojson", "data:geojson", description="风场矢量 GeoJSON FeatureCollection。"),
+            _port(
+                "geojson",
+                "data:geojson",
+                description="风场矢量 GeoJSON FeatureCollection。",
+            ),
         ],
         "params": [],
         "node_class": "weather_wind_field",
@@ -856,10 +1365,14 @@ _NODE_TEMPLATES: list[dict[str, Any]] = [
         "title": "温度渲染",
         "description": "生成温度栅格图层。",
         "inputs": [
-            _port("grid_data", "data:raster", required=False, description="上游网格数据。"),
+            _port(
+                "grid_data", "data:raster", required=False, description="上游网格数据。"
+            ),
             _port("latitude", "value:number", description="中心纬度。"),
             _port("longitude", "value:number", description="中心经度。"),
-            _port("layer_id", "value:string", required=False, description="目标图层标识。"),
+            _port(
+                "layer_id", "value:string", required=False, description="目标图层标识。"
+            ),
         ],
         "outputs": [
             _port("geojson", "data:geojson", description="温度栅格 GeoJSON。"),
@@ -874,10 +1387,14 @@ _NODE_TEMPLATES: list[dict[str, Any]] = [
         "title": "降水渲染",
         "description": "生成降水栅格图层。",
         "inputs": [
-            _port("grid_data", "data:raster", required=False, description="上游网格数据。"),
+            _port(
+                "grid_data", "data:raster", required=False, description="上游网格数据。"
+            ),
             _port("latitude", "value:number", description="中心纬度。"),
             _port("longitude", "value:number", description="中心经度。"),
-            _port("layer_id", "value:string", required=False, description="目标图层标识。"),
+            _port(
+                "layer_id", "value:string", required=False, description="目标图层标识。"
+            ),
         ],
         "outputs": [
             _port("geojson", "data:geojson", description="降水栅格 GeoJSON。"),
@@ -892,10 +1409,14 @@ _NODE_TEMPLATES: list[dict[str, Any]] = [
         "title": "湿度渲染",
         "description": "生成湿度栅格图层。",
         "inputs": [
-            _port("grid_data", "data:raster", required=False, description="上游网格数据。"),
+            _port(
+                "grid_data", "data:raster", required=False, description="上游网格数据。"
+            ),
             _port("latitude", "value:number", description="中心纬度。"),
             _port("longitude", "value:number", description="中心经度。"),
-            _port("layer_id", "value:string", required=False, description="目标图层标识。"),
+            _port(
+                "layer_id", "value:string", required=False, description="目标图层标识。"
+            ),
         ],
         "outputs": [
             _port("geojson", "data:geojson", description="湿度栅格 GeoJSON。"),
@@ -910,10 +1431,14 @@ _NODE_TEMPLATES: list[dict[str, Any]] = [
         "title": "气压渲染",
         "description": "生成气压栅格图层。",
         "inputs": [
-            _port("grid_data", "data:raster", required=False, description="上游网格数据。"),
+            _port(
+                "grid_data", "data:raster", required=False, description="上游网格数据。"
+            ),
             _port("latitude", "value:number", description="中心纬度。"),
             _port("longitude", "value:number", description="中心经度。"),
-            _port("layer_id", "value:string", required=False, description="目标图层标识。"),
+            _port(
+                "layer_id", "value:string", required=False, description="目标图层标识。"
+            ),
         ],
         "outputs": [
             _port("geojson", "data:geojson", description="气压栅格 GeoJSON。"),
@@ -928,10 +1453,14 @@ _NODE_TEMPLATES: list[dict[str, Any]] = [
         "title": "能见度渲染",
         "description": "生成能见度栅格图层。",
         "inputs": [
-            _port("grid_data", "data:raster", required=False, description="上游网格数据。"),
+            _port(
+                "grid_data", "data:raster", required=False, description="上游网格数据。"
+            ),
             _port("latitude", "value:number", description="中心纬度。"),
             _port("longitude", "value:number", description="中心经度。"),
-            _port("layer_id", "value:string", required=False, description="目标图层标识。"),
+            _port(
+                "layer_id", "value:string", required=False, description="目标图层标识。"
+            ),
         ],
         "outputs": [
             _port("geojson", "data:geojson", description="能见度栅格 GeoJSON。"),
@@ -991,7 +1520,6 @@ _NODE_TEMPLATES: list[dict[str, Any]] = [
         "params": [],
         "node_class": "weather_summary_generate",
     },
-
     # ═══ Python Provider 模块节点 ══════════════════════════════════════════════
     {
         "type": "module/smap_daily",
@@ -1001,7 +1529,12 @@ _NODE_TEMPLATES: list[dict[str, Any]] = [
         "description": "读取 SMAP L3 HDF5，转换为日常 .mat 产品。",
         "inputs": [
             _port("input_dir", "data:source", description="SMAP HDF5 目录。"),
-            _port("time_range", "value:time_range", required=False, description="过滤时间。"),
+            _port(
+                "time_range",
+                "value:time_range",
+                required=False,
+                description="过滤时间。",
+            ),
             _port("bbox", "geometry:bbox", required=False, description="空间裁剪。"),
         ],
         "outputs": [
@@ -1018,16 +1551,44 @@ _NODE_TEMPLATES: list[dict[str, Any]] = [
         "description": "读取 NDVI 栅格，生成日常 NDVI .mat 产品。",
         "inputs": [
             _port("input_dir", "data:source", description="NDVI 栅格目录。"),
-            _port("time_range", "value:time_range", required=False, description="过滤时间。"),
+            _port(
+                "time_range",
+                "value:time_range",
+                required=False,
+                description="过滤时间。",
+            ),
             _port("bbox", "geometry:bbox", required=False, description="空间裁剪。"),
         ],
         "outputs": [
             _port("ndvi_daily_mat", "data:mat", description="NDVI 日常 .mat 输出。"),
         ],
         "params": [
-            _param("emit_quality_products", "boolean", default=False, description="是否输出质量产品。"),
-            _param("sg_step_days", "number", default=1, description="SG 滤波步长。", unit="天", min_val=1, max_val=30, step=1),
-            _param("gap_threshold_days", "number", default=16, description="间隔阈值。", unit="天", min_val=1, max_val=60, step=1),
+            _param(
+                "emit_quality_products",
+                "boolean",
+                default=False,
+                description="是否输出质量产品。",
+            ),
+            _param(
+                "sg_step_days",
+                "number",
+                default=1,
+                description="SG 滤波步长。",
+                unit="天",
+                min_val=1,
+                max_val=30,
+                step=1,
+            ),
+            _param(
+                "gap_threshold_days",
+                "number",
+                default=16,
+                description="间隔阈值。",
+                unit="天",
+                min_val=1,
+                max_val=60,
+                step=1,
+            ),
         ],
         "node_class": "ndvi_daily",
     },
@@ -1039,15 +1600,28 @@ _NODE_TEMPLATES: list[dict[str, Any]] = [
         "description": "读取风云三号 MWRI 数据，提取多波段亮温为 .mat。",
         "inputs": [
             _port("input_dir", "data:source", description="FY MWRI 目录。"),
-            _port("time_range", "value:time_range", required=False, description="过滤时间。"),
+            _port(
+                "time_range",
+                "value:time_range",
+                required=False,
+                description="过滤时间。",
+            ),
             _port("bbox", "geometry:bbox", required=False, description="空间裁剪。"),
         ],
         "outputs": [
             _port("fy_daily_mat", "data:mat", description="FY 日常 .mat 输出。"),
         ],
         "params": [
-            _param("orbit_mode", "string", default="MWRID", options=["MWRID", "MWRIA", "Both"], description="轨道模式。"),
-            _param("band_ids", "string", description="波段 ID 列表（逗号分隔，如 1,2,3）。"),
+            _param(
+                "orbit_mode",
+                "string",
+                default="MWRID",
+                options=["MWRID", "MWRIA", "Both"],
+                description="轨道模式。",
+            ),
+            _param(
+                "band_ids", "string", description="波段 ID 列表（逗号分隔，如 1,2,3）。"
+            ),
         ],
         "node_class": "fy_daily",
     },
@@ -1059,14 +1633,25 @@ _NODE_TEMPLATES: list[dict[str, Any]] = [
         "description": "读取 ISMN/CASMOS 站点数据，生成验证产品。",
         "inputs": [
             _port("input_dir", "data:source", description="站点数据目录。"),
-            _port("time_range", "value:time_range", required=False, description="过滤时间。"),
+            _port(
+                "time_range",
+                "value:time_range",
+                required=False,
+                description="过滤时间。",
+            ),
             _port("bbox", "geometry:bbox", required=False, description="空间过滤。"),
         ],
         "outputs": [
             _port("station_mat", "data:mat", description="站点 .mat 输出。"),
         ],
         "params": [
-            _param("source_type", "string", default="ISMN", options=["ISMN", "CASMOS"], description="数据源类型。"),
+            _param(
+                "source_type",
+                "string",
+                default="ISMN",
+                options=["ISMN", "CASMOS"],
+                description="数据源类型。",
+            ),
         ],
         "node_class": "station_daily",
     },
@@ -1078,15 +1663,35 @@ _NODE_TEMPLATES: list[dict[str, Any]] = [
         "description": "基于日常合成数据反演土壤湿度(SM)与植被光学厚度(VOD)。",
         "inputs": [
             _port("input_mat", "data:mat", description="daily_bundle 输出。"),
-            _port("time_range", "value:time_range", required=False, description="目标日期。"),
+            _port(
+                "time_range",
+                "value:time_range",
+                required=False,
+                description="目标日期。",
+            ),
             _port("bbox", "geometry:bbox", required=False, description="空间子集。"),
         ],
         "outputs": [
             _port("inversion_mat", "data:mat", description="反演结果 .mat。"),
         ],
         "params": [
-            _param("mode", "string", default="dh", options=["dh", "ddca"], description="反演模式。"),
-            _param("freq_ghz", "number", default=1.4, description="频率。", unit="GHz", min_val=0.1, max_val=40, step=0.1),
+            _param(
+                "mode",
+                "string",
+                default="dh",
+                options=["dh", "ddca"],
+                description="反演模式。",
+            ),
+            _param(
+                "freq_ghz",
+                "number",
+                default=1.4,
+                description="频率。",
+                unit="GHz",
+                min_val=0.1,
+                max_val=40,
+                step=0.1,
+            ),
         ],
         "node_class": "inversion_daily",
     },
@@ -1097,18 +1702,54 @@ _NODE_TEMPLATES: list[dict[str, Any]] = [
         "title": "批量反演",
         "description": "基于时间序列合成数据进行批量反演。",
         "inputs": [
-            _port("input_mat", "data:timeseries", description="timeseries_bundle 输出。"),
-            _port("time_range", "value:time_range", required=False, description="时间窗口。"),
+            _port(
+                "input_mat", "data:timeseries", description="timeseries_bundle 输出。"
+            ),
+            _port(
+                "time_range",
+                "value:time_range",
+                required=False,
+                description="时间窗口。",
+            ),
             _port("bbox", "geometry:bbox", required=False, description="空间子集。"),
         ],
         "outputs": [
             _port("block_mat", "data:mat", description="批量反演结果 .mat。"),
         ],
         "params": [
-            _param("mode", "string", default="dh", options=["dh", "ddca"], description="反演模式。"),
-            _param("freq_ghz", "number", default=1.4, description="频率。", unit="GHz", min_val=0.1, max_val=40, step=0.1),
-            _param("pixel_chunk_size", "number", default=512, description="像素分块大小。", unit="像素", min_val=64, max_val=4096, step=64),
-            _param("write_daily_files", "boolean", default=False, description="是否输出每日文件。"),
+            _param(
+                "mode",
+                "string",
+                default="dh",
+                options=["dh", "ddca"],
+                description="反演模式。",
+            ),
+            _param(
+                "freq_ghz",
+                "number",
+                default=1.4,
+                description="频率。",
+                unit="GHz",
+                min_val=0.1,
+                max_val=40,
+                step=0.1,
+            ),
+            _param(
+                "pixel_chunk_size",
+                "number",
+                default=512,
+                description="像素分块大小。",
+                unit="像素",
+                min_val=64,
+                max_val=4096,
+                step=64,
+            ),
+            _param(
+                "write_daily_files",
+                "boolean",
+                default=False,
+                description="是否输出每日文件。",
+            ),
         ],
         "node_class": "block_inversion",
     },
@@ -1119,18 +1760,47 @@ _NODE_TEMPLATES: list[dict[str, Any]] = [
         "title": "Omega 反演",
         "description": "基于时间序列数据进行 Omega 反演，支持多种实验模式。",
         "inputs": [
-            _port("input_mat", "data:timeseries", description="timeseries_bundle 输出。"),
-            _port("time_range", "value:time_range", required=False, description="时间窗口。"),
+            _port(
+                "input_mat", "data:timeseries", description="timeseries_bundle 输出。"
+            ),
+            _port(
+                "time_range",
+                "value:time_range",
+                required=False,
+                description="时间窗口。",
+            ),
             _port("bbox", "geometry:bbox", required=False, description="空间子集。"),
         ],
         "outputs": [
             _port("omega_mat", "data:mat", description="Omega 反演结果 .mat。"),
         ],
         "params": [
-            _param("exp_mode", "string", default="Exp0", options=["Exp0", "EXP1A", "EXP1B", "EXP2"], description="实验模式。"),
-            _param("freq_ghz", "number", default=1.4, description="频率。", unit="GHz", min_val=0.1, max_val=40, step=0.1),
-            _param("temp_scheme", "string", default="default", description="温度方案。"),
-            _param("write_daily_files", "boolean", default=False, description="是否输出每日文件。"),
+            _param(
+                "exp_mode",
+                "string",
+                default="Exp0",
+                options=["Exp0", "EXP1A", "EXP1B", "EXP2"],
+                description="实验模式。",
+            ),
+            _param(
+                "freq_ghz",
+                "number",
+                default=1.4,
+                description="频率。",
+                unit="GHz",
+                min_val=0.1,
+                max_val=40,
+                step=0.1,
+            ),
+            _param(
+                "temp_scheme", "string", default="default", description="温度方案。"
+            ),
+            _param(
+                "write_daily_files",
+                "boolean",
+                default=False,
+                description="是否输出每日文件。",
+            ),
         ],
         "node_class": "omega_block",
     },
@@ -1141,19 +1811,42 @@ _NODE_TEMPLATES: list[dict[str, Any]] = [
         "title": "日常合成",
         "description": "将 SMAP、NDVI、FY 等日常产品合成为统一 .mat。",
         "inputs": [
-            _port("smap_daily_mat", "data:mat", required=False, description="SMAP 日常 .mat。"),
-            _port("ndvi_daily_mat", "data:mat", required=False, description="NDVI 日常 .mat。"),
-            _port("fy3b_folder", "data:source", required=False, description="FY3B 目录。"),
-            _port("fy3d_folder", "data:source", required=False, description="FY3D 目录。"),
-            _port("time_range", "value:time_range", required=False, description="合成日期。"),
+            _port(
+                "smap_daily_mat",
+                "data:mat",
+                required=False,
+                description="SMAP 日常 .mat。",
+            ),
+            _port(
+                "ndvi_daily_mat",
+                "data:mat",
+                required=False,
+                description="NDVI 日常 .mat。",
+            ),
+            _port(
+                "fy3b_folder", "data:source", required=False, description="FY3B 目录。"
+            ),
+            _port(
+                "fy3d_folder", "data:source", required=False, description="FY3D 目录。"
+            ),
+            _port(
+                "time_range",
+                "value:time_range",
+                required=False,
+                description="合成日期。",
+            ),
             _port("bbox", "geometry:bbox", required=False, description="空间对齐。"),
         ],
         "outputs": [
             _port("daily_bundle_mat", "data:mat", description="日常合成 .mat 输出。"),
         ],
         "params": [
-            _param("tb_source", "string", default="default", description="亮温数据源。"),
-            _param("sm_source", "string", default="default", description="土壤湿度数据源。"),
+            _param(
+                "tb_source", "string", default="default", description="亮温数据源。"
+            ),
+            _param(
+                "sm_source", "string", default="default", description="土壤湿度数据源。"
+            ),
             _param("ndvi_mode", "string", default="default", description="NDVI 模式。"),
         ],
         "node_class": "daily_bundle",
@@ -1166,19 +1859,31 @@ _NODE_TEMPLATES: list[dict[str, Any]] = [
         "description": "将日常合成产品汇总为时间序列 .mat。",
         "inputs": [
             _port("daily_mat_sources", "data:mat", description="日常 .mat。"),
-            _port("time_range", "value:time_range", required=False, description="序列窗口。"),
+            _port(
+                "time_range",
+                "value:time_range",
+                required=False,
+                description="序列窗口。",
+            ),
             _port("bbox", "geometry:bbox", required=False, description="空间子集。"),
         ],
         "outputs": [
-            _port("timeseries_bundle_mat", "data:timeseries", description="时间序列 .mat 输出。"),
+            _port(
+                "timeseries_bundle_mat",
+                "data:timeseries",
+                description="时间序列 .mat 输出。",
+            ),
         ],
         "params": [
-            _param("tb_source", "string", default="default", description="亮温数据源。"),
-            _param("sm_source", "string", default="default", description="土壤湿度数据源。"),
+            _param(
+                "tb_source", "string", default="default", description="亮温数据源。"
+            ),
+            _param(
+                "sm_source", "string", default="default", description="土壤湿度数据源。"
+            ),
         ],
         "node_class": "timeseries_bundle",
     },
-
     # ═══ GIS 基础工具模块 ═══════════════════════════════════════════════════════
     {
         "type": "gis/buffer_analysis",
@@ -1194,8 +1899,22 @@ _NODE_TEMPLATES: list[dict[str, Any]] = [
             _port("buffer", "data:geojson", description="缓冲区 GeoJSON。"),
         ],
         "params": [
-            _param("distance_unit", "string", default="meters", options=["meters", "kilometers", "degrees"], description="缓冲距离单位。"),
-            _param("segments", "number", default=16, description="圆弧段数（曲线光滑度）。", min_val=3, max_val=128, step=1),
+            _param(
+                "distance_unit",
+                "string",
+                default="meters",
+                options=["meters", "kilometers", "degrees"],
+                description="缓冲距离单位。",
+            ),
+            _param(
+                "segments",
+                "number",
+                default=16,
+                description="圆弧段数（曲线光滑度）。",
+                min_val=3,
+                max_val=128,
+                step=1,
+            ),
         ],
         "node_class": "gis_buffer_analysis",
     },
@@ -1213,9 +1932,28 @@ _NODE_TEMPLATES: list[dict[str, Any]] = [
             _port("stats", "data:geojson", description="分区统计结果 GeoJSON。"),
         ],
         "params": [
-            _param("statistic", "string", default="mean", options=["mean", "median", "sum", "min", "max", "count"], description="统计量类型。"),
-            _param("band", "number", default=0, description="波段索引。", min_val=0, max_val=100, step=1),
-            _param("all_touched", "boolean", default=False, description="是否统计所有接触像元（否则仅统计中心点在内的像元）。"),
+            _param(
+                "statistic",
+                "string",
+                default="mean",
+                options=["mean", "median", "sum", "min", "max", "count"],
+                description="统计量类型。",
+            ),
+            _param(
+                "band",
+                "number",
+                default=0,
+                description="波段索引。",
+                min_val=0,
+                max_val=100,
+                step=1,
+            ),
+            _param(
+                "all_touched",
+                "boolean",
+                default=False,
+                description="是否统计所有接触像元（否则仅统计中心点在内的像元）。",
+            ),
         ],
         "node_class": "gis_zonal_statistics",
     },
@@ -1227,14 +1965,27 @@ _NODE_TEMPLATES: list[dict[str, Any]] = [
         "description": "对栅格执行数学表达式运算（如 A*2 + B）。",
         "inputs": [
             _port("a", "data:raster", description="输入栅格 A。"),
-            _port("b", "data:raster", required=False, description="输入栅格 B（可选）。"),
+            _port(
+                "b", "data:raster", required=False, description="输入栅格 B（可选）。"
+            ),
         ],
         "outputs": [
             _port("result", "data:raster", description="计算结果栅格。"),
         ],
         "params": [
-            _param("expression", "string", default="A", description="表达式，变量名 A/B/C，支持 + - * / ** 等。"),
-            _param("nodata_handling", "string", default="propagate", options=["propagate", "zero", "ignore"], description="NoData 处理方式。"),
+            _param(
+                "expression",
+                "string",
+                default="A",
+                description="表达式，变量名 A/B/C，支持 + - * / ** 等。",
+            ),
+            _param(
+                "nodata_handling",
+                "string",
+                default="propagate",
+                options=["propagate", "zero", "ignore"],
+                description="NoData 处理方式。",
+            ),
         ],
         "node_class": "gis_raster_calculator",
     },
@@ -1252,9 +2003,26 @@ _NODE_TEMPLATES: list[dict[str, Any]] = [
             _port("raster", "data:raster", description="栅格化结果。"),
         ],
         "params": [
-            _param("attribute_field", "string", description="用于赋值的矢量属性字段名。"),
-            _param("resolution", "number", default=1000, description="输出分辨率。", unit="米", min_val=1, max_val=100000, step=1),
-            _param("dtype", "string", default="float32", options=["float32", "int32", "uint8"], description="输出数据类型。"),
+            _param(
+                "attribute_field", "string", description="用于赋值的矢量属性字段名。"
+            ),
+            _param(
+                "resolution",
+                "number",
+                default=1000,
+                description="输出分辨率。",
+                unit="米",
+                min_val=1,
+                max_val=100000,
+                step=1,
+            ),
+            _param(
+                "dtype",
+                "string",
+                default="float32",
+                options=["float32", "int32", "uint8"],
+                description="输出数据类型。",
+            ),
             _param("fill_value", "number", default=0, description="背景填充值。"),
         ],
         "node_class": "gis_vector_to_raster",
@@ -1272,9 +2040,31 @@ _NODE_TEMPLATES: list[dict[str, Any]] = [
             _port("vector", "data:geojson", description="矢量化结果 GeoJSON。"),
         ],
         "params": [
-            _param("band", "number", default=0, description="波段索引。", min_val=0, max_val=100, step=1),
-            _param("threshold", "number", default=0, description="阈值化（大于此值的像元转矢量）。"),
-            _param("simplify_tolerance", "number", default=0, description="简化容差。", unit="米", min_val=0, max_val=10000, step=1),
+            _param(
+                "band",
+                "number",
+                default=0,
+                description="波段索引。",
+                min_val=0,
+                max_val=100,
+                step=1,
+            ),
+            _param(
+                "threshold",
+                "number",
+                default=0,
+                description="阈值化（大于此值的像元转矢量）。",
+            ),
+            _param(
+                "simplify_tolerance",
+                "number",
+                default=0,
+                description="简化容差。",
+                unit="米",
+                min_val=0,
+                max_val=10000,
+                step=1,
+            ),
         ],
         "node_class": "gis_raster_to_vector",
     },
@@ -1291,8 +2081,15 @@ _NODE_TEMPLATES: list[dict[str, Any]] = [
             _port("raster", "data:raster", description="重分类后栅格。"),
         ],
         "params": [
-            _param("remap_table", "string", default="", description='重映射表，逗号分隔如 "0-30:1,30-60:2,60-100:3"'),
-            _param("nodata_value", "number", default=-9999, description="输出 NoData 值。"),
+            _param(
+                "remap_table",
+                "string",
+                default="",
+                description='重映射表，逗号分隔如 "0-30:1,30-60:2,60-100:3"',
+            ),
+            _param(
+                "nodata_value", "number", default=-9999, description="输出 NoData 值。"
+            ),
         ],
         "node_class": "gis_reclassify",
     },
@@ -1309,9 +2106,27 @@ _NODE_TEMPLATES: list[dict[str, Any]] = [
             _port("contours", "data:geojson", description="等值线 GeoJSON。"),
         ],
         "params": [
-            _param("interval", "number", default=100, description="等值线间距。", min_val=0.01, max_val=10000, step=0.01),
-            _param("band", "number", default=0, description="波段索引。", min_val=0, max_val=100, step=1),
-            _param("smoothing", "boolean", default=True, description="是否平滑等值线。"),
+            _param(
+                "interval",
+                "number",
+                default=100,
+                description="等值线间距。",
+                min_val=0.01,
+                max_val=10000,
+                step=0.01,
+            ),
+            _param(
+                "band",
+                "number",
+                default=0,
+                description="波段索引。",
+                min_val=0,
+                max_val=100,
+                step=1,
+            ),
+            _param(
+                "smoothing", "boolean", default=True, description="是否平滑等值线。"
+            ),
         ],
         "node_class": "gis_contour",
     },
@@ -1329,8 +2144,20 @@ _NODE_TEMPLATES: list[dict[str, Any]] = [
             _port("aspect", "data:raster", description="坡向栅格（度，0=北 90=东）。"),
         ],
         "params": [
-            _param("z_unit", "string", default="meters", options=["meters", "feet"], description="高程单位。"),
-            _param("algorithm", "string", default="horn", options=["horn", "zevenbergen"], description="坡度算法。"),
+            _param(
+                "z_unit",
+                "string",
+                default="meters",
+                options=["meters", "feet"],
+                description="高程单位。",
+            ),
+            _param(
+                "algorithm",
+                "string",
+                default="horn",
+                options=["horn", "zevenbergen"],
+                description="坡度算法。",
+            ),
         ],
         "node_class": "gis_slope_aspect",
     },
@@ -1348,12 +2175,25 @@ _NODE_TEMPLATES: list[dict[str, Any]] = [
             _port("watershed", "data:geojson", description="流域边界 GeoJSON。"),
         ],
         "params": [
-            _param("fill_threshold", "number", default=0.01, description="填洼阈值。", min_val=0, max_val=1, step=0.01),
-            _param("flow_direction", "string", default="d8", options=["d8", "dinf"], description="流向算法。"),
+            _param(
+                "fill_threshold",
+                "number",
+                default=0.01,
+                description="填洼阈值。",
+                min_val=0,
+                max_val=1,
+                step=0.01,
+            ),
+            _param(
+                "flow_direction",
+                "string",
+                default="d8",
+                options=["d8", "dinf"],
+                description="流向算法。",
+            ),
         ],
         "node_class": "gis_watershed",
     },
-
     # ═══ GEE 节点 ═════════════════════════════════════════════════════════════
     {
         "type": "gee/image",
@@ -1362,7 +2202,12 @@ _NODE_TEMPLATES: list[dict[str, Any]] = [
         "title": "GEE 影像加载",
         "description": "从 Google Earth Engine 加载影像 Asset。",
         "inputs": [
-            _port("time_range", "value:time_range", required=False, description="影像日期过滤。"),
+            _port(
+                "time_range",
+                "value:time_range",
+                required=False,
+                description="影像日期过滤。",
+            ),
             _port("bbox", "geometry:bbox", required=False, description="感兴趣区。"),
         ],
         "outputs": [
@@ -1417,8 +2262,18 @@ _NODE_TEMPLATES: list[dict[str, Any]] = [
             _port("image", "data:raster", description="波段选择后影像。"),
         ],
         "params": [
-            _param("bands", "array", default=[], description="要选择的波段列表（逗号分隔）。"),
-            _param("rename", "array", default=[], description="重命名后的波段列表（逗号分隔）。"),
+            _param(
+                "bands",
+                "array",
+                default=[],
+                description="要选择的波段列表（逗号分隔）。",
+            ),
+            _param(
+                "rename",
+                "array",
+                default=[],
+                description="重命名后的波段列表（逗号分隔）。",
+            ),
         ],
         "node_class": "gee_select_bands",
     },
@@ -1556,6 +2411,11 @@ def get_node_template(node_type: str) -> dict[str, Any] | None:
 def get_node_template_summary() -> list[dict[str, str]]:
     """返回节点模板摘要列表（仅 type, engine, category, title）。"""
     return [
-        {"type": t["type"], "engine": t["engine"], "category": t["category"], "title": t["title"]}
+        {
+            "type": t["type"],
+            "engine": t["engine"],
+            "category": t["category"],
+            "title": t["title"],
+        }
         for t in _NODE_TEMPLATES
     ]

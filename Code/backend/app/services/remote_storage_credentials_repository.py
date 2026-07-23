@@ -1,4 +1,5 @@
 """Encrypted SQLite repository for remote storage credential profiles."""
+
 from __future__ import annotations
 
 import base64
@@ -119,7 +120,9 @@ class RemoteStorageCredentialsRepository:
                     "Cannot store remote credentials without BACKEND_GEE_CREDENTIALS_ENCRYPTION_KEY "
                     "outside development."
                 )
-            logger.error("Remote credentials encryption key not set, storing plaintext (development only)")
+            logger.error(
+                "Remote credentials encryption key not set, storing plaintext (development only)"
+            )
             return plaintext, ""
         try:
             from cryptography.hazmat.primitives.ciphers.aead import AESGCM  # type: ignore
@@ -128,7 +131,9 @@ class RemoteStorageCredentialsRepository:
             iv = os.urandom(12)
             aesgcm = AESGCM(key_bytes)
             ct = aesgcm.encrypt(iv, plaintext.encode("utf-8"), None)
-            return base64.b64encode(ct).decode("ascii"), base64.b64encode(iv).decode("ascii")
+            return base64.b64encode(ct).decode("ascii"), base64.b64encode(iv).decode(
+                "ascii"
+            )
         except ImportError as exc:
             from app.services.effective_config import secrets_encryption_required
 
@@ -174,7 +179,9 @@ class RemoteStorageCredentialsRepository:
         now = datetime.now(timezone.utc).isoformat()
         existing = self.get_secret_bundle(profile_id, include_disabled=True)
         # None = preserve existing secret/key/extra/enabled; "" clears secrets
-        secret_val = secret if secret is not None else (existing or {}).get("secret") or ""
+        secret_val = (
+            secret if secret is not None else (existing or {}).get("secret") or ""
+        )
         key_val = (
             private_key_pem
             if private_key_pem is not None
@@ -185,7 +192,9 @@ class RemoteStorageCredentialsRepository:
         else:
             extra_val = dict(extra)
         if enabled is None:
-            enabled_val = bool((existing or {}).get("enabled", True)) if existing else True
+            enabled_val = (
+                bool((existing or {}).get("enabled", True)) if existing else True
+            )
         else:
             enabled_val = bool(enabled)
 
@@ -266,7 +275,11 @@ class RemoteStorageCredentialsRepository:
         with self._connect() as conn:
             cur = conn.execute(
                 "UPDATE remote_storage_credentials SET enabled=?, updated_at=? WHERE profile_id=?",
-                (1 if enabled else 0, datetime.now(timezone.utc).isoformat(), profile_id),
+                (
+                    1 if enabled else 0,
+                    datetime.now(timezone.utc).isoformat(),
+                    profile_id,
+                ),
             )
             conn.commit()
             return cur.rowcount > 0
@@ -347,7 +360,9 @@ class RemoteStorageCredentialsRepository:
             "enabled": bool(row["enabled"]),
         }
 
-    def find_by_host_protocol(self, protocol: str, host: str) -> Optional[dict[str, Any]]:
+    def find_by_host_protocol(
+        self, protocol: str, host: str
+    ) -> Optional[dict[str, Any]]:
         protocol = protocol.lower().strip()
         protocols = [protocol]
         if protocol in {"ftp", "ftps"}:
@@ -470,7 +485,9 @@ class RemoteStorageCredentialsRepository:
             )
         return result
 
-    def get_history_bundle(self, profile_id: str, history_id: int) -> Optional[dict[str, Any]]:
+    def get_history_bundle(
+        self, profile_id: str, history_id: int
+    ) -> Optional[dict[str, Any]]:
         with self._connect() as conn:
             row = conn.execute(
                 """

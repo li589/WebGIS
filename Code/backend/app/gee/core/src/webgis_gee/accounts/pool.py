@@ -121,9 +121,15 @@ class InMemoryAccountPool:
         leases = self.snapshot()
         return {
             "total_accounts": len(leases),
-            "available_accounts": len([lease for lease in leases if lease.is_available()]),
-            "cooldown_accounts": len([lease for lease in leases if lease.state == AccountState.COOLDOWN]),
-            "disabled_accounts": len([lease for lease in leases if lease.state == AccountState.DISABLED]),
+            "available_accounts": len(
+                [lease for lease in leases if lease.is_available()]
+            ),
+            "cooldown_accounts": len(
+                [lease for lease in leases if lease.state == AccountState.COOLDOWN]
+            ),
+            "disabled_accounts": len(
+                [lease for lease in leases if lease.state == AccountState.DISABLED]
+            ),
             "accounts": [
                 {
                     "account_id": lease.account_id,

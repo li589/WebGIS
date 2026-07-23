@@ -2,6 +2,7 @@
 
 出网与鉴权热路径应通过本模块读取，避免 Settings / SQLite / ApiConfigManager 三源分叉。
 """
+
 from __future__ import annotations
 
 import logging
@@ -31,6 +32,14 @@ class RuntimeSnapshot:
     log_level: str = "INFO"
     task_executor: str = "sync"
     secrets_insecure: bool = False
+    cache_default_ttl_seconds: int = 1800
+    provider_max_hotspots: int = 200
+    provider_max_series_points: int = 240
+    provider_table_chunk_size: int = 100
+    provider_series_chunk_size: int = 120
+    result_inline_max_bytes: int = 131072
+    celery_task_soft_time_limit: int = 300
+    celery_task_time_limit: int = 360
     hydrated: bool = False
 
 
@@ -93,21 +102,69 @@ def hydrate_effective_config() -> RuntimeSnapshot:
         snap = RuntimeSnapshot(
             api_keys=api_keys,
             weather_cache_ttl_seconds=int(
-                overrides.get("weather_cache_ttl_seconds", settings.weather_cache_ttl_seconds)
+                overrides.get(
+                    "weather_cache_ttl_seconds", settings.weather_cache_ttl_seconds
+                )
             ),
-            max_active_runs=int(overrides.get("max_active_runs", settings.max_active_runs)),
+            max_active_runs=int(
+                overrides.get("max_active_runs", settings.max_active_runs)
+            ),
             max_active_weather_tile_runs=int(
-                overrides.get("max_active_weather_tile_runs", settings.max_active_weather_tile_runs)
+                overrides.get(
+                    "max_active_weather_tile_runs",
+                    settings.max_active_weather_tile_runs,
+                )
             ),
             max_requested_outputs=int(
                 overrides.get("max_requested_outputs", settings.max_requested_outputs)
             ),
             weather_refresh_forecast_hours=int(
-                overrides.get("weather_refresh_forecast_hours", settings.weather_refresh_forecast_hours)
+                overrides.get(
+                    "weather_refresh_forecast_hours",
+                    settings.weather_refresh_forecast_hours,
+                )
             ),
             log_level=str(overrides.get("log_level", settings.log_level)),
-            task_executor=str(overrides.get("task_executor", settings.workflow_executor)).lower(),
+            task_executor=str(
+                overrides.get("task_executor", settings.workflow_executor)
+            ).lower(),
             secrets_insecure=_secrets_insecure,
+            cache_default_ttl_seconds=int(
+                overrides.get(
+                    "cache_default_ttl_seconds", settings.cache_default_ttl_seconds
+                )
+            ),
+            provider_max_hotspots=int(
+                overrides.get("provider_max_hotspots", settings.provider_max_hotspots)
+            ),
+            provider_max_series_points=int(
+                overrides.get(
+                    "provider_max_series_points", settings.provider_max_series_points
+                )
+            ),
+            provider_table_chunk_size=int(
+                overrides.get(
+                    "provider_table_chunk_size", settings.provider_table_chunk_size
+                )
+            ),
+            provider_series_chunk_size=int(
+                overrides.get(
+                    "provider_series_chunk_size", settings.provider_series_chunk_size
+                )
+            ),
+            result_inline_max_bytes=int(
+                overrides.get(
+                    "result_inline_max_bytes", settings.result_inline_max_bytes
+                )
+            ),
+            celery_task_soft_time_limit=int(
+                overrides.get(
+                    "celery_task_soft_time_limit", settings.celery_task_soft_time_limit
+                )
+            ),
+            celery_task_time_limit=int(
+                overrides.get("celery_task_time_limit", settings.celery_task_time_limit)
+            ),
             hydrated=True,
         )
         _snapshot = snap
@@ -200,3 +257,23 @@ def _load_runtime_overrides() -> dict[str, Any]:
     except Exception:
         logger.exception("Failed to load runtime config overrides")
         return {}
+
+
+def get_cache_default_ttl_seconds() -> int:
+    return get_runtime_snapshot().cache_default_ttl_seconds
+
+
+def get_provider_max_hotspots() -> int:
+    return get_runtime_snapshot().provider_max_hotspots
+
+
+def get_provider_max_series_points() -> int:
+    return get_runtime_snapshot().provider_max_series_points
+
+
+def get_celery_task_soft_time_limit() -> int:
+    return get_runtime_snapshot().celery_task_soft_time_limit
+
+
+def get_celery_task_time_limit() -> int:
+    return get_runtime_snapshot().celery_task_time_limit

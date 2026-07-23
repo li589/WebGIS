@@ -1,4 +1,5 @@
 """Tests for dual-pool run_class capacity helpers and repository counting."""
+
 from __future__ import annotations
 
 from datetime import datetime, timezone
@@ -23,7 +24,9 @@ from shared.contracts.api_contracts import (
 )
 
 
-def _status(run_id: str, status: ExecutionStatus = ExecutionStatus.running) -> WorkflowRunStatusResponse:
+def _status(
+    run_id: str, status: ExecutionStatus = ExecutionStatus.running
+) -> WorkflowRunStatusResponse:
     now = datetime.now(timezone.utc)
     return WorkflowRunStatusResponse(
         run_id=run_id,
@@ -64,7 +67,12 @@ class RunClassResolverTests(unittest.TestCase):
                         {
                             "node_id": "tile-render",
                             "node_type": "weather_tile_render",
-                            "params": {"layer_id": "wind-field", "z": 3, "x": 1, "y": 2},
+                            "params": {
+                                "layer_id": "wind-field",
+                                "z": 3,
+                                "x": 1,
+                                "y": 2,
+                            },
                         }
                     ],
                     "edges": [],
@@ -79,8 +87,16 @@ class DualPoolRepositoryTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmpdir:
             repository = SQLiteWorkflowRepository(state_dir=Path(tmpdir))
             try:
-                repository.save_run(_status("run-biz-1"), request_json="{}", run_class=RUN_CLASS_BUSINESS)
-                repository.save_run(_status("run-biz-2"), request_json="{}", run_class=RUN_CLASS_BUSINESS)
+                repository.save_run(
+                    _status("run-biz-1"),
+                    request_json="{}",
+                    run_class=RUN_CLASS_BUSINESS,
+                )
+                repository.save_run(
+                    _status("run-biz-2"),
+                    request_json="{}",
+                    run_class=RUN_CLASS_BUSINESS,
+                )
                 repository.save_run(
                     _status("run-tile-1"),
                     request_json="{}",
@@ -93,8 +109,12 @@ class DualPoolRepositoryTests(unittest.TestCase):
                 )
 
                 self.assertEqual(repository.count_active_runs(), 3)
-                self.assertEqual(repository.count_active_runs(run_class=RUN_CLASS_BUSINESS), 2)
-                self.assertEqual(repository.count_active_runs(run_class=RUN_CLASS_WEATHER_TILE), 1)
+                self.assertEqual(
+                    repository.count_active_runs(run_class=RUN_CLASS_BUSINESS), 2
+                )
+                self.assertEqual(
+                    repository.count_active_runs(run_class=RUN_CLASS_WEATHER_TILE), 1
+                )
             finally:
                 # Windows: 必须在 TemporaryDirectory 清理前关闭连接池，否则文件句柄占用导致 PermissionError
                 repository.close()
@@ -109,8 +129,12 @@ class DualPoolRepositoryTests(unittest.TestCase):
                     run_class=RUN_CLASS_WEATHER_TILE,
                 )
                 repository.save_run(_status("run-tile", status=ExecutionStatus.running))
-                self.assertEqual(repository.count_active_runs(run_class=RUN_CLASS_WEATHER_TILE), 1)
-                self.assertEqual(repository.count_active_runs(run_class=RUN_CLASS_BUSINESS), 0)
+                self.assertEqual(
+                    repository.count_active_runs(run_class=RUN_CLASS_WEATHER_TILE), 1
+                )
+                self.assertEqual(
+                    repository.count_active_runs(run_class=RUN_CLASS_BUSINESS), 0
+                )
             finally:
                 repository.close()
 

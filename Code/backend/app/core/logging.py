@@ -74,10 +74,19 @@ def get_request_id() -> str | None:
 
 
 @contextmanager
-def log_context(*, request_id: str | None = None, run_id: str | None = None, task_id: str | None = None) -> Iterator[None]:
-    request_token = _request_id_var.set(request_id if request_id is not None else _request_id_var.get())
+def log_context(
+    *,
+    request_id: str | None = None,
+    run_id: str | None = None,
+    task_id: str | None = None,
+) -> Iterator[None]:
+    request_token = _request_id_var.set(
+        request_id if request_id is not None else _request_id_var.get()
+    )
     run_token = _run_id_var.set(run_id if run_id is not None else _run_id_var.get())
-    task_token = _task_id_var.set(task_id if task_id is not None else _task_id_var.get())
+    task_token = _task_id_var.set(
+        task_id if task_id is not None else _task_id_var.get()
+    )
     try:
         yield
     finally:

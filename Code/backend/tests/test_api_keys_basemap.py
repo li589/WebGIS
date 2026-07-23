@@ -1,4 +1,5 @@
 """API key list/toggle/effective semantics for basemap settings."""
+
 from __future__ import annotations
 
 import sys

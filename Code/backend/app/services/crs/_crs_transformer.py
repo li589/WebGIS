@@ -13,6 +13,7 @@
     pt = crs_transformer.transform_point(116.39747, 39.9088, 'GCJ02', 'EPSG:4326')
     # CoordinatePoint(lng=116.391226, lat=39.907397)
 """
+
 from __future__ import annotations
 
 from typing import Iterable
@@ -177,16 +178,12 @@ class CRSTransformer:
         if src_encrypted or tgt_encrypted:
             for lng, lat in points_list:
                 x, y = self._transform_encrypted(lng, lat, source_code, target_code)
-                results.append(
-                    CoordinatePoint(lng=x + lng_offset, lat=y + lat_offset)
-                )
+                results.append(CoordinatePoint(lng=x + lng_offset, lat=y + lat_offset))
         else:
             transformer = self._get_transformer(source_code, target_code)
             # itransform 接受迭代器，输出 (x, y) 元组
             for x, y in transformer.itransform(points_list):
-                results.append(
-                    CoordinatePoint(lng=x + lng_offset, lat=y + lat_offset)
-                )
+                results.append(CoordinatePoint(lng=x + lng_offset, lat=y + lat_offset))
         return results
 
     # ── 内部辅助 ─────────────────────────────────────────────────────────

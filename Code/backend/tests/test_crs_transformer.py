@@ -9,9 +9,9 @@
 - LRU 缓存命中
 - bounds 转换 + 批量点转换
 """
+
 from __future__ import annotations
 
-import pytest
 
 from app.services.crs import crs_transformer
 from app.services.crs._crs_transformer import CRSTransformer
@@ -19,8 +19,8 @@ from app.services.crs._gcj_bd import bd09_to_wgs84, gcj02_to_wgs84
 
 # ── 精度阈值 ──────────────────────────────────────────────────────────
 _PRECISION_3857 = 1e-6  # 与旧 wgs84_to_epsg3857 对比精度
-_PRECISION_GCJ = 1e-9   # GCJ-02 同算法路径，应几乎完全一致
-_PRECISION_UTM = 1e-6   # UTM 往返精度（pyproj 高精度）
+_PRECISION_GCJ = 1e-9  # GCJ-02 同算法路径，应几乎完全一致
+_PRECISION_UTM = 1e-6  # UTM 往返精度（pyproj 高精度）
 
 
 # ── 北京天安门测试点 ──────────────────────────────────────────────────
@@ -121,7 +121,9 @@ class TestTransformPoint:
         assert 4000000 < lcc.lng < 5000000
         assert 2800000 < lcc.lat < 3500000
         # 反算回 WGS84 应与原值一致（LCC 非线性投影，1e-7 ≈ 1cm）
-        back = crs_transformer.transform_point(lcc.lng, lcc.lat, "EPSG:3034", "EPSG:4326")
+        back = crs_transformer.transform_point(
+            lcc.lng, lcc.lat, "EPSG:3034", "EPSG:4326"
+        )
         assert abs(back.lng - lng) < 1e-7
         assert abs(back.lat - lat) < 1e-7
 
@@ -255,7 +257,9 @@ class TestTransformBounds:
         # 北京附近 1km x 1km 区域（基于天安门 UTM 坐标）
         e0, n0 = _BEIJING_UTM50
         bounds = (e0 - 500, n0 - 500, e0 + 500, n0 + 500)
-        w, s, e, n = crs_transformer.transform_bounds(*bounds, "EPSG:32650", "EPSG:4326")
+        w, s, e, n = crs_transformer.transform_bounds(
+            *bounds, "EPSG:32650", "EPSG:4326"
+        )
         # 应在中国区域内
         assert 70 < w < 140
         assert 0 < s < 60
@@ -311,7 +315,9 @@ class TestTransformPointsBatch:
         batch = crs_transformer.transform_points_batch(points, "EPSG:4326", "EPSG:3857")
         assert len(batch) == 2
         for (lng, lat), pt in zip(points, batch):
-            expected = crs_transformer.transform_point(lng, lat, "EPSG:4326", "EPSG:3857")
+            expected = crs_transformer.transform_point(
+                lng, lat, "EPSG:4326", "EPSG:3857"
+            )
             assert abs(pt.lng - expected.lng) < 1e-9
             assert abs(pt.lat - expected.lat) < 1e-9
 

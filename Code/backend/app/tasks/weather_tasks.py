@@ -17,4 +17,6 @@ if celery_available and celery_app is not None:
 else:
 
     def refresh_weather_layers_hourly() -> list[dict[str, object]]:
-        raise RuntimeError("Celery is not installed. Install backend dependencies before using weather schedule tasks.")
+        raise RuntimeError(
+            "Celery is not installed. Install backend dependencies before using weather schedule tasks."
+        )

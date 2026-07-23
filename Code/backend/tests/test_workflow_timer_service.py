@@ -6,9 +6,9 @@
 - WorkflowTimerStore CRUD
 - tick() / emit_event() / trigger_manually() 业务逻辑（mock submission_service）
 """
+
 from __future__ import annotations
 
-import json
 import tempfile
 import unittest
 from datetime import datetime, timezone
@@ -311,7 +311,9 @@ class TickEmitTriggerTests(unittest.TestCase):
     def test_tick_fires_due_timer(self, mock_build: MagicMock) -> None:
         self._make_due_timer()
         mock_build.return_value = MagicMock()
-        with patch("app.services.workflow.service_container.submission_service") as mock_sub:
+        with patch(
+            "app.services.workflow.service_container.submission_service"
+        ) as mock_sub:
             mock_sub.submit_workflow.return_value = MagicMock(run_id="run-tick-1")
             stats = tick()
         self.assertEqual(stats["checked"], 1)
@@ -349,7 +351,9 @@ class TickEmitTriggerTests(unittest.TestCase):
         self._store.create_timer(timer)
 
         mock_build.return_value = MagicMock()
-        with patch("app.services.workflow.service_container.submission_service") as mock_sub:
+        with patch(
+            "app.services.workflow.service_container.submission_service"
+        ) as mock_sub:
             mock_sub.submit_workflow.return_value = MagicMock(run_id="run-evt-1")
             stats = emit_event("data_ready", {"key": "value"})
 
@@ -382,7 +386,9 @@ class TickEmitTriggerTests(unittest.TestCase):
         self._store.create_timer(timer)
 
         mock_build.return_value = MagicMock()
-        with patch("app.services.workflow.service_container.submission_service") as mock_sub:
+        with patch(
+            "app.services.workflow.service_container.submission_service"
+        ) as mock_sub:
             mock_sub.submit_workflow.return_value = MagicMock(
                 run_id="run-manual-1",
                 status_url="/workflow-runs/run-manual-1",

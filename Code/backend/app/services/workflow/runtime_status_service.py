@@ -4,6 +4,7 @@ Handles runtime status reporting, config management, cache/Redis health checks,
 and frontend command submission. Extracted from interaction_hub.py to separate
 runtime observability from workflow orchestration.
 """
+
 from __future__ import annotations
 
 from datetime import datetime, timezone
@@ -28,8 +29,9 @@ from shared.contracts.api_contracts import (
 logger = logging.getLogger(__name__)
 
 # 仅允许已接线字段；幽灵 key（如 demo_snapshot_provider、default_queue）禁止写入。
+# frontend scope 暂无消费方，保留空集合占位以支持未来扩展
 ALLOWED_RUNTIME_CONFIG_KEYS: dict[str, set[str]] = {
-    "frontend": {"timeline_granularity", "ui_density"},
+    "frontend": set(),
     "backend": {
         "task_executor",
         "max_active_runs",
@@ -38,6 +40,14 @@ ALLOWED_RUNTIME_CONFIG_KEYS: dict[str, set[str]] = {
         "weather_cache_ttl_seconds",
         "weather_refresh_forecast_hours",
         "log_level",
+        "cache_default_ttl_seconds",
+        "provider_max_hotspots",
+        "provider_max_series_points",
+        "provider_table_chunk_size",
+        "provider_series_chunk_size",
+        "result_inline_max_bytes",
+        "celery_task_soft_time_limit",
+        "celery_task_time_limit",
     },
     "workflow": set(),
 }
@@ -53,6 +63,14 @@ RUNTIME_CONFIG_VALUE_VALIDATORS: dict[str, dict[str, tuple]] = {
         "weather_refresh_forecast_hours": ("int", 1, 48),
         "log_level": ("choice", ["DEBUG", "INFO", "WARNING", "ERROR"]),
         "task_executor": ("choice", ["celery", "sync"]),
+        "cache_default_ttl_seconds": ("int", 60, 86400),
+        "provider_max_hotspots": ("int", 10, 1000),
+        "provider_max_series_points": ("int", 10, 500),
+        "provider_table_chunk_size": ("int", 10, 500),
+        "provider_series_chunk_size": ("int", 10, 500),
+        "result_inline_max_bytes": ("int", 4096, 1048576),
+        "celery_task_soft_time_limit": ("int", 60, 7200),
+        "celery_task_time_limit": ("int", 120, 7200),
     },
 }
 
@@ -66,8 +84,12 @@ class RuntimeStatusService:
     def get_runtime_status(self) -> RuntimeStatusResponse:
         now = datetime.now(timezone.utc)
         active_run_count = self._repository.count_active_runs()
-        active_business_run_count = self._repository.count_active_runs(run_class="business")
-        active_weather_tile_run_count = self._repository.count_active_runs(run_class="weather_tile")
+        active_business_run_count = self._repository.count_active_runs(
+            run_class="business"
+        )
+        active_weather_tile_run_count = self._repository.count_active_runs(
+            run_class="weather_tile"
+        )
         celery_details = get_celery_runtime_details()
         if use_celery_executor():
             if not celery_available:
@@ -80,10 +102,14 @@ class RuntimeStatusService:
                 dispatcher_health = ServiceHealth.degraded
                 dispatcher_message = "Celery broker 可访问，但未发现在线 worker。"
             else:
-                dispatcher_health = ServiceHealth.busy if active_run_count > 0 else ServiceHealth.ok
+                dispatcher_health = (
+                    ServiceHealth.busy if active_run_count > 0 else ServiceHealth.ok
+                )
                 dispatcher_message = "当前使用 Celery 异步分发器，worker 在线。"
         else:
-            dispatcher_health = ServiceHealth.busy if active_run_count > 0 else ServiceHealth.ok
+            dispatcher_health = (
+                ServiceHealth.busy if active_run_count > 0 else ServiceHealth.ok
+            )
             dispatcher_message = "当前使用本地同步任务编排器。"
         try:
             from app.services.effective_config import executor_honesty_details
@@ -158,8 +184,12 @@ class RuntimeStatusService:
             ),
             BackendServiceStatus(
                 service_name="gee_bridge_service",
-                health=ServiceHealth.ok if settings.gee_enabled else ServiceHealth.offline,
-                message="GEE 引擎桥接服务可用。" if settings.gee_enabled else "GEE 引擎桥接已禁用（BACKEND_GEE_ENABLED=false）。",
+                health=ServiceHealth.ok
+                if settings.gee_enabled
+                else ServiceHealth.offline,
+                message="GEE 引擎桥接服务可用。"
+                if settings.gee_enabled
+                else "GEE 引擎桥接已禁用（BACKEND_GEE_ENABLED=false）。",
                 updated_at=now,
                 details={
                     "enabled": settings.gee_enabled,
@@ -178,8 +208,12 @@ class RuntimeStatusService:
             ),
             BackendServiceStatus(
                 service_name="weather_bridge_service",
-                health=ServiceHealth.ok if settings.weather_workflow_enabled else ServiceHealth.offline,
-                message="天气工作流桥接服务可用。" if settings.weather_workflow_enabled else "天气工作流桥接已禁用（BACKEND_WEATHER_WORKFLOW_ENABLED=false）。",
+                health=ServiceHealth.ok
+                if settings.weather_workflow_enabled
+                else ServiceHealth.offline,
+                message="天气工作流桥接服务可用。"
+                if settings.weather_workflow_enabled
+                else "天气工作流桥接已禁用（BACKEND_WEATHER_WORKFLOW_ENABLED=false）。",
                 updated_at=now,
                 details={
                     "enabled": settings.weather_workflow_enabled,
@@ -199,7 +233,9 @@ class RuntimeStatusService:
                 details=self._collect_redis_stats(),
             ),
         ]
-        overall_health = ServiceHealth.busy if active_run_count > 0 else ServiceHealth.ok
+        overall_health = (
+            ServiceHealth.busy if active_run_count > 0 else ServiceHealth.ok
+        )
         return RuntimeStatusResponse(
             overall_health=overall_health,
             service_name=settings.service_name,
@@ -210,7 +246,9 @@ class RuntimeStatusService:
             services=services,
         )
 
-    def update_runtime_config(self, payload: RuntimeConfigUpdateRequest) -> RuntimeConfigUpdateResponse:
+    def update_runtime_config(
+        self, payload: RuntimeConfigUpdateRequest
+    ) -> RuntimeConfigUpdateResponse:
         now = datetime.now(timezone.utc)
         self._validate_runtime_config(payload)
         applied_count = self._repository.apply_runtime_config(payload.items)
@@ -232,16 +270,22 @@ class RuntimeStatusService:
         """Return the current runtime config snapshot (merged defaults + DB overrides)."""
         return self._repository.get_config_snapshot()
 
-    def submit_frontend_command(self, payload: FrontendCommandRequest) -> FrontendCommandResponse:
+    def submit_frontend_command(
+        self, payload: FrontendCommandRequest
+    ) -> FrontendCommandResponse:
         """Deprecated — router returns HTTP 410. Kept for contract/type reference only."""
         del payload
-        raise RuntimeError("submit_frontend_command is retired; use POST /frontend/commands which returns 410.")
+        raise RuntimeError(
+            "submit_frontend_command is retired; use POST /frontend/commands which returns 410."
+        )
 
     def _validate_runtime_config(self, payload: RuntimeConfigUpdateRequest) -> None:
         for item in payload.items:
             allowed_keys = ALLOWED_RUNTIME_CONFIG_KEYS.get(item.scope.value, set())
             if item.key not in allowed_keys:
-                raise ValueError(f"Unsupported runtime config key: {item.scope.value}.{item.key}")
+                raise ValueError(
+                    f"Unsupported runtime config key: {item.scope.value}.{item.key}"
+                )
             scope_validators = RUNTIME_CONFIG_VALUE_VALIDATORS.get(item.scope.value, {})
             validator = scope_validators.get(item.key)
             if validator is None:

@@ -6,7 +6,7 @@ from typing import Any
 
 from webgis_gee.domain.enums import PortKind
 from webgis_gee.domain.enums import RunStatus
-from webgis_gee.domain.models import ExecutionContext, NodeExecutionResult, NodeSpec, PortSpec
+from webgis_gee.domain.models import NodeExecutionResult, NodeSpec, PortSpec
 from webgis_gee.nodes.base import BaseNode
 
 
@@ -38,8 +38,7 @@ class SampleComputeNode(BaseNode):
         return NodeSpec(
             node_id="sample_compute",
             node_type=SampleComputeNode.node_type,
-            input_ports=[
-                PortSpec(name="a", kind=PortKind.VALUE)],
+            input_ports=[PortSpec(name="a", kind=PortKind.VALUE)],
             output_ports=[PortSpec(name="result", kind=PortKind.VALUE)],
         )
 
@@ -142,7 +141,9 @@ class BatchMapNode(BaseNode):
             )
 
         item_key = str(inputs.get("item_key", self.spec.params.get("item_key", "item")))
-        extra_params = inputs.get("extra_params", self.spec.params.get("extra_params", {}))
+        extra_params = inputs.get(
+            "extra_params", self.spec.params.get("extra_params", {})
+        )
         if not isinstance(extra_params, dict):
             return NodeExecutionResult(
                 node_id=self.spec.node_id,
@@ -154,7 +155,9 @@ class BatchMapNode(BaseNode):
             {
                 "index": index,
                 "item": item,
-                "payload": self._build_payload(item=item, item_key=item_key, extra_params=extra_params),
+                "payload": self._build_payload(
+                    item=item, item_key=item_key, extra_params=extra_params
+                ),
             }
             for index, item in enumerate(items)
         ]
@@ -220,10 +223,14 @@ class BatchSplitByTimeNode(BaseNode):
             return NodeExecutionResult(
                 node_id=self.spec.node_id,
                 status=RunStatus.FAILED,
-                warnings=["batch_split_by_time end_date must be on or after start_date"],
+                warnings=[
+                    "batch_split_by_time end_date must be on or after start_date"
+                ],
             )
 
-        step_unit = str(inputs.get("step_unit", self.spec.params.get("step_unit", "day"))).lower()
+        step_unit = str(
+            inputs.get("step_unit", self.spec.params.get("step_unit", "day"))
+        ).lower()
         step_size = inputs.get("step_size", self.spec.params.get("step_size", 1))
         if not isinstance(step_size, int) or step_size <= 0:
             return NodeExecutionResult(
@@ -238,8 +245,12 @@ class BatchSplitByTimeNode(BaseNode):
                 warnings=["batch_split_by_time step_unit must be 'day' or 'month'"],
             )
 
-        item_key = str(inputs.get("item_key", self.spec.params.get("item_key", "time_window")))
-        extra_params = inputs.get("extra_params", self.spec.params.get("extra_params", {}))
+        item_key = str(
+            inputs.get("item_key", self.spec.params.get("item_key", "time_window"))
+        )
+        extra_params = inputs.get(
+            "extra_params", self.spec.params.get("extra_params", {})
+        )
         if not isinstance(extra_params, dict):
             return NodeExecutionResult(
                 node_id=self.spec.node_id,
@@ -305,11 +316,17 @@ class BatchSplitByRegionsNode(BaseNode):
                 warnings=["batch_split_by_regions regions input must be a list"],
             )
 
-        region_key = str(inputs.get("region_key", self.spec.params.get("region_key", "region")))
-        region_id_key = str(
-            inputs.get("region_id_key", self.spec.params.get("region_id_key", "region_id"))
+        region_key = str(
+            inputs.get("region_key", self.spec.params.get("region_key", "region"))
         )
-        extra_params = inputs.get("extra_params", self.spec.params.get("extra_params", {}))
+        region_id_key = str(
+            inputs.get(
+                "region_id_key", self.spec.params.get("region_id_key", "region_id")
+            )
+        )
+        extra_params = inputs.get(
+            "extra_params", self.spec.params.get("extra_params", {})
+        )
         if not isinstance(extra_params, dict):
             return NodeExecutionResult(
                 node_id=self.spec.node_id,
@@ -394,7 +411,9 @@ class BatchCollectNode(BaseNode):
                 warnings=["batch_collect batch_items input must be a list"],
             )
 
-        collect_field = inputs.get("collect_field", self.spec.params.get("collect_field"))
+        collect_field = inputs.get(
+            "collect_field", self.spec.params.get("collect_field")
+        )
         flatten = bool(inputs.get("flatten", self.spec.params.get("flatten", False)))
 
         try:
@@ -535,7 +554,9 @@ class BatchFilterNode(BaseNode):
             )
 
         field = inputs.get("field", self.spec.params.get("field"))
-        operator = str(inputs.get("operator", self.spec.params.get("operator", "eq"))).lower()
+        operator = str(
+            inputs.get("operator", self.spec.params.get("operator", "eq"))
+        ).lower()
         value = inputs.get("value", self.spec.params.get("value"))
         indices = inputs.get("indices", self.spec.params.get("indices"))
 
@@ -572,7 +593,19 @@ class BatchFilterNode(BaseNode):
         value: Any,
         indices: Any,
     ) -> list[Any]:
-        allowed_operators = {"eq", "ne", "gt", "gte", "lt", "lte", "in", "not_in", "contains", "truthy", "falsy"}
+        allowed_operators = {
+            "eq",
+            "ne",
+            "gt",
+            "gte",
+            "lt",
+            "lte",
+            "in",
+            "not_in",
+            "contains",
+            "truthy",
+            "falsy",
+        }
         if operator not in allowed_operators:
             raise ValueError(
                 "batch_filter operator must be one of "
@@ -581,13 +614,19 @@ class BatchFilterNode(BaseNode):
 
         index_set: set[int] | None = None
         if indices is not None:
-            if not isinstance(indices, list) or any(not isinstance(index, int) for index in indices):
+            if not isinstance(indices, list) or any(
+                not isinstance(index, int) for index in indices
+            ):
                 raise ValueError("batch_filter indices must be a list of integers")
             index_set = set(indices)
 
-        has_value_filter = field is not None or value is not None or operator in {"truthy", "falsy"}
+        has_value_filter = (
+            field is not None or value is not None or operator in {"truthy", "falsy"}
+        )
         if index_set is None and not has_value_filter:
-            raise ValueError("batch_filter requires indices or a field/value filter condition")
+            raise ValueError(
+                "batch_filter requires indices or a field/value filter condition"
+            )
 
         filtered_items: list[Any] = []
         for index, item in enumerate(items):
@@ -595,7 +634,9 @@ class BatchFilterNode(BaseNode):
                 continue
             if has_value_filter:
                 candidate = cls._resolve_candidate(item=item, field=field, index=index)
-                if not cls._matches(candidate=candidate, operator=operator, value=value):
+                if not cls._matches(
+                    candidate=candidate, operator=operator, value=value
+                ):
                     continue
             filtered_items.append(item)
         return filtered_items
@@ -609,7 +650,9 @@ class BatchFilterNode(BaseNode):
         if not isinstance(item, dict):
             raise ValueError("batch_filter field filtering requires dict items")
         if field not in item:
-            raise ValueError(f"batch_filter missing field {field!r} in item at index {index}")
+            raise ValueError(
+                f"batch_filter missing field {field!r} in item at index {index}"
+            )
         return item[field]
 
     @staticmethod
@@ -639,7 +682,9 @@ class BatchFilterNode(BaseNode):
             if operator == "contains":
                 return value in candidate
         except TypeError as exc:
-            raise ValueError(f"batch_filter operator {operator!r} cannot compare provided values") from exc
+            raise ValueError(
+                f"batch_filter operator {operator!r} cannot compare provided values"
+            ) from exc
 
         raise ValueError(f"batch_filter unsupported operator {operator!r}")
 

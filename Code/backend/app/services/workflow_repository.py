@@ -4,7 +4,6 @@ import json
 import logging
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-import sqlite3
 
 from app.core.config import settings
 from app.services._sqlite_pool import SQLiteConnectionPool
@@ -22,7 +21,9 @@ DEFAULT_CONFIG_SNAPSHOT: dict[str, dict[str, object]] = {
         "ui_density": "compact",
     },
     "backend": {
-        "task_executor": "celery" if settings.workflow_executor == "celery" else "in_memory",
+        "task_executor": "celery"
+        if settings.workflow_executor == "celery"
+        else "in_memory",
         "demo_snapshot_provider": "local_catalog",
     },
     "workflow": {
@@ -130,7 +131,9 @@ class SQLiteWorkflowRepository:
             rows = connection.execute(
                 "SELECT payload_json FROM workflow_runs ORDER BY updated_at DESC"
             ).fetchall()
-        return [WorkflowRunStatusResponse.model_validate(json.loads(row[0])) for row in rows]
+        return [
+            WorkflowRunStatusResponse.model_validate(json.loads(row[0])) for row in rows
+        ]
 
     def append_event(self, event: WorkflowEvent) -> None:
         payload = json.dumps(event.model_dump(mode="json"), ensure_ascii=False)
@@ -190,7 +193,11 @@ class SQLiteWorkflowRepository:
                     ON CONFLICT(scope, config_key) DO UPDATE SET
                         value_json = excluded.value_json
                     """,
-                    (item.scope.value, item.key, json.dumps(item.value, ensure_ascii=False)),
+                    (
+                        item.scope.value,
+                        item.key,
+                        json.dumps(item.value, ensure_ascii=False),
+                    ),
                 )
         return len(items)
 
@@ -251,7 +258,9 @@ class SQLiteWorkflowRepository:
         Returns:
             {"runs_deleted": N, "events_deleted": M, "vacuumed": 0|1}
         """
-        cutoff = (datetime.now(timezone.utc) - timedelta(days=retention_days)).isoformat()
+        cutoff = (
+            datetime.now(timezone.utc) - timedelta(days=retention_days)
+        ).isoformat()
         stats = {"runs_deleted": 0, "events_deleted": 0, "vacuumed": 0}
 
         with self._connect() as connection:
@@ -268,7 +277,8 @@ class SQLiteWorkflowRepository:
 
             if not run_ids:
                 logger.info(
-                    "cleanup_old_runs: no runs older than %d days to delete", retention_days,
+                    "cleanup_old_runs: no runs older than %d days to delete",
+                    retention_days,
                 )
                 return stats
 
@@ -289,7 +299,9 @@ class SQLiteWorkflowRepository:
 
             logger.info(
                 "cleanup_old_runs: deleted %d runs and %d events (retention=%d days)",
-                stats["runs_deleted"], stats["events_deleted"], retention_days,
+                stats["runs_deleted"],
+                stats["events_deleted"],
+                retention_days,
             )
 
         # 4. VACUUM 必须在事务外执行（SQLite 限制）
@@ -364,7 +376,9 @@ class SQLiteWorkflowRepository:
             cursor = connection.execute("PRAGMA table_info(workflow_runs)")
             columns = {row[1] for row in cursor.fetchall()}
             if "request_json" not in columns:
-                connection.execute("ALTER TABLE workflow_runs ADD COLUMN request_json TEXT")
+                connection.execute(
+                    "ALTER TABLE workflow_runs ADD COLUMN request_json TEXT"
+                )
             if "run_class" not in columns:
                 connection.execute(
                     "ALTER TABLE workflow_runs ADD COLUMN run_class TEXT NOT NULL DEFAULT 'business'"
@@ -397,4 +411,5 @@ class SQLiteWorkflowRepository:
 
     def _clone_default_config(self) -> dict[str, dict[str, object]]:
         import copy
+
         return copy.deepcopy(DEFAULT_CONFIG_SNAPSHOT)

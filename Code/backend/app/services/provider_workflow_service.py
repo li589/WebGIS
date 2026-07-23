@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime
 import logging
+from typing import Any
 from uuid import uuid4
 
 from algorithms.providers.base import ProviderExecutionPayload, ProviderExecutionResult
@@ -21,17 +22,19 @@ from shared.contracts.api_contracts import (
 logger = logging.getLogger(__name__)
 
 # P0-5: Parameter whitelist — only these keys are permitted in workflow parameters.
-_ALLOWED_PARAMETER_KEYS: frozenset[str] = frozenset({
-    "hour",
-    "latitude",
-    "longitude",
-    "hotspot_count",
-    "series_step_hours",
-    "cache_ttl_seconds",
-    "max_attempts",
-    "simulate_fail_attempts",
-    "partial_failure_ref_ids",
-})
+_ALLOWED_PARAMETER_KEYS: frozenset[str] = frozenset(
+    {
+        "hour",
+        "latitude",
+        "longitude",
+        "hotspot_count",
+        "series_step_hours",
+        "cache_ttl_seconds",
+        "max_attempts",
+        "simulate_fail_attempts",
+        "partial_failure_ref_ids",
+    }
+)
 _MAX_PARAMETER_KEYS = 64
 
 
@@ -80,8 +83,12 @@ class ProviderWorkflowService:
             requested_hour=self._resolve_requested_hour(payload),
             parameters=validated_params,
             requested_outputs=payload.requested_outputs,
-            spatial_filter=payload.spatial_filter.model_dump(mode="json") if payload.spatial_filter else {},
-            time_range=payload.time_range.model_dump(mode="json") if payload.time_range else {},
+            spatial_filter=payload.spatial_filter.model_dump(mode="json")
+            if payload.spatial_filter
+            else {},
+            time_range=payload.time_range.model_dump(mode="json")
+            if payload.time_range
+            else {},
             client=payload.client.model_dump(mode="json"),
             map_context=payload.map_context.model_dump(mode="json"),
             config_overrides=payload.config_overrides,
@@ -95,7 +102,10 @@ class ProviderWorkflowService:
         provider_result = self._apply_result_limits(provider.execute(provider_payload))
         # C5 修复：使用内部方法获取 refs + diagnostics，公开方法仅返回 refs
         result_refs, chunk_diagnostics = self._build_result_refs_with_diagnostics(
-            run_id, payload, requested_at, provider_result,
+            run_id,
+            payload,
+            requested_at,
+            provider_result,
         )
 
         events = [
@@ -132,9 +142,15 @@ class ProviderWorkflowService:
             *chunk_diagnostics,
         ]
 
-        algorithm_request = payload.algorithm_request if isinstance(payload.algorithm_request, dict) else payload.algorithm_request.model_dump(mode="json")
-        workflow_entry_name = (
-            str(algorithm_request.get("workflow_name") or algorithm_request.get("module_name") or "provider_workflow")
+        algorithm_request = (
+            payload.algorithm_request
+            if isinstance(payload.algorithm_request, dict)
+            else payload.algorithm_request.model_dump(mode="json")
+        )
+        workflow_entry_name = str(
+            algorithm_request.get("workflow_name")
+            or algorithm_request.get("module_name")
+            or "provider_workflow"
         )
         engine_run_id = (
             provider_result.metadata.get("engine_run_id")
@@ -274,7 +290,9 @@ class ProviderWorkflowService:
         provider_result: ProviderExecutionResult,
     ) -> list[WorkflowResultReference]:
         """Bridge 协议：仅返回 result_refs 列表，与其他 bridge 一致。"""
-        refs, _ = self._build_result_refs_with_diagnostics(run_id, payload, requested_at, provider_result)
+        refs, _ = self._build_result_refs_with_diagnostics(
+            run_id, payload, requested_at, provider_result
+        )
         return refs
 
     def _build_result_refs_with_diagnostics(
@@ -327,19 +345,21 @@ class ProviderWorkflowService:
 
         if ResultKind.table.value in requested_output_kinds:
             if len(provider_result.hotspots) > settings.provider_table_chunk_size:
-                chunked_ref, chunked_diagnostics = result_storage_service.build_chunked_reference(
-                    run_id=run_id,
-                    result_kind=ResultKind.table,
-                    title=f"{provider_result.title} 热点表",
-                    mime_type="application/json",
-                    updated_at=requested_at,
-                    items=provider_result.hotspots,
-                    chunk_size=settings.provider_table_chunk_size,
-                    manifest_payload={
-                        "columns": ["name", "lng", "lat", "risk_score"],
-                        "row_count": len(provider_result.hotspots),
-                        "provider_key": provider_result.provider_key,
-                    },
+                chunked_ref, chunked_diagnostics = (
+                    result_storage_service.build_chunked_reference(
+                        run_id=run_id,
+                        result_kind=ResultKind.table,
+                        title=f"{provider_result.title} Hotspot Table",
+                        mime_type="application/json",
+                        updated_at=requested_at,
+                        items=provider_result.hotspots,
+                        chunk_size=settings.provider_table_chunk_size,
+                        manifest_payload={
+                            "columns": ["name", "lng", "lat", "risk_score"],
+                            "row_count": len(provider_result.hotspots),
+                            "provider_key": provider_result.provider_key,
+                        },
+                    )
                 )
                 result_refs.append(chunked_ref)
                 diagnostics.extend(chunked_diagnostics)
@@ -360,19 +380,21 @@ class ProviderWorkflowService:
 
         if ResultKind.chart.value in requested_output_kinds:
             if len(provider_result.series) > settings.provider_series_chunk_size:
-                chunked_ref, chunked_diagnostics = result_storage_service.build_chunked_reference(
-                    run_id=run_id,
-                    result_kind=ResultKind.chart,
-                    title=f"{provider_result.title} 时段趋势",
-                    mime_type="application/json",
-                    updated_at=requested_at,
-                    items=provider_result.series,
-                    chunk_size=settings.provider_series_chunk_size,
-                    manifest_payload={
-                        "chart_type": "line",
-                        "series_name": provider_result.layer_id,
-                        "point_count": len(provider_result.series),
-                    },
+                chunked_ref, chunked_diagnostics = (
+                    result_storage_service.build_chunked_reference(
+                        run_id=run_id,
+                        result_kind=ResultKind.chart,
+                        title=f"{provider_result.title} 时段趋势",
+                        mime_type="application/json",
+                        updated_at=requested_at,
+                        items=provider_result.series,
+                        chunk_size=settings.provider_series_chunk_size,
+                        manifest_payload={
+                            "chart_type": "line",
+                            "series_name": provider_result.layer_id,
+                            "point_count": len(provider_result.series),
+                        },
+                    )
                 )
                 result_refs.append(chunked_ref)
                 diagnostics.extend(chunked_diagnostics)
@@ -432,10 +454,14 @@ class ProviderWorkflowService:
     ) -> tuple[WorkflowResultReference | None, list[str]]:
         descriptor = get_layer_descriptor(provider_result.layer_id)
         if descriptor is None:
-            return None, [f"map_layer_skipped=descriptor_missing:{provider_result.layer_id}"]
+            return None, [
+                f"map_layer_skipped=descriptor_missing:{provider_result.layer_id}"
+            ]
 
         if descriptor.render_type != LayerRenderType.heatmap:
-            return None, [f"map_layer_skipped=unsupported_render_type:{descriptor.render_type.value}"]
+            return None, [
+                f"map_layer_skipped=unsupported_render_type:{descriptor.render_type.value}"
+            ]
 
         features: list[dict[str, object]] = []
         for index, hotspot in enumerate(provider_result.hotspots):
@@ -447,7 +473,11 @@ class ProviderWorkflowService:
             if not isinstance(lng, (int, float)) or not isinstance(lat, (int, float)):
                 continue
             if not isinstance(risk_score, (int, float)):
-                risk_score = provider_result.metric_value if isinstance(provider_result.metric_value, (int, float)) else 0
+                risk_score = (
+                    provider_result.metric_value
+                    if isinstance(provider_result.metric_value, (int, float))
+                    else 0
+                )
             features.append(
                 {
                     "type": "Feature",
@@ -461,14 +491,17 @@ class ProviderWorkflowService:
                         "risk_score": float(risk_score),
                         "metric": "risk_score",
                         "value": float(risk_score),
-                        "unit": descriptor.style.unit_label or provider_result.metric_unit,
+                        "unit": descriptor.style.unit_label
+                        or provider_result.metric_unit,
                         "provider_key": provider_result.provider_key,
                     },
                 }
             )
 
         if not features:
-            return None, [f"map_layer_skipped=no_heatmap_features:{provider_result.layer_id}"]
+            return None, [
+                f"map_layer_skipped=no_heatmap_features:{provider_result.layer_id}"
+            ]
 
         feature_collection = {
             "type": "FeatureCollection",
@@ -501,7 +534,7 @@ class ProviderWorkflowService:
         map_layer_ref = WorkflowResultReference(
             result_id=f"map-layer-{uuid4().hex[:10]}",
             result_kind=ResultKind.map_layer,
-            title=f"{provider_result.title} 热力图图层",
+            title=f"{provider_result.title} Heatmap Layer",
             mime_type="application/json",
             inline_data={
                 "render_hint": render_hint.model_dump(mode="json"),
@@ -526,9 +559,13 @@ class ProviderWorkflowService:
             return float(hour_override)
         if payload.time_range is None:
             return 12.0
-        return payload.time_range.start_at.hour + payload.time_range.start_at.minute / 60
+        return (
+            payload.time_range.start_at.hour + payload.time_range.start_at.minute / 60
+        )
 
-    def _apply_result_limits(self, provider_result: ProviderExecutionResult) -> ProviderExecutionResult:
+    def _apply_result_limits(
+        self, provider_result: ProviderExecutionResult
+    ) -> ProviderExecutionResult:
         diagnostics = list(provider_result.diagnostics)
         hotspots = provider_result.hotspots[: settings.provider_max_hotspots]
         series = provider_result.series[: settings.provider_max_series_points]

@@ -40,7 +40,9 @@ def export_openapi(output_path: str | None = None) -> Path:
     out = Path(output_path)
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(json.dumps(schema, indent=2, ensure_ascii=False), encoding="utf-8")
-    print(f"OpenAPI schema exported to {out} ({len(schema.get('paths', {}))} paths, {len(schema.get('components', {}).get('schemas', {}))} schemas)")
+    print(
+        f"OpenAPI schema exported to {out} ({len(schema.get('paths', {}))} paths, {len(schema.get('components', {}).get('schemas', {}))} schemas)"
+    )
     return out
 
 

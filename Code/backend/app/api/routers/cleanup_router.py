@@ -6,6 +6,7 @@
 - POST /cleanup/vacuum          VACUUM workflow_state 数据库回收磁盘空间
 - GET  /cleanup/stats           返回当前清理统计（不执行清理）
 """
+
 from __future__ import annotations
 
 from typing import Any
@@ -61,7 +62,9 @@ class CleanupStatsResponse(BaseModel):
     status_code=status.HTTP_200_OK,
     dependencies=[Depends(require_write_access)],
 )
-def cleanup_workflow_runs(request: WorkflowRunsCleanupRequest) -> WorkflowRunsCleanupResponse:
+def cleanup_workflow_runs(
+    request: WorkflowRunsCleanupRequest,
+) -> WorkflowRunsCleanupResponse:
     """手动清理过期的 workflow runs 及其 events。
 
     清理逻辑：删除 status 为 completed/failed/cancelled 且 updated_at 早于
@@ -156,6 +159,7 @@ def get_cleanup_stats() -> CleanupStatsResponse:
 
     # 统计终态数量
     from app.services.workflow_repository import _TERMINAL_STATUSES
+
     terminal_counts: dict[str, int] = {}
     try:
         with repository._connect() as connection:

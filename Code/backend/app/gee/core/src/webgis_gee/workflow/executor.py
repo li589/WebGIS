@@ -115,7 +115,9 @@ class WorkflowExecutor:
                         metrics.increment("node.execute.failed")
                 log_structured_event(
                     logger,
-                    logging.INFO if result.status == RunStatus.COMPLETED else logging.WARNING,
+                    logging.INFO
+                    if result.status == RunStatus.COMPLETED
+                    else logging.WARNING,
                     "node.execute.finished",
                     sink=event_sink,
                     run_id=context.run_id,
@@ -164,11 +166,7 @@ class WorkflowExecutor:
                 if not workflow.runtime_policy.continue_on_error:
                     break
 
-        overall_status = (
-            RunStatus.COMPLETED
-            if not all_errors
-            else RunStatus.FAILED
-        )
+        overall_status = RunStatus.COMPLETED if not all_errors else RunStatus.FAILED
 
         return RunResult(
             run_id=context.run_id,
@@ -211,7 +209,11 @@ class WorkflowExecutor:
 
     @staticmethod
     def _failed_result_message(node_id: str, result: NodeExecutionResult) -> str:
-        detail = "; ".join(result.warnings) if result.warnings else "node returned failed status"
+        detail = (
+            "; ".join(result.warnings)
+            if result.warnings
+            else "node returned failed status"
+        )
         return f"node {node_id} failed: {detail}"
 
     @staticmethod
@@ -237,7 +239,9 @@ class WorkflowExecutor:
         return outputs
 
     @staticmethod
-    def _resolve_metrics_collector(context: ExecutionContext) -> InMemoryMetricsCollector | None:
+    def _resolve_metrics_collector(
+        context: ExecutionContext,
+    ) -> InMemoryMetricsCollector | None:
         collector = context.metadata.get("metrics_collector")
         if isinstance(collector, InMemoryMetricsCollector):
             return collector

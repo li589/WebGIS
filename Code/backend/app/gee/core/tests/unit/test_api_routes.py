@@ -17,7 +17,9 @@ from webgis_gee.runtime.exceptions import WorkflowValidationError
 
 
 def _create_handlers(tmp_path) -> WorkflowApiHandlers:
-    service = WorkflowService(settings=Settings(storage_backend="local", local_storage_root=str(tmp_path)))
+    service = WorkflowService(
+        settings=Settings(storage_backend="local", local_storage_root=str(tmp_path))
+    )
     facade = WorkflowApiFacade(adapter=WorkflowContractAdapter(service))
     return WorkflowApiHandlers(facade=facade)
 
@@ -46,7 +48,9 @@ class _RaisingFacade:
             raise self._exception
         raise AssertionError("unexpected facade method call")
 
-    def get_export_task_status(self, manifest_uri, *, update_manifest=False, gee_module=None):
+    def get_export_task_status(
+        self, manifest_uri, *, update_manifest=False, gee_module=None
+    ):
         if self._method_name == "get_export_task_status":
             raise self._exception
         raise AssertionError("unexpected facade method call")
@@ -61,7 +65,9 @@ class _RecordingFacade:
     def __init__(self) -> None:
         self.last_get_export_task_status_call: dict[str, object] | None = None
 
-    def get_export_task_status(self, manifest_uri, *, update_manifest=False, gee_module=None):
+    def get_export_task_status(
+        self, manifest_uri, *, update_manifest=False, gee_module=None
+    ):
         self.last_get_export_task_status_call = {
             "manifest_uri": manifest_uri,
             "update_manifest": update_manifest,
@@ -75,7 +81,9 @@ class _RecordingFacade:
         )
 
 
-def test_handlers_validate_workflow_returns_route_friendly_validation_model(tmp_path) -> None:
+def test_handlers_validate_workflow_returns_route_friendly_validation_model(
+    tmp_path,
+) -> None:
     handlers = _create_handlers(tmp_path)
 
     response = handlers.validate_workflow(
@@ -83,7 +91,11 @@ def test_handlers_validate_workflow_returns_route_friendly_validation_model(tmp_
             "workflow": {
                 "workflow_id": "route-validate-demo",
                 "nodes": [
-                    {"node_id": "n1", "node_type": "literal", "params": {"value": "ok"}},
+                    {
+                        "node_id": "n1",
+                        "node_type": "literal",
+                        "params": {"value": "ok"},
+                    },
                 ],
             }
         }
@@ -94,7 +106,9 @@ def test_handlers_validate_workflow_returns_route_friendly_validation_model(tmp_
     assert response.saveback_terminal_plans["n1"].action == "monitor_only"
 
 
-def test_handlers_submit_workflow_returns_route_friendly_execution_model(tmp_path) -> None:
+def test_handlers_submit_workflow_returns_route_friendly_execution_model(
+    tmp_path,
+) -> None:
     handlers = _create_handlers(tmp_path)
 
     response = handlers.submit_workflow(
@@ -102,7 +116,11 @@ def test_handlers_submit_workflow_returns_route_friendly_execution_model(tmp_pat
             "workflow": {
                 "workflow_id": "route-submit-demo",
                 "nodes": [
-                    {"node_id": "n1", "node_type": "literal", "params": {"value": "ok"}},
+                    {
+                        "node_id": "n1",
+                        "node_type": "literal",
+                        "params": {"value": "ok"},
+                    },
                 ],
             }
         }
@@ -114,7 +132,9 @@ def test_handlers_submit_workflow_returns_route_friendly_execution_model(tmp_pat
     assert response.saveback_terminal_plan is not None
 
 
-def test_handlers_run_workflow_job_returns_route_friendly_execution_model(tmp_path) -> None:
+def test_handlers_run_workflow_job_returns_route_friendly_execution_model(
+    tmp_path,
+) -> None:
     handlers = _create_handlers(tmp_path)
 
     response = handlers.run_workflow_job(
@@ -169,7 +189,9 @@ def test_handlers_diagnose_returns_diagnostics_report(tmp_path) -> None:
     assert "workflow_schema" in response.checks
 
 
-def test_create_api_router_registers_fastapi_routes_when_dependency_is_available() -> None:
+def test_create_api_router_registers_fastapi_routes_when_dependency_is_available() -> (
+    None
+):
     pytest.importorskip("fastapi")
 
     router = create_api_router()
@@ -199,7 +221,13 @@ def test_create_api_router_preserves_workflow_validation_error_message() -> None
                 {
                     "workflow": {
                         "workflow_id": "route-validate-error-demo",
-                        "nodes": [{"node_id": "n1", "node_type": "literal", "params": {"value": "ok"}}],
+                        "nodes": [
+                            {
+                                "node_id": "n1",
+                                "node_type": "literal",
+                                "params": {"value": "ok"},
+                            }
+                        ],
                     }
                 }
             )
@@ -226,7 +254,13 @@ def test_create_api_router_hides_internal_submit_exception_details() -> None:
                 {
                     "workflow": {
                         "workflow_id": "route-submit-error-demo",
-                        "nodes": [{"node_id": "n1", "node_type": "literal", "params": {"value": "ok"}}],
+                        "nodes": [
+                            {
+                                "node_id": "n1",
+                                "node_type": "literal",
+                                "params": {"value": "ok"},
+                            }
+                        ],
                     }
                 }
             )
@@ -237,7 +271,9 @@ def test_create_api_router_hides_internal_submit_exception_details() -> None:
     assert "internal-secret" not in exc_info.value.detail
 
 
-def test_create_api_router_returns_generic_client_error_for_invalid_export_request() -> None:
+def test_create_api_router_returns_generic_client_error_for_invalid_export_request() -> (
+    None
+):
     fastapi = pytest.importorskip("fastapi")
     router = create_api_router(
         facade=_RaisingFacade(

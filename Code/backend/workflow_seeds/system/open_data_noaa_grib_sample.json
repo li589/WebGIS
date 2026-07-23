@@ -1,0 +1,65 @@
+{
+  "_meta": {
+    "kind": "system",
+    "engine": "common",
+    "name": "NOAA 开放数据样例（下载→提取）",
+    "description": "目的：演示 NOAA NOMADS 门户下载到本地缓存后提取变量。前置：无需凭证（公开产品）。使用前请把 relative_path 改成真实 NOMADS 对象路径。产出：缓存文件路径 + 变量摘要（需 GRIB 时安装 cfgrib）。",
+    "author": "system",
+    "readonly": true,
+    "is_template": true,
+    "linked_layer_id": null
+  },
+  "workflow_id": "open_data_noaa_grib_sample",
+  "name": "NOAA 开放数据样例（下载→提取）",
+  "description": "NOAA NOMADS → 可选解压 → 提取变量。请替换 relative_path。",
+  "nodes": [
+    {
+      "id": 1,
+      "type": "download/http_open_data",
+      "pos": [80, 120],
+      "properties": {
+        "preset": "noaa_nomads",
+        "relative_path": "REPLACE_WITH_NOMADS_RELATIVE_PATH",
+        "cred_profile": "",
+        "force_refresh": false
+      }
+    },
+    {
+      "id": 2,
+      "type": "archive/extract",
+      "pos": [360, 80],
+      "properties": {
+        "member_glob": "",
+        "recurse_once": false,
+        "output_dirname": "noaa_extracted"
+      }
+    },
+    {
+      "id": 3,
+      "type": "extract/variable",
+      "pos": [640, 120],
+      "properties": {
+        "variable": "REPLACE_VARIABLE_OR_SKIP_IF_RAW_FILE"
+      }
+    },
+    {
+      "id": 4,
+      "type": "format/convert",
+      "pos": [920, 120],
+      "properties": {
+        "target_format": "npy",
+        "variable": ""
+      }
+    }
+  ],
+  "links": [
+    {"0": 1, "1": 1, "2": 0, "3": 2, "4": 0, "5": "value:string"},
+    {"0": 2, "1": 2, "2": 0, "3": 3, "4": 0, "5": "value:string"},
+    {"0": 3, "1": 3, "2": 0, "3": 4, "4": 0, "5": "value:string"}
+  ],
+  "extra": {
+    "purpose": "open_portal_sample",
+    "portal": "noaa_nomads",
+    "notes": "若下载结果已是单文件而非归档，可绕过 archive/extract，直接把 http_open_data.path 连到 extract/variable。"
+  }
+}

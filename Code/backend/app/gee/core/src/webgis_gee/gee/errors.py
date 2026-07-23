@@ -21,7 +21,9 @@ class GeeErrorDecision:
 
 
 def classify_gee_error(*messages: str) -> GeeErrorDecision:
-    normalized_messages = [message.strip() for message in messages if message and message.strip()]
+    normalized_messages = [
+        message.strip() for message in messages if message and message.strip()
+    ]
     if not normalized_messages:
         return GeeErrorDecision(
             category=GeeErrorCategory.UNKNOWN,

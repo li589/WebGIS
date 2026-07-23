@@ -104,7 +104,9 @@ class WeatherProvidersRepository:
                     "Cannot store weather provider config without BACKEND_GEE_CREDENTIALS_ENCRYPTION_KEY "
                     "outside development."
                 )
-            logger.error("Weather provider encryption key not set, storing plaintext (development only)")
+            logger.error(
+                "Weather provider encryption key not set, storing plaintext (development only)"
+            )
             return plaintext, ""
         try:
             from cryptography.hazmat.primitives.ciphers.aead import AESGCM  # type: ignore
@@ -115,12 +117,16 @@ class WeatherProvidersRepository:
             iv = os.urandom(12)
             aesgcm = AESGCM(key_bytes)
             ct = aesgcm.encrypt(iv, plaintext.encode("utf-8"), None)
-            return base64.b64encode(ct).decode("ascii"), base64.b64encode(iv).decode("ascii")
+            return base64.b64encode(ct).decode("ascii"), base64.b64encode(iv).decode(
+                "ascii"
+            )
         except ImportError:
             from app.services.effective_config import secrets_encryption_required
 
             if secrets_encryption_required():
-                raise RuntimeError("cryptography package required to encrypt weather provider config") from None
+                raise RuntimeError(
+                    "cryptography package required to encrypt weather provider config"
+                ) from None
             logger.warning("cryptography not installed, storing plaintext")
             return plaintext, ""
         except RuntimeError:
@@ -129,8 +135,13 @@ class WeatherProvidersRepository:
             from app.services.effective_config import secrets_encryption_required
 
             if secrets_encryption_required():
-                raise RuntimeError(f"Encryption failed for weather provider config: {e}") from e
-            logger.error("Encryption failed for weather provider config, storing plaintext: %s", e)
+                raise RuntimeError(
+                    f"Encryption failed for weather provider config: {e}"
+                ) from e
+            logger.error(
+                "Encryption failed for weather provider config, storing plaintext: %s",
+                e,
+            )
             return plaintext, ""
 
     def _decrypt(self, ciphertext_b64: str, iv_b64: str) -> str:
@@ -207,11 +218,17 @@ class WeatherProvidersRepository:
                     updated_at=excluded.updated_at
                 """,
                 (
-                    provider_id, display_name, provider_type,
-                    1 if enabled else 0, priority,
-                    config_enc, config_iv,
-                    last_tested_at, last_test_status,
-                    now, now,
+                    provider_id,
+                    display_name,
+                    provider_type,
+                    1 if enabled else 0,
+                    priority,
+                    config_enc,
+                    config_iv,
+                    last_tested_at,
+                    last_test_status,
+                    now,
+                    now,
                 ),
             )
             conn.commit()
@@ -254,7 +271,11 @@ class WeatherProvidersRepository:
         with self._connect() as conn:
             cur = conn.execute(
                 "UPDATE weather_providers SET enabled=?, updated_at=? WHERE provider_id=?",
-                (1 if enabled else 0, datetime.now(timezone.utc).isoformat(), provider_id),
+                (
+                    1 if enabled else 0,
+                    datetime.now(timezone.utc).isoformat(),
+                    provider_id,
+                ),
             )
             conn.commit()
             return cur.rowcount > 0
@@ -288,7 +309,11 @@ class WeatherProvidersRepository:
                 config_str = self._decrypt(config_enc, config_iv or "")
                 config = json.loads(config_str) if config_str else None
             except Exception as e:
-                logger.warning("Failed to decrypt config for provider %s: %s", row["provider_id"], e)
+                logger.warning(
+                    "Failed to decrypt config for provider %s: %s",
+                    row["provider_id"],
+                    e,
+                )
                 config = None
 
         return {

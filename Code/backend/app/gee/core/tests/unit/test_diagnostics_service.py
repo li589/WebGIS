@@ -3,7 +3,10 @@ from webgis_gee.accounts.pool import InMemoryAccountPool
 from webgis_gee.application.services import WorkflowService
 from webgis_gee.config.settings import Settings
 from webgis_gee.domain.models import EdgeSpec, NodeSpec, WorkflowDefinition
-from webgis_gee.runtime.observability import InMemoryMetricsSink, InMemoryStructuredEventSink
+from webgis_gee.runtime.observability import (
+    InMemoryMetricsSink,
+    InMemoryStructuredEventSink,
+)
 
 
 def test_diagnostics_reports_registry_storage_and_account_pool(tmp_path) -> None:
@@ -29,10 +32,15 @@ def test_diagnostics_reports_registry_storage_and_account_pool(tmp_path) -> None
     assert report.checks["resource_control"]["gee_runtime_mode"] == "serialized"
     assert report.checks["resource_control"]["max_local_write_bytes"] == 2048
     assert report.checks["resource_control"]["active_temp_dirs"] == 0
-    assert report.checks["resource_control"]["quota_coordinator"]["type"] == "NoopResourceQuotaCoordinator"
+    assert (
+        report.checks["resource_control"]["quota_coordinator"]["type"]
+        == "NoopResourceQuotaCoordinator"
+    )
 
 
-def test_diagnostics_warns_when_gee_dependency_is_available(tmp_path, monkeypatch) -> None:
+def test_diagnostics_warns_when_gee_dependency_is_available(
+    tmp_path, monkeypatch
+) -> None:
     monkeypatch.setattr(
         DiagnosticsService,
         "_check_gee_dependency",
@@ -57,8 +65,13 @@ def test_diagnostics_exposes_external_observability_sinks(tmp_path) -> None:
     report = service.diagnose()
 
     assert report.checks["observability"]["status"] == "ok"
-    assert report.checks["observability"]["structured_event_sink"]["type"] == "InMemoryStructuredEventSink"
-    assert report.checks["observability"]["metrics_sink"]["type"] == "InMemoryMetricsSink"
+    assert (
+        report.checks["observability"]["structured_event_sink"]["type"]
+        == "InMemoryStructuredEventSink"
+    )
+    assert (
+        report.checks["observability"]["metrics_sink"]["type"] == "InMemoryMetricsSink"
+    )
 
 
 def test_diagnostics_exposes_metrics_snapshot(tmp_path) -> None:
@@ -87,4 +100,6 @@ def test_diagnostics_exposes_metrics_snapshot(tmp_path) -> None:
     assert report.checks["metrics"]["counters"]["workflow.execute.started"] == 1
     assert report.checks["metrics"]["counters"]["workflow.execute.completed"] == 1
     assert report.checks["metrics"]["counters"]["node.execute.started"] == 2
-    assert report.checks["metrics"]["timers"]["workflow.execute.duration_ms"]["count"] == 1
+    assert (
+        report.checks["metrics"]["timers"]["workflow.execute.duration_ms"]["count"] == 1
+    )

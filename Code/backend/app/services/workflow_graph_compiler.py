@@ -4,7 +4,10 @@ from __future__ import annotations
 
 from typing import Any
 
-from app.services.node_template_registry import get_all_node_templates, get_node_template
+from app.services.node_template_registry import (
+    get_all_node_templates,
+    get_node_template,
+)
 
 # Engines that execute as python_provider module nodes in this phase
 _PYTHONISH_ENGINES = frozenset({"common", "python_provider"})
@@ -94,7 +97,9 @@ def compile_litegraph_to_workflow_definition(
         node_id = f"n{lg_id_int}"
         id_map[lg_id_int] = node_id
 
-        props = node.get("properties") if isinstance(node.get("properties"), dict) else {}
+        props = (
+            node.get("properties") if isinstance(node.get("properties"), dict) else {}
+        )
         params: dict[str, Any] = {str(k): v for k, v in props.items()}
         params["module_name"] = node_class
 
@@ -128,7 +133,12 @@ def compile_litegraph_to_workflow_definition(
         # - object (frontend serialize): {"0": id, "1": from, "2": slot, "3": to, "4": slot, "5": type}
         # - object (native): {id, origin_id, origin_slot, target_id, target_slot, type}
         if isinstance(link, (list, tuple)) and len(link) >= 5:
-            from_id, from_slot, to_id, to_slot = int(link[1]), int(link[2]), int(link[3]), int(link[4])
+            from_id, from_slot, to_id, to_slot = (
+                int(link[1]),
+                int(link[2]),
+                int(link[3]),
+                int(link[4]),
+            )
         elif isinstance(link, dict):
             if "1" in link or 1 in link:
                 from_id = int(link.get("1", link.get(1)))

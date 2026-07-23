@@ -1,0 +1,108 @@
+{
+  "_meta": {
+    "kind": "system",
+    "engine": "python_provider",
+    "name": "avg-ω 逐日反演（SMAP 双温度 GLDAS）",
+    "description": "目的：D2 avg-omega 逐日反演（SMAP TB + DUAL 双温度方案，含 GLDAS 冠层/土壤温度）。前置：D1 omega_block 已产出；GLDAS .mat 已落盘（含 Ts_gldas/Tsoil1_gldas/Tsoil2_gldas）。产出：目标年逐日 SM/VOD/OMEGA .mat。配置：temp_scheme=DUAL 触发 build_effective_soil_temperature_scheme 计算 Ct/TG。",
+    "author": "system",
+    "readonly": true,
+    "is_template": true,
+    "linked_layer_id": "omega-avg-daily"
+  },
+  "workflow_id": "omega_avg_daily_smap_dual",
+  "name": "avg-ω 逐日反演（SMAP 双温度 GLDAS）",
+  "description": "D1 omega_block 输出 → D2 DOY 气候态 + 逐日 DDCA 回代（SMAP_SINGLE + DUAL 温度，GLDAS Ct/TG）。",
+  "nodes": [
+    {
+      "id": 1,
+      "type": "data/source",
+      "pos": [80, 120],
+      "properties": {
+        "path": "InversionResults/omega_block",
+        "dataset_key": "omega_block_output",
+        "notes": "D1 omega_block 输出目录"
+      }
+    },
+    {
+      "id": 2,
+      "type": "data/source",
+      "pos": [80, 280],
+      "properties": {
+        "path": "Soil_Ecological_Data/Smap_OriginData",
+        "dataset_key": "smap_daily_mat",
+        "notes": "逐日 SMAP .mat（TBv/TBh/IA/Ts/vwc/SM）"
+      }
+    },
+    {
+      "id": 3,
+      "type": "data/source",
+      "pos": [80, 440],
+      "properties": {
+        "path": "SMAP_ancillary",
+        "dataset_key": "ancillary_mat",
+        "notes": "静态辅助库"
+      }
+    },
+    {
+      "id": 4,
+      "type": "data/source",
+      "pos": [80, 600],
+      "properties": {
+        "path": "GLDAS",
+        "dataset_key": "gldas_mat",
+        "notes": "GLDAS .mat（命名 YYYYMMDD_HHMM.mat，含 Ts_gldas/Tsoil1_gldas/Tsoil2_gldas）；use_gldas_template=true 时按模板 slot 选取"
+      }
+    },
+    {
+      "id": 5,
+      "type": "data/source",
+      "pos": [80, 760],
+      "properties": {
+        "path": "NDVI/daily",
+        "dataset_key": "ndvi_daily_mat",
+        "notes": "逐日 NDVI .mat；ndvi_clim_folder 指向 NDVI/climatology"
+      }
+    },
+    {
+      "id": 6,
+      "type": "algorithm/omega_avg_daily",
+      "pos": [560, 380],
+      "properties": {
+        "module_name": "omega_avg_daily",
+        "task_type": "omega_avg_daily",
+        "algorithm_params": {
+          "target_year": 2023,
+          "tb_source": "SMAP",
+          "sm_source": "SMAP",
+          "temp_scheme": "DUAL",
+          "ndvi_mode": "DAILY_FILE",
+          "sf_mode": "STATIC",
+          "use_gldas_template": true,
+          "dual_tg_mode": "PAPER_CT",
+          "ct_smref": 0.30,
+          "ct_exp": 0.30,
+          "avg_build_start_year": 2015,
+          "avg_build_end_year": 2025,
+          "freq_ghz": 1.4,
+          "lambda_tau": 20.0,
+          "pixel_chunk_size": 200000,
+          "enable_parallel": true
+        }
+      }
+    }
+  ],
+  "links": [
+    {"0": 1, "1": 1, "2": 0, "3": 6, "4": 0, "5": "value:string"},
+    {"0": 2, "1": 2, "2": 0, "3": 6, "4": 0, "5": "value:string"},
+    {"0": 3, "1": 3, "2": 0, "3": 6, "4": 0, "5": "value:string"},
+    {"0": 4, "1": 4, "2": 0, "3": 6, "4": 0, "5": "value:string"},
+    {"0": 5, "1": 5, "2": 0, "3": 6, "4": 0, "5": "value:string"}
+  ],
+  "extra": {
+    "purpose": "d2_avg_omega_daily",
+    "scheme": "SMAP_SINGLE_DUAL_TEMP",
+    "pipeline": "D1 omega_block → D2 DOY climatology → per-day DDCA (omega fixed, tc=Ct/tg=TG from GLDAS)",
+    "prerequisite": "D1 omega_block + GLDAS .mat（Ts_gldas/Tsoil1_gldas/Tsoil2_gldas）",
+    "notes": "双温度方案：build_daily_bundle_for_date 内部调用 build_effective_soil_temperature_scheme(sm_ref, tsoil1, tsoil2) → Ct/TG，DDCA 用 ddca_dual_temp(tbv, tbh, tc, tg, ..., omega_value=OMEGA_AVG)。"
+  }
+}
