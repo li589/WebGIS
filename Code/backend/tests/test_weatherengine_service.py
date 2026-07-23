@@ -7,7 +7,12 @@ from app.weatherengine.constants import WEATHER_LAYER_SPECS
 from app.weatherengine.service import WeatherEngineService
 from app.weatherengine.provider_registry import get_registry
 from app.weatherengine.providers.open_meteo_provider import OpenMeteoProvider
-from shared.contracts.api_contracts import ResultKind, RuntimeMapContext, WorkflowCommandType, WorkflowSubmitRequest
+from shared.contracts.api_contracts import (
+    ResultKind,
+    RuntimeMapContext,
+    WorkflowCommandType,
+    WorkflowSubmitRequest,
+)
 
 
 class _FakeOpenMeteoClient:
@@ -128,15 +133,25 @@ class WeatherEngineServiceTests(unittest.TestCase):
         self.assertEqual(weather.layer_id, "wind-field")
         self.assertEqual(weather.place_name, "Guangzhou")
         self.assertEqual(weather.cache_status, "hit")
-        self.assertEqual(weather.render_hint.primary_metric, WEATHER_LAYER_SPECS["wind-field"].primary_metric)
-        self.assertEqual(weather.render_hint.paint_mode, WEATHER_LAYER_SPECS["wind-field"].paint_mode)
-        self.assertAlmostEqual(weather.render_hint.opacity, WEATHER_LAYER_SPECS["wind-field"].default_opacity)
+        self.assertEqual(
+            weather.render_hint.primary_metric,
+            WEATHER_LAYER_SPECS["wind-field"].primary_metric,
+        )
+        self.assertEqual(
+            weather.render_hint.paint_mode, WEATHER_LAYER_SPECS["wind-field"].paint_mode
+        )
+        self.assertAlmostEqual(
+            weather.render_hint.opacity,
+            WEATHER_LAYER_SPECS["wind-field"].default_opacity,
+        )
         self.assertEqual(len(weather.hourly), 3)
         self.assertAlmostEqual(weather.current.wind_speed_10m or 0.0, 8.2)
         self.assertEqual(weather.hourly[0].primary_metric, "wind_speed_10m")
         self.assertAlmostEqual(weather.hourly[0].primary_value or 0.0, 8.2)
 
-    def test_get_point_weather_exposes_layer_primary_metric_in_hourly_rows(self) -> None:
+    def test_get_point_weather_exposes_layer_primary_metric_in_hourly_rows(
+        self,
+    ) -> None:
         service = WeatherEngineService()
 
         weather = service.get_point_weather(
@@ -157,7 +172,12 @@ class WeatherEngineServiceTests(unittest.TestCase):
         payload = WorkflowSubmitRequest(
             command_type=WorkflowCommandType.analysis,
             layer_id="temperature",
-            requested_outputs=[ResultKind.json, ResultKind.text, ResultKind.table, ResultKind.map_layer],
+            requested_outputs=[
+                ResultKind.json,
+                ResultKind.text,
+                ResultKind.table,
+                ResultKind.map_layer,
+            ],
             parameters={
                 "latitude": 23.1291,
                 "longitude": 113.2644,
@@ -175,7 +195,10 @@ class WeatherEngineServiceTests(unittest.TestCase):
         )
 
         self.assertIn("Open-Meteo", execution.message)
-        self.assertEqual(execution.result_dto["workflow_entry_name"], "weatherengine.open_meteo_point")
+        self.assertEqual(
+            execution.result_dto["workflow_entry_name"],
+            "weatherengine.open_meteo_point",
+        )
         self.assertEqual(execution.result_dto["layer_id"], "temperature")
         self.assertGreaterEqual(len(execution.result_refs), 5)
         result_kinds = [result.result_kind for result in execution.result_refs]
@@ -188,7 +211,9 @@ class WeatherEngineServiceTests(unittest.TestCase):
 
     def test_execute_precipitation_returns_geojson_asset(self) -> None:
         client = _FakeOpenMeteoClient()
-        get_registry().register(OpenMeteoProvider(client=client), priority=0, enabled=True)
+        get_registry().register(
+            OpenMeteoProvider(client=client), priority=0, enabled=True
+        )
         service = WeatherEngineService()
         payload = WorkflowSubmitRequest(
             command_type=WorkflowCommandType.analysis,
@@ -251,7 +276,9 @@ class WeatherEngineServiceTests(unittest.TestCase):
     def test_execute_scalar_layers_use_grid_fetch_in_fallback(self) -> None:
         for layer_id in ("temperature", "humidity", "pressure", "visibility"):
             client = _FakeOpenMeteoClient()
-            get_registry().register(OpenMeteoProvider(client=client), priority=0, enabled=True)
+            get_registry().register(
+                OpenMeteoProvider(client=client), priority=0, enabled=True
+            )
             service = WeatherEngineService()
             payload = WorkflowSubmitRequest(
                 command_type=WorkflowCommandType.analysis,
@@ -278,7 +305,9 @@ class WeatherEngineServiceTests(unittest.TestCase):
 
     def test_execute_temperature_uses_grid_for_geojson_and_cog(self) -> None:
         client = _FakeOpenMeteoClient()
-        get_registry().register(OpenMeteoProvider(client=client), priority=0, enabled=True)
+        get_registry().register(
+            OpenMeteoProvider(client=client), priority=0, enabled=True
+        )
         service = WeatherEngineService()
         payload = WorkflowSubmitRequest(
             command_type=WorkflowCommandType.analysis,

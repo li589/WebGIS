@@ -53,7 +53,9 @@ class OpenMeteoProvider(WeatherProvider):
     ) -> None:
         self._provider_id = provider_id
         self._display_name = display_name
-        self._default_base_url = (default_base_url or OPEN_METEO_BASE_URL).rstrip("?").rstrip("/")
+        self._default_base_url = (
+            (default_base_url or OPEN_METEO_BASE_URL).rstrip("?").rstrip("/")
+        )
         if self._default_base_url.endswith("/v1/forecast"):
             pass
         self._description = description or (
@@ -197,9 +199,13 @@ class OpenMeteoProvider(WeatherProvider):
             enabled=True,
             healthy=healthy,
             circuit_state=circuit_state,
-            daily_quota=OPEN_METEO_DAILY_API_LIMIT if self.provider_id == OPEN_METEO_ONLINE_ID else None,
+            daily_quota=OPEN_METEO_DAILY_API_LIMIT
+            if self.provider_id == OPEN_METEO_ONLINE_ID
+            else None,
             daily_used=daily_used if self.provider_id == OPEN_METEO_ONLINE_ID else None,
-            daily_remaining=budget_remaining if self.provider_id == OPEN_METEO_ONLINE_ID else None,
+            daily_remaining=budget_remaining
+            if self.provider_id == OPEN_METEO_ONLINE_ID
+            else None,
             metadata={
                 "base_url": self.base_url,
                 "version": self.version,
@@ -223,7 +229,9 @@ class OpenMeteoProvider(WeatherProvider):
         return {
             "base_url": self.base_url,
             "requires_api_key": False,
-            "daily_quota": OPEN_METEO_DAILY_API_LIMIT if self.provider_id == OPEN_METEO_ONLINE_ID else None,
+            "daily_quota": OPEN_METEO_DAILY_API_LIMIT
+            if self.provider_id == OPEN_METEO_ONLINE_ID
+            else None,
         }
 
     def apply_config(self, config: dict[str, Any]) -> None:
@@ -250,7 +258,9 @@ class OpenMeteoProvider(WeatherProvider):
             layer_spec = WEATHER_LAYER_SPECS.get("wind-field")
             if layer_spec is None:
                 layer_spec = next(iter(WEATHER_LAYER_SPECS.values()))
-            model = resolve_open_meteo_model("best_match", provider_id=self._provider_id)
+            model = resolve_open_meteo_model(
+                "best_match", provider_id=self._provider_id
+            )
             self._client.fetch_point_forecast(
                 latitude=23.1291,
                 longitude=113.2644,

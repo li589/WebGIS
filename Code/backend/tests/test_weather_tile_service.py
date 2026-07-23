@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import asyncio
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, patch
 from urllib.error import HTTPError
 
 import pytest
@@ -31,7 +31,7 @@ class TestTileBbox:
 
     def test_tile_bbox_zoom_5_25_12(self):
         bbox = tile_bbox(5, 25, 12)
-        n = 2 ** 5
+        n = 2**5
         assert bbox.west == pytest.approx(25 / n * 360.0 - 180.0)
         assert bbox.east == pytest.approx(26 / n * 360.0 - 180.0)
         # y=12 的北边纬度应大于 y=13 的南边纬度
@@ -247,7 +247,9 @@ class TestGridDataForHour:
             "grid": {"rows": 2, "cols": 2},
             "data": {
                 "current": {"wind_speed_10m": [1.0, 2.0, 3.0, 4.0]},
-                "hourly": {"wind_speed_10m": [[1.0] * 4, [2.0] * 4, [3.0] * 4, [4.0] * 4]},
+                "hourly": {
+                    "wind_speed_10m": [[1.0] * 4, [2.0] * 4, [3.0] * 4, [4.0] * 4]
+                },
             },
         }
         result = _grid_data_for_hour(grid_data, 0)

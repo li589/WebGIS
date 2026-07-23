@@ -5,14 +5,17 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from app.core.config import settings
 from app.weatherengine.default_model import weather_default_model
 from app.weatherengine.constants import WEATHER_LAYER_SPECS
 from app.weatherengine.fetch_gateway import fetch_grid_forecast
 from app.workflow_engine.base import BaseNode
 from app.workflow_engine.enums import PortKind, RunStatus
 from app.workflow_engine.models import NodeExecutionResult, NodeSpec, PortSpec
-from app.weatherengine.nodes._utils import compute_dynamic_resolution, coerce_float, resolve_bbox
+from app.weatherengine.nodes._utils import (
+    compute_dynamic_resolution,
+    coerce_float,
+    resolve_bbox,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -121,19 +124,51 @@ class GridFetchNode(BaseNode):
                 PortSpec(name="latitude", kind=PortKind.value, description="中心纬度"),
                 PortSpec(name="longitude", kind=PortKind.value, description="中心经度"),
                 PortSpec(name="layer_id", kind=PortKind.value, description="图层类型"),
-                PortSpec(name="resolution", kind=PortKind.value, description="网格分辨率（度）"),
-                PortSpec(name="model", kind=PortKind.value, required=False, description="气象模型，可选"),
-                PortSpec(name="provider_id", kind=PortKind.value, required=False, description="天气源 Provider ID（钉源），可选"),
-                PortSpec(name="viewport_bbox", kind=PortKind.data, required=False, description="视口边界框"),
-                PortSpec(name="bbox", kind=PortKind.data, required=False, description="空间过滤器边界框"),
+                PortSpec(
+                    name="resolution",
+                    kind=PortKind.value,
+                    description="网格分辨率（度）",
+                ),
+                PortSpec(
+                    name="model",
+                    kind=PortKind.value,
+                    required=False,
+                    description="气象模型，可选",
+                ),
+                PortSpec(
+                    name="provider_id",
+                    kind=PortKind.value,
+                    required=False,
+                    description="天气源 Provider ID（钉源），可选",
+                ),
+                PortSpec(
+                    name="viewport_bbox",
+                    kind=PortKind.data,
+                    required=False,
+                    description="视口边界框",
+                ),
+                PortSpec(
+                    name="bbox",
+                    kind=PortKind.data,
+                    required=False,
+                    description="空间过滤器边界框",
+                ),
             ],
             output_ports=[
-                PortSpec(name="grid_data", kind=PortKind.data, description="网格化天气数据"),
+                PortSpec(
+                    name="grid_data", kind=PortKind.data, description="网格化天气数据"
+                ),
                 PortSpec(name="grid_rows", kind=PortKind.value, description="网格行数"),
                 PortSpec(name="grid_cols", kind=PortKind.value, description="网格列数"),
                 PortSpec(name="bbox", kind=PortKind.data, description="网格边界框"),
-                PortSpec(name="cache_status", kind=PortKind.value, description="缓存状态"),
+                PortSpec(
+                    name="cache_status", kind=PortKind.value, description="缓存状态"
+                ),
                 PortSpec(name="layer_id", kind=PortKind.value, description="图层类型"),
-                PortSpec(name="provider_id", kind=PortKind.value, description="实际使用的天气源 Provider ID"),
+                PortSpec(
+                    name="provider_id",
+                    kind=PortKind.value,
+                    description="实际使用的天气源 Provider ID",
+                ),
             ],
         )

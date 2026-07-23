@@ -5,6 +5,7 @@
 线程安全：注册与查找均通过 _REGISTRY_LOCK 串行化。
 查找顺序：精确匹配优先，其次按注册顺序遍历前缀策略。
 """
+
 from __future__ import annotations
 
 import logging
@@ -40,7 +41,9 @@ def register_strategy(
             if prefix:
                 _PREFIX_STRATEGIES.append((layer_id, cls))
                 logger.debug(
-                    "Registered prefix layer output strategy: %s -> %s", layer_id, cls.__name__
+                    "Registered prefix layer output strategy: %s -> %s",
+                    layer_id,
+                    cls.__name__,
                 )
             else:
                 if layer_id in _REGISTRY:

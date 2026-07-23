@@ -36,6 +36,7 @@ from shared.contracts.api_contracts import BoundingBox
 from app.weatherengine.field_mapping import (
     aligned_grid_axes,
     backfill_current_from_hourly_step0,
+    ensure_hub_height_temperature_in_grid_arrays,
     ensure_hub_height_wind_in_grid_arrays,
 )
 
@@ -88,7 +89,9 @@ class CircuitBreaker:
                 if time.monotonic() - self._opened_at >= self._recovery_timeout:
                     self._state = self._HALF_OPEN
                     self._half_open_probes_in_flight = 1
-                    logger.info("[CircuitBreaker] OPEN -> HALF_OPEN, allowing probe request")
+                    logger.info(
+                        "[CircuitBreaker] OPEN -> HALF_OPEN, allowing probe request"
+                    )
                     return True
                 return False
             # HALF_OPEN
@@ -127,7 +130,10 @@ class CircuitBreaker:
         """记录成功请求，关闭断路器并重置失败计数。"""
         with self._lock:
             if self._state != self._CLOSED:
-                logger.info("[CircuitBreaker] %s -> CLOSED after successful request", self._state.upper())
+                logger.info(
+                    "[CircuitBreaker] %s -> CLOSED after successful request",
+                    self._state.upper(),
+                )
             self._state = self._CLOSED
             self._failure_count = 0
             self._half_open_probes_in_flight = 0
@@ -166,7 +172,7 @@ class _RateLimitedResponse:
     确保无论响应是正常关闭还是因异常退出 with 块，槽位都会被释放。
     """
 
-    __slots__ = ('_response', '_pool')
+    __slots__ = ("_response", "_pool")
 
     def __init__(self, response, *, pool: str):
         self._response = response
@@ -220,7 +226,9 @@ class OpenMeteoClient:
         """Redis key 按日期 + base_url 分组，online/local 预算互不占用。"""
         date_str = datetime.now(timezone.utc).strftime("%Y-%m-%d")
         host = self._base_url.replace("https://", "").replace("http://", "").rstrip("/")
-        host_key = "".join(ch if ch.isalnum() or ch in "-_." else "_" for ch in host)[:120]
+        host_key = "".join(ch if ch.isalnum() or ch in "-_." else "_" for ch in host)[
+            :120
+        ]
         return f"{self._BUDGET_REDIS_KEY_PREFIX}{date_str}:{host_key}"
 
     def _budget_remaining(self) -> int | None:
@@ -318,7 +326,9 @@ class OpenMeteoClient:
         pool = self._api_slot_pool()
         # 槽位等待过长会拖垮前端瓦片超时；拿不到就快速 503 让客户端退避
         if not acquire_api_slot(timeout=8.0, pool=pool):
-            raise HTTPError(url, 503, "API rate limit: too many concurrent requests", None, None)
+            raise HTTPError(
+                url, 503, "API rate limit: too many concurrent requests", None, None
+            )
         try:
             resp = urlopen(url, timeout=timeout)
             return _RateLimitedResponse(resp, pool=pool)
@@ -390,19 +400,25 @@ class OpenMeteoClient:
             if cached_payload is not None:
                 logger.warning(
                     "[OpenMeteoClient] circuit open, returning stale cache: lat=%.4f lon=%.4f layer=%s",
-                    latitude, longitude, layer_spec.layer_id,
+                    latitude,
+                    longitude,
+                    layer_spec.layer_id,
                 )
                 return cached_payload, "circuit-open-stale"
             if self._circuit.wait_or_pass(timeout=8.0):
                 logger.info(
                     "[OpenMeteoClient] circuit recovered for point probe: lat=%.4f lon=%.4f layer=%s",
-                    latitude, longitude, layer_spec.layer_id,
+                    latitude,
+                    longitude,
+                    layer_spec.layer_id,
                 )
             else:
                 logger.warning(
                     "[OpenMeteoClient] circuit still open — soft-bypass interactive point: "
                     "lat=%.4f lon=%.4f layer=%s",
-                    latitude, longitude, layer_spec.layer_id,
+                    latitude,
+                    longitude,
+                    layer_spec.layer_id,
                 )
 
         # 3. Cross-worker request deduplication
@@ -413,7 +429,9 @@ class OpenMeteoClient:
                 redis_payload = cache_get_json(redis_key)
                 if redis_payload is not None:
                     return redis_payload, "dedup-hit"
-                cached_payload, cache_is_fresh = self._read_cached_payload(cache_path, now=now)
+                cached_payload, cache_is_fresh = self._read_cached_payload(
+                    cache_path, now=now
+                )
                 if cache_is_fresh and cached_payload is not None:
                     return cached_payload, "dedup-hit"
 
@@ -423,10 +441,16 @@ class OpenMeteoClient:
         # 每日 API 预算检查：超限时降级为 stale cache，避免被 Open-Meteo 完全封锁
         remaining = self._budget_remaining()
         if remaining is not None and remaining <= 0:
-            logger.warning("[OpenMeteoClient] daily API budget exhausted for point forecast: lat=%.4f lon=%.4f", latitude, longitude)
+            logger.warning(
+                "[OpenMeteoClient] daily API budget exhausted for point forecast: lat=%.4f lon=%.4f",
+                latitude,
+                longitude,
+            )
             if cached_payload is not None:
                 return cached_payload, "budget-exhausted-stale"
-            raise HTTPError(self._base_url, 503, "Daily API budget exhausted", None, None)
+            raise HTTPError(
+                self._base_url, 503, "Daily API budget exhausted", None, None
+            )
 
         query_dict: dict[str, str] = {
             "latitude": f"{latitude:.4f}",
@@ -439,7 +463,9 @@ class OpenMeteoClient:
         }
         # 气压层变量：layer_spec.notes 第三项可指定需要的气压层（如 850/700/500/200 hPa）
         if pressure_levels:
-            query_dict["pressure_levels"] = ",".join(str(level) for level in pressure_levels)
+            query_dict["pressure_levels"] = ",".join(
+                str(level) for level in pressure_levels
+            )
         query = urlencode(query_dict)
         # 点查是交互请求：短重试，避免与瓦片风暴抢 429 退避把用户拖死（旧逻辑可等 32s+64s）
         max_attempts = 2
@@ -447,7 +473,9 @@ class OpenMeteoClient:
         payload: dict[str, Any] | None = None
         for attempt in range(max_attempts):
             try:
-                with self._rate_limited_urlopen(f"{self._base_url}?{query}", timeout=15) as response:
+                with self._rate_limited_urlopen(
+                    f"{self._base_url}?{query}", timeout=15
+                ) as response:
                     payload = json.loads(response.read().decode("utf-8"))
                 self._circuit.record_success()
                 self._budget_record_call()
@@ -461,14 +489,18 @@ class OpenMeteoClient:
                     if cached_payload is not None:
                         logger.warning(
                             "[OpenMeteoClient] point forecast 429 falling back to stale cache: lat=%.4f lon=%.4f layer=%s",
-                            latitude, longitude, layer_spec.layer_id,
+                            latitude,
+                            longitude,
+                            layer_spec.layer_id,
                         )
                         return cached_payload, "stale-hit"
                     if attempt == max_attempts - 1:
                         raise
                     logger.info(
                         "[OpenMeteoClient] point forecast rate limited (429), short wait %.1fs... attempt=%d/%d",
-                        backoff, attempt + 1, max_attempts,
+                        backoff,
+                        attempt + 1,
+                        max_attempts,
                     )
                     time.sleep(backoff)
                     continue
@@ -503,7 +535,9 @@ class OpenMeteoClient:
 
         # 自建源请求错误 model / 未 sync 变量会 200 全 null。
         # 这是「无数据」不是「API 宕机」——勿记入断路器，否则会把同 provider 其它图层一并封死。
-        check_fields = sorted(set(list(layer_spec.current_fields) + list(layer_spec.hourly_fields)))
+        check_fields = sorted(
+            set(list(layer_spec.current_fields) + list(layer_spec.hourly_fields))
+        )
         if self._payload_looks_empty(payload, check_fields):
             logger.warning(
                 "[OpenMeteoClient] empty payload (all-null fields) model=%s layer=%s url=%s — not caching, not tripping circuit",
@@ -525,7 +559,9 @@ class OpenMeteoClient:
         cache_tmp_path.write_text(
             json.dumps(
                 {
-                    "expires_at": datetime.fromtimestamp(now.timestamp() + max(60, ttl_seconds), tz=timezone.utc).isoformat(),
+                    "expires_at": datetime.fromtimestamp(
+                        now.timestamp() + max(60, ttl_seconds), tz=timezone.utc
+                    ).isoformat(),
                     "payload": payload,
                 },
                 ensure_ascii=False,
@@ -551,7 +587,9 @@ class OpenMeteoClient:
         lat_key = str(round(latitude, 3)).replace("-", "m").replace(".", "_")
         lon_key = str(round(longitude, 3)).replace("-", "m").replace(".", "_")
         model_key = model.replace("/", "_").replace(":", "_")
-        pl_key = "-pl" + "_".join(str(p) for p in pressure_levels) if pressure_levels else ""
+        pl_key = (
+            "-pl" + "_".join(str(p) for p in pressure_levels) if pressure_levels else ""
+        )
         return f"{layer_id}-{model_key}-{forecast_hours}-{lat_key}-{lon_key}{pl_key}"
 
     def fetch_grid_forecast(
@@ -641,7 +679,9 @@ class OpenMeteoClient:
                 redis_payload = cache_get_json(redis_key)
                 if redis_payload is not None:
                     return redis_payload, "dedup-hit"
-                cached_payload, cache_is_fresh = self._read_cached_payload(cache_path, now=now)
+                cached_payload, cache_is_fresh = self._read_cached_payload(
+                    cache_path, now=now
+                )
                 if cache_is_fresh and cached_payload is not None:
                     return cached_payload, "dedup-hit"
 
@@ -656,10 +696,15 @@ class OpenMeteoClient:
         # 每日 API 预算检查：超限时降级为 stale cache，避免被 Open-Meteo 完全封锁
         remaining = self._budget_remaining()
         if remaining is not None and remaining <= 0:
-            logger.warning("[OpenMeteoClient] daily API budget exhausted for grid forecast: layer=%s", layer_spec.layer_id)
+            logger.warning(
+                "[OpenMeteoClient] daily API budget exhausted for grid forecast: layer=%s",
+                layer_spec.layer_id,
+            )
             if cached_payload is not None:
                 return cached_payload, "budget-exhausted-stale"
-            raise HTTPError(self._base_url, 503, "Daily API budget exhausted", None, None)
+            raise HTTPError(
+                self._base_url, 503, "Daily API budget exhausted", None, None
+            )
 
         # Open-Meteo 批量请求限制：单次最多 150 个点（URL 长度约 2500 字符，避免 414 错误）
         batch_limit = 150
@@ -667,8 +712,18 @@ class OpenMeteoClient:
         # [OpenMeteoClient] 调试：打印网格计算
         logger.info(
             "[OpenMeteoClient] fetch_grid_forecast: layer=%s bbox=(%.4f,%.4f,%.4f,%.4f) span=%.4fx%.4f resolution=%.2f→%.2f rows=%d cols=%d total_points=%d batches=%d",
-            layer_spec.layer_id, bbox.west, bbox.south, bbox.east, bbox.north,
-            lon_span, lat_span, resolution, grid_res, rows, cols, total_points,
+            layer_spec.layer_id,
+            bbox.west,
+            bbox.south,
+            bbox.east,
+            bbox.north,
+            lon_span,
+            lat_span,
+            resolution,
+            grid_res,
+            rows,
+            cols,
+            total_points,
             (total_points + batch_limit - 1) // batch_limit,
         )
 
@@ -693,7 +748,13 @@ class OpenMeteoClient:
                 )
                 if cached_payload is not None:
                     return cached_payload, "circuit-open-stale"
-                raise HTTPError(self._base_url, 503, "Circuit breaker open during grid fetch", None, None)
+                raise HTTPError(
+                    self._base_url,
+                    503,
+                    "Circuit breaker open during grid fetch",
+                    None,
+                    None,
+                )
 
             # 从第二批开始添加延迟，避免 Open-Meteo 免费 API 限流 (429)
             if batch_idx > 0:
@@ -722,7 +783,9 @@ class OpenMeteoClient:
                 "models": model,
             }
             if pressure_levels:
-                query_dict["pressure_levels"] = ",".join(str(level) for level in pressure_levels)
+                query_dict["pressure_levels"] = ",".join(
+                    str(level) for level in pressure_levels
+                )
 
             query = urlencode(query_dict)
 
@@ -735,30 +798,49 @@ class OpenMeteoClient:
                     # [OpenMeteoClient] 调试：打印请求信息
                     logger.info(
                         "[OpenMeteoClient] HTTP request: batch=%d-%d/%d points=%d url_len=%d attempt=%d",
-                        batch_start, batch_end, total_points, len(batch_lats), len(query), attempt + 1,
+                        batch_start,
+                        batch_end,
+                        total_points,
+                        len(batch_lats),
+                        len(query),
+                        attempt + 1,
                     )
-                    with self._rate_limited_urlopen(f"{self._base_url}?{query}", timeout=30) as response:
+                    with self._rate_limited_urlopen(
+                        f"{self._base_url}?{query}", timeout=30
+                    ) as response:
                         raw_data = response.read().decode("utf-8")
                         batch_payload = json.loads(raw_data)
                     # [OpenMeteoClient] 调试：打印响应信息
                     resp_type = "list" if isinstance(batch_payload, list) else "dict"
-                    resp_len = len(batch_payload) if isinstance(batch_payload, list) else 1
+                    resp_len = (
+                        len(batch_payload) if isinstance(batch_payload, list) else 1
+                    )
                     logger.info(
                         "[OpenMeteoClient] HTTP response: status=OK type=%s points=%d size=%d bytes",
-                        resp_type, resp_len, len(raw_data),
+                        resp_type,
+                        resp_len,
+                        len(raw_data),
                     )
                     self._circuit.record_success()
                     self._budget_record_call()
                     break
                 except HTTPError as exc:
-                    logger.warning("[OpenMeteoClient] HTTP error: code=%d attempt=%d/%d", exc.code, attempt + 1, max_attempts)
+                    logger.warning(
+                        "[OpenMeteoClient] HTTP error: code=%d attempt=%d/%d",
+                        exc.code,
+                        attempt + 1,
+                        max_attempts,
+                    )
                     # 429/5xx 视为 API 故障，记录到断路器；4xx 客户端错误不计入
                     if exc.code == 429 or exc.code >= 500:
                         self._circuit.record_failure()
                     if exc.code == 429:
                         # 限流：使用更长退避时间
                         retry_wait = max(backoff * 2, 5)
-                        logger.info("[OpenMeteoClient] Rate limited (429), waiting %ds...", retry_wait)
+                        logger.info(
+                            "[OpenMeteoClient] Rate limited (429), waiting %ds...",
+                            retry_wait,
+                        )
                         if attempt == max_attempts - 1:
                             raise
                         time.sleep(retry_wait)
@@ -768,7 +850,11 @@ class OpenMeteoClient:
                     time.sleep(backoff)
                     backoff *= 2
                 except URLError:
-                    logger.warning("[OpenMeteoClient] URL error: attempt=%d/%d", attempt + 1, max_attempts)
+                    logger.warning(
+                        "[OpenMeteoClient] URL error: attempt=%d/%d",
+                        attempt + 1,
+                        max_attempts,
+                    )
                     self._circuit.record_failure()
                     if attempt == max_attempts - 1:
                         raise
@@ -806,7 +892,11 @@ class OpenMeteoClient:
                         all_hourly_data[field] = [[] for _ in range(total_points)]
                     field_values = point_hourly.get(field, [])
                     for time_idx in range(len(hourly_times)):
-                        val = field_values[time_idx] if time_idx < len(field_values) else None
+                        val = (
+                            field_values[time_idx]
+                            if time_idx < len(field_values)
+                            else None
+                        )
                         if len(all_hourly_data[field][actual_idx]) <= time_idx:
                             all_hourly_data[field][actual_idx].append(val)
                         else:
@@ -836,7 +926,14 @@ class OpenMeteoClient:
         # 气压层变量偶发只在 hourly；轮毂高度在 ECMWF 等模型上全 null → 10m 外推
         backfill_current_from_hourly_step0(all_current_data, all_hourly_data)
         ensure_hub_height_wind_in_grid_arrays(
-            all_current_data, all_hourly_data, layer_spec.layer_id,
+            all_current_data,
+            all_hourly_data,
+            layer_spec.layer_id,
+        )
+        ensure_hub_height_temperature_in_grid_arrays(
+            all_current_data,
+            all_hourly_data,
+            layer_spec.layer_id,
         )
 
         primary = layer_spec.primary_metric
@@ -864,7 +961,9 @@ class OpenMeteoClient:
         cache_tmp_path.write_text(
             json.dumps(
                 {
-                    "expires_at": datetime.fromtimestamp(now.timestamp() + max(60, ttl_seconds), tz=timezone.utc).isoformat(),
+                    "expires_at": datetime.fromtimestamp(
+                        now.timestamp() + max(60, ttl_seconds), tz=timezone.utc
+                    ).isoformat(),
                     "payload": grid_data,
                 },
                 ensure_ascii=False,
@@ -877,10 +976,19 @@ class OpenMeteoClient:
         release_dedup_lock(dedup_lock_key)
 
         # [OpenMeteoClient] 调试：打印最终数据汇总
-        current_fields_summary = {k: f"{len(v)} values, non_none={sum(1 for x in v if x is not None)}" for k, v in all_current_data.items()}
+        current_fields_summary = {
+            k: f"{len(v)} values, non_none={sum(1 for x in v if x is not None)}"
+            for k, v in all_current_data.items()
+        }
         logger.info(
             "[OpenMeteoClient] fetch_grid_forecast done: rows=%d cols=%d lats=[%.4f..%.4f] lons=[%.4f..%.4f] current_fields=%s",
-            rows, cols, lats[0], lats[-1], lons[0], lons[-1], current_fields_summary,
+            rows,
+            cols,
+            lats[0],
+            lats[-1],
+            lons[0],
+            lons[-1],
+            current_fields_summary,
         )
 
         return grid_data, "miss"
@@ -902,5 +1010,7 @@ class OpenMeteoClient:
         north = round(bbox.north, 2)
         res_key = str(round(resolution, 3)).replace(".", "_")
         model_key = model.replace("/", "_").replace(":", "_")
-        pl_key = "-pl" + "_".join(str(p) for p in pressure_levels) if pressure_levels else ""
+        pl_key = (
+            "-pl" + "_".join(str(p) for p in pressure_levels) if pressure_levels else ""
+        )
         return f"{layer_id}-{model_key}-{res_key}-{west}_{south}_{east}_{north}{pl_key}"

@@ -62,7 +62,10 @@ class OpenMeteoClientTests(unittest.TestCase):
                 },
             }
 
-            with patch("app.weatherengine.client.urlopen", return_value=_FakeHttpResponse(payload)):
+            with patch(
+                "app.weatherengine.client.urlopen",
+                return_value=_FakeHttpResponse(payload),
+            ):
                 result, cache_status = client.fetch_point_forecast(
                     latitude=23.1291,
                     longitude=113.2644,
@@ -98,7 +101,10 @@ class OpenMeteoClientTests(unittest.TestCase):
                 },
             }
 
-            with patch("app.weatherengine.client.urlopen", return_value=_FakeHttpResponse(payload)):
+            with patch(
+                "app.weatherengine.client.urlopen",
+                return_value=_FakeHttpResponse(payload),
+            ):
                 client.fetch_point_forecast(
                     latitude=23.1291,
                     longitude=113.2644,

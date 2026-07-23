@@ -17,6 +17,7 @@ def get_weather_engine_service():
     （__init__.py 导入节点类，节点类反向导入 __init__.py 会循环）。
     """
     from app.weatherengine.service import weather_engine_service
+
     return weather_engine_service
 
 
@@ -46,7 +47,9 @@ def coerce_int(value: Any) -> int | None:
     return None
 
 
-def resolve_bbox(inputs: dict[str, Any], latitude: float, longitude: float) -> BoundingBox:
+def resolve_bbox(
+    inputs: dict[str, Any], latitude: float, longitude: float
+) -> BoundingBox:
     """解析渲染范围，优先使用 viewport_bbox，否则使用 bbox，最后兜底为默认范围。
 
     优先级：
@@ -65,7 +68,12 @@ def resolve_bbox(inputs: dict[str, Any], latitude: float, longitude: float) -> B
         east = viewport_bbox.get("east")
         north = viewport_bbox.get("north")
         if all(isinstance(v, (int, float)) for v in (west, south, east, north)):
-            return BoundingBox(west=float(west), south=float(south), east=float(east), north=float(north))
+            return BoundingBox(
+                west=float(west),
+                south=float(south),
+                east=float(east),
+                north=float(north),
+            )
 
     # 回退到 bbox（工作流空间过滤器）
     bbox_param = inputs.get("bbox")
@@ -75,7 +83,12 @@ def resolve_bbox(inputs: dict[str, Any], latitude: float, longitude: float) -> B
         east = bbox_param.get("east")
         north = bbox_param.get("north")
         if all(isinstance(v, (int, float)) for v in (west, south, east, north)):
-            return BoundingBox(west=float(west), south=float(south), east=float(east), north=float(north))
+            return BoundingBox(
+                west=float(west),
+                south=float(south),
+                east=float(east),
+                north=float(north),
+            )
 
     # 兜底：默认范围
     return BoundingBox(

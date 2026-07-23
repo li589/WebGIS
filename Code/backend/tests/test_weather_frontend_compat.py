@@ -1,10 +1,11 @@
-﻿"""weather 前端 dataState 兼容性测试。
+"""weather 前端 dataState 兼容性测试。
 
 模拟前端 runWorkflowForCatalog 的 payload（不带 weather_request.workflow，走 fallback 路径），
 验证 result_refs 包含 map_layer 类型，且 inline_data 含前端期望的
 render_hint / point_feature / layer_assets 字段。
 mock Open-Meteo API 避免网络依赖。
 """
+
 from __future__ import annotations
 
 import json
@@ -97,8 +98,14 @@ def _build_mock_payload() -> dict[str, Any]:
             "wind_gusts_10m": 27.0,
         },
         "hourly": {
-            "time": ["2026-07-06T00:00", "2026-07-06T01:00", "2026-07-06T02:00",
-                     "2026-07-06T03:00", "2026-07-06T04:00", "2026-07-06T05:00"],
+            "time": [
+                "2026-07-06T00:00",
+                "2026-07-06T01:00",
+                "2026-07-06T02:00",
+                "2026-07-06T03:00",
+                "2026-07-06T04:00",
+                "2026-07-06T05:00",
+            ],
             "temperature_2m": [25.7, 25.3, 24.9, 24.5, 24.1, 23.8],
             "precipitation": [0.2, 0.7, 0.0, 0.0, 0.1, 0.3],
             "wind_speed_10m": [13.2, 12.9, 13.2, 12.5, 11.8, 11.1],
@@ -154,7 +161,9 @@ class WeatherFrontendCompatTests(unittest.TestCase):
         from app.services.result_storage import result_storage_service
 
         for ref in result_refs:
-            ref_dict = ref.model_dump(mode="json") if hasattr(ref, "model_dump") else dict(ref)
+            ref_dict = (
+                ref.model_dump(mode="json") if hasattr(ref, "model_dump") else dict(ref)
+            )
             if ref_dict.get("result_kind") != "map_layer":
                 continue
             inline = ref_dict.get("inline_data") or {}
@@ -162,7 +171,9 @@ class WeatherFrontendCompatTests(unittest.TestCase):
                 # spill 到 artifact storage（兼容 local 和 minio 后端）
                 resource_key = ref_dict.get("resource_key")
                 if resource_key:
-                    raw_bytes = result_storage_service.fetch_artifact_bytes(resource_key)
+                    raw_bytes = result_storage_service.fetch_artifact_bytes(
+                        resource_key
+                    )
                     if raw_bytes is not None:
                         inline = json.loads(raw_bytes.decode("utf-8"))
             if inline:
@@ -179,7 +190,9 @@ class WeatherFrontendCompatTests(unittest.TestCase):
         # 必须有 map_layer 类型 ref
         ref_kinds = []
         for ref in status_resp.result_refs:
-            ref_dict = ref.model_dump(mode="json") if hasattr(ref, "model_dump") else dict(ref)
+            ref_dict = (
+                ref.model_dump(mode="json") if hasattr(ref, "model_dump") else dict(ref)
+            )
             ref_kinds.append(ref_dict.get("result_kind"))
         self.assertIn("map_layer", ref_kinds, f"result_refs kinds: {ref_kinds}")
 
@@ -278,9 +291,16 @@ class WeatherFrontendCompatTests(unittest.TestCase):
         self.assertEqual(render_hint.get("unit_label"), expected_unit)
 
         layer_assets = inline.get("layer_assets") or {}
-        self.assertTrue(layer_assets.get("geojson_url"), f"{layer_id} missing geojson_url")
-        self.assertFalse(layer_assets.get("cog_url"), f"{layer_id} should not include cog_url")
-        self.assertFalse(layer_assets.get("cog_preview_url"), f"{layer_id} should not include cog_preview_url")
+        self.assertTrue(
+            layer_assets.get("geojson_url"), f"{layer_id} missing geojson_url"
+        )
+        self.assertFalse(
+            layer_assets.get("cog_url"), f"{layer_id} should not include cog_url"
+        )
+        self.assertFalse(
+            layer_assets.get("cog_preview_url"),
+            f"{layer_id} should not include cog_preview_url",
+        )
 
     def test_pressure_map_layer_ref(self) -> None:
         self._assert_geojson_only_grid_layer(
@@ -308,11 +328,19 @@ class WeatherFrontendCompatTests(unittest.TestCase):
 
     def test_all_weather_layers_succeed(self) -> None:
         """验证所有 weather 图层 fallback 路径全部成功。"""
-        for layer_id in ("wind-field", "temperature", "precipitation", "pressure", "humidity", "visibility"):
+        for layer_id in (
+            "wind-field",
+            "temperature",
+            "precipitation",
+            "pressure",
+            "humidity",
+            "visibility",
+        ):
             run_id = self._submit_fallback_workflow(layer_id)
             status_resp = submission_service.get_workflow_run(run_id)
             self.assertIn(
-                status_resp.status, ("succeeded", "completed"),
+                status_resp.status,
+                ("succeeded", "completed"),
                 f"{layer_id} failed: {status_resp.status}",
             )
             self.assertEqual(status_resp.progress, 100)
@@ -320,7 +348,11 @@ class WeatherFrontendCompatTests(unittest.TestCase):
             # 验证 result_refs 含 map_layer
             ref_kinds = []
             for ref in status_resp.result_refs:
-                ref_dict = ref.model_dump(mode="json") if hasattr(ref, "model_dump") else dict(ref)
+                ref_dict = (
+                    ref.model_dump(mode="json")
+                    if hasattr(ref, "model_dump")
+                    else dict(ref)
+                )
                 ref_kinds.append(ref_dict.get("result_kind"))
             self.assertIn("map_layer", ref_kinds, f"{layer_id} missing map_layer ref")
 

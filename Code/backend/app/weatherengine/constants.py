@@ -6,9 +6,13 @@ from dataclasses import dataclass
 from app.weatherengine.provider_ids import OPEN_METEO_ONLINE_URL as OPEN_METEO_BASE_URL  # noqa: F401 — public alias
 
 # 断路器参数：API 连续失败后打开断路器，RECOVERY_TIMEOUT 秒内直接返回 stale cache
-CIRCUIT_BREAKER_FAILURE_THRESHOLD = 10  # 连续失败次数阈值，达到后打开断路器（提高以减少误触发）
-CIRCUIT_BREAKER_RECOVERY_TIMEOUT = 30   # OPEN 状态持续时间（秒），超时后转为 HALF_OPEN（缩短恢复时间）
-CIRCUIT_BREAKER_HALF_OPEN_PROBES = 2    # HALF_OPEN 状态允许的探测请求数（增加探测机会）
+CIRCUIT_BREAKER_FAILURE_THRESHOLD = (
+    10  # 连续失败次数阈值，达到后打开断路器（提高以减少误触发）
+)
+CIRCUIT_BREAKER_RECOVERY_TIMEOUT = (
+    30  # OPEN 状态持续时间（秒），超时后转为 HALF_OPEN（缩短恢复时间）
+)
+CIRCUIT_BREAKER_HALF_OPEN_PROBES = 2  # HALF_OPEN 状态允许的探测请求数（增加探测机会）
 
 # 每日 API 预算：Open-Meteo 免费版每日限额 ~10000 次，预留 2000 次缓冲
 OPEN_METEO_DAILY_API_LIMIT = 8000
@@ -33,6 +37,9 @@ class WeatherLayerSpec:
     notes: tuple[str, ...]
     # 气压层变量需要的压力等级（hPa），空 tuple 表示不需要 pressure_levels 参数
     pressure_levels: tuple[int, ...] = ()
+    # 图层首选模型：部分变量（如 visibility）仅在特定模型（gfs_global）下有数据。
+    # 留空表示使用全局默认模型。
+    preferred_model: str | None = None
 
 
 WEATHER_LAYER_SPECS: dict[str, WeatherLayerSpec] = {
@@ -47,7 +54,12 @@ WEATHER_LAYER_SPECS: dict[str, WeatherLayerSpec] = {
         unit_label="m/s",
         summary_template="Current 10 m wind speed is {value} {unit}.",
         current_fields=("wind_speed_10m", "wind_direction_10m", "wind_gusts_10m"),
-        hourly_fields=("wind_speed_10m", "wind_direction_10m", "temperature_2m", "precipitation"),
+        hourly_fields=(
+            "wind_speed_10m",
+            "wind_direction_10m",
+            "temperature_2m",
+            "precipitation",
+        ),
         legend_ticks=(0, 5, 10, 15, 20, 25, 30),
         notes=(
             "Particle flow field: 1000 particles animated along wind vectors with trailing fade.",
@@ -163,7 +175,11 @@ WEATHER_LAYER_SPECS: dict[str, WeatherLayerSpec] = {
         unit_label="m/s",
         summary_template="Current 850 hPa wind speed is {value} {unit}.",
         current_fields=("wind_speed_850hPa", "wind_direction_850hPa"),
-        hourly_fields=("wind_speed_850hPa", "wind_direction_850hPa", "temperature_850hPa"),
+        hourly_fields=(
+            "wind_speed_850hPa",
+            "wind_direction_850hPa",
+            "temperature_850hPa",
+        ),
         legend_ticks=(0, 10, 20, 30, 40, 50),
         notes=(
             "850 hPa wind field (~1.5 km AGL) — low-level jet and convective inflow reference.",
@@ -183,7 +199,11 @@ WEATHER_LAYER_SPECS: dict[str, WeatherLayerSpec] = {
         unit_label="m/s",
         summary_template="Current 500 hPa wind speed is {value} {unit}.",
         current_fields=("wind_speed_500hPa", "wind_direction_500hPa"),
-        hourly_fields=("wind_speed_500hPa", "wind_direction_500hPa", "temperature_500hPa"),
+        hourly_fields=(
+            "wind_speed_500hPa",
+            "wind_direction_500hPa",
+            "temperature_500hPa",
+        ),
         legend_ticks=(0, 15, 30, 45, 60, 75),
         notes=(
             "500 hPa wind field (~5.5 km AGL) — mid-level synoptic flow reference.",
@@ -203,7 +223,11 @@ WEATHER_LAYER_SPECS: dict[str, WeatherLayerSpec] = {
         unit_label="m/s",
         summary_template="Current 200 hPa wind speed is {value} {unit}.",
         current_fields=("wind_speed_200hPa", "wind_direction_200hPa"),
-        hourly_fields=("wind_speed_200hPa", "wind_direction_200hPa", "temperature_200hPa"),
+        hourly_fields=(
+            "wind_speed_200hPa",
+            "wind_direction_200hPa",
+            "temperature_200hPa",
+        ),
         legend_ticks=(0, 20, 40, 60, 80, 100),
         notes=(
             "200 hPa wind field (~12 km AGL) — upper-level jet stream reference.",
@@ -355,6 +379,8 @@ WEATHER_LAYER_SPECS: dict[str, WeatherLayerSpec] = {
             "Use an amber-to-gray ramp with hazardous zones (<1 km) highlighted in red.",
             "Visibility below 5 km should retain strong contrast for aviation alerts.",
         ),
+        # visibility 仅在 gfs_global 模型下有数据（icon_global / ecmwf_ifs025 均返回 null）
+        preferred_model="gfs_global",
     ),
     "cloud-cover": WeatherLayerSpec(
         layer_id="cloud-cover",

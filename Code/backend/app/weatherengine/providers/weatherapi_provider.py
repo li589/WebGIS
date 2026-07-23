@@ -138,7 +138,11 @@ class WeatherApiProvider(WeatherProvider):
             self._base_url = str(config["base_url"]).rstrip("/")
         with self._lock:
             self._memory_cache.clear()
-        logger.info("WeatherApiProvider.apply_config: base_url=%s has_key=%s", self._base_url, bool(self._api_key))
+        logger.info(
+            "WeatherApiProvider.apply_config: base_url=%s has_key=%s",
+            self._base_url,
+            bool(self._api_key),
+        )
 
     def get_status(self) -> ProviderStatus:
         self._roll_daily_counter()
@@ -242,7 +246,9 @@ class WeatherApiProvider(WeatherProvider):
             raise RuntimeError("WeatherAPI API Key is not configured")
 
         if layer_id in PRESSURE_LAYER_IDS:
-            empty = build_empty_pressure_grid(bbox=bbox, resolution=resolution, layer_spec=layer_spec)
+            empty = build_empty_pressure_grid(
+                bbox=bbox, resolution=resolution, layer_spec=layer_spec
+            )
             return empty, "miss"
 
         max_points = 36 if layer_id in HEIGHT_LAYER_IDS else 64
@@ -270,7 +276,9 @@ class WeatherApiProvider(WeatherProvider):
                     )
                     point_payloads.append(payload)
                 except Exception as exc:
-                    logger.warning("WeatherAPI grid sample failed at %.3f,%.3f: %s", lat, lon, exc)
+                    logger.warning(
+                        "WeatherAPI grid sample failed at %.3f,%.3f: %s", lat, lon, exc
+                    )
                     point_payloads.append(None)
 
         grid = assemble_grid_from_point_payloads(
@@ -289,8 +297,12 @@ class WeatherApiProvider(WeatherProvider):
         self._cache_misses += 1
         return grid, "miss"
 
-    def _map_forecast_payload(self, raw: dict[str, Any], *, forecast_hours: int) -> dict[str, Any]:
-        payload = build_empty_om_point_payload(timezone=(raw.get("location") or {}).get("tz_id"))
+    def _map_forecast_payload(
+        self, raw: dict[str, Any], *, forecast_hours: int
+    ) -> dict[str, Any]:
+        payload = build_empty_om_point_payload(
+            timezone=(raw.get("location") or {}).get("tz_id")
+        )
         current_src = raw.get("current") or {}
         merge_current_fields(payload["current"], weatherapi_current_to_om(current_src))
 
@@ -336,7 +348,9 @@ class WeatherApiProvider(WeatherProvider):
             self._last_error = None
             return data
         except HTTPError as exc:
-            detail = exc.read().decode("utf-8", errors="replace") if exc.fp else str(exc)
+            detail = (
+                exc.read().decode("utf-8", errors="replace") if exc.fp else str(exc)
+            )
             self._last_error = f"HTTP {exc.code}: {detail[:200]}"
             raise RuntimeError(self._last_error) from exc
         except URLError as exc:

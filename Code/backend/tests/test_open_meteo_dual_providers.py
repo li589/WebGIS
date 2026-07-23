@@ -5,7 +5,10 @@ from __future__ import annotations
 import unittest
 
 from app.weatherengine.field_mapping import SURFACE_LAYER_IDS
-from app.weatherengine.fetch_gateway import list_providers_for_layer, resolve_provider_for_layer
+from app.weatherengine.fetch_gateway import (
+    list_providers_for_layer,
+    resolve_provider_for_layer,
+)
 from app.weatherengine.provider_ids import (
     OPEN_METEO_LOCAL_ID,
     OPEN_METEO_ONLINE_ID,
@@ -27,7 +30,9 @@ class OpenMeteoDualProviderTests(unittest.TestCase):
 
     def test_normalize_legacy_alias(self) -> None:
         self.assertEqual(normalize_provider_id("open-meteo"), OPEN_METEO_ONLINE_ID)
-        self.assertEqual(normalize_provider_id(OPEN_METEO_LOCAL_ID), OPEN_METEO_LOCAL_ID)
+        self.assertEqual(
+            normalize_provider_id(OPEN_METEO_LOCAL_ID), OPEN_METEO_LOCAL_ID
+        )
 
     def test_resolve_local_best_match_to_ecmwf(self) -> None:
         from app.weatherengine.provider_ids import resolve_open_meteo_model
@@ -57,6 +62,7 @@ class OpenMeteoDualProviderTests(unittest.TestCase):
     def test_auto_resolve_prefers_local(self) -> None:
         provider = resolve_provider_for_layer("wind-field")
         self.assertEqual(provider.provider_id, OPEN_METEO_LOCAL_ID)
+
     def test_resolve_legacy_pin(self) -> None:
         provider = resolve_provider_for_layer("wind-field", provider_id="open-meteo")
         self.assertEqual(provider.provider_id, OPEN_METEO_ONLINE_ID)

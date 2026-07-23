@@ -3,6 +3,7 @@
 处理 layer_id == "wind-field" 或 layer_id.startswith("wind-field-") 的图层输出。
 从 service.py _build_map_layer_outputs L577-604 分支迁移而来，无行为变更。
 """
+
 from __future__ import annotations
 
 import logging
@@ -37,16 +38,28 @@ class WindFieldLayerOutput(LayerOutputStrategy):
         spec: Any,
         metric_value: float | int | str | None,
     ) -> LayerOutputResult | None:
-        bbox = service._resolve_render_bbox(payload, weather.latitude, weather.longitude)
+        bbox = service._resolve_render_bbox(
+            payload, weather.latitude, weather.longitude
+        )
         try:
-            grid_data, cache_status, resolution = service._fetch_layer_grid_data(bbox=bbox, spec=spec)
-            feature_collection = service.build_wind_geojson_from_grid(grid_data, spec.layer_id)
+            grid_data, cache_status, resolution = service._fetch_layer_grid_data(
+                bbox=bbox, spec=spec
+            )
+            feature_collection = service.build_wind_geojson_from_grid(
+                grid_data, spec.layer_id
+            )
             logger.info(
                 "[WindDebug] build_wind_geojson_from_grid: layer=%s bbox=%s features=%d cache=%s resolution=%s",
-                spec.layer_id, bbox, len(feature_collection['features']), cache_status, resolution,
+                spec.layer_id,
+                bbox,
+                len(feature_collection["features"]),
+                cache_status,
+                resolution,
             )
         except (HTTPError, URLError, OSError, KeyError, ValueError) as exc:
-            logger.warning("[WindDebug] Grid fetch failed, falling back to simulated data: %s", exc)
+            logger.warning(
+                "[WindDebug] Grid fetch failed, falling back to simulated data: %s", exc
+            )
             feature_collection = service.build_wind_geojson(weather, bbox)
 
         geojson_ref = result_storage_service.create_artifact_result_ref(
@@ -60,9 +73,11 @@ class WindFieldLayerOutput(LayerOutputStrategy):
         )
         logger.info(
             "[WindDebug] artifact created: result_id=%s resource_url=%s resource_key=%s",
-            geojson_ref.result_id, geojson_ref.resource_url, geojson_ref.resource_key,
+            geojson_ref.result_id,
+            geojson_ref.resource_url,
+            geojson_ref.resource_key,
         )
-        features = feature_collection['features']
+        features = feature_collection["features"]
         diagnostics: list[str] = [
             f"wind_geojson_points={len(features)}",
             f"wind_height={features[0]['properties']['height'] if features else '10m'}",

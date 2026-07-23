@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from typing import Any
 
-from app.core.config import settings
 from app.weatherengine.default_model import weather_default_model
 from app.workflow_engine.base import BaseNode
 from app.workflow_engine.enums import PortKind, RunStatus
@@ -11,7 +10,11 @@ from app.workflow_engine.models import (
     NodeSpec,
     PortSpec,
 )
-from app.weatherengine.nodes._utils import coerce_float, coerce_int, get_weather_engine_service
+from app.weatherengine.nodes._utils import (
+    coerce_float,
+    coerce_int,
+    get_weather_engine_service,
+)
 
 
 class PointParseNode(BaseNode):
@@ -88,16 +91,44 @@ class PointParseNode(BaseNode):
             node_id=PointParseNode.node_type,
             node_type=PointParseNode.node_type,
             input_ports=[
-                PortSpec(name="forecast", kind=PortKind.data, required=False, description="上游 ForecastFetchNode 输出的原始预报数据，未提供时自行获取"),
-                PortSpec(name="layer_id", kind=PortKind.value, description="天气图层标识"),
+                PortSpec(
+                    name="forecast",
+                    kind=PortKind.data,
+                    required=False,
+                    description="上游 ForecastFetchNode 输出的原始预报数据，未提供时自行获取",
+                ),
+                PortSpec(
+                    name="layer_id", kind=PortKind.value, description="天气图层标识"
+                ),
                 PortSpec(name="latitude", kind=PortKind.value, description="纬度"),
                 PortSpec(name="longitude", kind=PortKind.value, description="经度"),
-                PortSpec(name="forecast_hours", kind=PortKind.value, required=False, description="预报小时数，可选"),
-                PortSpec(name="cache_status", kind=PortKind.value, required=False, description="上游缓存状态，可选"),
-                PortSpec(name="model", kind=PortKind.value, required=False, description="气象模型，可选"),
+                PortSpec(
+                    name="forecast_hours",
+                    kind=PortKind.value,
+                    required=False,
+                    description="预报小时数，可选",
+                ),
+                PortSpec(
+                    name="cache_status",
+                    kind=PortKind.value,
+                    required=False,
+                    description="上游缓存状态，可选",
+                ),
+                PortSpec(
+                    name="model",
+                    kind=PortKind.value,
+                    required=False,
+                    description="气象模型，可选",
+                ),
             ],
             output_ports=[
-                PortSpec(name="weather_point", kind=PortKind.data, description="结构化天气点位数据"),
-                PortSpec(name="summary", kind=PortKind.value, description="天气摘要文本"),
+                PortSpec(
+                    name="weather_point",
+                    kind=PortKind.data,
+                    description="结构化天气点位数据",
+                ),
+                PortSpec(
+                    name="summary", kind=PortKind.value, description="天气摘要文本"
+                ),
             ],
         )

@@ -18,13 +18,15 @@ logger = logging.getLogger(__name__)
 
 class WorkflowPriority(Enum):
     """工作流优先级枚举"""
-    VIEWPORT = 0      # 视口区域，优先处理
-    SURROUNDING = 1   # 外围区域，异步处理
-    BACKGROUND = 2    # 后台任务，可被抢占
+
+    VIEWPORT = 0  # 视口区域，优先处理
+    SURROUNDING = 1  # 外围区域，异步处理
+    BACKGROUND = 2  # 后台任务，可被抢占
 
 
 class WorkflowState(Enum):
     """工作流状态枚举"""
+
     PENDING = "pending"
     RUNNING = "running"
     COMPLETED = "completed"
@@ -35,6 +37,7 @@ class WorkflowState(Enum):
 @dataclass
 class ManagedWorkflow:
     """管理工作流对象"""
+
     workflow_id: str
     layer_id: str
     priority: WorkflowPriority
@@ -101,7 +104,9 @@ class WorkflowLifecycleManager:
             if existing and existing.state == WorkflowState.RUNNING:
                 # 取消旧工作流
                 self._cancel_workflow_sync(existing)
-                logger.info(f"[WorkflowLifecycleManager] Cancelled old workflow {existing.workflow_id} for layer {layer_id}")
+                logger.info(
+                    f"[WorkflowLifecycleManager] Cancelled old workflow {existing.workflow_id} for layer {layer_id}"
+                )
 
             # 创建新工作流
             workflow = ManagedWorkflow(
@@ -120,7 +125,9 @@ class WorkflowLifecycleManager:
             self._pending_workflows.append((priority.value, workflow))
             self._pending_workflows.sort(key=lambda x: x[0])
 
-            logger.info(f"[WorkflowLifecycleManager] Submitted workflow {workflow_id} for layer {layer_id} with priority {priority.name}")
+            logger.info(
+                f"[WorkflowLifecycleManager] Submitted workflow {workflow_id} for layer {layer_id} with priority {priority.name}"
+            )
             return workflow_id
 
     async def submit_workflow_async(
@@ -140,7 +147,9 @@ class WorkflowLifecycleManager:
             if existing and existing.state == WorkflowState.RUNNING:
                 # 取消旧工作流
                 await self._cancel_workflow_async(existing)
-                logger.info(f"[WorkflowLifecycleManager] Cancelled old workflow {existing.workflow_id} for layer {layer_id}")
+                logger.info(
+                    f"[WorkflowLifecycleManager] Cancelled old workflow {existing.workflow_id} for layer {layer_id}"
+                )
 
             # 创建新工作流
             workflow = ManagedWorkflow(
@@ -159,7 +168,9 @@ class WorkflowLifecycleManager:
             self._pending_workflows.append((priority.value, workflow))
             self._pending_workflows.sort(key=lambda x: x[0])
 
-            logger.info(f"[WorkflowLifecycleManager] Submitted workflow {workflow_id} for layer {layer_id} with priority {priority.name}")
+            logger.info(
+                f"[WorkflowLifecycleManager] Submitted workflow {workflow_id} for layer {layer_id} with priority {priority.name}"
+            )
             return workflow_id
 
     def update_workflow_state(
@@ -186,13 +197,20 @@ class WorkflowLifecycleManager:
                 if run_id:
                     workflow.run_id = run_id
 
-                logger.info(f"[WorkflowLifecycleManager] Updated workflow {workflow.workflow_id} state: {old_state.value} -> {state.value}")
+                logger.info(
+                    f"[WorkflowLifecycleManager] Updated workflow {workflow.workflow_id} state: {old_state.value} -> {state.value}"
+                )
 
                 # 如果工作流已完成或失败，从活跃列表移除（保留 cancel 状态以便调试）
-                if state in (WorkflowState.COMPLETED, WorkflowState.FAILED, WorkflowState.CANCELLED):
+                if state in (
+                    WorkflowState.COMPLETED,
+                    WorkflowState.FAILED,
+                    WorkflowState.CANCELLED,
+                ):
                     # 从待处理队列移除
                     self._pending_workflows = [
-                        (p, w) for p, w in self._pending_workflows
+                        (p, w)
+                        for p, w in self._pending_workflows
                         if w.workflow_id != workflow.workflow_id
                     ]
 
@@ -215,7 +233,8 @@ class WorkflowLifecycleManager:
 
         # 从待处理队列移除
         self._pending_workflows = [
-            (p, w) for p, w in self._pending_workflows
+            (p, w)
+            for p, w in self._pending_workflows
             if w.workflow_id != workflow.workflow_id
         ]
 
@@ -230,9 +249,13 @@ class WorkflowLifecycleManager:
                     loop.run_until_complete(workflow.cancel_callback())
             except Exception as e:
                 # Sprint 3.5: 编程 bug 必须向上传播；cancel_callback 中的网络/API 失败降级为 warning。
-                if isinstance(e, (AttributeError, NameError, TypeError, ImportError, SyntaxError)):
+                if isinstance(
+                    e, (AttributeError, NameError, TypeError, ImportError, SyntaxError)
+                ):
                     raise
-                logger.warning(f"[WorkflowLifecycleManager] Cancel callback failed: {e}")
+                logger.warning(
+                    f"[WorkflowLifecycleManager] Cancel callback failed: {e}"
+                )
 
     async def _cancel_workflow_async(self, workflow: ManagedWorkflow) -> None:
         """异步取消工作流"""
@@ -240,7 +263,8 @@ class WorkflowLifecycleManager:
 
         # 从待处理队列移除
         self._pending_workflows = [
-            (p, w) for p, w in self._pending_workflows
+            (p, w)
+            for p, w in self._pending_workflows
             if w.workflow_id != workflow.workflow_id
         ]
 
@@ -250,9 +274,13 @@ class WorkflowLifecycleManager:
                 await workflow.cancel_callback()
             except Exception as e:
                 # Sprint 3.5: 编程 bug 必须向上传播；cancel_callback 中的网络/API 失败降级为 warning。
-                if isinstance(e, (AttributeError, NameError, TypeError, ImportError, SyntaxError)):
+                if isinstance(
+                    e, (AttributeError, NameError, TypeError, ImportError, SyntaxError)
+                ):
                     raise
-                logger.warning(f"[WorkflowLifecycleManager] Cancel callback failed: {e}")
+                logger.warning(
+                    f"[WorkflowLifecycleManager] Cancel callback failed: {e}"
+                )
 
     def cancel_workflow(self, layer_id: str) -> bool:
         """取消指定图层的工作流（同步版本）"""
@@ -260,7 +288,9 @@ class WorkflowLifecycleManager:
             workflow = self._active_workflows.get(layer_id)
             if workflow:
                 self._cancel_workflow_sync(workflow)
-                logger.info(f"[WorkflowLifecycleManager] Cancelled workflow {workflow.workflow_id} for layer {layer_id}")
+                logger.info(
+                    f"[WorkflowLifecycleManager] Cancelled workflow {workflow.workflow_id} for layer {layer_id}"
+                )
                 return True
             return False
 
@@ -270,7 +300,9 @@ class WorkflowLifecycleManager:
             workflow = self._active_workflows.get(layer_id)
             if workflow:
                 await self._cancel_workflow_async(workflow)
-                logger.info(f"[WorkflowLifecycleManager] Cancelled workflow {workflow.workflow_id} for layer {layer_id}")
+                logger.info(
+                    f"[WorkflowLifecycleManager] Cancelled workflow {workflow.workflow_id} for layer {layer_id}"
+                )
                 return True
             return False
 
@@ -283,7 +315,8 @@ class WorkflowLifecycleManager:
         """获取所有活跃工作流"""
         with self._lock:
             return [
-                w for w in self._active_workflows.values()
+                w
+                for w in self._active_workflows.values()
                 if w.state == WorkflowState.RUNNING
             ]
 
@@ -313,11 +346,27 @@ class WorkflowLifecycleManager:
         with self._lock:
             counts = {
                 "total": len(self._active_workflows),
-                "running": sum(1 for w in self._active_workflows.values() if w.state == WorkflowState.RUNNING),
+                "running": sum(
+                    1
+                    for w in self._active_workflows.values()
+                    if w.state == WorkflowState.RUNNING
+                ),
                 "pending": len(self._pending_workflows),
-                "completed": sum(1 for w in self._active_workflows.values() if w.state == WorkflowState.COMPLETED),
-                "failed": sum(1 for w in self._active_workflows.values() if w.state == WorkflowState.FAILED),
-                "cancelled": sum(1 for w in self._active_workflows.values() if w.state == WorkflowState.CANCELLED),
+                "completed": sum(
+                    1
+                    for w in self._active_workflows.values()
+                    if w.state == WorkflowState.COMPLETED
+                ),
+                "failed": sum(
+                    1
+                    for w in self._active_workflows.values()
+                    if w.state == WorkflowState.FAILED
+                ),
+                "cancelled": sum(
+                    1
+                    for w in self._active_workflows.values()
+                    if w.state == WorkflowState.CANCELLED
+                ),
             }
             return counts
 
@@ -333,7 +382,11 @@ class WorkflowLifecycleManager:
         with self._lock:
             to_remove = []
             for layer_id, workflow in self._active_workflows.items():
-                if workflow.state in (WorkflowState.COMPLETED, WorkflowState.FAILED, WorkflowState.CANCELLED):
+                if workflow.state in (
+                    WorkflowState.COMPLETED,
+                    WorkflowState.FAILED,
+                    WorkflowState.CANCELLED,
+                ):
                     to_remove.append(layer_id)
 
             # 保留最近的记录
@@ -349,7 +402,9 @@ class WorkflowLifecycleManager:
             for layer_id in to_remove:
                 del self._active_workflows[layer_id]
 
-            logger.info(f"[WorkflowLifecycleManager] Cleared {len(to_remove)} completed workflows")
+            logger.info(
+                f"[WorkflowLifecycleManager] Cleared {len(to_remove)} completed workflows"
+            )
             return len(to_remove)
 
     def is_workflow_running(self, layer_id: str) -> bool:

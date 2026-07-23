@@ -5,6 +5,7 @@
 Sprint 3 已将 6 个分支全部迁移到具体策略类，此类保留作为类型示例与未注册 layer_id
 的占位（service.py 在 registry 未命中时本就会跳过策略块）。
 """
+
 from __future__ import annotations
 
 from datetime import datetime

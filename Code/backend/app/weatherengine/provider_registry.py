@@ -29,7 +29,7 @@ import logging
 import threading
 from typing import Iterable
 
-from app.weatherengine.provider_base import WeatherProvider, WeatherCapability
+from app.weatherengine.provider_base import WeatherProvider
 
 logger = logging.getLogger(__name__)
 
@@ -84,12 +84,17 @@ class WeatherProviderRegistry:
         if existing is None:
             logger.info(
                 "WeatherProvider registered: id=%s type=%s priority=%d enabled=%s",
-                pid, provider.provider_type, priority, enabled,
+                pid,
+                provider.provider_type,
+                priority,
+                enabled,
             )
         else:
             logger.info(
                 "WeatherProvider re-registered: id=%s priority=%d enabled=%s (replaced previous)",
-                pid, priority, enabled,
+                pid,
+                priority,
+                enabled,
             )
 
     def unregister(self, provider_id: str) -> bool:
@@ -111,7 +116,8 @@ class WeatherProviderRegistry:
             self._providers[provider_id] = (provider, priority, enabled)
             logger.info(
                 "WeatherProvider %s -> enabled=%s",
-                provider_id, enabled,
+                provider_id,
+                enabled,
             )
             return True
 
@@ -127,7 +133,9 @@ class WeatherProviderRegistry:
 
     # ── 查询 ─────────────────────────────────────────────────────────────────
 
-    def list_providers(self, *, include_disabled: bool = False) -> list[WeatherProvider]:
+    def list_providers(
+        self, *, include_disabled: bool = False
+    ) -> list[WeatherProvider]:
         """列出所有已注册 Provider。默认仅返回已启用的。"""
         with self._lock:
             entries = list(self._providers.values())
@@ -236,6 +244,7 @@ class WeatherProviderRegistry:
 
 # ── 单例访问 ───────────────────────────────────────────────────────────────────
 
+
 def get_registry() -> WeatherProviderRegistry:
     """获取全局 Provider 注册表单例。"""
     return WeatherProviderRegistry()
@@ -260,7 +269,10 @@ def register_default_providers() -> None:
         import os
 
         from app.weatherengine.providers.open_meteo_provider import OpenMeteoProvider
-        from app.weatherengine.provider_ids import OPEN_METEO_LOCAL_ID, OPEN_METEO_ONLINE_ID
+        from app.weatherengine.provider_ids import (
+            OPEN_METEO_LOCAL_ID,
+            OPEN_METEO_ONLINE_ID,
+        )
 
         if registry.get_provider(OPEN_METEO_LOCAL_ID) is None:
             local_url = (
@@ -278,7 +290,9 @@ def register_default_providers() -> None:
         if registry.get_provider(OPEN_METEO_ONLINE_ID) is None:
             online = OpenMeteoProvider.create_online()
             registry.register(online, priority=1, enabled=True)
-            logger.info("Registered weather provider: %s (priority=1)", OPEN_METEO_ONLINE_ID)
+            logger.info(
+                "Registered weather provider: %s (priority=1)", OPEN_METEO_ONLINE_ID
+            )
     except Exception:
         logger.exception("Failed to register OpenMeteoProvider(s)")
 
@@ -306,6 +320,8 @@ def register_default_providers() -> None:
             owm = OpenWeatherProvider()
             bootstrap_openweather(owm)
             registry.register(owm, priority=20, enabled=False)
-            logger.info("Registered weather provider: openweather (disabled by default)")
+            logger.info(
+                "Registered weather provider: openweather (disabled by default)"
+            )
     except Exception:
         logger.exception("Failed to register OpenWeatherProvider")

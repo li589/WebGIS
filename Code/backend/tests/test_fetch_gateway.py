@@ -1,4 +1,5 @@
-﻿"""fetch_gateway 统一取数路径单测。"""
+"""fetch_gateway 统一取数路径单测。"""
+
 from __future__ import annotations
 
 import unittest
@@ -48,7 +49,9 @@ class FetchGatewayTests(unittest.TestCase):
         self.client = _CountingClient()
         registry = get_registry()
         registry.clear()
-        registry.register(OpenMeteoProvider(client=self.client), priority=0, enabled=True)
+        registry.register(
+            OpenMeteoProvider(client=self.client), priority=0, enabled=True
+        )
 
     def tearDown(self) -> None:
         get_registry().clear()

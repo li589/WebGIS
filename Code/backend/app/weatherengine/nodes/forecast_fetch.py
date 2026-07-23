@@ -88,15 +88,44 @@ class ForecastFetchNode(BaseNode):
             input_ports=[
                 PortSpec(name="latitude", kind=PortKind.value, description="纬度"),
                 PortSpec(name="longitude", kind=PortKind.value, description="经度"),
-                PortSpec(name="layer_id", kind=PortKind.value, description="天气图层标识"),
-                PortSpec(name="model", kind=PortKind.value, required=False, description="气象模型，可选"),
-                PortSpec(name="forecast_hours", kind=PortKind.value, required=False, description="预报小时数，可选"),
-                PortSpec(name="provider_id", kind=PortKind.value, required=False, description="天气源 Provider ID（钉源），可选"),
+                PortSpec(
+                    name="layer_id", kind=PortKind.value, description="天气图层标识"
+                ),
+                PortSpec(
+                    name="model",
+                    kind=PortKind.value,
+                    required=False,
+                    description="气象模型，可选",
+                ),
+                PortSpec(
+                    name="forecast_hours",
+                    kind=PortKind.value,
+                    required=False,
+                    description="预报小时数，可选",
+                ),
+                PortSpec(
+                    name="provider_id",
+                    kind=PortKind.value,
+                    required=False,
+                    description="天气源 Provider ID（钉源），可选",
+                ),
             ],
             output_ports=[
-                PortSpec(name="forecast", kind=PortKind.data, description="原始预报数据"),
-                PortSpec(name="cache_status", kind=PortKind.value, description="缓存状态（hit/miss）"),
-                PortSpec(name="layer_spec", kind=PortKind.data, description="图层规格字典"),
-                PortSpec(name="provider_id", kind=PortKind.value, description="实际使用的天气源 Provider ID"),
+                PortSpec(
+                    name="forecast", kind=PortKind.data, description="原始预报数据"
+                ),
+                PortSpec(
+                    name="cache_status",
+                    kind=PortKind.value,
+                    description="缓存状态（hit/miss）",
+                ),
+                PortSpec(
+                    name="layer_spec", kind=PortKind.data, description="图层规格字典"
+                ),
+                PortSpec(
+                    name="provider_id",
+                    kind=PortKind.value,
+                    description="实际使用的天气源 Provider ID",
+                ),
             ],
         )

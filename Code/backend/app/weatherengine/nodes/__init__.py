@@ -4,7 +4,9 @@ from app.weatherengine.nodes.forecast_fetch import ForecastFetchNode
 from app.weatherengine.nodes.grid_fetch import GridFetchNode
 from app.weatherengine.nodes.humidity_grid_render import HumidityGridRenderNode
 from app.weatherengine.nodes.point_parse import PointParseNode
-from app.weatherengine.nodes.precipitation_grid_render import PrecipitationGridRenderNode
+from app.weatherengine.nodes.precipitation_grid_render import (
+    PrecipitationGridRenderNode,
+)
 from app.weatherengine.nodes.pressure_grid_render import PressureGridRenderNode
 from app.weatherengine.nodes.summary_generate import SummaryGenerateNode
 from app.weatherengine.nodes.temperature_grid_render import TemperatureGridRenderNode
