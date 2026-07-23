@@ -83,6 +83,11 @@ function handleCancel() {
   emit('cancel')
 }
 
+function useExistingGroup() {
+  creatingNewGroup.value = false
+  selectedGroup.value = outputStore.groups[0]
+}
+
 // 对话框打开时重置状态
 watch(
   () => props.visible,
@@ -178,10 +183,7 @@ watch(
                 v-if="outputStore.groups.length > 0"
                 class="toggle-group-btn"
                 type="button"
-                @click="
-                  creatingNewGroup = false
-                  selectedGroup = outputStore.groups[0]
-                "
+                @click="useExistingGroup"
               >
                 选择已有
               </button>
