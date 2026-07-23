@@ -14,7 +14,7 @@ CGDA 跨平台一键启动器
     python launch.py status
     python launch.py restart [component] [options]
     python launch.py logs [component] [-n N]
-    python launch.py flush
+    python launch.py flush [--yes] [--dry-run]
     python launch.py sync [job]          # 数据面一次性同步（默认 open-meteo-sync）
 
 组件 (component):
@@ -44,6 +44,17 @@ CGDA 跨平台一键启动器
 选项 (仅 logs):
     -n N                显示最后 N 行（默认 50）
 
+选项 (仅 flush):
+    --yes / -y          跳过确认提示直接执行
+    --dry-run           仅预览将要清空的对象，不执行删除
+
+选项 (仅 reset-db):
+    --yes / -y          跳过确认提示直接执行
+    --no-snapshot       跳过快照备份（不推荐，无法回滚）
+    --keep-snapshots N  保留快照数量（默认 5）
+    --clear-user        同时清空用户自定义工作流定义（默认保留）
+    --force             即使后端服务正在运行也强制执行
+
 示例:
     python launch.py start                      # 启动全部，进入监控循环
     python launch.py start docker               # 仅 Redis + MinIO + Open-Meteo API
@@ -53,7 +64,12 @@ CGDA 跨平台一键启动器
     python launch.py start --frontend-port 3000 # 全部启动，前端用 3000 端口
     python launch.py logs fastapi -n 100        # 查看 FastAPI 最后 100 行日志
     python launch.py logs worker:all            # 查看所有 Worker 日志
-    python launch.py flush                      # 清空 Redis + 文件缓存
+    python launch.py flush                      # 清空 Redis + 文件缓存（需确认）
+    python launch.py flush --dry-run            # 预览将要清空的对象，不执行
+    python launch.py flush --yes                # 跳过确认直接执行
+    python launch.py reset-db                   # 清空 workflow_state，自动快照 + 重 seed
+    python launch.py reset-db --yes             # 跳过确认直接执行
+    python launch.py reset-db --clear-user      # 同时清空用户自定义工作流
     python launch.py stop                       # 停止全部服务
     python launch.py status                     # 查看服务状态
 
@@ -102,6 +118,29 @@ LAUNCHER_LOG = LOG_DIR / "launcher.log"
 PID_FILE = LOG_DIR / "launcher_pids.json"
 WEATHER_CACHE_DIR = BACKEND_DIR / ".data" / "cache" / "weather"
 WEATHERENGINE_CACHE_DIR = BACKEND_DIR / ".data" / "cache" / "weatherengine"
+
+# ─── workflow_state 重置相关路径 ─────────────────────────────────────────────
+# workflow_state 目录存放多个运行时 SQLite 数据库：
+#   • workflow_state.sqlite3          工作流执行状态 + 定时器（reset-db 清理目标）
+#   • weather_engine.sqlite3          天气引擎配置
+#   • weather_providers.sqlite3       Provider 覆盖
+#   • research_data_settings.sqlite3  课题组数据设置
+#   • api_keys.sqlite3                API 鉴权密钥（凭据，reset-db 保留）
+#   • gee_credentials.sqlite3         加密 GEE 凭据（凭据，reset-db 保留）
+#   • remote_storage_credentials.sqlite3  远程存储凭据（凭据，reset-db 保留）
+# reset-db 仅清理 workflow_state.sqlite3 及其 WAL/SHM 侧车文件，
+# 保留同目录下的凭据 / 配置数据库，避免破坏鉴权与加密凭据（AGENTS.md 高风险区）。
+WORKFLOW_STATE_DIR = BACKEND_DIR / ".data" / "workflow_state"
+# reset-db 清理目标 DB 文件名（工作流运行状态与定时器共享同一 DB 文件）。
+WORKFLOW_STATE_DB_STEM = "workflow_state.sqlite3"
+# workflow_definitions 目录存放工作流定义 JSON（system/ 只读种子 + user/ 自定义）。
+WORKFLOW_DEFINITIONS_DIR = BACKEND_DIR / ".data" / "workflow_definitions"
+# workflow_seeds/system 是仓库内置的系统工作流模板源（5 个 JSON），用于 re-seed。
+WORKFLOW_SEEDS_DIR = BACKEND_DIR / "workflow_seeds" / "system"
+# 快照根目录：reset-db 前自动备份 workflow_state + workflow_definitions 到此。
+SNAPSHOT_ROOT = BACKEND_DIR / ".data" / "workflow_state_snapshots"
+DEFAULT_MAX_SNAPSHOTS = 5
+
 DEFAULT_FRONTEND_PORT = 5175
 DEFAULT_OPEN_METEO_VOLUME = "backend_open-meteo-data"
 IS_WINDOWS = sys.platform == "win32"
@@ -115,7 +154,10 @@ CELERY_WORKERS: list[dict[str, str]] = [
     {"name": "batch", "queues": "batch"},
     {"name": "download", "queues": "download-realtime,download-standard"},
     {"name": "gee", "queues": "gee-realtime,gee-standard,gee-heavy,gee-batch"},
-    {"name": "weather", "queues": "weather-realtime,weather-standard,weather-heavy,weather-batch"},
+    {
+        "name": "weather",
+        "queues": "weather-realtime,weather-standard,weather-heavy,weather-batch",
+    },
 ]
 VALID_WORKER_NAMES = [w["name"] for w in CELERY_WORKERS]
 
@@ -133,11 +175,11 @@ class Log:
     """规范的彩色日志输出器，同时写入控制台和文件（带轮转）。"""
 
     _COLORS = {
-        "DEBUG": "\033[90m",      # 灰
-        "INFO": "\033[36m",       # 青
-        "OK": "\033[32m",         # 绿
-        "WARN": "\033[33m",       # 黄
-        "ERROR": "\033[31m",      # 红
+        "DEBUG": "\033[90m",  # 灰
+        "INFO": "\033[36m",  # 青
+        "OK": "\033[32m",  # 绿
+        "WARN": "\033[33m",  # 黄
+        "ERROR": "\033[31m",  # 红
         "RESET": "\033[0m",
     }
     _BOLD = "\033[1m"
@@ -161,7 +203,9 @@ class Log:
         self._logger.setLevel(logging.DEBUG)
         # 避免重复添加 handler（多次实例化时）
         for h in self._logger.handlers:
-            if isinstance(h, RotatingFileHandler) and getattr(h, "baseFilename", "") == str(log_file):
+            if isinstance(h, RotatingFileHandler) and getattr(
+                h, "baseFilename", ""
+            ) == str(log_file):
                 self._logger.removeHandler(h)
         self._logger.addHandler(self._file_handler)
         self._logger.propagate = False  # 不冒泡到 root logger
@@ -237,7 +281,9 @@ def _rotate_subprocess_log_if_needed(log_file: Path) -> None:
         if old_file.exists():
             old_file.unlink()
         log_file.rename(old_file)
-        log.info("Log", f"轮转 {log_file.name} ({size // 1024 // 1024} MB → {old_file.name})")
+        log.info(
+            "Log", f"轮转 {log_file.name} ({size // 1024 // 1024} MB → {old_file.name})"
+        )
     except OSError as exc:
         log.warn("Log", f"轮转 {log_file.name} 失败: {exc}")
 
@@ -325,11 +371,41 @@ def ensure_project_initialized() -> None:
         ds_ex = DATA_SYNC_DIR / ".env.example"
         if not ds_env.is_file() and ds_ex.is_file():
             shutil.copyfile(ds_ex, ds_env)
-            log.info("Init", f"已生成 data-sync .env ← .env.example")
+            log.info("Init", "已生成 data-sync .env ← .env.example")
 
     if not (FRONTEND_DIR / "node_modules").is_dir():
-        pkg = "pnpm install" if (FRONTEND_DIR / "pnpm-lock.yaml").is_file() else "npm install"
-        log.warn("Init", f"前端 node_modules 缺失，请先在 Code/frontend 执行: {pkg}")
+        # 权威包管理器为 npm（见 Code/frontend/package.json 的 packageManager 字段），与 CI 的 npm ci 一致。
+        log.warn(
+            "Init", "前端 node_modules 缺失，请先在 Code/frontend 执行: npm install"
+        )
+
+
+def _is_editor_bundled_node(path: str) -> bool:
+    """Cursor/VS Code 自带的 helpers/node，不适合作为 Vite 运行时。"""
+    normalized = path.replace("\\", "/").lower()
+    return "/resources/app/resources/helpers/" in normalized
+
+
+def _resolve_nodejs() -> str | None:
+    """解析可用的 Node.js：优先系统安装，回退到编辑器自带 helpers。"""
+    names = ("node.exe", "node") if IS_WINDOWS else ("node",)
+    fallback: str | None = None
+    for directory in os.environ.get("PATH", "").split(os.pathsep):
+        if not directory:
+            continue
+        for name in names:
+            candidate = Path(directory) / name
+            if not candidate.is_file():
+                continue
+            resolved = str(candidate.resolve()) if candidate.exists() else str(candidate)
+            if _is_editor_bundled_node(resolved):
+                fallback = fallback or resolved
+                continue
+            return resolved
+    which_hit = shutil.which("node.exe" if IS_WINDOWS else "node")
+    if which_hit:
+        return which_hit
+    return fallback
 
 
 def _frontend_dev_command(port: int) -> list[str] | None:
@@ -340,12 +416,10 @@ def _frontend_dev_command(port: int) -> list[str] | None:
     """
     port_s = str(port)
     vite_js = FRONTEND_DIR / "node_modules" / "vite" / "bin" / "vite.js"
-    node_candidates = ("node.exe", "node") if IS_WINDOWS else ("node",)
     if vite_js.is_file():
-        for cand in node_candidates:
-            node = shutil.which(cand)
-            if node:
-                return [node, str(vite_js), "--port", port_s, "--host"]
+        node = _resolve_nodejs()
+        if node:
+            return [node, str(vite_js), "--port", port_s, "--host"]
     npx_candidates = ("npx.cmd", "npx.exe", "npx") if IS_WINDOWS else ("npx",)
     for cand in npx_candidates:
         if shutil.which(cand):
@@ -379,7 +453,14 @@ $rows | ForEach-Object {
 """
         try:
             r = subprocess.run(
-                ["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", ps_script],
+                [
+                    "powershell",
+                    "-NoProfile",
+                    "-ExecutionPolicy",
+                    "Bypass",
+                    "-Command",
+                    ps_script,
+                ],
                 capture_output=True,
                 text=True,
                 timeout=30,
@@ -436,7 +517,11 @@ def start_docker_infra(*, start_open_meteo: bool = True) -> bool:
     """启动 Redis + MinIO；可选启动 backend 内的 cgda-open-meteo API。"""
     log.banner("启动 Docker 运行栈 (Redis + MinIO + Open-Meteo API)")
     if not docker_available():
-        hint = "请先启动 Docker Desktop" if IS_WINDOWS else "请先启动 Docker Engine / 守护进程"
+        hint = (
+            "请先启动 Docker Desktop"
+            if IS_WINDOWS
+            else "请先启动 Docker Engine / 守护进程"
+        )
         log.error("Docker", f"Docker 未运行或未安装，{hint}")
         return False
 
@@ -466,7 +551,9 @@ def start_docker_infra(*, start_open_meteo: bool = True) -> bool:
 
     log.ok("Docker", "容器已启动")
     log.info("Docker", "  Redis:  redis://127.0.0.1:6379/0")
-    log.info("Docker", "  MinIO:  API http://127.0.0.1:9100 | Console http://127.0.0.1:9101")
+    log.info(
+        "Docker", "  MinIO:  API http://127.0.0.1:9100 | Console http://127.0.0.1:9101"
+    )
     if start_open_meteo:
         log.info(
             "Docker",
@@ -581,11 +668,14 @@ class ProcessManager:
 
             proc = subprocess.Popen(
                 [
-                    py, worker_script, "worker",
+                    py,
+                    worker_script,
+                    "worker",
                     f"--loglevel={self._loglevel}",
                     f"--queues={queues}",
                     f"--hostname=worker-{name}@{hostname}",
-                    "-f", str(log_file),
+                    "-f",
+                    str(log_file),
                 ],
                 cwd=str(BACKEND_DIR),
                 env=child_env,
@@ -595,7 +685,10 @@ class ProcessManager:
             )
             self.processes[f"worker-{name}"] = proc
 
-        log.ok("Worker", f"{len(workers_to_start)} 个 Worker 已启动，日志: .data/logs/worker-*.log")
+        log.ok(
+            "Worker",
+            f"{len(workers_to_start)} 个 Worker 已启动，日志: .data/logs/worker-*.log",
+        )
 
     def start_celery_beat(self) -> None:
         """启动 Celery Beat 定时调度器。"""
@@ -609,9 +702,11 @@ class ProcessManager:
 
         proc = subprocess.Popen(
             [
-                py, beat_script,
+                py,
+                beat_script,
                 f"--loglevel={self._loglevel}",
-                "-f", str(log_file),
+                "-f",
+                str(log_file),
             ],
             cwd=str(BACKEND_DIR),
             env=_child_env(),
@@ -673,9 +768,15 @@ class ProcessManager:
         except FileNotFoundError:
             # Windows 上偶发 which 命中不可直接 CreateProcess 的 shim，回退 npx
             fallback = None
-            for cand in (("npx.cmd", "npx.exe", "npx") if IS_WINDOWS else ("npx",)):
+            for cand in ("npx.cmd", "npx.exe", "npx") if IS_WINDOWS else ("npx",):
                 if shutil.which(cand):
-                    fallback = [cand, "vite", "--port", str(self.frontend_port), "--host"]
+                    fallback = [
+                        cand,
+                        "vite",
+                        "--port",
+                        str(self.frontend_port),
+                        "--host",
+                    ]
                     break
             if not fallback or fallback[0] == cmd[0]:
                 log.error("Frontend", f"启动命令不可用: {cmd[0]}")
@@ -700,6 +801,7 @@ class ProcessManager:
         """等待 FastAPI 就绪。"""
         log.info("FastAPI", f"等待 HTTP 就绪（最多 {max_wait}s）...")
         import urllib.request
+
         for i in range(max_wait):
             try:
                 req = urllib.request.Request("http://127.0.0.1:8000/health")
@@ -719,6 +821,7 @@ class ProcessManager:
         merge=True 时与现有 PID 文件合并（用于单组件启动）。
         """
         import json
+
         pids = {name: proc.pid for name, proc in self.processes.items()}
         if merge and PID_FILE.exists():
             try:
@@ -761,12 +864,15 @@ class ProcessManager:
                 if name.startswith("worker-"):
                     log_file = LOG_DIR / f"worker-{name.replace('worker-', '')}.log"
                 if log_file.exists():
-                    lines = log_file.read_text(encoding="utf-8", errors="replace").splitlines()
+                    lines = log_file.read_text(
+                        encoding="utf-8", errors="replace"
+                    ).splitlines()
                     tail = "\n".join(lines[-5:]) if lines else "(空日志)"
                     log.error("Monitor", f"{name} 日志尾部:\n{tail}")
 
     def install_signal_handlers(self) -> None:
         """安装信号处理器，Ctrl+C 优雅退出。"""
+
         def handler(signum, frame):
             if self._shutting_down:
                 return
@@ -786,6 +892,7 @@ def _pid_alive(pid: int) -> bool:
     if IS_WINDOWS:
         try:
             import ctypes
+
             PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
             handle = ctypes.windll.kernel32.OpenProcess(
                 PROCESS_QUERY_LIMITED_INFORMATION, False, int(pid)
@@ -839,7 +946,10 @@ def _get_log_files(component: str | None) -> list[tuple[str, Path]]:
     if component == "frontend":
         return [("frontend", LOG_DIR / "frontend.log")]
     if component in ("worker", "worker:all"):
-        return [(f"worker-{w['name']}", LOG_DIR / f"worker-{w['name']}.log") for w in CELERY_WORKERS]
+        return [
+            (f"worker-{w['name']}", LOG_DIR / f"worker-{w['name']}.log")
+            for w in CELERY_WORKERS
+        ]
     if component.startswith("worker:"):
         name = component.split(":", 1)[1]
         return [(f"worker-{name}", LOG_DIR / f"worker-{name}.log")]
@@ -863,7 +973,9 @@ def _print_debug_info() -> None:
         try:
             r = subprocess.run(
                 ["docker", "version", "--format", "{{.Server.Version}}"],
-                capture_output=True, text=True, timeout=5,
+                capture_output=True,
+                text=True,
+                timeout=5,
                 **_hidden_kwargs(),
             )
             if r.returncode == 0:
@@ -882,16 +994,22 @@ def _print_debug_info() -> None:
     # 磁盘空间
     try:
         total, used, free = shutil.disk_usage(BACKEND_DIR)
-        log.info("Debug", f"磁盘: 总 {total // 1024 // 1024}MB, 已用 {used // 1024 // 1024}MB, 可用 {free // 1024 // 1024}MB")
+        log.info(
+            "Debug",
+            f"磁盘: 总 {total // 1024 // 1024}MB, 已用 {used // 1024 // 1024}MB, 可用 {free // 1024 // 1024}MB",
+        )
     except Exception:
         pass
 
     # PID 文件
     if PID_FILE.exists():
         import json
+
         try:
             pids = json.loads(PID_FILE.read_text(encoding="utf-8"))
-            log.info("Debug", f"PID 文件存在，记录 {len(pids)} 个进程: {list(pids.keys())}")
+            log.info(
+                "Debug", f"PID 文件存在，记录 {len(pids)} 个进程: {list(pids.keys())}"
+            )
         except Exception:
             log.warn("Debug", "PID 文件解析失败")
     else:
@@ -907,6 +1025,7 @@ def cmd_stop() -> int:
 
     # 1. 从 PID 文件读取进程
     import json
+
     if PID_FILE.exists():
         try:
             pids = json.loads(PID_FILE.read_text(encoding="utf-8"))
@@ -961,7 +1080,9 @@ def cmd_status() -> int:
     for cid, label in containers:
         r = subprocess.run(
             ["docker", "inspect", "-f", "{{.State.Status}}", cid],
-            capture_output=True, text=True, **_hidden_kwargs(),
+            capture_output=True,
+            text=True,
+            **_hidden_kwargs(),
         )
         state = r.stdout.strip() if r.returncode == 0 else "未运行"
         icon = "✓" if state == "running" else "✗"
@@ -969,6 +1090,7 @@ def cmd_status() -> int:
 
     # FastAPI
     import urllib.request
+
     try:
         req = urllib.request.Request("http://127.0.0.1:8000/health")
         with urllib.request.urlopen(req, timeout=3) as resp:
@@ -976,7 +1098,10 @@ def cmd_status() -> int:
     except Exception:
         ok = False
     icon = "✓" if ok else "✗"
-    log.info("Status", f"  {icon} FastAPI  (http://127.0.0.1:8000): {'就绪' if ok else '未响应'}")
+    log.info(
+        "Status",
+        f"  {icon} FastAPI  (http://127.0.0.1:8000): {'就绪' if ok else '未响应'}",
+    )
 
     # 前端
     try:
@@ -986,10 +1111,14 @@ def cmd_status() -> int:
     except Exception:
         fe_ok = False
     icon = "✓" if fe_ok else "✗"
-    log.info("Status", f"  {icon} Frontend (http://localhost:{DEFAULT_FRONTEND_PORT}):  {'就绪' if fe_ok else '未响应'}")
+    log.info(
+        "Status",
+        f"  {icon} Frontend (http://localhost:{DEFAULT_FRONTEND_PORT}):  {'就绪' if fe_ok else '未响应'}",
+    )
 
     # Celery Workers（从 PID 文件检查）
     import json
+
     if PID_FILE.exists():
         try:
             pids = json.loads(PID_FILE.read_text(encoding="utf-8"))
@@ -997,7 +1126,10 @@ def cmd_status() -> int:
             for name, pid in pids.items():
                 alive = _pid_alive(pid)
                 icon = "✓" if alive else "✗"
-                log.info("Status", f"  {icon} {name:20s} pid={pid} {'运行中' if alive else '已退出'}")
+                log.info(
+                    "Status",
+                    f"  {icon} {name:20s} pid={pid} {'运行中' if alive else '已退出'}",
+                )
         except (json.JSONDecodeError, OSError):
             pass
     else:
@@ -1018,7 +1150,9 @@ def cmd_status() -> int:
     except (FileNotFoundError, subprocess.TimeoutExpired):
         pass
     icon = "✓" if vol_ok else "✗"
-    log.info("Status", f"  {icon} data-sync volume ({vol}): {'存在' if vol_ok else '缺失'}")
+    log.info(
+        "Status", f"  {icon} data-sync volume ({vol}): {'存在' if vol_ok else '缺失'}"
+    )
     sync_compose = DATA_SYNC_DIR / "docker-compose.yml"
     icon = "✓" if sync_compose.is_file() else "✗"
     log.info("Status", f"  {icon} data-sync compose: {DATA_SYNC_DIR}")
@@ -1052,7 +1186,9 @@ def cmd_start(args: argparse.Namespace) -> int:
     pm.install_signal_handlers()
 
     if component == "docker":
-        if not start_docker_infra(start_open_meteo=not getattr(args, "no_open_meteo", False)):
+        if not start_docker_infra(
+            start_open_meteo=not getattr(args, "no_open_meteo", False)
+        ):
             return 1
         wait_for_redis(max_wait=30)
         log.ok("Launcher", "Docker 基础设施已启动（不进入监控循环）")
@@ -1060,7 +1196,10 @@ def cmd_start(args: argparse.Namespace) -> int:
 
     if component == "fastapi":
         if not redis_running():
-            log.warn("FastAPI", "Redis 未检测到，FastAPI 可能无法正常工作（请先 start docker）")
+            log.warn(
+                "FastAPI",
+                "Redis 未检测到，FastAPI 可能无法正常工作（请先 start docker）",
+            )
         pm.start_fastapi()
         pm.wait_for_fastapi(max_wait=30)
         pm.save_pids(merge=True)
@@ -1098,7 +1237,10 @@ def cmd_start(args: argparse.Namespace) -> int:
         return 0
 
     log.error("Launcher", f"未知组件: {component}")
-    log.info("Launcher", "可用组件: all, docker, fastapi, beat, worker, worker:<name>, frontend")
+    log.info(
+        "Launcher",
+        "可用组件: all, docker, fastapi, beat, worker, worker:<name>, frontend",
+    )
     return 1
 
 
@@ -1119,7 +1261,9 @@ def _start_all(args: argparse.Namespace) -> int:
 
     # 1. 启动 Docker 基础设施
     if not args.no_docker:
-        if not start_docker_infra(start_open_meteo=not getattr(args, "no_open_meteo", False)):
+        if not start_docker_infra(
+            start_open_meteo=not getattr(args, "no_open_meteo", False)
+        ):
             log.error("Launcher", "Docker 基础设施启动失败，终止")
             return 1
         wait_for_redis(max_wait=30)
@@ -1274,7 +1418,9 @@ def cmd_sync(job: str = "open-meteo-sync") -> int:
             for line in env_file.read_text(encoding="utf-8").splitlines():
                 line = line.strip()
                 if line.startswith("OPEN_METEO_SYNC_DOMAINS="):
-                    domains = line.split("=", 1)[1].strip().strip('"').strip("'") or domains
+                    domains = (
+                        line.split("=", 1)[1].strip().strip('"').strip("'") or domains
+                    )
                     break
         except OSError:
             pass
@@ -1292,11 +1438,15 @@ def cmd_sync(job: str = "open-meteo-sync") -> int:
         )
     except subprocess.TimeoutExpired:
         log.error("Sync", "同步超时（3600s）")
-        _record_cli_sync_result(ok=False, domains=domains, message="sync timeout 3600s", exit_code=1)
+        _record_cli_sync_result(
+            ok=False, domains=domains, message="sync timeout 3600s", exit_code=1
+        )
         return 1
     except FileNotFoundError:
         log.error("Sync", "docker 命令未找到")
-        _record_cli_sync_result(ok=False, domains=domains, message="docker not found", exit_code=127)
+        _record_cli_sync_result(
+            ok=False, domains=domains, message="docker not found", exit_code=127
+        )
         return 1
 
     if r.returncode != 0:
@@ -1309,7 +1459,9 @@ def cmd_sync(job: str = "open-meteo-sync") -> int:
         )
         return r.returncode
     log.ok("Sync", f"{job} 完成")
-    _record_cli_sync_result(ok=True, domains=domains, message=f"{job} completed via launch.py", exit_code=0)
+    _record_cli_sync_result(
+        ok=True, domains=domains, message=f"{job} completed via launch.py", exit_code=0
+    )
     return 0
 
 
@@ -1336,17 +1488,428 @@ def _record_cli_sync_result(
         log.warn("Sync", f"未能写入 sync 历史记录: {exc}")
 
 
-# ─── 清空缓存命令 ────────────────────────────────────────────────────────────
-def cmd_flush() -> int:
-    """清空 Redis DB + 文件缓存。"""
-    log.banner("清空缓存")
+# ─── 重置 workflow_state 命令 ────────────────────────────────────────────────
+#
+# 快照策略（Snapshot Strategy）
+# =============================
+#
+# 触发时机:
+#   每次 `python launch.py reset-db` 执行时，在清空之前自动创建一份带时间戳
+#   的快照（除非指定 --no-snapshot）。
+#
+# 存储位置:
+#   Code/backend/.data/workflow_state_snapshots/<YYYYMMDD-HHMMSS>/
+#     ├── workflow_state/        ← 运行时 SQLite 数据库备份
+#     └── workflow_definitions/  ← 工作流定义 JSON 备份（system + user）
+#
+# 轮转策略:
+#   默认保留最近 5 份快照（可通过 --keep-snapshots N 调整）。超出数量的最旧
+#   快照目录会被自动删除。快照目录按名称（时间戳）排序，最旧的先被清理。
+#
+# 恢复方法:
+#   手动恢复：将快照目录下的 workflow_state/ 和 workflow_definitions/ 复制回
+#   Code/backend/.data/ 对应位置即可。例如：
+#     cp -r .data/workflow_state_snapshots/20260722-100000/workflow_state/ \
+#           .data/workflow_state/
+#     cp -r .data/workflow_state_snapshots/20260722-100000/workflow_definitions/ \
+#           .data/workflow_definitions/
+#   恢复前请先停止后端服务（python launch.py stop），避免 SQLite 文件锁冲突。
+#
+# 清理范围（重要）:
+#   reset-db 只清理工作流执行状态数据库 workflow_state.sqlite3 及其 WAL/SHM
+#   侧车文件；同目录下的凭据 / 配置数据库（api_keys / gee_credentials /
+#   remote_storage_credentials / weather_engine / weather_providers /
+#   research_data_settings）会被保留，避免破坏鉴权与加密凭据。
+#   快照仍会完整备份整个 workflow_state 目录（含上述保留文件），确保可回滚。
+#
+# 注意事项:
+#   - 快照是 best-effort：如果源目录不存在或为空，对应子目录不会创建。
+#   - 快照仅备份 workflow_state 和 workflow_definitions，不包含 Redis 数据
+#    （Redis 数据可用 `python launch.py flush` 单独清空）。
+#   - 快照完整备份整个 workflow_state 目录（含被保留的凭据 / 配置 DB），
+#     即使清理只针对 workflow_state.sqlite3，也可从快照整体回滚。
+#   - SQLite WAL/SHM 侧车文件（-wal、-shm）会一并备份。
 
-    # 1. 清空 Redis DB
+
+def _create_workflow_snapshot() -> Path | None:
+    """创建带时间戳的 workflow_state + workflow_definitions 快照。
+
+    将 WORKFLOW_STATE_DIR 和 WORKFLOW_DEFINITIONS_DIR 的完整内容复制到
+    SNAPSHOT_ROOT/<timestamp>/ 下。如果两个源目录都不存在则返回 None。
+    """
+    timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+    snapshot_dir = SNAPSHOT_ROOT / timestamp
+    snapshot_dir.mkdir(parents=True, exist_ok=True)
+
+    copied_any = False
+    for src, label in (
+        (WORKFLOW_STATE_DIR, "workflow_state"),
+        (WORKFLOW_DEFINITIONS_DIR, "workflow_definitions"),
+    ):
+        if not src.is_dir():
+            continue
+        dest = snapshot_dir / label
+        try:
+            shutil.copytree(src, dest, dirs_exist_ok=True)
+            file_count = sum(1 for f in dest.rglob("*") if f.is_file())
+            log.info("Snapshot", f"  {label}: {file_count} 个文件 → {dest}")
+            copied_any = True
+        except OSError as exc:
+            log.warn("Snapshot", f"  {label}: 备份失败 ({exc})")
+
+    if not copied_any:
+        # 没有可备份的内容，删除空快照目录
+        try:
+            snapshot_dir.rmdir()
+        except OSError:
+            pass
+        return None
+
+    return snapshot_dir
+
+
+def _rotate_snapshots(max_keep: int) -> int:
+    """保留最近 max_keep 份快照，删除更旧的。返回被删除的数量。"""
+    if not SNAPSHOT_ROOT.is_dir():
+        return 0
+    snapshots = sorted(
+        [d for d in SNAPSHOT_ROOT.iterdir() if d.is_dir()],
+        key=lambda d: d.name,
+        reverse=True,  # 最新的在前
+    )
+    to_remove = snapshots[max_keep:]
+    for old in to_remove:
+        try:
+            shutil.rmtree(old, ignore_errors=True)
+            log.info("Snapshot", f"轮转删除旧快照: {old.name}")
+        except OSError:
+            pass
+    return len(to_remove)
+
+
+def _clear_workflow_state() -> int:
+    """删除工作流执行状态数据库 workflow_state.sqlite3 及其 WAL/SHM 侧车文件。
+
+    仅清理工作流运行状态与定时器共享的 workflow_state.sqlite3（含 -wal / -shm
+    侧车文件），保留同目录下的凭据 / 配置数据库（api_keys / gee_credentials /
+    remote_storage_credentials / weather_engine / weather_providers /
+    research_data_settings），避免破坏鉴权与加密凭据。
+
+    返回被删除的文件数量。目录本身会被保留。
+    """
+    if not WORKFLOW_STATE_DIR.is_dir():
+        WORKFLOW_STATE_DIR.mkdir(parents=True, exist_ok=True)
+        return 0
+
+    # 目标：workflow_state.sqlite3 及其 SQLite 侧车文件（-wal / -shm / -journal）
+    targets = [
+        WORKFLOW_STATE_DIR / WORKFLOW_STATE_DB_STEM,
+        WORKFLOW_STATE_DIR / f"{WORKFLOW_STATE_DB_STEM}-wal",
+        WORKFLOW_STATE_DIR / f"{WORKFLOW_STATE_DB_STEM}-shm",
+        WORKFLOW_STATE_DIR / f"{WORKFLOW_STATE_DB_STEM}-journal",
+    ]
+    file_count = 0
+    for item in targets:
+        if not item.exists():
+            continue
+        try:
+            item.unlink()
+            file_count += 1
+        except OSError as exc:
+            log.warn("Reset", f"  无法删除 {item.name}: {exc}")
+    return file_count
+
+
+def _reseed_workflow_definitions(*, clear_user: bool = False) -> tuple[int, int]:
+    """清空并重新 seed workflow_definitions。
+
+    - system/: 清空后从 WORKFLOW_SEEDS_DIR 重新复制全部种子 JSON。
+    - user/: 仅当 clear_user=True 时清空（默认保留用户自定义工作流）。
+
+    返回 (system_seed_count, user_cleared_count)。
+    """
+    system_dir = WORKFLOW_DEFINITIONS_DIR / "system"
+    user_dir = WORKFLOW_DEFINITIONS_DIR / "user"
+
+    # 清空 system/ 并重新 seed
+    system_dir.mkdir(parents=True, exist_ok=True)
+    user_dir.mkdir(parents=True, exist_ok=True)
+
+    for item in system_dir.iterdir():
+        try:
+            if item.is_file():
+                item.unlink()
+        except OSError as exc:
+            log.warn("Reset", f"  无法删除 system/{item.name}: {exc}")
+
+    # 从 workflow_seeds/system 复制种子
+    seed_count = 0
+    if WORKFLOW_SEEDS_DIR.is_dir():
+        for src in sorted(WORKFLOW_SEEDS_DIR.glob("*.json")):
+            dest = system_dir / src.name
+            try:
+                dest.write_text(src.read_text(encoding="utf-8"), encoding="utf-8")
+                seed_count += 1
+            except OSError as exc:
+                log.warn("Reset", f"  无法 seed {src.name}: {exc}")
+
+    # 可选：清空 user/
+    user_cleared = 0
+    if clear_user:
+        for item in user_dir.iterdir():
+            try:
+                if item.is_file() and item.name != ".gitkeep":
+                    item.unlink()
+                    user_cleared += 1
+            except OSError as exc:
+                log.warn("Reset", f"  无法删除 user/{item.name}: {exc}")
+
+    return seed_count, user_cleared
+
+
+def _verify_workflow_state_empty() -> bool:
+    """验证工作流执行状态数据库已被清空。
+
+    仅检查 workflow_state.sqlite3 及其 WAL/SHM/journal 侧车文件是否已删除；
+    同目录下被保留的凭据 / 配置 DB 不计入验证。
+    返回 True 表示工作流状态为空（验证通过）。
+    """
+    if not WORKFLOW_STATE_DIR.is_dir():
+        return True
+    targets = [
+        WORKFLOW_STATE_DIR / WORKFLOW_STATE_DB_STEM,
+        WORKFLOW_STATE_DIR / f"{WORKFLOW_STATE_DB_STEM}-wal",
+        WORKFLOW_STATE_DIR / f"{WORKFLOW_STATE_DB_STEM}-shm",
+        WORKFLOW_STATE_DIR / f"{WORKFLOW_STATE_DB_STEM}-journal",
+    ]
+    return not any(t.exists() for t in targets)
+
+
+def _backend_services_running() -> bool:
+    """检测后端服务（FastAPI / Celery）是否正在运行。
+
+    通过检查 PID 文件中的进程是否存活来判断。如果 PID 文件不存在
+    或所有进程都已退出，返回 False。
+    """
+    import json
+
+    if not PID_FILE.exists():
+        return False
+    try:
+        pids = json.loads(PID_FILE.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError):
+        return False
+    # 检查是否有任一后端进程存活（排除 frontend）
+    backend_names = [n for n in pids if n != "frontend"]
+    alive = [n for n in backend_names if _pid_alive(pids[n])]
+    return len(alive) > 0
+
+
+def cmd_reset_db(args: argparse.Namespace) -> int:
+    """reset-db: 清空 workflow_state 运行时数据库并重新 seed 工作流定义。
+
+    执行步骤:
+      1.（可选）创建快照备份 workflow_state + workflow_definitions
+      2. 删除 workflow_state.sqlite3 及其 WAL/SHM/journal 侧车文件（保留同目录凭据 DB）
+      3. 重新 seed workflow_definitions/system（从 workflow_seeds/system 复制）
+      4. 验证 workflow_state 为空、种子文件就位
+
+    选项:
+      --yes / -y        跳过确认提示
+      --no-snapshot     跳过快照备份（不推荐）
+      --keep-snapshots  保留快照数量（默认 5）
+      --clear-user      同时清空用户自定义工作流定义（默认保留）
+      --force           即使后端服务正在运行也强制执行（可能导致文件锁失败）
+    """
+    log.banner("重置 workflow_state")
+
+    # ── 0a. 检测后端服务是否运行 ──
+    if not getattr(args, "force", False) and _backend_services_running():
+        log.error("Reset", "后端服务正在运行，SQLite 文件被锁定无法删除。")
+        log.info("Reset", "  请先停止服务:  python launch.py stop")
+        log.info("Reset", "  然后重置:      python launch.py reset-db")
+        log.info(
+            "Reset",
+            "  或强制执行（部分文件可能删除失败）:  python launch.py reset-db --force",
+        )
+        return 1
+
+    # ── 0. 确认提示 ──
+    if not args.yes:
+        print()
+        print("  ⚠  此操作将清空以下运行时数据：")
+        print(
+            f"    • workflow_state.sqlite3（工作流执行状态 + 定时器）  {WORKFLOW_STATE_DIR}"
+        )
+        print("    • workflow_definitions/system/  （重新 seed）")
+        if args.clear_user:
+            print("    • workflow_definitions/user/    （用户自定义工作流也将被清空）")
+        print()
+        print("  保留：同目录下的凭据 / 配置 DB（api_keys / gee_credentials /")
+        print(
+            "        remote_storage_credentials / weather_engine / weather_providers 等）"
+        )
+        print(
+            "  快照将自动创建到 .data/workflow_state_snapshots/（可用 --no-snapshot 跳过）"
+        )
+        print()
+        try:
+            answer = input("  确认继续？输入 yes 执行: ").strip().lower()
+        except (EOFError, KeyboardInterrupt):
+            answer = ""
+        if answer not in ("yes", "y"):
+            log.warn("Reset", "用户取消，未做任何更改")
+            return 0
+
+    # ── 1. 创建快照 ──
+    if not args.no_snapshot:
+        log.info("Snapshot", "创建快照备份...")
+        snapshot_path = _create_workflow_snapshot()
+        if snapshot_path:
+            log.ok("Snapshot", f"快照已保存: {snapshot_path}")
+            removed = _rotate_snapshots(args.keep_snapshots)
+            if removed > 0:
+                log.info("Snapshot", f"轮转清理了 {removed} 个旧快照")
+        else:
+            log.info("Snapshot", "无运行时数据需要备份（源目录为空或不存在）")
+    else:
+        log.warn("Snapshot", "已跳过快照备份（--no-snapshot）")
+
+    # ── 2. 清空 workflow_state ──
+    log.info("Reset", f"清空 workflow_state: {WORKFLOW_STATE_DIR}")
+    cleared = _clear_workflow_state()
+    log.ok("Reset", f"已删除 {cleared} 个文件/目录")
+
+    # ── 3. 重新 seed workflow_definitions ──
+    log.info("Reset", "重新 seed workflow_definitions/system ...")
+    seed_count, user_cleared = _reseed_workflow_definitions(clear_user=args.clear_user)
+    log.ok("Reset", f"已 seed {seed_count} 个系统工作流模板")
+    if args.clear_user:
+        log.ok("Reset", f"已清空 {user_cleared} 个用户自定义工作流")
+    else:
+        log.info("Reset", "用户自定义工作流已保留（--clear-user 可同时清空）")
+
+    # ── 4. 验证 ──
+    log.banner("验证")
+    state_empty = _verify_workflow_state_empty()
+    if state_empty:
+        log.ok("Verify", "workflow_state 已清空（工作流状态数据库已删除）")
+    else:
+        remaining = [
+            name
+            for name in (
+                WORKFLOW_STATE_DB_STEM,
+                f"{WORKFLOW_STATE_DB_STEM}-wal",
+                f"{WORKFLOW_STATE_DB_STEM}-shm",
+                f"{WORKFLOW_STATE_DB_STEM}-journal",
+            )
+            if (WORKFLOW_STATE_DIR / name).exists()
+        ]
+        log.error("Verify", f"workflow_state 仍有数据库文件: {remaining}")
+
+    # 验证种子文件就位
+    system_dir = WORKFLOW_DEFINITIONS_DIR / "system"
+    seeded_files = list(system_dir.glob("*.json")) if system_dir.is_dir() else []
+    if seeded_files:
+        log.ok(
+            "Verify", f"workflow_definitions/system: {len(seeded_files)} 个种子文件就位"
+        )
+    else:
+        log.warn(
+            "Verify",
+            "workflow_definitions/system 无种子文件（检查 workflow_seeds/system 是否存在）",
+        )
+
+    # 汇总
+    log.banner("重置完成")
+    if state_empty:
+        log.ok("Reset", "workflow_state 已清空，工作流定义已重新 seed")
+        log.info("Reset", "  下次启动后端时 SQLite 表会自动重建（schema 由代码初始化）")
+        log.info("Reset", f"  快照目录: {SNAPSHOT_ROOT}")
+        return 0
+    else:
+        log.error("Reset", "workflow_state 清空不完整，请检查上方错误信息")
+        log.info("Reset", f"  可从快照恢复: {SNAPSHOT_ROOT}")
+        return 1
+
+
+# ─── 清空缓存命令 ────────────────────────────────────────────────────────────
+def cmd_flush(args: argparse.Namespace) -> int:
+    """清空 Redis DB + 文件缓存。
+
+    选项:
+      --yes / -y   跳过确认提示直接执行
+      --dry-run    仅预览将要清空的对象，不执行任何删除
+    """
+    dry_run = getattr(args, "dry_run", False)
+    log.banner("预览待清空对象" if dry_run else "清空缓存")
+
+    # ── 0. 统计待清空对象（供确认提示 / dry-run 预览）──
+    redis_keys: str | None = None
+    try:
+        probe = subprocess.run(
+            ["docker", "exec", "cgda-redis", "redis-cli", "DBSIZE"],
+            capture_output=True,
+            text=True,
+            timeout=10,
+            **_hidden_kwargs(),
+        )
+        if probe.returncode == 0:
+            redis_keys = probe.stdout.strip()
+    except (subprocess.TimeoutExpired, FileNotFoundError):
+        redis_keys = None
+
+    cache_targets = []
+    for cache_dir, label in (
+        (WEATHER_CACHE_DIR, "weather"),
+        (WEATHERENGINE_CACHE_DIR, "weatherengine"),
+    ):
+        file_count = (
+            sum(1 for f in cache_dir.rglob("*") if f.is_file())
+            if cache_dir.exists()
+            else 0
+        )
+        cache_targets.append((cache_dir, label, file_count))
+
+    # ── 1. 确认提示 / dry-run 预览 ──
+    if dry_run or not args.yes:
+        print()
+        print("  ⚠  此操作将清空以下对象：")
+        if redis_keys is not None:
+            print(
+                f"    • Redis DB（FLUSHDB）  当前约 {redis_keys} 个 key  容器 cgda-redis"
+            )
+        else:
+            print(
+                "    • Redis DB（FLUSHDB）  无法探测 key 数量（容器未运行？）  容器 cgda-redis"
+            )
+        for cache_dir, label, file_count in cache_targets:
+            print(f"    • 文件缓存 {label}  {file_count} 个文件  {cache_dir}")
+        print()
+        print("  保留：Open-Meteo named volume（backend_open-meteo-data）不受影响")
+        print()
+
+    if dry_run:
+        log.ok("Flush", "dry-run 预览完成，未做任何更改")
+        return 0
+
+    if not args.yes:
+        try:
+            answer = input("  确认继续？输入 yes 执行: ").strip().lower()
+        except (EOFError, KeyboardInterrupt):
+            answer = ""
+        if answer not in ("yes", "y"):
+            log.warn("Flush", "用户取消，未做任何更改")
+            return 0
+
+    # 2. 清空 Redis DB
     log.info("Flush", "清空 Redis DB (FLUSHDB)...")
     try:
         r = subprocess.run(
             ["docker", "exec", "cgda-redis", "redis-cli", "FLUSHDB"],
-            capture_output=True, text=True, timeout=10,
+            capture_output=True,
+            text=True,
+            timeout=10,
             **_hidden_kwargs(),
         )
         if r.returncode == 0:
@@ -1356,7 +1919,7 @@ def cmd_flush() -> int:
     except (subprocess.TimeoutExpired, FileNotFoundError) as e:
         log.error("Flush", f"Redis 清空异常: {e}")
 
-    # 2. 清空应用侧天气缓存（不删 Open-Meteo Docker volume）
+    # 3. 清空应用侧天气缓存（不删 Open-Meteo Docker volume）
     for cache_dir, label in (
         (WEATHER_CACHE_DIR, "weather"),
         (WEATHERENGINE_CACHE_DIR, "weatherengine"),
@@ -1394,20 +1957,32 @@ def main() -> int:
     # start
     p_start = sub.add_parser("start", help="启动服务")
     p_start.add_argument(
-        "component", nargs="?", default="all",
+        "component",
+        nargs="?",
+        default="all",
         help="组件: all/docker/fastapi/beat/worker/worker:<name>/frontend（默认 all）",
     )
-    p_start.add_argument("--no-frontend", action="store_true", help="不启动前端开发服务器")
+    p_start.add_argument(
+        "--no-frontend", action="store_true", help="不启动前端开发服务器"
+    )
     p_start.add_argument("--no-docker", action="store_true", help="不启动 Docker 容器")
     p_start.add_argument(
         "--no-open-meteo",
         action="store_true",
         help="不启动 cgda-open-meteo API（仍启动 Redis/MinIO；同步见 Code/infra/data-sync）",
     )
-    p_start.add_argument("--frontend-only", action="store_true", help="仅启动前端（等同 start frontend）")
-    p_start.add_argument("--debug", action="store_true", help="调试模式：不隐藏窗口，Celery 日志级别 DEBUG")
     p_start.add_argument(
-        "--frontend-port", type=int, default=DEFAULT_FRONTEND_PORT,
+        "--frontend-only", action="store_true", help="仅启动前端（等同 start frontend）"
+    )
+    p_start.add_argument(
+        "--debug",
+        action="store_true",
+        help="调试模式：不隐藏窗口，Celery 日志级别 DEBUG",
+    )
+    p_start.add_argument(
+        "--frontend-port",
+        type=int,
+        default=DEFAULT_FRONTEND_PORT,
         help=f"前端端口（默认 {DEFAULT_FRONTEND_PORT}）",
     )
 
@@ -1420,7 +1995,9 @@ def main() -> int:
     # restart
     p_restart = sub.add_parser("restart", help="重启服务")
     p_restart.add_argument(
-        "component", nargs="?", default="all",
+        "component",
+        nargs="?",
+        default="all",
         help="组件: all/docker/fastapi/beat/worker/worker:<name>/frontend（默认 all）",
     )
     p_restart.add_argument("--no-frontend", action="store_true")
@@ -1429,20 +2006,68 @@ def main() -> int:
     p_restart.add_argument("--frontend-only", action="store_true")
     p_restart.add_argument("--debug", action="store_true", help="调试模式")
     p_restart.add_argument(
-        "--frontend-port", type=int, default=DEFAULT_FRONTEND_PORT,
+        "--frontend-port",
+        type=int,
+        default=DEFAULT_FRONTEND_PORT,
         help=f"前端端口（默认 {DEFAULT_FRONTEND_PORT}）",
     )
 
     # logs
     p_logs = sub.add_parser("logs", help="查看日志")
     p_logs.add_argument(
-        "component", nargs="?", default=None,
+        "component",
+        nargs="?",
+        default=None,
         help="组件: fastapi/beat/frontend/worker/worker:<name>（默认合并全部）",
     )
     p_logs.add_argument("-n", type=int, default=50, help="显示行数（默认 50）")
 
     # flush
-    sub.add_parser("flush", help="清空 Redis DB + 应用天气文件缓存")
+    p_flush = sub.add_parser("flush", help="清空 Redis DB + 应用天气文件缓存")
+    p_flush.add_argument(
+        "--yes",
+        "-y",
+        action="store_true",
+        help="跳过确认提示直接执行",
+    )
+    p_flush.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="仅预览将要清空的对象，不执行任何删除",
+    )
+
+    # reset-db
+    p_reset = sub.add_parser(
+        "reset-db",
+        help="清空 workflow_state 运行时数据库并重新 seed 工作流定义",
+    )
+    p_reset.add_argument(
+        "--yes",
+        "-y",
+        action="store_true",
+        help="跳过确认提示直接执行",
+    )
+    p_reset.add_argument(
+        "--no-snapshot",
+        action="store_true",
+        help="跳过快照备份（不推荐，无法回滚）",
+    )
+    p_reset.add_argument(
+        "--keep-snapshots",
+        type=int,
+        default=DEFAULT_MAX_SNAPSHOTS,
+        help=f"保留快照数量（默认 {DEFAULT_MAX_SNAPSHOTS}）",
+    )
+    p_reset.add_argument(
+        "--clear-user",
+        action="store_true",
+        help="同时清空用户自定义工作流定义（默认保留）",
+    )
+    p_reset.add_argument(
+        "--force",
+        action="store_true",
+        help="即使后端服务正在运行也强制执行（可能导致文件锁失败）",
+    )
 
     # sync
     p_sync = sub.add_parser("sync", help="数据面一次性同步（Code/infra/data-sync）")
@@ -1467,7 +2092,9 @@ def main() -> int:
         elif args.command == "logs":
             return cmd_logs(args)
         elif args.command == "flush":
-            return cmd_flush()
+            return cmd_flush(args)
+        elif args.command == "reset-db":
+            return cmd_reset_db(args)
         elif args.command == "sync":
             return cmd_sync(args.job)
     except KeyboardInterrupt:

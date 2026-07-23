@@ -1,9 +1,12 @@
 """Backend startup helper with correct sys.path setup."""
+
 import os
 import sys
 from pathlib import Path
 
-backend_root = Path(r"d:\temp_desktop\Proj\Comprehensive Geographic Data Analysis system\Code\backend")
+backend_root = Path(
+    r"d:\temp_desktop\Proj\Comprehensive Geographic Data Analysis system\Code\backend"
+)
 code_path = backend_root.parent
 gee_src = backend_root / "app" / "gee" / "core" / "src"
 
