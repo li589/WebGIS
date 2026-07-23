@@ -17,7 +17,9 @@ class SmbTransport:
     def supports(self, parsed: ParsedRemoteUri) -> bool:
         return parsed.scheme == "smb"
 
-    def _auth_fields(self, parsed: ParsedRemoteUri, auth: RemoteAuth) -> tuple[str, str, str, int]:
+    def _auth_fields(
+        self, parsed: ParsedRemoteUri, auth: RemoteAuth
+    ) -> tuple[str, str, str, int]:
         username = auth.username or parsed.username
         if not username or not auth.password:
             raise ValueError("SMB requires username and password in credential profile")
@@ -33,7 +35,9 @@ class SmbTransport:
             from smbclient import stat as smb_stat  # type: ignore
             import stat as stat_mod
         except ImportError as exc:
-            raise ValueError("smbprotocol/smbclient is required for smb:// URIs") from exc
+            raise ValueError(
+                "smbprotocol/smbclient is required for smb:// URIs"
+            ) from exc
 
         username, password, domain, port = self._auth_fields(parsed, auth)
         relative = parsed.path_without_share.replace("/", "\\")
@@ -65,7 +69,9 @@ class SmbTransport:
             path=parsed.path,
             size=int(st.st_size) if getattr(st, "st_size", None) is not None else None,
             is_dir=is_dir,
-            mtime=float(st.st_mtime) if getattr(st, "st_mtime", None) is not None else None,
+            mtime=float(st.st_mtime)
+            if getattr(st, "st_mtime", None) is not None
+            else None,
         )
 
     def download_to(
@@ -79,7 +85,9 @@ class SmbTransport:
         try:
             from smbclient import open_file  # type: ignore
         except ImportError as exc:
-            raise ValueError("smbprotocol/smbclient is required for smb:// URIs") from exc
+            raise ValueError(
+                "smbprotocol/smbclient is required for smb:// URIs"
+            ) from exc
 
         username, password, domain, port = self._auth_fields(parsed, auth)
         relative = parsed.path_without_share.replace("/", "\\")
@@ -105,5 +113,10 @@ class SmbTransport:
                         local_path.unlink(missing_ok=True)
                         raise ValueError(f"SMB download exceeded max_bytes={max_bytes}")
                     out.write(chunk)
-        logger.info("SMB downloaded %s -> %s (%s bytes)", redact_uri(parsed.raw), local_path, written)
+        logger.info(
+            "SMB downloaded %s -> %s (%s bytes)",
+            redact_uri(parsed.raw),
+            local_path,
+            written,
+        )
         return RemoteStat(path=parsed.path, size=written, is_dir=False)

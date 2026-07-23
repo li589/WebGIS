@@ -439,7 +439,8 @@ class RetryPolicy(BaseModel):
 
         base = min(
             self.max_backoff_seconds,
-            self.initial_backoff_seconds * (self.backoff_multiplier ** max(0, attempt - 1)),
+            self.initial_backoff_seconds
+            * (self.backoff_multiplier ** max(0, attempt - 1)),
         )
         jitter = base * self.jitter_ratio
         return base + random.uniform(-jitter, jitter)
@@ -457,11 +458,15 @@ class WorkflowSubmitRequest(BaseModel):
     time_range: TimeRange | None = None
     parameters: dict[str, Any] = Field(default_factory=dict)
     # M13 修复：旧字段保留向后兼容，标记 deprecated
-    algorithm_request: AlgorithmWorkflowRequest | dict[str, Any] = Field(default_factory=AlgorithmWorkflowRequest)
+    algorithm_request: AlgorithmWorkflowRequest | dict[str, Any] = Field(
+        default_factory=AlgorithmWorkflowRequest
+    )
     gee_request: GeeWorkflowRequest | dict[str, Any] | None = None
     weather_request: WeatherWorkflowRequest | dict[str, Any] | None = None
     config_overrides: dict[str, Any] = Field(default_factory=dict)
-    requested_outputs: list[ResultKind | str] = Field(default_factory=lambda: [ResultKind.json])
+    requested_outputs: list[ResultKind | str] = Field(
+        default_factory=lambda: [ResultKind.json]
+    )
     client: ClientIdentity = Field(default_factory=ClientIdentity)
     map_context: RuntimeMapContext = Field(default_factory=RuntimeMapContext)
     correlation_id: str | None = None
@@ -564,7 +569,12 @@ class WorkflowDownloadResultDto(BaseModel):
     results: dict[str, str | None] = Field(default_factory=dict)
 
 
-WorkflowResultDto = WorkflowAnalysisResultDto | WorkflowProviderResultDto | WorkflowDownloadResultDto | dict[str, Any]
+WorkflowResultDto = (
+    WorkflowAnalysisResultDto
+    | WorkflowProviderResultDto
+    | WorkflowDownloadResultDto
+    | dict[str, Any]
+)
 
 
 class WorkflowRunStatusResponse(BaseModel):

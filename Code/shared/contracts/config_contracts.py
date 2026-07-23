@@ -1,4 +1,5 @@
 """配置面 HTTP 请求/响应模型（供 FastAPI OpenAPI 与前端 gen:types 共用）。"""
+
 from __future__ import annotations
 
 from pydantic import BaseModel, Field

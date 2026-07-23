@@ -126,7 +126,11 @@ def build_connectivity_probe_uri(uri: str, *, default_port: int | None = None) -
     """Build a root/share URI for connectivity checks (not object existence)."""
     parsed = parse_remote_uri(uri)
     port = parsed.port if parsed.port is not None else default_port
-    host_part = f"{parsed.host}:{port}" if port is not None and parsed.scheme != "gs" else parsed.host
+    host_part = (
+        f"{parsed.host}:{port}"
+        if port is not None and parsed.scheme != "gs"
+        else parsed.host
+    )
     if parsed.scheme == "smb":
         share = parsed.share or "share"
         base = f"smb://{host_part}/{share}/"

@@ -4,7 +4,10 @@ import io
 import logging
 from pathlib import Path
 
-from shared.remote_sources.limits import DEFAULT_CONNECT_TIMEOUT, DEFAULT_MAX_REMOTE_BYTES
+from shared.remote_sources.limits import (
+    DEFAULT_CONNECT_TIMEOUT,
+    DEFAULT_MAX_REMOTE_BYTES,
+)
 from shared.remote_sources.protocol import RemoteAuth, RemoteStat, effective_port
 from shared.remote_sources.uri import ParsedRemoteUri, redact_uri
 
@@ -59,7 +62,9 @@ class SftpTransport:
         elif auth.password:
             connect_kwargs["password"] = auth.password
         else:
-            raise ValueError("SFTP credential profile requires password or private_key_pem")
+            raise ValueError(
+                "SFTP credential profile requires password or private_key_pem"
+            )
 
         client.connect(**connect_kwargs)
         return client
@@ -107,10 +112,15 @@ class SftpTransport:
                 st = sftp.stat(parsed.path)
                 size = int(st.st_size) if st.st_size is not None else None
                 if size is not None and size > max_bytes:
-                    raise ValueError(f"SFTP file exceeds max_bytes={max_bytes}: {redact_uri(parsed.raw)}")
+                    raise ValueError(
+                        f"SFTP file exceeds max_bytes={max_bytes}: {redact_uri(parsed.raw)}"
+                    )
                 local_path.parent.mkdir(parents=True, exist_ok=True)
                 written = 0
-                with sftp.open(parsed.path, "rb") as remote, local_path.open("wb") as out:
+                with (
+                    sftp.open(parsed.path, "rb") as remote,
+                    local_path.open("wb") as out,
+                ):
                     while True:
                         chunk = remote.read(1024 * 1024)
                         if not chunk:
@@ -118,9 +128,16 @@ class SftpTransport:
                         written += len(chunk)
                         if written > max_bytes:
                             local_path.unlink(missing_ok=True)
-                            raise ValueError(f"SFTP download exceeded max_bytes={max_bytes}")
+                            raise ValueError(
+                                f"SFTP download exceeded max_bytes={max_bytes}"
+                            )
                         out.write(chunk)
-                logger.info("SFTP downloaded %s -> %s (%s bytes)", redact_uri(parsed.raw), local_path, written)
+                logger.info(
+                    "SFTP downloaded %s -> %s (%s bytes)",
+                    redact_uri(parsed.raw),
+                    local_path,
+                    written,
+                )
                 return RemoteStat(path=parsed.path, size=written, is_dir=False)
             finally:
                 sftp.close()

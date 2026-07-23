@@ -27,7 +27,9 @@ class GcsTransport:
 
         sa_json = (auth.extra or {}).get("service_account_json") or auth.password
         if not sa_json:
-            raise ValueError("GCS credential profile requires service_account_json (store in secret/password field)")
+            raise ValueError(
+                "GCS credential profile requires service_account_json (store in secret/password field)"
+            )
         if isinstance(sa_json, str):
             info = json.loads(sa_json)
         else:
@@ -42,7 +44,9 @@ class GcsTransport:
         object_name = parsed.path.lstrip("/")
         if not object_name:
             if not bucket.exists():
-                raise FileNotFoundError(f"GCS bucket not found or inaccessible: {parsed.host}")
+                raise FileNotFoundError(
+                    f"GCS bucket not found or inaccessible: {parsed.host}"
+                )
             return RemoteStat(path="/", size=None, is_dir=True)
 
         blob = bucket.blob(object_name)
@@ -74,12 +78,19 @@ class GcsTransport:
             raise FileNotFoundError(f"GCS object not found: {redact_uri(parsed.raw)}")
         blob.reload()
         if blob.size is not None and int(blob.size) > max_bytes:
-            raise ValueError(f"GCS object exceeds max_bytes={max_bytes}: {redact_uri(parsed.raw)}")
+            raise ValueError(
+                f"GCS object exceeds max_bytes={max_bytes}: {redact_uri(parsed.raw)}"
+            )
         local_path.parent.mkdir(parents=True, exist_ok=True)
         blob.download_to_filename(str(local_path))
         size = local_path.stat().st_size
         if size > max_bytes:
             local_path.unlink(missing_ok=True)
             raise ValueError(f"GCS download exceeded max_bytes={max_bytes}")
-        logger.info("GCS downloaded %s -> %s (%s bytes)", redact_uri(parsed.raw), local_path, size)
+        logger.info(
+            "GCS downloaded %s -> %s (%s bytes)",
+            redact_uri(parsed.raw),
+            local_path,
+            size,
+        )
         return RemoteStat(path=parsed.path, size=size, is_dir=False)
