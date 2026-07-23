@@ -14,6 +14,7 @@
   python download_resumable.py era5      # 只下载 ERA5
   python download_resumable.py biomass   # 只下载 BIOMASS
 """
+
 from __future__ import annotations
 
 import json
@@ -51,17 +52,48 @@ INITIAL_BACKOFF = 2  # 秒
 # (server, remote_path, local_subdir, description, tag)
 PENDING_LIST: list[tuple[str, str, str, str, str]] = [
     # hfp2018 重下（不完整 46.7%）
-    ("nas", "/Wangc/HFP/Human_p/hfp2018.tif", "HumanFootprint", "Human Footprint 2018 (re-download)", "hfp"),
+    (
+        "nas",
+        "/Wangc/HFP/Human_p/hfp2018.tif",
+        "HumanFootprint",
+        "Human Footprint 2018 (re-download)",
+        "hfp",
+    ),
     # ERA5 SMCI（3 年，每个 ~2.8 GB）
-    ("nas", "/Wangc/ERES5/SMCI/ERA5_2018_SMCI-T7.nc", "Weather", "ERA5 SMCI 2018", "era5"),
-    ("nas", "/Wangc/ERES5/SMCI/ERA5_2019_SMCI-T7.nc", "Weather", "ERA5 SMCI 2019", "era5"),
-    ("nas", "/Wangc/ERES5/SMCI/ERA5_2020_SMCI-T7.nc", "Weather", "ERA5 SMCI 2020", "era5"),
+    (
+        "nas",
+        "/Wangc/ERES5/SMCI/ERA5_2018_SMCI-T7.nc",
+        "Weather",
+        "ERA5 SMCI 2018",
+        "era5",
+    ),
+    (
+        "nas",
+        "/Wangc/ERES5/SMCI/ERA5_2019_SMCI-T7.nc",
+        "Weather",
+        "ERA5 SMCI 2019",
+        "era5",
+    ),
+    (
+        "nas",
+        "/Wangc/ERES5/SMCI/ERA5_2020_SMCI-T7.nc",
+        "Weather",
+        "ERA5 SMCI 2020",
+        "era5",
+    ),
     # ESACCI-BIOMASS（17.3 GB，可选）
-    ("nas", "/Wangc/Biomass/2018/ESACCI-BIOMASS-L4-AGB-MERGED-100m-2020-fv6.0.nc", "Biomass", "ESACCI BIOMASS AGB 2020", "biomass"),
+    (
+        "nas",
+        "/Wangc/Biomass/2018/ESACCI-BIOMASS-L4-AGB-MERGED-100m-2020-fv6.0.nc",
+        "Biomass",
+        "ESACCI BIOMASS AGB 2020",
+        "biomass",
+    ),
 ]
 
 
 # ─── FileBrowser 客户端（支持断点续传）─────────────────────────────────────────
+
 
 class FileBrowserClient:
     def __init__(self, base_url: str, username: str, password: str) -> None:
@@ -79,9 +111,12 @@ class FileBrowserClient:
 
     def login(self) -> None:
         url = f"{self.base_url}/api/login"
-        body = json.dumps({"username": self.username, "password": self.password}).encode("utf-8")
+        body = json.dumps(
+            {"username": self.username, "password": self.password}
+        ).encode("utf-8")
         req = urllib.request.Request(
-            url, data=body,
+            url,
+            data=body,
             headers={"Content-Type": "application/json", "User-Agent": BROWSER_UA},
             method="POST",
         )
@@ -104,8 +139,9 @@ class FileBrowserClient:
             return None
         return None
 
-    def download_with_resume(self, remote_path: str, local_path: Path,
-                              remote_size: int | None = None) -> int:
+    def download_with_resume(
+        self, remote_path: str, local_path: Path, remote_size: int | None = None
+    ) -> int:
         """支持断点续传的下载。返回本次下载的字节数。"""
         if self._token is None:
             self.login()
@@ -127,12 +163,14 @@ class FileBrowserClient:
             headers["Range"] = f"bytes={existing_size}-"
             print(f"    断点续传: 从 {existing_size} 字节开始")
         else:
-            print(f"    全新下载")
+            print("    全新下载")
 
         req = urllib.request.Request(url, headers=headers, method="GET")
         downloaded_this_session = 0
 
-        with urllib.request.urlopen(req, context=self._ssl_ctx, timeout=DOWNLOAD_TIMEOUT) as resp:
+        with urllib.request.urlopen(
+            req, context=self._ssl_ctx, timeout=DOWNLOAD_TIMEOUT
+        ) as resp:
             # 检查响应状态
             status = resp.status
             if status == 206:
@@ -141,7 +179,7 @@ class FileBrowserClient:
             elif status == 200:
                 # 完整内容 - 服务器不支持 Range 或从头开始
                 if existing_size > 0:
-                    print(f"    服务器不支持断点续传，从头下载")
+                    print("    服务器不支持断点续传，从头下载")
                     existing_size = 0
                 mode = "wb"
             else:
@@ -158,8 +196,14 @@ class FileBrowserClient:
                     if downloaded_this_session % (50 * 1024 * 1024) < CHUNK_SIZE:
                         current = existing_size + downloaded_this_session
                         pct = (current / remote_size * 100) if remote_size else 0
-                        print(f"    进度: {current / 1024 / 1024:.1f} MB"
-                              + (f" / {remote_size / 1024 / 1024:.1f} MB ({pct:.1f}%)" if remote_size else ""))
+                        print(
+                            f"    进度: {current / 1024 / 1024:.1f} MB"
+                            + (
+                                f" / {remote_size / 1024 / 1024:.1f} MB ({pct:.1f}%)"
+                                if remote_size
+                                else ""
+                            )
+                        )
 
         return downloaded_this_session
 
@@ -176,8 +220,9 @@ def _format_size(size_bytes: int) -> str:
     return f"{size:.1f} {units[i]}"
 
 
-def download_with_retry(client: FileBrowserClient, remote_path: str,
-                         local_path: Path, desc: str) -> bool:
+def download_with_retry(
+    client: FileBrowserClient, remote_path: str, local_path: Path, desc: str
+) -> bool:
     """带重试逻辑的下载。"""
     # 先获取远程文件大小
     remote_size = client.get_remote_size(remote_path)
@@ -194,7 +239,9 @@ def download_with_retry(client: FileBrowserClient, remote_path: str,
 
             print(f"    尝试 {attempt}/{MAX_RETRIES}")
             start = time.time()
-            downloaded = client.download_with_resume(remote_path, local_path, remote_size)
+            downloaded = client.download_with_resume(
+                remote_path, local_path, remote_size
+            )
             elapsed = time.time() - start
 
             # 验证完整性
@@ -208,8 +255,10 @@ def download_with_retry(client: FileBrowserClient, remote_path: str,
                 continue
 
             speed = downloaded / elapsed if elapsed > 0 and downloaded > 0 else 0
-            print(f"    OK: 本次下载 {_format_size(downloaded)}, "
-                  f"总大小 {_format_size(final_size)}, 耗时 {elapsed:.1f}s")
+            print(
+                f"    OK: 本次下载 {_format_size(downloaded)}, "
+                f"总大小 {_format_size(final_size)}, 耗时 {elapsed:.1f}s"
+            )
             if speed > 0:
                 print(f"    速度: {_format_size(int(speed))}/s")
             return True
@@ -221,7 +270,7 @@ def download_with_retry(client: FileBrowserClient, remote_path: str,
                 print(f"    等待 {backoff}s 后重试...")
                 time.sleep(backoff)
             else:
-                print(f"    已达最大重试次数，放弃")
+                print("    已达最大重试次数，放弃")
                 return False
     return False
 
@@ -274,7 +323,9 @@ def main() -> None:
                     print()
                     continue
                 else:
-                    print(f"    本地不完整: {_format_size(local_size)} / {_format_size(remote_size)}")
+                    print(
+                        f"    本地不完整: {_format_size(local_size)} / {_format_size(remote_size)}"
+                    )
 
             ok = download_with_retry(client, remote_path, local_path, desc)
             if ok:

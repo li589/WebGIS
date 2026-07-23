@@ -1,6 +1,7 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 """验证 /overlay-value 点查询对若干新图层可用（Python 组件验证）。"""
+
 import sys
 import urllib.request
 import json
@@ -11,13 +12,13 @@ BASE = "http://localhost:8000"
 
 # (layer_id, lng, lat, expected_unit)
 TESTS = [
-    ("gebco-dem-cn", 116.0, 40.0, "m"),       # 北京附近高程
-    ("cmfd-precip-cn", 116.0, 40.0, "mm"),    # 北京降水
-    ("clcd-cn", 116.0, 40.0, "class"),        # 北京土地覆盖
-    ("biomass-cn", 110.0, 25.0, "Mg/ha"),     # 华南生物量
+    ("gebco-dem-cn", 116.0, 40.0, "m"),  # 北京附近高程
+    ("cmfd-precip-cn", 116.0, 40.0, "mm"),  # 北京降水
+    ("clcd-cn", 116.0, 40.0, "class"),  # 北京土地覆盖
+    ("biomass-cn", 110.0, 25.0, "Mg/ha"),  # 华南生物量
     ("era5-dwaa-cn", 116.0, 40.0, "events"),  # 北京热浪
-    ("co2-cn", 116.0, 40.0, "ppm"),           # 北京 CO2
-    ("soil-ddca", 116.0, 40.0, ""),           # 土壤
+    ("co2-cn", 116.0, 40.0, "ppm"),  # 北京 CO2
+    ("soil-ddca", 116.0, 40.0, ""),  # 土壤
     ("omega-fy-output", 116.0, 40.0, "Omega"),
     ("forest-ratio", 116.0, 40.0, "ratio"),
 ]
@@ -48,7 +49,9 @@ for layer_id, lng, lat, expected_unit in TESTS:
         unit = data.get("unit", "")
         has_error = "error" in data
         if has_error:
-            print(f"  [WARN] {layer_id:20s} value={value} unit='{unit}' error={data.get('error', '')[:80]}")
+            print(
+                f"  [WARN] {layer_id:20s} value={value} unit='{unit}' error={data.get('error', '')[:80]}"
+            )
         else:
             print(f"  [OK]   {layer_id:20s} value={value} unit='{unit}' @({lng},{lat})")
             ok += 1

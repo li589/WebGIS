@@ -10,25 +10,27 @@
 
 输出: I:\\Geograph_DataSet\\ProjectOutput\\2023-01_Omega_Inversion\\
 """
+
 from __future__ import annotations
 
 import sys
 import time
-import traceback
 from pathlib import Path
 
-PROVIDERS_DIR = Path(r"d:\temp_desktop\Proj\Comprehensive Geographic Data Analysis system\Code\algorithms\providers\Python")
+PROVIDERS_DIR = Path(
+    r"d:\temp_desktop\Proj\Comprehensive Geographic Data Analysis system\Code\algorithms\providers\Python"
+)
 sys.path.insert(0, str(PROVIDERS_DIR))
 
 import numpy as np
 import pandas as pd
 from scipy.io import loadmat, savemat
 
-from data_access.universal_reader import UniversalDataReader, CHINA_BBOX
+from data_access.universal_reader import CHINA_BBOX
 from data_access.data_preprocessor import DataPreprocessor
 from data_access.spatial_aligner import SpatialAligner
 from analysis.spatial_stats import ZonalStats
-from analysis.timeseries_analysis import TrendAnalysis, CorrelationAnalysis
+from analysis.timeseries_analysis import CorrelationAnalysis
 from analysis.visualization import DataVisualization
 
 # ======================================================================
@@ -46,18 +48,40 @@ STATION_CSV = DATA_ROOT / "Station" / "ISMN_vs_Fluxnet2015.csv"
 
 # SMAP 14 天文件列表 (2023-01)
 SMAP_DATES = [
-    "20230101", "20230103", "20230105", "20230107", "20230109",
-    "20230112", "20230114", "20230115", "20230120", "20230122",
-    "20230124", "20230127", "20230130", "20230131",
+    "20230101",
+    "20230103",
+    "20230105",
+    "20230107",
+    "20230109",
+    "20230112",
+    "20230114",
+    "20230115",
+    "20230120",
+    "20230122",
+    "20230124",
+    "20230127",
+    "20230130",
+    "20230131",
 ]
 
 # IGBP 土地覆盖类型名称
 IGBP_NAMES = {
-    1: "Evergreen_Needleleaf", 2: "Evergreen_Broadleaf", 3: "Deciduous_Needleleaf",
-    4: "Deciduous_Broadleaf", 5: "Mixed_Forest", 6: "Closed_Shrubland",
-    7: "Open_Shrubland", 8: "Woody_Savanna", 9: "Savanna", 10: "Grassland",
-    11: "Permanent_Wetland", 12: "Cropland", 13: "Urban_BuiltUp",
-    14: "Cropland_Natural", 15: "Snow_Ice", 16: "Barren_Sparsely",
+    1: "Evergreen_Needleleaf",
+    2: "Evergreen_Broadleaf",
+    3: "Deciduous_Needleleaf",
+    4: "Deciduous_Broadleaf",
+    5: "Mixed_Forest",
+    6: "Closed_Shrubland",
+    7: "Open_Shrubland",
+    8: "Woody_Savanna",
+    9: "Savanna",
+    10: "Grassland",
+    11: "Permanent_Wetland",
+    12: "Cropland",
+    13: "Urban_BuiltUp",
+    14: "Cropland_Natural",
+    15: "Snow_Ice",
+    16: "Barren_Sparsely",
     17: "Water",
 }
 
@@ -133,7 +157,10 @@ def stage2_align_datasets() -> dict[str, tuple[np.ndarray, np.ndarray, np.ndarra
             resampling="nearest",
         )
         results["landcover"] = (aligned, lat, lon)
-        savemat(out_dir / "landcover_025.mat", {"landcover": aligned, "lat": lat, "lon": lon})
+        savemat(
+            out_dir / "landcover_025.mat",
+            {"landcover": aligned, "lat": lat, "lon": lon},
+        )
         valid = np.isfinite(aligned).sum()
         log(f"  ✓ landcover: shape={aligned.shape}, valid={valid}/{aligned.size}")
     except Exception as e:
@@ -169,7 +196,9 @@ def stage2_align_datasets() -> dict[str, tuple[np.ndarray, np.ndarray, np.ndarra
         # 过滤异常值 (AI 有效范围 0-50)
         aligned = np.where((aligned > -1000) & (aligned < 10000), aligned, np.nan)
         results["aridity"] = (aligned, lat, lon)
-        savemat(out_dir / "aridity_025.mat", {"aridity": aligned, "lat": lat, "lon": lon})
+        savemat(
+            out_dir / "aridity_025.mat", {"aridity": aligned, "lat": lat, "lon": lon}
+        )
         valid = np.isfinite(aligned).sum()
         log(f"  ✓ aridity: shape={aligned.shape}, valid={valid}/{aligned.size}")
     except Exception as e:
@@ -179,7 +208,7 @@ def stage2_align_datasets() -> dict[str, tuple[np.ndarray, np.ndarray, np.ndarra
     # 跳过: 17.3 GB 文件需分块读取优化，当前 UniversalDataReader 一次性读取会超时
     log("[2.4] BIOMASS 对齐 — 跳过 (17.3 GB 需分块读取优化)")
     log(f"    文件: {BIOMASS_PATH.name}")
-    log(f"    原因: 157500x405000 网格过大，一次性读取超内存")
+    log("    原因: 157500x405000 网格过大，一次性读取超内存")
 
     log(f"完成: {len(results)} 个数据集对齐成功")
     return results
@@ -198,6 +227,7 @@ def stage3_load_omega() -> dict[str, np.ndarray]:
         try:
             # v7.3 .mat 文件需用 h5py 读取
             import h5py
+
             with h5py.File(mat_file, "r") as f:
                 # OMEGA_AVG 是 v7.3 的数据集，需转置 (column-major → row-major)
                 if "OMEGA_AVG" in f:
@@ -246,25 +276,35 @@ def stage4_cross_analysis(
     smap_mat = loadmat(smap_mat_paths[ref_date], squeeze_me=True)
     sm = np.asarray(smap_mat.get("SM", np.full((1, 1), np.nan)), dtype=np.float64)
     ts = np.asarray(smap_mat.get("Ts", np.full((1, 1), np.nan)), dtype=np.float64)
-    smap_lat = np.asarray(smap_mat.get("lat", np.full((1, 1), np.nan)), dtype=np.float64)
-    smap_lon = np.asarray(smap_mat.get("lon", np.full((1, 1), np.nan)), dtype=np.float64)
+    smap_lat = np.asarray(
+        smap_mat.get("lat", np.full((1, 1), np.nan)), dtype=np.float64
+    )
+    smap_lon = np.asarray(
+        smap_mat.get("lon", np.full((1, 1), np.nan)), dtype=np.float64
+    )
     log(f"  参考 SMAP 数据: {ref_date}, SM shape={sm.shape}")
 
     # 4.1 SMAP SM 全局统计
     log("[4.1] SMAP SM 全局统计...")
     stats = zonal.compute_stats(sm)
     g = stats.get("global", {})
-    log(f"  mean={g.get('mean', 0):.4f}, std={g.get('std', 0):.4f}, "
-        f"min={g.get('min', 0):.4f}, max={g.get('max', 0):.4f}")
+    log(
+        f"  mean={g.get('mean', 0):.4f}, std={g.get('std', 0):.4f}, "
+        f"min={g.get('min', 0):.4f}, max={g.get('max', 0):.4f}"
+    )
     results["smap_sm_stats"] = g
 
     # 4.2 SMAP SM 空间地图
     log("[4.2] 生成 SMAP SM 空间地图...")
     try:
         viz.plot_spatial_map(
-            data=sm, lat=smap_lat, lon=smap_lon,
+            data=sm,
+            lat=smap_lat,
+            lon=smap_lon,
             title=f"SMAP Soil Moisture ({ref_date})",
-            cmap="RdYlBu", vmin=0.0, vmax=0.6,
+            cmap="RdYlBu",
+            vmin=0.0,
+            vmax=0.6,
             output_path=out_dir / f"smap_sm_{ref_date}.png",
         )
         log(f"  ✓ smap_sm_{ref_date}.png")
@@ -277,13 +317,17 @@ def stage4_cross_analysis(
     ts_flat = ts.flatten()
     mask = np.isfinite(sm_flat) & np.isfinite(ts_flat)
     if mask.sum() > 10:
-        r = corr_analyzer.timeseries_correlation(sm_flat[mask], ts_flat[mask], method="pearson")
+        r = corr_analyzer.timeseries_correlation(
+            sm_flat[mask], ts_flat[mask], method="pearson"
+        )
         log(f"  Pearson r={r['r']:.4f}, p={r['p_value']:.4f}, n={r['n']}")
         results["sm_ts_corr"] = r
         viz.plot_scatter(
-            x=sm_flat[mask][:5000], y=ts_flat[mask][:5000],
+            x=sm_flat[mask][:5000],
+            y=ts_flat[mask][:5000],
             title=f"SMAP SM vs Ts ({ref_date})",
-            xlabel="Soil Moisture (m3/m3)", ylabel="Surface Temperature (K)",
+            xlabel="Soil Moisture (m3/m3)",
+            ylabel="Surface Temperature (K)",
             output_path=out_dir / f"sm_vs_ts_{ref_date}.png",
         )
         log(f"  ✓ sm_vs_ts_{ref_date}.png")
@@ -295,8 +339,10 @@ def stage4_cross_analysis(
     for name, (data, lat, lon) in aligned_data.items():
         valid = data[np.isfinite(data)]
         if len(valid) > 0:
-            log(f"  {name}: mean={valid.mean():.4f}, std={valid.std():.4f}, "
-                f"range=[{valid.min():.4f}, {valid.max():.4f}], n={len(valid)}")
+            log(
+                f"  {name}: mean={valid.mean():.4f}, std={valid.std():.4f}, "
+                f"range=[{valid.min():.4f}, {valid.max():.4f}], n={len(valid)}"
+            )
             results[f"{name}_stats"] = {
                 "mean": float(valid.mean()),
                 "std": float(valid.std()),
@@ -306,9 +352,17 @@ def stage4_cross_analysis(
             }
             # 生成专题图
             try:
-                cmap = "YlGn" if name == "biomass" else "viridis" if name == "landcover" else "OrRd"
+                cmap = (
+                    "YlGn"
+                    if name == "biomass"
+                    else "viridis"
+                    if name == "landcover"
+                    else "OrRd"
+                )
                 viz.plot_spatial_map(
-                    data=data, lat=lat, lon=lon,
+                    data=data,
+                    lat=lat,
+                    lon=lon,
                     title=f"{name} (China, 0.25deg)",
                     cmap=cmap,
                     output_path=out_dir / f"{name}_china.png",
@@ -325,7 +379,7 @@ def stage4_cross_analysis(
         lc_valid = lc_flat[np.isfinite(lc_flat) & (lc_flat > 0) & (lc_flat <= 17)]
         if len(lc_valid) > 0:
             unique, counts = np.unique(lc_valid.astype(int), return_counts=True)
-            log(f"  IGBP 分布:")
+            log("  IGBP 分布:")
             igbp_stats = {}
             for u, c in zip(unique, counts):
                 name = IGBP_NAMES.get(u, f"Unknown_{u}")
@@ -348,7 +402,9 @@ def stage4_cross_analysis(
                 "count": int(len(valid)),
             }
             omega_stats[doy_key] = stat
-            log(f"  {doy_key}: mean={stat['mean']:.4f}, std={stat['std']:.4f}, n={stat['count']}")
+            log(
+                f"  {doy_key}: mean={stat['mean']:.4f}, std={stat['std']:.4f}, n={stat['count']}"
+            )
     results["omega_stats"] = omega_stats
 
     # 4.7 Omega 直方图 (取第一个 doy 作为示例)
@@ -396,8 +452,12 @@ def stage5_station_sampling(smap_mat_paths: dict[str, Path]) -> dict:
 
     smap_mat = loadmat(smap_mat_paths[ref_date], squeeze_me=True)
     sm = np.asarray(smap_mat.get("SM", np.full((1, 1), np.nan)), dtype=np.float64)
-    smap_lat = np.asarray(smap_mat.get("lat", np.full((1, 1), np.nan)), dtype=np.float64)
-    smap_lon = np.asarray(smap_mat.get("lon", np.full((1, 1), np.nan)), dtype=np.float64)
+    smap_lat = np.asarray(
+        smap_mat.get("lat", np.full((1, 1), np.nan)), dtype=np.float64
+    )
+    smap_lon = np.asarray(
+        smap_mat.get("lon", np.full((1, 1), np.nan)), dtype=np.float64
+    )
     ts_arr = np.asarray(smap_mat.get("Ts", np.full_like(sm, np.nan)), dtype=np.float64)
 
     # 预处理: 将 2D 坐标中的 NaN 填充为大值，避免 argmin 选到 NaN 像元
@@ -424,21 +484,31 @@ def stage5_station_sampling(smap_mat_paths: dict[str, Path]) -> dict:
         else:
             lat_idx = int(np.argmin(np.abs(smap_lat - lat)))
             lon_idx = int(np.argmin(np.abs(smap_lon - lon)))
-            sm_val = float(sm[lat_idx, lon_idx]) if np.isfinite(sm[lat_idx, lon_idx]) else np.nan
-            ts_val = float(ts_arr[lat_idx, lon_idx]) if np.isfinite(ts_arr[lat_idx, lon_idx]) else np.nan
+            sm_val = (
+                float(sm[lat_idx, lon_idx])
+                if np.isfinite(sm[lat_idx, lon_idx])
+                else np.nan
+            )
+            ts_val = (
+                float(ts_arr[lat_idx, lon_idx])
+                if np.isfinite(ts_arr[lat_idx, lon_idx])
+                else np.nan
+            )
 
-        records.append({
-            "station": row.get("station", ""),
-            "network": row.get("network", ""),
-            "latitude": lat,
-            "longitude": lon,
-            "IGBP": igbp,
-            "MAP": row.get("MAP", np.nan),
-            "MAT": row.get("MAT", np.nan),
-            "AI": row.get("AI", np.nan),
-            "smap_sm": sm_val,
-            "smap_ts": ts_val,
-        })
+        records.append(
+            {
+                "station": row.get("station", ""),
+                "network": row.get("network", ""),
+                "latitude": lat,
+                "longitude": lon,
+                "IGBP": igbp,
+                "MAP": row.get("MAP", np.nan),
+                "MAT": row.get("MAT", np.nan),
+                "AI": row.get("AI", np.nan),
+                "smap_sm": sm_val,
+                "smap_ts": ts_val,
+            }
+        )
 
     df = pd.DataFrame(records)
     valid_sm = df["smap_sm"].notna().sum()
@@ -446,33 +516,50 @@ def stage5_station_sampling(smap_mat_paths: dict[str, Path]) -> dict:
 
     # 保存站点采样结果
     df.to_csv(out_dir / "station_smap_sm.csv", index=False)
-    log(f"  ✓ station_smap_sm.csv")
+    log("  ✓ station_smap_sm.csv")
 
     # 按 IGBP 分组统计
     if "IGBP" in df.columns:
-        grouped = df.dropna(subset=["smap_sm"]).groupby("IGBP").agg(
-            count=("smap_sm", "count"),
-            sm_mean=("smap_sm", "mean"),
-            sm_std=("smap_sm", "std"),
-            ts_mean=("smap_ts", "mean"),
-        ).reset_index()
-        log(f"  IGBP 分组统计:")
+        grouped = (
+            df.dropna(subset=["smap_sm"])
+            .groupby("IGBP")
+            .agg(
+                count=("smap_sm", "count"),
+                sm_mean=("smap_sm", "mean"),
+                sm_std=("smap_sm", "std"),
+                ts_mean=("smap_ts", "mean"),
+            )
+            .reset_index()
+        )
+        log("  IGBP 分组统计:")
         for _, r in grouped.iterrows():
-            log(f"    {r['IGBP']:25s}: n={int(r['count']):3d}, "
-                f"SM={r['sm_mean']:.4f}±{r['sm_std']:.4f}, Ts={r['ts_mean']:.1f}K")
+            log(
+                f"    {r['IGBP']:25s}: n={int(r['count']):3d}, "
+                f"SM={r['sm_mean']:.4f}±{r['sm_std']:.4f}, Ts={r['ts_mean']:.1f}K"
+            )
         grouped.to_csv(out_dir / "station_igbp_stats.csv", index=False)
-        log(f"  ✓ station_igbp_stats.csv")
+        log("  ✓ station_igbp_stats.csv")
 
     # 可视化: 站点分布散点图
     viz = DataVisualization()
     try:
         import matplotlib
+
         matplotlib.use("Agg")
         import matplotlib.pyplot as plt
+
         fig, ax = plt.subplots(figsize=(12, 8))
-        sc = ax.scatter(df["longitude"], df["latitude"],
-                        c=df["smap_sm"], cmap="RdYlBu", vmin=0, vmax=0.6,
-                        s=50, edgecolors="black", linewidths=0.5)
+        sc = ax.scatter(
+            df["longitude"],
+            df["latitude"],
+            c=df["smap_sm"],
+            cmap="RdYlBu",
+            vmin=0,
+            vmax=0.6,
+            s=50,
+            edgecolors="black",
+            linewidths=0.5,
+        )
         ax.set_xlabel("Longitude")
         ax.set_ylabel("Latitude")
         ax.set_title(f"Station SMAP SM Sampling ({ref_date}, n={len(df)})")
@@ -520,23 +607,31 @@ def stage6_visualization(
             sm_aligned_stack.append(aligned)
             if target_lat is None:
                 target_lat, target_lon = t_lat, t_lon
-            log(f"  ✓ {date_key}: aligned shape={aligned.shape}, "
-                f"valid={np.isfinite(aligned).sum()}/{aligned.size}")
+            log(
+                f"  ✓ {date_key}: aligned shape={aligned.shape}, "
+                f"valid={np.isfinite(aligned).sum()}/{aligned.size}"
+            )
         except Exception as e:
             log(f"  ✗ {date_key}: {type(e).__name__}: {e}")
     if sm_aligned_stack:
         # 所有对齐后的数组形状一致 (176, 256), 可直接堆叠
         sm_mean = np.nanmean(np.stack(sm_aligned_stack), axis=0)
-        log(f"  堆叠 {len(sm_aligned_stack)} 天, 均值 shape={sm_mean.shape}, "
-            f"valid={np.isfinite(sm_mean).sum()}/{sm_mean.size}")
+        log(
+            f"  堆叠 {len(sm_aligned_stack)} 天, 均值 shape={sm_mean.shape}, "
+            f"valid={np.isfinite(sm_mean).sum()}/{sm_mean.size}"
+        )
         try:
             viz.plot_spatial_map(
-                data=sm_mean, lat=target_lat, lon=target_lon,
+                data=sm_mean,
+                lat=target_lat,
+                lon=target_lon,
                 title="SMAP SM 14-day Mean (2023-01, 0.25deg)",
-                cmap="RdYlBu", vmin=0.0, vmax=0.6,
+                cmap="RdYlBu",
+                vmin=0.0,
+                vmax=0.6,
                 output_path=out_dir / "smap_sm_14day_mean.png",
             )
-            log(f"  ✓ smap_sm_14day_mean.png")
+            log("  ✓ smap_sm_14day_mean.png")
         except Exception as e:
             log(f"  ✗ 14天均值图: {type(e).__name__}: {e}")
 
@@ -544,9 +639,17 @@ def stage6_visualization(
     log("[6.2] 对齐数据专题图...")
     for name, (data, lat, lon) in aligned_data.items():
         try:
-            cmap = "YlGn" if name == "biomass" else "tab20" if name == "landcover" else "OrRd"
+            cmap = (
+                "YlGn"
+                if name == "biomass"
+                else "tab20"
+                if name == "landcover"
+                else "OrRd"
+            )
             viz.plot_spatial_map(
-                data=data, lat=lat, lon=lon,
+                data=data,
+                lat=lat,
+                lon=lon,
                 title=f"{name} (China, 0.25deg)",
                 cmap=cmap,
                 output_path=out_dir / f"{name}_thematic.png",
@@ -564,7 +667,9 @@ def stage6_visualization(
             viz.plot_spatial_map(
                 data=omega,
                 title=f"Omega AVG ({first_doy})",
-                cmap="YlGnBu", vmin=0.0, vmax=0.3,
+                cmap="YlGnBu",
+                vmin=0.0,
+                vmax=0.3,
                 output_path=out_dir / f"omega_avg_{first_doy}.png",
             )
             log(f"  ✓ omega_avg_{first_doy}.png")

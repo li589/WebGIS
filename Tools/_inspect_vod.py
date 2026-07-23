@@ -1,6 +1,7 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 """Inspect VOD/SM and Smap_OriginData .mat file structures."""
+
 from __future__ import annotations
 
 import sys
@@ -38,6 +39,7 @@ def inspect_v5(path: Path) -> None:
 def inspect_v73(path: Path) -> None:
     print(f"=== {path.name} (h5py v7.3) ===")
     import h5py
+
     with h5py.File(str(path), "r") as f:
         for k in list(f.keys()):
             arr = f[k]
@@ -52,11 +54,15 @@ def inspect_v73(path: Path) -> None:
 
 
 if __name__ == "__main__":
-    vod_path = Path(r"I:\Geograph_DataSet\Soil_Ecological_Data\SmapSoil_VOD_SM\20251201.mat")
+    vod_path = Path(
+        r"I:\Geograph_DataSet\Soil_Ecological_Data\SmapSoil_VOD_SM\20251201.mat"
+    )
     inspect_v5(vod_path)
 
     print()
-    origin_path = Path(r"I:\Geograph_DataSet\Soil_Ecological_Data\Smap_OriginData\20251201.mat")
+    origin_path = Path(
+        r"I:\Geograph_DataSet\Soil_Ecological_Data\Smap_OriginData\20251201.mat"
+    )
     try:
         inspect_v5(origin_path)
     except Exception as e:
@@ -64,12 +70,17 @@ if __name__ == "__main__":
         inspect_v73(origin_path)
 
     print()
-    nc_path = Path(r"I:\Geograph_DataSet\Soil_Ecological_Data\CustomNC_SM_CalData\Processed_SM_20251201.nc")
+    nc_path = Path(
+        r"I:\Geograph_DataSet\Soil_Ecological_Data\CustomNC_SM_CalData\Processed_SM_20251201.nc"
+    )
     if nc_path.exists():
         print(f"=== {nc_path.name} (NetCDF) ===")
         from netCDF4 import Dataset
+
         with Dataset(nc_path) as ds:
             for name, var in ds.variables.items():
-                print(f"  {name}: dims={var.dimensions}, shape={var.shape}, dtype={var.dtype}")
+                print(
+                    f"  {name}: dims={var.dimensions}, shape={var.shape}, dtype={var.dtype}"
+                )
             attrs = {a: getattr(ds, a) for a in ds.ncattrs()}
             print(f"  Global attrs: {attrs}")

@@ -8,6 +8,7 @@
 
 支持断点续传：已存在且大小匹配的文件会跳过。
 """
+
 from __future__ import annotations
 
 import json
@@ -37,27 +38,85 @@ REQUEST_DELAY = 0.12
 # tag 用于命令行过滤: small / era5 / biomass
 REMAINING_LIST: list[tuple[str, str, str, str, str]] = [
     # ── omega FY avg (小文件, ~3.3 MB each) ──
-    ("nas", "/Liuzheng/omega_final/fy_avg_ω/doy_025.mat", "InversionResults/fy_avg", "omega FY avg DOY 025", "small"),
-    ("nas", "/Liuzheng/omega_final/fy_avg_ω/doy_026.mat", "InversionResults/fy_avg", "omega FY avg DOY 026", "small"),
-    ("nas", "/Liuzheng/omega_final/fy_avg_ω/doy_027.mat", "InversionResults/fy_avg", "omega FY avg DOY 027", "small"),
-    ("nas", "/Liuzheng/omega_final/fy_avg_ω/doy_028.mat", "InversionResults/fy_avg", "omega FY avg DOY 028", "small"),
-    ("nas", "/Liuzheng/omega_final/fy_avg_ω/doy_029.mat", "InversionResults/fy_avg", "omega FY avg DOY 029", "small"),
-    ("nas", "/Liuzheng/omega_final/fy_avg_ω/doy_030.mat", "InversionResults/fy_avg", "omega FY avg DOY 030", "small"),
-
+    (
+        "nas",
+        "/Liuzheng/omega_final/fy_avg_ω/doy_025.mat",
+        "InversionResults/fy_avg",
+        "omega FY avg DOY 025",
+        "small",
+    ),
+    (
+        "nas",
+        "/Liuzheng/omega_final/fy_avg_ω/doy_026.mat",
+        "InversionResults/fy_avg",
+        "omega FY avg DOY 026",
+        "small",
+    ),
+    (
+        "nas",
+        "/Liuzheng/omega_final/fy_avg_ω/doy_027.mat",
+        "InversionResults/fy_avg",
+        "omega FY avg DOY 027",
+        "small",
+    ),
+    (
+        "nas",
+        "/Liuzheng/omega_final/fy_avg_ω/doy_028.mat",
+        "InversionResults/fy_avg",
+        "omega FY avg DOY 028",
+        "small",
+    ),
+    (
+        "nas",
+        "/Liuzheng/omega_final/fy_avg_ω/doy_029.mat",
+        "InversionResults/fy_avg",
+        "omega FY avg DOY 029",
+        "small",
+    ),
+    (
+        "nas",
+        "/Liuzheng/omega_final/fy_avg_ω/doy_030.mat",
+        "InversionResults/fy_avg",
+        "omega FY avg DOY 030",
+        "small",
+    ),
     # ── CLCD (中等文件, ~783 MB) ──
     ("nas", "/Wangc/CLCD/CLCD_v01_1997.tif", "LandCover", "CLCD China 1997", "small"),
-
     # ── ERA5 SMCI (大文件, ~2.8 GB each) ──
-    ("nas", "/Wangc/ERES5/SMCI/ERA5_2018_SMCI-T7.nc", "Weather", "ERA5 SMCI 2018", "era5"),
-    ("nas", "/Wangc/ERES5/SMCI/ERA5_2019_SMCI-T7.nc", "Weather", "ERA5 SMCI 2019", "era5"),
-    ("nas", "/Wangc/ERES5/SMCI/ERA5_2020_SMCI-T7.nc", "Weather", "ERA5 SMCI 2020", "era5"),
-
+    (
+        "nas",
+        "/Wangc/ERES5/SMCI/ERA5_2018_SMCI-T7.nc",
+        "Weather",
+        "ERA5 SMCI 2018",
+        "era5",
+    ),
+    (
+        "nas",
+        "/Wangc/ERES5/SMCI/ERA5_2019_SMCI-T7.nc",
+        "Weather",
+        "ERA5 SMCI 2019",
+        "era5",
+    ),
+    (
+        "nas",
+        "/Wangc/ERES5/SMCI/ERA5_2020_SMCI-T7.nc",
+        "Weather",
+        "ERA5 SMCI 2020",
+        "era5",
+    ),
     # ── ESACCI-BIOMASS (超大文件, ~16.9 GB) ──
-    ("nas", "/Wangc/Biomass/2018/ESACCI-BIOMASS-L4-AGB-MERGED-100m-2020-fv6.0.nc", "Biomass", "ESACCI BIOMASS AGB 2020", "biomass"),
+    (
+        "nas",
+        "/Wangc/Biomass/2018/ESACCI-BIOMASS-L4-AGB-MERGED-100m-2020-fv6.0.nc",
+        "Biomass",
+        "ESACCI BIOMASS AGB 2020",
+        "biomass",
+    ),
 ]
 
 
 # ─── FileBrowser 客户端 ──────────────────────────────────────────────────────
+
 
 class FileBrowserClient:
     def __init__(self, base_url: str, username: str, password: str) -> None:
@@ -75,9 +134,12 @@ class FileBrowserClient:
 
     def login(self) -> None:
         url = f"{self.base_url}/api/login"
-        body = json.dumps({"username": self.username, "password": self.password}).encode("utf-8")
+        body = json.dumps(
+            {"username": self.username, "password": self.password}
+        ).encode("utf-8")
         req = urllib.request.Request(
-            url, data=body,
+            url,
+            data=body,
             headers={"Content-Type": "application/json", "User-Agent": BROWSER_UA},
             method="POST",
         )
@@ -100,7 +162,9 @@ class FileBrowserClient:
             return None
         return None
 
-    def download_file(self, remote_path: str, local_path: Path, chunk_size: int = 65536) -> int:
+    def download_file(
+        self, remote_path: str, local_path: Path, chunk_size: int = 65536
+    ) -> int:
         if self._token is None:
             self.login()
         encoded = urllib.parse.quote(remote_path.strip("/"), safe="/")
@@ -167,11 +231,15 @@ def main() -> None:
             local_size = local_path.stat().st_size
             remote_size = client.get_remote_size(remote_path)
             if remote_size and local_size == remote_size:
-                print(f"  [{i}/{total}] SKIP (exists, size match): {filename} -> {local_subdir}\\")
+                print(
+                    f"  [{i}/{total}] SKIP (exists, size match): {filename} -> {local_subdir}\\"
+                )
                 total_skipped += 1
                 continue
             elif remote_size and local_size < remote_size:
-                print(f"  [{i}/{total}] RESUME (partial: {_format_size(local_size)} / {_format_size(remote_size)})")
+                print(
+                    f"  [{i}/{total}] RESUME (partial: {_format_size(local_size)} / {_format_size(remote_size)})"
+                )
                 # 删除部分下载的文件，重新下载
                 try:
                     local_path.unlink()
@@ -190,7 +258,9 @@ def main() -> None:
             size = client.download_file(remote_path, local_path)
             elapsed = time.time() - start
             speed = size / elapsed if elapsed > 0 else 0
-            print(f"    OK: {_format_size(size)} in {elapsed:.1f}s ({_format_size(int(speed))}/s)")
+            print(
+                f"    OK: {_format_size(size)} in {elapsed:.1f}s ({_format_size(int(speed))}/s)"
+            )
             total_downloaded += 1
             total_bytes += size
             time.sleep(REQUEST_DELAY)
@@ -205,7 +275,9 @@ def main() -> None:
 
     print()
     print("=" * 60)
-    print(f"下载完成: {total_downloaded} 成功, {total_skipped} 跳过, {total_failed} 失败")
+    print(
+        f"下载完成: {total_downloaded} 成功, {total_skipped} 跳过, {total_failed} 失败"
+    )
     print(f"总下载量: {_format_size(total_bytes)}")
     print("=" * 60)
 

@@ -18,7 +18,9 @@ import sys
 from collections import defaultdict
 from pathlib import Path
 
-REPORT_DIR = Path(r"d:\temp_desktop\Proj\Comprehensive Geographic Data Analysis system\Tools\reports")
+REPORT_DIR = Path(
+    r"d:\temp_desktop\Proj\Comprehensive Geographic Data Analysis system\Tools\reports"
+)
 OUTPUT_PATH = REPORT_DIR / "download_candidates.json"
 
 # 中国区域大致经纬度范围（用于筛选已有区域切片）
@@ -86,16 +88,43 @@ def is_china_region(name: str, path: str) -> bool:
     lower = (name + " " + path).lower()
 
     # 全球数据默认包含中国
-    global_keywords = ["global", "world", "esa", "smap", "gldas", "era5", "gpm",
-                       "trmm", "igbp", "mcd12", "esacci", "biomass", "hfp",
-                       "forest_height", "canopy", "dem", "srtm", "gebco"]
+    global_keywords = [
+        "global",
+        "world",
+        "esa",
+        "smap",
+        "gldas",
+        "era5",
+        "gpm",
+        "trmm",
+        "igbp",
+        "mcd12",
+        "esacci",
+        "biomass",
+        "hfp",
+        "forest_height",
+        "canopy",
+        "dem",
+        "srtm",
+        "gebco",
+    ]
     for kw in global_keywords:
         if kw in lower:
             return True
 
     # 明确的中国/亚洲区域
-    china_keywords = ["china", "asia", "sasia", "nasia", "sam_", "中国", "亚洲",
-                      "chinese", "beijing", "yangtze"]
+    china_keywords = [
+        "china",
+        "asia",
+        "sasia",
+        "nasia",
+        "sam_",
+        "中国",
+        "亚洲",
+        "chinese",
+        "beijing",
+        "yangtze",
+    ]
     for kw in china_keywords:
         if kw in lower:
             return True
@@ -104,10 +133,16 @@ def is_china_region(name: str, path: str) -> bool:
     # 如 N30E110, S20W060 等命名
     tile_match = re.search(r"([NS])(\d{1,2})([EW])(\d{1,3})", name, re.IGNORECASE)
     if tile_match:
-        lat = int(tile_match.group(2)) * (1 if tile_match.group(1).upper() == "N" else -1)
-        lon = int(tile_match.group(4)) * (1 if tile_match.group(3).upper() == "E" else -1)
-        if (CHINA_BBOX["lat_min"] <= lat <= CHINA_BBOX["lat_max"] and
-            CHINA_BBOX["lon_min"] <= lon <= CHINA_BBOX["lon_max"]):
+        lat = int(tile_match.group(2)) * (
+            1 if tile_match.group(1).upper() == "N" else -1
+        )
+        lon = int(tile_match.group(4)) * (
+            1 if tile_match.group(3).upper() == "E" else -1
+        )
+        if (
+            CHINA_BBOX["lat_min"] <= lat <= CHINA_BBOX["lat_max"]
+            and CHINA_BBOX["lon_min"] <= lon <= CHINA_BBOX["lon_max"]
+        ):
             return True
         return False
 
@@ -138,13 +173,15 @@ def select_candidates(report_path: Path) -> dict:
         f["_china"] = is_china_region(f["name"], f.get("remote_path", ""))
         by_resolution[res].append(f)
 
-    print(f"\n按时间分辨率分布:")
+    print("\n按时间分辨率分布:")
     for res in ["daily", "monthly", "yearly", "static"]:
         files = by_resolution[res]
         total_size = sum(f["size_bytes"] for f in files)
         china_count = sum(1 for f in files if f["_china"])
-        print(f"  {res:8s}: {len(files):5d} 文件 ({china_count} 中国相关), "
-              f"总大小 {total_size / 1e9:.1f} GB")
+        print(
+            f"  {res:8s}: {len(files):5d} 文件 ({china_count} 中国相关), "
+            f"总大小 {total_size / 1e9:.1f} GB"
+        )
 
     # 选择候选文件
     candidates: list[dict] = []
@@ -153,12 +190,16 @@ def select_candidates(report_path: Path) -> dict:
     daily_files = [f for f in by_resolution["daily"] if f["_china"]]
     daily_files.sort(key=lambda x: (x.get("_date_year", 0), x["size_bytes"]))
     # 取最近30个日文件，且单个文件 < 500MB
-    daily_candidates = [f for f in daily_files if f["size_bytes"] < 500 * 1024 * 1024][-30:]
+    daily_candidates = [f for f in daily_files if f["size_bytes"] < 500 * 1024 * 1024][
+        -30:
+    ]
 
     # 2. 月数据：选最近3个月
     monthly_files = [f for f in by_resolution["monthly"] if f["_china"]]
     monthly_files.sort(key=lambda x: x["size_bytes"])
-    monthly_candidates = [f for f in monthly_files if f["size_bytes"] < 500 * 1024 * 1024][-3:]
+    monthly_candidates = [
+        f for f in monthly_files if f["size_bytes"] < 500 * 1024 * 1024
+    ][-3:]
 
     # 3. 年数据：选最近3年，每个数据集最多1个文件/年
     yearly_files = [f for f in by_resolution["yearly"] if f["_china"]]
@@ -184,20 +225,33 @@ def select_candidates(report_path: Path) -> dict:
     static_files = [f for f in by_resolution["static"] if f["_china"]]
     static_small = [f for f in static_files if f["size_bytes"] < 500 * 1024 * 1024]
     # 按 .mat 文件优先（omega 结果）
-    static_candidates = sorted(static_small, key=lambda x: (
-        0 if x["extension"] == ".mat" else 1,
-        x["size_bytes"],
-    ))[:50]
+    static_candidates = sorted(
+        static_small,
+        key=lambda x: (
+            0 if x["extension"] == ".mat" else 1,
+            x["size_bytes"],
+        ),
+    )[:50]
 
     # 合并候选
-    candidates = daily_candidates + monthly_candidates + yearly_candidates + static_candidates
+    candidates = (
+        daily_candidates + monthly_candidates + yearly_candidates + static_candidates
+    )
 
     total_size = sum(f["size_bytes"] for f in candidates)
-    print(f"\n=== 下载候选 ===")
-    print(f"日数据: {len(daily_candidates)} 文件, {sum(f['size_bytes'] for f in daily_candidates)/1e9:.1f} GB")
-    print(f"月数据: {len(monthly_candidates)} 文件, {sum(f['size_bytes'] for f in monthly_candidates)/1e9:.1f} GB")
-    print(f"年数据: {len(yearly_candidates)} 文件, {sum(f['size_bytes'] for f in yearly_candidates)/1e9:.1f} GB")
-    print(f"静态/小文件: {len(static_candidates)} 文件, {sum(f['size_bytes'] for f in static_candidates)/1e9:.1f} GB")
+    print("\n=== 下载候选 ===")
+    print(
+        f"日数据: {len(daily_candidates)} 文件, {sum(f['size_bytes'] for f in daily_candidates)/1e9:.1f} GB"
+    )
+    print(
+        f"月数据: {len(monthly_candidates)} 文件, {sum(f['size_bytes'] for f in monthly_candidates)/1e9:.1f} GB"
+    )
+    print(
+        f"年数据: {len(yearly_candidates)} 文件, {sum(f['size_bytes'] for f in yearly_candidates)/1e9:.1f} GB"
+    )
+    print(
+        f"静态/小文件: {len(static_candidates)} 文件, {sum(f['size_bytes'] for f in static_candidates)/1e9:.1f} GB"
+    )
     print(f"总计: {len(candidates)} 文件, {total_size/1e9:.1f} GB")
 
     # 打印详细列表

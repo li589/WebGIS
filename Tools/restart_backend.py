@@ -1,6 +1,7 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 """查找并重启 FastAPI 后端进程（监听 8000 端口）。"""
+
 import os
 import signal
 import subprocess
@@ -14,14 +15,21 @@ def find_pid_on_port(port: int) -> int | None:
     """通过 netstat 查找监听指定端口的 PID。"""
     try:
         out = subprocess.check_output(
-            ["netstat", "-ano", "-p", "TCP"], text=True, encoding="gbk", errors="replace"
+            ["netstat", "-ano", "-p", "TCP"],
+            text=True,
+            encoding="gbk",
+            errors="replace",
         )
     except Exception as e:
         print(f"[ERROR] netstat failed: {e}")
         return None
     for line in out.splitlines():
         parts = line.split()
-        if len(parts) >= 5 and parts[1].endswith(f":{port}") and parts[3] == "LISTENING":
+        if (
+            len(parts) >= 5
+            and parts[1].endswith(f":{port}")
+            and parts[3] == "LISTENING"
+        ):
             try:
                 return int(parts[4])
             except ValueError:

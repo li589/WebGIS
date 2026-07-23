@@ -1,6 +1,7 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 """查找监听 8000 端口的进程 PID。"""
+
 import subprocess
 import sys
 
@@ -34,8 +35,18 @@ for local, foreign, pid in found:
     # Try to get process info
     try:
         pout = subprocess.check_output(
-            ["wmic", "process", "where", f"ProcessId={pid}", "get", "Name,CommandLine,ProcessId"],
-            text=True, encoding="gbk", errors="replace", stderr=subprocess.DEVNULL
+            [
+                "wmic",
+                "process",
+                "where",
+                f"ProcessId={pid}",
+                "get",
+                "Name,CommandLine,ProcessId",
+            ],
+            text=True,
+            encoding="gbk",
+            errors="replace",
+            stderr=subprocess.DEVNULL,
         )
         for pline in pout.splitlines():
             pline = pline.strip()

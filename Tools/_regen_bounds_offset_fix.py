@@ -8,6 +8,7 @@
 
 本脚本只调用这 3 个函数, 避免重新运行耗时的 GPCP/SMAP 时间序列导出.
 """
+
 from __future__ import annotations
 
 import sys
@@ -42,6 +43,7 @@ def main() -> int:
         except Exception as e:
             print(f"\n  [FAIL] {name}: {e}")
             import traceback
+
             traceback.print_exc()
             results[name] = f"FAIL: {e}"
 
