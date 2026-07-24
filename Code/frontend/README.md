@@ -36,6 +36,15 @@
   - `effective-layer-symbology.ts`：InfoPanel / LayerSidebar 图例同源（色板覆盖；`legend_ticks` 优先配置，不足时视口采样）
 - `src/styles/main.css`：全局样式
 
+### 天气模型 / Provider 缺口（瓦片热路径）
+
+| 现象 | 说明 |
+|------|------|
+| `visibility` + 非 `gfs_global` | 能见度场主要来自 GFS；其它模型常返回 data-empty |
+| 80 m 风 / 温度 | 无原生该高度场时由邻近层外推，非独立观测层 |
+| `open-meteo-local` | 依赖 `cgda-open-meteo` volume；先 `python launch.py sync`（至少 `ecmwf_ifs025`，能见度需 `gfs_global`） |
+| 编辑器天气 demo | 系统种子 `weather_temperature_grid_demo` / `weather_wind_field_demo`；主展示仍走 `/weather/tiles` |
+
 ## 当前界面补充说明
 
 - `ModeToolbar.vue`：标题栏工具（底图风格、行政区、导入、截图、工作流入口等）

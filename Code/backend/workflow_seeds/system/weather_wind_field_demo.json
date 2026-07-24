@@ -1,0 +1,43 @@
+{
+  "_meta": {
+    "kind": "system",
+    "engine": "weather",
+    "name": "风场渲染（天气 demo）",
+    "description": "网格拉取 → 风场渲染。关联 wind-field 图层。",
+    "author": "system",
+    "readonly": true,
+    "is_template": true,
+    "linked_layer_id": "wind-field"
+  },
+  "workflow_id": "weather_wind_field_demo",
+  "name": "风场渲染（天气 demo）",
+  "description": "weather/grid_fetch → weather/wind_field_render",
+  "nodes": [
+    {
+      "id": 1,
+      "type": "weather/grid_fetch",
+      "pos": [120, 140],
+      "properties": {
+        "layer_id": "wind-field",
+        "model": "ecmwf_ifs025",
+        "provider": "open-meteo-local"
+      }
+    },
+    {
+      "id": 2,
+      "type": "weather/wind_field_render",
+      "pos": [440, 140],
+      "properties": {
+        "layer_id": "wind-field",
+        "latitude": 23.1,
+        "longitude": 113.3
+      }
+    }
+  ],
+  "links": [
+    {"0": 1, "1": 1, "2": 0, "3": 2, "4": 0, "5": "data:raster"}
+  ],
+  "extra": {
+    "purpose": "weather_editor_demo"
+  }
+}

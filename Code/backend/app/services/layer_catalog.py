@@ -602,16 +602,17 @@ def get_layer_catalog() -> LayerCatalogResponse:
             default_task_type="ndvi_daily",
             default_data_access_sources={
                 "NDVI_16DAY_RASTER": [
-                    "NDVI_VIIRS",
-                    "NDVI_MODIS",
-                    "Soil_Ecological_Data/NDVI/VIIRS",
-                    "Soil_Ecological_Data/NDVI/MODIS",
+                    "NDVI_16DAY_RASTER",
+                    "I:/Geograph_DataSet/Soil_Ecological_Data/NDVI/VIIRS_9km_tif",
+                    "Soil_Ecological_Data/NDVI/VIIRS_9km_tif",
                 ],
             },
-            run_readiness_summary="待下载 VIIRS/MODIS NDVI 16 天合成产品后可运行。",
+            run_readiness_summary="需先经 A1/A2（ndvi_hdf_preprocess）产出 9 km GeoTIFF，或放置已有 TIF。",
             run_readiness_notes=[
-                "数据源未就绪：NDVI_VIIRS 和 NDVI_MODIS 候选路径均不存在。",
-                "建议放置路径：I:/Geograph_DataSet/Soil_Ecological_Data/NDVI/VIIRS 或 MODIS。",
+                "ndvi_daily 读取的是 9 km GeoTIFF（YYYYMMDD.tif），不是原始 HDF。",
+                "原始 VNP13C1/MOYD13C1 请放到 Soil_Ecological_Data/NDVI/VIIRS 或 MODIS，"
+                "再跑模块 ndvi_hdf_preprocess → Soil_Ecological_Data/NDVI/VIIRS_9km_tif。",
+                "当前 I:/Geograph_DataSet 下 NDVI 目录缺失时保持 placeholder/blocked。",
             ],
         ),
         LayerDescriptor(
@@ -1468,6 +1469,7 @@ def get_layer_catalog() -> LayerCatalogResponse:
             default_data_access_sources={
                 "omega_block_dir": [
                     "omega_block_output",
+                    "I:/Geograph_DataSet/InversionResults/omega_block",
                     "InversionResults/omega_block",
                 ],
                 "timeseries_bundle_mat": [
@@ -1476,12 +1478,32 @@ def get_layer_catalog() -> LayerCatalogResponse:
                 ],
                 "smap_folder": [
                     "smap_daily_mat",
+                    "I:/Geograph_DataSet/Soil_Ecological_Data/Smap_OriginData",
                     "Soil_Ecological_Data/Smap_OriginData",
                 ],
-                "ndvi_folder": ["ndvi_daily_mat", "NDVI/daily"],
-                "ndvi_clim_folder": ["ndvi_clim_dir", "NDVI/climatology"],
-                "anc_root": ["ancillary_mat", "SMAP_ancillary"],
+                "ndvi_folder": [
+                    "ndvi_daily_mat",
+                    "I:/Geograph_DataSet/Soil_Ecological_Data/NDVI/daily",
+                    "Soil_Ecological_Data/NDVI/daily",
+                ],
+                "ndvi_clim_folder": [
+                    "ndvi_clim_dir",
+                    "I:/Geograph_DataSet/Soil_Ecological_Data/NDVI/climatology",
+                    "Soil_Ecological_Data/NDVI/climatology",
+                ],
+                "anc_root": [
+                    "ancillary_mat",
+                    "I:/Geograph_DataSet/Soil_Ecological_Data/Ancillary",
+                    "Soil_Ecological_Data/Ancillary",
+                    "SMAP_ancillary",
+                ],
             },
+            run_readiness_summary="D2 依赖 omega_block / SMAP 日 MAT / NDVI 日 MAT / Ancillary；可用 remote_layer_data_uris 指向合成测试集。",
+            run_readiness_notes=[
+                "本机已确认存在：Soil_Ecological_Data/Smap_OriginData、InversionResults/smap_avg。",
+                "常见缺口：InversionResults/omega_block、NDVI/daily、Ancillary——可用 Tools/test_data/omega_avg_daily_inputs 经 BACKEND_REMOTE_LAYER_DATA_URIS 注入。",
+                "系统种子 omega_avg_daily_* 与 pytest test_omega_avg_* 覆盖合成数据闭环。",
+            ],
         ),
     ]
 

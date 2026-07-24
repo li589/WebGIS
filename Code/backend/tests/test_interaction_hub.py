@@ -30,7 +30,13 @@ from shared.contracts.api_contracts import (
 
 
 def _build_services(repository: SQLiteWorkflowRepository):
-    """Build all 6 workflow services wired together with a custom repository."""
+    """Build all workflow services wired together with a custom repository.
+
+    Dependency direction is one-way: submission → lifecycle (for finalize).
+    User-initiated retry is handled by RetryDispatcher (not wired here since
+    no test in this file exercises retry_workflow_run directly; the router-
+    level retry test patches retry_dispatcher in test_frontend_call_simulation.py).
+    """
     transitions = WorkflowTransitionBuilder()
     persistence = WorkflowPersistenceService(repository)
     follow_up = FollowUpDispatchService(repository, persistence, transitions)
@@ -42,7 +48,6 @@ def _build_services(repository: SQLiteWorkflowRepository):
         repository, persistence, transitions, follow_up
     )
     submission.set_lifecycle_service(lifecycle)
-    lifecycle.set_submission_service(submission)
     return submission, lifecycle, runtime_status
 
 

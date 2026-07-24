@@ -133,6 +133,20 @@ class WorkflowSubmissionService:
 
     def process_workflow_run(self, run_id: str, payload: WorkflowSubmitRequest) -> None:
         current_run = self._repository.get_run(run_id)
+        # 幂等检查：acks_late 开启后，worker 崩溃会触发任务重投。
+        # 若 run 已处于终态，说明此前已成功/失败/取消，直接跳过避免重复执行。
+        if current_run is not None and current_run.status in (
+            ExecutionStatus.succeeded,
+            ExecutionStatus.failed,
+            ExecutionStatus.cancelled,
+        ):
+            logger.info(
+                "Workflow run %s already in terminal state %s; skipping re-execution "
+                "(likely acks_late redelivery after worker crash)",
+                run_id,
+                current_run.status.value,
+            )
+            return
         now = datetime.now(timezone.utc)
         created_at = current_run.created_at if current_run is not None else now
 

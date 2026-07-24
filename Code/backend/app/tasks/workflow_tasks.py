@@ -196,7 +196,18 @@ def _is_valid_queue_tag(queue_tag: str) -> bool:
 
 if celery_available and celery_app is not None:
 
-    @celery_app.task(name="app.tasks.workflow_tasks.process_workflow_run")
+    @celery_app.task(
+        name="app.tasks.workflow_tasks.process_workflow_run",
+        # acks_late：任务完成（成功/失败）后才 ack，worker 崩溃时任务自动重投，
+        # 防止 run_id 永久卡在 running 状态。配合 process_workflow_run 入口的
+        # 幂等检查（终态 run 直接跳过）避免重复执行。
+        acks_late=True,
+        # worker 进程丢失时把任务 reject 回队列，触发重投。
+        reject_on_worker_lost=True,
+        # 业务失败（非崩溃）不重新入队：失败已由 lifecycle 记录为终态，
+        # 重投只会被幂等检查跳过，徒增无效负载。
+        acks_on_failure_or_timeout=False,
+    )
     def process_workflow_run_task(run_id: str, payload_data: dict[str, Any]) -> None:
         from app.services.workflow.service_container import submission_service
 

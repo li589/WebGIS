@@ -1,15 +1,17 @@
 """Workflow lifecycle service.
 
-Handles workflow cancel, retry, timeout, failure, and success finalization.
-Uses late binding to access submission service (for retry → submit_workflow)
-to break the circular dependency: lifecycle → submission → lifecycle.
+Handles workflow cancel, timeout, failure, and success finalization.
+
+User-initiated retry (``retry_workflow_run``) has been extracted to
+``RetryDispatcher`` to break the former bidirectional late binding
+between submission_service and lifecycle_service (N3). The dependency
+direction is now one-way: ``submission → lifecycle`` (for finalize).
 """
 
 from __future__ import annotations
 
 from datetime import datetime, timezone
 import logging
-from typing import TYPE_CHECKING
 
 from app.core.celery_app import revoke_task
 from app.core.config import settings
@@ -28,19 +30,20 @@ from shared.contracts.api_contracts import (
     ExecutionStatus,
     FailureCategory,
     LogLevel,
-    WorkflowAcceptedResponse,
     WorkflowRunStatusResponse,
     WorkflowSubmitRequest,
 )
-
-if TYPE_CHECKING:
-    from app.services.workflow.submission_service import WorkflowSubmissionService
 
 logger = logging.getLogger(__name__)
 
 
 class WorkflowLifecycleService:
-    """Handles workflow lifecycle transitions: cancel, retry, finalize success/failure."""
+    """Handles workflow lifecycle transitions: cancel, finalize success/failure/retry.
+
+    User-initiated retry is handled by :class:`RetryDispatcher` (see
+    ``retry_dispatcher.py``). This service focuses on execution-phase
+    finalization: success, failure, timeout, and automatic retry scheduling.
+    """
 
     def __init__(
         self,
@@ -55,19 +58,6 @@ class WorkflowLifecycleService:
         self._follow_up = follow_up or FollowUpDispatchService(
             self._repository, self._persistence, self._transitions
         )
-        self._submission: "WorkflowSubmissionService | None" = None
-
-    def set_submission_service(self, submission: "WorkflowSubmissionService") -> None:
-        """Late binding to break circular dependency."""
-        self._submission = submission
-
-    @property
-    def submission(self) -> "WorkflowSubmissionService":
-        if self._submission is None:
-            raise RuntimeError(
-                "Submission service not set. Call set_submission_service() first."
-            )
-        return self._submission
 
     def cancel_workflow_run(self, run_id: str) -> WorkflowRunStatusResponse:
         now = datetime.now(timezone.utc)
@@ -133,37 +123,6 @@ class WorkflowLifecycleService:
             created_at=now,
         )
         return self._repository.get_run(run_id)
-
-    def retry_workflow_run(self, run_id: str) -> WorkflowAcceptedResponse:
-        now = datetime.now(timezone.utc)
-        request_json = self._repository.get_run_request_json(run_id)
-        if request_json is None:
-            raise ValueError(f"Cannot retry: no request found for run {run_id}")
-
-        payload = WorkflowSubmitRequest.model_validate_json(request_json)
-        new_response = self.submission.submit_workflow(payload)
-        new_run = self._repository.get_run(new_response.run_id)
-
-        if new_run:
-            self._persistence.save_run_status(
-                run_status=self._transitions.build_execution_transition(
-                    run_id=new_response.run_id,
-                    payload=payload,
-                    status=new_run.status,
-                    progress=new_run.progress,
-                    message=new_run.message,
-                    created_at=new_run.created_at,
-                    updated_at=now,
-                    result_refs=new_run.result_refs,
-                    result_dto=new_run.result_dto,
-                    diagnostics=new_run.diagnostics,
-                    executor_metadata={
-                        **new_run.executor_metadata,
-                        "retry_of_run_id": run_id,
-                    },
-                )
-            )
-        return new_response
 
     def handle_workflow_timeout(
         self,

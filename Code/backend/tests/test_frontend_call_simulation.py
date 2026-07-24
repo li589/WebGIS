@@ -252,7 +252,7 @@ class FrontendCallFlowTests(unittest.TestCase):
         from fastapi import HTTPException
 
         with patch(
-            "app.api.routers.workflow_router.lifecycle_service.retry_workflow_run",
+            "app.api.routers.workflow_router.retry_dispatcher.retry_workflow_run",
             side_effect=ValueError("Cannot retry: no request found"),
         ):
             with self.assertRaises(HTTPException) as ctx:

@@ -222,7 +222,7 @@ class NdviDailyModule(BaseModule):
             sg_step_days=int(algorithm_params.get("sg_step_days", 8)),
             daily_step_days=int(algorithm_params.get("daily_step_days", 1)),
             gap_threshold_days=int(algorithm_params.get("gap_threshold_days", 30)),
-            sg_polyorder=int(algorithm_params.get("sg_polyorder", 6)),
+            sg_polyorder=int(algorithm_params.get("sg_polyorder", 3)),
             sg_window_length=int(algorithm_params.get("sg_window_length", 9)),
         )
 

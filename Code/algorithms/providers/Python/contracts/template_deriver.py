@@ -6,9 +6,10 @@ RequestTemplateSpec，消除 contracts/request_templates.py 中 MODULE_REQUEST_T
 
 推导规则：
 - required_datasource_keys = input_ports 中 kind=scalar 且 required=True 的 name
+  + mode_required_inputs 展开的 keys（均为数据源路径键，如 input_mat / omega_block_dir）
 - optional_datasource_keys = input_ports 中 kind=scalar 且 required=False 的 name
-- required_algorithm_keys = default_params 中无默认值的 key（或 mode_required_inputs 展开的 keys）
-- optional_algorithm_keys = default_params 中有默认值的 key
+- required_algorithm_keys = （当前为空；未来可从 default_params 中无默认值的 key 扩展）
+- optional_algorithm_keys = default_params 中有默认值的 key（排除已归入 datasource_keys 的）
 - allowed_task_types = (module_name, "workflow")
 - accepted_data_access_datasets / allowed_algorithm_values / notes 由 template_overrides 提供
 """
@@ -39,33 +40,29 @@ def derive_template_from_module(module_name: str) -> RequestTemplateSpec | None:
     overrides = get_template_overrides(spec.name)
 
     # 推导 required/optional datasource keys
-    required_datasource_keys: list[str] = []
+    # input_ports 中 kind=scalar 的为数据源路径键；
+    # mode_required_inputs 的键同样是数据源路径键（如 input_mat / omega_block_dir），
+    # 而非算法参数，故一并归入 required_datasource_keys。
+    required_datasource_keys: set[str] = set()
     optional_datasource_keys: list[str] = []
     for port in spec.input_ports:
         if port.kind == "scalar":
             if port.required:
-                required_datasource_keys.append(port.name)
+                required_datasource_keys.add(port.name)
             else:
                 optional_datasource_keys.append(port.name)
 
-    # 推导 required/optional algorithm keys
-    # mode_required_inputs 展开后的是 required，default_params 中的是 optional
-    #
-    # 已知问题：所有 module 的 mode_required_inputs 实际存的是数据源路径键
-    # （如 input_mat / omega_block_dir / predicted_path），而非算法参数。
-    # 此处将它们放入 required_algorithm_keys 会导致 validate_request_against_template
-    # 在 algorithm_params 中查找路径键而误报 "Missing required algorithm param"。
-    # 当前缓解：为每个 module 在 MODULE_REQUEST_TEMPLATES 中提供手工 template
-    # （手工表优先于自动推导），正确将路径键归入 required_datasource_keys。
-    # 根因修复应改为将 mode_required_inputs 键放入 required_datasource_keys。
-    required_algorithm_keys: set[str] = set()
     for mode_inputs in spec.mode_required_inputs.values():
         for key in mode_inputs:
-            required_algorithm_keys.add(key)
+            required_datasource_keys.add(key)
+
+    # required_algorithm_keys：当前无模块声明无默认值的 required algorithm key，留空。
+    # 若未来需要，可从 default_params 中无默认值的 key 扩展。
+    required_algorithm_keys: set[str] = set()
 
     optional_algorithm_keys: list[str] = []
     for key in spec.default_params:
-        if key not in required_algorithm_keys:
+        if key not in required_datasource_keys and key not in required_algorithm_keys:
             optional_algorithm_keys.append(key)
 
     # allowed_task_types：module_name + "workflow"，可被 overrides 覆盖
@@ -74,7 +71,7 @@ def derive_template_from_module(module_name: str) -> RequestTemplateSpec | None:
     return RequestTemplateSpec(
         entry_kind="module",
         entry_name=spec.name,
-        required_datasource_keys=tuple(required_datasource_keys),
+        required_datasource_keys=tuple(sorted(required_datasource_keys)),
         accepted_data_access_datasets=tuple(
             overrides.get("accepted_data_access_datasets", ())
         ),
@@ -159,10 +156,6 @@ def validate_request_against_template(
     algorithm_params = request.algorithm_params or {}
     for key in template.required_algorithm_keys:
         if key not in algorithm_params and algorithm_params.get(key) is None:
-            # mode_required_inputs 中的 key 由 mode 控制，检查 mode 是否存在
-            if key in ("input_mat", "input_dir"):
-                # 这些由 datasource_selection 提供，不算 algorithm_params 缺失
-                continue
             errors.append(f"Missing required algorithm param: '{key}'")
 
     # 4. 校验 allowed_algorithm_values

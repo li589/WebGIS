@@ -1,0 +1,55 @@
+{
+  "_meta": {
+    "kind": "system",
+    "engine": "weather",
+    "name": "温度网格渲染（天气 demo）",
+    "description": "预报取数 → 网格拉取 → 温度渲染。主路径仍是 /weather/tiles；本模板用于编辑器联调 WeatherWorkflowService。",
+    "author": "system",
+    "readonly": true,
+    "is_template": true,
+    "linked_layer_id": "temperature"
+  },
+  "workflow_id": "weather_temperature_grid_demo",
+  "name": "温度网格渲染（天气 demo）",
+  "description": "weather/forecast_fetch → weather/grid_fetch → weather/temperature_render",
+  "nodes": [
+    {
+      "id": 1,
+      "type": "weather/forecast_fetch",
+      "pos": [80, 120],
+      "properties": {
+        "layer_id": "temperature",
+        "model": "ecmwf_ifs025",
+        "provider": "open-meteo-local"
+      }
+    },
+    {
+      "id": 2,
+      "type": "weather/grid_fetch",
+      "pos": [360, 120],
+      "properties": {
+        "layer_id": "temperature",
+        "model": "ecmwf_ifs025",
+        "provider": "open-meteo-local"
+      }
+    },
+    {
+      "id": 3,
+      "type": "weather/temperature_render",
+      "pos": [640, 120],
+      "properties": {
+        "layer_id": "temperature",
+        "latitude": 23.1,
+        "longitude": 113.3
+      }
+    }
+  ],
+  "links": [
+    {"0": 1, "1": 1, "2": 0, "3": 2, "4": 0, "5": "data"},
+    {"0": 2, "1": 2, "2": 0, "3": 3, "4": 0, "5": "data:raster"}
+  ],
+  "extra": {
+    "purpose": "weather_editor_demo",
+    "notes": "地图热路径请用瓦片；本种子验证编辑器 compile→weather_request。"
+  }
+}

@@ -30,6 +30,16 @@ class JobRequest:
     # 修复前：该字段在 AlgorithmWorkflowRequest 中存在但经 bridge 转换时被丢弃，导致信息损失
     workflow_entry_name: str | None = None
 
+    def __post_init__(self) -> None:
+        # 结构校验：job_id / pipeline_name 必填非空。
+        # 这是构造期可判定的硬约束，不涉及 entry 字段语义。
+        # entry 字段（module_name / workflow_name / workflow_definition）的互斥与
+        # 必填校验由 validate_job_request() 在 dispatch 前执行，因为合法的
+        # "先构造后赋值"模式（测试与 bridge 转换层均使用）要求 entry 字段可在
+        # 构造后设置，不应在 __post_init__ 中强制。
+        if not self.job_id or not self.pipeline_name:
+            raise ValueError("job_id and pipeline_name must be non-empty")
+
 
 @dataclass(slots=True)
 class JobResult:

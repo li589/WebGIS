@@ -82,6 +82,37 @@
   - `Python/runner/dispatch.py`
   - `Python/runner/registry.py`
 
+### 2.7 `D2-01` omega_avg_daily 四阶段闭环
+
+- 目标：D2 avg-omega 在合成小数据上 Stage A–D 可复现，产物类型稳定。
+- 输入：`Tools/test_data/omega_avg_daily_inputs/`（omega_block / smap_daily / ndvi_daily / anc）
+- 断言：
+  - Stage A–D 均产出预期中间/最终文件
+  - `ProductRef.type` 覆盖 SM / VOD / OMEGA 日 MAT（见模块实现）
+  - 系统种子 `omega_avg_daily_smap_single` 等 JSON 可被定义服务加载
+- 涉及命令 / 文件：
+  - `pytest Code/backend/tests/test_omega_avg_algorithm.py Code/backend/tests/test_omega_avg_daily_module.py -q`
+  - `python Tools/test_data_production_e2e.py --category C --no-pytest`（可选）
+  - `Python/modules/omega_avg_daily.py`、`Python/algorithms/omega_avg.py`
+
+### 2.8 `NDVI-A1A2` HDF → 9 km GeoTIFF
+
+- 目标：A1/A2 预处理契约（日期解析、QA 掩膜、输出命名）稳定；Matlab 树只读。
+- 断言：
+  - `parse_ydoy_from_filename` 对齐 Matlab `hdfname(10:16)`
+  - `apply_ndvi_qa_mask`：`QA>=2` 与越界值置 NaN，再 `*1e-4`
+  - 模块名 `ndvi_hdf_preprocess`，产物类型 `ndvi_9km_tif`
+- 涉及文件：
+  - `Python/ingest/ndvi_hdf_preprocess.py`
+  - `Python/modules/ndvi_hdf_preprocess.py`
+  - `Python/tests/test_ndvi_hdf_preprocess.py`
+
+### 2.9 `NDVI-SG` SG polyorder 偏差说明
+
+- Matlab `vi_sg_interp` 历史默认 **polyorder=6**（window=9）。
+- Python 核心 `algorithms/ndvi.py` 默认 **polyorder=3**（自由度更稳健；无法严格复现旧结果）。
+- `modules/ndvi.py` / `pipelines/ndvi_products.py` 默认已对齐为 3；严格 Matlab 回放请显式传 `algorithm_params.sg_polyorder=6`。
+
 ## 3. P1 清单
 
 ### 3.1 `FY-01` 计划模式与数据模式分支

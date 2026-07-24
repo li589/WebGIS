@@ -8,6 +8,7 @@ from app.api.deps import require_write_access
 from app.services.result_view_service import result_view_service
 from app.services.workflow.service_container import (
     lifecycle_service,
+    retry_dispatcher,
     submission_service,
 )
 from shared.contracts.api_contracts import (
@@ -194,7 +195,7 @@ def cancel_workflow_run(run_id: str) -> WorkflowRunStatusResponse:
 )
 def retry_workflow_run(run_id: str) -> WorkflowAcceptedResponse:
     try:
-        return lifecycle_service.retry_workflow_run(run_id)
+        return retry_dispatcher.retry_workflow_run(run_id)
     except ValueError as exc:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)

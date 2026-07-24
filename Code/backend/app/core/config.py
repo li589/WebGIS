@@ -339,6 +339,16 @@ class Settings:
     celery_task_time_limit: int = int(
         os.getenv("BACKEND_CELERY_TASK_TIME_LIMIT", "360")
     )
+    # Celery worker 并发度：每个 worker 进程的最大并发任务数。
+    # launch.py 启动 7 个 worker，默认占满 CPU 会严重过订阅；建议物理核数/worker 数。
+    celery_worker_concurrency: int = int(
+        os.getenv("BACKEND_CELERY_WORKER_CONCURRENCY", "2")
+    )
+    # Celery 预取倍数：worker 预先从队列拉取的任务数。
+    # 配合 acks_late 时应设为 1，避免长任务预取占槽阻塞短任务。
+    celery_worker_prefetch_multiplier: int = int(
+        os.getenv("BACKEND_CELERY_PREFETCH_MULTIPLIER", "1")
+    )
 
     # ---- Phase 1 工程治理开关 ----
     # 远端数据源就绪检查时是否短超时 probe（stat）；默认只校验凭证可解析

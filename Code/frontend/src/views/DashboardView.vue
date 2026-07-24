@@ -487,6 +487,7 @@ async function handleRunWorkflowFromEditor(
 
   try {
     let algorithmRequest: Record<string, unknown> | undefined
+    let weatherRequest: Record<string, unknown> | undefined
     const nodes = canvasGraph?.nodes ?? []
     const links = canvasGraph?.links ?? []
     if (nodes.length > 0) {
@@ -497,21 +498,39 @@ async function handleRunWorkflowFromEditor(
         nodes,
         links,
       })
-      algorithmRequest = {
-        workflow_definition: compiled.workflow_definition,
-        workflow_entry_name: workflowId,
-        datasource_selection: {},
-        algorithm_params: {},
-        output_spec: {},
-        tags: { source: 'workflow_editor', workflow_id: workflowId },
+      const def = compiled.workflow_definition as Record<string, unknown>
+      const engine =
+        ((def.metadata as Record<string, unknown> | undefined)?.engine as string | undefined) ??
+        'python_provider'
+      if (engine === 'weather') {
+        weatherRequest = {
+          workflow_id: workflowId,
+          layer_id: linkedLayerId,
+          workflow: def,
+          context: {
+            latitude: layersStore.currentMapCenter.lat,
+            longitude: layersStore.currentMapCenter.lng,
+          },
+          priority: 'viewport',
+        }
+      } else {
+        algorithmRequest = {
+          workflow_definition: def,
+          workflow_entry_name: workflowId,
+          datasource_selection: {},
+          algorithm_params: {},
+          output_spec: {},
+          tags: { source: 'workflow_editor', workflow_id: workflowId },
+        }
       }
       logStore.logWorkflow(
         'workflow-editor-compile',
-        `画布已编译: nodes=${(compiled.workflow_definition.nodes as unknown[] | undefined)?.length ?? 0}`,
+        `画布已编译(${engine}): nodes=${(def.nodes as unknown[] | undefined)?.length ?? 0}`,
       )
     }
     await layersStore.runWorkflowForCatalog(catalogId, {
       algorithmRequest,
+      weatherRequest,
       commandLabel: `运行画布工作流 ${workflowId}`,
     })
     workflowEditorRef.value?.notifyRunOutcome?.(true)

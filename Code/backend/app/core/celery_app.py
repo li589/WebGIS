@@ -50,6 +50,11 @@ if celery_available:
         # 避免长期运行后 Celery 结果在 Redis 中无限累积
         result_expires=86400,  # 1 天
         result_persistent=False,
+        # worker 并发度与预取倍数：防止多 worker 过订阅 CPU，
+        # prefetch=1 配合 acks_late 避免长任务预取占槽阻塞短任务。
+        # launch.py 可按 worker 角色用 -c / --prefetch-multiplier 覆盖。
+        worker_concurrency=settings.celery_worker_concurrency,
+        worker_prefetch_multiplier=settings.celery_worker_prefetch_multiplier,
         # Beat / 运维任务必须落到 launch.py 实际监听的队列（勿用默认 celery）
         task_routes={
             "app.tasks.open_meteo_sync_tasks.sync_open_meteo_data": {

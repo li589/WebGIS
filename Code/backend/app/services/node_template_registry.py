@@ -732,6 +732,7 @@ _NODE_TEMPLATES: list[dict[str, Any]] = [
                 description="重采样方法。",
             ),
         ],
+        "executable": False,
         "node_class": "preprocess_reproject",
     },
     {
@@ -772,6 +773,7 @@ _NODE_TEMPLATES: list[dict[str, Any]] = [
                 description="分辨率单位。",
             ),
         ],
+        "executable": False,
         "node_class": "preprocess_resample",
     },
     {
@@ -829,6 +831,7 @@ _NODE_TEMPLATES: list[dict[str, Any]] = [
                 step=10,
             ),
         ],
+        "executable": False,
         "node_class": "preprocess_clip",
     },
     {
@@ -853,6 +856,7 @@ _NODE_TEMPLATES: list[dict[str, Any]] = [
             ),
             _param("invert", "boolean", default=False, description="是否反转掩膜。"),
         ],
+        "executable": False,
         "node_class": "preprocess_mask",
     },
     # ═══ 统计分析模块 ══════════════════════════════════════════════════════════
@@ -886,6 +890,7 @@ _NODE_TEMPLATES: list[dict[str, Any]] = [
                 step=1,
             ),
         ],
+        "executable": False,
         "node_class": "stats_spatial_mean",
     },
     {
@@ -918,6 +923,7 @@ _NODE_TEMPLATES: list[dict[str, Any]] = [
                 step=0.01,
             ),
         ],
+        "executable": False,
         "node_class": "stats_temporal_trend",
     },
     {
@@ -950,6 +956,7 @@ _NODE_TEMPLATES: list[dict[str, Any]] = [
                 step=0.1,
             ),
         ],
+        "executable": False,
         "node_class": "stats_anomaly_detect",
     },
     {
@@ -984,6 +991,7 @@ _NODE_TEMPLATES: list[dict[str, Any]] = [
                 step=1,
             ),
         ],
+        "executable": False,
         "node_class": "stats_correlation",
     },
     {
@@ -1024,6 +1032,7 @@ _NODE_TEMPLATES: list[dict[str, Any]] = [
                 description="是否归一化为概率密度。",
             ),
         ],
+        "executable": False,
         "node_class": "stats_histogram",
     },
     # ═══ 数据融合与可视化模块 ═══════════════════════════════════════════════════
@@ -1068,6 +1077,7 @@ _NODE_TEMPLATES: list[dict[str, Any]] = [
                 step=10,
             ),
         ],
+        "executable": False,
         "node_class": "fusion_spatial_interpolate",
     },
     {
@@ -1101,6 +1111,7 @@ _NODE_TEMPLATES: list[dict[str, Any]] = [
                 step=0.05,
             ),
         ],
+        "executable": False,
         "node_class": "fusion_multi_source_merge",
     },
     {
@@ -1147,6 +1158,7 @@ _NODE_TEMPLATES: list[dict[str, Any]] = [
                 step=50,
             ),
         ],
+        "executable": False,
         "node_class": "viz_chart_generate",
     },
     {
@@ -1176,6 +1188,7 @@ _NODE_TEMPLATES: list[dict[str, Any]] = [
                 "include_charts", "boolean", default=True, description="是否包含图表。"
             ),
         ],
+        "executable": False,
         "node_class": "viz_report_export",
     },
     {
@@ -1206,6 +1219,7 @@ _NODE_TEMPLATES: list[dict[str, Any]] = [
                 description="分位数列表（逗号分隔）。",
             ),
         ],
+        "executable": False,
         "node_class": "viz_statistics_summary",
     },
     # ═══ 天气引擎节点 ══════════════════════════════════════════════════════════
@@ -1378,7 +1392,7 @@ _NODE_TEMPLATES: list[dict[str, Any]] = [
             _port("geojson", "data:geojson", description="温度栅格 GeoJSON。"),
         ],
         "params": [],
-        "node_class": "weather_temperature_grid_render",
+        "node_class": "weather_temperature_grid",
     },
     {
         "type": "weather/precipitation_render",
@@ -1400,7 +1414,7 @@ _NODE_TEMPLATES: list[dict[str, Any]] = [
             _port("geojson", "data:geojson", description="降水栅格 GeoJSON。"),
         ],
         "params": [],
-        "node_class": "weather_precipitation_grid_render",
+        "node_class": "weather_precipitation_grid",
     },
     {
         "type": "weather/humidity_render",
@@ -1422,7 +1436,7 @@ _NODE_TEMPLATES: list[dict[str, Any]] = [
             _port("geojson", "data:geojson", description="湿度栅格 GeoJSON。"),
         ],
         "params": [],
-        "node_class": "weather_humidity_grid_render",
+        "node_class": "weather_humidity_grid",
     },
     {
         "type": "weather/pressure_render",
@@ -1444,7 +1458,7 @@ _NODE_TEMPLATES: list[dict[str, Any]] = [
             _port("geojson", "data:geojson", description="气压栅格 GeoJSON。"),
         ],
         "params": [],
-        "node_class": "weather_pressure_grid_render",
+        "node_class": "weather_pressure_grid",
     },
     {
         "type": "weather/visibility_render",
@@ -1466,7 +1480,51 @@ _NODE_TEMPLATES: list[dict[str, Any]] = [
             _port("geojson", "data:geojson", description="能见度栅格 GeoJSON。"),
         ],
         "params": [],
-        "node_class": "weather_visibility_grid_render",
+        "node_class": "weather_visibility_grid",
+    },
+    {
+        "type": "weather/cloud_cover_render",
+        "engine": "weather",
+        "category": "天气-渲染",
+        "title": "云量渲染",
+        "description": "生成云量栅格图层。",
+        "inputs": [
+            _port(
+                "grid_data", "data:raster", required=False, description="上游网格数据。"
+            ),
+            _port("latitude", "value:number", description="中心纬度。"),
+            _port("longitude", "value:number", description="中心经度。"),
+            _port(
+                "layer_id", "value:string", required=False, description="目标图层标识。"
+            ),
+        ],
+        "outputs": [
+            _port("geojson", "data:geojson", description="云量栅格 GeoJSON。"),
+        ],
+        "params": [],
+        "node_class": "weather_cloud_cover_grid",
+    },
+    {
+        "type": "weather/dewpoint_render",
+        "engine": "weather",
+        "category": "天气-渲染",
+        "title": "露点渲染",
+        "description": "生成露点栅格图层。",
+        "inputs": [
+            _port(
+                "grid_data", "data:raster", required=False, description="上游网格数据。"
+            ),
+            _port("latitude", "value:number", description="中心纬度。"),
+            _port("longitude", "value:number", description="中心经度。"),
+            _port(
+                "layer_id", "value:string", required=False, description="目标图层标识。"
+            ),
+        ],
+        "outputs": [
+            _port("geojson", "data:geojson", description="露点栅格 GeoJSON。"),
+        ],
+        "params": [],
+        "node_class": "weather_dewpoint_grid",
     },
     {
         "type": "weather/tile_render",
@@ -1591,6 +1649,24 @@ _NODE_TEMPLATES: list[dict[str, Any]] = [
             ),
         ],
         "node_class": "ndvi_daily",
+    },
+    {
+        "type": "module/ndvi_hdf_preprocess",
+        "engine": "python_provider",
+        "category": "遥感处理",
+        "title": "NDVI HDF 预处理 (A1/A2)",
+        "description": "VNP13C1/MOYD13C1 → QA 掩膜 + 9 km GeoTIFF，供 ndvi_daily 使用。",
+        "inputs": [
+            _port(
+                "input_dir", "data:source", description="VIIRS/MODIS NDVI HDF 目录。"
+            ),
+        ],
+        "outputs": [
+            _port("manifest", "data:manifest", description="产物清单。"),
+            _port("output_dir", "value:string", description="9 km TIF 输出目录。"),
+        ],
+        "params": [],
+        "node_class": "ndvi_hdf_preprocess",
     },
     {
         "type": "module/fy_daily",
@@ -1884,6 +1960,81 @@ _NODE_TEMPLATES: list[dict[str, Any]] = [
         ],
         "node_class": "timeseries_bundle",
     },
+    {
+        "type": "module/omega_avg_daily",
+        "engine": "python_provider",
+        "category": "算法模块",
+        "title": "OMEGA 日均 (D2)",
+        "description": "从 omega_block 输出构建 DOY 气候态并回代 SM/VOD（Matlab D2）。",
+        "inputs": [
+            _port("data", "data:mat", required=False, description="上游数据或路径。"),
+        ],
+        "outputs": [
+            _port("data", "data:mat", description="日均/回代产物。"),
+        ],
+        "params": [],
+        "node_class": "omega_avg_daily",
+    },
+    {
+        "type": "module/validation_metrics",
+        "engine": "python_provider",
+        "category": "算法模块",
+        "title": "验证指标",
+        "description": "r / RMSE / bias 等验证指标（Matlab metrics）。",
+        "inputs": [
+            _port("data", "data:mat", required=False, description="观测/模拟配对。"),
+        ],
+        "outputs": [
+            _port("data", "data:mat", description="指标表。"),
+        ],
+        "params": [],
+        "node_class": "validation_metrics",
+    },
+    {
+        "type": "module/statistics",
+        "engine": "python_provider",
+        "category": "算法模块",
+        "title": "分区/时序统计",
+        "description": "平台统计模块。",
+        "inputs": [
+            _port("data", "data", required=False, description="输入数据。"),
+        ],
+        "outputs": [
+            _port("data", "data", description="统计结果。"),
+        ],
+        "params": [],
+        "node_class": "statistics",
+    },
+    {
+        "type": "module/curve_fitting",
+        "engine": "python_provider",
+        "category": "算法模块",
+        "title": "曲线拟合",
+        "description": "平台曲线拟合模块。",
+        "inputs": [
+            _port("data", "data", required=False, description="输入数据。"),
+        ],
+        "outputs": [
+            _port("data", "data", description="拟合结果。"),
+        ],
+        "params": [],
+        "node_class": "curve_fitting",
+    },
+    {
+        "type": "module/data_export",
+        "engine": "python_provider",
+        "category": "算法模块",
+        "title": "数据导出",
+        "description": "导出中间/最终产物。",
+        "inputs": [
+            _port("data", "data", required=False, description="待导出数据。"),
+        ],
+        "outputs": [
+            _port("path", "value:string", description="导出路径。"),
+        ],
+        "params": [],
+        "node_class": "data_export",
+    },
     # ═══ GIS 基础工具模块 ═══════════════════════════════════════════════════════
     {
         "type": "gis/buffer_analysis",
@@ -1916,6 +2067,7 @@ _NODE_TEMPLATES: list[dict[str, Any]] = [
                 step=1,
             ),
         ],
+        "executable": False,
         "node_class": "gis_buffer_analysis",
     },
     {
@@ -1955,6 +2107,7 @@ _NODE_TEMPLATES: list[dict[str, Any]] = [
                 description="是否统计所有接触像元（否则仅统计中心点在内的像元）。",
             ),
         ],
+        "executable": False,
         "node_class": "gis_zonal_statistics",
     },
     {
@@ -1987,6 +2140,7 @@ _NODE_TEMPLATES: list[dict[str, Any]] = [
                 description="NoData 处理方式。",
             ),
         ],
+        "executable": False,
         "node_class": "gis_raster_calculator",
     },
     {
@@ -2025,6 +2179,7 @@ _NODE_TEMPLATES: list[dict[str, Any]] = [
             ),
             _param("fill_value", "number", default=0, description="背景填充值。"),
         ],
+        "executable": False,
         "node_class": "gis_vector_to_raster",
     },
     {
@@ -2066,6 +2221,7 @@ _NODE_TEMPLATES: list[dict[str, Any]] = [
                 step=1,
             ),
         ],
+        "executable": False,
         "node_class": "gis_raster_to_vector",
     },
     {
@@ -2091,6 +2247,7 @@ _NODE_TEMPLATES: list[dict[str, Any]] = [
                 "nodata_value", "number", default=-9999, description="输出 NoData 值。"
             ),
         ],
+        "executable": False,
         "node_class": "gis_reclassify",
     },
     {
@@ -2128,6 +2285,7 @@ _NODE_TEMPLATES: list[dict[str, Any]] = [
                 "smoothing", "boolean", default=True, description="是否平滑等值线。"
             ),
         ],
+        "executable": False,
         "node_class": "gis_contour",
     },
     {
@@ -2159,6 +2317,7 @@ _NODE_TEMPLATES: list[dict[str, Any]] = [
                 description="坡度算法。",
             ),
         ],
+        "executable": False,
         "node_class": "gis_slope_aspect",
     },
     {
@@ -2192,6 +2351,7 @@ _NODE_TEMPLATES: list[dict[str, Any]] = [
                 description="流向算法。",
             ),
         ],
+        "executable": False,
         "node_class": "gis_watershed",
     },
     # ═══ GEE 节点 ═════════════════════════════════════════════════════════════

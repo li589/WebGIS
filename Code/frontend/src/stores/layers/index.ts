@@ -1433,6 +1433,7 @@ export const useLayersStore = defineStore('layers', () => {
     requestBBox: BoundingBox | null,
     backendLayerId?: string,
     algorithmRequest?: Record<string, unknown>,
+    weatherRequest?: Record<string, unknown>,
   ) {
     const layerId = backendLayerId ?? catalogId
     const payload: Record<string, unknown> = {
@@ -1460,6 +1461,9 @@ export const useLayersStore = defineStore('layers', () => {
     }
     if (algorithmRequest && Object.keys(algorithmRequest).length > 0) {
       payload.algorithm_request = algorithmRequest
+    }
+    if (weatherRequest && Object.keys(weatherRequest).length > 0) {
+      payload.weather_request = weatherRequest
     }
     return payload
   }
@@ -1794,6 +1798,7 @@ export const useLayersStore = defineStore('layers', () => {
     options: {
       expectedViewportEpoch?: number
       algorithmRequest?: Record<string, unknown>
+      weatherRequest?: Record<string, unknown>
       commandLabel?: string
     } = {},
   ) {
@@ -1816,8 +1821,13 @@ export const useLayersStore = defineStore('layers', () => {
     const submitStartedAt = new Date().toISOString()
 
     try {
-      // 天气图层走瓦片管道，不提交 /workflow-runs（此前 silent return 导致「运行无反应」）
-      if (isWeatherEngineLayer(backendLayerId)) {
+      const hasEditorWeather = Boolean(
+        options.weatherRequest &&
+        (options.weatherRequest.workflow ||
+          (options.weatherRequest as { workflow_id?: string }).workflow_id),
+      )
+      // 天气图层默认走瓦片管道；编辑器编译出 weather 画布时走 weather_request
+      if (isWeatherEngineLayer(backendLayerId) && !hasEditorWeather) {
         weatherTileManager.setLayerActive(catalogId, true)
         weatherTileManager.setViewport(
           catalogId,
@@ -1849,8 +1859,10 @@ export const useLayersStore = defineStore('layers', () => {
       }
 
       const hasCanvasDefinition = Boolean(
-        options.algorithmRequest &&
-        (options.algorithmRequest.workflow_definition || options.algorithmRequest.workflow_name),
+        (options.algorithmRequest &&
+          (options.algorithmRequest.workflow_definition ||
+            options.algorithmRequest.workflow_name)) ||
+        (options.weatherRequest && options.weatherRequest.workflow),
       )
       const blockedReason =
         runtimeCatalogReady && !isOutputLayer && !hasCanvasDefinition
@@ -1909,6 +1921,7 @@ export const useLayersStore = defineStore('layers', () => {
         requestBBox,
         backendLayerId,
         options.algorithmRequest,
+        options.weatherRequest,
       )
       if (options.commandLabel) {
         payload.command_label = options.commandLabel

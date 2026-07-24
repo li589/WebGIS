@@ -177,6 +177,9 @@ function getCategoryIcon(category: string): string {
 }
 
 function handleAddNode(template: NodeTemplate) {
+  if (template.executable === false) {
+    return
+  }
   // 更新最近使用：插入头部，去重，最多 10 个
   const type = template.type
   const filtered = recentTypes.value.filter((t) => t !== type)
@@ -185,6 +188,10 @@ function handleAddNode(template: NodeTemplate) {
   saveToStorage(RECENT_KEY, recentTypes.value)
 
   emit('addNode', template)
+}
+
+function isStub(template: NodeTemplate): boolean {
+  return template.executable === false
 }
 
 function toggleFavorite(type: string) {
@@ -269,13 +276,16 @@ function isFavorite(type: string): boolean {
             v-for="tpl in favoriteTemplates"
             :key="tpl.type"
             class="node-item"
+            :class="{ stub: isStub(tpl) }"
             type="button"
+            :disabled="isStub(tpl)"
             :style="{ borderLeftColor: getEngineAccentColor(tpl.type, tpl.engine) }"
-            :title="tpl.description"
+            :title="isStub(tpl) ? `${tpl.description}（未实现）` : tpl.description"
             @click="handleAddNode(tpl)"
           >
             <div class="node-item-header">
               <span class="node-item-title">{{ tpl.title }}</span>
+              <span v-if="isStub(tpl)" class="node-item-stub-badge">未实现</span>
               <span
                 class="node-item-favorite-btn favorited"
                 title="取消收藏"
@@ -314,13 +324,16 @@ function isFavorite(type: string): boolean {
             v-for="tpl in recentTemplates"
             :key="tpl.type"
             class="node-item"
+            :class="{ stub: isStub(tpl) }"
             type="button"
+            :disabled="isStub(tpl)"
             :style="{ borderLeftColor: getEngineAccentColor(tpl.type, tpl.engine) }"
-            :title="tpl.description"
+            :title="isStub(tpl) ? `${tpl.description}（未实现）` : tpl.description"
             @click="handleAddNode(tpl)"
           >
             <div class="node-item-header">
               <span class="node-item-title">{{ tpl.title }}</span>
+              <span v-if="isStub(tpl)" class="node-item-stub-badge">未实现</span>
               <span
                 class="node-item-favorite-btn"
                 :class="{ favorited: isFavorite(tpl.type) }"
@@ -368,13 +381,16 @@ function isFavorite(type: string): boolean {
             v-for="tpl in templates"
             :key="tpl.type"
             class="node-item"
+            :class="{ stub: isStub(tpl) }"
             type="button"
+            :disabled="isStub(tpl)"
             :style="{ borderLeftColor: getEngineAccentColor(tpl.type, tpl.engine) }"
-            :title="tpl.description"
+            :title="isStub(tpl) ? `${tpl.description}（未实现）` : tpl.description"
             @click="handleAddNode(tpl)"
           >
             <div class="node-item-header">
               <span class="node-item-title">{{ tpl.title }}</span>
+              <span v-if="isStub(tpl)" class="node-item-stub-badge">未实现</span>
               <span
                 class="node-item-favorite-btn"
                 :class="{ favorited: isFavorite(tpl.type) }"
@@ -630,6 +646,31 @@ function isFavorite(type: string): boolean {
   border-color: rgba(90, 213, 255, 0.32);
   background: rgba(10, 132, 255, 0.1);
   transform: translateX(2px);
+}
+
+.node-item.stub,
+.node-item:disabled {
+  opacity: 0.48;
+  cursor: not-allowed;
+  filter: grayscale(0.35);
+}
+
+.node-item.stub:hover,
+.node-item:disabled:hover {
+  border-color: rgba(136, 192, 255, 0.08);
+  background: rgba(4, 12, 23, 0.4);
+  transform: none;
+}
+
+.node-item-stub-badge {
+  margin-left: 0.35rem;
+  padding: 0.05rem 0.32rem;
+  border-radius: 0.25rem;
+  background: rgba(120, 120, 120, 0.35);
+  color: #9aa8b5;
+  font-size: 0.52rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
 }
 
 .node-item:active {

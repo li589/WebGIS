@@ -103,7 +103,7 @@ class NdviDailyPipeline(BasePipeline):
             gap_threshold_days=int(
                 request.algorithm_params.get("gap_threshold_days", 30)
             ),
-            sg_polyorder=int(request.algorithm_params.get("sg_polyorder", 6)),
+            sg_polyorder=int(request.algorithm_params.get("sg_polyorder", 3)),
             sg_window_length=int(request.algorithm_params.get("sg_window_length", 9)),
         )
 

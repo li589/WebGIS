@@ -39,6 +39,8 @@ export interface NodeTemplate {
   outputs: NodePortSpec[]
   params: NodeParamSpec[]
   node_class: string
+  /** false = stub / 未实现执行器；调色板灰显且不可加入画布 */
+  executable?: boolean
 }
 
 export interface WorkflowDefinitionSummary {

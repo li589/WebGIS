@@ -71,6 +71,25 @@ debug-*.md
 # Legacy review archives
 Code/frontend/legacy-review/
 
+# pytest run artifacts
+.pytest_run*/
+
+# IDE-specific tool artifacts
+.qoder/
+.zcode/
+
+# MATLAB autosave files
+*.asv
+
+# Downloaded reference pages
+Code/frontend/.tmp_windy/
+
+# Test data binaries (large .mat files)
+Tools/test_data/
+
+# Generated E2E test reports
+Tools/reports/data_production_e2e_*
+
 # Root-level temp/debug scripts and data
 /analyze_*.py
 /test_wf_*.py
@@ -80,3 +99,4 @@ Code/frontend/legacy-review/
 /temp_wf_*.json
 .trae/debug-*.png
 .trae/documents/旧对话*.md
+.trae/documents/plan_*.md

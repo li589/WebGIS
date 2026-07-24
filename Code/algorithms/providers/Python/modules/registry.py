@@ -1,8 +1,11 @@
 from __future__ import annotations
 
+import logging
 from typing import Any, Callable
 
 from modules.base import BaseModule
+
+_logger = logging.getLogger(__name__)
 
 
 MODULE_REGISTRY: dict[str, BaseModule] = {}
@@ -59,8 +62,26 @@ def register_module(
             而非 module.name。供 @register_module_decorator(name=...) 使用。
     """
     registry_key = name_override or module.name
+    existing = MODULE_REGISTRY.get(registry_key)
+    if existing is not None and existing is not module:
+        _logger.warning(
+            "Module '%s' is already registered (existing=%s, new=%s); "
+            "the new module will silently overwrite the previous one. "
+            "If this is intentional (e.g. compat shim override), ignore this warning.",
+            registry_key,
+            type(existing).__name__,
+            type(module).__name__,
+        )
     MODULE_REGISTRY[registry_key] = module
     for alias in aliases or []:
+        prev_alias_target = MODULE_ALIASES.get(alias)
+        if prev_alias_target is not None and prev_alias_target != registry_key:
+            _logger.warning(
+                "Alias '%s' was previously mapped to '%s'; remapping to '%s'.",
+                alias,
+                prev_alias_target,
+                registry_key,
+            )
         MODULE_ALIASES[alias] = registry_key
     if template_overrides:
         _TEMPLATE_OVERRIDES[registry_key] = dict(template_overrides)
@@ -112,6 +133,13 @@ def get_module(name: str) -> BaseModule:
     _ensure_default_modules_loaded()
     canonical_name = MODULE_ALIASES.get(name, name)
     if canonical_name not in MODULE_REGISTRY:
+        _logger.warning(
+            "Module not registered: '%s' (tried alias resolution → '%s'). "
+            "Registered modules: %s",
+            name,
+            canonical_name,
+            sorted(MODULE_REGISTRY),
+        )
         raise KeyError(f"Module not registered: {name}")
     return MODULE_REGISTRY[canonical_name]
 
