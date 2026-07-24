@@ -26,6 +26,7 @@ import WorkflowLeftSidebar from './WorkflowLeftSidebar.vue'
 import WorkflowRightSidebar from './WorkflowRightSidebar.vue'
 import WorkflowRunDialog, { type WorkflowRunTarget } from './WorkflowRunDialog.vue'
 import WorkflowTimerPanel from './WorkflowTimerPanel.vue'
+import { WORKFLOW_COPY } from '../../ui-copy'
 
 import type { LGraphNodeClass } from './litegraph-setup'
 import type {
@@ -394,7 +395,7 @@ defineExpose({
       <header class="editor-header">
         <div class="header-left">
           <span class="header-icon" aria-hidden="true">⬡</span>
-          <span class="header-title">流配置</span>
+          <span class="header-title">{{ WORKFLOW_COPY.editorTitle }}</span>
           <span v-if="currentDefinition" class="header-sep">/</span>
           <span v-if="currentDefinition" class="header-workflow-name">{{
             headerWorkflowLabel

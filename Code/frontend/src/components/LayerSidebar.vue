@@ -21,6 +21,7 @@ import {
   isWeatherLayerUnsupportedByModel,
 } from '../stores/weather-tile-manager'
 import { getWeatherProvidersForLayer, type WeatherProviderForLayer } from '../services/runtime-api'
+import { LAYERS_COPY, INSPECT_COPY } from '../ui-copy'
 
 const emit = defineEmits<{
   selectLayer: [instanceId: string]
@@ -370,13 +371,14 @@ function getPrimarySourceName(catalogId: string): string {
   const sources = getCatalogSources(catalogId)
   const id = getPrimarySourceId(catalogId)
   return (
-    sources.find((s) => s.id === id)?.name ?? (sources.length === 0 ? '暂无可用数据源' : '未选择')
+    sources.find((s) => s.id === id)?.name ??
+    (sources.length === 0 ? LAYERS_COPY.noDataSource : LAYERS_COPY.pleaseSelectSource)
   )
 }
 
 function getCatalogSourceSummary(catalogId: string): string {
   const sources = getCatalogSources(catalogId)
-  if (!sources.length) return '暂无可用数据源'
+  if (!sources.length) return LAYERS_COPY.noDataSource
   return sources.map((source) => source.name).join(' / ')
 }
 
@@ -714,7 +716,7 @@ const symbologyPanelLayer = computed(() => {
     <!-- ── EMPTY STATE ─────────────────────────────────────────────────────── -->
     <div v-if="sidebarView === 'empty'" class="empty-state">
       <div class="empty-icon" aria-hidden="true">◇</div>
-      <p class="empty-title">图层为空</p>
+      <p class="empty-title">{{ LAYERS_COPY.emptyTitle }}</p>
       <p class="empty-hint">点击下方按钮打开图层库，<br />添加气象、遥感或边界图层。</p>
       <button class="empty-cta" @click="openLibrary">
         <span aria-hidden="true">+</span>
@@ -817,7 +819,7 @@ const symbologyPanelLayer = computed(() => {
                           )
                         "
                       >
-                        <option value="auto">自动（优先本地 Open-Meteo）</option>
+                        <option value="auto">{{ INSPECT_COPY.providerAuto }}</option>
                         <option
                           v-for="p in weatherProvidersFor(item.catalogId)"
                           :key="p.provider_id"
@@ -852,7 +854,7 @@ const symbologyPanelLayer = computed(() => {
                     :title="'该图层暂未接入数据源'"
                   >
                     <span class="src-empty-icon" aria-hidden="true">ⓘ</span>
-                    <span>暂无可用数据源</span>
+                    <span>{{ LAYERS_COPY.noDataSource }}</span>
                   </div>
                   <div v-else-if="item.sources.length === 1" class="source-single">
                     <div class="src-line">
@@ -966,8 +968,10 @@ const symbologyPanelLayer = computed(() => {
     <!-- ── ACTIVE STATE ───────────────────────────────────────────────────── -->
     <div v-else-if="sidebarView === 'active'" class="active-state">
       <div v-if="activeLayersDisplay.length === 0" class="no-layers">
-        <p>暂无已添加图层。</p>
-        <button class="empty-cta small" @click="openLibrary">去添加</button>
+        <p>{{ LAYERS_COPY.emptyActive }}</p>
+        <button type="button" class="empty-cta" @click="openLibrary">
+          {{ LAYERS_COPY.emptyActiveCta }}
+        </button>
       </div>
 
       <template v-else>
@@ -1102,7 +1106,7 @@ const symbologyPanelLayer = computed(() => {
 
     <!-- ── Footer ──────────────────────────────────────────────────────────── -->
     <p class="panel-footnote">
-      <template v-if="sidebarView === 'active'">拖动排序 · 右键符号系统 / 导出</template>
+      <template v-if="sidebarView === 'active'">{{ LAYERS_COPY.footerActive }}</template>
       <template v-else-if="sidebarView === 'library'">选择图层添加到地图</template>
       <template v-else></template>
     </p>
@@ -1122,7 +1126,9 @@ const symbologyPanelLayer = computed(() => {
           @click="openSymbologyFromMenu"
         >
           <span class="ctx-icon" aria-hidden="true">🎨</span>
-          <span>{{ hasColorSymbology(contextMenuLayer) ? '符号系统' : '透明度' }}</span>
+          <span>{{
+            hasColorSymbology(contextMenuLayer) ? LAYERS_COPY.symbology : LAYERS_COPY.opacity
+          }}</span>
         </button>
         <button class="ctx-item" type="button" @click="viewDetailFromMenu">
           <span class="ctx-icon" aria-hidden="true">ℹ</span>
@@ -1159,7 +1165,7 @@ const symbologyPanelLayer = computed(() => {
       >
         <div class="sym-popover-header">
           <span class="sym-popover-title">{{
-            hasColorSymbology(symbologyPanelLayer) ? '符号系统' : '透明度'
+            hasColorSymbology(symbologyPanelLayer) ? LAYERS_COPY.symbology : LAYERS_COPY.opacity
           }}</span>
           <button class="sym-popover-close" type="button" @click="closeSymbologyPanel">✕</button>
         </div>

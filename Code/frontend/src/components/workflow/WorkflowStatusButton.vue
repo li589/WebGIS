@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import type { WorkflowSummary } from '../../stores/layers/types'
+import { WORKFLOW_COPY } from '../../ui-copy'
 
 const props = defineProps<{
   summary: WorkflowSummary
@@ -14,13 +15,13 @@ const toneClass = computed(() => `tone-${props.summary.tone}`)
 
 const label = computed(() => {
   const s = props.summary
-  if (s.total === 0) return '工作流'
+  if (s.total === 0) return WORKFLOW_COPY.entry
   const active = s.running + s.queued + s.retryPending
   if (active > 0) return '运行中'
   if (s.failed > 0) return '失败'
-  if (s.succeeded > 0) return '完成'
+  if (s.succeeded > 0) return WORKFLOW_COPY.statusDone
   if (s.cancelled > 0) return '已取消'
-  return '工作流'
+  return WORKFLOW_COPY.entry
 })
 
 const showRunningBadge = computed(() => props.summary.running > 0)
@@ -44,7 +45,7 @@ const showCancelledBadge = computed(
   <button
     class="wf-status-btn"
     :class="toneClass"
-    title="点击查看全局工作流状态"
+    :title="`点击查看${WORKFLOW_COPY.statusOverview}`"
     @click="$emit('click')"
   >
     <span class="wf-dot" aria-hidden="true"></span>
@@ -61,7 +62,7 @@ const showCancelledBadge = computed(
     <span v-if="showFailedBadge" class="wf-badge badge-failed" title="失败">{{
       summary.failed
     }}</span>
-    <span v-if="showDoneBadge" class="wf-badge badge-done" title="已完成">{{
+    <span v-if="showDoneBadge" class="wf-badge badge-done" :title="WORKFLOW_COPY.statusDone">{{
       summary.succeeded
     }}</span>
     <span v-if="showCancelledBadge" class="wf-badge badge-cancelled" title="已取消">{{

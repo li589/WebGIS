@@ -53,6 +53,10 @@ _API_KEY_META: dict[str, dict[str, str]] = {
         "display_name": "高德地图",
         "description": "高德底图可选 Key（当前瓦片模板可不填；预留与设置页对齐）",
     },
+    "bing": {
+        "display_name": "Bing",
+        "description": "Bing 底图可选 Key（当前瓦片模板可不填；预留与设置页对齐）",
+    },
     "backend_auth": {
         "display_name": "后端认证",
         "description": "后端 API 访问令牌，用于保护写接口（X-Api-Key）",
@@ -66,6 +70,7 @@ def _env_api_key_value(key_name: str) -> str:
         "baidu": settings.baidu_api_key,
         "backend_auth": settings.api_key,
         "gaode": os.getenv("BACKEND_GAODE_API_KEY", ""),
+        "bing": os.getenv("BACKEND_BING_API_KEY", ""),
     }
     return str(env_map.get(key_name) or "").strip()
 

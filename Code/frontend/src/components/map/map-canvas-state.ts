@@ -10,6 +10,7 @@ import { createMeasureModule } from './measure-module'
 import { createSelectedLayerFocusModule } from './selected-layer-focus-module'
 import type { WeatherOverlayModule } from './weather-overlay-module'
 import type { MapCanvasNonWeatherLayerSyncModule } from './map-canvas-non-weather-layer-sync-module'
+import { MAP_COPY } from '../../ui-copy'
 
 type MapInstance = import('maplibre-gl').Map
 
@@ -62,7 +63,7 @@ export function createMapCanvasState(): MapCanvasState {
     skeletonVisible: ref(true),
     isMapInteracting: ref(false),
     isSourceTransitioning: ref(false),
-    loadingLabel: ref('正在加载地图...'),
+    loadingLabel: ref(MAP_COPY.loading),
     tileLoadFailed: ref(false),
     tileFailedProvider: ref<string | null>(null),
     resources: {

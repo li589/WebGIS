@@ -194,7 +194,7 @@ onBeforeUnmount(() => {
           <button
             class="tool-button icon-button"
             type="button"
-            title="复位"
+            title="复位时间"
             @click.stop="resetPanel"
           >
             <svg viewBox="0 0 16 16" aria-hidden="true">
@@ -204,7 +204,7 @@ onBeforeUnmount(() => {
           <button
             class="tool-button icon-button"
             type="button"
-            title="隐藏"
+            title="隐藏时间轴"
             @click.stop="hidePanel"
           >
             <svg viewBox="0 0 16 16" aria-hidden="true">

@@ -83,7 +83,7 @@ def hydrate_effective_config() -> RuntimeSnapshot:
         from app.services.config_service import get_effective_api_key
 
         api_keys: dict[str, str] = {}
-        for name in ("tianditu", "baidu", "backend_auth", "gaode"):
+        for name in ("tianditu", "baidu", "backend_auth", "gaode", "bing"):
             value = get_effective_api_key(name)
             if value:
                 api_keys[name] = value

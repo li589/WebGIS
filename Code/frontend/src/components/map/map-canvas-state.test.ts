@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
 import { createMapCanvasState } from './map-canvas-state'
+import { MAP_COPY } from '../../ui-copy'
 
 describe('map-canvas-state', () => {
   it('creates default stage refs and runtime flags', () => {
@@ -15,7 +16,7 @@ describe('map-canvas-state', () => {
     expect(state.skeletonVisible.value).toBe(true)
     expect(state.isMapInteracting.value).toBe(false)
     expect(state.isSourceTransitioning.value).toBe(false)
-    expect(state.loadingLabel.value).toBe('正在加载地图...')
+    expect(state.loadingLabel.value).toBe(MAP_COPY.loading)
     expect(state.tileLoadFailed.value).toBe(false)
     expect(state.tileFailedProvider.value).toBeNull()
   })

@@ -29,11 +29,8 @@ import {
   buildLegendExplainer,
 } from './map/effective-layer-symbology'
 import { useOverlaySymbologyStore } from '../stores/overlay-symbology'
-import {
-  windDisplayModeChip,
-  windDisplayModeLabel,
-  type WindDisplayMode,
-} from './map/wind-display-mode'
+import { windDisplayModeLabel, type WindDisplayMode } from './map/wind-display-mode'
+import { INSPECT_COPY } from '../ui-copy'
 
 const layersStore = useLayersStore()
 const uiStore = useUiStore()
@@ -307,7 +304,7 @@ const particleFlowButtonDisabled = computed(() => {
 })
 const windStyleChipLabel = computed(() => {
   if (!canToggleParticleFlow.value) return styleRenderHint.value?.paint_mode ?? '样式'
-  return windDisplayModeChip(currentWindDisplayMode.value)
+  return windDisplayModeLabel(currentWindDisplayMode.value)
 })
 
 const hasLayerStyleSection = computed(
@@ -536,18 +533,21 @@ const pointWeatherRows = computed(() => {
   const primaryValue = pointWeatherPrimaryValue.value
   return [
     {
-      label: 'Point',
+      label: INSPECT_COPY.fieldPoint,
       value:
         weather.place_name ?? `${weather.latitude.toFixed(3)}, ${weather.longitude.toFixed(3)}`,
     },
-    { label: 'Layer', value: weather.layer_id || displayLayer.value.catalogId || '—' },
-    { label: 'Model', value: weather.model },
+    {
+      label: INSPECT_COPY.fieldLayer,
+      value: weather.layer_id || displayLayer.value.catalogId || '—',
+    },
+    { label: INSPECT_COPY.fieldModel, value: weather.model },
     {
       label: pointWeatherMetric.value.label,
       value: primaryValue,
     },
     {
-      label: 'Observed',
+      label: INSPECT_COPY.fieldObserved,
       value: weather.observation_time ? formatTime(weather.observation_time) : '--',
     },
   ]
@@ -574,11 +574,11 @@ const pointWeatherHourlyRows = computed(() => {
 })
 
 const pointInspectStatusLabel = computed(() => {
-  if (props.pointWeatherLoading) return '查询中'
-  if (props.pointWeatherError) return '失败'
-  if (props.pointWeather) return props.pointWeather.cache_status || '已取数'
-  if (uiStore.interactionMode === 'select') return '等待点击'
-  return '需选择模式'
+  if (props.pointWeatherLoading) return INSPECT_COPY.statusQuerying
+  if (props.pointWeatherError) return INSPECT_COPY.statusFailed
+  if (props.pointWeather) return props.pointWeather.cache_status || INSPECT_COPY.statusReady
+  if (uiStore.interactionMode === 'select') return INSPECT_COPY.statusWaitingClick
+  return INSPECT_COPY.statusNeedSelectMode
 })
 const canRunWorkflow = computed(
   () =>
@@ -1050,10 +1050,10 @@ onBeforeUnmount(() => {
         class="analysis-section analysis-section--weather"
         id="point-weather"
       >
-        <div class="section-kicker">点天气</div>
+        <div class="section-kicker">{{ INSPECT_COPY.sectionKicker }}</div>
         <div class="weather-section-head">
           <div>
-            <h3>地图点击查询</h3>
+            <h3>{{ INSPECT_COPY.sectionTitle }}</h3>
             <p>
               使用工具栏「选择」后点击地图；漫游模式下可
               <kbd>Shift</kbd>+点击临时查询。查询对象为当前选中天气层（或最顶层可见天气层）。
@@ -1087,7 +1087,7 @@ onBeforeUnmount(() => {
         </div>
 
         <div v-if="pointWeatherLoading" class="weather-state weather-state-loading">
-          正在获取点天气...
+          正在获取点查…
         </div>
         <div v-else-if="pointWeatherError" class="weather-state weather-state-error">
           {{ pointWeatherError }}
@@ -1197,7 +1197,7 @@ onBeforeUnmount(() => {
               :disabled="weatherProvidersLoading"
               :title="weatherProvidersError || '自动按优先级选择已启用源；钉选后瓦片与点查均走该源'"
             >
-              <option value="auto">自动（优先本地 Open-Meteo）</option>
+              <option value="auto">{{ INSPECT_COPY.providerAuto }}</option>
               <option
                 v-for="opt in weatherProviderOptions"
                 :key="opt.provider_id"

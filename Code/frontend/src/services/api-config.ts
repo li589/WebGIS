@@ -213,7 +213,7 @@ export interface TileSourceConfig {
 export const BASEMAP_PROVIDER_CONFIGS: BasemapProviderConfig[] = [
   {
     id: 'none',
-    label: 'Blank Basemap',
+    label: '空白底图',
     provider: 'None',
     coordinateSystem: 'EPSG:3857',
     endpoints: [
@@ -388,7 +388,7 @@ export const BASEMAP_PROVIDER_CONFIGS: BasemapProviderConfig[] = [
   },
   {
     id: 'bing',
-    label: 'Bing Basemaps',
+    label: 'Bing',
     provider: 'Bing',
     coordinateSystem: 'EPSG:3857',
     endpoints: [
@@ -406,7 +406,7 @@ export const BASEMAP_PROVIDER_CONFIGS: BasemapProviderConfig[] = [
         brightness: 0.01,
         contrast: 0.05,
         isStandard: true,
-        needsBackendTransform: true,
+        needsBackendTransform: false,
         secretRef: { id: 'bing-maps-key', backend: 'config-api-keys', key: 'bing' },
       },
       {
@@ -423,7 +423,7 @@ export const BASEMAP_PROVIDER_CONFIGS: BasemapProviderConfig[] = [
         brightness: 0.02,
         contrast: 0.08,
         isStandard: true,
-        needsBackendTransform: true,
+        needsBackendTransform: false,
         secretRef: { id: 'bing-maps-key', backend: 'config-api-keys', key: 'bing' },
       },
       {
@@ -440,15 +440,15 @@ export const BASEMAP_PROVIDER_CONFIGS: BasemapProviderConfig[] = [
         brightness: -0.04,
         contrast: 0.12,
         isStandard: true,
-        needsBackendTransform: true,
+        needsBackendTransform: false,
         secretRef: { id: 'bing-maps-key', backend: 'config-api-keys', key: 'bing' },
       },
     ],
   },
   {
     id: 'gaode',
-    label: 'Gaode Basemaps',
-    provider: 'AutoNavi',
+    label: '高德',
+    provider: '高德',
     coordinateSystem: 'GCJ-02',
     endpoints: [
       {
@@ -698,6 +698,37 @@ for (const source of TILE_SOURCES) {
   }
 }
 
+/**
+ * 同风格展示优先级：高德 → Bing → 其余（验收默认与第二选项）。
+ * 未列出的 id 保持相对顺序排在后面。
+ */
+const BASEMAP_STYLE_PRIORITY: Partial<Record<BasemapStyle, readonly string[]>> = {
+  street: ['gaode-street', 'bing-road'],
+  satellite: ['gaode-satellite', 'bing-aerial'],
+  dark: ['bing-dark'],
+}
+
+function sortBasemapSourcesInPlace(sources: TileSourceConfig[], style: BasemapStyle): void {
+  const priority = BASEMAP_STYLE_PRIORITY[style]
+  if (!priority?.length) return
+  const rank = new Map(priority.map((id, i) => [id, i]))
+  const decorated = sources.map((s, i) => ({ s, i }))
+  decorated.sort((a, b) => {
+    const ra = rank.get(a.s.id) ?? priority.length + a.i
+    const rb = rank.get(b.s.id) ?? priority.length + b.i
+    return ra - rb
+  })
+  for (let i = 0; i < decorated.length; i++) sources[i] = decorated[i].s
+}
+
+for (const [style, sources] of TILE_SOURCES_BY_STYLE) {
+  sortBasemapSourcesInPlace(sources, style)
+}
+
+export function getDefaultTileSource(): TileSourceId {
+  return 'gaode-street'
+}
+
 export function needsBackendProxy(sourceId: TileSourceId): boolean {
   return TILE_SOURCE_MAP.get(sourceId)?.needsBackendTransform ?? false
 }
@@ -716,10 +747,6 @@ export function getDirectAccessSources(): TileSourceConfig[] {
 
 export function getSourcesByStyle(style: BasemapStyle): TileSourceConfig[] {
   return TILE_SOURCES_BY_STYLE.get(style) ?? []
-}
-
-export function getDefaultTileSource(): TileSourceId {
-  return 'esri-street'
 }
 
 export function isSourceAvailable(sourceId: TileSourceId): boolean {

@@ -9,6 +9,7 @@ import type { WindGeoJSON } from './types'
 import type { WindDisplayMode } from './wind-display-mode'
 import { type OverlaySymbologyMeta, resolveStyleRenderHint } from './layer-symbology'
 import { buildScalarGridFromGeoJSON, resolveScalarValueRange } from './scalar-field-grid'
+import { WIND_COPY } from '../../ui-copy'
 
 const SAMPLED_TICK_COUNT = 5
 
@@ -61,14 +62,14 @@ export function buildLegendExplainer(options: {
 }): string {
   const { hint, windDisplayMode, canToggleParticleFlow } = options
   if (windDisplayMode === 'particle' || windDisplayMode === 'streamline') {
-    return '色带对应风速网格底色；粒子/流线表示流向（颜色随风速提亮）。'
+    return WIND_COPY.explainerOn
   }
   if (windDisplayMode === 'off' && canToggleParticleFlow) {
-    return '色带对应风速网格底色；风场粒子/流线当前已关闭。'
+    return WIND_COPY.explainerOff
   }
   const mode = hint?.paint_mode
   if (mode === 'particle_flow' || canToggleParticleFlow) {
-    return '色带对应风速网格底色；粒子线表示流向（颜色随风速提亮）。'
+    return WIND_COPY.explainerOn
   }
   if (mode === 'grid_fill' || mode === 'heatmap') {
     return '色带对应网格单元量级；相邻单元接壤形成连续色场。'

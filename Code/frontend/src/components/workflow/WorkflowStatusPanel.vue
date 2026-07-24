@@ -6,6 +6,7 @@ import { useWeatherTileManager } from '../../stores/weather-tile-manager'
 import { useWeatherSyncStatusStore } from '../../stores/weather-sync-status'
 import { mergeWorkflowSummaryWithWeather } from '../../utils/workflow-status-merge'
 import type { JobStatus } from '../../stores/layers/types'
+import { WORKFLOW_COPY } from '../../ui-copy'
 
 const layersStore = useLayersStore()
 const weatherTileManager = useWeatherTileManager()
@@ -348,7 +349,7 @@ onBeforeUnmount(() => {
       <header class="wf-panel-header">
         <div>
           <p class="wf-panel-eyebrow">WORKFLOW STATUS</p>
-          <h2>工作流状态总览</h2>
+          <h2>{{ WORKFLOW_COPY.statusOverview }}</h2>
         </div>
         <div class="wf-header-stats" v-if="summary.total > 0 || globalTileStats.totalPending > 0">
           <span class="wf-header-stat">

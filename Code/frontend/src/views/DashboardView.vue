@@ -13,7 +13,7 @@ import TimelinePanel from '../components/TimelinePanel.vue'
 import TimelineScrubber from '../components/TimelineScrubber.vue'
 import WorkflowStatusPanel from '../components/workflow/WorkflowStatusPanel.vue'
 import type { TileSourceId } from '../services/api-config'
-import type { ActiveLayerDisplay, LayerHotspot } from '../stores/layers/types'
+import type { LayerHotspot } from '../stores/layers/types'
 import type { OverlayTimeState } from '../components/map/overlay-image-module'
 import {
   getOverlayValue,
@@ -32,6 +32,7 @@ import {
   dateHourToTileHour,
   findLatestValidCoverageInstant,
 } from '../utils/weather-timeline'
+import { buildFallbackActiveLayerDisplay } from '../components/map/map-stage-view-model'
 
 const uiStore = useUiStore()
 const layersStore = useLayersStore()
@@ -66,7 +67,7 @@ const { statusVersion: weatherStatusVersion, activityVersion: weatherActivityVer
 
 const activeLayer = computed(() => {
   if (selectedLayerDisplay.value) return selectedLayerDisplay.value
-  return buildFallbackActiveLayer()
+  return buildFallbackActiveLayerDisplay()
 })
 
 const stageLabel = computed(() =>
@@ -631,39 +632,6 @@ watch(tileForecastHour, () => {
     requestPointWeather(point.lng, point.lat, catalogId)
   }, 180)
 })
-
-function buildFallbackActiveLayer(): ActiveLayerDisplay {
-  return {
-    instanceId: '',
-    catalogId: '',
-    name: '无图层',
-    category: '',
-    summary: '请在左侧面板选择图层进行展示。',
-    metricLabel: '—',
-    metricValue: '—',
-    trendLabel: '—',
-    statusLabel: '—',
-    updateLabel: '—',
-    sourceLabel: '—',
-    confidenceLabel: '—',
-    accentColor: '#5a6a80',
-    accentGlow: 'rgba(90, 106, 128, 0.3)',
-    chipTone: 'rgba(90, 106, 128, 0.16)',
-    availabilityState: 'empty',
-    availabilityLabel: '空状态',
-    availabilityDescription: '从左侧图层面板添加数据图层。',
-    observationTimeLabel: '—',
-    missingFieldsLabel: '—',
-    hotspots: [],
-    isAdminBoundary: false,
-    isImported: false,
-    isImportedRaster: false,
-    visible: true,
-    opacity: 1,
-    order: 0,
-    dataState: 'catalog',
-  }
-}
 </script>
 
 <template>

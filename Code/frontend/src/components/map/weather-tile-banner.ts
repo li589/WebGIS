@@ -1,6 +1,7 @@
 /**
  * 天气瓦片地图横幅聚合：按层隔离，避免单层无数据盖住其它健康层。
  */
+import { MAP_COPY } from '../../ui-copy'
 
 export interface WeatherTileBannerLayerInput {
   /** 显示名（优先中文 metric / label） */
@@ -56,7 +57,7 @@ export function aggregateWeatherTileBanner(
     return {
       show: true,
       isLoading: false,
-      error: formatNamedList(parts, '天气数据加载失败'),
+      error: formatNamedList(parts, MAP_COPY.weatherLoadFailed),
       partial: null,
     }
   }
@@ -71,14 +72,14 @@ export function aggregateWeatherTileBanner(
   if (partialLayers.length > 0) {
     const parts = partialLayers.map((l) => {
       const progress = `${l.cachedInViewport}/${l.cachedInViewport + l.missingInViewport}`
-      const tip = l.gapSweepActive ? '正在补全空洞…' : '部分区域待重试'
+      const tip = l.gapSweepActive ? MAP_COPY.weatherGapSweep : MAP_COPY.weatherPartial
       return `${l.label} ${progress}，${tip}`
     })
     return {
       show: true,
       isLoading: false,
       error: null,
-      partial: formatNamedList(parts, '部分区域待重试'),
+      partial: formatNamedList(parts, MAP_COPY.weatherPartial),
     }
   }
 

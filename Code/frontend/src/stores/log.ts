@@ -34,7 +34,7 @@ const TYPE_LABELS: Record<string, string> = {
   'map-point-clear': '清除选点',
   'workflow-submit': '提交工作流',
   'workflow-error': '工作流失败',
-  'workflow-editor-open': '流配置',
+  'workflow-editor-open': '工作流',
   'workflow-timer-open': '定时器',
   'weather-tile-error': '天气瓦片',
   'settings-open': '设置',

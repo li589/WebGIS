@@ -11,7 +11,7 @@ import {
 describe('map-stage-view-model', () => {
   it('builds fallback active layer display', () => {
     expect(buildFallbackActiveLayerDisplay()).toMatchObject({
-      name: '无图层',
+      name: '暂无图层',
       availabilityState: 'empty',
       availabilityLabel: '空状态',
       metricLabel: '—',

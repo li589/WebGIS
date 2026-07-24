@@ -2,6 +2,7 @@ import { computed, ref, watch } from 'vue'
 import { defineStore } from 'pinia'
 
 import type { TileSourceId } from '../services/api-config'
+import { getDefaultTileSource } from '../services/api-config'
 import { CLOCK_DAY_MAX_HOUR, formatClockHourLabel } from '../utils/weather-timeline'
 
 export type { TileSourceId } from '../services/api-config'
@@ -76,7 +77,7 @@ function loadLayerMemory(): Record<string, LayerTimeMemory> {
 }
 
 export const useUiStore = defineStore('ui', () => {
-  const tileSourceId = ref<TileSourceId>('esri-street')
+  const tileSourceId = ref<TileSourceId>(getDefaultTileSource())
   const analysisFocusRequest = ref<{ ids: string[]; token: number } | null>(null)
 
   // 时间轴：日历日期 + 当日钟点 0–23

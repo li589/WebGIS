@@ -25,7 +25,7 @@ import {
   buildMapStageTimeVisualState,
 } from './map/map-stage-view-model'
 import { aggregateWeatherTileBanner } from './map/weather-tile-banner'
-import { TILE_SOURCE_MAP, type TileSourceId } from '../services/api-config'
+import { TILE_SOURCE_MAP, getDefaultTileSource, type TileSourceId } from '../services/api-config'
 
 const layersStore = useLayersStore()
 const uiStore = useUiStore()
@@ -134,7 +134,7 @@ function debugLog(module: string, ...args: unknown[]) {
 }
 
 const currentTileConfig = computed(
-  () => TILE_SOURCE_MAP.get(props.tileSourceId) ?? TILE_SOURCE_MAP.get('esri-street')!,
+  () => TILE_SOURCE_MAP.get(props.tileSourceId) ?? TILE_SOURCE_MAP.get(getDefaultTileSource())!,
 )
 
 // ── Derived from layersStore ──────────────────────────────────────────────────

@@ -12,6 +12,7 @@ import OpenMeteoSyncSettings from './OpenMeteoSyncSettings.vue'
 import DataSourceSettings from './DataSourceSettings.vue'
 import RemoteStorageSettings from './RemoteStorageSettings.vue'
 import AboutSettings from './AboutSettings.vue'
+import { SETTINGS_COPY } from '../../ui-copy'
 
 const emit = defineEmits<{
   close: []
@@ -58,13 +59,13 @@ const tabComponents = shallowRef<Record<SettingsTab, typeof GeneralSettings>>({
 })
 
 const tabs: Array<{ id: SettingsTab; label: string; icon: string }> = [
-  { id: 'general', label: '常规设置', icon: '▣' },
-  { id: 'api-keys', label: 'API管理', icon: '🔑' },
-  { id: 'gee-accounts', label: 'GEE账户', icon: '🌍' },
-  { id: 'weather-providers', label: '天气源', icon: '🌦' },
-  { id: 'open-meteo-sync', label: 'Open-Meteo', icon: '🌩' },
+  { id: 'general', label: SETTINGS_COPY.tabGeneral, icon: '▣' },
+  { id: 'api-keys', label: SETTINGS_COPY.tabApiKeys, icon: '🔑' },
+  { id: 'gee-accounts', label: SETTINGS_COPY.tabGee, icon: '🌍' },
+  { id: 'weather-providers', label: SETTINGS_COPY.tabWeather, icon: '🌦' },
+  { id: 'open-meteo-sync', label: SETTINGS_COPY.tabOpenMeteo, icon: '🌩' },
   { id: 'remote-storage', label: '远程存储', icon: '🖧' },
-  { id: 'data-source', label: '数据源', icon: '⚱' },
+  { id: 'data-source', label: SETTINGS_COPY.tabDataSource, icon: '⚱' },
   { id: 'about', label: '关于', icon: 'ⓘ' },
 ]
 
@@ -97,7 +98,7 @@ watch(activeTab, (tab) => {
     <div class="settings-panel">
       <div class="settings-header">
         <span class="header-icon" aria-hidden="true">⚙</span>
-        <span class="header-title">系统设置</span>
+        <span class="header-title">{{ SETTINGS_COPY.panelTitle }}</span>
         <button class="close-btn" @click="emit('close')" title="关闭">
           <span aria-hidden="true">✕</span>
         </button>

@@ -87,9 +87,19 @@
 
 | 模式 | 主实现 | 要点 |
 |------|--------|------|
-| 粒子 `particle` | WebGL（`wind-particle-webgl-*`）；`?windgl=0` → Canvas `wind-particle-canvas.ts` | 默认路径；急流区降低 drop bump + 多子步 RK2，避免高密度跳动 |
+| 粒子流 `particle` | WebGL（`wind-particle-webgl-*`）；`?windgl=0` → Canvas `wind-particle-canvas.ts` | 默认路径；急流区降低 drop bump + 多子步 RK2，避免高密度跳动 |
 | 流量场 `streamline` | Canvas `wind-streamline-layer.ts` | 视口∩grid 撒种；`lonWrapOffset` 仅在数据变化 / zoomend 重算；绘制 `base±360` 世界副本 |
-| 关闭 `off` | 仅风速色底 | 无粒子/流线 |
+| 关闭 `off` | 仅风速色底 | 无粒子流/流量场 |
+
+用户可见文案以 `ui-copy` + `windDisplayModeLabel` 为准（粒子流 / 流量场 / 关闭），**禁止**把 `particle_flow` / `streamline` / `off` 直接当 chip 展示。
+
+### 底图默认与选项序
+
+- 默认：`gaode-street`（`getDefaultTileSource()` / `ui.tileSourceId`）
+- 街道 Tab 序：高德 → Bing → 其余；影像：高德卫星 → Bing 航空 → 其余
+- 高德经 `/unified-tiles` 做 GCJ 瓦片索引转换；Bing Key 在设置「API 管理」可选配置
+- 风格 Tab「空白」与源「空白」同词；pill 显示短名（高德 / Bing / Esri…）而非单字母
+- 工具栏不再对高德/Bing 显示「需坐标转换」警告（属正常代理路径；缺 Key 仍显示「需配置底图 API Key」）
 
 缩放 + 视口刷新后的已知坑与对策：
 
@@ -124,6 +134,7 @@
 - `components/map/wind-contour-layer.ts`：等值线
 - `components/map/canvas-utils.ts`：`lonWrapOffset` / 布局（wrap 对齐相机中心）
 - `components/map/weather-render.ts`：样式映射
+- `ui-copy/`：验收中文词表（品牌 / 底图 / 风场 / 点查 / 图层 / 工作流 / 地图）
 - `stores/layers/result-adapter.ts`：解析 `render_hint` 与 `layer_assets`
 - `stores/layers/index.ts`：图层状态、workflow、粒子流独占与视口状态
 - `stores/weather-tile-manager.ts` / `weather-tile-cache-trim.ts`：瓦片调度与 LRU trim

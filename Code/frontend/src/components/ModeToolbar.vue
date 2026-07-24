@@ -20,6 +20,15 @@ import { useSettingsStore } from '../stores/settings'
 import { useWeatherTileManager } from '../stores/weather-tile-manager'
 import { useWeatherSyncStatusStore } from '../stores/weather-sync-status'
 import { mergeWorkflowSummaryWithWeather } from '../utils/workflow-status-merge'
+import {
+  BRAND,
+  BASEMAP_COPY,
+  basemapStyleLabel,
+  basemapProviderShort,
+  WORKFLOW_COPY,
+  SETTINGS_COPY,
+  LAYERS_COPY,
+} from '../ui-copy'
 import WorkflowStatusButton from './workflow/WorkflowStatusButton.vue'
 import DataImportMenu from './toolbar/DataImportMenu.vue'
 
@@ -87,12 +96,12 @@ const sourcesByStyle = computed(() => {
     icon: string
     sources: TileSourceConfig[]
   }> = []
-  const styleMeta: Record<BasemapStyle, { label: string; icon: string }> = {
-    none: { label: '空图', icon: '◇' },
-    satellite: { label: '影像', icon: '◆' },
-    street: { label: '街道', icon: '▦' },
-    dark: { label: '深色', icon: '◑' },
-    terrain: { label: '地形', icon: '⛰' },
+  const styleMeta: Record<BasemapStyle, { icon: string }> = {
+    none: { icon: '◇' },
+    satellite: { icon: '◆' },
+    street: { icon: '▦' },
+    dark: { icon: '◑' },
+    terrain: { icon: '⛰' },
   }
 
   for (const [style, sources] of TILE_SOURCES_BY_STYLE) {
@@ -101,7 +110,7 @@ const sourcesByStyle = computed(() => {
     if (standard.some((s) => s.isStandard)) {
       result.push({
         style,
-        label: styleMeta[style]?.label ?? style,
+        label: basemapStyleLabel(style),
         icon: styleMeta[style]?.icon ?? '▦',
         sources: standard,
       })
@@ -159,12 +168,16 @@ function handleScreenshot() {
 
 function handleSettings() {
   emit('openSettings')
-  logStore.logOperation('settings-open', '打开系统设置')
+  logStore.logOperation('settings-open', SETTINGS_COPY.openLog)
 }
 
 function handleWorkflowEditor() {
   emit('openWorkflowEditor')
-  logStore.logOperation('workflow-editor-open', '打开流配置编辑器')
+  logStore.logOperation('workflow-editor-open', WORKFLOW_COPY.openEditorLog)
+}
+
+function sourcePillLabel(source: TileSourceConfig): string {
+  return basemapProviderShort(source.id, source.provider)
 }
 </script>
 
@@ -175,8 +188,8 @@ function handleWorkflowEditor() {
       <div class="brand">
         <div class="brand-mark"></div>
         <div class="brand-copy">
-          <p class="eyebrow">GeoFlow</p>
-          <h1>综合地理态势</h1>
+          <p class="eyebrow">{{ BRAND.eyebrow }}</p>
+          <h1>{{ BRAND.shortName }}</h1>
         </div>
       </div>
 
@@ -215,7 +228,7 @@ function handleWorkflowEditor() {
             class="mode-btn"
             :class="{ active: uiStore.interactionMode === 'select' }"
             type="button"
-            title="选择模式（点击查询点信息）"
+            title="点查模式（点击查询）"
             @click="setInteractionMode('select')"
           >
             <svg
@@ -283,21 +296,26 @@ function handleWorkflowEditor() {
           <span class="btn-label">截图</span>
         </button>
 
-        <!-- 流配置 -->
+        <!-- 工作流 -->
         <button
           class="tool-btn"
           type="button"
-          title="工作流配置编辑器（含定时器）"
+          :title="WORKFLOW_COPY.entryTitle"
           @click="handleWorkflowEditor"
         >
           <span class="btn-icon" aria-hidden="true">⬡</span>
-          <span class="btn-label">流配置</span>
+          <span class="btn-label">{{ WORKFLOW_COPY.entry }}</span>
         </button>
 
         <!-- 设置 -->
-        <button class="tool-btn" type="button" title="系统设置" @click="handleSettings">
+        <button
+          class="tool-btn"
+          type="button"
+          :title="SETTINGS_COPY.panelTitle"
+          @click="handleSettings"
+        >
           <span class="btn-icon" aria-hidden="true">⚙</span>
-          <span class="btn-label">设置</span>
+          <span class="btn-label">{{ SETTINGS_COPY.panelTitle }}</span>
         </button>
 
         <!-- 日志 -->
@@ -368,18 +386,17 @@ function handleWorkflowEditor() {
             "
             @click="selectSource(source)"
           >
-            {{ source.provider[0] }}
+            {{ sourcePillLabel(source) }}
           </button>
         </div>
 
         <div class="time-chip">{{ hourLabel }}</div>
 
         <div v-if="activeLayerCount > 0" class="status-chip">{{ activeLayer.name }}</div>
-        <div v-else class="status-chip">无图层</div>
+        <div v-else class="status-chip">{{ LAYERS_COPY.emptyTitle }}</div>
         <div v-if="activeLayerCount > 0" class="status-chip">{{ activeLayerCount }} 个图层</div>
-        <div v-if="currentSourceLocked" class="status-chip warning">需配置底图 Key</div>
-        <div v-else-if="currentTileConfig?.needsBackendTransform" class="status-chip warning">
-          需坐标转换
+        <div v-if="currentSourceLocked" class="status-chip warning">
+          {{ BASEMAP_COPY.needApiKey }}
         </div>
       </div>
     </div>
@@ -662,11 +679,11 @@ h1 {
 }
 
 .source-btn {
-  width: 1.38rem;
+  min-width: 1.8rem;
   height: 1.38rem;
   border: none;
   border-radius: 0.4rem;
-  padding: 0;
+  padding: 0 0.28rem;
   background: transparent;
   color: #6e8ba0;
   cursor: pointer;
@@ -674,6 +691,7 @@ h1 {
   font-size: 0.58rem;
   font-weight: 600;
   letter-spacing: 0.01em;
+  white-space: nowrap;
   transition:
     background 0.16s ease,
     color 0.16s ease,
