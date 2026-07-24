@@ -100,3 +100,5 @@ Tools/reports/data_production_e2e_*
 .trae/debug-*.png
 .trae/documents/旧对话*.md
 .trae/documents/plan_*.md
+.trae/documents/weather-rendering-*.md
+.trae/documents/windy-style-*.md
