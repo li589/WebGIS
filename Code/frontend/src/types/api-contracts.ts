@@ -38,40 +38,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/demo/layers/snapshots": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** List Demo Snapshots */
-        get: operations["list_demo_snapshots_demo_layers_snapshots_get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/demo/layers/{layer_id}/snapshot": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** Get Demo Snapshot */
-        get: operations["get_demo_snapshot_demo_layers__layer_id__snapshot_get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/geo/transform": {
         parameters: {
             query?: never;
@@ -182,7 +148,13 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        get?: never;
+        /**
+         * List Workflow Runs
+         * @description 列出工作流 run。active_only=true（默认）仅返回非终态 run。
+         *
+         *     供前端启动恢复与跨会话状态同步使用。
+         */
+        get: operations["list_workflow_runs_workflow_runs_get"];
         put?: never;
         /** Submit Workflow */
         post: operations["submit_workflow_workflow_runs_post"];
@@ -569,6 +541,90 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/weather/coverage": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Weather Coverage
+         * @description 返回本地 Open-Meteo 数据覆盖范围，供前端时间轴限制可选时段。
+         */
+        get: operations["get_weather_coverage_weather_coverage_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/weather/sync/overview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Open Meteo Sync Overview
+         * @description Open-Meteo 同步与本地可达性总览（设置页 / 运维）。
+         */
+        get: operations["get_open_meteo_sync_overview_weather_sync_overview_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/weather/sync/trigger": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Trigger Open Meteo Sync
+         * @description 手动触发 Open-Meteo 数据同步。
+         *
+         *     优先 Celery 异步派发；broker 卡住/超时时降级为本地后台线程。
+         *     注意：Celery apply_async 必须在限时线程中调用，且 ThreadPool 不可 wait=True
+         *     退出（否则 timeout 后仍会挂死整个 HTTP 请求 → 前端 AbortError）。
+         */
+        post: operations["trigger_open_meteo_sync_weather_sync_trigger_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/weather/sync/status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Open Meteo Sync Status
+         * @description 查询同步任务状态（含完成时间 / domains / 错误摘要）。
+         */
+        get: operations["get_open_meteo_sync_status_weather_sync_status_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/weather/point": {
         parameters: {
             query?: never;
@@ -578,6 +634,26 @@ export interface paths {
         };
         /** Get Weather Point */
         get: operations["get_weather_point_weather_point_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/weather/providers-for-layer/{layer_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Providers For Layer
+         * @description List weather providers that declare support for ``layer_id`` (for layer source dropdown).
+         */
+        get: operations["get_providers_for_layer_weather_providers_for_layer__layer_id__get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -722,6 +798,28 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/import/crs-options": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Crs Options
+         * @description 返回前端下拉用 CRS 列表（按 category 分组前的平铺列表）。
+         *
+         *     委托 ``crs_registry.to_api_payload()``，返回 13 项 Phase 1 扩展版 CRS。
+         */
+        get: operations["list_crs_options_import_crs_options_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/import/raster": {
         parameters: {
             query?: never;
@@ -733,11 +831,106 @@ export interface paths {
         put?: never;
         /**
          * Import Raster
-         * @description 上传栅格文件（TIF），转 COG 预览，动态注册为 overlay 图层。
+         * @description 上传栅格文件（TIF），生成预览 PNG + bounds，动态注册为 overlay 图层。
          *
-         *     返回 ``{"layer_id": "imported-xxx", "bounds": [west, south, east, north]}``。
+         *     返回 ``{layer_id, bounds, source_crs, suggested_crs, needs_confirm}``。
+         *     bounds 保持源 CRS 不转换；前端若收到 ``needs_confirm=True`` 应弹确认框，
+         *     用户确认后调 ``POST /import/raster/confirm`` 重投影到 WGS84。
          */
         post: operations["import_raster_import_raster_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/import/raster/{layer_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Delete Imported Raster
+         * @description 删除动态导入的栅格 overlay，并清理磁盘目录。
+         */
+        delete: operations["delete_imported_raster_import_raster__layer_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/import/raster/confirm": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Confirm Imported Raster
+         * @description 用户确认 CRS 后：1) 重投影 PNG 2) 重算 bounds 3) 更新 OverlaySpec.crs 4) 返回新 bounds。
+         *
+         *     流程：
+         *     1. 从 ``_IMPORTS_DIR/{layer_id}/`` 读 bounds.json 拿 source_filename
+         *     2. 调 ``render_cog_preview_reprojected(source_crs=body.source_crs, target_crs='EPSG:4326')``
+         *        生成新 PNG + WGS84 bounds
+         *     3. 应用 ``lng_offset``/``lat_offset`` 到 bounds（CRS 转换后应用）
+         *     4. 覆盖 ``preview.png`` + ``bounds.json``（保留原 TIF 不动）
+         *     5. ``unregister_overlay`` + ``register_overlay`` 重新注册（crs='EPSG:4326'）
+         *     6. 返回 ``{layer_id, bounds, source_crs, applied_offset}``
+         */
+        post: operations["confirm_imported_raster_import_raster_confirm_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/import/transform-point": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Transform Point Endpoint
+         * @description 批量点转换（前端 CSV/POI 提交时用）。
+         *
+         *     委托 ``crs_transformer.transform_points_batch``。返回转换后的点列表。
+         */
+        post: operations["transform_point_endpoint_import_transform_point_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/import/transform-bounds": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Transform Bounds Endpoint
+         * @description bounds 转换（前端栅格预览用）。
+         *
+         *     委托 ``crs_transformer.transform_bounds``。返回目标 CRS 下的 bounds。
+         */
+        post: operations["transform_bounds_endpoint_import_transform_bounds_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -970,11 +1163,69 @@ export interface paths {
         get?: never;
         /**
          * Toggle Api Key
-         * @description 启用/禁用 API Key。
+         * @description 启用/禁用 API Key。无值时返回 400；env-only 会物化到 DB。
          */
         put: operations["toggle_api_key_config_api_keys__key_name__toggle_put"];
         post?: never;
         delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/config/api-keys/{key_name}/history": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Api Key History
+         * @description 列出密钥历史版本（脱敏）。
+         */
+        get: operations["list_api_key_history_config_api_keys__key_name__history_get"];
+        put?: never;
+        post?: never;
+        /** Clear Api Key History */
+        delete: operations["clear_api_key_history_config_api_keys__key_name__history_delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/config/api-keys/{key_name}/history/{history_id}/restore": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Restore Api Key History
+         * @description 将历史版本恢复为当前密钥。
+         */
+        post: operations["restore_api_key_history_config_api_keys__key_name__history__history_id__restore_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/config/api-keys/{key_name}/history/{history_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Delete Api Key History Entry */
+        delete: operations["delete_api_key_history_entry_config_api_keys__key_name__history__history_id__delete"];
         options?: never;
         head?: never;
         patch?: never;
@@ -1117,6 +1368,26 @@ export interface paths {
          */
         get: operations["get_weather_config_config_weather_get"];
         put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/config/weather/model": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Update Weather Default Model
+         * @description 更新全局默认天气模型（SQLite 持久化，立即影响无参 coverage / 瓦片默认 model）。
+         */
+        put: operations["update_weather_default_model_config_weather_model_put"];
         post?: never;
         delete?: never;
         options?: never;
@@ -1303,6 +1574,58 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/config/remote-storage/{profile_id}/history": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Remote Storage History */
+        get: operations["list_remote_storage_history_config_remote_storage__profile_id__history_get"];
+        put?: never;
+        post?: never;
+        /** Clear Remote Storage History */
+        delete: operations["clear_remote_storage_history_config_remote_storage__profile_id__history_delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/config/remote-storage/{profile_id}/history/{history_id}/restore": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Restore Remote Storage History */
+        post: operations["restore_remote_storage_history_config_remote_storage__profile_id__history__history_id__restore_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/config/remote-storage/{profile_id}/history/{history_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Delete Remote Storage History Entry */
+        delete: operations["delete_remote_storage_history_entry_config_remote_storage__profile_id__history__history_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/config/data-source": {
         parameters: {
             query?: never;
@@ -1323,6 +1646,130 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/config/data-cache/overview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Data Cache Overview
+         * @description 静态 materialize 缓存概览。
+         */
+        get: operations["get_data_cache_overview_config_data_cache_overview_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/config/data-cache/evict": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Evict Data Cache
+         * @description 清理静态缓存（按 URI/名称或过期时间）。
+         */
+        post: operations["evict_data_cache_config_data_cache_evict_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/config/data-source/open-data-presets": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Update Open Data Presets
+         * @description 更新 NOAA/NASA/NSIDC/ESA 开放数据 base URL 预设。
+         */
+        put: operations["update_open_data_presets_config_data_source_open_data_presets_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/config/data-source/portal-credentials": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Portal Credentials
+         * @description 开放门户凭证（脱敏）。
+         */
+        get: operations["get_portal_credentials_config_data_source_portal_credentials_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/config/data-source/portal-credentials/{portal_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Upsert Portal Credential
+         * @description 新增/更新门户凭证（earthdata / nsidc / copernicus）。
+         */
+        put: operations["upsert_portal_credential_config_data_source_portal_credentials__portal_id__put"];
+        post?: never;
+        /**
+         * Delete Portal Credential
+         * @description 删除门户凭证。
+         */
+        delete: operations["delete_portal_credential_config_data_source_portal_credentials__portal_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/config/data-source/remote-layer-uris": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Update Remote Layer Uris
+         * @description 更新图层 URI 覆盖（等价 BACKEND_REMOTE_LAYER_DATA_URIS）。
+         */
+        put: operations["update_remote_layer_uris_config_data_source_remote_layer_uris_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/config/about": {
         parameters: {
             query?: never;
@@ -1335,6 +1782,336 @@ export interface paths {
          * @description 获取项目信息。
          */
         get: operations["get_about_info_config_about_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/workflow-definitions/node-templates": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Node Templates
+         * @description 获取所有可用的节点模板，供前端节点面板展示。
+         */
+        get: operations["list_node_templates_workflow_definitions_node_templates_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/workflow-definitions/compile": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Compile Graph
+         * @description 将 LiteGraph 画布编译为 Python provider 可执行的 workflow_definition。
+         */
+        post: operations["compile_graph_workflow_definitions_compile_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/workflow-definitions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Definitions
+         * @description 列出所有工作流定义（system + user）。
+         */
+        get: operations["list_definitions_workflow_definitions_get"];
+        put?: never;
+        /**
+         * Create Definition
+         * @description 创建用户工作流定义。
+         */
+        post: operations["create_definition_workflow_definitions_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/workflow-definitions/{workflow_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Definition
+         * @description 获取单个工作流定义的完整内容。
+         */
+        get: operations["get_definition_workflow_definitions__workflow_id__get"];
+        /**
+         * Update Definition
+         * @description 更新用户工作流定义。system 定义不可更新。
+         */
+        put: operations["update_definition_workflow_definitions__workflow_id__put"];
+        post?: never;
+        /**
+         * Delete Definition
+         * @description 删除用户工作流定义。system 定义不可删除。
+         */
+        delete: operations["delete_definition_workflow_definitions__workflow_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/workflow-definitions/{workflow_id}/duplicate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Duplicate Definition
+         * @description 复制现有工作流定义为新的用户工作流。
+         */
+        post: operations["duplicate_definition_workflow_definitions__workflow_id__duplicate_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/workflow-timers": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Timers
+         * @description 列出全部定时器，可选按 workflow_id 过滤。
+         */
+        get: operations["list_timers_workflow_timers_get"];
+        put?: never;
+        /**
+         * Create Timer
+         * @description 创建定时器。
+         *
+         *     请求体字段：
+         *     - workflow_id (str, 必填)
+         *     - name (str, 必填)
+         *     - trigger_type ('cron' | 'interval' | 'event', 必填)
+         *     - trigger_config (dict, 必填, 格式依 trigger_type 而定)
+         *     - payload_overrides (dict, 可选)
+         *     - enabled (bool, 可选, 默认 true)
+         */
+        post: operations["create_timer_workflow_timers_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/workflow-timers/{timer_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Timer
+         * @description 获取单个定时器详情。
+         */
+        get: operations["get_timer_workflow_timers__timer_id__get"];
+        /**
+         * Update Timer
+         * @description 更新定时器。允许字段：name / enabled / trigger_type / trigger_config / payload_overrides。
+         */
+        put: operations["update_timer_workflow_timers__timer_id__put"];
+        post?: never;
+        /**
+         * Delete Timer
+         * @description 删除定时器。
+         */
+        delete: operations["delete_timer_workflow_timers__timer_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/workflow-timers/{timer_id}/run": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Run Timer
+         * @description 手动触发一次定时器对应的工作流（不影响 next_fire_at）。
+         */
+        post: operations["run_timer_workflow_timers__timer_id__run_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/workflow-timers/events": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Emit Event
+         * @description 发射外部事件，触发匹配的 event 类型定时器。
+         *
+         *     请求体：
+         *     - event_type (str, 必填)
+         *     - payload (dict, 可选)
+         */
+        post: operations["emit_event_workflow_timers_events_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/workflow-timers/tick": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Manual Tick
+         * @description 手动触发一次扫描（调试用，正常情况下由 Celery Beat 每分钟调用）。
+         */
+        post: operations["manual_tick_workflow_timers_tick_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/cleanup/workflow-runs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Cleanup Workflow Runs
+         * @description 手动清理过期的 workflow runs 及其 events。
+         *
+         *     清理逻辑：删除 status 为 completed/failed/cancelled 且 updated_at 早于
+         *     retention_days 天前的 run，对应 events 一并删除。
+         *
+         *     可选执行 VACUUM 回收磁盘空间（耗时，数据库越大耗时越长）。
+         */
+        post: operations["cleanup_workflow_runs_cleanup_workflow_runs_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/cleanup/cache": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Cleanup Cache
+         * @description 手动清理已过期的缓存文件。
+         *
+         *     扫描 cache_service 的 cache_dir，删除所有 expires_at 已过期的 JSON 文件。
+         *     损坏的缓存文件也会被删除以避免持续报错。
+         */
+        post: operations["cleanup_cache_cleanup_cache_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/cleanup/vacuum": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Vacuum Workflow State
+         * @description VACUUM workflow_state.sqlite3 回收磁盘空间。
+         *
+         *     在清理 workflow runs 后执行可回收磁盘空间。耗时较长，建议低峰期执行。
+         */
+        post: operations["vacuum_workflow_state_cleanup_vacuum_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/cleanup/stats": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Cleanup Stats
+         * @description 返回当前清理统计（不执行清理）。
+         *
+         *     包含：
+         *     - cache_stats：缓存命中率、过期数、总数、各 scope 分布
+         *     - workflow_runs_stats：active / completed / failed 数量
+         */
+        get: operations["get_cleanup_stats_cleanup_stats_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -1509,6 +2286,30 @@ export interface components {
             /** Priority */
             priority?: number | null;
         };
+        /** ApiKeyHistoryClearResponse */
+        ApiKeyHistoryClearResponse: {
+            /** Key Name */
+            key_name: string;
+            /** Deleted */
+            deleted: number;
+        };
+        /** ApiKeyHistoryItem */
+        ApiKeyHistoryItem: {
+            /** Id */
+            id: number;
+            /** Key Name */
+            key_name: string;
+            /** Masked Value */
+            masked_value: string;
+            /** Label */
+            label?: string | null;
+            /** Created At */
+            created_at: string;
+            /** Superseded At */
+            superseded_at: string;
+            /** Source */
+            source: string;
+        };
         /** ApiKeyToggleRequest */
         ApiKeyToggleRequest: {
             /** Enabled */
@@ -1527,6 +2328,8 @@ export interface components {
              * @default true
              */
             enabled: boolean;
+            /** History Label */
+            history_label?: string | null;
         };
         /** BackendServiceStatus */
         BackendServiceStatus: {
@@ -1569,6 +2372,32 @@ export interface components {
              */
             crs: string;
         };
+        /**
+         * CacheCleanupResponse
+         * @description 缓存清理响应。
+         */
+        CacheCleanupResponse: {
+            /** Deleted */
+            deleted: number;
+            /** Skipped */
+            skipped: number;
+            /** Errors */
+            errors: number;
+        };
+        /**
+         * CleanupStatsResponse
+         * @description 当前清理统计（不执行清理）。
+         */
+        CleanupStatsResponse: {
+            /** Cache Stats */
+            cache_stats: {
+                [key: string]: unknown;
+            };
+            /** Workflow Runs Stats */
+            workflow_runs_stats: {
+                [key: string]: number;
+            };
+        };
         /** ClientIdentity */
         ClientIdentity: {
             /** Client Id */
@@ -1583,78 +2412,26 @@ export interface components {
             user_agent?: string | null;
         };
         /**
-         * DemoAvailabilityState
-         * @enum {string}
+         * ConfirmRequest
+         * @description ``POST /import/raster/confirm`` 请求体。
+         *
+         *     用户在前端确认对话框中选定源 CRS（可覆盖检测结果）并设置偏移后提交。
          */
-        DemoAvailabilityState: "empty" | "partial" | "ready";
-        /**
-         * DemoDataStateMode
-         * @enum {string}
-         */
-        DemoDataStateMode: "demo" | "placeholder" | "mixed";
-        /** DemoFieldAliasMap */
-        DemoFieldAliasMap: {
-            /** Metric Value */
-            metric_value: string[];
-            /** Hotspot Value */
-            hotspot_value: string[];
-            /** Observation Time */
-            observation_time: string[];
-            /** Status Label */
-            status_label: string[];
-        };
-        /** DemoLayerSnapshot */
-        DemoLayerSnapshot: {
+        ConfirmRequest: {
             /** Layer Id */
             layer_id: string;
-            /** Display Name */
-            display_name: string;
-            /** Category */
-            category: string;
-            /** Metric Label */
-            metric_label: string;
-            /** Metric Unit */
-            metric_unit: string;
-            /** Metric Precision */
-            metric_precision: number;
-            /** Update Label */
-            update_label: string;
-            /** Source Label */
-            source_label: string;
-            /** Accent Color */
-            accent_color: string;
-            /** Accent Glow */
-            accent_glow: string;
-            /** Chip Tone */
-            chip_tone: string;
-            data_state_mode: components["schemas"]["DemoDataStateMode"];
-            /** Data State Label */
-            data_state_label: string;
-            /** Empty State Label */
-            empty_state_label: string;
-            availability_state: components["schemas"]["DemoAvailabilityState"];
-            /** Trend Label */
-            trend_label: string;
-            /** Summary */
-            summary: string;
-            /** Status Label */
-            status_label: string;
-            /** Confidence Label */
-            confidence_label: string;
-            /** Requested Hour */
-            requested_hour: number;
-            field_aliases: components["schemas"]["DemoFieldAliasMap"];
-            /** Raw Payload */
-            raw_payload: {
-                [key: string]: unknown;
-            };
-        };
-        /** DemoLayerSnapshotsResponse */
-        DemoLayerSnapshotsResponse: {
-            /** Requested Hour */
-            requested_hour: number;
-            /** Items */
-            items: components["schemas"]["DemoLayerSnapshot"][];
+            /** Source Crs */
+            source_crs: string;
+            /**
+             * Lng Offset
+             * @default 0
+             */
+            lng_offset: number;
+            /**
+             * Lat Offset
+             * @default 0
+             */
+            lat_offset: number;
         };
         /** DiagnosticsReport */
         DiagnosticsReport: {
@@ -2118,6 +2895,35 @@ export interface components {
             /** Message */
             message: string;
         };
+        /** RemoteStorageHistoryClearResponse */
+        RemoteStorageHistoryClearResponse: {
+            /** Profile Id */
+            profile_id: string;
+            /** Deleted */
+            deleted: number;
+        };
+        /** RemoteStorageHistoryItem */
+        RemoteStorageHistoryItem: {
+            /** Id */
+            id: number;
+            /** Profile Id */
+            profile_id: string;
+            /** Masked Secret */
+            masked_secret: string;
+            /**
+             * Has Private Key
+             * @default false
+             */
+            has_private_key: boolean;
+            /** Label */
+            label?: string | null;
+            /** Created At */
+            created_at: string;
+            /** Superseded At */
+            superseded_at: string;
+            /** Source */
+            source: string;
+        };
         /**
          * RemoteStorageTestRequest
          * @description Optional probe URI; defaults to protocol://host/.
@@ -2405,6 +3211,49 @@ export interface components {
             /** @default hour */
             granularity: components["schemas"]["TimeGranularity"];
         };
+        /**
+         * TransformBoundsRequest
+         * @description ``POST /import/transform-bounds`` 请求体。
+         */
+        TransformBoundsRequest: {
+            /** Bounds */
+            bounds: number[];
+            /** Source Crs */
+            source_crs: string;
+            /**
+             * Target Crs
+             * @default EPSG:4326
+             */
+            target_crs: string;
+        };
+        /**
+         * TransformPointRequest
+         * @description ``POST /import/transform-point`` 请求体。
+         */
+        TransformPointRequest: {
+            /** Points */
+            points: [
+                number,
+                number
+            ][];
+            /** Source Crs */
+            source_crs: string;
+            /**
+             * Target Crs
+             * @default EPSG:4326
+             */
+            target_crs: string;
+            /**
+             * Lng Offset
+             * @default 0
+             */
+            lng_offset: number;
+            /**
+             * Lat Offset
+             * @default 0
+             */
+            lat_offset: number;
+        };
         /** ValidationError */
         ValidationError: {
             /** Location */
@@ -2438,6 +3287,17 @@ export interface components {
             legend_ticks?: (number | string)[];
             /** Notes */
             notes?: string[];
+        };
+        /**
+         * WeatherModelUpdateRequest
+         * @description 全局默认天气模型（持久化到 DB，影响 coverage / 瓦片 / 点预报）。
+         */
+        WeatherModelUpdateRequest: {
+            /**
+             * Default Model
+             * @description 如 ecmwf_ifs025
+             */
+            default_model: string;
         };
         /** WeatherPointCurrent */
         WeatherPointCurrent: {
@@ -3004,6 +3864,38 @@ export interface components {
             value: string;
         };
         /**
+         * WorkflowRunsCleanupRequest
+         * @description workflow runs 清理请求。
+         */
+        WorkflowRunsCleanupRequest: {
+            /**
+             * Retention Days
+             * @description 保留天数
+             * @default 30
+             */
+            retention_days: number;
+            /**
+             * Vacuum
+             * @description 是否执行 VACUUM 回收磁盘空间
+             * @default false
+             */
+            vacuum: boolean;
+        };
+        /**
+         * WorkflowRunsCleanupResponse
+         * @description workflow runs 清理响应。
+         */
+        WorkflowRunsCleanupResponse: {
+            /** Retention Days */
+            retention_days: number;
+            /** Runs Deleted */
+            runs_deleted: number;
+            /** Events Deleted */
+            events_deleted: number;
+            /** Vacuumed */
+            vacuumed: number;
+        };
+        /**
          * WorkflowSubmissionPayload
          * @description Thin request contract for workflow submission endpoints.
          */
@@ -3126,70 +4018,6 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["LayerCatalogResponse"];
-                };
-            };
-        };
-    };
-    list_demo_snapshots_demo_layers_snapshots_get: {
-        parameters: {
-            query?: {
-                hour?: number;
-            };
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["DemoLayerSnapshotsResponse"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    get_demo_snapshot_demo_layers__layer_id__snapshot_get: {
-        parameters: {
-            query?: {
-                hour?: number;
-            };
-            header?: never;
-            path: {
-                layer_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["DemoLayerSnapshot"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };
@@ -3344,6 +4172,37 @@ export interface operations {
                     "application/json": {
                         [key: string]: unknown;
                     };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_workflow_runs_workflow_runs_get: {
+        parameters: {
+            query?: {
+                active_only?: boolean;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkflowRunStatusResponse"][];
                 };
             };
             /** @description Validation Error */
@@ -4028,6 +4887,108 @@ export interface operations {
             };
         };
     };
+    get_weather_coverage_weather_coverage_get: {
+        parameters: {
+            query?: {
+                model?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_open_meteo_sync_overview_weather_sync_overview_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    trigger_open_meteo_sync_weather_sync_trigger_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    get_open_meteo_sync_status_weather_sync_status_get: {
+        parameters: {
+            query: {
+                task_id: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     get_weather_point_weather_point_get: {
         parameters: {
             query: {
@@ -4037,6 +4998,7 @@ export interface operations {
                 model?: string | null;
                 forecast_hours?: number;
                 place_name?: string | null;
+                provider?: string | null;
             };
             header?: never;
             path?: never;
@@ -4051,6 +5013,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["WeatherPointResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_providers_for_layer_weather_providers_for_layer__layer_id__get: {
+        parameters: {
+            query?: {
+                include_disabled?: boolean;
+            };
+            header?: never;
+            path: {
+                layer_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
                 };
             };
             /** @description Validation Error */
@@ -4274,6 +5269,39 @@ export interface operations {
             };
         };
     };
+    list_crs_options_import_crs_options_get: {
+        parameters: {
+            query?: never;
+            header?: {
+                "x-api-key"?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     import_raster_import_raster_post: {
         parameters: {
             query?: never;
@@ -4286,6 +5314,152 @@ export interface operations {
         requestBody: {
             content: {
                 "multipart/form-data": components["schemas"]["Body_import_raster_import_raster_post"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_imported_raster_import_raster__layer_id__delete: {
+        parameters: {
+            query?: never;
+            header?: {
+                "x-api-key"?: string | null;
+            };
+            path: {
+                layer_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    confirm_imported_raster_import_raster_confirm_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                "x-api-key"?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ConfirmRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    transform_point_endpoint_import_transform_point_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                "x-api-key"?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TransformPointRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    transform_bounds_endpoint_import_transform_bounds_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                "x-api-key"?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TransformBoundsRequest"];
             };
         };
         responses: {
@@ -4354,6 +5528,8 @@ export interface operations {
             query?: {
                 hour?: number | null;
                 model?: string | null;
+                /** @description Weather provider id, or omit/auto for registry priority */
+                provider?: string | null;
                 t?: number | null;
             };
             header?: never;
@@ -4647,6 +5823,140 @@ export interface operations {
             };
         };
     };
+    list_api_key_history_config_api_keys__key_name__history_get: {
+        parameters: {
+            query?: never;
+            header?: {
+                "x-api-key"?: string | null;
+            };
+            path: {
+                key_name: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiKeyHistoryItem"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    clear_api_key_history_config_api_keys__key_name__history_delete: {
+        parameters: {
+            query?: never;
+            header?: {
+                "x-api-key"?: string | null;
+            };
+            path: {
+                key_name: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiKeyHistoryClearResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    restore_api_key_history_config_api_keys__key_name__history__history_id__restore_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                "x-api-key"?: string | null;
+            };
+            path: {
+                key_name: string;
+                history_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_api_key_history_entry_config_api_keys__key_name__history__history_id__delete: {
+        parameters: {
+            query?: never;
+            header?: {
+                "x-api-key"?: string | null;
+            };
+            path: {
+                key_name: string;
+                history_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     list_gee_accounts_config_gee_accounts_get: {
         parameters: {
             query?: never;
@@ -4872,6 +6182,41 @@ export interface operations {
                 };
                 content: {
                     "application/json": unknown;
+                };
+            };
+        };
+    };
+    update_weather_default_model_config_weather_model_put: {
+        parameters: {
+            query?: never;
+            header?: {
+                "x-api-key"?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["WeatherModelUpdateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };
@@ -5290,6 +6635,140 @@ export interface operations {
             };
         };
     };
+    list_remote_storage_history_config_remote_storage__profile_id__history_get: {
+        parameters: {
+            query?: never;
+            header?: {
+                "x-api-key"?: string | null;
+            };
+            path: {
+                profile_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RemoteStorageHistoryItem"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    clear_remote_storage_history_config_remote_storage__profile_id__history_delete: {
+        parameters: {
+            query?: never;
+            header?: {
+                "x-api-key"?: string | null;
+            };
+            path: {
+                profile_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RemoteStorageHistoryClearResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    restore_remote_storage_history_config_remote_storage__profile_id__history__history_id__restore_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                "x-api-key"?: string | null;
+            };
+            path: {
+                profile_id: string;
+                history_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_remote_storage_history_entry_config_remote_storage__profile_id__history__history_id__delete: {
+        parameters: {
+            query?: never;
+            header?: {
+                "x-api-key"?: string | null;
+            };
+            path: {
+                profile_id: string;
+                history_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     get_data_source_config_config_data_source_get: {
         parameters: {
             query?: never;
@@ -5310,6 +6789,229 @@ export interface operations {
             };
         };
     };
+    get_data_cache_overview_config_data_cache_overview_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    evict_data_cache_config_data_cache_evict_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                "x-api-key"?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": {
+                    [key: string]: unknown;
+                } | null;
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_open_data_presets_config_data_source_open_data_presets_put: {
+        parameters: {
+            query?: never;
+            header?: {
+                "x-api-key"?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    [key: string]: unknown;
+                };
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_portal_credentials_config_data_source_portal_credentials_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    upsert_portal_credential_config_data_source_portal_credentials__portal_id__put: {
+        parameters: {
+            query?: never;
+            header?: {
+                "x-api-key"?: string | null;
+            };
+            path: {
+                portal_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    [key: string]: unknown;
+                };
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_portal_credential_config_data_source_portal_credentials__portal_id__delete: {
+        parameters: {
+            query?: never;
+            header?: {
+                "x-api-key"?: string | null;
+            };
+            path: {
+                portal_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_remote_layer_uris_config_data_source_remote_layer_uris_put: {
+        parameters: {
+            query?: never;
+            header?: {
+                "x-api-key"?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    [key: string]: unknown;
+                };
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     get_about_info_config_about_get: {
         parameters: {
             query?: never;
@@ -5326,6 +7028,685 @@ export interface operations {
                 };
                 content: {
                     "application/json": unknown;
+                };
+            };
+        };
+    };
+    list_node_templates_workflow_definitions_node_templates_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+        };
+    };
+    compile_graph_workflow_definitions_compile_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                "x-api-key"?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    [key: string]: unknown;
+                };
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_definitions_workflow_definitions_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+        };
+    };
+    create_definition_workflow_definitions_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                "x-api-key"?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    [key: string]: unknown;
+                };
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_definition_workflow_definitions__workflow_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workflow_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_definition_workflow_definitions__workflow_id__put: {
+        parameters: {
+            query?: never;
+            header?: {
+                "x-api-key"?: string | null;
+            };
+            path: {
+                workflow_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    [key: string]: unknown;
+                };
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_definition_workflow_definitions__workflow_id__delete: {
+        parameters: {
+            query?: never;
+            header?: {
+                "x-api-key"?: string | null;
+            };
+            path: {
+                workflow_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    duplicate_definition_workflow_definitions__workflow_id__duplicate_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                "x-api-key"?: string | null;
+            };
+            path: {
+                workflow_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    [key: string]: unknown;
+                };
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_timers_workflow_timers_get: {
+        parameters: {
+            query?: {
+                workflow_id?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_timer_workflow_timers_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                "x-api-key"?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    [key: string]: unknown;
+                };
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_timer_workflow_timers__timer_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                timer_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_timer_workflow_timers__timer_id__put: {
+        parameters: {
+            query?: never;
+            header?: {
+                "x-api-key"?: string | null;
+            };
+            path: {
+                timer_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    [key: string]: unknown;
+                };
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_timer_workflow_timers__timer_id__delete: {
+        parameters: {
+            query?: never;
+            header?: {
+                "x-api-key"?: string | null;
+            };
+            path: {
+                timer_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    run_timer_workflow_timers__timer_id__run_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                "x-api-key"?: string | null;
+            };
+            path: {
+                timer_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    emit_event_workflow_timers_events_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                "x-api-key"?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    [key: string]: unknown;
+                };
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    manual_tick_workflow_timers_tick_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                "x-api-key"?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    cleanup_workflow_runs_cleanup_workflow_runs_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                "x-api-key"?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["WorkflowRunsCleanupRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkflowRunsCleanupResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    cleanup_cache_cleanup_cache_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                "x-api-key"?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CacheCleanupResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    vacuum_workflow_state_cleanup_vacuum_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                "x-api-key"?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_cleanup_stats_cleanup_stats_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CleanupStatsResponse"];
                 };
             };
         };

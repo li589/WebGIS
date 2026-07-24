@@ -5,6 +5,7 @@ import {
   TRIANGLE_FRAGMENT_SHADER,
   TRIANGLE_VERTEX_SHADER,
   MERCATOR_PROJECTION_GLSL,
+  PARTICLE_UPDATE_FRAGMENT_SHADER,
 } from './wind-particle-webgl-shaders'
 
 describe('lngLatToMercatorNormalized（GLSL 投影的 TS 镜像）', () => {
@@ -54,5 +55,19 @@ describe('B1 调试着色器源码', () => {
   it('Mercator 投影助手含纬度钳制', () => {
     expect(MERCATOR_PROJECTION_GLSL).toContain('85.051129')
     expect(MERCATOR_PROJECTION_GLSL).toContain('lngLatToMercator')
+  })
+})
+
+describe('B3 粒子更新着色器稳定性约定', () => {
+  it('含多子步 RK2 与位移钳制常量', () => {
+    expect(PARTICLE_UPDATE_FRAGMENT_SHADER).toContain('SUBSTEPS')
+    expect(PARTICLE_UPDATE_FRAGMENT_SHADER).toContain('MAX_STEP_DEG')
+    expect(PARTICLE_UPDATE_FRAGMENT_SHADER).toContain('for (int i = 0; i < SUBSTEPS; i++)')
+  })
+
+  it('高风速 DROP_BUMP 保持低值（避免急流区狂跳）', () => {
+    const bump = PARTICLE_UPDATE_FRAGMENT_SHADER.match(/DROP_BUMP\s*=\s*([0-9.]+)/)
+    expect(bump).not.toBeNull()
+    expect(Number(bump![1])).toBeLessThanOrEqual(0.004)
   })
 })

@@ -82,10 +82,18 @@ const MAX_PARTICLE_COUNT = 3600
 /** 粒子数量下限 */
 const MIN_PARTICLE_COUNT = 400
 
-/** 对照 WindMap dropRate / dropRateBump：高风速区更频繁重生 */
-const PARTICLE_DROP_RATE = 0.004
-const PARTICLE_DROP_RATE_BUMP = 0.014
+/**
+ * 对照 WindMap dropRate / dropRateBump，但大幅压低 bump：
+ * 旧 bump=0.014 使 25 m/s 区重生率约 4.5×，急流/辐合高密度区粒子不断瞬移 → 跳动。
+ */
+const PARTICLE_DROP_RATE = 0.0045
+const PARTICLE_DROP_RATE_BUMP = 0.002
 const PARTICLE_DROP_SPEED_REF = 25
+
+/** 单帧平流总位移上限（度），急流过冲时钳制，避免拖尾断裂后视觉跳动 */
+const MAX_ADVECT_STEP_DEG = 0.32
+/** RK2 子步数：曲率大的流场（台风、急流）降低单步误差 */
+const ADVECT_SUBSTEPS = 2
 
 /** DPI 上限（防止超高分屏幕创建过大 canvas） */
 const MAX_PIXEL_RATIO = 2
@@ -107,6 +115,27 @@ function computeParticleCountForGrid(grid: WindGrid): number {
 export function __testComputeParticleCountForArea(areaDeg2: number): number {
   const count = Math.round(areaDeg2 * PARTICLES_PER_DEG2)
   return Math.min(MAX_PARTICLE_COUNT, Math.max(MIN_PARTICLE_COUNT, count))
+}
+
+/** 供单测：高风速区 drop 概率不应再成倍放大 */
+export function __testParticleDropChance(speedMs: number, dt: number): number {
+  return (
+    (PARTICLE_DROP_RATE +
+      PARTICLE_DROP_RATE_BUMP * Math.min(1, Math.max(0, speedMs) / PARTICLE_DROP_SPEED_REF)) *
+    dt
+  )
+}
+
+/** 供单测：平流位移钳制 */
+export function __testClampAdvectStep(
+  dLon: number,
+  dLat: number,
+  maxStepDeg: number = MAX_ADVECT_STEP_DEG,
+): [number, number] {
+  const len = Math.hypot(dLon, dLat)
+  if (len <= maxStepDeg || len < 1e-12) return [dLon, dLat]
+  const s = maxStepDeg / len
+  return [dLon * s, dLat * s]
 }
 
 /**
@@ -873,37 +902,43 @@ export class WindParticleCanvas {
       }
 
       if (!freezeFrame) {
-        // RK2 (midpoint) 平流积分：先用当前点风场估算半步位置，再用半步位置
-        // 重采样风场推进一步。比 Euler 一阶在曲率大的旋转流场（台风眼、急流）
-        // 中更准确，避免粒子向外螺旋伪影。
-        // 数学：k1 = f(x_n)；k2 = f(x_n + h/2·k1)；x_{n+1} = x_n + h·k2
-        const advectSpeed0 = Math.max(wind.speed, MIN_ADVECT_SPEED_FOR_TRAIL)
-        const [u0, v0] = windToUV(advectSpeed0, wind.direction)
-
-        // 粒子在经纬度网格上运动：经向 1° 的地面距离随纬度变化（cos(lat)）。
-        // 这里对 u（东西向）按 cos(lat) 做补偿，使 Mercator 投影上的粒子轨迹
-        // 方向与真实风向一致，避免中高纬地区出现“竖直线条”。
-        const cosLat0 = Math.max(Math.cos(p.lat * DEG_TO_RAD), 0.1)
-        const halfSpeed = scaledSpeed * 0.5
-        const midLon = p.lon + (u0 / cosLat0) * halfSpeed
-        const midLat = p.lat + v0 * halfSpeed
-
-        // 在 midpoint 重采样风场；interpolateWind 内部已 clamp 到 grid 边界，
-        // 外推用边缘格点值，保证 midpoint 即使落到 grid 外也能给出连续向量
-        const windMid = interpolateWind(grid, midLat, midLon)
-        const advectSpeedMid = Math.max(windMid.speed, MIN_ADVECT_SPEED_FOR_TRAIL)
-        const [uMid, vMid] = windToUV(advectSpeedMid, windMid.direction)
-        const cosLatMid = Math.max(Math.cos(midLat * DEG_TO_RAD), 0.1)
-        p.lon += (uMid / cosLatMid) * scaledSpeed
-        p.lat += vMid * scaledSpeed
+        // 多子步 RK2 midpoint：急流/台风曲率大时降低单步过冲与方向突变。
+        // 数学：每子步 stepH = scaledSpeed/N；k1=f(x)；k2=f(x+stepH/2·k1)；x ← x+stepH·k2；再钳制 ‖Δ‖。
+        const stepH = scaledSpeed / ADVECT_SUBSTEPS
+        const maxSubStep = MAX_ADVECT_STEP_DEG / ADVECT_SUBSTEPS
+        for (let step = 0; step < ADVECT_SUBSTEPS; step++) {
+          const windA = step === 0 ? wind : interpolateWind(grid, p.lat, p.lon)
+          const advectSpeedA = Math.max(windA.speed, MIN_ADVECT_SPEED_FOR_TRAIL)
+          const [uA, vA] = windToUV(advectSpeedA, windA.direction)
+          const cosA = Math.max(Math.cos(p.lat * DEG_TO_RAD), 0.1)
+          const midLon = p.lon + (uA / cosA) * (stepH * 0.5)
+          const midLat = p.lat + vA * (stepH * 0.5)
+          const windMid = interpolateWind(grid, midLat, midLon)
+          const advectSpeedMid = Math.max(windMid.speed, MIN_ADVECT_SPEED_FOR_TRAIL)
+          const [uMid, vMid] = windToUV(advectSpeedMid, windMid.direction)
+          const cosMid = Math.max(Math.cos(midLat * DEG_TO_RAD), 0.1)
+          let dLon = (uMid / cosMid) * stepH
+          let dLat = vMid * stepH
+          const stepLen = Math.hypot(dLon, dLat)
+          if (stepLen > maxSubStep && stepLen > 1e-12) {
+            const scale = maxSubStep / stepLen
+            dLon *= scale
+            dLat *= scale
+          }
+          p.lon += dLon
+          p.lat += dLat
+        }
         p.age += dt
 
-        // 高风速区提高重生概率，拖尾更“活”（对照 Windy dropRateBump）
+        // 概率丢弃改为「加速进入淡出带」而非瞬移重生，高密度区不再闪跳
         const dropChance =
           (PARTICLE_DROP_RATE +
             PARTICLE_DROP_RATE_BUMP * Math.min(1, wind.speed / PARTICLE_DROP_SPEED_REF)) *
           dt
-        if (p.age > p.maxAge || Math.random() < dropChance) {
+        if (Math.random() < dropChance) {
+          p.age = Math.max(p.age, p.maxAge * AGE_BAND_OLD_RATIO)
+        }
+        if (p.age > p.maxAge) {
           this.resetParticle(p)
           continue
         }

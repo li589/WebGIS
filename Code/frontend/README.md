@@ -45,6 +45,17 @@
 | `open-meteo-local` | 依赖 `cgda-open-meteo` volume；先 `python launch.py sync`（至少 `ecmwf_ifs025`，能见度需 `gfs_global`） |
 | 编辑器天气 demo | 系统种子 `weather_temperature_grid_demo` / `weather_wind_field_demo`；主展示仍走 `/weather/tiles` |
 
+### 选择 / 点击与分析框约定
+
+| 通道 | 说明 |
+|------|------|
+| 图层选中 | `layersStore.selectedInstanceId` → LayerSidebar / InfoPanel「当前对象」 |
+| 地图点查 | 工具栏「选择」模式点击，或漫游下 `Shift`+点击；结果进 InfoPanel「点天气」+ 地图橙点标记 |
+| 点查图层 | 优先当前选中且可见的天气层；否则最顶层可见天气层 |
+| 时间轴 | `tileForecastHour` 变化会刷新点查，并高亮对应小时条 |
+| Overlay 像素 | 与点查同坐标；快速连点用序号丢弃过期响应 |
+| 热点 | 地图钉与分析框列表双向可选 |
+
 ## 当前界面补充说明
 
 - `ModeToolbar.vue`：标题栏工具（底图风格、行政区、导入、截图、工作流入口等）
@@ -64,13 +75,27 @@
 - 底图 source/layer 与行政区叠加
 - hotspot 同步与点击
 - 天气 overlay（GeoJSON / COG preview / Canvas）
-- 风场粒子、风羽、等值线
+- 风场粒子 / 流量场、风羽、等值线
 
 天气图层语义：
 
 - `grid_fill`：可多图层并行叠加；优先 `cog_preview_url + cog_bbox`，缺失时回退 GeoJSON
 - `point_symbol`：按各自 source/layer 独立渲染
-- `particle_flow`：同一时刻只允许一个 catalog，由 `particleFlowCatalogId` 控制
+- `particle_flow`：同一时刻只允许一个 catalog，由 `particleFlowCatalogId` 控制；UI 三态 `particle` / `streamline`（流量场）/ `off`
+
+### 风场粒子 / 流量场约定
+
+| 模式 | 主实现 | 要点 |
+|------|--------|------|
+| 粒子 `particle` | WebGL（`wind-particle-webgl-*`）；`?windgl=0` → Canvas `wind-particle-canvas.ts` | 默认路径；急流区降低 drop bump + 多子步 RK2，避免高密度跳动 |
+| 流量场 `streamline` | Canvas `wind-streamline-layer.ts` | 视口∩grid 撒种；`lonWrapOffset` 仅在数据变化 / zoomend 重算；绘制 `base±360` 世界副本 |
+| 关闭 `off` | 仅风速色底 | 无粒子/流线 |
+
+缩放 + 视口刷新后的已知坑与对策：
+
+- **大范围 zoom-out 后视口几乎空白、贴边才有线**：曾因按全 grid 摊薄 `MAX_STREAMLINES`，且 wrap 用 bounds 均值 / 每帧重算落到错误世界副本。现按视口撒种 + `map.getCenter().lng` 算 wrap + 多副本绘制（`canvas-utils.computeCanvasLayout` / `resolveStreamlineSeedBounds`）。
+- **粒子急流区闪烁**：WebGL/Canvas 共用压低的 `DROP_RATE_BUMP` 与位移钳制（见 `wind-particle-webgl-shaders.ts` / `wind-particle-canvas.ts`）。
+- **半屏空白 / 错位叠影**：瓦片集合未变时仍须同步 bbox（`weather-tile-manager` view-only 路径）；粒子 Canvas 交互中勿频繁改 `lonWrapOffset`。
 
 地图上下文会进入图层状态并影响请求：
 
@@ -92,10 +117,13 @@
 - `components/map/weather-tile-banner.ts`：可见天气层横幅聚合（error / loading / partial）
 - `components/map/effective-layer-symbology.ts`：有效符号学（图例色带 / ticks / explainer）
 - `components/map/weather-overlay-*.ts`：overlay 解析、注册、渲染与会话
-- `components/map/wind-particle-canvas.ts`：风粒子（Canvas 2D）
+- `components/map/wind-particle-webgl-*.ts`：风粒子（默认 WebGL）
+- `components/map/wind-particle-canvas.ts`：风粒子（Canvas 回退）
+- `components/map/wind-streamline-layer.ts`：流量场（流线动画）
 - `components/map/wind-barb-layer.ts`：风羽
 - `components/map/wind-contour-layer.ts`：等值线
-- `components/map/canvas-utils.ts` / `weather-render.ts`：布局与样式映射
+- `components/map/canvas-utils.ts`：`lonWrapOffset` / 布局（wrap 对齐相机中心）
+- `components/map/weather-render.ts`：样式映射
 - `stores/layers/result-adapter.ts`：解析 `render_hint` 与 `layer_assets`
 - `stores/layers/index.ts`：图层状态、workflow、粒子流独占与视口状态
 - `stores/weather-tile-manager.ts` / `weather-tile-cache-trim.ts`：瓦片调度与 LRU trim

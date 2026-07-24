@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest'
 
 import {
   __testInterpolateWindUV,
+  __testParticleDropChance,
+  __testClampAdvectStep,
   computeViewportBBoxFromBounds,
   mergeRoamBounds,
 } from './wind-particle-canvas'
@@ -239,5 +241,23 @@ describe('viewport bbox helpers (Part C1+C2)', () => {
     const viewport = { south: 10, north: 20, west: 130, east: 140 }
     const merged = mergeRoamBounds(grid, viewport)
     expect(merged).toEqual({ south: 10, north: 40, west: 100, east: 140 })
+  })
+})
+
+describe('粒子平流稳定性（高密度/急流）', () => {
+  it('高风速 drop 概率相对静风增幅有限（不再 4×+）', () => {
+    const calm = __testParticleDropChance(0, 1)
+    const jet = __testParticleDropChance(25, 1)
+    expect(jet / calm).toBeLessThan(2)
+    expect(jet).toBeLessThan(0.01)
+  })
+
+  it('clampAdvectStep 限制单步过冲', () => {
+    const [dLon, dLat] = __testClampAdvectStep(1.2, 0.9, 0.32)
+    expect(Math.hypot(dLon, dLat)).toBeCloseTo(0.32, 5)
+  })
+
+  it('clampAdvectStep 小步长不改变方向量', () => {
+    expect(__testClampAdvectStep(0.1, 0.05, 0.32)).toEqual([0.1, 0.05])
   })
 })

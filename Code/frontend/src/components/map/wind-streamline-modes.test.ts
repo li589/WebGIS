@@ -2,8 +2,11 @@ import { describe, expect, it } from 'vitest'
 
 import {
   buildStreamlineSeeds,
+  computeStreamlineCountForArea,
   computeStreamlineCountForGrid,
   integrateStreamline,
+  resolveStreamlineSeedBounds,
+  streamlineLonWrapOffsets,
   wrappedPulse,
 } from './wind-streamline-layer'
 import type { WindGrid } from './wind-grid'
@@ -72,6 +75,35 @@ describe('wind streamline pure functions', () => {
     const path = integrateStreamline(grid, 25, 112, 12, 0.3)
     expect(path.length).toBeGreaterThan(2)
     expect(path[path.length - 1].lon).toBeGreaterThan(path[0].lon)
+  })
+
+  it('viewport seed bounds keep density after large zoom-out grid', () => {
+    const grid = { west: 60, east: 180, south: -10, north: 55 }
+    const viewport = { west: 110, east: 125, south: 20, north: 35 }
+    const seed = resolveStreamlineSeedBounds(grid, viewport)
+    const fullCount = computeStreamlineCountForGrid({
+      ...makeUniformGrid(),
+      west: grid.west,
+      east: grid.east,
+      south: grid.south,
+      north: grid.north,
+    })
+    const viewCount = computeStreamlineCountForArea(
+      Math.abs(seed.north - seed.south) * Math.abs(seed.east - seed.west),
+    )
+    // 视口面积远小于全 grid：条数应更贴近视口，且种子落在视口附近
+    expect(seed.west).toBeGreaterThanOrEqual(grid.west)
+    expect(seed.east).toBeLessThanOrEqual(grid.east)
+    expect(seed.west).toBeLessThan(120)
+    expect(seed.east).toBeGreaterThan(115)
+    expect(viewCount).toBeLessThanOrEqual(fullCount)
+    const seeds = buildStreamlineSeeds(seed, viewCount, () => 0.5)
+    expect(seeds.every((s) => s.lon >= seed.west && s.lon <= seed.east)).toBe(true)
+  })
+
+  it('streamlineLonWrapOffsets covers adjacent world copies', () => {
+    expect(streamlineLonWrapOffsets(0)).toEqual([-360, 0, 360])
+    expect(streamlineLonWrapOffsets(360)).toEqual([0, 360, 720])
   })
 
   it('wrappedPulse is continuous across the 0/1 seam', () => {

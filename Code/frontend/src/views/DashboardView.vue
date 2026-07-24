@@ -322,8 +322,79 @@ function handleTileSourceChange(sourceId: TileSourceId) {
 }
 
 function handleLayerSelect(layerId: string) {
-  layersStore.selectLayer(layerId)
+  // LayerSidebar 已 select；此处只记日志，避免重复副作用
+  if (layersStore.selectedInstanceId !== layerId) {
+    layersStore.selectLayer(layerId)
+  }
   logStore.logOperation('layer-select', `选中图层: ${layerId}`)
+}
+
+/** 点查优先当前选中天气层；否则取最顶层可见天气层 */
+function resolveWeatherInspectCatalogId(): string | null {
+  const selected = selectedLayerDisplay.value
+  if (selected && layersStore.isWeatherEngineLayer(selected.catalogId) && selected.visible) {
+    return selected.catalogId
+  }
+  const topVisible = [...layersStore.activeLayers]
+    .filter((l) => l.visible && layersStore.isWeatherEngineLayer(l.catalogId))
+    .sort((a, b) => b.order - a.order)[0]
+  return topVisible?.catalogId ?? null
+}
+
+function requestPointWeather(lng: number, lat: number, catalogId: string) {
+  void layersStore.fetchPointWeather(lng, lat, catalogId, {
+    forecastHours: tileForecastHour.value + 1,
+  })
+}
+
+function handleMapPointSelect(point: { lng: number; lat: number }) {
+  selectedMapPoint.value = point
+  logStore.logOperation(
+    'map-point-select',
+    `查询点 (${point.lng.toFixed(4)}, ${point.lat.toFixed(4)})`,
+  )
+  const catalogId = resolveWeatherInspectCatalogId()
+  if (catalogId) {
+    requestPointWeather(point.lng, point.lat, catalogId)
+  } else {
+    layersStore.clearPointWeather()
+  }
+  void fetchOverlayPointValues(point.lng, point.lat)
+}
+
+function clearMapPointInspect() {
+  selectedMapPoint.value = null
+  layersStore.clearPointWeather()
+  overlayPointValues.value = []
+  logStore.logOperation('map-point-clear', '清除地图选点')
+}
+
+function handleHotspotSelect(hotspot: LayerHotspot | null) {
+  selectedHotspot.value = hotspot
+}
+
+function handleHotspotSelectFromPanel(hotspotId: string) {
+  const hotspot = visibleHotspots.value.find((h) => h.id === hotspotId) ?? null
+  selectedHotspot.value = hotspot
+  mapCanvasRef.value?.selectHotspot?.(hotspotId)
+}
+
+let overlayPointFetchSeq = 0
+
+async function fetchOverlayPointValues(lng: number, lat: number) {
+  const states = overlayTimeStates.value
+  if (states.length === 0) {
+    overlayPointValues.value = []
+    return
+  }
+  const seq = ++overlayPointFetchSeq
+  const results = await Promise.allSettled(
+    states.map((s) => getOverlayValue(s.layerId, lng, lat, s.currentTime ?? undefined)),
+  )
+  if (seq !== overlayPointFetchSeq) return
+  overlayPointValues.value = results
+    .map((r) => (r.status === 'fulfilled' ? r.value : null))
+    .filter((v): v is OverlayPointValue => v !== null)
 }
 
 function handleTimelineStep(delta: number) {
@@ -375,36 +446,8 @@ function handleVisibleHotspotsChange(hotspots: LayerHotspot[]) {
   }
 }
 
-function handleHotspotSelect(hotspot: LayerHotspot | null) {
-  selectedHotspot.value = hotspot
-}
-
-function handleMapPointSelect(point: { lng: number; lat: number }) {
-  selectedMapPoint.value = point
-  logStore.logOperation(
-    'map-point-select',
-    `查询点 (${point.lng.toFixed(4)}, ${point.lat.toFixed(4)})`,
-  )
-  void layersStore.fetchPointWeather(point.lng, point.lat, activeLayer.value.catalogId)
-  void fetchOverlayPointValues(point.lng, point.lat)
-}
-
 function handleOverlayTimeUpdate(states: OverlayTimeState[]) {
   overlayTimeStates.value = states
-}
-
-async function fetchOverlayPointValues(lng: number, lat: number) {
-  const states = overlayTimeStates.value
-  if (states.length === 0) {
-    overlayPointValues.value = []
-    return
-  }
-  const results = await Promise.allSettled(
-    states.map((s) => getOverlayValue(s.layerId, lng, lat, s.currentTime ?? undefined)),
-  )
-  overlayPointValues.value = results
-    .map((r) => (r.status === 'fulfilled' ? r.value : null))
-    .filter((v): v is OverlayPointValue => v !== null)
 }
 
 function handleToggleLayerVisibility(instanceId: string) {
@@ -572,14 +615,22 @@ watch(
       return
     }
     if (selectedMapPoint.value) {
-      void layersStore.fetchPointWeather(
-        selectedMapPoint.value.lng,
-        selectedMapPoint.value.lat,
-        catalogId,
-      )
+      requestPointWeather(selectedMapPoint.value.lng, selectedMapPoint.value.lat, catalogId)
     }
   },
 )
+
+let pointHourRefetchTimer: number | null = null
+watch(tileForecastHour, () => {
+  const point = selectedMapPoint.value
+  const catalogId = resolveWeatherInspectCatalogId()
+  if (!point || !catalogId) return
+  if (pointHourRefetchTimer !== null) window.clearTimeout(pointHourRefetchTimer)
+  pointHourRefetchTimer = window.setTimeout(() => {
+    pointHourRefetchTimer = null
+    requestPointWeather(point.lng, point.lat, catalogId)
+  }, 180)
+})
 
 function buildFallbackActiveLayer(): ActiveLayerDisplay {
   return {
@@ -631,6 +682,7 @@ function buildFallbackActiveLayer(): ActiveLayerDisplay {
         :tile-source-id="tileSourceId"
         :current-hour="currentHour"
         :hour-label="hourLabel"
+        :inspect-point="selectedMapPoint"
         @visible-hotspots-change="handleVisibleHotspotsChange"
         @hotspot-select="handleHotspotSelect"
         @map-point-select="handleMapPointSelect"
@@ -697,6 +749,8 @@ function buildFallbackActiveLayer(): ActiveLayerDisplay {
             :visible-hotspots="visibleHotspots"
             :selected-layer="selectedLayerDisplay"
             :selected-hotspot="selectedHotspot"
+            :selected-map-point="selectedMapPoint"
+            :inspect-hour="tileForecastHour"
             :is-submitting="isSubmitting"
             :workflow-error="workflowError"
             :point-weather="pointWeather"
@@ -707,6 +761,9 @@ function buildFallbackActiveLayer(): ActiveLayerDisplay {
             @run-workflow="handleRunWorkflow"
             @toggle-layer-visibility="handleToggleLayerVisibility"
             @set-layer-opacity="handleSetLayerOpacity"
+            @select-hotspot="handleHotspotSelectFromPanel"
+            @clear-map-point="clearMapPointInspect"
+            @enter-select-mode="uiStore.setInteractionMode('select')"
           />
         </ControlPanel>
       </div>

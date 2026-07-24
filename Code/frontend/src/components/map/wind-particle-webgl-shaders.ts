@@ -203,11 +203,12 @@ export const PARTICLE_UPDATE_VERTEX_SHADER = /* glsl */ `
 `
 
 /**
- * B3 更新 pass 片元着色器：对每个粒子做 RK2 midpoint 平流积分。
+ * B3 更新 pass 片元着色器：对每个粒子做多子步 RK2 midpoint 平流积分。
  *
  * 行为要点：
  *   - 概率丢弃 / u_resetAll → 重定位到随机位置；静风粒子静止不每帧重撒
- *   - 半步重采样（RK2 midpoint），cos(lat) 经向补偿，按真实风速平流
+ *   - 2 子步 RK2 + 每子步位移钳制，抑制急流/辐合带单帧大跳
+ *   - 高风速区仅轻微提高重生率（DROP_BUMP 很低），避免高密度区粒子狂跳
  *   - 仅全球网格（east-west≥359°）做反子午线包裹；区域网格出界重撒
  *   - u_remap：bbox 变化首帧仅做归一化坐标重映射，保持轨迹/拖尾稳定
  * 风场纹理直接存 u/v，无需 GPU 三角函数。
@@ -223,9 +224,14 @@ export const PARTICLE_UPDATE_FRAGMENT_SHADER = /* glsl */ `
   uniform vec4 u_prevWindBounds;  // remap 前的 windBounds（west, south, east, north）
   uniform float u_remap;       // >0.5：仅做 bbox 坐标系重映射，本帧不平流
 
-  const float DROP_RATE = 0.004;
-  const float DROP_BUMP = 0.014;
+  // 基础生命周期丢弃；高风速 bump 刻意压低——旧值 0.014 使急流区重生率约 4.5×，
+  // 粒子在高密度区不断瞬移，视觉上就是「跳动」。
+  const float DROP_RATE = 0.0045;
+  const float DROP_BUMP = 0.002;
   const float DROP_REF = 25.0;
+  // 单帧总位移上限（度）。急流中 (u/cosLat)*scaledSpeed 可能远超点尺寸导致断线/跳点。
+  const float MAX_STEP_DEG = 0.32;
+  const int SUBSTEPS = 2;
 
   ${WIND_TEXTURE_SAMPLE_GLSL}
   ${POSITION_ENCODE_GLSL}
@@ -274,16 +280,31 @@ export const PARTICLE_UPDATE_FRAGMENT_SHADER = /* glsl */ `
       return;
     }
 
-    // RK2 midpoint：半步重采样；按真实风速平流（不做弱风下限放大，避免风眼虚假漂移）
-    float cosLat0 = max(cos(radians(lat)), 0.1);
-    float halfSpeed = u_scaledSpeed * 0.5;
-    float midLon = lon + (uv0.x / cosLat0) * halfSpeed;
-    float midLat = lat + uv0.y * halfSpeed;
-
-    vec2 uvMid = sampleWindVec(windTexUv(midLon, midLat));
-    float cosLatMid = max(cos(radians(midLat)), 0.1);
-    float newLon = lon + (uvMid.x / cosLatMid) * u_scaledSpeed;
-    float newLat = lat + uvMid.y * u_scaledSpeed;
+    // 多子步 RK2 midpoint：在曲率大的急流/台风环流中降低单步误差与过冲
+    float h = u_scaledSpeed / float(SUBSTEPS);
+    float maxSubStep = MAX_STEP_DEG / float(SUBSTEPS);
+    float curLon = lon;
+    float curLat = lat;
+    for (int i = 0; i < SUBSTEPS; i++) {
+      vec2 uvA = sampleWindVec(windTexUv(curLon, curLat));
+      float cosA = max(cos(radians(curLat)), 0.1);
+      float midLon = curLon + (uvA.x / cosA) * (h * 0.5);
+      float midLat = curLat + uvA.y * (h * 0.5);
+      vec2 uvB = sampleWindVec(windTexUv(midLon, midLat));
+      float cosB = max(cos(radians(midLat)), 0.1);
+      float dLon = (uvB.x / cosB) * h;
+      float dLat = uvB.y * h;
+      float stepLen = length(vec2(dLon, dLat));
+      if (stepLen > maxSubStep && stepLen > 1e-8) {
+        float scale = maxSubStep / stepLen;
+        dLon *= scale;
+        dLat *= scale;
+      }
+      curLon += dLon;
+      curLat += dLat;
+    }
+    float newLon = curLon;
+    float newLat = curLat;
 
     // 边界处理：仅全球网格（跨整圈经度）做反子午线包裹；区域网格出界即重撒，
     // 避免粒子从区域一侧瞬移到对侧造成的混乱。纬度出界始终重撒。
