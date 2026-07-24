@@ -30,6 +30,8 @@ const TYPE_LABELS: Record<string, string> = {
   'layer-remove': '移除图层',
   'layer-visibility': '图层显隐',
   'map-point': '地图选点',
+  'map-point-select': '地图选点',
+  'map-point-clear': '清除选点',
   'workflow-submit': '提交工作流',
   'workflow-error': '工作流失败',
   'workflow-editor-open': '流配置',

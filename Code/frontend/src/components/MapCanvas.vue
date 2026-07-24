@@ -37,6 +37,8 @@ const props = defineProps<{
   tileSourceId: TileSourceId
   currentHour: number
   hourLabel: string
+  /** 地图点查选中坐标（持久标记，非定位标记） */
+  inspectPoint?: { lng: number; lat: number } | null
 }>()
 
 const emit = defineEmits<{
@@ -77,6 +79,7 @@ const actionBridge = createMapCanvasActionBridge({
 const exposeBridge = createMapCanvasExposeBridge({
   getMapStageElement: () => mapStageRef.value,
   getMap: () => state.resources.map,
+  selectHotspot: (pinId: string) => actionBridge.handleHotspotPinClick(pinId),
 })
 
 defineExpose(exposeBridge)
@@ -342,6 +345,7 @@ onBeforeUnmount(() => {
   teardownBinder.dispose()
   overlayImageModule = null
   _clearLocationMarker()
+  _clearInspectMarker()
   if (locateErrorTimer) {
     clearTimeout(locateErrorTimer)
     locateErrorTimer = null
@@ -373,6 +377,41 @@ function _clearLocationMarker() {
     locationMarkerCleanup = null
   }
 }
+
+let inspectMarkerCleanup: (() => void) | null = null
+
+function _clearInspectMarker() {
+  if (inspectMarkerCleanup) {
+    inspectMarkerCleanup()
+    inspectMarkerCleanup = null
+  }
+}
+
+async function _syncInspectMarker(point: { lng: number; lat: number } | null | undefined) {
+  const mapInstance = state.resources.map
+  if (!mapInstance || !point) {
+    _clearInspectMarker()
+    return
+  }
+  _clearInspectMarker()
+  const { default: maplibregl } = await import('maplibre-gl')
+  if (!state.resources.map) return
+  const el = document.createElement('div')
+  el.className = 'inspect-point-marker'
+  el.innerHTML = '<div class="inspect-dot"></div>'
+  const marker = new maplibregl.Marker({ element: el })
+    .setLngLat([point.lng, point.lat])
+    .addTo(mapInstance)
+  inspectMarkerCleanup = () => marker.remove()
+}
+
+watch(
+  () => props.inspectPoint,
+  (point) => {
+    void _syncInspectMarker(point)
+  },
+  { deep: true },
+)
 
 async function handleLocateMe() {
   if (isLocating.value) return
@@ -1616,6 +1655,18 @@ async function handleLocateMe() {
   pointer-events: none;
 }
 
+:deep(.inspect-point-marker) {
+  pointer-events: none;
+}
+
+:deep(.inspect-dot) {
+  width: 0.75rem;
+  height: 0.75rem;
+  border-radius: 50%;
+  background: #ffb84d;
+  border: 2px solid #fff;
+  box-shadow: 0 0 8px rgba(255, 184, 77, 0.75);
+}
 :deep(.geo-dot) {
   position: absolute;
   top: 50%;

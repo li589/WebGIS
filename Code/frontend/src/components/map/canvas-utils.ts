@@ -53,8 +53,9 @@ export function computeCanvasLayout(
   let projEast = gridEast
 
   if (gridLonSpan < 360) {
-    const bounds = map.getBounds()
-    const visibleCenterLon = (bounds.getWest() + bounds.getEast()) / 2
+    // 用相机中心而非 bounds 均值：大范围缩放时 getBounds 常接近 ±180，
+    // 均值≈0，会把东亚等区域误判到错误世界副本 → 半屏/贴边空白。
+    const visibleCenterLon = map.getCenter().lng
     const gridCenterLon = (gridWest + gridEast) / 2
 
     // 计算将 gridCenter 对齐到 visibleCenter 附近所需的偏移量（±360 的倍数）

@@ -80,6 +80,13 @@ describe('map-interaction-module', () => {
     expect(emitMapPointSelect).toHaveBeenCalledTimes(1)
     expect(emitMapPointSelect).toHaveBeenCalledWith({ lng: 113.2, lat: 23.1 })
 
+    handlers.get('click')?.({
+      lngLat: { lng: 121, lat: 31 },
+      originalEvent: { shiftKey: true },
+    })
+    expect(emitMapPointSelect).toHaveBeenCalledTimes(2)
+    expect(emitMapPointSelect).toHaveBeenLastCalledWith({ lng: 121, lat: 31 })
+
     module.dispose()
     expect(map.off).toHaveBeenCalledTimes(9)
   })

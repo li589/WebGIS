@@ -113,8 +113,10 @@ export function createMapInteractionModule(
     on('render', () => {
       options.scheduleHotspotSync()
     })
-    on('click', (event: { lngLat: { lng: number; lat: number } }) => {
-      if (options.getInteractionMode() !== 'select') return
+    on('click', (event: { lngLat: { lng: number; lat: number }; originalEvent?: MouseEvent }) => {
+      const mode = options.getInteractionMode()
+      const shiftOneShot = mode === 'move' && Boolean(event.originalEvent?.shiftKey)
+      if (mode !== 'select' && !shiftOneShot) return
       options.emitMapPointSelect({
         lng: event.lngLat.lng,
         lat: event.lngLat.lat,

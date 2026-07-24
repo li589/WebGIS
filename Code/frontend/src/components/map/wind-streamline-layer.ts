@@ -9,7 +9,11 @@ import type { WindGeoJSON } from './types'
 import { MAP_EVENT_MOVE, MAP_EVENT_MOVEEND, MAP_EVENT_RESIZE, MIN_VISIBLE_ZOOM } from './types'
 import { computeCanvasLayout, type CanvasLayout } from './canvas-utils'
 import { buildWindGridFromGeoJSON, windToUV, type WindGrid } from './wind-grid'
-import { interpolateWind } from './wind-particle-canvas'
+import {
+  computeViewportBBoxFromBounds,
+  interpolateWind,
+  type WindRoamBounds,
+} from './wind-particle-canvas'
 import { unwrapLonIntoGridFrame } from './weather-grid-lattice'
 
 const TARGET_FRAME_INTERVAL_MS = 33
@@ -28,6 +32,10 @@ const SECOND_PULSE_WIDTH = 0.2
 const SECOND_PULSE_OFFSET = 0.5
 /** 低于此透明度的边跳过，减 stroke 次数 */
 const PULSE_ALPHA_EPS = 0.03
+/** zoom-out 后 grid 面积显著增大时强制按视口重撒，避免旧种子+稀疏补种导致视口空 */
+const AREA_RESEED_RATIO = 1.5
+/** 视口撒种边距（相对视口跨度） */
+const SEED_VIEWPORT_MARGIN = 0.15
 
 /**
  * 圆环上的光滑脉冲。`s`/`center`/`width` ∈ [0,1)；返回 [0,1]。
@@ -51,26 +59,70 @@ export interface StreamlineSeed {
   phase: number
 }
 
-/** 纯函数：按网格面积估算流线条数 */
-export function computeStreamlineCountForGrid(grid: WindGrid): number {
-  const area = Math.abs(grid.north - grid.south) * Math.abs(grid.east - grid.west)
-  const count = Math.round(area * STREAMLINES_PER_DEG2)
+export interface StreamlineSeedBounds {
+  west: number
+  east: number
+  south: number
+  north: number
+}
+
+/** 纯函数：按面积估算流线条数 */
+export function computeStreamlineCountForArea(areaDeg2: number): number {
+  const count = Math.round(Math.abs(areaDeg2) * STREAMLINES_PER_DEG2)
   return Math.min(MAX_STREAMLINES, Math.max(MIN_STREAMLINES, count))
 }
 
-/** 纯函数：在网格范围内均匀撒种子（带相位抖动） */
+/** 纯函数：按网格面积估算流线条数 */
+export function computeStreamlineCountForGrid(grid: WindGrid): number {
+  const area = Math.abs(grid.north - grid.south) * Math.abs(grid.east - grid.west)
+  return computeStreamlineCountForArea(area)
+}
+
+/**
+ * 流量场撒种范围：视口（含边距）与 grid 的交集。
+ * 大范围 zoom-out 后若仍按全 grid 均匀撒种，MAX_STREAMLINES 摊到全球会令视口几乎空白。
+ */
+export function resolveStreamlineSeedBounds(
+  grid: StreamlineSeedBounds,
+  viewport: WindRoamBounds | null,
+): StreamlineSeedBounds {
+  if (!viewport) {
+    return { west: grid.west, east: grid.east, south: grid.south, north: grid.north }
+  }
+  const vw = unwrapLonIntoGridFrame(viewport.west, grid.west, grid.east)
+  const ve = unwrapLonIntoGridFrame(viewport.east, grid.west, grid.east)
+  const vpWest = Math.min(vw, ve)
+  const vpEast = Math.max(vw, ve)
+  const lonSpan = Math.max(1e-6, vpEast - vpWest)
+  const latSpan = Math.max(1e-6, viewport.north - viewport.south)
+  const lonMargin = lonSpan * SEED_VIEWPORT_MARGIN
+  const latMargin = latSpan * SEED_VIEWPORT_MARGIN
+  const west = Math.max(grid.west, vpWest - lonMargin)
+  const east = Math.min(grid.east, vpEast + lonMargin)
+  const south = Math.max(grid.south, viewport.south - latMargin)
+  const north = Math.min(grid.north, viewport.north + latMargin)
+  if (!(east > west) || !(north > south)) {
+    return { west: grid.west, east: grid.east, south: grid.south, north: grid.north }
+  }
+  return { west, east, south, north }
+}
+
+/** renderWorldCopies：主世界投影在屏外时，±360 副本仍可能在视口内 */
+export function streamlineLonWrapOffsets(baseWrap: number): number[] {
+  return [baseWrap - 360, baseWrap, baseWrap + 360]
+}
+
+/** 纯函数：在给定范围内均匀撒种子（带相位抖动） */
 export function buildStreamlineSeeds(
-  grid: WindGrid,
+  bounds: StreamlineSeedBounds,
   count: number,
   rng: () => number = Math.random,
 ): StreamlineSeed[] {
   const seeds: StreamlineSeed[] = []
   const n = Math.max(1, count)
-  const cols = Math.ceil(
-    Math.sqrt(
-      n * (Math.abs(grid.east - grid.west) / Math.max(1e-6, Math.abs(grid.north - grid.south))),
-    ),
-  )
+  const lonSpan = Math.abs(bounds.east - bounds.west)
+  const latSpan = Math.max(1e-6, Math.abs(bounds.north - bounds.south))
+  const cols = Math.ceil(Math.sqrt(n * (lonSpan / latSpan)))
   const rows = Math.ceil(n / cols)
   for (let r = 0; r < rows; r++) {
     for (let c = 0; c < cols; c++) {
@@ -78,8 +130,8 @@ export function buildStreamlineSeeds(
       const u = (c + 0.35 + rng() * 0.3) / cols
       const v = (r + 0.35 + rng() * 0.3) / rows
       seeds.push({
-        lon: grid.west + u * (grid.east - grid.west),
-        lat: grid.south + v * (grid.north - grid.south),
+        lon: bounds.west + u * (bounds.east - bounds.west),
+        lat: bounds.south + v * (bounds.north - bounds.south),
         phase: rng(),
       })
     }
@@ -125,6 +177,8 @@ export class WindStreamlineLayer {
   private seeds: StreamlineSeed[] = []
   private paths: Array<Array<{ lat: number; lon: number; speed: number }>> = []
   private layout: CanvasLayout = { width: 0, height: 0, offsetX: 0, offsetY: 0, lonWrapOffset: 0 }
+  /** 与粒子层一致：仅在数据变化时重算，避免交互中 0↔±360 跳变导致半球空白 */
+  private lonWrapOffset = 0
   private pixelRatio: number
   private rafId: number | null = null
   private lastFrameTs = 0
@@ -132,6 +186,7 @@ export class WindStreamlineLayer {
   private running = false
   private lastSeedZoom = 0
   private moveHandler: () => void
+  private moveEndHandler: () => void
   private resizeHandler: () => void
   private visibilityHandler: () => void
 
@@ -152,8 +207,11 @@ export class WindStreamlineLayer {
     this.ctx = ctx
 
     this.moveHandler = () => {
-      this.syncLayout()
-      // 显著缩放后按当前 grid 重撒种子，避免流线仍挤在缩放前的地理范围
+      this.syncLayout(false)
+      this.draw()
+    }
+    this.moveEndHandler = () => {
+      this.syncLayout(false)
       const zoom = this.map.getZoom()
       if (this.grid && (this.lastSeedZoom === 0 || Math.abs(zoom - this.lastSeedZoom) >= 0.35)) {
         this.reseedPathsForZoom(zoom)
@@ -161,7 +219,7 @@ export class WindStreamlineLayer {
       this.draw()
     }
     this.resizeHandler = () => {
-      this.syncLayout()
+      this.syncLayout(false)
       this.draw()
     }
     this.visibilityHandler = () => {
@@ -169,13 +227,13 @@ export class WindStreamlineLayer {
       else if (this.running) this.startLoop()
     }
     map.on(MAP_EVENT_MOVE, this.moveHandler)
-    map.on(MAP_EVENT_MOVEEND, this.moveHandler)
-    map.on('zoomend', this.moveHandler)
+    map.on(MAP_EVENT_MOVEEND, this.moveEndHandler)
+    map.on('zoomend', this.moveEndHandler)
     map.on(MAP_EVENT_RESIZE, this.resizeHandler)
     document.addEventListener('visibilitychange', this.visibilityHandler)
 
     this.updateGeoJSON(geojson)
-    this.syncLayout()
+    this.syncLayout(true)
     this.lastSeedZoom = map.getZoom()
   }
 
@@ -188,48 +246,76 @@ export class WindStreamlineLayer {
       return
     }
 
-    // 数据未变：跳过
+    // 数据未变：跳过重撒，但仍刷新 wrap（视口可能已变）
     if (this.grid && this.grid.checksum === nextGrid.checksum) {
-      this.syncLayout()
+      this.syncLayout(true)
       return
     }
 
-    const target = computeStreamlineCountForGrid(nextGrid)
-    const inBounds = (s: StreamlineSeed) => {
-      const lon = unwrapLonIntoGridFrame(s.lon, nextGrid.west, nextGrid.east)
+    const viewport = this.readViewportBBox()
+    const seedBounds = resolveStreamlineSeedBounds(nextGrid, viewport)
+    const target = computeStreamlineCountForArea(
+      Math.abs(seedBounds.north - seedBounds.south) * Math.abs(seedBounds.east - seedBounds.west),
+    )
+
+    const old = this.grid
+    const oldArea = old ? Math.abs(old.north - old.south) * Math.abs(old.east - old.west) : 0
+    const newArea =
+      Math.abs(nextGrid.north - nextGrid.south) * Math.abs(nextGrid.east - nextGrid.west)
+    const areaGrew = !old || newArea > oldArea * AREA_RESEED_RATIO
+
+    const inSeedBounds = (s: StreamlineSeed) => {
+      const lon = unwrapLonIntoGridFrame(s.lon, seedBounds.west, seedBounds.east)
       return (
-        s.lat >= nextGrid.south &&
-        s.lat <= nextGrid.north &&
-        lon >= nextGrid.west &&
-        lon <= nextGrid.east
+        s.lat >= seedBounds.south &&
+        s.lat <= seedBounds.north &&
+        lon >= seedBounds.west &&
+        lon <= seedBounds.east
       )
     }
 
-    // 瓦片陆续补齐时保留已有种子，只增量补种 + 重积分，避免密度整屏抖动
-    let seeds = this.seeds.filter(inBounds)
-    if (seeds.length === 0) {
-      seeds = buildStreamlineSeeds(nextGrid, target)
-    } else if (seeds.length > target) {
-      seeds = seeds.slice(0, target)
-    } else if (seeds.length < target) {
-      const extras = buildStreamlineSeeds(nextGrid, target - seeds.length)
-      seeds = seeds.concat(extras)
+    // zoom-out 揭示大片新区：整列按视口重撒，保证密度；瓦片微调则增量保留
+    let seeds: StreamlineSeed[]
+    if (areaGrew || this.seeds.length === 0) {
+      seeds = buildStreamlineSeeds(seedBounds, target)
+    } else {
+      seeds = this.seeds.filter(inSeedBounds)
+      if (seeds.length === 0) {
+        seeds = buildStreamlineSeeds(seedBounds, target)
+      } else if (seeds.length > target) {
+        seeds = seeds.slice(0, target)
+      } else if (seeds.length < target) {
+        const extras = buildStreamlineSeeds(seedBounds, target - seeds.length)
+        seeds = seeds.concat(extras)
+      }
     }
 
     this.grid = nextGrid
     this.seeds = seeds
     this.paths = seeds.map((s) => integrateStreamline(nextGrid, s.lat, s.lon))
     this.lastSeedZoom = this.map.getZoom()
-    this.syncLayout()
+    this.syncLayout(true)
   }
 
-  /** 缩放后在现有 grid 上重撒/重积分，避免亮线挤在旧地理范围 */
+  /** 缩放后按当前视口∩grid 重撒/重积分，避免亮线挤在旧地理范围或摊稀到全球 */
   private reseedPathsForZoom(zoom: number) {
     if (!this.grid) return
-    const target = computeStreamlineCountForGrid(this.grid)
-    this.seeds = buildStreamlineSeeds(this.grid, target)
+    const seedBounds = resolveStreamlineSeedBounds(this.grid, this.readViewportBBox())
+    const target = computeStreamlineCountForArea(
+      Math.abs(seedBounds.north - seedBounds.south) * Math.abs(seedBounds.east - seedBounds.west),
+    )
+    this.seeds = buildStreamlineSeeds(seedBounds, target)
     this.paths = this.seeds.map((s) => integrateStreamline(this.grid!, s.lat, s.lon))
     this.lastSeedZoom = zoom
+    this.syncLayout(true)
+  }
+
+  private readViewportBBox(): WindRoamBounds | null {
+    try {
+      return computeViewportBBoxFromBounds(this.map.getBounds())
+    } catch {
+      return null
+    }
   }
 
   start() {
@@ -259,15 +345,14 @@ export class WindStreamlineLayer {
 
   /**
    * 全视口 canvas（与粒子层一致）；仅从 grid 取 lonWrapOffset。
-   * 切勿把 canvas/DOM 误传给 computeCanvasLayout（其参数是 west/east/south/north）。
+   * @param recalcWrapOffset 仅在网格变化 / zoomend 重撒时为 true，交互中保持稳定。
    */
-  private syncLayout() {
+  private syncLayout(recalcWrapOffset = false) {
     const container = this.map.getContainer()
     const vw = container.clientWidth
     const vh = container.clientHeight
-    let lonWrapOffset = 0
-    if (this.grid) {
-      lonWrapOffset = computeCanvasLayout(
+    if (recalcWrapOffset && this.grid) {
+      this.lonWrapOffset = computeCanvasLayout(
         this.map,
         this.grid.west,
         this.grid.east,
@@ -280,7 +365,7 @@ export class WindStreamlineLayer {
       height: vh,
       offsetX: 0,
       offsetY: 0,
-      lonWrapOffset,
+      lonWrapOffset: this.lonWrapOffset,
     }
     const dpr = this.pixelRatio
     const nextW = Math.round(vw * dpr)
@@ -298,7 +383,7 @@ export class WindStreamlineLayer {
   private draw() {
     const zoom = this.map.getZoom()
     if (this.layout.width <= 0 || this.layout.height <= 0) {
-      this.syncLayout()
+      this.syncLayout(false)
     }
     const ctx = this.ctx
     const w = this.canvas.width
@@ -306,8 +391,9 @@ export class WindStreamlineLayer {
     ctx.clearRect(0, 0, w, h)
     if (zoom < MIN_VISIBLE_ZOOM || !this.grid || this.paths.length === 0) return
 
-    const wrap = this.layout.lonWrapOffset
+    const wraps = streamlineLonWrapOffsets(this.layout.lonWrapOffset)
     const dpr = this.pixelRatio
+    const margin = 40 * dpr
 
     ctx.save()
     ctx.lineCap = 'round'
@@ -320,52 +406,57 @@ export class WindStreamlineLayer {
       const seedPhase = this.seeds[i]?.phase ?? 0
       const localPhase = (this.phase + seedPhase) % 1
 
-      const pts: Array<{ x: number; y: number; speed: number }> = []
-      for (const p of path) {
-        const scr = this.map.project([p.lon + wrap, p.lat])
-        pts.push({
-          x: scr.x * dpr,
-          y: scr.y * dpr,
-          speed: p.speed,
-        })
-      }
+      for (const wrap of wraps) {
+        const pts: Array<{ x: number; y: number; speed: number }> = []
+        let anyOnScreen = false
+        for (const p of path) {
+          const scr = this.map.project([p.lon + wrap, p.lat])
+          const x = scr.x * dpr
+          const y = scr.y * dpr
+          if (x >= -margin && x <= w + margin && y >= -margin && y <= h + margin) {
+            anyOnScreen = true
+          }
+          pts.push({ x, y, speed: p.speed })
+        }
+        if (!anyOnScreen) continue
 
-      // 屏幕弧长累积，相位按弧长而非点序号滑动，速度更匀
-      const cum: number[] = [0]
-      for (let j = 1; j < pts.length; j++) {
-        const dx = pts[j].x - pts[j - 1].x
-        const dy = pts[j].y - pts[j - 1].y
-        cum.push(cum[j - 1] + Math.hypot(dx, dy))
-      }
-      const totalLen = cum[cum.length - 1]
-      if (totalLen < 2) continue
+        // 屏幕弧长累积，相位按弧长而非点序号滑动，速度更匀
+        const cum: number[] = [0]
+        for (let j = 1; j < pts.length; j++) {
+          const dx = pts[j].x - pts[j - 1].x
+          const dy = pts[j].y - pts[j - 1].y
+          cum.push(cum[j - 1] + Math.hypot(dx, dy))
+        }
+        const totalLen = cum[cum.length - 1]
+        if (totalLen < 2) continue
 
-      // 底迹
-      ctx.beginPath()
-      ctx.strokeStyle = 'rgba(200, 228, 255, 0.32)'
-      ctx.lineWidth = LINE_WIDTH * dpr
-      ctx.moveTo(pts[0].x, pts[0].y)
-      for (let j = 1; j < pts.length; j++) ctx.lineTo(pts[j].x, pts[j].y)
-      ctx.stroke()
-
-      // 圆环光滑脉冲：相位 % 1 绕回时亮斑从尾丝滑接到头，无闪回
-      const phase2 = (localPhase + SECOND_PULSE_OFFSET) % 1
-      for (let j = 0; j < pts.length - 1; j++) {
-        const sMid = ((cum[j] + cum[j + 1]) * 0.5) / totalLen
-        const a = Math.max(
-          wrappedPulse(sMid, localPhase, PULSE_WIDTH),
-          wrappedPulse(sMid, phase2, SECOND_PULSE_WIDTH) * 0.72,
-        )
-        if (a < PULSE_ALPHA_EPS) continue
-        const speed = (pts[j].speed + pts[j + 1].speed) * 0.5
-        const bright = Math.min(1, 0.35 + speed / 24)
-        const alpha = (0.28 + bright * 0.62) * a
+        // 底迹
         ctx.beginPath()
-        ctx.strokeStyle = `rgba(255, 255, 255, ${alpha})`
-        ctx.lineWidth = (LINE_WIDTH + bright * 1.05 * a) * dpr
-        ctx.moveTo(pts[j].x, pts[j].y)
-        ctx.lineTo(pts[j + 1].x, pts[j + 1].y)
+        ctx.strokeStyle = 'rgba(200, 228, 255, 0.32)'
+        ctx.lineWidth = LINE_WIDTH * dpr
+        ctx.moveTo(pts[0].x, pts[0].y)
+        for (let j = 1; j < pts.length; j++) ctx.lineTo(pts[j].x, pts[j].y)
         ctx.stroke()
+
+        // 圆环光滑脉冲：相位 % 1 绕回时亮斑从尾丝滑接到头，无闪回
+        const phase2 = (localPhase + SECOND_PULSE_OFFSET) % 1
+        for (let j = 0; j < pts.length - 1; j++) {
+          const sMid = ((cum[j] + cum[j + 1]) * 0.5) / totalLen
+          const a = Math.max(
+            wrappedPulse(sMid, localPhase, PULSE_WIDTH),
+            wrappedPulse(sMid, phase2, SECOND_PULSE_WIDTH) * 0.72,
+          )
+          if (a < PULSE_ALPHA_EPS) continue
+          const speed = (pts[j].speed + pts[j + 1].speed) * 0.5
+          const bright = Math.min(1, 0.35 + speed / 24)
+          const alpha = (0.28 + bright * 0.62) * a
+          ctx.beginPath()
+          ctx.strokeStyle = `rgba(255, 255, 255, ${alpha})`
+          ctx.lineWidth = (LINE_WIDTH + bright * 1.05 * a) * dpr
+          ctx.moveTo(pts[j].x, pts[j].y)
+          ctx.lineTo(pts[j + 1].x, pts[j + 1].y)
+          ctx.stroke()
+        }
       }
     }
     ctx.restore()
@@ -375,8 +466,8 @@ export class WindStreamlineLayer {
     this.running = false
     this.stopLoop()
     this.map.off(MAP_EVENT_MOVE, this.moveHandler)
-    this.map.off(MAP_EVENT_MOVEEND, this.moveHandler)
-    this.map.off('zoomend', this.moveHandler)
+    this.map.off(MAP_EVENT_MOVEEND, this.moveEndHandler)
+    this.map.off('zoomend', this.moveEndHandler)
     this.map.off(MAP_EVENT_RESIZE, this.resizeHandler)
     document.removeEventListener('visibilitychange', this.visibilityHandler)
     this.canvas.remove()

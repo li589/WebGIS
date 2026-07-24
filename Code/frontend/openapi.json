@@ -52,101 +52,6 @@
         }
       }
     },
-    "/demo/layers/snapshots": {
-      "get": {
-        "tags": [
-          "demo"
-        ],
-        "summary": "List Demo Snapshots",
-        "operationId": "list_demo_snapshots_demo_layers_snapshots_get",
-        "parameters": [
-          {
-            "name": "hour",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "type": "number",
-              "default": 12,
-              "title": "Hour"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/DemoLayerSnapshotsResponse"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/demo/layers/{layer_id}/snapshot": {
-      "get": {
-        "tags": [
-          "demo"
-        ],
-        "summary": "Get Demo Snapshot",
-        "operationId": "get_demo_snapshot_demo_layers__layer_id__snapshot_get",
-        "parameters": [
-          {
-            "name": "layer_id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "title": "Layer Id"
-            }
-          },
-          {
-            "name": "hour",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "type": "number",
-              "default": 12,
-              "title": "Hour"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/DemoLayerSnapshot"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
     "/geo/transform": {
       "get": {
         "tags": [
@@ -491,6 +396,52 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/WorkflowAcceptedResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "tags": [
+          "workflow"
+        ],
+        "summary": "List Workflow Runs",
+        "description": "列出工作流 run。active_only=true（默认）仅返回非终态 run。\n\n供前端启动恢复与跨会话状态同步使用。",
+        "operationId": "list_workflow_runs_workflow_runs_get",
+        "parameters": [
+          {
+            "name": "active_only",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": true,
+              "title": "Active Only"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/WorkflowRunStatusResponse"
+                  },
+                  "title": "Response List Workflow Runs Workflow Runs Get"
                 }
               }
             }
@@ -1423,6 +1374,135 @@
         }
       }
     },
+    "/weather/coverage": {
+      "get": {
+        "tags": [
+          "weather"
+        ],
+        "summary": "Get Weather Coverage",
+        "description": "返回本地 Open-Meteo 数据覆盖范围，供前端时间轴限制可选时段。",
+        "operationId": "get_weather_coverage_weather_coverage_get",
+        "parameters": [
+          {
+            "name": "model",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Model"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/weather/sync/overview": {
+      "get": {
+        "tags": [
+          "weather"
+        ],
+        "summary": "Get Open Meteo Sync Overview",
+        "description": "Open-Meteo 同步与本地可达性总览（设置页 / 运维）。",
+        "operationId": "get_open_meteo_sync_overview_weather_sync_overview_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        }
+      }
+    },
+    "/weather/sync/trigger": {
+      "post": {
+        "tags": [
+          "weather"
+        ],
+        "summary": "Trigger Open Meteo Sync",
+        "description": "手动触发 Open-Meteo 数据同步。\n\n优先 Celery 异步派发；broker 卡住/超时时降级为本地后台线程。\n注意：Celery apply_async 必须在限时线程中调用，且 ThreadPool 不可 wait=True\n退出（否则 timeout 后仍会挂死整个 HTTP 请求 → 前端 AbortError）。",
+        "operationId": "trigger_open_meteo_sync_weather_sync_trigger_post",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        }
+      }
+    },
+    "/weather/sync/status": {
+      "get": {
+        "tags": [
+          "weather"
+        ],
+        "summary": "Get Open Meteo Sync Status",
+        "description": "查询同步任务状态（含完成时间 / domains / 错误摘要）。",
+        "operationId": "get_open_meteo_sync_status_weather_sync_status_get",
+        "parameters": [
+          {
+            "name": "task_id",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Task Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/weather/point": {
       "get": {
         "tags": [
@@ -1499,6 +1579,22 @@
               ],
               "title": "Place Name"
             }
+          },
+          {
+            "name": "provider",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Provider"
+            }
           }
         ],
         "responses": {
@@ -1509,6 +1605,57 @@
                 "schema": {
                   "$ref": "#/components/schemas/WeatherPointResponse"
                 }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/weather/providers-for-layer/{layer_id}": {
+      "get": {
+        "tags": [
+          "weather"
+        ],
+        "summary": "Get Providers For Layer",
+        "description": "List weather providers that declare support for ``layer_id`` (for layer source dropdown).",
+        "operationId": "get_providers_for_layer_weather_providers_for_layer__layer_id__get",
+        "parameters": [
+          {
+            "name": "layer_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Layer Id"
+            }
+          },
+          {
+            "name": "include_disabled",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false,
+              "title": "Include Disabled"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
               }
             }
           },
@@ -1823,13 +1970,65 @@
         }
       }
     },
+    "/import/crs-options": {
+      "get": {
+        "tags": [
+          "import"
+        ],
+        "summary": "List Crs Options",
+        "description": "返回前端下拉用 CRS 列表（按 category 分组前的平铺列表）。\n\n委托 ``crs_registry.to_api_payload()``，返回 13 项 Phase 1 扩展版 CRS。",
+        "operationId": "list_crs_options_import_crs_options_get",
+        "parameters": [
+          {
+            "name": "x-api-key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Api-Key"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response List Crs Options Import Crs Options Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/import/raster": {
       "post": {
         "tags": [
           "import"
         ],
         "summary": "Import Raster",
-        "description": "上传栅格文件（TIF），转 COG 预览，动态注册为 overlay 图层。\n\n返回 ``{\"layer_id\": \"imported-xxx\", \"bounds\": [west, south, east, north]}``。",
+        "description": "上传栅格文件（TIF），生成预览 PNG + bounds，动态注册为 overlay 图层。\n\n返回 ``{layer_id, bounds, source_crs, suggested_crs, needs_confirm}``。\nbounds 保持源 CRS 不转换；前端若收到 ``needs_confirm=True`` 应弹确认框，\n用户确认后调 ``POST /import/raster/confirm`` 重投影到 WGS84。",
         "operationId": "import_raster_import_raster_post",
         "parameters": [
           {
@@ -1868,6 +2067,253 @@
                   "type": "object",
                   "additionalProperties": true,
                   "title": "Response Import Raster Import Raster Post"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/import/raster/{layer_id}": {
+      "delete": {
+        "tags": [
+          "import"
+        ],
+        "summary": "Delete Imported Raster",
+        "description": "删除动态导入的栅格 overlay，并清理磁盘目录。",
+        "operationId": "delete_imported_raster_import_raster__layer_id__delete",
+        "parameters": [
+          {
+            "name": "layer_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Layer Id"
+            }
+          },
+          {
+            "name": "x-api-key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Api-Key"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Delete Imported Raster Import Raster  Layer Id  Delete"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/import/raster/confirm": {
+      "post": {
+        "tags": [
+          "import"
+        ],
+        "summary": "Confirm Imported Raster",
+        "description": "用户确认 CRS 后：1) 重投影 PNG 2) 重算 bounds 3) 更新 OverlaySpec.crs 4) 返回新 bounds。\n\n流程：\n1. 从 ``_IMPORTS_DIR/{layer_id}/`` 读 bounds.json 拿 source_filename\n2. 调 ``render_cog_preview_reprojected(source_crs=body.source_crs, target_crs='EPSG:4326')``\n   生成新 PNG + WGS84 bounds\n3. 应用 ``lng_offset``/``lat_offset`` 到 bounds（CRS 转换后应用）\n4. 覆盖 ``preview.png`` + ``bounds.json``（保留原 TIF 不动）\n5. ``unregister_overlay`` + ``register_overlay`` 重新注册（crs='EPSG:4326'）\n6. 返回 ``{layer_id, bounds, source_crs, applied_offset}``",
+        "operationId": "confirm_imported_raster_import_raster_confirm_post",
+        "parameters": [
+          {
+            "name": "x-api-key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Api-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ConfirmRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Confirm Imported Raster Import Raster Confirm Post"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/import/transform-point": {
+      "post": {
+        "tags": [
+          "import"
+        ],
+        "summary": "Transform Point Endpoint",
+        "description": "批量点转换（前端 CSV/POI 提交时用）。\n\n委托 ``crs_transformer.transform_points_batch``。返回转换后的点列表。",
+        "operationId": "transform_point_endpoint_import_transform_point_post",
+        "parameters": [
+          {
+            "name": "x-api-key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Api-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TransformPointRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Transform Point Endpoint Import Transform Point Post"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/import/transform-bounds": {
+      "post": {
+        "tags": [
+          "import"
+        ],
+        "summary": "Transform Bounds Endpoint",
+        "description": "bounds 转换（前端栅格预览用）。\n\n委托 ``crs_transformer.transform_bounds``。返回目标 CRS 下的 bounds。",
+        "operationId": "transform_bounds_endpoint_import_transform_bounds_post",
+        "parameters": [
+          {
+            "name": "x-api-key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Api-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TransformBoundsRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Transform Bounds Endpoint Import Transform Bounds Post"
                 }
               }
             }
@@ -2060,6 +2506,24 @@
               ],
               "title": "Model"
             }
+          },
+          {
+            "name": "provider",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Weather provider id, or omit/auto for registry priority",
+              "title": "Provider"
+            },
+            "description": "Weather provider id, or omit/auto for registry priority"
           },
           {
             "name": "t",
@@ -2413,7 +2877,7 @@
           "config"
         ],
         "summary": "Toggle Api Key",
-        "description": "启用/禁用 API Key。",
+        "description": "启用/禁用 API Key。无值时返回 400；env-only 会物化到 DB。",
         "operationId": "toggle_api_key_config_api_keys__key_name__toggle_put",
         "parameters": [
           {
@@ -2452,6 +2916,256 @@
             }
           }
         },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/config/api-keys/{key_name}/history": {
+      "get": {
+        "tags": [
+          "config"
+        ],
+        "summary": "List Api Key History",
+        "description": "列出密钥历史版本（脱敏）。",
+        "operationId": "list_api_key_history_config_api_keys__key_name__history_get",
+        "parameters": [
+          {
+            "name": "key_name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Key Name"
+            }
+          },
+          {
+            "name": "x-api-key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Api-Key"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ApiKeyHistoryItem"
+                  },
+                  "title": "Response List Api Key History Config Api Keys  Key Name  History Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "config"
+        ],
+        "summary": "Clear Api Key History",
+        "operationId": "clear_api_key_history_config_api_keys__key_name__history_delete",
+        "parameters": [
+          {
+            "name": "key_name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Key Name"
+            }
+          },
+          {
+            "name": "x-api-key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Api-Key"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiKeyHistoryClearResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/config/api-keys/{key_name}/history/{history_id}/restore": {
+      "post": {
+        "tags": [
+          "config"
+        ],
+        "summary": "Restore Api Key History",
+        "description": "将历史版本恢复为当前密钥。",
+        "operationId": "restore_api_key_history_config_api_keys__key_name__history__history_id__restore_post",
+        "parameters": [
+          {
+            "name": "key_name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Key Name"
+            }
+          },
+          {
+            "name": "history_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "History Id"
+            }
+          },
+          {
+            "name": "x-api-key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Api-Key"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/config/api-keys/{key_name}/history/{history_id}": {
+      "delete": {
+        "tags": [
+          "config"
+        ],
+        "summary": "Delete Api Key History Entry",
+        "operationId": "delete_api_key_history_entry_config_api_keys__key_name__history__history_id__delete",
+        "parameters": [
+          {
+            "name": "key_name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Key Name"
+            }
+          },
+          {
+            "name": "history_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "History Id"
+            }
+          },
+          {
+            "name": "x-api-key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Api-Key"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "description": "Successful Response",
@@ -2817,6 +3531,64 @@
             "content": {
               "application/json": {
                 "schema": {}
+              }
+            }
+          }
+        }
+      }
+    },
+    "/config/weather/model": {
+      "put": {
+        "tags": [
+          "config"
+        ],
+        "summary": "Update Weather Default Model",
+        "description": "更新全局默认天气模型（SQLite 持久化，立即影响无参 coverage / 瓦片默认 model）。",
+        "operationId": "update_weather_default_model_config_weather_model_put",
+        "parameters": [
+          {
+            "name": "x-api-key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Api-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WeatherModelUpdateRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
               }
             }
           }
@@ -3521,6 +4293,254 @@
         }
       }
     },
+    "/config/remote-storage/{profile_id}/history": {
+      "get": {
+        "tags": [
+          "config"
+        ],
+        "summary": "List Remote Storage History",
+        "operationId": "list_remote_storage_history_config_remote_storage__profile_id__history_get",
+        "parameters": [
+          {
+            "name": "profile_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Profile Id"
+            }
+          },
+          {
+            "name": "x-api-key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Api-Key"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/RemoteStorageHistoryItem"
+                  },
+                  "title": "Response List Remote Storage History Config Remote Storage  Profile Id  History Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "config"
+        ],
+        "summary": "Clear Remote Storage History",
+        "operationId": "clear_remote_storage_history_config_remote_storage__profile_id__history_delete",
+        "parameters": [
+          {
+            "name": "profile_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Profile Id"
+            }
+          },
+          {
+            "name": "x-api-key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Api-Key"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RemoteStorageHistoryClearResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/config/remote-storage/{profile_id}/history/{history_id}/restore": {
+      "post": {
+        "tags": [
+          "config"
+        ],
+        "summary": "Restore Remote Storage History",
+        "operationId": "restore_remote_storage_history_config_remote_storage__profile_id__history__history_id__restore_post",
+        "parameters": [
+          {
+            "name": "profile_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Profile Id"
+            }
+          },
+          {
+            "name": "history_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "History Id"
+            }
+          },
+          {
+            "name": "x-api-key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Api-Key"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/config/remote-storage/{profile_id}/history/{history_id}": {
+      "delete": {
+        "tags": [
+          "config"
+        ],
+        "summary": "Delete Remote Storage History Entry",
+        "operationId": "delete_remote_storage_history_entry_config_remote_storage__profile_id__history__history_id__delete",
+        "parameters": [
+          {
+            "name": "profile_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Profile Id"
+            }
+          },
+          {
+            "name": "history_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "History Id"
+            }
+          },
+          {
+            "name": "x-api-key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Api-Key"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/config/data-source": {
       "get": {
         "tags": [
@@ -3541,6 +4561,356 @@
         }
       }
     },
+    "/config/data-cache/overview": {
+      "get": {
+        "tags": [
+          "config"
+        ],
+        "summary": "Get Data Cache Overview",
+        "description": "静态 materialize 缓存概览。",
+        "operationId": "get_data_cache_overview_config_data_cache_overview_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        }
+      }
+    },
+    "/config/data-cache/evict": {
+      "post": {
+        "tags": [
+          "config"
+        ],
+        "summary": "Evict Data Cache",
+        "description": "清理静态缓存（按 URI/名称或过期时间）。",
+        "operationId": "evict_data_cache_config_data_cache_evict_post",
+        "parameters": [
+          {
+            "name": "x-api-key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Api-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "anyOf": [
+                  {
+                    "type": "object",
+                    "additionalProperties": true
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Payload"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/config/data-source/open-data-presets": {
+      "put": {
+        "tags": [
+          "config"
+        ],
+        "summary": "Update Open Data Presets",
+        "description": "更新 NOAA/NASA/NSIDC/ESA 开放数据 base URL 预设。",
+        "operationId": "update_open_data_presets_config_data_source_open_data_presets_put",
+        "parameters": [
+          {
+            "name": "x-api-key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Api-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": true,
+                "title": "Payload"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/config/data-source/portal-credentials": {
+      "get": {
+        "tags": [
+          "config"
+        ],
+        "summary": "Get Portal Credentials",
+        "description": "开放门户凭证（脱敏）。",
+        "operationId": "get_portal_credentials_config_data_source_portal_credentials_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        }
+      }
+    },
+    "/config/data-source/portal-credentials/{portal_id}": {
+      "put": {
+        "tags": [
+          "config"
+        ],
+        "summary": "Upsert Portal Credential",
+        "description": "新增/更新门户凭证（earthdata / nsidc / copernicus）。",
+        "operationId": "upsert_portal_credential_config_data_source_portal_credentials__portal_id__put",
+        "parameters": [
+          {
+            "name": "portal_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Portal Id"
+            }
+          },
+          {
+            "name": "x-api-key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Api-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": true,
+                "title": "Payload"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "config"
+        ],
+        "summary": "Delete Portal Credential",
+        "description": "删除门户凭证。",
+        "operationId": "delete_portal_credential_config_data_source_portal_credentials__portal_id__delete",
+        "parameters": [
+          {
+            "name": "portal_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Portal Id"
+            }
+          },
+          {
+            "name": "x-api-key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Api-Key"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/config/data-source/remote-layer-uris": {
+      "put": {
+        "tags": [
+          "config"
+        ],
+        "summary": "Update Remote Layer Uris",
+        "description": "更新图层 URI 覆盖（等价 BACKEND_REMOTE_LAYER_DATA_URIS）。",
+        "operationId": "update_remote_layer_uris_config_data_source_remote_layer_uris_put",
+        "parameters": [
+          {
+            "name": "x-api-key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Api-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": true,
+                "title": "Payload"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/config/about": {
       "get": {
         "tags": [
@@ -3555,6 +4925,1086 @@
             "content": {
               "application/json": {
                 "schema": {}
+              }
+            }
+          }
+        }
+      }
+    },
+    "/workflow-definitions/node-templates": {
+      "get": {
+        "tags": [
+          "workflow-definition",
+          "workflow-definition"
+        ],
+        "summary": "List Node Templates",
+        "description": "获取所有可用的节点模板，供前端节点面板展示。",
+        "operationId": "list_node_templates_workflow_definitions_node_templates_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object",
+                  "title": "Response List Node Templates Workflow Definitions Node Templates Get"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/workflow-definitions/compile": {
+      "post": {
+        "tags": [
+          "workflow-definition",
+          "workflow-definition"
+        ],
+        "summary": "Compile Graph",
+        "description": "将 LiteGraph 画布编译为 Python provider 可执行的 workflow_definition。",
+        "operationId": "compile_graph_workflow_definitions_compile_post",
+        "parameters": [
+          {
+            "name": "x-api-key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Api-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": true,
+                "title": "Payload"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Compile Graph Workflow Definitions Compile Post"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/workflow-definitions": {
+      "get": {
+        "tags": [
+          "workflow-definition",
+          "workflow-definition"
+        ],
+        "summary": "List Definitions",
+        "description": "列出所有工作流定义（system + user）。",
+        "operationId": "list_definitions_workflow_definitions_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response List Definitions Workflow Definitions Get"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "workflow-definition",
+          "workflow-definition"
+        ],
+        "summary": "Create Definition",
+        "description": "创建用户工作流定义。",
+        "operationId": "create_definition_workflow_definitions_post",
+        "parameters": [
+          {
+            "name": "x-api-key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Api-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": true,
+                "title": "Payload"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Create Definition Workflow Definitions Post"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/workflow-definitions/{workflow_id}": {
+      "get": {
+        "tags": [
+          "workflow-definition",
+          "workflow-definition"
+        ],
+        "summary": "Get Definition",
+        "description": "获取单个工作流定义的完整内容。",
+        "operationId": "get_definition_workflow_definitions__workflow_id__get",
+        "parameters": [
+          {
+            "name": "workflow_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Workflow Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Get Definition Workflow Definitions  Workflow Id  Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "workflow-definition",
+          "workflow-definition"
+        ],
+        "summary": "Update Definition",
+        "description": "更新用户工作流定义。system 定义不可更新。",
+        "operationId": "update_definition_workflow_definitions__workflow_id__put",
+        "parameters": [
+          {
+            "name": "workflow_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Workflow Id"
+            }
+          },
+          {
+            "name": "x-api-key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Api-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": true,
+                "title": "Payload"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Update Definition Workflow Definitions  Workflow Id  Put"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "workflow-definition",
+          "workflow-definition"
+        ],
+        "summary": "Delete Definition",
+        "description": "删除用户工作流定义。system 定义不可删除。",
+        "operationId": "delete_definition_workflow_definitions__workflow_id__delete",
+        "parameters": [
+          {
+            "name": "workflow_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Workflow Id"
+            }
+          },
+          {
+            "name": "x-api-key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Api-Key"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Delete Definition Workflow Definitions  Workflow Id  Delete"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/workflow-definitions/{workflow_id}/duplicate": {
+      "post": {
+        "tags": [
+          "workflow-definition",
+          "workflow-definition"
+        ],
+        "summary": "Duplicate Definition",
+        "description": "复制现有工作流定义为新的用户工作流。",
+        "operationId": "duplicate_definition_workflow_definitions__workflow_id__duplicate_post",
+        "parameters": [
+          {
+            "name": "workflow_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Workflow Id"
+            }
+          },
+          {
+            "name": "x-api-key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Api-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": true,
+                "title": "Payload"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Duplicate Definition Workflow Definitions  Workflow Id  Duplicate Post"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/workflow-timers": {
+      "get": {
+        "tags": [
+          "workflow-timer"
+        ],
+        "summary": "List Timers",
+        "description": "列出全部定时器，可选按 workflow_id 过滤。",
+        "operationId": "list_timers_workflow_timers_get",
+        "parameters": [
+          {
+            "name": "workflow_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Workflow Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response List Timers Workflow Timers Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "workflow-timer"
+        ],
+        "summary": "Create Timer",
+        "description": "创建定时器。\n\n请求体字段：\n- workflow_id (str, 必填)\n- name (str, 必填)\n- trigger_type ('cron' | 'interval' | 'event', 必填)\n- trigger_config (dict, 必填, 格式依 trigger_type 而定)\n- payload_overrides (dict, 可选)\n- enabled (bool, 可选, 默认 true)",
+        "operationId": "create_timer_workflow_timers_post",
+        "parameters": [
+          {
+            "name": "x-api-key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Api-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": true,
+                "title": "Payload"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Create Timer Workflow Timers Post"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/workflow-timers/{timer_id}": {
+      "get": {
+        "tags": [
+          "workflow-timer"
+        ],
+        "summary": "Get Timer",
+        "description": "获取单个定时器详情。",
+        "operationId": "get_timer_workflow_timers__timer_id__get",
+        "parameters": [
+          {
+            "name": "timer_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Timer Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Get Timer Workflow Timers  Timer Id  Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "workflow-timer"
+        ],
+        "summary": "Update Timer",
+        "description": "更新定时器。允许字段：name / enabled / trigger_type / trigger_config / payload_overrides。",
+        "operationId": "update_timer_workflow_timers__timer_id__put",
+        "parameters": [
+          {
+            "name": "timer_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Timer Id"
+            }
+          },
+          {
+            "name": "x-api-key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Api-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": true,
+                "title": "Payload"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Update Timer Workflow Timers  Timer Id  Put"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "workflow-timer"
+        ],
+        "summary": "Delete Timer",
+        "description": "删除定时器。",
+        "operationId": "delete_timer_workflow_timers__timer_id__delete",
+        "parameters": [
+          {
+            "name": "timer_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Timer Id"
+            }
+          },
+          {
+            "name": "x-api-key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Api-Key"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Delete Timer Workflow Timers  Timer Id  Delete"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/workflow-timers/{timer_id}/run": {
+      "post": {
+        "tags": [
+          "workflow-timer"
+        ],
+        "summary": "Run Timer",
+        "description": "手动触发一次定时器对应的工作流（不影响 next_fire_at）。",
+        "operationId": "run_timer_workflow_timers__timer_id__run_post",
+        "parameters": [
+          {
+            "name": "timer_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Timer Id"
+            }
+          },
+          {
+            "name": "x-api-key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Api-Key"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Run Timer Workflow Timers  Timer Id  Run Post"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/workflow-timers/events": {
+      "post": {
+        "tags": [
+          "workflow-timer"
+        ],
+        "summary": "Emit Event",
+        "description": "发射外部事件，触发匹配的 event 类型定时器。\n\n请求体：\n- event_type (str, 必填)\n- payload (dict, 可选)",
+        "operationId": "emit_event_workflow_timers_events_post",
+        "parameters": [
+          {
+            "name": "x-api-key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Api-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": true,
+                "title": "Payload"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Emit Event Workflow Timers Events Post"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/workflow-timers/tick": {
+      "post": {
+        "tags": [
+          "workflow-timer"
+        ],
+        "summary": "Manual Tick",
+        "description": "手动触发一次扫描（调试用，正常情况下由 Celery Beat 每分钟调用）。",
+        "operationId": "manual_tick_workflow_timers_tick_post",
+        "parameters": [
+          {
+            "name": "x-api-key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Api-Key"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Manual Tick Workflow Timers Tick Post"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/cleanup/workflow-runs": {
+      "post": {
+        "tags": [
+          "cleanup"
+        ],
+        "summary": "Cleanup Workflow Runs",
+        "description": "手动清理过期的 workflow runs 及其 events。\n\n清理逻辑：删除 status 为 completed/failed/cancelled 且 updated_at 早于\nretention_days 天前的 run，对应 events 一并删除。\n\n可选执行 VACUUM 回收磁盘空间（耗时，数据库越大耗时越长）。",
+        "operationId": "cleanup_workflow_runs_cleanup_workflow_runs_post",
+        "parameters": [
+          {
+            "name": "x-api-key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Api-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WorkflowRunsCleanupRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkflowRunsCleanupResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/cleanup/cache": {
+      "post": {
+        "tags": [
+          "cleanup"
+        ],
+        "summary": "Cleanup Cache",
+        "description": "手动清理已过期的缓存文件。\n\n扫描 cache_service 的 cache_dir，删除所有 expires_at 已过期的 JSON 文件。\n损坏的缓存文件也会被删除以避免持续报错。",
+        "operationId": "cleanup_cache_cleanup_cache_post",
+        "parameters": [
+          {
+            "name": "x-api-key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Api-Key"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CacheCleanupResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/cleanup/vacuum": {
+      "post": {
+        "tags": [
+          "cleanup"
+        ],
+        "summary": "Vacuum Workflow State",
+        "description": "VACUUM workflow_state.sqlite3 回收磁盘空间。\n\n在清理 workflow runs 后执行可回收磁盘空间。耗时较长，建议低峰期执行。",
+        "operationId": "vacuum_workflow_state_cleanup_vacuum_post",
+        "parameters": [
+          {
+            "name": "x-api-key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Api-Key"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Vacuum Workflow State Cleanup Vacuum Post"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/cleanup/stats": {
+      "get": {
+        "tags": [
+          "cleanup"
+        ],
+        "summary": "Get Cleanup Stats",
+        "description": "返回当前清理统计（不执行清理）。\n\n包含：\n- cache_stats：缓存命中率、过期数、总数、各 scope 分布\n- workflow_runs_stats：active / completed / failed 数量",
+        "operationId": "get_cleanup_stats_cleanup_stats_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CleanupStatsResponse"
+                }
               }
             }
           }
@@ -3947,6 +6397,73 @@
         "type": "object",
         "title": "AlgorithmWorkflowRequest"
       },
+      "ApiKeyHistoryClearResponse": {
+        "properties": {
+          "key_name": {
+            "type": "string",
+            "title": "Key Name"
+          },
+          "deleted": {
+            "type": "integer",
+            "title": "Deleted"
+          }
+        },
+        "type": "object",
+        "required": [
+          "key_name",
+          "deleted"
+        ],
+        "title": "ApiKeyHistoryClearResponse"
+      },
+      "ApiKeyHistoryItem": {
+        "properties": {
+          "id": {
+            "type": "integer",
+            "title": "Id"
+          },
+          "key_name": {
+            "type": "string",
+            "title": "Key Name"
+          },
+          "masked_value": {
+            "type": "string",
+            "title": "Masked Value"
+          },
+          "label": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Label"
+          },
+          "created_at": {
+            "type": "string",
+            "title": "Created At"
+          },
+          "superseded_at": {
+            "type": "string",
+            "title": "Superseded At"
+          },
+          "source": {
+            "type": "string",
+            "title": "Source"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "key_name",
+          "masked_value",
+          "created_at",
+          "superseded_at",
+          "source"
+        ],
+        "title": "ApiKeyHistoryItem"
+      },
       "ApiKeyToggleRequest": {
         "properties": {
           "enabled": {
@@ -3992,6 +6509,17 @@
             "type": "boolean",
             "title": "Enabled",
             "default": true
+          },
+          "history_label": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "History Label"
           }
         },
         "type": "object",
@@ -4080,6 +6608,53 @@
         ],
         "title": "BoundingBox"
       },
+      "CacheCleanupResponse": {
+        "properties": {
+          "deleted": {
+            "type": "integer",
+            "title": "Deleted"
+          },
+          "skipped": {
+            "type": "integer",
+            "title": "Skipped"
+          },
+          "errors": {
+            "type": "integer",
+            "title": "Errors"
+          }
+        },
+        "type": "object",
+        "required": [
+          "deleted",
+          "skipped",
+          "errors"
+        ],
+        "title": "CacheCleanupResponse",
+        "description": "缓存清理响应。"
+      },
+      "CleanupStatsResponse": {
+        "properties": {
+          "cache_stats": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Cache Stats"
+          },
+          "workflow_runs_stats": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "type": "object",
+            "title": "Workflow Runs Stats"
+          }
+        },
+        "type": "object",
+        "required": [
+          "cache_stats",
+          "workflow_runs_stats"
+        ],
+        "title": "CleanupStatsResponse",
+        "description": "当前清理统计（不执行清理）。"
+      },
       "ClientIdentity": {
         "properties": {
           "client_id": {
@@ -4141,200 +6716,34 @@
         "type": "object",
         "title": "ClientIdentity"
       },
-      "DemoAvailabilityState": {
-        "type": "string",
-        "enum": [
-          "empty",
-          "partial",
-          "ready"
-        ],
-        "title": "DemoAvailabilityState"
-      },
-      "DemoDataStateMode": {
-        "type": "string",
-        "enum": [
-          "demo",
-          "placeholder",
-          "mixed"
-        ],
-        "title": "DemoDataStateMode"
-      },
-      "DemoFieldAliasMap": {
-        "properties": {
-          "metric_value": {
-            "items": {
-              "type": "string"
-            },
-            "type": "array",
-            "title": "Metric Value"
-          },
-          "hotspot_value": {
-            "items": {
-              "type": "string"
-            },
-            "type": "array",
-            "title": "Hotspot Value"
-          },
-          "observation_time": {
-            "items": {
-              "type": "string"
-            },
-            "type": "array",
-            "title": "Observation Time"
-          },
-          "status_label": {
-            "items": {
-              "type": "string"
-            },
-            "type": "array",
-            "title": "Status Label"
-          }
-        },
-        "type": "object",
-        "required": [
-          "metric_value",
-          "hotspot_value",
-          "observation_time",
-          "status_label"
-        ],
-        "title": "DemoFieldAliasMap"
-      },
-      "DemoLayerSnapshot": {
+      "ConfirmRequest": {
         "properties": {
           "layer_id": {
             "type": "string",
             "title": "Layer Id"
           },
-          "display_name": {
+          "source_crs": {
             "type": "string",
-            "title": "Display Name"
+            "title": "Source Crs"
           },
-          "category": {
-            "type": "string",
-            "title": "Category"
-          },
-          "metric_label": {
-            "type": "string",
-            "title": "Metric Label"
-          },
-          "metric_unit": {
-            "type": "string",
-            "title": "Metric Unit"
-          },
-          "metric_precision": {
-            "type": "integer",
-            "title": "Metric Precision"
-          },
-          "update_label": {
-            "type": "string",
-            "title": "Update Label"
-          },
-          "source_label": {
-            "type": "string",
-            "title": "Source Label"
-          },
-          "accent_color": {
-            "type": "string",
-            "title": "Accent Color"
-          },
-          "accent_glow": {
-            "type": "string",
-            "title": "Accent Glow"
-          },
-          "chip_tone": {
-            "type": "string",
-            "title": "Chip Tone"
-          },
-          "data_state_mode": {
-            "$ref": "#/components/schemas/DemoDataStateMode"
-          },
-          "data_state_label": {
-            "type": "string",
-            "title": "Data State Label"
-          },
-          "empty_state_label": {
-            "type": "string",
-            "title": "Empty State Label"
-          },
-          "availability_state": {
-            "$ref": "#/components/schemas/DemoAvailabilityState"
-          },
-          "trend_label": {
-            "type": "string",
-            "title": "Trend Label"
-          },
-          "summary": {
-            "type": "string",
-            "title": "Summary"
-          },
-          "status_label": {
-            "type": "string",
-            "title": "Status Label"
-          },
-          "confidence_label": {
-            "type": "string",
-            "title": "Confidence Label"
-          },
-          "requested_hour": {
+          "lng_offset": {
             "type": "number",
-            "title": "Requested Hour"
+            "title": "Lng Offset",
+            "default": 0.0
           },
-          "field_aliases": {
-            "$ref": "#/components/schemas/DemoFieldAliasMap"
-          },
-          "raw_payload": {
-            "additionalProperties": true,
-            "type": "object",
-            "title": "Raw Payload"
+          "lat_offset": {
+            "type": "number",
+            "title": "Lat Offset",
+            "default": 0.0
           }
         },
         "type": "object",
         "required": [
           "layer_id",
-          "display_name",
-          "category",
-          "metric_label",
-          "metric_unit",
-          "metric_precision",
-          "update_label",
-          "source_label",
-          "accent_color",
-          "accent_glow",
-          "chip_tone",
-          "data_state_mode",
-          "data_state_label",
-          "empty_state_label",
-          "availability_state",
-          "trend_label",
-          "summary",
-          "status_label",
-          "confidence_label",
-          "requested_hour",
-          "field_aliases",
-          "raw_payload"
+          "source_crs"
         ],
-        "title": "DemoLayerSnapshot"
-      },
-      "DemoLayerSnapshotsResponse": {
-        "properties": {
-          "requested_hour": {
-            "type": "number",
-            "title": "Requested Hour"
-          },
-          "items": {
-            "items": {
-              "$ref": "#/components/schemas/DemoLayerSnapshot"
-            },
-            "type": "array",
-            "title": "Items"
-          }
-        },
-        "type": "object",
-        "required": [
-          "requested_hour",
-          "items"
-        ],
-        "title": "DemoLayerSnapshotsResponse"
+        "title": "ConfirmRequest",
+        "description": "``POST /import/raster/confirm`` 请求体。\n\n用户在前端确认对话框中选定源 CRS（可覆盖检测结果）并设置偏移后提交。"
       },
       "DiagnosticsReport": {
         "properties": {
@@ -5209,6 +7618,39 @@
             },
             "type": "array",
             "title": "Run Readiness Notes"
+          },
+          "data_owner": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Data Owner"
+          },
+          "temporal_coverage": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Temporal Coverage"
+          },
+          "source_reference": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Reference"
           }
         },
         "type": "object",
@@ -5487,6 +7929,78 @@
           "message"
         ],
         "title": "ReloadResultResponse"
+      },
+      "RemoteStorageHistoryClearResponse": {
+        "properties": {
+          "profile_id": {
+            "type": "string",
+            "title": "Profile Id"
+          },
+          "deleted": {
+            "type": "integer",
+            "title": "Deleted"
+          }
+        },
+        "type": "object",
+        "required": [
+          "profile_id",
+          "deleted"
+        ],
+        "title": "RemoteStorageHistoryClearResponse"
+      },
+      "RemoteStorageHistoryItem": {
+        "properties": {
+          "id": {
+            "type": "integer",
+            "title": "Id"
+          },
+          "profile_id": {
+            "type": "string",
+            "title": "Profile Id"
+          },
+          "masked_secret": {
+            "type": "string",
+            "title": "Masked Secret"
+          },
+          "has_private_key": {
+            "type": "boolean",
+            "title": "Has Private Key",
+            "default": false
+          },
+          "label": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Label"
+          },
+          "created_at": {
+            "type": "string",
+            "title": "Created At"
+          },
+          "superseded_at": {
+            "type": "string",
+            "title": "Superseded At"
+          },
+          "source": {
+            "type": "string",
+            "title": "Source"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "profile_id",
+          "masked_secret",
+          "created_at",
+          "superseded_at",
+          "source"
+        ],
+        "title": "RemoteStorageHistoryItem"
       },
       "RemoteStorageTestRequest": {
         "properties": {
@@ -6160,6 +8674,80 @@
         ],
         "title": "TimeRange"
       },
+      "TransformBoundsRequest": {
+        "properties": {
+          "bounds": {
+            "items": {
+              "type": "number"
+            },
+            "type": "array",
+            "title": "Bounds"
+          },
+          "source_crs": {
+            "type": "string",
+            "title": "Source Crs"
+          },
+          "target_crs": {
+            "type": "string",
+            "title": "Target Crs",
+            "default": "EPSG:4326"
+          }
+        },
+        "type": "object",
+        "required": [
+          "bounds",
+          "source_crs"
+        ],
+        "title": "TransformBoundsRequest",
+        "description": "``POST /import/transform-bounds`` 请求体。"
+      },
+      "TransformPointRequest": {
+        "properties": {
+          "points": {
+            "items": {
+              "prefixItems": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "number"
+                }
+              ],
+              "type": "array",
+              "maxItems": 2,
+              "minItems": 2
+            },
+            "type": "array",
+            "title": "Points"
+          },
+          "source_crs": {
+            "type": "string",
+            "title": "Source Crs"
+          },
+          "target_crs": {
+            "type": "string",
+            "title": "Target Crs",
+            "default": "EPSG:4326"
+          },
+          "lng_offset": {
+            "type": "number",
+            "title": "Lng Offset",
+            "default": 0.0
+          },
+          "lat_offset": {
+            "type": "number",
+            "title": "Lat Offset",
+            "default": 0.0
+          }
+        },
+        "type": "object",
+        "required": [
+          "points",
+          "source_crs"
+        ],
+        "title": "TransformPointRequest",
+        "description": "``POST /import/transform-point`` 请求体。"
+      },
       "ValidationError": {
         "properties": {
           "loc": {
@@ -6254,6 +8842,22 @@
           "unit_label"
         ],
         "title": "WeatherLayerRenderHint"
+      },
+      "WeatherModelUpdateRequest": {
+        "properties": {
+          "default_model": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Default Model",
+            "description": "如 ecmwf_ifs025"
+          }
+        },
+        "type": "object",
+        "required": [
+          "default_model"
+        ],
+        "title": "WeatherModelUpdateRequest",
+        "description": "全局默认天气模型（持久化到 DB，影响 coverage / 瓦片 / 点预报）。"
       },
       "WeatherPointCurrent": {
         "properties": {
@@ -8162,6 +10766,56 @@
           "value"
         ],
         "title": "WorkflowRunViewSummaryRow"
+      },
+      "WorkflowRunsCleanupRequest": {
+        "properties": {
+          "retention_days": {
+            "type": "integer",
+            "maximum": 365.0,
+            "minimum": 1.0,
+            "title": "Retention Days",
+            "description": "保留天数",
+            "default": 30
+          },
+          "vacuum": {
+            "type": "boolean",
+            "title": "Vacuum",
+            "description": "是否执行 VACUUM 回收磁盘空间",
+            "default": false
+          }
+        },
+        "type": "object",
+        "title": "WorkflowRunsCleanupRequest",
+        "description": "workflow runs 清理请求。"
+      },
+      "WorkflowRunsCleanupResponse": {
+        "properties": {
+          "retention_days": {
+            "type": "integer",
+            "title": "Retention Days"
+          },
+          "runs_deleted": {
+            "type": "integer",
+            "title": "Runs Deleted"
+          },
+          "events_deleted": {
+            "type": "integer",
+            "title": "Events Deleted"
+          },
+          "vacuumed": {
+            "type": "integer",
+            "title": "Vacuumed"
+          }
+        },
+        "type": "object",
+        "required": [
+          "retention_days",
+          "runs_deleted",
+          "events_deleted",
+          "vacuumed"
+        ],
+        "title": "WorkflowRunsCleanupResponse",
+        "description": "workflow runs 清理响应。"
       },
       "WorkflowSubmissionPayload": {
         "properties": {

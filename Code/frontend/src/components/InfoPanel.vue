@@ -64,6 +64,9 @@ const props = defineProps<{
   visibleHotspots: LayerHotspot[]
   selectedLayer?: ActiveLayerDisplay | null
   selectedHotspot?: LayerHotspot | null
+  selectedMapPoint?: { lng: number; lat: number } | null
+  /** 与瓦片对齐的预报 hour 索引，用于高亮点查小时条 */
+  inspectHour?: number
   isSubmitting?: boolean
   workflowError?: string | null
   pointWeather?: WeatherPointResponse | null
@@ -77,6 +80,9 @@ const emit = defineEmits<{
   runWorkflow: [catalogId: string]
   toggleLayerVisibility: [instanceId: string]
   setLayerOpacity: [payload: { instanceId: string; opacity: number }]
+  selectHotspot: [hotspotId: string]
+  clearMapPoint: []
+  enterSelectMode: []
 }>()
 
 const displayLayer = computed(() => props.selectedLayer ?? props.activeLayer)
@@ -509,6 +515,16 @@ const trendArrowSymbol = computed(() => {
 const pointWeatherPrimaryValue = computed(() => {
   const weather = props.pointWeather
   if (!weather) return '--'
+  const hourIdx = Math.max(0, Math.floor(props.inspectHour ?? 0))
+  const hourly = weather.hourly ?? []
+  if (hourly.length > 0 && hourIdx < hourly.length) {
+    const entry = hourly[hourIdx]
+    const metricValue =
+      typeof entry.primary_value === 'number'
+        ? entry.primary_value
+        : readWeatherMetricValue(entry, pointWeatherMetric.value.key)
+    return formatMetric(metricValue, pointWeatherMetric.value.unit)
+  }
   return formatMetric(
     readWeatherMetricValue(weather.current, pointWeatherMetric.value.key),
     pointWeatherMetric.value.unit,
@@ -517,16 +533,14 @@ const pointWeatherPrimaryValue = computed(() => {
 const pointWeatherRows = computed(() => {
   const weather = props.pointWeather
   if (!weather) return []
-  const primaryValue = formatMetric(
-    readWeatherMetricValue(weather.current, pointWeatherMetric.value.key),
-    pointWeatherMetric.value.unit,
-  )
+  const primaryValue = pointWeatherPrimaryValue.value
   return [
     {
       label: 'Point',
       value:
         weather.place_name ?? `${weather.latitude.toFixed(3)}, ${weather.longitude.toFixed(3)}`,
     },
+    { label: 'Layer', value: weather.layer_id || displayLayer.value.catalogId || '—' },
     { label: 'Model', value: weather.model },
     {
       label: pointWeatherMetric.value.label,
@@ -541,9 +555,10 @@ const pointWeatherRows = computed(() => {
 const pointWeatherHourlyRows = computed(() => {
   const weather = props.pointWeather
   if (!weather) return []
+  const activeHour = Math.max(0, Math.floor(props.inspectHour ?? 0))
   return (weather.hourly ?? [])
-    .slice(0, 4)
-    .map((entry) => {
+    .slice(0, Math.max(8, activeHour + 1))
+    .map((entry, index) => {
       const metricValue =
         typeof entry.primary_value === 'number'
           ? entry.primary_value
@@ -552,9 +567,18 @@ const pointWeatherHourlyRows = computed(() => {
       return {
         time: formatHour(entry.time),
         metric,
+        active: index === activeHour,
       }
     })
     .filter((entry) => entry.metric !== `-- ${pointWeatherMetric.value.unit}`.trim())
+})
+
+const pointInspectStatusLabel = computed(() => {
+  if (props.pointWeatherLoading) return '查询中'
+  if (props.pointWeatherError) return '失败'
+  if (props.pointWeather) return props.pointWeather.cache_status || '已取数'
+  if (uiStore.interactionMode === 'select') return '等待点击'
+  return '需选择模式'
 })
 const canRunWorkflow = computed(
   () =>
@@ -726,6 +750,8 @@ watch(
   (instanceId) => {
     scrollToTopSummary()
     if (!instanceId) return
+    // 「查看报告」等显式焦点优先，避免滚到当前对象卡片盖住报告区
+    if (uiStore.analysisFocusRequest) return
     // 导入层滚到专项；其余保持当前对象卡片，避免每次强制跳「图层样式」
     if (displayLayer.value.isImported || displayLayer.value.isImportedRaster) {
       void scrollAnalysisIntoView('#imported-layer')
@@ -1028,10 +1054,35 @@ onBeforeUnmount(() => {
         <div class="weather-section-head">
           <div>
             <h3>地图点击查询</h3>
-            <p>点击地图空白位置后，右侧展示该点位的实时天气与短时预报。</p>
+            <p>
+              使用工具栏「选择」后点击地图；漫游模式下可
+              <kbd>Shift</kbd>+点击临时查询。查询对象为当前选中天气层（或最顶层可见天气层）。
+            </p>
           </div>
           <span class="analysis-chip" :class="{ muted: !pointWeather }">
-            {{ pointWeather?.cache_status ?? '等待点击' }}
+            {{ pointInspectStatusLabel }}
+          </span>
+        </div>
+
+        <div class="weather-layer-btn-row" style="margin-bottom: 0.55rem; gap: 0.4rem">
+          <button
+            v-if="uiStore.interactionMode !== 'select'"
+            type="button"
+            class="weather-mini-btn"
+            @click="emit('enterSelectMode')"
+          >
+            进入选择模式
+          </button>
+          <button
+            v-if="selectedMapPoint || pointWeather"
+            type="button"
+            class="weather-mini-btn"
+            @click="emit('clearMapPoint')"
+          >
+            清除选点
+          </button>
+          <span v-if="selectedMapPoint" class="weather-mini-meta">
+            {{ selectedMapPoint.lng.toFixed(3) }}, {{ selectedMapPoint.lat.toFixed(3) }}
           </span>
         </div>
 
@@ -1060,6 +1111,7 @@ onBeforeUnmount(() => {
               v-for="row in pointWeatherHourlyRows"
               :key="row.time"
               class="weather-hourly-card"
+              :class="{ active: row.active }"
             >
               <span>{{ row.time }}</span>
               <strong>{{ row.metric }}</strong>
@@ -1317,6 +1369,10 @@ onBeforeUnmount(() => {
             :id="`hotspot-${hotspot.id}`"
             :key="hotspot.id"
             :class="{ selected: selectedHotspot?.id === hotspot.id }"
+            role="button"
+            tabindex="0"
+            @click="emit('selectHotspot', hotspot.id)"
+            @keydown.enter.prevent="emit('selectHotspot', hotspot.id)"
           >
             <span>{{ hotspot.name }}</span>
             <strong>{{ hotspot.value }}</strong>
@@ -1923,6 +1979,33 @@ onBeforeUnmount(() => {
   background: rgba(8, 18, 33, 0.56);
   border: 1px solid rgba(136, 192, 255, 0.1);
   text-align: center;
+}
+.weather-hourly-card.active {
+  border-color: rgba(255, 184, 77, 0.55);
+  background: rgba(255, 184, 77, 0.12);
+}
+.weather-mini-btn {
+  border: 1px solid rgba(136, 192, 255, 0.22);
+  border-radius: 0.42rem;
+  background: rgba(10, 132, 255, 0.12);
+  color: #cfeaff;
+  font: inherit;
+  font-size: 0.55rem;
+  padding: 0.22rem 0.45rem;
+  cursor: pointer;
+}
+.weather-mini-btn:hover {
+  border-color: rgba(90, 213, 255, 0.45);
+}
+.weather-mini-meta {
+  color: #8aa0b5;
+  font-size: 0.52rem;
+}
+.hotspot-list li {
+  cursor: pointer;
+}
+.hotspot-list li:focus-visible {
+  outline: 1px solid rgba(90, 213, 255, 0.55);
 }
 .weather-hourly-card span {
   color: #7f93a9;

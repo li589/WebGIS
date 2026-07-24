@@ -277,8 +277,9 @@ function selectItem(instanceId: string) {
 }
 
 function openJobReport(instanceId: string) {
-  selectItem(instanceId)
+  // 先请求滚动目标，再选中图层，避免 InfoPanel 默认滚到「当前对象」盖住报告区
   uiStore.requestAnalysisFocus(['report-section', 'result-section', 'scheduler-status'])
+  selectItem(instanceId)
 }
 
 function toggleVisibility(instanceId: string, event: MouseEvent) {

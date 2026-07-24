@@ -2201,7 +2201,12 @@ export const useLayersStore = defineStore('layers', () => {
    * 提交点天气查询（作为单一工作流管理）。
    * 每次调用会中断上一次尚未完成的查询，确保同一时间只有一条点查询工作流在运行。
    */
-  async function fetchPointWeather(lng: number, lat: number, catalogId: string) {
+  async function fetchPointWeather(
+    lng: number,
+    lat: number,
+    catalogId: string,
+    options?: { forecastHours?: number },
+  ) {
     if (!isWeatherEngineLayer(catalogId)) {
       clearPointWeather()
       return
@@ -2215,12 +2220,17 @@ export const useLayersStore = defineStore('layers', () => {
     pointWeatherLoading.value = true
     pointWeatherError.value = null
     lastPointWeatherQuery.value = { lng, lat, catalogId }
+    // 覆盖时间轴当前 hour（0-based）及短时预报；至少 6 小时
+    const forecastHours = Math.min(
+      48,
+      Math.max(6, Math.floor(options?.forecastHours ?? currentHour.value + 1)),
+    )
     try {
       const weather = await getWeatherPoint({
         layer_id: catalogId,
         latitude: lat,
         longitude: lng,
-        forecast_hours: 6,
+        forecast_hours: forecastHours,
         place_name: `${lat.toFixed(3)}, ${lng.toFixed(3)}`,
         provider: weatherProviderQuery(catalogId),
         signal: controller.signal,

@@ -3,11 +3,13 @@ type MapInstance = import('maplibre-gl').Map
 export interface MapCanvasExposeBridge {
   getMapStageElement: () => HTMLElement | null
   captureMapCanvas: () => string | null
+  selectHotspot?: (pinId: string) => void
 }
 
 interface CreateMapCanvasExposeBridgeOptions {
   getMapStageElement: () => HTMLElement | null
   getMap: () => MapInstance | null
+  selectHotspot?: (pinId: string) => void
   dependencies?: {
     warn?: (message?: unknown, ...optionalParams: unknown[]) => void
   }
@@ -82,5 +84,6 @@ export function createMapCanvasExposeBridge(
   return {
     getMapStageElement: options.getMapStageElement,
     captureMapCanvas,
+    selectHotspot: options.selectHotspot,
   }
 }
