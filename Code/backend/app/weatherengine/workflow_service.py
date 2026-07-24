@@ -16,6 +16,8 @@ from app.weatherengine.nodes import (
     HumidityGridRenderNode,
     PressureGridRenderNode,
     VisibilityGridRenderNode,
+    CloudCoverGridRenderNode,
+    DewpointGridRenderNode,
     SummaryGenerateNode,
     WeatherTileRenderNode,
 )
@@ -49,6 +51,8 @@ class WeatherWorkflowService:
             HumidityGridRenderNode,
             PressureGridRenderNode,
             VisibilityGridRenderNode,
+            CloudCoverGridRenderNode,
+            DewpointGridRenderNode,
             SummaryGenerateNode,
             WeatherTileRenderNode,
         )

@@ -1,4 +1,5 @@
 """Unit tests for remote URI catalog injection + download limits."""
+
 from __future__ import annotations
 
 import json
@@ -14,7 +15,10 @@ for _p in (_CODE_ROOT / "algorithms" / "providers" / "Python", _CODE_ROOT):
 
 
 def test_get_max_remote_bytes_from_env(monkeypatch):
-    from shared.remote_sources.limits import DEFAULT_MAX_REMOTE_BYTES, get_max_remote_bytes
+    from shared.remote_sources.limits import (
+        DEFAULT_MAX_REMOTE_BYTES,
+        get_max_remote_bytes,
+    )
 
     monkeypatch.delenv("BACKEND_REMOTE_MAX_BYTES", raising=False)
     assert get_max_remote_bytes() == DEFAULT_MAX_REMOTE_BYTES
@@ -64,7 +68,9 @@ def test_parse_remote_layer_data_uris_db_overrides_env(monkeypatch):
         "app.services.layer_catalog.settings",
         type("S", (), {"remote_layer_data_uris": json.dumps(env_payload)})(),
     )
-    monkeypatch.setattr(layer_catalog, "_load_db_remote_layer_data_uris", lambda: db_payload)
+    monkeypatch.setattr(
+        layer_catalog, "_load_db_remote_layer_data_uris", lambda: db_payload
+    )
     merged = layer_catalog._parse_remote_layer_data_uris()
     assert merged["smap-soil"]["SMAP_SPL3SMP_E"] == ["smb://db-nas/share/b.h5?cred=db"]
 

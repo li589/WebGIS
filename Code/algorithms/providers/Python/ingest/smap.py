@@ -21,8 +21,12 @@ class SmapFieldSpec:
 
 
 SMAP_AM_FIELD_SPECS: tuple[SmapFieldSpec, ...] = (
-    SmapFieldSpec("TBh", "/Soil_Moisture_Retrieval_Data_AM/tb_h_corrected", max_valid=330.0),
-    SmapFieldSpec("TBv", "/Soil_Moisture_Retrieval_Data_AM/tb_v_corrected", max_valid=330.0),
+    SmapFieldSpec(
+        "TBh", "/Soil_Moisture_Retrieval_Data_AM/tb_h_corrected", max_valid=330.0
+    ),
+    SmapFieldSpec(
+        "TBv", "/Soil_Moisture_Retrieval_Data_AM/tb_v_corrected", max_valid=330.0
+    ),
     SmapFieldSpec(
         "Ts",
         "/Soil_Moisture_Retrieval_Data_AM/surface_temperature",
@@ -39,7 +43,9 @@ SMAP_AM_FIELD_SPECS: tuple[SmapFieldSpec, ...] = (
     SmapFieldSpec("sm_dca", "/Soil_Moisture_Retrieval_Data_AM/soil_moisture_dca"),
     SmapFieldSpec("sm_scav", "/Soil_Moisture_Retrieval_Data_AM/soil_moisture_scav"),
     SmapFieldSpec("vod_dca", "/Soil_Moisture_Retrieval_Data_AM/vegetation_opacity_dca"),
-    SmapFieldSpec("vod_sca", "/Soil_Moisture_Retrieval_Data_AM/vegetation_opacity_scav"),
+    SmapFieldSpec(
+        "vod_sca", "/Soil_Moisture_Retrieval_Data_AM/vegetation_opacity_scav"
+    ),
 )
 
 

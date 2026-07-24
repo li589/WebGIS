@@ -8,10 +8,7 @@ import {
 } from './wind-streamline-layer'
 import type { WindGrid } from './wind-grid'
 import { isWindDisplayMode, windDisplayModeChip, windDisplayModeLabel } from './wind-display-mode'
-import {
-  buildWeakScalarContourLevels,
-  isWeakContourLayerId,
-} from './scalar-contour-layer'
+import { buildWeakScalarContourLevels, isWeakContourLayerId } from './scalar-contour-layer'
 import { getPaletteColors } from './weather-render'
 
 function makeUniformGrid(speed = 10, direction = 90): WindGrid {
@@ -94,8 +91,8 @@ describe('wind streamline pure functions', () => {
     const grid = makeUniformGrid(10, 270)
     const seeds = buildStreamlineSeeds(grid, 12, () => 0.5)
     const target = computeStreamlineCountForGrid(grid)
-    const kept = seeds.filter((s) =>
-      s.lat >= grid.south && s.lat <= grid.north && s.lon >= grid.west && s.lon <= grid.east,
+    const kept = seeds.filter(
+      (s) => s.lat >= grid.south && s.lat <= grid.north && s.lon >= grid.west && s.lon <= grid.east,
     )
     expect(kept.length).toBe(seeds.length)
     if (kept.length < target) {
@@ -107,7 +104,10 @@ describe('wind streamline pure functions', () => {
 
 describe('weak scalar contours', () => {
   it('builds sparse low-alpha levels from ticks', () => {
-    const levels = buildWeakScalarContourLevels([-10, 0, 10, 20, 30], { targetCount: 5, alpha: 0.2 })
+    const levels = buildWeakScalarContourLevels([-10, 0, 10, 20, 30], {
+      targetCount: 5,
+      alpha: 0.2,
+    })
     expect(levels.length).toBeGreaterThan(2)
     expect(levels.length).toBeLessThanOrEqual(8)
     expect(levels[0].color).toContain('rgba')

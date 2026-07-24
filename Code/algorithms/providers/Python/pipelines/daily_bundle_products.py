@@ -6,7 +6,12 @@ from contracts.job import JobRequest
 from contracts.product import ProductManifest, ProductRef
 from contracts.runtime import RuntimeContext
 from data_access import resolve_prepared_local_path
-from ingest.daily_bundle import build_daily_bundle_config, build_daily_bundle_for_date, date_keys_from_range, load_lin_pix_selection
+from ingest.daily_bundle import (
+    build_daily_bundle_config,
+    build_daily_bundle_for_date,
+    date_keys_from_range,
+    load_lin_pix_selection,
+)
 from pipelines.base import BasePipeline, PipelinePlan
 
 
@@ -23,7 +28,9 @@ _DAILY_BUNDLE_PREPARED_KEY_MAP: dict[str, tuple[str, ...]] = {
 }
 
 
-def _resolve_bundle_datasource_selection(datasource_selection: dict[str, object]) -> dict[str, object]:
+def _resolve_bundle_datasource_selection(
+    datasource_selection: dict[str, object],
+) -> dict[str, object]:
     resolved = dict(datasource_selection)
     for target_key, dataset_names in _DAILY_BUNDLE_PREPARED_KEY_MAP.items():
         if target_key in resolved:
@@ -40,7 +47,19 @@ class DailyBundlePipeline(BasePipeline):
     def plan(self, request: JobRequest, ctx: RuntimeContext) -> PipelinePlan:
         return PipelinePlan(
             required_datasets=["smap_daily_mat", "ndvi_daily_mat", "ancillary_mat"],
-            required_variables=["TBv", "TBh", "IA", "Ts", "sm_dca", "NDVI", "Albedo", "B", "CF", "BD", "H"],
+            required_variables=[
+                "TBv",
+                "TBh",
+                "IA",
+                "Ts",
+                "sm_dca",
+                "NDVI",
+                "Albedo",
+                "B",
+                "CF",
+                "BD",
+                "H",
+            ],
             estimated_outputs=["daily_bundle_mat"],
             parallelizable=True,
             chunk_strategy="daily_file",
@@ -50,20 +69,32 @@ class DailyBundlePipeline(BasePipeline):
     def execute(self, request: JobRequest, ctx: RuntimeContext) -> ProductManifest:
         from scipy.io import savemat
 
-        datasource_selection = _resolve_bundle_datasource_selection(request.datasource_selection)
+        datasource_selection = _resolve_bundle_datasource_selection(
+            request.datasource_selection
+        )
         config = build_daily_bundle_config(request.algorithm_params)
-        output_dir = Path(request.output_spec.extra.get("output_dir", ctx.workspace / "products" / "daily_bundle"))
+        output_dir = Path(
+            request.output_spec.extra.get(
+                "output_dir", ctx.workspace / "products" / "daily_bundle"
+            )
+        )
         output_dir.mkdir(parents=True, exist_ok=True)
 
         lin_pix = load_lin_pix_selection(
             lin_pix=request.algorithm_params.get("lin_pix"),
             lin_pix_mat=datasource_selection.get("lin_pix_mat"),
-            variable_name=str(request.algorithm_params.get("lin_pix_varname", "lin_pix")),
+            variable_name=str(
+                request.algorithm_params.get("lin_pix_varname", "lin_pix")
+            ),
         )
-        date_keys = date_keys_from_range(request.time_range.start, request.time_range.end)
+        date_keys = date_keys_from_range(
+            request.time_range.start, request.time_range.end
+        )
 
         if self.logger_adapter is not None:
-            self.logger_adapter.emit_stage_start("daily_bundle", f"Build {len(date_keys)} daily bundles")
+            self.logger_adapter.emit_stage_start(
+                "daily_bundle", f"Build {len(date_keys)} daily bundles"
+            )
 
         products: list[ProductRef] = []
         for date_key in date_keys:
@@ -85,16 +116,27 @@ class DailyBundlePipeline(BasePipeline):
                 )
             )
             if self.logger_adapter is not None:
-                self.logger_adapter.emit_artifact("daily_bundle", str(output_path), "daily_bundle_mat")
+                self.logger_adapter.emit_artifact(
+                    "daily_bundle", str(output_path), "daily_bundle_mat"
+                )
 
         if self.logger_adapter is not None:
-            self.logger_adapter.emit_stage_end("daily_bundle", f"Generated {len(products)} daily bundles")
+            self.logger_adapter.emit_stage_end(
+                "daily_bundle", f"Generated {len(products)} daily bundles"
+            )
 
         main_layers = ["TBv", "TBh", "IA", "Ts", "SM_ref", "NDVI", "SF", "vwc"]
         if str(config.temp_scheme).upper() == "DUAL":
             main_layers.extend(["TC", "Tsoil1", "Tsoil2", "Ct", "TG"])
             if config.save_match_info:
-                main_layers.extend(["match_slot_index", "match_day_offset", "match_picked_file", "match_picked_utc"])
+                main_layers.extend(
+                    [
+                        "match_slot_index",
+                        "match_day_offset",
+                        "match_picked_file",
+                        "match_picked_utc",
+                    ]
+                )
 
         return ProductManifest(
             job_id=request.job_id,

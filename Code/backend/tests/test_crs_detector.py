@@ -6,6 +6,7 @@
 - ``detect_from_bounds``：地理坐标系 / 投影坐标系 / 异常 bounds
 - ``_parse_crs_name``：urn / EPSG / 别名 / 无法解析
 """
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -17,6 +18,7 @@ from app.services.crs._crs_detector import CRSDetector, _CONFIRM_THRESHOLD
 
 
 # ── 合成 GeoTIFF fixture ──────────────────────────────────────────────
+
 
 @pytest.fixture
 def wgs84_geotiff(tmp_path: Path) -> Path:
@@ -154,6 +156,7 @@ def no_crs_geotiff(tmp_path: Path) -> Path:
 
 # ── detect_from_raster ────────────────────────────────────────────────
 
+
 class TestDetectFromRaster:
     def test_wgs84_geotiff(self, wgs84_geotiff: Path):
         """WGS84 GeoTIFF：返回 EPSG:4326，confidence ≥ 0.9。"""
@@ -204,9 +207,7 @@ class TestDetectFromRaster:
         assert result.needs_user_confirm is True
         assert "读取栅格失败" in result.notes
 
-    def test_geographic_crs_with_projected_bounds(
-        self, tmp_path: Path
-    ):
+    def test_geographic_crs_with_projected_bounds(self, tmp_path: Path):
         """CRS 声明地理系但 bounds 超出 ±180/±90：提示可能实际为投影系。"""
         import numpy as np
         import rasterio
@@ -237,6 +238,7 @@ class TestDetectFromRaster:
 
 
 # ── detect_from_geojson ───────────────────────────────────────────────
+
 
 class TestDetectFromGeojson:
     def test_explicit_crs_4490(self):
@@ -306,6 +308,7 @@ class TestDetectFromGeojson:
 
 
 # ── detect_from_bounds ────────────────────────────────────────────────
+
 
 class TestDetectFromBounds:
     def test_geographic_bounds_china(self):
@@ -389,6 +392,7 @@ class TestDetectFromBounds:
 
 # ── _parse_crs_name ───────────────────────────────────────────────────
 
+
 class TestParseCrsName:
     @pytest.mark.parametrize(
         "name,expected",
@@ -421,6 +425,7 @@ class TestParseCrsName:
 
 
 # ── 置信度阈值一致性 ──────────────────────────────────────────────────
+
 
 class TestConfidenceThreshold:
     def test_threshold_value(self):

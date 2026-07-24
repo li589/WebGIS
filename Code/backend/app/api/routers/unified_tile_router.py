@@ -37,7 +37,9 @@ async def get_unified_tile(
             ),
         )
     if z < 0 or z > 18:
-        raise HTTPException(status_code=400, detail="Zoom level must be between 0 and 18")
+        raise HTTPException(
+            status_code=400, detail="Zoom level must be between 0 and 18"
+        )
     if x < 0 or y < 0:
         raise HTTPException(status_code=400, detail="Invalid tile coordinates")
 
@@ -54,7 +56,9 @@ async def get_unified_tile(
         status_code = 404 if "unknown" in message or "not found" in message else 400
         raise HTTPException(status_code=status_code, detail=str(exc)) from exc
     except Exception as exc:
-        logger.exception("[UnifiedTileRoutes] failed to generate tile for layer=%s", layer_id)
+        logger.exception(
+            "[UnifiedTileRoutes] failed to generate tile for layer=%s", layer_id
+        )
         raise HTTPException(status_code=503, detail=f"Tile unavailable: {exc}") from exc
 
     headers = dict(tile.extra_headers)

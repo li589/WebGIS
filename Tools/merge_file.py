@@ -11,6 +11,7 @@
 import sys
 import os
 
+
 def main():
     if len(sys.argv) < 3:
         print("用法: python merge_folder.py <文件夹路径> <扩展名> [输出文件]")
@@ -18,7 +19,7 @@ def main():
         sys.exit(1)
 
     folder = sys.argv[1]
-    ext = sys.argv[2].lstrip(".")   # 去除可能输入的 '.'，统一处理
+    ext = sys.argv[2].lstrip(".")  # 去除可能输入的 '.'，统一处理
     output_file = sys.argv[3] if len(sys.argv) > 3 else None
 
     if not os.path.isdir(folder):
@@ -27,8 +28,10 @@ def main():
 
     # 收集所有符合扩展名的文件（仅当前文件夹，不含子文件夹）
     files = [
-        f for f in os.listdir(folder)
-        if os.path.isfile(os.path.join(folder, f)) and f.lower().endswith("." + ext.lower())
+        f
+        for f in os.listdir(folder)
+        if os.path.isfile(os.path.join(folder, f))
+        and f.lower().endswith("." + ext.lower())
     ]
     files.sort()  # 按文件名排序，保证顺序稳定
 
@@ -60,11 +63,12 @@ def main():
             out.write(content)
 
             # 如果文件末尾没有换行，补一个，确保分隔符独占一行
-            if content and content[-1] != 10:   # 10 是 b'\n' 的 ASCII
+            if content and content[-1] != 10:  # 10 是 b'\n' 的 ASCII
                 out.write(b"\n")
     finally:
         if output_file:
             out.close()
+
 
 if __name__ == "__main__":
     main()

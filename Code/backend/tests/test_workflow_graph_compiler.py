@@ -20,7 +20,10 @@ class WorkflowGraphCompilerTests(unittest.TestCase):
                     "id": 1,
                     "type": "data/source",
                     "title": "数据源",
-                    "properties": {"path": "I:/Geograph_DataSet/SMAP", "dataset_key": "SMAP_L3"},
+                    "properties": {
+                        "path": "I:/Geograph_DataSet/SMAP",
+                        "dataset_key": "SMAP_L3",
+                    },
                 },
                 {
                     "id": 2,
@@ -34,23 +37,53 @@ class WorkflowGraphCompilerTests(unittest.TestCase):
         self.assertEqual(definition["workflow_id"], "wf_test")
         self.assertEqual(len(definition["nodes"]), 2)
         self.assertEqual(definition["nodes"][0]["params"]["module_name"], "data_source")
-        self.assertEqual(definition["nodes"][1]["params"]["module_name"], "remote_fetch")
+        self.assertEqual(
+            definition["nodes"][1]["params"]["module_name"], "remote_fetch"
+        )
         self.assertEqual(len(definition["edges"]), 1)
         self.assertEqual(definition["edges"][0]["from_port"], "data")
         self.assertEqual(definition["edges"][0]["to_port"], "data")
         self.assertTrue(definition["outputs"])
         self.assertIn("manifest", definition["outputs"][0]["name"])
 
-    def test_reject_weather_engine(self) -> None:
+    def test_compile_weather_engine(self) -> None:
+        definition = compile_litegraph_to_workflow_definition(
+            workflow_id="wf_weather",
+            nodes=[
+                {
+                    "id": 1,
+                    "type": "weather/grid_fetch",
+                    "properties": {"layer_id": "temperature"},
+                },
+                {
+                    "id": 2,
+                    "type": "weather/temperature_render",
+                    "properties": {"latitude": 23.1, "longitude": 113.3},
+                },
+            ],
+            links=[[1, 1, 0, 2, 0, "data:raster"]],
+        )
+        self.assertEqual(definition["metadata"]["engine"], "weather")
+        self.assertEqual(definition["nodes"][0]["node_type"], "weather_grid_fetch")
+        self.assertEqual(
+            definition["nodes"][1]["node_type"], "weather_temperature_grid"
+        )
+
+    def test_reject_mixed_weather_and_python(self) -> None:
         with self.assertRaises(WorkflowGraphCompileError):
             compile_litegraph_to_workflow_definition(
-                workflow_id="wf_bad",
+                workflow_id="wf_mixed",
                 nodes=[
                     {
                         "id": 1,
                         "type": "weather/forecast_fetch",
                         "properties": {},
-                    }
+                    },
+                    {
+                        "id": 2,
+                        "type": "data/source",
+                        "properties": {"path": "/tmp"},
+                    },
                 ],
                 links=[],
             )
@@ -70,7 +103,9 @@ class WorkflowGraphCompilerTests(unittest.TestCase):
 
     def test_empty_graph(self) -> None:
         with self.assertRaises(WorkflowGraphCompileError):
-            compile_litegraph_to_workflow_definition(workflow_id="x", nodes=[], links=[])
+            compile_litegraph_to_workflow_definition(
+                workflow_id="x", nodes=[], links=[]
+            )
 
 
 if __name__ == "__main__":

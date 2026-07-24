@@ -69,7 +69,9 @@ def create_api_router(facade: WorkflowApiFacade | None = None):
 
     try:
         from fastapi import APIRouter, HTTPException, Query
-    except ModuleNotFoundError as exc:  # pragma: no cover - exercised only in FastAPI integrations
+    except (
+        ModuleNotFoundError
+    ) as exc:  # pragma: no cover - exercised only in FastAPI integrations
         raise RuntimeError(
             "FastAPI is not installed. Install it in the WebGIS backend environment to use create_api_router()."
         ) from exc
@@ -95,7 +97,9 @@ def create_api_router(facade: WorkflowApiFacade | None = None):
         raise HTTPException(status_code=500, detail=server_error_message) from exc
 
     @router.post("/workflows:validate", response_model=WorkflowValidationResponse)
-    def validate_workflow(payload: WorkflowSubmissionPayload) -> WorkflowValidationResponse:
+    def validate_workflow(
+        payload: WorkflowSubmissionPayload,
+    ) -> WorkflowValidationResponse:
         try:
             return handlers.validate_workflow(payload)
         except Exception as exc:
@@ -106,7 +110,9 @@ def create_api_router(facade: WorkflowApiFacade | None = None):
             )
 
     @router.post("/workflows:submit", response_model=WorkflowExecutionResponse)
-    def submit_workflow(payload: WorkflowSubmissionPayload) -> WorkflowExecutionResponse:
+    def submit_workflow(
+        payload: WorkflowSubmissionPayload,
+    ) -> WorkflowExecutionResponse:
         try:
             return handlers.submit_workflow(payload)
         except Exception as exc:

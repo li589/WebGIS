@@ -4,7 +4,10 @@ import ftplib
 import logging
 from pathlib import Path
 
-from shared.remote_sources.limits import DEFAULT_CONNECT_TIMEOUT, DEFAULT_MAX_REMOTE_BYTES
+from shared.remote_sources.limits import (
+    DEFAULT_CONNECT_TIMEOUT,
+    DEFAULT_MAX_REMOTE_BYTES,
+)
 from shared.remote_sources.protocol import RemoteAuth, RemoteStat, effective_port
 from shared.remote_sources.uri import ParsedRemoteUri, redact_uri
 
@@ -29,7 +32,9 @@ class FtpTransport:
             ftp.login(username, password)
             ftp.prot_p()
         else:
-            allow_plain = (auth.extra or {}).get("allow_plain_ftp", "false").lower() == "true"
+            allow_plain = (auth.extra or {}).get(
+                "allow_plain_ftp", "false"
+            ).lower() == "true"
             if not allow_plain:
                 raise ValueError(
                     "Plain ftp:// is disabled by default; set credential extra.allow_plain_ftp=true "
@@ -63,7 +68,9 @@ class FtpTransport:
             try:
                 ftp.nlst(path)
             except Exception as exc:
-                raise FileNotFoundError(f"FTP path not found or inaccessible: {path}") from exc
+                raise FileNotFoundError(
+                    f"FTP path not found or inaccessible: {path}"
+                ) from exc
             return RemoteStat(path=path, size=None, is_dir=False)
         finally:
             try:
@@ -93,7 +100,12 @@ class FtpTransport:
 
             with local_path.open("wb") as out:
                 ftp.retrbinary(f"RETR {parsed.path}", _write, blocksize=1024 * 1024)
-            logger.info("FTP downloaded %s -> %s (%s bytes)", redact_uri(parsed.raw), local_path, written)
+            logger.info(
+                "FTP downloaded %s -> %s (%s bytes)",
+                redact_uri(parsed.raw),
+                local_path,
+                written,
+            )
             return RemoteStat(path=parsed.path, size=written, is_dir=False)
         except Exception:
             local_path.unlink(missing_ok=True)

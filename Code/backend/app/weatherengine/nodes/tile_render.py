@@ -13,7 +13,12 @@ from typing import Any
 from app.services.result_storage import result_storage_service
 from app.workflow_engine.base import BaseNode
 from app.workflow_engine.enums import PortKind, RunStatus
-from app.workflow_engine.models import ArtifactRecord, NodeExecutionResult, NodeSpec, PortSpec
+from app.workflow_engine.models import (
+    ArtifactRecord,
+    NodeExecutionResult,
+    NodeSpec,
+    PortSpec,
+)
 from app.weatherengine.tile_service import get_weather_tile_service
 from shared.contracts.api_contracts import ResultKind
 
@@ -117,7 +122,12 @@ class WeatherTileRenderNode(BaseNode):
                 PortSpec(name="y", kind=PortKind.value, required=True),
                 PortSpec(name="hour", kind=PortKind.value, required=False),
                 PortSpec(name="model", kind=PortKind.value, required=False),
-                PortSpec(name="provider_id", kind=PortKind.value, required=False, description="天气源 Provider ID，可选"),
+                PortSpec(
+                    name="provider_id",
+                    kind=PortKind.value,
+                    required=False,
+                    description="天气源 Provider ID，可选",
+                ),
             ],
             output_ports=[
                 PortSpec(name="geojson", kind=PortKind.geojson),

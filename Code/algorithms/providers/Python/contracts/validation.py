@@ -1,7 +1,10 @@
 from __future__ import annotations
 
 from contracts.job import JobRequest
-from contracts.request_templates import build_workflow_request_template, get_module_request_template
+from contracts.request_templates import (
+    build_workflow_request_template,
+    get_module_request_template,
+)
 from workflow.template_inference import infer_workflow_request_template
 
 
@@ -89,10 +92,16 @@ def _validate_workflow_request_template(request: JobRequest) -> None:
 
 
 def _validate_template(template, request: JobRequest) -> None:
-    missing_datasource_keys = [key for key in template.required_datasource_keys if key not in request.datasource_selection]
+    missing_datasource_keys = [
+        key
+        for key in template.required_datasource_keys
+        if key not in request.datasource_selection
+    ]
     if missing_datasource_keys:
         missing_datasource_keys = [
-            key for key in missing_datasource_keys if not _has_satisfying_data_access_request(template, request, key)
+            key
+            for key in missing_datasource_keys
+            if not _has_satisfying_data_access_request(template, request, key)
         ]
     if missing_datasource_keys:
         raise JobRequestValidationError(
@@ -100,7 +109,11 @@ def _validate_template(template, request: JobRequest) -> None:
             + ", ".join(missing_datasource_keys)
         )
 
-    missing_algorithm_keys = [key for key in template.required_algorithm_keys if key not in request.algorithm_params]
+    missing_algorithm_keys = [
+        key
+        for key in template.required_algorithm_keys
+        if key not in request.algorithm_params
+    ]
     if missing_algorithm_keys:
         raise JobRequestValidationError(
             f"{template.entry_kind} '{template.entry_name}' requires algorithm_params keys: "
@@ -119,7 +132,10 @@ def _validate_template(template, request: JobRequest) -> None:
             f"allowed values: {allowed_text}"
         )
 
-    if template.allowed_task_types and request.task_type not in template.allowed_task_types:
+    if (
+        template.allowed_task_types
+        and request.task_type not in template.allowed_task_types
+    ):
         allowed_text = ", ".join(template.allowed_task_types)
         raise JobRequestValidationError(
             f"{template.entry_kind} '{template.entry_name}' rejects task_type={request.task_type!r}; "
@@ -135,7 +151,9 @@ def _matches_allowed_value(value: object, allowed_values: tuple[object, ...]) ->
     return False
 
 
-def _has_satisfying_data_access_request(template, request: JobRequest, required_key: str) -> bool:
+def _has_satisfying_data_access_request(
+    template, request: JobRequest, required_key: str
+) -> bool:
     raw_requests = request.datasource_selection.get("_data_access_requests")
     if not isinstance(raw_requests, dict):
         return False
@@ -152,23 +170,34 @@ def _has_satisfying_data_access_request(template, request: JobRequest, required_
 
 
 def _get_accepted_dataset_names(template, required_key: str) -> tuple[str, ...]:
-    accepted_by_required_key = getattr(template, "accepted_data_access_by_required_key", {})
+    accepted_by_required_key = getattr(
+        template, "accepted_data_access_by_required_key", {}
+    )
     if isinstance(accepted_by_required_key, dict):
         dataset_names = accepted_by_required_key.get(required_key)
         if isinstance(dataset_names, tuple):
             return dataset_names
     accepted_datasets = tuple(getattr(template, "accepted_data_access_datasets", ()))
-    if len(getattr(template, "required_datasource_keys", ())) == 1 and accepted_datasets:
+    if (
+        len(getattr(template, "required_datasource_keys", ())) == 1
+        and accepted_datasets
+    ):
         return accepted_datasets
     return (required_key,)
 
 
 def _validate_explicit_workflow_template(request: JobRequest) -> None:
     template = infer_workflow_request_template(request.workflow_definition)
-    missing_datasource_keys = [key for key in template.required_datasource_keys if key not in request.datasource_selection]
+    missing_datasource_keys = [
+        key
+        for key in template.required_datasource_keys
+        if key not in request.datasource_selection
+    ]
     if missing_datasource_keys:
         missing_datasource_keys = [
-            key for key in missing_datasource_keys if not _has_satisfying_data_access_request(template, request, key)
+            key
+            for key in missing_datasource_keys
+            if not _has_satisfying_data_access_request(template, request, key)
         ]
     if missing_datasource_keys:
         raise JobRequestValidationError(

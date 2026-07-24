@@ -65,7 +65,11 @@ def _create_platform_handler(state: _PlatformHttpState):
 
             if self.path == "/api/v1/platform/submissions/claim":
                 with state.lock:
-                    item = None if not state.queued_submissions else state.queued_submissions.pop(0)
+                    item = (
+                        None
+                        if not state.queued_submissions
+                        else state.queued_submissions.pop(0)
+                    )
                 return self._send_json(item)
 
             if self.path == "/api/v1/platform/submissions/ack":
@@ -74,7 +78,9 @@ def _create_platform_handler(state: _PlatformHttpState):
                 return self._send_json({"acked": True})
 
             if self.path == "/api/v1/platform/run-context":
-                return self._send_json({"job_id": payload["job_id"], "platform": "http"})
+                return self._send_json(
+                    {"job_id": payload["job_id"], "platform": "http"}
+                )
 
             if self.path == "/api/v1/platform/job-status":
                 with state.lock:
@@ -107,7 +113,9 @@ def _create_platform_handler(state: _PlatformHttpState):
                         "time_range": dict(payload["time_range"]),
                         "storage_mode": payload.get("acquire_mode") or "lazy",
                         "local_paths": [],
-                        "remote_refs": ["https://platform.example.com/bundles/demo-001"],
+                        "remote_refs": [
+                            "https://platform.example.com/bundles/demo-001"
+                        ],
                         "metadata": {"resolved_by": "platform-http"},
                         "is_materialized": False,
                     }
@@ -115,7 +123,10 @@ def _create_platform_handler(state: _PlatformHttpState):
 
             if self.path == "/api/v1/platform/data-bundles/acquire":
                 response = dict(payload)
-                response["metadata"] = {**dict(payload.get("metadata") or {}), "acquired": True}
+                response["metadata"] = {
+                    **dict(payload.get("metadata") or {}),
+                    "acquired": True,
+                }
                 return self._send_json(response)
 
             if self.path == "/api/v1/platform/data-bundles/materialize":
@@ -153,7 +164,9 @@ def _create_platform_handler(state: _PlatformHttpState):
             if self.path == "/api/v1/platform/manifests":
                 with state.lock:
                     state.persisted_manifests.append(dict(payload))
-                return self._send_json({"uri": f"platform://manifests/{payload['run_id']}.json"})
+                return self._send_json(
+                    {"uri": f"platform://manifests/{payload['run_id']}.json"}
+                )
 
             self.send_response(404)
             self.end_headers()
@@ -210,7 +223,9 @@ def _patched_platform_env(base_url: str, *, token: str = "secret-token"):
 
 
 class PlatformHttpIntegrationTests(unittest.TestCase):
-    def test_platform_http_client_supports_queue_and_platform_adapter_methods(self) -> None:
+    def test_platform_http_client_supports_queue_and_platform_adapter_methods(
+        self,
+    ) -> None:
         with _platform_http_server() as (state, base_url):
             client = PlatformHttpClient(base_url=base_url, token="secret-token")
             request = _build_request()
@@ -231,7 +246,9 @@ class PlatformHttpIntegrationTests(unittest.TestCase):
             context = client.build_run_context(request)
             self.assertEqual(context["platform"], "http")
 
-            client.update_job_status(request.job_id, "run-http-001", "planning", {"step": 1})
+            client.update_job_status(
+                request.job_id, "run-http-001", "planning", {"step": 1}
+            )
             client.complete_job(
                 JobResult(
                     job_id=request.job_id,
@@ -263,10 +280,14 @@ class PlatformHttpIntegrationTests(unittest.TestCase):
                 )
             )
             raster_ref = client.persist_raster(
-                RasterProduct(name="demo_raster", uri="memory://demo.tif", variable="demo")
+                RasterProduct(
+                    name="demo_raster", uri="memory://demo.tif", variable="demo"
+                )
             )
             table_ref = client.persist_table(
-                TableProduct(name="demo_table", uri="memory://demo.parquet", table_type="table")
+                TableProduct(
+                    name="demo_table", uri="memory://demo.parquet", table_type="table"
+                )
             )
             manifest_uri = client.persist_manifest(
                 ProductManifest(job_id=request.job_id, run_id="run-http-001")
@@ -282,14 +303,28 @@ class PlatformHttpIntegrationTests(unittest.TestCase):
             self.assertEqual(state.status_events[0]["status"], "planning")
             self.assertEqual(state.completed_jobs[0]["run_id"], "run-http-001")
             self.assertEqual(state.log_events[0]["event_type"], "stage_start")
-            self.assertTrue(all(header == "Bearer secret-token" for header in state.authorization_headers))
+            self.assertTrue(
+                all(
+                    header == "Bearer secret-token"
+                    for header in state.authorization_headers
+                )
+            )
 
     def test_platform_http_job_service_runs_async_job_end_to_end(self) -> None:
         workspace = tempfile.mkdtemp()
 
-        def fake_run_job(request, scheduler_adapter, datasource_adapter, logger_adapter, product_sink=None, workspace=None):
+        def fake_run_job(
+            request,
+            scheduler_adapter,
+            datasource_adapter,
+            logger_adapter,
+            product_sink=None,
+            workspace=None,
+        ):
             scheduler_adapter.get_run_context(request)
-            scheduler_adapter.update_status(request.job_id, "run-http-002", "running", {"queue": "platform"})
+            scheduler_adapter.update_status(
+                request.job_id, "run-http-002", "running", {"queue": "platform"}
+            )
             if product_sink is not None:
                 manifest_uri = product_sink.write_manifest(
                     ProductManifest(job_id=request.job_id, run_id="run-http-002")
@@ -315,7 +350,9 @@ class PlatformHttpIntegrationTests(unittest.TestCase):
                     start_worker=False,
                 )
 
-                response = service.submit_job_async(_to_request_payload(_build_request()))
+                response = service.submit_job_async(
+                    _to_request_payload(_build_request())
+                )
                 self.assertEqual(response.status_code, 202)
                 submission_id = response.body["submission_id"]
                 self.assertEqual(len(state.queued_submissions), 1)
@@ -327,8 +364,13 @@ class PlatformHttpIntegrationTests(unittest.TestCase):
                 self.assertEqual(status_response.status_code, 200)
                 self.assertEqual(status_response.body["state"], "completed")
                 self.assertEqual(status_response.body["run_id"], "run-http-002")
-                self.assertEqual(status_response.body["job_result"]["status"], "success")
-                self.assertEqual(status_response.body["result_dto"]["artifacts"]["manifest_uri"], "platform://manifests/run-http-002.json")
+                self.assertEqual(
+                    status_response.body["job_result"]["status"], "success"
+                )
+                self.assertEqual(
+                    status_response.body["result_dto"]["artifacts"]["manifest_uri"],
+                    "platform://manifests/run-http-002.json",
+                )
                 self.assertEqual(state.acked_submissions, [submission_id])
                 self.assertEqual(state.status_events[0]["status"], "running")
                 self.assertEqual(state.completed_jobs[0]["run_id"], "run-http-002")
@@ -346,7 +388,9 @@ class PlatformHttpIntegrationTests(unittest.TestCase):
                 response = service.get_health_response()
                 self.assertEqual(response.status_code, 200)
                 self.assertEqual(response.body["job_queue"], "PlatformJobQueue")
-                self.assertEqual(response.body["async_job_store"], "FileAsyncJobRegistry")
+                self.assertEqual(
+                    response.body["async_job_store"], "FileAsyncJobRegistry"
+                )
 
 
 def _to_request_payload(request: JobRequest) -> dict[str, object]:

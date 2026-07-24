@@ -88,7 +88,9 @@ class GeeCredentialsRepository:
                     "Cannot store GEE credentials without BACKEND_GEE_CREDENTIALS_ENCRYPTION_KEY "
                     "outside development."
                 )
-            logger.error("GEE credentials encryption key not set, storing plaintext (development only)")
+            logger.error(
+                "GEE credentials encryption key not set, storing plaintext (development only)"
+            )
             return plaintext, ""
         try:
             from cryptography.hazmat.primitives.ciphers.aead import AESGCM  # type: ignore
@@ -99,12 +101,16 @@ class GeeCredentialsRepository:
             iv = os.urandom(12)
             aesgcm = AESGCM(key_bytes)
             ct = aesgcm.encrypt(iv, plaintext.encode("utf-8"), None)
-            return base64.b64encode(ct).decode("ascii"), base64.b64encode(iv).decode("ascii")
+            return base64.b64encode(ct).decode("ascii"), base64.b64encode(iv).decode(
+                "ascii"
+            )
         except ImportError:
             from app.services.effective_config import secrets_encryption_required
 
             if secrets_encryption_required():
-                raise RuntimeError("cryptography package required to encrypt GEE credentials") from None
+                raise RuntimeError(
+                    "cryptography package required to encrypt GEE credentials"
+                ) from None
             logger.warning("cryptography not installed, storing plaintext")
             return plaintext, ""
         except RuntimeError:
@@ -155,7 +161,11 @@ class GeeCredentialsRepository:
 
         if not project_id and isinstance(sa_dict, dict) and sa_dict.get("project_id"):
             project_id = sa_dict["project_id"]
-        if not display_name and isinstance(sa_dict, dict) and sa_dict.get("client_email"):
+        if (
+            not display_name
+            and isinstance(sa_dict, dict)
+            and sa_dict.get("client_email")
+        ):
             display_name = sa_dict["client_email"]
 
         ct, iv = self._encrypt(sa_str)
@@ -206,7 +216,9 @@ class GeeCredentialsRepository:
         except json.JSONDecodeError:
             return None
 
-    def list_accounts(self, include_disabled: bool = False, enabled_only: bool = False) -> list[dict[str, Any]]:
+    def list_accounts(
+        self, include_disabled: bool = False, enabled_only: bool = False
+    ) -> list[dict[str, Any]]:
         """列出账号（脱敏）。
 
         参数优先级：``enabled_only`` > ``include_disabled``。两者都为 False 时仅返回启用账号。
@@ -224,7 +236,9 @@ class GeeCredentialsRepository:
 
     def delete_account(self, account_id: str) -> bool:
         with self._connect() as conn:
-            cur = conn.execute("DELETE FROM gee_accounts WHERE account_id=?", (account_id,))
+            cur = conn.execute(
+                "DELETE FROM gee_accounts WHERE account_id=?", (account_id,)
+            )
             conn.commit()
             return cur.rowcount > 0
 
@@ -232,7 +246,11 @@ class GeeCredentialsRepository:
         with self._connect() as conn:
             cur = conn.execute(
                 "UPDATE gee_accounts SET enabled=?, updated_at=? WHERE account_id=?",
-                (1 if enabled else 0, datetime.now(timezone.utc).isoformat(), account_id),
+                (
+                    1 if enabled else 0,
+                    datetime.now(timezone.utc).isoformat(),
+                    account_id,
+                ),
             )
             conn.commit()
             return cur.rowcount > 0
@@ -259,7 +277,9 @@ class GeeCredentialsRepository:
             # 不返回 credentials_encrypted / iv
         }
 
-    def list_enabled_accounts_with_credentials(self) -> list[tuple[str, dict[str, Any], Optional[str]]]:
+    def list_enabled_accounts_with_credentials(
+        self,
+    ) -> list[tuple[str, dict[str, Any], Optional[str]]]:
         """供账号池加载：返回 [(account_id, sa_json, project_id), ...]"""
         result: list[tuple[str, dict[str, Any], Optional[str]]] = []
         for acc in self.list_accounts(enabled_only=True):

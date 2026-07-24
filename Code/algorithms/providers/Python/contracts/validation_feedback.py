@@ -37,17 +37,24 @@ def build_validation_feedback(
     workflow_definition: object | None = None,
 ) -> ValidationFeedback:
     panel_catalog = _build_panel_catalog(
-        workflow_definition=workflow_definition or (request.workflow_definition if request is not None else None)
+        workflow_definition=workflow_definition
+        or (request.workflow_definition if request is not None else None)
     )
 
     if isinstance(error, JobRequestDecodeError):
-        issues = _build_decode_issues(error, default_section="request", panel_catalog=panel_catalog)
+        issues = _build_decode_issues(
+            error, default_section="request", panel_catalog=panel_catalog
+        )
         return ValidationFeedback("job_request_decode", str(error), issues)
     if isinstance(error, WorkflowDefinitionDecodeError):
-        issues = _build_decode_issues(error, default_section="workflow_definition", panel_catalog=panel_catalog)
+        issues = _build_decode_issues(
+            error, default_section="workflow_definition", panel_catalog=panel_catalog
+        )
         return ValidationFeedback("workflow_definition_decode", str(error), issues)
     if isinstance(error, JobRequestValidationError):
-        issues = _build_job_request_validation_issues(error, panel_catalog=panel_catalog)
+        issues = _build_job_request_validation_issues(
+            error, panel_catalog=panel_catalog
+        )
         return ValidationFeedback("job_request_validation", str(error), issues)
     if isinstance(error, WorkflowDefinitionValidationError):
         issues = _build_workflow_validation_issues(error, panel_catalog=panel_catalog)
@@ -105,11 +112,21 @@ def _build_decode_issues(
     elif message.startswith("Field must satisfy start <= end: "):
         code = "invalid_range"
         field_path = message.split(": ", 1)[1]
-    elif ": " in message and ("job_request." in message or "workflow_definition." in message):
+    elif ": " in message and (
+        "job_request." in message or "workflow_definition." in message
+    ):
         field_path = message.rsplit(": ", 1)[1]
         code = _decode_error_code_from_message(message)
 
-    return (_make_issue(code, message, field_path=field_path, default_section=default_section, panel_catalog=panel_catalog),)
+    return (
+        _make_issue(
+            code,
+            message,
+            field_path=field_path,
+            default_section=default_section,
+            panel_catalog=panel_catalog,
+        ),
+    )
 
 
 def _build_job_request_validation_issues(
@@ -175,7 +192,10 @@ def _build_job_request_validation_issues(
                 ),
             )
 
-    match = re.match(r"^(module|workflow|workflow_definition) '([^']+)' requires datasource_selection keys: (.+)$", message)
+    match = re.match(
+        r"^(module|workflow|workflow_definition) '([^']+)' requires datasource_selection keys: (.+)$",
+        message,
+    )
     if match:
         entry_kind, entry_name, keys_text = match.groups()
         issues = []
@@ -192,7 +212,9 @@ def _build_job_request_validation_issues(
             )
         return tuple(issues)
 
-    match = re.match(r"^(module|workflow) '([^']+)' requires algorithm_params keys: (.+)$", message)
+    match = re.match(
+        r"^(module|workflow) '([^']+)' requires algorithm_params keys: (.+)$", message
+    )
     if match:
         entry_kind, entry_name, keys_text = match.groups()
         issues = []
@@ -230,7 +252,10 @@ def _build_job_request_validation_issues(
             ),
         )
 
-    match = re.match(r"^(module|workflow) '([^']+)' rejects task_type=.+; allowed values: (.+)$", message)
+    match = re.match(
+        r"^(module|workflow) '([^']+)' rejects task_type=.+; allowed values: (.+)$",
+        message,
+    )
     if match:
         entry_kind, entry_name, allowed_values = match.groups()
         return (
@@ -248,7 +273,14 @@ def _build_job_request_validation_issues(
             ),
         )
 
-    return (_make_issue("job_request_validation_error", message, default_section="request", panel_catalog=panel_catalog),)
+    return (
+        _make_issue(
+            "job_request_validation_error",
+            message,
+            default_section="request",
+            panel_catalog=panel_catalog,
+        ),
+    )
 
 
 def _build_workflow_validation_issues(
@@ -259,15 +291,33 @@ def _build_workflow_validation_issues(
     message = str(error)
 
     root_mappings = (
-        ("workflow_definition must contain at least one enabled node", "empty_workflow", "workflow_definition.nodes"),
-        ("workflow_definition.outputs must not be empty", "missing_outputs", "workflow_definition.outputs"),
+        (
+            "workflow_definition must contain at least one enabled node",
+            "empty_workflow",
+            "workflow_definition.nodes",
+        ),
+        (
+            "workflow_definition.outputs must not be empty",
+            "missing_outputs",
+            "workflow_definition.outputs",
+        ),
         ("Workflow contains a cycle", "workflow_cycle", "workflow_definition.edges"),
     )
     for prefix, code, field_path in root_mappings:
         if message.startswith(prefix):
-            return (_make_issue(code, message, field_path=field_path, default_section="workflow_definition", panel_catalog=panel_catalog),)
+            return (
+                _make_issue(
+                    code,
+                    message,
+                    field_path=field_path,
+                    default_section="workflow_definition",
+                    panel_catalog=panel_catalog,
+                ),
+            )
 
-    match = re.match(r"^Duplicate enabled node_id detected in workflow definition: (.+)$", message)
+    match = re.match(
+        r"^Duplicate enabled node_id detected in workflow definition: (.+)$", message
+    )
     if match:
         return (
             _make_issue(
@@ -280,7 +330,10 @@ def _build_workflow_validation_issues(
             ),
         )
 
-    match = re.match(r"^Duplicate workflow output name detected: (workflow_definition\.outputs\[\d+\]\.name)=.+$", message)
+    match = re.match(
+        r"^Duplicate workflow output name detected: (workflow_definition\.outputs\[\d+\]\.name)=.+$",
+        message,
+    )
     if match:
         return (
             _make_issue(
@@ -292,7 +345,10 @@ def _build_workflow_validation_issues(
             ),
         )
 
-    match = re.match(r"^(workflow_definition\.nodes\[[^\]]+\]) module node requires params\.module_name$", message)
+    match = re.match(
+        r"^(workflow_definition\.nodes\[[^\]]+\]) module node requires params\.module_name$",
+        message,
+    )
     if match:
         return (
             _make_issue(
@@ -304,7 +360,10 @@ def _build_workflow_validation_issues(
             ),
         )
 
-    match = re.match(r"^(workflow_definition\.nodes\[[^\]]+\]) bridge\.pipeline node requires params\.pipeline_name$", message)
+    match = re.match(
+        r"^(workflow_definition\.nodes\[[^\]]+\]) bridge\.pipeline node requires params\.pipeline_name$",
+        message,
+    )
     if match:
         return (
             _make_issue(
@@ -316,7 +375,10 @@ def _build_workflow_validation_issues(
             ),
         )
 
-    match = re.match(r"^(workflow_definition\.[^ ]+) references unsupported request binding: request:(.+)$", message)
+    match = re.match(
+        r"^(workflow_definition\.[^ ]+) references unsupported request binding: request:(.+)$",
+        message,
+    )
     if match:
         return (
             _make_issue(
@@ -341,7 +403,9 @@ def _build_workflow_validation_issues(
             ),
         )
 
-    match = re.match(r"^Workflow required input port not bound: ([^.]+)\.(.+)$", message)
+    match = re.match(
+        r"^Workflow required input port not bound: ([^.]+)\.(.+)$", message
+    )
     if match:
         node_id, port_name = match.groups()
         return (
@@ -354,7 +418,9 @@ def _build_workflow_validation_issues(
             ),
         )
 
-    match = re.match(r"^Workflow input port received multiple bindings: ([^.]+)\.(.+)$", message)
+    match = re.match(
+        r"^Workflow input port received multiple bindings: ([^.]+)\.(.+)$", message
+    )
     if match:
         node_id, port_name = match.groups()
         return (
@@ -367,7 +433,14 @@ def _build_workflow_validation_issues(
             ),
         )
 
-    return (_make_issue("workflow_validation_error", message, default_section="workflow_definition", panel_catalog=panel_catalog),)
+    return (
+        _make_issue(
+            "workflow_validation_error",
+            message,
+            default_section="workflow_definition",
+            panel_catalog=panel_catalog,
+        ),
+    )
 
 
 def _make_issue(
@@ -399,7 +472,9 @@ def _make_issue(
     )
 
 
-def _build_panel_catalog(*, workflow_definition: object | None) -> dict[str, dict[str, str]]:
+def _build_panel_catalog(
+    *, workflow_definition: object | None
+) -> dict[str, dict[str, str]]:
     if workflow_definition is None:
         return {}
     try:
@@ -408,11 +483,11 @@ def _build_panel_catalog(*, workflow_definition: object | None) -> dict[str, dic
         return {}
     catalog: dict[str, dict[str, str]] = {}
     for section in ui_schema.sections:
-        for field in section.fields:
-            catalog[field.key] = {
+        for field_spec in section.fields:
+            catalog[field_spec.key] = {
                 "section": section.key,
-                "label": field.label,
-                "control_type": field.control_type,
+                "label": field_spec.label,
+                "control_type": field_spec.control_type,
             }
     return catalog
 
@@ -420,11 +495,25 @@ def _build_panel_catalog(*, workflow_definition: object | None) -> dict[str, dic
 def _infer_section(field_path: str | None, *, default_section: str) -> str | None:
     if field_path is None:
         return default_section
-    if ".datasource_selection." in field_path or field_path.startswith("workflow_definition.inputs."):
+    if ".datasource_selection." in field_path or field_path.startswith(
+        "workflow_definition.inputs."
+    ):
         return "datasource_selection"
     if ".algorithm_params." in field_path:
         return "algorithm_params"
-    if any(token in field_path for token in (".time_range", ".region", ".tags", ".output_spec", ".task_type", ".pipeline_name", ".module_name", ".workflow_name")):
+    if any(
+        token in field_path
+        for token in (
+            ".time_range",
+            ".region",
+            ".tags",
+            ".output_spec",
+            ".task_type",
+            ".pipeline_name",
+            ".module_name",
+            ".workflow_name",
+        )
+    ):
         return "request"
     return default_section
 

@@ -5,6 +5,7 @@ module so Provider enablement, effective TTL, and base_url overrides stay
 consistent. ``OpenMeteoClient`` remains an implementation detail behind
 ``OpenMeteoProvider``.
 """
+
 from __future__ import annotations
 
 import logging
@@ -15,6 +16,7 @@ from app.weatherengine.default_model import weather_default_model
 from app.services.effective_config import get_weather_cache_ttl_seconds
 from app.weatherengine.constants import WEATHER_LAYER_SPECS, WeatherLayerSpec
 from app.weatherengine.provider_base import ProviderType, WeatherProvider
+from app.weatherengine.provider_ids import normalize_provider_id, provider_grid_mode
 from app.weatherengine.provider_registry import get_registry
 from shared.contracts.api_contracts import BoundingBox
 
@@ -30,9 +32,6 @@ def resolve_layer_spec(layer_id: str) -> WeatherLayerSpec:
     if spec is None:
         raise ValueError(f"Unsupported weather layer: {layer_id}")
     return spec
-
-
-from app.weatherengine.provider_ids import normalize_provider_id, provider_grid_mode
 
 
 def resolve_provider_for_layer(
@@ -82,7 +81,9 @@ def require_provider_for_layer(layer_id: str, *, provider_id: str | None = None)
     return resolve_provider_for_layer(layer_id, provider_id=provider_id)
 
 
-def list_providers_for_layer(layer_id: str, *, include_disabled: bool = False) -> list[dict[str, Any]]:
+def list_providers_for_layer(
+    layer_id: str, *, include_disabled: bool = False
+) -> list[dict[str, Any]]:
     """UI helper: providers that declare support for ``layer_id``."""
     from app.weatherengine.field_mapping import (
         COMMERCIAL_LAYER_IDS,
@@ -107,7 +108,10 @@ def list_providers_for_layer(layer_id: str, *, include_disabled: bool = False) -
             else str(provider.provider_type),
             "grid_mode": provider_grid_mode(provider.provider_id),
         }
-        if layer_id in COMMERCIAL_LAYER_IDS and provider.provider_id in ("weatherapi", "openweather"):
+        if layer_id in COMMERCIAL_LAYER_IDS and provider.provider_id in (
+            "weatherapi",
+            "openweather",
+        ):
             row["data_quality"] = commercial_data_quality(layer_id)
             row["hint"] = commercial_layer_hint(layer_id)
         rows.append(row)
@@ -172,11 +176,15 @@ def fetch_point_forecast(
         (payload, cache_status, provider_id)
     """
     spec = layer_spec or resolve_layer_spec(layer_id)
-    pinned = bool(provider_id and str(provider_id).strip().lower() not in {"", "auto", "default"})
+    pinned = bool(
+        provider_id and str(provider_id).strip().lower() not in {"", "auto", "default"}
+    )
     provider = resolve_provider_for_layer(layer_id, provider_id=provider_id)
-    resolved_model = model or weather_default_model()
+    resolved_model = model or spec.preferred_model or weather_default_model()
     resolved_hours = forecast_hours or settings.weather_refresh_forecast_hours
-    resolved_ttl = ttl_seconds if ttl_seconds is not None else get_weather_cache_ttl_seconds()
+    resolved_ttl = (
+        ttl_seconds if ttl_seconds is not None else get_weather_cache_ttl_seconds()
+    )
 
     try:
         payload, cache_status = _call_point(
@@ -246,13 +254,17 @@ def fetch_grid_forecast(
         (grid_data, cache_status, provider_id)
     """
     spec = layer_spec or resolve_layer_spec(layer_id)
-    pinned = bool(provider_id and str(provider_id).strip().lower() not in {"", "auto", "default"})
+    pinned = bool(
+        provider_id and str(provider_id).strip().lower() not in {"", "auto", "default"}
+    )
     provider = resolve_provider_for_layer(layer_id, provider_id=provider_id)
 
     # 瓦片网格：商业源钉选时改走 registry 优先级中的密集源
     if pinned and _is_sparse_grid_provider(provider):
         try:
-            dense = resolve_provider_for_layer(layer_id, exclude=(provider.provider_id,))
+            dense = resolve_provider_for_layer(
+                layer_id, exclude=(provider.provider_id,)
+            )
             if not _is_sparse_grid_provider(dense):
                 logger.info(
                     "Grid tile prefers dense provider=%s over pinned commercial=%s for layer=%s",
@@ -269,8 +281,10 @@ def fetch_grid_forecast(
                 layer_id,
             )
 
-    resolved_model = model or weather_default_model()
-    resolved_ttl = ttl_seconds if ttl_seconds is not None else get_weather_cache_ttl_seconds()
+    resolved_model = model or spec.preferred_model or weather_default_model()
+    resolved_ttl = (
+        ttl_seconds if ttl_seconds is not None else get_weather_cache_ttl_seconds()
+    )
 
     try:
         grid_data, cache_status = _call_grid(

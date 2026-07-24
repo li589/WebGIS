@@ -69,5 +69,7 @@ def _resolve_optional_callable(platform_client: Any, name: str):
 def _resolve_required_callable(platform_client: Any, name: str, parameter_name: str):
     candidate = _resolve_optional_callable(platform_client, name)
     if candidate is None:
-        raise ValueError(f"{parameter_name} is required, or platform_client.{name} must be provided")
+        raise ValueError(
+            f"{parameter_name} is required, or platform_client.{name} must be provided"
+        )
     return candidate

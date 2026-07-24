@@ -47,7 +47,9 @@ class GeeExportTaskService:
             raise ValueError("must provide manifest_uri or task_ref")
 
         polled_at = datetime.now(timezone.utc).isoformat()
-        status_payload = self._build_status_payload(task_ref=task_ref, gee_module=gee_module)
+        status_payload = self._build_status_payload(
+            task_ref=task_ref, gee_module=gee_module
+        )
         status_payload["polled_at"] = polled_at
         status_payload["manifest_uri"] = manifest_uri or task_ref.get("manifest_uri")
 
@@ -103,7 +105,8 @@ class GeeExportTaskService:
             "state": state,
             "task_id": task_id,
             "started": True,
-            "error_message": raw_status.get("error_message") or raw_status.get("error_message".upper()),
+            "error_message": raw_status.get("error_message")
+            or raw_status.get("error_message".upper()),
             "raw": raw_status,
         }
 
@@ -166,7 +169,9 @@ class GeeExportTaskService:
             target_path.parent.mkdir(parents=True, exist_ok=True)
             if self._resource_controller is not None:
                 with self._resource_controller.upload_slot(run_id=owner_id):
-                    with self._resource_controller.transient_local_write(byte_count=len(content)):
+                    with self._resource_controller.transient_local_write(
+                        byte_count=len(content)
+                    ):
                         self._atomic_write_file(target_path, content)
                     return
             self._atomic_write_file(target_path, content)

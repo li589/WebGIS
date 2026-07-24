@@ -122,7 +122,9 @@ class MinIOStorage(StorageBackend):
         Returns:
             拼接后的路径字符串
         """
-        joined = "/".join(p.strip("/").replace("\\", "/") for p in parts if p.strip("/"))
+        joined = "/".join(
+            p.strip("/").replace("\\", "/") for p in parts if p.strip("/")
+        )
         return joined
 
     def exists(self, path: str) -> bool:
@@ -179,7 +181,7 @@ class MinIOStorage(StorageBackend):
                     continue
 
                 # 提取相对于 prefix 的部分
-                relative = key[len(prefix):]
+                relative = key[len(prefix) :]
                 if not relative:
                     continue
 

@@ -26,25 +26,36 @@
 - `src/views/DashboardView.vue`：主布局（地图 + 面板 + 工具栏）
 - `src/stores/ui.ts`：底图瓦片源、时间轴、交互模式等 UI 状态
 - `src/stores/layers/`：图层目录、workflow 编排、result-adapter
-- `src/stores/weather-tile-manager.ts`：天气瓦片并发、缓存与优先队列（缓存键含 provider）
+- `src/stores/weather-tile-manager.ts`：天气瓦片并发、缓存与优先队列（缓存键含 provider）；`data-empty` 按 layerId 隔离，不因全局 `modelEmpty` 连坐其它层
 - `src/stores/weather-source-prefs.ts`：每图层天气源偏好（auto / provider_id；旧 `open-meteo` 映射为 `open-meteo-online`）
 - `src/stores/import.ts` / `src/stores/log.ts`：数据导入与日志面板
 - `src/services/runtime-api.ts`：workflow / runtime / weather providers-for-layer API 客户端
 - `src/services/weather-tile-api.ts`：Mercator 瓦片数学与 `/weather/tiles` 请求（支持 `provider`）
 - `src/components/map/`：地图模块化实现（底图、天气 overlay、风场 Canvas 等）
+  - `weather-tile-banner.ts`：全图横幅按层隔离聚合（仅当可见天气层均无缓存且有错误时才盖 error）
+  - `effective-layer-symbology.ts`：InfoPanel / LayerSidebar 图例同源（色板覆盖；`legend_ticks` 优先配置，不足时视口采样）
 - `src/styles/main.css`：全局样式
+
+### 天气模型 / Provider 缺口（瓦片热路径）
+
+| 现象 | 说明 |
+|------|------|
+| `visibility` + 非 `gfs_global` | 能见度场主要来自 GFS；其它模型常返回 data-empty |
+| 80 m 风 / 温度 | 无原生该高度场时由邻近层外推，非独立观测层 |
+| `open-meteo-local` | 依赖 `cgda-open-meteo` volume；先 `python launch.py sync`（至少 `ecmwf_ifs025`，能见度需 `gfs_global`） |
+| 编辑器天气 demo | 系统种子 `weather_temperature_grid_demo` / `weather_wind_field_demo`；主展示仍走 `/weather/tiles` |
 
 ## 当前界面补充说明
 
 - `ModeToolbar.vue`：标题栏工具（底图风格、行政区、导入、截图、工作流入口等）
 - `LayerSidebar.vue`：分类、搜索、批量显隐/移除、拖拽排序；`online-weather` 卡片接入运行时 `providers-for-layer` 选源
-- `InfoPanel.vue`：态势摘要、workflow 状态、天气图例/数据源钉选、选中图层/热点信息
+- `InfoPanel.vue`：态势摘要、workflow 状态、天气图例/数据源钉选、选中图层/热点信息（图例经 `effective-layer-symbology` 与侧栏色条同源；说明文案可跟 live `windDisplayMode`）
 - `TimelineScrubber.vue` / `TimelinePanel.vue`：时间轴
 - `ScreenshotExport.vue`：截图导出
 - `workflow/`：全局工作流状态按钮与面板；`WorkflowEditorPanel` 画布 Run 提交编译后的 `workflow_definition`
 - `toolbar/`：数据导入菜单、CSV 对话框、日志面板
 - `settings/`：系统设置（含数据源扫描、开放数据预设、静态缓存清理、远程存储 profile）
-- `MapCanvas.vue`：地图运行时总入口（编排各 map 模块）
+- `MapCanvas.vue`：地图运行时总入口（编排各 map 模块；天气错误横幅按层隔离，不因单层无数据盖住健康层）
 
 ## 当前地图与天气渲染事实
 
@@ -70,13 +81,16 @@
 
 - `weather-tile-api.ts` → `GET /weather/tiles/{layer_id}/{z}/{x}/{y}`（热路径，不走 workflow 轮询）
 - 底图 MapLibre → `GET /unified-tiles/{layer_id}/{z}/{x}/{y}`
-- `weather-tile-manager.ts` 负责视口瓦片集合、并发与预取
+- `weather-tile-manager.ts` 负责视口瓦片集合、并发与预取；TTL/SWR、同小时 depth=3 邻域、邻小时仅视口预取
+- 图层无数据（422 / `data-empty`）只短路该 `layerId`；工作流六态贡献与地图横幅均不因其它层失败而连坐
 - `submitWeatherTileWorkflow` 仅保留给显式扩展 DAG / 调试；计入后端 `weather_tile` 容量池
 - 业务分析 workflow 使用独立的 `max_active_runs`（business 池）
 
 ## 当前天气相关前端模块
 
 - `components/MapCanvas.vue`：总调度
+- `components/map/weather-tile-banner.ts`：可见天气层横幅聚合（error / loading / partial）
+- `components/map/effective-layer-symbology.ts`：有效符号学（图例色带 / ticks / explainer）
 - `components/map/weather-overlay-*.ts`：overlay 解析、注册、渲染与会话
 - `components/map/wind-particle-canvas.ts`：风粒子（Canvas 2D）
 - `components/map/wind-barb-layer.ts`：风羽
@@ -84,6 +98,7 @@
 - `components/map/canvas-utils.ts` / `weather-render.ts`：布局与样式映射
 - `stores/layers/result-adapter.ts`：解析 `render_hint` 与 `layer_assets`
 - `stores/layers/index.ts`：图层状态、workflow、粒子流独占与视口状态
+- `stores/weather-tile-manager.ts` / `weather-tile-cache-trim.ts`：瓦片调度与 LRU trim
 
 ## 当前前端对后端契约的消费方式
 

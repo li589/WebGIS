@@ -1,0 +1,56 @@
+{
+  "_meta": {
+    "kind": "system",
+    "engine": "common",
+    "name": "NASA Earthdata 开放数据样例",
+    "description": "目的：从 NASA Earthdata/LP DAAC 云端对象下载产品到静态缓存并解压。前置：earthdata 凭证。使用前替换 relative_path。产出：解压目录路径（可再接 variable_extract）。",
+    "author": "system",
+    "readonly": true,
+    "is_template": true,
+    "linked_layer_id": null
+  },
+  "workflow_id": "open_data_nasa_earthdata_sample",
+  "name": "NASA Earthdata 开放数据样例",
+  "description": "nasa_earthdata + earthdata 凭证 → archive_extract。",
+  "nodes": [
+    {
+      "id": 1,
+      "type": "download/http_open_data",
+      "pos": [100, 140],
+      "properties": {
+        "preset": "nasa_earthdata",
+        "relative_path": "REPLACE_WITH_EARTHDATA_OBJECT_KEY",
+        "cred_profile": "earthdata",
+        "force_refresh": false
+      }
+    },
+    {
+      "id": 2,
+      "type": "archive/extract",
+      "pos": [420, 140],
+      "properties": {
+        "member_glob": "",
+        "recurse_once": true,
+        "output_dirname": "earthdata_extracted"
+      }
+    },
+    {
+      "id": 3,
+      "type": "extract/variable",
+      "pos": [740, 140],
+      "properties": {
+        "variable": "REPLACE_VARIABLE_NAME"
+      }
+    }
+  ],
+  "links": [
+    {"0": 1, "1": 1, "2": 0, "3": 2, "4": 0, "5": "value:string"},
+    {"0": 2, "1": 2, "2": 0, "3": 3, "4": 0, "5": "value:string"}
+  ],
+  "extra": {
+    "purpose": "open_portal_sample",
+    "portal": "nasa_earthdata",
+    "cred_profile": "earthdata",
+    "notes": "nasa_cmr 预设仅作二期检索 base；下载请用 nasa_earthdata 或具体 CDN。"
+  }
+}

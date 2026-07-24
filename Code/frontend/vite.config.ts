@@ -38,6 +38,7 @@ export default defineConfig(({ mode }) => {
         '/unified-tiles': { target: apiTarget, changeOrigin: true },
         '/overlay-preview': { target: apiTarget, changeOrigin: true },
         '/overlay-bounds': { target: apiTarget, changeOrigin: true },
+        '/overlay-value': { target: apiTarget, changeOrigin: true },
         '/overlays': { target: apiTarget, changeOrigin: true },
         '/import': { target: apiTarget, changeOrigin: true },
       },

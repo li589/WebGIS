@@ -13,6 +13,7 @@
   2. PNG 尺寸显著减小（从 ~3600×1800 降至 ~640×440）
   3. 像素尺寸修正后定位准确
 """
+
 from __future__ import annotations
 
 import sys
@@ -51,6 +52,7 @@ def main() -> int:
             results[name] = "OK"
         except Exception as e:
             import traceback
+
             traceback.print_exc()
             results[name] = f"FAIL: {e}"
 
@@ -63,7 +65,9 @@ def main() -> int:
 
     # 验证 PNG 文件大小
     print("\n=== PNG File Sizes (中国裁剪后应显著变小) ===")
-    out_root = Path(r"I:\Geograph_DataSet\ProjectOutput\2023-01_Omega_Inversion\_overlays")
+    out_root = Path(
+        r"I:\Geograph_DataSet\ProjectOutput\2023-01_Omega_Inversion\_overlays"
+    )
     for subdir, fname in [
         ("forest_ratio", "forest_ratio_overlay.png"),
         ("soil_ddca", "soil_ddca_overlay.png"),
@@ -80,6 +84,7 @@ def main() -> int:
     # 验证 bounds JSON
     print("\n=== Bounds JSON (应在中国区域 73,15,137,59 附近) ===")
     import json
+
     for subdir, fname in [
         ("forest_ratio", "forest_ratio_overlay_bounds.json"),
         ("soil_ddca", "soil_ddca_overlay_bounds.json"),

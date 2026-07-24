@@ -37,7 +37,9 @@ class DataAccessCoordinator:
     ) -> PreparedInput:
         located_resources = self.locator.locate(request)
         resolved_resources = self.resolver.resolve(request, located_resources)
-        fetched_resources, cache_hits = self.fetcher.fetch_many(request, resolved_resources)
+        fetched_resources, cache_hits = self.fetcher.fetch_many(
+            request, resolved_resources
+        )
         materialized_resources = self.materializer.materialize_many(
             request,
             fetched_resources,
@@ -46,7 +48,9 @@ class DataAccessCoordinator:
         conversion_trace = self._build_conversion_trace(materialized_resources)
         warnings: list[str] = []
         if not resolved_resources:
-            warnings.append(f"No resources resolved for dataset '{request.dataset_name}'")
+            warnings.append(
+                f"No resources resolved for dataset '{request.dataset_name}'"
+            )
         return build_prepared_input(
             request,
             resources=resolved_resources,
@@ -137,17 +141,29 @@ def _summarize_loaded_value(value: Any) -> dict[str, object]:
         if "feature_count" in value and value["feature_count"] is not None:
             summary["counts"]["feature_count"] = int(value["feature_count"])
         if "headers" in value and isinstance(value["headers"], tuple):
-            summary["schema"]["headers"] = tuple(str(header) for header in value["headers"])
+            summary["schema"]["headers"] = tuple(
+                str(header) for header in value["headers"]
+            )
         if "sheet_names" in value and isinstance(value["sheet_names"], tuple):
-            summary["schema"]["sheet_names"] = tuple(str(sheet_name) for sheet_name in value["sheet_names"])
+            summary["schema"]["sheet_names"] = tuple(
+                str(sheet_name) for sheet_name in value["sheet_names"]
+            )
         if "variable_names" in value and isinstance(value["variable_names"], tuple):
-            summary["schema"]["variable_names"] = tuple(str(name) for name in value["variable_names"])
+            summary["schema"]["variable_names"] = tuple(
+                str(name) for name in value["variable_names"]
+            )
         if "dataset_names" in value and isinstance(value["dataset_names"], tuple):
-            summary["schema"]["dataset_names"] = tuple(str(name) for name in value["dataset_names"])
+            summary["schema"]["dataset_names"] = tuple(
+                str(name) for name in value["dataset_names"]
+            )
         if "dimension_names" in value and isinstance(value["dimension_names"], tuple):
-            summary["schema"]["dimension_names"] = tuple(str(name) for name in value["dimension_names"])
+            summary["schema"]["dimension_names"] = tuple(
+                str(name) for name in value["dimension_names"]
+            )
         if "group_names" in value and isinstance(value["group_names"], tuple):
-            summary["schema"]["group_names"] = tuple(str(name) for name in value["group_names"])
+            summary["schema"]["group_names"] = tuple(
+                str(name) for name in value["group_names"]
+            )
         if "geometry_type" in value:
             summary["spatial"]["geometry_type"] = str(value["geometry_type"])
         if "root_tag" in value:
@@ -157,7 +173,9 @@ def _summarize_loaded_value(value: Any) -> dict[str, object]:
         if "height" in value:
             summary["spatial"]["height"] = int(value["height"])
         if "crs" in value:
-            summary["spatial"]["crs"] = None if value["crs"] is None else str(value["crs"])
+            summary["spatial"]["crs"] = (
+                None if value["crs"] is None else str(value["crs"])
+            )
         if "bounds" in value and isinstance(value["bounds"], dict):
             summary["spatial"]["bounds"] = dict(value["bounds"])
         if "bbox" in value and isinstance(value["bbox"], dict):
@@ -166,7 +184,9 @@ def _summarize_loaded_value(value: Any) -> dict[str, object]:
             document = value["document"]
             if isinstance(document, dict):
                 summary["document"]["kind"] = "object"
-                summary["document"]["keys"] = tuple(sorted(str(key) for key in document.keys()))
+                summary["document"]["keys"] = tuple(
+                    sorted(str(key) for key in document.keys())
+                )
             elif isinstance(document, list):
                 summary["document"]["kind"] = "array"
                 summary["document"]["length"] = len(document)
@@ -211,7 +231,9 @@ def _build_loaded_value_title(summary: dict[str, object]) -> str:
     return "Structured resource"
 
 
-def _build_loaded_value_highlights(summary: dict[str, object]) -> list[dict[str, object]]:
+def _build_loaded_value_highlights(
+    summary: dict[str, object],
+) -> list[dict[str, object]]:
     counts = summary.get("counts", {})
     schema = summary.get("schema", {})
     document = summary.get("document", {})
@@ -219,45 +241,91 @@ def _build_loaded_value_highlights(summary: dict[str, object]) -> list[dict[str,
     highlights: list[dict[str, object]] = []
     if isinstance(counts, dict):
         if counts.get("row_count") is not None:
-            highlights.append(_build_highlight_item("row_count", "Rows", counts["row_count"]))
+            highlights.append(
+                _build_highlight_item("row_count", "Rows", counts["row_count"])
+            )
         if counts.get("worksheet_count") is not None:
-            highlights.append(_build_highlight_item("worksheet_count", "Worksheets", counts["worksheet_count"]))
+            highlights.append(
+                _build_highlight_item(
+                    "worksheet_count", "Worksheets", counts["worksheet_count"]
+                )
+            )
         if counts.get("variable_count") is not None:
-            highlights.append(_build_highlight_item("variable_count", "Variables", counts["variable_count"]))
+            highlights.append(
+                _build_highlight_item(
+                    "variable_count", "Variables", counts["variable_count"]
+                )
+            )
         if counts.get("dataset_count") is not None:
-            highlights.append(_build_highlight_item("dataset_count", "Datasets", counts["dataset_count"]))
+            highlights.append(
+                _build_highlight_item(
+                    "dataset_count", "Datasets", counts["dataset_count"]
+                )
+            )
         if counts.get("dimension_count") is not None:
-            highlights.append(_build_highlight_item("dimension_count", "Dimensions", counts["dimension_count"]))
+            highlights.append(
+                _build_highlight_item(
+                    "dimension_count", "Dimensions", counts["dimension_count"]
+                )
+            )
         if counts.get("band_count") is not None:
-            highlights.append(_build_highlight_item("band_count", "Bands", counts["band_count"]))
+            highlights.append(
+                _build_highlight_item("band_count", "Bands", counts["band_count"])
+            )
         if counts.get("feature_count") is not None:
-            highlights.append(_build_highlight_item("feature_count", "Features", counts["feature_count"]))
+            highlights.append(
+                _build_highlight_item(
+                    "feature_count", "Features", counts["feature_count"]
+                )
+            )
         if counts.get("line_count") is not None:
-            highlights.append(_build_highlight_item("line_count", "Lines", counts["line_count"]))
+            highlights.append(
+                _build_highlight_item("line_count", "Lines", counts["line_count"])
+            )
     if isinstance(schema, dict):
         headers = schema.get("headers")
         if isinstance(headers, tuple) and headers:
-            highlights.append(_build_highlight_item("headers", "Headers", ", ".join(str(value) for value in headers[:3])))
+            highlights.append(
+                _build_highlight_item(
+                    "headers", "Headers", ", ".join(str(value) for value in headers[:3])
+                )
+            )
         sheet_names = schema.get("sheet_names")
         if isinstance(sheet_names, tuple) and sheet_names:
-            highlights.append(_build_highlight_item("sheet_name", "Sheet", str(sheet_names[0])))
+            highlights.append(
+                _build_highlight_item("sheet_name", "Sheet", str(sheet_names[0]))
+            )
         dimension_names = schema.get("dimension_names")
         if isinstance(dimension_names, tuple) and dimension_names:
             highlights.append(
-                _build_highlight_item("dimension_names", "Dimension Names", ", ".join(str(value) for value in dimension_names[:3]))
+                _build_highlight_item(
+                    "dimension_names",
+                    "Dimension Names",
+                    ", ".join(str(value) for value in dimension_names[:3]),
+                )
             )
         variable_names = schema.get("variable_names")
         if isinstance(variable_names, tuple) and variable_names:
             highlights.append(
-                _build_highlight_item("variable_names", "Variable Names", ", ".join(str(value) for value in variable_names[:3]))
+                _build_highlight_item(
+                    "variable_names",
+                    "Variable Names",
+                    ", ".join(str(value) for value in variable_names[:3]),
+                )
             )
     if isinstance(document, dict) and document.get("root_tag"):
-        highlights.append(_build_highlight_item("root_tag", "Root Tag", str(document["root_tag"])))
+        highlights.append(
+            _build_highlight_item("root_tag", "Root Tag", str(document["root_tag"]))
+        )
     if isinstance(spatial, dict):
         if spatial.get("crs"):
             highlights.append(_build_highlight_item("crs", "CRS", str(spatial["crs"])))
         if spatial.get("geometry_type"):
-            highlights.append(_build_highlight_item("geometry_type", "Geometry", str(spatial["geometry_type"])))
+            highlights.append(
+                _build_highlight_item(
+                    "geometry_type", "Geometry", str(spatial["geometry_type"])
+                )
+            )
     return highlights[:4]
 
 
@@ -275,19 +343,39 @@ def _build_loaded_value_warnings(summary: dict[str, object]) -> list[dict[str, s
     spatial = summary.get("spatial", {})
     if isinstance(counts, dict):
         if counts.get("row_count") == 0:
-            warnings.append(_build_warning_item("no_rows", "No rows", "warning", "No rows detected"))
+            warnings.append(
+                _build_warning_item("no_rows", "No rows", "warning", "No rows detected")
+            )
         if counts.get("variable_count") == 0:
-            warnings.append(_build_warning_item("no_variables", "No variables", "warning", "No variables detected"))
+            warnings.append(
+                _build_warning_item(
+                    "no_variables", "No variables", "warning", "No variables detected"
+                )
+            )
         if counts.get("dataset_count") == 0:
-            warnings.append(_build_warning_item("no_datasets", "No datasets", "warning", "No datasets detected"))
+            warnings.append(
+                _build_warning_item(
+                    "no_datasets", "No datasets", "warning", "No datasets detected"
+                )
+            )
         if counts.get("feature_count") == 0:
-            warnings.append(_build_warning_item("no_features", "No features", "warning", "No features detected"))
+            warnings.append(
+                _build_warning_item(
+                    "no_features", "No features", "warning", "No features detected"
+                )
+            )
     if isinstance(spatial, dict) and "crs" in spatial and not spatial.get("crs"):
-        warnings.append(_build_warning_item("missing_crs", "Missing CRS", "warning", "Spatial reference is missing"))
+        warnings.append(
+            _build_warning_item(
+                "missing_crs", "Missing CRS", "warning", "Spatial reference is missing"
+            )
+        )
     return warnings
 
 
-def _build_warning_item(code: str, label: str, severity: str, message: str) -> dict[str, str]:
+def _build_warning_item(
+    code: str, label: str, severity: str, message: str
+) -> dict[str, str]:
     return {
         "code": code,
         "label": label,

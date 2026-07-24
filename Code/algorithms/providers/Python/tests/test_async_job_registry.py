@@ -64,7 +64,9 @@ class FileAsyncJobRegistryTests(unittest.TestCase):
         self.assertEqual(snapshot.job_result.status, "success")
         self.assertTrue(snapshot.job_result.started_at.tzinfo is not None)
 
-    def test_file_registry_marks_failed_when_only_error_response_is_recorded(self) -> None:
+    def test_file_registry_marks_failed_when_only_error_response_is_recorded(
+        self,
+    ) -> None:
         registry = FileAsyncJobRegistry(tempfile.mkdtemp())
         record = registry.create_submission("failed-job-001")
 

@@ -11,7 +11,8 @@ describe('overlay-symbology store', () => {
 
   it('retries after miss TTL instead of sticky empty forever', async () => {
     const store = useOverlaySymbologyStore()
-    const fetchMock = vi.fn()
+    const fetchMock = vi
+      .fn()
       .mockResolvedValueOnce({ ok: false, status: 404 })
       .mockResolvedValueOnce({
         ok: true,

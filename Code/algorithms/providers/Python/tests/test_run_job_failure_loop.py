@@ -1,4 +1,5 @@
 """Dispatch-02: run_job() failure闭环 - exceptions propagate and notify scheduler."""
+
 from __future__ import annotations
 
 import tempfile
@@ -9,7 +10,7 @@ from unittest.mock import MagicMock, patch
 
 from contracts.job import JobRequest
 from contracts.product import OutputSpec
-from contracts.runtime import RegionSpec, RuntimeContext, TimeRange
+from contracts.runtime import RegionSpec, TimeRange
 from runner.dispatch import run_job
 
 
@@ -25,8 +26,10 @@ class RunJobFailure闭环Tests(unittest.TestCase):
         datasource = MagicMock()
         logger = MagicMock()
 
-        with patch("runner.dispatch.get_pipeline") as mock_get, \
-             patch("contracts.validation.validate_job_request"):
+        with (
+            patch("runner.dispatch.get_pipeline") as mock_get,
+            patch("contracts.validation.validate_job_request"),
+        ):
             from pipelines.base import BasePipeline, PipelinePlan
 
             class FailingPipeline(BasePipeline):
@@ -51,14 +54,18 @@ class RunJobFailure闭环Tests(unittest.TestCase):
                 job_id="failure-test",
                 pipeline_name="failing_pipeline",
                 task_type="extract",
-                time_range=TimeRange(start=datetime(2020, 1, 1), end=datetime(2020, 1, 2)),
+                time_range=TimeRange(
+                    start=datetime(2020, 1, 1), end=datetime(2020, 1, 2)
+                ),
                 region=RegionSpec(kind="global", value={}),
                 datasource_selection={},
                 algorithm_params={},
                 output_spec=OutputSpec(extra={}),
             )
 
-            result = run_job(request, scheduler, datasource, logger, workspace=workspace)
+            result = run_job(
+                request, scheduler, datasource, logger, workspace=workspace
+            )
 
         self.assertEqual(result.status, "failed")
         self.assertIn("Intentional test failure", result.error_summary)

@@ -30,6 +30,7 @@
 
 [TS] = 时间序列图层，输出多张按时间索引的 PNG + bounds JSON。
 """
+
 from __future__ import annotations
 
 import json
@@ -44,9 +45,9 @@ warnings.filterwarnings("ignore", category=UserWarning)
 
 # matplotlib Agg backend
 import matplotlib
+
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
-import matplotlib.colors as mcolors
 
 # Output root
 _OUT_ROOT = Path(r"I:\Geograph_DataSet\ProjectOutput\2023-01_Omega_Inversion\_overlays")
@@ -57,11 +58,15 @@ _INVERSION_RESULTS_ROOT = Path(r"I:\Geograph_DataSet\InversionResults")
 _OMEGA_SMAP_AVG_DIR = _INVERSION_RESULTS_ROOT / "smap_avg"
 _OMEGA_FY_AVG_DIR = _INVERSION_RESULTS_ROOT / "fy_avg"
 _SOIL_DDCA_H_DIR = Path(r"I:\Geograph_DataSet\Soil_Ecological_Data\DDCA\DDCA_DH\H")
-_LANDSCAPE_METRICS_MAT = _INVERSION_RESULTS_ROOT / "Landscape_Metrics_LandOnly_9KM_2020.mat"
+_LANDSCAPE_METRICS_MAT = (
+    _INVERSION_RESULTS_ROOT / "Landscape_Metrics_LandOnly_9KM_2020.mat"
+)
 
 # ── Phase 2: 课题组 VOD/SM 产品族（2025-12 时间序列，EASE-Grid 9km）──────────
 # SmapSoil_VOD_SM/YYYYMMDD.mat (v7.3 HDF5) 含 OMEGA / SM / VOD 三个变量，shape (1624, 3856)
-_SMAP_SOIL_VOD_SM_DIR = Path(r"I:\Geograph_DataSet\Soil_Ecological_Data\SmapSoil_VOD_SM")
+_SMAP_SOIL_VOD_SM_DIR = Path(
+    r"I:\Geograph_DataSet\Soil_Ecological_Data\SmapSoil_VOD_SM"
+)
 
 
 def _doy_time_list(directory: Path, prefix: str = "doy_") -> list[str]:
@@ -77,7 +82,7 @@ def _doy_time_list(directory: Path, prefix: str = "doy_") -> list[str]:
     for f in sorted(directory.glob(f"{prefix}*.mat")):
         stem = f.stem  # 'doy_017'
         if stem.startswith(prefix):
-            tag = stem[len(prefix):]
+            tag = stem[len(prefix) :]
             if tag.isdigit():
                 tags.append(tag)
     return tags
@@ -165,7 +170,15 @@ def _render_png(
     ax.set_axis_off()
     # Mask NaN as transparent
     masked = np.ma.masked_invalid(data)
-    ax.imshow(masked, cmap=cmap, vmin=vmin, vmax=vmax, aspect="auto", origin="upper", interpolation="nearest")
+    ax.imshow(
+        masked,
+        cmap=cmap,
+        vmin=vmin,
+        vmax=vmax,
+        aspect="auto",
+        origin="upper",
+        interpolation="nearest",
+    )
 
     # 渲染到内存缓冲（matplotlib 输出 PNG 字节流）
     buf = io.BytesIO()
@@ -186,11 +199,14 @@ def _render_png(
             last_err = e
             if attempt < max_attempts:
                 wait = 0.5 * attempt  # 0.5s, 1s, 1.5s, 2s, 2.5s
-                print(f"  [RETRY {attempt}/{max_attempts}] {png_path.name} locked, waiting {wait:.1f}s...")
+                print(
+                    f"  [RETRY {attempt}/{max_attempts}] {png_path.name} locked, waiting {wait:.1f}s..."
+                )
                 time.sleep(wait)
             else:
                 # 最后一次尝试：写临时文件 + os.replace 原子替换
                 import os
+
                 tmp_path = png_path.parent / f"{png_path.name}.tmp_{os.getpid()}.png"
                 try:
                     tmp_path.write_bytes(png_bytes)
@@ -203,9 +219,10 @@ def _render_png(
     print(f"  [OK] PNG saved: {png_path.name} ({n_lat}x{n_lon})")
 
 
-def _write_bounds(bounds_path: Path, layer_id: str, bounds: tuple[float, float, float, float]) -> None:
+def _write_bounds(
+    bounds_path: Path, layer_id: str, bounds: tuple[float, float, float, float]
+) -> None:
     """Write bounds JSON file (临时文件 + 原子替换，处理外部 HDD 文件锁)."""
-    import os
     import time
 
     bounds_path.parent.mkdir(parents=True, exist_ok=True)
@@ -232,7 +249,9 @@ def _write_bounds(bounds_path: Path, layer_id: str, bounds: tuple[float, float, 
                 time.sleep(0.5 * attempt)
             else:
                 raise
-    print(f"  [OK] bounds saved: {bounds_path.name} (W{bounds[0]:.1f} S{bounds[1]:.1f} E{bounds[2]:.1f} N{bounds[3]:.1f})")
+    print(
+        f"  [OK] bounds saved: {bounds_path.name} (W{bounds[0]:.1f} S{bounds[1]:.1f} E{bounds[2]:.1f} N{bounds[3]:.1f})"
+    )
 
 
 def _bounds_from_centers(lat_1d, lon_1d):
@@ -257,7 +276,7 @@ def _bounds_from_centers(lat_1d, lon_1d):
     lat = lat[np.isfinite(lat)]
     lon = lon[np.isfinite(lon)]
     if len(lat) == 0 or len(lon) == 0:
-        return (float('nan'), float('nan'), float('nan'), float('nan'))
+        return (float("nan"), float("nan"), float("nan"), float("nan"))
     # 排序后取相邻差的中位数，避免 2D ravel 后跨行跳变导致 diff 异常
     lat_sorted = np.sort(lat)
     lon_sorted = np.sort(lon)
@@ -276,14 +295,19 @@ def _bounds_from_centers(lat_1d, lon_1d):
 _EASE_GRID_9K_CRS = "EPSG:6933"
 _EASE_GRID_9K_PIXEL_SIZE = 9008.0552  # 米（= 18 × 500.4475，NSIDC 标准）
 _EASE_GRID_9K_UL_X = -17367530.45  # 上左角 x（米）
-_EASE_GRID_9K_UL_Y = 7314540.83    # 上左角 y（米）
+_EASE_GRID_9K_UL_Y = 7314540.83  # 上左角 y（米）
 
 
 def _ease_grid_9k_transform():
     """返回 EASE-Grid 2.0 9km 的 Affine 变换（rasterio 约定）。"""
     from rasterio.transform import from_origin
-    return from_origin(_EASE_GRID_9K_UL_X, _EASE_GRID_9K_UL_Y,
-                       _EASE_GRID_9K_PIXEL_SIZE, _EASE_GRID_9K_PIXEL_SIZE)
+
+    return from_origin(
+        _EASE_GRID_9K_UL_X,
+        _EASE_GRID_9K_UL_Y,
+        _EASE_GRID_9K_PIXEL_SIZE,
+        _EASE_GRID_9K_PIXEL_SIZE,
+    )
 
 
 def _ease_grid_9k_transform_from_mat(mat_dict):
@@ -305,6 +329,7 @@ def _ease_grid_9k_transform_from_mat(mat_dict):
         return None
     try:
         from rasterio.transform import Affine
+
         t = np.asarray(mat_dict["Transform"]).ravel()
         if len(t) < 6:
             return None
@@ -320,14 +345,16 @@ def _ease_grid_9k_transform_from_mat(mat_dict):
             f = float(t[3])  # 上左 y
             return Affine(a, 0.0, c, 0.0, e, f)
         # 否则按原样使用
-        return Affine(float(t[1]), float(t[2]), float(t[0]),
-                      float(t[4]), float(t[5]), float(t[3]))
+        return Affine(
+            float(t[1]), float(t[2]), float(t[0]), float(t[4]), float(t[5]), float(t[3])
+        )
     except Exception:
         return None
 
 
-def _reproject_ease_to_wgs84(data, target_resolution=0.1, clip_bounds=_CHINA_BBOX,
-                             mat_dict=None):
+def _reproject_ease_to_wgs84(
+    data, target_resolution=0.1, clip_bounds=_CHINA_BBOX, mat_dict=None
+):
     """将 EASE-Grid 2.0 9km 数据重投影到 WGS84 等经纬度网格，并裁剪到指定区域。
 
     EASE-Grid 2.0 9km 是圆柱等积投影（EPSG:6933），行间距随纬度变化。
@@ -364,7 +391,10 @@ def _reproject_ease_to_wgs84(data, target_resolution=0.1, clip_bounds=_CHINA_BBO
     n_lat, n_lon = data.shape
     # 计算目标网格的 transform 和尺寸
     dst_transform, dst_width, dst_height = calculate_default_transform(
-        src_crs, dst_crs, n_lon, n_lat,
+        src_crs,
+        dst_crs,
+        n_lon,
+        n_lat,
         *_ease_grid_9k_transform_bounds(src_transform, n_lon, n_lat),
         resolution=target_resolution,
     )
@@ -391,8 +421,12 @@ def _reproject_ease_to_wgs84(data, target_resolution=0.1, clip_bounds=_CHINA_BBO
     # 裁剪到指定区域（默认中国），避免高纬度 Web Mercator 拉伸
     if clip_bounds is not None:
         dst_data, west, south, east, north = _clip_wgs84_array(
-            dst_data, dst_transform,
-            west=west, south=south, east=east, north=north,
+            dst_data,
+            dst_transform,
+            west=west,
+            south=south,
+            east=east,
+            north=north,
             clip_bounds=clip_bounds,
         )
 
@@ -472,9 +506,12 @@ def _ease_grid_9k_transform_bounds(transform, width, height):
 # 1. DEM ETOPO_2022
 # ──────────────────────────────────────────────────────────────────────────────
 
+
 def export_dem_etopo() -> None:
     print("\n=== DEM ETOPO_2022 ===")
-    tif_path = Path(r"I:\Geograph_DataSet\DEM\ETOPO_2022\ETOPO_2022_v1_60s_N90W180_surface.tif")
+    tif_path = Path(
+        r"I:\Geograph_DataSet\DEM\ETOPO_2022\ETOPO_2022_v1_60s_N90W180_surface.tif"
+    )
     if not tif_path.exists():
         print("  [SKIP] File not found")
         return
@@ -499,20 +536,28 @@ def export_dem_etopo() -> None:
         if nodata is not None:
             data[data == nodata] = np.nan
 
-    print(f"  Data shape: {data.shape}, range: {np.nanmin(data):.1f} to {np.nanmax(data):.1f}")
-    _render_png(data, out_dir / "etopo_bed_overlay.png", cmap="terrain",
-                vmin=-8000, vmax=8000)
-    _write_bounds(out_dir / "etopo_bed_overlay_bounds.json", "dem-etopo",
-                  (float(west), float(south), float(east), float(north)))
+    print(
+        f"  Data shape: {data.shape}, range: {np.nanmin(data):.1f} to {np.nanmax(data):.1f}"
+    )
+    _render_png(
+        data, out_dir / "etopo_bed_overlay.png", cmap="terrain", vmin=-8000, vmax=8000
+    )
+    _write_bounds(
+        out_dir / "etopo_bed_overlay_bounds.json",
+        "dem-etopo",
+        (float(west), float(south), float(east), float(north)),
+    )
 
 
 # ──────────────────────────────────────────────────────────────────────────────
 # 2-4. China regional .mat files (landcover, hfp, aridity)
 # ──────────────────────────────────────────────────────────────────────────────
 
+
 def _read_mat_v5(path: Path) -> dict:
     """Read v5/v6 .mat file using scipy.io.loadmat."""
     from scipy.io import loadmat
+
     m = loadmat(str(path))
     return {k: v for k, v in m.items() if not k.startswith("__")}
 
@@ -520,6 +565,7 @@ def _read_mat_v5(path: Path) -> dict:
 def _read_mat_v73(path: Path) -> dict:
     """Read v7.3 .mat file using h5py (with transpose)."""
     import h5py
+
     result = {}
     with h5py.File(str(path), "r") as f:
         for k in f.keys():
@@ -541,7 +587,9 @@ def _read_mat_auto(path: Path) -> dict:
 
 def export_thematic_layers() -> None:
     print("\n=== Thematic layers (landcover, hfp, aridity) ===")
-    stage2 = Path(r"I:\Geograph_DataSet\ProjectOutput\2023-01_Omega_Inversion\stage2_aligned")
+    stage2 = Path(
+        r"I:\Geograph_DataSet\ProjectOutput\2023-01_Omega_Inversion\stage2_aligned"
+    )
     out_dir = _OUT_ROOT / "thematic"
 
     # 修复：从 .mat 读取实际 lat/lon 坐标计算 bounds，不再使用硬编码 _CHINA_BBOX
@@ -567,14 +615,16 @@ def export_thematic_layers() -> None:
             bounds = _CHINA_BBOX  # fallback
             print(f"  [WARN] {fname} has no lat/lon, using _CHINA_BBOX fallback")
         print(f"  {layer_id}: {data.shape}, bounds={bounds}")
-        _render_png(data, out_dir / f"{varname}_overlay.png", cmap=cmap,
-                    vmin=vmin, vmax=vmax)
+        _render_png(
+            data, out_dir / f"{varname}_overlay.png", cmap=cmap, vmin=vmin, vmax=vmax
+        )
         _write_bounds(out_dir / f"{varname}_overlay_bounds.json", layer_id, bounds)
 
 
 # ──────────────────────────────────────────────────────────────────────────────
 # 5. Omega inversion result 时间序列（doy 017-030，14 天）
 # ──────────────────────────────────────────────────────────────────────────────
+
 
 def export_omega_ts() -> None:
     """导出 omega-output 时间序列：每个 doy 一个 PNG + bounds JSON。
@@ -618,7 +668,9 @@ def export_omega_ts() -> None:
             data[count == 0] = np.nan
 
         try:
-            data, bounds = _reproject_ease_to_wgs84(data, target_resolution=0.1, mat_dict=m)
+            data, bounds = _reproject_ease_to_wgs84(
+                data, target_resolution=0.1, mat_dict=m
+            )
         except Exception as e:
             print(f"  [WARN] doy_{tag} reproject failed, fallback to global: {e}")
             bounds = (-180.0, -90.0, 180.0, 90.0)
@@ -627,26 +679,32 @@ def export_omega_ts() -> None:
             generic_bounds = bounds
 
         vmax = float(np.nanpercentile(data, 99))
-        print(f"  doy_{tag}: range={np.nanmin(data):.4f}-{np.nanmax(data):.4f}, "
-              f"vmax={vmax:.4f}, bounds={bounds}")
-        _render_png(data, out_dir / f"omega_avg_{tag}.png", cmap="plasma",
-                    vmin=0, vmax=vmax)
-        _write_bounds(out_dir / f"omega_avg_{tag}_bounds.json", "omega-output",
-                      bounds)
+        print(
+            f"  doy_{tag}: range={np.nanmin(data):.4f}-{np.nanmax(data):.4f}, "
+            f"vmax={vmax:.4f}, bounds={bounds}"
+        )
+        _render_png(
+            data, out_dir / f"omega_avg_{tag}.png", cmap="plasma", vmin=0, vmax=vmax
+        )
+        _write_bounds(out_dir / f"omega_avg_{tag}_bounds.json", "omega-output", bounds)
 
     # 通用 bounds 备用（overlay_registry 中 bounds_filename 指向此文件）
     if generic_bounds is not None:
-        _write_bounds(out_dir / "omega_avg_overlay_bounds.json", "omega-output",
-                      generic_bounds)
+        _write_bounds(
+            out_dir / "omega_avg_overlay_bounds.json", "omega-output", generic_bounds
+        )
 
 
 # ──────────────────────────────────────────────────────────────────────────────
 # 6. SMAP soil moisture time series
 # ──────────────────────────────────────────────────────────────────────────────
 
+
 def export_smap_ts() -> None:
     print("\n=== SMAP SM time series ===")
-    smap_dir = Path(r"I:\Geograph_DataSet\ProjectOutput\2023-01_Omega_Inversion\stage1_smap_mat")
+    smap_dir = Path(
+        r"I:\Geograph_DataSet\ProjectOutput\2023-01_Omega_Inversion\stage1_smap_mat"
+    )
     if not smap_dir.exists():
         print("  [SKIP] Directory not found")
         return
@@ -678,7 +736,19 @@ def export_smap_ts() -> None:
                 break
         if sm_key is None:
             # Try first non-coordinate variable
-            coord_keys = {"lat", "lon", "latitude", "longitude", "count_grid", "used_years", "ts", "tbh", "tbv", "vwc", "cf"}
+            coord_keys = {
+                "lat",
+                "lon",
+                "latitude",
+                "longitude",
+                "count_grid",
+                "used_years",
+                "ts",
+                "tbh",
+                "tbv",
+                "vwc",
+                "cf",
+            }
             for k in m:
                 if k.lower() not in coord_keys:
                     sm_key = k
@@ -709,19 +779,26 @@ def export_smap_ts() -> None:
             if generic_bounds is None:
                 generic_bounds = bounds
 
-        print(f"  {tag}: {data.shape}, key={sm_key}, range={np.nanmin(data):.3f}-{np.nanmax(data):.3f}, bounds={bounds}")
-        _render_png(data, out_dir / f"smap_sm_{tag}.png", cmap="YlGnBu",
-                    vmin=0, vmax=0.5)
+        print(
+            f"  {tag}: {data.shape}, key={sm_key}, range={np.nanmin(data):.3f}-{np.nanmax(data):.3f}, bounds={bounds}"
+        )
+        _render_png(
+            data, out_dir / f"smap_sm_{tag}.png", cmap="YlGnBu", vmin=0, vmax=0.5
+        )
         _write_bounds(out_dir / f"smap_sm_{tag}_bounds.json", "smap-sm-ts", bounds)
 
     # Also write a generic bounds file
-    _write_bounds(out_dir / "smap_sm_ts_bounds.json", "smap-sm-ts",
-                  generic_bounds if generic_bounds is not None else _CHINA_BBOX)
+    _write_bounds(
+        out_dir / "smap_sm_ts_bounds.json",
+        "smap-sm-ts",
+        generic_bounds if generic_bounds is not None else _CHINA_BBOX,
+    )
 
 
 # ──────────────────────────────────────────────────────────────────────────────
 # 7. GPCP monthly precipitation time series
 # ──────────────────────────────────────────────────────────────────────────────
+
 
 def export_gpcp_ts() -> None:
     print("\n=== GPCP precipitation time series ===")
@@ -769,20 +846,23 @@ def export_gpcp_ts() -> None:
 
         print(f"  {tag}: {arr.shape}, range={np.nanmin(arr):.2f}-{np.nanmax(arr):.2f}")
         vmax = float(np.nanpercentile(arr, 99))
-        _render_png(arr, out_dir / f"gpcp_{tag}.png", cmap="YlGnBu",
-                    vmin=0, vmax=max(vmax, 10))
+        _render_png(
+            arr, out_dir / f"gpcp_{tag}.png", cmap="YlGnBu", vmin=0, vmax=max(vmax, 10)
+        )
         _write_bounds(out_dir / f"gpcp_{tag}_bounds.json", "gpcp-precip-ts", bounds)
 
         ds.close()
 
     # Generic bounds
-    _write_bounds(out_dir / "gpcp_ts_bounds.json", "gpcp-precip-ts",
-                  (-180.0, -90.0, 180.0, 90.0))
+    _write_bounds(
+        out_dir / "gpcp_ts_bounds.json", "gpcp-precip-ts", (-180.0, -90.0, 180.0, 90.0)
+    )
 
 
 # ──────────────────────────────────────────────────────────────────────────────
 # 8. GEBCO 2024 DEM (NetCDF, 中国区域)
 # ──────────────────────────────────────────────────────────────────────────────
+
 
 def export_gebco_dem() -> None:
     print("\n=== GEBCO 2024 DEM (China) ===")
@@ -792,6 +872,7 @@ def export_gebco_dem() -> None:
         return
 
     from netCDF4 import Dataset
+
     out_dir = _OUT_ROOT / "gebco_dem"
     bounds = _CHINA_BBOX
 
@@ -819,16 +900,21 @@ def export_gebco_dem() -> None:
         lon_s = lon[lon_sl]
         actual_bounds = _bounds_from_centers(lat_s, lon_s)
 
-    print(f"  Data shape: {data.shape}, range: {np.nanmin(data):.1f} to {np.nanmax(data):.1f}")
-    _render_png(data, out_dir / "gebco_dem_overlay.png", cmap="terrain",
-                vmin=-2000, vmax=6000)
-    _write_bounds(out_dir / "gebco_dem_overlay_bounds.json", "gebco-dem-cn",
-                  actual_bounds)
+    print(
+        f"  Data shape: {data.shape}, range: {np.nanmin(data):.1f} to {np.nanmax(data):.1f}"
+    )
+    _render_png(
+        data, out_dir / "gebco_dem_overlay.png", cmap="terrain", vmin=-2000, vmax=6000
+    )
+    _write_bounds(
+        out_dir / "gebco_dem_overlay_bounds.json", "gebco-dem-cn", actual_bounds
+    )
 
 
 # ──────────────────────────────────────────────────────────────────────────────
 # 9. CMFD Precipitation (GeoTIFF, 中国区域)
 # ──────────────────────────────────────────────────────────────────────────────
+
 
 def export_cmfd_precip() -> None:
     print("\n=== CMFD Precipitation (China 1km) ===")
@@ -839,14 +925,18 @@ def export_cmfd_precip() -> None:
 
     import rasterio
     from rasterio.enums import Resampling
+
     out_dir = _OUT_ROOT / "cmfd_precip"
     bounds = _CHINA_BBOX
 
     with rasterio.open(tif_path) as src:
         # 降采样到 ~2000x2000
         scale = max(1, max(src.width, src.height) // 2000)
-        data = src.read(1, out_shape=(src.height // scale, src.width // scale),
-                        resampling=Resampling.average).astype(np.float64)
+        data = src.read(
+            1,
+            out_shape=(src.height // scale, src.width // scale),
+            resampling=Resampling.average,
+        ).astype(np.float64)
         nodata = src.nodata
         if nodata is not None:
             data[data == nodata] = np.nan
@@ -854,17 +944,28 @@ def export_cmfd_precip() -> None:
         data = data / 10.0
         west, south, east, north = src.bounds
 
-    print(f"  Data shape: {data.shape}, range: {np.nanmin(data):.1f} to {np.nanmax(data):.1f} mm")
+    print(
+        f"  Data shape: {data.shape}, range: {np.nanmin(data):.1f} to {np.nanmax(data):.1f} mm"
+    )
     vmax = float(np.nanpercentile(data, 99))
-    _render_png(data, out_dir / "cmfd_precip_overlay.png", cmap="YlGnBu",
-                vmin=0, vmax=max(vmax, 10))
-    _write_bounds(out_dir / "cmfd_precip_overlay_bounds.json", "cmfd-precip-cn",
-                  (float(west), float(south), float(east), float(north)))
+    _render_png(
+        data,
+        out_dir / "cmfd_precip_overlay.png",
+        cmap="YlGnBu",
+        vmin=0,
+        vmax=max(vmax, 10),
+    )
+    _write_bounds(
+        out_dir / "cmfd_precip_overlay_bounds.json",
+        "cmfd-precip-cn",
+        (float(west), float(south), float(east), float(north)),
+    )
 
 
 # ──────────────────────────────────────────────────────────────────────────────
 # 10. CLCD 1997 (GeoTIFF, 中国区域, 降采样)
 # ──────────────────────────────────────────────────────────────────────────────
+
 
 def export_clcd() -> None:
     print("\n=== CLCD 1997 (China) ===")
@@ -876,6 +977,7 @@ def export_clcd() -> None:
     import rasterio
     from rasterio.windows import from_bounds, Window
     from rasterio.enums import Resampling
+
     out_dir = _OUT_ROOT / "clcd"
     bounds = _CHINA_BBOX
 
@@ -885,34 +987,41 @@ def export_clcd() -> None:
         win = win.intersection(full_win).round_offsets().round_lengths()
         # 降采样到 ~2000x2000
         scale = max(1, max(win.width, win.height) // 2000)
-        data = src.read(1, window=win,
-                        out_shape=(win.height // scale, win.width // scale),
-                        resampling=Resampling.mode).astype(np.float64)
+        data = src.read(
+            1,
+            window=win,
+            out_shape=(win.height // scale, win.width // scale),
+            resampling=Resampling.mode,
+        ).astype(np.float64)
         # CLCD: 0=填充, 1-9 分类
         data[data == 0] = np.nan
         # 使用 window_bounds 获取窗口的地理边界 (west, south, east, north)
         # 注意: 不能用 xy(offset="ll")/xy(offset="ur"), 那样会取像素内边沿导致整体偏移 1 个像素
         actual_bounds = tuple(float(v) for v in src.window_bounds(win))
 
-    print(f"  Data shape: {data.shape}, classes: {np.nanmin(data):.0f} to {np.nanmax(data):.0f}")
-    _render_png(data, out_dir / "clcd_overlay.png", cmap="tab10",
-                vmin=1, vmax=9)
-    _write_bounds(out_dir / "clcd_overlay_bounds.json", "clcd-cn",
-                  actual_bounds)
+    print(
+        f"  Data shape: {data.shape}, classes: {np.nanmin(data):.0f} to {np.nanmax(data):.0f}"
+    )
+    _render_png(data, out_dir / "clcd_overlay.png", cmap="tab10", vmin=1, vmax=9)
+    _write_bounds(out_dir / "clcd_overlay_bounds.json", "clcd-cn", actual_bounds)
 
 
 # ──────────────────────────────────────────────────────────────────────────────
 # 11. ESACCI BIOMASS 2020 (NetCDF, 中国区域, 降采样)
 # ──────────────────────────────────────────────────────────────────────────────
 
+
 def export_biomass() -> None:
     print("\n=== ESACCI BIOMASS 2020 (China) ===")
-    nc_path = Path(r"I:\Geograph_DataSet\Biomass\ESACCI-BIOMASS-L4-AGB-MERGED-100m-2020-fv6.0.nc")
+    nc_path = Path(
+        r"I:\Geograph_DataSet\Biomass\ESACCI-BIOMASS-L4-AGB-MERGED-100m-2020-fv6.0.nc"
+    )
     if not nc_path.exists():
         print("  [SKIP] File not found")
         return
 
     from netCDF4 import Dataset
+
     out_dir = _OUT_ROOT / "biomass"
     bounds = _CHINA_BBOX
 
@@ -951,27 +1060,33 @@ def export_biomass() -> None:
         # 修复：补半像素边界，避免整体偏移
         actual_bounds = _bounds_from_centers(lat_s, lon_s)
 
-    print(f"  Data shape: {data.shape}, range: {np.nanmin(data):.1f} to {np.nanmax(data):.1f} Mg/ha")
+    print(
+        f"  Data shape: {data.shape}, range: {np.nanmin(data):.1f} to {np.nanmax(data):.1f} Mg/ha"
+    )
     vmax = float(np.nanpercentile(data, 98))
-    _render_png(data, out_dir / "biomass_overlay.png", cmap="YlGn",
-                vmin=0, vmax=max(vmax, 50))
-    _write_bounds(out_dir / "biomass_overlay_bounds.json", "biomass-cn",
-                  actual_bounds)
+    _render_png(
+        data, out_dir / "biomass_overlay.png", cmap="YlGn", vmin=0, vmax=max(vmax, 50)
+    )
+    _write_bounds(out_dir / "biomass_overlay_bounds.json", "biomass-cn", actual_bounds)
 
 
 # ──────────────────────────────────────────────────────────────────────────────
 # 12. ERA5 DWAA/WDAA SMCI 2020 (GeoTIFF, 多波段事件标识, band 100)
 # ──────────────────────────────────────────────────────────────────────────────
 
+
 def export_era5_dwaa() -> None:
     print("\n=== ERA5 DWAA SMCI 2020 (event flag) ===")
-    tif_path = Path(r"I:\Geograph_DataSet\Hazards\DWAA_result\DW_T7\ERA5_2020_DW_SMCI.tif")
+    tif_path = Path(
+        r"I:\Geograph_DataSet\Hazards\DWAA_result\DW_T7\ERA5_2020_DW_SMCI.tif"
+    )
     if not tif_path.exists():
         print("  [SKIP] File not found")
         return
 
     import rasterio
     from rasterio.windows import from_bounds
+
     out_dir = _OUT_ROOT / "era5_dwaa"
     bounds = _CHINA_BBOX
 
@@ -988,23 +1103,34 @@ def export_era5_dwaa() -> None:
         # 注意: 不能用 xy(offset="ll")/xy(offset="ur"), 那样会取像素内边沿导致整体偏移 1 个像素
         actual_bounds = tuple(float(v) for v in src.window_bounds(win))
 
-    print(f"  Event count shape: {event_count.shape}, max events: {np.nanmax(event_count):.0f}")
+    print(
+        f"  Event count shape: {event_count.shape}, max events: {np.nanmax(event_count):.0f}"
+    )
     vmax = float(np.nanmax(event_count)) if np.isfinite(np.nanmax(event_count)) else 10
-    _render_png(event_count, out_dir / "era5_dwaa_overlay.png", cmap="YlOrRd",
-                vmin=1, vmax=max(vmax, 5))
-    _write_bounds(out_dir / "era5_dwaa_overlay_bounds.json", "era5-dwaa-cn",
-                  actual_bounds)
+    _render_png(
+        event_count,
+        out_dir / "era5_dwaa_overlay.png",
+        cmap="YlOrRd",
+        vmin=1,
+        vmax=max(vmax, 5),
+    )
+    _write_bounds(
+        out_dir / "era5_dwaa_overlay_bounds.json", "era5-dwaa-cn", actual_bounds
+    )
 
 
 def export_era5_wdaa() -> None:
     print("\n=== ERA5 WDAA SMCI 2020 (event flag) ===")
-    tif_path = Path(r"I:\Geograph_DataSet\Hazards\DWAA_result\WD_T7\ERA5_2020_WD_SMCI.tif")
+    tif_path = Path(
+        r"I:\Geograph_DataSet\Hazards\DWAA_result\WD_T7\ERA5_2020_WD_SMCI.tif"
+    )
     if not tif_path.exists():
         print("  [SKIP] File not found")
         return
 
     import rasterio
     from rasterio.windows import from_bounds
+
     out_dir = _OUT_ROOT / "era5_wdaa"
     bounds = _CHINA_BBOX
 
@@ -1019,26 +1145,38 @@ def export_era5_wdaa() -> None:
         # 注意: 不能用 xy(offset="ll")/xy(offset="ur"), 那样会取像素内边沿导致整体偏移 1 个像素
         actual_bounds = tuple(float(v) for v in src.window_bounds(win))
 
-    print(f"  Event count shape: {event_count.shape}, max events: {np.nanmax(event_count):.0f}")
+    print(
+        f"  Event count shape: {event_count.shape}, max events: {np.nanmax(event_count):.0f}"
+    )
     vmax = float(np.nanmax(event_count)) if np.isfinite(np.nanmax(event_count)) else 10
-    _render_png(event_count, out_dir / "era5_wdaa_overlay.png", cmap="YlGnBu",
-                vmin=1, vmax=max(vmax, 5))
-    _write_bounds(out_dir / "era5_wdaa_overlay_bounds.json", "era5-wdaa-cn",
-                  actual_bounds)
+    _render_png(
+        event_count,
+        out_dir / "era5_wdaa_overlay.png",
+        cmap="YlGnBu",
+        vmin=1,
+        vmax=max(vmax, 5),
+    )
+    _write_bounds(
+        out_dir / "era5_wdaa_overlay_bounds.json", "era5-wdaa-cn", actual_bounds
+    )
 
 
 # ──────────────────────────────────────────────────────────────────────────────
 # 13. MeanCarbonDioxide (GeoTIFF, 中国区域)
 # ──────────────────────────────────────────────────────────────────────────────
 
+
 def export_co2() -> None:
     print("\n=== MeanCarbonDioxide (China) ===")
-    tif_path = Path(r"I:\Geograph_DataSet\CO2\MidLayerCO2Column\TIF\MeanCarbonDioxide.tif")
+    tif_path = Path(
+        r"I:\Geograph_DataSet\CO2\MidLayerCO2Column\TIF\MeanCarbonDioxide.tif"
+    )
     if not tif_path.exists():
         print("  [SKIP] File not found")
         return
 
     import rasterio
+
     out_dir = _OUT_ROOT / "co2"
     bounds = _CHINA_BBOX
 
@@ -1046,16 +1184,21 @@ def export_co2() -> None:
         data = src.read(1).astype(np.float64)
         west, south, east, north = src.bounds
 
-    print(f"  Data shape: {data.shape}, range: {np.nanmin(data):.2f} to {np.nanmax(data):.2f} ppm")
-    _render_png(data, out_dir / "co2_overlay.png", cmap="RdYlGn_r",
-                vmin=386, vmax=391)
-    _write_bounds(out_dir / "co2_overlay_bounds.json", "co2-cn",
-                  (float(west), float(south), float(east), float(north)))
+    print(
+        f"  Data shape: {data.shape}, range: {np.nanmin(data):.2f} to {np.nanmax(data):.2f} ppm"
+    )
+    _render_png(data, out_dir / "co2_overlay.png", cmap="RdYlGn_r", vmin=386, vmax=391)
+    _write_bounds(
+        out_dir / "co2_overlay_bounds.json",
+        "co2-cn",
+        (float(west), float(south), float(east), float(north)),
+    )
 
 
 # ──────────────────────────────────────────────────────────────────────────────
 # 14. Soil DDCA 时间序列（中国 9km，2015-04 ~ 2022-12，采样 60 天）
 # ──────────────────────────────────────────────────────────────────────────────
+
 
 def export_soil_ddca_ts() -> None:
     """导出 soil-ddca 时间序列：每个采样日期一个 PNG + bounds JSON。
@@ -1096,7 +1239,9 @@ def export_soil_ddca_ts() -> None:
         data[data < 0] = np.nan
 
         try:
-            data, bounds = _reproject_ease_to_wgs84(data, target_resolution=0.1, mat_dict=m)
+            data, bounds = _reproject_ease_to_wgs84(
+                data, target_resolution=0.1, mat_dict=m
+            )
         except Exception as e:
             print(f"  [WARN] {tag} reproject failed, fallback to global: {e}")
             bounds = (-180.0, -90.0, 180.0, 90.0)
@@ -1105,21 +1250,29 @@ def export_soil_ddca_ts() -> None:
             generic_bounds = bounds
 
         vmax = float(np.nanpercentile(data, 99))
-        print(f"  {tag}: range={np.nanmin(data):.2f}-{np.nanmax(data):.2f}, "
-              f"vmax={vmax:.2f}, bounds={bounds}")
-        _render_png(data, out_dir / f"soil_ddca_{tag}.png", cmap="viridis",
-                    vmin=0, vmax=max(vmax, 1))
-        _write_bounds(out_dir / f"soil_ddca_{tag}_bounds.json", "soil-ddca",
-                      bounds)
+        print(
+            f"  {tag}: range={np.nanmin(data):.2f}-{np.nanmax(data):.2f}, "
+            f"vmax={vmax:.2f}, bounds={bounds}"
+        )
+        _render_png(
+            data,
+            out_dir / f"soil_ddca_{tag}.png",
+            cmap="viridis",
+            vmin=0,
+            vmax=max(vmax, 1),
+        )
+        _write_bounds(out_dir / f"soil_ddca_{tag}_bounds.json", "soil-ddca", bounds)
 
     if generic_bounds is not None:
-        _write_bounds(out_dir / "soil_ddca_overlay_bounds.json", "soil-ddca",
-                      generic_bounds)
+        _write_bounds(
+            out_dir / "soil_ddca_overlay_bounds.json", "soil-ddca", generic_bounds
+        )
 
 
 # ──────────────────────────────────────────────────────────────────────────────
 # 15. Omega FY avg 时间序列（doy 025-030，6 天）
 # ──────────────────────────────────────────────────────────────────────────────
+
 
 def export_omega_fy_ts() -> None:
     """导出 omega-fy-output 时间序列：每个 doy 一个 PNG + bounds JSON。
@@ -1160,7 +1313,9 @@ def export_omega_fy_ts() -> None:
             data[count == 0] = np.nan
 
         try:
-            data, bounds = _reproject_ease_to_wgs84(data, target_resolution=0.1, mat_dict=m)
+            data, bounds = _reproject_ease_to_wgs84(
+                data, target_resolution=0.1, mat_dict=m
+            )
         except Exception as e:
             print(f"  [WARN] doy_{tag} reproject failed, fallback to global: {e}")
             bounds = (-180.0, -90.0, 180.0, 90.0)
@@ -1169,21 +1324,27 @@ def export_omega_fy_ts() -> None:
             generic_bounds = bounds
 
         vmax = float(np.nanpercentile(data, 99))
-        print(f"  doy_{tag}: range={np.nanmin(data):.4f}-{np.nanmax(data):.4f}, "
-              f"vmax={vmax:.4f}, bounds={bounds}")
-        _render_png(data, out_dir / f"omega_fy_{tag}.png", cmap="magma",
-                    vmin=0, vmax=vmax)
-        _write_bounds(out_dir / f"omega_fy_{tag}_bounds.json", "omega-fy-output",
-                      bounds)
+        print(
+            f"  doy_{tag}: range={np.nanmin(data):.4f}-{np.nanmax(data):.4f}, "
+            f"vmax={vmax:.4f}, bounds={bounds}"
+        )
+        _render_png(
+            data, out_dir / f"omega_fy_{tag}.png", cmap="magma", vmin=0, vmax=vmax
+        )
+        _write_bounds(
+            out_dir / f"omega_fy_{tag}_bounds.json", "omega-fy-output", bounds
+        )
 
     if generic_bounds is not None:
-        _write_bounds(out_dir / "omega_fy_overlay_bounds.json", "omega-fy-output",
-                      generic_bounds)
+        _write_bounds(
+            out_dir / "omega_fy_overlay_bounds.json", "omega-fy-output", generic_bounds
+        )
 
 
 # ──────────────────────────────────────────────────────────────────────────────
 # 16. Forest_Ratio 9KM 2020 (MAT, 全球 9km)
 # ──────────────────────────────────────────────────────────────────────────────
+
 
 def export_forest_ratio() -> None:
     print("\n=== Forest Ratio 9KM 2020 ===")
@@ -1196,28 +1357,31 @@ def export_forest_ratio() -> None:
 
     m = _read_mat_auto(mat_path)
     if "Forest_Ratio" not in m:
-        print(f"  [SKIP] Variable Forest_Ratio not found")
+        print("  [SKIP] Variable Forest_Ratio not found")
         return
     data = m["Forest_Ratio"].astype(np.float64)
     data[data < 0] = np.nan
 
-    print(f"  Data shape: {data.shape}, range: {np.nanmin(data):.3f} to {np.nanmax(data):.3f}")
+    print(
+        f"  Data shape: {data.shape}, range: {np.nanmin(data):.3f} to {np.nanmax(data):.3f}"
+    )
     # 修复：EASE-Grid 2.0 9km 重投影到 WGS84 + 裁剪到中国区域（避免全球 Mercator 拉伸）
     try:
         data, bounds = _reproject_ease_to_wgs84(data, target_resolution=0.1, mat_dict=m)
         print(f"  forest_ratio reprojected: {data.shape}, bounds={bounds}")
     except Exception as e:
-        print(f"  [WARN] EASE-Grid reproject failed, falling back to global bounds: {e}")
+        print(
+            f"  [WARN] EASE-Grid reproject failed, falling back to global bounds: {e}"
+        )
         bounds = (-180.0, -90.0, 180.0, 90.0)
-    _render_png(data, out_dir / "forest_ratio_overlay.png", cmap="YlGn",
-                vmin=0, vmax=1)
-    _write_bounds(out_dir / "forest_ratio_overlay_bounds.json", "forest-ratio",
-                  bounds)
+    _render_png(data, out_dir / "forest_ratio_overlay.png", cmap="YlGn", vmin=0, vmax=1)
+    _write_bounds(out_dir / "forest_ratio_overlay_bounds.json", "forest-ratio", bounds)
 
 
 # ──────────────────────────────────────────────────────────────────────────────
 # 17. Landscape Metrics 9km 2020 — SHDI（Phase 1.6 新增）
 # ──────────────────────────────────────────────────────────────────────────────
+
 
 def export_landscape_metrics() -> None:
     """导出 landscape-metrics-9km 静态图层：Shannon 多样性指数 SHDI。
@@ -1245,30 +1409,50 @@ def export_landscape_metrics() -> None:
     # SHDI 理论范围 [0, ~2.22]；负值或 NaN 视为无效
     data[data < 0] = np.nan
 
-    print(f"  Data shape: {data.shape}, range: {np.nanmin(data):.4f} to {np.nanmax(data):.4f}")
+    print(
+        f"  Data shape: {data.shape}, range: {np.nanmin(data):.4f} to {np.nanmax(data):.4f}"
+    )
     # EASE-Grid 2.0 9km 重投影到 WGS84 + 裁剪到中国区域
     # .mat 含 Transform (500m 网格，需 × 18 = 9008.0552m) + CRS (EPSG:6933)
     try:
         data, bounds = _reproject_ease_to_wgs84(data, target_resolution=0.1, mat_dict=m)
         print(f"  landscape_metrics reprojected: {data.shape}, bounds={bounds}")
     except Exception as e:
-        print(f"  [WARN] EASE-Grid reproject failed, falling back to global bounds: {e}")
+        print(
+            f"  [WARN] EASE-Grid reproject failed, falling back to global bounds: {e}"
+        )
         bounds = (-180.0, -90.0, 180.0, 90.0)
     # SHDI 取 99 分位作为 vmax，避免极端值压缩色彩
     vmax = float(np.nanpercentile(data, 99))
-    _render_png(data, out_dir / "landscape_metrics_overlay.png", cmap="cividis",
-                vmin=0, vmax=max(vmax, 1.0))
-    _write_bounds(out_dir / "landscape_metrics_overlay_bounds.json",
-                  "landscape-metrics-9km", bounds)
+    _render_png(
+        data,
+        out_dir / "landscape_metrics_overlay.png",
+        cmap="cividis",
+        vmin=0,
+        vmax=max(vmax, 1.0),
+    )
+    _write_bounds(
+        out_dir / "landscape_metrics_overlay_bounds.json",
+        "landscape-metrics-9km",
+        bounds,
+    )
 
 
 # ──────────────────────────────────────────────────────────────────────────────
 # 18-20. Phase 2: VOD / SM / Omega 2025-12 时间序列（SmapSoil_VOD_SM 产品族）
 # ──────────────────────────────────────────────────────────────────────────────
 
-def _export_smap_soil_vod_sm_ts(varname: str, layer_id: str, out_subdir: str,
-                                cmap: str, vmin: float, vmax: float | None,
-                                unit: str, label: str) -> None:
+
+def _export_smap_soil_vod_sm_ts(
+    varname: str,
+    layer_id: str,
+    out_subdir: str,
+    cmap: str,
+    vmin: float,
+    vmax: float | None,
+    unit: str,
+    label: str,
+) -> None:
     """通用导出器：从 SmapSoil_VOD_SM/YYYYMMDD.mat 读取指定变量并导出时间序列。
 
     Phase 2 共用逻辑，供 VOD / SM / OMEGA 三个变量复用。每个变量导出 31 天
@@ -1317,7 +1501,9 @@ def _export_smap_soil_vod_sm_ts(varname: str, layer_id: str, out_subdir: str,
         data[data < 0] = np.nan
 
         try:
-            data, bounds = _reproject_ease_to_wgs84(data, target_resolution=0.1, mat_dict=m)
+            data, bounds = _reproject_ease_to_wgs84(
+                data, target_resolution=0.1, mat_dict=m
+            )
         except Exception as e:
             print(f"  [WARN] {tag} reproject failed, fallback to global: {e}")
             bounds = (-180.0, -90.0, 180.0, 90.0)
@@ -1329,15 +1515,23 @@ def _export_smap_soil_vod_sm_ts(varname: str, layer_id: str, out_subdir: str,
         eff_vmax = vmax
         if eff_vmax is None:
             eff_vmax = float(np.nanpercentile(data, 99))
-        print(f"  {tag}: range={np.nanmin(data):.4f}-{np.nanmax(data):.4f}, "
-              f"vmax={eff_vmax:.4f}, bounds={bounds}")
-        _render_png(data, out_dir / f"{out_subdir}_{tag}.png", cmap=cmap,
-                    vmin=vmin, vmax=eff_vmax)
+        print(
+            f"  {tag}: range={np.nanmin(data):.4f}-{np.nanmax(data):.4f}, "
+            f"vmax={eff_vmax:.4f}, bounds={bounds}"
+        )
+        _render_png(
+            data,
+            out_dir / f"{out_subdir}_{tag}.png",
+            cmap=cmap,
+            vmin=vmin,
+            vmax=eff_vmax,
+        )
         _write_bounds(out_dir / f"{out_subdir}_{tag}_bounds.json", layer_id, bounds)
 
     if generic_bounds is not None:
-        _write_bounds(out_dir / f"{out_subdir}_overlay_bounds.json", layer_id,
-                      generic_bounds)
+        _write_bounds(
+            out_dir / f"{out_subdir}_overlay_bounds.json", layer_id, generic_bounds
+        )
 
 
 def export_vod_ts() -> None:
@@ -1349,8 +1543,14 @@ def export_vod_ts() -> None:
       - ``_OVERLAY_PNG_ROOT/vod_ts/vod_ts_overlay_bounds.json``（通用 bounds）
     """
     _export_smap_soil_vod_sm_ts(
-        varname="VOD", layer_id="vod-dec2025", out_subdir="vod_ts",
-        cmap="magma", vmin=0, vmax=None, unit="", label="VOD",
+        varname="VOD",
+        layer_id="vod-dec2025",
+        out_subdir="vod_ts",
+        cmap="magma",
+        vmin=0,
+        vmax=None,
+        unit="",
+        label="VOD",
     )
 
 
@@ -1363,8 +1563,14 @@ def export_sm_dec2025_ts() -> None:
       - ``_OVERLAY_PNG_ROOT/sm_ts/sm_ts_overlay_bounds.json``（通用 bounds）
     """
     _export_smap_soil_vod_sm_ts(
-        varname="SM", layer_id="sm-dec2025", out_subdir="sm_ts",
-        cmap="YlGnBu", vmin=0, vmax=0.6, unit="m³/m³", label="Soil Moisture",
+        varname="SM",
+        layer_id="sm-dec2025",
+        out_subdir="sm_ts",
+        cmap="YlGnBu",
+        vmin=0,
+        vmax=0.6,
+        unit="m³/m³",
+        label="Soil Moisture",
     )
 
 
@@ -1380,14 +1586,21 @@ def export_omega_2025_ts() -> None:
       - ``_OVERLAY_PNG_ROOT/omega_2025_ts/omega_2025_ts_overlay_bounds.json``
     """
     _export_smap_soil_vod_sm_ts(
-        varname="OMEGA", layer_id="omega-dec2025", out_subdir="omega_2025_ts",
-        cmap="plasma", vmin=0, vmax=None, unit="Omega", label="Omega 2025-12",
+        varname="OMEGA",
+        layer_id="omega-dec2025",
+        out_subdir="omega_2025_ts",
+        cmap="plasma",
+        vmin=0,
+        vmax=None,
+        unit="Omega",
+        label="Omega 2025-12",
     )
 
 
 # ──────────────────────────────────────────────────────────────────────────────
 # Main
 # ──────────────────────────────────────────────────────────────────────────────
+
 
 def main() -> int:
     print("=" * 60)
@@ -1427,6 +1640,7 @@ def main() -> int:
         except Exception as e:
             print(f"\n  [FAIL] {name}: {e}")
             import traceback
+
             traceback.print_exc()
             results[name] = f"FAIL: {e}"
 

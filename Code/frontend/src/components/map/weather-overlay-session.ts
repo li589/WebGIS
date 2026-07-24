@@ -1,5 +1,11 @@
+/**
+ * Weather overlay session: sole teardown entry for per-catalog and bulk cleanup.
+ * Controllers only remove artifacts when called from here (or reconcile via coordinator).
+ * Do not add MapCanvas-level wind/scalar clears outside this session.
+ */
 import type { WindParticleControllerContract } from './wind-particle-controller-contract'
 import type { ScalarFieldWebGLController } from './scalar-field-webgl-controller'
+import { clearLastGoodGridFillState } from './weather-overlay-coordinator'
 
 type MapInstance = import('maplibre-gl').Map
 
@@ -24,6 +30,7 @@ export function createWeatherOverlaySession(
   function removeCatalogOverlay(catalogId: string) {
     options.windParticleController?.removeCatalogArtifacts(catalogId)
     options.scalarFieldController?.removeCatalogArtifacts(catalogId)
+    clearLastGoodGridFillState(catalogId)
     renderedCatalogIds.delete(catalogId)
   }
 

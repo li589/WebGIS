@@ -1,0 +1,66 @@
+{
+  "_meta": {
+    "kind": "system",
+    "engine": "common",
+    "name": "NSIDC/SMAP 开放数据样例",
+    "description": "目的：经 NSIDC/Earthdata 凭证下载 SMAP 类产品并转为课题组常用格式。前置：设置页配置 earthdata 或 nsidc 凭证（或 BACKEND_EARTHDATA_TOKEN）。使用前替换 relative_path 为真实 granule 路径。产出：本地缓存 HDF5/MAT + 可选转换结果。",
+    "author": "system",
+    "readonly": true,
+    "is_template": true,
+    "linked_layer_id": "smap-soil"
+  },
+  "workflow_id": "open_data_nsidc_smap_sample",
+  "name": "NSIDC/SMAP 开放数据样例",
+  "description": "nsidc_data + earthdata 凭证 → 解压/提取 → format_convert(mat)。",
+  "nodes": [
+    {
+      "id": 1,
+      "type": "download/http_open_data",
+      "pos": [80, 140],
+      "properties": {
+        "preset": "nsidc_data",
+        "relative_path": "REPLACE_WITH_NSIDC_SMAP_OBJECT_PATH",
+        "cred_profile": "earthdata",
+        "force_refresh": false
+      }
+    },
+    {
+      "id": 2,
+      "type": "archive/extract",
+      "pos": [360, 80],
+      "properties": {
+        "member_glob": "*.h5",
+        "recurse_once": true,
+        "output_dirname": "smap_extracted"
+      }
+    },
+    {
+      "id": 3,
+      "type": "extract/variable",
+      "pos": [640, 140],
+      "properties": {
+        "variable": "Soil_Moisture_Retrieval_Data_AM/soil_moisture"
+      }
+    },
+    {
+      "id": 4,
+      "type": "format/convert",
+      "pos": [920, 140],
+      "properties": {
+        "target_format": "mat",
+        "variable": "Soil_Moisture_Retrieval_Data_AM/soil_moisture"
+      }
+    }
+  ],
+  "links": [
+    {"0": 1, "1": 1, "2": 0, "3": 2, "4": 0, "5": "value:string"},
+    {"0": 2, "1": 2, "2": 0, "3": 3, "4": 0, "5": "value:string"},
+    {"0": 3, "1": 3, "2": 0, "3": 4, "4": 0, "5": "value:string"}
+  ],
+  "extra": {
+    "purpose": "open_portal_sample",
+    "portal": "nsidc_data",
+    "cred_profile": "earthdata",
+    "notes": "与本地盘 smap_soil_moisture 系统流互补：本流走开放下载，本地流走 I:/Geograph_DataSet。"
+  }
+}

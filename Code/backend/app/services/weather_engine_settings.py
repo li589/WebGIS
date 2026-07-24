@@ -137,7 +137,9 @@ def probe_local_open_meteo_reachable(timeout: float = 2.0) -> bool:
     from app.weatherengine.provider_ids import OPEN_METEO_LOCAL_URL
 
     try:
-        with urlopen(f"{OPEN_METEO_LOCAL_URL}?latitude=0&longitude=0", timeout=timeout) as resp:
+        with urlopen(
+            f"{OPEN_METEO_LOCAL_URL}?latitude=0&longitude=0", timeout=timeout
+        ) as resp:
             return 200 <= int(getattr(resp, "status", 200)) < 500
     except (URLError, HTTPError, OSError, TimeoutError):
         return False
@@ -241,9 +243,7 @@ def get_weather_engine_public_config() -> dict[str, Any]:
     domains = parse_sync_domains()
     return {
         "default_model": default_model,
-        "default_model_source": (
-            "db" if _get_repo().get(KEY_DEFAULT_MODEL) else "env"
-        ),
+        "default_model_source": ("db" if _get_repo().get(KEY_DEFAULT_MODEL) else "env"),
         "sync_domains": domains,
         "sync_enabled": bool(settings.open_meteo_sync_enabled),
         "sync_cron": {

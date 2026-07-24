@@ -1,4 +1,5 @@
 """OMEGA forward kernel prototypes preserve single-temp behavior."""
+
 from __future__ import annotations
 
 import unittest
@@ -30,7 +31,15 @@ class OmegaForwardKernelPrototypeTests(unittest.TestCase):
 
         for case in cases:
             with self.subTest(case=case):
-                soil_moisture, tau_value, h_value, alpha_value, omega_value, ts_value, scale = case
+                (
+                    soil_moisture,
+                    tau_value,
+                    h_value,
+                    alpha_value,
+                    omega_value,
+                    ts_value,
+                    scale,
+                ) = case
                 expected_tbv, expected_tbh = tb_forward_single_temp(
                     soil_moisture,
                     tau_value,
@@ -116,7 +125,16 @@ class OmegaForwardKernelPrototypeTests(unittest.TestCase):
 
         for case in cases:
             with self.subTest(case=case):
-                soil_moisture, tau_value, h_value, alpha_value, omega_value, tc_value, tg_value, scale = case
+                (
+                    soil_moisture,
+                    tau_value,
+                    h_value,
+                    alpha_value,
+                    omega_value,
+                    tc_value,
+                    tg_value,
+                    scale,
+                ) = case
                 expected_tbv, expected_tbh = tb_forward_dual_temp(
                     soil_moisture,
                     tau_value,

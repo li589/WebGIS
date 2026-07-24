@@ -14,6 +14,7 @@
 - 提交失败不影响下次触发，错误记录到 last_error 字段
 - 事件触发器立即响应 emit_event 调用（同步提交）
 """
+
 from __future__ import annotations
 
 import json
@@ -62,11 +63,11 @@ class WorkflowTimer:
 # ─── Cron 解析器（5 字段，无外部依赖） ───────────────────────────────────────
 # 字段范围：minute(0-59) hour(0-23) day-of-month(1-31) month(1-12) day-of-week(0-6, 0=Sunday)
 _FIELD_RANGES = [
-    (0, 59),   # minute
-    (0, 23),   # hour
-    (1, 31),   # day of month
-    (1, 12),   # month
-    (0, 6),    # day of week (0=Sunday)
+    (0, 59),  # minute
+    (0, 23),  # hour
+    (1, 31),  # day of month
+    (1, 12),  # month
+    (0, 6),  # day of week (0=Sunday)
 ]
 
 _FIELD_NAMES = ["minute", "hour", "day_of_month", "month", "day_of_week"]
@@ -150,7 +151,7 @@ def next_cron_time(cron_expr: str, after: datetime) -> datetime:
     """
     parsed = parse_cron(cron_expr)
     # 起始：after + 1 分钟，秒归零
-    candidate = (after.replace(second=0, microsecond=0) + timedelta(minutes=1))
+    candidate = after.replace(second=0, microsecond=0) + timedelta(minutes=1)
     # Python weekday: Monday=0 ... Sunday=6；cron weekday: Sunday=0 ... Saturday=6
     # 转换：cron_wd = (py_wd + 1) % 7
     max_iter = 60 * 24 * 366  # 闰年最坏情况
@@ -170,7 +171,9 @@ def next_cron_time(cron_expr: str, after: datetime) -> datetime:
 
 
 # ─── 触发器配置校验 ──────────────────────────────────────────────────────────
-def validate_trigger_config(trigger_type: str, config: dict[str, Any]) -> dict[str, Any]:
+def validate_trigger_config(
+    trigger_type: str, config: dict[str, Any]
+) -> dict[str, Any]:
     """校验并规范化触发器配置。返回规范化后的 config。"""
     if trigger_type == "cron":
         expr = config.get("cron")
@@ -189,7 +192,9 @@ def validate_trigger_config(trigger_type: str, config: dict[str, Any]) -> dict[s
     if trigger_type == "event":
         event_type = config.get("event_type")
         if not isinstance(event_type, str) or not event_type.strip():
-            raise TimerValidationError("event trigger requires 'event_type' string field")
+            raise TimerValidationError(
+                "event trigger requires 'event_type' string field"
+            )
         return {"event_type": event_type.strip()}
     raise TimerValidationError(
         f"unknown trigger_type: {trigger_type!r} (expected: cron | interval | event)"
@@ -223,7 +228,10 @@ def _build_submit_payload(
     若定义缺失，使用 analysis 作为兜底。
     """
     from app.services import workflow_definition_service as wds
-    from shared.contracts.api_contracts import WorkflowCommandType, WorkflowSubmitRequest
+    from shared.contracts.api_contracts import (
+        WorkflowCommandType,
+        WorkflowSubmitRequest,
+    )
 
     definition = wds.get_definition(workflow_id)
     if definition is None:
@@ -249,9 +257,18 @@ def _build_submit_payload(
         parameters=parameters,
     )
     # 应用其余 overrides（time_range / spatial_filter / engine_requests 等）
-    for key in ("time_range", "spatial_filter", "gee_request", "weather_request",
-                "algorithm_request", "config_overrides", "realtime_preferred",
-                "priority", "resource_profile", "queue_tag"):
+    for key in (
+        "time_range",
+        "spatial_filter",
+        "gee_request",
+        "weather_request",
+        "algorithm_request",
+        "config_overrides",
+        "realtime_preferred",
+        "priority",
+        "resource_profile",
+        "queue_tag",
+    ):
         if key in overrides:
             setattr(payload, key, overrides[key])
     return payload
@@ -353,13 +370,20 @@ class WorkflowTimerStore:
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
-                    timer.timer_id, timer.workflow_id, timer.name,
-                    timer.trigger_type, json.dumps(timer.trigger_config, ensure_ascii=False),
+                    timer.timer_id,
+                    timer.workflow_id,
+                    timer.name,
+                    timer.trigger_type,
+                    json.dumps(timer.trigger_config, ensure_ascii=False),
                     json.dumps(timer.payload_overrides, ensure_ascii=False),
                     1 if timer.enabled else 0,
-                    timer.last_fired_at, timer.next_fire_at,
-                    timer.last_run_id, timer.last_error,
-                    timer.fire_count, timer.created_at, timer.updated_at,
+                    timer.last_fired_at,
+                    timer.next_fire_at,
+                    timer.last_run_id,
+                    timer.last_error,
+                    timer.fire_count,
+                    timer.created_at,
+                    timer.updated_at,
                 ),
             )
         return timer
@@ -376,7 +400,9 @@ class WorkflowTimerStore:
         trigger_type = updates.get("trigger_type", existing.trigger_type)
         trigger_config = existing.trigger_config
         if "trigger_config" in updates:
-            trigger_config = validate_trigger_config(trigger_type, updates["trigger_config"])
+            trigger_config = validate_trigger_config(
+                trigger_type, updates["trigger_config"]
+            )
         payload_overrides = updates.get("payload_overrides", existing.payload_overrides)
 
         # 若 trigger 或 enabled 变化，重新计算 next_fire_at
@@ -387,7 +413,9 @@ class WorkflowTimerStore:
             or (enabled and not existing.enabled)
         ):
             last_dt = _parse_iso(existing.last_fired_at)
-            recomputed_next = compute_next_fire_at(trigger_type, trigger_config, last_dt)
+            recomputed_next = compute_next_fire_at(
+                trigger_type, trigger_config, last_dt
+            )
         if not enabled:
             recomputed_next = None
 
@@ -401,14 +429,19 @@ class WorkflowTimerStore:
                 WHERE timer_id = ?
                 """,
                 (
-                    name, 1 if enabled else 0, trigger_type,
+                    name,
+                    1 if enabled else 0,
+                    trigger_type,
                     json.dumps(trigger_config, ensure_ascii=False),
                     json.dumps(payload_overrides, ensure_ascii=False),
-                    recomputed_next, updated_at, timer_id,
+                    recomputed_next,
+                    updated_at,
+                    timer_id,
                 ),
             )
         result = self.get_timer(timer_id)
-        assert result is not None
+        if result is None:
+            raise RuntimeError(f"timer disappeared after update: {timer_id}")
         return result
 
     def delete_timer(self, timer_id: str) -> bool:
@@ -473,6 +506,28 @@ class WorkflowTimerStore:
                 (now_iso, run_id, error, next_fire_at, now_iso, timer_id),
             )
 
+    def update_last_run(
+        self,
+        timer_id: str,
+        *,
+        run_id: str | None,
+        error: str | None,
+    ) -> None:
+        """仅更新 last_run_id/last_error，不影响 fire_count/last_fired_at/next_fire_at。
+
+        用于手动触发场景：记录最新 run_id 但不污染自动触发的统计数据和调度基准。
+        """
+        now_iso = datetime.now(timezone.utc).isoformat()
+        with self._lock:
+            self._conn.execute(
+                """
+                UPDATE workflow_timers SET
+                    last_run_id = ?, last_error = ?, updated_at = ?
+                WHERE timer_id = ?
+                """,
+                (run_id, error, now_iso, timer_id),
+            )
+
     def _row_to_timer(self, row: sqlite3.Row) -> WorkflowTimer:
         return WorkflowTimer(
             timer_id=row["timer_id"],
@@ -529,14 +584,21 @@ def create_timer(
     """创建并持久化一个新定时器。"""
     # 校验 workflow_id 存在
     from app.services import workflow_definition_service as wds
+
     if wds.get_definition(workflow_id) is None:
         raise TimerValidationError(f"workflow definition not found: {workflow_id}")
 
     normalized_config = validate_trigger_config(trigger_type, trigger_config)
     now = datetime.now(timezone.utc)
-    next_fire = compute_next_fire_at(
-        trigger_type, normalized_config, None,
-    ) if enabled else None
+    next_fire = (
+        compute_next_fire_at(
+            trigger_type,
+            normalized_config,
+            None,
+        )
+        if enabled
+        else None
+    )
 
     timer = WorkflowTimer(
         timer_id=f"timer-{uuid4().hex[:12]}",
@@ -568,24 +630,31 @@ def tick() -> dict[str, Any]:
         try:
             payload = _build_submit_payload(timer.workflow_id, timer.payload_overrides)
             from app.services.workflow.service_container import submission_service
+
             accepted = submission_service.submit_workflow(payload)
             run_id = accepted.run_id
             stats["fired"] += 1
             logger.info(
                 "workflow timer %s fired: workflow_id=%s run_id=%s",
-                timer.timer_id, timer.workflow_id, run_id,
+                timer.timer_id,
+                timer.workflow_id,
+                run_id,
             )
         except Exception as exc:
             error = f"{type(exc).__name__}: {exc}"
             stats["failed"] += 1
             logger.exception(
-                "workflow timer %s failed to fire: %s", timer.timer_id, exc,
+                "workflow timer %s failed to fire: %s",
+                timer.timer_id,
+                exc,
             )
 
         # 计算下次触发时间：以当前时间为基准（避免漏触发）
         try:
             now_dt = datetime.now(timezone.utc)
-            next_fire = compute_next_fire_at(timer.trigger_type, timer.trigger_config, now_dt)
+            next_fire = compute_next_fire_at(
+                timer.trigger_type, timer.trigger_config, now_dt
+            )
         except Exception:
             next_fire = None
 
@@ -599,7 +668,9 @@ def tick() -> dict[str, Any]:
     return stats
 
 
-def emit_event(event_type: str, payload: dict[str, Any] | None = None) -> dict[str, Any]:
+def emit_event(
+    event_type: str, payload: dict[str, Any] | None = None
+) -> dict[str, Any]:
     """发射外部事件，触发匹配的 event 类型定时器。
 
     返回 {matched, fired, failed} 统计。
@@ -619,18 +690,23 @@ def emit_event(event_type: str, payload: dict[str, Any] | None = None) -> dict[s
                 overrides["parameters"] = params
             submit_payload = _build_submit_payload(timer.workflow_id, overrides)
             from app.services.workflow.service_container import submission_service
+
             accepted = submission_service.submit_workflow(submit_payload)
             run_id = accepted.run_id
             stats["fired"] += 1
             logger.info(
                 "workflow timer %s triggered by event %s: run_id=%s",
-                timer.timer_id, event_type, run_id,
+                timer.timer_id,
+                event_type,
+                run_id,
             )
         except Exception as exc:
             error = f"{type(exc).__name__}: {exc}"
             stats["failed"] += 1
             logger.exception(
-                "workflow timer %s event trigger failed: %s", timer.timer_id, exc,
+                "workflow timer %s event trigger failed: %s",
+                timer.timer_id,
+                exc,
             )
         # event 触发器不需要计算 next_fire_at
         store.mark_fired(timer.timer_id, run_id=run_id, error=error, next_fire_at=None)
@@ -645,14 +721,14 @@ def trigger_manually(timer_id: str) -> dict[str, Any]:
         raise TimerNotFoundError(f"timer not found: {timer_id}")
     payload = _build_submit_payload(timer.workflow_id, timer.payload_overrides)
     from app.services.workflow.service_container import submission_service
+
     accepted = submission_service.submit_workflow(payload)
-    # 更新 last_run_id 但不更新 fire_count 或 next_fire_at
+    # 仅更新 last_run_id，不影响 fire_count / last_fired_at / next_fire_at
     now_iso = datetime.now(timezone.utc).isoformat()
-    store.mark_fired(
+    store.update_last_run(
         timer_id,
         run_id=accepted.run_id,
         error=None,
-        next_fire_at=timer.next_fire_at,  # 保留原值
     )
     return {
         "timer_id": timer_id,

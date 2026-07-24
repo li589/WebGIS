@@ -11,7 +11,9 @@ class NodeRegistry:
     def __init__(self) -> None:
         self._node_classes: dict[str, Type[BaseNode]] = {}
 
-    def register(self, node_type: str | None = None, node_cls: Type[BaseNode] | None = None) -> None:
+    def register(
+        self, node_type: str | None = None, node_cls: Type[BaseNode] | None = None
+    ) -> None:
         if isinstance(node_type, type) and issubclass(node_type, BaseNode):
             # 简化调用方式：register(MyNode)
             node_cls = node_type

@@ -1,8 +1,4 @@
-import {
-  boundsToPolygonRing,
-  latticeCellBounds,
-  latticeIndex,
-} from './weather-grid-lattice'
+import { boundsToPolygonRing, latticeCellBounds, latticeIndex } from './weather-grid-lattice'
 import {
   buildWeatherArrowSizeExpression,
   buildWeatherFillColorExpression,
@@ -11,7 +7,11 @@ import {
   buildWeatherPointRadiusExpression,
   getWeatherFillOpacity,
 } from './weather-render'
-import { buildWeatherOverlayIds, getWeatherOverlayBeforeLayerId, removeWeatherMapArtifacts } from './weather-overlay-maplibre'
+import {
+  buildWeatherOverlayIds,
+  getWeatherOverlayBeforeLayerId,
+  removeWeatherMapArtifacts,
+} from './weather-overlay-maplibre'
 import type { WeatherOverlayState } from './weather-overlay-registry'
 import type { WindGeoJSON } from './types'
 
@@ -55,7 +55,11 @@ export function weatherZoomToResolution(z: number): number {
 
 /** 从 feature props / 中位 gap / zoom 推断格点步长 */
 function resolveGridStepDegrees(
-  points: Array<{ lon: number; lat: number; feature: { properties?: Record<string, unknown> | null } }>,
+  points: Array<{
+    lon: number
+    lat: number
+    feature: { properties?: Record<string, unknown> | null }
+  }>,
   axis: 'lon' | 'lat',
   options?: { zoom?: number; stepDegrees?: number },
 ): number {
@@ -66,17 +70,19 @@ function resolveGridStepDegrees(
     const props = p.feature.properties
     if (!props) continue
     const fromProp =
-      Number(props.resolution)
-      || Number(props.grid_resolution)
-      || Number(props.step)
-      || Number(props.cell_size)
+      Number(props.resolution) ||
+      Number(props.grid_resolution) ||
+      Number(props.step) ||
+      Number(props.cell_size)
     if (Number.isFinite(fromProp) && fromProp > 0) return fromProp
   }
   if (typeof options?.zoom === 'number' && Number.isFinite(options.zoom)) {
     return weatherZoomToResolution(options.zoom)
   }
   const coords = points.map((p) => (axis === 'lon' ? p.lon : p.lat))
-  const unique = Array.from(new Set(coords.map((v) => Math.round(v * 1e6) / 1e6))).sort((a, b) => a - b)
+  const unique = Array.from(new Set(coords.map((v) => Math.round(v * 1e6) / 1e6))).sort(
+    (a, b) => a - b,
+  )
   const gaps = unique.slice(1).map((v, i) => v - unique[i])
   return medianPositive(gaps) ?? 0.25
 }
@@ -101,7 +107,8 @@ export function geojsonPointsToGridCells(
       polygonCount += 1
       continue
     }
-    if (geom.type !== 'Point' || !Array.isArray(geom.coordinates) || geom.coordinates.length < 2) continue
+    if (geom.type !== 'Point' || !Array.isArray(geom.coordinates) || geom.coordinates.length < 2)
+      continue
     const lon = Number(geom.coordinates[0])
     const lat = Number(geom.coordinates[1])
     if (!Number.isFinite(lon) || !Number.isFinite(lat)) continue
@@ -127,8 +134,7 @@ export function geojsonPointsToGridCells(
       Number(props.step) ||
       Number(props.cell_size)
     // 每点用自身分辨率建格元，避免跨赤道父子 z 混用时被首点粗分辨率拉大留下空带
-    const step =
-      Number.isFinite(fromProp) && fromProp > 0 ? fromProp : fallbackStep
+    const step = Number.isFinite(fromProp) && fromProp > 0 ? fromProp : fallbackStep
     const ix = latticeIndex(lon, step)
     const iy = latticeIndex(lat, step)
     const key = `${step}:${ix}:${iy}`
@@ -149,7 +155,7 @@ export function geojsonPointsToGridCells(
     })
   }
 
-  return { type: 'FeatureCollection', features }
+  return { type: 'FeatureCollection', features } as FieldFeatureCollection | WindGeoJSON
 }
 
 /** 连续色场用 GeoJSON：多边形原样；点阵转成网格单元 */
@@ -171,7 +177,7 @@ export function syncWeatherCogOverlay(map: MapInstance, overlayState: WeatherOve
     (tick: number | string): tick is number => typeof tick === 'number',
   )
   const minValue = ticks[0] ?? 0
-  const maxValue = ticks[ticks.length - 1] ?? (minValue + 1)
+  const maxValue = ticks[ticks.length - 1] ?? minValue + 1
   const previewUrl = `${overlayState.cogPreviewUrl}?palette=${encodeURIComponent(overlayState.renderHint.palette)}&min_value=${minValue}&max_value=${maxValue}&width=768&height=768`
   const coordinates = [
     [overlayState.cogBbox.west, overlayState.cogBbox.north],
@@ -219,9 +225,10 @@ export function syncWeatherGridFillOverlay(map: MapInstance, overlayState: Weath
   const rawSource = overlayState.geojsonData ?? overlayState.geojsonUrl
   if (!rawSource) return
   const zoom = typeof map.getZoom === 'function' ? map.getZoom() : undefined
-  const geojsonSource = typeof rawSource === 'string'
-    ? rawSource
-    : prepareContinuousFieldGeojson(rawSource as FieldFeatureCollection | WindGeoJSON, { zoom })
+  const geojsonSource =
+    typeof rawSource === 'string'
+      ? rawSource
+      : prepareContinuousFieldGeojson(rawSource as FieldFeatureCollection | WindGeoJSON, { zoom })
 
   if (!geojsonSource) return
 
@@ -238,7 +245,10 @@ export function syncWeatherGridFillOverlay(map: MapInstance, overlayState: Weath
   if (map.getSource(ids.bloomSourceId)) map.removeSource(ids.bloomSourceId)
 
   const existingSource = map.getSource(ids.sourceId) as GeoJSONSource | undefined
-  const fillOpacity = buildWeatherFillOpacityExpression(overlayState.renderHint, overlayState.opacity)
+  const fillOpacity = buildWeatherFillOpacityExpression(
+    overlayState.renderHint,
+    overlayState.opacity,
+  )
   const fillColor = buildWeatherFillColorExpression(overlayState.renderHint)
 
   if (!existingSource) {
@@ -259,7 +269,9 @@ export function syncWeatherGridFillOverlay(map: MapInstance, overlayState: Weath
         paint: {
           'fill-color': fillColor,
           'fill-opacity': fillOpacity,
-          'fill-antialias': true,
+          // 禁用抗锯齿：相邻网格单元共享边的 AA 会产生细缝，
+          // 多图层叠加时缝障交错尤其明显
+          'fill-antialias': false,
         },
       },
       getWeatherOverlayBeforeLayerId(map),
@@ -360,7 +372,11 @@ export function syncWeatherPointOverlay(map: MapInstance, overlayState: WeatherO
     map.setPaintProperty(ids.pointLayerId, 'circle-radius', pointRadius)
     map.setPaintProperty(ids.pointLayerId, 'circle-color', pointColor)
     map.setPaintProperty(ids.pointLayerId, 'circle-opacity', Math.max(0.18, pointOpacity * 0.52))
-    map.setPaintProperty(ids.pointLayerId, 'circle-stroke-opacity', Math.max(0.18, pointOpacity * 0.7))
+    map.setPaintProperty(
+      ids.pointLayerId,
+      'circle-stroke-opacity',
+      Math.max(0.18, pointOpacity * 0.7),
+    )
   }
   if (map.getLayer(ids.arrowLayerId)) {
     map.setLayoutProperty(ids.arrowLayerId, 'text-size', ['*', 15, arrowSize])

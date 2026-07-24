@@ -20,7 +20,13 @@ class Materializer:
         resolved_target = None if target_dir is None else Path(target_dir)
         if request.materialization_mode == "memory":
             return resource
-        return self.source_registry.materialize(resource) if resolved_target is None else self.source_registry.find_for_uri(resource.uri).adapter.materialize(resource, target_dir=resolved_target)
+        return (
+            self.source_registry.materialize(resource)
+            if resolved_target is None
+            else self.source_registry.find_for_uri(resource.uri).adapter.materialize(
+                resource, target_dir=resolved_target
+            )
+        )
 
     def materialize_many(
         self,
@@ -29,4 +35,7 @@ class Materializer:
         *,
         target_dir: str | Path | None = None,
     ) -> tuple[ResourceRef, ...]:
-        return tuple(self.materialize(request, resource, target_dir=target_dir) for resource in resources)
+        return tuple(
+            self.materialize(request, resource, target_dir=target_dir)
+            for resource in resources
+        )

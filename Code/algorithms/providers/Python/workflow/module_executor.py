@@ -14,7 +14,12 @@ class ModuleNodeExecutor:
     def get_output_ports(self) -> list[PortSpec]:
         return []
 
-    def execute(self, inputs: dict[str, object], params: dict[str, object], ctx: NodeExecutionContext) -> dict[str, object]:
+    def execute(
+        self,
+        inputs: dict[str, object],
+        params: dict[str, object],
+        ctx: NodeExecutionContext,
+    ) -> dict[str, object]:
         module_name = str(params["module_name"])
         module = get_module(module_name)
         resolved_params = module.resolve_params(params)

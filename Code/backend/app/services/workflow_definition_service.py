@@ -3,6 +3,7 @@
 管理系统预设工作流（只读）和用户自定义工作流（可编辑），
 以 JSON 文件形式存储在 .data/workflow_definitions/ 下。
 """
+
 from __future__ import annotations
 
 import json
@@ -27,9 +28,12 @@ class WorkflowNotFoundError(Exception):
 class WorkflowExistsError(Exception):
     """工作流定义已存在（创建时 ID 冲突或并发竞态）。"""
 
+
 # ─── 路径常量 ────────────────────────────────────────────────────────────────
 # 基于 __file__ 解析 backend 根目录，避免依赖 CWD（FastAPI 进程 CWD 可能不是 Code/backend）
-_BACKEND_ROOT = Path(__file__).resolve().parents[2]  # app/services/x.py -> app/services -> app -> backend
+_BACKEND_ROOT = (
+    Path(__file__).resolve().parents[2]
+)  # app/services/x.py -> app/services -> app -> backend
 _data_root_raw = settings.data_root or ".data"
 _data_root = Path(_data_root_raw)
 if not _data_root.is_absolute():
@@ -42,25 +46,52 @@ _USER_DIR = _DEFINITIONS_ROOT / "user"
 _ID_PATTERN = re.compile(r"^[a-zA-Z0-9][a-zA-Z0-9_\-]*$")
 
 
+_SEED_SYSTEM_DIR = _BACKEND_ROOT / "workflow_seeds" / "system"
+
+
+def _sync_system_seeds() -> None:
+    """Copy packaged system workflow templates into the runtime system dir (fill missing only)."""
+    if not _SEED_SYSTEM_DIR.is_dir():
+        return
+    for src in sorted(_SEED_SYSTEM_DIR.glob("*.json")):
+        dest = _SYSTEM_DIR / src.name
+        if dest.exists():
+            continue
+        try:
+            dest.write_text(src.read_text(encoding="utf-8"), encoding="utf-8")
+            logger.info("Seeded system workflow definition: %s", dest.name)
+        except OSError as exc:
+            logger.warning("Failed to seed workflow %s: %s", src.name, exc)
+
+
 def _ensure_dirs() -> None:
-    """确保目录存在。"""
+    """确保目录存在，并同步仓库内 system 种子模板。"""
     _SYSTEM_DIR.mkdir(parents=True, exist_ok=True)
     _USER_DIR.mkdir(parents=True, exist_ok=True)
     (_USER_DIR / ".gitkeep").touch(exist_ok=True)
+    _sync_system_seeds()
 
 
 def _validate_id(workflow_id: str) -> None:
     """校验 workflow_id 格式，防路径穿越。"""
     if not _ID_PATTERN.match(workflow_id):
-        raise ValueError(f"Invalid workflow_id: {workflow_id!r} (allowed: alphanumeric, dash, underscore)")
+        raise ValueError(
+            f"Invalid workflow_id: {workflow_id!r} (allowed: alphanumeric, dash, underscore)"
+        )
 
 
 def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
-def _build_meta(kind: str, engine: str, name: str, description: str | None,
-                author: str = "user", linked_layer_id: str | None = None) -> dict[str, Any]:
+def _build_meta(
+    kind: str,
+    engine: str,
+    name: str,
+    description: str | None,
+    author: str = "user",
+    linked_layer_id: str | None = None,
+) -> dict[str, Any]:
     """构建 _meta 声明头。"""
     return {
         "kind": kind,  # "system" | "user"
@@ -96,11 +127,15 @@ def _read_file(path: Path) -> dict[str, Any]:
     try:
         text = path.read_text(encoding="utf-8")
     except FileNotFoundError as exc:
-        raise WorkflowNotFoundError(f"Workflow definition file disappeared: {path.name}") from exc
+        raise WorkflowNotFoundError(
+            f"Workflow definition file disappeared: {path.name}"
+        ) from exc
     try:
         data = json.loads(text)
         if not isinstance(data, dict):
-            raise ValueError(f"Workflow definition must be a JSON object, got {type(data)}")
+            raise ValueError(
+                f"Workflow definition must be a JSON object, got {type(data)}"
+            )
         return data
     except json.JSONDecodeError as exc:
         raise ValueError(f"Invalid JSON in {path.name}: {exc}") from exc
@@ -165,17 +200,19 @@ def list_definitions() -> list[dict[str, Any]]:
             try:
                 data = _read_file(path)
                 meta = data.get("_meta", {})
-                results.append({
-                    "workflow_id": data.get("workflow_id", path.stem),
-                    "kind": meta.get("kind", default_kind),
-                    "engine": meta.get("engine", "unknown"),
-                    "name": meta.get("name", data.get("workflow_id", path.stem)),
-                    "description": meta.get("description"),
-                    "readonly": meta.get("readonly", default_kind == "system"),
-                    "linked_layer_id": meta.get("linked_layer_id"),
-                    "updated_at": meta.get("updated_at"),
-                    "node_count": len(data.get("nodes", [])),
-                })
+                results.append(
+                    {
+                        "workflow_id": data.get("workflow_id", path.stem),
+                        "kind": meta.get("kind", default_kind),
+                        "engine": meta.get("engine", "unknown"),
+                        "name": meta.get("name", data.get("workflow_id", path.stem)),
+                        "description": meta.get("description"),
+                        "readonly": meta.get("readonly", default_kind == "system"),
+                        "linked_layer_id": meta.get("linked_layer_id"),
+                        "updated_at": meta.get("updated_at"),
+                        "node_count": len(data.get("nodes", [])),
+                    }
+                )
             except Exception as exc:
                 logger.warning("Failed to read workflow definition %s: %s", path, exc)
 
@@ -206,7 +243,9 @@ def create_definition(payload: dict[str, Any]) -> dict[str, Any]:
     # system 定义不会动态创建，预检查安全（无 TOCTOU 风险）
     sys_file = _SYSTEM_DIR / f"{workflow_id}.json"
     if sys_file.exists():
-        raise WorkflowExistsError(f"workflow_id '{workflow_id}' is reserved by system definition")
+        raise WorkflowExistsError(
+            f"workflow_id '{workflow_id}' is reserved by system definition"
+        )
 
     usr_file = _USER_DIR / f"{workflow_id}.json"
 
@@ -304,7 +343,9 @@ def delete_definition(workflow_id: str) -> bool:
     return True
 
 
-def duplicate_definition(source_id: str, new_id: str, new_name: str | None = None) -> dict[str, Any]:
+def duplicate_definition(
+    source_id: str, new_id: str, new_name: str | None = None
+) -> dict[str, Any]:
     """复制现有工作流定义为新的用户工作流。"""
     source = get_definition(source_id)
     if source is None:

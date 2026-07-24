@@ -189,7 +189,9 @@ def test_minio_export_workflow_and_polling_share_same_storage_backend() -> None:
     workflow = WorkflowDefinition(
         workflow_id="export-minio",
         nodes=[
-            NodeSpec(node_id="source", node_type="literal", params={"value": "fake-image"}),
+            NodeSpec(
+                node_id="source", node_type="literal", params={"value": "fake-image"}
+            ),
             NodeSpec(
                 node_id="export",
                 node_type="gee_export_image",
@@ -212,7 +214,9 @@ def test_minio_export_workflow_and_polling_share_same_storage_backend() -> None:
     )
 
     run_result = service.execute_workflow(workflow)
-    poll_result = service.poll_export_task(manifest_uri=run_result.outputs["export.manifest_uri"])
+    poll_result = service.poll_export_task(
+        manifest_uri=run_result.outputs["export.manifest_uri"]
+    )
 
     manifest_key = run_result.outputs["export.manifest_uri"].removeprefix("s3://gee/")
     saved_manifest = json.loads(backend.get(manifest_key).decode("utf-8"))
@@ -238,10 +242,14 @@ def test_poll_export_task_rejects_s3_manifest_bucket_mismatch() -> None:
         service.poll_export_task(manifest_uri="s3://other/exports/submitted.json")
 
 
-def test_poll_export_task_rejects_file_manifest_outside_local_storage_root(tmp_path) -> None:
+def test_poll_export_task_rejects_file_manifest_outside_local_storage_root(
+    tmp_path,
+) -> None:
     storage_root = tmp_path / "storage"
     service = WorkflowService(
-        settings=Settings(storage_backend="local", local_storage_root=str(storage_root)),
+        settings=Settings(
+            storage_backend="local", local_storage_root=str(storage_root)
+        ),
     )
     outside_manifest = tmp_path / "outside.json"
     outside_manifest.write_text(
@@ -259,7 +267,9 @@ def test_poll_export_task_rejects_file_manifest_outside_local_storage_root(tmp_p
         service.poll_export_task(manifest_uri=f"file://{outside_manifest}")
 
 
-def test_poll_export_task_rejects_file_manifest_outside_exports_directory(tmp_path) -> None:
+def test_poll_export_task_rejects_file_manifest_outside_exports_directory(
+    tmp_path,
+) -> None:
     service = WorkflowService(
         settings=Settings(storage_backend="local", local_storage_root=str(tmp_path)),
     )

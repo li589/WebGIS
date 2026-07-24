@@ -1,4 +1,5 @@
 """Convenience download helper used by data_access and source_fetcher wrappers."""
+
 from __future__ import annotations
 
 import hashlib
@@ -25,7 +26,10 @@ def download_remote_uri(
         # Reuse only when remote size matches; otherwise re-download
         try:
             remote_stat = transport.stat(parsed, auth)
-            if remote_stat.size is not None and remote_stat.size == local_path.stat().st_size:
+            if (
+                remote_stat.size is not None
+                and remote_stat.size == local_path.stat().st_size
+            ):
                 return local_path, remote_stat
         except Exception:
             pass

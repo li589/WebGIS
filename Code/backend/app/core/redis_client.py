@@ -87,7 +87,9 @@ def get_redis_client() -> redis.Redis | None:
         return _client
     except Exception as exc:
         _mark_redis_failure(str(exc))
-        logger.warning("[RedisClient] unavailable, falling back to local cache: %s", exc)
+        logger.warning(
+            "[RedisClient] unavailable, falling back to local cache: %s", exc
+        )
         return None
 
 
@@ -155,7 +157,9 @@ def release_dedup_lock(key: str) -> None:
         logger.debug("[RedisClient] release_dedup_lock error for key=%s: %s", key, exc)
 
 
-def wait_for_dedup(key: str, timeout_seconds: float = 30.0, poll_interval: float = 0.5) -> bool:
+def wait_for_dedup(
+    key: str, timeout_seconds: float = 30.0, poll_interval: float = 0.5
+) -> bool:
     """Wait for a dedup lock to be released.
 
     Returns True if the lock was released within the timeout, False otherwise.
@@ -200,9 +204,23 @@ def _normalize_api_pool(pool: str | None) -> str:
 
 
 def _max_concurrent_for_pool(pool: str) -> int:
-    """Open-Meteo（含 base_url / provider id）放宽到 4；其余池保持 2。"""
+    """Open-Meteo（含 base_url / provider id）放宽到 4；其余池保持 2。
+
+    本地 Open-Meteo Docker（http://127.0.0.1:8080）的 base_url 不含
+    "open-meteo" 字符串，需额外匹配 localhost / 127.0.0.1 端口 8080
+    （OPEN_METEO_API_PORT 默认 8080）以及 provider_id 形式的 pool key。
+    """
     lowered = pool.lower()
     if "open-meteo" in lowered or "openmeteo" in lowered:
+        return _MAX_CONCURRENT_API_CALLS_OPEN_METEO
+    # 本地 Docker Open-Meteo API（http://127.0.0.1:8080 或 localhost:8080）
+    # 不限速，放宽并发
+    if (
+        "127.0.0.1:8080" in lowered or "localhost:8080" in lowered
+    ) and "/forecast" in lowered:
+        return _MAX_CONCURRENT_API_CALLS_OPEN_METEO
+    # provider_id 形式的 pool key
+    if "open-meteo-local" in lowered or "open_meteo_local" in lowered:
         return _MAX_CONCURRENT_API_CALLS_OPEN_METEO
     return _MAX_CONCURRENT_API_CALLS_DEFAULT
 
@@ -264,7 +282,9 @@ def acquire_api_slot(timeout: float = 30.0, *, pool: str | None = None) -> bool:
             client.decr(redis_key)
         except redis.RedisError as exc:
             _mark_redis_failure(f"acquire_api_slot:{exc}")
-            return _acquire_local_api_slot(max(0.0, deadline - time.monotonic()), pool_key)
+            return _acquire_local_api_slot(
+                max(0.0, deadline - time.monotonic()), pool_key
+            )
         time.sleep(0.5)
     return False
 
@@ -377,16 +397,18 @@ def get_metrics_summary(date_str: str | None = None) -> dict[str, Any]:
             p50 = timings[int(count * 0.5)]
             p95 = timings[min(int(count * 0.95), count - 1)]
             avg = sum(timings) / count
-            endpoints.append({
-                "method": method,
-                "path": path,
-                "count": count,
-                "p50_ms": round(p50, 1),
-                "p95_ms": round(p95, 1),
-                "avg_ms": round(avg, 1),
-                "min_ms": round(timings[0], 1),
-                "max_ms": round(timings[-1], 1),
-            })
+            endpoints.append(
+                {
+                    "method": method,
+                    "path": path,
+                    "count": count,
+                    "p50_ms": round(p50, 1),
+                    "p95_ms": round(p95, 1),
+                    "avg_ms": round(avg, 1),
+                    "min_ms": round(timings[0], 1),
+                    "max_ms": round(timings[-1], 1),
+                }
+            )
         endpoints.sort(key=lambda e: e["p95_ms"], reverse=True)
         _mark_redis_success()
         return {

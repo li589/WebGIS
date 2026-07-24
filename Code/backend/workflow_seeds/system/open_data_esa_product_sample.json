@@ -1,0 +1,57 @@
+{
+  "_meta": {
+    "kind": "system",
+    "engine": "common",
+    "name": "欧空局产品下载样例（SAFE/ZIP）",
+    "description": "目的：经 Copernicus 下载 CDN 拉取产品包并识别 Sentinel SAFE。前置：设置页 copernicus 凭证（或 BACKEND_COPERNICUS_TOKEN）。使用前替换 relative_path。产出：SAFE 根目录（若存在）或解压目录。",
+    "author": "system",
+    "readonly": true,
+    "is_template": true,
+    "linked_layer_id": "remote-sensing"
+  },
+  "workflow_id": "open_data_esa_product_sample",
+  "name": "欧空局产品下载样例（SAFE/ZIP）",
+  "description": "esa_download + copernicus 凭证 → archive_extract（SAFE 识别）。",
+  "nodes": [
+    {
+      "id": 1,
+      "type": "download/http_open_data",
+      "pos": [100, 140],
+      "properties": {
+        "preset": "esa_download",
+        "relative_path": "REPLACE_WITH_COPERNICUS_PRODUCT_PATH",
+        "cred_profile": "copernicus",
+        "force_refresh": false
+      }
+    },
+    {
+      "id": 2,
+      "type": "archive/extract",
+      "pos": [420, 140],
+      "properties": {
+        "member_glob": "",
+        "recurse_once": true,
+        "output_dirname": "esa_extracted"
+      }
+    },
+    {
+      "id": 3,
+      "type": "output/map_layer",
+      "pos": [740, 140],
+      "properties": {
+        "layer_id": "remote-sensing",
+        "title": "ESA product extract"
+      }
+    }
+  ],
+  "links": [
+    {"0": 1, "1": 1, "2": 0, "3": 2, "4": 0, "5": "value:string"},
+    {"0": 2, "1": 2, "2": 0, "3": 3, "4": 0, "5": "value:string"}
+  ],
+  "extra": {
+    "purpose": "open_portal_sample",
+    "portal": "esa_download",
+    "cred_profile": "copernicus",
+    "notes": "esa_copernicus 为目录/检索 base；实际文件下载用 esa_download。Sentinel 在线即时出图也可走 GEE 遥感反演图层。"
+  }
+}

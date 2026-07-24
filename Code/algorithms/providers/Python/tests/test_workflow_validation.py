@@ -9,15 +9,30 @@ from modules.base import BaseModule
 from modules.registry import MODULE_ALIASES, MODULE_REGISTRY, register_module
 from pipelines.base import BasePipeline, PipelinePlan
 from runner.registry import PIPELINE_REGISTRY, register_pipeline
-from workflow.graph import WorkflowDefinition, WorkflowEdge, WorkflowNodeSpec, WorkflowOutputSpec
+from workflow.graph import (
+    WorkflowDefinition,
+    WorkflowEdge,
+    WorkflowNodeSpec,
+    WorkflowOutputSpec,
+)
 from workflow.schemas import PortSpec
 from workflow.template_inference import infer_workflow_request_template
-from workflow.validation import WorkflowDefinitionValidationError, validate_workflow_definition
+from workflow.validation import (
+    WorkflowDefinitionValidationError,
+    validate_workflow_definition,
+)
 
 
 class _ValidationModule(BaseModule):
     name = "validation_module"
-    input_ports = [PortSpec(name="input_value", kind="scalar", data_class="python_object", required=False)]
+    input_ports = [
+        PortSpec(
+            name="input_value",
+            kind="scalar",
+            data_class="python_object",
+            required=False,
+        )
+    ]
     output_ports = [
         PortSpec(name="manifest", kind="artifact", data_class="product_manifest"),
         PortSpec(name="output_value", kind="scalar", data_class="python_object"),
@@ -64,7 +79,11 @@ class WorkflowValidationTests(unittest.TestCase):
         definition = WorkflowDefinition(
             workflow_id="wf-invalid-node-type",
             nodes=[WorkflowNodeSpec(node_id="bad_node", node_type="test.missing")],
-            outputs=[WorkflowOutputSpec(name="final_manifest", source="node:bad_node.manifest")],
+            outputs=[
+                WorkflowOutputSpec(
+                    name="final_manifest", source="node:bad_node.manifest"
+                )
+            ],
         )
 
         with self.assertRaises(WorkflowDefinitionValidationError) as ctx:
@@ -72,7 +91,9 @@ class WorkflowValidationTests(unittest.TestCase):
 
         self.assertIn("Node executor not registered", str(ctx.exception))
 
-    def test_validate_workflow_definition_rejects_unsupported_request_binding(self) -> None:
+    def test_validate_workflow_definition_rejects_unsupported_request_binding(
+        self,
+    ) -> None:
         definition = WorkflowDefinition(
             workflow_id="wf-invalid-request-binding",
             nodes=[
@@ -83,7 +104,11 @@ class WorkflowValidationTests(unittest.TestCase):
                     params={"module_name": "validation_module"},
                 )
             ],
-            outputs=[WorkflowOutputSpec(name="final_manifest", source="node:module_node.manifest")],
+            outputs=[
+                WorkflowOutputSpec(
+                    name="final_manifest", source="node:module_node.manifest"
+                )
+            ],
         )
 
         with self.assertRaises(WorkflowDefinitionValidationError) as ctx:
@@ -91,12 +116,22 @@ class WorkflowValidationTests(unittest.TestCase):
 
         self.assertIn("unsupported request binding", str(ctx.exception))
 
-    def test_validate_workflow_definition_rejects_unknown_edge_target_port(self) -> None:
+    def test_validate_workflow_definition_rejects_unknown_edge_target_port(
+        self,
+    ) -> None:
         definition = WorkflowDefinition(
             workflow_id="wf-invalid-edge-port",
             nodes=[
-                WorkflowNodeSpec(node_id="source_node", node_type="module", params={"module_name": "validation_module"}),
-                WorkflowNodeSpec(node_id="target_node", node_type="module", params={"module_name": "validation_module"}),
+                WorkflowNodeSpec(
+                    node_id="source_node",
+                    node_type="module",
+                    params={"module_name": "validation_module"},
+                ),
+                WorkflowNodeSpec(
+                    node_id="target_node",
+                    node_type="module",
+                    params={"module_name": "validation_module"},
+                ),
             ],
             edges=[
                 WorkflowEdge(
@@ -106,7 +141,11 @@ class WorkflowValidationTests(unittest.TestCase):
                     to_port="missing_input",
                 )
             ],
-            outputs=[WorkflowOutputSpec(name="final_manifest", source="node:target_node.manifest")],
+            outputs=[
+                WorkflowOutputSpec(
+                    name="final_manifest", source="node:target_node.manifest"
+                )
+            ],
         )
 
         with self.assertRaises(WorkflowDefinitionValidationError) as ctx:
@@ -114,11 +153,23 @@ class WorkflowValidationTests(unittest.TestCase):
 
         self.assertIn("unknown input port", str(ctx.exception))
 
-    def test_validate_workflow_definition_rejects_unknown_output_source_port(self) -> None:
+    def test_validate_workflow_definition_rejects_unknown_output_source_port(
+        self,
+    ) -> None:
         definition = WorkflowDefinition(
             workflow_id="wf-invalid-output-source",
-            nodes=[WorkflowNodeSpec(node_id="module_node", node_type="module", params={"module_name": "validation_module"})],
-            outputs=[WorkflowOutputSpec(name="final_manifest", source="node:module_node.missing_output")],
+            nodes=[
+                WorkflowNodeSpec(
+                    node_id="module_node",
+                    node_type="module",
+                    params={"module_name": "validation_module"},
+                )
+            ],
+            outputs=[
+                WorkflowOutputSpec(
+                    name="final_manifest", source="node:module_node.missing_output"
+                )
+            ],
         )
 
         with self.assertRaises(WorkflowDefinitionValidationError) as ctx:
@@ -130,14 +181,34 @@ class WorkflowValidationTests(unittest.TestCase):
         definition = WorkflowDefinition(
             workflow_id="wf-cycle",
             nodes=[
-                WorkflowNodeSpec(node_id="node_a", node_type="module", params={"module_name": "validation_module"}),
-                WorkflowNodeSpec(node_id="node_b", node_type="module", params={"module_name": "validation_module"}),
+                WorkflowNodeSpec(
+                    node_id="node_a",
+                    node_type="module",
+                    params={"module_name": "validation_module"},
+                ),
+                WorkflowNodeSpec(
+                    node_id="node_b",
+                    node_type="module",
+                    params={"module_name": "validation_module"},
+                ),
             ],
             edges=[
-                WorkflowEdge(from_node="node_a", from_port="output_value", to_node="node_b", to_port="input_value"),
-                WorkflowEdge(from_node="node_b", from_port="output_value", to_node="node_a", to_port="input_value"),
+                WorkflowEdge(
+                    from_node="node_a",
+                    from_port="output_value",
+                    to_node="node_b",
+                    to_port="input_value",
+                ),
+                WorkflowEdge(
+                    from_node="node_b",
+                    from_port="output_value",
+                    to_node="node_a",
+                    to_port="input_value",
+                ),
             ],
-            outputs=[WorkflowOutputSpec(name="final_manifest", source="node:node_a.manifest")],
+            outputs=[
+                WorkflowOutputSpec(name="final_manifest", source="node:node_a.manifest")
+            ],
         )
 
         with self.assertRaises(WorkflowDefinitionValidationError) as ctx:
@@ -145,7 +216,9 @@ class WorkflowValidationTests(unittest.TestCase):
 
         self.assertIn("cycle", str(ctx.exception).lower())
 
-    def test_validate_workflow_definition_rejects_missing_bridge_param_binding_input(self) -> None:
+    def test_validate_workflow_definition_rejects_missing_bridge_param_binding_input(
+        self,
+    ) -> None:
         definition = WorkflowDefinition(
             workflow_id="wf-bridge-missing-binding",
             nodes=[
@@ -158,7 +231,11 @@ class WorkflowValidationTests(unittest.TestCase):
                     },
                 )
             ],
-            outputs=[WorkflowOutputSpec(name="final_manifest", source="node:bridge_node.manifest")],
+            outputs=[
+                WorkflowOutputSpec(
+                    name="final_manifest", source="node:bridge_node.manifest"
+                )
+            ],
         )
 
         with self.assertRaises(WorkflowDefinitionValidationError) as ctx:
@@ -167,7 +244,9 @@ class WorkflowValidationTests(unittest.TestCase):
         self.assertIn("dynamic_source", str(ctx.exception))
         self.assertIn("required input port not bound", str(ctx.exception).lower())
 
-    def test_validate_workflow_definition_accepts_bridge_param_binding_input(self) -> None:
+    def test_validate_workflow_definition_accepts_bridge_param_binding_input(
+        self,
+    ) -> None:
         definition = WorkflowDefinition(
             workflow_id="wf-bridge-bound-input",
             nodes=[
@@ -181,14 +260,20 @@ class WorkflowValidationTests(unittest.TestCase):
                     },
                 )
             ],
-            outputs=[WorkflowOutputSpec(name="final_manifest", source="node:bridge_node.manifest")],
+            outputs=[
+                WorkflowOutputSpec(
+                    name="final_manifest", source="node:bridge_node.manifest"
+                )
+            ],
         )
 
         validated = validate_workflow_definition(definition)
 
         self.assertIs(validated, definition)
 
-    def test_infer_workflow_request_template_collects_input_and_request_bindings(self) -> None:
+    def test_infer_workflow_request_template_collects_input_and_request_bindings(
+        self,
+    ) -> None:
         definition = WorkflowDefinition(
             workflow_id="wf-template",
             name="wf-template",
@@ -210,7 +295,11 @@ class WorkflowValidationTests(unittest.TestCase):
                     params={"module_name": "validation_module"},
                 ),
             ],
-            outputs=[WorkflowOutputSpec(name="final_manifest", source="node:module_node.manifest")],
+            outputs=[
+                WorkflowOutputSpec(
+                    name="final_manifest", source="node:module_node.manifest"
+                )
+            ],
         )
 
         template = infer_workflow_request_template(definition)

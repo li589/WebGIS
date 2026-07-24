@@ -685,15 +685,23 @@ mat2py/
 - `ingest/mat_bundle.py`
 - `ingest/daily_bundle.py`
 - `ingest/timeseries_bundle.py`
+- `ingest/ndvi_hdf_preprocess.py`（Matlab **A1/A2**：VNP13C1/MOYD13C1 → 9 km TIF）
 - `algorithms/physics.py`
 - `algorithms/inversion.py`
 - `algorithms/block_inversion.py`
 - `algorithms/omega.py`
+- `algorithms/omega_avg.py`（Matlab **D2**）
+- `modules/ndvi_hdf_preprocess.py`
+- `modules/omega_avg_daily.py`
 - `pipelines/daily_bundle_products.py`
 - `pipelines/timeseries_bundle_products.py`
 - `pipelines/block_inversion_products.py`
 - `pipelines/omega_block_products.py`
 - `pipelines/retrieval_workflow_products.py`
+
+**A4/A5**：仍嵌在 `ndvi_daily`（日插值与气候态差分/质量产物），未单独拆入口；需要时可后续加可选 module。
+
+**SG polyorder**：Matlab 历史默认 6；Python `algorithms/ndvi.py` 与模块/pipeline 默认 **3**（见 `regression_checklist.md` §2.9）。
 
 ### 8.2 当前已注册的 pipeline
 

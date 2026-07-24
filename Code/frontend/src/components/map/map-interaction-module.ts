@@ -28,7 +28,16 @@ interface CreateMapInteractionModuleOptions {
 }
 
 interface RegisteredEventHandler {
-  event: 'movestart' | 'move' | 'moveend' | 'zoomstart' | 'zoom' | 'zoomend' | 'resize' | 'render' | 'click'
+  event:
+    | 'movestart'
+    | 'move'
+    | 'moveend'
+    | 'zoomstart'
+    | 'zoom'
+    | 'zoomend'
+    | 'resize'
+    | 'render'
+    | 'click'
   handler: (...args: any[]) => void
 }
 
@@ -64,7 +73,10 @@ export function createMapInteractionModule(
     }
   }
 
-  function on<T extends RegisteredEventHandler['event']>(event: T, handler: (...args: any[]) => void) {
+  function on<T extends RegisteredEventHandler['event']>(
+    event: T,
+    handler: (...args: any[]) => void,
+  ) {
     options.map.on(event, handler)
     registeredHandlers.push({ event, handler })
   }

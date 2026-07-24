@@ -38,7 +38,9 @@ class ProviderFrontendCompatTests(unittest.TestCase):
 
     def _find_map_layer_inline_data(self, result_refs) -> dict | None:
         for ref in result_refs:
-            ref_dict = ref.model_dump(mode="json") if hasattr(ref, "model_dump") else dict(ref)
+            ref_dict = (
+                ref.model_dump(mode="json") if hasattr(ref, "model_dump") else dict(ref)
+            )
             if ref_dict.get("result_kind") != "map_layer":
                 continue
             inline_data = ref_dict.get("inline_data") or {}

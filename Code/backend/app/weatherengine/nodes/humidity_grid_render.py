@@ -11,7 +11,11 @@ from app.workflow_engine.models import (
     NodeSpec,
     PortSpec,
 )
-from app.weatherengine.nodes._utils import coerce_float, get_weather_engine_service, resolve_bbox
+from app.weatherengine.nodes._utils import (
+    coerce_float,
+    get_weather_engine_service,
+    resolve_bbox,
+)
 from shared.contracts.api_contracts import ResultKind, WeatherPointResponse
 
 logger = logging.getLogger(__name__)
@@ -20,6 +24,7 @@ logger = logging.getLogger(__name__)
 def _get_result_storage_service():
     """延迟导入 result_storage_service，避免循环导入。"""
     from app.services.result_storage import result_storage_service
+
     return result_storage_service
 
 
@@ -38,7 +43,9 @@ class HumidityGridRenderNode(BaseNode):
                 return NodeExecutionResult(
                     node_id=self.spec.node_id,
                     status=RunStatus.failed,
-                    warnings=["HumidityGridRenderNode 缺少必需输入: latitude/longitude"],
+                    warnings=[
+                        "HumidityGridRenderNode 缺少必需输入: latitude/longitude"
+                    ],
                 )
 
             # 获取 layer_id
@@ -56,7 +63,8 @@ class HumidityGridRenderNode(BaseNode):
                 )
                 logger.info(
                     "[HumidityGridRenderNode] Built from grid data: layer=%s features=%d",
-                    layer_id, len(geojson.get("features", [])),
+                    layer_id,
+                    len(geojson.get("features", [])),
                 )
             else:
                 # 降级：使用单点数据 + 模拟算法
@@ -73,7 +81,8 @@ class HumidityGridRenderNode(BaseNode):
                 geojson = weather_engine_service.build_humidity_geojson(weather, bbox)
                 logger.info(
                     "[HumidityGridRenderNode] Built from point data (fallback): layer=%s features=%d",
-                    layer_id, len(geojson.get("features", [])),
+                    layer_id,
+                    len(geojson.get("features", [])),
                 )
 
             # 将 GeoJSON 存储为 artifact，使前端可通过 /artifacts/{id} 访问
@@ -82,6 +91,7 @@ class HumidityGridRenderNode(BaseNode):
             artifact = None
             try:
                 from datetime import datetime, timezone
+
                 artifact_ref = storage.create_artifact_result_ref(
                     run_id=run_id,
                     result_id=f"humidity-geojson-{self.spec.node_id}",
@@ -121,15 +131,44 @@ class HumidityGridRenderNode(BaseNode):
             node_id=HumidityGridRenderNode.node_type,
             node_type=HumidityGridRenderNode.node_type,
             input_ports=[
-                PortSpec(name="grid_data", kind=PortKind.data, required=False, description="上游 GridFetchNode 输出的网格化天气数据，优先使用"),
-                PortSpec(name="weather_point", kind=PortKind.data, required=False, description="上游 PointParseNode 输出的天气点位数据，未提供且无 grid_data 时使用"),
+                PortSpec(
+                    name="grid_data",
+                    kind=PortKind.data,
+                    required=False,
+                    description="上游 GridFetchNode 输出的网格化天气数据，优先使用",
+                ),
+                PortSpec(
+                    name="weather_point",
+                    kind=PortKind.data,
+                    required=False,
+                    description="上游 PointParseNode 输出的天气点位数据，未提供且无 grid_data 时使用",
+                ),
                 PortSpec(name="latitude", kind=PortKind.value, description="中心纬度"),
                 PortSpec(name="longitude", kind=PortKind.value, description="中心经度"),
-                PortSpec(name="layer_id", kind=PortKind.value, required=False, description="图层类型"),
-                PortSpec(name="viewport_bbox", kind=PortKind.data, required=False, description="视口边界框"),
-                PortSpec(name="bbox", kind=PortKind.data, required=False, description="空间过滤器边界框"),
+                PortSpec(
+                    name="layer_id",
+                    kind=PortKind.value,
+                    required=False,
+                    description="图层类型",
+                ),
+                PortSpec(
+                    name="viewport_bbox",
+                    kind=PortKind.data,
+                    required=False,
+                    description="视口边界框",
+                ),
+                PortSpec(
+                    name="bbox",
+                    kind=PortKind.data,
+                    required=False,
+                    description="空间过滤器边界框",
+                ),
             ],
             output_ports=[
-                PortSpec(name="geojson", kind=PortKind.geojson, description="湿度网格 GeoJSON FeatureCollection"),
+                PortSpec(
+                    name="geojson",
+                    kind=PortKind.geojson,
+                    description="湿度网格 GeoJSON FeatureCollection",
+                ),
             ],
         )

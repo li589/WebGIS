@@ -61,7 +61,8 @@ watch(
   (v) => {
     if (v) {
       loadCrsOptions()
-      selectedCrs.value = props.detectionResult.suggested_crs || props.detectionResult.source_crs || 'EPSG:4326'
+      selectedCrs.value =
+        props.detectionResult.suggested_crs || props.detectionResult.source_crs || 'EPSG:4326'
       lngOffset.value = 0
       latOffset.value = 0
     }
@@ -92,10 +93,20 @@ const previewValid = computed(() => {
   if (!b) return false
   const [w, s, e, n] = b
   return (
-    Number.isFinite(w) && Number.isFinite(s) && Number.isFinite(e) && Number.isFinite(n) &&
-    w >= -180 && w <= 180 && e >= -180 && e <= 180 &&
-    s >= -90 && s <= 90 && n >= -90 && n <= 90 &&
-    w < e && s < n
+    Number.isFinite(w) &&
+    Number.isFinite(s) &&
+    Number.isFinite(e) &&
+    Number.isFinite(n) &&
+    w >= -180 &&
+    w <= 180 &&
+    e >= -180 &&
+    e <= 180 &&
+    s >= -90 &&
+    s <= 90 &&
+    n >= -90 &&
+    n <= 90 &&
+    w < e &&
+    s < n
   )
 })
 
@@ -107,7 +118,7 @@ function formatNum(n: number, digits = 4): string {
   return n.toFixed(digits)
 }
 
-function formatBounds(b: [number, number, number, number] | null): string {
+function formatBounds(b: [number, number, number, number] | null | undefined): string {
   if (!b) return '—'
   return `[${formatNum(b[0])}, ${formatNum(b[1])}, ${formatNum(b[2])}, ${formatNum(b[3])}]`
 }
@@ -119,10 +130,6 @@ function handleConfirm() {
     lngOffset: lngOffset.value,
     latOffset: latOffset.value,
   })
-}
-
-function handleSkip() {
-  emit('skip')
 }
 
 function handleCancel() {
@@ -159,7 +166,9 @@ function handleCancel() {
         <div class="info-line">
           <span class="info-key">原始 bounds</span>
           <span class="info-value mono">{{ formatBounds(detectionResult.bounds) }}</span>
-          <span class="info-unit" v-if="detectionResult.source_crs">（在 {{ detectionResult.source_crs }} 下）</span>
+          <span class="info-unit" v-if="detectionResult.source_crs"
+            >（在 {{ detectionResult.source_crs }} 下）</span
+          >
         </div>
       </div>
 
@@ -206,14 +215,17 @@ function handleCancel() {
         </div>
         <div class="preview-value mono">{{ formatBounds(previewBounds) }}</div>
         <div class="preview-hint">
-          路径：{{ selectedCrs }} → WGS84（transformBounds）→ +offset({{ formatNum(lngOffset, 3) }}, {{ formatNum(latOffset, 3) }})
+          路径：{{ selectedCrs }} → WGS84（transformBounds）→ +offset({{ formatNum(lngOffset, 3) }},
+          {{ formatNum(latOffset, 3) }})
         </div>
       </div>
 
       <!-- 区块 3：操作按钮 -->
       <div class="action-row">
         <button class="cancel-btn" :disabled="isBusy" @click="handleCancel">取消</button>
-        <button class="skip-btn" :disabled="isBusy" title="使用建议 CRS + 0 偏移">跳过（用建议值）</button>
+        <button class="skip-btn" :disabled="isBusy" title="使用建议 CRS + 0 偏移">
+          跳过（用建议值）
+        </button>
         <button class="confirm-btn" :disabled="!previewValid || isBusy" @click="handleConfirm">
           确认转换
         </button>
@@ -259,7 +271,10 @@ function handleCancel() {
   font-weight: 600;
 }
 
-.panel-icon { font-size: 0.8rem; color: #5ad5ff; }
+.panel-icon {
+  font-size: 0.8rem;
+  color: #5ad5ff;
+}
 
 .close-btn {
   margin-left: auto;
@@ -272,8 +287,14 @@ function handleCancel() {
   cursor: pointer;
   font-size: 0.7rem;
 }
-.close-btn:hover:not(:disabled) { background: rgba(136, 192, 255, 0.1); color: #d8e6f5; }
-.close-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+.close-btn:hover:not(:disabled) {
+  background: rgba(136, 192, 255, 0.1);
+  color: #d8e6f5;
+}
+.close-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
 
 .section-label {
   color: #5a7080;
@@ -312,9 +333,18 @@ function handleCancel() {
   word-break: break-all;
 }
 
-.info-value.notes { color: #9fb6cc; font-style: italic; }
-.info-value.mono { font-variant-numeric: tabular-nums; color: #5ad5ff; }
-.info-unit { color: #5a7080; font-size: 0.54rem; }
+.info-value.notes {
+  color: #9fb6cc;
+  font-style: italic;
+}
+.info-value.mono {
+  font-variant-numeric: tabular-nums;
+  color: #5ad5ff;
+}
+.info-unit {
+  color: #5a7080;
+  font-size: 0.54rem;
+}
 
 .crs-badge {
   display: inline-block;
@@ -342,7 +372,9 @@ function handleCancel() {
   min-width: 7rem;
 }
 
-.crs-field { flex: 1.4; }
+.crs-field {
+  flex: 1.4;
+}
 
 .col-label {
   color: #8aa8bf;
@@ -361,7 +393,9 @@ function handleCancel() {
   cursor: pointer;
 }
 
-.col-input { cursor: text; }
+.col-input {
+  cursor: text;
+}
 
 .col-select:focus,
 .col-input:focus {
@@ -392,7 +426,11 @@ function handleCancel() {
   gap: 0.42rem;
 }
 
-.preview-warn { color: #ffb070; font-weight: 400; font-size: 0.54rem; }
+.preview-warn {
+  color: #ffb070;
+  font-weight: 400;
+  font-size: 0.54rem;
+}
 
 .preview-value {
   color: #5ad5ff;
@@ -407,7 +445,9 @@ function handleCancel() {
   margin-top: 0.22rem;
 }
 
-.mono { font-variant-numeric: tabular-nums; }
+.mono {
+  font-variant-numeric: tabular-nums;
+}
 
 /* 区块 3：操作按钮 */
 .action-row {
@@ -430,21 +470,30 @@ function handleCancel() {
 
 .cancel-btn:disabled,
 .skip-btn:disabled,
-.confirm-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+.confirm-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
 
 .cancel-btn {
   border: 1px solid rgba(136, 192, 255, 0.16);
   background: transparent;
   color: #9fb6cc;
 }
-.cancel-btn:hover:not(:disabled) { background: rgba(136, 192, 255, 0.08); color: #d8e6f5; }
+.cancel-btn:hover:not(:disabled) {
+  background: rgba(136, 192, 255, 0.08);
+  color: #d8e6f5;
+}
 
 .skip-btn {
   border: 1px solid rgba(255, 200, 120, 0.22);
   background: rgba(255, 200, 120, 0.06);
   color: #ffc878;
 }
-.skip-btn:hover:not(:disabled) { background: rgba(255, 200, 120, 0.14); color: #ffe0a8; }
+.skip-btn:hover:not(:disabled) {
+  background: rgba(255, 200, 120, 0.14);
+  color: #ffe0a8;
+}
 
 .confirm-btn {
   border: 1px solid rgba(90, 213, 255, 0.3);
@@ -452,5 +501,8 @@ function handleCancel() {
   color: #a8e8ff;
   font-weight: 600;
 }
-.confirm-btn:hover:not(:disabled) { background: rgba(10, 132, 255, 0.48); color: #d0f0ff; }
+.confirm-btn:hover:not(:disabled) {
+  background: rgba(10, 132, 255, 0.48);
+  color: #d0f0ff;
+}
 </style>

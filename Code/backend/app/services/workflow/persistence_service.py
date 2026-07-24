@@ -4,11 +4,11 @@ Handles repository persistence (save_run_status, append_event) and event/diagnos
 construction. Extracted from interaction_hub.py to separate storage concerns from
 orchestration logic.
 """
+
 from __future__ import annotations
 
 from datetime import datetime, timezone
 import logging
-from typing import Any
 from uuid import uuid4
 
 from app.services.workflow_repository import SQLiteWorkflowRepository
@@ -39,7 +39,9 @@ class WorkflowPersistenceService:
         request_json: str | None = None,
         run_class: str | None = None,
     ) -> None:
-        self._repository.save_run(run_status, request_json=request_json, run_class=run_class)
+        self._repository.save_run(
+            run_status, request_json=request_json, run_class=run_class
+        )
 
     def record_event(
         self,
@@ -55,7 +57,9 @@ class WorkflowPersistenceService:
     ) -> None:
         if event is None:
             if run_id is None or channel is None or message is None:
-                raise ValueError("run_id, channel and message are required when event is not provided")
+                raise ValueError(
+                    "run_id, channel and message are required when event is not provided"
+                )
             event = self.make_event(
                 run_id=run_id,
                 channel=channel,
@@ -78,7 +82,9 @@ class WorkflowPersistenceService:
         level: LogLevel | str = LogLevel.info,
         created_at: datetime | None = None,
     ) -> WorkflowEvent:
-        resolved_channel = channel if isinstance(channel, EventChannel) else EventChannel(channel)
+        resolved_channel = (
+            channel if isinstance(channel, EventChannel) else EventChannel(channel)
+        )
         resolved_level = level if isinstance(level, LogLevel) else LogLevel(level)
         return WorkflowEvent(
             event_id=f"evt-{uuid4().hex[:10]}",
@@ -111,7 +117,9 @@ class WorkflowPersistenceService:
 
         explicit_datasets = resolution.get("explicit_data_access_datasets")
         if isinstance(explicit_datasets, list) and explicit_datasets:
-            diagnostics.append(f"validation_explicit_data_access_datasets={'|'.join(str(item) for item in explicit_datasets)}")
+            diagnostics.append(
+                f"validation_explicit_data_access_datasets={'|'.join(str(item) for item in explicit_datasets)}"
+            )
 
         unresolved_datasets = resolution.get("unresolved_default_datasets")
         if isinstance(unresolved_datasets, list):

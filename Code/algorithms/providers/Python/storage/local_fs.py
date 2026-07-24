@@ -6,7 +6,6 @@
 
 from __future__ import annotations
 
-import os
 from pathlib import Path
 
 from storage.base import StorageBackend
@@ -69,7 +68,9 @@ class LocalFileSystemStorage(StorageBackend):
         Returns:
             规范化后的路径字符串
         """
-        joined = "/".join(p.strip("/").replace("\\", "/") for p in parts if p.strip("/"))
+        joined = "/".join(
+            p.strip("/").replace("\\", "/") for p in parts if p.strip("/")
+        )
         return joined
 
     def exists(self, path: str) -> bool:

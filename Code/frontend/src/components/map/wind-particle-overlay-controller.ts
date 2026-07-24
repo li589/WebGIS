@@ -73,7 +73,12 @@ export class WindParticleOverlayController {
   }
 
   reset(options?: { invalidatePendingFetch?: boolean }) {
-    debugLog('WindParticleController', 'reset', 'invalidatePendingFetch', options?.invalidatePendingFetch)
+    debugLog(
+      'WindParticleController',
+      'reset',
+      'invalidatePendingFetch',
+      options?.invalidatePendingFetch,
+    )
     if (options?.invalidatePendingFetch !== false) {
       this.windParticleFetchToken++
       this.abortPendingGeojsonFetch()
@@ -136,10 +141,12 @@ export class WindParticleOverlayController {
 
     if (!this.stillCurrent(options, catalogId)) return
 
-    const inlineGeojson = (overlayState.geojsonData && typeof overlayState.geojsonData === 'object'
-      && 'features' in overlayState.geojsonData)
-      ? overlayState.geojsonData as WindGeoJSON
-      : null
+    const inlineGeojson =
+      overlayState.geojsonData &&
+      typeof overlayState.geojsonData === 'object' &&
+      'features' in overlayState.geojsonData
+        ? (overlayState.geojsonData as WindGeoJSON)
+        : null
 
     // 视口切换后 merge 可能短暂为 null：清掉旧画面，等待新瓦片，避免旧区域「粘住」
     if (!inlineGeojson && !overlayState.geojsonUrl) {
@@ -172,7 +179,7 @@ export class WindParticleOverlayController {
       try {
         const resp = await fetch(overlayState.geojsonUrl, { signal: abort.signal })
         if (!resp.ok) throw new Error(`wind geojson ${resp.status}`)
-        geojson = await resp.json() as WindGeoJSON
+        geojson = (await resp.json()) as WindGeoJSON
       } catch (err) {
         if ((err as Error)?.name === 'AbortError') return
         debugLog('WindParticleController', 'fetch failed', err)
@@ -214,11 +221,11 @@ export class WindParticleOverlayController {
 
     // 粒子/流量场：不叠风速底色；数据未变且层已就绪时可跳过
     if (
-      !dataChanged
-      && !modeChanged
-      && hasVisualLayer
-      && this.windContourLayer
-      && (!enableBarbLayer || this.windBarbLayer)
+      !dataChanged &&
+      !modeChanged &&
+      hasVisualLayer &&
+      this.windContourLayer &&
+      (!enableBarbLayer || this.windBarbLayer)
     ) {
       return
     }

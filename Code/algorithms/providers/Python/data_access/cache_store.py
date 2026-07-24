@@ -28,11 +28,23 @@ class CacheStore:
         self.root_dir.mkdir(parents=True, exist_ok=True)
 
     def build_cache_key(self, resource: ResourceRef) -> str:
-        digest = sha256(resource.uri.encode("utf-8")).hexdigest()
+        # Prefer HTTP-aware key when headers are present (align with HttpSource)
+        headers = {}
+        raw = (resource.metadata or {}).get("http_headers")
+        if isinstance(raw, dict):
+            headers = {
+                str(k): str(v) for k, v in raw.items() if str(k).strip() and str(v)
+            }
+        if headers:
+            from data_access.sources.http import build_http_cache_key
+
+            key = build_http_cache_key(resource.uri, headers)
+        else:
+            key = sha256(resource.uri.encode("utf-8")).hexdigest()
         suffix = ""
         if resource.format:
             suffix = f".{resource.format}"
-        return f"{digest}{suffix}"
+        return f"{key}{suffix}"
 
     def resolve_cache_path(self, resource: ResourceRef) -> Path:
         return self.root_dir / self.build_cache_key(resource)

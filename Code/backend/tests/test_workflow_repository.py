@@ -11,13 +11,10 @@ from shared.contracts.api_contracts import (
     EventChannel,
     ResultKind,
     WorkflowAnalysisResultDto,
-    WorkflowDownloadResultDto,
     WorkflowEvent,
     WorkflowPriority,
-    WorkflowProviderResultDto,
     WorkflowResultReference,
     WorkflowRunStatusResponse,
-    WorkflowSubmitRequest,
     WorkflowCommandType,
     RuntimeMapContext,
     ClientIdentity,
@@ -71,7 +68,9 @@ class WorkflowRepositoryTests(unittest.TestCase):
                 self.assertIsNotNone(loaded)
                 self.assertEqual(loaded.run_id, payload.run_id)
                 self.assertEqual(loaded.status, payload.status)
-                self.assertEqual(loaded.result_dto.workflow_entry_name, "analysis_workflow")
+                self.assertEqual(
+                    loaded.result_dto.workflow_entry_name, "analysis_workflow"
+                )
                 self.assertEqual(repository.get_run_request_json("run-test"), "{}")
             finally:
                 # Windows: 必须在 TemporaryDirectory 清理前关闭连接池，否则文件句柄占用导致 PermissionError

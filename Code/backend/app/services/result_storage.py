@@ -11,7 +11,7 @@ from typing import Iterator
 from uuid import uuid4
 
 from app.core.config import settings
-from app.services.object_store import StoredObject, object_store
+from app.services.object_store import object_store
 from shared.contracts.api_contracts import ResultKind, WorkflowResultReference
 
 logger = logging.getLogger(__name__)
@@ -138,7 +138,9 @@ class ResultStorageService:
                 persisted.append(result_ref)
                 continue
 
-            serialized = json.dumps(result_ref.inline_data, ensure_ascii=False).encode("utf-8")
+            serialized = json.dumps(result_ref.inline_data, ensure_ascii=False).encode(
+                "utf-8"
+            )
             if len(serialized) <= settings.result_inline_max_bytes:
                 persisted.append(result_ref)
                 continue
@@ -300,8 +302,14 @@ class ResultStorageService:
 
     def _artifact_key(self, artifact_name: str) -> str:
         normalized = artifact_name.replace("\\", "/").strip("/")
-        if ".." in normalized or normalized.startswith("/") or not re.match(r"^[a-zA-Z0-9_\-./]+$", normalized):
-            raise ValueError(f"Invalid artifact name (path traversal or illegal characters): {artifact_name!r}")
+        if (
+            ".." in normalized
+            or normalized.startswith("/")
+            or not re.match(r"^[a-zA-Z0-9_\-./]+$", normalized)
+        ):
+            raise ValueError(
+                f"Invalid artifact name (path traversal or illegal characters): {artifact_name!r}"
+            )
         return normalized
 
 

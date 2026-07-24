@@ -79,10 +79,7 @@ export const useWorkflowTimersStore = defineStore('workflow-timers', () => {
     return created
   }
 
-  async function updateTimer(
-    timerId: string,
-    payload: UpdateTimerPayload,
-  ): Promise<WorkflowTimer> {
+  async function updateTimer(timerId: string, payload: UpdateTimerPayload): Promise<WorkflowTimer> {
     const updated = await updateWorkflowTimer(timerId, payload)
     const idx = timers.value.findIndex((t) => t.timer_id === timerId)
     if (idx >= 0) {
@@ -114,6 +111,18 @@ export const useWorkflowTimersStore = defineStore('workflow-timers', () => {
       const result = await runWorkflowTimer(timerId)
       // 重新加载该定时器以获取最新 last_run_id
       await loadTimer(timerId)
+      // 将触发的 run 注册到 layers store 进行状态跟踪
+      if (result.run_id) {
+        try {
+          const { useLayersStore } = await import('./layers')
+          const layersStore = useLayersStore()
+          const catalogIdHint = timers.value.find((t) => t.timer_id === timerId)?.payload_overrides
+            ?.layer_id
+          void layersStore.registerExternalWorkflowRun(result.run_id, catalogIdHint)
+        } catch (err) {
+          console.warn('[workflow-timers] registerExternalWorkflowRun failed:', err)
+        }
+      }
       return result
     } finally {
       lastActionTimerId.value = null

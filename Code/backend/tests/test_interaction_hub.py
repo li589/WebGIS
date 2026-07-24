@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
 from pathlib import Path
 import tempfile
 import unittest
@@ -21,14 +20,9 @@ from app.services.workflow_repository import SQLiteWorkflowRepository
 from shared.contracts.api_contracts import (
     ExecutionStatus,
     FailureCategory,
-    WorkflowAnalysisResultDto,
     WorkflowAcceptedResponse,
     WorkflowCommandType,
-    WorkflowDownloadResultDto,
     WorkflowPriority,
-    WorkflowProviderResultDto,
-    WorkflowResultReference,
-    WorkflowRunStatusResponse,
     WorkflowSubmitRequest,
     RuntimeMapContext,
     ClientIdentity,
@@ -36,15 +30,24 @@ from shared.contracts.api_contracts import (
 
 
 def _build_services(repository: SQLiteWorkflowRepository):
-    """Build all 6 workflow services wired together with a custom repository."""
+    """Build all workflow services wired together with a custom repository.
+
+    Dependency direction is one-way: submission → lifecycle (for finalize).
+    User-initiated retry is handled by RetryDispatcher (not wired here since
+    no test in this file exercises retry_workflow_run directly; the router-
+    level retry test patches retry_dispatcher in test_frontend_call_simulation.py).
+    """
     transitions = WorkflowTransitionBuilder()
     persistence = WorkflowPersistenceService(repository)
     follow_up = FollowUpDispatchService(repository, persistence, transitions)
     runtime_status = RuntimeStatusService(repository)
-    submission = WorkflowSubmissionService(repository, persistence, transitions, follow_up)
-    lifecycle = WorkflowLifecycleService(repository, persistence, transitions, follow_up)
+    submission = WorkflowSubmissionService(
+        repository, persistence, transitions, follow_up
+    )
+    lifecycle = WorkflowLifecycleService(
+        repository, persistence, transitions, follow_up
+    )
     submission.set_lifecycle_service(lifecycle)
-    lifecycle.set_submission_service(submission)
     return submission, lifecycle, runtime_status
 
 
@@ -64,7 +67,9 @@ def _temp_repository() -> Iterator[SQLiteWorkflowRepository]:
 
 
 class WorkflowServicesTests(unittest.TestCase):
-    def _build_payload(self, command_type: WorkflowCommandType, *, layer_id: str = "wind-field") -> WorkflowSubmitRequest:
+    def _build_payload(
+        self, command_type: WorkflowCommandType, *, layer_id: str = "wind-field"
+    ) -> WorkflowSubmitRequest:
         return WorkflowSubmitRequest(
             command_type=command_type,
             layer_id=layer_id,
@@ -85,7 +90,9 @@ class WorkflowServicesTests(unittest.TestCase):
                 "app.services.workflow.submission_service.execute_workflow_task",
                 return_value=WorkflowExecutionResult(message="ok"),
             ):
-                response = submission.submit_workflow(self._build_payload(WorkflowCommandType.analysis))
+                response = submission.submit_workflow(
+                    self._build_payload(WorkflowCommandType.analysis)
+                )
 
             self.assertIsInstance(response, WorkflowAcceptedResponse)
             run = submission.get_workflow_run(response.run_id)
@@ -101,7 +108,9 @@ class WorkflowServicesTests(unittest.TestCase):
                 "app.services.workflow.submission_service.execute_workflow_task",
                 return_value=WorkflowExecutionResult(message="ok"),
             ):
-                response = submission.submit_workflow(self._build_payload(WorkflowCommandType.analysis))
+                response = submission.submit_workflow(
+                    self._build_payload(WorkflowCommandType.analysis)
+                )
             with self.assertRaisesRegex(ValueError, "terminal state"):
                 lifecycle.cancel_workflow_run(response.run_id)
 
@@ -118,7 +127,9 @@ class WorkflowServicesTests(unittest.TestCase):
             submission, lifecycle, runtime_status = _build_services(repository)
             payload = self._build_payload(WorkflowCommandType.analysis)
 
-            with patch("app.services.workflow.lifecycle_service.dispatch_workflow_task") as dispatch_mock:
+            with patch(
+                "app.services.workflow.lifecycle_service.dispatch_workflow_task"
+            ) as dispatch_mock:
                 lifecycle._schedule_retry(
                     run_id="run-retry-1",
                     payload=payload,
@@ -132,15 +143,24 @@ class WorkflowServicesTests(unittest.TestCase):
             self.assertEqual(call_kwargs["countdown"], 4.5)
             self.assertEqual(call_kwargs["payload"].retry_attempt, 2)
 
-    def test_submit_workflow_auto_populates_algorithm_request_from_layer_catalog(self) -> None:
+    def test_submit_workflow_auto_populates_algorithm_request_from_layer_catalog(
+        self,
+    ) -> None:
         with _temp_repository() as repository:
             submission, lifecycle, runtime_status = _build_services(repository)
 
-            with patch(
-                "app.services.workflow_request_resolver._resolve_data_access_source_uri",
-                side_effect=lambda source: f"D:/prepared/{str(source).replace('/', '_')}",
-            ), patch("app.services.workflow.submission_service.execute_workflow_task") as execute_mock:
-                response = submission.submit_workflow(self._build_payload(WorkflowCommandType.analysis, layer_id="ndvi"))
+            with (
+                patch(
+                    "app.services.workflow_request_resolver._resolve_data_access_source_uri",
+                    side_effect=lambda source: f"D:/prepared/{str(source).replace('/', '_')}",
+                ),
+                patch(
+                    "app.services.workflow.submission_service.execute_workflow_task"
+                ) as execute_mock,
+            ):
+                response = submission.submit_workflow(
+                    self._build_payload(WorkflowCommandType.analysis, layer_id="ndvi")
+                )
 
             execute_mock.assert_called_once()
             normalized_payload = execute_mock.call_args.kwargs["payload"]
@@ -149,18 +169,24 @@ class WorkflowServicesTests(unittest.TestCase):
             self.assertEqual(algorithm_request["workflow_entry_name"], "ndvi_daily")
             self.assertEqual(algorithm_request["task_type"], "ndvi_daily")
             self.assertEqual(
-                algorithm_request["datasource_selection"]["_data_access_requests"]["NDVI_16DAY_RASTER"]["selector"]["uris"],
+                algorithm_request["datasource_selection"]["_data_access_requests"][
+                    "NDVI_16DAY_RASTER"
+                ]["selector"]["uris"],
                 ["D:/prepared/NDVI_VIIRS"],
             )
 
             request_json = repository.get_run_request_json(response.run_id)
             self.assertIsNotNone(request_json)
             persisted_payload = WorkflowSubmitRequest.model_validate_json(request_json)
-            persisted_algorithm_request = self._as_dict(persisted_payload.algorithm_request)
+            persisted_algorithm_request = self._as_dict(
+                persisted_payload.algorithm_request
+            )
             self.assertEqual(persisted_algorithm_request["module_name"], "ndvi_daily")
             self.assertEqual(persisted_algorithm_request["task_type"], "ndvi_daily")
 
-    def test_submit_workflow_auto_populates_python_provider_defaults_for_smap_and_fy_layers(self) -> None:
+    def test_submit_workflow_auto_populates_python_provider_defaults_for_smap_and_fy_layers(
+        self,
+    ) -> None:
         # P2.2 修复后 fy-mwri 的首个候选数据源从 “fy” 扩展为 “FY_MWRI_HDF”
         # （见 layer_catalog.py 中 fy-mwri.default_data_access_sources）。
         expected_layers = {
@@ -170,37 +196,61 @@ class WorkflowServicesTests(unittest.TestCase):
 
         with _temp_repository() as repository:
             submission, lifecycle, runtime_status = _build_services(repository)
-            with patch(
-                "app.services.workflow_request_resolver._resolve_data_access_source_uri",
-                side_effect=lambda source: f"D:/prepared/{str(source).replace('/', '_')}",
-            ), patch("app.services.workflow.submission_service.execute_workflow_task") as execute_mock:
+            with (
+                patch(
+                    "app.services.workflow_request_resolver._resolve_data_access_source_uri",
+                    side_effect=lambda source: f"D:/prepared/{str(source).replace('/', '_')}",
+                ),
+                patch(
+                    "app.services.workflow.submission_service.execute_workflow_task"
+                ) as execute_mock,
+            ):
                 for layer_id in expected_layers:
-                    submission.submit_workflow(self._build_payload(WorkflowCommandType.analysis, layer_id=layer_id))
+                    submission.submit_workflow(
+                        self._build_payload(
+                            WorkflowCommandType.analysis, layer_id=layer_id
+                        )
+                    )
 
             self.assertEqual(execute_mock.call_count, len(expected_layers))
             for call in execute_mock.call_args_list:
                 normalized_payload = call.kwargs["payload"]
                 layer_id = normalized_payload.layer_id
-                expected_task_type, expected_dataset_name, expected_uri = expected_layers[layer_id]
+                expected_task_type, expected_dataset_name, expected_uri = (
+                    expected_layers[layer_id]
+                )
                 algorithm_request = self._as_dict(normalized_payload.algorithm_request)
 
                 with self.subTest(layer_id=layer_id):
-                    self.assertEqual(algorithm_request["module_name"], expected_task_type)
+                    self.assertEqual(
+                        algorithm_request["module_name"], expected_task_type
+                    )
                     self.assertEqual(algorithm_request["task_type"], expected_task_type)
                     self.assertEqual(
-                        algorithm_request["datasource_selection"]["_data_access_requests"][expected_dataset_name]["selector"]["uris"],
+                        algorithm_request["datasource_selection"][
+                            "_data_access_requests"
+                        ][expected_dataset_name]["selector"]["uris"],
                         [expected_uri],
                     )
 
-    def test_submit_workflow_keeps_python_provider_datasource_missing_when_default_sources_are_unavailable(self) -> None:
+    def test_submit_workflow_keeps_python_provider_datasource_missing_when_default_sources_are_unavailable(
+        self,
+    ) -> None:
         with _temp_repository() as repository:
             submission, lifecycle, runtime_status = _build_services(repository)
 
-            with patch(
-                "app.services.workflow_request_resolver._resolve_data_access_source_uri",
-                return_value=None,
-            ), patch("app.services.workflow.submission_service.execute_workflow_task") as execute_mock:
-                submission.submit_workflow(self._build_payload(WorkflowCommandType.analysis, layer_id="ndvi"))
+            with (
+                patch(
+                    "app.services.workflow_request_resolver._resolve_data_access_source_uri",
+                    return_value=None,
+                ),
+                patch(
+                    "app.services.workflow.submission_service.execute_workflow_task"
+                ) as execute_mock,
+            ):
+                submission.submit_workflow(
+                    self._build_payload(WorkflowCommandType.analysis, layer_id="ndvi")
+                )
 
             execute_mock.assert_called_once()
             normalized_payload = execute_mock.call_args.kwargs["payload"]
@@ -221,7 +271,9 @@ class WorkflowServicesTests(unittest.TestCase):
                     message="Provider template validation failed: module 'ndvi_daily' requires datasource_selection keys: input_dir",
                 ),
             ):
-                response = submission.submit_workflow(self._build_payload(WorkflowCommandType.analysis, layer_id="ndvi"))
+                response = submission.submit_workflow(
+                    self._build_payload(WorkflowCommandType.analysis, layer_id="ndvi")
+                )
 
             run = submission.get_workflow_run(response.run_id)
             self.assertIsNotNone(run)
@@ -229,7 +281,9 @@ class WorkflowServicesTests(unittest.TestCase):
             self.assertIn("工作流校验失败：", run.message)
             self.assertIn("Provider template validation failed", run.message)
 
-    def test_submit_workflow_persists_resolution_diagnostics_for_validation_failure(self) -> None:
+    def test_submit_workflow_persists_resolution_diagnostics_for_validation_failure(
+        self,
+    ) -> None:
         with _temp_repository() as repository:
             submission, lifecycle, runtime_status = _build_services(repository)
 
@@ -247,31 +301,47 @@ class WorkflowServicesTests(unittest.TestCase):
                             "unresolved_default_datasets": [
                                 {
                                     "dataset_name": "NDVI_16DAY_RASTER",
-                                    "candidate_sources": ["NDVI_VIIRS", "NDVI_MODIS", "ndvi"],
+                                    "candidate_sources": [
+                                        "NDVI_VIIRS",
+                                        "NDVI_MODIS",
+                                        "ndvi",
+                                    ],
                                 }
                             ],
                         }
                     },
                 ),
             ):
-                response = submission.submit_workflow(self._build_payload(WorkflowCommandType.analysis, layer_id="ndvi"))
+                response = submission.submit_workflow(
+                    self._build_payload(WorkflowCommandType.analysis, layer_id="ndvi")
+                )
 
             run = submission.get_workflow_run(response.run_id)
             self.assertIsNotNone(run)
             self.assertIn("validation_layer_id=ndvi", run.diagnostics)
             self.assertIn("validation_module_name=ndvi_daily", run.diagnostics)
             self.assertIn("validation_layer_status=placeholder", run.diagnostics)
-            self.assertIn("validation_dataset_missing=NDVI_16DAY_RASTER", run.diagnostics)
+            self.assertIn(
+                "validation_dataset_missing=NDVI_16DAY_RASTER", run.diagnostics
+            )
             self.assertIn(
                 "validation_dataset_candidates.NDVI_16DAY_RASTER=NDVI_VIIRS|NDVI_MODIS|ndvi",
                 run.diagnostics,
             )
 
-    def test_submit_workflow_auto_populates_gee_request_from_layer_catalog(self) -> None:
+    def test_submit_workflow_auto_populates_gee_request_from_layer_catalog(
+        self,
+    ) -> None:
         with _temp_repository() as repository:
             submission, lifecycle, runtime_status = _build_services(repository)
-            with patch("app.services.workflow.submission_service.execute_workflow_task") as execute_mock:
-                response = submission.submit_workflow(self._build_payload(WorkflowCommandType.analysis, layer_id="remote-sensing"))
+            with patch(
+                "app.services.workflow.submission_service.execute_workflow_task"
+            ) as execute_mock:
+                response = submission.submit_workflow(
+                    self._build_payload(
+                        WorkflowCommandType.analysis, layer_id="remote-sensing"
+                    )
+                )
 
             execute_mock.assert_called_once()
             normalized_payload = execute_mock.call_args.kwargs["payload"]
@@ -281,10 +351,18 @@ class WorkflowServicesTests(unittest.TestCase):
                 else normalized_payload.gee_request.model_dump(mode="json")
             )
             self.assertEqual(gee_request["workflow_id"], "gee-remote-sensing-ndvi")
-            self.assertEqual(gee_request["workflow"]["workflow_id"], "gee-remote-sensing-ndvi")
-            self.assertEqual(gee_request["workflow"]["nodes"][0]["node_type"], "gee_image")
-            self.assertEqual(gee_request["workflow"]["nodes"][1]["node_type"], "gee_spectral_index")
-            self.assertEqual(gee_request["workflow"]["nodes"][2]["node_type"], "gee_export_image")
+            self.assertEqual(
+                gee_request["workflow"]["workflow_id"], "gee-remote-sensing-ndvi"
+            )
+            self.assertEqual(
+                gee_request["workflow"]["nodes"][0]["node_type"], "gee_image"
+            )
+            self.assertEqual(
+                gee_request["workflow"]["nodes"][1]["node_type"], "gee_spectral_index"
+            )
+            self.assertEqual(
+                gee_request["workflow"]["nodes"][2]["node_type"], "gee_export_image"
+            )
 
             request_json = repository.get_run_request_json(response.run_id)
             self.assertIsNotNone(request_json)
@@ -294,7 +372,9 @@ class WorkflowServicesTests(unittest.TestCase):
                 if isinstance(persisted_payload.gee_request, dict)
                 else persisted_payload.gee_request.model_dump(mode="json")
             )
-            self.assertEqual(persisted_gee_request["workflow_id"], "gee-remote-sensing-ndvi")
+            self.assertEqual(
+                persisted_gee_request["workflow_id"], "gee-remote-sensing-ndvi"
+            )
 
 
 if __name__ == "__main__":

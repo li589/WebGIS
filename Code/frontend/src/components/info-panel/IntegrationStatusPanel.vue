@@ -37,23 +37,34 @@ function readArray(value: unknown) {
 
 function hasRuntimeSnapshotForProvider(provider: { metadata?: Record<string, unknown> }) {
   const metadata = asRecord(provider.metadata)
-  return typeof metadata.runtimeProviderId === 'string' || typeof metadata.runtimeEnabled === 'boolean'
+  return (
+    typeof metadata.runtimeProviderId === 'string' || typeof metadata.runtimeEnabled === 'boolean'
+  )
 }
 
 const basemapProviders = computed(() => config.value?.basemaps ?? [])
 const externalApis = computed(() => config.value?.externalApis ?? [])
 const geeConfig = computed(() => config.value?.gee ?? null)
 
-const enabledBasemapProviders = computed(() => (config.value ? listEnabledBasemapProviders(config.value) : []))
-const enabledExternalApis = computed(() => (config.value ? listEnabledExternalApis(config.value) : []))
-const enabledGeeAccounts = computed(() => (config.value ? listEnabledGeeAccounts(config.value) : []))
+const enabledBasemapProviders = computed(() =>
+  config.value ? listEnabledBasemapProviders(config.value) : [],
+)
+const enabledExternalApis = computed(() =>
+  config.value ? listEnabledExternalApis(config.value) : [],
+)
+const enabledGeeAccounts = computed(() =>
+  config.value ? listEnabledGeeAccounts(config.value) : [],
+)
 
 const hasRuntimeSnapshot = computed(() => {
   if (!config.value) return false
-  if (basemapProviders.value.some((provider) => hasRuntimeSnapshotForProvider(provider))) return true
+  if (basemapProviders.value.some((provider) => hasRuntimeSnapshotForProvider(provider)))
+    return true
   if (externalApis.value.some((api) => hasRuntimeSnapshotForProvider(api))) return true
   const geeMetadata = asRecord(geeConfig.value?.metadata)
-  return typeof geeMetadata.geeAvailable === 'boolean' || typeof geeMetadata.storageBackend === 'string'
+  return (
+    typeof geeMetadata.geeAvailable === 'boolean' || typeof geeMetadata.storageBackend === 'string'
+  )
 })
 
 const geeStatusSummary = computed(() => {
@@ -69,7 +80,8 @@ const geeStatusSummary = computed(() => {
     storageBackend: readString(metadata.storageBackend),
     geeAvailable: readBoolean(metadata.geeAvailable),
     encryptionEnabled:
-      readBoolean(metadata.credentialsEncryptionEnabled) || readBoolean(metadata.credentialsEncryptionKeySet),
+      readBoolean(metadata.credentialsEncryptionEnabled) ||
+      readBoolean(metadata.credentialsEncryptionKeySet),
     activeExports: readNumber(concurrencyStats.active_exports),
     activeUploads: readNumber(concurrencyStats.active_uploads),
     activeDownloads: readNumber(concurrencyStats.active_downloads),
@@ -80,7 +92,10 @@ const geeStatusSummary = computed(() => {
 
 function describeProviderRuntimeState(provider: BasemapProviderConfig | ExternalApiConfig) {
   const metadata = asRecord(provider.metadata)
-  const enabled = readBoolean(metadata.runtimeEnabled, provider.endpoints.some((endpoint) => endpoint.enabled))
+  const enabled = readBoolean(
+    metadata.runtimeEnabled,
+    provider.endpoints.some((endpoint) => endpoint.enabled),
+  )
   const authConfigured = readBoolean(metadata.runtimeAuthConfigured)
   const runtimeCapabilities = readArray(metadata.runtimeCapabilities)
   const providerDisplayName = 'provider' in provider ? provider.provider : provider.label
@@ -133,8 +148,8 @@ onMounted(() => {
     </div>
 
     <p class="integration-summary">
-      底图 Provider {{ enabledBasemapProviders.length }} 个，外部 API {{ enabledExternalApis.length }} 个，
-      GEE 账户 {{ enabledGeeAccounts.length }} 个。
+      底图 Provider {{ enabledBasemapProviders.length }} 个，外部 API
+      {{ enabledExternalApis.length }} 个， GEE 账户 {{ enabledGeeAccounts.length }} 个。
     </p>
 
     <div v-if="lastError" class="integration-error">{{ lastError }}</div>
@@ -149,14 +164,19 @@ onMounted(() => {
           <li v-for="provider in basemapProviders" :key="provider.id">
             <div class="status-main">
               <strong>{{ provider.label }}</strong>
-              <span class="status-pill" :class="{ ok: describeProviderRuntimeState(provider).enabled }">
+              <span
+                class="status-pill"
+                :class="{ ok: describeProviderRuntimeState(provider).enabled }"
+              >
                 {{ describeProviderRuntimeState(provider).enabled ? '启用' : '停用' }}
               </span>
             </div>
             <div class="status-meta">
               <span>{{ provider.coordinateSystem ?? '未声明坐标系' }}</span>
               <span>{{ provider.endpoints.length }} 个端点</span>
-              <span>{{ describeProviderRuntimeState(provider).authConfigured ? '认证已配置' : '认证待配置' }}</span>
+              <span>{{
+                describeProviderRuntimeState(provider).authConfigured ? '认证已配置' : '认证待配置'
+              }}</span>
             </div>
           </li>
         </ul>
@@ -225,9 +245,7 @@ onMounted(() => {
             <strong>{{ geeStatusSummary.queuedTasks }}</strong>
           </div>
         </div>
-        <p class="gee-note">
-          凭据库路径：{{ geeStatusSummary.runtimeResolvedCredentialsDbPath }}
-        </p>
+        <p class="gee-note">凭据库路径：{{ geeStatusSummary.runtimeResolvedCredentialsDbPath }}</p>
       </article>
     </div>
   </section>

@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 from datetime import datetime, timezone
 from typing import Any
@@ -14,7 +14,7 @@ from app.weatherengine.default_model import weather_default_model
 from app.services.api_config import api_config_manager, ApiProvider, DataType
 from app.services.result_storage import result_storage_service
 from app.services.workflow_execution import WorkflowExecutionResult
-from app.weatherengine.constants import DEFAULT_LAYER_ID, DEFAULT_POINT, WEATHER_LAYER_SPECS
+from app.weatherengine.constants import DEFAULT_LAYER_ID, WEATHER_LAYER_SPECS
 from app.weatherengine.nodes._utils import compute_dynamic_resolution
 from shared.contracts.api_contracts import (
     BoundingBox,
@@ -51,7 +51,9 @@ class WeatherEngineService:
         """获取当前活跃的天气数据 Provider。"""
         # 优先使用 api_config_manager 中配置的天气 Provider
         # M15 兼容：get_best_available 返回 ApiConfig 对象，不是字典
-        best = api_config_manager.get_best_available(required_capabilities={DataType.WEATHER})
+        best = api_config_manager.get_best_available(
+            required_capabilities={DataType.WEATHER}
+        )
         if best:
             return best.provider
         return self._active_provider
@@ -76,10 +78,12 @@ class WeatherEngineService:
         if spec is None:
             raise ValueError(f"Unsupported weather layer: {layer_id}")
 
-        resolved_model = model or weather_default_model()
-        from urllib.error import HTTPError, URLError
+        resolved_model = model or spec.preferred_model or weather_default_model()
 
-        from app.weatherengine.fetch_gateway import WeatherProviderUnavailableError, fetch_point_forecast
+        from app.weatherengine.fetch_gateway import (
+            WeatherProviderUnavailableError,
+            fetch_point_forecast,
+        )
 
         try:
             payload, cache_status, provider_label = fetch_point_forecast(
@@ -247,9 +251,15 @@ class WeatherEngineService:
             hourly_rows.append(
                 WeatherPointHourlyEntry(
                     time=self._coerce_datetime(time_value),
-                    temperature_2m=self._pick_series_value(hourly, "temperature_2m", index),
-                    precipitation=self._pick_series_value(hourly, "precipitation", index),
-                    wind_speed_10m=self._pick_series_value(hourly, "wind_speed_10m", index),
+                    temperature_2m=self._pick_series_value(
+                        hourly, "temperature_2m", index
+                    ),
+                    precipitation=self._pick_series_value(
+                        hourly, "precipitation", index
+                    ),
+                    wind_speed_10m=self._pick_series_value(
+                        hourly, "wind_speed_10m", index
+                    ),
                     primary_metric=spec.primary_metric,
                     primary_value=primary_value,
                 )
@@ -257,25 +267,36 @@ class WeatherEngineService:
         # 气压层变量仅出现在 hourly 段，取首小时作为当前值
         # 当 spec 未请求气压层时这些字段保持 None
         pl_wind_speed_850 = self._pick_series_value(hourly, "wind_speed_850hPa", 0)
-        pl_wind_direction_850 = self._pick_series_value(hourly, "wind_direction_850hPa", 0)
+        pl_wind_direction_850 = self._pick_series_value(
+            hourly, "wind_direction_850hPa", 0
+        )
         pl_temperature_850 = self._pick_series_value(hourly, "temperature_850hPa", 0)
         pl_wind_speed_500 = self._pick_series_value(hourly, "wind_speed_500hPa", 0)
-        pl_wind_direction_500 = self._pick_series_value(hourly, "wind_direction_500hPa", 0)
+        pl_wind_direction_500 = self._pick_series_value(
+            hourly, "wind_direction_500hPa", 0
+        )
         pl_temperature_500 = self._pick_series_value(hourly, "temperature_500hPa", 0)
         pl_wind_speed_200 = self._pick_series_value(hourly, "wind_speed_200hPa", 0)
-        pl_wind_direction_200 = self._pick_series_value(hourly, "wind_direction_200hPa", 0)
+        pl_wind_direction_200 = self._pick_series_value(
+            hourly, "wind_direction_200hPa", 0
+        )
         pl_temperature_200 = self._pick_series_value(hourly, "temperature_200hPa", 0)
 
         # metric_value 优先从 current 取；气压层变量不在 current 段，回退到 hourly 首小时
         metric_value = current.get(spec.primary_metric)
         if metric_value is None and spec.pressure_levels:
             metric_value = self._pick_series_value(hourly, spec.primary_metric, 0)
-        summary = spec.summary_template.format(value=metric_value if metric_value is not None else "--", unit=spec.unit_label)
+        summary = spec.summary_template.format(
+            value=metric_value if metric_value is not None else "--",
+            unit=spec.unit_label,
+        )
         observation_time = self._coerce_datetime(current.get("time"))
         return WeatherPointResponse(
             provider=provider,
             model=resolved_model,
-            resolved_model=str(payload.get("model")) if payload.get("model") is not None else None,
+            resolved_model=str(payload.get("model"))
+            if payload.get("model") is not None
+            else None,
             layer_id=layer_id,
             latitude=latitude,
             longitude=longitude,
@@ -351,10 +372,17 @@ class WeatherEngineService:
         error_message: str,
     ) -> WeatherPointResponse:
         """当上游天气 API 不可用时构建降级 WeatherPointResponse，保证网格渲染工作流可继续。"""
-        logger.info("[WeatherEngine] building fallback weather for layer=%s lat=%.4f lon=%.4f", layer_id, latitude, longitude)
+        logger.info(
+            "[WeatherEngine] building fallback weather for layer=%s lat=%.4f lon=%.4f",
+            layer_id,
+            latitude,
+            longitude,
+        )
         return WeatherPointResponse(
             provider="unavailable",
-            model=spec.default_model if hasattr(spec, 'default_model') else "icon_seamless",
+            model=spec.default_model
+            if hasattr(spec, "default_model")
+            else "icon_seamless",
             resolved_model=None,
             layer_id=layer_id,
             latitude=latitude,
@@ -413,7 +441,7 @@ class WeatherEngineService:
             diagnostics=[
                 "provider=unavailable",
                 f"layer_id={layer_id}",
-                f"cache_status=fallback",
+                "cache_status=fallback",
                 f"render_mode={spec.paint_mode}",
                 f"point_weather_error={error_message}",
             ],
@@ -427,16 +455,29 @@ class WeatherEngineService:
         requested_at: datetime,
         event_factory,
     ) -> WorkflowExecutionResult:
-        layer_id = payload.layer_id or payload.map_context.active_layer_id or DEFAULT_LAYER_ID
+        layer_id = (
+            payload.layer_id or payload.map_context.active_layer_id or DEFAULT_LAYER_ID
+        )
         latitude, longitude, place_name = self._resolve_point(payload)
         forecast_hours = self._resolve_forecast_hours(payload)
         # [WeatherEngine] 调试：打印工作流入参
         vp_bbox = payload.map_context.viewport_bbox
         logger.info(
             "[WeatherEngine] execute: run_id=%s layer_id=%s lat=%s lon=%s place=%s forecast_hours=%s viewport_bbox=%s params=%s",
-            run_id, layer_id, latitude, longitude, place_name, forecast_hours,
-            f"({vp_bbox.west},{vp_bbox.south},{vp_bbox.east},{vp_bbox.north})" if vp_bbox else "None",
-            {k: v for k, v in payload.parameters.items() if k in ('hour', 'latitude', 'longitude', 'weather_model')},
+            run_id,
+            layer_id,
+            latitude,
+            longitude,
+            place_name,
+            forecast_hours,
+            f"({vp_bbox.west},{vp_bbox.south},{vp_bbox.east},{vp_bbox.north})"
+            if vp_bbox
+            else "None",
+            {
+                k: v
+                for k, v in payload.parameters.items()
+                if k in ("hour", "latitude", "longitude", "weather_model")
+            },
         )
         spec = WEATHER_LAYER_SPECS[layer_id]
         try:
@@ -447,11 +488,16 @@ class WeatherEngineService:
                 model=self._as_string(payload.parameters.get("weather_model")),
                 forecast_hours=forecast_hours,
                 place_name=place_name,
-                cache_ttl_seconds=self._as_int(payload.parameters.get("cache_ttl_seconds")),
+                cache_ttl_seconds=self._as_int(
+                    payload.parameters.get("cache_ttl_seconds")
+                ),
             )
         except (HTTPError, URLError, OSError) as exc:
             # 点位天气 API 失败（如 429 限流）不应阻断网格渲染工作流
-            logger.warning("[WeatherEngine] point weather failed, continuing with fallback: %s", exc)
+            logger.warning(
+                "[WeatherEngine] point weather failed, continuing with fallback: %s",
+                exc,
+            )
             weather = self._build_fallback_weather(
                 layer_id=layer_id,
                 latitude=latitude,
@@ -487,7 +533,12 @@ class WeatherEngineService:
                     title=f"{spec.display_name} Hourly Series",
                     mime_type="application/json",
                     inline_data={
-                        "columns": ["time", "temperature_2m", "precipitation", "wind_speed_10m"],
+                        "columns": [
+                            "time",
+                            "temperature_2m",
+                            "precipitation",
+                            "wind_speed_10m",
+                        ],
                         "rows": [row.model_dump(mode="json") for row in weather.hourly],
                     },
                     updated_at=requested_at,
@@ -587,7 +638,9 @@ class WeatherEngineService:
             )
         return refreshed
 
-    def _fetch_layer_grid_data(self, *, bbox: BoundingBox, spec) -> tuple[dict[str, Any], str, float]:
+    def _fetch_layer_grid_data(
+        self, *, bbox: BoundingBox, spec
+    ) -> tuple[dict[str, Any], str, float]:
         from app.weatherengine.fetch_gateway import fetch_grid_forecast
 
         resolution = compute_dynamic_resolution(bbox)
@@ -599,7 +652,9 @@ class WeatherEngineService:
         )
         return grid_data, cache_status, resolution
 
-    def _build_geojson_from_grid(self, *, grid_data: dict[str, Any], layer_id: str) -> dict[str, object]:
+    def _build_geojson_from_grid(
+        self, *, grid_data: dict[str, Any], layer_id: str
+    ) -> dict[str, object]:
         if layer_id == "precipitation":
             return self.build_precipitation_geojson_from_grid(grid_data, layer_id)
         if layer_id == "humidity":
@@ -608,6 +663,10 @@ class WeatherEngineService:
             return self.build_pressure_geojson_from_grid(grid_data, layer_id)
         if layer_id == "visibility":
             return self.build_visibility_geojson_from_grid(grid_data, layer_id)
+        if layer_id == "cloud-cover":
+            return self.build_cloud_cover_geojson_from_grid(grid_data, layer_id)
+        if layer_id == "dewpoint":
+            return self.build_dewpoint_geojson_from_grid(grid_data, layer_id)
         if layer_id == "temperature" or layer_id.startswith("temperature-"):
             return self.build_temperature_geojson_from_grid(grid_data, layer_id)
         return self.build_wind_geojson_from_grid(grid_data, layer_id)
@@ -656,11 +715,16 @@ class WeatherEngineService:
         spec,
         metric_value: float | int | str | None,
     ) -> tuple[list[WorkflowResultReference], list[str]]:
-        from app.weatherengine.layer_outputs import get_strategy as _get_layer_output_strategy
+        from app.weatherengine.layer_outputs import (
+            get_strategy as _get_layer_output_strategy,
+        )
 
         point_feature = {
             "type": "Feature",
-            "geometry": {"type": "Point", "coordinates": [weather.longitude, weather.latitude]},
+            "geometry": {
+                "type": "Point",
+                "coordinates": [weather.longitude, weather.latitude],
+            },
             "properties": {
                 "place_name": weather.place_name,
                 "metric": spec.primary_metric,
@@ -712,16 +776,28 @@ class WeatherEngineService:
                     "render_hint": weather.render_hint.model_dump(mode="json"),
                     "point_feature": point_feature,
                     "layer_assets": {
-                        "geojson_url": geojson_ref.resource_url if geojson_ref else None,
+                        "geojson_url": geojson_ref.resource_url
+                        if geojson_ref
+                        else None,
                         "cog_url": cog_ref.resource_url if cog_ref else None,
-                        "cog_preview_url": f"/artifacts/{cog_ref.resource_key}/preview.png" if cog_ref and cog_ref.resource_key else None,
+                        "cog_preview_url": f"/artifacts/{cog_ref.resource_key}/preview.png"
+                        if cog_ref and cog_ref.resource_key
+                        else None,
                         "cog_bbox": {
                             "west": bbox.west,
                             "south": bbox.south,
                             "east": bbox.east,
                             "north": bbox.north,
                             "crs": bbox.crs,
-                        } if (cog_ref and (spec.layer_id.startswith("temperature") or spec.layer_id == "precipitation")) else None,
+                        }
+                        if (
+                            cog_ref
+                            and (
+                                spec.layer_id.startswith("temperature")
+                                or spec.layer_id == "precipitation"
+                            )
+                        )
+                        else None,
                     },
                 },
                 updated_at=requested_at,
@@ -731,7 +807,9 @@ class WeatherEngineService:
             "[WindDebug] map_layer result_ref created: geojson_url=%s cog_url=%s cog_preview=%s",
             geojson_ref.resource_url if geojson_ref else None,
             cog_ref.resource_url if cog_ref else None,
-            f"/artifacts/{cog_ref.resource_key}/preview.png" if cog_ref and cog_ref.resource_key else None,
+            f"/artifacts/{cog_ref.resource_key}/preview.png"
+            if cog_ref and cog_ref.resource_key
+            else None,
         )
         return result_refs, diagnostics
 
@@ -747,8 +825,12 @@ class WeatherEngineService:
         # 最小 24×32（对应小视口），最大 180×360（全球约 1 度间隔）
         lat_span = max(0.1, bbox.north - bbox.south)
         lon_span = max(0.1, bbox.east - bbox.west)
-        resolved_rows = rows if rows is not None else max(24, min(180, int(lat_span / 0.35)))
-        resolved_cols = cols if cols is not None else max(32, min(360, int(lon_span / 0.35)))
+        resolved_rows = (
+            rows if rows is not None else max(24, min(180, int(lat_span / 0.35)))
+        )
+        resolved_cols = (
+            cols if cols is not None else max(32, min(360, int(lon_span / 0.35)))
+        )
         lat_step = lat_span / resolved_rows
         lon_step = lon_span / resolved_cols
         # 根据 layer_id 高度后缀读取对应字段：wind-field → 10m，wind-field-80m → 80m，…
@@ -759,8 +841,16 @@ class WeatherEngineService:
             height_suffix = layer_id.split("-", 2)[-1]  # "80m" / "120m" / "180m"
         speed_attr = f"wind_speed_{height_suffix}"
         direction_attr = f"wind_direction_{height_suffix}"
-        base_speed = getattr(weather.current, speed_attr, None) or weather.current.wind_speed_10m or 0.0
-        base_direction = getattr(weather.current, direction_attr, None) or weather.current.wind_direction_10m or 0.0
+        base_speed = (
+            getattr(weather.current, speed_attr, None)
+            or weather.current.wind_speed_10m
+            or 0.0
+        )
+        base_direction = (
+            getattr(weather.current, direction_attr, None)
+            or weather.current.wind_direction_10m
+            or 0.0
+        )
         for row in range(resolved_rows):
             for col in range(resolved_cols):
                 lat = bbox.south + (row + 0.5) * lat_step
@@ -816,7 +906,9 @@ class WeatherEngineService:
         # 根据 layer_id 解析高度后缀
         height_suffix = "10m"
         if layer_id and layer_id.startswith("wind-field-"):
-            height_suffix = layer_id.split("-", 2)[-1]  # "80m" / "120m" / "180m" / "850hPa" 等
+            height_suffix = layer_id.split("-", 2)[
+                -1
+            ]  # "80m" / "120m" / "180m" / "850hPa" 等
 
         speed_attr = f"wind_speed_{height_suffix}"
         direction_attr = f"wind_direction_{height_suffix}"
@@ -839,7 +931,9 @@ class WeatherEngineService:
             base_speed = current.get("wind_speed_10m") or []
             base_dir = current.get("wind_direction_10m") or []
             if target_h > 0 and any(v is not None for v in base_speed):
-                from app.weatherengine.field_mapping import extrapolate_wind_speed_power_law
+                from app.weatherengine.field_mapping import (
+                    extrapolate_wind_speed_power_law,
+                )
 
                 speed_values = [
                     extrapolate_wind_speed_power_law(
@@ -881,15 +975,32 @@ class WeatherEngineService:
             )
 
         # [WeatherEngine] 调试：打印网格数据概要
-        speed_sample = [speed_values[i] for i in range(min(5, len(speed_values))) if speed_values[i] is not None]
-        dir_sample = [direction_values[i] for i in range(min(5, len(direction_values))) if direction_values[i] is not None]
+        speed_sample = [
+            speed_values[i]
+            for i in range(min(5, len(speed_values)))
+            if speed_values[i] is not None
+        ]
+        dir_sample = [
+            direction_values[i]
+            for i in range(min(5, len(direction_values)))
+            if direction_values[i] is not None
+        ]
         logger.info(
             "[WeatherEngine] build_wind_geojson_from_grid: layer=%s rows=%d cols=%d total=%d speed_attr=%s(speed_values=%d, sample=%s) dir_attr=%s(dir_values=%d, sample=%s) lats=[%.4f..%.4f] lons=[%.4f..%.4f]",
-            layer_id, rows, cols, rows * cols,
-            api_speed_attr, len(speed_values), speed_sample,
-            api_direction_attr, len(direction_values), dir_sample,
-            lats[0] if lats else 0, lats[-1] if lats else 0,
-            lons[0] if lons else 0, lons[-1] if lons else 0,
+            layer_id,
+            rows,
+            cols,
+            rows * cols,
+            api_speed_attr,
+            len(speed_values),
+            speed_sample,
+            api_direction_attr,
+            len(direction_values),
+            dir_sample,
+            lats[0] if lats else 0,
+            lats[-1] if lats else 0,
+            lons[0] if lons else 0,
+            lons[-1] if lons else 0,
         )
 
         for i in range(rows):
@@ -901,24 +1012,29 @@ class WeatherEngineService:
                 speed = speed_values[idx] if idx < len(speed_values) else None
                 if speed is None:
                     continue
-                direction = direction_values[idx] if idx < len(direction_values) else None
+                direction = (
+                    direction_values[idx] if idx < len(direction_values) else None
+                )
                 if direction is None:
                     direction = 0.0
 
-                features.append({
-                    "type": "Feature",
-                    "geometry": {"type": "Point", "coordinates": [lon, lat]},
-                    "properties": {
-                        speed_attr: round(float(speed), 2),
-                        direction_attr: round(float(direction), 1),
-                        "height": height_suffix,
-                        "unit": "m/s",
-                        "row": i,
-                        "col": j,
+                features.append(
+                    {
+                        "type": "Feature",
+                        "geometry": {"type": "Point", "coordinates": [lon, lat]},
+                        "properties": {
+                            speed_attr: round(float(speed), 2),
+                            direction_attr: round(float(direction), 1),
+                            "height": height_suffix,
+                            "unit": "m/s",
+                            "row": i,
+                            "col": j,
+                        },
                     }
-                })
+                )
 
-        logger.info("[WeatherEngine] build_wind_geojson_from_grid: generated %d features, first=(%.4f,%.4f) last=(%.4f,%.4f)",
+        logger.info(
+            "[WeatherEngine] build_wind_geojson_from_grid: generated %d features, first=(%.4f,%.4f) last=(%.4f,%.4f)",
             len(features),
             features[0]["geometry"]["coordinates"][0] if features else 0,
             features[0]["geometry"]["coordinates"][1] if features else 0,
@@ -938,8 +1054,12 @@ class WeatherEngineService:
         # 根据 bbox 范围动态计算网格点数
         lat_span = max(0.1, bbox.north - bbox.south)
         lon_span = max(0.1, bbox.east - bbox.west)
-        resolved_rows = rows if rows is not None else max(18, min(120, int(lat_span / 0.4)))
-        resolved_cols = cols if cols is not None else max(18, min(120, int(lon_span / 0.4)))
+        resolved_rows = (
+            rows if rows is not None else max(18, min(120, int(lat_span / 0.4)))
+        )
+        resolved_cols = (
+            cols if cols is not None else max(18, min(120, int(lon_span / 0.4)))
+        )
         lat_step = lat_span / resolved_rows
         lon_step = lon_span / resolved_cols
         # 根据 layer_id 高度后缀读取对应字段：temperature → 2m，temperature-80m → 80m，…
@@ -949,7 +1069,11 @@ class WeatherEngineService:
         if layer_id and layer_id.startswith("temperature-"):
             height_suffix = layer_id.split("-", 1)[-1]  # "80m" / "120m" / "180m"
         temp_attr = f"temperature_{height_suffix}"
-        base_temp = getattr(weather.current, temp_attr, None) or weather.current.temperature_2m or 0.0
+        base_temp = (
+            getattr(weather.current, temp_attr, None)
+            or weather.current.temperature_2m
+            or 0.0
+        )
         for row in range(resolved_rows):
             for col in range(resolved_cols):
                 south = bbox.south + row * lat_step
@@ -972,13 +1096,15 @@ class WeatherEngineService:
                         "type": "Feature",
                         "geometry": {
                             "type": "Polygon",
-                            "coordinates": [[
-                                [west, south],
-                                [east, south],
-                                [east, north],
-                                [west, north],
-                                [west, south],
-                            ]],
+                            "coordinates": [
+                                [
+                                    [west, south],
+                                    [east, south],
+                                    [east, north],
+                                    [west, north],
+                                    [west, south],
+                                ]
+                            ],
                         },
                         "properties": {
                             temp_attr: round(value, 2),
@@ -1004,7 +1130,9 @@ class WeatherEngineService:
         try:
             numpy = importlib.import_module("numpy")
             transform_module = importlib.import_module("rasterio.transform")
-            raster_writer_module = importlib.import_module("algorithms.providers.Python.publish.raster_writer")
+            raster_writer_module = importlib.import_module(
+                "algorithms.providers.Python.publish.raster_writer"
+            )
         except ImportError as exc:
             diagnostics.append(f"temperature_cog_skipped={exc.__class__.__name__}")
             return None, diagnostics
@@ -1030,7 +1158,11 @@ class WeatherEngineService:
             )
         except (HTTPError, URLError, OSError, KeyError, ValueError):
             array = numpy.zeros((rows, cols), dtype="float32")
-            base_temp = getattr(weather.current, temp_attr, None) or weather.current.temperature_2m or 0.0
+            base_temp = (
+                getattr(weather.current, temp_attr, None)
+                or weather.current.temperature_2m
+                or 0.0
+            )
             for row in range(rows):
                 lat = bbox.north - ((row + 0.5) / rows) * (bbox.north - bbox.south)
                 for col in range(cols):
@@ -1052,7 +1184,9 @@ class WeatherEngineService:
 
         job_dir = Path(settings.cache_dir) / "weatherengine" / run_id
         writer = writer_cls(output_dir=job_dir, overwrite=True)
-        transform = transform_module.from_bounds(bbox.west, bbox.south, bbox.east, bbox.north, cols, rows)
+        transform = transform_module.from_bounds(
+            bbox.west, bbox.south, bbox.east, bbox.north, cols, rows
+        )
         output_name = f"temperature_{height_suffix}_{run_id}"
         result = writer.write(
             array,
@@ -1072,7 +1206,9 @@ class WeatherEngineService:
             updated_at=requested_at,
             payload=cog_path.read_bytes(),
         )
-        diagnostics.append(f"temperature_cog_size_bytes={cog_ref.resource_size_bytes or 0}")
+        diagnostics.append(
+            f"temperature_cog_size_bytes={cog_ref.resource_size_bytes or 0}"
+        )
         return cog_ref, diagnostics
 
     def build_precipitation_geojson(
@@ -1086,8 +1222,12 @@ class WeatherEngineService:
         # 根据 bbox 范围动态计算网格点数
         lat_span = max(0.1, bbox.north - bbox.south)
         lon_span = max(0.1, bbox.east - bbox.west)
-        resolved_rows = rows if rows is not None else max(18, min(120, int(lat_span / 0.4)))
-        resolved_cols = cols if cols is not None else max(18, min(120, int(lon_span / 0.4)))
+        resolved_rows = (
+            rows if rows is not None else max(18, min(120, int(lat_span / 0.4)))
+        )
+        resolved_cols = (
+            cols if cols is not None else max(18, min(120, int(lon_span / 0.4)))
+        )
         lat_step = lat_span / resolved_rows
         lon_step = lon_span / resolved_cols
         base_precip = weather.current.precipitation or 0.0
@@ -1115,13 +1255,15 @@ class WeatherEngineService:
                         "type": "Feature",
                         "geometry": {
                             "type": "Polygon",
-                            "coordinates": [[
-                                [west, south],
-                                [east, south],
-                                [east, north],
-                                [west, north],
-                                [west, south],
-                            ]],
+                            "coordinates": [
+                                [
+                                    [west, south],
+                                    [east, south],
+                                    [east, north],
+                                    [west, north],
+                                    [west, south],
+                                ]
+                            ],
                         },
                         "properties": {
                             "precipitation": round(value, 2),
@@ -1146,7 +1288,9 @@ class WeatherEngineService:
         try:
             numpy = importlib.import_module("numpy")
             transform_module = importlib.import_module("rasterio.transform")
-            raster_writer_module = importlib.import_module("algorithms.providers.Python.publish.raster_writer")
+            raster_writer_module = importlib.import_module(
+                "algorithms.providers.Python.publish.raster_writer"
+            )
         except ImportError as exc:
             diagnostics.append(f"precipitation_cog_skipped={exc.__class__.__name__}")
             return None, diagnostics
@@ -1186,7 +1330,9 @@ class WeatherEngineService:
 
         job_dir = Path(settings.cache_dir) / "weatherengine" / run_id
         writer = writer_cls(output_dir=job_dir, overwrite=True)
-        transform = transform_module.from_bounds(bbox.west, bbox.south, bbox.east, bbox.north, cols, rows)
+        transform = transform_module.from_bounds(
+            bbox.west, bbox.south, bbox.east, bbox.north, cols, rows
+        )
         output_name = f"precipitation_{run_id}"
         result = writer.write(
             array,
@@ -1206,7 +1352,9 @@ class WeatherEngineService:
             updated_at=requested_at,
             payload=cog_path.read_bytes(),
         )
-        diagnostics.append(f"precipitation_cog_size_bytes={cog_ref.resource_size_bytes or 0}")
+        diagnostics.append(
+            f"precipitation_cog_size_bytes={cog_ref.resource_size_bytes or 0}"
+        )
         return cog_ref, diagnostics
 
     def build_humidity_geojson(
@@ -1220,8 +1368,12 @@ class WeatherEngineService:
         # 根据 bbox 范围动态计算网格点数
         lat_span = max(0.1, bbox.north - bbox.south)
         lon_span = max(0.1, bbox.east - bbox.west)
-        resolved_rows = rows if rows is not None else max(18, min(120, int(lat_span / 0.4)))
-        resolved_cols = cols if cols is not None else max(18, min(120, int(lon_span / 0.4)))
+        resolved_rows = (
+            rows if rows is not None else max(18, min(120, int(lat_span / 0.4)))
+        )
+        resolved_cols = (
+            cols if cols is not None else max(18, min(120, int(lon_span / 0.4)))
+        )
         lat_step = lat_span / resolved_rows
         lon_step = lon_span / resolved_cols
         base_humidity = weather.current.relative_humidity_2m or 0.0
@@ -1247,13 +1399,15 @@ class WeatherEngineService:
                         "type": "Feature",
                         "geometry": {
                             "type": "Polygon",
-                            "coordinates": [[
-                                [west, south],
-                                [east, south],
-                                [east, north],
-                                [west, north],
-                                [west, south],
-                            ]],
+                            "coordinates": [
+                                [
+                                    [west, south],
+                                    [east, south],
+                                    [east, north],
+                                    [west, north],
+                                    [west, south],
+                                ]
+                            ],
                         },
                         "properties": {
                             "relative_humidity_2m": round(value, 2),
@@ -1276,8 +1430,12 @@ class WeatherEngineService:
         # 根据 bbox 范围动态计算网格点数
         lat_span = max(0.1, bbox.north - bbox.south)
         lon_span = max(0.1, bbox.east - bbox.west)
-        resolved_rows = rows if rows is not None else max(18, min(120, int(lat_span / 0.4)))
-        resolved_cols = cols if cols is not None else max(18, min(120, int(lon_span / 0.4)))
+        resolved_rows = (
+            rows if rows is not None else max(18, min(120, int(lat_span / 0.4)))
+        )
+        resolved_cols = (
+            cols if cols is not None else max(18, min(120, int(lon_span / 0.4)))
+        )
         lat_step = lat_span / resolved_rows
         lon_step = lon_span / resolved_cols
         base_pressure = weather.current.pressure_msl or 0.0
@@ -1303,13 +1461,15 @@ class WeatherEngineService:
                         "type": "Feature",
                         "geometry": {
                             "type": "Polygon",
-                            "coordinates": [[
-                                [west, south],
-                                [east, south],
-                                [east, north],
-                                [west, north],
-                                [west, south],
-                            ]],
+                            "coordinates": [
+                                [
+                                    [west, south],
+                                    [east, south],
+                                    [east, north],
+                                    [west, north],
+                                    [west, south],
+                                ]
+                            ],
                         },
                         "properties": {
                             "pressure_msl": round(value, 2),
@@ -1332,8 +1492,12 @@ class WeatherEngineService:
         # 根据 bbox 范围动态计算网格点数
         lat_span = max(0.1, bbox.north - bbox.south)
         lon_span = max(0.1, bbox.east - bbox.west)
-        resolved_rows = rows if rows is not None else max(18, min(120, int(lat_span / 0.4)))
-        resolved_cols = cols if cols is not None else max(18, min(120, int(lon_span / 0.4)))
+        resolved_rows = (
+            rows if rows is not None else max(18, min(120, int(lat_span / 0.4)))
+        )
+        resolved_cols = (
+            cols if cols is not None else max(18, min(120, int(lon_span / 0.4)))
+        )
         lat_step = lat_span / resolved_rows
         lon_step = lon_span / resolved_cols
         base_visibility = weather.current.visibility or 0.0
@@ -1359,13 +1523,15 @@ class WeatherEngineService:
                         "type": "Feature",
                         "geometry": {
                             "type": "Polygon",
-                            "coordinates": [[
-                                [west, south],
-                                [east, south],
-                                [east, north],
-                                [west, north],
-                                [west, south],
-                            ]],
+                            "coordinates": [
+                                [
+                                    [west, south],
+                                    [east, south],
+                                    [east, north],
+                                    [west, north],
+                                    [west, south],
+                                ]
+                            ],
                         },
                         "properties": {
                             "visibility": round(value, 2),
@@ -1395,8 +1561,6 @@ class WeatherEngineService:
         current = grid_data["data"]["current"]
 
         rows, cols = grid["rows"], grid["cols"]
-        lats = grid["lats"]
-        lons = grid["lons"]
         features = []
 
         # 根据 layer_id 解析高度后缀
@@ -1434,32 +1598,40 @@ class WeatherEngineService:
                 west = grid["bbox"]["west"] + j * lon_step
                 east = west + lon_step
 
-                features.append({
-                    "type": "Feature",
-                    "geometry": {
-                        "type": "Polygon",
-                        "coordinates": [[
-                            [west, south],
-                            [east, south],
-                            [east, north],
-                            [west, north],
-                            [west, south],
-                        ]],
-                    },
-                    "properties": {
-                        temp_attr: round(numeric, 2),
-                        "height": height_suffix,
-                        "unit": "C",
-                        "row": i,
-                        "col": j,
+                features.append(
+                    {
+                        "type": "Feature",
+                        "geometry": {
+                            "type": "Polygon",
+                            "coordinates": [
+                                [
+                                    [west, south],
+                                    [east, south],
+                                    [east, north],
+                                    [west, north],
+                                    [west, south],
+                                ]
+                            ],
+                        },
+                        "properties": {
+                            temp_attr: round(numeric, 2),
+                            "height": height_suffix,
+                            "unit": "C",
+                            "row": i,
+                            "col": j,
+                        },
                     }
-                })
+                )
 
         if not features:
             logger.warning(
                 "[WeatherEngine] build_temperature_geojson_from_grid: empty features "
                 "layer=%s rows=%d cols=%d temp_len=%d attr=%s",
-                layer_id, rows, cols, len(temp_values), api_temp_attr,
+                layer_id,
+                rows,
+                cols,
+                len(temp_values),
+                api_temp_attr,
             )
 
         return {"type": "FeatureCollection", "features": features}
@@ -1482,8 +1654,6 @@ class WeatherEngineService:
         current = grid_data["data"]["current"]
 
         rows, cols = grid["rows"], grid["cols"]
-        lats = grid["lats"]
-        lons = grid["lons"]
         features = []
 
         # 从 API 响应中提取数据
@@ -1507,25 +1677,29 @@ class WeatherEngineService:
                 west = grid["bbox"]["west"] + j * lon_step
                 east = west + lon_step
 
-                features.append({
-                    "type": "Feature",
-                    "geometry": {
-                        "type": "Polygon",
-                        "coordinates": [[
-                            [west, south],
-                            [east, south],
-                            [east, north],
-                            [west, north],
-                            [west, south],
-                        ]],
-                    },
-                    "properties": {
-                        "precipitation": round(value, 2),
-                        "unit": "mm",
-                        "row": i,
-                        "col": j,
+                features.append(
+                    {
+                        "type": "Feature",
+                        "geometry": {
+                            "type": "Polygon",
+                            "coordinates": [
+                                [
+                                    [west, south],
+                                    [east, south],
+                                    [east, north],
+                                    [west, north],
+                                    [west, south],
+                                ]
+                            ],
+                        },
+                        "properties": {
+                            "precipitation": round(value, 2),
+                            "unit": "mm",
+                            "row": i,
+                            "col": j,
+                        },
                     }
-                })
+                )
 
         return {"type": "FeatureCollection", "features": features}
 
@@ -1568,25 +1742,31 @@ class WeatherEngineService:
                 west = grid["bbox"]["west"] + j * lon_step
                 east = west + lon_step
 
-                features.append({
-                    "type": "Feature",
-                    "geometry": {
-                        "type": "Polygon",
-                        "coordinates": [[
-                            [west, south],
-                            [east, south],
-                            [east, north],
-                            [west, north],
-                            [west, south],
-                        ]],
-                    },
-                    "properties": {
-                        "relative_humidity_2m": round(value, 2) if value is not None else 0,
-                        "unit": "%",
-                        "row": i,
-                        "col": j,
+                features.append(
+                    {
+                        "type": "Feature",
+                        "geometry": {
+                            "type": "Polygon",
+                            "coordinates": [
+                                [
+                                    [west, south],
+                                    [east, south],
+                                    [east, north],
+                                    [west, north],
+                                    [west, south],
+                                ]
+                            ],
+                        },
+                        "properties": {
+                            "relative_humidity_2m": round(value, 2)
+                            if value is not None
+                            else 0,
+                            "unit": "%",
+                            "row": i,
+                            "col": j,
+                        },
                     }
-                })
+                )
 
         return {"type": "FeatureCollection", "features": features}
 
@@ -1629,25 +1809,29 @@ class WeatherEngineService:
                 west = grid["bbox"]["west"] + j * lon_step
                 east = west + lon_step
 
-                features.append({
-                    "type": "Feature",
-                    "geometry": {
-                        "type": "Polygon",
-                        "coordinates": [[
-                            [west, south],
-                            [east, south],
-                            [east, north],
-                            [west, north],
-                            [west, south],
-                        ]],
-                    },
-                    "properties": {
-                        "pressure_msl": round(value, 2) if value is not None else 0,
-                        "unit": "hPa",
-                        "row": i,
-                        "col": j,
+                features.append(
+                    {
+                        "type": "Feature",
+                        "geometry": {
+                            "type": "Polygon",
+                            "coordinates": [
+                                [
+                                    [west, south],
+                                    [east, south],
+                                    [east, north],
+                                    [west, north],
+                                    [west, south],
+                                ]
+                            ],
+                        },
+                        "properties": {
+                            "pressure_msl": round(value, 2) if value is not None else 0,
+                            "unit": "hPa",
+                            "row": i,
+                            "col": j,
+                        },
                     }
-                })
+                )
 
         return {"type": "FeatureCollection", "features": features}
 
@@ -1690,25 +1874,166 @@ class WeatherEngineService:
                 west = grid["bbox"]["west"] + j * lon_step
                 east = west + lon_step
 
-                features.append({
-                    "type": "Feature",
-                    "geometry": {
-                        "type": "Polygon",
-                        "coordinates": [[
-                            [west, south],
-                            [east, south],
-                            [east, north],
-                            [west, north],
-                            [west, south],
-                        ]],
-                    },
-                    "properties": {
-                        "visibility": round(value, 2) if value is not None else 0,
-                        "unit": "m",
-                        "row": i,
-                        "col": j,
+                features.append(
+                    {
+                        "type": "Feature",
+                        "geometry": {
+                            "type": "Polygon",
+                            "coordinates": [
+                                [
+                                    [west, south],
+                                    [east, south],
+                                    [east, north],
+                                    [west, north],
+                                    [west, south],
+                                ]
+                            ],
+                        },
+                        "properties": {
+                            "visibility": round(value, 2) if value is not None else 0,
+                            "unit": "m",
+                            "row": i,
+                            "col": j,
+                        },
                     }
-                })
+                )
+
+        return {"type": "FeatureCollection", "features": features}
+
+    def build_cloud_cover_geojson_from_grid(
+        self,
+        grid_data: dict[str, Any],
+        layer_id: str,
+    ) -> dict[str, object]:
+        """从真实网格数据构建云量 GeoJSON。
+
+        Args:
+            grid_data: fetch_grid_forecast() 返回的网格数据
+            layer_id: 图层类型（cloud-cover）
+
+        Returns:
+            GeoJSON FeatureCollection（Polygon 网格，0~100%）
+        """
+        grid = grid_data["grid"]
+        current = grid_data["data"]["current"]
+
+        rows, cols = grid["rows"], grid["cols"]
+        features = []
+
+        # 从 API 响应中提取数据
+        cloud_cover_values = current.get("cloud_cover", [])
+
+        lat_step = (grid["bbox"]["north"] - grid["bbox"]["south"]) / rows
+        lon_step = (grid["bbox"]["east"] - grid["bbox"]["west"]) / cols
+
+        for i in range(rows):
+            for j in range(cols):
+                idx = i * cols + j
+                if idx >= len(cloud_cover_values):
+                    continue
+
+                value = cloud_cover_values[idx]
+
+                south = grid["bbox"]["south"] + i * lat_step
+                north = south + lat_step
+                west = grid["bbox"]["west"] + j * lon_step
+                east = west + lon_step
+
+                features.append(
+                    {
+                        "type": "Feature",
+                        "geometry": {
+                            "type": "Polygon",
+                            "coordinates": [
+                                [
+                                    [west, south],
+                                    [east, south],
+                                    [east, north],
+                                    [west, north],
+                                    [west, south],
+                                ]
+                            ],
+                        },
+                        "properties": {
+                            "cloud_cover": round(value, 2) if value is not None else 0,
+                            "unit": "%",
+                            "row": i,
+                            "col": j,
+                        },
+                    }
+                )
+
+        return {"type": "FeatureCollection", "features": features}
+
+    def build_dewpoint_geojson_from_grid(
+        self,
+        grid_data: dict[str, Any],
+        layer_id: str,
+    ) -> dict[str, object]:
+        """从真实网格数据构建露点温度 GeoJSON。
+
+        Args:
+            grid_data: fetch_grid_forecast() 返回的网格数据
+            layer_id: 图层类型（dewpoint）
+
+        Returns:
+            GeoJSON FeatureCollection（Polygon 网格）
+        """
+        grid = grid_data["grid"]
+        current = grid_data["data"]["current"]
+
+        rows, cols = grid["rows"], grid["cols"]
+        features = []
+
+        # 从 API 响应中提取数据
+        dewpoint_values = current.get("dew_point_2m", [])
+
+        lat_step = (grid["bbox"]["north"] - grid["bbox"]["south"]) / rows
+        lon_step = (grid["bbox"]["east"] - grid["bbox"]["west"]) / cols
+
+        for i in range(rows):
+            for j in range(cols):
+                idx = i * cols + j
+                if idx >= len(dewpoint_values):
+                    continue
+
+                value = dewpoint_values[idx]
+                if value is None:
+                    continue
+
+                try:
+                    numeric = float(value)
+                except (TypeError, ValueError):
+                    continue
+
+                south = grid["bbox"]["south"] + i * lat_step
+                north = south + lat_step
+                west = grid["bbox"]["west"] + j * lon_step
+                east = west + lon_step
+
+                features.append(
+                    {
+                        "type": "Feature",
+                        "geometry": {
+                            "type": "Polygon",
+                            "coordinates": [
+                                [
+                                    [west, south],
+                                    [east, south],
+                                    [east, north],
+                                    [west, north],
+                                    [west, south],
+                                ]
+                            ],
+                        },
+                        "properties": {
+                            "dew_point_2m": round(numeric, 2),
+                            "unit": "C",
+                            "row": i,
+                            "col": j,
+                        },
+                    }
+                )
 
         return {"type": "FeatureCollection", "features": features}
 
@@ -1737,25 +2062,29 @@ class WeatherEngineService:
                 north = south + lat_step
                 west = grid["bbox"]["west"] + j * lon_step
                 east = west + lon_step
-                features.append({
-                    "type": "Feature",
-                    "geometry": {
-                        "type": "Polygon",
-                        "coordinates": [[
-                            [west, south],
-                            [east, south],
-                            [east, north],
-                            [west, north],
-                            [west, south],
-                        ]],
-                    },
-                    "properties": {
-                        metric_key: round(value, 2) if value is not None else 0,
-                        "unit": unit,
-                        "row": i,
-                        "col": j,
-                    },
-                })
+                features.append(
+                    {
+                        "type": "Feature",
+                        "geometry": {
+                            "type": "Polygon",
+                            "coordinates": [
+                                [
+                                    [west, south],
+                                    [east, south],
+                                    [east, north],
+                                    [west, north],
+                                    [west, south],
+                                ]
+                            ],
+                        },
+                        "properties": {
+                            metric_key: round(value, 2) if value is not None else 0,
+                            "unit": unit,
+                            "row": i,
+                            "col": j,
+                        },
+                    }
+                )
         return {"type": "FeatureCollection", "features": features}
 
     def build_scalar_geojson_from_point(
@@ -1773,8 +2102,12 @@ class WeatherEngineService:
         features: list[dict[str, object]] = []
         lat_span = max(0.1, bbox.north - bbox.south)
         lon_span = max(0.1, bbox.east - bbox.west)
-        resolved_rows = rows if rows is not None else max(18, min(120, int(lat_span / 0.4)))
-        resolved_cols = cols if cols is not None else max(18, min(120, int(lon_span / 0.4)))
+        resolved_rows = (
+            rows if rows is not None else max(18, min(120, int(lat_span / 0.4)))
+        )
+        resolved_cols = (
+            cols if cols is not None else max(18, min(120, int(lon_span / 0.4)))
+        )
         lat_step = lat_span / resolved_rows
         lon_step = lon_span / resolved_cols
         for row in range(resolved_rows):
@@ -1795,25 +2128,29 @@ class WeatherEngineService:
                     lat_span=lat_span,
                     lon_span=lon_span,
                 )
-                features.append({
-                    "type": "Feature",
-                    "geometry": {
-                        "type": "Polygon",
-                        "coordinates": [[
-                            [west, south],
-                            [east, south],
-                            [east, north],
-                            [west, north],
-                            [west, south],
-                        ]],
-                    },
-                    "properties": {
-                        metric_key: round(value, 2),
-                        "unit": unit,
-                        "row": row,
-                        "col": col,
-                    },
-                })
+                features.append(
+                    {
+                        "type": "Feature",
+                        "geometry": {
+                            "type": "Polygon",
+                            "coordinates": [
+                                [
+                                    [west, south],
+                                    [east, south],
+                                    [east, north],
+                                    [west, north],
+                                    [west, south],
+                                ]
+                            ],
+                        },
+                        "properties": {
+                            metric_key: round(value, 2),
+                            "unit": unit,
+                            "row": row,
+                            "col": col,
+                        },
+                    }
+                )
         return {"type": "FeatureCollection", "features": features}
 
     def _resolve_render_bbox(
@@ -1827,13 +2164,23 @@ class WeatherEngineService:
         if vp_bbox is not None:
             logger.info(
                 "[WeatherEngine] _resolve_render_bbox: source=viewport_bbox bbox=(%s,%s,%s,%s) span=%.2fx%.2f",
-                vp_bbox.west, vp_bbox.south, vp_bbox.east, vp_bbox.north,
-                vp_bbox.east - vp_bbox.west, vp_bbox.north - vp_bbox.south,
+                vp_bbox.west,
+                vp_bbox.south,
+                vp_bbox.east,
+                vp_bbox.north,
+                vp_bbox.east - vp_bbox.west,
+                vp_bbox.north - vp_bbox.south,
             )
             return vp_bbox
         if payload.spatial_filter and payload.spatial_filter.bbox is not None:
             bbox = payload.spatial_filter.bbox
-            logger.info("[WeatherEngine] _resolve_render_bbox: source=spatial_filter bbox=(%s,%s,%s,%s)", bbox.west, bbox.south, bbox.east, bbox.north)
+            logger.info(
+                "[WeatherEngine] _resolve_render_bbox: source=spatial_filter bbox=(%s,%s,%s,%s)",
+                bbox.west,
+                bbox.south,
+                bbox.east,
+                bbox.north,
+            )
             return bbox
         west = longitude - 1.6
         east = longitude + 1.6
@@ -1847,7 +2194,15 @@ class WeatherEngineService:
         # 极地纬度 clamp：latitude≈90 时 north 会 >90，需限制到 [-90, 90]
         north = min(90, max(-90, north))
         south = min(90, max(-90, south))
-        logger.info("[WeatherEngine] _resolve_render_bbox: source=fallback(center±1.6/1.2) bbox=(%s,%s,%s,%s) center=(%s,%s)", west, south, east, north, longitude, latitude)
+        logger.info(
+            "[WeatherEngine] _resolve_render_bbox: source=fallback(center±1.6/1.2) bbox=(%s,%s,%s,%s) center=(%s,%s)",
+            west,
+            south,
+            east,
+            north,
+            longitude,
+            latitude,
+        )
         return BoundingBox(
             west=west,
             south=south,
@@ -1904,7 +2259,9 @@ class WeatherEngineService:
         # 简单的经纬度扰动模型，相对湿度限制在 0~100%
         lat_norm = (lat - center_lat) / lat_span
         lon_norm = (lon - center_lon) / lon_span
-        noise = (math.sin(lat_norm * math.pi) * 0.5 + math.cos(lon_norm * math.pi) * 0.5) * 5.0
+        noise = (
+            math.sin(lat_norm * math.pi) * 0.5 + math.cos(lon_norm * math.pi) * 0.5
+        ) * 5.0
         return max(0.0, min(100.0, base_humidity + noise))
 
     def _pressure_value_for_location(
@@ -1922,7 +2279,11 @@ class WeatherEngineService:
         lat_norm = (lat - center_lat) / lat_span
         lon_norm = (lon - center_lon) / lon_span
         radial = math.sqrt(lat_norm * lat_norm + lon_norm * lon_norm)
-        noise = -radial * 3.2 + math.sin(lon_norm * math.pi) * 1.5 - math.cos(lat_norm * math.pi) * 1.2
+        noise = (
+            -radial * 3.2
+            + math.sin(lon_norm * math.pi) * 1.5
+            - math.cos(lat_norm * math.pi) * 1.2
+        )
         return base_pressure + noise
 
     def _visibility_value_for_location(
@@ -1958,11 +2319,21 @@ class WeatherEngineService:
         lat_norm = (lat - center_lat) / lat_span
         lon_norm = (lon - center_lon) / lon_span
         radial = math.sqrt(lat_norm * lat_norm + lon_norm * lon_norm)
-        speed = max(0.0, base_speed + lon_norm * 3.2 - lat_norm * 1.4 + math.sin((lat_norm + lon_norm) * math.pi) * 1.2)
-        direction = (base_direction + lon_norm * 36.0 - lat_norm * 24.0 + radial * 18.0) % 360
+        speed = max(
+            0.0,
+            base_speed
+            + lon_norm * 3.2
+            - lat_norm * 1.4
+            + math.sin((lat_norm + lon_norm) * math.pi) * 1.2,
+        )
+        direction = (
+            base_direction + lon_norm * 36.0 - lat_norm * 24.0 + radial * 18.0
+        ) % 360
         return speed, direction
 
-    def _resolve_point(self, payload: WorkflowSubmitRequest) -> tuple[float, float, str | None]:
+    def _resolve_point(
+        self, payload: WorkflowSubmitRequest
+    ) -> tuple[float, float, str | None]:
         latitude = self._as_float(payload.parameters.get("latitude"))
         longitude = self._as_float(payload.parameters.get("longitude"))
         place_name = self._as_string(payload.parameters.get("place_name"))
@@ -1970,8 +2341,16 @@ class WeatherEngineService:
             return latitude, longitude, place_name
         if payload.spatial_filter and payload.spatial_filter.bbox:
             bbox = payload.spatial_filter.bbox
-            return (bbox.south + bbox.north) / 2, (bbox.west + bbox.east) / 2, place_name
-        return settings.weather_default_latitude, settings.weather_default_longitude, place_name or settings.weather_default_place_name
+            return (
+                (bbox.south + bbox.north) / 2,
+                (bbox.west + bbox.east) / 2,
+                place_name,
+            )
+        return (
+            settings.weather_default_latitude,
+            settings.weather_default_longitude,
+            place_name or settings.weather_default_place_name,
+        )
 
     def _resolve_forecast_hours(self, payload: WorkflowSubmitRequest) -> int:
         requested = self._as_int(payload.parameters.get("forecast_hours"))
@@ -1979,7 +2358,9 @@ class WeatherEngineService:
             return settings.weather_refresh_forecast_hours
         return max(1, min(24, requested))
 
-    def _pick_series_value(self, hourly: dict[str, object], key: str, index: int) -> float | None:
+    def _pick_series_value(
+        self, hourly: dict[str, object], key: str, index: int
+    ) -> float | None:
         values = hourly.get(key)
         if isinstance(values, list) and index < len(values):
             value = values[index]

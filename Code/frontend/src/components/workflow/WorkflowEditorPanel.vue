@@ -28,7 +28,11 @@ import WorkflowRunDialog, { type WorkflowRunTarget } from './WorkflowRunDialog.v
 import WorkflowTimerPanel from './WorkflowTimerPanel.vue'
 
 import type { LGraphNodeClass } from './litegraph-setup'
-import type { NodeTemplate, WorkflowDefinitionNode, WorkflowDefinitionLink } from '../../services/workflow-definition-api'
+import type {
+  NodeTemplate,
+  WorkflowDefinitionNode,
+  WorkflowDefinitionLink,
+} from '../../services/workflow-definition-api'
 
 const emit = defineEmits<{
   close: []
@@ -83,10 +87,15 @@ const newWorkflowDescription = ref('')
 const newWorkflowEngine = ref<'general' | 'weather' | 'python_provider' | 'gee'>('general')
 
 // 当前画布数据（未保存的修改）
-const currentGraphData = ref<{ nodes: WorkflowDefinitionNode[]; links: WorkflowDefinitionLink[] } | null>(null)
+const currentGraphData = ref<{
+  nodes: WorkflowDefinitionNode[]
+  links: WorkflowDefinitionLink[]
+} | null>(null)
 
 const hasDefinition = computed(() => currentDefinition.value !== null)
-const canSave = computed(() => hasDefinition.value && !isReadonly.value && dirty.value && !saving.value)
+const canSave = computed(
+  () => hasDefinition.value && !isReadonly.value && dirty.value && !saving.value,
+)
 const canRun = computed(() => hasDefinition.value && !running.value)
 const currentEngine = computed(() => currentDefinition.value?._meta?.engine ?? 'general')
 const currentLinkedLayerId = computed(() => currentDefinition.value?._meta?.linked_layer_id ?? null)
@@ -101,10 +110,7 @@ const headerWorkflowLabel = computed(() => {
 onMounted(async () => {
   const loading = useUiLoadingStore()
   try {
-    await Promise.all([
-      store.loadNodeTemplates(),
-      store.loadSummaries(),
-    ])
+    await Promise.all([store.loadNodeTemplates(), store.loadSummaries()])
   } finally {
     // 对应 DashboardView 中 workflowEditorOpen watch 的 showImmediate
     loading.hideImmediate()
@@ -114,9 +120,12 @@ onMounted(async () => {
 onBeforeUnmount(() => {
   // 先清 LiteGraph 浮动输入框，再卸面板（避免未保存关闭时泄漏到主地图）
   try {
-    ;(canvasRef.value as { disposeLiteGraphFloatingUi?: () => void } | null)
-      ?.disposeLiteGraphFloatingUi?.()
-  } catch { /* ignore */ }
+    ;(
+      canvasRef.value as { disposeLiteGraphFloatingUi?: () => void } | null
+    )?.disposeLiteGraphFloatingUi?.()
+  } catch {
+    /* ignore */
+  }
   clearRunStatusTimers()
 })
 
@@ -163,7 +172,10 @@ function cancelCreateWorkflow() {
   showCreateDialog.value = false
 }
 
-function handleGraphChange(payload: { nodes: WorkflowDefinitionNode[]; links: WorkflowDefinitionLink[] }) {
+function handleGraphChange(payload: {
+  nodes: WorkflowDefinitionNode[]
+  links: WorkflowDefinitionLink[]
+}) {
   currentGraphData.value = payload
   if (!isReadonly.value) {
     dirty.value = true
@@ -268,11 +280,15 @@ function notifyRunOutcome(ok: boolean, message?: string) {
   if (ok) {
     runStatus.value = 'submitted'
     saveError.value = null
-    _runStatusTimer2 = setTimeout(() => { runStatus.value = 'idle' }, 2500)
+    _runStatusTimer2 = setTimeout(() => {
+      runStatus.value = 'idle'
+    }, 2500)
   } else {
     runStatus.value = 'error'
     if (message) saveError.value = message
-    _runStatusTimer2 = setTimeout(() => { runStatus.value = 'idle' }, 4000)
+    _runStatusTimer2 = setTimeout(() => {
+      runStatus.value = 'idle'
+    }, 4000)
   }
 }
 
@@ -347,7 +363,7 @@ async function handleImportFile(event: Event) {
     console.error('[WorkflowEditorPanel] Import failed:', err)
     saveError.value = `导入失败：${err instanceof Error ? err.message : String(err)}`
   } finally {
-    input.value = ''  // 重置 input 以允许重复导入同一文件
+    input.value = '' // 重置 input 以允许重复导入同一文件
   }
 }
 
@@ -357,9 +373,12 @@ function handleClose() {
   }
   // emit 前主动清理：widget 编辑框可能挂在 document.body，晚一拍卸载会闪到主界面
   try {
-    ;(canvasRef.value as { disposeLiteGraphFloatingUi?: () => void } | null)
-      ?.disposeLiteGraphFloatingUi?.()
-  } catch { /* ignore */ }
+    ;(
+      canvasRef.value as { disposeLiteGraphFloatingUi?: () => void } | null
+    )?.disposeLiteGraphFloatingUi?.()
+  } catch {
+    /* ignore */
+  }
   emit('close')
 }
 
@@ -377,9 +396,13 @@ defineExpose({
           <span class="header-icon" aria-hidden="true">⬡</span>
           <span class="header-title">流配置</span>
           <span v-if="currentDefinition" class="header-sep">/</span>
-          <span v-if="currentDefinition" class="header-workflow-name">{{ headerWorkflowLabel }}</span>
+          <span v-if="currentDefinition" class="header-workflow-name">{{
+            headerWorkflowLabel
+          }}</span>
           <span v-if="isReadonly" class="readonly-badge">只读</span>
-          <span v-if="dirty && !isReadonly" class="dirty-badge" title="有未保存的修改">● 未保存</span>
+          <span v-if="dirty && !isReadonly" class="dirty-badge" title="有未保存的修改"
+            >● 未保存</span
+          >
         </div>
 
         <div class="header-actions">
@@ -424,12 +447,7 @@ defineExpose({
             <span aria-hidden="true">⬇</span>
             <span>导出</span>
           </button>
-          <button
-            class="header-btn"
-            type="button"
-            @click="handleImportClick"
-            title="从 JSON 导入"
-          >
+          <button class="header-btn" type="button" @click="handleImportClick" title="从 JSON 导入">
             <span aria-hidden="true">⬆</span>
             <span>导入</span>
           </button>
@@ -437,7 +455,7 @@ defineExpose({
             ref="fileInputRef"
             type="file"
             accept=".json,application/json"
-            style="display:none"
+            style="display: none"
             @change="handleImportFile"
           />
           <span class="action-divider"></span>
@@ -452,25 +470,37 @@ defineExpose({
             <span>{{ editorView === 'timers' ? '返回画布' : '定时器' }}</span>
           </button>
           <span class="action-divider"></span>
-          <button
-            class="header-btn primary"
-            type="button"
-            :disabled="!canSave"
-            @click="handleSave"
-          >
+          <button class="header-btn primary" type="button" :disabled="!canSave" @click="handleSave">
             <span aria-hidden="true">{{ saving ? '◌' : '💾' }}</span>
             <span>{{ saving ? '保存中...' : '保存' }}</span>
           </button>
           <button
             class="header-btn run"
             type="button"
-            :class="{ submitting: runStatus === 'submitting', submitted: runStatus === 'submitted' }"
+            :class="{
+              submitting: runStatus === 'submitting',
+              submitted: runStatus === 'submitted',
+            }"
             :disabled="!canRun"
             @click="handleRun"
-            :title="runStatus === 'submitting' ? '正在提交...' : runStatus === 'submitted' ? '已提交，查看状态面板' : '运行工作流'"
+            :title="
+              runStatus === 'submitting'
+                ? '正在提交...'
+                : runStatus === 'submitted'
+                  ? '已提交，查看状态面板'
+                  : '运行工作流'
+            "
           >
-            <span aria-hidden="true">{{ runStatus === 'submitting' ? '◌' : runStatus === 'submitted' ? '✓' : '▶' }}</span>
-            <span>{{ runStatus === 'submitting' ? '提交中...' : runStatus === 'submitted' ? '已提交' : '运行' }}</span>
+            <span aria-hidden="true">{{
+              runStatus === 'submitting' ? '◌' : runStatus === 'submitted' ? '✓' : '▶'
+            }}</span>
+            <span>{{
+              runStatus === 'submitting'
+                ? '提交中...'
+                : runStatus === 'submitted'
+                  ? '已提交'
+                  : '运行'
+            }}</span>
           </button>
           <span class="action-divider"></span>
           <button class="header-btn close" type="button" @click="handleClose" title="关闭">
@@ -553,15 +583,30 @@ defineExpose({
         <div class="dialog-form">
           <div class="form-row">
             <label class="form-label">工作流 ID</label>
-            <input v-model="newWorkflowId" type="text" class="form-input" placeholder="唯一标识符" />
+            <input
+              v-model="newWorkflowId"
+              type="text"
+              class="form-input"
+              placeholder="唯一标识符"
+            />
           </div>
           <div class="form-row">
             <label class="form-label">名称 *</label>
-            <input v-model="newWorkflowName" type="text" class="form-input" placeholder="显示名称" />
+            <input
+              v-model="newWorkflowName"
+              type="text"
+              class="form-input"
+              placeholder="显示名称"
+            />
           </div>
           <div class="form-row">
             <label class="form-label">描述</label>
-            <textarea v-model="newWorkflowDescription" class="form-textarea" rows="2" placeholder="可选描述"></textarea>
+            <textarea
+              v-model="newWorkflowDescription"
+              class="form-textarea"
+              rows="2"
+              placeholder="可选描述"
+            ></textarea>
           </div>
           <div class="form-row">
             <label class="form-label">引擎</label>
@@ -574,7 +619,9 @@ defineExpose({
           </div>
         </div>
         <div class="dialog-actions">
-          <button class="dialog-btn cancel" type="button" @click="cancelCreateWorkflow">取消</button>
+          <button class="dialog-btn cancel" type="button" @click="cancelCreateWorkflow">
+            取消
+          </button>
           <button
             class="dialog-btn primary"
             type="button"

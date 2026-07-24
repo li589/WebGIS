@@ -14,7 +14,12 @@ from modules.registry import MODULE_REGISTRY, MODULE_ALIASES, register_module
 from pipelines.base import BasePipeline, PipelinePlan
 from runner.registry import PIPELINE_REGISTRY, register_pipeline
 from workflow.executor import WorkflowRunner
-from workflow.graph import WorkflowDefinition, WorkflowEdge, WorkflowNodeSpec, WorkflowOutputSpec
+from workflow.graph import (
+    WorkflowDefinition,
+    WorkflowEdge,
+    WorkflowNodeSpec,
+    WorkflowOutputSpec,
+)
 from workflow.registry import NODE_EXECUTOR_REGISTRY, register_node_executor
 from workflow.schemas import NodeExecutionContext, PortSpec
 
@@ -28,17 +33,31 @@ class _LiteralNodeExecutor:
     def get_output_ports(self) -> list[PortSpec]:
         return [PortSpec(name="value", kind="scalar", data_class="python_object")]
 
-    def execute(self, inputs: dict[str, object], params: dict[str, object], ctx: NodeExecutionContext) -> dict[str, object]:
+    def execute(
+        self,
+        inputs: dict[str, object],
+        params: dict[str, object],
+        ctx: NodeExecutionContext,
+    ) -> dict[str, object]:
         _ = (inputs, ctx)
         return {"value": params["value"]}
 
 
 class _WorkflowFakeModule(BaseModule):
     name = "workflow_fake_module"
-    input_ports = [PortSpec(name="input_value", kind="scalar", data_class="python_object")]
-    output_ports = [PortSpec(name="manifest", kind="artifact", data_class="product_manifest")]
+    input_ports = [
+        PortSpec(name="input_value", kind="scalar", data_class="python_object")
+    ]
+    output_ports = [
+        PortSpec(name="manifest", kind="artifact", data_class="product_manifest")
+    ]
 
-    def execute(self, inputs: dict[str, object], params: dict[str, object], ctx: NodeExecutionContext) -> dict[str, object]:
+    def execute(
+        self,
+        inputs: dict[str, object],
+        params: dict[str, object],
+        ctx: NodeExecutionContext,
+    ) -> dict[str, object]:
         input_value = str(inputs["input_value"])
         scale = int(inputs["scale_value"])
         output_dir = str(params["output_dir"])
@@ -54,7 +73,11 @@ class _WorkflowFakeModule(BaseModule):
                 )
             ],
             main_layers=["value"],
-            extra={"input_value": input_value, "scale": scale, "output_dir": output_dir},
+            extra={
+                "input_value": input_value,
+                "scale": scale,
+                "output_dir": output_dir,
+            },
         )
         from workflow.schemas import ArtifactRef
 
@@ -74,7 +97,12 @@ class _WorkflowDefaultParamModule(BaseModule):
     name = "workflow_default_param_module"
     default_params = {"output_dir": "default-workflow-out"}
 
-    def execute(self, inputs: dict[str, object], params: dict[str, object], ctx: NodeExecutionContext) -> dict[str, object]:
+    def execute(
+        self,
+        inputs: dict[str, object],
+        params: dict[str, object],
+        ctx: NodeExecutionContext,
+    ) -> dict[str, object]:
         _ = inputs
         manifest = ProductManifest(
             job_id=ctx.request.job_id,
@@ -122,7 +150,9 @@ class _BridgeAcceptancePipeline(BasePipeline):
         assert prepared is not None
         assert prepared_inputs is not None
         assert prepared["mock_dataset"]["bundle"]["is_materialized"] is True
-        assert prepared_inputs["mock_dataset"]["request"]["dataset_name"] == "mock_dataset"
+        assert (
+            prepared_inputs["mock_dataset"]["request"]["dataset_name"] == "mock_dataset"
+        )
         return ProductManifest(
             job_id=request.job_id,
             run_id=ctx.run_id,
@@ -200,10 +230,16 @@ class _RecordingLogger:
 
 class WorkflowRunnerTests(unittest.TestCase):
     def setUp(self) -> None:
-        self._original_literal = NODE_EXECUTOR_REGISTRY.get(_LiteralNodeExecutor.node_type)
+        self._original_literal = NODE_EXECUTOR_REGISTRY.get(
+            _LiteralNodeExecutor.node_type
+        )
         self._original_module = MODULE_REGISTRY.get(_WorkflowFakeModule.name)
-        self._original_default_module = MODULE_REGISTRY.get(_WorkflowDefaultParamModule.name)
-        self._original_bridge_pipeline = PIPELINE_REGISTRY.get(_BridgeAcceptancePipeline.name)
+        self._original_default_module = MODULE_REGISTRY.get(
+            _WorkflowDefaultParamModule.name
+        )
+        self._original_bridge_pipeline = PIPELINE_REGISTRY.get(
+            _BridgeAcceptancePipeline.name
+        )
         self._original_module_aliases = dict(MODULE_ALIASES)
         register_node_executor(_LiteralNodeExecutor.node_type, _LiteralNodeExecutor)
         register_module(_WorkflowFakeModule())
@@ -214,7 +250,9 @@ class WorkflowRunnerTests(unittest.TestCase):
         if self._original_literal is None:
             NODE_EXECUTOR_REGISTRY.pop(_LiteralNodeExecutor.node_type, None)
         else:
-            NODE_EXECUTOR_REGISTRY[_LiteralNodeExecutor.node_type] = self._original_literal
+            NODE_EXECUTOR_REGISTRY[_LiteralNodeExecutor.node_type] = (
+                self._original_literal
+            )
         if self._original_module is None:
             MODULE_REGISTRY.pop(_WorkflowFakeModule.name, None)
         else:
@@ -222,11 +260,15 @@ class WorkflowRunnerTests(unittest.TestCase):
         if self._original_default_module is None:
             MODULE_REGISTRY.pop(_WorkflowDefaultParamModule.name, None)
         else:
-            MODULE_REGISTRY[_WorkflowDefaultParamModule.name] = self._original_default_module
+            MODULE_REGISTRY[_WorkflowDefaultParamModule.name] = (
+                self._original_default_module
+            )
         if self._original_bridge_pipeline is None:
             PIPELINE_REGISTRY.pop(_BridgeAcceptancePipeline.name, None)
         else:
-            PIPELINE_REGISTRY[_BridgeAcceptancePipeline.name] = self._original_bridge_pipeline
+            PIPELINE_REGISTRY[_BridgeAcceptancePipeline.name] = (
+                self._original_bridge_pipeline
+            )
         MODULE_ALIASES.clear()
         MODULE_ALIASES.update(self._original_module_aliases)
 
@@ -234,7 +276,9 @@ class WorkflowRunnerTests(unittest.TestCase):
         definition = WorkflowDefinition(
             workflow_id="wf-1",
             nodes=[
-                WorkflowNodeSpec(node_id="literal", node_type="test.literal", params={"value": 7}),
+                WorkflowNodeSpec(
+                    node_id="literal", node_type="test.literal", params={"value": 7}
+                ),
                 WorkflowNodeSpec(
                     node_id="module_node",
                     node_type="module",
@@ -245,8 +289,19 @@ class WorkflowRunnerTests(unittest.TestCase):
                     },
                 ),
             ],
-            edges=[WorkflowEdge(from_node="literal", from_port="value", to_node="module_node", to_port="scale_value")],
-            outputs=[WorkflowOutputSpec(name="final_manifest", source="node:module_node.manifest")],
+            edges=[
+                WorkflowEdge(
+                    from_node="literal",
+                    from_port="value",
+                    to_node="module_node",
+                    to_port="scale_value",
+                )
+            ],
+            outputs=[
+                WorkflowOutputSpec(
+                    name="final_manifest", source="node:module_node.manifest"
+                )
+            ],
         )
 
         with tempfile.TemporaryDirectory() as tmp_dir:
@@ -255,7 +310,9 @@ class WorkflowRunnerTests(unittest.TestCase):
                 job_id="job-workflow",
                 pipeline_name="workflow",
                 task_type="workflow",
-                time_range=TimeRange(start=datetime(2020, 1, 1), end=datetime(2020, 1, 1)),
+                time_range=TimeRange(
+                    start=datetime(2020, 1, 1), end=datetime(2020, 1, 1)
+                ),
                 region=RegionSpec(kind="global", value={}),
                 datasource_selection={"source_value": "demo-input"},
                 algorithm_params={},
@@ -286,16 +343,32 @@ class WorkflowRunnerTests(unittest.TestCase):
         definition = WorkflowDefinition(
             workflow_id="wf-logging",
             nodes=[
-                WorkflowNodeSpec(node_id="literal", node_type="test.literal", params={"value": 7}),
+                WorkflowNodeSpec(
+                    node_id="literal", node_type="test.literal", params={"value": 7}
+                ),
                 WorkflowNodeSpec(
                     node_id="module_node",
                     node_type="module",
                     input_bindings={"input_value": "input:source_value"},
-                    params={"module_name": "workflow_fake_module", "output_dir": "workflow-out"},
+                    params={
+                        "module_name": "workflow_fake_module",
+                        "output_dir": "workflow-out",
+                    },
                 ),
             ],
-            edges=[WorkflowEdge(from_node="literal", from_port="value", to_node="module_node", to_port="scale_value")],
-            outputs=[WorkflowOutputSpec(name="final_manifest", source="node:module_node.manifest")],
+            edges=[
+                WorkflowEdge(
+                    from_node="literal",
+                    from_port="value",
+                    to_node="module_node",
+                    to_port="scale_value",
+                )
+            ],
+            outputs=[
+                WorkflowOutputSpec(
+                    name="final_manifest", source="node:module_node.manifest"
+                )
+            ],
         )
 
         with tempfile.TemporaryDirectory() as tmp_dir:
@@ -304,7 +377,9 @@ class WorkflowRunnerTests(unittest.TestCase):
                 job_id="job-logging",
                 pipeline_name="workflow",
                 task_type="workflow",
-                time_range=TimeRange(start=datetime(2020, 1, 1), end=datetime(2020, 1, 1)),
+                time_range=TimeRange(
+                    start=datetime(2020, 1, 1), end=datetime(2020, 1, 1)
+                ),
                 region=RegionSpec(kind="global", value={}),
                 datasource_selection={"source_value": "demo-input"},
                 algorithm_params={},
@@ -348,7 +423,11 @@ class WorkflowRunnerTests(unittest.TestCase):
                     params={"module_name": "workflow_default_param_module"},
                 )
             ],
-            outputs=[WorkflowOutputSpec(name="final_manifest", source="node:module_node.manifest")],
+            outputs=[
+                WorkflowOutputSpec(
+                    name="final_manifest", source="node:module_node.manifest"
+                )
+            ],
         )
 
         with tempfile.TemporaryDirectory() as tmp_dir:
@@ -357,7 +436,9 @@ class WorkflowRunnerTests(unittest.TestCase):
                 job_id="job-default-params",
                 pipeline_name="workflow",
                 task_type="workflow",
-                time_range=TimeRange(start=datetime(2020, 1, 1), end=datetime(2020, 1, 1)),
+                time_range=TimeRange(
+                    start=datetime(2020, 1, 1), end=datetime(2020, 1, 1)
+                ),
                 region=RegionSpec(kind="global", value={}),
                 datasource_selection={},
                 algorithm_params={},
@@ -380,20 +461,38 @@ class WorkflowRunnerTests(unittest.TestCase):
             manifest = runner.artifact_store.load(artifact.artifact_id)
             self.assertEqual(manifest.extra["output_dir"], "default-workflow-out")
 
-    def test_workflow_runner_rejects_duplicate_bindings_for_same_input_port(self) -> None:
+    def test_workflow_runner_rejects_duplicate_bindings_for_same_input_port(
+        self,
+    ) -> None:
         definition = WorkflowDefinition(
             workflow_id="wf-conflict",
             nodes=[
-                WorkflowNodeSpec(node_id="literal", node_type="test.literal", params={"value": 7}),
+                WorkflowNodeSpec(
+                    node_id="literal", node_type="test.literal", params={"value": 7}
+                ),
                 WorkflowNodeSpec(
                     node_id="module_node",
                     node_type="module",
                     input_bindings={"input_value": "input:source_value"},
-                    params={"module_name": "workflow_fake_module", "output_dir": "workflow-out"},
+                    params={
+                        "module_name": "workflow_fake_module",
+                        "output_dir": "workflow-out",
+                    },
                 ),
             ],
-            edges=[WorkflowEdge(from_node="literal", from_port="value", to_node="module_node", to_port="input_value")],
-            outputs=[WorkflowOutputSpec(name="final_manifest", source="node:module_node.manifest")],
+            edges=[
+                WorkflowEdge(
+                    from_node="literal",
+                    from_port="value",
+                    to_node="module_node",
+                    to_port="input_value",
+                )
+            ],
+            outputs=[
+                WorkflowOutputSpec(
+                    name="final_manifest", source="node:module_node.manifest"
+                )
+            ],
         )
 
         with tempfile.TemporaryDirectory() as tmp_dir:
@@ -402,7 +501,9 @@ class WorkflowRunnerTests(unittest.TestCase):
                 job_id="job-conflict",
                 pipeline_name="workflow",
                 task_type="workflow",
-                time_range=TimeRange(start=datetime(2020, 1, 1), end=datetime(2020, 1, 1)),
+                time_range=TimeRange(
+                    start=datetime(2020, 1, 1), end=datetime(2020, 1, 1)
+                ),
                 region=RegionSpec(kind="global", value={}),
                 datasource_selection={"source_value": "demo-input"},
                 algorithm_params={},
@@ -432,7 +533,11 @@ class WorkflowRunnerTests(unittest.TestCase):
                     params={"pipeline_name": "bridge_acceptance_pipeline"},
                 )
             ],
-            outputs=[WorkflowOutputSpec(name="final_manifest", source="node:bridge_node.manifest")],
+            outputs=[
+                WorkflowOutputSpec(
+                    name="final_manifest", source="node:bridge_node.manifest"
+                )
+            ],
         )
 
         with tempfile.TemporaryDirectory() as tmp_dir:
@@ -441,7 +546,9 @@ class WorkflowRunnerTests(unittest.TestCase):
                 job_id="job-bridge",
                 pipeline_name="workflow",
                 task_type="workflow",
-                time_range=TimeRange(start=datetime(2020, 1, 1), end=datetime(2020, 1, 2)),
+                time_range=TimeRange(
+                    start=datetime(2020, 1, 1), end=datetime(2020, 1, 2)
+                ),
                 region=RegionSpec(kind="global", value={}),
                 datasource_selection={},
                 algorithm_params={},
@@ -458,7 +565,9 @@ class WorkflowRunnerTests(unittest.TestCase):
             runtime_context.cache_dir.mkdir(parents=True, exist_ok=True)
 
             datasource = _RecordingDataSource()
-            runner = WorkflowRunner(datasource_adapter=datasource, logger_adapter=_RecordingLogger())
+            runner = WorkflowRunner(
+                datasource_adapter=datasource, logger_adapter=_RecordingLogger()
+            )
             result = runner.run(definition, request, runtime_context)
 
             artifact = result.outputs["final_manifest"]
@@ -475,7 +584,9 @@ class WorkflowRunnerTests(unittest.TestCase):
                 ],
             )
 
-    def test_workflow_runner_bridge_pipeline_rejects_shim_pipeline_reentry(self) -> None:
+    def test_workflow_runner_bridge_pipeline_rejects_shim_pipeline_reentry(
+        self,
+    ) -> None:
         definition = WorkflowDefinition(
             workflow_id="wf-shim-bridge",
             nodes=[
@@ -485,7 +596,11 @@ class WorkflowRunnerTests(unittest.TestCase):
                     params={"pipeline_name": "retrieval_workflow_pipeline"},
                 )
             ],
-            outputs=[WorkflowOutputSpec(name="final_manifest", source="node:bridge_node.manifest")],
+            outputs=[
+                WorkflowOutputSpec(
+                    name="final_manifest", source="node:bridge_node.manifest"
+                )
+            ],
         )
 
         with tempfile.TemporaryDirectory() as tmp_dir:
@@ -494,7 +609,9 @@ class WorkflowRunnerTests(unittest.TestCase):
                 job_id="job-shim-bridge",
                 pipeline_name="workflow",
                 task_type="workflow",
-                time_range=TimeRange(start=datetime(2020, 1, 1), end=datetime(2020, 1, 2)),
+                time_range=TimeRange(
+                    start=datetime(2020, 1, 1), end=datetime(2020, 1, 2)
+                ),
                 region=RegionSpec(kind="global", value={}),
                 datasource_selection={},
                 algorithm_params={},

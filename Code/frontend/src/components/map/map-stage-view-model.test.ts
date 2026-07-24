@@ -25,19 +25,21 @@ describe('map-stage-view-model', () => {
   })
 
   it('builds stage display model from current basemap and active layer', () => {
-    expect(buildMapStageDisplayModel({
-      basemapProvider: 'Esri',
-      basemapLabel: 'Street',
-      hourLabel: '12:00',
-      activeLayer: {
-        ...buildFallbackActiveLayerDisplay(),
-        name: '风场图层',
-        availabilityState: 'partial',
-        availabilityLabel: '加载中',
-        observationTimeLabel: '11:45',
-        trendLabel: '等待工作流返回结果',
-      },
-    })).toEqual({
+    expect(
+      buildMapStageDisplayModel({
+        basemapProvider: 'Esri',
+        basemapLabel: 'Street',
+        hourLabel: '12:00',
+        activeLayer: {
+          ...buildFallbackActiveLayerDisplay(),
+          name: '风场图层',
+          availabilityState: 'partial',
+          availabilityLabel: '加载中',
+          observationTimeLabel: '11:45',
+          trendLabel: '等待工作流返回结果',
+        },
+      }),
+    ).toEqual({
       basemapChipLabel: 'Esri · Street',
       hourChipLabel: '12:00',
       layerChipLabel: '风场图层',
@@ -51,12 +53,14 @@ describe('map-stage-view-model', () => {
   })
 
   it('builds stage status model for loading and tile error banner', () => {
-    expect(buildMapStageStatusModel({
-      mapReady: false,
-      loadingLabel: '正在加载地图引擎...',
-      tileLoadFailed: true,
-      tileFailedProvider: 'Esri',
-    })).toEqual({
+    expect(
+      buildMapStageStatusModel({
+        mapReady: false,
+        loadingLabel: '正在加载地图引擎...',
+        tileLoadFailed: true,
+        tileFailedProvider: 'Esri',
+      }),
+    ).toEqual({
       showLoading: true,
       loadingLabel: '正在加载地图引擎...',
       showTileError: true,
@@ -66,21 +70,23 @@ describe('map-stage-view-model', () => {
   })
 
   it('builds stage appearance model from basemap, layer state and stage flags', () => {
-    expect(buildMapStageAppearanceModel({
-      basemapStyle: 'satellite',
-      activeLayer: {
-        ...buildFallbackActiveLayerDisplay(),
-        availabilityState: 'partial',
-        accentColor: '#12abef',
-        accentGlow: 'rgba(18, 171, 239, 0.32)',
-        chipTone: 'rgba(18, 171, 239, 0.12)',
-      },
-      timeVisualState: buildMapStageTimeVisualState(12),
-      isMapInteracting: true,
-      isSourceTransitioning: false,
-      mapVisible: true,
-      skeletonVisible: false,
-    })).toEqual({
+    expect(
+      buildMapStageAppearanceModel({
+        basemapStyle: 'satellite',
+        activeLayer: {
+          ...buildFallbackActiveLayerDisplay(),
+          availabilityState: 'partial',
+          accentColor: '#12abef',
+          accentGlow: 'rgba(18, 171, 239, 0.32)',
+          chipTone: 'rgba(18, 171, 239, 0.12)',
+        },
+        timeVisualState: buildMapStageTimeVisualState(12),
+        isMapInteracting: true,
+        isSourceTransitioning: false,
+        mapVisible: true,
+        skeletonVisible: false,
+      }),
+    ).toEqual({
       usesLightNavigationTheme: true,
       stageClassNames: {
         'map-stage-interacting': true,

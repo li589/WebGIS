@@ -7,7 +7,11 @@ from typing import Any
 
 from algorithms.inversion import ddca_retrieve_grid, retrieve_dynamic_h_grid
 from algorithms.physics import _FREQ_GHZ_MAX, _FREQ_GHZ_MIN, tau_from_ndvi
-from ingest.mat_bundle import get_first_available, load_mat_file, normalize_aliases_param
+from ingest.mat_bundle import (
+    get_first_available,
+    load_mat_file,
+    normalize_aliases_param,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -43,21 +47,49 @@ class BlockFieldConfig:
 def build_block_field_config(params: dict[str, Any]) -> BlockFieldConfig:
     """从参数字典构建 BlockFieldConfig，允许覆盖各字段的默认别名。"""
     return BlockFieldConfig(
-        tbv_mat_aliases=normalize_aliases_param(params.get("tbv_mat_aliases"), ("TBv_mat",)),
-        tbh_mat_aliases=normalize_aliases_param(params.get("tbh_mat_aliases"), ("TBh_mat",)),
-        ia_mat_aliases=normalize_aliases_param(params.get("ia_mat_aliases"), ("IA_mat",)),
-        ts_mat_aliases=normalize_aliases_param(params.get("ts_mat_aliases"), ("Ts_mat",)),
-        ndvi_mat_aliases=normalize_aliases_param(params.get("ndvi_mat_aliases"), ("NDVI_mat",)),
-        sf_mat_aliases=normalize_aliases_param(params.get("sf_mat_aliases"), ("SF_mat",)),
-        albedo_aliases=normalize_aliases_param(params.get("albedo_aliases"), ("Albedo", "ALBEDO")),
+        tbv_mat_aliases=normalize_aliases_param(
+            params.get("tbv_mat_aliases"), ("TBv_mat",)
+        ),
+        tbh_mat_aliases=normalize_aliases_param(
+            params.get("tbh_mat_aliases"), ("TBh_mat",)
+        ),
+        ia_mat_aliases=normalize_aliases_param(
+            params.get("ia_mat_aliases"), ("IA_mat",)
+        ),
+        ts_mat_aliases=normalize_aliases_param(
+            params.get("ts_mat_aliases"), ("Ts_mat",)
+        ),
+        ndvi_mat_aliases=normalize_aliases_param(
+            params.get("ndvi_mat_aliases"), ("NDVI_mat",)
+        ),
+        sf_mat_aliases=normalize_aliases_param(
+            params.get("sf_mat_aliases"), ("SF_mat",)
+        ),
+        albedo_aliases=normalize_aliases_param(
+            params.get("albedo_aliases"), ("Albedo", "ALBEDO")
+        ),
         b_aliases=normalize_aliases_param(params.get("b_aliases"), ("B", "b")),
-        clay_fraction_aliases=normalize_aliases_param(params.get("clay_fraction_aliases"), ("CF",)),
-        porosity_aliases=normalize_aliases_param(params.get("porosity_aliases"), ("porosity", "Porosity")),
-        landcover_aliases=normalize_aliases_param(params.get("landcover_aliases"), ("LC", "IGBP_9km_12")),
-        ndvi_v_max_aliases=normalize_aliases_param(params.get("ndvi_v_max_aliases"), ("NDVI_v_max",)),
-        ndvi_v_min_aliases=normalize_aliases_param(params.get("ndvi_v_min_aliases"), ("NDVI_v_min",)),
-        h_static_aliases=normalize_aliases_param(params.get("h_static_aliases"), ("H", "h")),
-        dh_aliases=normalize_aliases_param(params.get("dh_aliases"), ("DH_mat", "DH", "dh_mat")),
+        clay_fraction_aliases=normalize_aliases_param(
+            params.get("clay_fraction_aliases"), ("CF",)
+        ),
+        porosity_aliases=normalize_aliases_param(
+            params.get("porosity_aliases"), ("porosity", "Porosity")
+        ),
+        landcover_aliases=normalize_aliases_param(
+            params.get("landcover_aliases"), ("LC", "IGBP_9km_12")
+        ),
+        ndvi_v_max_aliases=normalize_aliases_param(
+            params.get("ndvi_v_max_aliases"), ("NDVI_v_max",)
+        ),
+        ndvi_v_min_aliases=normalize_aliases_param(
+            params.get("ndvi_v_min_aliases"), ("NDVI_v_min",)
+        ),
+        h_static_aliases=normalize_aliases_param(
+            params.get("h_static_aliases"), ("H", "h")
+        ),
+        dh_aliases=normalize_aliases_param(
+            params.get("dh_aliases"), ("DH_mat", "DH", "dh_mat")
+        ),
     )
 
 
@@ -93,9 +125,13 @@ def _broadcast_matrix(value: Any, target_shape: tuple[int, int], *, name: str) -
         return np.full(target_shape, array.item(), dtype=np.float64)
     if array.ndim == 1:
         if array.size == target_shape[1]:
-            return np.broadcast_to(array.reshape(1, target_shape[1]), target_shape).astype(np.float64, copy=False)
+            return np.broadcast_to(
+                array.reshape(1, target_shape[1]), target_shape
+            ).astype(np.float64, copy=False)
         if array.size == target_shape[0]:
-            return np.broadcast_to(array.reshape(target_shape[0], 1), target_shape).astype(np.float64, copy=False)
+            return np.broadcast_to(
+                array.reshape(target_shape[0], 1), target_shape
+            ).astype(np.float64, copy=False)
         if array.size == target_shape[0] * target_shape[1]:
             return array.reshape(target_shape)
     if array.ndim == 2:
@@ -103,10 +139,14 @@ def _broadcast_matrix(value: Any, target_shape: tuple[int, int], *, name: str) -
             return np.broadcast_to(array, target_shape).astype(np.float64, copy=False)
         except ValueError:
             pass
-    raise ValueError(f"Cannot broadcast {name} from shape {array.shape} to {target_shape}")
+    raise ValueError(
+        f"Cannot broadcast {name} from shape {array.shape} to {target_shape}"
+    )
 
 
-def _as_time_pixel_matrix(value: Any, *, name: str, target_shape: tuple[int, int] | None = None) -> Any:
+def _as_time_pixel_matrix(
+    value: Any, *, name: str, target_shape: tuple[int, int] | None = None
+) -> Any:
     """将输入规范化为 (nt, npix) 时间-像素矩阵。标量→(1,1)，1D→(1,N)，2D 直接使用。"""
     import numpy as np
 
@@ -116,7 +156,9 @@ def _as_time_pixel_matrix(value: Any, *, name: str, target_shape: tuple[int, int
     elif array.ndim == 1:
         array = array.reshape(1, -1)
     elif array.ndim != 2:
-        raise ValueError(f"{name} must be a scalar, 1-D, or 2-D array; got shape {array.shape}")
+        raise ValueError(
+            f"{name} must be a scalar, 1-D, or 2-D array; got shape {array.shape}"
+        )
     if target_shape is None:
         return array
     return _broadcast_matrix(array, target_shape, name=name)
@@ -151,10 +193,16 @@ def load_h_matrix(
 
     if dh_mat_path is not None:
         dh_payload = load_mat_file(dh_mat_path)
-        return np.asarray(get_first_available(dh_payload, list(field_config.dh_aliases)), dtype=np.float64)
+        return np.asarray(
+            get_first_available(dh_payload, list(field_config.dh_aliases)),
+            dtype=np.float64,
+        )
 
     try:
-        return np.asarray(get_first_available(payload, list(field_config.dh_aliases)), dtype=np.float64)
+        return np.asarray(
+            get_first_available(payload, list(field_config.dh_aliases)),
+            dtype=np.float64,
+        )
     except KeyError:
         if fallback_h is None:
             raise
@@ -292,7 +340,9 @@ def _run_chunks_serial(
         cols = slice(start, end)
         sub_kwargs = _prepare_chunk_kwargs(matrices, cols, mode)
         results.append(
-            _process_chunk(start, end, mode=mode, nt=nt, freq_ghz=freq_ghz, **sub_kwargs)
+            _process_chunk(
+                start, end, mode=mode, nt=nt, freq_ghz=freq_ghz, **sub_kwargs
+            )
         )
     return results
 
@@ -462,15 +512,29 @@ def execute_block_inversion(
         target_shape=target_shape,
     )
 
-    albedo = _as_static_vector(get_first_available(payload, list(field_config.albedo_aliases)), npix, name="albedo")
-    b_param = _as_static_vector(get_first_available(payload, list(field_config.b_aliases)), npix, name="b_param")
+    albedo = _as_static_vector(
+        get_first_available(payload, list(field_config.albedo_aliases)),
+        npix,
+        name="albedo",
+    )
+    b_param = _as_static_vector(
+        get_first_available(payload, list(field_config.b_aliases)), npix, name="b_param"
+    )
     clay_fraction = _as_static_vector(
         get_first_available(payload, list(field_config.clay_fraction_aliases)),
         npix,
         name="clay_fraction",
     )
-    porosity = _as_static_vector(get_first_available(payload, list(field_config.porosity_aliases)), npix, name="porosity")
-    landcover = _as_static_vector(get_first_available(payload, list(field_config.landcover_aliases)), npix, name="landcover")
+    porosity = _as_static_vector(
+        get_first_available(payload, list(field_config.porosity_aliases)),
+        npix,
+        name="porosity",
+    )
+    landcover = _as_static_vector(
+        get_first_available(payload, list(field_config.landcover_aliases)),
+        npix,
+        name="landcover",
+    )
     ndvi_v_max = _as_static_vector(
         get_first_available(payload, list(field_config.ndvi_v_max_aliases)),
         npix,
@@ -481,7 +545,11 @@ def execute_block_inversion(
         npix,
         name="ndvi_v_min",
     )
-    static_h = _as_static_vector(get_first_available(payload, list(field_config.h_static_aliases)), npix, name="static_h")
+    static_h = _as_static_vector(
+        get_first_available(payload, list(field_config.h_static_aliases)),
+        npix,
+        name="static_h",
+    )
     tau_ini_mat = np.full((nt, npix), np.nan, dtype=np.float64)
     results: dict[str, Any] = {
         "Tau_ini_mat": tau_ini_mat,
@@ -493,7 +561,9 @@ def execute_block_inversion(
         dh_mat = np.full((nt, npix), np.nan, dtype=np.float64)
         results["DH_mat"] = dh_mat
     elif mode == "ddca":
-        h_mat = load_h_matrix(payload, field_config, dh_mat_path=dh_mat_path, fallback_h=static_h, nt=nt)
+        h_mat = load_h_matrix(
+            payload, field_config, dh_mat_path=dh_mat_path, fallback_h=static_h, nt=nt
+        )
         sm_mat = np.full((nt, npix), np.nan, dtype=np.float64)
         vod_mat = np.full((nt, npix), np.nan, dtype=np.float64)
         results["H_used_mat"] = h_mat

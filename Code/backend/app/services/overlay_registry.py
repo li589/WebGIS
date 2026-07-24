@@ -15,7 +15,7 @@ from __future__ import annotations
 
 import json
 import sys
-from dataclasses import asdict, dataclass, field
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
@@ -24,7 +24,9 @@ from fastapi import HTTPException
 
 # 引入 algorithms providers 目录以复用 universal_reader
 # 注意：必须 append 而非 insert(0)，否则 providers/Python/algorithms 会遮蔽顶层 algorithms 包
-_PROVIDER_ROOT = Path(r"d:\temp_desktop\Proj\Comprehensive Geographic Data Analysis system\Code\algorithms\providers\Python")
+_PROVIDER_ROOT = Path(
+    r"d:\temp_desktop\Proj\Comprehensive Geographic Data Analysis system\Code\algorithms\providers\Python"
+)
 if str(_PROVIDER_ROOT) not in sys.path:
     sys.path.append(str(_PROVIDER_ROOT))
 
@@ -169,7 +171,9 @@ class OverlaySpec:
             return None
         return self.source_path if self.source_path.exists() else None
 
-    def resolve_value(self, lng: float, lat: float, time: str | None = None) -> dict[str, Any]:
+    def resolve_value(
+        self, lng: float, lat: float, time: str | None = None
+    ) -> dict[str, Any]:
         """查询图层在 (lng, lat) 点的像素值。
 
         读取源数据文件，用最近邻法采样。返回:
@@ -191,6 +195,7 @@ class OverlaySpec:
                 return result
 
             from data_access.universal_reader import UniversalDataReader
+
             reader = UniversalDataReader(src_path)
             # 读取变量（GeoTIFF 忽略 variable）
             variable = self.source_variable if self.source_reader != "geotiff" else None
@@ -209,17 +214,29 @@ class OverlaySpec:
             # 二维数据 (lat, lon): 找最近邻行列
             if values.ndim == 2:
                 # 若坐标为一维，按行列索引
-                if lat_1d.ndim == 1 and lon_1d.ndim == 1 and lat_1d.size == values.shape[0] and lon_1d.size == values.shape[1]:
+                if (
+                    lat_1d.ndim == 1
+                    and lon_1d.ndim == 1
+                    and lat_1d.size == values.shape[0]
+                    and lon_1d.size == values.shape[1]
+                ):
                     row = int(np.argmin(np.abs(lat_1d - lat)))
                     col = int(np.argmin(np.abs(lon_1d - lng)))
                     val = float(values[row, col])
                 else:
                     # 二维坐标（如 SMAP EASE-Grid）：逐像素距离
-                    flat_idx = int(np.argmin((lat_arr - lat) ** 2 + (lon_arr - lng) ** 2))
+                    flat_idx = int(
+                        np.argmin((lat_arr - lat) ** 2 + (lon_arr - lng) ** 2)
+                    )
                     val = float(values.ravel()[flat_idx])
             elif values.ndim == 3:
                 # 3D (time, lat, lon): 取第一个时间片
-                if lat_1d.ndim == 1 and lon_1d.ndim == 1 and lat_1d.size == values.shape[1] and lon_1d.size == values.shape[2]:
+                if (
+                    lat_1d.ndim == 1
+                    and lon_1d.ndim == 1
+                    and lat_1d.size == values.shape[1]
+                    and lon_1d.size == values.shape[2]
+                ):
                     row = int(np.argmin(np.abs(lat_1d - lat)))
                     col = int(np.argmin(np.abs(lon_1d - lng)))
                     val = float(values[0, row, col])
@@ -258,7 +275,9 @@ _SOIL_DDCA_H_DIR = Path(r"I:\Geograph_DataSet\Soil_Ecological_Data\DDCA\DDCA_DH\
 
 # ── Phase 2: 课题组 VOD/SM 产品族（2025-12 时间序列，EASE-Grid 9km）──────────
 # SmapSoil_VOD_SM/YYYYMMDD.mat (v7.3 HDF5) 含 OMEGA / SM / VOD 三个变量，shape (1624, 3856)
-_SMAP_SOIL_VOD_SM_DIR = Path(r"I:\Geograph_DataSet\Soil_Ecological_Data\SmapSoil_VOD_SM")
+_SMAP_SOIL_VOD_SM_DIR = Path(
+    r"I:\Geograph_DataSet\Soil_Ecological_Data\SmapSoil_VOD_SM"
+)
 
 _OVERLAY_PNG_ROOT = _PROJECT_OUTPUT / "_overlays"
 """所有导出 PNG 的统一存放目录（由 Tools/export_overlay_assets.py 生成）。"""
@@ -309,7 +328,7 @@ def _doy_time_list(directory: Path, prefix: str = "doy_") -> list[str]:
         # doy_017.mat -> 017
         stem = f.stem  # 'doy_017'
         if stem.startswith(prefix):
-            tag = stem[len(prefix):]
+            tag = stem[len(prefix) :]
             if tag.isdigit():
                 tags.append(tag)
     return tags
@@ -530,7 +549,9 @@ register_overlay(
         vmax=0.5,
         unit="m³/m³",
         opacity=0.7,
-        source_pattern=str(_PROJECT_OUTPUT / "stage1_smap_mat" / "SMAP_L3_SM_P_{time}_R*.mat"),
+        source_pattern=str(
+            _PROJECT_OUTPUT / "stage1_smap_mat" / "SMAP_L3_SM_P_{time}_R*.mat"
+        ),
         source_variable="sm_dca",
         source_reader="mat",
     )
@@ -565,13 +586,23 @@ register_overlay(
 _GEBCO_NC = Path(r"I:\Geograph_DataSet\DEM\GEBCO_2024.nc")
 _CMFD_TIF = Path(r"I:\Geograph_DataSet\Precipitation\pre_2002_01.tif")
 _CLCD_TIF = Path(r"I:\Geograph_DataSet\LandCover\CLCD_v01_1997.tif")
-_BIOMASS_NC = Path(r"I:\Geograph_DataSet\Biomass\ESACCI-BIOMASS-L4-AGB-MERGED-100m-2020-fv6.0.nc")
-_ERA5_DWAA_TIF = Path(r"I:\Geograph_DataSet\Hazards\DWAA_result\DW_T7\ERA5_2020_DW_SMCI.tif")
-_ERA5_WDAA_TIF = Path(r"I:\Geograph_DataSet\Hazards\DWAA_result\WD_T7\ERA5_2020_WD_SMCI.tif")
+_BIOMASS_NC = Path(
+    r"I:\Geograph_DataSet\Biomass\ESACCI-BIOMASS-L4-AGB-MERGED-100m-2020-fv6.0.nc"
+)
+_ERA5_DWAA_TIF = Path(
+    r"I:\Geograph_DataSet\Hazards\DWAA_result\DW_T7\ERA5_2020_DW_SMCI.tif"
+)
+_ERA5_WDAA_TIF = Path(
+    r"I:\Geograph_DataSet\Hazards\DWAA_result\WD_T7\ERA5_2020_WD_SMCI.tif"
+)
 _CO2_TIF = Path(r"I:\Geograph_DataSet\CO2\MidLayerCO2Column\TIF\MeanCarbonDioxide.tif")
-_SOIL_DDCA_MAT = Path(r"I:\Geograph_DataSet\Soil_Ecological_Data\DDCA\DDCA_DH\H\20150401.mat")
+_SOIL_DDCA_MAT = Path(
+    r"I:\Geograph_DataSet\Soil_Ecological_Data\DDCA\DDCA_DH\H\20150401.mat"
+)
 _OMEGA_FY_MAT = Path(r"I:\Geograph_DataSet\InversionResults\fy_avg\doy_025.mat")
-_FOREST_RATIO_MAT = Path(r"I:\Geograph_DataSet\InversionResults\Forest_Ratio_9KM_2020.mat")
+_FOREST_RATIO_MAT = Path(
+    r"I:\Geograph_DataSet\InversionResults\Forest_Ratio_9KM_2020.mat"
+)
 
 
 # GEBCO 2024 DEM（中国区域）
@@ -750,7 +781,9 @@ register_overlay(
 # Phase 1.4 新增：课题组派生景观指数数据，与 Forest_Ratio 同源
 # .mat 含 4 个景观指数：PD/ED/SHDI/CONTAG；Phase 1 先暴露 SHDI（Shannon 多样性指数），
 # 其余 3 个可在后续 Phase 通过相似方式扩展。
-_LANDSCAPE_METRICS_MAT = _INVERSION_RESULTS_ROOT / "Landscape_Metrics_LandOnly_9KM_2020.mat"
+_LANDSCAPE_METRICS_MAT = (
+    _INVERSION_RESULTS_ROOT / "Landscape_Metrics_LandOnly_9KM_2020.mat"
+)
 register_overlay(
     OverlaySpec(
         layer_id="landscape-metrics-9km",

@@ -24,11 +24,7 @@ function toggleCollapsed() {
 
 <template>
   <aside class="editor-sidebar left" :class="{ collapsed }">
-    <WorkflowList
-      v-show="!collapsed"
-      @select="emit('select', $event)"
-      @create="emit('create')"
-    />
+    <WorkflowList v-show="!collapsed" @select="emit('select', $event)" @create="emit('create')" />
     <button
       class="sidebar-toggle left-toggle"
       type="button"
@@ -73,7 +69,10 @@ function toggleCollapsed() {
   display: flex;
   align-items: center;
   justify-content: center;
-  transition: color 0.16s ease, border-color 0.16s ease, background 0.16s ease;
+  transition:
+    color 0.16s ease,
+    border-color 0.16s ease,
+    background 0.16s ease;
 }
 
 .sidebar-toggle:hover {

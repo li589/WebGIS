@@ -5,6 +5,7 @@
 
 量纲: max_size 无量纲（连接数），busy_timeout_ms 单位毫秒。
 """
+
 from __future__ import annotations
 
 import logging
@@ -132,7 +133,9 @@ class SQLiteConnectionPool:
             self._created = 0
         if not quiet:
             logger.info(
-                "SQLiteConnectionPool closed %d idle connections for %s", closed, self.db_path
+                "SQLiteConnectionPool closed %d idle connections for %s",
+                closed,
+                self.db_path,
             )
 
     def __del__(self) -> None:

@@ -18,7 +18,9 @@ from utils.fy_executor import execute_fy_command_steps
 
 
 def _resolve_fy_input_dir(datasource_selection: dict[str, object]) -> Path:
-    prepared_dir = resolve_prepared_local_directory(datasource_selection, ("FY_MWRI_HDF",))
+    prepared_dir = resolve_prepared_local_directory(
+        datasource_selection, ("FY_MWRI_HDF",)
+    )
     if prepared_dir is not None:
         return prepared_dir
     input_dir = datasource_selection.get("input_dir")
@@ -46,7 +48,11 @@ class FyDailyPipeline(BasePipeline):
 
     def execute(self, request: JobRequest, ctx: RuntimeContext) -> ProductManifest:
         input_dir = _resolve_fy_input_dir(request.datasource_selection)
-        output_root = Path(request.output_spec.extra.get("output_dir", ctx.workspace / "products" / "fy_daily"))
+        output_root = Path(
+            request.output_spec.extra.get(
+                "output_dir", ctx.workspace / "products" / "fy_daily"
+            )
+        )
         orbit_mode = request.algorithm_params.get("orbit_mode", "MWRID")
         band_ids = tuple(request.algorithm_params.get("band_ids", [1, 2]))
         overlap_option = request.algorithm_params.get("overlap_option", "average")
@@ -55,7 +61,9 @@ class FyDailyPipeline(BasePipeline):
         execute_commands = bool(request.algorithm_params.get("execute_commands", False))
 
         if self.logger_adapter is not None:
-            self.logger_adapter.emit_stage_start("fy_plan", f"Build FY daily job plan from {input_dir}")
+            self.logger_adapter.emit_stage_start(
+                "fy_plan", f"Build FY daily job plan from {input_dir}"
+            )
 
         plans = build_fy_daily_job_plans(
             input_dir=input_dir,
@@ -65,13 +73,17 @@ class FyDailyPipeline(BasePipeline):
             orbit_mode=orbit_mode,
         )
         if not plans:
-            raise FileNotFoundError("No FY daily jobs found in the requested date range")
+            raise FileNotFoundError(
+                "No FY daily jobs found in the requested date range"
+            )
 
         for plan in plans:
             Path(plan.output_dir).mkdir(parents=True, exist_ok=True)
             Path(plan.work_dir).mkdir(parents=True, exist_ok=True)
 
-        plan_json_path = write_fy_daily_plan_json(plans, output_root / "fy_daily_plan.json")
+        plan_json_path = write_fy_daily_plan_json(
+            plans, output_root / "fy_daily_plan.json"
+        )
         command_plan_refs: list[ProductRef] = []
         for plan in plans:
             command_steps = build_fy_daily_command_steps(
@@ -97,15 +109,23 @@ class FyDailyPipeline(BasePipeline):
                 )
             )
             if self.logger_adapter is not None:
-                self.logger_adapter.emit_artifact("fy_plan", str(command_plan_path), "fy_daily_command_plan")
+                self.logger_adapter.emit_artifact(
+                    "fy_plan", str(command_plan_path), "fy_daily_command_plan"
+                )
 
-        data_product_refs = self._build_fy_data_products(plans, output_root, execute_commands=execute_commands)
+        data_product_refs = self._build_fy_data_products(
+            plans, output_root, execute_commands=execute_commands
+        )
 
         if self.logger_adapter is not None:
-            self.logger_adapter.emit_artifact("fy_plan", str(plan_json_path), "fy_daily_plan_json")
+            self.logger_adapter.emit_artifact(
+                "fy_plan", str(plan_json_path), "fy_daily_plan_json"
+            )
             for product in data_product_refs:
                 self.logger_adapter.emit_artifact("fy_plan", product.uri, product.type)
-            self.logger_adapter.emit_stage_end("fy_plan", f"Generated {len(plans)} FY daily job plans")
+            self.logger_adapter.emit_stage_end(
+                "fy_plan", f"Generated {len(plans)} FY daily job plans"
+            )
 
         product_refs = [
             ProductRef(
@@ -120,7 +140,11 @@ class FyDailyPipeline(BasePipeline):
         product_refs.extend(command_plan_refs)
         product_refs.extend(data_product_refs)
 
-        main_layers = ["TBv", "TBh", "IA"] if any(product.type == "fy_daily_mat" for product in data_product_refs) else []
+        main_layers = (
+            ["TBv", "TBh", "IA"]
+            if any(product.type == "fy_daily_mat" for product in data_product_refs)
+            else []
+        )
 
         return ProductManifest(
             job_id=request.job_id,
@@ -164,7 +188,11 @@ class FyDailyPipeline(BasePipeline):
                     type="fy_daily_tif",
                     uri=str(tif_path),
                     variable="TBv,TBh,IA",
-                    tags={"date_key": plan.date_key, "orbit_type": plan.orbit_type, "satellite": plan.satellite},
+                    tags={
+                        "date_key": plan.date_key,
+                        "orbit_type": plan.orbit_type,
+                        "satellite": plan.satellite,
+                    },
                 )
             )
             payload = _load_fy_multiband_payload(tif_path, satellite=plan.satellite)
@@ -176,7 +204,11 @@ class FyDailyPipeline(BasePipeline):
                     type="fy_daily_mat",
                     uri=str(mat_path),
                     variable="TBv,TBh,IA",
-                    tags={"date_key": plan.date_key, "orbit_type": plan.orbit_type, "satellite": plan.satellite},
+                    tags={
+                        "date_key": plan.date_key,
+                        "orbit_type": plan.orbit_type,
+                        "satellite": plan.satellite,
+                    },
                 )
             )
         return data_products
@@ -189,7 +221,9 @@ def _load_fy_multiband_payload(tif_path: Path, *, satellite: str) -> dict[str, o
     profile = get_fy_profile(satellite)
     with rasterio.open(tif_path) as dataset:
         if dataset.count < 3:
-            raise ValueError(f"FY multiband output must contain at least 3 bands: {tif_path}")
+            raise ValueError(
+                f"FY multiband output must contain at least 3 bands: {tif_path}"
+            )
         tbv = dataset.read(1).astype(np.float64)
         tbh = dataset.read(2).astype(np.float64)
         ia = dataset.read(3).astype(np.float64)

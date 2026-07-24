@@ -1,4 +1,5 @@
 """Retrieval-01: dh/ddca/omega three-mode output branches."""
+
 from __future__ import annotations
 
 import tempfile
@@ -56,6 +57,7 @@ class RetrievalThreeModesTests(unittest.TestCase):
             "CF": np.zeros((1, 5), dtype=np.float64),
             "BD": np.zeros((1, 5), dtype=np.float64),
             "H": np.zeros((1, 5), dtype=np.float64),
+            "DH_mat": np.zeros((1, 5), dtype=np.float64),
             "porosity": np.zeros((1, 5), dtype=np.float64),
             "LC": np.zeros((1, 5), dtype=np.float64),
             "NDVI_v_max": np.zeros((1, 5), dtype=np.float64),
@@ -65,7 +67,9 @@ class RetrievalThreeModesTests(unittest.TestCase):
             "date_keys": ["20200101"],
         }
 
-    def _run_workflow(self, request: JobRequest, payload_data: dict | None = None) -> ProductManifest:
+    def _run_workflow(
+        self, request: JobRequest, payload_data: dict | None = None
+    ) -> ProductManifest:
         tmp_dir = Path(tempfile.mkdtemp())
         ctx = RuntimeContext(
             job_id=request.job_id,
@@ -80,8 +84,17 @@ class RetrievalThreeModesTests(unittest.TestCase):
         mock_bundle.data = dict(payload_data)
         mock_bundle.missing_dates = []
         mock_bundle.pixel_count = 5
-        with patch("modules.bundles.build_timeseries_bundle_from_range", return_value=mock_bundle), \
-             patch("ingest.mat_bundle.load_mat_file", return_value=payload_data):
+        with (
+            patch(
+                "modules.bundles.build_timeseries_bundle_from_range",
+                return_value=mock_bundle,
+            ),
+            patch("ingest.mat_bundle.load_mat_file", return_value=payload_data),
+            patch(
+                "algorithms.block_inversion.load_mat_file", return_value=payload_data
+            ),
+            patch("modules.block_inversion.load_mat_file", return_value=payload_data),
+        ):
             definition = build_retrieval_workflow_definition(request)
             runner = WorkflowRunner()
             workflow_result = runner.run(definition, request, ctx)
@@ -135,6 +148,7 @@ class RetrievalThreeModesTests(unittest.TestCase):
                 "smap_daily_mat": str(bundle_path),
                 "ndvi_daily_mat": str(bundle_path),
                 "ancillary_mat": str(bundle_path),
+                "dh_mat": str(bundle_path),
             },
             algorithm_params={"mode": "ddca"},
             output_spec=OutputSpec(extra={"output_dir": str(output_dir)}),

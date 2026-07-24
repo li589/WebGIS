@@ -22,13 +22,17 @@ from app.api.routers.unified_tile_router import router as unified_tile_router
 from app.api.weather_tile_routes import router as weather_tile_router
 from app.api.gee_config_routes import router as gee_config_router
 from app.api.config_routes import router as config_router
-from app.api.routers.workflow_definition_router import router as workflow_definition_router
+from app.api.routers.workflow_definition_router import (
+    router as workflow_definition_router,
+)
 from app.api.routers.workflow_timer_router import router as workflow_timer_router
 from app.api.routers.cleanup_router import router as cleanup_router
 from app.core.config import settings
 from app.core.logging import ensure_logging_configured, log_context, set_request_id
 from app.core.redis_client import record_request_metric
-from app.gee.core.src.webgis_gee.api.routes import create_api_router as create_gee_router
+from app.gee.core.src.webgis_gee.api.routes import (
+    create_api_router as create_gee_router,
+)
 from app.services.providers import register_default_providers
 from app.services.workflow.service_container import follow_up_dispatch_service
 
@@ -47,31 +51,40 @@ async def lifespan(app: FastAPI):
     try:
         cleaned = follow_up_dispatch_service.cleanup_stale_workflow_runs()
         if cleaned > 0:
-            logger.info("Startup cleanup: marked %d stale workflow run(s) as failed", cleaned)
+            logger.info(
+                "Startup cleanup: marked %d stale workflow run(s) as failed", cleaned
+            )
     except Exception:
         logger.exception("Failed to cleanup stale workflow runs on startup")
 
     # 后台预热 provider dataset helpers 缓存，避免首次 /layers 请求阻塞
     # 在后台线程运行，不阻塞服务启动
     import threading
+
     def _warmup():
         try:
             from app.services.workflow_request_resolver import warm_provider_helpers
+
             if warm_provider_helpers():
                 logger.info("Provider dataset helpers warmed up successfully")
             else:
-                logger.warning("Provider dataset helpers warmup returned None — /layers may be slow on first call")
+                logger.warning(
+                    "Provider dataset helpers warmup returned None — /layers may be slow on first call"
+                )
         except Exception:
             logger.exception("Failed to warm up provider dataset helpers")
+
     threading.Thread(target=_warmup, daemon=True, name="provider-warmup").start()
 
     # 注册默认天气源 Provider 到全局注册表
     # 使 /config/weather/providers 端点能查询到已注册的天气源
     try:
         from app.weatherengine.provider_registry import register_default_providers
+
         register_default_providers()
         # 应用 DB 中持久化的覆盖配置（enabled/priority/config）
         from app.services.config_service import apply_persisted_provider_overrides
+
         apply_persisted_provider_overrides()
     except Exception:
         logger.exception("Failed to register default weather providers")
@@ -178,7 +191,9 @@ def create_app() -> FastAPI:
         gee_router = create_gee_router()
         app.include_router(gee_router)
     except Exception:
-        logger.warning("GEE router failed to mount — GEE backend may not be installed or configured.")
+        logger.warning(
+            "GEE router failed to mount — GEE backend may not be installed or configured."
+        )
 
     return app
 

@@ -17,16 +17,14 @@
 
 from __future__ import annotations
 
-import shutil
-import sys
 from pathlib import Path
 
 ROOT = Path(r"I:\Geograph_DataSet")
 
 # (旧目录名, 新目录名, 是否需要先删除空的新目录)
 RENAME_PLAN = [
-    ("行政区数据", "AdminBoundary", True),   # AdminBoundary 已创建为空目录
-    ("ISD-Lite", "Station", True),           # Station 已创建为空目录
+    ("行政区数据", "AdminBoundary", True),  # AdminBoundary 已创建为空目录
+    ("ISD-Lite", "Station", True),  # Station 已创建为空目录
     ("二氧化碳数据", "CO2", False),
     ("交通数据", "Transport", False),
     ("灾害数据", "Hazards", False),
@@ -62,7 +60,7 @@ def main() -> None:
 
         # 检查旧目录是否存在
         if not old_path.exists():
-            print(f"  SKIP: 旧目录不存在")
+            print("  SKIP: 旧目录不存在")
             skipped += 1
             continue
 
@@ -85,14 +83,14 @@ def main() -> None:
 
         # 检查新目录是否已存在
         if new_path.exists():
-            print(f"  SKIP: 新目录已存在")
+            print("  SKIP: 新目录已存在")
             skipped += 1
             continue
 
         # 执行重命名（同盘操作，瞬间完成）
         try:
             old_path.rename(new_path)
-            print(f"  OK: 重命名成功")
+            print("  OK: 重命名成功")
             success += 1
         except Exception as exc:
             print(f"  ERROR: {exc}")

@@ -4,11 +4,11 @@ Stateless builders for WorkflowRunStatusResponse transitions and SubmissionTrans
 dataclass. Extracted from interaction_hub.py to separate transition object construction
 from service orchestration logic.
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import Any
 
 from app.core.config import settings
 from app.services.effective_config import get_task_executor
@@ -16,7 +16,6 @@ from app.tasks.workflow_tasks import resolve_workflow_channel, resolve_workflow_
 from shared.contracts.api_contracts import (
     ExecutionStatus,
     WorkflowEvent,
-    WorkflowPriority,
     WorkflowResultReference,
     WorkflowRunStatusResponse,
     WorkflowSubmitRequest,
@@ -117,7 +116,10 @@ class WorkflowTransitionBuilder:
                         channel="log",
                         message="已完成参数接收与协议校验。",
                         progress=8,
-                        payload={"layer_id": payload.layer_id, "command_type": payload.command_type.value},
+                        payload={
+                            "layer_id": payload.layer_id,
+                            "command_type": payload.command_type.value,
+                        },
                     ),
                 ],
             ),

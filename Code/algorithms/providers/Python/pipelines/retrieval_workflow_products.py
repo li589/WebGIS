@@ -20,7 +20,19 @@ class RetrievalWorkflowPipeline(BasePipeline):
             outputs = ["timeseries_bundle_mat", "sm_vod_block_mat", "tau_block_mat"]
         return PipelinePlan(
             required_datasets=["daily_mat_sources", "ancillary_mat"],
-            required_variables=["TBv", "TBh", "IA", "Ts", "NDVI", "SF", "Albedo", "B", "CF", "BD", "H"],
+            required_variables=[
+                "TBv",
+                "TBh",
+                "IA",
+                "Ts",
+                "NDVI",
+                "SF",
+                "Albedo",
+                "B",
+                "CF",
+                "BD",
+                "H",
+            ],
             estimated_outputs=outputs,
             parallelizable=True,
             chunk_strategy="timerange_then_pixel_block",
@@ -51,7 +63,9 @@ class RetrievalWorkflowPipeline(BasePipeline):
         elif isinstance(manifest_value, ArtifactRef):
             manifest = runner.artifact_store.load(manifest_value.artifact_id)
         else:
-            raise TypeError(f"Unsupported retrieval workflow manifest output: {type(manifest_value)!r}")
+            raise TypeError(
+                f"Unsupported retrieval workflow manifest output: {type(manifest_value)!r}"
+            )
         manifest.extra = dict(manifest.extra)
         manifest.extra.setdefault("compat_pipeline_name", self.name)
         return manifest

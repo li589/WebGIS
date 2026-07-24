@@ -39,6 +39,8 @@ export interface NodeTemplate {
   outputs: NodePortSpec[]
   params: NodeParamSpec[]
   node_class: string
+  /** false = stub / 未实现执行器；调色板灰显且不可加入画布 */
+  executable?: boolean
 }
 
 export interface WorkflowDefinitionSummary {
@@ -64,12 +66,12 @@ export interface WorkflowDefinitionNode {
 }
 
 export interface WorkflowDefinitionLink {
-  0: number  // link_id
-  1: number  // from_node_id
-  2: number  // from_slot
-  3: number  // to_node_id
-  4: number  // to_slot
-  5: string  // type
+  0: number // link_id
+  1: number // from_node_id
+  2: number // from_slot
+  3: number // to_node_id
+  4: number // to_slot
+  5: string // type
 }
 
 export interface WorkflowDefinitionMeta {

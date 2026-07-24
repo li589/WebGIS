@@ -25,9 +25,7 @@ describe('filterGeojsonOutsideCoverage', () => {
       [112.5, 22.5],
       [118, 24],
     ])
-    const out = filterGeojsonOutsideCoverage(geo, [
-      { west: 110, south: 20, east: 115, north: 25 },
-    ])
+    const out = filterGeojsonOutsideCoverage(geo, [{ west: 110, south: 20, east: 115, north: 25 }])
     expect(out.features).toHaveLength(1)
     expect((out.features[0].geometry as { coordinates: number[] }).coordinates).toEqual([118, 24])
   })
@@ -42,9 +40,7 @@ describe('filterGeojsonOutsideCoverage', () => {
     const out = filterGeojsonOutsideCoverage(geo, [
       { west: 112.5, south: 0, east: 135, north: 40.98 },
     ])
-    const lats = out.features.map(
-      (f) => (f.geometry as { coordinates: number[] }).coordinates[1],
-    )
+    const lats = out.features.map((f) => (f.geometry as { coordinates: number[] }).coordinates[1])
     expect(lats).toEqual(expect.arrayContaining([0, -1.25]))
     expect(lats).not.toContain(1.25)
   })
@@ -103,7 +99,10 @@ describe('mergeWeatherTiles parent vs child resolutions', () => {
         x: 0,
         y: 0,
         hour: 0,
-        geojson: pointFc([[110.0, 20.0], [110.25, 20.0]]),
+        geojson: pointFc([
+          [110.0, 20.0],
+          [110.25, 20.0],
+        ]),
       },
       {
         layerId: 't',
@@ -111,7 +110,10 @@ describe('mergeWeatherTiles parent vs child resolutions', () => {
         x: 0,
         y: 0,
         hour: 0,
-        geojson: pointFc([[110.0, 20.0], [110.5, 20.0]]),
+        geojson: pointFc([
+          [110.0, 20.0],
+          [110.5, 20.0],
+        ]),
       },
     ])
     // same 110,20 deduped; 110.25 and 110.5 both survive → would double-paint without gap clip

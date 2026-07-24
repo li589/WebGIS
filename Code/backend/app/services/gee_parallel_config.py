@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import datetime
 from enum import Enum
 from typing import Optional
@@ -21,6 +21,7 @@ logger = logging.getLogger(__name__)
 
 class TaskType(Enum):
     """GEE 任务类型"""
+
     EXPORT_IMAGE = "export_image"
     EXPORT_TABLE = "export_table"
     UPLOAD_ASSET = "upload_asset"
@@ -30,6 +31,7 @@ class TaskType(Enum):
 @dataclass
 class GEEParallelConfig:
     """GEE 并行配置"""
+
     # 最大并行导出任务数
     max_parallel_exports: int = 2
     # 最大并行上传任务数
@@ -47,6 +49,7 @@ class GEEParallelConfig:
 @dataclass
 class GEEAccountInfo:
     """GEE 账户信息"""
+
     email: str
     is_active: bool = True
     is_available: bool = True
@@ -58,6 +61,7 @@ class GEEAccountInfo:
 @dataclass
 class GEEConcurrencyStats:
     """GEE 并发统计"""
+
     active_exports: int = 0
     active_uploads: int = 0
     active_downloads: int = 0
@@ -70,9 +74,15 @@ class GEETaskQueue:
 
     def __init__(self, config: GEEParallelConfig):
         self.config = config
-        self._export_semaphore: asyncio.Semaphore = asyncio.Semaphore(config.max_parallel_exports)
-        self._upload_semaphore: asyncio.Semaphore = asyncio.Semaphore(config.max_parallel_uploads)
-        self._download_semaphore: asyncio.Semaphore = asyncio.Semaphore(config.max_parallel_downloads)
+        self._export_semaphore: asyncio.Semaphore = asyncio.Semaphore(
+            config.max_parallel_exports
+        )
+        self._upload_semaphore: asyncio.Semaphore = asyncio.Semaphore(
+            config.max_parallel_uploads
+        )
+        self._download_semaphore: asyncio.Semaphore = asyncio.Semaphore(
+            config.max_parallel_downloads
+        )
         self._stats = GEEConcurrencyStats()
         self._locks = {
             TaskType.EXPORT_IMAGE: asyncio.Lock(),
@@ -110,11 +120,26 @@ class GEETaskQueue:
     def get_waiting_count(self, task_type: TaskType) -> int:
         """获取任务类型的等待任务数"""
         if task_type == TaskType.EXPORT_IMAGE or task_type == TaskType.EXPORT_TABLE:
-            return max(0, self._export_semaphore._value - self.config.max_parallel_exports + self._stats.active_exports)
+            return max(
+                0,
+                self._export_semaphore._value
+                - self.config.max_parallel_exports
+                + self._stats.active_exports,
+            )
         elif task_type == TaskType.UPLOAD_ASSET:
-            return max(0, self._upload_semaphore._value - self.config.max_parallel_uploads + self._stats.active_uploads)
+            return max(
+                0,
+                self._upload_semaphore._value
+                - self.config.max_parallel_uploads
+                + self._stats.active_uploads,
+            )
         else:
-            return max(0, self._download_semaphore._value - self.config.max_parallel_downloads + self._stats.active_downloads)
+            return max(
+                0,
+                self._download_semaphore._value
+                - self.config.max_parallel_downloads
+                + self._stats.active_downloads,
+            )
 
 
 class GEEConfigService:
@@ -151,7 +176,9 @@ class GEEConfigService:
             },
             "storage_backend": settings.gee_storage_backend,
             "local_storage_root": settings.gee_local_storage_root,
-            "credentials_encryption_enabled": bool(settings.gee_credentials_encryption_key),
+            "credentials_encryption_enabled": bool(
+                settings.gee_credentials_encryption_key
+            ),
             "api_account_management_enabled": settings.gee_api_account_management_enabled,
         }
 
@@ -161,19 +188,22 @@ class GEEConfigService:
             return {
                 "max_concurrent": self._parallel_config.max_parallel_exports,
                 "active": self._task_queue.stats.active_exports,
-                "available": self._parallel_config.max_parallel_exports - self._task_queue.stats.active_exports,
+                "available": self._parallel_config.max_parallel_exports
+                - self._task_queue.stats.active_exports,
             }
         elif task_type == TaskType.UPLOAD_ASSET:
             return {
                 "max_concurrent": self._parallel_config.max_parallel_uploads,
                 "active": self._task_queue.stats.active_uploads,
-                "available": self._parallel_config.max_parallel_uploads - self._task_queue.stats.active_uploads,
+                "available": self._parallel_config.max_parallel_uploads
+                - self._task_queue.stats.active_uploads,
             }
         else:
             return {
                 "max_concurrent": self._parallel_config.max_parallel_downloads,
                 "active": self._task_queue.stats.active_downloads,
-                "available": self._parallel_config.max_parallel_downloads - self._task_queue.stats.active_downloads,
+                "available": self._parallel_config.max_parallel_downloads
+                - self._task_queue.stats.active_downloads,
             }
 
     async def acquire_task_slot(self, task_type: TaskType) -> bool:
@@ -195,12 +225,21 @@ class GEEConfigService:
         except Exception as e:
             # 释放已增加的任务计数
             async with lock:
-                if task_type == TaskType.EXPORT_IMAGE or task_type == TaskType.EXPORT_TABLE:
-                    self._task_queue.stats.active_exports = max(0, self._task_queue.stats.active_exports - 1)
+                if (
+                    task_type == TaskType.EXPORT_IMAGE
+                    or task_type == TaskType.EXPORT_TABLE
+                ):
+                    self._task_queue.stats.active_exports = max(
+                        0, self._task_queue.stats.active_exports - 1
+                    )
                 elif task_type == TaskType.UPLOAD_ASSET:
-                    self._task_queue.stats.active_uploads = max(0, self._task_queue.stats.active_uploads - 1)
+                    self._task_queue.stats.active_uploads = max(
+                        0, self._task_queue.stats.active_uploads - 1
+                    )
                 else:
-                    self._task_queue.stats.active_downloads = max(0, self._task_queue.stats.active_downloads - 1)
+                    self._task_queue.stats.active_downloads = max(
+                        0, self._task_queue.stats.active_downloads - 1
+                    )
             raise e
 
     async def release_task_slot(self, task_type: TaskType):
@@ -212,11 +251,17 @@ class GEEConfigService:
 
         async with lock:
             if task_type == TaskType.EXPORT_IMAGE or task_type == TaskType.EXPORT_TABLE:
-                self._task_queue.stats.active_exports = max(0, self._task_queue.stats.active_exports - 1)
+                self._task_queue.stats.active_exports = max(
+                    0, self._task_queue.stats.active_exports - 1
+                )
             elif task_type == TaskType.UPLOAD_ASSET:
-                self._task_queue.stats.active_uploads = max(0, self._task_queue.stats.active_uploads - 1)
+                self._task_queue.stats.active_uploads = max(
+                    0, self._task_queue.stats.active_uploads - 1
+                )
             else:
-                self._task_queue.stats.active_downloads = max(0, self._task_queue.stats.active_downloads - 1)
+                self._task_queue.stats.active_downloads = max(
+                    0, self._task_queue.stats.active_downloads - 1
+                )
 
 
 # 全局实例

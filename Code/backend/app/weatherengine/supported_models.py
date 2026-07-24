@@ -73,7 +73,9 @@ SUPPORTED_WEATHER_MODELS: tuple[SupportedWeatherModel, ...] = (
     },
 )
 
-SUPPORTED_WEATHER_MODEL_IDS: frozenset[str] = frozenset(m["id"] for m in SUPPORTED_WEATHER_MODELS)
+SUPPORTED_WEATHER_MODEL_IDS: frozenset[str] = frozenset(
+    m["id"] for m in SUPPORTED_WEATHER_MODELS
+)
 
 
 def is_supported_weather_model(model_id: str) -> bool:

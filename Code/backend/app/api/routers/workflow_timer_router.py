@@ -10,6 +10,7 @@
 - POST   /workflow-timers/events            发射事件（触发匹配的 event 定时器）
 - POST   /workflow-timers/tick              手动触发一次扫描（调试用）
 """
+
 from __future__ import annotations
 
 from typing import Any
@@ -85,7 +86,9 @@ def create_timer(payload: dict[str, Any]) -> dict[str, Any]:
 
     payload_overrides = payload.get("payload_overrides") or {}
     if not isinstance(payload_overrides, dict):
-        raise HTTPException(status_code=400, detail="payload_overrides must be an object")
+        raise HTTPException(
+            status_code=400, detail="payload_overrides must be an object"
+        )
     enabled = bool(payload.get("enabled", True))
 
     try:
@@ -110,20 +113,34 @@ def create_timer(payload: dict[str, Any]) -> dict[str, Any]:
 def update_timer(timer_id: str, payload: dict[str, Any]) -> dict[str, Any]:
     """更新定时器。允许字段：name / enabled / trigger_type / trigger_config / payload_overrides。"""
     # 校验 trigger_type 若提供则合法
-    if "trigger_type" in payload and payload["trigger_type"] not in ("cron", "interval", "event"):
+    if "trigger_type" in payload and payload["trigger_type"] not in (
+        "cron",
+        "interval",
+        "event",
+    ):
         raise HTTPException(
             status_code=400,
             detail=f"trigger_type must be one of: cron, interval, event (got {payload['trigger_type']!r})",
         )
     if "trigger_config" in payload and not isinstance(payload["trigger_config"], dict):
         raise HTTPException(status_code=400, detail="trigger_config must be an object")
-    if "payload_overrides" in payload and not isinstance(payload["payload_overrides"], dict):
-        raise HTTPException(status_code=400, detail="payload_overrides must be an object")
+    if "payload_overrides" in payload and not isinstance(
+        payload["payload_overrides"], dict
+    ):
+        raise HTTPException(
+            status_code=400, detail="payload_overrides must be an object"
+        )
 
     # 仅传递支持的字段
     updates = {
         k: payload[k]
-        for k in ("name", "enabled", "trigger_type", "trigger_config", "payload_overrides")
+        for k in (
+            "name",
+            "enabled",
+            "trigger_type",
+            "trigger_config",
+            "payload_overrides",
+        )
         if k in payload
     }
     try:
@@ -147,7 +164,9 @@ def delete_timer(timer_id: str) -> dict[str, Any]:
     except TimerNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     if not deleted:
-        raise HTTPException(status_code=404, detail=f"workflow timer not found: {timer_id}")
+        raise HTTPException(
+            status_code=404, detail=f"workflow timer not found: {timer_id}"
+        )
     return {"deleted": timer_id}
 
 
@@ -186,7 +205,9 @@ def emit_event(payload: dict[str, Any]) -> dict[str, Any]:
         raise HTTPException(status_code=400, detail="event_type is required")
     event_payload = payload.get("payload")
     if event_payload is not None and not isinstance(event_payload, dict):
-        raise HTTPException(status_code=400, detail="payload must be an object if provided")
+        raise HTTPException(
+            status_code=400, detail="payload must be an object if provided"
+        )
     return wts.emit_event(event_type, event_payload)
 
 

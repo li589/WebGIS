@@ -25,10 +25,9 @@ export function createMapCanvasActionBridge(
 ): MapCanvasActionBridge {
   function syncAdminOverlay() {
     if (!options.getMapReady()) return
-    options.getAdminBoundaryModule()?.syncOverlay(
-      options.getHasAdminBoundary(),
-      options.getAdminBoundaryOpacity(),
-    )
+    options
+      .getAdminBoundaryModule()
+      ?.syncOverlay(options.getHasAdminBoundary(), options.getAdminBoundaryOpacity())
   }
 
   function retryTileLoad() {

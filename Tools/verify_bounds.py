@@ -1,6 +1,7 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 """验证 10 个新图层的 bounds 与 preview 可访问性。"""
+
 import sys
 import urllib.request
 import json
@@ -10,9 +11,16 @@ sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 BASE = "http://localhost:8000"
 
 NEW_LAYERS = [
-    "gebco-dem-cn", "cmfd-precip-cn", "clcd-cn", "biomass-cn",
-    "era5-dwaa-cn", "era5-wdaa-cn", "co2-cn", "soil-ddca",
-    "omega-fy-output", "forest-ratio",
+    "gebco-dem-cn",
+    "cmfd-precip-cn",
+    "clcd-cn",
+    "biomass-cn",
+    "era5-dwaa-cn",
+    "era5-wdaa-cn",
+    "co2-cn",
+    "soil-ddca",
+    "omega-fy-output",
+    "forest-ratio",
 ]
 
 
@@ -52,12 +60,16 @@ for layer_id in NEW_LAYERS:
     # preview
     pstatus, pct, praw = fetch(f"/overlay-preview/{layer_id}", timeout=30)
     if pstatus != 200 or not praw:
-        print(f"  [FAIL] {layer_id:20s} preview status={pstatus} ct={pct} size={len(praw)}")
+        print(
+            f"  [FAIL] {layer_id:20s} preview status={pstatus} ct={pct} size={len(praw)}"
+        )
         continue
     png_size_kb = len(praw) / 1024
 
-    print(f"  [OK]   {layer_id:20s} bounds={bounds} palette={palette} "
-          f"vmin={vmin} vmax={vmax} unit='{unit}' png={png_size_kb:.1f}KB")
+    print(
+        f"  [OK]   {layer_id:20s} bounds={bounds} palette={palette} "
+        f"vmin={vmin} vmax={vmax} unit='{unit}' png={png_size_kb:.1f}KB"
+    )
     ok_count += 1
 
 print()

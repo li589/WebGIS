@@ -19,7 +19,10 @@ from app.weatherengine.field_mapping import (
     openweather_current_to_om,
     weatherapi_current_to_om,
 )
-from app.weatherengine.fetch_gateway import fetch_point_forecast, resolve_provider_for_layer
+from app.weatherengine.fetch_gateway import (
+    fetch_point_forecast,
+    resolve_provider_for_layer,
+)
 from app.weatherengine.tile_service import normalize_provider_id, tile_key
 
 
@@ -73,11 +76,15 @@ class TestFieldMapping:
         assert commercial_data_quality("wind-field-500hPa") == "sparse"
 
     def test_power_law_wind_extrapolation(self):
-        assert extrapolate_wind_speed_power_law(10.0, target_height_m=80.0) == pytest.approx(
-            10.0 * (8.0**0.14)
-        )
+        assert extrapolate_wind_speed_power_law(
+            10.0, target_height_m=80.0
+        ) == pytest.approx(10.0 * (8.0**0.14))
         payload = {
-            "current": {"wind_speed_10m": 10.0, "wind_direction_10m": 90, "temperature_2m": 20.0},
+            "current": {
+                "wind_speed_10m": 10.0,
+                "wind_direction_10m": 90,
+                "temperature_2m": 20.0,
+            },
             "hourly": {
                 "time": ["2024-01-01T00:00"],
                 "wind_speed_10m": [10.0],
@@ -91,10 +98,13 @@ class TestFieldMapping:
         assert payload["current"]["wind_direction_80m"] == 90
 
         apply_commercial_height_extrapolation(payload, "temperature-120m")
-        assert payload["current"]["temperature_120m"] == 20.0
+        # Lapse-rate extrapolation: 20.0 + (120 - 2) * (-6.5/1000) = 19.233
+        assert payload["current"]["temperature_120m"] == pytest.approx(19.233, abs=0.01)
 
     def test_ensure_hub_height_wind_fills_null_grid_arrays(self):
-        from app.weatherengine.field_mapping import ensure_hub_height_wind_in_grid_arrays
+        from app.weatherengine.field_mapping import (
+            ensure_hub_height_wind_in_grid_arrays,
+        )
 
         current = {
             "wind_speed_80m": [None, None, None, None],
@@ -107,22 +117,73 @@ class TestFieldMapping:
             "wind_direction_10m": [[90, 91], [100, 101], [80, 81], [85, 86]],
             "wind_speed_80m": [[None, None], [None, None], [None, None], [None, None]],
         }
-        assert ensure_hub_height_wind_in_grid_arrays(current, hourly, "wind-field-80m") is True
+        assert (
+            ensure_hub_height_wind_in_grid_arrays(current, hourly, "wind-field-80m")
+            is True
+        )
         assert current["wind_speed_80m"][0] == pytest.approx(10.0 * (8.0**0.14))
         assert current["wind_direction_80m"][1] == 100
         assert hourly["wind_speed_80m"][0][0] == pytest.approx(10.0 * (8.0**0.14))
         assert hourly["wind_direction_80m"][1][1] == 101
 
     def test_ensure_hub_height_skips_when_native_present(self):
-        from app.weatherengine.field_mapping import ensure_hub_height_wind_in_grid_arrays
+        from app.weatherengine.field_mapping import (
+            ensure_hub_height_wind_in_grid_arrays,
+        )
 
         current = {
             "wind_speed_80m": [15.0, 16.0],
             "wind_speed_10m": [10.0, 11.0],
         }
         hourly: dict = {}
-        assert ensure_hub_height_wind_in_grid_arrays(current, hourly, "wind-field-80m") is False
+        assert (
+            ensure_hub_height_wind_in_grid_arrays(current, hourly, "wind-field-80m")
+            is False
+        )
         assert current["wind_speed_80m"] == [15.0, 16.0]
+
+    def test_ensure_hub_height_temperature_fills_null_grid_arrays(self):
+        from app.weatherengine.field_mapping import (
+            ensure_hub_height_temperature_in_grid_arrays,
+        )
+
+        current = {
+            "temperature_80m": [None, None, None],
+            "temperature_2m": [20.0, 25.0, 30.0],
+        }
+        hourly: dict = {
+            "temperature_2m": [[20.0, 21.0], [25.0, 26.0], [30.0, 31.0]],
+            "temperature_80m": [[None, None], [None, None], [None, None]],
+        }
+        assert (
+            ensure_hub_height_temperature_in_grid_arrays(
+                current, hourly, "temperature-80m"
+            )
+            is True
+        )
+        # Lapse rate: 20.0 + (80 - 2) * (-6.5/1000) = 20.0 - 0.507 = 19.493
+        assert current["temperature_80m"][0] == pytest.approx(19.493, abs=0.01)
+        assert current["temperature_80m"][1] == pytest.approx(24.493, abs=0.01)
+        assert hourly["temperature_80m"][0][0] == pytest.approx(19.493, abs=0.01)
+        assert hourly["temperature_80m"][2][1] == pytest.approx(30.493, abs=0.01)
+
+    def test_ensure_hub_height_temperature_skips_when_native_present(self):
+        from app.weatherengine.field_mapping import (
+            ensure_hub_height_temperature_in_grid_arrays,
+        )
+
+        current = {
+            "temperature_80m": [19.0, 20.0],
+            "temperature_2m": [25.0, 26.0],
+        }
+        hourly: dict = {}
+        assert (
+            ensure_hub_height_temperature_in_grid_arrays(
+                current, hourly, "temperature-80m"
+            )
+            is False
+        )
+        assert current["temperature_80m"] == [19.0, 20.0]
 
     def test_empty_pressure_grid_marks_sparse(self):
         grid = build_empty_pressure_grid(
@@ -162,7 +223,9 @@ class TestResolvePin:
         registry.get_provider.return_value = provider
         registry.is_enabled.return_value = False
 
-        with patch("app.weatherengine.fetch_gateway.get_registry", return_value=registry):
+        with patch(
+            "app.weatherengine.fetch_gateway.get_registry", return_value=registry
+        ):
             with pytest.raises(ValueError, match="disabled"):
                 resolve_provider_for_layer("wind-field", provider_id="weatherapi")
 
@@ -174,7 +237,9 @@ class TestResolvePin:
         registry.get_provider.return_value = provider
         registry.is_enabled.return_value = True
 
-        with patch("app.weatherengine.fetch_gateway.get_registry", return_value=registry):
+        with patch(
+            "app.weatherengine.fetch_gateway.get_registry", return_value=registry
+        ):
             with pytest.raises(ValueError, match="does not support"):
                 resolve_provider_for_layer("wind-field-80m", provider_id="weatherapi")
 
@@ -187,7 +252,10 @@ class TestFetchPointFallback:
 
         fallback = MagicMock()
         fallback.provider_id = "weatherapi"
-        fallback.fetch_point_forecast.return_value = ({"current": {"temperature_2m": 1}}, "miss")
+        fallback.fetch_point_forecast.return_value = (
+            {"current": {"temperature_2m": 1}},
+            "miss",
+        )
 
         spec = MagicMock()
         spec.pressure_levels = None
@@ -197,8 +265,13 @@ class TestFetchPointFallback:
                 "app.weatherengine.fetch_gateway.resolve_provider_for_layer",
                 side_effect=[primary, fallback],
             ),
-            patch("app.weatherengine.fetch_gateway.resolve_layer_spec", return_value=spec),
-            patch("app.weatherengine.fetch_gateway.get_weather_cache_ttl_seconds", return_value=60),
+            patch(
+                "app.weatherengine.fetch_gateway.resolve_layer_spec", return_value=spec
+            ),
+            patch(
+                "app.weatherengine.fetch_gateway.get_weather_cache_ttl_seconds",
+                return_value=60,
+            ),
         ):
             payload, status, used = fetch_point_forecast(
                 layer_id="temperature",
@@ -228,8 +301,13 @@ class TestFetchPointFallback:
                 "app.weatherengine.fetch_gateway.resolve_provider_for_layer",
                 side_effect=[primary, WeatherProviderUnavailableError("no fallback")],
             ),
-            patch("app.weatherengine.fetch_gateway.resolve_layer_spec", return_value=spec),
-            patch("app.weatherengine.fetch_gateway.get_weather_cache_ttl_seconds", return_value=60),
+            patch(
+                "app.weatherengine.fetch_gateway.resolve_layer_spec", return_value=spec
+            ),
+            patch(
+                "app.weatherengine.fetch_gateway.get_weather_cache_ttl_seconds",
+                return_value=60,
+            ),
         ):
             with pytest.raises(RuntimeError, match="upstream down"):
                 fetch_point_forecast(
@@ -252,8 +330,13 @@ class TestFetchPointFallback:
                 "app.weatherengine.fetch_gateway.resolve_provider_for_layer",
                 return_value=primary,
             ),
-            patch("app.weatherengine.fetch_gateway.resolve_layer_spec", return_value=spec),
-            patch("app.weatherengine.fetch_gateway.get_weather_cache_ttl_seconds", return_value=60),
+            patch(
+                "app.weatherengine.fetch_gateway.resolve_layer_spec", return_value=spec
+            ),
+            patch(
+                "app.weatherengine.fetch_gateway.get_weather_cache_ttl_seconds",
+                return_value=60,
+            ),
         ):
             with pytest.raises(RuntimeError, match="quota"):
                 fetch_point_forecast(

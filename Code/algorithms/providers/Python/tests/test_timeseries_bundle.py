@@ -10,7 +10,9 @@ from ingest.timeseries_bundle import build_timeseries_bundle
 
 
 class TimeSeriesBundleTests(unittest.TestCase):
-    def test_missing_file_only_populates_missing_dates_and_keeps_other_days(self) -> None:
+    def test_missing_file_only_populates_missing_dates_and_keeps_other_days(
+        self,
+    ) -> None:
         config = DailyBundleConfig()
         static_bundle = {
             "Albedo": np.array([0.1, 0.2], dtype=np.float64),
@@ -41,9 +43,15 @@ class TimeSeriesBundleTests(unittest.TestCase):
                 "vwc": np.array([0.8, 0.9], dtype=np.float64),
             }
 
-        with patch("ingest.timeseries_bundle.load_static_ancillary_bundle", return_value=static_bundle) as static_loader, patch(
-            "ingest.timeseries_bundle.build_daily_bundle_for_date",
-            side_effect=fake_daily_bundle,
+        with (
+            patch(
+                "ingest.timeseries_bundle.load_static_ancillary_bundle",
+                return_value=static_bundle,
+            ) as static_loader,
+            patch(
+                "ingest.timeseries_bundle.build_daily_bundle_for_date",
+                side_effect=fake_daily_bundle,
+            ),
         ):
             bundle = build_timeseries_bundle(
                 date_keys=["20200101", "20200102", "20200103"],
@@ -79,9 +87,15 @@ class TimeSeriesBundleTests(unittest.TestCase):
             "lon_9km": np.array([100.0], dtype=np.float64),
         }
 
-        with patch("ingest.timeseries_bundle.load_static_ancillary_bundle", return_value=static_bundle), patch(
-            "ingest.timeseries_bundle.build_daily_bundle_for_date",
-            side_effect=KeyError("missing TBv field"),
+        with (
+            patch(
+                "ingest.timeseries_bundle.load_static_ancillary_bundle",
+                return_value=static_bundle,
+            ),
+            patch(
+                "ingest.timeseries_bundle.build_daily_bundle_for_date",
+                side_effect=KeyError("missing TBv field"),
+            ),
         ):
             with self.assertRaises(KeyError):
                 build_timeseries_bundle(

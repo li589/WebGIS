@@ -26,7 +26,10 @@ export function clearBackendWriteApiKey(): void {
 }
 
 export function hasBackendWriteApiKey(): boolean {
-  return hasLocalWriteApiKey() || Boolean((import.meta.env.VITE_BACKEND_API_KEY as string | undefined)?.trim())
+  return (
+    hasLocalWriteApiKey() ||
+    Boolean((import.meta.env.VITE_BACKEND_API_KEY as string | undefined)?.trim())
+  )
 }
 
 /** Attach X-Api-Key for mutating requests when a write key is available. */

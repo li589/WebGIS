@@ -152,12 +152,7 @@ defineExpose({ processFiles })
     </Teleport>
 
     <Teleport to="body">
-      <div
-        v-if="importMsg"
-        class="import-toast"
-        :class="{ error: importError }"
-        role="status"
-      >
+      <div v-if="importMsg" class="import-toast" :class="{ error: importError }" role="status">
         {{ importMsg }}
       </div>
     </Teleport>
@@ -171,7 +166,13 @@ defineExpose({ processFiles })
       </div>
     </div>
 
-    <input ref="vectorInput" type="file" accept=".shp,.zip,.geojson,.json" hidden @change="onVectorChange" />
+    <input
+      ref="vectorInput"
+      type="file"
+      accept=".shp,.zip,.geojson,.json"
+      hidden
+      @change="onVectorChange"
+    />
     <input ref="csvInput" type="file" accept=".csv" hidden @change="onCsvChange" />
     <input ref="rasterInput" type="file" accept=".tif,.tiff" hidden @change="onRasterChange" />
 
@@ -217,7 +218,10 @@ defineExpose({ processFiles })
   font-size: 0.62rem;
   font-weight: 500;
   white-space: nowrap;
-  transition: border-color 0.18s ease, color 0.18s ease, background 0.18s ease;
+  transition:
+    border-color 0.18s ease,
+    color 0.18s ease,
+    background 0.18s ease;
 }
 
 .import-trigger:hover {
@@ -233,9 +237,17 @@ defineExpose({ processFiles })
   box-shadow: inset 0 0 0 1px rgba(90, 213, 255, 0.16);
 }
 
-.btn-icon { font-size: 0.72rem; opacity: 0.9; }
-.btn-label { font-size: 0.6rem; }
-.caret { font-size: 0.52rem; opacity: 0.6; }
+.btn-icon {
+  font-size: 0.72rem;
+  opacity: 0.9;
+}
+.btn-label {
+  font-size: 0.6rem;
+}
+.caret {
+  font-size: 0.52rem;
+  opacity: 0.6;
+}
 
 .import-spinner {
   position: fixed;
@@ -270,7 +282,11 @@ defineExpose({ processFiles })
   color: #a8e8ff;
 }
 
-@keyframes spin { to { transform: rotate(360deg); } }
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
 </style>
 
 <style>
@@ -301,7 +317,9 @@ defineExpose({ processFiles })
   cursor: pointer;
   font: inherit;
   text-align: left;
-  transition: background 0.16s ease, color 0.16s ease;
+  transition:
+    background 0.16s ease,
+    color 0.16s ease;
 }
 
 .import-dropdown .dropdown-item:hover {
@@ -309,10 +327,24 @@ defineExpose({ processFiles })
   color: #d8e6f5;
 }
 
-.import-dropdown .item-icon { font-size: 0.8rem; flex: none; }
-.import-dropdown .item-body { display: flex; flex-direction: column; gap: 0.08rem; min-width: 0; }
-.import-dropdown .item-title { font-size: 0.62rem; font-weight: 500; }
-.import-dropdown .item-desc { font-size: 0.52rem; color: #5a7080; }
+.import-dropdown .item-icon {
+  font-size: 0.8rem;
+  flex: none;
+}
+.import-dropdown .item-body {
+  display: flex;
+  flex-direction: column;
+  gap: 0.08rem;
+  min-width: 0;
+}
+.import-dropdown .item-title {
+  font-size: 0.62rem;
+  font-weight: 500;
+}
+.import-dropdown .item-desc {
+  font-size: 0.52rem;
+  color: #5a7080;
+}
 .import-dropdown .dropdown-hint {
   margin: 0.2rem 0.35rem 0.15rem;
   padding-top: 0.28rem;

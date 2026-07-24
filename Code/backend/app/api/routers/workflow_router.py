@@ -8,6 +8,7 @@ from app.api.deps import require_write_access
 from app.services.result_view_service import result_view_service
 from app.services.workflow.service_container import (
     lifecycle_service,
+    retry_dispatcher,
     submission_service,
 )
 from shared.contracts.api_contracts import (
@@ -21,7 +22,9 @@ from shared.contracts.api_contracts import (
 router = APIRouter()
 
 # JSON 事件轮询限流：按「每 IP / 每分钟请求数」（非 SSE 连接数）
-_EVENTS_POLL_RATE_LIMIT = int(os.getenv("BACKEND_EVENTS_POLL_RATE_LIMIT_PER_MINUTE", "120"))
+_EVENTS_POLL_RATE_LIMIT = int(
+    os.getenv("BACKEND_EVENTS_POLL_RATE_LIMIT_PER_MINUTE", "120")
+)
 _EVENTS_POLL_WINDOW = timedelta(minutes=1)
 
 
@@ -47,7 +50,9 @@ class EventsPollRateLimiter:
             return True
 
 
-_events_poll_limiter = EventsPollRateLimiter(_EVENTS_POLL_RATE_LIMIT, _EVENTS_POLL_WINDOW)
+_events_poll_limiter = EventsPollRateLimiter(
+    _EVENTS_POLL_RATE_LIMIT, _EVENTS_POLL_WINDOW
+)
 
 
 def _get_client_ip(request: Request) -> str:
@@ -73,29 +78,74 @@ def submit_workflow(payload: WorkflowSubmitRequest) -> WorkflowAcceptedResponse:
         return accepted
     except ValueError as exc:
         detail = str(exc)
-        status_code = status.HTTP_429_TOO_MANY_REQUESTS if "capacity" in detail.lower() else status.HTTP_400_BAD_REQUEST
+        status_code = (
+            status.HTTP_429_TOO_MANY_REQUESTS
+            if "capacity" in detail.lower()
+            else status.HTTP_400_BAD_REQUEST
+        )
         raise HTTPException(status_code=status_code, detail=detail) from exc
-    except Exception as exc:
+    except Exception:
         raise
 
 
-@router.get("/workflow-runs/{run_id}", tags=["workflow"], response_model=WorkflowRunStatusResponse)
+@router.get(
+    "/workflow-runs", tags=["workflow"], response_model=list[WorkflowRunStatusResponse]
+)
+def list_workflow_runs(active_only: bool = True) -> list[WorkflowRunStatusResponse]:
+    """列出工作流 run。active_only=true（默认）仅返回非终态 run。
+
+    供前端启动恢复与跨会话状态同步使用。
+    """
+    from app.services.workflow_repository import SQLiteWorkflowRepository
+    from shared.contracts.api_contracts import ExecutionStatus
+
+    repo = SQLiteWorkflowRepository()
+    all_runs = repo.list_runs()
+    if not active_only:
+        return all_runs
+    active_statuses = {
+        ExecutionStatus.accepted.value,
+        ExecutionStatus.queued.value,
+        ExecutionStatus.running.value,
+    }
+    return [r for r in all_runs if r.status in active_statuses]
+
+
+@router.get(
+    "/workflow-runs/{run_id}",
+    tags=["workflow"],
+    response_model=WorkflowRunStatusResponse,
+)
 def get_workflow_run(run_id: str) -> WorkflowRunStatusResponse:
     run_status = submission_service.get_workflow_run(run_id)
     if run_status is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Workflow run not found: {run_id}")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Workflow run not found: {run_id}",
+        )
     return run_status
 
 
-@router.get("/workflow-runs/{run_id}/view", tags=["workflow"], response_model=WorkflowRunViewResponse)
+@router.get(
+    "/workflow-runs/{run_id}/view",
+    tags=["workflow"],
+    response_model=WorkflowRunViewResponse,
+)
 def get_workflow_run_view(run_id: str) -> WorkflowRunViewResponse:
     run_view = result_view_service.get_workflow_run_view(run_id)
     if run_view is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Workflow run not found: {run_id}")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Workflow run not found: {run_id}",
+        )
     return run_view
 
 
-@router.get("/workflow-runs/{run_id}/events", tags=["workflow"], response_model=WorkflowEventsResponse)
+@router.get(
+    "/workflow-runs/{run_id}/events",
+    tags=["workflow"],
+    response_model=WorkflowEventsResponse,
+)
 def list_workflow_events(
     request: Request,
     run_id: str,
@@ -111,9 +161,14 @@ def list_workflow_events(
                 f"Limit: {_EVENTS_POLL_RATE_LIMIT} per minute."
             ),
         )
-    events = submission_service.list_workflow_events(run_id, after_event_id=after_event_id, limit=limit)
+    events = submission_service.list_workflow_events(
+        run_id, after_event_id=after_event_id, limit=limit
+    )
     if events is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Workflow run not found: {run_id}")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Workflow run not found: {run_id}",
+        )
     return events
 
 
@@ -127,7 +182,9 @@ def cancel_workflow_run(run_id: str) -> WorkflowRunStatusResponse:
     try:
         return lifecycle_service.cancel_workflow_run(run_id)
     except ValueError as exc:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)
+        ) from exc
 
 
 @router.post(
@@ -138,6 +195,8 @@ def cancel_workflow_run(run_id: str) -> WorkflowRunStatusResponse:
 )
 def retry_workflow_run(run_id: str) -> WorkflowAcceptedResponse:
     try:
-        return lifecycle_service.retry_workflow_run(run_id)
+        return retry_dispatcher.retry_workflow_run(run_id)
     except ValueError as exc:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)
+        ) from exc

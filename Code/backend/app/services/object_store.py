@@ -39,12 +39,10 @@ class ObjectStore(ABC):
         data: bytes,
         content_type: str,
         metadata: dict[str, Any] | None = None,
-    ) -> StoredObject:
-        ...
+    ) -> StoredObject: ...
 
     @abstractmethod
-    def get_object(self, object_key: str) -> StoredObject | None:
-        ...
+    def get_object(self, object_key: str) -> StoredObject | None: ...
 
     def fetch_bytes(self, object_key: str) -> bytes | None:
         """Return raw bytes for an object, or None if not found.
@@ -136,7 +134,9 @@ class MinioObjectStore(ObjectStore):
         secure: bool,
     ) -> None:
         if Minio is None:
-            raise RuntimeError("MinIO dependency is not installed. Add 'minio' to backend requirements.")
+            raise RuntimeError(
+                "MinIO dependency is not installed. Add 'minio' to backend requirements."
+            )
         self._client = Minio(
             endpoint,
             access_key=access_key,
@@ -183,7 +183,9 @@ class MinioObjectStore(ObjectStore):
             file_path=None,
             content_type=stat.content_type or "application/octet-stream",
             content_length=stat.size,
-            metadata={key: value for key, value in getattr(stat, "metadata", {}).items()},
+            metadata={
+                key: value for key, value in getattr(stat, "metadata", {}).items()
+            },
             public_url=self._client.presigned_get_object(self._bucket, object_key),
         )
 
@@ -205,8 +207,14 @@ def build_object_store() -> ObjectStore:
     if backend == "local":
         return LocalObjectStore(settings.result_artifact_dir)
     if backend == "minio":
-        if not settings.minio_endpoint or not settings.minio_access_key or not settings.minio_secret_key:
-            raise ValueError("MinIO backend requires endpoint, access key, and secret key.")
+        if (
+            not settings.minio_endpoint
+            or not settings.minio_access_key
+            or not settings.minio_secret_key
+        ):
+            raise ValueError(
+                "MinIO backend requires endpoint, access key, and secret key."
+            )
         return MinioObjectStore(
             endpoint=settings.minio_endpoint,
             access_key=settings.minio_access_key,
@@ -214,7 +222,9 @@ def build_object_store() -> ObjectStore:
             bucket=settings.minio_bucket,
             secure=settings.minio_secure,
         )
-    raise ValueError(f"Unsupported object store backend: {settings.object_store_backend}")
+    raise ValueError(
+        f"Unsupported object store backend: {settings.object_store_backend}"
+    )
 
 
 object_store = build_object_store()

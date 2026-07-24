@@ -60,8 +60,17 @@ class JobQueueBackendTests(unittest.TestCase):
         workspace = tempfile.mkdtemp()
         queue_root = Path(workspace) / "service_state" / "queue"
 
-        def fake_run_job(request, scheduler_adapter, datasource_adapter, logger_adapter, product_sink=None, workspace=None):
-            scheduler_adapter.update_status(request.job_id, "run-file-001", "running", {"backend": "file"})
+        def fake_run_job(
+            request,
+            scheduler_adapter,
+            datasource_adapter,
+            logger_adapter,
+            product_sink=None,
+            workspace=None,
+        ):
+            scheduler_adapter.update_status(
+                request.job_id, "run-file-001", "running", {"backend": "file"}
+            )
             result = JobResult(
                 job_id=request.job_id,
                 run_id="run-file-001",
@@ -105,7 +114,9 @@ class JobQueueBackendTests(unittest.TestCase):
 
         callback_queue = CallbackJobQueueBackend(
             publish_submission_fn=lambda item: published.append(item.submission_id),
-            claim_submission_fn=lambda timeout: claimed_items.pop(0) if claimed_items else None,
+            claim_submission_fn=lambda timeout: claimed_items.pop(0)
+            if claimed_items
+            else None,
             ack_submission_fn=lambda item: acked.append(item.submission_id),
         )
 

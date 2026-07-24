@@ -166,7 +166,9 @@ class WeatherSyncOverviewTests(unittest.TestCase):
         repo = WeatherEngineSettingsRepository(Path(tmp.name) / "t.sqlite3")
         try:
             with patch.object(wes, "_get_repo", return_value=repo):
-                with patch.object(wes, "probe_local_open_meteo_reachable", return_value=False):
+                with patch.object(
+                    wes, "probe_local_open_meteo_reachable", return_value=False
+                ):
                     overview = wes.get_weather_sync_overview()
             self.assertIn("domains", overview)
             self.assertIn("local_reachable", overview)

@@ -25,7 +25,8 @@ interface CreateMapStagePresentationModuleOptions {
 export function createMapStagePresentationModule(
   options: CreateMapStagePresentationModuleOptions,
 ): MapStagePresentationModule {
-  const requestAnimationFrameImpl = options.dependencies?.requestAnimationFrame ?? requestAnimationFrame
+  const requestAnimationFrameImpl =
+    options.dependencies?.requestAnimationFrame ?? requestAnimationFrame
   const setTimeoutImpl = options.dependencies?.setTimeout ?? setTimeout
   const clearTimeoutImpl = options.dependencies?.clearTimeout ?? clearTimeout
 
@@ -37,7 +38,9 @@ export function createMapStagePresentationModule(
   }
 
   function syncNavigationControlTheme() {
-    const navButtons = options.getMapContainer()?.querySelectorAll('.maplibregl-ctrl-bottom-right .maplibregl-ctrl-group button')
+    const navButtons = options
+      .getMapContainer()
+      ?.querySelectorAll('.maplibregl-ctrl-bottom-right .maplibregl-ctrl-group button')
     if (!navButtons?.length) return
 
     const buttonBackground = options.getUsesLightNavigationTheme()

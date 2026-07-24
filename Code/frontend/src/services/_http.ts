@@ -53,10 +53,7 @@ export interface RequestJsonInit extends RequestInit {
  *
  * 量纲：timeoutMs 单位毫秒；HTTP status 单位为 status code。
  */
-export async function requestJson<T>(
-  path: string,
-  init?: RequestJsonInit,
-): Promise<T> {
+export async function requestJson<T>(path: string, init?: RequestJsonInit): Promise<T> {
   const { headers: initHeaders, timeoutMs, silent, allowEmpty, ...restInit } = init ?? {}
   const method = (restInit.method ?? 'GET').toString()
   const mergedHeaders: Record<string, string> = withWriteAuthHeaders(
@@ -119,17 +116,11 @@ export async function requestJson<T>(
       if (restInit.signal?.aborted) throw err
       const reason = controller.signal.reason
       const reasonMsg =
-        reason instanceof DOMException
-          ? reason.message
-          : typeof reason === 'string'
-            ? reason
-            : ''
-      throw new Error(
-        reasonMsg || `请求超时（${effectiveTimeout}ms）：${path}`,
-      )
+        reason instanceof DOMException ? reason.message : typeof reason === 'string' ? reason : ''
+      throw new Error(reasonMsg || `请求超时（${effectiveTimeout}ms）：${path}`, { cause: err })
     }
     if (err instanceof TypeError && /fetch|network|Failed to fetch/i.test(err.message)) {
-      throw new Error(`网络不可用或服务未启动：${path}`)
+      throw new Error(`网络不可用或服务未启动：${path}`, { cause: err })
     }
     throw err
   } finally {

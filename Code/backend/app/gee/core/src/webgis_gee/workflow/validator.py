@@ -35,13 +35,19 @@ class WorkflowValidator:
 
         graph = nx.DiGraph()
         graph.add_nodes_from(node_map.keys())
-        inbound_ports: dict[str, set[str]] = {node.node_id: set() for node in workflow.nodes}
+        inbound_ports: dict[str, set[str]] = {
+            node.node_id: set() for node in workflow.nodes
+        }
 
         for edge in workflow.edges:
             if edge.source_node_id not in node_map:
-                raise WorkflowValidationError(f"unknown source node: {edge.source_node_id}")
+                raise WorkflowValidationError(
+                    f"unknown source node: {edge.source_node_id}"
+                )
             if edge.target_node_id not in node_map:
-                raise WorkflowValidationError(f"unknown target node: {edge.target_node_id}")
+                raise WorkflowValidationError(
+                    f"unknown target node: {edge.target_node_id}"
+                )
 
             source_ports = self._port_map(
                 node=node_map[edge.source_node_id],

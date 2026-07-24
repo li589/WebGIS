@@ -10,7 +10,6 @@
 from __future__ import annotations
 
 import hashlib
-import io
 import math
 import time
 from collections import OrderedDict
@@ -28,19 +27,21 @@ from app.services.crs._gcj_bd import wgs84_to_bd09, wgs84_to_gcj02
 
 class TileProvider(Enum):
     """支持的底图提供商"""
-    TIANDITU = "tianditu"       # 天地图
-    GAODE = "gaode"             # 高德
-    BAIDU = "baidu"             # 百度
-    BING = "bing"               # Bing
+
+    TIANDITU = "tianditu"  # 天地图
+    GAODE = "gaode"  # 高德
+    BAIDU = "baidu"  # 百度
+    BING = "bing"  # Bing
     # 以下为直接访问的提供商（无需坐标转换）
-    ESRI = "esri"               # Esri
-    OSM = "osm"                 # OpenStreetMap
-    OSM_FR = "osm_fr"           # OSM France
+    ESRI = "esri"  # Esri
+    OSM = "osm"  # OpenStreetMap
+    OSM_FR = "osm_fr"  # OSM France
 
 
 @dataclass
 class TileUrlTemplate:
     """Tile URL 模板配置"""
+
     provider: TileProvider
     url_pattern: str
     requires_transform: bool  # 是否需要坐标转换
@@ -68,7 +69,6 @@ TILE_URL_TEMPLATES: dict[str, TileUrlTemplate] = {
         requires_transform=False,
         coord_system="WGS84",
     ),
-
     # 高德地图（GCJ-02 坐标系）
     "gaode-street": TileUrlTemplate(
         provider=TileProvider.GAODE,
@@ -88,7 +88,6 @@ TILE_URL_TEMPLATES: dict[str, TileUrlTemplate] = {
         requires_transform=True,
         coord_system="GCJ-02",
     ),
-
     # 百度地图（BD-09 坐标系）
     # 注意：百度 tile 服务器不支持 HTTPS（SSL 握手失败），必须使用 HTTP
     # 百度 tile 服务需要 ak 认证，未配置时返回 503 错误
@@ -104,7 +103,6 @@ TILE_URL_TEMPLATES: dict[str, TileUrlTemplate] = {
         requires_transform=True,
         coord_system="BD-09",
     ),
-
     # Esri（直接访问）
     "esri-street": TileUrlTemplate(
         provider=TileProvider.ESRI,
@@ -124,7 +122,6 @@ TILE_URL_TEMPLATES: dict[str, TileUrlTemplate] = {
         requires_transform=False,
         coord_system="WGS84",
     ),
-
     # OSM（直接访问）
     # 注意：tile.openstreetmap.org 在国内网络环境下不可达，改用德国镜像
     "osm-standard": TileUrlTemplate(
@@ -139,7 +136,6 @@ TILE_URL_TEMPLATES: dict[str, TileUrlTemplate] = {
         requires_transform=False,
         coord_system="WGS84",
     ),
-
     # Bing（直接访问，无需坐标转换）
     "bing-road": TileUrlTemplate(
         provider=TileProvider.BING,
@@ -159,7 +155,6 @@ TILE_URL_TEMPLATES: dict[str, TileUrlTemplate] = {
         requires_transform=False,
         coord_system="WGS84",
     ),
-
     # CARTO（直接访问）
     # 注意：a.basemaps.cartocdn.com 在国内不可达，改用 b 子域名
     "carto-light": TileUrlTemplate(
@@ -174,7 +169,6 @@ TILE_URL_TEMPLATES: dict[str, TileUrlTemplate] = {
         requires_transform=False,
         coord_system="WGS84",
     ),
-
     # Stadia（已迁移到 PolyMaps，需要 API Key，暂时禁用）
     # "stadia-streets": TileUrlTemplate(
     #     provider=TileProvider.OSM,
@@ -194,7 +188,6 @@ TILE_URL_TEMPLATES: dict[str, TileUrlTemplate] = {
     #     requires_transform=False,
     #     coord_system="WGS84",
     # ),
-
     "esri-dark": TileUrlTemplate(
         provider=TileProvider.ESRI,
         url_pattern="https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}",
@@ -219,7 +212,9 @@ class TileProxyService:
         self._http_client: Optional[httpx.AsyncClient] = None
         # OrderedDict LRU：url_hash -> (data, timestamp)
         self._cache: OrderedDict[str, tuple[bytes, float]] = OrderedDict()
-        self._cache_ttl = int(getattr(settings, "tile_proxy_cache_ttl_seconds", 3600) or 3600)
+        self._cache_ttl = int(
+            getattr(settings, "tile_proxy_cache_ttl_seconds", 3600) or 3600
+        )
 
     async def get_http_client(self) -> httpx.AsyncClient:
         if self._http_client is None:
@@ -240,7 +235,7 @@ class TileProxyService:
 
     def _mercator_to_geo(self, x: int, y: int, z: int) -> tuple[float, float]:
         """Web Mercator tile 坐标转 WGS84 经纬度（tile 左下角）"""
-        n = 2 ** z
+        n = 2**z
         lon = x / n * 360.0 - 180.0
         lat_rad = math.atan(math.sinh(math.pi * (1 - 2 * y / n)))
         lat = lat_rad * 180.0 / math.pi
@@ -248,7 +243,7 @@ class TileProxyService:
 
     def _mercator_to_geo_center(self, x: int, y: int, z: int) -> tuple[float, float]:
         """Web Mercator tile 坐标转 WGS84 经纬度（tile 中心）"""
-        n = 2 ** z
+        n = 2**z
         lon = (x + 0.5) / n * 360.0 - 180.0
         lat_rad = math.atan(math.sinh(math.pi * (1 - 2 * (y + 0.5) / n)))
         lat = lat_rad * 180.0 / math.pi
@@ -287,7 +282,7 @@ class TileProxyService:
 
         # 3. 将目标坐标系经纬度转换为 Mercator tile 坐标
         merc = self._lonlat_to_mercator(gcj_lon, gcj_lat)
-        n = 2 ** z
+        n = 2**z
         new_x = int((merc.lng + 20037508.342789244) / 20037508.342789244 / 2 * n)
         new_y = int((20037508.342789244 - merc.lat) / 20037508.342789244 / 2 * n)
 
@@ -297,14 +292,19 @@ class TileProxyService:
 
         return new_x, new_y, z
 
-    def _lonlat_to_mercator(self, lng: float, lat: float) -> 'CoordinatePoint':
+    def _lonlat_to_mercator(self, lng: float, lat: float) -> "CoordinatePoint":
         """经纬度转 Web Mercator"""
         import math
+
         origin_shift = 20037508.342789244
         max_lat = 85.05112878
         clipped_lat = max(-max_lat, min(max_lat, lat))
         mx = lng * origin_shift / 180.0
-        my = math.log(math.tan((90.0 + clipped_lat) * math.pi / 360.0)) * origin_shift / math.pi
+        my = (
+            math.log(math.tan((90.0 + clipped_lat) * math.pi / 360.0))
+            * origin_shift
+            / math.pi
+        )
         return CoordinatePoint(lng=mx, lat=my)
 
     def _xyz_to_quadkey(self, x: int, y: int, z: int) -> str:
@@ -318,7 +318,7 @@ class TileProxyService:
             if y & mask:
                 digit += 2
             quadkey.append(str(digit))
-        return ''.join(quadkey)
+        return "".join(quadkey)
 
     def _get_cache_key(self, url: str) -> str:
         return hashlib.md5(url.encode()).hexdigest()
@@ -344,7 +344,9 @@ class TileProxyService:
         """
         template = TILE_URL_TEMPLATES.get(tile_id)
         if not template:
-            raise HTTPException(status_code=400, detail=f"Unknown tile provider: {tile_id}")
+            raise HTTPException(
+                status_code=400, detail=f"Unknown tile provider: {tile_id}"
+            )
 
         from app.services.config_service import get_effective_api_key
 
@@ -385,7 +387,9 @@ class TileProxyService:
             # 高德/百度模板需要 server 子域名编号（1-4），用于负载均衡
             if "{server}" in template.url_pattern:
                 # 修复：hexdigest()[0] 是字符串字符，必须先 int(..., 16) 转为整数才能取模
-                format_args["server"] = int(hashlib.md5(f"{tx}{ty}".encode()).hexdigest()[0], 16) % 4 + 1
+                format_args["server"] = (
+                    int(hashlib.md5(f"{tx}{ty}".encode()).hexdigest()[0], 16) % 4 + 1
+                )
             url = template.url_pattern.format(**format_args)
 
         # 检查缓存（LRU）
@@ -424,12 +428,14 @@ class TileProxyService:
         """获取所有可用的底图提供商列表"""
         providers = []
         for tile_id, template in TILE_URL_TEMPLATES.items():
-            providers.append({
-                "id": tile_id,
-                "provider": template.provider.value,
-                "requires_transform": template.requires_transform,
-                "coord_system": template.coord_system,
-            })
+            providers.append(
+                {
+                    "id": tile_id,
+                    "provider": template.provider.value,
+                    "requires_transform": template.requires_transform,
+                    "coord_system": template.coord_system,
+                }
+            )
         return providers
 
     def clear_cache(self):

@@ -15,7 +15,12 @@ def resolve_static_cache_root() -> Path:
     override = os.getenv("BACKEND_STATIC_CACHE_ROOT", "").strip()
     if override:
         return Path(override)
-    workspace = Path(settings.python_provider_workspace or settings.output_root or settings.data_root or ".")
+    workspace = Path(
+        settings.python_provider_workspace
+        or settings.output_root
+        or settings.data_root
+        or "."
+    )
     return workspace / "data_access" / "materialized"
 
 
@@ -104,7 +109,9 @@ def get_data_cache_overview() -> dict[str, Any]:
     }
 
 
-def evict_data_cache(*, uri_or_name: str | None = None, older_than_seconds: int | None = None) -> dict[str, Any]:
+def evict_data_cache(
+    *, uri_or_name: str | None = None, older_than_seconds: int | None = None
+) -> dict[str, Any]:
     cache_root = resolve_static_cache_root()
     removed: list[str] = []
     if not cache_root.exists():
@@ -134,12 +141,29 @@ def evict_data_cache(*, uri_or_name: str | None = None, older_than_seconds: int 
             removed.append(str(path))
         except OSError:
             continue
-    return {"removed": removed, "cache_root": str(cache_root), "removed_count": len(removed)}
+    return {
+        "removed": removed,
+        "cache_root": str(cache_root),
+        "removed_count": len(removed),
+    }
 
 
 DEFAULT_OPEN_DATA_PRESETS: dict[str, str] = {
     "noaa_nomads": "https://nomads.ncep.noaa.gov/",
     "noaa_goes": "https://cdn.star.nesdis.noaa.gov/",
     "nasa_earthdata": "https://data.lpdaac.earthdatacloud.nasa.gov/",
+    "nasa_cmr": "https://cmr.earthdata.nasa.gov/",
+    "nsidc_data": "https://n5eil01u.ecs.nsidc.org/",
     "esa_copernicus": "https://catalogue.dataspace.copernicus.eu/",
+    "esa_download": "https://download.dataspace.copernicus.eu/",
+}
+
+OPEN_DATA_PRESET_LABELS: dict[str, str] = {
+    "noaa_nomads": "NOAA NOMADS 数值产品",
+    "noaa_goes": "NOAA GOES 影像 CDN",
+    "nasa_earthdata": "NASA Earthdata / LP DAAC 云端对象",
+    "nasa_cmr": "NASA CMR 元数据（二期检索预留）",
+    "nsidc_data": "NSIDC 数据下载",
+    "esa_copernicus": "欧空局 Copernicus 目录",
+    "esa_download": "欧空局 Copernicus 下载 CDN",
 }

@@ -81,7 +81,10 @@ export const useOverlaySymbologyStore = defineStore('overlay-symbology', () => {
     bump()
   }
 
-  async function ensureMeta(catalogId: string, options?: { force?: boolean }): Promise<OverlaySymbologyMeta | null> {
+  async function ensureMeta(
+    catalogId: string,
+    options?: { force?: boolean },
+  ): Promise<OverlaySymbologyMeta | null> {
     if (!catalogId) return null
     if (!options?.force && shouldSkipFetch(catalogId)) {
       return getMeta(catalogId)

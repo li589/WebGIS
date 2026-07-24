@@ -74,7 +74,9 @@ class MinioStorageBackend(StorageBackend):
         object_prefix = self._normalize_path(prefix)
         return [
             obj.object_name
-            for obj in self._client.list_objects(self._bucket, prefix=object_prefix, recursive=True)
+            for obj in self._client.list_objects(
+                self._bucket, prefix=object_prefix, recursive=True
+            )
         ]
 
     def stat(self, path: str) -> dict[str, Any]:

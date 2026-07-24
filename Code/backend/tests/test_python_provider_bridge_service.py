@@ -29,7 +29,9 @@ class _InvalidValidationJobService:
             200,
             {
                 "is_valid": False,
-                "errors": ["module 'ndvi_daily' requires datasource_selection keys: input_dir"],
+                "errors": [
+                    "module 'ndvi_daily' requires datasource_selection keys: input_dir"
+                ],
                 "template": {
                     "entry_kind": "module",
                     "entry_name": "ndvi_daily",
@@ -40,8 +42,12 @@ class _InvalidValidationJobService:
             },
         )
 
-    def submit_job(self, payload: object) -> _ServiceResponse:  # pragma: no cover - should not be called
-        raise AssertionError(f"submit_job should not be called when validation fails: {payload!r}")
+    def submit_job(
+        self, payload: object
+    ) -> _ServiceResponse:  # pragma: no cover - should not be called
+        raise AssertionError(
+            f"submit_job should not be called when validation fails: {payload!r}"
+        )
 
 
 class PythonProviderBridgeServiceTests(unittest.TestCase):
@@ -59,7 +65,9 @@ class PythonProviderBridgeServiceTests(unittest.TestCase):
             },
         )
 
-    def test_execute_includes_default_data_source_diagnostics_on_validation_failure(self) -> None:
+    def test_execute_includes_default_data_source_diagnostics_on_validation_failure(
+        self,
+    ) -> None:
         resolution_diagnostics = {
             "layer_id": "ndvi",
             "layer_status": "available",
@@ -73,13 +81,16 @@ class PythonProviderBridgeServiceTests(unittest.TestCase):
             ],
         }
 
-        with patch.object(
-            python_provider_bridge_service,
-            "_get_job_service",
-            return_value=_InvalidValidationJobService(),
-        ), patch(
-            "app.services.python_provider_bridge_service.describe_python_provider_resolution",
-            return_value=resolution_diagnostics,
+        with (
+            patch.object(
+                python_provider_bridge_service,
+                "_get_job_service",
+                return_value=_InvalidValidationJobService(),
+            ),
+            patch(
+                "app.services.python_provider_bridge_service.describe_python_provider_resolution",
+                return_value=resolution_diagnostics,
+            ),
         ):
             with self.assertRaises(BridgeExecutionError) as ctx:
                 python_provider_bridge_service.execute(
@@ -94,7 +105,9 @@ class PythonProviderBridgeServiceTests(unittest.TestCase):
         self.assertIn("Provider template validation failed", str(error))
         self.assertIn("Default data sources are not ready for layer 'ndvi'", str(error))
         self.assertIn("NDVI_16DAY_RASTER <= NDVI_VIIRS, NDVI_MODIS, ndvi", str(error))
-        self.assertEqual(error.details["resolution_diagnostics"], resolution_diagnostics)
+        self.assertEqual(
+            error.details["resolution_diagnostics"], resolution_diagnostics
+        )
         self.assertEqual(
             error.details["validation_errors"],
             ["module 'ndvi_daily' requires datasource_selection keys: input_dir"],

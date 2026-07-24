@@ -1,12 +1,11 @@
-﻿"""weatherengine get_point_weather 单元测试。
+"""weatherengine get_point_weather 单元测试。
 
 验证 3 个图层（wind-field/temperature/precipitation）的 forecast 解析、
 render_hint 构造、缓存 miss→hit 转换逻辑，mock Open-Meteo API 避免网络依赖。
 """
+
 from __future__ import annotations
 
-import os
-import shutil
 import unittest
 from typing import Any
 
@@ -65,8 +64,14 @@ def _build_mock_payload(layer_spec) -> dict[str, Any]:
         "wind_gusts_10m": 27.0,
     }
     hourly: dict[str, list] = {
-        "time": ["2026-07-06T00:00", "2026-07-06T01:00", "2026-07-06T02:00",
-                 "2026-07-06T03:00", "2026-07-06T04:00", "2026-07-06T05:00"],
+        "time": [
+            "2026-07-06T00:00",
+            "2026-07-06T01:00",
+            "2026-07-06T02:00",
+            "2026-07-06T03:00",
+            "2026-07-06T04:00",
+            "2026-07-06T05:00",
+        ],
         "temperature_2m": [25.7, 25.3, 24.9, 24.5, 24.1, 23.8],
         "precipitation": [0.2, 0.7, 0.0, 0.0, 0.1, 0.3],
         "wind_speed_10m": [13.2, 12.9, 13.2, 12.5, 11.8, 11.1],
@@ -96,7 +101,9 @@ class GetPointWeatherTests(unittest.TestCase):
     def tearDown(self) -> None:
         get_registry().clear()
 
-    def _make_service(self, cache_status_sequence: list[str] | None = None) -> tuple[WeatherEngineService, _FakeOpenMeteoClient]:
+    def _make_service(
+        self, cache_status_sequence: list[str] | None = None
+    ) -> tuple[WeatherEngineService, _FakeOpenMeteoClient]:
         client = _FakeOpenMeteoClient(cache_status_sequence=cache_status_sequence)
         # 覆盖 setUp 中的默认 provider，使用带特定 cache_status_sequence 的 fake client
         # 确保 get_point_weather 通过 registry 路由到此 client（而非 setUp 的默认 client）

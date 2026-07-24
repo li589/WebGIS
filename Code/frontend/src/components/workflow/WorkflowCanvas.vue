@@ -25,6 +25,9 @@ import {
   syncGraphSlotsWithTemplates,
   getPortColor,
   suggestConnectorsForPortType,
+  getGraphNodes,
+  liteGraphTheme,
+  asLGraphCanvasRuntime,
 } from './litegraph-setup'
 import type {
   LGraphClass,
@@ -78,8 +81,6 @@ const alignmentGuides = ref<AlignmentGuide[]>([])
 const SNAP_GRID_SIZE = 20
 /** 边缘对齐吸附阈值（graph 坐标） */
 const ALIGN_SNAP_THRESHOLD = 8
-/** 拖动过程中是否正在吸附（避免重复 emit） */
-let _dragSnapActive = false
 
 /** 连接点悬停提示 */
 const portTooltip = ref<{
@@ -166,7 +167,11 @@ function setupLiteGraphFloatingUiGuards() {
   _floatingPointerDownRef = (e: PointerEvent) => {
     const t = e.target as HTMLElement | null
     if (!t) return
-    if (t.closest('.litecontextmenu, .graphdialog, .litesearchbox, .param-combo-menu, .param-combobox')) {
+    if (
+      t.closest(
+        '.litecontextmenu, .graphdialog, .litesearchbox, .param-combo-menu, .param-combobox',
+      )
+    ) {
       return
     }
     const hasMenu = document.querySelector('.litecontextmenu, .graphdialog, .litesearchbox')
@@ -318,6 +323,7 @@ function configureCanvas(canvas: LGraphCanvasClass) {
 
   // 主题色适配深色 UI
   if (LiteGraph) {
+    const lg = liteGraphTheme()
     // 节点默认颜色
     LiteGraph.NODE_DEFAULT_COLOR = '#1a2740'
     LiteGraph.NODE_DEFAULT_BGCOLOR = '#0f1828'
@@ -325,20 +331,20 @@ function configureCanvas(canvas: LGraphCanvasClass) {
     LiteGraph.NODE_DEFAULT_SHAPE = 'round'
     LiteGraph.NODE_TITLE_COLOR = '#d8e6f5'
     LiteGraph.NODE_TEXT_COLOR = '#c4d6e8'
-    LiteGraph.NODE_SELECTED_TITLE_COLOR = '#ffb84d'
-    LiteGraph.NODE_BOX_OUTLINE_COLOR = '#5ad5ff'
+    lg.NODE_SELECTED_TITLE_COLOR = '#ffb84d'
+    lg.NODE_BOX_OUTLINE_COLOR = '#5ad5ff'
     // 连线颜色 — 不同数据类型不同颜色
-    LiteGraph.LINK_COLOR = '#5ad5ff'           // 默认（青色）
+    LiteGraph.LINK_COLOR = '#5ad5ff' // 默认（青色）
     LiteGraph.CONNECTING_LINK_COLOR = '#ffb84d' // 正在连接（橙色）
-    LiteGraph.EVENT_LINK_COLOR = '#78ffa0'      // 事件类型（绿色）
+    LiteGraph.EVENT_LINK_COLOR = '#78ffa0' // 事件类型（绿色）
     // 标题栏高度
     LiteGraph.NODE_TITLE_HEIGHT = 22
     LiteGraph.NODE_SLOT_HEIGHT = 20
     LiteGraph.NODE_WIDGET_HEIGHT = 20
     // 连线宽度
-    LiteGraph.LINK_WIDTH = 2.2
+    lg.LINK_WIDTH = 2.2
     // 鼠标悬停连接线时的高亮颜色（降级方案：依赖 LiteGraph 内置 hover 绘制）
-    LiteGraph.LINK_HOVER_COLOR = '#ffd38a'
+    lg.LINK_HOVER_COLOR = '#ffd38a'
   }
 
   // 选区回调
@@ -349,21 +355,22 @@ function configureCanvas(canvas: LGraphCanvasClass) {
   }
 
   const origOnNodeDeselected = canvas.onNodeDeselected?.bind(canvas)
-  canvas.onNodeDeselected = () => {
+  canvas.onNodeDeselected = (node: LGraphNodeClass) => {
     emit('nodeSelect', null)
-    if (origOnNodeDeselected) origOnNodeDeselected()
+    if (origOnNodeDeselected) origOnNodeDeselected(node)
   }
 
   // 图变更后通知父组件
-  const origOnConnectionChange = (canvas as unknown as {
-    onConnectionChange?: (...args: unknown[]) => void
-  }).onConnectionChange
-  ;(canvas as unknown as { onConnectionChange?: (...args: unknown[]) => void }).onConnectionChange = (
-    ...args: unknown[]
-  ) => {
-    emitChange()
-    if (origOnConnectionChange) origOnConnectionChange(...args)
-  }
+  const origOnConnectionChange = (
+    canvas as unknown as {
+      onConnectionChange?: (...args: unknown[]) => void
+    }
+  ).onConnectionChange
+  ;(canvas as unknown as { onConnectionChange?: (...args: unknown[]) => void }).onConnectionChange =
+    (...args: unknown[]) => {
+      emitChange()
+      if (origOnConnectionChange) origOnConnectionChange(...args)
+    }
 
   // 拖动过程中实时吸附 + 辅助线（LiteGraph 的 onNodeMoved 仅在 mouseup 触发，不跟手）
   const canvasAny = canvas as unknown as {
@@ -372,7 +379,10 @@ function configureCanvas(canvas: LGraphCanvasClass) {
     selected_nodes?: Record<string, LGraphNodeClass>
     onNodeMoved?: (node: LGraphNodeClass) => void
     onDrawOverlay?: (ctx: CanvasRenderingContext2D) => void
-    onDrawBackground?: (ctx: CanvasRenderingContext2D, visibleArea?: Float32Array | number[]) => void
+    onDrawBackground?: (
+      ctx: CanvasRenderingContext2D,
+      visibleArea?: Float32Array | number[],
+    ) => void
     convertOffsetToCanvas?: (pos: number[], out?: number[]) => number[]
     ds?: { offset: [number, number]; scale: number; visible_area?: Float32Array | number[] }
   }
@@ -382,7 +392,6 @@ function configureCanvas(canvas: LGraphCanvasClass) {
       const result = origProcessMouseMove(e)
       const dragged = canvasAny.node_dragged
       if (dragged && !props.readonly) {
-        _dragSnapActive = true
         applySnapWhileDragging(dragged, canvasAny.selected_nodes ?? { [dragged.id]: dragged })
         computeAlignmentGuides(dragged)
         canvas.setDirty(true, true)
@@ -402,14 +411,18 @@ function configureCanvas(canvas: LGraphCanvasClass) {
         hidePortTooltip()
         return
       }
-      const dragged = (canvasInstance.value as unknown as { node_dragged?: LGraphNodeClass | null }).node_dragged
+      const dragged = (canvasInstance.value as unknown as { node_dragged?: LGraphNodeClass | null })
+        .node_dragged
       if (dragged) {
         hidePortTooltip()
         return
       }
       updatePortTooltipFromEvent(e, canvasInstance.value)
     }
-    tipHost.addEventListener('mousemove', _portMousemoveHandlerRef, { passive: true, capture: true })
+    tipHost.addEventListener('mousemove', _portMousemoveHandlerRef as EventListener, {
+      passive: true,
+      capture: true,
+    })
     tipHost.addEventListener('mouseleave', hidePortTooltip)
   }
 
@@ -419,7 +432,6 @@ function configureCanvas(canvas: LGraphCanvasClass) {
     applySnapWhileDragging(node, canvasAny.selected_nodes ?? { [node.id]: node }, true)
     alignmentGuides.value = []
     emitChange()
-    _dragSnapActive = false
     if (origOnNodeMoved) origOnNodeMoved(node)
   }
 
@@ -505,7 +517,6 @@ function configureCanvas(canvas: LGraphCanvasClass) {
   // 松手即清除辅助线（仅拖动过程中显示）
   if (canvasRef.value) {
     _mouseupHandlerRef = () => {
-      _dragSnapActive = false
       if (alignmentGuides.value.length) {
         alignmentGuides.value = []
         canvas.setDirty(true, true)
@@ -517,18 +528,19 @@ function configureCanvas(canvas: LGraphCanvasClass) {
 
   // 键盘快捷键：Delete 删除 + Ctrl+A/C/V/D 编辑快捷键 + Escape 取消选中
   if (!props.readonly) {
-    canvas.bindKey = undefined  // 不覆盖 LiteGraph 默认绑定
+    asLGraphCanvasRuntime(canvas).bindKey = undefined // 不覆盖 LiteGraph 默认绑定
     const canvasEl = canvasRef.value
     if (canvasEl) {
       const keydownHandler = (e: KeyboardEvent) => {
         // 输入框/文本域/下拉框中不拦截快捷键
         const target = e.target as HTMLElement | null
-        if (target && (
-          target.tagName === 'INPUT' ||
-          target.tagName === 'TEXTAREA' ||
-          target.tagName === 'SELECT' ||
-          target.isContentEditable
-        )) {
+        if (
+          target &&
+          (target.tagName === 'INPUT' ||
+            target.tagName === 'TEXTAREA' ||
+            target.tagName === 'SELECT' ||
+            target.isContentEditable)
+        ) {
           return
         }
         const mod = e.ctrlKey || e.metaKey
@@ -551,7 +563,7 @@ function configureCanvas(canvas: LGraphCanvasClass) {
           clearAlignmentGuides(canvas)
           hidePortTooltip()
           if (graphInstance.value) {
-            for (const n of graphInstance.value._nodes) {
+            for (const n of getGraphNodes(graphInstance.value)) {
               n.selected = false
             }
             canvas.setDirty(true, true)
@@ -757,11 +769,14 @@ function drawMinimap() {
   ctx.fillStyle = 'rgba(8, 15, 28, 0.6)'
   ctx.fillRect(0, 0, W, H)
 
-  const nodes = graph._nodes
+  const nodes = getGraphNodes(graph)
   if (nodes.length === 0) return
 
   // 计算所有节点的边界框
-  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity
+  let minX = Infinity,
+    minY = Infinity,
+    maxX = -Infinity,
+    maxY = -Infinity
   for (const n of nodes) {
     const w = n.size?.[0] ?? 200
     const h = n.size?.[1] ?? 100
@@ -772,7 +787,10 @@ function drawMinimap() {
   }
   // 加 padding 避免节点贴边
   const pad = 40
-  minX -= pad; minY -= pad; maxX += pad; maxY += pad
+  minX -= pad
+  minY -= pad
+  maxX += pad
+  maxY += pad
   const contentW = maxX - minX
   const contentH = maxY - minY
   if (contentW <= 0 || contentH <= 0) return
@@ -868,9 +886,12 @@ function syncMinimapToViewport(e: MouseEvent) {
   const py = e.clientY - rect.top
 
   // 反推 graph 坐标（与 drawMinimap 中的计算对应）
-  const nodes = graph._nodes
+  const nodes = getGraphNodes(graph)
   if (nodes.length === 0) return
-  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity
+  let minX = Infinity,
+    minY = Infinity,
+    maxX = -Infinity,
+    maxY = -Infinity
   for (const n of nodes) {
     const w = n.size?.[0] ?? 200
     const h = n.size?.[1] ?? 100
@@ -880,7 +901,10 @@ function syncMinimapToViewport(e: MouseEvent) {
     maxY = Math.max(maxY, n.pos[1] + h)
   }
   const pad = 40
-  minX -= pad; minY -= pad; maxX += pad; maxY += pad
+  minX -= pad
+  minY -= pad
+  maxX += pad
+  maxY += pad
   const contentW = maxX - minX
   const contentH = maxY - minY
   if (contentW <= 0 || contentH <= 0) return
@@ -910,11 +934,15 @@ function hidePortTooltip() {
 }
 
 function resolveSuggestTitles(portType: string): string[] {
-  return suggestConnectorsForPortType(portType)
-    .map((t) => props.nodeTemplates.find((n) => n.type === t)?.title ?? t)
+  return suggestConnectorsForPortType(portType).map(
+    (t) => props.nodeTemplates.find((n) => n.type === t)?.title ?? t,
+  )
 }
 
-function clientToGraphCoords(e: MouseEvent, canvas: LGraphCanvasClass): { x: number; y: number } | null {
+function clientToGraphCoords(
+  e: MouseEvent,
+  canvas: LGraphCanvasClass,
+): { x: number; y: number } | null {
   // 优先走 LiteGraph 官方坐标换算，避免与缩放/偏移不一致
   const canvasAny = canvas as unknown as {
     adjustMouseEvent?: (ev: MouseEvent) => void
@@ -955,24 +983,32 @@ function updatePortTooltipFromEvent(e: MouseEvent, canvas: LGraphCanvasClass) {
   const scale = Math.max(ds?.scale ?? 1, 0.35)
   // 连接点常在节点外缘，不能先 getNodeOnPos；扫描全部节点的 slot
   const hit = 22 / scale
-  let best: {
-    node: LGraphNodeClass
-    direction: 'input' | 'output'
-    slotIndex: number
-    dist: number
-  } | null = null
+  const hitState: {
+    best: {
+      node: LGraphNodeClass
+      direction: 'input' | 'output'
+      slotIndex: number
+      dist: number
+    } | null
+  } = { best: null }
 
-  for (const node of graphInstance.value._nodes ?? []) {
+  for (const node of getGraphNodes(graphInstance.value)) {
     const probe = (isInput: boolean, count: number) => {
       for (let i = 0; i < count; i++) {
         const out = new Float32Array(2)
-        const pos = (node as unknown as {
-          getConnectionPos?: (input: boolean, slot: number, out?: Float32Array) => Float32Array | number[]
-        }).getConnectionPos?.(isInput, i, out)
+        const pos = (
+          node as unknown as {
+            getConnectionPos?: (
+              input: boolean,
+              slot: number,
+              out?: Float32Array,
+            ) => Float32Array | number[]
+          }
+        ).getConnectionPos?.(isInput, i, out)
         if (!pos) continue
         const dist = Math.hypot(graphPos.x - pos[0], graphPos.y - pos[1])
-        if (dist <= hit && (!best || dist < best.dist)) {
-          best = {
+        if (dist <= hit && (!hitState.best || dist < hitState.best.dist)) {
+          hitState.best = {
             node,
             direction: isInput ? 'input' : 'output',
             slotIndex: i,
@@ -985,19 +1021,19 @@ function updatePortTooltipFromEvent(e: MouseEvent, canvas: LGraphCanvasClass) {
     probe(false, node.outputs?.length ?? 0)
   }
 
-  if (!best) {
+  if (!hitState.best) {
     hidePortTooltip()
     return
   }
 
-  const { node, direction, slotIndex } = best
+  const { node, direction, slotIndex } = hitState.best
   const slot = direction === 'input' ? node.inputs?.[slotIndex] : node.outputs?.[slotIndex]
   if (!slot) {
     hidePortTooltip()
     return
   }
 
-  const slotAny = slot as Record<string, unknown>
+  const slotAny = slot as unknown as Record<string, unknown>
   const portType = String(slot.type ?? '')
   const key = `${node.id}:${direction}:${slotIndex}`
   // Teleport 到 body 时用 client 坐标做 fixed 定位
@@ -1007,15 +1043,17 @@ function updatePortTooltipFromEvent(e: MouseEvent, canvas: LGraphCanvasClass) {
   if (key !== _portTooltipKey) {
     _portTooltipKey = key
     const tpl = props.nodeTemplates.find((t) => t.type === node.type)
-    const tplPort = direction === 'input'
-      ? tpl?.inputs?.find((p) => p.name === slot.name)
-      : tpl?.outputs?.find((p) => p.name === slot.name)
-    const help = (typeof slotAny._help === 'string' ? slotAny._help : undefined)
-      ?? tplPort?.description
-    const connected = direction === 'input'
-      ? (slot as { link?: number | null }).link != null
-      : Array.isArray((slot as { links?: number[] | null }).links)
-        && ((slot as { links?: number[] | null }).links?.length ?? 0) > 0
+    const tplPort =
+      direction === 'input'
+        ? tpl?.inputs?.find((p) => p.name === slot.name)
+        : tpl?.outputs?.find((p) => p.name === slot.name)
+    const help =
+      (typeof slotAny._help === 'string' ? slotAny._help : undefined) ?? tplPort?.description
+    const connected =
+      direction === 'input'
+        ? (slot as { link?: number | null }).link != null
+        : Array.isArray((slot as { links?: number[] | null }).links) &&
+          ((slot as { links?: number[] | null }).links?.length ?? 0) > 0
 
     const model = buildPortTooltip({
       direction,
@@ -1079,7 +1117,9 @@ function applySnapWhileDragging(
   const movers = selected.length > 0 ? selected : [draggedNode]
   const primary = draggedNode
   const pb = nodeBounds(primary)
-  const others = graphInstance.value._nodes.filter((n) => !movers.some((m) => m.id === n.id))
+  const others = getGraphNodes(graphInstance.value).filter(
+    (n) => !movers.some((m) => m.id === n.id),
+  )
 
   let bestDx: number | null = null
   let bestDy: number | null = null
@@ -1120,12 +1160,8 @@ function applySnapWhileDragging(
 
   // 边缘磁吸优先；否则吸附到网格（hard 仅表示松手再确认一次）
   void hard
-  const dx = bestDx !== null
-    ? bestDx
-    : snapToGrid(primary.pos[0]) - primary.pos[0]
-  const dy = bestDy !== null
-    ? bestDy
-    : snapToGrid(primary.pos[1]) - primary.pos[1]
+  const dx = bestDx !== null ? bestDx : snapToGrid(primary.pos[0]) - primary.pos[0]
+  const dy = bestDy !== null ? bestDy : snapToGrid(primary.pos[1]) - primary.pos[1]
 
   if (Math.abs(dx) < 0.01 && Math.abs(dy) < 0.01) return
   for (const n of movers) {
@@ -1141,7 +1177,7 @@ function applySnapWhileDragging(
 function computeAlignmentGuides(draggedNode: LGraphNodeClass) {
   if (!graphInstance.value) return
   const guides: AlignmentGuide[] = []
-  const others = graphInstance.value._nodes.filter((n) => n.id !== draggedNode.id)
+  const others = getGraphNodes(graphInstance.value).filter((n) => n.id !== draggedNode.id)
   const threshold = ALIGN_SNAP_THRESHOLD
   const db = nodeBounds(draggedNode)
   const pad = 24
@@ -1190,7 +1226,7 @@ function computeAlignmentGuides(draggedNode: LGraphNodeClass) {
 
 function selectAllNodes() {
   if (!graphInstance.value) return
-  for (const n of graphInstance.value._nodes) {
+  for (const n of getGraphNodes(graphInstance.value)) {
     n.selected = true
   }
   canvasInstance.value?.setDirty(true, true)
@@ -1198,7 +1234,7 @@ function selectAllNodes() {
 
 function copySelectedNodes() {
   if (!graphInstance.value) return
-  _clipboard = graphInstance.value._nodes
+  _clipboard = getGraphNodes(graphInstance.value)
     .filter((n) => n.selected)
     .map((n) => ({
       type: n.type ?? '',
@@ -1227,7 +1263,7 @@ function pasteNodes() {
 
 function duplicateSelectedNodes() {
   if (!graphInstance.value) return
-  const selected = graphInstance.value._nodes.filter((n) => n.selected)
+  const selected = getGraphNodes(graphInstance.value).filter((n) => n.selected)
   for (const n of selected) {
     try {
       if (!LiteGraph) continue
@@ -1297,7 +1333,11 @@ function loadDefinitionIntoGraph(def: WorkflowDefinition, graph: LGraphClass) {
     }
 
     // 加载后重新计算节点尺寸，确保文字不重叠/不溢出
-    const nodes = (graph as unknown as { _nodes?: Array<{ computeSize?: () => [number, number]; size?: [number, number] }> })._nodes
+    const nodes = (
+      graph as unknown as {
+        _nodes?: Array<{ computeSize?: () => [number, number]; size?: [number, number] }>
+      }
+    )._nodes
     if (nodes) {
       for (const node of nodes) {
         if (typeof node.computeSize === 'function') {
@@ -1347,7 +1387,10 @@ function emitChange() {
 
 // ─── 公开方法（通过 defineExpose） ──────────────────────────────────────────
 
-function getSerializedGraph(): { nodes: WorkflowDefinitionNode[]; links: WorkflowDefinitionLink[] } | null {
+function getSerializedGraph(): {
+  nodes: WorkflowDefinitionNode[]
+  links: WorkflowDefinitionLink[]
+} | null {
   if (!graphInstance.value) return null
   try {
     const graphData = graphInstance.value.serialize<serializedLGraph>()
@@ -1373,11 +1416,14 @@ function arrangeNodes() {
 function fitView() {
   if (!canvasInstance.value || !graphInstance.value) return
   const canvas = canvasInstance.value
-  const nodes = graphInstance.value._nodes
+  const nodes = getGraphNodes(graphInstance.value)
   if (!nodes || nodes.length === 0) return
 
   // 计算所有节点的边界框
-  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity
+  let minX = Infinity,
+    minY = Infinity,
+    maxX = -Infinity,
+    maxY = -Infinity
   for (const node of nodes) {
     const w = node.size?.[0] ?? 200
     const h = node.size?.[1] ?? 100
@@ -1412,10 +1458,7 @@ function fitView() {
  * @param pos 可选位置 [x, y]，默认为视口中心
  * @returns 创建的节点实例
  */
-function addNodeByType(
-  nodeType: string,
-  pos?: [number, number],
-): LGraphNodeClass | null {
+function addNodeByType(nodeType: string, pos?: [number, number]): LGraphNodeClass | null {
   if (!graphInstance.value || !LiteGraph) return null
   try {
     const node = LiteGraph.createNode<LGraphNodeClass>(nodeType)
@@ -1437,7 +1480,7 @@ function addNodeByType(
           const cx = (rect.width / 2 - ds.offset[0]) / ds.scale
           const cy = (rect.height / 2 - ds.offset[1]) / ds.scale
           // 叠加偏移避免新节点完全重叠
-          const offset = graphInstance.value._nodes?.length ?? 0
+          const offset = getGraphNodes(graphInstance.value).length ?? 0
           node.pos = [cx + (offset % 5) * 30, cy + (offset % 5) * 30]
         } else {
           node.pos = [200, 200]
@@ -1476,26 +1519,53 @@ function disposeLiteGraphFloatingUi() {
     closePanels?: () => void
   } | null
 
-  try { canvas?.search_box?.close?.() } catch { /* ignore */ }
-  try { canvas?.prompt_box?.close?.() } catch { /* ignore */ }
-  try { canvas?.closePanels?.() } catch { /* ignore */ }
   try {
-    ;(LiteGraph as unknown as { closeAllContextMenus?: (w?: Window) => void })
-      .closeAllContextMenus?.(window)
-  } catch { /* ignore */ }
+    canvas?.search_box?.close?.()
+  } catch {
+    /* ignore */
+  }
+  try {
+    canvas?.prompt_box?.close?.()
+  } catch {
+    /* ignore */
+  }
+  try {
+    canvas?.closePanels?.()
+  } catch {
+    /* ignore */
+  }
+  try {
+    ;(
+      LiteGraph as unknown as { closeAllContextMenus?: (w?: Window) => void }
+    ).closeAllContextMenus?.(window)
+  } catch {
+    /* ignore */
+  }
 
   // prompt / createDialog 挂在 canvas.parentNode；搜索框/菜单挂在 document.body
   canvasContainerRef.value
-    ?.querySelectorAll('.graphdialog, .litegraph.dialog, .litegraph.litesearchbox, .litegraph.litecontextmenu')
+    ?.querySelectorAll(
+      '.graphdialog, .litegraph.dialog, .litegraph.litesearchbox, .litegraph.litecontextmenu',
+    )
     .forEach((el) => {
-      try { el.parentNode?.removeChild(el) } catch { /* ignore */ }
+      try {
+        el.parentNode?.removeChild(el)
+      } catch {
+        /* ignore */
+      }
     })
 
-  document.querySelectorAll(
-    '.graphdialog, .litegraph.graphdialog, .litegraph.litesearchbox, .litegraph.litecontextmenu, .litegraph.dialog, #node-panel, #option-panel',
-  ).forEach((el) => {
-    try { el.parentNode?.removeChild(el) } catch { /* ignore */ }
-  })
+  document
+    .querySelectorAll(
+      '.graphdialog, .litegraph.graphdialog, .litegraph.litesearchbox, .litegraph.litecontextmenu, .litegraph.dialog, #node-panel, #option-panel',
+    )
+    .forEach((el) => {
+      try {
+        el.parentNode?.removeChild(el)
+      } catch {
+        /* ignore */
+      }
+    })
 
   if (document.body.style.overflow === 'hidden') {
     document.body.style.overflow = ''
@@ -1572,14 +1642,16 @@ onBeforeUnmount(() => {
   const tipHost = canvasContainerRef.value ?? canvasEl
   if (tipHost) {
     if (_portMousemoveHandlerRef) {
-      tipHost.removeEventListener('mousemove', _portMousemoveHandlerRef, true)
+      tipHost.removeEventListener('mousemove', _portMousemoveHandlerRef as EventListener, true)
       _portMousemoveHandlerRef = null
     }
     tipHost.removeEventListener('mouseleave', hidePortTooltip)
   }
-  const container = canvasContainerRef.value as (HTMLDivElement & {
-    __clearGuidesHandler?: (e: Event) => void
-  }) | null
+  const container = canvasContainerRef.value as
+    | (HTMLDivElement & {
+        __clearGuidesHandler?: (e: Event) => void
+      })
+    | null
   if (container?.__clearGuidesHandler) {
     container.removeEventListener('mousedown', container.__clearGuidesHandler, true)
     delete container.__clearGuidesHandler
@@ -1689,13 +1761,7 @@ watch(
       <InlineLoader label="正在加载画布..." />
     </div>
 
-    <canvas
-      ref="minimapRef"
-      class="workflow-minimap"
-      width="160"
-      height="100"
-      aria-hidden="true"
-    />
+    <canvas ref="minimapRef" class="workflow-minimap" width="160" height="100" aria-hidden="true" />
   </div>
 
   <!-- Teleport 到 body，避免被 editor-canvas-area 的 overflow:hidden 裁剪 -->
@@ -1781,7 +1847,9 @@ watch(
   border-radius: 0.5rem;
   border: 1px solid color-mix(in srgb, var(--tip-accent, #5ad5ff) 45%, transparent);
   background: linear-gradient(165deg, rgba(14, 24, 40, 0.96), rgba(8, 14, 26, 0.94));
-  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.45), 0 0 0 1px rgba(255, 255, 255, 0.03) inset;
+  box-shadow:
+    0 10px 28px rgba(0, 0, 0, 0.45),
+    0 0 0 1px rgba(255, 255, 255, 0.03) inset;
   pointer-events: none;
   color: #d5e4f3;
 }
@@ -1845,7 +1913,9 @@ watch(
 
 :global(.port-tip-enter-active),
 :global(.port-tip-leave-active) {
-  transition: opacity 0.12s ease, transform 0.12s ease;
+  transition:
+    opacity 0.12s ease,
+    transform 0.12s ease;
 }
 :global(.port-tip-enter-from),
 :global(.port-tip-leave-to) {

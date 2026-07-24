@@ -35,7 +35,7 @@ describe('crs-transformer', () => {
   it('GCJ02 → WGS84 与后端 _gcj_bd 北京样例一致', () => {
     // 北京天安门 GCJ02 (116.39747, 39.90880) → WGS84 (116.391226, 39.907397)
     // 后端 _BEIJING_WGS84 = (116.391226, 39.907397) 是公认真值
-    const [lng, lat] = transformPoint(116.39747, 39.90880, 'GCJ02', 'EPSG:4326')
+    const [lng, lat] = transformPoint(116.39747, 39.9088, 'GCJ02', 'EPSG:4326')
     expect(lng).toBeCloseTo(116.3912, 3)
     expect(lat).toBeCloseTo(39.9074, 3)
   })
@@ -55,7 +55,10 @@ describe('crs-transformer', () => {
   })
 
   it('偏移在 CRS 转换后应用', () => {
-    const [lng, lat] = transformPoint(0, 0, 'EPSG:4326', 'EPSG:4326', { lngOffset: 1.5, latOffset: 2.5 })
+    const [lng, lat] = transformPoint(0, 0, 'EPSG:4326', 'EPSG:4326', {
+      lngOffset: 1.5,
+      latOffset: 2.5,
+    })
     expect(lng).toBeCloseTo(1.5, 9)
     expect(lat).toBeCloseTo(2.5, 9)
   })
@@ -96,7 +99,10 @@ describe('crs-transformer', () => {
   })
 
   it('批量点转换', () => {
-    const points: Array<[number, number]> = [[116.39, 39.91], [121.47, 31.23]]
+    const points: Array<[number, number]> = [
+      [116.39, 39.91],
+      [121.47, 31.23],
+    ]
     const result = transformPointsBatch(points, 'EPSG:4326', 'EPSG:3857')
     expect(result.length).toBe(2)
     const expected0 = proj4('EPSG:4326', 'EPSG:3857', points[0])

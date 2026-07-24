@@ -10,7 +10,10 @@ from service.job_api import JobService
 from service.job_queue import InMemoryJobQueue, JobQueueBackend
 from service.platform_client_mock import PlatformClientMock
 from service.platform_datasource_adapter import PlatformDataSourceAdapter
-from service.platform_http_client import PlatformHttpClient, build_platform_http_client_from_env
+from service.platform_http_client import (
+    PlatformHttpClient,
+    build_platform_http_client_from_env,
+)
 from service.platform_job_queue import PlatformJobQueue
 from service.platform_logger_adapter import PlatformLoggerAdapter
 from service.platform_product_sink import PlatformProductSink
@@ -33,12 +36,22 @@ def build_platform_job_service(
 ) -> tuple[JobService, JobQueueWorker]:
     resolved_workspace = None if workspace is None else Path(workspace)
     async_registry = async_job_registry or AsyncJobRegistry()
-    queue_backend = job_queue or _build_default_queue(platform_client, use_platform_queue=use_platform_queue)
+    queue_backend = job_queue or _build_default_queue(
+        platform_client, use_platform_queue=use_platform_queue
+    )
     service = JobService(
-        scheduler_adapter_factory=lambda: PlatformSchedulerAdapter(platform_client=platform_client),
-        datasource_adapter_factory=lambda: PlatformDataSourceAdapter(platform_client=platform_client),
-        logger_adapter_factory=lambda: PlatformLoggerAdapter(platform_client=platform_client),
-        product_sink_factory=lambda: PlatformProductSink(platform_client=platform_client),
+        scheduler_adapter_factory=lambda: PlatformSchedulerAdapter(
+            platform_client=platform_client
+        ),
+        datasource_adapter_factory=lambda: PlatformDataSourceAdapter(
+            platform_client=platform_client
+        ),
+        logger_adapter_factory=lambda: PlatformLoggerAdapter(
+            platform_client=platform_client
+        ),
+        product_sink_factory=lambda: PlatformProductSink(
+            platform_client=platform_client
+        ),
         workspace=resolved_workspace,
         run_job_fn=run_job_fn,
         async_job_registry=async_registry,
@@ -47,17 +60,27 @@ def build_platform_job_service(
     worker = JobQueueWorker(
         job_queue=queue_backend,
         async_job_registry=async_registry,
-        scheduler_adapter_factory=lambda: PlatformSchedulerAdapter(platform_client=platform_client),
-        datasource_adapter_factory=lambda: PlatformDataSourceAdapter(platform_client=platform_client),
-        logger_adapter_factory=lambda: PlatformLoggerAdapter(platform_client=platform_client),
-        product_sink_factory=lambda: PlatformProductSink(platform_client=platform_client),
+        scheduler_adapter_factory=lambda: PlatformSchedulerAdapter(
+            platform_client=platform_client
+        ),
+        datasource_adapter_factory=lambda: PlatformDataSourceAdapter(
+            platform_client=platform_client
+        ),
+        logger_adapter_factory=lambda: PlatformLoggerAdapter(
+            platform_client=platform_client
+        ),
+        product_sink_factory=lambda: PlatformProductSink(
+            platform_client=platform_client
+        ),
         workspace=resolved_workspace,
         run_job_fn=run_job_fn,
     )
     if start_worker:
         import threading
 
-        thread = threading.Thread(target=lambda: _run_worker_forever(worker), daemon=True)
+        thread = threading.Thread(
+            target=lambda: _run_worker_forever(worker), daemon=True
+        )
         thread.start()
     return service, worker
 
@@ -115,7 +138,9 @@ def build_platform_http_job_service(
     return service, worker, platform_client
 
 
-def _build_default_queue(platform_client, *, use_platform_queue: bool) -> JobQueueBackend:
+def _build_default_queue(
+    platform_client, *, use_platform_queue: bool
+) -> JobQueueBackend:
     if use_platform_queue:
         return PlatformJobQueue(platform_client=platform_client)
     return InMemoryJobQueue()

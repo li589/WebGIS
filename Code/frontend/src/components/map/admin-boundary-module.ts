@@ -18,11 +18,13 @@ interface CreateAdminBoundaryModuleOptions {
 export function createAdminBoundaryModule(
   options: CreateAdminBoundaryModuleOptions,
 ): AdminBoundaryModule {
-  const loadBoundaryModuleImpl = options.dependencies?.loadBoundaryModule
-    ?? (() => import('../../app/guangdong-boundaries').catch((error) => {
-      console.error('[MapCanvas] Failed to load boundary module:', error)
-      return null
-    }))
+  const loadBoundaryModuleImpl =
+    options.dependencies?.loadBoundaryModule ??
+    (() =>
+      import('../../app/guangdong-boundaries').catch((error) => {
+        console.error('[MapCanvas] Failed to load boundary module:', error)
+        return null
+      }))
 
   let boundaryModule: BoundaryModuleData | null = null
   let boundaryModulePromise: Promise<BoundaryModuleData | null> | null = null

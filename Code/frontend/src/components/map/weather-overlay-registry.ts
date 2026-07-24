@@ -7,6 +7,8 @@ export interface WeatherOverlayState {
   geojsonData: WindGeoJSON | Record<string, unknown> | null
   cogPreviewUrl: string | null
   cogBbox: { west: number; south: number; east: number; north: number } | null
+  /** 瓦片请求的目标视口 bounds；grid_fill 用它画灰底占位（无数据区域渐填） */
+  viewportBounds?: { west: number; south: number; east: number; north: number } | null
   renderHint: WeatherLayerRenderHint
   opacity: number
 }
@@ -40,6 +42,10 @@ function hasCogPreview(state: WeatherOverlayState) {
   return Boolean(state.cogPreviewUrl && state.cogBbox)
 }
 
+function hasViewportPlaceholder(state: WeatherOverlayState) {
+  return Boolean(state.viewportBounds)
+}
+
 const WEATHER_OVERLAY_RENDERERS: Record<string, WeatherOverlayRenderer> = {
   particle_flow: {
     canRender: hasGeojsonSource,
@@ -65,7 +71,9 @@ const WEATHER_OVERLAY_RENDERERS: Record<string, WeatherOverlayRenderer> = {
     },
   },
   grid_fill: {
-    canRender: (state) => hasGeojsonSource(state) || hasCogPreview(state),
+    // 有视口 bounds 即可渲染灰底占位，数据瓦片到达后渐进填色
+    canRender: (state) =>
+      hasGeojsonSource(state) || hasCogPreview(state) || hasViewportPlaceholder(state),
     render: (state, context, overlayToken) => {
       if (hasCogPreview(state)) {
         context.syncWeatherCogOverlay(state)

@@ -90,7 +90,9 @@ class WorkflowService:
             max_local_write_bytes=self._settings.max_local_write_bytes,
             quota_coordinator=quota_coordinator,
         )
-        self._metrics = metrics_collector or InMemoryMetricsCollector(metrics_sink=metrics_sink)
+        self._metrics = metrics_collector or InMemoryMetricsCollector(
+            metrics_sink=metrics_sink
+        )
         self._migrator = WorkflowDefinitionMigrator(self._registry)
         self._validator = WorkflowValidator(self._registry, migrator=self._migrator)
         self._executor = WorkflowExecutor(self._registry)
@@ -373,7 +375,11 @@ class WorkflowService:
 
     def _resolve_workflow_temp_root(self, context: ExecutionContext) -> Path:
         default_temp_dir = ExecutionContext.model_fields["temp_dir"].default
-        temp_root = context.temp_dir if context.temp_dir != default_temp_dir else self._settings.temp_dir
+        temp_root = (
+            context.temp_dir
+            if context.temp_dir != default_temp_dir
+            else self._settings.temp_dir
+        )
         return Path(temp_root).resolve()
 
     def _wrap_existing_storage_backend(
@@ -395,16 +401,22 @@ class WorkflowService:
     ) -> StorageBackend:
         existing_backend = context.metadata.get("storage_backend")
         if isinstance(existing_backend, StorageBackend):
-            return self._wrap_existing_storage_backend(existing_backend, context=context)
+            return self._wrap_existing_storage_backend(
+                existing_backend, context=context
+            )
         if self._storage_backend is not None:
-            return self._wrap_existing_storage_backend(self._storage_backend, context=context)
+            return self._wrap_existing_storage_backend(
+                self._storage_backend, context=context
+            )
 
         backend_type = (
             workflow.storage_policy.backend
             or context.storage_backend
             or self._settings.storage_backend
         )
-        local_storage_root = workflow.storage_policy.base_path or self._settings.local_storage_root
+        local_storage_root = (
+            workflow.storage_policy.base_path or self._settings.local_storage_root
+        )
         return self._resource_controller.wrap_storage_backend(
             create_storage_backend(
                 self._settings,

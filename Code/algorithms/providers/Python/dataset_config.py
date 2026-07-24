@@ -58,7 +58,9 @@ _BACKEND_DATA_ROOT_ENV = os.getenv("BACKEND_DATA_ROOT", _BACKEND_DATA_ROOT_DEFAU
 
 # 产物输出根目录
 _BACKEND_OUTPUT_ROOT_DEFAULT = r"I:\GeoOutput"
-_BACKEND_OUTPUT_ROOT_ENV = os.getenv("BACKEND_OUTPUT_ROOT", _BACKEND_OUTPUT_ROOT_DEFAULT)
+_BACKEND_OUTPUT_ROOT_ENV = os.getenv(
+    "BACKEND_OUTPUT_ROOT", _BACKEND_OUTPUT_ROOT_DEFAULT
+)
 
 # 存储后端类型
 _BACKEND_STORAGE_BACKEND = os.getenv("BACKEND_STORAGE_BACKEND", "local")
@@ -94,7 +96,9 @@ _BACKEND_PROJECTBACKUP_ROOT_DEFAULT = r"I:\ProjectBackup\GeoPaper"
 
 def _get_projectbackup_root() -> Path:
     """获取 ProjectBackup 根目录，优先使用环境变量，否则使用默认值。"""
-    root = Path(os.getenv("BACKEND_PROJECTBACKUP_ROOT", _BACKEND_PROJECTBACKUP_ROOT_DEFAULT))
+    root = Path(
+        os.getenv("BACKEND_PROJECTBACKUP_ROOT", _BACKEND_PROJECTBACKUP_ROOT_DEFAULT)
+    )
     if root.exists():
         return root
     # Fallback: 尝试默认路径
@@ -144,8 +148,15 @@ DATASET_REGISTRY: dict[str, DatasetInfo] = {
         relative_path="SMAP",
         description="NASA SMAP L3 土壤水分被动微波遥感产品（HDF5 格式），2023-01 两周序列 + 2022-09",
         file_format="hdf5",
-        variables=("soil_moisture", "surface_temperature", "tb_h_corrected", "tb_v_corrected",
-                   "vegetation_water_content", "clay_fraction", "vegetation_opacity"),
+        variables=(
+            "soil_moisture",
+            "surface_temperature",
+            "tb_h_corrected",
+            "tb_v_corrected",
+            "vegetation_water_content",
+            "clay_fraction",
+            "vegetation_opacity",
+        ),
         time_range=("2022-09-20", "2023-01-31"),
         resolution="9km",
         crs="EPSG:4326",
@@ -331,7 +342,16 @@ DATASET_REGISTRY: dict[str, DatasetInfo] = {
         relative_path="Station",
         description="ISMN 与 FLUXNET2015 站点匹配表（CSV 格式），101 个站点，31 列属性",
         file_format="csv",
-        variables=("network", "station", "latitude", "longitude", "MAP", "MAT", "AI", "IGBP_Fluxnet"),
+        variables=(
+            "network",
+            "station",
+            "latitude",
+            "longitude",
+            "MAP",
+            "MAT",
+            "AI",
+            "IGBP_Fluxnet",
+        ),
         time_range=None,
         resolution="point",
         crs="EPSG:4326",
@@ -547,6 +567,91 @@ DATASET_REGISTRY: dict[str, DatasetInfo] = {
         crs="EPSG:4326",
         tags=("ancillary", "modis", "lst", "albedo"),
     ),
+    # ---- D2 / NDVI 预处理逻辑别名（相对 BACKEND_DATA_ROOT）----
+    "NDVI_16DAY_RASTER": DatasetInfo(
+        name="NDVI 9km 16天 GeoTIFF（A1/A2 输出）",
+        logical_name="NDVI_16DAY_RASTER",
+        relative_path="Soil_Ecological_Data/NDVI/VIIRS_9km_tif",
+        description="A1/A2 ndvi_hdf_preprocess 产出的 9 km GeoTIFF（YYYYMMDD.tif），供 ndvi_daily 读取",
+        file_format="tif",
+        variables=("NDVI",),
+        time_range=None,
+        resolution="9km",
+        crs="EPSG:6933",
+        tags=("vegetation", "ndvi", "preprocess", "a1", "a2"),
+    ),
+    "NDVI_16DAY_HDF": DatasetInfo(
+        name="NDVI 16天原始 HDF（VIIRS/MODIS）",
+        logical_name="NDVI_16DAY_HDF",
+        relative_path="Soil_Ecological_Data/NDVI/VIIRS",
+        description="VNP13C1/MOYD13C1 原始 HDF 输入目录（与 NDVI_VIIRS 同路径时可互换）",
+        file_format="hdf",
+        variables=("NDVI",),
+        time_range=None,
+        resolution="0.05deg",
+        crs="EPSG:4326",
+        tags=("vegetation", "ndvi", "hdf", "raw"),
+    ),
+    "omega_block_output": DatasetInfo(
+        name="D1 omega_block 输出目录",
+        logical_name="omega_block_output",
+        relative_path="InversionResults/omega_block",
+        description="含 omega_block_*.mat 与 daily_omega/ 的 D1 输出目录",
+        file_format="mat",
+        variables=("OMEGA",),
+        time_range=None,
+        resolution="9km",
+        crs="EPSG:4326",
+        tags=("omega", "d1", "block"),
+    ),
+    "smap_daily_mat": DatasetInfo(
+        name="逐日 SMAP .mat（D2 输入）",
+        logical_name="smap_daily_mat",
+        relative_path="Soil_Ecological_Data/Smap_OriginData",
+        description="逐日 SMAP 亮温/湿度 MAT（YYYYMMDD.mat）",
+        file_format="mat",
+        variables=("TBv", "TBh", "Ts", "vwc", "IA", "SM"),
+        time_range=None,
+        resolution="9km",
+        crs="EPSG:4326",
+        tags=("smap", "daily", "d2"),
+    ),
+    "ndvi_daily_mat": DatasetInfo(
+        name="逐日 NDVI .mat（D2 输入）",
+        logical_name="ndvi_daily_mat",
+        relative_path="Soil_Ecological_Data/NDVI/daily",
+        description="逐日 NDVI MAT（YYYYMMDD.mat），可由 ndvi_daily 产出",
+        file_format="mat",
+        variables=("NDVI",),
+        time_range=None,
+        resolution="9km",
+        crs="EPSG:4326",
+        tags=("ndvi", "daily", "d2"),
+    ),
+    "ndvi_clim_dir": DatasetInfo(
+        name="NDVI 气候态目录",
+        logical_name="ndvi_clim_dir",
+        relative_path="Soil_Ecological_Data/NDVI/climatology",
+        description="NDVI DOY 气候态 MAT 目录",
+        file_format="mat",
+        variables=("NDVI",),
+        time_range=None,
+        resolution="9km",
+        crs="EPSG:4326",
+        tags=("ndvi", "climatology", "d2"),
+    ),
+    "ancillary_mat": DatasetInfo(
+        name="反演静态辅助库",
+        logical_name="ancillary_mat",
+        relative_path="Soil_Ecological_Data/Ancillary",
+        description="IGBP/Albedo/B/BD/CF/H/SF 等静态辅助 MAT（D2 anc_root）",
+        file_format="mat",
+        variables=("IGBP_9km_12", "Albedo", "B", "BD", "CF", "H", "SF"),
+        time_range=None,
+        resolution="9km",
+        crs="EPSG:4326",
+        tags=("ancillary", "d2", "static"),
+    ),
 }
 
 
@@ -617,15 +722,17 @@ def get_dataset_summary() -> list[dict[str, str | bool]]:
     results = []
     for logical_name, info in sorted(DATASET_REGISTRY.items()):
         path = resolve_dataset_path(logical_name)
-        results.append({
-            "name": info.name,
-            "logical_name": logical_name,
-            "available": path is not None,
-            "path": str(path) if path else "",
-            "description": info.description,
-            "file_format": info.file_format,
-            "resolution": info.resolution or "",
-        })
+        results.append(
+            {
+                "name": info.name,
+                "logical_name": logical_name,
+                "available": path is not None,
+                "path": str(path) if path else "",
+                "description": info.description,
+                "file_format": info.file_format,
+                "resolution": info.resolution or "",
+            }
+        )
     return results
 
 
@@ -643,6 +750,7 @@ def get_storage_backend() -> "StorageBackend | None":
     """
     try:
         from mat2py.core.storage import get_storage_backend as _get
+
         return _get()
     except ImportError:
         # Storage 模块尚未安装依赖，返回 None
@@ -658,6 +766,7 @@ def get_output_storage_backend() -> "StorageBackend | None":
     """
     try:
         from mat2py.core.storage import get_output_storage_backend as _get
+
         return _get()
     except ImportError:
         return None

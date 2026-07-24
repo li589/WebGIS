@@ -53,7 +53,10 @@ function updateMenuPosition() {
   if (!el) return
   const r = el.getBoundingClientRect()
   const maxH = 168
-  const estimated = Math.min(maxH, Math.max(32, filtered.value.length * 22 + (showCustomHint.value ? 22 : 0) + 6))
+  const estimated = Math.min(
+    maxH,
+    Math.max(32, filtered.value.length * 22 + (showCustomHint.value ? 22 : 0) + 6),
+  )
   const spaceBelow = window.innerHeight - r.bottom - 8
   const openUp = spaceBelow < estimated && r.top > spaceBelow
   const left = Math.max(8, Math.min(r.left, window.innerWidth - Math.max(r.width, 120) - 8))
@@ -138,8 +141,7 @@ function onKeydown(e: KeyboardEvent) {
   if (e.key === 'ArrowUp') {
     e.preventDefault()
     if (filtered.value.length) {
-      activeIndex.value =
-        activeIndex.value <= 0 ? filtered.value.length - 1 : activeIndex.value - 1
+      activeIndex.value = activeIndex.value <= 0 ? filtered.value.length - 1 : activeIndex.value - 1
     }
     return
   }

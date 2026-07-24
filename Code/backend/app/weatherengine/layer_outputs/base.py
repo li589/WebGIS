@@ -10,6 +10,7 @@ humidity/pressure/visibility）全部迁移到独立策略类。
 - 返回 None 表示策略未处理（调用方 fallback）；当前 6 个 layer_id 均已注册，
   正常路径不会返回 None。
 """
+
 from __future__ import annotations
 
 from abc import ABC, abstractmethod

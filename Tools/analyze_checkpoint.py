@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """分析扫描检查点文件，输出数据分类统计。"""
+
 import json
 import sys
 from collections import Counter
@@ -94,13 +95,19 @@ def analyze_checkpoint(checkpoint_path: str) -> None:
 if __name__ == "__main__":
     if len(sys.argv) < 2:
         # 默认查找最新的检查点文件
-        report_dir = Path(r"d:\temp_desktop\Proj\Comprehensive Geographic Data Analysis system\Tools\reports")
-        checkpoints = sorted(report_dir.glob("checkpoint_*.json"), key=lambda p: p.stat().st_mtime)
+        report_dir = Path(
+            r"d:\temp_desktop\Proj\Comprehensive Geographic Data Analysis system\Tools\reports"
+        )
+        checkpoints = sorted(
+            report_dir.glob("checkpoint_*.json"), key=lambda p: p.stat().st_mtime
+        )
         if checkpoints:
             print(f"使用最新检查点: {checkpoints[-1]}")
             analyze_checkpoint(str(checkpoints[-1]))
         else:
-            print("未找到检查点文件。用法: python analyze_checkpoint.py <checkpoint.json>")
+            print(
+                "未找到检查点文件。用法: python analyze_checkpoint.py <checkpoint.json>"
+            )
             sys.exit(1)
     else:
         analyze_checkpoint(sys.argv[1])

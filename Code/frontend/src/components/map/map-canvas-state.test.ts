@@ -27,6 +27,7 @@ describe('map-canvas-state', () => {
     state.resources.basemapModule = {} as any
     state.resources.mapStagePresentationModule = {} as any
     state.resources.weatherOverlayModule = {} as any
+    state.resources.nonWeatherLayerSyncModule = {} as any
     state.resources.hotspotPinsModule = {} as any
     state.resources.mapInteractionModule = {} as any
     state.resources.mapCanvasRuntimeModule = {} as any
@@ -41,6 +42,7 @@ describe('map-canvas-state', () => {
       basemapModule: null,
       mapStagePresentationModule: null,
       weatherOverlayModule: null,
+      nonWeatherLayerSyncModule: null,
       hotspotPinsModule: null,
       mapInteractionModule: null,
       mapCanvasRuntimeModule: null,

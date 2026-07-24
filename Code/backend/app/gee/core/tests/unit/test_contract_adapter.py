@@ -5,7 +5,11 @@ from webgis_gee.api.contracts import (
     WorkflowContractAdapter,
     WorkflowExecutionResponse,
 )
-from webgis_gee.api.facade import WorkflowApiFacade, create_default_api_facade, create_default_contract_adapter
+from webgis_gee.api.facade import (
+    WorkflowApiFacade,
+    create_default_api_facade,
+    create_default_contract_adapter,
+)
 from webgis_gee.application.services import WorkflowService
 from webgis_gee.config.settings import Settings
 from webgis_gee.domain.enums import RunStatus
@@ -14,7 +18,9 @@ from webgis_gee.domain.models import RunResult, WorkflowDefinition
 
 def test_submit_workflow_accepts_serialized_payload(tmp_path) -> None:
     adapter = WorkflowContractAdapter(
-        WorkflowService(settings=Settings(storage_backend="local", local_storage_root=str(tmp_path)))
+        WorkflowService(
+            settings=Settings(storage_backend="local", local_storage_root=str(tmp_path))
+        )
     )
 
     result = adapter.submit_workflow(
@@ -45,7 +51,9 @@ def test_submit_workflow_accepts_serialized_payload(tmp_path) -> None:
 
 def test_run_workflow_job_accepts_celery_style_payload(tmp_path) -> None:
     adapter = WorkflowContractAdapter(
-        WorkflowService(settings=Settings(storage_backend="local", local_storage_root=str(tmp_path)))
+        WorkflowService(
+            settings=Settings(storage_backend="local", local_storage_root=str(tmp_path))
+        )
     )
 
     result = adapter.run_workflow_job(
@@ -69,7 +77,9 @@ def test_run_workflow_job_accepts_celery_style_payload(tmp_path) -> None:
 
 def test_get_export_task_status_uses_existing_polling_contract(tmp_path) -> None:
     adapter = WorkflowContractAdapter(
-        WorkflowService(settings=Settings(storage_backend="local", local_storage_root=str(tmp_path)))
+        WorkflowService(
+            settings=Settings(storage_backend="local", local_storage_root=str(tmp_path))
+        )
     )
     manifest_path = tmp_path / "exports" / "adapter.json"
     manifest_path.parent.mkdir(parents=True, exist_ok=True)
@@ -112,12 +122,18 @@ def test_create_default_contract_adapter_returns_runnable_adapter() -> None:
     assert result.status == RunStatus.COMPLETED
 
 
-def test_workflow_execution_response_extracts_saveback_terminal_plans_from_workflow_metadata() -> None:
+def test_workflow_execution_response_extracts_saveback_terminal_plans_from_workflow_metadata() -> (
+    None
+):
     workflow = WorkflowDefinition.model_validate(
         {
             "workflow_id": "saveback-response-demo",
             "nodes": [
-                {"node_id": "export", "node_type": "gee_export_image", "params": {"task_name": "legacy-export"}}
+                {
+                    "node_id": "export",
+                    "node_type": "gee_export_image",
+                    "params": {"task_name": "legacy-export"},
+                }
             ],
             "metadata": {
                 "saveback_terminal_plan": {
@@ -125,7 +141,10 @@ def test_workflow_execution_response_extracts_saveback_terminal_plans_from_workf
                         {
                             "node_id": "export",
                             "action": "writeback_required",
-                            "reasons": ["requires_review_receipt", "terminal_writeback_pending"],
+                            "reasons": [
+                                "requires_review_receipt",
+                                "terminal_writeback_pending",
+                            ],
                             "summary": {
                                 "receipt_summary": "review_receipt_recorded",
                                 "writeback_summary": "terminal_writeback_required",
@@ -154,16 +173,29 @@ def test_workflow_execution_response_extracts_saveback_terminal_plans_from_workf
             "terminal_state": "closed_reviewed",
         },
     )
-    assert response.saveback_terminal_plans["export"].summary.terminal_state == "closed_reviewed"
+    assert (
+        response.saveback_terminal_plans["export"].summary.terminal_state
+        == "closed_reviewed"
+    )
 
 
-def test_workflow_execution_response_prefers_writeback_required_terminal_plan_over_monitor_only() -> None:
+def test_workflow_execution_response_prefers_writeback_required_terminal_plan_over_monitor_only() -> (
+    None
+):
     workflow = WorkflowDefinition.model_validate(
         {
             "workflow_id": "saveback-priority-demo",
             "nodes": [
-                {"node_id": "a_monitor", "node_type": "literal", "params": {"value": "ok"}},
-                {"node_id": "z_export", "node_type": "gee_export_image", "params": {"task_name": "export"}},
+                {
+                    "node_id": "a_monitor",
+                    "node_type": "literal",
+                    "params": {"value": "ok"},
+                },
+                {
+                    "node_id": "z_export",
+                    "node_type": "gee_export_image",
+                    "params": {"task_name": "export"},
+                },
             ],
             "metadata": {
                 "saveback_terminal_plan": {
@@ -181,7 +213,10 @@ def test_workflow_execution_response_prefers_writeback_required_terminal_plan_ov
                         {
                             "node_id": "z_export",
                             "action": "writeback_required",
-                            "reasons": ["requires_review_receipt", "terminal_writeback_pending"],
+                            "reasons": [
+                                "requires_review_receipt",
+                                "terminal_writeback_pending",
+                            ],
                             "summary": {
                                 "receipt_summary": "review_receipt_recorded",
                                 "writeback_summary": "terminal_writeback_required",
@@ -222,13 +257,22 @@ def test_api_facade_submit_workflow_returns_route_friendly_response_model() -> N
     assert response.outputs["n1.value"] == "ok"
     assert response.saveback_terminal_plan is not None
     assert response.saveback_terminal_plan.action == "monitor_only"
-    assert response.saveback_terminal_plans["n1"].summary.terminal_state == "no_terminal_update"
+    assert (
+        response.saveback_terminal_plans["n1"].summary.terminal_state
+        == "no_terminal_update"
+    )
 
 
-def test_api_facade_get_export_task_status_returns_route_friendly_response_model(tmp_path) -> None:
+def test_api_facade_get_export_task_status_returns_route_friendly_response_model(
+    tmp_path,
+) -> None:
     facade = WorkflowApiFacade(
         WorkflowContractAdapter(
-            WorkflowService(settings=Settings(storage_backend="local", local_storage_root=str(tmp_path)))
+            WorkflowService(
+                settings=Settings(
+                    storage_backend="local", local_storage_root=str(tmp_path)
+                )
+            )
         )
     )
     manifest_path = tmp_path / "exports" / "api-facade.json"
@@ -256,7 +300,9 @@ def test_api_facade_get_export_task_status_returns_route_friendly_response_model
 
 def test_get_export_task_status_is_read_only_by_default(tmp_path) -> None:
     adapter = WorkflowContractAdapter(
-        WorkflowService(settings=Settings(storage_backend="local", local_storage_root=str(tmp_path)))
+        WorkflowService(
+            settings=Settings(storage_backend="local", local_storage_root=str(tmp_path))
+        )
     )
     manifest_path = tmp_path / "exports" / "adapter-read-only.json"
     manifest_path.parent.mkdir(parents=True, exist_ok=True)

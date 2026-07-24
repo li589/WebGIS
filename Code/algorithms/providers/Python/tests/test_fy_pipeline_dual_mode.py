@@ -1,4 +1,5 @@
 """FY-01: plan_only vs data_products dual contract."""
+
 from __future__ import annotations
 
 import json
@@ -6,7 +7,7 @@ import tempfile
 import unittest
 from datetime import datetime
 from pathlib import Path
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch
 
 from contracts.job import JobRequest
 from contracts.product import OutputSpec
@@ -14,7 +15,9 @@ from contracts.runtime import RegionSpec, RuntimeContext, TimeRange
 from pipelines.fy_products import FyDailyPipeline
 
 
-def _make_fy_plan(tmp_dir: Path, date_key: str = "20230101", satellite: str = "FY3D") -> dict:
+def _make_fy_plan(
+    tmp_dir: Path, date_key: str = "20230101", satellite: str = "FY3D"
+) -> dict:
     return {
         "date_key": date_key,
         "orbit_type": "D",
@@ -40,7 +43,9 @@ class FyPlanOnlyModeTests(unittest.TestCase):
                 job_id="fy-plan-only",
                 pipeline_name="fy_daily_pipeline",
                 task_type="extract",
-                time_range=TimeRange(start=datetime(2023, 1, 1), end=datetime(2023, 1, 2)),
+                time_range=TimeRange(
+                    start=datetime(2023, 1, 1), end=datetime(2023, 1, 2)
+                ),
                 region=RegionSpec(kind="global", value={}),
                 datasource_selection={"input_dir": str(tmp_dir)},
                 algorithm_params={"execute_commands": False, "orbit_mode": "MWRID"},
@@ -54,12 +59,16 @@ class FyPlanOnlyModeTests(unittest.TestCase):
                 cache_dir=Path(tempfile.mkdtemp()),
             )
 
-            with patch("pipelines.fy_products.build_fy_daily_job_plans") as mock_plans, \
-                 patch("pipelines.fy_products.build_fy_daily_command_steps", return_value=[]):
+            with (
+                patch("pipelines.fy_products.build_fy_daily_job_plans") as mock_plans,
+                patch(
+                    "pipelines.fy_products.build_fy_daily_command_steps",
+                    return_value=[],
+                ),
+            ):
                 from ingest.fy import FyDailyJobPlan
-                mock_plans.return_value = [
-                    FyDailyJobPlan(**plan_dict)
-                ]
+
+                mock_plans.return_value = [FyDailyJobPlan(**plan_dict)]
                 manifest = FyDailyPipeline().execute(request, ctx)
 
         product_types = {p.type for p in manifest.products}
@@ -103,7 +112,9 @@ class FyDataProductsModeTests(unittest.TestCase):
                 job_id="fy-data",
                 pipeline_name="fy_daily_pipeline",
                 task_type="extract",
-                time_range=TimeRange(start=datetime(2023, 1, 1), end=datetime(2023, 1, 2)),
+                time_range=TimeRange(
+                    start=datetime(2023, 1, 1), end=datetime(2023, 1, 2)
+                ),
                 region=RegionSpec(kind="global", value={}),
                 datasource_selection={"input_dir": str(tmp_dir)},
                 algorithm_params={"execute_commands": True, "orbit_mode": "MWRID"},
@@ -117,11 +128,20 @@ class FyDataProductsModeTests(unittest.TestCase):
                 cache_dir=Path(tempfile.mkdtemp()),
             )
 
-            with patch("pipelines.fy_products.build_fy_daily_job_plans") as mock_plans, \
-                 patch("pipelines.fy_products.build_fy_daily_command_steps", return_value=[]), \
-                 patch("pipelines.fy_products.execute_fy_command_steps"), \
-                 patch("pipelines.fy_products.get_fy_daily_multiband_output_path", return_value=tif_path):
+            with (
+                patch("pipelines.fy_products.build_fy_daily_job_plans") as mock_plans,
+                patch(
+                    "pipelines.fy_products.build_fy_daily_command_steps",
+                    return_value=[],
+                ),
+                patch("pipelines.fy_products.execute_fy_command_steps"),
+                patch(
+                    "pipelines.fy_products.get_fy_daily_multiband_output_path",
+                    return_value=tif_path,
+                ),
+            ):
                 from ingest.fy import FyDailyJobPlan
+
                 mock_plans.return_value = [FyDailyJobPlan(**plan_dict)]
                 manifest = FyDailyPipeline().execute(request, ctx)
 
@@ -146,7 +166,9 @@ class FyCommandPlanFileTests(unittest.TestCase):
                 job_id="fy-json",
                 pipeline_name="fy_daily_pipeline",
                 task_type="extract",
-                time_range=TimeRange(start=datetime(2023, 1, 1), end=datetime(2023, 1, 1)),
+                time_range=TimeRange(
+                    start=datetime(2023, 1, 1), end=datetime(2023, 1, 1)
+                ),
                 region=RegionSpec(kind="global", value={}),
                 datasource_selection={"input_dir": str(tmp_dir)},
                 algorithm_params={"execute_commands": False, "orbit_mode": "MWRID"},
@@ -160,19 +182,33 @@ class FyCommandPlanFileTests(unittest.TestCase):
                 cache_dir=Path(tempfile.mkdtemp()),
             )
 
-            with patch("pipelines.fy_products.build_fy_daily_job_plans") as mock_plans, \
-                 patch("pipelines.fy_products.build_fy_daily_command_steps") as mock_steps:
+            with (
+                patch("pipelines.fy_products.build_fy_daily_job_plans") as mock_plans,
+                patch(
+                    "pipelines.fy_products.build_fy_daily_command_steps"
+                ) as mock_steps,
+            ):
                 from ingest.fy import FyDailyJobPlan
                 from algorithms.fy import FyCommandStep
 
                 mock_steps.return_value = [
-                    FyCommandStep(name="s1", command="gdal_translate", outputs=(str(tmp_dir / "s1.tif"),)),
-                    FyCommandStep(name="s2", command="gdalwarp", outputs=(str(tmp_dir / "s2.tif"),)),
+                    FyCommandStep(
+                        name="s1",
+                        command="gdal_translate",
+                        outputs=(str(tmp_dir / "s1.tif"),),
+                    ),
+                    FyCommandStep(
+                        name="s2",
+                        command="gdalwarp",
+                        outputs=(str(tmp_dir / "s2.tif"),),
+                    ),
                 ]
                 mock_plans.return_value = [FyDailyJobPlan(**plan_dict)]
                 manifest = FyDailyPipeline().execute(request, ctx)
 
-            command_plan_refs = [p for p in manifest.products if p.type == "fy_daily_command_plan"]
+            command_plan_refs = [
+                p for p in manifest.products if p.type == "fy_daily_command_plan"
+            ]
             self.assertEqual(len(command_plan_refs), 1)
             plan_path = Path(command_plan_refs[0].uri)
             self.assertTrue(plan_path.exists())

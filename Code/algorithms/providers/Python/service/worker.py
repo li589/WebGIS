@@ -62,14 +62,19 @@ class JobQueueWorker:
         product_sink = self._product_sink_factory()
         tracking_scheduler = TrackingSchedulerAdapter(
             scheduler_adapter,
-            on_status=lambda job_id, run_id, status, detail: self._async_job_registry.record_status(
+            on_status=lambda job_id,
+            run_id,
+            status,
+            detail: self._async_job_registry.record_status(
                 submission_id,
                 job_id=job_id,
                 run_id=run_id,
                 status=status,
                 detail=detail,
             ),
-            on_complete=lambda result: self._async_job_registry.record_completion(submission_id, result=result),
+            on_complete=lambda result: self._async_job_registry.record_completion(
+                submission_id, result=result
+            ),
         )
         result = self._run_job_fn(
             request,
@@ -90,7 +95,8 @@ class JobQueueWorker:
                 "http_status": 500,
                 "retryable": False,
                 "user_message": "任务执行失败，请检查错误摘要、日志和产物清单。",
-                "developer_message": result.error_summary or "run_job returned a failed result",
+                "developer_message": result.error_summary
+                or "run_job returned a failed result",
                 "job_result": _to_jsonable(result),
             }
         self._async_job_registry.record_response(
@@ -98,11 +104,15 @@ class JobQueueWorker:
             _RegistryResponse(status_code=response_status, body=response_body),
         )
 
-    def _record_unhandled_failure(self, submission_id: str, request, error: Exception) -> None:
+    def _record_unhandled_failure(
+        self, submission_id: str, request, error: Exception
+    ) -> None:
         api_error = build_api_error_response(error, request=request)
         self._async_job_registry.record_response(
             submission_id,
-            _RegistryResponse(status_code=api_error.http_status, body=_to_jsonable(api_error)),
+            _RegistryResponse(
+                status_code=api_error.http_status, body=_to_jsonable(api_error)
+            ),
         )
 
 

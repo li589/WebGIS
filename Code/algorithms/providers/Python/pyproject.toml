@@ -24,6 +24,10 @@ dependencies = [
   "typing_extensions",
 ]
 
+[tool.pytest.ini_options]
+pythonpath = [".", "../../.."]
+testpaths = ["tests"]
+
 [tool.setuptools]
 include-package-data = true
 

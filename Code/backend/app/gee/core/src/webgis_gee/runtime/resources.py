@@ -31,7 +31,9 @@ class ResourceQuotaCoordinator(ABC):
     """Coordinates optional shared quotas across workers or processes."""
 
     @abstractmethod
-    def acquire(self, *, resource_name: str, owner_id: str, limit: int) -> ResourceQuotaLease:
+    def acquire(
+        self, *, resource_name: str, owner_id: str, limit: int
+    ) -> ResourceQuotaLease:
         raise NotImplementedError
 
     @abstractmethod
@@ -63,7 +65,9 @@ class ResourceQuotaCoordinator(ABC):
 
 
 class NoopResourceQuotaCoordinator(ResourceQuotaCoordinator):
-    def acquire(self, *, resource_name: str, owner_id: str, limit: int) -> ResourceQuotaLease:
+    def acquire(
+        self, *, resource_name: str, owner_id: str, limit: int
+    ) -> ResourceQuotaLease:
         return ResourceQuotaLease(resource_name=resource_name, owner_id=owner_id)
 
     def release(self, lease: ResourceQuotaLease) -> None:
@@ -77,9 +81,13 @@ class InMemoryResourceQuotaCoordinator(ResourceQuotaCoordinator):
         self._lock = Lock()
         self._active_leases_by_resource: dict[str, set[str]] = {}
 
-    def acquire(self, *, resource_name: str, owner_id: str, limit: int) -> ResourceQuotaLease:
+    def acquire(
+        self, *, resource_name: str, owner_id: str, limit: int
+    ) -> ResourceQuotaLease:
         with self._lock:
-            active_owners = self._active_leases_by_resource.setdefault(resource_name, set())
+            active_owners = self._active_leases_by_resource.setdefault(
+                resource_name, set()
+            )
             if len(active_owners) >= limit:
                 raise ResourceExhaustedError(
                     f"shared quota reached: resource={resource_name} active={len(active_owners)} limit={limit}"
@@ -122,10 +130,14 @@ class RedisResourceQuotaCoordinator(ResourceQuotaCoordinator):
     ) -> None:
         self._key_prefix = key_prefix.rstrip(":")
         self._lease_ttl_seconds = lease_ttl_seconds
-        self._renew_interval_seconds = renew_interval_seconds or max(1.0, lease_ttl_seconds / 3)
+        self._renew_interval_seconds = renew_interval_seconds or max(
+            1.0, lease_ttl_seconds / 3
+        )
         self._client = client or self._create_client(redis_url)
 
-    def acquire(self, *, resource_name: str, owner_id: str, limit: int) -> ResourceQuotaLease:
+    def acquire(
+        self, *, resource_name: str, owner_id: str, limit: int
+    ) -> ResourceQuotaLease:
         lease_key = self._lease_key(resource_name, owner_id)
         counter_key = self._counter_key(resource_name)
         token = str(uuid4())
@@ -249,7 +261,9 @@ class RedisResourceQuotaCoordinator(ResourceQuotaCoordinator):
         try:
             import redis
         except ImportError as exc:
-            raise ImportError("redis package is required for RedisResourceQuotaCoordinator") from exc
+            raise ImportError(
+                "redis package is required for RedisResourceQuotaCoordinator"
+            ) from exc
         return redis.Redis.from_url(redis_url)
 
 
@@ -270,7 +284,9 @@ class ResourceManagedStorageBackend(StorageBackend):
     def put(self, path: str, content: bytes) -> str:
         with self._resource_controller.upload_slot(run_id=self._run_id):
             if isinstance(self._backend, LocalStorageBackend):
-                with self._resource_controller.local_write(run_id=self._run_id, byte_count=len(content)):
+                with self._resource_controller.local_write(
+                    run_id=self._run_id, byte_count=len(content)
+                ):
                     return self._backend.put(path, content)
             return self._backend.put(path, content)
 
@@ -312,7 +328,9 @@ class RuntimeResourceController:
         self._max_parallel_downloads = max_parallel_downloads
         self._max_local_write_bytes = max_local_write_bytes
         self._quota_coordinator = quota_coordinator or NoopResourceQuotaCoordinator()
-        self._shared_quota_recovery_cooldown_seconds = max(0.0, shared_quota_recovery_cooldown_seconds)
+        self._shared_quota_recovery_cooldown_seconds = max(
+            0.0, shared_quota_recovery_cooldown_seconds
+        )
         self._export_slots = BoundedSemaphore(max_parallel_exports)
         self._upload_slots = BoundedSemaphore(max_parallel_uploads)
         self._download_slots = BoundedSemaphore(max_parallel_downloads)
@@ -379,7 +397,9 @@ class RuntimeResourceController:
             with self._lock:
                 self._active_temp_dirs = max(0, self._active_temp_dirs - 1)
                 released_bytes = self._local_write_bytes_by_run.pop(run_id, 0)
-                self._active_local_write_bytes = max(0, self._active_local_write_bytes - released_bytes)
+                self._active_local_write_bytes = max(
+                    0, self._active_local_write_bytes - released_bytes
+                )
 
     @contextmanager
     def local_write(self, *, run_id: str, byte_count: int) -> Iterator[None]:
@@ -404,8 +424,12 @@ class RuntimeResourceController:
             if not committed:
                 with self._lock:
                     current_run_bytes = self._local_write_bytes_by_run.get(run_id, 0)
-                    self._local_write_bytes_by_run[run_id] = max(0, current_run_bytes - byte_count)
-                    self._active_local_write_bytes = max(0, self._active_local_write_bytes - byte_count)
+                    self._local_write_bytes_by_run[run_id] = max(
+                        0, current_run_bytes - byte_count
+                    )
+                    self._active_local_write_bytes = max(
+                        0, self._active_local_write_bytes - byte_count
+                    )
 
     @contextmanager
     def transient_local_write(self, *, byte_count: int) -> Iterator[None]:
@@ -425,9 +449,13 @@ class RuntimeResourceController:
             yield
         finally:
             with self._lock:
-                self._active_local_write_bytes = max(0, self._active_local_write_bytes - byte_count)
+                self._active_local_write_bytes = max(
+                    0, self._active_local_write_bytes - byte_count
+                )
 
-    def wrap_storage_backend(self, backend: StorageBackend, *, run_id: str) -> StorageBackend:
+    def wrap_storage_backend(
+        self, backend: StorageBackend, *, run_id: str
+    ) -> StorageBackend:
         if isinstance(backend, ResourceManagedStorageBackend):
             return backend
         return ResourceManagedStorageBackend(
@@ -436,7 +464,11 @@ class RuntimeResourceController:
             run_id=run_id,
         )
 
-    def snapshot(self) -> dict[str, int | float | str | dict[str, str] | dict[str, int] | dict[str, float]]:
+    def snapshot(
+        self,
+    ) -> dict[
+        str, int | float | str | dict[str, str] | dict[str, int] | dict[str, float]
+    ]:
         with self._lock:
             active_export_slots = self._active_export_slots
             active_upload_slots = self._active_upload_slots
@@ -455,7 +487,8 @@ class RuntimeResourceController:
             "available_upload_slots": self._max_parallel_uploads - active_upload_slots,
             "max_parallel_downloads": self._max_parallel_downloads,
             "active_download_slots": active_download_slots,
-            "available_download_slots": self._max_parallel_downloads - active_download_slots,
+            "available_download_slots": self._max_parallel_downloads
+            - active_download_slots,
             "max_local_write_bytes": self._max_local_write_bytes,
             "active_local_write_bytes": active_local_write_bytes,
             "active_temp_dirs": active_temp_dirs,
@@ -494,7 +527,11 @@ class RuntimeResourceController:
                 limit=limit,
             )
             heartbeat_interval = self._quota_coordinator.heartbeat_interval_seconds()
-            if shared_lease.token is not None and heartbeat_interval is not None and heartbeat_interval > 0:
+            if (
+                shared_lease.token is not None
+                and heartbeat_interval is not None
+                and heartbeat_interval > 0
+            ):
                 heartbeat_stop = Event()
                 heartbeat_thread = Thread(
                     target=self._heartbeat_shared_lease,
@@ -507,7 +544,11 @@ class RuntimeResourceController:
             if heartbeat_stop is not None:
                 heartbeat_stop.set()
             if heartbeat_thread is not None:
-                heartbeat_thread.join(timeout=heartbeat_interval * 2 if heartbeat_interval is not None else 1.0)
+                heartbeat_thread.join(
+                    timeout=heartbeat_interval * 2
+                    if heartbeat_interval is not None
+                    else 1.0
+                )
             if shared_lease is not None:
                 self._quota_coordinator.release(shared_lease)
             with self._lock:
@@ -550,9 +591,13 @@ class RuntimeResourceController:
             next_deadline = monotonic() + interval_seconds
 
     def _ensure_shared_quota_available(self, resource_name: str) -> None:
-        shared_retry_after = self._quota_coordinator.get_retry_after_seconds(resource_name)
+        shared_retry_after = self._quota_coordinator.get_retry_after_seconds(
+            resource_name
+        )
         with self._lock:
-            degraded_until = self._shared_quota_degraded_until_by_resource.get(resource_name)
+            degraded_until = self._shared_quota_degraded_until_by_resource.get(
+                resource_name
+            )
             remaining_seconds = 0.0
             if degraded_until is not None:
                 remaining_seconds = degraded_until - monotonic()
@@ -567,12 +612,16 @@ class RuntimeResourceController:
             f"resource={resource_name} retry_after_seconds={effective_retry_after:.3f}"
         )
 
-    def _record_shared_quota_failure(self, *, resource_name: str, owner_id: str) -> None:
+    def _record_shared_quota_failure(
+        self, *, resource_name: str, owner_id: str
+    ) -> None:
         if self._shared_quota_recovery_cooldown_seconds <= 0:
             return
         degraded_until = monotonic() + self._shared_quota_recovery_cooldown_seconds
         with self._lock:
-            current_deadline = self._shared_quota_degraded_until_by_resource.get(resource_name, 0.0)
+            current_deadline = self._shared_quota_degraded_until_by_resource.get(
+                resource_name, 0.0
+            )
             self._shared_quota_degraded_until_by_resource[resource_name] = max(
                 current_deadline,
                 degraded_until,

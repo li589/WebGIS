@@ -10,7 +10,10 @@ import {
   lngLatToMercatorNormalized,
 } from './scalar-field-webgl-shaders'
 import type { EncodedScalarTexture } from './scalar-field-webgl-texture'
-import { computeWorldWrapOffsets, extractMercatorProjectionMatrix } from './wind-particle-webgl-renderer'
+import {
+  computeWorldWrapOffsets,
+  extractMercatorProjectionMatrix,
+} from './wind-particle-webgl-renderer'
 
 function compileShader(
   gl: WebGLRenderingContext,
@@ -29,11 +32,7 @@ function compileShader(
   return shader
 }
 
-function linkProgram(
-  gl: WebGLRenderingContext,
-  vsSrc: string,
-  fsSrc: string,
-): WebGLProgram | null {
+function linkProgram(gl: WebGLRenderingContext, vsSrc: string, fsSrc: string): WebGLProgram | null {
   const vs = compileShader(gl, gl.VERTEX_SHADER, vsSrc)
   const fs = compileShader(gl, gl.FRAGMENT_SHADER, fsSrc)
   if (!vs || !fs) return null
@@ -95,7 +94,11 @@ export class ScalarFieldWebGLLayer {
   private uBounds: WebGLUniformLocation | null = null
   private uBlend: WebGLUniformLocation | null = null
   private uOpacity: WebGLUniformLocation | null = null
+  private uPlaceholder: WebGLUniformLocation | null = null
   private quadBuffer: WebGLBuffer | null = null
+  /** 灰底占位 quad（视口 bounds）：数据未到的区域淡灰打底，数据 quad 覆盖上色 */
+  private viewportQuadBuffer: WebGLBuffer | null = null
+  private viewportBounds: { west: number; south: number; east: number; north: number } | null = null
 
   private texA: WebGLTexture | null = null
   private texB: WebGLTexture | null = null
@@ -143,14 +146,21 @@ export class ScalarFieldWebGLLayer {
     this.initFailed = false
     const canvas = document.createElement('canvas')
     canvas.className = 'scalar-field-webgl-canvas'
-    canvas.style.cssText = 'position:absolute;inset:0;width:100%;height:100%;pointer-events:none;z-index:4'
+    canvas.style.cssText =
+      'position:absolute;inset:0;width:100%;height:100%;pointer-events:none;z-index:4'
     map.getContainer().appendChild(canvas)
     this.canvas = canvas
 
-    const gl = (
-      canvas.getContext('webgl2', { alpha: true, antialias: false, premultipliedAlpha: false })
-      || canvas.getContext('webgl', { alpha: true, antialias: false, premultipliedAlpha: false })
-    ) as WebGLRenderingContext | null
+    const gl = (canvas.getContext('webgl2', {
+      alpha: true,
+      antialias: false,
+      premultipliedAlpha: false,
+    }) ||
+      canvas.getContext('webgl', {
+        alpha: true,
+        antialias: false,
+        premultipliedAlpha: false,
+      })) as WebGLRenderingContext | null
     if (!gl) {
       this.initFailed = true
       canvas.remove()
@@ -175,8 +185,10 @@ export class ScalarFieldWebGLLayer {
     this.uBounds = gl.getUniformLocation(this.program, 'u_bounds')
     this.uBlend = gl.getUniformLocation(this.program, 'u_blend')
     this.uOpacity = gl.getUniformLocation(this.program, 'u_opacity')
+    this.uPlaceholder = gl.getUniformLocation(this.program, 'u_placeholder')
 
     this.quadBuffer = gl.createBuffer()
+    this.viewportQuadBuffer = gl.createBuffer()
     this.texA = gl.createTexture()
     this.texB = gl.createTexture()
     this.paletteTex = gl.createTexture()
@@ -203,13 +215,15 @@ export class ScalarFieldWebGLLayer {
   }
 
   private refreshProjectionMatrix(): void {
-    const transform = (this.map as unknown as {
-      transform?: {
-        getProjectionDataForCustomLayer?: (applyGlobe?: boolean) => {
-          mainMatrix?: ArrayLike<number>
+    const transform = (
+      this.map as unknown as {
+        transform?: {
+          getProjectionDataForCustomLayer?: (applyGlobe?: boolean) => {
+            mainMatrix?: ArrayLike<number>
+          }
         }
       }
-    })?.transform
+    )?.transform
     const fromTransform = transform?.getProjectionDataForCustomLayer?.(false)?.mainMatrix
     if (fromTransform && typeof fromTransform[0] === 'number') {
       for (let i = 0; i < 16; i++) this.matrix[i] = Number(fromTransform[i])
@@ -297,11 +311,11 @@ export class ScalarFieldWebGLLayer {
     if (!gl) return
     // A 待传数据已在 B 纹理中（crossfade / blend 完成）：交换纹理槽，省一次全量上传
     if (
-      this.pendingA
-      && this.pendingA === this.uploadedB
-      && this.pendingA !== this.uploadedA
-      && this.texA
-      && this.texB
+      this.pendingA &&
+      this.pendingA === this.uploadedB &&
+      this.pendingA !== this.uploadedA &&
+      this.texA &&
+      this.texB
     ) {
       const tmpTex = this.texA
       this.texA = this.texB
@@ -326,7 +340,17 @@ export class ScalarFieldWebGLLayer {
       gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE)
       gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR)
       gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR)
-      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, 256, 1, 0, gl.RGBA, gl.UNSIGNED_BYTE, this.pendingLut)
+      gl.texImage2D(
+        gl.TEXTURE_2D,
+        0,
+        gl.RGBA,
+        256,
+        1,
+        0,
+        gl.RGBA,
+        gl.UNSIGNED_BYTE,
+        this.pendingLut,
+      )
     }
   }
 
@@ -334,14 +358,33 @@ export class ScalarFieldWebGLLayer {
     const gl = this.gl
     if (!gl || !this.quadBuffer || !this.bounds) return
     const { west, south, east, north } = this.bounds
-    const verts = new Float32Array([
-      west, south,
-      east, south,
-      west, north,
-      east, north,
-    ])
+    const verts = new Float32Array([west, south, east, south, west, north, east, north])
     gl.bindBuffer(gl.ARRAY_BUFFER, this.quadBuffer)
     gl.bufferData(gl.ARRAY_BUFFER, verts, gl.STATIC_DRAW)
+  }
+
+  /** 设置灰底占位的视口 bounds；null 清除占位 */
+  setViewportBounds(
+    bounds: { west: number; south: number; east: number; north: number } | null,
+  ): void {
+    const changed =
+      bounds === null
+        ? this.viewportBounds !== null
+        : !this.viewportBounds ||
+          this.viewportBounds.west !== bounds.west ||
+          this.viewportBounds.east !== bounds.east ||
+          this.viewportBounds.south !== bounds.south ||
+          this.viewportBounds.north !== bounds.north
+    if (!changed) return
+    this.viewportBounds = bounds ? { ...bounds } : null
+    const gl = this.gl
+    if (gl && this.viewportQuadBuffer && bounds) {
+      const { west, south, east, north } = bounds
+      const verts = new Float32Array([west, south, east, south, west, north, east, north])
+      gl.bindBuffer(gl.ARRAY_BUFFER, this.viewportQuadBuffer)
+      gl.bufferData(gl.ARRAY_BUFFER, verts, gl.STATIC_DRAW)
+    }
+    this.needsRedraw = true
   }
 
   private resizeCanvas(): void {
@@ -400,7 +443,8 @@ export class ScalarFieldWebGLLayer {
 
   private drawFrame(): boolean {
     const gl = this.gl
-    if (!gl || !this.program || !this.hasData || !this.bounds || !this.hasMatrix) return false
+    if (!gl || !this.program || !this.hasMatrix) return false
+    if (!this.hasData && !this.viewportBounds) return false
 
     if (this.blendAnim) {
       const t = (performance.now() - this.blendAnim.startMs) / this.blendAnim.durationMs
@@ -422,38 +466,62 @@ export class ScalarFieldWebGLLayer {
     gl.clear(gl.COLOR_BUFFER_BIT)
 
     gl.useProgram(this.program)
-    gl.bindBuffer(gl.ARRAY_BUFFER, this.quadBuffer)
     gl.enableVertexAttribArray(this.attribLngLat)
-    gl.vertexAttribPointer(this.attribLngLat, 2, gl.FLOAT, false, 0, 0)
-
-    gl.activeTexture(gl.TEXTURE0)
-    gl.bindTexture(gl.TEXTURE_2D, this.texA)
-    gl.uniform1i(this.uFieldA, 0)
-    gl.activeTexture(gl.TEXTURE1)
-    gl.bindTexture(gl.TEXTURE_2D, this.texB)
-    gl.uniform1i(this.uFieldB, 1)
-    gl.activeTexture(gl.TEXTURE2)
-    gl.bindTexture(gl.TEXTURE_2D, this.paletteTex)
-    gl.uniform1i(this.uPalette, 2)
-
-    gl.uniform4f(
-      this.uBounds,
-      this.bounds.west,
-      this.bounds.south,
-      this.bounds.east,
-      this.bounds.north,
-    )
-    gl.uniform1f(this.uBlend, this.blend)
     gl.uniform1f(this.uOpacity, this.opacity)
 
     // 世界包裹：屏幕可见的每个世界副本各画一次（v_merc 由各片元自身插值得到，
     // 与绘制次数无关；副本仅需平移 matrix[12]），消除反子午线/低缩放下的半球空白
     const offsets = computeWorldWrapOffsets(this.matrix)
-    for (const offset of offsets) {
-      this.tempMatrix.set(this.matrix)
-      this.tempMatrix[12] += offset
-      gl.uniformMatrix4fv(this.uMatrix, false, this.tempMatrix)
-      gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4)
+
+    // Pass 1：灰底占位（视口 bounds）——数据未到的区域淡灰打底
+    if (this.viewportBounds && this.viewportQuadBuffer) {
+      gl.uniform1f(this.uPlaceholder, 1)
+      gl.uniform4f(
+        this.uBounds,
+        this.viewportBounds.west,
+        this.viewportBounds.south,
+        this.viewportBounds.east,
+        this.viewportBounds.north,
+      )
+      gl.uniform1f(this.uBlend, 0)
+      gl.bindBuffer(gl.ARRAY_BUFFER, this.viewportQuadBuffer)
+      gl.vertexAttribPointer(this.attribLngLat, 2, gl.FLOAT, false, 0, 0)
+      for (const offset of offsets) {
+        this.tempMatrix.set(this.matrix)
+        this.tempMatrix[12] += offset
+        gl.uniformMatrix4fv(this.uMatrix, false, this.tempMatrix)
+        gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4)
+      }
+    }
+
+    // Pass 2：数据场（grid bounds）——覆盖灰底渐进上色；无数据片元 discard 透出灰底
+    if (this.hasData && this.bounds && this.quadBuffer) {
+      gl.uniform1f(this.uPlaceholder, 0)
+      gl.activeTexture(gl.TEXTURE0)
+      gl.bindTexture(gl.TEXTURE_2D, this.texA)
+      gl.uniform1i(this.uFieldA, 0)
+      gl.activeTexture(gl.TEXTURE1)
+      gl.bindTexture(gl.TEXTURE_2D, this.texB)
+      gl.uniform1i(this.uFieldB, 1)
+      gl.activeTexture(gl.TEXTURE2)
+      gl.bindTexture(gl.TEXTURE_2D, this.paletteTex)
+      gl.uniform1i(this.uPalette, 2)
+      gl.uniform4f(
+        this.uBounds,
+        this.bounds.west,
+        this.bounds.south,
+        this.bounds.east,
+        this.bounds.north,
+      )
+      gl.uniform1f(this.uBlend, this.blend)
+      gl.bindBuffer(gl.ARRAY_BUFFER, this.quadBuffer)
+      gl.vertexAttribPointer(this.attribLngLat, 2, gl.FLOAT, false, 0, 0)
+      for (const offset of offsets) {
+        this.tempMatrix.set(this.matrix)
+        this.tempMatrix[12] += offset
+        gl.uniformMatrix4fv(this.uMatrix, false, this.tempMatrix)
+        gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4)
+      }
     }
 
     this.lastDrawnMatrix.set(this.matrix)
@@ -471,12 +539,15 @@ export class ScalarFieldWebGLLayer {
     if (gl) {
       if (this.program) gl.deleteProgram(this.program)
       if (this.quadBuffer) gl.deleteBuffer(this.quadBuffer)
+      if (this.viewportQuadBuffer) gl.deleteBuffer(this.viewportQuadBuffer)
       if (this.texA) gl.deleteTexture(this.texA)
       if (this.texB) gl.deleteTexture(this.texB)
       if (this.paletteTex) gl.deleteTexture(this.paletteTex)
     }
     this.program = null
     this.quadBuffer = null
+    this.viewportQuadBuffer = null
+    this.viewportBounds = null
     this.texA = null
     this.texB = null
     this.paletteTex = null
@@ -502,7 +573,10 @@ export class ScalarFieldWebGLLayer {
 }
 
 /** @internal */
-export function probeScalarFieldWebGLSupport(doc: Document = document): { ok: boolean; reason?: string } {
+export function probeScalarFieldWebGLSupport(doc: Document = document): {
+  ok: boolean
+  reason?: string
+} {
   try {
     const canvas = doc.createElement('canvas')
     const gl = canvas.getContext('webgl') || canvas.getContext('experimental-webgl')

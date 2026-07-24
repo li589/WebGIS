@@ -1,4 +1,5 @@
 """Physics kernel prototypes preserve current Mironov/Fresnel behavior."""
+
 from __future__ import annotations
 
 import unittest
@@ -21,7 +22,9 @@ from algorithms.physics import (
 
 class PhysicsKernelPrototypeTests(unittest.TestCase):
     def test_force_python_loader_returns_fallback_implementations(self) -> None:
-        mironov_impl, fresnel_impl, use_numba = _load_scalar_kernel_impls(force_python=True)
+        mironov_impl, fresnel_impl, use_numba = _load_scalar_kernel_impls(
+            force_python=True
+        )
 
         self.assertIs(mironov_impl, _mironov_dielectric_kernel_py)
         self.assertIs(fresnel_impl, _fresnel_reflectance_kernel_py)
@@ -69,7 +72,9 @@ class PhysicsKernelPrototypeTests(unittest.TestCase):
 
         for epsilon in epsilons:
             with self.subTest(epsilon=epsilon):
-                expected_rh, expected_rv = fresnel_reflectance_from_context(epsilon, context)
+                expected_rh, expected_rv = fresnel_reflectance_from_context(
+                    epsilon, context
+                )
                 actual_rh, actual_rv = _fresnel_reflectance_kernel(
                     float(epsilon.real),
                     float(epsilon.imag),
@@ -81,7 +86,16 @@ class PhysicsKernelPrototypeTests(unittest.TestCase):
 
     def test_loaded_kernel_matches_python_baseline(self) -> None:
         context = build_mironov_context(1.4, 0.31)
-        epsilon_real, epsilon_imag = _mironov_dielectric_kernel(0.21, context.zxmvt, context.znd, context.zkd, context.znb, context.zkb, context.znu, context.zku)
+        epsilon_real, epsilon_imag = _mironov_dielectric_kernel(
+            0.21,
+            context.zxmvt,
+            context.znd,
+            context.zkd,
+            context.znb,
+            context.zkb,
+            context.znu,
+            context.zku,
+        )
         epsilon_real_py, epsilon_imag_py = _mironov_dielectric_kernel_py(
             0.21,
             context.zxmvt,
@@ -96,7 +110,9 @@ class PhysicsKernelPrototypeTests(unittest.TestCase):
         self.assertAlmostEqual(epsilon_imag, epsilon_imag_py)
 
         fresnel = build_fresnel_context(40.0)
-        rh, rv = _fresnel_reflectance_kernel(epsilon_real, epsilon_imag, fresnel.cos_theta, fresnel.sin_theta_sq)
+        rh, rv = _fresnel_reflectance_kernel(
+            epsilon_real, epsilon_imag, fresnel.cos_theta, fresnel.sin_theta_sq
+        )
         rh_py, rv_py = _fresnel_reflectance_kernel_py(
             epsilon_real_py,
             epsilon_imag_py,

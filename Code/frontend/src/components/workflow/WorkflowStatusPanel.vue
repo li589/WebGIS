@@ -11,7 +11,7 @@ const layersStore = useLayersStore()
 const weatherTileManager = useWeatherTileManager()
 const weatherSyncStatus = useWeatherSyncStatusStore()
 const { activityVersion, statusVersion } = storeToRefs(weatherTileManager)
-const { syncInProgress, modelEmpty } = storeToRefs(weatherSyncStatus)
+const { syncInProgress } = storeToRefs(weatherSyncStatus)
 const emit = defineEmits<{ close: [] }>()
 
 // 每秒刷新 tick，用于运行中工作流的时长动态更新
@@ -22,11 +22,9 @@ const weatherContribution = computed(() => {
   void activityVersion.value
   void statusVersion.value
   void syncInProgress.value
-  void modelEmpty.value
   void tick.value
   return weatherTileManager.deriveWeatherWorkflowContribution({
     syncInProgress: syncInProgress.value,
-    modelEmpty: modelEmpty.value,
   })
 })
 
@@ -45,9 +43,7 @@ const workflowItems = computed(() => {
     }))
 
   const activeJobIds = new Set(fromActive.map((item) => item.jobLayer.jobId))
-  const catalogMeta = new Map(
-    layersStore.layerLibrary.map((item) => [item.catalogId, item]),
-  )
+  const catalogMeta = new Map(layersStore.layerLibrary.map((item) => [item.catalogId, item]))
   const fromOrphan = layersStore.jobLayers
     .filter((job) => !activeJobIds.has(job.jobId))
     .map((job) => {
@@ -65,7 +61,14 @@ const workflowItems = computed(() => {
     })
 
   return [...fromActive, ...fromOrphan].sort((a, b) => {
-    const order: Record<string, number> = { running: 0, queued: 1, retry_pending: 2, failed: 3, cancelled: 4, succeeded: 5 }
+    const order: Record<string, number> = {
+      running: 0,
+      queued: 1,
+      retry_pending: 2,
+      failed: 3,
+      cancelled: 4,
+      succeeded: 5,
+    }
     const diff = (order[a.jobLayer.status] ?? 9) - (order[b.jobLayer.status] ?? 9)
     if (diff !== 0) return diff
     return new Date(b.jobLayer.updatedAt).getTime() - new Date(a.jobLayer.updatedAt).getTime()
@@ -74,9 +77,7 @@ const workflowItems = computed(() => {
 
 /** 天气瓦片合成行（非 workflow-runs） */
 const weatherSyntheticItems = computed(() => {
-  const catalogMeta = new Map(
-    layersStore.layerLibrary.map((item) => [item.catalogId, item]),
-  )
+  const catalogMeta = new Map(layersStore.layerLibrary.map((item) => [item.catalogId, item]))
   return weatherContribution.value.items.map((item) => {
     const meta = catalogMeta.get(item.catalogId)
     const active = layersStore.activeLayersDisplay.find((l) => l.catalogId === item.catalogId)
@@ -134,17 +135,24 @@ const weatherStatusMeta: Record<string, { label: string; color: string; bg: stri
   retry_pending: { label: '等待重试', color: '#ffd38a', bg: 'rgba(255, 211, 138, 0.1)' },
 }
 
-
 /** 按分类分组统计工作流 */
 const categoryBreakdown = computed(() => {
   void tick.value
-  const map = new Map<string, { total: number; running: number; succeeded: number; failed: number }>()
+  const map = new Map<
+    string,
+    { total: number; running: number; succeeded: number; failed: number }
+  >()
   for (const item of workflowItems.value) {
     const cat = item.category
     if (!map.has(cat)) map.set(cat, { total: 0, running: 0, succeeded: 0, failed: 0 })
     const entry = map.get(cat)!
     entry.total++
-    if (item.jobLayer.status === 'running' || item.jobLayer.status === 'queued' || item.jobLayer.status === 'retry_pending') entry.running++
+    if (
+      item.jobLayer.status === 'running' ||
+      item.jobLayer.status === 'queued' ||
+      item.jobLayer.status === 'retry_pending'
+    )
+      entry.running++
     if (item.jobLayer.status === 'succeeded') entry.succeeded++
     if (item.jobLayer.status === 'failed') entry.failed++
   }
@@ -211,7 +219,13 @@ const summaryCards = computed(() => {
   const tileCached = globalTileStats.value.totalCached
   const tileViewport = globalTileStats.value.totalViewport
   return [
-    { key: 'running', label: '运行中', count: s.running, color: '#5ad5ff', sub: tilePending > 0 ? `含瓦片 ${tilePending}` : '' },
+    {
+      key: 'running',
+      label: '运行中',
+      count: s.running,
+      color: '#5ad5ff',
+      sub: tilePending > 0 ? `含瓦片 ${tilePending}` : '',
+    },
     { key: 'queued', label: '排队中', count: s.queued, color: '#88dfff', sub: '' },
     { key: 'retryPending', label: '等待重试', count: s.retryPending, color: '#ffd38a', sub: '' },
     {
@@ -219,9 +233,12 @@ const summaryCards = computed(() => {
       label: '已完成',
       count: s.succeeded,
       color: '#9ff8cf',
-      sub: tileCached > 0
-        ? (tileViewport > 0 ? `含瓦片 ${tileCached}/${tileViewport}` : `含瓦片 ${tileCached}`)
-        : '',
+      sub:
+        tileCached > 0
+          ? tileViewport > 0
+            ? `含瓦片 ${tileCached}/${tileViewport}`
+            : `含瓦片 ${tileCached}`
+          : '',
     },
     { key: 'failed', label: '失败', count: s.failed, color: '#ff8a8a', sub: '' },
     { key: 'cancelled', label: '已取消', count: s.cancelled, color: '#8aa8bf', sub: '' },
@@ -251,7 +268,13 @@ function formatTime(value: string): string {
 function formatDateTime(value: string): string {
   const date = new Date(value)
   if (Number.isNaN(date.getTime())) return value
-  return date.toLocaleString('zh-CN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit' })
+  return date.toLocaleString('zh-CN', {
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+  })
 }
 
 function formatDuration(createdAt: string, updatedAt: string, status: JobStatus): string {
@@ -333,11 +356,27 @@ onBeforeUnmount(() => {
             <span class="wf-header-stat-label">总计</span>
           </span>
           <span class="wf-header-stat" v-if="derivedStats.active > 0">
-            <span class="wf-header-stat-value" style="color: #5ad5ff">{{ derivedStats.active }}</span>
+            <span class="wf-header-stat-value" style="color: #5ad5ff">{{
+              derivedStats.active
+            }}</span>
             <span class="wf-header-stat-label">活跃</span>
           </span>
-          <span class="wf-header-stat" v-if="jobSummary.total > 0 && derivedStats.successRate !== null">
-            <span class="wf-header-stat-value" :style="{ color: derivedStats.successRate >= 80 ? '#9ff8cf' : derivedStats.successRate >= 50 ? '#ffd38a' : '#ff8a8a' }">{{ derivedStats.successRate }}%</span>
+          <span
+            class="wf-header-stat"
+            v-if="jobSummary.total > 0 && derivedStats.successRate !== null"
+          >
+            <span
+              class="wf-header-stat-value"
+              :style="{
+                color:
+                  derivedStats.successRate >= 80
+                    ? '#9ff8cf'
+                    : derivedStats.successRate >= 50
+                      ? '#ffd38a'
+                      : '#ff8a8a',
+              }"
+              >{{ derivedStats.successRate }}%</span
+            >
             <span class="wf-header-stat-label">成功率</span>
           </span>
         </div>
@@ -358,7 +397,11 @@ onBeforeUnmount(() => {
           class="wf-summary-card"
           :class="{ active: card.count > 0, idle: card.count === 0 }"
         >
-          <span class="wf-summary-count" :style="{ color: card.count > 0 ? card.color : undefined }">{{ card.count }}</span>
+          <span
+            class="wf-summary-count"
+            :style="{ color: card.count > 0 ? card.color : undefined }"
+            >{{ card.count }}</span
+          >
           <span class="wf-summary-label">{{ card.label }}</span>
           <span v-if="card.sub" class="wf-summary-sub">{{ card.sub }}</span>
         </div>
@@ -367,7 +410,10 @@ onBeforeUnmount(() => {
       <!-- 整体进度条（仅业务工作流，不含天气瓦片） -->
       <div v-if="jobSummary.total > 0" class="wf-overall-progress">
         <div class="wf-overall-progress-bar">
-          <div class="wf-overall-progress-fill" :style="{ width: `${derivedStats.overallProgress}%` }"></div>
+          <div
+            class="wf-overall-progress-fill"
+            :style="{ width: `${derivedStats.overallProgress}%` }"
+          ></div>
         </div>
         <span class="wf-overall-progress-text">整体完成度 {{ derivedStats.overallProgress }}%</span>
       </div>
@@ -377,7 +423,8 @@ onBeforeUnmount(() => {
         <div class="wf-tile-bar">
           <span class="wf-tile-icon">🌀</span>
           <span class="wf-tile-text">
-            天气瓦片调度 — 在途 <strong>{{ tileConcurrency.active }}</strong> / 并发上限 <strong>{{ tileConcurrency.max }}</strong>
+            天气瓦片调度 — 在途 <strong>{{ tileConcurrency.active }}</strong> / 并发上限
+            <strong>{{ tileConcurrency.max }}</strong>
           </span>
           <span class="wf-tile-hint">自适应调节（CPU/内存/限流）</span>
         </div>
@@ -385,12 +432,19 @@ onBeforeUnmount(() => {
         <div v-if="globalTileStats.totalViewport > 0" class="wf-tile-cache-bar">
           <span class="wf-tile-cache-label">视口缓存</span>
           <div class="wf-tile-cache-progress">
-            <div class="wf-tile-cache-fill" :style="{ width: `${globalTileStats.hitRate ?? 0}%` }"></div>
+            <div
+              class="wf-tile-cache-fill"
+              :style="{ width: `${globalTileStats.hitRate ?? 0}%` }"
+            ></div>
           </div>
           <span class="wf-tile-cache-text">
             <strong>{{ globalTileStats.totalCached }}</strong> / {{ globalTileStats.totalViewport }}
-            <template v-if="globalTileStats.totalPending > 0"> · 待加载 {{ globalTileStats.totalPending }}</template>
-            <template v-if="globalTileStats.hitRate !== null"> · {{ globalTileStats.hitRate }}%</template>
+            <template v-if="globalTileStats.totalPending > 0">
+              · 待加载 {{ globalTileStats.totalPending }}</template
+            >
+            <template v-if="globalTileStats.hitRate !== null">
+              · {{ globalTileStats.hitRate }}%</template
+            >
           </span>
         </div>
         <!-- 分图层状态 -->
@@ -401,7 +455,9 @@ onBeforeUnmount(() => {
             <span class="wf-tile-layer-stats">
               {{ layer.status.cachedInViewport }}/{{ layer.status.viewportTotal }}
               <template v-if="layer.status.pending > 0"> · 待{{ layer.status.pending }}</template>
-              <template v-else-if="layer.status.missingInViewport > 0"> · 缺{{ layer.status.missingInViewport }}</template>
+              <template v-else-if="layer.status.missingInViewport > 0">
+                · 缺{{ layer.status.missingInViewport }}</template
+              >
             </span>
             <span
               v-if="layer.status.missingInViewport > 0 && layer.status.gapSweepActive"
@@ -426,9 +482,15 @@ onBeforeUnmount(() => {
         <div v-for="cat in categoryBreakdown" :key="cat.category" class="wf-category-stat-item">
           <span class="wf-category-stat-name">{{ getCategoryName(cat.category) }}</span>
           <span class="wf-category-stat-counts">
-            <span class="wf-cat-count" style="color: #5ad5ff" v-if="cat.running > 0">{{ cat.running }}</span>
-            <span class="wf-cat-count" style="color: #9ff8cf" v-if="cat.succeeded > 0">{{ cat.succeeded }}</span>
-            <span class="wf-cat-count" style="color: #ff8a8a" v-if="cat.failed > 0">{{ cat.failed }}</span>
+            <span class="wf-cat-count" style="color: #5ad5ff" v-if="cat.running > 0">{{
+              cat.running
+            }}</span>
+            <span class="wf-cat-count" style="color: #9ff8cf" v-if="cat.succeeded > 0">{{
+              cat.succeeded
+            }}</span>
+            <span class="wf-cat-count" style="color: #ff8a8a" v-if="cat.failed > 0">{{
+              cat.failed
+            }}</span>
             <span class="wf-cat-count-total">{{ cat.total }}</span>
           </span>
         </div>
@@ -436,7 +498,12 @@ onBeforeUnmount(() => {
 
       <!-- 工作流列表 -->
       <section class="wf-list-section">
-        <div v-if="workflowItems.length === 0 && weatherSyntheticItems.length === 0 && !tileConcurrency" class="wf-empty">
+        <div
+          v-if="
+            workflowItems.length === 0 && weatherSyntheticItems.length === 0 && !tileConcurrency
+          "
+          class="wf-empty"
+        >
           <span class="wf-empty-icon">◇</span>
           <p>当前没有运行中的工作流</p>
           <p class="wf-empty-hint">从左侧面板添加图层并运行工作流后，状态将显示在这里</p>
@@ -457,7 +524,10 @@ onBeforeUnmount(() => {
               </div>
               <span
                 class="wf-item-status"
-                :style="{ color: weatherStatusMeta[item.status].color, background: weatherStatusMeta[item.status].bg }"
+                :style="{
+                  color: weatherStatusMeta[item.status].color,
+                  background: weatherStatusMeta[item.status].bg,
+                }"
               >
                 {{ weatherStatusMeta[item.status].label }}
               </span>
@@ -491,23 +561,26 @@ onBeforeUnmount(() => {
             </div>
           </div>
 
-          <div
-            v-for="item in workflowItems"
-            :key="item.jobLayer.jobId"
-            class="wf-item"
-          >
+          <div v-for="item in workflowItems" :key="item.jobLayer.jobId" class="wf-item">
             <div class="wf-item-header">
               <div class="wf-item-name">
                 <span class="wf-item-dot" :style="{ background: item.accentColor }"></span>
                 <span class="wf-item-title">{{ item.name }}</span>
-                <span v-if="item.jobLayer.commandType" class="wf-item-cmd">{{ item.jobLayer.commandType }}</span>
+                <span v-if="item.jobLayer.commandType" class="wf-item-cmd">{{
+                  item.jobLayer.commandType
+                }}</span>
               </div>
               <span
                 class="wf-item-status"
-                :style="{ color: statusMeta[item.jobLayer.status].color, background: statusMeta[item.jobLayer.status].bg }"
+                :style="{
+                  color: statusMeta[item.jobLayer.status].color,
+                  background: statusMeta[item.jobLayer.status].bg,
+                }"
               >
                 {{ statusMeta[item.jobLayer.status].label }}
-                <template v-if="item.jobLayer.status === 'running'">{{ item.jobLayer.progress }}%</template>
+                <template v-if="item.jobLayer.status === 'running'"
+                  >{{ item.jobLayer.progress }}%</template
+                >
               </span>
             </div>
 
@@ -519,7 +592,9 @@ onBeforeUnmount(() => {
             <!-- 消息 -->
             <p v-if="item.jobLayer.message" class="wf-item-message">{{ item.jobLayer.message }}</p>
             <p
-              v-if="item.jobLayer.reportSummary && item.jobLayer.reportSummary !== item.jobLayer.message"
+              v-if="
+                item.jobLayer.reportSummary && item.jobLayer.reportSummary !== item.jobLayer.message
+              "
               class="wf-item-summary"
             >
               {{ item.jobLayer.reportSummary }}
@@ -527,7 +602,11 @@ onBeforeUnmount(() => {
 
             <!-- 指标 -->
             <div v-if="item.jobLayer.metrics?.length" class="wf-item-metrics">
-              <span v-for="m in item.jobLayer.metrics.slice(0, 4)" :key="m.label" class="wf-metric-chip">
+              <span
+                v-for="m in item.jobLayer.metrics.slice(0, 4)"
+                :key="m.label"
+                class="wf-metric-chip"
+              >
                 <span class="wf-metric-label">{{ m.label }}</span>
                 <span class="wf-metric-value">{{ m.value }}</span>
               </span>
@@ -535,28 +614,77 @@ onBeforeUnmount(() => {
 
             <!-- 诊断（可展开） -->
             <ul v-if="item.jobLayer.diagnosticNotes?.length" class="wf-item-notes">
-              <li v-for="note in (isExpanded(item.jobLayer.jobId) ? item.jobLayer.diagnosticNotes : item.jobLayer.diagnosticNotes.slice(0, 2))" :key="note">{{ note }}</li>
-              <button v-if="item.jobLayer.diagnosticNotes.length > 2" class="wf-expand-btn" @click="toggleExpand(item.jobLayer.jobId)">
-                {{ isExpanded(item.jobLayer.jobId) ? '收起' : `展开全部 (${item.jobLayer.diagnosticNotes.length})` }}
+              <li
+                v-for="note in isExpanded(item.jobLayer.jobId)
+                  ? item.jobLayer.diagnosticNotes
+                  : item.jobLayer.diagnosticNotes.slice(0, 2)"
+                :key="note"
+              >
+                {{ note }}
+              </li>
+              <button
+                v-if="item.jobLayer.diagnosticNotes.length > 2"
+                class="wf-expand-btn"
+                @click="toggleExpand(item.jobLayer.jobId)"
+              >
+                {{
+                  isExpanded(item.jobLayer.jobId)
+                    ? '收起'
+                    : `展开全部 (${item.jobLayer.diagnosticNotes.length})`
+                }}
               </button>
             </ul>
 
             <!-- 事件消息（可展开） -->
             <ul v-if="item.jobLayer.eventMessages?.length" class="wf-item-events">
-              <li v-for="evt in (isExpanded(item.jobLayer.jobId) ? item.jobLayer.eventMessages : item.jobLayer.eventMessages.slice(-2))" :key="evt">{{ evt }}</li>
-              <button v-if="item.jobLayer.eventMessages.length > 2" class="wf-expand-btn" @click="toggleExpand(item.jobLayer.jobId)">
-                {{ isExpanded(item.jobLayer.jobId) ? '收起' : `展开全部 (${item.jobLayer.eventMessages.length})` }}
+              <li
+                v-for="evt in isExpanded(item.jobLayer.jobId)
+                  ? item.jobLayer.eventMessages
+                  : item.jobLayer.eventMessages.slice(-2)"
+                :key="evt"
+              >
+                {{ evt }}
+              </li>
+              <button
+                v-if="item.jobLayer.eventMessages.length > 2"
+                class="wf-expand-btn"
+                @click="toggleExpand(item.jobLayer.jobId)"
+              >
+                {{
+                  isExpanded(item.jobLayer.jobId)
+                    ? '收起'
+                    : `展开全部 (${item.jobLayer.eventMessages.length})`
+                }}
               </button>
             </ul>
 
             <!-- 底部行：时间 + 时长 + 结果链接 + 操作 -->
             <div class="wf-item-footer">
               <div class="wf-item-time-info">
-                <span class="wf-item-time" :title="`创建于 ${formatDateTime(item.jobLayer.createdAt)}`">
+                <span
+                  class="wf-item-time"
+                  :title="`创建于 ${formatDateTime(item.jobLayer.createdAt)}`"
+                >
                   {{ formatTime(item.jobLayer.createdAt) }}
                 </span>
-                <span v-if="formatDuration(item.jobLayer.createdAt, item.jobLayer.updatedAt, item.jobLayer.status)" class="wf-item-duration">
-                  · {{ formatDuration(item.jobLayer.createdAt, item.jobLayer.updatedAt, item.jobLayer.status) }}
+                <span
+                  v-if="
+                    formatDuration(
+                      item.jobLayer.createdAt,
+                      item.jobLayer.updatedAt,
+                      item.jobLayer.status,
+                    )
+                  "
+                  class="wf-item-duration"
+                >
+                  ·
+                  {{
+                    formatDuration(
+                      item.jobLayer.createdAt,
+                      item.jobLayer.updatedAt,
+                      item.jobLayer.status,
+                    )
+                  }}
                 </span>
                 <span v-if="item.jobLayer.resultUrl" class="wf-item-result-link">
                   · <a :href="item.jobLayer.resultUrl" target="_blank" rel="noopener">查看结果</a>
@@ -564,7 +692,11 @@ onBeforeUnmount(() => {
               </div>
               <div class="wf-item-actions">
                 <button
-                  v-if="item.jobLayer.status === 'running' || item.jobLayer.status === 'queued' || item.jobLayer.status === 'retry_pending'"
+                  v-if="
+                    item.jobLayer.status === 'running' ||
+                    item.jobLayer.status === 'queued' ||
+                    item.jobLayer.status === 'retry_pending'
+                  "
                   class="wf-action-btn cancel"
                   @click="handleCancel(item.jobLayer.jobId, item.catalogId)"
                 >
@@ -607,8 +739,7 @@ onBeforeUnmount(() => {
   border: 1px solid rgba(145, 197, 255, 0.16);
   border-radius: 1.2rem;
   background:
-    linear-gradient(180deg, rgba(8, 17, 31, 0.92), rgba(7, 15, 28, 0.88)),
-    rgba(8, 18, 33, 0.9);
+    linear-gradient(180deg, rgba(8, 17, 31, 0.92), rgba(7, 15, 28, 0.88)), rgba(8, 18, 33, 0.9);
   box-shadow: 0 24px 60px rgba(1, 8, 16, 0.5);
   overflow: hidden;
 }
@@ -675,7 +806,9 @@ onBeforeUnmount(() => {
   display: flex;
   align-items: center;
   justify-content: center;
-  transition: background 0.16s ease, color 0.16s ease;
+  transition:
+    background 0.16s ease,
+    color 0.16s ease;
   flex: none;
 }
 
@@ -697,7 +830,10 @@ onBeforeUnmount(() => {
   font-size: 0.68rem;
 }
 
-.wf-error-icon { font-size: 0.8rem; flex: none; }
+.wf-error-icon {
+  font-size: 0.8rem;
+  flex: none;
+}
 
 /* 整体进度条 */
 .wf-overall-progress {
@@ -746,7 +882,10 @@ onBeforeUnmount(() => {
   background: rgba(10, 40, 60, 0.42);
 }
 
-.wf-tile-icon { font-size: 0.7rem; flex: none; }
+.wf-tile-icon {
+  font-size: 0.7rem;
+  flex: none;
+}
 
 .wf-tile-text {
   color: #c8dff0;
@@ -925,7 +1064,10 @@ onBeforeUnmount(() => {
   border: 1px solid rgba(136, 192, 255, 0.08);
   border-radius: 0.6rem;
   background: rgba(4, 12, 23, 0.42);
-  transition: border-color 0.2s ease, background-color 0.2s ease, opacity 0.2s ease;
+  transition:
+    border-color 0.2s ease,
+    background-color 0.2s ease,
+    opacity 0.2s ease;
 }
 
 .wf-summary-card.active {
@@ -992,8 +1134,14 @@ onBeforeUnmount(() => {
   opacity: 0.4;
 }
 
-.wf-empty p { margin: 0; font-size: 0.72rem; }
-.wf-empty-hint { font-size: 0.6rem; color: #5a7080; }
+.wf-empty p {
+  margin: 0;
+  font-size: 0.72rem;
+}
+.wf-empty-hint {
+  font-size: 0.6rem;
+  color: #5a7080;
+}
 
 .wf-list {
   display: flex;
@@ -1208,7 +1356,9 @@ onBeforeUnmount(() => {
   font-size: 0.52rem;
   font-weight: 600;
   cursor: pointer;
-  transition: background 0.16s ease, border-color 0.16s ease;
+  transition:
+    background 0.16s ease,
+    border-color 0.16s ease;
 }
 
 .wf-action-btn.cancel {

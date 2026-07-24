@@ -53,8 +53,14 @@ export function useDataImportFlow() {
     try {
       const { geojson, multiLayerNote } = await parseVectorFile(file)
       layersStore.addImportedVectorLayer(file.name, geojson)
-      showToast(`${multiLayerNote}已导入 ${geojson.features.length} 个要素（${formatBytes(file.size)}）`)
-      logStore.logOperation('import-vector-success', `矢量导入成功: ${file.name}`, `要素数: ${geojson.features.length}`)
+      showToast(
+        `${multiLayerNote}已导入 ${geojson.features.length} 个要素（${formatBytes(file.size)}）`,
+      )
+      logStore.logOperation(
+        'import-vector-success',
+        `矢量导入成功: ${file.name}`,
+        `要素数: ${geojson.features.length}`,
+      )
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err)
       showToast(`导入失败: ${msg}`, true)
@@ -83,7 +89,11 @@ export function useDataImportFlow() {
     layersStore.addImportedVectorLayer(name, geojson)
     csvFile.value = null
     showToast(`CSV 已导入 ${geojson.features.length} 个点`)
-    logStore.logOperation('import-csv-success', `CSV 导入成功: ${name}`, `要素数: ${geojson.features.length}`)
+    logStore.logOperation(
+      'import-csv-success',
+      `CSV 导入成功: ${name}`,
+      `要素数: ${geojson.features.length}`,
+    )
   }
 
   async function importRasterFile(file: File) {

@@ -250,7 +250,9 @@ def _clone_snapshot(snapshot: AsyncJobSnapshot) -> AsyncJobSnapshot:
         status_detail=dict(snapshot.status_detail),
         job_result=snapshot.job_result,
         final_response_status=snapshot.final_response_status,
-        final_response_body=None if snapshot.final_response_body is None else dict(snapshot.final_response_body),
+        final_response_body=None
+        if snapshot.final_response_body is None
+        else dict(snapshot.final_response_body),
     )
 
 
@@ -261,7 +263,11 @@ def _snapshot_to_dict(snapshot: AsyncJobSnapshot) -> dict[str, Any]:
 
 def _snapshot_from_dict(payload: dict[str, Any]) -> AsyncJobSnapshot:
     job_result_payload = payload.get("job_result")
-    job_result = None if job_result_payload is None else _job_result_from_dict(job_result_payload)
+    job_result = (
+        None
+        if job_result_payload is None
+        else _job_result_from_dict(job_result_payload)
+    )
     final_response_body = payload.get("final_response_body")
     return AsyncJobSnapshot(
         submission_id=str(payload["submission_id"]),
@@ -270,11 +276,17 @@ def _snapshot_from_dict(payload: dict[str, Any]) -> AsyncJobSnapshot:
         accepted_at=datetime.fromisoformat(str(payload["accepted_at"])),
         updated_at=datetime.fromisoformat(str(payload["updated_at"])),
         run_id=None if payload.get("run_id") is None else str(payload["run_id"]),
-        scheduler_status=None if payload.get("scheduler_status") is None else str(payload["scheduler_status"]),
-        status_detail={} if payload.get("status_detail") is None else dict(payload["status_detail"]),
+        scheduler_status=None
+        if payload.get("scheduler_status") is None
+        else str(payload["scheduler_status"]),
+        status_detail={}
+        if payload.get("status_detail") is None
+        else dict(payload["status_detail"]),
         job_result=job_result,
         final_response_status=payload.get("final_response_status"),
-        final_response_body=None if final_response_body is None else dict(final_response_body),
+        final_response_body=None
+        if final_response_body is None
+        else dict(final_response_body),
     )
 
 
@@ -282,7 +294,9 @@ def _job_result_from_dict(payload: dict[str, Any]) -> JobResult:
     decoded = dict(payload)
     decoded["started_at"] = datetime.fromisoformat(str(decoded["started_at"]))
     decoded["finished_at"] = datetime.fromisoformat(str(decoded["finished_at"]))
-    decoded["metrics"] = {} if decoded.get("metrics") is None else dict(decoded["metrics"])
+    decoded["metrics"] = (
+        {} if decoded.get("metrics") is None else dict(decoded["metrics"])
+    )
     return JobResult(**decoded)
 
 

@@ -71,7 +71,9 @@ def build_date_keys(start_time: datetime, end_time: datetime) -> list[str]:
     return keys
 
 
-def discover_fy_orbit_files(input_dir: str | Path, pattern: str = "*.HDF") -> list[FyOrbitFile]:
+def discover_fy_orbit_files(
+    input_dir: str | Path, pattern: str = "*.HDF"
+) -> list[FyOrbitFile]:
     input_dir = Path(input_dir)
     files: list[FyOrbitFile] = []
     for file_path in sorted(input_dir.glob(pattern)):
@@ -135,7 +137,9 @@ def build_fy_daily_job_plans(
 
         for orbit_type, files in orbit_items:
             satellite = files[0].satellite
-            target_output_dir = output_root / orbit_type if orbit_mode == "Both" else output_root
+            target_output_dir = (
+                output_root / orbit_type if orbit_mode == "Both" else output_root
+            )
             work_dir = target_output_dir / "_work" / date_key
             output_prefix = f"{satellite}_GBAL_L1_10V10H_{date_key}_{orbit_type}"
             plans.append(
@@ -156,9 +160,13 @@ def build_fy_daily_job_plans(
     return plans
 
 
-def write_fy_daily_plan_json(plans: list[FyDailyJobPlan], output_path: str | Path) -> Path:
+def write_fy_daily_plan_json(
+    plans: list[FyDailyJobPlan], output_path: str | Path
+) -> Path:
     output_path = Path(output_path)
     output_path.parent.mkdir(parents=True, exist_ok=True)
     payload = [asdict(plan) for plan in plans]
-    output_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+    output_path.write_text(
+        json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8"
+    )
     return output_path

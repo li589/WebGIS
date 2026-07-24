@@ -5,8 +5,13 @@ from typing import Any
 from pydantic import BaseModel, Field
 
 from webgis_gee.application.services import WorkflowService
-from webgis_gee.domain.models import DiagnosticsReport, ExecutionContext, RunResult, WorkflowDefinition
-from webgis_gee.workflow.versioning import TerminalPlanResponse, TerminalPlanSummary
+from webgis_gee.domain.models import (
+    DiagnosticsReport,
+    ExecutionContext,
+    RunResult,
+    WorkflowDefinition,
+)
+from webgis_gee.workflow.versioning import TerminalPlanSummary
 
 
 class WorkflowSubmissionPayload(BaseModel):
@@ -49,10 +54,14 @@ class WorkflowValidationResponse(BaseModel):
 
     workflow: WorkflowDefinition
     saveback_terminal_plan: SavebackTerminalPlanPayload | None = None
-    saveback_terminal_plans: dict[str, SavebackTerminalPlanPayload] = Field(default_factory=dict)
+    saveback_terminal_plans: dict[str, SavebackTerminalPlanPayload] = Field(
+        default_factory=dict
+    )
 
     @classmethod
-    def from_workflow(cls, workflow: WorkflowDefinition) -> "WorkflowValidationResponse":
+    def from_workflow(
+        cls, workflow: WorkflowDefinition
+    ) -> "WorkflowValidationResponse":
         saveback_terminal_plans = _collect_saveback_terminal_plans(
             workflow=workflow,
             outputs=None,
@@ -79,7 +88,9 @@ class WorkflowExecutionResponse(BaseModel):
     warnings: list[str] = Field(default_factory=list)
     errors: list[str] = Field(default_factory=list)
     saveback_terminal_plan: SavebackTerminalPlanPayload | None = None
-    saveback_terminal_plans: dict[str, SavebackTerminalPlanPayload] = Field(default_factory=dict)
+    saveback_terminal_plans: dict[str, SavebackTerminalPlanPayload] = Field(
+        default_factory=dict
+    )
 
     @classmethod
     def from_run_result(
@@ -96,9 +107,14 @@ class WorkflowExecutionResponse(BaseModel):
             run_id=result.run_id,
             workflow_id=result.workflow_id,
             status=result.status.value,
-            node_results=[node_result.model_dump(mode="python") for node_result in result.node_results],
+            node_results=[
+                node_result.model_dump(mode="python")
+                for node_result in result.node_results
+            ],
             outputs=result.outputs,
-            artifacts=[artifact.model_dump(mode="python") for artifact in result.artifacts],
+            artifacts=[
+                artifact.model_dump(mode="python") for artifact in result.artifacts
+            ],
             warnings=list(result.warnings),
             errors=list(result.errors),
             saveback_terminal_plan=_select_primary_saveback_terminal_plan(
@@ -154,7 +170,9 @@ def _collect_saveback_terminal_plans(
 
     if outputs is not None:
         for output_name, output_value in outputs.items():
-            if not output_name.endswith(".saveback_terminal_plan") or not isinstance(output_value, dict):
+            if not output_name.endswith(".saveback_terminal_plan") or not isinstance(
+                output_value, dict
+            ):
                 continue
             node_id = output_name.removesuffix(".saveback_terminal_plan")
             plans[node_id] = SavebackTerminalPlanPayload.model_validate(output_value)
@@ -172,8 +190,7 @@ def _select_primary_saveback_terminal_plan(
     workflow_node_order: dict[str, int] = {}
     if workflow is not None:
         workflow_node_order = {
-            node.node_id: index
-            for index, node in enumerate(workflow.nodes)
+            node.node_id: index for index, node in enumerate(workflow.nodes)
         }
 
     def sort_key(item: tuple[str, SavebackTerminalPlanPayload]) -> tuple[int, int, str]:
@@ -212,7 +229,9 @@ class WorkflowContractAdapter:
         context: ExecutionContext | dict[str, Any] | None = None,
     ) -> RunResult:
         workflow_model = self._service.normalize_workflow_definition(workflow)
-        context_model = None if context is None else ExecutionContext.model_validate(context)
+        context_model = (
+            None if context is None else ExecutionContext.model_validate(context)
+        )
         return self._service.execute_workflow(workflow_model, context_model)
 
     def submit_workflow_response(
@@ -221,9 +240,13 @@ class WorkflowContractAdapter:
         context: ExecutionContext | dict[str, Any] | None = None,
     ) -> WorkflowExecutionResponse:
         workflow_model = self._service.normalize_workflow_definition(workflow)
-        context_model = None if context is None else ExecutionContext.model_validate(context)
+        context_model = (
+            None if context is None else ExecutionContext.model_validate(context)
+        )
         result = self._service.execute_workflow(workflow_model, context_model)
-        return WorkflowExecutionResponse.from_run_result(result, workflow=workflow_model)
+        return WorkflowExecutionResponse.from_run_result(
+            result, workflow=workflow_model
+        )
 
     def get_export_task_status(
         self,

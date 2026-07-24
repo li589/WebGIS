@@ -34,6 +34,7 @@ from storage.local_fs import LocalFileSystemStorage
 def _get_minio_storage_class():
     """延迟导入 MinIOStorage，避免 minio 包未安装时阻塞"""
     from storage.minio_storage import MinIOStorage
+
     return MinIOStorage
 
 
@@ -159,7 +160,7 @@ def get_storage_backend() -> StorageBackend:
     return LocalFileSystemStorage(_resolve_local_data_root())
 
 
-def _create_minio_backend() -> "MinIOStorage":
+def _create_minio_backend() -> "MinIOStorage":  # noqa: F821  # MinIOStorage 经工厂延迟解析，注解为前向引用字符串
     """创建 MinIO 存储后端实例
 
     Returns:
@@ -168,7 +169,9 @@ def _create_minio_backend() -> "MinIOStorage":
     try:
         MinIOStorage = _get_minio_storage_class()
     except (ImportError, ModuleNotFoundError):
-        raise ImportError("MinIO storage backend requires the 'minio' package. Install: pip install minio")
+        raise ImportError(
+            "MinIO storage backend requires the 'minio' package. Install: pip install minio"
+        )
     config = _get_minio_config()
     return MinIOStorage(
         endpoint=config["endpoint"],

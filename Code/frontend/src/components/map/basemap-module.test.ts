@@ -37,21 +37,22 @@ describe('basemap-module', () => {
 
     const module = createBasemapModule({
       map,
-      getTileConfig: (sourceId) => sourceId === 'esri-street'
-        ? {
-            id: 'esri-street',
-            label: 'Esri Street',
-            provider: 'Esri',
-            style: 'street',
-            urlTemplate: 'https://example.com/{z}/{x}/{y}.png',
-            saturation: 0,
-            brightness: 0,
-            contrast: 0,
-            isStandard: true,
-            needsBackendTransform: false,
-            authMode: 'none',
-          }
-        : undefined,
+      getTileConfig: (sourceId) =>
+        sourceId === 'esri-street'
+          ? {
+              id: 'esri-street',
+              label: 'Esri Street',
+              provider: 'Esri',
+              style: 'street',
+              urlTemplate: 'https://example.com/{z}/{x}/{y}.png',
+              saturation: 0,
+              brightness: 0,
+              contrast: 0,
+              isStandard: true,
+              needsBackendTransform: false,
+              authMode: 'none',
+            }
+          : undefined,
       getCurrentTileSourceId: () => 'esri-street',
       setTileLoadFailed,
       setTileFailedProvider,
@@ -98,21 +99,22 @@ describe('basemap-module', () => {
 
     const module = createBasemapModule({
       map,
-      getTileConfig: (sourceId) => sourceId === 'esri-street'
-        ? {
-            id: 'esri-street',
-            label: 'Esri Street',
-            provider: 'Esri',
-            style: 'street',
-            urlTemplate: 'https://example.com/{z}/{x}/{y}.png',
-            saturation: 0,
-            brightness: 0,
-            contrast: 0,
-            isStandard: true,
-            needsBackendTransform: false,
-            authMode: 'none',
-          }
-        : undefined,
+      getTileConfig: (sourceId) =>
+        sourceId === 'esri-street'
+          ? {
+              id: 'esri-street',
+              label: 'Esri Street',
+              provider: 'Esri',
+              style: 'street',
+              urlTemplate: 'https://example.com/{z}/{x}/{y}.png',
+              saturation: 0,
+              brightness: 0,
+              contrast: 0,
+              isStandard: true,
+              needsBackendTransform: false,
+              authMode: 'none',
+            }
+          : undefined,
       getCurrentTileSourceId: () => 'esri-street',
       setTileLoadFailed,
       setTileFailedProvider,
@@ -149,21 +151,22 @@ describe('basemap-module', () => {
 
     const module = createBasemapModule({
       map,
-      getTileConfig: (sourceId) => sourceId === 'esri-street'
-        ? {
-            id: 'esri-street',
-            label: 'Esri Street',
-            provider: 'Esri',
-            style: 'street',
-            urlTemplate: 'https://example.com/{z}/{x}/{y}.png',
-            saturation: 0,
-            brightness: 0,
-            contrast: 0,
-            isStandard: true,
-            needsBackendTransform: false,
-            authMode: 'none',
-          }
-        : undefined,
+      getTileConfig: (sourceId) =>
+        sourceId === 'esri-street'
+          ? {
+              id: 'esri-street',
+              label: 'Esri Street',
+              provider: 'Esri',
+              style: 'street',
+              urlTemplate: 'https://example.com/{z}/{x}/{y}.png',
+              saturation: 0,
+              brightness: 0,
+              contrast: 0,
+              isStandard: true,
+              needsBackendTransform: false,
+              authMode: 'none',
+            }
+          : undefined,
       getCurrentTileSourceId: () => 'esri-street',
       setTileLoadFailed,
       setTileFailedProvider,

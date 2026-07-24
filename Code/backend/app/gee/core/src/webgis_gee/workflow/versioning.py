@@ -65,7 +65,9 @@ class TerminalPlanSummary(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     receipt_summary: str = Field(description="Receipt summary for the terminal plan")
-    writeback_summary: str = Field(description="Writeback summary for the terminal plan")
+    writeback_summary: str = Field(
+        description="Writeback summary for the terminal plan"
+    )
     terminal_state: str = Field(description="Terminal state after writeback")
 
 
@@ -73,7 +75,9 @@ class TerminalPlanResponse(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     action: str = Field(description="Recommended API action for the terminal plan")
-    reasons: list[str] = Field(default_factory=list, description="Risk or decision reasons")
+    reasons: list[str] = Field(
+        default_factory=list, description="Risk or decision reasons"
+    )
     summary: TerminalPlanSummary = Field(description="Terminal plan summary payload")
 
 
@@ -83,11 +87,15 @@ class WorkflowDefinitionMigrator:
     def __init__(self, registry: NodeRegistry | None = None) -> None:
         self._registry = registry
 
-    def detect_version(self, workflow_payload: WorkflowDefinition | dict[str, Any]) -> str:
+    def detect_version(
+        self, workflow_payload: WorkflowDefinition | dict[str, Any]
+    ) -> str:
         if isinstance(workflow_payload, WorkflowDefinition):
             return workflow_payload.schema_version
         if not isinstance(workflow_payload, dict):
-            raise WorkflowValidationError("workflow payload must be a mapping or WorkflowDefinition")
+            raise WorkflowValidationError(
+                "workflow payload must be a mapping or WorkflowDefinition"
+            )
         metadata = workflow_payload.get("metadata", {})
         if isinstance(metadata, dict):
             metadata_schema_version = metadata.get("schema_version")
@@ -98,14 +106,18 @@ class WorkflowDefinitionMigrator:
             return schema_version
         return LEGACY_SCHEMA_VERSION
 
-    def migrate_to_latest(self, workflow_payload: WorkflowDefinition | dict[str, Any]) -> dict[str, Any]:
+    def migrate_to_latest(
+        self, workflow_payload: WorkflowDefinition | dict[str, Any]
+    ) -> dict[str, Any]:
         payload = (
             workflow_payload.model_dump(mode="python")
             if isinstance(workflow_payload, WorkflowDefinition)
             else deepcopy(workflow_payload)
         )
         if not isinstance(payload, dict):
-            raise WorkflowValidationError("workflow payload must be a mapping or WorkflowDefinition")
+            raise WorkflowValidationError(
+                "workflow payload must be a mapping or WorkflowDefinition"
+            )
 
         detected_version = self.detect_version(payload)
         payload.setdefault("metadata", {})
@@ -131,7 +143,9 @@ class WorkflowDefinitionMigrator:
     def validate_compatibility(self, workflow_definition: WorkflowDefinition) -> None:
         errors: list[str] = []
         if workflow_definition.schema_version not in SUPPORTED_SCHEMA_VERSIONS:
-            errors.append(f"unsupported workflow schema_version: {workflow_definition.schema_version}")
+            errors.append(
+                f"unsupported workflow schema_version: {workflow_definition.schema_version}"
+            )
 
         if self._registry is not None:
             for node in workflow_definition.nodes:
@@ -150,7 +164,8 @@ class WorkflowDefinitionMigrator:
                 ]
                 if alias_pairs:
                     alias_summary = ", ".join(
-                        f"{alias_name}->{target_name}" for alias_name, target_name in alias_pairs
+                        f"{alias_name}->{target_name}"
+                        for alias_name, target_name in alias_pairs
                     )
                     errors.append(
                         f"node {node.node_id} uses legacy parameter aliases {alias_summary}; "
@@ -158,7 +173,9 @@ class WorkflowDefinitionMigrator:
                     )
                 if canonical.deprecated:
                     replacement_node_type = canonical.replacement_node_type
-                    if replacement_node_type and self._registry.has(replacement_node_type):
+                    if replacement_node_type and self._registry.has(
+                        replacement_node_type
+                    ):
                         errors.append(
                             f"node {node.node_id} uses deprecated node type {node.node_type}; "
                             f"replacement available: {replacement_node_type}; normalize workflow first"
@@ -177,7 +194,9 @@ class WorkflowDefinitionMigrator:
         if errors:
             raise WorkflowValidationError("; ".join(errors))
 
-    def to_workflow_definition(self, workflow_payload: WorkflowDefinition | dict[str, Any]) -> WorkflowDefinition:
+    def to_workflow_definition(
+        self, workflow_payload: WorkflowDefinition | dict[str, Any]
+    ) -> WorkflowDefinition:
         payload = self.migrate_to_latest(workflow_payload)
         workflow_definition = WorkflowDefinition.model_validate(payload)
         self.validate_compatibility(workflow_definition)
@@ -191,7 +210,9 @@ class WorkflowDefinitionMigrator:
                 "legacy_node_type": legacy_node_type,
                 "replacement_node_type": config["replacement_node_type"],
                 "parameter_aliases": config.get("parameter_aliases", {}),
-                "parameter_migration_rules": config.get("parameter_migration_rules", []),
+                "parameter_migration_rules": config.get(
+                    "parameter_migration_rules", []
+                ),
             }
             for legacy_node_type, config in sorted(LEGACY_NODE_MAPPINGS.items())
         ]
@@ -277,19 +298,25 @@ class WorkflowDefinitionMigrator:
             "status": "ok",
             "current_schema_version": CURRENT_SCHEMA_VERSION,
             "supported_schema_versions": list(SUPPORTED_SCHEMA_VERSIONS),
-            "auto_migrate_from_schema_versions": list(AUTO_MIGRATE_FROM_SCHEMA_VERSIONS),
+            "auto_migrate_from_schema_versions": list(
+                AUTO_MIGRATE_FROM_SCHEMA_VERSIONS
+            ),
             "schema_upgrade_paths": [
                 {
                     "from": source_version,
                     "to": CURRENT_SCHEMA_VERSION,
                     "path": [source_version, *target_versions],
                 }
-                for source_version, target_versions in sorted(SCHEMA_UPGRADE_PATHS.items())
+                for source_version, target_versions in sorted(
+                    SCHEMA_UPGRADE_PATHS.items()
+                )
             ],
             "schema_support_summary": {
                 "current_schema_version": CURRENT_SCHEMA_VERSION,
                 "supported_schema_versions": list(SUPPORTED_SCHEMA_VERSIONS),
-                "auto_migrate_from_schema_versions": list(AUTO_MIGRATE_FROM_SCHEMA_VERSIONS),
+                "auto_migrate_from_schema_versions": list(
+                    AUTO_MIGRATE_FROM_SCHEMA_VERSIONS
+                ),
                 "schema_upgrade_path_count": len(SCHEMA_UPGRADE_PATHS),
                 "metadata_feature_count": len(workflow_metadata_features),
                 "terminal_plan_schema_version": CURRENT_SCHEMA_VERSION,
@@ -308,7 +335,12 @@ class WorkflowDefinitionMigrator:
             "workflow_metadata_feature_groups": [
                 {
                     "group": "normalization_and_compatibility",
-                    "schema_versions": [SCHEMA_VERSION_1_2, SCHEMA_VERSION_1_3, SCHEMA_VERSION_1_4, SCHEMA_VERSION_1_5],
+                    "schema_versions": [
+                        SCHEMA_VERSION_1_2,
+                        SCHEMA_VERSION_1_3,
+                        SCHEMA_VERSION_1_4,
+                        SCHEMA_VERSION_1_5,
+                    ],
                     "fields": [
                         "normalization_summary",
                         "compatibility_snapshot",
@@ -323,8 +355,16 @@ class WorkflowDefinitionMigrator:
                 },
                 {
                     "group": "saveback_execution_plans",
-                    "schema_versions": [SCHEMA_VERSION_1_8, SCHEMA_VERSION_1_9, SCHEMA_VERSION_1_10],
-                    "fields": ["auto_fix_plan", "saveback_commit_plan", "saveback_audit_plan"],
+                    "schema_versions": [
+                        SCHEMA_VERSION_1_8,
+                        SCHEMA_VERSION_1_9,
+                        SCHEMA_VERSION_1_10,
+                    ],
+                    "fields": [
+                        "auto_fix_plan",
+                        "saveback_commit_plan",
+                        "saveback_audit_plan",
+                    ],
                 },
                 {
                     "group": "saveback_terminal_closure",
@@ -346,7 +386,9 @@ class WorkflowDefinitionMigrator:
             },
         }
 
-    def _normalize_metadata_defaults(self, payload: dict[str, Any], *, auto_migrated: bool = False) -> None:
+    def _normalize_metadata_defaults(
+        self, payload: dict[str, Any], *, auto_migrated: bool = False
+    ) -> None:
         metadata = payload.setdefault("metadata", {})
         if not isinstance(metadata, dict):
             raise WorkflowValidationError("workflow metadata must be a mapping")
@@ -354,24 +396,37 @@ class WorkflowDefinitionMigrator:
         metadata.setdefault("schema_version", CURRENT_SCHEMA_VERSION)
         metadata.setdefault("created_at", now_iso)
         metadata.setdefault("updated_at", now_iso)
-        metadata.setdefault("source", "workflow_definition_migrator" if auto_migrated else "workflow_definition")
-        metadata.setdefault("compatibility_mode", "migrated" if auto_migrated else "strict")
+        metadata.setdefault(
+            "source",
+            "workflow_definition_migrator" if auto_migrated else "workflow_definition",
+        )
+        metadata.setdefault(
+            "compatibility_mode", "migrated" if auto_migrated else "strict"
+        )
         metadata.setdefault("migration_notes", [])
 
-    def _apply_schema_upgrade_path(self, payload: dict[str, Any], detected_version: str) -> None:
+    def _apply_schema_upgrade_path(
+        self, payload: dict[str, Any], detected_version: str
+    ) -> None:
         if detected_version == CURRENT_SCHEMA_VERSION:
             payload["schema_version"] = CURRENT_SCHEMA_VERSION
             return
         if detected_version not in AUTO_MIGRATE_FROM_SCHEMA_VERSIONS:
-            raise WorkflowValidationError(f"unsupported workflow schema_version: {detected_version}")
+            raise WorkflowValidationError(
+                f"unsupported workflow schema_version: {detected_version}"
+            )
         metadata = payload.setdefault("metadata", {})
         if not isinstance(metadata, dict):
             raise WorkflowValidationError("workflow metadata must be a mapping")
         metadata["auto_migrated_from_schema_version"] = detected_version
-        migration_notes: list[dict[str, Any]] = metadata.setdefault("migration_notes", [])
+        migration_notes: list[dict[str, Any]] = metadata.setdefault(
+            "migration_notes", []
+        )
         upgrade_path = SCHEMA_UPGRADE_PATHS.get(detected_version)
         if not upgrade_path:
-            raise WorkflowValidationError(f"unsupported workflow schema_version: {detected_version}")
+            raise WorkflowValidationError(
+                f"unsupported workflow schema_version: {detected_version}"
+            )
         metadata["schema_upgrade_path"] = [detected_version, *upgrade_path]
         current_version = detected_version
         for target_version in upgrade_path:
@@ -642,7 +697,9 @@ class WorkflowDefinitionMigrator:
         )
 
     def _normalize_workflow_defaults(self, payload: dict[str, Any]) -> None:
-        migration_notes: list[dict[str, Any]] = payload["metadata"].setdefault("migration_notes", [])
+        migration_notes: list[dict[str, Any]] = payload["metadata"].setdefault(
+            "migration_notes", []
+        )
         filled_fields: list[str] = []
         if "version" not in payload:
             payload["version"] = "1.0.0"
@@ -671,14 +728,18 @@ class WorkflowDefinitionMigrator:
         nodes = payload.get("nodes", [])
         if not isinstance(nodes, list):
             raise WorkflowValidationError("workflow nodes must be a list")
-        migration_notes: list[dict[str, Any]] = payload["metadata"].setdefault("migration_notes", [])
+        migration_notes: list[dict[str, Any]] = payload["metadata"].setdefault(
+            "migration_notes", []
+        )
         normalized_node_ids: list[str] = []
         for node in nodes:
             if not isinstance(node, dict):
                 raise WorkflowValidationError("workflow node payload must be a mapping")
             node_metadata = node.setdefault("metadata", {})
             if not isinstance(node_metadata, dict):
-                raise WorkflowValidationError("workflow node metadata must be a mapping")
+                raise WorkflowValidationError(
+                    "workflow node metadata must be a mapping"
+                )
             changed = False
             if node_metadata.get("schema_version") != CURRENT_SCHEMA_VERSION:
                 node_metadata["schema_version"] = CURRENT_SCHEMA_VERSION
@@ -688,9 +749,18 @@ class WorkflowDefinitionMigrator:
                 node_metadata["canonical_node_type"] = canonical_node_type
                 changed = True
             canonical_node_version = node.get("version")
-            if self._registry is not None and isinstance(canonical_node_type, str) and self._registry.has(canonical_node_type):
-                canonical_node_version = self._registry.get(canonical_node_type).build_spec().version
-            elif not isinstance(canonical_node_version, str) or not canonical_node_version:
+            if (
+                self._registry is not None
+                and isinstance(canonical_node_type, str)
+                and self._registry.has(canonical_node_type)
+            ):
+                canonical_node_version = (
+                    self._registry.get(canonical_node_type).build_spec().version
+                )
+            elif (
+                not isinstance(canonical_node_version, str)
+                or not canonical_node_version
+            ):
                 canonical_node_version = "1.0.0"
             if node_metadata.get("canonical_node_version") != canonical_node_version:
                 node_metadata["canonical_node_version"] = canonical_node_version
@@ -713,26 +783,34 @@ class WorkflowDefinitionMigrator:
         nodes = payload.get("nodes", [])
         if not isinstance(nodes, list):
             raise WorkflowValidationError("workflow nodes must be a list")
-        migration_notes: list[dict[str, Any]] = metadata.setdefault("migration_notes", [])
+        migration_notes: list[dict[str, Any]] = metadata.setdefault(
+            "migration_notes", []
+        )
         summary = {
             "schema_version": SCHEMA_VERSION_1_2,
             "total_nodes": len(nodes),
             "replaced_nodes": sum(
                 1
                 for note in migration_notes
-                if note.get("migration") in {"node_type_replaced", "deprecated_node_replaced"}
+                if note.get("migration")
+                in {"node_type_replaced", "deprecated_node_replaced"}
             ),
             "aliased_parameters": sum(
-                1 for note in migration_notes if note.get("migration") == "parameter_aliased"
+                1
+                for note in migration_notes
+                if note.get("migration") == "parameter_aliased"
             ),
             "rule_migrated_parameters": sum(
-                1 for note in migration_notes if note.get("migration") == "parameter_rule_applied"
+                1
+                for note in migration_notes
+                if note.get("migration") == "parameter_rule_applied"
             ),
             "defaulted_nodes": len(
                 {
                     note.get("node_id")
                     for note in migration_notes
-                    if note.get("migration") == "default_params_filled" and note.get("node_id")
+                    if note.get("migration") == "default_params_filled"
+                    and note.get("node_id")
                 }
             ),
             "auto_migrated": "auto_migrated_from_schema_version" in metadata,
@@ -755,11 +833,17 @@ class WorkflowDefinitionMigrator:
         nodes = payload.get("nodes", [])
         if not isinstance(nodes, list):
             raise WorkflowValidationError("workflow nodes must be a list")
-        migration_notes: list[dict[str, Any]] = metadata.setdefault("migration_notes", [])
+        migration_notes: list[dict[str, Any]] = metadata.setdefault(
+            "migration_notes", []
+        )
         compatibility_snapshot = {
             "schema_version": SCHEMA_VERSION_1_3,
-            "source_schema_version": metadata.get("auto_migrated_from_schema_version", CURRENT_SCHEMA_VERSION),
-            "upgrade_path": metadata.get("schema_upgrade_path", [CURRENT_SCHEMA_VERSION]),
+            "source_schema_version": metadata.get(
+                "auto_migrated_from_schema_version", CURRENT_SCHEMA_VERSION
+            ),
+            "upgrade_path": metadata.get(
+                "schema_upgrade_path", [CURRENT_SCHEMA_VERSION]
+            ),
             "compatible": True,
             "total_nodes": len(nodes),
             "canonical_node_types": sorted(
@@ -773,7 +857,8 @@ class WorkflowDefinitionMigrator:
                 {
                     note.get("node_id")
                     for note in migration_notes
-                    if note.get("migration") in {"node_type_replaced", "deprecated_node_replaced"}
+                    if note.get("migration")
+                    in {"node_type_replaced", "deprecated_node_replaced"}
                     and isinstance(note.get("node_id"), str)
                 }
             ),
@@ -817,7 +902,9 @@ class WorkflowDefinitionMigrator:
         metadata = payload.setdefault("metadata", {})
         if not isinstance(metadata, dict):
             raise WorkflowValidationError("workflow metadata must be a mapping")
-        migration_notes: list[dict[str, Any]] = metadata.setdefault("migration_notes", [])
+        migration_notes: list[dict[str, Any]] = metadata.setdefault(
+            "migration_notes", []
+        )
         reason_map = {
             "schema_version_upgraded": "schema_upgraded",
             "node_type_replaced": "node_replaced",
@@ -874,14 +961,18 @@ class WorkflowDefinitionMigrator:
         nodes = payload.get("nodes", [])
         if not isinstance(nodes, list):
             raise WorkflowValidationError("workflow nodes must be a list")
-        migration_notes: list[dict[str, Any]] = metadata.setdefault("migration_notes", [])
+        migration_notes: list[dict[str, Any]] = metadata.setdefault(
+            "migration_notes", []
+        )
         node_contracts: list[dict[str, Any]] = []
         node_types_with_alias_support: set[str] = set()
         nodes_requiring_resave: list[str] = []
         for node in nodes:
             if not isinstance(node, dict):
                 raise WorkflowValidationError("workflow node payload must be a mapping")
-            node_contract = self._build_node_compatibility_contract(node, migration_notes)
+            node_contract = self._build_node_compatibility_contract(
+                node, migration_notes
+            )
             if node_contract is None:
                 continue
             node_contracts.append(node_contract)
@@ -895,8 +986,12 @@ class WorkflowDefinitionMigrator:
                 "auto_migrated_from_schema_version",
                 CURRENT_SCHEMA_VERSION,
             ),
-            "upgrade_path": metadata.get("schema_upgrade_path", [CURRENT_SCHEMA_VERSION]),
-            "resave_recommended": bool(metadata.get("resave_hint", {}).get("resave_recommended", False)),
+            "upgrade_path": metadata.get(
+                "schema_upgrade_path", [CURRENT_SCHEMA_VERSION]
+            ),
+            "resave_recommended": bool(
+                metadata.get("resave_hint", {}).get("resave_recommended", False)
+            ),
             "nodes_requiring_resave": sorted(nodes_requiring_resave),
             "node_types_with_alias_support": sorted(node_types_with_alias_support),
             "nodes": node_contracts,
@@ -918,16 +1013,24 @@ class WorkflowDefinitionMigrator:
             raise WorkflowValidationError("workflow metadata must be a mapping")
         compatibility_contract = metadata.get("compatibility_contract", {})
         if not isinstance(compatibility_contract, dict):
-            raise WorkflowValidationError("workflow compatibility_contract must be a mapping")
+            raise WorkflowValidationError(
+                "workflow compatibility_contract must be a mapping"
+            )
         node_contracts = compatibility_contract.get("nodes", [])
         if not isinstance(node_contracts, list):
-            raise WorkflowValidationError("workflow compatibility contract nodes must be a list")
-        migration_notes: list[dict[str, Any]] = metadata.setdefault("migration_notes", [])
+            raise WorkflowValidationError(
+                "workflow compatibility contract nodes must be a list"
+            )
+        migration_notes: list[dict[str, Any]] = metadata.setdefault(
+            "migration_notes", []
+        )
         node_actions: list[dict[str, Any]] = []
         nodes_requiring_canonical_writeback: list[str] = []
         for node_contract in node_contracts:
             if not isinstance(node_contract, dict):
-                raise WorkflowValidationError("workflow node compatibility contract must be a mapping")
+                raise WorkflowValidationError(
+                    "workflow node compatibility contract must be a mapping"
+                )
             node_action = self._build_node_saveback_action(node_contract)
             node_actions.append(node_action)
             if node_action["action"] != "keep":
@@ -935,7 +1038,9 @@ class WorkflowDefinitionMigrator:
         saveback_policy = {
             "schema_version": SCHEMA_VERSION_1_6,
             "target_schema_version": CURRENT_SCHEMA_VERSION,
-            "saveback_required": bool(metadata.get("resave_hint", {}).get("resave_recommended", False)),
+            "saveback_required": bool(
+                metadata.get("resave_hint", {}).get("resave_recommended", False)
+            ),
             "recommended_mode": (
                 "canonical_writeback"
                 if metadata.get("resave_hint", {}).get("resave_recommended", False)
@@ -948,7 +1053,9 @@ class WorkflowDefinitionMigrator:
                 "compatibility_contract",
                 "saveback_policy",
             ],
-            "nodes_requiring_canonical_writeback": sorted(nodes_requiring_canonical_writeback),
+            "nodes_requiring_canonical_writeback": sorted(
+                nodes_requiring_canonical_writeback
+            ),
             "node_actions": node_actions,
         }
         if metadata.get("saveback_policy") != saveback_policy:
@@ -971,14 +1078,20 @@ class WorkflowDefinitionMigrator:
             raise WorkflowValidationError("workflow saveback_policy must be a mapping")
         node_actions = saveback_policy.get("node_actions", [])
         if not isinstance(node_actions, list):
-            raise WorkflowValidationError("workflow saveback policy node_actions must be a list")
-        migration_notes: list[dict[str, Any]] = metadata.setdefault("migration_notes", [])
+            raise WorkflowValidationError(
+                "workflow saveback policy node_actions must be a list"
+            )
+        migration_notes: list[dict[str, Any]] = metadata.setdefault(
+            "migration_notes", []
+        )
         node_decisions: list[dict[str, Any]] = []
         required_node_ids: list[str] = []
         recommended_node_ids: list[str] = []
         for node_action in node_actions:
             if not isinstance(node_action, dict):
-                raise WorkflowValidationError("workflow saveback policy node action must be a mapping")
+                raise WorkflowValidationError(
+                    "workflow saveback policy node action must be a mapping"
+                )
             node_decision = self._build_node_saveback_decision(node_action)
             node_decisions.append(node_decision)
             if node_decision["severity"] == "required":
@@ -1027,17 +1140,25 @@ class WorkflowDefinitionMigrator:
             raise WorkflowValidationError("workflow metadata must be a mapping")
         saveback_decision = metadata.get("saveback_decision", {})
         if not isinstance(saveback_decision, dict):
-            raise WorkflowValidationError("workflow saveback_decision must be a mapping")
+            raise WorkflowValidationError(
+                "workflow saveback_decision must be a mapping"
+            )
         node_decisions = saveback_decision.get("node_decisions", [])
         if not isinstance(node_decisions, list):
-            raise WorkflowValidationError("workflow saveback decision node_decisions must be a list")
-        migration_notes: list[dict[str, Any]] = metadata.setdefault("migration_notes", [])
+            raise WorkflowValidationError(
+                "workflow saveback decision node_decisions must be a list"
+            )
+        migration_notes: list[dict[str, Any]] = metadata.setdefault(
+            "migration_notes", []
+        )
         node_plans: list[dict[str, Any]] = []
         auto_fixable_node_ids: list[str] = []
         manual_review_node_ids: list[str] = []
         for node_decision in node_decisions:
             if not isinstance(node_decision, dict):
-                raise WorkflowValidationError("workflow saveback decision node decision must be a mapping")
+                raise WorkflowValidationError(
+                    "workflow saveback decision node decision must be a mapping"
+                )
             node_plan = self._build_node_auto_fix_plan(node_decision)
             node_plans.append(node_plan)
             if node_plan["auto_fix"]:
@@ -1057,9 +1178,7 @@ class WorkflowDefinitionMigrator:
             "schema_version": SCHEMA_VERSION_1_8,
             "target_schema_version": CURRENT_SCHEMA_VERSION,
             "plan_mode": (
-                "batch_canonical_writeback"
-                if auto_fixable_node_ids
-                else "no_op"
+                "batch_canonical_writeback" if auto_fixable_node_ids else "no_op"
             ),
             "highest_severity": saveback_decision.get("highest_severity", "none"),
             "can_auto_fix": not manual_review_node_ids,
@@ -1098,14 +1217,20 @@ class WorkflowDefinitionMigrator:
             raise WorkflowValidationError("workflow auto_fix_plan must be a mapping")
         node_plans = auto_fix_plan.get("node_plans", [])
         if not isinstance(node_plans, list):
-            raise WorkflowValidationError("workflow auto_fix plan node_plans must be a list")
-        migration_notes: list[dict[str, Any]] = metadata.setdefault("migration_notes", [])
+            raise WorkflowValidationError(
+                "workflow auto_fix plan node_plans must be a list"
+            )
+        migration_notes: list[dict[str, Any]] = metadata.setdefault(
+            "migration_notes", []
+        )
         commit_entries: list[dict[str, Any]] = []
         confirm_before_persist_node_ids: list[str] = []
         review_before_persist_node_ids: list[str] = []
         for node_plan in node_plans:
             if not isinstance(node_plan, dict):
-                raise WorkflowValidationError("workflow auto fix plan node plan must be a mapping")
+                raise WorkflowValidationError(
+                    "workflow auto fix plan node plan must be a mapping"
+                )
             commit_entry = self._build_node_saveback_commit_entry(node_plan)
             commit_entries.append(commit_entry)
             if commit_entry["commit_mode"] == "confirm_before_persist":
@@ -1131,7 +1256,9 @@ class WorkflowDefinitionMigrator:
             "target_schema_version": CURRENT_SCHEMA_VERSION,
             "commit_barrier": commit_barrier,
             "requires_confirmation": bool(confirm_before_persist_node_ids),
-            "requires_review": bool(confirm_before_persist_node_ids or review_before_persist_node_ids),
+            "requires_review": bool(
+                confirm_before_persist_node_ids or review_before_persist_node_ids
+            ),
             "confirm_before_persist_node_ids": sorted(confirm_before_persist_node_ids),
             "review_before_persist_node_ids": sorted(review_before_persist_node_ids),
             "workflow_metadata_fields_to_persist": workflow_metadata_fields_to_persist,
@@ -1142,7 +1269,9 @@ class WorkflowDefinitionMigrator:
                 },
                 {
                     "step": "validate_before_persist",
-                    "node_ids": sorted(confirm_before_persist_node_ids + review_before_persist_node_ids),
+                    "node_ids": sorted(
+                        confirm_before_persist_node_ids + review_before_persist_node_ids
+                    ),
                 },
                 {
                     "step": "persist_workflow_definition",
@@ -1168,17 +1297,25 @@ class WorkflowDefinitionMigrator:
             raise WorkflowValidationError("workflow metadata must be a mapping")
         saveback_commit_plan = metadata.get("saveback_commit_plan", {})
         if not isinstance(saveback_commit_plan, dict):
-            raise WorkflowValidationError("workflow saveback_commit_plan must be a mapping")
+            raise WorkflowValidationError(
+                "workflow saveback_commit_plan must be a mapping"
+            )
         node_commits = saveback_commit_plan.get("node_commits", [])
         if not isinstance(node_commits, list):
-            raise WorkflowValidationError("workflow saveback commit plan node_commits must be a list")
-        migration_notes: list[dict[str, Any]] = metadata.setdefault("migration_notes", [])
+            raise WorkflowValidationError(
+                "workflow saveback commit plan node_commits must be a list"
+            )
+        migration_notes: list[dict[str, Any]] = metadata.setdefault(
+            "migration_notes", []
+        )
         node_audits: list[dict[str, Any]] = []
         confirmation_audit_node_ids: list[str] = []
         review_audit_node_ids: list[str] = []
         for node_commit in node_commits:
             if not isinstance(node_commit, dict):
-                raise WorkflowValidationError("workflow saveback commit node entry must be a mapping")
+                raise WorkflowValidationError(
+                    "workflow saveback commit node entry must be a mapping"
+                )
             node_audit = self._build_node_saveback_audit_entry(node_commit)
             node_audits.append(node_audit)
             if node_audit["confirmation_record_required"]:
@@ -1188,7 +1325,9 @@ class WorkflowDefinitionMigrator:
         workflow_metadata_fields_to_persist = list(
             dict.fromkeys(
                 [
-                    *saveback_commit_plan.get("workflow_metadata_fields_to_persist", []),
+                    *saveback_commit_plan.get(
+                        "workflow_metadata_fields_to_persist", []
+                    ),
                     "saveback_audit_plan",
                 ]
             )
@@ -1197,9 +1336,7 @@ class WorkflowDefinitionMigrator:
             "schema_version": SCHEMA_VERSION_1_10,
             "target_schema_version": CURRENT_SCHEMA_VERSION,
             "audit_mode": (
-                "persist_saveback_audit"
-                if node_audits
-                else "no_audit_required"
+                "persist_saveback_audit" if node_audits else "no_audit_required"
             ),
             "requires_audit_record": bool(node_audits),
             "confirmation_audit_node_ids": sorted(confirmation_audit_node_ids),
@@ -1255,17 +1392,25 @@ class WorkflowDefinitionMigrator:
             raise WorkflowValidationError("workflow metadata must be a mapping")
         saveback_audit_plan = metadata.get("saveback_audit_plan", {})
         if not isinstance(saveback_audit_plan, dict):
-            raise WorkflowValidationError("workflow saveback_audit_plan must be a mapping")
+            raise WorkflowValidationError(
+                "workflow saveback_audit_plan must be a mapping"
+            )
         node_audits = saveback_audit_plan.get("node_audits", [])
         if not isinstance(node_audits, list):
-            raise WorkflowValidationError("workflow saveback audit plan node_audits must be a list")
-        migration_notes: list[dict[str, Any]] = metadata.setdefault("migration_notes", [])
+            raise WorkflowValidationError(
+                "workflow saveback audit plan node_audits must be a list"
+            )
+        migration_notes: list[dict[str, Any]] = metadata.setdefault(
+            "migration_notes", []
+        )
         node_closures: list[dict[str, Any]] = []
         batch_writeback_node_ids: list[str] = []
         pending_closure_node_ids: list[str] = []
         for node_audit in node_audits:
             if not isinstance(node_audit, dict):
-                raise WorkflowValidationError("workflow saveback audit node entry must be a mapping")
+                raise WorkflowValidationError(
+                    "workflow saveback audit node entry must be a mapping"
+                )
             node_closure = self._build_node_saveback_closure_entry(node_audit)
             node_closures.append(node_closure)
             if node_closure["batch_writeback_eligible"]:
@@ -1335,11 +1480,17 @@ class WorkflowDefinitionMigrator:
             raise WorkflowValidationError("workflow metadata must be a mapping")
         saveback_closure_plan = metadata.get("saveback_closure_plan", {})
         if not isinstance(saveback_closure_plan, dict):
-            raise WorkflowValidationError("workflow saveback_closure_plan must be a mapping")
+            raise WorkflowValidationError(
+                "workflow saveback_closure_plan must be a mapping"
+            )
         node_closures = saveback_closure_plan.get("node_closures", [])
         if not isinstance(node_closures, list):
-            raise WorkflowValidationError("workflow saveback closure plan node_closures must be a list")
-        migration_notes: list[dict[str, Any]] = metadata.setdefault("migration_notes", [])
+            raise WorkflowValidationError(
+                "workflow saveback closure plan node_closures must be a list"
+            )
+        migration_notes: list[dict[str, Any]] = metadata.setdefault(
+            "migration_notes", []
+        )
         node_terminals: list[dict[str, Any]] = []
         terminal_writeback_node_ids: list[str] = []
         closed_terminal_node_ids: list[str] = []
@@ -1347,7 +1498,9 @@ class WorkflowDefinitionMigrator:
         recommended_terminal_node_ids: list[str] = []
         for node_closure in node_closures:
             if not isinstance(node_closure, dict):
-                raise WorkflowValidationError("workflow saveback closure node entry must be a mapping")
+                raise WorkflowValidationError(
+                    "workflow saveback closure node entry must be a mapping"
+                )
             node_terminal = self._build_node_saveback_terminal_entry(node_closure)
             node_terminals.append(node_terminal)
             if node_terminal["terminal_writeback_required"]:
@@ -1366,7 +1519,9 @@ class WorkflowDefinitionMigrator:
         workflow_metadata_fields_to_persist = list(
             dict.fromkeys(
                 [
-                    *saveback_closure_plan.get("workflow_metadata_fields_to_persist", []),
+                    *saveback_closure_plan.get(
+                        "workflow_metadata_fields_to_persist", []
+                    ),
                     "saveback_terminal_plan",
                 ]
             )
@@ -1395,7 +1550,9 @@ class WorkflowDefinitionMigrator:
             "schema_version": SCHEMA_VERSION_1_12,
             "target_schema_version": CURRENT_SCHEMA_VERSION,
             "terminal_mode": (
-                "writeback_audit_terminal_state" if node_terminals else "no_terminal_writeback"
+                "writeback_audit_terminal_state"
+                if node_terminals
+                else "no_terminal_writeback"
             ),
             "requires_terminal_writeback": bool(terminal_writeback_node_ids),
             "terminal_writeback_node_ids": sorted(terminal_writeback_node_ids),
@@ -1508,7 +1665,9 @@ class WorkflowDefinitionMigrator:
         return {
             "node_id": node_id,
             "node_type": node_type,
-            "canonical_node_version": node_metadata.get("canonical_node_version", "1.0.0"),
+            "canonical_node_version": node_metadata.get(
+                "canonical_node_version", "1.0.0"
+            ),
             "legacy_node_type": node_metadata.get("migrated_from_node_type"),
             "supported_parameter_aliases": supported_parameter_aliases,
             "applied_parameter_aliases": applied_parameter_aliases,
@@ -1604,7 +1763,9 @@ class WorkflowDefinitionMigrator:
             "severity": severity,
             "auto_fix": auto_fix,
             "manual_review": manual_review,
-            "editor_action": "apply_canonical_writeback" if auto_fix else "keep_current",
+            "editor_action": "apply_canonical_writeback"
+            if auto_fix
+            else "keep_current",
             "canonical_node_type": node_decision["canonical_node_type"],
             "legacy_node_type": node_decision.get("legacy_node_type"),
             "fields_to_drop": node_decision.get("fields_to_drop", []),
@@ -1629,7 +1790,8 @@ class WorkflowDefinitionMigrator:
             "node_id": node_plan["node_id"],
             "severity": severity,
             "commit_mode": commit_mode,
-            "persist_after_apply": bool(node_plan.get("auto_fix")) and not bool(node_plan.get("manual_review")),
+            "persist_after_apply": bool(node_plan.get("auto_fix"))
+            and not bool(node_plan.get("manual_review")),
             "review_required": severity in {"required", "recommended"},
             "canonical_node_type": node_plan["canonical_node_type"],
             "legacy_node_type": node_plan.get("legacy_node_type"),
@@ -1670,7 +1832,9 @@ class WorkflowDefinitionMigrator:
         }
 
     @staticmethod
-    def _build_node_saveback_closure_entry(node_audit: dict[str, Any]) -> dict[str, Any]:
+    def _build_node_saveback_closure_entry(
+        node_audit: dict[str, Any],
+    ) -> dict[str, Any]:
         audit_mode = node_audit.get("audit_mode", "no_receipt")
         closure_required = bool(node_audit.get("persist_audit_after_save"))
         closure_mode = "noop_closure"
@@ -1703,7 +1867,9 @@ class WorkflowDefinitionMigrator:
         }
 
     @staticmethod
-    def _build_node_saveback_terminal_entry(node_closure: dict[str, Any]) -> dict[str, Any]:
+    def _build_node_saveback_terminal_entry(
+        node_closure: dict[str, Any],
+    ) -> dict[str, Any]:
         closure_mode = node_closure.get("closure_mode", "noop_closure")
         severity = node_closure.get("severity", "none")
         terminal_state = "no_terminal_update"
@@ -1721,7 +1887,11 @@ class WorkflowDefinitionMigrator:
             if node_closure.get("closure_required")
             else "no_terminal_writeback_required"
         )
-        terminal_summary_fields = ["receipt_summary", "writeback_summary", "terminal_state"]
+        terminal_summary_fields = [
+            "receipt_summary",
+            "writeback_summary",
+            "terminal_state",
+        ]
         action = (
             "writeback_required"
             if node_closure.get("closure_required")
@@ -1730,10 +1900,18 @@ class WorkflowDefinitionMigrator:
         reasons = [
             reason
             for reason in [
-                "requires_confirmation_receipt" if closure_mode == "writeback_confirmation_receipt" else None,
-                "requires_review_receipt" if closure_mode == "writeback_review_receipt" else None,
-                "terminal_writeback_pending" if node_closure.get("closure_required") else None,
-                "writeback_can_be_deferred" if not node_closure.get("closure_required") else None,
+                "requires_confirmation_receipt"
+                if closure_mode == "writeback_confirmation_receipt"
+                else None,
+                "requires_review_receipt"
+                if closure_mode == "writeback_review_receipt"
+                else None,
+                "terminal_writeback_pending"
+                if node_closure.get("closure_required")
+                else None,
+                "writeback_can_be_deferred"
+                if not node_closure.get("closure_required")
+                else None,
             ]
             if reason is not None
         ]
@@ -1757,7 +1935,9 @@ class WorkflowDefinitionMigrator:
             "terminal_summary": response.summary.model_dump(),
             "terminal_state": terminal_state,
             "terminal_writeback_required": bool(node_closure.get("closure_required")),
-            "closed_after_terminal_writeback": bool(node_closure.get("close_after_writeback")),
+            "closed_after_terminal_writeback": bool(
+                node_closure.get("close_after_writeback")
+            ),
             "canonical_node_type": node_closure["canonical_node_type"],
             "legacy_node_type": node_closure.get("legacy_node_type"),
             "fields_to_drop": node_closure.get("fields_to_drop", []),
@@ -1774,7 +1954,9 @@ class WorkflowDefinitionMigrator:
         nodes = payload.get("nodes", [])
         if not isinstance(nodes, list):
             raise WorkflowValidationError("workflow nodes must be a list")
-        migration_notes: list[dict[str, Any]] = payload["metadata"].setdefault("migration_notes", [])
+        migration_notes: list[dict[str, Any]] = payload["metadata"].setdefault(
+            "migration_notes", []
+        )
         for node in nodes:
             if not isinstance(node, dict):
                 raise WorkflowValidationError("workflow node payload must be a mapping")
@@ -1783,7 +1965,9 @@ class WorkflowDefinitionMigrator:
                 raise WorkflowValidationError("workflow node payload missing node_type")
             node.setdefault("metadata", {})
             if not isinstance(node["metadata"], dict):
-                raise WorkflowValidationError("workflow node metadata must be a mapping")
+                raise WorkflowValidationError(
+                    "workflow node metadata must be a mapping"
+                )
 
             replaced_node_type = self._apply_legacy_node_mapping(node)
             if replaced_node_type is not None:
@@ -1837,7 +2021,9 @@ class WorkflowDefinitionMigrator:
                     }
                     for note in self._apply_parameter_migration_rules(
                         node,
-                        self._get_deprecated_replacement_parameter_rules(deprecated_replacement[0]),
+                        self._get_deprecated_replacement_parameter_rules(
+                            deprecated_replacement[0]
+                        ),
                     )
                 )
                 alias_notes = self._apply_canonical_parameter_aliases(node)
@@ -1868,13 +2054,17 @@ class WorkflowDefinitionMigrator:
             return None
         params = node.setdefault("params", {})
         if not isinstance(params, dict):
-            raise WorkflowValidationError(f"node {node.get('node_id')} params must be a mapping")
+            raise WorkflowValidationError(
+                f"node {node.get('node_id')} params must be a mapping"
+            )
         self._apply_alias_map(params, mapping.get("parameter_aliases", {}))
         node["metadata"]["migrated_from_node_type"] = node_type
         node["node_type"] = mapping["replacement_node_type"]
         return mapping["replacement_node_type"]
 
-    def _apply_deprecated_node_replacement(self, node: dict[str, Any]) -> tuple[str, str] | None:
+    def _apply_deprecated_node_replacement(
+        self, node: dict[str, Any]
+    ) -> tuple[str, str] | None:
         if self._registry is None:
             return None
         node_type = node["node_type"]
@@ -1885,7 +2075,9 @@ class WorkflowDefinitionMigrator:
         if not canonical.deprecated or not replacement_node_type:
             return None
         if not self._registry.has(replacement_node_type):
-            node["metadata"]["deprecated_replacement_unavailable"] = replacement_node_type
+            node["metadata"]["deprecated_replacement_unavailable"] = (
+                replacement_node_type
+            )
             return None
         node["metadata"].setdefault("migrated_from_node_type", node_type)
         node["metadata"]["replaced_deprecated_node_type"] = node_type
@@ -1907,7 +2099,9 @@ class WorkflowDefinitionMigrator:
             )
         return rules
 
-    def _apply_canonical_parameter_aliases(self, node: dict[str, Any]) -> list[tuple[str, str]]:
+    def _apply_canonical_parameter_aliases(
+        self, node: dict[str, Any]
+    ) -> list[tuple[str, str]]:
         if self._registry is None:
             return []
         node_type = node["node_type"]
@@ -1915,7 +2109,9 @@ class WorkflowDefinitionMigrator:
             return []
         params = node.setdefault("params", {})
         if not isinstance(params, dict):
-            raise WorkflowValidationError(f"node {node.get('node_id')} params must be a mapping")
+            raise WorkflowValidationError(
+                f"node {node.get('node_id')} params must be a mapping"
+            )
         canonical = self._registry.get(node_type).build_spec()
         alias_map = canonical.parameter_aliases or {}
         return self._apply_alias_map(params, alias_map)
@@ -1928,7 +2124,9 @@ class WorkflowDefinitionMigrator:
             return []
         params = node.setdefault("params", {})
         if not isinstance(params, dict):
-            raise WorkflowValidationError(f"node {node.get('node_id')} params must be a mapping")
+            raise WorkflowValidationError(
+                f"node {node.get('node_id')} params must be a mapping"
+            )
         canonical = self._registry.get(node_type).build_spec()
         applied: list[str] = []
         for field_name, default_value in canonical.params.items():
@@ -1947,7 +2145,9 @@ class WorkflowDefinitionMigrator:
             return []
         params = node.setdefault("params", {})
         if not isinstance(params, dict):
-            raise WorkflowValidationError(f"node {node.get('node_id')} params must be a mapping")
+            raise WorkflowValidationError(
+                f"node {node.get('node_id')} params must be a mapping"
+            )
         applied: list[dict[str, Any]] = []
         for rule in rules:
             if not isinstance(rule, dict):
@@ -1971,10 +2171,16 @@ class WorkflowDefinitionMigrator:
                     }
                 )
                 continue
-            if not isinstance(source_name, str) or not source_name or source_name not in params:
+            if (
+                not isinstance(source_name, str)
+                or not source_name
+                or source_name not in params
+            ):
                 continue
             transform = rule.get("transform", "identity")
-            params[target_name] = self._transform_parameter_value(params.pop(source_name), transform)
+            params[target_name] = self._transform_parameter_value(
+                params.pop(source_name), transform
+            )
             applied.append(
                 {
                     "from": source_name,
@@ -1998,10 +2204,14 @@ class WorkflowDefinitionMigrator:
             return str(value)
         if transform == "wrap_list":
             return [value]
-        raise WorkflowValidationError(f"unsupported parameter migration transform: {transform}")
+        raise WorkflowValidationError(
+            f"unsupported parameter migration transform: {transform}"
+        )
 
     @staticmethod
-    def _apply_alias_map(params: dict[str, Any], alias_map: dict[str, str]) -> list[tuple[str, str]]:
+    def _apply_alias_map(
+        params: dict[str, Any], alias_map: dict[str, str]
+    ) -> list[tuple[str, str]]:
         applied: list[tuple[str, str]] = []
         for alias_name, target_name in alias_map.items():
             if alias_name not in params or target_name in params:

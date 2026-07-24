@@ -13,6 +13,7 @@ describe('map-canvas-teardown-binder', () => {
       mapCanvasRuntimeModule: { dispose: vi.fn() },
       hotspotPinsModule: { dispose: vi.fn() },
       weatherOverlayModule: { dispose: vi.fn() },
+      nonWeatherLayerSyncModule: { dispose: vi.fn() },
       map: { remove: vi.fn() },
     }
     const clearResources = vi.fn()
@@ -31,32 +32,8 @@ describe('map-canvas-teardown-binder', () => {
     expect(resources.mapCanvasRuntimeModule.dispose).toHaveBeenCalledTimes(1)
     expect(resources.hotspotPinsModule.dispose).toHaveBeenCalledTimes(1)
     expect(resources.weatherOverlayModule.dispose).toHaveBeenCalledTimes(1)
+    expect(resources.nonWeatherLayerSyncModule.dispose).toHaveBeenCalledTimes(1)
     expect(resources.map.remove).toHaveBeenCalledTimes(1)
-    expect(clearResources).toHaveBeenCalledTimes(1)
-  })
-
-  it('disposes overlay image module when provided', () => {
-    const overlayImageModule = { dispose: vi.fn() }
-    const clearResources = vi.fn()
-    const binder = createMapCanvasTeardownBinder({
-      getResources: () => ({
-        mapStagePresentationModule: null,
-        basemapModule: null,
-        adminBoundaryModule: null,
-        selectedLayerFocusModule: null,
-        mapInteractionModule: null,
-        mapCanvasRuntimeModule: null,
-        hotspotPinsModule: null,
-        weatherOverlayModule: null,
-        map: null,
-      }),
-      clearResources,
-      getOverlayImageModule: () => overlayImageModule,
-    })
-
-    binder.dispose()
-
-    expect(overlayImageModule.dispose).toHaveBeenCalledTimes(1)
     expect(clearResources).toHaveBeenCalledTimes(1)
   })
 
@@ -72,6 +49,7 @@ describe('map-canvas-teardown-binder', () => {
         mapCanvasRuntimeModule: null,
         hotspotPinsModule: null,
         weatherOverlayModule: null,
+        nonWeatherLayerSyncModule: null,
         map: null,
       }),
       clearResources,

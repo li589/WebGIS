@@ -23,16 +23,20 @@ def execute_download_follow_up_task(*, task_data: dict[str, Any]) -> None:
         logger.info("Download follow-up task started")
         run = repository.get_run(run_id)
         if run is None:
-            raise ValueError(f"Workflow run not found for download follow-up task: {run_id}")
+            raise ValueError(
+                f"Workflow run not found for download follow-up task: {run_id}"
+            )
         updated_at = datetime.now(timezone.utc)
-        result_refs, diagnostics, task_report = download_service.complete_follow_up_task(
-            run_id=run_id,
-            result_refs=run.result_refs,
-            task_data=task_data,
-            cache_key=str(task_data["cache_key"]),
-            summary_result_id=str(task_data["summary_result_id"]),
-            manifest_result_id=str(task_data["manifest_result_id"]),
-            updated_at=updated_at,
+        result_refs, diagnostics, task_report = (
+            download_service.complete_follow_up_task(
+                run_id=run_id,
+                result_refs=run.result_refs,
+                task_data=task_data,
+                cache_key=str(task_data["cache_key"]),
+                summary_result_id=str(task_data["summary_result_id"]),
+                manifest_result_id=str(task_data["manifest_result_id"]),
+                updated_at=updated_at,
+            )
         )
         run.result_refs = result_refs
         run.diagnostics = [*run.diagnostics, *diagnostics]
@@ -82,12 +86,18 @@ if celery_available and celery_app is not None:
 else:
 
     def process_download_follow_up_task(task_data: dict[str, Any]) -> None:
-        raise RuntimeError("Celery is not installed. Install backend dependencies before using celery executor.")
+        raise RuntimeError(
+            "Celery is not installed. Install backend dependencies before using celery executor."
+        )
 
 
-def dispatch_download_follow_up_task(*, task_data: dict[str, Any], queue_name: str, priority: int) -> str:
+def dispatch_download_follow_up_task(
+    *, task_data: dict[str, Any], queue_name: str, priority: int
+) -> str:
     if not celery_available or celery_app is None:
-        raise RuntimeError("Celery is not installed. Install backend dependencies before using celery executor.")
+        raise RuntimeError(
+            "Celery is not installed. Install backend dependencies before using celery executor."
+        )
     async_result = process_download_follow_up_task.apply_async(
         kwargs={"task_data": task_data},
         queue=queue_name,

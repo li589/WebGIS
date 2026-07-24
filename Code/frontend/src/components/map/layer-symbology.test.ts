@@ -28,11 +28,13 @@ describe('layer-symbology', () => {
   })
 
   it('resolveEffectivePalette prefers override', () => {
-    expect(resolveEffectivePalette({
-      paletteOverride: 'blues',
-      renderHintPalette: 'wind-blue',
-      overlayMetaPalette: 'viridis',
-    })).toBe('blues')
+    expect(
+      resolveEffectivePalette({
+        paletteOverride: 'blues',
+        renderHintPalette: 'wind-blue',
+        overlayMetaPalette: 'viridis',
+      }),
+    ).toBe('blues')
   })
 
   it('builds overlay legend hint when palette present', () => {
@@ -71,12 +73,16 @@ describe('layer-symbology', () => {
   })
 
   it('hides symbology for imported / admin layers', () => {
-    expect(hasRenderableSymbology({
-      isImported: true,
-      renderHint: { palette: 'wind-blue' } as any,
-    })).toBe(false)
-    expect(hasRenderableSymbology({
-      renderHint: { palette: 'wind-blue' } as any,
-    })).toBe(true)
+    expect(
+      hasRenderableSymbology({
+        isImported: true,
+        renderHint: { palette: 'wind-blue' } as any,
+      }),
+    ).toBe(false)
+    expect(
+      hasRenderableSymbology({
+        renderHint: { palette: 'wind-blue' } as any,
+      }),
+    ).toBe(true)
   })
 })

@@ -38,7 +38,9 @@ def _store_manifest(
 
 
 def _resolve_fy_input_dir(datasource_selection: dict[str, object]) -> Path:
-    prepared_dir = resolve_prepared_local_directory(datasource_selection, ("FY_MWRI_HDF",))
+    prepared_dir = resolve_prepared_local_directory(
+        datasource_selection, ("FY_MWRI_HDF",)
+    )
     if prepared_dir is not None:
         return prepared_dir
     input_dir = datasource_selection.get("input_dir")
@@ -50,22 +52,42 @@ def _resolve_fy_input_dir(datasource_selection: dict[str, object]) -> Path:
 @register_module_decorator(name="fy_daily", aliases=["fy_daily_pipeline"])
 class FyDailyModule(BaseModule):
     name = "fy_daily"
-    description = "Native module that builds FY daily plans and optional execution products."
+    description = (
+        "Native module that builds FY daily plans and optional execution products."
+    )
     input_ports = [
-        PortSpec(name="datasource_selection", kind="config", data_class="dict", required=False),
-        PortSpec(name="algorithm_params", kind="config", data_class="dict", required=False),
-        PortSpec(name="output_spec_extra", kind="config", data_class="dict", required=False),
+        PortSpec(
+            name="datasource_selection",
+            kind="config",
+            data_class="dict",
+            required=False,
+        ),
+        PortSpec(
+            name="algorithm_params", kind="config", data_class="dict", required=False
+        ),
+        PortSpec(
+            name="output_spec_extra", kind="config", data_class="dict", required=False
+        ),
     ]
-    output_ports = [PortSpec(name="manifest", kind="artifact", data_class="product_manifest")]
+    output_ports = [
+        PortSpec(name="manifest", kind="artifact", data_class="product_manifest")
+    ]
 
-    def execute(self, inputs: dict[str, object], params: dict[str, object], ctx: NodeExecutionContext) -> dict[str, object]:
+    def execute(
+        self,
+        inputs: dict[str, object],
+        params: dict[str, object],
+        ctx: NodeExecutionContext,
+    ) -> dict[str, object]:
         _ = params
         datasource_selection = dict(inputs.get("datasource_selection", {}))
         algorithm_params = dict(inputs.get("algorithm_params", {}))
         output_spec_extra = dict(inputs.get("output_spec_extra", {}))
 
         input_dir = _resolve_fy_input_dir(datasource_selection)
-        output_root = Path(output_spec_extra.get("output_dir", ctx.workspace / "products" / "fy_daily"))
+        output_root = Path(
+            output_spec_extra.get("output_dir", ctx.workspace / "products" / "fy_daily")
+        )
         orbit_mode = algorithm_params.get("orbit_mode", "MWRID")
         band_ids = tuple(algorithm_params.get("band_ids", [1, 2]))
         overlap_option = algorithm_params.get("overlap_option", "average")
@@ -74,7 +96,9 @@ class FyDailyModule(BaseModule):
         execute_commands = bool(algorithm_params.get("execute_commands", False))
 
         if ctx.logger_adapter is not None:
-            ctx.logger_adapter.emit_stage_start("fy_plan", f"Build FY daily job plan from {input_dir}")
+            ctx.logger_adapter.emit_stage_start(
+                "fy_plan", f"Build FY daily job plan from {input_dir}"
+            )
 
         plans = build_fy_daily_job_plans(
             input_dir=input_dir,
@@ -84,13 +108,17 @@ class FyDailyModule(BaseModule):
             orbit_mode=orbit_mode,
         )
         if not plans:
-            raise FileNotFoundError("No FY daily jobs found in the requested date range")
+            raise FileNotFoundError(
+                "No FY daily jobs found in the requested date range"
+            )
 
         for plan in plans:
             Path(plan.output_dir).mkdir(parents=True, exist_ok=True)
             Path(plan.work_dir).mkdir(parents=True, exist_ok=True)
 
-        plan_json_path = write_fy_daily_plan_json(plans, output_root / "fy_daily_plan.json")
+        plan_json_path = write_fy_daily_plan_json(
+            plans, output_root / "fy_daily_plan.json"
+        )
         command_plan_refs: list[ProductRef] = []
         for plan in plans:
             command_steps = build_fy_daily_command_steps(
@@ -116,15 +144,23 @@ class FyDailyModule(BaseModule):
                 )
             )
             if ctx.logger_adapter is not None:
-                ctx.logger_adapter.emit_artifact("fy_plan", str(command_plan_path), "fy_daily_command_plan")
+                ctx.logger_adapter.emit_artifact(
+                    "fy_plan", str(command_plan_path), "fy_daily_command_plan"
+                )
 
-        data_product_refs = self._build_fy_data_products(plans, output_root, execute_commands=execute_commands)
+        data_product_refs = self._build_fy_data_products(
+            plans, output_root, execute_commands=execute_commands
+        )
 
         if ctx.logger_adapter is not None:
-            ctx.logger_adapter.emit_artifact("fy_plan", str(plan_json_path), "fy_daily_plan_json")
+            ctx.logger_adapter.emit_artifact(
+                "fy_plan", str(plan_json_path), "fy_daily_plan_json"
+            )
             for product in data_product_refs:
                 ctx.logger_adapter.emit_artifact("fy_plan", product.uri, product.type)
-            ctx.logger_adapter.emit_stage_end("fy_plan", f"Generated {len(plans)} FY daily job plans")
+            ctx.logger_adapter.emit_stage_end(
+                "fy_plan", f"Generated {len(plans)} FY daily job plans"
+            )
 
         product_refs = [
             ProductRef(
@@ -139,7 +175,11 @@ class FyDailyModule(BaseModule):
         product_refs.extend(command_plan_refs)
         product_refs.extend(data_product_refs)
 
-        main_layers = ["TBv", "TBh", "IA"] if any(product.type == "fy_daily_mat" for product in data_product_refs) else []
+        main_layers = (
+            ["TBv", "TBh", "IA"]
+            if any(product.type == "fy_daily_mat" for product in data_product_refs)
+            else []
+        )
         manifest = ProductManifest(
             job_id=ctx.request.job_id,
             run_id=ctx.runtime_context.run_id,
@@ -156,7 +196,12 @@ class FyDailyModule(BaseModule):
                 "artifact_mode": "data_products" if main_layers else "plan_only",
             },
         )
-        return _store_manifest(ctx, module_name=self.name, manifest=manifest, metadata={"product_count": len(product_refs)})
+        return _store_manifest(
+            ctx,
+            module_name=self.name,
+            manifest=manifest,
+            metadata={"product_count": len(product_refs)},
+        )
 
     def _build_fy_data_products(
         self,
@@ -183,7 +228,11 @@ class FyDailyModule(BaseModule):
                     type="fy_daily_tif",
                     uri=str(tif_path),
                     variable="TBv,TBh,IA",
-                    tags={"date_key": plan.date_key, "orbit_type": plan.orbit_type, "satellite": plan.satellite},
+                    tags={
+                        "date_key": plan.date_key,
+                        "orbit_type": plan.orbit_type,
+                        "satellite": plan.satellite,
+                    },
                 )
             )
             payload = _load_fy_multiband_payload(tif_path, satellite=plan.satellite)
@@ -195,7 +244,11 @@ class FyDailyModule(BaseModule):
                     type="fy_daily_mat",
                     uri=str(mat_path),
                     variable="TBv,TBh,IA",
-                    tags={"date_key": plan.date_key, "orbit_type": plan.orbit_type, "satellite": plan.satellite},
+                    tags={
+                        "date_key": plan.date_key,
+                        "orbit_type": plan.orbit_type,
+                        "satellite": plan.satellite,
+                    },
                 )
             )
         return data_products
@@ -208,7 +261,9 @@ def _load_fy_multiband_payload(tif_path: Path, *, satellite: str) -> dict[str, o
     profile = get_fy_profile(satellite)
     with rasterio.open(tif_path) as dataset:
         if dataset.count < 3:
-            raise ValueError(f"FY multiband output must contain at least 3 bands: {tif_path}")
+            raise ValueError(
+                f"FY multiband output must contain at least 3 bands: {tif_path}"
+            )
         tbv = dataset.read(1).astype(np.float64)
         tbh = dataset.read(2).astype(np.float64)
         ia = dataset.read(3).astype(np.float64)

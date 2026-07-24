@@ -1,6 +1,7 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 """验证 /layers 接口返回新增的 10 个图层。"""
+
 import sys
 import urllib.request
 import json
@@ -10,9 +11,16 @@ sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 BASE = "http://localhost:8000"
 
 NEW_LAYERS = {
-    "gebco-dem-cn", "cmfd-precip-cn", "clcd-cn", "biomass-cn",
-    "era5-dwaa-cn", "era5-wdaa-cn", "co2-cn", "soil-ddca",
-    "omega-fy-output", "forest-ratio",
+    "gebco-dem-cn",
+    "cmfd-precip-cn",
+    "clcd-cn",
+    "biomass-cn",
+    "era5-dwaa-cn",
+    "era5-wdaa-cn",
+    "co2-cn",
+    "soil-ddca",
+    "omega-fy-output",
+    "forest-ratio",
 }
 
 try:
@@ -36,8 +44,10 @@ print("New layers in /layers:")
 for lid in sorted(NEW_LAYERS):
     item = next((i for i in items if i.get("layer_id") == lid), None)
     if item:
-        print(f"  [OK] {lid:20s} name='{item.get('display_name', '?')}' "
-              f"category='{item.get('category', '?')}' status='{item.get('status', '?')}'")
+        print(
+            f"  [OK] {lid:20s} name='{item.get('display_name', '?')}' "
+            f"category='{item.get('category', '?')}' status='{item.get('status', '?')}'"
+        )
     else:
         print(f"  [MISSING] {lid}")
 
@@ -46,7 +56,7 @@ if missing:
     print(f"\n[FAIL] Missing: {sorted(missing)}")
     sys.exit(2)
 else:
-    print(f"\n[OK] All 10 new layers present in /layers")
+    print("\n[OK] All 10 new layers present in /layers")
 
 # Also check /overlays
 try:

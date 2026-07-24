@@ -1,4 +1,5 @@
 """Station-01: ISMN and CASMOS produce both daily.mat and am6.mat products."""
+
 from __future__ import annotations
 
 import tempfile
@@ -7,8 +8,6 @@ from datetime import datetime
 from pathlib import Path
 from unittest.mock import patch
 
-import numpy as np
-from scipy.io import savemat
 
 from contracts.job import JobRequest
 from contracts.product import OutputSpec
@@ -53,7 +52,9 @@ class StationDualOutputTests(unittest.TestCase):
                 job_id="station-dual",
                 pipeline_name="station_daily_pipeline",
                 task_type="extract",
-                time_range=TimeRange(start=datetime(2020, 1, 1), end=datetime(2020, 1, 10)),
+                time_range=TimeRange(
+                    start=datetime(2020, 1, 1), end=datetime(2020, 1, 10)
+                ),
                 region=RegionSpec(kind="global", value={}),
                 datasource_selection={"input_dir": str(root)},
                 algorithm_params={
@@ -80,8 +81,14 @@ class StationDualOutputTests(unittest.TestCase):
             stm_file.write_text("", encoding="utf-8")
 
             # Intercept both file discovery and parsing so the pipeline receives the mock records
-            with patch("pipelines.station_products.discover_ismn_stm_files", return_value=[stm_file]):
-                with patch("pipelines.station_products.parse_ismn_stm_file", return_value=records):
+            with patch(
+                "pipelines.station_products.discover_ismn_stm_files",
+                return_value=[stm_file],
+            ):
+                with patch(
+                    "pipelines.station_products.parse_ismn_stm_file",
+                    return_value=records,
+                ):
                     manifest = pipeline.execute(request, ctx)
 
             product_types = {p.type for p in manifest.products}
@@ -138,7 +145,9 @@ class StationDualOutputTests(unittest.TestCase):
                 job_id="cosmos-dual",
                 pipeline_name="station_daily_pipeline",
                 task_type="extract",
-                time_range=TimeRange(start=datetime(2020, 1, 1), end=datetime(2020, 1, 10)),
+                time_range=TimeRange(
+                    start=datetime(2020, 1, 1), end=datetime(2020, 1, 10)
+                ),
                 region=RegionSpec(kind="global", value={}),
                 datasource_selection={"input_dir": str(root)},
                 algorithm_params={
@@ -162,8 +171,14 @@ class StationDualOutputTests(unittest.TestCase):
             txt_file.write_text("", encoding="utf-8")
 
             # Intercept file discovery and parsing with pre-built records
-            with patch("pipelines.station_products.discover_casmos_txt_files", return_value=[txt_file]):
-                with patch("pipelines.station_products.parse_casmos_txt_file", return_value=records):
+            with patch(
+                "pipelines.station_products.discover_casmos_txt_files",
+                return_value=[txt_file],
+            ):
+                with patch(
+                    "pipelines.station_products.parse_casmos_txt_file",
+                    return_value=records,
+                ):
                     manifest = pipeline.execute(request, ctx)
 
             product_types = {p.type for p in manifest.products}

@@ -51,6 +51,7 @@ interface CreateWeatherOverlayFacadeOptions {
   resolver: WeatherOverlayResolver
   getEnabledParticleFlowCatalogId: () => string | null
   getWindDisplayMode?: () => WindDisplayMode
+  getSmoothRendering?: () => boolean
   debugLog: DebugLogger
   debounceMs?: number
   dependencies?: WeatherOverlayFacadeDependencies
@@ -65,14 +66,16 @@ export interface WeatherOverlayFacade {
 export function createWeatherOverlayFacade(
   options: CreateWeatherOverlayFacadeOptions,
 ): WeatherOverlayFacade {
-  const createWindParticleControllerImpl = options.dependencies?.createWindParticleController
-    ?? createDefaultWindParticleController
-  const createScalarFieldControllerImpl = options.dependencies?.createScalarFieldController
-    ?? ((map: MapInstance) => new ScalarFieldWebGLController(map))
+  const createWindParticleControllerImpl =
+    options.dependencies?.createWindParticleController ?? createDefaultWindParticleController
+  const createScalarFieldControllerImpl =
+    options.dependencies?.createScalarFieldController ??
+    ((map: MapInstance) => new ScalarFieldWebGLController(map))
   const createSessionImpl = options.dependencies?.createSession ?? createWeatherOverlaySession
-  const createSchedulerImpl = options.dependencies?.createScheduler ?? createWeatherOverlaySyncScheduler
-  const createRuntimeOrchestratorImpl = options.dependencies?.createRuntimeOrchestrator
-    ?? createWeatherOverlayRuntimeOrchestrator
+  const createSchedulerImpl =
+    options.dependencies?.createScheduler ?? createWeatherOverlaySyncScheduler
+  const createRuntimeOrchestratorImpl =
+    options.dependencies?.createRuntimeOrchestrator ?? createWeatherOverlayRuntimeOrchestrator
 
   const windParticleController = createWindParticleControllerImpl(options.map)
   const scalarFieldController = createScalarFieldControllerImpl(options.map)
@@ -95,6 +98,7 @@ export function createWeatherOverlayFacade(
     scalarFieldController,
     getEnabledParticleFlowCatalogId: options.getEnabledParticleFlowCatalogId,
     getWindDisplayMode: options.getWindDisplayMode,
+    getSmoothRendering: options.getSmoothRendering,
     getSyncWeatherToken: weatherOverlaySyncScheduler.getCurrentToken,
     debugLog: options.debugLog,
   })

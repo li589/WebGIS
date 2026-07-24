@@ -3,6 +3,7 @@
 注意：``lab_output`` 是样板/兼容入口（sample），不是生产算法主叙事。
 正式计算应走 ``algorithms/providers/Python`` 的 python_provider bridge。
 """
+
 from __future__ import annotations
 
 from algorithms.providers.base import AlgorithmProvider

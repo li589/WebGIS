@@ -23,11 +23,15 @@ router = APIRouter()
     response_model=RuntimeConfigUpdateResponse,
     dependencies=[Depends(require_write_access)],
 )
-def update_runtime_config(payload: RuntimeConfigUpdateRequest) -> RuntimeConfigUpdateResponse:
+def update_runtime_config(
+    payload: RuntimeConfigUpdateRequest,
+) -> RuntimeConfigUpdateResponse:
     try:
         return runtime_status_service.update_runtime_config(payload)
     except ValueError as exc:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)
+        ) from exc
 
 
 @router.get("/runtime/config", tags=["runtime"])
@@ -49,6 +53,7 @@ def get_runtime_metrics(date: str | None = None) -> dict:
         date: YYYY-MM-DD 格式日期，默认当天（UTC）。
     """
     from app.core.redis_client import get_metrics_summary
+
     return get_metrics_summary(date)
 
 
@@ -78,7 +83,6 @@ def submit_frontend_command(payload: FrontendCommandRequest) -> FrontendCommandR
 @router.get("/runtime/api-config", tags=["runtime"])
 def get_api_config_status() -> JSONResponse:
     """返回所有 API 配置状态，供前端判断可用数据源。"""
-    configs = api_config_manager.get_all_configs()
     serializable_configs = api_config_manager.get_all_configs_serializable()
     return JSONResponse(content=serializable_configs)
 
@@ -89,10 +93,16 @@ def get_provider_api_config(provider: str) -> JSONResponse:
     try:
         api_provider = ApiProvider(provider)
     except ValueError:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Unknown provider: {provider}")
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Unknown provider: {provider}",
+        )
     config = api_config_manager.get_config(api_provider)
     if config is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Config not found for provider: {provider}")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Config not found for provider: {provider}",
+        )
     serializable_config = api_config_manager.get_config_serializable(api_provider)
     return JSONResponse(content=serializable_config)
 
@@ -121,17 +131,25 @@ def get_best_available_api(provider: str) -> JSONResponse:
     try:
         data_type = DataType(provider)
     except ValueError:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Unknown data type: {provider}")
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Unknown data type: {provider}",
+        )
     best = api_config_manager.get_best_available(required_capabilities={data_type})
     if best is None:
-        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=f"No available API provider for data type: {provider}")
-    return JSONResponse(content={
-        "provider": best.provider.value,
-        "name": best.name,
-        "endpoint_url": best.endpoint.url,
-        "capabilities": [c.value for c in best.endpoint.capabilities],
-        "priority": best.priority,
-    })
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=f"No available API provider for data type: {provider}",
+        )
+    return JSONResponse(
+        content={
+            "provider": best.provider.value,
+            "name": best.name,
+            "endpoint_url": best.endpoint.url,
+            "capabilities": [c.value for c in best.endpoint.capabilities],
+            "priority": best.priority,
+        }
+    )
 
 
 # ---------------- 底图瓦片管理（原 /tiles/providers、/tiles/cache/*）----------------
@@ -148,11 +166,15 @@ class TileProvidersResponse(BaseModel):
     providers: list[TileProviderInfo]
 
 
-@router.get("/runtime/tiles/providers", tags=["runtime"], response_model=TileProvidersResponse)
+@router.get(
+    "/runtime/tiles/providers", tags=["runtime"], response_model=TileProvidersResponse
+)
 def list_runtime_tile_providers() -> TileProvidersResponse:
     """列出可用底图代理提供商（管理面，像素请求请走 /unified-tiles）。"""
     providers = tile_proxy_service.get_available_providers()
-    return TileProvidersResponse(providers=[TileProviderInfo(**item) for item in providers])
+    return TileProvidersResponse(
+        providers=[TileProviderInfo(**item) for item in providers]
+    )
 
 
 @router.get("/runtime/tiles/cache/stats", tags=["runtime"])

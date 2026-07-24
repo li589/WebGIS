@@ -44,10 +44,7 @@ function extractPointCoord(feature: WindGeoJSONFeature): [number, number] | null
   return [lon, lat]
 }
 
-function buildDedupKey(
-  feature: WindGeoJSONFeature,
-  quantizeFactor: number,
-): string | null {
+function buildDedupKey(feature: WindGeoJSONFeature, quantizeFactor: number): string | null {
   const coord = extractPointCoord(feature)
   if (!coord) return null
   const [lon, lat] = coord

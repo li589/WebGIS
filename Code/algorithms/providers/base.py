@@ -44,5 +44,4 @@ class AlgorithmProvider(Protocol):
     provider_key: str
     supported_layers: tuple[str, ...]
 
-    def execute(self, payload: ProviderExecutionPayload) -> ProviderExecutionResult:
-        ...
+    def execute(self, payload: ProviderExecutionPayload) -> ProviderExecutionResult: ...

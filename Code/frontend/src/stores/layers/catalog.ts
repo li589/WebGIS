@@ -288,7 +288,8 @@ const SOURCE_LANDSAT: LayerSource = {
 const SOURCE_LAB: LayerSource = {
   id: 'lab-model',
   name: 'SMAP/Omega 交叉分析数据（2023-01）',
-  description: '中国区域 SMAP L3 土壤湿度与 Omega 反演产品多源交叉分析数据集，含 14 天 SM 均值、Omega 反演、IGBP 分区统计。',
+  description:
+    '中国区域 SMAP L3 土壤湿度与 Omega 反演产品多源交叉分析数据集，含 14 天 SM 均值、Omega 反演、IGBP 分区统计。',
   urlTemplate: '',
   needsAuth: false,
   needsBackendTransform: false,
@@ -343,7 +344,8 @@ const SOURCE_ARIDITY_CN: LayerSource = {
 const SOURCE_OMEGA: LayerSource = {
   id: 'omega-output',
   name: 'Omega 植被光学厚度反演（doy 017-030 时间序列）',
-  description: 'SMAP Omega 植被光学厚度反演结果（全球 EASE-Grid 9km，doy 017-030 多年均值时间序列，14 天）。',
+  description:
+    'SMAP Omega 植被光学厚度反演结果（全球 EASE-Grid 9km，doy 017-030 多年均值时间序列，14 天）。',
   urlTemplate: '',
   needsAuth: false,
   needsBackendTransform: false,
@@ -455,7 +457,8 @@ const SOURCE_CO2_CN: LayerSource = {
 const SOURCE_SOIL_DDCA: LayerSource = {
   id: 'soil-ddca',
   name: '土壤生态 DDCA（2015-2022 时间序列）',
-  description: '中国 9km 土壤生态数据集 DDCA 产品（变量 DH，2015-04-01 至 2022-12-31 时间序列，采样 60 个时间点）。',
+  description:
+    '中国 9km 土壤生态数据集 DDCA 产品（变量 DH，2015-04-01 至 2022-12-31 时间序列，采样 60 个时间点）。',
   urlTemplate: '',
   needsAuth: false,
   needsBackendTransform: false,
@@ -478,7 +481,8 @@ const SOURCE_OMEGA_FY_OUTPUT: LayerSource = {
 const SOURCE_LANDSCAPE_METRICS: LayerSource = {
   id: 'landscape-metrics-9km',
   name: '景观多样性指数 SHDI（9km，2020）',
-  description: '全球 9km 景观格局指数（Shannon 多样性指数 SHDI），基于 EASE-Grid 9km 与 IGBP 土地覆盖派生。',
+  description:
+    '全球 9km 景观格局指数（Shannon 多样性指数 SHDI），基于 EASE-Grid 9km 与 IGBP 土地覆盖派生。',
   urlTemplate: '',
   needsAuth: false,
   needsBackendTransform: false,
@@ -501,7 +505,8 @@ const SOURCE_FOREST_RATIO: LayerSource = {
 const SOURCE_VOD_DEC2025: LayerSource = {
   id: 'vod-dec2025',
   name: 'VOD 植被光学厚度（2025-12）',
-  description: 'SMAP 植被光学厚度 VOD 反演结果（2025-12-01 至 2025-12-31 时间序列，31 天，EASE-Grid 9km）。',
+  description:
+    'SMAP 植被光学厚度 VOD 反演结果（2025-12-01 至 2025-12-31 时间序列，31 天，EASE-Grid 9km）。',
   urlTemplate: '',
   needsAuth: false,
   needsBackendTransform: false,
@@ -512,7 +517,8 @@ const SOURCE_VOD_DEC2025: LayerSource = {
 const SOURCE_SM_DEC2025: LayerSource = {
   id: 'sm-dec2025',
   name: 'SM 土壤湿度（2025-12）',
-  description: 'SMAP 土壤湿度 SM 反演结果（2025-12-01 至 2025-12-31 时间序列，31 天，EASE-Grid 9km）。',
+  description:
+    'SMAP 土壤湿度 SM 反演结果（2025-12-01 至 2025-12-31 时间序列，31 天，EASE-Grid 9km）。',
   urlTemplate: '',
   needsAuth: false,
   needsBackendTransform: false,
@@ -523,7 +529,74 @@ const SOURCE_SM_DEC2025: LayerSource = {
 const SOURCE_OMEGA_DEC2025: LayerSource = {
   id: 'omega-dec2025',
   name: 'Omega 反演（2025-12）',
-  description: 'SMAP Omega 植被光学厚度反演结果（2025-12-01 至 2025-12-31 时间序列，31 天，EASE-Grid 9km）；与 omega-output（doy 017-030 多年均值）互补。',
+  description:
+    'SMAP Omega 植被光学厚度反演结果（2025-12-01 至 2025-12-31 时间序列，31 天，EASE-Grid 9km）；与 omega-output（doy 017-030 多年均值）互补。',
+  urlTemplate: '',
+  needsAuth: false,
+  needsBackendTransform: false,
+  coordSys: 'EPSG:4326',
+  updateFrequency: '每日更新',
+}
+
+const SOURCE_FY_MWRI: LayerSource = {
+  id: 'fy-mwri',
+  name: 'FY-3 MWRI 亮温',
+  description: '风云三号 MWRI 微波成像仪多波段亮温产品（10V/10H/18V/18H/23V/36V/36H/89V/89H）。',
+  urlTemplate: '',
+  needsAuth: false,
+  needsBackendTransform: false,
+  coordSys: 'EPSG:4326',
+  updateFrequency: '每日更新',
+}
+
+const SOURCE_STATION_SOIL: LayerSource = {
+  id: 'station-soil',
+  name: 'ISMN/CASMOS 站点土壤湿度',
+  description: 'ISMN/CASMOS 站点逐日土壤湿度观测，用于算法验证与产品订正。',
+  urlTemplate: '',
+  needsAuth: false,
+  needsBackendTransform: false,
+  coordSys: 'EPSG:4326',
+  updateFrequency: '每日更新',
+}
+
+const SOURCE_INVERSION_DAILY: LayerSource = {
+  id: 'inversion-daily',
+  name: '单日微波反演',
+  description: '单日微波反演产品，含土壤湿度(SM)、植被光学厚度(VOD)与反演诊断量(DH)。',
+  urlTemplate: '',
+  needsAuth: false,
+  needsBackendTransform: false,
+  coordSys: 'EPSG:4326',
+  updateFrequency: '每日更新',
+}
+
+const SOURCE_BLOCK_INVERSION: LayerSource = {
+  id: 'block-inversion',
+  name: '时间序列块反演',
+  description: '时间序列块反演产品，含 DH/SM/VOD/Tau_ini 多变量时间序列矩阵。',
+  urlTemplate: '',
+  needsAuth: false,
+  needsBackendTransform: false,
+  coordSys: 'EPSG:4326',
+  updateFrequency: '每日更新',
+}
+
+const SOURCE_OMEGA_BLOCK: LayerSource = {
+  id: 'omega-block',
+  name: 'OMEGA 块反演',
+  description: 'OMEGA 算法块反演产品，含 OMEGA/SM_RET/VOD_RET/Tau_star 多变量反演矩阵。',
+  urlTemplate: '',
+  needsAuth: false,
+  needsBackendTransform: false,
+  coordSys: 'EPSG:4326',
+  updateFrequency: '每日更新',
+}
+
+const SOURCE_OMEGA_AVG_DAILY: LayerSource = {
+  id: 'omega-avg-daily',
+  name: 'avg-ω 逐日反演',
+  description: 'D2 avg-omega 逐日反演产品：DOY 气候态平均 ω + 逐日 DDCA 回代，产出 SM/VOD/OMEGA。',
   urlTemplate: '',
   needsAuth: false,
   needsBackendTransform: false,
@@ -1156,6 +1229,90 @@ export const LAYER_LIBRARY: LayerCatalogItem[] = [
     sourceReference: 'https://nsidc.org/data/SPL3SMP',
   },
   {
+    catalogId: 'fy-mwri',
+    name: 'FY MWRI 亮温',
+    category: '遥感产品',
+    metricLabel: '亮温',
+    metricUnit: 'K',
+    metricPrecision: 1,
+    updateLabel: '每日更新',
+    sourceLabel: 'FY-3 MWRI',
+    accentColor: '#e6a85c',
+    accentGlow: 'rgba(230, 168, 92, 0.3)',
+    chipTone: 'rgba(230, 168, 92, 0.16)',
+    sources: [SOURCE_FY_MWRI],
+  },
+  {
+    catalogId: 'station-soil',
+    name: '站点土壤湿度',
+    category: '植被监测',
+    metricLabel: '土壤湿度',
+    metricUnit: 'm³/m³',
+    metricPrecision: 3,
+    updateLabel: '每日更新',
+    sourceLabel: 'ISMN/CASMOS',
+    accentColor: '#6bbf59',
+    accentGlow: 'rgba(107, 191, 89, 0.3)',
+    chipTone: 'rgba(107, 191, 89, 0.16)',
+    sources: [SOURCE_STATION_SOIL],
+  },
+  {
+    catalogId: 'inversion-daily',
+    name: '单日反演',
+    category: '模拟结果',
+    metricLabel: '土壤湿度',
+    metricUnit: 'm³/m³',
+    metricPrecision: 3,
+    updateLabel: '每日更新',
+    sourceLabel: 'DDCA 单日反演',
+    accentColor: '#5b8def',
+    accentGlow: 'rgba(91, 141, 239, 0.3)',
+    chipTone: 'rgba(91, 141, 239, 0.16)',
+    sources: [SOURCE_INVERSION_DAILY],
+  },
+  {
+    catalogId: 'block-inversion',
+    name: '块反演',
+    category: '模拟结果',
+    metricLabel: '土壤湿度',
+    metricUnit: 'm³/m³',
+    metricPrecision: 3,
+    updateLabel: '每日更新',
+    sourceLabel: '块反演时间序列',
+    accentColor: '#4a90d9',
+    accentGlow: 'rgba(74, 144, 217, 0.3)',
+    chipTone: 'rgba(74, 144, 217, 0.16)',
+    sources: [SOURCE_BLOCK_INVERSION],
+  },
+  {
+    catalogId: 'omega-block',
+    name: 'OMEGA 反演',
+    category: '模拟结果',
+    metricLabel: 'Omega',
+    metricUnit: '',
+    metricPrecision: 3,
+    updateLabel: '每日更新',
+    sourceLabel: 'OMEGA 块反演',
+    accentColor: '#7b68ee',
+    accentGlow: 'rgba(123, 104, 238, 0.3)',
+    chipTone: 'rgba(123, 104, 238, 0.16)',
+    sources: [SOURCE_OMEGA_BLOCK],
+  },
+  {
+    catalogId: 'omega-avg-daily',
+    name: 'avg-ω 逐日反演',
+    category: '模拟结果',
+    metricLabel: 'Omega',
+    metricUnit: '',
+    metricPrecision: 3,
+    updateLabel: '每日更新',
+    sourceLabel: 'D2 avg-omega',
+    accentColor: '#9370db',
+    accentGlow: 'rgba(147, 112, 219, 0.3)',
+    chipTone: 'rgba(147, 112, 219, 0.16)',
+    sources: [SOURCE_OMEGA_AVG_DAILY],
+  },
+  {
     catalogId: 'admin-boundary',
     name: '行政区边界',
     category: 'boundary',
@@ -1174,9 +1331,9 @@ export const LAYER_LIBRARY: LayerCatalogItem[] = [
 
 /** Static whitelist of catalog IDs backed by weatherengine (used before runtime catalog loads). */
 export const WEATHER_ENGINE_CATALOG_IDS = new Set(
-  LAYER_LIBRARY
-    .filter((item) => item.sources.some((s) => s.id.startsWith('weatherengine')))
-    .map((item) => item.catalogId),
+  LAYER_LIBRARY.filter((item) => item.sources.some((s) => s.id.startsWith('weatherengine'))).map(
+    (item) => item.catalogId,
+  ),
 )
 
 export const LAYER_LIBRARY_BY_CATEGORY = (() => {

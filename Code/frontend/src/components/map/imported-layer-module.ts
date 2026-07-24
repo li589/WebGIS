@@ -23,7 +23,11 @@ interface LoadedImportedLayer {
   geometryType: ImportedGeometryType
   bounds: [number, number, number, number] | null
   /** 注册的事件监听器引用，用于 removeLayer 时精确移除 */
-  eventHandlers: Array<{ type: MapLayerEventType; layerId: string; handler: (e: MapLayerMouseEvent) => void }>
+  eventHandlers: Array<{
+    type: MapLayerEventType
+    layerId: string
+    handler: (e: MapLayerMouseEvent) => void
+  }>
 }
 
 /** 与导入矢量 display accent（#7ee0a8）对齐 */
@@ -112,81 +116,95 @@ export function createImportedLayerModule(options: CreateImportedLayerModuleOpti
     // 面图层（Polygon / MultiPolygon）
     if (_hasGeometryType(geojson, ['Polygon', 'MultiPolygon'])) {
       const fillId = `imported-fill-${safe}`
-      options.map.addLayer({
-        id: fillId,
-        type: 'fill',
-        source: sourceId,
-        filter: ['==', '$type', 'Polygon'],
-        paint: {
-          'fill-color': DEFAULT_FILL_COLOR,
-          'fill-opacity': 0.25,
+      options.map.addLayer(
+        {
+          id: fillId,
+          type: 'fill',
+          source: sourceId,
+          filter: ['==', '$type', 'Polygon'],
+          paint: {
+            'fill-color': DEFAULT_FILL_COLOR,
+            'fill-opacity': 0.25,
+          },
+          layout: { visibility: 'visible' },
         },
-        layout: { visibility: 'visible' },
-      }, beforeAdmin)
+        beforeAdmin,
+      )
       layerIds.push(fillId)
     }
 
     // 线图层（LineString / MultiLineString + Polygon 边线）
     if (_hasGeometryType(geojson, ['LineString', 'MultiLineString', 'Polygon', 'MultiPolygon'])) {
       const lineId = `imported-line-${safe}`
-      options.map.addLayer({
-        id: lineId,
-        type: 'line',
-        source: sourceId,
-        paint: {
-          'line-color': DEFAULT_LINE_COLOR,
-          'line-width': 2,
-          'line-opacity': 0.9,
+      options.map.addLayer(
+        {
+          id: lineId,
+          type: 'line',
+          source: sourceId,
+          paint: {
+            'line-color': DEFAULT_LINE_COLOR,
+            'line-width': 2,
+            'line-opacity': 0.9,
+          },
+          layout: { visibility: 'visible' },
         },
-        layout: { visibility: 'visible' },
-      }, beforeAdmin)
+        beforeAdmin,
+      )
       layerIds.push(lineId)
     }
 
     // 点图层（Point / MultiPoint）
     if (_hasGeometryType(geojson, ['Point', 'MultiPoint'])) {
       const circleId = `imported-circle-${safe}`
-      options.map.addLayer({
-        id: circleId,
-        type: 'circle',
-        source: sourceId,
-        filter: ['==', '$type', 'Point'],
-        paint: {
-          'circle-radius': 4,
-          'circle-color': DEFAULT_POINT_COLOR,
-          'circle-stroke-width': 1,
-          'circle-stroke-color': '#0a233a',
-          'circle-opacity': 0.9,
+      options.map.addLayer(
+        {
+          id: circleId,
+          type: 'circle',
+          source: sourceId,
+          filter: ['==', '$type', 'Point'],
+          paint: {
+            'circle-radius': 4,
+            'circle-color': DEFAULT_POINT_COLOR,
+            'circle-stroke-width': 1,
+            'circle-stroke-color': '#0a233a',
+            'circle-opacity': 0.9,
+          },
+          layout: { visibility: 'visible' },
         },
-        layout: { visibility: 'visible' },
-      }, beforeAdmin)
+        beforeAdmin,
+      )
       layerIds.push(circleId)
 
       // 点标签
       const labelId = `imported-label-${safe}`
-      options.map.addLayer({
-        id: labelId,
-        type: 'symbol',
-        source: sourceId,
-        filter: ['==', '$type', 'Point'],
-        layout: {
-          'text-field': ['get', 'name'] as any,
-          'text-size': 10,
-          'text-offset': [0, 1.2],
-          'text-allow-overlap': false,
-          visibility: 'visible',
+      options.map.addLayer(
+        {
+          id: labelId,
+          type: 'symbol',
+          source: sourceId,
+          filter: ['==', '$type', 'Point'],
+          layout: {
+            'text-field': ['get', 'name'] as any,
+            'text-size': 10,
+            'text-offset': [0, 1.2],
+            'text-allow-overlap': false,
+            visibility: 'visible',
+          },
+          paint: {
+            'text-color': '#d8e6f5',
+            'text-halo-color': '#0a1a2a',
+            'text-halo-width': 1.5,
+          },
         },
-        paint: {
-          'text-color': '#d8e6f5',
-          'text-halo-color': '#0a1a2a',
-          'text-halo-width': 1.5,
-        },
-      }, beforeAdmin)
+        beforeAdmin,
+      )
       layerIds.push(labelId)
     }
 
     // 推断主几何类型
-    const primaryType = geojson.features.find((f: GeoJSON.Feature) => f.geometry)?.geometry?.type as ImportedGeometryType ?? 'Unknown'
+    const primaryType =
+      (geojson.features.find((f: GeoJSON.Feature) => f.geometry)?.geometry
+        ?.type as ImportedGeometryType) ?? 'Unknown'
 
     // 注册事件监听器并保存引用，以便 removeLayer 时精确移除
     const eventHandlers: LoadedImportedLayer['eventHandlers'] = []
@@ -197,13 +215,20 @@ export function createImportedLayerModule(options: CreateImportedLayerModuleOpti
         const feature = e.features[0]
         const props = feature.properties ?? {}
         const propLines = Object.entries(props)
-          .map(([k, v]) => `<tr><td class="pk">${escapeHtml(k)}</td><td class="pv">${escapeHtml(String(v ?? ''))}</td></tr>`)
+          .map(
+            ([k, v]) =>
+              `<tr><td class="pk">${escapeHtml(k)}</td><td class="pv">${escapeHtml(String(v ?? ''))}</td></tr>`,
+          )
           .join('')
         const html = `<div class="imported-popup"><strong>${escapeHtml(name)}</strong><table>${propLines}</table></div>`
         new Popup().setLngLat(e.lngLat).setHTML(html).addTo(options.map)
       }
-      const enterHandler = (_e: MapLayerMouseEvent) => { options.map.getCanvas().style.cursor = 'pointer' }
-      const leaveHandler = (_e: MapLayerMouseEvent) => { options.map.getCanvas().style.cursor = '' }
+      const enterHandler = (_e: MapLayerMouseEvent) => {
+        options.map.getCanvas().style.cursor = 'pointer'
+      }
+      const leaveHandler = (_e: MapLayerMouseEvent) => {
+        options.map.getCanvas().style.cursor = ''
+      }
 
       options.map.on('click', layerId, clickHandler)
       options.map.on('mouseenter', layerId, enterHandler)
@@ -276,7 +301,9 @@ export function createImportedLayerModule(options: CreateImportedLayerModuleOpti
 
   /** 返回某导入层当前在地图上的 MapLibre layer id（自下而上） */
   function getLayerIds(id: string): string[] {
-    return loaded.get(id)?.layerIds.filter((layerId) => Boolean(options.map.getLayer(layerId))) ?? []
+    return (
+      loaded.get(id)?.layerIds.filter((layerId) => Boolean(options.map.getLayer(layerId))) ?? []
+    )
   }
 
   function fitLayers(ids: string[]): void {
@@ -305,7 +332,10 @@ export function createImportedLayerModule(options: CreateImportedLayerModuleOpti
       maxLat += pad
     }
     options.map.fitBounds(
-      [[minLng, minLat], [maxLng, maxLat]],
+      [
+        [minLng, minLat],
+        [maxLng, maxLat],
+      ],
       { padding: 48, maxZoom: 14, duration: 600 },
     )
   }

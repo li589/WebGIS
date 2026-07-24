@@ -1,0 +1,87 @@
+{
+  "_meta": {
+    "kind": "system",
+    "engine": "python_provider",
+    "name": "avg-ω 逐日反演（GLDAS 在线拉取 + DUAL 双温度）",
+    "description": "目的：在线拉取 GLDAS NOAH025_3H 温度场（Ts_gldas/Tsoil1_gldas/Tsoil2_gldas）→ 解压 → D2 avg-omega 逐日反演（DUAL 双温度方案，Ct/TG 由 GLDAS 计算）。前置：earthdata 凭证（cred_profile=earthdata，可访问 GES-DISC）；D1 omega_block 已产出；SMAP/anc/NDVI 本地就绪。产出：目标年逐日 SM/VOD/OMEGA .mat。本种子为模板：relative_path 用 YYYY/MMDD 占位符，运行前替换为目标日期。注意：GLDAS .nc4 → .mat 预处理（对应 B 类脚本）当前不在 D2 主链，需用户在实例化时补 h5/nc4→mat 转换节点或预先落盘 .mat。",
+    "author": "system",
+    "readonly": true,
+    "is_template": true,
+    "linked_layer_id": "omega-avg-daily"
+  },
+  "workflow_id": "omega_avg_daily_gldas_online",
+  "name": "avg-ω 逐日反演（GLDAS 在线拉取 + DUAL 双温度）",
+  "description": "nasa_gldas 在线拉取 + earthdata 凭证 → archive_extract → D2 avg-omega 逐日反演（DUAL）。",
+  "nodes": [
+    {
+      "id": 1,
+      "type": "download/http_open_data",
+      "pos": [80, 140],
+      "properties": {
+        "preset": "nasa_gldas",
+        "relative_path": "GLDAS_NOAH025_3H.2.1/YYYY/MMDD/*.nc4",
+        "cred_profile": "earthdata",
+        "force_refresh": false
+      }
+    },
+    {
+      "id": 2,
+      "type": "archive/extract",
+      "pos": [400, 140],
+      "properties": {
+        "member_glob": "*.nc4",
+        "recurse_once": true,
+        "output_dirname": "gldas_extracted"
+      }
+    },
+    {
+      "id": 3,
+      "type": "extract/variable",
+      "pos": [720, 140],
+      "properties": {
+        "variable": "Ts_gldas,Tsoil1_gldas,Tsoil2_gldas"
+      }
+    },
+    {
+      "id": 4,
+      "type": "algorithm/omega_avg_daily",
+      "pos": [1040, 140],
+      "properties": {
+        "module_name": "omega_avg_daily",
+        "task_type": "omega_avg_daily",
+        "algorithm_params": {
+          "target_year": 2023,
+          "tb_source": "SMAP",
+          "sm_source": "SMAP",
+          "temp_scheme": "DUAL",
+          "ndvi_mode": "DAILY_FILE",
+          "sf_mode": "STATIC",
+          "use_gldas_template": true,
+          "dual_tg_mode": "PAPER_CT",
+          "ct_smref": 0.30,
+          "ct_exp": 0.30,
+          "avg_build_start_year": 2015,
+          "avg_build_end_year": 2025,
+          "freq_ghz": 1.4,
+          "lambda_tau": 20.0,
+          "pixel_chunk_size": 200000,
+          "enable_parallel": true
+        }
+      }
+    }
+  ],
+  "links": [
+    {"0": 1, "1": 1, "2": 0, "3": 2, "4": 0, "5": "value:string"},
+    {"0": 2, "1": 2, "2": 0, "3": 3, "4": 0, "5": "value:string"},
+    {"0": 3, "1": 3, "2": 0, "3": 4, "4": 0, "5": "value:string"}
+  ],
+  "extra": {
+    "purpose": "online_gldas_pipeline",
+    "scheme": "SMAP_SINGLE_DUAL_TEMP_ONLINE_GLDAS",
+    "portal": "nasa_gldas",
+    "cred_profile": "earthdata",
+    "pipeline": "online GLDAS download → extract → D2 DDCA (DUAL, Ct/TG from GLDAS)",
+    "prerequisite": "earthdata 凭证 + D1 omega_block + 本地 SMAP/anc/NDVI .mat",
+    "notes": "模板种子：relative_path 含 YYYY/MMDD 占位符，运行前替换。GLDAS .nc4 需转 .mat（B 类预处理脚本）方可被 build_daily_bundle_for_date 读取；当前 D2 主链假定 gldas_folder 已含 YYYYMMDD_HHMM.mat。"
+  }
+}

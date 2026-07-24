@@ -11,7 +11,16 @@ describe('weather-overlay-runtime-orchestrator', () => {
         geojsonData: null,
         cogPreviewUrl: null,
         cogBbox: null,
-        renderHint: { paint_mode: 'particle_flow', palette: 'viridis', primary_metric: 'wind_speed_10m', unit_label: 'm/s', opacity: 1, legend_ticks: [], notes: [], layer_id: 'weather.wind' },
+        renderHint: {
+          paint_mode: 'particle_flow',
+          palette: 'viridis',
+          primary_metric: 'wind_speed_10m',
+          unit_label: 'm/s',
+          opacity: 1,
+          legend_ticks: [],
+          notes: [],
+          layer_id: 'weather.wind',
+        },
         opacity: 1,
       },
       {
@@ -20,7 +29,16 @@ describe('weather-overlay-runtime-orchestrator', () => {
         geojsonData: null,
         cogPreviewUrl: null,
         cogBbox: null,
-        renderHint: { paint_mode: 'grid_fill', palette: 'magma', primary_metric: 'temperature_2m', unit_label: 'C', opacity: 1, legend_ticks: [], notes: [], layer_id: 'weather.temp' },
+        renderHint: {
+          paint_mode: 'grid_fill',
+          palette: 'magma',
+          primary_metric: 'temperature_2m',
+          unit_label: 'C',
+          opacity: 1,
+          legend_ticks: [],
+          notes: [],
+          layer_id: 'weather.temp',
+        },
         opacity: 0.8,
       },
     ] as any
@@ -64,7 +82,10 @@ describe('weather-overlay-runtime-orchestrator', () => {
     orchestrator.sync(7)
 
     expect(pruneStale).toHaveBeenCalledTimes(1)
-    expect(Array.from(pruneStale.mock.calls[0][1] as Set<string>)).toEqual(['weather.wind', 'weather.temp'])
+    expect(Array.from(pruneStale.mock.calls[0][1] as Set<string>)).toEqual([
+      'weather.wind',
+      'weather.temp',
+    ])
     expect(reconcileParticleFlow).toHaveBeenCalledWith({
       enabledParticleFlowCatalogId: 'weather.wind',
       targetCatalogIds: expect.any(Set),

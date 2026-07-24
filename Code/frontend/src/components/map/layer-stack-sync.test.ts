@@ -54,7 +54,8 @@ describe('applyActiveLayerStackOrder', () => {
 
     applyActiveLayerStackOrder(map, layers, {
       getImportedVectorLayerIds: () => [],
-      getOverlayRasterLayerId: (id) => (id === 'low' ? 'overlay-raster-low' : id === 'high' ? 'overlay-raster-high' : null),
+      getOverlayRasterLayerId: (id) =>
+        id === 'low' ? 'overlay-raster-low' : id === 'high' ? 'overlay-raster-high' : null,
     })
 
     // high order first under admin, then low under high

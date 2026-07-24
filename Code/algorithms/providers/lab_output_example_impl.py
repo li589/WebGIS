@@ -17,9 +17,24 @@ def run_lab_output_algorithm(payload: ProviderExecutionPayload) -> dict:
         "status_label": "外部算法已执行",
         "confidence_label": "示例实现",
         "hotspots": [
-            {"name": "广州北部", "lng": 113.42, "lat": 23.06, "risk_score": round(metric_value + 3.2, 1)},
-            {"name": "东莞中部", "lng": 113.74, "lat": 22.98, "risk_score": round(metric_value + 1.1, 1)},
-            {"name": "深圳西部", "lng": 113.9, "lat": 22.56, "risk_score": round(metric_value - 1.7, 1)},
+            {
+                "name": "广州北部",
+                "lng": 113.42,
+                "lat": 23.06,
+                "risk_score": round(metric_value + 3.2, 1),
+            },
+            {
+                "name": "东莞中部",
+                "lng": 113.74,
+                "lat": 22.98,
+                "risk_score": round(metric_value + 1.1, 1),
+            },
+            {
+                "name": "深圳西部",
+                "lng": 113.9,
+                "lat": 22.56,
+                "risk_score": round(metric_value - 1.7, 1),
+            },
         ],
         "series": [
             {"label": "00:00", "value": round(metric_value - 5.0, 1)},

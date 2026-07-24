@@ -16,7 +16,7 @@ import { resolveApiUrl } from './runtime-api'
 export type IntegrationDomain = 'basemap' | 'data-source' | 'gee' | 'credential' | 'certificate'
 export type IntegrationEnv = 'local' | 'dev' | 'staging' | 'prod'
 export type AuthMode = 'none' | 'api-key' | 'bearer' | 'service-account' | 'certificate'
-export type SecretBackend = 'env' | 'vault' | 'backend-runtime' | 'manual'
+export type SecretBackend = 'env' | 'vault' | 'backend-runtime' | 'manual' | 'config-api-keys'
 export type BasemapStyle = 'none' | 'street' | 'satellite' | 'dark' | 'terrain'
 export type TileSourceId =
   | 'none'
@@ -665,9 +665,10 @@ export const TILE_SOURCES: TileSourceConfig[] = BASEMAP_PROVIDER_CONFIGS.flatMap
     .map((endpoint) => ({
       id: endpoint.sourceId,
       label: endpoint.label,
-      provider: typeof endpoint.metadata?.providerLabel === 'string'
-        ? endpoint.metadata.providerLabel
-        : provider.provider,
+      provider:
+        typeof endpoint.metadata?.providerLabel === 'string'
+          ? endpoint.metadata.providerLabel
+          : provider.provider,
       style: endpoint.style,
       urlTemplate: endpoint.url,
       attribution: endpoint.attribution,
@@ -742,7 +743,9 @@ export function isTileSourceUsable(
 }
 
 export function listEnabledBasemapProviders(config: UnifiedIntegrationConfig) {
-  return config.basemaps.filter((provider) => provider.endpoints.some((endpoint) => endpoint.enabled))
+  return config.basemaps.filter((provider) =>
+    provider.endpoints.some((endpoint) => endpoint.enabled),
+  )
 }
 
 export function listEnabledBasemapSources(config: UnifiedIntegrationConfig) {
@@ -763,7 +766,10 @@ function cloneUnifiedIntegrationConfig(source: UnifiedIntegrationConfig): Unifie
   return JSON.parse(JSON.stringify(source)) as UnifiedIntegrationConfig
 }
 
-async function requestConfigJson<T>(path: string, init?: RequestInit & { timeoutMs?: number }): Promise<T> {
+async function requestConfigJson<T>(
+  path: string,
+  init?: RequestInit & { timeoutMs?: number },
+): Promise<T> {
   const { timeoutMs, ...restInit } = init ?? {}
   const controller = new AbortController()
   const timeoutId = window.setTimeout(() => controller.abort(), timeoutMs ?? 15000)
@@ -796,7 +802,11 @@ function hasApiCredential(runtimeConfig: RuntimeApiProviderResponse) {
     return true
   }
   const metadata = runtimeConfig.metadata
-  if (metadata && typeof metadata.credentials_path === 'string' && metadata.credentials_path.trim().length > 0) {
+  if (
+    metadata &&
+    typeof metadata.credentials_path === 'string' &&
+    metadata.credentials_path.trim().length > 0
+  ) {
     return true
   }
   return false
@@ -928,15 +938,19 @@ function mergeGeeRuntimeSnapshot(
 export async function loadUnifiedIntegrationConfig(): Promise<UnifiedIntegrationConfig> {
   const baseConfig = cloneUnifiedIntegrationConfig(UNIFIED_INTEGRATION_CONFIG_TEMPLATE)
 
-  const [runtimeApiConfigsResult, geeConfigResult, geeStatusResult, geeEnvironmentResult] = await Promise.allSettled([
-    requestConfigJson<Record<string, RuntimeApiProviderResponse>>('/runtime/api-config'),
-    requestConfigJson<GeeConfigResponse>('/gee/config'),
-    requestConfigJson<GeeStatusResponse>('/gee/config/status'),
-    requestConfigJson<GeeEnvironmentResponse>('/gee/config/environment'),
-  ])
+  const [runtimeApiConfigsResult, geeConfigResult, geeStatusResult, geeEnvironmentResult] =
+    await Promise.allSettled([
+      requestConfigJson<Record<string, RuntimeApiProviderResponse>>('/runtime/api-config'),
+      requestConfigJson<GeeConfigResponse>('/gee/config'),
+      requestConfigJson<GeeStatusResponse>('/gee/config/status'),
+      requestConfigJson<GeeEnvironmentResponse>('/gee/config/environment'),
+    ])
 
   if (runtimeApiConfigsResult.status === 'fulfilled') {
-    mergeRuntimeApiConfigs(baseConfig, normalizeRuntimeApiProviderEntries(runtimeApiConfigsResult.value))
+    mergeRuntimeApiConfigs(
+      baseConfig,
+      normalizeRuntimeApiProviderEntries(runtimeApiConfigsResult.value),
+    )
   }
 
   mergeGeeRuntimeSnapshot(

@@ -81,7 +81,11 @@ type MapSnapshot = {
   dh: number
 }
 
-function buildMapSnapshot(stage: HTMLElement, captureEl: HTMLElement, scale: number): MapSnapshot | null {
+function buildMapSnapshot(
+  stage: HTMLElement,
+  captureEl: HTMLElement,
+  scale: number,
+): MapSnapshot | null {
   const mapCanvas = stage.querySelector('.maplibregl-canvas') as HTMLCanvasElement | null
   if (!mapCanvas) return null
 
@@ -111,7 +115,12 @@ function resolveCaptureElement(mode: ScreenshotMode): HTMLElement | null {
   if (!props.mapStageEl) return null
 
   if (mode === 'shell') {
-    return props.dashboardEl?.ownerDocument.documentElement ?? props.dashboardEl ?? props.mapShellEl ?? props.mapStageEl
+    return (
+      props.dashboardEl?.ownerDocument.documentElement ??
+      props.dashboardEl ??
+      props.mapShellEl ??
+      props.mapStageEl
+    )
   }
 
   if (mode === 'bare' || mode === 'clean') {
@@ -172,12 +181,17 @@ async function capture() {
           clonedMapHost.style.background = 'transparent'
         }
 
-        clonedDoc.querySelectorAll('.maplibregl-canvas-container,.maplibregl-canvas').forEach((el: Element) => {
-          ;(el as HTMLElement).style.visibility = 'hidden'
-        })
+        clonedDoc
+          .querySelectorAll('.maplibregl-canvas-container,.maplibregl-canvas')
+          .forEach((el: Element) => {
+            ;(el as HTMLElement).style.visibility = 'hidden'
+          })
       },
       ignoreElements: (el: Element) => {
-        if (el instanceof HTMLElement && (el.matches('.maplibregl-canvas-container') || el.matches('.maplibregl-canvas'))) {
+        if (
+          el instanceof HTMLElement &&
+          (el.matches('.maplibregl-canvas-container') || el.matches('.maplibregl-canvas'))
+        ) {
           return true
         }
 
@@ -211,12 +225,21 @@ async function capture() {
         mapImage.src = mapSnapshot.dataUrl
         await new Promise((resolve) => {
           mapImage.onload = () => {
-            composedCtx.drawImage(mapImage, mapSnapshot.dx, mapSnapshot.dy, mapSnapshot.dw, mapSnapshot.dh)
+            composedCtx.drawImage(
+              mapImage,
+              mapSnapshot.dx,
+              mapSnapshot.dy,
+              mapSnapshot.dw,
+              mapSnapshot.dh,
+            )
             composedCtx.drawImage(canvas, 0, 0)
             finalCanvas = composedCanvas
             resolve(null)
           }
-          mapImage.onerror = () => { finalCanvas = canvas; resolve(null) }
+          mapImage.onerror = () => {
+            finalCanvas = canvas
+            resolve(null)
+          }
         })
       }
     }
@@ -374,7 +397,9 @@ async function capture() {
   color: #6e8ba0;
   cursor: pointer;
   font-size: 0.7rem;
-  transition: background 0.18s ease, color 0.18s ease;
+  transition:
+    background 0.18s ease,
+    color 0.18s ease;
 }
 
 .close-btn:hover {
@@ -408,7 +433,10 @@ async function capture() {
   cursor: pointer;
   font: inherit;
   text-align: left;
-  transition: border-color 0.18s ease, background 0.18s ease, color 0.18s ease;
+  transition:
+    border-color 0.18s ease,
+    background 0.18s ease,
+    color 0.18s ease;
 }
 
 .mode-btn:hover {
@@ -463,7 +491,10 @@ async function capture() {
   font: inherit;
   font-size: 0.64rem;
   font-weight: 500;
-  transition: border-color 0.18s ease, background 0.18s ease, color 0.18s ease;
+  transition:
+    border-color 0.18s ease,
+    background 0.18s ease,
+    color 0.18s ease;
 }
 
 .format-btn:hover {
@@ -495,7 +526,11 @@ async function capture() {
   font-weight: 600;
   box-shadow: 0 8px 24px rgba(10, 132, 255, 0.18);
   /* 性能优化：GPU 属性过渡 */
-  transition: background 0.2s ease, color 0.2s ease, transform 0.2s cubic-bezier(0.25, 0.46, 0.45, 0.94), box-shadow 0.2s ease;
+  transition:
+    background 0.2s ease,
+    color 0.2s ease,
+    transform 0.2s cubic-bezier(0.25, 0.46, 0.45, 0.94),
+    box-shadow 0.2s ease;
 }
 
 .capture-btn:hover:not(:disabled) {
@@ -525,7 +560,9 @@ async function capture() {
 }
 
 @keyframes spin {
-  to { transform: rotate(360deg); }
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 .success-hint {

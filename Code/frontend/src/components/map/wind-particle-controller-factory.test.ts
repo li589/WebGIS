@@ -34,15 +34,19 @@ function makeStubWindow(search = '', webglSupported = false): StubWindow {
           void pname
           return 16
         },
-        MAX_VERTEX_TEXTURE_IMAGE_UNITS: 0x8B4C,
+        MAX_VERTEX_TEXTURE_IMAGE_UNITS: 0x8b4c,
       }
     : null
   return {
     location: { search, href: `http://localhost/${search}` },
     localStorage: {
       getItem: (k) => store[k] ?? null,
-      setItem: (k, v) => { store[k] = v },
-      removeItem: (k) => { delete store[k] },
+      setItem: (k, v) => {
+        store[k] = v
+      },
+      removeItem: (k) => {
+        delete store[k]
+      },
     },
     document: {
       createElement: () => ({
@@ -101,7 +105,7 @@ describe('isWebGLWindEnabled 特性开关', () => {
 })
 
 describe('createDefaultWindParticleController', () => {
-  const makeMap = () => ({} as any)
+  const makeMap = () => ({}) as any
 
   afterEach(() => {
     vi.unstubAllGlobals()

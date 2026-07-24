@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
 from workflow.graph import WorkflowDefinition
 from workflow.serialization import coerce_workflow_definition
@@ -33,7 +33,9 @@ def infer_workflow_request_template(value: object) -> WorkflowRequestTemplate:
     return _infer_workflow_request_template(definition)
 
 
-def _infer_workflow_request_template(definition: WorkflowDefinition) -> WorkflowRequestTemplate:
+def _infer_workflow_request_template(
+    definition: WorkflowDefinition,
+) -> WorkflowRequestTemplate:
     from modules.registry import get_module
 
     required_inputs: set[str] = set()
@@ -55,7 +57,9 @@ def _infer_workflow_request_template(definition: WorkflowDefinition) -> Workflow
             )
         entry_name = _resolve_entry_name(node)
         if node.node_type == "module" and entry_name:
-            module_mode_required_inputs = dict(get_module(entry_name).get_spec().mode_required_inputs)
+            module_mode_required_inputs = dict(
+                get_module(entry_name).get_spec().mode_required_inputs
+            )
             mode = str(node.params.get("mode", "")).lower()
             for required_input in module_mode_required_inputs.get(mode, ()):
                 required_inputs.add(required_input)
@@ -74,9 +78,13 @@ def _infer_workflow_request_template(definition: WorkflowDefinition) -> Workflow
     optional_declared_inputs = tuple(sorted(declared_inputs - required_inputs))
     notes = []
     if declared_inputs:
-        notes.append("Declared workflow.inputs are informational unless referenced by input:* bindings.")
+        notes.append(
+            "Declared workflow.inputs are informational unless referenced by input:* bindings."
+        )
     if not required_inputs:
-        notes.append("Workflow does not require any datasource_selection input:* bindings.")
+        notes.append(
+            "Workflow does not require any datasource_selection input:* bindings."
+        )
 
     return WorkflowRequestTemplate(
         workflow_id=definition.workflow_id,

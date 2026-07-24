@@ -4,7 +4,12 @@ from pathlib import Path
 
 from contracts.product import ProductManifest, ProductRef
 from data_access import resolve_prepared_local_path
-from ingest.daily_bundle import build_daily_bundle_config, build_daily_bundle_for_date, date_keys_from_range, load_lin_pix_selection
+from ingest.daily_bundle import (
+    build_daily_bundle_config,
+    build_daily_bundle_for_date,
+    date_keys_from_range,
+    load_lin_pix_selection,
+)
 from ingest.timeseries_bundle import build_timeseries_bundle_from_range
 from modules.base import BaseModule
 from modules.registry import register_module_decorator
@@ -44,7 +49,9 @@ _DAILY_BUNDLE_PREPARED_KEY_MAP: dict[str, tuple[str, ...]] = {
 }
 
 
-def _resolve_bundle_datasource_selection(datasource_selection: dict[str, object]) -> dict[str, object]:
+def _resolve_bundle_datasource_selection(
+    datasource_selection: dict[str, object],
+) -> dict[str, object]:
     resolved = dict(datasource_selection)
     for target_key, dataset_names in _DAILY_BUNDLE_PREPARED_KEY_MAP.items():
         if target_key in resolved:
@@ -64,21 +71,43 @@ class DailyBundleModule(BaseModule):
     name = "daily_bundle"
     description = "Native module that builds one MAT bundle per day."
     input_ports = [
-        PortSpec(name="datasource_selection", kind="config", data_class="dict", required=False),
-        PortSpec(name="algorithm_params", kind="config", data_class="dict", required=False),
-        PortSpec(name="output_spec_extra", kind="config", data_class="dict", required=False),
+        PortSpec(
+            name="datasource_selection",
+            kind="config",
+            data_class="dict",
+            required=False,
+        ),
+        PortSpec(
+            name="algorithm_params", kind="config", data_class="dict", required=False
+        ),
+        PortSpec(
+            name="output_spec_extra", kind="config", data_class="dict", required=False
+        ),
     ]
-    output_ports = [PortSpec(name="manifest", kind="artifact", data_class="product_manifest")]
+    output_ports = [
+        PortSpec(name="manifest", kind="artifact", data_class="product_manifest")
+    ]
 
-    def execute(self, inputs: dict[str, object], params: dict[str, object], ctx: NodeExecutionContext) -> dict[str, object]:
+    def execute(
+        self,
+        inputs: dict[str, object],
+        params: dict[str, object],
+        ctx: NodeExecutionContext,
+    ) -> dict[str, object]:
         from scipy.io import savemat
 
-        datasource_selection = _resolve_bundle_datasource_selection(dict(inputs.get("datasource_selection", {})))
+        datasource_selection = _resolve_bundle_datasource_selection(
+            dict(inputs.get("datasource_selection", {}))
+        )
         algorithm_params = dict(inputs.get("algorithm_params", {}))
         output_spec_extra = dict(inputs.get("output_spec_extra", {}))
 
         config = build_daily_bundle_config(algorithm_params)
-        output_dir = Path(output_spec_extra.get("output_dir", ctx.workspace / "products" / "daily_bundle"))
+        output_dir = Path(
+            output_spec_extra.get(
+                "output_dir", ctx.workspace / "products" / "daily_bundle"
+            )
+        )
         output_dir.mkdir(parents=True, exist_ok=True)
 
         lin_pix = load_lin_pix_selection(
@@ -86,10 +115,14 @@ class DailyBundleModule(BaseModule):
             lin_pix_mat=datasource_selection.get("lin_pix_mat"),
             variable_name=str(algorithm_params.get("lin_pix_varname", "lin_pix")),
         )
-        date_keys = date_keys_from_range(ctx.request.time_range.start, ctx.request.time_range.end)
+        date_keys = date_keys_from_range(
+            ctx.request.time_range.start, ctx.request.time_range.end
+        )
 
         if ctx.logger_adapter is not None:
-            ctx.logger_adapter.emit_stage_start("daily_bundle", f"Build {len(date_keys)} daily bundles")
+            ctx.logger_adapter.emit_stage_start(
+                "daily_bundle", f"Build {len(date_keys)} daily bundles"
+            )
 
         products: list[ProductRef] = []
         for date_key in date_keys:
@@ -111,16 +144,27 @@ class DailyBundleModule(BaseModule):
                 )
             )
             if ctx.logger_adapter is not None:
-                ctx.logger_adapter.emit_artifact("daily_bundle", str(output_path), "daily_bundle_mat")
+                ctx.logger_adapter.emit_artifact(
+                    "daily_bundle", str(output_path), "daily_bundle_mat"
+                )
 
         if ctx.logger_adapter is not None:
-            ctx.logger_adapter.emit_stage_end("daily_bundle", f"Generated {len(products)} daily bundles")
+            ctx.logger_adapter.emit_stage_end(
+                "daily_bundle", f"Generated {len(products)} daily bundles"
+            )
 
         main_layers = ["TBv", "TBh", "IA", "Ts", "SM_ref", "NDVI", "SF", "vwc"]
         if str(config.temp_scheme).upper() == "DUAL":
             main_layers.extend(["TC", "Tsoil1", "Tsoil2", "Ct", "TG"])
             if config.save_match_info:
-                main_layers.extend(["match_slot_index", "match_day_offset", "match_picked_file", "match_picked_utc"])
+                main_layers.extend(
+                    [
+                        "match_slot_index",
+                        "match_day_offset",
+                        "match_picked_file",
+                        "match_picked_utc",
+                    ]
+                )
 
         manifest = ProductManifest(
             job_id=ctx.request.job_id,
@@ -140,17 +184,35 @@ class DailyBundleModule(BaseModule):
                 "save_match_info": config.save_match_info,
             },
         )
-        return _store_manifest(ctx, module_name=self.name, manifest=manifest, metadata={"product_count": len(products)})
+        return _store_manifest(
+            ctx,
+            module_name=self.name,
+            manifest=manifest,
+            metadata={"product_count": len(products)},
+        )
 
 
-@register_module_decorator(name="timeseries_bundle", aliases=["timeseries_bundle_pipeline"])
+@register_module_decorator(
+    name="timeseries_bundle", aliases=["timeseries_bundle_pipeline"]
+)
 class TimeSeriesBundleModule(BaseModule):
     name = "timeseries_bundle"
-    description = "Native module that builds one MAT time-series bundle for a date range."
+    description = (
+        "Native module that builds one MAT time-series bundle for a date range."
+    )
     input_ports = [
-        PortSpec(name="datasource_selection", kind="config", data_class="dict", required=False),
-        PortSpec(name="algorithm_params", kind="config", data_class="dict", required=False),
-        PortSpec(name="output_spec_extra", kind="config", data_class="dict", required=False),
+        PortSpec(
+            name="datasource_selection",
+            kind="config",
+            data_class="dict",
+            required=False,
+        ),
+        PortSpec(
+            name="algorithm_params", kind="config", data_class="dict", required=False
+        ),
+        PortSpec(
+            name="output_spec_extra", kind="config", data_class="dict", required=False
+        ),
     ]
     output_ports = [
         PortSpec(name="manifest", kind="artifact", data_class="product_manifest"),
@@ -159,15 +221,26 @@ class TimeSeriesBundleModule(BaseModule):
         PortSpec(name="pixel_count", kind="scalar", data_class="int"),
     ]
 
-    def execute(self, inputs: dict[str, object], params: dict[str, object], ctx: NodeExecutionContext) -> dict[str, object]:
+    def execute(
+        self,
+        inputs: dict[str, object],
+        params: dict[str, object],
+        ctx: NodeExecutionContext,
+    ) -> dict[str, object]:
         from scipy.io import savemat
 
-        datasource_selection = _resolve_bundle_datasource_selection(dict(inputs.get("datasource_selection", {})))
+        datasource_selection = _resolve_bundle_datasource_selection(
+            dict(inputs.get("datasource_selection", {}))
+        )
         algorithm_params = dict(inputs.get("algorithm_params", {}))
         output_spec_extra = dict(inputs.get("output_spec_extra", {}))
 
         config = build_daily_bundle_config(algorithm_params)
-        output_dir = Path(output_spec_extra.get("output_dir", ctx.workspace / "products" / "timeseries_bundle"))
+        output_dir = Path(
+            output_spec_extra.get(
+                "output_dir", ctx.workspace / "products" / "timeseries_bundle"
+            )
+        )
         output_dir.mkdir(parents=True, exist_ok=True)
 
         lin_pix = load_lin_pix_selection(
@@ -199,15 +272,28 @@ class TimeSeriesBundleModule(BaseModule):
         savemat(output_path, payload, do_compression=True)
 
         if ctx.logger_adapter is not None:
-            ctx.logger_adapter.emit_artifact("timeseries_bundle", str(output_path), "timeseries_bundle_mat")
+            ctx.logger_adapter.emit_artifact(
+                "timeseries_bundle", str(output_path), "timeseries_bundle_mat"
+            )
             ctx.logger_adapter.emit_stage_end(
                 "timeseries_bundle",
                 f"Generated bundle with {len(bundle.date_keys)} days and {bundle.pixel_count} pixels",
             )
 
-        main_layers = ["TBv_mat", "TBh_mat", "IA_mat", "Ts_mat", "SMref_mat", "NDVI_mat", "SF_mat", "vwc_mat"]
+        main_layers = [
+            "TBv_mat",
+            "TBh_mat",
+            "IA_mat",
+            "Ts_mat",
+            "SMref_mat",
+            "NDVI_mat",
+            "SF_mat",
+            "vwc_mat",
+        ]
         if str(config.temp_scheme).upper() == "DUAL":
-            main_layers.extend(["TC_mat", "Tsoil1_mat", "Tsoil2_mat", "Ct_mat", "TG_mat"])
+            main_layers.extend(
+                ["TC_mat", "Tsoil1_mat", "Tsoil2_mat", "Ct_mat", "TG_mat"]
+            )
             if config.save_match_info:
                 main_layers.extend(
                     [
@@ -245,7 +331,12 @@ class TimeSeriesBundleModule(BaseModule):
                 "save_match_info": config.save_match_info,
             },
         )
-        outputs = _store_manifest(ctx, module_name=self.name, manifest=manifest, metadata={"pixel_count": bundle.pixel_count})
+        outputs = _store_manifest(
+            ctx,
+            module_name=self.name,
+            manifest=manifest,
+            metadata={"pixel_count": bundle.pixel_count},
+        )
         outputs["output_path"] = str(output_path)
         outputs["missing_dates"] = list(bundle.missing_dates)
         outputs["pixel_count"] = bundle.pixel_count

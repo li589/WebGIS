@@ -7,6 +7,8 @@ export interface WeatherOverlayWatchInputs {
   windDisplayMode: WindDisplayMode
   dataVersion: number
   currentHour: number
+  /** 平滑渲染开关：变化须触发 sync，否则 WebGL/MapLibre 切换会卡住 */
+  smoothRendering: boolean
 }
 
 export function buildWeatherOverlayWatchInputs(
@@ -15,6 +17,7 @@ export function buildWeatherOverlayWatchInputs(
   dataVersion: number,
   currentHour: number,
   windDisplayMode: WindDisplayMode = 'off',
+  smoothRendering: boolean = true,
 ): WeatherOverlayWatchInputs {
   return {
     layersHash: JSON.stringify(
@@ -30,6 +33,7 @@ export function buildWeatherOverlayWatchInputs(
     windDisplayMode,
     dataVersion,
     currentHour,
+    smoothRendering,
   }
 }
 
@@ -39,6 +43,7 @@ export interface WeatherOverlayWatchDiff {
   layersHashChanged: boolean
   dataVersionChanged: boolean
   hourChanged: boolean
+  smoothRenderingChanged: boolean
 }
 
 export function diffWeatherOverlayWatchInputs(
@@ -51,5 +56,6 @@ export function diffWeatherOverlayWatchInputs(
     layersHashChanged: next.layersHash !== previous?.layersHash,
     dataVersionChanged: next.dataVersion !== previous?.dataVersion,
     hourChanged: next.currentHour !== previous?.currentHour,
+    smoothRenderingChanged: next.smoothRendering !== previous?.smoothRendering,
   }
 }

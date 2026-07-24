@@ -48,31 +48,46 @@ def build_workflow_input_panel_schema(value: object) -> WorkflowInputPanelSchema
         edge_targets.setdefault(edge.to_node, set()).add(edge.to_port)
 
     for key in template.required_datasource_keys:
-        field = datasource_fields.setdefault(key, _MutableField(key=key, section="datasource_selection"))
+        field = datasource_fields.setdefault(
+            key, _MutableField(key=key, section="datasource_selection")
+        )
         field.required = True
         field.value_kind = "external_input"
-        field.description = field.description or "Required by input:* binding in workflow_definition."
+        field.description = (
+            field.description or "Required by input:* binding in workflow_definition."
+        )
 
     for key, input_spec in definition.inputs.items():
-        field = datasource_fields.setdefault(key, _MutableField(key=key, section="datasource_selection"))
+        field = datasource_fields.setdefault(
+            key, _MutableField(key=key, section="datasource_selection")
+        )
         field.value_kind = "external_input"
         field.source_types.add(input_spec.source_type)
         field.format_hints.add(input_spec.format)
         if key not in template.required_datasource_keys:
-            field.description = field.description or "Declared workflow input that is not strictly required by current bindings."
+            field.description = (
+                field.description
+                or "Declared workflow input that is not strictly required by current bindings."
+            )
 
     for node_requirement in template.nodes:
         node = node_map[node_requirement.node_id]
-        direct_bound_ports = set(node.input_bindings) | edge_targets.get(node.node_id, set())
+        direct_bound_ports = set(node.input_bindings) | edge_targets.get(
+            node.node_id, set()
+        )
         entry_name = node_requirement.entry_name
         module_template = None
         module_mode_required_inputs: dict[str, tuple[str, ...]] = {}
         if node.node_type == "module" and entry_name:
             module_template = get_module_request_template(entry_name)
-            module_mode_required_inputs = dict(get_module(entry_name).get_spec().mode_required_inputs)
+            module_mode_required_inputs = dict(
+                get_module(entry_name).get_spec().mode_required_inputs
+            )
 
         for input_key in node_requirement.required_input_keys:
-            field = datasource_fields.setdefault(input_key, _MutableField(key=input_key, section="datasource_selection"))
+            field = datasource_fields.setdefault(
+                input_key, _MutableField(key=input_key, section="datasource_selection")
+            )
             field.required = True
             field.value_kind = "external_input"
             field.consumers.add(node_requirement.node_id)
@@ -80,7 +95,9 @@ def build_workflow_input_panel_schema(value: object) -> WorkflowInputPanelSchema
                 field.entry_names.add(entry_name)
 
         for request_key in node_requirement.referenced_request_keys:
-            field = request_fields.setdefault(request_key, _MutableField(key=request_key, section="request"))
+            field = request_fields.setdefault(
+                request_key, _MutableField(key=request_key, section="request")
+            )
             field.required = True
             field.value_kind = _request_value_kind(request_key)
             field.consumers.add(node_requirement.node_id)
@@ -95,59 +112,100 @@ def build_workflow_input_panel_schema(value: object) -> WorkflowInputPanelSchema
             for key in module_template.required_datasource_keys:
                 if key in direct_bound_ports and key != "datasource_selection":
                     continue
-                field = datasource_fields.setdefault(key, _MutableField(key=key, section="datasource_selection"))
+                field = datasource_fields.setdefault(
+                    key, _MutableField(key=key, section="datasource_selection")
+                )
                 field.required = True
                 field.value_kind = "path_or_uri"
                 field.consumers.add(node_requirement.node_id)
                 field.entry_names.add(module_template.entry_name)
-                field.description = field.description or f"Template-derived datasource key for module '{module_template.entry_name}'."
+                field.description = (
+                    field.description
+                    or f"Template-derived datasource key for module '{module_template.entry_name}'."
+                )
             for key in module_template.optional_datasource_keys:
                 if key in direct_bound_ports and key != "datasource_selection":
                     continue
-                field = datasource_fields.setdefault(key, _MutableField(key=key, section="datasource_selection"))
+                field = datasource_fields.setdefault(
+                    key, _MutableField(key=key, section="datasource_selection")
+                )
                 field.required = field.required or False
                 field.value_kind = field.value_kind or "path_or_uri"
                 field.consumers.add(node_requirement.node_id)
                 field.entry_names.add(module_template.entry_name)
-                field.description = field.description or f"Optional datasource key for module '{module_template.entry_name}'."
+                field.description = (
+                    field.description
+                    or f"Optional datasource key for module '{module_template.entry_name}'."
+                )
 
         if "request:algorithm_params" in node.input_bindings.values():
             for key in module_template.required_algorithm_keys:
-                field = algorithm_fields.setdefault(key, _MutableField(key=key, section="algorithm_params"))
+                field = algorithm_fields.setdefault(
+                    key, _MutableField(key=key, section="algorithm_params")
+                )
                 field.required = True
                 field.value_kind = "scalar"
                 field.consumers.add(node_requirement.node_id)
                 field.entry_names.add(module_template.entry_name)
-                field.description = field.description or f"Required algorithm param for module '{module_template.entry_name}'."
+                field.description = (
+                    field.description
+                    or f"Required algorithm param for module '{module_template.entry_name}'."
+                )
             for key, values in module_template.allowed_algorithm_values.items():
-                field = algorithm_fields.setdefault(key, _MutableField(key=key, section="algorithm_params"))
+                field = algorithm_fields.setdefault(
+                    key, _MutableField(key=key, section="algorithm_params")
+                )
                 field.value_kind = "enum"
                 field.allowed_values.update(str(item) for item in values)
                 field.consumers.add(node_requirement.node_id)
                 field.entry_names.add(module_template.entry_name)
-                field.description = field.description or f"Enum-like algorithm param for module '{module_template.entry_name}'."
+                field.description = (
+                    field.description
+                    or f"Enum-like algorithm param for module '{module_template.entry_name}'."
+                )
             for key in module_template.optional_algorithm_keys:
-                field = algorithm_fields.setdefault(key, _MutableField(key=key, section="algorithm_params"))
+                field = algorithm_fields.setdefault(
+                    key, _MutableField(key=key, section="algorithm_params")
+                )
                 field.value_kind = field.value_kind or "scalar"
                 field.consumers.add(node_requirement.node_id)
                 field.entry_names.add(module_template.entry_name)
-                field.description = field.description or f"Optional algorithm param for module '{module_template.entry_name}'."
+                field.description = (
+                    field.description
+                    or f"Optional algorithm param for module '{module_template.entry_name}'."
+                )
             for mode, required_inputs in module_mode_required_inputs.items():
-                mode_field = algorithm_fields.setdefault("mode", _MutableField(key="mode", section="algorithm_params"))
+                mode_field = algorithm_fields.setdefault(
+                    "mode", _MutableField(key="mode", section="algorithm_params")
+                )
                 mode_field.value_kind = "enum"
                 mode_field.allowed_values.add(mode)
                 mode_field.consumers.add(node_requirement.node_id)
                 mode_field.entry_names.add(module_template.entry_name)
-                mode_field.description = mode_field.description or "Workflow mode selector that activates mode-specific input requirements."
+                mode_field.description = (
+                    mode_field.description
+                    or "Workflow mode selector that activates mode-specific input requirements."
+                )
                 for required_input in required_inputs:
-                    if required_input in direct_bound_ports and required_input != "algorithm_params":
+                    if (
+                        required_input in direct_bound_ports
+                        and required_input != "algorithm_params"
+                    ):
                         continue
-                    field = datasource_fields.setdefault(required_input, _MutableField(key=required_input, section="datasource_selection"))
+                    field = datasource_fields.setdefault(
+                        required_input,
+                        _MutableField(
+                            key=required_input, section="datasource_selection"
+                        ),
+                    )
                     field.required = True
                     field.value_kind = field.value_kind or "path_or_uri"
                     field.consumers.add(node_requirement.node_id)
                     field.entry_names.add(module_template.entry_name)
-                    field.description = field.description or f"Mode-specific datasource key for module '{module_template.entry_name}' in mode '{mode}'."
+                    field.description = (
+                        field.description
+                        or f"Mode-specific datasource key for module '{module_template.entry_name}' in mode '{mode}'."
+                    )
 
     return WorkflowInputPanelSchema(
         workflow_id=template.workflow_id,
@@ -187,12 +245,19 @@ def _freeze_fields(fields: dict[str, _MutableField]) -> tuple[WorkflowPanelField
             source_types=tuple(sorted(item.source_types)),
             format_hints=tuple(sorted(item.format_hints)),
         )
-        for item in sorted(fields.values(), key=lambda field: (field.section, field.key))
+        for item in sorted(
+            fields.values(), key=lambda field: (field.section, field.key)
+        )
     )
 
 
 def _request_value_kind(request_key: str) -> str:
-    if request_key in {"algorithm_params", "datasource_selection", "output_spec_extra", "tags"}:
+    if request_key in {
+        "algorithm_params",
+        "datasource_selection",
+        "output_spec_extra",
+        "tags",
+    }:
         return "object"
     if request_key in {"time_range", "region"}:
         return "structured_object"

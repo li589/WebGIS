@@ -16,7 +16,8 @@ def _get_api_keys_repository():
     from app.services.api_keys_repository import ApiKeysRepository
 
     db_path = str(
-        __import__("pathlib").Path(settings.gee_credentials_db_path).parent / "api_keys.sqlite3"
+        __import__("pathlib").Path(settings.gee_credentials_db_path).parent
+        / "api_keys.sqlite3"
     )
     return ApiKeysRepository(
         db_path=db_path,
@@ -225,7 +226,9 @@ def delete_api_key(key_name: str) -> bool:
 
             hydrate_effective_config()
         except Exception:
-            logger.exception("Failed to rehydrate effective config after api key delete")
+            logger.exception(
+                "Failed to rehydrate effective config after api key delete"
+            )
     return deleted
 
 
@@ -329,10 +332,15 @@ async def test_api_key(key_name: str) -> tuple[bool, str]:
         if key_name == "tianditu":
             # 测试天地图 API：请求一个瓦片（使用 httpx 异步客户端，避免阻塞事件循环）
             import httpx
+
             url = f"https://t0.tianditu.gov.cn/img_w/wmts?SERVICE=WMTS&REQUEST=GetTile&VERSION=1.0.0&LAYER=img&STYLE=default&TILEMATRIXSET=w&FORMAT=tiles&TILECOL=0&TILEROW=0&TILEMATRIX=0&tk={key_value}"
             try:
-                async with httpx.AsyncClient(timeout=httpx.Timeout(10.0, connect=5.0)) as client:
-                    resp = await client.get(url, headers={"User-Agent": "CGDA-Backend/1.0"})
+                async with httpx.AsyncClient(
+                    timeout=httpx.Timeout(10.0, connect=5.0)
+                ) as client:
+                    resp = await client.get(
+                        url, headers={"User-Agent": "CGDA-Backend/1.0"}
+                    )
                 if resp.status_code == 200:
                     repo.update_test_status(key_name, "ok")
                     return True, "天地图 API Key 有效"
@@ -346,10 +354,15 @@ async def test_api_key(key_name: str) -> tuple[bool, str]:
         elif key_name == "baidu":
             # 百度地图 API 测试（使用 httpx 异步客户端）
             import httpx
+
             url = f"https://maponline0.bdimg.com/tile/?qt=tile&x=0&y=0&z=1&styles=pl&v=020&udt=20231201&ak={key_value}"
             try:
-                async with httpx.AsyncClient(timeout=httpx.Timeout(10.0, connect=5.0)) as client:
-                    resp = await client.get(url, headers={"User-Agent": "CGDA-Backend/1.0"})
+                async with httpx.AsyncClient(
+                    timeout=httpx.Timeout(10.0, connect=5.0)
+                ) as client:
+                    resp = await client.get(
+                        url, headers={"User-Agent": "CGDA-Backend/1.0"}
+                    )
                 if resp.status_code == 200:
                     repo.update_test_status(key_name, "ok")
                     return True, "百度地图 API Key 有效"
@@ -357,7 +370,10 @@ async def test_api_key(key_name: str) -> tuple[bool, str]:
                     # 百度可能返回 403 但 key 仍然有效（只是瓦片限制）。
                     # httpx 不像 urllib 那样在 4xx 时抛异常，需显式检查 status_code。
                     repo.update_test_status(key_name, "ok")
-                    return True, "百度地图 API Key 格式有效（瓦片访问受限但 key 已配置）"
+                    return (
+                        True,
+                        "百度地图 API Key 格式有效（瓦片访问受限但 key 已配置）",
+                    )
                 else:
                     msg = f"百度地图 API 返回 HTTP {resp.status_code}"
                     repo.update_test_status(key_name, "failed")
@@ -388,6 +404,7 @@ async def test_api_key(key_name: str) -> tuple[bool, str]:
 
 
 # ── GEE 账户管理 ──────────────────────────────────────────────────────────────
+
 
 def list_gee_accounts() -> list[dict[str, Any]]:
     """列出所有 GEE 账户（脱敏）。"""
@@ -439,7 +456,9 @@ async def test_gee_account(account_id: str) -> tuple[bool, str]:
         return False, f"GEE 账户 '{account_id}' 不存在或凭证为空"
 
     try:
-        from app.gee.core.src.webgis_gee.accounts.credentials import GeeCredentialsLoader
+        from app.gee.core.src.webgis_gee.accounts.credentials import (
+            GeeCredentialsLoader,
+        )
 
         creds = GeeCredentialsLoader.load_service_account_credentials(sa_json)
         success, message = GeeCredentialsLoader.test_credentials(
@@ -460,6 +479,7 @@ def _reload_gee_facade() -> None:
     """重载 GEE facade，使账户池变更生效。"""
     try:
         from app.services.gee_bridge_service import reload_gee_facade
+
         reload_gee_facade()
         logger.info("GEE facade reloaded after account change")
     except Exception as e:
@@ -479,6 +499,7 @@ def reload_gee_account_pool() -> tuple[bool, int, str]:
 
 # ── 常规配置 ──────────────────────────────────────────────────────────────────
 
+
 def get_general_config() -> dict[str, Any]:
     """获取常规配置（脱敏）。"""
     return {
@@ -493,6 +514,25 @@ def get_general_config() -> dict[str, Any]:
         "log_level": settings.log_level,
         "max_active_runs": settings.max_active_runs,
         "max_requested_outputs": settings.max_requested_outputs,
+        "max_active_weather_tile_runs": settings.max_active_weather_tile_runs,
+        "weather_cache_ttl_seconds": settings.weather_cache_ttl_seconds,
+        "weather_refresh_forecast_hours": settings.weather_refresh_forecast_hours,
+        "cache_default_ttl_seconds": settings.cache_default_ttl_seconds,
+        "provider_max_hotspots": settings.provider_max_hotspots,
+        "provider_max_series_points": settings.provider_max_series_points,
+        "provider_table_chunk_size": settings.provider_table_chunk_size,
+        "provider_series_chunk_size": settings.provider_series_chunk_size,
+        "result_inline_max_bytes": settings.result_inline_max_bytes,
+        "celery_task_soft_time_limit": settings.celery_task_soft_time_limit,
+        "celery_task_time_limit": settings.celery_task_time_limit,
+        "celery_task_always_eager": settings.celery_task_always_eager,
+        "cors_origins": settings.cors_origins,
+        "object_store_backend": settings.object_store_backend,
+        "object_store_public_base": settings.object_store_public_base,
+        "result_artifact_dir": settings.result_artifact_dir,
+        "workflow_state_dir": settings.workflow_state_dir,
+        "python_provider_root": settings.python_provider_root,
+        "python_provider_workspace": settings.python_provider_workspace,
         "redis_url": settings.redis_url,
         "storage_backend": settings.storage_backend,
         "reload": settings.reload,
@@ -500,6 +540,7 @@ def get_general_config() -> dict[str, Any]:
 
 
 # ── GEE 运行时配置 ────────────────────────────────────────────────────────────
+
 
 def get_gee_runtime_config() -> dict[str, Any]:
     """获取 GEE 运行时配置。"""
@@ -518,9 +559,13 @@ def get_gee_runtime_config() -> dict[str, Any]:
 
 # ── 天气 API 配置 ─────────────────────────────────────────────────────────────
 
+
 def get_weather_config() -> dict[str, Any]:
     """获取天气 API 配置（含 runtime effective 覆盖 + 模型/同步真源）。"""
-    from app.services.effective_config import get_runtime_snapshot, get_weather_cache_ttl_seconds
+    from app.services.effective_config import (
+        get_runtime_snapshot,
+        get_weather_cache_ttl_seconds,
+    )
     from app.services.weather_engine_settings import get_weather_engine_public_config
 
     snap = get_runtime_snapshot()
@@ -545,18 +590,23 @@ def set_weather_default_model(model: str) -> dict[str, Any]:
 
 
 def get_effective_weather_default_model() -> str:
-    from app.services.weather_engine_settings import get_effective_weather_default_model as _get
+    from app.services.weather_engine_settings import (
+        get_effective_weather_default_model as _get,
+    )
 
     return _get()
 
 
 def get_weather_sync_overview() -> dict[str, Any]:
-    from app.services.weather_engine_settings import get_weather_sync_overview as _overview
+    from app.services.weather_engine_settings import (
+        get_weather_sync_overview as _overview,
+    )
 
     return _overview()
 
 
 # ── 数据源配置 ────────────────────────────────────────────────────────────────
+
 
 def _research_data_repo():
     from functools import lru_cache
@@ -564,9 +614,14 @@ def _research_data_repo():
 
     @lru_cache(maxsize=1)
     def _inner():
-        from app.services.research_data_settings_repository import ResearchDataSettingsRepository
+        from app.services.research_data_settings_repository import (
+            ResearchDataSettingsRepository,
+        )
 
-        db_path = Path(settings.gee_credentials_db_path).parent / "research_data_settings.sqlite3"
+        db_path = (
+            Path(settings.gee_credentials_db_path).parent
+            / "research_data_settings.sqlite3"
+        )
         return ResearchDataSettingsRepository(db_path=db_path)
 
     return _inner()
@@ -576,19 +631,36 @@ def get_data_source_config() -> dict[str, Any]:
     """获取数据源配置（含数据根扫描、开放数据预设、静态缓存概览）。"""
     from app.services.data_cache_service import (
         DEFAULT_OPEN_DATA_PRESETS,
+        OPEN_DATA_PRESET_LABELS,
         get_data_cache_overview,
         scan_data_root_datasets,
     )
+    from app.services.portal_credentials import public_portal_credentials
 
     repo = _research_data_repo()
     presets = repo.get_json("open_data_presets", None)
     if not isinstance(presets, dict) or not presets:
         presets = dict(DEFAULT_OPEN_DATA_PRESETS)
+    else:
+        # Merge defaults so new portal keys appear even if DB has older map
+        merged = dict(DEFAULT_OPEN_DATA_PRESETS)
+        merged.update(
+            {
+                str(k): str(v)
+                for k, v in presets.items()
+                if str(k).strip() and str(v).strip()
+            }
+        )
+        presets = merged
     layer_uris = repo.get_json("remote_layer_data_uris", {})
     if not isinstance(layer_uris, dict):
         layer_uris = {}
 
     overview = get_data_cache_overview()
+    portal_creds = public_portal_credentials(
+        repo=repo,
+        encryption_key=settings.gee_credentials_encryption_key,
+    )
     return {
         "storage_backend": settings.storage_backend,
         "data_root": settings.data_root,
@@ -601,9 +673,13 @@ def get_data_source_config() -> dict[str, Any]:
             "endpoint": settings.minio_endpoint,
             "bucket": settings.minio_bucket,
             "secure": settings.minio_secure,
-        } if settings.storage_backend == "minio" else None,
+        }
+        if settings.storage_backend == "minio"
+        else None,
         "discovered_datasets": scan_data_root_datasets(),
         "open_data_presets": presets,
+        "open_data_preset_labels": OPEN_DATA_PRESET_LABELS,
+        "portal_credentials": portal_creds,
         "remote_layer_data_uris": layer_uris,
         "static_cache": {
             "cache_root": overview["cache_root"],
@@ -613,16 +689,64 @@ def get_data_source_config() -> dict[str, Any]:
             "total_bytes": overview["total_bytes"],
         },
         "workflow_hint": (
-            "在工作流「远程拉取」节点中填写 URI，并可用 ?cred=profile 或 cred_profile 参数"
-            "引用「远程存储」设置中的凭证 profile。"
+            "开放门户请用工作流「门户数据下载」(http_open_data) + cred_profile；"
+            "NAS/任意 URI 用「远程拉取」并引用「远程存储」凭证 profile。"
         ),
     }
 
 
 def update_open_data_presets(presets: dict[str, Any]) -> dict[str, Any]:
-    cleaned = {str(k): str(v) for k, v in presets.items() if str(k).strip() and str(v).strip()}
+    cleaned = {
+        str(k): str(v) for k, v in presets.items() if str(k).strip() and str(v).strip()
+    }
     _research_data_repo().set_json("open_data_presets", cleaned)
     return {"open_data_presets": cleaned}
+
+
+def get_portal_credentials_public() -> dict[str, Any]:
+    from app.services.portal_credentials import public_portal_credentials
+
+    return {
+        "portal_credentials": public_portal_credentials(
+            repo=_research_data_repo(),
+            encryption_key=settings.gee_credentials_encryption_key,
+        )
+    }
+
+
+def upsert_portal_credential(portal_id: str, payload: dict[str, Any]) -> dict[str, Any]:
+    from app.services.portal_credentials import upsert_portal_credential as _upsert
+
+    return {
+        "portal_credentials": _upsert(
+            repo=_research_data_repo(),
+            encryption_key=settings.gee_credentials_encryption_key,
+            portal_id=portal_id,
+            payload=payload,
+        )
+    }
+
+
+def delete_portal_credential(portal_id: str) -> dict[str, Any]:
+    from app.services.portal_credentials import delete_portal_credential as _delete
+
+    return {
+        "portal_credentials": _delete(
+            repo=_research_data_repo(),
+            encryption_key=settings.gee_credentials_encryption_key,
+            portal_id=portal_id,
+        )
+    }
+
+
+def get_portal_credentials_runtime() -> dict[str, Any]:
+    """Decrypted portal credentials for job injection (never expose via public API)."""
+    from app.services.portal_credentials import load_portal_credentials_secret
+
+    return load_portal_credentials_secret(
+        repo=_research_data_repo(),
+        encryption_key=settings.gee_credentials_encryption_key,
+    )
 
 
 def update_remote_layer_data_uris(uris: dict[str, Any]) -> dict[str, Any]:
@@ -651,13 +775,18 @@ def get_data_cache_overview_api() -> dict[str, Any]:
     return get_data_cache_overview()
 
 
-def evict_data_cache_api(*, uri_or_name: str | None = None, older_than_seconds: int | None = None) -> dict[str, Any]:
+def evict_data_cache_api(
+    *, uri_or_name: str | None = None, older_than_seconds: int | None = None
+) -> dict[str, Any]:
     from app.services.data_cache_service import evict_data_cache
 
-    return evict_data_cache(uri_or_name=uri_or_name, older_than_seconds=older_than_seconds)
+    return evict_data_cache(
+        uri_or_name=uri_or_name, older_than_seconds=older_than_seconds
+    )
 
 
 # ── 关于信息 ──────────────────────────────────────────────────────────────────
+
 
 def get_about_info() -> dict[str, Any]:
     """获取项目信息。"""
@@ -666,17 +795,40 @@ def get_about_info() -> dict[str, Any]:
         "version": "0.1.0",
         "description": "综合地理态势数据分析与可视化系统",
         "tech_stack": [
-            "Vue 3", "TypeScript", "Pinia", "MapLibre GL", "Vite",
-            "FastAPI", "Python 3.11+", "Celery", "Redis", "SQLite",
-            "MinIO", "Google Earth Engine", "Open-Meteo", "Docker",
+            "Vue 3",
+            "TypeScript",
+            "Pinia",
+            "MapLibre GL",
+            "Vite",
+            "FastAPI",
+            "Python 3.11+",
+            "Celery",
+            "Redis",
+            "SQLite",
+            "MinIO",
+            "Google Earth Engine",
+            "Open-Meteo",
+            "Docker",
         ],
         "modules": [
             {"name": "图层管理", "description": "多源图层目录、工作流驱动、实时瓦片"},
-            {"name": "天气引擎", "description": "Open-Meteo 实时气象数据、风场粒子流渲染"},
-            {"name": "GEE 引擎", "description": "Google Earth Engine 多账户并行、遥感分析"},
+            {
+                "name": "天气引擎",
+                "description": "Open-Meteo 实时气象数据、风场粒子流渲染",
+            },
+            {
+                "name": "GEE 引擎",
+                "description": "Google Earth Engine 多账户并行、遥感分析",
+            },
             {"name": "算法引擎", "description": "Python Provider 算法集成、双通道接口"},
-            {"name": "工作流调度", "description": "Celery 分布式任务、队列路由、重试策略"},
-            {"name": "数据管理", "description": "本地/远程数据源、导入导出、MinIO 持久化"},
+            {
+                "name": "工作流调度",
+                "description": "Celery 分布式任务、队列路由、重试策略",
+            },
+            {
+                "name": "数据管理",
+                "description": "本地/远程数据源、导入导出、MinIO 持久化",
+            },
         ],
         "architecture_summary": (
             "系统采用前后端分离架构：前端 Vue 3 + MapLibre GL 负责地图渲染与交互，"
@@ -688,6 +840,7 @@ def get_about_info() -> dict[str, Any]:
 
 
 # ── 天气源 Provider 管理 ──────────────────────────────────────────────────────
+
 
 @lru_cache(maxsize=1)
 def _get_weather_providers_repository():
@@ -707,6 +860,7 @@ def _get_weather_providers_repository():
 def _get_weather_registry():
     """获取 Provider 注册表单例（惰性 import 避免循环依赖）。"""
     from app.weatherengine.provider_registry import get_registry
+
     return get_registry()
 
 
@@ -775,7 +929,10 @@ def _provider_to_dict(
 def _ensure_weather_providers_registered() -> None:
     """设置页/配置读路径：惰性补注册默认天气源（含后续新增的 commercial providers）。"""
     try:
-        from app.weatherengine.provider_registry import get_registry, register_default_providers
+        from app.weatherengine.provider_registry import (
+            get_registry,
+            register_default_providers,
+        )
 
         register_default_providers()
         # 仅在 registry 刚从空变为有内容时应用一次 DB 覆盖；若已有 entries，
@@ -793,7 +950,10 @@ def list_weather_providers(*, include_disabled: bool = True) -> list[dict[str, A
     repo = _get_weather_providers_repository()
 
     # 从 DB 读取持久化配置
-    db_records = {r["provider_id"]: r for r in repo.list_providers(include_disabled=include_disabled)}
+    db_records = {
+        r["provider_id"]: r
+        for r in repo.list_providers(include_disabled=include_disabled)
+    }
 
     # 从 registry 读取运行时 Provider
     entries = registry.list_provider_entries()
@@ -818,7 +978,10 @@ def list_weather_providers(*, include_disabled: bool = True) -> list[dict[str, A
         seen_ids.add(provider.provider_id)
 
     # DB 中存在但 registry 中未注册的 Provider（过滤遗留 open-meteo，避免 UI 出现第三条幽灵行）
-    from app.weatherengine.provider_ids import OPEN_METEO_LEGACY_ID, OPEN_METEO_ONLINE_ID
+    from app.weatherengine.provider_ids import (
+        OPEN_METEO_LEGACY_ID,
+        OPEN_METEO_ONLINE_ID,
+    )
 
     legacy = db_records.get(OPEN_METEO_LEGACY_ID)
     if legacy is not None and OPEN_METEO_LEGACY_ID not in seen_ids:
@@ -835,7 +998,9 @@ def list_weather_providers(*, include_disabled: bool = True) -> list[dict[str, A
                     config=legacy.get("config") or {},
                 )
             repo.delete_provider(OPEN_METEO_LEGACY_ID)
-            logger.info("Migrated/removed legacy weather provider id %s", OPEN_METEO_LEGACY_ID)
+            logger.info(
+                "Migrated/removed legacy weather provider id %s", OPEN_METEO_LEGACY_ID
+            )
         except Exception as exc:
             logger.warning("Failed to purge legacy open-meteo DB row: %s", exc)
 
@@ -844,35 +1009,37 @@ def list_weather_providers(*, include_disabled: bool = True) -> list[dict[str, A
             continue
         if pid == OPEN_METEO_LEGACY_ID:
             continue
-        result.append({
-            "provider_id": pid,
-            "display_name": db_record.get("display_name") or pid,
-            "provider_type": db_record.get("provider_type") or "unknown",
-            "version": "n/a",
-            "description": "Provider registered in DB but not loaded at runtime (missing implementation).",
-            "homepage_url": None,
-            "requires_api_key": False,
-            "supported_capabilities": [],
-            "priority": db_record["priority"],
-            "enabled": db_record["enabled"],
-            "status": {
-                "healthy": False,
-                "circuit_state": "n/a",
-                "last_error": "Provider not loaded at runtime",
-                "daily_quota": None,
-                "daily_used": None,
-                "daily_remaining": None,
-                "cache_hits": 0,
-                "cache_misses": 0,
-                "metadata": {},
-            },
-            "config_schema": [],
-            "current_config": {},
-            "persisted_config": db_record.get("config"),
-            "last_tested_at": db_record.get("last_tested_at"),
-            "last_test_status": db_record.get("last_test_status"),
-            "is_builtin": False,
-        })
+        result.append(
+            {
+                "provider_id": pid,
+                "display_name": db_record.get("display_name") or pid,
+                "provider_type": db_record.get("provider_type") or "unknown",
+                "version": "n/a",
+                "description": "Provider registered in DB but not loaded at runtime (missing implementation).",
+                "homepage_url": None,
+                "requires_api_key": False,
+                "supported_capabilities": [],
+                "priority": db_record["priority"],
+                "enabled": db_record["enabled"],
+                "status": {
+                    "healthy": False,
+                    "circuit_state": "n/a",
+                    "last_error": "Provider not loaded at runtime",
+                    "daily_quota": None,
+                    "daily_used": None,
+                    "daily_remaining": None,
+                    "cache_hits": 0,
+                    "cache_misses": 0,
+                    "metadata": {},
+                },
+                "config_schema": [],
+                "current_config": {},
+                "persisted_config": db_record.get("config"),
+                "last_tested_at": db_record.get("last_tested_at"),
+                "last_test_status": db_record.get("last_test_status"),
+                "is_builtin": False,
+            }
+        )
 
     # 按 priority 升序排序
     result.sort(key=lambda x: (x["priority"], x["provider_id"]))
@@ -905,9 +1072,17 @@ def update_weather_provider(
 
     # 读取现有 DB 记录（若有）
     existing = repo.get_provider(provider_id)
-    new_enabled = enabled if enabled is not None else (existing["enabled"] if existing else True)
-    new_priority = priority if priority is not None else (existing["priority"] if existing else 100)
-    new_config = config if config is not None else (existing["config"] if existing else None)
+    new_enabled = (
+        enabled if enabled is not None else (existing["enabled"] if existing else True)
+    )
+    new_priority = (
+        priority
+        if priority is not None
+        else (existing["priority"] if existing else 100)
+    )
+    new_config = (
+        config if config is not None else (existing["config"] if existing else None)
+    )
 
     # 写入 DB
     repo.upsert_provider(
@@ -938,7 +1113,9 @@ def toggle_weather_provider(provider_id: str, enabled: bool) -> dict[str, Any] |
     return update_weather_provider(provider_id, enabled=enabled)
 
 
-def set_weather_provider_priority(provider_id: str, priority: int) -> dict[str, Any] | None:
+def set_weather_provider_priority(
+    provider_id: str, priority: int
+) -> dict[str, Any] | None:
     """调整 Provider 优先级。"""
     return update_weather_provider(provider_id, priority=priority)
 
@@ -987,7 +1164,9 @@ def test_weather_provider(provider_id: str) -> dict[str, Any]:
         "provider_id": provider_id,
         "success": success,
         "message": message,
-        "tested_at": __import__("datetime").datetime.now(__import__("datetime").timezone.utc).isoformat(),
+        "tested_at": __import__("datetime")
+        .datetime.now(__import__("datetime").timezone.utc)
+        .isoformat(),
     }
 
 
@@ -1008,19 +1187,27 @@ def delete_weather_provider(provider_id: str) -> bool:
             try:
                 provider.apply_config({})
             except Exception:
-                logger.exception("Failed to reset provider config after delete: %s", provider_id)
+                logger.exception(
+                    "Failed to reset provider config after delete: %s", provider_id
+                )
     return deleted
 
 
 # ── 远程存储凭证 ──────────────────────────────────────────────────────────────
 
+
 @lru_cache(maxsize=1)
 def _get_remote_storage_repository():
     from pathlib import Path
 
-    from app.services.remote_storage_credentials_repository import RemoteStorageCredentialsRepository
+    from app.services.remote_storage_credentials_repository import (
+        RemoteStorageCredentialsRepository,
+    )
 
-    db_path = Path(settings.gee_credentials_db_path).parent / "remote_storage_credentials.sqlite3"
+    db_path = (
+        Path(settings.gee_credentials_db_path).parent
+        / "remote_storage_credentials.sqlite3"
+    )
     return RemoteStorageCredentialsRepository(
         db_path=db_path,
         encryption_key=settings.gee_credentials_encryption_key,
@@ -1029,7 +1216,9 @@ def _get_remote_storage_repository():
 
 
 def list_remote_storage_profiles(include_disabled: bool = True) -> list[dict[str, Any]]:
-    return _get_remote_storage_repository().list_profiles(include_disabled=include_disabled)
+    return _get_remote_storage_repository().list_profiles(
+        include_disabled=include_disabled
+    )
 
 
 def list_remote_storage_history(profile_id: str) -> list[dict[str, Any]]:
@@ -1122,12 +1311,17 @@ def toggle_remote_storage_profile(profile_id: str, enabled: bool) -> bool:
     return ok
 
 
-def test_remote_storage_profile(profile_id: str, uri: str | None = None) -> dict[str, Any]:
+def test_remote_storage_profile(
+    profile_id: str, uri: str | None = None
+) -> dict[str, Any]:
     """Probe connectivity for a credential profile (auth/host, not object existence)."""
     from datetime import datetime, timezone
 
     from app.services.remote_auth_resolver import resolve_remote_auth
-    from shared.remote_sources.download import probe_remote_connectivity, probe_remote_uri
+    from shared.remote_sources.download import (
+        probe_remote_connectivity,
+        probe_remote_uri,
+    )
     from shared.remote_sources.uri import redact_uri
 
     repo = _get_remote_storage_repository()
@@ -1223,7 +1417,8 @@ def apply_persisted_provider_overrides() -> None:
             if online_rec is None:
                 repo.upsert_provider(
                     provider_id=OPEN_METEO_ONLINE_ID,
-                    display_name=legacy_rec.get("display_name") or "Open-Meteo (Online)",
+                    display_name=legacy_rec.get("display_name")
+                    or "Open-Meteo (Online)",
                     provider_type=legacy_rec.get("provider_type") or "free_api",
                     enabled=bool(legacy_rec.get("enabled", True)),
                     priority=int(legacy_rec.get("priority", 1)),
@@ -1266,7 +1461,9 @@ def apply_persisted_provider_overrides() -> None:
             )
             records = repo.list_providers(include_disabled=True)
         except Exception as e:
-            logger.warning("Failed to migrate open-meteo priorities to local-first: %s", e)
+            logger.warning(
+                "Failed to migrate open-meteo priorities to local-first: %s", e
+            )
 
     for record in records:
         pid = record["provider_id"]
@@ -1283,9 +1480,12 @@ def apply_persisted_provider_overrides() -> None:
                 try:
                     provider.apply_config(config)
                 except Exception as e:
-                    logger.warning("Failed to apply persisted config to provider %s: %s", pid, e)
+                    logger.warning(
+                        "Failed to apply persisted config to provider %s: %s", pid, e
+                    )
         logger.info(
             "Applied persisted override for weather provider %s: enabled=%s priority=%d",
-            pid, record["enabled"], record["priority"],
+            pid,
+            record["enabled"],
+            record["priority"],
         )
-

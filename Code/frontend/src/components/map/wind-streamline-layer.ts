@@ -66,7 +66,11 @@ export function buildStreamlineSeeds(
 ): StreamlineSeed[] {
   const seeds: StreamlineSeed[] = []
   const n = Math.max(1, count)
-  const cols = Math.ceil(Math.sqrt(n * (Math.abs(grid.east - grid.west) / Math.max(1e-6, Math.abs(grid.north - grid.south)))))
+  const cols = Math.ceil(
+    Math.sqrt(
+      n * (Math.abs(grid.east - grid.west) / Math.max(1e-6, Math.abs(grid.north - grid.south))),
+    ),
+  )
   const rows = Math.ceil(n / cols)
   for (let r = 0; r < rows; r++) {
     for (let c = 0; c < cols; c++) {
@@ -193,8 +197,12 @@ export class WindStreamlineLayer {
     const target = computeStreamlineCountForGrid(nextGrid)
     const inBounds = (s: StreamlineSeed) => {
       const lon = unwrapLonIntoGridFrame(s.lon, nextGrid.west, nextGrid.east)
-      return s.lat >= nextGrid.south && s.lat <= nextGrid.north
-        && lon >= nextGrid.west && lon <= nextGrid.east
+      return (
+        s.lat >= nextGrid.south &&
+        s.lat <= nextGrid.north &&
+        lon >= nextGrid.west &&
+        lon <= nextGrid.east
+      )
     }
 
     // 瓦片陆续补齐时保留已有种子，只增量补种 + 重积分，避免密度整屏抖动
@@ -343,7 +351,7 @@ export class WindStreamlineLayer {
       // 圆环光滑脉冲：相位 % 1 绕回时亮斑从尾丝滑接到头，无闪回
       const phase2 = (localPhase + SECOND_PULSE_OFFSET) % 1
       for (let j = 0; j < pts.length - 1; j++) {
-        const sMid = (cum[j] + cum[j + 1]) * 0.5 / totalLen
+        const sMid = ((cum[j] + cum[j + 1]) * 0.5) / totalLen
         const a = Math.max(
           wrappedPulse(sMid, localPhase, PULSE_WIDTH),
           wrappedPulse(sMid, phase2, SECOND_PULSE_WIDTH) * 0.72,

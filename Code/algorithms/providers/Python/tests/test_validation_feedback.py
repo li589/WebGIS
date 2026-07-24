@@ -10,7 +10,10 @@ from contracts.serialization import JobRequestDecodeError
 from contracts.validation import JobRequestValidationError, validate_job_request
 from contracts.validation_feedback import build_validation_feedback
 from workflow.serialization import coerce_workflow_definition
-from workflow.validation import WorkflowDefinitionValidationError, validate_workflow_definition
+from workflow.validation import (
+    WorkflowDefinitionValidationError,
+    validate_workflow_definition,
+)
 
 
 class ValidationFeedbackTests(unittest.TestCase):
@@ -27,7 +30,9 @@ class ValidationFeedbackTests(unittest.TestCase):
         )
 
     def test_build_validation_feedback_maps_job_request_decode_error(self) -> None:
-        error = JobRequestDecodeError("Field must be an ISO datetime string: job_request.time_range.start")
+        error = JobRequestDecodeError(
+            "Field must be an ISO datetime string: job_request.time_range.start"
+        )
 
         feedback = build_validation_feedback(error)
 
@@ -40,7 +45,9 @@ class ValidationFeedbackTests(unittest.TestCase):
         self.assertEqual(issue.section, "request")
 
     def test_build_validation_feedback_maps_unknown_field_decode_error(self) -> None:
-        error = JobRequestDecodeError("Unknown field(s) not allowed: job_request -> unexpected")
+        error = JobRequestDecodeError(
+            "Unknown field(s) not allowed: job_request -> unexpected"
+        )
 
         feedback = build_validation_feedback(error)
 
@@ -52,7 +59,9 @@ class ValidationFeedbackTests(unittest.TestCase):
         self.assertEqual(issue.field_key, "unexpected")
         self.assertEqual(issue.section, "request")
 
-    def test_build_validation_feedback_maps_inconsistent_timezone_decode_error(self) -> None:
+    def test_build_validation_feedback_maps_inconsistent_timezone_decode_error(
+        self,
+    ) -> None:
         error = JobRequestDecodeError(
             "Fields must both include timezone info or both omit it: "
             "job_request.time_range.start, job_request.time_range.end"
@@ -66,7 +75,9 @@ class ValidationFeedbackTests(unittest.TestCase):
         self.assertEqual(feedback.issues[0].field_path, "job_request.time_range.start")
         self.assertEqual(feedback.issues[1].field_path, "job_request.time_range.end")
 
-    def test_build_validation_feedback_maps_job_request_validation_error_to_datasource_field(self) -> None:
+    def test_build_validation_feedback_maps_job_request_validation_error_to_datasource_field(
+        self,
+    ) -> None:
         request = self._build_request()
         request.workflow_definition = {
             "workflow_id": "wf-feedback",
@@ -84,7 +95,9 @@ class ValidationFeedbackTests(unittest.TestCase):
                     "params": {"module_name": "daily_bundle"},
                 }
             ],
-            "outputs": [{"name": "final_manifest", "source": "node:bundle_node.manifest"}],
+            "outputs": [
+                {"name": "final_manifest", "source": "node:bundle_node.manifest"}
+            ],
         }
 
         with self.assertRaises(JobRequestValidationError) as ctx:
@@ -96,13 +109,17 @@ class ValidationFeedbackTests(unittest.TestCase):
         self.assertEqual(len(feedback.issues), 1)
         issue = feedback.issues[0]
         self.assertEqual(issue.code, "missing_datasource_key")
-        self.assertEqual(issue.field_path, "job_request.datasource_selection.source_value")
+        self.assertEqual(
+            issue.field_path, "job_request.datasource_selection.source_value"
+        )
         self.assertEqual(issue.field_key, "source_value")
         self.assertEqual(issue.section, "datasource_selection")
         self.assertEqual(issue.label, "Source Value")
         self.assertEqual(issue.control_type, "file_picker")
 
-    def test_build_validation_feedback_maps_workflow_validation_error_to_binding_path(self) -> None:
+    def test_build_validation_feedback_maps_workflow_validation_error_to_binding_path(
+        self,
+    ) -> None:
         workflow_definition = {
             "workflow_id": "wf-invalid-binding",
             "nodes": [
@@ -113,13 +130,19 @@ class ValidationFeedbackTests(unittest.TestCase):
                     "params": {"module_name": "daily_bundle"},
                 }
             ],
-            "outputs": [{"name": "final_manifest", "source": "node:module_node.manifest"}],
+            "outputs": [
+                {"name": "final_manifest", "source": "node:module_node.manifest"}
+            ],
         }
 
         with self.assertRaises(WorkflowDefinitionValidationError) as ctx:
-            validate_workflow_definition(coerce_workflow_definition(workflow_definition))
+            validate_workflow_definition(
+                coerce_workflow_definition(workflow_definition)
+            )
 
-        feedback = build_validation_feedback(ctx.exception, workflow_definition=workflow_definition)
+        feedback = build_validation_feedback(
+            ctx.exception, workflow_definition=workflow_definition
+        )
 
         self.assertEqual(feedback.error_type, "workflow_definition_validation")
         self.assertEqual(len(feedback.issues), 1)

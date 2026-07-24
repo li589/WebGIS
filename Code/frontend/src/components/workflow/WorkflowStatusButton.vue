@@ -29,13 +29,14 @@ const showRetryBadge = computed(() => props.summary.retryPending > 0)
 const showFailedBadge = computed(() => props.summary.failed > 0)
 /** 已完成数量（含天气视口瓦片填满的图层）始终展示，便于与运行中并存对照 */
 const showDoneBadge = computed(() => props.summary.succeeded > 0)
-const showCancelledBadge = computed(() =>
-  props.summary.cancelled > 0
-  && props.summary.running === 0
-  && props.summary.queued === 0
-  && props.summary.retryPending === 0
-  && props.summary.failed === 0
-  && props.summary.succeeded === 0,
+const showCancelledBadge = computed(
+  () =>
+    props.summary.cancelled > 0 &&
+    props.summary.running === 0 &&
+    props.summary.queued === 0 &&
+    props.summary.retryPending === 0 &&
+    props.summary.failed === 0 &&
+    props.summary.succeeded === 0,
 )
 </script>
 
@@ -48,12 +49,24 @@ const showCancelledBadge = computed(() =>
   >
     <span class="wf-dot" aria-hidden="true"></span>
     <span class="wf-label">{{ label }}</span>
-    <span v-if="showRunningBadge" class="wf-badge badge-running" title="运行中">{{ summary.running }}</span>
-    <span v-if="showQueuedBadge" class="wf-badge badge-queued" title="排队中">{{ summary.queued }}</span>
-    <span v-if="showRetryBadge" class="wf-badge badge-retry" title="等待重试">{{ summary.retryPending }}</span>
-    <span v-if="showFailedBadge" class="wf-badge badge-failed" title="失败">{{ summary.failed }}</span>
-    <span v-if="showDoneBadge" class="wf-badge badge-done" title="已完成">{{ summary.succeeded }}</span>
-    <span v-if="showCancelledBadge" class="wf-badge badge-cancelled" title="已取消">{{ summary.cancelled }}</span>
+    <span v-if="showRunningBadge" class="wf-badge badge-running" title="运行中">{{
+      summary.running
+    }}</span>
+    <span v-if="showQueuedBadge" class="wf-badge badge-queued" title="排队中">{{
+      summary.queued
+    }}</span>
+    <span v-if="showRetryBadge" class="wf-badge badge-retry" title="等待重试">{{
+      summary.retryPending
+    }}</span>
+    <span v-if="showFailedBadge" class="wf-badge badge-failed" title="失败">{{
+      summary.failed
+    }}</span>
+    <span v-if="showDoneBadge" class="wf-badge badge-done" title="已完成">{{
+      summary.succeeded
+    }}</span>
+    <span v-if="showCancelledBadge" class="wf-badge badge-cancelled" title="已取消">{{
+      summary.cancelled
+    }}</span>
   </button>
 </template>
 
@@ -72,7 +85,11 @@ const showCancelledBadge = computed(() =>
   font: inherit;
   font-size: 0.62rem;
   font-weight: 500;
-  transition: border-color 0.22s ease, color 0.22s ease, background 0.22s ease, box-shadow 0.22s ease;
+  transition:
+    border-color 0.22s ease,
+    color 0.22s ease,
+    background 0.22s ease,
+    box-shadow 0.22s ease;
   white-space: nowrap;
   overflow: hidden;
 }
@@ -88,7 +105,9 @@ const showCancelledBadge = computed(() =>
   border-radius: 50%;
   flex: none;
   background: currentColor;
-  transition: background 0.2s ease, box-shadow 0.2s ease;
+  transition:
+    background 0.2s ease,
+    box-shadow 0.2s ease;
 }
 
 .wf-label {
@@ -148,8 +167,12 @@ const showCancelledBadge = computed(() =>
 }
 
 /* ── Tone: idle ─────────────────────────────────────────────────────────── */
-.tone-idle { color: #6e8ba0; }
-.tone-idle .wf-dot { background: #6e8ba0; }
+.tone-idle {
+  color: #6e8ba0;
+}
+.tone-idle .wf-dot {
+  background: #6e8ba0;
+}
 
 /* ── Tone: active (running) — pulsing glow + rotating shimmer ───────────── */
 .tone-active {
@@ -170,26 +193,37 @@ const showCancelledBadge = computed(() =>
   position: absolute;
   inset: 0;
   border-radius: inherit;
-  background: linear-gradient(90deg,
-    transparent,
-    rgba(90, 213, 255, 0.12),
-    transparent
-  );
+  background: linear-gradient(90deg, transparent, rgba(90, 213, 255, 0.12), transparent);
   transform: translateX(-100%);
   animation: wf-shimmer 2.8s ease-in-out infinite;
   pointer-events: none;
 }
 
 @keyframes wf-pulse-active {
-  0% { box-shadow: 0 0 0 0 rgba(90, 213, 255, 0.6); opacity: 1; }
-  50% { box-shadow: 0 0 0 4px rgba(90, 213, 255, 0.08); opacity: 0.65; }
-  100% { box-shadow: 0 0 0 0 rgba(90, 213, 255, 0); opacity: 1; }
+  0% {
+    box-shadow: 0 0 0 0 rgba(90, 213, 255, 0.6);
+    opacity: 1;
+  }
+  50% {
+    box-shadow: 0 0 0 4px rgba(90, 213, 255, 0.08);
+    opacity: 0.65;
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgba(90, 213, 255, 0);
+    opacity: 1;
+  }
 }
 
 @keyframes wf-shimmer {
-  0% { transform: translateX(-100%); }
-  60% { transform: translateX(100%); }
-  100% { transform: translateX(100%); }
+  0% {
+    transform: translateX(-100%);
+  }
+  60% {
+    transform: translateX(100%);
+  }
+  100% {
+    transform: translateX(100%);
+  }
 }
 
 /* ── Tone: success ──────────────────────────────────────────────────────── */
@@ -231,8 +265,17 @@ const showCancelledBadge = computed(() =>
 }
 
 @keyframes wf-pulse-error {
-  0% { box-shadow: 0 0 0 0 rgba(255, 138, 138, 0.6); opacity: 1; }
-  50% { box-shadow: 0 0 0 4px rgba(255, 138, 138, 0.06); opacity: 0.6; }
-  100% { box-shadow: 0 0 0 0 rgba(255, 138, 138, 0); opacity: 1; }
+  0% {
+    box-shadow: 0 0 0 0 rgba(255, 138, 138, 0.6);
+    opacity: 1;
+  }
+  50% {
+    box-shadow: 0 0 0 4px rgba(255, 138, 138, 0.06);
+    opacity: 0.6;
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgba(255, 138, 138, 0);
+    opacity: 1;
+  }
 }
 </style>

@@ -38,7 +38,9 @@ class GeeContext:
         self._lock_acquired = True
         try:
             if self._credentials and self._project_id:
-                self._ee.Initialize(credentials=self._credentials, project=self._project_id)
+                self._ee.Initialize(
+                    credentials=self._credentials, project=self._project_id
+                )
             elif self._credentials:
                 self._ee.Initialize(credentials=self._credentials)
             else:
@@ -49,7 +51,9 @@ class GeeContext:
             if self._lock_acquired:
                 self._runtime_lock.release()
                 self._lock_acquired = False
-            logger.error("GEE context initialization failed for %s: %s", self.account_id, str(e))
+            logger.error(
+                "GEE context initialization failed for %s: %s", self.account_id, str(e)
+            )
             raise
 
     @property

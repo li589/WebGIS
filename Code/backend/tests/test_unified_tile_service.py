@@ -20,6 +20,7 @@ class TileProviderRegistryTests(unittest.TestCase):
 
     def test_registry_resolves_basemap_provider_id(self) -> None:
         from app.services.providers.basemap_tile_provider import BaseMapTileProvider
+
         provider = BaseMapTileProvider()
         self.assertTrue(provider.matches("gaode-street"))
         self.assertTrue(provider.matches("esri-street"))
@@ -29,6 +30,7 @@ class TileProviderRegistryTests(unittest.TestCase):
 
     def test_registry_resolves_weather_layer_id(self) -> None:
         from app.services.providers.weather_tile_provider import WeatherTileProvider
+
         provider = WeatherTileProvider()
         # 天气图层 ID 来自 layer_catalog 中 source_type=weather 的条目
         self.assertTrue(provider.matches("wind-field"))

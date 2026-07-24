@@ -9,20 +9,23 @@ import { createMapStagePresentationModule } from './map-stage-presentation-modul
 import { createMeasureModule } from './measure-module'
 import { createSelectedLayerFocusModule } from './selected-layer-focus-module'
 import type { WeatherOverlayModule } from './weather-overlay-module'
+import type { MapCanvasNonWeatherLayerSyncModule } from './map-canvas-non-weather-layer-sync-module'
 
 type MapInstance = import('maplibre-gl').Map
 
 export interface MapCanvasState {
   mapContainer: Ref<HTMLElement | null>
   mapStageRef: Ref<HTMLElement | null>
-  hotspotPins: Ref<Array<{
-    id: string
-    name: string
-    value: string
-    left: string
-    top: string
-    selected: boolean
-  }>>
+  hotspotPins: Ref<
+    Array<{
+      id: string
+      name: string
+      value: string
+      left: string
+      top: string
+      selected: boolean
+    }>
+  >
   selectedHotspotId: Ref<string | null>
   mapReady: Ref<boolean>
   mapVisible: Ref<boolean>
@@ -38,6 +41,7 @@ export interface MapCanvasState {
     basemapModule: ReturnType<typeof createBasemapModule> | null
     mapStagePresentationModule: ReturnType<typeof createMapStagePresentationModule> | null
     weatherOverlayModule: WeatherOverlayModule | null
+    nonWeatherLayerSyncModule: MapCanvasNonWeatherLayerSyncModule | null
     hotspotPinsModule: ReturnType<typeof createHotspotPinsModule> | null
     mapInteractionModule: ReturnType<typeof createMapInteractionModule> | null
     mapCanvasRuntimeModule: ReturnType<typeof createMapCanvasRuntimeModule> | null
@@ -67,6 +71,7 @@ export function createMapCanvasState(): MapCanvasState {
       basemapModule: null,
       mapStagePresentationModule: null,
       weatherOverlayModule: null,
+      nonWeatherLayerSyncModule: null,
       hotspotPinsModule: null,
       mapInteractionModule: null,
       mapCanvasRuntimeModule: null,
@@ -79,6 +84,7 @@ export function createMapCanvasState(): MapCanvasState {
       state.resources.basemapModule = null
       state.resources.mapStagePresentationModule = null
       state.resources.weatherOverlayModule = null
+      state.resources.nonWeatherLayerSyncModule = null
       state.resources.hotspotPinsModule = null
       state.resources.mapInteractionModule = null
       state.resources.mapCanvasRuntimeModule = null

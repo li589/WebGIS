@@ -91,7 +91,9 @@ def _parse_remote_layer_data_uris() -> dict[str, dict[str, list[str]]]:
         return db_overlay
 
     # Deep merge: DB layer/dataset wins; env fills gaps
-    merged: dict[str, dict[str, list[str]]] = {k: dict(v) for k, v in env_overlay.items()}
+    merged: dict[str, dict[str, list[str]]] = {
+        k: dict(v) for k, v in env_overlay.items()
+    }
     for layer_id, datasets in db_overlay.items():
         if layer_id not in merged:
             merged[layer_id] = dict(datasets)
@@ -101,7 +103,9 @@ def _parse_remote_layer_data_uris() -> dict[str, dict[str, list[str]]]:
     return merged
 
 
-def _apply_remote_layer_data_uris(items: list[LayerDescriptor]) -> list[LayerDescriptor]:
+def _apply_remote_layer_data_uris(
+    items: list[LayerDescriptor],
+) -> list[LayerDescriptor]:
     """Inject SMB/SFTP URIs into matching layers (DB overlay preferred over env)."""
     overlay = _parse_remote_layer_data_uris()
     if not overlay:
@@ -119,9 +123,7 @@ def _apply_remote_layer_data_uris(items: list[LayerDescriptor]) -> list[LayerDes
         notes = list(item.run_readiness_notes or [])
         note = (
             f"已注入远端数据源候选（remote_layer_data_uris / {item.layer_id}）："
-            + ", ".join(
-                f"{ds}×{len(uris)}" for ds, uris in remote_by_dataset.items()
-            )
+            + ", ".join(f"{ds}×{len(uris)}" for ds, uris in remote_by_dataset.items())
         )
         if note not in notes:
             notes.insert(0, note)
@@ -152,11 +154,20 @@ def _layer_capabilities(
     result_interfaces: list[str] | None = None,
 ) -> LayerCapabilities:
     if supports_viewport_refresh is None:
-        supports_viewport_refresh = render_strategy in {"weather_tile", "workflow_map_layer"}
+        supports_viewport_refresh = render_strategy in {
+            "weather_tile",
+            "workflow_map_layer",
+        }
     if viewport_refresh_mode is None and supports_viewport_refresh:
-        viewport_refresh_mode = "tile" if render_strategy == "weather_tile" else "workflow"
+        viewport_refresh_mode = (
+            "tile" if render_strategy == "weather_tile" else "workflow"
+        )
     if delivery_modes is None:
-        delivery_modes = ["tile_cache", "point_query"] if render_strategy == "weather_tile" else ["workflow_result"]
+        delivery_modes = (
+            ["tile_cache", "point_query"]
+            if render_strategy == "weather_tile"
+            else ["workflow_result"]
+        )
     if result_interfaces is None:
         result_interfaces = (
             ["map_layer", "weather_point"]
@@ -219,10 +230,18 @@ def get_layer_catalog() -> LayerCatalogResponse:
         crs="EPSG:4326",
     )
     china_extent = BoundingBox(
-        west=73.0, south=15.0, east=137.0, north=59.0, crs="EPSG:4326",
+        west=73.0,
+        south=15.0,
+        east=137.0,
+        north=59.0,
+        crs="EPSG:4326",
     )
     global_extent = BoundingBox(
-        west=-180.0, south=-90.0, east=180.0, north=90.0, crs="EPSG:4326",
+        west=-180.0,
+        south=-90.0,
+        east=180.0,
+        north=90.0,
+        crs="EPSG:4326",
     )
 
     items = [
@@ -319,7 +338,13 @@ def get_layer_catalog() -> LayerCatalogResponse:
             extent=extent,
             style=LayerStyleHint(palette="blue-cyan", unit_label="m/s", opacity=0.78),
             capabilities=_weather_capabilities("wind-field-850hPa"),
-            tags=["wind", "frontend-aligned", "850hPa", "pressure-level", "low-level-jet"],
+            tags=[
+                "wind",
+                "frontend-aligned",
+                "850hPa",
+                "pressure-level",
+                "low-level-jet",
+            ],
         ),
         LayerDescriptor(
             layer_id="wind-field-500hPa",
@@ -545,7 +570,9 @@ def get_layer_catalog() -> LayerCatalogResponse:
             time_granularity=TimeGranularity.hour,
             default_time_offset=0,
             extent=extent,
-            style=LayerStyleHint(palette="thermal-orange", unit_label="C", opacity=0.78),
+            style=LayerStyleHint(
+                palette="thermal-orange", unit_label="C", opacity=0.78
+            ),
             capabilities=_weather_capabilities("dewpoint"),
             tags=["dewpoint", "atmosphere", "frontend-aligned"],
         ),
@@ -566,18 +593,26 @@ def get_layer_catalog() -> LayerCatalogResponse:
             default_time_offset=-1,
             extent=extent,
             style=LayerStyleHint(palette="ndvi-ramp", unit_label="", opacity=0.78),
-            capabilities=_workflow_map_capabilities(data_domain="vegetation", paint_mode="grid_fill"),
+            capabilities=_workflow_map_capabilities(
+                data_domain="vegetation", paint_mode="grid_fill"
+            ),
             tags=["ndvi", "vegetation", "remote-sensing", "frontend-aligned"],
             module_name="ndvi_daily",
             engine="python_provider",
             default_task_type="ndvi_daily",
             default_data_access_sources={
-                "NDVI_16DAY_RASTER": ["NDVI_VIIRS", "NDVI_MODIS", "Soil_Ecological_Data/NDVI/VIIRS", "Soil_Ecological_Data/NDVI/MODIS"],
+                "NDVI_16DAY_RASTER": [
+                    "NDVI_16DAY_RASTER",
+                    "I:/Geograph_DataSet/Soil_Ecological_Data/NDVI/VIIRS_9km_tif",
+                    "Soil_Ecological_Data/NDVI/VIIRS_9km_tif",
+                ],
             },
-            run_readiness_summary="待下载 VIIRS/MODIS NDVI 16 天合成产品后可运行。",
+            run_readiness_summary="需先经 A1/A2（ndvi_hdf_preprocess）产出 9 km GeoTIFF，或放置已有 TIF。",
             run_readiness_notes=[
-                "数据源未就绪：NDVI_VIIRS 和 NDVI_MODIS 候选路径均不存在。",
-                "建议放置路径：I:/Geograph_DataSet/Soil_Ecological_Data/NDVI/VIIRS 或 MODIS。",
+                "ndvi_daily 读取的是 9 km GeoTIFF（YYYYMMDD.tif），不是原始 HDF。",
+                "原始 VNP13C1/MOYD13C1 请放到 Soil_Ecological_Data/NDVI/VIIRS 或 MODIS，"
+                "再跑模块 ndvi_hdf_preprocess → Soil_Ecological_Data/NDVI/VIIRS_9km_tif。",
+                "当前 I:/Geograph_DataSet 下 NDVI 目录缺失时保持 placeholder/blocked。",
             ],
         ),
         LayerDescriptor(
@@ -595,8 +630,12 @@ def get_layer_catalog() -> LayerCatalogResponse:
             time_granularity=TimeGranularity.day,
             default_time_offset=-1,
             extent=extent,
-            style=LayerStyleHint(palette="purple-green", unit_label="index", opacity=0.75),
-            capabilities=_workflow_map_capabilities(data_domain="remote_sensing", paint_mode="grid_fill"),
+            style=LayerStyleHint(
+                palette="purple-green", unit_label="index", opacity=0.75
+            ),
+            capabilities=_workflow_map_capabilities(
+                data_domain="remote_sensing", paint_mode="grid_fill"
+            ),
             tags=["remote-sensing", "frontend-aligned"],
             engine="gee",
             workflow_id="gee-remote-sensing-ndvi",
@@ -662,8 +701,12 @@ def get_layer_catalog() -> LayerCatalogResponse:
             time_granularity=TimeGranularity.day,
             default_time_offset=0,
             extent=extent,
-            style=LayerStyleHint(palette="magenta-yellow", unit_label="m³/m³", opacity=0.9),
-            capabilities=_workflow_map_capabilities(data_domain="soil_moisture", paint_mode="heatmap"),
+            style=LayerStyleHint(
+                palette="magenta-yellow", unit_label="m³/m³", opacity=0.9
+            ),
+            capabilities=_workflow_map_capabilities(
+                data_domain="soil_moisture", paint_mode="heatmap"
+            ),
             tags=["sample", "lab-output", "compat"],
             engine="provider",
             run_readiness="ready",
@@ -694,7 +737,9 @@ def get_layer_catalog() -> LayerCatalogResponse:
             tags=["dem", "etopo", "topography", "bathymetry", "overlay"],
             run_readiness="ready",
             run_readiness_summary="ETOPO 2022 全球地形数据已就绪。",
-            run_readiness_notes=["数据源: I:/Geograph_DataSet/DEM/ETOPO_2022/ETOPO_2022_v1_60s_N90W180_surface.tif"],
+            run_readiness_notes=[
+                "数据源: I:/Geograph_DataSet/DEM/ETOPO_2022/ETOPO_2022_v1_60s_N90W180_surface.tif"
+            ],
         ),
         LayerDescriptor(
             layer_id="landcover-cn",
@@ -776,7 +821,9 @@ def get_layer_catalog() -> LayerCatalogResponse:
             tags=["omega", "inversion", "vod", "overlay"],
             run_readiness="ready",
             run_readiness_summary="Omega 反演结果已就绪（doy 017-030，14 天时间序列）。",
-            run_readiness_notes=["数据源: InversionResults/smap_avg/doy_{017..030}.mat (14 files)"],
+            run_readiness_notes=[
+                "数据源: InversionResults/smap_avg/doy_{017..030}.mat (14 files)"
+            ],
             data_owner="Lab",
             temporal_coverage="doy 017-030 (multi-year mean)",
         ),
@@ -800,7 +847,9 @@ def get_layer_catalog() -> LayerCatalogResponse:
             tags=["smap", "soil-moisture", "time-series", "overlay"],
             run_readiness="ready",
             run_readiness_summary="SMAP 土壤湿度时间序列数据已就绪（13 天）。",
-            run_readiness_notes=["数据源: stage1_smap_mat/SMAP_L3_SM_P_*.mat (13 files)"],
+            run_readiness_notes=[
+                "数据源: stage1_smap_mat/SMAP_L3_SM_P_*.mat (13 files)"
+            ],
             data_owner="Lab",
             temporal_coverage="2023-01 (13 days)",
             source_reference="https://nsidc.org/data/SPL3SMP",
@@ -825,7 +874,9 @@ def get_layer_catalog() -> LayerCatalogResponse:
             tags=["gpcp", "precipitation", "time-series", "overlay"],
             run_readiness="ready",
             run_readiness_summary="GPCP 月降水时间序列数据已就绪（24 个月采样）。",
-            run_readiness_notes=["数据源: Weather/Precipitation/Precipitation/dataset/GPCPMON_L3_*_V3.2.nc4 (336 files, sampled 24)"],
+            run_readiness_notes=[
+                "数据源: Weather/Precipitation/Precipitation/dataset/GPCPMON_L3_*_V3.2.nc4 (336 files, sampled 24)"
+            ],
         ),
         # ─── 新增数据集叠加图层（10 个） ────────────────────────────────────────
         LayerDescriptor(
@@ -866,7 +917,9 @@ def get_layer_catalog() -> LayerCatalogResponse:
             tags=["precipitation", "cmfd", "china", "overlay"],
             run_readiness="ready",
             run_readiness_summary="CMFD 中国区域降水数据已就绪（2002-01）。",
-            run_readiness_notes=["数据源: I:/Geograph_DataSet/Precipitation/pre_2002_01.tif"],
+            run_readiness_notes=[
+                "数据源: I:/Geograph_DataSet/Precipitation/pre_2002_01.tif"
+            ],
         ),
         LayerDescriptor(
             layer_id="clcd-cn",
@@ -886,7 +939,9 @@ def get_layer_catalog() -> LayerCatalogResponse:
             tags=["landcover", "clcd", "china", "overlay"],
             run_readiness="ready",
             run_readiness_summary="CLCD 1997 土地覆盖数据已就绪。",
-            run_readiness_notes=["数据源: I:/Geograph_DataSet/LandCover/CLCD_v01_1997.tif"],
+            run_readiness_notes=[
+                "数据源: I:/Geograph_DataSet/LandCover/CLCD_v01_1997.tif"
+            ],
         ),
         LayerDescriptor(
             layer_id="biomass-cn",
@@ -906,7 +961,9 @@ def get_layer_catalog() -> LayerCatalogResponse:
             tags=["biomass", "esa", "agb", "overlay"],
             run_readiness="ready",
             run_readiness_summary="ESA BIOMASS 2020 中国区域数据已就绪。",
-            run_readiness_notes=["数据源: I:/Geograph_DataSet/Biomass/ESACCI-BIOMASS-L4-AGB-MERGED-100m-2020-fv6.0.nc"],
+            run_readiness_notes=[
+                "数据源: I:/Geograph_DataSet/Biomass/ESACCI-BIOMASS-L4-AGB-MERGED-100m-2020-fv6.0.nc"
+            ],
         ),
         LayerDescriptor(
             layer_id="era5-dwaa-cn",
@@ -926,7 +983,9 @@ def get_layer_catalog() -> LayerCatalogResponse:
             tags=["era5", "heatwave", "dwaa", "disaster", "overlay"],
             run_readiness="ready",
             run_readiness_summary="ERA5 DWAA 白天热浪事件数据已就绪（2020）。",
-            run_readiness_notes=["数据源: I:/Geograph_DataSet/Hazards/DWAA_result/DW_T7/ERA5_2020_DW_SMCI.tif"],
+            run_readiness_notes=[
+                "数据源: I:/Geograph_DataSet/Hazards/DWAA_result/DW_T7/ERA5_2020_DW_SMCI.tif"
+            ],
         ),
         LayerDescriptor(
             layer_id="era5-wdaa-cn",
@@ -946,7 +1005,9 @@ def get_layer_catalog() -> LayerCatalogResponse:
             tags=["era5", "heatwave", "wdaa", "disaster", "overlay"],
             run_readiness="ready",
             run_readiness_summary="ERA5 WDAA 夜间热浪事件数据已就绪（2020）。",
-            run_readiness_notes=["数据源: I:/Geograph_DataSet/Hazards/DWAA_result/WD_T7/ERA5_2020_WD_SMCI.tif"],
+            run_readiness_notes=[
+                "数据源: I:/Geograph_DataSet/Hazards/DWAA_result/WD_T7/ERA5_2020_WD_SMCI.tif"
+            ],
         ),
         LayerDescriptor(
             layer_id="co2-cn",
@@ -966,7 +1027,9 @@ def get_layer_catalog() -> LayerCatalogResponse:
             tags=["co2", "gosat", "atmosphere", "overlay"],
             run_readiness="ready",
             run_readiness_summary="GOSAT CO₂ 柱浓度数据已就绪。",
-            run_readiness_notes=["数据源: I:/Geograph_DataSet/CO2/MidLayerCO2Column/TIF/MeanCarbonDioxide.tif"],
+            run_readiness_notes=[
+                "数据源: I:/Geograph_DataSet/CO2/MidLayerCO2Column/TIF/MeanCarbonDioxide.tif"
+            ],
         ),
         LayerDescriptor(
             layer_id="soil-ddca",
@@ -988,7 +1051,9 @@ def get_layer_catalog() -> LayerCatalogResponse:
             tags=["soil", "ecology", "ddca", "overlay"],
             run_readiness="ready",
             run_readiness_summary="土壤生态 DDCA 数据已就绪（2015-04-01 至 2022-12-31，采样 60 天）。",
-            run_readiness_notes=["数据源: I:/Geograph_DataSet/Soil_Ecological_Data/DDCA/DDCA_DH/H/YYYYMMDD.mat (2747 files, sampled 60)"],
+            run_readiness_notes=[
+                "数据源: I:/Geograph_DataSet/Soil_Ecological_Data/DDCA/DDCA_DH/H/YYYYMMDD.mat (2747 files, sampled 60)"
+            ],
             data_owner="Lab",
             temporal_coverage="2015-04-01 to 2022-12-31 (sampled 60 dates)",
         ),
@@ -1012,7 +1077,9 @@ def get_layer_catalog() -> LayerCatalogResponse:
             tags=["omega", "inversion", "fy", "overlay"],
             run_readiness="ready",
             run_readiness_summary="Omega FY 反演均值数据已就绪（doy 025-030，6 天时间序列）。",
-            run_readiness_notes=["数据源: I:/Geograph_DataSet/InversionResults/fy_avg/doy_{025..030}.mat (6 files)"],
+            run_readiness_notes=[
+                "数据源: I:/Geograph_DataSet/InversionResults/fy_avg/doy_{025..030}.mat (6 files)"
+            ],
             data_owner="Lab",
             temporal_coverage="doy 025-030 (multi-year mean)",
         ),
@@ -1034,7 +1101,9 @@ def get_layer_catalog() -> LayerCatalogResponse:
             tags=["forest", "vegetation", "overlay", "ease-9km"],
             run_readiness="ready",
             run_readiness_summary="全球森林比例数据已就绪（2020）。",
-            run_readiness_notes=["数据源: I:/Geograph_DataSet/InversionResults/Forest_Ratio_9KM_2020.mat"],
+            run_readiness_notes=[
+                "数据源: I:/Geograph_DataSet/InversionResults/Forest_Ratio_9KM_2020.mat"
+            ],
             data_owner="Liuzheng",
             temporal_coverage="2020",
             source_reference="https://doi.org/10.5281/zenodo.4708837",
@@ -1058,7 +1127,9 @@ def get_layer_catalog() -> LayerCatalogResponse:
             tags=["landscape", "ecology", "shdi", "overlay", "ease-9km"],
             run_readiness="ready",
             run_readiness_summary="景观多样性指数 SHDI 数据已就绪（2020）。",
-            run_readiness_notes=["数据源: I:/Geograph_DataSet/InversionResults/Landscape_Metrics_LandOnly_9KM_2020.mat#SHDI"],
+            run_readiness_notes=[
+                "数据源: I:/Geograph_DataSet/InversionResults/Landscape_Metrics_LandOnly_9KM_2020.mat#SHDI"
+            ],
             data_owner="Liuzheng",
             temporal_coverage="2020",
         ),
@@ -1084,7 +1155,9 @@ def get_layer_catalog() -> LayerCatalogResponse:
             tags=["vod", "vegetation", "smap", "overlay", "ease-9km", "dec2025"],
             run_readiness="ready",
             run_readiness_summary="VOD 植被光学厚度数据已就绪（2025-12，31 天）。",
-            run_readiness_notes=["数据源: I:/Geograph_DataSet/Soil_Ecological_Data/SmapSoil_VOD_SM/YYYYMMDD.mat#VOD (31 files, v7.3 HDF5)"],
+            run_readiness_notes=[
+                "数据源: I:/Geograph_DataSet/Soil_Ecological_Data/SmapSoil_VOD_SM/YYYYMMDD.mat#VOD (31 files, v7.3 HDF5)"
+            ],
             data_owner="Lab",
             temporal_coverage="2025-12-01 to 2025-12-31 (31 days)",
         ),
@@ -1109,7 +1182,9 @@ def get_layer_catalog() -> LayerCatalogResponse:
             tags=["sm", "soil-moisture", "smap", "overlay", "ease-9km", "dec2025"],
             run_readiness="ready",
             run_readiness_summary="SM 土壤湿度数据已就绪（2025-12，31 天）。",
-            run_readiness_notes=["数据源: I:/Geograph_DataSet/Soil_Ecological_Data/SmapSoil_VOD_SM/YYYYMMDD.mat#SM (31 files, v7.3 HDF5)"],
+            run_readiness_notes=[
+                "数据源: I:/Geograph_DataSet/Soil_Ecological_Data/SmapSoil_VOD_SM/YYYYMMDD.mat#SM (31 files, v7.3 HDF5)"
+            ],
             data_owner="Lab",
             temporal_coverage="2025-12-01 to 2025-12-31 (31 days)",
         ),
@@ -1135,7 +1210,9 @@ def get_layer_catalog() -> LayerCatalogResponse:
             tags=["omega", "inversion", "smap", "overlay", "ease-9km", "dec2025"],
             run_readiness="ready",
             run_readiness_summary="Omega 2025-12 反演数据已就绪（31 天）。",
-            run_readiness_notes=["数据源: I:/Geograph_DataSet/Soil_Ecological_Data/SmapSoil_VOD_SM/YYYYMMDD.mat#OMEGA (31 files, v7.3 HDF5)"],
+            run_readiness_notes=[
+                "数据源: I:/Geograph_DataSet/Soil_Ecological_Data/SmapSoil_VOD_SM/YYYYMMDD.mat#OMEGA (31 files, v7.3 HDF5)"
+            ],
             data_owner="Lab",
             temporal_coverage="2025-12-01 to 2025-12-31 (31 days)",
         ),
@@ -1155,8 +1232,12 @@ def get_layer_catalog() -> LayerCatalogResponse:
             time_granularity=TimeGranularity.day,
             default_time_offset=-1,
             extent=extent,
-            style=LayerStyleHint(palette="soil-moisture-ramp", unit_label="m³/m³", opacity=0.8),
-            capabilities=_workflow_map_capabilities(data_domain="soil_moisture", paint_mode="grid_fill"),
+            style=LayerStyleHint(
+                palette="soil-moisture-ramp", unit_label="m³/m³", opacity=0.8
+            ),
+            capabilities=_workflow_map_capabilities(
+                data_domain="soil_moisture", paint_mode="grid_fill"
+            ),
             tags=["smap", "soil-moisture", "remote-sensing", "frontend-aligned"],
             module_name="smap_daily",
             engine="python_provider",
@@ -1165,7 +1246,9 @@ def get_layer_catalog() -> LayerCatalogResponse:
                 "SMAP_SPL3SMP_E": ["SMAP_L3", "smap"],
             },
             run_readiness_summary="SMAP L3 HDF5 数据已就绪（19 个 .h5 文件）。",
-            run_readiness_notes=["数据源: I:/Geograph_DataSet/SMAP/SMAP_L3_SM_P_*.h5 (19 files)"],
+            run_readiness_notes=[
+                "数据源: I:/Geograph_DataSet/SMAP/SMAP_L3_SM_P_*.h5 (19 files)"
+            ],
             data_owner="Lab",
             temporal_coverage="2023-01 to 2023-09 (19 days, gap-filled)",
             source_reference="https://nsidc.org/data/SPL3SMP",
@@ -1186,14 +1269,23 @@ def get_layer_catalog() -> LayerCatalogResponse:
             time_granularity=TimeGranularity.day,
             default_time_offset=-1,
             extent=extent,
-            style=LayerStyleHint(palette="bright-temp-ramp", unit_label="K", opacity=0.78),
-            capabilities=_workflow_map_capabilities(data_domain="remote_sensing", paint_mode="grid_fill"),
+            style=LayerStyleHint(
+                palette="bright-temp-ramp", unit_label="K", opacity=0.78
+            ),
+            capabilities=_workflow_map_capabilities(
+                data_domain="remote_sensing", paint_mode="grid_fill"
+            ),
             tags=["fy", "brightness-temperature", "remote-sensing", "frontend-aligned"],
             module_name="fy_daily",
             engine="python_provider",
             default_task_type="fy_daily",
             default_data_access_sources={
-                "FY_MWRI_HDF": ["FY_MWRI_HDF", "Soil_Ecological_Data/FY3B", "Soil_Ecological_Data/FY3D", "Soil_Ecological_Data/FY_MWRI"],
+                "FY_MWRI_HDF": [
+                    "FY_MWRI_HDF",
+                    "Soil_Ecological_Data/FY3B",
+                    "Soil_Ecological_Data/FY3D",
+                    "Soil_Ecological_Data/FY_MWRI",
+                ],
             },
             run_readiness_summary="待下载 FY-3 MWRI 原始 HDF 数据后可运行。",
             run_readiness_notes=[
@@ -1217,14 +1309,24 @@ def get_layer_catalog() -> LayerCatalogResponse:
             time_granularity=TimeGranularity.day,
             default_time_offset=-1,
             extent=extent,
-            style=LayerStyleHint(palette="station-ramp", unit_label="m³/m³", opacity=0.85),
-            capabilities=_workflow_map_capabilities(data_domain="soil_moisture", paint_mode="point_symbol"),
+            style=LayerStyleHint(
+                palette="station-ramp", unit_label="m³/m³", opacity=0.85
+            ),
+            capabilities=_workflow_map_capabilities(
+                data_domain="soil_moisture", paint_mode="point_symbol"
+            ),
             tags=["station", "soil-moisture", "validation", "frontend-aligned"],
             module_name="station_daily",
             engine="python_provider",
             default_task_type="station_daily",
             default_data_access_sources={
-                "ISMN_STM_OR_CASMOS_TXT": ["ISMN_STATION", "CASMOS_STATION", "Station/ISMN", "Station/CASMOS", "Station/Global_20yr"],
+                "ISMN_STM_OR_CASMOS_TXT": [
+                    "ISMN_STATION",
+                    "CASMOS_STATION",
+                    "Station/ISMN",
+                    "Station/CASMOS",
+                    "Station/Global_20yr",
+                ],
             },
             run_readiness_summary="待下载 ISMN/CASMOS 站点土壤水分数据后可运行。",
             run_readiness_notes=[
@@ -1249,14 +1351,21 @@ def get_layer_catalog() -> LayerCatalogResponse:
             time_granularity=TimeGranularity.day,
             default_time_offset=-1,
             extent=extent,
-            style=LayerStyleHint(palette="inversion-ramp", unit_label="m³/m³", opacity=0.8),
-            capabilities=_workflow_map_capabilities(data_domain="soil_moisture", paint_mode="grid_fill"),
+            style=LayerStyleHint(
+                palette="inversion-ramp", unit_label="m³/m³", opacity=0.8
+            ),
+            capabilities=_workflow_map_capabilities(
+                data_domain="soil_moisture", paint_mode="grid_fill"
+            ),
             tags=["inversion", "soil-moisture", "vod", "frontend-aligned"],
             module_name="inversion_daily",
             engine="python_provider",
             default_task_type="inversion_daily",
             default_data_access_sources={
-                "daily_bundle_mat": ["daily_bundle_mat", "Soil_Ecological_Data/DDCA/DDCA_DH/H"],
+                "daily_bundle_mat": [
+                    "daily_bundle_mat",
+                    "Soil_Ecological_Data/DDCA/DDCA_DH/H",
+                ],
             },
         ),
         LayerDescriptor(
@@ -1275,14 +1384,28 @@ def get_layer_catalog() -> LayerCatalogResponse:
             time_granularity=TimeGranularity.day,
             default_time_offset=-1,
             extent=extent,
-            style=LayerStyleHint(palette="block-inversion-ramp", unit_label="m³/m³", opacity=0.8),
-            capabilities=_workflow_map_capabilities(data_domain="soil_moisture", paint_mode="grid_fill"),
-            tags=["block-inversion", "timeseries", "soil-moisture", "vod", "frontend-aligned"],
+            style=LayerStyleHint(
+                palette="block-inversion-ramp", unit_label="m³/m³", opacity=0.8
+            ),
+            capabilities=_workflow_map_capabilities(
+                data_domain="soil_moisture", paint_mode="grid_fill"
+            ),
+            tags=[
+                "block-inversion",
+                "timeseries",
+                "soil-moisture",
+                "vod",
+                "frontend-aligned",
+            ],
             module_name="block_inversion",
             engine="python_provider",
             default_task_type="block_inversion",
             default_data_access_sources={
-                "timeseries_bundle_mat": ["timeseries_bundle_mat", "INVERSION_OMEGA_SMAP", "INVERSION_OMEGA_FY"],
+                "timeseries_bundle_mat": [
+                    "timeseries_bundle_mat",
+                    "INVERSION_OMEGA_SMAP",
+                    "INVERSION_OMEGA_FY",
+                ],
             },
         ),
         LayerDescriptor(
@@ -1302,14 +1425,85 @@ def get_layer_catalog() -> LayerCatalogResponse:
             default_time_offset=-1,
             extent=extent,
             style=LayerStyleHint(palette="omega-ramp", unit_label="m³/m³", opacity=0.8),
-            capabilities=_workflow_map_capabilities(data_domain="soil_moisture", paint_mode="grid_fill"),
+            capabilities=_workflow_map_capabilities(
+                data_domain="soil_moisture", paint_mode="grid_fill"
+            ),
             tags=["omega", "retrieval", "soil-moisture", "vod", "frontend-aligned"],
             module_name="omega_block",
             engine="python_provider",
             default_task_type="omega_block",
             default_data_access_sources={
-                "timeseries_bundle_mat": ["timeseries_bundle_mat", "INVERSION_OMEGA_SMAP", "INVERSION_OMEGA_FY"],
+                "timeseries_bundle_mat": [
+                    "timeseries_bundle_mat",
+                    "INVERSION_OMEGA_SMAP",
+                    "INVERSION_OMEGA_FY",
+                ],
             },
+        ),
+        LayerDescriptor(
+            layer_id="omega-avg-daily",
+            dataset_key="omega_avg_daily",
+            display_name="avg-ω 逐日反演",
+            description="D2 avg-omega 逐日反演产品：DOY 气候态平均 ω + 逐日 DDCA 回代，产出 SM/VOD/OMEGA。",
+            category="模拟结果",
+            source_type=LayerSourceType.algorithm_output,
+            render_type=LayerRenderType.raster,
+            supported_map_modes=[MapMode.mode_2d],
+            supports_time=True,
+            is_realtime=False,
+            default_visible=False,
+            status="available",
+            time_granularity=TimeGranularity.day,
+            default_time_offset=-1,
+            extent=extent,
+            style=LayerStyleHint(
+                palette="omega-avg-ramp", unit_label="m³/m³", opacity=0.8
+            ),
+            capabilities=_workflow_map_capabilities(
+                data_domain="soil_moisture", paint_mode="grid_fill"
+            ),
+            tags=["omega", "avg", "daily", "soil-moisture", "vod", "frontend-aligned"],
+            module_name="omega_avg_daily",
+            engine="python_provider",
+            default_task_type="omega_avg_daily",
+            default_data_access_sources={
+                "omega_block_dir": [
+                    "omega_block_output",
+                    "I:/Geograph_DataSet/InversionResults/omega_block",
+                    "InversionResults/omega_block",
+                ],
+                "timeseries_bundle_mat": [
+                    "timeseries_bundle_mat",
+                    "INVERSION_OMEGA_SMAP",
+                ],
+                "smap_folder": [
+                    "smap_daily_mat",
+                    "I:/Geograph_DataSet/Soil_Ecological_Data/Smap_OriginData",
+                    "Soil_Ecological_Data/Smap_OriginData",
+                ],
+                "ndvi_folder": [
+                    "ndvi_daily_mat",
+                    "I:/Geograph_DataSet/Soil_Ecological_Data/NDVI/daily",
+                    "Soil_Ecological_Data/NDVI/daily",
+                ],
+                "ndvi_clim_folder": [
+                    "ndvi_clim_dir",
+                    "I:/Geograph_DataSet/Soil_Ecological_Data/NDVI/climatology",
+                    "Soil_Ecological_Data/NDVI/climatology",
+                ],
+                "anc_root": [
+                    "ancillary_mat",
+                    "I:/Geograph_DataSet/Soil_Ecological_Data/Ancillary",
+                    "Soil_Ecological_Data/Ancillary",
+                    "SMAP_ancillary",
+                ],
+            },
+            run_readiness_summary="D2 依赖 omega_block / SMAP 日 MAT / NDVI 日 MAT / Ancillary；可用 remote_layer_data_uris 指向合成测试集。",
+            run_readiness_notes=[
+                "本机已确认存在：Soil_Ecological_Data/Smap_OriginData、InversionResults/smap_avg。",
+                "常见缺口：InversionResults/omega_block、NDVI/daily、Ancillary——可用 Tools/test_data/omega_avg_daily_inputs 经 BACKEND_REMOTE_LAYER_DATA_URIS 注入。",
+                "系统种子 omega_avg_daily_* 与 pytest test_omega_avg_* 覆盖合成数据闭环。",
+            ],
         ),
     ]
 

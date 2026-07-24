@@ -1,10 +1,7 @@
 /**
  * 标量场 WebGL 着色器：Mercator 场四边形 + 双纹理 LUT 混合。
  */
-import {
-  MERCATOR_INVERSE_GLSL,
-  MERCATOR_PROJECTION_GLSL,
-} from './wind-particle-webgl-shaders'
+import { MERCATOR_INVERSE_GLSL, MERCATOR_PROJECTION_GLSL } from './wind-particle-webgl-shaders'
 
 export { MERCATOR_PROJECTION_GLSL, lngLatToMercatorNormalized } from './wind-particle-webgl-shaders'
 
@@ -33,6 +30,7 @@ export const SCALAR_FIELD_FRAGMENT_SHADER = /* glsl */ `
   uniform vec4 u_bounds;   // west, south, east, north
   uniform float u_blend;   // 0..1
   uniform float u_opacity;
+  uniform float u_placeholder;  // >0.5：灰底占位（数据未到的视口区域）
 
   ${MERCATOR_INVERSE_GLSL}
 
@@ -44,6 +42,11 @@ export const SCALAR_FIELD_FRAGMENT_SHADER = /* glsl */ `
   }
 
   void main() {
+    // 灰底占位：淡灰半透明，数据瓦片到达后由数据 quad 覆盖上色
+    if (u_placeholder > 0.5) {
+      gl_FragColor = vec4(0.55, 0.58, 0.62, 0.20 * u_opacity);
+      return;
+    }
     vec2 lnglat = mercatorToLngLat(v_merc);
     vec2 uv = fieldUv(lnglat.x, lnglat.y);
     if (uv.x < -0.002 || uv.x > 1.002 || uv.y < -0.002 || uv.y > 1.002) {
@@ -57,9 +60,10 @@ export const SCALAR_FIELD_FRAGMENT_SHADER = /* glsl */ `
       discard;
     }
     // 边缘羽化：场边界 + alpha softstep，减轻硬边色带
+    // 羽化范围缩小到 0.6%，仅消除像素级硬边，不产生可见边框
     float edge = min(min(uvClamped.x, 1.0 - uvClamped.x), min(uvClamped.y, 1.0 - uvClamped.y));
-    float feather = smoothstep(0.0, 0.045, edge);
-    float softMask = smoothstep(0.015, 0.22, mask) * feather;
+    float feather = smoothstep(0.0, 0.006, edge);
+    float softMask = smoothstep(0.008, 0.06, mask) * feather;
     float t = mix(a.r, b.r, clamp(u_blend, 0.0, 1.0));
     // 轻微 gamma，压缩中间带状感
     t = pow(clamp(t, 0.0, 1.0), 0.92);

@@ -5,6 +5,7 @@
   - NetCDF (.nc) — ERA5, BIOMASS, CMFD
   - GeoTIFF (.tif) — HFP, China 1km, MCD12Q1, CLCD
   - MAT (.mat) — omega 反演结果 (v5/v6 + v7.3)
+  - GRIB (.grib/.grib2/.grb) — 可选依赖 cfgrib + xarray（NOAA 等）
 
 统一功能:
   - 坐标归一化: latitude → lat, longitude → lon
@@ -19,9 +20,10 @@
                                  bbox=(73, 15, 137, 59))  # 中国区域
     print(data.values.shape, data.lat.shape, data.lon.shape)
 """
+
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -35,23 +37,26 @@ CHINA_BBOX = (73.0, 15.0, 137.0, 59.0)
 @dataclass
 class DataArray:
     """统一的读取结果数据结构。"""
-    values: np.ndarray           # 数据值 (填充值已替换为 NaN)
-    lat: np.ndarray | None       # 纬度坐标 (一维或二维)
-    lon: np.ndarray | None       # 经度坐标 (一维或二维)
-    time: np.ndarray | None      # 时间坐标 (一维)
-    crs: str | None              # 坐标系
-    attrs: dict[str, Any]        # 属性 (units, fill_value, scale_factor, 等)
-    var_name: str                # 变量名
-    file_path: str               # 源文件路径
-    file_format: str             # 文件格式
+
+    values: np.ndarray  # 数据值 (填充值已替换为 NaN)
+    lat: np.ndarray | None  # 纬度坐标 (一维或二维)
+    lon: np.ndarray | None  # 经度坐标 (一维或二维)
+    time: np.ndarray | None  # 时间坐标 (一维)
+    crs: str | None  # 坐标系
+    attrs: dict[str, Any]  # 属性 (units, fill_value, scale_factor, 等)
+    var_name: str  # 变量名
+    file_path: str  # 源文件路径
+    file_format: str  # 文件格式
 
     @property
     def shape(self) -> tuple[int, ...]:
         return self.values.shape
 
     def __repr__(self) -> str:
-        return (f"DataArray(var={self.var_name!r}, shape={self.values.shape}, "
-                f"format={self.file_format}, crs={self.crs})")
+        return (
+            f"DataArray(var={self.var_name!r}, shape={self.values.shape}, "
+            f"format={self.file_format}, crs={self.crs})"
+        )
 
 
 class UniversalDataReader:
@@ -74,6 +79,8 @@ class UniversalDataReader:
             return "geotiff"
         if ext == ".mat":
             return "mat"
+        if ext in (".grib", ".grib2", ".grb", ".grb2"):
+            return "grib"
         raise ValueError(f"不支持的文件格式: {ext}")
 
     # ------------------------------------------------------------------
@@ -90,6 +97,8 @@ class UniversalDataReader:
             return ["band_1"]  # GeoTIFF 通常只有 1 个波段
         if self.format == "mat":
             return self._list_mat_variables()
+        if self.format == "grib":
+            return self._list_grib_variables()
         return []
 
     def read_variable(
@@ -102,7 +111,7 @@ class UniversalDataReader:
         """读取变量数据。
 
         Args:
-            variable: 变量名 (HDF5/NetCDF/MAT)。GeoTIFF 忽略。
+            variable: 变量名 (HDF5/NetCDF/MAT/GRIB)。GeoTIFF 忽略。
             bbox: 区域裁剪 (west, south, east, north)，经纬度。None 读取全部。
             time_index: 时间层索引 (NetCDF 3D+ 数据)。None 读取全部时间。
             band: 波段号 (GeoTIFF)，从 1 开始。
@@ -118,6 +127,8 @@ class UniversalDataReader:
             return self._read_geotiff(bbox, band)
         if self.format == "mat":
             return self._read_mat(variable)
+        if self.format == "grib":
+            return self._read_grib(variable, bbox, time_index)
         raise ValueError(f"不支持的格式: {self.format}")
 
     # ------------------------------------------------------------------
@@ -126,13 +137,21 @@ class UniversalDataReader:
 
     def _list_hdf5_variables(self) -> list[str]:
         import h5py
+
         names: list[str] = []
         with h5py.File(self.path, "r") as f:
-            f.visititems(lambda name, node: names.append(name) if isinstance(node, h5py.Dataset) else None)
+            f.visititems(
+                lambda name, node: names.append(name)
+                if isinstance(node, h5py.Dataset)
+                else None
+            )
         return names
 
-    def _read_hdf5(self, variable: str | None, bbox: tuple[float, float, float, float] | None) -> DataArray:
+    def _read_hdf5(
+        self, variable: str | None, bbox: tuple[float, float, float, float] | None
+    ) -> DataArray:
         import h5py
+
         if variable is None:
             raise ValueError("HDF5 读取需要指定 variable 参数")
 
@@ -170,7 +189,12 @@ class UniversalDataReader:
                 lat_valid = np.where(lat_2d > -9000, lat_2d, np.nan)
                 lon_valid = np.where(lon_2d > -9000, lon_2d, np.nan)
                 west, south, east, north = bbox
-                mask = (lat_valid >= south) & (lat_valid <= north) & (lon_valid >= west) & (lon_valid <= east)
+                mask = (
+                    (lat_valid >= south)
+                    & (lat_valid <= north)
+                    & (lon_valid >= west)
+                    & (lon_valid <= east)
+                )
                 # 找到裁剪区域的行列范围
                 rows = np.any(mask, axis=1)
                 cols = np.any(mask, axis=0)
@@ -178,14 +202,22 @@ class UniversalDataReader:
                     raise ValueError(f"bbox {bbox} 不在数据范围内")
                 r0, r1 = np.where(rows)[0][[0, -1]]
                 c0, c1 = np.where(cols)[0][[0, -1]]
-                values = ds[r0:r1+1, c0:c1+1]
-                lat_out = lat_valid[r0:r1+1, c0:c1+1]
-                lon_out = lon_valid[r0:r1+1, c0:c1+1]
+                values = ds[r0 : r1 + 1, c0 : c1 + 1]
+                lat_out = lat_valid[r0 : r1 + 1, c0 : c1 + 1]
+                lon_out = lon_valid[r0 : r1 + 1, c0 : c1 + 1]
             else:
                 values = ds[:]
                 # 过滤坐标中的填充值
-                lat_out = np.where(lat_2d > -9000, lat_2d, np.nan) if lat_2d is not None else None
-                lon_out = np.where(lon_2d > -9000, lon_2d, np.nan) if lon_2d is not None else None
+                lat_out = (
+                    np.where(lat_2d > -9000, lat_2d, np.nan)
+                    if lat_2d is not None
+                    else None
+                )
+                lon_out = (
+                    np.where(lon_2d > -9000, lon_2d, np.nan)
+                    if lon_2d is not None
+                    else None
+                )
 
             # 填充值处理
             values = values.astype(np.float64)
@@ -212,6 +244,7 @@ class UniversalDataReader:
 
     def _list_netcdf_variables(self) -> list[str]:
         from netCDF4 import Dataset
+
         with Dataset(self.path) as ds:
             return list(ds.variables.keys())
 
@@ -222,6 +255,7 @@ class UniversalDataReader:
         time_index: int | None,
     ) -> DataArray:
         from netCDF4 import Dataset, num2date
+
         if variable is None:
             raise ValueError("NetCDF 读取需要指定 variable 参数")
 
@@ -242,7 +276,11 @@ class UniversalDataReader:
             time_vals = None
             if time_var is not None:
                 try:
-                    time_vals = num2date(time_var[:], time_var.units, getattr(time_var, "calendar", "standard"))
+                    time_vals = num2date(
+                        time_var[:],
+                        time_var.units,
+                        getattr(time_var, "calendar", "standard"),
+                    )
                     time_vals = np.array([str(t) for t in time_vals])
                 except (AttributeError, ValueError):
                     # ERA5 特殊: time 是字符串 "YYYYMMDD"
@@ -296,12 +334,20 @@ class UniversalDataReader:
 
             # 处理时间维度
             if time_index is not None and time_vals is not None:
-                time_out = np.array([time_vals[time_index]]) if time_index < len(time_vals) else None
+                time_out = (
+                    np.array([time_vals[time_index]])
+                    if time_index < len(time_vals)
+                    else None
+                )
                 # 去掉时间维度 (如果只有1个时间步)
                 if len(values.shape) == 3 and values.shape[0] == 1:
                     values = values[0]
             elif time_vals is not None:
-                time_out = time_vals[slices[dims.index(time_var.dimensions[0])]] if time_var.dimensions[0] in dims else None
+                time_out = (
+                    time_vals[slices[dims.index(time_var.dimensions[0])]]
+                    if time_var.dimensions[0] in dims
+                    else None
+                )
             else:
                 time_out = None
 
@@ -314,7 +360,9 @@ class UniversalDataReader:
             if fill_value is not None:
                 values[values == fill_value] = np.nan
             # int16 特殊: -32768/-32767 也是填充值
-            if values.dtype == np.int16 or (hasattr(var, 'dtype') and var.dtype == np.int16):
+            if values.dtype == np.int16 or (
+                hasattr(var, "dtype") and var.dtype == np.int16
+            ):
                 values[values <= -32767] = np.nan
             if scale_factor is not None:
                 values = values * float(scale_factor)
@@ -348,7 +396,9 @@ class UniversalDataReader:
     # GeoTIFF (HFP, China 1km, MCD12Q1, CLCD)
     # ------------------------------------------------------------------
 
-    def _read_geotiff(self, bbox: tuple[float, float, float, float] | None, band: int) -> DataArray:
+    def _read_geotiff(
+        self, bbox: tuple[float, float, float, float] | None, band: int
+    ) -> DataArray:
         import rasterio
         from rasterio.windows import Window, from_bounds
 
@@ -358,7 +408,9 @@ class UniversalDataReader:
                 "height": ds.height,
                 "count": ds.count,
                 "dtypes": ds.dtypes,
-                "nodata": ds.nodatavals[band - 1] if band <= len(ds.nodatavals) else None,
+                "nodata": ds.nodatavals[band - 1]
+                if band <= len(ds.nodatavals)
+                else None,
                 "transform": ds.transform,
                 "res": (ds.res[0], ds.res[1]),
             }
@@ -370,8 +422,11 @@ class UniversalDataReader:
                 # 对于非 WGS84 投影 (如 Mollweide, Sinusoidal)，需要先转换 bbox
                 if crs and "EPSG:4326" not in crs and "WGS 84" not in crs.upper():
                     from rasterio.warp import transform_bounds
+
                     west, south, east, north = bbox
-                    bbox_proj = transform_bounds("EPSG:4326", ds.crs, west, south, east, north)
+                    bbox_proj = transform_bounds(
+                        "EPSG:4326", ds.crs, west, south, east, north
+                    )
                     window = from_bounds(*bbox_proj, ds.transform)
                 else:
                     window = from_bounds(*bbox, ds.transform)
@@ -389,8 +444,16 @@ class UniversalDataReader:
                 attrs["transform"] = ds.window_transform(window)
                 attrs["window"] = window
                 # 计算裁剪后的坐标
-                col_coords = np.arange(window.col_off, window.col_off + window.width) * ds.transform.a + ds.transform.c
-                row_coords = np.arange(window.row_off, window.row_off + window.height) * ds.transform.e + ds.transform.f
+                col_coords = (
+                    np.arange(window.col_off, window.col_off + window.width)
+                    * ds.transform.a
+                    + ds.transform.c
+                )
+                row_coords = (
+                    np.arange(window.row_off, window.row_off + window.height)
+                    * ds.transform.e
+                    + ds.transform.f
+                )
                 # 对于 WGS84 GeoTIFF, row_coords 是纬度, col_coords 是经度
                 if crs and "EPSG:4326" in crs:
                     lat_out = row_coords
@@ -439,12 +502,18 @@ class UniversalDataReader:
     def _list_mat_variables(self) -> list[str]:
         try:
             from scipy.io import whosmat
+
             return [name for name, _, _ in whosmat(self.path)]
         except NotImplementedError:
             import h5py
+
             names: list[str] = []
             with h5py.File(self.path, "r") as f:
-                f.visititems(lambda name, node: names.append(name) if isinstance(node, h5py.Dataset) else None)
+                f.visititems(
+                    lambda name, node: names.append(name)
+                    if isinstance(node, h5py.Dataset)
+                    else None
+                )
             return names
 
     def _read_mat(self, variable: str | None) -> DataArray:
@@ -454,6 +523,7 @@ class UniversalDataReader:
         # 尝试 v5/v6 (scipy.io.loadmat)
         try:
             from scipy.io import loadmat
+
             data = loadmat(self.path)
             if variable not in data:
                 raise KeyError(f"变量 {variable} 不存在于 {self.path}")
@@ -480,6 +550,7 @@ class UniversalDataReader:
 
         # v7.3 (h5py)
         import h5py
+
         with h5py.File(self.path, "r") as f:
             if variable not in f:
                 raise KeyError(f"变量 {variable} 不存在于 {self.path}")
@@ -520,7 +591,9 @@ class UniversalDataReader:
             )
 
     @staticmethod
-    def _extract_mat_coord(data: dict, candidates: tuple[str, ...]) -> np.ndarray | None:
+    def _extract_mat_coord(
+        data: dict, candidates: tuple[str, ...]
+    ) -> np.ndarray | None:
         """从 loadmat 字典中提取坐标变量。"""
         for name in candidates:
             if name in data:
@@ -530,6 +603,103 @@ class UniversalDataReader:
                     arr = arr.squeeze()
                 return arr
         return None
+
+    # ------------------------------------------------------------------
+    # GRIB (optional cfgrib + xarray)
+    # ------------------------------------------------------------------
+
+    def _require_cfgrib(self):
+        try:
+            import cfgrib  # noqa: F401
+            import xarray as xr  # noqa: F401
+        except ImportError as exc:
+            raise RuntimeError(
+                "读取 GRIB 需要安装可选依赖 cfgrib 与 xarray（以及系统 eccodes）。"
+                "请安装后重试，或改用已转换的 NetCDF。"
+            ) from exc
+
+    def _open_grib_dataset(self):
+        self._require_cfgrib()
+        import xarray as xr
+
+        try:
+            return xr.open_dataset(self.path, engine="cfgrib")
+        except Exception as exc:
+            raise ValueError(f"无法打开 GRIB 文件 {self.path}: {exc}") from exc
+
+    def _list_grib_variables(self) -> list[str]:
+        ds = self._open_grib_dataset()
+        try:
+            return [str(name) for name in ds.data_vars]
+        finally:
+            ds.close()
+
+    def _read_grib(
+        self,
+        variable: str | None,
+        bbox: tuple[float, float, float, float] | None,
+        time_index: int | None,
+    ) -> DataArray:
+        ds = self._open_grib_dataset()
+        try:
+            names = list(ds.data_vars)
+            if not names:
+                raise ValueError(f"GRIB 文件无数据变量: {self.path}")
+            var_name = variable or str(names[0])
+            if var_name not in ds.data_vars:
+                raise ValueError(f"GRIB 变量不存在: {var_name}；可选: {names[:20]}")
+            da = ds[var_name]
+            if time_index is not None and "time" in da.dims:
+                da = da.isel(time=int(time_index))
+            if bbox is not None:
+                west, south, east, north = bbox
+                lat_name = next(
+                    (c for c in ("latitude", "lat") if c in da.coords), None
+                )
+                lon_name = next(
+                    (c for c in ("longitude", "lon") if c in da.coords), None
+                )
+                if lat_name and lon_name:
+                    da = da.sel(
+                        {
+                            lat_name: slice(north, south)
+                            if float(da[lat_name][0]) > float(da[lat_name][-1])
+                            else slice(south, north),
+                            lon_name: slice(west, east),
+                        },
+                    )
+            values = np.asarray(da.values, dtype=np.float64)
+            lat = None
+            lon = None
+            for cand in ("latitude", "lat"):
+                if cand in da.coords:
+                    lat = np.asarray(da[cand].values)
+                    break
+            for cand in ("longitude", "lon"):
+                if cand in da.coords:
+                    lon = np.asarray(da[cand].values)
+                    break
+            time_arr = None
+            if "time" in da.coords:
+                time_arr = np.asarray(da["time"].values)
+            return DataArray(
+                values=values,
+                lat=lat,
+                lon=lon,
+                time=time_arr,
+                crs="EPSG:4326",
+                attrs={
+                    str(k): (
+                        str(v) if not isinstance(v, (int, float, str, bool)) else v
+                    )
+                    for k, v in dict(da.attrs).items()
+                },
+                var_name=var_name,
+                file_path=str(self.path),
+                file_format="grib",
+            )
+        finally:
+            ds.close()
 
     # ------------------------------------------------------------------
     # 辅助函数

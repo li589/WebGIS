@@ -17,10 +17,9 @@ import threading
 from collections import OrderedDict
 from datetime import datetime, timezone
 from functools import lru_cache
-from typing import Any
+from typing import TYPE_CHECKING, Any
 from urllib.error import HTTPError
 
-from app.core.config import settings
 from app.weatherengine.default_model import weather_default_model
 from app.core.redis_client import cache_get_json, cache_set_json
 from app.services.effective_config import get_weather_cache_ttl_seconds
@@ -28,6 +27,9 @@ from app.weatherengine.constants import WEATHER_LAYER_SPECS, WeatherLayerSpec
 from app.weatherengine.field_mapping import point_in_tile_half_open
 from app.weatherengine.fetch_gateway import fetch_grid_forecast
 from shared.contracts.api_contracts import BoundingBox
+
+if TYPE_CHECKING:
+    from app.weatherengine.service import WeatherEngineService
 
 logger = logging.getLogger(__name__)
 
@@ -77,7 +79,9 @@ def tile_key(
 ) -> str:
     """生成瓦片缓存键（前后端保持一致；含 provider_id 避免换源脏缓存）。"""
     model_part = model.replace("/", "_").replace(":", "_") if model else "default"
-    provider_part = normalize_provider_id(provider_id).replace("/", "_").replace(":", "_")
+    provider_part = (
+        normalize_provider_id(provider_id).replace("/", "_").replace(":", "_")
+    )
     return (
         f"{_TILE_REDIS_KEY_PREFIX}{layer_id}:z{z}:x{x}:y{y}:h{hour}"
         f":m{model_part}:p{provider_part}"
@@ -86,7 +90,7 @@ def tile_key(
 
 def tile_bbox(z: int, x: int, y: int) -> BoundingBox:
     """Web Mercator z/x/y → EPSG:4326 bbox（西南东北）。"""
-    n = 2 ** z
+    n = 2**z
     west = x / n * 360.0 - 180.0
     east = (x + 1) / n * 360.0 - 180.0
 
@@ -112,12 +116,16 @@ def tile_bbox(z: int, x: int, y: int) -> BoundingBox:
 
 def lonlat_to_tile(z: int, longitude: float, latitude: float) -> tuple[int, int]:
     """EPSG:4326 → Web Mercator 瓦片坐标 (x, y)。"""
-    n = 2 ** z
+    n = 2**z
     lon = ((longitude + 180.0) % 360.0 + 360.0) % 360.0 - 180.0
     lat = max(-_WEB_MERCATOR_MAX_LAT, min(_WEB_MERCATOR_MAX_LAT, latitude))
     x = int((lon + 180.0) / 360.0 * n)
     lat_rad = math.radians(lat)
-    y = int((1.0 - math.log(math.tan(lat_rad) + (1.0 / math.cos(lat_rad))) / math.pi) / 2.0 * n)
+    y = int(
+        (1.0 - math.log(math.tan(lat_rad) + (1.0 / math.cos(lat_rad))) / math.pi)
+        / 2.0
+        * n
+    )
     return x % n, max(0, min(n - 1, y))
 
 
@@ -157,7 +165,11 @@ def _stamp_and_clip_tile_geojson(
             continue
         geom = feature.get("geometry") or {}
         coords = geom.get("coordinates") if isinstance(geom, dict) else None
-        if geom.get("type") == "Point" and isinstance(coords, (list, tuple)) and len(coords) >= 2:
+        if (
+            geom.get("type") == "Point"
+            and isinstance(coords, (list, tuple))
+            and len(coords) >= 2
+        ):
             lon = float(coords[0])
             lat = float(coords[1])
             if not point_in_tile_half_open(
@@ -221,7 +233,10 @@ def _grid_data_for_hour(grid_data: dict[str, Any], hour: int) -> dict[str, Any]:
         )
 
     if not hourly:
-        logger.warning("[WeatherTileService] hourly data not available for hour=%d, falling back to current", hour)
+        logger.warning(
+            "[WeatherTileService] hourly data not available for hour=%d, falling back to current",
+            hour,
+        )
         return grid_data
 
     # 检查 hourly 是否有足够时间步
@@ -236,7 +251,9 @@ def _grid_data_for_hour(grid_data: dict[str, Any], hour: int) -> dict[str, Any]:
     # 第一个点的时间序列长度表示可用时间步数
     first_point_series = first_series[0]
     if not isinstance(first_point_series, list) or hour >= len(first_point_series):
-        available_steps = len(first_point_series) if isinstance(first_point_series, list) else 0
+        available_steps = (
+            len(first_point_series) if isinstance(first_point_series, list) else 0
+        )
         logger.warning(
             "[WeatherTileService] hourly data only has %d steps, requested hour=%d, falling back to current",
             available_steps,
@@ -300,13 +317,19 @@ class WeatherTileService:
         if layer_id.startswith("temperature"):
             return self._engine.build_temperature_geojson_from_grid(grid_data, layer_id)
         if layer_id == "precipitation":
-            return self._engine.build_precipitation_geojson_from_grid(grid_data, layer_id)
+            return self._engine.build_precipitation_geojson_from_grid(
+                grid_data, layer_id
+            )
         if layer_id == "humidity":
             return self._engine.build_humidity_geojson_from_grid(grid_data, layer_id)
         if layer_id == "pressure":
             return self._engine.build_pressure_geojson_from_grid(grid_data, layer_id)
         if layer_id == "visibility":
             return self._engine.build_visibility_geojson_from_grid(grid_data, layer_id)
+        if layer_id == "cloud-cover":
+            return self._engine.build_cloud_cover_geojson_from_grid(grid_data, layer_id)
+        if layer_id == "dewpoint":
+            return self._engine.build_dewpoint_geojson_from_grid(grid_data, layer_id)
 
         raise ValueError(f"Unsupported weather tile layer: {layer_id}")
 
@@ -330,15 +353,22 @@ class WeatherTileService:
 
         logger.info(
             "[WeatherTileService] generating tile layer=%s z=%d x=%d y=%d hour=%d resolution=%.2f provider=%s bbox=(%.4f,%.4f,%.4f,%.4f)",
-            layer_id, z, x, y, hour, resolution, normalize_provider_id(provider_id),
-            bbox.west, bbox.south, bbox.east, bbox.north,
+            layer_id,
+            z,
+            x,
+            y,
+            hour,
+            resolution,
+            normalize_provider_id(provider_id),
+            bbox.west,
+            bbox.south,
+            bbox.east,
+            bbox.north,
         )
-
-        from app.weatherengine.fetch_gateway import fetch_grid_forecast
 
         # 与 /grid、DAG grid_fetch 共用 OpenMeteoClient grid Redis/文件缓存；
         # 同 bbox+resolution 命中时不会连环打上游。
-        resolved_model = model or weather_default_model()
+        resolved_model = model or layer_spec.preferred_model or weather_default_model()
         try:
             grid_data, cache_status, resolved_provider = fetch_grid_forecast(
                 layer_id=layer_id,
@@ -357,8 +387,7 @@ class WeatherTileService:
         grid_data_for_hour = _grid_data_for_hour(grid_data, hour)
         geojson = self._build_geojson(grid_data_for_hour, layer_id, layer_spec)
         effective_res = float(
-            (grid_data.get("grid") or {}).get("resolution")
-            or resolution
+            (grid_data.get("grid") or {}).get("resolution") or resolution
         )
         geojson = _stamp_and_clip_tile_geojson(
             geojson,
@@ -384,7 +413,14 @@ class WeatherTileService:
 
         logger.info(
             "[WeatherTileService] tile generated layer=%s z=%d x=%d y=%d hour=%d features=%d upstream_cache=%s provider=%s",
-            layer_id, z, x, y, hour, len(geojson.get("features", [])), cache_status, resolved_provider,
+            layer_id,
+            z,
+            x,
+            y,
+            hour,
+            len(geojson.get("features", [])),
+            cache_status,
+            resolved_provider,
         )
         return geojson
 
@@ -428,17 +464,18 @@ class WeatherTileService:
     ) -> tuple[dict[str, Any], str]:
         """同步版 get_tile：供 workflow 节点复用同一套缓存与生成逻辑。"""
         hour = _clamp_hour(hour)
-        model = model or weather_default_model()
-        key = tile_key(layer_id, z, x, y, hour, model, provider_id)
-
         layer_spec = WEATHER_LAYER_SPECS.get(layer_id)
         if layer_spec is None:
             raise ValueError(f"Unsupported weather layer: {layer_id}")
+        model = model or layer_spec.preferred_model or weather_default_model()
+        key = tile_key(layer_id, z, x, y, hour, model, provider_id)
 
         if not (_MIN_TILE_ZOOM <= z <= _MAX_TILE_ZOOM):
-            raise ValueError(f"Tile zoom must be between {_MIN_TILE_ZOOM} and {_MAX_TILE_ZOOM}")
+            raise ValueError(
+                f"Tile zoom must be between {_MIN_TILE_ZOOM} and {_MAX_TILE_ZOOM}"
+            )
 
-        n = 2 ** z
+        n = 2**z
         if not (0 <= x < n and 0 <= y < n):
             raise ValueError("Invalid tile coordinates for zoom level")
 
@@ -501,7 +538,12 @@ class WeatherTileService:
         provider_id: str | None = None,
     ) -> dict[str, Any] | None:
         """只读缓存（内存 / Redis），不触发上游拉取。供点查询降级采样。"""
-        model = model or weather_default_model()
+        layer_spec = WEATHER_LAYER_SPECS.get(layer_id)
+        model = (
+            model
+            or (layer_spec.preferred_model if layer_spec else None)
+            or weather_default_model()
+        )
         key = tile_key(
             layer_id=layer_id,
             z=z,
@@ -532,14 +574,27 @@ class WeatherTileService:
     ) -> dict[str, Any] | None:
         """优先 hour=0；否则扫描 Redis 同 z/x/y 任意 hour 的缓存瓦片。"""
         hit = self.peek_cached_tile(
-            layer_id, z, x, y, hour=0, model=model, provider_id=provider_id,
+            layer_id,
+            z,
+            x,
+            y,
+            hour=0,
+            model=model,
+            provider_id=provider_id,
         )
         if hit is not None:
             return hit
 
-        model = model or weather_default_model()
+        layer_spec = WEATHER_LAYER_SPECS.get(layer_id)
+        model = (
+            model
+            or (layer_spec.preferred_model if layer_spec else None)
+            or weather_default_model()
+        )
         model_part = model.replace("/", "_").replace(":", "_")
-        provider_part = normalize_provider_id(provider_id).replace("/", "_").replace(":", "_")
+        provider_part = (
+            normalize_provider_id(provider_id).replace("/", "_").replace(":", "_")
+        )
         pattern = (
             f"{_TILE_REDIS_KEY_PREFIX}{layer_id}:z{z}:x{x}:y{y}:h*"
             f":m{model_part}:p{provider_part}"
@@ -562,7 +617,9 @@ class WeatherTileService:
 
         try:
             for key in client.scan_iter(match=pattern, count=32):
-                key_str = key.decode() if isinstance(key, (bytes, bytearray)) else str(key)
+                key_str = (
+                    key.decode() if isinstance(key, (bytes, bytearray)) else str(key)
+                )
                 redis_cached = cache_get_json(key_str)
                 if redis_cached is not None:
                     self._write_memory_cache(key_str, redis_cached)
@@ -647,17 +704,18 @@ class WeatherTileService:
         - "miss": 未命中，已生成
         """
         hour = _clamp_hour(hour)
-        model = model or weather_default_model()
-        key = tile_key(layer_id, z, x, y, hour, model, provider_id)
-
         layer_spec = WEATHER_LAYER_SPECS.get(layer_id)
         if layer_spec is None:
             raise ValueError(f"Unsupported weather layer: {layer_id}")
+        model = model or layer_spec.preferred_model or weather_default_model()
+        key = tile_key(layer_id, z, x, y, hour, model, provider_id)
 
         if not (_MIN_TILE_ZOOM <= z <= _MAX_TILE_ZOOM):
-            raise ValueError(f"Tile zoom must be between {_MIN_TILE_ZOOM} and {_MAX_TILE_ZOOM}")
+            raise ValueError(
+                f"Tile zoom must be between {_MIN_TILE_ZOOM} and {_MAX_TILE_ZOOM}"
+            )
 
-        n = 2 ** z
+        n = 2**z
         if not (0 <= x < n and 0 <= y < n):
             raise ValueError("Invalid tile coordinates for zoom level")
 

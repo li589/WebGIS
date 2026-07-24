@@ -2,7 +2,10 @@ from __future__ import annotations
 
 import unittest
 
-from app.services.node_template_registry import get_all_node_templates, get_node_template
+from app.services.node_template_registry import (
+    get_all_node_templates,
+    get_node_template,
+)
 
 
 class NodeTemplatePortTests(unittest.TestCase):
@@ -77,4 +80,3 @@ class NodeTemplatePortTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
-

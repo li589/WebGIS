@@ -21,8 +21,12 @@ const filteredEntries = computed(() => {
 // 倒序显示（最新在上）
 const displayEntries = computed(() => [...filteredEntries.value].reverse())
 
-const operationCount = computed(() => logStore.entries.filter((e) => e.category === 'operation').length)
-const workflowCount = computed(() => logStore.entries.filter((e) => e.category === 'workflow').length)
+const operationCount = computed(
+  () => logStore.entries.filter((e) => e.category === 'operation').length,
+)
+const workflowCount = computed(
+  () => logStore.entries.filter((e) => e.category === 'workflow').length,
+)
 
 function formatTime(ts: number): string {
   const d = new Date(ts)
@@ -76,16 +80,12 @@ function handleClearAll() {
         >
           工作流日志 <span class="tab-count">{{ workflowCount }}</span>
         </button>
-        <button class="clear-btn" @click="handleClearAll" title="清空所有日志">
-          清空
-        </button>
+        <button class="clear-btn" @click="handleClearAll" title="清空所有日志">清空</button>
       </div>
 
       <!-- 日志列表 -->
       <div class="log-list">
-        <div v-if="displayEntries.length === 0" class="empty-hint">
-          暂无日志记录
-        </div>
+        <div v-if="displayEntries.length === 0" class="empty-hint">暂无日志记录</div>
         <div
           v-for="entry in displayEntries"
           :key="entry.id"
@@ -147,7 +147,10 @@ function handleClearAll() {
   flex: none;
 }
 
-.panel-icon { font-size: 0.82rem; color: #5ad5ff; }
+.panel-icon {
+  font-size: 0.82rem;
+  color: #5ad5ff;
+}
 
 .entry-count {
   padding: 0.1rem 0.4rem;
@@ -169,7 +172,10 @@ function handleClearAll() {
   cursor: pointer;
   font-size: 0.7rem;
 }
-.close-btn:hover { background: rgba(136, 192, 255, 0.1); color: #d8e6f5; }
+.close-btn:hover {
+  background: rgba(136, 192, 255, 0.1);
+  color: #d8e6f5;
+}
 
 .filter-tabs {
   display: flex;
@@ -196,7 +202,10 @@ function handleClearAll() {
   transition: all 0.16s ease;
 }
 
-.filter-tab:hover { background: rgba(136, 192, 255, 0.08); color: #d8e6f5; }
+.filter-tab:hover {
+  background: rgba(136, 192, 255, 0.08);
+  color: #d8e6f5;
+}
 
 .filter-tab.active {
   border-color: rgba(90, 213, 255, 0.36);
@@ -204,7 +213,10 @@ function handleClearAll() {
   color: #5ad5ff;
 }
 
-.tab-count { font-size: 0.52rem; opacity: 0.7; }
+.tab-count {
+  font-size: 0.52rem;
+  opacity: 0.7;
+}
 
 .clear-btn {
   margin-left: auto;
@@ -217,7 +229,9 @@ function handleClearAll() {
   font: inherit;
   font-size: 0.58rem;
 }
-.clear-btn:hover { background: rgba(255, 77, 77, 0.12); }
+.clear-btn:hover {
+  background: rgba(255, 77, 77, 0.12);
+}
 
 .log-list {
   flex: 1;
@@ -239,7 +253,9 @@ function handleClearAll() {
   transition: background 0.12s ease;
 }
 
-.log-entry:hover { background: rgba(136, 192, 255, 0.04); }
+.log-entry:hover {
+  background: rgba(136, 192, 255, 0.04);
+}
 
 .entry-row {
   display: flex;

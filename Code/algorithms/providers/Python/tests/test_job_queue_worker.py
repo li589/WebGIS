@@ -10,7 +10,12 @@ from contracts.runtime import RegionSpec, TimeRange
 from service.async_jobs import AsyncJobRegistry
 from service.job_queue import InMemoryJobQueue
 from service.worker import JobQueueWorker
-from utils.local_adapters import ConsoleLoggerAdapter, LocalDataSourceAdapter, LocalProductSink, LocalSchedulerAdapter
+from utils.local_adapters import (
+    ConsoleLoggerAdapter,
+    LocalDataSourceAdapter,
+    LocalProductSink,
+    LocalSchedulerAdapter,
+)
 
 
 def _build_request() -> JobRequest:
@@ -37,8 +42,17 @@ class JobQueueWorkerTests(unittest.TestCase):
         registry.mark_queued(record.submission_id)
         job_queue.enqueue(record.submission_id, request)
 
-        def fake_run_job(request, scheduler_adapter, datasource_adapter, logger_adapter, product_sink=None, workspace=None):
-            scheduler_adapter.update_status(request.job_id, "run-worker-001", "running", {"stage": "dispatch"})
+        def fake_run_job(
+            request,
+            scheduler_adapter,
+            datasource_adapter,
+            logger_adapter,
+            product_sink=None,
+            workspace=None,
+        ):
+            scheduler_adapter.update_status(
+                request.job_id, "run-worker-001", "running", {"stage": "dispatch"}
+            )
             result = JobResult(
                 job_id=request.job_id,
                 run_id="run-worker-001",
@@ -105,7 +119,9 @@ class JobQueueWorkerTests(unittest.TestCase):
             logger_adapter_factory=ConsoleLoggerAdapter,
             product_sink_factory=lambda: None,
             workspace=workspace,
-            run_job_fn=lambda *args, **kwargs: (_ for _ in ()).throw(RuntimeError("boom")),
+            run_job_fn=lambda *args, **kwargs: (_ for _ in ()).throw(
+                RuntimeError("boom")
+            ),
         )
 
         processed = worker.process_next(timeout=0.01)
@@ -117,7 +133,9 @@ class JobQueueWorkerTests(unittest.TestCase):
         self.assertIsNotNone(snapshot)
         self.assertEqual(snapshot.state, "failed")
         self.assertEqual(snapshot.final_response_status, 500)
-        self.assertEqual(snapshot.final_response_body["error_code"], "internal_server_error")
+        self.assertEqual(
+            snapshot.final_response_body["error_code"], "internal_server_error"
+        )
         self.assertEqual(snapshot.final_response_body["developer_message"], "boom")
 
 

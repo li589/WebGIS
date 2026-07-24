@@ -3,6 +3,7 @@
 Handles download follow-up task dispatch (Celery or inline) and stale workflow
 cleanup on backend startup. Extracted from interaction_hub.py.
 """
+
 from __future__ import annotations
 
 from datetime import datetime, timezone
@@ -12,8 +13,14 @@ from uuid import uuid4
 from app.core.logging import log_context
 from app.services.workflow_repository import SQLiteWorkflowRepository
 from app.services.workflow.persistence_service import WorkflowPersistenceService
-from app.services.workflow.transition_builder import WorkflowTransitionBuilder, use_celery_executor
-from app.tasks.download_tasks import dispatch_download_follow_up_task, execute_download_follow_up_task
+from app.services.workflow.transition_builder import (
+    WorkflowTransitionBuilder,
+    use_celery_executor,
+)
+from app.tasks.download_tasks import (
+    dispatch_download_follow_up_task,
+    execute_download_follow_up_task,
+)
 from app.tasks.workflow_tasks import resolve_workflow_queue
 from shared.contracts.api_contracts import (
     EventChannel,
@@ -56,7 +63,10 @@ class FollowUpDispatchService:
         queue_name = resolve_workflow_queue(payload)
         for task_data in follow_up_tasks:
             # P0 修复：task_type 过滤条件与 download_service.build_follow_up_task 产出的值对齐
-            if task_data.get("task_type") not in {"download_fetch", "download_fetch_placeholder"}:
+            if task_data.get("task_type") not in {
+                "download_fetch",
+                "download_fetch_placeholder",
+            }:
                 continue
             with log_context(run_id=run_id):
                 try:

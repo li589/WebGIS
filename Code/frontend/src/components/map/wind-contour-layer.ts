@@ -22,16 +22,16 @@ interface GridData {
   north: number
   west: number
   east: number
-  speeds: number[][]  // [row][col]
+  speeds: number[][] // [row][col]
 }
 
 // ── 渲染参数常量 ─────────────────────────────────────────
 
 /** 等值线 LOD 缩放阈值 */
-const CONTOUR_ZOOM_HIDE = 3        // zoom < 3 不绘制
+const CONTOUR_ZOOM_HIDE = 3 // zoom < 3 不绘制
 const CONTOUR_ZOOM_FILTER_HIGH = 4 // zoom < 4 仅显示强风级别
-const CONTOUR_ZOOM_ALL_LEVELS = 7  // zoom < 7 显示默认级别
-const CONTOUR_ZOOM_LABEL_THRESHOLD = 5   // zoom > 5 且段数够多才绘制标注
+const CONTOUR_ZOOM_ALL_LEVELS = 7 // zoom < 7 显示默认级别
+const CONTOUR_ZOOM_LABEL_THRESHOLD = 5 // zoom > 5 且段数够多才绘制标注
 const CONTOUR_ZOOM_LABEL_COUNT_BREAK = 8 // zoom > 8 时标注数量翻倍
 
 /** 等值线标注参数 */
@@ -84,7 +84,11 @@ export class WindContourLayer {
     this.ctx = this.canvas.getContext('2d', { alpha: true })!
     this.loadData(geojson)
     this.updateLayout()
-    console.log(`[${performance.now().toFixed(1)}ms] [WindContourLayer] constructor`, 'grid', this.gridData ? `${this.gridData.rows}x${this.gridData.cols}` : 'null')
+    console.log(
+      `[${performance.now().toFixed(1)}ms] [WindContourLayer] constructor`,
+      'grid',
+      this.gridData ? `${this.gridData.rows}x${this.gridData.cols}` : 'null',
+    )
 
     // 用 rAF 节流：move 事件高频触发，但每帧只重绘一次
     this.moveHandler = () => {
@@ -95,7 +99,10 @@ export class WindContourLayer {
         this.draw()
       })
     }
-    this.resizeHandler = () => { this.updateLayout(); this.draw() }
+    this.resizeHandler = () => {
+      this.updateLayout()
+      this.draw()
+    }
     map.on(MAP_EVENT_MOVE, this.moveHandler)
     map.on(MAP_EVENT_MOVEEND, this.moveHandler)
     map.on(MAP_EVENT_RESIZE, this.resizeHandler)
@@ -150,7 +157,11 @@ export class WindContourLayer {
     // 收集所有点的数据和量化后的唯一经纬度
     // 不依赖后端 row/col —— 多瓦片合并时各瓦片的 row/col 是相对内部的，会互相冲突覆盖
     const QUANT = 1000 // 0.001° 精度，合并浮点误差
-    interface RawPoint { lat: number; lon: number; speed: number }
+    interface RawPoint {
+      lat: number
+      lon: number
+      speed: number
+    }
     const rawPoints: RawPoint[] = []
     const latQuantSet = new Set<number>()
     const lonQuantSet = new Set<number>()
@@ -207,7 +218,12 @@ export class WindContourLayer {
         }
       }
       let head = 0
-      const DIRS: ReadonlyArray<readonly [number, number]> = [[-1, 0], [1, 0], [0, -1], [0, 1]]
+      const DIRS: ReadonlyArray<readonly [number, number]> = [
+        [-1, 0],
+        [1, 0],
+        [0, -1],
+        [0, 1],
+      ]
       while (head < queue.length) {
         const [r, c, srcR, srcC] = queue[head++]
         for (const [dr, dc] of DIRS) {
@@ -223,7 +239,8 @@ export class WindContourLayer {
     }
 
     this.gridData = {
-      rows, cols,
+      rows,
+      cols,
       south: sortedLats[rows - 1] / QUANT,
       north: sortedLats[0] / QUANT,
       west: sortedLons[0] / QUANT,
@@ -249,13 +266,17 @@ export class WindContourLayer {
 
     for (let r = 0; r < rows - 1; r++) {
       for (let c = 0; c < cols - 1; c++) {
-        const tl = speeds[r][c]     // top-left
-        const tr = speeds[r][c + 1]  // top-right
+        const tl = speeds[r][c] // top-left
+        const tr = speeds[r][c + 1] // top-right
         const br = speeds[r + 1][c + 1] // bottom-right
-        const bl = speeds[r + 1][c]  // bottom-left
+        const bl = speeds[r + 1][c] // bottom-left
 
         // 4 个角点是否大于等值线值
-        const caseCode = (tl >= level ? 1 : 0) | (tr >= level ? 2 : 0) | (br >= level ? 4 : 0) | (bl >= level ? 8 : 0)
+        const caseCode =
+          (tl >= level ? 1 : 0) |
+          (tr >= level ? 2 : 0) |
+          (br >= level ? 4 : 0) |
+          (bl >= level ? 8 : 0)
 
         // 线性插值交点位置（0-1）
         const interp = (a: number, b: number) => {
@@ -276,15 +297,41 @@ export class WindContourLayer {
         }
 
         switch (caseCode) {
-          case 0: case 15: break
-          case 1: case 14: segments.push([toLngLat(left()), toLngLat(top())]); break
-          case 2: case 13: segments.push([toLngLat(top()), toLngLat(right())]); break
-          case 3: case 12: segments.push([toLngLat(left()), toLngLat(right())]); break
-          case 4: case 11: segments.push([toLngLat(right()), toLngLat(bottom())]); break
-          case 5: segments.push([toLngLat(left()), toLngLat(top())]); segments.push([toLngLat(right()), toLngLat(bottom())]); break
-          case 6: case 9: segments.push([toLngLat(top()), toLngLat(bottom())]); break
-          case 7: case 8: segments.push([toLngLat(left()), toLngLat(bottom())]); break
-          case 10: segments.push([toLngLat(left()), toLngLat(bottom())]); segments.push([toLngLat(top()), toLngLat(right())]); break
+          case 0:
+          case 15:
+            break
+          case 1:
+          case 14:
+            segments.push([toLngLat(left()), toLngLat(top())])
+            break
+          case 2:
+          case 13:
+            segments.push([toLngLat(top()), toLngLat(right())])
+            break
+          case 3:
+          case 12:
+            segments.push([toLngLat(left()), toLngLat(right())])
+            break
+          case 4:
+          case 11:
+            segments.push([toLngLat(right()), toLngLat(bottom())])
+            break
+          case 5:
+            segments.push([toLngLat(left()), toLngLat(top())])
+            segments.push([toLngLat(right()), toLngLat(bottom())])
+            break
+          case 6:
+          case 9:
+            segments.push([toLngLat(top()), toLngLat(bottom())])
+            break
+          case 7:
+          case 8:
+            segments.push([toLngLat(left()), toLngLat(bottom())])
+            break
+          case 10:
+            segments.push([toLngLat(left()), toLngLat(bottom())])
+            segments.push([toLngLat(top()), toLngLat(right())])
+            break
         }
       }
     }
@@ -320,10 +367,17 @@ export class WindContourLayer {
         const p1 = this.map.project([seg[0][0] + this.lonWrapOffset, seg[0][1]])
         const p2 = this.map.project([seg[1][0] + this.lonWrapOffset, seg[1][1]])
         // 视口剔除（基于 canvas CSS 像素范围）
-        if ((p1.x < ox - CONTOUR_SEGMENT_CULLING_MARGIN_PX && p2.x < ox - CONTOUR_SEGMENT_CULLING_MARGIN_PX) ||
-            (p1.x > ox + cw + CONTOUR_SEGMENT_CULLING_MARGIN_PX && p2.x > ox + cw + CONTOUR_SEGMENT_CULLING_MARGIN_PX) ||
-            (p1.y < oy - CONTOUR_SEGMENT_CULLING_MARGIN_PX && p2.y < oy - CONTOUR_SEGMENT_CULLING_MARGIN_PX) ||
-            (p1.y > oy + ch + CONTOUR_SEGMENT_CULLING_MARGIN_PX && p2.y > oy + ch + CONTOUR_SEGMENT_CULLING_MARGIN_PX)) continue
+        if (
+          (p1.x < ox - CONTOUR_SEGMENT_CULLING_MARGIN_PX &&
+            p2.x < ox - CONTOUR_SEGMENT_CULLING_MARGIN_PX) ||
+          (p1.x > ox + cw + CONTOUR_SEGMENT_CULLING_MARGIN_PX &&
+            p2.x > ox + cw + CONTOUR_SEGMENT_CULLING_MARGIN_PX) ||
+          (p1.y < oy - CONTOUR_SEGMENT_CULLING_MARGIN_PX &&
+            p2.y < oy - CONTOUR_SEGMENT_CULLING_MARGIN_PX) ||
+          (p1.y > oy + ch + CONTOUR_SEGMENT_CULLING_MARGIN_PX &&
+            p2.y > oy + ch + CONTOUR_SEGMENT_CULLING_MARGIN_PX)
+        )
+          continue
         ctx.beginPath()
         ctx.moveTo((p1.x - ox) * dpr, (p1.y - oy) * dpr)
         ctx.lineTo((p2.x - ox) * dpr, (p2.y - oy) * dpr)
@@ -335,7 +389,8 @@ export class WindContourLayer {
         ctx.fillStyle = level.color.replace(/[\d.]+\)$/, '0.9)')
         ctx.font = `${CONTOUR_LABEL_FONT_SIZE * dpr}px monospace`
         // 标注密度也随 zoom 调整：zoom 大时标注更多
-        const targetLabelCount = zoom > CONTOUR_ZOOM_LABEL_COUNT_BREAK ? LABEL_COUNT_CLOSE_VIEW : LABEL_COUNT_DEFAULT
+        const targetLabelCount =
+          zoom > CONTOUR_ZOOM_LABEL_COUNT_BREAK ? LABEL_COUNT_CLOSE_VIEW : LABEL_COUNT_DEFAULT
         const labelInterval = Math.max(1, Math.floor(segments.length / targetLabelCount))
         for (let i = 0; i < segments.length; i += labelInterval) {
           const mid: [number, number] = [
@@ -344,8 +399,13 @@ export class WindContourLayer {
           ]
           const screen = this.map.project([mid[0] + this.lonWrapOffset, mid[1]])
           // 标注位置也转换为 canvas 内坐标
-          if (screen.x < ox - CONTOUR_SEGMENT_CULLING_MARGIN_PX || screen.x > ox + cw + CONTOUR_SEGMENT_CULLING_MARGIN_PX ||
-              screen.y < oy - CONTOUR_SEGMENT_CULLING_MARGIN_PX || screen.y > oy + ch + CONTOUR_SEGMENT_CULLING_MARGIN_PX) continue
+          if (
+            screen.x < ox - CONTOUR_SEGMENT_CULLING_MARGIN_PX ||
+            screen.x > ox + cw + CONTOUR_SEGMENT_CULLING_MARGIN_PX ||
+            screen.y < oy - CONTOUR_SEGMENT_CULLING_MARGIN_PX ||
+            screen.y > oy + ch + CONTOUR_SEGMENT_CULLING_MARGIN_PX
+          )
+            continue
           ctx.fillText(level.label, (screen.x - ox + 3) * dpr, (screen.y - oy - 3) * dpr)
         }
       }
@@ -353,7 +413,9 @@ export class WindContourLayer {
   }
 
   /** 根据 zoom 解析当前应绘制的等值线级别（LOD 策略） */
-  private resolveActiveLevels(zoom: number): { value: number; color: string; width: number; label: string }[] {
+  private resolveActiveLevels(
+    zoom: number,
+  ): { value: number; color: string; width: number; label: string }[] {
     // 颜色定义：低级别淡色，高级别亮色
     const colorFor = (v: number) => {
       if (v <= 2.5) return 'rgba(100, 180, 255, 0.35)'
@@ -363,7 +425,12 @@ export class WindContourLayer {
       return 'rgba(240, 250, 255, 0.8)'
     }
     const widthFor = (v: number) => (v <= 5 ? 1.0 : 1.3)
-    const make = (v: number) => ({ value: v, color: colorFor(v), width: widthFor(v), label: `${v} m/s` })
+    const make = (v: number) => ({
+      value: v,
+      color: colorFor(v),
+      width: widthFor(v),
+      label: `${v} m/s`,
+    })
 
     if (zoom < CONTOUR_ZOOM_FILTER_HIGH) {
       // 远视图：只显示高级别，避免线条过密
@@ -389,7 +456,11 @@ export class WindContourLayer {
   updateGeoJSON(geojson: WindGeoJSON): void {
     this.loadData(geojson)
     this.updateLayout()
-    console.log(`[${performance.now().toFixed(1)}ms] [WindContourLayer] updateGeoJSON`, 'grid', this.gridData ? `${this.gridData.rows}x${this.gridData.cols}` : 'null')
+    console.log(
+      `[${performance.now().toFixed(1)}ms] [WindContourLayer] updateGeoJSON`,
+      'grid',
+      this.gridData ? `${this.gridData.rows}x${this.gridData.cols}` : 'null',
+    )
     this.draw()
   }
 

@@ -1,4 +1,5 @@
 """Resolve RemoteAuth for a remote URI from credential profiles."""
+
 from __future__ import annotations
 
 from functools import lru_cache
@@ -12,9 +13,14 @@ def _repo():
     from pathlib import Path
 
     from app.core.config import settings
-    from app.services.remote_storage_credentials_repository import RemoteStorageCredentialsRepository
+    from app.services.remote_storage_credentials_repository import (
+        RemoteStorageCredentialsRepository,
+    )
 
-    db_path = Path(settings.gee_credentials_db_path).parent / "remote_storage_credentials.sqlite3"
+    db_path = (
+        Path(settings.gee_credentials_db_path).parent
+        / "remote_storage_credentials.sqlite3"
+    )
     return RemoteStorageCredentialsRepository(
         db_path=db_path,
         encryption_key=settings.gee_credentials_encryption_key,
@@ -35,7 +41,9 @@ def resolve_remote_auth(uri: str) -> RemoteAuth:
     if parsed.cred_profile:
         bundle = repo.get_secret_bundle(parsed.cred_profile)
         if bundle is None:
-            raise ValueError(f"Remote credential profile not found or disabled: {parsed.cred_profile}")
+            raise ValueError(
+                f"Remote credential profile not found or disabled: {parsed.cred_profile}"
+            )
     else:
         bundle = repo.find_by_host_protocol(parsed.scheme, parsed.host)
         if bundle is None:
@@ -47,10 +55,10 @@ def resolve_remote_auth(uri: str) -> RemoteAuth:
     profile_proto = _normalize_protocol(str(bundle.get("protocol") or ""))
     uri_proto = parsed.scheme
     # Allow ftp profile to serve ftps and vice versa loosely? Keep strict with ftp/ftps match.
-    compatible = (
-        profile_proto == uri_proto
-        or {profile_proto, uri_proto} <= {"ftp", "ftps"}
-    )
+    compatible = profile_proto == uri_proto or {profile_proto, uri_proto} <= {
+        "ftp",
+        "ftps",
+    }
     if not compatible:
         raise ValueError(
             f"Credential profile protocol '{profile_proto}' does not match URI scheme '{uri_proto}'"
@@ -75,7 +83,9 @@ def resolve_remote_auth(uri: str) -> RemoteAuth:
         private_key_pem=bundle.get("private_key_pem") or None,
         domain=bundle.get("domain") or None,
         port=profile_port_int,
-        extra={str(k): str(v) if not isinstance(v, str) else v for k, v in extra.items()},
+        extra={
+            str(k): str(v) if not isinstance(v, str) else v for k, v in extra.items()
+        },
     )
 
 

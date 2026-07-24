@@ -216,12 +216,16 @@ def _load_scalar_kernel_impls(
         return _mironov_dielectric_kernel_py, _fresnel_reflectance_kernel_py, False
 
 
-_MIRONOV_DIELECTRIC_KERNEL_IMPL, _FRESNEL_REFLECTANCE_KERNEL_IMPL, _SCALAR_KERNELS_USE_NUMBA = (
-    _load_scalar_kernel_impls()
-)
+(
+    _MIRONOV_DIELECTRIC_KERNEL_IMPL,
+    _FRESNEL_REFLECTANCE_KERNEL_IMPL,
+    _SCALAR_KERNELS_USE_NUMBA,
+) = _load_scalar_kernel_impls()
 
 
-def _broadcast_to_shape(value: Any, target_shape: tuple[int, ...], *, name: str, dtype: Any | None = None) -> Any:
+def _broadcast_to_shape(
+    value: Any, target_shape: tuple[int, ...], *, name: str, dtype: Any | None = None
+) -> Any:
     """将输入数组广播到目标形状。
 
     量纲: 输入/输出保持原量纲。支持标量→任意形状、1D→2D (按行/列)、2D→2D 广播。
@@ -254,7 +258,9 @@ def _broadcast_to_shape(value: Any, target_shape: tuple[int, ...], *, name: str,
     try:
         return np.broadcast_to(array, target_shape)
     except ValueError as exc:
-        raise ValueError(f"Cannot broadcast {name} from shape {array.shape} to {target_shape}") from exc
+        raise ValueError(
+            f"Cannot broadcast {name} from shape {array.shape} to {target_shape}"
+        ) from exc
 
 
 def fresnel_reflectance(theta_deg: float, epsilon: complex) -> tuple[float, float]:
@@ -297,7 +303,9 @@ def _fresnel_reflectance_kernel(
     )
 
 
-def fresnel_reflectance_from_context(epsilon: complex, context: FresnelContext) -> tuple[float, float]:
+def fresnel_reflectance_from_context(
+    epsilon: complex, context: FresnelContext
+) -> tuple[float, float]:
     """Fresnel 反射率（从预计算 context 计算）。
 
     量纲: 输入 epsilon 无量纲，context 含入射角三角函数（无量纲）。
@@ -311,13 +319,17 @@ def fresnel_reflectance_from_context(epsilon: complex, context: FresnelContext) 
     )
 
 
-def mironov_dielectric(freq_ghz: float, soil_moisture: float, clay_fraction: float) -> complex:
+def mironov_dielectric(
+    freq_ghz: float, soil_moisture: float, clay_fraction: float
+) -> complex:
     """Mironov 介电模型（直接计算）。
 
     量纲: 输入 freq_ghz 单位 GHz，soil_moisture 单位 m³/m³，clay_fraction 无量纲 (0-1)。
     返回复介电常数（无量纲）。
     """
-    return mironov_dielectric_from_context(soil_moisture, build_mironov_context(freq_ghz, clay_fraction))
+    return mironov_dielectric_from_context(
+        soil_moisture, build_mironov_context(freq_ghz, clay_fraction)
+    )
 
 
 def build_mironov_context(freq_ghz: float, clay_fraction: float) -> MironovContext:
@@ -342,7 +354,11 @@ def build_mironov_context(freq_ghz: float, clay_fraction: float) -> MironovConte
 
     freq_hz = freq_ghz * 1e9
 
-    znd = _MIRONOV_COEFF_A0 + _MIRONOV_COEFF_A1 * clay_fraction + _MIRONOV_COEFF_A2 * clay_fraction**2
+    znd = (
+        _MIRONOV_COEFF_A0
+        + _MIRONOV_COEFF_A1 * clay_fraction
+        + _MIRONOV_COEFF_A2 * clay_fraction**2
+    )
     zkd = _MIRONOV_COEFF_B0 + _MIRONOV_COEFF_B1 * clay_fraction
     zxmvt = _MIRONOV_COEFF_XMVT0 + _MIRONOV_COEFF_XMVT1 * clay_fraction
 
@@ -352,19 +368,31 @@ def build_mironov_context(freq_ghz: float, clay_fraction: float) -> MironovConte
         + _MIRONOV_BOUND_WATER_EPS_INF_A2 * clay_fraction**2
     )
     ztaub = _MIRONOV_BOUND_WATER_TAU_A0 + _MIRONOV_BOUND_WATER_TAU_A1 * clay_fraction
-    zsigmab = _MIRONOV_BOUND_WATER_SIGMA_A0 + _MIRONOV_BOUND_WATER_SIGMA_A1 * clay_fraction
+    zsigmab = (
+        _MIRONOV_BOUND_WATER_SIGMA_A0 + _MIRONOV_BOUND_WATER_SIGMA_A1 * clay_fraction
+    )
 
     zep0u = _MIRONOV_FREE_WATER_EPS_INF
     ztauu = _MIRONOV_FREE_WATER_TAU
-    zsigmau = _MIRONOV_FREE_WATER_SIGMA_A0 + _MIRONOV_FREE_WATER_SIGMA_A1 * clay_fraction
+    zsigmau = (
+        _MIRONOV_FREE_WATER_SIGMA_A0 + _MIRONOV_FREE_WATER_SIGMA_A1 * clay_fraction
+    )
 
-    cxb = (zep0b - _WATER_HIGH_FREQ_DIELECTRIC) / (1 + (2 * math.pi * freq_hz * ztaub) ** 2)
+    cxb = (zep0b - _WATER_HIGH_FREQ_DIELECTRIC) / (
+        1 + (2 * math.pi * freq_hz * ztaub) ** 2
+    )
     epwbx = _WATER_HIGH_FREQ_DIELECTRIC + cxb
-    epwby = cxb * (2 * math.pi * freq_hz * ztaub) + zsigmab / (2 * math.pi * _VACUUM_PERMITTIVITY * freq_hz)
+    epwby = cxb * (2 * math.pi * freq_hz * ztaub) + zsigmab / (
+        2 * math.pi * _VACUUM_PERMITTIVITY * freq_hz
+    )
 
-    cxu = (zep0u - _WATER_HIGH_FREQ_DIELECTRIC) / (1 + (2 * math.pi * freq_hz * ztauu) ** 2)
+    cxu = (zep0u - _WATER_HIGH_FREQ_DIELECTRIC) / (
+        1 + (2 * math.pi * freq_hz * ztauu) ** 2
+    )
     epwux = _WATER_HIGH_FREQ_DIELECTRIC + cxu
-    epwuy = cxu * (2 * math.pi * freq_hz * ztauu) + zsigmau / (2 * math.pi * _VACUUM_PERMITTIVITY * freq_hz)
+    epwuy = cxu * (2 * math.pi * freq_hz * ztauu) + zsigmau / (
+        2 * math.pi * _VACUUM_PERMITTIVITY * freq_hz
+    )
 
     mag_b = math.sqrt(epwbx * epwbx + epwby * epwby)  # 复数模长，非负
     znb = _safe_sqrt((mag_b + epwbx) / 2)
@@ -412,7 +440,9 @@ def _mironov_dielectric_kernel(
     )
 
 
-def mironov_dielectric_from_context(soil_moisture: float, context: MironovContext) -> complex:
+def mironov_dielectric_from_context(
+    soil_moisture: float, context: MironovContext
+) -> complex:
     """基于预计算上下文计算 Mironov 复介电常数。
 
     量纲: 输入 soil_moisture 单位 m³/m³（体积含水量），context 为 build_mironov_context
@@ -449,10 +479,16 @@ def vwc_from_ndvi(
 
     ndvi = np.array(ndvi, dtype=np.float64, copy=True)
     target_shape = ndvi.shape
-    ndvi_max = _broadcast_to_shape(ndvi_max, target_shape, name="ndvi_max", dtype=np.float64)
-    ndvi_min = _broadcast_to_shape(ndvi_min, target_shape, name="ndvi_min", dtype=np.float64)
+    ndvi_max = _broadcast_to_shape(
+        ndvi_max, target_shape, name="ndvi_max", dtype=np.float64
+    )
+    ndvi_min = _broadcast_to_shape(
+        ndvi_min, target_shape, name="ndvi_min", dtype=np.float64
+    )
     landcover = _broadcast_to_shape(landcover, target_shape, name="landcover")
-    stem_factor = _broadcast_to_shape(stem_factor, target_shape, name="stem_factor", dtype=np.float64)
+    stem_factor = _broadcast_to_shape(
+        stem_factor, target_shape, name="stem_factor", dtype=np.float64
+    )
 
     ndvi[(ndvi < _NDVI_VALID_MIN) | (ndvi > _NDVI_VALID_MAX)] = np.nan
     vwc1 = _VWC_NDVI_COEFF_A * (ndvi**2) + _VWC_NDVI_COEFF_B * ndvi
@@ -498,8 +534,12 @@ def tau_from_ndvi(
 
     vwc = vwc_from_ndvi(ndvi, ndvi_max, ndvi_min, landcover, stem_factor)
     target_shape = np.asarray(vwc).shape
-    theta_deg = _broadcast_to_shape(theta_deg, target_shape, name="theta_deg", dtype=np.float64)
-    b_param = _broadcast_to_shape(b_param, target_shape, name="b_param", dtype=np.float64)
+    theta_deg = _broadcast_to_shape(
+        theta_deg, target_shape, name="theta_deg", dtype=np.float64
+    )
+    b_param = _broadcast_to_shape(
+        b_param, target_shape, name="b_param", dtype=np.float64
+    )
     tau = b_param * vwc / np.cos(np.radians(theta_deg))
     tau[(tau < 0) | (tau > _TAU_MAX_VALID)] = np.nan
     return tau

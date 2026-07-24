@@ -64,7 +64,9 @@ class DataAccessNodesTests(unittest.TestCase):
             mod = self.registry.get_module(name)
             self.assertTrue(mod.name)
 
-        self.assertEqual(self.registry.get_module("preprocess_format_convert").name, "format_convert")
+        self.assertEqual(
+            self.registry.get_module("preprocess_format_convert").name, "format_convert"
+        )
 
     def test_config_read_and_archive_extract(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -75,14 +77,22 @@ class DataAccessNodesTests(unittest.TestCase):
             zip_path = Path(tmp) / "a.zip"
             with zipfile.ZipFile(zip_path, "w") as zf:
                 zf.writestr("inner.txt", "hello")
+                zf.writestr("keep.nc", "netcdf")
 
-            cfg_out = self.registry.get_module("config_read").execute({}, {"path": str(cfg)}, _ctx(workspace))
+            cfg_out = self.registry.get_module("config_read").execute(
+                {}, {"path": str(cfg)}, _ctx(workspace)
+            )
             self.assertEqual(cfg_out["config"]["alpha"], 1)
             self.assertIn("manifest", cfg_out)
 
-            arc_out = self.registry.get_module("archive_extract").execute({"path": str(zip_path)}, {}, _ctx(workspace))
+            arc_out = self.registry.get_module("archive_extract").execute(
+                {"path": str(zip_path)},
+                {"member_glob": "*.nc"},
+                _ctx(workspace),
+            )
             extract_dir = Path(str(arc_out["extract_dir"]))
-            self.assertTrue((extract_dir / "inner.txt").exists())
+            self.assertTrue((extract_dir / "keep.nc").exists())
+            self.assertFalse((extract_dir / "inner.txt").exists())
 
     def test_data_source_module(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

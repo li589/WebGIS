@@ -5,7 +5,6 @@ from typing import Any
 from app.workflow_engine.base import BaseNode
 from app.workflow_engine.enums import PortKind, RunStatus
 from app.workflow_engine.models import (
-    ExecutionContext,
     NodeExecutionResult,
     NodeSpec,
     PortSpec,
@@ -51,11 +50,21 @@ class SummaryGenerateNode(BaseNode):
             node_id=SummaryGenerateNode.node_type,
             node_type=SummaryGenerateNode.node_type,
             input_ports=[
-                PortSpec(name="weather_point", kind=PortKind.data, description="结构化天气点位数据"),
+                PortSpec(
+                    name="weather_point",
+                    kind=PortKind.data,
+                    description="结构化天气点位数据",
+                ),
             ],
             output_ports=[
-                PortSpec(name="summary", kind=PortKind.value, description="天气摘要文本"),
-                PortSpec(name="diagnostics", kind=PortKind.diagnostic, description="诊断信息列表"),
+                PortSpec(
+                    name="summary", kind=PortKind.value, description="天气摘要文本"
+                ),
+                PortSpec(
+                    name="diagnostics",
+                    kind=PortKind.diagnostic,
+                    description="诊断信息列表",
+                ),
             ],
         )
 
@@ -79,9 +88,7 @@ class SummaryGenerateNode(BaseNode):
         else:
             value_text = str(metric_value)
 
-        return (
-            f"[{provider}] layer={layer_id}, {primary_metric}={value_text} {unit_label}".strip()
-        )
+        return f"[{provider}] layer={layer_id}, {primary_metric}={value_text} {unit_label}".strip()
 
     @staticmethod
     def _build_diagnostics(weather_point: dict[str, Any]) -> list[str]:
@@ -92,7 +99,9 @@ class SummaryGenerateNode(BaseNode):
         diagnostics.append(f"provider={weather_point.get('provider', 'unknown')}")
         diagnostics.append(f"layer_id={weather_point.get('layer_id', 'unknown')}")
         diagnostics.append(f"model={weather_point.get('model', 'unknown')}")
-        diagnostics.append(f"cache_status={weather_point.get('cache_status', 'unknown')}")
+        diagnostics.append(
+            f"cache_status={weather_point.get('cache_status', 'unknown')}"
+        )
         diagnostics.append(f"latitude={weather_point.get('latitude', 'unknown')}")
         diagnostics.append(f"longitude={weather_point.get('longitude', 'unknown')}")
 

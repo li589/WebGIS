@@ -62,6 +62,7 @@ Python/
 - 原生模块：SMAP / NDVI / FY / station / inversion / omega / bundles 等
 - **数据链路模块**（2026-07-21）：`remote_fetch`、`http_open_data`、`archive_extract`、`config_read`、`variable_extract`、`format_convert`，以及画布参数节点 `data_source` / `output_map_layer` 等（见 `modules/data_access_nodes.py`、`modules/graph_io.py`）
 - `data_access`：本地 / HTTP / remote(SMB/SFTP) / MinIO / CacheStore（支持 `BACKEND_STATIC_CACHE_TTL_SECONDS`）
+- 开放门户：`http_open_data` 预设含 NOAA / NASA Earthdata / NSIDC / ESA；HTTP 下载支持鉴权头与 ETag 缓存；归档支持 member_glob / SAFE
 - 平台侧 LiteGraph 画布经后端编译后以 `workflow_definition` 进入本包 `WorkflowRunner`
 - 支持 Job / Workflow / Module 的统一调度思路
 - 支持本地执行与平台化执行两种接入方式

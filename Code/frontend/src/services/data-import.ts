@@ -69,7 +69,11 @@ export function normalizeShpResult(result: unknown): {
 } {
   if (Array.isArray(result)) {
     const collections = result.filter((item): item is GeoJSON.FeatureCollection =>
-      Boolean(item && typeof item === 'object' && Array.isArray((item as GeoJSON.FeatureCollection).features)),
+      Boolean(
+        item &&
+        typeof item === 'object' &&
+        Array.isArray((item as GeoJSON.FeatureCollection).features),
+      ),
     )
     if (collections.length === 0) {
       throw new Error('ZIP/SHP 解析后未找到有效图层')
@@ -82,14 +86,23 @@ export function normalizeShpResult(result: unknown): {
       },
     }
   }
-  if (result && typeof result === 'object' && Array.isArray((result as GeoJSON.FeatureCollection).features)) {
+  if (
+    result &&
+    typeof result === 'object' &&
+    Array.isArray((result as GeoJSON.FeatureCollection).features)
+  ) {
     return { layerCount: 1, geojson: result as GeoJSON.FeatureCollection }
   }
   if (result && typeof result === 'object') {
     const collections = Object.entries(result as Record<string, unknown>)
-      .filter(([key, value]) =>
-        !key.endsWith('_null')
-        && Boolean(value && typeof value === 'object' && Array.isArray((value as GeoJSON.FeatureCollection).features)),
+      .filter(
+        ([key, value]) =>
+          !key.endsWith('_null') &&
+          Boolean(
+            value &&
+            typeof value === 'object' &&
+            Array.isArray((value as GeoJSON.FeatureCollection).features),
+          ),
       )
       .map(([, value]) => value as GeoJSON.FeatureCollection)
     if (collections.length === 0) {
@@ -114,10 +127,19 @@ export async function parseVectorFile(file: File): Promise<ParsedVectorImport> {
 
   if (ext === 'geojson' || ext === 'json') {
     const text = await file.text()
-    const parsed = JSON.parse(text) as GeoJSON.FeatureCollection | GeoJSON.Feature | GeoJSON.Geometry
-    if (parsed && typeof parsed === 'object' && (parsed as GeoJSON.FeatureCollection).type === 'FeatureCollection') {
+    const parsed = JSON.parse(text) as
+      GeoJSON.FeatureCollection | GeoJSON.Feature | GeoJSON.Geometry
+    if (
+      parsed &&
+      typeof parsed === 'object' &&
+      (parsed as GeoJSON.FeatureCollection).type === 'FeatureCollection'
+    ) {
       geojson = parsed as GeoJSON.FeatureCollection
-    } else if (parsed && typeof parsed === 'object' && (parsed as GeoJSON.Feature).type === 'Feature') {
+    } else if (
+      parsed &&
+      typeof parsed === 'object' &&
+      (parsed as GeoJSON.Feature).type === 'Feature'
+    ) {
       geojson = { type: 'FeatureCollection', features: [parsed as GeoJSON.Feature] }
     } else if (parsed && typeof parsed === 'object' && 'type' in parsed) {
       geojson = {
@@ -145,9 +167,7 @@ export async function parseVectorFile(file: File): Promise<ParsedVectorImport> {
     throw new Error('文件中没有要素')
   }
 
-  const multiLayerNote = layerCount > 1
-    ? `已合并 ZIP 内 ${layerCount} 个图层，`
-    : ''
+  const multiLayerNote = layerCount > 1 ? `已合并 ZIP 内 ${layerCount} 个图层，` : ''
 
   return { geojson, layerCount, multiLayerNote }
 }
@@ -159,7 +179,11 @@ function parseErrorDetail(status: number, text: string): string {
     if (typeof detail === 'string') return detail
     if (Array.isArray(detail)) {
       return detail
-        .map((d) => (typeof d === 'object' && d && 'msg' in d ? String((d as { msg: unknown }).msg) : String(d)))
+        .map((d) =>
+          typeof d === 'object' && d && 'msg' in d
+            ? String((d as { msg: unknown }).msg)
+            : String(d),
+        )
         .join('; ')
     }
   } catch {
@@ -200,7 +224,9 @@ export function uploadRasterFile(
       if (xhr.status < 200 || xhr.status >= 300) {
         const detail = parseErrorDetail(xhr.status, text)
         if (xhr.status === 401 || xhr.status === 403) {
-          reject(new Error(`鉴权失败（${xhr.status}）：请在设置中配置正确的后端认证 Key。${detail}`))
+          reject(
+            new Error(`鉴权失败（${xhr.status}）：请在设置中配置正确的后端认证 Key。${detail}`),
+          )
           return
         }
         reject(new Error(detail))

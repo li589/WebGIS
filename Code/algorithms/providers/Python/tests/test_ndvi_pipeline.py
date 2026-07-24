@@ -16,7 +16,9 @@ from pipelines.ndvi_products import NdviDailyPipeline
 
 
 class NdviPipelineTests(unittest.TestCase):
-    def test_execute_splits_yearly_metrics_and_ignores_historical_quality_files(self) -> None:
+    def test_execute_splits_yearly_metrics_and_ignores_historical_quality_files(
+        self,
+    ) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
             root = Path(tmp_dir)
             input_dir = root / "ndvi_16day"
@@ -77,11 +79,18 @@ class NdviPipelineTests(unittest.TestCase):
                 job_id="job-ndvi",
                 pipeline_name="ndvi_daily_pipeline",
                 task_type="extract",
-                time_range=TimeRange(start=datetime(2019, 12, 20), end=datetime(2021, 1, 1)),
+                time_range=TimeRange(
+                    start=datetime(2019, 12, 20), end=datetime(2021, 1, 1)
+                ),
                 region=RegionSpec(kind="global", value={}),
                 datasource_selection={"input_dir": str(input_dir)},
                 algorithm_params={"emit_quality_products": True},
-                output_spec=OutputSpec(extra={"output_dir": str(output_dir), "quality_output_dir": str(quality_dir)}),
+                output_spec=OutputSpec(
+                    extra={
+                        "output_dir": str(output_dir),
+                        "quality_output_dir": str(quality_dir),
+                    }
+                ),
             )
             ctx = RuntimeContext(
                 job_id="job-ndvi",
@@ -91,24 +100,48 @@ class NdviPipelineTests(unittest.TestCase):
                 cache_dir=root / "cache",
             )
 
-            with patch("pipelines.ndvi_products.load_ndvi_stack", return_value=(ndvi_stack, observation_dates)), patch(
-                "pipelines.ndvi_products.process_ndvi_stack_to_daily",
-                return_value=(daily_stack, daily_dates),
+            with (
+                patch(
+                    "pipelines.ndvi_products.load_ndvi_stack",
+                    return_value=(ndvi_stack, observation_dates),
+                ),
+                patch(
+                    "pipelines.ndvi_products.process_ndvi_stack_to_daily",
+                    return_value=(daily_stack, daily_dates),
+                ),
             ):
                 manifest = NdviDailyPipeline().execute(request, ctx)
 
-            yearly_products = [product for product in manifest.products if product.type == "ndvi_yearly_qa_mat"]
-            self.assertEqual([product.tags["year"] for product in yearly_products], ["2019", "2020", "2021"])
+            yearly_products = [
+                product
+                for product in manifest.products
+                if product.type == "ndvi_yearly_qa_mat"
+            ]
+            self.assertEqual(
+                [product.tags["year"] for product in yearly_products],
+                ["2019", "2020", "2021"],
+            )
             self.assertTrue((quality_dir / "VI_viirs_2019.mat").exists())
             self.assertTrue((quality_dir / "VI_viirs_2020.mat").exists())
             self.assertTrue((quality_dir / "VI_viirs_2021.mat").exists())
 
             merged = loadmat(quality_dir / "VI_v_qa.mat")
             self.assertIn("NDVI_v_mean", merged)
-            self.assertFalse(np.allclose(merged["NDVI_v_mean"], historical_value, equal_nan=True))
+            self.assertFalse(
+                np.allclose(merged["NDVI_v_mean"], historical_value, equal_nan=True)
+            )
             self.assertEqual(
-                [product.type for product in manifest.products if product.type.endswith("_qa_mat")],
-                ["ndvi_yearly_qa_mat", "ndvi_yearly_qa_mat", "ndvi_yearly_qa_mat", "ndvi_multi_year_qa_mat"],
+                [
+                    product.type
+                    for product in manifest.products
+                    if product.type.endswith("_qa_mat")
+                ],
+                [
+                    "ndvi_yearly_qa_mat",
+                    "ndvi_yearly_qa_mat",
+                    "ndvi_yearly_qa_mat",
+                    "ndvi_multi_year_qa_mat",
+                ],
             )
 
 

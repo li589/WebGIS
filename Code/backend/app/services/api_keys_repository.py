@@ -1,4 +1,5 @@
 """API Key SQLite persistence with encrypted current value + version history."""
+
 from __future__ import annotations
 
 import base64
@@ -109,7 +110,9 @@ class ApiKeysRepository:
                     "Cannot store API keys without BACKEND_GEE_CREDENTIALS_ENCRYPTION_KEY "
                     "outside development."
                 )
-            logger.error("API keys encryption key not set, storing plaintext (development only)")
+            logger.error(
+                "API keys encryption key not set, storing plaintext (development only)"
+            )
             return plaintext, ""
         try:
             from cryptography.hazmat.primitives.ciphers.aead import AESGCM  # type: ignore
@@ -118,12 +121,16 @@ class ApiKeysRepository:
             iv = os.urandom(12)
             aesgcm = AESGCM(key_bytes)
             ct = aesgcm.encrypt(iv, plaintext.encode("utf-8"), None)
-            return base64.b64encode(ct).decode("ascii"), base64.b64encode(iv).decode("ascii")
+            return base64.b64encode(ct).decode("ascii"), base64.b64encode(iv).decode(
+                "ascii"
+            )
         except ImportError:
             from app.services.effective_config import secrets_encryption_required
 
             if secrets_encryption_required():
-                raise RuntimeError("cryptography package required to encrypt API keys") from None
+                raise RuntimeError(
+                    "cryptography package required to encrypt API keys"
+                ) from None
             logger.warning("cryptography not installed, storing plaintext")
             return plaintext, ""
         except RuntimeError:
@@ -221,7 +228,9 @@ class ApiKeysRepository:
             ).fetchone()
             if archive_previous and existing is not None:
                 try:
-                    old_plain = self._decrypt(existing["key_value_encrypted"], existing["key_iv"])
+                    old_plain = self._decrypt(
+                        existing["key_value_encrypted"], existing["key_iv"]
+                    )
                 except Exception:
                     old_plain = None
                 if old_plain is not None and old_plain != key_value:
@@ -286,7 +295,9 @@ class ApiKeysRepository:
         """列出所有 key（脱敏）。"""
         with self._connect() as conn:
             if include_disabled:
-                rows = conn.execute("SELECT * FROM api_keys ORDER BY created_at").fetchall()
+                rows = conn.execute(
+                    "SELECT * FROM api_keys ORDER BY created_at"
+                ).fetchall()
             else:
                 rows = conn.execute(
                     "SELECT * FROM api_keys WHERE enabled=1 ORDER BY created_at"

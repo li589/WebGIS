@@ -1,4 +1,5 @@
 """Cloud cover / dewpoint layer output strategies."""
+
 from __future__ import annotations
 
 import logging
@@ -31,7 +32,9 @@ def _build_scalar_layer(
     try:
         grid_data, _, _ = service._fetch_layer_grid_data(bbox=bbox, spec=spec)
         feature_collection = service.build_scalar_geojson_from_grid(
-            grid_data, metric_key=metric_key, unit=unit,
+            grid_data,
+            metric_key=metric_key,
+            unit=unit,
         )
     except (HTTPError, URLError, OSError, KeyError, ValueError):
         current = weather.current
@@ -60,7 +63,9 @@ def _build_scalar_layer(
     return LayerOutputResult(
         geojson_ref=geojson_ref,
         cog_ref=None,
-        diagnostics=[f"{artifact_prefix}_geojson_cells={len(feature_collection['features'])}"],
+        diagnostics=[
+            f"{artifact_prefix}_geojson_cells={len(feature_collection['features'])}"
+        ],
         bbox=bbox,
     )
 

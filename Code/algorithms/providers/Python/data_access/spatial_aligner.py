@@ -13,6 +13,7 @@
         bbox=CHINA_BBOX,
     )
 """
+
 from __future__ import annotations
 
 import sys
@@ -26,7 +27,8 @@ _PROVIDERS_DIR = Path(__file__).resolve().parent.parent
 if str(_PROVIDERS_DIR) not in sys.path:
     sys.path.insert(0, str(_PROVIDERS_DIR))
 
-from data_access.universal_reader import UniversalDataReader, CHINA_BBOX, DataArray
+# noqa 说明：需先完成 sys.path 引导（支持脚本独立运行）后再导入包内模块，故此处 E402 为有意为之。
+from data_access.universal_reader import UniversalDataReader, CHINA_BBOX, DataArray  # noqa: E402
 
 
 # 重采样方法映射
@@ -41,6 +43,7 @@ _RESAMPLING_MAP = {
 def _get_resampling_enum(method: str):
     """获取 rasterio 重采样枚举值。"""
     from rasterio.enums import Resampling
+
     return {
         "nearest": Resampling.nearest,
         "bilinear": Resampling.bilinear,
@@ -78,7 +81,6 @@ class SpatialAligner:
         Returns:
             目标网格上的数据数组 (target_height, target_width)
         """
-        import rasterio
         from rasterio.warp import reproject
 
         # 准备输出数组
@@ -145,7 +147,6 @@ class SpatialAligner:
         Returns:
             (aligned_data, lat_1d, lon_1d) — 对齐后的数据和一维坐标
         """
-        import rasterio
         from rasterio.transform import from_bounds
 
         # 读取源数据
@@ -156,7 +157,9 @@ class SpatialAligner:
         west, south, east, north = bbox
         target_width = int((east - west) / target_resolution)
         target_height = int((north - south) / target_resolution)
-        target_transform = from_bounds(west, south, east, north, target_width, target_height)
+        target_transform = from_bounds(
+            west, south, east, north, target_width, target_height
+        )
 
         # 如果源数据是 GeoTIFF，直接使用 rasterio 重投影
         if data.file_format == "geotiff":
@@ -177,7 +180,9 @@ class SpatialAligner:
                 )
             else:
                 # 没有 transform 信息，使用简单重采样
-                aligned = self._simple_resample(data.values, target_height, target_width)
+                aligned = self._simple_resample(
+                    data.values, target_height, target_width
+                )
         else:
             # HDF5/NetCDF/MAT — 使用基于坐标的简单重采样
             aligned = self._coordinate_based_resample(
@@ -251,8 +256,10 @@ class SpatialAligner:
                     time_index=time_index,
                 )
                 results[name] = aligned
-                print(f"  ✓ {name}: shape={aligned.shape}, "
-                      f"valid={np.isfinite(aligned).sum()}/{aligned.size}")
+                print(
+                    f"  ✓ {name}: shape={aligned.shape}, "
+                    f"valid={np.isfinite(aligned).sum()}/{aligned.size}"
+                )
             except Exception as e:
                 print(f"  ✗ {name}: {type(e).__name__}: {e}")
                 results[name] = None

@@ -48,9 +48,13 @@ class RasterPreviewService:
             memory_file_cls = importlib.import_module("rasterio.io").MemoryFile
             resampling = importlib.import_module("rasterio.enums").Resampling
         except Exception as exc:  # pragma: no cover - optional dependency path
-            raise ValueError(f"Raster preview dependencies unavailable: {exc.__class__.__name__}") from exc
+            raise ValueError(
+                f"Raster preview dependencies unavailable: {exc.__class__.__name__}"
+            ) from exc
 
-        palette_colors = numpy.array(_PALETTES.get(palette) or _PALETTES["wind-blue"], dtype="float32")
+        palette_colors = numpy.array(
+            _PALETTES.get(palette) or _PALETTES["wind-blue"], dtype="float32"
+        )
         width = max(64, min(2048, int(width)))
         height = max(64, min(2048, int(height)))
 
@@ -66,12 +70,18 @@ class RasterPreviewService:
         if min_value is None:
             min_value = float(masked_array.min()) if masked_array.count() else 0.0
         if max_value is None:
-            max_value = float(masked_array.max()) if masked_array.count() else max(min_value + 1.0, 1.0)
+            max_value = (
+                float(masked_array.max())
+                if masked_array.count()
+                else max(min_value + 1.0, 1.0)
+            )
         if max_value <= min_value:
             max_value = min_value + 1.0
 
         data = masked_array.filled(min_value).astype("float32")
-        norm = numpy.clip((data - float(min_value)) / (float(max_value) - float(min_value)), 0.0, 1.0)
+        norm = numpy.clip(
+            (data - float(min_value)) / (float(max_value) - float(min_value)), 0.0, 1.0
+        )
         anchors = numpy.linspace(0.0, 1.0, len(palette_colors), dtype="float32")
 
         red = numpy.interp(norm, anchors, palette_colors[:, 0]).astype("uint8")
@@ -133,9 +143,13 @@ class RasterPreviewService:
             warp = importlib.import_module("rasterio.warp")
             array_bounds = importlib.import_module("rasterio.transform").array_bounds
         except Exception as exc:  # pragma: no cover - optional dependency path
-            raise ValueError(f"Raster preview dependencies unavailable: {exc.__class__.__name__}") from exc
+            raise ValueError(
+                f"Raster preview dependencies unavailable: {exc.__class__.__name__}"
+            ) from exc
 
-        palette_colors = numpy.array(_PALETTES.get(palette) or _PALETTES["wind-blue"], dtype="float32")
+        palette_colors = numpy.array(
+            _PALETTES.get(palette) or _PALETTES["wind-blue"], dtype="float32"
+        )
         # width/height 仅作为 dst 计算的输入提示，最终由 calculate_default_transform 决定
         width = max(64, min(2048, int(width)))
         height = max(64, min(2048, int(height)))
@@ -191,12 +205,18 @@ class RasterPreviewService:
         if min_value is None:
             min_value = float(masked_array.min()) if masked_array.count() else 0.0
         if max_value is None:
-            max_value = float(masked_array.max()) if masked_array.count() else max(min_value + 1.0, 1.0)
+            max_value = (
+                float(masked_array.max())
+                if masked_array.count()
+                else max(min_value + 1.0, 1.0)
+            )
         if max_value <= min_value:
             max_value = min_value + 1.0
 
         data = masked_array.filled(min_value).astype("float32")
-        norm = numpy.clip((data - float(min_value)) / (float(max_value) - float(min_value)), 0.0, 1.0)
+        norm = numpy.clip(
+            (data - float(min_value)) / (float(max_value) - float(min_value)), 0.0, 1.0
+        )
         anchors = numpy.linspace(0.0, 1.0, len(palette_colors), dtype="float32")
 
         red = numpy.interp(norm, anchors, palette_colors[:, 0]).astype("uint8")

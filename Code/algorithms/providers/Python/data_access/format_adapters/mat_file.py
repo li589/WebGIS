@@ -16,6 +16,7 @@ class MatFormatAdapter(LocalFileFormatAdapter):
         # 尝试 scipy.io.whosmat (v5/v6)
         try:
             from scipy.io import whosmat
+
             info = whosmat(local_path)
             variables = tuple(
                 {

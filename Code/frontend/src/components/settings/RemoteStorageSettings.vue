@@ -198,8 +198,8 @@ async function deleteHistory(profileId: string, historyId: number) {
         支持 sftp / smb / ftp(s) / gs。URI 形如
         <code>smb://host/share/path/file.h5?cred=profile_id</code>
         或
-        <code>sftp://host/path?cred=profile_id</code>。
-        工作流「远程拉取」节点也可填 <code>cred_profile</code> 参数引用本页 profile。
+        <code>sftp://host/path?cred=profile_id</code>。 工作流「远程拉取」节点也可填
+        <code>cred_profile</code> 参数引用本页 profile。
         算法取数与下载链共用；凭证落在本机加密库，多机需同步 DB +
         <code>BACKEND_GEE_CREDENTIALS_ENCRYPTION_KEY</code>。
       </p>
@@ -282,7 +282,9 @@ async function deleteHistory(profileId: string, historyId: number) {
             <div class="key-badges">
               <span class="key-badge">{{ item.protocol }}</span>
               <span v-if="item.last_test_status === 'ok'" class="key-badge badge-ok">已验证</span>
-              <span v-else-if="item.last_test_status === 'failed'" class="key-badge badge-fail">失败</span>
+              <span v-else-if="item.last_test_status === 'failed'" class="key-badge badge-fail"
+                >失败</span
+              >
             </div>
           </div>
           <p class="key-desc">
@@ -304,12 +306,21 @@ async function deleteHistory(profileId: string, historyId: number) {
               "
             />
           </label>
-          <p v-if="testResults[item.profile_id]" class="test-msg" :class="{ ok: testResults[item.profile_id].success }">
+          <p
+            v-if="testResults[item.profile_id]"
+            class="test-msg"
+            :class="{ ok: testResults[item.profile_id].success }"
+          >
             {{ testResults[item.profile_id].message }}
           </p>
           <div class="actions">
             <button type="button" class="btn" @click="fillFormFrom(item.profile_id)">编辑</button>
-            <button type="button" class="btn" :disabled="testing.has(item.profile_id)" @click="runTest(item.profile_id)">
+            <button
+              type="button"
+              class="btn"
+              :disabled="testing.has(item.profile_id)"
+              @click="runTest(item.profile_id)"
+            >
               {{ testing.has(item.profile_id) ? '测试中…' : '测试' }}
             </button>
             <button type="button" class="btn" @click="toggleHistory(item.profile_id)">
@@ -336,12 +347,23 @@ async function deleteHistory(profileId: string, historyId: number) {
               >
                 <span>
                   <code>{{ row.masked_secret || '****' }}</code>
-                  · {{ row.has_private_key ? '含私钥' : '无私钥' }}
-                  · {{ row.superseded_at }}
+                  · {{ row.has_private_key ? '含私钥' : '无私钥' }} · {{ row.superseded_at }}
                 </span>
                 <span class="history-actions">
-                  <button type="button" class="btn" @click="restoreHistory(item.profile_id, row.id)">恢复</button>
-                  <button type="button" class="btn danger" @click="deleteHistory(item.profile_id, row.id)">删除</button>
+                  <button
+                    type="button"
+                    class="btn"
+                    @click="restoreHistory(item.profile_id, row.id)"
+                  >
+                    恢复
+                  </button>
+                  <button
+                    type="button"
+                    class="btn danger"
+                    @click="deleteHistory(item.profile_id, row.id)"
+                  >
+                    删除
+                  </button>
                 </span>
               </li>
             </ul>

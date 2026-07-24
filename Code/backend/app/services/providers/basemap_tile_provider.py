@@ -15,6 +15,7 @@ class BaseMapTileProvider:
 
     def matches(self, layer_id: str) -> bool:
         from app.services.tile_proxy_service import TILE_URL_TEMPLATES
+
         return layer_id in TILE_URL_TEMPLATES
 
     async def get_tile(

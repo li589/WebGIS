@@ -1,5 +1,7 @@
 @import 'maplibre-gl/dist/maplibre-gl.css';
-html,body,#app{
+html,
+body,
+#app {
   margin: 0;
   padding: 0;
   width: 100%;
@@ -12,12 +14,7 @@ html,body,#app{
 }
 
 :root {
-  font-family:
-    Inter,
-    'Segoe UI',
-    'PingFang SC',
-    'Microsoft YaHei',
-    sans-serif;
+  font-family: Inter, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif;
   line-height: 1.5;
   font-weight: 400;
   font-size: 15px;
@@ -61,4 +58,3 @@ a {
   max-width: none;
   margin: 0;
 }
-

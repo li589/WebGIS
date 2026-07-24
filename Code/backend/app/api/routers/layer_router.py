@@ -30,7 +30,9 @@ def list_layers() -> LayerCatalogResponse:
 
     layer_readiness: dict[str, dict[str, Any]] = {}
     with ThreadPoolExecutor(max_workers=8) as executor:
-        futures = {executor.submit(_check_readiness, desc): desc for desc in catalog.items}
+        futures = {
+            executor.submit(_check_readiness, desc): desc for desc in catalog.items
+        }
         for future in as_completed(futures):
             layer_id, readiness = future.result()
             layer_readiness[layer_id] = readiness
@@ -41,9 +43,15 @@ def list_layers() -> LayerCatalogResponse:
         items.append(
             descriptor.model_copy(
                 update={
-                    "run_readiness": readiness.get("run_readiness", descriptor.run_readiness),
-                    "run_readiness_summary": readiness.get("run_readiness_summary", descriptor.run_readiness_summary),
-                    "run_readiness_notes": readiness.get("run_readiness_notes", descriptor.run_readiness_notes),
+                    "run_readiness": readiness.get(
+                        "run_readiness", descriptor.run_readiness
+                    ),
+                    "run_readiness_summary": readiness.get(
+                        "run_readiness_summary", descriptor.run_readiness_summary
+                    ),
+                    "run_readiness_notes": readiness.get(
+                        "run_readiness_notes", descriptor.run_readiness_notes
+                    ),
                 }
             )
         )
@@ -51,7 +59,9 @@ def list_layers() -> LayerCatalogResponse:
 
 
 @router.get("/geo/transform", tags=["geo"])
-def transform_geo_point(lng: float, lat: float, source: str, target: str = "EPSG:3857") -> dict[str, float | str]:
+def transform_geo_point(
+    lng: float, lat: float, source: str, target: str = "EPSG:3857"
+) -> dict[str, float | str]:
     try:
         # 归一化旧码连字符写法（'GCJ-02' → 'GCJ02'，'BD-09' → 'BD09'），
         # 保持与旧垫片 transform_point 相同的向后兼容行为
@@ -60,11 +70,15 @@ def transform_geo_point(lng: float, lat: float, source: str, target: str = "EPSG
         point = crs_transformer.transform_point(lng, lat, src, tgt)
         return {"lng": point.lng, "lat": point.lat, "source": source, "target": target}
     except ValueError as exc:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)
+        ) from exc
 
 
 @router.get("/overlay-preview/{layer_id}", tags=["overlay"])
-def get_overlay_preview(layer_id: str, time: str | None = Query(default=None)) -> Response:
+def get_overlay_preview(
+    layer_id: str, time: str | None = Query(default=None)
+) -> Response:
     """返回图层的 PNG 预览图（地理配准），供前端 MapLibre image source 使用。
 
     对于时间序列图层，可通过 `?time=YYYYMMDD` 指定时间标签；

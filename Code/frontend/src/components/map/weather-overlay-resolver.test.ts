@@ -67,6 +67,7 @@ describe('weather-overlay-resolver', () => {
         geojsonData: geojson,
         cogPreviewUrl: null,
         cogBbox: null,
+        viewportBounds: null,
         renderHint: {
           layer_id: 'weather.wind',
           paint_mode: 'particle_flow',
@@ -80,5 +81,55 @@ describe('weather-overlay-resolver', () => {
         opacity: 1,
       },
     ])
+  })
+
+  it('grid_fill：无数据时先推灰底占位态，有数据后快照在瞬态空窗被沿用', () => {
+    const geojson = {
+      type: 'FeatureCollection',
+      features: [{ type: 'Feature', geometry: null, properties: {} }],
+    }
+    const viewport = { west: -10, south: -10, east: 10, north: 10 }
+    const renderHint = {
+      layer_id: 'temperature',
+      paint_mode: 'grid_fill',
+      palette: 'turbo',
+      primary_metric: 'temperature_2m',
+      unit_label: '°C',
+      opacity: 1,
+      legend_ticks: [],
+      notes: [],
+    }
+    let merged: unknown = null
+    const resolver = createWeatherOverlayResolver({
+      getActiveLayers: () => [createLayer({ catalogId: 'temperature', renderHint })],
+      isWeatherEngineLayer: () => true,
+      getMergedGeojsonForViewport: vi.fn((): any => merged),
+      getViewportBounds: vi.fn(() => viewport),
+      buildDefaultWeatherRenderHint: vi.fn(() => null),
+      resolveApiUrl: vi.fn((url: string) => url),
+      debugLog: vi.fn(),
+    })
+
+    // 首次加载无数据：推出灰底占位态（geojsonData=null + viewportBounds）
+    const placeholderStates = resolver.resolveStates()
+    expect(placeholderStates).toHaveLength(1)
+    expect(placeholderStates[0]).toMatchObject({
+      catalogId: 'temperature',
+      geojsonData: null,
+      viewportBounds: viewport,
+    })
+
+    // 数据到达：正常推数据态并记录快照
+    merged = geojson
+    const dataStates = resolver.resolveStates()
+    expect(dataStates).toHaveLength(1)
+    expect(dataStates[0]?.geojsonData).toBe(geojson)
+
+    // 瞬态空窗（平移/退避）：沿用上一快照（地理锚定），避免 prune 销毁重建闪烁
+    merged = null
+    const staleStates = resolver.resolveStates()
+    expect(staleStates).toHaveLength(1)
+    expect(staleStates[0]?.geojsonData).toBe(geojson)
+    expect(staleStates[0]?.viewportBounds).toEqual(viewport)
   })
 })

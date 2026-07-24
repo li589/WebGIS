@@ -12,7 +12,9 @@ from pathlib import Path
 class CanvasCompileRunTests(unittest.TestCase):
     def test_compile_and_run_data_source_to_config_read(self) -> None:
         import contracts.job  # noqa: F401
-        from app.services.workflow_graph_compiler import compile_litegraph_to_workflow_definition
+        from app.services.workflow_graph_compiler import (
+            compile_litegraph_to_workflow_definition,
+        )
         from contracts.job import JobRequest
         from contracts.product import OutputSpec
         from contracts.runtime import RegionSpec, RuntimeContext, TimeRange
@@ -51,7 +53,9 @@ class CanvasCompileRunTests(unittest.TestCase):
                 job_id="job-canvas-e2e",
                 pipeline_name="workflow",
                 task_type="canvas",
-                region=RegionSpec(kind="bbox", value={"west": 0, "south": 0, "east": 1, "north": 1}),
+                region=RegionSpec(
+                    kind="bbox", value={"west": 0, "south": 0, "east": 1, "north": 1}
+                ),
                 time_range=TimeRange(start=start, end=end),
                 datasource_selection={},
                 algorithm_params={},

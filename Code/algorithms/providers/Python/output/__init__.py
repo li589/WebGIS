@@ -47,8 +47,6 @@ from __future__ import annotations
 
 import json
 import logging
-import os
-import sys
 from datetime import datetime, timezone
 from functools import lru_cache
 from pathlib import Path
@@ -69,7 +67,14 @@ _PUBLISH_AVAILABLE = False
 _COGBOOK_AVAILABLE = False
 
 try:
-    from publish import COGWriter, ManifestBuilder, OutputManager, PreviewGenerator, TableWriter
+    from publish import (
+        COGWriter,
+        ManifestBuilder,
+        OutputManager,
+        PreviewGenerator,
+        TableWriter,
+    )
+
     _PUBLISH_AVAILABLE = True
 except ImportError:
     COGWriter = None
@@ -80,6 +85,7 @@ except ImportError:
 
 try:
     from affine import Affine
+
     _COGBOOK_AVAILABLE = True
 except ImportError:
     Affine = None
@@ -93,6 +99,7 @@ except ImportError:
 def _is_float_array(arr: "np.ndarray") -> bool:
     """判断是否为浮点类型数组"""
     import numpy as np
+
     return np.issubdtype(arr.dtype, np.floating)
 
 
@@ -106,6 +113,7 @@ def _ensure_contiguous(arr: "np.ndarray") -> "np.ndarray":
 def _get_default_nodata(dtype: "np.dtype") -> float:
     """根据数据类型返回合理的默认 nodata 值"""
     import numpy as np
+
     if np.issubdtype(dtype, np.floating):
         return -9999.0
     return -9999
@@ -181,7 +189,9 @@ def _generate_preview_from_array(
         )
         fig.colorbar(im, ax=ax, fraction=0.03, pad=0.02)
         fig.tight_layout(pad=0.1)
-        fig.savefig(output_path, format="png", bbox_inches="tight", dpi=100, facecolor="white")
+        fig.savefig(
+            output_path, format="png", bbox_inches="tight", dpi=100, facecolor="white"
+        )
         plt.close(fig)
         return True
     except Exception:
@@ -301,13 +311,20 @@ class RasterPublisher:
         if transform is None:
             if Affine is not None:
                 # EPSG:4326，假设左上角 (west, north)，像素分辨率 pixel_resolution
-                transform = Affine(pixel_resolution, 0.0, 0.0, 0.0, -pixel_resolution, 0.0)
+                transform = Affine(
+                    pixel_resolution, 0.0, 0.0, 0.0, -pixel_resolution, 0.0
+                )
 
         # 估算 bounds
         if transform is not None:
             bounds = _estimate_bounds_from_transform(transform, width, height)
         else:
-            bounds = (0.0, 0.0, float(width) * pixel_resolution, float(height) * pixel_resolution)
+            bounds = (
+                0.0,
+                0.0,
+                float(width) * pixel_resolution,
+                float(height) * pixel_resolution,
+            )
 
         # 写入 COG
         cog_path = self.output_dir / f"{name}.cog.tif"
@@ -346,9 +363,13 @@ class RasterPublisher:
             except Exception as e:
                 logger.warning(f"COG 写出失败: {e}，跳过 COG 输出")
                 # 回退：写入普通 GeoTIFF
-                result = self._write_plain_geotiff(data, cog_path, transform, nodata, result)
+                result = self._write_plain_geotiff(
+                    data, cog_path, transform, nodata, result
+                )
         else:
-            result = self._write_plain_geotiff(data, cog_path, transform, nodata, result)
+            result = self._write_plain_geotiff(
+                data, cog_path, transform, nodata, result
+            )
 
         if result.get("size_bytes", 0) == 0:
             logger.warning(f"COG 写出文件为空: {cog_path}")
@@ -358,7 +379,9 @@ class RasterPublisher:
             preview_path = self.output_dir / f"{name}.preview.png"
             if _PUBLISH_AVAILABLE and PreviewGenerator is not None:
                 try:
-                    gen = PreviewGenerator(output_dir=self.output_dir, size=self.preview_size)
+                    gen = PreviewGenerator(
+                        output_dir=self.output_dir, size=self.preview_size
+                    )
                     preview_result = gen.generate(
                         data=data,
                         output_name=f"{name}.preview",
@@ -372,8 +395,11 @@ class RasterPublisher:
                 except Exception as e:
                     logger.warning(f"预览图生成失败: {e}，使用备用方法")
                     ok = _generate_preview_from_array(
-                        data, preview_path,
-                        cmap=self.preview_cmap, nodata=nodata, title=description or name,
+                        data,
+                        preview_path,
+                        cmap=self.preview_cmap,
+                        nodata=nodata,
+                        title=description or name,
                         size=self.preview_size,
                     )
                     if ok:
@@ -382,8 +408,11 @@ class RasterPublisher:
                         result["preview_size"] = preview_path.stat().st_size
             else:
                 ok = _generate_preview_from_array(
-                    data, preview_path,
-                    cmap=self.preview_cmap, nodata=nodata, title=description or name,
+                    data,
+                    preview_path,
+                    cmap=self.preview_cmap,
+                    nodata=nodata,
+                    title=description or name,
                     size=self.preview_size,
                 )
                 if ok:
@@ -408,8 +437,12 @@ class RasterPublisher:
 
             if transform is not None and Affine is not None:
                 arr_transform = rasterio.Affine(
-                    transform.a, transform.b, transform.c,
-                    transform.d, transform.e, transform.f,
+                    transform.a,
+                    transform.b,
+                    transform.c,
+                    transform.d,
+                    transform.e,
+                    transform.f,
                 )
             else:
                 height, width = data.shape
@@ -431,9 +464,9 @@ class RasterPublisher:
             with rasterio.open(output_path, "w", **profile) as dst:
                 dst.write(data, 1)
                 if result.get("description"):
-                    dst.update_tags( DESCRIPTION=result["description"] )
+                    dst.update_tags(DESCRIPTION=result["description"])
                 if result.get("unit"):
-                    dst.update_tags( UNIT=result["unit"] )
+                    dst.update_tags(UNIT=result["unit"])
 
             result["path"] = str(output_path)
             result["uri"] = f"file://{output_path.resolve()}"
@@ -443,6 +476,7 @@ class RasterPublisher:
             # rasterio 不可用，输出为 numpy .npy 文件
             np_path = output_path.with_suffix(".npy")
             import numpy as np
+
             np.save(np_path, data)
             logger.warning(f"rasterio 不可用，栅格保存为 numpy 格式: {np_path}")
             result["path"] = str(np_path)
@@ -497,9 +531,6 @@ class TablePublisher:
         返回：
             dict: 包含 path / uri / rows / columns / size_bytes 等字段
         """
-        import numpy as np
-        import pandas as pd
-
         self.output_dir.mkdir(parents=True, exist_ok=True)
         parquet_path = self.output_dir / f"{name}.parquet"
 
@@ -508,7 +539,9 @@ class TablePublisher:
 
         if _PUBLISH_AVAILABLE and TableWriter is not None:
             try:
-                writer = TableWriter(output_dir=self.output_dir, overwrite=self.overwrite)
+                writer = TableWriter(
+                    output_dir=self.output_dir, overwrite=self.overwrite
+                )
                 result = writer.write(
                     df=df,
                     output_name=name,
@@ -543,7 +576,7 @@ class TablePublisher:
             # pyarrow 不可用，直接用 pandas 原生 parquet 支持（内部用 pyarrow）
             try:
                 df.to_parquet(parquet_path, compression=self.compression)
-            except Exception as e:
+            except Exception:
                 # pandas 内部也依赖 pyarrow，尝试 csv 降级
                 csv_path = parquet_path.with_suffix(".csv")
                 df.to_csv(csv_path, index=False)
@@ -632,7 +665,9 @@ class ManifestPublisher:
             "description": description,
             "preview": {
                 "path": preview_path,
-                "uri": preview_uri or f"file://{Path(preview_path).resolve()}" if preview_path else "",
+                "uri": preview_uri or f"file://{Path(preview_path).resolve()}"
+                if preview_path
+                else "",
             },
             "shape": shape,
             "dtype": dtype,
@@ -846,7 +881,9 @@ class OutputCoordinator:
         """将数据写入 storage_backend（如已配置），返回远程 URI。"""
         if self.storage_backend is None:
             return ""
-        backend_path = self.storage_backend.resolve_path(self.job_id, str(Path(rel_path)))
+        backend_path = self.storage_backend.resolve_path(
+            self.job_id, str(Path(rel_path))
+        )
         return self.storage_backend.write_bytes(backend_path, data)
 
     def write_raster(
@@ -886,14 +923,18 @@ class OutputCoordinator:
             if cog_path_str:
                 p = Path(cog_path_str)
                 if p.exists():
-                    remote_uri = self._write_to_backend(str(p.relative_to(self.output_dir)), p.read_bytes())
+                    remote_uri = self._write_to_backend(
+                        str(p.relative_to(self.output_dir)), p.read_bytes()
+                    )
                     if remote_uri:
                         result["remote_uri"] = remote_uri
             preview_path_str = result.get("preview_path", "")
             if preview_path_str:
                 p = Path(preview_path_str)
                 if p.exists():
-                    remote_uri = self._write_to_backend(str(p.relative_to(self.output_dir)), p.read_bytes())
+                    remote_uri = self._write_to_backend(
+                        str(p.relative_to(self.output_dir)), p.read_bytes()
+                    )
                     if remote_uri:
                         result["remote_uri_preview"] = remote_uri
 
@@ -946,7 +987,9 @@ class OutputCoordinator:
             if path_str:
                 p = Path(path_str)
                 if p.exists():
-                    remote_uri = self._write_to_backend(str(p.relative_to(self.output_dir)), p.read_bytes())
+                    remote_uri = self._write_to_backend(
+                        str(p.relative_to(self.output_dir)), p.read_bytes()
+                    )
                     if remote_uri:
                         result["remote_uri"] = remote_uri
 
@@ -971,6 +1014,7 @@ class OutputCoordinator:
         *,
         variable: str = "",
         description: str = "MATLAB 兼容格式",
+        **kwargs,
     ):
         """将已有的 MAT 文件添加到 manifest。"""
         p = Path(path)
@@ -980,6 +1024,7 @@ class OutputCoordinator:
             variable=variable,
             description=description,
             size_bytes=p.stat().st_size if p.exists() else 0,
+            **kwargs,
         )
 
     def add_diagnostic(self, key: str, value: Any):

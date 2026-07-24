@@ -1,10 +1,11 @@
 import { describe, expect, it } from 'vitest'
 
+import { buildScalarGridFromGeoJSON, resolveScalarValueRange } from './scalar-field-grid'
 import {
-  buildScalarGridFromGeoJSON,
-  resolveScalarValueRange,
-} from './scalar-field-grid'
-import { encodeScalarGridToRGBA, decodeScalarByte, buildPaletteLUT } from './scalar-field-webgl-texture'
+  encodeScalarGridToRGBA,
+  decodeScalarByte,
+  buildPaletteLUT,
+} from './scalar-field-webgl-texture'
 import { clampBlend } from './scalar-field-webgl-shaders'
 import {
   buildPressureIsobarLevels,

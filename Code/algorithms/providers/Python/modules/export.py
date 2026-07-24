@@ -14,6 +14,7 @@
   - variables: 逗号分隔的变量名列表 (仅导出指定变量)
   - output_dir: 输出目录 (默认 ctx.workspace / "products" / "export")
 """
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -55,7 +56,7 @@ def _collect_input_files(inputs: dict[str, object]) -> list[Path]:
         # manifest_artifact 可能是 ArtifactRef，需从 artifact_store 加载
         try:
             artifact_id = getattr(manifest_artifact, "artifact_id", None)
-            if artifact_id and hasattr(ctx_ref := inputs, "get"):
+            if artifact_id and hasattr(inputs, "get"):
                 pass  # ctx 不可在此获取，留到 execute 中处理
         except Exception:
             pass
@@ -93,6 +94,7 @@ def _collect_input_files(inputs: dict[str, object]) -> list[Path]:
 
 def _export_to_mat(data_dict: dict, output_path: Path) -> None:
     from scipy.io import savemat
+
     savemat(output_path, data_dict, do_compression=True)
 
 
@@ -126,7 +128,8 @@ def _export_to_geotiff(data_dict: dict, output_path: Path, transform=None) -> No
             if transform is None:
                 transform = from_bounds(-180.0, -90.0, 180.0, 90.0, width, height)
             with rasterio.open(
-                output_path, "w",
+                output_path,
+                "w",
                 driver="GTiff",
                 height=height,
                 width=width,
@@ -141,8 +144,10 @@ def _export_to_geotiff(data_dict: dict, output_path: Path, transform=None) -> No
 
 def _export_to_csv(data_dict: dict, output_path: Path) -> None:
     import numpy as np
+
     try:
         import pandas as pd
+
         rows = {}
         for name, arr in data_dict.items():
             if isinstance(arr, np.ndarray):
@@ -154,6 +159,7 @@ def _export_to_csv(data_dict: dict, output_path: Path) -> None:
         pass
     # 纯 numpy 降级
     import csv
+
     with open(output_path, "w", newline="", encoding="utf-8") as f:
         writer = csv.writer(f)
         for name, arr in data_dict.items():
@@ -166,22 +172,49 @@ class DataExportModule(BaseModule):
     name = "data_export"
     description = "Export upstream products or standalone files to MAT/NetCDF/GeoTIFF/CSV formats."
     input_ports = [
-        PortSpec(name="manifest", kind="artifact", data_class="product_manifest", required=False),
-        PortSpec(name="datasource_selection", kind="config", data_class="dict", required=False),
-        PortSpec(name="algorithm_params", kind="config", data_class="dict", required=False),
-        PortSpec(name="output_spec_extra", kind="config", data_class="dict", required=False),
+        PortSpec(
+            name="manifest",
+            kind="artifact",
+            data_class="product_manifest",
+            required=False,
+        ),
+        PortSpec(
+            name="datasource_selection",
+            kind="config",
+            data_class="dict",
+            required=False,
+        ),
+        PortSpec(
+            name="algorithm_params", kind="config", data_class="dict", required=False
+        ),
+        PortSpec(
+            name="output_spec_extra", kind="config", data_class="dict", required=False
+        ),
     ]
-    output_ports = [PortSpec(name="manifest", kind="artifact", data_class="product_manifest")]
+    output_ports = [
+        PortSpec(name="manifest", kind="artifact", data_class="product_manifest")
+    ]
 
-    def execute(self, inputs: dict[str, object], params: dict[str, object], ctx: NodeExecutionContext) -> dict[str, object]:
+    def execute(
+        self,
+        inputs: dict[str, object],
+        params: dict[str, object],
+        ctx: NodeExecutionContext,
+    ) -> dict[str, object]:
         algorithm_params = dict(inputs.get("algorithm_params", {}))
         output_spec_extra = dict(inputs.get("output_spec_extra", {}))
 
         export_format = str(algorithm_params.get("format", "mat")).lower()
         variables_filter = str(algorithm_params.get("variables", "")).strip()
-        variable_names = [v.strip() for v in variables_filter.split(",") if v.strip()] if variables_filter else []
+        variable_names = (
+            [v.strip() for v in variables_filter.split(",") if v.strip()]
+            if variables_filter
+            else []
+        )
 
-        output_dir = Path(output_spec_extra.get("output_dir", ctx.workspace / "products" / "export"))
+        output_dir = Path(
+            output_spec_extra.get("output_dir", ctx.workspace / "products" / "export")
+        )
         output_dir.mkdir(parents=True, exist_ok=True)
 
         # 收集源文件
@@ -191,7 +224,9 @@ class DataExportModule(BaseModule):
         manifest_artifact = inputs.get("manifest")
         if manifest_artifact is not None:
             try:
-                loaded = ctx.artifact_store.load(getattr(manifest_artifact, "artifact_id", ""))
+                loaded = ctx.artifact_store.load(
+                    getattr(manifest_artifact, "artifact_id", "")
+                )
                 if isinstance(loaded, ProductManifest):
                     for product in loaded.products:
                         if product.uri:
@@ -202,10 +237,14 @@ class DataExportModule(BaseModule):
                 pass
 
         if not input_files:
-            raise ValueError("data_export: 未找到输入文件 (需要 manifest 或 datasource_selection.input_path/input_dir)")
+            raise ValueError(
+                "data_export: 未找到输入文件 (需要 manifest 或 datasource_selection.input_path/input_dir)"
+            )
 
         if ctx.logger_adapter is not None:
-            ctx.logger_adapter.emit_stage_start("data_export", f"Export {len(input_files)} files to {export_format}")
+            ctx.logger_adapter.emit_stage_start(
+                "data_export", f"Export {len(input_files)} files to {export_format}"
+            )
 
         products: list[ProductRef] = []
         for src_path in input_files:
@@ -215,9 +254,16 @@ class DataExportModule(BaseModule):
                 target_vars = variable_names if variable_names else available_vars[:5]
                 data_dict: dict[str, object] = {}
                 for var_name in target_vars:
-                    if var_name in available_vars or src_path.suffix.lower() in (".tif", ".tiff"):
+                    if var_name in available_vars or src_path.suffix.lower() in (
+                        ".tif",
+                        ".tiff",
+                    ):
                         try:
-                            da = reader.read_variable(variable=var_name if src_path.suffix.lower() not in (".tif", ".tiff") else None)
+                            da = reader.read_variable(
+                                variable=var_name
+                                if src_path.suffix.lower() not in (".tif", ".tiff")
+                                else None
+                            )
                             data_dict[var_name] = da.values
                         except Exception:
                             continue
@@ -239,24 +285,34 @@ class DataExportModule(BaseModule):
                     out_path = output_dir / f"{out_name}.csv"
                     _export_to_csv(data_dict, out_path)
                 else:
-                    raise ValueError(f"不支持的导出格式: {export_format} (可选 mat|netcdf|geotiff|csv)")
+                    raise ValueError(
+                        f"不支持的导出格式: {export_format} (可选 mat|netcdf|geotiff|csv)"
+                    )
 
-                products.append(ProductRef(
-                    name=out_name,
-                    type=f"exported_{export_format}",
-                    uri=str(out_path),
-                    variable=",".join(data_dict.keys()),
-                    tags={"source": src_path.name, "format": export_format},
-                ))
+                products.append(
+                    ProductRef(
+                        name=out_name,
+                        type=f"exported_{export_format}",
+                        uri=str(out_path),
+                        variable=",".join(data_dict.keys()),
+                        tags={"source": src_path.name, "format": export_format},
+                    )
+                )
                 if ctx.logger_adapter is not None:
-                    ctx.logger_adapter.emit_artifact("data_export", str(out_path), f"exported_{export_format}")
+                    ctx.logger_adapter.emit_artifact(
+                        "data_export", str(out_path), f"exported_{export_format}"
+                    )
             except Exception as e:
                 if ctx.logger_adapter is not None:
-                    ctx.logger_adapter.emit_artifact("data_export", str(src_path), f"error: {e}")
+                    ctx.logger_adapter.emit_artifact(
+                        "data_export", str(src_path), f"error: {e}"
+                    )
                 continue
 
         if ctx.logger_adapter is not None:
-            ctx.logger_adapter.emit_stage_end("data_export", f"Exported {len(products)} files to {export_format}")
+            ctx.logger_adapter.emit_stage_end(
+                "data_export", f"Exported {len(products)} files to {export_format}"
+            )
 
         manifest = ProductManifest(
             job_id=ctx.request.job_id,
@@ -271,7 +327,12 @@ class DataExportModule(BaseModule):
                 "count": len(products),
             },
         )
-        return _store_manifest(ctx, module_name=self.name, manifest=manifest, metadata={
-            "product_count": len(products),
-            "format": export_format,
-        })
+        return _store_manifest(
+            ctx,
+            module_name=self.name,
+            manifest=manifest,
+            metadata={
+                "product_count": len(products),
+                "format": export_format,
+            },
+        )

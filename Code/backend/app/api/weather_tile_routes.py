@@ -59,7 +59,10 @@ async def get_weather_tile(
     y: int,
     hour: int | None = Query(default=0, ge=0, le=47),
     model: str | None = Query(default=None),
-    provider: str | None = Query(default=None, description="Weather provider id, or omit/auto for registry priority"),
+    provider: str | None = Query(
+        default=None,
+        description="Weather provider id, or omit/auto for registry priority",
+    ),
     t: int | None = Query(default=None),  # 客户端缓存 bust，不参与业务
 ) -> Response:
     """获取指定图层的标准 Web Mercator GeoJSON 瓦片。"""
@@ -85,7 +88,9 @@ async def get_weather_tile(
         raise HTTPException(status_code=422, detail=f"no usable data: {exc}") from exc
     except Exception as exc:
         logger.exception("[WeatherTileRoutes] failed to generate tile")
-        raise HTTPException(status_code=503, detail=f"Weather tile unavailable: {exc}") from exc
+        raise HTTPException(
+            status_code=503, detail=f"Weather tile unavailable: {exc}"
+        ) from exc
 
     meta = geojson.get("_tile_meta") if isinstance(geojson, dict) else None
     resolved_provider = None

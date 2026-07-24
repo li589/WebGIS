@@ -52,7 +52,9 @@ def load_mat_file(file_path: str | Path) -> dict[str, Any]:
         return _load_v73_mat_file(file_path)
     try:
         payload = loadmat(file_path, squeeze_me=True, struct_as_record=False)
-        return {key: value for key, value in payload.items() if not key.startswith("__")}
+        return {
+            key: value for key, value in payload.items() if not key.startswith("__")
+        }
     except NotImplementedError as exc:
         if "Please use HDF reader for matlab v7.3 files" not in str(exc):
             raise

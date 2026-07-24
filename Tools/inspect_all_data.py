@@ -12,6 +12,7 @@
 9. Landscape Metrics .mat - 景观指数
 10. AridityIndex GeoTIFF - 干燥度指数
 """
+
 from pathlib import Path
 import json
 
@@ -30,7 +31,6 @@ def check_smap() -> dict:
         return {"status": "no_files"}
 
     import h5py
-    import numpy as np
 
     f = files[0]
     print(f"  文件: {f.name} ({f.stat().st_size / 1024 / 1024:.1f} MB)")
@@ -58,27 +58,42 @@ def check_smap() -> dict:
                     # 读取部分数据统计
                     try:
                         data = v[:]
-                        valid = data[data != v.fillvalue] if hasattr(v, "fillvalue") and v.fillvalue != 0 else data
+                        valid = (
+                            data[data != v.fillvalue]
+                            if hasattr(v, "fillvalue") and v.fillvalue != 0
+                            else data
+                        )
                         if len(valid) > 0:
                             stats = f"min={valid.min():.4g}, max={valid.max():.4g}, mean={valid.mean():.4g}"
                         else:
                             stats = "all fillvalues"
                     except Exception:
                         stats = "N/A"
-                    print(f"    {vname:<40} shape={str(shape):<20} dtype={dtype:<10} {stats}")
-                    vars_in_g.append({
-                        "name": vname,
-                        "shape": list(shape),
-                        "dtype": dtype,
-                    })
+                    print(
+                        f"    {vname:<40} shape={str(shape):<20} dtype={dtype:<10} {stats}"
+                    )
+                    vars_in_g.append(
+                        {
+                            "name": vname,
+                            "shape": list(shape),
+                            "dtype": dtype,
+                        }
+                    )
             variables[gname] = vars_in_g
 
         # 检查关键反演变量
         print("\n  关键反演变量检查:")
         key_vars = [
-            "soil_moisture", "surface_temperature", "tb_h_corrected", "tb_v_corrected",
-            "vegetation_water_content", "clay_fraction", "sand_fraction",
-            "static_water_body_fraction", "lat", "lon",
+            "soil_moisture",
+            "surface_temperature",
+            "tb_h_corrected",
+            "tb_v_corrected",
+            "vegetation_water_content",
+            "clay_fraction",
+            "sand_fraction",
+            "static_water_body_fraction",
+            "lat",
+            "lon",
         ]
         found_keys = []
         for gname, vs in variables.items():
@@ -134,7 +149,9 @@ def check_omega_mat() -> dict:
                         stats = f"min={valid.min():.4g}, max={valid.max():.4g}, mean={valid.mean():.4g}"
                     else:
                         stats = "all NaN"
-                    print(f"    {k:<20} shape={str(v.shape):<20} dtype={v.dtype}  {stats}")
+                    print(
+                        f"    {k:<20} shape={str(v.shape):<20} dtype={v.dtype}  {stats}"
+                    )
                     vars_info[k] = {
                         "shape": list(v.shape),
                         "dtype": str(v.dtype),
@@ -163,17 +180,16 @@ def check_cmfd_netcdf() -> dict:
         return {"status": "no_files"}
 
     import netCDF4 as nc
-    import numpy as np
 
     results = {}
     for f in files:
         print(f"\n  文件: {f.name} ({f.stat().st_size / 1024 / 1024:.1f} MB)")
         with nc.Dataset(f) as ds:
-            print(f"  全局属性:")
+            print("  全局属性:")
             for attr in list(ds.ncattrs())[:10]:
                 print(f"    {attr}: {getattr(ds, attr)}")
             print(f"  维度: {dict((k, len(v)) for k, v in ds.dimensions.items())}")
-            print(f"  变量:")
+            print("  变量:")
             for vname in ds.variables:
                 v = ds.variables[vname]
                 print(f"    {vname:<20} shape={v.shape} dtype={v.dtype}")
@@ -191,12 +207,11 @@ def check_geotiff(path: Path, title: str) -> dict:
     """检查 GeoTIFF 文件（使用 rasterio）。"""
     print(f"\n  [{title}] {path.name}")
     if not path.exists():
-        print(f"    文件不存在")
+        print("    文件不存在")
         return {"status": "not_exists"}
 
     import rasterio
     import numpy as np
-    from rasterio.crs import CRS
 
     try:
         ds = rasterio.open(str(path))
@@ -205,7 +220,7 @@ def check_geotiff(path: Path, title: str) -> dict:
         return {"status": "open_failed", "error": str(e)}
 
     if ds is None:
-        print(f"    无法打开")
+        print("    无法打开")
         return {"status": "open_failed"}
 
     w, h = ds.width, ds.height
@@ -217,7 +232,9 @@ def check_geotiff(path: Path, title: str) -> dict:
     crs_str = str(crs_obj) if crs_obj else "Unknown"
     if crs_obj and crs_obj.to_epsg() == 4326:
         crs = "EPSG:4326 (WGS84)"
-    elif "Sinusoidal" in crs_str or (crs_obj and crs_obj.to_proj4() and "sinu" in crs_obj.to_proj4().lower()):
+    elif "Sinusoidal" in crs_str or (
+        crs_obj and crs_obj.to_proj4() and "sinu" in crs_obj.to_proj4().lower()
+    ):
         crs = "Sinusoidal (MODIS)"
     else:
         crs = crs_str[:80]
@@ -262,9 +279,13 @@ def check_geotiff(path: Path, title: str) -> dict:
     if len(valid) > 0:
         print(f"    数据类型: {dtype}")
         print(f"    NoData: {nodata}")
-        print(f"    有效像素: {len(valid)} / {arr.size} ({100 * len(valid) / arr.size:.1f}%)")
+        print(
+            f"    有效像素: {len(valid)} / {arr.size} ({100 * len(valid) / arr.size:.1f}%)"
+        )
         if valid.dtype.kind in ("f", "i", "u"):
-            print(f"    值范围: min={valid.min()}, max={valid.max()}, mean={valid.mean():.4f}")
+            print(
+                f"    值范围: min={valid.min()}, max={valid.max()}, mean={valid.mean():.4f}"
+            )
 
     ds.close()
 
@@ -298,27 +319,27 @@ def check_geotiffs() -> dict:
     # CLCD
     print("\n  --- CLCD 中国土地覆盖动态 ---")
     for f in sorted((ROOT / "LandCover").glob("CLCD_*.tif")):
-        results[f.stem] = check_geotiff(f, f"CLCD")
+        results[f.stem] = check_geotiff(f, "CLCD")
 
     # China 1km 降水
     print("\n  --- China 1km 降水 ---")
     for f in sorted((ROOT / "Precipitation").glob("pre_*.tif")):
-        results[f.stem] = check_geotiff(f, f"Precipitation")
+        results[f.stem] = check_geotiff(f, "Precipitation")
 
     # China 1km 温度
     print("\n  --- China 1km 温度 ---")
     for f in sorted((ROOT / "Weather").glob("tmp_*.tif")):
-        results[f.stem] = check_geotiff(f, f"Temperature")
+        results[f.stem] = check_geotiff(f, "Temperature")
 
     # HFP
     print("\n  --- Human Footprint ---")
     for f in sorted((ROOT / "HumanFootprint").glob("hfp*.tif")):
-        results[f.stem] = check_geotiff(f, f"Human Footprint")
+        results[f.stem] = check_geotiff(f, "Human Footprint")
 
     # Aridity Index
     print("\n  --- Aridity Index ---")
     for f in sorted((ROOT / "Others").glob("AridityIndex*.tif")):
-        results[f.stem] = check_geotiff(f, f"Aridity Index")
+        results[f.stem] = check_geotiff(f, "Aridity Index")
 
     return results
 
@@ -341,7 +362,7 @@ def check_csv() -> dict:
     print(f"  行数: {len(df)}")
     print(f"  列数: {len(df.columns)}")
     print(f"  列名: {list(df.columns)}")
-    print(f"  前 5 行:")
+    print("  前 5 行:")
     print(df.head().to_string())
 
     return {
@@ -358,7 +379,10 @@ def check_landscape_mat() -> dict:
     print("=" * 70)
 
     results = {}
-    for fname in ["Landscape_Metrics_LandOnly_9KM_2020.mat", "Forest_Ratio_9KM_2020.mat"]:
+    for fname in [
+        "Landscape_Metrics_LandOnly_9KM_2020.mat",
+        "Forest_Ratio_9KM_2020.mat",
+    ]:
         f = ROOT / "InversionResults" / fname
         if not f.exists():
             print(f"  {fname}: 不存在")
@@ -375,7 +399,7 @@ def check_landscape_mat() -> dict:
             data = loadmat(str(f))
             # 过滤 __ 开头的元数据
             vars = {k: v for k, v in data.items() if not k.startswith("__")}
-            print(f"  格式: MAT v5 (scipy.io.loadmat)")
+            print("  格式: MAT v5 (scipy.io.loadmat)")
             print(f"  变量: {list(vars.keys())}")
             for k, v in vars.items():
                 if hasattr(v, "shape"):
@@ -384,7 +408,9 @@ def check_landscape_mat() -> dict:
                         stats = f"min={valid.min():.4g}, max={valid.max():.4g}, mean={valid.mean():.4g}"
                     else:
                         stats = "all NaN"
-                    print(f"    {k:<30} shape={str(v.shape):<20} dtype={v.dtype}  {stats}")
+                    print(
+                        f"    {k:<30} shape={str(v.shape):<20} dtype={v.dtype}  {stats}"
+                    )
             results[fname] = {
                 "status": "ok",
                 "format": "v5",
@@ -397,18 +423,22 @@ def check_landscape_mat() -> dict:
 
             with h5py.File(f, "r") as h:
                 keys = list(h.keys())
-                print(f"  格式: MAT v7.3 (h5py)")
+                print("  格式: MAT v7.3 (h5py)")
                 print(f"  变量: {keys}")
                 for k in keys:
                     v = h[k]
                     if hasattr(v, "shape"):
                         data = v[:]
-                        valid = data[~np.isnan(data)] if data.dtype.kind == "f" else data
+                        valid = (
+                            data[~np.isnan(data)] if data.dtype.kind == "f" else data
+                        )
                         if len(valid) > 0:
                             stats = f"min={valid.min():.4g}, max={valid.max():.4g}, mean={valid.mean():.4g}"
                         else:
                             stats = "all NaN"
-                        print(f"    {k:<30} shape={str(v.shape):<20} dtype={v.dtype}  {stats}")
+                        print(
+                            f"    {k:<30} shape={str(v.shape):<20} dtype={v.dtype}  {stats}"
+                        )
                 results[fname] = {
                     "status": "ok",
                     "format": "v7.3",
@@ -433,7 +463,9 @@ def main() -> None:
     report["landscape"] = check_landscape_mat()
 
     # 保存报告
-    report_path = Path(r"d:\temp_desktop\Proj\Comprehensive Geographic Data Analysis system\Tools\reports\data_inspection.json")
+    report_path = Path(
+        r"d:\temp_desktop\Proj\Comprehensive Geographic Data Analysis system\Tools\reports\data_inspection.json"
+    )
     report_path.parent.mkdir(parents=True, exist_ok=True)
     with open(report_path, "w", encoding="utf-8") as f:
         json.dump(report, f, ensure_ascii=False, indent=2, default=str)

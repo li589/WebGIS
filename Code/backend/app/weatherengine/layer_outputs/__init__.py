@@ -16,6 +16,7 @@ service.py 通过 get_strategy(layer_id) 查找并调用。
     - clear_registry: 清空注册表（测试用）
     - list_registered: 列出已注册策略（诊断用）
 """
+
 from app.weatherengine.layer_outputs.base import LayerOutputResult, LayerOutputStrategy
 from app.weatherengine.layer_outputs.default import DefaultLayerOutput
 from app.weatherengine.layer_outputs.registry import (

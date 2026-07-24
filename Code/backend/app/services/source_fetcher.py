@@ -7,6 +7,7 @@
 
 抓取后的字节通过 object_store 持久化为 artifact，返回 FetchResult 供 manifest 引用。
 """
+
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
@@ -86,9 +87,13 @@ class HttpSourceFetcher(SourceFetcher):
             )
             with urllib.request.urlopen(req, timeout=DEFAULT_HTTP_TIMEOUT) as response:  # noqa: S310 - 源 URL 由配置或 layer catalog 提供
                 data = response.read()
-                content_type = response.headers.get("Content-Type", "application/octet-stream")
+                content_type = response.headers.get(
+                    "Content-Type", "application/octet-stream"
+                )
         except Exception as exc:  # pragma: no cover - 依赖运行时网络环境
-            logger.warning("HTTP fetch failed for ref=%s uri=%s: %s", ref_id, source_uri, exc)
+            logger.warning(
+                "HTTP fetch failed for ref=%s uri=%s: %s", ref_id, source_uri, exc
+            )
             return FetchResult(
                 ref_id=ref_id,
                 success=False,
@@ -169,7 +174,9 @@ class MinioSourceFetcher(SourceFetcher):
                 response.close()
                 response.release_conn()
         except Exception as exc:  # pragma: no cover - 依赖运行时 MinIO 环境
-            logger.warning("MinIO fetch failed for ref=%s uri=%s: %s", ref_id, source_uri, exc)
+            logger.warning(
+                "MinIO fetch failed for ref=%s uri=%s: %s", ref_id, source_uri, exc
+            )
             return FetchResult(
                 ref_id=ref_id,
                 success=False,
@@ -227,7 +234,9 @@ class LocalFileSourceFetcher(SourceFetcher):
             else:
                 local_path = Path(raw_path)
         else:
-            local_path = Path(unquote(parsed.path) if parsed.path else source_uri[len("local://"):])
+            local_path = Path(
+                unquote(parsed.path) if parsed.path else source_uri[len("local://") :]
+            )
 
         if not local_path.exists() or not local_path.is_file():
             return FetchResult(
@@ -240,7 +249,9 @@ class LocalFileSourceFetcher(SourceFetcher):
         try:
             data = local_path.read_bytes()
         except Exception as exc:  # pragma: no cover - 依赖运行时文件系统
-            logger.warning("Local file read failed for ref=%s path=%s: %s", ref_id, local_path, exc)
+            logger.warning(
+                "Local file read failed for ref=%s path=%s: %s", ref_id, local_path, exc
+            )
             return FetchResult(
                 ref_id=ref_id,
                 success=False,
@@ -312,7 +323,9 @@ class RemoteProtocolSourceFetcher(SourceFetcher):
             )
             data = local_path.read_bytes()
         except Exception as exc:
-            logger.warning("Remote fetch failed for ref=%s uri=%s: %s", ref_id, source_uri, exc)
+            logger.warning(
+                "Remote fetch failed for ref=%s uri=%s: %s", ref_id, source_uri, exc
+            )
             return FetchResult(
                 ref_id=ref_id,
                 success=False,

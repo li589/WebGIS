@@ -1,0 +1,51 @@
+{
+  "_meta": {
+    "kind": "system",
+    "engine": "python_provider",
+    "name": "本地 SMAP 土壤湿度（硬盘路径）",
+    "description": "目的：读取本机已落盘的 SMAP L3（如 I:/Geograph_DataSet/SMAP）。不访问开放门户。若要从 NSIDC 下载，请用系统模板 open_data_nsidc_smap_sample。",
+    "author": "system",
+    "readonly": true,
+    "is_template": true,
+    "linked_layer_id": "smap-soil"
+  },
+  "workflow_id": "smap_soil_moisture_local",
+  "name": "本地 SMAP 土壤湿度（硬盘路径）",
+  "description": "本地 data_source → 提取/转换。与开放下载模板互补。",
+  "nodes": [
+    {
+      "id": 1,
+      "type": "data/source",
+      "pos": [100, 140],
+      "properties": {
+        "path": "I:/Geograph_DataSet/SMAP",
+        "dataset_key": "SMAP_L3"
+      }
+    },
+    {
+      "id": 2,
+      "type": "extract/variable",
+      "pos": [420, 140],
+      "properties": {
+        "variable": "Soil_Moisture_Retrieval_Data_AM/soil_moisture"
+      }
+    },
+    {
+      "id": 3,
+      "type": "format/convert",
+      "pos": [740, 140],
+      "properties": {
+        "target_format": "mat",
+        "variable": "Soil_Moisture_Retrieval_Data_AM/soil_moisture"
+      }
+    }
+  ],
+  "links": [
+    {"0": 1, "1": 1, "2": 1, "3": 2, "4": 0, "5": "value:string"},
+    {"0": 2, "1": 2, "2": 0, "3": 3, "4": 0, "5": "value:string"}
+  ],
+  "extra": {
+    "purpose": "local_disk_pipeline",
+    "notes": "开放门户链路见 open_data_nsidc_smap_sample。"
+  }
+}

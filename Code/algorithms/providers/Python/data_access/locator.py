@@ -13,7 +13,9 @@ class Locator:
     def locate(self, request: DataRequestV2) -> tuple[ResourceRef, ...]:
         candidates = self._extract_candidates(request)
         return tuple(
-            self.source_registry.locate(candidate["uri"], request=request, metadata=candidate.get("metadata"))
+            self.source_registry.locate(
+                candidate["uri"], request=request, metadata=candidate.get("metadata")
+            )
             for candidate in candidates
         )
 
@@ -42,4 +44,6 @@ class Locator:
         request: DataRequestV2 | None = None,
     ) -> tuple[ResourceRef, ...]:
         resolved_request = request or DataRequestV2(dataset_name="ad_hoc")
-        return tuple(self.source_registry.locate(uri, request=resolved_request) for uri in uris)
+        return tuple(
+            self.source_registry.locate(uri, request=resolved_request) for uri in uris
+        )

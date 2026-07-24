@@ -8,7 +8,9 @@ from data_access.consumers import resolve_prepared_local_path
 
 
 class DataAccessConsumerTests(unittest.TestCase):
-    def test_resolve_prepared_local_path_prefers_matching_resource_metadata(self) -> None:
+    def test_resolve_prepared_local_path_prefers_matching_resource_metadata(
+        self,
+    ) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
             workspace = Path(tmp_dir)
             smap_dir = workspace / "smap"
@@ -42,7 +44,9 @@ class DataAccessConsumerTests(unittest.TestCase):
 
             self.assertEqual(resolved, ndvi_dir)
 
-    def test_resolve_prepared_local_path_falls_back_to_first_resource_without_metadata_match(self) -> None:
+    def test_resolve_prepared_local_path_falls_back_to_first_resource_without_metadata_match(
+        self,
+    ) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
             workspace = Path(tmp_dir)
             first_dir = workspace / "first"

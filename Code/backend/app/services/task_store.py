@@ -102,7 +102,9 @@ class SQLiteTaskStore:
             task_id=task_id,
             layer_id=layer_id or workflow_run.layer_id or "",
             task_type=TaskType(task_type),
-            created_at=datetime.fromisoformat(created_at) if created_at else workflow_run.created_at,
+            created_at=datetime.fromisoformat(created_at)
+            if created_at
+            else workflow_run.created_at,
             workflow_run=workflow_run,
         )
 
@@ -138,12 +140,21 @@ class SQLiteTaskStore:
         connection.execute("PRAGMA synchronous=NORMAL")
         return connection
 
-    def _ensure_column(self, connection: sqlite3.Connection, table_name: str, column_name: str, column_type: str) -> None:
+    def _ensure_column(
+        self,
+        connection: sqlite3.Connection,
+        table_name: str,
+        column_name: str,
+        column_type: str,
+    ) -> None:
         existing_columns = {
-            row[1] for row in connection.execute(f"PRAGMA table_info({table_name})").fetchall()
+            row[1]
+            for row in connection.execute(f"PRAGMA table_info({table_name})").fetchall()
         }
         if column_name not in existing_columns:
-            connection.execute(f"ALTER TABLE {table_name} ADD COLUMN {column_name} {column_type}")
+            connection.execute(
+                f"ALTER TABLE {table_name} ADD COLUMN {column_name} {column_type}"
+            )
 
     def _to_workflow_request(self, payload: TaskSubmitRequest) -> WorkflowSubmitRequest:
         command_type = {
@@ -162,7 +173,9 @@ class SQLiteTaskStore:
             spatial_filter=payload.spatial_filter,
             time_range=payload.time_range,
             parameters=payload.parameters,
-            requested_outputs=[self._to_result_kind(value) for value in payload.requested_outputs],
+            requested_outputs=[
+                self._to_result_kind(value) for value in payload.requested_outputs
+            ],
             client=ClientIdentity(
                 client_id=client_context.get("client_id"),
                 session_id=client_context.get("session_id"),
@@ -172,7 +185,9 @@ class SQLiteTaskStore:
             ),
             map_context=RuntimeMapContext(
                 active_layer_id=payload.layer_id,
-                map_mode=payload.map_mode if isinstance(payload.map_mode, MapMode) else MapMode.mode_2d,
+                map_mode=payload.map_mode
+                if isinstance(payload.map_mode, MapMode)
+                else MapMode.mode_2d,
             ),
             correlation_id=client_context.get("correlation_id"),
         )
@@ -218,9 +233,12 @@ class SQLiteTaskStore:
             spatial_filter=workflow_run.spatial_filter,
             time_range=workflow_run.time_range,
             requested_outputs=[
-                item.value if hasattr(item, "value") else str(item) for item in workflow_run.requested_outputs
+                item.value if hasattr(item, "value") else str(item)
+                for item in workflow_run.requested_outputs
             ],
-            result_refs=[self._map_result_ref(item) for item in workflow_run.result_refs],
+            result_refs=[
+                self._map_result_ref(item) for item in workflow_run.result_refs
+            ],
             diagnostics=[
                 f"bridged_run_id={workflow_run.run_id}",
                 "legacy_tasks_endpoint=true",
@@ -240,12 +258,15 @@ class SQLiteTaskStore:
             return TaskStatus.cancelled
         return TaskStatus.failed
 
-    def _map_result_ref(self, result_ref: WorkflowResultReference) -> TaskResultReference:
+    def _map_result_ref(
+        self, result_ref: WorkflowResultReference
+    ) -> TaskResultReference:
         return TaskResultReference(
             result_type=result_ref.result_kind.value,
             mime_type=result_ref.mime_type,
             inline_data=result_ref.inline_data,
             resource_url=result_ref.resource_url,
         )
+
 
 task_store = SQLiteTaskStore()

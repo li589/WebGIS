@@ -1,6 +1,7 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 """快速验证 /api/overlays 与 /api/layers 接口返回新图层。"""
+
 import sys
 import urllib.request
 import json
@@ -34,7 +35,10 @@ def main() -> int:
         for lid in overlay_ids_list:
             print(f"  - {lid}")
     elif isinstance(overlays, list):
-        overlay_ids_list = [item.get("layer_id") if isinstance(item, dict) else item for item in overlays]
+        overlay_ids_list = [
+            item.get("layer_id") if isinstance(item, dict) else item
+            for item in overlays
+        ]
         print(f"Total overlays: {len(overlay_ids_list)}")
         for lid in overlay_ids_list:
             print(f"  - {lid}")
@@ -54,7 +58,12 @@ def main() -> int:
         ids = []
         for item in layers:
             if isinstance(item, dict):
-                ids.append(item.get("id") or item.get("layer_id") or item.get("catalogId") or "?")
+                ids.append(
+                    item.get("id")
+                    or item.get("layer_id")
+                    or item.get("catalogId")
+                    or "?"
+                )
         print("Layer IDs:")
         for i in ids:
             print(f"  - {i}")
@@ -63,9 +72,16 @@ def main() -> int:
 
     # 验证新增的 10 个 layer_id 是否都出现在 /overlays 中
     expected = {
-        "gebco-dem-cn", "cmfd-precip-cn", "clcd-cn", "biomass-cn",
-        "era5-dwaa-cn", "era5-wdaa-cn", "co2-cn", "soil-ddca",
-        "omega-fy-output", "forest-ratio",
+        "gebco-dem-cn",
+        "cmfd-precip-cn",
+        "clcd-cn",
+        "biomass-cn",
+        "era5-dwaa-cn",
+        "era5-wdaa-cn",
+        "co2-cn",
+        "soil-ddca",
+        "omega-fy-output",
+        "forest-ratio",
     }
     print()
     print("=" * 60)
@@ -78,7 +94,7 @@ def main() -> int:
         print(f"[FAIL] Missing layer_ids: {sorted(missing)}")
         return 2
     else:
-        print(f"[OK] All 10 new layer_ids registered in /overlays")
+        print("[OK] All 10 new layer_ids registered in /overlays")
         # 也确认一下 bounds 可访问
         for layer_id in sorted(expected):
             b = fetch(f"/overlay-bounds/{layer_id}")

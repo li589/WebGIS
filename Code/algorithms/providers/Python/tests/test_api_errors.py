@@ -25,7 +25,9 @@ class ApiErrorResponseTests(unittest.TestCase):
         )
 
     def test_build_api_error_response_maps_decode_error_to_400(self) -> None:
-        error = JobRequestDecodeError("Field must be an ISO datetime string: job_request.time_range.start")
+        error = JobRequestDecodeError(
+            "Field must be an ISO datetime string: job_request.time_range.start"
+        )
 
         response = build_api_error_response(error)
 
@@ -36,7 +38,9 @@ class ApiErrorResponseTests(unittest.TestCase):
         self.assertEqual(response.suggested_fixes[0].code, "use_iso_datetime")
 
     def test_build_api_error_response_maps_unknown_field_decode_error(self) -> None:
-        error = JobRequestDecodeError("Unknown field(s) not allowed: job_request -> unexpected")
+        error = JobRequestDecodeError(
+            "Unknown field(s) not allowed: job_request -> unexpected"
+        )
 
         response = build_api_error_response(error)
 
@@ -45,7 +49,9 @@ class ApiErrorResponseTests(unittest.TestCase):
         self.assertEqual(response.issues[0].field_path, "job_request.unexpected")
         self.assertEqual(response.suggested_fixes[0].code, "remove_unknown_field")
 
-    def test_build_api_error_response_maps_inconsistent_timezone_decode_error(self) -> None:
+    def test_build_api_error_response_maps_inconsistent_timezone_decode_error(
+        self,
+    ) -> None:
         error = JobRequestDecodeError(
             "Fields must both include timezone info or both omit it: "
             "job_request.time_range.start, job_request.time_range.end"
@@ -76,7 +82,9 @@ class ApiErrorResponseTests(unittest.TestCase):
                     "params": {"module_name": "daily_bundle"},
                 }
             ],
-            "outputs": [{"name": "final_manifest", "source": "node:bundle_node.manifest"}],
+            "outputs": [
+                {"name": "final_manifest", "source": "node:bundle_node.manifest"}
+            ],
         }
 
         with self.assertRaises(JobRequestValidationError) as ctx:

@@ -30,17 +30,20 @@ logger = logging.getLogger(__name__)
 
 # ── Provider 类型枚举（字符串常量，避免强类型耦合） ─────────────────────────────
 
+
 class ProviderType:
     """Provider 类型常量。
 
     用字符串而非 Enum，便于第三方 Provider 扩展自定义类型而无需修改本文件。
     """
-    FREE_API = "free_api"            # 免费公开 API（如 Open-Meteo、NOAA、ERA5）
+
+    FREE_API = "free_api"  # 免费公开 API（如 Open-Meteo、NOAA、ERA5）
     COMMERCIAL_API = "commercial_api"  # 付费商业 API（如 AccuWeather、WeatherAPI）
-    LOCAL_DATA = "local_data"        # 本地数据源（如 GRIB 文件、本地气象站）
+    LOCAL_DATA = "local_data"  # 本地数据源（如 GRIB 文件、本地气象站）
 
 
 # ── 能力常量（与 WeatherLayerSpec.layer_id 对齐） ───────────────────────────────
+
 
 class WeatherCapability:
     """天气图层能力常量。
@@ -51,6 +54,7 @@ class WeatherCapability:
     - ``"point_query"``：支持点查询（不一定支持网格）
     - ``"grid_query"``：支持网格查询
     """
+
     ALL = "all"
     POINT_QUERY = "point_query"
     GRID_QUERY = "grid_query"
@@ -58,20 +62,22 @@ class WeatherCapability:
 
 # ── Provider 状态数据类 ─────────────────────────────────────────────────────────
 
+
 @dataclass(frozen=True, slots=True)
 class ProviderStatus:
     """Provider 运行时状态快照。用于 UI 展示与监控。"""
+
     provider_id: str
     enabled: bool
-    healthy: bool                          # 是否健康（最近一次调用成功）
-    circuit_state: str = "closed"          # closed / open / half_open / n/a
-    last_error: str | None = None          # 最近一次错误信息
-    last_tested_at: str | None = None      # ISO8601 时间戳
-    last_test_status: str | None = None    # "ok" / "failed" / None
+    healthy: bool  # 是否健康（最近一次调用成功）
+    circuit_state: str = "closed"  # closed / open / half_open / n/a
+    last_error: str | None = None  # 最近一次错误信息
+    last_tested_at: str | None = None  # ISO8601 时间戳
+    last_test_status: str | None = None  # "ok" / "failed" / None
     # 用量监控（可选，免费 API 关心每日预算；付费 API 关心计费；本地数据关心读取次数）
-    daily_quota: int | None = None         # 每日总配额，None 表示无限制
-    daily_used: int | None = None          # 今日已用次数
-    daily_remaining: int | None = None     # 今日剩余次数
+    daily_quota: int | None = None  # 每日总配额，None 表示无限制
+    daily_used: int | None = None  # 今日已用次数
+    daily_remaining: int | None = None  # 今日剩余次数
     # 缓存统计
     cache_hits: int = 0
     cache_misses: int = 0
@@ -81,20 +87,23 @@ class ProviderStatus:
 
 # ── Provider 配置 Schema ───────────────────────────────────────────────────────
 
+
 @dataclass(frozen=True, slots=True)
 class ConfigFieldSchema:
     """单个配置字段的 UI 渲染 schema。"""
-    key: str                              # 配置键名
-    label: str                            # UI 展示标签
-    field_type: str                       # "string" / "password" / "int" / "float" / "bool" / "select"
+
+    key: str  # 配置键名
+    label: str  # UI 展示标签
+    field_type: str  # "string" / "password" / "int" / "float" / "bool" / "select"
     required: bool = False
     default: Any = None
     description: str = ""
-    options: tuple[str, ...] = ()          # field_type="select" 时的可选项
+    options: tuple[str, ...] = ()  # field_type="select" 时的可选项
     placeholder: str = ""
 
 
 # ── 抽象基类 ───────────────────────────────────────────────────────────────────
+
 
 class WeatherProvider(ABC):
     """天气源 Provider 抽象基类。
@@ -268,7 +277,11 @@ class WeatherProvider(ABC):
         """
         try:
             # 默认测试：获取广州的一个简单预报
-            from app.weatherengine.constants import WEATHER_LAYER_SPECS, DEFAULT_LAYER_ID
+            from app.weatherengine.constants import (
+                WEATHER_LAYER_SPECS,
+                DEFAULT_LAYER_ID,
+            )
+
             layer_spec = WEATHER_LAYER_SPECS.get(DEFAULT_LAYER_ID)
             if layer_spec is None:
                 # fallback：取第一个可用的 layer spec

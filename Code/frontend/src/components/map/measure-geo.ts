@@ -35,9 +35,7 @@ export function haversineDistance(p1: LngLat, p2: LngLat): number {
   const Δφ = toRad(p2.lat - p1.lat)
   const Δλ = toRad(p2.lng - p1.lng)
 
-  const a =
-    Math.sin(Δφ / 2) ** 2 +
-    Math.cos(φ1) * Math.cos(φ2) * Math.sin(Δλ / 2) ** 2
+  const a = Math.sin(Δφ / 2) ** 2 + Math.cos(φ1) * Math.cos(φ2) * Math.sin(Δλ / 2) ** 2
   const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a))
 
   return EARTH_RADIUS_M * c
@@ -55,9 +53,7 @@ export function bearing(p1: LngLat, p2: LngLat): number {
   const Δλ = toRad(p2.lng - p1.lng)
 
   const y = Math.sin(Δλ) * Math.cos(φ2)
-  const x =
-    Math.cos(φ1) * Math.sin(φ2) -
-    Math.sin(φ1) * Math.cos(φ2) * Math.cos(Δλ)
+  const x = Math.cos(φ1) * Math.sin(φ2) - Math.sin(φ1) * Math.cos(φ2) * Math.cos(Δλ)
 
   return (toDeg(Math.atan2(y, x)) + 360) % 360
 }

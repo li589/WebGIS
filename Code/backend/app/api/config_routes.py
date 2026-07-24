@@ -74,6 +74,7 @@ router = APIRouter(prefix="/config", tags=["config"])
 
 # ── 常规配置 ──────────────────────────────────────────────────────────────────
 
+
 @router.get("/general")
 async def get_general_config():
     """获取常规配置（脱敏）。"""
@@ -81,6 +82,7 @@ async def get_general_config():
 
 
 # ── API Key 管理 ──────────────────────────────────────────────────────────────
+
 
 @router.get("/api-keys")
 async def list_api_keys():
@@ -180,6 +182,7 @@ async def clear_api_key_history(key_name: str):
 
 # ── GEE 账户管理 ──────────────────────────────────────────────────────────────
 
+
 @router.get("/gee/accounts")
 async def list_gee_accounts():
     """列出所有 GEE 账户（脱敏）。"""
@@ -188,7 +191,10 @@ async def list_gee_accounts():
 
 @router.post(
     "/gee/accounts",
-    dependencies=[Depends(require_write_access), Depends(require_gee_account_management_enabled)],
+    dependencies=[
+        Depends(require_write_access),
+        Depends(require_gee_account_management_enabled),
+    ],
 )
 async def create_gee_account(request: GeeAccountCreateRequest):
     """新增 GEE 账户。"""
@@ -216,13 +222,20 @@ async def create_gee_account(request: GeeAccountCreateRequest):
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     except Exception:
-        logger.exception("[config_routes] Failed to add GEE account: %s", request.account_id)
-        raise HTTPException(status_code=500, detail="添加 GEE 账户时发生内部错误，请检查日志")
+        logger.exception(
+            "[config_routes] Failed to add GEE account: %s", request.account_id
+        )
+        raise HTTPException(
+            status_code=500, detail="添加 GEE 账户时发生内部错误，请检查日志"
+        )
 
 
 @router.delete(
     "/gee/accounts/{account_id}",
-    dependencies=[Depends(require_write_access), Depends(require_gee_account_management_enabled)],
+    dependencies=[
+        Depends(require_write_access),
+        Depends(require_gee_account_management_enabled),
+    ],
 )
 async def delete_gee_account(account_id: str):
     """删除 GEE 账户。"""
@@ -245,7 +258,10 @@ async def test_gee_account(account_id: str):
 
 @router.put(
     "/gee/accounts/{account_id}/toggle",
-    dependencies=[Depends(require_write_access), Depends(require_gee_account_management_enabled)],
+    dependencies=[
+        Depends(require_write_access),
+        Depends(require_gee_account_management_enabled),
+    ],
 )
 async def toggle_gee_account(account_id: str, request: GeeAccountToggleRequest):
     """启用/禁用 GEE 账户。"""
@@ -258,7 +274,10 @@ async def toggle_gee_account(account_id: str, request: GeeAccountToggleRequest):
 @router.post(
     "/gee/accounts/reload",
     response_model=ReloadResultResponse,
-    dependencies=[Depends(require_write_access), Depends(require_gee_account_management_enabled)],
+    dependencies=[
+        Depends(require_write_access),
+        Depends(require_gee_account_management_enabled),
+    ],
 )
 async def reload_gee_accounts():
     """重载 GEE 账户池。"""
@@ -268,6 +287,7 @@ async def reload_gee_accounts():
 
 # ── GEE 运行时配置 ────────────────────────────────────────────────────────────
 
+
 @router.get("/gee/runtime")
 async def get_gee_runtime_config():
     """获取 GEE 运行时配置。"""
@@ -275,6 +295,7 @@ async def get_gee_runtime_config():
 
 
 # ── 天气 API 配置 ─────────────────────────────────────────────────────────────
+
 
 @router.get("/weather")
 async def get_weather_config():
@@ -296,6 +317,7 @@ async def update_weather_default_model(request: WeatherModelUpdateRequest):
 
 # ── 天气源 Provider 管理 ──────────────────────────────────────────────────────
 
+
 @router.get("/weather/providers")
 async def list_weather_providers(include_disabled: bool = True):
     """列出所有天气源 Provider。"""
@@ -307,7 +329,9 @@ async def get_weather_provider(provider_id: str):
     """获取单个天气源 Provider 详情。"""
     result = config_service.get_weather_provider(provider_id)
     if result is None:
-        raise HTTPException(status_code=404, detail=f"天气源 Provider '{provider_id}' 不存在")
+        raise HTTPException(
+            status_code=404, detail=f"天气源 Provider '{provider_id}' 不存在"
+        )
     return result
 
 
@@ -315,7 +339,9 @@ async def get_weather_provider(provider_id: str):
     "/weather/providers/{provider_id}",
     dependencies=[Depends(require_write_access)],
 )
-async def update_weather_provider(provider_id: str, request: WeatherProviderUpdateRequest):
+async def update_weather_provider(
+    provider_id: str, request: WeatherProviderUpdateRequest
+):
     """更新天气源 Provider 配置（enabled/priority/config）。"""
     try:
         result = config_service.update_weather_provider(
@@ -327,10 +353,16 @@ async def update_weather_provider(provider_id: str, request: WeatherProviderUpda
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
     except Exception:
-        logger.exception("[config_routes] Failed to update weather provider: %s", provider_id)
-        raise HTTPException(status_code=500, detail="更新天气源 Provider 时发生内部错误，请检查日志")
+        logger.exception(
+            "[config_routes] Failed to update weather provider: %s", provider_id
+        )
+        raise HTTPException(
+            status_code=500, detail="更新天气源 Provider 时发生内部错误，请检查日志"
+        )
     if result is None:
-        raise HTTPException(status_code=404, detail=f"天气源 Provider '{provider_id}' 不存在")
+        raise HTTPException(
+            status_code=404, detail=f"天气源 Provider '{provider_id}' 不存在"
+        )
     return result
 
 
@@ -349,14 +381,18 @@ async def test_weather_provider(provider_id: str):
     "/weather/providers/{provider_id}/toggle",
     dependencies=[Depends(require_write_access)],
 )
-async def toggle_weather_provider(provider_id: str, request: WeatherProviderToggleRequest):
+async def toggle_weather_provider(
+    provider_id: str, request: WeatherProviderToggleRequest
+):
     """启用/禁用天气源 Provider。"""
     try:
         result = config_service.toggle_weather_provider(provider_id, request.enabled)
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
     if result is None:
-        raise HTTPException(status_code=404, detail=f"天气源 Provider '{provider_id}' 不存在")
+        raise HTTPException(
+            status_code=404, detail=f"天气源 Provider '{provider_id}' 不存在"
+        )
     return {"provider_id": provider_id, "enabled": request.enabled}
 
 
@@ -364,14 +400,20 @@ async def toggle_weather_provider(provider_id: str, request: WeatherProviderTogg
     "/weather/providers/{provider_id}/priority",
     dependencies=[Depends(require_write_access)],
 )
-async def set_weather_provider_priority(provider_id: str, request: WeatherProviderPriorityRequest):
+async def set_weather_provider_priority(
+    provider_id: str, request: WeatherProviderPriorityRequest
+):
     """调整天气源 Provider 优先级。"""
     try:
-        result = config_service.set_weather_provider_priority(provider_id, request.priority)
+        result = config_service.set_weather_provider_priority(
+            provider_id, request.priority
+        )
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
     if result is None:
-        raise HTTPException(status_code=404, detail=f"天气源 Provider '{provider_id}' 不存在")
+        raise HTTPException(
+            status_code=404, detail=f"天气源 Provider '{provider_id}' 不存在"
+        )
     return {"provider_id": provider_id, "priority": request.priority}
 
 
@@ -386,22 +428,29 @@ async def delete_weather_provider(provider_id: str):
     """
     deleted = config_service.delete_weather_provider(provider_id)
     if not deleted:
-        raise HTTPException(status_code=404, detail=f"Provider '{provider_id}' 在 DB 中无配置记录")
+        raise HTTPException(
+            status_code=404, detail=f"Provider '{provider_id}' 在 DB 中无配置记录"
+        )
     return {"deleted": True, "provider_id": provider_id}
 
 
 # ── 远程存储凭证 ──────────────────────────────────────────────────────────────
 
+
 @router.get("/remote-storage")
 async def list_remote_storage_profiles(include_disabled: bool = True):
-    return config_service.list_remote_storage_profiles(include_disabled=include_disabled)
+    return config_service.list_remote_storage_profiles(
+        include_disabled=include_disabled
+    )
 
 
 @router.put(
     "/remote-storage/{profile_id}",
     dependencies=[Depends(require_write_access)],
 )
-async def upsert_remote_storage_profile(profile_id: str, request: RemoteStorageUpsertRequest):
+async def upsert_remote_storage_profile(
+    profile_id: str, request: RemoteStorageUpsertRequest
+):
     try:
         return config_service.upsert_remote_storage_profile(
             profile_id,
@@ -435,7 +484,9 @@ async def delete_remote_storage_profile(profile_id: str):
     "/remote-storage/{profile_id}/toggle",
     dependencies=[Depends(require_write_access)],
 )
-async def toggle_remote_storage_profile(profile_id: str, request: RemoteStorageToggleRequest):
+async def toggle_remote_storage_profile(
+    profile_id: str, request: RemoteStorageToggleRequest
+):
     ok = config_service.toggle_remote_storage_profile(profile_id, request.enabled)
     if not ok:
         raise HTTPException(status_code=404, detail=f"Profile '{profile_id}' not found")
@@ -499,6 +550,7 @@ async def clear_remote_storage_history(profile_id: str):
 
 # ── 数据源配置 ────────────────────────────────────────────────────────────────
 
+
 @router.get("/data-source")
 async def get_data_source_config():
     """获取数据源配置。"""
@@ -521,25 +573,61 @@ async def evict_data_cache(payload: dict[str, Any] | None = None):
     )
 
 
-@router.put("/data-source/open-data-presets", dependencies=[Depends(require_write_access)])
+@router.put(
+    "/data-source/open-data-presets", dependencies=[Depends(require_write_access)]
+)
 async def update_open_data_presets(payload: dict[str, Any]):
-    """更新 NOAA/NASA/ESA 开放数据 base URL 预设。"""
+    """更新 NOAA/NASA/NSIDC/ESA 开放数据 base URL 预设。"""
     presets = payload.get("open_data_presets") or payload
     if not isinstance(presets, dict):
-        raise HTTPException(status_code=400, detail="open_data_presets must be an object")
+        raise HTTPException(
+            status_code=400, detail="open_data_presets must be an object"
+        )
     return config_service.update_open_data_presets(presets)
 
 
-@router.put("/data-source/remote-layer-uris", dependencies=[Depends(require_write_access)])
+@router.get("/data-source/portal-credentials")
+async def get_portal_credentials():
+    """开放门户凭证（脱敏）。"""
+    return config_service.get_portal_credentials_public()
+
+
+@router.put(
+    "/data-source/portal-credentials/{portal_id}",
+    dependencies=[Depends(require_write_access)],
+)
+async def upsert_portal_credential(portal_id: str, payload: dict[str, Any]):
+    """新增/更新门户凭证（earthdata / nsidc / copernicus）。"""
+    try:
+        return config_service.upsert_portal_credential(portal_id, payload or {})
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.delete(
+    "/data-source/portal-credentials/{portal_id}",
+    dependencies=[Depends(require_write_access)],
+)
+async def delete_portal_credential(portal_id: str):
+    """删除门户凭证。"""
+    return config_service.delete_portal_credential(portal_id)
+
+
+@router.put(
+    "/data-source/remote-layer-uris", dependencies=[Depends(require_write_access)]
+)
 async def update_remote_layer_uris(payload: dict[str, Any]):
     """更新图层 URI 覆盖（等价 BACKEND_REMOTE_LAYER_DATA_URIS）。"""
     uris = payload.get("remote_layer_data_uris") or payload
     if not isinstance(uris, dict):
-        raise HTTPException(status_code=400, detail="remote_layer_data_uris must be an object")
+        raise HTTPException(
+            status_code=400, detail="remote_layer_data_uris must be an object"
+        )
     return config_service.update_remote_layer_data_uris(uris)
 
 
 # ── 关于 ──────────────────────────────────────────────────────────────────────
+
 
 @router.get("/about")
 async def get_about_info():

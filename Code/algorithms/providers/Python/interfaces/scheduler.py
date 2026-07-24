@@ -6,8 +6,7 @@ from contracts.job import JobRequest, JobResult
 
 
 class SchedulerAdapter(Protocol):
-    def get_run_context(self, request: JobRequest) -> dict[str, Any]:
-        ...
+    def get_run_context(self, request: JobRequest) -> dict[str, Any]: ...
 
     def update_status(
         self,
@@ -15,8 +14,6 @@ class SchedulerAdapter(Protocol):
         run_id: str,
         status: str,
         detail: dict[str, Any] | None = None,
-    ) -> None:
-        ...
+    ) -> None: ...
 
-    def complete(self, result: JobResult) -> None:
-        ...
+    def complete(self, result: JobResult) -> None: ...

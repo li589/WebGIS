@@ -6,7 +6,13 @@ from pathlib import Path
 from typing import Any
 
 from contracts.data import DataRequest
-from data_access import DataRequestV2, build_default_coordinator, build_prepared_input, build_resource_ref, resource_refs_to_legacy_bundle
+from data_access import (
+    DataRequestV2,
+    build_default_coordinator,
+    build_prepared_input,
+    build_resource_ref,
+    resource_refs_to_legacy_bundle,
+)
 from contracts.job import JobRequest, JobResult
 from interfaces.datasource import DataSourceAdapter
 from interfaces.logger import LoggerAdapter
@@ -49,7 +55,9 @@ def _build_data_requests(
     ]
 
 
-def _build_data_request_v2(request: JobRequest, data_request: DataRequest) -> DataRequestV2:
+def _build_data_request_v2(
+    request: JobRequest, data_request: DataRequest
+) -> DataRequestV2:
     raw_configs = request.datasource_selection.get(_DATA_ACCESS_REQUESTS_KEY, {})
     dataset_config: dict[str, Any] = {}
     if isinstance(raw_configs, dict):
@@ -71,7 +79,9 @@ def _build_data_request_v2(request: JobRequest, data_request: DataRequest) -> Da
         accepted_formats=tuple(dataset_config.get("accepted_formats", ())),
         preferred_format=dataset_config.get("preferred_format"),
         materialization_mode=str(dataset_config.get("materialization_mode", "auto")),
-        access_mode=_normalize_acquire_mode(dataset_config.get("access_mode") or data_request.acquire_mode),
+        access_mode=_normalize_acquire_mode(
+            dataset_config.get("access_mode") or data_request.acquire_mode
+        ),
         allow_cache=bool(dataset_config.get("allow_cache", True)),
         allow_streaming=bool(dataset_config.get("allow_streaming", False)),
         logical_type=dataset_config.get("logical_type"),
@@ -80,7 +90,9 @@ def _build_data_request_v2(request: JobRequest, data_request: DataRequest) -> Da
     )
 
 
-def _build_request_v2_from_dataset_config(dataset_name: str, dataset_config: dict[str, Any], request: JobRequest) -> DataRequestV2:
+def _build_request_v2_from_dataset_config(
+    dataset_name: str, dataset_config: dict[str, Any], request: JobRequest
+) -> DataRequestV2:
     selector = dict(dataset_config.get("selector", {}))
     if "uris" not in selector:
         if "uris" in dataset_config:
@@ -129,9 +141,17 @@ def _resource_refs_from_assets(assets: list[object]) -> tuple[object, ...]:
 def _resource_refs_from_bundle(bundle) -> tuple[object, ...]:
     resources: list[object] = []
     for local_path in bundle.local_paths:
-        resources.append(build_resource_ref(str(local_path), metadata={"dataset_name": bundle.dataset_name}))
+        resources.append(
+            build_resource_ref(
+                str(local_path), metadata={"dataset_name": bundle.dataset_name}
+            )
+        )
     for remote_ref in bundle.remote_refs:
-        resources.append(build_resource_ref(str(remote_ref), metadata={"dataset_name": bundle.dataset_name}))
+        resources.append(
+            build_resource_ref(
+                str(remote_ref), metadata={"dataset_name": bundle.dataset_name}
+            )
+        )
     return tuple(resources)
 
 
@@ -141,12 +161,20 @@ def _build_prepared_input_from_legacy_result(
     assets: list[object],
     bundle,
 ):
-    resource_refs = _resource_refs_from_assets(assets) or _resource_refs_from_bundle(bundle)
+    resource_refs = _resource_refs_from_assets(assets) or _resource_refs_from_bundle(
+        bundle
+    )
     materialized_refs = _resource_refs_from_bundle(bundle)
     warnings: list[str] = []
     if not resource_refs:
-        warnings.append(f"No resources discovered for dataset '{data_request.dataset_name}'")
-    cache_hits = bundle.metadata.get("cache_hits", ()) if isinstance(bundle.metadata, dict) else ()
+        warnings.append(
+            f"No resources discovered for dataset '{data_request.dataset_name}'"
+        )
+    cache_hits = (
+        bundle.metadata.get("cache_hits", ())
+        if isinstance(bundle.metadata, dict)
+        else ()
+    )
     return build_prepared_input(
         data_request_v2,
         resources=resource_refs,
@@ -170,7 +198,9 @@ def _resource_refs_to_asset_payloads(resources) -> list[dict[str, object]]:
     return payloads
 
 
-def _extract_conversion_trace_entries(prepared_input_payload: object) -> tuple[dict[str, Any], ...]:
+def _extract_conversion_trace_entries(
+    prepared_input_payload: object,
+) -> tuple[dict[str, Any], ...]:
     raw_entries: object
     if isinstance(prepared_input_payload, dict):
         raw_entries = prepared_input_payload.get("conversion_trace", ())
@@ -191,18 +221,28 @@ def _build_conversion_trace_resource_detail(entry: dict[str, Any]) -> dict[str, 
         "local_path": None if local_path is None else str(local_path),
         "adapter": None if entry.get("adapter") is None else str(entry["adapter"]),
         "format": None if entry.get("format") is None else str(entry["format"]),
-        "logical_type": None if entry.get("logical_type") is None else str(entry["logical_type"]),
-        "loaded_summary": dict(loaded_summary) if isinstance(loaded_summary, dict) else {},
+        "logical_type": None
+        if entry.get("logical_type") is None
+        else str(entry["logical_type"]),
+        "loaded_summary": dict(loaded_summary)
+        if isinstance(loaded_summary, dict)
+        else {},
     }
 
 
-def _summarize_conversion_trace_dataset(dataset_name: str, prepared_input_payload: object) -> dict[str, Any] | None:
+def _summarize_conversion_trace_dataset(
+    dataset_name: str, prepared_input_payload: object
+) -> dict[str, Any] | None:
     entries = _extract_conversion_trace_entries(prepared_input_payload)
     if not entries:
         return None
-    adapters = sorted({str(entry["adapter"]) for entry in entries if entry.get("adapter")})
+    adapters = sorted(
+        {str(entry["adapter"]) for entry in entries if entry.get("adapter")}
+    )
     formats = sorted({str(entry["format"]) for entry in entries if entry.get("format")})
-    logical_types = sorted({str(entry["logical_type"]) for entry in entries if entry.get("logical_type")})
+    logical_types = sorted(
+        {str(entry["logical_type"]) for entry in entries if entry.get("logical_type")}
+    )
     resources = [_build_conversion_trace_resource_detail(entry) for entry in entries]
     return {
         "dataset_name": dataset_name,
@@ -230,11 +270,15 @@ def _emit_conversion_trace_warning(
     )
 
 
-def _build_conversion_trace_metrics(prepared_inputs: dict[str, dict[str, object]]) -> dict[str, Any]:
+def _build_conversion_trace_metrics(
+    prepared_inputs: dict[str, dict[str, object]],
+) -> dict[str, Any]:
     dataset_summaries: list[dict[str, Any]] = []
     total_entries = 0
     for dataset_name in sorted(prepared_inputs):
-        summary = _summarize_conversion_trace_dataset(dataset_name, prepared_inputs[dataset_name])
+        summary = _summarize_conversion_trace_dataset(
+            dataset_name, prepared_inputs[dataset_name]
+        )
         if summary is None:
             continue
         dataset_summaries.append(summary)
@@ -248,7 +292,9 @@ def _build_conversion_trace_metrics(prepared_inputs: dict[str, dict[str, object]
     }
 
 
-def _attach_conversion_trace_to_manifest(manifest: object, prepared_inputs: dict[str, dict[str, object]]) -> dict[str, Any]:
+def _attach_conversion_trace_to_manifest(
+    manifest: object, prepared_inputs: dict[str, dict[str, object]]
+) -> dict[str, Any]:
     conversion_trace_metrics = _build_conversion_trace_metrics(prepared_inputs)
     if not conversion_trace_metrics:
         return {}
@@ -271,20 +317,28 @@ def _prepare_explicit_data_access_requests(
 
     prepared: dict[str, dict[str, object]] = {}
     prepared_inputs: dict[str, dict[str, object]] = {}
-    coordinator = build_default_coordinator(Path(cache_root or Path.cwd()) / "data_access")
+    coordinator = build_default_coordinator(
+        Path(cache_root or Path.cwd()) / "data_access"
+    )
     skipped_datasets = excluded_datasets or set()
     for dataset_name, raw_config in raw_configs.items():
         if str(dataset_name) in skipped_datasets:
             continue
         if not isinstance(raw_config, dict):
             continue
-        request_v2 = _build_request_v2_from_dataset_config(str(dataset_name), raw_config, request)
+        request_v2 = _build_request_v2_from_dataset_config(
+            str(dataset_name), raw_config, request
+        )
         if not _has_explicit_data_access_selector(request_v2):
             continue
-        logger_adapter.emit_stage_start("data_prepare", f"Prepare dataset {dataset_name}")
+        logger_adapter.emit_stage_start(
+            "data_prepare", f"Prepare dataset {dataset_name}"
+        )
         prepared_input = coordinator.prepare(
             request_v2,
-            target_dir=Path(cache_root or Path.cwd()) / "materialized" / str(dataset_name),
+            target_dir=Path(cache_root or Path.cwd())
+            / "materialized"
+            / str(dataset_name),
         )
         legacy_request = DataRequest(
             dataset_name=str(dataset_name),
@@ -294,7 +348,9 @@ def _prepare_explicit_data_access_requests(
             acquire_mode=request_v2.access_mode,
             cache_policy=request.cache_policy,
         )
-        resources_for_bundle = prepared_input.materialized_resources or prepared_input.resources
+        resources_for_bundle = (
+            prepared_input.materialized_resources or prepared_input.resources
+        )
         bundle = resource_refs_to_legacy_bundle(
             legacy_request,
             resources_for_bundle,
@@ -311,7 +367,9 @@ def _prepare_explicit_data_access_requests(
             "bundle": asdict(bundle),
             "assets": _resource_refs_to_asset_payloads(prepared_input.resources),
         }
-        _emit_conversion_trace_warning(logger_adapter, str(dataset_name), prepared_input)
+        _emit_conversion_trace_warning(
+            logger_adapter, str(dataset_name), prepared_input
+        )
         prepared_inputs[str(dataset_name)] = asdict(prepared_input)
         logger_adapter.emit_stage_end(
             "data_prepare",
@@ -349,21 +407,29 @@ def _prepare_required_datasets(
 ) -> tuple[dict[str, dict[str, object]], dict[str, dict[str, object]]]:
     prepared: dict[str, dict[str, object]] = {}
     prepared_inputs: dict[str, dict[str, object]] = {}
-    coordinator = build_default_coordinator(Path(cache_root or Path.cwd()) / "data_access")
+    coordinator = build_default_coordinator(
+        Path(cache_root or Path.cwd()) / "data_access"
+    )
     for data_request in _build_data_requests(
         request,
         required_datasets,
         required_variables,
         acquire_mode=acquire_mode,
     ):
-        logger_adapter.emit_stage_start("data_prepare", f"Prepare dataset {data_request.dataset_name}")
+        logger_adapter.emit_stage_start(
+            "data_prepare", f"Prepare dataset {data_request.dataset_name}"
+        )
         request_v2 = _build_data_request_v2(request, data_request)
         if _has_explicit_data_access_selector(request_v2):
             prepared_input = coordinator.prepare(
                 request_v2,
-                target_dir=Path(cache_root or Path.cwd()) / "materialized" / data_request.dataset_name,
+                target_dir=Path(cache_root or Path.cwd())
+                / "materialized"
+                / data_request.dataset_name,
             )
-            resources_for_bundle = prepared_input.materialized_resources or prepared_input.resources
+            resources_for_bundle = (
+                prepared_input.materialized_resources or prepared_input.resources
+            )
             bundle = resource_refs_to_legacy_bundle(
                 data_request,
                 resources_for_bundle,
@@ -393,7 +459,9 @@ def _prepare_required_datasets(
             "bundle": asdict(bundle),
             "assets": assets_payload,
         }
-        _emit_conversion_trace_warning(logger_adapter, data_request.dataset_name, prepared_input)
+        _emit_conversion_trace_warning(
+            logger_adapter, data_request.dataset_name, prepared_input
+        )
         prepared_inputs[data_request.dataset_name] = asdict(prepared_input)
         logger_adapter.emit_stage_end(
             "data_prepare",
@@ -422,7 +490,8 @@ def _is_workflow_manifest_value(output_value: object) -> bool:
     from workflow.schemas import ArtifactRef
 
     return isinstance(output_value, ProductManifest) or (
-        isinstance(output_value, ArtifactRef) and output_value.artifact_type == "product_manifest"
+        isinstance(output_value, ArtifactRef)
+        and output_value.artifact_type == "product_manifest"
     )
 
 
@@ -444,7 +513,9 @@ def _select_workflow_manifest_output(workflow_definition, workflow_result) -> ob
         return manifest_candidates[0]
     if not manifest_candidates:
         raise ValueError("workflow_definition must expose a final manifest output")
-    raise ValueError("workflow_definition exposes multiple manifest outputs; use final_manifest to disambiguate")
+    raise ValueError(
+        "workflow_definition exposes multiple manifest outputs; use final_manifest to disambiguate"
+    )
 
 
 def _build_single_module_workflow(request: JobRequest):
@@ -452,6 +523,31 @@ def _build_single_module_workflow(request: JobRequest):
 
     if not request.module_name:
         raise ValueError("module_name is required to build a single-module workflow")
+
+    input_bindings = {
+        "datasource_selection": "request:datasource_selection",
+        "algorithm_params": "request:algorithm_params",
+        "output_spec_extra": "request:output_spec_extra",
+    }
+
+    # Bind mode-required scalar inputs (e.g. input_mat, dh_mat) so the workflow
+    # validator passes. The "input:{name}" binding resolves from
+    # datasource_selection direct keys, or returns None when the key is absent
+    # (the module then resolves it from _prepared_inputs at runtime).
+    mode = request.algorithm_params.get("mode")
+    if mode is not None:
+        try:
+            from modules.registry import get_module
+
+            module_cls = get_module(request.module_name)
+            mode_inputs = getattr(module_cls, "mode_required_inputs", {}).get(
+                str(mode).lower(), ()
+            )
+            for input_name in mode_inputs:
+                input_bindings[input_name] = f"input:{input_name}"
+        except Exception:
+            pass
+
     return WorkflowDefinition(
         workflow_id=request.workflow_name or f"module::{request.module_name}",
         name=request.workflow_name or request.module_name,
@@ -460,18 +556,22 @@ def _build_single_module_workflow(request: JobRequest):
             WorkflowNodeSpec(
                 node_id="module_node",
                 node_type="module",
-                input_bindings={
-                    "datasource_selection": "request:datasource_selection",
-                    "algorithm_params": "request:algorithm_params",
-                    "output_spec_extra": "request:output_spec_extra",
-                },
+                input_bindings=input_bindings,
                 params={
                     "module_name": request.module_name,
-                    **({"mode": request.algorithm_params.get("mode")} if request.algorithm_params.get("mode") is not None else {}),
+                    **(
+                        {"mode": request.algorithm_params.get("mode")}
+                        if request.algorithm_params.get("mode") is not None
+                        else {}
+                    ),
                 },
             )
         ],
-        outputs=[WorkflowOutputSpec(name="final_manifest", source="node:module_node.manifest")],
+        outputs=[
+            WorkflowOutputSpec(
+                name="final_manifest", source="node:module_node.manifest"
+            )
+        ],
         metadata={"generated_from": "run_job", "module_name": request.module_name},
     )
 
@@ -495,7 +595,9 @@ def _copy_job_request(request: JobRequest) -> JobRequest:
         datasource_selection=dict(request.datasource_selection),
         algorithm_params=dict(request.algorithm_params),
         output_spec=replace(request.output_spec, extra=dict(request.output_spec.extra)),
-        resume_policy=None if request.resume_policy is None else dict(request.resume_policy),
+        resume_policy=None
+        if request.resume_policy is None
+        else dict(request.resume_policy),
         tags=dict(request.tags),
     )
 
@@ -513,7 +615,9 @@ def run_job(
     working_request = _copy_job_request(request)
     started_at = datetime.now(UTC)
     base_workspace = Path(workspace or Path.cwd())
-    resolved_product_sink = product_sink or LocalProductSink(base_workspace / "products" / "manifests")
+    resolved_product_sink = product_sink or LocalProductSink(
+        base_workspace / "products" / "manifests"
+    )
     scheduler_adapter.get_run_context(working_request)
     ctx = build_runtime_context(working_request, base_workspace)
     logger_adapter.bind_context(working_request.job_id, ctx.run_id)
@@ -529,11 +633,23 @@ def run_job(
         ):
             _promote_legacy_pipeline_to_workflow(working_request)
 
-        if working_request.workflow_definition is None and working_request.module_name is not None:
-            working_request.workflow_definition = _build_single_module_workflow(working_request)
-            working_request.workflow_name = working_request.workflow_name or working_request.module_name
-        elif working_request.workflow_definition is None and working_request.workflow_name is not None:
-            working_request.workflow_definition = _resolve_named_workflow(working_request)
+        if (
+            working_request.workflow_definition is None
+            and working_request.module_name is not None
+        ):
+            working_request.workflow_definition = _build_single_module_workflow(
+                working_request
+            )
+            working_request.workflow_name = (
+                working_request.workflow_name or working_request.module_name
+            )
+        elif (
+            working_request.workflow_definition is None
+            and working_request.workflow_name is not None
+        ):
+            working_request.workflow_definition = _resolve_named_workflow(
+                working_request
+            )
 
         if working_request.workflow_definition is not None:
             from workflow.executor import WorkflowRunner
@@ -541,19 +657,29 @@ def run_job(
             from workflow.validation import validate_workflow_definition
 
             error_stage = "dispatch.workflow"
-            workflow_definition = coerce_workflow_definition(working_request.workflow_definition)
+            workflow_definition = coerce_workflow_definition(
+                working_request.workflow_definition
+            )
             validate_workflow_definition(workflow_definition)
             working_request.workflow_definition = workflow_definition
-            request_level_prepared_bundles, request_level_prepared_inputs = _prepare_explicit_data_access_requests(
-                working_request,
-                logger_adapter,
-                cache_root=ctx.cache_dir,
+            request_level_prepared_bundles, request_level_prepared_inputs = (
+                _prepare_explicit_data_access_requests(
+                    working_request,
+                    logger_adapter,
+                    cache_root=ctx.cache_dir,
+                )
             )
             if request_level_prepared_bundles:
-                working_request.datasource_selection[_PREPARED_BUNDLES_KEY] = request_level_prepared_bundles
+                working_request.datasource_selection[_PREPARED_BUNDLES_KEY] = (
+                    request_level_prepared_bundles
+                )
             if request_level_prepared_inputs:
-                working_request.datasource_selection[_PREPARED_INPUTS_KEY] = request_level_prepared_inputs
-            workflow_name = working_request.workflow_name or workflow_definition.workflow_id
+                working_request.datasource_selection[_PREPARED_INPUTS_KEY] = (
+                    request_level_prepared_inputs
+                )
+            workflow_name = (
+                working_request.workflow_name or workflow_definition.workflow_id
+            )
             scheduler_adapter.update_status(
                 working_request.job_id,
                 ctx.run_id,
@@ -565,20 +691,32 @@ def run_job(
                     "output_count": len(workflow_definition.outputs),
                 },
             )
-            logger_adapter.emit_stage_start("workflow_dispatch", f"Execute workflow {workflow_name}")
+            logger_adapter.emit_stage_start(
+                "workflow_dispatch", f"Execute workflow {workflow_name}"
+            )
             workflow_runner = WorkflowRunner(
                 datasource_adapter=datasource_adapter,
                 logger_adapter=logger_adapter,
                 product_sink=resolved_product_sink,
             )
-            workflow_result = workflow_runner.run(workflow_definition, working_request, ctx)
+            workflow_result = workflow_runner.run(
+                workflow_definition, working_request, ctx
+            )
             if not workflow_definition.outputs:
                 raise ValueError("workflow_definition.outputs must not be empty")
-            manifest_value = _select_workflow_manifest_output(workflow_definition, workflow_result)
-            manifest = _resolve_workflow_manifest_payload(manifest_value, workflow_runner)
-            conversion_trace_metrics = _attach_conversion_trace_to_manifest(manifest, request_level_prepared_inputs)
+            manifest_value = _select_workflow_manifest_output(
+                workflow_definition, workflow_result
+            )
+            manifest = _resolve_workflow_manifest_payload(
+                manifest_value, workflow_runner
+            )
+            conversion_trace_metrics = _attach_conversion_trace_to_manifest(
+                manifest, request_level_prepared_inputs
+            )
             manifest_uri = resolved_product_sink.write_manifest(manifest)
-            logger_adapter.emit_artifact("dispatch.workflow", manifest_uri, "job_manifest")
+            logger_adapter.emit_artifact(
+                "dispatch.workflow", manifest_uri, "job_manifest"
+            )
             logger_adapter.emit_stage_end("workflow_dispatch", "Workflow finished")
             workflow_metrics = {
                 "workflow_id": workflow_definition.workflow_id,
@@ -626,21 +764,33 @@ def run_job(
             acquire_mode=plan.cache_requirement,
             cache_root=ctx.cache_dir,
         )
-        explicit_prepared_bundles, explicit_prepared_inputs = _prepare_explicit_data_access_requests(
-            working_request,
-            logger_adapter,
-            cache_root=ctx.cache_dir,
-            excluded_datasets=set(plan.required_datasets),
+        explicit_prepared_bundles, explicit_prepared_inputs = (
+            _prepare_explicit_data_access_requests(
+                working_request,
+                logger_adapter,
+                cache_root=ctx.cache_dir,
+                excluded_datasets=set(plan.required_datasets),
+            )
         )
-        prepared_bundles = _merge_prepared_payloads(prepared_bundles, explicit_prepared_bundles)
-        prepared_inputs = _merge_prepared_payloads(prepared_inputs, explicit_prepared_inputs)
+        prepared_bundles = _merge_prepared_payloads(
+            prepared_bundles, explicit_prepared_bundles
+        )
+        prepared_inputs = _merge_prepared_payloads(
+            prepared_inputs, explicit_prepared_inputs
+        )
         if prepared_bundles:
-            working_request.datasource_selection[_PREPARED_BUNDLES_KEY] = prepared_bundles
+            working_request.datasource_selection[_PREPARED_BUNDLES_KEY] = (
+                prepared_bundles
+            )
         if prepared_inputs:
             working_request.datasource_selection[_PREPARED_INPUTS_KEY] = prepared_inputs
-        logger_adapter.emit_stage_start("pipeline_dispatch", f"Execute {working_request.pipeline_name}")
+        logger_adapter.emit_stage_start(
+            "pipeline_dispatch", f"Execute {working_request.pipeline_name}"
+        )
         manifest = pipeline.execute(working_request, ctx)
-        pipeline_conversion_trace_metrics = _attach_conversion_trace_to_manifest(manifest, prepared_inputs)
+        pipeline_conversion_trace_metrics = _attach_conversion_trace_to_manifest(
+            manifest, prepared_inputs
+        )
         manifest_uri = resolved_product_sink.write_manifest(manifest)
         logger_adapter.emit_artifact("dispatch.pipeline", manifest_uri, "job_manifest")
         logger_adapter.emit_stage_end("pipeline_dispatch", "Pipeline finished")
@@ -651,19 +801,26 @@ def run_job(
             started_at=started_at,
             finished_at=datetime.now(UTC),
             manifest_uri=manifest_uri,
-            metrics={"conversion_trace": pipeline_conversion_trace_metrics} if pipeline_conversion_trace_metrics else {},
+            metrics={"conversion_trace": pipeline_conversion_trace_metrics}
+            if pipeline_conversion_trace_metrics
+            else {},
         )
         scheduler_adapter.complete(result)
         return result
     except Exception as exc:
         # Sprint 3.5: 编程 bug（AttributeError/NameError/TypeError/ImportError/SyntaxError）
         # 必须向上传播，避免被掩盖为 job 失败；其余运行时异常（网络/数据/IO）降级为 JobResult(failed)。
-        if isinstance(exc, (AttributeError, NameError, TypeError, ImportError, SyntaxError)):
+        if isinstance(
+            exc, (AttributeError, NameError, TypeError, ImportError, SyntaxError)
+        ):
             raise
         logger_adapter.emit_error(
             error_stage,
             str(exc),
-            extra={"exception_type": type(exc).__name__, "call_chain": list(ctx.call_chain)},
+            extra={
+                "exception_type": type(exc).__name__,
+                "call_chain": list(ctx.call_chain),
+            },
         )
         result = JobResult(
             job_id=working_request.job_id,

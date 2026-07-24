@@ -49,7 +49,9 @@ PRESSURE_LAYER_IDS: frozenset[str] = frozenset(
     }
 )
 
-COMMERCIAL_LAYER_IDS: frozenset[str] = SURFACE_LAYER_IDS | HEIGHT_LAYER_IDS | PRESSURE_LAYER_IDS
+COMMERCIAL_LAYER_IDS: frozenset[str] = (
+    SURFACE_LAYER_IDS | HEIGHT_LAYER_IDS | PRESSURE_LAYER_IDS
+)
 
 DataQuality = Literal["observed", "extrapolated", "sparse"]
 
@@ -72,6 +74,33 @@ _PRESSURE_WIND_SUFFIX: dict[str, str] = {
 # Hellmann / power-law exponent for open terrain (≈0.14).
 _WIND_POWER_LAW_ALPHA = 0.14
 _REF_WIND_HEIGHT_M = 10.0
+
+# Standard environmental lapse rate: -6.5 °C per 1000 m altitude increase.
+_ENV_LAPSE_RATE_PER_M = -6.5 / 1000.0
+_REF_TEMP_HEIGHT_M = 2.0
+
+
+def extrapolate_temperature_lapse_rate(
+    temp_2m: float | None,
+    *,
+    target_height_m: float,
+    lapse_rate: float = _ENV_LAPSE_RATE_PER_M,
+) -> float | None:
+    """Extrapolate temperature at ``target_height_m`` from 2 m using lapse rate.
+
+    Uses the standard environmental lapse rate (-6.5 °C/km). At 180 m AGL
+    the correction is ≈ -1.16 °C, which is small but more physically accurate
+    than directly copying the 2 m value.
+    """
+    if temp_2m is None:
+        return None
+    try:
+        t = float(temp_2m)
+    except (TypeError, ValueError):
+        return None
+    if target_height_m <= _REF_TEMP_HEIGHT_M:
+        return t
+    return t + (target_height_m - _REF_TEMP_HEIGHT_M) * lapse_rate
 
 
 def commercial_data_quality(layer_id: str) -> DataQuality:
@@ -114,7 +143,9 @@ def extrapolate_wind_speed_power_law(
     return s * (target_height_m / _REF_WIND_HEIGHT_M) ** alpha
 
 
-def apply_commercial_height_extrapolation(payload: dict[str, Any], layer_id: str) -> dict[str, Any]:
+def apply_commercial_height_extrapolation(
+    payload: dict[str, Any], layer_id: str
+) -> dict[str, Any]:
     """Mutate OM-style point payload: copy/extrapolate surface → height fields."""
     if layer_id not in HEIGHT_LAYER_IDS:
         return payload
@@ -127,7 +158,9 @@ def apply_commercial_height_extrapolation(payload: dict[str, Any], layer_id: str
         speed_key = f"wind_speed_{suffix}"
         dir_key = f"wind_direction_{suffix}"
         base_speed = current.get("wind_speed_10m")
-        current[speed_key] = extrapolate_wind_speed_power_law(base_speed, target_height_m=target_h)
+        current[speed_key] = extrapolate_wind_speed_power_law(
+            base_speed, target_height_m=target_h
+        )
         # 仅当 current 真正提供 wind_direction_10m 时才外推方向；否则不写 dir_key，
         # 避免写入 None 让下游误判为“有数据但无值”。与 hourly 部分守卫一致。
         if "wind_direction_10m" in current:
@@ -167,13 +200,20 @@ def apply_commercial_height_extrapolation(payload: dict[str, Any], layer_id: str
     elif layer_id in _HEIGHT_TEMP_SUFFIX:
         suffix = _HEIGHT_TEMP_SUFFIX[layer_id]
         temp_key = f"temperature_{suffix}"
-        # Commercial APIs lack hub-height temp → use 2 m as proxy (documented as extrapolated).
-        current[temp_key] = current.get("temperature_2m")
+        # Commercial APIs lack hub-height temp → extrapolate from 2 m using
+        # the standard environmental lapse rate (-6.5 °C/km).
+        target_h = _height_meters_from_suffix(suffix)
+        current[temp_key] = extrapolate_temperature_lapse_rate(
+            current.get("temperature_2m"), target_height_m=target_h
+        )
         if "temperature_2m" in hourly:
             times = hourly.get("time") or []
             base = hourly.get("temperature_2m") or []
             hourly[temp_key] = [
-                base[i] if i < len(base) else None for i in range(len(times) or len(base))
+                extrapolate_temperature_lapse_rate(
+                    base[i] if i < len(base) else None, target_height_m=target_h
+                )
+                for i in range(len(times) or len(base))
             ]
 
     payload["data_quality"] = "extrapolated"
@@ -205,7 +245,10 @@ def ensure_hub_height_wind_in_grid_arrays(
     if (
         isinstance(base_speed, list)
         and base_speed
-        and (not isinstance(speed_series, list) or not any(v is not None for v in speed_series))
+        and (
+            not isinstance(speed_series, list)
+            or not any(v is not None for v in speed_series)
+        )
     ):
         current[speed_key] = [
             extrapolate_wind_speed_power_law(
@@ -214,10 +257,13 @@ def ensure_hub_height_wind_in_grid_arrays(
             )
             for i in range(len(base_speed))
         ]
-        if "wind_direction_10m" in current and isinstance(current["wind_direction_10m"], list):
+        if "wind_direction_10m" in current and isinstance(
+            current["wind_direction_10m"], list
+        ):
             base_dir = current["wind_direction_10m"]
             current[dir_key] = [
-                base_dir[i] if i < len(base_dir) else None for i in range(len(base_speed))
+                base_dir[i] if i < len(base_dir) else None
+                for i in range(len(base_speed))
             ]
         filled = True
         logger.info(
@@ -230,7 +276,8 @@ def ensure_hub_height_wind_in_grid_arrays(
     hourly_speed = hourly.get(speed_key)
     if isinstance(hourly_base, list) and hourly_base:
         need_hourly = not isinstance(hourly_speed, list) or not any(
-            isinstance(pt, list) and any(v is not None for v in pt) for pt in hourly_speed
+            isinstance(pt, list) and any(v is not None for v in pt)
+            for pt in hourly_speed
         )
         if need_hourly:
             hourly[speed_key] = [
@@ -240,7 +287,9 @@ def ensure_hub_height_wind_in_grid_arrays(
                 ]
                 for pt in hourly_base
             ]
-            if "wind_direction_10m" in hourly and isinstance(hourly["wind_direction_10m"], list):
+            if "wind_direction_10m" in hourly and isinstance(
+                hourly["wind_direction_10m"], list
+            ):
                 hourly[dir_key] = [
                     list(pt) if isinstance(pt, list) else []
                     for pt in hourly["wind_direction_10m"]
@@ -249,6 +298,78 @@ def ensure_hub_height_wind_in_grid_arrays(
             logger.info(
                 "ensure_hub_height_wind_in_grid_arrays: filled hourly %s from 10m for layer=%s",
                 speed_key,
+                layer_id,
+            )
+
+    return filled
+
+
+def ensure_hub_height_temperature_in_grid_arrays(
+    current: dict[str, list[Any]],
+    hourly: dict[str, list[Any]],
+    layer_id: str,
+) -> bool:
+    """Fill all-null hub-height temperature arrays from 2 m via lapse rate (in-place).
+
+    ECMWF IFS 等模型不提供 ``temperature_80m/120m/180m``（返回全 null），
+    但提供 ``temperature_2m``。使用标准环境递减率 (-6.5 °C/km) 外推，
+    保证网格瓦片在默认模型下仍可渲染。与风场的 ``ensure_hub_height_wind_in_grid_arrays`` 对齐。
+    """
+    if layer_id not in _HEIGHT_TEMP_SUFFIX:
+        return False
+    suffix = _HEIGHT_TEMP_SUFFIX[layer_id]
+    target_h = _height_meters_from_suffix(suffix)
+    temp_key = f"temperature_{suffix}"
+    filled = False
+
+    base_temp = current.get("temperature_2m")
+    temp_series = current.get(temp_key)
+    if (
+        isinstance(base_temp, list)
+        and base_temp
+        and (
+            not isinstance(temp_series, list)
+            or not any(v is not None for v in temp_series)
+        )
+    ):
+        current[temp_key] = [
+            extrapolate_temperature_lapse_rate(
+                base_temp[i] if i < len(base_temp) else None,
+                target_height_m=target_h,
+            )
+            for i in range(len(base_temp))
+        ]
+        filled = True
+        logger.info(
+            "ensure_hub_height_temperature_in_grid_arrays: filled current %s from 2m for layer=%s",
+            temp_key,
+            layer_id,
+        )
+
+    hourly_base = hourly.get("temperature_2m")
+    hourly_temp = hourly.get(temp_key)
+    if isinstance(hourly_base, list) and hourly_base:
+        need_hourly = (
+            not isinstance(hourly_temp, list)
+            or not any(
+                isinstance(pt, list) and any(v is not None for v in pt)
+                for pt in hourly_temp
+            )
+            if isinstance(hourly_temp, list)
+            else True
+        )
+        if need_hourly:
+            hourly[temp_key] = [
+                [
+                    extrapolate_temperature_lapse_rate(v, target_height_m=target_h)
+                    for v in (pt if isinstance(pt, list) else [])
+                ]
+                for pt in hourly_base
+            ]
+            filled = True
+            logger.info(
+                "ensure_hub_height_temperature_in_grid_arrays: filled hourly %s from 2m for layer=%s",
+                temp_key,
                 layer_id,
             )
 
@@ -464,8 +585,12 @@ def assemble_grid_from_point_payloads(
     """Assemble OM-style ``grid_data`` from per-point forecast payloads."""
     rows, cols = len(lats), len(lons)
     total = rows * cols
-    all_current: dict[str, list[Any | None]] = {f: [None] * total for f in current_fields}
-    all_hourly: dict[str, list[list[Any | None]]] = {f: [[] for _ in range(total)] for f in hourly_fields}
+    all_current: dict[str, list[Any | None]] = {
+        f: [None] * total for f in current_fields
+    }
+    all_hourly: dict[str, list[list[Any | None]]] = {
+        f: [[] for _ in range(total)] for f in hourly_fields
+    }
     hourly_times_ref: list[str] = []
 
     for idx, payload in enumerate(point_payloads):

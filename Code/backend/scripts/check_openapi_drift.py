@@ -54,7 +54,12 @@ def _load_committed_openapi(code_root: Path) -> dict[str, Any]:
 def _critical_paths(paths: dict[str, Any]) -> dict[str, Any]:
     selected: dict[str, Any] = {}
     for path, definition in paths.items():
-        if any(path == prefix or path.startswith(prefix + "/") or path.startswith(prefix + "{") for prefix in CRITICAL_PREFIXES):
+        if any(
+            path == prefix
+            or path.startswith(prefix + "/")
+            or path.startswith(prefix + "{")
+            for prefix in CRITICAL_PREFIXES
+        ):
             selected[path] = definition
         elif any(path.startswith(prefix) for prefix in CRITICAL_PREFIXES):
             selected[path] = definition
@@ -67,7 +72,8 @@ def _path_methods(paths: dict[str, Any]) -> dict[str, list[str]]:
         methods = sorted(
             key.lower()
             for key in definition
-            if key.lower() in {"get", "post", "put", "patch", "delete", "head", "options"}
+            if key.lower()
+            in {"get", "post", "put", "patch", "delete", "head", "options"}
         )
         result[path] = methods
     return result
@@ -83,9 +89,13 @@ def _diff_paths(live: dict[str, Any], committed: dict[str, Any]) -> list[str]:
     missing_in_committed = sorted(live_keys - committed_keys)
     missing_in_live = sorted(committed_keys - live_keys)
     if missing_in_committed:
-        issues.append(f"Paths in live app but missing from openapi.json: {missing_in_committed}")
+        issues.append(
+            f"Paths in live app but missing from openapi.json: {missing_in_committed}"
+        )
     if missing_in_live:
-        issues.append(f"Paths in openapi.json but missing from live app: {missing_in_live}")
+        issues.append(
+            f"Paths in openapi.json but missing from live app: {missing_in_live}"
+        )
 
     for path in sorted(live_keys & committed_keys):
         if live_methods[path] != committed_methods[path]:

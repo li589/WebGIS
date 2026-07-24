@@ -65,14 +65,18 @@ def _explain_no_bridge(payload: WorkflowSubmitRequest) -> str:
     )
 
 
-def _find_bridge_handler(payload: WorkflowSubmitRequest) -> tuple[Callable[..., WorkflowExecutionResult], str] | None:
+def _find_bridge_handler(
+    payload: WorkflowSubmitRequest,
+) -> tuple[Callable[..., WorkflowExecutionResult], str] | None:
     for bridge, channel in _BRIDGE_CHAIN:
         if bridge.supports(payload):
             return bridge.execute, channel
     return None
 
 
-def _resolve_workflow_handler(payload: WorkflowSubmitRequest) -> Callable[..., WorkflowExecutionResult]:
+def _resolve_workflow_handler(
+    payload: WorkflowSubmitRequest,
+) -> Callable[..., WorkflowExecutionResult]:
     bridge_match = _find_bridge_handler(payload)
     if bridge_match is not None:
         handler, _channel = bridge_match
@@ -80,7 +84,9 @@ def _resolve_workflow_handler(payload: WorkflowSubmitRequest) -> Callable[..., W
     raise ValueError(_explain_no_bridge(payload))
 
 
-def execute_workflow_task(*, run_id: str, payload: WorkflowSubmitRequest, requested_at, event_factory) -> WorkflowExecutionResult:
+def execute_workflow_task(
+    *, run_id: str, payload: WorkflowSubmitRequest, requested_at, event_factory
+) -> WorkflowExecutionResult:
     handler = _resolve_workflow_handler(payload)
     return handler(
         run_id=run_id,
@@ -146,7 +152,10 @@ def resolve_workflow_queue(payload: WorkflowSubmitRequest) -> str:
             )
         return queue_tag
     channel = resolve_workflow_channel(payload)
-    is_realtime = payload.realtime_preferred or payload.priority in {WorkflowPriority.high, WorkflowPriority.critical}
+    is_realtime = payload.realtime_preferred or payload.priority in {
+        WorkflowPriority.high,
+        WorkflowPriority.critical,
+    }
     slot = _resolve_profile_slot(payload.resource_profile, is_realtime)
     queue_attr = _CHANNEL_PROFILE_QUEUE_MAP.get((channel, slot))
     if queue_attr is None:
@@ -170,7 +179,11 @@ def _is_valid_queue_tag(queue_tag: str) -> bool:
     """
     # 形式 2：channel-slot 模式
     parts = queue_tag.split("-", 1)
-    if len(parts) == 2 and parts[0] in _VALID_QUEUE_CHANNELS and parts[1] in _VALID_QUEUE_SLOTS:
+    if (
+        len(parts) == 2
+        and parts[0] in _VALID_QUEUE_CHANNELS
+        and parts[1] in _VALID_QUEUE_SLOTS
+    ):
         return True
     # 形式 1：settings 中已注册的队列值
     for attr_name in dir(settings):
@@ -183,7 +196,18 @@ def _is_valid_queue_tag(queue_tag: str) -> bool:
 
 if celery_available and celery_app is not None:
 
-    @celery_app.task(name="app.tasks.workflow_tasks.process_workflow_run")
+    @celery_app.task(
+        name="app.tasks.workflow_tasks.process_workflow_run",
+        # acks_late：任务完成（成功/失败）后才 ack，worker 崩溃时任务自动重投，
+        # 防止 run_id 永久卡在 running 状态。配合 process_workflow_run 入口的
+        # 幂等检查（终态 run 直接跳过）避免重复执行。
+        acks_late=True,
+        # worker 进程丢失时把任务 reject 回队列，触发重投。
+        reject_on_worker_lost=True,
+        # 业务失败（非崩溃）不重新入队：失败已由 lifecycle 记录为终态，
+        # 重投只会被幂等检查跳过，徒增无效负载。
+        acks_on_failure_or_timeout=False,
+    )
     def process_workflow_run_task(run_id: str, payload_data: dict[str, Any]) -> None:
         from app.services.workflow.service_container import submission_service
 
@@ -193,12 +217,18 @@ if celery_available and celery_app is not None:
 else:
 
     def process_workflow_run_task(run_id: str, payload_data: dict[str, Any]) -> None:
-        raise RuntimeError("Celery is not installed. Install backend dependencies before using celery executor.")
+        raise RuntimeError(
+            "Celery is not installed. Install backend dependencies before using celery executor."
+        )
 
 
-def dispatch_workflow_task(run_id: str, payload: WorkflowSubmitRequest, *, countdown: float | None = None) -> str:
+def dispatch_workflow_task(
+    run_id: str, payload: WorkflowSubmitRequest, *, countdown: float | None = None
+) -> str:
     if not celery_available or celery_app is None:
-        raise RuntimeError("Celery is not installed. Install backend dependencies before using celery executor.")
+        raise RuntimeError(
+            "Celery is not installed. Install backend dependencies before using celery executor."
+        )
 
     apply_async_kwargs: dict[str, Any] = {
         "kwargs": {"run_id": run_id, "payload_data": payload.model_dump(mode="json")},

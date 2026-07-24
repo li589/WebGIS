@@ -9,27 +9,51 @@ from time import perf_counter
 
 import numpy as np
 
-from algorithms.omega import OmegaConfig, execute_omega_retrieval, make_date_blocks, retrieve_omega_pixel_timeseries
+from algorithms.omega import (
+    OmegaConfig,
+    execute_omega_retrieval,
+    make_date_blocks,
+    retrieve_omega_pixel_timeseries,
+)
 
 
 def _build_date_keys(nt: int, step_days: int) -> list[str]:
     start = datetime(2020, 1, 1)
-    return [(start + timedelta(days=step_days * idx)).strftime("%Y%m%d") for idx in range(nt)]
+    return [
+        (start + timedelta(days=step_days * idx)).strftime("%Y%m%d")
+        for idx in range(nt)
+    ]
 
 
-def _build_payload(nt: int, npix: int, *, dual_temp: bool, seed: int) -> dict[str, object]:
+def _build_payload(
+    nt: int, npix: int, *, dual_temp: bool, seed: int
+) -> dict[str, object]:
     rng = np.random.default_rng(seed)
     time_axis = np.linspace(0.0, 2.0 * np.pi, nt, dtype=np.float64).reshape(nt, 1)
     pixel_phase = rng.uniform(0.0, np.pi, size=(1, npix))
     pixel_scale = rng.uniform(0.85, 1.15, size=(1, npix))
 
-    sm_ref = np.clip(0.22 + 0.05 * np.sin(time_axis + pixel_phase) + 0.01 * rng.standard_normal((nt, npix)), 0.05, 0.45)
+    sm_ref = np.clip(
+        0.22
+        + 0.05 * np.sin(time_axis + pixel_phase)
+        + 0.01 * rng.standard_normal((nt, npix)),
+        0.05,
+        0.45,
+    )
     ndvi = np.clip(0.42 + 0.25 * np.sin(time_axis + 0.5 * pixel_phase), 0.10, 0.82)
     ia = np.clip(40.0 + 6.0 * np.cos(time_axis * 0.5 + pixel_phase), 25.0, 55.0)
-    ts = 294.0 + 7.0 * np.sin(time_axis - 0.3 * pixel_phase) * pixel_scale + 0.6 * rng.standard_normal((nt, npix))
+    ts = (
+        294.0
+        + 7.0 * np.sin(time_axis - 0.3 * pixel_phase) * pixel_scale
+        + 0.6 * rng.standard_normal((nt, npix))
+    )
     tau_shape = 0.45 + 0.18 * np.sin(time_axis + pixel_phase)
-    tbv = 238.0 + 18.0 * tau_shape + 6.0 * sm_ref + 0.8 * rng.standard_normal((nt, npix))
-    tbh = 228.0 + 14.0 * tau_shape + 4.0 * sm_ref + 0.8 * rng.standard_normal((nt, npix))
+    tbv = (
+        238.0 + 18.0 * tau_shape + 6.0 * sm_ref + 0.8 * rng.standard_normal((nt, npix))
+    )
+    tbh = (
+        228.0 + 14.0 * tau_shape + 4.0 * sm_ref + 0.8 * rng.standard_normal((nt, npix))
+    )
     sf = np.clip(0.05 + 0.015 * np.cos(time_axis + pixel_phase), 0.01, 0.10)
 
     albedo = np.clip(0.08 + 0.02 * rng.standard_normal(npix), 0.03, 0.16)
@@ -92,7 +116,9 @@ def _measure_trials(func, trials: int, *, warmup: int = 0) -> tuple[np.ndarray, 
     return samples, result
 
 
-def _measure_timed_trials(func, repeats: int, trials: int, *, warmup: int = 0) -> tuple[np.ndarray, object]:
+def _measure_timed_trials(
+    func, repeats: int, trials: int, *, warmup: int = 0
+) -> tuple[np.ndarray, object]:
     result = None
     for _ in range(max(0, warmup)):
         _, result = _time_call(func, repeats)
@@ -132,8 +158,12 @@ def _profile_single_pixel_paths(
     tbh_mat = np.asarray(payload["TBh_mat"], dtype=np.float64)
     ia_mat = np.asarray(payload["IA_mat"], dtype=np.float64)
     ts_mat = np.asarray(payload["Ts_mat"], dtype=np.float64)
-    tc_mat = np.asarray(payload["TC_mat"], dtype=np.float64) if "TC_mat" in payload else None
-    tg_mat = np.asarray(payload["TG_mat"], dtype=np.float64) if "TG_mat" in payload else None
+    tc_mat = (
+        np.asarray(payload["TC_mat"], dtype=np.float64) if "TC_mat" in payload else None
+    )
+    tg_mat = (
+        np.asarray(payload["TG_mat"], dtype=np.float64) if "TG_mat" in payload else None
+    )
     smref_mat = np.asarray(payload["SMref_mat"], dtype=np.float64)
     ndvi_mat = np.asarray(payload["NDVI_mat"], dtype=np.float64)
     sf_mat = np.asarray(payload["SF_mat"], dtype=np.float64)
@@ -148,12 +178,17 @@ def _profile_single_pixel_paths(
     fixed_omega = np.asarray(payload["omega_fixed_vec"], dtype=np.float64).reshape(-1)
     exp0_h = np.asarray(payload["h_exp0_vec"], dtype=np.float64).reshape(-1)
     exp0_alpha = np.asarray(payload["alpha_exp0_vec"], dtype=np.float64).reshape(-1)
-    date_keys = [str(value) for value in np.asarray(payload["date_keys"]).reshape(-1).tolist()]
+    date_keys = [
+        str(value) for value in np.asarray(payload["date_keys"]).reshape(-1).tolist()
+    ]
 
     blocks, block_start_dates = make_date_blocks(date_keys, config.block_days)
     block_index_arrays = [np.asarray(block, dtype=np.int64) for block in blocks]
     precomputed_blocks = (blocks, block_start_dates, block_index_arrays)
-    precomputed_modes = (str(config.exp_mode).upper(), str(config.temp_scheme).upper() == "DUAL")
+    precomputed_modes = (
+        str(config.exp_mode).upper(),
+        str(config.temp_scheme).upper() == "DUAL",
+    )
     pixel_indices = _sample_pixel_indices(tbv_mat.shape[1], sample_count)
 
     def _run_once() -> list[dict[str, object]]:
@@ -177,7 +212,9 @@ def _profile_single_pixel_paths(
                 clay_fraction_value=float(clay_fraction[j]),
                 bulk_density_value=float(bulk_density[j]),
                 h_static_value=float(h_static[j]),
-                fixed_omega_value=float(fixed_omega[j]) if np.isfinite(fixed_omega[j]) else float("nan"),
+                fixed_omega_value=float(fixed_omega[j])
+                if np.isfinite(fixed_omega[j])
+                else float("nan"),
                 exp0_h_value=float(exp0_h[j]),
                 exp0_alpha_value=float(exp0_alpha[j]),
                 config=config,
@@ -187,7 +224,9 @@ def _profile_single_pixel_paths(
             for j in pixel_indices
         ]
 
-    samples, results = _measure_timed_trials(_run_once, repeats, trial_count, warmup=warmup)
+    samples, results = _measure_timed_trials(
+        _run_once, repeats, trial_count, warmup=warmup
+    )
     elapsed = float(samples[-1])
     per_trial_avg_ms = samples * 1000.0 / max(1, repeats * pixel_indices.size)
     print(
@@ -204,7 +243,14 @@ def _profile_single_pixel_paths(
             "max_ms_per_pixel": round(float(np.max(per_trial_avg_ms)), 3),
             "trial_summary": _summarize_samples(samples),
             "mean_n_use": round(
-                float(np.nanmean([np.asarray(item["n_use"], dtype=np.float64) for item in results])),
+                float(
+                    np.nanmean(
+                        [
+                            np.asarray(item["n_use"], dtype=np.float64)
+                            for item in results
+                        ]
+                    )
+                ),
                 3,
             ),
         },
@@ -245,7 +291,9 @@ def _profile_execute_omega_retrieval(
     )
 
 
-def _run_cprofile(payload: dict[str, object], config: OmegaConfig, sort_by: str, top_n: int) -> None:
+def _run_cprofile(
+    payload: dict[str, object], config: OmegaConfig, sort_by: str, top_n: int
+) -> None:
     profiler = cProfile.Profile()
     profiler.enable()
     execute_omega_retrieval(payload, config=config)
@@ -256,27 +304,71 @@ def _run_cprofile(payload: dict[str, object], config: OmegaConfig, sort_by: str,
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Profile omega retrieval with synthetic but realistic timeseries shapes.")
+    parser = argparse.ArgumentParser(
+        description="Profile omega retrieval with synthetic but realistic timeseries shapes."
+    )
     parser.add_argument("--nt", type=int, default=64, help="Number of timesteps.")
     parser.add_argument("--npix", type=int, default=192, help="Number of pixels.")
-    parser.add_argument("--repeats", type=int, default=3, help="Full retrieval repeats.")
-    parser.add_argument("--pixel-repeats", type=int, default=4, help="Single-pixel solver repeats.")
-    parser.add_argument("--pixel-samples", type=int, default=8, help="Number of sampled pixels for solver timing.")
-    parser.add_argument("--trial-count", type=int, default=5, help="Number of repeated timing trials for each profile section.")
-    parser.add_argument("--warmup", type=int, default=1, help="Warmup runs before timing trials.")
+    parser.add_argument(
+        "--repeats", type=int, default=3, help="Full retrieval repeats."
+    )
+    parser.add_argument(
+        "--pixel-repeats", type=int, default=4, help="Single-pixel solver repeats."
+    )
+    parser.add_argument(
+        "--pixel-samples",
+        type=int,
+        default=8,
+        help="Number of sampled pixels for solver timing.",
+    )
+    parser.add_argument(
+        "--trial-count",
+        type=int,
+        default=5,
+        help="Number of repeated timing trials for each profile section.",
+    )
+    parser.add_argument(
+        "--warmup", type=int, default=1, help="Warmup runs before timing trials."
+    )
     parser.add_argument("--block-days", type=int, default=8, help="Block size in days.")
-    parser.add_argument("--temp-scheme", choices=("ORIG_TS", "DUAL"), default="ORIG_TS", help="Temperature scheme.")
-    parser.add_argument("--exp-mode", choices=("Exp0", "Exp1A", "Exp1B", "Exp2"), default="Exp2", help="Experiment mode.")
-    parser.add_argument("--lambda-list", type=str, default="1,10,100,1000", help="Comma-separated lambda candidates.")
+    parser.add_argument(
+        "--temp-scheme",
+        choices=("ORIG_TS", "DUAL"),
+        default="ORIG_TS",
+        help="Temperature scheme.",
+    )
+    parser.add_argument(
+        "--exp-mode",
+        choices=("Exp0", "Exp1A", "Exp1B", "Exp2"),
+        default="Exp2",
+        help="Experiment mode.",
+    )
+    parser.add_argument(
+        "--lambda-list",
+        type=str,
+        default="1,10,100,1000",
+        help="Comma-separated lambda candidates.",
+    )
     parser.add_argument("--seed", type=int, default=7, help="Random seed.")
-    parser.add_argument("--cprofile", action="store_true", help="Run cProfile for one execute_omega_retrieval call.")
+    parser.add_argument(
+        "--cprofile",
+        action="store_true",
+        help="Run cProfile for one execute_omega_retrieval call.",
+    )
     parser.add_argument("--cprofile-sort", default="tottime", help="cProfile sort key.")
-    parser.add_argument("--cprofile-top", type=int, default=20, help="Number of cProfile entries to print.")
+    parser.add_argument(
+        "--cprofile-top",
+        type=int,
+        default=20,
+        help="Number of cProfile entries to print.",
+    )
     args = parser.parse_args()
 
     dual_temp = args.temp_scheme.upper() == "DUAL"
     payload = _build_payload(args.nt, args.npix, dual_temp=dual_temp, seed=args.seed)
-    lambda_list = tuple(float(item.strip()) for item in args.lambda_list.split(",") if item.strip())
+    lambda_list = tuple(
+        float(item.strip()) for item in args.lambda_list.split(",") if item.strip()
+    )
     config = replace(
         OmegaConfig(),
         temp_scheme=args.temp_scheme,
@@ -306,7 +398,9 @@ def main() -> None:
         args.trial_count,
         args.warmup,
     )
-    _profile_execute_omega_retrieval(payload, config, args.repeats, args.trial_count, args.warmup)
+    _profile_execute_omega_retrieval(
+        payload, config, args.repeats, args.trial_count, args.warmup
+    )
     if args.cprofile:
         _run_cprofile(payload, config, args.cprofile_sort, args.cprofile_top)
 

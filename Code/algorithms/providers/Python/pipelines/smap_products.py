@@ -11,7 +11,9 @@ from pipelines.base import BasePipeline, PipelinePlan
 
 
 def _resolve_smap_input_dir(datasource_selection: dict[str, object]) -> Path:
-    prepared_dir = resolve_prepared_local_directory(datasource_selection, ("SMAP_SPL3SMP_E",))
+    prepared_dir = resolve_prepared_local_directory(
+        datasource_selection, ("SMAP_SPL3SMP_E",)
+    )
     if prepared_dir is not None:
         return prepared_dir
     input_dir = datasource_selection.get("input_dir")
@@ -26,7 +28,17 @@ class SmapDailyPipeline(BasePipeline):
     def plan(self, request: JobRequest, ctx: RuntimeContext) -> PipelinePlan:
         return PipelinePlan(
             required_datasets=["SMAP_SPL3SMP_E"],
-            required_variables=["TBh", "TBv", "Ts", "vwc", "IA", "sm_dca", "sm_scav", "vod_dca", "vod_sca"],
+            required_variables=[
+                "TBh",
+                "TBv",
+                "Ts",
+                "vwc",
+                "IA",
+                "sm_dca",
+                "sm_scav",
+                "vod_dca",
+                "vod_sca",
+            ],
             estimated_outputs=["smap_daily_mat"],
             parallelizable=True,
             chunk_strategy="file_level",
@@ -35,9 +47,15 @@ class SmapDailyPipeline(BasePipeline):
 
     def execute(self, request: JobRequest, ctx: RuntimeContext) -> ProductManifest:
         input_dir = _resolve_smap_input_dir(request.datasource_selection)
-        output_dir = Path(request.output_spec.extra.get("output_dir", ctx.workspace / "products" / "smap_daily"))
+        output_dir = Path(
+            request.output_spec.extra.get(
+                "output_dir", ctx.workspace / "products" / "smap_daily"
+            )
+        )
         if self.logger_adapter is not None:
-            self.logger_adapter.emit_stage_start("smap_extract", f"Extract SMAP L3 from {input_dir}")
+            self.logger_adapter.emit_stage_start(
+                "smap_extract", f"Extract SMAP L3 from {input_dir}"
+            )
         outputs = convert_smap_l3_directory_to_mat(
             input_dir=input_dir,
             output_dir=output_dir,
@@ -57,14 +75,28 @@ class SmapDailyPipeline(BasePipeline):
         ]
         if self.logger_adapter is not None:
             for output_path in outputs:
-                self.logger_adapter.emit_artifact("smap_extract", str(output_path), "smap_daily_mat")
-            self.logger_adapter.emit_stage_end("smap_extract", f"Generated {len(outputs)} SMAP daily files")
+                self.logger_adapter.emit_artifact(
+                    "smap_extract", str(output_path), "smap_daily_mat"
+                )
+            self.logger_adapter.emit_stage_end(
+                "smap_extract", f"Generated {len(outputs)} SMAP daily files"
+            )
 
         return ProductManifest(
             job_id=request.job_id,
             run_id=ctx.run_id,
             products=product_refs,
-            main_layers=["TBh", "TBv", "Ts", "vwc", "IA", "sm_dca", "sm_scav", "vod_dca", "vod_sca"],
+            main_layers=[
+                "TBh",
+                "TBv",
+                "Ts",
+                "vwc",
+                "IA",
+                "sm_dca",
+                "sm_scav",
+                "vod_dca",
+                "vod_sca",
+            ],
             metadata_uri=None,
             extra={
                 "pipeline_name": self.name,

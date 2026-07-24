@@ -19,7 +19,8 @@ OPEN_METEO_LOCAL_URL = "http://127.0.0.1:8080/v1/forecast"
 # Self-hosted Open-Meteo only syncs concrete domains (no best_match ensemble).
 # Override with BACKEND_OPEN_METEO_LOCAL_MODEL if sync uses another domain.
 OPEN_METEO_LOCAL_DEFAULT_MODEL = (
-    os.getenv("BACKEND_OPEN_METEO_LOCAL_MODEL", "ecmwf_ifs025").strip() or "ecmwf_ifs025"
+    os.getenv("BACKEND_OPEN_METEO_LOCAL_MODEL", "ecmwf_ifs025").strip()
+    or "ecmwf_ifs025"
 )
 _LOCAL_ENSEMBLE_ALIASES = frozenset({"best_match", "auto", ""})
 
@@ -34,7 +35,9 @@ def normalize_provider_id(provider_id: str | None) -> str | None:
     return PROVIDER_ID_ALIASES.get(pid, pid)
 
 
-def resolve_open_meteo_model(model: str | None, *, provider_id: str | None = None) -> str:
+def resolve_open_meteo_model(
+    model: str | None, *, provider_id: str | None = None
+) -> str:
     """Map ensemble aliases to a concrete domain for self-hosted Open-Meteo.
 
     Public API accepts ``best_match``; Docker local only has synced domains
@@ -45,7 +48,9 @@ def resolve_open_meteo_model(model: str | None, *, provider_id: str | None = Non
     pid = normalize_provider_id(provider_id) or provider_id
     if pid == OPEN_METEO_LOCAL_ID and resolved in _LOCAL_ENSEMBLE_ALIASES:
         try:
-            from app.services.weather_engine_settings import get_effective_weather_default_model
+            from app.services.weather_engine_settings import (
+                get_effective_weather_default_model,
+            )
 
             return get_effective_weather_default_model()
         except Exception:

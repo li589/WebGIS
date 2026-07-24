@@ -12,22 +12,18 @@ class FormatAdapter(Protocol):
     name: str
     supported_formats: tuple[str, ...]
 
-    def can_handle(self, resource: ResourceRef) -> bool:
-        ...
+    def can_handle(self, resource: ResourceRef) -> bool: ...
 
-    def probe(self, resource: ResourceRef) -> bool:
-        ...
+    def probe(self, resource: ResourceRef) -> bool: ...
 
-    def load(self, resource: ResourceRef) -> Any:
-        ...
+    def load(self, resource: ResourceRef) -> Any: ...
 
     def materialize(
         self,
         resource: ResourceRef,
         *,
         target_dir: str | Path | None = None,
-    ) -> ResourceRef:
-        ...
+    ) -> ResourceRef: ...
 
 
 class LocalFileFormatAdapter:

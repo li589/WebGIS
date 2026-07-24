@@ -61,15 +61,17 @@ const nodeOutputs = computed<INodeOutputSlot[]>(() => props.selectedNode?.output
 
 // 从节点模板中查找当前节点的描述和参数信息
 const nodeTemplate = computed(() => {
-  if (!props.selectedNode?.type) return null
-  return store.nodeTemplates.find((t) => t.type === props.selectedNode.type) ?? null
+  const nodeType = props.selectedNode?.type
+  if (!nodeType) return null
+  return store.nodeTemplates.find((t) => t.type === nodeType) ?? null
 })
 
 const nodeDescription = computed(() => nodeTemplate.value?.description ?? '')
 const nodeEngine = computed(() => {
   const type = props.selectedNode?.type ?? ''
-  const engine = nodeTemplate.value?.engine
-    ?? (type.startsWith('module/') || type.startsWith('python_provider/')
+  const engine =
+    nodeTemplate.value?.engine ??
+    (type.startsWith('module/') || type.startsWith('python_provider/')
       ? 'python_provider'
       : type.startsWith('weather/')
         ? 'weather'
@@ -84,8 +86,9 @@ const nodeEngine = computed(() => {
 
 const nodeEngineIcon = computed(() => {
   const type = props.selectedNode?.type ?? ''
-  const engine = nodeTemplate.value?.engine
-    ?? (type.startsWith('module/') || type.startsWith('python_provider/')
+  const engine =
+    nodeTemplate.value?.engine ??
+    (type.startsWith('module/') || type.startsWith('python_provider/')
       ? 'python_provider'
       : type.startsWith('weather/')
         ? 'weather'
@@ -103,7 +106,7 @@ const templateParams = computed(() => nodeTemplate.value?.params ?? [])
 
 // 参数元信息映射（key -> param meta），用于按 key 快速查找
 const templateParamMap = computed(() => {
-  const m: Record<string, typeof templateParams.value[number]> = {}
+  const m: Record<string, (typeof templateParams.value)[number]> = {}
   for (const p of templateParams.value) m[p.key] = p
   return m
 })
@@ -197,7 +200,10 @@ function resetToOriginal(key: string) {
 function parseArrayValue(value: unknown): string[] {
   if (Array.isArray(value)) return value.map(String)
   if (typeof value === 'string' && value.trim()) {
-    return value.split(',').map((s) => s.trim()).filter(Boolean)
+    return value
+      .split(',')
+      .map((s) => s.trim())
+      .filter(Boolean)
   }
   return []
 }
@@ -240,10 +246,18 @@ function validateParam(key: string, value: unknown): string | null {
   if (key === 'freq_ghz' && typeof value === 'number' && (value < 0.1 || value > 40)) {
     return '频率范围 0.1-40 GHz'
   }
-  if ((key === 'west' || key === 'east') && typeof value === 'number' && (value < -180 || value > 180)) {
+  if (
+    (key === 'west' || key === 'east') &&
+    typeof value === 'number' &&
+    (value < -180 || value > 180)
+  ) {
     return '经度范围 -180~180'
   }
-  if ((key === 'south' || key === 'north') && typeof value === 'number' && (value < -90 || value > 90)) {
+  if (
+    (key === 'south' || key === 'north') &&
+    typeof value === 'number' &&
+    (value < -90 || value > 90)
+  ) {
     return '纬度范围 -90~90'
   }
   return null
@@ -251,17 +265,23 @@ function validateParam(key: string, value: unknown): string | null {
 
 const validationErrors = ref<Record<string, string>>({})
 
-function buildInspectorPortTitle(name: string, type: string, direction: 'input' | 'output'): string {
-  const fromTpl = direction === 'input'
-    ? nodeTemplate.value?.inputs?.find((p) => p.name === name)?.description
-    : nodeTemplate.value?.outputs?.find((p) => p.name === name)?.description
+function buildInspectorPortTitle(
+  name: string,
+  type: string,
+  direction: 'input' | 'output',
+): string {
+  const fromTpl =
+    direction === 'input'
+      ? nodeTemplate.value?.inputs?.find((p) => p.name === name)?.description
+      : nodeTemplate.value?.outputs?.find((p) => p.name === name)?.description
   const model = buildPortTooltip({
     direction,
     name,
     type,
     description: fromTpl || getParamMeta(name)?.description,
-    suggestTitles: suggestConnectorsForPortType(type)
-      .map((t) => store.nodeTemplates.find((n) => n.type === t)?.title ?? t),
+    suggestTitles: suggestConnectorsForPortType(type).map(
+      (t) => store.nodeTemplates.find((n) => n.type === t)?.title ?? t,
+    ),
   })
   return [model.typeLabel, model.body, ...model.tips].filter(Boolean).join('\n')
 }
@@ -331,12 +351,7 @@ function handleTitleChange() {
 
         <div class="form-row">
           <label class="form-label">ID</label>
-          <input
-            :value="selectedNode.id"
-            type="text"
-            class="form-input readonly"
-            readonly
-          />
+          <input :value="selectedNode.id" type="text" class="form-input readonly" readonly />
         </div>
 
         <div class="form-row">
@@ -369,7 +384,10 @@ function handleTitleChange() {
             class="port-item"
             :title="buildInspectorPortTitle(input.name, String(input.type), 'input')"
           >
-            <span class="port-color-dot" :style="{ background: getPortColor(String(input.type)) }"></span>
+            <span
+              class="port-color-dot"
+              :style="{ background: getPortColor(String(input.type)) }"
+            ></span>
             <span class="port-name">{{ input.name }}</span>
             <span class="port-type">{{ getPortTypeLabel(String(input.type)) }}</span>
             <span class="port-status" :class="{ connected: input.link !== null }">
@@ -389,11 +407,19 @@ function handleTitleChange() {
             class="port-item"
             :title="buildInspectorPortTitle(output.name, String(output.type), 'output')"
           >
-            <span class="port-color-dot" :style="{ background: getPortColor(String(output.type)) }"></span>
+            <span
+              class="port-color-dot"
+              :style="{ background: getPortColor(String(output.type)) }"
+            ></span>
             <span class="port-name">{{ output.name }}</span>
             <span class="port-type">{{ getPortTypeLabel(String(output.type)) }}</span>
-            <span class="port-status" :class="{ connected: output.links && output.links.length > 0 }">
-              {{ output.links && output.links.length > 0 ? `${output.links.length} 连接` : '未连接' }}
+            <span
+              class="port-status"
+              :class="{ connected: output.links && output.links.length > 0 }"
+            >
+              {{
+                output.links && output.links.length > 0 ? `${output.links.length} 连接` : '未连接'
+              }}
             </span>
           </div>
         </div>
@@ -407,21 +433,26 @@ function handleTitleChange() {
         <div v-if="groupedProperties.datasource.length" class="param-group">
           <h4 class="param-group-title">数据源</h4>
           <div class="property-list">
-            <div v-for="([key, value]) in groupedProperties.datasource" :key="key" class="form-row">
+            <div v-for="[key, value] in groupedProperties.datasource" :key="key" class="form-row">
               <label class="form-label">
                 <span class="param-label-text" :class="{ modified: isModified(key) }">
-                  {{ getParamLabel(key) }}<span v-if="isModified(key)" class="modified-mark">*</span>
+                  {{ getParamLabel(key)
+                  }}<span v-if="isModified(key)" class="modified-mark">*</span>
                 </span>
                 <span v-if="getParamHint(key)" class="param-hint">{{ getParamHint(key) }}</span>
                 <span class="param-info-icon" :title="getParamTooltip(key)">ⓘ</span>
-                <span v-if="getParamMeta(key)?.unit" class="param-unit-badge">{{ getParamMeta(key)?.unit }}</span>
+                <span v-if="getParamMeta(key)?.unit" class="param-unit-badge">{{
+                  getParamMeta(key)?.unit
+                }}</span>
                 <button
                   v-if="isModified(key) && !readonly"
                   class="reset-btn"
                   type="button"
                   title="重置为初始值"
                   @click="resetToOriginal(key)"
-                >↺</button>
+                >
+                  ↺
+                </button>
               </label>
 
               <ParamField
@@ -450,21 +481,26 @@ function handleTitleChange() {
         <div v-if="groupedProperties.basic.length" class="param-group">
           <h4 class="param-group-title">基础参数</h4>
           <div class="property-list">
-            <div v-for="([key, value]) in groupedProperties.basic" :key="key" class="form-row">
+            <div v-for="[key, value] in groupedProperties.basic" :key="key" class="form-row">
               <label class="form-label">
                 <span class="param-label-text" :class="{ modified: isModified(key) }">
-                  {{ getParamLabel(key) }}<span v-if="isModified(key)" class="modified-mark">*</span>
+                  {{ getParamLabel(key)
+                  }}<span v-if="isModified(key)" class="modified-mark">*</span>
                 </span>
                 <span v-if="getParamHint(key)" class="param-hint">{{ getParamHint(key) }}</span>
                 <span class="param-info-icon" :title="getParamTooltip(key)">ⓘ</span>
-                <span v-if="getParamMeta(key)?.unit" class="param-unit-badge">{{ getParamMeta(key)?.unit }}</span>
+                <span v-if="getParamMeta(key)?.unit" class="param-unit-badge">{{
+                  getParamMeta(key)?.unit
+                }}</span>
                 <button
                   v-if="isModified(key) && !readonly"
                   class="reset-btn"
                   type="button"
                   title="重置为初始值"
                   @click="resetToOriginal(key)"
-                >↺</button>
+                >
+                  ↺
+                </button>
               </label>
 
               <ParamField
@@ -492,21 +528,26 @@ function handleTitleChange() {
         <div v-if="groupedProperties.advanced.length" class="param-group">
           <h4 class="param-group-title">高级参数</h4>
           <div class="property-list">
-            <div v-for="([key, value]) in groupedProperties.advanced" :key="key" class="form-row">
+            <div v-for="[key, value] in groupedProperties.advanced" :key="key" class="form-row">
               <label class="form-label">
                 <span class="param-label-text" :class="{ modified: isModified(key) }">
-                  {{ getParamLabel(key) }}<span v-if="isModified(key)" class="modified-mark">*</span>
+                  {{ getParamLabel(key)
+                  }}<span v-if="isModified(key)" class="modified-mark">*</span>
                 </span>
                 <span v-if="getParamHint(key)" class="param-hint">{{ getParamHint(key) }}</span>
                 <span class="param-info-icon" :title="getParamTooltip(key)">ⓘ</span>
-                <span v-if="getParamMeta(key)?.unit" class="param-unit-badge">{{ getParamMeta(key)?.unit }}</span>
+                <span v-if="getParamMeta(key)?.unit" class="param-unit-badge">{{
+                  getParamMeta(key)?.unit
+                }}</span>
                 <button
                   v-if="isModified(key) && !readonly"
                   class="reset-btn"
                   type="button"
                   title="重置为初始值"
                   @click="resetToOriginal(key)"
-                >↺</button>
+                >
+                  ↺
+                </button>
               </label>
 
               <ParamField

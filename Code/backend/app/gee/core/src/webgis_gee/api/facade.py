@@ -8,7 +8,11 @@ from webgis_gee.api.contracts import (
     WorkflowExecutionResponse,
     WorkflowValidationResponse,
 )
-from webgis_gee.domain.models import DiagnosticsReport, ExecutionContext, WorkflowDefinition
+from webgis_gee.domain.models import (
+    DiagnosticsReport,
+    ExecutionContext,
+    WorkflowDefinition,
+)
 from webgis_gee.application.services import WorkflowService
 from webgis_gee.nodes.registry import NodeRegistry
 

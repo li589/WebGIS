@@ -4,7 +4,8 @@ import { focusMapOnHotspots } from './selected-layer-focus'
 import { watchSelectedLayerFocus } from './selected-layer-focus-watcher'
 
 type MapInstance = import('maplibre-gl').Map
-type SelectedLayerGetter = () => import('../../stores/layers/types').ActiveLayerDisplay | null | undefined
+type SelectedLayerGetter = () =>
+  import('../../stores/layers/types').ActiveLayerDisplay | null | undefined
 type DebugLogger = (module: string, ...args: unknown[]) => void
 
 export interface SelectedLayerFocusModule {
@@ -28,7 +29,8 @@ export function createSelectedLayerFocusModule(
   options: CreateSelectedLayerFocusModuleOptions,
 ): SelectedLayerFocusModule {
   const focusMapOnHotspotsImpl = options.dependencies?.focusMapOnHotspots ?? focusMapOnHotspots
-  const watchSelectedLayerFocusImpl = options.dependencies?.watchSelectedLayerFocus ?? watchSelectedLayerFocus
+  const watchSelectedLayerFocusImpl =
+    options.dependencies?.watchSelectedLayerFocus ?? watchSelectedLayerFocus
 
   let initialFocusDone = false
   let stopWatcher: WatchStopHandle | null = null

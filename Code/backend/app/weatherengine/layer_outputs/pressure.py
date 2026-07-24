@@ -3,6 +3,7 @@
 处理 layer_id == "pressure" 的图层输出。
 从 service.py _build_map_layer_outputs L682-699 分支迁移而来，无行为变更。
 """
+
 from __future__ import annotations
 
 import logging
@@ -37,10 +38,14 @@ class PressureLayerOutput(LayerOutputStrategy):
         spec: Any,
         metric_value: float | int | str | None,
     ) -> LayerOutputResult | None:
-        bbox = service._resolve_render_bbox(payload, weather.latitude, weather.longitude)
+        bbox = service._resolve_render_bbox(
+            payload, weather.latitude, weather.longitude
+        )
         try:
             grid_data, _, _ = service._fetch_layer_grid_data(bbox=bbox, spec=spec)
-            feature_collection = service.build_pressure_geojson_from_grid(grid_data, spec.layer_id)
+            feature_collection = service.build_pressure_geojson_from_grid(
+                grid_data, spec.layer_id
+            )
         except (HTTPError, URLError, OSError, KeyError, ValueError):
             feature_collection = service.build_pressure_geojson(weather, bbox)
 

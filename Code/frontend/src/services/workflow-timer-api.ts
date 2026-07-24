@@ -93,9 +93,7 @@ export interface TickStats {
 // ─── API 调用层 ────────────────────────────────────────────────────────────
 const BASE = '/workflow-timers'
 
-export async function fetchWorkflowTimers(
-  workflowId?: string,
-): Promise<WorkflowTimer[]> {
+export async function fetchWorkflowTimers(workflowId?: string): Promise<WorkflowTimer[]> {
   const search = new URLSearchParams()
   if (workflowId) search.set('workflow_id', workflowId)
   const suffix = search.toString() ? `?${search.toString()}` : ''
@@ -107,9 +105,7 @@ export async function fetchWorkflowTimer(timerId: string): Promise<WorkflowTimer
   return requestJson<WorkflowTimer>(`${BASE}/${timerId}`)
 }
 
-export async function createWorkflowTimer(
-  payload: CreateTimerPayload,
-): Promise<WorkflowTimer> {
+export async function createWorkflowTimer(payload: CreateTimerPayload): Promise<WorkflowTimer> {
   return requestJson<WorkflowTimer>(BASE, {
     method: 'POST',
     body: JSON.stringify(payload),
@@ -136,9 +132,7 @@ export async function runWorkflowTimer(timerId: string): Promise<ManualTriggerRe
   })
 }
 
-export async function emitWorkflowEvent(
-  payload: EmitEventPayload,
-): Promise<EmitEventResponse> {
+export async function emitWorkflowEvent(payload: EmitEventPayload): Promise<EmitEventResponse> {
   return requestJson<EmitEventResponse>(`${BASE}/events`, {
     method: 'POST',
     body: JSON.stringify(payload),

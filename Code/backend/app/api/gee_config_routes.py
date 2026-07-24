@@ -19,6 +19,7 @@ router = APIRouter(prefix="/gee/config", tags=["gee-config"])
 
 class ParallelConfig(BaseModel):
     """并行配置"""
+
     max_parallel_exports: int
     max_parallel_uploads: int
     max_parallel_downloads: int
@@ -28,6 +29,7 @@ class ParallelConfig(BaseModel):
 
 class GEEConfigResponse(BaseModel):
     """GEE 配置响应"""
+
     enabled: bool
     parallel_config: ParallelConfig
     storage_backend: str
@@ -38,6 +40,7 @@ class GEEConfigResponse(BaseModel):
 
 class TaskLimit(BaseModel):
     """任务限制"""
+
     max_concurrent: int
     active: int
     available: int
@@ -45,6 +48,7 @@ class TaskLimit(BaseModel):
 
 class GEEConfigLimitsResponse(BaseModel):
     """GEE 任务限制响应"""
+
     export: TaskLimit
     upload: TaskLimit
     download: TaskLimit
@@ -52,6 +56,7 @@ class GEEConfigLimitsResponse(BaseModel):
 
 class GEEConcurrencyStats(BaseModel):
     """GEE 并发统计"""
+
     active_exports: int
     active_uploads: int
     active_downloads: int
@@ -61,6 +66,7 @@ class GEEConcurrencyStats(BaseModel):
 
 class GEEStatusResponse(BaseModel):
     """GEE 状态响应"""
+
     enabled: bool
     gee_available: bool
     concurrency_stats: GEEConcurrencyStats
@@ -106,6 +112,7 @@ async def get_gee_status():
         gee_available = True
         try:
             import ee
+
             if not ee.Initialize.__doc__:
                 gee_available = False
         except Exception:
@@ -123,13 +130,21 @@ async def get_gee_status():
                 queued_tasks=0,  # 需要从任务队列获取
             ),
             task_limits=GEEConfigLimitsResponse(
-                export=TaskLimit(**gee_config_service.get_task_limits(TaskType.EXPORT_IMAGE)),
-                upload=TaskLimit(**gee_config_service.get_task_limits(TaskType.UPLOAD_ASSET)),
-                download=TaskLimit(**gee_config_service.get_task_limits(TaskType.DOWNLOAD)),
+                export=TaskLimit(
+                    **gee_config_service.get_task_limits(TaskType.EXPORT_IMAGE)
+                ),
+                upload=TaskLimit(
+                    **gee_config_service.get_task_limits(TaskType.UPLOAD_ASSET)
+                ),
+                download=TaskLimit(
+                    **gee_config_service.get_task_limits(TaskType.DOWNLOAD)
+                ),
             ),
         )
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to get GEE status: {str(e)}")
+        raise HTTPException(
+            status_code=500, detail=f"Failed to get GEE status: {str(e)}"
+        )
 
 
 @router.get("/environment")
@@ -145,7 +160,9 @@ async def get_gee_environment():
         "gee_module_root": settings.gee_module_root,
         "gee_storage_backend": settings.gee_storage_backend,
         "gee_local_storage_root": settings.gee_local_storage_root,
-        "gee_credentials_encryption_key_set": bool(settings.gee_credentials_encryption_key),
+        "gee_credentials_encryption_key_set": bool(
+            settings.gee_credentials_encryption_key
+        ),
         "gee_credentials_db_path": settings.gee_credentials_db_path,
         "gee_api_account_management_enabled": settings.gee_api_account_management_enabled,
     }

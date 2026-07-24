@@ -42,8 +42,11 @@ export function isWebGLAvailable(): boolean {
   if (!doc || typeof doc.createElement !== 'function') return false
   try {
     const canvas = doc.createElement('canvas')
-    const gl = (canvas as HTMLCanvasElement & { getContext: (id: string) => unknown }).getContext('webgl')
-      ?? (canvas as HTMLCanvasElement & { getContext: (id: string) => unknown }).getContext('experimental-webgl')
+    const gl =
+      (canvas as HTMLCanvasElement & { getContext: (id: string) => unknown }).getContext('webgl') ??
+      (canvas as HTMLCanvasElement & { getContext: (id: string) => unknown }).getContext(
+        'experimental-webgl',
+      )
     return !!gl
   } catch {
     return false
@@ -62,7 +65,9 @@ export function isWebGLWindUsable(): boolean {
 }
 
 /** 默认控制器工厂：WebGL 优先，显式关闭或能力不足时回退 Canvas。 */
-export function createDefaultWindParticleController(map: MaplibreMap): WindParticleControllerContract {
+export function createDefaultWindParticleController(
+  map: MaplibreMap,
+): WindParticleControllerContract {
   if (isWebGLWindEnabled() && isWebGLWindUsable()) {
     return new WindParticleWebGLOverlayController(map)
   }

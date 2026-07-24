@@ -65,7 +65,9 @@ def _normalize_array(data: np.ndarray) -> tuple[np.ndarray, bool]:
     raise ValueError(f"不支持的数组维度: {data.ndim}D，仅支持 2D 或 3D 数组")
 
 
-def _compute_bounds(transform: "Affine", width: int, height: int) -> tuple[float, float, float, float]:
+def _compute_bounds(
+    transform: "Affine", width: int, height: int
+) -> tuple[float, float, float, float]:
     """根据仿射变换计算地理范围 (west, south, east, north)。"""
     west = transform.xoff
     east = transform.xoff + transform.a * width
@@ -78,16 +80,17 @@ def _compute_bounds(transform: "Affine", width: int, height: int) -> tuple[float
 # 延迟依赖检查
 # ---------------------------------------------------------------------------
 
+
 def _check_rasterio() -> Any:
     """检查并导入 rasterio，失败时给出友好提示。"""
     try:
         import rasterio
         from rasterio import Affine
+
         return rasterio, Affine
     except ImportError as e:
         raise ImportError(
-            "rasterio 未安装，无法使用 COGWriter。"
-            " 请运行: pip install rasterio"
+            "rasterio 未安装，无法使用 COGWriter。" " 请运行: pip install rasterio"
         ) from e
 
 
@@ -97,6 +100,7 @@ def _check_matplotlib() -> Any:
         import matplotlib
         import matplotlib.pyplot as plt
         from matplotlib import cm
+
         return matplotlib, plt, cm
     except ImportError as e:
         raise ImportError(
@@ -139,6 +143,7 @@ def _resolve_title_font():
 # ---------------------------------------------------------------------------
 # COGWriter
 # ---------------------------------------------------------------------------
+
 
 class COGWriter:
     """COG (Cloud Optimized GeoTIFF) 栅格写出器。
@@ -282,8 +287,15 @@ class COGWriter:
     ) -> dict:
         """将 numpy 数组写出为 COG 格式 GeoTIFF 文件（兼容旧接口）。"""
         cog_bytes, metadata = self.write_bytes(
-            data, output_name, crs=crs, transform=transform, nodata=nodata,
-            dtype=dtype, compress=compress, description=description, unit=unit,
+            data,
+            output_name,
+            crs=crs,
+            transform=transform,
+            nodata=nodata,
+            dtype=dtype,
+            compress=compress,
+            description=description,
+            unit=unit,
             **profile_overrides,
         )
         self.output_dir.mkdir(parents=True, exist_ok=True)
@@ -300,6 +312,7 @@ class COGWriter:
 # ---------------------------------------------------------------------------
 # PreviewGenerator
 # ---------------------------------------------------------------------------
+
 
 class PreviewGenerator:
     """栅格缩略图生成器。
@@ -368,8 +381,12 @@ class PreviewGenerator:
             if valid_data.size == 0:
                 vmin_calc, vmax_calc = 0.0, 1.0
             else:
-                vmin_calc = vmin if vmin is not None else float(np.percentile(valid_data, 2))
-                vmax_calc = vmax if vmax is not None else float(np.percentile(valid_data, 98))
+                vmin_calc = (
+                    vmin if vmin is not None else float(np.percentile(valid_data, 2))
+                )
+                vmax_calc = (
+                    vmax if vmax is not None else float(np.percentile(valid_data, 98))
+                )
             if vmin_calc == vmax_calc:
                 vmin_calc = float(np.nanmin(valid_data)) if valid_data.size > 0 else 0.0
                 vmax_calc = vmin_calc + 1.0
@@ -407,7 +424,9 @@ class PreviewGenerator:
             ax.set_ylim(south, north)
 
         if fig_w > 1.5 and fig_h > 1.5:
-            cbar = fig.colorbar(im, ax=ax, orientation="vertical", fraction=0.05, pad=0.02)
+            cbar = fig.colorbar(
+                im, ax=ax, orientation="vertical", fraction=0.05, pad=0.02
+            )
             cbar.ax.tick_params(labelsize=6)
 
         fig.tight_layout(pad=0.1)
@@ -428,7 +447,11 @@ class PreviewGenerator:
         if len(png_bytes) == 0:
             raise IOError("预览图生成失败，缓冲区为空")
         rel_path = f"{output_name}.png"
-        return png_bytes, {"path": rel_path, "size": self.size, "size_bytes": len(png_bytes)}
+        return png_bytes, {
+            "path": rel_path,
+            "size": self.size,
+            "size_bytes": len(png_bytes),
+        }
 
     def generate(
         self,
@@ -444,8 +467,14 @@ class PreviewGenerator:
     ) -> dict:
         """从栅格数据生成 PNG 缩略图文件（兼容旧接口）。"""
         png_bytes, metadata = self.generate_bytes(
-            data, output_name, cmap=cmap, nodata=nodata, vmin=vmin, vmax=vmax,
-            title=title, overlay_extent=overlay_extent,
+            data,
+            output_name,
+            cmap=cmap,
+            nodata=nodata,
+            vmin=vmin,
+            vmax=vmax,
+            title=title,
+            overlay_extent=overlay_extent,
         )
         self.output_dir.mkdir(parents=True, exist_ok=True)
         output_file = self.output_dir / f"{output_name}.png"

@@ -10,17 +10,22 @@ const { weatherProviders, weatherConfig } = storeToRefs(settingsStore)
 // ── 状态 ───────────────────────────────────────────────────────────────────
 
 const testingIds = ref<Set<string>>(new Set())
-const testResults = reactive<Record<string, { success: boolean; message: string; tested_at?: string }>>({})
+const testResults = reactive<
+  Record<string, { success: boolean; message: string; tested_at?: string }>
+>({})
 const togglingIds = ref<Set<string>>(new Set())
 const savingConfigId = ref<string | null>(null)
 const savingPriorityId = ref<string | null>(null)
 const expandedId = ref<string | null>(null)
-const editingConfig = reactive<Record<string, Record<string, unknown>>>({})
+const editingConfig = reactive<Record<string, Record<string, string | number | boolean>>>({})
 const confirmResetId = ref<string | null>(null)
 
 // ── 类型显示映射 ───────────────────────────────────────────────────────────
 
-const providerTypeMeta: Record<WeatherProviderType, { label: string; icon: string; class: string }> = {
+const providerTypeMeta: Record<
+  WeatherProviderType,
+  { label: string; icon: string; class: string }
+> = {
   free_api: { label: '免费 API', icon: '🆓', class: 'type-free' },
   commercial_api: { label: '商业 API', icon: '💰', class: 'type-commercial' },
   local_data: { label: '本地数据', icon: '💾', class: 'type-local' },
@@ -129,7 +134,9 @@ function startEditConfig(p: WeatherProviderItem) {
   }
   expandedId.value = p.provider_id
   // 初始化编辑状态：用 current_config 作为初始值
-  editingConfig[p.provider_id] = { ...(p.persisted_config ?? p.current_config) }
+  editingConfig[p.provider_id] = {
+    ...(p.persisted_config ?? p.current_config),
+  } as Record<string, string | number | boolean>
 }
 
 function cancelEditConfig(providerId: string) {
@@ -175,7 +182,7 @@ function formatPercent(used: number | null, quota: number | null): string {
   return `${((used / quota) * 100).toFixed(1)}%`
 }
 
-function formatTime(iso: string | null): string {
+function formatTime(iso: string | null | undefined): string {
   if (!iso) return '—'
   try {
     const d = new Date(iso)
@@ -215,7 +222,9 @@ const healthyCount = computed(() => weatherProviders.value.filter((p) => p.statu
       <div class="section-header">
         <h3 class="section-title">
           天气源 Provider
-          <span class="count-badge">{{ enabledCount }}/{{ weatherProviders.length }} 启用 · {{ healthyCount }} 健康</span>
+          <span class="count-badge"
+            >{{ enabledCount }}/{{ weatherProviders.length }} 启用 · {{ healthyCount }} 健康</span
+          >
         </h3>
         <div class="section-actions">
           <button class="action-btn reload" @click="settingsStore.loadWeatherProviders()">
@@ -225,8 +234,8 @@ const healthyCount = computed(() => weatherProviders.value.filter((p) => p.statu
       </div>
 
       <p class="section-hint">
-        系统按 Provider 优先级（数字越小越优先）路由天气请求。
-        Open-Meteo 仅应出现两条：<strong>本地</strong>（open-meteo-local）与
+        系统按 Provider 优先级（数字越小越优先）路由天气请求。 Open-Meteo
+        仅应出现两条：<strong>本地</strong>（open-meteo-local）与
         <strong>Online</strong>（open-meteo-online）。模型与 Docker 同步请到「Open-Meteo」页。
         保存配置后立即作用于后端 registry（可点「测试连通性」验证）。
       </p>
@@ -305,7 +314,10 @@ const healthyCount = computed(() => weatherProviders.value.filter((p) => p.statu
                 {{ p.requires_api_key ? '是' : '否' }}
               </span>
             </div>
-            <div v-if="p.status?.circuit_state && p.status.circuit_state !== 'n/a'" class="meta-item">
+            <div
+              v-if="p.status?.circuit_state && p.status.circuit_state !== 'n/a'"
+              class="meta-item"
+            >
               <span class="meta-label">断路器</span>
               <span class="key-badge" :class="circuitBadge(p.status.circuit_state)?.class">
                 {{ circuitBadge(p.status.circuit_state)?.text }}
@@ -314,20 +326,29 @@ const healthyCount = computed(() => weatherProviders.value.filter((p) => p.statu
           </div>
 
           <!-- 运行时状态 -->
-          <div v-if="p.status?.daily_quota !== null && p.status?.daily_quota !== undefined" class="provider-runtime">
+          <div
+            v-if="p.status?.daily_quota !== null && p.status?.daily_quota !== undefined"
+            class="provider-runtime"
+          >
             <div class="runtime-row">
               <span class="runtime-label">API 预算</span>
               <div class="runtime-bar-wrapper">
                 <div class="runtime-bar">
                   <div
                     class="runtime-bar-fill"
-                    :class="{ warn: p.status.daily_used !== null && p.status.daily_quota !== null && p.status.daily_used / p.status.daily_quota > 0.8 }"
+                    :class="{
+                      warn:
+                        p.status.daily_used !== null &&
+                        p.status.daily_quota !== null &&
+                        p.status.daily_used / p.status.daily_quota > 0.8,
+                    }"
                     :style="{ width: formatPercent(p.status.daily_used, p.status.daily_quota) }"
                   ></div>
                 </div>
                 <span class="runtime-text">
-                  {{ formatNumber(p.status.daily_used) }} / {{ formatNumber(p.status.daily_quota) }}
-                  (剩 {{ formatNumber(p.status.daily_remaining) }})
+                  {{ formatNumber(p.status.daily_used) }} /
+                  {{ formatNumber(p.status.daily_quota) }} (剩
+                  {{ formatNumber(p.status.daily_remaining) }})
                 </span>
               </div>
             </div>
@@ -349,11 +370,7 @@ const healthyCount = computed(() => weatherProviders.value.filter((p) => p.statu
             >
               ⚙ 配置
             </button>
-            <button
-              v-else
-              class="action-btn cancel"
-              @click="cancelEditConfig(p.provider_id)"
-            >
+            <button v-else class="action-btn cancel" @click="cancelEditConfig(p.provider_id)">
               收起
             </button>
           </div>
@@ -362,7 +379,10 @@ const healthyCount = computed(() => weatherProviders.value.filter((p) => p.statu
           <div
             v-if="testResults[p.provider_id]"
             class="test-result"
-            :class="{ success: testResults[p.provider_id].success, fail: !testResults[p.provider_id].success }"
+            :class="{
+              success: testResults[p.provider_id].success,
+              fail: !testResults[p.provider_id].success,
+            }"
           >
             <div>{{ testResults[p.provider_id].message }}</div>
             <div v-if="testResults[p.provider_id].tested_at" class="test-time">
@@ -392,7 +412,9 @@ const healthyCount = computed(() => weatherProviders.value.filter((p) => p.statu
                   type="number"
                   min="0"
                   max="999"
-                  @change="(e) => savePriority(p, parseInt((e.target as HTMLInputElement).value, 10))"
+                  @change="
+                    (e) => savePriority(p, parseInt((e.target as HTMLInputElement).value, 10))
+                  "
                   :disabled="savingPriorityId === p.provider_id"
                 />
                 <span v-if="savingPriorityId === p.provider_id" class="saving-hint">保存中...</span>
@@ -401,11 +423,7 @@ const healthyCount = computed(() => weatherProviders.value.filter((p) => p.statu
 
             <!-- 配置字段 -->
             <div v-if="p.config_schema.length > 0">
-              <div
-                v-for="field in p.config_schema"
-                :key="field.key"
-                class="form-row"
-              >
+              <div v-for="field in p.config_schema" :key="field.key" class="form-row">
                 <label class="form-label">
                   {{ field.label }}
                   <span v-if="field.required" class="required-mark">*</span>
@@ -439,16 +457,14 @@ const healthyCount = computed(() => weatherProviders.value.filter((p) => p.statu
                 </select>
                 <textarea
                   v-else
-                  v-model="editingConfig[p.provider_id][field.key]"
+                  v-model="editingConfig[p.provider_id][field.key] as string"
                   class="form-textarea"
                   rows="2"
                 ></textarea>
                 <p v-if="field.description" class="form-hint">{{ field.description }}</p>
               </div>
             </div>
-            <div v-else class="no-config">
-              此 Provider 无可配置项
-            </div>
+            <div v-else class="no-config">此 Provider 无可配置项</div>
 
             <!-- 配置操作 -->
             <div class="config-actions">
@@ -474,19 +490,13 @@ const healthyCount = computed(() => weatherProviders.value.filter((p) => p.statu
             <!-- 重置确认 -->
             <div v-if="confirmResetId === p.provider_id" class="confirm-reset">
               <span>确认删除 DB 中的自定义配置？将回退到代码默认值。</span>
-              <button class="action-btn confirm-delete" @click="resetConfig(p)">
-                确认重置
-              </button>
-              <button class="action-btn cancel" @click="confirmResetId = null">
-                取消
-              </button>
+              <button class="action-btn confirm-delete" @click="resetConfig(p)">确认重置</button>
+              <button class="action-btn cancel" @click="confirmResetId = null">取消</button>
             </div>
           </div>
 
           <!-- 错误信息 -->
-          <div v-if="p.status?.last_error" class="provider-error">
-            ⚠ {{ p.status.last_error }}
-          </div>
+          <div v-if="p.status?.last_error" class="provider-error">⚠ {{ p.status.last_error }}</div>
         </div>
       </div>
     </section>
@@ -603,7 +613,9 @@ const healthyCount = computed(() => weatherProviders.value.filter((p) => p.statu
   border-radius: 0.52rem;
   background: rgba(4, 12, 23, 0.5);
   border: 1px solid rgba(136, 192, 255, 0.1);
-  transition: opacity 0.2s ease, border-color 0.2s ease;
+  transition:
+    opacity 0.2s ease,
+    border-color 0.2s ease;
 }
 
 .provider-card.disabled {
@@ -1055,7 +1067,9 @@ const healthyCount = computed(() => weatherProviders.value.filter((p) => p.statu
   background: rgba(4, 12, 23, 0.8);
   cursor: pointer;
   padding: 0;
-  transition: background 0.2s ease, border-color 0.2s ease;
+  transition:
+    background 0.2s ease,
+    border-color 0.2s ease;
   flex: none;
 }
 
@@ -1078,7 +1092,9 @@ const healthyCount = computed(() => weatherProviders.value.filter((p) => p.statu
   border-radius: 50%;
   background: #8aa8bf;
   transform: translateY(-50%);
-  transition: left 0.2s ease, background 0.2s ease;
+  transition:
+    left 0.2s ease,
+    background 0.2s ease;
 }
 
 .toggle-switch.on .toggle-knob {

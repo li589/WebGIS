@@ -13,7 +13,10 @@ from dataclasses import dataclass
 from math import cos, radians, sin
 import os
 
-from algorithms.adapters.provider_adapter import adapt_algorithm_output, resolve_algorithm_callable
+from algorithms.adapters.provider_adapter import (
+    adapt_algorithm_output,
+    resolve_algorithm_callable,
+)
 from algorithms.providers.base import ProviderExecutionPayload, ProviderExecutionResult
 
 
@@ -51,7 +54,9 @@ class LabOutputProvider:
         base_score = self._resolve_base_score(hour, center_lng, center_lat)
         hotspot_count = self._resolve_hotspot_count(payload)
         series_step_hours = self._resolve_series_step(payload)
-        hotspots = self._build_hotspots(base_score, center_lng, center_lat, hotspot_count)
+        hotspots = self._build_hotspots(
+            base_score, center_lng, center_lat, hotspot_count
+        )
         series = self._build_series(base_score, hour, series_step_hours)
         max_hotspot = max((item["risk_score"] for item in hotspots), default=base_score)
 
@@ -81,7 +86,9 @@ class LabOutputProvider:
             },
         )
 
-    def _resolve_algorithm_entrypoint(self, payload: ProviderExecutionPayload) -> str | None:
+    def _resolve_algorithm_entrypoint(
+        self, payload: ProviderExecutionPayload
+    ) -> str | None:
         env_entrypoint = os.getenv("LAB_OUTPUT_ALGORITHM_ENTRYPOINT", "").strip()
         return env_entrypoint or None
 
@@ -104,7 +111,9 @@ class LabOutputProvider:
         requested = payload.parameters.get("hotspot_count", 3)
         if not isinstance(requested, int):
             return 3
-        return max(3, min(requested, int(payload.execution_limits.get("max_hotspots", 200))))
+        return max(
+            3, min(requested, int(payload.execution_limits.get("max_hotspots", 200)))
+        )
 
     def _resolve_series_step(self, payload: ProviderExecutionPayload) -> int:
         requested = payload.parameters.get("series_step_hours", 6)
@@ -120,7 +129,14 @@ class LabOutputProvider:
         hotspot_count: int,
     ) -> list[dict[str, object]]:
         items: list[dict[str, object]] = []
-        base_names = ["广州北部", "东莞中部", "深圳西部", "佛山南部", "珠海东侧", "中山东部"]
+        base_names = [
+            "广州北部",
+            "东莞中部",
+            "深圳西部",
+            "佛山南部",
+            "珠海东侧",
+            "中山东部",
+        ]
         for index in range(hotspot_count):
             name = f"{base_names[index % len(base_names)]}-{index + 1:02d}"
             lng_offset = ((index % 10) - 5) * 0.041
@@ -138,7 +154,9 @@ class LabOutputProvider:
         items.sort(key=lambda item: float(item["risk_score"]), reverse=True)
         return items
 
-    def _build_series(self, base_score: float, hour: float, step_hours: int) -> list[dict[str, object]]:
+    def _build_series(
+        self, base_score: float, hour: float, step_hours: int
+    ) -> list[dict[str, object]]:
         series_points: list[dict[str, object]] = []
         for point_hour in range(0, 24, step_hours):
             phase_adjust = sin(((point_hour - hour + 24) % 24) / 24 * 6.28318) * 3.4

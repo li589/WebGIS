@@ -1,23 +1,28 @@
 """Workflow lifecycle service.
 
-Handles workflow cancel, retry, timeout, failure, and success finalization.
-Uses late binding to access submission service (for retry → submit_workflow)
-to break the circular dependency: lifecycle → submission → lifecycle.
+Handles workflow cancel, timeout, failure, and success finalization.
+
+User-initiated retry (``retry_workflow_run``) has been extracted to
+``RetryDispatcher`` to break the former bidirectional late binding
+between submission_service and lifecycle_service (N3). The dependency
+direction is now one-way: ``submission → lifecycle`` (for finalize).
 """
+
 from __future__ import annotations
 
 from datetime import datetime, timezone
 import logging
-from typing import TYPE_CHECKING
 
 from app.core.celery_app import revoke_task
 from app.core.config import settings
-from app.core.logging import log_context
 from app.services.failure_classifier import FailureClassifier
 from app.services.result_storage import result_storage_service
 from app.services.workflow_repository import SQLiteWorkflowRepository
 from app.services.workflow.persistence_service import WorkflowPersistenceService
-from app.services.workflow.transition_builder import WorkflowTransitionBuilder, use_celery_executor
+from app.services.workflow.transition_builder import (
+    WorkflowTransitionBuilder,
+    use_celery_executor,
+)
 from app.services.workflow.follow_up_dispatch_service import FollowUpDispatchService
 from app.tasks.workflow_tasks import dispatch_workflow_task
 from shared.contracts.api_contracts import (
@@ -25,19 +30,20 @@ from shared.contracts.api_contracts import (
     ExecutionStatus,
     FailureCategory,
     LogLevel,
-    WorkflowAcceptedResponse,
     WorkflowRunStatusResponse,
     WorkflowSubmitRequest,
 )
-
-if TYPE_CHECKING:
-    from app.services.workflow.submission_service import WorkflowSubmissionService
 
 logger = logging.getLogger(__name__)
 
 
 class WorkflowLifecycleService:
-    """Handles workflow lifecycle transitions: cancel, retry, finalize success/failure."""
+    """Handles workflow lifecycle transitions: cancel, finalize success/failure/retry.
+
+    User-initiated retry is handled by :class:`RetryDispatcher` (see
+    ``retry_dispatcher.py``). This service focuses on execution-phase
+    finalization: success, failure, timeout, and automatic retry scheduling.
+    """
 
     def __init__(
         self,
@@ -49,18 +55,9 @@ class WorkflowLifecycleService:
         self._repository = repository or SQLiteWorkflowRepository()
         self._persistence = persistence or WorkflowPersistenceService(self._repository)
         self._transitions = transitions or WorkflowTransitionBuilder()
-        self._follow_up = follow_up or FollowUpDispatchService(self._repository, self._persistence, self._transitions)
-        self._submission: "WorkflowSubmissionService | None" = None
-
-    def set_submission_service(self, submission: "WorkflowSubmissionService") -> None:
-        """Late binding to break circular dependency."""
-        self._submission = submission
-
-    @property
-    def submission(self) -> "WorkflowSubmissionService":
-        if self._submission is None:
-            raise RuntimeError("Submission service not set. Call set_submission_service() first.")
-        return self._submission
+        self._follow_up = follow_up or FollowUpDispatchService(
+            self._repository, self._persistence, self._transitions
+        )
 
     def cancel_workflow_run(self, run_id: str) -> WorkflowRunStatusResponse:
         now = datetime.now(timezone.utc)
@@ -68,8 +65,14 @@ class WorkflowLifecycleService:
         if current_run is None:
             raise ValueError(f"Workflow run not found: {run_id}")
 
-        if current_run.status in (ExecutionStatus.succeeded, ExecutionStatus.failed, ExecutionStatus.cancelled):
-            raise ValueError(f"Cannot cancel workflow in terminal state: {current_run.status.value}")
+        if current_run.status in (
+            ExecutionStatus.succeeded,
+            ExecutionStatus.failed,
+            ExecutionStatus.cancelled,
+        ):
+            raise ValueError(
+                f"Cannot cancel workflow in terminal state: {current_run.status.value}"
+            )
 
         if use_celery_executor() and current_run.executor_metadata:
             task_id = current_run.executor_metadata.get("task_id")
@@ -120,37 +123,6 @@ class WorkflowLifecycleService:
             created_at=now,
         )
         return self._repository.get_run(run_id)
-
-    def retry_workflow_run(self, run_id: str) -> WorkflowAcceptedResponse:
-        now = datetime.now(timezone.utc)
-        request_json = self._repository.get_run_request_json(run_id)
-        if request_json is None:
-            raise ValueError(f"Cannot retry: no request found for run {run_id}")
-
-        payload = WorkflowSubmitRequest.model_validate_json(request_json)
-        new_response = self.submission.submit_workflow(payload)
-        new_run = self._repository.get_run(new_response.run_id)
-
-        if new_run:
-            self._persistence.save_run_status(
-                run_status=self._transitions.build_execution_transition(
-                    run_id=new_response.run_id,
-                    payload=payload,
-                    status=new_run.status,
-                    progress=new_run.progress,
-                    message=new_run.message,
-                    created_at=new_run.created_at,
-                    updated_at=now,
-                    result_refs=new_run.result_refs,
-                    result_dto=new_run.result_dto,
-                    diagnostics=new_run.diagnostics,
-                    executor_metadata={
-                        **new_run.executor_metadata,
-                        "retry_of_run_id": run_id,
-                    },
-                )
-            )
-        return new_response
 
     def handle_workflow_timeout(
         self,
@@ -279,12 +251,17 @@ class WorkflowLifecycleService:
         )
         logger.info(
             "[LifecycleService] materialize_result_refs: run_id=%s result_refs_count=%d spill_count=%d",
-            run_id, len(result_refs), len(spill_diagnostics),
+            run_id,
+            len(result_refs),
+            len(spill_diagnostics),
         )
         for r in result_refs:
             logger.info(
                 "[LifecycleService] result_ref: result_id=%s result_kind=%s resource_url=%s inline_data=%s",
-                r.result_id, r.result_kind, r.resource_url, "present" if r.inline_data else "None",
+                r.result_id,
+                r.result_kind,
+                r.resource_url,
+                "present" if r.inline_data else "None",
             )
         diagnostics = [*execution.diagnostics, *spill_diagnostics]
         result_dto = self._persistence.augment_result_dto(
@@ -350,7 +327,7 @@ class WorkflowLifecycleService:
         failed_at = datetime.now(timezone.utc)
         diagnostics = [
             "workflow-runs 已进入服务编排链，但本次执行失败。",
-            f"error_code=workflow_execution_failed",
+            "error_code=workflow_execution_failed",
             f"attempt_count={attempt_count}",
         ]
         if category is not None:

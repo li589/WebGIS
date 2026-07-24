@@ -62,7 +62,10 @@ function splitForDisplay(message: string, details?: string): { message: string; 
       const head = display.slice(0, colon).trim()
       const tail = display.slice(colon + 1).trim()
       // 疑似「失败: Error: ...」类
-      if (/失败|错误|error|Error|Exception/i.test(head) || /Error|Exception|Traceback|\bat\b/i.test(tail)) {
+      if (
+        /失败|错误|error|Error|Exception/i.test(head) ||
+        /Error|Exception|Traceback|\bat\b/i.test(tail)
+      ) {
         parts.unshift(tail)
         display = head
       }
@@ -93,12 +96,7 @@ export const useLogStore = defineStore('log', () => {
     return `log-${Date.now()}-${counter}`
   }
 
-  function addLogEntry(
-    category: LogCategory,
-    type: string,
-    message: string,
-    details?: string,
-  ) {
+  function addLogEntry(category: LogCategory, type: string, message: string, details?: string) {
     const split = splitForDisplay(message, details)
     const entry: LogEntry = {
       id: _genId(),

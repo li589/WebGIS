@@ -43,7 +43,9 @@ class PlatformAdapterTests(unittest.TestCase):
         )
         adapter = CallbackSchedulerAdapter(
             get_run_context=lambda req: {"trace_id": req.job_id},
-            update_status=lambda job_id, run_id, status, detail=None: events.append((job_id, run_id, status, detail)),
+            update_status=lambda job_id, run_id, status, detail=None: events.append(
+                (job_id, run_id, status, detail)
+            ),
             complete=lambda job_result: completed.append(job_result.run_id),
         )
 
@@ -60,13 +62,20 @@ class PlatformAdapterTests(unittest.TestCase):
         tracked_events = []
         completed = []
         delegate = CallbackSchedulerAdapter(
-            update_status=lambda job_id, run_id, status, detail=None: delegate_events.append((job_id, run_id, status)),
+            update_status=lambda job_id,
+            run_id,
+            status,
+            detail=None: delegate_events.append((job_id, run_id, status)),
             complete=lambda result: completed.append(result.status),
         )
         adapter = TrackingSchedulerAdapter(
             delegate,
-            on_status=lambda job_id, run_id, status, detail=None: tracked_events.append((job_id, run_id, status)),
-            on_complete=lambda result: tracked_events.append(("complete", result.run_id, result.status)),
+            on_status=lambda job_id, run_id, status, detail=None: tracked_events.append(
+                (job_id, run_id, status)
+            ),
+            on_complete=lambda result: tracked_events.append(
+                ("complete", result.run_id, result.status)
+            ),
         )
         result = JobResult(
             job_id="job-001",
@@ -98,11 +107,15 @@ class PlatformAdapterTests(unittest.TestCase):
             storage_mode="lazy",
         )
         datasource = CallbackDataSourceAdapter(resolve=lambda req: bundle)
-        product_sink = CallbackProductSink(write_manifest=lambda manifest: f"memory://{manifest.run_id}.json")
+        product_sink = CallbackProductSink(
+            write_manifest=lambda manifest: f"memory://{manifest.run_id}.json"
+        )
 
         resolved = datasource.resolve(request)
         materialized = datasource.materialize(resolved)
-        manifest_uri = product_sink.write_manifest(ProductManifest(job_id="job", run_id="run-003"))
+        manifest_uri = product_sink.write_manifest(
+            ProductManifest(job_id="job", run_id="run-003")
+        )
 
         self.assertEqual(resolved.bundle_id, "bundle-001")
         self.assertTrue(materialized.is_materialized)

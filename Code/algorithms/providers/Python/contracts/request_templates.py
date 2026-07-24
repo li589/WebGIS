@@ -11,12 +11,16 @@ class RequestTemplateSpec:
     entry_name: str
     required_datasource_keys: tuple[str, ...] = ()
     accepted_data_access_datasets: tuple[str, ...] = ()
-    accepted_data_access_by_required_key: dict[str, tuple[str, ...]] = field(default_factory=dict)
+    accepted_data_access_by_required_key: dict[str, tuple[str, ...]] = field(
+        default_factory=dict
+    )
     optional_datasource_keys: tuple[str, ...] = ()
     required_algorithm_keys: tuple[str, ...] = ()
     optional_algorithm_keys: tuple[str, ...] = ()
     allowed_task_types: tuple[str, ...] = ()
-    allowed_algorithm_values: dict[str, tuple[object, ...]] = field(default_factory=dict)
+    allowed_algorithm_values: dict[str, tuple[object, ...]] = field(
+        default_factory=dict
+    )
     notes: str | None = None
 
 
@@ -37,7 +41,15 @@ MODULE_REQUEST_TEMPLATES: dict[str, RequestTemplateSpec] = {
             "ddca_sm_folder",
         ),
         optional_datasource_keys=("lin_pix_mat",),
-        optional_algorithm_keys=("lin_pix", "lin_pix_varname", "tb_source", "sm_source", "ndvi_mode", "sf_mode", "temp_scheme"),
+        optional_algorithm_keys=(
+            "lin_pix",
+            "lin_pix_varname",
+            "tb_source",
+            "sm_source",
+            "ndvi_mode",
+            "sf_mode",
+            "temp_scheme",
+        ),
         allowed_task_types=("daily_bundle", "workflow"),
     ),
     "timeseries_bundle": RequestTemplateSpec(
@@ -56,7 +68,15 @@ MODULE_REQUEST_TEMPLATES: dict[str, RequestTemplateSpec] = {
             "ddca_sm_folder",
         ),
         optional_datasource_keys=("lin_pix_mat",),
-        optional_algorithm_keys=("lin_pix", "lin_pix_varname", "tb_source", "sm_source", "ndvi_mode", "sf_mode", "temp_scheme"),
+        optional_algorithm_keys=(
+            "lin_pix",
+            "lin_pix_varname",
+            "tb_source",
+            "sm_source",
+            "ndvi_mode",
+            "sf_mode",
+            "temp_scheme",
+        ),
         allowed_task_types=("timeseries_bundle", "workflow"),
     ),
     "ndvi_daily": RequestTemplateSpec(
@@ -66,7 +86,14 @@ MODULE_REQUEST_TEMPLATES: dict[str, RequestTemplateSpec] = {
         accepted_data_access_datasets=("NDVI_16DAY_RASTER",),
         accepted_data_access_by_required_key={"input_dir": ("NDVI_16DAY_RASTER",)},
         optional_datasource_keys=("ndvi_clim_dir", "ndvi_clim_folder"),
-        optional_algorithm_keys=("emit_quality_products", "sg_step_days", "daily_step_days", "gap_threshold_days", "sg_polyorder", "sg_window_length"),
+        optional_algorithm_keys=(
+            "emit_quality_products",
+            "sg_step_days",
+            "daily_step_days",
+            "gap_threshold_days",
+            "sg_polyorder",
+            "sg_window_length",
+        ),
         allowed_task_types=("ndvi_daily", "workflow"),
     ),
     "smap_daily": RequestTemplateSpec(
@@ -83,7 +110,13 @@ MODULE_REQUEST_TEMPLATES: dict[str, RequestTemplateSpec] = {
         required_datasource_keys=("input_dir",),
         accepted_data_access_datasets=("ISMN_STM_OR_CASMOS_TXT",),
         accepted_data_access_by_required_key={"input_dir": ("ISMN_STM_OR_CASMOS_TXT",)},
-        optional_datasource_keys=("site_info_csv", "smap_grid_mat", "landcover_mat", "climate_mat", "network_map_csv"),
+        optional_datasource_keys=(
+            "site_info_csv",
+            "smap_grid_mat",
+            "landcover_mat",
+            "climate_mat",
+            "network_map_csv",
+        ),
         optional_algorithm_keys=(
             "source_type",
             "emit_validation_products",
@@ -103,7 +136,14 @@ MODULE_REQUEST_TEMPLATES: dict[str, RequestTemplateSpec] = {
         required_datasource_keys=("input_dir",),
         accepted_data_access_datasets=("FY_MWRI_HDF",),
         accepted_data_access_by_required_key={"input_dir": ("FY_MWRI_HDF",)},
-        optional_algorithm_keys=("orbit_mode", "band_ids", "overlap_option", "spatial_mode", "gdal_bin", "execute_commands"),
+        optional_algorithm_keys=(
+            "orbit_mode",
+            "band_ids",
+            "overlap_option",
+            "spatial_mode",
+            "gdal_bin",
+            "execute_commands",
+        ),
         allowed_task_types=("fy_daily", "workflow"),
         allowed_algorithm_values={
             "orbit_mode": ("MWRID", "MWRIA", "Both"),
@@ -137,9 +177,79 @@ MODULE_REQUEST_TEMPLATES: dict[str, RequestTemplateSpec] = {
         accepted_data_access_datasets=("timeseries_bundle_mat",),
         accepted_data_access_by_required_key={"input_mat": ("timeseries_bundle_mat",)},
         optional_datasource_keys=("omega_fixed_mat", "exp0_calib_mat"),
-        optional_algorithm_keys=("freq_ghz", "temp_scheme", "exp_mode", "write_daily_files"),
+        optional_algorithm_keys=(
+            "freq_ghz",
+            "temp_scheme",
+            "exp_mode",
+            "write_daily_files",
+        ),
         allowed_task_types=("omega_block", "retrieval", "workflow"),
         allowed_algorithm_values={"exp_mode": ("Exp0", "EXP1A", "EXP1B", "EXP2")},
+    ),
+    "omega_avg_daily": RequestTemplateSpec(
+        entry_kind="module",
+        entry_name="omega_avg_daily",
+        required_datasource_keys=(
+            "omega_block_dir",
+            "anc_root",
+            "smap_folder",
+            "ndvi_folder",
+        ),
+        accepted_data_access_datasets=(
+            "omega_block_dir",
+            "anc_root",
+            "smap_folder",
+            "ndvi_folder",
+            "ndvi_clim_folder",
+            "timeseries_bundle_mat",
+        ),
+        accepted_data_access_by_required_key={
+            "omega_block_dir": ("omega_block_dir",),
+            "anc_root": ("anc_root",),
+            "smap_folder": ("smap_folder",),
+            "ndvi_folder": ("ndvi_folder",),
+        },
+        optional_datasource_keys=(
+            "ndvi_clim_folder",
+            "ndvi_extrema_mat",
+            "avg_omega_doy_dir",
+            "omega_block_mat",
+        ),
+        optional_algorithm_keys=(
+            "target_year",
+            "tb_source",
+            "temp_scheme",
+            "ndvi_mode",
+            "sf_mode",
+            "sm_source",
+            "enable_parallel",
+            "avg_build_start_year",
+            "avg_build_end_year",
+            "grid_shape",
+            "print_every_days",
+            "freq_ghz",
+            "lambda_tau",
+            "pixel_chunk_size",
+            "use_gldas_template",
+            "dual_tg_mode",
+            "ct_smref",
+            "ct_exp",
+        ),
+        allowed_task_types=("omega_avg_daily", "workflow"),
+        allowed_algorithm_values={
+            "tb_source": ("SMAP", "FY"),
+            "temp_scheme": ("ORIG_TS", "DUAL"),
+        },
+    ),
+    "validation_metrics": RequestTemplateSpec(
+        entry_kind="module",
+        entry_name="validation_metrics",
+        # predicted_path 可从 datasource_selection 或上游 manifest artifact 解析，
+        # 故仅 observed_path 为必需 datasource 键。
+        required_datasource_keys=("observed_path",),
+        optional_datasource_keys=("predicted_path",),
+        optional_algorithm_keys=("predicted_variable", "observed_variable"),
+        allowed_task_types=("validation_metrics", "workflow"),
     ),
 }
 
@@ -148,7 +258,9 @@ def get_module_request_template(name: str) -> RequestTemplateSpec | None:
     return MODULE_REQUEST_TEMPLATES.get(name)
 
 
-def build_workflow_request_template(name: str, request: JobRequest) -> RequestTemplateSpec | None:
+def build_workflow_request_template(
+    name: str, request: JobRequest
+) -> RequestTemplateSpec | None:
     if name != "retrieval_workflow":
         return None
     mode = str(request.algorithm_params.get("mode", "dh")).lower()
@@ -160,13 +272,24 @@ def build_workflow_request_template(name: str, request: JobRequest) -> RequestTe
         entry_kind="workflow",
         entry_name="retrieval_workflow",
         required_datasource_keys=tuple(required_inputs),
-        accepted_data_access_datasets=("timeseries_bundle_mat", "omega_fixed_mat", "exp0_calib_mat", "dh_mat"),
+        accepted_data_access_datasets=(
+            "timeseries_bundle_mat",
+            "omega_fixed_mat",
+            "exp0_calib_mat",
+            "dh_mat",
+        ),
         accepted_data_access_by_required_key={
             "omega_fixed_mat": ("omega_fixed_mat",),
             "exp0_calib_mat": ("exp0_calib_mat",),
         },
         optional_datasource_keys=tuple(optional_inputs),
-        optional_algorithm_keys=("mode", "freq_ghz", "pixel_chunk_size", "write_daily_files", "exp_mode"),
+        optional_algorithm_keys=(
+            "mode",
+            "freq_ghz",
+            "pixel_chunk_size",
+            "write_daily_files",
+            "exp_mode",
+        ),
         allowed_task_types=("retrieval", "workflow", "retrieval_workflow"),
         allowed_algorithm_values={"mode": ("dh", "ddca", "omega")},
         notes="Retrieval workflow switches downstream module by algorithm_params.mode.",

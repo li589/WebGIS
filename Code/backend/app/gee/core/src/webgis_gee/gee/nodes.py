@@ -36,7 +36,9 @@ class GeeImageNode(BaseNode):
         return NodeSpec(
             node_id="gee_image",
             node_type=GeeImageNode.node_type,
-            params={"asset_id": "COPERNICUS/S2_SR_HARMONIZED/20230101T000000_20230101T000000_T50SMJ"},
+            params={
+                "asset_id": "COPERNICUS/S2_SR_HARMONIZED/20230101T000000_20230101T000000_T50SMJ"
+            },
             output_ports=[PortSpec(name="image", kind=PortKind.VALUE)],
         )
 
@@ -109,7 +111,8 @@ class GeeClipNode(BaseNode):
             node_type=GeeClipNode.node_type,
             input_ports=[
                 PortSpec(name="image", kind=PortKind.VALUE),
-                PortSpec(name="geometry", kind=PortKind.VALUE)],
+                PortSpec(name="geometry", kind=PortKind.VALUE),
+            ],
             output_ports=[PortSpec(name="clipped", kind=PortKind.VALUE)],
         )
 
@@ -164,7 +167,11 @@ class GeeSelectBandsNode(BaseNode):
                 status=RunStatus.FAILED,
                 warnings=["Missing image input for band selection"],
             )
-        if not isinstance(bands, list) or not bands or any(not isinstance(band, str) or not band for band in bands):
+        if (
+            not isinstance(bands, list)
+            or not bands
+            or any(not isinstance(band, str) or not band for band in bands)
+        ):
             return NodeExecutionResult(
                 node_id=self.spec.node_id,
                 status=RunStatus.FAILED,
@@ -178,7 +185,11 @@ class GeeSelectBandsNode(BaseNode):
                     warnings=["gee_select_bands rename must match bands length"],
                 )
         try:
-            selected = image.select(bands, rename) if rename is not None else image.select(bands)
+            selected = (
+                image.select(bands, rename)
+                if rename is not None
+                else image.select(bands)
+            )
             return NodeExecutionResult(
                 node_id=self.spec.node_id,
                 outputs={"image": selected},
@@ -220,8 +231,12 @@ class GeeSpectralIndexNode(BaseNode):
                 warnings=["Missing image input for spectral index"],
             )
 
-        index_name = str(inputs.get("index", self.spec.params.get("index", "ndvi"))).lower()
-        output_band = inputs.get("output_band", self.spec.params.get("output_band")) or index_name
+        index_name = str(
+            inputs.get("index", self.spec.params.get("index", "ndvi"))
+        ).lower()
+        output_band = (
+            inputs.get("output_band", self.spec.params.get("output_band")) or index_name
+        )
         if not isinstance(output_band, str) or not output_band:
             return NodeExecutionResult(
                 node_id=self.spec.node_id,
@@ -230,7 +245,9 @@ class GeeSpectralIndexNode(BaseNode):
             )
 
         try:
-            left_band, right_band = self._resolve_index_bands(index_name=index_name, inputs=inputs)
+            left_band, right_band = self._resolve_index_bands(
+                index_name=index_name, inputs=inputs
+            )
         except ValueError as exc:
             return NodeExecutionResult(
                 node_id=self.spec.node_id,
@@ -239,7 +256,9 @@ class GeeSpectralIndexNode(BaseNode):
             )
 
         try:
-            index_image = image.normalizedDifference([left_band, right_band]).rename(output_band)
+            index_image = image.normalizedDifference([left_band, right_band]).rename(
+                output_band
+            )
             return NodeExecutionResult(
                 node_id=self.spec.node_id,
                 outputs={"index_image": index_image},
@@ -251,7 +270,9 @@ class GeeSpectralIndexNode(BaseNode):
                 warnings=[f"Spectral index failed: {str(e)}"],
             )
 
-    def _resolve_index_bands(self, *, index_name: str, inputs: dict[str, Any]) -> tuple[str, str]:
+    def _resolve_index_bands(
+        self, *, index_name: str, inputs: dict[str, Any]
+    ) -> tuple[str, str]:
         if index_name == "ndvi":
             return (
                 str(inputs.get("nir_band", self.spec.params.get("nir_band", "B8"))),
@@ -267,7 +288,9 @@ class GeeSpectralIndexNode(BaseNode):
                 str(inputs.get("nir_band", self.spec.params.get("nir_band", "B8"))),
                 str(inputs.get("swir_band", self.spec.params.get("swir_band", "B11"))),
             )
-        raise ValueError("gee_spectral_index index must be one of 'ndvi', 'ndwi', 'ndmi'")
+        raise ValueError(
+            "gee_spectral_index index must be one of 'ndvi', 'ndwi', 'ndmi'"
+        )
 
 
 class GeeRasterAlgebraNode(BaseNode):
@@ -312,13 +335,18 @@ class GeeRasterAlgebraNode(BaseNode):
                 warnings=["gee_raster_algebra band_map must be a non-empty mapping"],
             )
         if any(
-            not isinstance(variable, str) or not variable or not isinstance(band_name, str) or not band_name
+            not isinstance(variable, str)
+            or not variable
+            or not isinstance(band_name, str)
+            or not band_name
             for variable, band_name in band_map.items()
         ):
             return NodeExecutionResult(
                 node_id=self.spec.node_id,
                 status=RunStatus.FAILED,
-                warnings=["gee_raster_algebra band_map keys and values must be non-empty strings"],
+                warnings=[
+                    "gee_raster_algebra band_map keys and values must be non-empty strings"
+                ],
             )
         if not isinstance(output_band, str) or not output_band:
             return NodeExecutionResult(
@@ -368,7 +396,9 @@ class GeeThresholdClassifyNode(BaseNode):
         image = inputs.get("image")
         band = inputs.get("band", self.spec.params.get("band"))
         thresholds = inputs.get("thresholds", self.spec.params.get("thresholds", []))
-        class_values = inputs.get("class_values", self.spec.params.get("class_values", []))
+        class_values = inputs.get(
+            "class_values", self.spec.params.get("class_values", [])
+        )
         output_band = inputs.get("output_band", self.spec.params.get("output_band"))
         if image is None:
             return NodeExecutionResult(
@@ -390,13 +420,20 @@ class GeeThresholdClassifyNode(BaseNode):
             return NodeExecutionResult(
                 node_id=self.spec.node_id,
                 status=RunStatus.FAILED,
-                warnings=["gee_threshold_classify thresholds must be a non-empty numeric list"],
+                warnings=[
+                    "gee_threshold_classify thresholds must be a non-empty numeric list"
+                ],
             )
-        if any(thresholds[index] >= thresholds[index + 1] for index in range(len(thresholds) - 1)):
+        if any(
+            thresholds[index] >= thresholds[index + 1]
+            for index in range(len(thresholds) - 1)
+        ):
             return NodeExecutionResult(
                 node_id=self.spec.node_id,
                 status=RunStatus.FAILED,
-                warnings=["gee_threshold_classify thresholds must be strictly ascending"],
+                warnings=[
+                    "gee_threshold_classify thresholds must be strictly ascending"
+                ],
             )
         if (
             not isinstance(class_values, list)
@@ -406,13 +443,17 @@ class GeeThresholdClassifyNode(BaseNode):
             return NodeExecutionResult(
                 node_id=self.spec.node_id,
                 status=RunStatus.FAILED,
-                warnings=["gee_threshold_classify class_values must be a numeric list with len(thresholds) + 1 items"],
+                warnings=[
+                    "gee_threshold_classify class_values must be a numeric list with len(thresholds) + 1 items"
+                ],
             )
         if not isinstance(output_band, str) or not output_band:
             return NodeExecutionResult(
                 node_id=self.spec.node_id,
                 status=RunStatus.FAILED,
-                warnings=["gee_threshold_classify output_band must be a non-empty string"],
+                warnings=[
+                    "gee_threshold_classify output_band must be a non-empty string"
+                ],
             )
 
         try:
@@ -456,7 +497,9 @@ class GeeReclassifyNode(BaseNode):
         image = inputs.get("image")
         band = inputs.get("band", self.spec.params.get("band"))
         rules = inputs.get("rules", self.spec.params.get("rules", []))
-        default_value = inputs.get("default_value", self.spec.params.get("default_value", 0))
+        default_value = inputs.get(
+            "default_value", self.spec.params.get("default_value", 0)
+        )
         output_band = inputs.get("output_band", self.spec.params.get("output_band"))
         if image is None:
             return NodeExecutionResult(
@@ -532,8 +575,12 @@ class GeeReclassifyNode(BaseNode):
                 raise ValueError("gee_reclassify match rule must include numeric match")
             return {"match": float(rule["match"]), "value": float(rule["value"])}
         if "min" in rule and "max" in rule:
-            if not isinstance(rule["min"], (int, float)) or not isinstance(rule["max"], (int, float)):
-                raise ValueError("gee_reclassify range rule must include numeric min and max")
+            if not isinstance(rule["min"], (int, float)) or not isinstance(
+                rule["max"], (int, float)
+            ):
+                raise ValueError(
+                    "gee_reclassify range rule must include numeric min and max"
+                )
             if float(rule["min"]) > float(rule["max"]):
                 raise ValueError("gee_reclassify range rule min must be <= max")
             return {
@@ -559,7 +606,9 @@ class GeeImageCollectionCompositeNode(BaseNode):
 
     def execute(self, inputs: dict[str, Any]) -> NodeExecutionResult:
         collection = inputs.get("collection")
-        reducer = str(inputs.get("reducer", self.spec.params.get("reducer", "median"))).lower()
+        reducer = str(
+            inputs.get("reducer", self.spec.params.get("reducer", "median"))
+        ).lower()
         if collection is None:
             return NodeExecutionResult(
                 node_id=self.spec.node_id,
@@ -570,7 +619,9 @@ class GeeImageCollectionCompositeNode(BaseNode):
             return NodeExecutionResult(
                 node_id=self.spec.node_id,
                 status=RunStatus.FAILED,
-                warnings=["gee_image_collection_composite reducer must be 'median', 'mean' or 'mosaic'"],
+                warnings=[
+                    "gee_image_collection_composite reducer must be 'median', 'mean' or 'mosaic'"
+                ],
             )
         try:
             composite = getattr(collection, reducer)()
@@ -608,7 +659,9 @@ class GeeRegionStatsNode(BaseNode):
     def execute(self, inputs: dict[str, Any]) -> NodeExecutionResult:
         image = inputs.get("image")
         geometry = inputs.get("geometry")
-        reducer_name = str(inputs.get("reducer", self.spec.params.get("reducer", "mean"))).lower()
+        reducer_name = str(
+            inputs.get("reducer", self.spec.params.get("reducer", "mean"))
+        ).lower()
         scale = inputs.get("scale", self.spec.params.get("scale", 30))
         if image is None or geometry is None:
             return NodeExecutionResult(
@@ -620,7 +673,9 @@ class GeeRegionStatsNode(BaseNode):
             return NodeExecutionResult(
                 node_id=self.spec.node_id,
                 status=RunStatus.FAILED,
-                warnings=["gee_region_stats reducer must be one of 'mean', 'sum', 'min', 'max', 'median', 'count'"],
+                warnings=[
+                    "gee_region_stats reducer must be one of 'mean', 'sum', 'min', 'max', 'median', 'count'"
+                ],
             )
         try:
             reducer = _resolve_reducer(self.context, reducer_name)
@@ -670,11 +725,23 @@ class GeeTimeSeriesStatsNode(BaseNode):
     def execute(self, inputs: dict[str, Any]) -> NodeExecutionResult:
         collection = inputs.get("collection")
         geometry = inputs.get("geometry")
-        reducer_name = str(inputs.get("reducer", self.spec.params.get("reducer", "mean"))).lower()
+        reducer_name = str(
+            inputs.get("reducer", self.spec.params.get("reducer", "mean"))
+        ).lower()
         scale = inputs.get("scale", self.spec.params.get("scale", 30))
         band = inputs.get("band", self.spec.params.get("band"))
-        date_property = str(inputs.get("date_property", self.spec.params.get("date_property", "system:time_start")))
-        value_property = str(inputs.get("value_property", self.spec.params.get("value_property", "__gee_ts_value__")))
+        date_property = str(
+            inputs.get(
+                "date_property",
+                self.spec.params.get("date_property", "system:time_start"),
+            )
+        )
+        value_property = str(
+            inputs.get(
+                "value_property",
+                self.spec.params.get("value_property", "__gee_ts_value__"),
+            )
+        )
         if collection is None or geometry is None:
             return NodeExecutionResult(
                 node_id=self.spec.node_id,
@@ -685,7 +752,9 @@ class GeeTimeSeriesStatsNode(BaseNode):
             return NodeExecutionResult(
                 node_id=self.spec.node_id,
                 status=RunStatus.FAILED,
-                warnings=["gee_time_series_stats reducer must be one of 'mean', 'sum', 'min', 'max', 'median', 'count'"],
+                warnings=[
+                    "gee_time_series_stats reducer must be one of 'mean', 'sum', 'min', 'max', 'median', 'count'"
+                ],
             )
         if not isinstance(band, str) or not band:
             return NodeExecutionResult(
@@ -698,11 +767,13 @@ class GeeTimeSeriesStatsNode(BaseNode):
             enriched_collection = collection.map(
                 lambda image: image.set(
                     value_property,
-                    image.select([band]).reduceRegion(
+                    image.select([band])
+                    .reduceRegion(
                         reducer=reducer,
                         geometry=geometry,
                         scale=scale,
-                    ).get(band),
+                    )
+                    .get(band),
                 )
             )
             series = {
@@ -763,15 +834,21 @@ class GeeExportImageNode(BaseNode):
             )
 
         storage_backend = _resolve_storage_backend(self.context)
-        destination = inputs.get("destination", self.spec.params.get("destination", "manifest"))
-        description = inputs.get("description", self.spec.params.get("description", self.spec.node_id))
+        destination = inputs.get(
+            "destination", self.spec.params.get("destination", "manifest")
+        )
+        description = inputs.get(
+            "description", self.spec.params.get("description", self.spec.node_id)
+        )
         file_name_prefix = inputs.get(
             "file_name_prefix",
             self.spec.params.get("file_name_prefix", self.spec.node_id),
         )
         scale = inputs.get("scale", self.spec.params.get("scale", 10))
         bucket = inputs.get("bucket", self.spec.params.get("bucket"))
-        start_task = bool(inputs.get("start_task", self.spec.params.get("start_task", False)))
+        start_task = bool(
+            inputs.get("start_task", self.spec.params.get("start_task", False))
+        )
 
         task_ref: dict[str, Any] = {
             "destination": destination,
@@ -900,14 +977,20 @@ class GeeExportTableNode(BaseNode):
             )
 
         storage_backend = _resolve_storage_backend(self.context)
-        destination = inputs.get("destination", self.spec.params.get("destination", "manifest"))
-        description = inputs.get("description", self.spec.params.get("description", self.spec.node_id))
+        destination = inputs.get(
+            "destination", self.spec.params.get("destination", "manifest")
+        )
+        description = inputs.get(
+            "description", self.spec.params.get("description", self.spec.node_id)
+        )
         file_name_prefix = inputs.get(
             "file_name_prefix",
             self.spec.params.get("file_name_prefix", self.spec.node_id),
         )
         bucket = inputs.get("bucket", self.spec.params.get("bucket"))
-        start_task = bool(inputs.get("start_task", self.spec.params.get("start_task", False)))
+        start_task = bool(
+            inputs.get("start_task", self.spec.params.get("start_task", False))
+        )
 
         task_ref: dict[str, Any] = {
             "destination": destination,
@@ -1022,7 +1105,9 @@ def _resolve_reducer(context: ExecutionContext, reducer_name: str) -> Any:
     return reducer_name
 
 
-def _resolve_resource_controller(context: ExecutionContext) -> RuntimeResourceController | None:
+def _resolve_resource_controller(
+    context: ExecutionContext,
+) -> RuntimeResourceController | None:
     controller = context.metadata.get("resource_controller")
     if isinstance(controller, RuntimeResourceController):
         return controller
@@ -1036,7 +1121,9 @@ def _export_slot(context: ExecutionContext):
     return controller.export_slot()
 
 
-def _resolve_metrics_collector(context: ExecutionContext) -> InMemoryMetricsCollector | None:
+def _resolve_metrics_collector(
+    context: ExecutionContext,
+) -> InMemoryMetricsCollector | None:
     collector = context.metadata.get("metrics_collector")
     if isinstance(collector, InMemoryMetricsCollector):
         return collector
@@ -1076,7 +1163,9 @@ def _write_manifest_artifact(
     artifact_type: str,
 ) -> ArtifactRecord:
     path = f"exports/{context.workflow_id}/{context.run_id}/{node_id}/{file_name}"
-    storage_uri = storage_backend.put(path, json.dumps(payload, ensure_ascii=True, indent=2).encode("utf-8"))
+    storage_uri = storage_backend.put(
+        path, json.dumps(payload, ensure_ascii=True, indent=2).encode("utf-8")
+    )
     return ArtifactRecord(
         workflow_run_id=context.run_id,
         node_id=node_id,

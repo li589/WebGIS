@@ -31,6 +31,7 @@ interface CreateWeatherOverlayRuntimeOrchestratorOptions {
   scalarFieldController?: ScalarFieldWebGLController | null
   getEnabledParticleFlowCatalogId: () => string | null
   getWindDisplayMode?: () => WindDisplayMode
+  getSmoothRendering?: () => boolean
   getSyncWeatherToken: () => number
   debugLog: DebugLogger
   dependencies?: WeatherOverlayRuntimeOrchestratorDependencies
@@ -43,10 +44,13 @@ export interface WeatherOverlayRuntimeOrchestrator {
 export function createWeatherOverlayRuntimeOrchestrator(
   options: CreateWeatherOverlayRuntimeOrchestratorOptions,
 ): WeatherOverlayRuntimeOrchestrator {
-  const createOverlayServicesImpl = options.dependencies?.createOverlayServices ?? createWeatherOverlayServices
-  const createRenderContextImpl = options.dependencies?.createRenderContext ?? createWeatherOverlayRenderContext
+  const createOverlayServicesImpl =
+    options.dependencies?.createOverlayServices ?? createWeatherOverlayServices
+  const createRenderContextImpl =
+    options.dependencies?.createRenderContext ?? createWeatherOverlayRenderContext
   const pruneStaleImpl = options.dependencies?.pruneStale ?? pruneStaleWeatherOverlays
-  const reconcileParticleFlowImpl = options.dependencies?.reconcileParticleFlow ?? reconcileParticleFlowController
+  const reconcileParticleFlowImpl =
+    options.dependencies?.reconcileParticleFlow ?? reconcileParticleFlowController
   const renderBatchImpl = options.dependencies?.renderBatch ?? renderWeatherOverlayBatch
 
   return {
@@ -93,6 +97,7 @@ export function createWeatherOverlayRuntimeOrchestrator(
         getSyncWeatherToken: options.getSyncWeatherToken,
         getEnabledParticleFlowCatalogId: options.getEnabledParticleFlowCatalogId,
         getWindDisplayMode: options.getWindDisplayMode,
+        getSmoothRendering: options.getSmoothRendering,
       })
 
       renderBatchImpl({

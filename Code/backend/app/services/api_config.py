@@ -14,6 +14,7 @@ logger = logging.getLogger(__name__)
 
 class ApiProvider(Enum):
     """API 提供商枚举"""
+
     OPEN_METEO = "open-meteo"
     GEE = "gee"
     BAIDU = "baidu"
@@ -24,6 +25,7 @@ class ApiProvider(Enum):
 
 class DataType(Enum):
     """数据类型枚举"""
+
     WEATHER = "weather"
     ELEVATION = "elevation"
     SATELLITE = "satellite"
@@ -35,6 +37,7 @@ class DataType(Enum):
 @dataclass
 class ApiEndpoint:
     """API 端点配置"""
+
     url: str
     requires_auth: bool = False
     rate_limit: Optional[int] = None  # 每分钟请求数限制
@@ -46,6 +49,7 @@ class ApiEndpoint:
 @dataclass
 class ApiConfig:
     """API 配置"""
+
     provider: ApiProvider
     name: str
     endpoint: ApiEndpoint
@@ -72,7 +76,9 @@ class ApiConfigManager:
 
         self._configs: dict[ApiProvider, ApiConfig] = {}
         self._provider_aliases: dict[str, ApiProvider] = {}  # 别名映射
-        self._data_type_providers: dict[DataType, list[ApiProvider]] = {}  # 数据类型 → 提供商列表
+        self._data_type_providers: dict[
+            DataType, list[ApiProvider]
+        ] = {}  # 数据类型 → 提供商列表
         self._initialized = True
 
         self._load_default_configs()
@@ -82,74 +88,88 @@ class ApiConfigManager:
         """加载默认配置"""
 
         # Open-Meteo（无需 API Key）
-        self.register_config(ApiConfig(
-            provider=ApiProvider.OPEN_METEO,
-            name="Open-Meteo (Online)",
-            endpoint=ApiEndpoint(
-                url="https://api.open-meteo.com/v1/forecast",
-                requires_auth=False,
-                rate_limit=10000,
-                timeout=15,
-                capabilities={DataType.WEATHER},
-            ),
-            priority=0,
-        ))
+        self.register_config(
+            ApiConfig(
+                provider=ApiProvider.OPEN_METEO,
+                name="Open-Meteo (Online)",
+                endpoint=ApiEndpoint(
+                    url="https://api.open-meteo.com/v1/forecast",
+                    requires_auth=False,
+                    rate_limit=10000,
+                    timeout=15,
+                    capabilities={DataType.WEATHER},
+                ),
+                priority=0,
+            )
+        )
 
         # 天地图
-        self.register_config(ApiConfig(
-            provider=ApiProvider.TIANDITU,
-            name="天地图",
-            endpoint=ApiEndpoint(
-                url="https://api.tianditu.gov.cn",
-                requires_auth=True,
-                rate_limit=500,
-                timeout=10,
-                capabilities={DataType.TILE, DataType.GEOCODING},
-            ),
-            priority=10,
-        ))
+        self.register_config(
+            ApiConfig(
+                provider=ApiProvider.TIANDITU,
+                name="天地图",
+                endpoint=ApiEndpoint(
+                    url="https://api.tianditu.gov.cn",
+                    requires_auth=True,
+                    rate_limit=500,
+                    timeout=10,
+                    capabilities={DataType.TILE, DataType.GEOCODING},
+                ),
+                priority=10,
+            )
+        )
 
         # 百度地图
-        self.register_config(ApiConfig(
-            provider=ApiProvider.BAIDU,
-            name="百度地图",
-            endpoint=ApiEndpoint(
-                url="https://api.map.baidu.com",
-                requires_auth=True,
-                rate_limit=200,
-                timeout=10,
-                capabilities={DataType.TILE, DataType.GEOCODING, DataType.ROUTING},
-            ),
-            priority=20,
-        ))
+        self.register_config(
+            ApiConfig(
+                provider=ApiProvider.BAIDU,
+                name="百度地图",
+                endpoint=ApiEndpoint(
+                    url="https://api.map.baidu.com",
+                    requires_auth=True,
+                    rate_limit=200,
+                    timeout=10,
+                    capabilities={DataType.TILE, DataType.GEOCODING, DataType.ROUTING},
+                ),
+                priority=20,
+            )
+        )
 
         # 高德地图
-        self.register_config(ApiConfig(
-            provider=ApiProvider.GAODE,
-            name="高德地图",
-            endpoint=ApiEndpoint(
-                url="https://restapi.amap.com",
-                requires_auth=True,
-                rate_limit=500,
-                timeout=10,
-                capabilities={DataType.TILE, DataType.GEOCODING, DataType.ROUTING},
-            ),
-            priority=30,
-        ))
+        self.register_config(
+            ApiConfig(
+                provider=ApiProvider.GAODE,
+                name="高德地图",
+                endpoint=ApiEndpoint(
+                    url="https://restapi.amap.com",
+                    requires_auth=True,
+                    rate_limit=500,
+                    timeout=10,
+                    capabilities={DataType.TILE, DataType.GEOCODING, DataType.ROUTING},
+                ),
+                priority=30,
+            )
+        )
 
         # GEE
-        self.register_config(ApiConfig(
-            provider=ApiProvider.GEE,
-            name="Google Earth Engine",
-            endpoint=ApiEndpoint(
-                url="https://earthengine.googleapis.com",
-                requires_auth=True,
-                rate_limit=50,
-                timeout=30,
-                capabilities={DataType.SATELLITE, DataType.ELEVATION, DataType.WEATHER},
-            ),
-            priority=5,
-        ))
+        self.register_config(
+            ApiConfig(
+                provider=ApiProvider.GEE,
+                name="Google Earth Engine",
+                endpoint=ApiEndpoint(
+                    url="https://earthengine.googleapis.com",
+                    requires_auth=True,
+                    rate_limit=50,
+                    timeout=30,
+                    capabilities={
+                        DataType.SATELLITE,
+                        DataType.ELEVATION,
+                        DataType.WEATHER,
+                    },
+                ),
+                priority=5,
+            )
+        )
 
     def _load_from_env(self):
         """从环境变量加载配置"""
@@ -179,7 +199,9 @@ class ApiConfigManager:
             config = self.get_config(ApiProvider.GEE)
             if config:
                 config.metadata["credentials_path"] = gee_credentials
-                logger.info("[ApiConfigManager] Loaded GEE credentials path from environment")
+                logger.info(
+                    "[ApiConfigManager] Loaded GEE credentials path from environment"
+                )
 
         # Open-Meteo online 默认端点（local 由 weather provider registry 管理）
         openmeteo_url = os.getenv("BACKEND_OPEN_METEO_ONLINE_URL", "").strip()
@@ -187,7 +209,9 @@ class ApiConfigManager:
             config = self.get_config(ApiProvider.OPEN_METEO)
             if config:
                 config.endpoint.url = openmeteo_url
-                logger.info(f"[ApiConfigManager] Updated Open-Meteo online URL to {openmeteo_url}")
+                logger.info(
+                    f"[ApiConfigManager] Updated Open-Meteo online URL to {openmeteo_url}"
+                )
 
     def register_config(self, config: ApiConfig):
         """注册 API 配置"""
@@ -200,7 +224,9 @@ class ApiConfigManager:
             if config.provider not in self._data_type_providers[data_type]:
                 self._data_type_providers[data_type].append(config.provider)
 
-        logger.debug(f"[ApiConfigManager] Registered API config for {config.provider.value}")
+        logger.debug(
+            f"[ApiConfigManager] Registered API config for {config.provider.value}"
+        )
 
     def get_config(self, provider: ApiProvider) -> Optional[ApiConfig]:
         """获取指定提供商的配置"""
@@ -230,7 +256,9 @@ class ApiConfigManager:
         config = self._configs.get(provider)
         if config:
             config.enabled = enabled
-            logger.info(f"[ApiConfigManager] {'Enabled' if enabled else 'Disabled'} {provider.value}")
+            logger.info(
+                f"[ApiConfigManager] {'Enabled' if enabled else 'Disabled'} {provider.value}"
+            )
 
     def get_best_available(
         self,
@@ -286,7 +314,9 @@ class ApiConfigManager:
         """获取所有配置"""
         return self._configs.copy()
 
-    def get_config_serializable(self, provider: ApiProvider) -> Optional[dict[str, Any]]:
+    def get_config_serializable(
+        self, provider: ApiProvider
+    ) -> Optional[dict[str, Any]]:
         """获取可直接 JSON 序列化的 provider 配置（永不包含明文 api_key）。"""
         config = self._configs.get(provider)
         if config is None:
@@ -338,8 +368,7 @@ def _to_jsonable(value: Any) -> Any:
         }
     if isinstance(value, dict):
         return {
-            str(_to_jsonable(key)): _to_jsonable(item)
-            for key, item in value.items()
+            str(_to_jsonable(key)): _to_jsonable(item) for key, item in value.items()
         }
     if isinstance(value, set):
         return sorted(_to_jsonable(item) for item in value)
@@ -352,7 +381,9 @@ def _resolve_api_key_source(config: ApiConfig) -> str:
     """推断密钥来源展示字段：env | metadata | none（不含明文）。"""
     if config.api_key and str(config.api_key).strip():
         return "env"
-    credentials_path = config.metadata.get("credentials_path") if config.metadata else None
+    credentials_path = (
+        config.metadata.get("credentials_path") if config.metadata else None
+    )
     if isinstance(credentials_path, str) and credentials_path.strip():
         return "metadata"
     return "none"
@@ -374,11 +405,19 @@ def _to_public_config(config: ApiConfig) -> dict[str, Any]:
     if not isinstance(payload, dict):
         return {}
     key_present = bool(config.api_key and str(config.api_key).strip())
-    credentials_path = config.metadata.get("credentials_path") if config.metadata else None
-    credentials_present = isinstance(credentials_path, str) and bool(credentials_path.strip())
+    credentials_path = (
+        config.metadata.get("credentials_path") if config.metadata else None
+    )
+    credentials_present = isinstance(credentials_path, str) and bool(
+        credentials_path.strip()
+    )
     payload.pop("api_key", None)
     payload["api_key_configured"] = key_present or credentials_present
-    payload["api_key_source"] = _resolve_api_key_source(config) if key_present or credentials_present else "none"
+    payload["api_key_source"] = (
+        _resolve_api_key_source(config)
+        if key_present or credentials_present
+        else "none"
+    )
     wired = list(_HOT_PATH_WIRED.get(config.provider, ()))
     payload["wired_in_hot_path"] = wired
     payload["hot_path_notes"] = (
@@ -396,7 +435,9 @@ def get_api_config(provider: ApiProvider) -> Optional[ApiConfig]:
 
 def get_weather_api_config() -> Optional[ApiConfig]:
     """获取天气数据 API 配置（优先级最高）"""
-    return api_config_manager.get_best_available(required_capabilities={DataType.WEATHER})
+    return api_config_manager.get_best_available(
+        required_capabilities={DataType.WEATHER}
+    )
 
 
 def get_tile_api_config() -> Optional[ApiConfig]:
@@ -406,4 +447,6 @@ def get_tile_api_config() -> Optional[ApiConfig]:
 
 def get_geocoding_api_config() -> Optional[ApiConfig]:
     """获取地理编码 API 配置"""
-    return api_config_manager.get_best_available(required_capabilities={DataType.GEOCODING})
+    return api_config_manager.get_best_available(
+        required_capabilities={DataType.GEOCODING}
+    )

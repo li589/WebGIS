@@ -9,6 +9,7 @@
 
 输出: 控制台报告 + Tools/reports/dataset_verification.json
 """
+
 from __future__ import annotations
 
 import json
@@ -27,9 +28,11 @@ import numpy as np
 
 # 添加 Code 目录到 sys.path
 CODE_ROOT = Path(__file__).resolve().parent.parent / "Code"
-sys.path.insert(0, str(CODE_ROOT / "algorithms" / "providers" / "Python" / "data_access"))
+sys.path.insert(
+    0, str(CODE_ROOT / "algorithms" / "providers" / "Python" / "data_access")
+)
 
-from universal_reader import UniversalDataReader, DataArray, CHINA_BBOX
+from universal_reader import UniversalDataReader, CHINA_BBOX
 
 DATA_ROOT = Path("I:/Geograph_DataSet")
 REPORT_PATH = Path(__file__).resolve().parent / "reports" / "dataset_verification.json"
@@ -41,7 +44,11 @@ def fmt_stat(values: np.ndarray) -> dict:
     total = values.size
     nan_count = total - finite.size
     if finite.size == 0:
-        return {"total_pixels": int(total), "nan_count": int(nan_count), "nan_ratio": 1.0}
+        return {
+            "total_pixels": int(total),
+            "nan_count": int(nan_count),
+            "nan_ratio": 1.0,
+        }
     return {
         "total_pixels": int(total),
         "valid_pixels": int(finite.size),
@@ -114,13 +121,19 @@ def verify_dataset(
         result.update(fmt_coord(data.lon, "lon"))
         if data.time is not None:
             result["time_available"] = True
-            result["time_count"] = len(data.time) if hasattr(data.time, "__len__") else 1
+            result["time_count"] = (
+                len(data.time) if hasattr(data.time, "__len__") else 1
+            )
             result["time_first"] = str(data.time[0]) if len(data.time) > 0 else None
             result["time_last"] = str(data.time[-1]) if len(data.time) > 0 else None
         else:
             result["time_available"] = False
 
-        result["attrs"] = {k: str(v)[:100] for k, v in data.attrs.items() if not isinstance(v, (dict, list))}
+        result["attrs"] = {
+            k: str(v)[:100]
+            for k, v in data.attrs.items()
+            if not isinstance(v, (dict, list))
+        }
         result["status"] = "ok"
 
     except Exception as e:
@@ -154,7 +167,6 @@ def main():
             "file": str(DATA_ROOT / "InversionResults" / "smap_avg" / "doy_017.mat"),
             "variable": "omega",
         },
-
         # ── 待验证数据集 ──
         # DEM
         {
@@ -164,11 +176,12 @@ def main():
         },
         {
             "label": "Italy DEM GEBCO2024 (GeoTIFF)",
-            "file": str(DATA_ROOT / "DEM" / "Italy_GEBCO2024" / "Italy_DEM_GEBCO2024.tif"),
+            "file": str(
+                DATA_ROOT / "DEM" / "Italy_GEBCO2024" / "Italy_DEM_GEBCO2024.tif"
+            ),
             "variable": None,
             "skip_china": True,  # 意大利区域，不裁剪中国
         },
-
         # Precipitation / CMFD
         {
             "label": "CMFD Precipitation 2002-01 (GeoTIFF)",
@@ -180,54 +193,76 @@ def main():
             "file": str(DATA_ROOT / "Precipitation" / "pre_2002_02.tif"),
             "variable": None,
         },
-
         # LandCover - CLCD
         {
             "label": "CLCD 1997 (GeoTIFF)",
             "file": str(DATA_ROOT / "LandCover" / "CLCD_v01_1997.tif"),
             "variable": None,
         },
-
         # BIOMASS (大文件, 只读中国区域)
         {
             "label": "ESACCI BIOMASS 2020 (NetCDF, 17.3GB)",
-            "file": str(DATA_ROOT / "Biomass" / "ESACCI-BIOMASS-L4-AGB-MERGED-100m-2020-fv6.0.nc"),
+            "file": str(
+                DATA_ROOT
+                / "Biomass"
+                / "ESACCI-BIOMASS-L4-AGB-MERGED-100m-2020-fv6.0.nc"
+            ),
             "variable": "agb",
         },
-
         # ERA5 DWAA SMCI (GeoTIFF)
         {
             "label": "ERA5 DWAA SMCI 2020 (GeoTIFF)",
-            "file": str(DATA_ROOT / "Hazards" / "DWAA_result" / "DW_T7" / "ERA5_2020_DW_SMCI.tif"),
+            "file": str(
+                DATA_ROOT
+                / "Hazards"
+                / "DWAA_result"
+                / "DW_T7"
+                / "ERA5_2020_DW_SMCI.tif"
+            ),
             "variable": None,
         },
         {
             "label": "ERA5 WDAA SMCI 2020 (GeoTIFF)",
-            "file": str(DATA_ROOT / "Hazards" / "DWAA_result" / "WD_T7" / "ERA5_2020_WD_SMCI.tif"),
+            "file": str(
+                DATA_ROOT
+                / "Hazards"
+                / "DWAA_result"
+                / "WD_T7"
+                / "ERA5_2020_WD_SMCI.tif"
+            ),
             "variable": None,
         },
-
         # CO2
         {
             "label": "MeanCarbonDioxide (GeoTIFF)",
-            "file": str(DATA_ROOT / "CO2" / "MidLayerCO2Column" / "TIF" / "MeanCarbonDioxide.tif"),
+            "file": str(
+                DATA_ROOT
+                / "CO2"
+                / "MidLayerCO2Column"
+                / "TIF"
+                / "MeanCarbonDioxide.tif"
+            ),
             "variable": None,
         },
-
         # Soil Ecological Data (MAT)
         {
             "label": "Soil DDCA 20150401 (MAT)",
-            "file": str(DATA_ROOT / "Soil_Ecological_Data" / "DDCA" / "DDCA_DH" / "H" / "20150401.mat"),
+            "file": str(
+                DATA_ROOT
+                / "Soil_Ecological_Data"
+                / "DDCA"
+                / "DDCA_DH"
+                / "H"
+                / "20150401.mat"
+            ),
             "variable": None,  # 先列出变量
         },
-
         # InversionResults fy_avg
         {
             "label": "InversionResults fy_avg doy_025 (MAT)",
             "file": str(DATA_ROOT / "InversionResults" / "fy_avg" / "doy_025.mat"),
             "variable": None,
         },
-
         # Forest Ratio
         {
             "label": "Forest_Ratio_9KM_2020 (MAT)",
@@ -256,14 +291,24 @@ def main():
             print(f"  格式: {result['format']} | 变量: {result.get('var_name', '—')}")
             print(f"  形状: {result['shape']} | CRS: {result.get('crs', '—')}")
             if "valid_pixels" in stats:
-                print(f"  有效: {stats['valid_pixels']}/{stats['total_pixels']} ({1-stats['nan_ratio']:.1%})")
-                print(f"  值域: [{stats['min']}, {stats['max']}] | 均值: {stats['mean']} | 标准差: {stats['std']}")
+                print(
+                    f"  有效: {stats['valid_pixels']}/{stats['total_pixels']} ({1-stats['nan_ratio']:.1%})"
+                )
+                print(
+                    f"  值域: [{stats['min']}, {stats['max']}] | 均值: {stats['mean']} | 标准差: {stats['std']}"
+                )
             if result.get("lat_available"):
-                print(f"  纬度: [{result['lat_min']}, {result['lat_max']}] shape={result['lat_shape']}")
+                print(
+                    f"  纬度: [{result['lat_min']}, {result['lat_max']}] shape={result['lat_shape']}"
+                )
             if result.get("lon_available"):
-                print(f"  经度: [{result['lon_min']}, {result['lon_max']}] shape={result['lon_shape']}")
+                print(
+                    f"  经度: [{result['lon_min']}, {result['lon_max']}] shape={result['lon_shape']}"
+                )
             if result.get("time_available"):
-                print(f"  时间: {result.get('time_count', 0)} 步 | 首={result.get('time_first')} | 末={result.get('time_last')}")
+                print(
+                    f"  时间: {result.get('time_count', 0)} 步 | 首={result.get('time_first')} | 末={result.get('time_last')}"
+                )
             var_list = result.get("variables", [])
             if var_list:
                 print(f"  变量列表({len(var_list)}): {var_list[:8]}")

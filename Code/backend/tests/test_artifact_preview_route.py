@@ -31,12 +31,24 @@ class ArtifactPreviewRouteTests(unittest.TestCase):
 
     def test_preview_route_returns_png_bytes(self) -> None:
         with (
-            patch("app.api.routers.artifact_router.result_storage_service.get_artifact", return_value=self._artifact),
-            patch("app.api.routers.artifact_router.raster_preview_service.render_cog_preview", return_value=b"png-bytes") as render_mock,
+            patch(
+                "app.api.routers.artifact_router.result_storage_service.get_artifact",
+                return_value=self._artifact,
+            ),
+            patch(
+                "app.api.routers.artifact_router.raster_preview_service.render_cog_preview",
+                return_value=b"png-bytes",
+            ) as render_mock,
         ):
             response = self._client.get(
                 "/artifacts/artifact-preview-1/preview.png",
-                params={"palette": "thermal-orange", "width": 512, "height": 256, "min_value": 5, "max_value": 40},
+                params={
+                    "palette": "thermal-orange",
+                    "width": 512,
+                    "height": 256,
+                    "min_value": 5,
+                    "max_value": 40,
+                },
             )
 
         self.assertEqual(response.status_code, 200)
@@ -59,7 +71,10 @@ class ArtifactPreviewRouteTests(unittest.TestCase):
             title="Temperature GeoJSON",
             content_length=8,
         )
-        with patch("app.api.routers.artifact_router.result_storage_service.get_artifact", return_value=non_tiff_artifact):
+        with patch(
+            "app.api.routers.artifact_router.result_storage_service.get_artifact",
+            return_value=non_tiff_artifact,
+        ):
             response = self._client.get("/artifacts/artifact-preview-2/preview.png")
 
         self.assertEqual(response.status_code, 400)
@@ -82,9 +97,18 @@ class ArtifactPreviewRouteTests(unittest.TestCase):
             return b"png-bytes"
 
         with (
-            patch("app.api.routers.artifact_router.result_storage_service.get_artifact", return_value=remote_artifact),
-            patch("app.api.routers.artifact_router.result_storage_service.fetch_artifact_bytes", return_value=b"remote-cog"),
-            patch("app.api.routers.artifact_router.raster_preview_service.render_cog_preview", side_effect=_render_preview),
+            patch(
+                "app.api.routers.artifact_router.result_storage_service.get_artifact",
+                return_value=remote_artifact,
+            ),
+            patch(
+                "app.api.routers.artifact_router.result_storage_service.fetch_artifact_bytes",
+                return_value=b"remote-cog",
+            ),
+            patch(
+                "app.api.routers.artifact_router.raster_preview_service.render_cog_preview",
+                side_effect=_render_preview,
+            ),
         ):
             first = self._client.get("/artifacts/artifact-preview-remote/preview.png")
             second = self._client.get("/artifacts/artifact-preview-remote/preview.png")
@@ -94,7 +118,9 @@ class ArtifactPreviewRouteTests(unittest.TestCase):
         self.assertEqual(len(preview_paths), 2)
         self.assertNotEqual(preview_paths[0], preview_paths[1])
         for preview_path in preview_paths:
-            self.assertFalse(preview_path.exists(), f"temp preview file still exists: {preview_path}")
+            self.assertFalse(
+                preview_path.exists(), f"temp preview file still exists: {preview_path}"
+            )
 
 
 if __name__ == "__main__":

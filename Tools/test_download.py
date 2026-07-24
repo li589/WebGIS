@@ -1,11 +1,16 @@
 #!/usr/bin/env python3
 """测试下载单个文件到 I: 盘。"""
-import sys
-sys.path.insert(0, r"d:\temp_desktop\Proj\Comprehensive Geographic Data Analysis system\Tools")
-from download_curated import FileBrowserClient, LOCAL_ROOT, SERVERS
-from pathlib import Path
 
-client = FileBrowserClient(SERVERS["nas"]["base_url"], SERVERS["nas"]["username"], SERVERS["nas"]["password"])
+import sys
+
+sys.path.insert(
+    0, r"d:\temp_desktop\Proj\Comprehensive Geographic Data Analysis system\Tools"
+)
+from download_curated import FileBrowserClient, LOCAL_ROOT, SERVERS
+
+client = FileBrowserClient(
+    SERVERS["nas"]["base_url"], SERVERS["nas"]["username"], SERVERS["nas"]["password"]
+)
 client.login()
 print("Login OK")
 

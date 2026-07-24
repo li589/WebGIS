@@ -22,7 +22,9 @@ _NDVI_RANGE_PERCENTILE_HIGH = 95.0
 _NDVI_MIN_VALID_OBS = 3  # 质量度量最少有效观测数
 
 
-def build_datetime_sequence(start: datetime, end: datetime, step_days: int) -> list[datetime]:
+def build_datetime_sequence(
+    start: datetime, end: datetime, step_days: int
+) -> list[datetime]:
     """构建等间距日期序列。输入 start/end 为 datetime，step_days 单位天，返回 datetime 列表。"""
     if step_days <= 0:
         raise ValueError("step_days must be positive")
@@ -172,7 +174,9 @@ def vi_sg_interpolate(
         daily_values = _apply_gap_masking(
             daily_values, observation_days, valid_mask, output_days, gap_threshold_days
         )
-        return _apply_range_masking(daily_values, observation_days, valid_mask, output_days)
+        return _apply_range_masking(
+            daily_values, observation_days, valid_mask, output_days
+        )
 
     interpolated_8day = _linear_interp_with_nan(
         observation_days[valid_mask],
@@ -181,7 +185,9 @@ def vi_sg_interpolate(
     )
     # 填充首尾 NaN 防止 savgol_filter 崩溃（savgol_filter 无法处理 NaN 输入）
     interpolated_filled, _ = _fill_nan_edges_1d(interpolated_8day)
-    sg_filtered = savgol_filter(interpolated_filled, sg_window_length, sg_polyorder, mode="interp")
+    sg_filtered = savgol_filter(
+        interpolated_filled, sg_window_length, sg_polyorder, mode="interp"
+    )
     daily_values = _linear_interp_with_nan(sg_days, sg_filtered, output_days)
 
     daily_values = _apply_gap_masking(
@@ -246,7 +252,9 @@ def process_ndvi_stack_to_daily(
     if ndvi_stack.ndim != 3:
         raise ValueError("NDVI stack must be a 3D array: rows x cols x time")
     if ndvi_stack.shape[2] != len(observation_dates):
-        raise ValueError("Observation date count does not match NDVI stack time dimension")
+        raise ValueError(
+            "Observation date count does not match NDVI stack time dimension"
+        )
 
     sg_dates = build_datetime_sequence(start_time, end_time, sg_step_days)
     daily_dates = build_datetime_sequence(start_time, end_time, daily_step_days)
@@ -262,7 +270,9 @@ def process_ndvi_stack_to_daily(
     # 像素级有效观测数 (shape: (n_pixels,))
     valid_counts = (~np.isnan(flattened)).sum(axis=1)
     # savgol_filter 批量路径要求 sg_days 长度 >= window_length，且像素有效点 > _SG_MIN_VALID_POINTS
-    sg_capable_mask = (valid_counts > _SG_MIN_VALID_POINTS) & (sg_days.size >= sg_window_length)
+    sg_capable_mask = (valid_counts > _SG_MIN_VALID_POINTS) & (
+        sg_days.size >= sg_window_length
+    )
 
     # ── 批量路径：对 sg_capable 像素沿时间轴批量 savgol_filter ─────────────────
     if np.any(sg_capable_mask):
@@ -292,7 +302,9 @@ def process_ndvi_stack_to_daily(
         for row_idx, pixel_idx in enumerate(capable_indices):
             pixel_data = flattened[pixel_idx]
             pixel_valid = ~np.isnan(pixel_data)
-            daily_values = _linear_interp_with_nan(sg_days, filtered[row_idx], output_days)
+            daily_values = _linear_interp_with_nan(
+                sg_days, filtered[row_idx], output_days
+            )
             daily_values = _apply_gap_masking(
                 daily_values,
                 observation_days,
@@ -318,7 +330,9 @@ def process_ndvi_stack_to_daily(
         )
 
     daily_stack = daily_flattened.reshape(rows, cols, output_days.size)
-    daily_stack[(daily_stack < _NDVI_VALID_MIN) | (daily_stack > _NDVI_VALID_MAX)] = np.nan
+    daily_stack[(daily_stack < _NDVI_VALID_MIN) | (daily_stack > _NDVI_VALID_MAX)] = (
+        np.nan
+    )
     return daily_stack, daily_dates
 
 
@@ -437,9 +451,13 @@ def build_ndvi_quality_metrics(
         "NDVI_v_mean": _safe_nanmean(dynamic_stack, axis=2),
         "NDVI_v_max": _safe_nanmax(dynamic_stack, axis=2),
         "NDVI_v_min": _safe_nanmin(dynamic_stack, axis=2),
-        "NDVI_v_range": _safe_nanpercentile(dynamic_stack, _NDVI_RANGE_PERCENTILE_HIGH, axis=2)
+        "NDVI_v_range": _safe_nanpercentile(
+            dynamic_stack, _NDVI_RANGE_PERCENTILE_HIGH, axis=2
+        )
         - _safe_nanpercentile(dynamic_stack, _NDVI_RANGE_PERCENTILE_LOW, axis=2),
-        "NDVI_v_vali": np.where(pixel_valid_count >= _NDVI_MIN_VALID_OBS, pixel_valid_count, np.nan),
+        "NDVI_v_vali": np.where(
+            pixel_valid_count >= _NDVI_MIN_VALID_OBS, pixel_valid_count, np.nan
+        ),
     }
 
     if climatology_stack is None:
@@ -474,14 +492,41 @@ def merge_ndvi_quality_metrics(metric_list: list[dict[str, Any]]) -> dict[str, A
     if not metric_list:
         raise ValueError("metric_list must not be empty")
 
-    mean_stack = np.stack([np.asarray(item["NDVI_v_mean"], dtype=np.float64) for item in metric_list], axis=2)
-    max_stack = np.stack([np.asarray(item["NDVI_v_max"], dtype=np.float64) for item in metric_list], axis=2)
-    min_stack = np.stack([np.asarray(item["NDVI_v_min"], dtype=np.float64) for item in metric_list], axis=2)
-    range_stack = np.stack([np.asarray(item["NDVI_v_range"], dtype=np.float64) for item in metric_list], axis=2)
-    diff_mean_stack = np.stack([np.asarray(item["NDVI_v_diff_mean"], dtype=np.float64) for item in metric_list], axis=2)
-    diff_std_stack = np.stack([np.asarray(item["NDVI_v_diff_std"], dtype=np.float64) for item in metric_list], axis=2)
-    od_stack = np.stack([np.asarray(item["NDVI_v_od"], dtype=np.float64) for item in metric_list], axis=2)
-    vali_stack = np.stack([np.asarray(item["NDVI_v_vali"], dtype=np.float64) for item in metric_list], axis=2)
+    mean_stack = np.stack(
+        [np.asarray(item["NDVI_v_mean"], dtype=np.float64) for item in metric_list],
+        axis=2,
+    )
+    max_stack = np.stack(
+        [np.asarray(item["NDVI_v_max"], dtype=np.float64) for item in metric_list],
+        axis=2,
+    )
+    min_stack = np.stack(
+        [np.asarray(item["NDVI_v_min"], dtype=np.float64) for item in metric_list],
+        axis=2,
+    )
+    range_stack = np.stack(
+        [np.asarray(item["NDVI_v_range"], dtype=np.float64) for item in metric_list],
+        axis=2,
+    )
+    diff_mean_stack = np.stack(
+        [
+            np.asarray(item["NDVI_v_diff_mean"], dtype=np.float64)
+            for item in metric_list
+        ],
+        axis=2,
+    )
+    diff_std_stack = np.stack(
+        [np.asarray(item["NDVI_v_diff_std"], dtype=np.float64) for item in metric_list],
+        axis=2,
+    )
+    od_stack = np.stack(
+        [np.asarray(item["NDVI_v_od"], dtype=np.float64) for item in metric_list],
+        axis=2,
+    )
+    vali_stack = np.stack(
+        [np.asarray(item["NDVI_v_vali"], dtype=np.float64) for item in metric_list],
+        axis=2,
+    )
 
     merged = {
         "NDVI_v_mean": _safe_nanmean(mean_stack, axis=2),

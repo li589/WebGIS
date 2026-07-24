@@ -18,7 +18,9 @@ class FakeRedisClient:
         self.values: dict[str, str] = {}
         self.expiry: dict[str, int] = {}
 
-    def set(self, key: str, value: str, nx: bool = False, ex: int | None = None) -> bool:
+    def set(
+        self, key: str, value: str, nx: bool = False, ex: int | None = None
+    ) -> bool:
         if nx and key in self.values:
             return False
         self.values[key] = value
@@ -58,8 +60,12 @@ class HeartbeatQuotaCoordinator(InMemoryResourceQuotaCoordinator):
         self.renew_count = 0
         self.renewed_event = Event()
 
-    def acquire(self, *, resource_name: str, owner_id: str, limit: int) -> ResourceQuotaLease:
-        lease = super().acquire(resource_name=resource_name, owner_id=owner_id, limit=limit)
+    def acquire(
+        self, *, resource_name: str, owner_id: str, limit: int
+    ) -> ResourceQuotaLease:
+        lease = super().acquire(
+            resource_name=resource_name, owner_id=owner_id, limit=limit
+        )
         return ResourceQuotaLease(
             resource_name=lease.resource_name,
             owner_id=lease.owner_id,
@@ -80,8 +86,12 @@ class FailingHeartbeatQuotaCoordinator(InMemoryResourceQuotaCoordinator):
         super().__init__()
         self.renewed_event = Event()
 
-    def acquire(self, *, resource_name: str, owner_id: str, limit: int) -> ResourceQuotaLease:
-        lease = super().acquire(resource_name=resource_name, owner_id=owner_id, limit=limit)
+    def acquire(
+        self, *, resource_name: str, owner_id: str, limit: int
+    ) -> ResourceQuotaLease:
+        lease = super().acquire(
+            resource_name=resource_name, owner_id=owner_id, limit=limit
+        )
         return ResourceQuotaLease(
             resource_name=lease.resource_name,
             owner_id=lease.owner_id,
@@ -102,8 +112,12 @@ class FailOnceHeartbeatQuotaCoordinator(InMemoryResourceQuotaCoordinator):
         self.renewed_event = Event()
         self._should_fail_next_renew = True
 
-    def acquire(self, *, resource_name: str, owner_id: str, limit: int) -> ResourceQuotaLease:
-        lease = super().acquire(resource_name=resource_name, owner_id=owner_id, limit=limit)
+    def acquire(
+        self, *, resource_name: str, owner_id: str, limit: int
+    ) -> ResourceQuotaLease:
+        lease = super().acquire(
+            resource_name=resource_name, owner_id=owner_id, limit=limit
+        )
         return ResourceQuotaLease(
             resource_name=lease.resource_name,
             owner_id=lease.owner_id,
@@ -208,7 +222,9 @@ def test_redis_resource_quota_coordinator_renews_lease_ttl() -> None:
     assert client.expiry["test_quota:counter:export"] == 120
 
 
-def test_redis_resource_quota_coordinator_shares_recovery_window_across_instances() -> None:
+def test_redis_resource_quota_coordinator_shares_recovery_window_across_instances() -> (
+    None
+):
     client = FakeRedisClient()
     coordinator_a = FailOnceRenewingRedisQuotaCoordinator(
         client=client,
@@ -243,7 +259,9 @@ def test_redis_resource_quota_coordinator_shares_recovery_window_across_instance
         assert coordinator_a.renewed_event.wait(timeout=0.2)
         time.sleep(0.02)
 
-    with pytest.raises(ResourceExhaustedError, match="shared quota recovery in progress"):
+    with pytest.raises(
+        ResourceExhaustedError, match="shared quota recovery in progress"
+    ):
         with controller_b.export_slot(run_id="worker-b"):
             pass
 
@@ -256,7 +274,9 @@ def test_redis_resource_quota_coordinator_shares_recovery_window_across_instance
     assert controller_b.snapshot()["degraded_shared_quotas"] == {}
 
 
-def test_runtime_resource_controller_uses_redis_quota_coordinator_across_instances() -> None:
+def test_runtime_resource_controller_uses_redis_quota_coordinator_across_instances() -> (
+    None
+):
     client = FakeRedisClient()
     coordinator = RedisResourceQuotaCoordinator(
         client=client,
@@ -302,7 +322,9 @@ def test_runtime_resource_controller_heartbeats_shared_lease() -> None:
     assert coordinator.renew_count >= 1
 
 
-def test_runtime_resource_controller_enters_recovery_cooldown_after_heartbeat_failure() -> None:
+def test_runtime_resource_controller_enters_recovery_cooldown_after_heartbeat_failure() -> (
+    None
+):
     coordinator = FailingHeartbeatQuotaCoordinator()
     controller = RuntimeResourceController(
         max_parallel_exports=1,
@@ -320,7 +342,9 @@ def test_runtime_resource_controller_enters_recovery_cooldown_after_heartbeat_fa
     degraded_snapshot = controller.snapshot()
     assert "export" in degraded_snapshot["degraded_shared_quotas"]
 
-    with pytest.raises(ResourceExhaustedError, match="shared quota recovery in progress"):
+    with pytest.raises(
+        ResourceExhaustedError, match="shared quota recovery in progress"
+    ):
         with controller.export_slot(run_id="worker-b"):
             pass
 
@@ -333,7 +357,9 @@ def test_runtime_resource_controller_enters_recovery_cooldown_after_heartbeat_fa
     assert recovered_snapshot["degraded_shared_quotas"] == {}
 
 
-def test_runtime_resource_controller_blocks_concurrent_contention_during_recovery_window() -> None:
+def test_runtime_resource_controller_blocks_concurrent_contention_during_recovery_window() -> (
+    None
+):
     coordinator = FailOnceHeartbeatQuotaCoordinator()
     controller = RuntimeResourceController(
         max_parallel_exports=2,
@@ -371,7 +397,9 @@ def test_runtime_resource_controller_blocks_concurrent_contention_during_recover
 
     degraded_snapshot = controller.snapshot()
     assert len(blocked_attempts) == 3
-    assert all("shared quota recovery in progress" in result for result in blocked_attempts)
+    assert all(
+        "shared quota recovery in progress" in result for result in blocked_attempts
+    )
     assert "export" in degraded_snapshot["degraded_shared_quotas"]
     assert degraded_snapshot["active_export_slots"] == 0
 
@@ -423,7 +451,9 @@ def test_runtime_resource_controller_scopes_temp_dirs_and_local_write_budget() -
             assert temp_dir.endswith("run-1")
             with controller.local_write(run_id="run-1", byte_count=8):
                 assert controller.snapshot()["active_local_write_bytes"] == 8
-            with pytest.raises(ResourceExhaustedError, match="local storage write budget exceeded"):
+            with pytest.raises(
+                ResourceExhaustedError, match="local storage write budget exceeded"
+            ):
                 with controller.local_write(run_id="run-1", byte_count=9):
                     pass
             assert controller.snapshot()["active_temp_dirs"] == 1

@@ -24,8 +24,14 @@ from webgis_gee.gee.context import GeeContext
 from webgis_gee.nodes.base import BaseNode
 from webgis_gee.nodes.registry import NodeRegistry
 from webgis_gee.nodes.sample_nodes import LiteralNode
-from webgis_gee.runtime.exceptions import ResourceExhaustedError, WorkflowValidationError
-from webgis_gee.runtime.observability import InMemoryMetricsSink, InMemoryStructuredEventSink
+from webgis_gee.runtime.exceptions import (
+    ResourceExhaustedError,
+    WorkflowValidationError,
+)
+from webgis_gee.runtime.observability import (
+    InMemoryMetricsSink,
+    InMemoryStructuredEventSink,
+)
 from webgis_gee.runtime.resources import InMemoryResourceQuotaCoordinator
 from webgis_gee.storage.local import LocalStorageBackend
 
@@ -191,7 +197,9 @@ class FakeImage:
         return image
 
     def normalizedDifference(self, bands):
-        image = FakeImage(f"{self.name}:normalized_difference", properties=dict(self.properties))
+        image = FakeImage(
+            f"{self.name}:normalized_difference", properties=dict(self.properties)
+        )
         image.normalized_diff_bands = list(bands)
         return image
 
@@ -216,7 +224,10 @@ class FakeImage:
         return FakeImage(
             f"{self.name}:multiply",
             selected_bands=list(self.selected_bands),
-            band_values={band: band_value * value for band, band_value in self.band_values.items()},
+            band_values={
+                band: band_value * value
+                for band, band_value in self.band_values.items()
+            },
             properties=dict(self.properties),
         )
 
@@ -224,7 +235,10 @@ class FakeImage:
         return FakeImage(
             f"{self.name}:add",
             selected_bands=list(self.selected_bands),
-            band_values={band: band_value + value for band, band_value in self.band_values.items()},
+            band_values={
+                band: band_value + value
+                for band, band_value in self.band_values.items()
+            },
             properties=dict(self.properties),
         )
 
@@ -274,7 +288,9 @@ class FakeImage:
         )
 
     def where(self, condition, value: float):
-        condition_values = condition.band_values if isinstance(condition, FakeImage) else {}
+        condition_values = (
+            condition.band_values if isinstance(condition, FakeImage) else {}
+        )
         return FakeImage(
             f"{self.name}:where",
             selected_bands=list(self.selected_bands),
@@ -604,7 +620,9 @@ def test_execute_workflow_runs_gee_select_bands_node() -> None:
     workflow = WorkflowDefinition(
         workflow_id="gee-select-bands-demo",
         nodes=[
-            NodeSpec(node_id="n1", node_type="literal", params={"value": FakeImage("img")}),
+            NodeSpec(
+                node_id="n1", node_type="literal", params={"value": FakeImage("img")}
+            ),
             NodeSpec(
                 node_id="n2",
                 node_type="gee_select_bands",
@@ -632,7 +650,9 @@ def test_execute_workflow_fails_when_gee_select_bands_params_are_invalid() -> No
     workflow = WorkflowDefinition(
         workflow_id="gee-select-bands-invalid-demo",
         nodes=[
-            NodeSpec(node_id="n1", node_type="literal", params={"value": FakeImage("img")}),
+            NodeSpec(
+                node_id="n1", node_type="literal", params={"value": FakeImage("img")}
+            ),
             NodeSpec(
                 node_id="n2",
                 node_type="gee_select_bands",
@@ -652,7 +672,9 @@ def test_execute_workflow_fails_when_gee_select_bands_params_are_invalid() -> No
     result = facade.execute_workflow(workflow)
 
     assert result.status == RunStatus.FAILED
-    assert result.errors == ["node n2 failed: gee_select_bands rename must match bands length"]
+    assert result.errors == [
+        "node n2 failed: gee_select_bands rename must match bands length"
+    ]
 
 
 def test_execute_workflow_runs_gee_spectral_index_node() -> None:
@@ -660,11 +682,18 @@ def test_execute_workflow_runs_gee_spectral_index_node() -> None:
     workflow = WorkflowDefinition(
         workflow_id="gee-spectral-index-demo",
         nodes=[
-            NodeSpec(node_id="n1", node_type="literal", params={"value": FakeImage("img")}),
+            NodeSpec(
+                node_id="n1", node_type="literal", params={"value": FakeImage("img")}
+            ),
             NodeSpec(
                 node_id="n2",
                 node_type="gee_spectral_index",
-                params={"index": "ndvi", "nir_band": "B8", "red_band": "B4", "output_band": "ndvi_band"},
+                params={
+                    "index": "ndvi",
+                    "nir_band": "B8",
+                    "red_band": "B4",
+                    "output_band": "ndvi_band",
+                },
             ),
         ],
         edges=[
@@ -719,7 +748,9 @@ def test_execute_workflow_runs_gee_raster_algebra_node() -> None:
     assert result.status == RunStatus.COMPLETED
     assert result.outputs["n2.image"].expression_text == "(nir - red) / (nir + red)"
     assert result.outputs["n2.image"].expression_variables == {"nir": 0.8, "red": 0.3}
-    assert result.outputs["n2.image"].band_values == pytest.approx({"ndvi_like": 0.45454545454545453})
+    assert result.outputs["n2.image"].band_values == pytest.approx(
+        {"ndvi_like": 0.45454545454545453}
+    )
     assert result.outputs["n2.image"].renamed_to == "ndvi_like"
 
 
@@ -728,7 +759,9 @@ def test_execute_workflow_fails_when_gee_raster_algebra_band_map_is_invalid() ->
     workflow = WorkflowDefinition(
         workflow_id="gee-raster-algebra-invalid-demo",
         nodes=[
-            NodeSpec(node_id="n1", node_type="literal", params={"value": FakeImage("img")}),
+            NodeSpec(
+                node_id="n1", node_type="literal", params={"value": FakeImage("img")}
+            ),
             NodeSpec(
                 node_id="n2",
                 node_type="gee_raster_algebra",
@@ -795,12 +828,18 @@ def test_execute_workflow_runs_gee_threshold_classify_node() -> None:
     assert result.outputs["n2.image"].renamed_to == "ndvi_class"
 
 
-def test_execute_workflow_fails_when_gee_threshold_classify_thresholds_are_invalid() -> None:
+def test_execute_workflow_fails_when_gee_threshold_classify_thresholds_are_invalid() -> (
+    None
+):
     facade = create_default_facade()
     workflow = WorkflowDefinition(
         workflow_id="gee-threshold-classify-invalid-demo",
         nodes=[
-            NodeSpec(node_id="n1", node_type="literal", params={"value": FakeImage("img", band_values={"ndvi": 0.45})}),
+            NodeSpec(
+                node_id="n1",
+                node_type="literal",
+                params={"value": FakeImage("img", band_values={"ndvi": 0.45})},
+            ),
             NodeSpec(
                 node_id="n2",
                 node_type="gee_threshold_classify",
@@ -876,7 +915,9 @@ def test_execute_workflow_fails_when_gee_reclassify_rule_is_invalid() -> None:
     workflow = WorkflowDefinition(
         workflow_id="gee-reclassify-invalid-demo",
         nodes=[
-            NodeSpec(node_id="n1", node_type="literal", params={"value": FakeImage("img")}),
+            NodeSpec(
+                node_id="n1", node_type="literal", params={"value": FakeImage("img")}
+            ),
             NodeSpec(
                 node_id="n2",
                 node_type="gee_reclassify",
@@ -911,7 +952,9 @@ def test_execute_workflow_fails_when_gee_spectral_index_index_is_invalid() -> No
     workflow = WorkflowDefinition(
         workflow_id="gee-spectral-index-invalid-demo",
         nodes=[
-            NodeSpec(node_id="n1", node_type="literal", params={"value": FakeImage("img")}),
+            NodeSpec(
+                node_id="n1", node_type="literal", params={"value": FakeImage("img")}
+            ),
             NodeSpec(
                 node_id="n2",
                 node_type="gee_spectral_index",
@@ -968,7 +1011,9 @@ def test_execute_workflow_runs_gee_image_collection_composite_node() -> None:
     assert result.outputs["n2.image"].name == "collection:mean"
 
 
-def test_execute_workflow_fails_when_gee_image_collection_composite_reducer_is_invalid() -> None:
+def test_execute_workflow_fails_when_gee_image_collection_composite_reducer_is_invalid() -> (
+    None
+):
     facade = create_default_facade()
     workflow = WorkflowDefinition(
         workflow_id="gee-composite-invalid-demo",
@@ -1012,7 +1057,9 @@ def test_execute_workflow_runs_gee_region_stats_node() -> None:
                 node_type="literal",
                 params={"value": FakeImage("img", band_values={"B4": 0.3, "B8": 0.8})},
             ),
-            NodeSpec(node_id="n2", node_type="literal", params={"value": {"type": "Polygon"}}),
+            NodeSpec(
+                node_id="n2", node_type="literal", params={"value": {"type": "Polygon"}}
+            ),
             NodeSpec(
                 node_id="n3",
                 node_type="gee_region_stats",
@@ -1046,8 +1093,12 @@ def test_execute_workflow_fails_when_gee_region_stats_reducer_is_invalid() -> No
     workflow = WorkflowDefinition(
         workflow_id="gee-region-stats-invalid-demo",
         nodes=[
-            NodeSpec(node_id="n1", node_type="literal", params={"value": FakeImage("img")}),
-            NodeSpec(node_id="n2", node_type="literal", params={"value": {"type": "Polygon"}}),
+            NodeSpec(
+                node_id="n1", node_type="literal", params={"value": FakeImage("img")}
+            ),
+            NodeSpec(
+                node_id="n2", node_type="literal", params={"value": {"type": "Polygon"}}
+            ),
             NodeSpec(
                 node_id="n3",
                 node_type="gee_region_stats",
@@ -1083,15 +1134,25 @@ def test_execute_workflow_runs_gee_time_series_stats_node() -> None:
     collection = FakeImageCollection(
         "collection",
         images=[
-            FakeImage("img-1", band_values={"B8": 0.8}, properties={"system:time_start": "2026-01-01"}),
-            FakeImage("img-2", band_values={"B8": 0.6}, properties={"system:time_start": "2026-01-02"}),
+            FakeImage(
+                "img-1",
+                band_values={"B8": 0.8},
+                properties={"system:time_start": "2026-01-01"},
+            ),
+            FakeImage(
+                "img-2",
+                band_values={"B8": 0.6},
+                properties={"system:time_start": "2026-01-02"},
+            ),
         ],
     )
     workflow = WorkflowDefinition(
         workflow_id="gee-time-series-demo",
         nodes=[
             NodeSpec(node_id="n1", node_type="literal", params={"value": collection}),
-            NodeSpec(node_id="n2", node_type="literal", params={"value": {"type": "Polygon"}}),
+            NodeSpec(
+                node_id="n2", node_type="literal", params={"value": {"type": "Polygon"}}
+            ),
             NodeSpec(
                 node_id="n3",
                 node_type="gee_time_series_stats",
@@ -1126,8 +1187,14 @@ def test_execute_workflow_fails_when_gee_time_series_band_is_missing() -> None:
     workflow = WorkflowDefinition(
         workflow_id="gee-time-series-invalid-demo",
         nodes=[
-            NodeSpec(node_id="n1", node_type="literal", params={"value": FakeImageCollection("collection", images=[])}),
-            NodeSpec(node_id="n2", node_type="literal", params={"value": {"type": "Polygon"}}),
+            NodeSpec(
+                node_id="n1",
+                node_type="literal",
+                params={"value": FakeImageCollection("collection", images=[])},
+            ),
+            NodeSpec(
+                node_id="n2", node_type="literal", params={"value": {"type": "Polygon"}}
+            ),
             NodeSpec(
                 node_id="n3",
                 node_type="gee_time_series_stats",
@@ -1153,10 +1220,14 @@ def test_execute_workflow_fails_when_gee_time_series_band_is_missing() -> None:
     result = facade.execute_workflow(workflow)
 
     assert result.status == RunStatus.FAILED
-    assert result.errors == ["node n3 failed: gee_time_series_stats band must be a non-empty string"]
+    assert result.errors == [
+        "node n3 failed: gee_time_series_stats band must be a non-empty string"
+    ]
 
 
-def test_execute_workflow_fails_when_batch_split_by_regions_params_are_invalid() -> None:
+def test_execute_workflow_fails_when_batch_split_by_regions_params_are_invalid() -> (
+    None
+):
     facade = create_default_facade()
     workflow = WorkflowDefinition(
         workflow_id="batch-region-invalid-demo",
@@ -1250,7 +1321,9 @@ def test_execute_workflow_fails_when_batch_collect_input_is_invalid() -> None:
     result = facade.execute_workflow(workflow)
 
     assert result.status == RunStatus.FAILED
-    assert result.errors == ["node n2 failed: batch_collect batch_items input must be a list"]
+    assert result.errors == [
+        "node n2 failed: batch_collect batch_items input must be a list"
+    ]
 
 
 def test_execute_workflow_runs_batch_flatten_node() -> None:
@@ -1258,7 +1331,9 @@ def test_execute_workflow_runs_batch_flatten_node() -> None:
     workflow = WorkflowDefinition(
         workflow_id="batch-flatten-demo",
         nodes=[
-            NodeSpec(node_id="n1", node_type="literal", params={"value": [[1, 2], 3, [4]]}),
+            NodeSpec(
+                node_id="n1", node_type="literal", params={"value": [[1, 2], 3, [4]]}
+            ),
             NodeSpec(node_id="n2", node_type="batch_flatten"),
         ],
         edges=[
@@ -1349,7 +1424,9 @@ def test_execute_workflow_runs_batch_filter_node_by_indices() -> None:
     workflow = WorkflowDefinition(
         workflow_id="batch-filter-indices-demo",
         nodes=[
-            NodeSpec(node_id="n1", node_type="literal", params={"value": ["a", "b", "c"]}),
+            NodeSpec(
+                node_id="n1", node_type="literal", params={"value": ["a", "b", "c"]}
+            ),
             NodeSpec(
                 node_id="n2",
                 node_type="batch_filter",
@@ -1478,7 +1555,9 @@ def test_workflow_service_skips_duplicate_default_registration() -> None:
 
     service = WorkflowService(registry=registry)
 
-    assert "literal" in service.diagnose().checks["node_registry"]["supported_node_types"]
+    assert (
+        "literal" in service.diagnose().checks["node_registry"]["supported_node_types"]
+    )
 
 
 def test_execute_workflow_releases_account_pool_lease() -> None:
@@ -1601,7 +1680,9 @@ def test_execute_workflow_export_terminal_messages_drive_account_pool_state(
         nodes=[NodeSpec(node_id="n1", node_type="literal", params={"value": 1})],
     )
 
-    def return_failed_result(workflow: WorkflowDefinition, context: ExecutionContext) -> RunResult:
+    def return_failed_result(
+        workflow: WorkflowDefinition, context: ExecutionContext
+    ) -> RunResult:
         return RunResult(
             run_id=context.run_id,
             workflow_id=workflow.workflow_id,
@@ -1621,17 +1702,24 @@ def test_execute_workflow_respects_workflow_storage_policy_base_path(tmp_path) -
     default_root = tmp_path / "default"
     override_root = tmp_path / "override"
     service = WorkflowService(
-        settings=Settings(storage_backend="local", local_storage_root=str(default_root)),
+        settings=Settings(
+            storage_backend="local", local_storage_root=str(default_root)
+        ),
     )
     workflow = WorkflowDefinition(
         workflow_id="storage-policy-demo",
         storage_policy=StoragePolicy(backend="local", base_path=str(override_root)),
         nodes=[
-            NodeSpec(node_id="source", node_type="literal", params={"value": "fake-image"}),
+            NodeSpec(
+                node_id="source", node_type="literal", params={"value": "fake-image"}
+            ),
             NodeSpec(
                 node_id="export",
                 node_type="gee_export_image",
-                params={"destination": "drive", "file_name_prefix": "storage_policy_manifest"},
+                params={
+                    "destination": "drive",
+                    "file_name_prefix": "storage_policy_manifest",
+                },
             ),
         ],
         edges=[
@@ -1651,10 +1739,14 @@ def test_execute_workflow_respects_workflow_storage_policy_base_path(tmp_path) -
     assert not (default_root / "exports").exists()
 
 
-def test_execute_workflow_respects_context_storage_backend(monkeypatch, tmp_path) -> None:
+def test_execute_workflow_respects_context_storage_backend(
+    monkeypatch, tmp_path
+) -> None:
     captured: dict[str, str | None] = {}
 
-    def fake_create_storage_backend(settings, *, backend_type=None, local_storage_root=None):
+    def fake_create_storage_backend(
+        settings, *, backend_type=None, local_storage_root=None
+    ):
         captured["backend_type"] = backend_type
         captured["local_storage_root"] = local_storage_root
         return LocalStorageBackend(base_path=str(tmp_path / "context-storage"))
@@ -1668,11 +1760,16 @@ def test_execute_workflow_respects_context_storage_backend(monkeypatch, tmp_path
     workflow = WorkflowDefinition(
         workflow_id="context-storage-demo",
         nodes=[
-            NodeSpec(node_id="source", node_type="literal", params={"value": "fake-image"}),
+            NodeSpec(
+                node_id="source", node_type="literal", params={"value": "fake-image"}
+            ),
             NodeSpec(
                 node_id="export",
                 node_type="gee_export_image",
-                params={"destination": "drive", "file_name_prefix": "context_storage_manifest"},
+                params={
+                    "destination": "drive",
+                    "file_name_prefix": "context_storage_manifest",
+                },
             ),
         ],
         edges=[
@@ -1684,7 +1781,9 @@ def test_execute_workflow_respects_context_storage_backend(monkeypatch, tmp_path
             )
         ],
     )
-    context = ExecutionContext(workflow_id=workflow.workflow_id, storage_backend="minio")
+    context = ExecutionContext(
+        workflow_id=workflow.workflow_id, storage_backend="minio"
+    )
 
     service.execute_workflow(workflow, context)
 
@@ -1745,7 +1844,9 @@ def test_execute_workflow_fails_when_export_slots_are_exhausted(tmp_path) -> Non
     workflow = WorkflowDefinition(
         workflow_id="export-slot-demo",
         nodes=[
-            NodeSpec(node_id="source", node_type="literal", params={"value": "fake-image"}),
+            NodeSpec(
+                node_id="source", node_type="literal", params={"value": "fake-image"}
+            ),
             NodeSpec(
                 node_id="export",
                 node_type="gee_export_image",
@@ -1778,7 +1879,9 @@ def test_execute_workflow_fails_when_export_slots_are_exhausted(tmp_path) -> Non
         result = service.execute_workflow(workflow, context)
 
     manifest_uri = result.outputs["export.manifest_uri"]
-    manifest_payload = storage_backend.get(manifest_uri.removeprefix("file://")).decode("utf-8")
+    manifest_payload = storage_backend.get(manifest_uri.removeprefix("file://")).decode(
+        "utf-8"
+    )
 
     assert result.status == RunStatus.FAILED
     assert result.outputs["export.task_ref"]["status"] == "submit_failed"
@@ -1797,11 +1900,16 @@ def test_execute_workflow_fails_when_upload_slots_are_exhausted(tmp_path) -> Non
     workflow = WorkflowDefinition(
         workflow_id="upload-slot-demo",
         nodes=[
-            NodeSpec(node_id="source", node_type="literal", params={"value": "fake-image"}),
+            NodeSpec(
+                node_id="source", node_type="literal", params={"value": "fake-image"}
+            ),
             NodeSpec(
                 node_id="export",
                 node_type="gee_export_image",
-                params={"destination": "manifest", "file_name_prefix": "upload_slot_manifest"},
+                params={
+                    "destination": "manifest",
+                    "file_name_prefix": "upload_slot_manifest",
+                },
             ),
         ],
         edges=[
@@ -1836,12 +1944,16 @@ def test_poll_export_task_fails_when_download_slots_are_exhausted(tmp_path) -> N
         encoding="utf-8",
     )
 
-    with pytest.raises(ResourceExhaustedError, match="download concurrency limit reached"):
+    with pytest.raises(
+        ResourceExhaustedError, match="download concurrency limit reached"
+    ):
         with service._resource_controller.download_slot(run_id="held-download"):
             service.poll_export_task(manifest_uri=f"file://{manifest_path}")
 
 
-def test_execute_workflow_respects_shared_export_quota_across_services(tmp_path) -> None:
+def test_execute_workflow_respects_shared_export_quota_across_services(
+    tmp_path,
+) -> None:
     shared_quota = InMemoryResourceQuotaCoordinator()
     service_a = WorkflowService(
         settings=Settings(
@@ -1862,7 +1974,9 @@ def test_execute_workflow_respects_shared_export_quota_across_services(tmp_path)
     workflow = WorkflowDefinition(
         workflow_id="shared-export-quota-demo",
         nodes=[
-            NodeSpec(node_id="source", node_type="literal", params={"value": "fake-image"}),
+            NodeSpec(
+                node_id="source", node_type="literal", params={"value": "fake-image"}
+            ),
             NodeSpec(
                 node_id="export",
                 node_type="gee_export_image",
@@ -1895,7 +2009,10 @@ def test_execute_workflow_respects_shared_export_quota_across_services(tmp_path)
     assert result.status == RunStatus.FAILED
     assert result.outputs["export.task_ref"]["status"] == "submit_failed"
     assert "shared quota reached" in result.errors[0]
-    assert diagnostics.checks["resource_control"]["quota_coordinator"]["type"] == "InMemoryResourceQuotaCoordinator"
+    assert (
+        diagnostics.checks["resource_control"]["quota_coordinator"]["type"]
+        == "InMemoryResourceQuotaCoordinator"
+    )
 
 
 def test_execute_workflow_cleans_up_workflow_temp_dir(tmp_path) -> None:
@@ -1938,11 +2055,16 @@ def test_execute_workflow_fails_when_local_write_budget_is_exhausted(tmp_path) -
     workflow = WorkflowDefinition(
         workflow_id="local-write-budget-demo",
         nodes=[
-            NodeSpec(node_id="source", node_type="literal", params={"value": "fake-image"}),
+            NodeSpec(
+                node_id="source", node_type="literal", params={"value": "fake-image"}
+            ),
             NodeSpec(
                 node_id="export",
                 node_type="gee_export_image",
-                params={"destination": "manifest", "file_name_prefix": "budget_limited_manifest"},
+                params={
+                    "destination": "manifest",
+                    "file_name_prefix": "budget_limited_manifest",
+                },
             ),
         ],
         edges=[
@@ -2020,10 +2142,21 @@ def test_execute_workflow_emits_events_and_metrics_to_external_sinks() -> None:
     metrics_snapshot = metrics_sink.snapshot()
     diagnostics = service.diagnose()
     assert result.status == RunStatus.COMPLETED
-    assert any(event["payload"]["event"] == "workflow.execute.started" for event in event_snapshot)
-    assert any(event["payload"]["event"] == "node.execute.started" for event in event_snapshot)
+    assert any(
+        event["payload"]["event"] == "workflow.execute.started"
+        for event in event_snapshot
+    )
+    assert any(
+        event["payload"]["event"] == "node.execute.started" for event in event_snapshot
+    )
     assert metrics_snapshot["counters"]["workflow.execute.started"] == 1
     assert metrics_snapshot["counters"]["workflow.execute.completed"] == 1
     assert "workflow.execute.duration_ms" in metrics_snapshot["durations"]
-    assert diagnostics.checks["observability"]["structured_event_sink"]["type"] == "InMemoryStructuredEventSink"
-    assert diagnostics.checks["observability"]["metrics_sink"]["type"] == "InMemoryMetricsSink"
+    assert (
+        diagnostics.checks["observability"]["structured_event_sink"]["type"]
+        == "InMemoryStructuredEventSink"
+    )
+    assert (
+        diagnostics.checks["observability"]["metrics_sink"]["type"]
+        == "InMemoryMetricsSink"
+    )

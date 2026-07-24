@@ -6,6 +6,7 @@ Phase 2: Open-Meteo 本地数据自动同步任务。
 - 同步失败不影响线上服务，下次 beat 触发时重试
 - 支持多模型同步（通过 OPEN_METEO_SYNC_DOMAINS 配置）
 """
+
 from __future__ import annotations
 
 import logging
@@ -31,7 +32,9 @@ def _build_sync_command() -> list[str]:
     project = settings.open_meteo_sync_compose_project
     domains = settings.open_meteo_sync_domains
     variables = settings.open_meteo_sync_variables
-    compose_file = os.path.join(settings.open_meteo_sync_compose_dir, "docker-compose.yml")
+    compose_file = os.path.join(
+        settings.open_meteo_sync_compose_dir, "docker-compose.yml"
+    )
     env_file = os.path.join(settings.open_meteo_sync_compose_dir, ".env")
 
     cmd = [
@@ -135,7 +138,9 @@ def execute_open_meteo_sync() -> dict[str, Any]:
             message="docker command not found; ensure Docker is installed",
             exit_code=None,
         )
-        raise RuntimeError("docker command not found; ensure Docker is installed") from exc
+        raise RuntimeError(
+            "docker command not found; ensure Docker is installed"
+        ) from exc
     except subprocess.TimeoutExpired as exc:
         record_open_meteo_sync_result(
             ok=False,

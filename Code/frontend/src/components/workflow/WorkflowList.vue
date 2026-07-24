@@ -107,7 +107,11 @@ function handleDuplicate(workflowId: string) {
 async function confirmDuplicate() {
   if (!duplicateSourceId.value || !duplicateNewId.value.trim()) return
   try {
-    await store.duplicate(duplicateSourceId.value, duplicateNewId.value.trim(), duplicateNewName.value.trim() || undefined)
+    await store.duplicate(
+      duplicateSourceId.value,
+      duplicateNewId.value.trim(),
+      duplicateNewName.value.trim() || undefined,
+    )
   } catch (err) {
     console.error('[WorkflowList] Failed to duplicate workflow:', err)
   } finally {
@@ -292,16 +296,33 @@ function formatTime(iso: string | null): string {
         <div class="dialog-form">
           <div class="form-row">
             <label class="form-label">新工作流 ID</label>
-            <input v-model="duplicateNewId" type="text" class="form-input" placeholder="workflow_id" />
+            <input
+              v-model="duplicateNewId"
+              type="text"
+              class="form-input"
+              placeholder="workflow_id"
+            />
           </div>
           <div class="form-row">
             <label class="form-label">新名称（可选）</label>
-            <input v-model="duplicateNewName" type="text" class="form-input" placeholder="显示名称" />
+            <input
+              v-model="duplicateNewName"
+              type="text"
+              class="form-input"
+              placeholder="显示名称"
+            />
           </div>
         </div>
         <div class="dialog-actions">
           <button class="dialog-btn cancel" type="button" @click="cancelDuplicate">取消</button>
-          <button class="dialog-btn primary" type="button" :disabled="!duplicateNewId.trim()" @click="confirmDuplicate">复制</button>
+          <button
+            class="dialog-btn primary"
+            type="button"
+            :disabled="!duplicateNewId.trim()"
+            @click="confirmDuplicate"
+          >
+            复制
+          </button>
         </div>
       </div>
     </div>
@@ -316,11 +337,21 @@ function formatTime(iso: string | null): string {
         <div class="dialog-form">
           <div class="form-row">
             <label class="form-label">新工作流 ID</label>
-            <input v-model="useTemplateNewId" type="text" class="form-input" placeholder="workflow_id" />
+            <input
+              v-model="useTemplateNewId"
+              type="text"
+              class="form-input"
+              placeholder="workflow_id"
+            />
           </div>
           <div class="form-row">
             <label class="form-label">新名称（可选）</label>
-            <input v-model="useTemplateNewName" type="text" class="form-input" placeholder="显示名称" />
+            <input
+              v-model="useTemplateNewName"
+              type="text"
+              class="form-input"
+              placeholder="显示名称"
+            />
           </div>
         </div>
         <div class="dialog-actions">
@@ -453,7 +484,9 @@ function formatTime(iso: string | null): string {
   cursor: pointer;
   font: inherit;
   text-align: left;
-  transition: border-color 0.16s ease, background 0.16s ease;
+  transition:
+    border-color 0.16s ease,
+    background 0.16s ease;
 }
 
 .workflow-item:hover {
@@ -693,7 +726,9 @@ function formatTime(iso: string | null): string {
   align-items: center;
   justify-content: center;
   gap: 0.22rem;
-  transition: background 0.16s ease, border-color 0.16s ease;
+  transition:
+    background 0.16s ease,
+    border-color 0.16s ease;
 }
 
 .use-template-btn:hover {

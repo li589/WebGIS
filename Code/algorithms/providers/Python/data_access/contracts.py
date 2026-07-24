@@ -142,8 +142,7 @@ class SourceAdapter(Protocol):
     name: str
     supported_schemes: tuple[str, ...]
 
-    def can_handle(self, uri: str) -> bool:
-        ...
+    def can_handle(self, uri: str) -> bool: ...
 
     def locate(
         self,
@@ -151,16 +150,14 @@ class SourceAdapter(Protocol):
         *,
         request: DataRequestV2 | None = None,
         metadata: dict[str, Any] | None = None,
-    ) -> ResourceRef:
-        ...
+    ) -> ResourceRef: ...
 
     def materialize(
         self,
         resource: ResourceRef,
         *,
         target_dir: Path | None = None,
-    ) -> ResourceRef:
-        ...
+    ) -> ResourceRef: ...
 
 
 def build_resource_ref(
@@ -178,7 +175,10 @@ def build_resource_ref(
     normalized_format = normalize_format(format) or infer_format_from_uri(uri)
     normalized_source_kind = source_kind or detect_source_kind(uri)
     normalized_local_path = local_path
-    if normalized_local_path is None and normalized_source_kind in {"local_file", "local_dir"}:
+    if normalized_local_path is None and normalized_source_kind in {
+        "local_file",
+        "local_dir",
+    }:
         normalized_local_path = normalize_local_path(uri)
     return ResourceRef(
         uri=uri,

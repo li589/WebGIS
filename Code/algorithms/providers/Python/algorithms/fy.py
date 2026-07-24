@@ -50,6 +50,7 @@ class FyDatasetProfile:
 @dataclass(frozen=True, slots=True)
 class FyCommandStep:
     """GDAL 命令步骤描述。name 步骤名，command 命令字符串，outputs 输出文件路径元组。"""
+
     name: str
     command: str
     outputs: tuple[str, ...] = ()
@@ -62,7 +63,18 @@ FY3D_PROFILE = FyDatasetProfile(
     lat_sds_path="//Geolocation/Latitude",
     lon_sds_path="//Geolocation/Longitude",
     zen_sds_path="//Geolocation/Sensor_Zenith",
-    tb_band_names=("10V", "10H", "18V", "18H", "23V", "23H", "36V", "36H", "89V", "89H"),
+    tb_band_names=(
+        "10V",
+        "10H",
+        "18V",
+        "18H",
+        "23V",
+        "23H",
+        "36V",
+        "36H",
+        "89V",
+        "89H",
+    ),
     zenith_name="Sensor_Zenith",
     tb_src_nodata=-32767.0,
     lat_lon_src_nodata=65535.0,
@@ -82,7 +94,18 @@ FY3B_PROFILE = FyDatasetProfile(
     lat_sds_path="//Latitude",
     lon_sds_path="//Longitude",
     zen_sds_path="//SensorZenith",
-    tb_band_names=("10V", "10H", "18V", "18H", "23V", "23H", "36V", "36H", "89V", "89H"),
+    tb_band_names=(
+        "10V",
+        "10H",
+        "18V",
+        "18H",
+        "23V",
+        "23H",
+        "36V",
+        "36H",
+        "89V",
+        "89H",
+    ),
     zenith_name="SensorZenith",
     tb_src_nodata=-999.0,
     lat_lon_src_nodata=999.9,
@@ -164,7 +187,7 @@ def build_geoloc_metadata_block(lon_vrt_path: str, lat_vrt_path: str) -> str:
         f'    <MDI key="X_DATASET">{lon_vrt_path}</MDI>\n'
         '    <MDI key="Y_BAND">1</MDI>\n'
         f'    <MDI key="Y_DATASET">{lat_vrt_path}</MDI>\n'
-        '</Metadata>\n'
+        "</Metadata>\n"
     )
 
 
@@ -185,7 +208,9 @@ def build_fy_daily_command_steps(
     work_dir = Path(plan.work_dir)
     steps: list[FyCommandStep] = []
 
-    selected_tb_band_names = tuple(profile.tb_band_names[index - 1] for index in band_ids)
+    selected_tb_band_names = tuple(
+        profile.tb_band_names[index - 1] for index in band_ids
+    )
     all_output_tifs: list[str] = []
 
     for input_file in plan.input_files:
@@ -240,7 +265,9 @@ def build_fy_daily_command_steps(
                     metadata={
                         "source_vrt": str(data_vrt),
                         "target_vrt": str(geoloc_vrt),
-                        "geoloc_metadata": build_geoloc_metadata_block(str(lon_vrt), str(lat_vrt)),
+                        "geoloc_metadata": build_geoloc_metadata_block(
+                            str(lon_vrt), str(lat_vrt)
+                        ),
                     },
                 )
             )
@@ -306,7 +333,9 @@ def build_fy_daily_command_steps(
                 metadata={
                     "source_vrt": str(zen_vrt),
                     "target_vrt": str(zen_geoloc_vrt),
-                    "geoloc_metadata": build_geoloc_metadata_block(str(lon_vrt), str(lat_vrt)),
+                    "geoloc_metadata": build_geoloc_metadata_block(
+                        str(lon_vrt), str(lat_vrt)
+                    ),
                 },
             )
         )
@@ -327,10 +356,18 @@ def build_fy_daily_command_steps(
 
     merged_outputs: list[str] = []
     for band_name in (*selected_tb_band_names, profile.zenith_name):
-        band_geoloc_tifs = [path for path in all_output_tifs if path.endswith(f"_{band_name}.tif")]
+        band_geoloc_tifs = [
+            path for path in all_output_tifs if path.endswith(f"_{band_name}.tif")
+        ]
         mosaic_vrt = work_dir / f"mosaic_{band_name}.vrt"
-        mosaic_4326 = work_dir / f"{profile.output_prefix}_{band_name}_{plan.date_key}_{plan.orbit_type}_01.tif"
-        final_tif = work_dir / f"{profile.output_prefix}_{band_name}_{plan.date_key}_{plan.orbit_type}.tif"
+        mosaic_4326 = (
+            work_dir
+            / f"{profile.output_prefix}_{band_name}_{plan.date_key}_{plan.orbit_type}_01.tif"
+        )
+        final_tif = (
+            work_dir
+            / f"{profile.output_prefix}_{band_name}_{plan.date_key}_{plan.orbit_type}.tif"
+        )
         input_arg = " ".join(f'"{path}"' for path in band_geoloc_tifs)
         steps.append(
             FyCommandStep(
@@ -381,11 +418,19 @@ def build_fy_daily_command_steps(
         )
         merged_outputs.append(str(final_tif))
 
-    merged_vrt = work_dir / f"{profile.output_prefix}_{plan.orbit_type}_10V10H_{plan.date_key}_1.vrt"
-    merged_tif = Path(plan.output_dir) / f"{profile.output_prefix}_{plan.orbit_type}_10V10H_{plan.date_key}.tif"
+    merged_vrt = (
+        work_dir
+        / f"{profile.output_prefix}_{plan.orbit_type}_10V10H_{plan.date_key}_1.vrt"
+    )
+    merged_tif = (
+        Path(plan.output_dir)
+        / f"{profile.output_prefix}_{plan.orbit_type}_10V10H_{plan.date_key}.tif"
+    )
     multi_input_arg = " ".join(f'"{path}"' for path in merged_outputs)
     band_names = (*selected_tb_band_names, profile.zenith_name)
-    metadata_args = " ".join(f'-mo Band_{idx}={name}' for idx, name in enumerate(band_names, start=1))
+    metadata_args = " ".join(
+        f"-mo Band_{idx}={name}" for idx, name in enumerate(band_names, start=1)
+    )
     steps.append(
         FyCommandStep(
             name="buildvrt_multiband",
@@ -413,12 +458,19 @@ def build_fy_daily_command_steps(
 
 def get_fy_daily_multiband_output_path(plan: FyDailyJobPlan) -> Path:
     profile = get_fy_profile(plan.satellite)
-    return Path(plan.output_dir) / f"{profile.output_prefix}_{plan.orbit_type}_10V10H_{plan.date_key}.tif"
+    return (
+        Path(plan.output_dir)
+        / f"{profile.output_prefix}_{plan.orbit_type}_10V10H_{plan.date_key}.tif"
+    )
 
 
-def write_fy_command_plan_json(steps: list[FyCommandStep], output_path: str | Path) -> Path:
+def write_fy_command_plan_json(
+    steps: list[FyCommandStep], output_path: str | Path
+) -> Path:
     output_path = Path(output_path)
     output_path.parent.mkdir(parents=True, exist_ok=True)
     payload = [asdict(step) for step in steps]
-    output_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+    output_path.write_text(
+        json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8"
+    )
     return output_path

@@ -32,9 +32,13 @@ class _NodeSignature:
 def validate_workflow_definition(definition: WorkflowDefinition) -> WorkflowDefinition:
     enabled_nodes = [node for node in definition.nodes if node.enabled]
     if not enabled_nodes:
-        raise WorkflowDefinitionValidationError("workflow_definition must contain at least one enabled node")
+        raise WorkflowDefinitionValidationError(
+            "workflow_definition must contain at least one enabled node"
+        )
     if not definition.outputs:
-        raise WorkflowDefinitionValidationError("workflow_definition.outputs must not be empty")
+        raise WorkflowDefinitionValidationError(
+            "workflow_definition.outputs must not be empty"
+        )
 
     node_map: dict[str, WorkflowNodeSpec] = {}
     for node in enabled_nodes:
@@ -44,9 +48,13 @@ def validate_workflow_definition(definition: WorkflowDefinition) -> WorkflowDefi
             )
         node_map[node.node_id] = node
 
-    node_signatures = {node_id: _resolve_node_signature(node) for node_id, node in node_map.items()}
+    node_signatures = {
+        node_id: _resolve_node_signature(node) for node_id, node in node_map.items()
+    }
 
-    _validate_edges(definition.edges, node_map=node_map, node_signatures=node_signatures)
+    _validate_edges(
+        definition.edges, node_map=node_map, node_signatures=node_signatures
+    )
 
     for node in enabled_nodes:
         _validate_node_inputs(
@@ -55,7 +63,9 @@ def validate_workflow_definition(definition: WorkflowDefinition) -> WorkflowDefi
             node_map=node_map,
             edges=definition.edges,
         )
-        _validate_mode_required_inputs(node, node_signatures=node_signatures, edges=definition.edges)
+        _validate_mode_required_inputs(
+            node, node_signatures=node_signatures, edges=definition.edges
+        )
 
     output_names: set[str] = set()
     for index, output_spec in enumerate(definition.outputs):
@@ -114,7 +124,9 @@ def _resolve_node_signature(node: WorkflowNodeSpec) -> _NodeSignature:
         raise WorkflowDefinitionValidationError(str(exc)) from exc
 
 
-def _extend_signature_with_param_bindings(signature: _NodeSignature, node: WorkflowNodeSpec) -> _NodeSignature:
+def _extend_signature_with_param_bindings(
+    signature: _NodeSignature, node: WorkflowNodeSpec
+) -> _NodeSignature:
     input_ports = dict(signature.input_ports)
     for input_name in _collect_param_binding_input_names(node):
         existing = input_ports.get(input_name)
@@ -163,9 +175,13 @@ def _validate_edges(
     for index, edge in enumerate(edges):
         path = f"workflow_definition.edges[{index}]"
         if edge.from_node not in node_map:
-            raise WorkflowDefinitionValidationError(f"{path}.from_node references unknown enabled node: {edge.from_node}")
+            raise WorkflowDefinitionValidationError(
+                f"{path}.from_node references unknown enabled node: {edge.from_node}"
+            )
         if edge.to_node not in node_map:
-            raise WorkflowDefinitionValidationError(f"{path}.to_node references unknown enabled node: {edge.to_node}")
+            raise WorkflowDefinitionValidationError(
+                f"{path}.to_node references unknown enabled node: {edge.to_node}"
+            )
 
         source_ports = node_signatures[edge.from_node].output_ports
         if source_ports and edge.from_port not in source_ports:
@@ -231,7 +247,11 @@ def _validate_mode_required_inputs(
         return
     module_name = str(node.params.get("module_name", "")).strip()
     mode = str(node.params.get("mode", "")).lower()
-    required_inputs = tuple(getattr(_load_module_spec(module_name), "mode_required_inputs", {}).get(mode, ()))
+    required_inputs = tuple(
+        getattr(_load_module_spec(module_name), "mode_required_inputs", {}).get(
+            mode, ()
+        )
+    )
     if not required_inputs:
         return
     signature = node_signatures[node.node_id].input_ports
@@ -262,12 +282,16 @@ def _validate_binding(
     path: str,
 ) -> None:
     if not isinstance(binding, str) or not binding:
-        raise WorkflowDefinitionValidationError(f"{path} must be a non-empty binding string")
+        raise WorkflowDefinitionValidationError(
+            f"{path} must be a non-empty binding string"
+        )
 
     if binding.startswith("input:"):
         input_name = binding.split(":", 1)[1]
         if not input_name:
-            raise WorkflowDefinitionValidationError(f"{path} uses an empty input binding")
+            raise WorkflowDefinitionValidationError(
+                f"{path} uses an empty input binding"
+            )
         return
 
     if binding.startswith("request:"):
@@ -281,16 +305,24 @@ def _validate_binding(
     if binding.startswith("node:"):
         source = binding.split(":", 1)[1]
         if "." not in source:
-            raise WorkflowDefinitionValidationError(f"{path} must use node:<node_id>.<port_name> syntax")
+            raise WorkflowDefinitionValidationError(
+                f"{path} must use node:<node_id>.<port_name> syntax"
+            )
         node_id, port_name = source.split(".", 1)
         if node_id not in node_map:
-            raise WorkflowDefinitionValidationError(f"{path} references unknown enabled node: {node_id}")
+            raise WorkflowDefinitionValidationError(
+                f"{path} references unknown enabled node: {node_id}"
+            )
         output_ports = node_signatures[node_id].output_ports
         if output_ports and port_name not in output_ports:
-            raise WorkflowDefinitionValidationError(f"{path} references unknown node output port: {node_id}.{port_name}")
+            raise WorkflowDefinitionValidationError(
+                f"{path} references unknown node output port: {node_id}.{port_name}"
+            )
         return
 
-    raise WorkflowDefinitionValidationError(f"{path} uses unsupported binding syntax: {binding}")
+    raise WorkflowDefinitionValidationError(
+        f"{path} uses unsupported binding syntax: {binding}"
+    )
 
 
 def _validate_acyclic_graph(

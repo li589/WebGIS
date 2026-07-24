@@ -51,10 +51,14 @@ def _probe_local_open_meteo_coverage(model: str) -> tuple[dict | None, str | Non
         with urlopen(probe_url, timeout=5) as response:
             payload = json.loads(response.read().decode("utf-8"))
     except (URLError, HTTPError, OSError) as exc:
-        logger.warning("weather coverage probe unreachable for model=%s: %s", model, exc)
+        logger.warning(
+            "weather coverage probe unreachable for model=%s: %s", model, exc
+        )
         return None, "local_unreachable"
     except json.JSONDecodeError as exc:
-        logger.warning("weather coverage probe decode failed for model=%s: %s", model, exc)
+        logger.warning(
+            "weather coverage probe decode failed for model=%s: %s", model, exc
+        )
         return None, "probe_error"
 
     hourly = payload.get("hourly") or {}
@@ -102,7 +106,9 @@ def get_weather_coverage(model: str | None = None):
     """返回本地 Open-Meteo 数据覆盖范围，供前端时间轴限制可选时段。"""
     from app.services.weather_engine_settings import get_effective_weather_default_model
 
-    resolved_model = (model or get_effective_weather_default_model()).strip() or get_effective_weather_default_model()
+    resolved_model = (
+        model or get_effective_weather_default_model()
+    ).strip() or get_effective_weather_default_model()
     coverage, error_code = _probe_local_open_meteo_coverage(resolved_model)
     if coverage is None:
         messages = {
@@ -153,10 +159,12 @@ def get_open_meteo_sync_overview():
 
     # In-flight local-thread sync jobs
     overview["sync_in_progress"] = any(
-        isinstance(job, dict) and str(job.get("state", "")).upper() in {"PENDING", "STARTED", "RETRY"}
+        isinstance(job, dict)
+        and str(job.get("state", "")).upper() in {"PENDING", "STARTED", "RETRY"}
         for job in _LOCAL_SYNC_JOBS.values()
     )
     return overview
+
 
 @router.post("/weather/sync/trigger", tags=["weather"])
 def trigger_open_meteo_sync():
@@ -173,7 +181,10 @@ def trigger_open_meteo_sync():
 
     from app.core.celery_app import celery_available
     from app.core.config import settings
-    from app.tasks.open_meteo_sync_tasks import execute_open_meteo_sync, sync_open_meteo_data
+    from app.tasks.open_meteo_sync_tasks import (
+        execute_open_meteo_sync,
+        sync_open_meteo_data,
+    )
 
     def _run_local(task_id: str) -> None:
         _LOCAL_SYNC_JOBS[task_id] = {
@@ -244,7 +255,9 @@ def trigger_open_meteo_sync():
             logger.warning("Celery apply_async timed out; falling back to local thread")
             return _dispatch_local("Celery broker timeout;")
         except Exception as exc:
-            logger.warning("Celery dispatch failed (%s); falling back to local thread", exc)
+            logger.warning(
+                "Celery dispatch failed (%s); falling back to local thread", exc
+            )
             return _dispatch_local(f"Celery dispatch failed ({exc});")
         finally:
             pool.shutdown(wait=False, cancel_futures=True)
@@ -281,7 +294,13 @@ def get_open_meteo_sync_status(task_id: str):
 
     result: AsyncResult = celery_app.AsyncResult(task_id)
     state = result.state
-    info = result.info if result.successful() else str(result.info) if result.info else None
+    info = (
+        result.info
+        if result.successful()
+        else str(result.info)
+        if result.info
+        else None
+    )
     payload: dict = {
         "task_id": task_id,
         "state": state,
@@ -310,11 +329,19 @@ def _weather_service_response(service_call) -> JSONResponse:
         return service_json_response(service_call())
     except RuntimeError as exc:
         detail = str(exc)
-        status_code = status.HTTP_503_SERVICE_UNAVAILABLE if "disabled" in detail.lower() or "initialize" in detail.lower() else status.HTTP_500_INTERNAL_SERVER_ERROR
+        status_code = (
+            status.HTTP_503_SERVICE_UNAVAILABLE
+            if "disabled" in detail.lower() or "initialize" in detail.lower()
+            else status.HTTP_500_INTERNAL_SERVER_ERROR
+        )
         raise HTTPException(status_code=status_code, detail=detail) from exc
     except ValueError as exc:
         detail = str(exc)
-        status_code = status.HTTP_404_NOT_FOUND if "not found" in detail.lower() else status.HTTP_400_BAD_REQUEST
+        status_code = (
+            status.HTTP_404_NOT_FOUND
+            if "not found" in detail.lower()
+            else status.HTTP_400_BAD_REQUEST
+        )
         raise HTTPException(status_code=status_code, detail=detail) from exc
 
 
@@ -350,11 +377,17 @@ def get_weather_point(
                 "does not support layer",
             )
         ):
-            raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=detail) from exc
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=detail) from exc
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=detail
+            ) from exc
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail=detail
+        ) from exc
     except (HTTPError, URLError) as exc:
         detail = "Weather point forecast is temporarily unavailable."
-        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=detail) from exc
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=detail
+        ) from exc
 
 
 @router.get("/weather/providers-for-layer/{layer_id}", tags=["weather"])
@@ -365,9 +398,17 @@ def get_providers_for_layer(layer_id: str, include_disabled: bool = False):
     from app.services.config_service import _ensure_weather_providers_registered
 
     if layer_id not in WEATHER_LAYER_SPECS:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Unknown weather layer: {layer_id}")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Unknown weather layer: {layer_id}",
+        )
     _ensure_weather_providers_registered()
-    return {"layer_id": layer_id, "providers": list_providers_for_layer(layer_id, include_disabled=include_disabled)}
+    return {
+        "layer_id": layer_id,
+        "providers": list_providers_for_layer(
+            layer_id, include_disabled=include_disabled
+        ),
+    }
 
 
 @router.get("/weather/workflows", tags=["weather"])
@@ -382,4 +423,6 @@ def get_weather_diagnostics() -> JSONResponse:
 
 @router.get("/weather/workflows/{workflow_name}", tags=["weather"])
 def describe_weather_workflow(workflow_name: str) -> JSONResponse:
-    return _weather_service_response(lambda: weather_bridge_service.describe_workflow_response(workflow_name))
+    return _weather_service_response(
+        lambda: weather_bridge_service.describe_workflow_response(workflow_name)
+    )

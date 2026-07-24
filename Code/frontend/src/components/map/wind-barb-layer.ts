@@ -108,8 +108,8 @@ export class WindBarbLayer {
   private lonWrapOffset = 0
 
   // 线条颜色（RGB 0-1 → 转换为 CSS rgba 字符串时乘以 255）
-  private readonly STEM_COLOR = { r: 0.863, g: 0.941, b: 1.0, a: 0.90 }
-  private readonly CIRCLE_COLOR = { r: 0.706, g: 0.902, b: 1.0, a: 0.80 }
+  private readonly STEM_COLOR = { r: 0.863, g: 0.941, b: 1.0, a: 0.9 }
+  private readonly CIRCLE_COLOR = { r: 0.706, g: 0.902, b: 1.0, a: 0.8 }
 
   constructor(map: MaplibreMap, geojson: WindGeoJSON, options?: { barbSize?: number }) {
     this.map = map
@@ -132,7 +132,13 @@ export class WindBarbLayer {
 
     this.loadData(geojson)
     this.updateLayout()
-    console.log(`[${performance.now().toFixed(1)}ms] [WindBarbLayer] constructor`, 'dataCount', this.data.length, 'bounds', this.dataBounds)
+    console.log(
+      `[${performance.now().toFixed(1)}ms] [WindBarbLayer] constructor`,
+      'dataCount',
+      this.data.length,
+      'bounds',
+      this.dataBounds,
+    )
 
     // 用 rAF 节流：move 事件高频触发，但每帧只重绘一次
     this.moveHandler = () => {
@@ -143,7 +149,10 @@ export class WindBarbLayer {
         this.draw()
       })
     }
-    this.resizeHandler = () => { this.updateLayout(); this.draw() }
+    this.resizeHandler = () => {
+      this.updateLayout()
+      this.draw()
+    }
     map.on(MAP_EVENT_MOVE, this.moveHandler)
     map.on(MAP_EVENT_MOVEEND, this.moveHandler)
     map.on(MAP_EVENT_RESIZE, this.resizeHandler)
@@ -154,8 +163,10 @@ export class WindBarbLayer {
     const b = this.dataBounds
     this.layout = computeCanvasLayout(
       this.map,
-      b ? b.west : -180, b ? b.east : 180,
-      b ? b.south : -90, b ? b.north : 90,
+      b ? b.west : -180,
+      b ? b.east : 180,
+      b ? b.south : -90,
+      b ? b.north : 90,
     )
     this.lonWrapOffset = this.layout.lonWrapOffset
     const { width, height, offsetX, offsetY } = this.layout
@@ -179,7 +190,12 @@ export class WindBarbLayer {
     // 收集所有点和量化后的唯一经纬度
     // 不依赖后端 row/col —— 多瓦片合并时各瓦片的 row/col 是相对内部的，会互相冲突
     const QUANT = 1000 // 0.001° 精度，合并浮点误差
-    interface RawPoint { lat: number; lon: number; speed: number; direction: number }
+    interface RawPoint {
+      lat: number
+      lon: number
+      speed: number
+      direction: number
+    }
     const rawPoints: RawPoint[] = []
     const latQuantSet = new Set<number>()
     const lonQuantSet = new Set<number>()
@@ -200,8 +216,10 @@ export class WindBarbLayer {
       return
     }
 
-    let minLat = rawPoints[0].lat, maxLat = rawPoints[0].lat
-    let minLon = rawPoints[0].lon, maxLon = rawPoints[0].lon
+    let minLat = rawPoints[0].lat,
+      maxLat = rawPoints[0].lat
+    let minLon = rawPoints[0].lon,
+      maxLon = rawPoints[0].lon
     for (const p of rawPoints) {
       if (p.lat < minLat) minLat = p.lat
       if (p.lat > maxLat) maxLat = p.lat
@@ -237,13 +255,15 @@ export class WindBarbLayer {
    * 几何计算逻辑：杆方向、三角旗、长线、短线均按气象风羽标准。
    */
   private buildBarbGeometry(
-    cx: number, cy: number,   // canvas 内中心坐标
-    dirCos: number, dirSin: number,  // 杆方向单位向量（cos/sin）
+    cx: number,
+    cy: number, // canvas 内中心坐标
+    dirCos: number,
+    dirSin: number, // 杆方向单位向量（cos/sin）
     speed: number,
   ): BarbGeometry {
     const size = this.barbSize
     // 垂直于杆的单位向量（逆时针 90°）
-    const perpCos = dirCos   // 旋转 90°: (cos, sin) -> (-sin, cos)
+    const perpCos = dirCos // 旋转 90°: (cos, sin) -> (-sin, cos)
     const perpSin = -dirSin
 
     const lineSegments: LineSegment[] = []
@@ -251,8 +271,8 @@ export class WindBarbLayer {
 
     // 气象风向：风吹来的方向，杆从圆圈指向风吹来的方向
     // stem: 从 (cx, cy) 指向 (cx + stemDx, cy + stemDy)
-    const stemDx = -dirSin * size  // 负 sin = cos(90°+θ)
-    const stemDy =  dirCos * size  //  cos(90°+θ) = -sin(θ)
+    const stemDx = -dirSin * size // 负 sin = cos(90°+θ)
+    const stemDy = dirCos * size //  cos(90°+θ) = -sin(θ)
 
     // 圆圈
     circles.push({ x: cx, y: cy })
@@ -264,12 +284,15 @@ export class WindBarbLayer {
 
     // 风速分解
     let remaining = Math.round(speed)
-    const flags50 = Math.floor(remaining / BARB_FLAG_UNIT); remaining -= flags50 * BARB_FLAG_UNIT
-    const flags10 = Math.floor(remaining / BARB_LONG_BARB_UNIT); remaining -= flags10 * BARB_LONG_BARB_UNIT
-    const flags5  = Math.floor(remaining / BARB_SHORT_BARB_UNIT)
+    const flags50 = Math.floor(remaining / BARB_FLAG_UNIT)
+    remaining -= flags50 * BARB_FLAG_UNIT
+    const flags10 = Math.floor(remaining / BARB_LONG_BARB_UNIT)
+    remaining -= flags10 * BARB_LONG_BARB_UNIT
+    const flags5 = Math.floor(remaining / BARB_SHORT_BARB_UNIT)
 
     const addLine = (x1: number, y1: number, x2: number, y2: number) => {
-      const dx = x2 - x1, dy = y2 - y1
+      const dx = x2 - x1,
+        dy = y2 - y1
       const len = Math.hypot(dx, dy)
       if (len < MIN_BARB_LINE_LENGTH_PX) return
       lineSegments.push({ x1, y1, x2, y2 })
@@ -346,8 +369,13 @@ export class WindBarbLayer {
       const cx = screen.x - ox
       const cy = screen.y - oy
       // 视口裁剪
-      if (cx < -BARB_VIEWPORT_CULLING_MARGIN_PX || cx > cw + BARB_VIEWPORT_CULLING_MARGIN_PX ||
-          cy < -BARB_VIEWPORT_CULLING_MARGIN_PX || cy > ch + BARB_VIEWPORT_CULLING_MARGIN_PX) continue
+      if (
+        cx < -BARB_VIEWPORT_CULLING_MARGIN_PX ||
+        cx > cw + BARB_VIEWPORT_CULLING_MARGIN_PX ||
+        cy < -BARB_VIEWPORT_CULLING_MARGIN_PX ||
+        cy > ch + BARB_VIEWPORT_CULLING_MARGIN_PX
+      )
+        continue
       visible++
 
       const rad = (d.direction * Math.PI) / 180
@@ -375,7 +403,21 @@ export class WindBarbLayer {
     ctx.clearRect(0, 0, this.canvas.width, this.canvas.height)
 
     const { lineSegments, circles, step, considered, visible } = this.buildAllBarbs()
-    console.log(`[${performance.now().toFixed(1)}ms] [WindBarbLayer] draw`, 'zoom', zoom, 'step', step, 'considered', considered, 'visible', visible, 'segments', lineSegments.length, 'circles', circles.length)
+    console.log(
+      `[${performance.now().toFixed(1)}ms] [WindBarbLayer] draw`,
+      'zoom',
+      zoom,
+      'step',
+      step,
+      'considered',
+      considered,
+      'visible',
+      visible,
+      'segments',
+      lineSegments.length,
+      'circles',
+      circles.length,
+    )
     if (lineSegments.length === 0 && circles.length === 0) return
 
     // 绘制所有线条（批量一次 stroke）
@@ -419,7 +461,13 @@ export class WindBarbLayer {
   updateGeoJSON(geojson: WindGeoJSON): void {
     this.loadData(geojson)
     this.updateLayout()
-    console.log(`[${performance.now().toFixed(1)}ms] [WindBarbLayer] updateGeoJSON`, 'dataCount', this.data.length, 'bounds', this.dataBounds)
+    console.log(
+      `[${performance.now().toFixed(1)}ms] [WindBarbLayer] updateGeoJSON`,
+      'dataCount',
+      this.data.length,
+      'bounds',
+      this.dataBounds,
+    )
     this.draw()
   }
 
