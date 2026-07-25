@@ -16,22 +16,22 @@
 环境变量：
     BACKEND_STORAGE_BACKEND: "local" | "minio"，默认 "local"
     BACKEND_DATA_ROOT: 本地地理数据根目录，默认为 I:\\Geograph_DataSet
-    BACKEND_OUTPUT_ROOT: 产物输出根目录，默认为 I:\\GeoOutput
+    BACKEND_OUTPUT_ROOT: 产物输出根目录，默认为 I:\\Geograph_DataSet\\ProjectOutput
     BACKEND_MINIO_ENDPOINT / _ACCESS_KEY / _SECRET_KEY / _BUCKET / _SECURE: MinIO 配置
 
 路径映射约定：
     逻辑数据集名 → 相对于数据根目录的子路径
 
     示例（本地文件系统，BACKEND_DATA_ROOT="I:\\Geograph_DataSet"）：
-        "SMAP_L3"           → I:\\Geograph_DataSet\\SMAP
-        "ERA5_SMCI"         → I:\\Geograph_DataSet\\Weather
-        "BIOMASS_ESACCI"    → I:\\Geograph_DataSet\\Biomass
-        "GOSAT_XCO2"        → I:\\Geograph_DataSet\\CO2
-        "ADMIN_BOUNDARY_CN" → I:\\Geograph_DataSet\\AdminBoundary
-        "DEM_SRTM"          → I:\\Geograph_DataSet\\DEM
-        "LANDCOVER_MODIS"   → I:\\Geograph_DataSet\\LandCover
-        "HUMAN_FOOTPRINT"   → I:\\Geograph_DataSet\\HumanFootprint
-        "INVERSION_OMEGA"   → I:\\Geograph_DataSet\\InversionResults
+        "SMAP_L3"           → I:\\Geograph_DataSet\\Soil_Moisture\\SMAP
+        "ERA5_SMCI"         → I:\\Geograph_DataSet\\Meteorological\\Weather
+        "BIOMASS_ESACCI"    → I:\\Geograph_DataSet\\Ecological_Vegetation\\Biomass
+        "GOSAT_XCO2"        → I:\\Geograph_DataSet\\Atmospheric\\CO2
+        "ADMIN_BOUNDARY_CN" → I:\\Geograph_DataSet\\Admin_Boundary
+        "DEM_SRTM"          → I:\\Geograph_DataSet\\Geological\\DEM
+        "LANDCOVER_MODIS"   → I:\\Geograph_DataSet\\Ecological_Vegetation\\LandCover
+        "HUMAN_FOOTPRINT"   → I:\\Geograph_DataSet\\Socio_Economic\\HumanFootprint
+        "INVERSION_OMEGA"   → I:\\Geograph_DataSet\\Inversion_Results
 
     示例（MinIO 模式）：
         "SMAP_L3" → s3://geodata/SMAP
@@ -57,7 +57,7 @@ _BACKEND_DATA_ROOT_DEFAULT = r"I:\Geograph_DataSet"
 _BACKEND_DATA_ROOT_ENV = os.getenv("BACKEND_DATA_ROOT", _BACKEND_DATA_ROOT_DEFAULT)
 
 # 产物输出根目录
-_BACKEND_OUTPUT_ROOT_DEFAULT = r"I:\GeoOutput"
+_BACKEND_OUTPUT_ROOT_DEFAULT = r"I:\Geograph_DataSet\ProjectOutput"
 _BACKEND_OUTPUT_ROOT_ENV = os.getenv(
     "BACKEND_OUTPUT_ROOT", _BACKEND_OUTPUT_ROOT_DEFAULT
 )
@@ -145,7 +145,7 @@ DATASET_REGISTRY: dict[str, DatasetInfo] = {
     "SMAP_L3": DatasetInfo(
         name="SMAP L3 土壤水分产品",
         logical_name="SMAP_L3",
-        relative_path="SMAP",
+        relative_path="Soil_Moisture/SMAP",
         description="NASA SMAP L3 土壤水分被动微波遥感产品（HDF5 格式），2023-01 两周序列 + 2022-09",
         file_format="hdf5",
         variables=(
@@ -165,7 +165,7 @@ DATASET_REGISTRY: dict[str, DatasetInfo] = {
     "ERA5_SMCI": DatasetInfo(
         name="ERA5 土壤水分气候异常指数",
         logical_name="ERA5_SMCI",
-        relative_path="Weather",
+        relative_path="Meteorological/Weather",
         description="ERA5 SMCI-T7 土壤水分气候异常指数（NetCDF 格式），365天日数据，0.25° 全球",
         file_format="nc",
         variables=("SMCI",),
@@ -178,7 +178,7 @@ DATASET_REGISTRY: dict[str, DatasetInfo] = {
     "BIOMASS_ESACCI": DatasetInfo(
         name="ESA CCI 地上生物量",
         logical_name="BIOMASS_ESACCI",
-        relative_path="Biomass",
+        relative_path="Ecological_Vegetation/Biomass",
         description="ESA CCI Biomass L4 AGB 产品（NetCDF 格式），100m 分辨率，ALOS-2+Sentinel-1",
         file_format="nc",
         variables=("agb", "agb_sd"),
@@ -190,7 +190,7 @@ DATASET_REGISTRY: dict[str, DatasetInfo] = {
     "HUMAN_FOOTPRINT": DatasetInfo(
         name="Human Footprint 人类足迹指数",
         logical_name="HUMAN_FOOTPRINT",
-        relative_path="HumanFootprint",
+        relative_path="Socio_Economic/HumanFootprint",
         description="Human Footprint 人类足迹指数（GeoTIFF 格式），1000m Mollweide 投影",
         file_format="tif",
         variables=("hfp",),
@@ -203,7 +203,7 @@ DATASET_REGISTRY: dict[str, DatasetInfo] = {
     "CMFD_LRAD": DatasetInfo(
         name="CMFD 地表向下长波辐射",
         logical_name="CMFD_LRAD",
-        relative_path="Weather",
+        relative_path="Meteorological/Weather",
         description="CMFD 月度地表向下长波辐射（NetCDF 格式），0.1° 中国区域，1979-2018",
         file_format="nc",
         variables=("lrad",),
@@ -215,7 +215,7 @@ DATASET_REGISTRY: dict[str, DatasetInfo] = {
     "CMFD_SRAD": DatasetInfo(
         name="CMFD 地表向下短波辐射",
         logical_name="CMFD_SRAD",
-        relative_path="Weather",
+        relative_path="Meteorological/Weather",
         description="CMFD 月度地表向下短波辐射（NetCDF 格式），0.1° 中国区域，1979-2018",
         file_format="nc",
         variables=("srad",),
@@ -227,7 +227,7 @@ DATASET_REGISTRY: dict[str, DatasetInfo] = {
     "CHINA_1KM_TEMP": DatasetInfo(
         name="China 1km 月度温度",
         logical_name="CHINA_1KM_TEMP",
-        relative_path="Weather",
+        relative_path="Meteorological/Weather",
         description="彭守彰 1km 月度温度数据集（GeoTIFF 格式），单位 0.1℃，2002-01~03",
         file_format="tif",
         variables=("tmp",),
@@ -239,7 +239,7 @@ DATASET_REGISTRY: dict[str, DatasetInfo] = {
     "CHINA_1KM_PRECIP": DatasetInfo(
         name="China 1km 月度降水",
         logical_name="CHINA_1KM_PRECIP",
-        relative_path="Precipitation",
+        relative_path="Meteorological/Precipitation",
         description="彭守彰 1km 月度降水数据集（GeoTIFF 格式），单位 0.1mm，2002-01~03",
         file_format="tif",
         variables=("pre",),
@@ -252,7 +252,7 @@ DATASET_REGISTRY: dict[str, DatasetInfo] = {
     "LANDCOVER_MODIS": DatasetInfo(
         name="MODIS MCD12Q1 土地覆盖",
         logical_name="LANDCOVER_MODIS",
-        relative_path="LandCover",
+        relative_path="Ecological_Vegetation/LandCover",
         description="MODIS MCD12Q1 IGBP 土地覆盖分类（GeoTIFF 格式），463m Sinusoidal 投影，2019-2021",
         file_format="tif",
         variables=("LC",),
@@ -264,7 +264,7 @@ DATASET_REGISTRY: dict[str, DatasetInfo] = {
     "LANDCOVER_CLCD": DatasetInfo(
         name="武汉大学 CLCD 中国土地覆盖",
         logical_name="LANDCOVER_CLCD",
-        relative_path="LandCover",
+        relative_path="Ecological_Vegetation/LandCover",
         description="武汉大学 CLCD 中国土地覆盖动态（GeoTIFF 格式），30m EPSG:4326，值 0-9",
         file_format="tif",
         variables=("LC",),
@@ -277,7 +277,7 @@ DATASET_REGISTRY: dict[str, DatasetInfo] = {
     "INVERSION_OMEGA_SMAP": DatasetInfo(
         name="omega 反演结果 (SMAP 平均)",
         logical_name="INVERSION_OMEGA_SMAP",
-        relative_path="InversionResults/smap_avg",
+        relative_path="Inversion_Results/smap_avg",
         description="omega 植被光学厚度反演结果（MAT v7.3 格式），SMAP 平均，doy 017-030",
         file_format="mat",
         variables=("OMEGA_AVG", "count_grid", "used_years"),
@@ -289,7 +289,7 @@ DATASET_REGISTRY: dict[str, DatasetInfo] = {
     "INVERSION_OMEGA_FY": DatasetInfo(
         name="omega 反演结果 (FY 平均)",
         logical_name="INVERSION_OMEGA_FY",
-        relative_path="InversionResults/fy_avg",
+        relative_path="Inversion_Results/fy_avg",
         description="omega 植被光学厚度反演结果（MAT v7.3 格式），FY 平均，doy 025-030",
         file_format="mat",
         variables=("OMEGA_AVG", "count_grid", "used_years"),
@@ -301,7 +301,7 @@ DATASET_REGISTRY: dict[str, DatasetInfo] = {
     "LANDSCAPE_METRICS": DatasetInfo(
         name="景观格局指数",
         logical_name="LANDSCAPE_METRICS",
-        relative_path="InversionResults",
+        relative_path="Inversion_Results",
         description="景观格局指数（MAT v5 格式），9km 分辨率，2020 年",
         file_format="mat",
         variables=("PD", "ED", "SHDI", "CONTAG", "Forest_Ratio"),
@@ -314,7 +314,7 @@ DATASET_REGISTRY: dict[str, DatasetInfo] = {
     "daily_bundle_mat": DatasetInfo(
         name="单日合成数据 (daily_bundle 输出)",
         logical_name="daily_bundle_mat",
-        relative_path="Soil_Ecological_Data/DDCA/DDCA_DH/H",
+        relative_path="Soil_Moisture/DDCA/H",
         description="daily_bundle 模块输出的单日合成 .mat 文件（含 TB/SM 等矩阵），可作为 inversion_daily 输入",
         file_format="mat",
         variables=("TB", "SM", "DH"),
@@ -326,7 +326,7 @@ DATASET_REGISTRY: dict[str, DatasetInfo] = {
     "timeseries_bundle_mat": DatasetInfo(
         name="时间序列合成数据 (timeseries_bundle 输出)",
         logical_name="timeseries_bundle_mat",
-        relative_path="InversionResults/smap_avg",
+        relative_path="Inversion_Results/smap_avg",
         description="timeseries_bundle 模块输出的时间序列 .mat 文件，可作为 block_inversion / omega_block 输入",
         file_format="mat",
         variables=("OMEGA_AVG", "count_grid"),
@@ -339,7 +339,7 @@ DATASET_REGISTRY: dict[str, DatasetInfo] = {
     "ISMN_FLUXNET_MATCH": DatasetInfo(
         name="ISMN 与 FLUXNET 站点匹配",
         logical_name="ISMN_FLUXNET_MATCH",
-        relative_path="Station",
+        relative_path="Station_Observation",
         description="ISMN 与 FLUXNET2015 站点匹配表（CSV 格式），101 个站点，31 列属性",
         file_format="csv",
         variables=(
@@ -360,7 +360,7 @@ DATASET_REGISTRY: dict[str, DatasetInfo] = {
     "STATION_ISD_LITE": DatasetInfo(
         name="ISD-Lite 全球站点气象数据",
         logical_name="STATION_ISD_LITE",
-        relative_path="Station/China_Station_Rainfall",
+        relative_path="Station_Observation/China_Station_Rainfall",
         description="中国地区 ISD-Lite 地面气象观测站数据（ZIP 格式），1942-2021",
         file_format="txt",
         variables=("soil_moisture", "soil_temperature"),
@@ -373,7 +373,7 @@ DATASET_REGISTRY: dict[str, DatasetInfo] = {
     "GOSAT_XCO2": DatasetInfo(
         name="GOSAT XCO2 柱浓度数据",
         logical_name="GOSAT_XCO2",
-        relative_path="Gosat",
+        relative_path="Atmospheric/Gosat",
         description="GOSAT 卫星反演的大气 CO2 柱浓度数据（L2/L3/L4 产品）",
         file_format="mat",
         variables=("xco2",),
@@ -385,7 +385,7 @@ DATASET_REGISTRY: dict[str, DatasetInfo] = {
     "CO2_MIDLAYER": DatasetInfo(
         name="中层二氧化碳柱浓度",
         logical_name="CO2_MIDLAYER",
-        relative_path="CO2/MidLayerCO2Column",
+        relative_path="Atmospheric/CO2/MidLayerCO2Column",
         description="中层二氧化碳柱浓度 GeoTIFF 数据",
         file_format="tif",
         variables=("co2",),
@@ -398,7 +398,7 @@ DATASET_REGISTRY: dict[str, DatasetInfo] = {
     "ADMIN_BOUNDARY_CN": DatasetInfo(
         name="中国行政区划边界",
         logical_name="ADMIN_BOUNDARY_CN",
-        relative_path="AdminBoundary",
+        relative_path="Admin_Boundary",
         description="中国省/市/区县/乡镇行政区划矢量边界（SHP/GeoJSON 格式）",
         file_format="shp",
         variables=("boundary",),
@@ -411,7 +411,7 @@ DATASET_REGISTRY: dict[str, DatasetInfo] = {
     "DEM_SRTM": DatasetInfo(
         name="GEBCO 数字高程模型",
         logical_name="DEM_SRTM",
-        relative_path="DEM",
+        relative_path="Geological/DEM",
         description="GEBCO_2024 全球数字高程模型（NetCDF + GeoTIFF 格式）",
         file_format="nc",
         variables=("elevation",),
@@ -450,7 +450,7 @@ DATASET_REGISTRY: dict[str, DatasetInfo] = {
     "NDVI_VIIRS": DatasetInfo(
         name="VIIRS NDVI 16天合成产品",
         logical_name="NDVI_VIIRS",
-        relative_path="Soil_Ecological_Data/NDVI/VIIRS",
+        relative_path="Ecological_Vegetation/NDVI/VIIRS",
         description="VIIRS 卫星 16 天合成 NDVI 栅格数据（HDF 格式），用于植被监测",
         file_format="hdf",
         variables=("NDVI",),
@@ -462,7 +462,7 @@ DATASET_REGISTRY: dict[str, DatasetInfo] = {
     "NDVI_MODIS": DatasetInfo(
         name="MODIS NDVI 16天合成产品",
         logical_name="NDVI_MODIS",
-        relative_path="Soil_Ecological_Data/NDVI/MODIS",
+        relative_path="Ecological_Vegetation/NDVI/MODIS",
         description="MODIS 卫星 16 天合成 NDVI 栅格数据（HDF 格式）",
         file_format="hdf",
         variables=("NDVI",),
@@ -474,7 +474,7 @@ DATASET_REGISTRY: dict[str, DatasetInfo] = {
     "FY_MWRI_HDF": DatasetInfo(
         name="FY-3 MWRI 亮温产品",
         logical_name="FY_MWRI_HDF",
-        relative_path="Soil_Ecological_Data/FY_MWRI",
+        relative_path="Soil_Moisture/FY_MWRI",
         description="风云三号 MWRI 微波成像仪轨道 HDF 数据，用于亮温产品生成。",
         file_format="hdf",
         variables=("10V", "10H", "18V", "18H", "23V", "36V", "36H", "89V", "89H"),
@@ -486,7 +486,7 @@ DATASET_REGISTRY: dict[str, DatasetInfo] = {
     "RAINFUSION": DatasetInfo(
         name="融合降水数据",
         logical_name="RAINFUSION",
-        relative_path="Precipitation/Fusion",
+        relative_path="Meteorological/Precipitation/Fusion",
         description="卫星-站点融合降水数据（GRID）",
         file_format="tif",
         variables=("precipitation",),
@@ -498,7 +498,7 @@ DATASET_REGISTRY: dict[str, DatasetInfo] = {
     "WIND_FIELD": DatasetInfo(
         name="ECMWF 风场再分析数据",
         logical_name="WIND_FIELD",
-        relative_path="Weather/WindField",
+        relative_path="Meteorological/Weather/WindField",
         description="ECMWF 风场再分析数据（NetCDF 格式）",
         file_format="nc",
         variables=("u10", "v10", "wind_speed"),
@@ -510,7 +510,7 @@ DATASET_REGISTRY: dict[str, DatasetInfo] = {
     "ISMN_STATION": DatasetInfo(
         name="ISMN 全球土壤水分站点数据",
         logical_name="ISMN_STATION",
-        relative_path="Station/ISMN",
+        relative_path="Station_Observation/ISMN",
         description="International Soil Moisture Network 全球土壤水分站点数据（STM 格式）",
         file_format="txt",
         variables=("soil_moisture", "soil_temperature"),
@@ -522,7 +522,7 @@ DATASET_REGISTRY: dict[str, DatasetInfo] = {
     "CASMOS_STATION": DatasetInfo(
         name="CASMOS 中国土壤水分站点数据",
         logical_name="CASMOS_STATION",
-        relative_path="Station/CASMOS",
+        relative_path="Station_Observation/CASMOS",
         description="中国土壤水分观测网络站点数据（CASMOS 项目）",
         file_format="txt",
         variables=("soil_moisture", "soil_temperature"),
@@ -534,7 +534,7 @@ DATASET_REGISTRY: dict[str, DatasetInfo] = {
     "CHINA_STATION": DatasetInfo(
         name="中国生态站网土壤数据",
         logical_name="CHINA_STATION",
-        relative_path="Soil_Ecological_Data/China_Soil",
+        relative_path="Soil_Moisture/China_Soil",
         description="中国生态系统研究网络（CERN）土壤温湿度长期观测数据",
         file_format="txt",
         variables=("soil_moisture", "soil_temperature"),
@@ -546,7 +546,7 @@ DATASET_REGISTRY: dict[str, DatasetInfo] = {
     "LANDCOVER": DatasetInfo(
         name="MODIS 土地覆盖产品（兼容别名）",
         logical_name="LANDCOVER",
-        relative_path="LandCover",
+        relative_path="Ecological_Vegetation/LandCover",
         description="MODIS IGBP 土地覆盖类型分类（兼容旧逻辑名，等同于 LANDCOVER_MODIS）",
         file_format="tif",
         variables=("LC",),
@@ -558,7 +558,7 @@ DATASET_REGISTRY: dict[str, DatasetInfo] = {
     "ANCILLARY_MODIS": DatasetInfo(
         name="MODIS 地表参数辅助数据",
         logical_name="ANCILLARY_MODIS",
-        relative_path="Soil_Ecological_Data/Ancillary",
+        relative_path="Soil_Moisture/SMAP_Auxiliary_Data",
         description="MODIS 地表温度/反射率等辅助参数",
         file_format="hdf",
         variables=("LST", "albedo"),
@@ -571,7 +571,7 @@ DATASET_REGISTRY: dict[str, DatasetInfo] = {
     "NDVI_16DAY_RASTER": DatasetInfo(
         name="NDVI 9km 16天 GeoTIFF（A1/A2 输出）",
         logical_name="NDVI_16DAY_RASTER",
-        relative_path="Soil_Ecological_Data/NDVI/VIIRS_9km_tif",
+        relative_path="Ecological_Vegetation/NDVI/VIIRS_9km_tif",
         description="A1/A2 ndvi_hdf_preprocess 产出的 9 km GeoTIFF（YYYYMMDD.tif），供 ndvi_daily 读取",
         file_format="tif",
         variables=("NDVI",),
@@ -583,7 +583,7 @@ DATASET_REGISTRY: dict[str, DatasetInfo] = {
     "NDVI_16DAY_HDF": DatasetInfo(
         name="NDVI 16天原始 HDF（VIIRS/MODIS）",
         logical_name="NDVI_16DAY_HDF",
-        relative_path="Soil_Ecological_Data/NDVI/VIIRS",
+        relative_path="Ecological_Vegetation/NDVI/VIIRS",
         description="VNP13C1/MOYD13C1 原始 HDF 输入目录（与 NDVI_VIIRS 同路径时可互换）",
         file_format="hdf",
         variables=("NDVI",),
@@ -595,7 +595,7 @@ DATASET_REGISTRY: dict[str, DatasetInfo] = {
     "omega_block_output": DatasetInfo(
         name="D1 omega_block 输出目录",
         logical_name="omega_block_output",
-        relative_path="InversionResults/omega_block",
+        relative_path="Inversion_Results/omega_block",
         description="含 omega_block_*.mat 与 daily_omega/ 的 D1 输出目录",
         file_format="mat",
         variables=("OMEGA",),
@@ -607,7 +607,7 @@ DATASET_REGISTRY: dict[str, DatasetInfo] = {
     "smap_daily_mat": DatasetInfo(
         name="逐日 SMAP .mat（D2 输入）",
         logical_name="smap_daily_mat",
-        relative_path="Soil_Ecological_Data/Smap_OriginData",
+        relative_path="Soil_Moisture/SMAP_Origin_Data",
         description="逐日 SMAP 亮温/湿度 MAT（YYYYMMDD.mat）",
         file_format="mat",
         variables=("TBv", "TBh", "Ts", "vwc", "IA", "SM"),
@@ -619,7 +619,7 @@ DATASET_REGISTRY: dict[str, DatasetInfo] = {
     "ndvi_daily_mat": DatasetInfo(
         name="逐日 NDVI .mat（D2 输入）",
         logical_name="ndvi_daily_mat",
-        relative_path="Soil_Ecological_Data/NDVI/daily",
+        relative_path="Ecological_Vegetation/NDVI/daily",
         description="逐日 NDVI MAT（YYYYMMDD.mat），可由 ndvi_daily 产出",
         file_format="mat",
         variables=("NDVI",),
@@ -631,7 +631,7 @@ DATASET_REGISTRY: dict[str, DatasetInfo] = {
     "ndvi_clim_dir": DatasetInfo(
         name="NDVI 气候态目录",
         logical_name="ndvi_clim_dir",
-        relative_path="Soil_Ecological_Data/NDVI/climatology",
+        relative_path="Ecological_Vegetation/NDVI/climatology",
         description="NDVI DOY 气候态 MAT 目录",
         file_format="mat",
         variables=("NDVI",),
@@ -643,7 +643,7 @@ DATASET_REGISTRY: dict[str, DatasetInfo] = {
     "ancillary_mat": DatasetInfo(
         name="反演静态辅助库",
         logical_name="ancillary_mat",
-        relative_path="Soil_Ecological_Data/Ancillary",
+        relative_path="Soil_Moisture/SMAP_Auxiliary_Data",
         description="IGBP/Albedo/B/BD/CF/H/SF 等静态辅助 MAT（D2 anc_root）",
         file_format="mat",
         variables=("IGBP_9km_12", "Albedo", "B", "BD", "CF", "H", "SF"),
@@ -651,6 +651,67 @@ DATASET_REGISTRY: dict[str, DatasetInfo] = {
         resolution="9km",
         crs="EPSG:4326",
         tags=("ancillary", "d2", "static"),
+    ),
+    # ---- FY-3B/3D 亮温逐日数据（omega_sf 算法输入）----
+    "FY3D_DAILY_TB": DatasetInfo(
+        name="FY-3D 亮温逐日数据",
+        logical_name="FY3D_DAILY_TB",
+        relative_path="Soil_Moisture/FY3D",
+        description="FY-3D 卫星微波亮温逐日 MAT 数据（预处理后），含 TB_H/TB_V 通道",
+        file_format="mat",
+        variables=("TB_H", "TB_V"),
+        time_range=None,
+        resolution="9km",
+        crs="EPSG:4326",
+        tags=("fy3d", "brightness_temperature", "daily", "omega_sf"),
+    ),
+    "FY3B_DAILY_TB": DatasetInfo(
+        name="FY-3B 亮温逐日数据",
+        logical_name="FY3B_DAILY_TB",
+        relative_path="Soil_Moisture/FY3B",
+        description="FY-3B 卫星微波亮温逐日 MAT 数据（预处理后），含 TB_H/TB_V 通道",
+        file_format="mat",
+        variables=("TB_H", "TB_V"),
+        time_range=None,
+        resolution="9km",
+        crs="EPSG:4326",
+        tags=("fy3b", "brightness_temperature", "daily", "omega_sf"),
+    ),
+    "GLDAS_TEMP": DatasetInfo(
+        name="GLDAS 地表温度数据",
+        logical_name="GLDAS_TEMP",
+        relative_path="Meteorological/Weather/GLDAS",
+        description="GLDAS 地表温度 MAT 数据（用于双温度反演模式 DUAL_TG）",
+        file_format="mat",
+        variables=("Ts_GLDAS",),
+        time_range=None,
+        resolution="0.25deg",
+        crs="EPSG:4326",
+        tags=("gldas", "temperature", "dual_tg", "omega_sf"),
+    ),
+    "DDCA_SM": DatasetInfo(
+        name="DDCA 土壤水分产品",
+        logical_name="DDCA_SM",
+        relative_path="Soil_Moisture/DDCA/SM",
+        description="DDCA 算法产出的土壤水分 MAT 数据（用于验证）",
+        file_format="mat",
+        variables=("SM",),
+        time_range=None,
+        resolution="9km",
+        crs="EPSG:4326",
+        tags=("ddca", "soil_moisture", "validation"),
+    ),
+    "DDCA_H_ANNUAL": DatasetInfo(
+        name="DDCA 年度 H 参数数据",
+        logical_name="DDCA_H_ANNUAL",
+        relative_path="Soil_Moisture/DDCA/H",
+        description="DDCA 算法年度 H 参数 MAT 数据",
+        file_format="mat",
+        variables=("H",),
+        time_range=None,
+        resolution="9km",
+        crs="EPSG:4326",
+        tags=("ddca", "h_parameter", "annual"),
     ),
 }
 

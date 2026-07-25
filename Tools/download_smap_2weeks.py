@@ -17,7 +17,7 @@ BASE_URL = "https://nasfile.personaltunnel.dpdns.org"
 USERNAME = "user"
 PASSWORD = "remotefangwen123"
 UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
-LOCAL_ROOT = Path(r"I:\Geograph_DataSet\SMAP")
+LOCAL_ROOT = Path(r"I:\Geograph_DataSet\Soil_Moisture\SMAP")
 
 # Additional SMAP files to download (skip existing ones)
 # Pick ~10 files spread across January for 2-week coverage

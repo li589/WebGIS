@@ -1,4 +1,6 @@
 import { ref } from 'vue'
+import { showToast } from '../../data-manager/core/workspace-store'
+import { overlaySafeWgs84Bounds } from '../../services/geo-math'
 
 type MapInstance = import('maplibre-gl').Map
 
@@ -17,15 +19,15 @@ export interface OverlayTimeState {
 
 /**
  * 防御性 bounds 校验：后端 CRS 重投影/检测可能产生 NaN、跨 ±180° 包围盒、
- * 顺序错乱等异常 bounds。直接 addSource 会让 MapLibre 渲染出错误覆盖
- * （或北极/太平洋上的鬼影），并在 console 留下晦涩错误。这里集中拦截，
- * 返回带原因的失败结果，便于上层日志定位。
+ * 顺序错乱等异常 bounds。直接 addSource 会让 MapLibre 渲染出错误覆盖。
  *
- * 导出为顶级函数以便单元测试覆盖各异常分支。
+ * 契约（与 backend ``overlay_safe_wgs84_bounds`` 对齐）：
+ * - 近全球 → [-180, s, 180, n]
+ * - 跨日界线：raw west>east 且展开跨度 ≤180° → east∈(180,360]；或后端已展开且 west<east
+ * - 拒绝：非有限、纬度越界、经度越界（west∉[-180,180] 或 east∉[-180,360]）、
+ *   south>=north、零宽度、误序（展开后跨度>180° 的「东西颠倒」）
  *
- * 注意：image source 的 4 个角点不支持真正"跨子午线"渲染（如 `[170,..,-170,..]`），
- * 但这种情况会被下面的 `w >= e` 检查拦截。`[-180,..,180,..]`（全球）和
- * `[-100,..,100,..]`（宽 200°）都能正常渲染为单张拉伸图片，故不限制东西跨度。
+ * 注意：不做 lat 对调 / 零宽度 pad —— 那是数据错误，应拒绝而非静默“修好”。
  */
 export function validateOverlayBounds(
   raw: unknown,
@@ -33,21 +35,49 @@ export function validateOverlayBounds(
   if (!Array.isArray(raw) || raw.length !== 4) {
     return { ok: false, reason: `bounds 不是 4 元素数组（实际: ${JSON.stringify(raw)}）` }
   }
-  const [w, s, e, n] = raw as number[]
-  if (![w, s, e, n].every(Number.isFinite)) {
-    return { ok: false, reason: `bounds 含非有限值: [${w}, ${s}, ${e}, ${n}]` }
+  const [w0, s0, e0, n0] = raw as number[]
+  if (![w0, s0, e0, n0].every(Number.isFinite)) {
+    return { ok: false, reason: `bounds 含非有限值: [${w0}, ${s0}, ${e0}, ${n0}]` }
   }
-  // WGS84 经纬度范围（overlay 渲染坐标空间）
-  if (w < -180 || e > 180 || s < -90 || n > 90) {
-    return { ok: false, reason: `bounds 超出 WGS84 范围: [${w}, ${s}, ${e}, ${n}]` }
+  if (s0 < -90 || s0 > 90 || n0 < -90 || n0 > 90) {
+    return { ok: false, reason: `bounds 超出 WGS84 范围: [${w0}, ${s0}, ${e0}, ${n0}]` }
   }
-  if (w >= e) {
-    return { ok: false, reason: `bounds west >= east: [${w}, ${s}, ${e}, ${n}]` }
+  if (s0 >= n0) {
+    return { ok: false, reason: `bounds south >= north: [${w0}, ${s0}, ${e0}, ${n0}]` }
   }
-  if (s >= n) {
-    return { ok: false, reason: `bounds south >= north: [${w}, ${s}, ${e}, ${n}]` }
+  // west∈[-180,180]；east∈[-180,180]∪(180,360]（已展开日界线条带）
+  if (w0 < -180 || w0 > 180 || e0 < -180 || e0 > 360) {
+    return { ok: false, reason: `bounds 超出 WGS84 范围: [${w0}, ${s0}, ${e0}, ${n0}]` }
   }
-  return { ok: true, bounds: [w, s, e, n] }
+  if (w0 === e0) {
+    return { ok: false, reason: `bounds west >= east: [${w0}, ${s0}, ${e0}, ${n0}]` }
+  }
+  if (w0 > e0) {
+    // 日界线条带：仅当展开跨度 ≤180° 才接受（避免把「东西颠倒」误当成跨日界线）
+    const span = e0 + 360 - w0
+    if (span <= 0 || span > 180) {
+      return { ok: false, reason: `bounds west >= east: [${w0}, ${s0}, ${e0}, ${n0}]` }
+    }
+  }
+
+  try {
+    const [w, s, e, n] = overlaySafeWgs84Bounds(w0, s0, e0, n0)
+    if (w < -180 || e > 360 || s < -90 || n > 90) {
+      return { ok: false, reason: `bounds 超出允许范围: [${w}, ${s}, ${e}, ${n}]` }
+    }
+    if (w >= e) {
+      return { ok: false, reason: `bounds west >= east: [${w}, ${s}, ${e}, ${n}]` }
+    }
+    if (s >= n) {
+      return { ok: false, reason: `bounds south >= north: [${w}, ${s}, ${e}, ${n}]` }
+    }
+    return { ok: true, bounds: [w, s, e, n] }
+  } catch (err) {
+    return {
+      ok: false,
+      reason: err instanceof Error ? err.message : `bounds 规范化失败: ${String(err)}`,
+    }
+  }
 }
 
 export interface OverlayImageModule {
@@ -112,6 +142,8 @@ export function createOverlayImageModule(
   const overlayTimeStates = ref<OverlayTimeState[]>([])
   const loadedOverlays = new Map<string, LoadedOverlay>()
   const loadingOverlays = new Set<string>()
+  /** 加载过程中用户切换显隐时记住最新意图，避免 hide 被 in-flight load 覆盖 */
+  const desiredVisibility = new Map<string, boolean>()
   const linkTimeEnabled = ref(false)
   // bounds 内存缓存：避免显示/隐藏切换时重复请求 /overlay-bounds
   const boundsCache = new Map<string, { bounds: [number, number, number, number]; meta: any }>()
@@ -147,6 +179,7 @@ export function createOverlayImageModule(
       options.map.removeSource(sourceId)
     }
     loadedOverlays.delete(layerId)
+    desiredVisibility.delete(layerId)
     // 移除时间状态
     overlayTimeStates.value = overlayTimeStates.value.filter((s) => s.layerId !== layerId)
   }
@@ -155,9 +188,16 @@ export function createOverlayImageModule(
     try {
       const center = options.map.getCenter()
       const [west, south, east, north] = bounds
-      const inside =
-        center.lng >= west && center.lng <= east && center.lat >= south && center.lat <= north
-      if (inside) return
+      if (center.lat >= south && center.lat <= north) {
+        if (east <= 180) {
+          if (center.lng >= west && center.lng <= east) return
+        } else {
+          // east∈(180,360]：把中心经度展开到与 bounds 同一连续轴再判断
+          let lng = center.lng
+          if (lng < west) lng += 360
+          if (lng >= west && lng <= east) return
+        }
+      }
       options.map.fitBounds(
         [
           [west, south],
@@ -175,8 +215,15 @@ export function createOverlayImageModule(
     initialOpacity?: number,
     initiallyVisible: boolean = true,
   ): Promise<void> {
-    if (loadedOverlays.has(layerId)) return
-    if (loadingOverlays.has(layerId)) return
+    desiredVisibility.set(layerId, initiallyVisible)
+    if (loadedOverlays.has(layerId)) {
+      setOverlayVisibility(layerId, desiredVisibility.get(layerId) ?? initiallyVisible)
+      return
+    }
+    if (loadingOverlays.has(layerId)) {
+      // 已有加载在飞：只更新 desiredVisibility，完成后应用
+      return
+    }
     const { sourceId, rasterLayerId } = _ids(layerId)
     if (options.map.getSource(sourceId)) return
     loadingOverlays.add(layerId)
@@ -198,6 +245,7 @@ export function createOverlayImageModule(
       const boundsValidation = validateOverlayBounds(boundsData.bounds)
       if (!boundsValidation.ok) {
         console.warn(`[Overlay] Invalid bounds for ${layerId}: ${boundsValidation.reason}`)
+        showToast(`栅格无法显示：${boundsValidation.reason}。请确认坐标系或重新导入。`, true, 6500)
         return
       }
       const bounds: [number, number, number, number] = boundsValidation.bounds
@@ -239,13 +287,14 @@ export function createOverlayImageModule(
         ],
       } as any)
 
+      const visibleNow = desiredVisibility.get(layerId) ?? initiallyVisible
       options.map.addLayer(
         {
           id: rasterLayerId,
           type: 'raster',
           source: sourceId,
           // 隐藏的图层以 visibility='none' 加入，避免显示时再触发 addLayer 流程
-          layout: { visibility: initiallyVisible ? 'visible' : 'none' },
+          layout: { visibility: visibleNow ? 'visible' : 'none' },
           paint: {
             'raster-opacity': opacity,
             // 降低 fade duration 让显隐切换更跟手（原 300ms 显得迟钝）
@@ -279,11 +328,18 @@ export function createOverlayImageModule(
       overlayTimeStates.value = [...overlayTimeStates.value, state]
 
       // 自动 fitBounds：若当前地图中心不在 overlay 范围内，则飞到该图层范围
-      _fitBoundsIfOutside(bounds)
+      if (visibleNow) {
+        _fitBoundsIfOutside(bounds)
+      }
     } catch (e) {
       console.warn(`[Overlay] Failed to load overlay for ${layerId}`, e)
     } finally {
       loadingOverlays.delete(layerId)
+      // 加载完成后再次对齐最新显隐意图（可能在加载期间被用户切换）
+      const want = desiredVisibility.get(layerId)
+      if (want !== undefined && loadedOverlays.has(layerId)) {
+        setOverlayVisibility(layerId, want)
+      }
     }
   }
 
@@ -409,6 +465,7 @@ export function createOverlayImageModule(
   }
 
   function setOverlayVisibility(layerId: string, visible: boolean) {
+    desiredVisibility.set(layerId, visible)
     const loaded = loadedOverlays.get(layerId)
     if (!loaded) return
     if (!options.map.getLayer(loaded.rasterLayerId)) return
@@ -426,6 +483,7 @@ export function createOverlayImageModule(
       _removeOverlay(layerId)
     }
     loadingOverlays.clear()
+    desiredVisibility.clear()
     boundsCache.clear()
     knownOverlayIds.value = []
     overlayTimeStates.value = []

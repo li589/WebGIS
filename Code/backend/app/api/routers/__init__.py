@@ -20,6 +20,8 @@ from app.api.routers.weather_router import router as weather_router
 from app.api.routers.provider_router import router as provider_router
 from app.api.routers.artifact_router import router as artifact_router
 from app.api.routers.import_router import router as import_router
+from app.data_io.api.router import router as data_io_router
+from app.api.routers.remote_browser_router import router as remote_browser_router
 
 __all__ = [
     "health_router",
@@ -31,4 +33,6 @@ __all__ = [
     "provider_router",
     "artifact_router",
     "import_router",
+    "data_io_router",
+    "remote_browser_router",
 ]

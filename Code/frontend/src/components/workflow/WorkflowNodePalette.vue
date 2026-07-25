@@ -5,7 +5,7 @@
  * 节点面板：显示所有可用的节点模板，支持搜索、引擎过滤、分类折叠、收藏夹、最近使用。
  * 用户可以点击节点添加到画布，或拖拽到画布上。
  */
-import { computed, ref, watch } from 'vue'
+import { computed, ref, watch, onBeforeUnmount } from 'vue'
 import { storeToRefs } from 'pinia'
 import { useWorkflowDefinitionsStore } from '../../stores/workflow-definitions'
 import type { NodeTemplate } from '../../services/workflow-definition-api'
@@ -20,6 +20,8 @@ const { nodeTemplates, templatesByCategory } = storeToRefs(store)
 const searchQuery = ref('')
 const activeEngineFilter = ref<string>('all')
 const collapsedCategories = ref<Set<string>>(new Set())
+/** 默认隐藏尚未实现的 stub 模块，避免误加入画布 */
+const showStubs = ref(false)
 
 // ─── localStorage 持久化：收藏夹/最近使用/折叠状态 ─────────────────────────
 const FAVORITES_KEY = 'workflow_node_favorites'
@@ -44,6 +46,39 @@ function saveToStorage(key: string, value: unknown): void {
   }
 }
 
+/**
+ * 简单防抖：延迟 ms 执行 fn；返回的句柄带 .flush() 可立即执行挂起调用。
+ * 用于折叠状态持久化，避免连续点击分类时频繁写 localStorage。
+ */
+function debounce<TArgs extends unknown[]>(
+  fn: (...args: TArgs) => void,
+  ms: number,
+): ((...args: TArgs) => void) & { flush: () => void } {
+  let timer: ReturnType<typeof setTimeout> | null = null
+  let pendingArgs: TArgs | null = null
+  const debounced = (...args: TArgs) => {
+    pendingArgs = args
+    if (timer) clearTimeout(timer)
+    timer = setTimeout(() => {
+      timer = null
+      pendingArgs = null
+      fn(...args)
+    }, ms)
+  }
+  debounced.flush = () => {
+    if (timer) {
+      clearTimeout(timer)
+      timer = null
+    }
+    if (pendingArgs) {
+      const args = pendingArgs
+      pendingArgs = null
+      fn(...args)
+    }
+  }
+  return debounced
+}
+
 // 收藏夹：存储 node.type 集合
 const favorites = ref<Set<string>>(new Set(loadFromStorage<string[]>(FAVORITES_KEY, [])))
 
@@ -54,14 +89,24 @@ const recentTypes = ref<string[]>(loadFromStorage<string[]>(RECENT_KEY, []))
 const savedCollapsed = loadFromStorage<string[]>(COLLAPSED_KEY, [])
 collapsedCategories.value = new Set(savedCollapsed)
 
+// 防抖持久化折叠状态（300ms），避免连续折叠/展开时频繁写 localStorage
+const persistCollapsed = debounce((set: Set<string>) => {
+  saveToStorage(COLLAPSED_KEY, Array.from(set))
+}, 300)
+
 // 监听折叠状态变化，持久化
 watch(
   collapsedCategories,
   (set) => {
-    saveToStorage(COLLAPSED_KEY, Array.from(set))
+    persistCollapsed(set)
   },
   { deep: true },
 )
+
+// 组件卸载前立即刷新挂起的写入，避免丢失最后一次折叠状态
+onBeforeUnmount(() => {
+  persistCollapsed.flush()
+})
 
 // ─── 引擎过滤工具 ────────────────────────────────────────────────────────────
 const ENGINE_FILTERS: Array<{ key: string; label: string; color: string }> = [
@@ -104,6 +149,7 @@ const filteredTemplatesByCategory = computed(() => {
 
   for (const [category, templates] of Object.entries(templatesByCategory.value)) {
     const filtered = templates.filter((t) => {
+      if (!showStubs.value && t.executable === false) return false
       // 引擎过滤（用模板 engine 字段，避免 module/* 被误判为 common）
       if (engineFilter !== 'all' && getEngineOfNode(t.type, t.engine) !== engineFilter) return false
       // 搜索过滤
@@ -121,10 +167,20 @@ const filteredTemplatesByCategory = computed(() => {
   return result
 })
 
+const visibleTemplateCount = computed(() =>
+  Object.values(filteredTemplatesByCategory.value).reduce((n, list) => n + list.length, 0),
+)
+
+const stubCount = computed(() => nodeTemplates.value.filter((t) => t.executable === false).length)
+
 // ─── 收藏夹节点列表 ──────────────────────────────────────────────────────────
 const favoriteTemplates = computed(() => {
   if (favorites.value.size === 0) return []
-  return nodeTemplates.value.filter((t) => favorites.value.has(t.type))
+  return nodeTemplates.value.filter((t) => {
+    if (!favorites.value.has(t.type)) return false
+    if (!showStubs.value && t.executable === false) return false
+    return true
+  })
 })
 
 // ─── 最近使用节点列表 ────────────────────────────────────────────────────────
@@ -133,7 +189,9 @@ const recentTemplates = computed(() => {
   const result: NodeTemplate[] = []
   for (const type of recentTypes.value) {
     const tpl = nodeTemplates.value.find((t) => t.type === type)
-    if (tpl) result.push(tpl)
+    if (!tpl) continue
+    if (!showStubs.value && tpl.executable === false) continue
+    result.push(tpl)
   }
   return result
 })
@@ -214,7 +272,12 @@ function isFavorite(type: string): boolean {
   <div class="node-palette">
     <div class="palette-header">
       <span class="header-title">节点库</span>
-      <span class="header-count">{{ nodeTemplates.length }}</span>
+      <span
+        class="header-count"
+        :title="`可见 ${visibleTemplateCount} / 总计 ${nodeTemplates.length}`"
+      >
+        {{ visibleTemplateCount }}
+      </span>
     </div>
 
     <div class="palette-search">
@@ -227,6 +290,11 @@ function isFavorite(type: string): boolean {
       />
       <span v-if="searchQuery" class="search-clear" @click="searchQuery = ''">✕</span>
     </div>
+
+    <label v-if="stubCount > 0" class="stub-toggle" title="未实现模块不可加入画布，默认隐藏">
+      <input v-model="showStubs" type="checkbox" />
+      <span>显示未实现（{{ stubCount }}）</span>
+    </label>
 
     <!-- 引擎过滤标签 -->
     <div class="palette-engine-filters">
@@ -545,6 +613,41 @@ function isFavorite(type: string): boolean {
   flex: 1;
   overflow-y: auto;
   padding: 0.32rem 0;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(90, 180, 255, 0.28) transparent;
+}
+
+.palette-content::-webkit-scrollbar {
+  width: 4px;
+}
+
+.palette-content::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.palette-content::-webkit-scrollbar-thumb {
+  background: rgba(90, 180, 255, 0.26);
+  border-radius: 3px;
+}
+
+.palette-content::-webkit-scrollbar-thumb:hover {
+  background: rgba(90, 180, 255, 0.45);
+}
+
+.stub-toggle {
+  display: flex;
+  align-items: center;
+  gap: 0.32rem;
+  padding: 0.22rem 0.62rem;
+  border-bottom: 1px solid rgba(136, 192, 255, 0.06);
+  font-size: 0.52rem;
+  color: #7f96ad;
+  cursor: pointer;
+  user-select: none;
+}
+
+.stub-toggle input {
+  accent-color: #ffb84d;
 }
 
 .empty-hint {

@@ -7,7 +7,12 @@
     "author": "system",
     "readonly": true,
     "is_template": true,
-    "linked_layer_id": "temperature"
+    "linked_layer_id": "temperature",
+    "tags": [
+      "demo",
+      "weather"
+    ],
+    "category": "weather"
   },
   "workflow_id": "weather_temperature_grid_demo",
   "name": "温度网格渲染（天气 demo）",
@@ -16,7 +21,10 @@
     {
       "id": 1,
       "type": "weather/forecast_fetch",
-      "pos": [80, 120],
+      "pos": [
+        80,
+        120
+      ],
       "properties": {
         "layer_id": "temperature",
         "model": "ecmwf_ifs025",
@@ -26,7 +34,10 @@
     {
       "id": 2,
       "type": "weather/grid_fetch",
-      "pos": [360, 120],
+      "pos": [
+        360,
+        120
+      ],
       "properties": {
         "layer_id": "temperature",
         "model": "ecmwf_ifs025",
@@ -36,7 +47,10 @@
     {
       "id": 3,
       "type": "weather/temperature_render",
-      "pos": [640, 120],
+      "pos": [
+        640,
+        120
+      ],
       "properties": {
         "layer_id": "temperature",
         "latitude": 23.1,
@@ -45,8 +59,22 @@
     }
   ],
   "links": [
-    {"0": 1, "1": 1, "2": 0, "3": 2, "4": 0, "5": "data"},
-    {"0": 2, "1": 2, "2": 0, "3": 3, "4": 0, "5": "data:raster"}
+    {
+      "0": 1,
+      "1": 1,
+      "2": 0,
+      "3": 2,
+      "4": 2,
+      "5": "data"
+    },
+    {
+      "0": 2,
+      "1": 2,
+      "2": 0,
+      "3": 3,
+      "4": 2,
+      "5": "data:raster"
+    }
   ],
   "extra": {
     "purpose": "weather_editor_demo",

@@ -23,10 +23,11 @@ export type TileSourceId =
   | 'esri-street'
   | 'esri-imagery'
   | 'esri-terrain'
+  | 'esri-hillshade'
   | 'esri-dark'
-  | 'esri-light'
   | 'osm-standard'
   | 'osm-hot'
+  | 'opentopo-terrain'
   | 'carto-dark'
   | 'bing-road'
   | 'bing-aerial'
@@ -35,6 +36,7 @@ export type TileSourceId =
   | 'gaode-satellite'
   | 'tianditu-img'
   | 'tianditu-cva'
+  | 'tianditu-ter'
   | 'baidu-street'
   | 'baidu-satellite'
 
@@ -274,7 +276,7 @@ export const BASEMAP_PROVIDER_CONFIGS: BasemapProviderConfig[] = [
       {
         id: 'terrain',
         sourceId: 'esri-terrain',
-        label: 'Esri 地形',
+        label: 'Esri 地形图',
         url: '/unified-tiles/esri-terrain/{z}/{x}/{y}',
         authMode: 'none',
         enabled: true,
@@ -284,6 +286,22 @@ export const BASEMAP_PROVIDER_CONFIGS: BasemapProviderConfig[] = [
         saturation: -0.1,
         brightness: 0.02,
         contrast: 0.12,
+        isStandard: true,
+        needsBackendTransform: false,
+      },
+      {
+        id: 'hillshade',
+        sourceId: 'esri-hillshade',
+        label: 'Esri 晕渲',
+        url: '/unified-tiles/esri-hillshade/{z}/{x}/{y}',
+        authMode: 'none',
+        enabled: true,
+        style: 'terrain',
+        attribution: 'Esri',
+        tileSize: 256,
+        saturation: -0.12,
+        brightness: 0.04,
+        contrast: 0.14,
         isStandard: true,
         needsBackendTransform: false,
       },
@@ -300,22 +318,6 @@ export const BASEMAP_PROVIDER_CONFIGS: BasemapProviderConfig[] = [
         saturation: -0.15,
         brightness: -0.05,
         contrast: 0.12,
-        isStandard: true,
-        needsBackendTransform: false,
-      },
-      {
-        id: 'light',
-        sourceId: 'esri-light',
-        label: 'Esri 浅色',
-        url: '/unified-tiles/esri-light/{z}/{x}/{y}',
-        authMode: 'none',
-        enabled: true,
-        style: 'street',
-        attribution: 'Esri',
-        tileSize: 256,
-        saturation: -0.05,
-        brightness: 0.02,
-        contrast: 0.08,
         isStandard: true,
         needsBackendTransform: false,
       },
@@ -359,6 +361,23 @@ export const BASEMAP_PROVIDER_CONFIGS: BasemapProviderConfig[] = [
         isStandard: true,
         needsBackendTransform: false,
         metadata: { providerLabel: 'OSM-FR' },
+      },
+      {
+        id: 'opentopo',
+        sourceId: 'opentopo-terrain',
+        label: 'OpenTopoMap',
+        url: '/unified-tiles/opentopo-terrain/{z}/{x}/{y}',
+        authMode: 'none',
+        enabled: true,
+        style: 'terrain',
+        attribution: '© OpenStreetMap contributors, SRTM | OpenTopoMap',
+        tileSize: 256,
+        saturation: -0.05,
+        brightness: 0.02,
+        contrast: 0.1,
+        isStandard: true,
+        needsBackendTransform: false,
+        metadata: { providerLabel: 'OpenTopo' },
       },
     ],
   },
@@ -523,6 +542,23 @@ export const BASEMAP_PROVIDER_CONFIGS: BasemapProviderConfig[] = [
         saturation: 0,
         brightness: 0,
         contrast: 0.02,
+        isStandard: true,
+        needsBackendTransform: true,
+        secretRef: { id: 'tianditu-token', backend: 'config-api-keys', key: 'tianditu' },
+      },
+      {
+        id: 'terrain',
+        sourceId: 'tianditu-ter',
+        label: '天地图地形',
+        url: '/unified-tiles/tianditu-ter/{z}/{x}/{y}',
+        authMode: 'api-key',
+        enabled: true,
+        style: 'terrain',
+        attribution: '© 天地图',
+        tileSize: 256,
+        saturation: -0.08,
+        brightness: 0.02,
+        contrast: 0.1,
         isStandard: true,
         needsBackendTransform: true,
         secretRef: { id: 'tianditu-token', backend: 'config-api-keys', key: 'tianditu' },
@@ -706,6 +742,8 @@ const BASEMAP_STYLE_PRIORITY: Partial<Record<BasemapStyle, readonly string[]>> =
   street: ['gaode-street', 'bing-road'],
   satellite: ['gaode-satellite', 'bing-aerial'],
   dark: ['bing-dark'],
+  // 免 Key 优先；天地图地形需 Key，排后
+  terrain: ['esri-terrain', 'esri-hillshade', 'opentopo-terrain', 'tianditu-ter'],
 }
 
 function sortBasemapSourcesInPlace(sources: TileSourceConfig[], style: BasemapStyle): void {

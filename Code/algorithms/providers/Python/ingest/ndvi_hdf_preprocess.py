@@ -21,12 +21,17 @@ from typing import Literal
 
 import numpy as np
 
+from data_access.ease_grid_constants import (
+    EASE2_GLOBAL_BOUNDS,
+    EASE2_SHAPE_9KM,
+)
+
 SourceKind = Literal["viirs", "modis"]
 
-# Matlab A1/A2 gdalwarp -te / -ts for 9 km EASE-Grid 2.0
-_EASE2_BOUNDS = (-17367530.45, -7314540.83, 17367530.45, 7314540.83)
-_EASE2_WIDTH = 3856
-_EASE2_HEIGHT = 1624
+# Matlab A1/A2 gdalwarp -te / -ts for 9 km EASE-Grid 2.0（精确 NSIDC 角点）
+_EASE2_BOUNDS = EASE2_GLOBAL_BOUNDS
+_EASE2_WIDTH = EASE2_SHAPE_9KM[1]
+_EASE2_HEIGHT = EASE2_SHAPE_9KM[0]
 _NDVI_SCALE = 0.0001
 _NDVI_VALID_MIN = -2000
 _NDVI_VALID_MAX = 10000

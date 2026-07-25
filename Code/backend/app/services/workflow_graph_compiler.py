@@ -13,6 +13,7 @@ from typing import Any
 from app.services.node_template_registry import (
     get_all_node_templates,
     get_node_template,
+    resolve_node_type,
 )
 
 _PYTHONISH_ENGINES = frozenset({"common", "python_provider"})
@@ -34,7 +35,7 @@ def _as_list(value: Any) -> list[Any]:
 
 def _node_type_of(node: dict[str, Any]) -> str:
     raw = node.get("type") or node.get("node_type") or ""
-    return str(raw).strip()
+    return resolve_node_type(str(raw).strip())
 
 
 def _port_name(ports: list[dict[str, Any]], slot: int, fallback_prefix: str) -> str:

@@ -146,27 +146,32 @@ def parse_cron(expr: str) -> dict[str, set[int]]:
 def next_cron_time(cron_expr: str, after: datetime) -> datetime:
     """计算 cron 表达式在 after 之后的下一次触发时间。
 
-    从 after + 1 分钟开始逐分钟扫描，最多扫描 366 天（4 年闰年边界）。
-    简单可靠，性能足够（每分钟最多 60*24*366 = ~527k 次检查，但实际首个匹配通常在前几千次内）。
+    逐日扫描月/日/星期匹配，匹配日内在时/分组合中查找最早时间。
+    最多扫描 8 年（覆盖 Gregorian 闰年最大间隔，如 2096→2104 跨非闰世纪年）。
+    比逐分钟扫描快 ~500x（日级迭代 ≤ 2922 次 vs 分钟级 ~210 万次）。
     """
     parsed = parse_cron(cron_expr)
     # 起始：after + 1 分钟，秒归零
     candidate = after.replace(second=0, microsecond=0) + timedelta(minutes=1)
     # Python weekday: Monday=0 ... Sunday=6；cron weekday: Sunday=0 ... Saturday=6
     # 转换：cron_wd = (py_wd + 1) % 7
-    max_iter = 60 * 24 * 366  # 闰年最坏情况
-    for _ in range(max_iter):
+    max_days = 366 * 8  # 覆盖 Gregorian 闰年最大 8 年间隔（如 2096→2104）
+    for _ in range(max_days):
         cron_wd = (candidate.weekday() + 1) % 7
+        # 检查月/日/星期是否匹配
         if (
-            candidate.minute in parsed["minute"]
-            and candidate.hour in parsed["hour"]
+            candidate.month in parsed["month"]
             and candidate.day in parsed["day_of_month"]
-            and candidate.month in parsed["month"]
             and cron_wd in parsed["day_of_week"]
         ):
-            return candidate
-        candidate += timedelta(minutes=1)
-    # 理论上不会走到这里（4 年内必有匹配）
+            # 日匹配，在当天查找最早匹配的时:分（>= candidate 当前时间）
+            for hour in sorted(parsed["hour"]):
+                for minute in sorted(parsed["minute"]):
+                    if (hour, minute) >= (candidate.hour, candidate.minute):
+                        return candidate.replace(hour=hour, minute=minute)
+        # 跳到下一天的 00:00
+        candidate = (candidate + timedelta(days=1)).replace(hour=0, minute=0)
+    # 理论上不会走到这里（8 年内必有匹配）
     raise TimerValidationError(f"no next fire time found for cron: {cron_expr}")
 
 
@@ -250,6 +255,10 @@ def _build_submit_payload(
     parameters = dict(extra.get("default_parameters") or {})
     parameters.update(overrides.get("parameters") or {})
 
+    # 在提交前解析动态日期模板（{{today}}、{{yesterday}} 等）
+    # 确保使用触发时的实际日期，而非创建定时器时的固定日期
+    parameters = resolve_date_templates(parameters)  # type: ignore[assignment]
+
     payload = WorkflowSubmitRequest(
         command_type=command_type,
         command_label=overrides.get("command_label") or f"timer:{workflow_id}",
@@ -270,7 +279,7 @@ def _build_submit_payload(
         "queue_tag",
     ):
         if key in overrides:
-            setattr(payload, key, overrides[key])
+            setattr(payload, key, resolve_date_templates(overrides[key]))
     return payload
 
 
@@ -736,6 +745,107 @@ def trigger_manually(timer_id: str) -> dict[str, Any]:
         "status_url": accepted.status_url,
         "triggered_at": now_iso,
     }
+
+
+def preview_cron(cron_expr: str, count: int = 5) -> list[str]:
+    """计算 cron 表达式接下来 count 次触发时间（ISO 8601 UTC）。
+
+    用于前端实时预览，帮助用户确认 cron 表达式语义。
+    复用 next_cron_time 的逐日扫描算法，确保 Feb 29 等罕见日期正确计算。
+    """
+    if count < 1 or count > 20:
+        count = 5
+    expr = cron_expr.strip()
+    parse_cron(expr)  # 立即验证语法
+    results: list[str] = []
+    candidate = datetime.now(timezone.utc)
+    for _ in range(count):
+        nxt = next_cron_time(expr, candidate)
+        results.append(nxt.isoformat())
+        candidate = nxt
+    return results
+
+
+# ─── 动态日期模板解析 ──────────────────────────────────────────────────────────
+
+
+def resolve_date_templates(value: Any) -> Any:
+    """递归解析值中的动态日期模板占位符。
+
+    支持的模板（在触发时求值，确保使用最新日期）：
+      {{today}}             → 当前日期 YYYYMMDD
+      {{yesterday}}         → 昨日 YYYYMMDD
+      {{tomorrow}}          → 明日 YYYYMMDD
+      {{last_7_days_start}} → 7 天前 YYYYMMDD
+      {{last_7_days_end}}   → 昨日 YYYYMMDD
+      {{last_30_days_start}}→ 30 天前 YYYYMMDD
+      {{last_30_days_end}}  → 昨日 YYYYMMDD
+      {{this_month_start}}  → 本月 1 日 YYYYMMDD
+      {{this_month_end}}    → 今日 YYYYMMDD
+      {{last_month_start}}  → 上月 1 日 YYYYMMDD
+      {{last_month_end}}    → 上月最后一天 YYYYMMDD
+      {{this_year_start}}   → 本年 1 月 1 日 YYYYMMDD
+      {{this_year_end}}     → 今日 YYYYMMDD
+    """
+    if isinstance(value, str):
+        return _resolve_string_templates(value)
+    if isinstance(value, dict):
+        return {k: resolve_date_templates(v) for k, v in value.items()}
+    if isinstance(value, list):
+        return [resolve_date_templates(item) for item in value]
+    return value
+
+
+def _resolve_string_templates(s: str) -> Any:
+    """解析字符串中的 {{...}} 占位符。"""
+    if "{{" not in s:
+        return s
+
+    now = datetime.now(timezone.utc)
+    today = now.strftime("%Y%m%d")
+    yesterday = (now - timedelta(days=1)).strftime("%Y%m%d")
+    tomorrow = (now + timedelta(days=1)).strftime("%Y%m%d")
+
+    # 月初/月末计算
+    first_of_month = now.replace(day=1)
+    if now.month == 1:
+        last_month_first = first_of_month.replace(year=now.year - 1, month=12)
+    else:
+        last_month_first = first_of_month.replace(month=now.month - 1)
+    # 上月最后一天 = 本月第 1 天 - 1 天
+    last_month_last = first_of_month - timedelta(days=1)
+
+    first_of_year = now.replace(month=1, day=1)
+
+    templates: dict[str, str] = {
+        "today": today,
+        "yesterday": yesterday,
+        "tomorrow": tomorrow,
+        "last_7_days_start": (now - timedelta(days=7)).strftime("%Y%m%d"),
+        "last_7_days_end": yesterday,
+        "last_30_days_start": (now - timedelta(days=30)).strftime("%Y%m%d"),
+        "last_30_days_end": yesterday,
+        "this_month_start": first_of_month.strftime("%Y%m%d"),
+        "this_month_end": today,
+        "last_month_start": last_month_first.strftime("%Y%m%d"),
+        "last_month_end": last_month_last.strftime("%Y%m%d"),
+        "this_year_start": first_of_year.strftime("%Y%m%d"),
+        "this_year_end": today,
+    }
+
+    result = s
+    for key, val in templates.items():
+        result = result.replace("{{" + key + "}}", val)
+
+    # 如果整个字符串就是一个模板（如 "{{today}}"），尝试转换为数字
+    stripped = result.strip()
+    if stripped.isdigit() and len(stripped) == 8:
+        try:
+            return int(stripped)
+        except ValueError:
+            pass
+
+    return result
 
 
 def timer_to_dict(timer: WorkflowTimer) -> dict[str, Any]:

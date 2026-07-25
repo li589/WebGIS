@@ -1,5 +1,12 @@
 import type { ImportedGeometryType } from '../../stores/layers/imported-vector'
 import { Popup, type MapLayerMouseEvent } from 'maplibre-gl'
+import {
+  dataWorkspaceHighlight,
+  dataWorkspaceLayerId,
+  dataWorkspaceOpen,
+  dataWorkspaceTab,
+} from '../../data-manager/core/workspace-store'
+import { lngSpanFromList } from '../../services/geo-math'
 
 type MapInstance = import('maplibre-gl').Map
 type MapLayerEventType = 'click' | 'mouseenter' | 'mouseleave'
@@ -53,19 +60,17 @@ function _hasGeometryType(fc: GeoJSON.FeatureCollection, types: string[]): boole
 }
 
 function _collectBounds(fc: GeoJSON.FeatureCollection): [number, number, number, number] | null {
-  let minLng = Infinity
   let minLat = Infinity
-  let maxLng = -Infinity
   let maxLat = -Infinity
+  const lngs: number[] = []
   const visitCoords = (coords: unknown): void => {
     if (!Array.isArray(coords) || coords.length === 0) return
     if (typeof coords[0] === 'number' && typeof coords[1] === 'number') {
       const lng = coords[0] as number
       const lat = coords[1] as number
       if (!Number.isFinite(lng) || !Number.isFinite(lat)) return
-      minLng = Math.min(minLng, lng)
+      lngs.push(lng)
       minLat = Math.min(minLat, lat)
-      maxLng = Math.max(maxLng, lng)
       maxLat = Math.max(maxLat, lat)
       return
     }
@@ -82,8 +87,25 @@ function _collectBounds(fc: GeoJSON.FeatureCollection): [number, number, number,
   for (const feature of fc.features) {
     visitGeometry(feature.geometry)
   }
-  if (!Number.isFinite(minLng) || !Number.isFinite(minLat)) return null
-  return [minLng, minLat, maxLng, maxLat]
+  if (!lngs.length || !Number.isFinite(minLat)) return null
+  const span = lngSpanFromList(lngs)
+  if (!span) return null
+  const [minLng, maxLng] = span
+  // 零面积包围盒：扩一点避免 fitBounds 异常
+  const pad = 1e-6
+  let west = minLng
+  let east = maxLng
+  let south = minLat
+  let north = maxLat
+  if (east - west < pad) {
+    west -= pad
+    east += pad
+  }
+  if (north - south < pad) {
+    south -= pad
+    north += pad
+  }
+  return [west, south, east, north]
 }
 
 export function createImportedLayerModule(options: CreateImportedLayerModuleOptions) {
@@ -108,6 +130,8 @@ export function createImportedLayerModule(options: CreateImportedLayerModuleOpti
     options.map.addSource(sourceId, {
       type: 'geojson',
       data: geojson,
+      // 供点选时用 feature.id 作为要素绝对索引，联动属性表行
+      generateId: true,
     } as any)
 
     const beforeAdmin = options.map.getLayer('admin-fill') ? 'admin-fill' : undefined
@@ -222,6 +246,23 @@ export function createImportedLayerModule(options: CreateImportedLayerModuleOpti
           .join('')
         const html = `<div class="imported-popup"><strong>${escapeHtml(name)}</strong><table>${propLines}</table></div>`
         new Popup().setLngLat(e.lngLat).setHTML(html).addTo(options.map)
+        // 地图点选 → 属性表跟踪（不自动打开工作台；若已打开则切到属性表）
+        const geoFeature = {
+          type: 'Feature' as const,
+          geometry: feature.geometry as GeoJSON.Geometry,
+          properties: { ...props },
+        }
+        const featureIndex =
+          typeof feature.id === 'number' && Number.isFinite(feature.id) ? feature.id : undefined
+        dataWorkspaceLayerId.value = id
+        dataWorkspaceHighlight.value = {
+          instanceId: id,
+          feature: geoFeature,
+          featureIndex,
+        }
+        if (dataWorkspaceOpen.value) {
+          dataWorkspaceTab.value = 'attributes'
+        }
       }
       const enterHandler = (_e: MapLayerMouseEvent) => {
         options.map.getCanvas().style.cursor = 'pointer'
@@ -253,6 +294,7 @@ export function createImportedLayerModule(options: CreateImportedLayerModuleOpti
   function removeLayer(id: string): void {
     const info = loaded.get(id)
     if (!info) return
+    setFeatureHighlight(id, null)
     // 移除事件监听器（必须在 removeLayer 之前，否则 MapLibre 可能找不到图层）
     for (const { type, layerId, handler } of info.eventHandlers) {
       options.map.off(type, layerId, handler)
@@ -292,6 +334,99 @@ export function createImportedLayerModule(options: CreateImportedLayerModuleOpti
       } else if (layer.type === 'circle') {
         options.map.setPaintProperty(layerId, 'circle-opacity', 0.9 * opacity)
       }
+    }
+  }
+
+  function applyLayerStyle(id: string, style: ImportedLayerStyle, baseOpacity = 1): void {
+    const info = loaded.get(id)
+    if (!info) return
+    const color = style.color || DEFAULT_FILL_COLOR
+    const width = style.width ?? 2
+    const radius = style.radius ?? 4
+    const fillOpacity = (style.fillOpacity ?? 0.25) * baseOpacity
+    for (const layerId of info.layerIds) {
+      const layer = options.map.getLayer(layerId) as any
+      if (!layer) continue
+      if (layer.type === 'fill') {
+        options.map.setPaintProperty(layerId, 'fill-color', color)
+        options.map.setPaintProperty(layerId, 'fill-opacity', fillOpacity)
+      } else if (layer.type === 'line') {
+        options.map.setPaintProperty(layerId, 'line-color', color)
+        options.map.setPaintProperty(layerId, 'line-width', width)
+        options.map.setPaintProperty(layerId, 'line-opacity', 0.9 * baseOpacity)
+      } else if (layer.type === 'circle') {
+        options.map.setPaintProperty(layerId, 'circle-color', color)
+        options.map.setPaintProperty(layerId, 'circle-radius', radius)
+        options.map.setPaintProperty(layerId, 'circle-opacity', 0.9 * baseOpacity)
+      }
+    }
+  }
+
+  function updateLayerData(id: string, geojson: GeoJSON.FeatureCollection): void {
+    const info = loaded.get(id)
+    if (!info) return
+    const src = options.map.getSource(info.sourceId) as
+      { setData?: (d: unknown) => void } | undefined
+    if (src?.setData) {
+      src.setData(geojson)
+      info.bounds = _collectBounds(geojson)
+    }
+  }
+
+  function setFeatureHighlight(id: string, feature: GeoJSON.Feature | null): void {
+    if (!_ensureMap()) return
+    const safe = _safeId(id)
+    const hlSource = `imported-hl-src-${safe}`
+    const hlLine = `imported-hl-line-${safe}`
+    const hlCircle = `imported-hl-circle-${safe}`
+
+    const clearHl = () => {
+      if (options.map.getLayer(hlLine)) options.map.removeLayer(hlLine)
+      if (options.map.getLayer(hlCircle)) options.map.removeLayer(hlCircle)
+      if (options.map.getSource(hlSource)) options.map.removeSource(hlSource)
+    }
+
+    if (!feature) {
+      clearHl()
+      return
+    }
+
+    clearHl()
+    const fc: GeoJSON.FeatureCollection = { type: 'FeatureCollection', features: [feature] }
+    options.map.addSource(hlSource, { type: 'geojson', data: fc } as any)
+    options.map.addLayer({
+      id: hlLine,
+      type: 'line',
+      source: hlSource,
+      paint: {
+        'line-color': '#ffd166',
+        'line-width': 3.5,
+        'line-opacity': 0.95,
+      },
+    })
+    options.map.addLayer({
+      id: hlCircle,
+      type: 'circle',
+      source: hlSource,
+      filter: ['==', '$type', 'Point'],
+      paint: {
+        'circle-radius': 8,
+        'circle-color': '#ffd166',
+        'circle-stroke-width': 2,
+        'circle-stroke-color': '#0a233a',
+        'circle-opacity': 0.95,
+      },
+    })
+
+    const b = _collectBounds(fc)
+    if (b) {
+      options.map.fitBounds(
+        [
+          [b[0], b[1]],
+          [b[2], b[3]],
+        ],
+        { padding: 80, maxZoom: 14, duration: 450 },
+      )
     }
   }
 
@@ -351,6 +486,9 @@ export function createImportedLayerModule(options: CreateImportedLayerModuleOpti
     removeLayer,
     setLayerVisibility,
     setLayerOpacity,
+    applyLayerStyle,
+    updateLayerData,
+    setFeatureHighlight,
     getLoadedIds,
     getLayerIds,
     fitLayers,

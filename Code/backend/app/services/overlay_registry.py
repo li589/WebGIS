@@ -261,23 +261,21 @@ class OverlaySpec:
 # ──────────────────────────────────────────────────────────────────────────────
 
 _PROJECT_OUTPUT = Path(r"I:\Geograph_DataSet\ProjectOutput\2023-01_Omega_Inversion")
-_DEM_DIR = Path(r"I:\Geograph_DataSet\DEM\ETOPO_2022")
-_GPCP_DIR = Path(r"I:\Geograph_DataSet\Weather\Precipitation\Precipitation\dataset")
+_DEM_DIR = Path(r"I:\Geograph_DataSet\Geological\DEM\ETOPO_2022")
+_GPCP_DIR = Path(r"I:\Geograph_DataSet\Meteorological\Precipitation\GPCP\dataset")
 _STAGE2_ALIGNED = _PROJECT_OUTPUT / "stage2_aligned"
-_OMEGA_SOURCE = Path(r"I:\Geograph_DataSet\InversionResults\smap_avg\doy_017.mat")
+_OMEGA_SOURCE = Path(r"I:\Geograph_DataSet\Inversion_Results\smap_avg\doy_017.mat")
 _DEM_SOURCE_TIF = _DEM_DIR / "ETOPO_2022_v1_60s_N90W180_surface.tif"
 
 # ── 课题组派生 9km EASE-Grid 数据根 ──────────────────────────────────────────
-_INVERSION_RESULTS_ROOT = Path(r"I:\Geograph_DataSet\InversionResults")
+_INVERSION_RESULTS_ROOT = Path(r"I:\Geograph_DataSet\Inversion_Results")
 _OMEGA_SMAP_AVG_DIR = _INVERSION_RESULTS_ROOT / "smap_avg"
 _OMEGA_FY_AVG_DIR = _INVERSION_RESULTS_ROOT / "fy_avg"
-_SOIL_DDCA_H_DIR = Path(r"I:\Geograph_DataSet\Soil_Ecological_Data\DDCA\DDCA_DH\H")
+_SOIL_DDCA_H_DIR = Path(r"I:\Geograph_DataSet\Soil_Moisture\DDCA\DDCA_DH\H")
 
 # ── Phase 2: 课题组 VOD/SM 产品族（2025-12 时间序列，EASE-Grid 9km）──────────
 # SmapSoil_VOD_SM/YYYYMMDD.mat (v7.3 HDF5) 含 OMEGA / SM / VOD 三个变量，shape (1624, 3856)
-_SMAP_SOIL_VOD_SM_DIR = Path(
-    r"I:\Geograph_DataSet\Soil_Ecological_Data\SmapSoil_VOD_SM"
-)
+_SMAP_SOIL_VOD_SM_DIR = Path(r"I:\Geograph_DataSet\Soil_Moisture\SMAP_Soil_VOD_SM")
 
 _OVERLAY_PNG_ROOT = _PROJECT_OUTPUT / "_overlays"
 """所有导出 PNG 的统一存放目录（由 Tools/export_overlay_assets.py 生成）。"""
@@ -317,7 +315,7 @@ def _gpcp_time_list(limit: int = 24) -> list[str]:
 
 
 def _doy_time_list(directory: Path, prefix: str = "doy_") -> list[str]:
-    """从 InversionResults/smap_avg|fy_avg 目录推断 doy 时间序列标签。
+    """从 Inversion_Results/smap_avg|fy_avg 目录推断 doy 时间序列标签。
 
     文件名形如 ``doy_017.mat`` → 标签 ``'017'``。
     """
@@ -335,7 +333,7 @@ def _doy_time_list(directory: Path, prefix: str = "doy_") -> list[str]:
 
 
 def _soil_ddca_time_list(limit: int = 60) -> list[str]:
-    """从 Soil_Ecological_Data/DDCA/DDCA_DH/H 目录推断日期时间序列标签。
+    """从 Soil_Moisture/DDCA/DDCA_DH/H 目录推断日期时间序列标签。
 
     文件名形如 ``20150401.mat`` → 标签 ``'20150401'``。
     限制最多 limit 个标签，避免时间轴过长。
@@ -583,11 +581,13 @@ register_overlay(
 # ─── 新增数据集图层（10 个，静态） ────────────────────────────────────────────
 
 # 源数据根目录
-_GEBCO_NC = Path(r"I:\Geograph_DataSet\DEM\GEBCO_2024.nc")
-_CMFD_TIF = Path(r"I:\Geograph_DataSet\Precipitation\pre_2002_01.tif")
-_CLCD_TIF = Path(r"I:\Geograph_DataSet\LandCover\CLCD_v01_1997.tif")
+_GEBCO_NC = Path(r"I:\Geograph_DataSet\Geological\DEM\GEBCO_2024.nc")
+_CMFD_TIF = Path(r"I:\Geograph_DataSet\Meteorological\Precipitation\pre_2002_01.tif")
+_CLCD_TIF = Path(
+    r"I:\Geograph_DataSet\Ecological_Vegetation\LandCover\CLCD\CLCD_v01_1997.tif"
+)
 _BIOMASS_NC = Path(
-    r"I:\Geograph_DataSet\Biomass\ESACCI-BIOMASS-L4-AGB-MERGED-100m-2020-fv6.0.nc"
+    r"I:\Geograph_DataSet\Ecological_Vegetation\Biomass\ESACCI-BIOMASS-L4-AGB-MERGED-100m-2020-fv6.0.nc"
 )
 _ERA5_DWAA_TIF = Path(
     r"I:\Geograph_DataSet\Hazards\DWAA_result\DW_T7\ERA5_2020_DW_SMCI.tif"
@@ -595,13 +595,13 @@ _ERA5_DWAA_TIF = Path(
 _ERA5_WDAA_TIF = Path(
     r"I:\Geograph_DataSet\Hazards\DWAA_result\WD_T7\ERA5_2020_WD_SMCI.tif"
 )
-_CO2_TIF = Path(r"I:\Geograph_DataSet\CO2\MidLayerCO2Column\TIF\MeanCarbonDioxide.tif")
-_SOIL_DDCA_MAT = Path(
-    r"I:\Geograph_DataSet\Soil_Ecological_Data\DDCA\DDCA_DH\H\20150401.mat"
+_CO2_TIF = Path(
+    r"I:\Geograph_DataSet\Atmospheric\CO2\MidLayerCO2Column\TIF\MeanCarbonDioxide.tif"
 )
-_OMEGA_FY_MAT = Path(r"I:\Geograph_DataSet\InversionResults\fy_avg\doy_025.mat")
+_SOIL_DDCA_MAT = Path(r"I:\Geograph_DataSet\Soil_Moisture\DDCA\DDCA_DH\H\20150401.mat")
+_OMEGA_FY_MAT = Path(r"I:\Geograph_DataSet\Inversion_Results\fy_avg\doy_025.mat")
 _FOREST_RATIO_MAT = Path(
-    r"I:\Geograph_DataSet\InversionResults\Forest_Ratio_9KM_2020.mat"
+    r"I:\Geograph_DataSet\Inversion_Results\Forest_Ratio_9KM_2020.mat"
 )
 
 
@@ -823,7 +823,7 @@ register_overlay(
 
 
 # ─── Phase 2: 课题组 VOD/SM/Omega 2025-12 产品族 ──────────────────────────────
-# 数据源：I:\Geograph_DataSet\Soil_Ecological_Data\SmapSoil_VOD_SM\YYYYMMDD.mat
+# 数据源：I:\Geograph_DataSet\Soil_Moisture\SMAP_Soil_VOD_SM\YYYYMMDD.mat
 # v7.3 HDF5，含 OMEGA / SM / VOD 三个变量，shape (1624, 3856) on EASE-Grid 9km
 # 每个图层导出 31 天（2025-12-01 ~ 2025-12-31）的 PNG + bounds JSON
 

@@ -10,8 +10,8 @@
 
     pre = DataPreprocessor("I:/Geograph_DataSet")
     pre.convert_smap_to_mat(
-        smap_h5_path="I:/Geograph_DataSet/SMAP/SMAP_L3_SM_P_20230110_R18290_001.h5",
-        output_dir="I:/Geograph_DataSet/SMAP/mat",
+        smap_h5_path="I:/Geograph_DataSet/Soil_Moisture/SMAP/SMAP_L3_SM_P_20230110_R18290_001.h5",
+        output_dir="I:/Geograph_DataSet/Soil_Moisture/SMAP/mat",
     )
 """
 

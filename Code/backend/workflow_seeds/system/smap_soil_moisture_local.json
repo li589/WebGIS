@@ -7,7 +7,9 @@
     "author": "system",
     "readonly": true,
     "is_template": true,
-    "linked_layer_id": "smap-soil"
+    "linked_layer_id": "smap-soil",
+    "tags": ["sample", "local"],
+    "category": "data_access"
   },
   "workflow_id": "smap_soil_moisture_local",
   "name": "本地 SMAP 土壤湿度（硬盘路径）",

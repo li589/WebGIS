@@ -17,6 +17,7 @@ import { createMapStagePresentationModule } from './map/map-stage-presentation-m
 import { createMapCanvasState } from './map/map-canvas-state'
 import { createMapCanvasTeardownBinder } from './map/map-canvas-teardown-binder'
 import type { OverlayTimeState } from './map/overlay-image-module'
+import { validateOverlayBounds } from './map/overlay-image-module'
 import {
   buildMapStageAppearanceModel,
   buildMapStageDisplayModel,
@@ -26,6 +27,7 @@ import {
 } from './map/map-stage-view-model'
 import { aggregateWeatherTileBanner } from './map/weather-tile-banner'
 import { TILE_SOURCE_MAP, getDefaultTileSource, type TileSourceId } from '../services/api-config'
+import { dataWorkspaceHighlight, showToast } from '../data-manager/core/workspace-store'
 
 const layersStore = useLayersStore()
 const uiStore = useUiStore()
@@ -80,9 +82,80 @@ const exposeBridge = createMapCanvasExposeBridge({
   getMapStageElement: () => mapStageRef.value,
   getMap: () => state.resources.map,
   selectHotspot: (pinId: string) => actionBridge.handleHotspotPinClick(pinId),
+  setWindAnimationPaused: (paused: boolean) => {
+    state.resources.weatherOverlayModule?.setAnimationPaused(paused)
+  },
+  fitToLayerExtent: (instanceId: string) => fitToLayerExtent(instanceId),
 })
 
 defineExpose(exposeBridge)
+
+function fitToLayerExtent(instanceId: string): boolean {
+  const map = state.resources.map
+  if (!map) return false
+
+  const layer = layersStore.activeLayers.find((l) => l.instanceId === instanceId)
+  const display = layersStore.activeLayersDisplay.find((l) => l.instanceId === instanceId)
+  if (!layer && !display) {
+    showToast('未找到图层，无法缩放', true)
+    return false
+  }
+
+  let bounds: [number, number, number, number] | null | undefined =
+    layer?.importedVector?.bounds ??
+    layer?.importedRaster?.bounds ??
+    display?.importedBounds ??
+    display?.importedRasterBounds
+
+  if (!bounds) {
+    const overlayId = layer?.importedRaster?.overlayLayerId ?? display?.catalogId
+    if (overlayId && overlayImageModule) {
+      const st = overlayImageModule.overlayTimeStates.value.find((s) => s.layerId === overlayId)
+      bounds = st?.bounds ?? null
+    }
+  }
+
+  if (!bounds && layer?.importedVector) {
+    const mod = state.resources.nonWeatherLayerSyncModule?.importedLayerModule
+    if (mod) {
+      mod.fitLayers([instanceId])
+      return true
+    }
+  }
+
+  if (!bounds) {
+    showToast('该图层暂无可用显示范围', true, 3500)
+    return false
+  }
+
+  const check = validateOverlayBounds(bounds)
+  if (!check.ok) {
+    showToast(`无法缩放到图层：${check.reason}`, true, 5000)
+    return false
+  }
+  const [w, s, e, n] = check.bounds
+  const pad = 0.0001
+  let west = w
+  let south = s
+  let east = e
+  let north = n
+  if (east - west < pad) {
+    west -= pad
+    east += pad
+  }
+  if (north - south < pad) {
+    south -= pad
+    north += pad
+  }
+  map.fitBounds(
+    [
+      [west, south],
+      [east, north],
+    ],
+    { padding: 48, maxZoom: 14, duration: 600 },
+  )
+  return true
+}
 
 // ─── Overlay image module (via non-weather sync module) ──────────────────────
 let overlayImageModule: MapCanvasNonWeatherLayerSyncModule['overlayImageModule'] | null = null
@@ -303,6 +376,21 @@ onMounted(async () => {
     moduleBundle.mapCanvasRuntimeModule.setupWatchers()
     moduleBundle.selectedLayerFocusModule.setupWatchers()
     moduleBundle.measureModule.bindEvents()
+    watch(
+      dataWorkspaceHighlight,
+      (hl) => {
+        const mod = moduleBundle.nonWeatherLayerSyncModule.importedLayerModule
+        if (!hl) {
+          for (const id of mod.getLoadedIds()) mod.setFeatureHighlight(id, null)
+          return
+        }
+        for (const id of mod.getLoadedIds()) {
+          if (id !== hl.instanceId) mod.setFeatureHighlight(id, null)
+        }
+        mod.setFeatureHighlight(hl.instanceId, hl.feature)
+      },
+      { deep: false },
+    )
 
     createMapCanvasLifecycleBinder({
       map: mapInstance,
@@ -325,6 +413,7 @@ onMounted(async () => {
         moduleBundle.weatherOverlayModule.runSyncNow()
         // 同样补同步导入层：mapReady 前 addVectorLayer 会 no-op
         moduleBundle.nonWeatherLayerSyncModule.syncImportedLayers({ fitNew: true })
+        void moduleBundle.nonWeatherLayerSyncModule.syncOverlayLayers()
         moduleBundle.mapInteractionModule.applyInteractionMode()
         // 测量模式初始状态同步（mapInteractionModule 已处理 dragPan，measureModule 处理 doubleClickZoom/boxZoom + Canvas show）
         moduleBundle.measureModule.applyMeasureMode()

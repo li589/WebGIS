@@ -17,12 +17,12 @@
 ```text
 Comprehensive Geographic Data Analysis system/
 ├─ Doc/         # 项目方案、技术栈、规范与协作文档
-├─ Env/         # 本地开发环境与启停辅助脚本
-├─ Code/        # 实际工程代码
-├─ Tools/       # 数据下载、校验与辅助工具
-├─ Example/     # 外部参考材料（如 Windy）
-├─ launch.py    # 跨平台一键启动（Docker + FastAPI + Celery + 前端）
-├─ start.bat / start.sh
+├─ Env/Python312/  # 【本地联调唯一 Python 运行时】勿用系统 PATH 的 python
+├─ Code/           # 实际工程代码（含 backend/vendor 等运行时第三方二进制）
+├─ Tools/          # 主线外辅助：外部/临时工具、下载校验脚本（禁止放主体运行模块）
+├─ Example/        # 外部参考材料（如 Windy）
+├─ launch.py       # 跨平台一键启动（会优先切换到 Env/Python312）
+├─ start.bat / start.sh   # 推荐入口（强制 Env/Python312）
 ├─ stop.bat / stop.sh
 └─ README.md
 ```
@@ -106,11 +106,23 @@ Code/
 
 带明确日期的阶段快照与实施计划（如 `代码事实同步文档-2026-07-06.md`、`.trae/documents/*-2026-07-*.md`）作历史参考，不以它们覆盖上述活文档。
 
-## 说明
+## 本地 Python 环境（必读）
 
-- `Env/Python312` 更接近本地开发环境，不建议直接作为长期交付依赖
-- 日常联调优先使用根目录 `launch.py` / `start.bat`（Windows）或 `./start.sh`（Linux）：
-  - `python launch.py start` — 运行栈 + FastAPI + Workers + 前端
-  - `python launch.py sync` — 数据面 Open-Meteo 同步（`Code/infra/data-sync`）
-  - `python launch.py stop` / `status` / `flush`
+**本仓库本地联调唯一解释器：`Env/Python312`。**
+
+| 平台 | 解释器路径 | 推荐启动 |
+|------|------------|----------|
+| Windows | `Env\Python312\python.exe` | `start.bat` / `stop.bat` |
+| Linux/macOS | `Env/Python312/bin/python`（或同目录 `python3`） | `./start.sh` / `./stop.sh` |
+
+- **不要**用系统 PATH 里的 `python` / `C:\Program Files\Python\...` 起后端与 Worker：依赖（如 `rarfile`、科学库）与 `Env/Python312` 不一致会导致导入/解压等「环境幽灵问题」。
+- `start.bat` / `stop.bat` **强制**使用上述路径；找不到则直接报错退出。
+- 若手动调用：`Env\Python312\python.exe launch.py start`。即便误用系统 `python launch.py`，启动器也会在检测到 `Env/Python312` 时自动 `exec` 切换过去。
+- `Env/Python312` 是**本地开发/联调运行时**，不是 Docker 生产镜像；交付部署另走容器/服务器环境。旧文档中「不建议作为长期交付依赖」仅指生产交付，**不表示本地应回避它**。
+
+## 日常联调命令
+
+- `start.bat`（或 `Env\Python312\python.exe launch.py start`）— 运行栈 + FastAPI + Workers + 前端
+- `Env\Python312\python.exe launch.py sync` — 数据面 Open-Meteo 同步（`Code/infra/data-sync`）
+- `stop.bat` / `Env\Python312\python.exe launch.py status` / `flush`
 - 活文档应随代码结构变化同步更新；带日期的记录文档可归档保留

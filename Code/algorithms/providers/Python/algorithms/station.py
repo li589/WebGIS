@@ -46,13 +46,13 @@ def filter_station_records(
             continue
         if require_good_quality and record.quality_flag != _QUALITY_FLAG_GOOD:
             continue
-        if min_sm is not None and (
-            math.isnan(record.soil_moisture) or record.soil_moisture <= min_sm
-        ):
+        # 非有限或常见填值（-9999 等）一律剔除，避免均值被污染
+        sm = record.soil_moisture
+        if not math.isfinite(sm) or sm <= -9000.0 or sm == -32768.0 or sm == -32767.0:
             continue
-        if max_sm is not None and (
-            math.isnan(record.soil_moisture) or record.soil_moisture > max_sm
-        ):
+        if min_sm is not None and sm <= min_sm:
+            continue
+        if max_sm is not None and sm > max_sm:
             continue
         filtered.append(record)
     return filtered
@@ -71,7 +71,11 @@ def aggregate_station_records_daily(
     for (_, _, _, _), values in groups.items():
         first = values[0]
         valid_values = [
-            item.soil_moisture for item in values if not math.isnan(item.soil_moisture)
+            item.soil_moisture
+            for item in values
+            if math.isfinite(item.soil_moisture)
+            and item.soil_moisture > -9000.0
+            and item.soil_moisture not in (-32768.0, -32767.0)
         ]
         if not valid_values:
             continue

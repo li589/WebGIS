@@ -21,9 +21,21 @@ describe('acceptance basemap defaults', () => {
     ).toEqual(['gaode-satellite', 'bing-aerial'])
   })
 
-  it('exposes eighteen sources including blank', () => {
+  it('keeps Esri terrain only under terrain, not street', () => {
+    const streetIds = getSourcesByStyle('street').map((s) => s.id)
+    expect(streetIds).not.toContain('esri-terrain')
+    expect(streetIds.filter((id) => id.startsWith('esri-'))).toEqual(['esri-street'])
+    expect(getSourcesByStyle('terrain').map((s) => s.id)).toEqual([
+      'esri-terrain',
+      'esri-hillshade',
+      'opentopo-terrain',
+      'tianditu-ter',
+    ])
+  })
+
+  it('exposes twenty sources including blank', () => {
     expect(TILE_SOURCES.some((s) => s.id === 'none')).toBe(true)
-    expect(TILE_SOURCES.length).toBe(18)
+    expect(TILE_SOURCES.length).toBe(20)
   })
 })
 
@@ -34,7 +46,7 @@ describe('ui-copy glossary', () => {
     expect(BRAND.eyebrow).toBe('CGDA')
     expect(WIND_COPY.particle).toBe('粒子流')
     expect(WIND_COPY.streamline).toBe('流量场')
-    expect(WIND_COPY.off).toBe('关闭')
+    expect(WIND_COPY.off).toBe('网格')
     expect(basemapStyleLabel('none')).toBe(BASEMAP_COPY.styleNone)
   })
 })

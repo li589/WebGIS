@@ -13,10 +13,14 @@ import type { LGraphNodeClass, INodeInputSlot, INodeOutputSlot } from './litegra
 import { getPortColor, getPortTypeLabel, suggestConnectorsForPortType } from './litegraph-setup'
 import { buildPortTooltip } from './port-tooltip'
 import ParamField from './ParamField.vue'
+import BboxInputField from './BboxInputField.vue'
+import DownloadNodeForm from './node-forms/DownloadNodeForm.vue'
+import type { ValidationIssue } from '../../composables/workflow-validator'
 
 const props = defineProps<{
   selectedNode: LGraphNodeClass | null
   readonly?: boolean
+  validationIssues?: ValidationIssue[]
 }>()
 
 const emit = defineEmits<{
@@ -67,6 +71,9 @@ const nodeTemplate = computed(() => {
 })
 
 const nodeDescription = computed(() => nodeTemplate.value?.description ?? '')
+
+// 下载节点（download/*）走专用参数表单，替代通用 ParamField 列表
+const isDownloadNode = computed(() => (props.selectedNode?.type ?? '').startsWith('download/'))
 const nodeEngine = computed(() => {
   const type = props.selectedNode?.type ?? ''
   const engine =
@@ -157,17 +164,41 @@ interface GroupedProperties {
   basic: Array<[string, unknown]>
   advanced: Array<[string, unknown]>
   datasource: Array<[string, unknown]>
+  /** widget=bbox 聚合参数组：每个元素是 [anchorKey, bboxKeys] */
+  bboxGroups: Array<{ anchorKey: string; bboxKeys: Record<string, string> }>
 }
 
 const DATASOURCE_KEYS = new Set(['dataset_key', 'path', 'pattern'])
+
+/**
+ * 计算 bbox 聚合参数组：当某个参数声明了 widget="bbox" + bbox_keys 时，
+ * 将 bbox_keys 中涉及的 4 个 key 标记为"已聚合"，在分组时跳过独立渲染。
+ */
+const bboxAggregation = computed(() => {
+  const groups: Array<{ anchorKey: string; bboxKeys: Record<string, string> }> = []
+  const consumedKeys = new Set<string>()
+  for (const p of templateParams.value) {
+    if (p.widget === 'bbox' && p.bbox_keys) {
+      const keys = p.bbox_keys
+      groups.push({ anchorKey: p.key, bboxKeys: keys })
+      for (const v of Object.values(keys)) {
+        if (v) consumedKeys.add(v)
+      }
+    }
+  }
+  return { groups, consumedKeys }
+})
 
 const groupedProperties = computed<GroupedProperties>(() => {
   const result: GroupedProperties = {
     basic: [],
     advanced: [],
     datasource: [],
+    bboxGroups: bboxAggregation.value.groups,
   }
+  const consumed = bboxAggregation.value.consumedKeys
   for (const [key, value] of Object.entries(localProperties.value)) {
+    if (consumed.has(key)) continue // 被 bbox 聚合的 key 跳过独立渲染
     const meta = getParamMeta(key)
     if (DATASOURCE_KEYS.has(key)) {
       result.datasource.push([key, value])
@@ -180,12 +211,71 @@ const groupedProperties = computed<GroupedProperties>(() => {
   return result
 })
 
+/** 从 localProperties 中提取 bbox 聚合值 */
+function getBboxValue(bboxKeys: Record<string, string>): Record<string, number> {
+  const result: Record<string, number> = {}
+  for (const [field, key] of Object.entries(bboxKeys)) {
+    if (key) result[field] = Number(localProperties.value[key]) || 0
+  }
+  return result
+}
+
+/** 将 bbox 聚合值写回各独立 key */
+function handleBboxChange(bboxKeys: Record<string, string>, value: Record<string, number>) {
+  for (const [field, key] of Object.entries(bboxKeys)) {
+    if (key) {
+      localProperties.value[key] = value[field] ?? 0
+      emit('updateProperty', key, value[field] ?? 0)
+    }
+  }
+}
+
 // ─── 默认值对比 ──────────────────────────────────────────────────────────────
+/**
+ * 浅层相等对比，避免对大对象使用 JSON.stringify 的性能开销。
+ * - 基本类型：直接 ===
+ * - 数组：长度对比 + 逐元素 ===
+ * - 对象：keys 数量对比 + 逐 key 浅层递归对比
+ * - 其他（函数/Symbol 等无法用 === 区分的引用类型）：fallback 到 JSON.stringify
+ */
+function shallowEqual(a: unknown, b: unknown): boolean {
+  // 同引用或同基本类型值直接命中（含 null === null、undefined === undefined）
+  if (a === b) return true
+  // 走到这里说明引用不同；若任一为 null/undefined 或非对象类型，则必不相等
+  if (a === null || b === null || typeof a !== 'object' || typeof b !== 'object') {
+    return false
+  }
+  const aIsArray = Array.isArray(a)
+  const bIsArray = Array.isArray(b)
+  // 数组：长度对比 + 逐元素 ===（元素不递归，保持浅层语义）
+  if (aIsArray || bIsArray) {
+    if (!aIsArray || !bIsArray) return false
+    const arrA = a as unknown[]
+    const arrB = b as unknown[]
+    if (arrA.length !== arrB.length) return false
+    for (let i = 0; i < arrA.length; i++) {
+      if (arrA[i] !== arrB[i]) return false
+    }
+    return true
+  }
+  // 普通对象：keys 数量对比 + 逐 key 浅层递归对比
+  const objA = a as Record<string, unknown>
+  const objB = b as Record<string, unknown>
+  const keysA = Object.keys(objA)
+  const keysB = Object.keys(objB)
+  if (keysA.length !== keysB.length) return false
+  for (const key of keysA) {
+    if (!Object.prototype.hasOwnProperty.call(objB, key)) return false
+    if (!shallowEqual(objA[key], objB[key])) return false
+  }
+  return true
+}
+
 function isModified(key: string): boolean {
   const current = localProperties.value[key]
   const original = originalProperties.value[key]
-  // 深度对比（处理数组/对象）
-  return JSON.stringify(current) !== JSON.stringify(original)
+  // 浅层 key-by-key 对比，避免大参数对象的 JSON.stringify 开销
+  return !shallowEqual(current, original)
 }
 
 function resetToOriginal(key: string) {
@@ -323,6 +413,21 @@ function handleTitleChange() {
         <p class="desc-text">{{ nodeDescription }}</p>
       </div>
 
+      <!-- 运行前校验问题 -->
+      <div v-if="validationIssues && validationIssues.length > 0" class="node-validation-issues">
+        <div
+          v-for="(issue, idx) in validationIssues"
+          :key="idx"
+          class="validation-issue"
+          :class="issue.severity"
+        >
+          <span class="issue-icon" aria-hidden="true">{{
+            issue.severity === 'error' ? '✕' : '⚠'
+          }}</span>
+          <span class="issue-message">{{ issue.message }}</span>
+        </div>
+      </div>
+
       <!-- 基本信息 -->
       <section class="inspector-section">
         <h3 class="section-title">基本信息</h3>
@@ -425,8 +530,18 @@ function handleTitleChange() {
         </div>
       </section>
 
+      <!-- 下载节点专用参数表单：替代通用 ParamField 列表 -->
+      <section v-if="isDownloadNode" class="inspector-section">
+        <h3 class="section-title">下载参数</h3>
+        <DownloadNodeForm
+          :node="selectedNode"
+          :readonly="readonly"
+          @update-property="handlePropertyChange"
+        />
+      </section>
+
       <!-- 属性：按分组显示 -->
-      <section v-if="Object.keys(localProperties).length" class="inspector-section">
+      <section v-else-if="Object.keys(localProperties).length" class="inspector-section">
         <h3 class="section-title">自定义属性</h3>
 
         <!-- 数据源参数 -->
@@ -473,6 +588,31 @@ function handleTitleChange() {
               <span v-if="validationErrors[key]" class="param-error">
                 {{ validationErrors[key] }}
               </span>
+            </div>
+          </div>
+        </div>
+
+        <!-- bbox 聚合参数组 -->
+        <div v-if="groupedProperties.bboxGroups.length" class="param-group">
+          <h4 class="param-group-title">空间范围</h4>
+          <div class="property-list">
+            <div
+              v-for="(grp, idx) in groupedProperties.bboxGroups"
+              :key="`bbox-${idx}`"
+              class="form-row"
+            >
+              <label class="form-label">
+                <span class="param-label-text">{{ grp.anchorKey }}</span>
+                <span class="param-info-icon" title="西/南/东/北四至范围，可使用预设快捷选择"
+                  >ⓘ</span
+                >
+              </label>
+              <BboxInputField
+                :model-value="getBboxValue(grp.bboxKeys)"
+                :readonly="readonly"
+                :field-keys="grp.bboxKeys"
+                @update:model-value="handleBboxChange(grp.bboxKeys, $event)"
+              />
             </div>
           </div>
         </div>
@@ -627,6 +767,25 @@ function handleTitleChange() {
   flex: 1;
   overflow-y: auto;
   padding: 0.42rem 0.62rem;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(90, 180, 255, 0.28) transparent;
+}
+
+.inspector-content::-webkit-scrollbar {
+  width: 4px;
+}
+
+.inspector-content::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.inspector-content::-webkit-scrollbar-thumb {
+  background: rgba(90, 180, 255, 0.26);
+  border-radius: 3px;
+}
+
+.inspector-content::-webkit-scrollbar-thumb:hover {
+  background: rgba(90, 180, 255, 0.45);
 }
 
 /* 节点描述卡片 */
@@ -662,6 +821,44 @@ function handleTitleChange() {
   font-size: 0.58rem;
   line-height: 1.4;
   color: #8aa8bf;
+}
+
+/* 运行前校验问题 */
+.node-validation-issues {
+  margin-bottom: 0.52rem;
+  padding: 0.32rem 0.42rem;
+  background: rgba(255, 107, 107, 0.08);
+  border: 1px solid rgba(255, 107, 107, 0.25);
+  border-radius: 4px;
+}
+
+.validation-issue {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.32rem;
+  font-size: 0.55rem;
+  line-height: 1.4;
+  padding: 0.12rem 0;
+}
+
+.validation-issue.warning {
+  color: #e0a030;
+}
+
+.validation-issue.error {
+  color: #ff6b6b;
+}
+
+.issue-icon {
+  flex-shrink: 0;
+  font-weight: 700;
+  font-size: 0.6rem;
+}
+
+.issue-message {
+  flex: 1;
+  min-width: 0;
+  word-break: break-word;
 }
 
 /* 参数提示 */

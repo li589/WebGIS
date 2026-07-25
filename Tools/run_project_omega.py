@@ -3,7 +3,7 @@
 执行阶段:
   1. SMAP 14 天 HDF5 → .mat 批量转换
   2. 多源数据对齐到 0.25° WGS84 中国网格 (BIOMASS/MCD12Q1/HFP/AI)
-  3. 加载 InversionResults/smap_avg omega 产品
+  3. 加载 Inversion_Results/smap_avg omega 产品
   4. 交叉分析 (SM/Omega vs BIOMASS/LandCover/HFP 相关性 + IGBP 分区统计)
   5. 站点空间采样 (101 站点 × SMAP SM)
   6. 可视化报告
@@ -43,7 +43,7 @@ BIOMASS_PATH = DATA_ROOT / "Biomass" / "ESACCI-BIOMASS-L4-AGB-MERGED-100m-2020-f
 MCD12Q1_PATH = DATA_ROOT / "LandCover" / "MCD12Q1_2019.tif"
 HFP_PATH = DATA_ROOT / "HumanFootprint" / "hfp2019.tif"
 AI_PATH = DATA_ROOT / "Others" / "AridityIndex_MSWEP-prcp_div_GLEAM-Ep_1980-2020.tif"
-OMEGA_DIR = DATA_ROOT / "InversionResults" / "smap_avg"
+OMEGA_DIR = DATA_ROOT / "Inversion_Results" / "smap_avg"
 STATION_CSV = DATA_ROOT / "Station" / "ISMN_vs_Fluxnet2015.csv"
 
 # SMAP 14 天文件列表 (2023-01)
@@ -218,8 +218,8 @@ def stage2_align_datasets() -> dict[str, tuple[np.ndarray, np.ndarray, np.ndarra
 # 阶段 3: 加载 Omega 产品
 # ======================================================================
 def stage3_load_omega() -> dict[str, np.ndarray]:
-    """加载 InversionResults/smap_avg omega .mat 产品 (v7.3 格式, 需 h5py)"""
-    section("[阶段 3] 加载 InversionResults/smap_avg omega 产品")
+    """加载 Inversion_Results/smap_avg omega .mat 产品 (v7.3 格式, 需 h5py)"""
+    section("[阶段 3] 加载 Inversion_Results/smap_avg omega 产品")
     omega_data: dict[str, np.ndarray] = {}
 
     for mat_file in sorted(OMEGA_DIR.glob("doy_*.mat")):

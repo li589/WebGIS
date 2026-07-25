@@ -7,6 +7,10 @@ from pathlib import Path
 from typing import Any
 
 from ingest.fy import FyDailyJobPlan
+from data_access.ease_grid_constants import (
+    EASE2_GLOBAL_BOUNDS,
+    EASE2_SHAPE_9KM,
+)
 
 # ─── GDAL 地理坐标系常量 ─────────────────────────────────────────────────────
 _GDAL_SRS_EPSG4326 = "EPSG:4326"
@@ -393,10 +397,12 @@ def build_fy_daily_command_steps(
             )
         )
         if spatial_mode == "global":
+            te_w, te_s, te_e, te_n = EASE2_GLOBAL_BOUNDS
+            ts_rows, ts_cols = EASE2_SHAPE_9KM
             command = (
                 f'"{gdal_bins["gdalwarp"]}" -overwrite -t_srs EPSG:6933 '
-                f'-te -17367530.45 -7314540.83 17367530.45 7314540.83 '
-                f'-ts 3856 1624 -r average '
+                f"-te {te_w} {te_s} {te_e} {te_n} "
+                f"-ts {ts_cols} {ts_rows} -r average "
                 f'-srcnodata {profile.dst_nodata} -dstnodata {profile.dst_nodata} '
                 f'-of GTiff -ot Float32 '
                 f'-co "COMPRESS=LZW" -co "PREDICTOR=3" -co "TILED=YES" '

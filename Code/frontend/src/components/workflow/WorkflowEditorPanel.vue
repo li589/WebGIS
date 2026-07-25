@@ -14,19 +14,28 @@
  * 左右面板已拆分为 WorkflowLeftSidebar / WorkflowRightSidebar 独立组件。
  * 顶部工具栏：保存 / 排列 / 适配视图 / 清空 / 运行
  */
-import { onMounted, onBeforeUnmount, ref, shallowRef, computed } from 'vue'
+import { onMounted, onBeforeUnmount, ref, shallowRef, computed, nextTick } from 'vue'
 import { storeToRefs } from 'pinia'
 
 import { useWorkflowDefinitionsStore } from '../../stores/workflow-definitions'
 import { useUiLoadingStore } from '../../stores/ui-loading'
 import { useLogStore } from '../../stores/log'
+import { useWorkflowOutputLayersStore } from '../../stores/workflow-output-layers'
 
 import WorkflowCanvas from './WorkflowCanvas.vue'
 import WorkflowLeftSidebar from './WorkflowLeftSidebar.vue'
 import WorkflowRightSidebar from './WorkflowRightSidebar.vue'
 import WorkflowRunDialog, { type WorkflowRunTarget } from './WorkflowRunDialog.vue'
 import WorkflowTimerPanel from './WorkflowTimerPanel.vue'
+import PipelineLauncher from './PipelineLauncher.vue'
 import { WORKFLOW_COPY } from '../../ui-copy'
+import {
+  validateWorkflowBeforeRun,
+  formatValidationSummary,
+  groupIssuesByNode,
+  type ValidationResult,
+  type ValidationIssue,
+} from '../../composables/workflow-validator'
 
 import type { LGraphNodeClass } from './litegraph-setup'
 import type {
@@ -48,6 +57,7 @@ const emit = defineEmits<{
 const store = useWorkflowDefinitionsStore()
 const { nodeTemplates, currentDefinition, isReadonly, error } = storeToRefs(store)
 const logStore = useLogStore()
+const outputStore = useWorkflowOutputLayersStore()
 
 // 选中节点状态
 const selectedNode = shallowRef<LGraphNodeClass | null>(null)
@@ -73,6 +83,12 @@ let _runStatusTimer2: ReturnType<typeof setTimeout> | null = null
 // 运行对话框
 const showRunDialog = ref(false)
 
+// 流水线启动器对话框
+const showPipelineLauncher = ref(false)
+
+// 流水线启动时待注入的 algorithm_params（由 PipelineLauncher 传入）
+const pendingPipelineParams = ref<Record<string, unknown> | null>(null)
+
 // 左右面板收起状态
 const leftSidebarCollapsed = ref(false)
 const rightSidebarCollapsed = ref(false)
@@ -93,6 +109,30 @@ const currentGraphData = ref<{
   links: WorkflowDefinitionLink[]
 } | null>(null)
 
+// 校验状态
+const validationResult = ref<ValidationResult | null>(null)
+const showValidationPanel = ref(false)
+
+/** 执行校验并更新状态 */
+function runValidation(): ValidationResult {
+  const graphData = canvasRef.value?.getSerializedGraph() ?? currentGraphData.value ?? null
+  const result = validateWorkflowBeforeRun(graphData, nodeTemplates.value)
+  validationResult.value = result
+  return result
+}
+
+/** 按节点分组的校验问题（供 Inspector 使用） */
+const issuesByNode = computed(() => {
+  if (!validationResult.value) return new Map<number, ValidationIssue[]>()
+  return groupIssuesByNode(validationResult.value.issues)
+})
+
+/** 当前选中节点的校验问题 */
+const selectedNodeIssues = computed<ValidationIssue[]>(() => {
+  if (!selectedNode.value || !validationResult.value) return []
+  return issuesByNode.value.get(selectedNode.value.id) ?? []
+})
+
 const hasDefinition = computed(() => currentDefinition.value !== null)
 const canSave = computed(
   () => hasDefinition.value && !isReadonly.value && dirty.value && !saving.value,
@@ -110,11 +150,12 @@ const headerWorkflowLabel = computed(() => {
 
 onMounted(async () => {
   const loading = useUiLoadingStore()
+  // 编辑器壳已挂上：立刻关全局 loading，列表/模板在面板内继续加载
+  loading.hideImmediate()
   try {
     await Promise.all([store.loadNodeTemplates(), store.loadSummaries()])
-  } finally {
-    // 对应 DashboardView 中 workflowEditorOpen watch 的 showImmediate
-    loading.hideImmediate()
+  } catch {
+    /* store 自管错误态 */
   }
 })
 
@@ -250,28 +291,123 @@ function handleClear() {
 
 function handleRun() {
   if (!currentDefinition.value || running.value) return
-  const linkedLayerId = currentDefinition.value._meta?.linked_layer_id ?? null
-  if (!linkedLayerId) {
-    const msg = `工作流 ${currentDefinition.value.workflow_id} 未关联图层，无法运行`
-    logStore.logWorkflow('workflow-editor-error', msg)
-    saveError.value = msg
-    runStatus.value = 'error'
+  saveError.value = null
+
+  // 运行前参数校验
+  const result = runValidation()
+  if (result.hasErrors) {
+    showValidationPanel.value = true
     return
   }
-  saveError.value = null
-  // 显示产出目标选择对话框
+  // 有警告但无错误时仍打开运行对话框，但显示警告
+  // 未关联图层时仍打开对话框，由用户点选图层后运行
   showRunDialog.value = true
 }
 
-function handleRunConfirm(target: WorkflowRunTarget) {
+async function handleRunConfirm(target: WorkflowRunTarget) {
   if (!currentDefinition.value) return
   clearRunStatusTimers()
-  const linkedLayerId = currentDefinition.value._meta?.linked_layer_id ?? null
+  const linkedLayerId = target.layerId ?? currentDefinition.value._meta?.linked_layer_id ?? null
+  if (!linkedLayerId) {
+    saveError.value = '请先选择关联图层后再运行'
+    runStatus.value = 'error'
+    return
+  }
   showRunDialog.value = false
+
+  // 有未保存修改时先自动保存，避免运行的是陈旧定义（只读系统流跳过）
+  if (dirty.value && !isReadonly.value) {
+    try {
+      await handleSave()
+    } catch {
+      /* handleSave 已写 saveError */
+      runStatus.value = 'error'
+      return
+    }
+  }
+
   running.value = true
   runStatus.value = 'submitting'
-  const graphData = canvasRef.value?.getSerializedGraph() ?? null
+
+  // multi 模式：批量创建输出图层条目（展示用）；提交仍走源图层一次运行
+  if (target.mode === 'multi' && target.targets) {
+    outputStore.createOutputLayers(
+      target.targets,
+      currentDefinition.value.workflow_id,
+      linkedLayerId,
+      currentEngine.value,
+    )
+    logStore.logOperation(
+      'workflow-multi-create',
+      `批量创建 ${target.targets.length} 个产出图层: ${target.targets.map((t) => t.name).join(', ')}`,
+    )
+  }
+
+  // 获取画布序列化数据，并注入流水线参数（如有）
+  let graphData = canvasRef.value?.getSerializedGraph() ?? currentGraphData.value ?? null
+  if (pendingPipelineParams.value && graphData) {
+    graphData = applyPipelineParamsToGraph(graphData, pendingPipelineParams.value)
+    pendingPipelineParams.value = null
+  }
+
   emit('run', currentDefinition.value.workflow_id, linkedLayerId, target, graphData)
+}
+
+/**
+ * 将流水线启动器传入的 algorithm_params 注入到 graphData 的 module 节点中。
+ * 仅更新包含 algorithm_params 的节点属性，其他节点保持不变。
+ */
+function applyPipelineParamsToGraph(
+  graphData: { nodes: WorkflowDefinitionNode[]; links: WorkflowDefinitionLink[] },
+  params: Record<string, unknown>,
+): { nodes: WorkflowDefinitionNode[]; links: WorkflowDefinitionLink[] } {
+  const updatedNodes = graphData.nodes.map((node) => {
+    const nodeProps = node.properties as Record<string, unknown>
+    if (
+      nodeProps.algorithm_params &&
+      typeof nodeProps.algorithm_params === 'object' &&
+      !Array.isArray(nodeProps.algorithm_params)
+    ) {
+      return {
+        ...node,
+        properties: {
+          ...nodeProps,
+          algorithm_params: {
+            ...(nodeProps.algorithm_params as Record<string, unknown>),
+            ...params,
+          },
+        },
+      }
+    }
+    return node
+  })
+  return { nodes: updatedNodes, links: graphData.links }
+}
+
+/**
+ * 流水线启动回调：加载对应工作流定义，注入 algorithm_params，然后走正常的 run 流程。
+ */
+async function handlePipelineLaunch(workflowId: string, params: Record<string, unknown>) {
+  showPipelineLauncher.value = false
+  saveError.value = null
+
+  // 加载工作流定义（会更新 currentDefinition 和画布）
+  await store.loadDefinition(workflowId)
+  selectedNode.value = null
+  dirty.value = false
+
+  // 暂存流水线参数，待 handleRunConfirm 时注入 graphData
+  pendingPipelineParams.value = params
+
+  logStore.logOperation(
+    'workflow-pipeline-launch',
+    `启动流水线: ${workflowId}, params: ${JSON.stringify(params)}`,
+  )
+
+  // 走正常的 run 流程（检查 linkedLayerId 并显示运行对话框）
+  // 等待画布渲染完成后再触发 run 对话框
+  await nextTick()
+  handleRun()
 }
 
 /** 由 Dashboard 在提交结束（成功/失败）后回调，同步按钮与错误条 */
@@ -475,6 +611,36 @@ defineExpose({
             <span aria-hidden="true">{{ saving ? '◌' : '💾' }}</span>
             <span>{{ saving ? '保存中...' : '保存' }}</span>
           </button>
+          <!-- 校验状态指示器 -->
+          <button
+            v-if="validationResult"
+            class="header-btn validation-btn"
+            :class="{
+              'has-errors': validationResult.hasErrors,
+              'has-warnings': validationResult.hasWarnings && !validationResult.hasErrors,
+              'all-good': !validationResult.hasErrors && !validationResult.hasWarnings,
+            }"
+            type="button"
+            @click="showValidationPanel = !showValidationPanel"
+            :title="formatValidationSummary(validationResult)"
+          >
+            <span aria-hidden="true">{{
+              validationResult.hasErrors ? '⚠' : validationResult.hasWarnings ? '◐' : '✓'
+            }}</span>
+            <span v-if="validationResult.errorCount > 0">{{ validationResult.errorCount }}</span>
+            <span v-else-if="validationResult.warningCount > 0">{{
+              validationResult.warningCount
+            }}</span>
+          </button>
+          <button
+            class="header-btn pipeline"
+            type="button"
+            @click="showPipelineLauncher = true"
+            title="端到端流水线"
+          >
+            <span aria-hidden="true">🚀</span>
+            <span>流水线</span>
+          </button>
           <button
             class="header-btn run"
             type="button"
@@ -517,6 +683,54 @@ defineExpose({
         <button class="error-dismiss" type="button" @click="saveError = null">✕</button>
       </div>
 
+      <!-- 校验结果面板 -->
+      <div v-if="showValidationPanel && validationResult" class="validation-panel">
+        <div class="validation-header">
+          <span class="validation-title">
+            <span aria-hidden="true">{{
+              validationResult.hasErrors ? '⚠' : validationResult.hasWarnings ? '◐' : '✓'
+            }}</span>
+            <span>运行前校验：{{ formatValidationSummary(validationResult) }}</span>
+          </span>
+          <div class="validation-actions">
+            <button
+              v-if="!validationResult.hasErrors"
+              class="validation-action-btn proceed"
+              type="button"
+              @click="
+                showValidationPanel = false
+                showRunDialog = true
+              "
+            >
+              继续运行
+            </button>
+            <button
+              class="validation-action-btn close"
+              type="button"
+              @click="showValidationPanel = false"
+            >
+              关闭
+            </button>
+          </div>
+        </div>
+        <div v-if="validationResult.issues.length > 0" class="validation-list">
+          <div
+            v-for="(issue, idx) in validationResult.issues"
+            :key="idx"
+            class="validation-item"
+            :class="{ error: issue.severity === 'error', warning: issue.severity === 'warning' }"
+          >
+            <span class="validation-icon" aria-hidden="true">{{
+              issue.severity === 'error' ? '✕' : '⚠'
+            }}</span>
+            <span class="validation-node">{{ issue.nodeTitle || '全局' }}</span>
+            <span class="validation-field" v-if="issue.field">{{ issue.field }}</span>
+            <span class="validation-message">{{ issue.message }}</span>
+          </div>
+        </div>
+        <div v-else class="validation-empty">所有节点参数校验通过</div>
+      </div>
+
       <!-- 主体三栏布局 -->
       <div class="editor-body">
         <!-- 左侧：工作流列表（独立组件） -->
@@ -538,8 +752,10 @@ defineExpose({
             <div class="placeholder-content">
               <span class="placeholder-icon" aria-hidden="true">⬡</span>
               <h2 class="placeholder-title">工作流编辑器</h2>
-              <p class="placeholder-text">从左侧选择一个工作流，或点击"新建"创建一个</p>
-              <p class="placeholder-hint">支持天气引擎、Python 处理器、GEE 三种引擎节点</p>
+              <p class="placeholder-text">从左侧选择工作流或范例，也可点击「新建」创建空白流</p>
+              <p class="placeholder-hint">
+                范例可一键「从范例新建」为可编辑副本；支持天气 / Python / GEE 节点
+              </p>
             </div>
           </div>
           <WorkflowCanvas
@@ -559,6 +775,7 @@ defineExpose({
           v-model:collapsed="rightSidebarCollapsed"
           :selected-node="selectedNode"
           :readonly="isReadonly"
+          :validation-issues="selectedNodeIssues"
           @add-node="handleAddNode"
           @update-property="handleUpdateProperty"
           @update-title="handleUpdateTitle"
@@ -634,6 +851,13 @@ defineExpose({
         </div>
       </div>
     </div>
+
+    <!-- 流水线启动器对话框 -->
+    <PipelineLauncher
+      :visible="showPipelineLauncher"
+      @close="showPipelineLauncher = false"
+      @launch="handlePipelineLaunch"
+    />
   </div>
 </template>
 
@@ -793,6 +1017,18 @@ defineExpose({
 
 .header-btn.run.submitted span:first-child {
   animation: none;
+}
+
+.header-btn.pipeline {
+  border-color: rgba(255, 184, 77, 0.3);
+  background: rgba(180, 130, 40, 0.14);
+  color: #ffd38a;
+}
+
+.header-btn.pipeline:hover:not(:disabled) {
+  border-color: rgba(255, 184, 77, 0.5);
+  background: rgba(180, 130, 40, 0.24);
+  color: #fff0d4;
 }
 
 .header-btn.close {
@@ -1031,5 +1267,153 @@ defineExpose({
   to {
     transform: rotate(360deg);
   }
+}
+
+/* ── 校验面板 ─────────────────────────────────────────────── */
+.validation-btn.has-errors {
+  border-color: rgba(232, 70, 58, 0.4);
+  background: rgba(232, 70, 58, 0.14);
+  color: #ff9b9b;
+}
+.validation-btn.has-warnings {
+  border-color: rgba(239, 170, 23, 0.36);
+  background: rgba(239, 170, 23, 0.12);
+  color: #ffd38a;
+}
+.validation-btn.all-good {
+  border-color: rgba(29, 201, 129, 0.3);
+  background: rgba(29, 201, 129, 0.08);
+  color: #6ee7b7;
+}
+
+.validation-panel {
+  border-bottom: 1px solid rgba(136, 192, 255, 0.12);
+  background: rgba(8, 16, 30, 0.88);
+  max-height: 280px;
+  overflow-y: auto;
+}
+
+.validation-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.52rem 0.86rem;
+  border-bottom: 1px solid rgba(136, 192, 255, 0.08);
+  position: sticky;
+  top: 0;
+  background: rgba(8, 16, 30, 0.96);
+  z-index: 1;
+}
+
+.validation-title {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.68rem;
+  color: #c4d6e8;
+  font-weight: 500;
+}
+
+.validation-actions {
+  display: flex;
+  gap: 0.32rem;
+}
+
+.validation-action-btn {
+  padding: 0.24rem 0.62rem;
+  border-radius: 0.32rem;
+  border: 1px solid rgba(136, 192, 255, 0.18);
+  background: transparent;
+  color: #8aa0b6;
+  font: inherit;
+  font-size: 0.58rem;
+  cursor: pointer;
+  transition: all 0.16s ease;
+}
+
+.validation-action-btn.proceed {
+  border-color: rgba(29, 201, 129, 0.36);
+  background: rgba(29, 201, 129, 0.1);
+  color: #6ee7b7;
+}
+
+.validation-action-btn.proceed:hover {
+  border-color: rgba(29, 201, 129, 0.56);
+  background: rgba(29, 201, 129, 0.2);
+}
+
+.validation-action-btn.close:hover {
+  border-color: rgba(136, 192, 255, 0.36);
+  color: #c4d6e8;
+}
+
+.validation-list {
+  padding: 0.32rem 0;
+}
+
+.validation-item {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.36rem 0.86rem;
+  font-size: 0.6rem;
+  border-bottom: 1px solid rgba(136, 192, 255, 0.04);
+  transition: background 0.12s ease;
+}
+
+.validation-item:hover {
+  background: rgba(136, 192, 255, 0.04);
+}
+
+.validation-item.error .validation-icon {
+  color: #ff7b7b;
+}
+
+.validation-item.warning .validation-icon {
+  color: #ffd38a;
+}
+
+.validation-icon {
+  flex-shrink: 0;
+  font-size: 0.64rem;
+}
+
+.validation-node {
+  flex-shrink: 0;
+  color: #a0b8d0;
+  font-weight: 500;
+  max-width: 120px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.validation-field {
+  flex-shrink: 0;
+  padding: 0.08rem 0.36rem;
+  border-radius: 0.24rem;
+  background: rgba(136, 192, 255, 0.1);
+  color: #8aa0b6;
+  font-size: 0.54rem;
+  font-family: var(--font-mono, monospace);
+  max-width: 140px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.validation-message {
+  flex: 1;
+  color: #8aa0b6;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.validation-empty {
+  padding: 1rem;
+  text-align: center;
+  font-size: 0.62rem;
+  color: #6ee7b7;
 }
 </style>

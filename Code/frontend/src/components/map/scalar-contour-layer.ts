@@ -6,6 +6,7 @@ import type { Map as MaplibreMap } from 'maplibre-gl'
 import { MAP_EVENT_MOVE, MAP_EVENT_MOVEEND, MAP_EVENT_RESIZE } from './types'
 import type { WindGeoJSON } from './types'
 import { computeCanvasLayout, type CanvasLayout } from './canvas-utils'
+import { unwrapLonsToMinimalSpan } from './weather-grid-lattice'
 
 interface GridData {
   rows: number
@@ -250,6 +251,9 @@ export class ScalarContourLayer {
     }
 
     const sortedLats = Array.from(latSet).sort((a, b) => b - a)
+    const rawLons = Array.from(lonSet).map((q) => q / QUANT)
+    const unwrappedLons = unwrapLonsToMinimalSpan(rawLons)
+    // 量化索引仍用原始量化键；网格东西界用 unwrap 后的连续经度
     const sortedLons = Array.from(lonSet).sort((a, b) => a - b)
     const rows = sortedLats.length
     const cols = sortedLons.length
@@ -300,13 +304,15 @@ export class ScalarContourLayer {
       }
     }
 
+    const west = Math.min(...unwrappedLons)
+    const east = Math.max(...unwrappedLons)
     this.gridData = {
       rows,
       cols,
-      south: sortedLats[rows - 1] / QUANT,
-      north: sortedLats[0] / QUANT,
-      west: sortedLons[0] / QUANT,
-      east: sortedLons[cols - 1] / QUANT,
+      south: sortedLats[rows - 1]! / QUANT,
+      north: sortedLats[0]! / QUANT,
+      west,
+      east: east - west >= 359.999 ? west + 360 : east,
       values,
     }
   }

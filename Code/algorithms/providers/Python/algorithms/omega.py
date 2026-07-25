@@ -467,7 +467,8 @@ def tb_forward_single_temp(
     rh_r = attenuation * (rh + q_value * delta_r)
     rv_r = attenuation * (rv - q_value * delta_r)
     gamma = math.exp(-tau_value)
-    one_minus_gamma = 1.0 - gamma
+    # 小 τ 时 1-exp(-τ) 用 -expm1 避免相消；数学等价
+    one_minus_gamma = -math.expm1(-tau_value)
     canopy_factor = (1.0 - omega_value) * one_minus_gamma
     rv_gamma = rv_r * gamma
     rh_gamma = rh_r * gamma
@@ -520,7 +521,7 @@ def tb_forward_dual_temp(
     rh_r = attenuation * (rh + q_value * delta_r)
     rv_r = attenuation * (rv - q_value * delta_r)
     gamma = math.exp(-tau_value)
-    one_minus_gamma = 1.0 - gamma
+    one_minus_gamma = -math.expm1(-tau_value)
     canopy_factor = (1.0 - omega_value) * one_minus_gamma
     rv_gamma = rv_r * gamma
     rh_gamma = rh_r * gamma
@@ -613,7 +614,7 @@ def _tb_forward_single_temp_kernel(
     rh_r = attenuation * (rh + q_value * delta_r)
     rv_r = attenuation * (rv - q_value * delta_r)
     gamma = math.exp(-tau_value)
-    one_minus_gamma = 1.0 - gamma
+    one_minus_gamma = -math.expm1(-tau_value)
     canopy_factor = (1.0 - omega_value) * one_minus_gamma
     rv_gamma = rv_r * gamma
     rh_gamma = rh_r * gamma
@@ -704,7 +705,7 @@ def _tb_forward_dual_temp_kernel(
     rh_r = attenuation * (rh + q_value * delta_r)
     rv_r = attenuation * (rv - q_value * delta_r)
     gamma = math.exp(-tau_value)
-    one_minus_gamma = 1.0 - gamma
+    one_minus_gamma = -math.expm1(-tau_value)
     canopy_factor = (1.0 - omega_value) * one_minus_gamma
     rv_gamma = rv_r * gamma
     rh_gamma = rh_r * gamma
@@ -1194,8 +1195,9 @@ def ddca_single_temp(
     clay_fraction/porosity 无量纲 (0-1)，freq_ghz 单位 GHz，theta_deg 单位度。
     返回 (soil_moisture, vod)，sm 单位 m³/m³，vod 无量纲。
     """
+    import math
+
     from scipy.optimize import least_squares
-    import numpy as np
 
     if model_context is None:
         model_context = _build_tb_forward_context(freq_ghz, clay_fraction, theta_deg)
@@ -1220,7 +1222,7 @@ def ddca_single_temp(
             dtype=np.float64,
         )
 
-    if not np.isfinite(porosity) or porosity <= _SOIL_MOISTURE_LOWER_BOUND:
+    if not math.isfinite(porosity) or porosity <= _SOIL_MOISTURE_LOWER_BOUND:
         # 孔隙度无效时 least_squares 会因 bounds 不合理抛 ValueError，直接返回 NaN
         return float("nan"), float("nan")
     lower_bounds = (_SOIL_MOISTURE_LOWER_BOUND, 0.0)
@@ -1258,6 +1260,8 @@ def ddca_dual_temp(
     clay_fraction/porosity 无量纲 (0-1)，freq_ghz 单位 GHz，theta_deg 单位度。
     返回 (soil_moisture, vod)，sm 单位 m³/m³，vod 无量纲。
     """
+    import math
+
     from scipy.optimize import least_squares
 
     if model_context is None:
@@ -1284,8 +1288,10 @@ def ddca_dual_temp(
             dtype=np.float64,
         )
 
-    lower_bounds = (0.02, 0.0)
-    upper_bounds = (porosity, 5.0)
+    if not math.isfinite(porosity) or porosity <= _SOIL_MOISTURE_LOWER_BOUND:
+        return float("nan"), float("nan")
+    lower_bounds = (_SOIL_MOISTURE_LOWER_BOUND, 0.0)
+    upper_bounds = (porosity, _TAU_UPPER_BOUND)
     result = least_squares(
         cost_func,
         x0=[0.20, tau_ini],

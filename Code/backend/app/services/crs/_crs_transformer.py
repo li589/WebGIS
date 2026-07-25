@@ -84,33 +84,42 @@ class CRSTransformer:
     ) -> tuple[float, float, float, float]:
         """转换 bounds 从 source_code 到 target_code。
 
-        委托 ``rasterio.warp.transform_bounds``（与 ``universal_reader.py:374`` 一致），
-        加密系先逐角点转 WGS84 再走 rasterio。
-
-        Args:
-            west, south, east, north: 源 bounds
-            source_code, target_code: 源/目标 CRS code
-
-        Returns:
-            ``(west, south, east, north)`` 目标 bounds
+        标准系优先 ``rasterio.warp.transform_bounds(..., densify_pts=21)``；
+        对 EPSG:6933 等全球投影会先钳到有效域，并对地理结果做日界线/
+        浮点塌缩修复，避免东缘越界导致 ``west≈east≈-180``。
         """
         if source_code == target_code:
             return (west, south, east, north)
+
+        src_span = (
+            abs(east - west)
+            if all(isinstance(v, (int, float)) for v in (west, east))
+            else None
+        )
+
+        # 投影域钳位（防止浮点越界）
+        try:
+            from app.data_io.services.grid_presets import (
+                clamp_projected_bounds_to_crs_domain,
+                normalize_geographic_bounds,
+            )
+
+            west, south, east, north = clamp_projected_bounds_to_crs_domain(
+                west, south, east, north, source_code
+            )
+        except Exception:
+            normalize_geographic_bounds = None  # type: ignore[assignment]
 
         src_encrypted = self._is_encrypted(source_code)
         tgt_encrypted = self._is_encrypted(target_code)
 
         if src_encrypted and tgt_encrypted:
-            # 加密系 -> 加密系：四角点逐个转，取 min/max
-            return self._transform_bounds_via_corners(
+            result = self._transform_bounds_via_corners(
                 west, south, east, north, source_code, target_code
             )
-
-        if src_encrypted:
-            # 加密系 -> 标准系：先加密系 -> WGS84（角点），再 WGS84 -> 目标（rasterio）
+        elif src_encrypted:
             w, s = self._transform_encrypted(west, south, source_code, "EPSG:4326")
             e, n = self._transform_encrypted(east, north, source_code, "EPSG:4326")
-            # 加密偏移非线性，四角都要转
             w2, s2 = self._transform_encrypted(east, south, source_code, "EPSG:4326")
             e2, n2 = self._transform_encrypted(west, north, source_code, "EPSG:4326")
             wgs_w = min(w, e, w2, e2)
@@ -118,27 +127,36 @@ class CRSTransformer:
             wgs_e = max(w, e, w2, e2)
             wgs_n = max(s, n, s2, n2)
             if target_code == "EPSG:4326":
-                return (wgs_w, wgs_s, wgs_e, wgs_n)
-            return self._rasterio_transform_bounds(
-                wgs_w, wgs_s, wgs_e, wgs_n, "EPSG:4326", target_code
-            )
-
-        if tgt_encrypted:
-            # 标准系 -> 加密系：先标准系 -> WGS84（rasterio），再 WGS84 -> 加密系（角点）
+                result = (wgs_w, wgs_s, wgs_e, wgs_n)
+            else:
+                result = self._rasterio_transform_bounds(
+                    wgs_w, wgs_s, wgs_e, wgs_n, "EPSG:4326", target_code
+                )
+        elif tgt_encrypted:
             if source_code != "EPSG:4326":
                 w, s, e, n = self._rasterio_transform_bounds(
                     west, south, east, north, source_code, "EPSG:4326"
                 )
             else:
                 w, s, e, n = west, south, east, north
-            return self._transform_bounds_via_corners(
+            result = self._transform_bounds_via_corners(
                 w, s, e, n, "EPSG:4326", target_code
             )
+        else:
+            result = self._rasterio_transform_bounds(
+                west, south, east, north, source_code, target_code
+            )
 
-        # 标准系 -> 标准系：rasterio 一次搞定
-        return self._rasterio_transform_bounds(
-            west, south, east, north, source_code, target_code
-        )
+        # 地理目标：规范化日界线 / 浮点塌缩
+        if (
+            target_code in ("EPSG:4326", "EPSG:4490", "EPSG:4258")
+            and normalize_geographic_bounds
+        ):
+            try:
+                result = normalize_geographic_bounds(*result, source_span_hint=src_span)
+            except ValueError:
+                pass
+        return result
 
     def transform_points_batch(
         self,

@@ -4,12 +4,18 @@ export interface MapCanvasExposeBridge {
   getMapStageElement: () => HTMLElement | null
   captureMapCanvas: () => string | null
   selectHotspot?: (pinId: string) => void
+  /** 全屏面板盖住地图时暂停风场 RAF */
+  setWindAnimationPaused?: (paused: boolean) => void
+  /** 缩放到指定图层显示范围（双击图层列表等） */
+  fitToLayerExtent?: (instanceId: string) => boolean
 }
 
 interface CreateMapCanvasExposeBridgeOptions {
   getMapStageElement: () => HTMLElement | null
   getMap: () => MapInstance | null
   selectHotspot?: (pinId: string) => void
+  setWindAnimationPaused?: (paused: boolean) => void
+  fitToLayerExtent?: (instanceId: string) => boolean
   dependencies?: {
     warn?: (message?: unknown, ...optionalParams: unknown[]) => void
   }
@@ -85,5 +91,7 @@ export function createMapCanvasExposeBridge(
     getMapStageElement: options.getMapStageElement,
     captureMapCanvas,
     selectHotspot: options.selectHotspot,
+    setWindAnimationPaused: options.setWindAnimationPaused,
+    fitToLayerExtent: options.fitToLayerExtent,
   }
 }

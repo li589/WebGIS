@@ -1,18 +1,12 @@
 <script setup lang="ts">
-import { computed, ref, watch, onMounted, onUnmounted } from 'vue'
+import { computed, nextTick, ref, watch, onMounted, onUnmounted } from 'vue'
 import { storeToRefs } from 'pinia'
 
 import { useLayersStore } from '../stores/layers'
 import { useUiStore } from '../stores/ui'
 import { useLogStore } from '../stores/log'
 import type { RuntimeLayerLibraryItem, WeatherLayerRenderHint } from '../stores/layers/types'
-import {
-  WEATHER_PALETTE_OPTIONS,
-  buildWeatherLegendGradient,
-  isMapLinkedPalette,
-  resolveCanonicalPaletteId,
-  resolveSymbologyColors,
-} from './map/layer-symbology'
+import { buildWeatherLegendGradient, resolveSymbologyColors } from './map/layer-symbology'
 import { resolveEffectiveLayerSymbology } from './map/effective-layer-symbology'
 import { useOverlaySymbologyStore } from '../stores/overlay-symbology'
 import { useWeatherSourcePrefsStore } from '../stores/weather-source-prefs'
@@ -22,9 +16,17 @@ import {
 } from '../stores/weather-tile-manager'
 import { getWeatherProvidersForLayer, type WeatherProviderForLayer } from '../services/runtime-api'
 import { LAYERS_COPY, INSPECT_COPY } from '../ui-copy'
+import { openDataWorkspace } from '../data-manager/core/workspace-store'
+import { exportLayer } from '../data-manager/adapters/export'
+import {
+  buildLayerContextMenu,
+  type LayerContextActionId,
+} from './layer-sidebar/layer-context-menu'
+import LayerSymbologyPopover from './layer-sidebar/LayerSymbologyPopover.vue'
 
 const emit = defineEmits<{
   selectLayer: [instanceId: string]
+  zoomToLayer: [instanceId: string]
 }>()
 
 const layersStore = useLayersStore()
@@ -115,6 +117,24 @@ const searchQuery = ref('')
 const expandedCategories = ref<Set<string>>(new Set(layerCategories.map((c) => c.id)))
 const draggedInstanceId = ref<string | null>(null)
 const dragOverInstanceId = ref<string | null>(null)
+/** 侧栏根节点：切换视图时滚回顶部，避免页签滚出视口后「点不动」 */
+const sidebarRootEl = ref<HTMLElement | null>(null)
+
+function scrollSidebarChromeIntoView() {
+  const root = sidebarRootEl.value
+  if (!root) return
+  root.scrollTop = 0
+  const panelBody = root.closest('.panel-body') as HTMLElement | null
+  if (panelBody) panelBody.scrollTop = 0
+  const libraryScroll = root.querySelector('.library-scroll') as HTMLElement | null
+  if (libraryScroll) libraryScroll.scrollTop = 0
+  const layerList = root.querySelector('.layer-list') as HTMLElement | null
+  if (layerList) layerList.scrollTop = 0
+}
+
+watch(sidebarView, () => {
+  void nextTick(() => scrollSidebarChromeIntoView())
+})
 
 // ── Filter library items by search ────────────────────────────────────────────
 
@@ -213,11 +233,13 @@ function catalogSemanticNoteClass(catalogId: string) {
 
 function openLibrary() {
   layersStore.setSidebarView('library')
+  void nextTick(() => scrollSidebarChromeIntoView())
 }
 
 function openActive() {
-  // 显式切到已添加列表；即使当前已是 active 也再写一次，避免偶发状态不同步
+  // 显式切到已添加列表；即使当前已是 active 也再写一次，并滚回页签可见区
   layersStore.setSidebarView('active')
+  void nextTick(() => scrollSidebarChromeIntoView())
 }
 
 function addCatalogItem(catalogId: string, isAdminBoundary = false) {
@@ -275,6 +297,18 @@ function removeItem(instanceId: string, event: MouseEvent) {
 function selectItem(instanceId: string) {
   layersStore.selectLayer(instanceId)
   emit('selectLayer', instanceId)
+}
+
+function zoomToItem(instanceId: string) {
+  selectItem(instanceId)
+  emit('zoomToLayer', instanceId)
+}
+
+function zoomToLayerFromMenu() {
+  if (!contextMenu.value) return
+  const id = contextMenu.value.instanceId
+  zoomToItem(id)
+  closeContextMenu()
 }
 
 function openJobReport(instanceId: string) {
@@ -405,9 +439,8 @@ const contextMenuLayer = computed(() => {
 /** 右键图层条目时弹出上下文菜单 */
 function onLayerContextMenu(instanceId: string, event: MouseEvent) {
   event.preventDefault()
-  // 边界检测：防止菜单超出视口
-  const MENU_W = 180
-  const MENU_H = 220
+  const MENU_W = 200
+  const MENU_H = 360
   const vw = window.innerWidth
   const vh = window.innerHeight
   const x = Math.min(event.clientX, vw - MENU_W - 8)
@@ -419,12 +452,30 @@ function closeContextMenu() {
   contextMenu.value = null
 }
 
+const contextMenuGroups = computed(() => {
+  const layer = contextMenuLayer.value
+  if (!layer) return []
+  const canRun =
+    !layer.isImported &&
+    !layer.isImportedRaster &&
+    !layer.isAdminBoundary &&
+    layersStore.canRunCatalog(layer.catalogId)
+  return buildLayerContextMenu({
+    visible: layer.visible,
+    isAdminBoundary: layer.isAdminBoundary,
+    isImported: layer.isImported,
+    isImportedRaster: layer.isImportedRaster,
+    hasJobReport: Boolean(layer.jobLayer?.reportSummary),
+    canRunWorkflow: canRun,
+    hasColorSymbology: hasColorSymbology(layer),
+  })
+})
+
 /** 从右键菜单打开"符号系统"浮窗 */
 function openSymbologyFromMenu() {
   if (!contextMenu.value) return
-  // 边界检测：防止浮窗超出视口
-  const POPOVER_W = 220
-  const POPOVER_H = 240
+  const POPOVER_W = 280
+  const POPOVER_H = 420
   const vw = window.innerWidth
   const vh = window.innerHeight
   const x = Math.min(contextMenu.value.x, vw - POPOVER_W - 8)
@@ -434,7 +485,6 @@ function openSymbologyFromMenu() {
     x: Math.max(8, x),
     y: Math.max(8, y),
   }
-  // 异步获取 overlay 元数据
   const layer = activeLayersDisplay.value.find(
     (l) => l.instanceId === contextMenu.value!.instanceId,
   )
@@ -450,58 +500,111 @@ function openSymbologyFromMenu() {
   closeContextMenu()
 }
 
-/** 右键菜单：查看详情（选中图层） */
-function viewDetailFromMenu() {
+async function exportActiveFromMenu(format: 'geojson' | 'csv' | 'png' | 'tif') {
   if (!contextMenu.value) return
-  selectItem(contextMenu.value.instanceId)
-  closeContextMenu()
-}
-
-/** 右键菜单：移除图层 */
-function removeLayerFromMenu() {
-  if (!contextMenu.value) return
-  removeItem(contextMenu.value.instanceId, new MouseEvent('click'))
-  closeContextMenu()
-}
-
-function exportImportedGeoJsonFromMenu() {
-  if (!contextMenu.value) return
-  const layer = contextMenuLayer.value
-  const geojson = layersStore.getImportedVectorGeojson(contextMenu.value.instanceId)
-  if (!layer || !geojson) {
-    logStore.logOperation('export-fail', '当前图层不是可导出的导入矢量')
+  const active = layersStore.activeLayers.find(
+    (l) => l.instanceId === contextMenu.value?.instanceId,
+  )
+  if (!active) {
     closeContextMenu()
     return
   }
-  void import('../stores/layers/imported-vector').then(({ exportFeatureCollectionAsGeoJson }) => {
-    exportFeatureCollectionAsGeoJson(geojson, layer.name)
+  try {
+    await exportLayer(active, format)
+    logStore.logOperation(`export-${format}`, `导出 ${format.toUpperCase()}「${active.name}」`)
+  } catch (e) {
     logStore.logOperation(
-      'export-geojson',
-      `导出 GeoJSON「${layer.name}」`,
-      `要素数: ${geojson.features.length}`,
+      'export-fail',
+      `导出 ${format.toUpperCase()} 失败: ${active.name}`,
+      e instanceof Error ? e.message : String(e),
     )
-  })
+  }
   closeContextMenu()
 }
 
-function exportImportedCsvFromMenu() {
+function renameLayerFromMenu() {
   if (!contextMenu.value) return
-  const layer = contextMenuLayer.value
-  const geojson = layersStore.getImportedVectorGeojson(contextMenu.value.instanceId)
-  if (!layer || !geojson) {
-    logStore.logOperation('export-fail', '当前图层不是可导出的导入矢量')
-    closeContextMenu()
-    return
+  const id = contextMenu.value.instanceId
+  const layer = activeLayersDisplay.value.find((l) => l.instanceId === id)
+  const next = window.prompt(LAYERS_COPY.renamePrompt, layer?.name ?? '')
+  if (next != null && next.trim()) {
+    layersStore.setLayerDisplayName(id, next)
+    logStore.logOperation('layer-rename', `重命名图层「${next.trim()}」`)
   }
-  void import('../stores/layers/imported-vector').then(({ exportFeatureCollectionAsCsv }) => {
-    exportFeatureCollectionAsCsv(geojson, layer.name)
-    logStore.logOperation(
-      'export-csv',
-      `导出 CSV「${layer.name}」`,
-      `要素数: ${geojson.features.length}`,
-    )
-  })
   closeContextMenu()
+}
+
+function handleContextAction(action: LayerContextActionId) {
+  if (!contextMenu.value) return
+  const id = contextMenu.value.instanceId
+  switch (action) {
+    case 'zoom':
+      zoomToLayerFromMenu()
+      return
+    case 'toggleVisible':
+      layersStore.toggleLayerVisibility(id)
+      closeContextMenu()
+      return
+    case 'symbology':
+      openSymbologyFromMenu()
+      return
+    case 'viewDetails':
+      selectItem(id)
+      closeContextMenu()
+      return
+    case 'bringToFront':
+      layersStore.bringLayerToFront(id)
+      closeContextMenu()
+      return
+    case 'sendToBack':
+      layersStore.sendLayerToBack(id)
+      closeContextMenu()
+      return
+    case 'rename':
+      renameLayerFromMenu()
+      return
+    case 'openAttributes':
+      selectItem(id)
+      openDataWorkspace({ tab: 'attributes', layerInstanceId: id })
+      closeContextMenu()
+      return
+    case 'openDetails':
+      selectItem(id)
+      openDataWorkspace({ tab: 'details', layerInstanceId: id })
+      closeContextMenu()
+      return
+    case 'openStyle':
+      openSymbologyFromMenu()
+      return
+    case 'exportGeoJson':
+      void exportActiveFromMenu('geojson')
+      return
+    case 'exportCsv':
+      void exportActiveFromMenu('csv')
+      return
+    case 'exportPng':
+      void exportActiveFromMenu('png')
+      return
+    case 'exportTif':
+      void exportActiveFromMenu('tif')
+      return
+    case 'viewReport':
+      openJobReport(id)
+      closeContextMenu()
+      return
+    case 'runWorkflow': {
+      const layer = activeLayersDisplay.value.find((l) => l.instanceId === id)
+      if (layer) {
+        void layersStore.runWorkflowForCatalog(layer.catalogId)
+      }
+      closeContextMenu()
+      return
+    }
+    case 'remove':
+      removeItem(id, new MouseEvent('click'))
+      closeContextMenu()
+      return
+  }
 }
 
 function closeSymbologyPanel() {
@@ -561,28 +664,6 @@ function hasColorSymbology(layer: ActiveLayerDisplayLike): boolean {
   return !!meta?.palette
 }
 
-function getSymbologyVmin(layer: ActiveLayerDisplayLike): string {
-  if (layer.renderHint?.legend_ticks?.length) {
-    const first = layer.renderHint.legend_ticks[0]
-    return typeof first === 'number' ? String(first) : '—'
-  }
-  void overlaySymbologyStore.version
-  const meta = overlaySymbologyStore.getMeta(layer.catalogId)
-  if (meta?.vmin != null) return String(meta.vmin)
-  return '—'
-}
-
-function getSymbologyVmax(layer: ActiveLayerDisplayLike): string {
-  if (layer.renderHint?.legend_ticks?.length) {
-    const last = layer.renderHint.legend_ticks[layer.renderHint.legend_ticks.length - 1]
-    return typeof last === 'number' ? String(last) : '—'
-  }
-  void overlaySymbologyStore.version
-  const meta = overlaySymbologyStore.getMeta(layer.catalogId)
-  if (meta?.vmax != null) return String(meta.vmax)
-  return '—'
-}
-
 function getSymbologyUnit(layer: ActiveLayerDisplayLike): string {
   if (layer.renderHint?.unit_label) return layer.renderHint.unit_label
   void overlaySymbologyStore.version
@@ -591,28 +672,17 @@ function getSymbologyUnit(layer: ActiveLayerDisplayLike): string {
   return ''
 }
 
-function getSymbologyMetric(layer: ActiveLayerDisplayLike): string {
-  return layer.metricLabel || '—'
+function getSymbologyVmin(layer: ActiveLayerDisplayLike): string {
+  const ticks = layer.renderHint?.legend_ticks
+  if (ticks && ticks.length > 0) return String(ticks[0])
+  return ''
 }
 
-function handleSymbologyOpacity(instanceId: string, event: Event) {
-  const target = event.target as HTMLInputElement
-  layersStore.setLayerOpacity(instanceId, Number(target.value) / 100)
-}
-
-function canEditSymbologyPalette(layer: ActiveLayerDisplayLike): boolean {
-  return isMapLinkedPalette({
-    hasRenderHint: Boolean(layer.renderHint),
-    isImportedRaster: layer.isImportedRaster,
-  })
-}
-
-function handleSymbologyPalette(instanceId: string, paletteId: string) {
-  const layer = activeLayersDisplay.value.find((l) => l.instanceId === instanceId)
-  if (!layer || !canEditSymbologyPalette(layer)) return
-  const defaultPalette = layer.renderHint?.palette ?? ''
-  const target = paletteId === defaultPalette ? null : paletteId
-  layersStore.setLayerPaletteOverride(instanceId, target)
+function getSymbologyVmax(layer: ActiveLayerDisplayLike): string {
+  const ticks = layer.renderHint?.legend_ticks
+  if (ticks && ticks.length > 1) return String(ticks[ticks.length - 1])
+  if (ticks && ticks.length === 1) return String(ticks[0])
+  return ''
 }
 
 function getColorRampStyle(layer: ActiveLayerDisplayLike): Record<string, string> {
@@ -635,16 +705,6 @@ function getColorRampStyle(layer: ActiveLayerDisplayLike): Record<string, string
   return {
     background: `linear-gradient(90deg, ${colors.join(', ')})`,
   }
-}
-
-function currentSymbologyPaletteId(layer: ActiveLayerDisplayLike): string {
-  void overlaySymbologyStore.version
-  return resolveCanonicalPaletteId(
-    layer.paletteOverride ??
-      layer.renderHint?.palette ??
-      overlaySymbologyStore.getMeta(layer.catalogId)?.palette ??
-      '',
-  )
 }
 
 // 类型别名：对齐 WeatherLayerRenderHint 实际 schema（legend_ticks 而非 vmin/vmax）
@@ -676,7 +736,7 @@ const symbologyPanelLayer = computed(() => {
 </script>
 
 <template>
-  <aside class="panel">
+  <aside ref="sidebarRootEl" class="panel">
     <!-- ── Header ─────────────────────────────────────────────────────────── -->
     <div class="panel-topline">
       <div class="panel-header">
@@ -687,7 +747,15 @@ const symbologyPanelLayer = computed(() => {
           </p>
         </div>
         <div class="header-actions">
-          <span v-if="activeLayerCount > 0" class="badge">{{ activeLayerCount }}</span>
+          <button
+            v-if="activeLayerCount > 0"
+            class="badge"
+            type="button"
+            title="查看已添加图层"
+            @click="openActive"
+          >
+            {{ activeLayerCount }}
+          </button>
           <div class="view-tabs" role="tablist">
             <button
               class="view-tab"
@@ -1011,6 +1079,7 @@ const symbologyPanelLayer = computed(() => {
             role="option"
             :aria-selected="layer.instanceId === selectedInstanceId"
             @click="selectItem(layer.instanceId)"
+            @dblclick.stop="zoomToItem(layer.instanceId)"
             @contextmenu="onLayerContextMenu(layer.instanceId, $event)"
             @dragstart="onDragStart(layer.instanceId)"
             @dragover="onDragOver(layer.instanceId, $event)"
@@ -1119,134 +1188,30 @@ const symbologyPanelLayer = computed(() => {
         :style="{ left: contextMenu.x + 'px', top: contextMenu.y + 'px' }"
         @click.stop
       >
-        <button
-          v-if="contextMenuLayer && !contextMenuLayer.isAdminBoundary"
-          class="ctx-item"
-          type="button"
-          @click="openSymbologyFromMenu"
-        >
-          <span class="ctx-icon" aria-hidden="true">🎨</span>
-          <span>{{
-            hasColorSymbology(contextMenuLayer) ? LAYERS_COPY.symbology : LAYERS_COPY.opacity
-          }}</span>
-        </button>
-        <button class="ctx-item" type="button" @click="viewDetailFromMenu">
-          <span class="ctx-icon" aria-hidden="true">ℹ</span>
-          <span>查看详情</span>
-        </button>
-        <template v-if="contextMenuLayer?.isImported">
-          <div class="ctx-sep" role="separator"></div>
-          <button class="ctx-item" type="button" @click="exportImportedGeoJsonFromMenu">
-            <span class="ctx-icon" aria-hidden="true">⇩</span>
-            <span>导出 GeoJSON</span>
-          </button>
-          <button class="ctx-item" type="button" @click="exportImportedCsvFromMenu">
-            <span class="ctx-icon" aria-hidden="true">⇩</span>
-            <span>导出 CSV</span>
+        <template v-for="(group, gi) in contextMenuGroups" :key="group.id">
+          <div v-if="gi > 0" class="ctx-sep" role="separator"></div>
+          <button
+            v-for="item in group.items"
+            :key="item.id"
+            class="ctx-item"
+            :class="{ 'ctx-danger': item.danger }"
+            type="button"
+            :disabled="item.disabled"
+            @click="handleContextAction(item.id)"
+          >
+            <span class="ctx-icon" aria-hidden="true">{{ item.icon }}</span>
+            <span>{{ item.label }}</span>
           </button>
         </template>
-        <div class="ctx-sep" role="separator"></div>
-        <button class="ctx-item ctx-danger" type="button" @click="removeLayerFromMenu">
-          <span class="ctx-icon" aria-hidden="true">✕</span>
-          <span>移除图层</span>
-        </button>
       </div>
 
-      <!-- ── 符号系统浮窗（Teleport 到 body） ─────────────────────────────── -->
-      <div
+      <LayerSymbologyPopover
         v-if="symbologyPanel && symbologyPanelLayer"
-        class="sym-popover"
-        :style="{
-          left: symbologyPanel.x + 'px',
-          top: symbologyPanel.y + 'px',
-          '--accent': symbologyPanelLayer.accentColor,
-        }"
-        @click.stop
-      >
-        <div class="sym-popover-header">
-          <span class="sym-popover-title">{{
-            hasColorSymbology(symbologyPanelLayer) ? LAYERS_COPY.symbology : LAYERS_COPY.opacity
-          }}</span>
-          <button class="sym-popover-close" type="button" @click="closeSymbologyPanel">✕</button>
-        </div>
-        <div class="sym-popover-body">
-          <!-- 图层名 -->
-          <div class="sym-layer-name">{{ symbologyPanelLayer.name }}</div>
-
-          <template v-if="hasColorSymbology(symbologyPanelLayer)">
-            <!-- 字段/指标 -->
-            <div class="sym-field-row">
-              <span class="sym-field-label">字段</span>
-              <span class="sym-field-value">{{ getSymbologyMetric(symbologyPanelLayer) }}</span>
-            </div>
-
-            <!-- 色带条 -->
-            <div class="sym-color-ramp" :style="getColorRampStyle(symbologyPanelLayer)"></div>
-
-            <!-- 值域范围 -->
-            <div class="sym-range-row">
-              <span class="sym-range-min">{{ getSymbologyVmin(symbologyPanelLayer) }}</span>
-              <span class="sym-range-unit">{{ getSymbologyUnit(symbologyPanelLayer) }}</span>
-              <span class="sym-range-max">{{ getSymbologyVmax(symbologyPanelLayer) }}</span>
-            </div>
-
-            <!-- 配色方案：仅地图会跟随 palette 的图层可改；预渲染 overlay 只读 -->
-            <div
-              v-if="
-                symbologyPanelLayer.renderHint ||
-                overlaySymbologyStore.getMeta(symbologyPanelLayer.catalogId)?.palette
-              "
-              class="sym-palette-row"
-            >
-              <span class="sym-field-label">配色</span>
-              <select
-                class="sym-palette-select"
-                :value="currentSymbologyPaletteId(symbologyPanelLayer)"
-                :disabled="!canEditSymbologyPalette(symbologyPanelLayer)"
-                :title="
-                  canEditSymbologyPalette(symbologyPanelLayer)
-                    ? '切换地图配色'
-                    : '预渲染栅格图例，改配色不会重涂 PNG'
-                "
-                @change="
-                  handleSymbologyPalette(
-                    symbologyPanelLayer.instanceId,
-                    ($event.target as HTMLSelectElement).value,
-                  )
-                "
-              >
-                <option v-for="opt in WEATHER_PALETTE_OPTIONS" :key="opt.id" :value="opt.id">
-                  {{ opt.label }}
-                </option>
-              </select>
-            </div>
-            <p
-              v-if="
-                !canEditSymbologyPalette(symbologyPanelLayer) &&
-                (symbologyPanelLayer.renderHint ||
-                  overlaySymbologyStore.getMeta(symbologyPanelLayer.catalogId)?.palette)
-              "
-              class="sym-palette-hint"
-            >
-              预渲染图例，不支持前端改色
-            </p>
-          </template>
-
-          <!-- 透明度（与"分析"面板同步） -->
-          <div class="sym-opacity-row">
-            <span>透明度</span>
-            <input
-              class="sym-opacity-slider"
-              type="range"
-              min="0"
-              max="100"
-              :value="Math.round(symbologyPanelLayer.opacity * 100)"
-              @input="handleSymbologyOpacity(symbologyPanelLayer.instanceId, $event)"
-            />
-            <strong>{{ Math.round(symbologyPanelLayer.opacity * 100) }}%</strong>
-          </div>
-        </div>
-      </div>
+        :layer="symbologyPanelLayer"
+        :x="symbologyPanel.x"
+        :y="symbologyPanel.y"
+        @close="closeSymbologyPanel"
+      />
     </Teleport>
   </aside>
 </template>
@@ -1289,7 +1254,7 @@ const symbologyPanelLayer = computed(() => {
   gap: 0.28rem;
   padding: 0.08rem;
   flex: 0 0 auto;
-  /* 不要 sticky 实色底：会盖住面板顶部圆角，看起来像直角 */
+  /* 不要 sticky 实色底：会盖住面板顶部圆角，看起来像直角矩形 */
   background: transparent;
 }
 
@@ -1334,14 +1299,31 @@ h2 {
 }
 
 .badge {
-  min-width: 1.65rem;
-  padding: 0.18rem 0.34rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  min-width: 1rem;
+  height: 1rem;
+  padding: 0 0.22rem;
+  border: 1px solid rgba(103, 212, 255, 0.22);
   border-radius: 999px;
   background: rgba(103, 212, 255, 0.14);
   color: #8fe7ff;
-  text-align: center;
-  font-size: 0.58rem;
-  flex: 0 0 auto;
+  /* 勿用 font: inherit，会继承面板大字号把徽标撑爆 */
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.5rem;
+  font-weight: 650;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+  letter-spacing: -0.02em;
+  flex: 0 1 auto;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.badge:hover {
+  background: rgba(103, 212, 255, 0.22);
 }
 
 /* ── View tabs ──────────────────────────────────────────────────────────── */
@@ -1355,6 +1337,8 @@ h2 {
   align-self: flex-start;
   flex: 0 0 auto;
   min-width: max-content;
+  position: relative;
+  z-index: 1;
 }
 
 .view-tab {
@@ -1372,6 +1356,7 @@ h2 {
   color: #6e8ba0;
   cursor: pointer;
   font-size: 0.64rem;
+  pointer-events: auto;
   transition:
     background-color 0.18s ease,
     color 0.18s ease;

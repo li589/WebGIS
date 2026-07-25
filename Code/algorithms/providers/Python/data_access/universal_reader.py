@@ -15,7 +15,7 @@
   - 时间索引: time_index 指定特定时间层
 
 使用示例:
-    reader = UniversalDataReader("I:/Geograph_DataSet/SMAP/SMAP_L3_SM_P_20230110_R18290_001.h5")
+    reader = UniversalDataReader("I:/Geograph_DataSet/Soil_Moisture/SMAP/SMAP_L3_SM_P_20230110_R18290_001.h5")
     data = reader.read_variable("Soil_Moisture_Retrieval_Data_AM/soil_moisture",
                                  bbox=(73, 15, 137, 59))  # 中国区域
     print(data.values.shape, data.lat.shape, data.lon.shape)
@@ -223,8 +223,10 @@ class UniversalDataReader:
             values = values.astype(np.float64)
             if fill_value is not None:
                 values[values == fill_value] = np.nan
-            # SMAP 特殊: -9999 也是填充值
-            values[values == -9999] = np.nan
+            # SMAP 特殊: -9999 也是填充值；统一清洗常见哨兵与非有限
+            from data_access.numeric_sanitize import mask_common_fill_values
+
+            values = mask_common_fill_values(values)
 
             return DataArray(
                 values=values,
@@ -359,15 +361,19 @@ class UniversalDataReader:
             values = values.astype(np.float64)
             if fill_value is not None:
                 values[values == fill_value] = np.nan
-            # int16 特殊: -32768/-32767 也是填充值
+            # int16 特殊: -32768/-32767 也是填充值（在缩放前处理）
             if values.dtype == np.int16 or (
                 hasattr(var, "dtype") and var.dtype == np.int16
             ):
                 values[values <= -32767] = np.nan
+            from data_access.numeric_sanitize import mask_common_fill_values
+
+            values = mask_common_fill_values(values, also_non_finite=False)
             if scale_factor is not None:
                 values = values * float(scale_factor)
             if add_offset is not None:
                 values = values + float(add_offset)
+            values = mask_common_fill_values(values)
 
             # CRS
             crs = "EPSG:4326"
@@ -480,8 +486,9 @@ class UniversalDataReader:
                 if "int16" in dtype_str and np.nanmin(values) <= -32767:
                     # China 1km 特殊: int16 NoData=-32768 未在元数据中声明
                     values[values <= -32767] = np.nan
-            # 额外: 过滤 inf 和 NaN
-            values[~np.isfinite(values)] = np.nan
+            from data_access.numeric_sanitize import mask_common_fill_values
+
+            values = mask_common_fill_values(values)
 
             return DataArray(
                 values=values,
@@ -534,8 +541,19 @@ class UniversalDataReader:
             # 尝试读取坐标变量 (lat/lon, 可能是 1D 或 2D)
             lat_out = self._extract_mat_coord(data, ("lat", "latitude"))
             lon_out = self._extract_mat_coord(data, ("lon", "longitude"))
+            from data_access.numeric_sanitize import mask_common_fill_values
+
+            values = mask_common_fill_values(values.astype(np.float64))
+            if lat_out is not None:
+                lat_out = mask_common_fill_values(
+                    lat_out, also_large_abs_sentinel=True
+                )
+            if lon_out is not None:
+                lon_out = mask_common_fill_values(
+                    lon_out, also_large_abs_sentinel=True
+                )
             return DataArray(
-                values=values.astype(np.float64),
+                values=values,
                 lat=lat_out,
                 lon=lon_out,
                 time=None,
@@ -578,8 +596,20 @@ class UniversalDataReader:
                         lon_out = lon_out.T
                     break
 
+            from data_access.numeric_sanitize import mask_common_fill_values
+
+            values = mask_common_fill_values(values.astype(np.float64))
+            if lat_out is not None:
+                lat_out = mask_common_fill_values(
+                    lat_out, also_large_abs_sentinel=True
+                )
+            if lon_out is not None:
+                lon_out = mask_common_fill_values(
+                    lon_out, also_large_abs_sentinel=True
+                )
+
             return DataArray(
-                values=values.astype(np.float64),
+                values=values,
                 lat=lat_out,
                 lon=lon_out,
                 time=None,

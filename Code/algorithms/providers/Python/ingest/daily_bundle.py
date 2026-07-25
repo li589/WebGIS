@@ -290,12 +290,20 @@ def build_sf_row_daily(
         den[is_crop_grass] = (ndvi_clim_row[is_crop_grass] - 0.1) / 0.9
         den[is_other] = (ndvi_clim_max_row[is_other] - 0.1) / 0.9
     elif mode_sf == "NDVIMIN":
-        den[is_crop_grass] = (
-            ndvi_clim_row[is_crop_grass] - ndvi_clim_min_row[is_crop_grass]
-        ) / (1 - ndvi_clim_min_row[is_crop_grass])
-        den[is_other] = (ndvi_clim_max_row[is_other] - ndvi_clim_min_row[is_other]) / (
-            1 - ndvi_clim_min_row[is_other]
-        )
+        with np.errstate(divide="ignore", invalid="ignore"):
+            den_cg = 1.0 - ndvi_clim_min_row[is_crop_grass]
+            den[is_crop_grass] = np.where(
+                np.abs(den_cg) >= 1e-6,
+                (ndvi_clim_row[is_crop_grass] - ndvi_clim_min_row[is_crop_grass])
+                / den_cg,
+                np.nan,
+            )
+            den_ot = 1.0 - ndvi_clim_min_row[is_other]
+            den[is_other] = np.where(
+                np.abs(den_ot) >= 1e-6,
+                (ndvi_clim_max_row[is_other] - ndvi_clim_min_row[is_other]) / den_ot,
+                np.nan,
+            )
     else:
         raise ValueError(f"Unsupported SF invert mode: {mode_sf}")
 

@@ -308,6 +308,8 @@ export class WindParticleWebGLLayer {
   private mapMoving = false
   private lastMoveEndAt = 0
   private frameCounter = 0
+  /** 面板盖住地图时为 true：停 RAF；visibility 恢复时也不应强行 start */
+  private animationPaused = false
   private visibilityHandler: (() => void) | null = null
   private moveStartHandler: (() => void) | null = null
   private moveEndHandler: (() => void) | null = null
@@ -316,6 +318,10 @@ export class WindParticleWebGLLayer {
   private initFailed = false
   private initFailReason: string | null = null
   private readonly frame = () => {
+    if (this.animationPaused) {
+      this.rafId = null
+      return
+    }
     this.rafId = requestAnimationFrame(this.frame)
     if (typeof document !== 'undefined' && document.visibilityState === 'hidden') {
       return
@@ -549,6 +555,7 @@ export class WindParticleWebGLLayer {
   // ── 公共 API（controller 调用）────────────────────────────────────
 
   start(): void {
+    if (this.animationPaused) return
     if (this.rafId !== null) return
     this.lastFrameTime = 0
     this.rafId = requestAnimationFrame(this.frame)
@@ -558,6 +565,19 @@ export class WindParticleWebGLLayer {
     if (this.rafId !== null) {
       cancelAnimationFrame(this.rafId)
       this.rafId = null
+    }
+  }
+
+  /**
+   * 全屏面板盖住地图时暂停 RAF（保留 GPU 粒子状态）；关闭后续播。
+   * 与 document.visibility 暂停可叠加：面板暂停优先。
+   */
+  setAnimationPaused(paused: boolean): void {
+    if (this.animationPaused === paused) return
+    this.animationPaused = paused
+    if (paused) this.stop()
+    else if (typeof document === 'undefined' || document.visibilityState !== 'hidden') {
+      this.start()
     }
   }
 

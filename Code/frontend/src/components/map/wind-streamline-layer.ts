@@ -112,6 +112,58 @@ export function streamlineLonWrapOffsets(baseWrap: number): number[] {
   return [baseWrap - 360, baseWrap, baseWrap + 360]
 }
 
+export interface StreamlineProjectedPoint {
+  x: number
+  y: number
+  speed: number
+}
+
+/** 单条流线在某一 wrap 下的屏幕折线（含弧长累积，供相位脉冲复用） */
+export interface StreamlineProjectedStroke {
+  pts: StreamlineProjectedPoint[]
+  cum: number[]
+  totalLen: number
+}
+
+/**
+ * 将一条地理流线投影为屏幕笔画（可含多 wrap）。
+ * 纯函数：相位动画帧只复用结果，避免每帧 map.project。
+ */
+export function projectStreamlinePathStrokes(
+  path: Array<{ lat: number; lon: number; speed: number }>,
+  wraps: number[],
+  project: (lngLat: [number, number]) => { x: number; y: number },
+  options: { dpr: number; canvasWidth: number; canvasHeight: number; margin: number },
+): StreamlineProjectedStroke[] {
+  if (path.length < 2) return []
+  const { dpr, canvasWidth: w, canvasHeight: h, margin } = options
+  const strokes: StreamlineProjectedStroke[] = []
+  for (const wrap of wraps) {
+    const pts: StreamlineProjectedPoint[] = []
+    let anyOnScreen = false
+    for (const p of path) {
+      const scr = project([p.lon + wrap, p.lat])
+      const x = scr.x * dpr
+      const y = scr.y * dpr
+      if (x >= -margin && x <= w + margin && y >= -margin && y <= h + margin) {
+        anyOnScreen = true
+      }
+      pts.push({ x, y, speed: p.speed })
+    }
+    if (!anyOnScreen) continue
+    const cum: number[] = [0]
+    for (let j = 1; j < pts.length; j++) {
+      const dx = pts[j].x - pts[j - 1].x
+      const dy = pts[j].y - pts[j - 1].y
+      cum.push(cum[j - 1] + Math.hypot(dx, dy))
+    }
+    const totalLen = cum[cum.length - 1]
+    if (totalLen < 2) continue
+    strokes.push({ pts, cum, totalLen })
+  }
+  return strokes
+}
+
 /** 纯函数：在给定范围内均匀撒种子（带相位抖动） */
 export function buildStreamlineSeeds(
   bounds: StreamlineSeedBounds,
@@ -176,6 +228,9 @@ export class WindStreamlineLayer {
   private grid: WindGrid | null = null
   private seeds: StreamlineSeed[] = []
   private paths: Array<Array<{ lat: number; lon: number; speed: number }>> = []
+  /** 屏幕投影缓存：地图未动时相位动画复用，避免每帧 project */
+  private projectedStrokesByPath: StreamlineProjectedStroke[][] | null = null
+  private projectionDirty = true
   private layout: CanvasLayout = { width: 0, height: 0, offsetX: 0, offsetY: 0, lonWrapOffset: 0 }
   /** 与粒子层一致：仅在数据变化时重算，避免交互中 0↔±360 跳变导致半球空白 */
   private lonWrapOffset = 0
@@ -184,6 +239,8 @@ export class WindStreamlineLayer {
   private lastFrameTs = 0
   private phase = 0
   private running = false
+  /** 面板盖住地图时为 true：停 RAF，保留 paths */
+  private animationPaused = false
   private lastSeedZoom = 0
   private moveHandler: () => void
   private moveEndHandler: () => void
@@ -207,10 +264,12 @@ export class WindStreamlineLayer {
     this.ctx = ctx
 
     this.moveHandler = () => {
+      this.markProjectionDirty()
       this.syncLayout(false)
       this.draw()
     }
     this.moveEndHandler = () => {
+      this.markProjectionDirty()
       this.syncLayout(false)
       const zoom = this.map.getZoom()
       if (this.grid && (this.lastSeedZoom === 0 || Math.abs(zoom - this.lastSeedZoom) >= 0.35)) {
@@ -219,6 +278,7 @@ export class WindStreamlineLayer {
       this.draw()
     }
     this.resizeHandler = () => {
+      this.markProjectionDirty()
       this.syncLayout(false)
       this.draw()
     }
@@ -243,11 +303,13 @@ export class WindStreamlineLayer {
       this.grid = null
       this.seeds = []
       this.paths = []
+      this.markProjectionDirty()
       return
     }
 
     // 数据未变：跳过重撒，但仍刷新 wrap（视口可能已变）
     if (this.grid && this.grid.checksum === nextGrid.checksum) {
+      this.markProjectionDirty()
       this.syncLayout(true)
       return
     }
@@ -294,6 +356,7 @@ export class WindStreamlineLayer {
     this.seeds = seeds
     this.paths = seeds.map((s) => integrateStreamline(nextGrid, s.lat, s.lon))
     this.lastSeedZoom = this.map.getZoom()
+    this.markProjectionDirty()
     this.syncLayout(true)
   }
 
@@ -307,6 +370,7 @@ export class WindStreamlineLayer {
     this.seeds = buildStreamlineSeeds(seedBounds, target)
     this.paths = this.seeds.map((s) => integrateStreamline(this.grid!, s.lat, s.lon))
     this.lastSeedZoom = zoom
+    this.markProjectionDirty()
     this.syncLayout(true)
   }
 
@@ -323,11 +387,23 @@ export class WindStreamlineLayer {
     this.startLoop()
   }
 
+  /**
+   * 全屏面板盖住地图时暂停 RAF（保留路径数据）；关闭后 resume 续播相位动画。
+   * 不销毁层，避免回来时闪空/重撒。
+   */
+  setAnimationPaused(paused: boolean) {
+    if (this.animationPaused === paused) return
+    this.animationPaused = paused
+    if (paused) this.stopLoop()
+    else if (this.running) this.startLoop()
+  }
+
   private startLoop() {
+    if (this.animationPaused) return
     if (this.rafId !== null) return
     const tick = (ts: number) => {
       this.rafId = requestAnimationFrame(tick)
-      if (document.hidden) return
+      if (this.animationPaused || document.hidden) return
       if (ts - this.lastFrameTs < TARGET_FRAME_INTERVAL_MS) return
       this.lastFrameTs = ts
       this.phase = (this.phase + PHASE_SPEED) % 1
@@ -373,11 +449,36 @@ export class WindStreamlineLayer {
     if (this.canvas.width !== nextW || this.canvas.height !== nextH) {
       this.canvas.width = nextW
       this.canvas.height = nextH
+      this.markProjectionDirty()
     }
     this.canvas.style.width = `${vw}px`
     this.canvas.style.height = `${vh}px`
     this.canvas.style.left = '0px'
     this.canvas.style.top = '0px'
+  }
+
+  private markProjectionDirty() {
+    this.projectionDirty = true
+    this.projectedStrokesByPath = null
+  }
+
+  private ensureProjectedCache() {
+    if (!this.projectionDirty && this.projectedStrokesByPath) return
+    const wraps = streamlineLonWrapOffsets(this.layout.lonWrapOffset)
+    const dpr = this.pixelRatio
+    const w = this.canvas.width
+    const h = this.canvas.height
+    const margin = 40 * dpr
+    const project = (lngLat: [number, number]) => this.map.project(lngLat)
+    this.projectedStrokesByPath = this.paths.map((path) =>
+      projectStreamlinePathStrokes(path, wraps, project, {
+        dpr,
+        canvasWidth: w,
+        canvasHeight: h,
+        margin,
+      }),
+    )
+    this.projectionDirty = false
   }
 
   private draw() {
@@ -391,44 +492,25 @@ export class WindStreamlineLayer {
     ctx.clearRect(0, 0, w, h)
     if (zoom < MIN_VISIBLE_ZOOM || !this.grid || this.paths.length === 0) return
 
-    const wraps = streamlineLonWrapOffsets(this.layout.lonWrapOffset)
-    const dpr = this.pixelRatio
-    const margin = 40 * dpr
+    this.ensureProjectedCache()
+    const projected = this.projectedStrokesByPath
+    if (!projected) return
 
+    const dpr = this.pixelRatio
     ctx.save()
     ctx.lineCap = 'round'
     ctx.lineJoin = 'round'
     ctx.lineWidth = LINE_WIDTH * dpr
 
-    for (let i = 0; i < this.paths.length; i++) {
-      const path = this.paths[i]
-      if (path.length < 2) continue
+    for (let i = 0; i < projected.length; i++) {
+      const strokes = projected[i]
+      if (strokes.length === 0) continue
       const seedPhase = this.seeds[i]?.phase ?? 0
       const localPhase = (this.phase + seedPhase) % 1
+      const phase2 = (localPhase + SECOND_PULSE_OFFSET) % 1
 
-      for (const wrap of wraps) {
-        const pts: Array<{ x: number; y: number; speed: number }> = []
-        let anyOnScreen = false
-        for (const p of path) {
-          const scr = this.map.project([p.lon + wrap, p.lat])
-          const x = scr.x * dpr
-          const y = scr.y * dpr
-          if (x >= -margin && x <= w + margin && y >= -margin && y <= h + margin) {
-            anyOnScreen = true
-          }
-          pts.push({ x, y, speed: p.speed })
-        }
-        if (!anyOnScreen) continue
-
-        // 屏幕弧长累积，相位按弧长而非点序号滑动，速度更匀
-        const cum: number[] = [0]
-        for (let j = 1; j < pts.length; j++) {
-          const dx = pts[j].x - pts[j - 1].x
-          const dy = pts[j].y - pts[j - 1].y
-          cum.push(cum[j - 1] + Math.hypot(dx, dy))
-        }
-        const totalLen = cum[cum.length - 1]
-        if (totalLen < 2) continue
+      for (const stroke of strokes) {
+        const { pts, cum, totalLen } = stroke
 
         // 底迹
         ctx.beginPath()
@@ -439,7 +521,6 @@ export class WindStreamlineLayer {
         ctx.stroke()
 
         // 圆环光滑脉冲：相位 % 1 绕回时亮斑从尾丝滑接到头，无闪回
-        const phase2 = (localPhase + SECOND_PULSE_OFFSET) % 1
         for (let j = 0; j < pts.length - 1; j++) {
           const sMid = ((cum[j] + cum[j + 1]) * 0.5) / totalLen
           const a = Math.max(
@@ -474,5 +555,6 @@ export class WindStreamlineLayer {
     this.grid = null
     this.seeds = []
     this.paths = []
+    this.markProjectionDirty()
   }
 }

@@ -33,21 +33,33 @@ def static_cache_ttl_seconds() -> int:
         return 0
 
 
-def _dir_size_bytes(root: Path) -> int:
+def _dir_size_bytes(root: Path, *, max_files: int = 5000) -> int:
     total = 0
     if not root.exists():
         return 0
+    counted = 0
     for path in root.rglob("*"):
         if path.is_file():
             try:
                 total += path.stat().st_size
+                counted += 1
+                if counted >= max_files:
+                    break
             except OSError:
                 continue
     return total
 
 
-def scan_data_root_datasets() -> list[dict[str, Any]]:
-    """List top-level logical dataset folders under BACKEND_DATA_ROOT."""
+def scan_data_root_datasets(
+    *, include_file_counts: bool = False, max_files_per_dataset: int = 5000
+) -> list[dict[str, Any]]:
+    """List top-level logical dataset folders under BACKEND_DATA_ROOT.
+
+    By default **does not** recursively count every file under each dataset.
+    Full ``rglob`` over a research data root (often tens/hundreds of GB) can
+    block the FastAPI event loop for many seconds and stall the whole settings
+    panel (which loads ``/config/data-source`` on open).
+    """
     root = Path(settings.data_root) if settings.data_root else None
     if root is None or not root.exists():
         return []
@@ -56,16 +68,26 @@ def scan_data_root_datasets() -> list[dict[str, Any]]:
         for child in sorted(root.iterdir()):
             if not child.is_dir():
                 continue
-            file_count = 0
-            try:
-                file_count = sum(1 for p in child.rglob("*") if p.is_file())
-            except OSError:
+            file_count: int | None = None
+            truncated = False
+            if include_file_counts:
                 file_count = 0
+                try:
+                    for p in child.rglob("*"):
+                        if not p.is_file():
+                            continue
+                        file_count += 1
+                        if file_count >= max_files_per_dataset:
+                            truncated = True
+                            break
+                except OSError:
+                    file_count = 0
             items.append(
                 {
                     "name": child.name,
                     "path": str(child),
                     "file_count": file_count,
+                    "file_count_truncated": truncated,
                 }
             )
     except OSError:
@@ -82,7 +104,11 @@ def get_data_cache_overview() -> dict[str, Any]:
             if not path.is_file() and not path.is_dir():
                 continue
             try:
-                size = path.stat().st_size if path.is_file() else _dir_size_bytes(path)
+                # 仅统计顶层条目体积：目录用浅层估算，避免 materialize 树 rglob 卡死
+                if path.is_file():
+                    size = path.stat().st_size
+                else:
+                    size = _dir_size_bytes(path, max_files=2000)
                 mtime = path.stat().st_mtime
             except OSError:
                 continue
@@ -105,7 +131,8 @@ def get_data_cache_overview() -> dict[str, Any]:
         "entries": entries[:200],
         "data_root": settings.data_root or "",
         "output_root": settings.output_root or "",
-        "discovered_datasets": scan_data_root_datasets(),
+        # 概览接口不再触发数据根全量扫描
+        "discovered_datasets": [],
     }
 
 

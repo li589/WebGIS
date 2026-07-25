@@ -126,6 +126,16 @@ class PythonProviderResultBuilder:
                 result_dto=result_dto,
             )
         )
+
+        # Multi-output support: create individual file-kind result_refs for
+        # each product in result_dto.products (e.g. SM / VOD / OMEGA).
+        result_refs.extend(
+            self._build_product_refs(
+                run_id=run_id,
+                requested_at=requested_at,
+                result_dto=result_dto,
+            )
+        )
         return result_refs
 
     # ------------------------------------------------------------------
@@ -184,6 +194,128 @@ class PythonProviderResultBuilder:
             if artifact_ref is not None:
                 artifact_refs.append(artifact_ref)
         return artifact_refs
+
+    # ------------------------------------------------------------------
+    # Product refs (multi-output: SM / VOD / OMEGA)
+    # ------------------------------------------------------------------
+
+    def _build_product_refs(
+        self,
+        *,
+        run_id: str,
+        requested_at: datetime,
+        result_dto: dict[str, Any],
+    ) -> list[WorkflowResultReference]:
+        """Build individual file-kind result_refs for each product output.
+
+        Iterates ``result_dto.products`` (populated from the algorithm
+        manifest) and creates a separate ref for each product with a
+        resolvable URI. This enables the frontend to link directly to
+        individual output layers (e.g. SM, VOD, OMEGA) rather than only
+        the aggregate json result.
+        """
+        products = result_dto.get("products")
+        if not isinstance(products, list):
+            return []
+        product_refs: list[WorkflowResultReference] = []
+        for idx, product in enumerate(products):
+            if not isinstance(product, dict):
+                continue
+            ref = self._build_product_ref(
+                run_id=run_id,
+                requested_at=requested_at,
+                product=product,
+                index=idx,
+            )
+            if ref is not None:
+                product_refs.append(ref)
+        return product_refs
+
+    def _build_product_ref(
+        self,
+        *,
+        run_id: str,
+        requested_at: datetime,
+        product: dict[str, Any],
+        index: int,
+    ) -> WorkflowResultReference | None:
+        """Build a single product result_ref.
+
+        Resolution order for the product URI:
+        1. ``download_url``
+        2. ``preview_url``
+        3. ``uri``
+
+        If the URI resolves to a local file that exists, the file is
+        spilled to object storage via ``result_storage_service``. Otherwise
+        an external URL-backed ref is returned.
+        """
+        uri = str(
+            product.get("download_url")
+            or product.get("preview_url")
+            or product.get("uri")
+            or ""
+        ).strip()
+        if not uri:
+            return None
+
+        product_type = str(product.get("type") or "raster")
+        variable = str(product.get("variable") or "")
+        tags = as_dict(product.get("tags"))
+        layer_label = str(tags.get("layer") or variable or product_type)
+
+        # Title must be US-ASCII (Celery metadata constraint)
+        title = f"Algorithm Output: {layer_label}"
+        mime_type = self._infer_product_mime_type(uri, product_type)
+
+        local_path = self._uri_to_local_path(uri)
+        if local_path is not None and local_path.exists() and local_path.is_file():
+            payload = local_path.read_bytes()
+            return result_storage_service.create_artifact_result_ref(
+                run_id=run_id,
+                result_id=f"algorithm-product-{index}-{run_id[-8:]}",
+                result_kind=ResultKind.file,
+                title=title,
+                mime_type=mime_type,
+                updated_at=requested_at,
+                payload=payload,
+            )
+
+        # External URL-backed ref
+        resource_backend = str(product.get("storage_backend") or "external")
+        resource_key = str(product.get("object_key") or uri)
+        return WorkflowResultReference(
+            result_id=f"algorithm-product-{index}-{run_id[-8:]}",
+            result_kind=ResultKind.file,
+            title=title,
+            mime_type=mime_type,
+            resource_url=uri,
+            resource_backend=resource_backend,
+            resource_key=resource_key,
+            updated_at=requested_at,
+        )
+
+    @staticmethod
+    def _infer_product_mime_type(uri: str, product_type: str) -> str:
+        """Infer MIME type from URI extension or product type."""
+        lower_uri = uri.lower()
+        if lower_uri.endswith((".tif", ".tiff")):
+            return "image/tiff"
+        if lower_uri.endswith(".nc"):
+            return "application/x-netcdf"
+        if lower_uri.endswith((".h5", ".hdf5")):
+            return "application/x-hdf5"
+        if lower_uri.endswith((".hdf", ".he5")):
+            return "application/x-hdf"
+        if lower_uri.endswith(".mat"):
+            return "application/x-matlab-data"
+        if lower_uri.endswith(".json"):
+            return "application/json"
+        if lower_uri.endswith(".csv"):
+            return "text/csv"
+        if "raster" in product_type.lower() or "omega" in product_type.lower():
+            return "image/tiff"
+        return "application/octet-stream"
 
     def _build_artifact_ref(
         self,

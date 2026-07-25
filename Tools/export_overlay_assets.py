@@ -54,10 +54,10 @@ _OUT_ROOT = Path(r"I:\Geograph_DataSet\ProjectOutput\2023-01_Omega_Inversion\_ov
 _CHINA_BBOX = (73.0, 15.0, 137.0, 59.0)
 
 # ── Phase 1.6: 课题组时间序列源数据目录（与 overlay_registry.py 同步）──────────
-_INVERSION_RESULTS_ROOT = Path(r"I:\Geograph_DataSet\InversionResults")
+_INVERSION_RESULTS_ROOT = Path(r"I:\Geograph_DataSet\Inversion_Results")
 _OMEGA_SMAP_AVG_DIR = _INVERSION_RESULTS_ROOT / "smap_avg"
 _OMEGA_FY_AVG_DIR = _INVERSION_RESULTS_ROOT / "fy_avg"
-_SOIL_DDCA_H_DIR = Path(r"I:\Geograph_DataSet\Soil_Ecological_Data\DDCA\DDCA_DH\H")
+_SOIL_DDCA_H_DIR = Path(r"I:\Geograph_DataSet\Soil_Moisture\DDCA\DDCA_DH\H")
 _LANDSCAPE_METRICS_MAT = (
     _INVERSION_RESULTS_ROOT / "Landscape_Metrics_LandOnly_9KM_2020.mat"
 )
@@ -65,12 +65,12 @@ _LANDSCAPE_METRICS_MAT = (
 # ── Phase 2: 课题组 VOD/SM 产品族（2025-12 时间序列，EASE-Grid 9km）──────────
 # SmapSoil_VOD_SM/YYYYMMDD.mat (v7.3 HDF5) 含 OMEGA / SM / VOD 三个变量，shape (1624, 3856)
 _SMAP_SOIL_VOD_SM_DIR = Path(
-    r"I:\Geograph_DataSet\Soil_Ecological_Data\SmapSoil_VOD_SM"
+    r"I:\Geograph_DataSet\Soil_Moisture\SMAP_Soil_VOD_SM"
 )
 
 
 def _doy_time_list(directory: Path, prefix: str = "doy_") -> list[str]:
-    """从 InversionResults/smap_avg|fy_avg 目录推断 doy 时间序列标签。
+    """从 Inversion_Results/smap_avg|fy_avg 目录推断 doy 时间序列标签。
 
     文件名形如 ``doy_017.mat`` → 标签 ``'017'``。
     与 overlay_registry.py 中的同名 helper 保持一致，确保导出的 PNG 时间标签
@@ -89,7 +89,7 @@ def _doy_time_list(directory: Path, prefix: str = "doy_") -> list[str]:
 
 
 def _soil_ddca_time_list(limit: int = 60) -> list[str]:
-    """从 Soil_Ecological_Data/DDCA/DDCA_DH/H 目录推断日期时间序列标签。
+    """从 Soil_Moisture/DDCA/DDCA_DH/H 目录推断日期时间序列标签。
 
     文件名形如 ``20150401.mat`` → 标签 ``'20150401'``。
     限制最多 limit 个标签（均匀采样），与 overlay_registry.py 中的同名 helper 一致。
@@ -866,7 +866,12 @@ def export_gpcp_ts() -> None:
 
 def export_gebco_dem() -> None:
     print("\n=== GEBCO 2024 DEM (China) ===")
-    nc_path = Path(r"I:\Geograph_DataSet\DEM\GEBCO_2024.nc")
+    # 与 overlay_registry._GEBCO_NC 对齐
+    nc_path = Path(r"I:\Geograph_DataSet\Geological\DEM\GEBCO_2024.nc")
+    if not nc_path.exists():
+        # 旧路径兼容
+        alt = Path(r"I:\Geograph_DataSet\DEM\GEBCO_2024.nc")
+        nc_path = alt if alt.exists() else nc_path
     if not nc_path.exists():
         print("  [SKIP] File not found")
         return
@@ -1348,7 +1353,7 @@ def export_omega_fy_ts() -> None:
 
 def export_forest_ratio() -> None:
     print("\n=== Forest Ratio 9KM 2020 ===")
-    mat_path = Path(r"I:\Geograph_DataSet\InversionResults\Forest_Ratio_9KM_2020.mat")
+    mat_path = Path(r"I:\Geograph_DataSet\Inversion_Results\Forest_Ratio_9KM_2020.mat")
     if not mat_path.exists():
         print("  [SKIP] File not found")
         return

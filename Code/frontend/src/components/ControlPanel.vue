@@ -1,6 +1,15 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import BasePanel from './BasePanel.vue'
+import {
+  clampPanelDim,
+  clampPanelOffset,
+  isRightDockedPanel,
+  nextSizeFromResizeDelta,
+  offsetXToPinRightEdge,
+  offsetYToPinBottomEdge,
+  shouldCompensateOffsetOnResize,
+} from './control-panel-geometry'
 
 const props = withDefaults(
   defineProps<{
@@ -74,8 +83,6 @@ const panelHeight = ref(persistedState?.height ?? props.defaultHeight)
 const userResized = ref(Boolean(persistedState?.width || persistedState?.height))
 const persistTimer = ref<number | null>(null)
 
-const viewportEdgePadding = 12
-
 const resolvedMinWidth = computed(() => Math.max(220, props.minWidth))
 const resolvedMinHeight = computed(() => Math.max(120, props.minHeight))
 const resolvedMaxWidth = computed(() => Math.max(resolvedMinWidth.value, props.maxWidth))
@@ -96,7 +103,6 @@ const bodyClass = computed(() => [
   'panel-body',
   { 'panel-body--mobile': isMobile.value, 'panel-body--hidden': props.bodyOverflow === 'hidden' },
 ])
-const anchorRef = ref<HTMLElement | null>(null)
 const collapsedHeight = computed(() =>
   collapsed.value ? 'var(--panel-collapsed-height)' : undefined,
 )
@@ -118,13 +124,20 @@ let dragStartX = 0
 let dragStartY = 0
 let baseOffsetX = 0
 let baseOffsetY = 0
-let dragging = false
+const dragging = ref(false)
 let resizeStartX = 0
 let resizeStartY = 0
 let baseWidth = 0
 let baseHeight = 0
-let baseRightEdge = 0
-let resizing = false
+let baseResizeOffsetX = 0
+let baseResizeOffsetY = 0
+const resizing = ref(false)
+
+const layoutPinsRightEdge = computed(() => isRightDockedPanel(props.panelKey))
+const anchorClass = computed(() => ({
+  'panel-anchor--dock-right': layoutPinsRightEdge.value,
+  'panel-anchor--interacting': dragging.value || resizing.value,
+}))
 
 const frameStyle = computed(() => ({
   transform: `translate(${offsetX.value}px, ${offsetY.value}px)`,
@@ -165,45 +178,30 @@ function showPanel() {
   visible.value = true
 }
 
-function clampOffset(value: number, limit: number) {
-  return Math.min(limit, Math.max(-limit, value))
-}
-
 function clampPanelWidth(value: number) {
-  return Math.min(resolvedMaxWidth.value, Math.max(resolvedMinWidth.value, value))
+  return clampPanelDim(value, resolvedMinWidth.value, resolvedMaxWidth.value)
 }
 
 function clampPanelHeight(value: number) {
-  return Math.min(resolvedMaxHeight.value, Math.max(resolvedMinHeight.value, value))
-}
-
-function getAnalysisRightEdgeLimit() {
-  const rect = anchorRef.value?.getBoundingClientRect()
-  if (!rect || typeof window === 'undefined') return baseRightEdge
-  return Math.min(baseRightEdge, window.innerWidth - rect.left - viewportEdgePadding)
-}
-
-function clampAnalysisLeftAnchoredWidth(width: number, rightEdge: number) {
-  const maxVisibleWidth = Math.max(resolvedMinWidth.value, rightEdge - viewportEdgePadding)
-  const boundedMaxWidth = Math.min(resolvedMaxWidth.value, maxVisibleWidth)
-  return Math.min(boundedMaxWidth, Math.max(resolvedMinWidth.value, width))
+  return clampPanelDim(value, resolvedMinHeight.value, resolvedMaxHeight.value)
 }
 
 function handlePointerMove(event: PointerEvent) {
-  if (!dragging) return
-  offsetX.value = clampOffset(baseOffsetX + event.clientX - dragStartX, props.maxOffsetX)
-  offsetY.value = clampOffset(baseOffsetY + event.clientY - dragStartY, props.maxOffsetY)
+  if (!dragging.value) return
+  // 拖动只改位置记忆，不改宽高
+  offsetX.value = clampPanelOffset(baseOffsetX + event.clientX - dragStartX, props.maxOffsetX)
+  offsetY.value = clampPanelOffset(baseOffsetY + event.clientY - dragStartY, props.maxOffsetY)
 }
 
 function stopDragging() {
-  dragging = false
+  dragging.value = false
   window.removeEventListener('pointermove', handlePointerMove)
   window.removeEventListener('pointerup', stopDragging)
 }
 
 function startDragging(event: PointerEvent) {
   if (!props.draggable || window.innerWidth < 900) return
-  dragging = true
+  dragging.value = true
   dragStartX = event.clientX
   dragStartY = event.clientY
   baseOffsetX = offsetX.value
@@ -213,42 +211,56 @@ function startDragging(event: PointerEvent) {
 }
 
 function handleResizeMove(event: PointerEvent) {
-  if (!resizing) return
+  if (!resizing.value) return
   userResized.value = true
   const deltaX = event.clientX - resizeStartX
   const deltaY = event.clientY - resizeStartY
-  const resizingFromLeft =
-    props.handlePosition === 'bottom-left' || props.handlePosition === 'top-left'
-  const resizingFromTop =
-    props.handlePosition === 'top-left' || props.handlePosition === 'top-right'
-  const nextWidth = resizingFromLeft ? baseWidth - deltaX : baseWidth + deltaX
-  const nextHeight = resizingFromTop ? baseHeight - deltaY : baseHeight + deltaY
-  const clampedHeight = clampPanelHeight(nextHeight)
+  const raw = nextSizeFromResizeDelta({
+    handlePosition: props.handlePosition,
+    baseWidth,
+    baseHeight,
+    deltaX,
+    deltaY,
+  })
+  const clampedWidth = clampPanelWidth(raw.width)
+  const clampedHeight = clampPanelHeight(raw.height)
+  panelWidth.value = clampedWidth
+  panelHeight.value = clampedHeight
 
-  if (props.panelKey === 'analysis') {
-    const rightEdge = getAnalysisRightEdgeLimit()
-    const clampedWidth = clampAnalysisLeftAnchoredWidth(nextWidth, rightEdge)
-    panelWidth.value = clampedWidth
-    panelHeight.value = clampedHeight
-    offsetX.value = rightEdge - clampedWidth
-  } else {
-    const clampedWidth = clampPanelWidth(nextWidth)
-    panelWidth.value = clampedWidth
-    panelHeight.value = clampedHeight
-    if (resizingFromLeft) {
-      const nextRightEdge = baseOffsetX + baseWidth
-      offsetX.value = clampOffset(nextRightEdge - clampedWidth, props.maxOffsetX)
-    }
+  // 分析框等右侧 dock：CSS 已钉右上，只改尺寸，不改 offset（位置记忆保持）
+  // 其它面板：左/上手柄时用 transform 钉住对边
+  if (
+    !shouldCompensateOffsetOnResize({
+      panelKey: props.panelKey,
+      handlePosition: props.handlePosition,
+      layoutPinsRightEdge: layoutPinsRightEdge.value,
+    })
+  ) {
+    return
   }
 
-  if (resizingFromTop) {
-    const bottomEdge = baseOffsetY + baseHeight
-    offsetY.value = clampOffset(bottomEdge - clampedHeight, props.maxOffsetY)
+  const fromLeft = props.handlePosition === 'bottom-left' || props.handlePosition === 'top-left'
+  const fromTop = props.handlePosition === 'top-left' || props.handlePosition === 'top-right'
+  if (fromLeft) {
+    offsetX.value = offsetXToPinRightEdge(
+      baseResizeOffsetX,
+      baseWidth,
+      clampedWidth,
+      props.maxOffsetX,
+    )
+  }
+  if (fromTop) {
+    offsetY.value = offsetYToPinBottomEdge(
+      baseResizeOffsetY,
+      baseHeight,
+      clampedHeight,
+      props.maxOffsetY,
+    )
   }
 }
 
 function stopResizing() {
-  resizing = false
+  resizing.value = false
   window.removeEventListener('pointermove', handleResizeMove)
   window.removeEventListener('pointerup', stopResizing)
 }
@@ -256,16 +268,13 @@ function stopResizing() {
 function startResizing(event: PointerEvent) {
   if (!resizeEnabled.value) return
   event.preventDefault()
-  resizing = true
+  resizing.value = true
   resizeStartX = event.clientX
   resizeStartY = event.clientY
   baseWidth = panelWidth.value || props.defaultWidth || resolvedMinWidth.value
   baseHeight = panelHeight.value || props.defaultHeight || resolvedMinHeight.value
-  baseRightEdge = offsetX.value + baseWidth
-  if (props.panelKey === 'analysis') {
-    baseRightEdge = getAnalysisRightEdgeLimit()
-    offsetX.value = baseRightEdge - baseWidth
-  }
+  baseResizeOffsetX = offsetX.value
+  baseResizeOffsetY = offsetY.value
   window.addEventListener('pointermove', handleResizeMove)
   window.addEventListener('pointerup', stopResizing)
 }
@@ -290,6 +299,7 @@ watch([visible, collapsed, offsetX, offsetY, panelWidth, panelHeight], () => {
   if (typeof window === 'undefined' || !props.panelKey) return
   if (persistTimer.value !== null) window.clearTimeout(persistTimer.value)
   persistTimer.value = window.setTimeout(() => {
+    // 位置与尺寸分字段持久化：仅拖动时只更新 offset；仅缩放时才写入 width/height
     const nextState: PersistedPanelState = {
       visible: visible.value,
       collapsed: collapsed.value,
@@ -307,7 +317,7 @@ defineExpose({ showPanel, hidePanel, resetPanel, toggleCollapsed })
 </script>
 
 <template>
-  <div ref="anchorRef" class="panel-anchor" :style="frameStyle">
+  <div class="panel-anchor" :class="anchorClass" :style="frameStyle">
     <button v-if="!visible" class="restore-pill" type="button" @click="showPanel">
       <svg viewBox="0 0 16 16" aria-hidden="true">
         <path
@@ -400,10 +410,24 @@ defineExpose({ showPanel, hidePanel, resetPanel, toggleCollapsed })
   pointer-events: auto;
   will-change: transform;
   transition: transform 0.18s cubic-bezier(0.25, 0.46, 0.45, 0.94);
-  width: 100%;
-  height: 100%;
-  display: inline-block;
+  /* 收缩到面板实际尺寸，避免占满 overlay 导致左下缩放时右上角跟着跑 */
+  width: fit-content;
+  height: fit-content;
+  max-width: 100%;
+  display: block;
   min-width: 200px;
+}
+.panel-anchor--dock-right {
+  /* 右侧 dock：不被窄 overlay 的 100% 卡住；右缘由父级 right + max-content 钉住 */
+  max-width: calc(100vw - 1.6rem);
+  margin-inline-start: auto;
+}
+.panel-anchor--dock-right :deep(.control-panel) {
+  /* 若锚点偶发宽于面板，仍靠右生长 */
+  margin-inline-start: auto;
+}
+.panel-anchor--interacting {
+  transition: none;
 }
 .restore-pill {
   display: inline-flex;

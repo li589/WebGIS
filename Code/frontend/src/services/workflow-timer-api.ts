@@ -90,6 +90,28 @@ export interface TickStats {
   skipped: number
 }
 
+export interface CronPreviewResult {
+  cron_expr: string
+  next_times: string[]
+}
+
+/** 支持的动态日期模板（与后端 resolve_date_templates 对齐） */
+export const DATE_TEMPLATES: Array<{ key: string; label: string; description: string }> = [
+  { key: '{{today}}', label: '今天', description: '当前日期 YYYYMMDD' },
+  { key: '{{yesterday}}', label: '昨天', description: '昨日 YYYYMMDD' },
+  { key: '{{tomorrow}}', label: '明天', description: '明日 YYYYMMDD' },
+  { key: '{{last_7_days_start}}', label: '近7天起', description: '7天前 YYYYMMDD' },
+  { key: '{{last_7_days_end}}', label: '近7天止', description: '昨日 YYYYMMDD' },
+  { key: '{{last_30_days_start}}', label: '近30天起', description: '30天前 YYYYMMDD' },
+  { key: '{{last_30_days_end}}', label: '近30天止', description: '昨日 YYYYMMDD' },
+  { key: '{{this_month_start}}', label: '本月起', description: '本月1日 YYYYMMDD' },
+  { key: '{{this_month_end}}', label: '本月止', description: '今日 YYYYMMDD' },
+  { key: '{{last_month_start}}', label: '上月起', description: '上月1日 YYYYMMDD' },
+  { key: '{{last_month_end}}', label: '上月止', description: '上月末 YYYYMMDD' },
+  { key: '{{this_year_start}}', label: '本年起', description: '本年1月1日 YYYYMMDD' },
+  { key: '{{this_year_end}}', label: '本年止', description: '今日 YYYYMMDD' },
+]
+
 // ─── API 调用层 ────────────────────────────────────────────────────────────
 const BASE = '/workflow-timers'
 
@@ -141,4 +163,11 @@ export async function emitWorkflowEvent(payload: EmitEventPayload): Promise<Emit
 
 export async function manualTickTimers(): Promise<TickStats> {
   return requestJson<TickStats>(`${BASE}/tick`, { method: 'POST' })
+}
+
+export async function previewCron(cronExpr: string, count: number = 5): Promise<CronPreviewResult> {
+  return requestJson<CronPreviewResult>(`${BASE}/cron-preview`, {
+    method: 'POST',
+    body: JSON.stringify({ cron_expr: cronExpr, count }),
+  })
 }

@@ -16,7 +16,7 @@ print("Login OK")
 
 # Test 1: small .mat file (~3.2 MB)
 remote = "/Liuzheng/omega_final/smap_avg_ω/doy_017.mat"
-local = LOCAL_ROOT / "InversionResults" / "doy_017.mat"
+local = LOCAL_ROOT / "Inversion_Results" / "doy_017.mat"
 print(f"Downloading: {remote}")
 print(f"-> {local}")
 size = client.download_file(remote, local)

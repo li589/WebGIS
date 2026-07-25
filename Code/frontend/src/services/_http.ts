@@ -19,6 +19,81 @@
 import { withWriteAuthHeaders } from './backend-auth'
 import { useUiLoadingStore } from '../stores/ui-loading'
 
+/**
+ * 字段级校验问题，对应后端 WorkflowValidationError 的 issues 元素。
+ */
+export interface ValidationIssue {
+  /** 字段路径，如 "algorithm_params.mode" / "datasource_selection.input_dir"。 */
+  field: string
+  /** 人类可读的校验错误描述。 */
+  message: string
+}
+
+/**
+ * 提交期参数预校验错误。
+ *
+ * 后端 submission_service 在提交阶段调用 validate_request_against_template
+ * 做静态校验，失败时返回 422 + {"error_type":"validation","issues":[...]}。
+ * 本类携带字段级 issues 列表，供调用方（如表单组件）定位具体字段并展示
+ * 行内错误，而非仅显示一个笼统的错误消息。
+ *
+ * 调用方可用 `instanceof WorkflowValidationError` 区分校验错误与其他
+ * 网络/服务器错误，进而决定是否把 issues 映射到表单字段。
+ */
+export class WorkflowValidationError extends Error {
+  /** 字段级校验问题列表，供 UI 定位具体表单字段。 */
+  readonly issues: ValidationIssue[]
+  /** HTTP 状态码（通常为 422）。 */
+  readonly status: number
+  /** 请求路径，便于调试。 */
+  readonly path: string
+
+  constructor(message: string, issues: ValidationIssue[], path = '', status = 422) {
+    super(message)
+    this.name = 'WorkflowValidationError'
+    this.issues = issues
+    this.status = status
+    this.path = path
+  }
+}
+
+/**
+ * 从后端错误响应体中提取结构化校验负载。
+ *
+ * 兼容两种返回格式：
+ *   1. FastAPI HTTPException 包裹：{"detail": {"error_type": "validation", ...}}
+ *   2. 扁平结构：{"error_type": "validation", ...}
+ *
+ * 非 validation 类型或不包含 issues 数组时返回 null。
+ */
+function extractValidationPayload(
+  errorBody: any,
+): { user_message?: string; issues: ValidationIssue[] } | null {
+  if (!errorBody || typeof errorBody !== 'object') return null
+  // 扁平结构
+  if (errorBody.error_type === 'validation' && Array.isArray(errorBody.issues)) {
+    return {
+      user_message: typeof errorBody.user_message === 'string' ? errorBody.user_message : undefined,
+      issues: errorBody.issues as ValidationIssue[],
+    }
+  }
+  // FastAPI HTTPException 包裹在 detail 里
+  const detail = errorBody.detail
+  if (
+    detail &&
+    typeof detail === 'object' &&
+    !Array.isArray(detail) &&
+    detail.error_type === 'validation' &&
+    Array.isArray(detail.issues)
+  ) {
+    return {
+      user_message: typeof detail.user_message === 'string' ? detail.user_message : undefined,
+      issues: detail.issues as ValidationIssue[],
+    }
+  }
+  return null
+}
+
 export function getApiBaseUrl(): string {
   // 开发模式走 Vite proxy（相对路径），避免 CORS 问题
   if (import.meta.env.DEV) return ''
@@ -49,6 +124,8 @@ export interface RequestJsonInit extends RequestInit {
  *   3. 默认 30s 超时，通过 AbortController 实现；外部 init.signal 优先于超时 signal。
  *   4. 非 silent 请求触发全局 loading（300ms 延迟显示，避免短请求闪烁，由 store 实现）。
  *   5. 错误响应解析顺序：user_message → error → detail → JSON.stringify(body) → text。
+ *      若响应体为结构化校验错误（error_type="validation" + issues 数组），
+ *      抛出 WorkflowValidationError（携带字段级 issues）而非普通 Error。
  *   6. allowEmpty=true 且状态码 204 时返回 undefined as T；否则统一 await response.json()。
  *
  * 量纲：timeoutMs 单位毫秒；HTTP status 单位为 status code。
@@ -87,16 +164,29 @@ export async function requestJson<T>(path: string, init?: RequestJsonInit): Prom
 
     if (!response.ok) {
       // 解析结构化错误体（兼容 user_message / error / detail 三种字段命名）
+      let errorBody: any = null
       let errorDetail = ''
       try {
-        const errorBody = await response.json()
+        errorBody = await response.json()
         errorDetail =
-          errorBody?.user_message ||
-          errorBody?.error ||
-          errorBody?.detail ||
+          (typeof errorBody?.user_message === 'string' && errorBody.user_message) ||
+          (typeof errorBody?.error === 'string' && errorBody.error) ||
+          (typeof errorBody?.detail === 'string' ? errorBody.detail : '') ||
           JSON.stringify(errorBody)
       } catch {
         errorDetail = await response.text().catch(() => '')
+      }
+      // 结构化校验错误：携带字段级 issues 供 UI 定位具体表单字段。
+      // 后端 FastAPI HTTPException 把 detail 包在 {"detail": {...}} 里，
+      // extractValidationPayload 兼容扁平与包裹两种格式。
+      const validationPayload = extractValidationPayload(errorBody)
+      if (validationPayload) {
+        throw new WorkflowValidationError(
+          validationPayload.user_message || '参数校验失败',
+          validationPayload.issues,
+          path,
+          response.status,
+        )
       }
       throw new Error(
         `Request failed: ${response.status} ${path}${errorDetail ? ` - ${errorDetail}` : ''}`,

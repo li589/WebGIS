@@ -8,8 +8,12 @@ to break the circular dependency: submission → lifecycle → submission.
 from __future__ import annotations
 
 from datetime import datetime, timezone
+import importlib
 import json
 import logging
+import re
+from pathlib import Path
+from types import SimpleNamespace
 from typing import TYPE_CHECKING
 from uuid import uuid4
 
@@ -17,7 +21,11 @@ from celery.exceptions import SoftTimeLimitExceeded
 
 from app.core.config import settings
 from app.core.logging import ensure_logging_configured, log_context
-from app.services.workflow_request_resolver import normalize_workflow_submit_request
+from app.services.workflow_request_resolver import (
+    _normalize_algorithm_request,
+    _python_provider_import_path,
+    normalize_workflow_submit_request,
+)
 from app.services.workflow_repository import SQLiteWorkflowRepository
 from app.services.workflow.persistence_service import WorkflowPersistenceService
 from app.services.workflow.transition_builder import (
@@ -41,6 +49,7 @@ from shared.contracts.api_contracts import (
     ExecutionStatus,
     LogLevel,
     WorkflowAcceptedResponse,
+    WorkflowCommandType,
     WorkflowEventsResponse,
     WorkflowRunStatusResponse,
     WorkflowSubmitRequest,
@@ -51,6 +60,56 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 ensure_logging_configured()
+
+
+class WorkflowValidationError(ValueError):
+    """提交期参数预校验失败。
+
+    携带结构化 issue 列表（``[{"field": ..., "message": ...}]``），供
+    ``workflow_router`` 转为 422 响应。继承 ``ValueError`` 以兼容既有
+    "校验失败用 ValueError" 的约定，但 router 会优先捕获本类型以返回
+    字段级定位信息。
+    """
+
+    def __init__(self, issues: list[dict[str, str]]) -> None:
+        self.issues = issues
+        super().__init__(self._format_message(issues))
+
+    @staticmethod
+    def _format_message(issues: list[dict[str, str]]) -> str:
+        if not issues:
+            return "workflow request validation failed"
+        return "; ".join(
+            f"[{item.get('field', '?')}] {item.get('message', '')}".rstrip()
+            for item in issues
+        )
+
+
+# validate_request_against_template 返回的字符串错误 → {field, message} 的映射规则。
+# 按错误消息前缀匹配，提取出字段路径供前端定位。
+_TEMPLATE_ERROR_PATTERNS: tuple[tuple[re.Pattern[str], str], ...] = (
+    (
+        re.compile(r"^Missing required datasource key: '([^']*)'"),
+        "datasource_selection",
+    ),
+    (re.compile(r"^Missing required algorithm param: '([^']*)'"), "algorithm_params"),
+    (re.compile(r"^algorithm param '([^']*)'"), "algorithm_params"),
+    (
+        re.compile(r"^dataset '([^']*)'"),
+        "datasource_selection._data_access_requests",
+    ),
+)
+
+
+def _template_error_to_issue(message: str) -> dict[str, str]:
+    """把 ``validate_request_against_template`` 的字符串错误转为 ``{field, message}``。"""
+    for pattern, prefix in _TEMPLATE_ERROR_PATTERNS:
+        match = pattern.match(message)
+        if match:
+            return {"field": f"{prefix}.{match.group(1)}", "message": message}
+    if message.startswith("task_type "):
+        return {"field": "task_type", "message": message}
+    return {"field": "_unknown", "message": message}
 
 
 class WorkflowSubmissionService:
@@ -96,6 +155,7 @@ class WorkflowSubmissionService:
         with log_context(run_id=run_id):
             self._assert_workflow_capacity(run_class)
             self._validate_requested_outputs(payload)
+            self._validate_request_params(payload)
             logger.info("Workflow accepted run_class=%s", run_class)
             accepted_at = now
             queued_at = datetime.now(timezone.utc)
@@ -357,4 +417,60 @@ class WorkflowSubmissionService:
         if len(payload.requested_outputs) > limit:
             raise ValueError(
                 f"Requested outputs exceed limit: count={len(payload.requested_outputs)}, limit={limit}"
+            )
+
+    def _validate_request_params(self, payload: WorkflowSubmitRequest) -> None:
+        """提交期参数预校验。仅校验可静态检查的参数，不阻塞未知的可选参数。
+
+        对于 ``command_type == "analysis"`` 且携带 ``module_name`` 的请求，
+        尝试用 Python provider 的 ``RequestTemplateSpec`` 做静态校验
+        （required datasource/algorithm keys、allowed_task_types、
+        allowed_algorithm_values 等）。校验失败时抛出
+        :class:`WorkflowValidationError`，由 router 转为 422 结构化响应。
+
+        跳过条件（不阻塞提交，让执行阶段处理）：
+        - 非 analysis 命令；
+        - 无 module_name（workflow_definition / workflow_name 模式，图编译时校验）；
+        - python provider root 不存在；
+        - 未知 module（无模板）；
+        - 模板导入/校验过程异常（降级跳过，避免阻断提交链路）。
+        """
+        if payload.command_type != WorkflowCommandType.analysis:
+            return
+        algo_req = _normalize_algorithm_request(payload.algorithm_request)
+        module_name = algo_req.get("module_name")
+        if not module_name:
+            # workflow_definition 模式：跳过模板校验（图编译时校验）
+            return
+        provider_root = Path(settings.python_provider_root)
+        if not provider_root.exists():
+            return
+        errors: list[str] = []
+        try:
+            with _python_provider_import_path(provider_root):
+                deriver = importlib.import_module("contracts.template_deriver")
+                template = deriver.get_module_request_template(module_name)
+                if template is None:
+                    return  # 未知模块：跳过，让执行阶段处理
+                # validate_request_against_template 通过属性访问（duck typing）读取
+                # task_type / datasource_selection / algorithm_params，用 SimpleNamespace
+                # 构造轻量代理，避免实例化完整 JobRequest（需要 time_range/region 等必填字段）。
+                request_proxy = SimpleNamespace(
+                    task_type=algo_req.get("task_type") or module_name,
+                    datasource_selection=algo_req.get("datasource_selection") or {},
+                    algorithm_params=algo_req.get("algorithm_params") or {},
+                )
+                _, errors = deriver.validate_request_against_template(
+                    request_proxy, template
+                )
+        except Exception:
+            logger.debug(
+                "Submission-time template validation skipped for module=%s",
+                module_name,
+                exc_info=True,
+            )
+            return
+        if errors:
+            raise WorkflowValidationError(
+                [_template_error_to_issue(msg) for msg in errors]
             )

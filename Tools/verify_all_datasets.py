@@ -163,8 +163,8 @@ def main():
             "variable": None,
         },
         {
-            "label": "InversionResults smap_avg doy_017 (MAT)",
-            "file": str(DATA_ROOT / "InversionResults" / "smap_avg" / "doy_017.mat"),
+            "label": "Inversion_Results smap_avg doy_017 (MAT)",
+            "file": str(DATA_ROOT / "Inversion_Results" / "smap_avg" / "doy_017.mat"),
             "variable": "omega",
         },
         # ── 待验证数据集 ──
@@ -249,7 +249,7 @@ def main():
             "label": "Soil DDCA 20150401 (MAT)",
             "file": str(
                 DATA_ROOT
-                / "Soil_Ecological_Data"
+                / "Soil_Moisture"
                 / "DDCA"
                 / "DDCA_DH"
                 / "H"
@@ -257,16 +257,16 @@ def main():
             ),
             "variable": None,  # 先列出变量
         },
-        # InversionResults fy_avg
+        # Inversion_Results fy_avg
         {
-            "label": "InversionResults fy_avg doy_025 (MAT)",
-            "file": str(DATA_ROOT / "InversionResults" / "fy_avg" / "doy_025.mat"),
+            "label": "Inversion_Results fy_avg doy_025 (MAT)",
+            "file": str(DATA_ROOT / "Inversion_Results" / "fy_avg" / "doy_025.mat"),
             "variable": None,
         },
         # Forest Ratio
         {
             "label": "Forest_Ratio_9KM_2020 (MAT)",
-            "file": str(DATA_ROOT / "InversionResults" / "Forest_Ratio_9KM_2020.mat"),
+            "file": str(DATA_ROOT / "Inversion_Results" / "Forest_Ratio_9KM_2020.mat"),
             "variable": None,
         },
     ]

@@ -178,8 +178,8 @@ def extract_data_paths(notes: list[str]) -> list[str]:
 
     格式示例：
       "数据源: I:/Geograph_DataSet/DEM/ETOPO_2022/ETOPO_2022_v1_60s_N90W180_surface.tif"
-      "数据源: I:/Geograph_DataSet/SMAP/SMAP_L3_SM_P_*.h5 (19 files)"
-      "数据源: I:/Geograph_DataSet/Soil_Ecological_Data/SmapSoil_VOD_SM/YYYYMMDD.mat#OMEGA (31 files, v7.3 HDF5)"
+      "数据源: I:/Geograph_DataSet/Soil_Moisture/SMAP/SMAP_L3_SM_P_*.h5 (19 files)"
+      "数据源: I:/Geograph_DataSet/Soil_Moisture/SMAP_Soil_VOD_SM/YYYYMMDD.mat#OMEGA (31 files, v7.3 HDF5)"
     """
     paths: list[str] = []
     for note in notes:

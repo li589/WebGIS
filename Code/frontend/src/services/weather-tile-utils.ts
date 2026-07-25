@@ -9,6 +9,7 @@ import {
   pointInTileHalfOpen,
   type LngLatBounds as LatticeBounds,
 } from '../components/map/weather-grid-lattice'
+import { lngSpanFromList } from './geo-math'
 
 export interface MergedWeatherTile {
   layerId: string
@@ -139,15 +140,13 @@ export function mergeWeatherTiles(
   }
 }
 
-/** 计算瓦片集合的合并 bbox（用于 canvas layout）。 */
+/** 计算瓦片集合的合并 bbox（用于 canvas layout；经度展开防日界线塌缩）。 */
 export function computeTilesBounds(tiles: MergedWeatherTile[]): LngLatBounds | null {
   if (!tiles.length) return null
 
-  let west = Number.POSITIVE_INFINITY
   let south = Number.POSITIVE_INFINITY
-  let east = Number.NEGATIVE_INFINITY
   let north = Number.NEGATIVE_INFINITY
-  let hasCoord = false
+  const lngs: number[] = []
 
   for (const tile of tiles) {
     if (!tile?.geojson?.features?.length) continue
@@ -155,16 +154,17 @@ export function computeTilesBounds(tiles: MergedWeatherTile[]): LngLatBounds | n
       const coord = extractPointCoord(feature)
       if (!coord) continue
       const [lon, lat] = coord
-      west = Math.min(west, lon)
+      if (!Number.isFinite(lon) || !Number.isFinite(lat)) continue
+      lngs.push(lon)
       south = Math.min(south, lat)
-      east = Math.max(east, lon)
       north = Math.max(north, lat)
-      hasCoord = true
     }
   }
 
-  if (!hasCoord) return null
-  return { west, south, east, north }
+  if (!lngs.length) return null
+  const span = lngSpanFromList(lngs)
+  if (!span) return null
+  return { west: span[0], south, east: span[1], north }
 }
 
 /** 生成用于调试的合并统计。 */

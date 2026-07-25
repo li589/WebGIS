@@ -26,6 +26,8 @@ if celery_available:
             "app.tasks.open_meteo_sync_tasks",
             "app.tasks.workflow_timer_tasks",
             "app.tasks.cleanup_tasks",
+            "app.tasks.import_tasks",
+            "app.data_io.tasks.import_jobs",
         ],
     )
     celery_app.conf.update(

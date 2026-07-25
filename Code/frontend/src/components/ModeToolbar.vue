@@ -30,7 +30,7 @@ import {
   LAYERS_COPY,
 } from '../ui-copy'
 import WorkflowStatusButton from './workflow/WorkflowStatusButton.vue'
-import DataImportMenu from './toolbar/DataImportMenu.vue'
+import DataImportMenu from '../data-manager/ui/DataImportMenu.vue'
 
 const layersStore = useLayersStore()
 const uiStore = useUiStore()
@@ -194,7 +194,7 @@ function sourcePillLabel(source: TileSourceConfig): string {
       </div>
 
       <div class="primary-tools">
-        <!-- 数据导入 -->
+        <!-- 数据导入 / 导出 -->
         <DataImportMenu />
 
         <!-- 移动 / 选择 模式 -->

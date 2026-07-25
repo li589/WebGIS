@@ -8,7 +8,7 @@
 使用示例:
     aligner = SpatialAligner()
     data, lat, lon = aligner.align_to_smap_grid(
-        Path("I:/Geograph_DataSet/Weather/ERA5_2018_SMCI-T7.nc"),
+        Path("I:/Geograph_DataSet/Meteorological/Weather/ERA5/ERA5_2018_SMCI-T7.nc"),
         variable="SMCI",
         bbox=CHINA_BBOX,
     )
@@ -29,6 +29,7 @@ if str(_PROVIDERS_DIR) not in sys.path:
 
 # noqa 说明：需先完成 sys.path 引导（支持脚本独立运行）后再导入包内模块，故此处 E402 为有意为之。
 from data_access.universal_reader import UniversalDataReader, CHINA_BBOX, DataArray  # noqa: E402
+from data_access.geo_math import grid_size_from_span, pixel_center_axis  # noqa: E402
 
 
 # 重采样方法映射
@@ -118,8 +119,8 @@ class SpatialAligner:
         from rasterio.transform import from_bounds
 
         west, south, east, north = bbox
-        width = int((east - west) / resolution_deg)
-        height = int((north - south) / resolution_deg)
+        width = grid_size_from_span(east - west, resolution_deg)
+        height = grid_size_from_span(north - south, resolution_deg)
         transform = from_bounds(west, south, east, north, width, height)
         return "EPSG:4326", width, height, transform
 
@@ -155,8 +156,8 @@ class SpatialAligner:
 
         # 创建目标网格
         west, south, east, north = bbox
-        target_width = int((east - west) / target_resolution)
-        target_height = int((north - south) / target_resolution)
+        target_width = grid_size_from_span(east - west, target_resolution)
+        target_height = grid_size_from_span(north - south, target_resolution)
         target_transform = from_bounds(
             west, south, east, north, target_width, target_height
         )
@@ -189,9 +190,9 @@ class SpatialAligner:
                 data, target_height, target_width, bbox, resampling
             )
 
-        # 生成目标坐标
-        lat_1d = np.linspace(north, south, target_height)
-        lon_1d = np.linspace(west, east, target_width)
+        # 生成目标坐标（像素中心，与 from_bounds Affine 一致；禁止 linspace 边点）
+        lat_1d = np.asarray(pixel_center_axis(north, south, target_height), dtype=np.float64)
+        lon_1d = np.asarray(pixel_center_axis(west, east, target_width), dtype=np.float64)
 
         return aligned, lat_1d, lon_1d
 

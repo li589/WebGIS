@@ -43,7 +43,15 @@ def hidden_kwargs() -> dict[str, Any]:
 
 
 def python_executable() -> str:
-    """返回当前 Python 解释器路径，确保子进程使用同一环境。"""
+    """返回子进程应使用的 Python：优先 ``Env/Python312``，否则当前解释器。"""
+    try:
+        from launch.env_python import env_python312_path
+
+        env_py = env_python312_path()
+        if env_py is not None:
+            return str(env_py)
+    except Exception:
+        pass
     return sys.executable
 
 

@@ -85,9 +85,17 @@ def _bounds_from_geojson_coords(coords) -> tuple[float, float, float, float]:
     pts = list(_flatten(coords))
     if not pts:
         return (73.0, 18.0, 135.0, 53.0)
+    from data_access.geo_math import lng_span_from_list
+
     lons = [p[0] for p in pts]
     lats = [p[1] for p in pts]
-    return (min(lons), min(lats), max(lons), max(lats))
+    finite_lats = [float(y) for y in lats if isinstance(y, (int, float))]
+    if not finite_lats:
+        return (73.0, 18.0, 135.0, 53.0)
+    span = lng_span_from_list([float(x) for x in lons if isinstance(x, (int, float))])
+    if span is None:
+        return (73.0, 18.0, 135.0, 53.0)
+    return (span[0], min(finite_lats), span[1], max(finite_lats))
 
 
 def _build_transform_from_bounds(

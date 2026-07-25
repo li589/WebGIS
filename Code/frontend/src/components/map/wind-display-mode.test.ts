@@ -17,7 +17,7 @@ describe('wind-display-mode dual-axis mapping', () => {
   it('exposes Chinese labels for UI (never paint_mode ids)', () => {
     expect(windDisplayModeLabel('particle')).toBe('粒子流')
     expect(windDisplayModeLabel('streamline')).toBe('流量场')
-    expect(windDisplayModeLabel('off')).toBe('关闭')
+    expect(windDisplayModeLabel('off')).toBe('网格')
   })
 
   it('does not treat barb as a WindDisplayMode', () => {

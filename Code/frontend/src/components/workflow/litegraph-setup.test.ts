@@ -4,6 +4,7 @@ import {
   getPortTypeLabel,
   mapParamTypeToPortType,
   resolveNodeEngine,
+  resolveNodeType,
   suggestConnectorsForPortType,
 } from './litegraph-setup'
 
@@ -44,5 +45,10 @@ describe('litegraph connection helpers', () => {
     expect(resolveNodeEngine('module/smap_daily')).toBe('python_provider')
     expect(resolveNodeEngine('module/ndvi_daily', 'python_provider')).toBe('python_provider')
     expect(resolveNodeEngine('data/bbox', 'common')).toBe('common')
+  })
+
+  it('resolves legacy algorithm/* node type aliases', () => {
+    expect(resolveNodeType('algorithm/omega_avg_daily')).toBe('module/omega_avg_daily')
+    expect(resolveNodeType('module/omega_avg_daily')).toBe('module/omega_avg_daily')
   })
 })

@@ -13,18 +13,18 @@ CGDA 跨平台一键启动器（薄入口）
 2. 委托到 :func:`launch.cli.main`。
 
 所有命令实现见 :mod:`launch.commands`；argparse 配置见 :mod:`launch.cli`。
-外部调用方式（``python launch.py``、``start.bat``、``./start.sh``）保持不变。
+本地联调 **必须** 使用仓库内 ``Env/Python312``（Windows: ``Env\\Python312\\python.exe``）。
+推荐入口：``start.bat`` / ``stop.bat``（或 ``./start.sh``）；直接调用时请写：
+
+    Env\\Python312\\python.exe launch.py start
+
+若用系统 ``python launch.py``，启动器会自动切换到 ``Env/Python312``（若存在）。
 
 用法:
-    python launch.py                     # 等同 start（无参数默认）
-    python launch.py start [component] [options]
-    python launch.py stop
-    python launch.py status
-    python launch.py restart [component] [options]
-    python launch.py logs [component] [-n N]
-    python launch.py flush [--yes] [--dry-run]
-    python launch.py sync [job]          # 数据面一次性同步（默认 open-meteo-sync）
-    python launch.py reset-db [--yes] [--no-snapshot] [--clear-user] [--force]
+    Env\\Python312\\python.exe launch.py                     # 等同 start
+    Env\\Python312\\python.exe launch.py start [component]
+    start.bat / stop.bat                                     # Windows 推荐
+    Env\\Python312\\python.exe launch.py stop|status|restart|logs|flush|sync|reset-db
 
 组件 (component):
     (无) 或 all        启动全部服务并进入监控循环（默认）
@@ -42,7 +42,7 @@ CGDA 跨平台一键启动器（薄入口）
     worker:weather      仅启动 weather 队列 Worker
     frontend            仅启动前端 Vite 开发服务器
 
-完整示例见 ``python launch.py --help``。
+完整示例见 ``Env\\Python312\\python.exe launch.py --help``。
 Windows: start.bat / stop.bat    Linux/macOS: ./start.sh / ./stop.sh
 """
 
@@ -62,7 +62,14 @@ if sys.platform in ("win32", "win"):
 
 def main() -> int:
     """委托到 :func:`launch.cli.main`。"""
-    # 延迟导入：先完成控制台 UTF-8 配置，再加载包（包初始化会创建日志文件）。
+    # 强制切换到 Env/Python312（若存在且当前不是）
+    from launch.env_python import ensure_env_python312, require_env_python312_message
+
+    env_py = ensure_env_python312(reexec=True)
+    if env_py is None and sys.platform in ("win32", "win"):
+        print(require_env_python312_message(), file=sys.stderr)
+        return 2
+
     from launch.cli import main as cli_main
 
     return cli_main()

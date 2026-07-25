@@ -27,6 +27,28 @@ from app.services.workflow_timer_service import (
 router = APIRouter()
 
 
+# ─── Cron 预览（无需鉴权，只读计算） ─────────────────────────────────────────
+@router.post("/workflow-timers/cron-preview", tags=["workflow-timer"])
+def preview_cron(payload: dict[str, Any]) -> dict[str, Any]:
+    """预览 cron 表达式的接下来 N 次触发时间。
+
+    请求体：
+    - cron_expr (str, 必填): 5 字段 cron 表达式
+    - count (int, 可选, 默认 5): 返回次数（1-20）
+    """
+    cron_expr = payload.get("cron_expr")
+    if not isinstance(cron_expr, str) or not cron_expr.strip():
+        raise HTTPException(status_code=400, detail="cron_expr is required")
+    count = payload.get("count", 5)
+    if not isinstance(count, int) or count < 1 or count > 20:
+        count = 5
+    try:
+        next_times = wts.preview_cron(cron_expr.strip(), count)
+    except TimerValidationError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {"cron_expr": cron_expr.strip(), "next_times": next_times}
+
+
 # ─── 列表 / 详情 ────────────────────────────────────────────────────────────
 @router.get("/workflow-timers", tags=["workflow-timer"])
 def list_timers(workflow_id: str | None = Query(default=None)) -> dict[str, Any]:

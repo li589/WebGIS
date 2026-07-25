@@ -71,11 +71,13 @@ const tabs: Array<{ id: SettingsTab; label: string; icon: string }> = [
 
 onMounted(async () => {
   const loading = useUiLoadingStore()
+  // 面板异步 chunk 已挂上：立刻关掉全屏 hero。
+  // 配置拉取用面板内 spinner；否则 9 路 /config 全完（甚至重试）才关全屏，看起来像「设置已出来但还在转」。
+  loading.hideImmediate()
   try {
-    await settingsStore.loadAll()
-  } finally {
-    // 对应 DashboardView 中 settingsOpen watch 的 showImmediate
-    loading.hideImmediate()
+    await settingsStore.loadAll({ quiet: Boolean(settingsStore.generalConfig) })
+  } catch {
+    /* loadAll 自行写入 error / partialError */
   }
 })
 

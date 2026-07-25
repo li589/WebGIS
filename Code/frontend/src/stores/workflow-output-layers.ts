@@ -126,6 +126,24 @@ export const useWorkflowOutputLayersStore = defineStore('workflow-output-layers'
     return entry
   }
 
+  /** 批量创建产出图层条目（multi 模式） */
+  function createOutputLayers(
+    targets: Array<{ name: string; group: string }>,
+    sourceWorkflowId: string,
+    sourceLayerId: string,
+    engine: string,
+  ): WorkflowOutputLayerEntry[] {
+    return targets.map((t) =>
+      createOutputLayer({
+        name: t.name,
+        group: t.group,
+        sourceWorkflowId,
+        sourceLayerId,
+        engine,
+      }),
+    )
+  }
+
   /** 更新最近运行状态 */
   function updateRunStatus(localId: string, runId: string, status: string) {
     const entry = entries.value.find((e) => e.localId === localId)
@@ -150,6 +168,7 @@ export const useWorkflowOutputLayersStore = defineStore('workflow-output-layers'
     getBySourceLayerId,
     getByLocalId,
     createOutputLayer,
+    createOutputLayers,
     updateRunStatus,
     removeOutputLayer,
   }

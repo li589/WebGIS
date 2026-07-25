@@ -1,36 +1,20 @@
-<script setup lang="ts">
-import { onBeforeUnmount, ref, watch } from 'vue'
-import CsvImportDialog from './CsvImportDialog.vue'
-import RasterImportConfirmDialog from './RasterImportConfirmDialog.vue'
-import { useDataImportFlow } from '../../composables/useDataImportFlow'
-import { MAX_RASTER_UPLOAD_BYTES } from '../../services/data-import'
+﻿<script setup lang="ts">
+import { computed, onBeforeUnmount, ref, watch } from 'vue'
+import DataWorkspace from './DataWorkspace.vue'
+import {
+  dataWorkspaceOpen,
+  openDataWorkspace,
+  pendingOpenExport,
+  pendingOpenImport,
+  useDataImportFlow,
+} from '../core/workspace-store'
+import { DATA_COPY } from '../../ui-copy'
 
-const {
-  csvFile,
-  importing,
-  importMsg,
-  importError,
-  uploadProgress,
-  pendingRasterConfirm,
-  importVectorFile,
-  openCsvDialog,
-  closeCsvDialog,
-  confirmCsvImport,
-  importRasterFile,
-  confirmRasterCrs,
-  skipRasterConfirm,
-  cancelRasterConfirm,
-  processFiles,
-} = useDataImportFlow()
+const { importing, importMsg, importError, uploadProgress, processFiles } = useDataImportFlow()
 
 const menuOpen = ref(false)
-const vectorInput = ref<HTMLInputElement | null>(null)
-const csvInput = ref<HTMLInputElement | null>(null)
-const rasterInput = ref<HTMLInputElement | null>(null)
 const triggerRef = ref<HTMLButtonElement | null>(null)
 const dropdownPos = ref({ top: 0, left: 0 })
-
-const rasterLimitMb = MAX_RASTER_UPLOAD_BYTES / (1024 * 1024)
 
 function toggleMenu() {
   if (!menuOpen.value && triggerRef.value) {
@@ -43,6 +27,28 @@ function toggleMenu() {
 function closeMenu() {
   menuOpen.value = false
 }
+
+function openImport(tab: 'vector' | 'raster' | 'document' = 'vector', files?: File[]) {
+  closeMenu()
+  openDataWorkspace({ tab: 'import', importKind: tab, files })
+}
+
+function openExport() {
+  closeMenu()
+  openDataWorkspace({ tab: 'export' })
+}
+
+watch(pendingOpenImport, (req) => {
+  if (!req) return
+  openImport(req.tab, req.files)
+  pendingOpenImport.value = null
+})
+
+watch(pendingOpenExport, (open) => {
+  if (!open) return
+  openExport()
+  pendingOpenExport.value = false
+})
 
 function handleDocumentClick(e: MouseEvent) {
   if (!menuOpen.value) return
@@ -65,43 +71,11 @@ onBeforeUnmount(() => {
   document.removeEventListener('click', handleDocumentClick, { capture: true })
 })
 
-function pickVector() {
-  closeMenu()
-  vectorInput.value?.click()
-}
-
-function pickCsv() {
-  closeMenu()
-  csvInput.value?.click()
-}
-
-function pickRaster() {
-  closeMenu()
-  rasterInput.value?.click()
-}
-
-async function onVectorChange(e: Event) {
-  const target = e.target as HTMLInputElement
-  const file = target.files?.[0]
-  target.value = ''
-  if (file) await importVectorFile(file)
-}
-
-function onCsvChange(e: Event) {
-  const target = e.target as HTMLInputElement
-  const file = target.files?.[0]
-  target.value = ''
-  if (file) openCsvDialog(file)
-}
-
-async function onRasterChange(e: Event) {
-  const target = e.target as HTMLInputElement
-  const file = target.files?.[0]
-  target.value = ''
-  if (file) await importRasterFile(file)
-}
-
 defineExpose({ processFiles })
+
+const progressLabel = computed(() =>
+  uploadProgress.value == null ? null : `${Math.round(uploadProgress.value * 100)}%`,
+)
 </script>
 
 <template>
@@ -109,13 +83,13 @@ defineExpose({ processFiles })
     <button
       ref="triggerRef"
       class="import-trigger"
-      :class="{ active: menuOpen }"
+      :class="{ active: menuOpen || dataWorkspaceOpen }"
       type="button"
-      title="导入数据（也可拖到地图上）"
+      :title="DATA_COPY.menuTitle"
       @click="toggleMenu"
     >
-      <span class="btn-icon" aria-hidden="true">📁</span>
-      <span class="btn-label">导入</span>
+      <span class="btn-icon" aria-hidden="true">◫</span>
+      <span class="btn-label">{{ DATA_COPY.menuLabel }}</span>
       <span class="caret" aria-hidden="true">▾</span>
     </button>
 
@@ -126,25 +100,46 @@ defineExpose({ processFiles })
         :style="{ top: dropdownPos.top + 'px', left: dropdownPos.left + 'px' }"
         @click.stop
       >
-        <button class="dropdown-item" type="button" @click="pickVector">
-          <span class="item-icon" aria-hidden="true">📐</span>
+        <button class="dropdown-item" type="button" @click="openImport('vector')">
+          <span class="item-icon" aria-hidden="true">⬆</span>
           <span class="item-body">
-            <span class="item-title">矢量（SHP / GeoJSON）</span>
-            <span class="item-desc">点线面 · 浏览器本地解析</span>
+            <span class="item-title">{{ DATA_COPY.import }}</span>
+            <span class="item-desc">矢量 / 栅格 / 文档 · 后端统一解析</span>
           </span>
         </button>
-        <button class="dropdown-item" type="button" @click="pickCsv">
-          <span class="item-icon" aria-hidden="true">📊</span>
+        <button class="dropdown-item" type="button" @click="openExport">
+          <span class="item-icon" aria-hidden="true">⬇</span>
           <span class="item-body">
-            <span class="item-title">CSV 表格</span>
-            <span class="item-desc">选择 XY 列与坐标系</span>
+            <span class="item-title">{{ DATA_COPY.export }}</span>
+            <span class="item-desc">导出已导入图层</span>
           </span>
         </button>
-        <button class="dropdown-item" type="button" @click="pickRaster">
-          <span class="item-icon" aria-hidden="true">🗺</span>
+        <button
+          class="dropdown-item"
+          type="button"
+          @click="
+            closeMenu()
+            openDataWorkspace({ tab: 'attributes' })
+          "
+        >
+          <span class="item-icon" aria-hidden="true">☰</span>
           <span class="item-body">
-            <span class="item-title">栅格（TIF）</span>
-            <span class="item-desc">上传生成预览 overlay · ≤{{ rasterLimitMb }} MiB</span>
+            <span class="item-title">{{ DATA_COPY.wsAttributes }}</span>
+            <span class="item-desc">分页浏览与字段重命名</span>
+          </span>
+        </button>
+        <button
+          class="dropdown-item"
+          type="button"
+          @click="
+            closeMenu()
+            openDataWorkspace({ tab: 'details' })
+          "
+        >
+          <span class="item-icon" aria-hidden="true">ℹ</span>
+          <span class="item-body">
+            <span class="item-title">{{ DATA_COPY.wsDetails }}</span>
+            <span class="item-desc">元数据 · 样式 · 删除</span>
           </span>
         </button>
         <p class="dropdown-hint">提示：也可直接把文件拖到地图上导入</p>
@@ -160,39 +155,11 @@ defineExpose({ processFiles })
     <div v-if="importing" class="import-spinner">
       <div class="spinner-card">
         <span class="spinning-icon" aria-hidden="true">↻</span>
-        <span v-if="uploadProgress != null" class="progress-text">
-          {{ Math.round(uploadProgress * 100) }}%
-        </span>
+        <span v-if="progressLabel" class="progress-text">{{ progressLabel }}</span>
       </div>
     </div>
 
-    <input
-      ref="vectorInput"
-      type="file"
-      accept=".shp,.zip,.geojson,.json"
-      hidden
-      @change="onVectorChange"
-    />
-    <input ref="csvInput" type="file" accept=".csv" hidden @change="onCsvChange" />
-    <input ref="rasterInput" type="file" accept=".tif,.tiff" hidden @change="onRasterChange" />
-
-    <CsvImportDialog
-      v-if="csvFile"
-      :file="csvFile"
-      @confirm="confirmCsvImport"
-      @close="closeCsvDialog"
-    />
-
-    <RasterImportConfirmDialog
-      v-if="pendingRasterConfirm"
-      :visible="true"
-      :file-name="pendingRasterConfirm.fileName"
-      :detection-result="pendingRasterConfirm.detectionResult"
-      :importing="importing"
-      @confirm="confirmRasterCrs"
-      @cancel="cancelRasterConfirm"
-      @skip="skipRasterConfirm"
-    />
+    <DataWorkspace />
   </div>
 </template>
 

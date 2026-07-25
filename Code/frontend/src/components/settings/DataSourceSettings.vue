@@ -263,7 +263,14 @@ void refreshCache()
       <ul v-else class="dataset-list">
         <li v-for="ds in discovered" :key="ds.name">
           <strong>{{ ds.name }}</strong>
-          <span class="muted">{{ ds.file_count }} 文件 · {{ ds.path }}</span>
+          <span class="muted"
+            >{{
+              ds.file_count == null
+                ? '未统计文件数'
+                : `${ds.file_count}${ds.file_count_truncated ? '+' : ''} 文件`
+            }}
+            · {{ ds.path }}</span
+          >
         </li>
       </ul>
     </section>

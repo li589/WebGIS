@@ -21,7 +21,7 @@ class WorkflowGraphCompilerTests(unittest.TestCase):
                     "type": "data/source",
                     "title": "数据源",
                     "properties": {
-                        "path": "I:/Geograph_DataSet/SMAP",
+                        "path": "I:/Geograph_DataSet/Soil_Moisture/SMAP",
                         "dataset_key": "SMAP_L3",
                     },
                 },

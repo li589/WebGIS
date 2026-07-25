@@ -4,6 +4,7 @@
  *
  * 工作流列表侧边栏：显示模板、系统预设和用户工作流。
  * 支持选中、新建、复制、删除用户工作流、使用模板创建。
+ * 支持按 category 分类过滤和标签显示。
  */
 import { ref, computed } from 'vue'
 import { storeToRefs } from 'pinia'
@@ -24,18 +25,51 @@ const duplicateSourceId = ref<string | null>(null)
 const duplicateNewId = ref('')
 const duplicateNewName = ref('')
 
-// 模板工作流 ID 列表（与后端 .data/workflow_definitions/system/*.json 中 is_template=true 的工作流对应）
-const TEMPLATE_IDS = new Set(['gis_terrain_analysis', 'preprocess_pipeline', 'stats_analysis'])
+// ── 分类过滤 ──────────────────────────────────────────────────────────
+/** 分类标签映射：后端 category → 中文显示名 + 颜色 */
+const CATEGORY_LABELS: Record<string, { label: string; color: string }> = {
+  inversion: { label: '反演', color: '#5ad5ff' },
+  weather: { label: '天气', color: '#ffd38a' },
+  data_access: { label: '数据获取', color: '#a6e3a1' },
+  demo: { label: '演示', color: '#f38ba8' },
+}
 
-// 模板工作流：从系统工作流中过滤出标记为模板的（按 workflow_id 识别）
+/** 当前选中的分类过滤器：null = 全部 */
+const activeCategory = ref<string | null>(null)
+
+/** 所有可用分类（从 summaries 中动态提取） */
+const availableCategories = computed(() => {
+  const cats = new Set<string>()
+  for (const s of summaries.value) {
+    if (s.category) cats.add(s.category)
+  }
+  return Array.from(cats).sort()
+})
+
+/** 分类徽章信息 */
+function categoryBadge(cat: string | null | undefined) {
+  if (!cat) return null
+  return CATEGORY_LABELS[cat] ?? { label: cat, color: '#6e8ba0' }
+}
+
+/** 按分类过滤后的工作流列表 */
+function filterByCategory(list: WorkflowDefinitionSummary[]) {
+  if (!activeCategory.value) return list
+  return list.filter((s) => s.category === activeCategory.value)
+}
+
+// 范例工作流：以后端 _meta.is_template 为准（不再硬编码过时 ID）
 const templateWorkflows = computed(() =>
-  systemWorkflows.value.filter((s) => TEMPLATE_IDS.has(s.workflow_id)),
+  filterByCategory(systemWorkflows.value.filter((s) => Boolean(s.is_template))),
 )
 
-// 非模板的系统预设工作流
+// 非范例的系统预设工作流
 const systemWorkflowsNonTemplate = computed(() =>
-  systemWorkflows.value.filter((s) => !TEMPLATE_IDS.has(s.workflow_id)),
+  filterByCategory(systemWorkflows.value.filter((s) => !s.is_template)),
 )
+
+// 用户工作流
+const userWorkflowsFiltered = computed(() => filterByCategory(userWorkflows.value))
 
 // 使用模板创建新工作流
 const useTemplateSourceId = ref<string | null>(null)
@@ -45,7 +79,7 @@ const useTemplateNewName = ref('')
 function handleUseTemplate(summary: WorkflowDefinitionSummary) {
   useTemplateSourceId.value = summary.workflow_id
   useTemplateNewId.value = `${summary.workflow_id}_instance_${Date.now().toString(36)}`
-  useTemplateNewName.value = `${summary.name}（副本）`
+  useTemplateNewName.value = `${summary.name}（范例副本）`
 }
 
 async function confirmUseTemplate() {
@@ -155,11 +189,38 @@ function formatTime(iso: string | null): string {
     <InlineLoader v-if="loading" label="加载中..." size="sm" />
 
     <div v-else class="list-content">
-      <!-- 模板工作流 -->
+      <!-- 分类过滤栏 -->
+      <div v-if="availableCategories.length > 0" class="category-filter">
+        <button
+          class="cat-chip"
+          :class="{ active: activeCategory === null }"
+          type="button"
+          @click="activeCategory = null"
+        >
+          全部
+        </button>
+        <button
+          v-for="cat in availableCategories"
+          :key="cat"
+          class="cat-chip"
+          :class="{ active: activeCategory === cat }"
+          :style="
+            activeCategory === cat
+              ? { borderColor: categoryBadge(cat)?.color, color: categoryBadge(cat)?.color }
+              : {}
+          "
+          type="button"
+          @click="activeCategory = cat"
+        >
+          {{ categoryBadge(cat)?.label ?? cat }}
+        </button>
+      </div>
+
+      <!-- 范例工作流 -->
       <section v-if="templateWorkflows.length" class="list-section">
         <h3 class="section-title">
           <span class="section-icon" aria-hidden="true">📋</span>
-          <span>模板</span>
+          <span>范例</span>
           <span class="section-count">{{ templateWorkflows.length }}</span>
         </h3>
         <div class="section-items">
@@ -173,7 +234,18 @@ function formatTime(iso: string | null): string {
           >
             <div class="item-header">
               <span class="item-title">{{ summary.name }}</span>
-              <span class="template-badge">模板</span>
+              <div class="item-badges">
+                <span
+                  v-if="categoryBadge(summary.category)"
+                  class="cat-badge"
+                  :style="{
+                    color: categoryBadge(summary.category)?.color,
+                    borderColor: categoryBadge(summary.category)?.color,
+                  }"
+                  >{{ categoryBadge(summary.category)?.label }}</span
+                >
+                <span class="template-badge">范例</span>
+              </div>
             </div>
             <div v-if="summary.description" class="item-desc">{{ summary.description }}</div>
             <div class="item-meta">
@@ -183,11 +255,11 @@ function formatTime(iso: string | null): string {
             <button
               class="use-template-btn"
               type="button"
-              title="基于此模板创建新工作流"
+              title="基于此范例创建新工作流"
               @click.stop="handleUseTemplate(summary)"
             >
               <span aria-hidden="true">⚡</span>
-              <span>使用此模板</span>
+              <span>从范例新建</span>
             </button>
           </button>
         </div>
@@ -211,7 +283,18 @@ function formatTime(iso: string | null): string {
           >
             <div class="item-header">
               <span class="item-title">{{ summary.name }}</span>
-              <span v-if="summary.readonly" class="readonly-badge" aria-label="只读">🔒</span>
+              <div class="item-badges">
+                <span
+                  v-if="categoryBadge(summary.category)"
+                  class="cat-badge"
+                  :style="{
+                    color: categoryBadge(summary.category)?.color,
+                    borderColor: categoryBadge(summary.category)?.color,
+                  }"
+                  >{{ categoryBadge(summary.category)?.label }}</span
+                >
+                <span v-if="summary.readonly" class="readonly-badge" aria-label="只读">🔒</span>
+              </div>
             </div>
             <div v-if="summary.description" class="item-desc">{{ summary.description }}</div>
             <div class="item-meta">
@@ -224,15 +307,15 @@ function formatTime(iso: string | null): string {
       </section>
 
       <!-- 用户工作流 -->
-      <section v-if="userWorkflows.length" class="list-section">
+      <section v-if="userWorkflowsFiltered.length" class="list-section">
         <h3 class="section-title">
           <span class="section-icon" aria-hidden="true">◈</span>
           <span>用户工作流</span>
-          <span class="section-count">{{ userWorkflows.length }}</span>
+          <span class="section-count">{{ userWorkflowsFiltered.length }}</span>
         </h3>
         <div class="section-items">
           <button
-            v-for="summary in userWorkflows"
+            v-for="summary in userWorkflowsFiltered"
             :key="summary.workflow_id"
             class="workflow-item"
             :class="{ active: isActive(summary) }"
@@ -242,6 +325,15 @@ function formatTime(iso: string | null): string {
             <div class="item-header">
               <span class="item-title">{{ summary.name }}</span>
               <div class="item-actions">
+                <span
+                  v-if="categoryBadge(summary.category)"
+                  class="cat-badge"
+                  :style="{
+                    color: categoryBadge(summary.category)?.color,
+                    borderColor: categoryBadge(summary.category)?.color,
+                  }"
+                  >{{ categoryBadge(summary.category)?.label }}</span
+                >
                 <button
                   class="action-btn"
                   type="button"
@@ -270,10 +362,21 @@ function formatTime(iso: string | null): string {
         </div>
       </section>
 
-      <div v-if="summaries.length === 0" class="list-empty">
+      <div
+        v-if="
+          summaries.length === 0 ||
+          (activeCategory &&
+            !templateWorkflows.length &&
+            !systemWorkflowsNonTemplate.length &&
+            !userWorkflowsFiltered.length)
+        "
+        class="list-empty"
+      >
         <span class="empty-icon" aria-hidden="true">◇</span>
         <span class="empty-text">暂无工作流</span>
-        <span class="empty-hint">点击"新建"创建第一个工作流</span>
+        <span class="empty-hint">{{
+          activeCategory ? '该分类下暂无工作流' : '点击"新建"创建第一个工作流'
+        }}</span>
       </div>
     </div>
 
@@ -327,12 +430,14 @@ function formatTime(iso: string | null): string {
       </div>
     </div>
 
-    <!-- 使用模板对话框 -->
+    <!-- 从范例新建对话框 -->
     <div v-if="useTemplateSourceId" class="dialog-overlay" @click.self="cancelUseTemplate">
       <div class="dialog">
-        <h3 class="dialog-title">基于模板创建工作流</h3>
+        <h3 class="dialog-title">从范例新建工作流</h3>
         <p class="dialog-text">
-          将基于模板 "{{ useTemplateSourceId }}" 创建一个新的用户工作流副本，您可在副本上自由修改。
+          将基于范例「{{
+            useTemplateSourceId
+          }}」创建可编辑的用户工作流副本（保留关联图层，便于直接运行）。
         </p>
         <div class="dialog-form">
           <div class="form-row">
@@ -434,6 +539,78 @@ function formatTime(iso: string | null): string {
   flex: 1;
   overflow-y: auto;
   padding: 0.42rem 0;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(90, 180, 255, 0.28) transparent;
+}
+
+/* ── 分类过滤栏 ──────────────────────────────────────────────────── */
+.category-filter {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.22rem;
+  padding: 0.32rem 0.72rem 0.42rem;
+  border-bottom: 1px solid rgba(136, 192, 255, 0.06);
+  margin-bottom: 0.32rem;
+}
+
+.cat-chip {
+  padding: 0.16rem 0.46rem;
+  border: 1px solid rgba(136, 192, 255, 0.12);
+  border-radius: 999px;
+  background: transparent;
+  color: #6e8ba0;
+  cursor: pointer;
+  font: inherit;
+  font-size: 0.52rem;
+  font-weight: 500;
+  transition: all 0.16s ease;
+  white-space: nowrap;
+}
+
+.cat-chip:hover {
+  border-color: rgba(136, 192, 255, 0.3);
+  color: #c4d6e8;
+}
+
+.cat-chip.active {
+  border-color: rgba(90, 213, 255, 0.4);
+  background: rgba(10, 132, 255, 0.14);
+  color: #5ad5ff;
+}
+
+/* ── 分类徽章 ────────────────────────────────────────────────────── */
+.item-badges {
+  display: flex;
+  align-items: center;
+  gap: 0.22rem;
+  flex-shrink: 0;
+}
+
+.cat-badge {
+  padding: 0.02rem 0.3rem;
+  border: 1px solid;
+  border-radius: 0.2rem;
+  font-size: 0.48rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  background: rgba(136, 192, 255, 0.04);
+}
+
+.list-content::-webkit-scrollbar {
+  width: 4px;
+}
+
+.list-content::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.list-content::-webkit-scrollbar-thumb {
+  background: rgba(90, 180, 255, 0.26);
+  border-radius: 3px;
+}
+
+.list-content::-webkit-scrollbar-thumb:hover {
+  background: rgba(90, 180, 255, 0.45);
 }
 
 .list-section {

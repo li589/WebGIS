@@ -7,11 +7,12 @@
  *
  * 集成方式：作为模态弹窗从 WorkflowList 或 DashboardView 触发。
  */
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { storeToRefs } from 'pinia'
 
 import { useWorkflowTimersStore } from '../../stores/workflow-timers'
 import { useWorkflowDefinitionsStore } from '../../stores/workflow-definitions'
+import { previewCron, DATE_TEMPLATES } from '../../services/workflow-timer-api'
 import type {
   WorkflowTimer,
   TriggerType,
@@ -41,6 +42,7 @@ const { summaries } = storeToRefs(definitionsStore)
 
 // ─── 过滤 ────────────────────────────────────────────────────────────────────
 const filterWorkflowId = ref(props.defaultWorkflowId || '')
+const searchQuery = ref('')
 watch(
   () => props.defaultWorkflowId,
   (id) => {
@@ -48,9 +50,89 @@ watch(
   },
 )
 const filteredTimers = computed(() => {
-  if (!filterWorkflowId.value) return timers.value
-  return timers.value.filter((t) => t.workflow_id === filterWorkflowId.value)
+  let result = timers.value
+  if (filterWorkflowId.value) {
+    result = result.filter((t) => t.workflow_id === filterWorkflowId.value)
+  }
+  if (searchQuery.value.trim()) {
+    const q = searchQuery.value.toLowerCase()
+    result = result.filter(
+      (t) =>
+        t.name.toLowerCase().includes(q) ||
+        t.timer_id.toLowerCase().includes(q) ||
+        t.workflow_id.toLowerCase().includes(q),
+    )
+  }
+  return result
 })
+
+// ─── Cron 预设 ──────────────────────────────────────────────────────────────
+const cronPresets: Array<{ label: string; expr: string; description: string }> = [
+  { label: '每小时', expr: '0 * * * *', description: '每整点触发' },
+  { label: '每6小时', expr: '0 */6 * * *', description: '每天 0/6/12/18 点触发' },
+  { label: '每天8点', expr: '0 8 * * *', description: '每天 08:00 触发' },
+  { label: '每天0点', expr: '0 0 * * *', description: '每天 00:00 触发' },
+  { label: '每周一', expr: '0 0 * * 1', description: '每周一 00:00 触发' },
+  { label: '每月1日', expr: '0 0 1 * *', description: '每月 1 日 00:00 触发' },
+  { label: '工作日8点', expr: '0 8 * * 1-5', description: '周一至周五 08:00 触发' },
+  { label: '每15分钟', expr: '*/15 * * * *', description: '每 15 分钟触发' },
+]
+
+function applyCronPreset(expr: string) {
+  editorForm.value.cron_expr = expr
+  void fetchCronPreview(expr)
+}
+
+// ─── Cron 预览 ──────────────────────────────────────────────────────────────
+const cronPreviewTimes = ref<string[]>([])
+const cronPreviewError = ref<string | null>(null)
+const cronPreviewLoading = ref(false)
+let _cronPreviewTimer: ReturnType<typeof setTimeout> | null = null
+
+async function fetchCronPreview(expr: string) {
+  cronPreviewError.value = null
+  if (!expr.trim()) {
+    cronPreviewTimes.value = []
+    return
+  }
+  cronPreviewLoading.value = true
+  try {
+    const result = await previewCron(expr.trim(), 5)
+    cronPreviewTimes.value = result.next_times
+  } catch (err) {
+    cronPreviewTimes.value = []
+    cronPreviewError.value = err instanceof Error ? err.message : String(err)
+  } finally {
+    cronPreviewLoading.value = false
+  }
+}
+
+function debouncedCronPreview(expr: string) {
+  if (_cronPreviewTimer) clearTimeout(_cronPreviewTimer)
+  _cronPreviewTimer = setTimeout(() => void fetchCronPreview(expr), 400)
+}
+
+watch(
+  () => editorForm.value.cron_expr,
+  (expr) => {
+    if (editorForm.value.trigger_type === 'cron' && expr) {
+      debouncedCronPreview(expr)
+    } else {
+      cronPreviewTimes.value = []
+      cronPreviewError.value = null
+    }
+  },
+)
+
+// ─── 日期模板插入 ───────────────────────────────────────────────────────────
+const showDateTemplates = ref(false)
+
+function insertDateTemplate(template: string) {
+  const current = editorForm.value.payload_overrides_json
+  // 尝试在光标位置插入，简单追加到末尾
+  editorForm.value.payload_overrides_json = current.trimEnd() + ' ' + template
+  showDateTemplates.value = false
+}
 
 // ─── 新建/编辑对话框 ────────────────────────────────────────────────────────
 const editingTimer = ref<WorkflowTimer | null>(null)
@@ -310,6 +392,13 @@ const friendlyError = computed(() => {
 onMounted(async () => {
   await Promise.all([timersStore.loadTimers(), definitionsStore.loadSummaries()])
 })
+
+onUnmounted(() => {
+  if (_cronPreviewTimer) {
+    clearTimeout(_cronPreviewTimer)
+    _cronPreviewTimer = null
+  }
+})
 </script>
 
 <template>
@@ -362,6 +451,12 @@ onMounted(async () => {
               {{ s.name }} ({{ s.workflow_id }})
             </option>
           </select>
+          <input
+            v-model="searchQuery"
+            type="text"
+            class="search-input"
+            placeholder="搜索定时器名称..."
+          />
           <button
             class="refresh-btn"
             type="button"
@@ -531,12 +626,37 @@ onMounted(async () => {
                   >（5 字段：分 时 日 月 周，例如 "0 8 * * *" 每天 8 点）</span
                 >
               </label>
+              <!-- Cron 预设快捷按钮 -->
+              <div class="cron-presets">
+                <button
+                  v-for="preset in cronPresets"
+                  :key="preset.expr"
+                  class="cron-preset-btn"
+                  type="button"
+                  :title="preset.description"
+                  @click="applyCronPreset(preset.expr)"
+                >
+                  {{ preset.label }}
+                </button>
+              </div>
               <input
                 v-model="editorForm.cron_expr"
                 type="text"
                 class="form-input mono"
                 placeholder="0 8 * * *"
               />
+              <!-- Cron 预览：下次触发时间 -->
+              <div v-if="cronPreviewError" class="cron-preview-error">⚠ {{ cronPreviewError }}</div>
+              <div v-else-if="cronPreviewTimes.length > 0" class="cron-preview">
+                <span class="cron-preview-label">{{
+                  cronPreviewLoading ? '计算中...' : '下次触发:'
+                }}</span>
+                <div class="cron-preview-times">
+                  <code v-for="(t, i) in cronPreviewTimes" :key="i" class="cron-time-item">
+                    {{ formatTime(t) }}
+                  </code>
+                </div>
+              </div>
             </div>
             <div v-else-if="editorForm.trigger_type === 'interval'" class="form-row">
               <label class="form-label">
@@ -569,11 +689,33 @@ onMounted(async () => {
                 Payload Overrides (JSON)
                 <span class="form-hint">（可选，覆盖默认 WorkflowSubmitRequest 字段）</span>
               </label>
+              <!-- 日期模板快捷插入 -->
+              <div class="date-templates-bar">
+                <button
+                  class="date-templates-toggle"
+                  type="button"
+                  @click="showDateTemplates = !showDateTemplates"
+                >
+                  {{ showDateTemplates ? '▼' : '▶' }} 动态日期模板
+                </button>
+                <div v-if="showDateTemplates" class="date-templates-list">
+                  <button
+                    v-for="tpl in DATE_TEMPLATES"
+                    :key="tpl.key"
+                    class="date-template-btn"
+                    type="button"
+                    :title="tpl.description"
+                    @click="insertDateTemplate(tpl.key)"
+                  >
+                    {{ tpl.label }}
+                  </button>
+                </div>
+              </div>
               <textarea
                 v-model="editorForm.payload_overrides_json"
                 class="form-input mono textarea"
                 rows="5"
-                placeholder="{}"
+                placeholder='{"parameters": {"start_date": "{{today}}", "end_date": "{{yesterday}}"}}'
               ></textarea>
             </div>
             <div class="form-row">
@@ -1184,5 +1326,142 @@ onMounted(async () => {
 .dialog-btn:disabled {
   opacity: 0.5;
   cursor: not-allowed;
+}
+
+/* ── 搜索框 ────────────────────────────────────────────────── */
+.search-input {
+  flex: 1;
+  min-width: 6rem;
+  padding: 0.32rem 0.5rem;
+  border: 1px solid rgba(136, 192, 255, 0.2);
+  border-radius: 0.32rem;
+  background: rgba(8, 17, 31, 0.6);
+  color: #e8f3fc;
+  font: inherit;
+  font-size: 0.6rem;
+  outline: none;
+}
+
+.search-input:focus {
+  border-color: rgba(90, 213, 255, 0.5);
+}
+
+.search-input::placeholder {
+  color: #5a6f85;
+}
+
+/* ── Cron 预设 ─────────────────────────────────────────────── */
+.cron-presets {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.28rem;
+  margin: 0.2rem 0;
+}
+
+.cron-preset-btn {
+  padding: 0.18rem 0.46rem;
+  border-radius: 999px;
+  border: 1px solid rgba(126, 224, 168, 0.25);
+  background: rgba(40, 180, 90, 0.08);
+  color: #a0e8c0;
+  font: inherit;
+  font-size: 0.54rem;
+  cursor: pointer;
+  transition:
+    border-color 0.16s ease,
+    background 0.16s ease;
+}
+
+.cron-preset-btn:hover {
+  border-color: rgba(126, 224, 168, 0.5);
+  background: rgba(40, 180, 90, 0.18);
+}
+
+/* ── Cron 预览 ─────────────────────────────────────────────── */
+.cron-preview {
+  margin-top: 0.32rem;
+  padding: 0.36rem 0.5rem;
+  border-radius: 0.32rem;
+  background: rgba(10, 132, 255, 0.08);
+  border: 1px solid rgba(90, 213, 255, 0.15);
+}
+
+.cron-preview-label {
+  font-size: 0.54rem;
+  color: #5ad5ff;
+  font-weight: 500;
+}
+
+.cron-preview-times {
+  display: flex;
+  flex-direction: column;
+  gap: 0.16rem;
+  margin-top: 0.2rem;
+}
+
+.cron-time-item {
+  font-size: 0.56rem;
+  color: #b8cce0;
+  font-family: ui-monospace, 'Cascadia Code', Consolas, monospace;
+}
+
+.cron-preview-error {
+  margin-top: 0.32rem;
+  padding: 0.36rem 0.5rem;
+  border-radius: 0.32rem;
+  background: rgba(90, 20, 20, 0.2);
+  border: 1px solid rgba(255, 100, 100, 0.25);
+  color: #ffb0b0;
+  font-size: 0.56rem;
+}
+
+/* ── 日期模板 ──────────────────────────────────────────────── */
+.date-templates-bar {
+  margin: 0.2rem 0;
+}
+
+.date-templates-toggle {
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: #6e8ba0;
+  font: inherit;
+  font-size: 0.56rem;
+  cursor: pointer;
+  transition: color 0.16s ease;
+}
+
+.date-templates-toggle:hover {
+  color: #c4d6e8;
+}
+
+.date-templates-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.24rem;
+  margin-top: 0.28rem;
+  padding: 0.36rem;
+  border-radius: 0.32rem;
+  background: rgba(4, 12, 23, 0.4);
+  border: 1px solid rgba(136, 192, 255, 0.08);
+}
+
+.date-template-btn {
+  padding: 0.14rem 0.4rem;
+  border-radius: 0.28rem;
+  border: 1px solid rgba(255, 184, 77, 0.2);
+  background: rgba(255, 184, 77, 0.06);
+  color: #ffd38a;
+  font: inherit;
+  font-size: 0.52rem;
+  cursor: pointer;
+  transition:
+    border-color 0.16s ease,
+    background 0.16s ease;
+}
+
+.date-template-btn:hover {
+  border-color: rgba(255, 184, 77, 0.45);
+  background: rgba(255, 184, 77, 0.16);
 }
 </style>

@@ -50,16 +50,26 @@ _SEED_SYSTEM_DIR = _BACKEND_ROOT / "workflow_seeds" / "system"
 
 
 def _sync_system_seeds() -> None:
-    """Copy packaged system workflow templates into the runtime system dir (fill missing only)."""
+    """Sync packaged system workflow templates into the runtime system dir.
+
+    Missing files are created; existing files are overwritten when seed content
+    differs so shipped fixes (node type renames, meta flags) reach .data/.
+    """
     if not _SEED_SYSTEM_DIR.is_dir():
         return
     for src in sorted(_SEED_SYSTEM_DIR.glob("*.json")):
         dest = _SYSTEM_DIR / src.name
-        if dest.exists():
-            continue
         try:
-            dest.write_text(src.read_text(encoding="utf-8"), encoding="utf-8")
-            logger.info("Seeded system workflow definition: %s", dest.name)
+            content = src.read_text(encoding="utf-8")
+            existed = dest.exists()
+            if existed and dest.read_text(encoding="utf-8") == content:
+                continue
+            dest.write_text(content, encoding="utf-8")
+            logger.info(
+                "%s system workflow definition: %s",
+                "Updated" if existed else "Seeded",
+                dest.name,
+            )
         except OSError as exc:
             logger.warning("Failed to seed workflow %s: %s", src.name, exc)
 
@@ -91,9 +101,16 @@ def _build_meta(
     description: str | None,
     author: str = "user",
     linked_layer_id: str | None = None,
+    tags: list[str] | None = None,
+    category: str | None = None,
 ) -> dict[str, Any]:
-    """构建 _meta 声明头。"""
-    return {
+    """构建 _meta 声明头。
+
+    Args:
+        tags: 工作流标签列表（如 ["pipeline", "inversion"]），用于前端分类过滤。
+        category: 工作流主分类（如 "inversion"/"weather"/"data_access"/"demo"）。
+    """
+    meta = {
         "kind": kind,  # "system" | "user"
         "engine": engine,  # "weather" | "python_provider" | "gee" | "common"
         "name": name,
@@ -104,6 +121,11 @@ def _build_meta(
         "readonly": kind == "system",
         "linked_layer_id": linked_layer_id,
     }
+    if tags is not None:
+        meta["tags"] = tags
+    if category is not None:
+        meta["category"] = category
+    return meta
 
 
 def _resolve_file(workflow_id: str) -> Path | None:
@@ -125,7 +147,7 @@ def _read_file(path: Path) -> dict[str, Any]:
     并转换为 WorkflowNotFoundError，供 router 层映射为 404。
     """
     try:
-        text = path.read_text(encoding="utf-8")
+        text = path.read_text(encoding="utf-8-sig")
     except FileNotFoundError as exc:
         raise WorkflowNotFoundError(
             f"Workflow definition file disappeared: {path.name}"
@@ -208,9 +230,12 @@ def list_definitions() -> list[dict[str, Any]]:
                         "name": meta.get("name", data.get("workflow_id", path.stem)),
                         "description": meta.get("description"),
                         "readonly": meta.get("readonly", default_kind == "system"),
+                        "is_template": bool(meta.get("is_template", False)),
                         "linked_layer_id": meta.get("linked_layer_id"),
                         "updated_at": meta.get("updated_at"),
                         "node_count": len(data.get("nodes", [])),
+                        "tags": meta.get("tags", []),
+                        "category": meta.get("category"),
                     }
                 )
             except Exception as exc:
@@ -260,6 +285,8 @@ def create_definition(payload: dict[str, Any]) -> dict[str, Any]:
         description=description,
         author="user",
         linked_layer_id=payload.get("linked_layer_id"),
+        tags=payload.get("tags"),
+        category=payload.get("category"),
     )
 
     definition = {
@@ -308,6 +335,10 @@ def update_definition(workflow_id: str, payload: dict[str, Any]) -> dict[str, An
         meta["engine"] = payload["engine"]
     if "linked_layer_id" in payload:
         meta["linked_layer_id"] = payload["linked_layer_id"]
+    if "tags" in payload:
+        meta["tags"] = payload["tags"]
+    if "category" in payload:
+        meta["category"] = payload["category"]
 
     definition = {
         "_meta": meta,
@@ -351,12 +382,16 @@ def duplicate_definition(
     if source is None:
         raise WorkflowNotFoundError(f"Source workflow not found: {source_id}")
 
+    source_meta = (
+        source.get("_meta", {}) if isinstance(source.get("_meta"), dict) else {}
+    )
+    # 从范例/系统流新建时保留关联图层，便于副本可直接运行；纯用户复制同样继承，可在编辑器改绑。
     payload = {
         "workflow_id": new_id,
-        "name": new_name or f"{source.get('_meta', {}).get('name', source_id)} (copy)",
-        "description": source.get("_meta", {}).get("description"),
-        "engine": source.get("_meta", {}).get("engine", "common"),
-        "linked_layer_id": None,  # 副本不绑定图层
+        "name": new_name or f"{source_meta.get('name', source_id)} (copy)",
+        "description": source_meta.get("description"),
+        "engine": source_meta.get("engine", "common"),
+        "linked_layer_id": source_meta.get("linked_layer_id"),
         "nodes": source.get("nodes", []),
         "links": source.get("links", []),
         "extra": source.get("extra", {}),

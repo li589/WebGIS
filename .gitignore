@@ -102,3 +102,23 @@ Tools/reports/data_production_e2e_*
 .trae/documents/plan_*.md
 .trae/documents/weather-rendering-*.md
 .trae/documents/windy-style-*.md
+
+# TRAE HTML share packages (temporary export)
+.trae-html-share-packages/
+
+# Algorithm validation reports (generated artifacts)
+algorithm-validation-report/
+
+# Tools binary executables
+Tools/unrar/
+
+# Vendor binary executables (keep source/license, exclude binaries)
+Code/backend/vendor/unrar/linux-x64/
+Code/backend/vendor/unrar/win-x64/
+
+# Tools generated reports (CSV/JSON inventories)
+Tools/reports/dataset_inventory_*.csv
+Tools/reports/dataset_inventory_*.json
+
+# Doc task notes (temp)
+Doc/一份任务说明-*.txt

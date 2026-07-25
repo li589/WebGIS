@@ -116,14 +116,14 @@
 | `Gosat/` | 276 | — | GOSAT L2/L4 CO2 数据 | 原有 |
 | `Hazards/` | 7340 | — | DWAA干旱、滑坡、自然灾害统计 | 原有（原"灾害数据"） |
 | `HumanFootprint/` | 3 | 2146 MB | hfp2018-2020.tif | 远程 |
-| `InversionResults/` | 20 | 189 MB | omega .mat (smap_avg + fy_avg) + Landscape Metrics | 远程 |
+| `Inversion_Results/` | 20 | 189 MB | omega .mat (smap_avg + fy_avg) + Landscape Metrics | 远程 |
 | `LandCover/` | 4 | 838 MB | MCD12Q1 2019-2021 + CLCD 1997 | 远程 |
 | `Others/` | 1 | 0.1 MB | AridityIndex | 远程 |
 | `Precipitation/` | 3 | 231 MB | China 1km 降水 2002-01~03 | 远程 |
 | `River/` | 0 | 0 | 河流数据（待下载） | 远程 |
 | `SAR/` | 0 | 0 | 雷达数据（待下载） | 远程 |
-| `SMAP/` | 5 | 174 MB | SMAP L3 SM HDF5 (2022-2023) | 远程 |
-| `Soil_Ecological_Data/` | 10766 | — | DDCA、2m温度、森林变化、WHU_CLCD | 原有 |
+| `Soil_Moisture/SMAP/` | 5 | 174 MB | SMAP L3 SM HDF5 (2022-2023) | 远程 |
+| `Soil_Moisture/` | 10766 | — | DDCA、2m温度、森林变化、WHU_CLCD | 原有 |
 | `Station/` | 322430 | 16472 MB | ISD-Lite + ISMN/FLUX 匹配 | 原有+远程 |
 | `Transport/` | 26 | — | 出租车轨迹、通行路号 | 原有（原"交通数据"） |
 | `Weather/` | 388 | 18209 MB | CMFD + China 1km tmp + PET/温度/降水 | 原有+远程 |
@@ -139,26 +139,26 @@
 - `Hazards/DroughtIndex/` — 干旱指数
 - `Hazards/Landslide/` — 滑坡数据（含 6 个子目录）
 - `Hazards/FireData/` — 火灾数据
-- `InversionResults/smap_avg/` — omega SMAP 平均（14 个 doy_*.mat）
-- `InversionResults/fy_avg/` — omega FY 平均（6 个 doy_*.mat）
+- `Inversion_Results/smap_avg/` — omega SMAP 平均（14 个 doy_*.mat）
+- `Inversion_Results/fy_avg/` — omega FY 平均（6 个 doy_*.mat）
 - `Station/China_Station_Rainfall/` — 全国观测站降雨数据（含 DataDescription/Guangzhou 子目录）
 - `Station/Global_20yr/` — 近 20 年全球数据
 - `Transport/Taxi_RoadNumber/` — 出租车通行路号
 - `Weather/Temperature/` — 温度数据
 - `Weather/Precipitation/` — 降水数据（含 ChinaData/dataset 子目录）
 - `Weather/PET/` — 蒸散发数据
-- `Soil_Ecological_Data/WHU_CLCD_1985_2023/` — 武汉大学 CLCD
+- `Ecological_Vegetation/LandCover/CLCD_1985_2023/` — 武汉大学 CLCD
 
 ### 4.2 新增目录（用于远程数据下载）
 
 ```
 I:\Geograph_DataSet\
-├── SMAP\                    # 土壤水分（SMAP HDF5）✓ 已下载 5 个文件
+├── Soil_Moisture\SMAP\                    # 土壤水分（SMAP HDF5）✓ 已下载 5 个文件
 ├── Biomass\                 # 生物量（ESACCI-BIOMASS .nc）待下载
 ├── ForestHeight\            # 森林高度 待下载
 ├── HumanFootprint\          # 人类足迹 ✓ 已下载 3 个文件（hfp2018 不完整）
 ├── SAR\                     # 雷达数据 待下载
-├── InversionResults\        # 反演结果 ✓ 已下载 20 个文件
+├── Inversion_Results\        # 反演结果 ✓ 已下载 20 个文件
 │   ├── smap_avg\            #   omega SMAP 平均 (14 文件)
 │   ├── fy_avg\              #   omega FY 平均 (6 文件)
 │   ├── Landscape_Metrics_LandOnly_9KM_2020.mat
@@ -226,7 +226,7 @@ I:\Geograph_DataSet\
 ### 5.2 omega .mat v7.3 (反演结果)
 
 **格式**: MAT v7.3 (HDF5-based)，h5py 可正常读取
-**文件**: `InversionResults/smap_avg/doy_017.mat` (3.25 MB)
+**文件**: `Inversion_Results/smap_avg/doy_017.mat` (3.25 MB)
 
 **变量**:
 | 变量名 | 形状 | 数据类型 | 值范围 | 说明 |
@@ -421,7 +421,7 @@ I:\Geograph_DataSet\
 | 1 | SMAP L3 SM P 20230110 | HDF5 | ✅ | 12.3% | [0.02, 0.64] | 0.265 | 中国区域 121×172, SM m³/m³ |
 | 2 | MCD12Q1 2020 | GeoTIFF | ✅ | 69.8% | [1, 17] | 12.26 | Sinusoidal 投影, IGBP 分类 |
 | 3 | HFP 2020 | GeoTIFF | ✅ | 63.2% | [0, 50] | 9.52 | ESRI:54009 Mollweide, 中国区域 4934×8615 |
-| 4 | InversionResults smap_avg doy_017 | MAT v7.3 | ✅ | 13.7% | [0, 1] | 0.099 | OMEGA_AVG 变量 (非 omega) |
+| 4 | Inversion_Results smap_avg doy_017 | MAT v7.3 | ✅ | 13.7% | [0, 1] | 0.099 | OMEGA_AVG 变量 (非 omega) |
 | 5 | GEBCO 2024 DEM | NetCDF | ✅ | 100% | [-8403, 8627] | 495.16 | elevation 变量, 中国区域 10560×15361 |
 | 6 | Italy DEM GEBCO2024 | GeoTIFF | ✅ | 100% | [-4450, 4655] | -427.30 | EPSG:4326, 3000×3120 (意大利区域) |
 | 7 | CMFD Precipitation 2002-01 | GeoTIFF | ✅ | 80.6% | [0, 4875] | 151.55 | int16, 单位 0.1mm, 5146×7644 |
@@ -432,7 +432,7 @@ I:\Geograph_DataSet\
 | 12 | ERA5 WDAA SMCI 2020 | GeoTIFF | ✅ | 0.1% | {0,1} | — | 事件标识层, 366波段, uint8 |
 | 13 | MeanCarbonDioxide | GeoTIFF | ✅ | 100% | [386.38, 390.61] | 388.85 | 2.5°×2.0° 低分辨率, 22×26 |
 | 14 | Soil DDCA 20150401 | MAT v5 | ✅ | 5.9% | [0, 3] | 0.587 | DH 变量, 1624×3856 |
-| 15 | InversionResults fy_avg doy_025 | MAT v7.3 | ✅ | 13.4% | [0, 1] | 0.134 | OMEGA_AVG, fy_avg > smap_avg |
+| 15 | Inversion_Results fy_avg doy_025 | MAT v7.3 | ✅ | 13.4% | [0, 1] | 0.134 | OMEGA_AVG, fy_avg > smap_avg |
 | 16 | Forest_Ratio_9KM_2020 | MAT v5 | ✅ | 27.3% | [0, 1] | 0.168 | 森林比例, 9km 网格 |
 
 #### ERA5 DWAA 辅助文件验证 (2020年 band 100)
@@ -447,7 +447,7 @@ I:\Geograph_DataSet\
 
 #### 关键发现与已知问题
 
-1. **InversionResults smap_avg 变量名**: 变量名是 `OMEGA_AVG`，不是 `omega`。脚本中已修正。
+1. **Inversion_Results smap_avg 变量名**: 变量名是 `OMEGA_AVG`，不是 `omega`。脚本中已修正。
 2. **CLCD 大文件内存问题**: 228579×131361 uint8 = 28 GiB，`UniversalDataReader` 转 float64 需 224 GiB。
    - **解决方案**: 使用 rasterio 窗口读取 (`from_bounds` + `intersection`)，保持 uint8 dtype。
    - **采样验证** (北京窗口 110-120°E, 35-45°N): 37106×37106, 100% 有效, 值分布: 1(森林)=483M, 4(草地)=554M, 0(耕地)=103M, 2(灌木)=144M, 8(湿地)=65M。
@@ -536,8 +536,8 @@ python download_resumable.py          # 全部待下载文件
 
 | 目录 | 文件 | 大小 | 状态 |
 |------|------|------|------|
-| SMAP | 14 个 .h5 (L3 SM P 2023-01 两周序列) | 242 MB | ✓ 完成 (8 新 + 6 已有) |
-| SMAP | 5 个 .h5 (原有 L3 SM P + L3 SM P_E 2022-09) | 326 MB | ✓ 完成 |
+| Soil_Moisture/SMAP | 14 个 .h5 (L3 SM P 2023-01 两周序列) | 242 MB | ✓ 完成 (8 新 + 6 已有) |
+| Soil_Moisture/SMAP | 5 个 .h5 (原有 L3 SM P + L3 SM P_E 2022-09) | 326 MB | ✓ 完成 |
 | Weather | 3 个 ERA5 SMCI .nc (2018/2019/2020) | 8409 MB | ✓ 完成 (断点续传) |
 | Weather | 2 个 CMFD .nc (lrad, srad 1979-2018) | 513 MB | ✓ 完成 |
 | Weather | 3 个 China 1km tmp .tif (2002-01~03) | 231 MB | ✓ 完成 |
@@ -546,9 +546,9 @@ python download_resumable.py          # 全部待下载文件
 | LandCover | 3 个 MCD12Q1 .tif (2019-2021) | 55 MB | ✓ 完成 |
 | LandCover | CLCD_v01_1997.tif | 783 MB | ✓ 完成 |
 | Precipitation | 3 个 China 1km pre .tif (2002-01~03) | 231 MB | ✓ 完成 |
-| InversionResults/smap_avg | 14 个 omega .mat (doy 017-030) | 46 MB | ✓ 完成 |
-| InversionResults/fy_avg | 6 个 omega .mat (doy 025-030) | 20 MB | ✓ 完成 |
-| InversionResults | Landscape_Metrics + Forest_Ratio .mat | 143 MB | ✓ 完成 |
+| Inversion_Results/smap_avg | 14 个 omega .mat (doy 017-030) | 46 MB | ✓ 完成 |
+| Inversion_Results/fy_avg | 6 个 omega .mat (doy 025-030) | 20 MB | ✓ 完成 |
+| Inversion_Results | Landscape_Metrics + Forest_Ratio .mat | 143 MB | ✓ 完成 |
 | Station | ISMN_vs_Fluxnet2015.csv | 0.03 MB | ✓ 完成 |
 | Others | AridityIndex .tif | 0.12 MB | ✓ 完成 |
 
@@ -629,7 +629,7 @@ python download_resumable.py          # 全部待下载文件
 | MCD12Q1 | 3 个 .tif (2019-2021) | 2019 | IGBP 分区统计 |
 | Human Footprint | 3 个 .tif (2018-2020) | 2019 | 人为干扰分析 |
 | AridityIndex | 1 个 .tif | 1980-2020 | 干燥度分区 |
-| InversionResults/smap_avg | 14 个 .mat (doy 017-030) | 历史均值 | Omega 反演结果对比 |
+| Inversion_Results/smap_avg | 14 个 .mat (doy 017-030) | 历史均值 | Omega 反演结果对比 |
 | ISMN_vs_Fluxnet | 1 个 .csv (101 站点) | 多年 | SMAP SM 验证 |
 
 ### 11.4 工作流阶段
@@ -654,7 +654,7 @@ python download_resumable.py          # 全部待下载文件
 - 输入: 阶段 1 的日尺度 .mat
 - 算法: 现有 `omega_block` 模块（双温度方案 DUAL）
 - 输出: 14 天的 OMEGA .mat 时间序列
-- 对比: 与 InversionResults/smap_avg 历史均值对比
+- 对比: 与 Inversion_Results/smap_avg 历史均值对比
 
 **阶段 4: 交叉分析（Analysis 模块）**
 - 4.1 相关性分析: SMAP SM vs BIOMASS / HFP / AridityIndex（逐像素 Pearson）
@@ -712,7 +712,7 @@ python download_resumable.py          # 全部待下载文件
 经探索 omega_block 模块接口和 Station 数据结构，做如下调整：
 
 1. **Omega 反演算法**: ❌ 不直接运行 omega_block — 该算法需要时序束 .mat（含 IA/SMref/NDVI/SF/B/H 等辅助场），SMAP HDF5 仅提供 SM/Ts/TBh/TBv/VWC/CF，缺少 IA/SMref/NDVI/SF/B/H。构建完整时序束需 TimeSeriesBundlePipeline 多源数据组装，超出本期范围。
-   - ✅ 改用现有 `InversionResults/smap_avg` (doy 017-030, 14 个 .mat) 作为 omega 产品
+   - ✅ 改用现有 `Inversion_Results/smap_avg` (doy 017-030, 14 个 .mat) 作为 omega 产品
 2. **Omega 对比基线**: ✅ 与 SMAP SM 14 天数据交叉分析（omega vs SM/Ts 空间相关性）
 3. **站点验证数据**: `Station/` 目录是 ISD-Lite 气象数据（非 ISMN 土壤水分观测），无法做 SM 时间序列验证
    - ✅ 改为站点空间采样: 用 ISMN_vs_Fluxnet2015.csv 的 101 站点坐标，提取 SMAP SM 在站点位置的值，按 IGBP 分类统计
@@ -724,7 +724,7 @@ python download_resumable.py          # 全部待下载文件
 |------|------|----------|------|
 | 1 | SMAP 14 天 → .mat | SMAP HDF5 | DataPreprocessor |
 | 2 | 多源数据对齐到 0.25° | BIOMASS/MCD12Q1/HFP/AI | SpatialAligner |
-| 3 | Omega 产品加载 | InversionResults/smap_avg | UniversalDataReader |
+| 3 | Omega 产品加载 | Inversion_Results/smap_avg | UniversalDataReader |
 | 4 | 交叉分析 | SM/Omega vs BIOMASS/LandCover/HFP | CorrelationAnalysis + ZonalStats |
 | 5 | 站点空间采样 | ISMN_vs_Fluxnet2015.csv (101 站点) | SMAP SM 像元提取 + IGBP 分组 |
 | 6 | 可视化报告 | 全部产出 | DataVisualization |

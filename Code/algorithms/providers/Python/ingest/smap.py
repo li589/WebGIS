@@ -59,14 +59,17 @@ def extract_date_from_smap_filename(file_path: str | Path) -> str:
 def _sanitize_array(data: Any, spec: SmapFieldSpec) -> Any:
     import numpy as np
 
+    from data_access.numeric_sanitize import mask_common_fill_values, mask_value_range
+
     result = np.array(data, dtype=np.float64, copy=True)
     if spec.transpose:
         result = result.T
+    result = mask_common_fill_values(result)
+    # 保留字段专属 invalid_fill（可能不是常见哨兵列表中的值）
     result[result == spec.invalid_fill] = np.nan
-    if spec.min_valid is not None:
-        result[result < spec.min_valid] = np.nan
-    if spec.max_valid is not None:
-        result[result > spec.max_valid] = np.nan
+    result = mask_value_range(
+        result, min_valid=spec.min_valid, max_valid=spec.max_valid
+    )
     return result
 
 
