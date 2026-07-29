@@ -162,20 +162,58 @@ class RasterPreviewService:
             src_band = dataset.read(1, masked=True)
             src_nodata = dataset.nodata
 
-            # 计算目标 CRS 下的 transform/尺寸
-            dst_transform, dst_width, dst_height = warp.calculate_default_transform(
-                source_crs,
-                target_crs,
-                src_width,
-                src_height,
-                *src_bounds,
+            # 投影域钳位：避免 EASE 等全球网格因浮点越界导致东缘经度折返
+            try:
+                from app.data_io.services.grid_presets import (
+                    clamp_projected_bounds_to_crs_domain,
+                    normalize_geographic_bounds,
+                )
+
+                sw, ss, se, sn = clamp_projected_bounds_to_crs_domain(
+                    float(src_bounds.left),
+                    float(src_bounds.bottom),
+                    float(src_bounds.right),
+                    float(src_bounds.top),
+                    source_crs,
+                )
+                src_span_hint = abs(se - sw)
+            except Exception:
+                sw, ss, se, sn = (
+                    float(src_bounds.left),
+                    float(src_bounds.bottom),
+                    float(src_bounds.right),
+                    float(src_bounds.top),
+                )
+                normalize_geographic_bounds = None  # type: ignore[assignment]
+                src_span_hint = abs(se - sw)
+
+            # 计算目标 CRS 下覆盖完整范围的 transform/尺寸
+            dst_transform_full, dst_width_full, dst_height_full = (
+                warp.calculate_default_transform(
+                    source_crs,
+                    target_crs,
+                    src_width,
+                    src_height,
+                    sw,
+                    ss,
+                    se,
+                    sn,
+                )
+            )
+            full_west, full_south, full_east, full_north = array_bounds(
+                dst_height_full, dst_width_full, dst_transform_full
             )
 
-            # 限制 dst 尺寸上限（避免全球重投影生成过大网格）
-            # 注意：不能向上扩展（如 max(64, dst_width)），否则 dst_transform 仍按原
-            # calculate_default_transform 返回的尺寸计算，导致 bounds 被错误放大。
-            dst_width = max(1, min(width, dst_width))
-            dst_height = max(1, min(height, dst_height))
+            # 限制预览像素尺寸，但必须用 from_bounds 重建 Affine，
+            # 使缩略图仍覆盖完整地理范围（旧逻辑直接 min 尺寸却保留原 Affine，
+            # 全球 EASE 会变成仅 NW 一角的错误 bounds）。
+            from rasterio.transform import from_bounds as _from_bounds
+
+            dst_width = max(1, min(width, int(dst_width_full)))
+            dst_height = max(1, min(height, int(dst_height_full)))
+            dst_transform = _from_bounds(
+                full_west, full_south, full_east, full_north, dst_width, dst_height
+            )
 
             # 重投影：用普通 ndarray 作 destination（不能用 MaskedArray + 标量 mask，
             # 否则 rasterio.warp.reproject 在 _warp.pyx 检查 mask 时报
@@ -238,14 +276,26 @@ class RasterPreviewService:
                 dataset.write(alpha, 4)
             png_bytes = memory_file.read()
 
-        # 目标 bounds 由 dst_transform × dst 尺寸计算（比 transform_bounds(src→dst, src_bounds) 更准确）
-        # array_bounds 返回 (west, south, east, north) 顺序
+        # 目标 bounds：与重建后的 Affine 一致；地理系再做日界线/塌缩规范化
         west, south, east, north = array_bounds(dst_height, dst_width, dst_transform)
-        # 正常情况 west < east, south < north；防御性处理跨 ±180° 经线等边界情形
         if west > east:
             west, east = east, west
         if south > north:
             south, north = north, south
+        if (
+            target_crs in ("EPSG:4326", "EPSG:4490", "EPSG:4258")
+            and normalize_geographic_bounds
+        ):
+            try:
+                west, south, east, north = normalize_geographic_bounds(
+                    float(west),
+                    float(south),
+                    float(east),
+                    float(north),
+                    source_span_hint=src_span_hint,
+                )
+            except ValueError:
+                pass
         return png_bytes, (float(west), float(south), float(east), float(north))
 
 

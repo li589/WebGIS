@@ -32,6 +32,8 @@ def _param(
     max_val: float | None = None,
     step: float | None = None,
     allow_custom: bool | None = None,
+    widget: str | None = None,
+    bbox_keys: dict[str, str] | None = None,
 ) -> dict[str, Any]:
     """构造参数描述字典。
 
@@ -46,6 +48,17 @@ def _param(
         max_val: 数值上限
         step: 数值步长
         allow_custom: 有 options 时是否允许自定义输入；None 时由前端推断
+        widget: 前端渲染控件类型提示，优先级高于根据 type/value 自动推断。
+            可选值: date | datetime | bbox | coordinate | path | textarea | color
+            - date: 原生日期选择器，存储格式 YYYYMMDD
+            - datetime: 日期+时间选择器，存储格式 YYYYMMDDHHmm
+            - bbox: 四分量经纬度输入器（需配合 bbox_keys 指定字段映射）
+            - coordinate: 单点经纬度选择器
+            - path: 路径输入框（带目录浏览按钮）
+            - textarea: 多行文本输入
+            - color: 颜色选择器
+        bbox_keys: widget=bbox 时，指定四个分量 key 映射
+            (如 {"west": "min_lon", "east": "max_lon", ...})；默认 west/south/east/north
     """
     p: dict[str, Any] = {
         "key": key,
@@ -65,6 +78,10 @@ def _param(
         p["step"] = step
     if allow_custom is not None:
         p["allow_custom"] = allow_custom
+    if widget:
+        p["widget"] = widget
+    if bbox_keys:
+        p["bbox_keys"] = bbox_keys
     return p
 
 
@@ -120,7 +137,7 @@ _NODE_TEMPLATES: list[dict[str, Any]] = [
                 "string",
                 description="数据集标识符（如 SMAP_SPL3SMP_E）。",
             ),
-            _param("path", "string", description="数据路径或 URI。"),
+            _param("path", "string", description="数据路径或 URI。", widget="path"),
             _param("pattern", "string", default="*", description="文件匹配模式。"),
             _param(
                 "format",
@@ -196,7 +213,12 @@ _NODE_TEMPLATES: list[dict[str, Any]] = [
             _port("manifest", "data", description="产物清单。"),
         ],
         "params": [
-            _param("uri", "string", description="URI（也可由上游端口提供）。"),
+            _param(
+                "uri",
+                "string",
+                description="URI（也可由上游端口提供）。",
+                widget="path",
+            ),
             _param(
                 "cred_profile",
                 "string",
@@ -237,7 +259,12 @@ _NODE_TEMPLATES: list[dict[str, Any]] = [
                 allow_custom=False,
             ),
             _param("base_url", "string", description="自定义 base URL（优先于预设）。"),
-            _param("relative_path", "string", description="相对路径或对象键（必填）。"),
+            _param(
+                "relative_path",
+                "string",
+                description="相对路径或对象键（必填）。",
+                widget="path",
+            ),
             _param("query", "string", description="可选 query string。"),
             _param(
                 "cred_profile",
@@ -261,6 +288,146 @@ _NODE_TEMPLATES: list[dict[str, Any]] = [
         ],
         "node_class": "http_open_data",
     },
+    # ── 远程数据下载/同步/预处理节点 ──
+    {
+        "type": "download/ssh_sync",
+        "engine": "common",
+        "category": "数据获取与解析",
+        "title": "SSH/SFTP 同步",
+        "description": "从 HPC/Win11/NAS 远程服务器增量同步数据到本地。支持日期过滤、断点续传、FileBrowser REST API。",
+        "inputs": [
+            _port(
+                "data",
+                "data:source",
+                required=False,
+                description="上游数据源引用（可选）。",
+            ),
+        ],
+        "outputs": [
+            _port("path", "value:string", description="本地落盘路径。"),
+            _port("manifest", "data", description="产物清单。"),
+        ],
+        "params": [
+            _param(
+                "server_type",
+                "string",
+                default="hpc",
+                options=["hpc", "win11", "nas"],
+                description="服务器类型。",
+            ),
+            _param(
+                "remote_path", "string", description="远程目录路径。", widget="path"
+            ),
+            _param("local_path", "string", description="本地目标目录。", widget="path"),
+            _param(
+                "start_date",
+                "string",
+                description="起始日期 YYYYMMDD（可选过滤）。",
+                widget="date",
+            ),
+            _param(
+                "end_date",
+                "string",
+                description="结束日期 YYYYMMDD（可选过滤）。",
+                widget="date",
+            ),
+            _param(
+                "file_filter",
+                "string",
+                description="文件扩展名过滤（如 .mat,.h5）。",
+            ),
+            _param(
+                "max_depth",
+                "number",
+                default=4,
+                min_val=1,
+                max_val=10,
+                step=1,
+                description="最大递归深度。",
+            ),
+        ],
+        "node_class": "ssh_sync",
+    },
+    {
+        "type": "download/nsidc_smap_download",
+        "engine": "common",
+        "category": "数据获取与解析",
+        "title": "NSIDC SMAP 下载",
+        "description": "从 NASA NSIDC 下载 SMAP L3 SPL3SMP_E V6 土壤湿度数据。支持日期范围、增量下载、earthaccess 认证。",
+        "inputs": [],
+        "outputs": [
+            _port("path", "value:string", description="本地落盘目录。"),
+            _port("manifest", "data", description="产物清单。"),
+        ],
+        "params": [
+            _param(
+                "start_date", "string", description="起始日期 YYYYMMDD。", widget="date"
+            ),
+            _param(
+                "end_date", "string", description="结束日期 YYYYMMDD。", widget="date"
+            ),
+            _param("local_path", "string", description="本地目标目录。", widget="path"),
+            _param(
+                "version",
+                "string",
+                default="6",
+                options=["5", "6"],
+                description="产品版本。",
+            ),
+        ],
+        "node_class": "nsidc_smap_download",
+    },
+    {
+        "type": "download/fy_preprocess",
+        "engine": "common",
+        "category": "数据获取与解析",
+        "title": "FY 亮温预处理",
+        "description": "FY-3B/3D MWRI HDF 亮温预处理：geolocation 校正、日内轨道拼接、多通道合并、重投影。",
+        "inputs": [
+            _port(
+                "data",
+                "data:source",
+                required=False,
+                description="上游数据源（可选）。",
+            ),
+        ],
+        "outputs": [
+            _port("path", "value:string", description="输出目录。"),
+            _port("manifest", "data", description="产物清单。"),
+        ],
+        "params": [
+            _param(
+                "satellite",
+                "string",
+                default="FY3D",
+                options=["FY3D", "FY3B"],
+                description="卫星。",
+            ),
+            _param("input_dir", "string", description="HDF 输入目录。", widget="path"),
+            _param("output_dir", "string", description="输出目录。", widget="path"),
+            _param(
+                "start_date", "string", description="起始日期 YYYYMMDD。", widget="date"
+            ),
+            _param(
+                "end_date", "string", description="结束日期 YYYYMMDD。", widget="date"
+            ),
+            _param(
+                "orbit_mode",
+                "string",
+                default="MWRID",
+                options=["MWRID", "MWRIA", "Both"],
+                description="轨道模式。",
+            ),
+            _param(
+                "outfile_type",
+                "string",
+                default="HDF5",
+                options=["GTiff", "NetCDF", "HDF5"],
+                description="输出格式。",
+            ),
+        ],
+        "node_class": "fy_preprocess",
+    },
     {
         "type": "archive/extract",
         "engine": "common",
@@ -282,7 +449,10 @@ _NODE_TEMPLATES: list[dict[str, Any]] = [
         ],
         "params": [
             _param(
-                "archive_path", "string", description="归档路径（也可由上游提供）。"
+                "archive_path",
+                "string",
+                description="归档路径（也可由上游提供）。",
+                widget="path",
             ),
             _param(
                 "output_dirname",
@@ -318,7 +488,7 @@ _NODE_TEMPLATES: list[dict[str, Any]] = [
             _port("manifest", "data", description="产物清单。"),
         ],
         "params": [
-            _param("path", "string", description="配置文件路径。"),
+            _param("path", "string", description="配置文件路径。", widget="path"),
             _param(
                 "format",
                 "string",
@@ -348,7 +518,12 @@ _NODE_TEMPLATES: list[dict[str, Any]] = [
             _port("manifest", "data", description="产物清单。"),
         ],
         "params": [
-            _param("path", "string", description="文件路径（也可由上游提供）。"),
+            _param(
+                "path",
+                "string",
+                description="文件路径（也可由上游提供）。",
+                widget="path",
+            ),
             _param(
                 "variable", "string", description="变量名（HDF5/NetCDF/MAT/GRIB）。"
             ),
@@ -412,7 +587,7 @@ _NODE_TEMPLATES: list[dict[str, Any]] = [
             _port("manifest", "data", description="产物清单。"),
         ],
         "params": [
-            _param("path", "string", description="源路径。"),
+            _param("path", "string", description="源路径。", widget="path"),
             _param(
                 "target_format",
                 "string",
@@ -440,8 +615,15 @@ _NODE_TEMPLATES: list[dict[str, Any]] = [
                 "string",
                 default="",
                 description="起始时间 ISO 8601（如 2023-01-01T00:00:00）。",
+                widget="datetime",
             ),
-            _param("end_at", "string", default="", description="结束时间 ISO 8601。"),
+            _param(
+                "end_at",
+                "string",
+                default="",
+                description="结束时间 ISO 8601。",
+                widget="datetime",
+            ),
             _param(
                 "resolution_unit",
                 "string",
@@ -512,6 +694,13 @@ _NODE_TEMPLATES: list[dict[str, Any]] = [
                 min_val=-180,
                 max_val=180,
                 step=0.01,
+                widget="bbox",
+                bbox_keys={
+                    "west": "west",
+                    "south": "south",
+                    "east": "east",
+                    "north": "north",
+                },
             ),
             _param(
                 "south",
@@ -1369,7 +1558,14 @@ _NODE_TEMPLATES: list[dict[str, Any]] = [
                 description="风场矢量 GeoJSON FeatureCollection。",
             ),
         ],
-        "params": [],
+        "params": [
+            _param(
+                "layer_id",
+                "string",
+                default="wind-field",
+                description="目标图层标识。",
+            ),
+        ],
         "node_class": "weather_wind_field",
     },
     {
@@ -1391,7 +1587,14 @@ _NODE_TEMPLATES: list[dict[str, Any]] = [
         "outputs": [
             _port("geojson", "data:geojson", description="温度栅格 GeoJSON。"),
         ],
-        "params": [],
+        "params": [
+            _param(
+                "layer_id",
+                "string",
+                default="temperature",
+                description="目标图层标识。",
+            ),
+        ],
         "node_class": "weather_temperature_grid",
     },
     {
@@ -1413,7 +1616,14 @@ _NODE_TEMPLATES: list[dict[str, Any]] = [
         "outputs": [
             _port("geojson", "data:geojson", description="降水栅格 GeoJSON。"),
         ],
-        "params": [],
+        "params": [
+            _param(
+                "layer_id",
+                "string",
+                default="precipitation",
+                description="目标图层标识。",
+            ),
+        ],
         "node_class": "weather_precipitation_grid",
     },
     {
@@ -1435,7 +1645,14 @@ _NODE_TEMPLATES: list[dict[str, Any]] = [
         "outputs": [
             _port("geojson", "data:geojson", description="湿度栅格 GeoJSON。"),
         ],
-        "params": [],
+        "params": [
+            _param(
+                "layer_id",
+                "string",
+                default="humidity",
+                description="目标图层标识。",
+            ),
+        ],
         "node_class": "weather_humidity_grid",
     },
     {
@@ -1457,7 +1674,14 @@ _NODE_TEMPLATES: list[dict[str, Any]] = [
         "outputs": [
             _port("geojson", "data:geojson", description="气压栅格 GeoJSON。"),
         ],
-        "params": [],
+        "params": [
+            _param(
+                "layer_id",
+                "string",
+                default="pressure",
+                description="目标图层标识。",
+            ),
+        ],
         "node_class": "weather_pressure_grid",
     },
     {
@@ -1479,7 +1703,14 @@ _NODE_TEMPLATES: list[dict[str, Any]] = [
         "outputs": [
             _port("geojson", "data:geojson", description="能见度栅格 GeoJSON。"),
         ],
-        "params": [],
+        "params": [
+            _param(
+                "layer_id",
+                "string",
+                default="visibility",
+                description="目标图层标识。",
+            ),
+        ],
         "node_class": "weather_visibility_grid",
     },
     {
@@ -1501,7 +1732,14 @@ _NODE_TEMPLATES: list[dict[str, Any]] = [
         "outputs": [
             _port("geojson", "data:geojson", description="云量栅格 GeoJSON。"),
         ],
-        "params": [],
+        "params": [
+            _param(
+                "layer_id",
+                "string",
+                default="cloud-cover",
+                description="目标图层标识。",
+            ),
+        ],
         "node_class": "weather_cloud_cover_grid",
     },
     {
@@ -1523,7 +1761,14 @@ _NODE_TEMPLATES: list[dict[str, Any]] = [
         "outputs": [
             _port("geojson", "data:geojson", description="露点栅格 GeoJSON。"),
         ],
-        "params": [],
+        "params": [
+            _param(
+                "layer_id",
+                "string",
+                default="dewpoint",
+                description="目标图层标识。",
+            ),
+        ],
         "node_class": "weather_dewpoint_grid",
     },
     {
@@ -1542,7 +1787,30 @@ _NODE_TEMPLATES: list[dict[str, Any]] = [
         "outputs": [
             _port("tile", "data", description="渲染后的瓦片数据。"),
         ],
-        "params": [],
+        "params": [
+            _param(
+                "hour",
+                "number",
+                default=0,
+                min_val=0,
+                max_val=240,
+                step=1,
+                unit="小时",
+                description="渲染目标小时偏移（0=当前）。",
+            ),
+            _param(
+                "model",
+                "string",
+                default="best_match",
+                description="预报模型。",
+            ),
+            _param(
+                "provider_id",
+                "string",
+                default="",
+                description="天气源 Provider ID（空=自动）。",
+            ),
+        ],
         "node_class": "weather_tile_render",
     },
     {
@@ -1559,7 +1827,18 @@ _NODE_TEMPLATES: list[dict[str, Any]] = [
         "outputs": [
             _port("weather_point", "data", description="解析后的天气点位数据。"),
         ],
-        "params": [],
+        "params": [
+            _param(
+                "forecast_hours",
+                "number",
+                default=6,
+                min_val=1,
+                max_val=240,
+                step=1,
+                unit="小时",
+                description="预报小时数。",
+            ),
+        ],
         "node_class": "weather_point_parse",
     },
     {
@@ -1598,7 +1877,15 @@ _NODE_TEMPLATES: list[dict[str, Any]] = [
         "outputs": [
             _port("smap_daily_mat", "data:mat", description="SMAP 日常 .mat 输出。"),
         ],
-        "params": [],
+        "params": [
+            _param(
+                "output_dir",
+                "string",
+                default="",
+                description="输出目录（空=默认工作区 products/smap_daily）。",
+                widget="path",
+            ),
+        ],
         "node_class": "smap_daily",
     },
     {
@@ -1665,7 +1952,22 @@ _NODE_TEMPLATES: list[dict[str, Any]] = [
             _port("manifest", "data:manifest", description="产物清单。"),
             _port("output_dir", "value:string", description="9 km TIF 输出目录。"),
         ],
-        "params": [],
+        "params": [
+            _param(
+                "output_dir",
+                "string",
+                default="",
+                description="9 km GeoTIFF 输出目录（空=默认工作区）。",
+                widget="path",
+            ),
+            _param(
+                "work_dir",
+                "string",
+                default="",
+                description="临时工作目录（空=output_dir/_tmp_ndvi_hdf）。",
+                widget="path",
+            ),
+        ],
         "node_class": "ndvi_hdf_preprocess",
     },
     {
@@ -1972,8 +2274,207 @@ _NODE_TEMPLATES: list[dict[str, Any]] = [
         "outputs": [
             _port("data", "data:mat", description="日均/回代产物。"),
         ],
-        "params": [],
+        "params": [
+            _param("target_year", "number", description="目标反演年份。"),
+            _param(
+                "tb_source",
+                "string",
+                default="SMAP",
+                options=["SMAP", "FY"],
+                description="亮温数据源。",
+            ),
+            _param(
+                "temp_scheme",
+                "string",
+                default="ORIG_TS",
+                options=["ORIG_TS", "DUAL"],
+                description="温度方案。",
+            ),
+            _param(
+                "ndvi_mode",
+                "string",
+                default="DOY_CLIM",
+                options=["DAILY_FILE", "DOY_CLIM"],
+                description="NDVI 模式。",
+            ),
+            _param(
+                "sf_mode",
+                "string",
+                default="INVERTED_DAILY",
+                options=["STATIC", "INVERTED_DAILY"],
+                description="SF 模式。",
+            ),
+            _param(
+                "sm_source",
+                "string",
+                default="SMAP",
+                options=["SMAP", "ISMN", "DDCA"],
+                description="土壤水分参考源。",
+            ),
+            _param(
+                "enable_parallel",
+                "boolean",
+                default=True,
+                description="启用并行处理。",
+            ),
+            _param(
+                "pixel_chunk_size",
+                "number",
+                default=200000,
+                min_val=10000,
+                max_val=500000,
+                step=10000,
+                description="像元分块大小。",
+            ),
+            _param(
+                "avg_build_start_year",
+                "number",
+                description="气候态构建起始年。",
+            ),
+            _param(
+                "avg_build_end_year",
+                "number",
+                description="气候态构建结束年。",
+            ),
+        ],
         "node_class": "omega_avg_daily",
+    },
+    {
+        "type": "module/omega_sf_fenkuai",
+        "engine": "python_provider",
+        "category": "反演",
+        "title": "SF 块反演 (omega_sf)",
+        "description": "SF 块反演 + OMEGA 识别：8-day 分块、逐日 SF 倒推、块级 h/alpha/OMEGA 优化、DDCA SM/VOD 反演。输出 SM/VOD/OMEGA 三图层。",
+        "inputs": [
+            _port(
+                "datasource_selection",
+                "data:source",
+                required=False,
+                description="数据源选择（smap_folder/anc_root/fy3d_folder 等）。",
+            ),
+            _port(
+                "algorithm_params",
+                "value:any",
+                required=False,
+                description="算法参数覆盖。",
+            ),
+        ],
+        "outputs": [
+            _port(
+                "manifest",
+                "data",
+                description="产物清单（含 SM/VOD/OMEGA 三个 ProductRef）。",
+            ),
+        ],
+        "params": [
+            _param(
+                "tb_source",
+                "string",
+                default="FY",
+                options=["FY", "SMAP"],
+                description="亮温数据源。",
+            ),
+            _param(
+                "fy_platform",
+                "string",
+                default="3D",
+                options=["3D", "3B"],
+                description="FY 平台（tb_source=FY 时）。",
+            ),
+            _param(
+                "sm_source",
+                "string",
+                default="SMAP",
+                options=["SMAP", "ISMN", "DDCA"],
+                description="土壤水分参考源。",
+            ),
+            _param(
+                "temp_scheme",
+                "string",
+                default="ORIG_TS",
+                options=["ORIG_TS", "DUAL"],
+                description="温度方案。",
+            ),
+            _param(
+                "sf_mode",
+                "string",
+                default="INVERTED_DAILY",
+                options=["STATIC", "INVERTED_DAILY"],
+                description="SF 模式。",
+            ),
+            _param(
+                "sf_invert_mode",
+                "string",
+                default="POINT1",
+                options=["POINT1", "NDVIMIN"],
+                description="SF 倒推模式。",
+            ),
+            _param(
+                "ndvi_mode",
+                "string",
+                default="DOY_CLIM",
+                options=["DAILY_FILE", "DOY_CLIM"],
+                description="NDVI 模式。",
+            ),
+            _param(
+                "omega_fixed_mode",
+                "string",
+                default="PFT",
+                options=["PFT", "PIXEL"],
+                description="OMEGA 固定模式。",
+            ),
+            _param(
+                "match_enable",
+                "boolean",
+                default=True,
+                description="启用 FY3B→FY3D 匹配。",
+            ),
+            _param(
+                "match_method",
+                "string",
+                default="bias",
+                options=["none", "bias", "cdf"],
+                description="匹配方法。",
+            ),
+            _param(
+                "block_days",
+                "number",
+                default=8,
+                min_val=1,
+                max_val=16,
+                step=1,
+                unit="天",
+                description="块大小。",
+            ),
+            _param(
+                "start_date",
+                "string",
+                default="20250101",
+                description="起始日期 YYYYMMDD。",
+            ),
+            _param(
+                "end_date",
+                "string",
+                default="20251231",
+                description="结束日期 YYYYMMDD。",
+            ),
+            _param(
+                "enable_parallel",
+                "boolean",
+                default=True,
+                description="启用并行。",
+            ),
+            _param(
+                "pixel_chunk_size",
+                "number",
+                default=200000,
+                min_val=10000,
+                max_val=500000,
+                step=10000,
+                description="像元分块大小。",
+            ),
+        ],
+        "node_class": "omega_sf_fenkuai",
     },
     {
         "type": "module/validation_metrics",
@@ -1987,7 +2488,27 @@ _NODE_TEMPLATES: list[dict[str, Any]] = [
         "outputs": [
             _port("data", "data:mat", description="指标表。"),
         ],
-        "params": [],
+        "params": [
+            _param(
+                "predicted_variable",
+                "string",
+                default="",
+                description="predicted 文件中的变量名（空=自动选取）。",
+            ),
+            _param(
+                "observed_variable",
+                "string",
+                default="",
+                description="observed 文件中的变量名（空=自动选取）。",
+            ),
+            _param(
+                "output_dir",
+                "string",
+                default="",
+                description="输出目录（空=默认工作区 products/validation）。",
+                widget="path",
+            ),
+        ],
         "node_class": "validation_metrics",
     },
     {
@@ -2002,7 +2523,35 @@ _NODE_TEMPLATES: list[dict[str, Any]] = [
         "outputs": [
             _port("data", "data", description="统计结果。"),
         ],
-        "params": [],
+        "params": [
+            _param(
+                "mode",
+                "string",
+                default="global",
+                options=["global", "zonal", "landcover", "timeseries"],
+                description="统计模式。",
+            ),
+            _param(
+                "variable",
+                "string",
+                default="",
+                description="待统计变量名（空=自动选取）。",
+            ),
+            _param(
+                "zones_source",
+                "string",
+                default="",
+                description="分区数据文件路径（zonal/landcover 模式必需）。",
+                widget="path",
+            ),
+            _param(
+                "output_dir",
+                "string",
+                default="",
+                description="输出目录（空=默认工作区）。",
+                widget="path",
+            ),
+        ],
         "node_class": "statistics",
     },
     {
@@ -2017,7 +2566,37 @@ _NODE_TEMPLATES: list[dict[str, Any]] = [
         "outputs": [
             _port("data", "data", description="拟合结果。"),
         ],
-        "params": [],
+        "params": [
+            _param(
+                "method",
+                "string",
+                default="linear",
+                options=["linear", "polynomial", "exponential"],
+                description="拟合方法。",
+            ),
+            _param(
+                "degree",
+                "number",
+                default=2,
+                min_val=1,
+                max_val=10,
+                step=1,
+                description="多项式阶数（method=polynomial 时）。",
+            ),
+            _param(
+                "variable",
+                "string",
+                default="",
+                description="待拟合变量名（空=自动选取）。",
+            ),
+            _param(
+                "output_dir",
+                "string",
+                default="",
+                description="输出目录（空=默认工作区）。",
+                widget="path",
+            ),
+        ],
         "node_class": "curve_fitting",
     },
     {
@@ -2032,7 +2611,28 @@ _NODE_TEMPLATES: list[dict[str, Any]] = [
         "outputs": [
             _port("path", "value:string", description="导出路径。"),
         ],
-        "params": [],
+        "params": [
+            _param(
+                "format",
+                "string",
+                default="mat",
+                options=["mat", "netcdf", "geotiff", "csv"],
+                description="导出格式。",
+            ),
+            _param(
+                "variables",
+                "string",
+                default="",
+                description="逗号分隔的变量名列表（空=导出全部）。",
+            ),
+            _param(
+                "output_dir",
+                "string",
+                default="",
+                description="输出目录（空=默认工作区）。",
+                widget="path",
+            ),
+        ],
         "node_class": "data_export",
     },
     # ═══ GIS 基础工具模块 ═══════════════════════════════════════════════════════
@@ -2560,10 +3160,22 @@ def get_node_templates_by_engine(engine: str) -> list[dict[str, Any]]:
     return [dict(t) for t in _NODE_TEMPLATES if t["engine"] == engine]
 
 
+# 历史种子/画布类型别名 → 现行注册 type（避免画布出现「未定义」节点）
+_NODE_TYPE_ALIASES: dict[str, str] = {
+    "algorithm/omega_avg_daily": "module/omega_avg_daily",
+}
+
+
+def resolve_node_type(node_type: str) -> str:
+    """将历史/别名节点 type 归一为注册表中的规范 type。"""
+    return _NODE_TYPE_ALIASES.get(node_type, node_type)
+
+
 def get_node_template(node_type: str) -> dict[str, Any] | None:
-    """按类型获取单个节点模板。"""
+    """按类型获取单个节点模板（支持历史别名）。"""
+    canonical = resolve_node_type(node_type)
     for t in _NODE_TEMPLATES:
-        if t["type"] == node_type:
+        if t["type"] == canonical:
             return dict(t)
     return None
 

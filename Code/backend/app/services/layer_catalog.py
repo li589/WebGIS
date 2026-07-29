@@ -603,15 +603,15 @@ def get_layer_catalog() -> LayerCatalogResponse:
             default_data_access_sources={
                 "NDVI_16DAY_RASTER": [
                     "NDVI_16DAY_RASTER",
-                    "I:/Geograph_DataSet/Soil_Ecological_Data/NDVI/VIIRS_9km_tif",
-                    "Soil_Ecological_Data/NDVI/VIIRS_9km_tif",
+                    "I:/Geograph_DataSet/Ecological_Vegetation/NDVI/VIIRS_9km_tif",
+                    "Ecological_Vegetation/NDVI/VIIRS_9km_tif",
                 ],
             },
             run_readiness_summary="需先经 A1/A2（ndvi_hdf_preprocess）产出 9 km GeoTIFF，或放置已有 TIF。",
             run_readiness_notes=[
                 "ndvi_daily 读取的是 9 km GeoTIFF（YYYYMMDD.tif），不是原始 HDF。",
-                "原始 VNP13C1/MOYD13C1 请放到 Soil_Ecological_Data/NDVI/VIIRS 或 MODIS，"
-                "再跑模块 ndvi_hdf_preprocess → Soil_Ecological_Data/NDVI/VIIRS_9km_tif。",
+                "原始 VNP13C1/MOYD13C1 请放到 Ecological_Vegetation/NDVI/VIIRS 或 MODIS，"
+                "再跑模块 ndvi_hdf_preprocess → Ecological_Vegetation/NDVI/VIIRS_9km_tif。",
                 "当前 I:/Geograph_DataSet 下 NDVI 目录缺失时保持 placeholder/blocked。",
             ],
         ),
@@ -738,7 +738,7 @@ def get_layer_catalog() -> LayerCatalogResponse:
             run_readiness="ready",
             run_readiness_summary="ETOPO 2022 全球地形数据已就绪。",
             run_readiness_notes=[
-                "数据源: I:/Geograph_DataSet/DEM/ETOPO_2022/ETOPO_2022_v1_60s_N90W180_surface.tif"
+                "数据源: I:/Geograph_DataSet/Geological/DEM/ETOPO_2022/ETOPO_2022_v1_60s_N90W180_surface.tif"
             ],
         ),
         LayerDescriptor(
@@ -822,7 +822,7 @@ def get_layer_catalog() -> LayerCatalogResponse:
             run_readiness="ready",
             run_readiness_summary="Omega 反演结果已就绪（doy 017-030，14 天时间序列）。",
             run_readiness_notes=[
-                "数据源: InversionResults/smap_avg/doy_{017..030}.mat (14 files)"
+                "数据源: Inversion_Results/smap_avg/doy_{017..030}.mat (14 files)"
             ],
             data_owner="Lab",
             temporal_coverage="doy 017-030 (multi-year mean)",
@@ -897,7 +897,9 @@ def get_layer_catalog() -> LayerCatalogResponse:
             tags=["dem", "gebco", "bathymetry", "overlay"],
             run_readiness="ready",
             run_readiness_summary="GEBCO 2024 DEM 中国区域数据已就绪。",
-            run_readiness_notes=["数据源: I:/Geograph_DataSet/DEM/GEBCO_2024.nc"],
+            run_readiness_notes=[
+                "数据源: I:/Geograph_DataSet/Geological/DEM/GEBCO_2024.nc"
+            ],
         ),
         LayerDescriptor(
             layer_id="cmfd-precip-cn",
@@ -918,7 +920,7 @@ def get_layer_catalog() -> LayerCatalogResponse:
             run_readiness="ready",
             run_readiness_summary="CMFD 中国区域降水数据已就绪（2002-01）。",
             run_readiness_notes=[
-                "数据源: I:/Geograph_DataSet/Precipitation/pre_2002_01.tif"
+                "数据源: I:/Geograph_DataSet/Meteorological/Precipitation/pre_2002_01.tif"
             ],
         ),
         LayerDescriptor(
@@ -940,7 +942,7 @@ def get_layer_catalog() -> LayerCatalogResponse:
             run_readiness="ready",
             run_readiness_summary="CLCD 1997 土地覆盖数据已就绪。",
             run_readiness_notes=[
-                "数据源: I:/Geograph_DataSet/LandCover/CLCD_v01_1997.tif"
+                "数据源: I:/Geograph_DataSet/Ecological_Vegetation/LandCover/CLCD_v01_1997.tif"
             ],
         ),
         LayerDescriptor(
@@ -962,7 +964,7 @@ def get_layer_catalog() -> LayerCatalogResponse:
             run_readiness="ready",
             run_readiness_summary="ESA BIOMASS 2020 中国区域数据已就绪。",
             run_readiness_notes=[
-                "数据源: I:/Geograph_DataSet/Biomass/ESACCI-BIOMASS-L4-AGB-MERGED-100m-2020-fv6.0.nc"
+                "数据源: I:/Geograph_DataSet/Ecological_Vegetation/Biomass/ESACCI-BIOMASS-L4-AGB-MERGED-100m-2020-fv6.0.nc"
             ],
         ),
         LayerDescriptor(
@@ -1028,7 +1030,7 @@ def get_layer_catalog() -> LayerCatalogResponse:
             run_readiness="ready",
             run_readiness_summary="GOSAT CO₂ 柱浓度数据已就绪。",
             run_readiness_notes=[
-                "数据源: I:/Geograph_DataSet/CO2/MidLayerCO2Column/TIF/MeanCarbonDioxide.tif"
+                "数据源: I:/Geograph_DataSet/Atmospheric/CO2/MidLayerCO2Column/TIF/MeanCarbonDioxide.tif"
             ],
         ),
         LayerDescriptor(
@@ -1052,7 +1054,7 @@ def get_layer_catalog() -> LayerCatalogResponse:
             run_readiness="ready",
             run_readiness_summary="土壤生态 DDCA 数据已就绪（2015-04-01 至 2022-12-31，采样 60 天）。",
             run_readiness_notes=[
-                "数据源: I:/Geograph_DataSet/Soil_Ecological_Data/DDCA/DDCA_DH/H/YYYYMMDD.mat (2747 files, sampled 60)"
+                "数据源: I:/Geograph_DataSet/Soil_Moisture/DDCA/DDCA_DH/H/YYYYMMDD.mat (2747 files, sampled 60)"
             ],
             data_owner="Lab",
             temporal_coverage="2015-04-01 to 2022-12-31 (sampled 60 dates)",
@@ -1078,7 +1080,7 @@ def get_layer_catalog() -> LayerCatalogResponse:
             run_readiness="ready",
             run_readiness_summary="Omega FY 反演均值数据已就绪（doy 025-030，6 天时间序列）。",
             run_readiness_notes=[
-                "数据源: I:/Geograph_DataSet/InversionResults/fy_avg/doy_{025..030}.mat (6 files)"
+                "数据源: I:/Geograph_DataSet/Inversion_Results/fy_avg/doy_{025..030}.mat (6 files)"
             ],
             data_owner="Lab",
             temporal_coverage="doy 025-030 (multi-year mean)",
@@ -1102,7 +1104,7 @@ def get_layer_catalog() -> LayerCatalogResponse:
             run_readiness="ready",
             run_readiness_summary="全球森林比例数据已就绪（2020）。",
             run_readiness_notes=[
-                "数据源: I:/Geograph_DataSet/InversionResults/Forest_Ratio_9KM_2020.mat"
+                "数据源: I:/Geograph_DataSet/Inversion_Results/Forest_Ratio_9KM_2020.mat"
             ],
             data_owner="Liuzheng",
             temporal_coverage="2020",
@@ -1128,7 +1130,7 @@ def get_layer_catalog() -> LayerCatalogResponse:
             run_readiness="ready",
             run_readiness_summary="景观多样性指数 SHDI 数据已就绪（2020）。",
             run_readiness_notes=[
-                "数据源: I:/Geograph_DataSet/InversionResults/Landscape_Metrics_LandOnly_9KM_2020.mat#SHDI"
+                "数据源: I:/Geograph_DataSet/Inversion_Results/Landscape_Metrics_LandOnly_9KM_2020.mat#SHDI"
             ],
             data_owner="Liuzheng",
             temporal_coverage="2020",
@@ -1156,7 +1158,7 @@ def get_layer_catalog() -> LayerCatalogResponse:
             run_readiness="ready",
             run_readiness_summary="VOD 植被光学厚度数据已就绪（2025-12，31 天）。",
             run_readiness_notes=[
-                "数据源: I:/Geograph_DataSet/Soil_Ecological_Data/SmapSoil_VOD_SM/YYYYMMDD.mat#VOD (31 files, v7.3 HDF5)"
+                "数据源: I:/Geograph_DataSet/Soil_Moisture/SMAP_Soil_VOD_SM/YYYYMMDD.mat#VOD (31 files, v7.3 HDF5)"
             ],
             data_owner="Lab",
             temporal_coverage="2025-12-01 to 2025-12-31 (31 days)",
@@ -1183,7 +1185,7 @@ def get_layer_catalog() -> LayerCatalogResponse:
             run_readiness="ready",
             run_readiness_summary="SM 土壤湿度数据已就绪（2025-12，31 天）。",
             run_readiness_notes=[
-                "数据源: I:/Geograph_DataSet/Soil_Ecological_Data/SmapSoil_VOD_SM/YYYYMMDD.mat#SM (31 files, v7.3 HDF5)"
+                "数据源: I:/Geograph_DataSet/Soil_Moisture/SMAP_Soil_VOD_SM/YYYYMMDD.mat#SM (31 files, v7.3 HDF5)"
             ],
             data_owner="Lab",
             temporal_coverage="2025-12-01 to 2025-12-31 (31 days)",
@@ -1211,7 +1213,7 @@ def get_layer_catalog() -> LayerCatalogResponse:
             run_readiness="ready",
             run_readiness_summary="Omega 2025-12 反演数据已就绪（31 天）。",
             run_readiness_notes=[
-                "数据源: I:/Geograph_DataSet/Soil_Ecological_Data/SmapSoil_VOD_SM/YYYYMMDD.mat#OMEGA (31 files, v7.3 HDF5)"
+                "数据源: I:/Geograph_DataSet/Soil_Moisture/SMAP_Soil_VOD_SM/YYYYMMDD.mat#OMEGA (31 files, v7.3 HDF5)"
             ],
             data_owner="Lab",
             temporal_coverage="2025-12-01 to 2025-12-31 (31 days)",
@@ -1247,7 +1249,7 @@ def get_layer_catalog() -> LayerCatalogResponse:
             },
             run_readiness_summary="SMAP L3 HDF5 数据已就绪（19 个 .h5 文件）。",
             run_readiness_notes=[
-                "数据源: I:/Geograph_DataSet/SMAP/SMAP_L3_SM_P_*.h5 (19 files)"
+                "数据源: I:/Geograph_DataSet/Soil_Moisture/SMAP/SMAP_L3_SM_P_*.h5 (19 files)"
             ],
             data_owner="Lab",
             temporal_coverage="2023-01 to 2023-09 (19 days, gap-filled)",
@@ -1282,15 +1284,15 @@ def get_layer_catalog() -> LayerCatalogResponse:
             default_data_access_sources={
                 "FY_MWRI_HDF": [
                     "FY_MWRI_HDF",
-                    "Soil_Ecological_Data/FY3B",
-                    "Soil_Ecological_Data/FY3D",
-                    "Soil_Ecological_Data/FY_MWRI",
+                    "Soil_Moisture/FY3B",
+                    "Soil_Moisture/FY3D",
+                    "Soil_Moisture/FY_MWRI",
                 ],
             },
             run_readiness_summary="待下载 FY-3 MWRI 原始 HDF 数据后可运行。",
             run_readiness_notes=[
                 "数据源未就绪：FY_MWRI_HDF 候选路径均不存在（需下载 FY-3B/FY-3D MWRI HDF 轨道数据）。",
-                "建议放置路径：I:/Geograph_DataSet/Soil_Ecological_Data/FY3B 或 FY3D。",
+                "建议放置路径：I:/Geograph_DataSet/Soil_Moisture/FY3B 或 FY3D。",
             ],
         ),
         LayerDescriptor(
@@ -1364,7 +1366,7 @@ def get_layer_catalog() -> LayerCatalogResponse:
             default_data_access_sources={
                 "daily_bundle_mat": [
                     "daily_bundle_mat",
-                    "Soil_Ecological_Data/DDCA/DDCA_DH/H",
+                    "Soil_Moisture/DDCA/DDCA_DH/H",
                 ],
             },
         ),
@@ -1469,8 +1471,8 @@ def get_layer_catalog() -> LayerCatalogResponse:
             default_data_access_sources={
                 "omega_block_dir": [
                     "omega_block_output",
-                    "I:/Geograph_DataSet/InversionResults/omega_block",
-                    "InversionResults/omega_block",
+                    "I:/Geograph_DataSet/Inversion_Results/omega_block",
+                    "Inversion_Results/omega_block",
                 ],
                 "timeseries_bundle_mat": [
                     "timeseries_bundle_mat",
@@ -1478,30 +1480,30 @@ def get_layer_catalog() -> LayerCatalogResponse:
                 ],
                 "smap_folder": [
                     "smap_daily_mat",
-                    "I:/Geograph_DataSet/Soil_Ecological_Data/Smap_OriginData",
-                    "Soil_Ecological_Data/Smap_OriginData",
+                    "I:/Geograph_DataSet/Soil_Moisture/SMAP_Origin_Data",
+                    "Soil_Moisture/SMAP_Origin_Data",
                 ],
                 "ndvi_folder": [
                     "ndvi_daily_mat",
-                    "I:/Geograph_DataSet/Soil_Ecological_Data/NDVI/daily",
-                    "Soil_Ecological_Data/NDVI/daily",
+                    "I:/Geograph_DataSet/Ecological_Vegetation/NDVI/daily",
+                    "Ecological_Vegetation/NDVI/daily",
                 ],
                 "ndvi_clim_folder": [
                     "ndvi_clim_dir",
-                    "I:/Geograph_DataSet/Soil_Ecological_Data/NDVI/climatology",
-                    "Soil_Ecological_Data/NDVI/climatology",
+                    "I:/Geograph_DataSet/Ecological_Vegetation/NDVI/climatology",
+                    "Ecological_Vegetation/NDVI/climatology",
                 ],
                 "anc_root": [
                     "ancillary_mat",
-                    "I:/Geograph_DataSet/Soil_Ecological_Data/Ancillary",
-                    "Soil_Ecological_Data/Ancillary",
+                    "I:/Geograph_DataSet/Soil_Moisture/Ancillary",
+                    "Soil_Moisture/Ancillary",
                     "SMAP_ancillary",
                 ],
             },
             run_readiness_summary="D2 依赖 omega_block / SMAP 日 MAT / NDVI 日 MAT / Ancillary；可用 remote_layer_data_uris 指向合成测试集。",
             run_readiness_notes=[
-                "本机已确认存在：Soil_Ecological_Data/Smap_OriginData、InversionResults/smap_avg。",
-                "常见缺口：InversionResults/omega_block、NDVI/daily、Ancillary——可用 Tools/test_data/omega_avg_daily_inputs 经 BACKEND_REMOTE_LAYER_DATA_URIS 注入。",
+                "本机已确认存在：Soil_Moisture/SMAP_Origin_Data、Inversion_Results/smap_avg。",
+                "常见缺口：Inversion_Results/omega_block、NDVI/daily、Ancillary——可用 Tools/test_data/omega_avg_daily_inputs 经 BACKEND_REMOTE_LAYER_DATA_URIS 注入。",
                 "系统种子 omega_avg_daily_* 与 pytest test_omega_avg_* 覆盖合成数据闭环。",
             ],
         ),

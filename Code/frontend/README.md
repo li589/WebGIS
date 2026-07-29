@@ -6,7 +6,7 @@
 
 - `2D-first`：MapLibre 为当前主地图引擎
 - 天气图层：标准 z/x/y 瓦片加载 + Canvas 风场叠加；支持多 Provider 钉源（侧栏与 InfoPanel，偏好存 localStorage；`open-meteo-online` / `open-meteo-local` / 商业源）
-- 图层面板、时间轴、工具栏导入、截图导出、工作流状态
+- 图层面板、时间轴、工具栏「数据」工作台（导入/导出/属性表/详情/作业）、截图导出、工作流状态
 - Cesium / vue-cesium 已在依赖中，尚未成为默认主界面模式
 
 ## 当前技术栈
@@ -16,7 +16,7 @@
 - `vitest`
 - `openapi-typescript`（`npm run gen:types` → `src/types/api-contracts.ts`）
 - 自定义 Windy 风格组件（未使用 Naive UI）
-- 辅助：`html2canvas` / `jspdf`（截图导出）、`papaparse` / `shpjs` / `proj4`（导入与投影）
+- 辅助：`html2canvas` / `jspdf`（截图导出）；本地导入主路径走 `src/data-manager/`（`core/api.ts` → 后端 `/import/*`、`/export/*`，Vite 均需 proxy）
 
 ## 关键目录与文件
 
@@ -28,7 +28,8 @@
 - `src/stores/layers/`：图层目录、workflow 编排、result-adapter
 - `src/stores/weather-tile-manager.ts`：天气瓦片并发、缓存与优先队列（缓存键含 provider）；`data-empty` 按 layerId 隔离，不因全局 `modelEmpty` 连坐其它层
 - `src/stores/weather-source-prefs.ts`：每图层天气源偏好（auto / provider_id；旧 `open-meteo` 映射为 `open-meteo-online`）
-- `src/stores/import.ts` / `src/stores/log.ts`：数据导入与日志面板
+- `src/stores/log.ts`：日志面板
+- `src/data-manager/`：数据管理器（`ui/` 工作台面板、`core/` API 与 workspace store、`adapters/` 导出/图层注册）；`services/data-io.ts` 为兼容 re-export
 - `src/services/runtime-api.ts`：workflow / runtime / weather providers-for-layer API 客户端
 - `src/services/weather-tile-api.ts`：Mercator 瓦片数学与 `/weather/tiles` 请求（支持 `provider`）
 - `src/components/map/`：地图模块化实现（底图、天气 overlay、风场 Canvas 等）
@@ -56,15 +57,28 @@
 | Overlay 像素 | 与点查同坐标；快速连点用序号丢弃过期响应 |
 | 热点 | 地图钉与分析框列表双向可选 |
 
-## 当前界面补充说明
+### 浮动面板（ControlPanel）缩放 / 位置
 
-- `ModeToolbar.vue`：标题栏工具（底图风格、行政区、导入、截图、工作流入口等）
+`ControlPanel.vue` + `control-panel-geometry.ts`：
+
+| 行为 | 规则 |
+|------|------|
+| 分析框缩放 | 右下角手柄为 `bottom-left`；`overlay-right` 为 `width: max-content` 钉右缘，向左/下长高，其它角不动 |
+| 拖动 | 只改 `offsetX/Y`（有限范围 clamp），**不改**宽高 |
+| 记忆 | `localStorage` key `geo-panel:{panelKey}`；offset 与 width/height 分字段；未手动缩放时不写尺寸 |
+| 缩放时 | 禁止再改 offset（分析框）；交互中关闭 transform 过渡，避免发飘 |
+
+### 当前界面补充说明
+
+- `ModeToolbar.vue`：标题栏工具（底图风格、行政区、数据导入/导出、截图、工作流入口等）
 - `LayerSidebar.vue`：分类、搜索、批量显隐/移除、拖拽排序；`online-weather` 卡片接入运行时 `providers-for-layer` 选源
 - `InfoPanel.vue`：态势摘要、workflow 状态、天气图例/数据源钉选、选中图层/热点信息（图例经 `effective-layer-symbology` 与侧栏色条同源；说明文案可跟 live `windDisplayMode`）
+- `ControlPanel.vue`：图层 / 分析等浮动框（拖动记忆位置、角点缩放）
 - `TimelineScrubber.vue` / `TimelinePanel.vue`：时间轴
 - `ScreenshotExport.vue`：截图导出
 - `workflow/`：全局工作流状态按钮与面板；`WorkflowEditorPanel` 画布 Run 提交编译后的 `workflow_definition`
-- `toolbar/`：数据导入菜单、CSV 对话框、日志面板
+- `toolbar/`：日志面板；数据入口见 `src/data-manager/ui/DataImportMenu.vue` + `DataWorkspace.vue`
+- `data-manager/`：导入/导出/属性表/详情/作业；侧栏与 InfoPanel 仅调用 `openDataWorkspace` / `exportLayer`
 - `settings/`：系统设置（含数据源扫描、开放数据预设、静态缓存清理、远程存储 profile）
 - `MapCanvas.vue`：地图运行时总入口（编排各 map 模块；天气错误横幅按层隔离，不因单层无数据盖住健康层）
 
@@ -81,15 +95,25 @@
 
 - `grid_fill`：可多图层并行叠加；优先 `cog_preview_url + cog_bbox`，缺失时回退 GeoJSON
 - `point_symbol`：按各自 source/layer 独立渲染
-- `particle_flow`：同一时刻只允许一个 catalog，由 `particleFlowCatalogId` 控制；UI 三态 `particle` / `streamline`（流量场）/ `off`
+- `particle_flow`：同一时刻只允许一个 catalog，由 `particleFlowCatalogId` 控制；UI 三态 `particle` / `streamline`（流量场）/ `off`（网格色底）
 
 ### 风场粒子 / 流量场约定
 
 | 模式 | 主实现 | 要点 |
 |------|--------|------|
-| 粒子 `particle` | WebGL（`wind-particle-webgl-*`）；`?windgl=0` → Canvas `wind-particle-canvas.ts` | 默认路径；急流区降低 drop bump + 多子步 RK2，避免高密度跳动 |
+| 粒子流 `particle` | WebGL（`wind-particle-webgl-*`）；`?windgl=0` → Canvas `wind-particle-canvas.ts` | 默认路径；急流区降低 drop bump + 多子步 RK2，避免高密度跳动 |
 | 流量场 `streamline` | Canvas `wind-streamline-layer.ts` | 视口∩grid 撒种；`lonWrapOffset` 仅在数据变化 / zoomend 重算；绘制 `base±360` 世界副本 |
-| 关闭 `off` | 仅风速色底 | 无粒子/流线 |
+| 网格 `off` | 风速色底（平滑开=WebGL 连续面，关=MapLibre 网格） | 无粒子流/流量场 |
+
+用户可见文案以 `ui-copy` + `windDisplayModeLabel` 为准（粒子流 / 流量场 / 网格），**禁止**把 `particle_flow` / `streamline` / `off` 直接当 chip 展示。
+
+### 底图默认与选项序
+
+- 默认：`gaode-street`（`getDefaultTileSource()` / `ui.tileSourceId`）
+- 街道 Tab 序：高德 → Bing → 其余；影像：高德卫星 → Bing 航空 → 其余
+- 高德经 `/unified-tiles` 做 GCJ 瓦片索引转换；Bing Key 在设置「API 管理」可选配置
+- 风格 Tab「空白」与源「空白」同词；pill 显示短名（高德 / Bing / Esri…）而非单字母
+- 工具栏不再对高德/Bing 显示「需坐标转换」警告（属正常代理路径；缺 Key 仍显示「需配置底图 API Key」）
 
 缩放 + 视口刷新后的已知坑与对策：
 
@@ -124,6 +148,7 @@
 - `components/map/wind-contour-layer.ts`：等值线
 - `components/map/canvas-utils.ts`：`lonWrapOffset` / 布局（wrap 对齐相机中心）
 - `components/map/weather-render.ts`：样式映射
+- `ui-copy/`：验收中文词表（品牌 / 底图 / 风场 / 点查 / 图层 / 工作流 / 地图）
 - `stores/layers/result-adapter.ts`：解析 `render_hint` 与 `layer_assets`
 - `stores/layers/index.ts`：图层状态、workflow、粒子流独占与视口状态
 - `stores/weather-tile-manager.ts` / `weather-tile-cache-trim.ts`：瓦片调度与 LRU trim

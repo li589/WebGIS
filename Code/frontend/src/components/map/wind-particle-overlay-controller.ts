@@ -8,6 +8,8 @@ import { syncWeatherSpeedUnderlay } from './weather-overlay-renderers'
 import { paletteToParticleColors, resolveCanonicalPaletteId } from './weather-render'
 import type { WeatherOverlayState } from './weather-overlay-registry'
 import type { WindGeoJSON } from './types'
+import { shouldUseSmoothWindOffUnderlay } from './wind-off-underlay'
+import type { WindParticleSyncOptions } from './wind-particle-controller-contract'
 
 type MapInstance = import('maplibre-gl').Map
 
@@ -27,6 +29,10 @@ export class WindParticleOverlayController {
   private windParticleFetchToken = 0
   private windParticleFetchAbort: AbortController | null = null
   private lastDisplayMode: WindDisplayMode = 'particle'
+  /** 全屏面板盖住地图时暂停粒子/流量场 RAF */
+  private animationPaused = false
+  /** 快速切换模式时作废过期 sync，避免色底与粒子叠绘 */
+  private applyGeneration = 0
 
   constructor(map: MapInstance) {
     this.map = map
@@ -38,6 +44,13 @@ export class WindParticleOverlayController {
 
   set activeCatalogId(catalogId: string | null) {
     this.currentParticleFlowCatalogId = catalogId
+  }
+
+  setAnimationPaused(paused: boolean) {
+    if (this.animationPaused === paused) return
+    this.animationPaused = paused
+    this.windParticleCanvas?.setAnimationPaused(paused)
+    this.windStreamlineLayer?.setAnimationPaused(paused)
   }
 
   private abortPendingGeojsonFetch() {
@@ -88,6 +101,7 @@ export class WindParticleOverlayController {
     this.destroyAuxLayers()
     this.currentWindGeojson = null
     this.lastWindGeojsonUrl = null
+    this.applyGeneration++
   }
 
   removeCatalogArtifacts(catalogId: string) {
@@ -127,19 +141,17 @@ export class WindParticleOverlayController {
     return prevN !== nextN || prev !== next
   }
 
-  async sync(
-    overlayState: WeatherOverlayState,
-    options: {
-      overlayToken: number
-      getSyncWeatherToken: () => number
-      getEnabledParticleFlowCatalogId: () => string | null
-      getWindDisplayMode?: () => WindDisplayMode
-    },
-  ) {
+  async sync(overlayState: WeatherOverlayState, options: WindParticleSyncOptions) {
     const catalogId = overlayState.catalogId
+    const applyGen = ++this.applyGeneration
     const displayMode: WindDisplayMode = options.getWindDisplayMode?.() ?? 'particle'
 
-    if (!this.stillCurrent(options, catalogId)) return
+    const isStale = () =>
+      applyGen !== this.applyGeneration ||
+      !this.stillCurrent(options, catalogId) ||
+      (options.getWindDisplayMode?.() ?? 'particle') !== displayMode
+
+    if (isStale()) return
 
     const inlineGeojson =
       overlayState.geojsonData &&
@@ -156,6 +168,7 @@ export class WindParticleOverlayController {
         this.destroyAuxLayers()
         this.currentWindGeojson = null
         this.lastWindGeojsonUrl = null
+        options.clearSmoothScalarUnderlay?.(catalogId)
         removeWeatherMapArtifacts(this.map, catalogId)
       }
       return
@@ -187,28 +200,55 @@ export class WindParticleOverlayController {
       } finally {
         if (this.windParticleFetchAbort === abort) this.windParticleFetchAbort = null
       }
-      if (!this.stillCurrent(options, catalogId, fetchToken)) return
+      if (isStale() || fetchToken !== this.windParticleFetchToken) return
       this.currentWindGeojson = geojson
     }
 
-    if (!this.stillCurrent(options, catalogId)) return
+    if (isStale()) return
     if (!geojson) return
 
     const modeChanged = displayMode !== this.lastDisplayMode
     this.lastDisplayMode = displayMode
 
-    // ── 关闭：仅风速色底，无粒子/流线/等值线 ────────────────────────────
+    // ── 网格（off）：仅风速色底，无粒子/流线/等值线 ───────────────────────
     if (displayMode === 'off') {
       this.destroyParticleCanvas()
       this.destroyStreamlineLayer()
       this.destroyAuxLayers()
-      syncWeatherSpeedUnderlay(this.map, {
+      if (isStale()) return
+      const underlayState: WeatherOverlayState = {
         ...overlayState,
         geojsonData: geojson,
         opacity: Math.min(1, Math.max(0.55, overlayState.opacity * 1.05)),
-      })
+      }
+      const wantSmooth = shouldUseSmoothWindOffUnderlay(
+        options.getSmoothRendering?.() ?? true,
+        typeof options.syncSmoothScalarUnderlay === 'function',
+      )
+      if (wantSmooth) {
+        removeWeatherMapArtifacts(this.map, catalogId)
+        if (isStale()) return
+        const ok = options.syncSmoothScalarUnderlay!(underlayState)
+        if (isStale()) {
+          // 已切回粒子流：拆掉刚画的平滑色底
+          options.clearSmoothScalarUnderlay?.(catalogId)
+          return
+        }
+        if (!ok) {
+          options.clearSmoothScalarUnderlay?.(catalogId)
+          syncWeatherSpeedUnderlay(this.map, underlayState)
+        }
+      } else {
+        options.clearSmoothScalarUnderlay?.(catalogId)
+        if (isStale()) return
+        syncWeatherSpeedUnderlay(this.map, underlayState)
+      }
       return
     }
+
+    // 粒子 / 流量场：始终清掉网格色底残留（含快速切换竞态）
+    options.clearSmoothScalarUnderlay?.(catalogId)
+    removeWeatherMapArtifacts(this.map, catalogId)
 
     const enableBarbLayer = overlayState.renderHint.paint_mode === 'barb'
     const useStreamline = displayMode === 'streamline'
@@ -234,6 +274,8 @@ export class WindParticleOverlayController {
       removeWeatherMapArtifacts(this.map, catalogId)
     }
 
+    if (isStale()) return
+
     if (!this.windContourLayer) {
       this.windContourLayer = new WindContourLayer(this.map, geojson)
     } else {
@@ -244,6 +286,7 @@ export class WindParticleOverlayController {
     if (useParticle) {
       if (!this.windParticleCanvas) {
         this.windParticleCanvas = new WindParticleCanvas(this.map, geojson)
+        this.windParticleCanvas.setAnimationPaused(this.animationPaused)
         this.windParticleCanvas.start()
       } else {
         this.windParticleCanvas.updateGeoJSON(geojson)
@@ -256,6 +299,7 @@ export class WindParticleOverlayController {
     } else if (useStreamline) {
       if (!this.windStreamlineLayer) {
         this.windStreamlineLayer = new WindStreamlineLayer(this.map, geojson)
+        this.windStreamlineLayer.setAnimationPaused(this.animationPaused)
         this.windStreamlineLayer.start()
       } else {
         this.windStreamlineLayer.updateGeoJSON(geojson)

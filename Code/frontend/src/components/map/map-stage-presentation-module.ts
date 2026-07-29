@@ -1,3 +1,5 @@
+import { MAP_COPY } from '../../ui-copy'
+
 type MapContainerGetter = () => HTMLElement | null
 
 export interface MapStagePresentationModule {
@@ -53,9 +55,9 @@ export function createMapStagePresentationModule(
   }
 
   async function prepareMount() {
-    setLoadingLabel('正在准备地图...')
+    setLoadingLabel(MAP_COPY.loading)
     await new Promise<void>((resolve) => requestAnimationFrameImpl(() => resolve()))
-    setLoadingLabel('正在加载地图引擎...')
+    setLoadingLabel(MAP_COPY.loading)
   }
 
   function scheduleNavigationThemeSync() {

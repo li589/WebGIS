@@ -64,8 +64,8 @@ export function createWeatherViewportSlice(deps: WeatherViewportSliceDeps) {
   const currentMapBBox = ref<BoundingBox | null>(null)
   const currentMapZoom = ref(4.8)
 
-  /** 平滑渲染开关：启用后天气标量场使用 WebGL 双线性插值（平滑过渡），关闭则为网格色块。
-   *  默认启用：WebGL 可用时自动平滑，不可用时透明回退网格。 */
+  /** 平滑渲染：开=WebGL 双线性连续数值面（含风场「网格」色底）；关=网格色块。
+   *  默认开；WebGL 不可用时回退网格。变化经 weather-overlay-watcher 触发 sync。 */
   const smoothRendering = ref(true)
   function setSmoothRendering(v: boolean) {
     smoothRendering.value = v

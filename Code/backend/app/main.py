@@ -10,10 +10,12 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.api.routers import (
     algorithm_router,
     artifact_router,
+    data_io_router,
     health_router,
     import_router,
     layer_router,
     provider_router,
+    remote_browser_router,
     runtime_router,
     weather_router,
     workflow_router,
@@ -98,6 +100,18 @@ async def lifespan(app: FastAPI):
         logger.exception("Failed to hydrate effective config on startup")
         raise
 
+    # 清理过期导入 staging（TTL 见 STAGING_TTL_SECONDS）
+    try:
+        from app.data_io.services.upload import cleanup_expired_staging
+
+        removed = cleanup_expired_staging()
+        if removed:
+            logger.info(
+                "Startup cleanup: removed %d expired import staging dir(s)", removed
+            )
+    except Exception:
+        logger.exception("Failed to cleanup expired import staging")
+
     yield
 
 
@@ -177,6 +191,7 @@ def create_app() -> FastAPI:
     app.include_router(provider_router)
     app.include_router(artifact_router)
     app.include_router(import_router)
+    app.include_router(data_io_router)
     app.include_router(unified_tile_router)
     app.include_router(weather_tile_router)
     app.include_router(gee_config_router)
@@ -184,6 +199,7 @@ def create_app() -> FastAPI:
     app.include_router(workflow_definition_router)
     app.include_router(workflow_timer_router)
     app.include_router(cleanup_router)
+    app.include_router(remote_browser_router)
 
     # 挂载 GEE engine router，使 /gee/* 路由正式接入 FastAPI
     # 路由前缀已在 create_gee_router 内部定义为 /gee

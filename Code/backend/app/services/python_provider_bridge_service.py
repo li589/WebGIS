@@ -29,7 +29,8 @@ import importlib
 import logging
 from pathlib import Path
 import sys
-from typing import Iterator
+import threading
+from typing import Any, Iterator
 
 from app.core.config import settings
 from app.services.python_provider_request_builder import (
@@ -97,9 +98,120 @@ def _python_provider_import_path(provider_root: Path) -> Iterator[None]:
                 pass
 
 
+# ─── 线程局部事件转发上下文 ───────────────────────────────────────────────────
+# D2+D3 修复：算法模块通过 ctx.logger_adapter.emit_progress() 发送进度，
+# 但 ConsoleLoggerAdapter 只打印到 stdout。此处通过线程局部上下文将
+# bridge service 的 event_factory 注入到 LoggerAdapter 中，实现实时
+# node_progress 事件转发到前端。
+
+_thread_local = threading.local()
+
+
+def _set_event_context(event_factory: Any | None, run_id: str | None = None) -> None:
+    """设置当前线程的事件转发上下文。"""
+    _thread_local.event_factory = event_factory
+    _thread_local.run_id = run_id
+
+
+def _clear_event_context() -> None:
+    """清除当前线程的事件转发上下文。"""
+    _thread_local.event_factory = None
+    _thread_local.run_id = None
+
+
+def _classify_stage(stage: str) -> str:
+    """将算法 stage 名称映射为前端阶段分类。"""
+    stage_lower = stage.lower()
+    if any(k in stage_lower for k in ("ssh_sync", "nsidc", "download", "sync")):
+        return "download"
+    if any(k in stage_lower for k in ("fy_preprocess", "preprocess", "geolocation")):
+        return "preprocess"
+    if any(
+        k in stage_lower
+        for k in ("omega_sf", "inversion", "sf_invert", "ddca", "block")
+    ):
+        return "inversion"
+    if any(k in stage_lower for k in ("output", "export", "write")):
+        return "output"
+    return "processing"
+
+
+class _EventForwardingLoggerAdapter:
+    """包装 ConsoleLoggerAdapter，同时将 emit_* 调用转发为 node_progress 事件。
+
+    当线程局部上下文中存在 event_factory 时，将 stage/progress/message
+    转发为前端可解析的 node_progress 事件；否则退化为纯控制台输出。
+    """
+
+    def __init__(self) -> None:
+        with _python_provider_import_path(Path(settings.python_provider_root)):
+            local_adapters = importlib.import_module("utils.local_adapters")
+            self._console = local_adapters.ConsoleLoggerAdapter()
+
+    def bind_context(self, job_id: str, run_id: str) -> None:
+        self._console.bind_context(job_id, run_id)
+
+    def emit_stage_start(self, stage: str, message: str) -> None:
+        self._console.emit_stage_start(stage, message)
+        self._forward(stage, 0, message)
+
+    def emit_progress(self, stage: str, progress: float, message: str) -> None:
+        self._console.emit_progress(stage, progress, message)
+        # progress 可能是 0-1 或 0-100，统一为 0-100
+        pct = int(progress * 100) if progress <= 1.0 else int(progress)
+        self._forward(stage, pct, message)
+
+    def emit_warning(self, stage: str, message: str, extra: dict | None = None) -> None:
+        self._console.emit_warning(stage, message, extra=extra)
+        self._forward(stage, -1, message, level="warning")
+
+    def emit_error(self, stage: str, message: str, extra: dict | None = None) -> None:
+        self._console.emit_error(stage, message, extra=extra)
+        self._forward(stage, -1, message, level="error")
+
+    def emit_artifact(self, stage: str, artifact_uri: str, artifact_type: str) -> None:
+        self._console.emit_artifact(stage, artifact_uri, artifact_type)
+
+    def emit_stage_end(self, stage: str, message: str) -> None:
+        self._console.emit_stage_end(stage, message)
+        self._forward(stage, 100, message)
+
+    def _forward(
+        self, stage: str, progress: int, message: str, level: str = "info"
+    ) -> None:
+        event_factory = getattr(_thread_local, "event_factory", None)
+        if event_factory is None:
+            return
+        try:
+            clamped = max(0, min(100, progress)) if progress >= 0 else -1
+            event_factory(
+                channel="log",
+                message=message,
+                progress=clamped if clamped >= 0 else None,
+                payload={
+                    "node_progress": {
+                        "node_id": stage,
+                        "node_label": stage,
+                        "stage": _classify_stage(stage),
+                        "progress": clamped,
+                        "message": message,
+                        "level": level,
+                    }
+                },
+            )
+        except Exception:
+            # 事件转发失败不应影响算法执行
+            logger.debug("Failed to forward node_progress event", exc_info=True)
+
+
 @lru_cache(maxsize=1)
 def _load_python_job_service():
-    """M7 修复：与其他 bridge 一致，使用无参 lru_cache 单例。"""
+    """M7 修复：与其他 bridge 一致，使用无参 lru_cache 单例。
+
+    D2+D3 修复：加载后覆盖 logger_adapter_factory 为 _EventForwardingLoggerAdapter，
+    使算法执行期间的 emit_progress/emit_stage_start 等调用能通过线程局部上下文
+    转发为前端可解析的 node_progress 事件。
+    """
     provider_root = Path(settings.python_provider_root)
     workspace = Path(settings.python_provider_workspace)
     workspace.mkdir(parents=True, exist_ok=True)
@@ -108,9 +220,12 @@ def _load_python_job_service():
         build_local_persistent_job_service = getattr(
             job_api_module, "build_local_persistent_job_service"
         )
-        return build_local_persistent_job_service(
+        service = build_local_persistent_job_service(
             workspace=workspace, start_worker=False
         )
+    # 覆盖 logger_adapter_factory：用事件转发适配器替代纯控制台适配器
+    service._logger_adapter_factory = _EventForwardingLoggerAdapter
+    return service
 
 
 class PythonProviderBridgeService:
@@ -201,7 +316,14 @@ class PythonProviderBridgeService:
                     },
                 )
 
-        response = service.submit_job(request_payload)
+        # D2+D3 修复：设置线程局部事件上下文，使 _EventForwardingLoggerAdapter
+        # 能在算法执行期间将 emit_progress/emit_stage_start 等调用转发为
+        # 前端可解析的 node_progress 事件。
+        _set_event_context(event_factory, run_id)
+        try:
+            response = service.submit_job(request_payload)
+        finally:
+            _clear_event_context()
         response_body = dict(response.body)
         if response.status_code >= 400:
             developer_message = str(

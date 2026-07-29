@@ -312,7 +312,7 @@ function jumpToNow() {
         >进度 <strong>{{ progressPercent }}</strong></span
       >
       <span class="meta-text meta-text--right"
-        >观测时次 <strong>{{ observationTimeLabel }}</strong></span
+        >观测时间 <strong>{{ observationTimeLabel }}</strong></span
       >
     </div>
   </section>

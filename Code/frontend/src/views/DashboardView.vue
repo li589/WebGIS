@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, defineAsyncComponent, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { storeToRefs } from 'pinia'
-import { useDataImportFlow } from '../composables/useDataImportFlow'
+import { useDataImportFlow } from '../data-manager/core/workspace-store'
 
 import ControlPanel from '../components/ControlPanel.vue'
 import InfoPanel from '../components/InfoPanel.vue'
@@ -13,7 +13,7 @@ import TimelinePanel from '../components/TimelinePanel.vue'
 import TimelineScrubber from '../components/TimelineScrubber.vue'
 import WorkflowStatusPanel from '../components/workflow/WorkflowStatusPanel.vue'
 import type { TileSourceId } from '../services/api-config'
-import type { ActiveLayerDisplay, LayerHotspot } from '../stores/layers/types'
+import type { LayerHotspot } from '../stores/layers/types'
 import type { OverlayTimeState } from '../components/map/overlay-image-module'
 import {
   getOverlayValue,
@@ -32,6 +32,11 @@ import {
   dateHourToTileHour,
   findLatestValidCoverageInstant,
 } from '../utils/weather-timeline'
+import { buildFallbackActiveLayerDisplay } from '../components/map/map-stage-view-model'
+import {
+  resolveAnalysisStageKind,
+  resolveAnalysisStageLabel,
+} from '../components/info-panel/analysis-panel-summary'
 
 const uiStore = useUiStore()
 const layersStore = useLayersStore()
@@ -66,12 +71,30 @@ const { statusVersion: weatherStatusVersion, activityVersion: weatherActivityVer
 
 const activeLayer = computed(() => {
   if (selectedLayerDisplay.value) return selectedLayerDisplay.value
-  return buildFallbackActiveLayer()
+  return buildFallbackActiveLayerDisplay()
 })
 
-const stageLabel = computed(() =>
-  activeLayer.value.dataState === 'real' ? '运行时工作流' : '运行时目录',
-)
+const stageLabel = computed(() => {
+  const layer = activeLayer.value
+  const hasRealSelection = Boolean(layer.instanceId)
+  const isWeather = hasRealSelection && layersStore.isWeatherEngineLayer(layer.catalogId)
+  const canRun =
+    hasRealSelection &&
+    !layer.isAdminBoundary &&
+    !layer.isImported &&
+    !layer.isImportedRaster &&
+    !isWeather &&
+    layersStore.supportsAnalysisWorkflow(layer.catalogId)
+  const kind = resolveAnalysisStageKind({
+    hasRealSelection,
+    isWeather,
+    isImported: !!layer.isImported,
+    isImportedRaster: !!layer.isImportedRaster,
+    isAdminBoundary: !!layer.isAdminBoundary,
+    canRunWorkflow: canRun,
+  })
+  return resolveAnalysisStageLabel(kind)
+})
 const visibleHotspots = ref<LayerHotspot[]>([])
 const selectedHotspot = ref<LayerHotspot | null>(null)
 const selectedMapPoint = ref<{ lng: number; lat: number } | null>(null)
@@ -260,15 +283,22 @@ const _loadedAsyncPanels = new Set<string>()
 watch(settingsOpen, (open) => {
   if (open && !_loadedAsyncPanels.has('settings')) {
     _loadedAsyncPanels.add('settings')
-    uiLoading.showImmediate('加载设置面板...')
+    // 仅覆盖异步 chunk 下载；SettingsPanel onMounted 会立刻 hide。
+    // 勿用 hero：配置拉取可能数秒，全屏转圈会盖住已打开的设置壳。
+    uiLoading.showImmediate('加载设置面板...', 'compact')
   }
 })
 
 watch(workflowEditorOpen, (open) => {
   if (open && !_loadedAsyncPanels.has('workflow-editor')) {
     _loadedAsyncPanels.add('workflow-editor')
-    uiLoading.showImmediate('加载工作流编辑器...')
+    uiLoading.showImmediate('加载工作流编辑器...', 'compact')
   }
+})
+
+/** 全屏面板盖住地图时暂停风场 RAF，避免看不见仍占主线程 */
+watch([workflowEditorOpen, settingsOpen], ([workflowOpen, settingsPanelOpen]) => {
+  mapCanvasRef.value?.setWindAnimationPaused?.(workflowOpen || settingsPanelOpen)
 })
 
 const sidePanelDimensions = Object.freeze({
@@ -327,6 +357,13 @@ function handleLayerSelect(layerId: string) {
     layersStore.selectLayer(layerId)
   }
   logStore.logOperation('layer-select', `选中图层: ${layerId}`)
+}
+
+function handleZoomToLayer(instanceId: string) {
+  const ok = mapCanvasRef.value?.fitToLayerExtent?.(instanceId)
+  if (ok) {
+    logStore.logOperation('layer-zoom', `缩放到图层: ${instanceId}`)
+  }
 }
 
 /** 点查优先当前选中天气层；否则取最顶层可见天气层 */
@@ -503,22 +540,23 @@ async function handleRunWorkflowFromEditor(
     'workflow-editor-run',
     `从编辑器运行工作流: ${workflowId} (目标: ${target.mode})`,
   )
-  if (!linkedLayerId) {
+  const sourceLayerId = target.layerId ?? linkedLayerId
+  if (!sourceLayerId) {
     const msg = `工作流 ${workflowId} 未关联图层，无法运行`
     logStore.logWorkflow('workflow-editor-error', msg)
     workflowEditorRef.value?.notifyRunOutcome?.(false, msg)
     return
   }
 
-  let catalogId = linkedLayerId
+  let catalogId = sourceLayerId
   if (target.mode === 'new') {
     const engine =
-      layersStore.layerLibrary.find((l) => l.catalogId === linkedLayerId)?.engine ?? 'general'
+      layersStore.layerLibrary.find((l) => l.catalogId === sourceLayerId)?.engine ?? 'general'
     const entry = workflowOutputStore.createOutputLayer({
       name: target.name ?? `产出 ${workflowId}`,
       group: target.group ?? '默认分组',
       sourceWorkflowId: workflowId,
-      sourceLayerId: linkedLayerId,
+      sourceLayerId,
       engine,
     })
     logStore.logWorkflow(
@@ -526,6 +564,11 @@ async function handleRunWorkflowFromEditor(
       `创建产出图层「${entry.name}」→ 分组「${entry.group}」`,
     )
     catalogId = entry.localId
+  } else if (target.mode === 'multi' && target.targets?.length) {
+    // multi：编辑器已创建条目；状态跟踪挂到第一个产出图层，后端仍按源图层解析
+    const existing = workflowOutputStore.getBySourceLayerId(sourceLayerId)
+    const latest = existing.find((e) => e.sourceWorkflowId === workflowId)
+    if (latest) catalogId = latest.localId
   }
 
   try {
@@ -548,7 +591,7 @@ async function handleRunWorkflowFromEditor(
       if (engine === 'weather') {
         weatherRequest = {
           workflow_id: workflowId,
-          layer_id: linkedLayerId,
+          layer_id: sourceLayerId,
           workflow: def,
           context: {
             latitude: layersStore.currentMapCenter.lat,
@@ -631,39 +674,6 @@ watch(tileForecastHour, () => {
     requestPointWeather(point.lng, point.lat, catalogId)
   }, 180)
 })
-
-function buildFallbackActiveLayer(): ActiveLayerDisplay {
-  return {
-    instanceId: '',
-    catalogId: '',
-    name: '无图层',
-    category: '',
-    summary: '请在左侧面板选择图层进行展示。',
-    metricLabel: '—',
-    metricValue: '—',
-    trendLabel: '—',
-    statusLabel: '—',
-    updateLabel: '—',
-    sourceLabel: '—',
-    confidenceLabel: '—',
-    accentColor: '#5a6a80',
-    accentGlow: 'rgba(90, 106, 128, 0.3)',
-    chipTone: 'rgba(90, 106, 128, 0.16)',
-    availabilityState: 'empty',
-    availabilityLabel: '空状态',
-    availabilityDescription: '从左侧图层面板添加数据图层。',
-    observationTimeLabel: '—',
-    missingFieldsLabel: '—',
-    hotspots: [],
-    isAdminBoundary: false,
-    isImported: false,
-    isImportedRaster: false,
-    visible: true,
-    opacity: 1,
-    order: 0,
-    dataState: 'catalog',
-  }
-}
 </script>
 
 <template>
@@ -692,7 +702,9 @@ function buildFallbackActiveLayer(): ActiveLayerDisplay {
       <div v-if="dropActive" class="import-drop-overlay" aria-hidden="true">
         <div class="import-drop-card">
           <span class="import-drop-title">释放以导入数据</span>
-          <span class="import-drop-desc">SHP / GeoJSON / CSV / TIF</span>
+          <span class="import-drop-desc"
+            >SHP(+旁路) / GeoJSON / CSV·Excel·TXT / TIF·NC·HDF·MAT</span
+          >
         </div>
       </div>
 
@@ -725,7 +737,7 @@ function buildFallbackActiveLayer(): ActiveLayerDisplay {
           :max-width="layerPanelDimensions.maxWidth"
           :max-height="layerPanelDimensions.maxHeight"
         >
-          <LayerSidebar @select-layer="handleLayerSelect" />
+          <LayerSidebar @select-layer="handleLayerSelect" @zoom-to-layer="handleZoomToLayer" />
         </ControlPanel>
       </div>
 
@@ -905,9 +917,12 @@ function buildFallbackActiveLayer(): ActiveLayerDisplay {
 .overlay-right {
   top: 9.5rem;
   right: 0.8rem;
-  width: min(21rem, calc(100vw - 1.6rem));
+  /* 宽度跟面板走，右缘钉在 right；向左拉宽时右边缘不动 */
+  width: max-content;
+  max-width: calc(100vw - 1.6rem);
   display: flex;
   justify-content: flex-end;
+  align-items: flex-start;
 }
 
 .overlay-bottom {
@@ -933,9 +948,11 @@ function buildFallbackActiveLayer(): ActiveLayerDisplay {
 
   .overlay-right {
     right: 0.75rem;
-    width: min(21rem, calc(100vw - 1.5rem));
+    width: max-content;
+    max-width: calc(100vw - 1.5rem);
     display: flex;
     justify-content: flex-end;
+    align-items: flex-start;
   }
 }
 

@@ -23,29 +23,26 @@ from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from pydantic import BaseModel
 
 from app.api.deps import require_write_access
-from app.core.config import settings
 from app.services.crs import crs_detector, crs_transformer
 from app.services.crs.crs_registry import to_api_payload
+from app.data_io.services.paths import (
+    MAX_IMPORTS_TOTAL_BYTES as _MAX_IMPORTS_TOTAL_BYTES,
+)
+from app.data_io.services.paths import (
+    MAX_UPLOAD_BYTES as _MAX_UPLOAD_BYTES,
+)
+from app.data_io.services.paths import IMPORTS_DIR as _IMPORTS_DIR
+from app.data_io.services.paths import dir_size_bytes as _dir_size_bytes
 from app.services.overlay_registry import (
     OverlaySpec,
     register_overlay,
     unregister_overlay,
 )
+from app.data_io.services.raster_register import confirm_imported_raster_crs
 from app.services.raster_preview_service import raster_preview_service
 
 router = APIRouter(prefix="/import", tags=["import"])
 
-# 导入文件存储根目录
-_OUTPUT_ROOT = (
-    Path(settings.output_root)
-    if settings.output_root
-    else Path.cwd() / "imports_output"
-)
-_IMPORTS_DIR = _OUTPUT_ROOT / "imports"
-
-# 安全限额：单文件与总量
-_MAX_UPLOAD_BYTES = 100 * 1024 * 1024  # 100 MiB
-_MAX_IMPORTS_TOTAL_BYTES = 2 * 1024 * 1024 * 1024  # 2 GiB
 _ALLOWED_EXTENSIONS = frozenset({"tif", "tiff"})
 
 
@@ -89,22 +86,6 @@ class TransformBoundsRequest(BaseModel):
 
     source_crs: str
     target_crs: str = "EPSG:4326"
-
-
-# ── 工具函数 ───────────────────────────────────────────────────────────
-
-
-def _dir_size_bytes(path: Path) -> int:
-    if not path.exists():
-        return 0
-    total = 0
-    for child in path.rglob("*"):
-        if child.is_file():
-            try:
-                total += child.stat().st_size
-            except OSError:
-                continue
-    return total
 
 
 # ── CRS 选项端点 ───────────────────────────────────────────────────────
@@ -308,114 +289,20 @@ async def delete_imported_raster(layer_id: str) -> dict[str, Any]:
 
 @router.post("/raster/confirm", dependencies=[Depends(require_write_access)])
 async def confirm_imported_raster(body: ConfirmRequest) -> dict[str, Any]:
-    """用户确认 CRS 后：1) 重投影 PNG 2) 重算 bounds 3) 更新 OverlaySpec.crs 4) 返回新 bounds。
-
-    流程：
-    1. 从 ``_IMPORTS_DIR/{layer_id}/`` 读 bounds.json 拿 source_filename
-    2. 调 ``render_cog_preview_reprojected(source_crs=body.source_crs, target_crs='EPSG:4326')``
-       生成新 PNG + WGS84 bounds
-    3. 应用 ``lng_offset``/``lat_offset`` 到 bounds（CRS 转换后应用）
-    4. 覆盖 ``preview.png`` + ``bounds.json``（保留原 TIF 不动）
-    5. ``unregister_overlay`` + ``register_overlay`` 重新注册（crs='EPSG:4326'）
-    6. 返回 ``{layer_id, bounds, source_crs, applied_offset}``
-    """
-    if not body.layer_id.startswith("imported-"):
-        raise HTTPException(status_code=400, detail="仅允许确认 imported-* 图层")
-
-    dest_dir = _IMPORTS_DIR / body.layer_id
-    bounds_path = dest_dir / "bounds.json"
-    if not bounds_path.exists():
-        raise HTTPException(status_code=404, detail=f"导入图层不存在: {body.layer_id}")
-
-    # 读原 bounds.json 拿 source_filename
+    """用户确认 CRS 后：重投影 PNG、重算 bounds、更新 overlay。"""
     try:
-        bounds_data = json.loads(bounds_path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError) as exc:
-        raise HTTPException(
-            status_code=500,
-            detail=f"读取 bounds.json 失败: {exc}",
-        ) from exc
-
-    meta = bounds_data.get("meta", {})
-    source_filename = meta.get("source_filename")
-    if not source_filename:
-        raise HTTPException(
-            status_code=500,
-            detail="bounds.json 缺少 source_filename 元数据",
+        return confirm_imported_raster_crs(
+            body.layer_id,
+            source_crs=body.source_crs,
+            lng_offset=body.lng_offset,
+            lat_offset=body.lat_offset,
         )
-
-    src_path = dest_dir / source_filename
-    if not src_path.exists():
-        raise HTTPException(
-            status_code=404,
-            detail=f"源 TIF 文件不存在: {source_filename}",
-        )
-
-    # 重投影到 WGS84 并生成新 PNG
-    try:
-        png_bytes, target_bounds = (
-            raster_preview_service.render_cog_preview_reprojected(
-                cog_path=src_path,
-                palette="wind-blue",
-                width=1024,
-                height=1024,
-                source_crs=body.source_crs,
-                target_crs="EPSG:4326",
-            )
-        )
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     except Exception as exc:
-        raise HTTPException(
-            status_code=500,
-            detail=f"重投影失败: {exc}",
-        ) from exc
-
-    # 应用偏移（CRS 转换后）
-    west, south, east, north = target_bounds
-    west += body.lng_offset
-    east += body.lng_offset
-    south += body.lat_offset
-    north += body.lat_offset
-    new_bounds: list[float] = [float(west), float(south), float(east), float(north)]
-
-    # 覆盖 preview.png
-    png_path = dest_dir / "preview.png"
-    png_path.write_bytes(png_bytes)
-
-    # 覆盖 bounds.json（保留 source_* 元数据，更新 bounds/crs）
-    bounds_data["bounds"] = new_bounds
-    meta["crs"] = "EPSG:4326"  # 确认后 bounds 已是 WGS84
-    meta["confirmed_source_crs"] = body.source_crs
-    meta["applied_lng_offset"] = body.lng_offset
-    meta["applied_lat_offset"] = body.lat_offset
-    bounds_data["meta"] = meta
-    bounds_path.write_text(
-        json.dumps(bounds_data, ensure_ascii=False, indent=2), encoding="utf-8"
-    )
-
-    # 重新注册 overlay（更新 crs 字段为 WGS84）
-    unregister_overlay(body.layer_id)
-    register_overlay(
-        OverlaySpec(
-            layer_id=body.layer_id,
-            overlay_dir=dest_dir,
-            png_filename="preview.png",
-            bounds_filename="bounds.json",
-            category="static",
-            palette="wind-blue",
-            opacity=0.7,
-            crs="EPSG:4326",
-            source_path=src_path,
-            source_reader="geotiff",
-        )
-    )
-
-    return {
-        "layer_id": body.layer_id,
-        "bounds": new_bounds,
-        "source_crs": body.source_crs,
-        "target_crs": "EPSG:4326",
-        "applied_offset": [body.lng_offset, body.lat_offset],
-    }
+        raise HTTPException(status_code=500, detail=f"重投影失败: {exc}") from exc
 
 
 # ── 转换端点 ───────────────────────────────────────────────────────────

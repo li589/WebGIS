@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, ref } from 'vue'
+import { LAYERS_COPY } from '../ui-copy'
 
 export type ScreenshotMode = 'shell' | 'bare' | 'clean' | 'pure'
 export type ScreenshotFormat = 'png' | 'pdf'
@@ -244,7 +245,8 @@ async function capture() {
       }
     }
 
-    const exportName = props.activeLayerName === '无图层' ? '无数据图层' : props.activeLayerName
+    const exportName =
+      props.activeLayerName === LAYERS_COPY.emptyTitle ? '无数据图层' : props.activeLayerName
     const filename = `geoflow-${exportName}-${props.hourLabel.replace(':', '')}-${mode}`
 
     if (format === 'png') {

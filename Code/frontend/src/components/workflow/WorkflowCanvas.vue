@@ -196,6 +196,10 @@ function setupLiteGraphFloatingUiGuards() {
 // mouseup 监听句柄（用于清空对齐辅助线）
 let _mouseupHandlerRef: (() => void) | null = null
 
+// 多选拖拽：mousedown capture + mouseup 处理器（独立于辅助线 mouseup）
+let _multiSelectMousedownRef: ((e: MouseEvent) => void) | null = null
+let _multiSelectMouseupRef: ((e: MouseEvent) => void) | null = null
+
 // minimap mousedown 监听句柄（用于点击/拖动同步主视口）
 let _minimapMousedownHandlerRef: ((e: MouseEvent) => void) | null = null
 let _minimapMouseupHandlerRef: (() => void) | null = null
@@ -375,6 +379,8 @@ function configureCanvas(canvas: LGraphCanvasClass) {
   // 拖动过程中实时吸附 + 辅助线（LiteGraph 的 onNodeMoved 仅在 mouseup 触发，不跟手）
   const canvasAny = canvas as unknown as {
     processMouseMove?: (e: MouseEvent) => unknown
+    processNodeSelected?: (node: LGraphNodeClass, e: MouseEvent) => void
+    selectNode?: (node: LGraphNodeClass, addToCurrent?: boolean) => void
     node_dragged?: LGraphNodeClass | null
     selected_nodes?: Record<string, LGraphNodeClass>
     onNodeMoved?: (node: LGraphNodeClass) => void
@@ -386,39 +392,96 @@ function configureCanvas(canvas: LGraphCanvasClass) {
     convertOffsetToCanvas?: (pos: number[], out?: number[]) => number[]
     ds?: { offset: [number, number]; scale: number; visible_area?: Float32Array | number[] }
   }
-  const origProcessMouseMove = canvasAny.processMouseMove?.bind(canvas)
-  if (origProcessMouseMove) {
-    canvasAny.processMouseMove = (e: MouseEvent) => {
-      const result = origProcessMouseMove(e)
-      const dragged = canvasAny.node_dragged
-      if (dragged && !props.readonly) {
-        applySnapWhileDragging(dragged, canvasAny.selected_nodes ?? { [dragged.id]: dragged })
-        computeAlignmentGuides(dragged)
-        canvas.setDirty(true, true)
-        hidePortTooltip()
+
+  // ─── 多选拖拽修复 ─────────────────────────────────────────────────────────
+  // 根因：LiteGraph 的 processMouseDown → processNodeSelected → selectNode(node, false)
+  // 会 deselectAllNodes 清空多选，导致 processMouseMove 内置的多选拖循环只看到 1 个节点。
+  // 修复：覆写 selectNode（processMouseDown 内部通过 this. 动态查找），
+  // 当目标节点已属于多选且无修饰键时跳过 deselectAllNodes，让内置多选拖自然生效。
+  // mouseup 时若鼠标未显著移动（纯点击）则恢复单选。
+  let _multiSelectDownPos: [number, number] | null = null
+  const DRAG_THRESHOLD = 4 // 像素阈值，小于此距离视为点击
+
+  const origSelectNode = canvasAny.selectNode?.bind(canvas)
+  if (origSelectNode && !props.readonly) {
+    canvasAny.selectNode = function (node: LGraphNodeClass, addToCurrent?: boolean) {
+      // 仅在非追加选择且节点已属于多选时跳过 deselection
+      if (
+        !addToCurrent &&
+        node?.is_selected &&
+        !(node as unknown as { _skipDeselect?: boolean })._skipDeselect
+      ) {
+        const selectedMap = canvasAny.selected_nodes ?? {}
+        if (Object.keys(selectedMap).length > 1) {
+          // 记录 mousedown 位置，mouseup 时判断是点击还是拖拽
+          _multiSelectDownPos = _multiSelectDownPos ?? [0, 0]
+          return // 跳过 deselectAllNodes，保持多选状态
+        }
       }
-      return result
+      return origSelectNode(node, addToCurrent)
     }
   }
 
-  // 连接点悬停：挂在容器 capture 上（LiteGraph 的 processMouseMove 已被 bind，覆写方法无效）
+  // mousedown 时记录起始位置（capture 阶段，先于 LiteGraph 处理）
+  _multiSelectMouseupRef = (e: MouseEvent) => {
+    if (!_multiSelectDownPos) {
+      return
+    }
+    const dx = Math.abs(e.clientX - _multiSelectDownPos[0])
+    const dy = Math.abs(e.clientY - _multiSelectDownPos[1])
+    _multiSelectDownPos = null
+    // 鼠标移动 < 阈值 → 纯点击 → 恢复单选
+    if (dx < DRAG_THRESHOLD && dy < DRAG_THRESHOLD) {
+      const selectedMap = canvasAny.selected_nodes ?? {}
+      const firstSelected = Object.values(selectedMap)[0]
+      if (firstSelected) {
+        // 用原始 selectNode 恢复单选，不经过覆写逻辑
+        origSelectNode?.(firstSelected, false)
+      }
+    }
+    // 鼠标移动 >= 阈值 → 拖拽 → 保持多选，不干预
+  }
+
+  // 用 capture 阶段 mousedown 记录起始位置
+  _multiSelectMousedownRef = (e: MouseEvent) => {
+    const selectedMap = canvasAny.selected_nodes ?? {}
+    if (Object.keys(selectedMap).length > 1) {
+      _multiSelectDownPos = [e.clientX, e.clientY]
+    } else {
+      _multiSelectDownPos = null
+    }
+  }
+  canvasRef.value?.addEventListener('mousedown', _multiSelectMousedownRef, {
+    capture: true,
+    passive: true,
+  })
+  canvasRef.value?.addEventListener('mouseup', _multiSelectMouseupRef)
+
+  // 实时吸附 + 辅助线：用 capture 阶段 mousemove 监听
+  // （processMouseMove 覆写无效，因为 LiteGraph 用 .bind() 绑定 DOM 监听器）
+  _portMousemoveHandlerRef = (e: MouseEvent) => {
+    if (!canvasInstance.value) return
+    const target = e.target as HTMLElement | null
+    if (target?.closest?.('.workflow-minimap')) {
+      hidePortTooltip()
+      return
+    }
+    const dragged = canvasAny.node_dragged
+    if (dragged) {
+      // 拖动中：实时吸附 + 辅助线
+      if (!props.readonly) {
+        applySnapWhileDragging(dragged, canvasAny.selected_nodes ?? { [dragged.id]: dragged })
+        computeAlignmentGuides(dragged)
+        canvas.setDirty(true, true)
+      }
+      hidePortTooltip()
+      return
+    }
+    // 非拖动：更新端口悬停提示
+    updatePortTooltipFromEvent(e, canvasInstance.value)
+  }
   const tipHost = canvasContainerRef.value ?? canvasRef.value
   if (tipHost) {
-    _portMousemoveHandlerRef = (e: MouseEvent) => {
-      if (!canvasInstance.value) return
-      const target = e.target as HTMLElement | null
-      if (target?.closest?.('.workflow-minimap')) {
-        hidePortTooltip()
-        return
-      }
-      const dragged = (canvasInstance.value as unknown as { node_dragged?: LGraphNodeClass | null })
-        .node_dragged
-      if (dragged) {
-        hidePortTooltip()
-        return
-      }
-      updatePortTooltipFromEvent(e, canvasInstance.value)
-    }
     tipHost.addEventListener('mousemove', _portMousemoveHandlerRef as EventListener, {
       passive: true,
       capture: true,
@@ -429,6 +492,7 @@ function configureCanvas(canvas: LGraphCanvasClass) {
   const origOnNodeMoved = canvasAny.onNodeMoved
   canvasAny.onNodeMoved = (node: LGraphNodeClass) => {
     // 松手时再做一次硬吸附，保证落点落在网格/对齐线上；辅助线仅拖动中显示
+    // applySnapWhileDragging 会将 snap delta 同步给所有选中节点
     applySnapWhileDragging(node, canvasAny.selected_nodes ?? { [node.id]: node }, true)
     alignmentGuides.value = []
     emitChange()
@@ -1664,6 +1728,15 @@ onBeforeUnmount(() => {
     if (_mouseupHandlerRef) {
       canvasEl.removeEventListener('mouseup', _mouseupHandlerRef)
       _mouseupHandlerRef = null
+    }
+    // 清理多选拖拽监听器
+    if (_multiSelectMousedownRef) {
+      canvasEl.removeEventListener('mousedown', _multiSelectMousedownRef, true)
+      _multiSelectMousedownRef = null
+    }
+    if (_multiSelectMouseupRef) {
+      canvasEl.removeEventListener('mouseup', _multiSelectMouseupRef)
+      _multiSelectMouseupRef = null
     }
     canvasEl.removeEventListener('mouseleave', hidePortTooltip)
   }

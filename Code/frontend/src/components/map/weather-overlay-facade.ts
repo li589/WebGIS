@@ -60,6 +60,8 @@ interface CreateWeatherOverlayFacadeOptions {
 export interface WeatherOverlayFacade {
   scheduleSync: (reason?: 'move' | 'zoom' | 'data' | 'hour') => void
   runSyncNow: () => void
+  /** 全屏面板盖住地图时暂停风场动画；关闭后续播 */
+  setAnimationPaused: (paused: boolean) => void
   dispose: () => void
 }
 
@@ -115,6 +117,9 @@ export function createWeatherOverlayFacade(
         if (!options.getMapReady()) return
         runtimeOrchestrator.sync(weatherOverlaySyncScheduler.beginSync())
       })
+    },
+    setAnimationPaused(paused: boolean) {
+      windParticleController.setAnimationPaused(paused)
     },
     dispose() {
       weatherOverlaySyncScheduler.dispose()

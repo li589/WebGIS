@@ -108,6 +108,15 @@ function slotRecord(slot: INodeInputSlot | INodeOutputSlot): Record<string, unkn
 /** 已注册过的类型集合；允许后续用更新后的模板覆盖注册 */
 const _registeredTypes = new Set<string>()
 
+/** 历史画布 type → 现行注册 type（与后端 _NODE_TYPE_ALIASES 对齐） */
+const NODE_TYPE_ALIASES: Record<string, string> = {
+  'algorithm/omega_avg_daily': 'module/omega_avg_daily',
+}
+
+export function resolveNodeType(nodeType: string): string {
+  return NODE_TYPE_ALIASES[nodeType] ?? nodeType
+}
+
 /**
  * 将可调参数提升为可选输入端口，使参数也能用连线驱动（widget 仍保留作默认值）。
  */
@@ -248,6 +257,8 @@ export function registerWorkflowNodeTypes(
         }
 
         if (tpl.params) {
+          // 确保 properties 对象存在（LiteGraph 构造器已初始化为 {}）
+          if (!this.properties) this.properties = {}
           for (const param of tpl.params) {
             const widgetType = mapParamTypeToWidget(param.type, param.options)
             let defaultValue: unknown = param.default ?? getDefaultForType(param.type)
@@ -265,6 +276,13 @@ export function registerWorkflowNodeTypes(
               param.key,
               options,
             )
+            // LiteGraph 的 addWidget 不会初始化 this.properties[key]，
+            // 只把默认值存在 widget.value 中。必须显式写入 properties，
+            // 否则 WorkflowInspector 读取 node.properties 时为空对象，
+            // 导致所有参数（含 date/bbox widget）无法渲染。
+            if (this.properties[param.key] === undefined) {
+              this.properties[param.key] = defaultValue
+            }
           }
         }
 
@@ -292,6 +310,14 @@ export function registerWorkflowNodeTypes(
       WorkflowNode as unknown as { new (): LGraphNodeClass },
     )
     _registeredTypes.add(template.type)
+
+    // 历史别名一并注册，避免旧种子画布显示「未定义」节点
+    for (const [alias, canonical] of Object.entries(NODE_TYPE_ALIASES)) {
+      if (canonical === template.type) {
+        LiteGraph.registerNodeType(alias, WorkflowNode as unknown as { new (): LGraphNodeClass })
+        _registeredTypes.add(alias)
+      }
+    }
   }
 }
 
@@ -543,7 +569,7 @@ export function workflowDefinitionToGraphData(def: WorkflowDefinition): serializ
 
   const nodes: SerializedLGraphNode[] = def.nodes.map((n) => ({
     id: n.id,
-    type: n.type,
+    type: resolveNodeType(n.type),
     pos: n.pos,
     size: [220, 72] as [number, number],
     flags: {},
@@ -558,7 +584,7 @@ export function workflowDefinitionToGraphData(def: WorkflowDefinition): serializ
       type: p.type,
       links: outputLinksMap.get(`${n.id}:${idx}`) ?? null,
     })),
-    title: n.title,
+    title: n.title ?? n.type ?? '',
     properties: n.properties ?? {},
   }))
 
@@ -595,7 +621,7 @@ export function graphDataToWorkflowNodes(graphData: serializedLGraph): {
 } {
   const nodes: WorkflowDefinitionNode[] = graphData.nodes.map((n) => ({
     id: n.id,
-    type: n.type ?? '',
+    type: resolveNodeType(n.type ?? ''),
     title: n.title ?? n.type ?? '',
     pos: n.pos ?? [0, 0],
     properties: n.properties ?? {},

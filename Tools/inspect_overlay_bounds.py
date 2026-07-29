@@ -147,22 +147,22 @@ def main() -> int:
     # EASE-Grid .mat files
     inspect_ease_mat(
         "Forest Ratio",
-        Path(r"I:\Geograph_DataSet\InversionResults\Forest_Ratio_9KM_2020.mat"),
+        Path(r"I:\Geograph_DataSet\Inversion_Results\Forest_Ratio_9KM_2020.mat"),
         "Forest_Ratio",
     )
     inspect_ease_mat(
         "Soil DDCA",
-        Path(r"I:\Geograph_DataSet\Soil_Ecological_Data\DDCA\DDCA_DH\H\20150401.mat"),
+        Path(r"I:\Geograph_DataSet\Soil_Moisture\DDCA\DDCA_DH\H\20150401.mat"),
         "DH",
     )
     inspect_ease_mat(
         "Omega FY",
-        Path(r"I:\Geograph_DataSet\InversionResults\fy_avg\doy_025.mat"),
+        Path(r"I:\Geograph_DataSet\Inversion_Results\fy_avg\doy_025.mat"),
         "OMEGA_AVG",
     )
     inspect_ease_mat(
         "Omega (smap_avg)",
-        Path(r"I:\Geograph_DataSet\InversionResults\smap_avg\doy_017.mat"),
+        Path(r"I:\Geograph_DataSet\Inversion_Results\smap_avg\doy_017.mat"),
         "OMEGA_AVG",
     )
 

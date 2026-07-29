@@ -121,7 +121,7 @@ def check_omega_mat() -> dict:
 
     results = {}
     for subdir in ["smap_avg", "fy_avg"]:
-        d = ROOT / "InversionResults" / subdir
+        d = ROOT / "Inversion_Results" / subdir
         files = sorted(d.glob("doy_*.mat"))
         if not files:
             print(f"\n  [{subdir}] 无文件")
@@ -383,7 +383,7 @@ def check_landscape_mat() -> dict:
         "Landscape_Metrics_LandOnly_9KM_2020.mat",
         "Forest_Ratio_9KM_2020.mat",
     ]:
-        f = ROOT / "InversionResults" / fname
+        f = ROOT / "Inversion_Results" / fname
         if not f.exists():
             print(f"  {fname}: 不存在")
             results[fname] = {"status": "not_exists"}

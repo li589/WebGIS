@@ -16,25 +16,32 @@ CGDA（综合地理数据分析系统）：基于 Web 的地理信息平台，�
 | `Code/shared/` | 前后端共享协议与公共契约 | `contracts/` |
 | `Code/infra/data-sync/` | 数据面 compose（Open-Meteo 同步，与运行栈隔离） | `docker-compose.yml`、`sync.sh` / `sync.ps1` |
 | `Doc/` | 方案、技术栈、规范与协作文档 | — |
-| `Tools/` | 数据下载、校验与辅助脚本 | — |
-| `Env/` | 本地开发环境与启停辅助 | — |
-| `launch.py` | 跨平台一键启动器（Docker + FastAPI + Celery + 前端） | — |
+| `Tools/` | 主线外辅助（下载/校验/一次性脚本）；**禁止**放主体功能与运行时模块，见 `Tools/README.md` | — |
+| `Env/Python312/` | **本地联调唯一 Python 运行时**（Windows: `python.exe`） | 依赖与后端/Worker 必须与此一致 |
+| `launch.py` | 跨平台一键启动器（自动切换到 Env/Python312） | — |
 
 后端路由入口：`app/api/routers/__init__.py` 注册各域 router（health / layer / workflow / runtime / weather / algorithm / provider / artifact / import）；瓦片另走 `app/api/tile_routes.py`（底图 `/unified-tiles`）与 `app/api/weather_tile_routes.py`（天气 `/weather/tiles`）；配置写操作走 `app/api/config_routes.py`。
 
+## Python 环境（硬约定）
+
+- **唯一解释器**：`Env/Python312`（勿用系统 PATH / `Program Files\Python`）。
+- **推荐入口**：Windows `start.bat` / `stop.bat`；Linux `./start.sh` / `./stop.sh`。
+- **手动调用**：`Env\Python312\python.exe launch.py <cmd>`。
+- Agent 在本仓库执行后端/pytest/launch 时，也应优先该解释器。
+
 ## 命令指针（launch.py）
 
-所有日常联调经根目录 `launch.py`（Windows: `start.bat` / `stop.bat`；Linux: `./start.sh` / `./stop.sh` 均转发到 `launch.py`）：
+所有日常联调经根目录 `launch.py`（由 `start.bat` 等以 `Env/Python312` 调用）：
 
 | 命令 | 作用 |
 |------|------|
-| `python launch.py start` | 启动全部（Docker 运行栈 + FastAPI + 7 个 Celery Worker + Beat + 前端），进入监控循环 |
-| `python launch.py start <component>` | 单组件：`docker` / `fastapi` / `beat` / `worker` / `worker:<name>` / `frontend` |
-| `python launch.py stop` | 停止全部服务（含 Docker 容器） |
-| `python launch.py status` | 查看服务状态（Docker / FastAPI :8000 / 前端 :5175 / Worker PID / volume） |
-| `python launch.py logs [component] [-n N]` | 查看日志（`fastapi` / `beat` / `frontend` / `worker:<name>`；默认合并全部） |
-| `python launch.py flush` | 清空 Redis DB + 应用天气文件缓存（**见高风险区**） |
-| `python launch.py sync [job]` | 数据面一次性同步（默认 `open-meteo-sync`，走 `Code/infra/data-sync`） |
+| `start.bat` 或 `Env\Python312\python.exe launch.py start` | 启动全部（Docker + FastAPI + 7 Worker + Beat + 前端） |
+| `Env\Python312\python.exe launch.py start <component>` | 单组件：`docker` / `fastapi` / `beat` / `worker` / `worker:<name>` / `frontend` |
+| `stop.bat` / `… launch.py stop` | 停止全部服务（含 Docker 容器） |
+| `… launch.py status` | 查看服务状态（Docker / FastAPI :8000 / 前端 :5175 / Worker PID / volume） |
+| `… launch.py logs [component] [-n N]` | 查看日志 |
+| `… launch.py flush` | 清空 Redis DB + 应用天气文件缓存（**见高风险区**） |
+| `… launch.py sync [job]` | 数据面一次性同步（默认 `open-meteo-sync`） |
 
 服务地址：FastAPI `http://127.0.0.1:8000`（docs `/docs`）、前端 `http://localhost:5175`、Open-Meteo API `http://127.0.0.1:8080`、Redis `:6379`、MinIO `:9100`（Console `:9101`）。
 
@@ -46,7 +53,7 @@ CGDA（综合地理数据分析系统）：基于 Web 的地理信息平台，�
 
 2. **GEE 凭据**：`app/gee/` + `app/services/gee_parallel_config.py`。存储的 GEE 账号凭据用 `BACKEND_GEE_CREDENTIALS_ENCRYPTION_KEY`（32-byte hex，`.env` 生成）加密落 DB。非 development 环境**必须**配置该密钥，否则凭据无法加解密。涉及 `/config/gee/accounts*` 与 `/gee/config`。
 
-3. **flush（清缓存）**：`python launch.py flush` 执行 Redis `FLUSHDB` + 删除 `Code/backend/.data/cache/weather` 与 `weatherengine` 目录。会清空队列、缓存与限流/断路器状态，影响在线服务；**不**删 Open-Meteo Docker volume。仅在排障或强制刷新天气缓存时使用，勿在正常联调中随意执行。
+3. **flush（清缓存）**：`Env\Python312\python.exe launch.py flush` 执行 Redis `FLUSHDB` + 删除 `Code/backend/.data/cache/weather` 与 `weatherengine` 目录。会清空队列、缓存与限流/断路器状态，影响在线服务；**不**删 Open-Meteo Docker volume。仅在排障或强制刷新天气缓存时使用，勿在正常联调中随意执行。
 
 4. **Open-Meteo volume**：named volume `backend_open-meteo-data`（名可经 `Code/infra/data-sync/.env` 的 `OPEN_METEO_DATA_VOLUME` 覆盖），落在 Docker Desktop VHDX 内（`I:\Docker\DockerDesktop`）。**勿用 Windows 路径 bind mount** 替代。API 在 backend 运行栈（容器 `cgda-open-meteo`）；同步在 `Code/infra/data-sync`（`-p data-sync`）。两栈共享同一 volume 但 compose project 不同，改动 compose 时勿混用 project 名。
 

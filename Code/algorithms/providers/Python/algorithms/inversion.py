@@ -126,11 +126,12 @@ def tb_model(
         rh, rv = fresnel_reflectance_from_context(epsilon, model_context.fresnel)
         rh_r, rv_r = rough_reflectance_from_context(model_context, h_value, rh, rv)
     gamma = math.exp(-tau_value)
+    one_minus_gamma = -math.expm1(-tau_value)
     tbv_model = ts * (
-        (1 - rv_r) * gamma + (1 - albedo) * (1 - gamma) * (1 + rv_r * gamma)
+        (1 - rv_r) * gamma + (1 - albedo) * one_minus_gamma * (1 + rv_r * gamma)
     )
     tbh_model = ts * (
-        (1 - rh_r) * gamma + (1 - albedo) * (1 - gamma) * (1 + rh_r * gamma)
+        (1 - rh_r) * gamma + (1 - albedo) * one_minus_gamma * (1 + rh_r * gamma)
     )
     return tbv_model, tbh_model
 

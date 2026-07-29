@@ -64,6 +64,7 @@ export interface WeatherOverlayModule {
   setupWatchers: () => void
   scheduleSync: () => void
   runSyncNow: () => void
+  setAnimationPaused: (paused: boolean) => void
   dispose: () => void
 }
 
@@ -116,6 +117,9 @@ export function createWeatherOverlayModule(
     },
     runSyncNow() {
       facade.runSyncNow()
+    },
+    setAnimationPaused(paused: boolean) {
+      facade.setAnimationPaused(paused)
     },
     dispose() {
       stopWeatherWatcher?.()

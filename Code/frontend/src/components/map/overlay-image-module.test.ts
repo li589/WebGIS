@@ -101,10 +101,19 @@ describe('validateOverlayBounds', () => {
       if (!r.ok) expect(r.reason).toContain('超出 WGS84 范围')
     })
 
-    it('经度 > 180 拒绝', () => {
-      const r = validateOverlayBounds([73, 15, 181, 59])
+    it('经度 > 360 拒绝（超出已展开日界线允许上界）', () => {
+      const r = validateOverlayBounds([73, 15, 361, 59])
       expect(r.ok).toBe(false)
       if (!r.ok) expect(r.reason).toContain('超出 WGS84 范围')
+    })
+
+    it('已展开日界线条带 east∈(180,360] 且 west<east 通过', () => {
+      const r = validateOverlayBounds([170, -10, 190, 10])
+      expect(r.ok).toBe(true)
+      if (r.ok) {
+        expect(r.bounds[0]).toBeLessThan(r.bounds[2])
+        expect(r.bounds[2]).toBeGreaterThan(180)
+      }
     })
 
     it('纬度 < -90 拒绝', () => {
@@ -157,11 +166,23 @@ describe('validateOverlayBounds', () => {
       expect(r.ok).toBe(true)
     })
 
-    it('真正的跨子午线情况（east < west）仍被 west>=east 拦截', () => {
-      // 例如太平洋数据 [170, -10, -170, 10]：east=-170 < west=170
+    it('跨子午线 raw bounds 规范化为 west<east（east 可 >180）', () => {
+      // 例如太平洋数据 [170, -10, -170, 10] → [170, -10, 190, 10]
       const r = validateOverlayBounds([170, -10, -170, 10])
-      expect(r.ok).toBe(false)
-      if (!r.ok) expect(r.reason).toContain('west >= east')
+      expect(r.ok).toBe(true)
+      if (r.ok) {
+        expect(r.bounds[0]).toBeLessThan(r.bounds[2])
+        expect(r.bounds[2]).toBeGreaterThan(180)
+      }
+    })
+
+    it('近全球经度归一为 [-180,180]', () => {
+      const r = validateOverlayBounds([-180, -10, 180, 10])
+      expect(r.ok).toBe(true)
+      if (r.ok) {
+        expect(r.bounds[0]).toBe(-180)
+        expect(r.bounds[2]).toBe(180)
+      }
     })
   })
 

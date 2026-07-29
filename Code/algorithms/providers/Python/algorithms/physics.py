@@ -48,15 +48,26 @@ _TAU_MAX_VALID = 5.0
 _NDVI_VALID_MIN = 0.0
 _NDVI_VALID_MAX = 1.0
 # 土地覆盖类型代码
+# IGBP 标准：10=Grasslands, 12=Croplands, 0=Water
+# 注意：Matlab VWC.m/Tau.m 中 LC==0 的赋值(L19: VWC2(LC==0)=nan)被 L21
+# 的 VWC2(LC~=10 & LC~=12)=... 覆盖（因 LC==0 满足 ~=10 & ~=12），水体
+# 实际使用了"其他"公式。Python 修正此缺陷：水体显式排除在"其他"之外，
+# 最终为 NaN，符合 VWC.m 注释 % 0-water 的原意。
 _LANDCOVER_WATER = 0
-_LANDCOVER_CROP = 10
-_LANDCOVER_GRASS = 12
+_LANDCOVER_CROP = 12
+_LANDCOVER_GRASS = 10
 # 频率有效范围 (GHz)
 _FREQ_GHZ_MIN = 0.1
 _FREQ_GHZ_MAX = 40.0
 # 黏粒含量有效范围（无量纲，0-1）
 _CLAY_FRACTION_MIN = 0.0
 _CLAY_FRACTION_MAX = 1.0
+# Fresnel |den|² 低于此视为奇异几何 → NaN（避免 /0 与 inf 反射率）
+_FRESNEL_DEN_ABS2_MIN = 1e-30
+# NDVI→VWC 分母 (1-ndvi_min) 过小则无效（与后续 QC 一致，避免 inf 尖峰）
+_NDVI_MIN_DENOM_EPS = 1e-6
+# cos(θ) 过小（掠射）时 tau 无效
+_COS_THETA_EPS = 1e-12
 
 
 def _safe_sqrt(x: float) -> float:
@@ -109,14 +120,20 @@ def _fresnel_reflectance_kernel_py(
     den_h = cos_theta + root_term
     num_h_abs2 = num_h.real * num_h.real + num_h.imag * num_h.imag
     den_h_abs2 = den_h.real * den_h.real + den_h.imag * den_h.imag
-    rh = num_h_abs2 / den_h_abs2
+    if den_h_abs2 < _FRESNEL_DEN_ABS2_MIN:
+        rh = float("nan")
+    else:
+        rh = num_h_abs2 / den_h_abs2
 
     epsilon_cos = epsilon * cos_theta
     num_v = epsilon_cos - root_term
     den_v = epsilon_cos + root_term
     num_v_abs2 = num_v.real * num_v.real + num_v.imag * num_v.imag
     den_v_abs2 = den_v.real * den_v.real + den_v.imag * den_v.imag
-    rv = num_v_abs2 / den_v_abs2
+    if den_v_abs2 < _FRESNEL_DEN_ABS2_MIN:
+        rv = float("nan")
+    else:
+        rv = num_v_abs2 / den_v_abs2
     return float(rh), float(rv)
 
 
@@ -198,14 +215,20 @@ def _load_scalar_kernel_impls(
             den_h = cos_theta + root_term
             num_h_abs2 = num_h.real * num_h.real + num_h.imag * num_h.imag
             den_h_abs2 = den_h.real * den_h.real + den_h.imag * den_h.imag
-            rh = num_h_abs2 / den_h_abs2
+            if den_h_abs2 < 1e-30:
+                rh = np.nan
+            else:
+                rh = num_h_abs2 / den_h_abs2
 
             epsilon_cos = epsilon * cos_theta
             num_v = epsilon_cos - root_term
             den_v = epsilon_cos + root_term
             num_v_abs2 = num_v.real * num_v.real + num_v.imag * num_v.imag
             den_v_abs2 = den_v.real * den_v.real + den_v.imag * den_v.imag
-            rv = num_v_abs2 / den_v_abs2
+            if den_v_abs2 < 1e-30:
+                rv = np.nan
+            else:
+                rv = num_v_abs2 / den_v_abs2
             return rh, rv
 
         # Compile eagerly so unsupported complex operations fall back immediately.
@@ -394,10 +417,11 @@ def build_mironov_context(freq_ghz: float, clay_fraction: float) -> MironovConte
         2 * math.pi * _VACUUM_PERMITTIVITY * freq_hz
     )
 
-    mag_b = math.sqrt(epwbx * epwbx + epwby * epwby)  # 复数模长，非负
+    # 模长物理上非负；对 epw* 非有限时用 _safe_sqrt 避免 math.sqrt 抛错
+    mag_b = _safe_sqrt(epwbx * epwbx + epwby * epwby)
     znb = _safe_sqrt((mag_b + epwbx) / 2)
     zkb = _safe_sqrt((mag_b - epwbx) / 2)
-    mag_u = math.sqrt(epwux * epwux + epwuy * epwuy)  # 复数模长，非负
+    mag_u = _safe_sqrt(epwux * epwux + epwuy * epwuy)
     znu = _safe_sqrt((mag_u + epwux) / 2)
     zku = _safe_sqrt((mag_u - epwux) / 2)
 
@@ -498,20 +522,29 @@ def vwc_from_ndvi(
     mask_water = landcover == _LANDCOVER_WATER
     mask_other = ~mask_crop_grass & ~mask_water
 
-    vwc2[mask_crop_grass] = (
-        stem_factor[mask_crop_grass]
-        / (1 - ndvi_min[mask_crop_grass])
-        * (ndvi[mask_crop_grass] - ndvi_min[mask_crop_grass])
-    )
-    vwc2[mask_water] = np.nan
-    vwc2[mask_other] = (
-        stem_factor[mask_other]
-        / (1 - ndvi_min[mask_other])
-        * (ndvi_max[mask_other] - ndvi_min[mask_other])
-    )
+    # 分母 (1-ndvi_min)→0 时与无效像素同为 NaN，避免先产生 ±inf 再过滤
+    with np.errstate(divide="ignore", invalid="ignore"):
+        den_cg = 1.0 - ndvi_min[mask_crop_grass]
+        safe_cg = np.abs(den_cg) >= _NDVI_MIN_DENOM_EPS
+        vwc2_cg = (
+            stem_factor[mask_crop_grass]
+            / den_cg
+            * (ndvi[mask_crop_grass] - ndvi_min[mask_crop_grass])
+        )
+        vwc2[mask_crop_grass] = np.where(safe_cg, vwc2_cg, np.nan)
 
-    vwc = vwc1 + vwc2
-    vwc[(vwc > _VWC_MAX_VALID) | np.isinf(vwc)] = np.nan
+        den_ot = 1.0 - ndvi_min[mask_other]
+        safe_ot = np.abs(den_ot) >= _NDVI_MIN_DENOM_EPS
+        vwc2_ot = (
+            stem_factor[mask_other]
+            / den_ot
+            * (ndvi_max[mask_other] - ndvi_min[mask_other])
+        )
+        vwc2[mask_other] = np.where(safe_ot, vwc2_ot, np.nan)
+    vwc2[mask_water] = np.nan
+
+    vwc = np.asarray(vwc1 + vwc2, dtype=np.float64)
+    vwc = np.where((vwc > _VWC_MAX_VALID) | np.isinf(vwc), np.nan, vwc)
     return vwc
 
 
@@ -540,6 +573,13 @@ def tau_from_ndvi(
     b_param = _broadcast_to_shape(
         b_param, target_shape, name="b_param", dtype=np.float64
     )
-    tau = b_param * vwc / np.cos(np.radians(theta_deg))
-    tau[(tau < 0) | (tau > _TAU_MAX_VALID)] = np.nan
+    cos_theta = np.cos(np.radians(theta_deg))
+    with np.errstate(divide="ignore", invalid="ignore"):
+        tau = np.where(
+            np.abs(cos_theta) >= _COS_THETA_EPS,
+            b_param * vwc / cos_theta,
+            np.nan,
+        )
+    tau = np.asarray(tau, dtype=np.float64)
+    tau = np.where((tau < 0) | (tau > _TAU_MAX_VALID) | np.isinf(tau), np.nan, tau)
     return tau

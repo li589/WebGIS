@@ -5,11 +5,14 @@ import tempfile
 import unittest
 from contextlib import contextmanager
 from typing import Iterator
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 from app.core.config import settings
 from app.services.bridge_protocol import BridgeExecutionError
-from app.services.workflow.submission_service import WorkflowSubmissionService
+from app.services.workflow.submission_service import (
+    WorkflowSubmissionService,
+    WorkflowValidationError,
+)
 from app.services.workflow.lifecycle_service import WorkflowLifecycleService
 from app.services.workflow.persistence_service import WorkflowPersistenceService
 from app.services.workflow.transition_builder import WorkflowTransitionBuilder
@@ -172,7 +175,7 @@ class WorkflowServicesTests(unittest.TestCase):
                 algorithm_request["datasource_selection"]["_data_access_requests"][
                     "NDVI_16DAY_RASTER"
                 ]["selector"]["uris"],
-                ["D:/prepared/NDVI_VIIRS"],
+                ["D:/prepared/I:_Geograph_DataSet_Ecological_Vegetation_NDVI_VIIRS_9km_tif"],
             )
 
             request_json = repository.get_run_request_json(response.run_id)
@@ -190,7 +193,7 @@ class WorkflowServicesTests(unittest.TestCase):
         # P2.2 修复后 fy-mwri 的首个候选数据源从 “fy” 扩展为 “FY_MWRI_HDF”
         # （见 layer_catalog.py 中 fy-mwri.default_data_access_sources）。
         expected_layers = {
-            "smap-soil": ("smap_daily", "SMAP_SPL3SMP_E", "D:/prepared/SMAP_L3"),
+            "smap-soil": ("smap_daily", "SMAP_SPL3SMP_E", "D:/prepared/I:_Geograph_DataSet_Soil_Moisture_SMAP"),
             "fy-mwri": ("fy_daily", "FY_MWRI_HDF", "D:/prepared/FY_MWRI_HDF"),
         }
 
@@ -247,6 +250,13 @@ class WorkflowServicesTests(unittest.TestCase):
                 patch(
                     "app.services.workflow.submission_service.execute_workflow_task"
                 ) as execute_mock,
+                # 跳过提交期参数预校验：本测试关注 normalization 行为
+                # （_data_access_requests 在数据源不可用时应留空），
+                # 而非校验逻辑（校验逻辑由独立测试覆盖）。
+                patch(
+                    "app.services.workflow.submission_service.WorkflowSubmissionService._validate_request_params",
+                    lambda self, payload: None,
+                ),
             ):
                 submission.submit_workflow(
                     self._build_payload(WorkflowCommandType.analysis, layer_id="ndvi")
@@ -264,11 +274,19 @@ class WorkflowServicesTests(unittest.TestCase):
         with _temp_repository() as repository:
             submission, lifecycle, runtime_status = _build_services(repository)
 
-            with patch(
-                "app.services.workflow.submission_service.execute_workflow_task",
-                side_effect=BridgeExecutionError(
-                    category=FailureCategory.validation_error,
-                    message="Provider template validation failed: module 'ndvi_daily' requires datasource_selection keys: input_dir",
+            with (
+                patch(
+                    "app.services.workflow.submission_service.execute_workflow_task",
+                    side_effect=BridgeExecutionError(
+                        category=FailureCategory.validation_error,
+                        message="Provider template validation failed: module 'ndvi_daily' requires datasource_selection keys: input_dir",
+                    ),
+                ),
+                # 跳过提交期预校验，以便测试执行期校验失败的消息上抛路径
+                # （提交期预校验由独立测试覆盖）。
+                patch(
+                    "app.services.workflow.submission_service.WorkflowSubmissionService._validate_request_params",
+                    lambda self, payload: None,
                 ),
             ):
                 response = submission.submit_workflow(
@@ -287,29 +305,37 @@ class WorkflowServicesTests(unittest.TestCase):
         with _temp_repository() as repository:
             submission, lifecycle, runtime_status = _build_services(repository)
 
-            with patch(
-                "app.services.workflow.submission_service.execute_workflow_task",
-                side_effect=BridgeExecutionError(
-                    category=FailureCategory.validation_error,
-                    message="Provider template validation failed: module 'ndvi_daily' requires datasource_selection keys: input_dir",
-                    details={
-                        "resolution_diagnostics": {
-                            "layer_id": "ndvi",
-                            "module_name": "ndvi_daily",
-                            "task_type": "ndvi_daily",
-                            "layer_status": "placeholder",
-                            "unresolved_default_datasets": [
-                                {
-                                    "dataset_name": "NDVI_16DAY_RASTER",
-                                    "candidate_sources": [
-                                        "NDVI_VIIRS",
-                                        "NDVI_MODIS",
-                                        "ndvi",
-                                    ],
-                                }
-                            ],
-                        }
-                    },
+            with (
+                patch(
+                    "app.services.workflow.submission_service.execute_workflow_task",
+                    side_effect=BridgeExecutionError(
+                        category=FailureCategory.validation_error,
+                        message="Provider template validation failed: module 'ndvi_daily' requires datasource_selection keys: input_dir",
+                        details={
+                            "resolution_diagnostics": {
+                                "layer_id": "ndvi",
+                                "module_name": "ndvi_daily",
+                                "task_type": "ndvi_daily",
+                                "layer_status": "placeholder",
+                                "unresolved_default_datasets": [
+                                    {
+                                        "dataset_name": "NDVI_16DAY_RASTER",
+                                        "candidate_sources": [
+                                            "NDVI_VIIRS",
+                                            "NDVI_MODIS",
+                                            "ndvi",
+                                        ],
+                                    }
+                                ],
+                            }
+                        },
+                    ),
+                ),
+                # 跳过提交期预校验，以便测试执行期校验失败的 diagnostics 持久化路径
+                # （提交期预校验由独立测试覆盖）。
+                patch(
+                    "app.services.workflow.submission_service.WorkflowSubmissionService._validate_request_params",
+                    lambda self, payload: None,
                 ),
             ):
                 response = submission.submit_workflow(
@@ -328,6 +354,92 @@ class WorkflowServicesTests(unittest.TestCase):
                 "validation_dataset_candidates.NDVI_16DAY_RASTER=NDVI_VIIRS|NDVI_MODIS|ndvi",
                 run.diagnostics,
             )
+
+    def test_submit_workflow_raises_validation_error_when_required_datasource_missing(
+        self,
+    ) -> None:
+        """提交期预校验：缺必需 datasource key 时抛出 WorkflowValidationError。
+
+        通过 mock 模板校验器返回校验错误，验证 submission_service 能正确
+        将错误转为结构化 WorkflowValidationError（携带字段级 issues）。
+        使用 mock 而非真实导入因 algorithms 包 contracts 模块依赖
+        Python 3.11+（StrEnum / datetime.UTC），本地 Python 3.10 无法导入；
+        CI（Python 3.12）覆盖真实集成路径。
+        """
+        import importlib as _importlib
+
+        # Mock deriver: 模板存在但校验失败（缺 input_dir）
+        mock_deriver = MagicMock()
+        # list_module_templates 返回空 dict，使 normalization 不受 mock 影响
+        mock_deriver.list_module_templates.return_value = {}
+        # get_module_request_template 返回非 None，使校验逻辑继续执行
+        mock_deriver.get_module_request_template.return_value = "mock_template"
+        # validate_request_against_template 返回校验失败 + 字符串错误列表
+        mock_deriver.validate_request_against_template.return_value = (
+            False,
+            ["Missing required datasource key: 'input_dir'"],
+        )
+
+        # 条件 mock：仅 "contracts.template_deriver" 返回 mock_deriver，
+        # 其他模块名委托给真实 importlib.import_module
+        _real_import_module = _importlib.import_module
+
+        def _side_effect(name, *args, **kwargs):
+            if name == "contracts.template_deriver":
+                return mock_deriver
+            return _real_import_module(name, *args, **kwargs)
+
+        with _temp_repository() as repository:
+            submission, lifecycle, runtime_status = _build_services(repository)
+            with (
+                patch(
+                    "app.services.workflow_request_resolver._resolve_data_access_source_uri",
+                    return_value=None,
+                ),
+                patch(
+                    "app.services.workflow.submission_service.execute_workflow_task"
+                ) as execute_mock,
+                patch(
+                    "app.services.workflow.submission_service.importlib.import_module",
+                    side_effect=_side_effect,
+                ),
+            ):
+                with self.assertRaises(WorkflowValidationError) as ctx:
+                    submission.submit_workflow(
+                        self._build_payload(
+                            WorkflowCommandType.analysis, layer_id="ndvi"
+                        )
+                    )
+
+            # 不应进入执行阶段
+            execute_mock.assert_not_called()
+            issues = ctx.exception.issues
+            self.assertTrue(len(issues) >= 1)
+            # 至少有一个 issue 指向 input_dir 字段
+            self.assertTrue(
+                any("input_dir" in issue["field"] for issue in issues),
+                f"expected an issue targeting input_dir, got {issues}",
+            )
+            # 每个 issue 都有 field 和 message
+            for issue in issues:
+                self.assertIn("field", issue)
+                self.assertIn("message", issue)
+
+    def test_submit_workflow_skips_validation_when_no_module_name(self) -> None:
+        """无 module_name 的请求（如 workflow_definition 模式）跳过提交期预校验。"""
+        with _temp_repository() as repository:
+            submission, lifecycle, runtime_status = _build_services(repository)
+            # wind-field 图层未注册 module_name，normalize 后 algorithm_request 无 module_name
+            with patch(
+                "app.services.workflow.submission_service.execute_workflow_task",
+                return_value=WorkflowExecutionResult(message="ok"),
+            ):
+                response = submission.submit_workflow(
+                    self._build_payload(
+                        WorkflowCommandType.analysis, layer_id="wind-field"
+                    )
+                )
+            self.assertIsInstance(response, WorkflowAcceptedResponse)
 
     def test_submit_workflow_auto_populates_gee_request_from_layer_catalog(
         self,

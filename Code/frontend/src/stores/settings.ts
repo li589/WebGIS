@@ -115,55 +115,37 @@ export const useSettingsStore = defineStore('settings', () => {
   const partialError = ref<string | null>(null)
   const failedLoaders = ref<LoaderName[]>([])
 
-  async function loadAll() {
-    loading.value = true
+  async function loadAll(options?: { quiet?: boolean }) {
+    // quiet：已有数据时后台刷新，不挡面板内容区（避免二次打开白等）
+    const quiet = Boolean(options?.quiet && generalConfig.value)
+    if (!quiet) {
+      loading.value = true
+    }
     error.value = null
     partialError.value = null
     failedLoaders.value = []
 
-    const runBatch = () =>
+    // 关键路径先返回：常规配置拿到即可解除整页 spinner。
+    // 数据源扫描等慢接口放第二批，避免拖住整个设置面板。
+    const criticalBatch = () =>
       Promise.all([
         settled('general', fetchGeneralConfig),
         settled('api-keys', fetchApiKeys),
+        settled('about', fetchAboutInfo),
+      ])
+
+    const deferredBatch = () =>
+      Promise.all([
         settled('gee-accounts', fetchGeeAccounts),
         settled('gee-runtime', fetchGeeRuntimeConfig),
         settled('weather', fetchWeatherConfig),
         settled('weather-providers', fetchWeatherProviders),
         settled('data-source', fetchDataSourceConfig),
         settled('remote-storage', fetchRemoteStorageProfiles),
-        settled('about', fetchAboutInfo),
       ])
 
-    let results = await runBatch()
-
-    // 对失败项短暂重试一次（覆盖后端刚启动 / Vite 代理抖动）
-    const failedOnce = results.filter((r) => r.error)
-    if (failedOnce.length > 0) {
-      await new Promise((resolve) => window.setTimeout(resolve, 350))
-      const retryMap = new Map<LoaderName, Awaited<ReturnType<typeof settled>>>()
-      await Promise.all(
-        failedOnce.map(async (item) => {
-          const loader = {
-            general: () => settled('general', fetchGeneralConfig),
-            'api-keys': () => settled('api-keys', fetchApiKeys),
-            'gee-accounts': () => settled('gee-accounts', fetchGeeAccounts),
-            'gee-runtime': () => settled('gee-runtime', fetchGeeRuntimeConfig),
-            weather: () => settled('weather', fetchWeatherConfig),
-            'weather-providers': () => settled('weather-providers', fetchWeatherProviders),
-            'data-source': () => settled('data-source', fetchDataSourceConfig),
-            'remote-storage': () => settled('remote-storage', fetchRemoteStorageProfiles),
-            about: () => settled('about', fetchAboutInfo),
-          }[item.name]
-          retryMap.set(item.name, await loader())
-        }),
-      )
-      results = results.map((r) => retryMap.get(r.name) ?? r) as Awaited<
-        ReturnType<typeof runBatch>
-      >
-    }
-
-    for (const r of results) {
-      if (r.value === undefined) continue
+    const applyResult = (r: Awaited<ReturnType<typeof settled>>) => {
+      if (r.value === undefined) return
       switch (r.name) {
         case 'general':
           generalConfig.value = r.value as GeneralConfig
@@ -195,6 +177,53 @@ export const useSettingsStore = defineStore('settings', () => {
       }
     }
 
+    let critical = await criticalBatch()
+    const criticalFailed = critical.filter((r) => r.error)
+    if (criticalFailed.length > 0) {
+      await new Promise((resolve) => window.setTimeout(resolve, quiet ? 120 : 250))
+      const retryMap = new Map<LoaderName, Awaited<ReturnType<typeof settled>>>()
+      await Promise.all(
+        criticalFailed.map(async (item) => {
+          const loader = {
+            general: () => settled('general', fetchGeneralConfig),
+            'api-keys': () => settled('api-keys', fetchApiKeys),
+            about: () => settled('about', fetchAboutInfo),
+          }[item.name as 'general' | 'api-keys' | 'about']
+          if (loader) retryMap.set(item.name, await loader())
+        }),
+      )
+      critical = critical.map((r) => retryMap.get(r.name) ?? r) as typeof critical
+    }
+    for (const r of critical) applyResult(r)
+
+    // 常规配置已就绪：立刻放开内容区，其余分区后台继续
+    if (generalConfig.value) {
+      loading.value = false
+    }
+
+    let deferred = await deferredBatch()
+    const deferredFailed = deferred.filter((r) => r.error)
+    if (deferredFailed.length > 0) {
+      await new Promise((resolve) => window.setTimeout(resolve, quiet ? 120 : 250))
+      const retryMap = new Map<LoaderName, Awaited<ReturnType<typeof settled>>>()
+      await Promise.all(
+        deferredFailed.map(async (item) => {
+          const loader = {
+            'gee-accounts': () => settled('gee-accounts', fetchGeeAccounts),
+            'gee-runtime': () => settled('gee-runtime', fetchGeeRuntimeConfig),
+            weather: () => settled('weather', fetchWeatherConfig),
+            'weather-providers': () => settled('weather-providers', fetchWeatherProviders),
+            'data-source': () => settled('data-source', fetchDataSourceConfig),
+            'remote-storage': () => settled('remote-storage', fetchRemoteStorageProfiles),
+          }[item.name as Exclude<LoaderName, 'general' | 'api-keys' | 'about'>]
+          if (loader) retryMap.set(item.name, await loader())
+        }),
+      )
+      deferred = deferred.map((r) => retryMap.get(r.name) ?? r) as typeof deferred
+    }
+    for (const r of deferred) applyResult(r)
+
+    const results = [...critical, ...deferred]
     const failures = results.filter((r) => r.error)
     failedLoaders.value = failures.map((f) => f.name)
     if (failures.length > 0) {
@@ -202,7 +231,6 @@ export const useSettingsStore = defineStore('settings', () => {
       partialError.value = `部分配置加载失败：${labels}。可重试或先查看其它分区。`
     }
 
-    // 仅当常规配置也失败时阻断主内容区
     if (!generalConfig.value) {
       error.value =
         failures.find((f) => f.name === 'general')?.error ??

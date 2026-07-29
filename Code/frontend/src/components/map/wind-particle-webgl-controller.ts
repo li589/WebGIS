@@ -7,7 +7,7 @@
  * 差异仅在「粒子渲染层」：Canvas 2D 的 `WindParticleCanvas` 被替换为
  * WebGL 的 `WindParticleWebGLLayer`（MapLibre CustomLayer + 独立 GL context）。
  * 等值线（WindContourLayer）、风羽（WindBarbLayer）与 fetch/token 生命周期
- * 与 Canvas 控制器对齐；风速色底仅在「关闭」模式由 Canvas 路径绘制。
+ * 与 Canvas 控制器对齐；风速色底仅在「网格」(off) 模式由 Canvas 路径绘制。
  *
  * 若 WebGL 层初始化失败（无 context / 无顶点纹理 / shader 失败），
  * 自动委托给 Canvas 控制器，保证粒子流始终可用。
@@ -46,6 +46,10 @@ export class WindParticleWebGLOverlayController implements WindParticleControlle
   private canvasFallback: WindParticleOverlayController | null = null
   /** 回退原因：gl 失败需常驻；streamline 可切回 WebGL particle */
   private fallbackReason: 'gl-failure' | 'streamline' | null = null
+  /** 全屏面板盖住地图时暂停粒子 RAF */
+  private animationPaused = false
+  /** 与 Canvas 控制器同理：作废过期的 off/streamline sync */
+  private applyGeneration = 0
 
   constructor(map: MapInstance) {
     this.map = map
@@ -58,6 +62,13 @@ export class WindParticleWebGLOverlayController implements WindParticleControlle
   set activeCatalogId(catalogId: string | null) {
     this.currentParticleFlowCatalogId = catalogId
     if (this.canvasFallback) this.canvasFallback.activeCatalogId = catalogId
+  }
+
+  setAnimationPaused(paused: boolean) {
+    if (this.animationPaused === paused) return
+    this.animationPaused = paused
+    this.canvasFallback?.setAnimationPaused(paused)
+    this.webglLayer?.setAnimationPaused(paused)
   }
 
   private ensureCanvasFallback(reason: 'gl-failure' | 'streamline'): WindParticleOverlayController {
@@ -79,6 +90,7 @@ export class WindParticleWebGLOverlayController implements WindParticleControlle
       // 渲染就绪后调用 destroyWebGLLayerAndAuxiliaries() 销毁，消除视觉空窗
       this.canvasFallback = new WindParticleOverlayController(this.map)
       this.canvasFallback.activeCatalogId = this.currentParticleFlowCatalogId
+      this.canvasFallback.setAnimationPaused(this.animationPaused)
       this.fallbackReason = reason
     } else if (reason === 'gl-failure') {
       this.fallbackReason = 'gl-failure'
@@ -241,16 +253,28 @@ export class WindParticleWebGLOverlayController implements WindParticleControlle
   }
 
   async sync(overlayState: WeatherOverlayState, options: WindParticleSyncOptions) {
+    const applyGen = ++this.applyGeneration
     const displayMode = options.getWindDisplayMode?.() ?? 'particle'
+    const catalogId = overlayState.catalogId
 
     if (displayMode === 'off' || displayMode === 'streamline') {
-      // 关闭（仅色底）与流量场均走 Canvas 控制器
+      // 网格色底 / 流量场走 Canvas；完成后仅在模式仍匹配时拆 WebGL 粒子
       await this.ensureCanvasFallback('streamline').sync(overlayState, options)
-      // Canvas 渲染就绪后销毁 WebGL 粒子层和辅助层，消除视觉空窗：
-      // 粒子 → 粒子+流线（瞬间）→ 流线
+      if (applyGen !== this.applyGeneration) return
+      if ((options.getWindDisplayMode?.() ?? 'particle') !== displayMode) return
+      if (
+        options.overlayToken !== options.getSyncWeatherToken() ||
+        this.currentParticleFlowCatalogId !== catalogId
+      ) {
+        return
+      }
       this.destroyWebGLLayerAndAuxiliaries()
       return
     }
+
+    // 切回粒子流：立刻清掉网格/平滑色底，避免与粒子叠绘
+    options.clearSmoothScalarUnderlay?.(catalogId)
+    removeWeatherMapArtifacts(this.map, catalogId)
 
     // particle：若仅因 streamline/off 回退，切回 WebGL
     this.clearStreamlineFallbackIfNeeded()
@@ -271,9 +295,8 @@ export class WindParticleWebGLOverlayController implements WindParticleControlle
       !!overlayState.geojsonData,
     )
 
-    const catalogId = overlayState.catalogId
-
     if (
+      applyGen !== this.applyGeneration ||
       options.overlayToken !== options.getSyncWeatherToken() ||
       this.currentParticleFlowCatalogId !== catalogId
     ) {
@@ -312,6 +335,8 @@ export class WindParticleWebGLOverlayController implements WindParticleControlle
         }
         const fetchedGeojson = (await resp.json()) as WindGeoJSON
         if (
+          applyGen !== this.applyGeneration ||
+          (options.getWindDisplayMode?.() ?? 'particle') !== 'particle' ||
           options.overlayToken !== options.getSyncWeatherToken() ||
           fetchToken !== this.windParticleFetchToken ||
           this.currentParticleFlowCatalogId !== catalogId ||
@@ -389,6 +414,7 @@ export class WindParticleWebGLOverlayController implements WindParticleControlle
       return
     }
     layer.setWindData(geojson)
+    layer.setAnimationPaused(this.animationPaused)
     layer.start()
     if (!layer.isUsable()) {
       debugLog('WindParticleWebGL', 'unusable after start', layer.getFailureReason())

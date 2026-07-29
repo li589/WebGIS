@@ -7,7 +7,12 @@
     "author": "system",
     "readonly": true,
     "is_template": true,
-    "linked_layer_id": "omega-avg-daily"
+    "linked_layer_id": "omega-avg-daily",
+    "tags": [
+      "pipeline",
+      "omega_avg"
+    ],
+    "category": "inversion"
   },
   "workflow_id": "omega_avg_daily_smap_online",
   "name": "avg-ω 逐日反演（SMAP 在线拉取 + ORIG_TS）",
@@ -16,7 +21,10 @@
     {
       "id": 1,
       "type": "download/http_open_data",
-      "pos": [80, 140],
+      "pos": [
+        80,
+        140
+      ],
       "properties": {
         "preset": "nsidc_data",
         "relative_path": "SMAP/L3_SM_P/YYYY.MM.DD/",
@@ -27,7 +35,10 @@
     {
       "id": 2,
       "type": "archive/extract",
-      "pos": [400, 140],
+      "pos": [
+        400,
+        140
+      ],
       "properties": {
         "member_glob": "*.h5",
         "recurse_once": true,
@@ -36,8 +47,11 @@
     },
     {
       "id": 3,
-      "type": "algorithm/omega_avg_daily",
-      "pos": [720, 140],
+      "type": "module/omega_avg_daily",
+      "pos": [
+        720,
+        140
+      ],
       "properties": {
         "module_name": "omega_avg_daily",
         "task_type": "omega_avg_daily",
@@ -59,8 +73,22 @@
     }
   ],
   "links": [
-    {"0": 1, "1": 1, "2": 0, "3": 2, "4": 0, "5": "value:string"},
-    {"0": 2, "1": 2, "2": 0, "3": 3, "4": 0, "5": "value:string"}
+    {
+      "0": 1,
+      "1": 1,
+      "2": 0,
+      "3": 2,
+      "4": 0,
+      "5": "value:string"
+    },
+    {
+      "0": 2,
+      "1": 2,
+      "2": 0,
+      "3": 3,
+      "4": 2,
+      "5": "value:string"
+    }
   ],
   "extra": {
     "purpose": "online_smap_pipeline",
@@ -69,6 +97,10 @@
     "cred_profile": "earthdata",
     "pipeline": "online SMAP L3 download → extract → D2 DDCA (ORIG_TS, Ts from SMAP IA)",
     "prerequisite": "earthdata 凭证 + D1 omega_block + 本地 anc/NDVI .mat",
+    "outputs": [
+      "SM",
+      "OMEGA"
+    ],
     "notes": "模板种子：relative_path 含 YYYY.MM.DD 占位符，运行前替换。SMAP .h5 需转 .mat（B1_SMAPL3.m 预处理）方可被 build_daily_bundle_for_date 读取；当前 D2 主链假定 smap_folder 已含 YYYYMMDD.mat（含 TBv/TBh/IA/Ts/vwc/SM）。"
   }
 }

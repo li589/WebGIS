@@ -383,6 +383,9 @@ export class WindParticleCanvas {
   private grid: WindGrid | null = null
   private particles: Particle[] = []
   private rafId: number | null = null
+  /** start() 后为 true；setAnimationPaused(true) 时停 RAF 但不清该标记 */
+  private wantsAnimation = false
+  private animationPaused = false
   private options: Required<WindParticleOptions>
   private resizeObserver: ResizeObserver | null = null
   private movestartHandler: (() => void) | null = null
@@ -771,6 +774,10 @@ export class WindParticleCanvas {
   }
 
   private animate = (now: number): void => {
+    if (this.animationPaused) {
+      this.rafId = null
+      return
+    }
     this.debugFrame++
     if (!this.grid || this.particles.length === 0) {
       if (this.debugFrame % 60 === 0) {
@@ -1061,14 +1068,35 @@ export class WindParticleCanvas {
   }
 
   start(): void {
+    this.wantsAnimation = true
+    if (this.animationPaused) return
     if (this.rafId !== null) return
     this.rafId = requestAnimationFrame(this.animate)
   }
 
   stop(): void {
+    this.wantsAnimation = false
     if (this.rafId !== null) {
       cancelAnimationFrame(this.rafId)
       this.rafId = null
+    }
+  }
+
+  /**
+   * 全屏面板盖住地图时暂停 RAF（保留粒子状态）；关闭后按 wantsAnimation 续播。
+   */
+  setAnimationPaused(paused: boolean): void {
+    if (this.animationPaused === paused) return
+    this.animationPaused = paused
+    if (paused) {
+      if (this.rafId !== null) {
+        cancelAnimationFrame(this.rafId)
+        this.rafId = null
+      }
+      return
+    }
+    if (this.wantsAnimation && this.rafId === null) {
+      this.rafId = requestAnimationFrame(this.animate)
     }
   }
 

@@ -38,11 +38,11 @@ describe('map-stage-presentation-module', () => {
     })
 
     const preparePromise = module.prepareMount()
-    expect(setLoadingLabel).toHaveBeenCalledWith('正在准备地图...')
+    expect(setLoadingLabel).toHaveBeenCalledWith('正在加载地图…')
     expect(animationFrameCallback).not.toBeNull()
     animationFrameCallback!(16)
     await preparePromise
-    expect(setLoadingLabel).toHaveBeenLastCalledWith('正在加载地图引擎...')
+    expect(setLoadingLabel).toHaveBeenLastCalledWith('正在加载地图…')
 
     module.scheduleNavigationThemeSync()
     timeouts.get(1)?.()

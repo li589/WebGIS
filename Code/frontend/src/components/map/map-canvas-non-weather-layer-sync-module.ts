@@ -102,7 +102,12 @@ export function createMapCanvasNonWeatherLayerSyncModule(
     }
     for (const layer of imported) {
       importedLayerModule.setLayerVisibility(layer.instanceId, layer.visible)
-      importedLayerModule.setLayerOpacity(layer.instanceId, layer.opacity)
+      const style = layer.importedVector?.style
+      if (style) {
+        importedLayerModule.applyLayerStyle(layer.instanceId, style, layer.opacity)
+      } else {
+        importedLayerModule.setLayerOpacity(layer.instanceId, layer.opacity)
+      }
     }
     for (const staleId of loadedIds) {
       importedLayerModule.removeLayer(staleId)
@@ -149,7 +154,8 @@ export function createMapCanvasNonWeatherLayerSyncModule(
             .getActiveLayers()
             .filter((l) => l.importedVector)
             .map(
-              (l) => `${l.instanceId}:${l.visible}:${l.opacity}:${l.importedVector!.featureCount}`,
+              (l) =>
+                `${l.instanceId}:${l.visible}:${l.opacity}:${l.importedVector!.featureCount}:${JSON.stringify(l.importedVector!.style ?? null)}`,
             )
             .join(','),
         () => {

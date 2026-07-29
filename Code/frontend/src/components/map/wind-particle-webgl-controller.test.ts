@@ -38,6 +38,7 @@ describe('WindParticleWebGLOverlayController 契约', () => {
     expect(typeof contract.reset).toBe('function')
     expect(typeof contract.removeCatalogArtifacts).toBe('function')
     expect(typeof contract.destroy).toBe('function')
+    expect(typeof contract.setAnimationPaused).toBe('function')
     expect(contract.activeCatalogId).toBeNull()
   })
 

@@ -165,9 +165,11 @@ def resolve_workflow_queue(payload: WorkflowSubmitRequest) -> str:
 
 
 # m21 修复：queue_tag 白名单校验
-# 允许已注册的队列名，或符合 <channel>-<slot> 模式的自定义队列名
-_VALID_QUEUE_CHANNELS = {"gee", "weather", "algorithm", "analysis", "download"}
-_VALID_QUEUE_SLOTS = {"realtime", "standard", "heavy", "batch"}
+# 从 _CHANNEL_PROFILE_QUEUE_MAP 派生合法的 <channel>-<slot> 模式，
+# 避免允许无 worker 的组合（如 download-batch、download-heavy）
+_VALID_QUEUE_TAGS: frozenset[str] = frozenset(
+    f"{channel}-{slot}" for channel, slot in _CHANNEL_PROFILE_QUEUE_MAP
+)
 
 
 def _is_valid_queue_tag(queue_tag: str) -> bool:
@@ -175,15 +177,12 @@ def _is_valid_queue_tag(queue_tag: str) -> bool:
 
     允许两种形式：
     1. settings 中已注册的队列名（如 workflow_queue_gee_standard 对应的值）
-    2. 符合 <channel>-<slot> 模式的自定义队列名（如 gee-realtime）
+    2. _CHANNEL_PROFILE_QUEUE_MAP 中存在的 <channel>-<slot> 模式（如 gee-realtime）
+
+    注意：download 仅支持 realtime/standard，不允许 download-batch/download-heavy。
     """
-    # 形式 2：channel-slot 模式
-    parts = queue_tag.split("-", 1)
-    if (
-        len(parts) == 2
-        and parts[0] in _VALID_QUEUE_CHANNELS
-        and parts[1] in _VALID_QUEUE_SLOTS
-    ):
+    # 形式 2：CHANNEL_PROFILE_QUEUE_MAP 中注册的 channel-slot 模式
+    if queue_tag in _VALID_QUEUE_TAGS:
         return True
     # 形式 1：settings 中已注册的队列值
     for attr_name in dir(settings):

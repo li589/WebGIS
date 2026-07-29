@@ -7,7 +7,9 @@
     "author": "system",
     "readonly": true,
     "is_template": true,
-    "linked_layer_id": null
+    "linked_layer_id": null,
+    "tags": ["sample", "download"],
+    "category": "data_access"
   },
   "workflow_id": "open_data_nasa_earthdata_sample",
   "name": "NASA Earthdata 开放数据样例",

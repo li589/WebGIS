@@ -1,7 +1,7 @@
 """下载剩余的精选文件。
 
 剩余待下载:
-1. omega FY avg 6 个文件 → InversionResults/fy_avg/
+1. omega FY avg 6 个文件 → Inversion_Results/fy_avg/
 2. CLCD_v01_1997.tif → LandCover/
 3. ERA5 SMCI 3 个文件 → Weather/ (大文件, 2.8 GB 每个)
 4. ESACCI-BIOMASS → Biomass/ (16.9 GB, 超大文件)
@@ -41,42 +41,42 @@ REMAINING_LIST: list[tuple[str, str, str, str, str]] = [
     (
         "nas",
         "/Liuzheng/omega_final/fy_avg_ω/doy_025.mat",
-        "InversionResults/fy_avg",
+        "Inversion_Results/fy_avg",
         "omega FY avg DOY 025",
         "small",
     ),
     (
         "nas",
         "/Liuzheng/omega_final/fy_avg_ω/doy_026.mat",
-        "InversionResults/fy_avg",
+        "Inversion_Results/fy_avg",
         "omega FY avg DOY 026",
         "small",
     ),
     (
         "nas",
         "/Liuzheng/omega_final/fy_avg_ω/doy_027.mat",
-        "InversionResults/fy_avg",
+        "Inversion_Results/fy_avg",
         "omega FY avg DOY 027",
         "small",
     ),
     (
         "nas",
         "/Liuzheng/omega_final/fy_avg_ω/doy_028.mat",
-        "InversionResults/fy_avg",
+        "Inversion_Results/fy_avg",
         "omega FY avg DOY 028",
         "small",
     ),
     (
         "nas",
         "/Liuzheng/omega_final/fy_avg_ω/doy_029.mat",
-        "InversionResults/fy_avg",
+        "Inversion_Results/fy_avg",
         "omega FY avg DOY 029",
         "small",
     ),
     (
         "nas",
         "/Liuzheng/omega_final/fy_avg_ω/doy_030.mat",
-        "InversionResults/fy_avg",
+        "Inversion_Results/fy_avg",
         "omega FY avg DOY 030",
         "small",
     ),

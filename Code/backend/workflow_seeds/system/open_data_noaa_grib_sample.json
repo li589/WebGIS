@@ -7,7 +7,9 @@
     "author": "system",
     "readonly": true,
     "is_template": true,
-    "linked_layer_id": null
+    "linked_layer_id": null,
+    "tags": ["sample", "download"],
+    "category": "data_access"
   },
   "workflow_id": "open_data_noaa_grib_sample",
   "name": "NOAA 开放数据样例（下载→提取）",

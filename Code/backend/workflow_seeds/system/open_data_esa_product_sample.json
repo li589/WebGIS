@@ -7,7 +7,9 @@
     "author": "system",
     "readonly": true,
     "is_template": true,
-    "linked_layer_id": "remote-sensing"
+    "linked_layer_id": "remote-sensing",
+    "tags": ["sample", "download"],
+    "category": "data_access"
   },
   "workflow_id": "open_data_esa_product_sample",
   "name": "欧空局产品下载样例（SAFE/ZIP）",

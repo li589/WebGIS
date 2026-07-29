@@ -29,7 +29,7 @@ import { LAYER_CATEGORIES, LAYER_LIBRARY } from './catalog'
 import { isWeatherEngineCatalogId } from './weather-session'
 import { createWeatherViewportSlice } from './weather-viewport'
 import { buildJobLayer } from './result-adapter'
-import { buildImportedVectorPayload } from './imported-vector'
+import { buildImportedVectorPayload, computeBounds, inferGeometryType } from './imported-vector'
 import { buildImportedRasterPayload } from './imported-raster'
 import { deleteImportedRaster } from '../../services/data-import'
 import { useWorkflowOutputLayersStore } from '../workflow-output-layers'
@@ -41,6 +41,7 @@ import type {
   LayerCatalogItem,
   LayerHotspot,
   LayerSidebarView,
+  NodeProgress,
   RuntimeLayerLibraryItem,
   WorkflowSummary,
 } from './types'
@@ -726,7 +727,10 @@ export const useLayersStore = defineStore('layers', () => {
             dataState: 'imported',
             importedGeometryType: payload.geometryType,
             importedFeatureCount: payload.featureCount,
+            importedVectorBackendLayerId: payload.backendLayerId,
             importedBounds: payload.bounds,
+            importedFileName: payload.fileName,
+            importedVectorStyle: payload.style,
           }
         }
 
@@ -770,6 +774,8 @@ export const useLayersStore = defineStore('layers', () => {
             dataState: 'imported',
             importedRasterBounds: payload.bounds,
             importedBounds: payload.bounds,
+            importedRasterSourceCrs: payload.sourceCrs,
+            importedFileName: payload.fileName,
           }
         }
 
@@ -806,21 +812,13 @@ export const useLayersStore = defineStore('layers', () => {
             tileStats.cached >= tileStats.visible &&
             tileStats.pending === 0
           ) {
-            // 空 GeoJSON 被缓存时不应显示「完整数据」
-            const merged = weatherTileManager.getMergedGeojsonForViewport(layer.catalogId)
-            const featureCount = merged?.features?.length ?? 0
-            if (featureCount === 0) {
-              finalAvailability = {
-                state: 'empty' as const,
-                label: '无有效数据',
-                description: '视口瓦片已缓存但无要素，可能模型未同步或时段无数据',
-              }
-            } else {
-              finalAvailability = {
-                state: 'ready' as const,
-                label: '完整数据',
-                description: `已缓存全部 ${tileStats.visible} 个可视瓦片`,
-              }
+            // 勿在 activeLayersDisplay 热路径调用 getMergedGeojsonForViewport：
+            // 同步合并视口瓦片会卡主线程，表现为点「已添加图层」无响应。
+            // 无数据场景由上方 data-empty 状态覆盖。
+            finalAvailability = {
+              state: 'ready' as const,
+              label: '完整数据',
+              description: `已缓存全部 ${tileStats.visible} 个可视瓦片`,
             }
           } else if (tileStats.cached > 0 || tileStats.pending > 0) {
             finalAvailability = {
@@ -992,16 +990,28 @@ export const useLayersStore = defineStore('layers', () => {
     }
   }
 
-  /** 将本地 SHP / GeoJSON / CSV 矢量添加到活动图层列表，可在侧栏控制显隐并导出 */
-  function addImportedVectorLayer(name: string, geojson: GeoJSON.FeatureCollection): ActiveLayer {
+  /** 将导入矢量添加到活动图层列表（本地解析或后端统一导入） */
+  function addImportedVectorLayer(
+    name: string,
+    geojson: GeoJSON.FeatureCollection,
+    options?: { backendLayerId?: string; featureCount?: number; truncated?: boolean },
+  ): ActiveLayer {
     const maxOrder = activeLayers.value.reduce((max, l) => Math.max(max, l.order), 0)
     const instanceId = genInstanceId()
-    const catalogId = `imported-${instanceId}`
-    const payload = buildImportedVectorPayload(geojson, name)
+    const catalogId = options?.backendLayerId || `imported-${instanceId}`
+    const payload = buildImportedVectorPayload(geojson, name, {
+      backendLayerId: options?.backendLayerId,
+      featureCount: options?.featureCount,
+    })
+    if (options?.truncated) payload.truncated = true
     const layer: ActiveLayer = {
       instanceId,
       catalogId,
-      name: name.replace(/\.(geojson|json|shp|zip|csv)$/i, '') || name,
+      name:
+        name.replace(
+          /\.(geojson|json|shp|zip|rar|csv|xlsx|xls|txt|dbf|shx|prj|cpg|sbn|sbx|qix|tif|tiff|nc|hdf|h5|he5|mat)$/i,
+          '',
+        ) || name,
       visible: true,
       opacity: 0.85,
       order: maxOrder + 1,
@@ -1020,6 +1030,35 @@ export const useLayersStore = defineStore('layers', () => {
   function getImportedVectorGeojson(instanceId: string): GeoJSON.FeatureCollection | null {
     const layer = activeLayers.value.find((l) => l.instanceId === instanceId)
     return layer?.importedVector?.geojson ?? null
+  }
+
+  function updateImportedVectorGeojson(
+    instanceId: string,
+    geojson: GeoJSON.FeatureCollection,
+    extras?: { featureCount?: number; truncated?: boolean },
+  ) {
+    const layer = activeLayers.value.find((l) => l.instanceId === instanceId)
+    if (!layer?.importedVector) return
+    layer.importedVector = {
+      ...layer.importedVector,
+      geojson,
+      featureCount: extras?.featureCount ?? geojson.features.length,
+      truncated: extras?.truncated ?? layer.importedVector.truncated,
+      geometryType: inferGeometryType(geojson),
+      bounds: computeBounds(geojson),
+    }
+  }
+
+  function setImportedVectorStyle(
+    instanceId: string,
+    style: NonNullable<import('./imported-vector').ImportedVectorPayload['style']>,
+  ) {
+    const layer = activeLayers.value.find((l) => l.instanceId === instanceId)
+    if (!layer?.importedVector) return
+    layer.importedVector = {
+      ...layer.importedVector,
+      style: { ...layer.importedVector.style, ...style },
+    }
   }
 
   /** 将后端已注册的 TIF overlay 挂入活动图层列表 */
@@ -1088,6 +1127,15 @@ export const useLayersStore = defineStore('layers', () => {
       void deleteImportedRaster(overlayId).catch((err) => {
         console.warn('[layers] deleteImportedRaster failed', overlayId, err)
       })
+    }
+    // 导入矢量：清理后端 imports 目录
+    const vecBackendId = layer.importedVector?.backendLayerId
+    if (vecBackendId) {
+      void import('../../services/data-io').then(({ deleteImportedLayer }) =>
+        deleteImportedLayer(vecBackendId).catch((err) => {
+          console.warn('[layers] deleteImportedLayer failed', vecBackendId, err)
+        }),
+      )
     }
     clearWindForCatalog(layer.catalogId)
     activeLayers.value.splice(idx, 1)
@@ -1240,6 +1288,31 @@ export const useLayersStore = defineStore('layers', () => {
     if (layer) {
       layer.order = newOrder
     }
+  }
+
+  /** 覆盖图层显示名（导入层 / 工作流输出等） */
+  function setLayerDisplayName(instanceId: string, name: string) {
+    const layer = activeLayers.value.find((l) => l.instanceId === instanceId)
+    if (!layer) return
+    const trimmed = name.trim()
+    if (!trimmed) return
+    layer.name = trimmed
+  }
+
+  /** 置顶：order = max+1 */
+  function bringLayerToFront(instanceId: string) {
+    const layer = activeLayers.value.find((l) => l.instanceId === instanceId)
+    if (!layer) return
+    const maxOrder = activeLayers.value.reduce((max, l) => Math.max(max, l.order), 0)
+    layer.order = maxOrder + 1
+  }
+
+  /** 置底：order = min-1 */
+  function sendLayerToBack(instanceId: string) {
+    const layer = activeLayers.value.find((l) => l.instanceId === instanceId)
+    if (!layer) return
+    const minOrder = activeLayers.value.reduce((min, l) => Math.min(min, l.order), 0)
+    layer.order = minOrder - 1
   }
 
   function selectLayer(instanceId: string | null) {
@@ -1480,6 +1553,8 @@ export const useLayersStore = defineStore('layers', () => {
     let nextUpdatedAt = jobLayer.updatedAt
     let lastEventId = jobLayer.lastEventId
     let lastEventAt = jobLayer.lastEventAt
+    // 节点级进度累计：保留已有节点，按 node_id 合并最新阶段
+    const nextNodeProgress: NodeProgress[] = [...(jobLayer.nodeProgress ?? [])]
 
     for (const event of events) {
       if (typeof event.progress === 'number') {
@@ -1490,6 +1565,45 @@ export const useLayersStore = defineStore('layers', () => {
       }
       if (isRecognizedJobStatus(event.payload?.status)) {
         nextStatus = event.payload.status
+      }
+      // 解析节点级进度事件
+      const rawNodeProgress = (event.payload as { node_progress?: unknown } | null | undefined)
+        ?.node_progress
+      if (rawNodeProgress && typeof rawNodeProgress === 'object') {
+        const np = rawNodeProgress as {
+          node_id?: string
+          node_label?: string
+          stage?: string
+          progress?: number
+          message?: string
+          artifacts?: string[]
+        }
+        if (typeof np.node_id === 'string') {
+          const existing = nextNodeProgress.find((p) => p.nodeId === np.node_id)
+          if (existing) {
+            Object.assign(existing, {
+              stage: typeof np.stage === 'string' ? np.stage : existing.stage,
+              progress:
+                typeof np.progress === 'number'
+                  ? Math.max(0, Math.min(100, Math.round(np.progress)))
+                  : existing.progress,
+              message: typeof np.message === 'string' ? np.message : existing.message,
+              artifacts: Array.isArray(np.artifacts) ? np.artifacts : existing.artifacts,
+            })
+          } else {
+            nextNodeProgress.push({
+              nodeId: np.node_id,
+              nodeLabel: typeof np.node_label === 'string' ? np.node_label : np.node_id,
+              stage: typeof np.stage === 'string' ? np.stage : '',
+              progress:
+                typeof np.progress === 'number'
+                  ? Math.max(0, Math.min(100, Math.round(np.progress)))
+                  : 0,
+              message: typeof np.message === 'string' ? np.message : undefined,
+              artifacts: Array.isArray(np.artifacts) ? np.artifacts : undefined,
+            })
+          }
+        }
       }
       lastEventId = event.event_id
       lastEventAt = event.created_at
@@ -1512,6 +1626,7 @@ export const useLayersStore = defineStore('layers', () => {
       lastEventId,
       lastEventAt,
       eventMessages,
+      nodeProgress: nextNodeProgress,
       diagnosticNotes: showEventMessages ? eventMessages : jobLayer.diagnosticNotes,
     }
   }
@@ -1556,6 +1671,7 @@ export const useLayersStore = defineStore('layers', () => {
             lastEventId: existingJobLayer.lastEventId,
             lastEventAt: existingJobLayer.lastEventAt,
             eventMessages: existingJobLayer.eventMessages,
+            nodeProgress: existingJobLayer.nodeProgress,
             diagnosticNotes: jobLayer.diagnosticNotes?.length
               ? jobLayer.diagnosticNotes
               : (existingJobLayer.eventMessages ?? existingJobLayer.diagnosticNotes),
@@ -2348,6 +2464,8 @@ export const useLayersStore = defineStore('layers', () => {
     addImportedVectorLayer,
     addImportedRasterLayer,
     getImportedVectorGeojson,
+    updateImportedVectorGeojson,
+    setImportedVectorStyle,
     removeLayer,
     toggleLayerVisibility,
     setAllLayerVisibility,
@@ -2355,6 +2473,9 @@ export const useLayersStore = defineStore('layers', () => {
     setLayerOpacity,
     setLayerPaletteOverride,
     setLayerOrder,
+    setLayerDisplayName,
+    bringLayerToFront,
+    sendLayerToBack,
     selectLayer,
     setSidebarView,
     setCurrentHour,

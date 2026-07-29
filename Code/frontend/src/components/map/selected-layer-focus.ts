@@ -1,4 +1,5 @@
 import type { LayerHotspot } from '../../stores/layers/types'
+import { lngSpanFromList } from '../../services/geo-math'
 
 type MapInstance = import('maplibre-gl').Map
 
@@ -16,11 +17,15 @@ export function focusMapOnHotspots(map: MapInstance, hotspots: LayerHotspot[]) {
     return
   }
 
-  const lngs = hotspots.map((hotspot) => hotspot.lng)
-  const lats = hotspots.map((hotspot) => hotspot.lat)
+  const lngSpan = lngSpanFromList(hotspots.map((hotspot) => hotspot.lng))
+  if (!lngSpan) return
+  const lats = hotspots.map((hotspot) => hotspot.lat).filter(Number.isFinite)
+  if (!lats.length) return
+  const south = Math.min(...lats)
+  const north = Math.max(...lats)
   const bounds: [[number, number], [number, number]] = [
-    [Math.min(...lngs), Math.min(...lats)],
-    [Math.max(...lngs), Math.max(...lats)],
+    [lngSpan[0], south],
+    [lngSpan[1], north],
   ]
 
   map.fitBounds(bounds, {

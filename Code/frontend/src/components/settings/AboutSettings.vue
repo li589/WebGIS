@@ -2,6 +2,7 @@
 import { computed, ref } from 'vue'
 import { storeToRefs } from 'pinia'
 import { useSettingsStore } from '../../stores/settings'
+import { BRAND } from '../../ui-copy'
 
 const settingsStore = useSettingsStore()
 const { aboutInfo, weatherConfig, geeRuntimeConfig, dataSourceConfig } = storeToRefs(settingsStore)
@@ -11,7 +12,7 @@ const selectedNode = ref<string | null>(null)
 // 架构树节点
 const archTree = computed(() => [
   {
-    name: '综合地理态势分析系统',
+    name: BRAND.fullName,
     level: 0,
     children: [
       {

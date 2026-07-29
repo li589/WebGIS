@@ -10,7 +10,7 @@
   - export_sm_dec2025_ts    → sm_ts/sm_ts_{tag}.png × 31
   - export_omega_2025_ts    → omega_2025_ts/omega_2025_ts_{tag}.png × 31
 
-数据源：I:\\Geograph_DataSet\\Soil_Ecological_Data\\SmapSoil_VOD_SM\\YYYYMMDD.mat
+数据源：I:\\Geograph_DataSet\\Soil_Moisture\\SMAP_Soil_VOD_SM\\YYYYMMDD.mat
        v7.3 HDF5，含 OMEGA / SM / VOD 三个变量，shape (1624, 3856) on EASE-Grid 9km
 """
 

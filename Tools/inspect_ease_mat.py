@@ -9,9 +9,9 @@ sys.path.insert(0, str(Path(__file__).parent))
 from export_overlay_assets import _read_mat_auto, _ease_grid_9k_transform
 
 files = {
-    "forest_ratio": r"I:\Geograph_DataSet\InversionResults\Forest_Ratio_9KM_2020.mat",
-    "omega_fy": r"I:\Geograph_DataSet\InversionResults\fy_avg\doy_025.mat",
-    "soil_ddca": r"I:\Geograph_DataSet\Soil_Ecological_Data\DDCA\DDCA_DH\H\20150401.mat",
+    "forest_ratio": r"I:\Geograph_DataSet\Inversion_Results\Forest_Ratio_9KM_2020.mat",
+    "omega_fy": r"I:\Geograph_DataSet\Inversion_Results\fy_avg\doy_025.mat",
+    "soil_ddca": r"I:\Geograph_DataSet\Soil_Moisture\DDCA\DDCA_DH\H\20150401.mat",
 }
 
 for name, path in files.items():

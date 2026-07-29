@@ -55,13 +55,13 @@ def inspect_v73(path: Path) -> None:
 
 if __name__ == "__main__":
     vod_path = Path(
-        r"I:\Geograph_DataSet\Soil_Ecological_Data\SmapSoil_VOD_SM\20251201.mat"
+        r"I:\Geograph_DataSet\Soil_Moisture\SMAP_Soil_VOD_SM\20251201.mat"
     )
     inspect_v5(vod_path)
 
     print()
     origin_path = Path(
-        r"I:\Geograph_DataSet\Soil_Ecological_Data\Smap_OriginData\20251201.mat"
+        r"I:\Geograph_DataSet\Soil_Moisture\SMAP_Origin_Data\20251201.mat"
     )
     try:
         inspect_v5(origin_path)
@@ -71,7 +71,7 @@ if __name__ == "__main__":
 
     print()
     nc_path = Path(
-        r"I:\Geograph_DataSet\Soil_Ecological_Data\CustomNC_SM_CalData\Processed_SM_20251201.nc"
+        r"I:\Geograph_DataSet\Soil_Moisture\CustomNC_SM_CalData\Processed_SM_20251201.nc"
     )
     if nc_path.exists():
         print(f"=== {nc_path.name} (NetCDF) ===")

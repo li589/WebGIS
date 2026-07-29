@@ -98,6 +98,31 @@ describe('crs-transformer', () => {
     expect(result[1]).toBeLessThan(result[3])
   })
 
+  it('EPSG:6933 全球 EASE bounds → WGS84 不塌缩', () => {
+    // NSIDC 对称角点；若 east 用 west+cols*res 浮点越界会塌成 west≈east≈-180
+    /* eslint-disable no-loss-of-precision -- NSIDC EASE-Grid 2.0 spec constants */
+    const ease: [number, number, number, number] = [
+      -17367530.445161516, -7314540.830865865, 17367530.445161516, 7314540.830865865,
+    ]
+    /* eslint-enable no-loss-of-precision */
+    const result = transformBounds(ease, 'EPSG:6933', 'EPSG:4326')
+    expect(result[0]).toBeLessThan(result[2])
+    expect(result[0]).toBeCloseTo(-180, 5)
+    expect(result[2]).toBeCloseTo(180, 5)
+    expect(result[1]).toBeLessThan(-85)
+    expect(result[3]).toBeGreaterThan(85)
+  })
+
+  it('EPSG:6933 浮点越界 east 仍可规范化为全球', () => {
+    /* eslint-disable no-loss-of-precision -- NSIDC EASE-Grid 2.0 spec constants */
+    const brokenEast: [number, number, number, number] = [
+      -17367530.445161516, -7314540.830865865, 17367530.445173528, 7314540.830865865,
+    ]
+    /* eslint-enable no-loss-of-precision */
+    const result = transformBounds(brokenEast, 'EPSG:6933', 'EPSG:4326')
+    expect(result[2] - result[0]).toBeGreaterThan(359)
+  })
+
   it('批量点转换', () => {
     const points: Array<[number, number]> = [
       [116.39, 39.91],

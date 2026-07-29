@@ -53,7 +53,7 @@ def check_omega_mat():
     print("=" * 60)
     print("omega .mat 文件检查")
     print("=" * 60)
-    inv_dir = ROOT / "InversionResults"
+    inv_dir = ROOT / "Inversion_Results"
     files = list(inv_dir.glob("*.mat"))
     print(f"文件数: {len(files)}")
 

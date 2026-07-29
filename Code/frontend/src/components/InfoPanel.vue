@@ -12,10 +12,6 @@ import { useWeatherSourcePrefsStore } from '../stores/weather-source-prefs'
 import IntegrationStatusPanel from './info-panel/IntegrationStatusPanel.vue'
 import { buildResultDisplayModel } from './info-panel/result-adapter'
 import {
-  exportFeatureCollectionAsCsv,
-  exportFeatureCollectionAsGeoJson,
-} from '../stores/layers/imported-vector'
-import {
   WEATHER_PALETTE_OPTIONS,
   buildWeatherLegendGradient,
   buildWeatherLegendStops,
@@ -29,11 +25,16 @@ import {
   buildLegendExplainer,
 } from './map/effective-layer-symbology'
 import { useOverlaySymbologyStore } from '../stores/overlay-symbology'
+import { windDisplayModeLabel, type WindDisplayMode } from './map/wind-display-mode'
+import { ANALYSIS_COPY, INSPECT_COPY, LAYERS_COPY, DATA_COPY } from '../ui-copy'
+import { openDataWorkspace } from '../data-manager/core/workspace-store'
+import { exportLayer } from '../data-manager/adapters/export'
 import {
-  windDisplayModeChip,
-  windDisplayModeLabel,
-  type WindDisplayMode,
-} from './map/wind-display-mode'
+  resolveAnalysisStageKind,
+  resolveAnalysisSubtitle,
+  resolveStaticLayerHint,
+  resolveWorkflowStageCopy,
+} from './info-panel/analysis-panel-summary'
 
 const layersStore = useLayersStore()
 const uiStore = useUiStore()
@@ -90,13 +91,16 @@ const jobLayer = computed(() => displayLayer.value?.jobLayer)
 const resultModel = computed(() => buildResultDisplayModel(jobLayer.value?.resultView ?? null))
 const analysisSummary = computed(() => {
   if (displayLayer.value.isImported) {
-    return `本地导入矢量 · ${displayLayer.value.importedGeometryType ?? '—'} · ${displayLayer.value.importedFeatureCount ?? 0} 个要素`
+    return ANALYSIS_COPY.overviewImportedVector(
+      displayLayer.value.importedGeometryType ?? '—',
+      displayLayer.value.importedFeatureCount ?? 0,
+    )
   }
   if (displayLayer.value.isImportedRaster) {
-    return '本地导入栅格（TIF）已注册为 overlay，可在此控制透明度。'
+    return ANALYSIS_COPY.overviewImportedRaster
   }
   if (displayLayer.value.isAdminBoundary) {
-    return '行政区边界为静态矢量叠加，不参与分析工作流。'
+    return ANALYSIS_COPY.overviewBoundary
   }
   return displayLayer.value.summary || props.activeLayer.summary
 })
@@ -211,8 +215,9 @@ watch(
       displayLayer.value.isImportedRaster,
       displayLayer.value.isAdminBoundary,
     ] as const,
-  ([catalogId, renderHint, isImported, isImportedRaster, isAdminBoundary]) => {
-    if (!catalogId || isImported || isImportedRaster || isAdminBoundary || renderHint) return
+  ([catalogId, renderHint, isImported, _isImportedRaster, isAdminBoundary]) => {
+    // 导入矢量 / 边界跳过；导入栅格仍拉取 overlay meta（只读色带）
+    if (!catalogId || isImported || isAdminBoundary || renderHint) return
     void overlaySymbologyStore.ensureMeta(catalogId)
   },
   { immediate: true },
@@ -280,7 +285,7 @@ const jobEventNotes = computed(
 const canToggleParticleFlow = computed(() =>
   layersStore.supportsParticleFlow(displayLayer.value.catalogId),
 )
-/** 该层是否持有风场三态控件归属（含「关闭」态） */
+/** 该层是否持有风场三态控件归属（含「网格」色底态） */
 const ownsWindDisplay = computed(
   () => layersStore.particleFlowCatalogId === displayLayer.value.catalogId,
 )
@@ -300,14 +305,14 @@ function handleSetWindDisplayMode(mode: WindDisplayMode) {
   if (mode !== 'off' && particleFlowButtonDisabled.value) return
   layersStore.setWindDisplayMode(displayLayer.value.catalogId, mode)
 }
-/** 无数据且非本层归属时禁用「粒子流/流量场」；「关闭」永远可点 */
+/** 无数据且非本层归属时禁用「粒子流/流量场」；「网格」永远可点 */
 const particleFlowButtonDisabled = computed(() => {
   if (ownsWindDisplay.value) return false
   return !hasWeatherLayerAsset.value
 })
 const windStyleChipLabel = computed(() => {
   if (!canToggleParticleFlow.value) return styleRenderHint.value?.paint_mode ?? '样式'
-  return windDisplayModeChip(currentWindDisplayMode.value)
+  return windDisplayModeLabel(currentWindDisplayMode.value)
 })
 
 const hasLayerStyleSection = computed(
@@ -320,7 +325,9 @@ const hasLayerStyleSection = computed(
       isImportedRaster: displayLayer.value.isImportedRaster,
     }) ||
     canToggleParticleFlow.value ||
-    isRealtimeWeatherLayer.value,
+    isRealtimeWeatherLayer.value ||
+    !!displayLayer.value.isImported ||
+    !!displayLayer.value.isImportedRaster,
 )
 
 /** 点天气仅在有查询态或当前确为天气层时展示（样式已拆出） */
@@ -339,51 +346,71 @@ const showCompactHero = computed(
     displayLayer.value.isAdminBoundary,
 )
 
-const runBlockedHint = computed(() => {
-  if (displayLayer.value.isAdminBoundary) {
-    return '该图层仅用于边界展示，不支持任务运行'
-  }
-  if (displayLayer.value.isImported || displayLayer.value.isImportedRaster) {
-    return '本地导入图层不支持分析工作流，可在此控制显隐与透明度'
-  }
-  if (isRealtimeWeatherLayer.value) {
-    return '瓦片按视口自动加载，无需手动运行'
-  }
-  return '当前图层不支持任务运行'
-})
-
 function formatBounds(bounds?: [number, number, number, number] | null): string {
   if (!bounds || bounds.length !== 4) return '—'
   return `${bounds[0].toFixed(3)}, ${bounds[1].toFixed(3)} → ${bounds[2].toFixed(3)}, ${bounds[3].toFixed(3)}`
 }
 
-function exportImportedGeoJson() {
+async function exportImportedGeoJson() {
   const id = displayLayer.value.instanceId
   if (!id) return
-  const geojson = layersStore.getImportedVectorGeojson(id)
-  if (!geojson) {
-    flashImportHint('导出失败：未找到矢量数据')
-    logStore.logOperation('export-fail', '分析框导出 GeoJSON 失败：无数据')
-    return
+  const active = layersStore.activeLayers.find((l) => l.instanceId === id)
+  if (!active) return
+  try {
+    await exportLayer(active, 'geojson')
+    flashImportHint('已导出 GeoJSON')
+    logStore.logOperation('export-geojson', `导出 GeoJSON：${displayLayer.value.name || id}`)
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e)
+    flashImportHint(`导出失败：${msg}`)
+    logStore.logOperation('export-fail', '分析框导出 GeoJSON 失败', msg)
   }
-  exportFeatureCollectionAsGeoJson(geojson, displayLayer.value.name || 'export')
-  flashImportHint('已导出 GeoJSON')
-  logStore.logOperation('export-geojson', `导出 GeoJSON：${displayLayer.value.name || id}`)
 }
 
-function exportImportedCsv() {
+async function exportImportedCsv() {
   const id = displayLayer.value.instanceId
   if (!id) return
-  const geojson = layersStore.getImportedVectorGeojson(id)
-  if (!geojson) {
-    flashImportHint('导出失败：未找到矢量数据')
-    logStore.logOperation('export-fail', '分析框导出 CSV 失败：无数据')
-    return
+  const active = layersStore.activeLayers.find((l) => l.instanceId === id)
+  if (!active) return
+  try {
+    await exportLayer(active, 'csv')
+    flashImportHint('已导出 CSV')
+    logStore.logOperation('export-csv', `导出 CSV：${displayLayer.value.name || id}`)
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e)
+    flashImportHint(`导出失败：${msg}`)
+    logStore.logOperation('export-fail', '分析框导出 CSV 失败', msg)
   }
-  exportFeatureCollectionAsCsv(geojson, displayLayer.value.name || 'export')
-  flashImportHint('已导出 CSV')
-  logStore.logOperation('export-csv', `导出 CSV：${displayLayer.value.name || id}`)
 }
+
+async function exportImportedRaster(format: 'png' | 'tif') {
+  const id = displayLayer.value.instanceId
+  if (!id) return
+  const active = layersStore.activeLayers.find((l) => l.instanceId === id)
+  if (!active) return
+  try {
+    await exportLayer(active, format)
+    flashImportHint(format === 'png' ? '已导出 PNG' : '已导出 GeoTIFF')
+    logStore.logOperation(
+      `export-${format}`,
+      `导出 ${format.toUpperCase()}：${displayLayer.value.name || id}`,
+    )
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e)
+    flashImportHint(`导出失败：${msg}`)
+    logStore.logOperation('export-fail', `分析框导出 ${format.toUpperCase()} 失败`, msg)
+  }
+}
+
+function patchImportedVectorStyle(
+  patch: Partial<{ color: string; width: number; radius: number; fillOpacity: number }>,
+) {
+  const id = displayLayer.value.instanceId
+  if (!id || !displayLayer.value.isImported) return
+  layersStore.setImportedVectorStyle(id, patch)
+}
+
+const importedVectorStyle = computed(() => displayLayer.value.importedVectorStyle ?? {})
 
 const WEATHER_METRIC_LABELS: Record<string, string> = {
   wind_speed_10m: '实时风速',
@@ -536,18 +563,21 @@ const pointWeatherRows = computed(() => {
   const primaryValue = pointWeatherPrimaryValue.value
   return [
     {
-      label: 'Point',
+      label: INSPECT_COPY.fieldPoint,
       value:
         weather.place_name ?? `${weather.latitude.toFixed(3)}, ${weather.longitude.toFixed(3)}`,
     },
-    { label: 'Layer', value: weather.layer_id || displayLayer.value.catalogId || '—' },
-    { label: 'Model', value: weather.model },
+    {
+      label: INSPECT_COPY.fieldLayer,
+      value: weather.layer_id || displayLayer.value.catalogId || '—',
+    },
+    { label: INSPECT_COPY.fieldModel, value: weather.model },
     {
       label: pointWeatherMetric.value.label,
       value: primaryValue,
     },
     {
-      label: 'Observed',
+      label: INSPECT_COPY.fieldObserved,
       value: weather.observation_time ? formatTime(weather.observation_time) : '--',
     },
   ]
@@ -574,11 +604,11 @@ const pointWeatherHourlyRows = computed(() => {
 })
 
 const pointInspectStatusLabel = computed(() => {
-  if (props.pointWeatherLoading) return '查询中'
-  if (props.pointWeatherError) return '失败'
-  if (props.pointWeather) return props.pointWeather.cache_status || '已取数'
-  if (uiStore.interactionMode === 'select') return '等待点击'
-  return '需选择模式'
+  if (props.pointWeatherLoading) return INSPECT_COPY.statusQuerying
+  if (props.pointWeatherError) return INSPECT_COPY.statusFailed
+  if (props.pointWeather) return props.pointWeather.cache_status || INSPECT_COPY.statusReady
+  if (uiStore.interactionMode === 'select') return INSPECT_COPY.statusWaitingClick
+  return INSPECT_COPY.statusNeedSelectMode
 })
 const canRunWorkflow = computed(
   () =>
@@ -655,6 +685,69 @@ const latestEventMessage = computed(() => {
   if (!msgs || msgs.length === 0) return ''
   return msgs[msgs.length - 1]
 })
+
+const hasRealSelection = computed(() => Boolean(displayLayer.value.instanceId))
+
+const analysisStageKind = computed(() =>
+  resolveAnalysisStageKind({
+    hasRealSelection: hasRealSelection.value,
+    isWeather: isRealtimeWeatherLayer.value,
+    isImported: !!displayLayer.value.isImported,
+    isImportedRaster: !!displayLayer.value.isImportedRaster,
+    isAdminBoundary: !!displayLayer.value.isAdminBoundary,
+    canRunWorkflow: canRunWorkflow.value,
+  }),
+)
+
+const panelSubtitle = computed(() => resolveAnalysisSubtitle(analysisStageKind.value))
+
+const hasWeatherTileActivity = computed(() => {
+  const stats = tileStats.value
+  if (!stats) return false
+  return stats.pending > 0 || stats.cached > 0
+})
+
+const showWorkflowStageRow = computed(
+  () =>
+    canRunWorkflow.value ||
+    isWorkflowRunning.value ||
+    (isRealtimeWeatherLayer.value && hasRealSelection.value && hasWeatherTileActivity.value),
+)
+
+const workflowStageCopy = computed(() =>
+  resolveWorkflowStageCopy({
+    stage: workflowStage.value,
+    progress: workflowProgress.value,
+    isWeather: isRealtimeWeatherLayer.value && hasRealSelection.value,
+    tilePending: tileStats.value?.pending ?? 0,
+    tileCached: tileStats.value?.cached ?? 0,
+  }),
+)
+
+const weatherTopLines = computed(() => {
+  if (!hasRealSelection.value || !isRealtimeWeatherLayer.value) return [] as string[]
+  const lines: string[] = [ANALYSIS_COPY.weatherAutoLoad]
+  const stats = tileStats.value
+  if (stats) {
+    lines.push(ANALYSIS_COPY.weatherTileLine(stats.cached, stats.visible, stats.pending))
+  } else {
+    lines.push(ANALYSIS_COPY.weatherNoTilesYet)
+  }
+  const timeLabel = displayLayer.value.observationTimeLabel
+  if (timeLabel && timeLabel !== '—') {
+    lines.push(`${ANALYSIS_COPY.metaTime}：${timeLabel}`)
+  }
+  if (canToggleParticleFlow.value) {
+    lines.push(ANALYSIS_COPY.weatherWindMode(windStyleChipLabel.value))
+  }
+  const source = displayLayer.value.sourceLabel
+  if (source && source !== '—') {
+    lines.push(`${ANALYSIS_COPY.metaSource}：${source}`)
+  }
+  return lines
+})
+
+const staticTopHint = computed(() => resolveStaticLayerHint(analysisStageKind.value))
 
 const analysisScrollEl = ref<HTMLElement | null>(null)
 const topSummaryEl = ref<HTMLElement | null>(null)
@@ -806,10 +899,7 @@ onBeforeUnmount(() => {
   >
     <div class="panel-topline" ref="topSummaryEl">
       <div class="panel-header">
-        <div>
-          <h2>分析</h2>
-          <p class="panel-subtitle">当前摘要</p>
-        </div>
+        <p class="panel-subtitle panel-subtitle--solo">{{ panelSubtitle }}</p>
         <span class="readiness">{{ stageLabel }}</span>
       </div>
 
@@ -818,47 +908,88 @@ onBeforeUnmount(() => {
         <span class="error-message">{{ workflowError }}</span>
       </div>
 
-      <div class="action-row">
-        <button
-          v-if="canRunWorkflow"
-          class="run-workflow-btn"
-          :disabled="buttonDisabled"
-          :title="runBlockedReason ?? ''"
-          @click="handleRunWorkflow"
-        >
-          {{ buttonLabel }}
-        </button>
-        <span v-else class="run-workflow-hint">{{ runBlockedHint }}</span>
-      </div>
-      <div v-if="runBlockedReason" class="run-block-hint">
-        {{ runBlockedReason }}
+      <!-- 空态：引导添加图层 -->
+      <div v-if="!hasRealSelection" class="analysis-empty-guide">
+        <p class="analysis-empty-lead">{{ ANALYSIS_COPY.emptyLead }}</p>
+        <ul class="analysis-empty-hints">
+          <li>{{ LAYERS_COPY.emptyActiveCta }}</li>
+          <li>{{ ANALYSIS_COPY.emptyHintInspect }}</li>
+          <li>{{ ANALYSIS_COPY.emptyHintWind }}</li>
+        </ul>
       </div>
 
-      <!-- 工作流元信息 -->
-      <div v-if="workflowMeta.engineLabel" class="workflow-meta-row">
-        <span class="wf-engine-icon" aria-hidden="true">{{ workflowMeta.engineIcon }}</span>
-        <span class="wf-engine-label">{{ workflowMeta.engineLabel }}</span>
-        <span v-if="workflowMeta.name" class="wf-name">{{ workflowMeta.name }}</span>
+      <!-- 天气层：瓦片/时间/风场摘要 -->
+      <div v-else-if="isRealtimeWeatherLayer" class="analysis-context-card">
+        <p v-for="(line, idx) in weatherTopLines" :key="idx" class="analysis-context-line">
+          {{ line }}
+        </p>
+        <dl class="meta-list">
+          <div>
+            <dt>{{ ANALYSIS_COPY.metaLayer }}</dt>
+            <dd>{{ displayLayer.name }}</dd>
+          </div>
+        </dl>
       </div>
 
-      <!-- 工作流阶段 + 进度 -->
-      <div class="workflow-stage-row">
+      <!-- 导入/边界/静态：能力说明 -->
+      <div v-else-if="!canRunWorkflow" class="analysis-context-card">
+        <p class="analysis-context-line">{{ staticTopHint }}</p>
+        <dl class="meta-list">
+          <div>
+            <dt>{{ ANALYSIS_COPY.metaLayer }}</dt>
+            <dd>{{ displayLayer.name }}</dd>
+          </div>
+          <div v-if="displayLayer.sourceLabel && displayLayer.sourceLabel !== '—'">
+            <dt>{{ ANALYSIS_COPY.metaSource }}</dt>
+            <dd>{{ displayLayer.sourceLabel }}</dd>
+          </div>
+        </dl>
+      </div>
+
+      <!-- 可跑工作流 -->
+      <template v-else>
+        <div class="action-row">
+          <button
+            class="run-workflow-btn"
+            :disabled="buttonDisabled"
+            :title="runBlockedReason ?? ''"
+            @click="handleRunWorkflow"
+          >
+            {{ buttonLabel }}
+          </button>
+        </div>
+        <div v-if="runBlockedReason" class="run-block-hint">
+          {{ runBlockedReason }}
+        </div>
+
+        <div v-if="workflowMeta.engineLabel" class="workflow-meta-row">
+          <span class="wf-engine-icon" aria-hidden="true">{{ workflowMeta.engineIcon }}</span>
+          <span class="wf-engine-label">{{ workflowMeta.engineLabel }}</span>
+          <span v-if="workflowMeta.name" class="wf-name">{{ workflowMeta.name }}</span>
+        </div>
+
+        <dl class="meta-list">
+          <div>
+            <dt>{{ ANALYSIS_COPY.metaLayer }}</dt>
+            <dd>{{ displayLayer.name }}</dd>
+          </div>
+          <div>
+            <dt>{{ ANALYSIS_COPY.metaSource }}</dt>
+            <dd>{{ displayLayer.sourceLabel }}</dd>
+          </div>
+        </dl>
+      </template>
+
+      <!-- 阶段行：仅工作流运行中，或天气确有瓦片活动时 -->
+      <div v-if="showWorkflowStageRow" class="workflow-stage-row">
         <span class="stage-pill" :class="workflowStage">{{ workflowStage }}</span>
-        <span class="stage-copy">
-          {{
-            workflowStage === 'running'
-              ? `${workflowProgress}%`
-              : workflowStage === 'succeeded'
-                ? '完成'
-                : workflowStage === 'failed'
-                  ? '失败'
-                  : '逐步进入可用状态'
-          }}
-        </span>
+        <span class="stage-copy">{{ workflowStageCopy }}</span>
       </div>
 
-      <!-- 进度条 -->
-      <div v-if="isWorkflowRunning || workflowStage === 'succeeded'" class="wf-progress-bar">
+      <div
+        v-if="canRunWorkflow && (isWorkflowRunning || workflowStage === 'succeeded')"
+        class="wf-progress-bar"
+      >
         <div
           class="wf-progress-fill"
           :class="workflowStage"
@@ -866,28 +997,20 @@ onBeforeUnmount(() => {
         ></div>
       </div>
 
-      <!-- 最近事件消息 -->
-      <div v-if="latestEventMessage" class="wf-event-msg">
+      <div v-if="canRunWorkflow && latestEventMessage" class="wf-event-msg">
         <span class="wf-event-dot" :class="workflowStage"></span>
         <span class="wf-event-text">{{ latestEventMessage }}</span>
       </div>
-
-      <dl class="meta-list">
-        <div>
-          <dt>图层</dt>
-          <dd>{{ displayLayer.name }}</dd>
-        </div>
-        <div>
-          <dt>来源</dt>
-          <dd>{{ displayLayer.sourceLabel }}</dd>
-        </div>
-      </dl>
     </div>
 
     <div class="analysis-stream">
       <section class="analysis-section analysis-section--overview" id="global-overview">
-        <div class="section-kicker">总览</div>
-        <h3>{{ showCompactHero ? '图层说明' : '全图态势' }}</h3>
+        <div class="section-kicker">{{ ANALYSIS_COPY.overviewKicker }}</div>
+        <h3>
+          {{
+            showCompactHero ? ANALYSIS_COPY.overviewTitleCompact : ANALYSIS_COPY.overviewTitleFull
+          }}
+        </h3>
         <p>{{ analysisSummary }}</p>
       </section>
 
@@ -896,42 +1019,94 @@ onBeforeUnmount(() => {
         class="analysis-section analysis-section--imported"
         id="imported-layer"
       >
-        <div class="section-kicker">导入</div>
-        <h3>本地数据</h3>
+        <div class="section-kicker">{{ ANALYSIS_COPY.importedSectionKicker }}</div>
+        <h3>{{ ANALYSIS_COPY.importedSectionTitle }}</h3>
         <dl class="meta-list imported-meta">
           <div v-if="displayLayer.isImported">
-            <dt>几何类型</dt>
+            <dt>{{ ANALYSIS_COPY.metaGeometry }}</dt>
             <dd>{{ displayLayer.importedGeometryType ?? '—' }}</dd>
           </div>
           <div v-if="displayLayer.isImported">
-            <dt>要素数</dt>
+            <dt>{{ ANALYSIS_COPY.metaFeatures }}</dt>
             <dd>{{ displayLayer.importedFeatureCount ?? 0 }}</dd>
           </div>
           <div v-if="displayLayer.isImportedRaster">
-            <dt>类型</dt>
-            <dd>栅格 · TIF overlay</dd>
+            <dt>{{ ANALYSIS_COPY.metaMode }}</dt>
+            <dd>{{ ANALYSIS_COPY.importedRasterType }}</dd>
+          </div>
+          <div v-if="displayLayer.isImportedRaster">
+            <dt>{{ ANALYSIS_COPY.metaCrs }}</dt>
+            <dd>{{ displayLayer.importedRasterSourceCrs ?? '—' }}</dd>
           </div>
           <div v-if="displayLayer.isImportedRaster">
             <dt>Overlay ID</dt>
             <dd class="mono">{{ displayLayer.catalogId }}</dd>
           </div>
+          <div v-if="displayLayer.importedFileName">
+            <dt>{{ ANALYSIS_COPY.metaFile }}</dt>
+            <dd>{{ displayLayer.importedFileName }}</dd>
+          </div>
           <div>
-            <dt>范围</dt>
+            <dt>{{ ANALYSIS_COPY.metaBounds }}</dt>
             <dd>
               {{ formatBounds(displayLayer.importedBounds ?? displayLayer.importedRasterBounds) }}
             </dd>
           </div>
           <div>
-            <dt>来源</dt>
+            <dt>{{ ANALYSIS_COPY.metaSource }}</dt>
             <dd>{{ displayLayer.sourceLabel }}</dd>
           </div>
         </dl>
         <div v-if="displayLayer.isImported" class="imported-export-row">
+          <button
+            class="imported-export-btn"
+            type="button"
+            @click="
+              openDataWorkspace({
+                tab: 'attributes',
+                layerInstanceId: displayLayer.instanceId,
+              })
+            "
+          >
+            {{ DATA_COPY.openAttrTable }}
+          </button>
+          <button
+            class="imported-export-btn"
+            type="button"
+            @click="
+              openDataWorkspace({
+                tab: 'details',
+                layerInstanceId: displayLayer.instanceId,
+              })
+            "
+          >
+            {{ DATA_COPY.openDetails }}
+          </button>
           <button class="imported-export-btn" type="button" @click="exportImportedGeoJson">
-            导出 GeoJSON
+            {{ LAYERS_COPY.exportGeoJson }}
           </button>
           <button class="imported-export-btn" type="button" @click="exportImportedCsv">
-            导出 CSV
+            {{ LAYERS_COPY.exportCsv }}
+          </button>
+        </div>
+        <div v-else-if="displayLayer.isImportedRaster" class="imported-export-row">
+          <button
+            class="imported-export-btn"
+            type="button"
+            @click="
+              openDataWorkspace({
+                tab: 'details',
+                layerInstanceId: displayLayer.instanceId,
+              })
+            "
+          >
+            {{ DATA_COPY.openDetails }}
+          </button>
+          <button class="imported-export-btn" type="button" @click="exportImportedRaster('png')">
+            {{ LAYERS_COPY.exportPng }}
+          </button>
+          <button class="imported-export-btn" type="button" @click="exportImportedRaster('tif')">
+            {{ LAYERS_COPY.exportTif }}
           </button>
         </div>
         <p
@@ -1028,11 +1203,21 @@ onBeforeUnmount(() => {
         class="analysis-section analysis-section--layer"
         :id="`layer-${displayLayer.instanceId || 'default'}`"
       >
-        <div class="section-kicker">当前对象</div>
-        <h3>选中图层</h3>
+        <div class="section-kicker">{{ ANALYSIS_COPY.selectedLayerKicker }}</div>
+        <h3>{{ ANALYSIS_COPY.selectedLayerTitle }}</h3>
         <p>{{ displayLayer.name }} · {{ displayLayer.availabilityLabel }}</p>
+        <dl
+          v-if="displayLayer.sourceLabel && displayLayer.sourceLabel.startsWith('工作流')"
+          class="meta-list"
+          style="margin-top: 0.45rem"
+        >
+          <div>
+            <dt>{{ ANALYSIS_COPY.metaWorkflow }}</dt>
+            <dd>{{ displayLayer.sourceLabel }}</dd>
+          </div>
+        </dl>
         <div v-if="displayLayer.instanceId" class="layer-opacity-row">
-          <span>透明度</span>
+          <span>{{ LAYERS_COPY.opacity }}</span>
           <input
             class="layer-opacity-slider"
             type="range"
@@ -1050,10 +1235,10 @@ onBeforeUnmount(() => {
         class="analysis-section analysis-section--weather"
         id="point-weather"
       >
-        <div class="section-kicker">点天气</div>
+        <div class="section-kicker">{{ INSPECT_COPY.sectionKicker }}</div>
         <div class="weather-section-head">
           <div>
-            <h3>地图点击查询</h3>
+            <h3>{{ INSPECT_COPY.sectionTitle }}</h3>
             <p>
               使用工具栏「选择」后点击地图；漫游模式下可
               <kbd>Shift</kbd>+点击临时查询。查询对象为当前选中天气层（或最顶层可见天气层）。
@@ -1087,7 +1272,7 @@ onBeforeUnmount(() => {
         </div>
 
         <div v-if="pointWeatherLoading" class="weather-state weather-state-loading">
-          正在获取点天气...
+          正在获取点查…
         </div>
         <div v-else-if="pointWeatherError" class="weather-state weather-state-error">
           {{ pointWeatherError }}
@@ -1125,20 +1310,101 @@ onBeforeUnmount(() => {
         class="analysis-section analysis-section--style"
         id="layer-style"
       >
-        <div class="section-kicker">符号</div>
+        <div class="section-kicker">{{ ANALYSIS_COPY.styleSectionKicker }}</div>
         <div class="weather-style-head">
           <div>
-            <h3>图层样式</h3>
+            <h3>{{ ANALYSIS_COPY.styleTitle }}</h3>
             <p>
               {{
-                canEditPalette
-                  ? '图例与配色与地图符号化联动。'
-                  : '预渲染图例仅作对照，改配色不会重涂已生成的 PNG。'
+                displayLayer.isImported
+                  ? ANALYSIS_COPY.staticImportedVector
+                  : displayLayer.isImportedRaster
+                    ? ANALYSIS_COPY.staticImportedRaster
+                    : canEditPalette
+                      ? ANALYSIS_COPY.styleHintLinked
+                      : ANALYSIS_COPY.styleHintReadonly
               }}
             </p>
           </div>
-          <span class="analysis-chip">{{ windStyleChipLabel }}</span>
+          <span v-if="isRealtimeWeatherLayer || canToggleParticleFlow" class="analysis-chip">{{
+            windStyleChipLabel
+          }}</span>
         </div>
+
+        <!-- 导入矢量就地样式 -->
+        <div v-if="displayLayer.isImported" class="imported-vector-style">
+          <label class="layer-style-row">
+            <span>{{ LAYERS_COPY.vectorColor }}</span>
+            <input
+              type="color"
+              :value="importedVectorStyle.color || '#4fc3f7'"
+              @input="
+                patchImportedVectorStyle({
+                  color: ($event.target as HTMLInputElement).value,
+                })
+              "
+            />
+          </label>
+          <label class="layer-style-row">
+            <span>{{ LAYERS_COPY.vectorWidth }}</span>
+            <input
+              type="range"
+              min="0.5"
+              max="8"
+              step="0.5"
+              :value="importedVectorStyle.width ?? 2"
+              @input="
+                patchImportedVectorStyle({
+                  width: Number(($event.target as HTMLInputElement).value),
+                })
+              "
+            />
+            <strong>{{ importedVectorStyle.width ?? 2 }}</strong>
+          </label>
+          <label class="layer-style-row">
+            <span>{{ LAYERS_COPY.vectorRadius }}</span>
+            <input
+              type="range"
+              min="2"
+              max="16"
+              step="1"
+              :value="importedVectorStyle.radius ?? 5"
+              @input="
+                patchImportedVectorStyle({
+                  radius: Number(($event.target as HTMLInputElement).value),
+                })
+              "
+            />
+            <strong>{{ importedVectorStyle.radius ?? 5 }}</strong>
+          </label>
+          <label class="layer-style-row">
+            <span>{{ LAYERS_COPY.vectorFillOpacity }}</span>
+            <input
+              type="range"
+              min="0"
+              max="100"
+              :value="Math.round((importedVectorStyle.fillOpacity ?? 0.35) * 100)"
+              @input="
+                patchImportedVectorStyle({
+                  fillOpacity: Number(($event.target as HTMLInputElement).value) / 100,
+                })
+              "
+            />
+            <strong>{{ Math.round((importedVectorStyle.fillOpacity ?? 0.35) * 100) }}%</strong>
+          </label>
+        </div>
+
+        <!-- 导入栅格：CRS + 只读色带提示 -->
+        <dl v-if="displayLayer.isImportedRaster" class="meta-list" style="margin-bottom: 0.55rem">
+          <div>
+            <dt>{{ ANALYSIS_COPY.metaCrs }}</dt>
+            <dd>{{ displayLayer.importedRasterSourceCrs ?? '—' }}</dd>
+          </div>
+          <div v-if="displayLayer.importedFileName">
+            <dt>{{ ANALYSIS_COPY.metaFile }}</dt>
+            <dd>{{ displayLayer.importedFileName }}</dd>
+          </div>
+        </dl>
 
         <div
           v-if="displayLayer.instanceId && (isRealtimeWeatherLayer || canToggleParticleFlow)"
@@ -1197,7 +1463,7 @@ onBeforeUnmount(() => {
               :disabled="weatherProvidersLoading"
               :title="weatherProvidersError || '自动按优先级选择已启用源；钉选后瓦片与点查均走该源'"
             >
-              <option value="auto">自动（优先本地 Open-Meteo）</option>
+              <option value="auto">{{ INSPECT_COPY.providerAuto }}</option>
               <option
                 v-for="opt in weatherProviderOptions"
                 :key="opt.provider_id"
@@ -1231,13 +1497,13 @@ onBeforeUnmount(() => {
               type="button"
               role="switch"
               :aria-checked="layersStore.smoothRendering"
-              title="启用后天气色场使用双线性插值平滑过渡（需 WebGL）"
+              title="开：连续数值面（双线性插值）；关：网格色块"
               @click="layersStore.setSmoothRendering(!layersStore.smoothRendering)"
             >
               <span class="smooth-toggle-knob"></span>
             </button>
             <span class="smooth-render-hint">{{
-              layersStore.smoothRendering ? '平滑过渡' : '网格色块'
+              layersStore.smoothRendering ? '连续数值面' : '网格色块'
             }}</span>
           </div>
         </div>
@@ -1630,14 +1896,23 @@ onBeforeUnmount(() => {
 .panel-header {
   display: flex;
   justify-content: space-between;
-  align-items: flex-start;
+  align-items: center;
   gap: 0.44rem;
   flex-wrap: wrap;
   min-width: 0;
 }
-.panel-header > div:first-child {
+.panel-subtitle {
+  margin: 0;
+  font-size: 0.72rem;
+  line-height: 1.35;
+  color: rgba(148, 163, 184, 0.95);
+}
+.panel-subtitle--solo {
   flex: 1 1 8rem;
   min-width: 0;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: rgba(226, 232, 240, 0.92);
 }
 .readiness {
   padding: 0.16rem 0.36rem;
@@ -1652,6 +1927,31 @@ onBeforeUnmount(() => {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+.analysis-empty-guide,
+.analysis-context-card {
+  display: grid;
+  gap: 0.35rem;
+  padding: 0.42rem 0.1rem 0.1rem;
+}
+
+.analysis-empty-lead,
+.analysis-context-line {
+  margin: 0;
+  font-size: 0.78rem;
+  line-height: 1.45;
+  color: rgba(203, 213, 225, 0.92);
+}
+
+.analysis-empty-hints {
+  margin: 0;
+  padding-left: 1.05rem;
+  display: grid;
+  gap: 0.2rem;
+  font-size: 0.72rem;
+  line-height: 1.4;
+  color: rgba(148, 163, 184, 0.95);
 }
 .action-row {
   display: flex;
@@ -2240,6 +2540,30 @@ onBeforeUnmount(() => {
   margin-top: 0.34rem;
   color: #9eb3c8;
   font-size: 0.56rem;
+}
+.layer-style-row {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  gap: 0.35rem;
+  align-items: center;
+  margin-top: 0.4rem;
+  color: #9eb3c8;
+  font-size: 0.56rem;
+}
+.layer-style-row input[type='color'] {
+  width: 2rem;
+  height: 1.35rem;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  justify-self: start;
+}
+.layer-style-row input[type='range'] {
+  width: 100%;
+  accent-color: var(--accent-color, #38bdf8);
+}
+.imported-vector-style {
+  margin-bottom: 0.55rem;
 }
 .layer-opacity-slider {
   width: 100%;

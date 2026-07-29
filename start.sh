@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # ============================================================
 #  CGDA 一键启动 (Linux / macOS)
-#  调用跨平台 Python 启动器 launch.py
+#  优先使用仓库内 Env/Python312（与 Windows 本地约定一致）
 #
 #  用法:
 #    ./start.sh                         → start all
@@ -11,20 +11,29 @@
 set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-PYTHON=""
-for cmd in python3 python; do
-    if command -v "$cmd" &>/dev/null; then
-        PYTHON="$cmd"
-        break
-    fi
+ENV_PY=""
+for cand in \
+  "${SCRIPT_DIR}/Env/Python312/bin/python" \
+  "${SCRIPT_DIR}/Env/Python312/bin/python3" \
+  "${SCRIPT_DIR}/Env/Python312/python"
+do
+  if [[ -x "$cand" ]]; then
+    ENV_PY="$cand"
+    break
+  fi
 done
-if [ -z "$PYTHON" ]; then
-    echo "[ERROR] Python 未找到，请确保 python3 在 PATH 中"
-    exit 1
+
+if [[ -z "$ENV_PY" ]]; then
+  echo "[ERROR] 未找到 Env/Python312 解释器。"
+  echo "        本仓库本地联调约定使用 Env/Python312；请先准备该环境。"
+  echo "        （若仅临时验证，可手动: python3 launch.py …，但不推荐）"
+  exit 1
 fi
 
-if [ "$#" -eq 0 ]; then
-    set -- start
+echo "[INFO] Python: $ENV_PY"
+
+if [[ "$#" -eq 0 ]]; then
+  set -- start
 fi
 
-exec "$PYTHON" "${SCRIPT_DIR}/launch.py" "$@"
+exec "$ENV_PY" "${SCRIPT_DIR}/launch.py" "$@"

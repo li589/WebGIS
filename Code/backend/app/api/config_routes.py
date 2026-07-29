@@ -40,6 +40,7 @@
 import logging
 from typing import Any
 
+import anyio
 from fastapi import APIRouter, Depends, HTTPException
 
 from app.api.deps import require_gee_account_management_enabled, require_write_access
@@ -553,14 +554,14 @@ async def clear_remote_storage_history(profile_id: str):
 
 @router.get("/data-source")
 async def get_data_source_config():
-    """获取数据源配置。"""
-    return config_service.get_data_source_config()
+    """获取数据源配置（磁盘扫描放到线程池，避免阻塞事件循环）。"""
+    return await anyio.to_thread.run_sync(config_service.get_data_source_config)
 
 
 @router.get("/data-cache/overview")
 async def get_data_cache_overview():
     """静态 materialize 缓存概览。"""
-    return config_service.get_data_cache_overview_api()
+    return await anyio.to_thread.run_sync(config_service.get_data_cache_overview_api)
 
 
 @router.post("/data-cache/evict", dependencies=[Depends(require_write_access)])

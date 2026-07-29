@@ -27,6 +27,15 @@ export interface NodeParamSpec {
   min?: number
   max?: number
   step?: number
+  /** 指定前端渲染控件类型，优先级高于根据 type/value 自动推断 */
+  widget?: 'date' | 'datetime' | 'bbox' | 'coordinate' | 'path' | 'textarea' | 'color'
+  /** widget=bbox 时，指定四个分量 key 映射 */
+  bbox_keys?: {
+    west?: string
+    east?: string
+    south?: string
+    north?: string
+  }
 }
 
 export interface NodeTemplate {
@@ -50,9 +59,15 @@ export interface WorkflowDefinitionSummary {
   name: string
   description: string | null
   readonly: boolean
+  /** 范例工作流：可一键「从范例新建」用户副本 */
+  is_template?: boolean
   linked_layer_id: string | null
   updated_at: string | null
   node_count: number
+  /** 工作流标签（如 ["pipeline", "inversion"]），用于分类过滤 */
+  tags?: string[]
+  /** 工作流主分类（如 "inversion"/"weather"/"data_access"/"demo"） */
+  category?: string | null
 }
 
 export interface WorkflowDefinitionNode {
@@ -84,6 +99,10 @@ export interface WorkflowDefinitionMeta {
   author: string
   readonly: boolean
   linked_layer_id: string | null
+  /** 工作流标签列表 */
+  tags?: string[]
+  /** 工作流主分类 */
+  category?: string | null
 }
 
 export interface WorkflowDefinition {
@@ -122,6 +141,8 @@ export async function createWorkflowDefinition(payload: {
   description?: string
   engine?: string
   linked_layer_id?: string
+  tags?: string[]
+  category?: string
   nodes?: unknown[]
   links?: unknown[]
 }): Promise<WorkflowDefinition> {
@@ -138,6 +159,8 @@ export async function updateWorkflowDefinition(
     description: string
     engine: string
     linked_layer_id: string
+    tags: string[]
+    category: string
     nodes: unknown[]
     links: unknown[]
   }>,

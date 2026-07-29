@@ -5,6 +5,7 @@ import {
   computeStreamlineCountForArea,
   computeStreamlineCountForGrid,
   integrateStreamline,
+  projectStreamlinePathStrokes,
   resolveStreamlineSeedBounds,
   streamlineLonWrapOffsets,
   wrappedPulse,
@@ -131,6 +132,58 @@ describe('wind streamline pure functions', () => {
       const extras = buildStreamlineSeeds(grid, target - kept.length, () => 0.25)
       expect(kept.length + extras.length).toBe(target)
     }
+  })
+
+  it('projectStreamlinePathStrokes caches screen pts and arc length', () => {
+    const path = [
+      { lat: 25, lon: 112, speed: 8 },
+      { lat: 25.2, lon: 112.4, speed: 10 },
+      { lat: 25.4, lon: 112.8, speed: 12 },
+    ]
+    let projectCalls = 0
+    const project = (lngLat: [number, number]) => {
+      projectCalls += 1
+      return { x: lngLat[0] * 10, y: lngLat[1] * 10 }
+    }
+    const wraps = streamlineLonWrapOffsets(0)
+    const strokes = projectStreamlinePathStrokes(path, wraps, project, {
+      dpr: 1,
+      canvasWidth: 2000,
+      canvasHeight: 2000,
+      margin: 40,
+    })
+    expect(projectCalls).toBe(path.length * wraps.length)
+    expect(strokes.length).toBeGreaterThan(0)
+    expect(strokes[0].pts).toHaveLength(3)
+    expect(strokes[0].cum).toHaveLength(3)
+    expect(strokes[0].cum[0]).toBe(0)
+    expect(strokes[0].totalLen).toBeGreaterThan(2)
+    expect(strokes[0].cum[2]).toBe(strokes[0].totalLen)
+
+    // 复用同一结果不应再 project（调用方缓存语义）
+    const again = projectStreamlinePathStrokes(path, wraps, project, {
+      dpr: 1,
+      canvasWidth: 2000,
+      canvasHeight: 2000,
+      margin: 40,
+    })
+    expect(again[0].pts[0]).toEqual(strokes[0].pts[0])
+  })
+
+  it('drops fully off-screen wrap copies', () => {
+    const path = [
+      { lat: 10, lon: 10, speed: 5 },
+      { lat: 40, lon: 50, speed: 5 },
+    ]
+    const project = (lngLat: [number, number]) => ({ x: lngLat[0], y: lngLat[1] })
+    const strokes = projectStreamlinePathStrokes(path, [0, 9999], project, {
+      dpr: 1,
+      canvasWidth: 100,
+      canvasHeight: 100,
+      margin: 10,
+    })
+    expect(strokes).toHaveLength(1)
+    expect(strokes[0].pts[0].x).toBe(10)
   })
 })
 

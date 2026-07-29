@@ -54,12 +54,27 @@ export function createWeatherOverlayServices(
         getSyncWeatherToken: options.getSyncWeatherToken,
         getEnabledParticleFlowCatalogId: options.getEnabledParticleFlowCatalogId,
         getWindDisplayMode: options.getWindDisplayMode,
+        getSmoothRendering: options.getSmoothRendering,
+        syncSmoothScalarUnderlay: (state) => {
+          if (!options.scalarFieldController) return false
+          if (!(options.getSmoothRendering?.() ?? true)) return false
+          return options.scalarFieldController.sync(state, {
+            overlayToken,
+            getSyncWeatherToken: options.getSyncWeatherToken,
+          })
+        },
+        clearSmoothScalarUnderlay: (catalogId) => {
+          options.scalarFieldController?.removeCatalogArtifacts(catalogId)
+        },
       })
     },
     syncScalarFieldWebGL(overlayState: WeatherOverlayState, overlayToken: number) {
       if (!options.scalarFieldController) return false
-      // 用户关闭平滑渲染时，跳过 WebGL 路径，回退 MapLibre fill（网格色块）
-      if (!(options.getSmoothRendering?.() ?? true)) return false
+      // 用户关闭平滑渲染：拆掉 WebGL 连续面，回退 MapLibre 网格色块
+      if (!(options.getSmoothRendering?.() ?? true)) {
+        options.scalarFieldController.removeCatalogArtifacts(overlayState.catalogId)
+        return false
+      }
       const windMode = options.getWindDisplayMode?.() ?? 'particle'
       if (
         shouldYieldScalarWebGLToWind({

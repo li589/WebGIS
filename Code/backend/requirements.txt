@@ -11,3 +11,12 @@ httpx>=0.27.0
 # CRS 转换：app.services.crs._crs_transformer 依赖 pyproj（rasterio 传递依赖，
 # 此处显式 pin 以避免 rasterio 卸载/降级时丢失）
 pyproj>=3.6,<4
+# 数据导入/导出（矢量 SHP、文档表、科学栅格）
+pyshp>=2.3.1
+pandas>=2.0
+openpyxl>=3.1
+xlrd>=2.0
+h5py>=3.10
+netCDF4>=1.6
+rarfile>=4.1
+scipy>=1.11

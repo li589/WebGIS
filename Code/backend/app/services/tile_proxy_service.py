@@ -122,6 +122,19 @@ TILE_URL_TEMPLATES: dict[str, TileUrlTemplate] = {
         requires_transform=False,
         coord_system="WGS84",
     ),
+    "esri-hillshade": TileUrlTemplate(
+        provider=TileProvider.ESRI,
+        url_pattern="https://server.arcgisonline.com/ArcGIS/rest/services/World_Terrain_Base/MapServer/tile/{z}/{y}/{x}",
+        requires_transform=False,
+        coord_system="WGS84",
+    ),
+    # OpenTopoMap（OSM 系地形图，免费；国内可达性视网络而定）
+    "opentopo-terrain": TileUrlTemplate(
+        provider=TileProvider.OSM,
+        url_pattern="https://a.tile.opentopomap.org/{z}/{x}/{y}.png",
+        requires_transform=False,
+        coord_system="WGS84",
+    ),
     # OSM（直接访问）
     # 注意：tile.openstreetmap.org 在国内网络环境下不可达，改用德国镜像
     "osm-standard": TileUrlTemplate(

@@ -1,11 +1,12 @@
 <script setup lang="ts">
-import { computed, ref, onMounted, onBeforeUnmount } from 'vue'
+import { computed, ref, onMounted, onBeforeUnmount, watch } from 'vue'
 import { storeToRefs } from 'pinia'
 import { useLayersStore } from '../../stores/layers'
 import { useWeatherTileManager } from '../../stores/weather-tile-manager'
 import { useWeatherSyncStatusStore } from '../../stores/weather-sync-status'
 import { mergeWorkflowSummaryWithWeather } from '../../utils/workflow-status-merge'
 import type { JobStatus } from '../../stores/layers/types'
+import { WORKFLOW_COPY } from '../../ui-copy'
 
 const layersStore = useLayersStore()
 const weatherTileManager = useWeatherTileManager()
@@ -18,11 +19,16 @@ const emit = defineEmits<{ close: [] }>()
 const tick = ref(0)
 let tickTimer: number | null = null
 
+/** 是否存在活跃工作流（running/queued/retry_pending），用于决定是否启用 tick 定时器 */
+const hasActiveWorkflows = computed(() => {
+  const s = layersStore.workflowSummary
+  return s.running + s.queued + s.retryPending > 0
+})
+
 const weatherContribution = computed(() => {
   void activityVersion.value
   void statusVersion.value
   void syncInProgress.value
-  void tick.value
   return weatherTileManager.deriveWeatherWorkflowContribution({
     syncInProgress: syncInProgress.value,
   })
@@ -30,7 +36,6 @@ const weatherContribution = computed(() => {
 
 // 从 activeLayersDisplay 中提取有 jobLayer 的条目，并合并 jobLayers 中的孤儿工作流
 const workflowItems = computed(() => {
-  void tick.value
   const fromActive = layersStore.activeLayersDisplay
     .filter((layer) => layer.jobLayer)
     .map((layer) => ({
@@ -107,7 +112,6 @@ const summary = computed(() => {
 
 /** 衍生统计指标 */
 const derivedStats = computed(() => {
-  void tick.value
   const s = summary.value
   const jobs = jobSummary.value
   const active = s.running + s.queued + s.retryPending
@@ -137,7 +141,6 @@ const weatherStatusMeta: Record<string, { label: string; color: string; bg: stri
 
 /** 按分类分组统计工作流 */
 const categoryBreakdown = computed(() => {
-  void tick.value
   const map = new Map<
     string,
     { total: number; running: number; succeeded: number; failed: number }
@@ -299,6 +302,18 @@ function getCategoryName(categoryId: string): string {
   return cat?.name ?? categoryId
 }
 
+/** 节点阶段图标映射 */
+const STAGE_ICONS: Record<string, string> = {
+  download: '📥',
+  preprocess: '⚙',
+  inversion: '🔬',
+  output: '📦',
+}
+
+function getStageIcon(stage: string): string {
+  return STAGE_ICONS[stage] ?? '•'
+}
+
 function handleCancel(jobId: string, catalogId: string) {
   void layersStore.cancelWorkflowRunForJob(jobId, catalogId)
 }
@@ -324,20 +339,38 @@ function handleKeydown(e: KeyboardEvent) {
   if (e.key === 'Escape') emit('close')
 }
 
-onMounted(() => {
-  window.addEventListener('keydown', handleKeydown)
+function startTickTimer() {
+  if (tickTimer !== null) return
   tickTimer = window.setInterval(() => {
     tick.value++
   }, 1000)
+}
+
+function stopTickTimer() {
+  if (tickTimer !== null) {
+    clearInterval(tickTimer)
+    tickTimer = null
+  }
+}
+
+// 监听活跃工作流状态，动态启停 tick 定时器（仅在有 running/queued/retry_pending 时运行）
+watch(
+  hasActiveWorkflows,
+  (active) => {
+    if (active) startTickTimer()
+    else stopTickTimer()
+  },
+  { immediate: true },
+)
+
+onMounted(() => {
+  window.addEventListener('keydown', handleKeydown)
   void weatherSyncStatus.refreshOverview()
 })
 
 onBeforeUnmount(() => {
   window.removeEventListener('keydown', handleKeydown)
-  if (tickTimer !== null) {
-    clearInterval(tickTimer)
-    tickTimer = null
-  }
+  stopTickTimer()
 })
 </script>
 
@@ -348,7 +381,7 @@ onBeforeUnmount(() => {
       <header class="wf-panel-header">
         <div>
           <p class="wf-panel-eyebrow">WORKFLOW STATUS</p>
-          <h2>工作流状态总览</h2>
+          <h2>{{ WORKFLOW_COPY.statusOverview }}</h2>
         </div>
         <div class="wf-header-stats" v-if="summary.total > 0 || globalTileStats.totalPending > 0">
           <span class="wf-header-stat">
@@ -657,6 +690,26 @@ onBeforeUnmount(() => {
                 }}
               </button>
             </ul>
+
+            <!-- 节点级进度 -->
+            <div v-if="item.jobLayer.nodeProgress?.length" class="node-progress-section">
+              <h4 class="progress-section-title">节点进度</h4>
+              <div
+                v-for="np in item.jobLayer.nodeProgress"
+                :key="np.nodeId"
+                class="node-progress-item"
+              >
+                <div class="node-progress-header">
+                  <span class="node-stage-icon">{{ getStageIcon(np.stage) }}</span>
+                  <span class="node-label">{{ np.nodeLabel }}</span>
+                  <span class="node-progress-value">{{ np.progress }}%</span>
+                </div>
+                <div class="node-progress-bar">
+                  <div class="node-progress-fill" :style="{ width: np.progress + '%' }"></div>
+                </div>
+                <span v-if="np.message" class="node-progress-message">{{ np.message }}</span>
+              </div>
+            </div>
 
             <!-- 底部行：时间 + 时长 + 结果链接 + 操作 -->
             <div class="wf-item-footer">
@@ -1221,6 +1274,85 @@ onBeforeUnmount(() => {
   border-radius: 999px;
   background: linear-gradient(90deg, #5ad5ff, #2f7eff);
   transition: width 0.3s ease;
+}
+
+/* 节点级进度 */
+.node-progress-section {
+  margin-top: 0.4rem;
+  padding: 0.4rem 0.5rem;
+  border: 1px solid rgba(136, 192, 255, 0.1);
+  border-radius: 0.5rem;
+  background: rgba(4, 12, 23, 0.42);
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.progress-section-title {
+  margin: 0;
+  color: #88dfff;
+  font-size: 0.55rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.node-progress-item {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+}
+
+.node-progress-header {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+}
+
+.node-stage-icon {
+  font-size: 0.6rem;
+  flex: none;
+  line-height: 1;
+}
+
+.node-label {
+  flex: 1;
+  min-width: 0;
+  color: #c8dff0;
+  font-size: 0.58rem;
+  font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.node-progress-value {
+  color: #5ad5ff;
+  font-size: 0.55rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  flex: none;
+}
+
+.node-progress-bar {
+  height: 4px;
+  border-radius: 999px;
+  background: rgba(136, 192, 255, 0.08);
+  overflow: hidden;
+}
+
+.node-progress-fill {
+  height: 100%;
+  border-radius: 999px;
+  background: linear-gradient(90deg, #5ad5ff, #2f7eff);
+  transition: width 0.3s ease;
+}
+
+.node-progress-message {
+  color: #7f96ab;
+  font-size: 0.52rem;
+  line-height: 1.4;
+  word-break: break-word;
 }
 
 .wf-item-message {

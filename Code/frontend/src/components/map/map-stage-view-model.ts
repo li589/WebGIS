@@ -1,4 +1,5 @@
 import type { ActiveLayerDisplay } from '../../stores/layers/types'
+import { LAYERS_COPY } from '../../ui-copy'
 
 export interface MapStageDisplayModel {
   basemapChipLabel: string
@@ -53,16 +54,16 @@ export function buildFallbackActiveLayerDisplay(): ActiveLayerDisplay {
   return {
     instanceId: '',
     catalogId: '',
-    name: '无图层',
+    name: LAYERS_COPY.emptyTitle,
     category: '',
-    summary: '',
+    summary: '请在左侧面板选择图层进行展示。',
     metricLabel: '—',
     metricValue: '—',
-    trendLabel: '',
-    statusLabel: '',
-    updateLabel: '',
-    sourceLabel: '',
-    confidenceLabel: '',
+    trendLabel: '—',
+    statusLabel: '—',
+    updateLabel: '—',
+    sourceLabel: '—',
+    confidenceLabel: '—',
     accentColor: '#5a6a80',
     accentGlow: 'rgba(90, 106, 128, 0.3)',
     chipTone: 'rgba(90, 106, 128, 0.16)',

@@ -148,9 +148,10 @@ def _as_time_pixel_matrix(
     value: Any, *, name: str, target_shape: tuple[int, int] | None = None
 ) -> Any:
     """将输入规范化为 (nt, npix) 时间-像素矩阵。标量→(1,1)，1D→(1,N)，2D 直接使用。"""
-    import numpy as np
 
-    array = np.asarray(value, dtype=np.float64)
+    from data_access.numeric_sanitize import mask_common_fill_values
+
+    array = mask_common_fill_values(value)
     if array.ndim == 0:
         array = array.reshape(1, 1)
     elif array.ndim == 1:
@@ -168,7 +169,9 @@ def _as_static_vector(value: Any, pixel_count: int, *, name: str) -> Any:
     """将输入规范化为长度 pixel_count 的静态向量。标量广播为全 1 向量。"""
     import numpy as np
 
-    array = np.asarray(value, dtype=np.float64).reshape(-1)
+    from data_access.numeric_sanitize import mask_common_fill_values
+
+    array = mask_common_fill_values(value).reshape(-1)
     if array.size == pixel_count:
         return array
     if array.size == 1:
@@ -191,22 +194,30 @@ def load_h_matrix(
     """
     import numpy as np
 
+    from data_access.numeric_sanitize import mask_common_fill_values
+
     if dh_mat_path is not None:
         dh_payload = load_mat_file(dh_mat_path)
-        return np.asarray(
-            get_first_available(dh_payload, list(field_config.dh_aliases)),
-            dtype=np.float64,
+        return mask_common_fill_values(
+            np.asarray(
+                get_first_available(dh_payload, list(field_config.dh_aliases)),
+                dtype=np.float64,
+            )
         )
 
     try:
-        return np.asarray(
-            get_first_available(payload, list(field_config.dh_aliases)),
-            dtype=np.float64,
+        return mask_common_fill_values(
+            np.asarray(
+                get_first_available(payload, list(field_config.dh_aliases)),
+                dtype=np.float64,
+            )
         )
     except KeyError:
         if fallback_h is None:
             raise
-        base = np.asarray(fallback_h, dtype=np.float64).reshape(-1)
+        base = mask_common_fill_values(
+            np.asarray(fallback_h, dtype=np.float64)
+        ).reshape(-1)
         if nt is None:
             return base
         return np.repeat(base[None, :], nt, axis=0)
@@ -512,6 +523,16 @@ def execute_block_inversion(
         target_shape=target_shape,
     )
 
+    # 物理量二次护栏：填值已在 _as_* 清洗；此处仅挡明显越界（与 SMAP/FY QC 对齐）
+    from data_access.numeric_sanitize import mask_value_range
+
+    tbv_mat = mask_value_range(tbv_mat, min_valid=0.0, max_valid=350.0)
+    tbh_mat = mask_value_range(tbh_mat, min_valid=0.0, max_valid=350.0)
+    ts_mat = mask_value_range(ts_mat, min_valid=200.0, max_valid=350.0)
+    ia_mat = mask_value_range(ia_mat, min_valid=0.0, max_valid=90.0)
+    ndvi_mat = mask_value_range(ndvi_mat, min_valid=0.0, max_valid=1.0)
+    sf_mat = mask_value_range(sf_mat, min_valid=0.0, max_valid=None)
+
     albedo = _as_static_vector(
         get_first_available(payload, list(field_config.albedo_aliases)),
         npix,
@@ -550,6 +571,11 @@ def execute_block_inversion(
         npix,
         name="static_h",
     )
+    clay_fraction = mask_value_range(clay_fraction, min_valid=0.0, max_valid=1.0)
+    albedo = mask_value_range(albedo, min_valid=0.0, max_valid=1.0)
+    porosity = mask_value_range(porosity, min_valid=0.02, max_valid=1.0)
+    ndvi_v_max = mask_value_range(ndvi_v_max, min_valid=0.0, max_valid=1.0)
+    ndvi_v_min = mask_value_range(ndvi_v_min, min_valid=0.0, max_valid=1.0)
     tau_ini_mat = np.full((nt, npix), np.nan, dtype=np.float64)
     results: dict[str, Any] = {
         "Tau_ini_mat": tau_ini_mat,

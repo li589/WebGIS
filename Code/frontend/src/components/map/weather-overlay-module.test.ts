@@ -8,6 +8,7 @@ describe('weather-overlay-module', () => {
     const facade = {
       scheduleSync: vi.fn(),
       runSyncNow: vi.fn(),
+      setAnimationPaused: vi.fn(),
       dispose: vi.fn(),
     }
     const stopWatcher = vi.fn()

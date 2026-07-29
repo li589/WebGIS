@@ -201,7 +201,12 @@ export interface DataSourceConfig {
     bucket: string
     secure: boolean
   } | null
-  discovered_datasets?: Array<{ name: string; path: string; file_count: number }>
+  discovered_datasets?: Array<{
+    name: string
+    path: string
+    file_count: number | null
+    file_count_truncated?: boolean
+  }>
   open_data_presets?: Record<string, string>
   open_data_preset_labels?: Record<string, string>
   portal_credentials?: Record<string, PortalCredentialPublic>
@@ -243,7 +248,12 @@ export interface DataCacheOverview {
   }>
   data_root: string
   output_root: string
-  discovered_datasets: Array<{ name: string; path: string; file_count: number }>
+  discovered_datasets: Array<{
+    name: string
+    path: string
+    file_count: number | null
+    file_count_truncated?: boolean
+  }>
 }
 
 export interface AboutModule {

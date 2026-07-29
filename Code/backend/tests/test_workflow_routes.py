@@ -4,7 +4,14 @@ from datetime import datetime, timezone
 import unittest
 from unittest.mock import patch
 
-from app.api.routers.workflow_router import submit_workflow, list_workflow_events
+from fastapi import HTTPException
+
+from app.api.routers.workflow_router import (
+    submit_workflow,
+    list_workflow_events,
+    submission_service,
+)
+from app.services.workflow.submission_service import WorkflowValidationError
 from shared.contracts.api_contracts import (
     ClientIdentity,
     RuntimeMapContext,
@@ -41,8 +48,9 @@ class WorkflowRoutesTests(unittest.TestCase):
             events_url="/workflow-runs/run-route-1/events",
         )
 
-        with patch(
-            "app.api.routers.workflow_router.submission_service.submit_workflow",
+        with patch.object(
+            submission_service,
+            "submit_workflow",
             return_value=accepted,
         ) as submit_mock:
             response = submit_workflow(payload)
@@ -59,6 +67,44 @@ class WorkflowRoutesTests(unittest.TestCase):
         self.assertIsNone(algorithm_request.get("module_name"))
         self.assertIsNone(algorithm_request.get("workflow_name"))
         self.assertIsNone(algorithm_request.get("workflow_definition"))
+
+    def test_submit_workflow_route_returns_422_for_validation_error(self) -> None:
+        """提交期预校验失败时，路由应返回 422 + 结构化字段级错误。"""
+        payload = self._build_payload(layer_id="ndvi")
+        issues = [
+            {
+                "field": "datasource_selection.input_dir",
+                "message": "Missing required datasource key: 'input_dir'",
+            }
+        ]
+        with patch.object(
+            submission_service,
+            "submit_workflow",
+            side_effect=WorkflowValidationError(issues),
+        ):
+            with self.assertRaises(HTTPException) as ctx:
+                submit_workflow(payload)
+
+        self.assertEqual(ctx.exception.status_code, 422)
+        detail = ctx.exception.detail
+        self.assertEqual(detail["error_type"], "validation")
+        self.assertIn("user_message", detail)
+        self.assertEqual(detail["issues"], issues)
+
+    def test_submit_workflow_route_returns_429_for_capacity_error(self) -> None:
+        """容量超限时仍返回 429（不被 422 校验逻辑拦截）。"""
+        payload = self._build_payload(layer_id="ndvi")
+        with patch.object(
+            submission_service,
+            "submit_workflow",
+            side_effect=ValueError(
+                "Workflow capacity reached: active_runs=4, limit=4"
+            ),
+        ):
+            with self.assertRaises(HTTPException) as ctx:
+                submit_workflow(payload)
+
+        self.assertEqual(ctx.exception.status_code, 429)
 
     def test_list_workflow_events_route_forwards_cursor(self) -> None:
         event_response = WorkflowEventsResponse(
@@ -82,8 +128,9 @@ class WorkflowRoutesTests(unittest.TestCase):
             },
         )()
 
-        with patch(
-            "app.api.routers.workflow_router.submission_service.list_workflow_events",
+        with patch.object(
+            submission_service,
+            "list_workflow_events",
             return_value=event_response,
         ) as list_mock:
             response = list_workflow_events(

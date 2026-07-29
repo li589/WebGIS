@@ -119,6 +119,22 @@ export interface JobLayerMapLayerPayload {
   layerAssets?: JobLayerMapAssets
 }
 
+/** 节点级进度信息 */
+export interface NodeProgress {
+  /** 节点 ID */
+  nodeId: string
+  /** 节点显示名 */
+  nodeLabel: string
+  /** 阶段: "download" | "preprocess" | "inversion" | "output" */
+  stage: string
+  /** 进度 0-100 */
+  progress: number
+  /** 当前消息 */
+  message?: string
+  /** 产物路径列表 */
+  artifacts?: string[]
+}
+
 export interface JobLayerItem {
   /** 作业 ID (run_id) */
   jobId: string
@@ -155,6 +171,8 @@ export interface JobLayerItem {
   lastEventAt?: string
   /** 最近的增量事件消息，用于运行中展示持续产出 */
   eventMessages?: string[]
+  /** 节点级进度（下载/预处理/反演各阶段） */
+  nodeProgress?: NodeProgress[]
 }
 
 // ─── Active layer (已添加图层) ────────────────────────────────────────────────
@@ -245,8 +263,21 @@ export interface ActiveLayerDisplay {
   /** 导入矢量元信息（仅 isImported） */
   importedGeometryType?: string
   importedFeatureCount?: number
+  /** 导入矢量的后端 layer_id（用于 /export/layer） */
+  importedVectorBackendLayerId?: string
   /** 导入栅格元信息（仅 isImportedRaster） */
   importedRasterBounds?: [number, number, number, number]
+  /** 导入栅格源 CRS */
+  importedRasterSourceCrs?: string
+  /** 导入文件名 */
+  importedFileName?: string
+  /** 导入矢量样式（仅 isImported） */
+  importedVectorStyle?: {
+    color?: string
+    width?: number
+    radius?: number
+    fillOpacity?: number
+  }
   /** 导入数据包围盒（矢量 / 栅格） */
   importedBounds?: [number, number, number, number]
 }

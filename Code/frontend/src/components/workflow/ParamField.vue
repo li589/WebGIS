@@ -1,8 +1,14 @@
 <script setup lang="ts">
 /**
- * 单参数编辑行内容区：按 meta 选择 combobox / toggle / number / array / text。
+ * 单参数编辑行内容区：按 meta.widget 或 meta.type 选择对应控件。
+ * widget 优先级最高：date/datetime → 日期选择器，bbox → 经纬度输入器，
+ * textarea → 多行文本，path → 路径输入（等宽字体+图标），
+ * coordinate → 单点经纬度双输入框。
+ * 其余按 options/typeof value/type 自动推断：combobox / toggle / number / array / text。
  */
 import ParamCombobox from './ParamCombobox.vue'
+import DateInputField from './DateInputField.vue'
+import BboxInputField from './BboxInputField.vue'
 import type { NodeParamSpec } from '../../services/workflow-definition-api'
 
 defineProps<{
@@ -68,12 +74,114 @@ function onNumberInput(event: Event) {
 function onCombo(v: string) {
   emit('change', v)
 }
+
+/** 从 value 中提取纬度（支持 "lat,lng" 字符串或 {lat,lng} 对象） */
+function coordLat(v: unknown): number | string {
+  if (v == null) return ''
+  if (typeof v === 'object' && !Array.isArray(v)) {
+    const obj = v as Record<string, unknown>
+    return Number(obj.lat ?? obj.latitude) || ''
+  }
+  const s = String(v)
+  const parts = s.split(',')
+  return parts.length >= 2 ? Number(parts[0]) || '' : ''
+}
+
+/** 从 value 中提取经度 */
+function coordLng(v: unknown): number | string {
+  if (v == null) return ''
+  if (typeof v === 'object' && !Array.isArray(v)) {
+    const obj = v as Record<string, unknown>
+    return Number(obj.lng ?? obj.lon ?? obj.longitude) || ''
+  }
+  const s = String(v)
+  const parts = s.split(',')
+  return parts.length >= 2 ? Number(parts[1]) || '' : ''
+}
+
+/** 更新坐标值，返回新的 "lat,lng" 字符串 */
+function updateCoord(v: unknown, field: 'lat' | 'lng', raw: string): string {
+  const lat = field === 'lat' ? raw : String(coordLat(v) ?? '')
+  const lng = field === 'lng' ? raw : String(coordLng(v) ?? '')
+  return `${lat},${lng}`
+}
 </script>
 
 <template>
+  <!-- widget=date/datetime：日期选择器 -->
+  <DateInputField
+    v-if="meta?.widget === 'date' || meta?.widget === 'datetime'"
+    :model-value="value"
+    :readonly="readonly"
+    :error="error"
+    :mode="meta.widget === 'datetime' ? 'datetime' : 'date'"
+    @update:model-value="emit('change', $event)"
+  />
+
+  <!-- widget=bbox：经纬度输入器 -->
+  <BboxInputField
+    v-else-if="meta?.widget === 'bbox'"
+    :model-value="value"
+    :readonly="readonly"
+    :error="error"
+    :field-keys="meta.bbox_keys"
+    @update:model-value="emit('change', $event)"
+  />
+
+  <!-- widget=textarea：多行文本 -->
+  <textarea
+    v-else-if="meta?.widget === 'textarea'"
+    class="form-input form-textarea"
+    :class="{ error }"
+    :value="String(value ?? '')"
+    :placeholder="placeholder"
+    :readonly="readonly"
+    rows="3"
+    @input="emit('change', ($event.target as HTMLTextAreaElement).value)"
+  ></textarea>
+
+  <!-- widget=path：路径输入（等宽字体 + 目录图标） -->
+  <div v-else-if="meta?.widget === 'path'" class="path-input-wrapper" :class="{ error }">
+    <span class="path-icon" title="路径">📁</span>
+    <input
+      type="text"
+      class="form-input path-input"
+      :value="String(value ?? '')"
+      :placeholder="placeholder || '输入路径...'"
+      :readonly="readonly"
+      @input="emit('change', ($event.target as HTMLInputElement).value)"
+    />
+  </div>
+
+  <!-- widget=coordinate：单点经纬度 -->
+  <div v-else-if="meta?.widget === 'coordinate'" class="coord-input-wrapper" :class="{ error }">
+    <input
+      type="number"
+      class="form-input coord-input"
+      :value="coordLat(value)"
+      :min="-90"
+      :max="90"
+      :step="0.0001"
+      :readonly="readonly"
+      placeholder="纬度"
+      @input="emit('change', updateCoord(value, 'lat', ($event.target as HTMLInputElement).value))"
+    />
+    <input
+      type="number"
+      class="form-input coord-input"
+      :value="coordLng(value)"
+      :min="-180"
+      :max="180"
+      :step="0.0001"
+      :readonly="readonly"
+      placeholder="经度"
+      @input="emit('change', updateCoord(value, 'lng', ($event.target as HTMLInputElement).value))"
+    />
+  </div>
+
   <!-- 有 options：可输入 + 可选择 -->
   <ParamCombobox
-    v-if="meta?.options?.length"
+    v-else-if="meta?.options?.length"
     :model-value="String(value ?? '')"
     :options="meta.options"
     :disabled="readonly"
@@ -168,6 +276,12 @@ function onCombo(v: string) {
 
 .form-input.error {
   border-color: rgba(255, 120, 120, 0.55);
+}
+
+.form-textarea {
+  resize: vertical;
+  min-height: 2.4rem;
+  line-height: 1.4;
 }
 
 .toggle-switch {
@@ -275,5 +389,49 @@ function onCombo(v: string) {
 
 .array-input::placeholder {
   color: #5a7080;
+}
+
+.path-input-wrapper {
+  display: flex;
+  align-items: center;
+  gap: 0.28rem;
+  border: 1px solid rgba(136, 192, 255, 0.18);
+  border-radius: 0.32rem;
+  background: rgba(8, 17, 31, 0.55);
+  padding: 0 0.42rem;
+}
+
+.path-input-wrapper.error {
+  border-color: rgba(255, 120, 120, 0.55);
+}
+
+.path-icon {
+  flex-shrink: 0;
+  font-size: 0.62rem;
+  opacity: 0.7;
+}
+
+.path-input {
+  border: none;
+  border-radius: 0;
+  background: transparent;
+  padding: 0.28rem 0;
+  font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+  font-size: 0.56rem;
+}
+
+.path-input:focus {
+  border-color: transparent;
+}
+
+.coord-input-wrapper {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.28rem;
+}
+
+.coord-input {
+  text-align: center;
+  font-size: 0.54rem;
 }
 </style>

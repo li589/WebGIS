@@ -146,6 +146,18 @@ def _start_all(args: argparse.Namespace) -> int:
     log.banner("CGDA 一键启动")
     log.info("Launcher", f"操作系统: {sys.platform}")
     log.info("Launcher", f"Python:   {sys.executable}")
+    try:
+        from launch.env_python import is_running_env_python312
+
+        if is_running_env_python312():
+            log.ok("Launcher", "已使用约定运行时 Env/Python312")
+        else:
+            log.warn(
+                "Launcher",
+                "当前解释器不是 Env/Python312；本地联调请改用 start.bat 或 Env\\Python312\\python.exe",
+            )
+    except Exception:
+        pass
     log.info("Launcher", f"后端目录: {BACKEND_DIR}")
     log.info("Launcher", f"前端目录: {FRONTEND_DIR}")
     log.info("Launcher", f"数据同步: {DATA_SYNC_DIR}")

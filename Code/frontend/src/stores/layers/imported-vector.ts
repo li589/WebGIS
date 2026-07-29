@@ -18,6 +18,17 @@ export interface ImportedVectorPayload {
   bounds?: [number, number, number, number]
   /** 原始文件名（含扩展名），用于导出命名 */
   fileName?: string
+  /** 后端统一导入登记的 layer_id（用于 /export/layer） */
+  backendLayerId?: string
+  /** 导入时后端是否截断预览 */
+  truncated?: boolean
+  /** 用户自定义矢量样式 */
+  style?: {
+    color?: string
+    width?: number
+    radius?: number
+    fillOpacity?: number
+  }
 }
 
 export function inferGeometryType(fc: GeoJSON.FeatureCollection): ImportedGeometryType {
@@ -77,13 +88,15 @@ function flattenCoords(geom: GeoJSON.Geometry): number[] {
 export function buildImportedVectorPayload(
   geojson: GeoJSON.FeatureCollection,
   fileName?: string,
+  options?: { backendLayerId?: string; featureCount?: number },
 ): ImportedVectorPayload {
   return {
     geojson,
     geometryType: inferGeometryType(geojson),
-    featureCount: geojson.features.length,
+    featureCount: options?.featureCount ?? geojson.features.length,
     bounds: computeBounds(geojson),
     fileName,
+    backendLayerId: options?.backendLayerId,
   }
 }
 

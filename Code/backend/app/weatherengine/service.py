@@ -10,6 +10,7 @@ from urllib.error import HTTPError, URLError
 from uuid import uuid4
 
 from app.core.config import settings
+from app.services.geo_math import grid_size_from_span
 from app.weatherengine.default_model import weather_default_model
 from app.services.api_config import api_config_manager, ApiProvider, DataType
 from app.services.result_storage import result_storage_service
@@ -826,10 +827,14 @@ class WeatherEngineService:
         lat_span = max(0.1, bbox.north - bbox.south)
         lon_span = max(0.1, bbox.east - bbox.west)
         resolved_rows = (
-            rows if rows is not None else max(24, min(180, int(lat_span / 0.35)))
+            rows
+            if rows is not None
+            else max(24, min(180, grid_size_from_span(lat_span, 0.35)))
         )
         resolved_cols = (
-            cols if cols is not None else max(32, min(360, int(lon_span / 0.35)))
+            cols
+            if cols is not None
+            else max(32, min(360, grid_size_from_span(lon_span, 0.35)))
         )
         lat_step = lat_span / resolved_rows
         lon_step = lon_span / resolved_cols
@@ -1055,10 +1060,14 @@ class WeatherEngineService:
         lat_span = max(0.1, bbox.north - bbox.south)
         lon_span = max(0.1, bbox.east - bbox.west)
         resolved_rows = (
-            rows if rows is not None else max(18, min(120, int(lat_span / 0.4)))
+            rows
+            if rows is not None
+            else max(18, min(120, grid_size_from_span(lat_span, 0.4)))
         )
         resolved_cols = (
-            cols if cols is not None else max(18, min(120, int(lon_span / 0.4)))
+            cols
+            if cols is not None
+            else max(18, min(120, grid_size_from_span(lon_span, 0.4)))
         )
         lat_step = lat_span / resolved_rows
         lon_step = lon_span / resolved_cols
@@ -1223,10 +1232,14 @@ class WeatherEngineService:
         lat_span = max(0.1, bbox.north - bbox.south)
         lon_span = max(0.1, bbox.east - bbox.west)
         resolved_rows = (
-            rows if rows is not None else max(18, min(120, int(lat_span / 0.4)))
+            rows
+            if rows is not None
+            else max(18, min(120, grid_size_from_span(lat_span, 0.4)))
         )
         resolved_cols = (
-            cols if cols is not None else max(18, min(120, int(lon_span / 0.4)))
+            cols
+            if cols is not None
+            else max(18, min(120, grid_size_from_span(lon_span, 0.4)))
         )
         lat_step = lat_span / resolved_rows
         lon_step = lon_span / resolved_cols
@@ -1369,10 +1382,14 @@ class WeatherEngineService:
         lat_span = max(0.1, bbox.north - bbox.south)
         lon_span = max(0.1, bbox.east - bbox.west)
         resolved_rows = (
-            rows if rows is not None else max(18, min(120, int(lat_span / 0.4)))
+            rows
+            if rows is not None
+            else max(18, min(120, grid_size_from_span(lat_span, 0.4)))
         )
         resolved_cols = (
-            cols if cols is not None else max(18, min(120, int(lon_span / 0.4)))
+            cols
+            if cols is not None
+            else max(18, min(120, grid_size_from_span(lon_span, 0.4)))
         )
         lat_step = lat_span / resolved_rows
         lon_step = lon_span / resolved_cols
@@ -1431,10 +1448,14 @@ class WeatherEngineService:
         lat_span = max(0.1, bbox.north - bbox.south)
         lon_span = max(0.1, bbox.east - bbox.west)
         resolved_rows = (
-            rows if rows is not None else max(18, min(120, int(lat_span / 0.4)))
+            rows
+            if rows is not None
+            else max(18, min(120, grid_size_from_span(lat_span, 0.4)))
         )
         resolved_cols = (
-            cols if cols is not None else max(18, min(120, int(lon_span / 0.4)))
+            cols
+            if cols is not None
+            else max(18, min(120, grid_size_from_span(lon_span, 0.4)))
         )
         lat_step = lat_span / resolved_rows
         lon_step = lon_span / resolved_cols
@@ -1493,10 +1514,14 @@ class WeatherEngineService:
         lat_span = max(0.1, bbox.north - bbox.south)
         lon_span = max(0.1, bbox.east - bbox.west)
         resolved_rows = (
-            rows if rows is not None else max(18, min(120, int(lat_span / 0.4)))
+            rows
+            if rows is not None
+            else max(18, min(120, grid_size_from_span(lat_span, 0.4)))
         )
         resolved_cols = (
-            cols if cols is not None else max(18, min(120, int(lon_span / 0.4)))
+            cols
+            if cols is not None
+            else max(18, min(120, grid_size_from_span(lon_span, 0.4)))
         )
         lat_step = lat_span / resolved_rows
         lon_step = lon_span / resolved_cols
@@ -2103,10 +2128,14 @@ class WeatherEngineService:
         lat_span = max(0.1, bbox.north - bbox.south)
         lon_span = max(0.1, bbox.east - bbox.west)
         resolved_rows = (
-            rows if rows is not None else max(18, min(120, int(lat_span / 0.4)))
+            rows
+            if rows is not None
+            else max(18, min(120, grid_size_from_span(lat_span, 0.4)))
         )
         resolved_cols = (
-            cols if cols is not None else max(18, min(120, int(lon_span / 0.4)))
+            cols
+            if cols is not None
+            else max(18, min(120, grid_size_from_span(lon_span, 0.4)))
         )
         lat_step = lat_span / resolved_rows
         lon_step = lon_span / resolved_cols

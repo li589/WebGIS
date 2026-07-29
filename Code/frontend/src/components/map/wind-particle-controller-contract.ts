@@ -22,6 +22,12 @@ export interface WindParticleSyncOptions {
   getEnabledParticleFlowCatalogId: () => string | null
   /** 风场显示三态；缺省按 particle 处理（兼容旧调用） */
   getWindDisplayMode?: () => WindDisplayMode
+  /** 平滑渲染：网格(off) 模式下用 WebGL 连续数值面，否则 MapLibre 网格色块 */
+  getSmoothRendering?: () => boolean
+  /** 网格 + 平滑：渲染连续风速色面；false 时应回退网格 underlay */
+  syncSmoothScalarUnderlay?: (state: WeatherOverlayState) => boolean
+  /** 离开网格色底时清理 WebGL 标量层 */
+  clearSmoothScalarUnderlay?: (catalogId: string) => void
 }
 
 /** 风粒子控制器公开 API（两种实现的公共面）。 */
@@ -40,4 +46,10 @@ export interface WindParticleControllerContract {
 
   /** 彻底销毁（含 reset 与激活 id 清理） */
   destroy(): void
+
+  /**
+   * 全屏面板盖住地图时暂停风场动画 RAF（不销毁层/不重撒）。
+   * 关闭面板后传 false 续播；sync 建层时也应尊重当前暂停态。
+   */
+  setAnimationPaused(paused: boolean): void
 }

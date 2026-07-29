@@ -11,6 +11,7 @@ from app.services.workflow.service_container import (
     retry_dispatcher,
     submission_service,
 )
+from app.services.workflow.submission_service import WorkflowValidationError
 from shared.contracts.api_contracts import (
     WorkflowAcceptedResponse,
     WorkflowEventsResponse,
@@ -76,6 +77,18 @@ def submit_workflow(payload: WorkflowSubmitRequest) -> WorkflowAcceptedResponse:
     try:
         accepted = submission_service.submit_workflow(payload)
         return accepted
+    except WorkflowValidationError as exc:
+        # 提交期参数预校验失败：返回 422 + 结构化字段级错误，
+        # 供前端定位具体表单字段。必须在 ValueError 之前捕获
+        # （WorkflowValidationError 继承 ValueError）。
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail={
+                "error_type": "validation",
+                "user_message": "请求参数未通过业务校验，请检查表单字段。",
+                "issues": exc.issues,
+            },
+        ) from exc
     except ValueError as exc:
         detail = str(exc)
         status_code = (

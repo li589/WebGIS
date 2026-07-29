@@ -10,14 +10,16 @@ load_dotenv(_env_path)
 
 
 BACKEND_ROOT = Path(__file__).resolve().parents[2]
-DEFAULT_WORKFLOW_STATE_DIR = BACKEND_ROOT / ".data" / "workflow_state"
-DEFAULT_LOG_DIR = BACKEND_ROOT / ".data" / "logs"
-DEFAULT_ARTIFACT_DIR = BACKEND_ROOT / ".data" / "artifacts"
-DEFAULT_CACHE_DIR = BACKEND_ROOT / ".data" / "cache"
+# Runtime cache root on I drive (avoids D drive space exhaustion)
+_RUNTIME_ROOT = Path(os.getenv("BACKEND_RUNTIME_ROOT", r"I:\Geograph_DataSet\_runtime"))
+DEFAULT_WORKFLOW_STATE_DIR = _RUNTIME_ROOT / "workflow_state"
+DEFAULT_LOG_DIR = _RUNTIME_ROOT / "logs"
+DEFAULT_ARTIFACT_DIR = _RUNTIME_ROOT / "artifacts"
+DEFAULT_CACHE_DIR = _RUNTIME_ROOT / "cache"
 DEFAULT_PYTHON_PROVIDER_ROOT = (
     BACKEND_ROOT.parent / "algorithms" / "providers" / "Python"
 )
-DEFAULT_PYTHON_PROVIDER_WORKSPACE = BACKEND_ROOT / ".data" / "python_provider"
+DEFAULT_PYTHON_PROVIDER_WORKSPACE = _RUNTIME_ROOT / "python_provider"
 
 
 def _parse_csv_env(name: str, default: str = "") -> list[str]:
@@ -220,7 +222,7 @@ class Settings:
     # GEE 本地存储根目录（manifest/导出产物落盘根路径）
     gee_local_storage_root: str = os.getenv(
         "BACKEND_GEE_LOCAL_STORAGE_ROOT",
-        str(BACKEND_ROOT / ".data" / "gee"),
+        str(_RUNTIME_ROOT / "gee"),
     )
     # GEE MinIO 配置（仅当 gee_storage_backend=minio 时使用）
     gee_minio_endpoint: str = os.getenv("BACKEND_GEE_MINIO_ENDPOINT", "")
@@ -267,7 +269,7 @@ class Settings:
     # 凭证存储路径（SQLite 文件路径，默认复用 workflow_state 目录）
     gee_credentials_db_path: str = os.getenv(
         "BACKEND_GEE_CREDENTIALS_DB_PATH",
-        str(BACKEND_ROOT / ".data" / "workflow_state" / "gee_credentials.sqlite3"),
+        str(_RUNTIME_ROOT / "workflow_state" / "gee_credentials.sqlite3"),
     )
     # 是否允许通过 API 添加 service_account（生产环境建议 False，仅启动时从环境变量加载）
     gee_api_account_management_enabled: bool = (
@@ -368,6 +370,30 @@ class Settings:
     remote_storage_history_limit: int = int(
         os.getenv("BACKEND_REMOTE_STORAGE_HISTORY_LIMIT", "20")
     )
+
+    # ---- SSH 远程同步 ----
+    ssh_hpc_host: str = os.getenv("BACKEND_SSH_HPC_HOST", "127.0.0.1")
+    ssh_hpc_port: int = int(os.getenv("BACKEND_SSH_HPC_PORT", "2222"))
+    ssh_hpc_user: str = os.getenv("BACKEND_SSH_HPC_USER", "likr6008")
+    ssh_hpc_key_path: str = os.getenv("BACKEND_SSH_HPC_KEY_PATH", "~/.ssh/seahpc_key")
+    ssh_win11_alias: str = os.getenv("BACKEND_SSH_WIN11_ALIAS", "win11-lab")
+    ssh_win11_user: str = os.getenv("BACKEND_SSH_WIN11_USER", "qiujianqiu")
+
+    # ---- Earthdata 凭据 ----
+    earthdata_username: str = os.getenv("BACKEND_EARTHDATA_USERNAME", "")
+    earthdata_password: str = os.getenv("BACKEND_EARTHDATA_PASSWORD", "")
+
+    # ---- FileBrowser ----
+    filebrowser_nas_url: str = os.getenv(
+        "BACKEND_FILEBROWSER_NAS_URL",
+        "https://nasfile.personaltunnel.dpdns.org",
+    )
+    filebrowser_win11_url: str = os.getenv(
+        "BACKEND_FILEBROWSER_WIN11_URL",
+        "https://win11file.personaltunnel.dpdns.org",
+    )
+    filebrowser_user: str = os.getenv("BACKEND_FILEBROWSER_USER", "user")
+    filebrowser_password: str = os.getenv("BACKEND_FILEBROWSER_PASSWORD", "")
 
 
 settings = Settings()
