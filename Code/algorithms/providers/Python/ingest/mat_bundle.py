@@ -44,21 +44,36 @@ def _load_v73_mat_file(file_path: Path) -> dict[str, Any]:
 
 
 def load_mat_file(file_path: str | Path) -> dict[str, Any]:
+    """Load a .mat file, auto-detecting MAT v7.3 (HDF5) vs v5 (scipy).
+
+    On Windows, ``h5py.is_hdf5()`` may raise ``OSError`` instead of returning
+    ``False`` for certain files (antivirus, locking, or permission edge cases).
+    Catch that and fall through to scipy.
+    """
     import h5py
     from scipy.io import loadmat
 
     file_path = Path(file_path)
-    if h5py.is_hdf5(file_path):
-        return _load_v73_mat_file(file_path)
+    file_path_str = str(file_path)
     try:
-        payload = loadmat(file_path, squeeze_me=True, struct_as_record=False)
+        is_hdf5 = h5py.is_hdf5(file_path_str)
+    except OSError:
+        is_hdf5 = False
+    if is_hdf5:
+        return _load_v73_mat_file(file_path_str)
+    try:
+        payload = loadmat(file_path_str, squeeze_me=True, struct_as_record=False)
         return {
             key: value for key, value in payload.items() if not key.startswith("__")
         }
     except NotImplementedError as exc:
         if "Please use HDF reader for matlab v7.3 files" not in str(exc):
             raise
-        return _load_v73_mat_file(file_path)
+        return _load_v73_mat_file(file_path_str)
+    except (FileNotFoundError, OSError):
+        # Windows NTFS 可能出现文件存在于目录列表但无法 open() 的情况
+        # （文件系统损坏 / 权限 / 杀软锁定）。向上传播调用方自行处理回退。
+        raise
 
 
 def normalize_aliases_param(value: Any, default: tuple[str, ...]) -> tuple[str, ...]:

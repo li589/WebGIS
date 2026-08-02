@@ -7,7 +7,6 @@ import { DATA_COPY } from '../../ui-copy/data'
 export type LayerContextActionId =
   | 'zoom'
   | 'toggleVisible'
-  | 'symbology'
   | 'viewDetails'
   | 'bringToFront'
   | 'sendToBack'
@@ -49,8 +48,6 @@ export interface LayerContextMenuInput {
   hasJobReport: boolean
   /** 可提交分析工作流（非天气/导入/边界） */
   canRunWorkflow: boolean
-  /** 是否有颜色图例（决定菜单文案：符号化 vs 透明度） */
-  hasColorSymbology: boolean
 }
 
 const GROUP_LABEL: Record<LayerContextGroupId, string> = {
@@ -92,28 +89,18 @@ export function buildLayerContextMenu(input: LayerContextMenuInput): LayerContex
     ],
   })
 
-  const appearanceItems: LayerContextMenuItem[] = []
-  if (!input.isAdminBoundary) {
-    appearanceItems.push({
-      id: 'symbology',
-      label: input.hasColorSymbology ? LAYERS_COPY.symbology : LAYERS_COPY.opacity,
-      icon: '🎨',
-    })
-  }
-  if (input.isImported) {
-    appearanceItems.push({
-      id: 'openStyle',
-      label: LAYERS_COPY.openStyle,
-      icon: '🖌',
-    })
-  }
-  if (appearanceItems.length) {
-    groups.push({
-      id: 'appearance',
-      label: GROUP_LABEL.appearance,
-      items: appearanceItems,
-    })
-  }
+  // 样式统一进分析面板「样式」Tab（含透明度 / 配色 / 矢量样式 / 风场等）
+  groups.push({
+    id: 'appearance',
+    label: GROUP_LABEL.appearance,
+    items: [
+      {
+        id: 'openStyle',
+        label: LAYERS_COPY.openStyle,
+        icon: '🎨',
+      },
+    ],
+  })
 
   groups.push({
     id: 'order',

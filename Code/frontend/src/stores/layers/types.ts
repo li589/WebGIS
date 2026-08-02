@@ -34,6 +34,8 @@ export interface LayerCatalogItem {
   catalogId: string
   name: string
   category: string
+  /** 课题组数据二级分类: '模型输入' | '模型输出' | '辅助数据' */
+  subCategory?: '模型输入' | '模型输出' | '辅助数据'
   metricLabel: string
   metricUnit: string
   metricPrecision: number
@@ -133,6 +135,14 @@ export interface NodeProgress {
   message?: string
   /** 产物路径列表 */
   artifacts?: string[]
+  /** chunk/pixel 细粒度进度（算法反演等长任务） */
+  detail?: {
+    chunksDone?: number
+    chunksTotal?: number
+    pixelsDone?: number
+    pixelsTotal?: number
+    phase?: string
+  }
 }
 
 export interface JobLayerItem {
@@ -201,6 +211,10 @@ export interface ActiveLayer {
   dataState: 'catalog' | 'real' | 'imported'
   /** 用户自定义配色方案覆盖（覆盖默认 renderHint.palette） */
   paletteOverride?: string | null
+  /** 实例级强调色（侧栏区分 / 时间轴主色） */
+  accentColor?: string
+  accentGlow?: string
+  chipTone?: string
 }
 
 // ─── Layer sidebar view mode ──────────────────────────────────────────────────
@@ -224,6 +238,7 @@ export interface ActiveLayerDisplay {
   catalogId: string
   name: string
   category: string
+  subCategory?: '模型输入' | '模型输出' | '辅助数据'
   description?: string
   engine?: string | null
   supportsTime?: boolean

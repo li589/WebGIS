@@ -76,8 +76,14 @@ class ConsoleLoggerAdapter:
     def emit_stage_start(self, stage: str, message: str) -> None:
         self._emit("stage_start", stage, message)
 
-    def emit_progress(self, stage: str, progress: float, message: str) -> None:
-        self._emit("progress", stage, message, progress=progress)
+    def emit_progress(
+        self,
+        stage: str,
+        progress: float,
+        message: str,
+        detail: dict[str, Any] | None = None,
+    ) -> None:
+        self._emit("progress", stage, message, progress=progress, detail=detail or {})
 
     def emit_warning(
         self,

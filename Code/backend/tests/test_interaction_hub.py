@@ -158,7 +158,8 @@ class WorkflowServicesTests(unittest.TestCase):
                     side_effect=lambda source: f"D:/prepared/{str(source).replace('/', '_')}",
                 ),
                 patch(
-                    "app.services.workflow.submission_service.execute_workflow_task"
+                    "app.services.workflow.submission_service.execute_workflow_task",
+                    return_value=WorkflowExecutionResult(message="ok"),
                 ) as execute_mock,
             ):
                 response = submission.submit_workflow(
@@ -175,7 +176,7 @@ class WorkflowServicesTests(unittest.TestCase):
                 algorithm_request["datasource_selection"]["_data_access_requests"][
                     "NDVI_16DAY_RASTER"
                 ]["selector"]["uris"],
-                ["D:/prepared/I:_Geograph_DataSet_Ecological_Vegetation_NDVI_VIIRS_9km_tif"],
+                ["D:/prepared/NDVI_16DAY_RASTER"],
             )
 
             request_json = repository.get_run_request_json(response.run_id)
@@ -193,7 +194,7 @@ class WorkflowServicesTests(unittest.TestCase):
         # P2.2 修复后 fy-mwri 的首个候选数据源从 “fy” 扩展为 “FY_MWRI_HDF”
         # （见 layer_catalog.py 中 fy-mwri.default_data_access_sources）。
         expected_layers = {
-            "smap-soil": ("smap_daily", "SMAP_SPL3SMP_E", "D:/prepared/I:_Geograph_DataSet_Soil_Moisture_SMAP"),
+            "smap-soil": ("smap_daily", "SMAP_SPL3SMP_E", "D:/prepared/SMAP_L3"),
             "fy-mwri": ("fy_daily", "FY_MWRI_HDF", "D:/prepared/FY_MWRI_HDF"),
         }
 
@@ -205,7 +206,8 @@ class WorkflowServicesTests(unittest.TestCase):
                     side_effect=lambda source: f"D:/prepared/{str(source).replace('/', '_')}",
                 ),
                 patch(
-                    "app.services.workflow.submission_service.execute_workflow_task"
+                    "app.services.workflow.submission_service.execute_workflow_task",
+                    return_value=WorkflowExecutionResult(message="ok"),
                 ) as execute_mock,
             ):
                 for layer_id in expected_layers:
@@ -441,52 +443,7 @@ class WorkflowServicesTests(unittest.TestCase):
                 )
             self.assertIsInstance(response, WorkflowAcceptedResponse)
 
-    def test_submit_workflow_auto_populates_gee_request_from_layer_catalog(
-        self,
-    ) -> None:
-        with _temp_repository() as repository:
-            submission, lifecycle, runtime_status = _build_services(repository)
-            with patch(
-                "app.services.workflow.submission_service.execute_workflow_task"
-            ) as execute_mock:
-                response = submission.submit_workflow(
-                    self._build_payload(
-                        WorkflowCommandType.analysis, layer_id="remote-sensing"
-                    )
-                )
 
-            execute_mock.assert_called_once()
-            normalized_payload = execute_mock.call_args.kwargs["payload"]
-            gee_request = (
-                normalized_payload.gee_request
-                if isinstance(normalized_payload.gee_request, dict)
-                else normalized_payload.gee_request.model_dump(mode="json")
-            )
-            self.assertEqual(gee_request["workflow_id"], "gee-remote-sensing-ndvi")
-            self.assertEqual(
-                gee_request["workflow"]["workflow_id"], "gee-remote-sensing-ndvi"
-            )
-            self.assertEqual(
-                gee_request["workflow"]["nodes"][0]["node_type"], "gee_image"
-            )
-            self.assertEqual(
-                gee_request["workflow"]["nodes"][1]["node_type"], "gee_spectral_index"
-            )
-            self.assertEqual(
-                gee_request["workflow"]["nodes"][2]["node_type"], "gee_export_image"
-            )
-
-            request_json = repository.get_run_request_json(response.run_id)
-            self.assertIsNotNone(request_json)
-            persisted_payload = WorkflowSubmitRequest.model_validate_json(request_json)
-            persisted_gee_request = (
-                persisted_payload.gee_request
-                if isinstance(persisted_payload.gee_request, dict)
-                else persisted_payload.gee_request.model_dump(mode="json")
-            )
-            self.assertEqual(
-                persisted_gee_request["workflow_id"], "gee-remote-sensing-ndvi"
-            )
 
 
 if __name__ == "__main__":

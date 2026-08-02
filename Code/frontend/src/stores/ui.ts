@@ -3,9 +3,23 @@ import { defineStore } from 'pinia'
 
 import type { TileSourceId } from '../services/api-config'
 import { getDefaultTileSource } from '../services/api-config'
-import { CLOCK_DAY_MAX_HOUR, formatClockHourLabel } from '../utils/weather-timeline'
+import {
+  CLOCK_DAY_MAX_HOUR,
+  formatClockHourLabel,
+  quantizeClockHour,
+} from '../utils/weather-timeline'
+import {
+  DEFAULT_PLAY_INTERVAL_MS,
+  loadPlayIntervalMs,
+  persistPlayIntervalMs,
+  isValidPlayIntervalMs,
+} from '../utils/timeline-play'
 
 export type { TileSourceId } from '../services/api-config'
+export {
+  DEFAULT_PLAY_INTERVAL_MS,
+  TIMELINE_PLAY_INTERVAL_OPTIONS,
+} from '../utils/timeline-play'
 
 /** 地图交互模式：移动（拖动视角）/ 选择（点击查询点气象）/ 测量（路径规划与测距） */
 export type InteractionMode = 'move' | 'select' | 'measure'
@@ -66,7 +80,7 @@ function loadLayerMemory(): Record<string, LayerTimeMemory> {
       if (typeof row.dateKey === 'string' && typeof row.hour === 'number') {
         out[k] = {
           dateKey: row.dateKey,
-          hour: Math.max(0, Math.min(CLOCK_DAY_MAX_HOUR, Math.round(row.hour))),
+          hour: quantizeClockHour(row.hour),
         }
       }
     }
@@ -84,6 +98,7 @@ export const useUiStore = defineStore('ui', () => {
   const now = new Date()
   const currentHour = ref(now.getHours())
   const isPlaying = ref(false)
+  const playIntervalMs = ref(loadPlayIntervalMs())
   const currentDate = ref(now)
 
   /**
@@ -92,6 +107,23 @@ export const useUiStore = defineStore('ui', () => {
    */
   const unifiedTimeLock = ref(loadUnifiedFlag())
   const layerTimeMemory = ref<Record<string, LayerTimeMemory>>(loadLayerMemory())
+  const lockedLayerIds = ref<Record<string, boolean>>({})
+  const activeTimeGranularity = ref<'hour' | 'day' | 'month' | 'year' | 'static'>('hour')
+
+  function toggleLayerTimeLock(catalogId: string) {
+    lockedLayerIds.value = {
+      ...lockedLayerIds.value,
+      [catalogId]: !lockedLayerIds.value[catalogId],
+    }
+  }
+
+  function isLayerTimeLocked(catalogId: string): boolean {
+    return !!lockedLayerIds.value[catalogId]
+  }
+
+  function setTimelineGranularity(granularity: 'hour' | 'day' | 'month' | 'year' | 'static') {
+    activeTimeGranularity.value = granularity
+  }
 
   const interactionMode = ref<InteractionMode>('move')
 
@@ -136,10 +168,12 @@ export const useUiStore = defineStore('ui', () => {
   }
 
   function setHour(hour: number) {
-    currentHour.value = Math.max(0, Math.min(CLOCK_DAY_MAX_HOUR, Math.round(hour)))
+    if (!Number.isFinite(hour)) return
+    currentHour.value = quantizeClockHour(hour)
   }
 
   function stepHour(delta: number) {
+    if (!Number.isFinite(delta) || delta === 0) return
     const nextValue = currentHour.value + delta
 
     if (nextValue < 0) {
@@ -158,7 +192,7 @@ export const useUiStore = defineStore('ui', () => {
       return
     }
 
-    currentHour.value = nextValue
+    currentHour.value = quantizeClockHour(nextValue)
   }
 
   function play() {
@@ -173,6 +207,12 @@ export const useUiStore = defineStore('ui', () => {
     isPlaying.value = !isPlaying.value
   }
 
+  function setPlayIntervalMs(ms: number) {
+    const next = isValidPlayIntervalMs(ms) ? ms : DEFAULT_PLAY_INTERVAL_MS
+    playIntervalMs.value = next
+    persistPlayIntervalMs(next)
+  }
+
   function setDate(date: Date) {
     currentDate.value = date
   }
@@ -185,9 +225,13 @@ export const useUiStore = defineStore('ui', () => {
     unifiedTimeLock.value = !unifiedTimeLock.value
   }
 
-  /** 记住某图层最近使用的日期+钟点（仅非统一模式有意义） */
-  function rememberLayerTime(catalogId: string | null | undefined) {
-    if (!catalogId || unifiedTimeLock.value) return
+  /** 记住某图层最近使用的日期+钟点（仅非统一模式且未被单独锁定时有效） */
+  function rememberLayerTime(
+    catalogId: string | null | undefined,
+    options?: { force?: boolean },
+  ) {
+    if (!catalogId) return
+    if (!options?.force && (unifiedTimeLock.value || isLayerTimeLocked(catalogId))) return
     layerTimeMemory.value = {
       ...layerTimeMemory.value,
       [catalogId]: {
@@ -265,17 +309,24 @@ export const useUiStore = defineStore('ui', () => {
     hourLabel,
     fullTimeLabel,
     isPlaying,
+    playIntervalMs,
     currentDate,
     unifiedTimeLock,
     layerTimeMemory,
     interactionMode,
     measureState,
+    lockedLayerIds,
+    activeTimeGranularity,
+    toggleLayerTimeLock,
+    isLayerTimeLocked,
+    setTimelineGranularity,
     setTileSource,
     setHour,
     stepHour,
     play,
     pause,
     togglePlay,
+    setPlayIntervalMs,
     setDate,
     setUnifiedTimeLock,
     toggleUnifiedTimeLock,

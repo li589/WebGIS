@@ -286,6 +286,9 @@ def _validate_binding(
             f"{path} must be a non-empty binding string"
         )
 
+    if binding.startswith("literal:"):
+        return
+
     if binding.startswith("input:"):
         input_name = binding.split(":", 1)[1]
         if not input_name:

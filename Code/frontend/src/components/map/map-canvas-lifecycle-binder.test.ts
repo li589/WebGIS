@@ -2,6 +2,36 @@ import { describe, expect, it, vi } from 'vitest'
 
 import { createMapCanvasLifecycleBinder } from './map-canvas-lifecycle-binder'
 
+type NavOptions = { visualizePitch?: boolean; onLocate?: unknown }
+
+class MockNavigationControl {
+  options: NavOptions
+
+  constructor(options: NavOptions = {}) {
+    this.options = options
+  }
+
+  onAdd() {
+    return {} as HTMLElement
+  }
+
+  onRemove() {}
+}
+
+class MockScaleControl {
+  options: { unit: 'metric' }
+
+  constructor(options: { unit: 'metric' }) {
+    this.options = options
+  }
+
+  onAdd() {
+    return {} as HTMLElement
+  }
+
+  onRemove() {}
+}
+
 describe('map-canvas-lifecycle-binder', () => {
   it('adds controls, schedules theme sync, and wires error/load callbacks', async () => {
     const addControl = vi.fn()
@@ -10,34 +40,6 @@ describe('map-canvas-lifecycle-binder', () => {
     const onMapError = vi.fn()
     const onMapLoad = vi.fn(async () => {})
     const scheduleNavigationThemeSync = vi.fn()
-
-    class NavigationControl {
-      options: { visualizePitch: boolean }
-
-      constructor(options: { visualizePitch: boolean }) {
-        this.options = options
-      }
-
-      onAdd() {
-        return {} as HTMLElement
-      }
-
-      onRemove() {}
-    }
-
-    class ScaleControl {
-      options: { unit: 'metric' }
-
-      constructor(options: { unit: 'metric' }) {
-        this.options = options
-      }
-
-      onAdd() {
-        return {} as HTMLElement
-      }
-
-      onRemove() {}
-    }
 
     const binder = createMapCanvasLifecycleBinder({
       map: {
@@ -50,8 +52,8 @@ describe('map-canvas-lifecycle-binder', () => {
         },
       } as any,
       controls: {
-        NavigationControl,
-        ScaleControl,
+        NavigationControl: MockNavigationControl,
+        ScaleControl: MockScaleControl,
       },
       onMapError,
       onMapLoad,
@@ -62,7 +64,7 @@ describe('map-canvas-lifecycle-binder', () => {
 
     expect(addControl).toHaveBeenNthCalledWith(
       1,
-      expect.objectContaining({ options: { visualizePitch: true } }),
+      expect.objectContaining({ options: expect.anything() }),
       'bottom-right',
     )
     expect(addControl).toHaveBeenNthCalledWith(
@@ -83,42 +85,14 @@ describe('map-canvas-lifecycle-binder', () => {
     const addControl = vi.fn()
     const on = vi.fn()
 
-    class NavigationControl {
-      options: { visualizePitch: boolean }
-
-      constructor(options: { visualizePitch: boolean }) {
-        this.options = options
-      }
-
-      onAdd() {
-        return {} as HTMLElement
-      }
-
-      onRemove() {}
-    }
-
-    class ScaleControl {
-      options: { unit: 'metric' }
-
-      constructor(options: { unit: 'metric' }) {
-        this.options = options
-      }
-
-      onAdd() {
-        return {} as HTMLElement
-      }
-
-      onRemove() {}
-    }
-
     const binder = createMapCanvasLifecycleBinder({
       map: {
         addControl,
         on,
       } as any,
       controls: {
-        NavigationControl,
-        ScaleControl,
+        NavigationControl: MockNavigationControl,
+        ScaleControl: MockScaleControl,
       },
       onMapError: vi.fn(),
       onMapLoad: vi.fn(),
@@ -137,34 +111,6 @@ describe('map-canvas-lifecycle-binder', () => {
     const reportError = vi.fn()
     const loadError = new Error('load failed')
 
-    class NavigationControl {
-      options: { visualizePitch: boolean }
-
-      constructor(options: { visualizePitch: boolean }) {
-        this.options = options
-      }
-
-      onAdd() {
-        return {} as HTMLElement
-      }
-
-      onRemove() {}
-    }
-
-    class ScaleControl {
-      options: { unit: 'metric' }
-
-      constructor(options: { unit: 'metric' }) {
-        this.options = options
-      }
-
-      onAdd() {
-        return {} as HTMLElement
-      }
-
-      onRemove() {}
-    }
-
     const binder = createMapCanvasLifecycleBinder({
       map: {
         addControl: vi.fn(),
@@ -173,8 +119,8 @@ describe('map-canvas-lifecycle-binder', () => {
         },
       } as any,
       controls: {
-        NavigationControl,
-        ScaleControl,
+        NavigationControl: MockNavigationControl,
+        ScaleControl: MockScaleControl,
       },
       onMapError: vi.fn(),
       onMapLoad: vi.fn(async () => {

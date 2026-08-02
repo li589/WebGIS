@@ -15,6 +15,7 @@ CGDA（综合地理数据分析系统）：基于 Web 的地理信息平台，�
 | `Code/algorithms/` | Python 算法包：contracts / data_access / runner / publish | `providers/Python/`（lint/mypy 覆盖范围） |
 | `Code/shared/` | 前后端共享协议与公共契约 | `contracts/` |
 | `Code/infra/data-sync/` | 数据面 compose（Open-Meteo 同步，与运行栈隔离） | `docker-compose.yml`、`sync.sh` / `sync.ps1` |
+| `Code/infra/gateway/` | 可选 Nginx 同域入口（静态 dist + 反代 FastAPI `:8000`） | `docker-compose.yml`、`nginx.conf`、`README.md` |
 | `Doc/` | 方案、技术栈、规范与协作文档 | — |
 | `Tools/` | 主线外辅助（下载/校验/一次性脚本）；**禁止**放主体功能与运行时模块，见 `Tools/README.md` | — |
 | `Env/Python312/` | **本地联调唯一 Python 运行时**（Windows: `python.exe`） | 依赖与后端/Worker 必须与此一致 |
@@ -29,16 +30,26 @@ CGDA（综合地理数据分析系统）：基于 Web 的地理信息平台，�
 - **手动调用**：`Env\Python312\python.exe launch.py <cmd>`。
 - Agent 在本仓库执行后端/pytest/launch 时，也应优先该解释器。
 
+## Windows：Docker 管理员身份（硬约定）
+
+在 **Windows** 上启动本仓库 Docker 相关服务（`launch.py start` / `start docker` / `sync`）时：
+
+- **Docker Desktop 与运行启动命令的终端必须以管理员身份运行。**
+- 否则可能出现：**镜像无法访问/拉取**、named volume 或引擎配置读失败、部分容器起不全。
+- 默认联调**不包含 Nginx**；可选剖面 `launch.py start gateway`（见 `Code/infra/gateway/`），日常入口是 Vite `:5175` + FastAPI `:8000`。
+
 ## 命令指针（launch.py）
 
 所有日常联调经根目录 `launch.py`（由 `start.bat` 等以 `Env/Python312` 调用）：
 
 | 命令 | 作用 |
 |------|------|
-| `start.bat` 或 `Env\Python312\python.exe launch.py start` | 启动全部（Docker + FastAPI + 7 Worker + Beat + 前端） |
-| `Env\Python312\python.exe launch.py start <component>` | 单组件：`docker` / `fastapi` / `beat` / `worker` / `worker:<name>` / `frontend` |
-| `stop.bat` / `… launch.py stop` | 停止全部服务（含 Docker 容器） |
-| `… launch.py status` | 查看服务状态（Docker / FastAPI :8000 / 前端 :5175 / Worker PID / volume） |
+| `start.bat` 或 `Env\Python312\python.exe launch.py start` | 启动全部（Docker + FastAPI + 7 Worker + Beat + Vite 前端） |
+| `Env\Python312\python.exe launch.py start <component>` | 单组件：`docker` / `fastapi` / `beat` / `worker` / `worker:<name>` / `frontend` / `gateway` |
+| `Env\Python312\python.exe launch.py start gateway` | Nginx 同域入口 `:5175`（静态 dist + 反代 API；与 Vite 互斥） |
+| `stop.bat` / `… launch.py stop` | 停止全部服务（含 Docker 与 gateway 容器） |
+| `… launch.py stop gateway` | 仅停 Nginx Gateway |
+| `… launch.py status` | 查看服务状态（Docker / FastAPI :8000 / 前端 :5175 / Gateway / Worker PID / volume） |
 | `… launch.py logs [component] [-n N]` | 查看日志 |
 | `… launch.py flush` | 清空 Redis DB + 应用天气文件缓存（**见高风险区**） |
 | `… launch.py sync [job]` | 数据面一次性同步（默认 `open-meteo-sync`） |

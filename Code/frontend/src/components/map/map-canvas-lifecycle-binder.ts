@@ -1,9 +1,15 @@
+import {
+  MapChromeNavigationControl,
+  createMapChromeScaleControl,
+  ensureMapChromeControlStyles,
+} from './map-chrome-controls'
+
 type MapInstance = import('maplibre-gl').Map
 type MapControl = import('maplibre-gl').IControl
 
 interface MapControlConstructors {
-  NavigationControl: new (options: { visualizePitch: boolean }) => MapControl
-  ScaleControl: new (options: { unit: 'metric' }) => MapControl
+  NavigationControl?: new (options: { visualizePitch?: boolean; onLocate?: unknown }) => MapControl
+  ScaleControl?: new (options: { unit: 'metric' }) => MapControl
 }
 
 export interface MapCanvasLifecycleBinder {
@@ -12,7 +18,8 @@ export interface MapCanvasLifecycleBinder {
 
 interface CreateMapCanvasLifecycleBinderOptions {
   map: MapInstance
-  controls: MapControlConstructors
+  controls?: MapControlConstructors
+  onLocate?: () => void
   onMapError: (event: unknown) => void
   onMapLoad: () => void | Promise<void>
   scheduleNavigationThemeSync: () => void
@@ -31,11 +38,18 @@ export function createMapCanvasLifecycleBinder(
     if (bound) return
     bound = true
 
-    options.map.addControl(
-      new options.controls.NavigationControl({ visualizePitch: true }),
-      'bottom-right',
-    )
-    options.map.addControl(new options.controls.ScaleControl({ unit: 'metric' }), 'bottom-left')
+    ensureMapChromeControlStyles()
+
+    const navControl = options.controls?.NavigationControl
+      ? new options.controls.NavigationControl({ onLocate: options.onLocate })
+      : new MapChromeNavigationControl({ onLocate: options.onLocate })
+    options.map.addControl(navControl, 'bottom-right')
+
+    const scaleControl = options.controls?.ScaleControl
+      ? new options.controls.ScaleControl({ unit: 'metric' })
+      : createMapChromeScaleControl({ unit: 'metric' })
+    options.map.addControl(scaleControl, 'bottom-left')
+
     options.scheduleNavigationThemeSync()
 
     options.map.on('error', (event) => {

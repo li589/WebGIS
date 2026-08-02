@@ -864,7 +864,9 @@ _NODE_TEMPLATES: list[dict[str, Any]] = [
         "inputs": [
             _port("data", "data", description="要输出的图层数据。"),
         ],
-        "outputs": [],
+        "outputs": [
+            _port("manifest", "data", description="产物清单。"),
+        ],
         "params": [
             _param("layer_id", "string", description="目标图层标识符。"),
             _param("display_name", "string", description="图层显示名称。"),
@@ -880,7 +882,9 @@ _NODE_TEMPLATES: list[dict[str, Any]] = [
         "inputs": [
             _port("data", "data", description="要输出的数据。"),
         ],
-        "outputs": [],
+        "outputs": [
+            _port("manifest", "data", description="产物清单。"),
+        ],
         "params": [
             _param(
                 "format",

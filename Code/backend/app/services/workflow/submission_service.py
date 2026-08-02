@@ -248,9 +248,7 @@ class WorkflowSubmissionService:
                     run_id=run_id,
                     payload=payload,
                     requested_at=running_at,
-                    event_factory=lambda **kwargs: self._persistence.make_event(
-                        run_id=run_id, **kwargs
-                    ),
+                    event_factory=self._make_persisting_event_factory(run_id),
                 )
                 self.lifecycle.finalize_workflow_success(
                     run_id=run_id,
@@ -274,6 +272,21 @@ class WorkflowSubmissionService:
                     created_at=created_at,
                     exc=exc,
                 )
+
+    def _make_persisting_event_factory(self, run_id: str):
+        """Create event_factory that persists immediately for UI mid-run progress.
+
+        Bridges call this factory during execute (node_progress) and also return
+        the same event objects in ``execution.events`` for lifecycle finalize.
+        ``append_event`` uses INSERT OR IGNORE so finalize re-writes are safe.
+        """
+
+        def _factory(**kwargs):
+            event = self._persistence.make_event(run_id=run_id, **kwargs)
+            self._persistence.record_event(event=event)
+            return event
+
+        return _factory
 
     def get_workflow_run(self, run_id: str) -> WorkflowRunStatusResponse | None:
         return self._repository.get_run(run_id)

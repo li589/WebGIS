@@ -8,7 +8,13 @@ class LoggerAdapter(Protocol):
 
     def emit_stage_start(self, stage: str, message: str) -> None: ...
 
-    def emit_progress(self, stage: str, progress: float, message: str) -> None: ...
+    def emit_progress(
+        self,
+        stage: str,
+        progress: float,
+        message: str,
+        detail: dict[str, Any] | None = None,
+    ) -> None: ...
 
     def emit_warning(
         self,

@@ -10,6 +10,16 @@ import os
 import sys
 from pathlib import Path
 
+os.environ["ENVIRONMENT"] = "test"
+os.environ["BACKEND_ENV"] = "test"
+os.environ["BACKEND_WORKFLOW_EXECUTOR"] = "sync"
+
+try:
+    import app.core.config
+    app.core.config.settings = app.core.config.Settings()
+except Exception:
+    pass
+
 _BACKEND_ROOT = Path(__file__).resolve().parent.parent
 _CODE_ROOT = _BACKEND_ROOT.parent
 _GEE_SRC = _BACKEND_ROOT / "app" / "gee" / "core" / "src"

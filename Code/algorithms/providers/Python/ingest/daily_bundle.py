@@ -412,13 +412,51 @@ def load_ndvi_row_for_day(
 
 
 def _resolve_daily_mat_file(folder: str | Path, date_key: str) -> Path:
+    """解析指定日期的 MAT 文件路径。
+
+    匹配优先级：
+    1. 精确匹配 YYYYMMDD.mat
+    2. 严格模式匹配 YYYYMMDD_suffix.mat（单下划线+字母数字后缀）
+    3. 宽松模糊匹配 *YYYYMMDD*.mat（带警告日志）
+
+    Args:
+        folder: MAT 文件目录
+        date_key: 日期键 (YYYYMMDD)
+
+    Returns:
+        匹配的 MAT 文件路径
+
+    Raises:
+        FileNotFoundError: 找不到任何匹配文件
+    """
+    import re
+
     folder = Path(folder)
-    direct = folder / f"{date_key}.mat"
-    if direct.exists():
-        return direct
+
+    # 优先级 1: 精确匹配 YYYYMMDD.mat
+    exact = folder / f"{date_key}.mat"
+    if exact.exists():
+        return exact
+
+    # 优先级 2: 严格模式 YYYYMMDD_suffix.mat
+    # 只允许单下划线后跟字母数字后缀，避免匹配 202501011_bundle.mat 这类错误
+    strict_pattern = re.compile(rf"^{re.escape(date_key)}_[a-zA-Z0-9_]+\.mat$")
+    for f in folder.glob("*.mat"):
+        if strict_pattern.match(f.name):
+            return f
+
+    # 优先级 3: 宽松模糊匹配（带警告）
     matches = sorted(folder.glob(f"*{date_key}*.mat"))
     if matches:
+        # 记录警告，提示用户可能的误匹配
+        import logging
+        logging.getLogger(__name__).warning(
+            "使用模糊匹配找到 %s 的 MAT 文件: %s (建议规范命名为 YYYYMMDD.mat 或 YYYYMMDD_suffix.mat)",
+            date_key,
+            matches[0].name,
+        )
         return matches[0]
+
     raise FileNotFoundError(f"Cannot find daily MAT file for {date_key} under {folder}")
 
 

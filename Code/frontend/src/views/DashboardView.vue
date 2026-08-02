@@ -32,6 +32,8 @@ import {
   dateHourToTileHour,
   findLatestValidCoverageInstant,
 } from '../utils/weather-timeline'
+import type { TimeGranularity, TimelineAvailabilitySegment } from '../utils/layer-timeline'
+import { generateTimelineSegments } from '../utils/layer-timeline'
 import { buildFallbackActiveLayerDisplay } from '../components/map/map-stage-view-model'
 import {
   resolveAnalysisStageKind,
@@ -54,7 +56,7 @@ void layersStore.ensureRuntimeLayerCatalog().finally(() => {
 // 恢复后端活跃工作流（跨会话 / 定时器触发 / 其他客户端提交）
 void layersStore.restoreActiveWorkflows()
 
-const { tileSourceId, currentHour, currentDate, hourLabel, isPlaying, unifiedTimeLock } =
+const { tileSourceId, currentHour, currentDate, hourLabel, isPlaying, playIntervalMs, unifiedTimeLock } =
   storeToRefs(uiStore)
 const {
   selectedLayerDisplay,
@@ -107,6 +109,7 @@ const screenshotOpen = ref(false)
 const workflowStatusOpen = ref(false)
 const logOpen = ref(false)
 const settingsOpen = ref(false)
+const analysisPanelRef = ref<{ showPanel: () => void } | null>(null)
 
 // 本地 Open-Meteo 覆盖范围：按「日期+钟点」着色；瓦片 hour 由日期映射得出
 const weatherCoverage = ref<WeatherCoverage | null>(null)
@@ -140,6 +143,8 @@ onMounted(() => {
 })
 
 const coverageSourceLabel = computed(() => {
+  const hasRealLayer = Boolean(selectedLayerDisplay.value?.catalogId)
+  if (!hasRealLayer) return '未选择图层'
   const mode = unifiedTimeLock.value ? '统一时间' : '分图层'
   const layerName = activeLayer.value?.name
   const base = layerName ? `${mode} · ${layerName}` : mode
@@ -147,6 +152,19 @@ const coverageSourceLabel = computed(() => {
   if (!weatherCoverage.value && weatherSyncStatus.modelEmpty) return `${base} · 本地无数据`
   return base
 })
+
+/** 是否选中了真实图层（非空状态占位） */
+const hasTimelineLayer = computed(() => Boolean(selectedLayerDisplay.value?.catalogId))
+
+const timelineLayerName = computed(() =>
+  hasTimelineLayer.value ? activeLayer.value.name : '未选择图层',
+)
+const timelineAvailabilityLabel = computed(() =>
+  hasTimelineLayer.value ? activeLayer.value.availabilityLabel : '空闲',
+)
+const timelineObservationLabel = computed(() =>
+  hasTimelineLayer.value ? activeLayer.value.observationTimeLabel : '—',
+)
 
 /** 瓦片 API 用的预报偏移：由所选日期+钟点映射，不限制 UI 拖动 */
 const tileForecastHour = computed(() =>
@@ -319,16 +337,54 @@ const analysisPanelDimensions = Object.freeze({
   defaultWidth: 304,
 })
 
+const activeLayerGranularity = computed<TimeGranularity>(() => {
+  const catalogId = activeLayer.value?.catalogId
+  if (!catalogId) return 'hour'
+  const descriptor = layersStore.resolveEffectiveDescriptor(catalogId)
+  if (!descriptor) {
+    return layersStore.isWeatherEngineLayer(catalogId) ? 'hour' : 'hour'
+  }
+  const gran =
+    (descriptor as { time_granularity?: string }).time_granularity ||
+    (descriptor as { timeGranularity?: string }).timeGranularity
+  if (gran === 'static' || descriptor.supports_time === false) return 'static'
+  if (gran === 'month' || gran === 'year' || gran === 'day' || gran === 'hour') return gran
+  return 'hour'
+})
+
+const isLayerLocked = computed(() => {
+  const catalogId = activeLayer.value?.catalogId
+  return catalogId ? uiStore.isLayerTimeLocked(catalogId) : false
+})
+
 /**
- * 时间轴色段：按「当前所选日期」判断各钟点是否有覆盖。
- * 绿=有数据，黄=加载中，紫=无数据。
+ * 时间轴色段：根据激活图层粒度（static/month/year/day/hour）自动生成或计算。
+ * 无选中图层时固定为空闲 8 段，不沿用全局 weather coverage，避免 UI 跳变。
  */
-const timelineSegments = computed(() => {
+const timelineSegments = computed((): TimelineAvailabilitySegment[] => {
   void weatherStatusVersion.value
   void weatherActivityVersion.value
   void currentHour.value
   void currentDate.value
   void weatherCoverage.value
+
+  if (!hasTimelineLayer.value) {
+    return buildClockDayTimelineSegments({
+      selectedDate: currentDate.value,
+      currentHour: currentHour.value,
+      coverage: null,
+      currentStatus: null,
+      isWeatherLayer: false,
+    })
+  }
+
+  const gran = activeLayerGranularity.value
+  if (gran === 'static') {
+    return generateTimelineSegments(currentDate.value, 'static')
+  }
+  if (gran === 'month' || gran === 'year' || gran === 'day') {
+    return generateTimelineSegments(currentDate.value, gran)
+  }
 
   const layer = activeLayer.value
   const catalogId = layer.catalogId
@@ -339,12 +395,20 @@ const timelineSegments = computed(() => {
   return buildClockDayTimelineSegments({
     selectedDate: currentDate.value,
     currentHour: currentHour.value,
-    coverage: weatherCoverage.value,
+    coverage: isWeatherLayer ? weatherCoverage.value : null,
     currentStatus,
     isWeatherLayer,
     runReadiness: layer.runReadiness,
   })
 })
+
+watch(
+  () => uiStore.analysisFocusRequest,
+  (request) => {
+    if (!request) return
+    analysisPanelRef.value?.showPanel()
+  },
+)
 
 function handleTileSourceChange(sourceId: TileSourceId) {
   uiStore.setTileSource(sourceId)
@@ -435,6 +499,7 @@ async function fetchOverlayPointValues(lng: number, lat: number) {
 }
 
 function handleTimelineStep(delta: number) {
+  if (!Number.isFinite(delta) || delta === 0) return
   uiStore.stepHour(delta)
   if (!unifiedTimeLock.value) uiStore.rememberLayerTime(selectedCatalogId.value)
   logStore.logOperation(
@@ -444,6 +509,7 @@ function handleTimelineStep(delta: number) {
 }
 
 function handleTimelineChange(hour: number) {
+  if (!Number.isFinite(hour)) return
   uiStore.setHour(hour)
   if (!unifiedTimeLock.value) uiStore.rememberLayerTime(selectedCatalogId.value)
   logStore.logOperation('timeline-change', `时间轴跳转到 ${hourLabel.value}`)
@@ -463,14 +529,41 @@ function handleTimelineTogglePlay() {
   logStore.logOperation('timeline-play', isPlaying.value ? '时间轴播放' : '时间轴暂停')
 }
 
+function handleTimelinePlayInterval(ms: number) {
+  uiStore.setPlayIntervalMs(ms)
+  logStore.logOperation('timeline-play-interval', `播放间隔设为 ${ms}ms`)
+}
+
 function handleTimelineToggleUnified() {
+  const turningOn = !unifiedTimeLock.value
+  if (turningOn && selectedCatalogId.value) {
+    // 开启前先写入当前层记忆（开启后 remember 会被统一模式挡住）
+    uiStore.rememberLayerTime(selectedCatalogId.value, { force: true })
+  }
   uiStore.toggleUnifiedTimeLock()
   const on = unifiedTimeLock.value
-  if (on && selectedCatalogId.value) {
-    // 开启统一时间时，以当前选中层时刻作为共享基准并写入各天气层记忆
-    uiStore.rememberLayerTime(selectedCatalogId.value)
+  if (!on && selectedCatalogId.value) {
+    // 切回图层记忆：恢复选中层最近时刻
+    uiStore.restoreLayerTime(selectedCatalogId.value)
   }
   logStore.logOperation('timeline-unified', on ? '开启统一时间' : '关闭统一时间（分图层记忆）')
+}
+
+function handleToggleLayerLock() {
+  const catalogId = activeLayer.value?.catalogId
+  if (catalogId) {
+    const willLock = !uiStore.isLayerTimeLocked(catalogId)
+    if (willLock) {
+      // 锁定时快照当前时刻，切回该层可恢复
+      uiStore.rememberLayerTime(catalogId, { force: true })
+    }
+    uiStore.toggleLayerTimeLock(catalogId)
+    const locked = uiStore.isLayerTimeLocked(catalogId)
+    logStore.logOperation(
+      'timeline-lock',
+      `图层 ${activeLayer.value.name} 时间记忆锁定: ${locked ? '已锁定' : '已解锁'}`,
+    )
+  }
 }
 
 function handleVisibleHotspotsChange(hotspots: LayerHotspot[]) {
@@ -743,6 +836,7 @@ watch(tileForecastHour, () => {
 
       <div class="overlay overlay-right">
         <ControlPanel
+          ref="analysisPanelRef"
           panel-label="分析"
           panel-key="analysis"
           handle-position="bottom-left"
@@ -787,28 +881,34 @@ watch(tileForecastHour, () => {
           :max-offset-x="140"
           :max-offset-y="70"
           :default-width="720"
-          :default-height="180"
+          :default-height="205"
           :min-width="460"
-          :min-height="175"
+          :min-height="195"
           :max-width="980"
-          :max-height="220"
+          :max-height="260"
         >
           <TimelineScrubber
             :current-hour="currentHour"
             :current-date="currentDate"
             :hour-label="hourLabel"
-            :accent-color="activeLayer.accentColor"
-            :availability-label="activeLayer.availabilityLabel"
-            :observation-time-label="activeLayer.observationTimeLabel"
+            :accent-color="hasTimelineLayer ? activeLayer.accentColor : '#64748b'"
+            :availability-label="timelineAvailabilityLabel"
+            :observation-time-label="timelineObservationLabel"
             :timeline-segments="timelineSegments"
             :coverage-source-label="coverageSourceLabel"
             :unified-time-lock="unifiedTimeLock"
             :is-playing="isPlaying"
+            :play-interval-ms="playIntervalMs"
+            :granularity="hasTimelineLayer ? activeLayerGranularity : 'hour'"
+            :active-layer-name="timelineLayerName"
+            :is-layer-locked="isLayerLocked"
             @step="handleTimelineStep"
             @change-hour="handleTimelineChange"
             @change-date="handleTimelineDateChange"
             @toggle-play="handleTimelineTogglePlay"
+            @change-play-interval="handleTimelinePlayInterval"
             @toggle-unified-time="handleTimelineToggleUnified"
+            @toggle-layer-lock="handleToggleLayerLock"
           />
         </TimelinePanel>
       </div>
@@ -820,6 +920,7 @@ watch(tileForecastHour, () => {
       :map-shell-el="mapShellRef"
       :map-stage-el="mapCanvasRef?.getMapStageElement() ?? null"
       :capture-map-canvas="mapCanvasRef?.captureMapCanvas ?? null"
+      :set-wind-animation-paused="mapCanvasRef?.setWindAnimationPaused ?? null"
       :active-layer-name="activeLayer.name"
       :hour-label="hourLabel"
       @close="handleCloseScreenshot"

@@ -6,6 +6,7 @@ import {
   findLatestValidCoverageInstant,
   formatClockHourLabel,
   isDateHourWithinCoverage,
+  quantizeClockHour,
 } from './weather-timeline'
 
 describe('weather-timeline (日历日)', () => {
@@ -24,14 +25,24 @@ describe('weather-timeline (日历日)', () => {
     max_tile_hour: 47,
   }
 
-  it('刻度标签单行 HH:00', () => {
+  it('刻度标签单行 HH:MM', () => {
     expect(formatClockHourLabel(9)).toBe('09:00')
     expect(formatClockHourLabel(23)).toBe('23:00')
+    expect(formatClockHourLabel(14.5)).toBe('14:30')
+    expect(formatClockHourLabel(14.25)).toBe('14:15')
+  })
+
+  it('quantizeClockHour 钳制并量化到 0.25', () => {
+    expect(quantizeClockHour(14.24)).toBe(14.25)
+    expect(quantizeClockHour(-1)).toBe(0)
+    expect(quantizeClockHour(99)).toBe(23)
+    expect(quantizeClockHour(Number.NaN)).toBe(0)
   })
 
   it('覆盖判断考虑日期', () => {
     expect(isDateHourWithinCoverage(coverage, new Date(2026, 6, 21), 12)).toBe(true)
     expect(isDateHourWithinCoverage(coverage, new Date(2026, 6, 25), 12)).toBe(false)
+    expect(isDateHourWithinCoverage(coverage, new Date(2026, 6, 21), 12.5)).toBe(true)
   })
 
   it('dateHourToTileHour 映射到 times 索引', () => {
@@ -55,7 +66,7 @@ describe('weather-timeline (日历日)', () => {
     expect(latest?.date.getDate()).toBe(22) // base+47h → 7/22 23:00
   })
 
-  it('色段：有覆盖=ready，加载中=partial', () => {
+  it('色段：有覆盖=ready，加载中=partial，且带 index=hour', () => {
     const segs = buildClockDayTimelineSegments({
       selectedDate: new Date(2026, 6, 21),
       currentHour: 12,
@@ -70,8 +81,10 @@ describe('weather-timeline (日历日)', () => {
     })
     expect(segs).toHaveLength(8)
     expect(segs.every((s) => /^\d{2}:\d{2}$/.test(s.label))).toBe(true)
+    expect(segs.every((s) => s.index === s.hour)).toBe(true)
     const noon = segs.find((s) => s.hour === 12)
     expect(noon?.state).toBe('partial')
+    expect(noon?.index).toBe(12)
     const morning = segs.find((s) => s.hour === 3)
     expect(morning?.state).toBe('ready')
   })

@@ -30,6 +30,7 @@ from __future__ import annotations
 
 import logging
 import math
+import re
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -130,11 +131,19 @@ class OmegaSfConfig:
 
     # ── 并行 ──
     enable_parallel: bool = True
+    max_workers: int | None = None  # None → auto_process_count；1 强制串行
     pixel_chunk_size: int = 200000
 
     # ── 日期范围 ──
     start_date: str = "20250101"
     end_date: str = "20251231"
+
+    # ── 空间裁剪 / 抽样（验证窗；None 表示不裁剪）──
+    bbox_west: float | None = None
+    bbox_south: float | None = None
+    bbox_east: float | None = None
+    bbox_north: float | None = None
+    max_pixels: int = 0  # >0 时限制有效像元数（等价 OMEGA_SF_MAX_PIXELS）
 
     # ── QC ──
     qc_enable: bool = True
@@ -151,9 +160,23 @@ class OmegaSfConfig:
 
     @staticmethod
     def from_params(params: dict[str, Any]) -> OmegaSfConfig:
-        """从 algorithm_params 字典构建配置。"""
+        """从 algorithm_params 字典构建配置。
+
+        兼容 ``bbox: [west, south, east, north]``（与 API/seed 常用写法），
+        展开为 ``bbox_west/south/east/north``。
+        """
         known_fields = {f.name for f in OmegaSfConfig.__dataclass_fields__.values()}
         filtered = {k: v for k, v in params.items() if k in known_fields}
+        raw_bbox = params.get("bbox")
+        if (
+            filtered.get("bbox_west") is None
+            and isinstance(raw_bbox, (list, tuple))
+            and len(raw_bbox) == 4
+        ):
+            filtered["bbox_west"] = float(raw_bbox[0])
+            filtered["bbox_south"] = float(raw_bbox[1])
+            filtered["bbox_east"] = float(raw_bbox[2])
+            filtered["bbox_north"] = float(raw_bbox[3])
         return OmegaSfConfig(**filtered)
 
 
@@ -266,16 +289,17 @@ class BlockStructure:
     indices: list[np.ndarray]  # 每块在时间序列中的索引
 
 
-def make_viirs8_blocks(tvec: Sequence[datetime]) -> BlockStructure:
-    """按 8 天划分时间块。
+def make_viirs8_blocks(tvec: Sequence[datetime], block_days: int = 8) -> BlockStructure:
+    """按 N 天划分时间块（默认 8 天）。
 
     对应 Matlab ``make_viirs8_blocks`` (L2813-2831)。
 
-    算法：以每年 1 月 1 日为起点，每 8 天一块，跨年重置。
-    不足 8 天的末尾块也保留。
+    算法：以每年 1 月 1 日为起点，每 ``block_days`` 天一块，跨年重置。
+    不足 ``block_days`` 天的末尾块也保留（年末不足则到 12.31）。
 
     Args:
         tvec: 日期序列（datetime 数组）
+        block_days: 每块天数（默认 8，对应 VIIRS 8-day 合成周期）
 
     Returns:
         BlockStructure 包含 starts/ends/indices
@@ -289,7 +313,8 @@ def make_viirs8_blocks(tvec: Sequence[datetime]) -> BlockStructure:
     doy = [t.timetuple().tm_yday for t in tvec]
     yy = [t.year for t in tvec]
     blk_starts_raw = [
-        datetime(y, 1, 1) + timedelta(days=8 * ((d - 1) // 8)) for y, d in zip(yy, doy)
+        datetime(y, 1, 1) + timedelta(days=block_days * ((d - 1) // block_days))
+        for y, d in zip(yy, doy)
     ]
 
     # 去重保持顺序
@@ -575,21 +600,32 @@ def execute_pixel_inversion(
     nt = len(tbv)
     freq = config.freq_ghz
 
-    # ── Step 0: Tau ──
+    # Mironov / TB 模型要求 clay∈[0,1]；辅助库陆地掩膜外常为 NaN，应跳过而非抛错
+    if (
+        not np.isfinite(clay_fraction)
+        or clay_fraction < 0.0
+        or clay_fraction > 1.0
+        or not np.isfinite(porosity)
+    ):
+        return None
+
+    # ── Step 0: Tau (vectorized — replaces per-day Python loop) ──
+    ok_tau_input = np.isfinite(ndvi) & np.isfinite(ia) & np.isfinite(sf_col)
     tau_star = np.full(nt, np.nan)
-    for k in range(nt):
-        if np.isfinite(ndvi[k]) and np.isfinite(ia[k]) and np.isfinite(sf_col[k]):
-            tau_star[k] = float(
-                tau_from_ndvi(
-                    ndvi[k],
-                    ndvi_max,
-                    ndvi_min,
-                    landcover,
-                    b_param,
-                    sf_col[k],
-                    ia[k],
-                )
-            )
+    if np.any(ok_tau_input):
+        ndvi_safe = np.where(ok_tau_input, ndvi, 0.5)
+        sf_safe = np.where(ok_tau_input, sf_col, 0.0)
+        ia_safe = np.where(ok_tau_input, ia, 40.0)
+        tau_all = tau_from_ndvi(
+            ndvi_safe,
+            ndvi_max,
+            ndvi_min,
+            landcover,
+            b_param,
+            sf_safe,
+            ia_safe,
+        )
+        tau_star = np.where(ok_tau_input, tau_all, np.nan)
 
     # ── 有效性判断 ──
     if config.temp_scheme.upper() == "ORIG_TS":
@@ -702,7 +738,7 @@ def execute_pixel_inversion(
                 np.array([config.bounds_h[0], config.bounds_alpha[0]]),
                 np.array([config.bounds_h[1], config.bounds_alpha[1]]),
             ),
-            max_nfev=400,
+            max_nfev=100,
             ftol=1e-6,
             xtol=1e-6,
         )
@@ -792,7 +828,7 @@ def execute_pixel_inversion(
                         np.array([config.bounds_omega[0]]),
                         np.array([config.bounds_omega[1]]),
                     ),
-                    max_nfev=400,
+                    max_nfev=100,
                     ftol=1e-6,
                     xtol=1e-6,
                 )
@@ -1186,6 +1222,260 @@ def _ddca_single_temp(
     return float(result.x[0]), float(result.x[1])
 
 
+def _build_bbox_lin_mask(
+    anc: dict[str, np.ndarray],
+    nrows: int,
+    ncols: int,
+    config: OmegaSfConfig,
+) -> np.ndarray | None:
+    """根据 config.bbox_* 构建 (npix,) 布尔掩膜；未配置 bbox 时返回 None。"""
+    if (
+        config.bbox_west is None
+        or config.bbox_south is None
+        or config.bbox_east is None
+        or config.bbox_north is None
+    ):
+        return None
+    lat = anc.get("lat")
+    lon = anc.get("lon")
+    if lat is None or lon is None:
+        logger.warning("[BBOX] 已配置 bbox 但辅助库缺少 lat/lon，忽略空间裁剪")
+        return None
+    lat_f = np.asarray(lat, dtype=np.float64).ravel()
+    lon_f = np.asarray(lon, dtype=np.float64).ravel()
+    npix = nrows * ncols
+    if lat_f.size != npix or lon_f.size != npix:
+        logger.warning(
+            "[BBOX] lat/lon 大小 (%d,%d) != npix %d，忽略空间裁剪",
+            lat_f.size,
+            lon_f.size,
+            npix,
+        )
+        return None
+    mask = (
+        (lat_f >= float(config.bbox_south))
+        & (lat_f <= float(config.bbox_north))
+        & (lon_f >= float(config.bbox_west))
+        & (lon_f <= float(config.bbox_east))
+    )
+    logger.info(
+        "[BBOX] 裁剪 [%s,%s]x[%s,%s] → %d/%d 像元",
+        config.bbox_west,
+        config.bbox_east,
+        config.bbox_south,
+        config.bbox_north,
+        int(mask.sum()),
+        npix,
+    )
+    return mask
+
+
+def _emit_progress(
+    progress_callback: Any,
+    *,
+    processed: int,
+    total: int,
+    chunks_done: int,
+    chunks_total: int,
+    pixels_done: int,
+    pixels_total: int,
+    phase: str,
+) -> None:
+    if not progress_callback:
+        return
+    detail = {
+        "chunks_done": chunks_done,
+        "chunks_total": chunks_total,
+        "pixels_done": pixels_done,
+        "pixels_total": pixels_total,
+        "phase": phase,
+    }
+    try:
+        progress_callback(processed, total, detail)
+    except TypeError:
+        progress_callback(processed, total)
+
+
+def _invert_omega_sf_pixel_indices(
+    local_indices: list[int],
+    *,
+    lin_pix: np.ndarray,
+    ncols: int,
+    npix: int,
+    tbv: np.ndarray,
+    tbh: np.ndarray,
+    ia: np.ndarray,
+    ts: np.ndarray,
+    sm_ref: np.ndarray,
+    ndvi: np.ndarray,
+    sf: np.ndarray,
+    ndvi_v_max_arr: np.ndarray,
+    ndvi_v_min_arr: np.ndarray,
+    albedo_flat: np.ndarray,
+    b_flat: np.ndarray,
+    clay_flat: np.ndarray,
+    porosity_flat: np.ndarray,
+    h_flat: np.ndarray,
+    landcover_flat: np.ndarray,
+    omega_fixed_map: np.ndarray | None,
+    config: OmegaSfConfig,
+    block_struct: BlockStructure,
+) -> tuple[list[PixelResult], int, int]:
+    """串行处理一批局部像元索引（模块级，可供 ProcessPool pickle）。
+
+    Returns:
+        (成功结果列表, 尝试数, 失败数)
+    """
+    results: list[PixelResult] = []
+    n_ok = 0
+    n_fail = 0
+    for p in local_indices:
+        lin_idx = int(lin_pix[p])
+        iy = lin_idx // ncols + 1
+        ix = lin_idx % ncols + 1
+        lc = int(landcover_flat[lin_idx]) if lin_idx < npix else 0
+        omega_fixed = None
+        if omega_fixed_map is not None and lin_idx < npix:
+            omega_fixed = float(omega_fixed_map[lc])
+        try:
+            result = execute_pixel_inversion(
+                tbv=tbv[:, p],
+                tbh=tbh[:, p],
+                ia=ia[:, p],
+                ts=ts[:, p],
+                sm_ref=sm_ref[:, p],
+                ndvi=ndvi[:, p],
+                sf_col=sf[:, p],
+                ndvi_max=float(ndvi_v_max_arr[lin_idx])
+                if lin_idx < len(ndvi_v_max_arr)
+                else float("nan"),
+                ndvi_min=float(ndvi_v_min_arr[lin_idx])
+                if lin_idx < len(ndvi_v_min_arr)
+                else float("nan"),
+                albedo=float(albedo_flat[lin_idx]) if lin_idx < npix else float("nan"),
+                b_param=float(b_flat[lin_idx]) if lin_idx < npix else float("nan"),
+                clay_fraction=float(clay_flat[lin_idx])
+                if lin_idx < npix
+                else float("nan"),
+                porosity=float(porosity_flat[lin_idx])
+                if lin_idx < npix
+                else float("nan"),
+                h_static=float(h_flat[lin_idx]) if lin_idx < npix else float("nan"),
+                landcover=lc,
+                config=config,
+                block_struct=block_struct,
+                omega_fixed=omega_fixed,
+            )
+        except ValueError:
+            # 单像元物理约束失败（如 clay NaN）不拖垮整块并行/串行批次
+            result = None
+        n_ok += 1
+        if result is not None:
+            result.iy = iy
+            result.ix = ix
+            results.append(result)
+        else:
+            n_fail += 1
+    return results, n_ok, n_fail
+
+
+def _run_omega_sf_pixels_parallel(
+    valid_local: list[int],
+    *,
+    process_count: int,
+    lin_pix: np.ndarray,
+    ncols: int,
+    npix: int,
+    chunk_data: dict[str, np.ndarray],
+    ndvi_v_max_arr: np.ndarray,
+    ndvi_v_min_arr: np.ndarray,
+    albedo_flat: np.ndarray,
+    b_flat: np.ndarray,
+    clay_flat: np.ndarray,
+    porosity_flat: np.ndarray,
+    h_flat: np.ndarray,
+    landcover_flat: np.ndarray,
+    omega_fixed_map: np.ndarray | None,
+    config: OmegaSfConfig,
+    block_struct: BlockStructure,
+) -> tuple[list[PixelResult], int, int]:
+    """ProcessPoolExecutor 并行反演一批有效像元；异常向上抛出由调用方回退。"""
+    import os
+    from concurrent.futures import ALL_COMPLETED, ProcessPoolExecutor, wait
+
+    from algorithms._parallel import get_spawn_context
+
+    n = len(valid_local)
+    if n == 0:
+        return [], 0, 0
+
+    # 按进程数切批，保证每进程至少有工作
+    n_batches = min(process_count, n)
+    batch_size = (n + n_batches - 1) // n_batches
+    batches = [valid_local[i : i + batch_size] for i in range(0, n, batch_size)]
+
+    env_val = os.environ.get("CGDA_PARALLEL_TIMEOUT_PER_CHUNK")
+    try:
+        timeout_per_batch = float(env_val) if env_val else 600.0
+    except ValueError:
+        timeout_per_batch = 600.0
+    total_timeout = max(1.0, timeout_per_batch) * len(batches)
+
+    common_kwargs = {
+        "lin_pix": lin_pix,
+        "ncols": ncols,
+        "npix": npix,
+        "tbv": chunk_data["tbv"],
+        "tbh": chunk_data["tbh"],
+        "ia": chunk_data["ia"],
+        "ts": chunk_data["ts"],
+        "sm_ref": chunk_data["sm_ref"],
+        "ndvi": chunk_data["ndvi"],
+        "sf": chunk_data["sf"],
+        "ndvi_v_max_arr": ndvi_v_max_arr,
+        "ndvi_v_min_arr": ndvi_v_min_arr,
+        "albedo_flat": albedo_flat,
+        "b_flat": b_flat,
+        "clay_flat": clay_flat,
+        "porosity_flat": porosity_flat,
+        "h_flat": h_flat,
+        "landcover_flat": landcover_flat,
+        "omega_fixed_map": omega_fixed_map,
+        "config": config,
+        "block_struct": block_struct,
+    }
+
+    ctx = get_spawn_context()
+    ex = ProcessPoolExecutor(max_workers=process_count, mp_context=ctx)
+    try:
+        futures = [
+            ex.submit(_invert_omega_sf_pixel_indices, batch, **common_kwargs)
+            for batch in batches
+        ]
+        done, not_done = wait(futures, timeout=total_timeout, return_when=ALL_COMPLETED)
+        if not_done:
+            for fut in not_done:
+                fut.cancel()
+            raise TimeoutError(
+                f"omega_sf parallel timed out after {total_timeout:.0f}s "
+                f"({len(not_done)}/{len(futures)} batches unfinished)"
+            )
+        all_results: list[PixelResult] = []
+        n_attempted = 0
+        n_failed = 0
+        for fut in futures:
+            res, n_ok, n_fail = fut.result()
+            all_results.extend(res)
+            n_attempted += n_ok
+            n_failed += n_fail
+        return all_results, n_attempted, n_failed
+    finally:
+        try:
+            ex.shutdown(wait=False, cancel_futures=True)
+        except TypeError:
+            ex.shutdown(wait=False)
+
+
 # ─── 主反演循环 ─────────────────────────────────────────────────────────────
 
 
@@ -1282,12 +1572,40 @@ def retrieve_omega_sf_daily(
     npix = nrows * ncols
 
     # 3) 构建 8 天块结构
-    block_struct = make_viirs8_blocks(tvec)
+    block_struct = make_viirs8_blocks(tvec, block_days=config.block_days)
     logger.info("[BLOCK] 共 %d 个块", len(block_struct.starts))
 
-    # 4) NDVI 气候态
+    # 4) NDVI 气候态（用于 SF 倒推中的 DOY NDVI 上下文）
     ndvi_clim_max = anc.get("ndvi_clim_max", np.full(npix, np.nan))
     ndvi_clim_min = anc.get("ndvi_clim_min", np.full(npix, np.nan))
+    # NDVI 历史极值（VI_v_qa.mat → ndvi_v_max/min），用于 Tau 计算和 SF 倒推极值项
+    # Matlab omega_sf_fenkuai.m L352-354: 从 VI_v_qa.mat 加载 NDVI_v_max/min
+    # L710: 传入 Tau 函数；L633-634: 传入 SF 倒推
+    ndvi_v_max_arr = anc.get("ndvi_v_max", ndvi_clim_max)
+    ndvi_v_min_arr = anc.get("ndvi_v_min", ndvi_clim_min)
+
+    # 诊断：辅助数据健康检查
+    logger.info("[DIAG] 辅助数据键: %s", sorted(anc.keys()))
+    logger.info(
+        "[DIAG] landcover shape=%s, npix=%d, valid=%d",
+        anc["landcover"].shape,
+        npix,
+        int(np.sum(np.isfinite(anc["landcover"].astype(float)))),
+    )
+    for _k in ("albedo", "b", "clay", "porosity", "h", "ndvi_v_max", "ndvi_v_min"):
+        _v = anc.get(_k)
+        if _v is not None:
+            logger.info(
+                "[DIAG] %-12s size=%d, finite=%d (%.1f%%), min=%.4f, max=%.4f",
+                _k,
+                _v.size,
+                int(np.sum(np.isfinite(_v))),
+                100.0 * np.sum(np.isfinite(_v)) / max(_v.size, 1),
+                float(np.nanmin(_v)) if np.any(np.isfinite(_v)) else float("nan"),
+                float(np.nanmax(_v)) if np.any(np.isfinite(_v)) else float("nan"),
+            )
+        else:
+            logger.warning("[DIAG] %-12s MISSING", _k)
 
     # 5) 固定 OMEGA（PFT 模式从 omega_pft_file 加载）
     omega_fixed_map: np.ndarray | None = None
@@ -1303,27 +1621,135 @@ def retrieve_omega_sf_daily(
     n_processed = 0
     n_success = 0
     n_failed = 0
+    n_valid_processed = 0  # 有效像元计数（用于 TEST MODE 限制）
+
+    import os
+
+    # 提前读取 max_pixels，便于 bbox 打包时只 preload 需要的像元
+    max_pixels_env = os.environ.get("OMEGA_SF_MAX_PIXELS")
+    max_valid_pixels = (
+        int(max_pixels_env) if max_pixels_env else int(config.max_pixels or 0)
+    )
+    if max_valid_pixels > 0:
+        logger.warning(
+            "[TEST MODE] 限制有效像元总数 ≤ %d（OMEGA_SF_MAX_PIXELS/config.max_pixels）",
+            max_valid_pixels,
+        )
 
     chunk_size = config.pixel_chunk_size
-    chunks = [(i, min(i + chunk_size, npix)) for i in range(0, npix, chunk_size)]
-    logger.info("[CHUNK] 共 %d 个 chunk（每 chunk %d 像元）", len(chunks), chunk_size)
+    pack_size = (
+        min(chunk_size, max_valid_pixels) if max_valid_pixels > 0 else chunk_size
+    )
+    # 每个 chunk 是一组线性像元索引（可非连续）。bbox 模式按 mask 像元打包，
+    # 避免「一行一个 chunk」导致逐日 .mat 被重复 preload 数百次。
+    chunk_lin_list: list[np.ndarray] = [
+        np.arange(i, min(i + pack_size, npix), dtype=np.int64)
+        for i in range(0, npix, pack_size)
+    ]
 
-    for ci, (chunk_start, chunk_end) in enumerate(chunks):
-        chunk_pix = chunk_end - chunk_start
+    bbox_mask = _build_bbox_lin_mask(anc, nrows, ncols, config)
+    if bbox_mask is not None:
+        idx = np.flatnonzero(bbox_mask).astype(np.int64, copy=False)
+        if idx.size == 0:
+            raise ValueError("bbox 内无有效像元（检查 lat/lon 与 bbox 配置）")
+        ys, xs = np.unravel_index(idx, (nrows, ncols))
+        ymin, ymax = int(ys.min()), int(ys.max())
+        xmin, xmax = int(xs.min()), int(xs.max())
+        row_width = xmax - xmin + 1
+        if max_valid_pixels > 0 and idx.size > max_valid_pixels:
+            # 均匀抽稀，避免只取 bbox 北缘一行条，便于对照轨道条带
+            step = float(idx.size) / float(max_valid_pixels)
+            sel = (np.arange(max_valid_pixels) * step).astype(np.int64)
+            sel = np.clip(sel, 0, idx.size - 1)
+            idx = idx[sel]
+        chunk_lin_list = [
+            idx[i : i + pack_size] for i in range(0, int(idx.size), pack_size)
+        ]
         logger.info(
-            "[CHUNK %d/%d] 像元 %d~%d (%d)",
+            "[BBOX] 矩形行=%d..%d col=%d..%d → %d chunk（打包像元 %d，行宽 %d，"
+            "按 mask 打包避免逐行重复 I/O）",
+            ymin,
+            ymax,
+            xmin,
+            xmax,
+            len(chunk_lin_list),
+            int(idx.size),
+            row_width,
+        )
+
+    # 测试模式：通过环境变量 OMEGA_SF_CHUNK_OFFSET 跳过前 N 个 chunk（跳过高纬度缺数据区域）
+    # 注意：offset 必须在 max_chunks 之前应用，否则 max_chunks 先截断后 offset 会越界。
+    # bbox 验证窗已重建 chunk 时忽略，避免偏移到空区域。
+    chunk_offset_env = os.environ.get("OMEGA_SF_CHUNK_OFFSET")
+    if chunk_offset_env and bbox_mask is None:
+        chunk_offset = int(chunk_offset_env)
+        if chunk_offset > 0 and chunk_offset < len(chunk_lin_list):
+            logger.warning(
+                "[TEST MODE] 跳过前 %d 个 chunk（OMEGA_SF_CHUNK_OFFSET=%s），从 chunk %d 开始",
+                chunk_offset,
+                chunk_offset_env,
+                chunk_offset + 1,
+            )
+            chunk_lin_list = chunk_lin_list[chunk_offset:]
+    elif chunk_offset_env and bbox_mask is not None:
+        logger.warning(
+            "[TEST MODE] 已配置 bbox，忽略 OMEGA_SF_CHUNK_OFFSET=%s",
+            chunk_offset_env,
+        )
+
+    # 测试模式：通过环境变量 OMEGA_SF_MAX_CHUNKS 限制处理 chunk 数
+    # bbox 验证窗已重建 chunk 时忽略该环境变量，避免误截断到空区域
+    max_chunks_env = os.environ.get("OMEGA_SF_MAX_CHUNKS")
+    if max_chunks_env and bbox_mask is None:
+        max_chunks = int(max_chunks_env)
+        if max_chunks > 0 and max_chunks < len(chunk_lin_list):
+            logger.warning(
+                "[TEST MODE] 仅处理前 %d/%d 个 chunk（OMEGA_SF_MAX_CHUNKS=%s）",
+                max_chunks,
+                len(chunk_lin_list),
+                max_chunks_env,
+            )
+            chunk_lin_list = chunk_lin_list[:max_chunks]
+    elif max_chunks_env and bbox_mask is not None:
+        logger.warning(
+            "[TEST MODE] 已配置 bbox，忽略 OMEGA_SF_MAX_CHUNKS=%s",
+            max_chunks_env,
+        )
+
+    logger.info(
+        "[CHUNK] 共 %d 个 chunk（每 chunk ≤ %d 像元）",
+        len(chunk_lin_list),
+        pack_size,
+    )
+
+    for ci, lin_pix in enumerate(chunk_lin_list):
+        chunk_pix = int(lin_pix.size)
+        if chunk_pix == 0:
+            continue
+
+        logger.info(
+            "[CHUNK %d/%d] 像元索引 %d 个（lin %d..%d）",
             ci + 1,
-            len(chunks),
-            chunk_start,
-            chunk_end,
+            len(chunk_lin_list),
             chunk_pix,
+            int(lin_pix[0]),
+            int(lin_pix[-1]),
+        )
+
+        _emit_progress(
+            progress_callback,
+            processed=n_processed,
+            total=npix,
+            chunks_done=ci,
+            chunks_total=len(chunk_lin_list),
+            pixels_done=n_valid_processed,
+            pixels_total=max_valid_pixels or npix,
+            phase="preload",
         )
 
         # 预读 chunk 数据
         chunk_data = _preload_chunk(
             tvec,
-            chunk_start,
-            chunk_end,
             nrows,
             ncols,
             config,
@@ -1333,70 +1759,249 @@ def retrieve_omega_sf_daily(
             ndvi_clim_folder,
             ndvi_folder,
             anc,
+            lin_pix=lin_pix,
+        )
+
+        _emit_progress(
+            progress_callback,
+            processed=n_processed,
+            total=npix,
+            chunks_done=ci,
+            chunks_total=len(chunk_lin_list),
+            pixels_done=n_valid_processed,
+            pixels_total=max_valid_pixels or npix,
+            phase="step2_omega",
         )
 
         # 逐像元反演
-        for p in range(chunk_pix):
-            lin_idx = chunk_start + p
-            iy = lin_idx // ncols + 1  # 1-based
-            ix = lin_idx % ncols + 1
-
-            n_processed += 1
-
-            result = execute_pixel_inversion(
-                tbv=chunk_data["tbv"][:, p],
-                tbh=chunk_data["tbh"][:, p],
-                ia=chunk_data["ia"][:, p],
-                ts=chunk_data["ts"][:, p],
-                sm_ref=chunk_data["sm_ref"][:, p],
-                ndvi=chunk_data["ndvi"][:, p],
-                sf_col=chunk_data["sf"][:, p],
-                ndvi_max=float(ndvi_clim_max[lin_idx])
-                if lin_idx < len(ndvi_clim_max)
-                else float("nan"),
-                ndvi_min=float(ndvi_clim_min[lin_idx])
-                if lin_idx < len(ndvi_clim_min)
-                else float("nan"),
-                albedo=float(anc["albedo"].ravel()[lin_idx])
-                if lin_idx < npix
-                else float("nan"),
-                b_param=float(anc["b"].ravel()[lin_idx])
-                if lin_idx < npix
-                else float("nan"),
-                clay_fraction=float(anc["clay"].ravel()[lin_idx])
-                if lin_idx < npix
-                else float("nan"),
-                porosity=float(anc["porosity"].ravel()[lin_idx])
-                if lin_idx < npix
-                else float("nan"),
-                h_static=float(anc["h"].ravel()[lin_idx])
-                if lin_idx < npix
-                else float("nan"),
-                landcover=int(landcover.ravel()[lin_idx]) if lin_idx < npix else 0,
-                config=config,
-                block_struct=block_struct,
-                omega_fixed=float(omega_fixed_map[landcover.ravel()[lin_idx]])
-                if omega_fixed_map is not None and lin_idx < npix
-                else None,
+        # 预计算每像元的有效天数掩码，跳过无效像元（海洋/极地/缺测）
+        tbv_chunk = chunk_data["tbv"]  # (nt, chunk_pix)
+        tbh_chunk = chunk_data["tbh"]
+        ts_chunk = chunk_data["ts"]
+        sm_chunk = chunk_data["sm_ref"]
+        ndvi_chunk = chunk_data["ndvi"]
+        # 有效像元 = TBv/TBh/Ts/SM/NDVI 至少有 1 天有效，且 clay/porosity 可用
+        # （SM/NDVI 在高纬/海洋缺失；clay 陆地掩膜外常为 NaN，会触发 Mironov ValueError）
+        clay_chunk = anc["clay"].ravel()[lin_pix]
+        porosity_chunk = anc["porosity"].ravel()[lin_pix]
+        valid_mask = (
+            np.any(np.isfinite(tbv_chunk), axis=0)
+            & np.any(np.isfinite(tbh_chunk), axis=0)
+            & np.any(np.isfinite(ts_chunk), axis=0)
+            & np.any(np.isfinite(sm_chunk), axis=0)
+            & np.any(np.isfinite(ndvi_chunk), axis=0)
+            & np.isfinite(clay_chunk)
+            & (clay_chunk >= 0.0)
+            & (clay_chunk <= 1.0)
+            & np.isfinite(porosity_chunk)
+        )
+        n_skip_chunk = int((~valid_mask).sum())
+        if n_skip_chunk > 0:
+            logger.info(
+                "[CHUNK %d/%d] 跳过 %d 个无效像元（全 NaN），处理 %d 个",
+                ci + 1,
+                len(chunk_lin_list),
+                n_skip_chunk,
+                int(valid_mask.sum()),
             )
 
-            if result is not None:
-                result.iy = iy
-                result.ix = ix
-                all_results.append(result)
-                n_success += 1
-            else:
-                n_failed += 1
+        valid_local = [int(p) for p in np.flatnonzero(valid_mask)]
+        n_skip_chunk_count = chunk_pix - len(valid_local)
+        n_processed += n_skip_chunk_count
+        n_failed += n_skip_chunk_count
 
-            if progress_callback and n_processed % 1000 == 0:
-                progress_callback(n_processed, npix)
+        # 诊断：前 3 个有效像元
+        for diag_i, p in enumerate(valid_local[:3]):
+            if n_valid_processed + diag_i >= 3:
+                break
+            lin_idx = int(lin_pix[p])
+            iy = lin_idx // ncols + 1
+            ix = lin_idx % ncols + 1
+            _tbv = chunk_data["tbv"][:, p]
+            _tbh = chunk_data["tbh"][:, p]
+            _ia = chunk_data["ia"][:, p]
+            _ts = chunk_data["ts"][:, p]
+            _sm = chunk_data["sm_ref"][:, p]
+            _ndvi = chunk_data["ndvi"][:, p]
+            _sf = chunk_data["sf"][:, p]
+            logger.warning(
+                "[DIAG PIX %d] iy=%d ix=%d | "
+                "tbv_finite=%d/%d tbh_finite=%d/%d ia_finite=%d/%d "
+                "ts_finite=%d/%d sm_finite=%d/%d ndvi_finite=%d/%d "
+                "sf_finite=%d/%d | sm_range=[%.3f,%.3f] ndvi_range=[%.3f,%.3f] "
+                "sf_range=[%.3f,%.3f]",
+                n_valid_processed + diag_i + 1,
+                iy,
+                ix,
+                int(np.isfinite(_tbv).sum()),
+                len(_tbv),
+                int(np.isfinite(_tbh).sum()),
+                len(_tbh),
+                int(np.isfinite(_ia).sum()),
+                len(_ia),
+                int(np.isfinite(_ts).sum()),
+                len(_ts),
+                int(np.isfinite(_sm).sum()),
+                len(_sm),
+                int(np.isfinite(_ndvi).sum()),
+                len(_ndvi),
+                int(np.isfinite(_sf).sum()),
+                len(_sf),
+                float(np.nanmin(_sm)) if np.any(np.isfinite(_sm)) else float("nan"),
+                float(np.nanmax(_sm)) if np.any(np.isfinite(_sm)) else float("nan"),
+                float(np.nanmin(_ndvi)) if np.any(np.isfinite(_ndvi)) else float("nan"),
+                float(np.nanmax(_ndvi)) if np.any(np.isfinite(_ndvi)) else float("nan"),
+                float(np.nanmin(_sf)) if np.any(np.isfinite(_sf)) else float("nan"),
+                float(np.nanmax(_sf)) if np.any(np.isfinite(_sf)) else float("nan"),
+            )
+
+        # 测试模式：截断到 max_pixels
+        if max_valid_pixels > 0:
+            remain = max_valid_pixels - n_valid_processed
+            if remain <= 0:
+                break
+            if len(valid_local) > remain:
+                valid_local = valid_local[:remain]
+
+        use_parallel = bool(config.enable_parallel) and len(valid_local) >= 8
+        process_count = 1
+        if use_parallel:
+            try:
+                from algorithms._parallel import auto_process_count
+
+                process_count = auto_process_count(
+                    chunk_count=len(valid_local),
+                    max_workers=config.max_workers,
+                )
+            except Exception as exc:
+                logger.warning("[PARALLEL] auto_process_count failed: %s", exc)
+                process_count = 1
+            use_parallel = process_count > 1
+
+        albedo_flat = anc["albedo"].ravel()
+        b_flat = anc["b"].ravel()
+        clay_flat = anc["clay"].ravel()
+        porosity_flat = anc["porosity"].ravel()
+        h_flat = anc["h"].ravel()
+        landcover_flat = landcover.ravel()
+
+        batch_results: list[PixelResult] = []
+        n_attempted = 0
+        n_batch_failed = 0
+        if use_parallel:
+            logger.info(
+                "[PARALLEL] chunk %d/%d：%d 像元，%d 进程",
+                ci + 1,
+                len(chunk_lin_list),
+                len(valid_local),
+                process_count,
+            )
+            try:
+                batch_results, n_attempted, n_batch_failed = (
+                    _run_omega_sf_pixels_parallel(
+                        valid_local,
+                        process_count=process_count,
+                        lin_pix=lin_pix,
+                        ncols=ncols,
+                        npix=npix,
+                        chunk_data=chunk_data,
+                        ndvi_v_max_arr=ndvi_v_max_arr,
+                        ndvi_v_min_arr=ndvi_v_min_arr,
+                        albedo_flat=albedo_flat,
+                        b_flat=b_flat,
+                        clay_flat=clay_flat,
+                        porosity_flat=porosity_flat,
+                        h_flat=h_flat,
+                        landcover_flat=landcover_flat,
+                        omega_fixed_map=omega_fixed_map,
+                        config=config,
+                        block_struct=block_struct,
+                    )
+                )
+            except Exception as exc:
+                logger.warning("[PARALLEL] 失败，回退串行：%s", exc, exc_info=True)
+                use_parallel = False
+
+        if not use_parallel:
+            batch_results, n_attempted, n_batch_failed = _invert_omega_sf_pixel_indices(
+                valid_local,
+                lin_pix=lin_pix,
+                ncols=ncols,
+                npix=npix,
+                tbv=chunk_data["tbv"],
+                tbh=chunk_data["tbh"],
+                ia=chunk_data["ia"],
+                ts=chunk_data["ts"],
+                sm_ref=chunk_data["sm_ref"],
+                ndvi=chunk_data["ndvi"],
+                sf=chunk_data["sf"],
+                ndvi_v_max_arr=ndvi_v_max_arr,
+                ndvi_v_min_arr=ndvi_v_min_arr,
+                albedo_flat=albedo_flat,
+                b_flat=b_flat,
+                clay_flat=clay_flat,
+                porosity_flat=porosity_flat,
+                h_flat=h_flat,
+                landcover_flat=landcover_flat,
+                omega_fixed_map=omega_fixed_map,
+                config=config,
+                block_struct=block_struct,
+            )
+
+        all_results.extend(batch_results)
+        n_processed += n_attempted
+        n_valid_processed += n_attempted
+        n_success += len(batch_results)
+        n_failed += n_batch_failed
+
+        _emit_progress(
+            progress_callback,
+            processed=n_processed,
+            total=npix,
+            chunks_done=ci + 1,
+            chunks_total=len(chunk_lin_list),
+            pixels_done=n_valid_processed,
+            pixels_total=max_valid_pixels or npix,
+            phase="step2_omega",
+        )
+
+        # 测试模式：检查像元限制
+        if max_valid_pixels > 0 and n_valid_processed >= max_valid_pixels:
+            logger.warning(
+                "[TEST MODE] 已达到像元限制 %d，停止处理",
+                max_valid_pixels,
+            )
+            break
+
+        # 外层循环也需检查
+        if max_valid_pixels > 0 and n_valid_processed >= max_valid_pixels:
+            break
+
+    _emit_progress(
+        progress_callback,
+        processed=n_processed,
+        total=npix,
+        chunks_done=len(chunk_lin_list),
+        chunks_total=len(chunk_lin_list),
+        pixels_done=n_valid_processed,
+        pixels_total=max_valid_pixels or npix,
+        phase="ddca",
+    )
 
     logger.info(
-        "[DONE] 反演完成：成功 %d / 失败 %d / 总计 %d",
+        "[DONE] 反演完成：成功 %d / 失败 %d / 总计 %d (%.1f%%)",
         n_success,
         n_failed,
         n_processed,
+        100.0 * n_success / max(n_processed, 1),
     )
+    if n_success == 0:
+        logger.error(
+            "[DIAG] 反演成功率为 0%%！请检查："
+            "1) SMAP/FY 数据文件是否存在且变量名正确；"
+            "2) 辅助库（VI_v_qa.mat/IGBP_9km_12.mat 等）是否完整；"
+            "3) grid_shape 是否与数据文件匹配。"
+        )
 
     # 7) 汇总输出
     omega_pft = build_omega_pft_from_results(all_results)
@@ -1464,16 +2069,40 @@ def retrieve_omega_sf_daily(
             output_paths["omega_pixel"] = str(pix_file)
 
             # 块级 SM / VOD / OMEGA
+            # 使用 Matlab 兼容的命名格式：YYYYMMDD_YYYYMMDD.mat
+            # 同时保留 block_{idx:03d}.mat 作为向后兼容
             for blk_idx in sm_maps:
-                blk_file = out_path / f"block_{blk_idx:03d}.mat"
+                blk_start = block_struct.starts[blk_idx]
+                blk_end = block_struct.ends[blk_idx]
+                date_start_str = blk_start.strftime("%Y%m%d")
+                date_end_str = blk_end.strftime("%Y%m%d")
+
+                # Matlab 兼容命名：20250101_20250108.mat
+                blk_file = out_path / f"{date_start_str}_{date_end_str}.mat"
                 savemat(
                     str(blk_file),
                     {
                         "SM": sm_maps[blk_idx],
                         "VOD": vod_maps[blk_idx],
                         "OMEGA": omega_maps[blk_idx],
-                        "block_start": str(block_struct.starts[blk_idx]),
-                        "block_end": str(block_struct.ends[blk_idx]),
+                        "block_start": str(blk_start),
+                        "block_end": str(blk_end),
+                        "block_idx": blk_idx,
+                        "date_start": date_start_str,
+                        "date_end": date_end_str,
+                    },
+                )
+
+                # 向后兼容命名：block_001.mat
+                blk_compat_file = out_path / f"block_{blk_idx:03d}.mat"
+                savemat(
+                    str(blk_compat_file),
+                    {
+                        "SM": sm_maps[blk_idx],
+                        "VOD": vod_maps[blk_idx],
+                        "OMEGA": omega_maps[blk_idx],
+                        "block_start": str(blk_start),
+                        "block_end": str(blk_end),
                     },
                 )
             output_paths["block_dir"] = str(out_path)
@@ -1507,44 +2136,93 @@ def _build_time_series(
     fy3b_folder: str,
     ddca_sm_folder: str,
 ) -> list[datetime]:
-    """构建时间序列：取所有数据源的日期交集。"""
+    """构建时间序列：保留完整日期范围，缺失日由逐像元反演自然处理。
+
+    与 Matlab 一致：tvec = start_date:end_date（全日期），缺失文件对应日
+    数据为 NaN，由 ok_base / valid_tau 逻辑自动跳过。不取交集是为了保证
+    8 天块结构与 Matlab 输出一致。
+    """
     start = datetime.strptime(config.start_date, "%Y%m%d")
     end = datetime.strptime(config.end_date, "%Y%m%d")
     tvec_req = [start + timedelta(days=i) for i in range((end - start).days + 1)]
+    total_req = len(tvec_req)
 
-    # SMAP 日期
+    # 诊断：统计各数据源可用日期数（不用于过滤）
     t_smap = _scan_folder_dates(smap_folder)
     if t_smap:
-        tvec_req = [t for t in tvec_req if t in t_smap]
+        avail = sum(1 for t in tvec_req if t in t_smap)
+        logger.info(
+            "[TS] SMAP 可用日期: %d/%d (%.1f%%)",
+            avail,
+            total_req,
+            100.0 * avail / total_req,
+        )
+        if avail == 0:
+            raise ValueError("SMAP 文件夹无可用日期数据: %s" % smap_folder)
 
-    # NDVI 日期（仅 DAILY_FILE 模式需要）
+    # NDVI 日期（仅 DAILY_FILE 模式诊断）
     if config.ndvi_mode.upper() == "DAILY_FILE" and ndvi_folder:
         t_ndvi = _scan_folder_dates(ndvi_folder)
         if t_ndvi:
-            tvec_req = [t for t in tvec_req if t in t_ndvi]
+            avail = sum(1 for t in tvec_req if t in t_ndvi)
+            logger.info(
+                "[TS] NDVI 可用日期: %d/%d (%.1f%%)",
+                avail,
+                total_req,
+                100.0 * avail / total_req,
+            )
 
-    # TB 日期
+    # TB 日期诊断
     if config.tb_source.upper() == "FY":
         tb_folder = fy3d_folder if config.fy_platform.upper() == "3D" else fy3b_folder
         if tb_folder:
             t_tb = _scan_folder_dates(tb_folder)
             if t_tb:
-                tvec_req = [t for t in tvec_req if t in t_tb]
-    else:
-        # SMAP TB = SMAP 文件
-        pass
+                avail = sum(1 for t in tvec_req if t in t_tb)
+                logger.info(
+                    "[TS] FY TB 可用日期: %d/%d (%.1f%%)",
+                    avail,
+                    total_req,
+                    100.0 * avail / total_req,
+                )
+                if avail == 0:
+                    raise ValueError("FY TB 文件夹无可用日期数据: %s" % tb_folder)
 
-    # SM 参考日期
+    # SM 参考日期诊断
     if config.sm_source.upper() == "DDCA" and ddca_sm_folder:
         t_smref = _scan_folder_dates(ddca_sm_folder)
         if t_smref:
-            tvec_req = [t for t in tvec_req if t in t_smref]
+            avail = sum(1 for t in tvec_req if t in t_smref)
+            logger.info(
+                "[TS] DDCA SM 可用日期: %d/%d (%.1f%%)",
+                avail,
+                total_req,
+                100.0 * avail / total_req,
+            )
 
-    return sorted(tvec_req)
+    logger.info(
+        "[TS] 时间序列: %d 天（%s ~ %s），保留全日期范围",
+        total_req,
+        tvec_req[0].strftime("%Y%m%d"),
+        tvec_req[-1].strftime("%Y%m%d"),
+    )
+    return tvec_req
+
+
+# 增强版日期提取正则（支持 YYYYMMDD_*.* 格式）
+_ENHANCED_DATE_PATTERN = re.compile(r"(\d{8})")
 
 
 def _scan_folder_dates(folder: str) -> set[datetime]:
-    """扫描文件夹中的 YYYYMMDD.mat 文件，返回日期集合。"""
+    """扫描文件夹中的 MAT 文件，提取日期集合。
+
+    支持多种文件名格式：
+    - YYYYMMDD.mat (纯日期)
+    - YYYYMMDD_*.mat (日期+后缀，如 20250101_bundle.mat)
+    - *_YYYYMMDD_*.mat (前缀+日期，如 FY3D_20250101_processed.mat)
+
+    对应 Matlab 的日期提取逻辑，从文件名中提取任意 YYYYMMDD 模式。
+    """
     if not folder:
         return set()
     p = Path(folder)
@@ -1553,13 +2231,43 @@ def _scan_folder_dates(folder: str) -> set[datetime]:
         return set()
 
     dates: set[datetime] = set()
+    skipped_files: list[str] = []
+
     for f in p.glob("*.mat"):
         name = f.stem
-        try:
-            d = datetime.strptime(name, "%Y%m%d")
-            dates.add(d)
-        except ValueError:
-            continue
+
+        # 方法 1: 尝试纯 YYYYMMDD 匹配（最高优先级）
+        if re.fullmatch(r"\d{8}", name):
+            try:
+                d = datetime.strptime(name, "%Y%m%d")
+                dates.add(d)
+                continue
+            except ValueError:
+                pass
+
+        # 方法 2: 从文件名任意位置提取 YYYYMMDD 模式
+        match = _ENHANCED_DATE_PATTERN.search(f.name)
+        if match:
+            date_str = match.group(1)
+            try:
+                d = datetime.strptime(date_str, "%Y%m%d")
+                dates.add(d)
+                continue
+            except ValueError:
+                pass
+
+        # 无法解析的文件记录日志
+        skipped_files.append(f.name)
+
+    if skipped_files:
+        logger.debug(
+            "文件夹 %s 中 %d 个文件无法解析日期: %s%s",
+            folder,
+            len(skipped_files),
+            skipped_files[:5],
+            "..." if len(skipped_files) > 5 else "",
+        )
+
     return dates
 
 
@@ -1573,7 +2281,7 @@ def _load_ancillary(anc_root: str) -> dict[str, np.ndarray]:
     root = Path(anc_root)
     anc: dict[str, np.ndarray] = {}
 
-    # IGBP 土地覆盖
+    # IGBP 土地覆盖 + 经纬度（若同文件提供）
     igbp_path = root / "IGBP_9km_12.mat"
     if igbp_path.exists():
         data = load_mat_file(str(igbp_path))
@@ -1581,6 +2289,33 @@ def _load_ancillary(anc_root: str) -> dict[str, np.ndarray]:
             if key in data:
                 anc["landcover"] = np.asarray(data[key], dtype=np.float64)
                 break
+        for key in ("lat_9km", "lat", "LAT"):
+            if key in data:
+                anc["lat"] = np.asarray(data[key], dtype=np.float64)
+                break
+        for key in ("lon_9km", "lon", "LON"):
+            if key in data:
+                anc["lon"] = np.asarray(data[key], dtype=np.float64)
+                break
+
+    # 独立经纬度文件回退
+    if "lat" not in anc or "lon" not in anc:
+        for fname in ("smap_lat_lon.mat", "lat_lon_9km.mat"):
+            ll_path = root / fname
+            if not ll_path.exists():
+                continue
+            data = load_mat_file(str(ll_path))
+            if "lat" not in anc:
+                for key in ("lat_9km", "lat", "LAT"):
+                    if key in data:
+                        anc["lat"] = np.asarray(data[key], dtype=np.float64)
+                        break
+            if "lon" not in anc:
+                for key in ("lon_9km", "lon", "LON"):
+                    if key in data:
+                        anc["lon"] = np.asarray(data[key], dtype=np.float64)
+                        break
+            break
 
     # Albedo
     albedo_path = root / "Albedo.mat"
@@ -1637,17 +2372,47 @@ def _load_ancillary(anc_root: str) -> dict[str, np.ndarray]:
                 break
 
     # NDVI_v_max / NDVI_v_min
-    ndvi_extrema_path = root / "NDVI_extrema.mat"
-    if ndvi_extrema_path.exists():
-        data = load_mat_file(str(ndvi_extrema_path))
-        for key in ("NDVI_v_max", "ndvi_v_max"):
-            if key in data:
-                anc["ndvi_v_max"] = np.asarray(data[key], dtype=np.float64).ravel()
+    # Matlab 从 VI_v_qa.mat 加载（A5_NDVI_diff_all.m 产出），这是权威历史极值
+    # 同时用于 SF 倒推和 Tau 计算（omega_sf_fenkuai.m L352-354, L633-634, L710）
+    for fname in ("VI_v_qa.mat", "NDVI_extrema.mat", "ndvi_extrema.mat"):
+        ndvi_extrema_path = root / fname
+        if ndvi_extrema_path.exists():
+            # Windows NTFS 可能出现文件存在于目录列表但无法 open() 的情况
+            # 提前用 open() 测试可访问性，避免 load_mat_file 内部异常逃逸
+            try:
+                with open(ndvi_extrema_path, "rb") as _f:
+                    pass
+            except (FileNotFoundError, OSError, PermissionError) as exc:
+                logger.warning(
+                    "[ANC] 文件存在但无法 open() %s: %s，将使用 NDVI 气候态极值",
+                    ndvi_extrema_path,
+                    exc,
+                )
                 break
-        for key in ("NDVI_v_min", "ndvi_v_min"):
-            if key in data:
-                anc["ndvi_v_min"] = np.asarray(data[key], dtype=np.float64).ravel()
+            try:
+                data = load_mat_file(str(ndvi_extrema_path))
+            except (FileNotFoundError, OSError) as exc:
+                logger.warning(
+                    "[ANC] 文件可 open 但 load_mat_file 失败 %s: %s，将使用 NDVI 气候态极值",
+                    ndvi_extrema_path,
+                    exc,
+                )
                 break
+            for key in ("NDVI_v_max", "ndvi_v_max"):
+                if key in data:
+                    anc["ndvi_v_max"] = np.asarray(data[key], dtype=np.float64).ravel()
+                    break
+            for key in ("NDVI_v_min", "ndvi_v_min"):
+                if key in data:
+                    anc["ndvi_v_min"] = np.asarray(data[key], dtype=np.float64).ravel()
+                    break
+            logger.info(
+                "[ANC] NDVI 极值加载自 %s: ndvi_v_max=%s, ndvi_v_min=%s",
+                fname,
+                "OK" if "ndvi_v_max" in anc else "MISSING",
+                "OK" if "ndvi_v_min" in anc else "MISSING",
+            )
+            break
 
     # NDVI climatology max/min
     ndvi_clim_folder = root / "NDVI_clim"
@@ -1665,6 +2430,13 @@ def _load_ancillary(anc_root: str) -> dict[str, np.ndarray]:
         anc["ndvi_clim_max"] = np.full(anc["landcover"].size, np.nan)
     if "ndvi_clim_min" not in anc:
         anc["ndvi_clim_min"] = np.full(anc["landcover"].size, np.nan)
+    # ndvi_v_max/min 回退到 clim_max/min（VI_v_qa.mat 不存在时）
+    if "ndvi_v_max" not in anc:
+        anc["ndvi_v_max"] = anc["ndvi_clim_max"].copy()
+        logger.warning("[ANC] ndvi_v_max 未找到，回退到 ndvi_clim_max")
+    if "ndvi_v_min" not in anc:
+        anc["ndvi_v_min"] = anc["ndvi_clim_min"].copy()
+        logger.warning("[ANC] ndvi_v_min 未找到，回退到 ndvi_clim_min")
 
     # 孔隙度 = 1 - BD/2.65 (矿物颗粒密度)；过小/负值视为无效
     _POROSITY_MIN = 0.02
@@ -1682,53 +2454,157 @@ def _load_ancillary(anc_root: str) -> dict[str, np.ndarray]:
 
 
 def _build_ndvi_clim_max(folder: Path) -> np.ndarray:
-    """构建 NDVI 气候态年最大值。"""
+    """构建 NDVI 气候态年最大值（增量计算，避免 OOM）。"""
     from ingest.mat_bundle import load_mat_file
 
-    arrays: list[np.ndarray] = []
+    result: np.ndarray | None = None
     for f in sorted(folder.glob("*.mat")):
         try:
             data = load_mat_file(str(f))
             for key in ("NDVI_clim", "ndvi_clim"):
                 if key in data:
-                    arrays.append(np.asarray(data[key], dtype=np.float64))
+                    arr = np.asarray(data[key], dtype=np.float64)
+                    if result is None:
+                        result = arr.copy()
+                    else:
+                        # np.fmax 传播 NaN，等价于 nanmax 但可原地更新
+                        np.fmax(result, arr, out=result, where=np.isfinite(arr))
                     break
         except Exception:
             continue
 
-    if not arrays:
+    if result is None:
         return np.full(1, np.nan)
 
-    stacked = np.stack(arrays, axis=0)
-    return np.nanmax(stacked, axis=0).ravel()
+    return result.ravel()
 
 
 def _build_ndvi_clim_min(folder: Path) -> np.ndarray:
-    """构建 NDVI 气候态年最小值。"""
+    """构建 NDVI 气候态年最小值（增量计算，避免 OOM）。"""
     from ingest.mat_bundle import load_mat_file
 
-    arrays: list[np.ndarray] = []
+    result: np.ndarray | None = None
     for f in sorted(folder.glob("*.mat")):
         try:
             data = load_mat_file(str(f))
             for key in ("NDVI_clim", "ndvi_clim"):
                 if key in data:
-                    arrays.append(np.asarray(data[key], dtype=np.float64))
+                    arr = np.asarray(data[key], dtype=np.float64)
+                    if result is None:
+                        result = arr.copy()
+                    else:
+                        np.fmin(result, arr, out=result, where=np.isfinite(arr))
                     break
         except Exception:
             continue
 
-    if not arrays:
+    if result is None:
         return np.full(1, np.nan)
 
-    stacked = np.stack(arrays, axis=0)
-    return np.nanmin(stacked, axis=0).ravel()
+    return result.ravel()
+
+
+# FY3B→FY3D 偏差缓存（避免每个 chunk 重复计算）
+_fy3b_bias_cache: dict[str, tuple[float, float] | None] = {}
+
+
+def _compute_fy3b_bias_cached(
+    fy3d_folder: str,
+    fy3b_folder: str,
+    lin_pix: np.ndarray,
+    method: str = "bias",
+) -> tuple[float, float] | None:
+    """计算并缓存 FY3B→FY3D 偏差校正量。
+
+    从首个 FY3D/FY3B 同日可用日期计算偏差，缓存结果避免重复计算。
+    返回 (bias_v, bias_h) 或 None（无重叠日期时）。
+    """
+    cache_key = f"{fy3d_folder}::{fy3b_folder}"
+    if cache_key in _fy3b_bias_cache:
+        return _fy3b_bias_cache[cache_key]
+
+    from ingest.mat_bundle import load_mat_file
+
+    bias_result: tuple[float, float] | None = None
+    fy3d_dir = Path(fy3d_folder) if fy3d_folder else None
+    fy3b_dir = Path(fy3b_folder) if fy3b_folder else None
+
+    if fy3d_dir and fy3b_dir and fy3d_dir.exists() and fy3b_dir.exists():
+        # 找首个同日可用日期
+        fy3d_dates = {
+            f.stem for f in fy3d_dir.glob("*.mat") if re.fullmatch(r"\d{8}", f.stem)
+        }
+        fy3b_dates = {
+            f.stem for f in fy3b_dir.glob("*.mat") if re.fullmatch(r"\d{8}", f.stem)
+        }
+        common_dates = sorted(fy3d_dates & fy3b_dates)
+
+        for date_str in common_dates[:5]:  # 最多尝试 5 个日期
+            try:
+                d3d = load_mat_file(str(fy3d_dir / f"{date_str}.mat"))
+                d3b = load_mat_file(str(fy3b_dir / f"{date_str}.mat"))
+
+                v3d = h3d = v3b = h3b = None
+                for key in ("TBv_mat", "TBv"):
+                    if key in d3d:
+                        v3d = np.asarray(d3d[key], dtype=np.float64).ravel()
+                        break
+                for key in ("TBh_mat", "TBh"):
+                    if key in d3d:
+                        h3d = np.asarray(d3d[key], dtype=np.float64).ravel()
+                        break
+                for key in ("TBv_mat", "TBv"):
+                    if key in d3b:
+                        v3b = np.asarray(d3b[key], dtype=np.float64).ravel()
+                        break
+                for key in ("TBh_mat", "TBh"):
+                    if key in d3b:
+                        h3b = np.asarray(d3b[key], dtype=np.float64).ravel()
+                        break
+
+                if (
+                    v3d is not None
+                    and h3d is not None
+                    and v3b is not None
+                    and h3b is not None
+                ):
+                    match_info = match_fy3b_to_fy3d(v3b, h3b, v3d, h3d, method=method)
+                    if match_info.applied:
+                        bias_result = (match_info.bias_v, match_info.bias_h)
+                        break
+            except Exception:
+                continue
+
+    _fy3b_bias_cache[cache_key] = bias_result
+    if bias_result is None:
+        logger.warning(
+            "[FY3B] 无法计算 FY3B→FY3D 偏差（无重叠日期或样本不足），回退数据不加校正"
+        )
+    return bias_result
+
+
+def _fill_chunk_row(
+    dest: np.ndarray,
+    full_vals: np.ndarray | None,
+    lin_pix: np.ndarray,
+) -> None:
+    """将全图 flat 数组按 lin_pix 填入 chunk 行（长度必须等于 chunk_pix）。
+
+    旧实现 ``dest[:len(full)] = full[lin_pix]`` 在 chunk_pix < npix 时
+    左右形状不一致，异常被吞掉后整行保持 NaN，是反演破碎的致命根因之一。
+    """
+    if full_vals is None:
+        return
+    flat = np.asarray(full_vals, dtype=np.float64).ravel()
+    out = np.full(lin_pix.shape[0], np.nan, dtype=np.float64)
+    ok = (lin_pix >= 0) & (lin_pix < flat.size)
+    if np.any(ok):
+        out[ok] = flat[lin_pix[ok]]
+    dest[:] = out
 
 
 def _preload_chunk(
     tvec: list[datetime],
-    chunk_start: int,
-    chunk_end: int,
     nrows: int,
     ncols: int,
     config: OmegaSfConfig,
@@ -1738,18 +2614,49 @@ def _preload_chunk(
     ndvi_clim_folder: str,
     ndvi_folder: str,
     anc: dict[str, np.ndarray],
+    *,
+    lin_pix: np.ndarray | None = None,
+    chunk_start: int | None = None,
+    chunk_end: int | None = None,
 ) -> dict[str, np.ndarray]:
     """预读 chunk 数据。
 
     对应 Matlab 预读总函数 (L1425-1729)。
 
     返回 dict 包含 tbv/tbh/ia/ts/sm_ref/ndvi/sf，形状均为 (Nt, chunk_pix)。
+    ``lin_pix`` 可为非连续索引（bbox mask 打包）；未给时退回 ``[chunk_start, chunk_end)``。
     """
     from ingest.mat_bundle import load_mat_file
 
     nt = len(tvec)
-    chunk_pix = chunk_end - chunk_start
-    lin_pix = np.arange(chunk_start, chunk_end)
+    if lin_pix is None:
+        if chunk_start is None or chunk_end is None:
+            raise ValueError("preload 需要 lin_pix 或 chunk_start/chunk_end")
+        lin_pix = np.arange(chunk_start, chunk_end, dtype=np.int64)
+    else:
+        lin_pix = np.asarray(lin_pix, dtype=np.int64).ravel()
+    chunk_pix = int(lin_pix.size)
+    npix = nrows * ncols
+
+    # 网格形状一致性校验：首个 SMAP 文件的大小应与 grid_shape 一致
+    _grid_validated = False
+
+    def _validate_grid_size(vals: np.ndarray, source: str, date_str: str) -> None:
+        nonlocal _grid_validated
+        if _grid_validated or vals.size == 0:
+            return
+        _grid_validated = True
+        if vals.size != npix:
+            logger.warning(
+                "[GRID] %s/%s: 数据大小 %d != grid npix %d (nrows=%d ncols=%d)。"
+                "可能存在 MAT v7.3 转置问题或网格定义不匹配。",
+                source,
+                date_str,
+                vals.size,
+                npix,
+                nrows,
+                ncols,
+            )
 
     tbv_mat = np.full((nt, chunk_pix), np.nan)
     tbh_mat = np.full((nt, chunk_pix), np.nan)
@@ -1763,6 +2670,9 @@ def _preload_chunk(
     sf_static = anc.get("sf_static", np.full(anc["landcover"].size, np.nan)).ravel()
     ndvi_clim_max = anc.get("ndvi_clim_max", np.full(anc["landcover"].size, np.nan))
     ndvi_clim_min = anc.get("ndvi_clim_min", np.full(anc["landcover"].size, np.nan))
+    # SF 倒推中使用 NDVI 历史极值（VI_v_qa.mat），与 Matlab L633-634 一致
+    ndvi_v_max = anc.get("ndvi_v_max", ndvi_clim_max)
+    ndvi_v_min = anc.get("ndvi_v_min", ndvi_clim_min)
 
     for k, date in enumerate(tvec):
         date_str = date.strftime("%Y%m%d")
@@ -1774,62 +2684,143 @@ def _preload_chunk(
         if smap_file.exists():
             try:
                 smap_data = load_mat_file(str(smap_file))
+                # 首个文件触发网格大小校验
+                for _k in ("TBv", "TBv_mat", "Ts", "Ts_mat", "sm_dca", "SM"):
+                    if _k in smap_data:
+                        _validate_grid_size(
+                            np.asarray(smap_data[_k], dtype=np.float64).ravel(),
+                            "SMAP",
+                            date_str,
+                        )
+                        break
             except Exception:
                 pass
 
-        # TB 数据
+        # TB 数据 + 入射角（IA 与 TB 同源：FY 模式从 FY 文件读，SMAP 模式从 SMAP 文件读）
         if config.tb_source.upper() == "FY":
             tb_folder = (
                 fy3d_folder if config.fy_platform.upper() == "3D" else fy3b_folder
             )
             tb_file = Path(tb_folder) / f"{date_str}.mat"
+            tb_data: dict[str, Any] = {}
+            used_fy3b_fallback = False
+
             if tb_file.exists():
                 try:
                     tb_data = load_mat_file(str(tb_file))
+                except Exception:
+                    tb_data = {}
+            # FY3B→FY3D 回退：FY3D 缺失时使用 FY3B + 偏差校正
+            if (
+                not tb_data
+                and config.fy_platform.upper() == "3D"
+                and config.match_enable
+                and fy3b_folder
+            ):
+                fy3b_file = Path(fy3b_folder) / f"{date_str}.mat"
+                if fy3b_file.exists():
+                    try:
+                        tb_data = load_mat_file(str(fy3b_file))
+                        used_fy3b_fallback = True
+                    except Exception:
+                        tb_data = {}
+
+            if tb_data:
+                try:
+                    tbv_vals = None
+                    tbh_vals = None
+                    ia_vals = None
                     for key in ("TBv_mat", "TBv"):
                         if key in tb_data:
-                            vals = np.asarray(tb_data[key], dtype=np.float64).ravel()
-                            tbv_mat[k, : len(vals)] = vals[lin_pix]
+                            tbv_vals = np.asarray(
+                                tb_data[key], dtype=np.float64
+                            ).ravel()
                             break
                     for key in ("TBh_mat", "TBh"):
                         if key in tb_data:
-                            vals = np.asarray(tb_data[key], dtype=np.float64).ravel()
-                            tbh_mat[k, : len(vals)] = vals[lin_pix]
+                            tbh_vals = np.asarray(
+                                tb_data[key], dtype=np.float64
+                            ).ravel()
                             break
+                    for key in ("IA", "IA_mat"):
+                        if key in tb_data:
+                            ia_vals = np.asarray(tb_data[key], dtype=np.float64).ravel()
+                            break
+
+                    # FY3B 数据（回退或主源=3B）均应用 FY3B→FY3D 偏差校正
+                    apply_fy3b_bias = used_fy3b_fallback or (
+                        config.fy_platform.upper() == "3B" and config.match_enable
+                    )
+                    if (
+                        apply_fy3b_bias
+                        and tbv_vals is not None
+                        and tbh_vals is not None
+                    ):
+                        bias = _compute_fy3b_bias_cached(
+                            fy3d_folder, fy3b_folder, lin_pix, config.match_method
+                        )
+                        if bias is not None:
+                            tbv_vals = tbv_vals + bias[0]
+                            tbh_vals = tbh_vals + bias[1]
+                        if used_fy3b_fallback:
+                            logger.debug(
+                                "[TS] %s: FY3D 缺失，使用 FY3B 回退%s",
+                                date_str,
+                                f" (bias V={bias[0]:.3f} H={bias[1]:.3f})"
+                                if bias
+                                else " (无偏差)",
+                            )
+
+                    _fill_chunk_row(tbv_mat[k], tbv_vals, lin_pix)
+                    _fill_chunk_row(tbh_mat[k], tbh_vals, lin_pix)
+                    _fill_chunk_row(ia_mat[k], ia_vals, lin_pix)
                 except Exception:
                     pass
         else:
-            # SMAP TB
+            # SMAP TB + IA（均从 SMAP 文件读取）
             for key in ("TBv", "TBv_mat"):
                 if key in smap_data:
-                    vals = np.asarray(smap_data[key], dtype=np.float64).ravel()
-                    tbv_mat[k, : len(vals)] = vals[lin_pix]
+                    _fill_chunk_row(
+                        tbv_mat[k],
+                        np.asarray(smap_data[key], dtype=np.float64).ravel(),
+                        lin_pix,
+                    )
                     break
             for key in ("TBh", "TBh_mat"):
                 if key in smap_data:
-                    vals = np.asarray(smap_data[key], dtype=np.float64).ravel()
-                    tbh_mat[k, : len(vals)] = vals[lin_pix]
+                    _fill_chunk_row(
+                        tbh_mat[k],
+                        np.asarray(smap_data[key], dtype=np.float64).ravel(),
+                        lin_pix,
+                    )
                     break
-
-        # 入射角
-        for key in ("IA", "IA_mat"):
-            if key in smap_data:
-                vals = np.asarray(smap_data[key], dtype=np.float64).ravel()
-                ia_mat[k, : len(vals)] = vals[lin_pix]
-                break
+            for key in ("IA", "IA_mat"):
+                if key in smap_data:
+                    _fill_chunk_row(
+                        ia_mat[k],
+                        np.asarray(smap_data[key], dtype=np.float64).ravel(),
+                        lin_pix,
+                    )
+                    break
 
         # 温度
         for key in ("Ts", "Ts_mat"):
             if key in smap_data:
-                vals = np.asarray(smap_data[key], dtype=np.float64).ravel()
-                ts_mat[k, : len(vals)] = vals[lin_pix]
+                _fill_chunk_row(
+                    ts_mat[k],
+                    np.asarray(smap_data[key], dtype=np.float64).ravel(),
+                    lin_pix,
+                )
                 break
 
-        # 参考土壤水分
-        for key in ("SM", "SM_mat", "soil_moisture"):
+        # 参考土壤水分（sm_dca 为 SMAP MAT 标准变量名，与 daily_bundle.py smap_sm_aliases 对齐）
+        for key in ("sm_dca", "SM", "SM_mat", "soil_moisture", "sm"):
             if key in smap_data:
-                vals = np.asarray(smap_data[key], dtype=np.float64).ravel()
-                sm_ref_mat[k, : len(vals)] = vals[lin_pix]
+                _fill_chunk_row(
+                    sm_ref_mat[k],
+                    np.asarray(smap_data[key], dtype=np.float64).ravel(),
+                    lin_pix,
+                )
                 break
 
         # NDVI
@@ -1840,8 +2831,11 @@ def _preload_chunk(
                     clim_data = load_mat_file(str(clim_file))
                     for key in ("NDVI_clim", "ndvi_clim"):
                         if key in clim_data:
-                            vals = np.asarray(clim_data[key], dtype=np.float64).ravel()
-                            ndvi_mat[k, : len(vals)] = vals[lin_pix]
+                            _fill_chunk_row(
+                                ndvi_mat[k],
+                                np.asarray(clim_data[key], dtype=np.float64).ravel(),
+                                lin_pix,
+                            )
                             break
                 except Exception:
                     pass
@@ -1852,8 +2846,11 @@ def _preload_chunk(
                     ndvi_data = load_mat_file(str(ndvi_file))
                     for key in ("NDVI", "ndvi"):
                         if key in ndvi_data:
-                            vals = np.asarray(ndvi_data[key], dtype=np.float64).ravel()
-                            ndvi_mat[k, : len(vals)] = vals[lin_pix]
+                            _fill_chunk_row(
+                                ndvi_mat[k],
+                                np.asarray(ndvi_data[key], dtype=np.float64).ravel(),
+                                lin_pix,
+                            )
                             break
                 except Exception:
                     pass
@@ -1884,19 +2881,31 @@ def _preload_chunk(
                 except Exception:
                     pass
 
+            # 回退：当当天 DOY 的 NDVI_clim 缺测时（极地冬季/海洋），
+            # 使用 NDVI 气候态年最大值填充，避免 SF 全 NaN 导致反演失败
+            _ndvi_clim_nan = ~np.isfinite(ndvi_clim_row)
+            if np.any(_ndvi_clim_nan):
+                _ndvi_max_fallback = (
+                    ndvi_v_max[lin_pix]
+                    if lin_pix.max() < len(ndvi_v_max)
+                    else np.full(chunk_pix, np.nan)
+                )
+                _fallback_valid = _ndvi_clim_nan & np.isfinite(_ndvi_max_fallback)
+                ndvi_clim_row[_fallback_valid] = _ndvi_max_fallback[_fallback_valid]
+
             cls_row = (
                 landcover_flat[lin_pix]
                 if lin_pix.max() < len(landcover_flat)
                 else np.zeros(chunk_pix)
             )
             ndvi_max_row = (
-                ndvi_clim_max[lin_pix]
-                if lin_pix.max() < len(ndvi_clim_max)
+                ndvi_v_max[lin_pix]
+                if lin_pix.max() < len(ndvi_v_max)
                 else np.full(chunk_pix, np.nan)
             )
             ndvi_min_row = (
-                ndvi_clim_min[lin_pix]
-                if lin_pix.max() < len(ndvi_clim_min)
+                ndvi_v_min[lin_pix]
+                if lin_pix.max() < len(ndvi_v_min)
                 else np.full(chunk_pix, np.nan)
             )
 

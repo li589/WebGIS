@@ -40,8 +40,11 @@ if celery_available:
         # 禁用 task_send_sent_event 以避免 Windows 上 Celery 5.4 的 ValueError 问题
         task_send_sent_event=False,
         worker_send_task_events=False,
-        # 使用标准 trace 模式而非 fast_trace
-        worker_pool="prefork",
+        # Windows 上 Celery 5.4 prefork 模式的 fast_trace_task 存在 thread-local
+        # _loc 未初始化 bug（ValueError: not enough values to unpack），
+        # 使用 solo pool 在主进程中执行任务以避免此问题。
+        # 算法反演任务较重，不需要高并发，solo 模式更稳定。
+        worker_pool="solo",
         task_always_eager=settings.celery_task_always_eager,
         # 默认任务超时限制，防止无限期运行
         # soft_time_limit：软超时，抛出 SoftTimeLimitExceeded，可被捕获清理

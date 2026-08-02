@@ -7,6 +7,8 @@
 
 原则：核心数据只进 **Docker named volume**（本机 Docker Desktop → `I:\Docker\DockerDesktop`），不进项目目录 / D:。
 
+**Windows**：Docker Desktop 与执行 `sync.ps1` / `launch.py sync` 的终端须以**管理员身份**运行，否则可能镜像无法访问或 volume/配置读失败。
+
 ## 当前任务
 
 | Compose service | 写入 volume | 读取方 |

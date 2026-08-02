@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { MapChromeNavigationControl } from './map/map-chrome-controls'
+
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { storeToRefs } from 'pinia'
 
@@ -190,14 +192,39 @@ function overlayToggleLinkTime() {
   overlayImageModule.setLinkTime(!overlayImageModule.linkTimeEnabled.value)
 }
 
+function overlaySetTime(layerId: string, time: string) {
+  if (!overlayImageModule) return
+  void overlayImageModule.setOverlayTime(layerId, time)
+}
+
 function overlayFormatTime(time: string | null): string {
   if (!time) return ''
+  // 8-day block: YYYYMMDD_YYYYMMDD -> YYYY-MM-DD ~ YYYY-MM-DD
+  if (time.length === 17 && /^\d{8}_\d{8}$/.test(time)) {
+    const s = time.slice(0, 8)
+    const e = time.slice(9, 17)
+    const fmt = (d: string) => `${d.slice(0, 4)}-${d.slice(4, 6)}-${d.slice(6, 8)}`
+    return `${fmt(s)} ~ ${fmt(e)}`
+  }
   // YYYYMMDD -> YYYY-MM-DD ; YYYYMM -> YYYY-MM
   if (time.length === 8 && /^\d{8}$/.test(time)) {
     return `${time.slice(0, 4)}-${time.slice(4, 6)}-${time.slice(6, 8)}`
   }
   if (time.length === 6 && /^\d{6}$/.test(time)) {
     return `${time.slice(0, 4)}-${time.slice(4, 6)}`
+  }
+  return time
+}
+
+/** 紧凑格式：用于 tick 按钮 */
+function overlayFormatTimeShort(time: string): string {
+  if (time.length === 17 && /^\d{8}_\d{8}$/.test(time)) {
+    const s = time.slice(0, 8)
+    const e = time.slice(9, 17)
+    return `${s.slice(4, 6)}/${s.slice(6, 8)}~${e.slice(4, 6)}/${e.slice(6, 8)}`
+  }
+  if (time.length === 8 && /^\d{8}$/.test(time)) {
+    return `${time.slice(4, 6)}/${time.slice(6, 8)}`
   }
   return time
 }
@@ -395,9 +422,9 @@ onMounted(async () => {
     createMapCanvasLifecycleBinder({
       map: mapInstance,
       controls: {
-        NavigationControl: maplibregl.NavigationControl,
-        ScaleControl: maplibregl.ScaleControl,
+        NavigationControl: MapChromeNavigationControl as any,
       },
+      onLocate: handleLocateMe,
       onMapError: (event) => {
         moduleBundle.basemapModule.handleMapErrorEvent(event)
       },
@@ -504,6 +531,14 @@ watch(
 
 async function handleLocateMe() {
   if (isLocating.value) return
+
+  // 若当前地图上已有定位标记，二次点击则清除定位标
+  if (locationMarkerCleanup !== null) {
+    _clearLocationMarker()
+    logStore.logOperation('locate-me', '已清除地图定位标记')
+    return
+  }
+
   locateError.value = null
   if (!navigator.geolocation) {
     _showLocateError('浏览器不支持地理定位', '请使用 Chrome、Edge 或 Firefox 等现代浏览器')
@@ -525,11 +560,11 @@ async function handleLocateMe() {
       // 飞行到用户位置
       mapInstance.flyTo({
         center: [longitude, latitude],
-        zoom: Math.max(mapInstance.getZoom(), 10),
+        zoom: Math.max(mapInstance.getZoom(), 12),
         duration: 1500,
       })
 
-      // 添加临时定位标记
+      // 添加定位标记 (持续保留在地图上，直至再次点击消除)
       _clearLocationMarker()
       const { default: maplibregl } = await import('maplibre-gl')
       const el = document.createElement('div')
@@ -539,10 +574,6 @@ async function handleLocateMe() {
         .setLngLat([longitude, latitude])
         .addTo(mapInstance)
       locationMarkerCleanup = () => marker.remove()
-
-      // 8 秒后自动移除标记
-      if (locationMarkerTimer) clearTimeout(locationMarkerTimer)
-      locationMarkerTimer = setTimeout(() => _clearLocationMarker(), 8000)
 
       isLocating.value = false
       logStore.logOperation(
@@ -737,56 +768,43 @@ async function handleLocateMe() {
         :key="'overlay-time-' + state.layerId"
         class="overlay-time-control"
       >
-        <button
-          class="overlay-time-btn"
-          type="button"
-          :disabled="state.timeList.indexOf(state.currentTime ?? '') <= 0"
-          @click="overlayStepTime(state.layerId, -1)"
-          aria-label="上一个时间"
-        >
-          ‹
-        </button>
-        <span class="overlay-time-label">{{ overlayFormatTime(state.currentTime) }}</span>
-        <button
-          class="overlay-time-btn"
-          type="button"
-          :disabled="state.timeList.indexOf(state.currentTime ?? '') >= state.timeList.length - 1"
-          @click="overlayStepTime(state.layerId, 1)"
-          aria-label="下一个时间"
-        >
-          ›
-        </button>
+        <div class="overlay-time-row">
+          <button
+            class="overlay-time-btn"
+            type="button"
+            :disabled="state.timeList.indexOf(state.currentTime ?? '') <= 0"
+            @click="overlayStepTime(state.layerId, -1)"
+            aria-label="上一个时间"
+          >
+            ‹
+          </button>
+          <span class="overlay-time-label">{{ overlayFormatTime(state.currentTime) }}</span>
+          <button
+            class="overlay-time-btn"
+            type="button"
+            :disabled="state.timeList.indexOf(state.currentTime ?? '') >= state.timeList.length - 1"
+            @click="overlayStepTime(state.layerId, 1)"
+            aria-label="下一个时间"
+          >
+            ›
+          </button>
+        </div>
+        <!-- 8-day block tick selector -->
+        <div v-if="state.timeList.length > 1" class="overlay-time-ticks">
+          <button
+            v-for="(t, idx) in state.timeList"
+            :key="'tick-' + state.layerId + '-' + idx"
+            class="overlay-tick-btn"
+            :class="{ active: t === state.currentTime }"
+            type="button"
+            :title="overlayFormatTime(t)"
+            @click="overlaySetTime(state.layerId, t)"
+          >
+            {{ overlayFormatTimeShort(t) }}
+          </button>
+        </div>
       </div>
     </div>
-
-    <!-- 自动定位按钮 -->
-    <button
-      class="locate-me-btn"
-      :class="{ locating: isLocating }"
-      type="button"
-      title="定位到当前位置"
-      :disabled="isLocating"
-      @click="handleLocateMe"
-    >
-      <svg
-        v-if="!isLocating"
-        width="18"
-        height="18"
-        viewBox="0 0 24 24"
-        fill="none"
-        stroke="currentColor"
-        stroke-width="2"
-        stroke-linecap="round"
-        stroke-linejoin="round"
-      >
-        <circle cx="12" cy="12" r="4" />
-        <line x1="12" y1="2" x2="12" y2="5" />
-        <line x1="12" y1="19" x2="12" y2="22" />
-        <line x1="2" y1="12" x2="5" y2="12" />
-        <line x1="19" y1="12" x2="22" y2="12" />
-      </svg>
-      <span v-else class="locate-spinner"></span>
-    </button>
 
     <!-- 定位失败提示 -->
     <Transition name="locate-error">
@@ -1395,8 +1413,9 @@ async function handleLocateMe() {
 
 .overlay-time-control {
   display: inline-flex;
-  align-items: center;
-  gap: 0.3rem;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 0.2rem;
   padding: 0.32rem 0.4rem;
   border-radius: 0.7rem;
   background: rgba(8, 18, 33, 0.88);
@@ -1404,6 +1423,13 @@ async function handleLocateMe() {
   box-shadow: 0 6px 20px rgba(3, 10, 20, 0.22);
   color: #eaf3fb;
   font-size: 0.7rem;
+}
+
+.overlay-time-row {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  justify-content: center;
 }
 
 .overlay-link-btn {
@@ -1464,111 +1490,51 @@ async function handleLocateMe() {
 }
 
 .overlay-time-label {
-  min-width: 5.2rem;
+  min-width: 7.6rem;
   text-align: center;
   font-variant-numeric: tabular-nums;
   letter-spacing: 0.02em;
 }
 
-:deep(.maplibregl-ctrl-bottom-right) {
-  right: 0.8rem;
-  bottom: 0.8rem;
+.overlay-time-ticks {
   display: flex;
-  flex-direction: column;
-  align-items: flex-end;
-  gap: 0.28rem;
+  gap: 0.18rem;
+  margin-top: 0.22rem;
+  padding-top: 0.22rem;
+  border-top: 1px solid rgba(136, 192, 255, 0.12);
+  flex-wrap: wrap;
+  max-width: 14rem;
 }
-:deep(.maplibregl-ctrl-bottom-right .maplibregl-ctrl-group) {
-  display: flex;
-  flex-direction: column;
-  border-radius: 0.7rem;
-  overflow: hidden;
-  box-shadow: 0 8px 24px rgba(3, 10, 20, 0.18);
-  background: rgba(8, 18, 33, 0.9);
+
+.overlay-tick-btn {
+  padding: 0.16rem 0.32rem;
   border: 1px solid rgba(136, 192, 255, 0.12);
-}
-:deep(.maplibregl-ctrl-bottom-right .maplibregl-ctrl-group button) {
-  width: 2rem;
-  height: 2rem;
-  background: transparent;
-  border: none;
-  color: #dbe8f5;
-  box-shadow: none;
-  border-radius: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-:deep(.maplibregl-ctrl-bottom-right .maplibregl-ctrl-group button:hover) {
-  background: rgba(255, 255, 255, 0.08);
-  color: #f4fbff;
-}
-:deep(.maplibregl-ctrl-bottom-right .maplibregl-ctrl-group button + button) {
-  border-top: 1px solid rgba(136, 192, 255, 0.08);
-}
-:deep(.maplibregl-ctrl-bottom-right .maplibregl-ctrl-group button .maplibregl-ctrl-icon) {
-  filter: brightness(1.15) contrast(1.05);
+  border-radius: 0.36rem;
+  background: rgba(255, 255, 255, 0.025);
+  color: #7f97ad;
+  font: inherit;
+  font-size: 0.5rem;
+  white-space: nowrap;
+  cursor: pointer;
+  transition:
+    color 0.18s ease,
+    border-color 0.18s ease,
+    background-color 0.18s ease;
 }
 
-.map-stage-light :deep(.maplibregl-ctrl-bottom-right .maplibregl-ctrl-group),
-.map-stage-light :deep(.maplibregl-ctrl-bottom-left .maplibregl-ctrl-scale) {
-  background: rgba(8, 18, 33, 0.92);
-  border-color: rgba(136, 192, 255, 0.12);
-  box-shadow: 0 8px 24px rgba(3, 10, 20, 0.18);
-}
-
-.map-stage-light :deep(.maplibregl-ctrl-bottom-right .maplibregl-ctrl-group button),
-.map-stage-light :deep(.maplibregl-ctrl-bottom-left .maplibregl-ctrl-scale) {
+.overlay-tick-btn:hover {
   color: #eaf3fb;
+  border-color: rgba(136, 192, 255, 0.28);
+  background: rgba(90, 162, 255, 0.1);
 }
 
-.map-stage-light :deep(.maplibregl-ctrl-bottom-right .maplibregl-ctrl-group button:hover) {
-  background: rgba(255, 255, 255, 0.08);
-  color: #ffffff;
+.overlay-tick-btn.active {
+  color: #f3fbff;
+  border-color: rgba(90, 162, 255, 0.45);
+  background: rgba(90, 162, 255, 0.18);
+  font-weight: 600;
 }
 
-.map-stage-light
-  :deep(.maplibregl-ctrl-bottom-right .maplibregl-ctrl-group button .maplibregl-ctrl-icon) {
-  filter: brightness(1.15) contrast(1.08);
-}
-
-.map-stage-light :deep(.maplibregl-ctrl-bottom-left .maplibregl-ctrl-scale) {
-  color: #eaf3fb;
-}
-
-.map-stage-dark :deep(.maplibregl-ctrl-bottom-right .maplibregl-ctrl-group),
-.map-stage-dark :deep(.maplibregl-ctrl-bottom-left .maplibregl-ctrl-scale) {
-  background: rgba(255, 255, 255, 0.9);
-  border-color: rgba(18, 28, 44, 0.14);
-  box-shadow: 0 8px 24px rgba(3, 10, 20, 0.16);
-}
-
-.map-stage-dark :deep(.maplibregl-ctrl-bottom-right .maplibregl-ctrl-group button),
-.map-stage-dark :deep(.maplibregl-ctrl-bottom-left .maplibregl-ctrl-scale) {
-  color: #203040;
-}
-
-.map-stage-dark :deep(.maplibregl-ctrl-bottom-right .maplibregl-ctrl-group button:hover) {
-  background: rgba(24, 80, 160, 0.12);
-  color: #10233a;
-}
-
-.map-stage-dark
-  :deep(.maplibregl-ctrl-bottom-right .maplibregl-ctrl-group button .maplibregl-ctrl-icon) {
-  filter: brightness(0.42) contrast(1.15);
-}
-:deep(.maplibregl-ctrl-bottom-right .maplibregl-ctrl-scale) {
-  border-radius: 0.6rem;
-  border: none;
-  background: rgba(8, 18, 33, 0.9);
-  color: #eaf3fb;
-  font-size: 0.64rem;
-  font-weight: 700;
-  letter-spacing: 0.04em;
-  padding: 0.32rem 0.6rem;
-  box-shadow: 0 8px 24px rgba(3, 10, 20, 0.18);
-  box-sizing: border-box;
-}
 :deep(.maplibregl-ctrl-attrib) {
   background: rgba(255, 255, 255, 0.8);
 }

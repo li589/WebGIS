@@ -1,27 +1,43 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import type { TimeGranularity, TimelineAvailabilitySegment } from '../utils/layer-timeline'
+import {
+  computeVisibleTickIndices,
+  formatTimelineDateLabel,
+  granularityUnitLabel,
+  shiftTimelineDate,
+} from '../utils/layer-timeline'
+import {
+  DEFAULT_PLAY_INTERVAL_MS,
+  TIMELINE_PLAY_INTERVAL_OPTIONS,
+} from '../utils/timeline-play'
 
-type TimelineAvailabilitySegment = {
-  hour: number
-  label: string
-  state: 'empty' | 'partial' | 'ready'
-  availabilityLabel: string
-}
-
-const props = defineProps<{
-  currentHour: number
-  currentDate: Date
-  hourLabel: string
-  accentColor: string
-  availabilityLabel: string
-  observationTimeLabel: string
-  timelineSegments: TimelineAvailabilitySegment[]
-  /** 覆盖来源短说明（单行） */
-  coverageSourceLabel?: string
-  /** 统一时间：切层不改时刻 */
-  unifiedTimeLock?: boolean
-  isPlaying?: boolean
-}>()
+const props = withDefaults(
+  defineProps<{
+    currentHour: number
+    currentDate: Date
+    hourLabel: string
+    accentColor: string
+    availabilityLabel: string
+    observationTimeLabel: string
+    timelineSegments: TimelineAvailabilitySegment[]
+    coverageSourceLabel?: string
+    unifiedTimeLock?: boolean
+    isPlaying?: boolean
+    playIntervalMs?: number
+    granularity?: TimeGranularity
+    activeLayerName?: string
+    isLayerLocked?: boolean
+  }>(),
+  {
+    granularity: 'hour',
+    unifiedTimeLock: true,
+    isPlaying: false,
+    playIntervalMs: DEFAULT_PLAY_INTERVAL_MS,
+    isLayerLocked: false,
+    activeLayerName: '',
+  },
+)
 
 const emit = defineEmits<{
   step: [delta: number]
@@ -29,9 +45,17 @@ const emit = defineEmits<{
   changeDate: [date: Date]
   togglePlay: []
   toggleUnifiedTime: []
+  toggleLayerLock: []
+  changePlayInterval: [ms: number]
 }>()
 
-// ── 日期格式化 ────────────────────────────────────────────────
+// ── 日期与粒度格式化 ──────────────────────────────────────────
+const isStatic = computed(() => props.granularity === 'static')
+
+const formattedTimeHeader = computed(() => {
+  return formatTimelineDateLabel(props.currentDate, props.granularity, props.currentHour)
+})
+
 const dateString = computed(() => {
   const d = props.currentDate
   const y = d.getFullYear()
@@ -40,14 +64,28 @@ const dateString = computed(() => {
   return `${y}-${m}-${day}`
 })
 
+const monthString = computed(() => {
+  const d = props.currentDate
+  const y = d.getFullYear()
+  const m = String(d.getMonth() + 1).padStart(2, '0')
+  return `${y}-${m}`
+})
+
+const daysInMonth = computed(() =>
+  new Date(props.currentDate.getFullYear(), props.currentDate.getMonth() + 1, 0).getDate(),
+)
+
+const yearWindowStart = computed(() => props.currentDate.getFullYear() - 5)
+const yearWindowEnd = computed(() => yearWindowStart.value + 9)
+
 const weekdayLabel = computed(() => {
+  if (isStatic.value) return '静态'
   const weekdays = ['周日', '周一', '周二', '周三', '周四', '周五', '周六']
   return weekdays[props.currentDate.getDay()]
 })
 
-const dateInputValue = computed(() => dateString.value)
-
 const isToday = computed(() => {
+  if (isStatic.value) return false
   const today = new Date()
   return (
     props.currentDate.getFullYear() === today.getFullYear() &&
@@ -56,35 +94,76 @@ const isToday = computed(() => {
   )
 })
 
-// ── 时间/进度（当日 0–23，自由拖动）──────────────────────────
-const progressPercent = computed(() => `${((props.currentHour / 23) * 100).toFixed(1)}%`)
-const liveLabel = computed(() => `${props.availabilityLabel}`)
-const coverageCaption = computed(() => props.coverageSourceLabel?.trim() || '数据覆盖')
-const phaseLabel = computed(() => {
-  if (props.currentHour < 6) return '夜间'
-  if (props.currentHour < 11) return '上午'
-  if (props.currentHour < 17) return '午后'
-  if (props.currentHour < 20) return '傍晚'
-  return '夜间'
-})
-const phaseIcon = computed(() => {
-  if (props.currentHour < 6) return '🌙'
-  if (props.currentHour < 11) return '🌅'
-  if (props.currentHour < 17) return '☀️'
-  if (props.currentHour < 20) return '🌇'
-  return '🌙'
+function segmentIndex(segment: TimelineAvailabilitySegment): number {
+  return segment.timestamp ?? segment.index
+}
+
+function currentSliceValue(): number {
+  if (props.granularity === 'month') return props.currentDate.getMonth()
+  if (props.granularity === 'day') return props.currentDate.getDate()
+  if (props.granularity === 'year') return props.currentDate.getFullYear()
+  return props.currentHour
+}
+
+// ── 进度计算 ────────────────────────────────────────────────
+const progressPercent = computed(() => {
+  if (isStatic.value) return '100%'
+  if (props.granularity === 'month') {
+    return `${((props.currentDate.getMonth() / 11) * 100).toFixed(1)}%`
+  }
+  if (props.granularity === 'day') {
+    const span = Math.max(1, daysInMonth.value - 1)
+    return `${(((props.currentDate.getDate() - 1) / span) * 100).toFixed(1)}%`
+  }
+  if (props.granularity === 'year') {
+    const offset = props.currentDate.getFullYear() - yearWindowStart.value
+    return `${((Math.max(0, Math.min(9, offset)) / 9) * 100).toFixed(1)}%`
+  }
+  // hour：按实际切片跨度定位（天气 8 段或 24 小时）
+  const segs = props.timelineSegments
+  if (segs.length >= 2) {
+    const values = segs.map((s) => segmentIndex(s)).sort((a, b) => a - b)
+    const min = values[0]!
+    const max = values[values.length - 1]!
+    const span = Math.max(1e-6, max - min)
+    const t = Math.max(0, Math.min(1, (props.currentHour - min) / span))
+    return `${(t * 100).toFixed(1)}%`
+  }
+  return `${((props.currentHour / 23) * 100).toFixed(1)}%`
 })
 
+const liveLabel = computed(() => `${props.availabilityLabel}`)
+const coverageCaption = computed(() => props.coverageSourceLabel?.trim() || '数据覆盖')
+
+/** 过长图层名中间省略，保留前缀与后缀便于辨认 */
+const displayLayerName = computed(() => truncateMiddle(props.activeLayerName?.trim() || '', 28))
+
+function truncateMiddle(text: string, maxChars: number): string {
+  if (!text || text.length <= maxChars) return text
+  const keep = maxChars - 1
+  const head = Math.ceil(keep * 0.55)
+  const tail = keep - head
+  return `${text.slice(0, head)}…${text.slice(-tail)}`
+}
+
 const nearestSegment = computed(() => {
+  if (isStatic.value) {
+    return {
+      index: 0,
+      label: '静态',
+      state: 'static' as const,
+      availabilityLabel: '无时间维度 · 全面就绪',
+    }
+  }
+  const target = currentSliceValue()
   return props.timelineSegments.reduce(
     (closest, segment) => {
-      return Math.abs(segment.hour - props.currentHour) < Math.abs(closest.hour - props.currentHour)
-        ? segment
-        : closest
+      const segVal = segmentIndex(segment)
+      return Math.abs(segVal - target) < Math.abs(segmentIndex(closest) - target) ? segment : closest
     },
     props.timelineSegments[0] ?? {
-      hour: 0,
-      label: '00:00',
+      index: 0,
+      label: '无数据',
       state: 'empty' as const,
       availabilityLabel: '无数据',
     },
@@ -96,16 +175,73 @@ const trackStyle = computed(() => ({
   '--accent-color': props.accentColor,
 }))
 
-// ── 日期导航 ──────────────────────────────────────────────────
-function shiftDate(days: number) {
-  const d = new Date(props.currentDate)
-  d.setDate(d.getDate() + days)
-  emit('changeDate', d)
+function isTickActive(tick: TimelineAvailabilitySegment): boolean {
+  if (isStatic.value) return true
+  const idx = segmentIndex(tick)
+  if (props.granularity === 'month') return idx === props.currentDate.getMonth()
+  if (props.granularity === 'day') return idx === props.currentDate.getDate()
+  if (props.granularity === 'year') return idx === props.currentDate.getFullYear()
+  // hour：刻度可能是 0..23 或天气 8 段 (0,3,…,21)
+  return Math.abs(props.currentHour - idx) < 1.5
+}
+
+// ── 日期/切片导航 ──────────────────────────────────────────────
+/** 按当前粒度前进/后退一个切片（步进按钮与播放共用；优先跳到有数据的段） */
+function advanceSlice(delta: number) {
+  if (isStatic.value || !Number.isFinite(delta) || delta === 0) return
+
+  if (props.granularity === 'hour') {
+    const segs = props.timelineSegments
+    const usable = segs
+      .filter((s) => s.state === 'ready' || s.state === 'partial')
+      .map((s) => ({ seg: s, value: segmentIndex(s) }))
+      .sort((a, b) => a.value - b.value)
+
+    if (usable.length > 0) {
+      const cur = props.currentHour
+      if (delta > 0) {
+        const next = usable.find((u) => u.value > cur + 0.2)
+        if (next) {
+          emit('changeHour', next.value)
+          return
+        }
+        // 跨日：先改日再落到首个有数据段
+        const nextDate = shiftTimelineDate(props.currentDate, 1, 'day')
+        emit('changeDate', nextDate)
+        emit('changeHour', usable[0]!.value)
+        return
+      }
+      const prev = [...usable].reverse().find((u) => u.value < cur - 0.2)
+      if (prev) {
+        emit('changeHour', prev.value)
+        return
+      }
+      const prevDate = shiftTimelineDate(props.currentDate, -1, 'day')
+      emit('changeDate', prevDate)
+      emit('changeHour', usable[usable.length - 1]!.value)
+      return
+    }
+
+    emit('step', delta)
+    return
+  }
+
+  emit('changeDate', shiftTimelineDate(props.currentDate, delta, props.granularity))
 }
 
 function onDateInput(event: Event) {
   const value = (event.target as HTMLInputElement).value
-  if (!value) return
+  if (!value || isStatic.value) return
+
+  if (props.granularity === 'month') {
+    const [y, m] = value.split('-').map(Number)
+    if (!y || !m) return
+    const newDate = new Date(props.currentDate)
+    newDate.setFullYear(y, m - 1, 1)
+    emit('changeDate', newDate)
+    return
+  }
+
   const [y, m, d] = value.split('-').map(Number)
   if (!y || !m || !d) return
   const newDate = new Date(props.currentDate)
@@ -113,92 +249,369 @@ function onDateInput(event: Event) {
   emit('changeDate', newDate)
 }
 
+function onYearInput(event: Event) {
+  const yearVal = Number((event.target as HTMLInputElement).value)
+  if (!Number.isFinite(yearVal) || yearVal < 1980 || yearVal > 2100) return
+  const newDate = new Date(props.currentDate)
+  newDate.setFullYear(yearVal)
+  emit('changeDate', newDate)
+}
+
+function onSliderInput(event: Event) {
+  const val = Number((event.target as HTMLInputElement).value)
+  if (!Number.isFinite(val)) return
+  if (props.granularity === 'month') {
+    const newDate = new Date(props.currentDate)
+    newDate.setMonth(val)
+    emit('changeDate', newDate)
+    return
+  }
+  if (props.granularity === 'day') {
+    const day = Math.max(1, Math.min(daysInMonth.value, Math.round(val)))
+    const newDate = new Date(props.currentDate)
+    newDate.setDate(day)
+    emit('changeDate', newDate)
+    return
+  }
+  if (props.granularity === 'year') {
+    const newDate = new Date(props.currentDate)
+    newDate.setFullYear(Math.round(val))
+    emit('changeDate', newDate)
+    return
+  }
+  emit('changeHour', val)
+}
+
+function handleTickClick(tickIndex: number) {
+  if (!Number.isFinite(tickIndex)) return
+  if (props.granularity === 'month') {
+    const newDate = new Date(props.currentDate)
+    newDate.setMonth(tickIndex)
+    emit('changeDate', newDate)
+    return
+  }
+  if (props.granularity === 'day') {
+    const day = Math.max(1, Math.min(daysInMonth.value, Math.round(tickIndex)))
+    const newDate = new Date(props.currentDate)
+    newDate.setDate(day)
+    emit('changeDate', newDate)
+    return
+  }
+  if (props.granularity === 'year') {
+    const newDate = new Date(props.currentDate)
+    newDate.setFullYear(Math.round(tickIndex))
+    emit('changeDate', newDate)
+    return
+  }
+  emit('changeHour', tickIndex)
+}
+
 // ── 播放控制 ──────────────────────────────────────────────────
 const playing = computed(() => props.isPlaying ?? false)
 const playInterval = ref<number | null>(null)
+const documentVisible = ref(
+  typeof document === 'undefined' ? true : document.visibilityState !== 'hidden',
+)
+const playMenuOpen = ref(false)
+const playBtnRef = ref<HTMLButtonElement | null>(null)
+const playMenuStyle = ref<Record<string, string>>({})
 
-watch(playing, (isPlaying) => {
-  if (isPlaying && playInterval.value === null) {
-    playInterval.value = window.setInterval(() => {
-      emit('step', 1)
-    }, 2000)
-  } else if (!isPlaying && playInterval.value !== null) {
-    window.clearInterval(playInterval.value)
-    playInterval.value = null
-  }
+const playIntervalOptions = TIMELINE_PLAY_INTERVAL_OPTIONS
+const effectivePlayMs = computed(() => {
+  const ms = props.playIntervalMs
+  return playIntervalOptions.some((opt) => opt.ms === ms) ? ms : DEFAULT_PLAY_INTERVAL_MS
 })
+const playIntervalLabel = computed(
+  () => playIntervalOptions.find((opt) => opt.ms === effectivePlayMs.value)?.label ?? '2 秒',
+)
 
-onBeforeUnmount(() => {
+function clearPlayInterval() {
   if (playInterval.value !== null) {
     window.clearInterval(playInterval.value)
     playInterval.value = null
   }
+}
+
+function startPlayInterval() {
+  if (playInterval.value !== null || isStatic.value) return
+  playInterval.value = window.setInterval(() => {
+    advanceSlice(1)
+  }, effectivePlayMs.value)
+}
+
+function syncPlayInterval() {
+  clearPlayInterval()
+  if (playing.value && documentVisible.value && !isStatic.value) {
+    startPlayInterval()
+  }
+}
+
+function onVisibilityChange() {
+  documentVisible.value = document.visibilityState !== 'hidden'
+  syncPlayInterval()
+}
+
+function closePlayMenu() {
+  playMenuOpen.value = false
+}
+
+function openPlayMenu() {
+  if (isStatic.value) return
+  playMenuOpen.value = true
+  void nextTick(() => {
+    const btn = playBtnRef.value
+    if (!btn) return
+    const rect = btn.getBoundingClientRect()
+    const menuWidth = 148
+    const left = Math.min(rect.left, window.innerWidth - menuWidth - 8)
+    const top = Math.max(8, rect.top - 8)
+    playMenuStyle.value = {
+      position: 'fixed',
+      left: `${Math.max(8, left)}px`,
+      top: `${top}px`,
+      transform: 'translateY(-100%)',
+      zIndex: '80',
+    }
+  })
+}
+
+function onPlayContextMenu(event: MouseEvent) {
+  event.preventDefault()
+  event.stopPropagation()
+  if (isStatic.value) return
+  openPlayMenu()
+}
+
+function selectPlayInterval(ms: number) {
+  emit('changePlayInterval', ms)
+  closePlayMenu()
+  // 若正在播放，立即用新间隔重启
+  clearPlayInterval()
+  if (playing.value && documentVisible.value && !isStatic.value) {
+    playInterval.value = window.setInterval(() => {
+      advanceSlice(1)
+    }, ms)
+  }
+}
+
+function onPlayMenuKeydown(event: KeyboardEvent) {
+  if (event.key === 'Escape') closePlayMenu()
+}
+
+watch([playing, isStatic, effectivePlayMs], () => {
+  syncPlayInterval()
 })
 
-// ── 快捷跳转 ──────────────────────────────────────────────────
+onMounted(() => {
+  document.addEventListener('visibilitychange', onVisibilityChange)
+  document.addEventListener('pointerdown', onDocPointerDown, true)
+  document.addEventListener('keydown', onPlayMenuKeydown)
+  syncPlayInterval()
+})
+
+onBeforeUnmount(() => {
+  document.removeEventListener('visibilitychange', onVisibilityChange)
+  document.removeEventListener('pointerdown', onDocPointerDown, true)
+  document.removeEventListener('keydown', onPlayMenuKeydown)
+  clearPlayInterval()
+})
+
+function onDocPointerDown(event: PointerEvent) {
+  if (!playMenuOpen.value) return
+  const target = event.target as Node | null
+  if (playBtnRef.value?.contains(target)) return
+  const menu = document.getElementById('timeline-play-interval-menu')
+  if (menu?.contains(target)) return
+  closePlayMenu()
+}
+
 function jumpToNow() {
+  if (isStatic.value) return
   const now = new Date()
   emit('changeDate', now)
   emit('changeHour', now.getHours())
 }
+
+const datePickerInputRef = ref<HTMLInputElement | null>(null)
+
+function triggerDatePicker() {
+  if (isStatic.value) return
+  if (datePickerInputRef.value) {
+    try {
+      if (typeof datePickerInputRef.value.showPicker === 'function') {
+        datePickerInputRef.value.showPicker()
+      } else {
+        datePickerInputRef.value.click()
+      }
+    } catch {
+      datePickerInputRef.value.click()
+    }
+  }
+}
+
+// ── 刻度智能抽稀 ─────────────────────────────────────────────
+const unitLabel = computed(() => granularityUnitLabel(props.granularity))
+
+const visibleTickSet = computed(() =>
+  computeVisibleTickIndices(props.timelineSegments.length, 12),
+)
 </script>
 
 <template>
-  <section class="timeline" :style="trackStyle">
-    <!-- 顶部：日期导航 + 时间标题 + 播放 -->
+  <section class="timeline" :class="[`timeline--${granularity}`]" :style="trackStyle">
+    <!-- 顶部：日期展示 + 图层与粒度 + 统一动作按钮组 -->
     <div class="timeline-top">
+      <!-- 左侧：日期/时间点展示 + Picker + 快捷复位 -->
       <div class="date-nav">
-        <button class="nav-btn" type="button" title="前一天" @click="shiftDate(-1)">
-          <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M10 3 5 8l5 5" /></svg>
-        </button>
-        <label class="date-display" :title="isToday ? '今天' : '点击选择日期'">
-          <span class="date-text">{{ dateString }}</span>
-          <span class="date-weekday">{{ weekdayLabel }}</span>
+        <div
+          class="date-display"
+          :title="isStatic ? '静态数据' : '点击弹出日期/时间选择器'"
+          @click="triggerDatePicker"
+        >
+          <svg class="calendar-icon" viewBox="0 0 16 16" aria-hidden="true">
+            <path fill="currentColor" d="M3.5 0a.5.5 0 0 1 .5.5V1h8V.5a.5.5 0 0 1 1 0V1h1a2 2 0 0 1 2 2v11a2 2 0 0 1-2 2H2a2 2 0 0 1-2-2V3a2 2 0 0 1 2-2h1V.5a.5.5 0 0 1 .5-.5zM1 4v10a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V4H1z"/>
+          </svg>
+          <span class="date-text">{{ formattedTimeHeader }}</span>
+          <span v-if="!isStatic" class="date-weekday">{{ weekdayLabel }}</span>
           <span v-if="isToday" class="date-today-badge">今</span>
+
           <input
+            v-if="granularity === 'month'"
+            ref="datePickerInputRef"
             class="date-picker-hidden"
-            type="date"
-            :value="dateInputValue"
+            type="month"
+            :value="monthString"
             @change="onDateInput"
           />
-        </label>
-        <button class="nav-btn" type="button" title="后一天" @click="shiftDate(1)">
-          <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M6 3l5 5-5 5" /></svg>
-        </button>
+          <input
+            v-else-if="granularity === 'year'"
+            ref="datePickerInputRef"
+            class="date-picker-hidden"
+            type="number"
+            min="1980"
+            max="2100"
+            :value="currentDate.getFullYear()"
+            @change="onYearInput"
+          />
+          <input
+            v-else-if="!isStatic"
+            ref="datePickerInputRef"
+            class="date-picker-hidden"
+            type="date"
+            :value="dateString"
+            @change="onDateInput"
+          />
+        </div>
+
         <button
+          v-if="!isStatic"
           class="nav-btn nav-btn--now"
           type="button"
-          title="跳转到当前时刻"
+          title="Jump to now"
           @click="jumpToNow"
         >
-          <svg viewBox="0 0 16 16" aria-hidden="true">
-            <circle cx="8" cy="8" r="5.5" />
-            <path d="M8 5v3l2 1.5" />
-          </svg>
+          <span class="now-label">Now</span>
         </button>
       </div>
 
+      <!-- 中间：激活图层名称 + 粒度标记 (居中对齐) -->
       <div class="time-heading">
-        <span class="time-kicker">时刻</span>
-        <strong class="time-value">{{ hourLabel }}</strong>
-        <span class="time-phase">{{ phaseIcon }} {{ phaseLabel }}</span>
+        <span
+          v-if="activeLayerName"
+          class="active-layer-tag"
+          :title="activeLayerName"
+        >
+          {{ displayLayerName }}
+        </span>
+        <span class="granularity-badge" :class="`granularity-${granularity}`">
+          {{ granularity === 'static' ? '静态' : granularity === 'month' ? '月度' : granularity === 'year' ? '年度' : granularity === 'day' ? '日尺度' : '小时' }}
+        </span>
       </div>
 
+      <!-- 右侧：统一动作组（前进/后退、播放、图层锁定、统一联动） -->
       <div class="top-actions">
+        <!-- 统一的步进/切片控制组 -->
+        <div class="step-group">
+          <button
+            class="action-btn step-btn"
+            type="button"
+            :disabled="isStatic"
+            title="上一时间切片"
+            @click="advanceSlice(-1)"
+          >
+            <svg viewBox="0 0 16 16" aria-hidden="true"><path fill="currentColor" d="M10 3 5 8l5 5" /></svg>
+          </button>
+
+          <button
+            ref="playBtnRef"
+            class="action-btn play-btn"
+            :class="{ 'play-btn--playing': playing, 'play-btn--menu-open': playMenuOpen }"
+            type="button"
+            :disabled="isStatic"
+            :title="
+              isStatic
+                ? '静态图层不可播放'
+                : playing
+                  ? `暂停（间隔 ${playIntervalLabel} · 右键改间隔）`
+                  : `播放（间隔 ${playIntervalLabel} · 右键改间隔）`
+            "
+            @click="emit('togglePlay')"
+            @contextmenu="onPlayContextMenu"
+          >
+            <svg v-if="!playing" viewBox="0 0 16 16" aria-hidden="true">
+              <path fill="currentColor" d="M4.5 2.8v10.4l8.5-5.2z" />
+            </svg>
+            <svg v-else viewBox="0 0 16 16" aria-hidden="true">
+              <rect fill="currentColor" x="3.5" y="3" width="3" height="10" rx="0.5" />
+              <rect fill="currentColor" x="9.5" y="3" width="3" height="10" rx="0.5" />
+            </svg>
+          </button>
+
+          <button
+            class="action-btn step-btn"
+            type="button"
+            :disabled="isStatic"
+            title="下一时间切片"
+            @click="advanceSlice(1)"
+          >
+            <svg viewBox="0 0 16 16" aria-hidden="true"><path fill="currentColor" d="M6 3l5 5-5 5" /></svg>
+          </button>
+        </div>
+
+        <div class="divider" aria-hidden="true"></div>
+
+        <!-- 图层时间独立锁定开关 -->
         <button
-          class="sync-time-btn"
+          class="action-btn lock-btn"
           type="button"
-          :class="{ 'sync-time-btn--on': unifiedTimeLock }"
-          :aria-pressed="unifiedTimeLock ? 'true' : 'false'"
-          :aria-label="unifiedTimeLock ? '统一时间（已开启）' : '分图层记忆（已开启）'"
+          :class="{ 'lock-btn--locked': isLayerLocked }"
+          :title="
+            isLayerLocked
+              ? '已锁定本图层时间记忆：切回时恢复锁定时刻；播放/拖动仍用全局时刻驱动地图（点击解除）'
+              : '未锁定记忆：切层时按图层记忆模式读写时刻（点击锁定当前时刻）'
+          "
+          @click="emit('toggleLayerLock')"
+        >
+          <svg v-if="isLayerLocked" viewBox="0 0 16 16" aria-hidden="true">
+            <path fill="currentColor" d="M8 1a3.5 3.5 0 0 0-3.5 3.5V6H4a1 1 0 0 0-1 1v7a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1V7a1 1 0 0 0-1-1h-.5V4.5A3.5 3.5 0 0 0 8 1zm2 5H6V4.5a2 2 0 1 1 4 0V6z"/>
+          </svg>
+          <svg v-else viewBox="0 0 16 16" aria-hidden="true">
+            <path fill="currentColor" d="M11 6V4.5a3.5 3.5 0 1 0-7 0v.5h1.5v-.5a2 2 0 1 1 4 0V6H4a1 1 0 0 0-1 1v7a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1V7a1 1 0 0 0-1-1h-1z"/>
+          </svg>
+        </button>
+
+        <!-- 全局统一时间 Link 按钮 -->
+        <button
+          class="action-btn sync-btn"
+          type="button"
+          :class="{ 'sync-btn--on': unifiedTimeLock }"
           :title="
             unifiedTimeLock
-              ? '统一时间：切层保持同一时刻（点击切换为分图层）'
-              : '分图层：按图层记忆时刻（点击切换为统一时间）'
+              ? '全局统一时间已开启：切换图层保留同一时刻（点击切换为图层记忆）'
+              : '图层独立记忆模式：按图层记住各自时刻（点击开启全局统一时间）'
           "
           @click="emit('toggleUnifiedTime')"
         >
-          <!-- 统一：链条锁定同一时刻 -->
           <svg v-if="unifiedTimeLock" viewBox="0 0 16 16" aria-hidden="true">
             <path
               fill="none"
@@ -208,7 +621,6 @@ function jumpToNow() {
               d="M6.2 9.8 9.8 6.2M5.4 7.1a2.2 2.2 0 0 1 0-3.1l1.1-1.1a2.2 2.2 0 0 1 3.1 0M10.6 8.9a2.2 2.2 0 0 1 0 3.1l-1.1 1.1a2.2 2.2 0 0 1-3.1 0"
             />
           </svg>
-          <!-- 分图层：错位图层叠放 -->
           <svg v-else viewBox="0 0 16 16" aria-hidden="true">
             <path
               fill="none"
@@ -219,605 +631,713 @@ function jumpToNow() {
             />
           </svg>
         </button>
-        <button
-          class="play-btn"
-          :class="{ 'play-btn--playing': playing }"
-          type="button"
-          :title="playing ? '暂停' : '播放'"
-          @click="emit('togglePlay')"
-        >
-          <svg v-if="!playing" viewBox="0 0 16 16" aria-hidden="true">
-            <path d="M4 2.5v11l9-5.5z" />
-          </svg>
-          <svg v-else viewBox="0 0 16 16" aria-hidden="true">
-            <rect x="3.5" y="3" width="3" height="10" rx="0.5" />
-            <rect x="9.5" y="3" width="3" height="10" rx="0.5" />
-          </svg>
-        </button>
-        <div class="step-group">
-          <button class="step-btn" type="button" title="前 1 小时" @click="emit('step', -1)">
-            <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M10 3 5 8l5 5" /></svg>
-          </button>
-          <button class="step-btn" type="button" title="后 1 小时" @click="emit('step', 1)">
-            <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M6 3l5 5-5 5" /></svg>
-          </button>
-        </div>
       </div>
     </div>
 
-    <!-- 中部：数据可用性 + 滑块 + 刻度 -->
+    <!-- 中部：数据可用性 + 滑块 + 刻度切片 -->
     <div class="timeline-track">
       <div
         class="availability-caption"
-        :title="`${coverageCaption} · ${nearestSegment.availabilityLabel}`"
+        :title="`${coverageCaption} · ${nearestSegment.availabilityLabel} · ${liveLabel}`"
       >
-        <span class="availability-caption-main">{{ coverageCaption }}</span>
+        <span class="availability-caption-side availability-caption-main">{{ coverageCaption }}</span>
         <strong class="availability-caption-status">{{ nearestSegment.availabilityLabel }}</strong>
-        <span class="availability-live">{{ liveLabel }}</span>
+        <span class="availability-caption-side availability-live">{{ liveLabel }}</span>
       </div>
+
+      <!-- 可用性切片条：包含空数据灰色条指示 -->
       <div class="availability-strip" aria-hidden="true">
         <span
           v-for="segment in timelineSegments"
-          :key="segment.hour"
+          :key="segment.index"
           class="availability-segment"
           :class="`availability-${segment.state}`"
           :title="`${segment.label} · ${segment.availabilityLabel}`"
         ></span>
       </div>
-      <div class="track-interactive">
+
+      <!-- 交互滑块轨道 -->
+      <div class="track-interactive" :class="{ disabled: isStatic }">
         <div class="track-shell">
           <div class="track-fill" aria-hidden="true"></div>
           <div class="track-buffer" aria-hidden="true"></div>
           <div class="track-thumb" aria-hidden="true"></div>
         </div>
+
         <input
+          v-if="granularity === 'month'"
+          class="slider"
+          type="range"
+          min="0"
+          max="11"
+          step="1"
+          :value="currentDate.getMonth()"
+          @input="onSliderInput"
+        />
+        <input
+          v-else-if="granularity === 'day'"
+          class="slider"
+          type="range"
+          min="1"
+          :max="daysInMonth"
+          step="1"
+          :value="currentDate.getDate()"
+          @input="onSliderInput"
+        />
+        <input
+          v-else-if="granularity === 'year'"
+          class="slider"
+          type="range"
+          :min="yearWindowStart"
+          :max="yearWindowEnd"
+          step="1"
+          :value="currentDate.getFullYear()"
+          @input="onSliderInput"
+        />
+        <input
+          v-else-if="!isStatic"
           class="slider"
           type="range"
           min="0"
           max="23"
           step="0.25"
           :value="currentHour"
-          @input="emit('changeHour', Number(($event.target as HTMLInputElement).value))"
+          @input="onSliderInput"
         />
       </div>
-      <div class="track-scale" aria-hidden="true">
-        <span>00:00</span>
-        <span>06:00</span>
-        <span>12:00</span>
-        <span>18:00</span>
-        <span>23:00</span>
-      </div>
 
+      <!-- 时间刻度按钮 (智能抽稀: 密集时仅主刻度显示标签) -->
       <div class="timeline-ticks">
         <button
-          v-for="tick in timelineSegments"
-          :key="tick.hour"
+          v-for="(tick, i) in timelineSegments"
+          :key="tick.index"
           class="tick-button"
           type="button"
-          :class="[`tick-${tick.state}`, { active: Math.abs(currentHour - tick.hour) < 1.5 }]"
-          :title="`${tick.label} · ${tick.availabilityLabel}`"
-          @click="emit('changeHour', tick.hour)"
+          :class="[
+            `tick-${tick.state}`,
+            {
+              active: isTickActive(tick),
+              'tick-minor': !visibleTickSet.has(i),
+            },
+          ]"
+          :title="`${tick.label}${unitLabel} · ${tick.availabilityLabel}`"
+          @click="handleTickClick(tick.index)"
         >
-          {{ tick.label }}
+          <span v-if="visibleTickSet.has(i)" class="tick-label">{{ tick.label }}</span>
+          <span v-else class="tick-bar" aria-hidden="true"></span>
         </button>
+        <!-- 单位指示标签 -->
+        <span v-if="unitLabel && timelineSegments.length > 1" class="tick-unit-badge">{{ unitLabel }}</span>
       </div>
     </div>
 
-    <!-- 底部：元信息 -->
+    <!-- 底部：元信息面板 -->
     <div class="timeline-meta">
-      <span class="meta-text meta-text--left"
-        >阶段 <strong>{{ phaseLabel }}</strong></span
-      >
-      <span class="meta-text meta-text--center"
-        >进度 <strong>{{ progressPercent }}</strong></span
-      >
-      <span class="meta-text meta-text--right"
-        >观测时间 <strong>{{ observationTimeLabel }}</strong></span
-      >
+      <span class="meta-text meta-text--left">
+        模式: <strong>{{ granularity === 'static' ? '静态数据' : granularity === 'month' ? '月度分析' : granularity === 'year' ? '年度产品' : '实时/时序' }}</strong>
+      </span>
+      <span class="meta-text meta-text--center">
+        维度进度: <strong>{{ progressPercent }}</strong>
+      </span>
+      <span class="meta-text meta-text--right">
+        当前观测: <strong>{{ observationTimeLabel || formattedTimeHeader }}</strong>
+      </span>
     </div>
+
+    <!-- 播放间隔菜单：右键播放按钮打开 -->
+    <Teleport to="body">
+      <div
+        v-if="playMenuOpen"
+        id="timeline-play-interval-menu"
+        class="play-interval-menu"
+        role="menu"
+        aria-label="播放间隔"
+        :style="playMenuStyle"
+      >
+        <div class="play-interval-menu-title">播放间隔</div>
+        <button
+          v-for="opt in playIntervalOptions"
+          :key="opt.ms"
+          type="button"
+          class="play-interval-option"
+          role="menuitemradio"
+          :aria-checked="opt.ms === effectivePlayMs"
+          :class="{ active: opt.ms === effectivePlayMs }"
+          @click="selectPlayInterval(opt.ms)"
+        >
+          <span class="play-interval-check" aria-hidden="true">{{ opt.ms === effectivePlayMs ? '●' : '○' }}</span>
+          <span>{{ opt.label }}</span>
+        </button>
+      </div>
+    </Teleport>
   </section>
 </template>
 
 <style scoped>
 .timeline {
-  padding: 0.22rem 0.28rem 0.18rem;
-  border-radius: 0.9rem;
-  background:
-    radial-gradient(circle at 18% 0%, rgba(90, 162, 255, 0.12), transparent 34%),
-    linear-gradient(180deg, rgba(255, 255, 255, 0.025), rgba(255, 255, 255, 0));
-  width: 100%;
-  max-width: none;
-  margin: 0;
-  min-height: 0;
-  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  background: rgba(18, 30, 52, 0.72);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid rgba(136, 192, 255, 0.16);
+  border-radius: 0.85rem;
+  padding: 0.48rem 0.75rem;
+  box-shadow: 0 10px 32px rgba(0, 0, 0, 0.45);
+  color: #e2e8f0;
+  user-select: none;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+  transition: all 0.2s ease;
 }
 
-/* ── 顶部区域 ──────────────────────────────────────────────── */
 .timeline-top {
-  display: grid;
-  grid-template-columns: 1fr auto 1fr;
+  position: relative;
+  display: flex;
   align-items: center;
+  justify-content: space-between;
   gap: 0.5rem;
-  margin-bottom: 0.18rem;
+  margin-bottom: 0.25rem;
+  min-height: 2rem;
 }
 
-/* 日期导航 */
 .date-nav {
-  display: inline-flex;
+  display: flex;
   align-items: center;
-  gap: 0.18rem;
-  padding: 0.16rem 0.2rem;
-  border-radius: 0.72rem;
-  border: 1px solid rgba(136, 192, 255, 0.12);
-  background: linear-gradient(180deg, rgba(14, 28, 49, 0.5), rgba(8, 18, 33, 0.36));
+  gap: 0.35rem;
   justify-self: start;
+  flex-shrink: 0;
+  min-width: max-content;
+  z-index: 2;
 }
-.nav-btn {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 1.4rem;
-  height: 1.4rem;
-  border: 1px solid transparent;
-  border-radius: 0.5rem;
-  background: transparent;
-  color: #b0c4d8;
-  cursor: pointer;
-  transition:
-    color 0.18s ease,
-    background-color 0.18s ease,
-    border-color 0.18s ease;
-}
-.nav-btn:hover {
-  color: #f4fbff;
-  background: rgba(90, 162, 255, 0.12);
-  border-color: rgba(136, 192, 255, 0.2);
-}
-.nav-btn--now {
-  width: 1.55rem;
-  margin-left: 0.1rem;
-  border-left: 1px solid rgba(136, 192, 255, 0.1);
-  border-radius: 0 0.5rem 0.5rem 0;
-}
-.nav-btn svg {
-  width: 0.72rem;
-  height: 0.72rem;
-  fill: none;
-  stroke: currentColor;
-  stroke-width: 1.6;
-  stroke-linecap: round;
-  stroke-linejoin: round;
-}
-.nav-btn--now svg {
-  fill: none;
-  stroke: currentColor;
-  stroke-width: 1.4;
+
+.calendar-icon {
+  width: 0.85rem;
+  height: 0.85rem;
+  color: #38bdf8;
+  flex-shrink: 0;
 }
 
 .date-display {
+  position: relative;
   display: inline-flex;
   align-items: center;
-  gap: 0.28rem;
-  padding: 0.12rem 0.36rem;
-  border-radius: 0.48rem;
+  gap: 0.4rem;
+  padding: 0.25rem 0.55rem;
+  background: rgba(15, 23, 42, 0.7);
+  border: 1px solid rgba(56, 189, 248, 0.22);
+  border-radius: 0.45rem;
+  font-size: 0.8rem;
+  font-weight: 500;
+  color: #f1f5f9;
   cursor: pointer;
-  position: relative;
-  transition: background-color 0.18s ease;
+  flex-shrink: 0;
+  max-width: none;
+  transition: border-color 0.15s ease, background 0.15s ease;
 }
+
 .date-display:hover {
-  background: rgba(90, 162, 255, 0.08);
+  border-color: rgba(56, 189, 248, 0.45);
+  background: rgba(15, 23, 42, 0.85);
 }
+
 .date-text {
-  color: #eef6ff;
-  font-size: 0.66rem;
-  font-weight: 600;
+  font-family: 'JetBrains Mono', ui-monospace, SFMono-Regular, Roboto, monospace;
+  font-size: 0.78rem;
+  color: #38bdf8;
   letter-spacing: 0.02em;
   white-space: nowrap;
+  flex-shrink: 0;
 }
-.date-weekday {
-  color: #8095ab;
-  font-size: 0.52rem;
-}
-.date-today-badge {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 0.8rem;
-  height: 0.8rem;
-  border-radius: 999px;
-  background: rgba(90, 162, 255, 0.22);
-  color: #cfe0f2;
-  font-size: 0.46rem;
-  font-weight: 700;
-}
+
 .date-picker-hidden {
   position: absolute;
   inset: 0;
+  opacity: 0;
   width: 100%;
   height: 100%;
-  opacity: 0;
-  cursor: pointer;
-  color-scheme: dark;
+  pointer-events: none;
 }
 
-/* 时间标题 */
-.time-heading {
-  display: flex;
-  align-items: baseline;
-  gap: 0.36rem;
-  justify-content: center;
-  min-width: 0;
-}
-.time-kicker {
-  color: #8095ab;
-  font-size: 0.5rem;
-  text-transform: uppercase;
-  letter-spacing: 0.1em;
-}
-.time-value {
-  font-size: 1.08rem;
-  color: #f2f8ff;
-  letter-spacing: 0.01em;
-  line-height: 1;
-  font-variant-numeric: tabular-nums;
-}
-.time-phase {
-  color: #91aac0;
-  font-size: 0.58rem;
+.date-weekday {
+  font-size: 0.68rem;
+  color: #94a3b8;
+  flex-shrink: 0;
   white-space: nowrap;
 }
 
-/* 顶部操作按钮 */
+.date-today-badge {
+  font-size: 0.6rem;
+  background: rgba(56, 189, 248, 0.2);
+  color: #38bdf8;
+  border: 1px solid rgba(56, 189, 248, 0.3);
+  padding: 0 0.25rem;
+  border-radius: 0.2rem;
+  font-weight: 600;
+  flex-shrink: 0;
+}
+
+.nav-btn--now {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.18rem 0.38rem;
+  border-radius: 0.35rem;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.04);
+  color: #94a3b8;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: all 0.15s ease;
+}
+
+.nav-btn--now:hover {
+  background: rgba(56, 189, 248, 0.12);
+  color: #e0f2fe;
+  border-color: rgba(56, 189, 248, 0.35);
+}
+
+.now-label {
+  font-family: 'JetBrains Mono', ui-monospace, 'Cascadia Code', 'SF Mono', Menlo, Consolas, monospace;
+  font-style: normal;
+  font-weight: 600;
+  font-size: 0.62rem;
+  letter-spacing: 0.08em;
+  line-height: 1;
+  text-transform: uppercase;
+}
+
+.time-heading {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.35rem;
+  min-width: 0;
+  max-width: min(42%, 280px);
+  z-index: 1;
+  pointer-events: none;
+  text-align: center;
+}
+
+.time-heading .active-layer-tag,
+.time-heading .granularity-badge {
+  pointer-events: auto;
+}
+
 .top-actions {
-  display: inline-flex;
+  display: flex;
   align-items: center;
-  gap: 0.32rem;
-  justify-self: end;
+  gap: 0.35rem;
+  justify-content: flex-end;
+  flex-shrink: 0;
+  z-index: 2;
+  margin-left: auto;
 }
-.play-btn {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 1.7rem;
-  height: 1.7rem;
-  border: 1px solid rgba(136, 192, 255, 0.22);
-  border-radius: 999px;
-  background: linear-gradient(180deg, rgba(90, 162, 255, 0.18), rgba(45, 110, 212, 0.1));
-  color: #cfe0f2;
-  cursor: pointer;
-  transition: all 0.2s ease;
-  box-shadow: 0 4px 12px rgba(1, 8, 16, 0.1);
+
+.active-layer-tag {
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: #f8fafc;
+  background: rgba(30, 41, 59, 0.7);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  padding: 0.15rem 0.5rem;
+  border-radius: 0.35rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+  max-width: min(100%, 220px);
+  flex: 1 1 auto;
+  cursor: default;
 }
-.sync-time-btn {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 1.7rem;
-  height: 1.7rem;
-  padding: 0;
-  border: 1px solid rgba(136, 192, 255, 0.18);
-  border-radius: 999px;
-  background: rgba(8, 18, 33, 0.45);
-  color: #9bb0c4;
-  cursor: pointer;
-  transition:
-    color 0.18s ease,
-    border-color 0.18s ease,
-    background-color 0.18s ease,
-    box-shadow 0.18s ease;
+
+.granularity-badge {
+  font-size: 0.62rem;
+  padding: 0.12rem 0.4rem;
+  border-radius: 0.3rem;
+  border: 1px solid rgba(56, 189, 248, 0.3);
+  background: rgba(56, 189, 248, 0.1);
+  color: #38bdf8;
+  font-weight: 500;
+  flex: none;
 }
-.sync-time-btn:hover {
-  color: #eaf3fb;
-  border-color: rgba(136, 192, 255, 0.4);
-  transform: translateY(-1px);
+
+.granularity-static {
+  border-color: rgba(148, 163, 184, 0.25);
+  background: rgba(148, 163, 184, 0.08);
+  color: #94a3b8;
 }
-.sync-time-btn--on {
-  color: #b7f5d8;
-  border-color: rgba(114, 255, 207, 0.4);
-  background: rgba(114, 255, 207, 0.12);
-  box-shadow: 0 0 0 3px rgba(114, 255, 207, 0.1);
+
+.granularity-month {
+  border-color: rgba(16, 185, 129, 0.3);
+  background: rgba(16, 185, 129, 0.1);
+  color: #10b981;
 }
-.sync-time-btn svg {
-  width: 0.82rem;
-  height: 0.82rem;
-}
-.play-btn:hover {
-  border-color: rgba(136, 192, 255, 0.4);
-  color: #f4fbff;
-  transform: translateY(-1px);
-  box-shadow: 0 6px 16px rgba(90, 162, 255, 0.18);
-}
-.play-btn--playing {
-  background: linear-gradient(180deg, rgba(90, 162, 255, 0.3), rgba(45, 110, 212, 0.18));
-  border-color: rgba(90, 162, 255, 0.5);
-  color: #f4fbff;
-  box-shadow:
-    0 0 0 3px rgba(90, 162, 255, 0.12),
-    0 4px 12px rgba(1, 8, 16, 0.1);
-}
-.play-btn svg {
-  width: 0.76rem;
-  height: 0.76rem;
-  fill: currentColor;
+
+.divider {
+  width: 1px;
+  height: 1rem;
+  background: rgba(255, 255, 255, 0.1);
+  margin: 0 0.1rem;
 }
 
 .step-group {
-  display: inline-flex;
-  gap: 0.14rem;
-  padding: 0.14rem;
-  border-radius: 0.6rem;
-  border: 1px solid rgba(136, 192, 255, 0.12);
-  background: rgba(8, 18, 33, 0.42);
+  display: flex;
+  align-items: center;
+  background: rgba(15, 23, 42, 0.6);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 0.45rem;
+  padding: 0.1rem;
+  gap: 0.1rem;
 }
-.step-btn {
+
+.action-btn {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 1.32rem;
-  height: 1.32rem;
-  border: none;
-  border-radius: 0.42rem;
+  height: 1.45rem;
+  padding: 0 0.4rem;
+  border-radius: 0.35rem;
+  border: 1px solid transparent;
   background: transparent;
-  color: #b0c4d8;
+  color: #94a3b8;
   cursor: pointer;
-  transition: all 0.18s ease;
-}
-.step-btn:hover {
-  color: #f4fbff;
-  background: rgba(90, 162, 255, 0.14);
-}
-.step-btn svg {
-  width: 0.66rem;
-  height: 0.66rem;
-  fill: none;
-  stroke: currentColor;
-  stroke-width: 1.8;
-  stroke-linecap: round;
-  stroke-linejoin: round;
+  font-size: 0.68rem;
+  transition: all 0.15s ease;
 }
 
-/* ── 轨道区域 ──────────────────────────────────────────────── */
-.timeline-track {
-  position: relative;
-  margin-top: 0.22rem;
-  padding: 0.48rem 0.56rem 0.52rem;
-  border-radius: 0.82rem;
-  border: 1px solid rgba(136, 192, 255, 0.08);
-  background: linear-gradient(180deg, rgba(6, 14, 26, 0.18), rgba(255, 255, 255, 0.02));
+.action-btn:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.1);
+  color: #f8fafc;
 }
+
+.action-btn:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
+.action-btn svg {
+  width: 0.8rem;
+  height: 0.8rem;
+}
+
+.play-btn {
+  color: #38bdf8;
+}
+
+.play-btn--playing {
+  color: #f59e0b;
+  background: rgba(245, 158, 11, 0.15);
+}
+
+.play-btn--menu-open {
+  border-color: rgba(56, 189, 248, 0.45);
+  color: #38bdf8;
+}
+
+.lock-btn {
+  width: 1.45rem;
+  padding: 0;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(15, 23, 42, 0.5);
+}
+
+.lock-btn--locked {
+  border-color: rgba(245, 158, 11, 0.45);
+  background: rgba(245, 158, 11, 0.18);
+  color: #fbbf24;
+}
+
+.sync-btn {
+  width: 1.45rem;
+  padding: 0;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(15, 23, 42, 0.5);
+}
+
+.sync-btn--on {
+  border-color: rgba(56, 189, 248, 0.4);
+  background: rgba(56, 189, 248, 0.15);
+  color: #38bdf8;
+}
+
+.timeline-track {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+}
+
 .availability-caption {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
   align-items: center;
   column-gap: 0.4rem;
-  margin-bottom: 0.12rem;
-  color: #8da3b8;
-  font-size: 0.5rem;
-  letter-spacing: 0.06em;
-  white-space: nowrap;
-  overflow: hidden;
+  font-size: 0.65rem;
+  color: #94a3b8;
+  min-height: 1rem;
 }
-.availability-caption-main,
-.availability-caption-status,
-.availability-live {
+
+.availability-caption-side {
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+
 .availability-caption-main {
   justify-self: start;
-  min-width: 0;
+  text-align: left;
 }
-.availability-caption strong,
+
 .availability-caption-status {
   justify-self: center;
   text-align: center;
-  font-size: 0.52rem;
-  color: #cfe0f2;
-  max-width: 40%;
+  font-weight: 500;
+  color: #cbd5e1;
+  white-space: nowrap;
+  padding: 0 0.15rem;
 }
+
 .availability-live {
   justify-self: end;
   text-align: right;
-  color: #91aac0;
-  font-size: 0.5rem;
-  min-width: 0;
 }
+
 .availability-strip {
-  display: grid;
-  grid-template-columns: repeat(8, minmax(0, 1fr));
-  gap: 0.08rem;
-  margin-bottom: 0.16rem;
+  display: flex;
+  height: 4px;
+  gap: 2px;
+  border-radius: 2px;
+  overflow: hidden;
+  background: rgba(15, 23, 42, 0.4);
 }
+
 .availability-segment {
-  height: 0.16rem;
-  border-radius: 999px;
-  opacity: 0.9;
-  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.04);
+  flex: 1;
+  border-radius: 1px;
+  transition: opacity 0.15s ease;
 }
+
 .availability-ready {
-  background: rgba(114, 255, 207, 0.92);
+  background: #10b981;
 }
+
 .availability-partial {
-  background: rgba(255, 196, 120, 0.9);
+  background: #f59e0b;
 }
+
+/* 高质感无数据标灰切片 */
 .availability-empty {
-  background: rgba(187, 137, 255, 0.82);
+  background: rgba(148, 163, 184, 0.3);
+}
+
+.availability-static {
+  background: rgba(100, 116, 139, 0.2);
 }
 
 .track-interactive {
   position: relative;
-  margin-top: 0.02rem;
-  padding: 0.24rem 0;
+  height: 1rem;
+  display: flex;
+  align-items: center;
 }
+
+.track-interactive.disabled {
+  opacity: 0.45;
+  pointer-events: none;
+}
+
 .track-shell {
-  position: relative;
-  height: 0.42rem;
-  border-radius: 999px;
-  overflow: visible;
-  background: rgba(255, 255, 255, 0.06);
-  border: 1px solid rgba(136, 192, 255, 0.12);
-}
-.track-fill,
-.track-buffer,
-.track-thumb {
   position: absolute;
-  top: 0;
-  bottom: 0;
-}
-.track-fill {
   left: 0;
+  right: 0;
+  height: 0.35rem;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 999px;
+  overflow: hidden;
+}
+
+.track-fill {
+  height: 100%;
   width: var(--track-progress);
-  background: linear-gradient(90deg, rgba(45, 110, 212, 0.22), var(--accent-color));
+  background: linear-gradient(90deg, rgba(56, 189, 248, 0.4), var(--accent-color, #38bdf8));
   border-radius: 999px;
 }
-.track-buffer {
-  left: var(--track-progress);
-  width: calc(100% - var(--track-progress));
-  background: linear-gradient(90deg, rgba(255, 255, 255, 0.1), rgba(255, 255, 255, 0.03));
-  border-radius: 0 999px 999px 0;
+
+.slider {
+  position: absolute;
+  left: 0;
+  right: 0;
+  width: 100%;
+  opacity: 0;
+  cursor: pointer;
+  height: 100%;
+  margin: 0;
 }
-.track-thumb {
-  left: var(--track-progress);
-  width: 0.76rem;
-  height: 0.76rem;
-  top: 50%;
-  border-radius: 999px;
-  background: #f7fbff;
-  border: 1.5px solid rgba(90, 162, 255, 0.64);
-  box-shadow: 0 0 0 5px rgba(90, 162, 255, 0.14);
-  transform: translate(-50%, -50%);
-  z-index: 1;
-  will-change: left;
+
+.timeline-ticks {
+  display: flex;
+  align-items: flex-end;
+  gap: 1px;
+  overflow: hidden;
+  position: relative;
 }
-.track-scale {
+
+.tick-button {
+  flex: 1;
+  min-width: 0;
+  border: none;
+  background: transparent;
+  color: #64748b;
+  font-family: 'JetBrains Mono', ui-monospace, SFMono-Regular, Roboto, monospace;
+  font-size: 0.58rem;
+  padding: 0;
+  border-radius: 0.2rem;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 1.35rem;
+}
+
+.tick-label {
+  display: block;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+/* 次要刻度：不显示文字，仅显示细竖线 */
+.tick-button.tick-minor {
+  max-width: 6px;
+  flex: 0.4;
+}
+
+.tick-bar {
+  display: block;
+  width: 1px;
+  height: 0.5rem;
+  background: rgba(148, 163, 184, 0.25);
+  border-radius: 1px;
+}
+
+.tick-button.tick-minor:hover .tick-bar {
+  background: rgba(148, 163, 184, 0.55);
+  height: 0.65rem;
+}
+
+.tick-button.active,
+.tick-button:hover {
+  color: #f8fafc;
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.tick-button.active {
+  color: #38bdf8;
+  font-weight: 600;
+  background: rgba(56, 189, 248, 0.12);
+}
+
+.tick-button.tick-minor.active .tick-bar,
+.tick-button.tick-minor.active:hover .tick-bar {
+  background: #38bdf8;
+  width: 2px;
+  height: 0.7rem;
+}
+
+/* 空数据刻度弱化 */
+.tick-button.tick-empty {
+  opacity: 0.4;
+}
+
+/* 单位指示标签 */
+.tick-unit-badge {
+  flex: none;
+  font-size: 0.55rem;
+  color: #64748b;
+  background: rgba(30, 41, 59, 0.6);
+  border: 1px solid rgba(100, 116, 139, 0.2);
+  padding: 0.08rem 0.3rem;
+  border-radius: 0.22rem;
+  margin-left: 0.2rem;
+  align-self: center;
+  white-space: nowrap;
+  letter-spacing: 0.04em;
+}
+
+.timeline-meta {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-top: 0.12rem;
-  color: #73889c;
-  font-size: 0.48rem;
+  font-size: 0.62rem;
+  color: #64748b;
+  margin-top: 0.22rem;
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+  padding-top: 0.2rem;
+}
+
+.meta-text strong {
+  color: #cbd5e1;
+  font-weight: 500;
+}
+</style>
+
+<style>
+/* Teleport 到 body，需非 scoped */
+.play-interval-menu {
+  min-width: 9.2rem;
+  padding: 0.35rem;
+  border-radius: 0.55rem;
+  border: 1px solid rgba(136, 192, 255, 0.28);
+  background:
+    linear-gradient(180deg, rgba(22, 34, 56, 0.96), rgba(12, 20, 36, 0.94));
+  box-shadow: 0 12px 28px rgba(1, 8, 16, 0.45);
+  backdrop-filter: blur(14px);
+  color: #e2e8f0;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+}
+
+.play-interval-menu-title {
+  padding: 0.2rem 0.45rem 0.35rem;
+  font-size: 0.62rem;
+  color: #94a3b8;
   letter-spacing: 0.04em;
 }
-.slider {
-  position: absolute;
-  inset: 0;
+
+.play-interval-option {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
   width: 100%;
-  height: 100%;
-  margin: 0;
-  opacity: 0;
-  cursor: pointer;
-  z-index: 2;
-}
-.timeline-ticks {
-  display: grid;
-  grid-template-columns: repeat(8, minmax(0, 1fr));
-  gap: 0.22rem;
-  margin-top: 0.22rem;
-}
-.tick-button {
-  border: 1px solid transparent;
-  padding: 0.24rem 0.1rem;
-  border-radius: 0.58rem;
-  background: rgba(255, 255, 255, 0.025);
-  color: #7f97ad;
-  cursor: pointer;
+  border: none;
+  border-radius: 0.35rem;
+  background: transparent;
+  color: #cbd5e1;
   font: inherit;
-  font-size: 0.54rem;
-  text-align: center;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  transition:
-    color 0.2s ease,
-    border-color 0.2s ease,
-    background-color 0.2s ease,
-    transform 0.2s ease;
-}
-.tick-button.active,
-.tick-button:hover {
-  color: #f3fbff;
-  transform: translateY(-1px);
-}
-.tick-button.active {
-  border-color: rgba(136, 192, 255, 0.2);
-  background: rgba(90, 162, 255, 0.12);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05);
-}
-.tick-ready {
-  color: #a6f4d1;
-}
-.tick-partial {
-  color: #ffd38a;
-}
-.tick-empty {
-  color: #d5c0ff;
+  font-size: 0.72rem;
+  padding: 0.32rem 0.45rem;
+  cursor: pointer;
+  text-align: left;
 }
 
-/* ── 底部元信息 ────────────────────────────────────────────── */
-.timeline-meta {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
-  align-items: center;
-  gap: 0.5rem;
-  margin-top: 0.12rem;
-  color: #8ba1b7;
+.play-interval-option:hover {
+  background: rgba(56, 189, 248, 0.12);
+  color: #f8fafc;
+}
+
+.play-interval-option.active {
+  background: rgba(56, 189, 248, 0.18);
+  color: #38bdf8;
+}
+
+.play-interval-check {
+  width: 0.85rem;
+  text-align: center;
   font-size: 0.58rem;
-}
-.meta-text {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.24rem;
-  min-width: 0;
-  white-space: nowrap;
-}
-.meta-text strong {
-  color: #eef6ff;
-  font-size: 0.62rem;
-  font-weight: 600;
-  white-space: nowrap;
-}
-.meta-text--left {
-  justify-self: start;
-}
-.meta-text--center {
-  justify-self: center;
-  text-align: center;
-}
-.meta-text--right {
-  justify-self: end;
-}
-
-/* ── 响应式 ────────────────────────────────────────────────── */
-@media (max-width: 700px) {
-  .timeline {
-    padding: 0.16rem 0.16rem 0.2rem;
-  }
-  .timeline-top {
-    grid-template-columns: 1fr;
-    gap: 0.3rem;
-  }
-  .time-heading {
-    justify-content: flex-start;
-  }
-  .top-actions {
-    justify-self: flex-start;
-  }
-  .timeline-track {
-    padding: 0.42rem 0.38rem 0.46rem;
-  }
-  .timeline-ticks {
-    grid-template-columns: repeat(4, minmax(0, 1fr));
-  }
-  .timeline-meta {
-    grid-template-columns: 1fr;
-    gap: 0.16rem;
-  }
-  .meta-text--left,
-  .meta-text--center,
-  .meta-text--right {
-    justify-self: start;
-    text-align: left;
-  }
+  opacity: 0.9;
 }
 </style>

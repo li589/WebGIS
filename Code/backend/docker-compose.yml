@@ -8,6 +8,9 @@
 #
 # 日常:
 #   docker compose -p backend up -d
+#
+# Windows: Docker Desktop 与终端建议以管理员身份运行，
+# 否则可能镜像无法访问 / volume 或配置读取失败。
 # ============================================================
 
 services:

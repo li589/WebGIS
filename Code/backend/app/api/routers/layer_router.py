@@ -1,4 +1,9 @@
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from concurrent.futures import (
+    ThreadPoolExecutor,
+    as_completed,
+    TimeoutError as FuturesTimeoutError,
+)
+import logging
 from typing import Any
 
 from fastapi import APIRouter, HTTPException, Query, Response, status
@@ -17,7 +22,11 @@ from shared.contracts.api_contracts import (
     LayerCatalogResponse,
 )
 
+_logger = logging.getLogger(__name__)
+
 router = APIRouter()
+
+_READINESS_TIMEOUT = 8.0  # 单图层就绪检查最大耗时（秒）
 
 
 @router.get("/layers", tags=["catalog"], response_model=LayerCatalogResponse)
@@ -29,13 +38,26 @@ def list_layers() -> LayerCatalogResponse:
         return item.layer_id, readiness
 
     layer_readiness: dict[str, dict[str, Any]] = {}
-    with ThreadPoolExecutor(max_workers=8) as executor:
+    executor = ThreadPoolExecutor(max_workers=8)
+    try:
         futures = {
             executor.submit(_check_readiness, desc): desc for desc in catalog.items
         }
-        for future in as_completed(futures):
-            layer_id, readiness = future.result()
-            layer_readiness[layer_id] = readiness
+        for future in as_completed(futures, timeout=_READINESS_TIMEOUT):
+            try:
+                layer_id, readiness = future.result(timeout=_READINESS_TIMEOUT)
+                layer_readiness[layer_id] = readiness
+            except FuturesTimeoutError:
+                _logger.warning("Layer readiness check timed out")
+            except Exception:
+                _logger.warning("Layer readiness check failed", exc_info=True)
+    except FuturesTimeoutError:
+        # as_completed 整体超时：未完成的 future 直接跳过
+        _logger.warning(
+            "Layer readiness batch timed out after %.1fs", _READINESS_TIMEOUT
+        )
+    finally:
+        executor.shutdown(wait=False, cancel_futures=True)
 
     items = []
     for descriptor in catalog.items:

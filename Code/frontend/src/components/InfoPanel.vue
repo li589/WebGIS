@@ -9,7 +9,6 @@ import { useUiStore } from '../stores/ui'
 import { useLogStore } from '../stores/log'
 import { useWeatherTileManager } from '../stores/weather-tile-manager'
 import { useWeatherSourcePrefsStore } from '../stores/weather-source-prefs'
-import IntegrationStatusPanel from './info-panel/IntegrationStatusPanel.vue'
 import { buildResultDisplayModel } from './info-panel/result-adapter'
 import {
   WEATHER_PALETTE_OPTIONS,
@@ -31,10 +30,17 @@ import { openDataWorkspace } from '../data-manager/core/workspace-store'
 import { exportLayer } from '../data-manager/adapters/export'
 import {
   resolveAnalysisStageKind,
-  resolveAnalysisSubtitle,
   resolveStaticLayerHint,
   resolveWorkflowStageCopy,
 } from './info-panel/analysis-panel-summary'
+import {
+  normalizeAnalysisFocusIds,
+  resolveAnalysisTabForFocusIds,
+  type AnalysisTabId,
+} from './info-panel/analysis-tab-focus'
+import PointTimeSeriesChart from './info-panel/PointTimeSeriesChart.vue'
+import MultiOverlayBarChart from './info-panel/MultiOverlayBarChart.vue'
+import BufferAnalysisTool from './info-panel/BufferAnalysisTool.vue'
 
 const layersStore = useLayersStore()
 const uiStore = useUiStore()
@@ -44,6 +50,12 @@ const weatherSourcePrefs = useWeatherSourcePrefsStore()
 const overlaySymbologyStore = useOverlaySymbologyStore()
 const importActionHint = ref('')
 let importHintTimer: number | null = null
+
+const activeTab = ref<AnalysisTabId>('visual')
+
+function setActiveTab(tab: AnalysisTabId) {
+  activeTab.value = tab
+}
 
 const weatherProviderOptions = ref<WeatherProviderForLayer[]>([])
 const weatherProvidersLoading = ref(false)
@@ -238,6 +250,38 @@ const styleSymbology = computed(() => {
 })
 const styleRenderHint = computed(() => styleSymbology.value.hint)
 
+/** 样式 Tab：字段名（与原符号浮窗对齐） */
+const styleFieldLabel = computed(() => {
+  const hint = styleRenderHint.value
+  if (hint?.primary_metric) return hint.primary_metric
+  return displayLayer.value.metricLabel || ''
+})
+
+/** 样式 Tab：数值范围（图例 ticks 或 overlay meta） */
+const styleRangeMeta = computed(() => {
+  const hint = styleRenderHint.value
+  const meta = overlayStyleMeta.value
+  let vmin = '—'
+  let vmax = '—'
+  if (hint?.legend_ticks?.length) {
+    const first = hint.legend_ticks[0]
+    const last = hint.legend_ticks[hint.legend_ticks.length - 1]
+    vmin = typeof first === 'number' ? String(first) : String(first ?? '—')
+    vmax = typeof last === 'number' ? String(last) : String(last ?? '—')
+  } else if (meta) {
+    if (meta.vmin != null) vmin = String(meta.vmin)
+    if (meta.vmax != null) vmax = String(meta.vmax)
+  }
+  const unit = hint?.unit_label || meta?.unit || ''
+  const hasRange =
+    Boolean(hint) ||
+    Boolean(meta?.palette) ||
+    displayLayer.value.isImportedRaster ||
+    vmin !== '—' ||
+    vmax !== '—'
+  return { vmin, vmax, unit, hasRange }
+})
+
 const weatherLegendStops = computed(() =>
   styleRenderHint.value ? buildWeatherLegendStops(styleRenderHint.value) : [],
 )
@@ -315,7 +359,11 @@ const windStyleChipLabel = computed(() => {
   return windDisplayModeLabel(currentWindDisplayMode.value)
 })
 
-const hasLayerStyleSection = computed(
+/** 任意选中层可进样式 Tab（至少调透明度；天气/导入另有专项控件） */
+const hasLayerStyleSection = computed(() => !!displayLayer.value.instanceId)
+
+/** 除透明度外是否还有符号/专项样式控件 */
+const hasAdvancedStyleControls = computed(
   () =>
     hasRenderableSymbology({
       renderHint: weatherRenderHint.value,
@@ -330,13 +378,14 @@ const hasLayerStyleSection = computed(
     !!displayLayer.value.isImportedRaster,
 )
 
-/** 点天气仅在有查询态或当前确为天气层时展示（样式已拆出） */
+/** 天气点查区块：有查询态或已选点时展示；否则走稀疏空态卡 */
 const hasPointWeatherSection = computed(
   () =>
-    props.pointWeatherLoading ||
-    !!props.pointWeatherError ||
-    !!props.pointWeather ||
-    isRealtimeWeatherLayer.value,
+    isRealtimeWeatherLayer.value &&
+    (props.pointWeatherLoading ||
+      !!props.pointWeatherError ||
+      !!props.pointWeather ||
+      !!props.selectedMapPoint),
 )
 
 const showCompactHero = computed(
@@ -516,8 +565,6 @@ const overlayLayers = computed(() => {
     })
 })
 
-const hasOverlayLayers = computed(() => overlayLayers.value.length > 0)
-
 // ── 叠加图层像素值查询结果 ──────────────────────────────────────────────────
 const overlayPointValueMap = computed(() => {
   const m = new Map<string, import('../services/runtime-api').OverlayPointValue>()
@@ -557,6 +604,23 @@ const pointWeatherPrimaryValue = computed(() => {
     pointWeatherMetric.value.unit,
   )
 })
+
+/** 点查主指标原始数值（供缓冲工具展示中心点当前值） */
+const pointWeatherNumericValue = computed((): number | null => {
+  const weather = props.pointWeather
+  if (!weather) return null
+  const hourIdx = Math.max(0, Math.floor(props.inspectHour ?? 0))
+  const hourly = weather.hourly ?? []
+  if (hourly.length > 0 && hourIdx < hourly.length) {
+    const entry = hourly[hourIdx]
+    if (typeof entry.primary_value === 'number' && Number.isFinite(entry.primary_value)) {
+      return entry.primary_value
+    }
+    return readWeatherMetricValue(entry, pointWeatherMetric.value.key)
+  }
+  return readWeatherMetricValue(weather.current, pointWeatherMetric.value.key)
+})
+
 const pointWeatherRows = computed(() => {
   const weather = props.pointWeather
   if (!weather) return []
@@ -602,6 +666,44 @@ const pointWeatherHourlyRows = computed(() => {
     })
     .filter((entry) => entry.metric !== `-- ${pointWeatherMetric.value.unit}`.trim())
 })
+
+const pointWeatherHourlyChartRows = computed(() => {
+  return pointWeatherHourlyRows.value.map((row) => ({
+    time: row.time,
+    metric: row.metric,
+    active: row.active,
+  }))
+})
+
+const multiOverlayBarItems = computed(() => {
+  const list = overlayLayers.value ?? []
+  return list.map((layer) => {
+    const pt = overlayPointValueMap.value.get(layer.catalogId)
+    const val = pt?.value ?? null
+    return {
+      layerId: layer.catalogId,
+      name: layer.name,
+      category: layer.category,
+      valueText: pt && pt.value !== null ? formatOverlayValue(pt) : 'N/A',
+      numericValue: typeof val === 'number' && Number.isFinite(val) ? val : null,
+      unit: pt?.unit || layer.unit || '',
+      accentColor: layer.accentColor,
+    }
+  })
+})
+
+/** 多层叠加柱状图：有选点且存在其它可见 overlay 即可（不绑天气 section） */
+const showMultiOverlayBar = computed(
+  () => !!props.selectedMapPoint && multiOverlayBarItems.value.length > 0,
+)
+
+const hasVisualTabContent = computed(
+  () =>
+    hasPointWeatherSection.value ||
+    showMultiOverlayBar.value ||
+    !!resultModel.value ||
+    props.visibleHotspots.length > 0,
+)
 
 const pointInspectStatusLabel = computed(() => {
   if (props.pointWeatherLoading) return INSPECT_COPY.statusQuerying
@@ -688,6 +790,13 @@ const latestEventMessage = computed(() => {
 
 const hasRealSelection = computed(() => Boolean(displayLayer.value.instanceId))
 
+/** 图表 Tab 稀疏态说明（有选中但尚无图表载荷） */
+const sparseVisualHint = computed(() => {
+  if (isRealtimeWeatherLayer.value) return ANALYSIS_COPY.sparseVisualWeather
+  if (canRunWorkflow.value) return ANALYSIS_COPY.sparseVisualWorkflow
+  return ANALYSIS_COPY.sparseVisualStatic
+})
+
 const analysisStageKind = computed(() =>
   resolveAnalysisStageKind({
     hasRealSelection: hasRealSelection.value,
@@ -698,8 +807,6 @@ const analysisStageKind = computed(() =>
     canRunWorkflow: canRunWorkflow.value,
   }),
 )
-
-const panelSubtitle = computed(() => resolveAnalysisSubtitle(analysisStageKind.value))
 
 const hasWeatherTileActivity = computed(() => {
   const stats = tileStats.value
@@ -812,14 +919,23 @@ function scrollToTopSummary() {
 }
 
 async function focusRequestedAnalysisSection(ids: string[], token: number) {
+  const normalized = normalizeAnalysisFocusIds(ids)
+  const tab = resolveAnalysisTabForFocusIds(normalized)
+  if (tab) activeTab.value = tab
   await nextTick()
   let attempt = 0
 
   const tryFocus = () => {
     const container = analysisScrollEl.value
     if (!container) return
-    const target = ids
-      .map((id) => container.querySelector<HTMLElement>(`#${id}`))
+    const target = normalized
+      .map((id) => {
+        try {
+          return container.querySelector<HTMLElement>(`#${CSS.escape(id)}`)
+        } catch {
+          return container.querySelector<HTMLElement>(`#${id}`)
+        }
+      })
       .find((element) => element !== null)
     if (target) {
       target.scrollIntoView({ behavior: 'smooth', block: 'start' })
@@ -842,15 +958,22 @@ watch(
   () => displayLayer.value?.instanceId,
   (instanceId) => {
     scrollToTopSummary()
-    if (!instanceId) return
-    // 「查看报告」等显式焦点优先，避免滚到当前对象卡片盖住报告区
+    // 「查看报告」等显式焦点优先
     if (uiStore.analysisFocusRequest) return
-    // 导入层滚到专项；其余保持当前对象卡片，避免每次强制跳「图层样式」
+    if (!instanceId) {
+      if (activeTab.value === 'style') activeTab.value = 'visual'
+      return
+    }
+    // 导入层：切到元数据并滚到导入专项（导出/属性）
     if (displayLayer.value.isImported || displayLayer.value.isImportedRaster) {
+      activeTab.value = 'meta'
       void scrollAnalysisIntoView('#imported-layer')
       return
     }
-    void scrollAnalysisIntoView(`#layer-${instanceId}`)
+    // 当前 Tab 对该层无内容时回退，避免样式空白页
+    if (activeTab.value === 'style' && !hasLayerStyleSection.value) {
+      activeTab.value = 'visual'
+    }
   },
   { immediate: true },
 )
@@ -860,12 +983,26 @@ watch(
   (hotspotId) => {
     scrollToTopSummary()
     if (hotspotId) {
+      activeTab.value = 'visual'
       void scrollAnalysisIntoView(`#hotspot-${hotspotId}`)
       return
     }
     if (props.visibleHotspots.length > 0) {
+      activeTab.value = 'visual'
       void scrollAnalysisIntoView('#hotspot-section')
     }
+  },
+)
+
+/** 天气点查开始或结果到达 → 图表 Tab，避免人停在工具而结果在别处 */
+watch(
+  () =>
+    [props.pointWeatherLoading, !!props.pointWeather, !!props.pointWeatherError] as const,
+  ([loading, hasResult, hasError], prev) => {
+    if (!isRealtimeWeatherLayer.value) return
+    const becameActive =
+      (loading && !prev?.[0]) || (hasResult && !prev?.[1]) || (hasError && !prev?.[2])
+    if (becameActive) activeTab.value = 'visual'
   },
 )
 
@@ -892,61 +1029,83 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <aside
-    class="panel"
-    ref="analysisScrollEl"
-    :style="{ '--accent-color': displayLayer.accentColor }"
-  >
-    <div class="panel-topline" ref="topSummaryEl">
-      <div class="panel-header">
-        <p class="panel-subtitle panel-subtitle--solo">{{ panelSubtitle }}</p>
-        <span class="readiness">{{ stageLabel }}</span>
-      </div>
+  <aside class="panel" :style="{ '--accent-color': displayLayer.accentColor }">
+    <!-- 无选中：整页空态，不展示 Tab / 分区壳 -->
+    <div v-if="!hasRealSelection" class="analysis-idle" ref="analysisScrollEl">
+      <div class="analysis-idle-orb" aria-hidden="true"></div>
+      <p class="analysis-idle-kicker">{{ ANALYSIS_COPY.panelTitle }}</p>
+      <h2 class="analysis-idle-title">{{ ANALYSIS_COPY.emptyTitle }}</h2>
+      <p class="analysis-idle-lead">{{ ANALYSIS_COPY.emptyLeadShort }}</p>
+      <ul class="analysis-idle-steps">
+        <li>{{ ANALYSIS_COPY.emptyStepAdd }}</li>
+        <li>{{ ANALYSIS_COPY.emptyStepInspect }}</li>
+        <li>{{ ANALYSIS_COPY.emptyStepStyle }}</li>
+      </ul>
+    </div>
 
+    <template v-else>
+    <!-- Tab 始终贴顶 -->
+    <div class="panel-sticky-chrome">
+      <div class="dashboard-nav-tabs">
+        <button
+          type="button"
+          class="dash-tab"
+          :class="{ active: activeTab === 'visual' }"
+          @click="setActiveTab('visual')"
+        >
+          图表
+        </button>
+        <button
+          type="button"
+          class="dash-tab"
+          :class="{ active: activeTab === 'tools' }"
+          @click="setActiveTab('tools')"
+        >
+          工具
+        </button>
+        <button
+          type="button"
+          class="dash-tab"
+          :class="{ active: activeTab === 'style' }"
+          @click="setActiveTab('style')"
+        >
+          样式
+        </button>
+        <button
+          type="button"
+          class="dash-tab"
+          :class="{ active: activeTab === 'meta' }"
+          @click="setActiveTab('meta')"
+        >
+          元数据
+        </button>
+      </div>
+      <div class="panel-stage-row">
+        <span class="readiness readiness--inline" :title="stageLabel">{{ stageLabel }}</span>
+      </div>
+    </div>
+
+    <div class="panel-scroll" ref="analysisScrollEl">
+    <div class="panel-topline" ref="topSummaryEl">
       <div v-if="workflowError" class="workflow-error">
         <span class="error-icon">⚠️</span>
         <span class="error-message">{{ workflowError }}</span>
       </div>
 
-      <!-- 空态：引导添加图层 -->
-      <div v-if="!hasRealSelection" class="analysis-empty-guide">
-        <p class="analysis-empty-lead">{{ ANALYSIS_COPY.emptyLead }}</p>
-        <ul class="analysis-empty-hints">
-          <li>{{ LAYERS_COPY.emptyActiveCta }}</li>
-          <li>{{ ANALYSIS_COPY.emptyHintInspect }}</li>
-          <li>{{ ANALYSIS_COPY.emptyHintWind }}</li>
-        </ul>
-      </div>
-
-      <!-- 天气层：瓦片/时间/风场摘要 -->
-      <div v-else-if="isRealtimeWeatherLayer" class="analysis-context-card">
-        <p v-for="(line, idx) in weatherTopLines" :key="idx" class="analysis-context-line">
-          {{ line }}
+      <!-- 天气层：短摘要（详细进元数据 Tab） -->
+      <div v-if="isRealtimeWeatherLayer" class="analysis-context-card">
+        <p class="analysis-context-line">
+          {{ displayLayer.name }}
+          <span v-if="weatherTopLines[0]"> · {{ weatherTopLines[0] }}</span>
         </p>
-        <dl class="meta-list">
-          <div>
-            <dt>{{ ANALYSIS_COPY.metaLayer }}</dt>
-            <dd>{{ displayLayer.name }}</dd>
-          </div>
-        </dl>
       </div>
 
-      <!-- 导入/边界/静态：能力说明 -->
+      <!-- 导入/边界/静态：短说明 -->
       <div v-else-if="!canRunWorkflow" class="analysis-context-card">
-        <p class="analysis-context-line">{{ staticTopHint }}</p>
-        <dl class="meta-list">
-          <div>
-            <dt>{{ ANALYSIS_COPY.metaLayer }}</dt>
-            <dd>{{ displayLayer.name }}</dd>
-          </div>
-          <div v-if="displayLayer.sourceLabel && displayLayer.sourceLabel !== '—'">
-            <dt>{{ ANALYSIS_COPY.metaSource }}</dt>
-            <dd>{{ displayLayer.sourceLabel }}</dd>
-          </div>
-        </dl>
+        <p class="analysis-context-line">{{ displayLayer.name }} · {{ staticTopHint }}</p>
       </div>
 
-      <!-- 可跑工作流 -->
+      <!-- 可跑工作流：运行入口 + 短进度 -->
       <template v-else>
         <div class="action-row">
           <button
@@ -961,23 +1120,11 @@ onBeforeUnmount(() => {
         <div v-if="runBlockedReason" class="run-block-hint">
           {{ runBlockedReason }}
         </div>
-
         <div v-if="workflowMeta.engineLabel" class="workflow-meta-row">
           <span class="wf-engine-icon" aria-hidden="true">{{ workflowMeta.engineIcon }}</span>
           <span class="wf-engine-label">{{ workflowMeta.engineLabel }}</span>
           <span v-if="workflowMeta.name" class="wf-name">{{ workflowMeta.name }}</span>
         </div>
-
-        <dl class="meta-list">
-          <div>
-            <dt>{{ ANALYSIS_COPY.metaLayer }}</dt>
-            <dd>{{ displayLayer.name }}</dd>
-          </div>
-          <div>
-            <dt>{{ ANALYSIS_COPY.metaSource }}</dt>
-            <dd>{{ displayLayer.sourceLabel }}</dd>
-          </div>
-        </dl>
       </template>
 
       <!-- 阶段行：仅工作流运行中，或天气确有瓦片活动时 -->
@@ -997,14 +1144,22 @@ onBeforeUnmount(() => {
         ></div>
       </div>
 
-      <div v-if="canRunWorkflow && latestEventMessage" class="wf-event-msg">
+      <div
+        v-if="canRunWorkflow && latestEventMessage"
+        class="wf-event-msg"
+      >
         <span class="wf-event-dot" :class="workflowStage"></span>
         <span class="wf-event-text">{{ latestEventMessage }}</span>
       </div>
     </div>
 
     <div class="analysis-stream">
-      <section class="analysis-section analysis-section--overview" id="global-overview">
+      <!-- ── meta Tab ─────────────────────────────────────────────────── -->
+      <section
+        v-show="activeTab === 'meta'"
+        class="analysis-section analysis-section--overview"
+        id="global-overview"
+      >
         <div class="section-kicker">{{ ANALYSIS_COPY.overviewKicker }}</div>
         <h3>
           {{
@@ -1012,10 +1167,37 @@ onBeforeUnmount(() => {
           }}
         </h3>
         <p>{{ analysisSummary }}</p>
+        <div class="overview-quick-actions">
+          <button
+            v-if="isRealtimeWeatherLayer && uiStore.interactionMode !== 'select'"
+            type="button"
+            class="weather-mini-btn"
+            @click="setActiveTab('tools'); emit('enterSelectMode')"
+          >
+            {{ ANALYSIS_COPY.toolsQuickInspect }}
+          </button>
+          <button
+            v-if="canRunWorkflow"
+            type="button"
+            class="weather-mini-btn"
+            @click="setActiveTab('tools')"
+          >
+            {{ ANALYSIS_COPY.toolsQuickBuffer }}
+          </button>
+          <button
+            v-if="hasLayerStyleSection"
+            type="button"
+            class="weather-mini-btn"
+            @click="setActiveTab('style')"
+          >
+            符号样式
+          </button>
+        </div>
       </section>
 
       <section
         v-if="displayLayer.isImported || displayLayer.isImportedRaster"
+        v-show="activeTab === 'meta'"
         class="analysis-section analysis-section--imported"
         id="imported-layer"
       >
@@ -1120,6 +1302,7 @@ onBeforeUnmount(() => {
 
       <section
         v-if="jobLayer"
+        v-show="activeTab === 'meta'"
         class="job-report-card job-report-card--summary"
         id="scheduler-status"
       >
@@ -1149,6 +1332,40 @@ onBeforeUnmount(() => {
             <span class="job-progress-label">{{ jobLayer.progress }}%</span>
           </div>
           <p class="job-message">{{ jobLayer.message || '作业正在处理中...' }}</p>
+          <div
+            v-if="jobLayer.nodeProgress?.length"
+            class="job-node-progress-section"
+          >
+            <div
+              v-for="np in jobLayer.nodeProgress"
+              :key="np.nodeId"
+              class="job-node-progress-item"
+            >
+              <div class="job-node-progress-header">
+                <span>{{ np.nodeLabel }}</span>
+                <span>{{ np.progress }}%</span>
+              </div>
+              <div class="job-node-progress-bar">
+                <div
+                  class="job-node-progress-fill"
+                  :style="{ width: `${np.progress}%` }"
+                ></div>
+              </div>
+              <p v-if="np.message" class="job-node-progress-message">{{ np.message }}</p>
+              <p
+                v-if="np.detail && (np.detail.chunksTotal || np.detail.pixelsTotal)"
+                class="job-node-progress-detail"
+              >
+                <template v-if="np.detail.chunksTotal">
+                  chunk {{ np.detail.chunksDone ?? 0 }}/{{ np.detail.chunksTotal }}
+                </template>
+                <template v-if="np.detail.pixelsTotal">
+                  · pixel {{ np.detail.pixelsDone ?? 0 }}/{{ np.detail.pixelsTotal }}
+                </template>
+                <template v-if="np.detail.phase"> · {{ np.detail.phase }}</template>
+              </p>
+            </div>
+          </div>
           <ul v-if="jobEventNotes.length" class="job-diagnostic-list">
             <li v-for="note in jobEventNotes" :key="note" class="job-diagnostic-item">
               {{ note }}
@@ -1166,17 +1383,11 @@ onBeforeUnmount(() => {
           </div>
           <div class="job-step" :class="{ active: !!resultModel }">3. 读取视图</div>
         </div>
-
-        <div v-if="resultModel?.metricRows.length" class="job-metrics">
-          <div v-for="m in resultModel.metricRows" :key="m.label" class="job-metric-item">
-            <span class="jm-label">{{ m.label }}</span>
-            <strong class="jm-value">{{ m.value }}</strong>
-          </div>
-        </div>
       </section>
 
       <section
         v-if="jobLayer && jobReportSummary"
+        v-show="activeTab === 'meta'"
         class="analysis-section analysis-section--report"
         id="report-section"
       >
@@ -1200,55 +1411,29 @@ onBeforeUnmount(() => {
       </section>
 
       <section
+        v-show="activeTab === 'meta'"
         class="analysis-section analysis-section--layer"
         :id="`layer-${displayLayer.instanceId || 'default'}`"
       >
         <div class="section-kicker">{{ ANALYSIS_COPY.selectedLayerKicker }}</div>
         <h3>{{ ANALYSIS_COPY.selectedLayerTitle }}</h3>
-        <p>{{ displayLayer.name }} · {{ displayLayer.availabilityLabel }}</p>
-        <dl
-          v-if="displayLayer.sourceLabel && displayLayer.sourceLabel.startsWith('工作流')"
-          class="meta-list"
-          style="margin-top: 0.45rem"
-        >
-          <div>
-            <dt>{{ ANALYSIS_COPY.metaWorkflow }}</dt>
-            <dd>{{ displayLayer.sourceLabel }}</dd>
-          </div>
-        </dl>
-        <div v-if="displayLayer.instanceId" class="layer-opacity-row">
-          <span>{{ LAYERS_COPY.opacity }}</span>
-          <input
-            class="layer-opacity-slider"
-            type="range"
-            min="0"
-            max="100"
-            :value="Math.round(displayLayer.opacity * 100)"
-            @input="handleLayerOpacityInput"
-          />
-          <strong>{{ Math.round(displayLayer.opacity * 100) }}%</strong>
-        </div>
+        <p>
+          {{ displayLayer.name }}
+          <span v-if="displayLayer.availabilityLabel"> · {{ displayLayer.availabilityLabel }}</span>
+        </p>
+        <p class="tools-empty-hint" style="margin-top: 0.35rem">
+          透明度与符号请到「样式」Tab 调整。
+        </p>
       </section>
 
+      <!-- ── tools Tab ────────────────────────────────────────────────── -->
       <section
-        v-if="hasPointWeatherSection"
-        class="analysis-section analysis-section--weather"
-        id="point-weather"
+        v-show="activeTab === 'tools'"
+        class="analysis-section analysis-section--tools"
+        id="analysis-tools"
       >
-        <div class="section-kicker">{{ INSPECT_COPY.sectionKicker }}</div>
-        <div class="weather-section-head">
-          <div>
-            <h3>{{ INSPECT_COPY.sectionTitle }}</h3>
-            <p>
-              使用工具栏「选择」后点击地图；漫游模式下可
-              <kbd>Shift</kbd>+点击临时查询。查询对象为当前选中天气层（或最顶层可见天气层）。
-            </p>
-          </div>
-          <span class="analysis-chip" :class="{ muted: !pointWeather }">
-            {{ pointInspectStatusLabel }}
-          </span>
-        </div>
-
+        <div class="section-kicker">工具</div>
+        <h3>分析工具</h3>
         <div class="weather-layer-btn-row" style="margin-bottom: 0.55rem; gap: 0.4rem">
           <button
             v-if="uiStore.interactionMode !== 'select'"
@@ -1270,7 +1455,47 @@ onBeforeUnmount(() => {
             {{ selectedMapPoint.lng.toFixed(3) }}, {{ selectedMapPoint.lat.toFixed(3) }}
           </span>
         </div>
+        <div v-if="!selectedMapPoint" class="analysis-sparse-card">
+          <p>{{ ANALYSIS_COPY.sparseToolsHint }}</p>
+        </div>
+        <BufferAnalysisTool
+          v-if="selectedMapPoint"
+          :point-location="selectedMapPoint"
+          :layer-name="displayLayer.name"
+          :current-value-text="
+            pointWeatherPrimaryValue !== '--' ? pointWeatherPrimaryValue : undefined
+          "
+          :current-numeric-value="pointWeatherNumericValue"
+        />
+      </section>
 
+      <!-- ── visual Tab：点查图表 ──────────────────────────────────────── -->
+      <section
+        v-if="hasPointWeatherSection"
+        v-show="activeTab === 'visual'"
+        class="analysis-section analysis-section--weather"
+        id="point-weather"
+      >
+        <div class="section-kicker">{{ INSPECT_COPY.sectionKicker }}</div>
+        <div class="weather-section-head">
+          <div>
+            <h3>{{ INSPECT_COPY.sectionTitle }}</h3>
+            <p v-if="!pointWeather && !pointWeatherLoading">
+              点选地图后显示数值与时序。
+            </p>
+            <p v-else>
+              使用工具栏「选择」后点击地图；漫游模式下可
+              <kbd>Shift</kbd>+点击临时查询。
+            </p>
+          </div>
+          <span class="analysis-chip" :class="{ muted: !pointWeather }">
+            {{ pointInspectStatusLabel }}
+          </span>
+        </div>
+
+        <div v-if="!selectedMapPoint && !pointWeather && !pointWeatherLoading" class="weather-state">
+          尚未选点 — 切到「分析工具」进入选择模式后点击地图。
+        </div>
         <div v-if="pointWeatherLoading" class="weather-state weather-state-loading">
           正在获取点查…
         </div>
@@ -1302,11 +1527,30 @@ onBeforeUnmount(() => {
               <strong>{{ row.metric }}</strong>
             </article>
           </div>
+
+          <PointTimeSeriesChart
+            v-if="pointWeatherHourlyChartRows.length"
+            :hourly-rows="pointWeatherHourlyChartRows"
+            :title="pointWeatherMetric.label + ' 时序趋势'"
+          />
         </template>
       </section>
 
       <section
+        v-if="showMultiOverlayBar"
+        v-show="activeTab === 'visual'"
+        class="analysis-section analysis-section--overlays"
+        id="overlay-compare"
+      >
+        <div class="section-kicker">叠加对比</div>
+        <h3>可见叠加层点值</h3>
+        <p>当前选点处其它可见 overlay 的采样对比（含非天气层）。</p>
+        <MultiOverlayBarChart :items="multiOverlayBarItems" />
+      </section>
+
+      <section
         v-if="hasLayerStyleSection"
+        v-show="activeTab === 'style'"
         class="analysis-section analysis-section--style"
         id="layer-style"
       >
@@ -1320,9 +1564,11 @@ onBeforeUnmount(() => {
                   ? ANALYSIS_COPY.staticImportedVector
                   : displayLayer.isImportedRaster
                     ? ANALYSIS_COPY.staticImportedRaster
-                    : canEditPalette
-                      ? ANALYSIS_COPY.styleHintLinked
-                      : ANALYSIS_COPY.styleHintReadonly
+                    : hasAdvancedStyleControls
+                      ? canEditPalette
+                        ? ANALYSIS_COPY.styleHintLinked
+                        : ANALYSIS_COPY.styleHintReadonly
+                      : ANALYSIS_COPY.styleHintOpacityOnly
               }}
             </p>
           </div>
@@ -1330,6 +1576,27 @@ onBeforeUnmount(() => {
             windStyleChipLabel
           }}</span>
         </div>
+
+        <div v-if="displayLayer.instanceId" class="layer-opacity-row">
+          <span>{{ LAYERS_COPY.opacity }}</span>
+          <input
+            class="layer-opacity-slider"
+            type="range"
+            min="0"
+            max="100"
+            :value="Math.round(displayLayer.opacity * 100)"
+            @input="handleLayerOpacityInput"
+          />
+          <strong>{{ Math.round(displayLayer.opacity * 100) }}%</strong>
+        </div>
+
+        <template v-if="styleFieldLabel || styleRangeMeta.hasRange">
+          <div class="style-section-label">{{ LAYERS_COPY.sectionAppearance }}</div>
+          <div v-if="styleFieldLabel" class="style-field-row">
+            <span class="style-field-label">{{ LAYERS_COPY.fieldLabel }}</span>
+            <strong>{{ styleFieldLabel }}</strong>
+          </div>
+        </template>
 
         <!-- 导入矢量就地样式 -->
         <div v-if="displayLayer.isImported" class="imported-vector-style">
@@ -1537,6 +1804,24 @@ onBeforeUnmount(() => {
           </div>
         </div>
 
+        <div v-if="styleRangeMeta.hasRange" class="style-range-block">
+          <div class="style-section-label">{{ LAYERS_COPY.sectionRange }}</div>
+          <div class="style-range-grid">
+            <div v-if="styleRangeMeta.unit" class="style-range-cell">
+              <span>{{ LAYERS_COPY.metricUnit }}</span>
+              <strong>{{ styleRangeMeta.unit }}</strong>
+            </div>
+            <div class="style-range-cell">
+              <span>min</span>
+              <strong>{{ styleRangeMeta.vmin }}</strong>
+            </div>
+            <div class="style-range-cell">
+              <span>max</span>
+              <strong>{{ styleRangeMeta.vmax }}</strong>
+            </div>
+          </div>
+        </div>
+
         <div
           v-if="styleRenderHint"
           class="palette-selector"
@@ -1612,9 +1897,6 @@ onBeforeUnmount(() => {
           <span v-else-if="isRealtimeWeatherLayer || jobLayer">
             {{ hasWeatherLayerAsset ? '地图产物已挂载' : '尚无地图产物' }}
           </span>
-          <span v-if="styleRenderHint"
-            >默认不透明度 {{ Math.round(styleRenderHint.opacity * 100) }}%</span
-          >
         </div>
 
         <ul v-if="styleRenderHint?.notes?.length" class="weather-note-list">
@@ -1622,8 +1904,17 @@ onBeforeUnmount(() => {
         </ul>
       </section>
 
+      <div
+        v-show="activeTab === 'style'"
+        v-if="!hasLayerStyleSection"
+        class="analysis-sparse-card"
+      >
+        <p>{{ ANALYSIS_COPY.styleTabEmpty }}</p>
+      </div>
+
       <section
         v-if="visibleHotspots.length > 0"
+        v-show="activeTab === 'visual'"
         class="analysis-section analysis-section--hotspots"
         id="hotspot-section"
       >
@@ -1648,165 +1939,355 @@ onBeforeUnmount(() => {
 
       <section
         v-if="resultModel"
+        v-show="activeTab === 'visual'"
         class="analysis-section analysis-section--result"
         id="result-section"
       >
         <div class="section-kicker">结果</div>
-        <h3>结果视图</h3>
-        <p>{{ resultModel.title }}</p>
+        <div class="report-section-head">
+          <div>
+            <h3>{{ resultModel.title }}</h3>
+            <p v-if="resultModel.subtitle">{{ resultModel.subtitle }}</p>
+          </div>
+          <a
+            v-if="resultModel.canShowResultLink && resultModel.resultUrl"
+            class="job-result-link"
+            :href="resultModel.resultUrl"
+            target="_blank"
+            rel="noreferrer"
+          >
+            打开结果
+          </a>
+        </div>
+        <dl class="meta-list" style="margin-top: 0.35rem">
+          <div v-if="resultModel.statusText">
+            <dt>状态</dt>
+            <dd>{{ resultModel.statusText }}</dd>
+          </div>
+          <div v-if="resultModel.progressText">
+            <dt>进度</dt>
+            <dd>{{ resultModel.progressText }}</dd>
+          </div>
+          <div v-if="resultModel.category">
+            <dt>类别</dt>
+            <dd>{{ resultModel.category }}</dd>
+          </div>
+        </dl>
+        <div v-if="resultModel.metricRows.length" class="job-metrics">
+          <div v-for="m in resultModel.metricRows" :key="m.label" class="job-metric-item">
+            <span class="jm-label">{{ m.label }}</span>
+            <strong class="jm-value">{{ m.value }}</strong>
+          </div>
+        </div>
+      </section>
+
+      <div
+        v-show="activeTab === 'visual'"
+        v-if="!hasVisualTabContent"
+        class="analysis-sparse-card analysis-sparse-card--visual"
+      >
+        <p class="analysis-sparse-title">{{ ANALYSIS_COPY.sparseVisualTitle }}</p>
+        <p>{{ sparseVisualHint }}</p>
+        <div v-if="isRealtimeWeatherLayer || canRunWorkflow" class="overview-quick-actions">
+          <button
+            v-if="isRealtimeWeatherLayer && uiStore.interactionMode !== 'select'"
+            type="button"
+            class="weather-mini-btn"
+            @click="setActiveTab('tools'); emit('enterSelectMode')"
+          >
+            {{ ANALYSIS_COPY.toolsQuickInspect }}
+          </button>
+          <button
+            v-if="canRunWorkflow"
+            type="button"
+            class="weather-mini-btn"
+            :disabled="buttonDisabled"
+            @click="handleRunWorkflow"
+          >
+            {{ buttonLabel }}
+          </button>
+          <button
+            type="button"
+            class="weather-mini-btn"
+            @click="setActiveTab('style')"
+          >
+            符号样式
+          </button>
+        </div>
+      </div>
+
+      <!-- meta：主指标与洞察（去冗后只在此 Tab） -->
+      <section
+        v-if="hasRealSelection && !showCompactHero"
+        v-show="activeTab === 'meta'"
+        class="hero-metric"
+        :style="{ '--accent-color': displayLayer.accentColor }"
+      >
+        <span>{{ displayLayer.metricLabel }}</span>
+        <strong>{{ displayLayer.metricValue }}</strong>
+        <p>{{ displayLayer.trendLabel }}</p>
+      </section>
+
+      <div
+        v-if="hasRealSelection && !showCompactHero"
+        v-show="activeTab === 'meta'"
+        class="insight-grid"
+      >
+        <article class="insight-card">
+          <span>更新频率</span>
+          <strong>{{ displayLayer.updateLabel }}</strong>
+        </article>
+        <article class="insight-card">
+          <span>可用性</span>
+          <strong>{{ displayLayer.availabilityLabel }}</strong>
+        </article>
+        <article class="insight-card">
+          <span>可靠性</span>
+          <strong>{{ displayLayer.confidenceLabel }}</strong>
+        </article>
+        <article class="insight-card">
+          <span>观测时间</span>
+          <strong>{{ displayLayer.observationTimeLabel }}</strong>
+        </article>
+      </div>
+
+      <section
+        v-if="layerMetadata.length && hasRealSelection"
+        v-show="activeTab === 'meta'"
+        class="info-card meta-card"
+      >
+        <div class="info-card-head">
+          <span class="info-kicker">元数据</span>
+          <span class="info-card-tag" :class="{ real: displayLayer.dataState === 'real' }">
+            {{ displayLayer.dataState === 'real' ? '真实' : '目录' }}
+          </span>
+        </div>
+        <dl class="meta-grid">
+          <div v-for="row in layerMetadata" :key="row.label" class="meta-grid-row">
+            <dt>{{ row.label }}</dt>
+            <dd>{{ row.value }}</dd>
+          </div>
+        </dl>
+      </section>
+
+      <section
+        v-if="displayLayer.trendLabel && hasRealSelection"
+        v-show="activeTab === 'meta'"
+        class="info-card trend-card"
+        :style="{ '--accent-color': displayLayer.accentColor }"
+      >
+        <div class="info-card-head">
+          <span class="info-kicker">历史对比</span>
+          <span class="info-card-tag trend">{{ displayLayer.metricLabel }}</span>
+        </div>
+        <div class="trend-body">
+          <div class="trend-current">
+            <span class="trend-current-label">当前</span>
+            <strong class="trend-current-value">{{ displayLayer.metricValue }}</strong>
+          </div>
+          <div class="trend-indicator">
+            <span class="trend-arrow" :class="trendDirection">{{ trendArrowSymbol }}</span>
+            <span class="trend-text">{{ displayLayer.trendLabel }}</span>
+          </div>
+        </div>
       </section>
     </div>
-
-    <section
-      v-if="!showCompactHero"
-      class="hero-metric"
-      :style="{ '--accent-color': displayLayer.accentColor }"
-    >
-      <span>{{ displayLayer.metricLabel }}</span>
-      <strong>{{ displayLayer.metricValue }}</strong>
-      <p>{{ displayLayer.trendLabel }}</p>
-    </section>
-
-    <div v-if="!showCompactHero" class="insight-grid">
-      <article class="insight-card">
-        <span>更新频率</span>
-        <strong>{{ displayLayer.updateLabel }}</strong>
-      </article>
-      <article class="insight-card">
-        <span>可用性</span>
-        <strong>{{ displayLayer.availabilityLabel }}</strong>
-      </article>
-      <article class="insight-card">
-        <span>可靠性</span>
-        <strong>{{ displayLayer.confidenceLabel }}</strong>
-      </article>
-      <article class="insight-card">
-        <span>观测时间</span>
-        <strong>{{ displayLayer.observationTimeLabel }}</strong>
-      </article>
     </div>
-
-    <div v-if="!showCompactHero" class="learning-note">
-      <h3>摘要</h3>
-      <p>{{ displayLayer.summary }}</p>
-    </div>
-
-    <details class="protocol-details">
-      <summary>接入状态</summary>
-      <p>数据阶段：{{ displayLayer.dataState === 'real' ? '真实数据' : '目录态' }}</p>
-      <p>状态标签：{{ displayLayer.statusLabel }}</p>
-      <p>状态说明：{{ displayLayer.availabilityDescription }}</p>
-      <p>缺失字段：{{ displayLayer.missingFieldsLabel }}</p>
-    </details>
-
-    <IntegrationStatusPanel />
-
-    <!-- ── 元数据详情卡片 ─────────────────────────────────────────────────── -->
-    <section v-if="layerMetadata.length" class="info-card meta-card">
-      <div class="info-card-head">
-        <span class="info-kicker">元数据</span>
-        <span class="info-card-tag" :class="{ real: displayLayer.dataState === 'real' }">
-          {{ displayLayer.dataState === 'real' ? '真实' : '目录' }}
-        </span>
-      </div>
-      <dl class="meta-grid">
-        <div v-for="row in layerMetadata" :key="row.label" class="meta-grid-row">
-          <dt>{{ row.label }}</dt>
-          <dd>{{ row.value }}</dd>
-        </div>
-      </dl>
-    </section>
-
-    <!-- ── 历史趋势对比 ───────────────────────────────────────────────────── -->
-    <section
-      v-if="displayLayer.trendLabel"
-      class="info-card trend-card"
-      :style="{ '--accent-color': displayLayer.accentColor }"
-    >
-      <div class="info-card-head">
-        <span class="info-kicker">历史对比</span>
-        <span class="info-card-tag trend">{{ displayLayer.metricLabel }}</span>
-      </div>
-      <div class="trend-body">
-        <div class="trend-current">
-          <span class="trend-current-label">当前</span>
-          <strong class="trend-current-value">{{ displayLayer.metricValue }}</strong>
-        </div>
-        <div class="trend-indicator">
-          <span class="trend-arrow" :class="trendDirection">{{ trendArrowSymbol }}</span>
-          <span class="trend-text">{{ displayLayer.trendLabel }}</span>
-        </div>
-      </div>
-    </section>
-
-    <!-- ── 叠加图层列表 ───────────────────────────────────────────────────── -->
-    <section v-if="hasOverlayLayers" class="info-card overlay-card">
-      <div class="info-card-head">
-        <span class="info-kicker">叠加分析</span>
-        <span class="info-card-tag">{{ overlayLayers.length }} 个共显</span>
-      </div>
-      <ul class="overlay-list">
-        <li
-          v-for="layer in overlayLayers"
-          :key="layer.catalogId || layer.name"
-          :style="{ '--layer-accent': layer.accentColor }"
-        >
-          <span class="overlay-dot" aria-hidden="true"></span>
-          <div class="overlay-info">
-            <strong class="overlay-name">{{ layer.name }}</strong>
-            <span class="overlay-category">
-              {{ layer.category }}
-              <span v-if="layer.palette" class="overlay-palette-tag">{{ layer.palette }}</span>
-            </span>
-            <span v-if="layer.vmin !== null || layer.vmax !== null" class="overlay-range">
-              {{ layer.vmin ?? '—' }} – {{ layer.vmax ?? '—' }} {{ layer.unit }}
-            </span>
-            <span v-if="layer.isTimeSeries && layer.currentTime" class="overlay-time-tag">
-              {{ layer.currentTime }}
-            </span>
-          </div>
-          <div class="overlay-value-col">
-            <span class="overlay-state" :class="`state-${layer.availabilityState}`">{{
-              layer.availabilityState
-            }}</span>
-            <span
-              v-if="overlayPointValueMap.get(layer.catalogId)"
-              class="overlay-point-value"
-              :class="{ na: overlayPointValueMap.get(layer.catalogId)?.value === null }"
-            >
-              {{
-                overlayPointValueMap.get(layer.catalogId)?.value !== null
-                  ? formatOverlayValue(overlayPointValueMap.get(layer.catalogId)!)
-                  : 'N/A'
-              }}
-            </span>
-          </div>
-        </li>
-      </ul>
-    </section>
+    </template>
   </aside>
 </template>
 
 <style scoped>
+.overview-quick-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  margin-top: 0.45rem;
+}
+
+.tools-lead {
+  margin: 0 0 0.45rem;
+  font-size: 0.68rem;
+  color: #94a3b8;
+  line-height: 1.4;
+}
+
+.tools-empty-hint,
+.tab-empty-hint {
+  margin: 0.35rem 0 0;
+  padding: 0.45rem 0.5rem;
+  border-radius: 0.45rem;
+  border: 1px dashed rgba(148, 163, 184, 0.25);
+  background: rgba(15, 23, 42, 0.35);
+  font-size: 0.68rem;
+  color: #94a3b8;
+  line-height: 1.4;
+}
+
+.analysis-idle {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.55rem;
+  padding: 1.6rem 1.25rem 1.8rem;
+  text-align: center;
+  position: relative;
+  overflow: hidden;
+}
+
+.analysis-idle-orb {
+  width: 4.5rem;
+  height: 4.5rem;
+  border-radius: 50%;
+  margin-bottom: 0.35rem;
+  background:
+    radial-gradient(circle at 35% 30%, rgba(125, 211, 252, 0.35), transparent 55%),
+    radial-gradient(circle at 70% 65%, rgba(56, 189, 248, 0.12), transparent 60%),
+    rgba(15, 23, 42, 0.55);
+  border: 1px solid rgba(148, 163, 184, 0.16);
+  box-shadow: inset 0 0 24px rgba(56, 189, 248, 0.08);
+}
+
+.analysis-idle-kicker {
+  margin: 0;
+  font-size: 0.62rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: rgba(148, 163, 184, 0.85);
+}
+
+.analysis-idle-title {
+  margin: 0;
+  font-size: 1.05rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: #e2e8f0;
+}
+
+.analysis-idle-lead {
+  margin: 0;
+  max-width: 16rem;
+  font-size: 0.78rem;
+  line-height: 1.5;
+  color: rgba(148, 163, 184, 0.95);
+}
+
+.analysis-idle-steps {
+  list-style: none;
+  margin: 0.55rem 0 0;
+  padding: 0;
+  display: grid;
+  gap: 0.35rem;
+  width: min(100%, 15.5rem);
+  text-align: left;
+}
+
+.analysis-idle-steps li {
+  position: relative;
+  padding: 0.38rem 0.55rem 0.38rem 1.55rem;
+  border-radius: 0.5rem;
+  background: rgba(148, 163, 184, 0.06);
+  border: 1px solid rgba(148, 163, 184, 0.1);
+  font-size: 0.72rem;
+  line-height: 1.4;
+  color: rgba(203, 213, 225, 0.88);
+}
+
+.analysis-idle-steps li::before {
+  content: '';
+  position: absolute;
+  left: 0.55rem;
+  top: 50%;
+  width: 0.35rem;
+  height: 0.35rem;
+  border-radius: 50%;
+  transform: translateY(-50%);
+  background: rgba(125, 211, 252, 0.55);
+}
+
+.analysis-sparse-card {
+  margin: 0.15rem 0 0;
+  padding: 0.85rem 0.75rem;
+  border-radius: 0.62rem;
+  border: 1px solid rgba(148, 163, 184, 0.12);
+  background: linear-gradient(165deg, rgba(15, 23, 42, 0.45), rgba(8, 15, 28, 0.28));
+  color: #94a3b8;
+  font-size: 0.72rem;
+  line-height: 1.45;
+}
+
+.analysis-sparse-card p {
+  margin: 0;
+}
+
+.analysis-sparse-title {
+  margin: 0 0 0.28rem !important;
+  font-size: 0.82rem !important;
+  font-weight: 600;
+  color: #cbd5e1 !important;
+}
+
+.analysis-sparse-card--visual .overview-quick-actions {
+  margin-top: 0.65rem;
+}
+
 .panel {
   --info-card-radius: 0.82rem;
+  --panel-radius: 0.88rem;
   --info-card-padding-y: 0.46rem;
   --info-card-padding-x: 0.5rem;
   --info-soft-gap: 0.34rem;
-  display: grid;
-  gap: 0.52rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0;
   width: 100%;
   max-width: 100%;
-  padding: 0.56rem 0.48rem 0.5rem;
-  border-radius: 0.88rem;
+  height: 100%;
+  min-height: 0;
+  padding: 0;
+  border-radius: var(--panel-radius);
   border: 1px solid rgba(148, 163, 184, 0.15);
   background: linear-gradient(180deg, rgba(13, 21, 36, 0.72), rgba(8, 15, 28, 0.6));
   box-shadow:
     inset 0 1px 0 rgba(255, 255, 255, 0.03),
     0 12px 26px rgba(1, 8, 16, 0.14);
-  min-height: 100%;
   overflow: hidden;
   contain: layout style;
+}
+
+.panel-sticky-chrome {
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 0;
+  padding: 0;
+  border-bottom: 1px solid rgba(148, 163, 184, 0.12);
+  background: rgba(8, 15, 28, 0.94);
+  backdrop-filter: blur(8px);
+  z-index: 5;
+  border-top-left-radius: var(--panel-radius);
+  border-top-right-radius: var(--panel-radius);
+}
+
+.panel-stage-row {
+  display: flex;
+  justify-content: flex-end;
+  padding: 0.18rem 0.5rem 0.28rem;
+}
+
+.panel-scroll {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  display: grid;
+  gap: 0.48rem;
+  padding: 0.42rem 0.42rem 0.5rem;
+  align-content: start;
 }
 .panel,
 .panel * {
@@ -2562,6 +3043,57 @@ onBeforeUnmount(() => {
   width: 100%;
   accent-color: var(--accent-color, #38bdf8);
 }
+.style-section-label {
+  margin-top: 0.35rem;
+  font-size: 0.62rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: #94a3b8;
+}
+.style-field-row {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  font-size: 0.72rem;
+  margin-top: 0.25rem;
+}
+.style-field-label {
+  color: #94a3b8;
+  min-width: 2.4rem;
+}
+.style-field-row strong {
+  font-weight: 550;
+  color: #e2e8f0;
+}
+.style-range-block {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  margin: 0.35rem 0 0.15rem;
+}
+.style-range-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 0.35rem;
+}
+.style-range-cell {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+  padding: 0.3rem 0.4rem;
+  border-radius: 0.4rem;
+  background: rgba(148, 163, 184, 0.08);
+}
+.style-range-cell span {
+  color: #94a3b8;
+  font-size: 0.62rem;
+}
+.style-range-cell strong {
+  font-weight: 550;
+  color: #e2e8f0;
+  font-size: 0.72rem;
+  font-variant-numeric: tabular-nums;
+}
 .imported-vector-style {
   margin-bottom: 0.55rem;
 }
@@ -2876,10 +3408,48 @@ onBeforeUnmount(() => {
   background: linear-gradient(90deg, #5ad5ff, #7ea8ff);
 }
 .job-progress-label {
-  width: 2rem;
+  font-size: 12px;
+  opacity: 0.85;
+  min-width: 36px;
   text-align: right;
-  color: #8ea3b8;
-  font-size: 0.54rem;
+}
+
+.job-node-progress-section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.job-node-progress-item {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.job-node-progress-header {
+  display: flex;
+  justify-content: space-between;
+  font-size: 12px;
+}
+
+.job-node-progress-bar {
+  height: 4px;
+  border-radius: 2px;
+  background: rgba(255, 255, 255, 0.12);
+  overflow: hidden;
+}
+
+.job-node-progress-fill {
+  height: 100%;
+  background: #5b9fd4;
+}
+
+.job-node-progress-message,
+.job-node-progress-detail {
+  margin: 0;
+  font-size: 11px;
+  opacity: 0.75;
 }
 .job-message {
   margin: 0;
@@ -3261,6 +3831,69 @@ onBeforeUnmount(() => {
 
 .imported-action-hint.error {
   color: #ff9e9e;
+}
+
+.dashboard-nav-tabs {
+  display: flex;
+  width: 100%;
+  min-width: 0;
+  background: transparent;
+  border: none;
+  border-radius: 0;
+  padding: 0;
+  gap: 0;
+  margin: 0;
+  border-bottom: 1px solid rgba(148, 163, 184, 0.1);
+}
+
+.dash-tab {
+  flex: 1 1 0;
+  min-width: 0;
+  background: transparent;
+  border: none;
+  border-right: 1px solid rgba(148, 163, 184, 0.1);
+  color: rgba(226, 232, 240, 0.72);
+  font-size: 0.72rem;
+  font-weight: 500;
+  padding: 0.42rem 0.2rem;
+  border-radius: 0;
+  cursor: pointer;
+  transition: color 0.15s ease, background 0.15s ease;
+  text-align: center;
+  white-space: nowrap;
+  line-height: 1.25;
+}
+
+.dash-tab:last-child {
+  border-right: none;
+}
+
+.dash-tab:first-child {
+  border-top-left-radius: var(--panel-radius);
+}
+
+.dash-tab:last-child {
+  border-top-right-radius: var(--panel-radius);
+}
+
+.dash-tab:hover {
+  color: #ffffff;
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.dash-tab.active {
+  color: #7dd3fc;
+  background: rgba(56, 189, 248, 0.14);
+  font-weight: 600;
+  box-shadow: inset 0 -2px 0 #38bdf8;
+}
+
+.readiness--inline {
+  flex: 0 1 auto;
+  max-width: 100%;
+  align-self: flex-end;
+  padding: 0.12rem 0.32rem;
+  font-size: 0.58rem;
 }
 
 @media (max-width: 560px) {

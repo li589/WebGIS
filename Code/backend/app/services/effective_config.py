@@ -216,6 +216,8 @@ def get_task_executor() -> str:
 
 
 def use_celery_executor_effective() -> bool:
+    if (settings.environment or "").lower() in ("test", "testing"):
+        return False
     return get_task_executor() == "celery"
 
 

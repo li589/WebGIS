@@ -206,6 +206,10 @@ if celery_available and celery_app is not None:
         # 业务失败（非崩溃）不重新入队：失败已由 lifecycle 记录为终态，
         # 重投只会被幂等检查跳过，徒增无效负载。
         acks_on_failure_or_timeout=False,
+        # 算法反演工作流（如 omega_sf 块反演）可能运行数十分钟到数小时，
+        # 全局默认 300s/360s 远不够。此处设置 per-task 超时为 2 小时 / 2 小时 5 分钟。
+        soft_time_limit=7200,
+        time_limit=7500,
     )
     def process_workflow_run_task(run_id: str, payload_data: dict[str, Any]) -> None:
         from app.services.workflow.service_container import submission_service

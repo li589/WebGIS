@@ -1,0 +1,51 @@
+[
+  {
+    "id": "weather",
+    "name": "在线天气",
+    "icon": "CloudSun",
+    "accentColor": "#38bdf8"
+  },
+  {
+    "id": "climate",
+    "name": "气候与灾害",
+    "icon": "Thermometer",
+    "accentColor": "#f97316"
+  },
+  {
+    "id": "vegetation",
+    "name": "植被相关",
+    "icon": "Leaf",
+    "accentColor": "#10b981"
+  },
+  {
+    "id": "landcover",
+    "name": "土地利用",
+    "icon": "Layers",
+    "accentColor": "#a855f7"
+  },
+  {
+    "id": "terrain",
+    "name": "地形数据",
+    "icon": "Mountain",
+    "accentColor": "#eab308"
+  },
+  {
+    "id": "research-group",
+    "name": "课题组数据",
+    "icon": "FolderGit2",
+    "accentColor": "#6366f1",
+    "subCategories": ["模型输入", "模型输出", "辅助数据"]
+  },
+  {
+    "id": "imported",
+    "name": "本地导入",
+    "icon": "Upload",
+    "accentColor": "#06b6d4"
+  },
+  {
+    "id": "workflow-output",
+    "name": "工作流产出",
+    "icon": "Sparkles",
+    "accentColor": "#f43f5e"
+  }
+]

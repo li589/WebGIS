@@ -26,6 +26,7 @@ import type {
   WorkflowEvent,
 } from '../../services/runtime-api'
 import { LAYER_CATEGORIES, LAYER_LIBRARY } from './catalog'
+import { allocateLayerAccent } from './layer-accent'
 import { isWeatherEngineCatalogId } from './weather-session'
 import { createWeatherViewportSlice } from './weather-viewport'
 import { buildJobLayer } from './result-adapter'
@@ -333,11 +334,19 @@ function buildRuntimeLayerLibraryItem(descriptor: RuntimeLayerDescriptor): Runti
   const fallback = getStaticLayerLibraryItem(descriptor.layer_id)
   const category = resolveCategory(descriptor, fallback?.category)
   const categoryMeta = LAYER_CATEGORIES.find((item) => item.id === category)
+  const descriptorSub =
+    typeof (descriptor as { sub_category?: string | null }).sub_category === 'string'
+      ? (descriptor as { sub_category?: string }).sub_category
+      : undefined
+  const subCategory =
+    (descriptorSub as RuntimeLayerLibraryItem['subCategory'] | undefined) ??
+    fallback?.subCategory
 
   return {
     catalogId: descriptor.layer_id,
     name: descriptor.display_name,
     category,
+    subCategory,
     description: descriptor.description,
     metricLabel: fallback?.metricLabel ?? '主指标',
     metricUnit: fallback?.metricUnit ?? '',
@@ -668,7 +677,18 @@ export const useLayersStore = defineStore('layers', () => {
       supportsTime: false,
     }))
 
-    return items.concat(outputItems).sort((a, b) => {
+  // 行政边界不作为数据集目录展示；无数据源的空壳条目也不展示
+  const isDatasetLibraryItem = (item: RuntimeLayerLibraryItem) =>
+      item.category !== 'boundary' &&
+      !item.isAdminBoundary &&
+      item.catalogId !== 'admin-boundary' &&
+      item.catalogId !== 'admin-boundary-cn' &&
+      item.catalogId !== 'smap-soil'
+
+    return items
+      .concat(outputItems)
+      .filter(isDatasetLibraryItem)
+      .sort((a, b) => {
       const categoryOrderA = CATEGORY_INDEX_BY_ID.get(a.category) ?? Number.MAX_SAFE_INTEGER
       const categoryOrderB = CATEGORY_INDEX_BY_ID.get(b.category) ?? Number.MAX_SAFE_INTEGER
       if (categoryOrderA !== categoryOrderB) {
@@ -685,6 +705,7 @@ export const useLayersStore = defineStore('layers', () => {
   const activeLayersDisplay = computed<ActiveLayerDisplay[]>(() => {
     return activeLayers.value
       .slice()
+      .filter((layer) => !layer.isAdminBoundary && layer.catalogId !== 'admin-boundary')
       .sort((a, b) => a.order - b.order)
       .map((layer): ActiveLayerDisplay | null => {
         if (layer.importedVector) {
@@ -708,9 +729,9 @@ export const useLayersStore = defineStore('layers', () => {
             updateLabel: '本地文件',
             sourceLabel: payload.fileName ?? '本地导入',
             confidenceLabel: '本地数据',
-            accentColor: '#7ee0a8',
-            accentGlow: 'rgba(126, 224, 168, 0.28)',
-            chipTone: 'rgba(126, 224, 168, 0.16)',
+            accentColor: layer.accentColor ?? '#7ee0a8',
+            accentGlow: layer.accentGlow ?? 'rgba(126, 224, 168, 0.28)',
+            chipTone: layer.chipTone ?? 'rgba(126, 224, 168, 0.16)',
             availabilityState: 'ready',
             availabilityLabel: '完整数据',
             availabilityDescription: `已载入 ${payload.featureCount} 个要素，可在图层列表控制显隐与导出。`,
@@ -755,9 +776,9 @@ export const useLayersStore = defineStore('layers', () => {
             updateLabel: '本地文件',
             sourceLabel: payload.fileName ?? '本地导入',
             confidenceLabel: '本地数据',
-            accentColor: '#7eb8e0',
-            accentGlow: 'rgba(126, 184, 224, 0.28)',
-            chipTone: 'rgba(126, 184, 224, 0.16)',
+            accentColor: layer.accentColor ?? '#7eb8e0',
+            accentGlow: layer.accentGlow ?? 'rgba(126, 184, 224, 0.28)',
+            chipTone: layer.chipTone ?? 'rgba(126, 184, 224, 0.16)',
             availabilityState: 'ready',
             availabilityLabel: '完整数据',
             availabilityDescription: '已通过后端注册为 overlay，可在图层列表控制显隐与透明度。',
@@ -878,9 +899,9 @@ export const useLayersStore = defineStore('layers', () => {
           confidenceLabel: layer.isAdminBoundary
             ? '置信度 100%'
             : (realDisplay.confidenceLabel ?? '以课题组数据为准'),
-          accentColor: layer.isAdminBoundary ? '#88d8ff' : item.accentColor,
-          accentGlow: layer.isAdminBoundary ? 'rgba(136, 216, 255, 0.3)' : item.accentGlow,
-          chipTone: layer.isAdminBoundary ? 'rgba(136, 216, 255, 0.16)' : item.chipTone,
+          accentColor: layer.accentColor ?? item.accentColor,
+          accentGlow: layer.accentGlow ?? item.accentGlow,
+          chipTone: layer.chipTone ?? item.chipTone,
           availabilityState: layer.isAdminBoundary ? 'ready' : finalAvailability.state,
           availabilityLabel: layer.isAdminBoundary ? '完整数据' : finalAvailability.label,
           availabilityDescription: layer.isAdminBoundary
@@ -925,9 +946,29 @@ export const useLayersStore = defineStore('layers', () => {
 
   // ─────────────────────────────────────────────────────────────────────────────
 
+  function usedLayerAccentColors(): string[] {
+    return activeLayers.value
+      .map((l) => l.accentColor)
+      .filter((c): c is string => typeof c === 'string' && c.length > 0)
+  }
+
+  function assignLayerAccent(preferred?: string | null) {
+    return allocateLayerAccent(usedLayerAccentColors(), preferred)
+  }
+
   function addLayer(catalogId: string, isAdminBoundary = false, jobLayer?: JobLayerItem) {
+    // 行政边界不再作为可添加数据集
+    if (
+      isAdminBoundary ||
+      catalogId === 'admin-boundary' ||
+      catalogId === 'admin-boundary-cn' ||
+      catalogId === 'smap-soil'
+    ) {
+      return
+    }
+
     // 防止重复添加同 catalogId (除非来自不同 job)
-    if (!isAdminBoundary && !jobLayer) {
+    if (!jobLayer) {
       if (
         activeLayers.value.some(
           (l) => l.catalogId === catalogId && !l.jobLayer && !isLocalImport(l),
@@ -937,6 +978,8 @@ export const useLayersStore = defineStore('layers', () => {
       }
     }
 
+    const libraryItem = layerLibraryMap.value.get(catalogId)
+    const accent = assignLayerAccent(libraryItem?.accentColor)
     const maxOrder = activeLayers.value.reduce((max, l) => Math.max(max, l.order), 0)
     const layer: ActiveLayer = {
       instanceId: genInstanceId(),
@@ -944,9 +987,12 @@ export const useLayersStore = defineStore('layers', () => {
       visible: true,
       opacity: 1,
       order: maxOrder + 1,
-      isAdminBoundary,
+      isAdminBoundary: false,
       jobLayer,
       dataState: jobLayer ? 'real' : 'catalog',
+      accentColor: accent.accentColor,
+      accentGlow: accent.accentGlow,
+      chipTone: accent.chipTone,
     }
     activeLayers.value.push(layer)
     selectedInstanceId.value = layer.instanceId
@@ -1004,6 +1050,7 @@ export const useLayersStore = defineStore('layers', () => {
       featureCount: options?.featureCount,
     })
     if (options?.truncated) payload.truncated = true
+    const accent = assignLayerAccent('#7ee0a8')
     const layer: ActiveLayer = {
       instanceId,
       catalogId,
@@ -1018,6 +1065,9 @@ export const useLayersStore = defineStore('layers', () => {
       isAdminBoundary: false,
       importedVector: payload,
       dataState: 'imported',
+      accentColor: accent.accentColor,
+      accentGlow: accent.accentGlow,
+      chipTone: accent.chipTone,
     }
     activeLayers.value.push(layer)
     selectedInstanceId.value = layer.instanceId
@@ -1081,6 +1131,7 @@ export const useLayersStore = defineStore('layers', () => {
       lngOffset: options?.lngOffset,
       latOffset: options?.latOffset,
     })
+    const accent = assignLayerAccent('#7eb8e0')
     const layer: ActiveLayer = {
       instanceId,
       // catalogId 与后端 overlay_layer_id 对齐，便于 overlay-image-module 加载
@@ -1092,6 +1143,9 @@ export const useLayersStore = defineStore('layers', () => {
       isAdminBoundary: false,
       importedRaster: payload,
       dataState: 'imported',
+      accentColor: accent.accentColor,
+      accentGlow: accent.accentGlow,
+      chipTone: accent.chipTone,
     }
     activeLayers.value.push(layer)
     selectedInstanceId.value = layer.instanceId
@@ -1229,16 +1283,14 @@ export const useLayersStore = defineStore('layers', () => {
     }
   }
 
-  /** 批量移除所有图层（保留行政区边界） */
-  function removeAllLayers(keepBoundary = true) {
+  /** 批量移除所有图层 */
+  function removeAllLayers(_keepBoundary = false) {
     if (visibilitySyncRaf !== null) {
       globalThis.cancelAnimationFrame(visibilitySyncRaf)
       visibilitySyncRaf = null
     }
     pendingVisibilitySync.clear()
-    const layersToRemove = activeLayers.value.filter(
-      (layer) => !keepBoundary || !layer.isAdminBoundary,
-    )
+    const layersToRemove = [...activeLayers.value]
     const removedJobIds = layersToRemove
       .map((layer) => layer.jobLayer?.jobId)
       .filter((jobId): jobId is string => Boolean(jobId))
@@ -1258,14 +1310,8 @@ export const useLayersStore = defineStore('layers', () => {
       clearWindForCatalog(layer.catalogId)
       activeWorkflowCatalogIds.delete(layer.catalogId)
     }
-    if (keepBoundary) {
-      activeLayers.value = activeLayers.value.filter((l) => l.isAdminBoundary)
-    } else {
-      activeLayers.value = []
-    }
-    if (!activeLayers.value.some((l) => l.instanceId === selectedInstanceId.value)) {
-      selectedInstanceId.value = activeLayers.value[0]?.instanceId ?? null
-    }
+    activeLayers.value = []
+    selectedInstanceId.value = null
   }
 
   function setLayerOpacity(instanceId: string, opacity: number) {
@@ -1577,7 +1623,49 @@ export const useLayersStore = defineStore('layers', () => {
           progress?: number
           message?: string
           artifacts?: string[]
+          detail?: {
+            chunks_done?: number
+            chunks_total?: number
+            pixels_done?: number
+            pixels_total?: number
+            phase?: string
+            chunksDone?: number
+            chunksTotal?: number
+            pixelsDone?: number
+            pixelsTotal?: number
+          }
         }
+        const detailRaw = np.detail
+        const detail =
+          detailRaw && typeof detailRaw === 'object'
+            ? {
+                chunksDone:
+                  typeof detailRaw.chunks_done === 'number'
+                    ? detailRaw.chunks_done
+                    : typeof detailRaw.chunksDone === 'number'
+                      ? detailRaw.chunksDone
+                      : undefined,
+                chunksTotal:
+                  typeof detailRaw.chunks_total === 'number'
+                    ? detailRaw.chunks_total
+                    : typeof detailRaw.chunksTotal === 'number'
+                      ? detailRaw.chunksTotal
+                      : undefined,
+                pixelsDone:
+                  typeof detailRaw.pixels_done === 'number'
+                    ? detailRaw.pixels_done
+                    : typeof detailRaw.pixelsDone === 'number'
+                      ? detailRaw.pixelsDone
+                      : undefined,
+                pixelsTotal:
+                  typeof detailRaw.pixels_total === 'number'
+                    ? detailRaw.pixels_total
+                    : typeof detailRaw.pixelsTotal === 'number'
+                      ? detailRaw.pixelsTotal
+                      : undefined,
+                phase: typeof detailRaw.phase === 'string' ? detailRaw.phase : undefined,
+              }
+            : undefined
         if (typeof np.node_id === 'string') {
           const existing = nextNodeProgress.find((p) => p.nodeId === np.node_id)
           if (existing) {
@@ -1589,6 +1677,7 @@ export const useLayersStore = defineStore('layers', () => {
                   : existing.progress,
               message: typeof np.message === 'string' ? np.message : existing.message,
               artifacts: Array.isArray(np.artifacts) ? np.artifacts : existing.artifacts,
+              detail: detail ?? existing.detail,
             })
           } else {
             nextNodeProgress.push({
@@ -1601,6 +1690,7 @@ export const useLayersStore = defineStore('layers', () => {
                   : 0,
               message: typeof np.message === 'string' ? np.message : undefined,
               artifacts: Array.isArray(np.artifacts) ? np.artifacts : undefined,
+              detail,
             })
           }
         }

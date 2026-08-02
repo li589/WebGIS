@@ -16,6 +16,7 @@ SCRIPT_DIR = Path(__file__).resolve().parent.parent  # launch/ → project root
 BACKEND_DIR = SCRIPT_DIR / "Code" / "backend"
 FRONTEND_DIR = SCRIPT_DIR / "Code" / "frontend"
 DATA_SYNC_DIR = SCRIPT_DIR / "Code" / "infra" / "data-sync"
+GATEWAY_DIR = SCRIPT_DIR / "Code" / "infra" / "gateway"
 LOG_DIR = BACKEND_DIR / ".data" / "logs"
 DATA_DIRS = [
     BACKEND_DIR / ".data" / "logs",

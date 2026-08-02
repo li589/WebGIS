@@ -307,6 +307,8 @@ class OutputMapLayerModule(BaseModule):
         data = inputs.get("data")
         if isinstance(data, dict):
             path = data.get("path") or data.get("input_dir") or data.get("uri")
+        elif isinstance(data, str):
+            path = data
         path = path or inputs.get("path")
         if not path:
             raise ValueError("output_map_layer requires data/path or upstream manifest")
