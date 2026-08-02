@@ -41,7 +41,7 @@ const TYPE_HELP: Record<string, string> = {
     '数据源路径或 URI（目录/文件/远程地址）。通常由「数据源」节点提供，接到各处理模块的 input_dir。',
   'data:raster': '栅格数据流（影像、网格、DEM 等）。在预处理、统计分析、GEE、天气渲染之间传递。',
   'data:mat': 'MATLAB .mat 产品。遥感日常处理与反演链路的主要中间格式。',
-  'data:timeseries': '时间序列 .mat。由「时间序列合成」产出，供批量反演 / Omega 反演使用。',
+  'data:timeseries': '时间序列 .mat。由「时间序列合成」产出，供批量反演 / ω 反演使用。',
   'data:geojson': '矢量 GeoJSON（点/线/面）。风场渲染、缓冲区、分区统计等会产出或消费此类型。',
   data: '通用数据流（兼容多种 data:* 子类型）。优先使用更具体的类型端口以便校验。',
 }

@@ -120,9 +120,20 @@ Code/
 - 若手动调用：`Env\Python312\python.exe launch.py start`。即便误用系统 `python launch.py`，启动器也会在检测到 `Env/Python312` 时自动 `exec` 切换过去。
 - `Env/Python312` 是**本地开发/联调运行时**，不是 Docker 生产镜像；交付部署另走容器/服务器环境。旧文档中「不建议作为长期交付依赖」仅指生产交付，**不表示本地应回避它**。
 
+## Windows：Docker 必须以管理员身份运行（必读）
+
+本仓库联调依赖 Docker Desktop 拉起 Redis / MinIO / Open-Meteo 等容器。在 **Windows** 上：
+
+- **Docker Desktop 与启动终端（`start.bat` / PowerShell / Cursor 终端）建议均以「管理员身份」运行。**
+- 非管理员时，常见症状包括：**镜像无法拉取/访问**、named volume / 引擎配置读失败、部分 compose 服务起不全或权限报错。
+- 排障顺序：先确认 Docker Desktop 以管理员启动且引擎就绪 → 再 `launch.py start` / `restart`。
+
+> 默认联调不启 Nginx。演示/同域入口：`Env\Python312\python.exe launch.py start gateway`（需先有 FastAPI `:8000` 与 `Code/frontend/dist`；与 Vite 互斥，详见 `Code/infra/gateway/README.md`）。
+
 ## 日常联调命令
 
-- `start.bat`（或 `Env\Python312\python.exe launch.py start`）— 运行栈 + FastAPI + Workers + 前端
+- `start.bat`（或 `Env\Python312\python.exe launch.py start`）— 运行栈 + FastAPI + Workers + Vite 前端
+- `Env\Python312\python.exe launch.py start gateway` — Nginx 同域入口 `:5175`（可选）
 - `Env\Python312\python.exe launch.py sync` — 数据面 Open-Meteo 同步（`Code/infra/data-sync`）
 - `stop.bat` / `Env\Python312\python.exe launch.py status` / `flush`
 - 活文档应随代码结构变化同步更新；带日期的记录文档可归档保留

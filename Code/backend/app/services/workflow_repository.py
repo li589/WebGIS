@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import logging
+import sqlite3
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
@@ -138,13 +139,28 @@ class SQLiteWorkflowRepository:
     def append_event(self, event: WorkflowEvent) -> None:
         payload = json.dumps(event.model_dump(mode="json"), ensure_ascii=False)
         with self._connect() as connection:
-            connection.execute(
-                """
-                INSERT INTO workflow_events (event_id, run_id, created_at, payload_json)
-                VALUES (?, ?, ?, ?)
-                """,
-                (event.event_id, event.run_id, event.created_at.isoformat(), payload),
-            )
+            # OR IGNORE：event_factory 可能已在执行中即时落库，lifecycle 收尾再写同 event_id 时忽略。
+            # 额外吞掉 IntegrityError：旧 worker / 重复进程若仍跑无 OR IGNORE 的 SQL，
+            # 或池连接异常路径下约束冲突，不应把已成功的算法 run 标成 failed。
+            try:
+                connection.execute(
+                    """
+                    INSERT OR IGNORE INTO workflow_events (event_id, run_id, created_at, payload_json)
+                    VALUES (?, ?, ?, ?)
+                    """,
+                    (
+                        event.event_id,
+                        event.run_id,
+                        event.created_at.isoformat(),
+                        payload,
+                    ),
+                )
+            except sqlite3.IntegrityError:
+                logger.debug(
+                    "Ignoring duplicate workflow_events.event_id=%s run_id=%s",
+                    event.event_id,
+                    event.run_id,
+                )
 
     def list_events(
         self,

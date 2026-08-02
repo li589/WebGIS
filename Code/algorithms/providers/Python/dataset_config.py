@@ -720,6 +720,33 @@ DATASET_REGISTRY: dict[str, DatasetInfo] = {
 # 路径解析函数
 # ===========================================================================
 
+# 工作流种子 / Matlab CFG 历史路径别名 → 本地 catalog 相对路径
+# 解决 FY3D_TB / SMAP_ancillary 等与盘上目录名不一致导致的静默找不到数据。
+PATH_ALIASES: dict[str, str] = {
+    "SMAP_ancillary": "Soil_Moisture/SMAP_Auxiliary_Data",
+    "Soil_Moisture/SMAP_ancillary": "Soil_Moisture/SMAP_Auxiliary_Data",
+    "Soil_Moisture/FY3D_TB": "Soil_Moisture/FY3D",
+    "Soil_Moisture/FY3B_TB": "Soil_Moisture/FY3B",
+    "FY3D_TB": "Soil_Moisture/FY3D",
+    "FY3B_TB": "Soil_Moisture/FY3B",
+}
+
+
+def normalize_dataset_relative_path(path: str) -> str:
+    """将历史别名路径规范为 catalog 相对路径（正斜杠）。"""
+    raw = str(path or "").strip().replace("\\", "/")
+    if not raw:
+        return raw
+    if raw in PATH_ALIASES:
+        return PATH_ALIASES[raw]
+    # 末段别名：.../FY3D_TB → Soil_Moisture/FY3D
+    for alias, target in PATH_ALIASES.items():
+        if raw.endswith("/" + alias) or raw.endswith(alias):
+            if "/" not in alias:
+                parent = raw[: -len(alias)].rstrip("/")
+                return f"{parent}/{target.split('/')[-1]}" if parent else target
+    return raw
+
 
 @lru_cache(maxsize=128)
 def resolve_dataset_path(logical_name: str) -> Path | None:
@@ -728,8 +755,9 @@ def resolve_dataset_path(logical_name: str) -> Path | None:
 
     查找顺序：
         1. DATASET_REGISTRY 中定义的数据集 → 拼接 BACKEND_DATA_ROOT + relative_path
-        2. 直接将 logical_name 作为相对路径解析
-        3. 尝试从多个已知数据根目录查找
+        2. 路径别名（FY3D_TB / SMAP_ancillary 等）→ catalog 相对路径
+        3. 直接将 logical_name 作为相对路径解析
+        4. 尝试从多个已知数据根目录查找
 
     返回：
         Path 对象，如果数据集存在；否则返回 None
@@ -737,6 +765,12 @@ def resolve_dataset_path(logical_name: str) -> Path | None:
     info = DATASET_REGISTRY.get(logical_name)
     if info is not None:
         candidate = BACKEND_DATA_ROOT / info.relative_path
+        if candidate.exists():
+            return candidate
+
+    normalized = normalize_dataset_relative_path(logical_name)
+    if normalized != logical_name:
+        candidate = BACKEND_DATA_ROOT / normalized
         if candidate.exists():
             return candidate
 

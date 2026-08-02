@@ -1,15 +1,40 @@
 <script setup lang="ts">
+/**
+ * Screenshot export panel.
+ *
+ * html2canvas / jspdf are **static** imports so Vite does not re-optimize deps
+ * mid-click (that previously caused occasional full-page reloads). This panel
+ * itself is loaded via defineAsyncComponent, so the cost is deferred until open.
+ */
 import { computed, onBeforeUnmount, ref } from 'vue'
+import html2canvas from 'html2canvas'
+import { jsPDF } from 'jspdf'
 import { LAYERS_COPY } from '../ui-copy'
+import {
+  CLEAN_IGNORE_SELECTORS,
+  PURE_IGNORE_SELECTORS,
+  MAP_CANVAS_SELECTORS,
+  type ScreenshotFormat,
+  type ScreenshotMode,
+  buildMapSnapshotLayout,
+  canvasToPngBlob,
+  compositeMapUnderUi,
+  downloadBlob,
+  matchesAnySelector,
+  stampLayoutMeasurements,
+  prepareCloneForCapture,
+  resolveCaptureElement,
+  snapshotLivePaint,
+} from './screenshot-export'
 
-export type ScreenshotMode = 'shell' | 'bare' | 'clean' | 'pure'
-export type ScreenshotFormat = 'png' | 'pdf'
+export type { ScreenshotFormat, ScreenshotMode }
 
 const props = defineProps<{
   dashboardEl: HTMLElement | null
   mapShellEl: HTMLElement | null
   mapStageEl: HTMLElement | null
-  captureMapCanvas: (() => string | null) | null
+  captureMapCanvas: (() => Promise<string | null> | string | null) | null
+  setWindAnimationPaused?: ((paused: boolean) => void) | null
   activeLayerName: string
   hourLabel: string
 }>()
@@ -47,156 +72,89 @@ const selectedFormat = ref<ScreenshotFormat>('png')
 
 const canCapture = computed(() => !!props.mapStageEl && !isCapturing.value)
 
-const CLEAN_IGNORE_SELECTORS = [
-  '.overlay',
-  '.map-overlay',
-  '.map-note',
-  '.tile-load-error',
-  '.map-loading',
-  '.map-skeleton',
-  '.maplibregl-ctrl-bottom-right',
-  '.maplibregl-ctrl-bottom-left',
-]
-
-const PURE_IGNORE_SELECTORS = [
-  '.overlay',
-  '.map-overlay',
-  '.map-note',
-  '.tile-load-error',
-  '.map-loading',
-  '.map-skeleton',
-  '.maplibregl-ctrl-bottom-right',
-  '.map-fog',
-  '.time-sheen',
-  '.time-band',
-  '.weather-overlay',
-  '.grid-overlay',
-  '.basemap-transition-mask',
-]
-
-type MapSnapshot = {
-  dataUrl: string
-  dx: number
-  dy: number
-  dw: number
-  dh: number
-}
-
-function buildMapSnapshot(
-  stage: HTMLElement,
-  captureEl: HTMLElement,
-  scale: number,
-): MapSnapshot | null {
-  const mapCanvas = stage.querySelector('.maplibregl-canvas') as HTMLCanvasElement | null
-  if (!mapCanvas) return null
-
-  try {
-    // preserveDrawingBuffer=false 下，必须通过 map.render() + 同步 toDataURL() 读取
-    const dataUrl = props.captureMapCanvas
-      ? props.captureMapCanvas()
-      : mapCanvas.toDataURL('image/png')
-    if (!dataUrl) return null
-    const rect = mapCanvas.getBoundingClientRect()
-    const parentRect = captureEl.getBoundingClientRect()
-
-    return {
-      dataUrl,
-      dx: (rect.left - parentRect.left) * scale,
-      dy: (rect.top - parentRect.top) * scale,
-      dw: rect.width * scale,
-      dh: rect.height * scale,
-    }
-  } catch (error) {
-    console.warn('[ScreenshotExport] Failed to read map canvas:', error)
-    return null
-  }
-}
-
-function resolveCaptureElement(mode: ScreenshotMode): HTMLElement | null {
-  if (!props.mapStageEl) return null
-
-  if (mode === 'shell') {
-    return (
-      props.dashboardEl?.ownerDocument.documentElement ??
-      props.dashboardEl ??
-      props.mapShellEl ??
-      props.mapStageEl
-    )
-  }
-
-  if (mode === 'bare' || mode === 'clean') {
-    return props.mapShellEl ?? props.mapStageEl
-  }
-
-  return props.mapStageEl
-}
-
-function matchesAnySelector(el: HTMLElement, selectors: string[]) {
-  return selectors.some((selector) => el.matches(selector) || !!el.closest(selector))
-}
-
 async function capture() {
   if (!props.mapStageEl || isCapturing.value) return
   isCapturing.value = true
   captureMsg.value = '正在捕获...'
 
   const stage = props.mapStageEl
-
   const mode = selectedMode.value
   const format = selectedFormat.value
 
-  const captureEl = resolveCaptureElement(mode)
+  const captureEl = resolveCaptureElement(mode, {
+    dashboardEl: props.dashboardEl,
+    mapShellEl: props.mapShellEl,
+    mapStageEl: props.mapStageEl,
+  })
   if (!captureEl) {
     captureMsg.value = '截图失败'
     isCapturing.value = false
     return
   }
 
+  let restoreStamps: (() => void) | null = null
+  props.setWindAnimationPaused?.(true)
+
   try {
-    const { default: html2canvas } = await import('html2canvas')
-    const { default: jsPDF } = await import('jspdf')
-
     captureMsg.value = '正在渲染...'
-    const scale = window.devicePixelRatio * 2
-    const mapSnapshot = buildMapSnapshot(stage, captureEl, scale)
+    const scale = Math.max(2, window.devicePixelRatio || 1)
 
-    const canvas = await html2canvas(captureEl, {
+    // Step 1: Capture map WebGL FIRST — before any DOM measurements that could
+    // trigger reflow and clear the GL framebuffer (preserveDrawingBuffer=false).
+    const mapCanvasEl =
+      (stage.querySelector('.maplibregl-canvas') as HTMLCanvasElement | null) ||
+      (stage.querySelector('canvas') as HTMLCanvasElement | null)
+
+    let mapDataUrl: string | null = null
+    if (props.captureMapCanvas) {
+      try {
+        mapDataUrl = await Promise.resolve(props.captureMapCanvas())
+      } catch (err) {
+        console.warn('[ScreenshotExport] captureMapCanvas threw error:', err)
+      }
+    }
+    if (!mapDataUrl && mapCanvasEl) {
+      try {
+        mapDataUrl = mapCanvasEl.toDataURL('image/png')
+      } catch {
+        mapDataUrl = null
+      }
+    }
+
+    // Step 2: Build map snapshot layout using live rects.
+    const snapshotTarget = mapCanvasEl ?? stage
+    const mapSnapshot = mapDataUrl
+      ? buildMapSnapshotLayout(snapshotTarget, captureEl, scale, mapDataUrl)
+      : null
+
+    // Step 3: Stamp layout measurements as data attributes (non-destructive to live DOM).
+    restoreStamps = stampLayoutMeasurements(captureEl)
+
+    // Step 4: Snapshot live paint (computed styles) before html2canvas clones.
+    const paintSnapshots = snapshotLivePaint(captureEl)
+    const realToolbar = captureEl.querySelector('.toolbar') as HTMLElement | null
+
+    // Step 5: Run html2canvas — onclone callback does all layout pinning in the clone.
+    const captureRect = captureEl.getBoundingClientRect()
+    const uiCanvas = await html2canvas(captureEl, {
       useCORS: true,
-      allowTaint: true,
+      allowTaint: false,
       scale,
       backgroundColor: null,
       logging: false,
+      scrollX: -window.scrollX,
+      scrollY: -window.scrollY,
+      windowWidth: Math.ceil(captureRect.width) || captureEl.clientWidth || window.innerWidth,
+      windowHeight: Math.ceil(captureRect.height) || captureEl.clientHeight || window.innerHeight,
       onclone: (clonedDoc: Document) => {
-        const clonedStage = clonedDoc.querySelector('.map-stage') as HTMLElement | null
-        if (clonedStage) {
-          clonedStage.style.background = 'transparent'
-          if (mode === 'pure') {
-            clonedStage.style.border = 'none'
-            clonedStage.style.borderRadius = '0'
-            clonedStage.style.boxShadow = 'none'
-          }
-        }
-
-        const clonedMapHost = clonedDoc.querySelector('.map-host') as HTMLElement | null
-        if (clonedMapHost) {
-          clonedMapHost.style.background = 'transparent'
-        }
-
-        clonedDoc
-          .querySelectorAll('.maplibregl-canvas-container,.maplibregl-canvas')
-          .forEach((el: Element) => {
-            ;(el as HTMLElement).style.visibility = 'hidden'
-          })
+        prepareCloneForCapture(clonedDoc, { mode, paintSnapshots, realToolbar })
       },
       ignoreElements: (el: Element) => {
-        if (
-          el instanceof HTMLElement &&
-          (el.matches('.maplibregl-canvas-container') || el.matches('.maplibregl-canvas'))
-        ) {
+        if (!(el instanceof HTMLElement)) return false
+
+        if (matchesAnySelector(el, MAP_CANVAS_SELECTORS)) {
           return true
         }
-
-        if (!(el instanceof HTMLElement)) return false
 
         if (el.matches('.screenshot-overlay') || !!el.closest('.screenshot-overlay')) {
           return true
@@ -214,35 +172,18 @@ async function capture() {
       },
     })
 
-    let finalCanvas = canvas
-    if (mapSnapshot) {
-      const composedCanvas = document.createElement('canvas')
-      composedCanvas.width = canvas.width
-      composedCanvas.height = canvas.height
-      const composedCtx = composedCanvas.getContext('2d')
+    // Step 6: Composite map under UI.
+    let finalCanvas = uiCanvas
+    try {
+      finalCanvas = await compositeMapUnderUi(uiCanvas, mapSnapshot)
+    } catch (error) {
+      console.warn('[ScreenshotExport] map composite failed, exporting UI only:', error)
+    }
 
-      if (composedCtx) {
-        const mapImage = new Image()
-        mapImage.src = mapSnapshot.dataUrl
-        await new Promise((resolve) => {
-          mapImage.onload = () => {
-            composedCtx.drawImage(
-              mapImage,
-              mapSnapshot.dx,
-              mapSnapshot.dy,
-              mapSnapshot.dw,
-              mapSnapshot.dh,
-            )
-            composedCtx.drawImage(canvas, 0, 0)
-            finalCanvas = composedCanvas
-            resolve(null)
-          }
-          mapImage.onerror = () => {
-            finalCanvas = canvas
-            resolve(null)
-          }
-        })
-      }
+    if (!mapSnapshot) {
+      console.warn(
+        '[ScreenshotExport] map snapshot missing — basemap/overlays may be blank (tainted canvas or capture failure)',
+      )
     }
 
     const exportName =
@@ -250,10 +191,8 @@ async function capture() {
     const filename = `geoflow-${exportName}-${props.hourLabel.replace(':', '')}-${mode}`
 
     if (format === 'png') {
-      const link = document.createElement('a')
-      link.download = `${filename}.png`
-      link.href = finalCanvas.toDataURL('image/png')
-      link.click()
+      const blob = await canvasToPngBlob(finalCanvas)
+      downloadBlob(blob, `${filename}.png`)
     } else {
       const imgData = finalCanvas.toDataURL('image/png')
       const pdfWidth = finalCanvas.width
@@ -272,6 +211,8 @@ async function capture() {
     console.error('[ScreenshotExport] Capture failed:', err)
     captureMsg.value = '截图失败'
   } finally {
+    restoreStamps?.()
+    props.setWindAnimationPaused?.(false)
     isCapturing.value = false
     if (captureMsgTimer !== null) {
       clearTimeout(captureMsgTimer)
@@ -290,7 +231,7 @@ async function capture() {
       <div class="panel-header">
         <span class="panel-icon" aria-hidden="true">◫</span>
         <span>导出截图</span>
-        <button class="close-btn" @click="emit('close')" title="关闭">
+        <button type="button" class="close-btn" @click.prevent="emit('close')" title="关闭">
           <span aria-hidden="true">✕</span>
         </button>
       </div>
@@ -301,9 +242,10 @@ async function capture() {
         <button
           v-for="m in MODES"
           :key="m.id"
+          type="button"
           class="mode-btn"
           :class="{ active: selectedMode === m.id }"
-          @click="selectedMode = m.id"
+          @click.prevent="selectedMode = m.id"
         >
           <span class="mode-icon" aria-hidden="true">{{ m.icon }}</span>
           <span class="mode-label">{{ m.label }}</span>
@@ -317,9 +259,10 @@ async function capture() {
         <button
           v-for="f in FORMATS"
           :key="f.id"
+          type="button"
           class="format-btn"
           :class="{ active: selectedFormat === f.id }"
-          @click="selectedFormat = f.id"
+          @click.prevent="selectedFormat = f.id"
         >
           <span aria-hidden="true">{{ f.icon }}</span>
           <span>{{ f.label }}</span>
@@ -328,10 +271,11 @@ async function capture() {
 
       <!-- Capture button -->
       <button
+        type="button"
         class="capture-btn"
         :class="{ capturing: isCapturing }"
         :disabled="!canCapture"
-        @click="capture"
+        @click.prevent="capture"
       >
         <span v-if="!isCapturing && !captureMsg" class="btn-icon" aria-hidden="true">▼</span>
         <span v-else-if="captureMsg" class="btn-msg">{{ captureMsg }}</span>
@@ -527,7 +471,6 @@ async function capture() {
   font-size: 0.7rem;
   font-weight: 600;
   box-shadow: 0 8px 24px rgba(10, 132, 255, 0.18);
-  /* 性能优化：GPU 属性过渡 */
   transition:
     background 0.2s ease,
     color 0.2s ease,

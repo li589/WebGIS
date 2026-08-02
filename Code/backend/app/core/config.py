@@ -2,11 +2,16 @@ from dataclasses import dataclass, field
 import os
 from pathlib import Path
 
-from dotenv import load_dotenv
+# 尝试加载 dotenv，若不可用或 .env 不可读则跳过
+# catch Exception 而非仅 ImportError：Windows 文件系统可能存在
+# 文件存在但 open() 失败的异常情况，此时环境变量应已通过系统路径设置
+try:
+    from dotenv import load_dotenv
 
-# 加载 .env 文件到环境变量（优先查找 backend 目录）
-_env_path = Path(__file__).resolve().parents[2] / ".env"
-load_dotenv(_env_path)
+    _env_path = Path(__file__).resolve().parents[2] / ".env"
+    load_dotenv(_env_path)
+except Exception:
+    pass
 
 
 BACKEND_ROOT = Path(__file__).resolve().parents[2]

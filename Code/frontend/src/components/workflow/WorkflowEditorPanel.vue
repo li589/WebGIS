@@ -698,8 +698,8 @@ defineExpose({
               class="validation-action-btn proceed"
               type="button"
               @click="
-                showValidationPanel = false
-                showRunDialog = true
+                showValidationPanel = false;
+                showRunDialog = true;
               "
             >
               继续运行

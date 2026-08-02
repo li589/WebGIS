@@ -22,7 +22,6 @@ import {
   buildLayerContextMenu,
   type LayerContextActionId,
 } from './layer-sidebar/layer-context-menu'
-import LayerSymbologyPopover from './layer-sidebar/LayerSymbologyPopover.vue'
 
 const emit = defineEmits<{
   selectLayer: [instanceId: string]
@@ -138,6 +137,8 @@ watch(sidebarView, () => {
 
 // ── Filter library items by search ────────────────────────────────────────────
 
+const selectedSubCategory = ref<'all' | '模型输入' | '模型输出' | '辅助数据'>('all')
+
 const filteredLibrary = computed(() => {
   if (!searchQuery.value.trim()) return layerLibrary.value
   const q = searchQuery.value.toLowerCase()
@@ -145,6 +146,7 @@ const filteredLibrary = computed(() => {
     (item) =>
       item.name.toLowerCase().includes(q) ||
       item.category.toLowerCase().includes(q) ||
+      (item.subCategory && item.subCategory.toLowerCase().includes(q)) ||
       item.sourceLabel.toLowerCase().includes(q) ||
       item.description.toLowerCase().includes(q),
   )
@@ -156,10 +158,20 @@ const filteredLibraryByCategory = computed(() => {
   )
   for (const item of filteredLibrary.value) {
     if (map.has(item.category)) {
+      if (
+        item.category === 'research-group' &&
+        selectedSubCategory.value !== 'all' &&
+        item.subCategory !== selectedSubCategory.value
+      ) {
+        continue
+      }
       map.get(item.category)!.items.push(item)
     }
   }
-  return Array.from(map.values()).filter((g) => g.items.length > 0)
+  return Array.from(map.values()).filter((g) => {
+    if (g.category.id === 'research-group') return true
+    return g.items.length > 0
+  })
 })
 
 function prefetchVisibleWeatherProviders() {
@@ -282,9 +294,9 @@ function hideAllLayers() {
   layersStore.setAllLayerVisibility(false)
 }
 
-/** 批量移除所有图层（保留行政区边界） */
+/** 批量移除所有图层 */
 function removeAllLayers() {
-  layersStore.removeAllLayers(true)
+  layersStore.removeAllLayers()
 }
 
 function removeItem(instanceId: string, event: MouseEvent) {
@@ -416,9 +428,7 @@ function getCatalogSourceSummary(catalogId: string): string {
   return sources.map((source) => source.name).join(' / ')
 }
 
-// ── 符号系统 (Symbology) ─────────────────────────────────────────────────────
-
-// ── 右键菜单与符号系统浮窗 ───────────────────────────────────────────────────
+// ── 右键菜单 ─────────────────────────────────────────────────────────────────
 
 interface ContextMenuState {
   instanceId: string
@@ -427,7 +437,6 @@ interface ContextMenuState {
 }
 
 const contextMenu = ref<ContextMenuState | null>(null)
-const symbologyPanel = ref<ContextMenuState | null>(null)
 
 const contextMenuLayer = computed(() => {
   if (!contextMenu.value) return null
@@ -467,27 +476,16 @@ const contextMenuGroups = computed(() => {
     isImportedRaster: layer.isImportedRaster,
     hasJobReport: Boolean(layer.jobLayer?.reportSummary),
     canRunWorkflow: canRun,
-    hasColorSymbology: hasColorSymbology(layer),
   })
 })
 
-/** 从右键菜单打开"符号系统"浮窗 */
-function openSymbologyFromMenu() {
+/** 右键「样式…」→ 分析面板样式 Tab（符号/透明度/配色等统一入口） */
+function openStyleInAnalysis() {
   if (!contextMenu.value) return
-  const POPOVER_W = 280
-  const POPOVER_H = 420
-  const vw = window.innerWidth
-  const vh = window.innerHeight
-  const x = Math.min(contextMenu.value.x, vw - POPOVER_W - 8)
-  const y = Math.min(contextMenu.value.y, vh - POPOVER_H - 8)
-  symbologyPanel.value = {
-    instanceId: contextMenu.value.instanceId,
-    x: Math.max(8, x),
-    y: Math.max(8, y),
-  }
-  const layer = activeLayersDisplay.value.find(
-    (l) => l.instanceId === contextMenu.value!.instanceId,
-  )
+  const id = contextMenu.value.instanceId
+  const layer = activeLayersDisplay.value.find((l) => l.instanceId === id)
+  uiStore.requestAnalysisFocus(['layer-style'])
+  selectItem(id)
   if (
     layer &&
     !layer.isImported &&
@@ -545,9 +543,6 @@ function handleContextAction(action: LayerContextActionId) {
       layersStore.toggleLayerVisibility(id)
       closeContextMenu()
       return
-    case 'symbology':
-      openSymbologyFromMenu()
-      return
     case 'viewDetails':
       selectItem(id)
       closeContextMenu()
@@ -574,7 +569,7 @@ function handleContextAction(action: LayerContextActionId) {
       closeContextMenu()
       return
     case 'openStyle':
-      openSymbologyFromMenu()
+      openStyleInAnalysis()
       return
     case 'exportGeoJson':
       void exportActiveFromMenu('geojson')
@@ -607,25 +602,17 @@ function handleContextAction(action: LayerContextActionId) {
   }
 }
 
-function closeSymbologyPanel() {
-  symbologyPanel.value = null
-}
-
-/** 点击页面空白处关闭浮窗 */
+/** 点击页面空白处关闭菜单 */
 function onGlobalClick(event: MouseEvent) {
   const target = event.target as HTMLElement
   if (contextMenu.value && !target.closest('.ctx-menu')) {
     closeContextMenu()
   }
-  if (symbologyPanel.value && !target.closest('.sym-popover') && !target.closest('.ctx-menu')) {
-    closeSymbologyPanel()
-  }
 }
 
-/** ESC 关闭浮窗 */
+/** ESC 关闭菜单 */
 function onGlobalKeydown(event: KeyboardEvent) {
   if (event.key === 'Escape') {
-    closeSymbologyPanel()
     closeContextMenu()
   }
 }
@@ -725,14 +712,6 @@ type ActiveLayerDisplayLike = {
     legend_ticks?: (number | string)[]
   } | null
 }
-
-/** 符号系统浮窗当前关联的图层 */
-const symbologyPanelLayer = computed(() => {
-  if (!symbologyPanel.value) return null
-  return (
-    activeLayersDisplay.value.find((l) => l.instanceId === symbologyPanel.value!.instanceId) ?? null
-  )
-})
 </script>
 
 <template>
@@ -849,6 +828,22 @@ const symbologyPanelLayer = computed(() => {
           </div>
 
           <div v-if="expandedCategories.has(group.category.id)" class="category-items">
+            <!-- 课题组数据二级分类筛选 Pills -->
+            <div v-if="group.category.id === 'research-group'" class="subcategory-pills-bar">
+              <button
+                v-for="sub in ['all', '模型输入', '模型输出', '辅助数据'] as const"
+                :key="sub"
+                type="button"
+                class="sub-pill"
+                :class="{ active: selectedSubCategory === sub }"
+                @click.stop="selectedSubCategory = sub"
+              >
+                {{ sub === 'all' ? '全部' : sub }}
+              </button>
+            </div>
+            <div v-if="group.items.length === 0" class="empty-subcategory-hint">
+              暂无匹配【{{ selectedSubCategory === 'all' ? '全部' : selectedSubCategory }}】的课题组图层
+            </div>
             <div
               v-for="item in group.items"
               :key="item.catalogId"
@@ -862,9 +857,16 @@ const symbologyPanelLayer = computed(() => {
               <div class="card-top">
                 <div class="card-title-row">
                   <strong>{{ item.name }}</strong>
-                  <span class="card-chip" :style="{ background: item.chipTone }">{{
-                    getCategoryName(item.category)
-                  }}</span>
+                  <div class="chips-group">
+                    <span class="card-chip" :style="{ background: item.chipTone }">{{
+                      getCategoryName(item.category)
+                    }}</span>
+                    <span
+                      v-if="item.subCategory"
+                      class="card-chip subcategory-chip"
+                      style="background: rgba(255, 255, 255, 0.08); margin-left: 4px; color: #a4caf6;"
+                    >{{ item.subCategory }}</span>
+                  </div>
                 </div>
                 <p class="card-source">{{ item.sourceLabel }}</p>
               </div>
@@ -1053,7 +1055,7 @@ const symbologyPanelLayer = computed(() => {
           </button>
           <button
             class="batch-btn batch-btn-danger"
-            title="移除所有图层（边界除外）"
+            title="移除所有图层"
             @click="removeAllLayers"
           >
             <span aria-hidden="true">✕</span> 全部移除
@@ -1204,14 +1206,6 @@ const symbologyPanelLayer = computed(() => {
           </button>
         </template>
       </div>
-
-      <LayerSymbologyPopover
-        v-if="symbologyPanel && symbologyPanelLayer"
-        :layer="symbologyPanelLayer"
-        :x="symbologyPanel.x"
-        :y="symbologyPanel.y"
-        @close="closeSymbologyPanel"
-      />
     </Teleport>
   </aside>
 </template>
@@ -2078,9 +2072,10 @@ h2 {
   /* 始终展示三行：主行 + 图例 + 底行，统一间距 */
   gap: 0.18rem;
   padding: 0.3rem 0.42rem;
-  border: 1px solid rgba(136, 192, 255, 0.1);
+  border: 1px solid color-mix(in srgb, var(--accent, #88c0ff) 28%, rgba(136, 192, 255, 0.12));
+  border-left: 3px solid var(--accent, #67d4ff);
   border-radius: var(--sidebar-soft-radius);
-  background: rgba(8, 18, 33, 0.5);
+  background: color-mix(in srgb, var(--accent, #67d4ff) 14%, rgba(8, 18, 33, 0.78));
   color: #d8e4ef;
   font: inherit;
   font-size: 0.66rem;
@@ -2093,16 +2088,16 @@ h2 {
 }
 
 .layer-item:hover {
-  border-color: rgba(90, 162, 255, 0.4);
-  box-shadow: 0 4px 10px -8px rgba(90, 106, 128, 0.3);
+  border-color: color-mix(in srgb, var(--accent, #5aa2ff) 55%, rgba(90, 162, 255, 0.35));
+  box-shadow: 0 4px 12px -8px color-mix(in srgb, var(--accent, #5aa2ff) 50%, transparent);
 }
 
 .layer-item.active {
-  background: rgba(90, 162, 255, 0.12);
-  border-color: rgba(90, 162, 255, 0.5);
+  background: color-mix(in srgb, var(--accent, #5aa2ff) 22%, rgba(8, 18, 33, 0.82));
+  border-color: color-mix(in srgb, var(--accent, #5aa2ff) 65%, rgba(90, 162, 255, 0.45));
   box-shadow:
-    inset 0 0 0 1px rgba(255, 255, 255, 0.02),
-    0 12px 22px -20px rgba(90, 106, 128, 0.3);
+    inset 0 0 0 1px rgba(255, 255, 255, 0.03),
+    0 12px 22px -18px color-mix(in srgb, var(--accent, #5aa2ff) 55%, transparent);
 }
 
 .layer-item.hidden {
@@ -2423,244 +2418,63 @@ h2 {
   text-align: center;
 }
 
-/* ── 符号系统浮窗 (Symbology Popover) ────────────────────────────────────── */
-.sym-popover {
-  position: fixed;
-  z-index: 9999;
-  min-width: 12rem;
-  max-width: 16rem;
-  border: 1px solid rgba(90, 162, 255, 0.28);
-  border-radius: 0.6rem;
-  background: rgba(8, 18, 33, 0.97);
-  backdrop-filter: blur(14px);
-  box-shadow:
-    0 16px 40px -16px rgba(0, 0, 0, 0.7),
-    0 0 0 1px rgba(136, 192, 255, 0.04);
-  overflow: hidden;
-  animation: sym-pop-in 0.16s ease;
-}
-
-@keyframes sym-pop-in {
-  from {
-    opacity: 0;
-    transform: scale(0.96) translateY(-6px);
-  }
-  to {
-    opacity: 1;
-    transform: scale(1) translateY(0);
-  }
-}
-
-.sym-popover-header {
+.subcategory-pills-bar {
   display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 0.36rem 0.5rem;
-  border-bottom: 1px solid rgba(136, 192, 255, 0.1);
-  background: rgba(90, 162, 255, 0.06);
+  gap: 0.35rem;
+  margin: 0.3rem 0.5rem 0.5rem 0.5rem;
 }
 
-.sym-popover-title {
-  color: #e8f4ff;
-  font-size: 0.62rem;
-  font-weight: 700;
-  letter-spacing: 0.02em;
-}
-
-.sym-popover-close {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 1.1rem;
-  height: 1.1rem;
-  border: none;
-  border-radius: 0.32rem;
-  background: transparent;
-  color: #6e8ba0;
-  cursor: pointer;
-  font-size: 0.56rem;
-  transition:
-    background 0.12s ease,
-    color 0.12s ease;
-}
-
-.sym-popover-close:hover {
-  background: rgba(255, 100, 100, 0.14);
-  color: #ff9a9a;
-}
-
-.sym-popover-body {
-  display: grid;
-  gap: 0.26rem;
-  padding: 0.4rem 0.5rem;
-}
-
-.sym-layer-name {
-  color: #f3fbff;
-  font-size: 0.62rem;
-  font-weight: 600;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-/* 字段行 */
-.sym-field-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 0.3rem;
-}
-
-.sym-field-label {
-  color: #6e8ba0;
-  font-size: 0.54rem;
-  letter-spacing: 0.02em;
-}
-
-.sym-field-value {
-  color: #d4e4f4;
-  font-size: 0.58rem;
-  font-weight: 600;
-  text-align: right;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  flex: 1;
-}
-
-/* 色带条 */
-.sym-color-ramp {
-  width: 100%;
-  height: 0.72rem;
-  border-radius: 0.28rem;
-  border: 1px solid rgba(136, 192, 255, 0.12);
-  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.18);
-}
-
-/* 值域范围 */
-.sym-range-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 0.2rem;
-}
-
-.sym-range-min,
-.sym-range-max {
-  color: #9fb6cc;
-  font-size: 0.52rem;
-  font-variant-numeric: tabular-nums;
-  font-family: ui-monospace, 'SF Mono', monospace;
-}
-
-.sym-range-unit {
-  color: #6e8ba0;
-  font-size: 0.5rem;
-  letter-spacing: 0.02em;
-}
-
-/* 配色下拉（与分析框 palette 同源） */
-.sym-palette-row {
-  display: grid;
-  grid-template-columns: auto 1fr;
-  gap: 0.3rem;
-  align-items: center;
-  margin-top: 0.12rem;
-  color: #9eb3c8;
-  font-size: 0.54rem;
-}
-
-.sym-palette-select {
-  width: 100%;
-  border: 1px solid rgba(136, 192, 255, 0.2);
-  border-radius: 0.36rem;
-  background: rgba(8, 18, 33, 0.85);
-  color: #d8e6f5;
-  font: inherit;
-  font-size: 0.54rem;
-  padding: 0.22rem 0.35rem;
-}
-
-.sym-palette-select:disabled {
-  opacity: 0.55;
-  cursor: not-allowed;
-}
-
-.sym-palette-hint {
-  margin: 0.2rem 0 0;
-  color: #7f93a9;
-  font-size: 0.48rem;
-  line-height: 1.35;
-}
-
-/* 透明度滑块（与"分析"面板同步） */
-.sym-opacity-row {
-  display: grid;
-  grid-template-columns: auto 1fr auto;
-  gap: 0.3rem;
-  align-items: center;
-  margin-top: 0.12rem;
-  padding-top: 0.18rem;
-  border-top: 1px solid rgba(136, 192, 255, 0.06);
-  color: #9eb3c8;
-  font-size: 0.54rem;
-}
-
-.sym-opacity-slider {
-  width: 100%;
-  -webkit-appearance: none;
-  appearance: none;
-  height: 1.2rem;
-  background: transparent;
-  outline: none;
-  cursor: pointer;
-}
-
-.sym-opacity-slider::-webkit-slider-runnable-track {
-  height: 4px;
+.sub-pill {
+  border: 1px solid rgba(136, 192, 255, 0.16);
   border-radius: 999px;
-  background: rgba(136, 192, 255, 0.18);
+  padding: 0.18rem 0.5rem;
+  background: rgba(15, 23, 42, 0.4);
+  color: #94a3b8;
+  font-size: 0.7rem;
+  cursor: pointer;
+  transition: all 0.15s ease;
 }
 
-.sym-opacity-slider::-moz-range-track {
+.sub-pill:hover {
+  border-color: rgba(136, 192, 255, 0.35);
+  color: #e2e8f0;
+}
+
+.sub-pill.active {
+  border-color: #ff6f91;
+  background: rgba(255, 111, 145, 0.16);
+  color: #ff6f91;
+  font-weight: 500;
+}
+
+.empty-subcategory-hint {
+  padding: 0.75rem 0.5rem;
+  font-size: 0.75rem;
+  color: #94a3b8;
+  text-align: center;
+  background: rgba(15, 23, 42, 0.25);
+  border-radius: 6px;
+  margin: 0.35rem 0.5rem;
+  border: 1px dashed rgba(148, 163, 184, 0.2);
+}
+
+/* 侧栏细体纵向滚动条 */
+.library-scroll::-webkit-scrollbar,
+.active-layers-scroll::-webkit-scrollbar,
+.layer-sidebar-container::-webkit-scrollbar {
+  width: 4px;
   height: 4px;
-  border-radius: 999px;
-  background: rgba(136, 192, 255, 0.18);
+}
+.library-scroll::-webkit-scrollbar-thumb,
+.active-layers-scroll::-webkit-scrollbar-thumb,
+.layer-sidebar-container::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.16);
+  border-radius: 4px;
+}
+.library-scroll::-webkit-scrollbar-thumb:hover,
+.active-layers-scroll::-webkit-scrollbar-thumb:hover,
+.layer-sidebar-container::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.32);
 }
 
-.sym-opacity-slider::-webkit-slider-thumb {
-  -webkit-appearance: none;
-  appearance: none;
-  width: 0.82rem;
-  height: 0.82rem;
-  margin-top: -0.36rem;
-  border-radius: 50%;
-  background: var(--accent, #5ad5ff);
-  box-shadow: 0 0 6px var(--accent, #5ad5ff);
-  cursor: pointer;
-  transition: transform 0.14s ease;
-}
-
-.sym-opacity-slider::-webkit-slider-thumb:hover {
-  transform: scale(1.15);
-}
-
-.sym-opacity-slider::-moz-range-thumb {
-  width: 0.82rem;
-  height: 0.82rem;
-  border: none;
-  border-radius: 50%;
-  background: var(--accent, #5ad5ff);
-  box-shadow: 0 0 6px var(--accent, #5ad5ff);
-  cursor: pointer;
-}
-
-.sym-opacity-row strong {
-  color: #eff8ff;
-  font-size: 0.54rem;
-  font-variant-numeric: tabular-nums;
-  min-width: 2rem;
-  text-align: right;
-}
 </style>

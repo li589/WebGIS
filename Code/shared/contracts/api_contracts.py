@@ -119,6 +119,8 @@ class LayerDescriptor(BaseModel):
     """数据源引用（DOI / URL / 数据集官方页面）。
     例如 'https://doi.org/10.5281/zenodo.4417810' (CLCD)；用于学术引用与溯源。
     """
+    sub_category: str | None = None
+    """课题组数据二级分类：'模型输入' | '模型输出' | '辅助数据'；其它分类可留空。"""
 
 
 class LayerCatalogResponse(BaseModel):

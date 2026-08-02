@@ -200,14 +200,34 @@ class OmegaSfFenkuaiModule(BaseModule):
                 f"{config.start_date}~{config.end_date}",
             )
 
-        # 进度回调
-        def _progress_callback(processed: int, total: int) -> None:
-            if ctx.logger_adapter is not None:
-                ctx.logger_adapter.emit_progress(
-                    "omega_sf_fenkuai",
-                    processed / total if total else 0.0,
-                    f"Pixel {processed}/{total}",
-                )
+        # 进度回调（含 chunk/pixel detail）
+        def _progress_callback(
+            processed: int, total: int, detail: dict | None = None
+        ) -> None:
+            if ctx.logger_adapter is None:
+                return
+            detail = detail or {}
+            chunks_done = int(detail.get("chunks_done", 0) or 0)
+            chunks_total = int(detail.get("chunks_total", 0) or 0)
+            pixels_done = int(detail.get("pixels_done", processed) or 0)
+            pixels_total = int(detail.get("pixels_total", total) or 0)
+            phase = str(detail.get("phase") or "inversion")
+            msg = (
+                f"chunk {chunks_done}/{chunks_total} · "
+                f"pixel {pixels_done}/{pixels_total} · {phase}"
+                if chunks_total
+                else f"Pixel {processed}/{total}"
+            )
+            ratio = (
+                pixels_done / pixels_total
+                if pixels_total
+                else (processed / total if total else 0.0)
+            )
+            emit = ctx.logger_adapter.emit_progress
+            try:
+                emit("omega_sf_fenkuai", ratio, msg, detail=detail)
+            except TypeError:
+                emit("omega_sf_fenkuai", ratio, msg)
 
         # 执行主反演
         result = retrieve_omega_sf_daily(

@@ -197,6 +197,357 @@ def _get_module_request_template(module_name: str):
     return templates.get(module_name)
 
 
+def _node_props(node: dict[str, Any]) -> dict[str, Any]:
+    """统一读取种子节点 properties 或编译节点 params。"""
+    props = node.get("properties")
+    if isinstance(props, dict) and props:
+        return props
+    params = node.get("params")
+    if isinstance(params, dict) and params:
+        return params
+    return {}
+
+
+def _node_module_name(node: dict[str, Any]) -> str:
+    """识别节点逻辑类型：data/source、time_range、bbox、omega_sf_fenkuai 等。"""
+    node_type = str(node.get("type") or "")
+    if node_type.startswith("data/"):
+        return node_type.split("/", 1)[-1]
+    if node_type.startswith("module/"):
+        return node_type.split("/", 1)[-1]
+    if node_type.startswith("output/"):
+        return node_type.split("/", 1)[-1]
+    props = _node_props(node)
+    module_name = props.get("module_name")
+    if module_name:
+        return str(module_name)
+    return str(node.get("node_type") or "")
+
+
+def _extract_time_range_from_nodes(nodes: list[Any] | None):
+    """从 data/time_range（或编译后的 time_range 模块）节点提取 TimeRange。"""
+    if not nodes:
+        return None
+    try:
+        from datetime import datetime
+
+        from shared.contracts.api_contracts import TimeGranularity, TimeRange
+
+        for node in nodes:
+            if not isinstance(node, dict):
+                continue
+            if _node_module_name(node) != "time_range":
+                continue
+            props = _node_props(node)
+            start_str = props.get("start_at")
+            end_str = props.get("end_at")
+            if not start_str or not end_str:
+                continue
+            start_dt = datetime.fromisoformat(str(start_str))
+            end_dt = datetime.fromisoformat(str(end_str))
+            granularity_str = str(props.get("granularity") or "day")
+            try:
+                granularity = TimeGranularity(granularity_str)
+            except ValueError:
+                granularity = TimeGranularity.day
+            return TimeRange(start_at=start_dt, end_at=end_dt, granularity=granularity)
+    except Exception:
+        logger.debug("Failed to extract time_range from nodes", exc_info=True)
+    return None
+
+
+def _extract_time_range_from_seed(workflow_name: str):
+    """从工作流种子的 data/time_range 节点提取 TimeRange。
+
+    前端 UI 提交工作流时不带 time_range，Python provider 的 validate_job
+    要求 job_request.time_range 必填。这里从种子中读取默认值填充。
+    """
+    try:
+        from app.services.workflow_definition_service import get_definition
+
+        definition = get_definition(workflow_name)
+        if not definition:
+            return None
+        return _extract_time_range_from_nodes(definition.get("nodes"))
+    except Exception:
+        logger.debug("Failed to extract time_range from seed", exc_info=True)
+    return None
+
+
+def _resolve_missing_time_range(
+    *,
+    payload: WorkflowSubmitRequest,
+    algorithm_request: dict[str, Any],
+    descriptor: Any,
+):
+    """UI 提交常缺 time_range：从画布定义 / entry 名 / 图层种子补齐。"""
+    if payload.time_range is not None:
+        return None
+
+    workflow_definition = algorithm_request.get("workflow_definition")
+    if isinstance(workflow_definition, dict):
+        from_nodes = _extract_time_range_from_nodes(workflow_definition.get("nodes"))
+        if from_nodes is not None:
+            return from_nodes
+
+    tags = algorithm_request.get("tags")
+    tag_workflow_id = tags.get("workflow_id") if isinstance(tags, dict) else None
+    candidates = (
+        algorithm_request.get("workflow_entry_name"),
+        algorithm_request.get("workflow_name"),
+        tag_workflow_id,
+        getattr(descriptor, "workflow_name", None),
+    )
+    for name in candidates:
+        if not name:
+            continue
+        from_seed = _extract_time_range_from_seed(str(name))
+        if from_seed is not None:
+            return from_seed
+    return None
+
+
+def _extract_bbox_from_nodes(nodes: list[Any] | None):
+    """从 data/bbox（或编译后的 bbox 模块）节点提取 SpatialFilter。"""
+    if not nodes:
+        return None
+    try:
+        from shared.contracts.api_contracts import BoundingBox, SpatialFilter
+
+        for node in nodes:
+            if not isinstance(node, dict):
+                continue
+            if _node_module_name(node) != "bbox":
+                continue
+            props = _node_props(node)
+            required = ("west", "south", "east", "north")
+            if any(props.get(k) is None for k in required):
+                continue
+            bbox = BoundingBox(
+                west=float(props["west"]),
+                south=float(props["south"]),
+                east=float(props["east"]),
+                north=float(props["north"]),
+                crs=str(props.get("crs") or "EPSG:4326"),
+            )
+            return SpatialFilter(filter_type="bbox", bbox=bbox)
+    except Exception:
+        logger.debug("Failed to extract bbox from nodes", exc_info=True)
+    return None
+
+
+def _extract_algorithm_params_from_nodes(
+    nodes: list[Any] | None,
+) -> dict[str, Any] | None:
+    """从画布算法模块节点读取 algorithm_params。"""
+    if not nodes:
+        return None
+    skip = {"data_source", "time_range", "bbox", "output_map_layer", "module"}
+    for node in nodes:
+        if not isinstance(node, dict):
+            continue
+        module_name = _node_module_name(node)
+        node_type = str(node.get("type") or "")
+        # 种子：module/*；编译：params.module_name=算法名
+        if node_type.startswith("module/") or (
+            module_name and module_name not in skip and module_name != "module"
+        ):
+            props = _node_props(node)
+            params = props.get("algorithm_params")
+            if isinstance(params, dict) and params:
+                return dict(params)
+    return None
+
+
+def _extract_datasource_selection_from_nodes(
+    nodes: list[Any] | None,
+) -> dict[str, Any]:
+    """从 data/source（或编译后的 data_source 模块）提取 datasource_selection。"""
+    selection: dict[str, Any] = {}
+    if not nodes:
+        return selection
+    for node in nodes:
+        if not isinstance(node, dict):
+            continue
+        if _node_module_name(node) not in {"source", "data_source"}:
+            continue
+        props = _node_props(node)
+        key = props.get("dataset_key") or props.get("key")
+        path = props.get("path") or props.get("uri") or props.get("value")
+        if key and path:
+            selection[str(key)] = str(path)
+    return selection
+
+
+def _flatten_ui_workflow_definition(
+    algorithm_request: dict[str, Any],
+    *,
+    descriptor: Any,
+) -> tuple[dict[str, Any], Any, Any]:
+    """将 UI 画布 workflow_definition 展平为种子式 algorithm_request。
+
+    画布编译结果常含多条 datasource_selection edge，以及 time_range/bbox 元端口；
+    Python provider validate_job 不接受这些形态。展平后走 module_name +
+    algorithm_params + 默认 data_access，与成功的 API/种子路径一致。
+    """
+    workflow_definition = algorithm_request.get("workflow_definition")
+    if not isinstance(workflow_definition, dict):
+        return algorithm_request, None, None
+
+    nodes = workflow_definition.get("nodes")
+    canvas_params = _extract_algorithm_params_from_nodes(nodes)
+    time_range = _extract_time_range_from_nodes(nodes)
+    spatial = _extract_bbox_from_nodes(nodes)
+
+    flat = {
+        key: value
+        for key, value in algorithm_request.items()
+        if key not in {"workflow_definition", "workflow_name"}
+    }
+    flat.setdefault("module_name", getattr(descriptor, "module_name", None))
+    flat.setdefault(
+        "task_type",
+        getattr(descriptor, "default_task_type", None)
+        or getattr(descriptor, "module_name", None),
+    )
+    flat.setdefault(
+        "workflow_entry_name",
+        algorithm_request.get("workflow_entry_name")
+        or getattr(descriptor, "workflow_name", None)
+        or getattr(descriptor, "module_name", None),
+    )
+
+    existing_params = flat.get("algorithm_params")
+    if not isinstance(existing_params, dict):
+        existing_params = {}
+    if canvas_params:
+        merged = dict(canvas_params)
+        merged.update(existing_params)  # 显式覆盖优先
+        existing_params = merged
+    # 把 bbox 也写入 algorithm_params，供 OmegaSfConfig.from_params 识别
+    if spatial is not None and getattr(spatial, "bbox", None) is not None:
+        bbox = spatial.bbox
+        existing_params.setdefault("bbox_west", float(bbox.west))
+        existing_params.setdefault("bbox_south", float(bbox.south))
+        existing_params.setdefault("bbox_east", float(bbox.east))
+        existing_params.setdefault("bbox_north", float(bbox.north))
+        existing_params.setdefault(
+            "bbox", [bbox.west, bbox.south, bbox.east, bbox.north]
+        )
+    flat["algorithm_params"] = existing_params
+
+    existing_ds = flat.get("datasource_selection")
+    if not isinstance(existing_ds, dict):
+        existing_ds = {}
+    canvas_ds = _extract_datasource_selection_from_nodes(nodes)
+    for key, value in canvas_ds.items():
+        existing_ds.setdefault(key, value)
+    # 画布多为逻辑相对路径；模块侧按绝对本地路径读 anc_root/IGBP
+    for key, value in list(existing_ds.items()):
+        if key.startswith("_") or not isinstance(value, str) or not value.strip():
+            continue
+        if Path(value).is_absolute() and Path(value).exists():
+            continue
+        resolved = _resolve_data_access_source_uri(value)
+        if resolved:
+            existing_ds[key] = resolved
+    flat["datasource_selection"] = existing_ds
+    flat.setdefault("output_spec", {})
+    return flat, time_range, spatial
+
+
+def _compile_workflow_seed(workflow_name: str) -> dict[str, Any] | None:
+    """编译工作流种子，返回 compiled workflow_definition。
+
+    用于将种子的 algorithm_params（如 tb_source）传递到模块执行。
+
+    编译后过滤无效 edge：node_template_registry 会为模块节点添加 time_range/bbox
+    等"元输入端口"，但 Python provider 的模块签名不包含它们。这些值通过
+    job_request.time_range / job_request.region 在请求级别传递，不走 workflow edge。
+    同时合并重复的 datasource_selection edge（多个 data/source → 同一端口）为
+    input_bindings，只保留第一条 edge。
+    """
+    try:
+        from app.services.workflow_definition_service import get_definition
+        from app.services.workflow_graph_compiler import (
+            compile_litegraph_to_workflow_definition,
+        )
+
+        definition = get_definition(workflow_name)
+        if not definition:
+            return None
+        compiled = compile_litegraph_to_workflow_definition(
+            workflow_id=workflow_name,
+            name=definition.get("name"),
+            description=definition.get("description"),
+            nodes=definition.get("nodes", []),
+            links=definition.get("links", []),
+        )
+
+        _filter_invalid_edges(compiled)
+
+        return compiled
+    except Exception:
+        logger.debug("Failed to compile workflow seed", exc_info=True)
+        return None
+
+
+def _extract_algorithm_params_from_seed(workflow_name: str) -> dict[str, Any] | None:
+    """从工作流种子的模块节点 properties 中提取 algorithm_params。
+
+    比 _compile_workflow_seed 更轻量：不编译完整 graph，只读取种子的节点属性。
+    用于将 algorithm_params（如 tb_source=SMAP）直接合并到 algorithm_request，
+    避免设置 workflow_definition 导致 executor 处理 graph 时出现 datasource_selection
+    多重绑定问题。
+    """
+    try:
+        from app.services.workflow_definition_service import get_definition
+
+        definition = get_definition(workflow_name)
+        if not definition:
+            return None
+        for node in definition.get("nodes", []):
+            node_type = node.get("type") or node.get("node_type") or ""
+            if not node_type.startswith("module/"):
+                continue
+            props = node.get("properties") or {}
+            params = props.get("algorithm_params")
+            if isinstance(params, dict) and params:
+                return dict(params)
+        return None
+    except Exception:
+        logger.debug("Failed to extract algorithm_params from seed", exc_info=True)
+        return None
+
+
+# 这些端口由 job_request 级别处理，不应出现在 workflow edge 中
+_NON_EDGE_PORTS = frozenset({"time_range", "bbox", "region"})
+
+
+def _filter_invalid_edges(compiled: dict[str, Any]) -> None:
+    """从编译后的 workflow_definition 中移除引用不存在输入端口的 edge。
+
+    仅过滤 time_range/bbox/region 等由 job_request 级别处理的端口。
+    保留所有其他 edge（包括重复连接到同一端口的多条 edge，
+    因为多个 data/source 节点可能都连接到 datasource_selection）。
+    """
+    raw_edges = compiled.get("edges") or []
+    if not raw_edges:
+        return
+
+    filtered: list[dict[str, str]] = []
+    for edge in raw_edges:
+        to_port = edge.get("to_port", "")
+
+        # 跳过由 job_request 级别处理的端口
+        if to_port in _NON_EDGE_PORTS:
+            continue
+
+        filtered.append(edge)
+
+    compiled["edges"] = filtered
+
+
 def _populate_python_provider_request(
     *, payload: WorkflowSubmitRequest, descriptor
 ) -> WorkflowSubmitRequest:
@@ -204,22 +555,66 @@ def _populate_python_provider_request(
         return payload
 
     algorithm_request = _normalize_algorithm_request(payload.algorithm_request)
-    if algorithm_request.get("workflow_definition") or algorithm_request.get(
-        "workflow_name"
-    ):
-        return payload
-    explicit_module_name = algorithm_request.get("module_name")
-    if explicit_module_name and explicit_module_name != descriptor.module_name:
+    canvas_time_range = None
+    canvas_spatial = None
+    if algorithm_request.get("workflow_definition"):
+        # UI 画布提交：展平为种子式请求，避免多 datasource edge / 元端口校验失败
+        algorithm_request, canvas_time_range, canvas_spatial = (
+            _flatten_ui_workflow_definition(algorithm_request, descriptor=descriptor)
+        )
+        updates: dict[str, Any] = {"algorithm_request": algorithm_request}
+        if payload.time_range is None and canvas_time_range is not None:
+            updates["time_range"] = canvas_time_range
+        if payload.spatial_filter is None and canvas_spatial is not None:
+            updates["spatial_filter"] = canvas_spatial
+        payload = payload.model_copy(update=updates)
+    elif algorithm_request.get("workflow_name"):
+        # 仅声明 workflow_name、无 definition：仍补齐 time_range 后交由种子路径
+        resolved_tr = _resolve_missing_time_range(
+            payload=payload,
+            algorithm_request=algorithm_request,
+            descriptor=descriptor,
+        )
+        if resolved_tr is not None:
+            payload = payload.model_copy(update={"time_range": resolved_tr})
         return payload
 
-    algorithm_request.setdefault("module_name", descriptor.module_name)
-    algorithm_request.setdefault(
-        "workflow_entry_name",
-        descriptor.workflow_name or descriptor.module_name,
-    )
+    explicit_module_name = algorithm_request.get("module_name")
+    if explicit_module_name and explicit_module_name != descriptor.module_name:
+        updates = {}
+        resolved_tr = _resolve_missing_time_range(
+            payload=payload,
+            algorithm_request=algorithm_request,
+            descriptor=descriptor,
+        )
+        if resolved_tr is not None:
+            updates["time_range"] = resolved_tr
+        return payload.model_copy(update=updates) if updates else payload
+
     algorithm_request.setdefault(
         "task_type", descriptor.default_task_type or descriptor.module_name
     )
+
+    # 如果图层有 workflow_name，从种子中提取 algorithm_params（如 tb_source=SMAP）
+    # 直接合并到 algorithm_request，避免设置 workflow_definition 导致 executor
+    # 处理 graph 时出现 datasource_selection 多重绑定问题。
+    if descriptor.workflow_name:
+        seed_params = _extract_algorithm_params_from_seed(descriptor.workflow_name)
+        if seed_params is not None:
+            existing_params = algorithm_request.get("algorithm_params")
+            if not isinstance(existing_params, dict):
+                existing_params = {}
+                algorithm_request["algorithm_params"] = existing_params
+            for k, v in seed_params.items():
+                existing_params.setdefault(k, v)
+        algorithm_request.setdefault("module_name", descriptor.module_name)
+        algorithm_request.setdefault(
+            "workflow_entry_name",
+            descriptor.workflow_name or descriptor.module_name,
+        )
+    else:
+        algorithm_request.setdefault("module_name", descriptor.module_name)
+        algorithm_request.setdefault("workflow_entry_name", descriptor.module_name)
 
     datasource_selection = _normalize_request(
         algorithm_request.get("datasource_selection")
@@ -256,10 +651,30 @@ def _populate_python_provider_request(
                         datasource_selection[required_key] = uris[0]
                         break
 
+    # 显式相对路径（画布/种子）→ 绝对本地 URI，供 omega_sf 读 IGBP 等
+    for key, value in list(datasource_selection.items()):
+        if key.startswith("_") or not isinstance(value, str) or not value.strip():
+            continue
+        if Path(value).is_absolute() and Path(value).exists():
+            continue
+        resolved = _resolve_data_access_source_uri(value)
+        if resolved:
+            datasource_selection[key] = resolved
+
     if datasource_selection:
         algorithm_request["datasource_selection"] = datasource_selection
 
-    return payload.model_copy(update={"algorithm_request": algorithm_request})
+    # 从画布/种子补齐 time_range（前端 UI 提交时常缺该字段）
+    updates: dict[str, Any] = {"algorithm_request": algorithm_request}
+    resolved_tr = _resolve_missing_time_range(
+        payload=payload,
+        algorithm_request=algorithm_request,
+        descriptor=descriptor,
+    )
+    if resolved_tr is not None:
+        updates["time_range"] = resolved_tr
+
+    return payload.model_copy(update=updates)
 
 
 def _populate_gee_request(
@@ -359,8 +774,34 @@ def _resolve_data_access_source_uri(source: str) -> str | None:
     if resolved_path is not None:
         return str(resolved_path)
 
+    # 路径别名：FY3D_TB / SMAP_ancillary 等 → 本地 catalog 目录
+    normalized = _normalize_provider_relative_path(candidate)
+    if normalized != candidate:
+        alias_resolved = _resolve_provider_dataset_path(normalized)
+        if alias_resolved is not None:
+            return str(alias_resolved)
+        alias_fallback = Path(settings.data_root) / Path(normalized)
+        if alias_fallback.exists():
+            return str(alias_fallback)
+
     fallback_path = Path(settings.data_root) / Path(candidate)
     return str(fallback_path) if fallback_path.exists() else None
+
+
+def _normalize_provider_relative_path(path: str) -> str:
+    """Normalize historical seed paths via provider dataset_config aliases."""
+    try:
+        import importlib
+
+        # Ensure provider root is importable (helpers load already does this)
+        _load_provider_dataset_helpers()
+        mod = importlib.import_module("dataset_config")
+        normalize = getattr(mod, "normalize_dataset_relative_path", None)
+        if callable(normalize):
+            return str(normalize(path))
+    except Exception:
+        return path
+    return path
 
 
 def _resolve_scheme_uri(uri: str) -> str | None:

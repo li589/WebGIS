@@ -284,8 +284,8 @@ class WorkflowLifecycleService:
                 diagnostics=diagnostics,
             )
         )
-        for event in execution.events:
-            self._persistence.record_event(event=event)
+        # Mid-run event_factory 已即时落库；禁止在收尾再 INSERT 同批 event_id。
+        # （旧 worker 若仍执行「整表重写」会撞 UNIQUE 并把已成功的算法 run 标成 failed。）
         if spill_diagnostics:
             self._persistence.record_event(
                 run_id=run_id,

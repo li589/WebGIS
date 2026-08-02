@@ -49,6 +49,13 @@ from launch.docker_manager import (
     stop_docker_infra,
     wait_for_redis,
 )
+from launch.gateway_manager import (
+    GATEWAY_CONTAINER,
+    GATEWAY_PORT,
+    gateway_running,
+    start_gateway_infra,
+    stop_gateway_infra,
+)
 from launch.logging_setup import log
 from launch.process_manager import ProcessManager
 from launch.subprocess_utils import (
@@ -110,10 +117,39 @@ def cmd_start(args: argparse.Namespace) -> int:
         return 0
 
     if component == "frontend":
+        if gateway_running():
+            log.info("Launcher", "检测到 Nginx Gateway 占用 :5175，先停止 gateway")
+            stop_gateway_infra()
         pm.start_frontend()
         time.sleep(2)
         pm.save_pids(merge=True)
         log.ok("Launcher", "前端已启动（不进入监控循环）")
+        return 0
+
+    if component == "gateway":
+        # 演示/同域入口：静态 dist + 反代 FastAPI；与 Vite 互斥
+        import urllib.request
+
+        try:
+            req = urllib.request.Request("http://127.0.0.1:8000/health")
+            with urllib.request.urlopen(req, timeout=3) as resp:
+                api_ok = resp.status == 200
+        except Exception:
+            api_ok = False
+        if not api_ok:
+            log.warn(
+                "Gateway",
+                "FastAPI :8000 未响应；网关可启动但 API 反代会失败。"
+                " 建议先: launch.py start docker && launch.py start fastapi",
+            )
+        if not start_gateway_infra(
+            rebuild_frontend=bool(getattr(args, "rebuild_frontend", False))
+        ):
+            return 1
+        log.ok(
+            "Launcher",
+            f"Nginx Gateway 已启动（http://localhost:{GATEWAY_PORT}，不进入监控循环）",
+        )
         return 0
 
     if component in ("worker", "worker:all"):
@@ -136,7 +172,7 @@ def cmd_start(args: argparse.Namespace) -> int:
     log.error("Launcher", f"未知组件: {component}")
     log.info(
         "Launcher",
-        "可用组件: all, docker, fastapi, beat, worker, worker:<name>, frontend",
+        "可用组件: all, docker, fastapi, beat, worker, worker:<name>, frontend, gateway",
     )
     return 1
 
@@ -187,6 +223,9 @@ def _start_all(args: argparse.Namespace) -> int:
         pm.wait_for_fastapi(max_wait=30)
 
     if not args.no_frontend:
+        if gateway_running():
+            log.info("Launcher", "检测到 Nginx Gateway 占用 :5175，先停止 gateway 以启动 Vite")
+            stop_gateway_infra()
         pm.start_frontend()
         time.sleep(3)
 
@@ -219,8 +258,20 @@ def _start_all(args: argparse.Namespace) -> int:
 
 
 # ─── 停止命令 ────────────────────────────────────────────────────────────────
-def cmd_stop() -> int:
-    """停止所有 CGDA 服务。"""
+def cmd_stop(args: argparse.Namespace | None = None) -> int:
+    """停止全部 CGDA 服务，或仅停止 gateway。"""
+    component = getattr(args, "component", None) if args is not None else None
+    if component in (None, "", "all"):
+        component = None
+    if component == "gateway":
+        log.banner("停止 Nginx Gateway")
+        stop_gateway_infra()
+        log.ok("Stop", "Gateway 已停止")
+        return 0
+    if component is not None:
+        log.error("Stop", f"未知组件: {component}（stop 支持: 全部 / gateway）")
+        return 1
+
     log.banner("停止 CGDA 服务")
 
     if PID_FILE.exists():
@@ -252,6 +303,7 @@ def cmd_stop() -> int:
     )
 
     time.sleep(1)
+    stop_gateway_infra()
     stop_docker_infra()
     log.ok("Stop", "所有服务已停止")
     return 0
@@ -267,6 +319,7 @@ def cmd_status() -> int:
         ("cgda-redis", "Redis"),
         ("cgda-minio", "MinIO"),
         ("cgda-open-meteo", "Open-Meteo"),
+        (GATEWAY_CONTAINER, "Nginx Gateway"),
     ]
     for cid, label in containers:
         r = subprocess.run(
@@ -277,7 +330,7 @@ def cmd_status() -> int:
         )
         state = r.stdout.strip() if r.returncode == 0 else "未运行"
         icon = "✓" if state == "running" else "✗"
-        log.info("Status", f"  {icon} {label:8s} ({cid}): {state}")
+        log.info("Status", f"  {icon} {label:14s} ({cid}): {state}")
 
     import urllib.request
 
@@ -293,6 +346,7 @@ def cmd_status() -> int:
         f"  {icon} FastAPI  (http://127.0.0.1:8000): {'就绪' if ok else '未响应'}",
     )
 
+    gw_up = gateway_running()
     try:
         req = urllib.request.Request(f"http://localhost:{DEFAULT_FRONTEND_PORT}/")
         with urllib.request.urlopen(req, timeout=3) as resp:
@@ -300,9 +354,11 @@ def cmd_status() -> int:
     except Exception:
         fe_ok = False
     icon = "✓" if fe_ok else "✗"
+    fe_mode = "Nginx Gateway" if gw_up else ("Vite" if fe_ok else "未响应")
     log.info(
         "Status",
-        f"  {icon} Frontend (http://localhost:{DEFAULT_FRONTEND_PORT}):  {'就绪' if fe_ok else '未响应'}",
+        f"  {icon} Frontend (http://localhost:{DEFAULT_FRONTEND_PORT}):  "
+        f"{'就绪' if fe_ok else '未响应'} [{fe_mode}]",
     )
 
     if PID_FILE.exists():

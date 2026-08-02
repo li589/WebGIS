@@ -40,9 +40,27 @@ export function createMapStagePresentationModule(
   }
 
   function syncNavigationControlTheme() {
-    const navButtons = options
-      .getMapContainer()
-      ?.querySelectorAll('.maplibregl-ctrl-bottom-right .maplibregl-ctrl-group button')
+    const container = options.getMapContainer()
+    if (!container) return
+
+    const navCtrl = typeof container.querySelector === 'function'
+      ? container.querySelector('.maplibregl-ctrl-bottom-right .map-custom-nav-ctrl')
+      : null
+
+    if (navCtrl) {
+      if (options.getUsesLightNavigationTheme()) {
+        navCtrl.classList.add('map-nav-ctrl--light')
+        navCtrl.classList.remove('map-nav-ctrl--dark')
+      } else {
+        navCtrl.classList.add('map-nav-ctrl--dark')
+        navCtrl.classList.remove('map-nav-ctrl--light')
+      }
+      return
+    }
+
+    const navButtons = typeof container.querySelectorAll === 'function'
+      ? container.querySelectorAll('.maplibregl-ctrl-bottom-right .maplibregl-ctrl-group button')
+      : null
     if (!navButtons?.length) return
 
     const buttonBackground = options.getUsesLightNavigationTheme()

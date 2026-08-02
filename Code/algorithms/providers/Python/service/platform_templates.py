@@ -100,8 +100,14 @@ class PlatformLoggerAdapterTemplate:
     def emit_stage_start(self, stage: str, message: str) -> None:
         self._emit(stage, "stage_start", message)
 
-    def emit_progress(self, stage: str, progress: float, message: str) -> None:
-        self._emit(stage, "progress", message, progress=progress)
+    def emit_progress(
+        self,
+        stage: str,
+        progress: float,
+        message: str,
+        detail: dict[str, Any] | None = None,
+    ) -> None:
+        self._emit(stage, "progress", message, progress=progress, extra=detail or {})
 
     def emit_warning(
         self, stage: str, message: str, extra: dict[str, Any] | None = None

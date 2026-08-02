@@ -31,11 +31,12 @@ from launch.logging_setup import log
 
 # ─── 子命令帮助文本（集中声明，便于审阅 CLI 表面） ──────────────────────────
 _COMPONENT_HELP = (
-    "组件: all/docker/fastapi/beat/worker/worker:<name>/frontend（默认 all）"
+    "组件: all/docker/fastapi/beat/worker/worker:<name>/frontend/gateway（默认 all）"
 )
 _LOGS_COMPONENT_HELP = (
     "组件: fastapi/beat/frontend/worker/worker:<name>（默认合并全部）"
 )
+_STOP_COMPONENT_HELP = "可选: gateway（仅停 Nginx 网关；默认停止全部）"
 
 
 def _add_start_restart_args(p: argparse.ArgumentParser) -> None:
@@ -67,6 +68,11 @@ def _add_start_restart_args(p: argparse.ArgumentParser) -> None:
         default=DEFAULT_FRONTEND_PORT,
         help=f"前端端口（默认 {DEFAULT_FRONTEND_PORT}）",
     )
+    p.add_argument(
+        "--rebuild-frontend",
+        action="store_true",
+        help="start gateway 时强制 npm run build 再挂载 dist",
+    )
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -80,6 +86,9 @@ def build_parser() -> argparse.ArgumentParser:
             "  python launch.py start                      # 启动全部，进入监控循环\n"
             "  python launch.py start docker               # 仅 Redis + MinIO + Open-Meteo API\n"
             "  python launch.py sync                       # 跑 data-sync open-meteo-sync\n"
+            "  python launch.py start gateway              # Nginx 同域入口 :5175（与 Vite 互斥）\n"
+            "  python launch.py start gateway --rebuild-frontend\n"
+            "  python launch.py stop gateway               # 仅停 Nginx Gateway\n"
             "  python launch.py start worker:weather       # 仅启动 weather Worker\n"
             "  python launch.py start fastapi --debug      # 调试模式启动 FastAPI\n"
             "  python launch.py start --frontend-port 3000 # 全部启动，前端用 3000 端口\n"
@@ -104,7 +113,13 @@ def build_parser() -> argparse.ArgumentParser:
     _add_start_restart_args(p_start)
 
     # stop
-    sub.add_parser("stop", help="停止全部服务")
+    p_stop = sub.add_parser("stop", help="停止全部服务（或指定 gateway）")
+    p_stop.add_argument(
+        "component",
+        nargs="?",
+        default=None,
+        help=_STOP_COMPONENT_HELP,
+    )
 
     # status
     sub.add_parser("status", help="查看服务状态")
@@ -179,7 +194,7 @@ def _dispatch(args: argparse.Namespace) -> int:
     if command == "start":
         return cmd_start(args)
     if command == "stop":
-        return cmd_stop()
+        return cmd_stop(args)
     if command == "status":
         return cmd_status()
     if command == "restart":

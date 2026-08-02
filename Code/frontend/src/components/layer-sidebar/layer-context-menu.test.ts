@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { buildLayerContextMenu } from './layer-context-menu'
 
 describe('buildLayerContextMenu', () => {
-  it('weather-like layer gets zoom, symbology, order, remove', () => {
+  it('weather-like layer gets zoom, openStyle, order, remove', () => {
     const groups = buildLayerContextMenu({
       visible: true,
       isAdminBoundary: false,
@@ -10,18 +10,18 @@ describe('buildLayerContextMenu', () => {
       isImportedRaster: false,
       hasJobReport: false,
       canRunWorkflow: true,
-      hasColorSymbology: true,
     })
     const ids = groups.flatMap((g) => g.items.map((i) => i.id))
     expect(ids).toContain('zoom')
-    expect(ids).toContain('symbology')
+    expect(ids).toContain('openStyle')
+    expect(ids).not.toContain('symbology' as never)
     expect(ids).toContain('bringToFront')
     expect(ids).toContain('runWorkflow')
     expect(ids).toContain('remove')
     expect(ids).not.toContain('exportGeoJson')
   })
 
-  it('imported vector gets attributes and exports', () => {
+  it('imported vector gets attributes, exports, and single openStyle', () => {
     const groups = buildLayerContextMenu({
       visible: true,
       isAdminBoundary: false,
@@ -29,13 +29,12 @@ describe('buildLayerContextMenu', () => {
       isImportedRaster: false,
       hasJobReport: false,
       canRunWorkflow: false,
-      hasColorSymbology: false,
     })
     const ids = groups.flatMap((g) => g.items.map((i) => i.id))
     expect(ids).toContain('openAttributes')
     expect(ids).toContain('exportGeoJson')
     expect(ids).toContain('exportCsv')
-    expect(ids).toContain('openStyle')
+    expect(ids.filter((id) => id === 'openStyle')).toHaveLength(1)
     expect(ids).not.toContain('runWorkflow')
   })
 
@@ -47,17 +46,17 @@ describe('buildLayerContextMenu', () => {
       isImportedRaster: true,
       hasJobReport: false,
       canRunWorkflow: false,
-      hasColorSymbology: true,
     })
     const ids = groups.flatMap((g) => g.items.map((i) => i.id))
     expect(ids).toContain('exportPng')
     expect(ids).toContain('exportTif')
     expect(ids).toContain('toggleVisible')
+    expect(ids).toContain('openStyle')
     const toggle = groups.flatMap((g) => g.items).find((i) => i.id === 'toggleVisible')
     expect(toggle?.label).toContain('显示')
   })
 
-  it('admin boundary skips symbology', () => {
+  it('admin boundary still gets openStyle for opacity in analysis panel', () => {
     const groups = buildLayerContextMenu({
       visible: true,
       isAdminBoundary: true,
@@ -65,10 +64,10 @@ describe('buildLayerContextMenu', () => {
       isImportedRaster: false,
       hasJobReport: false,
       canRunWorkflow: false,
-      hasColorSymbology: false,
     })
     const ids = groups.flatMap((g) => g.items.map((i) => i.id))
-    expect(ids).not.toContain('symbology')
+    expect(ids).toContain('openStyle')
+    expect(ids).not.toContain('symbology' as never)
   })
 
   it('job report item when hasJobReport', () => {
@@ -79,7 +78,6 @@ describe('buildLayerContextMenu', () => {
       isImportedRaster: false,
       hasJobReport: true,
       canRunWorkflow: false,
-      hasColorSymbology: true,
     })
     const ids = groups.flatMap((g) => g.items.map((i) => i.id))
     expect(ids).toContain('viewReport')

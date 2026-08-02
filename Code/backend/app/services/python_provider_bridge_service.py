@@ -155,19 +155,28 @@ class _EventForwardingLoggerAdapter:
         self._console.emit_stage_start(stage, message)
         self._forward(stage, 0, message)
 
-    def emit_progress(self, stage: str, progress: float, message: str) -> None:
-        self._console.emit_progress(stage, progress, message)
+    def emit_progress(
+        self,
+        stage: str,
+        progress: float,
+        message: str,
+        detail: dict | None = None,
+    ) -> None:
+        try:
+            self._console.emit_progress(stage, progress, message, detail=detail)
+        except TypeError:
+            self._console.emit_progress(stage, progress, message)
         # progress 可能是 0-1 或 0-100，统一为 0-100
         pct = int(progress * 100) if progress <= 1.0 else int(progress)
-        self._forward(stage, pct, message)
+        self._forward(stage, pct, message, detail=detail)
 
     def emit_warning(self, stage: str, message: str, extra: dict | None = None) -> None:
         self._console.emit_warning(stage, message, extra=extra)
-        self._forward(stage, -1, message, level="warning")
+        self._forward(stage, -1, message, level="warning", detail=extra)
 
     def emit_error(self, stage: str, message: str, extra: dict | None = None) -> None:
         self._console.emit_error(stage, message, extra=extra)
-        self._forward(stage, -1, message, level="error")
+        self._forward(stage, -1, message, level="error", detail=extra)
 
     def emit_artifact(self, stage: str, artifact_uri: str, artifact_type: str) -> None:
         self._console.emit_artifact(stage, artifact_uri, artifact_type)
@@ -177,27 +186,33 @@ class _EventForwardingLoggerAdapter:
         self._forward(stage, 100, message)
 
     def _forward(
-        self, stage: str, progress: int, message: str, level: str = "info"
+        self,
+        stage: str,
+        progress: int,
+        message: str,
+        level: str = "info",
+        detail: dict | None = None,
     ) -> None:
         event_factory = getattr(_thread_local, "event_factory", None)
         if event_factory is None:
             return
         try:
             clamped = max(0, min(100, progress)) if progress >= 0 else -1
+            node_progress: dict[str, object] = {
+                "node_id": stage,
+                "node_label": stage,
+                "stage": _classify_stage(stage),
+                "progress": clamped,
+                "message": message,
+                "level": level,
+            }
+            if detail:
+                node_progress["detail"] = detail
             event_factory(
                 channel="log",
                 message=message,
                 progress=clamped if clamped >= 0 else None,
-                payload={
-                    "node_progress": {
-                        "node_id": stage,
-                        "node_label": stage,
-                        "stage": _classify_stage(stage),
-                        "progress": clamped,
-                        "message": message,
-                        "level": level,
-                    }
-                },
+                payload={"node_progress": node_progress},
             )
         except Exception:
             # 事件转发失败不应影响算法执行

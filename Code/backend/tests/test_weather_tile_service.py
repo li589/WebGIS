@@ -204,7 +204,7 @@ class TestGenerateTilePayloadDataEmpty:
     def test_all_null_422_becomes_tile_data_empty(self, service):
         layer_spec = WEATHER_LAYER_SPECS["temperature"]
         with patch(
-            "app.weatherengine.fetch_gateway.fetch_grid_forecast",
+            "app.weatherengine.tile_service.fetch_grid_forecast",
             side_effect=self._http_error(422, "all-null temperature_2m"),
         ):
             with pytest.raises(TileDataEmptyError, match="all-null"):
@@ -216,13 +216,13 @@ class TestGenerateTilePayloadDataEmpty:
                     y=1,
                     hour=0,
                     model="ecmwf_ifs025",
-                    provider_id="open-meteo-local",
+                    provider_id="open-meteo-online",
                 )
 
     def test_other_http_error_reraises(self, service):
         layer_spec = WEATHER_LAYER_SPECS["temperature"]
         with patch(
-            "app.weatherengine.fetch_gateway.fetch_grid_forecast",
+            "app.weatherengine.tile_service.fetch_grid_forecast",
             side_effect=self._http_error(503, "Circuit breaker open"),
         ):
             with pytest.raises(HTTPError) as exc_info:
@@ -234,7 +234,7 @@ class TestGenerateTilePayloadDataEmpty:
                     y=1,
                     hour=0,
                     model="ecmwf_ifs025",
-                    provider_id="open-meteo-local",
+                    provider_id="auto",
                 )
         assert exc_info.value.code == 503
 

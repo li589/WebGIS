@@ -39,9 +39,9 @@
         280
       ],
       "properties": {
-        "path": "SMAP_ancillary",
+        "path": "Soil_Moisture/SMAP_Auxiliary_Data",
         "dataset_key": "anc_root",
-        "notes": "静态辅助库（IGBP_9km_12/Albedo/B/BD/CF/H/SF/NDVI_v_max/NDVI_v_min）"
+        "notes": "静态辅助库（IGBP_9km_12/Albedo/B/BD/CF/H/SF/VI_v_qa→NDVI_v_max/min）"
       }
     },
     {
@@ -52,7 +52,7 @@
         440
       ],
       "properties": {
-        "path": "Soil_Moisture/FY3D_TB",
+        "path": "Soil_Moisture/FY3D",
         "dataset_key": "fy3d_folder",
         "notes": "逐日 FY3D TB .mat（TBv/TBh/IA），命名 YYYYMMDD.mat"
       }
@@ -65,7 +65,7 @@
         600
       ],
       "properties": {
-        "path": "Soil_Moisture/FY3B_TB",
+        "path": "Soil_Moisture/FY3B",
         "dataset_key": "fy3b_folder",
         "notes": "逐日 FY3B TB .mat（FY3B→FY3D 时空匹配用），命名 YYYYMMDD.mat"
       }
@@ -119,8 +119,13 @@
           "match_enable": true,
           "match_method": "bias",
           "block_days": 8,
-          "start_date": "20250101",
+          "start_date": "20251101",
           "end_date": "20251231",
+          "bbox_west": 15.0,
+          "bbox_south": -35.0,
+          "bbox_east": 35.0,
+          "bbox_north": -10.0,
+          "max_pixels": 8000,
           "enable_parallel": true,
           "pixel_chunk_size": 200000
         }
@@ -134,7 +139,7 @@
         40
       ],
       "properties": {
-        "start_at": "2025-01-01T00:00:00",
+        "start_at": "2025-11-01T00:00:00",
         "end_at": "2025-12-31T00:00:00",
         "resolution_unit": "day",
         "resolution_step": 1,
@@ -151,10 +156,10 @@
         40
       ],
       "properties": {
-        "west": 73.0,
-        "south": 15.0,
-        "east": 137.0,
-        "north": 59.0,
+        "west": 15.0,
+        "south": -35.0,
+        "east": 35.0,
+        "north": -10.0,
         "crs": "EPSG:4326"
       }
     },

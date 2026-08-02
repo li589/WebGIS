@@ -186,6 +186,8 @@ class WorkflowRunner:
         request: JobRequest,
         node_outputs: dict[str, dict[str, object]],
     ) -> object:
+        if binding.startswith("literal:"):
+            return binding.split(":", 1)[1]
         if binding.startswith("input:"):
             input_name = binding.split(":", 1)[1]
             if input_name not in request.datasource_selection:

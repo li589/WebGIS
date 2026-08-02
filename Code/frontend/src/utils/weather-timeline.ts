@@ -10,6 +10,9 @@ export const CLOCK_DAY_MAX_HOUR = 23
 export type TimelineAvailabilityState = 'empty' | 'partial' | 'ready'
 
 export type TimelineAvailabilitySegment = {
+  /** 与 layer-timeline / TimelineScrubber 共用的刻度索引（钟点 0/3/…/21） */
+  index: number
+  /** 同 index，保留供天气侧测试与调用方使用 */
   hour: number
   label: string
   state: TimelineAvailabilityState
@@ -29,15 +32,27 @@ export type WeatherCoverageLike = {
 }
 
 /** 钟点标签：固定单行 HH:00 */
+/** 将钟点量化到 0.25h 步进，并钳制到 [0, 23] */
+export function quantizeClockHour(hour: number): number {
+  if (!Number.isFinite(hour)) return 0
+  const quantized = Math.round(hour * 4) / 4
+  return Math.max(0, Math.min(CLOCK_DAY_MAX_HOUR, quantized))
+}
+
+/** 钟点标签：整点 HH:00，四分之一小时 HH:MM */
 export function formatClockHourLabel(hour: number): string {
-  const h = ((Math.round(hour) % 24) + 24) % 24
-  return `${String(h).padStart(2, '0')}:00`
+  const q = quantizeClockHour(hour)
+  const hInt = Math.floor(q)
+  const mInt = Math.round((q - hInt) * 60)
+  return `${String(hInt).padStart(2, '0')}:${String(mInt).padStart(2, '0')}`
 }
 
 export function combineDateAndHour(date: Date, hour: number): Date {
   const d = new Date(date)
-  d.setHours(Math.round(hour), 0, 0, 0)
-  d.setSeconds(0, 0)
+  const q = quantizeClockHour(hour)
+  const hInt = Math.floor(q)
+  const mInt = Math.round((q - hInt) * 60)
+  d.setHours(hInt, mInt, 0, 0)
   return d
 }
 
@@ -68,7 +83,7 @@ export function isDateHourWithinCoverage(
   hour: number,
 ): boolean {
   if (!coverage) return false
-  const h = ((Math.round(hour) % 24) + 24) % 24
+  const h = Math.floor(quantizeClockHour(hour))
   const y = date.getFullYear()
   const m = date.getMonth()
   const d = date.getDate()
@@ -223,6 +238,7 @@ export function buildClockDayTimelineSegments(options: {
     }
 
     return {
+      index: hour,
       hour,
       label: formatClockHourLabel(hour),
       state,

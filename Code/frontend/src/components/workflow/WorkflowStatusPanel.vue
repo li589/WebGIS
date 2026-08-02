@@ -708,6 +708,18 @@ onBeforeUnmount(() => {
                   <div class="node-progress-fill" :style="{ width: np.progress + '%' }"></div>
                 </div>
                 <span v-if="np.message" class="node-progress-message">{{ np.message }}</span>
+                <div
+                  v-if="np.detail && (np.detail.chunksTotal || np.detail.pixelsTotal)"
+                  class="node-progress-detail"
+                >
+                  <span v-if="np.detail.chunksTotal">
+                    chunk {{ np.detail.chunksDone ?? 0 }}/{{ np.detail.chunksTotal }}
+                  </span>
+                  <span v-if="np.detail.pixelsTotal">
+                    pixel {{ np.detail.pixelsDone ?? 0 }}/{{ np.detail.pixelsTotal }}
+                  </span>
+                  <span v-if="np.detail.phase">{{ np.detail.phase }}</span>
+                </div>
               </div>
             </div>
 
@@ -1349,10 +1361,20 @@ onBeforeUnmount(() => {
 }
 
 .node-progress-message {
-  color: #7f96ab;
-  font-size: 0.52rem;
-  line-height: 1.4;
+  display: block;
+  margin-top: 4px;
+  font-size: 11px;
+  opacity: 0.75;
   word-break: break-word;
+}
+
+.node-progress-detail {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 4px;
+  font-size: 11px;
+  opacity: 0.8;
 }
 
 .wf-item-message {

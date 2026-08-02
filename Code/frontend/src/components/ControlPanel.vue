@@ -53,10 +53,23 @@ const props = withDefaults(
 interface PersistedPanelState {
   visible: boolean
   collapsed: boolean
+  /** 显示态位置/尺寸（取消隐藏时恢复） */
   offsetX: number
   offsetY: number
   width?: number
   height?: number
+  /** 隐藏态胶囊位置（可选） */
+  pillOffsetX?: number
+  pillOffsetY?: number
+}
+
+interface VisibleLayoutSnapshot {
+  offsetX: number
+  offsetY: number
+  width: number
+  height: number
+  collapsed: boolean
+  userResized: boolean
 }
 
 function getStorageKey(panelKey: string | undefined) {
@@ -76,12 +89,34 @@ function readPersistedState(panelKey: string | undefined): PersistedPanelState |
 const persistedState = readPersistedState(props.panelKey)
 const visible = ref(persistedState?.visible ?? true)
 const collapsed = ref(persistedState?.collapsed ?? props.defaultCollapsed)
-const offsetX = ref(persistedState?.offsetX ?? 0)
-const offsetY = ref(persistedState?.offsetY ?? 0)
+const offsetX = ref(
+  !visible.value && typeof persistedState?.pillOffsetX === 'number'
+    ? persistedState.pillOffsetX
+    : (persistedState?.offsetX ?? 0),
+)
+const offsetY = ref(
+  !visible.value && typeof persistedState?.pillOffsetY === 'number'
+    ? persistedState.pillOffsetY
+    : (persistedState?.offsetY ?? 0),
+)
 const panelWidth = ref(persistedState?.width ?? props.defaultWidth)
 const panelHeight = ref(persistedState?.height ?? props.defaultHeight)
 const userResized = ref(Boolean(persistedState?.width || persistedState?.height))
 const persistTimer = ref<number | null>(null)
+
+/** 点击隐藏前的显示态布局；取消隐藏时还原 */
+const visibleLayoutSnapshot = ref<VisibleLayoutSnapshot | null>(
+  persistedState
+    ? {
+        offsetX: persistedState.offsetX ?? 0,
+        offsetY: persistedState.offsetY ?? 0,
+        width: persistedState.width ?? props.defaultWidth,
+        height: persistedState.height ?? props.defaultHeight,
+        collapsed: persistedState.collapsed ?? props.defaultCollapsed,
+        userResized: Boolean(persistedState.width || persistedState.height),
+      }
+    : null,
+)
 
 const resolvedMinWidth = computed(() => Math.max(220, props.minWidth))
 const resolvedMinHeight = computed(() => Math.max(120, props.minHeight))
@@ -125,6 +160,11 @@ let dragStartY = 0
 let baseOffsetX = 0
 let baseOffsetY = 0
 const dragging = ref(false)
+/** 当前是否在拖隐藏态胶囊（位置不设限） */
+const draggingPill = ref(false)
+/** 隐藏态胶囊拖拽：区分点击展开 vs 拖动移位 */
+let pillGestureMoved = false
+const PILL_DRAG_THRESHOLD_PX = 5
 let resizeStartX = 0
 let resizeStartY = 0
 let baseWidth = 0
@@ -132,11 +172,14 @@ let baseHeight = 0
 let baseResizeOffsetX = 0
 let baseResizeOffsetY = 0
 const resizing = ref(false)
+/** 显隐切换时短暂关闭 transform 过渡，避免卡顿感 */
+const suppressTransformTransition = ref(false)
 
 const layoutPinsRightEdge = computed(() => isRightDockedPanel(props.panelKey))
 const anchorClass = computed(() => ({
   'panel-anchor--dock-right': layoutPinsRightEdge.value,
-  'panel-anchor--interacting': dragging.value || resizing.value,
+  'panel-anchor--interacting':
+    dragging.value || resizing.value || suppressTransformTransition.value,
 }))
 
 const frameStyle = computed(() => ({
@@ -170,12 +213,46 @@ function toggleCollapsed() {
   collapsed.value = !collapsed.value
 }
 
+function captureVisibleLayout(): VisibleLayoutSnapshot {
+  return {
+    offsetX: offsetX.value,
+    offsetY: offsetY.value,
+    width: panelWidth.value,
+    height: panelHeight.value,
+    collapsed: collapsed.value,
+    userResized: userResized.value,
+  }
+}
+
+function applyVisibleLayout(snap: VisibleLayoutSnapshot) {
+  offsetX.value = snap.offsetX
+  offsetY.value = snap.offsetY
+  panelWidth.value = snap.width
+  panelHeight.value = snap.height
+  collapsed.value = snap.collapsed
+  userResized.value = snap.userResized
+}
+
 function hidePanel() {
+  // 隐藏前记录显示态位置与尺寸
+  visibleLayoutSnapshot.value = captureVisibleLayout()
+  suppressTransformTransition.value = true
   visible.value = false
+  window.requestAnimationFrame(() => {
+    suppressTransformTransition.value = false
+  })
 }
 
 function showPanel() {
+  suppressTransformTransition.value = true
+  // 取消隐藏：恢复隐藏前的位置与缩放，忽略胶囊拖动位置
+  if (visibleLayoutSnapshot.value) {
+    applyVisibleLayout(visibleLayoutSnapshot.value)
+  }
   visible.value = true
+  window.requestAnimationFrame(() => {
+    suppressTransformTransition.value = false
+  })
 }
 
 function clampPanelWidth(value: number) {
@@ -188,19 +265,32 @@ function clampPanelHeight(value: number) {
 
 function handlePointerMove(event: PointerEvent) {
   if (!dragging.value) return
-  // 拖动只改位置记忆，不改宽高
-  offsetX.value = clampPanelOffset(baseOffsetX + event.clientX - dragStartX, props.maxOffsetX)
-  offsetY.value = clampPanelOffset(baseOffsetY + event.clientY - dragStartY, props.maxOffsetY)
+  const dx = event.clientX - dragStartX
+  const dy = event.clientY - dragStartY
+  if (Math.abs(dx) > PILL_DRAG_THRESHOLD_PX || Math.abs(dy) > PILL_DRAG_THRESHOLD_PX) {
+    pillGestureMoved = true
+  }
+  if (draggingPill.value || !visible.value) {
+    // 隐藏态：位置移动不受限
+    offsetX.value = baseOffsetX + dx
+    offsetY.value = baseOffsetY + dy
+    return
+  }
+  offsetX.value = clampPanelOffset(baseOffsetX + dx, props.maxOffsetX)
+  offsetY.value = clampPanelOffset(baseOffsetY + dy, props.maxOffsetY)
 }
 
 function stopDragging() {
   dragging.value = false
+  draggingPill.value = false
   window.removeEventListener('pointermove', handlePointerMove)
   window.removeEventListener('pointerup', stopDragging)
 }
 
 function startDragging(event: PointerEvent) {
   if (!props.draggable || window.innerWidth < 900) return
+  pillGestureMoved = false
+  draggingPill.value = false
   dragging.value = true
   dragStartX = event.clientX
   dragStartY = event.clientY
@@ -208,6 +298,34 @@ function startDragging(event: PointerEvent) {
   baseOffsetY = offsetY.value
   window.addEventListener('pointermove', handlePointerMove)
   window.addEventListener('pointerup', stopDragging)
+}
+
+/** 隐藏态胶囊：拖动改位置（不设限）；未移动则点击展开并恢复显示态布局 */
+function startPillDragging(event: PointerEvent) {
+  if (!props.draggable) {
+    showPanel()
+    return
+  }
+  if (event.button !== 0) return
+  event.preventDefault()
+  pillGestureMoved = false
+  draggingPill.value = true
+  dragging.value = true
+  dragStartX = event.clientX
+  dragStartY = event.clientY
+  baseOffsetX = offsetX.value
+  baseOffsetY = offsetY.value
+  window.addEventListener('pointermove', handlePointerMove)
+  window.addEventListener('pointerup', stopPillDragging)
+}
+
+function stopPillDragging() {
+  const moved = pillGestureMoved
+  dragging.value = false
+  draggingPill.value = false
+  window.removeEventListener('pointermove', handlePointerMove)
+  window.removeEventListener('pointerup', stopPillDragging)
+  if (!moved) showPanel()
 }
 
 function handleResizeMove(event: PointerEvent) {
@@ -287,26 +405,46 @@ function resetPanel() {
   collapsed.value = props.defaultCollapsed
   visible.value = true
   userResized.value = false
+  visibleLayoutSnapshot.value = captureVisibleLayout()
 }
 
 onBeforeUnmount(() => {
   stopDragging()
+  stopPillDragging()
   stopResizing()
   if (persistTimer.value !== null) window.clearTimeout(persistTimer.value)
 })
 
-watch([visible, collapsed, offsetX, offsetY, panelWidth, panelHeight], () => {
+watch([visible, collapsed, offsetX, offsetY, panelWidth, panelHeight, visibleLayoutSnapshot], () => {
   if (typeof window === 'undefined' || !props.panelKey) return
   if (persistTimer.value !== null) window.clearTimeout(persistTimer.value)
   persistTimer.value = window.setTimeout(() => {
-    // 位置与尺寸分字段持久化：仅拖动时只更新 offset；仅缩放时才写入 width/height
+    const snap = visibleLayoutSnapshot.value
+    const layoutOffsetX = visible.value ? offsetX.value : (snap?.offsetX ?? offsetX.value)
+    const layoutOffsetY = visible.value ? offsetY.value : (snap?.offsetY ?? offsetY.value)
+    const layoutWidth = visible.value
+      ? userResized.value
+        ? panelWidth.value
+        : undefined
+      : snap?.userResized
+        ? snap.width
+        : undefined
+    const layoutHeight = visible.value
+      ? userResized.value
+        ? panelHeight.value
+        : undefined
+      : snap?.userResized
+        ? snap.height
+        : undefined
     const nextState: PersistedPanelState = {
       visible: visible.value,
-      collapsed: collapsed.value,
-      offsetX: offsetX.value,
-      offsetY: offsetY.value,
-      width: userResized.value ? panelWidth.value : undefined,
-      height: userResized.value ? panelHeight.value : undefined,
+      collapsed: visible.value ? collapsed.value : (snap?.collapsed ?? collapsed.value),
+      offsetX: layoutOffsetX,
+      offsetY: layoutOffsetY,
+      width: layoutWidth,
+      height: layoutHeight,
+      pillOffsetX: visible.value ? undefined : offsetX.value,
+      pillOffsetY: visible.value ? undefined : offsetY.value,
     }
     window.localStorage.setItem(getStorageKey(props.panelKey), JSON.stringify(nextState))
     persistTimer.value = null
@@ -318,7 +456,15 @@ defineExpose({ showPanel, hidePanel, resetPanel, toggleCollapsed })
 
 <template>
   <div class="panel-anchor" :class="anchorClass" :style="frameStyle">
-    <button v-if="!visible" class="restore-pill" type="button" @click="showPanel">
+    <button
+      v-if="!visible"
+      class="restore-pill"
+      type="button"
+      :class="{ 'restore-pill--dragging': dragging }"
+      :title="`${panelLabel} · 拖动自由移动 / 点击展开并恢复原布局`"
+      @pointerdown="startPillDragging"
+      @click.prevent
+    >
       <svg viewBox="0 0 16 16" aria-hidden="true">
         <path
           d="M2 8s2.2-3.5 6-3.5S14 8 14 8s-2.2 3.5-6 3.5S2 8 2 8Zm6 1.8A1.8 1.8 0 1 0 8 6.2a1.8 1.8 0 0 0 0 3.6Z"
@@ -433,14 +579,33 @@ defineExpose({ showPanel, hidePanel, resetPanel, toggleCollapsed })
   display: inline-flex;
   align-items: center;
   gap: 0.42rem;
-  border: 1px solid rgba(136, 192, 255, 0.16);
+  border: 1px solid rgba(136, 192, 255, 0.25);
   border-radius: 999px;
   padding: 0.42rem 0.68rem;
-  background: rgba(8, 18, 33, 0.88);
+  background: rgba(12, 22, 38, 0.65);
   color: #dfeefe;
-  cursor: pointer;
+  cursor: grab;
   font: inherit;
   font-size: 0.72rem;
+  box-shadow: 0 10px 22px rgba(1, 8, 16, 0.14);
+  opacity: 0.72;
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  user-select: none;
+  touch-action: none;
+  transition:
+    opacity 0.18s ease,
+    border-color 0.18s ease,
+    box-shadow 0.18s ease;
+}
+.restore-pill:hover {
+  opacity: 1;
+  border-color: rgba(136, 192, 255, 0.48);
+  box-shadow: 0 14px 28px rgba(1, 8, 16, 0.3), 0 0 12px rgba(56, 189, 248, 0.25);
+}
+.restore-pill--dragging {
+  cursor: grabbing;
+  opacity: 1;
 }
 .control-panel {
   position: relative;
@@ -448,8 +613,9 @@ defineExpose({ showPanel, hidePanel, resetPanel, toggleCollapsed })
   display: flex;
   flex-direction: column;
   transition:
-    opacity 0.2s ease,
-    box-shadow 0.2s ease;
+    opacity 0.25s cubic-bezier(0.4, 0, 0.2, 1),
+    transform 0.25s ease,
+    box-shadow 0.25s ease;
   overflow: visible;
   min-height: 0;
   border-color: transparent;
@@ -465,10 +631,21 @@ defineExpose({ showPanel, hidePanel, resetPanel, toggleCollapsed })
 .control-panel.collapsed {
   background: transparent;
   box-shadow: none;
+  opacity: 0.55;
+}
+.control-panel.collapsed:hover {
+  opacity: 1;
+  transform: translateY(-2px);
 }
 .control-panel.collapsed .panel-tools {
   border-radius: 0.86rem;
-  border-bottom-color: rgba(136, 192, 255, 0.12);
+  border-bottom-color: rgba(136, 192, 255, 0.18);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+  transition: border-color 0.25s ease, box-shadow 0.25s ease;
+}
+.control-panel.collapsed:hover .panel-tools {
+  border-color: rgba(136, 192, 255, 0.45);
+  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.5), 0 0 14px rgba(56, 189, 248, 0.25);
 }
 .control-panel--mobile {
   width: 100% !important;
