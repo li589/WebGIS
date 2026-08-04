@@ -81,11 +81,17 @@ class HttpSourceFetcher(SourceFetcher):
         try:
             import urllib.request
 
+            # 发布就绪修复（P0-2）：出站前做 SSRF 校验，阻断环回/链路本地(云元数据)/
+            # 保留/组播地址；私网默认放行以兼容内网数据源（可用 allow_private=False 收紧）。
+            from app.core.ssrf import validate_outbound_url
+
+            validate_outbound_url(source_uri)
+
             req = urllib.request.Request(
                 source_uri,
                 headers={"User-Agent": "cgda-backend-download-service/1.0"},
             )
-            with urllib.request.urlopen(req, timeout=DEFAULT_HTTP_TIMEOUT) as response:  # noqa: S310 - 源 URL 由配置或 layer catalog 提供
+            with urllib.request.urlopen(req, timeout=DEFAULT_HTTP_TIMEOUT) as response:  # noqa: S310 - 源 URL 经 validate_outbound_url 校验
                 data = response.read()
                 content_type = response.headers.get(
                     "Content-Type", "application/octet-stream"

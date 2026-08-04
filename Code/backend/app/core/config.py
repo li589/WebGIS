@@ -392,15 +392,13 @@ class Settings:
     earthdata_password: str = os.getenv("BACKEND_EARTHDATA_PASSWORD", "")
 
     # ---- FileBrowser ----
-    filebrowser_nas_url: str = os.getenv(
-        "BACKEND_FILEBROWSER_NAS_URL",
-        "https://nasfile.personaltunnel.dpdns.org",
-    )
-    filebrowser_win11_url: str = os.getenv(
-        "BACKEND_FILEBROWSER_WIN11_URL",
-        "https://win11file.personaltunnel.dpdns.org",
-    )
-    filebrowser_user: str = os.getenv("BACKEND_FILEBROWSER_USER", "user")
+    # 发布就绪修复（P0-2/P1-7）：移除硬编码的外部免费动态 DNS 端点默认值与默认用户名。
+    # 这些端点曾默认指向 *.personaltunnel.dpdns.org（可被第三方注册的免费 DDNS），
+    # 叠加未鉴权路由会让后端主动向外部域名发起连接并外发凭据。现默认为空 = 功能禁用，
+    # 需管理员在 .env / 设置界面显式配置内部地址后方可使用。
+    filebrowser_nas_url: str = os.getenv("BACKEND_FILEBROWSER_NAS_URL", "")
+    filebrowser_win11_url: str = os.getenv("BACKEND_FILEBROWSER_WIN11_URL", "")
+    filebrowser_user: str = os.getenv("BACKEND_FILEBROWSER_USER", "")
     filebrowser_password: str = os.getenv("BACKEND_FILEBROWSER_PASSWORD", "")
 
 

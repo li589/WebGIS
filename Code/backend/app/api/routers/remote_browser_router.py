@@ -16,13 +16,20 @@ import time
 from pathlib import Path
 from typing import Any
 
-from fastapi import APIRouter, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 
+from app.api.deps import require_write_access
 from app.core.config import settings
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter(prefix="/api/remote", tags=["remote-browser"])
+# 发布就绪修复（P0-2/P1-7）：远程浏览全部端点强制写权限鉴权。
+# 这些端点会携带已存凭据向内/外部服务器发起真实出站连接，未鉴权可被利用做 SSRF/凭据外带。
+router = APIRouter(
+    prefix="/api/remote",
+    tags=["remote-browser"],
+    dependencies=[Depends(require_write_access)],
+)
 
 # ── 将 algorithms/providers/Python 加入 sys.path 以复用 ingest 模块 ──
 _PROVIDER_ROOT = Path(settings.python_provider_root)
@@ -45,6 +52,11 @@ def _resolve_server(server: str) -> dict[str, Any]:
             "key_filename": settings.ssh_hpc_key_path,
         }
     if server == "win11":
+        if not settings.filebrowser_win11_url:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="win11 filebrowser 未配置（BACKEND_FILEBROWSER_WIN11_URL 为空）",
+            )
         return {
             "server_type": "filebrowser",
             "url": settings.filebrowser_win11_url,
@@ -52,6 +64,11 @@ def _resolve_server(server: str) -> dict[str, Any]:
             "password": settings.filebrowser_password,
         }
     if server == "nas":
+        if not settings.filebrowser_nas_url:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="nas filebrowser 未配置（BACKEND_FILEBROWSER_NAS_URL 为空）",
+            )
         return {
             "server_type": "filebrowser",
             "url": settings.filebrowser_nas_url,
