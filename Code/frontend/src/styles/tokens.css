@@ -1,0 +1,57 @@
+/* 设计令牌层（发布就绪 P1-10 最小止血）。
+ *
+ * 现状问题：main.css 此前 0 个 CSS 变量，各 .vue 内联 hex 共 229 个唯一值，
+ * 主题无法统一调整。本文件建立设计令牌（颜色/圆角/间距/字号）单一真源，
+ * 后续组件逐步迁移到 var(--*) 引用。
+ *
+ * 说明：字号下限（正文 ≥12px）涉及全局密排暗色 UI 的视觉回归，需视觉 QA 后
+ * 再统一抬升——此处先定义令牌刻度（含 floor），不在本次盲改各组件字号。
+ */
+
+:root {
+  /* ── 颜色：文本 ── */
+  --text-strong: #f0faff;
+  --text-primary: #d8e6f5;
+  --text-secondary: #9fb6cc;
+  --text-muted: #8aa8bf;
+  --text-faint: #6e8ba0;
+  --text-disabled: #5a7080;
+
+  /* ── 颜色：强调 / 状态 ── */
+  --accent: #5ad5ff;
+  --accent-strong: #88dfff;
+  --accent-warm: #ffc878;
+  --success: #9ff8cf;
+  --warning: #ffb070;
+  --danger: #ff8c64;
+
+  /* ── 颜色：表面 / 边框（深色 GIS 主题）── */
+  --surface-base: #020814;
+  --surface-panel: rgba(8, 17, 31, 0.96);
+  --surface-raised: rgba(4, 12, 23, 0.6);
+  --surface-sunken: rgba(4, 12, 23, 0.5);
+  --border-subtle: rgba(136, 192, 255, 0.08);
+  --border-default: rgba(136, 192, 255, 0.16);
+  --border-strong: rgba(90, 213, 255, 0.36);
+  --border-accent: rgba(90, 213, 255, 0.28);
+
+  /* ── 圆角 ── */
+  --radius-sm: 0.32rem;
+  --radius-md: 0.5rem;
+  --radius-lg: 1rem;
+  --radius-pill: 999px;
+
+  /* ── 间距基数 ── */
+  --space-1: 0.22rem;
+  --space-2: 0.32rem;
+  --space-3: 0.52rem;
+  --space-4: 0.72rem;
+  --space-5: 1.2rem;
+
+  /* ── 字号刻度（root=15px）。floor 令牌定义商业化可读下限，应用需视觉 QA ── */
+  --font-size-micro: 0.58rem; /* 8.7px —— 当前最小，待视觉 QA 后收敛 */
+  --font-size-caption: 0.62rem; /* 9.3px */
+  --font-size-body: 0.72rem; /* 10.8px */
+  --font-size-title: 0.8rem; /* 12px —— 商业化可读下限（floor） */
+  --font-size-floor: 0.8rem; /* = 12px，正文/标签的最低字号目标 */
+}
