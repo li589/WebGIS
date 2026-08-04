@@ -72,11 +72,10 @@ jobs:
           pip install pytest pytest-cov
 
       - name: Run pytest
-        working-directory: Code/backend
         env:
           REDIS_URL: redis://localhost:6379/0
           ENVIRONMENT: test
-        run: pytest tests/ -x --tb=short -q
+        run: pytest Test/backend/ -x --tb=short -q
 
   # ── vitest：前端单元测试 ──────────────────────────────────────────────────
   vitest:

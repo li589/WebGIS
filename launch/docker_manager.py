@@ -33,15 +33,18 @@ def docker_available() -> bool:
         return False
 
 
+def _windows_docker_hint() -> str:
+    return (
+        "请先以管理员身份启动 Docker Desktop，并确认引擎就绪"
+        "（Windows 非管理员可能导致 launch 失败）"
+    )
+
+
 def start_docker_infra(*, start_open_meteo: bool = True) -> bool:
     """启动 Redis + MinIO；可选启动 backend 内的 cgda-open-meteo API。"""
     log.banner("启动 Docker 运行栈 (Redis + MinIO + Open-Meteo API)")
     if not docker_available():
-        hint = (
-            "请先启动 Docker Desktop"
-            if IS_WINDOWS
-            else "请先启动 Docker Engine / 守护进程"
-        )
+        hint = _windows_docker_hint() if IS_WINDOWS else "请先启动 Docker Engine / 守护进程"
         log.error("Docker", f"Docker 未运行或未安装，{hint}")
         return False
 
@@ -64,6 +67,8 @@ def start_docker_infra(*, start_open_meteo: bool = True) -> bool:
         )
         if r.returncode != 0:
             log.error("Docker", f"docker compose 启动失败:\n{r.stderr}")
+            if IS_WINDOWS:
+                log.warn("Docker", _windows_docker_hint())
             return False
     except subprocess.TimeoutExpired:
         log.error("Docker", "docker compose 启动超时（180s）")

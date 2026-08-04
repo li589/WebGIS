@@ -25,8 +25,11 @@ dependencies = [
 ]
 
 [tool.pytest.ini_options]
+# 测试已迁至仓库根 Test/algorithms/（见该目录 conftest.py 的 sys.path 设置）。
+# 从本目录运行：cd Code/algorithms/providers/Python && pytest
+# 从仓库根运行：pytest Test/algorithms/
 pythonpath = [".", "../../.."]
-testpaths = ["tests"]
+testpaths = ["../../../../Test/algorithms"]
 
 [tool.setuptools]
 include-package-data = true
