@@ -6,4 +6,4 @@
 // 它对 pinia / @vue/test-utils 的解析会从 Code/frontend 向上命中 node_modules，与现有 446 个
 // 纯逻辑测试（经 @/ 进入 src 后解析依赖）是同一机制。生产构建中本文件因未被引用会被 tree-shake。
 export { mount, shallowMount } from '@vue/test-utils'
-export { createPinia, setActivePinia, createTestingPinia } from 'pinia'
+export { createPinia, setActivePinia } from 'pinia'
