@@ -113,6 +113,51 @@ def get_overlay_preview(
     )
 
 
+@router.get("/overlay-tiles/{layer_id}/{z}/{x}/{y}.png", tags=["overlay"])
+def get_overlay_tile(
+    layer_id: str,
+    z: int,
+    x: int,
+    y: int,
+    time: str | None = Query(default=None),
+) -> Response:
+    """Web Mercator XYZ PNG tile for imported / geotiff-backed overlays."""
+    from app.services.overlay_tile_service import render_overlay_tile
+
+    spec = get_overlay_spec(layer_id)
+    if spec is None:
+        raise HTTPException(status_code=404, detail=f"No overlay for layer: {layer_id}")
+    source = spec.resolve_source_path(time)
+    if source is None or source.suffix.lower() not in {
+        ".tif",
+        ".tiff",
+        ".geotiff",
+        ".cog",
+    }:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Overlay has no GeoTIFF source for XYZ tiles: {layer_id}",
+        )
+    try:
+        png = render_overlay_tile(str(source), z, x, y)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except Exception as exc:
+        _logger.warning(
+            "overlay tile render failed %s z=%s", layer_id, z, exc_info=True
+        )
+        raise HTTPException(
+            status_code=500, detail=f"Tile render failed: {exc}"
+        ) from exc
+    return Response(
+        content=png,
+        media_type="image/png",
+        headers={"Cache-Control": "public, max-age=120"},
+    )
+
+
 @router.get("/overlay-bounds/{layer_id}", tags=["overlay"])
 def get_overlay_bounds(
     layer_id: str,

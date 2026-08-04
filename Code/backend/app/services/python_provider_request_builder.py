@@ -29,6 +29,7 @@ from __future__ import annotations
 import logging
 from typing import Any
 
+from app.services.workflow.cancel_paths import workflow_cancel_flag_path
 from shared.contracts.api_contracts import (
     AlgorithmWorkflowRequest,
     WorkflowSubmitRequest,
@@ -139,6 +140,11 @@ class PythonProviderRequestBuilder:
             algorithm_params = request_payload["algorithm_params"]
         for key, value in payload.parameters.items():
             algorithm_params.setdefault(key, value)
+
+        # Cooperative cancel: lifecycle writes tmp/{run_id}/cancel.requested
+        algorithm_params.setdefault(
+            "cancel_flag_path", str(workflow_cancel_flag_path(run_id))
+        )
 
         output_spec = request_payload.get("output_spec")
         if not isinstance(output_spec, dict):

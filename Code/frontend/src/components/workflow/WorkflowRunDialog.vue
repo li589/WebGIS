@@ -2,26 +2,37 @@
 /**
  * WorkflowRunDialog.vue
  *
- * 运行工作流时的产出目标选择对话框。
- * 用户可选择：
- *   1. 默认图层 — 直接使用工作流关联的 layer_id 运行
- *   2. 新建图层 — 在指定分组（或新建分组）中创建产出图层条目
- *   3. 多图层（multi）— 自动生成 N 个图层（仅当工作流含 omega_sf_fenkuai 等多输出节点时可用）
+ * 运行工作流时的产出目标选择：
+ *   1. 默认图层 — 源图层上运行，Active TOC 建计算组（不强制写 library）
+ *   2. 新建图层 — 计算组 + 写入产出 registry
+ * 两种模式共用「预期产出」命名面板（组标题 + 每产品图层名）。
  */
 import { computed, ref, watch } from 'vue'
 import { useWorkflowOutputLayersStore } from '../../stores/workflow-output-layers'
 import { useLayersStore } from '../../stores/layers'
 import { useWorkflowDefinitionsStore } from '../../stores/workflow-definitions'
+import {
+  defaultProductLayerNames,
+  resolveExpectedOutputTags,
+  resolveOutputNamePrefix,
+} from '../../utils/workflow-expected-outputs'
+
+export interface WorkflowRunProductTarget {
+  name: string
+  productTag: string
+}
 
 export interface WorkflowRunTarget {
-  mode: 'default' | 'new' | 'multi'
-  /** mode === 'new' 时：新建图层的名称 */
-  name?: string
-  /** mode === 'new' 时：分组名称 */
+  mode: 'default' | 'new'
+  /** 计算组显示标题 */
+  groupTitle: string
+  /** 每个预期产出的图层名 + 产品标签 */
+  targets: WorkflowRunProductTarget[]
+  /** library 分组名（新建模式写入 registry） */
   group?: string
-  /** mode === 'multi' 时：批量创建的图层目标列表 */
-  targets?: Array<{ name: string; group: string }>
-  /** 运行时选定的源图层（覆盖工作流 _meta.linked_layer_id） */
+  /** 兼容旧字段：单名时可用第一个 target.name */
+  name?: string
+  /** 运行时选定的源图层 */
   layerId?: string
 }
 
@@ -42,25 +53,14 @@ const outputStore = useWorkflowOutputLayersStore()
 const layersStore = useLayersStore()
 const workflowDefsStore = useWorkflowDefinitionsStore()
 
-const mode = ref<'default' | 'new' | 'multi'>('default')
-const newLayerName = ref('')
+const mode = ref<'default' | 'new'>('default')
 const selectedGroup = ref('')
 const newGroupName = ref('')
 const creatingNewGroup = ref(false)
-/** 无 linked_layer_id 时由用户从目录选择 */
 const pickedLayerId = ref('')
+const groupTitle = ref('')
+const productNames = ref<string[]>([])
 
-// multi 模式状态
-const multiLayerNames = ref<string[]>([])
-const multiGroup = ref('')
-const multiCreatingNewGroup = ref(false)
-const multiNewGroupName = ref('')
-const sameGroupForAll = ref(true)
-
-/** omega_sf_fenkuai 等多输出模块的输出标签 */
-const MULTI_OUTPUT_TAGS = ['SM', 'VOD', 'OMEGA']
-
-/** 可选图层目录（用于未关联时点选） */
 const catalogOptions = computed(() =>
   layersStore.layerLibrary
     .filter((l) => Boolean(l.catalogId) && !String(l.catalogId).startsWith('wf-out-'))
@@ -73,57 +73,18 @@ const catalogOptions = computed(() =>
 
 const effectiveLayerId = computed(() => props.linkedLayerId || pickedLayerId.value.trim() || null)
 
-/**
- * 检测当前工作流是否包含多输出节点（优先看画布当前定义）。
- */
-const outputCount = computed(() => {
-  const def = workflowDefsStore.currentDefinition
-  if (!def) return 0
-  const hasFenkuaiNode = def.nodes.some(
-    (n) => n.type === 'module/omega_sf_fenkuai' || n.type?.includes('omega_sf_fenkuai'),
-  )
-  if (!hasFenkuaiNode) return 0
-  const extraOutputs = def.extra?.outputs
-  if (Array.isArray(extraOutputs) && extraOutputs.length > 1) {
-    return extraOutputs.filter((t): t is string => typeof t === 'string').length
-  }
-  return MULTI_OUTPUT_TAGS.length
-})
+const outputTags = computed(() => resolveExpectedOutputTags(workflowDefsStore.currentDefinition))
 
-/** 当前工作流的输出标签列表（用于生成 multi 模式的图层名称） */
-const outputTags = computed<string[]>(() => {
-  const def = workflowDefsStore.currentDefinition
-  if (!def) return []
-  const extraOutputs = def.extra?.outputs
-  if (Array.isArray(extraOutputs) && extraOutputs.length > 0) {
-    return extraOutputs.filter((t): t is string => typeof t === 'string')
-  }
-  if (outputCount.value > 0) return [...MULTI_OUTPUT_TAGS]
-  return []
-})
+const namePrefix = computed(() =>
+  resolveOutputNamePrefix(workflowDefsStore.currentDefinition, props.workflowId || 'output'),
+)
 
-/** 用于生成 multi 模式图层名称的前缀（从节点类型提取模块名） */
-const multiNamePrefix = computed(() => {
-  const def = workflowDefsStore.currentDefinition
-  if (!def) return props.workflowId || 'output'
-  const fenkuaiNode = def.nodes.find(
-    (n) => n.type === 'module/omega_sf_fenkuai' || n.type?.includes('omega_sf_fenkuai'),
-  )
-  if (fenkuaiNode?.type) {
-    const parts = fenkuaiNode.type.split('/')
-    return parts[parts.length - 1] || 'output'
-  }
-  return props.workflowId || 'output'
-})
-
-/** 默认图层模式下可选的已产出数据集（同一源 layer_id 的历史产出） */
 const existingOutputs = computed(() => {
   const layerId = effectiveLayerId.value
   if (!layerId) return []
   return outputStore.getBySourceLayerId(layerId)
 })
 
-/** 源图层显示名 */
 const sourceLayerName = computed(() => {
   const layerId = effectiveLayerId.value
   if (!layerId) return '未选择图层'
@@ -131,55 +92,37 @@ const sourceLayerName = computed(() => {
   return libItem?.name ?? layerId
 })
 
+const effectiveLibraryGroup = computed(() =>
+  creatingNewGroup.value ? newGroupName.value.trim() : selectedGroup.value.trim(),
+)
+
 const canConfirm = computed(() => {
   if (!effectiveLayerId.value) return false
-  if (mode.value === 'default') return true
-  if (mode.value === 'new') {
-    if (creatingNewGroup.value) {
-      return newLayerName.value.trim().length > 0 && newGroupName.value.trim().length > 0
-    }
-    return newLayerName.value.trim().length > 0 && selectedGroup.value.trim().length > 0
-  }
-  if (mode.value === 'multi') {
-    const allNamesValid = multiLayerNames.value.every((n) => n.trim().length > 0)
-    if (!allNamesValid) return false
-    if (multiCreatingNewGroup.value) {
-      return multiNewGroupName.value.trim().length > 0
-    }
-    return multiGroup.value.trim().length > 0
-  }
-  return false
+  if (!groupTitle.value.trim()) return false
+  if (!productNames.value.every((n) => n.trim().length > 0)) return false
+  if (mode.value === 'new' && !effectiveLibraryGroup.value) return false
+  return true
 })
 
-/** multi 模式下实际使用的分组名 */
-const effectiveMultiGroup = computed(() =>
-  multiCreatingNewGroup.value ? multiNewGroupName.value.trim() : multiGroup.value.trim(),
-)
+function buildTargets(): WorkflowRunProductTarget[] {
+  return productNames.value.map((name, i) => ({
+    name: name.trim(),
+    productTag: outputTags.value[i] || 'result',
+  }))
+}
 
 function handleConfirm() {
   if (!canConfirm.value || !effectiveLayerId.value) return
-  const layerId = effectiveLayerId.value
-  if (mode.value === 'default') {
-    emit('confirm', { mode: 'default', layerId })
-    return
-  }
-  if (mode.value === 'new') {
-    emit('confirm', {
-      mode: 'new',
-      layerId,
-      name: newLayerName.value.trim(),
-      group: creatingNewGroup.value ? newGroupName.value.trim() : selectedGroup.value.trim(),
-    })
-    return
-  }
-  if (mode.value === 'multi') {
-    const group = effectiveMultiGroup.value
-    const targets = multiLayerNames.value.map((name) => ({
-      name: name.trim(),
-      group,
-    }))
-    emit('confirm', { mode: 'multi', layerId, targets })
-  }
+  const targets = buildTargets()
+  const title = groupTitle.value.trim()
+  emit('confirm', {
+    mode: mode.value,
+    layerId: effectiveLayerId.value,
+    groupTitle: title,
+    targets,
+    name: targets[0]?.name,
+    group: mode.value === 'new' ? effectiveLibraryGroup.value : title,
+  })
 }
 
 function handleCancel() {
@@ -188,47 +131,39 @@ function handleCancel() {
 
 function useExistingGroup() {
   creatingNewGroup.value = false
-  selectedGroup.value = outputStore.groups[0]
-}
-
-function useExistingMultiGroup() {
-  multiCreatingNewGroup.value = false
-  if (outputStore.groups.length > 0) {
-    multiGroup.value = outputStore.groups[0]
-  }
+  selectedGroup.value = outputStore.groups[0] ?? ''
 }
 
 watch(
   () => props.visible,
   (visible) => {
-    if (visible) {
-      mode.value = 'default'
-      pickedLayerId.value = props.linkedLayerId ?? ''
-      newLayerName.value = props.workflowName ? `${props.workflowName} 产出` : ''
-      if (outputStore.groups.length > 0) {
-        selectedGroup.value = outputStore.groups[0]
-        creatingNewGroup.value = false
-      } else {
-        selectedGroup.value = ''
-        creatingNewGroup.value = true
-        newGroupName.value = '默认分组'
-      }
+    if (!visible) return
+    mode.value = 'default'
+    pickedLayerId.value = props.linkedLayerId ?? ''
+    groupTitle.value = props.workflowName
+      ? `${props.workflowName} · 计算中`
+      : `${props.workflowId || '工作流'} · 计算中`
 
-      const tags = outputTags.value
-      const prefix = multiNamePrefix.value
-      multiLayerNames.value = tags.map((tag) => `${prefix}_${tag}`)
-      sameGroupForAll.value = true
-      if (outputStore.groups.length > 0) {
-        multiGroup.value = outputStore.groups[0]
-        multiCreatingNewGroup.value = false
-      } else {
-        multiGroup.value = ''
-        multiCreatingNewGroup.value = true
-        multiNewGroupName.value = '默认分组'
-      }
+    const defaults = defaultProductLayerNames(outputTags.value, namePrefix.value)
+    productNames.value = defaults.map((d) => d.name)
+
+    if (outputStore.groups.length > 0) {
+      selectedGroup.value = outputStore.groups[0]
+      creatingNewGroup.value = false
+    } else {
+      selectedGroup.value = ''
+      creatingNewGroup.value = true
+      newGroupName.value = '默认分组'
     }
   },
 )
+
+watch(outputTags, (tags) => {
+  if (!props.visible) return
+  if (productNames.value.length === tags.length) return
+  const defaults = defaultProductLayerNames(tags, namePrefix.value)
+  productNames.value = defaults.map((d) => d.name)
+})
 </script>
 
 <template>
@@ -240,7 +175,6 @@ watch(
       </header>
 
       <div class="dialog-body">
-        <!-- 未关联图层时：从目录选择 -->
         <div v-if="!linkedLayerId" class="layer-picker">
           <label class="form-label">选择关联图层 *</label>
           <select v-model="pickedLayerId" class="form-select">
@@ -252,61 +186,68 @@ watch(
           <p class="info-hint">当前工作流未绑定图层；选择后将作为本次运行的源图层。</p>
         </div>
 
-        <!-- 模式选择 -->
         <div class="mode-selector">
           <label class="mode-option" :class="{ active: mode === 'default' }">
             <input v-model="mode" type="radio" value="default" />
             <span class="mode-label">
               <span class="mode-name">默认图层</span>
-              <span class="mode-desc">产出到工作流关联的源图层，覆盖上次结果</span>
+              <span class="mode-desc">在已添加图层中建计算组；不写入目录产出条目</span>
             </span>
           </label>
           <label class="mode-option" :class="{ active: mode === 'new' }">
             <input v-model="mode" type="radio" value="new" />
             <span class="mode-label">
               <span class="mode-name">新建图层</span>
-              <span class="mode-desc">在指定分组中创建新产出图层，保留历史结果</span>
-            </span>
-          </label>
-          <label v-if="outputCount > 1" class="mode-option" :class="{ active: mode === 'multi' }">
-            <input v-model="mode" type="radio" value="multi" />
-            <span class="mode-label">
-              <span class="mode-name">多图层自动生成</span>
-              <span class="mode-desc">
-                自动生成 {{ outputCount }} 个图层（{{ outputTags.join(' / ') }}），共用同一分组
-              </span>
+              <span class="mode-desc">计算组 + 写入目录产出条目，便于复用</span>
             </span>
           </label>
         </div>
 
-        <!-- 默认图层模式：显示已有产出 -->
-        <div v-if="mode === 'default'" class="default-mode-info">
-          <div v-if="existingOutputs.length > 0" class="existing-outputs">
-            <p class="info-label">该源图层已有产出条目:</p>
-            <ul class="output-list">
-              <li v-for="output in existingOutputs" :key="output.localId" class="output-item">
-                <span class="output-name">{{ output.name }}</span>
-                <span class="output-group">[{{ output.group }}]</span>
-              </li>
-            </ul>
+        <div v-if="mode === 'default' && existingOutputs.length > 0" class="default-mode-info">
+          <p class="info-label">该源图层已有目录产出条目:</p>
+          <ul class="output-list">
+            <li v-for="output in existingOutputs" :key="output.localId" class="output-item">
+              <span class="output-name">{{ output.name }}</span>
+              <span class="output-group">[{{ output.group }}]</span>
+            </li>
+          </ul>
+        </div>
+
+        <div class="products-form">
+          <div class="multi-info-bar">
+            <span class="info-icon" aria-hidden="true">ℹ</span>
+            <span class="info-text">
+              将创建计算组，含 {{ productNames.length }} 个图层：{{ outputTags.join(' / ') }}
+            </span>
           </div>
-          <p v-else class="info-hint">将直接使用源图层运行，结果覆盖该图层当前数据。</p>
-        </div>
 
-        <!-- 新建图层模式 -->
-        <div v-else-if="mode === 'new'" class="new-layer-form">
           <div class="form-row">
-            <label class="form-label">图层名称</label>
+            <label class="form-label">计算组标题</label>
             <input
-              v-model="newLayerName"
+              v-model="groupTitle"
               type="text"
               class="form-input"
-              placeholder="输入产出图层名称"
+              placeholder="显示在已添加图层中的组名"
             />
           </div>
 
           <div class="form-row">
-            <label class="form-label">目标分组</label>
+            <label class="form-label">图层名称（可编辑）</label>
+            <div class="multi-name-list">
+              <div v-for="(_name, idx) in productNames" :key="idx" class="multi-name-row">
+                <span class="multi-name-tag">{{ outputTags[idx] }}</span>
+                <input
+                  v-model="productNames[idx]"
+                  type="text"
+                  class="form-input"
+                  :placeholder="`${namePrefix}_${outputTags[idx]}`"
+                />
+              </div>
+            </div>
+          </div>
+
+          <div v-if="mode === 'new'" class="form-row">
+            <label class="form-label">目录分组</label>
             <div v-if="!creatingNewGroup" class="group-select-row">
               <select v-model="selectedGroup" class="form-select">
                 <option v-for="g in outputStore.groups" :key="g" :value="g">{{ g }}</option>
@@ -333,64 +274,6 @@ watch(
             </div>
           </div>
         </div>
-
-        <!-- 多图层自动生成模式 -->
-        <div v-else-if="mode === 'multi'" class="multi-layer-form">
-          <div class="multi-info-bar">
-            <span class="info-icon" aria-hidden="true">ℹ</span>
-            <span class="info-text">
-              将自动生成 {{ multiLayerNames.length }} 个图层，输出: {{ outputTags.join(' / ') }}
-            </span>
-          </div>
-
-          <div class="form-row">
-            <label class="form-label">图层名称（可编辑）</label>
-            <div class="multi-name-list">
-              <div v-for="(_name, idx) in multiLayerNames" :key="idx" class="multi-name-row">
-                <span class="multi-name-tag">{{ outputTags[idx] }}</span>
-                <input
-                  v-model="multiLayerNames[idx]"
-                  type="text"
-                  class="form-input"
-                  :placeholder="`${multiNamePrefix}_${outputTags[idx]}`"
-                />
-              </div>
-            </div>
-          </div>
-
-          <div class="form-row">
-            <label class="form-label">目标分组（所有图层共用）</label>
-            <div v-if="!multiCreatingNewGroup" class="group-select-row">
-              <select v-model="multiGroup" class="form-select">
-                <option v-for="g in outputStore.groups" :key="g" :value="g">{{ g }}</option>
-              </select>
-              <button class="toggle-group-btn" type="button" @click="multiCreatingNewGroup = true">
-                + 新建分组
-              </button>
-            </div>
-            <div v-else class="group-select-row">
-              <input
-                v-model="multiNewGroupName"
-                type="text"
-                class="form-input"
-                placeholder="输入新分组名称"
-              />
-              <button
-                v-if="outputStore.groups.length > 0"
-                class="toggle-group-btn"
-                type="button"
-                @click="useExistingMultiGroup"
-              >
-                选择已有
-              </button>
-            </div>
-          </div>
-
-          <label class="same-group-check">
-            <input v-model="sameGroupForAll" type="checkbox" />
-            <span class="check-label">全部使用相同分组</span>
-          </label>
-        </div>
       </div>
 
       <footer class="dialog-actions">
@@ -401,7 +284,7 @@ watch(
           :disabled="!canConfirm"
           @click="handleConfirm"
         >
-          {{ mode === 'default' ? '运行' : mode === 'multi' ? '批量创建并运行' : '创建并运行' }}
+          {{ mode === 'default' ? '运行' : '创建并运行' }}
         </button>
       </footer>
     </div>
@@ -553,7 +436,7 @@ watch(
 .output-group {
   color: #ffb84d;
 }
-.new-layer-form {
+.products-form {
   display: flex;
   flex-direction: column;
   gap: 0.5rem;
@@ -611,13 +494,6 @@ watch(
 .toggle-group-btn:hover {
   border-color: rgba(255, 184, 77, 0.4);
 }
-
-/* ── multi 模式样式 ──────────────────────────────────────────── */
-.multi-layer-form {
-  display: flex;
-  flex-direction: column;
-  gap: 0.5rem;
-}
 .multi-info-bar {
   display: flex;
   align-items: center;
@@ -663,21 +539,6 @@ watch(
   flex: 1 1 auto;
   min-width: 0;
 }
-.same-group-check {
-  display: flex;
-  align-items: center;
-  gap: 0.36rem;
-  cursor: pointer;
-  user-select: none;
-}
-.same-group-check input[type='checkbox'] {
-  accent-color: #ffb84d;
-}
-.same-group-check .check-label {
-  font-size: 0.56rem;
-  color: #8aa0b6;
-}
-
 .dialog-actions {
   display: flex;
   justify-content: flex-end;

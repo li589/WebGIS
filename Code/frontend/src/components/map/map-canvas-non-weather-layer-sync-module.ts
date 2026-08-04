@@ -44,6 +44,7 @@ export function createMapCanvasNonWeatherLayerSyncModule(
   })
 
   const stopHandles: WatchStopHandle[] = []
+  let onLayerRenamed: ((ev: Event) => void) | null = null
 
   function applyLayerStackOrder() {
     if (!options.getMapReady()) return
@@ -102,6 +103,9 @@ export function createMapCanvasNonWeatherLayerSyncModule(
     }
     for (const layer of imported) {
       importedLayerModule.setLayerVisibility(layer.instanceId, layer.visible)
+      if (layer.name) {
+        importedLayerModule.updateLayerDisplayName(layer.instanceId, layer.name)
+      }
       const style = layer.importedVector?.style
       if (style) {
         importedLayerModule.applyLayerStyle(layer.instanceId, style, layer.opacity)
@@ -119,6 +123,14 @@ export function createMapCanvasNonWeatherLayerSyncModule(
   }
 
   function setupWatchers() {
+    if (typeof window !== 'undefined') {
+      onLayerRenamed = (ev: Event) => {
+        const detail = (ev as CustomEvent<{ instanceId?: string; name?: string }>).detail
+        if (!detail?.instanceId || !detail.name) return
+        importedLayerModule.updateLayerDisplayName(detail.instanceId, detail.name)
+      }
+      window.addEventListener('cgda:layer-renamed', onLayerRenamed)
+    }
     stopHandles.push(
       watch(
         () =>
@@ -155,7 +167,7 @@ export function createMapCanvasNonWeatherLayerSyncModule(
             .filter((l) => l.importedVector)
             .map(
               (l) =>
-                `${l.instanceId}:${l.visible}:${l.opacity}:${l.importedVector!.featureCount}:${JSON.stringify(l.importedVector!.style ?? null)}`,
+                `${l.instanceId}:${l.name ?? ''}:${l.visible}:${l.opacity}:${l.importedVector!.featureCount}:${JSON.stringify(l.importedVector!.style ?? null)}`,
             )
             .join(','),
         () => {
@@ -172,6 +184,10 @@ export function createMapCanvasNonWeatherLayerSyncModule(
   }
 
   function dispose() {
+    if (onLayerRenamed && typeof window !== 'undefined') {
+      window.removeEventListener('cgda:layer-renamed', onLayerRenamed)
+      onLayerRenamed = null
+    }
     for (const stop of stopHandles) stop()
     stopHandles.length = 0
     overlayImageModule.dispose()

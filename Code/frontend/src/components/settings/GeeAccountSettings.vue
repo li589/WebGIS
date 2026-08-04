@@ -189,10 +189,10 @@ const enabledCount = computed(() => geeAccounts.value.filter((a) => a.enabled).l
           <span class="count-badge">{{ enabledCount }}/{{ geeAccounts.length }}</span>
         </h3>
         <div class="section-actions">
-          <button class="action-btn reload" @click="reloadPool" :disabled="reloading">
+          <button class="action-btn reload" :disabled="reloading" @click="reloadPool">
             {{ reloading ? '重载中...' : '重载账户池' }}
           </button>
-          <button class="action-btn add" @click="openAddForm" v-if="!showAddForm">
+          <button v-if="!showAddForm" class="action-btn add" @click="openAddForm">
             + 添加账户
           </button>
         </div>
@@ -241,13 +241,13 @@ const enabledCount = computed(() => geeAccounts.value.filter((a) => a.enabled).l
           <input
             type="file"
             accept=".json,application/json"
-            @change="handleFileUpload"
             class="form-file"
+            @change="handleFileUpload"
           />
         </div>
         <div v-if="addForm.error" class="form-error">{{ addForm.error }}</div>
         <div class="form-actions">
-          <button class="action-btn save" @click="submitAddForm" :disabled="addForm.saving">
+          <button class="action-btn save" :disabled="addForm.saving" @click="submitAddForm">
             {{ addForm.saving ? '保存中...' : '保存账户' }}
           </button>
           <button class="action-btn cancel" @click="closeAddForm">取消</button>
@@ -281,8 +281,8 @@ const enabledCount = computed(() => geeAccounts.value.filter((a) => a.enabled).l
               <button
                 class="toggle-switch"
                 :class="{ on: account.enabled }"
-                @click="toggleAccount(account)"
                 :title="account.enabled ? '点击禁用' : '点击启用'"
+                @click="toggleAccount(account)"
               >
                 <span class="toggle-knob"></span>
               </button>
@@ -297,8 +297,8 @@ const enabledCount = computed(() => geeAccounts.value.filter((a) => a.enabled).l
           <div class="account-actions">
             <button
               class="action-btn test"
-              @click="runTest(account.account_id)"
               :disabled="testingAccounts.has(account.account_id)"
+              @click="runTest(account.account_id)"
             >
               {{ testingAccounts.has(account.account_id) ? '测试中...' : '测试' }}
             </button>
@@ -312,8 +312,8 @@ const enabledCount = computed(() => geeAccounts.value.filter((a) => a.enabled).l
             <template v-else>
               <button
                 class="action-btn confirm-delete"
-                @click="deleteAccount(account.account_id)"
                 :disabled="deletingAccounts.has(account.account_id)"
+                @click="deleteAccount(account.account_id)"
               >
                 {{ deletingAccounts.has(account.account_id) ? '删除中...' : '确认删除' }}
               </button>

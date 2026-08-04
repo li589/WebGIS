@@ -11,6 +11,8 @@ Owns all "after ``service.submit_job()`` returns" concerns:
   file exists locally) or returns external URL-backed refs.
 - :meth:`_uri_to_local_path` converts ``file://`` / bare-path URIs to
   :class:`Path` instances, with Windows drive-letter normalization.
+- When ``map_layer`` is requested, science ``.mat`` products are committed
+  as imported overlays so the frontend can paint them immediately.
 
 The bridge service calls :meth:`build_result_refs` after a successful
 ``submit_job``; this module is unaware of validation, dispatch, or
@@ -20,6 +22,8 @@ the bridge service itself.
 
 from __future__ import annotations
 
+import logging
+import re
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -28,9 +32,45 @@ from urllib.parse import unquote, urlparse
 from app.services.result_storage import result_storage_service
 from shared.contracts.api_contracts import (
     ResultKind,
+    WeatherLayerRenderHint,
     WorkflowResultReference,
     WorkflowSubmitRequest,
 )
+
+logger = logging.getLogger(__name__)
+
+# Product type → GeoTIFF extract config for map_layer publishing.
+_MAPPABLE_PRODUCTS: dict[str, dict[str, Any]] = {
+    "omega_sf_omega_pixel": {
+        "variable": "omega_pix_map",
+        "grid_preset": "ease2-global-9km",
+        "label": "OMEGA",
+        "palette": "cividis",
+    },
+    "omega_sf_sm_block_dir": {
+        "variable": "SM",
+        "grid_preset": "ease2-global-9km",
+        "label": "SM",
+        "palette": "ylgnbu",
+        "from_block_dir": True,
+    },
+    "omega_sf_vod_block_dir": {
+        "variable": "VOD",
+        "grid_preset": "ease2-global-9km",
+        "label": "VOD",
+        "palette": "viridis",
+        "from_block_dir": True,
+    },
+    "omega_sf_omega_block_dir": {
+        "variable": "OMEGA",
+        "grid_preset": "ease2-global-9km",
+        "label": "OMEGA",
+        "palette": "cividis",
+        "from_block_dir": True,
+    },
+}
+
+_BLOCK_MAT_RE = re.compile(r"^\d{8}_\d{8}\.mat$", re.IGNORECASE)
 
 # MIME types for the three standard algorithm artifact kinds. Indexed by
 # the artifact_name key used in result_dto.artifacts.
@@ -136,6 +176,31 @@ class PythonProviderResultBuilder:
                 result_dto=result_dto,
             )
         )
+
+        # When map_layer is requested, convert science products to imported
+        # overlays and emit map_layer refs the frontend can paint.
+        if ResultKind.map_layer.value in requested_output_kinds:
+            time_start: str | None = None
+            time_end: str | None = None
+            tr = getattr(payload, "time_range", None)
+            if tr is not None:
+                start_at = getattr(tr, "start_at", None)
+                end_at = getattr(tr, "end_at", None)
+                if start_at is not None:
+                    time_start = str(start_at).replace("-", "")[:8]
+                if end_at is not None:
+                    time_end = str(end_at).replace("-", "")[:8]
+            result_refs.extend(
+                self._build_product_map_layer_refs(
+                    run_id=run_id,
+                    requested_at=requested_at,
+                    payload=payload,
+                    result_dto=result_dto,
+                    time_start=time_start,
+                    time_end=time_end,
+                )
+            )
+
         return result_refs
 
     # ------------------------------------------------------------------
@@ -378,6 +443,243 @@ class PythonProviderResultBuilder:
             resource_key=resource_key,
             updated_at=requested_at,
         )
+
+    # ------------------------------------------------------------------
+    # Map layer publishing (science products → imported overlays)
+    # ------------------------------------------------------------------
+
+    def _build_product_map_layer_refs(
+        self,
+        *,
+        run_id: str,
+        requested_at: datetime,
+        payload: WorkflowSubmitRequest,
+        result_dto: dict[str, Any],
+        time_start: str | None = None,
+        time_end: str | None = None,
+    ) -> list[WorkflowResultReference]:
+        """Commit mappable products as overlays and emit map_layer refs."""
+        products = result_dto.get("products")
+        if not isinstance(products, list):
+            return []
+
+        refs: list[WorkflowResultReference] = []
+        for idx, product in enumerate(products):
+            if not isinstance(product, dict):
+                continue
+            ref = self._build_product_map_layer_ref(
+                run_id=run_id,
+                requested_at=requested_at,
+                payload=payload,
+                product=product,
+                index=idx,
+                time_start=time_start,
+                time_end=time_end,
+            )
+            if ref is not None:
+                refs.append(ref)
+        return refs
+
+    def _build_product_map_layer_ref(
+        self,
+        *,
+        run_id: str,
+        requested_at: datetime,
+        payload: WorkflowSubmitRequest,
+        product: dict[str, Any],
+        index: int,
+        time_start: str | None = None,
+        time_end: str | None = None,
+    ) -> WorkflowResultReference | None:
+        product_type = str(product.get("type") or "")
+        config = _MAPPABLE_PRODUCTS.get(product_type)
+        if config is None:
+            return None
+
+        uri = str(
+            product.get("download_url")
+            or product.get("preview_url")
+            or product.get("uri")
+            or ""
+        ).strip()
+        local_path = self._uri_to_local_path(uri) if uri else None
+        if local_path is None:
+            return None
+
+        source_path = local_path
+        if config.get("from_block_dir"):
+            if not local_path.is_dir():
+                return None
+            try:
+                from app.data_io.services.raster_timeseries import (
+                    upsert_block_dir_timeseries,
+                )
+
+                registered_ts = upsert_block_dir_timeseries(
+                    local_path,
+                    variable_id=str(product.get("variable") or config["variable"]),
+                    label=str(config["label"]),
+                    run_id=run_id,
+                    grid_preset=str(config["grid_preset"]),
+                    palette=str(config.get("palette") or "cividis"),
+                    native_step="8d",
+                    time_start=time_start,
+                    time_end=time_end,
+                )
+            except Exception:
+                logger.exception(
+                    "Failed to publish TS map_layer for product type=%s path=%s",
+                    product_type,
+                    local_path,
+                )
+                return None
+
+            overlay_id = str(registered_ts.get("layer_id") or "").strip()
+            if not overlay_id:
+                return None
+            bounds = registered_ts.get("bounds")
+            cog_bbox = None
+            if (
+                isinstance(bounds, (list, tuple))
+                and len(bounds) == 4
+                and all(isinstance(v, (int, float)) for v in bounds)
+            ):
+                cog_bbox = {
+                    "west": float(bounds[0]),
+                    "south": float(bounds[1]),
+                    "east": float(bounds[2]),
+                    "north": float(bounds[3]),
+                    "crs": "EPSG:4326",
+                }
+            label = str(config["label"])
+            tags = as_dict(product.get("tags"))
+            layer_tag = str(tags.get("layer") or label)
+            render_hint = WeatherLayerRenderHint(
+                layer_id=payload.layer_id or overlay_id,
+                paint_mode="grid_fill",
+                palette=str(config.get("palette") or "cividis"),
+                primary_metric=str(product.get("variable") or config["variable"]),
+                unit_label=layer_tag,
+                opacity=0.8,
+                notes=[
+                    f"product={product_type}",
+                    f"overlay={overlay_id}",
+                    "native_step=8d",
+                ],
+            )
+            return WorkflowResultReference(
+                result_id=f"algorithm-map-{index}-{run_id[-8:]}",
+                result_kind=ResultKind.map_layer,
+                title=f"Algorithm Map Layer: {layer_tag}",
+                mime_type="application/json",
+                inline_data={
+                    "render_hint": render_hint.model_dump(mode="json"),
+                    "layer_assets": {
+                        "overlay_layer_id": overlay_id,
+                        "cog_url": f"/overlay-preview/{overlay_id}",
+                        "cog_preview_url": f"/overlay-preview/{overlay_id}",
+                        "cog_bbox": cog_bbox,
+                        "product_tag": layer_tag,
+                        "source_path": str(local_path),
+                        "time_list": registered_ts.get("time_list") or [],
+                        "default_time": registered_ts.get("default_time"),
+                        "native_step": registered_ts.get("native_step") or "8d",
+                    },
+                },
+                updated_at=requested_at,
+            )
+        elif not local_path.is_file():
+            return None
+
+        variable = str(product.get("variable") or config["variable"])
+        # omega_pixel ProductRef historically used variable=OMEGA; force the
+        # actual MAT key so extract does not KeyError.
+        if product_type == "omega_sf_omega_pixel":
+            variable = "omega_pix_map"
+
+        try:
+            from app.data_io.services.raster_commit import (
+                commit_science_raster_variable,
+            )
+
+            registered = commit_science_raster_variable(
+                source_path,
+                variable_id=variable,
+                source_name=f"{run_id}_{config['label']}",
+                upload_id=f"wf-{run_id[-8:]}-{index}",
+                grid_preset=str(config["grid_preset"]),
+                auto_confirm=True,
+            )
+        except Exception:
+            logger.exception(
+                "Failed to publish map_layer for product type=%s path=%s",
+                product_type,
+                source_path,
+            )
+            return None
+
+        overlay_id = str(registered.get("layer_id") or "").strip()
+        if not overlay_id:
+            return None
+
+        bounds = registered.get("bounds")
+        cog_bbox = None
+        if (
+            isinstance(bounds, (list, tuple))
+            and len(bounds) == 4
+            and all(isinstance(v, (int, float)) for v in bounds)
+        ):
+            cog_bbox = {
+                "west": float(bounds[0]),
+                "south": float(bounds[1]),
+                "east": float(bounds[2]),
+                "north": float(bounds[3]),
+                "crs": "EPSG:4326",
+            }
+
+        label = str(config["label"])
+        tags = as_dict(product.get("tags"))
+        layer_tag = str(tags.get("layer") or label)
+        render_hint = WeatherLayerRenderHint(
+            layer_id=payload.layer_id or overlay_id,
+            paint_mode="grid_fill",
+            palette=str(config.get("palette") or "cividis"),
+            primary_metric=variable,
+            unit_label=layer_tag,
+            opacity=0.8,
+            notes=[f"product={product_type}", f"overlay={overlay_id}"],
+        )
+
+        return WorkflowResultReference(
+            result_id=f"algorithm-map-{index}-{run_id[-8:]}",
+            result_kind=ResultKind.map_layer,
+            title=f"Algorithm Map Layer: {layer_tag}",
+            mime_type="application/json",
+            inline_data={
+                "render_hint": render_hint.model_dump(mode="json"),
+                "layer_assets": {
+                    "overlay_layer_id": overlay_id,
+                    "cog_url": f"/overlay-preview/{overlay_id}",
+                    "cog_preview_url": f"/overlay-preview/{overlay_id}",
+                    "cog_bbox": cog_bbox,
+                    "product_tag": layer_tag,
+                    "source_path": str(source_path),
+                },
+            },
+            updated_at=requested_at,
+        )
+
+    @staticmethod
+    def _latest_block_mat(directory: Path) -> Path | None:
+        """Pick the newest YYYYMMDD_YYYYMMDD.mat under a block output dir."""
+        candidates = [
+            path
+            for path in directory.iterdir()
+            if path.is_file() and _BLOCK_MAT_RE.match(path.name)
+        ]
+        if not candidates:
+            return None
+        return sorted(candidates, key=lambda p: p.name)[-1]
 
     # ------------------------------------------------------------------
     # URI → local path resolution

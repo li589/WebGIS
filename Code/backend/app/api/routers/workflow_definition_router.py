@@ -70,6 +70,115 @@ def compile_graph(payload: dict[str, Any]) -> dict[str, Any]:
     return {"workflow_definition": definition, "ok": True}
 
 
+@router.post(
+    "/dry-validate",
+    dependencies=[Depends(require_write_access)],
+    tags=["workflow-definition"],
+)
+def dry_validate_graph(payload: dict[str, Any]) -> dict[str, Any]:
+    """图模式提交前干跑校验：编译 + 静态结构检查，不入队。
+
+    成功返回 ``{ ok: true, workflow_definition, issues: [] }``；
+    编译失败返回 422 + 字段级 issues（与提交期校验风格一致）。
+    """
+    issues: list[dict[str, str]] = []
+    try:
+        definition = compile_litegraph_to_workflow_definition(
+            workflow_id=str(payload.get("workflow_id") or "canvas_workflow"),
+            name=payload.get("name"),
+            description=payload.get("description"),
+            nodes=payload.get("nodes")
+            if isinstance(payload.get("nodes"), list)
+            else [],
+            links=payload.get("links")
+            if isinstance(payload.get("links"), list)
+            else [],
+        )
+    except WorkflowGraphCompileError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail={
+                "error_type": "validation",
+                "user_message": "工作流图未通过预检，请检查节点与连线。",
+                "issues": [
+                    {
+                        "field": "graph",
+                        "code": "compile_error",
+                        "message": str(exc),
+                    }
+                ],
+            },
+        ) from exc
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail={
+                "error_type": "validation",
+                "user_message": "工作流图预检失败。",
+                "issues": [
+                    {
+                        "field": "graph",
+                        "code": "compile_error",
+                        "message": f"编译失败: {exc}",
+                    }
+                ],
+            },
+        ) from exc
+
+    nodes = definition.get("nodes") if isinstance(definition, dict) else None
+    if not isinstance(nodes, list) or not nodes:
+        issues.append(
+            {
+                "field": "nodes",
+                "code": "empty_graph",
+                "message": "工作流图没有可执行节点。",
+            }
+        )
+    else:
+        module_nodes = [
+            n
+            for n in nodes
+            if isinstance(n, dict) and str(n.get("type") or "").startswith("module/")
+        ]
+        if not module_nodes:
+            issues.append(
+                {
+                    "field": "nodes",
+                    "code": "no_module",
+                    "message": "图中缺少算法模块节点（module/*）。",
+                }
+            )
+        for node in module_nodes:
+            props = (
+                node.get("properties")
+                if isinstance(node.get("properties"), dict)
+                else {}
+            )
+            module_name = (
+                props.get("module_name")
+                or str(node.get("type") or "").split("/", 1)[-1]
+            )
+            if not module_name:
+                issues.append(
+                    {
+                        "field": f"node:{node.get('id')}",
+                        "code": "module_name_missing",
+                        "message": "模块节点缺少 module_name。",
+                    }
+                )
+
+    if issues:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail={
+                "error_type": "validation",
+                "user_message": "工作流图未通过预检，请检查节点配置。",
+                "issues": issues,
+            },
+        )
+    return {"ok": True, "workflow_definition": definition, "issues": []}
+
+
 # ─── 工作流定义 CRUD ──────────────────────────────────────────────────────────
 @router.get("", tags=["workflow-definition"])
 def list_definitions() -> dict[str, Any]:

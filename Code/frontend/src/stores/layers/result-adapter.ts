@@ -6,6 +6,10 @@ import type {
   WorkflowRunViewResponse,
 } from '../../services/runtime-api'
 import type { JobLayerItem, JobLayerMapLayerPayload } from './types'
+import {
+  localizeWorkflowDiagnostics,
+  localizeWorkflowErrorMessage,
+} from '../../utils/workflow-error-messages'
 
 function asRecord(value: unknown): Record<string, unknown> | null {
   return value !== null && typeof value === 'object' ? (value as Record<string, unknown>) : null
@@ -121,7 +125,7 @@ function extractDiagnosticNotes(run: WorkflowRunStatusResponse) {
     notes.push(`图层状态：${layerStatus}`)
   }
   if (!notes.length && errorMessage) {
-    notes.push(errorMessage)
+    notes.push(localizeWorkflowErrorMessage(errorMessage))
   }
   return notes
 }
@@ -129,8 +133,23 @@ function extractDiagnosticNotes(run: WorkflowRunStatusResponse) {
 function extractMapLayerPayload(
   resultRefs: WorkflowResultReference[] | undefined,
 ): JobLayerMapLayerPayload | undefined {
-  const mapLayerResult = resultRefs?.find((item) => item.result_kind === 'map_layer')
-  const payload = asRecord(mapLayerResult?.inline_data)
+  const mapLayerResults = (resultRefs ?? []).filter((item) => item.result_kind === 'map_layer')
+  if (!mapLayerResults.length) return undefined
+
+  // Prefer a ref that already carries paintable assets (COG / overlay).
+  const preferred =
+    mapLayerResults.find((item) => {
+      const payload = asRecord(item.inline_data)
+      const assets = asRecord(payload?.layer_assets)
+      return Boolean(
+        assets?.cog_preview_url ||
+        assets?.cog_url ||
+        assets?.geojson_url ||
+        assets?.overlay_layer_id,
+      )
+    }) ?? mapLayerResults[0]
+
+  const payload = asRecord(preferred.inline_data)
   if (!payload) {
     return undefined
   }
@@ -148,6 +167,12 @@ function extractMapLayerPayload(
             typeof layerAssets.cog_preview_url === 'string'
               ? layerAssets.cog_preview_url
               : undefined,
+          overlayLayerId:
+            typeof layerAssets.overlay_layer_id === 'string'
+              ? layerAssets.overlay_layer_id
+              : undefined,
+          productTag:
+            typeof layerAssets.product_tag === 'string' ? layerAssets.product_tag : undefined,
           cogBbox:
             asRecord(layerAssets.cog_bbox) &&
             typeof asRecord(layerAssets.cog_bbox)?.west === 'number'
@@ -165,6 +190,55 @@ function extractMapLayerPayload(
         }
       : undefined,
   }
+}
+
+/** Collect imported-overlay map layers emitted by algorithm workflows. */
+export function extractOverlayImportsFromResultRefs(
+  resultRefs: WorkflowResultReference[] | undefined,
+): Array<{
+  overlayLayerId: string
+  title: string
+  productTag?: string
+  bounds?: [number, number, number, number]
+  sourceCrs?: string
+}> {
+  const out: Array<{
+    overlayLayerId: string
+    title: string
+    productTag?: string
+    bounds?: [number, number, number, number]
+    sourceCrs?: string
+  }> = []
+  for (const item of resultRefs ?? []) {
+    if (item.result_kind !== 'map_layer') continue
+    const payload = asRecord(item.inline_data)
+    const assets = asRecord(payload?.layer_assets)
+    const overlayId =
+      typeof assets?.overlay_layer_id === 'string' ? assets.overlay_layer_id.trim() : ''
+    if (!overlayId) continue
+    const bbox = asRecord(assets?.cog_bbox)
+    const bounds =
+      bbox &&
+      typeof bbox.west === 'number' &&
+      typeof bbox.south === 'number' &&
+      typeof bbox.east === 'number' &&
+      typeof bbox.north === 'number'
+        ? ([Number(bbox.west), Number(bbox.south), Number(bbox.east), Number(bbox.north)] as [
+            number,
+            number,
+            number,
+            number,
+          ])
+        : undefined
+    out.push({
+      overlayLayerId: overlayId,
+      title: item.title || overlayId,
+      productTag: typeof assets?.product_tag === 'string' ? assets.product_tag : undefined,
+      bounds,
+      sourceCrs: typeof bbox?.crs === 'string' ? bbox.crs : undefined,
+    })
+  }
+  return out
 }
 
 async function fetchGeojsonData(geojsonUrl: string): Promise<Record<string, unknown> | undefined> {
@@ -199,7 +273,19 @@ export async function buildJobLayer(
 ): Promise<JobLayerItem> {
   const status = run.status === 'accepted' ? 'queued' : run.status
   const entryName = extractWorkflowEntryName(run)
-  const diagnosticNotes = extractDiagnosticNotes(run)
+  const rawDiagnostics = run.diagnostics ?? []
+  const diagnosticNotes = [
+    ...extractDiagnosticNotes(run),
+    ...localizeWorkflowDiagnostics(
+      rawDiagnostics.filter(
+        (item) =>
+          typeof item === 'string' &&
+          item.trim() &&
+          !item.startsWith('validation_') &&
+          !item.startsWith('error_message='),
+      ),
+    ),
+  ].filter((note, index, arr) => arr.indexOf(note) === index)
   const previousJobLayer = options.previousJobLayer
   const resultView: WorkflowRunViewResponse | null = shouldFetchWorkflowRunView(run)
     ? await getWorkflowRunView(run.run_id).catch(() => previousJobLayer?.resultView ?? null)
@@ -221,6 +307,7 @@ export async function buildJobLayer(
       }
     }
   }
+  const localizedMessage = localizeWorkflowErrorMessage(run.message)
   return {
     jobId: run.run_id,
     name: entryName ?? catalogName,
@@ -229,7 +316,7 @@ export async function buildJobLayer(
     progress: run.progress,
     createdAt: run.created_at,
     updatedAt: run.updated_at,
-    message: run.message,
+    message: localizedMessage,
     metrics: extractMetrics(run),
     reportSummary,
     resultDto: run.result_dto ?? undefined,
@@ -238,5 +325,9 @@ export async function buildJobLayer(
     mapLayerPayload,
     diagnostics: run.diagnostics ?? [],
     diagnosticNotes,
+    retryOfRunId:
+      typeof run.executor_metadata?.retry_of_run_id === 'string'
+        ? run.executor_metadata.retry_of_run_id
+        : undefined,
   }
 }

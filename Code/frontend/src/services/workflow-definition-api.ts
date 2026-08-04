@@ -199,3 +199,21 @@ export async function compileWorkflowGraph(payload: {
     body: JSON.stringify(payload),
   })
 }
+
+/** 图模式提交前干跑校验（不入队） */
+export async function dryValidateWorkflowGraph(payload: {
+  workflow_id: string
+  name?: string
+  description?: string | null
+  nodes: unknown[]
+  links: unknown[]
+}): Promise<{
+  ok: boolean
+  workflow_definition?: Record<string, unknown>
+  issues?: Array<{ field?: string; code?: string; message?: string }>
+}> {
+  return requestJson(`${BASE}/dry-validate`, {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  })
+}

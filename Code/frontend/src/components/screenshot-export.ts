@@ -184,8 +184,7 @@ function copyPaintFromComputed(style: CSSStyleDeclaration): Array<[string, strin
 
   // Provide a clean translucent background for UI panels.
   const bg = style.backgroundColor
-  const isClear =
-    !bg || bg === 'transparent' || bg === 'rgba(0, 0, 0, 0)' || bg === 'rgba(0,0,0,0)'
+  const isClear = !bg || bg === 'transparent' || bg === 'rgba(0, 0, 0, 0)' || bg === 'rgba(0,0,0,0)'
   if (isClear && style.backdropFilter && style.backdropFilter !== 'none') {
     props.push(['background-color', 'rgba(8, 18, 33, 0.92)'])
     props.push(['background-image', 'none'])
@@ -374,13 +373,7 @@ export async function compositeMapUnderUi(
   if (mapSnapshot) {
     try {
       const mapImage = await loadImage(mapSnapshot.dataUrl)
-      ctx.drawImage(
-        mapImage,
-        mapSnapshot.dx,
-        mapSnapshot.dy,
-        mapSnapshot.dw,
-        mapSnapshot.dh,
-      )
+      ctx.drawImage(mapImage, mapSnapshot.dx, mapSnapshot.dy, mapSnapshot.dw, mapSnapshot.dh)
     } catch (err) {
       console.warn('[ScreenshotExport] Failed to load map snapshot image:', err)
     }

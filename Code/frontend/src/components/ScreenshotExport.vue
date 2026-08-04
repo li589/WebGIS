@@ -231,7 +231,7 @@ async function capture() {
       <div class="panel-header">
         <span class="panel-icon" aria-hidden="true">◫</span>
         <span>导出截图</span>
-        <button type="button" class="close-btn" @click.prevent="emit('close')" title="关闭">
+        <button type="button" class="close-btn" title="关闭" @click.prevent="emit('close')">
           <span aria-hidden="true">✕</span>
         </button>
       </div>

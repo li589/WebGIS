@@ -43,9 +43,10 @@ export function createMapStagePresentationModule(
     const container = options.getMapContainer()
     if (!container) return
 
-    const navCtrl = typeof container.querySelector === 'function'
-      ? container.querySelector('.maplibregl-ctrl-bottom-right .map-custom-nav-ctrl')
-      : null
+    const navCtrl =
+      typeof container.querySelector === 'function'
+        ? container.querySelector('.maplibregl-ctrl-bottom-right .map-custom-nav-ctrl')
+        : null
 
     if (navCtrl) {
       if (options.getUsesLightNavigationTheme()) {
@@ -58,9 +59,10 @@ export function createMapStagePresentationModule(
       return
     }
 
-    const navButtons = typeof container.querySelectorAll === 'function'
-      ? container.querySelectorAll('.maplibregl-ctrl-bottom-right .maplibregl-ctrl-group button')
-      : null
+    const navButtons =
+      typeof container.querySelectorAll === 'function'
+        ? container.querySelectorAll('.maplibregl-ctrl-bottom-right .maplibregl-ctrl-group button')
+        : null
     if (!navButtons?.length) return
 
     const buttonBackground = options.getUsesLightNavigationTheme()

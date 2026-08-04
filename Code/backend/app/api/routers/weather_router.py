@@ -5,6 +5,7 @@ from urllib.error import HTTPError, URLError
 from urllib.request import urlopen
 
 from fastapi import APIRouter, HTTPException, status
+from pydantic import BaseModel, Field
 from fastapi.responses import JSONResponse
 
 from app.api.routers._helpers import service_json_response
@@ -166,18 +167,31 @@ def get_open_meteo_sync_overview():
     return overview
 
 
+class OpenMeteoSyncTriggerRequest(BaseModel):
+    """Optional one-shot domains override (does not persist OPEN_METEO_SYNC_DOMAINS)."""
+
+    domains: str | None = Field(
+        default=None,
+        description="Comma-separated model ids for this sync only, e.g. ecmwf_ifs025,gfs_global",
+    )
+
+
 @router.post("/weather/sync/trigger", tags=["weather"])
-def trigger_open_meteo_sync():
+def trigger_open_meteo_sync(
+    body: OpenMeteoSyncTriggerRequest = OpenMeteoSyncTriggerRequest(),
+):
     """手动触发 Open-Meteo 数据同步。
 
     优先 Celery 异步派发；broker 卡住/超时时降级为本地后台线程。
-    注意：Celery apply_async 必须在限时线程中调用，且 ThreadPool 不可 wait=True
-    退出（否则 timeout 后仍会挂死整个 HTTP 请求 → 前端 AbortError）。
+    可选 body.domains 临时覆盖同步域（白名单校验，不改环境变量）。
+    Docker/compose 不可用时返回 503 sync_unavailable。
     """
     import concurrent.futures
+    import shutil
     import threading
     import uuid
     from datetime import datetime, timezone
+    from pathlib import Path
 
     from app.core.celery_app import celery_available
     from app.core.config import settings
@@ -185,6 +199,45 @@ def trigger_open_meteo_sync():
         execute_open_meteo_sync,
         sync_open_meteo_data,
     )
+    from app.weatherengine.supported_models import is_supported_weather_model
+
+    domains_override: str | None = None
+    if body.domains and body.domains.strip():
+        parts = [p.strip() for p in body.domains.split(",") if p.strip()]
+        if not parts:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="domains must list at least one model id",
+            )
+        bad = [p for p in parts if not is_supported_weather_model(p)]
+        if bad:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Unsupported weather model(s): {', '.join(bad)}",
+            )
+        domains_override = ",".join(parts)
+
+    docker_ok = bool(shutil.which("docker"))
+    compose_ok = Path(
+        settings.open_meteo_sync_compose_dir, "docker-compose.yml"
+    ).is_file()
+    if not docker_ok or not compose_ok:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail={
+                "code": "sync_unavailable",
+                "message": (
+                    "Open-Meteo sync service unavailable: "
+                    + (
+                        "Docker CLI not found"
+                        if not docker_ok
+                        else f"compose file missing under {settings.open_meteo_sync_compose_dir}"
+                    )
+                ),
+                "docker_cli_available": docker_ok,
+                "compose_file_exists": compose_ok,
+            },
+        )
 
     def _run_local(task_id: str) -> None:
         _LOCAL_SYNC_JOBS[task_id] = {
@@ -193,9 +246,10 @@ def trigger_open_meteo_sync():
             "info": None,
             "mode": "local_thread",
             "finished_at": None,
+            "domains": domains_override or settings.open_meteo_sync_domains,
         }
         try:
-            result = execute_open_meteo_sync()
+            result = execute_open_meteo_sync(domains=domains_override)
             invalidate_weather_coverage_cache()
             _LOCAL_SYNC_JOBS[task_id] = {
                 "task_id": task_id,
@@ -229,6 +283,7 @@ def trigger_open_meteo_sync():
             "status": "dispatched",
             "task_id": task_id,
             "mode": "local_thread",
+            "domains": domains_override or settings.open_meteo_sync_domains,
             "message": (
                 f"{reason} Sync running in a local background thread. "
                 "Poll /weather/sync/status?task_id=..."
@@ -241,6 +296,7 @@ def trigger_open_meteo_sync():
         try:
             fut = pool.submit(
                 lambda: sync_open_meteo_data.apply_async(
+                    kwargs={"domains": domains_override} if domains_override else {},
                     queue=settings.workflow_queue_weather_batch,
                 )
             )
@@ -249,6 +305,7 @@ def trigger_open_meteo_sync():
                 "status": "dispatched",
                 "task_id": async_result.task_id,
                 "mode": "celery",
+                "domains": domains_override or settings.open_meteo_sync_domains,
                 "message": "Sync task dispatched via Celery. Poll /weather/sync/status?task_id=...",
             }
         except concurrent.futures.TimeoutError:

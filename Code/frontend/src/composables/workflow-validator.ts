@@ -454,6 +454,31 @@ function validateDownloadNode(node: WorkflowDefinitionNode): ValidationIssue[] {
     }
   }
 
+  if (nodeType === 'download/gldas_download') {
+    if (isEmpty(props.short_name)) {
+      issues.push({
+        nodeId,
+        nodeType,
+        nodeTitle,
+        field: 'short_name',
+        severity: 'error',
+        code: 'required_empty',
+        message: 'GLDAS 产品 short_name 不能为空',
+      })
+    }
+    if (isEmpty(props.local_dir)) {
+      issues.push({
+        nodeId,
+        nodeType,
+        nodeTitle,
+        field: 'local_dir',
+        severity: 'error',
+        code: 'required_empty',
+        message: '本地下载目录不能为空',
+      })
+    }
+  }
+
   if (nodeType === 'download/fy_preprocess') {
     if (isEmpty(props.input_dir)) {
       issues.push({

@@ -165,7 +165,15 @@ def get_celery_runtime_details() -> dict[str, Any]:
 
 
 def revoke_task(task_id: str, terminate: bool = False) -> None:
-    """撤销 Celery 任务。"""
+    """撤销 Celery 任务。
+
+    Windows 上 ``terminate=True`` 对子进程树清理不保证；配合算法侧
+    ``cancel.requested`` 旗标做协作式停止。
+    """
     if not celery_available or celery_app is None:
         return
-    celery_app.control.revoke(task_id, terminate=terminate)
+    try:
+        celery_app.control.revoke(task_id, terminate=terminate)
+    except Exception:
+        logger = __import__("logging").getLogger(__name__)
+        logger.warning("revoke_task failed for %s", task_id, exc_info=True)

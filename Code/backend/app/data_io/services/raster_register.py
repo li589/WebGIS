@@ -8,14 +8,21 @@ import uuid
 from pathlib import Path
 from typing import Any
 
+from rasterio.warp import transform_bounds as _transform_bounds
+
 from app.services.crs import crs_detector
 from app.data_io.services.paths import (
     IMPORTS_DIR,
     assert_quota_available,
+    dir_size_bytes,
     ensure_imports_root,
 )
 from app.services.geo_math import overlay_safe_wgs84_bounds
-from app.services.overlay_registry import OverlaySpec, register_overlay
+from app.services.overlay_registry import (
+    OverlaySpec,
+    register_overlay,
+    unregister_overlay,
+)
 from app.services.raster_preview_service import raster_preview_service
 
 
@@ -36,12 +43,29 @@ def register_geotiff_as_imported(
     source_filename: str | None = None,
     layer_id: str | None = None,
     extra_meta: dict[str, Any] | None = None,
+    replace_existing: bool = False,
 ) -> dict[str, Any]:
     ensure_imports_root()
-    assert_quota_available(src_path.stat().st_size if src_path.exists() else 0)
+    src_size = src_path.stat().st_size if src_path.exists() else 0
 
     layer_id = layer_id or f"imported-{uuid.uuid4().hex[:12]}"
     dest_dir = IMPORTS_DIR / layer_id
+    replace_bytes = 0
+    replaced = False
+    if dest_dir.exists():
+        if not replace_existing:
+            raise ValueError(
+                f"图层已存在: {layer_id}（可改用覆盖策略 conflict_policy=overwrite）"
+            )
+        replace_bytes = dir_size_bytes(dest_dir)
+        try:
+            unregister_overlay(layer_id)
+        except Exception:
+            pass
+        shutil.rmtree(dest_dir, ignore_errors=True)
+        replaced = True
+
+    assert_quota_available(src_size, replace_bytes=replace_bytes)
     dest_dir.mkdir(parents=True, exist_ok=True)
 
     filename = source_filename or src_path.name
@@ -71,6 +95,19 @@ def register_geotiff_as_imported(
     needs_confirm = detection.needs_user_confirm
     detection_notes = detection.notes
 
+    # 地理 CRS：检测 bounds 是否 XY 颠倒
+    needs_xy_swap = False
+    xy_swapped, xy_note = crs_detector.detect_xy_swap(
+        (float(west), float(south), float(east), float(north)),
+        source_crs=source_crs,
+    )
+    if xy_swapped:
+        needs_xy_swap = True
+        needs_confirm = True
+        detection_notes = f"{detection_notes}；{xy_note}".strip("；")
+    elif xy_note and "正常" not in xy_note:
+        detection_notes = f"{detection_notes}；{xy_note}".strip("；")
+
     # 防御：即便检测器认为无需确认，若原始 bounds 不像 WGS84（投影米制 /
     # 无 CRS / 元数据与数据不符），也强制进入确认流，避免 overlay 挂到地图外。
     if not _bounds_look_like_wgs84(
@@ -88,8 +125,8 @@ def register_geotiff_as_imported(
         png_bytes = raster_preview_service.render_cog_preview(
             cog_path=stored,
             palette="wind-blue",
-            width=min(1024, width),
-            height=min(1024, height),
+            width=min(2048, width),
+            height=min(2048, height),
         )
         png_path.write_bytes(png_bytes)
     except Exception as exc:
@@ -97,31 +134,51 @@ def register_geotiff_as_imported(
         raise RuntimeError(f"预览生成失败: {exc}") from exc
 
     bounds = [float(west), float(south), float(east), float(north)]
-    bounds_data = {
-        "bounds": bounds,
-        "meta": {
-            "layer_id": layer_id,
-            "category": "static",
-            "palette": "wind-blue",
-            "vmin": None,
-            "vmax": None,
-            "unit": "",
-            "opacity": 0.7,
-            "crs": source_crs,
-            "time_list": [],
-            "default_time": None,
-            "current_time": None,
-            "source_filename": filename,
-            "source_crs": source_crs,
-            "source_crs_confidence": detection.confidence,
-            "source_crs_method": detection.method,
-            "source_crs_notes": detection_notes,
-            "source_width": width,
-            "source_height": height,
-            "source_bands": count,
-            **(extra_meta or {}),
-        },
+    extra = dict(extra_meta or {})
+    time_list = extra.get("time_list")
+    if not isinstance(time_list, list):
+        time_list = []
+    time_list = [str(t) for t in time_list]
+    default_time = extra.get("default_time")
+    if default_time is not None:
+        default_time = str(default_time)
+    elif time_list:
+        default_time = time_list[-1]
+    native_step = extra.get("native_step")
+    native_step = str(native_step) if native_step else None
+    follow_policy = extra.get("follow_policy")
+    follow_policy = str(follow_policy) if follow_policy else None
+
+    meta = {
+        "layer_id": layer_id,
+        "category": "static",
+        "palette": "wind-blue",
+        "vmin": None,
+        "vmax": None,
+        "unit": "",
+        "opacity": 0.7,
+        "crs": source_crs,
+        "time_list": time_list,
+        "default_time": default_time,
+        "current_time": default_time,
+        "native_step": native_step,
+        "follow_policy": follow_policy,
+        "source_filename": filename,
+        "source_crs": source_crs,
+        "source_crs_confidence": detection.confidence,
+        "source_crs_method": detection.method,
+        "source_crs_notes": detection_notes,
+        "source_width": width,
+        "source_height": height,
+        "source_bands": count,
+        **extra,
     }
+    # 强制单文件布局为 static；时间语义靠 time_list 表达
+    meta["category"] = "static"
+    meta["time_list"] = time_list
+    meta["default_time"] = default_time
+    meta["current_time"] = default_time
+    bounds_data = {"bounds": bounds, "meta": meta}
     (dest_dir / "bounds.json").write_text(
         json.dumps(bounds_data, ensure_ascii=False, indent=2), encoding="utf-8"
     )
@@ -131,7 +188,27 @@ def register_geotiff_as_imported(
                 "layer_id": layer_id,
                 "kind": "raster",
                 "source_filename": filename,
-                **(extra_meta or {}),
+                "time_list": time_list,
+                "default_time": default_time,
+                "native_step": native_step,
+                "follow_policy": follow_policy,
+                "temporal_kind": meta.get("temporal_kind"),
+                "temporal_source": meta.get("temporal_source"),
+                **{
+                    k: v
+                    for k, v in extra.items()
+                    if k
+                    not in {
+                        "time_list",
+                        "default_time",
+                        "native_step",
+                        "follow_policy",
+                        "temporal_kind",
+                        "temporal_source",
+                        "category",
+                        "current_time",
+                    }
+                },
             },
             ensure_ascii=False,
             indent=2,
@@ -146,6 +223,8 @@ def register_geotiff_as_imported(
             png_filename="preview.png",
             bounds_filename="bounds.json",
             category="static",
+            time_list=time_list,
+            default_time=default_time,
             palette="wind-blue",
             opacity=0.7,
             crs=source_crs,
@@ -160,7 +239,15 @@ def register_geotiff_as_imported(
         "source_crs": source_crs,
         "suggested_crs": suggested_crs,
         "needs_confirm": needs_confirm,
+        "needs_xy_swap": needs_xy_swap,
         "detection_notes": detection_notes,
+        "replaced": replaced,
+        "time_list": time_list,
+        "default_time": default_time,
+        "native_step": native_step,
+        "follow_policy": follow_policy,
+        "temporal_kind": meta.get("temporal_kind"),
+        "temporal_source": meta.get("temporal_source"),
     }
 
 
@@ -194,16 +281,31 @@ def confirm_imported_raster_crs(
     if not src_path.exists():
         raise FileNotFoundError(f"源 TIF 文件不存在: {source_filename}")
 
-    png_bytes, target_bounds = raster_preview_service.render_cog_preview_reprojected(
+    # MapLibre ImageSource：PNG 须为 Web Mercator 内容，bounds 仍报 WGS84 四角。
+    # 全网格科学数据（EASE2 等）禁止 crop_to_data，否则稀疏全球场被裁成局部框导致比例失真。
+    grid_preset = str(meta.get("grid_preset") or "")
+    ease2_like = source_crs.strip().upper() in {
+        "EPSG:6933",
+        "6933",
+    } or grid_preset.startswith("ease2")
+    png_bytes, mercator_bounds = raster_preview_service.render_cog_preview_reprojected(
         cog_path=src_path,
         palette="wind-blue",
-        width=1024,
-        height=1024,
+        width=2048,
+        height=2048,
         source_crs=source_crs,
-        target_crs="EPSG:4326",
+        target_crs="EPSG:3857",
+        crop_to_data=not ease2_like,
     )
-
-    west, south, east, north = target_bounds
+    west, south, east, north = _transform_bounds(
+        "EPSG:3857",
+        "EPSG:4326",
+        float(mercator_bounds[0]),
+        float(mercator_bounds[1]),
+        float(mercator_bounds[2]),
+        float(mercator_bounds[3]),
+        densify_pts=21,
+    )
     west += lng_offset
     east += lng_offset
     south += lat_offset
@@ -238,6 +340,13 @@ def confirm_imported_raster_crs(
         unregister_overlay as _unregister_overlay,
     )
 
+    time_list = meta.get("time_list") if isinstance(meta.get("time_list"), list) else []
+    time_list = [str(t) for t in time_list]
+    default_time = meta.get("default_time")
+    default_time = (
+        str(default_time) if default_time else (time_list[-1] if time_list else None)
+    )
+
     _unregister_overlay(layer_id)
     _register_overlay(
         _OverlaySpec(
@@ -246,6 +355,8 @@ def confirm_imported_raster_crs(
             png_filename="preview.png",
             bounds_filename="bounds.json",
             category="static",
+            time_list=time_list,
+            default_time=default_time,
             palette="wind-blue",
             opacity=0.7,
             crs="EPSG:4326",
@@ -263,4 +374,10 @@ def confirm_imported_raster_crs(
         "target_crs": "EPSG:4326",
         "applied_offset": [lng_offset, lat_offset],
         "detection_notes": f"已按 {source_crs} 重投影到 WGS84",
+        "time_list": time_list,
+        "default_time": default_time,
+        "native_step": meta.get("native_step"),
+        "follow_policy": meta.get("follow_policy"),
+        "temporal_kind": meta.get("temporal_kind"),
+        "temporal_source": meta.get("temporal_source"),
     }

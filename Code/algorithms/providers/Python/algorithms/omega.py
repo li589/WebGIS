@@ -77,6 +77,7 @@ class OmegaConfig:
     qc_domega: float = 1e-3
     qc_dtau: float = 1e-2
     qc_dh: float = 1e-2
+    n_workers: int = 1
 
 
 @dataclass(frozen=True, slots=True)
@@ -149,6 +150,7 @@ def build_omega_config(params: dict[str, Any]) -> OmegaConfig:
         qc_domega=float(params.get("qc_domega", 1e-3)),
         qc_dtau=float(params.get("qc_dtau", 1e-2)),
         qc_dh=float(params.get("qc_dh", 1e-2)),
+        n_workers=max(1, int(params.get("n_workers", 1))),
     )
 
 
@@ -1227,14 +1229,21 @@ def ddca_single_temp(
         return float("nan"), float("nan")
     lower_bounds = (_SOIL_MOISTURE_LOWER_BOUND, 0.0)
     upper_bounds = (porosity, _TAU_UPPER_BOUND)
-    result = least_squares(
-        cost_func,
-        x0=[0.20, tau_ini],
-        bounds=(lower_bounds, upper_bounds),
-        jac=lambda x: _finite_difference_jacobian(
-            x, cost_func, lower_bounds, upper_bounds
-        ),
-    )
+    # 初值必须落在 bounds 内：低孔隙度像元上固定 0.20 会越界
+    sm0 = min(max(0.20, lower_bounds[0]), upper_bounds[0])
+    tau0 = float(tau_ini) if math.isfinite(tau_ini) else 0.0
+    tau0 = min(max(tau0, lower_bounds[1]), upper_bounds[1])
+    try:
+        result = least_squares(
+            cost_func,
+            x0=[sm0, tau0],
+            bounds=(lower_bounds, upper_bounds),
+            jac=lambda x: _finite_difference_jacobian(
+                x, cost_func, lower_bounds, upper_bounds
+            ),
+        )
+    except ValueError:
+        return float("nan"), float("nan")
     return float(result.x[0]), float(result.x[1])
 
 
@@ -1292,14 +1301,20 @@ def ddca_dual_temp(
         return float("nan"), float("nan")
     lower_bounds = (_SOIL_MOISTURE_LOWER_BOUND, 0.0)
     upper_bounds = (porosity, _TAU_UPPER_BOUND)
-    result = least_squares(
-        cost_func,
-        x0=[0.20, tau_ini],
-        bounds=(lower_bounds, upper_bounds),
-        jac=lambda x: _finite_difference_jacobian(
-            x, cost_func, lower_bounds, upper_bounds
-        ),
-    )
+    sm0 = min(max(0.20, lower_bounds[0]), upper_bounds[0])
+    tau0 = float(tau_ini) if math.isfinite(tau_ini) else 0.0
+    tau0 = min(max(tau0, lower_bounds[1]), upper_bounds[1])
+    try:
+        result = least_squares(
+            cost_func,
+            x0=[sm0, tau0],
+            bounds=(lower_bounds, upper_bounds),
+            jac=lambda x: _finite_difference_jacobian(
+                x, cost_func, lower_bounds, upper_bounds
+            ),
+        )
+    except ValueError:
+        return float("nan"), float("nan")
     return float(result.x[0]), float(result.x[1])
 
 
@@ -1909,7 +1924,13 @@ def retrieve_omega_pixel_timeseries(
         valid_tau = valid_tau & np.isfinite(tc) & np.isfinite(tg)
     else:
         valid_tau = valid_tau & np.isfinite(ts)
-    if not np.any(valid_tau):
+
+    clay_ok = bool(
+        np.isfinite(clay_fraction_value) and 0.0 <= float(clay_fraction_value) <= 1.0
+    )
+    static_ok = clay_ok and np.isfinite(ndvi_max_value) and np.isfinite(ndvi_min_value)
+
+    def _empty_pixel_result(*, valid_mask: Any) -> dict[str, Any]:
         return {
             "Tau_star": tau_star,
             "OMEGA": np.full(nt, np.nan, dtype=np.float64),
@@ -1919,7 +1940,7 @@ def retrieve_omega_pixel_timeseries(
             "alpha_star": float("nan"),
             "h_series": np.full(nt, np.nan, dtype=np.float64),
             "alpha_series": np.full(nt, np.nan, dtype=np.float64),
-            "valid_tau": valid_tau,
+            "valid_tau": valid_mask,
             "low_tau": np.zeros(nt, dtype=bool),
             "diag": {
                 "n_use": np.zeros(kb, dtype=np.uint16),
@@ -1950,8 +1971,13 @@ def retrieve_omega_pixel_timeseries(
             "exp2": _build_empty_exp2_info(config),
             "omega_fixed_used": omega_fixed,
             "n_low_tau": 0,
-            "n_use": int(np.count_nonzero(valid_tau)),
+            "n_use": int(np.count_nonzero(valid_mask)),
         }
+
+    if (not static_ok) or (not np.any(valid_tau)):
+        return _empty_pixel_result(
+            valid_mask=valid_tau if static_ok else np.zeros(nt, dtype=bool)
+        )
 
     tau_min = float(np.nanmin(tau_star[valid_tau]))
     tau_max = float(np.nanmax(tau_star[valid_tau]))
@@ -2716,7 +2742,18 @@ def execute_omega_retrieval(
         else None
     )
 
-    for j in range(npix):
+    # Skip ocean / missing-ancillary pixels before Mironov context build.
+    # CF or NDVI extrema outside [0,1]/non-finite would raise in build_mironov_context.
+    pixel_ok = (
+        np.isfinite(clay_fraction)
+        & (clay_fraction >= 0.0)
+        & (clay_fraction <= 1.0)
+        & np.isfinite(ndvi_v_max)
+        & np.isfinite(ndvi_v_min)
+    )
+    pixel_indices = [int(j) for j in np.flatnonzero(pixel_ok)]
+
+    def _retrieve_one(j: int) -> tuple[int, dict[str, Any]]:
         result = retrieve_omega_pixel_timeseries(
             date_keys=date_keys,
             tbv=tbv_mat[:, j],
@@ -2749,6 +2786,9 @@ def execute_omega_retrieval(
             precomputed_blocks=precomputed_blocks,
             precomputed_modes=precomputed_modes,
         )
+        return j, result
+
+    def _store_result(j: int, result: dict[str, Any]) -> None:
         omega_mat[:, j] = result["OMEGA"]
         tau_star_mat[:, j] = result["Tau_star"]
         sm_ret_mat[:, j] = result["SM_RET"]
@@ -2799,6 +2839,18 @@ def execute_omega_retrieval(
                 exp2_omega_by_lambda_block[:, :, j] = np.asarray(
                     result["exp2"]["omega_by_lambda_block"], dtype=np.float64
                 )
+
+    n_workers = max(1, int(config.n_workers))
+    if n_workers <= 1 or len(pixel_indices) <= 1:
+        for j in pixel_indices:
+            j, result = _retrieve_one(j)
+            _store_result(j, result)
+    else:
+        from concurrent.futures import ThreadPoolExecutor
+
+        with ThreadPoolExecutor(max_workers=n_workers) as executor:
+            for j, result in executor.map(_retrieve_one, pixel_indices):
+                _store_result(j, result)
 
     return {
         "date_keys": date_keys,

@@ -268,8 +268,6 @@ const SOURCE_NDVI: LayerSource = {
   updateFrequency: '每日更新',
 }
 
-
-
 const SOURCE_LAB: LayerSource = {
   id: 'lab-model',
   name: 'SMAP/ω 交叉分析数据（2023-01）',
@@ -545,12 +543,11 @@ const SOURCE_STATION_SOIL: LayerSource = {
   updateFrequency: '每日更新',
 }
 
-
-
 const SOURCE_OMEGA_SF_FENKUAI: LayerSource = {
   id: 'omega-sf-fenkuai',
   name: 'SF 块反演（SMAP）',
-  description: 'SMAP 亮温 + 辅助数据 → 8-day 分块 SF 倒推 → 块级 h/alpha/ω 优化 → DDCA SM/VOD 反演。',
+  description:
+    'SMAP 亮温 + 辅助数据 → 8-day 分块 SF 倒推 → 块级 h/alpha/ω 优化 → DDCA SM/VOD 反演。',
   urlTemplate: '',
   needsAuth: false,
   needsBackendTransform: false,

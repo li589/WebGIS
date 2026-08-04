@@ -415,16 +415,16 @@ onUnmounted(() => {
             class="header-btn"
             type="button"
             :disabled="ticking"
-            @click="manualTick"
             title="立即扫描到期定时器（调试用，正常由 Celery Beat 每分钟自动执行）"
+            @click="manualTick"
           >
             {{ ticking ? '扫描中...' : '立即扫描' }}
           </button>
           <button
             class="header-btn"
             type="button"
-            @click="showEventDialog = true"
             title="发射外部事件，触发匹配的 event 类型定时器"
+            @click="showEventDialog = true"
           >
             发射事件
           </button>
@@ -433,8 +433,8 @@ onUnmounted(() => {
             v-if="!embedded"
             class="close-btn"
             type="button"
-            @click="emit('close')"
             title="关闭"
+            @click="emit('close')"
           >
             <span aria-hidden="true">✕</span>
           </button>

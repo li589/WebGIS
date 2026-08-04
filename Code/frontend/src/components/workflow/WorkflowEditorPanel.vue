@@ -20,7 +20,6 @@ import { storeToRefs } from 'pinia'
 import { useWorkflowDefinitionsStore } from '../../stores/workflow-definitions'
 import { useUiLoadingStore } from '../../stores/ui-loading'
 import { useLogStore } from '../../stores/log'
-import { useWorkflowOutputLayersStore } from '../../stores/workflow-output-layers'
 
 import WorkflowCanvas from './WorkflowCanvas.vue'
 import WorkflowLeftSidebar from './WorkflowLeftSidebar.vue'
@@ -57,7 +56,6 @@ const emit = defineEmits<{
 const store = useWorkflowDefinitionsStore()
 const { nodeTemplates, currentDefinition, isReadonly, error } = storeToRefs(store)
 const logStore = useLogStore()
-const outputStore = useWorkflowOutputLayersStore()
 
 // 选中节点状态
 const selectedNode = shallowRef<LGraphNodeClass | null>(null)
@@ -113,9 +111,27 @@ const currentGraphData = ref<{
 const validationResult = ref<ValidationResult | null>(null)
 const showValidationPanel = ref(false)
 
+/** 画布序列化优先；LiteGraph 尚未刷入时回退到已加载的定义节点（避免流水线启动误报「画布为空」） */
+function resolveGraphForRun(): {
+  nodes: WorkflowDefinitionNode[]
+  links: WorkflowDefinitionLink[]
+} | null {
+  const fromCanvas = canvasRef.value?.getSerializedGraph() ?? null
+  if (fromCanvas?.nodes?.length) return fromCanvas
+  if (currentGraphData.value?.nodes?.length) return currentGraphData.value
+  const def = currentDefinition.value
+  if (def?.nodes?.length) {
+    return {
+      nodes: def.nodes as WorkflowDefinitionNode[],
+      links: (def.links ?? []) as WorkflowDefinitionLink[],
+    }
+  }
+  return fromCanvas ?? currentGraphData.value ?? null
+}
+
 /** 执行校验并更新状态 */
 function runValidation(): ValidationResult {
-  const graphData = canvasRef.value?.getSerializedGraph() ?? currentGraphData.value ?? null
+  const graphData = resolveGraphForRun()
   const result = validateWorkflowBeforeRun(graphData, nodeTemplates.value)
   validationResult.value = result
   return result
@@ -177,7 +193,15 @@ async function handleSelectWorkflow(workflowId: string) {
   selectedNode.value = null
   dirty.value = false
   saveError.value = null
-  await store.loadDefinition(workflowId)
+  const def = await store.loadDefinition(workflowId)
+  if (def?.nodes?.length) {
+    currentGraphData.value = {
+      nodes: def.nodes as WorkflowDefinitionNode[],
+      links: (def.links ?? []) as WorkflowDefinitionLink[],
+    }
+  } else {
+    currentGraphData.value = null
+  }
   logStore.logOperation('workflow-select', `选中工作流: ${workflowId}`)
 }
 
@@ -329,22 +353,8 @@ async function handleRunConfirm(target: WorkflowRunTarget) {
   running.value = true
   runStatus.value = 'submitting'
 
-  // multi 模式：批量创建输出图层条目（展示用）；提交仍走源图层一次运行
-  if (target.mode === 'multi' && target.targets) {
-    outputStore.createOutputLayers(
-      target.targets,
-      currentDefinition.value.workflow_id,
-      linkedLayerId,
-      currentEngine.value,
-    )
-    logStore.logOperation(
-      'workflow-multi-create',
-      `批量创建 ${target.targets.length} 个产出图层: ${target.targets.map((t) => t.name).join(', ')}`,
-    )
-  }
-
   // 获取画布序列化数据，并注入流水线参数（如有）
-  let graphData = canvasRef.value?.getSerializedGraph() ?? currentGraphData.value ?? null
+  let graphData = resolveGraphForRun()
   if (pendingPipelineParams.value && graphData) {
     graphData = applyPipelineParamsToGraph(graphData, pendingPipelineParams.value)
     pendingPipelineParams.value = null
@@ -392,7 +402,17 @@ async function handlePipelineLaunch(workflowId: string, params: Record<string, u
   saveError.value = null
 
   // 加载工作流定义（会更新 currentDefinition 和画布）
-  await store.loadDefinition(workflowId)
+  const def = await store.loadDefinition(workflowId)
+  if (!def?.nodes?.length) {
+    saveError.value = `无法加载流水线定义：${workflowId}（节点为空或请求失败）`
+    runStatus.value = 'error'
+    return
+  }
+  // 立刻写入 graph 快照，避免等 LiteGraph 异步 configure 完成
+  currentGraphData.value = {
+    nodes: def.nodes as WorkflowDefinitionNode[],
+    links: (def.links ?? []) as WorkflowDefinitionLink[],
+  }
   selectedNode.value = null
   dirty.value = false
 
@@ -404,9 +424,11 @@ async function handlePipelineLaunch(workflowId: string, params: Record<string, u
     `启动流水线: ${workflowId}, params: ${JSON.stringify(params)}`,
   )
 
-  // 走正常的 run 流程（检查 linkedLayerId 并显示运行对话框）
-  // 等待画布渲染完成后再触发 run 对话框
+  // 等画布挂载/刷入；即便 LiteGraph 未就绪也可用 definition 节点校验/运行
   await nextTick()
+  await new Promise<void>((resolve) => {
+    requestAnimationFrame(() => resolve())
+  })
   handleRun()
 }
 
@@ -547,8 +569,8 @@ defineExpose({
             class="header-btn"
             type="button"
             :disabled="!hasDefinition || isReadonly"
-            @click="handleArrange"
             title="自动排列节点"
+            @click="handleArrange"
           >
             <span aria-hidden="true">⊞</span>
             <span>排列</span>
@@ -557,8 +579,8 @@ defineExpose({
             class="header-btn"
             type="button"
             :disabled="!hasDefinition"
-            @click="handleFitView"
             title="适配视图"
+            @click="handleFitView"
           >
             <span aria-hidden="true">⊡</span>
             <span>适配</span>
@@ -567,8 +589,8 @@ defineExpose({
             class="header-btn"
             type="button"
             :disabled="!hasDefinition || isReadonly"
-            @click="handleClear"
             title="清空画布"
+            @click="handleClear"
           >
             <span aria-hidden="true">⊘</span>
             <span>清空</span>
@@ -578,13 +600,13 @@ defineExpose({
             class="header-btn"
             type="button"
             :disabled="!hasDefinition"
-            @click="handleExport"
             title="导出为 JSON"
+            @click="handleExport"
           >
             <span aria-hidden="true">⬇</span>
             <span>导出</span>
           </button>
-          <button class="header-btn" type="button" @click="handleImportClick" title="从 JSON 导入">
+          <button class="header-btn" type="button" title="从 JSON 导入" @click="handleImportClick">
             <span aria-hidden="true">⬆</span>
             <span>导入</span>
           </button>
@@ -600,8 +622,8 @@ defineExpose({
             class="header-btn"
             type="button"
             :class="{ active: editorView === 'timers' }"
-            @click="editorView = editorView === 'timers' ? 'canvas' : 'timers'"
             title="工作流定时器（Cron / 间隔 / 事件）"
+            @click="editorView = editorView === 'timers' ? 'canvas' : 'timers'"
           >
             <span aria-hidden="true">⏰</span>
             <span>{{ editorView === 'timers' ? '返回画布' : '定时器' }}</span>
@@ -621,8 +643,8 @@ defineExpose({
               'all-good': !validationResult.hasErrors && !validationResult.hasWarnings,
             }"
             type="button"
-            @click="showValidationPanel = !showValidationPanel"
             :title="formatValidationSummary(validationResult)"
+            @click="showValidationPanel = !showValidationPanel"
           >
             <span aria-hidden="true">{{
               validationResult.hasErrors ? '⚠' : validationResult.hasWarnings ? '◐' : '✓'
@@ -635,8 +657,8 @@ defineExpose({
           <button
             class="header-btn pipeline"
             type="button"
-            @click="showPipelineLauncher = true"
             title="端到端流水线"
+            @click="showPipelineLauncher = true"
           >
             <span aria-hidden="true">🚀</span>
             <span>流水线</span>
@@ -649,7 +671,6 @@ defineExpose({
               submitted: runStatus === 'submitted',
             }"
             :disabled="!canRun"
-            @click="handleRun"
             :title="
               runStatus === 'submitting'
                 ? '正在提交...'
@@ -657,6 +678,7 @@ defineExpose({
                   ? '已提交，查看状态面板'
                   : '运行工作流'
             "
+            @click="handleRun"
           >
             <span aria-hidden="true">{{
               runStatus === 'submitting' ? '◌' : runStatus === 'submitted' ? '✓' : '▶'
@@ -670,7 +692,7 @@ defineExpose({
             }}</span>
           </button>
           <span class="action-divider"></span>
-          <button class="header-btn close" type="button" @click="handleClose" title="关闭">
+          <button class="header-btn close" type="button" title="关闭" @click="handleClose">
             <span aria-hidden="true">✕</span>
           </button>
         </div>
@@ -698,8 +720,8 @@ defineExpose({
               class="validation-action-btn proceed"
               type="button"
               @click="
-                showValidationPanel = false;
-                showRunDialog = true;
+                showValidationPanel = false
+                showRunDialog = true
               "
             >
               继续运行
@@ -724,7 +746,7 @@ defineExpose({
               issue.severity === 'error' ? '✕' : '⚠'
             }}</span>
             <span class="validation-node">{{ issue.nodeTitle || '全局' }}</span>
-            <span class="validation-field" v-if="issue.field">{{ issue.field }}</span>
+            <span v-if="issue.field" class="validation-field">{{ issue.field }}</span>
             <span class="validation-message">{{ issue.message }}</span>
           </div>
         </div>

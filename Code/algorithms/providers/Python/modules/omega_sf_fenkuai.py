@@ -177,12 +177,30 @@ class OmegaSfFenkuaiModule(BaseModule):
         grid_shape = _resolve_grid_shape(algorithm_params, datasource_selection)
 
         # 解析输出目录
-        output_dir = Path(
-            output_spec_extra.get(
-                "output_dir", ctx.workspace / "products" / "omega_sf_fenkuai"
+        reuse_output_dir = algorithm_params.get("reuse_output_dir")
+        if isinstance(reuse_output_dir, str) and reuse_output_dir.strip():
+            output_dir = Path(reuse_output_dir.strip())
+        else:
+            output_dir = Path(
+                output_spec_extra.get(
+                    "output_dir", ctx.workspace / "products" / "omega_sf_fenkuai"
+                )
             )
-        )
         output_dir.mkdir(parents=True, exist_ok=True)
+
+        cancel_flag_path = algorithm_params.get("cancel_flag_path")
+        if not cancel_flag_path:
+            cancel_flag_path = ctx.runtime_context.env.get("cancel_flag_path")
+        if not cancel_flag_path:
+            cancel_flag_path = str(ctx.runtime_context.tmp_dir / "cancel.requested")
+
+        reuse_block_cache = algorithm_params.get("reuse_block_cache", True)
+        if isinstance(reuse_block_cache, str):
+            reuse_block_cache = reuse_block_cache.strip().lower() not in {
+                "0",
+                "false",
+                "no",
+            }
 
         # 可选数据源
         ndvi_clim_folder = str(datasource_selection.get("ndvi_clim_folder") or "")
@@ -218,11 +236,16 @@ class OmegaSfFenkuaiModule(BaseModule):
                 if chunks_total
                 else f"Pixel {processed}/{total}"
             )
-            ratio = (
-                pixels_done / pixels_total
-                if pixels_total
-                else (processed / total if total else 0.0)
-            )
+            # Prefer chunk progress so early chunks do not round to 0%
+            # against a multi-million-pixel grid denominator.
+            if chunks_total > 0:
+                ratio = max(0.0, min(1.0, chunks_done / chunks_total))
+            elif pixels_total > 0:
+                ratio = max(0.0, min(1.0, pixels_done / pixels_total))
+            elif total > 0:
+                ratio = max(0.0, min(1.0, processed / total))
+            else:
+                ratio = 0.0
             emit = ctx.logger_adapter.emit_progress
             try:
                 emit("omega_sf_fenkuai", ratio, msg, detail=detail)
@@ -243,6 +266,8 @@ class OmegaSfFenkuaiModule(BaseModule):
             grid_shape=grid_shape,
             output_dir=str(output_dir),
             progress_callback=_progress_callback,
+            cancel_flag_path=cancel_flag_path,
+            reuse_block_cache=bool(reuse_block_cache),
         )
 
         # 构建三个产品图层引用
@@ -256,7 +281,7 @@ class OmegaSfFenkuaiModule(BaseModule):
                     name="omega_sf_omega_pixel",
                     type="omega_sf_omega_pixel",
                     uri=omega_pix_path,
-                    variable="OMEGA",
+                    variable="omega_pix_map",
                     tags={"module": self.name, "layer": "OMEGA"},
                 )
             )
@@ -301,7 +326,7 @@ class OmegaSfFenkuaiModule(BaseModule):
                     type="omega_sf_omega_block_dir",
                     uri=block_dir,
                     variable="OMEGA",
-                    tags={"module": self.name, "layer": "OMEGA_BLOCK"},
+        tags={"module": self.name, "layer": "OMEGA"},
                 )
             )
 

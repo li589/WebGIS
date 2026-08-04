@@ -66,6 +66,29 @@ export function getWorkflowRunView(runId: string) {
   return requestJson<WorkflowRunViewResponse>(`/workflow-runs/${runId}/view`, { silent: true })
 }
 
+export function materializeWorkflowMapLayers(runId: string) {
+  return requestJson<{
+    run_id: string
+    layers: Array<{
+      overlay_layer_id: string
+      title?: string
+      product_tag?: string
+      bounds?: [number, number, number, number] | (number | null)[] | null
+      source_crs?: string | null
+      cog_preview_url?: string | null
+      time_list?: string[]
+      default_time?: string | null
+      native_step?: string | null
+    }>
+    count?: number
+    message?: string
+  }>(`/workflow-runs/${runId}/materialize-map-layers`, {
+    method: 'POST',
+    body: '{}',
+    timeoutMs: 300000,
+  })
+}
+
 export function getWeatherPoint(params: {
   layer_id: string
   latitude: number
@@ -159,6 +182,8 @@ export interface WeatherSyncTriggerResponse {
   message: string
   /** celery | local_thread */
   mode?: string
+  /** Domains used for this sync (env default or one-shot override) */
+  domains?: string
 }
 
 /** Phase 2: Open-Meteo 同步任务状态 */
@@ -171,10 +196,14 @@ export interface WeatherSyncStatus {
   finished_at?: string | null
 }
 
-/** 手动触发 Open-Meteo 数据同步（异步任务；派发应秒级返回） */
-export function triggerWeatherSync() {
+/** 手动触发 Open-Meteo 数据同步（异步任务；派发应秒级返回）。
+ *  ``domains`` 为一次性覆盖，不改 ``OPEN_METEO_SYNC_DOMAINS``。
+ */
+export function triggerWeatherSync(options?: { domains?: string }) {
+  const body = options?.domains && options.domains.trim() ? { domains: options.domains.trim() } : {}
   return requestJson<WeatherSyncTriggerResponse>('/weather/sync/trigger', {
     method: 'POST',
+    body: JSON.stringify(body),
     timeoutMs: 15000,
     silent: true,
   })
@@ -190,6 +219,8 @@ export function getWeatherSyncStatus(taskId: string, signal?: AbortSignal) {
 
 export interface WeatherSyncOverview {
   local_reachable: boolean
+  /** Docker CLI + compose file ready for sync */
+  sync_service_available?: boolean
   domains: string[]
   variables?: string[]
   models_meta?: Array<{

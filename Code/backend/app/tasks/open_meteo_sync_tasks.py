@@ -23,14 +23,15 @@ logger = logging.getLogger(__name__)
 _SYNC_TIMEOUT_SECONDS = 3600
 
 
-def _build_sync_command() -> list[str]:
+def _build_sync_command(domains: str | None = None) -> list[str]:
     """构建 docker compose sync 命令。
 
     数据栈：`Code/infra/data-sync`（`-p data-sync`）；API 在 backend（`cgda-open-meteo`）。
     官方镜像：`sync <domains> <variables>`（尾部参数覆盖 compose 默认 command）。
+    ``domains`` 可临时覆盖环境默认（不改持久配置）。
     """
     project = settings.open_meteo_sync_compose_project
-    domains = settings.open_meteo_sync_domains
+    domains = (domains or settings.open_meteo_sync_domains or "").strip()
     variables = settings.open_meteo_sync_variables
     compose_file = os.path.join(
         settings.open_meteo_sync_compose_dir, "docker-compose.yml"
@@ -107,20 +108,27 @@ def _ensure_sync_volume() -> None:
         logger.warning("Volume ensure skipped: %s", exc)
 
 
-def execute_open_meteo_sync() -> dict[str, Any]:
+def execute_open_meteo_sync(domains: str | None = None) -> dict[str, Any]:
     """执行 Open-Meteo 同步（非 Celery 入口，可供 API 直接调用）。
 
     同步期间旧数据继续可用：open-meteo 容器读取的是 named volume，
     sync 容器覆盖文件时 open-meteo 容器不会中断服务。
 
+    ``domains``：逗号分隔模型 id，临时覆盖 ``OPEN_METEO_SYNC_DOMAINS``（不落库）。
     返回同步结果摘要。失败时抛 RuntimeError。
     """
     from datetime import datetime, timezone
 
     from app.services.weather_engine_settings import record_open_meteo_sync_result
 
+    domains_eff = (domains or settings.open_meteo_sync_domains or "").strip()
+    if not domains_eff:
+        raise RuntimeError(
+            "Open-Meteo sync domains empty; set OPEN_METEO_SYNC_DOMAINS or pass domains="
+        )
+
     _ensure_sync_volume()
-    cmd = _build_sync_command()
+    cmd = _build_sync_command(domains=domains_eff)
     logger.info("Open-Meteo sync starting: %s", " ".join(cmd))
     try:
         result = subprocess.run(
@@ -134,7 +142,7 @@ def execute_open_meteo_sync() -> dict[str, Any]:
     except FileNotFoundError as exc:
         record_open_meteo_sync_result(
             ok=False,
-            domains=settings.open_meteo_sync_domains,
+            domains=domains_eff,
             message="docker command not found; ensure Docker is installed",
             exit_code=None,
         )
@@ -144,7 +152,7 @@ def execute_open_meteo_sync() -> dict[str, Any]:
     except subprocess.TimeoutExpired as exc:
         record_open_meteo_sync_result(
             ok=False,
-            domains=settings.open_meteo_sync_domains,
+            domains=domains_eff,
             message=f"Open-Meteo sync timed out after {_SYNC_TIMEOUT_SECONDS}s",
             exit_code=None,
         )
@@ -161,7 +169,7 @@ def execute_open_meteo_sync() -> dict[str, Any]:
         )
         record_open_meteo_sync_result(
             ok=False,
-            domains=settings.open_meteo_sync_domains,
+            domains=domains_eff,
             message=f"exit code {result.returncode}",
             exit_code=result.returncode,
             stderr_tail=stderr_tail,
@@ -175,14 +183,14 @@ def execute_open_meteo_sync() -> dict[str, Any]:
     logger.info("Open-Meteo sync completed successfully")
     record_open_meteo_sync_result(
         ok=True,
-        domains=settings.open_meteo_sync_domains,
+        domains=domains_eff,
         message="ok",
         exit_code=0,
         stderr_tail=result.stderr[-500:] if result.stderr else "",
     )
     return {
         "status": "succeeded",
-        "domains": settings.open_meteo_sync_domains,
+        "domains": domains_eff,
         "stdout_tail": result.stdout[-1000:] if result.stdout else "",
         "finished_at": finished_at,
     }
@@ -196,13 +204,16 @@ if celery_available and celery_app is not None:
         soft_time_limit=3600,
         time_limit=3900,
     )
-    def sync_open_meteo_data() -> dict[str, Any]:
-        """Celery 任务入口：定时同步本地 Open-Meteo 数据（weather-batch 队列）。"""
-        return execute_open_meteo_sync()
+    def sync_open_meteo_data(domains: str | None = None) -> dict[str, Any]:
+        """Celery 任务入口：定时同步本地 Open-Meteo 数据（weather-batch 队列）。
+
+        ``domains`` 可选；Beat 定时调用不传，沿用环境默认。
+        """
+        return execute_open_meteo_sync(domains=domains)
 
 else:
 
-    def sync_open_meteo_data() -> dict[str, Any]:
+    def sync_open_meteo_data(domains: str | None = None) -> dict[str, Any]:
         raise RuntimeError(
             "Celery is not installed. Install backend dependencies before using Open-Meteo sync tasks."
         )

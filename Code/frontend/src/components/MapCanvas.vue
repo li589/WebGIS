@@ -88,6 +88,9 @@ const exposeBridge = createMapCanvasExposeBridge({
     state.resources.weatherOverlayModule?.setAnimationPaused(paused)
   },
   fitToLayerExtent: (instanceId: string) => fitToLayerExtent(instanceId),
+  setOverlayTime: (layerId: string, time: string) => {
+    void overlayImageModule?.setOverlayTime(layerId, time)
+  },
 })
 
 defineExpose(exposeBridge)
@@ -773,8 +776,8 @@ async function handleLocateMe() {
             class="overlay-time-btn"
             type="button"
             :disabled="state.timeList.indexOf(state.currentTime ?? '') <= 0"
-            @click="overlayStepTime(state.layerId, -1)"
             aria-label="上一个时间"
+            @click="overlayStepTime(state.layerId, -1)"
           >
             ‹
           </button>
@@ -783,8 +786,8 @@ async function handleLocateMe() {
             class="overlay-time-btn"
             type="button"
             :disabled="state.timeList.indexOf(state.currentTime ?? '') >= state.timeList.length - 1"
-            @click="overlayStepTime(state.layerId, 1)"
             aria-label="下一个时间"
+            @click="overlayStepTime(state.layerId, 1)"
           >
             ›
           </button>

@@ -729,6 +729,11 @@ PATH_ALIASES: dict[str, str] = {
     "Soil_Moisture/FY3B_TB": "Soil_Moisture/FY3B",
     "FY3D_TB": "Soil_Moisture/FY3D",
     "FY3B_TB": "Soil_Moisture/FY3B",
+    # 数据集重组后目录名（下划线）与历史种子路径（无下划线 / 旧树）对齐
+    "InversionResults": "Inversion_Results",
+    "Soil_Ecological_Data/Smap_OriginData": "Soil_Moisture/SMAP_Origin_Data",
+    "NDVI/daily": "Ecological_Vegetation/NDVI/NDVIday",
+    "NDVI/climatology": "Ecological_Vegetation/NDVI/climatology",
 }
 
 
@@ -739,6 +744,10 @@ def normalize_dataset_relative_path(path: str) -> str:
         return raw
     if raw in PATH_ALIASES:
         return PATH_ALIASES[raw]
+    # 前缀别名：InversionResults/omega_block → Inversion_Results/omega_block
+    for alias, target in sorted(PATH_ALIASES.items(), key=lambda kv: -len(kv[0])):
+        if raw.startswith(alias + "/"):
+            return f"{target}/{raw[len(alias) + 1 :]}"
     # 末段别名：.../FY3D_TB → Soil_Moisture/FY3D
     for alias, target in PATH_ALIASES.items():
         if raw.endswith("/" + alias) or raw.endswith(alias):

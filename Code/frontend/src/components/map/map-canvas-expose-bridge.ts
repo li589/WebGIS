@@ -9,6 +9,8 @@ export interface MapCanvasExposeBridge {
   setWindAnimationPaused?: (paused: boolean) => void
   /** 缩放到指定图层显示范围（双击图层列表等） */
   fitToLayerExtent?: (instanceId: string) => boolean
+  /** 切换导入/科学 TS overlay 当前时刻 */
+  setOverlayTime?: (layerId: string, time: string) => void | Promise<void>
 }
 
 interface CreateMapCanvasExposeBridgeOptions {
@@ -17,6 +19,7 @@ interface CreateMapCanvasExposeBridgeOptions {
   selectHotspot?: (pinId: string) => void
   setWindAnimationPaused?: (paused: boolean) => void
   fitToLayerExtent?: (instanceId: string) => boolean
+  setOverlayTime?: (layerId: string, time: string) => void | Promise<void>
   dependencies?: {
     warn?: (message?: unknown, ...optionalParams: unknown[]) => void
   }
@@ -121,5 +124,6 @@ export function createMapCanvasExposeBridge(
     selectHotspot: options.selectHotspot,
     setWindAnimationPaused: options.setWindAnimationPaused,
     fitToLayerExtent: options.fitToLayerExtent,
+    setOverlayTime: options.setOverlayTime,
   }
 }

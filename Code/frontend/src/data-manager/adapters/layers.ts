@@ -48,9 +48,19 @@ export function focusImportedLayer(instanceId: string) {
   store.setSidebarView('active')
 }
 
+function resolveLayerInstanceId(
+  store: ReturnType<typeof useLayersStore>,
+  catalogOrInstanceId: string,
+): string {
+  const byInstance = store.activeLayers.find((l) => l.instanceId === catalogOrInstanceId)
+  if (byInstance) return byInstance.instanceId
+  const byCatalog = store.activeLayers.find((l) => l.catalogId === catalogOrInstanceId)
+  return byCatalog?.instanceId ?? catalogOrInstanceId
+}
+
 export async function removeImportedLayer(catalogOrInstanceId: string, backendLayerId?: string) {
   const store = useLayersStore()
-  store.removeLayer(catalogOrInstanceId)
+  store.removeLayer(resolveLayerInstanceId(store, catalogOrInstanceId))
   if (backendLayerId) {
     try {
       await deleteImportedLayer(backendLayerId)

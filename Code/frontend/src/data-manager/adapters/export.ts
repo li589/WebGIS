@@ -16,6 +16,10 @@ export type ExportFormat =
 export type ExportOptions = {
   /** auto | utf-8 | utf-8-sig | gbk | gb18030 | … */
   encoding?: string
+  /** 单时刻切片，如 20251227_20251231；写入文件名 */
+  time?: string | null
+  /** 多时刻；长度>1 时后端返回 zip */
+  times?: string[] | null
 }
 
 function normalizeFormat(format: string): ExportFormat {
@@ -25,8 +29,8 @@ function normalizeFormat(format: string): ExportFormat {
   return f as ExportFormat
 }
 
-function safeName(name: string, ext: string): string {
-  const base =
+function safeName(name: string, ext: string, time?: string | null): string {
+  let base =
     (name || 'export')
       .replace(
         /\.(geojson|json|shp|zip|rar|csv|xlsx|xls|txt|dbf|shx|prj|cpg|sbn|sbx|qix|tif|tiff|png|nc)$/i,
@@ -34,6 +38,10 @@ function safeName(name: string, ext: string): string {
       )
       .replace(/[\\/:*?"<>|]+/g, '_')
       .trim() || 'export'
+  if (time) {
+    const t = String(time).replace(/[\\/:*?"<>|]+/g, '_')
+    if (!base.includes(t)) base = `${base}_${t}`
+  }
   return base.toLowerCase().endsWith(`.${ext}`) ? base : `${base}.${ext}`
 }
 
@@ -70,10 +78,34 @@ export async function exportLayer(
 
   if (backendId) {
     try {
-      const blob = await exportImportedLayer(backendId, fmt, encoding)
-      const ext =
-        fmt === 'shp-zip' ? 'zip' : fmt === 'geojson' ? 'geojson' : fmt === 'csv' ? 'csv' : fmt
-      downloadBlob(blob, safeName(layer.name ?? 'export', ext))
+      const multi = options.times?.filter(Boolean) ?? []
+      const blob = await exportImportedLayer(
+        backendId,
+        fmt,
+        encoding,
+        multi.length > 1 ? null : options.time,
+        multi.length > 1 ? multi : null,
+      )
+      const isZip =
+        multi.length > 1 ||
+        blob.type.includes('zip') ||
+        (typeof blob.type === 'string' && blob.type === 'application/zip')
+      const ext = isZip
+        ? 'zip'
+        : fmt === 'shp-zip'
+          ? 'zip'
+          : fmt === 'geojson'
+            ? 'geojson'
+            : fmt === 'csv'
+              ? 'csv'
+              : fmt
+      const stamp =
+        multi.length > 1
+          ? multi.length > 3
+            ? `${multi.length}times`
+            : `${multi[0]}_${multi[multi.length - 1]}`
+          : options.time
+      downloadBlob(blob, safeName(layer.name ?? 'export', ext, stamp))
       return
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err)

@@ -41,7 +41,10 @@ const maxNumeric = computed(() => {
           <div
             class="bar-fill"
             :style="{
-              width: item.numericValue !== null ? `${Math.min(100, Math.max(5, (Math.abs(item.numericValue) / maxNumeric) * 100))}%` : '0%',
+              width:
+                item.numericValue !== null
+                  ? `${Math.min(100, Math.max(5, (Math.abs(item.numericValue) / maxNumeric) * 100))}%`
+                  : '0%',
               backgroundColor: item.accentColor || '#4fc3f7',
             }"
           ></div>

@@ -1,5 +1,5 @@
-﻿<script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+<script setup lang="ts">
+import { computed, onMounted, ref, watch } from 'vue'
 import { DATA_COPY } from '../../ui-copy'
 import {
   applyDocumentOps,
@@ -33,6 +33,12 @@ import ScienceRasterImportDialog, {
 } from './ScienceRasterImportDialog.vue'
 import { validateOverlayBounds } from '../../components/map/overlay-image-module'
 import { openDataWorkspace, setUploadProgress, showToast } from '../core/workspace-store'
+import {
+  buildImportTemporalPayload,
+  guessTimeLabelFromFilename,
+  type ImportTemporalMode,
+} from '../../utils/import-temporal'
+import type { TemporalFollowPolicy } from '../../utils/temporal-interval'
 
 const props = defineProps<{
   initialTab?: 'vector' | 'raster' | 'document'
@@ -67,13 +73,52 @@ const scienceFormat = ref('')
 const scienceGridPresets = ref<GridPreset[]>([])
 const scienceSuggestedPreset = ref<string | null>(null)
 const scienceSuggestedCrs = ref<string | null>(null)
+const scienceSuggestedNeedsTranspose = ref(false)
 const scienceCommitOpts = ref<ScienceRasterCommitPayload | null>(null)
 const documentQueue = ref<File[]>([])
 const documentSession = ref<DocumentSession | null>(null)
 const xField = ref('')
 const yField = ref('')
+/** auto | force | keep — 映射到 swap_xy null/true/false */
+const docSwapXyMode = ref<'auto' | 'force' | 'keep'>('auto')
 const sourceCrs = ref('EPSG:4326')
 
+/** 栅格时间语义：自动猜文件名 / 静态 / 时间点 / 时间段 */
+const temporalMode = ref<ImportTemporalMode>('auto')
+const temporalPoint = ref('')
+const temporalStart = ref('')
+const temporalEnd = ref('')
+const temporalNativeStep = ref('')
+
+const temporalPreview = computed(() => {
+  const sample = rasterFile.value?.name || rasterFiles.value[0]?.name || ''
+  return buildImportTemporalPayload({
+    mode: temporalMode.value,
+    fileName: sample,
+    timePoint: temporalPoint.value,
+    timeStart: temporalStart.value,
+    timeEnd: temporalEnd.value,
+    nativeStep: temporalNativeStep.value || undefined,
+  })
+})
+
+watch(
+  () => rasterFiles.value.map((f) => f.name).join('|'),
+  () => {
+    const name = rasterFiles.value[0]?.name
+    if (!name || temporalMode.value !== 'auto') return
+    const g = guessTimeLabelFromFilename(name)
+    if (g?.kind === 'point') {
+      temporalPoint.value = g.label
+      temporalNativeStep.value = g.nativeStep
+    } else if (g?.kind === 'range') {
+      const [a, b] = g.label.split('_')
+      temporalStart.value = a || ''
+      temporalEnd.value = b || ''
+      temporalNativeStep.value = g.nativeStep
+    }
+  },
+)
 const opRenameFrom = ref('')
 const opRenameTo = ref('')
 const opFilterField = ref('')
@@ -166,6 +211,9 @@ function uploadOpts(onProgress: (r: number) => void) {
       onProgress(r)
       setUploadProgress(r)
     },
+    onPhase: (phase: string) => {
+      setStatus(`${DATA_COPY.uploading} · ${phase}`)
+    },
     onUploadId: (id: string) => {
       activeUploadId.value = id
     },
@@ -222,6 +270,14 @@ async function importOneVectorGroup(files: File[], groupIndex: number, groupTota
     truncated: Boolean(result.truncated),
   })
   focusImportedLayer(layer.instanceId)
+  const changes = result.field_sanitization?.changes
+  if (Array.isArray(changes) && changes.length) {
+    const sample = changes
+      .slice(0, 3)
+      .map((c) => `${c.original}→${c.sanitized}`)
+      .join('；')
+    showToast(`字段名已规范化 ${changes.length} 项：${sample}${changes.length > 3 ? '…' : ''}`)
+  }
   return { ...result, instanceId: layer.instanceId }
 }
 
@@ -317,6 +373,7 @@ async function runRasterBatch() {
         scienceGridPresets.value = (info.grid_presets || []) as GridPreset[]
         scienceSuggestedPreset.value = info.suggested_grid_preset ?? null
         scienceSuggestedCrs.value = info.suggested_crs ?? null
+        scienceSuggestedNeedsTranspose.value = Boolean(info.suggested_needs_transpose)
         if (needsVariable.value) {
           // 需要用户配置变量/CRS/无效值：打开科学导入对话框
           rasterFiles.value = queue.slice(i)
@@ -391,8 +448,48 @@ async function onScienceRasterConfirm(payload: ScienceRasterCommitPayload) {
   scienceCommitOpts.value = payload
   selectedVariable.value = payload.variableIds[0] ?? ''
   timeIndex.value = payload.timeIndex
+  if (payload.temporalMode) temporalMode.value = payload.temporalMode
+  if (payload.timePoint != null) temporalPoint.value = payload.timePoint
+  if (payload.timeStart != null) temporalStart.value = payload.timeStart
+  if (payload.timeEnd != null) temporalEnd.value = payload.timeEnd
+  if (payload.nativeStep != null) temporalNativeStep.value = payload.nativeStep
   scienceDialogOpen.value = false
   await commitRaster({ resumeQueue: true })
+}
+
+function resolveTemporalCommitFields(fileName: string) {
+  const fromSci = scienceCommitOpts.value
+  const mode = (fromSci?.temporalMode || temporalMode.value) as ImportTemporalMode
+  const built = buildImportTemporalPayload({
+    mode,
+    fileName,
+    timePoint: fromSci?.timePoint ?? temporalPoint.value,
+    timeStart: fromSci?.timeStart ?? temporalStart.value,
+    timeEnd: fromSci?.timeEnd ?? temporalEnd.value,
+    nativeStep: (fromSci?.nativeStep ?? temporalNativeStep.value) || undefined,
+  })
+  if ((mode === 'point' || mode === 'range') && !built.preview) {
+    throw new Error(mode === 'point' ? '请填写有效时间点（YYYYMMDD）' : '请填写有效起止日期')
+  }
+  return built
+}
+
+function temporalOptionsFromResult(lr: {
+  time_list?: string[]
+  native_step?: string | null
+  follow_policy?: string | null
+}): {
+  nativeStep?: string | null
+  timeList?: string[]
+  followPolicy?: TemporalFollowPolicy
+} {
+  const timeList = Array.isArray(lr.time_list) ? lr.time_list.map(String) : []
+  if (!timeList.length) return {}
+  return {
+    timeList,
+    nativeStep: lr.native_step || (timeList[0]?.includes('_') ? '8d' : '1d'),
+    followPolicy: (lr.follow_policy as TemporalFollowPolicy) || 'containing',
+  }
 }
 
 function onScienceRasterCancel() {
@@ -408,6 +505,7 @@ async function commitRaster(opts?: { resumeQueue?: boolean }) {
   setStatus(DATA_COPY.processing)
   try {
     const sci = scienceCommitOpts.value
+    const temporal = resolveTemporalCommitFields(rasterFile.value.name)
     let data = await commitRasterUpload({
       uploadId: rasterUploadId.value,
       variableId: needsVariable.value ? selectedVariable.value : null,
@@ -420,6 +518,13 @@ async function commitRaster(opts?: { resumeQueue?: boolean }) {
       invalidValues: sci?.invalidValues,
       nodata: sci?.nodata ?? null,
       autoConfirm: sci?.autoConfirm !== false,
+      axisOrder: sci?.axisOrder ?? 'auto',
+      conflictPolicy: sci?.conflictPolicy ?? 'overwrite',
+      temporalMode: temporal.temporalMode,
+      timeLabel: temporal.timeLabel ?? null,
+      timeStart: temporal.timeStart ?? null,
+      timeEnd: temporal.timeEnd ?? null,
+      nativeStep: temporal.nativeStep ?? null,
     })
 
     if (data.async && data.job_id) {
@@ -445,6 +550,9 @@ async function commitRaster(opts?: { resumeQueue?: boolean }) {
                 detection_notes: data.detection_notes,
                 auto_confirm_error: (data as { auto_confirm_error?: string }).auto_confirm_error,
                 variable_id: selectedVariable.value,
+                time_list: data.time_list,
+                native_step: data.native_step,
+                follow_policy: data.follow_policy,
               },
             ]
           : []
@@ -483,7 +591,14 @@ async function commitRaster(opts?: { resumeQueue?: boolean }) {
         `${rasterFile.value.name}${lr.variable_id ? `:${lr.variable_id}` : ''}`,
         lr.layer_id,
         lr.bounds,
-        { sourceCrs: lr.source_crs ?? sci?.sourceCrs },
+        {
+          sourceCrs: lr.source_crs ?? sci?.sourceCrs,
+          ...temporalOptionsFromResult({
+            time_list: lr.time_list ?? data.time_list,
+            native_step: lr.native_step ?? data.native_step,
+            follow_policy: lr.follow_policy ?? data.follow_policy,
+          }),
+        },
       )
       lastInstanceId = layer.instanceId
       focusImportedLayer(layer.instanceId)
@@ -493,7 +608,9 @@ async function commitRaster(opts?: { resumeQueue?: boolean }) {
       if (lastInstanceId) {
         openDataWorkspace({ tab: 'details', layerInstanceId: lastInstanceId })
       }
-      setStatus(`栅格已导入：${rasterFile.value.name}（${layerResults.length} 层）`)
+      setStatus(
+        `${(data as { replaced?: boolean }).replaced || layerResults.some((l) => (l as { replaced?: boolean }).replaced) ? '已覆盖同名并导入' : '栅格已导入'}：${rasterFile.value.name}（${layerResults.length} 层）`,
+      )
       const doneName = rasterFile.value.name
       rasterFile.value = null
       rasterUploadId.value = null
@@ -537,6 +654,11 @@ async function onRasterConfirm(payload: {
         sourceCrs: payload.sourceCrs,
         lngOffset: payload.lngOffset,
         latOffset: payload.latOffset,
+        ...temporalOptionsFromResult({
+          time_list: (result as { time_list?: string[] }).time_list,
+          native_step: (result as { native_step?: string | null }).native_step,
+          follow_policy: (result as { follow_policy?: string | null }).follow_policy,
+        }),
       },
     )
     focusImportedLayer(layer.instanceId)
@@ -634,11 +756,14 @@ async function commitDocument() {
   busy.value = true
   setStatus(DATA_COPY.processing)
   try {
+    const swapXy =
+      docSwapXyMode.value === 'force' ? true : docSwapXyMode.value === 'keep' ? false : null
     const result = await commitDocumentSession({
       sessionId: documentSession.value.session_id,
       xField: xField.value,
       yField: yField.value,
       sourceCrs: sourceCrs.value,
+      swapXy,
     })
     const layer = await registerImportedVectorLayer(
       result.source_name || documentSession.value.source_name || 'document',
@@ -650,8 +775,25 @@ async function commitDocument() {
     )
     focusImportedLayer(layer.instanceId)
     openDataWorkspace({ tab: 'attributes', layerInstanceId: layer.instanceId })
-    setStatus(`已导入 ${result.point_count} 个点`)
+    const notes: string[] = [`已导入 ${result.point_count} 个点`]
+    if (result.xy_swap_applied) {
+      notes.push(result.xy_swap_note || '已自动交换 XY')
+    } else if (result.xy_swap_note) {
+      notes.push(result.xy_swap_note)
+    }
+    const fieldChanges = result.field_sanitization?.changes
+    if (Array.isArray(fieldChanges) && fieldChanges.length) {
+      notes.push(`字段规范化 ${fieldChanges.length} 项`)
+      showToast(
+        `字段名已规范化：${fieldChanges
+          .slice(0, 3)
+          .map((c) => `${c.original}→${c.sanitized}`)
+          .join('；')}`,
+      )
+    }
+    setStatus(notes.join('；'))
     documentSession.value = null
+    docSwapXyMode.value = 'auto'
     if (documentQueue.value.length) {
       void startDocument(documentQueue.value[0]!)
     }
@@ -751,6 +893,47 @@ async function commitDocument() {
           <ul v-if="rasterFiles.length" class="file-list">
             <li v-for="f in rasterFiles" :key="f.name">{{ f.name }} · {{ formatBytes(f.size) }}</li>
           </ul>
+
+          <div v-if="rasterFiles.length" class="temporal-block">
+            <p class="tip">数据时间（可从文件名自动识别，也可手动指定）</p>
+            <div class="temporal-modes">
+              <label><input v-model="temporalMode" type="radio" value="auto" /> 自动识别</label>
+              <label><input v-model="temporalMode" type="radio" value="static" /> 静态</label>
+              <label><input v-model="temporalMode" type="radio" value="point" /> 时间点</label>
+              <label><input v-model="temporalMode" type="radio" value="range" /> 时间段</label>
+            </div>
+            <div v-if="temporalMode === 'point'" class="temporal-fields">
+              <label>
+                日期
+                <input v-model="temporalPoint" type="text" placeholder="YYYYMMDD 或 YYYY-MM-DD" />
+              </label>
+              <label>
+                步长
+                <input v-model="temporalNativeStep" type="text" placeholder="1d" />
+              </label>
+            </div>
+            <div v-else-if="temporalMode === 'range'" class="temporal-fields">
+              <label>
+                起
+                <input v-model="temporalStart" type="text" placeholder="YYYYMMDD" />
+              </label>
+              <label>
+                止
+                <input v-model="temporalEnd" type="text" placeholder="YYYYMMDD" />
+              </label>
+              <label>
+                步长
+                <input v-model="temporalNativeStep" type="text" placeholder="8d" />
+              </label>
+            </div>
+            <p v-if="temporalPreview.preview" class="temporal-preview">
+              将写入：{{ temporalPreview.preview.kind }} · {{ temporalPreview.preview.label
+              }}{{
+                temporalPreview.preview.nativeStep ? ` · ${temporalPreview.preview.nativeStep}` : ''
+              }}
+            </p>
+          </div>
+
           <button
             v-if="rasterFiles.length > 1 || (rasterFiles.length === 1 && !needsVariable)"
             class="primary-btn"
@@ -890,10 +1073,22 @@ async function commitDocument() {
                 {{ DATA_COPY.sourceCrs }}
                 <input v-model="sourceCrs" type="text" />
               </label>
+              <label>
+                交换 XY
+                <select v-model="docSwapXyMode">
+                  <option value="auto">自动检测</option>
+                  <option value="force">强制交换</option>
+                  <option value="keep">保持不交换</option>
+                </select>
+              </label>
               <button class="primary-btn" type="button" :disabled="busy" @click="commitDocument">
                 {{ DATA_COPY.commit }}
               </button>
             </div>
+            <p class="table-meta">
+              地理 CRS 下若经纬度列颠倒，可选用「自动检测」或「强制交换」。Excel
+              为二进制格式，不适用文本编码探测。
+            </p>
           </template>
         </section>
       </div>
@@ -924,10 +1119,12 @@ async function commitDocument() {
       :visible="scienceDialogOpen"
       :file-name="rasterFile?.name || ''"
       :format="scienceFormat"
+      :upload-id="rasterUploadId"
       :variables="rasterVariables"
       :grid-presets="scienceGridPresets"
       :suggested-grid-preset="scienceSuggestedPreset"
       :suggested-crs="scienceSuggestedCrs"
+      :suggested-needs-transpose="scienceSuggestedNeedsTranspose"
       :importing="busy"
       @confirm="onScienceRasterConfirm"
       @cancel="onScienceRasterCancel"
@@ -1108,6 +1305,53 @@ async function commitDocument() {
   padding-left: 1rem;
   font-size: 0.58rem;
   color: #b7c9da;
+}
+.temporal-block {
+  margin: 0.45rem 0 0.55rem;
+  padding: 0.5rem 0.55rem;
+  border-radius: 0.42rem;
+  border: 1px solid rgba(136, 192, 255, 0.12);
+  background: rgba(4, 12, 23, 0.42);
+}
+.temporal-modes {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem 0.8rem;
+  margin: 0.3rem 0 0.35rem;
+  font-size: 0.6rem;
+  color: #c5d7ea;
+}
+.temporal-modes label {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  cursor: pointer;
+}
+.temporal-fields {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(7.2rem, 1fr));
+  gap: 0.35rem;
+}
+.temporal-fields label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.18rem;
+  font-size: 0.58rem;
+  color: #8aa0b4;
+}
+.temporal-fields input {
+  border: 1px solid rgba(136, 192, 255, 0.18);
+  border-radius: 0.35rem;
+  background: rgba(2, 10, 18, 0.7);
+  color: #d8e6f5;
+  padding: 0.26rem 0.38rem;
+  font: inherit;
+  font-size: 0.66rem;
+}
+.temporal-preview {
+  margin: 0.35rem 0 0;
+  font-size: 0.58rem;
+  color: #7eb8e0;
 }
 .sidecar-status {
   margin: 0;

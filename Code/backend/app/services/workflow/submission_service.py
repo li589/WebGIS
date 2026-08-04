@@ -153,7 +153,6 @@ class WorkflowSubmissionService:
         request_json = json.dumps(payload.model_dump(mode="json"), ensure_ascii=False)
         run_class = resolve_workflow_run_class(payload)
         with log_context(run_id=run_id):
-            self._assert_workflow_capacity(run_class)
             self._validate_requested_outputs(payload)
             self._validate_request_params(payload)
             logger.info("Workflow accepted run_class=%s", run_class)
@@ -168,12 +167,22 @@ class WorkflowSubmissionService:
                 events_url=events_url,
                 make_event_fn=self._persistence.make_event,
             )
+            capacity_limit = self._workflow_capacity_limit(run_class)
             for transition in submission_transitions:
-                self._persistence.save_run_status(
-                    run_status=transition.status,
-                    request_json=request_json if transition.request_json else None,
-                    run_class=run_class if transition.request_json else None,
-                )
+                if transition.request_json:
+                    # Atomic capacity reservation + first persist (closes TOCTOU).
+                    self._persistence.save_run_under_capacity(
+                        run_status=transition.status,
+                        request_json=request_json,
+                        run_class=run_class,
+                        limit=capacity_limit,
+                    )
+                else:
+                    self._persistence.save_run_status(
+                        run_status=transition.status,
+                        request_json=None,
+                        run_class=None,
+                    )
                 for event in transition.events:
                     self._persistence.record_event(event=event)
 
@@ -399,26 +408,28 @@ class WorkflowSubmissionService:
                     created_at=dispatch_at,
                 )
 
-    def _assert_workflow_capacity(self, run_class: str = RUN_CLASS_BUSINESS) -> None:
-        active_runs = self._repository.count_active_runs(run_class=run_class)
+    def _workflow_capacity_limit(self, run_class: str = RUN_CLASS_BUSINESS) -> int:
         if run_class == RUN_CLASS_WEATHER_TILE:
-            limit = self._persistence.get_effective_config_int(
+            return self._persistence.get_effective_config_int(
                 "backend",
                 "max_active_weather_tile_runs",
                 settings.max_active_weather_tile_runs,
             )
-            if active_runs >= limit:
-                raise ValueError(
-                    f"Weather tile workflow capacity reached: active_runs={active_runs}, limit={limit}"
-                )
-            return
-
-        limit = self._persistence.get_effective_config_int(
+        return self._persistence.get_effective_config_int(
             "backend",
             "max_active_runs",
             settings.max_active_runs,
         )
+
+    def _assert_workflow_capacity(self, run_class: str = RUN_CLASS_BUSINESS) -> None:
+        """Read-only capacity probe (tests / diagnostics). Submit path uses atomic reserve."""
+        active_runs = self._repository.count_active_runs(run_class=run_class)
+        limit = self._workflow_capacity_limit(run_class)
         if active_runs >= limit:
+            if run_class == RUN_CLASS_WEATHER_TILE:
+                raise ValueError(
+                    f"Weather tile workflow capacity reached: active_runs={active_runs}, limit={limit}"
+                )
             raise ValueError(
                 f"Workflow capacity reached: active_runs={active_runs}, limit={limit}"
             )

@@ -265,6 +265,12 @@ class OmegaAvgDailyModule(BaseModule):
         h_map, alpha_map = extract_halpha_maps(omega_block_mat_path, grid_shape)
 
         # Stage D: 逐日 DDCA 回代
+        cancel_flag_path = algorithm_params.get("cancel_flag_path")
+        if not cancel_flag_path:
+            cancel_flag_path = ctx.runtime_context.env.get("cancel_flag_path")
+        if not cancel_flag_path:
+            cancel_flag_path = str(ctx.runtime_context.tmp_dir / "cancel.requested")
+
         stage_d_result = retrieve_daily_with_avg_omega(
             target_year=target_year,
             omega_avg_doy_dir=avg_omega_doy_dir,
@@ -277,6 +283,7 @@ class OmegaAvgDailyModule(BaseModule):
             grid_shape=grid_shape,
             output_dir=output_dir,
             logger_adapter=ctx.logger_adapter,
+            cancel_flag_path=cancel_flag_path,
         )
 
         # 构建 manifest

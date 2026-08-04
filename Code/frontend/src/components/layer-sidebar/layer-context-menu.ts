@@ -20,6 +20,9 @@ export type LayerContextActionId =
   | 'exportTif'
   | 'viewReport'
   | 'runWorkflow'
+  | 'dissolveGroup'
+  | 'toggleGroupVisible'
+  | 'removeGroup'
   | 'remove'
 
 export type LayerContextGroupId = 'view' | 'appearance' | 'order' | 'data' | 'workflow' | 'danger'
@@ -48,6 +51,8 @@ export interface LayerContextMenuInput {
   hasJobReport: boolean
   /** 可提交分析工作流（非天气/导入/边界） */
   canRunWorkflow: boolean
+  /** 所属计算组可拆 */
+  canDissolveGroup?: boolean
 }
 
 const GROUP_LABEL: Record<LayerContextGroupId, string> = {
@@ -150,6 +155,13 @@ export function buildLayerContextMenu(input: LayerContextMenuInput): LayerContex
       icon: '▶',
     })
   }
+  if (input.canDissolveGroup) {
+    workflowItems.push({
+      id: 'dissolveGroup',
+      label: LAYERS_COPY.dissolveGroup,
+      icon: '⧉',
+    })
+  }
   if (workflowItems.length) {
     groups.push({
       id: 'workflow',
@@ -172,4 +184,38 @@ export function buildLayerContextMenu(input: LayerContextMenuInput): LayerContex
   })
 
   return groups
+}
+
+/** 计算组标题专用右键菜单（拆分 / 整组显隐 / 移除整组） */
+export function buildGroupContextMenu(input: {
+  dissolvable: boolean
+  computing: boolean
+  anyVisible: boolean
+}): LayerContextMenuGroup[] {
+  const items: LayerContextMenuItem[] = [
+    {
+      id: 'toggleGroupVisible',
+      label: input.anyVisible ? LAYERS_COPY.hideLayer : LAYERS_COPY.showLayer,
+      icon: input.anyVisible ? '👁' : '○',
+    },
+    {
+      id: 'dissolveGroup',
+      label: LAYERS_COPY.dissolveGroup,
+      icon: '⧉',
+      disabled: !input.dissolvable || input.computing,
+    },
+    {
+      id: 'removeGroup',
+      label: LAYERS_COPY.removeGroup,
+      icon: '✕',
+      danger: true,
+    },
+  ]
+  return [
+    {
+      id: 'workflow',
+      label: LAYERS_COPY.groupHeaderMenu,
+      items,
+    },
+  ]
 }

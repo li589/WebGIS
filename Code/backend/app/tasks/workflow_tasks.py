@@ -246,5 +246,19 @@ def dispatch_workflow_task(
     if countdown is not None:
         apply_async_kwargs["countdown"] = countdown
 
-    async_result = process_workflow_run_task.apply_async(**apply_async_kwargs)
+    # Broker 挂起时 apply_async 会拖死 HTTP 提交；限时派发，超时则让提交失败可重试。
+    import concurrent.futures
+
+    pool = concurrent.futures.ThreadPoolExecutor(max_workers=1)
+    try:
+        fut = pool.submit(
+            lambda: process_workflow_run_task.apply_async(**apply_async_kwargs)
+        )
+        async_result = fut.result(timeout=8)
+    except concurrent.futures.TimeoutError as exc:
+        raise RuntimeError(
+            "Celery broker timeout while dispatching workflow (apply_async > 8s)"
+        ) from exc
+    finally:
+        pool.shutdown(wait=False, cancel_futures=True)
     return async_result.id

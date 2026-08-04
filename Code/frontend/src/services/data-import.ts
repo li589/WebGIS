@@ -276,9 +276,22 @@ export async function deleteImportedRaster(layerId: string): Promise<void> {
 
 // ── Phase 1 CRS 模块：13 项 CRS 选项 / 确认重投影 / 批量点转换 ───────────
 
-/** GET /import/crs-options — 获取 13 项 CRS 下拉选项 */
+/** GET /import/crs-options — 获取 featured CRS 下拉选项 */
 export async function fetchCrsOptions(): Promise<{ count: number; items: CRSOption[] }> {
   const resp = await fetch(resolveApiUrl('/import/crs-options'))
+  if (!resp.ok) {
+    const text = await resp.text().catch(() => '')
+    throw new Error(parseErrorDetail(resp.status, text))
+  }
+  return resp.json() as Promise<{ count: number; items: CRSOption[] }>
+}
+
+/** GET /import/crs-options/expanded — 全量 UTM/GK + featured */
+export async function fetchCrsOptionsExpanded(): Promise<{
+  count: number
+  items: CRSOption[]
+}> {
+  const resp = await fetch(resolveApiUrl('/import/crs-options/expanded'))
   if (!resp.ok) {
     const text = await resp.text().catch(() => '')
     throw new Error(parseErrorDetail(resp.status, text))

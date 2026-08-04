@@ -14,7 +14,9 @@
  * col-row / col-field / col-select / action-row / cancel-btn / confirm-btn）。
  */
 import { computed, ref, watch } from 'vue'
-import { listCrs, transformBounds, type CRSDef } from '@/services/crs'
+import { listCrs, transformBounds } from '@/services/crs'
+import type { CRSOption } from '@/services/crs'
+import { fetchCrsOptionsExpanded } from '@/services/data-import'
 
 interface DetectionResult {
   /** 后端 RasterImportResult 字段均为 optional，dialog 内部已做 fallback */
@@ -43,11 +45,34 @@ const emit = defineEmits<{
   skip: []
 }>()
 
-// CRS 下拉选项（13 项，按 category 顺序：geographic / encrypted / projected）
-const crsOptions = ref<CRSDef[]>([])
+// CRS 下拉（优先后端 expanded，失败回退本地 13 项）
+const crsOptions = ref<CRSOption[]>([])
+const crsFilter = ref('')
+const filteredCrsOptions = computed(() => {
+  const q = crsFilter.value.trim().toLowerCase()
+  if (!q) return crsOptions.value
+  return crsOptions.value.filter(
+    (c) =>
+      c.code.toLowerCase().includes(q) ||
+      String(c.label || '')
+        .toLowerCase()
+        .includes(q),
+  )
+})
 
-function loadCrsOptions() {
-  crsOptions.value = listCrs()
+async function loadCrsOptions() {
+  try {
+    const data = await fetchCrsOptionsExpanded()
+    crsOptions.value = data.items || []
+  } catch {
+    crsOptions.value = listCrs().map((c) => ({
+      code: c.code,
+      label: c.label,
+      category: c.category,
+      area: c.area,
+      deprecated: c.deprecated,
+    }))
+  }
 }
 
 // 用户校验输入
@@ -60,7 +85,8 @@ watch(
   () => props.visible,
   (v) => {
     if (v) {
-      loadCrsOptions()
+      void loadCrsOptions()
+      crsFilter.value = ''
       selectedCrs.value =
         props.detectionResult.suggested_crs || props.detectionResult.source_crs || 'EPSG:4326'
       lngOffset.value = 0
@@ -143,7 +169,7 @@ function handleCancel() {
       <div class="panel-header">
         <span class="panel-icon" aria-hidden="true">🗺️</span>
         <span>确认栅格数据坐标系 — {{ fileName }}</span>
-        <button class="close-btn" :disabled="isBusy" @click="handleCancel" title="关闭">
+        <button class="close-btn" :disabled="isBusy" title="关闭" @click="handleCancel">
           <span aria-hidden="true">✕</span>
         </button>
       </div>
@@ -166,7 +192,7 @@ function handleCancel() {
         <div class="info-line">
           <span class="info-key">原始 bounds</span>
           <span class="info-value mono">{{ formatBounds(detectionResult.bounds) }}</span>
-          <span class="info-unit" v-if="detectionResult.source_crs"
+          <span v-if="detectionResult.source_crs" class="info-unit"
             >（在 {{ detectionResult.source_crs }} 下）</span
           >
         </div>
@@ -177,8 +203,15 @@ function handleCancel() {
       <div class="col-row">
         <label class="col-field crs-field">
           <span class="col-label">源 CRS（栅格实际坐标系）</span>
+          <input
+            v-model="crsFilter"
+            type="search"
+            class="col-input"
+            placeholder="搜索 EPSG / 名称（全量 UTM/GK）"
+            style="margin-bottom: 0.35rem"
+          />
           <select v-model="selectedCrs" class="col-select">
-            <option v-for="opt in crsOptions" :key="opt.code" :value="opt.code">
+            <option v-for="opt in filteredCrsOptions" :key="opt.code" :value="opt.code">
               {{ opt.code }} — {{ opt.label }}
             </option>
           </select>

@@ -38,9 +38,29 @@ class WorkflowPersistenceService:
         run_status: WorkflowRunStatusResponse,
         request_json: str | None = None,
         run_class: str | None = None,
+        result_dto_override: dict[str, object] | None = None,
     ) -> None:
         self._repository.save_run(
-            run_status, request_json=request_json, run_class=run_class
+            run_status,
+            request_json=request_json,
+            run_class=run_class,
+            result_dto_override=result_dto_override,
+        )
+
+    def save_run_under_capacity(
+        self,
+        *,
+        run_status: WorkflowRunStatusResponse,
+        request_json: str,
+        run_class: str,
+        limit: int,
+    ) -> None:
+        """Atomically reserve capacity and persist the accepted run."""
+        self._repository.save_run_under_capacity(
+            run_status,
+            request_json=request_json,
+            run_class=run_class,
+            limit=limit,
         )
 
     def record_event(

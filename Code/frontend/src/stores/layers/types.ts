@@ -113,6 +113,10 @@ export interface JobLayerMapAssets {
     north: number
     crs?: string
   }
+  /** 后端 imported overlay id（算法产品提交后） */
+  overlayLayerId?: string
+  /** 产品标签（SM / VOD / OMEGA 等） */
+  productTag?: string
 }
 
 export interface JobLayerMapLayerPayload {
@@ -135,13 +139,27 @@ export interface NodeProgress {
   message?: string
   /** 产物路径列表 */
   artifacts?: string[]
-  /** chunk/pixel 细粒度进度（算法反演等长任务） */
+  /** 最近一次 node_progress 事件时间（ISO） */
+  updatedAt?: string
+  /** chunk/pixel/block 细粒度进度（算法反演等长任务） */
   detail?: {
     chunksDone?: number
     chunksTotal?: number
     pixelsDone?: number
     pixelsTotal?: number
     phase?: string
+    blocksDone?: number
+    blocksTotal?: number
+    dateStart?: string
+    dateEnd?: string
+    blockIdx?: number
+    blockDir?: string
+    timeKey?: string
+    tileId?: string
+    chunkId?: string
+    blockId?: string
+    productTag?: string
+    moduleName?: string
   }
 }
 
@@ -183,9 +201,32 @@ export interface JobLayerItem {
   eventMessages?: string[]
   /** 节点级进度（下载/预处理/反演各阶段） */
   nodeProgress?: NodeProgress[]
+  /** 运行中 incremental materialize 已同步的时间片/图层数 */
+  progressiveOverlayCount?: number
+  /** incremental materialize 最近一次错误（用户可见摘要） */
+  progressiveOverlayError?: string
+  /** incremental materialize 最近一次成功时间（ISO） */
+  progressiveOverlayAt?: string
+  /** 若为重试运行，指向原 run_id */
+  retryOfRunId?: string
 }
 
 // ─── Active layer (已添加图层) ────────────────────────────────────────────────
+
+/** Active TOC 中的工作流计算组（与 library 的 output.group 文案无关） */
+export interface ActiveRunLayerGroup {
+  groupId: string
+  runId: string
+  title: string
+  status: 'computing' | 'ready' | 'failed' | 'cancelled'
+  memberInstanceIds: string[]
+  /** succeeded 且成员均可显示，或 failed/cancelled 时可拆 */
+  dissolvable: boolean
+  sourceLayerId?: string
+  workflowId?: string
+  progress?: number
+  message?: string
+}
 
 export interface ActiveLayer {
   /** 实例 ID (uuid)，用于列表 key 和唯一性 */
@@ -215,6 +256,12 @@ export interface ActiveLayer {
   accentColor?: string
   accentGlow?: string
   chipTone?: string
+  /** 所属计算组（工作流运行占位） */
+  runGroupId?: string
+  /** 组内产品标签（SM / VOD / result…） */
+  runGroupProductTag?: string
+  /** 计算中禁止单独拖出组 */
+  runGroupLocked?: boolean
 }
 
 // ─── Layer sidebar view mode ──────────────────────────────────────────────────
@@ -284,6 +331,12 @@ export interface ActiveLayerDisplay {
   importedRasterBounds?: [number, number, number, number]
   /** 导入栅格源 CRS */
   importedRasterSourceCrs?: string
+  /** 导入栅格原生时间步（如 8d） */
+  importedRasterNativeStep?: string
+  /** 导入栅格当前生效区间标签 */
+  importedRasterEffectiveTime?: string
+  /** 导入栅格可用时刻/块数量 */
+  importedRasterTimeCount?: number
   /** 导入文件名 */
   importedFileName?: string
   /** 导入矢量样式（仅 isImported） */
@@ -295,4 +348,8 @@ export interface ActiveLayerDisplay {
   }
   /** 导入数据包围盒（矢量 / 栅格） */
   importedBounds?: [number, number, number, number]
+  /** 计算组 */
+  runGroupId?: string
+  runGroupProductTag?: string
+  runGroupLocked?: boolean
 }

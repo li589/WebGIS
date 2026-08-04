@@ -180,7 +180,7 @@ function formatTime(iso: string | null): string {
   <div class="workflow-list">
     <div class="list-header">
       <span class="header-title">工作流</span>
-      <button class="new-btn" type="button" @click="emit('create')" title="新建工作流">
+      <button class="new-btn" type="button" title="新建工作流" @click="emit('create')">
         <span aria-hidden="true">+</span>
         <span>新建</span>
       </button>

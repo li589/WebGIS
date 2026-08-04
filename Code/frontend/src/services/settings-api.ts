@@ -716,6 +716,19 @@ export function fetchRuntimeConfig(): Promise<Record<string, Record<string, unkn
   return settingsFetch('/runtime/config')
 }
 
+/** 运行态队列/容量护栏（worker 探测、池占用） */
+export function fetchRuntimeStatus(): Promise<{
+  services?: Array<{
+    service_name: string
+    health: string
+    message?: string
+    details?: Record<string, unknown>
+  }>
+  updated_at?: string
+}> {
+  return settingsFetch('/runtime/status')
+}
+
 export async function updateRuntimeConfig(
   items: RuntimeConfigPatch[],
 ): Promise<RuntimeConfigUpdateResponse> {

@@ -101,7 +101,7 @@ watch(activeTab, (tab) => {
       <div class="settings-header">
         <span class="header-icon" aria-hidden="true">⚙</span>
         <span class="header-title">{{ SETTINGS_COPY.panelTitle }}</span>
-        <button class="close-btn" @click="emit('close')" title="关闭">
+        <button class="close-btn" title="关闭" @click="emit('close')">
           <span aria-hidden="true">✕</span>
         </button>
       </div>

@@ -252,6 +252,8 @@ _NODE_TEMPLATES: list[dict[str, Any]] = [
                     "nasa_earthdata",
                     "nasa_cmr",
                     "nsidc_data",
+                    "nasa_ges_disc",
+                    "nasa_gldas",
                     "esa_copernicus",
                     "esa_download",
                 ],
@@ -376,6 +378,57 @@ _NODE_TEMPLATES: list[dict[str, Any]] = [
             ),
         ],
         "node_class": "nsidc_smap_download",
+    },
+    {
+        "type": "download/gldas_download",
+        "engine": "common",
+        "category": "数据获取与解析",
+        "title": "GLDAS 在线下载",
+        "description": "从 NASA GES DISC 下载 GLDAS NOAH025_3H V2.1（.nc4）。支持日期范围、增量下载、earthdata 认证；落地后可转 .mat 接入 DUAL 温度链。",
+        "inputs": [],
+        "outputs": [
+            _port("path", "value:string", description="本地落盘目录。"),
+            _port("manifest", "data", description="产物清单。"),
+        ],
+        "params": [
+            _param(
+                "start_date", "string", description="起始日期 YYYYMMDD。", widget="date"
+            ),
+            _param(
+                "end_date", "string", description="结束日期 YYYYMMDD。", widget="date"
+            ),
+            _param(
+                "local_dir",
+                "string",
+                description="本地目标目录（默认 Meteorological/Weather/GLDAS_Download）。",
+                widget="path",
+            ),
+            _param(
+                "version",
+                "string",
+                default="2.1",
+                options=["2.1"],
+                description="产品版本。",
+            ),
+            _param(
+                "short_name",
+                "string",
+                default="GLDAS_NOAH025_3H",
+                description="CMR/GES DISC 产品短名。",
+            ),
+            _param(
+                "dry_run",
+                "boolean",
+                default=False,
+                description="仅搜索/统计，不实际下载。",
+            ),
+            _param(
+                "max_files",
+                "number",
+                description="最多下载文件数（联调节流，可选）。",
+            ),
+        ],
+        "node_class": "gldas_download",
     },
     {
         "type": "download/fy_preprocess",

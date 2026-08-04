@@ -52,7 +52,7 @@ function handleClearAll() {
         <span class="panel-icon" aria-hidden="true">📋</span>
         <span>系统日志</span>
         <span class="entry-count">{{ logStore.entries.length }}</span>
-        <button class="close-btn" @click="emit('close')" title="关闭">
+        <button class="close-btn" title="关闭" @click="emit('close')">
           <span aria-hidden="true">✕</span>
         </button>
       </div>
@@ -80,7 +80,7 @@ function handleClearAll() {
         >
           工作流日志 <span class="tab-count">{{ workflowCount }}</span>
         </button>
-        <button class="clear-btn" @click="handleClearAll" title="清空所有日志">清空</button>
+        <button class="clear-btn" title="清空所有日志" @click="handleClearAll">清空</button>
       </div>
 
       <!-- 日志列表 -->

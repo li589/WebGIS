@@ -3,13 +3,17 @@
 from __future__ import annotations
 
 import json
+import re
 import shutil
 import uuid
 from pathlib import Path
 from typing import Any
 
 from app.data_io.services.archive_safe import safe_extract_archive
-from app.data_io.services.dbf_encoding import shapefile_to_geojson_with_fallback
+from app.data_io.services.dbf_encoding import (
+    shapefile_to_geojson_with_fallback,
+    truncate_to_encoded_bytes,
+)
 from app.data_io.services.paths import (
     IMPORTS_DIR,
     PREVIEW_FEATURE_LIMIT,
@@ -31,6 +35,200 @@ _ENCODING_META_KEYS = (
     "encoding_strict",
     "export_encoding_default",
 )
+
+# GIS / SQL 保留字（不区分大小写比较，统一以大写形式存储）
+RESERVED_FIELD_NAMES = frozenset(
+    {
+        "OBJECTID",
+        "FID",
+        "OID",
+        "ID",
+        "GEOMETRY",
+        "SHAPE",
+        "THE_GEOM",
+        "GID",
+        "UID",
+        "PK",
+        "FK",
+    }
+)
+
+# DBF（dBase III）字段名最大字节数
+_DBF_MAX_FIELD_NAME_BYTES = 10
+
+# 匹配字段名首尾的空白和控制字符（含 Unicode 空白）
+_FIELD_EDGE_RE = re.compile(r"^[\s\x00-\x1f\x7f]+|[\s\x00-\x1f\x7f]+$")
+
+
+def _clean_field_name(name: str) -> str:
+    """去除字段名首尾空白和控制字符。"""
+    return _FIELD_EDGE_RE.sub("", name)
+
+
+def _deduplicate_name(name: str, used: set[str], encoding: str) -> str:
+    """为重复字段名追加唯一后缀，同时确保不超过 DBF 字节长度限制。
+
+    当基础名称已被占用时，依次尝试 ``_2``、``_3`` … 后缀。
+    为保证追加后缀后总长不超过 ``_DBF_MAX_FIELD_NAME_BYTES`` 字节，
+    会先将基础名称截断至 ``max_bytes - len(suffix)`` 字节。
+    """
+    suffix = 2
+    while True:
+        suffix_str = f"_{suffix}"
+        suffix_bytes = len(suffix_str.encode(encoding, errors="ignore"))
+        if suffix_bytes >= _DBF_MAX_FIELD_NAME_BYTES:
+            base = ""
+        else:
+            base = truncate_to_encoded_bytes(
+                name, encoding, _DBF_MAX_FIELD_NAME_BYTES - suffix_bytes
+            )
+        candidate = base + suffix_str
+        if candidate not in used:
+            return candidate
+        suffix += 1
+
+
+def sanitize_field_names(
+    fields: list[str], *, encoding: str = "utf-8"
+) -> tuple[list[str], list[dict]]:
+    """规范化字段名列表，确保符合 DBF / GIS 命名规范。
+
+    按以下顺序处理每个字段名：
+
+    1. **去除首尾空白和控制字符** —— 清理字段名边缘的空格、制表符、
+       换行符及其他控制字符（``\\x00-\\x1f``、``\\x7f``）。
+    2. **空字段名** —— 替换为 ``field_N``（N 从 1 递增）。
+    3. **保留字** —— 若字段名（不区分大小写）命中
+       :data:`RESERVED_FIELD_NAMES`，追加 ``_field`` 后缀
+       （如 ``ID`` → ``ID_field``）。
+    4. **DBF 字节长度截断** —— 按目标 ``encoding`` 编码后字段名超过
+       ``_DBF_MAX_FIELD_NAME_BYTES``（10）字节时，使用
+       :func:`truncate_to_encoded_bytes` 截断。
+    5. **重复字段名** —— 若处理后名称与已确定名称重复，追加
+       ``_2``、``_3`` … 后缀（同时确保不超字节限制）。
+
+    Args:
+        fields: 原始字段名列表。
+        encoding: 用于字节长度计算的目标编码（如 ``"gbk"``、``"utf-8"``）。
+
+    Returns:
+        二元组 ``(sanitized, changes)``：
+
+        - ``sanitized`` —— 规范化后的字段名列表，与输入等长且一一对应。
+        - ``changes`` —— 变更记录列表，每条记录格式为
+          ``{"original": str, "sanitized": str, "reason": str}``，
+          仅包含发生变更的字段。当多个规则作用于同一字段时，
+          ``reason`` 以分号连接各原因。
+    """
+    sanitized: list[str] = []
+    changes: list[dict] = []
+    used: set[str] = set()
+    empty_counter = 0
+
+    for original in fields:
+        original_str = str(original) if original is not None else ""
+        current = original_str
+        reasons: list[str] = []
+
+        # 1. 去除首尾空白和控制字符
+        cleaned = _clean_field_name(current)
+        if cleaned != current:
+            reasons.append("去除空白和控制字符")
+            current = cleaned
+
+        # 2. 空字段名 → field_N
+        if not current:
+            empty_counter += 1
+            current = f"field_{empty_counter}"
+            reasons.append("空字段名")
+
+        # 3. 保留字 → 追加 _field
+        if current.upper() in RESERVED_FIELD_NAMES:
+            current = current + "_field"
+            reasons.append("保留字")
+
+        # 4. DBF 字节长度截断
+        truncated = truncate_to_encoded_bytes(
+            current, encoding, _DBF_MAX_FIELD_NAME_BYTES
+        )
+        if truncated != current:
+            current = truncated
+            reasons.append("字段名超长截断")
+
+        # 5. 重复字段名 → 追加后缀
+        if current in used:
+            current = _deduplicate_name(current, used, encoding)
+            reasons.append("重复字段名")
+
+        used.add(current)
+        sanitized.append(current)
+
+        if current != original_str:
+            changes.append(
+                {
+                    "original": original_str,
+                    "sanitized": current,
+                    "reason": "；".join(reasons) if reasons else "规范化",
+                }
+            )
+
+    return sanitized, changes
+
+
+def apply_field_sanitization(
+    geojson: dict, *, encoding: str = "utf-8"
+) -> tuple[dict, list[dict]]:
+    """对 GeoJSON FeatureCollection 的属性字段名进行规范化。
+
+    遍历所有要素的 ``properties``，收集全量字段名后调用
+    :func:`sanitize_field_names` 进行规范化，再将规范化后的名称
+    映射回每个要素的 ``properties``。
+
+    Args:
+        geojson: GeoJSON FeatureCollection 字典。
+        encoding: 传递给 :func:`sanitize_field_names` 的目标编码。
+
+    Returns:
+        二元组 ``(geojson, changes)``：
+
+        - ``geojson`` —— 更新后的 GeoJSON（原地修改并返回同一对象）。
+        - ``changes`` —— 字段名变更记录列表（同 :func:`sanitize_field_names`）。
+    """
+    features = list(geojson.get("features") or [])
+
+    # 收集所有字段名（保持首次出现顺序）
+    field_names: list[str] = []
+    seen: set[str] = set()
+    for feat in features:
+        props = feat.get("properties") or {}
+        if not isinstance(props, dict):
+            continue
+        for k in props:
+            sk = str(k)
+            if sk not in seen:
+                seen.add(sk)
+                field_names.append(sk)
+
+    # 规范化字段名
+    sanitized_names, changes = sanitize_field_names(field_names, encoding=encoding)
+
+    # 无变更则直接返回
+    if not changes:
+        return geojson, changes
+
+    # 构建映射并应用到所有要素
+    name_map = dict(zip(field_names, sanitized_names))
+    for feat in features:
+        props = feat.get("properties")
+        if not isinstance(props, dict):
+            continue
+        new_props: dict[str, Any] = {}
+        for k, v in props.items():
+            new_key = name_map.get(str(k), str(k))
+            new_props[new_key] = v
+        feat["properties"] = new_props
+
+    return geojson, changes
 
 
 def _new_layer_dir(prefix: str = "imported-vec") -> tuple[str, Path]:
@@ -67,15 +265,8 @@ def _write_layer(
     features = list(geojson.get("features") or [])
     if not features:
         raise ValueError("文件中没有要素")
-    data_path = dest / "data.geojson"
-    data_path.write_text(json.dumps(geojson, ensure_ascii=False), encoding="utf-8")
 
-    preview_features = features[:PREVIEW_FEATURE_LIMIT]
-    preview = {"type": "FeatureCollection", "features": preview_features}
-    (dest / "preview.geojson").write_text(
-        json.dumps(preview, ensure_ascii=False), encoding="utf-8"
-    )
-
+    # 收集原始字段名（用于检测与规范化）
     field_names: list[str] = []
     for feat in features[:200]:
         props = feat.get("properties") or {}
@@ -84,7 +275,41 @@ def _write_layer(
                 if k not in field_names:
                     field_names.append(str(k))
 
+    # 确定字段名规范化所用编码：优先源编码，回退 utf-8
     preserved = _load_preserved_encoding_meta(dest)
+    source_encoding = (
+        (extra_meta or {}).get("source_encoding")
+        or preserved.get("source_encoding")
+        or "utf-8"
+    )
+    sanitize_encoding = str(source_encoding).split("+")[0].strip() or "utf-8"
+
+    # 字段名规范化
+    geojson, field_sanitization = apply_field_sanitization(
+        geojson, encoding=sanitize_encoding
+    )
+    features = list(geojson.get("features") or [])
+
+    # 收集规范化后的字段名
+    field_names = []
+    for feat in features[:200]:
+        props = feat.get("properties") or {}
+        if isinstance(props, dict):
+            for k in props:
+                if k not in field_names:
+                    field_names.append(str(k))
+
+    # 写入 data.geojson（使用规范化后的字段名）
+    data_path = dest / "data.geojson"
+    data_path.write_text(json.dumps(geojson, ensure_ascii=False), encoding="utf-8")
+
+    # 写入 preview.geojson（使用规范化后的字段名）
+    preview_features = features[:PREVIEW_FEATURE_LIMIT]
+    preview = {"type": "FeatureCollection", "features": preview_features}
+    (dest / "preview.geojson").write_text(
+        json.dumps(preview, ensure_ascii=False), encoding="utf-8"
+    )
+
     meta = {
         "layer_id": layer_id,
         "kind": "vector",
@@ -98,6 +323,7 @@ def _write_layer(
                 if f.get("geometry")
             }
         ),
+        "field_sanitization": field_sanitization,
         **preserved,
         **(extra_meta or {}),
     }

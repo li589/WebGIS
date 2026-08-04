@@ -393,6 +393,114 @@ _VOD_SM_TIMES = _date8_time_list(_SMAP_SOIL_VOD_SM_DIR, limit=None)
 _REGISTRY: dict[str, OverlaySpec] = {}
 
 
+def _try_load_imported_overlay(layer_id: str) -> OverlaySpec | None:
+    """Lazy-load an imported-* overlay from disk into the in-memory registry.
+
+    Import commits may run in a Celery worker / one-off process while the
+    FastAPI process has a separate ``_REGISTRY``. Rehydrate from
+    ``IMPORTS_DIR/<layer_id>`` so ``/overlay-preview`` works cross-process.
+    """
+    if not layer_id.startswith("imported-"):
+        return None
+    try:
+        from app.data_io.services.paths import IMPORTS_DIR
+    except Exception:
+        return None
+
+    dest_dir = IMPORTS_DIR / layer_id
+    bounds_path = dest_dir / "bounds.json"
+    if not bounds_path.is_file():
+        return None
+
+    try:
+        bounds_data = json.loads(bounds_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return None
+
+    meta = bounds_data.get("meta") if isinstance(bounds_data, dict) else {}
+    if not isinstance(meta, dict):
+        meta = {}
+    # Prefer meta.json when present (timeseries upserts write richer meta)
+    meta_path = dest_dir / "meta.json"
+    if meta_path.is_file():
+        try:
+            disk_meta = json.loads(meta_path.read_text(encoding="utf-8"))
+            if isinstance(disk_meta, dict):
+                meta = {**meta, **disk_meta}
+        except (OSError, json.JSONDecodeError):
+            pass
+
+    time_list = meta.get("time_list") if isinstance(meta.get("time_list"), list) else []
+    time_list = [str(t) for t in time_list]
+    has_time_previews = any(dest_dir.glob("preview_*.png"))
+    has_static_preview = (dest_dir / "preview.png").is_file()
+    category = str(
+        meta.get("category")
+        or ("time-series" if (time_list or has_time_previews) else "static")
+    )
+    # 时序层通常只有 preview_{time}.png，无根目录 preview.png
+    if category == "time-series":
+        if not has_time_previews and not has_static_preview:
+            return None
+    elif not has_static_preview:
+        return None
+
+    source_filename = meta.get("source_filename")
+    source_path = dest_dir / str(source_filename) if source_filename else None
+    if source_path is not None and not source_path.is_file():
+        source_path = None
+    if source_path is None:
+        # Fall back to any source_*.tif / source.tif
+        candidates = sorted(dest_dir.glob("source*.tif")) + sorted(
+            dest_dir.glob("source*.tiff")
+        )
+        if candidates:
+            source_path = candidates[0]
+
+    if not time_list and has_time_previews:
+        time_list = sorted(
+            p.stem.removeprefix("preview_")
+            for p in dest_dir.glob("preview_*.png")
+            if p.stem.startswith("preview_")
+        )
+    default_time_raw = meta.get("default_time")
+    default_time = (
+        str(default_time_raw)
+        if default_time_raw
+        else (time_list[-1] if time_list else None)
+    )
+    source_pattern = None
+    if category == "time-series" and any(dest_dir.glob("source_*.tif")):
+        source_pattern = str(dest_dir / "source_{time}.tif")
+
+    # OMEGA_BLOCK 对外统一为 OMEGA（与工作流组标签一致）
+    label = str(meta.get("label") or "")
+    if label.upper().startswith("OMEGA_BLOCK") or label.upper() == "OMEGA_BLOCK":
+        meta["label"] = "OMEGA"
+
+    spec = OverlaySpec(
+        layer_id=layer_id,
+        overlay_dir=dest_dir,
+        png_filename="preview.png" if has_static_preview else None,
+        bounds_filename="bounds.json",
+        category=category,
+        time_list=time_list,
+        default_time=default_time,
+        time_pattern="preview_{time}.png" if category == "time-series" else None,
+        bounds_pattern="bounds_{time}.json" if category == "time-series" else None,
+        palette=str(meta.get("palette") or "wind-blue"),
+        opacity=float(meta.get("opacity") or 0.7),
+        crs=str(meta.get("crs") or "EPSG:4326"),
+        source_path=source_path if category != "time-series" else None,
+        source_pattern=source_pattern,
+        source_reader="geotiff"
+        if (source_path is not None or source_pattern is not None)
+        else "auto",
+    )
+    _REGISTRY[layer_id] = spec
+    return spec
+
+
 def register_overlay(spec: OverlaySpec) -> None:
     _REGISTRY[spec.layer_id] = spec
 
@@ -403,11 +511,33 @@ def unregister_overlay(layer_id: str) -> OverlaySpec | None:
 
 
 def get_overlay_spec(layer_id: str) -> OverlaySpec | None:
-    return _REGISTRY.get(layer_id)
+    spec = _REGISTRY.get(layer_id)
+    if spec is not None:
+        return spec
+    return _try_load_imported_overlay(layer_id)
 
 
 def list_overlay_ids() -> list[str]:
-    return list(_REGISTRY.keys())
+    ids = set(_REGISTRY.keys())
+    try:
+        from app.data_io.services.paths import IMPORTS_DIR
+
+        if IMPORTS_DIR.is_dir():
+            for child in IMPORTS_DIR.iterdir():
+                if not (
+                    child.is_dir()
+                    and child.name.startswith("imported-")
+                    and (child / "bounds.json").is_file()
+                ):
+                    continue
+                has_preview = (child / "preview.png").is_file() or any(
+                    child.glob("preview_*.png")
+                )
+                if has_preview:
+                    ids.add(child.name)
+    except Exception:
+        pass
+    return sorted(ids)
 
 
 # ─── 静态图层 ─────────────────────────────────────────────────────────────────
@@ -911,6 +1041,15 @@ def read_bounds(layer_id: str, time: str | None = None) -> dict[str, Any]:
     meta = spec.meta_dict()
     if time is not None:
         meta["current_time"] = time
+    from app.services.overlay_tile_service import tile_meta_fields
+
+    source_path = spec.resolve_source_path(time)
+    supports_tiles = bool(
+        source_path is not None
+        and source_path.suffix.lower() in {".tif", ".tiff", ".geotiff", ".cog"}
+    )
+    meta.update(tile_meta_fields(layer_id))
+    meta["supports_xyz_tiles"] = supports_tiles
     data.setdefault("meta", {}).update(meta)
     # 确保 bounds 字段存在
     if "bounds" not in data:

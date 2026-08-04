@@ -1,7 +1,7 @@
 /**
  * 下载节点表单共享工具：节点属性读取 + YYYYMMDD ⇄ ISO 日期转换。
  *
- * 后端下载节点（download/ssh_sync、download/nsidc_smap_download、download/fy_preprocess）
+ * 后端下载节点（download/ssh_sync、download/nsidc_smap_download、download/gldas_download、download/fy_preprocess）
  * 的日期参数统一以 YYYYMMDD 字符串存储；原生 <input type="date"> 需要 YYYY-MM-DD，
  * 故在展示与写回之间做转换。
  */

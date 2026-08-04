@@ -159,8 +159,8 @@ function toggleCollapsed() {
       <div
         class="sidebar-resizer"
         :class="{ active: resizingRightSplit }"
-        @mousedown="startRightSplitResize"
         title="拖动调整属性面板高度"
+        @mousedown="startRightSplitResize"
       >
         <span class="resizer-handle" aria-hidden="true"></span>
       </div>

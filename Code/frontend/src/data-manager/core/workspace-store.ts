@@ -39,6 +39,8 @@ export const dataWorkspaceOpen = ref(false)
 export const dataWorkspaceTab = ref<DataWorkspaceTab>('import')
 export const dataWorkspaceImportKind = ref<ImportPanelTab>('vector')
 export const dataWorkspaceLayerId = ref<string | null>(null)
+/** 导出面板预选时间切片（如 20251227_20251231） */
+export const dataWorkspaceExportTime = ref<string | null>(null)
 export const dataWorkspaceHeight = ref(340)
 export const dataWorkspaceMaximized = ref(false)
 export const dataWorkspaceSeedFiles = shallowRef<File[] | undefined>(undefined)
@@ -85,6 +87,8 @@ export function openDataWorkspace(opts?: {
   importKind?: ImportPanelTab
   layerInstanceId?: string | null
   files?: File[]
+  /** 打开导出页时预选时刻 */
+  exportTime?: string | null
 }) {
   if (opts?.tab) dataWorkspaceTab.value = opts.tab
   if (opts?.importKind) dataWorkspaceImportKind.value = opts.importKind
@@ -92,7 +96,18 @@ export function openDataWorkspace(opts?: {
     dataWorkspaceLayerId.value = opts.layerInstanceId
   }
   if (opts?.files) dataWorkspaceSeedFiles.value = opts.files
+  if (opts?.exportTime !== undefined) {
+    dataWorkspaceExportTime.value = opts.exportTime
+  } else if (opts?.tab === 'export' && opts.exportTime === undefined) {
+    // 显式打开导出但未带时刻时保留已有预选；纯打开不强制清空
+  }
   dataWorkspaceOpen.value = true
+}
+
+/** 侧栏/分析框汇合：打开数据导出并预选图层 + 生效时刻 */
+export function openDatedExportForLayer(layerInstanceId: string, time?: string | null) {
+  dataWorkspaceExportTime.value = time ?? null
+  openDataWorkspace({ tab: 'export', layerInstanceId, exportTime: time ?? null })
 }
 
 export function closeDataWorkspace() {
@@ -100,6 +115,7 @@ export function closeDataWorkspace() {
   dataWorkspaceSeedFiles.value = undefined
   dataWorkspaceHighlight.value = null
   dataWorkspaceSelection.value = null
+  dataWorkspaceExportTime.value = null
 }
 
 export function useDataImportFlow() {

@@ -41,6 +41,8 @@ import {
   setWeatherTileConcurrencyDebugLog,
 } from './weather-tile-concurrency'
 import { trimWeatherLayerTileCache } from './weather-tile-cache-trim'
+import { normalizeWeatherModel, WEATHER_MODEL_BOOTSTRAP } from '../utils/weather-model'
+import { useWeatherEngineStore } from './weather-engine'
 
 /** 视口外扩预取圈数：同级邻居提前缓存，减少平移空洞 */
 const PREFETCH_NEIGHBOR_DEPTH = 3
@@ -91,7 +93,17 @@ const DATA_VERSION_ZOOMOUT_COALESCE_MS = 100
 const ZOOM_OUT_TRANSITION_MS = 3_000
 
 /** 默认气象模型 bootstrap；正式值由天气引擎配置 / 后端 default_model 覆盖。 */
-export const DEFAULT_WEATHER_MODEL = 'ecmwf_ifs025'
+export const DEFAULT_WEATHER_MODEL = WEATHER_MODEL_BOOTSTRAP
+
+/** Resolve tile model: explicit override > weather-engine default_model > bootstrap. */
+function resolveConfiguredWeatherModel(override?: string): string {
+  if (override && override.trim()) return normalizeWeatherModel(override)
+  try {
+    return useWeatherEngineStore().defaultModel
+  } catch {
+    return WEATHER_MODEL_BOOTSTRAP
+  }
+}
 
 /**
  * 模型 × 图层 结构性不支持清单：变量在该模型中不存在，数据同步也补不齐
@@ -638,7 +650,7 @@ export const useWeatherTileManager = defineStore('weatherTileManager', () => {
         zoom: 0,
         mapZoom: 0,
         hour: 0,
-        model: DEFAULT_WEATHER_MODEL,
+        model: resolveConfiguredWeatherModel(),
         provider: 'auto',
         bbox: null,
         viewportTiles: [],
@@ -760,7 +772,7 @@ export const useWeatherTileManager = defineStore('weatherTileManager', () => {
     const state = getOrCreateState(layerId)
     if (!state.visible) return
 
-    const resolvedModel = model || DEFAULT_WEATHER_MODEL
+    const resolvedModel = resolveConfiguredWeatherModel(model)
     // Explicit provider string required to change source; omit/undefined keeps current
     // (avoids accidental reset to auto when a caller forgets the 7th arg).
     const resolvedProvider =
@@ -1092,7 +1104,7 @@ export const useWeatherTileManager = defineStore('weatherTileManager', () => {
       { z: key.z, x: key.x, y: key.y },
       layerId,
       key.hour,
-      state?.model ?? DEFAULT_WEATHER_MODEL,
+      resolveConfiguredWeatherModel(state?.model),
       state?.provider ?? 'auto',
     )
 

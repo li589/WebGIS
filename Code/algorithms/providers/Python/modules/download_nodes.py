@@ -1,9 +1,10 @@
 """远程数据下载与预处理工作流节点。
 
-注册三个下载/预处理节点，供工作流编排使用：
+注册下载/预处理节点，供工作流编排使用：
 
     - ``ssh_sync``        — 从远程服务器（HPC/Win11/NAS）增量同步数据
     - ``nsidc_smap_download`` — 从 NASA NSIDC 下载 SMAP L3 SPL3SMP_E 数据
+    - ``gldas_download``  — 从 NASA GES DISC 下载 GLDAS NOAH025_3H ``.nc4``
     - ``fy_preprocess``   — FY-3B/3D MWRI HDF 亮温预处理（geolocation + 拼接 + 重投影）
 
 所有节点输出 ``path``（本地路径）和 ``manifest``（ProductManifest artifact），
@@ -329,6 +330,134 @@ class NsidcSmapDownloadModule(BaseModule):
                 "skipped": result.skipped,
                 "failed": result.failed,
                 "downloaded_bytes": result.downloaded_bytes,
+            },
+        )
+
+
+# ─── GLDAS 下载节点 ───────────────────────────────────────────────────────────
+
+
+@register_module_decorator(name="gldas_download")
+class GldasDownloadModule(BaseModule):
+    name = "gldas_download"
+    description = (
+        "从 NASA GES DISC 下载 GLDAS NOAH025_3H V2.1 温度场（.nc4）。"
+        "支持日期范围、增量下载、earthdata 认证；产出目录可再转 .mat 接入 DUAL。"
+    )
+    input_ports = [
+        PortSpec(
+            name="datasource_selection",
+            kind="config",
+            data_class="dict",
+            required=False,
+        ),
+        PortSpec(
+            name="algorithm_params", kind="config", data_class="dict", required=False
+        ),
+    ]
+    output_ports = [
+        PortSpec(name="path", kind="value", data_class="string"),
+        PortSpec(name="manifest", kind="artifact", data_class="product_manifest"),
+    ]
+    default_params: dict[str, object] = {
+        "start_date": "",
+        "end_date": "",
+        "local_dir": "",
+        "version": "2.1",
+        "short_name": "GLDAS_NOAH025_3H",
+        "username": "",
+        "password": "",
+        "dry_run": False,
+        "max_files": None,
+    }
+
+    def execute(
+        self,
+        inputs: dict[str, object],
+        params: dict[str, object],
+        ctx: NodeExecutionContext,
+    ) -> dict[str, object]:
+        from ingest.gldas_download import download_gldas_range
+
+        ds = dict(inputs.get("datasource_selection", {}))
+        ap = dict(inputs.get("algorithm_params", {}))
+        resolved = {**self.default_params, **params, **ap, **ds}
+
+        start_date = str(resolved.get("start_date") or "").strip()
+        end_date = str(resolved.get("end_date") or "").strip()
+        if not start_date or not end_date:
+            raise ValueError("gldas_download requires start_date and end_date")
+
+        local_dir = str(resolved.get("local_dir") or "").strip()
+        if not local_dir:
+            local_dir = str(ctx.workspace / "data_access" / "gldas_download")
+
+        version = str(resolved.get("version") or "2.1")
+        short_name = str(resolved.get("short_name") or "GLDAS_NOAH025_3H")
+        username = str(resolved.get("username") or "").strip()
+        password = str(resolved.get("password") or "").strip()
+        dry_run = bool(resolved.get("dry_run"))
+        max_files_raw = resolved.get("max_files")
+        max_files = int(max_files_raw) if max_files_raw else None
+
+        if ctx.logger_adapter is not None:
+            ctx.logger_adapter.emit_stage_start(
+                "gldas_download",
+                f"Download {short_name} V{version}: "
+                f"{start_date} ~ {end_date} -> {local_dir}",
+            )
+
+        def _progress_cb(current: int, total: int, downloaded: int) -> None:
+            if ctx.logger_adapter is not None:
+                ctx.logger_adapter.emit_progress(
+                    "gldas_download",
+                    current / total if total else 0.0,
+                    f"Granule {current}/{total}",
+                )
+
+        result = download_gldas_range(
+            start_date=start_date,
+            end_date=end_date,
+            local_dir=local_dir,
+            version=version,
+            short_name=short_name,
+            username=username,
+            password=password,
+            dry_run=dry_run,
+            max_files=max_files,
+            progress_callback=_progress_cb,
+        )
+
+        if ctx.logger_adapter is not None:
+            ctx.logger_adapter.emit_stage_end(
+                "gldas_download",
+                f"Downloaded: {result.downloaded}/{result.total_granules} "
+                f"skipped={result.skipped} failed={result.failed}",
+            )
+
+        if result.failed > 0 and not result.success:
+            error_summary = "; ".join(result.errors[:5]) if result.errors else "unknown"
+            raise RuntimeError(
+                f"gldas_download completed with {result.failed} failures: "
+                f"{error_summary}"
+            )
+
+        return _store_path_manifest(
+            ctx,
+            module_name=self.name,
+            path=local_dir,
+            product_type="gldas_nc4_dir",
+            extra={
+                "start_date": start_date,
+                "end_date": end_date,
+                "short_name": short_name,
+                "version": version,
+                "total_granules": result.total_granules,
+                "downloaded": result.downloaded,
+                "skipped": result.skipped,
+                "failed": result.failed,
+                "downloaded_bytes": result.downloaded_bytes,
+                "dry_run": dry_run,
             },
         )
 

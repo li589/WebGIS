@@ -153,6 +153,15 @@ export const useWorkflowOutputLayersStore = defineStore('workflow-output-layers'
     }
   }
 
+  /** 更新产出图层显示名 */
+  function renameOutputLayer(localId: string, name: string) {
+    const entry = entries.value.find((e) => e.localId === localId)
+    if (!entry) return
+    const trimmed = name.trim()
+    if (!trimmed) return
+    entry.name = trimmed
+  }
+
   /** 删除产出图层条目 */
   function removeOutputLayer(localId: string) {
     const index = entries.value.findIndex((e) => e.localId === localId)
@@ -170,6 +179,7 @@ export const useWorkflowOutputLayersStore = defineStore('workflow-output-layers'
     createOutputLayer,
     createOutputLayers,
     updateRunStatus,
+    renameOutputLayer,
     removeOutputLayer,
   }
 })

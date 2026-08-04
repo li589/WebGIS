@@ -17,7 +17,15 @@
 
 from __future__ import annotations
 
-from .crs_registry import CRS_REGISTRY, get_crs, list_crs, to_api_payload
+from .crs_registry import (
+    CRS_REGISTRY,
+    get_crs,
+    list_crs,
+    suggest_gk_zone,
+    suggest_utm_zone,
+    to_api_payload,
+    to_api_payload_expanded,
+)
 from .crs_types import CRSCategory, CRSDef, CoordinatePoint
 
 # 延迟导入 transformer/detector 以避免循环依赖与启动期开销
@@ -31,6 +39,9 @@ __all__ = [
     "get_crs",
     "list_crs",
     "to_api_payload",
+    "to_api_payload_expanded",
+    "suggest_utm_zone",
+    "suggest_gk_zone",
     "crs_transformer",
     "crs_detector",
 ]

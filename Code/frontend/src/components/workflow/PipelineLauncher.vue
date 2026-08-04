@@ -375,7 +375,7 @@ watch(
             <p v-else class="dialog-subtitle">选择一个流水线以启动端到端反演流程</p>
           </div>
         </div>
-        <button class="close-btn" type="button" @click="handleClose" title="关闭">
+        <button class="close-btn" type="button" title="关闭" @click="handleClose">
           <span aria-hidden="true">✕</span>
         </button>
       </header>
@@ -500,6 +500,7 @@ watch(
               <span aria-hidden="true">{{ showAdvanced ? '▼' : '▶' }}</span>
               <span>高级参数 ({{ advancedParams.length }})</span>
             </button>
+            <p class="override-tip">启动器参数优先覆盖节点 algorithm_params 中的同名键</p>
             <div v-if="showAdvanced" class="advanced-content">
               <div v-for="(adv, idx) in advancedParams" :key="idx" class="form-row compact">
                 <label class="form-label">{{ adv.key }}</label>
@@ -922,6 +923,13 @@ watch(
   margin-top: 0.32rem;
   border-top: 1px solid rgba(136, 192, 255, 0.1);
   padding-top: 0.52rem;
+}
+
+.override-tip {
+  margin: 0.28rem 0 0.2rem;
+  font-size: 0.52rem;
+  color: rgba(200, 220, 235, 0.72);
+  line-height: 1.35;
 }
 
 .advanced-toggle {

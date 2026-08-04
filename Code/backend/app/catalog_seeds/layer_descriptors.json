@@ -958,16 +958,24 @@
     ],
     "module_name": "omega_sf_fenkuai",
     "engine": "python_provider",
+    "workflow_name": "omega_sf_fenkuai_smap_single",
+    "workflow_id": "omega_sf_fenkuai_smap_single",
     "default_task_type": "omega_sf_fenkuai",
     "default_data_access_sources": {
-      "OMEGA_SF_FENKUAI": [
-        "OMEGA_SF_FENKUAI",
-        "Model_Outputs/Omega_SF_Fenkuai"
+      "smap_folder": [
+        "Soil_Moisture/SMAP_Origin_Data"
+      ],
+      "anc_root": [
+        "Soil_Moisture/SMAP_Auxiliary_Data"
+      ],
+      "ndvi_clim_folder": [
+        "Ecological_Vegetation/NDVI/climatology"
       ]
     },
-    "run_readiness_summary": "ω 分块反演图层已就绪。",
+    "run_readiness_summary": "ω 分块反演输入数据源已就绪（SMAP/辅助/NDVI 气候态）。",
     "run_readiness_notes": [
-      "数据源: I:/Geograph_DataSet/Model_Outputs/Omega_SF_Fenkuai"
+      "输入: Soil_Moisture/SMAP_Origin_Data + SMAP_Auxiliary_Data + NDVI/climatology",
+      "产出目录由运行时写入 _runtime/python_provider/products/omega_sf_fenkuai"
     ],
     "data_owner": "Lab Team",
     "temporal_coverage": "2023-01 to Present"

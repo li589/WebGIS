@@ -52,11 +52,16 @@ export function formatTimelineDateLabel(
  */
 export function granularityUnitLabel(granularity: TimeGranularity): string {
   switch (granularity) {
-    case 'hour': return '时'
-    case 'day': return '日'
-    case 'month': return '月'
-    case 'year': return '年'
-    case 'static': return ''
+    case 'hour':
+      return '时'
+    case 'day':
+      return '日'
+    case 'month':
+      return '月'
+    case 'year':
+      return '年'
+    case 'static':
+      return ''
   }
 }
 
@@ -115,7 +120,8 @@ export function generateTimelineSegments(
         index: idx,
         label: `${idx + 1}`,
         state,
-        availabilityLabel: state === 'ready' ? '数据可用' : state === 'partial' ? '部分就绪' : '数据未定测/空数据',
+        availabilityLabel:
+          state === 'ready' ? '数据可用' : state === 'partial' ? '部分就绪' : '数据未定测/空数据',
       }
     })
   }
@@ -185,10 +191,7 @@ export function generateTimelineSegments(
  * @param maxLabels   最多允许显示的文字刻度数（默认 12）
  * @returns           应显示标签的 tick 序号集合
  */
-export function computeVisibleTickIndices(
-  totalTicks: number,
-  maxLabels = 12,
-): Set<number> {
+export function computeVisibleTickIndices(totalTicks: number, maxLabels = 12): Set<number> {
   if (totalTicks <= maxLabels) {
     return new Set(Array.from({ length: totalTicks }, (_, i) => i))
   }

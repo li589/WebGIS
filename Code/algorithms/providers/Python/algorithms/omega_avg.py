@@ -373,44 +373,47 @@ def _process_day_pixel_chunk(
         if not np.isfinite(porosity) or porosity <= 0.02:
             continue
 
-        if use_dual:
-            tc = float(tc_vec[pixel])
-            tg = float(tg_vec[pixel])
-            if not np.isfinite(tc) or not np.isfinite(tg):
-                continue
-            sm, vod = ddca_dual_temp(
-                tbv,
-                tbh,
-                tc,
-                tg,
-                tau_ini,
-                h_value,
-                clay,
-                omega_value,
-                porosity,
-                freq_ghz,
-                theta_deg,
-                alpha_value,
-                lambda_tau,
-            )
-        else:
-            ts = float(ts_vec[pixel])
-            if not np.isfinite(ts):
-                continue
-            sm, vod = ddca_single_temp(
-                tbv,
-                tbh,
-                ts,
-                tau_ini,
-                h_value,
-                clay,
-                omega_value,
-                porosity,
-                freq_ghz,
-                theta_deg,
-                alpha_value,
-                lambda_tau,
-            )
+        try:
+            if use_dual:
+                tc = float(tc_vec[pixel])
+                tg = float(tg_vec[pixel])
+                if not np.isfinite(tc) or not np.isfinite(tg):
+                    continue
+                sm, vod = ddca_dual_temp(
+                    tbv,
+                    tbh,
+                    tc,
+                    tg,
+                    tau_ini,
+                    h_value,
+                    clay,
+                    omega_value,
+                    porosity,
+                    freq_ghz,
+                    theta_deg,
+                    alpha_value,
+                    lambda_tau,
+                )
+            else:
+                ts = float(ts_vec[pixel])
+                if not np.isfinite(ts):
+                    continue
+                sm, vod = ddca_single_temp(
+                    tbv,
+                    tbh,
+                    ts,
+                    tau_ini,
+                    h_value,
+                    clay,
+                    omega_value,
+                    porosity,
+                    freq_ghz,
+                    theta_deg,
+                    alpha_value,
+                    lambda_tau,
+                )
+        except ValueError:
+            continue
         sm_chunk[i] = sm
         vod_chunk[i] = vod
 
@@ -551,6 +554,7 @@ def retrieve_daily_with_avg_omega(
     grid_shape: tuple[int, int],
     output_dir: Path,
     logger_adapter: Any = None,
+    cancel_flag_path: str | Path | None = None,
 ) -> dict[str, Any]:
     """Stage D: 逐日 DDCA 回代，用平均 omega 产出 SM/VOD/OMEGA。
 
@@ -591,6 +595,7 @@ def retrieve_daily_with_avg_omega(
         adjust_chunk_size_for_parallelism,
         auto_process_count,
     )
+    from algorithms.cancel_utils import check_cancel_requested
     from algorithms.physics import tau_from_ndvi
     from ingest.daily_bundle import build_daily_bundle_for_date
 
@@ -642,6 +647,7 @@ def retrieve_daily_with_avg_omega(
             raw_chunks = _build_pixel_chunks(npix, chunk_size_adjusted)
 
     for day_idx, date_key in enumerate(date_keys):
+        check_cancel_requested(cancel_flag_path)
         # 1. 加载 DOY 对应的 OMEGA_AVG
         doy = datetime.strptime(date_key, _DATE_KEY_FORMAT).timetuple().tm_yday
         doy_file = omega_avg_doy_dir / f"{_DOY_FILE_PREFIX}{doy:03d}.mat"

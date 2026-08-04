@@ -10,16 +10,15 @@ import { buildWeatherLegendGradient, resolveSymbologyColors } from './map/layer-
 import { resolveEffectiveLayerSymbology } from './map/effective-layer-symbology'
 import { useOverlaySymbologyStore } from '../stores/overlay-symbology'
 import { useWeatherSourcePrefsStore } from '../stores/weather-source-prefs'
-import {
-  DEFAULT_WEATHER_MODEL as DEFAULT_TILE_MODEL,
-  isWeatherLayerUnsupportedByModel,
-} from '../stores/weather-tile-manager'
+import { isWeatherLayerUnsupportedByModel } from '../stores/weather-tile-manager'
+import { useWeatherEngineStore } from '../stores/weather-engine'
 import { getWeatherProvidersForLayer, type WeatherProviderForLayer } from '../services/runtime-api'
 import { LAYERS_COPY, INSPECT_COPY } from '../ui-copy'
-import { openDataWorkspace } from '../data-manager/core/workspace-store'
+import { openDataWorkspace, openDatedExportForLayer } from '../data-manager/core/workspace-store'
 import { exportLayer } from '../data-manager/adapters/export'
 import {
   buildLayerContextMenu,
+  buildGroupContextMenu,
   type LayerContextActionId,
 } from './layer-sidebar/layer-context-menu'
 
@@ -33,6 +32,7 @@ const uiStore = useUiStore()
 const logStore = useLogStore()
 const overlaySymbologyStore = useOverlaySymbologyStore()
 const weatherSourcePrefs = useWeatherSourcePrefsStore()
+const weatherEngine = useWeatherEngineStore()
 
 const weatherProvidersCache = ref<Record<string, WeatherProviderForLayer[]>>({})
 const weatherProvidersLoading = ref<Record<string, boolean>>({})
@@ -102,6 +102,7 @@ function weatherProviderOptionLabel(p: WeatherProviderForLayer): string {
 const {
   activeLayers,
   activeLayersDisplay,
+  runLayerGroups,
   selectedInstanceId,
   sidebarView,
   activeLayerCount,
@@ -115,7 +116,9 @@ const layerCategories = layersStore.layerCategories
 const searchQuery = ref('')
 const expandedCategories = ref<Set<string>>(new Set(layerCategories.map((c) => c.id)))
 const draggedInstanceId = ref<string | null>(null)
+const draggedGroupId = ref<string | null>(null)
 const dragOverInstanceId = ref<string | null>(null)
+const dragOverGroupId = ref<string | null>(null)
 /** 侧栏根节点：切换视图时滚回顶部，避免页签滚出视口后「点不动」 */
 const sidebarRootEl = ref<HTMLElement | null>(null)
 
@@ -217,8 +220,9 @@ function getCatalogSemanticNote(catalogId: string): string | null {
   if (blockReason) return blockReason
   // 模型 × 图层 结构性不支持（如 visibility × ecmwf_ifs025）：目录直接标注，
   // 与瓦片链路的 data-empty 短路同一语义
-  if (isWeatherLayerUnsupportedByModel(catalogId, DEFAULT_TILE_MODEL)) {
-    return `当前模型（${DEFAULT_TILE_MODEL}）不提供该图层变量，请切换其他气象模型。`
+  const model = weatherEngine.defaultModel
+  if (isWeatherLayerUnsupportedByModel(catalogId, model)) {
+    return `当前模型（${model}）不提供该图层变量，请切换其他气象模型。`
   }
   const item = getCatalogItem(catalogId)
   if (!item) return null
@@ -317,7 +321,7 @@ function zoomToItem(instanceId: string) {
 }
 
 function zoomToLayerFromMenu() {
-  if (!contextMenu.value) return
+  if (!contextMenu.value?.instanceId) return
   const id = contextMenu.value.instanceId
   zoomToItem(id)
   closeContextMenu()
@@ -349,35 +353,123 @@ function toggleCategory(categoryId: string) {
 
 // ── Drag to reorder ────────────────────────────────────────────────────────────
 
+type ActiveTocRow =
+  | { kind: 'group'; groupId: string; key: string }
+  | {
+      kind: 'layer'
+      layer: (typeof activeLayersDisplay.value)[number]
+      key: string
+      indented: boolean
+    }
+
+/** 组头 + 缩进成员的 Active TOC 行 */
+const activeTocRows = computed<ActiveTocRow[]>(() => {
+  const rows: ActiveTocRow[] = []
+  const seen = new Set<string>()
+  for (const layer of activeLayersDisplay.value) {
+    if (layer.runGroupId && !seen.has(layer.runGroupId)) {
+      seen.add(layer.runGroupId)
+      rows.push({ kind: 'group', groupId: layer.runGroupId, key: `g-${layer.runGroupId}` })
+    }
+    rows.push({
+      kind: 'layer',
+      layer,
+      key: layer.instanceId,
+      indented: Boolean(layer.runGroupId),
+    })
+  }
+  return rows
+})
+
+function runGroupOf(groupId: string) {
+  return runLayerGroups.value.find((g) => g.groupId === groupId) ?? null
+}
+
+function groupStatusLabel(groupId: string): string {
+  const g = runGroupOf(groupId)
+  if (!g) return ''
+  if (g.status === 'computing') {
+    if (g.message) return g.message
+    return `${LAYERS_COPY.computingGroupBusy}${typeof g.progress === 'number' ? ` ${g.progress}%` : ''}`
+  }
+  if (g.status === 'ready') return LAYERS_COPY.computingGroupReady
+  if (g.status === 'failed') return '失败'
+  if (g.status === 'cancelled') return '已取消'
+  return g.status
+}
+
 function onDragStart(instanceId: string) {
   draggedInstanceId.value = instanceId
+  draggedGroupId.value = null
+}
+
+function onGroupDragStart(groupId: string, event: DragEvent) {
+  event.stopPropagation()
+  draggedGroupId.value = groupId
+  draggedInstanceId.value = null
 }
 
 function onDragOver(instanceId: string, event: DragEvent) {
   event.preventDefault()
   dragOverInstanceId.value = instanceId
+  dragOverGroupId.value = null
+}
+
+function onGroupDragOver(groupId: string, event: DragEvent) {
+  event.preventDefault()
+  dragOverGroupId.value = groupId
+  dragOverInstanceId.value = null
 }
 
 function onDrop(targetInstanceId: string) {
-  if (!draggedInstanceId.value || draggedInstanceId.value === targetInstanceId) return
+  if (draggedGroupId.value) {
+    const group = runGroupOf(draggedGroupId.value)
+    const target = activeLayersDisplay.value.find((l) => l.instanceId === targetInstanceId)
+    if (group && target && target.runGroupId !== draggedGroupId.value) {
+      const sorted = activeLayersDisplay.value
+      const groupMembers = new Set(group.memberInstanceIds)
+      const firstMember = sorted.find((l) => groupMembers.has(l.instanceId))
+      const targetIdx = sorted.findIndex((l) => l.instanceId === targetInstanceId)
+      const firstIdx = firstMember
+        ? sorted.findIndex((l) => l.instanceId === firstMember.instanceId)
+        : -1
+      const placeAfter = firstIdx >= 0 ? targetIdx < firstIdx : true
+      layersStore.moveRunGroupBlock(draggedGroupId.value, targetInstanceId, placeAfter)
+    }
+    onDragEnd()
+    return
+  }
+  if (!draggedInstanceId.value || draggedInstanceId.value === targetInstanceId) {
+    onDragEnd()
+    return
+  }
   const sorted = activeLayersDisplay.value
   const fromIndex = sorted.findIndex((d) => d.instanceId === draggedInstanceId.value)
   const toIndex = sorted.findIndex((d) => d.instanceId === targetInstanceId)
-  if (fromIndex === -1) {
-    draggedInstanceId.value = null
-    dragOverInstanceId.value = null
+  if (fromIndex === -1 || toIndex === -1) {
+    onDragEnd()
     return
   }
-  if (toIndex !== -1) {
-    layersStore.reorderLayers(fromIndex, toIndex)
+  layersStore.reorderLayers(fromIndex, toIndex)
+  onDragEnd()
+}
+
+function onGroupDrop(groupId: string) {
+  if (draggedGroupId.value && draggedGroupId.value !== groupId) {
+    const targetGroup = runGroupOf(groupId)
+    const anchor = targetGroup?.memberInstanceIds[0] ?? null
+    if (anchor) {
+      layersStore.moveRunGroupBlock(draggedGroupId.value, anchor, false)
+    }
   }
-  draggedInstanceId.value = null
-  dragOverInstanceId.value = null
+  onDragEnd()
 }
 
 function onDragEnd() {
   draggedInstanceId.value = null
+  draggedGroupId.value = null
   dragOverInstanceId.value = null
+  dragOverGroupId.value = null
 }
 
 // ── Helper: availability chip class ───────────────────────────────────────────
@@ -431,7 +523,8 @@ function getCatalogSourceSummary(catalogId: string): string {
 // ── 右键菜单 ─────────────────────────────────────────────────────────────────
 
 interface ContextMenuState {
-  instanceId: string
+  instanceId?: string
+  groupId?: string
   x: number
   y: number
 }
@@ -439,7 +532,7 @@ interface ContextMenuState {
 const contextMenu = ref<ContextMenuState | null>(null)
 
 const contextMenuLayer = computed(() => {
-  if (!contextMenu.value) return null
+  if (!contextMenu.value?.instanceId) return null
   return (
     activeLayersDisplay.value.find((l) => l.instanceId === contextMenu.value!.instanceId) ?? null
   )
@@ -457,11 +550,35 @@ function onLayerContextMenu(instanceId: string, event: MouseEvent) {
   contextMenu.value = { instanceId, x: Math.max(8, x), y: Math.max(8, y) }
 }
 
+function onGroupContextMenu(groupId: string, event: MouseEvent) {
+  event.preventDefault()
+  event.stopPropagation()
+  const MENU_W = 200
+  const MENU_H = 200
+  const vw = window.innerWidth
+  const vh = window.innerHeight
+  const x = Math.min(event.clientX, vw - MENU_W - 8)
+  const y = Math.min(event.clientY, vh - MENU_H - 8)
+  contextMenu.value = { groupId, x: Math.max(8, x), y: Math.max(8, y) }
+}
+
 function closeContextMenu() {
   contextMenu.value = null
 }
 
 const contextMenuGroups = computed(() => {
+  if (contextMenu.value?.groupId) {
+    const g = runGroupOf(contextMenu.value.groupId)
+    if (!g) return []
+    const members = g.memberInstanceIds
+      .map((id) => layersStore.activeLayers.find((l) => l.instanceId === id))
+      .filter(Boolean)
+    return buildGroupContextMenu({
+      dissolvable: g.dissolvable,
+      computing: g.status === 'computing',
+      anyVisible: members.some((m) => m?.visible),
+    })
+  }
   const layer = contextMenuLayer.value
   if (!layer) return []
   const canRun =
@@ -476,12 +593,15 @@ const contextMenuGroups = computed(() => {
     isImportedRaster: layer.isImportedRaster,
     hasJobReport: Boolean(layer.jobLayer?.reportSummary),
     canRunWorkflow: canRun,
+    canDissolveGroup: Boolean(
+      layer.runGroupId && layersStore.findRunGroupById(layer.runGroupId)?.dissolvable,
+    ),
   })
 })
 
 /** 右键「样式…」→ 分析面板样式 Tab（符号/透明度/配色等统一入口） */
 function openStyleInAnalysis() {
-  if (!contextMenu.value) return
+  if (!contextMenu.value?.instanceId) return
   const id = contextMenu.value.instanceId
   const layer = activeLayersDisplay.value.find((l) => l.instanceId === id)
   uiStore.requestAnalysisFocus(['layer-style'])
@@ -507,6 +627,21 @@ async function exportActiveFromMenu(format: 'geojson' | 'csv' | 'png' | 'tif') {
     closeContextMenu()
     return
   }
+  // 栅格 GeoTIFF/PNG：汇合到数据导出框（带日期时刻选择）
+  if ((format === 'tif' || format === 'png') && active.importedRaster) {
+    const times = active.importedRaster.timeList ?? []
+    let time: string | null = null
+    if (times.length) {
+      const eff = active.importedRaster.effectiveTimeLabel
+      time =
+        (eff && times.find((t) => eff === t || eff.startsWith(t))) ||
+        times[times.length - 1] ||
+        null
+    }
+    openDatedExportForLayer(active.instanceId, time)
+    closeContextMenu()
+    return
+  }
   try {
     await exportLayer(active, format)
     logStore.logOperation(`export-${format}`, `导出 ${format.toUpperCase()}「${active.name}」`)
@@ -521,7 +656,7 @@ async function exportActiveFromMenu(format: 'geojson' | 'csv' | 'png' | 'tif') {
 }
 
 function renameLayerFromMenu() {
-  if (!contextMenu.value) return
+  if (!contextMenu.value?.instanceId) return
   const id = contextMenu.value.instanceId
   const layer = activeLayersDisplay.value.find((l) => l.instanceId === id)
   const next = window.prompt(LAYERS_COPY.renamePrompt, layer?.name ?? '')
@@ -534,7 +669,48 @@ function renameLayerFromMenu() {
 
 function handleContextAction(action: LayerContextActionId) {
   if (!contextMenu.value) return
+  const groupId = contextMenu.value.groupId
+  if (groupId) {
+    const g = runGroupOf(groupId)
+    switch (action) {
+      case 'toggleGroupVisible': {
+        const members = g?.memberInstanceIds ?? []
+        const anyVisible = members.some(
+          (id) => layersStore.activeLayers.find((l) => l.instanceId === id)?.visible,
+        )
+        for (const id of members) {
+          const layer = layersStore.activeLayers.find((l) => l.instanceId === id)
+          if (!layer) continue
+          if (layer.visible === anyVisible) {
+            layersStore.toggleLayerVisibility(id)
+          }
+        }
+        closeContextMenu()
+        return
+      }
+      case 'dissolveGroup':
+        if (g?.dissolvable) {
+          layersStore.dissolveRunGroup(groupId)
+          logStore.logOperation('layer-dissolve-group', `拆分计算组 ${groupId}`)
+        }
+        closeContextMenu()
+        return
+      case 'removeGroup': {
+        const members = [...(g?.memberInstanceIds ?? [])]
+        for (const id of members) {
+          layersStore.removeLayer(id)
+        }
+        logStore.logOperation('layer-remove-group', `移除计算组 ${groupId}`)
+        closeContextMenu()
+        return
+      }
+      default:
+        closeContextMenu()
+        return
+    }
+  }
   const id = contextMenu.value.instanceId
+  if (!id) return
   switch (action) {
     case 'zoom':
       zoomToLayerFromMenu()
@@ -591,6 +767,15 @@ function handleContextAction(action: LayerContextActionId) {
       const layer = activeLayersDisplay.value.find((l) => l.instanceId === id)
       if (layer) {
         void layersStore.runWorkflowForCatalog(layer.catalogId)
+      }
+      closeContextMenu()
+      return
+    }
+    case 'dissolveGroup': {
+      const layer = activeLayersDisplay.value.find((l) => l.instanceId === id)
+      if (layer?.runGroupId) {
+        layersStore.dissolveRunGroup(layer.runGroupId)
+        logStore.logOperation('layer-dissolve-group', `拆分计算组 ${layer.runGroupId}`)
       }
       closeContextMenu()
       return
@@ -842,7 +1027,9 @@ type ActiveLayerDisplayLike = {
               </button>
             </div>
             <div v-if="group.items.length === 0" class="empty-subcategory-hint">
-              暂无匹配【{{ selectedSubCategory === 'all' ? '全部' : selectedSubCategory }}】的课题组图层
+              暂无匹配【{{
+                selectedSubCategory === 'all' ? '全部' : selectedSubCategory
+              }}】的课题组图层
             </div>
             <div
               v-for="item in group.items"
@@ -864,8 +1051,13 @@ type ActiveLayerDisplayLike = {
                     <span
                       v-if="item.subCategory"
                       class="card-chip subcategory-chip"
-                      style="background: rgba(255, 255, 255, 0.08); margin-left: 4px; color: #a4caf6;"
-                    >{{ item.subCategory }}</span>
+                      style="
+                        background: rgba(255, 255, 255, 0.08);
+                        margin-left: 4px;
+                        color: #a4caf6;
+                      "
+                      >{{ item.subCategory }}</span
+                    >
                   </div>
                 </div>
                 <p class="card-source">{{ item.sourceLabel }}</p>
@@ -1053,124 +1245,186 @@ type ActiveLayerDisplayLike = {
           <button class="batch-btn" title="隐藏所有图层" @click="hideAllLayers">
             <span aria-hidden="true">◯</span> 全部隐藏
           </button>
-          <button
-            class="batch-btn batch-btn-danger"
-            title="移除所有图层"
-            @click="removeAllLayers"
-          >
+          <button class="batch-btn batch-btn-danger" title="移除所有图层" @click="removeAllLayers">
             <span aria-hidden="true">✕</span> 全部移除
           </button>
         </div>
 
-        <!-- 图层列表：参考 ArcGIS Pro 紧凑设计，按内容高度排列，不强制撑满 -->
+        <!-- 图层列表：组头 + 成员；按内容高度排列 -->
         <ul class="layer-list" role="listbox" aria-label="已添加图层">
-          <li
-            v-for="(layer, index) in activeLayersDisplay"
-            :key="layer.instanceId"
-            class="layer-item"
-            :class="{
-              active: layer.instanceId === selectedInstanceId,
-              hidden: !layer.visible,
-              'drag-over': layer.instanceId === dragOverInstanceId,
-            }"
-            :style="{
-              '--accent': layer.accentColor,
-              '--glow': layer.accentGlow,
-            }"
-            draggable="true"
-            role="option"
-            :aria-selected="layer.instanceId === selectedInstanceId"
-            @click="selectItem(layer.instanceId)"
-            @dblclick.stop="zoomToItem(layer.instanceId)"
-            @contextmenu="onLayerContextMenu(layer.instanceId, $event)"
-            @dragstart="onDragStart(layer.instanceId)"
-            @dragover="onDragOver(layer.instanceId, $event)"
-            @drop="onDrop(layer.instanceId)"
-            @dragend="onDragEnd"
-          >
-            <!-- 主行：紧凑单行布局 -->
-            <div class="layer-row-top">
-              <span class="drag-handle" title="拖动排序">☰</span>
-              <button
-                class="vis-btn"
-                :title="layer.visible ? '隐藏图层' : '显示图层'"
-                @click="toggleVisibility(layer.instanceId, $event)"
-              >
-                <span aria-hidden="true">{{ layer.visible ? '◉' : '◯' }}</span>
-              </button>
+          <template v-for="row in activeTocRows" :key="row.key">
+            <li
+              v-if="row.kind === 'group'"
+              class="layer-group-header"
+              :class="{
+                'drag-over': row.groupId === dragOverGroupId,
+                computing: runGroupOf(row.groupId)?.status === 'computing',
+              }"
+              draggable="true"
+              @dragstart="onGroupDragStart(row.groupId, $event)"
+              @dragover="onGroupDragOver(row.groupId, $event)"
+              @drop="onGroupDrop(row.groupId)"
+              @dragend="onDragEnd"
+              @contextmenu.prevent="onGroupContextMenu(row.groupId, $event)"
+            >
+              <span class="drag-handle" title="拖动整组">☰</span>
+              <span class="group-accent" aria-hidden="true"></span>
+              <strong class="group-title">{{
+                runGroupOf(row.groupId)?.title || LAYERS_COPY.computingGroup
+              }}</strong>
+              <span class="group-status-chip">{{ groupStatusLabel(row.groupId) }}</span>
               <span
-                class="layer-color-dot"
-                :style="{ background: layer.accentColor }"
-                aria-hidden="true"
-              ></span>
-              <strong class="layer-name">{{ layer.name }}</strong>
-              <span class="layer-chip" :style="{ background: layer.chipTone }">{{
-                getCategoryName(layer.category)
-              }}</span>
-              <button
-                class="del-btn"
-                title="移除图层"
-                @click="removeItem(layer.instanceId, $event)"
+                v-if="typeof runGroupOf(row.groupId)?.progress === 'number'"
+                class="group-progress-track"
+                :title="`${runGroupOf(row.groupId)?.progress}%`"
               >
-                <span aria-hidden="true">✕</span>
-              </button>
-            </div>
-
-            <!-- 颜色图例（参考 ArcGIS TOC：仅支持显示的图层展示色带） -->
-            <div v-if="hasColorSymbology(layer)" class="layer-legend">
-              <div class="legend-ramp" :style="getColorRampStyle(layer)"></div>
-              <div class="legend-labels">
-                <span class="legend-min">{{ getSymbologyVmin(layer) }}</span>
-                <span class="legend-unit">{{ getSymbologyUnit(layer) }}</span>
-                <span class="legend-max">{{ getSymbologyVmax(layer) }}</span>
-              </div>
-            </div>
-
-            <!-- 底行：状态信息（样板可运行、顺序、作业状态） -->
-            <div class="layer-row-bottom">
-              <span class="availability-chip" :class="availabilityClass(layer.availabilityState)">
-                {{ layer.availabilityLabel }}
+                <span
+                  class="group-progress-fill"
+                  :style="{
+                    width: `${Math.max(0, Math.min(100, runGroupOf(row.groupId)?.progress ?? 0))}%`,
+                  }"
+                ></span>
               </span>
-              <span v-if="layer.isAdminBoundary" class="admin-tip-inline">边界 · 静态矢量</span>
-              <span v-else-if="layer.isImported" class="admin-tip-inline"
-                >导入 · {{ layer.importedGeometryType }} ·
-                {{ layer.importedFeatureCount }} 要素</span
+              <span class="group-count"
+                >{{ runGroupOf(row.groupId)?.memberInstanceIds.length ?? 0 }} 层</span
               >
-              <span v-else-if="layer.isImportedRaster" class="admin-tip-inline"
-                >导入 · 栅格 · TIF</span
-              >
-              <template v-if="layer.jobLayer">
-                <span class="job-status-badge" :class="`job-${layer.jobLayer.status}`">
-                  {{
-                    layer.jobLayer.status === 'running'
-                      ? `运行中 ${layer.jobLayer.progress}%`
-                      : layer.jobLayer.status === 'queued'
-                        ? '排队中'
-                        : layer.jobLayer.status === 'retry_pending'
-                          ? '等待重试'
-                          : layer.jobLayer.status === 'succeeded'
-                            ? '已完成'
-                            : layer.jobLayer.status === 'failed'
-                              ? '失败'
-                              : layer.jobLayer.status === 'cancelled'
-                                ? '已取消'
-                                : layer.jobLayer.status
-                  }}
-                </span>
-                <button
-                  v-if="layer.jobLayer.reportSummary"
-                  class="job-report-hint"
-                  type="button"
-                  @click.stop="openJobReport(layer.instanceId)"
+            </li>
+            <li
+              v-else
+              class="layer-item"
+              :class="{
+                active: row.layer.instanceId === selectedInstanceId,
+                hidden: !row.layer.visible,
+                'drag-over': row.layer.instanceId === dragOverInstanceId,
+                'in-run-group': row.indented,
+                'group-locked': row.layer.runGroupLocked,
+              }"
+              :style="{
+                '--accent': row.layer.accentColor,
+                '--glow': row.layer.accentGlow,
+              }"
+              :draggable="true"
+              role="option"
+              :aria-selected="row.layer.instanceId === selectedInstanceId"
+              @click="selectItem(row.layer.instanceId)"
+              @dblclick.stop="zoomToItem(row.layer.instanceId)"
+              @contextmenu="onLayerContextMenu(row.layer.instanceId, $event)"
+              @dragstart="onDragStart(row.layer.instanceId)"
+              @dragover="onDragOver(row.layer.instanceId, $event)"
+              @drop="onDrop(row.layer.instanceId)"
+              @dragend="onDragEnd"
+            >
+              <div class="layer-row-top">
+                <span
+                  class="drag-handle"
+                  :title="row.layer.runGroupLocked ? '仅可在组内排序' : '拖动排序'"
+                  >☰</span
                 >
-                  查看报告
+                <button
+                  class="vis-btn"
+                  :title="row.layer.visible ? '隐藏图层' : '显示图层'"
+                  @click="toggleVisibility(row.layer.instanceId, $event)"
+                >
+                  <span aria-hidden="true">{{ row.layer.visible ? '◉' : '◯' }}</span>
                 </button>
-              </template>
-              <span class="order-hint"
-                >顺序 {{ index + 1 }} / {{ activeLayersDisplay.length }}</span
-              >
-            </div>
-          </li>
+                <span
+                  class="layer-color-dot"
+                  :style="{ background: row.layer.accentColor }"
+                  aria-hidden="true"
+                ></span>
+                <strong class="layer-name">{{ row.layer.name }}</strong>
+                <span class="layer-chip" :style="{ background: row.layer.chipTone }">{{
+                  getCategoryName(row.layer.category)
+                }}</span>
+                <button
+                  class="del-btn"
+                  title="移除图层"
+                  @click="removeItem(row.layer.instanceId, $event)"
+                >
+                  <span aria-hidden="true">✕</span>
+                </button>
+              </div>
+
+              <div v-if="hasColorSymbology(row.layer)" class="layer-legend">
+                <div class="legend-ramp" :style="getColorRampStyle(row.layer)"></div>
+                <div class="legend-labels">
+                  <span class="legend-min">{{ getSymbologyVmin(row.layer) }}</span>
+                  <span class="legend-unit">{{ getSymbologyUnit(row.layer) }}</span>
+                  <span class="legend-max">{{ getSymbologyVmax(row.layer) }}</span>
+                </div>
+              </div>
+
+              <div class="layer-row-bottom">
+                <span
+                  class="availability-chip"
+                  :class="availabilityClass(row.layer.availabilityState)"
+                >
+                  {{ row.layer.availabilityLabel }}
+                </span>
+                <span v-if="row.layer.isAdminBoundary" class="admin-tip-inline"
+                  >边界 · 静态矢量</span
+                >
+                <span v-else-if="row.layer.isImported" class="admin-tip-inline"
+                  >导入 · {{ row.layer.importedGeometryType }} ·
+                  {{ row.layer.importedFeatureCount }} 要素</span
+                >
+                <span v-else-if="row.layer.isImportedRaster" class="admin-tip-inline"
+                  >导入 · 栅格{{
+                    row.layer.importedRasterTimeCount
+                      ? ` · ${row.layer.importedRasterTimeCount} 块`
+                      : ' · TIF'
+                  }}{{
+                    row.layer.importedRasterEffectiveTime
+                      ? ` · ${row.layer.importedRasterEffectiveTime}`
+                      : ''
+                  }}</span
+                >
+                <span
+                  v-else-if="row.layer.runGroupId && !row.layer.isImportedRaster"
+                  class="admin-tip-inline"
+                  >计算占位{{
+                    row.layer.runGroupProductTag ? ` · ${row.layer.runGroupProductTag}` : ''
+                  }}</span
+                >
+                <template v-if="row.layer.jobLayer">
+                  <span class="job-status-badge" :class="`job-${row.layer.jobLayer.status}`">
+                    {{
+                      row.layer.jobLayer.status === 'running'
+                        ? row.layer.jobLayer.message
+                          ? row.layer.jobLayer.message
+                          : `运行中 ${row.layer.jobLayer.progress}%`
+                        : row.layer.jobLayer.status === 'queued'
+                          ? '排队中'
+                          : row.layer.jobLayer.status === 'retry_pending'
+                            ? '等待重试'
+                            : row.layer.jobLayer.status === 'succeeded'
+                              ? '已完成'
+                              : row.layer.jobLayer.status === 'failed'
+                                ? '失败'
+                                : row.layer.jobLayer.status === 'cancelled'
+                                  ? '已取消'
+                                  : row.layer.jobLayer.status
+                    }}
+                  </span>
+                  <button
+                    v-if="row.layer.jobLayer.reportSummary"
+                    class="job-report-hint"
+                    type="button"
+                    @click.stop="openJobReport(row.layer.instanceId)"
+                  >
+                    查看报告
+                  </button>
+                </template>
+                <span class="order-hint"
+                  >顺序
+                  {{
+                    activeLayersDisplay.findIndex((l) => l.instanceId === row.layer.instanceId) + 1
+                  }}
+                  / {{ activeLayersDisplay.length }}</span
+                >
+              </div>
+            </li>
+          </template>
         </ul>
       </template>
     </div>
@@ -2112,6 +2366,89 @@ h2 {
     background-color 0.08s ease;
 }
 
+.layer-group-header {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  margin: 0.35rem 0 0.15rem;
+  padding: 0.42rem 0.5rem;
+  border: 1px solid rgba(90, 213, 255, 0.22);
+  border-radius: var(--sidebar-soft-radius);
+  background: linear-gradient(90deg, rgba(14, 40, 62, 0.95) 0%, rgba(10, 24, 40, 0.88) 100%);
+  box-shadow: inset 3px 0 0 rgba(90, 213, 255, 0.65);
+  cursor: grab;
+  user-select: none;
+}
+
+.layer-group-header.computing {
+  border-color: rgba(255, 196, 86, 0.35);
+  box-shadow: inset 3px 0 0 rgba(255, 196, 86, 0.75);
+}
+
+.layer-group-header.drag-over {
+  border-color: rgba(90, 213, 255, 0.7);
+  background: rgba(10, 132, 255, 0.12);
+}
+
+.group-accent {
+  width: 0.28rem;
+  height: 1.1rem;
+  border-radius: 999px;
+  background: rgba(90, 213, 255, 0.85);
+  flex-shrink: 0;
+}
+
+.group-title {
+  font-size: 0.72rem;
+  font-weight: 650;
+  color: #e8f3fb;
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.group-status-chip {
+  font-size: 0.58rem;
+  color: #9ec3d8;
+  max-width: 9rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.group-progress-track {
+  width: 2.4rem;
+  height: 0.28rem;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.08);
+  overflow: hidden;
+  flex-shrink: 0;
+}
+
+.group-progress-fill {
+  display: block;
+  height: 100%;
+  background: linear-gradient(90deg, #5ad5ff, #67ffb0);
+}
+
+.group-count {
+  font-size: 0.58rem;
+  color: #7f9bb0;
+  flex-shrink: 0;
+}
+
+.layer-item.in-run-group {
+  margin-left: 0.55rem;
+  border-left-width: 2px;
+  background: color-mix(in srgb, var(--accent, #67d4ff) 8%, rgba(8, 18, 33, 0.72));
+}
+
+.layer-item.group-locked {
+  opacity: 0.92;
+}
+
 /* ── Layer row top (主行紧凑布局) ──────────────────────────────────────── */
 .layer-row-top {
   display: flex;
@@ -2401,6 +2738,12 @@ h2 {
   color: #e8f4ff;
 }
 
+.ctx-item:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+  pointer-events: none;
+}
+
 .ctx-item.ctx-danger:hover {
   background: rgba(255, 80, 80, 0.14);
   color: #ff9a9a;
@@ -2476,5 +2819,4 @@ h2 {
 .layer-sidebar-container::-webkit-scrollbar-thumb:hover {
   background: rgba(255, 255, 255, 0.32);
 }
-
 </style>

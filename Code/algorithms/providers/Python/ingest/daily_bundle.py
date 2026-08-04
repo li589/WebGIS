@@ -357,6 +357,13 @@ def load_static_ancillary_bundle(
     )
 
     if ndvi_extrema_mat is None:
+        for fname in ("VI_v_qa.mat", "NDVI_extrema.mat", "ndvi_extrema.mat"):
+            candidate = anc_root / fname
+            if candidate.is_file():
+                ndvi_extrema_mat = candidate
+                break
+
+    if ndvi_extrema_mat is None:
         ndvi_v_max = None
         ndvi_v_min = None
     else:

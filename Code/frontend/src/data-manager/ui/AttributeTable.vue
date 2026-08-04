@@ -707,7 +707,7 @@ function toggleSort(field: string) {
         }}</span>
       </p>
 
-      <div class="table-scroll" ref="tableBodyEl" @click="ctxMenu = null">
+      <div ref="tableBodyEl" class="table-scroll" @click="ctxMenu = null">
         <table>
           <thead>
             <tr>

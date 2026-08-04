@@ -15,6 +15,10 @@ import logging
 
 from app.core.celery_app import revoke_task
 from app.core.config import settings
+from app.services.workflow.cancel_paths import (
+    workflow_cancel_flag_path,
+    workflow_cancel_tmp_dir,
+)
 from app.services.failure_classifier import FailureClassifier
 from app.services.result_storage import result_storage_service
 from app.services.workflow_repository import SQLiteWorkflowRepository
@@ -74,8 +78,21 @@ class WorkflowLifecycleService:
                 f"Cannot cancel workflow in terminal state: {current_run.status.value}"
             )
 
-        if use_celery_executor() and current_run.executor_metadata:
-            task_id = current_run.executor_metadata.get("task_id")
+        # 协作式取消：先登记 cancel_requested + 写旗标，再 revoke
+        meta = dict(current_run.executor_metadata or {})
+        meta["cancel_requested"] = True
+        meta["cancel_requested_at"] = now.isoformat()
+        try:
+            tmp_dir = workflow_cancel_tmp_dir(run_id)
+            tmp_dir.mkdir(parents=True, exist_ok=True)
+            workflow_cancel_flag_path(run_id).write_text("1", encoding="utf-8")
+        except OSError:
+            logger.warning(
+                "Failed to write cancel flag for run %s", run_id, exc_info=True
+            )
+
+        if use_celery_executor() and meta:
+            task_id = meta.get("task_id")
             if task_id:
                 revoke_task(task_id, terminate=True)
 
@@ -108,7 +125,7 @@ class WorkflowLifecycleService:
                     "error_code=workflow_cancelled_by_user",
                 ],
                 executor_metadata={
-                    **current_run.executor_metadata,
+                    **meta,
                     "cancelled_at": now.isoformat(),
                     "cancelled_by": "user",
                 },
@@ -282,7 +299,8 @@ class WorkflowLifecycleService:
                 result_refs=result_refs,
                 result_dto=result_dto,
                 diagnostics=diagnostics,
-            )
+            ),
+            result_dto_override=result_dto if isinstance(result_dto, dict) else None,
         )
         # Mid-run event_factory 已即时落库；禁止在收尾再 INSERT 同批 event_id。
         # （旧 worker 若仍执行「整表重写」会撞 UNIQUE 并把已成功的算法 run 标成 failed。）

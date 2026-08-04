@@ -166,8 +166,8 @@ class _EventForwardingLoggerAdapter:
             self._console.emit_progress(stage, progress, message, detail=detail)
         except TypeError:
             self._console.emit_progress(stage, progress, message)
-        # progress 可能是 0-1 或 0-100，统一为 0-100
-        pct = int(progress * 100) if progress <= 1.0 else int(progress)
+        # progress 可能是 0-1 或 0-100，统一为 0-100（用 round 避免早期进度截断为 0）
+        pct = round(progress * 100) if 0.0 <= progress <= 1.0 else round(progress)
         self._forward(stage, pct, message, detail=detail)
 
     def emit_warning(self, stage: str, message: str, extra: dict | None = None) -> None:
@@ -180,6 +180,17 @@ class _EventForwardingLoggerAdapter:
 
     def emit_artifact(self, stage: str, artifact_uri: str, artifact_type: str) -> None:
         self._console.emit_artifact(stage, artifact_uri, artifact_type)
+        self._forward(
+            stage,
+            -1,
+            f"Artifact ready: {artifact_type}",
+            detail={
+                "artifact_uri": artifact_uri,
+                "artifact_type": artifact_type,
+                "product_tag": artifact_type,
+                "phase": "artifact",
+            },
+        )
 
     def emit_stage_end(self, stage: str, message: str) -> None:
         self._console.emit_stage_end(stage, message)
@@ -207,7 +218,11 @@ class _EventForwardingLoggerAdapter:
                 "level": level,
             }
             if detail:
-                node_progress["detail"] = detail
+                # Normalize common dimension keys onto detail for FE progress shell
+                enriched = dict(detail)
+                if "module_name" not in enriched:
+                    enriched["module_name"] = stage
+                node_progress["detail"] = enriched
             event_factory(
                 channel="log",
                 message=message,

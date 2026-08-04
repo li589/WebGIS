@@ -88,7 +88,17 @@ class CacheStore:
             raise FileNotFoundError(f"Fetch source does not exist: {source}")
         target_path = self.resolve_cache_path(resource)
         target_path.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copy2(source, target_path)
+        # Atomic replace avoids concurrent readers seeing a partial/truncated file.
+        tmp_path = target_path.with_suffix(target_path.suffix + f".{os.getpid()}.tmp")
+        try:
+            shutil.copy2(source, tmp_path)
+            os.replace(tmp_path, target_path)
+        except Exception:
+            try:
+                tmp_path.unlink(missing_ok=True)
+            except OSError:
+                pass
+            raise
         return build_resource_ref(
             uri=f"cache://materialized/{target_path.name}",
             source_kind="cache",

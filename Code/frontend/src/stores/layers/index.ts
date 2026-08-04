@@ -10,6 +10,7 @@ import {
   cancelWorkflowRun,
   retryWorkflowRun,
   getWeatherPoint,
+  materializeWorkflowMapLayers,
 } from '../../services/runtime-api'
 import {
   supportsMapLayerCapability,
@@ -18,6 +19,8 @@ import {
 } from '../../services/layer-capabilities'
 import { useWeatherTileManager } from '../weather-tile-manager'
 import { useWeatherSourcePrefsStore } from '../weather-source-prefs'
+import { useUiStore } from '../ui'
+import { formatClockHourLabel } from '../../utils/weather-timeline'
 import { buildDefaultWeatherRenderHint } from '../../components/map/weather-render'
 import type {
   BoundingBox,
@@ -29,14 +32,38 @@ import { LAYER_CATEGORIES, LAYER_LIBRARY } from './catalog'
 import { allocateLayerAccent } from './layer-accent'
 import { isWeatherEngineCatalogId } from './weather-session'
 import { createWeatherViewportSlice } from './weather-viewport'
-import { buildJobLayer } from './result-adapter'
+import { buildJobLayer, extractOverlayImportsFromResultRefs } from './result-adapter'
 import { buildImportedVectorPayload, computeBounds, inferGeometryType } from './imported-vector'
 import { buildImportedRasterPayload } from './imported-raster'
 import { deleteImportedRaster } from '../../services/data-import'
 import { useWorkflowOutputLayersStore } from '../workflow-output-layers'
+import { persistLayerDisplayName, resolvePersistedDisplayName } from './layer-display-names'
+import {
+  buildWorkspaceSnapshot,
+  isCatalogDismissed,
+  isOverlayDismissed,
+  isRunDismissed,
+  isVectorDismissed,
+  loadWorkspaceSnapshot,
+  rememberDismissedLayer,
+  saveWorkspaceSnapshot,
+  type PersistedActiveLayer,
+  type PersistedCatalogLayer,
+  type PersistedVectorLayer,
+} from './workspace-persist'
+import { formatProgressShell, pickLatestNodeProgress } from '../../utils/workflow-progress-format'
+import { claimOrphanWorkflowRun, isSubmitTimeoutError } from '../../utils/workflow-submit-reconcile'
+import { WORKFLOW_COPY } from '../../ui-copy/workflow'
+import { formatWorkflowEventLine } from '../../utils/workflow-event-label'
+import { localizeWorkflowErrorMessage } from '../../utils/workflow-error-messages'
+import {
+  timelineTargetFromWorkflowTimeKey,
+  type WorkflowProgressTimeSeekHint,
+} from '../../utils/workflow-timekey-seek'
 import type {
   ActiveLayer,
   ActiveLayerDisplay,
+  ActiveRunLayerGroup,
   JobLayerItem,
   JobStatus,
   LayerCatalogItem,
@@ -54,6 +81,25 @@ function genInstanceId() {
 /** 本地导入（矢量 / 栅格）不走 catalog / tile manager */
 function isLocalImport(layer: ActiveLayer): boolean {
   return Boolean(layer.importedVector || layer.importedRaster)
+}
+
+/** 产品标签归一：OMEGA_BLOCK / OMEGA_PIXEL → OMEGA，便于绑入计算组 */
+function normalizeProductTag(raw: string | null | undefined): string {
+  const tag = String(raw || '')
+    .trim()
+    .toUpperCase()
+    .replace(/^ALGORITHM MAP LAYER:\s*/i, '')
+  if (!tag) return ''
+  if (tag === 'OMEGA_BLOCK' || tag.startsWith('OMEGA_BLOCK') || tag.includes('OMEGA_BLOCK')) {
+    return 'OMEGA'
+  }
+  if (tag === 'OMEGA_PIXEL' || tag.includes('OMEGA_PIXEL') || tag.includes('OMEGA_PIX')) {
+    return 'OMEGA'
+  }
+  if (tag === 'OMEGA' || tag.endsWith('_OMEGA') || tag.endsWith('-OMEGA')) return 'OMEGA'
+  if (tag === 'SM' || tag.endsWith('_SM') || tag.endsWith('-SM')) return 'SM'
+  if (tag === 'VOD' || tag.endsWith('_VOD') || tag.endsWith('-VOD')) return 'VOD'
+  return tag
 }
 
 function isTerminalStatus(status: string) {
@@ -162,9 +208,81 @@ function buildRealLayerDisplay(
 const EVENT_POLL_ACTIVE_INTERVAL_MS = 1200
 const EVENT_POLL_IDLE_INTERVAL_MS = 2600
 const STATUS_SYNC_INTERVAL_MS = 9000
-const EVENT_POLL_MAX_DURATION_MS = 600_000
+/** 无新事件且状态同步后仍非终态时，才判为“事件等待超时”。长批（omega_sf 等）可数小时。 */
+const EVENT_POLL_IDLE_TIMEOUT_MS = 30 * 60_000
 const MAX_EVENT_MESSAGE_COUNT = 5
 const MAX_CONSECUTIVE_POLL_ERRORS = 3
+/** 刷新后恢复用：记住本机跟踪中的 run，避免仅依赖内存态丢失进度。 */
+const TRACKED_RUNS_STORAGE_KEY = 'geo:tracked-workflow-runs:v1'
+
+interface TrackedWorkflowRun {
+  runId: string
+  catalogId: string
+  name?: string
+  updatedAt: string
+  groupId?: string
+  memberCatalogIds?: string[]
+}
+
+function loadTrackedWorkflowRuns(): TrackedWorkflowRun[] {
+  if (typeof window === 'undefined') return []
+  try {
+    const raw = window.localStorage.getItem(TRACKED_RUNS_STORAGE_KEY)
+    if (!raw) return []
+    const parsed = JSON.parse(raw)
+    if (!Array.isArray(parsed)) return []
+    return parsed.filter(
+      (item): item is TrackedWorkflowRun =>
+        !!item && typeof item.runId === 'string' && typeof item.catalogId === 'string',
+    )
+  } catch {
+    return []
+  }
+}
+
+function saveTrackedWorkflowRuns(runs: TrackedWorkflowRun[]) {
+  if (typeof window === 'undefined') return
+  try {
+    // Keep recent 40 entries
+    window.localStorage.setItem(TRACKED_RUNS_STORAGE_KEY, JSON.stringify(runs.slice(0, 40)))
+  } catch {
+    // ignore quota errors
+  }
+}
+
+/** Normalize workflow/node progress to 0–100, preferring chunk ratios when available. */
+function normalizeWorkflowProgress(
+  raw: number | null | undefined,
+  detail?: {
+    chunksDone?: number
+    chunksTotal?: number
+    pixelsDone?: number
+    pixelsTotal?: number
+  } | null,
+): number {
+  let pct = 0
+  if (typeof raw === 'number' && Number.isFinite(raw)) {
+    pct = raw >= 0 && raw <= 1 ? raw * 100 : raw
+  }
+  if (
+    detail &&
+    typeof detail.chunksTotal === 'number' &&
+    detail.chunksTotal > 0 &&
+    typeof detail.chunksDone === 'number' &&
+    Number.isFinite(detail.chunksDone)
+  ) {
+    pct = Math.max(pct, (detail.chunksDone / detail.chunksTotal) * 100)
+  } else if (
+    detail &&
+    typeof detail.pixelsTotal === 'number' &&
+    detail.pixelsTotal > 0 &&
+    typeof detail.pixelsDone === 'number' &&
+    Number.isFinite(detail.pixelsDone)
+  ) {
+    pct = Math.max(pct, (detail.pixelsDone / detail.pixelsTotal) * 100)
+  }
+  return Math.max(0, Math.min(100, Math.round(pct)))
+}
 function getCatalogDisplayName(catalogId: string) {
   return LAYER_LIBRARY.find((item) => item.catalogId === catalogId)?.name ?? catalogId
 }
@@ -269,7 +387,7 @@ function extractLayerHotspots(
 function mergeRecentEventMessages(existing: string[] | undefined, incoming: WorkflowEvent[]) {
   const merged = [...(existing ?? [])]
   for (const event of incoming) {
-    const text = `${event.channel} · ${event.message}`
+    const text = formatWorkflowEventLine(event.channel, event.message)
     if (merged[merged.length - 1] !== text) {
       merged.push(text)
     }
@@ -280,7 +398,11 @@ function mergeRecentEventMessages(existing: string[] | undefined, incoming: Work
 function hasRenderableMapLayerAsset(jobLayer: JobLayerItem | null | undefined) {
   const assets = jobLayer?.mapLayerPayload?.layerAssets
   return Boolean(
-    assets?.geojsonData || assets?.geojsonUrl || assets?.cogUrl || assets?.cogPreviewUrl,
+    assets?.geojsonData ||
+    assets?.geojsonUrl ||
+    assets?.cogUrl ||
+    assets?.cogPreviewUrl ||
+    assets?.overlayLayerId,
   )
 }
 
@@ -339,8 +461,7 @@ function buildRuntimeLayerLibraryItem(descriptor: RuntimeLayerDescriptor): Runti
       ? (descriptor as { sub_category?: string }).sub_category
       : undefined
   const subCategory =
-    (descriptorSub as RuntimeLayerLibraryItem['subCategory'] | undefined) ??
-    fallback?.subCategory
+    (descriptorSub as RuntimeLayerLibraryItem['subCategory'] | undefined) ?? fallback?.subCategory
 
   return {
     catalogId: descriptor.layer_id,
@@ -502,6 +623,7 @@ function buildAvailabilityState(
 
 export const useLayersStore = defineStore('layers', () => {
   const weatherTileManager = useWeatherTileManager()
+  const uiStore = useUiStore()
   const weatherSourcePrefs = useWeatherSourcePrefsStore()
 
   /** Resolve tile manager provider arg (always explicit: auto | provider_id). */
@@ -516,6 +638,7 @@ export const useLayersStore = defineStore('layers', () => {
 
   // ── Active layers (已添加的图层实例) ──────────────────────────────────────
   const activeLayers = ref<ActiveLayer[]>([])
+  const runLayerGroups = ref<ActiveRunLayerGroup[]>([])
 
   // ── Sidebar view mode ────────────────────────────────────────────────────
   const sidebarView = ref<LayerSidebarView>('empty')
@@ -543,6 +666,34 @@ export const useLayersStore = defineStore('layers', () => {
   const workflowRetryCounts = new Map<string, number>()
   const MAX_WORKFLOW_429_RETRIES = 6
   const WORKFLOW_429_RETRY_DELAY_MS = 3000
+
+  /** 运行中 node_progress.timeKey → 时间轴自动 seek（DashboardView 消费） */
+  const workflowProgressTimeSeek = ref<WorkflowProgressTimeSeekHint | null>(null)
+  let lastWorkflowTimeSeekToken = ''
+
+  function emitWorkflowProgressTimeSeek(
+    jobLayer: JobLayerItem,
+    status: JobLayerItem['status'],
+    detail: { timeKey?: string; dateStart?: string; dateEnd?: string; phase?: string } | undefined,
+  ) {
+    if (status !== 'running') return
+    const phase = detail?.phase
+    if (phase !== 'block_commit' && phase !== 'block_refresh' && phase !== 'artifact') return
+    const timeKey = detail?.timeKey || detail?.dateStart
+    if (!timeKey || !jobLayer.catalogId) return
+    const token = `${jobLayer.jobId}:${timeKey}`
+    if (token === lastWorkflowTimeSeekToken) return
+    lastWorkflowTimeSeekToken = token
+    const target = timelineTargetFromWorkflowTimeKey(timeKey, detail?.dateEnd)
+    if (!target) return
+    workflowProgressTimeSeek.value = {
+      runId: jobLayer.jobId,
+      catalogId: jobLayer.catalogId,
+      timeKey,
+      sliceLabel: target.sliceLabel,
+      at: new Date().toISOString(),
+    }
+  }
 
   // ── 工作流全局状态汇总 ─────────────────────────────────────────────────
   const workflowSummary = computed<WorkflowSummary>(() => {
@@ -677,8 +828,8 @@ export const useLayersStore = defineStore('layers', () => {
       supportsTime: false,
     }))
 
-  // 行政边界不作为数据集目录展示；无数据源的空壳条目也不展示
-  const isDatasetLibraryItem = (item: RuntimeLayerLibraryItem) =>
+    // 行政边界不作为数据集目录展示；无数据源的空壳条目也不展示
+    const isDatasetLibraryItem = (item: RuntimeLayerLibraryItem) =>
       item.category !== 'boundary' &&
       !item.isAdminBoundary &&
       item.catalogId !== 'admin-boundary' &&
@@ -689,13 +840,13 @@ export const useLayersStore = defineStore('layers', () => {
       .concat(outputItems)
       .filter(isDatasetLibraryItem)
       .sort((a, b) => {
-      const categoryOrderA = CATEGORY_INDEX_BY_ID.get(a.category) ?? Number.MAX_SAFE_INTEGER
-      const categoryOrderB = CATEGORY_INDEX_BY_ID.get(b.category) ?? Number.MAX_SAFE_INTEGER
-      if (categoryOrderA !== categoryOrderB) {
-        return categoryOrderA - categoryOrderB
-      }
-      return a.name.localeCompare(b.name, 'zh-CN')
-    })
+        const categoryOrderA = CATEGORY_INDEX_BY_ID.get(a.category) ?? Number.MAX_SAFE_INTEGER
+        const categoryOrderB = CATEGORY_INDEX_BY_ID.get(b.category) ?? Number.MAX_SAFE_INTEGER
+        if (categoryOrderA !== categoryOrderB) {
+          return categoryOrderA - categoryOrderB
+        }
+        return a.name.localeCompare(b.name, 'zh-CN')
+      })
   })
 
   const layerLibraryMap = computed(
@@ -706,11 +857,16 @@ export const useLayersStore = defineStore('layers', () => {
     return activeLayers.value
       .slice()
       .filter((layer) => !layer.isAdminBoundary && layer.catalogId !== 'admin-boundary')
-      .sort((a, b) => a.order - b.order)
+      .sort((a, b) => b.order - a.order)
       .map((layer): ActiveLayerDisplay | null => {
         if (layer.importedVector) {
           const payload = layer.importedVector
-          const displayName = layer.name ?? payload.fileName ?? '导入图层'
+          const persisted = resolvePersistedDisplayName(
+            layer.catalogId,
+            payload.backendLayerId,
+            layer.instanceId,
+          )
+          const displayName = layer.name ?? persisted ?? payload.fileName ?? '导入图层'
           return {
             instanceId: layer.instanceId,
             catalogId: layer.catalogId,
@@ -757,21 +913,32 @@ export const useLayersStore = defineStore('layers', () => {
 
         if (layer.importedRaster) {
           const payload = layer.importedRaster
-          const displayName = layer.name ?? payload.fileName ?? '导入栅格'
+          const displayName =
+            layer.name ??
+            resolvePersistedDisplayName(
+              layer.catalogId,
+              payload.overlayLayerId,
+              layer.instanceId,
+            ) ??
+            payload.fileName ??
+            '导入栅格'
+          const hasTimes = Boolean(payload.timeList?.length)
           return {
             instanceId: layer.instanceId,
             catalogId: layer.catalogId,
             name: displayName,
             category: 'imported',
-            description: '本地导入栅格（TIF overlay）',
+            description: hasTimes
+              ? '科学时间序列栅格（按块 / 时刻）'
+              : '本地导入栅格（TIF overlay）',
             engine: 'local',
-            supportsTime: false,
+            supportsTime: hasTimes,
             runReadiness: 'ready',
             runReadinessSummary: '本地栅格已注册',
-            summary: '本地 TIF 栅格叠加',
+            summary: hasTimes ? '时间序列栅格叠加' : '本地 TIF 栅格叠加',
             metricLabel: '类型',
             metricValue: '栅格',
-            trendLabel: '本地栅格叠加',
+            trendLabel: hasTimes ? '科学时间序列' : '本地栅格叠加',
             statusLabel: '已导入',
             updateLabel: '本地文件',
             sourceLabel: payload.fileName ?? '本地导入',
@@ -780,9 +947,13 @@ export const useLayersStore = defineStore('layers', () => {
             accentGlow: layer.accentGlow ?? 'rgba(126, 184, 224, 0.28)',
             chipTone: layer.chipTone ?? 'rgba(126, 184, 224, 0.16)',
             availabilityState: 'ready',
-            availabilityLabel: '完整数据',
-            availabilityDescription: '已通过后端注册为 overlay，可在图层列表控制显隐与透明度。',
-            observationTimeLabel: '本地',
+            availabilityLabel: hasTimes ? `${payload.timeList!.length} 个时间块` : '完整数据',
+            availabilityDescription: hasTimes
+              ? '时间序列已注册；底部时间轴按块覆盖日期着色。'
+              : '已通过后端注册为 overlay，可在图层列表控制显隐与透明度。',
+            observationTimeLabel:
+              payload.effectiveTimeLabel ||
+              (hasTimes ? payload.timeList![payload.timeList!.length - 1]! : '静态'),
             missingFieldsLabel: '无',
             hotspots: [],
             isAdminBoundary: false,
@@ -796,7 +967,18 @@ export const useLayersStore = defineStore('layers', () => {
             importedRasterBounds: payload.bounds,
             importedBounds: payload.bounds,
             importedRasterSourceCrs: payload.sourceCrs,
+            importedRasterNativeStep:
+              typeof payload.nativeStep === 'string'
+                ? payload.nativeStep
+                : payload.nativeStep
+                  ? `${payload.nativeStep.value}${payload.nativeStep.unit === 'hour' ? 'h' : payload.nativeStep.unit === 'day' ? 'd' : payload.nativeStep.unit === 'month' ? 'm' : 'yr'}`
+                  : undefined,
+            importedRasterEffectiveTime: payload.effectiveTimeLabel,
+            importedRasterTimeCount: payload.timeList?.length,
             importedFileName: payload.fileName,
+            runGroupId: layer.runGroupId,
+            runGroupProductTag: layer.runGroupProductTag,
+            runGroupLocked: layer.runGroupLocked,
           }
         }
 
@@ -859,7 +1041,11 @@ export const useLayersStore = defineStore('layers', () => {
         return {
           instanceId: layer.instanceId,
           catalogId: layer.catalogId,
-          name: layer.isAdminBoundary ? '行政区边界' : item.name,
+          name: layer.isAdminBoundary
+            ? '行政区边界'
+            : (layer.name ??
+              resolvePersistedDisplayName(layer.catalogId, layer.instanceId) ??
+              item.name),
           category: layer.isAdminBoundary ? 'boundary' : item.category,
           description: layer.isAdminBoundary ? '广东省市级行政区边界叠加层。' : item.description,
           engine: layer.isAdminBoundary ? 'builtin' : item.engine,
@@ -910,9 +1096,10 @@ export const useLayersStore = defineStore('layers', () => {
           observationTimeLabel: layer.isAdminBoundary
             ? '静态数据'
             : isWeatherLayer
-              ? `${String(currentHour.value).padStart(2, '0')}:00`
+              ? // 用 ui 钟点，勿用 layersStore.currentHour（0–47 瓦片索引）
+                formatClockHourLabel(uiStore.currentHour)
               : (realDisplay.observationTimeLabel ??
-                (item.supportsTime ? `${String(currentHour.value).padStart(2, '0')}:00` : '--')),
+                (item.supportsTime ? formatClockHourLabel(uiStore.currentHour) : '--')),
           missingFieldsLabel: layer.isAdminBoundary
             ? '无'
             : (realDisplay.missingFieldsLabel ?? item.runReadinessNotes[0] ?? '无'),
@@ -926,6 +1113,9 @@ export const useLayersStore = defineStore('layers', () => {
           order: layer.order,
           dataState: layer.dataState,
           paletteOverride: layer.paletteOverride ?? null,
+          runGroupId: layer.runGroupId,
+          runGroupProductTag: layer.runGroupProductTag,
+          runGroupLocked: layer.runGroupLocked,
         }
       })
       .filter((d): d is ActiveLayerDisplay => d !== null)
@@ -1034,6 +1224,7 @@ export const useLayersStore = defineStore('layers', () => {
         }, 0)
       })
     }
+    scheduleWorkspacePersist()
   }
 
   /** 将导入矢量添加到活动图层列表（本地解析或后端统一导入） */
@@ -1074,6 +1265,7 @@ export const useLayersStore = defineStore('layers', () => {
     if (sidebarView.value === 'empty' || sidebarView.value === 'library') {
       sidebarView.value = 'active'
     }
+    scheduleWorkspacePersist()
     return layer
   }
 
@@ -1109,6 +1301,7 @@ export const useLayersStore = defineStore('layers', () => {
       ...layer.importedVector,
       style: { ...layer.importedVector.style, ...style },
     }
+    scheduleWorkspacePersist()
   }
 
   /** 将后端已注册的 TIF overlay 挂入活动图层列表 */
@@ -1120,6 +1313,9 @@ export const useLayersStore = defineStore('layers', () => {
       sourceCrs?: string
       lngOffset?: number
       latOffset?: number
+      nativeStep?: string | null
+      timeList?: string[]
+      followPolicy?: import('../../utils/temporal-interval').TemporalFollowPolicy
     },
   ): ActiveLayer {
     const maxOrder = activeLayers.value.reduce((max, l) => Math.max(max, l.order), 0)
@@ -1130,6 +1326,9 @@ export const useLayersStore = defineStore('layers', () => {
       sourceCrs: options?.sourceCrs,
       lngOffset: options?.lngOffset,
       latOffset: options?.latOffset,
+      nativeStep: options?.nativeStep,
+      timeList: options?.timeList,
+      followPolicy: options?.followPolicy,
     })
     const accent = assignLayerAccent('#7eb8e0')
     const layer: ActiveLayer = {
@@ -1152,37 +1351,52 @@ export const useLayersStore = defineStore('layers', () => {
     if (sidebarView.value === 'empty' || sidebarView.value === 'library') {
       sidebarView.value = 'active'
     }
+    scheduleWorkspacePersist()
     return layer
+  }
+
+  function maybeDismissWorkflowRun(runId: string | undefined) {
+    if (!runId || isLocalSubmitJobId(runId)) return
+    const stillReferenced = activeLayers.value.some((l) => {
+      if (l.jobLayer?.jobId === runId) return true
+      if (!l.runGroupId) return false
+      const g = runLayerGroups.value.find((x) => x.groupId === l.runGroupId)
+      return g?.runId === runId
+    })
+    if (!stillReferenced) {
+      rememberDismissedLayer({ runId })
+      forgetTrackedWorkflowRun(runId)
+    }
   }
 
   function removeLayer(instanceId: string) {
     const idx = activeLayers.value.findIndex((l) => l.instanceId === instanceId)
     if (idx === -1) return
     pendingVisibilitySync.delete(instanceId)
-    // 修复：删除图层时停止对应工作流轮询，避免泄漏 setTimeout 句柄
-    const layer = activeLayers.value[idx]
+    const layer = activeLayers.value[idx]!
+    const groupBeforeRemove = layer.runGroupId
+      ? runLayerGroups.value.find((x) => x.groupId === layer.runGroupId)
+      : undefined
+    const runIdHint = layer.jobLayer?.jobId || groupBeforeRemove?.runId
+
     if (layer.jobLayer?.jobId) {
       stopWorkflowPolling(layer.jobLayer.jobId)
     }
-    // 清理 429 重试定时器和计数，避免图层移除后重试仍触发
     const retryTimer = workflowRetryTimers.get(layer.catalogId)
     if (retryTimer !== undefined) {
       window.clearTimeout(retryTimer)
       workflowRetryTimers.delete(layer.catalogId)
     }
     workflowRetryCounts.delete(layer.catalogId)
-    // 清理 tile manager 中对应图层状态
     if (!layer.isAdminBoundary && !isLocalImport(layer) && isWeatherEngineLayer(layer.catalogId)) {
       weatherTileManager.clearLayer(layer.catalogId)
     }
-    // 导入栅格：best-effort 清理后端 overlay 与磁盘文件
     const overlayId = layer.importedRaster?.overlayLayerId
     if (overlayId) {
       void deleteImportedRaster(overlayId).catch((err) => {
         console.warn('[layers] deleteImportedRaster failed', overlayId, err)
       })
     }
-    // 导入矢量：清理后端 imports 目录
     const vecBackendId = layer.importedVector?.backendLayerId
     if (vecBackendId) {
       void import('../../services/data-io').then(({ deleteImportedLayer }) =>
@@ -1191,12 +1405,30 @@ export const useLayersStore = defineStore('layers', () => {
         }),
       )
     }
+    rememberDismissedLayer({
+      overlayLayerId: overlayId,
+      catalogId: isLocalImport(layer) ? undefined : layer.catalogId,
+      vectorBackendLayerId: layer.importedVector?.backendLayerId,
+      runId: undefined,
+    })
+
     clearWindForCatalog(layer.catalogId)
+    if (layer.runGroupId) {
+      const g = runLayerGroups.value.find((x) => x.groupId === layer.runGroupId)
+      if (g) {
+        g.memberInstanceIds = g.memberInstanceIds.filter((id) => id !== instanceId)
+        if (!g.memberInstanceIds.length) {
+          runLayerGroups.value = runLayerGroups.value.filter((x) => x.groupId !== g.groupId)
+        }
+      }
+    }
     activeLayers.value.splice(idx, 1)
 
     if (selectedInstanceId.value === instanceId) {
       selectedInstanceId.value = activeLayers.value[0]?.instanceId ?? null
     }
+    maybeDismissWorkflowRun(runIdHint)
+    flushWorkspacePersistNow()
   }
 
   /** 同帧内多次显隐：只把最终 visible 同步给 tile manager，避免狂点冲刷 generation */
@@ -1250,6 +1482,7 @@ export const useLayersStore = defineStore('layers', () => {
     if (!layer) return
     layer.visible = !layer.visible
     scheduleVisibilitySyncToTileManager(layer)
+    scheduleWorkspacePersist()
   }
 
   /** 批量设置所有图层可见性 */
@@ -1281,6 +1514,7 @@ export const useLayersStore = defineStore('layers', () => {
         )
       }
     }
+    scheduleWorkspacePersist()
   }
 
   /** 批量移除所有图层 */
@@ -1304,20 +1538,31 @@ export const useLayersStore = defineStore('layers', () => {
     workflowRetryTimers.clear()
     workflowRetryCounts.clear()
     for (const layer of layersToRemove) {
+      rememberDismissedLayer({
+        overlayLayerId: layer.importedRaster?.overlayLayerId,
+        catalogId: isLocalImport(layer) ? undefined : layer.catalogId,
+        vectorBackendLayerId: layer.importedVector?.backendLayerId,
+        runId: layer.jobLayer?.jobId,
+      })
       if (!isLocalImport(layer) && isWeatherEngineLayer(layer.catalogId)) {
         weatherTileManager.clearLayer(layer.catalogId)
       }
       clearWindForCatalog(layer.catalogId)
       activeWorkflowCatalogIds.delete(layer.catalogId)
+      if (layer.jobLayer?.jobId) forgetTrackedWorkflowRun(layer.jobLayer.jobId)
     }
     activeLayers.value = []
+    runLayerGroups.value = []
     selectedInstanceId.value = null
+    saveTrackedWorkflowRuns([])
+    flushWorkspacePersistNow()
   }
 
   function setLayerOpacity(instanceId: string, opacity: number) {
     const layer = activeLayers.value.find((l) => l.instanceId === instanceId)
     if (layer) {
       layer.opacity = Math.max(0, Math.min(1, opacity))
+      scheduleWorkspacePersist()
     }
   }
 
@@ -1333,16 +1578,80 @@ export const useLayersStore = defineStore('layers', () => {
     const layer = activeLayers.value.find((l) => l.instanceId === instanceId)
     if (layer) {
       layer.order = newOrder
+      scheduleWorkspacePersist()
     }
   }
 
-  /** 覆盖图层显示名（导入层 / 工作流输出等） */
+  /** 覆盖图层显示名（导入层 / 工作流输出等），并同步持久化与关联状态 */
   function setLayerDisplayName(instanceId: string, name: string) {
     const layer = activeLayers.value.find((l) => l.instanceId === instanceId)
     if (!layer) return
     const trimmed = name.trim()
     if (!trimmed) return
     layer.name = trimmed
+
+    // 同步导入载荷上的展示名（导出文件名 / 源标签 / 图例）
+    if (layer.importedVector) {
+      layer.importedVector = { ...layer.importedVector, fileName: trimmed }
+    }
+    if (layer.importedRaster) {
+      layer.importedRaster = { ...layer.importedRaster, fileName: trimmed }
+    }
+
+    const keys = new Set<string>()
+    keys.add(layer.catalogId)
+    keys.add(layer.instanceId)
+    if (layer.importedVector?.backendLayerId) {
+      keys.add(layer.importedVector.backendLayerId)
+    }
+    if (layer.importedRaster?.overlayLayerId) {
+      keys.add(layer.importedRaster.overlayLayerId)
+    }
+    for (const key of keys) {
+      persistLayerDisplayName(key, trimmed)
+    }
+
+    // 同步 jobLayers / 运行跟踪名（分析面板、状态条）
+    if (layer.jobLayer) {
+      layer.jobLayer = { ...layer.jobLayer, name: trimmed }
+    }
+    for (const job of jobLayers.value) {
+      if (job.catalogId === layer.catalogId || job.jobId === layer.jobLayer?.jobId) {
+        job.name = trimmed
+      }
+    }
+
+    // 同步工作流产出注册表（图层面板库）
+    if (layer.catalogId.startsWith('wf-out-')) {
+      try {
+        useWorkflowOutputLayersStore().renameOutputLayer(layer.catalogId, trimmed)
+      } catch {
+        /* store may be unavailable in tests */
+      }
+    }
+
+    // 通知地图矢量弹窗标题刷新
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(
+        new CustomEvent('cgda:layer-renamed', {
+          detail: { instanceId, catalogId: layer.catalogId, name: trimmed },
+        }),
+      )
+    }
+
+    // 导入图层：异步写回后端 meta.display_name（失败不影响本地）
+    const backendId =
+      layer.importedVector?.backendLayerId ||
+      layer.importedRaster?.overlayLayerId ||
+      (layer.catalogId.startsWith('imported-') ? layer.catalogId : null)
+    if (backendId) {
+      void import('../../data-manager/core/api')
+        .then(({ renameImportedLayerDisplayName }) =>
+          renameImportedLayerDisplayName(backendId, trimmed),
+        )
+        .catch(() => undefined)
+    }
+    scheduleWorkspacePersist()
   }
 
   /** 置顶：order = max+1 */
@@ -1351,6 +1660,7 @@ export const useLayersStore = defineStore('layers', () => {
     if (!layer) return
     const maxOrder = activeLayers.value.reduce((max, l) => Math.max(max, l.order), 0)
     layer.order = maxOrder + 1
+    scheduleWorkspacePersist()
   }
 
   /** 置底：order = min-1 */
@@ -1359,6 +1669,7 @@ export const useLayersStore = defineStore('layers', () => {
     if (!layer) return
     const minOrder = activeLayers.value.reduce((min, l) => Math.min(min, l.order), 0)
     layer.order = minOrder - 1
+    scheduleWorkspacePersist()
   }
 
   function selectLayer(instanceId: string | null) {
@@ -1378,14 +1689,23 @@ export const useLayersStore = defineStore('layers', () => {
   }
 
   /**
-   * 对于工作流产出图层（catalogId 以 wf-out- 为前缀），返回其源 layer_id；
+   * 对于工作流产出图层（catalogId 以 wf-out- / wf-run- 为前缀），返回其源 layer_id；
    * 普通图层则返回自身 catalogId。用于后端提交时解析引擎请求。
    */
   function resolveBackendLayerId(catalogId: string): string {
-    if (!catalogId.startsWith('wf-out-')) return catalogId
-    const outputStore = useWorkflowOutputLayersStore()
-    const entry = outputStore.getByLocalId(catalogId)
-    return entry?.sourceLayerId ?? catalogId
+    if (catalogId.startsWith('wf-out-')) {
+      const outputStore = useWorkflowOutputLayersStore()
+      const entry = outputStore.getByLocalId(catalogId)
+      return entry?.sourceLayerId ?? catalogId
+    }
+    if (catalogId.startsWith('wf-run-')) {
+      const layer = activeLayers.value.find((l) => l.catalogId === catalogId)
+      if (layer?.runGroupId) {
+        const g = runLayerGroups.value.find((x) => x.groupId === layer.runGroupId)
+        if (g?.sourceLayerId) return g.sourceLayerId
+      }
+    }
+    return catalogId
   }
 
   /**
@@ -1393,11 +1713,11 @@ export const useLayersStore = defineStore('layers', () => {
    * 普通图层则返回自身 descriptor。
    */
   function resolveEffectiveDescriptor(catalogId: string): RuntimeLayerDescriptor | null {
-    if (!catalogId.startsWith('wf-out-')) {
-      return getRuntimeLayerDescriptor(catalogId)
+    if (catalogId.startsWith('wf-out-') || catalogId.startsWith('wf-run-')) {
+      const backendId = resolveBackendLayerId(catalogId)
+      return getRuntimeLayerDescriptor(backendId)
     }
-    const backendId = resolveBackendLayerId(catalogId)
-    return getRuntimeLayerDescriptor(backendId)
+    return getRuntimeLayerDescriptor(catalogId)
   }
 
   async function ensureRuntimeLayerCatalog(force = false) {
@@ -1488,11 +1808,49 @@ export const useLayersStore = defineStore('layers', () => {
     return `local-submit-${catalogId}`
   }
 
+  function isLocalSubmitJobId(jobId: string | null | undefined): boolean {
+    return Boolean(jobId && String(jobId).startsWith('local-submit-'))
+  }
+
   function removeJobLayerById(jobId: string) {
     const idx = jobLayers.value.findIndex((item) => item.jobId === jobId)
     if (idx >= 0) {
       jobLayers.value.splice(idx, 1)
     }
+    // 同步清掉活跃图层上挂的同 id jobLayer，避免「排队中」幽灵状态
+    for (const layer of activeLayers.value) {
+      if (layer.jobLayer?.jobId === jobId) {
+        layer.jobLayer = undefined
+      }
+    }
+  }
+
+  /** 按成员 catalog 更新计算组进度（local-submit 阶段 group.runId 尚为空） */
+  function updateRunGroupForCatalog(
+    catalogId: string,
+    job: Pick<JobLayerItem, 'jobId' | 'status' | 'progress' | 'message' | 'nodeProgress'>,
+  ) {
+    const layer = activeLayers.value.find((l) => l.catalogId === catalogId && l.runGroupId)
+    if (!layer?.runGroupId) {
+      updateRunGroupFromJob(job.jobId, job)
+      return
+    }
+    const g = runLayerGroups.value.find((x) => x.groupId === layer.runGroupId)
+    if (!g) {
+      updateRunGroupFromJob(job.jobId, job)
+      return
+    }
+    // 真实 run id 才写入组；local-submit 只更新展示态
+    if (!isLocalSubmitJobId(job.jobId) && job.jobId) {
+      g.runId = job.jobId
+    }
+    if (job.status === 'succeeded') g.status = 'ready'
+    else if (job.status === 'failed') g.status = 'failed'
+    else if (job.status === 'cancelled') g.status = 'cancelled'
+    else g.status = 'computing'
+    if (typeof job.progress === 'number') g.progress = job.progress
+    if (job.message) g.message = job.message
+    refreshRunGroupDissolvable(g.groupId)
   }
 
   function setJobLayers(jobs: JobLayerItem[]) {
@@ -1531,6 +1889,35 @@ export const useLayersStore = defineStore('layers', () => {
     addLayer(catalogId, false, jobLayer)
   }
 
+  function rememberTrackedWorkflowRun(catalogId: string, jobLayer: JobLayerItem) {
+    // 乐观提交 ID 不是后端真 run，禁止写入恢复列表（否则会 404 / 误点重试）
+    if (isLocalSubmitJobId(jobLayer.jobId)) return
+    if (isTerminalStatus(jobLayer.status) && jobLayer.status === 'cancelled') {
+      forgetTrackedWorkflowRun(jobLayer.jobId)
+      return
+    }
+    const group = runLayerGroups.value.find((g) => g.runId === jobLayer.jobId)
+    const memberCatalogIds = group
+      ? group.memberInstanceIds
+          .map((id) => activeLayers.value.find((l) => l.instanceId === id)?.catalogId)
+          .filter((id): id is string => Boolean(id))
+      : undefined
+    const existing = loadTrackedWorkflowRuns().filter((item) => item.runId !== jobLayer.jobId)
+    existing.unshift({
+      runId: jobLayer.jobId,
+      catalogId,
+      name: jobLayer.name,
+      updatedAt: jobLayer.updatedAt || new Date().toISOString(),
+      groupId: group?.groupId,
+      memberCatalogIds,
+    })
+    saveTrackedWorkflowRuns(existing)
+  }
+
+  function forgetTrackedWorkflowRun(runId: string) {
+    saveTrackedWorkflowRuns(loadTrackedWorkflowRuns().filter((item) => item.runId !== runId))
+  }
+
   function upsertJobLayer(catalogId: string, jobLayer: JobLayerItem) {
     // 确保 catalogId 被记录在 jobLayer 上，便于面板列表展示孤儿工作流（无活跃图层时）
     const enrichedJobLayer: JobLayerItem = jobLayer.catalogId
@@ -1543,6 +1930,32 @@ export const useLayersStore = defineStore('layers', () => {
       jobLayers.value.unshift(enrichedJobLayer)
     }
     syncJobLayerToActiveLayer(catalogId, enrichedJobLayer)
+    rememberTrackedWorkflowRun(catalogId, enrichedJobLayer)
+    updateRunGroupForCatalog(catalogId, enrichedJobLayer)
+    if (isTerminalStatus(enrichedJobLayer.status)) {
+      if (enrichedJobLayer.status === 'cancelled' || enrichedJobLayer.status === 'failed') {
+        // local-submit 失败时按 catalog 找组清理占位；真 run 按 runId
+        if (isLocalSubmitJobId(enrichedJobLayer.jobId)) {
+          const layer = activeLayers.value.find((l) => l.catalogId === catalogId)
+          if (layer?.runGroupId) {
+            const g = runLayerGroups.value.find((x) => x.groupId === layer.runGroupId)
+            if (g && !g.runId) {
+              g.status = 'failed'
+              g.dissolvable = true
+              g.message = enrichedJobLayer.message || '提交失败'
+            }
+          }
+        } else {
+          cleanupUnproducedRunLayers(enrichedJobLayer.jobId)
+        }
+      }
+      // Keep succeeded/failed in storage briefly for refresh restore of final state,
+      // but drop cancelled noise.
+      if (enrichedJobLayer.status === 'cancelled') {
+        forgetTrackedWorkflowRun(enrichedJobLayer.jobId)
+      }
+    }
+    scheduleWorkspacePersist()
   }
 
   function buildWorkflowPayloadForCatalog(
@@ -1587,6 +2000,64 @@ export const useLayersStore = defineStore('layers', () => {
     return payload
   }
 
+  const progressiveMaterializeAt = new Map<string, number>()
+  const progressiveMaterializeInFlight = new Set<string>()
+
+  function formatProgressiveSyncMessage(count: number, hadError: boolean): string {
+    if (hadError && count > 0) {
+      return WORKFLOW_COPY.progressiveSyncPartial.replace('{count}', String(count))
+    }
+    if (hadError) return WORKFLOW_COPY.progressiveSyncFailed
+    if (count > 0) {
+      return WORKFLOW_COPY.progressiveSyncOk.replace('{count}', String(count))
+    }
+    return ''
+  }
+
+  function applyProgressiveSyncToJob(
+    catalogId: string,
+    runId: string,
+    count: number,
+    hadError: boolean,
+    errorMsg?: string,
+  ) {
+    const now = new Date().toISOString()
+    const msg = formatProgressiveSyncMessage(count, hadError)
+    const job = jobLayers.value.find((j) => j.jobId === runId)
+    if (job) {
+      job.progressiveOverlayCount = count
+      job.progressiveOverlayAt = hadError ? job.progressiveOverlayAt : now
+      job.progressiveOverlayError = hadError
+        ? errorMsg || WORKFLOW_COPY.progressiveSyncFailed
+        : undefined
+      if (msg) job.message = msg
+      syncJobLayerToActiveLayer(catalogId, job)
+      updateRunGroupForCatalog(catalogId, job)
+    }
+  }
+
+  /** 运行中块产物增量物化（节流）。 */
+  async function syncProgressiveBlockOverlays(runId: string, catalogId: string) {
+    if (!runId) return
+    const now = Date.now()
+    const last = progressiveMaterializeAt.get(runId) ?? 0
+    if (now - last < 8_000) return
+    if (progressiveMaterializeInFlight.has(runId)) return
+    progressiveMaterializeAt.set(runId, now)
+    progressiveMaterializeInFlight.add(runId)
+    try {
+      const count = await attachAlgorithmProductOverlays([], catalogId, runId)
+      applyProgressiveSyncToJob(catalogId, runId, count, false)
+    } catch (error) {
+      const errMsg = error instanceof Error ? error.message : WORKFLOW_COPY.progressiveSyncFailed
+      console.warn('[layers] progressive block overlay sync failed', runId, error)
+      const prev = jobLayers.value.find((j) => j.jobId === runId)?.progressiveOverlayCount ?? 0
+      applyProgressiveSyncToJob(catalogId, runId, prev, true, errMsg)
+    } finally {
+      progressiveMaterializeInFlight.delete(runId)
+    }
+  }
+
   function applyWorkflowEventsToJobLayer(
     jobLayer: JobLayerItem,
     events: WorkflowEvent[],
@@ -1604,7 +2075,7 @@ export const useLayersStore = defineStore('layers', () => {
 
     for (const event of events) {
       if (typeof event.progress === 'number') {
-        nextProgress = Math.max(nextProgress, Math.min(100, Math.round(event.progress)))
+        nextProgress = Math.max(nextProgress, normalizeWorkflowProgress(event.progress))
       }
       if (event.message) {
         nextMessage = event.message
@@ -1623,17 +2094,7 @@ export const useLayersStore = defineStore('layers', () => {
           progress?: number
           message?: string
           artifacts?: string[]
-          detail?: {
-            chunks_done?: number
-            chunks_total?: number
-            pixels_done?: number
-            pixels_total?: number
-            phase?: string
-            chunksDone?: number
-            chunksTotal?: number
-            pixelsDone?: number
-            pixelsTotal?: number
-          }
+          detail?: Record<string, unknown>
         }
         const detailRaw = np.detail
         const detail =
@@ -1664,35 +2125,114 @@ export const useLayersStore = defineStore('layers', () => {
                       ? detailRaw.pixelsTotal
                       : undefined,
                 phase: typeof detailRaw.phase === 'string' ? detailRaw.phase : undefined,
+                blocksDone:
+                  typeof detailRaw.blocks_done === 'number' ? detailRaw.blocks_done : undefined,
+                blocksTotal:
+                  typeof detailRaw.blocks_total === 'number' ? detailRaw.blocks_total : undefined,
+                dateStart:
+                  typeof detailRaw.date_start === 'string' ? detailRaw.date_start : undefined,
+                dateEnd: typeof detailRaw.date_end === 'string' ? detailRaw.date_end : undefined,
+                blockDir: typeof detailRaw.block_dir === 'string' ? detailRaw.block_dir : undefined,
+                timeKey:
+                  typeof detailRaw.time_key === 'string'
+                    ? detailRaw.time_key
+                    : typeof detailRaw.timeKey === 'string'
+                      ? detailRaw.timeKey
+                      : undefined,
+                tileId:
+                  typeof detailRaw.tile_id === 'string'
+                    ? detailRaw.tile_id
+                    : typeof detailRaw.tileId === 'string'
+                      ? detailRaw.tileId
+                      : undefined,
+                chunkId:
+                  typeof detailRaw.chunk_id === 'string'
+                    ? detailRaw.chunk_id
+                    : typeof detailRaw.chunkId === 'string'
+                      ? detailRaw.chunkId
+                      : undefined,
+                blockId:
+                  typeof detailRaw.block_id === 'string'
+                    ? detailRaw.block_id
+                    : typeof detailRaw.blockId === 'string'
+                      ? detailRaw.blockId
+                      : undefined,
+                productTag:
+                  typeof detailRaw.product_tag === 'string'
+                    ? detailRaw.product_tag
+                    : typeof detailRaw.productTag === 'string'
+                      ? detailRaw.productTag
+                      : typeof detailRaw.artifact_type === 'string'
+                        ? detailRaw.artifact_type
+                        : undefined,
+                moduleName:
+                  typeof detailRaw.module_name === 'string'
+                    ? detailRaw.module_name
+                    : typeof detailRaw.moduleName === 'string'
+                      ? detailRaw.moduleName
+                      : undefined,
               }
             : undefined
+        if (
+          detail?.phase === 'block_commit' ||
+          detail?.phase === 'block_refresh' ||
+          detail?.phase === 'artifact'
+        ) {
+          // progressive overlay sync (throttled inside helper)
+          const progressiveCatalogId = jobLayer.catalogId
+          if (progressiveCatalogId) {
+            void syncProgressiveBlockOverlays(jobLayer.jobId, progressiveCatalogId)
+          }
+          if (detail.dateStart && detail.dateEnd) {
+            nextMessage = `块 ${detail.blocksDone ?? '?'}/${detail.blocksTotal ?? '?'} · ${detail.dateStart}–${detail.dateEnd}`
+          } else {
+            const shell = formatProgressShell({
+              progress: typeof np.progress === 'number' ? np.progress : undefined,
+              message: typeof np.message === 'string' ? np.message : undefined,
+              stage: typeof np.stage === 'string' ? np.stage : undefined,
+              nodeLabel: typeof np.node_label === 'string' ? np.node_label : undefined,
+              detail,
+            })
+            if (shell) nextMessage = shell
+          }
+        }
+        const nodePct = normalizeWorkflowProgress(
+          typeof np.progress === 'number' ? np.progress : undefined,
+          detail,
+        )
         if (typeof np.node_id === 'string') {
+          const eventAt = event.created_at
           const existing = nextNodeProgress.find((p) => p.nodeId === np.node_id)
           if (existing) {
             Object.assign(existing, {
               stage: typeof np.stage === 'string' ? np.stage : existing.stage,
               progress:
-                typeof np.progress === 'number'
-                  ? Math.max(0, Math.min(100, Math.round(np.progress)))
+                typeof np.progress === 'number' || detail
+                  ? Math.max(existing.progress, nodePct)
                   : existing.progress,
               message: typeof np.message === 'string' ? np.message : existing.message,
               artifacts: Array.isArray(np.artifacts) ? np.artifacts : existing.artifacts,
               detail: detail ?? existing.detail,
+              updatedAt: eventAt,
             })
           } else {
             nextNodeProgress.push({
               nodeId: np.node_id,
               nodeLabel: typeof np.node_label === 'string' ? np.node_label : np.node_id,
               stage: typeof np.stage === 'string' ? np.stage : '',
-              progress:
-                typeof np.progress === 'number'
-                  ? Math.max(0, Math.min(100, Math.round(np.progress)))
-                  : 0,
+              progress: nodePct,
               message: typeof np.message === 'string' ? np.message : undefined,
               artifacts: Array.isArray(np.artifacts) ? np.artifacts : undefined,
               detail,
+              updatedAt: eventAt,
             })
           }
+          nextProgress = Math.max(nextProgress, nodePct)
+          emitWorkflowProgressTimeSeek(
+            { ...jobLayer, catalogId: jobLayer.catalogId },
+            nextStatus,
+            detail,
+          )
         }
       }
       lastEventId = event.event_id
@@ -1758,6 +2298,14 @@ export const useLayersStore = defineStore('layers', () => {
       existingJobLayer && !isTerminalStatus(jobLayer.status)
         ? {
             ...jobLayer,
+            // Keep the higher of server snapshot vs event-derived progress
+            progress: Math.max(
+              normalizeWorkflowProgress(jobLayer.progress),
+              normalizeWorkflowProgress(existingJobLayer.progress),
+              ...(existingJobLayer.nodeProgress ?? []).map((np) =>
+                normalizeWorkflowProgress(np.progress, np.detail),
+              ),
+            ),
             lastEventId: existingJobLayer.lastEventId,
             lastEventAt: existingJobLayer.lastEventAt,
             eventMessages: existingJobLayer.eventMessages,
@@ -1766,7 +2314,10 @@ export const useLayersStore = defineStore('layers', () => {
               ? jobLayer.diagnosticNotes
               : (existingJobLayer.eventMessages ?? existingJobLayer.diagnosticNotes),
           }
-        : jobLayer
+        : {
+            ...jobLayer,
+            progress: normalizeWorkflowProgress(jobLayer.progress),
+          }
 
     upsertJobLayer(catalogId, mergedJobLayer)
     workflowLastStatusSyncAt.set(jobId, now)
@@ -1774,6 +2325,9 @@ export const useLayersStore = defineStore('layers', () => {
     if (isTerminalStatus(mergedJobLayer.status)) {
       stopWorkflowPolling(jobId)
       activeWorkflowCatalogIds.delete(catalogId)
+      if (mergedJobLayer.status === 'succeeded' && !isRunDismissed(run.run_id)) {
+        void attachAlgorithmProductOverlays(run.result_refs, catalogId, run.run_id)
+      }
       if (
         particleFlowCatalogId.value === catalogId &&
         supportsParticleFlow(catalogId) &&
@@ -1794,10 +2348,306 @@ export const useLayersStore = defineStore('layers', () => {
     return false
   }
 
+  /** Attach algorithm-published overlays so the map shows SM/VOD/OMEGA content. */
+  async function attachAlgorithmProductOverlays(
+    resultRefs: Parameters<typeof extractOverlayImportsFromResultRefs>[0],
+    preferredCatalogId: string,
+    runId?: string,
+  ): Promise<number> {
+    if (runId && isRunDismissed(runId)) return 0
+
+    let imports = extractOverlayImportsFromResultRefs(resultRefs)
+    let materializedLayers: Awaited<ReturnType<typeof materializeWorkflowMapLayers>>['layers'] = []
+    if ((!imports.length || runId) && runId) {
+      try {
+        const materialized = await materializeWorkflowMapLayers(runId)
+        materializedLayers = materialized.layers ?? []
+        if (!imports.length) {
+          imports = materializedLayers
+            .filter((layer) => typeof layer.overlay_layer_id === 'string' && layer.overlay_layer_id)
+            .map((layer) => {
+              const rawBounds = layer.bounds
+              const bounds =
+                Array.isArray(rawBounds) &&
+                rawBounds.length === 4 &&
+                rawBounds.every((v) => typeof v === 'number' && Number.isFinite(v))
+                  ? ([rawBounds[0], rawBounds[1], rawBounds[2], rawBounds[3]] as [
+                      number,
+                      number,
+                      number,
+                      number,
+                    ])
+                  : undefined
+              return {
+                overlayLayerId: layer.overlay_layer_id,
+                title: layer.title || layer.overlay_layer_id,
+                productTag: layer.product_tag || undefined,
+                bounds,
+                sourceCrs: layer.source_crs || undefined,
+                timeList: layer.time_list || undefined,
+                nativeStep: layer.native_step || undefined,
+                defaultTime: layer.default_time || undefined,
+              }
+            })
+        }
+      } catch (error) {
+        console.warn('[layers] materializeWorkflowMapLayers failed', runId, error)
+      }
+    }
+    if (!imports.length) return 0
+    imports = imports.filter((item) => !isOverlayDismissed(item.overlayLayerId))
+    if (!imports.length) return 0
+
+    const outputStore = useWorkflowOutputLayersStore()
+    for (const item of imports) {
+      if (isOverlayDismissed(item.overlayLayerId)) continue
+      const matMeta = materializedLayers.find(
+        (layer) => layer.overlay_layer_id === item.overlayLayerId,
+      )
+      const timeList = (item as { timeList?: string[] }).timeList || matMeta?.time_list || undefined
+      const nativeStep =
+        (item as { nativeStep?: string }).nativeStep || matMeta?.native_step || undefined
+
+      const existingByOverlay = activeLayers.value.find(
+        (layer) => layer.importedRaster?.overlayLayerId === item.overlayLayerId,
+      )
+      if (existingByOverlay?.importedRaster) {
+        if (timeList?.length) {
+          existingByOverlay.importedRaster.timeList = [...timeList]
+          existingByOverlay.importedRaster.timeSlices = undefined
+          existingByOverlay.importedRaster.nativeStep =
+            nativeStep || existingByOverlay.importedRaster.nativeStep || '8d'
+        }
+        // 若游离 OMEGA_BLOCK 可并入组内 OMEGA 占位，不要在此 continue
+        const canMergeIntoGroup =
+          normalizeProductTag(item.productTag || item.title || existingByOverlay.name) ===
+            'OMEGA' &&
+          Boolean(
+            (runId
+              ? runLayerGroups.value.find((g) => g.runId === runId)
+              : runLayerGroups.value.find((g) =>
+                  g.memberInstanceIds.includes(existingByOverlay.instanceId),
+                )) ||
+            activeLayers.value.some(
+              (layer) =>
+                !layer.importedRaster &&
+                normalizeProductTag(layer.runGroupProductTag || layer.name) === 'OMEGA',
+            ),
+          )
+        if (!canMergeIntoGroup) {
+          continue
+        }
+      }
+
+      const tag = normalizeProductTag(item.productTag || item.title || '')
+      const matchingOutput = outputStore.entries.find((entry) => {
+        const name = entry.name.toUpperCase()
+        return Boolean(tag) && (name.includes(tag) || name.endsWith(`_${tag}`))
+      })
+      const displayName =
+        matchingOutput?.name ||
+        (tag === 'OMEGA' ? 'OMEGA' : item.title.replace(/^Algorithm Map Layer:\s*/i, '')) ||
+        item.productTag ||
+        item.overlayLayerId
+
+      // Bind only within this run's computing group (never cross-run by tag alone).
+      const groupByRun = runId ? runLayerGroups.value.find((g) => g.runId === runId) : undefined
+      const groupMember =
+        groupByRun &&
+        activeLayers.value.find(
+          (layer) =>
+            layer.runGroupId === groupByRun.groupId &&
+            normalizeProductTag(layer.runGroupProductTag) === tag,
+        )
+
+      // 已有同 overlay 的游离层 + 组内占位：并入组并移除游离层
+      if (
+        groupMember &&
+        existingByOverlay &&
+        existingByOverlay.instanceId !== groupMember.instanceId
+      ) {
+        groupMember.importedRaster = existingByOverlay.importedRaster
+          ? { ...existingByOverlay.importedRaster }
+          : buildImportedRasterPayload(item.overlayLayerId, {
+              bounds: item.bounds,
+              fileName: groupMember.name || displayName,
+              sourceCrs: item.sourceCrs,
+              nativeStep: nativeStep || (timeList?.length ? '8d' : null),
+              timeList,
+              followPolicy: timeList?.length ? 'containing' : undefined,
+            })
+        groupMember.dataState = 'imported'
+        groupMember.name = groupMember.name || displayName
+        // 去掉游离层但不删后端文件
+        const orphanId = existingByOverlay.instanceId
+        const idx = activeLayers.value.findIndex((l) => l.instanceId === orphanId)
+        if (idx >= 0) {
+          const orphan = activeLayers.value[idx]!
+          orphan.importedRaster = undefined
+          activeLayers.value.splice(idx, 1)
+          if (orphan.runGroupId) {
+            const og = runLayerGroups.value.find((x) => x.groupId === orphan.runGroupId)
+            if (og) {
+              og.memberInstanceIds = og.memberInstanceIds.filter((id) => id !== orphanId)
+            }
+          }
+        }
+        if (groupMember.runGroupId) refreshRunGroupDissolvable(groupMember.runGroupId)
+        scheduleWorkspacePersist()
+        continue
+      }
+
+      if (groupMember) {
+        groupMember.importedRaster = buildImportedRasterPayload(item.overlayLayerId, {
+          bounds: item.bounds,
+          fileName: groupMember.name || displayName,
+          sourceCrs: item.sourceCrs,
+          nativeStep: nativeStep || (timeList?.length ? '8d' : null),
+          timeList,
+          followPolicy: timeList?.length ? 'containing' : undefined,
+        })
+        groupMember.dataState = 'imported'
+        if (groupMember.name === 'OMEGA' || !groupMember.name) {
+          groupMember.name = displayName === 'OMEGA_BLOCK' ? 'OMEGA' : displayName
+        }
+        if (groupMember.runGroupId) refreshRunGroupDissolvable(groupMember.runGroupId)
+        continue
+      }
+
+      // 无组时：若已有「OMEGA」占位（任意组）且本条是 OMEGA_BLOCK，并入
+      if (tag === 'OMEGA') {
+        const omegaPlaceholder = activeLayers.value.find(
+          (layer) =>
+            !layer.importedRaster &&
+            normalizeProductTag(layer.runGroupProductTag || layer.name) === 'OMEGA',
+        )
+        if (omegaPlaceholder) {
+          omegaPlaceholder.importedRaster = buildImportedRasterPayload(item.overlayLayerId, {
+            bounds: item.bounds,
+            fileName: omegaPlaceholder.name || 'OMEGA',
+            sourceCrs: item.sourceCrs,
+            nativeStep: nativeStep || (timeList?.length ? '8d' : null),
+            timeList,
+            followPolicy: timeList?.length ? 'containing' : undefined,
+          })
+          omegaPlaceholder.dataState = 'imported'
+          omegaPlaceholder.name = 'OMEGA'
+          if (omegaPlaceholder.runGroupId) {
+            refreshRunGroupDissolvable(omegaPlaceholder.runGroupId)
+          }
+          // 若本 overlay 已作为游离层存在，删掉游离条目
+          if (existingByOverlay && existingByOverlay.instanceId !== omegaPlaceholder.instanceId) {
+            const idx = activeLayers.value.findIndex(
+              (l) => l.instanceId === existingByOverlay.instanceId,
+            )
+            if (idx >= 0) {
+              activeLayers.value[idx]!.importedRaster = undefined
+              activeLayers.value.splice(idx, 1)
+            }
+          }
+          scheduleWorkspacePersist()
+          continue
+        }
+      }
+
+      // Prefer binding onto an existing wf-out active layer when present.
+      const targetCatalogId = matchingOutput?.localId
+      const existingActive = targetCatalogId
+        ? activeLayers.value.find(
+            (layer) => layer.catalogId === targetCatalogId && !layer.isAdminBoundary,
+          )
+        : activeLayers.value.find(
+            (layer) => layer.catalogId === preferredCatalogId && !layer.isAdminBoundary,
+          )
+
+      if (existingActive && !existingActive.importedRaster) {
+        existingActive.importedRaster = buildImportedRasterPayload(item.overlayLayerId, {
+          bounds: item.bounds,
+          fileName: displayName,
+          sourceCrs: item.sourceCrs,
+          nativeStep: nativeStep || (timeList?.length ? '8d' : null),
+          timeList,
+          followPolicy: timeList?.length ? 'containing' : undefined,
+        })
+        existingActive.dataState = 'imported'
+        if (!existingActive.name) existingActive.name = displayName
+        if (existingActive.runGroupId) refreshRunGroupDissolvable(existingActive.runGroupId)
+        continue
+      }
+
+      const added = addImportedRasterLayer(displayName, item.overlayLayerId, item.bounds, {
+        sourceCrs: item.sourceCrs,
+        nativeStep: nativeStep || (timeList?.length ? '8d' : null),
+        timeList,
+        followPolicy: timeList?.length ? 'containing' : undefined,
+      })
+      if (added && groupByRun) {
+        added.runGroupId = groupByRun.groupId
+        added.runGroupProductTag = item.productTag || tag || 'result'
+        added.runGroupLocked = groupByRun.status === 'computing'
+        if (!groupByRun.memberInstanceIds.includes(added.instanceId)) {
+          groupByRun.memberInstanceIds.push(added.instanceId)
+        }
+        refreshRunGroupDissolvable(groupByRun.groupId)
+      }
+    }
+    if (runId) {
+      const g = runLayerGroups.value.find((x) => x.runId === runId)
+      if (g) refreshRunGroupDissolvable(g.groupId)
+    }
+    reconcileOmegaBlockLayers()
+    scheduleWorkspacePersist()
+    return imports.length
+  }
+
+  /** 把游离的 OMEGA_BLOCK 并入组内 OMEGA 占位，去掉重复条目（不删后端文件） */
+  function reconcileOmegaBlockLayers() {
+    const orphans = activeLayers.value.filter((layer) => {
+      if (!layer.importedRaster?.overlayLayerId) return false
+      const name = `${layer.name || ''} ${layer.importedRaster.fileName || ''}`.toUpperCase()
+      return name.includes('OMEGA_BLOCK') || normalizeProductTag(layer.name) === 'OMEGA'
+    })
+    for (const orphan of [...orphans]) {
+      // 只处理名为 OMEGA_BLOCK 的游离层
+      const orphanName = String(orphan.name || orphan.importedRaster?.fileName || '').toUpperCase()
+      if (!orphanName.includes('OMEGA_BLOCK')) continue
+      const placeholder = activeLayers.value.find(
+        (layer) =>
+          layer.instanceId !== orphan.instanceId &&
+          !layer.importedRaster &&
+          normalizeProductTag(layer.runGroupProductTag || layer.name) === 'OMEGA',
+      )
+      if (!placeholder) {
+        // 无占位：直接把游离层改名为 OMEGA
+        orphan.name = 'OMEGA'
+        if (orphan.runGroupProductTag) orphan.runGroupProductTag = 'OMEGA'
+        continue
+      }
+      placeholder.importedRaster = { ...orphan.importedRaster! }
+      placeholder.dataState = 'imported'
+      placeholder.name = 'OMEGA'
+      placeholder.runGroupProductTag = placeholder.runGroupProductTag || 'OMEGA'
+      // 摘掉游离层引用后从列表移除（不清后端）
+      orphan.importedRaster = undefined
+      const idx = activeLayers.value.findIndex((l) => l.instanceId === orphan.instanceId)
+      if (idx >= 0) activeLayers.value.splice(idx, 1)
+      if (orphan.runGroupId) {
+        const og = runLayerGroups.value.find((x) => x.groupId === orphan.runGroupId)
+        if (og) {
+          og.memberInstanceIds = og.memberInstanceIds.filter((id) => id !== orphan.instanceId)
+          if (!og.memberInstanceIds.length) {
+            runLayerGroups.value = runLayerGroups.value.filter((x) => x.groupId !== og.groupId)
+          }
+        }
+      }
+      if (placeholder.runGroupId) refreshRunGroupDissolvable(placeholder.runGroupId)
+    }
+  }
+
   async function pollWorkflowRun(
     jobId: string,
     catalogId: string,
-    startTime = Date.now(),
+    lastActivityAt = Date.now(),
     consecutiveErrors = 0,
     expectedViewportEpoch?: number,
   ) {
@@ -1806,24 +2656,41 @@ export const useLayersStore = defineStore('layers', () => {
       activeWorkflowCatalogIds.delete(catalogId)
       return
     }
-    if (Date.now() - startTime > EVENT_POLL_MAX_DURATION_MS) {
-      stopWorkflowPolling(jobId)
-      activeWorkflowCatalogIds.delete(catalogId)
-      workflowError.value = `工作流 ${jobId} 事件等待超时（${EVENT_POLL_MAX_DURATION_MS / 1000}s）`
-      const existingJobLayer = jobLayers.value.find((item) => item.jobId === jobId)
-      if (existingJobLayer && !isViewportRefreshStale(expectedViewportEpoch)) {
-        upsertJobLayer(catalogId, {
-          ...existingJobLayer,
-          status: 'failed',
-          message: '事件等待超时',
-          progress: 0,
-        })
+    if (Date.now() - lastActivityAt > EVENT_POLL_IDLE_TIMEOUT_MS) {
+      // Soft timeout: trust the server. Never invent a local failure over a
+      // succeeded/running run (long omega_sf jobs routinely exceed idle gaps).
+      try {
+        const run = await getWorkflowRun(jobId)
+        const serverStatus = run.status === 'accepted' ? 'queued' : run.status
+        if (!isTerminalStatus(serverStatus)) {
+          const handle = window.setTimeout(() => {
+            void pollWorkflowRun(jobId, catalogId, Date.now(), 0, expectedViewportEpoch)
+          }, EVENT_POLL_IDLE_INTERVAL_MS)
+          workflowPollingHandles.set(jobId, handle)
+          return
+        }
+        // Terminal on server — sync authoritative snapshot (incl. succeeded)
+        await syncWorkflowRunSnapshot(jobId, catalogId, true, expectedViewportEpoch)
+        return
+      } catch {
+        // Network blip: keep polling instead of marking failed.
+        const handle = window.setTimeout(() => {
+          void pollWorkflowRun(
+            jobId,
+            catalogId,
+            Date.now(),
+            consecutiveErrors,
+            expectedViewportEpoch,
+          )
+        }, EVENT_POLL_IDLE_INTERVAL_MS)
+        workflowPollingHandles.set(jobId, handle)
+        return
       }
-      return
     }
 
     let nextConsecutiveErrors = consecutiveErrors
     let nextDelayMs = EVENT_POLL_IDLE_INTERVAL_MS
+    let nextActivityAt = lastActivityAt
 
     try {
       const existingJobLayer = jobLayers.value.find((item) => item.jobId === jobId)
@@ -1841,6 +2708,7 @@ export const useLayersStore = defineStore('layers', () => {
       if (existingJobLayer && newItems.length > 0) {
         upsertJobLayer(catalogId, applyWorkflowEventsToJobLayer(existingJobLayer, newItems))
         nextDelayMs = EVENT_POLL_ACTIVE_INTERVAL_MS
+        nextActivityAt = Date.now()
       }
 
       workflowError.value = null
@@ -1859,6 +2727,22 @@ export const useLayersStore = defineStore('layers', () => {
       if (didReachTerminal) {
         return
       }
+      // Status sync that still shows running also counts as activity
+      if (shouldForceSync || newItems.length > 0) {
+        nextActivityAt = Date.now()
+      } else {
+        // Periodic status sync: if still running, treat as activity
+        const current = jobLayers.value.find((item) => item.jobId === jobId)
+        if (
+          current &&
+          (current.status === 'running' ||
+            current.status === 'queued' ||
+            current.status === 'retry_pending')
+        ) {
+          nextActivityAt = Date.now()
+          void syncProgressiveBlockOverlays(jobId, catalogId)
+        }
+      }
     } catch (error) {
       if (isViewportRefreshStale(expectedViewportEpoch)) {
         stopWorkflowPolling(jobId)
@@ -1876,7 +2760,7 @@ export const useLayersStore = defineStore('layers', () => {
             ...existingJobLayer,
             status: 'failed',
             message: '工作流记录不存在',
-            progress: 0,
+            progress: existingJobLayer.progress,
           })
         }
         return
@@ -1887,19 +2771,37 @@ export const useLayersStore = defineStore('layers', () => {
       if (isAbortError) {
         // 超时后用 idle 间隔重试，不递增错误计数，不设置 workflowError
         nextDelayMs = EVENT_POLL_IDLE_INTERVAL_MS
+        nextActivityAt = Date.now()
       } else {
         nextConsecutiveErrors = consecutiveErrors + 1
         if (nextConsecutiveErrors >= MAX_CONSECUTIVE_POLL_ERRORS) {
+          // Before giving up, ask the server — never invent failure over a live/succeeded run.
+          try {
+            const run = await getWorkflowRun(jobId)
+            const serverStatus = run.status === 'accepted' ? 'queued' : run.status
+            if (!isTerminalStatus(serverStatus) || serverStatus === 'succeeded') {
+              await syncWorkflowRunSnapshot(jobId, catalogId, true, expectedViewportEpoch)
+              if (!isTerminalStatus(serverStatus)) {
+                const handle = window.setTimeout(() => {
+                  void pollWorkflowRun(jobId, catalogId, Date.now(), 0, expectedViewportEpoch)
+                }, EVENT_POLL_IDLE_INTERVAL_MS)
+                workflowPollingHandles.set(jobId, handle)
+              }
+              return
+            }
+          } catch {
+            // fall through
+          }
           stopWorkflowPolling(jobId)
           activeWorkflowCatalogIds.delete(catalogId)
           workflowError.value = `工作流 ${jobId} 事件同步连续失败 ${nextConsecutiveErrors} 次：${errMsg}`
           const existingJobLayer = jobLayers.value.find((item) => item.jobId === jobId)
-          if (existingJobLayer) {
+          if (existingJobLayer && existingJobLayer.status !== 'succeeded') {
             upsertJobLayer(catalogId, {
               ...existingJobLayer,
               status: 'failed',
               message: `事件同步连续失败：${errMsg}`,
-              progress: 0,
+              progress: existingJobLayer.progress,
             })
           }
           return
@@ -1914,7 +2816,7 @@ export const useLayersStore = defineStore('layers', () => {
       void pollWorkflowRun(
         jobId,
         catalogId,
-        startTime,
+        nextActivityAt,
         nextConsecutiveErrors,
         expectedViewportEpoch,
       )
@@ -1949,30 +2851,221 @@ export const useLayersStore = defineStore('layers', () => {
     }
   }
 
+  function resolveRestoredCatalogId(runLayerId: string | null | undefined, runId: string): string {
+    const layerId = (runLayerId || '').trim()
+    const tracked = loadTrackedWorkflowRuns().find((item) => item.runId === runId)
+    if (tracked?.catalogId) return tracked.catalogId
+    if (layerId) {
+      const outputStore = useWorkflowOutputLayersStore()
+      const match = outputStore.entries.find(
+        (entry) => entry.sourceLayerId === layerId && entry.lastRunId === runId,
+      )
+      if (match) return match.localId
+      const bySource = outputStore.getBySourceLayerId(layerId)
+      if (bySource.length === 1) return bySource[0].localId
+      if (bySource.length > 1) {
+        // Prefer most recently created output entry
+        return bySource[0].localId
+      }
+      return layerId
+    }
+    return runId
+  }
+
+  /** Replay recent events so node progress bars survive page refresh. */
+  async function hydrateJobLayerFromEvents(jobLayer: JobLayerItem): Promise<JobLayerItem> {
+    try {
+      const events = await getWorkflowEvents(jobLayer.jobId, { limit: 50 })
+      const items = events.items ?? []
+      if (!items.length) return jobLayer
+      return applyWorkflowEventsToJobLayer(jobLayer, items)
+    } catch {
+      return jobLayer
+    }
+  }
+
   /**
-   * 从后端恢复活跃工作流列表。在页面加载 / 刷新后调用，
-   * 确保跨会话和定时器触发的工作流也能被状态栏跟踪。
+   * 从后端 + localStorage 恢复工作流列表。在页面加载 / 刷新后调用，
+   * 确保跨会话与长批任务的进度条/节点进度不会丢失。
    */
   async function restoreActiveWorkflows() {
     try {
-      const activeRuns = await listActiveWorkflowRuns()
-      for (const run of activeRuns) {
-        // 跳过已在跟踪的
-        if (workflowPollingHandles.has(run.run_id)) continue
-        const existing = jobLayers.value.find((item) => item.jobId === run.run_id)
-        if (existing && !isTerminalStatus(existing.status)) continue
+      // 先恢复本机已产出图层/组，再合并后端活跃 run
+      const instanceIdMap = hydrateWorkspaceFromSnapshot()
+      await hydrateVectorLayersFromSnapshot(instanceIdMap)
+      reconcileOmegaBlockLayers()
 
-        const catalogId = ((run as Record<string, unknown>).layer_id as string) ?? run.run_id
-        const jobLayer = await buildJobLayer(run, catalogId, {})
-        upsertJobLayer(catalogId, jobLayer)
-        if (!isTerminalStatus(jobLayer.status)) {
-          activeWorkflowCatalogIds.add(catalogId)
-          void pollWorkflowRun(run.run_id, catalogId)
+      const activeRuns = await listActiveWorkflowRuns().catch(() => [])
+      const tracked = loadTrackedWorkflowRuns()
+      const seen = new Set<string>()
+
+      const candidates: Array<{ runId: string; catalogIdHint?: string }> = []
+      for (const run of activeRuns) {
+        candidates.push({
+          runId: run.run_id,
+          catalogIdHint: ((run as Record<string, unknown>).layer_id as string) || undefined,
+        })
+      }
+      for (const item of tracked) {
+        if (isLocalSubmitJobId(item.runId)) {
+          forgetTrackedWorkflowRun(item.runId)
+          continue
+        }
+        if (!candidates.some((c) => c.runId === item.runId)) {
+          candidates.push({ runId: item.runId, catalogIdHint: item.catalogId })
         }
       }
+
+      // 清掉残留的乐观提交占位（排队幽灵）
+      for (const job of [...jobLayers.value]) {
+        if (isLocalSubmitJobId(job.jobId)) {
+          removeJobLayerById(job.jobId)
+        }
+      }
+
+      for (const candidate of candidates) {
+        if (seen.has(candidate.runId)) continue
+        seen.add(candidate.runId)
+        if (isRunDismissed(candidate.runId)) {
+          forgetTrackedWorkflowRun(candidate.runId)
+          continue
+        }
+        if (workflowPollingHandles.has(candidate.runId)) continue
+        const existing = jobLayers.value.find((item) => item.jobId === candidate.runId)
+        if (
+          existing &&
+          !isTerminalStatus(existing.status) &&
+          workflowPollingHandles.has(candidate.runId)
+        ) {
+          continue
+        }
+
+        let run
+        try {
+          run = await getWorkflowRun(candidate.runId)
+        } catch (err) {
+          console.warn('[layers] restore skip missing run', candidate.runId, err)
+          forgetTrackedWorkflowRun(candidate.runId)
+          continue
+        }
+
+        const catalogId = resolveRestoredCatalogId(
+          ((run as Record<string, unknown>).layer_id as string) || candidate.catalogIdHint,
+          run.run_id,
+        )
+        let jobLayer = await buildJobLayer(run, catalogId, {
+          previousJobLayer: existing,
+        })
+        jobLayer = await hydrateJobLayerFromEvents(jobLayer)
+        // Prefer hydrated progress over bare server snapshot (often stuck at 18/35)
+        if (existing) {
+          jobLayer = {
+            ...jobLayer,
+            progress: Math.max(
+              normalizeWorkflowProgress(jobLayer.progress),
+              normalizeWorkflowProgress(existing.progress),
+              ...(jobLayer.nodeProgress ?? []).map((np) =>
+                normalizeWorkflowProgress(np.progress, np.detail),
+              ),
+            ),
+            nodeProgress: jobLayer.nodeProgress?.length
+              ? jobLayer.nodeProgress
+              : existing.nodeProgress,
+            eventMessages: jobLayer.eventMessages?.length
+              ? jobLayer.eventMessages
+              : existing.eventMessages,
+          }
+        }
+        upsertJobLayer(catalogId, jobLayer)
+
+        const outputStore = useWorkflowOutputLayersStore()
+        if (catalogId.startsWith('wf-out-')) {
+          outputStore.updateRunStatus(catalogId, run.run_id, jobLayer.status)
+        }
+
+        if (!isTerminalStatus(jobLayer.status)) {
+          const trackedItem = tracked.find((t) => t.runId === run.run_id)
+          const layerId = String((run as Record<string, unknown>).layer_id || catalogId)
+          if (
+            layerId.includes('omega-sf') ||
+            catalogId.includes('omega-sf') ||
+            catalogId.startsWith('wf-run-')
+          ) {
+            ensureRestoredRunGroup(run.run_id, catalogId, trackedItem, {
+              createPlaceholders: true,
+              title: jobLayer.name || 'SF 块反演（SMAP）',
+            })
+          }
+          activeWorkflowCatalogIds.add(catalogId)
+          void pollWorkflowRun(run.run_id, catalogId)
+        } else if (jobLayer.status === 'succeeded' && !isRunDismissed(run.run_id)) {
+          // 确保计算组结构存在，便于 attach 绑到 SM/VOD/OMEGA 成员
+          ensureRestoredRunGroup(
+            run.run_id,
+            catalogId,
+            tracked.find((t) => t.runId === run.run_id),
+          )
+          void attachAlgorithmProductOverlays(run.result_refs, catalogId, run.run_id).then(() =>
+            scheduleWorkspacePersist(),
+          )
+        }
+      }
+      scheduleWorkspacePersist()
     } catch (err) {
       console.error('[layers] restoreActiveWorkflows failed:', err)
     }
+  }
+
+  function ensureRestoredRunGroup(
+    runId: string,
+    catalogId: string,
+    tracked?: TrackedWorkflowRun,
+    options?: { createPlaceholders?: boolean; title?: string },
+  ) {
+    if (runLayerGroups.value.some((g) => g.runId === runId)) return
+    const groupId =
+      tracked?.groupId || `run-group-restored-${runId.replace(/[^a-zA-Z0-9]/g, '').slice(-10)}`
+    const tags = ['SM', 'VOD', 'OMEGA'] as const
+    const memberCatalogIds =
+      tracked?.memberCatalogIds?.length === 3
+        ? tracked.memberCatalogIds
+        : tags.map((tag) => `wf-run-${groupId}-${tag.toLowerCase()}`)
+
+    const existingMembers = memberCatalogIds
+      .map((cid) => activeLayers.value.find((l) => l.catalogId === cid))
+      .filter((l): l is ActiveLayer => Boolean(l))
+
+    if (existingMembers.length) {
+      for (const m of existingMembers) {
+        m.runGroupId = groupId
+        m.runGroupLocked = options?.createPlaceholders === true
+      }
+      runLayerGroups.value.push({
+        groupId,
+        runId,
+        title: options?.title || tracked?.name || 'SF 块反演产物',
+        status: options?.createPlaceholders ? 'computing' : 'ready',
+        memberInstanceIds: existingMembers.map((m) => m.instanceId),
+        dissolvable: !options?.createPlaceholders,
+        sourceLayerId: 'omega-sf-fenkuai',
+        workflowId: 'omega_sf_fenkuai_smap_single',
+      })
+      return
+    }
+
+    if (!options?.createPlaceholders) {
+      void catalogId
+      return
+    }
+
+    const created = createRunLayerGroup({
+      title: options.title || tracked?.name || 'SF 块反演（SMAP）',
+      targets: tags.map((tag) => ({ name: tag, productTag: tag })),
+      sourceLayerId: 'omega-sf-fenkuai',
+      workflowId: 'omega_sf_fenkuai_smap_single',
+      memberCatalogIds,
+    })
+    bindRunIdToGroup(created.groupId, runId)
   }
 
   /** 中断指定 catalogId 的活跃工作流（平移时调用）：停止轮询、取消 API（fire-and-forget），但保留旧的 jobLayer */
@@ -2158,6 +3251,9 @@ export const useLayersStore = defineStore('layers', () => {
         // 保留旧 mapLayerPayload，使粒子流/网格填充在新工作流运行期间保持可见
         mapLayerPayload: previousJobLayer?.mapLayerPayload,
       })
+      if (catalogId.startsWith('wf-out-')) {
+        useWorkflowOutputLayersStore().updateRunStatus(catalogId, accepted.run_id, 'queued')
+      }
 
       activeWorkflowCatalogIds.add(catalogId)
       // 工作流提交成功，清除 429 重试计数
@@ -2171,8 +3267,61 @@ export const useLayersStore = defineStore('layers', () => {
         workflowError.value = errMsg
         throw error
       }
+      if (isSubmitTimeoutError(error)) {
+        try {
+          const activeRuns = await listActiveWorkflowRuns()
+          const claimed = claimOrphanWorkflowRun(
+            activeRuns.map((run) => ({
+              run_id: run.run_id,
+              command_label: run.command_label,
+              created_at: run.created_at,
+              status: run.status,
+              layer_id: run.layer_id,
+            })),
+            {
+              commandLabel: options.commandLabel,
+              catalogIdHint: backendLayerId,
+              submitStartedAt,
+            },
+          )
+          if (claimed?.run_id) {
+            removeJobLayerById(submitJobId)
+            const reconciledMsg = WORKFLOW_COPY.reconcilingSubmit
+            const prevLayer = activeLayers.value.find(
+              (l) => l.catalogId === catalogId && !l.isAdminBoundary,
+            )?.jobLayer
+            upsertJobLayer(catalogId, {
+              jobId: claimed.run_id,
+              catalogId,
+              name: catalogName,
+              commandType: 'analysis',
+              status: 'queued',
+              progress: 12,
+              createdAt: claimed.created_at ?? submitStartedAt,
+              updatedAt: new Date().toISOString(),
+              message: reconciledMsg,
+              metrics: [],
+              reportSummary: reconciledMsg,
+              resultUrl: undefined,
+              mapLayerPayload: prevLayer?.mapLayerPayload,
+            })
+            activeWorkflowCatalogIds.add(catalogId)
+            workflowRetryCounts.delete(catalogId)
+            void pollWorkflowRun(
+              claimed.run_id,
+              catalogId,
+              Date.now(),
+              0,
+              options.expectedViewportEpoch,
+            )
+            return claimed.run_id
+          }
+        } catch (reconcileError) {
+          console.warn('[LayersStore] submit timeout reconcile failed', catalogId, reconcileError)
+        }
+      }
       if (errMsg.includes('429')) {
-        workflowError.value = '工作流并发数已达上限，正在等待空闲后自动重试…'
+        workflowError.value = WORKFLOW_COPY.capacityWaiting
         // 429 时创建 queued jobLayer 让用户看到状态指示，并调度自动重试
         upsertJobLayer(catalogId, {
           jobId: submitJobId,
@@ -2183,14 +3332,15 @@ export const useLayersStore = defineStore('layers', () => {
           progress: 5,
           createdAt: submitStartedAt,
           updatedAt: new Date().toISOString(),
-          message: '等待工作流容量，自动重试中…',
+          message: WORKFLOW_COPY.capacityRetrying,
           metrics: [],
-          reportSummary: '等待工作流容量，自动重试中…',
+          reportSummary: WORKFLOW_COPY.capacityRetrying,
           resultUrl: undefined,
         })
         scheduleWorkflowRetry(catalogId)
       } else {
-        workflowError.value = errMsg
+        const localized = localizeWorkflowErrorMessage(errMsg)
+        workflowError.value = localized
         upsertJobLayer(catalogId, {
           jobId: submitJobId,
           catalogId,
@@ -2200,10 +3350,10 @@ export const useLayersStore = defineStore('layers', () => {
           progress: 0,
           createdAt: submitStartedAt,
           updatedAt: new Date().toISOString(),
-          message: errMsg,
+          message: localized,
           metrics: [],
-          reportSummary: errMsg,
-          diagnosticNotes: [errMsg],
+          reportSummary: localized,
+          diagnosticNotes: [localized],
           resultUrl: undefined,
         })
       }
@@ -2230,9 +3380,9 @@ export const useLayersStore = defineStore('layers', () => {
         progress: 0,
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
-        message: '工作流容量不足，已达最大重试次数，请稍后手动重试',
+        message: WORKFLOW_COPY.capacityExhausted,
         metrics: [],
-        reportSummary: '工作流容量不足，请稍后手动重试',
+        reportSummary: WORKFLOW_COPY.capacityExhausted,
         resultUrl: undefined,
       })
       return
@@ -2249,12 +3399,41 @@ export const useLayersStore = defineStore('layers', () => {
 
   async function cancelWorkflowRunForJob(jobId: string, catalogId: string) {
     try {
+      if (isLocalSubmitJobId(jobId)) {
+        removeJobLayerById(jobId)
+        forgetTrackedWorkflowRun(jobId)
+        const layer = activeLayers.value.find((l) => l.catalogId === catalogId)
+        if (layer?.runGroupId) {
+          const g = runLayerGroups.value.find((x) => x.groupId === layer.runGroupId)
+          if (g && (!g.runId || isLocalSubmitJobId(g.runId))) {
+            g.status = 'cancelled'
+            g.dissolvable = true
+            g.message = '已取消提交'
+            for (const id of [...g.memberInstanceIds]) {
+              const m = activeLayers.value.find((l) => l.instanceId === id)
+              if (m && !m.importedRaster?.overlayLayerId) {
+                const idx = activeLayers.value.findIndex((l) => l.instanceId === id)
+                if (idx >= 0) activeLayers.value.splice(idx, 1)
+              }
+            }
+            g.memberInstanceIds = g.memberInstanceIds.filter((id) =>
+              activeLayers.value.some((l) => l.instanceId === id),
+            )
+            if (!g.memberInstanceIds.length) {
+              runLayerGroups.value = runLayerGroups.value.filter((x) => x.groupId !== g.groupId)
+            }
+          }
+        }
+        scheduleWorkspacePersist()
+        return
+      }
       const run = await cancelWorkflowRun(jobId)
       const existingJobLayer = jobLayers.value.find((item) => item.jobId === jobId)
       const jobLayer = await buildJobLayer(run, catalogId, { previousJobLayer: existingJobLayer })
       upsertJobLayer(catalogId, jobLayer)
       stopWorkflowPolling(jobId)
       activeWorkflowCatalogIds.delete(catalogId)
+      cleanupUnproducedRunLayers(jobId)
     } catch (error) {
       workflowError.value = error instanceof Error ? error.message : '取消 workflow 失败'
     }
@@ -2262,6 +3441,12 @@ export const useLayersStore = defineStore('layers', () => {
 
   async function retryWorkflowRunForJob(jobId: string, catalogId: string) {
     if (submittingCatalogIds.has(catalogId)) return
+    // 乐观 ID / 从未真正落库的提交：走重新提交，而不是 /retry
+    if (isLocalSubmitJobId(jobId)) {
+      removeJobLayerById(jobId)
+      forgetTrackedWorkflowRun(jobId)
+      return runWorkflowForCatalog(catalogId)
+    }
     // 中断旧位置的活跃工作流，允许重试提交新工作流
     interruptWorkflowForCatalog(catalogId)
     workflowError.value = null
@@ -2295,12 +3480,548 @@ export const useLayersStore = defineStore('layers', () => {
   }
 
   function reorderLayers(fromIndex: number, toIndex: number) {
+    // Display order is descending (list top = map top = high order)
+    const sorted = activeLayers.value.slice().sort((a, b) => b.order - a.order)
+    const moved = sorted[fromIndex]
+    if (!moved) return
+
+    // 锁定组成员：只允许组内调序
+    if (moved.runGroupId && moved.runGroupLocked) {
+      const group = runLayerGroups.value.find((g) => g.groupId === moved.runGroupId)
+      if (group) {
+        const memberSet = new Set(group.memberInstanceIds)
+        const target = sorted[toIndex]
+        if (!target || !memberSet.has(target.instanceId)) return
+        reorderWithinRunGroup(
+          moved.runGroupId,
+          group.memberInstanceIds.indexOf(moved.instanceId),
+          group.memberInstanceIds.indexOf(target.instanceId),
+        )
+        return
+      }
+    }
+
+    // 禁止把外部图层插进锁定组块中间
+    const target = sorted[toIndex]
+    if (
+      target?.runGroupId &&
+      target.runGroupLocked &&
+      (!moved.runGroupId || moved.runGroupId !== target.runGroupId)
+    ) {
+      return
+    }
+
+    const [item] = sorted.splice(fromIndex, 1)
+    if (!item) return
+    sorted.splice(toIndex, 0, item)
+    sorted.forEach((layer, i) => {
+      layer.order = sorted.length - 1 - i
+    })
+    scheduleWorkspacePersist()
+  }
+
+  function syncGroupMemberOrders(group: ActiveRunLayerGroup) {
+    const members = group.memberInstanceIds
+      .map((id) => activeLayers.value.find((l) => l.instanceId === id))
+      .filter((l): l is ActiveLayer => Boolean(l))
+    if (!members.length) return
+    const minOrder = Math.min(...members.map((m) => m.order))
+    // memberInstanceIds[0] should sit at list top within the block → highest order
+    members.forEach((m, i) => {
+      m.order = minOrder + (members.length - 1 - i)
+    })
+    // 压缩全局 order，保持相对块位置（升序存储，显示时再降序）
     const sorted = activeLayers.value.slice().sort((a, b) => a.order - b.order)
-    const [moved] = sorted.splice(fromIndex, 1)
-    sorted.splice(toIndex, 0, moved)
     sorted.forEach((layer, i) => {
       layer.order = i
     })
+  }
+
+  function createRunLayerGroup(options: {
+    title: string
+    targets: Array<{ name: string; productTag: string }>
+    sourceLayerId: string
+    workflowId: string
+    memberCatalogIds?: string[]
+  }): { groupId: string; memberInstanceIds: string[]; memberCatalogIds: string[] } {
+    const groupId = `run-group-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`
+    const memberInstanceIds: string[] = []
+    const memberCatalogIds: string[] = []
+    const maxOrder = activeLayers.value.reduce((max, l) => Math.max(max, l.order), -1)
+    const accent = assignLayerAccent(undefined)
+
+    options.targets.forEach((t, i) => {
+      const catalogId =
+        options.memberCatalogIds?.[i] ||
+        `wf-run-${groupId}-${String(t.productTag || 'result').toLowerCase()}`
+      const layer: ActiveLayer = {
+        instanceId: genInstanceId(),
+        catalogId,
+        name: t.name,
+        visible: true,
+        opacity: 1,
+        order: maxOrder + options.targets.length - i,
+        isAdminBoundary: false,
+        dataState: 'catalog',
+        accentColor: accent.accentColor,
+        accentGlow: accent.accentGlow,
+        chipTone: accent.chipTone,
+        runGroupId: groupId,
+        runGroupProductTag: t.productTag,
+        runGroupLocked: true,
+      }
+      activeLayers.value.push(layer)
+      memberInstanceIds.push(layer.instanceId)
+      memberCatalogIds.push(catalogId)
+    })
+
+    runLayerGroups.value.push({
+      groupId,
+      runId: '',
+      title: options.title,
+      status: 'computing',
+      memberInstanceIds,
+      dissolvable: false,
+      sourceLayerId: options.sourceLayerId,
+      workflowId: options.workflowId,
+      progress: 0,
+      message: '等待计算…',
+    })
+
+    if (sidebarView.value === 'empty' || sidebarView.value === 'library') {
+      sidebarView.value = 'active'
+    }
+    if (memberInstanceIds[0]) {
+      selectedInstanceId.value = memberInstanceIds[0]
+    }
+    return { groupId, memberInstanceIds, memberCatalogIds }
+  }
+
+  function bindRunIdToGroup(groupId: string, runId: string) {
+    const g = runLayerGroups.value.find((x) => x.groupId === groupId)
+    if (!g) return
+    g.runId = runId
+    scheduleWorkspacePersist()
+  }
+
+  /**
+   * 停止/失败后清理未产出占位图层：无 overlay 的组成员移除；
+   * 已有栅格产物的成员保留并解锁，便于用户继续查看部分结果。
+   */
+  function cleanupUnproducedRunLayers(runId: string) {
+    if (!runId) return
+    progressiveMaterializeAt.delete(runId)
+    progressiveMaterializeInFlight.delete(runId)
+
+    const g = runLayerGroups.value.find((x) => x.runId === runId)
+    if (!g) return
+
+    const removeIds: string[] = []
+    for (const instanceId of [...g.memberInstanceIds]) {
+      const layer = activeLayers.value.find((l) => l.instanceId === instanceId)
+      if (!layer) {
+        removeIds.push(instanceId)
+        continue
+      }
+      if (!layer.importedRaster?.overlayLayerId) {
+        removeIds.push(instanceId)
+      } else {
+        layer.runGroupLocked = false
+        if (layer.name && !layer.name.includes('（部分）')) {
+          layer.name = `${layer.name}（部分）`
+        }
+      }
+    }
+    for (const instanceId of removeIds) {
+      // 占位无 overlay：removeLayer 不会删后端文件
+      removeLayer(instanceId)
+    }
+
+    const left = runLayerGroups.value.find((x) => x.groupId === g.groupId)
+    if (left) {
+      left.dissolvable = true
+      left.status = left.status === 'failed' ? 'failed' : 'cancelled'
+      if (!left.memberInstanceIds.length) {
+        runLayerGroups.value = runLayerGroups.value.filter((x) => x.groupId !== left.groupId)
+      }
+    }
+    scheduleWorkspacePersist()
+  }
+
+  let workspacePersistTimer: ReturnType<typeof setTimeout> | null = null
+
+  function flushWorkspacePersistNow() {
+    if (typeof window === 'undefined') return
+    if (workspacePersistTimer != null) {
+      window.clearTimeout(workspacePersistTimer)
+      workspacePersistTimer = null
+    }
+    saveWorkspaceSnapshot(buildWorkspaceSnapshot(activeLayers.value, runLayerGroups.value))
+  }
+
+  function scheduleWorkspacePersist() {
+    if (typeof window === 'undefined') return
+    if (workspacePersistTimer != null) window.clearTimeout(workspacePersistTimer)
+    workspacePersistTimer = window.setTimeout(() => {
+      workspacePersistTimer = null
+      flushWorkspacePersistNow()
+    }, 400)
+  }
+
+  if (typeof window !== 'undefined') {
+    window.addEventListener('pagehide', () => flushWorkspacePersistNow())
+  }
+
+  function restoreCatalogLayerFromSnapshot(
+    saved: PersistedCatalogLayer,
+    instanceIdMap?: Map<string, string>,
+  ) {
+    if (isCatalogDismissed(saved.catalogId)) return
+    if (
+      activeLayers.value.some(
+        (l) => l.catalogId === saved.catalogId && !isLocalImport(l) && !l.jobLayer,
+      )
+    ) {
+      return
+    }
+    const libraryItem = layerLibraryMap.value.get(saved.catalogId)
+    const accent = saved.accentColor
+      ? {
+          accentColor: saved.accentColor,
+          accentGlow: saved.accentGlow ?? 'rgba(255, 255, 255, 0.2)',
+          chipTone: saved.chipTone ?? 'rgba(255, 255, 255, 0.1)',
+        }
+      : assignLayerAccent(libraryItem?.accentColor)
+    const instanceId = genInstanceId()
+    instanceIdMap?.set(saved.instanceId, instanceId)
+    const layer: ActiveLayer = {
+      instanceId,
+      catalogId: saved.catalogId,
+      name: saved.name,
+      visible: saved.visible !== false,
+      opacity: typeof saved.opacity === 'number' ? saved.opacity : 1,
+      order: typeof saved.order === 'number' ? saved.order : activeLayers.value.length,
+      isAdminBoundary: false,
+      dataState: saved.dataState === 'real' ? 'real' : 'catalog',
+      accentColor: accent.accentColor,
+      accentGlow: accent.accentGlow,
+      chipTone: accent.chipTone,
+      runGroupId: saved.runGroupId,
+      runGroupProductTag: saved.runGroupProductTag,
+    }
+    activeLayers.value.push(layer)
+    if (isWeatherEngineLayer(saved.catalogId) && layer.visible) {
+      weatherTileManager.setLayerActive(saved.catalogId, true)
+      nextTick(() => {
+        window.setTimeout(() => {
+          weatherTileManager.setViewport(
+            saved.catalogId,
+            currentMapCenter.value,
+            currentMapZoom.value,
+            currentHour.value,
+            undefined,
+            currentMapBBox.value,
+            weatherProviderArg(saved.catalogId),
+          )
+        }, 0)
+      })
+    }
+  }
+
+  function restoreRunGroupsFromSnapshot(
+    snap: NonNullable<ReturnType<typeof loadWorkspaceSnapshot>>,
+    instanceIdMap: Map<string, string>,
+  ) {
+    for (const savedGroup of snap.groups || []) {
+      if (savedGroup.runId && isRunDismissed(savedGroup.runId)) continue
+      if (
+        runLayerGroups.value.some(
+          (g) => g.groupId === savedGroup.groupId || g.runId === savedGroup.runId,
+        )
+      ) {
+        continue
+      }
+      const memberInstanceIds = (savedGroup.memberInstanceIds || [])
+        .map((oldId) => instanceIdMap.get(oldId))
+        .filter((id): id is string => Boolean(id))
+      if (!memberInstanceIds.length) {
+        for (const layer of activeLayers.value) {
+          if (layer.runGroupId === savedGroup.groupId) {
+            memberInstanceIds.push(layer.instanceId)
+          }
+        }
+      }
+      if (!memberInstanceIds.length) continue
+      runLayerGroups.value.push({
+        groupId: savedGroup.groupId,
+        runId: savedGroup.runId || '',
+        title: savedGroup.title,
+        status: savedGroup.status === 'computing' ? 'ready' : savedGroup.status || 'ready',
+        memberInstanceIds,
+        dissolvable: true,
+        sourceLayerId: savedGroup.sourceLayerId,
+        workflowId: savedGroup.workflowId,
+        progress: savedGroup.progress,
+        message: savedGroup.message,
+      })
+      for (const id of memberInstanceIds) {
+        const layer = activeLayers.value.find((l) => l.instanceId === id)
+        if (layer) layer.runGroupId = savedGroup.groupId
+      }
+    }
+  }
+
+  function hydrateWorkspaceFromSnapshot(): Map<string, string> {
+    const snap = loadWorkspaceSnapshot()
+    const instanceIdMap = new Map<string, string>()
+    if (!snap) return instanceIdMap
+    const hasRaster = snap.layers?.length > 0
+    const hasCatalog = (snap.catalogLayers?.length ?? 0) > 0
+    const hasVector = (snap.vectorLayers?.length ?? 0) > 0
+    if (!hasRaster && !hasCatalog && !hasVector) return instanceIdMap
+
+    const existingOverlayIds = new Set(
+      activeLayers.value
+        .map((l) => l.importedRaster?.overlayLayerId)
+        .filter((id): id is string => Boolean(id)),
+    )
+
+    for (const saved of snap.layers as PersistedActiveLayer[]) {
+      if (!saved.importedRaster?.overlayLayerId) continue
+      if (isOverlayDismissed(saved.importedRaster.overlayLayerId)) continue
+      if (existingOverlayIds.has(saved.importedRaster.overlayLayerId)) continue
+
+      const instanceId = genInstanceId()
+      instanceIdMap.set(saved.instanceId, instanceId)
+      const layer: ActiveLayer = {
+        instanceId,
+        catalogId: saved.catalogId,
+        name: saved.name,
+        visible: saved.visible !== false,
+        opacity: typeof saved.opacity === 'number' ? saved.opacity : 1,
+        order: typeof saved.order === 'number' ? saved.order : activeLayers.value.length,
+        isAdminBoundary: false,
+        dataState: 'imported',
+        importedRaster: buildImportedRasterPayload(saved.importedRaster.overlayLayerId, {
+          bounds: saved.importedRaster.bounds,
+          fileName: saved.importedRaster.fileName || saved.name,
+          sourceCrs: saved.importedRaster.sourceCrs,
+          lngOffset: saved.importedRaster.lngOffset,
+          latOffset: saved.importedRaster.latOffset,
+          nativeStep: saved.importedRaster.nativeStep,
+          timeList: saved.importedRaster.timeList,
+          followPolicy: saved.importedRaster.followPolicy,
+          effectiveTimeLabel: saved.importedRaster.effectiveTimeLabel,
+        }),
+        accentColor: saved.accentColor,
+        accentGlow: saved.accentGlow,
+        chipTone: saved.chipTone,
+        runGroupId: saved.runGroupId,
+        runGroupProductTag: saved.runGroupProductTag,
+        runGroupLocked: false,
+      }
+      activeLayers.value.push(layer)
+      existingOverlayIds.add(saved.importedRaster.overlayLayerId)
+    }
+
+    for (const saved of snap.catalogLayers ?? []) {
+      restoreCatalogLayerFromSnapshot(saved, instanceIdMap)
+    }
+
+    restoreRunGroupsFromSnapshot(snap, instanceIdMap)
+
+    if (activeLayers.value.length && sidebarView.value === 'empty') {
+      sidebarView.value = 'active'
+    }
+    return instanceIdMap
+  }
+
+  async function hydrateVectorLayersFromSnapshot(instanceIdMap: Map<string, string>) {
+    const snap = loadWorkspaceSnapshot()
+    if (!snap?.vectorLayers?.length) return
+
+    const existingBackendIds = new Set(
+      activeLayers.value
+        .map((l) => l.importedVector?.backendLayerId)
+        .filter((id): id is string => Boolean(id)),
+    )
+
+    const { fetchImportedLayerGeojson, fetchImportedLayerMeta } =
+      await import('../../data-manager/core/api')
+
+    for (const saved of snap.vectorLayers as PersistedVectorLayer[]) {
+      if (!saved.backendLayerId) continue
+      if (isVectorDismissed(saved.backendLayerId)) continue
+      if (existingBackendIds.has(saved.backendLayerId)) continue
+
+      try {
+        const [geojson, meta] = await Promise.all([
+          fetchImportedLayerGeojson(saved.backendLayerId, true),
+          fetchImportedLayerMeta(saved.backendLayerId).catch(() => null),
+        ])
+        const instanceId = genInstanceId()
+        instanceIdMap.set(saved.instanceId, instanceId)
+        const displayName =
+          saved.name ||
+          (typeof meta?.source_name === 'string' ? meta.source_name : undefined) ||
+          saved.fileName ||
+          saved.backendLayerId
+        const payload = buildImportedVectorPayload(geojson, saved.fileName || displayName, {
+          backendLayerId: saved.backendLayerId,
+          featureCount: typeof meta?.feature_count === 'number' ? meta.feature_count : undefined,
+        })
+        if (saved.truncated ?? meta?.truncated) payload.truncated = true
+        if (saved.style) payload.style = saved.style
+
+        const accent = saved.accentColor
+          ? {
+              accentColor: saved.accentColor,
+              accentGlow: saved.accentGlow ?? 'rgba(255, 255, 255, 0.2)',
+              chipTone: saved.chipTone ?? 'rgba(255, 255, 255, 0.1)',
+            }
+          : assignLayerAccent('#7ee0a8')
+
+        activeLayers.value.push({
+          instanceId,
+          catalogId: saved.catalogId || saved.backendLayerId,
+          name: displayName,
+          visible: saved.visible !== false,
+          opacity: typeof saved.opacity === 'number' ? saved.opacity : 0.85,
+          order: typeof saved.order === 'number' ? saved.order : activeLayers.value.length,
+          isAdminBoundary: false,
+          dataState: 'imported',
+          importedVector: payload,
+          accentColor: accent.accentColor,
+          accentGlow: accent.accentGlow,
+          chipTone: accent.chipTone,
+        })
+        existingBackendIds.add(saved.backendLayerId)
+      } catch (err) {
+        console.warn('[layers] restore vector layer failed', saved.backendLayerId, err)
+      }
+    }
+
+    if (activeLayers.value.length && sidebarView.value === 'empty') {
+      sidebarView.value = 'active'
+    }
+  }
+
+  function refreshRunGroupDissolvable(groupId: string) {
+    const g = runLayerGroups.value.find((x) => x.groupId === groupId)
+    if (!g) return
+    const members = g.memberInstanceIds
+      .map((id) => activeLayers.value.find((l) => l.instanceId === id))
+      .filter((l): l is ActiveLayer => Boolean(l))
+    const allDisplayable =
+      members.length > 0 && members.every((m) => Boolean(m.importedRaster?.overlayLayerId))
+    if (g.status === 'failed' || g.status === 'cancelled') {
+      g.dissolvable = true
+      members.forEach((m) => {
+        m.runGroupLocked = false
+      })
+      return
+    }
+    if (g.status === 'ready' && allDisplayable) {
+      g.dissolvable = true
+      members.forEach((m) => {
+        m.runGroupLocked = false
+      })
+    }
+  }
+
+  function updateRunGroupFromJob(
+    runId: string,
+    job: Pick<JobLayerItem, 'status' | 'progress' | 'message' | 'nodeProgress'>,
+  ) {
+    const g = runLayerGroups.value.find((x) => x.runId === runId)
+    if (!g) return
+    if (job.status === 'succeeded') g.status = 'ready'
+    else if (job.status === 'failed') g.status = 'failed'
+    else if (job.status === 'cancelled') g.status = 'cancelled'
+    else g.status = 'computing'
+    if (typeof job.progress === 'number') g.progress = job.progress
+    const latest = pickLatestNodeProgress(job.nodeProgress)
+    const shell = formatProgressShell({
+      progress: job.progress,
+      message: job.message,
+      stage: latest?.stage,
+      nodeLabel: latest?.nodeLabel,
+      detail: latest?.detail,
+    })
+    if (shell) g.message = shell
+    else if (job.message) g.message = job.message
+    refreshRunGroupDissolvable(g.groupId)
+  }
+
+  function dissolveRunGroup(groupId: string) {
+    const g = runLayerGroups.value.find((x) => x.groupId === groupId)
+    if (!g) return
+    for (const id of g.memberInstanceIds) {
+      const layer = activeLayers.value.find((l) => l.instanceId === id)
+      if (!layer) continue
+      layer.runGroupId = undefined
+      layer.runGroupProductTag = undefined
+      layer.runGroupLocked = undefined
+    }
+    runLayerGroups.value = runLayerGroups.value.filter((x) => x.groupId !== groupId)
+    scheduleWorkspacePersist()
+  }
+
+  function reorderWithinRunGroup(groupId: string, fromMemberIndex: number, toMemberIndex: number) {
+    const g = runLayerGroups.value.find((x) => x.groupId === groupId)
+    if (!g) return
+    if (
+      fromMemberIndex < 0 ||
+      toMemberIndex < 0 ||
+      fromMemberIndex >= g.memberInstanceIds.length ||
+      toMemberIndex >= g.memberInstanceIds.length
+    ) {
+      return
+    }
+    const ids = [...g.memberInstanceIds]
+    const [moved] = ids.splice(fromMemberIndex, 1)
+    if (!moved) return
+    ids.splice(toMemberIndex, 0, moved)
+    g.memberInstanceIds = ids
+    syncGroupMemberOrders(g)
+    scheduleWorkspacePersist()
+  }
+
+  /** 将整组在 TOC 中上下移动：toAnchorInstanceId 为落点图层（组外）的 instanceId */
+  function moveRunGroupBlock(
+    groupId: string,
+    toAnchorInstanceId: string | null,
+    placeAfter: boolean,
+  ) {
+    const g = runLayerGroups.value.find((x) => x.groupId === groupId)
+    if (!g) return
+    const memberSet = new Set(g.memberInstanceIds)
+    const sorted = activeLayers.value.slice().sort((a, b) => a.order - b.order)
+    const block = sorted.filter((l) => memberSet.has(l.instanceId))
+    const rest = sorted.filter((l) => !memberSet.has(l.instanceId))
+    if (!block.length) return
+
+    let insertAt = rest.length
+    if (toAnchorInstanceId) {
+      const idx = rest.findIndex((l) => l.instanceId === toAnchorInstanceId)
+      if (idx >= 0) insertAt = placeAfter ? idx + 1 : idx
+    }
+    const next = [...rest.slice(0, insertAt), ...block, ...rest.slice(insertAt)]
+    next.forEach((layer, i) => {
+      layer.order = i
+    })
+    g.memberInstanceIds = block.map((l) => l.instanceId)
+    scheduleWorkspacePersist()
+  }
+
+  function findRunGroupByMember(instanceId: string): ActiveRunLayerGroup | null {
+    const layer = activeLayers.value.find((l) => l.instanceId === instanceId)
+    if (!layer?.runGroupId) return null
+    return runLayerGroups.value.find((g) => g.groupId === layer.runGroupId) ?? null
+  }
+
+  function findRunGroupById(groupId: string): ActiveRunLayerGroup | null {
+    return runLayerGroups.value.find((g) => g.groupId === groupId) ?? null
   }
 
   /** 判断 catalogId 是否由 weatherengine 后端支持（用于自动运行工作流） */
@@ -2525,11 +4246,13 @@ export const useLayersStore = defineStore('layers', () => {
   return {
     // State
     activeLayers,
+    runLayerGroups,
     sidebarView,
     selectedInstanceId,
     jobLayers,
     currentHour,
     workflowError,
+    workflowProgressTimeSeek,
     isSubmitting,
     workflowSummary,
     runtimeLayerCatalogLoading,
@@ -2572,6 +4295,15 @@ export const useLayersStore = defineStore('layers', () => {
     setJobLayers,
     ensureRuntimeLayerCatalog,
     reorderLayers,
+    createRunLayerGroup,
+    bindRunIdToGroup,
+    dissolveRunGroup,
+    reorderWithinRunGroup,
+    moveRunGroupBlock,
+    findRunGroupByMember,
+    findRunGroupById,
+    refreshRunGroupDissolvable,
+    updateRunGroupFromJob,
     runWorkflowForCatalog,
     cancelWorkflowRunForJob,
     retryWorkflowRunForJob,
@@ -2599,7 +4331,10 @@ export const useLayersStore = defineStore('layers', () => {
     clearPointWeather,
     setMapViewport,
     handleViewportChange,
+    flushWeatherTileViewports,
     refreshActiveWeatherWorkflows,
+    cleanupUnproducedRunLayers,
+    scheduleWorkspacePersist,
     // 外部工作流跟踪与恢复
     registerExternalWorkflowRun,
     restoreActiveWorkflows,

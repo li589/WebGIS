@@ -44,9 +44,18 @@ def _build_storage_backend() -> "Any | None":
 
 
 def build_runtime_context(request: JobRequest, workspace: Path) -> RuntimeContext:
-    run_id = f"{request.job_id}-{uuid4().hex[:8]}"
-    tmp_dir = workspace / "tmp" / run_id
+    job_id = str(request.job_id)
+    # Workflow Celery runs use job_id == workflow run id (run-*). Align tmp_dir
+    # with backend lifecycle cancel flag: workspace/tmp/{run_id}/cancel.requested
+    if job_id.startswith("run-"):
+        run_id = job_id
+        tmp_dir = workspace / "tmp" / run_id
+    else:
+        run_id = f"{job_id}-{uuid4().hex[:8]}"
+        tmp_dir = workspace / "tmp" / run_id
+    tmp_dir.mkdir(parents=True, exist_ok=True)
     cache_dir = workspace / "cache"
+    cancel_flag_path = tmp_dir / "cancel.requested"
 
     return RuntimeContext(
         job_id=request.job_id,
@@ -57,6 +66,7 @@ def build_runtime_context(request: JobRequest, workspace: Path) -> RuntimeContex
         resource_hint=request.resource_hint,
         env={
             "created_at": datetime.now(UTC).isoformat(),
+            "cancel_flag_path": str(cancel_flag_path),
         },
         call_chain=[],
         storage_backend=_build_storage_backend(),
