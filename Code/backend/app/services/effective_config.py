@@ -204,7 +204,24 @@ def get_effective_secret(key_name: str) -> Optional[str]:
 
 
 def get_backend_auth_key() -> Optional[str]:
-    return get_effective_secret("backend_auth") or (settings.api_key or None)
+    """后端写接口鉴权密钥。
+
+    发布就绪修复（P1-6 吊销语义）：DB 存在 backend_auth 行（含禁用）时以 DB 为准，
+    禁用/为空即返回 None，**绝不回落 env**——否则"禁用/删除"会静默复活已退役的
+    env 密钥（settings.api_key 为 frozen dataclass，编辑 .env 不生效，须全栈重启，
+    更放大该风险）。仅当无 DB 行（冷启动）时才回落 env。
+    """
+    secret = get_effective_secret("backend_auth")
+    from app.services.config_service import has_api_key_db_row
+
+    if has_api_key_db_row("backend_auth"):
+        if not secret:
+            logger.warning(
+                "backend_auth DB 行存在但已禁用/为空：按吊销语义返回 None，不回落 env。"
+                "若需恢复请重新启用或更新该 key。"
+            )
+        return secret
+    return secret or (settings.api_key or None)
 
 
 def get_weather_cache_ttl_seconds() -> int:

@@ -320,6 +320,15 @@ def get_effective_api_key(key_name: str) -> Optional[str]:
     return _get_effective_api_key_cached(key_name)
 
 
+def has_api_key_db_row(key_name: str) -> bool:
+    """是否存在该 key 的 DB 行（无论 enabled）。
+
+    发布就绪修复（P1-6）用于吊销语义：DB 有行（含禁用）时以 DB 为准、不回落 env，
+    避免"禁用/删除"静默复活已退役的 env 密钥。
+    """
+    return _get_api_keys_repository().get_key_info(key_name) is not None
+
+
 def is_basemap_key_available(key_name: str) -> bool:
     """Whether a basemap provider key is currently effective (for UI gating)."""
     return bool(get_effective_api_key(key_name))
