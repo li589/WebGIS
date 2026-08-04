@@ -78,6 +78,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/overlay-tiles/{layer_id}/{z}/{x}/{y}.png": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Overlay Tile
+         * @description Web Mercator XYZ PNG tile for imported / geotiff-backed overlays.
+         */
+        get: operations["get_overlay_tile_overlay_tiles__layer_id___z___x___y__png_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/overlay-bounds/{layer_id}": {
         parameters: {
             query?: never;
@@ -243,6 +263,30 @@ export interface paths {
         put?: never;
         /** Retry Workflow Run */
         post: operations["retry_workflow_run_workflow_runs__run_id__retry_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/workflow-runs/{run_id}/materialize-map-layers": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Materialize Workflow Map Layers
+         * @description Publish algorithm science products as imported overlays for map display.
+         *
+         *     Used when a run completed with file-only product refs (no map_layer), or to
+         *     re-publish after code updates without re-running the inversion.
+         *     Also allowed while ``running`` so block mats can progressively appear.
+         */
+        post: operations["materialize_workflow_map_layers_workflow_runs__run_id__materialize_map_layers_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -595,8 +639,8 @@ export interface paths {
          * @description 手动触发 Open-Meteo 数据同步。
          *
          *     优先 Celery 异步派发；broker 卡住/超时时降级为本地后台线程。
-         *     注意：Celery apply_async 必须在限时线程中调用，且 ThreadPool 不可 wait=True
-         *     退出（否则 timeout 后仍会挂死整个 HTTP 请求 → 前端 AbortError）。
+         *     可选 body.domains 临时覆盖同步域（白名单校验，不改环境变量）。
+         *     Docker/compose 不可用时返回 503 sync_unavailable。
          */
         post: operations["trigger_open_meteo_sync_weather_sync_trigger_post"];
         delete?: never;
@@ -820,6 +864,28 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/import/crs-options/expanded": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Crs Options Expanded
+         * @description 返回完整 CRS 列表（含动态 UTM/GK 带，供高级选择）。
+         *
+         *     featured 项为精简集，非 featured 项为动态生成的投影带。
+         */
+        get: operations["list_crs_options_expanded_import_crs_options_expanded_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/import/raster": {
         parameters: {
             query?: never;
@@ -945,6 +1011,40 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/import/upload/resumable/init": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Upload Resumable Init */
+        post: operations["upload_resumable_init_import_upload_resumable_init_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/import/upload/{upload_id}/status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Upload Status */
+        get: operations["upload_status_import_upload__upload_id__status_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/import/upload/{upload_id}/chunk": {
         parameters: {
             query?: never;
@@ -962,6 +1062,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/import/upload/{upload_id}/chunk/{chunk_index}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Upload Chunk Indexed */
+        post: operations["upload_chunk_indexed_import_upload__upload_id__chunk__chunk_index__post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/import/upload/complete": {
         parameters: {
             query?: never;
@@ -973,6 +1090,23 @@ export interface paths {
         put?: never;
         /** Upload Complete */
         post: operations["upload_complete_import_upload_complete_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/import/upload/resumable/complete": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Upload Resumable Complete */
+        post: operations["upload_resumable_complete_import_upload_resumable_complete_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1251,6 +1385,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/import/layers/{layer_id}/display-name": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /**
+         * Patch Imported Layer Display Name
+         * @description 更新导入图层显示名（meta.display_name / label），不影响物理文件名。
+         */
+        patch: operations["patch_imported_layer_display_name_import_layers__layer_id__display_name_patch"];
+        trace?: never;
+    };
     "/import/layers/{layer_id}": {
         parameters: {
             query?: never;
@@ -1266,6 +1420,46 @@ export interface paths {
          * @description 删除已导入矢量/栅格落盘目录（仅允许 imported-* 前缀）。
          */
         delete: operations["delete_imported_layer_import_layers__layer_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/import/quota": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Import Quota
+         * @description 导入存储配额用量；可选触发临时目录回收。
+         */
+        get: operations["import_quota_import_quota_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/import/quota/reclaim": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Import Quota Reclaim
+         * @description 主动清理 staging/_tmp/_exports，不删除已导入图层。
+         */
+        post: operations["import_quota_reclaim_import_quota_reclaim_post"];
+        delete?: never;
         options?: never;
         head?: never;
         patch?: never;
@@ -1299,6 +1493,26 @@ export interface paths {
         put?: never;
         /** Raster Commit */
         post: operations["raster_commit_import_raster_commit_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/import/raster/detect-invalid": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Raster Detect Invalid
+         * @description 检测科学栅格变量中的哨兵值 / Inf / FillValue，供 UI 一键填入。
+         */
+        post: operations["raster_detect_invalid_import_raster_detect_invalid_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -2337,6 +2551,29 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/workflow-definitions/dry-validate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Dry Validate Graph
+         * @description 图模式提交前干跑校验：编译 + 静态结构检查，不入队。
+         *
+         *     成功返回 ``{ ok: true, workflow_definition, issues: [] }``；
+         *     编译失败返回 422 + 字段级 issues（与提交期校验风格一致）。
+         */
+        post: operations["dry_validate_graph_workflow_definitions_dry_validate_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/workflow-definitions": {
         parameters: {
             query?: never;
@@ -2986,6 +3223,14 @@ export interface components {
             /** Offset */
             offset?: number | null;
         };
+        /** Body_upload_chunk_indexed_import_upload__upload_id__chunk__chunk_index__post */
+        Body_upload_chunk_indexed_import_upload__upload_id__chunk__chunk_index__post: {
+            /**
+             * File
+             * Format: binary
+             */
+            file: string;
+        };
         /** BoundingBox */
         BoundingBox: {
             /** West */
@@ -3105,6 +3350,8 @@ export interface components {
              * @default false
              */
             async_mode: boolean;
+            /** Swap Xy */
+            swap_xy?: boolean | null;
         };
         /** DocumentOpsBody */
         DocumentOpsBody: {
@@ -3173,6 +3420,8 @@ export interface components {
              * @default false
              */
             async_mode: boolean;
+            /** Time */
+            time?: string | null;
         };
         /** ExportBody */
         ExportBody: {
@@ -3188,6 +3437,10 @@ export interface components {
              * @default auto
              */
             encoding: string | null;
+            /** Time */
+            time?: string | null;
+            /** Times */
+            times?: string[] | null;
         };
         /**
          * ExportTaskStatusResponse
@@ -3507,6 +3760,11 @@ export interface components {
             /** Sub Category */
             sub_category?: string | null;
         };
+        /** LayerDisplayNameBody */
+        LayerDisplayNameBody: {
+            /** Display Name */
+            display_name: string;
+        };
         /**
          * LayerRenderType
          * @enum {string}
@@ -3589,6 +3847,17 @@ export interface components {
             };
         };
         /**
+         * OpenMeteoSyncTriggerRequest
+         * @description Optional one-shot domains override (does not persist OPEN_METEO_SYNC_DOMAINS).
+         */
+        OpenMeteoSyncTriggerRequest: {
+            /**
+             * Domains
+             * @description Comma-separated model ids for this sync only, e.g. ecmwf_ifs025,gfs_global
+             */
+            domains?: string | null;
+        };
+        /**
          * ParallelConfig
          * @description 并行配置
          */
@@ -3668,6 +3937,38 @@ export interface components {
              * @default 0
              */
             lat_offset: number;
+            /**
+             * Axis Order
+             * @default auto
+             */
+            axis_order: string;
+            /** Swap Xy */
+            swap_xy?: boolean | null;
+            /**
+             * Conflict Policy
+             * @default overwrite
+             */
+            conflict_policy: string;
+            /**
+             * Temporal Mode
+             * @default auto
+             */
+            temporal_mode: string;
+            /** Time Label */
+            time_label?: string | null;
+            /** Time Start */
+            time_start?: string | null;
+            /** Time End */
+            time_end?: string | null;
+            /** Native Step */
+            native_step?: string | null;
+        };
+        /** RasterDetectInvalidBody */
+        RasterDetectInvalidBody: {
+            /** Upload Id */
+            upload_id: string;
+            /** Variable Id */
+            variable_id: string;
         };
         /** RasterInspectBody */
         RasterInspectBody: {
@@ -4055,6 +4356,23 @@ export interface components {
             size: number;
             /** Content Type */
             content_type?: string | null;
+            /** Resume Upload Id */
+            resume_upload_id?: string | null;
+        };
+        /** UploadResumableInitBody */
+        UploadResumableInitBody: {
+            /** Filename */
+            filename: string;
+            /** Size */
+            size: number;
+            /** Content Type */
+            content_type?: string | null;
+            /** Chunk Size */
+            chunk_size?: number | null;
+            /** Total Chunks */
+            total_chunks?: number | null;
+            /** Sha256 */
+            sha256?: string | null;
         };
         /** ValidationError */
         ValidationError: {
@@ -4912,6 +5230,42 @@ export interface operations {
             };
         };
     };
+    get_overlay_tile_overlay_tiles__layer_id___z___x___y__png_get: {
+        parameters: {
+            query?: {
+                time?: string | null;
+            };
+            header?: never;
+            path: {
+                layer_id: string;
+                z: number;
+                x: number;
+                y: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     get_overlay_bounds_overlay_bounds__layer_id__get: {
         parameters: {
             query?: {
@@ -5221,6 +5575,41 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["WorkflowAcceptedResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    materialize_workflow_map_layers_workflow_runs__run_id__materialize_map_layers_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                "x-api-key"?: string | null;
+            };
+            path: {
+                run_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
                 };
             };
             /** @description Validation Error */
@@ -5766,7 +6155,11 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["OpenMeteoSyncTriggerRequest"];
+            };
+        };
         responses: {
             /** @description Successful Response */
             200: {
@@ -5775,6 +6168,15 @@ export interface operations {
                 };
                 content: {
                     "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };
@@ -6123,6 +6525,39 @@ export interface operations {
             };
         };
     };
+    list_crs_options_expanded_import_crs_options_expanded_get: {
+        parameters: {
+            query?: never;
+            header?: {
+                "x-api-key"?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     import_raster_import_raster_post: {
         parameters: {
             query?: never;
@@ -6343,6 +6778,78 @@ export interface operations {
             };
         };
     };
+    upload_resumable_init_import_upload_resumable_init_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                "x-api-key"?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UploadResumableInitBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    upload_status_import_upload__upload_id__status_get: {
+        parameters: {
+            query?: never;
+            header?: {
+                "x-api-key"?: string | null;
+            };
+            path: {
+                upload_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     upload_chunk_import_upload__upload_id__chunk_post: {
         parameters: {
             query?: never;
@@ -6382,7 +6889,84 @@ export interface operations {
             };
         };
     };
+    upload_chunk_indexed_import_upload__upload_id__chunk__chunk_index__post: {
+        parameters: {
+            query?: never;
+            header?: {
+                "x-api-key"?: string | null;
+            };
+            path: {
+                upload_id: string;
+                chunk_index: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "multipart/form-data": components["schemas"]["Body_upload_chunk_indexed_import_upload__upload_id__chunk__chunk_index__post"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     upload_complete_import_upload_complete_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                "x-api-key"?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UploadCompleteBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    upload_resumable_complete_import_upload_resumable_complete_post: {
         parameters: {
             query?: never;
             header?: {
@@ -7010,6 +7594,45 @@ export interface operations {
             };
         };
     };
+    patch_imported_layer_display_name_import_layers__layer_id__display_name_patch: {
+        parameters: {
+            query?: never;
+            header?: {
+                "x-api-key"?: string | null;
+            };
+            path: {
+                layer_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["LayerDisplayNameBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     delete_imported_layer_import_layers__layer_id__delete: {
         parameters: {
             query?: never;
@@ -7019,6 +7642,72 @@ export interface operations {
             path: {
                 layer_id: string;
             };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    import_quota_import_quota_get: {
+        parameters: {
+            query?: never;
+            header?: {
+                "x-api-key"?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    import_quota_reclaim_import_quota_reclaim_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                "x-api-key"?: string | null;
+            };
+            path?: never;
             cookie?: never;
         };
         requestBody?: never;
@@ -7094,6 +7783,43 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": components["schemas"]["RasterCommitBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    raster_detect_invalid_import_raster_detect_invalid_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                "x-api-key"?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RasterDetectInvalidBody"];
             };
         };
         responses: {
@@ -8979,6 +9705,45 @@ export interface operations {
         };
     };
     compile_graph_workflow_definitions_compile_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                "x-api-key"?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    [key: string]: unknown;
+                };
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    dry_validate_graph_workflow_definitions_dry_validate_post: {
         parameters: {
             query?: never;
             header?: {

@@ -190,6 +190,90 @@
         }
       }
     },
+    "/overlay-tiles/{layer_id}/{z}/{x}/{y}.png": {
+      "get": {
+        "tags": [
+          "overlay"
+        ],
+        "summary": "Get Overlay Tile",
+        "description": "Web Mercator XYZ PNG tile for imported / geotiff-backed overlays.",
+        "operationId": "get_overlay_tile_overlay_tiles__layer_id___z___x___y__png_get",
+        "parameters": [
+          {
+            "name": "layer_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Layer Id"
+            }
+          },
+          {
+            "name": "z",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Z"
+            }
+          },
+          {
+            "name": "x",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "X"
+            }
+          },
+          {
+            "name": "y",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Y"
+            }
+          },
+          {
+            "name": "time",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Time"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/overlay-bounds/{layer_id}": {
       "get": {
         "tags": [
@@ -716,6 +800,67 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/WorkflowAcceptedResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/workflow-runs/{run_id}/materialize-map-layers": {
+      "post": {
+        "tags": [
+          "workflow"
+        ],
+        "summary": "Materialize Workflow Map Layers",
+        "description": "Publish algorithm science products as imported overlays for map display.\n\nUsed when a run completed with file-only product refs (no map_layer), or to\nre-publish after code updates without re-running the inversion.\nAlso allowed while ``running`` so block mats can progressively appear.",
+        "operationId": "materialize_workflow_map_layers_workflow_runs__run_id__materialize_map_layers_post",
+        "parameters": [
+          {
+            "name": "run_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Run Id"
+            }
+          },
+          {
+            "name": "x-api-key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Api-Key"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Materialize Workflow Map Layers Workflow Runs  Run Id  Materialize Map Layers Post"
                 }
               }
             }
@@ -1448,14 +1593,34 @@
           "weather"
         ],
         "summary": "Trigger Open Meteo Sync",
-        "description": "手动触发 Open-Meteo 数据同步。\n\n优先 Celery 异步派发；broker 卡住/超时时降级为本地后台线程。\n注意：Celery apply_async 必须在限时线程中调用，且 ThreadPool 不可 wait=True\n退出（否则 timeout 后仍会挂死整个 HTTP 请求 → 前端 AbortError）。",
+        "description": "手动触发 Open-Meteo 数据同步。\n\n优先 Celery 异步派发；broker 卡住/超时时降级为本地后台线程。\n可选 body.domains 临时覆盖同步域（白名单校验，不改环境变量）。\nDocker/compose 不可用时返回 503 sync_unavailable。",
         "operationId": "trigger_open_meteo_sync_weather_sync_trigger_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OpenMeteoSyncTriggerRequest",
+                "default": {}
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "description": "Successful Response",
             "content": {
               "application/json": {
                 "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
               }
             }
           }
@@ -2022,6 +2187,58 @@
         }
       }
     },
+    "/import/crs-options/expanded": {
+      "get": {
+        "tags": [
+          "import"
+        ],
+        "summary": "List Crs Options Expanded",
+        "description": "返回完整 CRS 列表（含动态 UTM/GK 带，供高级选择）。\n\nfeatured 项为精简集，非 featured 项为动态生成的投影带。",
+        "operationId": "list_crs_options_expanded_import_crs_options_expanded_get",
+        "parameters": [
+          {
+            "name": "x-api-key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Api-Key"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response List Crs Options Expanded Import Crs Options Expanded Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/import/raster": {
       "post": {
         "tags": [
@@ -2392,6 +2609,127 @@
         }
       }
     },
+    "/import/upload/resumable/init": {
+      "post": {
+        "tags": [
+          "data-io"
+        ],
+        "summary": "Upload Resumable Init",
+        "operationId": "upload_resumable_init_import_upload_resumable_init_post",
+        "parameters": [
+          {
+            "name": "x-api-key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Api-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UploadResumableInitBody"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Upload Resumable Init Import Upload Resumable Init Post"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/import/upload/{upload_id}/status": {
+      "get": {
+        "tags": [
+          "data-io"
+        ],
+        "summary": "Upload Status",
+        "operationId": "upload_status_import_upload__upload_id__status_get",
+        "parameters": [
+          {
+            "name": "upload_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Upload Id"
+            }
+          },
+          {
+            "name": "x-api-key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Api-Key"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Upload Status Import Upload  Upload Id  Status Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/import/upload/{upload_id}/chunk": {
       "post": {
         "tags": [
@@ -2462,6 +2800,85 @@
         }
       }
     },
+    "/import/upload/{upload_id}/chunk/{chunk_index}": {
+      "post": {
+        "tags": [
+          "data-io"
+        ],
+        "summary": "Upload Chunk Indexed",
+        "operationId": "upload_chunk_indexed_import_upload__upload_id__chunk__chunk_index__post",
+        "parameters": [
+          {
+            "name": "upload_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Upload Id"
+            }
+          },
+          {
+            "name": "chunk_index",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Chunk Index"
+            }
+          },
+          {
+            "name": "x-api-key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Api-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/Body_upload_chunk_indexed_import_upload__upload_id__chunk__chunk_index__post"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Upload Chunk Indexed Import Upload  Upload Id  Chunk  Chunk Index  Post"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/import/upload/complete": {
       "post": {
         "tags": [
@@ -2506,6 +2923,67 @@
                   "type": "object",
                   "additionalProperties": true,
                   "title": "Response Upload Complete Import Upload Complete Post"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/import/upload/resumable/complete": {
+      "post": {
+        "tags": [
+          "data-io"
+        ],
+        "summary": "Upload Resumable Complete",
+        "operationId": "upload_resumable_complete_import_upload_resumable_complete_post",
+        "parameters": [
+          {
+            "name": "x-api-key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Api-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UploadCompleteBody"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Upload Resumable Complete Import Upload Resumable Complete Post"
                 }
               }
             }
@@ -3635,6 +4113,77 @@
         }
       }
     },
+    "/import/layers/{layer_id}/display-name": {
+      "patch": {
+        "tags": [
+          "data-io"
+        ],
+        "summary": "Patch Imported Layer Display Name",
+        "description": "更新导入图层显示名（meta.display_name / label），不影响物理文件名。",
+        "operationId": "patch_imported_layer_display_name_import_layers__layer_id__display_name_patch",
+        "parameters": [
+          {
+            "name": "layer_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Layer Id"
+            }
+          },
+          {
+            "name": "x-api-key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Api-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LayerDisplayNameBody"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Patch Imported Layer Display Name Import Layers  Layer Id  Display Name Patch"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/import/layers/{layer_id}": {
       "delete": {
         "tags": [
@@ -3679,6 +4228,110 @@
                   "type": "object",
                   "additionalProperties": true,
                   "title": "Response Delete Imported Layer Import Layers  Layer Id  Delete"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/import/quota": {
+      "get": {
+        "tags": [
+          "data-io"
+        ],
+        "summary": "Import Quota",
+        "description": "导入存储配额用量；可选触发临时目录回收。",
+        "operationId": "import_quota_import_quota_get",
+        "parameters": [
+          {
+            "name": "x-api-key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Api-Key"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Import Quota Import Quota Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/import/quota/reclaim": {
+      "post": {
+        "tags": [
+          "data-io"
+        ],
+        "summary": "Import Quota Reclaim",
+        "description": "主动清理 staging/_tmp/_exports，不删除已导入图层。",
+        "operationId": "import_quota_reclaim_import_quota_reclaim_post",
+        "parameters": [
+          {
+            "name": "x-api-key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Api-Key"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Import Quota Reclaim Import Quota Reclaim Post"
                 }
               }
             }
@@ -3801,6 +4454,68 @@
                   "type": "object",
                   "additionalProperties": true,
                   "title": "Response Raster Commit Import Raster Commit Post"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/import/raster/detect-invalid": {
+      "post": {
+        "tags": [
+          "data-io"
+        ],
+        "summary": "Raster Detect Invalid",
+        "description": "检测科学栅格变量中的哨兵值 / Inf / FillValue，供 UI 一键填入。",
+        "operationId": "raster_detect_invalid_import_raster_detect_invalid_post",
+        "parameters": [
+          {
+            "name": "x-api-key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Api-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RasterDetectInvalidBody"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Raster Detect Invalid Import Raster Detect Invalid Post"
                 }
               }
             }
@@ -6996,6 +7711,71 @@
         }
       }
     },
+    "/workflow-definitions/dry-validate": {
+      "post": {
+        "tags": [
+          "workflow-definition",
+          "workflow-definition"
+        ],
+        "summary": "Dry Validate Graph",
+        "description": "图模式提交前干跑校验：编译 + 静态结构检查，不入队。\n\n成功返回 ``{ ok: true, workflow_definition, issues: [] }``；\n编译失败返回 422 + 字段级 issues（与提交期校验风格一致）。",
+        "operationId": "dry_validate_graph_workflow_definitions_dry_validate_post",
+        "parameters": [
+          {
+            "name": "x-api-key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Api-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": true,
+                "title": "Payload"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Dry Validate Graph Workflow Definitions Dry Validate Post"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/workflow-definitions": {
       "get": {
         "tags": [
@@ -8829,6 +9609,20 @@
         ],
         "title": "Body_upload_chunk_import_upload__upload_id__chunk_post"
       },
+      "Body_upload_chunk_indexed_import_upload__upload_id__chunk__chunk_index__post": {
+        "properties": {
+          "file": {
+            "type": "string",
+            "format": "binary",
+            "title": "File"
+          }
+        },
+        "type": "object",
+        "required": [
+          "file"
+        ],
+        "title": "Body_upload_chunk_indexed_import_upload__upload_id__chunk__chunk_index__post"
+      },
       "BoundingBox": {
         "properties": {
           "west": {
@@ -9058,6 +9852,17 @@
             "type": "boolean",
             "title": "Async Mode",
             "default": false
+          },
+          "swap_xy": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Swap Xy"
           }
         },
         "type": "object",
@@ -9216,6 +10021,17 @@
             "type": "boolean",
             "title": "Async Mode",
             "default": false
+          },
+          "time": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Time"
           }
         },
         "type": "object",
@@ -9243,6 +10059,31 @@
             ],
             "title": "Encoding",
             "default": "auto"
+          },
+          "time": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Time"
+          },
+          "times": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Times"
           }
         },
         "type": "object",
@@ -10127,6 +10968,21 @@
         ],
         "title": "LayerDescriptor"
       },
+      "LayerDisplayNameBody": {
+        "properties": {
+          "display_name": {
+            "type": "string",
+            "maxLength": 256,
+            "minLength": 1,
+            "title": "Display Name"
+          }
+        },
+        "type": "object",
+        "required": [
+          "display_name"
+        ],
+        "title": "LayerDisplayNameBody"
+      },
       "LayerRenderType": {
         "type": "string",
         "enum": [
@@ -10285,6 +11141,25 @@
           "node_type"
         ],
         "title": "NodeSpec"
+      },
+      "OpenMeteoSyncTriggerRequest": {
+        "properties": {
+          "domains": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Domains",
+            "description": "Comma-separated model ids for this sync only, e.g. ecmwf_ifs025,gfs_global"
+          }
+        },
+        "type": "object",
+        "title": "OpenMeteoSyncTriggerRequest",
+        "description": "Optional one-shot domains override (does not persist OPEN_METEO_SYNC_DOMAINS)."
       },
       "ParallelConfig": {
         "properties": {
@@ -10480,6 +11355,76 @@
             "type": "number",
             "title": "Lat Offset",
             "default": 0.0
+          },
+          "axis_order": {
+            "type": "string",
+            "title": "Axis Order",
+            "default": "auto"
+          },
+          "swap_xy": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Swap Xy"
+          },
+          "conflict_policy": {
+            "type": "string",
+            "title": "Conflict Policy",
+            "default": "overwrite"
+          },
+          "temporal_mode": {
+            "type": "string",
+            "title": "Temporal Mode",
+            "default": "auto"
+          },
+          "time_label": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Time Label"
+          },
+          "time_start": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Time Start"
+          },
+          "time_end": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Time End"
+          },
+          "native_step": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Native Step"
           }
         },
         "type": "object",
@@ -10487,6 +11432,24 @@
           "upload_id"
         ],
         "title": "RasterCommitBody"
+      },
+      "RasterDetectInvalidBody": {
+        "properties": {
+          "upload_id": {
+            "type": "string",
+            "title": "Upload Id"
+          },
+          "variable_id": {
+            "type": "string",
+            "title": "Variable Id"
+          }
+        },
+        "type": "object",
+        "required": [
+          "upload_id",
+          "variable_id"
+        ],
+        "title": "RasterDetectInvalidBody"
       },
       "RasterInspectBody": {
         "properties": {
@@ -11375,6 +12338,17 @@
               }
             ],
             "title": "Content Type"
+          },
+          "resume_upload_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Resume Upload Id"
           }
         },
         "type": "object",
@@ -11383,6 +12357,68 @@
           "size"
         ],
         "title": "UploadInitBody"
+      },
+      "UploadResumableInitBody": {
+        "properties": {
+          "filename": {
+            "type": "string",
+            "title": "Filename"
+          },
+          "size": {
+            "type": "integer",
+            "title": "Size"
+          },
+          "content_type": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Content Type"
+          },
+          "chunk_size": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Chunk Size"
+          },
+          "total_chunks": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Total Chunks"
+          },
+          "sha256": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sha256"
+          }
+        },
+        "type": "object",
+        "required": [
+          "filename",
+          "size"
+        ],
+        "title": "UploadResumableInitBody"
       },
       "ValidationError": {
         "properties": {

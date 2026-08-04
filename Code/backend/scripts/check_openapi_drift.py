@@ -6,10 +6,18 @@ Usage:
     python scripts/check_openapi_drift.py [--update-hint]
 
 Critical paths checked (prefix or exact):
-    /weather/tiles
+    /weather          (covers /weather/tiles, /weather/point, /weather/coverage, ...)
     /unified-tiles
     /config
     /workflow-runs
+    /workflow-definitions
+    /import           (covers /import/raster, /import/upload/*, /import/crs-options/*, ...)
+    /layers
+    /export
+    /overlay-tiles
+    /runtime
+    /gee
+    /artifacts
 """
 
 from __future__ import annotations
@@ -20,11 +28,21 @@ from pathlib import Path
 from typing import Any
 
 
+# 发布就绪修复（P0-6）：从 4 个前缀扩展到覆盖全部对外 API 面，
+# 防止 /import /layers /export /gee /runtime /artifacts 等前缀的契约漂移逃过 CI。
 CRITICAL_PREFIXES: tuple[str, ...] = (
-    "/weather/tiles",
+    "/weather",
     "/unified-tiles",
     "/config",
     "/workflow-runs",
+    "/workflow-definitions",
+    "/import",
+    "/layers",
+    "/export",
+    "/overlay-tiles",
+    "/runtime",
+    "/gee",
+    "/artifacts",
 )
 
 
