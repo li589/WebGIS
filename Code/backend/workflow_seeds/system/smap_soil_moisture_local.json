@@ -7,7 +7,7 @@
     "author": "system",
     "readonly": true,
     "is_template": true,
-    "linked_layer_id": "smap-soil",
+    "linked_layer_id": "smap-sm-ts",
     "tags": ["sample", "local"],
     "category": "data_access"
   },
