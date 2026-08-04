@@ -392,14 +392,15 @@ class TestRasterConfirm:
             w, s, e, n = data["bounds"]
             # 偏移应在原 bounds 上加 0.5/0.3。
             # confirm 端点先把栅格重投影成 2048×2048 Web Mercator PNG，再把 PNG 的
-            # Mercator bounds 转回 WGS84（densify_pts=21）。Mercator↔WGS84 非线性变换
-            # + 2048 栅格化会引入 ~0.013° 边界漂移（东/南侧明显，西侧恰好抵消），
-            # 故容差放宽到 0.02°。0.5°/0.3° 偏移远大于该容差，仍能捕获"偏移未生效"回归。
-            # 这是栅格化预览的固有几何精度，非 bounds 计算回归。
-            assert abs(w - (original_bounds[0] + 0.5)) < 0.02
-            assert abs(s - (original_bounds[1] + 0.3)) < 0.02
-            assert abs(e - (original_bounds[2] + 0.5)) < 0.02
-            assert abs(n - (original_bounds[3] + 0.3)) < 0.02
+            # Mercator bounds 转回 WGS84（densify_pts=21）。P2-4 修复后预览用
+            # transform_bounds 取精确目标 CRS 范围 + from_bounds 重建 Affine，消除了
+            # 此前 calculate_default_transform 整像素取整累积的 ~0.013° 漂移；残余仅
+            # Mercator↔WGS84 非线性 + 2048 栅格化的亚像素精度，容差收紧到 0.005°。
+            # 0.5°/0.3° 偏移远大于该容差，仍能捕获"偏移未生效"回归。
+            assert abs(w - (original_bounds[0] + 0.5)) < 0.005
+            assert abs(s - (original_bounds[1] + 0.3)) < 0.005
+            assert abs(e - (original_bounds[2] + 0.5)) < 0.005
+            assert abs(n - (original_bounds[3] + 0.3)) < 0.005
         finally:
             if layer_id:
                 unregister_overlay(layer_id)

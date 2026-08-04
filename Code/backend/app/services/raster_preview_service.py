@@ -290,7 +290,7 @@ class RasterPreviewService:
                     sw, ss, se, sn = crop
                     src_span_hint = abs(se - sw)
 
-            # 计算目标 CRS 下覆盖完整范围的 transform/尺寸
+            # 计算目标 CRS 下覆盖完整范围的 transform/尺寸（用于确定缩放比与像素尺寸）
             dst_transform_full, dst_width_full, dst_height_full = (
                 warp.calculate_default_transform(
                     source_crs,
@@ -303,8 +303,21 @@ class RasterPreviewService:
                     sn,
                 )
             )
-            full_west, full_south, full_east, full_north = array_bounds(
-                dst_height_full, dst_width_full, dst_transform_full
+
+            # P2-4：此前用 array_bounds(dst_transform_full) 提取 bounds，该 transform 是
+            # calculate_default_transform 产出的整像素对齐 Affine——bounds 已被取整到整像素，
+            # 再喂给 from_bounds(rounded_dims) 重建时累积 ~0.013° Mercator round-trip 漂移
+            # （被测试容差掩盖）。改用 transform_bounds 直接得到目标 CRS 下的精确地理范围
+            # （densify_pts=21 沿边缘采样，不取整到像素），再 from_bounds 用精确范围 + 缩放后
+            # 的整像素尺寸重建 Affine——残余误差仅为亚像素，不再累积。
+            full_west, full_south, full_east, full_north = warp.transform_bounds(
+                source_crs,
+                target_crs,
+                sw,
+                ss,
+                se,
+                sn,
+                densify_pts=21,
             )
 
             # 限制预览像素尺寸，但必须用 from_bounds 重建 Affine，
