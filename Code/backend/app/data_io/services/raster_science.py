@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import logging
 from pathlib import Path
 from typing import Any
 
@@ -15,6 +16,8 @@ from app.data_io.services.grid_presets import (
     resolve_geo_reference,
     suggest_grid_preset,
 )
+
+logger = logging.getLogger(__name__)
 
 
 def list_raster_variables(path: Path) -> dict[str, Any]:
@@ -726,8 +729,13 @@ def _read_fill_metadata(
                         fill_value = float(np.asarray(fv).reshape(-1)[0])
                     if mv is not None:
                         missing_value = float(np.asarray(mv).reshape(-1)[0])
-        except Exception:
-            pass
+        except Exception as exc:  # 发布就绪修复（P1-5）：不再静默吞错
+            logger.warning(
+                "读取 NetCDF fill/missing 元数据失败 path=%s variable=%s: %s",
+                path,
+                variable_id,
+                exc,
+            )
     elif ext in {".h5", ".hdf", ".he5", ".mat"}:
         # GDAL 子数据集路径不走 h5py
         if not (
@@ -747,8 +755,13 @@ def _read_fill_metadata(
                             fill_value = float(np.asarray(fv).reshape(-1)[0])
                         if mv is not None:
                             missing_value = float(np.asarray(mv).reshape(-1)[0])
-            except Exception:
-                pass
+            except Exception as exc:  # 发布就绪修复（P1-5）：不再静默吞错
+                logger.warning(
+                    "读取 HDF/MAT fill/missing 元数据失败 path=%s variable=%s: %s",
+                    path,
+                    variable_id,
+                    exc,
+                )
 
     return fill_value, missing_value
 
