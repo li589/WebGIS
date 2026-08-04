@@ -1,15 +1,20 @@
 from __future__ import annotations
 
+import logging
 from typing import Any
 
 from app.core.config import settings
 
+logger = logging.getLogger(__name__)
+
 try:
     from celery import Celery
     from celery.schedules import crontab
+    from celery.signals import task_failure
 except ImportError:  # pragma: no cover - optional dependency during bootstrap
     Celery = None
     crontab = None
+    task_failure = None
 
 
 celery_available = Celery is not None
@@ -89,6 +94,19 @@ if celery_available:
             },
         },
     )
+    # 发布就绪修复（P1-6）：任务失败可观测。task_failure 信号在任务抛异常时触发，
+    # 统一记录失败任务与异常，提供聚合的失败观测点（此前任务失败仅散落各模块日志）。
+    if task_failure is not None:
+
+        @task_failure.connect
+        def _on_task_failure(sender=None, task_id=None, exception=None, **kwargs):  # type: ignore[no-untyped-def]
+            logger.error(
+                "Celery task failed: name=%s id=%s error=%r",
+                getattr(sender, "name", "?"),
+                task_id,
+                exception,
+            )
+
     beat_schedule: dict[str, dict[str, Any]] = {}
     if settings.weather_schedule_enabled and crontab is not None:
         beat_schedule["refresh-weather-layers-hourly"] = {
