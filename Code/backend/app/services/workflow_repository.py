@@ -48,6 +48,16 @@ _TERMINAL_STATUSES = (
 # 默认保留期：30 天前的已完成 run 将被清理
 _DEFAULT_RETENTION_DAYS = 30
 
+# P2-3：schema 版本跟踪（无 Alembic，用 schema_meta 表记录当前 schema 版本，
+# 发版/升级时可检测代码与 DB 版本是否一致）。每次 schema 变更（加列/加表/加索引）
+# 时递增此值并记录变更说明。
+SCHEMA_VERSION = 3
+SCHEMA_CHANGES: list[tuple[int, str]] = [
+    (1, "初始 schema：workflow_runs / workflow_events / runtime_config"),
+    (2, "workflow_runs 加 request_json / run_class 列 + idx_workflow_runs_class_status"),
+    (3, "新增 schema_meta 版本跟踪表（P2-3）"),
+]
+
 
 class SQLiteWorkflowRepository:
     def __init__(self, state_dir: str | Path | None = None) -> None:
@@ -477,6 +487,42 @@ class SQLiteWorkflowRepository:
                         """,
                         (scope, config_key, json.dumps(value, ensure_ascii=False)),
                     )
+            # P2-3：schema 版本跟踪表（无 Alembic，记录当前 schema 版本 + 变更日志）
+            connection.execute(
+                """
+                CREATE TABLE IF NOT EXISTS schema_meta (
+                    key TEXT PRIMARY KEY,
+                    value TEXT NOT NULL
+                )
+                """
+            )
+            connection.execute(
+                """
+                INSERT OR IGNORE INTO schema_meta (key, value) VALUES ('schema_version', ?)
+                """,
+                (str(SCHEMA_VERSION),),
+            )
+            # 若已存在的版本号低于代码版本，更新到代码版本（additive-only 迁移：
+            # 仅向前加列/加表/加索引，不删不改类型——与 _migrate_schema 的 ALTER 策略一致）
+            connection.execute(
+                """
+                UPDATE schema_meta SET value = ?
+                WHERE key = 'schema_version' AND CAST(value AS INTEGER) < ?
+                """,
+                (str(SCHEMA_VERSION), SCHEMA_VERSION),
+            )
+
+    def get_schema_version(self) -> int:
+        """返回 DB 中记录的 schema 版本（缺失则 0）。"""
+        try:
+            with self._connect() as connection:
+                cursor = connection.execute(
+                    "SELECT value FROM schema_meta WHERE key = 'schema_version'"
+                )
+                row = cursor.fetchone()
+                return int(row[0]) if row else 0
+        except sqlite3.OperationalError:
+            return 0
 
     def _migrate_schema(self) -> None:
         with self._connect() as connection:

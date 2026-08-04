@@ -155,3 +155,23 @@ Code/
 - `Env\Python312\python.exe launch.py sync` — 数据面 Open-Meteo 同步（`Code/infra/data-sync`）
 - `stop.bat` / `Env\Python312\python.exe launch.py status` / `flush`
 - 活文档应随代码结构变化同步更新；带日期的记录文档可归档保留
+
+## 运维手册（初代）
+
+### 凭据轮换（P2-1）
+
+- **写鉴权密钥**（`backend_auth`）与 MinIO / GEE / 天气源凭据均缓存在进程内（`effective_config` 三层缓存 + 各 repository），**轮换后须全栈重启**才彻底生效。
+  - 写密钥轮换经配置页 upsert/toggle/delete → 进程内即时失效（`cache_clear` + `rehydrate`）；但**跨进程**（多 worker / 多 FastAPI 副本）不会即时传播，须重启所有后端进程。
+  - 安全做法：先在配置页设新密钥 → `launch.py restart` → 再撤旧密钥。
+- **凭据不入前端 bundle**（P1-1）：写密钥仅由操作员运行时经设置页写入（localStorage），不随 JS 分发。
+
+### 数据库 schema 与迁移（P2-3）
+
+- 本项目无 Alembic；`workflow_state.sqlite3` 采用 **additive-only** 迁移策略：仅向前加列 / 加表 / 加索引，不改类型、不删列、不迁数据。
+- `workflow_repository.py` 维护 `SCHEMA_VERSION` 常量与 `schema_meta` 版本表；`get_schema_version()` 可读当前 DB 版本。每次 schema 变更须递增 `SCHEMA_VERSION` 并在 `SCHEMA_CHANGES` 记录说明。
+- 发版前检查：若 `get_schema_version() < SCHEMA_VERSION`，说明 DB 落后于代码（additive 迁移会在启动时自动补齐）；若 `>`，说明运行了更新代码的 DB（不支持回滚，需从快照恢复）。
+- **备份 / 恢复**：
+  - `launch.py reset-db` 会自动在 `.data/workflow_state_snapshots/` 创建带时间戳的快照（保留最近 N 份，`--keep-snapshots` 可配）。
+  - 手动备份：`cp -r Code/backend/.data/workflow_state/ <backup>/`（须先 `launch.py stop`，Windows 下 SQLite 文件被占用无法复制）。
+  - 恢复：停服务 → 用快照覆盖 `workflow_state/` → `launch.py start`。
+- 凭据 DB（`api_keys` / `gee_credentials` / `remote_storage_credentials` / `weather_engine` 等）与 `workflow_state` 同目录，备份时一并覆盖。
