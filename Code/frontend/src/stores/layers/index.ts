@@ -2392,6 +2392,11 @@ export const useLayersStore = defineStore('layers', () => {
         }
       } catch (error) {
         console.warn('[layers] materializeWorkflowMapLayers failed', runId, error)
+        // 发布就绪修复（P0-9）：materialize 失败不再静默吞掉——落到 workflowError，
+        // 避免"工作流显示 succeeded 但地图无图层、无任何错误提示"。
+        workflowError.value = `工作流结果图层加载失败：${
+          error instanceof Error ? error.message : String(error)
+        }`
       }
     }
     if (!imports.length) return 0
