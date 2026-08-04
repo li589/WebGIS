@@ -38,7 +38,10 @@ class Settings:
         "BACKEND_SERVICE_NAME",
         "Comprehensive Geographic Data Analysis Backend",
     )
-    environment: str = os.getenv("BACKEND_ENV", "development")
+    # 发布就绪修复（P0-1）：默认 environment 反转为 "production"（fail-secure）。
+    # 此前默认 "development" 会在未配置 API Key 时静默放行所有写接口（见 app/api/deps.py）。
+    # 本地联调请在 Code/backend/.env 显式设置 BACKEND_ENV=development 以保留开发旁路。
+    environment: str = os.getenv("BACKEND_ENV", "production")
     host: str = os.getenv("BACKEND_HOST", "127.0.0.1")
     port: int = int(os.getenv("BACKEND_PORT", "8000"))
     reload: bool = os.getenv("BACKEND_RELOAD", "true").lower() == "true"
