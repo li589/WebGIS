@@ -126,3 +126,22 @@ Tools/reports/dataset_inventory_*.json
 
 # Doc task notes (temp)
 Doc/一份任务说明-*.txt
+
+# AI workspace (local-only context: prompts/skills/plans/progress/memory/docs). NOT pushed to GitHub.
+.ai/
+
+# WorkBuddy local desktop state (sessions/logs/cache). NOT pushed to GitHub.
+.workbuddy/
+
+# Local pytest/vitest temp + manual verification logs (generated during dev verification)
+Test/.pytest-*/
+be_run*.log
+be_collect.log
+algo_run*.log
+algo_collect.log
+vitest_run.log
+
+# Generated test/verification reports (large dataset_inventory/scan/checkpoint dumps, up to ~188MB). Keep local, NOT in git.
+Test/reports/
+
+

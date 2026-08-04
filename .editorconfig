@@ -1,0 +1,37 @@
+# 根 EditorConfig —— 全编辑器 / AI 编程工具共享的格式化基线
+#
+# 约定来源：ruff.toml（Python 行宽 88、4 空格）、Code/frontend/.prettierrc.json
+# （TS/Vue 2 空格、single quote、printWidth 100）、全仓统一 LF / UTF-8。
+# 本文件让 Cursor / Trae / Qoder / VS Code / Copilot 等工具生成代码时
+# 自动对齐项目既有风格，减少 pre-commit 阶段的 reflow 噪音。
+
+root = true
+
+[*]
+charset = utf-8
+end_of_line = lf
+insert_final_newline = true
+trim_trailing_whitespace = true
+indent_style = space
+
+[*.py]
+indent_size = 4
+# 与 ruff.toml 默认一致；仅作编辑器提示，真实裁剪由 ruff-format 负责
+max_line_length = 88
+
+[*.{ts,tsx,js,jsx,vue,css,scss,html}]
+indent_size = 2
+
+[*.{json,yml,yaml,toml}]
+indent_size = 2
+
+# 行长度对标记类文件放宽：Markdown 文档与 YAML 块常含长链接/长说明
+[*.md]
+trim_trailing_whitespace = false
+max_line_length = off
+
+[*.{yml,yaml}]
+max_line_length = off
+
+[*.pyc]
+indent_size = unset

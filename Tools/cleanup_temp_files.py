@@ -4,7 +4,7 @@ from pathlib import Path
 # Clean up diagnostic scripts
 files_to_delete = [
     "lightweight_verify.py",
-    "verify_fy_smap_full_regression.py", 
+    "verify_fy_smap_full_regression.py",
     "final_diag.log",
     "diag_run.log",
     "diag_run2.log",

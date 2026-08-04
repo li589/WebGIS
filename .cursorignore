@@ -1,0 +1,17 @@
+# Cursor: un-ignore local AI workspace even though `.ai/` is in `.gitignore`
+# (keeps GitHub clean while allowing Agent / indexing / @ references).
+# Docs: https://cursor.com/docs/reference/ignore-file
+!.ai/
+!.ai/**
+
+# Heavy / generated paths - keep out of AI context (performance)
+Env/
+**/node_modules/
+**/__pycache__/
+**/.pytest_cache/
+**/.mypy_cache/
+Code/frontend/dist/
+Code/backend/.data/
+Code/backend/.pytest_tmp/
+Test/.pytest-*/
+**/*.pyc

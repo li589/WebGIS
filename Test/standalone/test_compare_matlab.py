@@ -12,7 +12,7 @@ CUSTOM_RES = r'I:\Geograph_DataSet\Soil_Moisture\Omega_Custom_Res'
 
 def compare_mat_results():
     """加载并对比 FY 和 SMAP 的结果."""
-    
+
     # FY 结果
     fy_dir = Path(CUSTOM_RES) / 'fy_raw_ω'
     print('\n=== FY RAW OMEGA Results ===')
@@ -25,7 +25,7 @@ def compare_mat_results():
             print(f'  {key}: shape={val.shape}, dtype={val.dtype}')
             if val.size < 100:
                 print(f'    values: {val.flatten()[:10]}')
-    
+
     # SMAP 结果
     smap_dir = Path(CUSTOM_RES) / 'smap_raw_omega'
     print('\n\n=== SMAP RAW OMEGA Results ===')
@@ -36,5 +36,5 @@ def compare_mat_results():
         for key in keys[:5]:
             val = data[key]
             print(f'  {key}: shape={val.shape}, dtype={val.dtype}')
-            
+
 compare_mat_results()

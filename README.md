@@ -16,7 +16,7 @@
 
 ```text
 Comprehensive Geographic Data Analysis system/
-├─ Doc/         # 项目方案、技术栈、规范与协作文档
+├─ .ai/         # 【本地专用，不上传 GitHub】AI 工作区：规则/技能/计划/进度/记忆/文档
 ├─ Env/Python312/  # 【本地联调唯一 Python 运行时】勿用系统 PATH 的 python
 ├─ Code/           # 实际工程代码（含 backend/vendor 等运行时第三方二进制）
 ├─ Tools/          # 主线外辅助：外部/临时工具、下载校验脚本（禁止放主体运行模块）
@@ -24,8 +24,12 @@ Comprehensive Geographic Data Analysis system/
 ├─ launch.py       # 跨平台一键启动（会优先切换到 Env/Python312）
 ├─ start.bat / start.sh   # 推荐入口（强制 Env/Python312）
 ├─ stop.bat / stop.sh
-└─ README.md
+├─ README.md       # 项目说明（表面三文档之一）
+├─ AGENTS.md       # AI 编程导航（表面三文档之一）
+└─ CLAUDE.md       # Claude Code 入口（表面三文档之一）
 ```
+
+> 原 `Doc/` 与根目录进度/验证文档已全部并入 `.ai/`（`.ai/docs/`、` .ai/progress/`）；各 AI 工具的规则文件（`.cursor/`、`.trae/`、`.github/`）保留原位但仅作指针，完整约定见 `.ai/rules/`。
 
 ## 当前工程分层
 
@@ -86,11 +90,14 @@ Code/
 
 ## 当前阶段建议
 
-1. 巩固天气瓦片与风场渲染体验（当前工作区主要推进项）
-2. 保持 `workflow-runs` / unified-tiles / artifact 契约稳定
-3. 继续完善课题组 Python 算法真实数据接入
-4. 按需推进 PostGIS、TiTiler/Martin、Cesium 3D 与 Nginx 部署
+近期排期以 `.ai/progress/2026-08-04-pending-tasks-audit.md` 与 `.ai/docs/reference/工程收口仪表盘.md` 为准：
 
+1. **P0**：FY/SMAP UI 人工闭环（更大样本条带上图 + `ui-verification-steps.md`）
+2. **P0**：Open-Meteo Phase B（tile-manager / coverage 与 settings `default_model` 贯通）
+3. **P1**：真实课题组数据 e2e / NAS 绿测；工作流调度 P1（dry-validate / progress 选取等）
+4. **P2–P3**：Layers god store 继续拆分；按需推进 PostGIS、TiTiler/Martin、Cesium 主链（Nginx 可选 gateway 已可用：`launch.py start gateway`）
+
+契约层面保持 `workflow-runs` / `unified-tiles` / artifact 稳定。
 ## 文档导航
 
 建议优先阅读：
@@ -101,10 +108,11 @@ Code/
 - `Code/shared/contracts/README.md`：共享协议说明
 - `Code/algorithms/providers/Python/README.md`：Python 算法包说明
 - `Code/docs/双通道接口设计总结.md`：控制流 / 数据流双通道设计
-- `Doc/技术栈.md`：目标架构与落地状态对照
-- `Doc/规范文档.md`：字段与接口命名约定
+- `.ai/docs/specs/技术栈.md`：目标架构与落地状态对照
+- `.ai/docs/specs/规范文档.md`：字段与接口命名约定
+- `.ai/README.md`：AI 工作区导航（规则/技能/计划/进度/记忆/文档）
 
-带明确日期的阶段快照与实施计划（如 `代码事实同步文档-2026-07-06.md`、`.trae/documents/*-2026-07-*.md`）作历史参考，不以它们覆盖上述活文档。
+带明确日期的阶段快照与实施计划（如 `.ai/docs/reference/`、`.ai/memory/archive/*`）作历史参考，不以它们覆盖上述活文档。
 
 ## 本地 Python 环境（必读）
 
@@ -124,9 +132,12 @@ Code/
 
 本仓库联调依赖 Docker Desktop 拉起 Redis / MinIO / Open-Meteo 等容器。在 **Windows** 上：
 
-- **Docker Desktop 与启动终端（`start.bat` / PowerShell / Cursor 终端）建议均以「管理员身份」运行。**
-- 非管理员时，常见症状包括：**镜像无法拉取/访问**、named volume / 引擎配置读失败、部分 compose 服务起不全或权限报错。
-- 排障顺序：先确认 Docker Desktop 以管理员启动且引擎就绪 → 再 `launch.py start` / `restart`。
+- **Docker Desktop 与启动终端（`start.bat` / PowerShell / Cursor 终端）须以「管理员身份」运行。**
+- **否则启动可能会失败**（例如报 Docker 未就绪、compose 起不全、镜像/volume 访问失败等）。
+- 非管理员时的常见症状：**镜像无法拉取/访问**、named volume / 引擎配置读失败、部分 compose 服务起不全或权限报错。
+- 排障顺序：先确认 Docker Desktop **以管理员身份**启动且引擎就绪 → 终端也提权 → 再 `launch.py start` / `restart`。
+
+详见 [`Doc/本地联调环境说明.md`](Doc/本地联调环境说明.md)。
 
 > 默认联调不启 Nginx。演示/同域入口：`Env\Python312\python.exe launch.py start gateway`（需先有 FastAPI `:8000` 与 `Code/frontend/dist`；与 Vite 互斥，详见 `Code/infra/gateway/README.md`）。
 

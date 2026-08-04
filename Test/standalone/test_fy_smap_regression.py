@@ -25,7 +25,7 @@ CUSTOM_RES_DIR = Path(r"I:\Geograph_DataSet\Soil_Moisture\Omega_Custom_Res")
 # FY Reference files
 FY_RAW_OMEGA_FILES = list((CUSTOM_RES_DIR / "fy_raw_ω").glob("*.mat"))[:4]
 
-# SMAP Reference files  
+# SMAP Reference files
 SMAP_RAW_OMEGA_FILES = list((CUSTOM_RES_DIR / "smap_raw_omega").glob("*.mat"))[:4]
 
 print("="*70)
@@ -64,7 +64,7 @@ CUSTOM_RES = r'I:\\Geograph_DataSet\\Soil_Moisture\\Omega_Custom_Res'
 
 def compare_mat_results():
     \"\"\"加载并对比 FY 和 SMAP 的结果.\"\"\"
-    
+
     # FY 结果
     fy_dir = Path(CUSTOM_RES) / 'fy_raw_ω'
     print('\\n=== FY RAW OMEGA Results ===')
@@ -77,7 +77,7 @@ def compare_mat_results():
             print(f'  {{key}}: shape={{val.shape}}, dtype={{val.dtype}}')
             if val.size < 100:
                 print(f'    values: {{val.flatten()[:10]}}')
-    
+
     # SMAP 结果
     smap_dir = Path(CUSTOM_RES) / 'smap_raw_omega'
     print('\\n\\n=== SMAP RAW OMEGA Results ===')
@@ -88,7 +88,7 @@ def compare_mat_results():
         for key in keys[:5]:
             val = data[key]
             print(f'  {{key}}: shape={{val.shape}}, dtype={{val.dtype}}')
-            
+
 compare_mat_results()
 """
 
@@ -120,7 +120,7 @@ except Exception as e:
     traceback.print_exc()
 """
 
-result = subprocess.run([ENV_PYTHON, '-c', check_load], 
+result = subprocess.run([ENV_PYTHON, '-c', check_load],
                        capture_output=True, text=True, encoding='utf-8')
 print(result.stdout)
 if result.stderr:
