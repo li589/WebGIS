@@ -60,6 +60,16 @@ if celery_available:
         # launch.py 可按 worker 角色用 -c / --prefetch-multiplier 覆盖。
         worker_concurrency=settings.celery_worker_concurrency,
         worker_prefetch_multiplier=settings.celery_worker_prefetch_multiplier,
+        # 发布就绪修复（P0-7）：broker_transport_options。
+        # visibility_timeout 必须 > 最长 task_time_limit（workflow=7500s），否则 acks_late
+        # 下长任务会在 visibility 超时（Redis 默认 3600s）后被重投到另一 worker → 并发重复执行。
+        # socket_timeout/socket_connect_timeout 给 broker 连接/读取定上界，避免 broker 挂起时
+        # 工作线程无限期阻塞（同根修复线程池阻塞无寿命上界问题）。
+        broker_transport_options={
+            "visibility_timeout": settings.celery_broker_visibility_timeout,
+            "socket_timeout": settings.celery_broker_socket_timeout,
+            "socket_connect_timeout": settings.celery_broker_socket_connect_timeout,
+        },
         # Beat / 运维任务必须落到 launch.py 实际监听的队列（勿用默认 celery）
         task_routes={
             "app.tasks.open_meteo_sync_tasks.sync_open_meteo_data": {

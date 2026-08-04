@@ -349,6 +349,20 @@ class Settings:
     celery_task_time_limit: int = int(
         os.getenv("BACKEND_CELERY_TASK_TIME_LIMIT", "360")
     )
+    # 发布就绪修复（P0-7）：broker visibility_timeout（秒）。
+    # 必须大于最长 task_time_limit（workflow 任务 time_limit=7500），否则 acks_late
+    # 下长任务会在 visibility 超时（Redis 默认 3600）后被重投到另一 worker，导致并发重复执行。
+    celery_broker_visibility_timeout: int = int(
+        os.getenv("BACKEND_CELERY_BROKER_VISIBILITY_TIMEOUT", "8100")
+    )
+    # broker 连接/读取超时（秒）：给 broker 操作定上界，避免 broker 挂起时
+    # 工作线程无限期阻塞（同根修复线程池阻塞无寿命上界问题）。
+    celery_broker_socket_timeout: int = int(
+        os.getenv("BACKEND_CELERY_BROKER_SOCKET_TIMEOUT", "30")
+    )
+    celery_broker_socket_connect_timeout: int = int(
+        os.getenv("BACKEND_CELERY_BROKER_SOCKET_CONNECT_TIMEOUT", "10")
+    )
     # Celery worker 并发度：每个 worker 进程的最大并发任务数。
     # launch.py 启动 7 个 worker，默认占满 CPU 会严重过订阅；建议物理核数/worker 数。
     celery_worker_concurrency: int = int(
