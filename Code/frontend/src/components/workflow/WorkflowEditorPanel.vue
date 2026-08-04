@@ -720,7 +720,7 @@ defineExpose({
               class="validation-action-btn proceed"
               type="button"
               @click="
-                showValidationPanel = false
+                showValidationPanel = false;
                 showRunDialog = true
               "
             >

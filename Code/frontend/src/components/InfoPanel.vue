@@ -1189,7 +1189,7 @@ onBeforeUnmount(() => {
                 type="button"
                 class="weather-mini-btn"
                 @click="
-                  setActiveTab('tools')
+                  setActiveTab('tools');
                   emit('enterSelectMode')
                 "
               >
@@ -2111,7 +2111,7 @@ onBeforeUnmount(() => {
                 type="button"
                 class="weather-mini-btn"
                 @click="
-                  setActiveTab('tools')
+                  setActiveTab('tools');
                   emit('enterSelectMode')
                 "
               >
