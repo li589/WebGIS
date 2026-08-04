@@ -784,6 +784,19 @@ onBeforeUnmount(() => {
                   <div class="node-progress-fill" :style="{ width: np.progress + '%' }"></div>
                 </div>
                 <span v-if="np.message" class="node-progress-message">{{ np.message }}</span>
+                <!-- P0-10：节点产物下载入口（/artifacts/{id} 由后端 FileResponse 直接下载） -->
+                <div v-if="np.artifacts?.length" class="node-artifacts">
+                  <a
+                    v-for="artifactId in np.artifacts"
+                    :key="artifactId"
+                    class="node-artifact-link"
+                    :href="`/artifacts/${encodeURIComponent(artifactId)}`"
+                    :download="artifactId"
+                    :title="`下载产物 ${artifactId}`"
+                  >
+                    ⬇ {{ artifactId.split('/').pop() }}
+                  </a>
+                </div>
                 <div
                   v-if="
                     np.detail &&
@@ -1496,6 +1509,28 @@ onBeforeUnmount(() => {
   font-size: 11px;
   opacity: 0.75;
   word-break: break-word;
+}
+
+.node-artifacts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 4px;
+}
+
+.node-artifact-link {
+  font-size: 11px;
+  padding: 2px 8px;
+  border-radius: 4px;
+  background: rgba(88, 166, 255, 0.12);
+  color: #58a6ff;
+  text-decoration: none;
+  word-break: break-all;
+}
+
+.node-artifact-link:hover {
+  background: rgba(88, 166, 255, 0.24);
+  text-decoration: underline;
 }
 
 .node-progress-detail {

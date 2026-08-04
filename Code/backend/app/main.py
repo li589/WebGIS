@@ -137,10 +137,11 @@ def create_app() -> FastAPI:
     )
 
     # 发布就绪修复（P1-2）：/config 与 /import 写接口的 IP 级限流（超阈 429）。
-    # test 环境旁路，避免影响测试。
+    # P0-10 产品定位决策：目标用户为课题组/研究院（访问量小），限流宽松化，
+    # 且 development/test 环境旁路（开发、调试时关闭 IP 限制），仅 production 生效。
     @app.middleware("http")
     async def write_rate_limit_middleware(request: Request, call_next):
-        if (settings.environment or "").lower() not in ("test", "testing"):
+        if (settings.environment or "").lower() not in ("test", "testing", "development"):
             from app.api.rate_limit import (
                 check_write_rate_limit,
                 client_ip,

@@ -422,5 +422,17 @@ class Settings:
     filebrowser_user: str = os.getenv("BACKEND_FILEBROWSER_USER", "")
     filebrowser_password: str = os.getenv("BACKEND_FILEBROWSER_PASSWORD", "")
 
+    # ---- P0-10 产品边界开关 ----
+    # demo:// 占位数据源：仅 development 默认可用（联调/展出演示）；production 默认直接
+    # fail，除非显式设 BACKEND_DEMO_SOURCES_ENABLED=true（如临时展出演示以生产模式运行时）。
+    demo_sources_enabled: bool = os.getenv(
+        "BACKEND_DEMO_SOURCES_ENABLED", ""
+    ).strip().lower() in {"1", "true", "yes", "on"}
+    # 未实现执行器的占位节点模板（executable=False 的 stub）：仅 development 默认在节点
+    # 面板可见；production 默认隐藏，除非显式设 BACKEND_NODE_STUBS_VISIBLE=true。
+    node_stubs_visible: bool = os.getenv(
+        "BACKEND_NODE_STUBS_VISIBLE", ""
+    ).strip().lower() in {"1", "true", "yes", "on"}
+
 
 settings = Settings()

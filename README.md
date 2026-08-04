@@ -2,15 +2,22 @@
 
 ## 项目定位
 
-本项目面向地理信息数据展示与分析需求，目标是建设一个基于 Web 的综合地理信息平台，统一承载：
+CGDA 是**面向课题组与大气研究院研究员**的科研数据分析平台（初代发布定位），以 2D 平面地图（MapLibre）为主链路，统一承载：
 
-- `3D 地球模式` 与 `2D 平面地图模式`
-- 多源数据接入，包括本地数据、Google Earth Engine（GEE）、公共数据接口
+- `2D 平面地图模式`（主链路）；`3D 地球模式`（Cesium，实验性，非默认主链）
+- 多源数据接入：本地数据、Google Earth Engine（GEE）、Open-Meteo 等公共数据接口
 - 动态时空结果展示与回传
-- 多课题组算法模块化接入
-- 面向展示效果、交互流畅度与后续扩展性的工程化实现
+- 多课题组算法模块化接入（workflow 编排）
 
-本仓库已从“方案与原型阶段”进入“工程化落地阶段”：`workflow-runs` 主链、天气瓦片渲染、Celery/Redis/MinIO 基础设施与架构拆分均已具备可运行实现。
+本仓库已从"方案与原型阶段"进入"工程化落地阶段"：`workflow-runs` 主链、天气瓦片渲染、Celery/Redis/MinIO 基础设施与架构拆分均已具备可运行实现。
+
+## 发布边界（初代）
+
+- **目标用户**：本课题组 + 大气研究院研究员，访问量小；可能有临时展出演示需求
+- **部署形态**：单机构部署、单 API Key 写鉴权、SQLite 元数据；多用户模型属 roadmap（不含在初代）
+- **演示模式**：`demo://` 占位数据源仅 development 默认可用；展出演示需以 production 运行时设 `BACKEND_DEMO_SOURCES_ENABLED=true`
+- **占位节点**：未实现执行器的节点模板在 production 节点面板默认隐藏（`BACKEND_NODE_STUBS_VISIBLE=true` 可显示）
+- **写接口限流**：默认 120 次/分钟/IP（宽松），development/test 环境自动关闭；阈值经 `BACKEND_WRITE_RATE_LIMIT_PER_MINUTE` 配置
 
 ## 当前仓库结构
 

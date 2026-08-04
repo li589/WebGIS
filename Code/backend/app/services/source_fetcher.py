@@ -366,6 +366,10 @@ class DemoSourceFetcher(SourceFetcher):
 
     为保持 legacy/demo 下载链路可继续联调，demo:// scheme 仍然走兼容成功路径，
     但只会生成最小的 compat artifact，确保 manifest 始终持有稳定的 resource_key。
+
+    P0-10：demo:// 是占位数据源（不产生真实数据）。development 环境保留用于联调/
+    展出演示；production 环境默认直接 fail（避免占位符静默冒充真实结果），除非显式
+    设 BACKEND_DEMO_SOURCES_ENABLED=true（如展演需以 production 模式运行）。
     """
 
     def supports(self, source_uri: str) -> bool:
@@ -379,6 +383,17 @@ class DemoSourceFetcher(SourceFetcher):
         source_uri: str,
         artifact_key_prefix: str,
     ) -> FetchResult:
+        from app.core.config import settings
+
+        if (
+            settings.environment != "development"
+            and not settings.demo_sources_enabled
+        ):
+            raise ValueError(
+                "demo:// 为占位演示数据源，不产生真实数据，当前环境（"
+                f"{settings.environment}）已禁用。展出演示请设 "
+                "BACKEND_DEMO_SOURCES_ENABLED=true 显式开启，或使用真实数据源。"
+            )
         fetched_at = datetime.now(timezone.utc).isoformat()
         payload = {
             "ref_id": ref_id,

@@ -34,9 +34,24 @@ router = APIRouter(prefix="/workflow-definitions", tags=["workflow-definition"])
 # ─── 节点模板 ────────────────────────────────────────────────────────────────
 @router.get("/node-templates", tags=["workflow-definition"])
 def list_node_templates() -> dict[str, Any]:
-    """获取所有可用的节点模板，供前端节点面板展示。"""
+    """获取所有可用的节点模板，供前端节点面板展示。
+
+    P0-10：未实现执行器的占位节点（executable=False 的 stub）在 production 默认
+    从面板隐藏（避免面板承诺未实现功能），development 或显式设
+    BACKEND_NODE_STUBS_VISIBLE=true 时可见（供开发中联调）。
+    """
+    from app.core.config import settings
+
     templates = get_all_node_templates()
-    return {"templates": templates, "count": len(templates)}
+    stubs_hidden = False
+    if settings.environment != "development" and not settings.node_stubs_visible:
+        templates = [t for t in templates if t.get("executable") is not False]
+        stubs_hidden = True
+    return {
+        "templates": templates,
+        "count": len(templates),
+        "stubs_hidden": stubs_hidden,
+    }
 
 
 @router.post(

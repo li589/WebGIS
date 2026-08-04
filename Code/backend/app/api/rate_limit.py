@@ -1,9 +1,12 @@
-"""写接口 IP 级限流（发布就绪 P1-2）。
+"""写接口 IP 级限流（发布就绪 P1-2，P0-10 宽松化）。
 
 `/config/*` 与 `/import/*` 写接口此前无任何限流/失败锁定，可被滥用（批量写、爆破
 API key——尽管鉴权用 compare_digest，限流仍是必要的纵深防御）。按客户端 IP 做滑动
-窗口限流，超阈返回 429。test 环境旁路（不影响测试）。阈值经
-``BACKEND_WRITE_RATE_LIMIT_PER_MINUTE`` 配置（默认 30 次/分钟/IP，比读接口更严）。
+窗口限流，超阈返回 429。
+
+P0-10 产品定位决策：目标用户为课题组/大气研究院研究员，访问量小——限流做宽松处理
+（默认 120 次/分钟/IP），且 development/test 环境整体旁路（开发、调试时关闭 IP 限制，
+仅 production 生效）。阈值经 ``BACKEND_WRITE_RATE_LIMIT_PER_MINUTE`` 配置。
 """
 
 from __future__ import annotations
@@ -40,7 +43,7 @@ class SlidingWindowRateLimiter:
 
 
 _write_limiter = SlidingWindowRateLimiter(
-    int(os.getenv("BACKEND_WRITE_RATE_LIMIT_PER_MINUTE", "30")),
+    int(os.getenv("BACKEND_WRITE_RATE_LIMIT_PER_MINUTE", "120")),
     timedelta(minutes=1),
 )
 
