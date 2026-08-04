@@ -47,6 +47,7 @@ from launch.docker_manager import (
     redis_running,
     start_docker_infra,
     stop_docker_infra,
+    wait_for_minio,
     wait_for_redis,
 )
 from launch.gateway_manager import (
@@ -94,7 +95,10 @@ def cmd_start(args: argparse.Namespace) -> int:
             start_open_meteo=not getattr(args, "no_open_meteo", False)
         ):
             return 1
-        wait_for_redis(max_wait=30)
+        # P2-2：检查 wait_for_redis 返回值并探测 MinIO（docker 组件仅警告，不阻塞）
+        if not wait_for_redis(max_wait=30):
+            log.warn("Launcher", "Redis 未就绪，后续 fastapi/worker 启动会失败")
+        wait_for_minio(max_wait=30)
         log.ok("Launcher", "Docker 基础设施已启动（不进入监控循环）")
         return 0
 
@@ -210,7 +214,14 @@ def _start_all(args: argparse.Namespace) -> int:
         ):
             log.error("Launcher", "Docker 基础设施启动失败，终止")
             return 1
-        wait_for_redis(max_wait=30)
+        # P2-2：此前 wait_for_redis 返回值被丢弃，Redis 未就绪仍拉起 7 worker+beat
+        # 导致 crash-loop。现检查返回值 fail-fast。
+        if not wait_for_redis(max_wait=30):
+            log.error("Launcher", "Redis 未就绪，终止启动（避免 worker/beat crash-loop）")
+            log.info("Launcher", "  排查：docker logs cgda-redis；或 launch.py start docker 单独诊断")
+            return 1
+        # P2-2：新增 MinIO 探测（warn-only，对象存储未就绪时部分功能降级但不阻塞启动）
+        wait_for_minio(max_wait=30)
         time.sleep(2)
     else:
         log.warn("Launcher", "跳过 Docker（--no-docker），使用外部 Redis/MinIO")
