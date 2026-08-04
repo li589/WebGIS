@@ -8,7 +8,7 @@
 
 ## 📌 TL;DR（执行摘要）
 
-> **修复进展（2026-08-05）：11 项 P0、13 项 P1 全部完成并提交（最终回归：后端 512 / 算法 306 / 前端 448 全绿；前端生产构建 `npm run build` 与后端导入检查均通过）。** P0-10 产品定位经用户决策（课题组+大气研究院研究员）已落地；另修复 4 处仅生产构建暴露的模板语法错误（多语句 @click 缺分号，`415df8aa`）。详见「🔧 修复进展」区。以下为审计原始结论。
+> **修复进展（2026-08-05）：11 项 P0、13 项 P1、5 项 P2 全部完成并提交（最终回归：后端 512+ / 算法 306 / 前端 448 全绿；前端生产构建 `npm run build` 与后端导入检查均通过）。** P0-10 产品定位经用户决策（课题组+大气研究院研究员）已落地；P2 全部清零（含 P2-5 随 P0-7 一并修复）。详见「🔧 修复进展」区。以下为审计原始结论。
 
 - **整体结论：🔴 No-Go（不可发）** —— 五维独立审计无一给出「可发」：QA 直接判 No-Go（3 P0），安全 3 P0、排障 2 P0、设计 4 P0、产品 🟡 条件发。
 - **阻塞项数量：11 项 P0（合并去重后）**，覆盖安全失守链、测试资产未入库、质量门全红、契约漂移、异步任务重复执行、配置跨进程 stale、UI 结果回显静默断链、产品定位与交付物错配。
@@ -136,11 +136,11 @@
 | P1-11 | 🟠 | 设计/a11y | `RasterImportConfirmDialog.vue` | 阻塞式模态缺 `role="dialog"`/`aria-modal`/ESC/焦点陷阱 | 补 aria + ESC + 焦点陷阱 | 设计 |
 | P1-12 | 🟠 | 鲁棒性/目录漂移 | `workflow_seeds/system/smap_soil_moisture_local.json:10` + `open_data_nsidc_smap_sample.json:10`（含 `.data/workflow_definitions/system/` 两份物化副本） | `layer_descriptors.json` 已移除 `smap-soil`（零命中），但 2 条内置系统工作流仍 `linked_layer_id:"smap-soil"` → 带着断链发版（清 `.data/` 才会自愈）。与产品官"占位节点"不同类：这是**目录漂移使既有内容失效** | 改 seed 的 linked_layer_id + 清 `.data/workflow_definitions/` 物化副本；加启动期 `linked_layer_id` 对 catalog 校验 | 排障 |
 | P1-13 | 🟡 | QA/发布 | `.gitignore:117,120,121`（`vendor/unrar/*`） | `UnRAR.exe` 二进制 gitignore 永不入库 → 全新 clone/CI 必缺；`archive_safe.py` 优雅降级（返回 None，不崩）→ RAR 导入路径**静默跳过**，CI 对 RAR 零覆盖，干净部署上传 RAR 得"无错无果" | 发布已知局限写明 + CI 加装 unrar 步骤（Linux `apt install unrar`） | 排障+QA |
-| P2-1 | 🟡 | 安全/运维 | 凭据轮换 | 跨进程凭据轮换不完全，需全栈重启才彻底 | 写进运维手册 | 安全+排障 |
-| P2-2 | 🟡 | 鲁棒性/启动 | `launch/commands.py:97,213` | `wait_for_redis` 返回值丢弃，Redis 未就绪仍拉起 7 worker+beat crash-loop；无 MinIO 探测 | 检查返回值 fail-fast + 加 MinIO 探测 | 排障 |
-| P2-3 | 🟡 | 鲁棒性/DB | 无 Alembic | 无版本化迁移，只能加列，无法改类型/删列/迁数据/回滚 | 发版前打 `schema_version` 表 + 备份/恢复脚本 | 排障 |
-| P2-4 | 🟡 | 鲁棒性/几何 | `raster_preview_service.py:294-322` | Mercator round-trip ~0.013° 漂移（被测试容差掩盖）；真因取整到整像素 | 改用 `transform_bounds`+`from_bounds`；收紧测试容差 | 排障 |
-| P2-5 | 🟡 | 鲁棒性/线程 | `workflow_tasks.py:252`+`app/api/routers/weather_router.py:292` | 两处 `ThreadPoolExecutor` 均在 `finally` 中 `shutdown(wait=False, cancel_futures=True)`（关闭正确）；真实根因在 `celery_app.py` 缺 `broker_transport_options`（无 `socket_timeout`）：`wait=False` + 已启动 future 时 `cancel_futures` 无效 → broker 挂起时阻塞线程寿命无上界（有意识权衡，非疏漏）。**与 P0-7 同根**，经 P0-7 的 `broker_transport_options` 一并修复后即判 🟢；全仓仅此 2 处、均有意为之 | 随 P0-7 补 `broker_transport_options`（含 socket_timeout）即解决，勿单独改线程池 | 排障 |
+| P2-1 | 🟡→✅ | 安全/运维 | 凭据轮换 | 跨进程凭据轮换不完全，需全栈重启才彻底 | ✅ 已写入 README「运维手册（初代）」（`8fe5150d`） | 安全+排障 |
+| P2-2 | 🟡→✅ | 鲁棒性/启动 | `launch/commands.py:97,213` | `wait_for_redis` 返回值丢弃，Redis 未就绪仍拉起 7 worker+beat crash-loop；无 MinIO 探测 | ✅ 检查返回值 fail-fast + 新增 `wait_for_minio` 探测（`0a714ff3`） | 排障 |
+| P2-3 | 🟡→✅ | 鲁棒性/DB | 无 Alembic | 无版本化迁移，只能加列，无法改类型/删列/迁数据/回滚 | ✅ `workflow_repository` 新增 `SCHEMA_VERSION` + `schema_meta` 版本表 + `get_schema_version()`；README 运维手册写明 additive-only 策略与备份/恢复（`8fe5150d`） | 排障 |
+| P2-4 | 🟡→✅ | 鲁棒性/几何 | `raster_preview_service.py:294-322` | Mercator round-trip ~0.013° 漂移（被测试容差掩盖）；真因取整到整像素 | ✅ 改用 `transform_bounds`(densify_pts=21) + `from_bounds`；测试容差 0.02°→0.005° 全过（`2fe8e238`） | 排障 |
+| P2-5 | 🟡→✅ | 鲁棒性/线程 | `workflow_tasks.py:252`+`app/api/routers/weather_router.py:292` | 两处 `ThreadPoolExecutor` 均在 `finally` 中 `shutdown(wait=False, cancel_futures=True)`（关闭正确）；真实根因在 `celery_app.py` 缺 `broker_transport_options`（无 `socket_timeout`）：`wait=False` + 已启动 future 时 `cancel_futures` 无效 → broker 挂起时阻塞线程寿命无上界（有意识权衡，非疏漏）。**与 P0-7 同根**，经 P0-7 的 `broker_transport_options` 一并修复后即判 🟢；全仓仅此 2 处、均有意为之 | ✅ 随 P0-7 补 `broker_transport_options`（含 socket_timeout）已解决（`91896479`），勿单独改线程池 | 排障 |
 
 ---
 
