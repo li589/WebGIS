@@ -19,12 +19,9 @@ const { apiKeys, apiKeyHistory } = storeToRefs(settingsStore)
 
 const writeKeyDraft = ref('')
 const writeKeyLocalSet = ref(hasBackendWriteApiKey())
-const writeKeyFromEnv = computed(() =>
-  Boolean((import.meta.env.VITE_BACKEND_API_KEY as string | undefined)?.trim()),
-)
 const writeKeyStatus = computed(() => {
+  // P1-1：已移除构建期 VITE_BACKEND_API_KEY 内联路径，仅识别运行时 localStorage 写入的密钥。
   if (writeKeyLocalSet.value) return '已保存到本机 localStorage'
-  if (writeKeyFromEnv.value) return '可用环境变量 VITE_BACKEND_API_KEY'
   return '未配置'
 })
 
