@@ -221,6 +221,93 @@ class FollowUpDispatchService:
             logger.info("Cleaned up %d stale workflow run(s) on startup", cleaned)
         return cleaned
 
+    def fail_stuck_running_workflows(self, *, max_running_seconds: int) -> int:
+        """把 running 且运行时长超过 max_running_seconds 的 run 标记为 failed。
+
+        发布就绪修复（P1-4 solo 池看门狗）：``worker_pool=solo`` 时 ``time_limit``
+        无法强杀卡死的任务（无子进程可 kill），卡死任务会让 run 永远停在 running。
+        本方法供周期性 Beat 任务调用，纠正 UI/DB 状态。
+
+        注意：仅纠正状态，**无法**释放被卡任务占用的 solo worker 线程——资源恢复
+        仍需重启该 worker。阈值应大于最长合法任务时长（workflow ``time_limit``=7500s），
+        避免误杀正常长任务。
+        """
+        from datetime import timedelta
+
+        now = datetime.now(timezone.utc)
+        threshold = timedelta(seconds=max_running_seconds)
+        failed = 0
+        for run in self._repository.list_runs():
+            if run.status != ExecutionStatus.running:
+                continue
+            updated = (
+                run.updated_at
+                if run.updated_at.tzinfo
+                else run.updated_at.replace(tzinfo=timezone.utc)
+            )
+            if now - updated < threshold:
+                continue
+            with log_context(run_id=run.run_id):
+                logger.warning(
+                    "Marking stuck running workflow run as failed "
+                    "(updated_at=%s, threshold=%ss)",
+                    run.updated_at.isoformat(),
+                    max_running_seconds,
+                )
+                payload = WorkflowSubmitRequest(
+                    command_type=run.command_type,
+                    command_label=run.command_label,
+                    priority=run.priority,
+                    resource_profile=run.resource_profile,
+                    realtime_preferred=run.realtime_preferred,
+                    queue_tag=run.queue_tag,
+                    spatial_filter=run.spatial_filter,
+                    time_range=run.time_range,
+                    requested_outputs=run.requested_outputs,
+                    client=run.client,
+                    map_context=run.map_context,
+                    config_overrides=run.config_overrides,
+                )
+                self._persistence.save_run_status(
+                    run_status=self._transitions.build_execution_transition(
+                        run_id=run.run_id,
+                        payload=payload,
+                        status=ExecutionStatus.failed,
+                        progress=100,
+                        message="工作流运行时长超过看门狗阈值（疑似卡死），已标记失败。",
+                        created_at=run.created_at,
+                        updated_at=now,
+                        result_refs=run.result_refs,
+                        result_dto=run.result_dto,
+                        diagnostics=[
+                            f"running 状态超过 {max_running_seconds}s（solo 池 time_limit 无法强杀）。",
+                            "error_code=workflow_stuck_running_watchdog",
+                            f"last_updated_at={run.updated_at.isoformat()}",
+                        ],
+                        executor_metadata={
+                            **run.executor_metadata,
+                            "watchdog_failed_at": now.isoformat(),
+                            "cleanup_reason": "stuck_running_watchdog",
+                        },
+                    )
+                )
+                self._persistence.record_event(
+                    run_id=run.run_id,
+                    channel=EventChannel.log,
+                    level=LogLevel.warning,
+                    message="工作流运行超时（疑似卡死），已被看门狗标记失败。",
+                    progress=100,
+                    payload={
+                        "cleanup_reason": "stuck_running_watchdog",
+                        "previous_status": run.status.value,
+                    },
+                    created_at=now,
+                )
+                failed += 1
+        if failed > 0:
+            logger.info("Watchdog marked %d stuck running workflow run(s) as failed", failed)
+        return failed
+
     @staticmethod
     def _collect_live_celery_task_ids() -> set[str]:
         """Return task ids currently active, reserved, or unacked in the broker."""

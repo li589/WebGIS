@@ -363,6 +363,13 @@ class Settings:
     celery_broker_socket_connect_timeout: int = int(
         os.getenv("BACKEND_CELERY_BROKER_SOCKET_CONNECT_TIMEOUT", "10")
     )
+    # 发布就绪修复（P1-4）：solo 池看门狗阈值（秒）。worker_pool=solo 时 time_limit
+    # 无法强杀卡死任务，run 会永远停在 running。看门狗周期任务把"运行时长超此阈值"
+    # 的 run 标记为 failed（仅纠正状态，不释放被卡 worker）。默认 8100 > workflow
+    # 任务 time_limit=7500，避免误杀合法长任务。
+    workflow_stuck_watchdog_seconds: int = int(
+        os.getenv("BACKEND_WORKFLOW_STUCK_WATCHDOG_SECONDS", "8100")
+    )
     # Celery worker 并发度：每个 worker 进程的最大并发任务数。
     # launch.py 启动 7 个 worker，默认占满 CPU 会严重过订阅；建议物理核数/worker 数。
     celery_worker_concurrency: int = int(

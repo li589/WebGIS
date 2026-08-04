@@ -153,6 +153,13 @@ if celery_available:
             "schedule": crontab(minute=30, hour=3),
             "options": {"queue": settings.workflow_queue_batch},
         }
+    # 发布就绪修复（P1-4）：solo 池看门狗，每 15 分钟把卡死的 running 工作流标记为失败
+    if crontab is not None:
+        beat_schedule["watchdog-stuck-running-workflows"] = {
+            "task": "app.tasks.cleanup_tasks.watchdog_stuck_running_workflows",
+            "schedule": crontab(minute="*/15"),
+            "options": {"queue": settings.workflow_queue_batch},
+        }
     if beat_schedule:
         celery_app.conf.beat_schedule = beat_schedule
 else:  # pragma: no cover - exercised only when Celery is unavailable
