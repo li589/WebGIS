@@ -75,6 +75,11 @@ jobs:
       - name: Install unrar (for archive import tests)
         run: sudo apt-get update && sudo apt-get install -y unrar
 
+      # P1-8：生成 omega_avg_daily 端到端测试所需合成数据（Tools/test_data/ 不入库，CI 现生成），
+      # 使 AGENTS.md 点名的核心算法链在 CI 有回归而非永久 skip
+      - name: Generate synthetic data for omega_avg_daily e2e test
+        run: python -c "import sys; sys.path.insert(0,'Tools'); from generate_synthetic_test_data import generate_omega_avg_daily_inputs as g; g()"
+
       # P1-7：去 -x（拿全量失败画像）+ 覆盖率阈值（当前后端 ~54%，先设 50 为不倒退基线；
       # 若首次 CI 运行因 --cov 目标口径差异误红，微调 --cov 目标即可）
       - name: Run pytest

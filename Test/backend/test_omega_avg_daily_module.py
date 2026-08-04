@@ -18,8 +18,10 @@ from pathlib import Path
 import pytest
 
 # ── Provider path setup (must precede algorithm imports) ─────────────────────
+# 发布就绪修复（P1-8）：迁移残留修正。本测试现位于 Test/backend/，parents[2]=仓库根，
+# algorithms 包在 Code/ 下，需含 Code/（旧值缺 Code/，此前靠 conftest 兜底才未报错）。
 _PROVIDER_ROOT = (
-    Path(__file__).resolve().parents[2] / "algorithms" / "providers" / "Python"
+    Path(__file__).resolve().parents[2] / "Code" / "algorithms" / "providers" / "Python"
 )
 if str(_PROVIDER_ROOT) not in sys.path:
     sys.path.insert(0, str(_PROVIDER_ROOT))
@@ -32,10 +34,10 @@ from modules.omega_avg_daily import OmegaAvgDailyModule  # noqa: E402
 from workflow.schemas import NodeExecutionContext  # noqa: E402
 
 # ── Synthetic data root ─────────────────────────────────────────────────────
-# Tools/ lives at the repo root (parents[3] from Code/backend/tests/*.py),
-# unlike algorithms/ which is under Code/ (parents[2]).
+# 发布就绪修复（P1-8）：迁移残留修正。本测试现位于 Test/backend/，parents[2]=仓库根，
+# Tools/ 在仓库根下（旧值 parents[3] 是 Code/backend/tests/ 时代的推算，少一级）。
 _SYNTH_ROOT = (
-    Path(__file__).resolve().parents[3]
+    Path(__file__).resolve().parents[2]
     / "Tools"
     / "test_data"
     / "omega_avg_daily_inputs"
@@ -136,8 +138,11 @@ def _build_inputs(output_dir: Path) -> dict[str, object]:
 # ── Tests ───────────────────────────────────────────────────────────────────
 
 
+# 发布就绪修复（P1-8）：skip 守卫改为检查实际数据文件（omega_block_*.mat），
+# 而非仅目录存在——避免目录在但数据未生成时（CI/新 clone）误跑然后 FileNotFoundError。
 @pytest.mark.skipif(
-    not _SYNTH_ROOT.exists(),
+    not _SYNTH_ROOT.exists()
+    or not any((_SYNTH_ROOT / "omega_block").glob("omega_block_*.mat")),
     reason=(
         f"Synthetic D2 inputs not found at {_SYNTH_ROOT}. "
         "Run `python Tools/generate_synthetic_test_data.py` first."
