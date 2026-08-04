@@ -71,11 +71,17 @@ jobs:
           pip install -r requirements-dev.txt
           pip install pytest pytest-cov
 
+      # P1-13：archive 导入测试依赖 unrar 二进制（Windows 本地为 gitignore 的 vendor 二进制；CI 用 apt 安装）
+      - name: Install unrar (for archive import tests)
+        run: sudo apt-get update && sudo apt-get install -y unrar
+
+      # P1-7：去 -x（拿全量失败画像）+ 覆盖率阈值（当前后端 ~54%，先设 50 为不倒退基线；
+      # 若首次 CI 运行因 --cov 目标口径差异误红，微调 --cov 目标即可）
       - name: Run pytest
         env:
           REDIS_URL: redis://localhost:6379/0
           ENVIRONMENT: test
-        run: pytest Test/backend/ -x --tb=short -q
+        run: pytest Test/backend/ --tb=short -q --cov=Code/backend/app --cov-report=term --cov-fail-under=50
 
   # ── vitest：前端单元测试 ──────────────────────────────────────────────────
   vitest:
@@ -98,6 +104,90 @@ jobs:
       - name: Run vitest
         working-directory: Code/frontend
         run: npm run test
+
+  # ── pytest-algorithms：算法包测试（P1-7 补入 CI；独立 job 避免与 backend conftest 交互）──
+  pytest-algorithms:
+    name: pytest (algorithms)
+    runs-on: ubuntu-latest
+    needs: pre-commit
+    services:
+      redis:
+        image: redis:7-alpine
+        ports: ["6379:6379"]
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: |
+            Code/backend/requirements.txt
+            Code/backend/requirements-dev.txt
+
+      - name: Install backend deps
+        working-directory: Code/backend
+        run: pip install -r requirements-dev.txt
+
+      - name: Run pytest (algorithms)
+        env:
+          REDIS_URL: redis://localhost:6379/0
+          ENVIRONMENT: test
+        run: pytest Test/algorithms/ --tb=short -q
+
+  # ── build：前端生产构建 + 类型检查（P1-7 补生产构建门）──────────────────────
+  build:
+    name: build (frontend)
+    runs-on: ubuntu-latest
+    needs: pre-commit
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: Code/frontend/package-lock.json
+
+      - name: Install frontend deps
+        working-directory: Code/frontend
+        run: npm ci --prefer-offline
+
+      - name: Build (vue-tsc + vite)
+        working-directory: Code/frontend
+        run: npm run build
+
+  # ── security-scan：依赖漏洞扫描（P1-7；初期非阻塞，避免误拦）───────────────
+  security-scan:
+    name: security scan
+    runs-on: ubuntu-latest
+    needs: pre-commit
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: pip-audit (backend)
+        working-directory: Code/backend
+        run: |
+          pip install pip-audit
+          pip-audit -r requirements.txt || true
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: npm audit (frontend)
+        working-directory: Code/frontend
+        run: npm audit --audit-level=high || true
 
   # ── check:openapi：前后端契约漂移检测 ──────────────────────────────────────
   check-openapi:
