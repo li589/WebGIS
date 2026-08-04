@@ -136,6 +136,27 @@ def create_app() -> FastAPI:
         allow_headers=["*"],
     )
 
+    # 发布就绪修复（P1-2）：/config 与 /import 写接口的 IP 级限流（超阈 429）。
+    # test 环境旁路，避免影响测试。
+    @app.middleware("http")
+    async def write_rate_limit_middleware(request: Request, call_next):
+        if (settings.environment or "").lower() not in ("test", "testing"):
+            from app.api.rate_limit import (
+                check_write_rate_limit,
+                client_ip,
+                should_rate_limit_write,
+            )
+
+            if should_rate_limit_write(request.url.path, request.method):
+                if not check_write_rate_limit(client_ip(request)):
+                    from fastapi.responses import JSONResponse
+
+                    return JSONResponse(
+                        status_code=429,
+                        content={"detail": "写请求过于频繁，请稍后再试。"},
+                    )
+        return await call_next(request)
+
     @app.middleware("http")
     async def request_context_middleware(request: Request, call_next):
         request_id = request.headers.get("x-request-id", f"req-{uuid4().hex[:12]}")
