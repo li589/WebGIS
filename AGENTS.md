@@ -71,6 +71,8 @@ CGDA（综合地理数据分析系统）：**面向课题组与大气研究院�
 
 4. **Open-Meteo volume**：named volume `backend_open-meteo-data`（名可经 `Code/infra/data-sync/.env` 的 `OPEN_METEO_DATA_VOLUME` 覆盖），落在 Docker Desktop VHDX 内（`I:\Docker\DockerDesktop`）。**勿用 Windows 路径 bind mount** 替代。API 在 backend 运行栈（容器 `cgda-open-meteo`）；同步在 `Code/infra/data-sync`（`-p data-sync`）。两栈共享同一 volume 但 compose project 不同，改动 compose 时勿混用 project 名。
 
+5. **生产禁止演示开关**：勿开启 `BACKEND_DEMO_SOURCES_ENABLED` / `BACKEND_NODE_STUBS_VISIBLE`；机构交付核对见 `.ai/docs/reference/delivery-checklist.md`。
+
 ## "改 X 则跑 Y" 映射
 
 | 改动区域 (X) | 定位模块 | 验证命令 (Y) |
@@ -90,6 +92,7 @@ CGDA（综合地理数据分析系统）：**面向课题组与大气研究院�
 | 图层工作区持久化 | `stores/layers/workspace-persist.ts`、`stores/layers/index.ts`；说明见 `.ai/docs/design/图层持久化说明.md` | `cd Code/frontend && npm run test -- workspace-persist` |
 | 天气瓦片 FE 调度 / 图例 | `weather-tile-manager.ts`、`weather-tile-banner.ts`、`effective-layer-symbology.ts` | `cd Code/frontend && npm run test -- weather-tile weather-tile-banner effective-layer-symbology` |
 | 前后端契约 / OpenAPI | `Code/frontend/openapi.json`、`Code/shared/contracts/` | `cd Code/frontend && npm run check:openapi` |
+| 图层目录漂移 | FE `catalog.ts` LAYER_LIBRARY ↔ BE `catalog_seeds/*_descriptors.json` | `cd Code/frontend && npm run check:catalog` |
 | Python 算法包 | `Code/algorithms/providers/Python/` | `pre-commit run --all-files`（ruff + mypy 覆盖 `algorithms/`） |
 | 任意提交前 | 全仓库 | `pre-commit run --all-files`（ruff / mypy / eslint / prettier / 契约检查） |
 

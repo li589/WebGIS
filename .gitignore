@@ -101,6 +101,15 @@ Tools/reports/data_production_e2e_*
 /tmp_*.txt
 /tmp_*.json
 /temp_wf_*.json
+
+# Local Windows env probe / repair scratch (machine-specific, not part of the project)
+/_env_*.bat
+/_env_*.log
+/_probe_*.bat
+/_xlsx_dump.json
+/fix_wsl_vhdx.bat
+/rebuild_env_python.bat
+/wsl_fix_result.log
 .trae/debug-*.png
 .trae/documents/旧对话*.md
 .trae/documents/plan_*.md

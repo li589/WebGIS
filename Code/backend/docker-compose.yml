@@ -48,8 +48,9 @@ services:
       - "127.0.0.1:9100:9000"    # API (宿主机 9100 -> 容器 9000)
       - "127.0.0.1:9101:9001"    # Console (宿主机 9101 -> 容器 9001)
     environment:
-      # 凭据经环境变量注入；生产部署必须覆盖默认值（见 .env.example，且后端
-      # BACKEND_MINIO_ACCESS_KEY/SECRET 需与此一致）。默认值仅为本地联调保留。
+      # 凭据经环境变量注入。生产/他机构部署必须覆盖 minioadmin 默认值
+      #（MINIO_ROOT_USER/PASSWORD，且后端 BACKEND_MINIO_* 与此一致）。
+      # 默认值仅本地联调保留，切勿原样上生产。
       MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minioadmin}
       MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-minioadmin}
       MINIO_DEFAULT_BUCKETS: workflow-artifacts,gee-exports,workflow-artifacts-public

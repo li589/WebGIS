@@ -1,4 +1,5 @@
 {
+  "_readme": "机构模板示例：路径仅示意本实验室 I: 布局。他机构请复制为本机 BACKEND_DOWNLOAD_SOURCE_URI_MAP 指向文件，并将 file:///I:/Geograph_DataSet 替换为实际 BACKEND_DATA_ROOT（或 HTTP/S3 URI）。勿在生产照抄本文件。",
   "wind-field": "file:///I:/Geograph_DataSet/Meteorological/Weather/WindField/10m/{hour}.json",
   "wind-field-80m": "file:///I:/Geograph_DataSet/Meteorological/Weather/WindField/80m/{hour}.json",
   "wind-field-120m": "file:///I:/Geograph_DataSet/Meteorological/Weather/WindField/120m/{hour}.json",

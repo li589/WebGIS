@@ -15,6 +15,7 @@
     "test": "vitest run",
     "gen:types": "openapi-typescript ./openapi.json -o ./src/types/api-contracts.ts",
     "check:openapi": "python ../backend/scripts/check_openapi_drift.py",
+    "check:catalog": "python ../../Tools/check_catalog_drift.py",
     "lint": "eslint src",
     "lint:strict": "eslint src --max-warnings=0",
     "lint:fix": "eslint src --fix",
