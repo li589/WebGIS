@@ -224,7 +224,6 @@ def _download_with_retry(
     size_mb: float | None,
     progress_callback: Callable[[int, int], None] | None,
 ) -> bool:
-    import requests  # type: ignore
 
     dest.parent.mkdir(parents=True, exist_ok=True)
     tmp = dest.with_suffix(dest.suffix + ".part")

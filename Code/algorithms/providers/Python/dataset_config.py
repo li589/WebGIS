@@ -52,60 +52,56 @@ if TYPE_CHECKING:
 # 根目录配置
 # ===========================================================================
 
-# 地理数据根目录
-_BACKEND_DATA_ROOT_DEFAULT = r"I:\Geograph_DataSet"
-_BACKEND_DATA_ROOT_ENV = os.getenv("BACKEND_DATA_ROOT", _BACKEND_DATA_ROOT_DEFAULT)
+# 地理数据根目录（去硬编码批 1：不再默认 I:\Geograph_DataSet，禁止静默回退盘符）
+_BACKEND_DATA_ROOT_ENV = os.getenv("BACKEND_DATA_ROOT", "").strip()
 
-# 产物输出根目录
-_BACKEND_OUTPUT_ROOT_DEFAULT = r"I:\Geograph_DataSet\ProjectOutput"
-_BACKEND_OUTPUT_ROOT_ENV = os.getenv(
-    "BACKEND_OUTPUT_ROOT", _BACKEND_OUTPUT_ROOT_DEFAULT
-)
+# 产物输出根目录（未设时由 data_root/ProjectOutput 推导）
+_BACKEND_OUTPUT_ROOT_ENV = os.getenv("BACKEND_OUTPUT_ROOT", "").strip()
 
 # 存储后端类型
 _BACKEND_STORAGE_BACKEND = os.getenv("BACKEND_STORAGE_BACKEND", "local")
 
 
+def _is_test_env() -> bool:
+    be = (os.getenv("BACKEND_ENV") or os.getenv("ENVIRONMENT") or "").lower()
+    return be in {"test", "testing"}
+
+
 def _get_data_root() -> Path:
-    """获取数据根目录，优先使用环境变量，否则使用默认值。"""
-    root = Path(_BACKEND_DATA_ROOT_ENV)
-    if root.exists():
-        return root
-    # Fallback: 尝试默认路径
-    default = Path(_BACKEND_DATA_ROOT_DEFAULT)
-    if default.exists():
-        return default
-    return root  # 返回配置路径（即使不存在，供后续检查）
+    """获取数据根目录。
+
+    必须设置 ``BACKEND_DATA_ROOT``（或处于 test 环境）。不再在路径不存在时
+    静默回退到实验室盘符 ``I:\\Geograph_DataSet``。
+    """
+    if _BACKEND_DATA_ROOT_ENV:
+        return Path(_BACKEND_DATA_ROOT_ENV)
+    if _is_test_env():
+        tmp = os.environ.get("TMP") or os.environ.get("TEMP") or "."
+        return Path(tmp) / "cgda_algo_test_data_root"
+    raise RuntimeError(
+        "BACKEND_DATA_ROOT is not set. Configure the geographic dataset root "
+        "(lab example only: I:\\Geograph_DataSet). Hardcoded drive-letter "
+        "fallback has been removed."
+    )
 
 
 def _get_output_root() -> Path:
     """获取产物输出根目录。"""
-    root = Path(_BACKEND_OUTPUT_ROOT_ENV)
-    if root.exists():
-        return root
-    # Fallback: 尝试默认路径
-    default = Path(_BACKEND_OUTPUT_ROOT_DEFAULT)
-    if default.exists():
-        return default
-    return root
-
-
-# ProjectBackup 根目录（用于 resolve_dataset_path 的兜底递归搜索）
-_BACKEND_PROJECTBACKUP_ROOT_DEFAULT = r"I:\ProjectBackup\GeoPaper"
+    if _BACKEND_OUTPUT_ROOT_ENV:
+        return Path(_BACKEND_OUTPUT_ROOT_ENV)
+    return _get_data_root() / "ProjectOutput"
 
 
 def _get_projectbackup_root() -> Path:
-    """获取 ProjectBackup 根目录，优先使用环境变量，否则使用默认值。"""
-    root = Path(
-        os.getenv("BACKEND_PROJECTBACKUP_ROOT", _BACKEND_PROJECTBACKUP_ROOT_DEFAULT)
-    )
-    if root.exists():
-        return root
-    # Fallback: 尝试默认路径
-    default = Path(_BACKEND_PROJECTBACKUP_ROOT_DEFAULT)
-    if default.exists():
-        return default
-    return root
+    """获取 ProjectBackup 根目录（可选；未配置则指向不存在路径）。"""
+    env_val = os.getenv("BACKEND_PROJECTBACKUP_ROOT", "").strip()
+    if env_val:
+        return Path(env_val)
+    if _is_test_env():
+        tmp = os.environ.get("TMP") or os.environ.get("TEMP") or "."
+        return Path(tmp) / "cgda_algo_test_projectbackup"
+    # 未配置时返回占位路径（exists()=False），避免回退实验室盘
+    return Path(".__cgda_no_projectbackup_root__")
 
 
 # 公开属性

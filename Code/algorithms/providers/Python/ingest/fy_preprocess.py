@@ -23,7 +23,6 @@ r"""FY-3B/3D MWRI HDF 亮温预处理模块。
 
 from __future__ import annotations
 
-import calendar
 import glob
 import logging
 import os
@@ -39,8 +38,10 @@ from typing import Sequence
 import h5py
 import netCDF4 as nc
 import numpy as np
-import pandas as pd
 import rasterio
+
+# EASE-Grid 2.0 全球投影参数（精确 NSIDC 对称角点，禁止两位小数近似）
+from data_access.ease_grid_constants import EASE2_GLOBAL_BOUNDS, EASE2_SHAPE_9KM
 
 logger = logging.getLogger(__name__)
 
@@ -116,9 +117,6 @@ def _ensure_gdal_bins() -> None:
 # ---------------------------------------------------------------------------
 # 卫星配置
 # ---------------------------------------------------------------------------
-
-# EASE-Grid 2.0 全球投影参数（精确 NSIDC 对称角点，禁止两位小数近似）
-from data_access.ease_grid_constants import EASE2_GLOBAL_BOUNDS, EASE2_SHAPE_9KM
 
 _EASE2_GLOBAL_EXTENT = EASE2_GLOBAL_BOUNDS
 _EASE2_GLOBAL_SIZE = (EASE2_SHAPE_9KM[1], EASE2_SHAPE_9KM[0])  # (cols, rows)

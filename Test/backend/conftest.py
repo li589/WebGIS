@@ -14,18 +14,25 @@ os.environ["ENVIRONMENT"] = "test"
 os.environ["BACKEND_ENV"] = "test"
 os.environ["BACKEND_WORKFLOW_EXECUTOR"] = "sync"
 
-try:
-    import app.core.config
-    app.core.config.settings = app.core.config.Settings()
-except Exception:
-    pass
-
 # 测试套件已从 Code/backend/tests/ 迁至 Test/backend/，路径需回归仓库根再定位。
 # conftest 位于 <repo>/Test/backend/conftest.py → parents[2] = 仓库根。
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 _BACKEND_ROOT = _REPO_ROOT / "Code" / "backend"
 _CODE_ROOT = _REPO_ROOT / "Code"
 _GEE_SRC = _BACKEND_ROOT / "app" / "gee" / "core" / "src"
+
+# 去硬编码批 1：算法/后端不再默认 I:；测试注入 DATA_ROOT（实验室盘存在则复用）
+if not os.environ.get("BACKEND_DATA_ROOT", "").strip():
+    _lab_root = Path(r"I:\Geograph_DataSet")
+    os.environ["BACKEND_DATA_ROOT"] = str(
+        _lab_root if _lab_root.exists() else _BACKEND_ROOT / ".pytest_tmp" / "data_root"
+    )
+
+try:
+    import app.core.config
+    app.core.config.settings = app.core.config.Settings()
+except Exception:
+    pass
 
 for path in (str(_BACKEND_ROOT), str(_CODE_ROOT), str(_GEE_SRC)):
     if path not in sys.path:
