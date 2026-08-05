@@ -26,7 +26,7 @@
       "properties": {
         "start_date": "20251227",
         "end_date": "20251231",
-        "local_dir": "I:\\Geograph_DataSet\\Meteorological\\Weather\\GLDAS_Download",
+        "local_dir": "{DATA_ROOT_WIN}\\Meteorological\\Weather\\GLDAS_Download",
         "version": "2.1",
         "short_name": "GLDAS_NOAH025_3H",
         "dry_run": false,

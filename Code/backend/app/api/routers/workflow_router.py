@@ -339,16 +339,18 @@ def materialize_workflow_map_layers(run_id: str) -> dict:
                     Path(uri.replace("file:///", "").replace("file://", ""))
                 )
         data_root = Path(getattr(settings, "data_root", "") or "")
-        runtime_candidates = [
-            data_root
-            / "_runtime"
-            / "python_provider"
-            / "products"
-            / "omega_sf_fenkuai",
-            Path(
-                r"I:\Geograph_DataSet\_runtime\python_provider\products\omega_sf_fenkuai"
-            ),
-        ]
+        workspace = Path(getattr(settings, "python_provider_workspace", "") or "")
+        runtime_candidates: list[Path] = []
+        if workspace.parts:
+            runtime_candidates.append(workspace / "products" / "omega_sf_fenkuai")
+        if data_root.parts:
+            runtime_candidates.append(
+                data_root
+                / "_runtime"
+                / "python_provider"
+                / "products"
+                / "omega_sf_fenkuai"
+            )
         for path in [*candidates, *runtime_candidates]:
             if path.is_dir() and any(path.glob("????????_????????.mat")):
                 for variable, label, palette in (

@@ -305,7 +305,9 @@ class FollowUpDispatchService:
                 )
                 failed += 1
         if failed > 0:
-            logger.info("Watchdog marked %d stuck running workflow run(s) as failed", failed)
+            logger.info(
+                "Watchdog marked %d stuck running workflow run(s) as failed", failed
+            )
         return failed
 
     @staticmethod

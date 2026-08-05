@@ -3,7 +3,7 @@
     "kind": "system",
     "engine": "python_provider",
     "name": "本地 SMAP 土壤湿度（硬盘路径）",
-    "description": "目的：读取本机已落盘的 SMAP L3（如 I:/Geograph_DataSet/SMAP）。不访问开放门户。若要从 NSIDC 下载，请用系统模板 open_data_nsidc_smap_sample。",
+    "description": "目的：读取本机已落盘的 SMAP L3（path 使用 {DATA_ROOT}/SMAP，由 BACKEND_DATA_ROOT 展开）。不访问开放门户。若要从 NSIDC 下载，请用系统模板 open_data_nsidc_smap_sample。",
     "author": "system",
     "readonly": true,
     "is_template": true,
@@ -20,7 +20,7 @@
       "type": "data/source",
       "pos": [100, 140],
       "properties": {
-        "path": "I:/Geograph_DataSet/SMAP",
+        "path": "{DATA_ROOT}/SMAP",
         "dataset_key": "SMAP_L3"
       }
     },

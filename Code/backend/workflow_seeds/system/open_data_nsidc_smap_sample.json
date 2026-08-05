@@ -63,6 +63,6 @@
     "purpose": "open_portal_sample",
     "portal": "nsidc_data",
     "cred_profile": "earthdata",
-    "notes": "与本地盘 smap_soil_moisture 系统流互补：本流走开放下载，本地流走 I:/Geograph_DataSet。"
+    "notes": "与本地盘 smap_soil_moisture 系统流互补：本流走开放下载，本地流走 {DATA_ROOT}。"
   }
 }

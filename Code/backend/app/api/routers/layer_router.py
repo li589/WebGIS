@@ -8,6 +8,7 @@ from typing import Any
 
 from fastapi import APIRouter, HTTPException, Query, Response, status
 
+from app.core.config import settings
 from app.services.crs import crs_transformer
 from app.services.crs.crs_registry import normalize_crs_code
 from app.services.layer_catalog import get_layer_catalog
@@ -15,7 +16,6 @@ from app.services.overlay_registry import (
     get_overlay_spec,
     list_overlay_ids,
     read_bounds,
-    read_png_bytes,
 )
 from app.services.workflow_request_resolver import describe_layer_run_readiness
 from shared.contracts.api_contracts import (
@@ -29,9 +29,18 @@ router = APIRouter()
 _READINESS_TIMEOUT = 8.0  # 单图层就绪检查最大耗时（秒）
 
 
+def _catalog_items_for_environment(items: list) -> list:
+    """非 development/test 隐藏 status=placeholder（实验室占位层，机构包可剔除）。"""
+    env = (settings.environment or "").strip().lower()
+    if env in {"development", "dev", "test", "testing"}:
+        return list(items)
+    return [item for item in items if getattr(item, "status", None) != "placeholder"]
+
+
 @router.get("/layers", tags=["catalog"], response_model=LayerCatalogResponse)
 def list_layers() -> LayerCatalogResponse:
     catalog = get_layer_catalog()
+    visible_items = _catalog_items_for_environment(catalog.items)
 
     def _check_readiness(item) -> tuple[str, dict]:
         readiness = describe_layer_run_readiness(item.layer_id) or {}
@@ -41,7 +50,7 @@ def list_layers() -> LayerCatalogResponse:
     executor = ThreadPoolExecutor(max_workers=8)
     try:
         futures = {
-            executor.submit(_check_readiness, desc): desc for desc in catalog.items
+            executor.submit(_check_readiness, desc): desc for desc in visible_items
         }
         for future in as_completed(futures, timeout=_READINESS_TIMEOUT):
             try:
@@ -60,7 +69,7 @@ def list_layers() -> LayerCatalogResponse:
         executor.shutdown(wait=False, cancel_futures=True)
 
     items = []
-    for descriptor in catalog.items:
+    for descriptor in visible_items:
         readiness = layer_readiness.get(descriptor.layer_id, {})
         items.append(
             descriptor.model_copy(
@@ -99,17 +108,44 @@ def transform_geo_point(
 
 @router.get("/overlay-preview/{layer_id}", tags=["overlay"])
 def get_overlay_preview(
-    layer_id: str, time: str | None = Query(default=None)
+    layer_id: str,
+    time: str | None = Query(default=None),
+    palette: str | None = Query(default=None),
+    min_value: float | None = Query(default=None),
+    max_value: float | None = Query(default=None),
+    nodata_mode: str | None = Query(default=None),
+    nodata_color: str | None = Query(default=None),
 ) -> Response:
     """返回图层的 PNG 预览图（地理配准），供前端 MapLibre image source 使用。
 
     对于时间序列图层，可通过 `?time=YYYYMMDD` 指定时间标签；
     未指定时使用 default_time。
+
+    有可读源且传入 palette/min/max/nodata 时动态重着色；否则返回烘焙 PNG。
     """
+    from app.services.overlay_recolor import render_overlay_preview_styled
+
+    styled = bool(
+        (palette and palette.strip())
+        or min_value is not None
+        or max_value is not None
+        or (nodata_mode and nodata_mode.strip())
+        or (nodata_color and nodata_color.strip())
+    )
+    content = render_overlay_preview_styled(
+        layer_id,
+        time=time,
+        palette=palette,
+        min_value=min_value,
+        max_value=max_value,
+        nodata_mode=nodata_mode,
+        nodata_color=nodata_color,
+    )
+    cache = "no-cache, must-revalidate" if styled else "public, max-age=60"
     return Response(
-        content=read_png_bytes(layer_id, time),
+        content=content,
         media_type="image/png",
-        headers={"Cache-Control": "no-cache, must-revalidate"},
+        headers={"Cache-Control": cache, "Vary": "Accept-Encoding"},
     )
 
 
@@ -120,6 +156,11 @@ def get_overlay_tile(
     x: int,
     y: int,
     time: str | None = Query(default=None),
+    palette: str | None = Query(default=None),
+    min_value: float | None = Query(default=None),
+    max_value: float | None = Query(default=None),
+    nodata_mode: str | None = Query(default=None),
+    nodata_color: str | None = Query(default=None),
 ) -> Response:
     """Web Mercator XYZ PNG tile for imported / geotiff-backed overlays."""
     from app.services.overlay_tile_service import render_overlay_tile
@@ -139,7 +180,17 @@ def get_overlay_tile(
             detail=f"Overlay has no GeoTIFF source for XYZ tiles: {layer_id}",
         )
     try:
-        png = render_overlay_tile(str(source), z, x, y)
+        png = render_overlay_tile(
+            str(source),
+            z,
+            x,
+            y,
+            palette=palette or spec.palette or "viridis",
+            min_value=min_value if min_value is not None else spec.vmin,
+            max_value=max_value if max_value is not None else spec.vmax,
+            nodata_mode=nodata_mode,
+            nodata_color=nodata_color,
+        )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except FileNotFoundError as exc:
@@ -154,7 +205,7 @@ def get_overlay_tile(
     return Response(
         content=png,
         media_type="image/png",
-        headers={"Cache-Control": "public, max-age=120"},
+        headers={"Cache-Control": "public, max-age=120", "Vary": "Accept-Encoding"},
     )
 
 

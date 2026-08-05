@@ -54,7 +54,10 @@ _DEFAULT_RETENTION_DAYS = 30
 SCHEMA_VERSION = 3
 SCHEMA_CHANGES: list[tuple[int, str]] = [
     (1, "初始 schema：workflow_runs / workflow_events / runtime_config"),
-    (2, "workflow_runs 加 request_json / run_class 列 + idx_workflow_runs_class_status"),
+    (
+        2,
+        "workflow_runs 加 request_json / run_class 列 + idx_workflow_runs_class_status",
+    ),
     (3, "新增 schema_meta 版本跟踪表（P2-3）"),
 ]
 

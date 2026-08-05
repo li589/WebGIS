@@ -254,6 +254,23 @@ class WorkflowLifecycleService:
             backoff_seconds=backoff_seconds,
         )
 
+    def _is_protected_terminal(self, run_id: str) -> tuple[bool, str]:
+        """审查 BUG-2：看门狗失败 / 用户取消为受保护终态，禁止后续成功或失败收口覆盖。
+
+        Returns:
+            (blocked, reason) — blocked 为 True 时应跳过 status 写入。
+        """
+        current = self._repository.get_run(run_id)
+        if current is None:
+            return False, ""
+        if current.status == ExecutionStatus.cancelled:
+            return True, "cancelled"
+        if current.status == ExecutionStatus.failed:
+            meta = current.executor_metadata or {}
+            if meta.get("cleanup_reason") == "stuck_running_watchdog":
+                return True, "stuck_running_watchdog"
+        return False, ""
+
     def finalize_workflow_success(
         self,
         *,
@@ -262,6 +279,47 @@ class WorkflowLifecycleService:
         execution,
         requested_at: datetime,
     ) -> None:
+        blocked, reason = self._is_protected_terminal(run_id)
+        if blocked:
+            logger.warning(
+                "Skip finalize_workflow_success for %s: protected terminal (%s); "
+                "will not overwrite with succeeded",
+                run_id,
+                reason,
+            )
+            # 仍 materialize 诊断用产物信息，但不改 status
+            try:
+                result_refs, spill_diagnostics = (
+                    result_storage_service.materialize_result_refs(
+                        run_id=run_id,
+                        result_refs=execution.result_refs,
+                    )
+                )
+                if result_refs or spill_diagnostics:
+                    self._persistence.record_event(
+                        run_id=run_id,
+                        channel=EventChannel.log,
+                        level=LogLevel.warning,
+                        message=(
+                            "工作流 worker 完成后本欲标为成功，但 run 已处于受保护终态"
+                            f"（{reason}），保留原状态；结果引用数={len(result_refs)}。"
+                        ),
+                        progress=100,
+                        payload={
+                            "skipped_success_finalize": True,
+                            "protected_reason": reason,
+                            "result_count": len(result_refs),
+                            "spill_count": len(spill_diagnostics),
+                        },
+                        created_at=datetime.now(timezone.utc),
+                    )
+            except Exception:
+                logger.exception(
+                    "Diagnostic materialize after protected-terminal skip failed for %s",
+                    run_id,
+                )
+            return
+
         result_refs, spill_diagnostics = result_storage_service.materialize_result_refs(
             run_id=run_id,
             result_refs=execution.result_refs,
@@ -342,6 +400,15 @@ class WorkflowLifecycleService:
         category: FailureCategory | None = None,
         attempt_count: int = 1,
     ) -> None:
+        blocked, reason = self._is_protected_terminal(run_id)
+        if blocked:
+            logger.warning(
+                "Skip finalize_workflow_failure for %s: protected terminal (%s)",
+                run_id,
+                reason,
+            )
+            return
+
         failed_at = datetime.now(timezone.utc)
         diagnostics = [
             "workflow-runs 已进入服务编排链，但本次执行失败。",
