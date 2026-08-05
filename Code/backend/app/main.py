@@ -93,9 +93,13 @@ async def lifespan(app: FastAPI):
 
     # 单一配置投影：env + DB api keys + runtime overrides
     try:
-        from app.services.effective_config import hydrate_effective_config
+        from app.services.effective_config import (
+            assert_data_root_policy,
+            hydrate_effective_config,
+        )
 
         hydrate_effective_config()
+        assert_data_root_policy()
     except Exception:
         logger.exception("Failed to hydrate effective config on startup")
         raise
@@ -141,7 +145,11 @@ def create_app() -> FastAPI:
     # 且 development/test 环境旁路（开发、调试时关闭 IP 限制），仅 production 生效。
     @app.middleware("http")
     async def write_rate_limit_middleware(request: Request, call_next):
-        if (settings.environment or "").lower() not in ("test", "testing", "development"):
+        if (settings.environment or "").lower() not in (
+            "test",
+            "testing",
+            "development",
+        ):
             from app.api.rate_limit import (
                 check_write_rate_limit,
                 client_ip,

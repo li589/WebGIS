@@ -70,6 +70,19 @@ def assert_encryption_policy() -> None:
     )
 
 
+def assert_data_root_policy() -> None:
+    """非 development/test 环境缺少 BACKEND_DATA_ROOT 时 fail-fast（去硬编码批 1）。"""
+    env = (settings.environment or "").lower()
+    if env in {"development", "dev", "test", "testing"}:
+        return
+    if not (settings.data_root or "").strip():
+        raise RuntimeError(
+            "BACKEND_DATA_ROOT is required outside development. "
+            "Refusing to start without a configured geographic data root "
+            "(do not rely on a hardcoded lab drive letter)."
+        )
+
+
 def is_secrets_insecure() -> bool:
     return _secrets_insecure
 

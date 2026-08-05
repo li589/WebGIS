@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import logging
 import os
 from functools import lru_cache
@@ -514,6 +515,42 @@ def reload_gee_account_pool() -> tuple[bool, int, str]:
 # ── 常规配置 ──────────────────────────────────────────────────────────────────
 
 
+def _parse_map_aoi_presets(raw: str) -> list[dict[str, Any]]:
+    text = (raw or "").strip()
+    if not text:
+        return []
+    try:
+        data = json.loads(text)
+    except json.JSONDecodeError:
+        return []
+    if not isinstance(data, list):
+        return []
+    presets: list[dict[str, Any]] = []
+    for item in data:
+        if not isinstance(item, dict):
+            continue
+        label = item.get("label")
+        try:
+            west = float(item["west"])
+            south = float(item["south"])
+            east = float(item["east"])
+            north = float(item["north"])
+        except (KeyError, TypeError, ValueError):
+            continue
+        if not isinstance(label, str) or not label.strip():
+            continue
+        presets.append(
+            {
+                "label": label.strip(),
+                "west": west,
+                "south": south,
+                "east": east,
+                "north": north,
+            }
+        )
+    return presets
+
+
 def get_general_config() -> dict[str, Any]:
     """获取常规配置（脱敏）。"""
     return {
@@ -550,6 +587,11 @@ def get_general_config() -> dict[str, Any]:
         "redis_url": settings.redis_url,
         "storage_backend": settings.storage_backend,
         "reload": settings.reload,
+        "map_default_longitude": settings.map_default_longitude,
+        "map_default_latitude": settings.map_default_latitude,
+        "map_default_zoom": settings.map_default_zoom,
+        "map_default_tile_source": settings.map_default_tile_source,
+        "map_aoi_presets": _parse_map_aoi_presets(settings.map_aoi_presets_json),
     }
 
 

@@ -53,12 +53,20 @@ _WRITE_METHODS = ("POST", "PUT", "DELETE", "PATCH")
 
 
 def client_ip(request) -> str:  # type: ignore[no-untyped-def]
-    forwarded = request.headers.get("x-forwarded-for")
-    if forwarded:
-        return forwarded.split(",")[0].strip()
-    real_ip = request.headers.get("x-real-ip")
-    if real_ip:
-        return real_ip
+    """解析限流用客户端 IP。
+
+    审查 BUG-3：默认不信任 ``X-Forwarded-For`` / ``X-Real-IP``（可被客户端伪造）。
+    仅当 ``settings.trust_proxy``（``BACKEND_TRUST_PROXY``）为真时才解析转发头。
+    """
+    from app.core.config import settings
+
+    if settings.trust_proxy:
+        forwarded = request.headers.get("x-forwarded-for")
+        if forwarded:
+            return forwarded.split(",")[0].strip()
+        real_ip = request.headers.get("x-real-ip")
+        if real_ip:
+            return real_ip
     return request.client.host if request.client else "unknown"
 
 

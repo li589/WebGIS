@@ -79,19 +79,15 @@ class HttpSourceFetcher(SourceFetcher):
     ) -> FetchResult:
         fetched_at = datetime.now(timezone.utc).isoformat()
         try:
-            import urllib.request
+            # 发布就绪修复（P0-2）+ 审查 BUG-1：safe_urlopen 对初始 URL 与每次
+            # 重定向 Location 均做 SSRF 校验，避免 urlopen 默认跟随 3xx 绕过到环回。
+            from app.core.ssrf import safe_urlopen
 
-            # 发布就绪修复（P0-2）：出站前做 SSRF 校验，阻断环回/链路本地(云元数据)/
-            # 保留/组播地址；私网默认放行以兼容内网数据源（可用 allow_private=False 收紧）。
-            from app.core.ssrf import validate_outbound_url
-
-            validate_outbound_url(source_uri)
-
-            req = urllib.request.Request(
+            with safe_urlopen(
                 source_uri,
+                timeout=DEFAULT_HTTP_TIMEOUT,
                 headers={"User-Agent": "cgda-backend-download-service/1.0"},
-            )
-            with urllib.request.urlopen(req, timeout=DEFAULT_HTTP_TIMEOUT) as response:  # noqa: S310 - 源 URL 经 validate_outbound_url 校验
+            ) as response:
                 data = response.read()
                 content_type = response.headers.get(
                     "Content-Type", "application/octet-stream"
@@ -385,10 +381,7 @@ class DemoSourceFetcher(SourceFetcher):
     ) -> FetchResult:
         from app.core.config import settings
 
-        if (
-            settings.environment != "development"
-            and not settings.demo_sources_enabled
-        ):
+        if settings.environment != "development" and not settings.demo_sources_enabled:
             raise ValueError(
                 "demo:// 为占位演示数据源，不产生真实数据，当前环境（"
                 f"{settings.environment}）已禁用。展出演示请设 "

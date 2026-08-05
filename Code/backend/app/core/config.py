@@ -42,6 +42,14 @@ class Settings:
     # 此前默认 "development" 会在未配置 API Key 时静默放行所有写接口（见 app/api/deps.py）。
     # 本地联调请在 Code/backend/.env 显式设置 BACKEND_ENV=development 以保留开发旁路。
     environment: str = os.getenv("BACKEND_ENV", "production")
+    # 审查 BUG-3：仅当后端位于受信反代（Nginx gateway）之后时开启，才信任
+    # X-Forwarded-For / X-Real-IP；默认 false，写限流用 request.client.host，防伪造。
+    trust_proxy: bool = os.getenv("BACKEND_TRUST_PROXY", "false").lower() in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }
     host: str = os.getenv("BACKEND_HOST", "127.0.0.1")
     port: int = int(os.getenv("BACKEND_PORT", "8000"))
     reload: bool = os.getenv("BACKEND_RELOAD", "true").lower() == "true"
@@ -159,6 +167,25 @@ class Settings:
     weather_default_place_name: str = os.getenv(
         "BACKEND_WEATHER_DEFAULT_PLACE_NAME", "Guangzhou"
     )
+    # 地图默认视口（与天气默认点同源缺省；机构可经 BACKEND_MAP_DEFAULT_* 覆盖）
+    map_default_longitude: float = float(
+        os.getenv(
+            "BACKEND_MAP_DEFAULT_LONGITUDE",
+            os.getenv("BACKEND_WEATHER_DEFAULT_LONGITUDE", "113.2644"),
+        )
+    )
+    map_default_latitude: float = float(
+        os.getenv(
+            "BACKEND_MAP_DEFAULT_LATITUDE",
+            os.getenv("BACKEND_WEATHER_DEFAULT_LATITUDE", "23.1291"),
+        )
+    )
+    map_default_zoom: float = float(os.getenv("BACKEND_MAP_DEFAULT_ZOOM", "4.8"))
+    map_default_tile_source: str = os.getenv(
+        "BACKEND_MAP_DEFAULT_TILE_SOURCE", "gaode-street"
+    )
+    # 可选机构 AOI 预设 JSON 数组：[{"label":"...","west":..,"south":..,"east":..,"north":..}]
+    map_aoi_presets_json: str = os.getenv("BACKEND_MAP_AOI_PRESETS", "")
     workflow_queue_realtime: str = os.getenv(
         "BACKEND_WORKFLOW_QUEUE_REALTIME", "realtime"
     )
@@ -403,10 +430,11 @@ class Settings:
     # ---- SSH 远程同步 ----
     ssh_hpc_host: str = os.getenv("BACKEND_SSH_HPC_HOST", "127.0.0.1")
     ssh_hpc_port: int = int(os.getenv("BACKEND_SSH_HPC_PORT", "2222"))
-    ssh_hpc_user: str = os.getenv("BACKEND_SSH_HPC_USER", "likr6008")
+    # 去硬编码批 1：不再默认实验室账号；空 = 未配置（与 FileBrowser URL 一致）
+    ssh_hpc_user: str = os.getenv("BACKEND_SSH_HPC_USER", "")
     ssh_hpc_key_path: str = os.getenv("BACKEND_SSH_HPC_KEY_PATH", "~/.ssh/seahpc_key")
     ssh_win11_alias: str = os.getenv("BACKEND_SSH_WIN11_ALIAS", "win11-lab")
-    ssh_win11_user: str = os.getenv("BACKEND_SSH_WIN11_USER", "qiujianqiu")
+    ssh_win11_user: str = os.getenv("BACKEND_SSH_WIN11_USER", "")
 
     # ---- Earthdata 凭据 ----
     earthdata_username: str = os.getenv("BACKEND_EARTHDATA_USERNAME", "")
