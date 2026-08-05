@@ -26,6 +26,8 @@ export interface OverlaySymbologyMeta {
   vmax?: number | null
   unit?: string
   opacity?: number
+  /** 有可读源时可服务端重着色 */
+  supports_recolor?: boolean
 }
 
 /** paletteOverride ?? renderHint ?? overlayMeta */
@@ -40,12 +42,15 @@ export function resolveEffectivePalette(options: {
 /**
  * 地图绘制是否会跟前端 palette 走。
  * - 天气 / 带 renderHint 的矢量作业：是（MapLibre paint）
- * - 仅 overlay 预渲染 PNG / 导入栅格：否
+ * - 有源 overlay / 导入 GeoTIFF（supports_recolor）：是（服务端参数化 PNG）
+ * - 仅烘焙 PNG 无源：否
  */
 export function isMapLinkedPalette(options: {
   hasRenderHint: boolean
   isImportedRaster?: boolean
+  supportsRecolor?: boolean
 }): boolean {
+  if (options.supportsRecolor) return true
   if (options.isImportedRaster) return false
   return options.hasRenderHint
 }
@@ -84,7 +89,7 @@ export function buildLegendHintFromOverlayMeta(
     unit_label: meta.unit ?? '',
     opacity: typeof meta.opacity === 'number' ? meta.opacity : 0.7,
     legend_ticks: [vmin, mid, vmax],
-    notes: ['预渲染栅格图例；改配色不会重涂已生成的 PNG'],
+    notes: ['有源图层可改配色；地图与图例同步重着色'],
   }
 }
 
@@ -119,7 +124,40 @@ export function hasRenderableSymbology(options: {
   isImported?: boolean
   isImportedRaster?: boolean
 }): boolean {
-  if (options.isAdminBoundary || options.isImported || options.isImportedRaster) return false
+  if (options.isAdminBoundary || options.isImported) return false
+  // 导入栅格若可重着色也展示图例/配色
+  if (options.isImportedRaster && !options.overlayMeta?.supports_recolor) return false
   if (options.renderHint) return true
   return Boolean(options.overlayMeta?.palette)
+}
+
+/** 拼 overlay-preview / overlay-tiles 样式 query（无覆盖时仍可传默认 palette 触发动态着色） */
+export function buildOverlayStyleQuery(params: {
+  time?: string | null
+  palette?: string | null
+  vmin?: number | null
+  vmax?: number | null
+  nodataMode?: string | null
+  nodataColor?: string | null
+  /** 仅当用户改过样式或明确要求动态着色时附加 */
+  forceStyle?: boolean
+}): string {
+  const q = new URLSearchParams()
+  if (params.time) q.set('time', params.time)
+  const force =
+    params.forceStyle ||
+    Boolean(params.palette) ||
+    params.vmin != null ||
+    params.vmax != null ||
+    (params.nodataMode && params.nodataMode !== 'transparent') ||
+    Boolean(params.nodataColor)
+  if (force) {
+    if (params.palette) q.set('palette', params.palette)
+    if (params.vmin != null && Number.isFinite(params.vmin)) q.set('min_value', String(params.vmin))
+    if (params.vmax != null && Number.isFinite(params.vmax)) q.set('max_value', String(params.vmax))
+    if (params.nodataMode) q.set('nodata_mode', params.nodataMode)
+    if (params.nodataColor) q.set('nodata_color', params.nodataColor)
+  }
+  const s = q.toString()
+  return s ? `?${s}` : ''
 }

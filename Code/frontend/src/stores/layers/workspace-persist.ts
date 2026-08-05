@@ -25,6 +25,11 @@ export interface PersistedActiveLayer {
   accentColor?: string
   accentGlow?: string
   chipTone?: string
+  paletteOverride?: string | null
+  vminOverride?: number | null
+  vmaxOverride?: number | null
+  nodataMode?: 'transparent' | 'solid' | null
+  nodataColor?: string | null
 }
 
 /** 导入矢量（仅 backend 登记层；刷新后按需拉取 GeoJSON） */
@@ -58,6 +63,11 @@ export interface PersistedCatalogLayer {
   accentColor?: string
   accentGlow?: string
   chipTone?: string
+  paletteOverride?: string | null
+  vminOverride?: number | null
+  vmaxOverride?: number | null
+  nodataMode?: 'transparent' | 'solid' | null
+  nodataColor?: string | null
 }
 
 export interface WorkspaceSnapshot {
@@ -223,6 +233,11 @@ export function buildWorkspaceSnapshot(
       accentColor: l.accentColor,
       accentGlow: l.accentGlow,
       chipTone: l.chipTone,
+      paletteOverride: l.paletteOverride ?? null,
+      vminOverride: l.vminOverride ?? null,
+      vmaxOverride: l.vmaxOverride ?? null,
+      nodataMode: l.nodataMode ?? null,
+      nodataColor: l.nodataColor ?? null,
     }))
 
   const vectorLayers = activeLayers
@@ -274,6 +289,11 @@ export function buildWorkspaceSnapshot(
     accentColor: l.accentColor,
     accentGlow: l.accentGlow,
     chipTone: l.chipTone,
+    paletteOverride: l.paletteOverride ?? null,
+    vminOverride: l.vminOverride ?? null,
+    vmaxOverride: l.vmaxOverride ?? null,
+    nodataMode: l.nodataMode ?? null,
+    nodataColor: l.nodataColor ?? null,
   }))
 
   const groups = runLayerGroups

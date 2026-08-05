@@ -1,4 +1,5 @@
 import { boundsToPolygonRing, latticeCellBounds, latticeIndex } from './weather-grid-lattice'
+import { buildOverlayStyleQuery } from './layer-symbology'
 import {
   buildWeatherArrowSizeExpression,
   buildWeatherFillColorExpression,
@@ -178,7 +179,20 @@ export function syncWeatherCogOverlay(map: MapInstance, overlayState: WeatherOve
   )
   const minValue = ticks[0] ?? 0
   const maxValue = ticks[ticks.length - 1] ?? minValue + 1
-  const previewUrl = `${overlayState.cogPreviewUrl}?palette=${encodeURIComponent(overlayState.renderHint.palette)}&min_value=${minValue}&max_value=${maxValue}&width=768&height=768`
+  const baseUrl = overlayState.cogPreviewUrl
+  const pathOnly = baseUrl.split('?')[0] ?? baseUrl
+  let previewUrl: string
+  if (pathOnly.includes('/overlay-preview/')) {
+    previewUrl = `${pathOnly}${buildOverlayStyleQuery({
+      palette: overlayState.renderHint.palette,
+      vmin: minValue,
+      vmax: maxValue,
+      forceStyle: true,
+    })}`
+  } else {
+    const join = baseUrl.includes('?') ? '&' : '?'
+    previewUrl = `${baseUrl}${join}palette=${encodeURIComponent(overlayState.renderHint.palette)}&min_value=${minValue}&max_value=${maxValue}&width=768&height=768`
+  }
   const coordinates = [
     [overlayState.cogBbox.west, overlayState.cogBbox.north],
     [overlayState.cogBbox.east, overlayState.cogBbox.north],

@@ -576,6 +576,7 @@ class PythonProviderResultBuilder:
                     "render_hint": render_hint.model_dump(mode="json"),
                     "layer_assets": {
                         "overlay_layer_id": overlay_id,
+                        # FE may append ?palette=&min_value=&max_value=&nodata_mode=
                         "cog_url": f"/overlay-preview/{overlay_id}",
                         "cog_preview_url": f"/overlay-preview/{overlay_id}",
                         "cog_bbox": cog_bbox,
@@ -659,6 +660,7 @@ class PythonProviderResultBuilder:
                 "render_hint": render_hint.model_dump(mode="json"),
                 "layer_assets": {
                     "overlay_layer_id": overlay_id,
+                    # FE may append ?palette=&min_value=&max_value=&nodata_mode=
                     "cog_url": f"/overlay-preview/{overlay_id}",
                     "cog_preview_url": f"/overlay-preview/{overlay_id}",
                     "cog_bbox": cog_bbox,

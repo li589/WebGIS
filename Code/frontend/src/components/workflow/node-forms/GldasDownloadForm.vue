@@ -36,7 +36,7 @@ const emit = defineEmits<{
 const DEFAULTS = {
   start_date: '',
   end_date: '',
-  local_dir: 'I:\\Geograph_DataSet\\Meteorological\\Weather\\GLDAS_Download',
+  local_dir: '',
   version: '2.1',
   short_name: 'GLDAS_NOAH025_3H',
   dry_run: false,
@@ -164,7 +164,7 @@ function update(key: string, value: unknown) {
         type="text"
         class="form-input"
         :value="String(form.local_dir ?? '')"
-        placeholder="I:\Geograph_DataSet\Meteorological\Weather\GLDAS_Download"
+        placeholder="请选择或输入本地目录"
         :readonly="readonly"
         @input="update('local_dir', ($event.target as HTMLInputElement).value)"
       />

@@ -14,6 +14,7 @@ import { isWeatherLayerUnsupportedByModel } from '../stores/weather-tile-manager
 import { useWeatherEngineStore } from '../stores/weather-engine'
 import { getWeatherProvidersForLayer, type WeatherProviderForLayer } from '../services/runtime-api'
 import { LAYERS_COPY, INSPECT_COPY } from '../ui-copy'
+import { ORG_LABEL } from '../ui-copy/brand'
 import { openDataWorkspace, openDatedExportForLayer } from '../data-manager/core/workspace-store'
 import { exportLayer } from '../data-manager/adapters/export'
 import {
@@ -33,6 +34,7 @@ const logStore = useLogStore()
 const overlaySymbologyStore = useOverlaySymbologyStore()
 const weatherSourcePrefs = useWeatherSourcePrefsStore()
 const weatherEngine = useWeatherEngineStore()
+const orgLabel = ORG_LABEL
 
 const weatherProvidersCache = ref<Record<string, WeatherProviderForLayer[]>>({})
 const weatherProvidersLoading = ref<Record<string, boolean>>({})
@@ -140,7 +142,7 @@ watch(sidebarView, () => {
 
 // ── Filter library items by search ────────────────────────────────────────────
 
-const selectedSubCategory = ref<'all' | '模型输入' | '模型输出' | '辅助数据'>('all')
+const selectedSubCategory = ref<string>('all')
 
 const filteredLibrary = computed(() => {
   if (!searchQuery.value.trim()) return layerLibrary.value
@@ -153,6 +155,23 @@ const filteredLibrary = computed(() => {
       item.sourceLabel.toLowerCase().includes(q) ||
       item.description.toLowerCase().includes(q),
   )
+})
+
+/** 二级分类 pills：从当前可见图层的 subCategory 去重生成（保留「全部」） */
+const researchSubCategoryPills = computed(() => {
+  const values = new Set<string>()
+  for (const item of filteredLibrary.value) {
+    if (item.category === 'research-group' && item.subCategory?.trim()) {
+      values.add(item.subCategory.trim())
+    }
+  }
+  return ['all', ...Array.from(values).sort((a, b) => a.localeCompare(b, 'zh-CN'))]
+})
+
+watch(researchSubCategoryPills, (pills) => {
+  if (!pills.includes(selectedSubCategory.value)) {
+    selectedSubCategory.value = 'all'
+  }
 })
 
 const filteredLibraryByCategory = computed(() => {
@@ -1014,9 +1033,12 @@ type ActiveLayerDisplayLike = {
 
           <div v-if="expandedCategories.has(group.category.id)" class="category-items">
             <!-- 课题组数据二级分类筛选 Pills -->
-            <div v-if="group.category.id === 'research-group'" class="subcategory-pills-bar">
+            <div
+              v-if="group.category.id === 'research-group' && researchSubCategoryPills.length > 1"
+              class="subcategory-pills-bar"
+            >
               <button
-                v-for="sub in ['all', '模型输入', '模型输出', '辅助数据'] as const"
+                v-for="sub in researchSubCategoryPills"
                 :key="sub"
                 type="button"
                 class="sub-pill"
@@ -1029,7 +1051,7 @@ type ActiveLayerDisplayLike = {
             <div v-if="group.items.length === 0" class="empty-subcategory-hint">
               暂无匹配【{{
                 selectedSubCategory === 'all' ? '全部' : selectedSubCategory
-              }}】的课题组图层
+              }}】的{{ orgLabel }}图层
             </div>
             <div
               v-for="item in group.items"

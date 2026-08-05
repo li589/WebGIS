@@ -54,6 +54,7 @@ import {
 import { formatProgressShell, pickLatestNodeProgress } from '../../utils/workflow-progress-format'
 import { claimOrphanWorkflowRun, isSubmitTimeoutError } from '../../utils/workflow-submit-reconcile'
 import { WORKFLOW_COPY } from '../../ui-copy/workflow'
+import { resolveEmptyOverlayWorkflowError } from './materialize-empty'
 import { formatWorkflowEventLine } from '../../utils/workflow-event-label'
 import { localizeWorkflowErrorMessage } from '../../utils/workflow-error-messages'
 import {
@@ -422,8 +423,14 @@ function formatClockLabel(value?: string | null) {
   return `${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`
 }
 
+const CATEGORY_ALIASES: Record<string, string> = {
+  weather: '气象场',
+  climate: '气候产品',
+}
+
 function resolveCategory(descriptor: RuntimeLayerDescriptor, fallbackCategory?: string) {
-  const category = descriptor.category || fallbackCategory
+  const raw = descriptor.category || fallbackCategory
+  const category = raw ? (CATEGORY_ALIASES[raw] ?? raw) : undefined
   if (category && CATEGORY_INDEX_BY_ID.has(category)) {
     return category
   }
@@ -976,6 +983,11 @@ export const useLayersStore = defineStore('layers', () => {
             importedRasterEffectiveTime: payload.effectiveTimeLabel,
             importedRasterTimeCount: payload.timeList?.length,
             importedFileName: payload.fileName,
+            paletteOverride: layer.paletteOverride ?? null,
+            vminOverride: layer.vminOverride ?? null,
+            vmaxOverride: layer.vmaxOverride ?? null,
+            nodataMode: layer.nodataMode ?? null,
+            nodataColor: layer.nodataColor ?? null,
             runGroupId: layer.runGroupId,
             runGroupProductTag: layer.runGroupProductTag,
             runGroupLocked: layer.runGroupLocked,
@@ -1113,6 +1125,10 @@ export const useLayersStore = defineStore('layers', () => {
           order: layer.order,
           dataState: layer.dataState,
           paletteOverride: layer.paletteOverride ?? null,
+          vminOverride: layer.vminOverride ?? null,
+          vmaxOverride: layer.vmaxOverride ?? null,
+          nodataMode: layer.nodataMode ?? null,
+          nodataColor: layer.nodataColor ?? null,
           runGroupId: layer.runGroupId,
           runGroupProductTag: layer.runGroupProductTag,
           runGroupLocked: layer.runGroupLocked,
@@ -1571,7 +1587,30 @@ export const useLayersStore = defineStore('layers', () => {
     const layer = activeLayers.value.find((l) => l.instanceId === instanceId)
     if (layer) {
       layer.paletteOverride = palette
+      scheduleWorkspacePersist()
     }
+  }
+
+  function setLayerRangeOverride(
+    instanceId: string,
+    range: { vmin?: number | null; vmax?: number | null },
+  ) {
+    const layer = activeLayers.value.find((l) => l.instanceId === instanceId)
+    if (!layer) return
+    if ('vmin' in range) layer.vminOverride = range.vmin ?? null
+    if ('vmax' in range) layer.vmaxOverride = range.vmax ?? null
+    scheduleWorkspacePersist()
+  }
+
+  function setLayerNodataDisplay(
+    instanceId: string,
+    options: { mode?: 'transparent' | 'solid' | null; color?: string | null },
+  ) {
+    const layer = activeLayers.value.find((l) => l.instanceId === instanceId)
+    if (!layer) return
+    if ('mode' in options) layer.nodataMode = options.mode ?? null
+    if ('color' in options) layer.nodataColor = options.color ?? null
+    scheduleWorkspacePersist()
   }
 
   function setLayerOrder(instanceId: string, newOrder: number) {
@@ -2399,7 +2438,17 @@ export const useLayersStore = defineStore('layers', () => {
         }`
       }
     }
-    if (!imports.length) return 0
+    if (!imports.length) {
+      // 审查 BUG-4：原始 imports 为空（非 dismiss 滤空）时给出可见空态
+      const emptyMsg = resolveEmptyOverlayWorkflowError({
+        runId,
+        rawImportCount: 0,
+        existingWorkflowError: workflowError.value,
+        emptyMessage: WORKFLOW_COPY.noMapLayers,
+      })
+      if (emptyMsg) workflowError.value = emptyMsg
+      return 0
+    }
     imports = imports.filter((item) => !isOverlayDismissed(item.overlayLayerId))
     if (!imports.length) return 0
 
@@ -2991,20 +3040,17 @@ export const useLayersStore = defineStore('layers', () => {
         if (!isTerminalStatus(jobLayer.status)) {
           const trackedItem = tracked.find((t) => t.runId === run.run_id)
           const layerId = String((run as Record<string, unknown>).layer_id || catalogId)
-          if (
-            layerId.includes('omega-sf') ||
-            catalogId.includes('omega-sf') ||
-            catalogId.startsWith('wf-run-')
-          ) {
+          const bridge = resolveRestoreWorkflowBridge(layerId, catalogId, trackedItem)
+          if (bridge.workflowId || bridge.sourceLayerId || catalogId.startsWith('wf-run-')) {
             ensureRestoredRunGroup(run.run_id, catalogId, trackedItem, {
               createPlaceholders: true,
-              title: jobLayer.name || 'SF 块反演（SMAP）',
+              title: jobLayer.name || bridge.title || '工作流运行',
             })
           }
           activeWorkflowCatalogIds.add(catalogId)
           void pollWorkflowRun(run.run_id, catalogId)
         } else if (jobLayer.status === 'succeeded' && !isRunDismissed(run.run_id)) {
-          // 确保计算组结构存在，便于 attach 绑到 SM/VOD/OMEGA 成员
+          // 确保计算组结构存在，便于 attach 绑到产物成员
           ensureRestoredRunGroup(
             run.run_id,
             catalogId,
@@ -3021,6 +3067,49 @@ export const useLayersStore = defineStore('layers', () => {
     }
   }
 
+  function resolveRestoreWorkflowBridge(
+    layerId: string,
+    catalogId: string,
+    tracked?: TrackedWorkflowRun,
+  ): { sourceLayerId?: string; workflowId?: string; title?: string } {
+    const candidates = [layerId, catalogId, tracked?.catalogId].filter(
+      (id): id is string => Boolean(id),
+    )
+    let descriptor: RuntimeLayerDescriptor | undefined
+    for (const id of candidates) {
+      const hit = runtimeLayerCatalog.value[id]
+      if (hit) {
+        descriptor = hit
+        break
+      }
+    }
+    if (!descriptor) {
+      descriptor = Object.values(runtimeLayerCatalog.value).find(
+        (d) =>
+          Boolean(d.workflow_id) &&
+          candidates.some(
+            (id) => id === d.layer_id || id.includes(d.layer_id) || d.layer_id.includes(id),
+          ),
+      )
+    }
+    const group = runLayerGroups.value.find((g) => g.runId === tracked?.runId)
+    const sourceLayerId =
+      group?.sourceLayerId ||
+      descriptor?.layer_id ||
+      (tracked?.catalogId && !tracked.catalogId.startsWith('wf-') ? tracked.catalogId : undefined) ||
+      (catalogId.startsWith('wf-') ? undefined : catalogId)
+    const workflowId =
+      group?.workflowId ||
+      descriptor?.workflow_id ||
+      descriptor?.workflow_name ||
+      undefined
+    return {
+      sourceLayerId,
+      workflowId,
+      title: tracked?.name || descriptor?.display_name || undefined,
+    }
+  }
+
   function ensureRestoredRunGroup(
     runId: string,
     catalogId: string,
@@ -3028,6 +3117,11 @@ export const useLayersStore = defineStore('layers', () => {
     options?: { createPlaceholders?: boolean; title?: string },
   ) {
     if (runLayerGroups.value.some((g) => g.runId === runId)) return
+    const bridge = resolveRestoreWorkflowBridge(
+      String(tracked?.catalogId || catalogId),
+      catalogId,
+      tracked,
+    )
     const groupId =
       tracked?.groupId || `run-group-restored-${runId.replace(/[^a-zA-Z0-9]/g, '').slice(-10)}`
     const tags = ['SM', 'VOD', 'OMEGA'] as const
@@ -3040,6 +3134,10 @@ export const useLayersStore = defineStore('layers', () => {
       .map((cid) => activeLayers.value.find((l) => l.catalogId === cid))
       .filter((l): l is ActiveLayer => Boolean(l))
 
+    // 无 descriptor/workflow 元数据时做通用 restore，禁止写死实验室 seed id
+    const sourceLayerId = bridge.sourceLayerId || catalogId
+    const workflowId = bridge.workflowId || ''
+
     if (existingMembers.length) {
       for (const m of existingMembers) {
         m.runGroupId = groupId
@@ -3048,12 +3146,12 @@ export const useLayersStore = defineStore('layers', () => {
       runLayerGroups.value.push({
         groupId,
         runId,
-        title: options?.title || tracked?.name || 'SF 块反演产物',
+        title: options?.title || tracked?.name || bridge.title || '工作流产物',
         status: options?.createPlaceholders ? 'computing' : 'ready',
         memberInstanceIds: existingMembers.map((m) => m.instanceId),
         dissolvable: !options?.createPlaceholders,
-        sourceLayerId: 'omega-sf-fenkuai',
-        workflowId: 'omega_sf_fenkuai_smap_single',
+        sourceLayerId,
+        workflowId,
       })
       return
     }
@@ -3064,10 +3162,10 @@ export const useLayersStore = defineStore('layers', () => {
     }
 
     const created = createRunLayerGroup({
-      title: options.title || tracked?.name || 'SF 块反演（SMAP）',
+      title: options.title || tracked?.name || bridge.title || '工作流运行',
       targets: tags.map((tag) => ({ name: tag, productTag: tag })),
-      sourceLayerId: 'omega-sf-fenkuai',
-      workflowId: 'omega_sf_fenkuai_smap_single',
+      sourceLayerId,
+      workflowId,
       memberCatalogIds,
     })
     bindRunIdToGroup(created.groupId, runId)
@@ -3713,6 +3811,11 @@ export const useLayersStore = defineStore('layers', () => {
       chipTone: accent.chipTone,
       runGroupId: saved.runGroupId,
       runGroupProductTag: saved.runGroupProductTag,
+      paletteOverride: saved.paletteOverride ?? null,
+      vminOverride: saved.vminOverride ?? null,
+      vmaxOverride: saved.vmaxOverride ?? null,
+      nodataMode: saved.nodataMode ?? null,
+      nodataColor: saved.nodataColor ?? null,
     }
     activeLayers.value.push(layer)
     if (isWeatherEngineLayer(saved.catalogId) && layer.visible) {
@@ -3824,6 +3927,11 @@ export const useLayersStore = defineStore('layers', () => {
         runGroupId: saved.runGroupId,
         runGroupProductTag: saved.runGroupProductTag,
         runGroupLocked: false,
+        paletteOverride: saved.paletteOverride ?? null,
+        vminOverride: saved.vminOverride ?? null,
+        vmaxOverride: saved.vmaxOverride ?? null,
+        nodataMode: saved.nodataMode ?? null,
+        nodataColor: saved.nodataColor ?? null,
       }
       activeLayers.value.push(layer)
       existingOverlayIds.add(saved.importedRaster.overlayLayerId)
@@ -4290,6 +4398,8 @@ export const useLayersStore = defineStore('layers', () => {
     removeAllLayers,
     setLayerOpacity,
     setLayerPaletteOverride,
+    setLayerRangeOverride,
+    setLayerNodataDisplay,
     setLayerOrder,
     setLayerDisplayName,
     bringLayerToFront,

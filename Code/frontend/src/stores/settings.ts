@@ -59,6 +59,7 @@ import {
   type RemoteStorageTestResult,
   type RemoteStorageHistoryItem,
 } from '../services/settings-api'
+import { hydrateMapDefaults } from '../services/map-defaults'
 
 type LoaderName =
   | 'general'
@@ -147,9 +148,18 @@ export const useSettingsStore = defineStore('settings', () => {
     const applyResult = (r: Awaited<ReturnType<typeof settled>>) => {
       if (r.value === undefined) return
       switch (r.name) {
-        case 'general':
-          generalConfig.value = r.value as GeneralConfig
+        case 'general': {
+          const general = r.value as GeneralConfig
+          generalConfig.value = general
+          hydrateMapDefaults({
+            longitude: general.map_default_longitude,
+            latitude: general.map_default_latitude,
+            zoom: general.map_default_zoom,
+            tileSource: general.map_default_tile_source,
+            aoiPresets: general.map_aoi_presets,
+          })
           break
+        }
         case 'api-keys':
           apiKeys.value = r.value as ApiKeyItem[]
           break

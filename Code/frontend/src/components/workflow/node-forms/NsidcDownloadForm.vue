@@ -6,7 +6,7 @@
  *
  * 字段：
  *   - start_date / end_date: YYYYMMDD
- *   - local_dir: 本地输出目录（默认 I:\Geograph_DataSet\Soil_Moisture\SMAP_Download）
+ *   - local_dir: 本地输出目录（须填写；相对 BACKEND_DATA_ROOT 或绝对路径）
  *   - version: 5 / 6
  *   - short_name: NSIDC 数据集短名（默认 SPL3SMP_E）
  */
@@ -42,7 +42,7 @@ const emit = defineEmits<{
 const DEFAULTS = {
   start_date: '',
   end_date: '',
-  local_dir: 'I:\\Geograph_DataSet\\Soil_Moisture\\SMAP_Download',
+  local_dir: '',
   version: 6,
   short_name: 'SPL3SMP_E',
 }
@@ -193,7 +193,7 @@ function onVersionChange(event: Event) {
         type="text"
         class="form-input"
         :value="String(form.local_dir ?? '')"
-        placeholder="I:\Geograph_DataSet\Soil_Moisture\SMAP_Download"
+        placeholder="请选择或输入本地目录"
         :readonly="readonly"
         @input="update('local_dir', ($event.target as HTMLInputElement).value)"
       />

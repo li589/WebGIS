@@ -1,34 +1,79 @@
 from __future__ import annotations
 
 import importlib
+import re
 from pathlib import Path
+from typing import Literal
+
+NodataMode = Literal["transparent", "solid"]
 
 
+def _hex_stops(*hexes: str) -> list[tuple[int, int, int]]:
+    out: list[tuple[int, int, int]] = []
+    for raw in hexes:
+        h = raw.lstrip("#")
+        if len(h) != 6:
+            continue
+        out.append((int(h[0:2], 16), int(h[2:4], 16), int(h[4:6], 16)))
+    return out
+
+
+# 与前端 WEATHER_PALETTES id 对齐；未知 id 回落 viridis。
 _PALETTES: dict[str, list[tuple[int, int, int]]] = {
-    "thermal-orange": [
-        (49, 93, 255),
-        (54, 197, 255),
-        (124, 231, 176),
-        (255, 209, 102),
-        (255, 123, 84),
-        (255, 77, 77),
-    ],
-    "precip-cyan": [
-        (22, 50, 79),
-        (28, 109, 208),
-        (30, 200, 255),
-        (112, 240, 255),
-        (183, 255, 245),
-        (245, 255, 255),
-    ],
-    "wind-blue": [
-        (16, 49, 75),
-        (29, 111, 165),
-        (75, 185, 255),
-        (132, 221, 255),
-        (196, 243, 255),
-    ],
-    # Algorithm science products (omega_sf / SM / VOD)
+    "thermal-orange": _hex_stops(
+        "0b1a6e",
+        "1b3cff",
+        "2a5fff",
+        "2f8cff",
+        "36c5ff",
+        "4ad4d0",
+        "5ad9c4",
+        "7ce7b0",
+        "a8e87a",
+        "c8e86a",
+        "ffe066",
+        "ffd166",
+        "ff9f4a",
+        "ff7b54",
+        "ff4d4d",
+        "e83070",
+        "c01888",
+    ),
+    "precip-cyan": _hex_stops(
+        "061018",
+        "0b1c30",
+        "123048",
+        "16324f",
+        "1a4a7a",
+        "1c6dd0",
+        "1ea0ef",
+        "1ec8ff",
+        "48e0ff",
+        "70f0ff",
+        "9af8f0",
+        "b7fff5",
+        "d8fffb",
+        "e8ffff",
+        "ffffff",
+    ),
+    "wind-blue": _hex_stops(
+        "6271b8",
+        "3d6ea3",
+        "4a94aa",
+        "4a9294",
+        "4d8e7c",
+        "6b9148",
+        "a89438",
+        "d07a3a",
+        "c94e4e",
+        "a83d7a",
+        "7a3d9e",
+        "5c4d6e",
+    ),
+    "magenta-yellow": _hex_stops(
+        "1a102a", "5b1f7a", "b832e0", "ff5e9a", "ffb347", "fff2a6"
+    ),
+    "viridis": _hex_stops("440154", "414487", "2a788e", "22a884", "7ad151", "fde725"),
     "cividis": [
         (0, 32, 77),
         (40, 86, 119),
@@ -37,13 +82,69 @@ _PALETTES: dict[str, list[tuple[int, int, int]]] = {
         (224, 201, 90),
         (253, 231, 55),
     ],
-    "viridis": [
-        (68, 1, 84),
-        (59, 82, 139),
-        (33, 145, 140),
-        (94, 201, 98),
-        (253, 231, 37),
-    ],
+    "spectral": _hex_stops(
+        "9e0142",
+        "d53e4f",
+        "f46d43",
+        "fdae61",
+        "fee08b",
+        "e6f598",
+        "abdda4",
+        "66c2a5",
+        "3288bd",
+    ),
+    "blues": _hex_stops(
+        "f7fbff",
+        "deebf7",
+        "c6dbef",
+        "9ecae1",
+        "6baed6",
+        "4292c6",
+        "2171b5",
+        "084594",
+    ),
+    "reds": _hex_stops(
+        "fff5f0",
+        "fee0d2",
+        "fcbba1",
+        "fc9272",
+        "fb6a4a",
+        "ef3b2c",
+        "cb181d",
+        "99000d",
+    ),
+    "greens": _hex_stops(
+        "0d2818",
+        "1a4d2e",
+        "2d6a4f",
+        "40916c",
+        "52b788",
+        "74c69d",
+        "95d5b2",
+        "b7e4c7",
+    ),
+    "yellow-red": _hex_stops(
+        "ffffcc",
+        "ffeda0",
+        "fed976",
+        "feb24c",
+        "fd8d3c",
+        "fc4e2a",
+        "e31a1c",
+        "b10026",
+    ),
+    "blue-green": _hex_stops(
+        "08306b", "2171b5", "6baed6", "66c2a4", "41ab5d", "238b45"
+    ),
+    "red-blue": _hex_stops(
+        "b2182b", "ef8a62", "fddbc7", "f7f7f7", "d1e5f0", "67a9cf", "2166ac"
+    ),
+    "purple-orange": _hex_stops(
+        "2d1b3d", "542466", "8c2d80", "c63e6c", "f08050", "ffb347", "ffe066"
+    ),
+    "dark-rainbow": _hex_stops(
+        "1a0033", "003380", "0066cc", "00cc66", "cccc00", "cc6600", "cc0000"
+    ),
     "ylgnbu": [
         (255, 255, 217),
         (199, 233, 180),
@@ -52,7 +153,82 @@ _PALETTES: dict[str, list[tuple[int, int, int]]] = {
         (29, 145, 192),
         (8, 29, 88),
     ],
+    # matplotlib / overlay_registry aliases
+    "plasma": _hex_stops("0d0887", "6a00a8", "b12a90", "e16462", "fca636", "f0f921"),
+    "hot": _hex_stops("000000", "8b0000", "ff0000", "ffff00", "ffffff"),
+    "terrain": _hex_stops("333399", "00aa88", "88cc44", "ddcc66", "c4a35a", "ffffff"),
+    "tab10": _hex_stops(
+        "1f77b4",
+        "ff7f0e",
+        "2ca02c",
+        "d62728",
+        "9467bd",
+        "8c564b",
+        "e377c2",
+        "7f7f7f",
+        "bcbd22",
+        "17becf",
+    ),
+    "ylgn": _hex_stops("ffffe5", "f7fcb9", "d9f0a3", "addd8e", "78c679", "238443"),
+    "ylorrd": _hex_stops(
+        "ffffcc", "ffeda0", "fed976", "feb24c", "fd8d3c", "f03b20", "bd0026"
+    ),
+    "brg": _hex_stops("0000ff", "ff00ff", "ff0000", "ffff00", "00ff00"),
+    "rdylgn_r": _hex_stops(
+        "006837", "31a354", "78c679", "c2e699", "ffffcc", "fdae61", "f46d43", "a50026"
+    ),
 }
+
+_PALETTE_ALIASES: dict[str, str] = {
+    "YlGnBu": "ylgnbu",
+    "ylgnbu": "ylgnbu",
+    "YlGn": "ylgn",
+    "YlOrRd": "ylorrd",
+    "RdYlGn_r": "rdylgn_r",
+    "elevation-terrain-ramp": "terrain",
+    "spectral-ramp": "spectral",
+}
+
+
+def resolve_palette_id(palette: str | None) -> str:
+    raw = (palette or "").strip() or "viridis"
+    aliased = _PALETTE_ALIASES.get(raw) or _PALETTE_ALIASES.get(raw.lower())
+    key = aliased or raw.lower() if raw.lower() in _PALETTES else raw
+    if key in _PALETTES:
+        return key
+    if raw in _PALETTES:
+        return raw
+    return "viridis"
+
+
+def get_palette_rgb_stops(palette: str | None) -> list[tuple[int, int, int]]:
+    return list(_PALETTES[resolve_palette_id(palette)])
+
+
+def parse_nodata_color(raw: str | None) -> tuple[int, int, int]:
+    """Parse ``#rgb`` / ``#rrggbb`` / ``r,g,b`` → RGB; default dark gray."""
+    if not raw or not str(raw).strip():
+        return (32, 36, 48)
+    text = str(raw).strip()
+    if text.startswith("#"):
+        h = text[1:]
+        if len(h) == 3:
+            h = "".join(ch * 2 for ch in h)
+        if len(h) == 6 and re.fullmatch(r"[0-9a-fA-F]{6}", h):
+            return (int(h[0:2], 16), int(h[2:4], 16), int(h[4:6], 16))
+    parts = re.split(r"[,/\s]+", text)
+    if len(parts) >= 3:
+        try:
+            r, g, b = (max(0, min(255, int(float(parts[i])))) for i in range(3))
+            return (r, g, b)
+        except (TypeError, ValueError):
+            pass
+    return (32, 36, 48)
+
+
+def normalize_nodata_mode(raw: str | None) -> NodataMode:
+    mode = (raw or "transparent").strip().lower()
+    return "solid" if mode == "solid" else "transparent"
 
 
 def _mask_invalid_raster(numpy, band, *, nodata: float | None = None):
@@ -75,6 +251,8 @@ def _colorize_masked_band(
     *,
     min_value: float | None,
     max_value: float | None,
+    nodata_mode: NodataMode = "transparent",
+    nodata_rgb: tuple[int, int, int] = (32, 36, 48),
 ):
     count = int(masked_array.count()) if hasattr(masked_array, "count") else 0
     if min_value is None:
@@ -98,8 +276,61 @@ def _colorize_masked_band(
     red = numpy.interp(norm, anchors, palette_colors[:, 0]).astype("uint8")
     green = numpy.interp(norm, anchors, palette_colors[:, 1]).astype("uint8")
     blue = numpy.interp(norm, anchors, palette_colors[:, 2]).astype("uint8")
-    alpha = numpy.where(numpy.ma.getmaskarray(masked_array), 0, 255).astype("uint8")
+    mask = numpy.ma.getmaskarray(masked_array)
+    if nodata_mode == "solid":
+        nr, ng, nb = nodata_rgb
+        red = numpy.where(mask, nr, red).astype("uint8")
+        green = numpy.where(mask, ng, green).astype("uint8")
+        blue = numpy.where(mask, nb, blue).astype("uint8")
+        alpha = numpy.full(mask.shape, 255, dtype="uint8")
+    else:
+        alpha = numpy.where(mask, 0, 255).astype("uint8")
     return red, green, blue, alpha
+
+
+def colorize_array_to_rgba(
+    data: object,
+    *,
+    palette: str | None = "viridis",
+    min_value: float | None = None,
+    max_value: float | None = None,
+    nodata: float | None = None,
+    nodata_mode: str | None = "transparent",
+    nodata_color: str | None = None,
+) -> object:
+    """Colorize a 2D float array into HxWx4 uint8 RGBA (shared by tiles / overlay preview)."""
+    numpy = importlib.import_module("numpy")
+    arr = numpy.asarray(data, dtype="float32")
+    if arr.ndim != 2:
+        raise ValueError(f"colorize expects 2D array, got shape={arr.shape}")
+    masked = _mask_invalid_raster(numpy, arr, nodata=nodata)
+    stops = numpy.array(get_palette_rgb_stops(palette), dtype="float32")
+    red, green, blue, alpha = _colorize_masked_band(
+        numpy,
+        masked,
+        stops,
+        min_value=min_value,
+        max_value=max_value,
+        nodata_mode=normalize_nodata_mode(nodata_mode),
+        nodata_rgb=parse_nodata_color(nodata_color),
+    )
+    return numpy.stack([red, green, blue, alpha], axis=-1)
+
+
+def encode_rgba_png(rgba: object) -> bytes:
+    """Encode HxWx4 uint8 array as PNG bytes."""
+    numpy = importlib.import_module("numpy")
+    from PIL import Image
+
+    arr = numpy.asarray(rgba, dtype="uint8")
+    if arr.ndim != 3 or arr.shape[2] != 4:
+        raise ValueError(f"encode_rgba_png expects HxWx4, got {arr.shape}")
+    img = Image.fromarray(arr, mode="RGBA")
+    import io
+
+    buf = io.BytesIO()
+    img.save(buf, format="PNG", optimize=True)
+    return buf.getvalue()
 
 
 def _finite_data_window_bounds(numpy, src_band, src_transform, *, pad_pixels: int = 8):
@@ -143,6 +374,8 @@ class RasterPreviewService:
         height: int,
         min_value: float | None = None,
         max_value: float | None = None,
+        nodata_mode: str | None = "transparent",
+        nodata_color: str | None = None,
     ) -> bytes:
         try:
             numpy = importlib.import_module("numpy")
@@ -154,9 +387,7 @@ class RasterPreviewService:
                 f"Raster preview dependencies unavailable: {exc.__class__.__name__}"
             ) from exc
 
-        palette_colors = numpy.array(
-            _PALETTES.get(palette) or _PALETTES["wind-blue"], dtype="float32"
-        )
+        palette_colors = numpy.array(get_palette_rgb_stops(palette), dtype="float32")
         width = max(64, min(2048, int(width)))
         height = max(64, min(2048, int(height)))
 
@@ -175,6 +406,8 @@ class RasterPreviewService:
             palette_colors,
             min_value=min_value,
             max_value=max_value,
+            nodata_mode=normalize_nodata_mode(nodata_mode),
+            nodata_rgb=parse_nodata_color(nodata_color),
         )
 
         with memory_file_cls() as memory_file:
@@ -238,9 +471,7 @@ class RasterPreviewService:
                 f"Raster preview dependencies unavailable: {exc.__class__.__name__}"
             ) from exc
 
-        palette_colors = numpy.array(
-            _PALETTES.get(palette) or _PALETTES["wind-blue"], dtype="float32"
-        )
+        palette_colors = numpy.array(get_palette_rgb_stops(palette), dtype="float32")
         # width/height 仅作为 dst 计算的输入提示，最终由 calculate_default_transform 决定
         width = max(64, min(2048, int(width)))
         height = max(64, min(2048, int(height)))

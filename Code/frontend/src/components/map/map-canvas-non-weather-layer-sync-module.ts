@@ -58,16 +58,32 @@ export function createMapCanvasNonWeatherLayerSyncModule(
   async function syncOverlayLayers() {
     const known = new Set(overlayImageModule.knownOverlayIds.value)
     const opacityByLayerId: Record<string, number> = {}
+    const styleByLayerId: Record<string, import('./overlay-image-module').OverlayStyleParams> = {}
     const activeList: string[] = []
     const visibleList: string[] = []
 
     for (const layer of options.getActiveLayers()) {
+      const styleParams = {
+        palette: layer.paletteOverride ?? undefined,
+        vmin: layer.vminOverride ?? undefined,
+        vmax: layer.vmaxOverride ?? undefined,
+        nodataMode: layer.nodataMode ?? undefined,
+        nodataColor: layer.nodataColor ?? undefined,
+        forceStyle: Boolean(
+          layer.paletteOverride ||
+            layer.vminOverride != null ||
+            layer.vmaxOverride != null ||
+            (layer.nodataMode && layer.nodataMode !== 'transparent') ||
+            layer.nodataColor,
+        ),
+      }
       if (layer.importedRaster) {
         const overlayId = layer.importedRaster.overlayLayerId
         overlayImageModule.rememberOverlayId(overlayId)
         known.add(overlayId)
         activeList.push(overlayId)
         opacityByLayerId[overlayId] = layer.opacity
+        styleByLayerId[overlayId] = styleParams
         if (layer.visible) visibleList.push(overlayId)
         continue
       }
@@ -75,11 +91,12 @@ export function createMapCanvasNonWeatherLayerSyncModule(
       if (known.has(layer.catalogId)) {
         activeList.push(layer.catalogId)
         opacityByLayerId[layer.catalogId] = layer.opacity
+        styleByLayerId[layer.catalogId] = styleParams
         if (layer.visible) visibleList.push(layer.catalogId)
       }
     }
 
-    await overlayImageModule.syncOverlays(activeList, visibleList, opacityByLayerId)
+    await overlayImageModule.syncOverlays(activeList, visibleList, opacityByLayerId, styleByLayerId)
     applyLayerStackOrder()
   }
 
@@ -139,7 +156,7 @@ export function createMapCanvasNonWeatherLayerSyncModule(
             .filter((l) => l.importedRaster || (!l.importedVector && !l.isAdminBoundary))
             .map(
               (l) =>
-                `${l.instanceId}:${l.catalogId}:${l.visible}:${l.opacity}:${l.importedRaster ? 'r' : 'c'}`,
+                `${l.instanceId}:${l.catalogId}:${l.visible}:${l.opacity}:${l.importedRaster ? 'r' : 'c'}:${l.paletteOverride ?? ''}:${l.vminOverride ?? ''}:${l.vmaxOverride ?? ''}:${l.nodataMode ?? ''}:${l.nodataColor ?? ''}`,
             )
             .join(','),
         () => {

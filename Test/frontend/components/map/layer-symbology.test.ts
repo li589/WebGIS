@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 
 import {
   buildLegendHintFromOverlayMeta,
+  buildOverlayStyleQuery,
   hasRenderableSymbology,
   isMapLinkedPalette,
   resolveEffectivePalette,
@@ -66,10 +67,33 @@ describe('layer-symbology', () => {
     expect(hint?.palette).toBe('spectral')
   })
 
-  it('marks overlay-only palette as not map-linked', () => {
+  it('marks overlay-only palette as not map-linked unless supports_recolor', () => {
     expect(isMapLinkedPalette({ hasRenderHint: false })).toBe(false)
     expect(isMapLinkedPalette({ hasRenderHint: true })).toBe(true)
     expect(isMapLinkedPalette({ hasRenderHint: true, isImportedRaster: true })).toBe(false)
+    expect(
+      isMapLinkedPalette({
+        hasRenderHint: false,
+        isImportedRaster: true,
+        supportsRecolor: true,
+      }),
+    ).toBe(true)
+  })
+
+  it('buildOverlayStyleQuery encodes palette and nodata', () => {
+    const qs = buildOverlayStyleQuery({
+      palette: 'viridis',
+      vmin: 0,
+      vmax: 1,
+      nodataMode: 'solid',
+      nodataColor: '#ff0000',
+      forceStyle: true,
+    })
+    expect(qs).toContain('palette=viridis')
+    expect(qs).toContain('min_value=0')
+    expect(qs).toContain('max_value=1')
+    expect(qs).toContain('nodata_mode=solid')
+    expect(qs).toContain('nodata_color')
   })
 
   it('hides symbology for imported / admin layers', () => {

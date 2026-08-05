@@ -36,6 +36,9 @@ export const WORKFLOW_COPY = {
   progressiveSyncFailed: '增量结果同步失败，将在下次重试',
   progressiveSyncPartial: '部分时间片已同步（{count}），同步仍在继续…',
 
+  // 结果回显空态（审查 BUG-4）
+  noMapLayers: '工作流已完成，但未生成可显示的地图图层。',
+
   // 状态面板
   copyRunTimeline: '复制运行时间线',
   filterByStage: '按阶段过滤',

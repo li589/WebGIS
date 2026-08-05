@@ -7,7 +7,7 @@
  * 字段：
  *   - server_type: hpc / win11 / nas
  *   - remote_path: 远程路径（带"浏览"按钮 → RemoteDirBrowser）
- *   - local_path:  本地路径（默认 I:\Geograph_DataSet\）
+ *   - local_path:  本地路径（须填写；相对 BACKEND_DATA_ROOT 或绝对路径）
  *   - start_date / end_date: YYYYMMDD
  *   - file_filter: 多选扩展名标签 (.mat/.h5/.nc/.tif/.txt)
  *   - 连接状态指示器（GET /api/remote/test?server=...）
@@ -46,7 +46,7 @@ const emit = defineEmits<{
 const DEFAULTS = {
   server_type: 'hpc',
   remote_path: '/',
-  local_path: 'I:\\Geograph_DataSet\\',
+  local_path: '',
   start_date: '',
   end_date: '',
   file_filter: [] as string[],
@@ -275,7 +275,7 @@ function toggleFilter(ext: string) {
         type="text"
         class="form-input"
         :value="String(form.local_path ?? '')"
-        placeholder="I:\Geograph_DataSet\"
+        placeholder="请选择或输入本地目录"
         :readonly="readonly"
         @input="update('local_path', ($event.target as HTMLInputElement).value)"
       />

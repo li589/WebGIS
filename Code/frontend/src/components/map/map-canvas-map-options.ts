@@ -1,10 +1,13 @@
 import type { MapOptions, StyleSpecification } from 'maplibre-gl'
 
+import { getMapDefaults } from '../../services/map-defaults'
+
 interface CreateMapCanvasMapOptionsOptions {
   container: HTMLElement
 }
 
 export function createMapCanvasMapOptions(options: CreateMapCanvasMapOptionsOptions): MapOptions {
+  const mapDefaults = getMapDefaults()
   return {
     container: options.container,
     style: {
@@ -12,8 +15,8 @@ export function createMapCanvasMapOptions(options: CreateMapCanvasMapOptionsOpti
       sources: {},
       layers: [{ id: 'background', type: 'background', paint: { 'background-color': '#07111e' } }],
     } as StyleSpecification,
-    center: [113.2644, 23.1291],
-    zoom: 4.8,
+    center: [mapDefaults.longitude, mapDefaults.latitude],
+    zoom: mapDefaults.zoom,
     pitch: 0,
     bearing: 0,
     attributionControl: false,

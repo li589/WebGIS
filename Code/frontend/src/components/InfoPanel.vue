@@ -227,9 +227,10 @@ watch(
       displayLayer.value.isImportedRaster,
       displayLayer.value.isAdminBoundary,
     ] as const,
-  ([catalogId, renderHint, isImported, _isImportedRaster, isAdminBoundary]) => {
-    // 导入矢量 / 边界跳过；导入栅格仍拉取 overlay meta（只读色带）
-    if (!catalogId || isImported || isAdminBoundary || renderHint) return
+  ([catalogId, renderHint, isImported, isImportedRaster, isAdminBoundary]) => {
+    if (!catalogId || isImported || isAdminBoundary) return
+    // 天气有 renderHint 时不必拉 overlay meta；有源 overlay / 导入栅格需要 supports_recolor
+    if (renderHint && !isImportedRaster) return
     void overlaySymbologyStore.ensureMeta(catalogId)
   },
   { immediate: true },
@@ -299,12 +300,73 @@ const canEditPalette = computed(() =>
   isMapLinkedPalette({
     hasRenderHint: Boolean(weatherRenderHint.value),
     isImportedRaster: displayLayer.value.isImportedRaster,
+    supportsRecolor: Boolean(overlayStyleMeta.value?.supports_recolor),
   }),
 )
 
+const rangeEditVmin = computed({
+  get: () => {
+    if (displayLayer.value.vminOverride != null) return String(displayLayer.value.vminOverride)
+    const meta = overlayStyleMeta.value
+    if (meta?.vmin != null) return String(meta.vmin)
+    const ticks = styleRenderHint.value?.legend_ticks
+    const first = ticks?.[0]
+    return typeof first === 'number' ? String(first) : ''
+  },
+  set: (raw: string) => {
+    if (!displayLayer.value?.instanceId || !canEditPalette.value) return
+    const n = raw.trim() === '' ? null : Number(raw)
+    layersStore.setLayerRangeOverride(displayLayer.value.instanceId, {
+      vmin: n != null && Number.isFinite(n) ? n : null,
+    })
+  },
+})
+
+const rangeEditVmax = computed({
+  get: () => {
+    if (displayLayer.value.vmaxOverride != null) return String(displayLayer.value.vmaxOverride)
+    const meta = overlayStyleMeta.value
+    if (meta?.vmax != null) return String(meta.vmax)
+    const ticks = styleRenderHint.value?.legend_ticks
+    const last = ticks?.length ? ticks[ticks.length - 1] : undefined
+    return typeof last === 'number' ? String(last) : ''
+  },
+  set: (raw: string) => {
+    if (!displayLayer.value?.instanceId || !canEditPalette.value) return
+    const n = raw.trim() === '' ? null : Number(raw)
+    layersStore.setLayerRangeOverride(displayLayer.value.instanceId, {
+      vmax: n != null && Number.isFinite(n) ? n : null,
+    })
+  },
+})
+
+const nodataModeValue = computed({
+  get: () => displayLayer.value.nodataMode ?? 'transparent',
+  set: (mode: 'transparent' | 'solid') => {
+    if (!displayLayer.value?.instanceId || !canEditPalette.value) return
+    layersStore.setLayerNodataDisplay(displayLayer.value.instanceId, {
+      mode,
+      color: mode === 'solid' ? displayLayer.value.nodataColor || '#808080' : null,
+    })
+  },
+})
+
+const nodataColorValue = computed({
+  get: () => displayLayer.value.nodataColor || '#808080',
+  set: (color: string) => {
+    if (!displayLayer.value?.instanceId || !canEditPalette.value) return
+    layersStore.setLayerNodataDisplay(displayLayer.value.instanceId, {
+      mode: 'solid',
+      color,
+    })
+  },
+})
+
 function handleSelectPalette(paletteId: string) {
   if (!canEditPalette.value) return
-  const defaultId = resolveCanonicalPaletteId(weatherRenderHint.value?.palette ?? '')
+  const defaultId = resolveCanonicalPaletteId(
+    weatherRenderHint.value?.palette ?? overlayStyleMeta.value?.palette ?? '',
+  )
   const target = paletteIdsEqual(paletteId, defaultId) ? null : paletteId
   if (displayLayer.value?.instanceId) {
     layersStore.setLayerPaletteOverride(displayLayer.value.instanceId, target)
@@ -1930,17 +1992,47 @@ onBeforeUnmount(() => {
                 </div>
                 <div class="style-range-cell">
                   <span>min</span>
-                  <strong>{{ styleRangeMeta.vmin }}</strong>
+                  <input
+                    v-if="canEditPalette"
+                    v-model="rangeEditVmin"
+                    class="style-range-input"
+                    type="number"
+                    step="any"
+                    title="值域下限"
+                  />
+                  <strong v-else>{{ styleRangeMeta.vmin }}</strong>
                 </div>
                 <div class="style-range-cell">
                   <span>max</span>
-                  <strong>{{ styleRangeMeta.vmax }}</strong>
+                  <input
+                    v-if="canEditPalette"
+                    v-model="rangeEditVmax"
+                    class="style-range-input"
+                    type="number"
+                    step="any"
+                    title="值域上限"
+                  />
+                  <strong v-else>{{ styleRangeMeta.vmax }}</strong>
                 </div>
+              </div>
+              <div v-if="canEditPalette" class="style-nodata-row">
+                <span class="style-section-label">无效值 (NaN)</span>
+                <select v-model="nodataModeValue" class="style-nodata-select" title="无效像元显示">
+                  <option value="transparent">透明</option>
+                  <option value="solid">固色填充</option>
+                </select>
+                <input
+                  v-if="nodataModeValue === 'solid'"
+                  v-model="nodataColorValue"
+                  class="style-nodata-color"
+                  type="color"
+                  title="NaN 填充色"
+                />
               </div>
             </div>
 
             <div
-              v-if="styleRenderHint"
+              v-if="styleRenderHint || canEditPalette"
               class="palette-selector"
               :class="{ 'is-readonly': !canEditPalette }"
             >
@@ -1953,7 +2045,7 @@ onBeforeUnmount(() => {
                 class="palette-trigger"
                 type="button"
                 :disabled="!canEditPalette"
-                :title="canEditPalette ? '切换地图配色' : '预渲染栅格图例，不支持前端改色'"
+                :title="canEditPalette ? '切换地图配色' : '无源预渲染栅格，不支持前端改色'"
                 @click="togglePaletteDropdown"
               >
                 <span class="palette-trigger-label">配色方案</span>
@@ -2003,7 +2095,9 @@ onBeforeUnmount(() => {
                   <span class="palette-option-label">恢复默认配色</span>
                 </button>
               </div>
-              <p v-if="!canEditPalette" class="palette-readonly-hint">预渲染产物，配色只读</p>
+              <p v-if="!canEditPalette" class="palette-readonly-hint">
+                无可读源的预渲染产物，配色只读
+              </p>
             </div>
 
             <div class="weather-style-meta">
@@ -3231,6 +3325,39 @@ onBeforeUnmount(() => {
   color: #e2e8f0;
   font-size: 0.72rem;
   font-variant-numeric: tabular-nums;
+}
+.style-range-input {
+  width: 100%;
+  border: 1px solid rgba(148, 163, 184, 0.25);
+  border-radius: 0.3rem;
+  background: rgba(15, 23, 42, 0.55);
+  color: #e2e8f0;
+  font-size: 0.72rem;
+  padding: 0.15rem 0.3rem;
+  font-variant-numeric: tabular-nums;
+}
+.style-nodata-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4rem;
+  margin-top: 0.25rem;
+}
+.style-nodata-select {
+  border: 1px solid rgba(148, 163, 184, 0.25);
+  border-radius: 0.3rem;
+  background: rgba(15, 23, 42, 0.55);
+  color: #e2e8f0;
+  font-size: 0.72rem;
+  padding: 0.2rem 0.35rem;
+}
+.style-nodata-color {
+  width: 1.6rem;
+  height: 1.4rem;
+  padding: 0;
+  border: none;
+  background: transparent;
+  cursor: pointer;
 }
 .imported-vector-style {
   margin-bottom: 0.55rem;

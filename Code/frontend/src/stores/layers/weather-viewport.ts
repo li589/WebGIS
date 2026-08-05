@@ -6,6 +6,7 @@
 import { ref } from 'vue'
 
 import type { WindDisplayMode } from '../../components/map/wind-display-mode'
+import { getMapDefaults } from '../../services/map-defaults'
 import type { BoundingBox } from '../../services/runtime-api'
 
 const VIEWPORT_DEBOUNCE_MS = 500
@@ -60,9 +61,13 @@ export function createWeatherViewportSlice(deps: WeatherViewportSliceDeps) {
   const weatherViewportDebounceTimer = ref<number | null>(null)
   let weatherViewportMaxWaitTimer: ReturnType<typeof setTimeout> | null = null
 
-  const currentMapCenter = ref<{ lng: number; lat: number }>({ lng: 113.2644, lat: 23.1291 })
+  const mapBoot = getMapDefaults()
+  const currentMapCenter = ref<{ lng: number; lat: number }>({
+    lng: mapBoot.longitude,
+    lat: mapBoot.latitude,
+  })
   const currentMapBBox = ref<BoundingBox | null>(null)
-  const currentMapZoom = ref(4.8)
+  const currentMapZoom = ref(mapBoot.zoom)
 
   /** 平滑渲染：开=WebGL 双线性连续数值面（含风场「网格」色底）；关=网格色块。
    *  默认开；WebGL 不可用时回退网格。变化经 weather-overlay-watcher 触发 sync。 */

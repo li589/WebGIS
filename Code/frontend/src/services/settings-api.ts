@@ -186,6 +186,17 @@ export interface GeneralConfig {
   workflow_state_dir?: string
   python_provider_root?: string
   python_provider_workspace?: string
+  map_default_longitude?: number
+  map_default_latitude?: number
+  map_default_zoom?: number
+  map_default_tile_source?: string
+  map_aoi_presets?: Array<{
+    label: string
+    west: number
+    south: number
+    east: number
+    north: number
+  }>
 }
 
 export interface DataSourceConfig {

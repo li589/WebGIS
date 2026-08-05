@@ -233,7 +233,9 @@ function buildWorkflowOverlayState(
   layer: ActiveLayerDisplay,
   options: ResolveWeatherOverlayStatesOptions,
 ): WeatherOverlayState | null {
-  const renderHint = layer.jobLayer?.mapLayerPayload?.renderHint
+  // 优先用 display 合并后的 renderHint（含 paletteOverride）
+  const renderHint =
+    layer.renderHint ?? layer.jobLayer?.mapLayerPayload?.renderHint ?? null
   if (!renderHint) return null
 
   const geojsonUrl = layer.jobLayer?.mapLayerPayload?.layerAssets?.geojsonUrl

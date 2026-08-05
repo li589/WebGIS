@@ -1209,5 +1209,203 @@
     ],
     "data_owner": "Lab",
     "temporal_coverage": "Static Auxiliary Baseline"
+  },
+  {
+    "layer_id": "aridity-cn",
+    "dataset_key": "aridity_index_cn",
+    "display_name": "干旱指数 AI",
+    "description": "中国区域干旱指数（P/PET）0.25° 网格产品。",
+    "category": "climate",
+    "source_type": "algorithm_output",
+    "render_type": "raster",
+    "supported_map_modes": ["2d"],
+    "supports_time": false,
+    "is_realtime": false,
+    "default_visible": false,
+    "status": "available",
+    "time_granularity": "static",
+    "default_time_offset": 0,
+    "extent": {
+      "west": 73.0,
+      "south": 15.0,
+      "east": 137.0,
+      "north": 59.0,
+      "crs": "EPSG:4326"
+    },
+    "style": { "palette": "brg", "unit_label": "AI", "opacity": 0.8 },
+    "capabilities": {
+      "render_strategy": "workflow_map_layer",
+      "data_domain": "climate",
+      "paint_mode": "grid_fill"
+    },
+    "tags": ["aridity", "climate", "frontend-aligned"],
+    "engine": "overlay_registry",
+    "run_readiness_summary": "干旱指数 AI 叠加层已注册",
+    "temporal_coverage": "Static Climate Product"
+  },
+  {
+    "layer_id": "gpcp-precip-ts",
+    "dataset_key": "gpcp_v32_monthly",
+    "display_name": "GPCP 月降水时间序列",
+    "description": "GPCP V3.2 月降水时间序列（采样月份）。",
+    "category": "climate",
+    "source_type": "algorithm_output",
+    "render_type": "raster",
+    "supported_map_modes": ["2d"],
+    "supports_time": true,
+    "is_realtime": false,
+    "default_visible": false,
+    "status": "available",
+    "time_granularity": "month",
+    "default_time_offset": 0,
+    "extent": {
+      "west": -180.0,
+      "south": -90.0,
+      "east": 180.0,
+      "north": 90.0,
+      "crs": "EPSG:4326"
+    },
+    "style": { "palette": "blues", "unit_label": "mm/month", "opacity": 0.8 },
+    "capabilities": {
+      "render_strategy": "workflow_map_layer",
+      "data_domain": "climate",
+      "paint_mode": "grid_fill"
+    },
+    "tags": ["gpcp", "precipitation", "timeseries", "frontend-aligned"],
+    "engine": "overlay_registry",
+    "run_readiness_summary": "GPCP 月降水时间序列已注册",
+    "temporal_coverage": "Monthly sample series"
+  },
+  {
+    "layer_id": "cmfd-precip-cn",
+    "dataset_key": "cmfd_precip_cn",
+    "display_name": "CMFD 中国区域降水",
+    "description": "CMFD 中国区域降水栅格（示例时段 2002-01）。",
+    "category": "climate",
+    "source_type": "algorithm_output",
+    "render_type": "raster",
+    "supported_map_modes": ["2d"],
+    "supports_time": false,
+    "is_realtime": false,
+    "default_visible": false,
+    "status": "available",
+    "time_granularity": "static",
+    "default_time_offset": 0,
+    "extent": {
+      "west": 73.0,
+      "south": 15.0,
+      "east": 137.0,
+      "north": 59.0,
+      "crs": "EPSG:4326"
+    },
+    "style": { "palette": "YlGnBu", "unit_label": "mm", "opacity": 0.8 },
+    "capabilities": {
+      "render_strategy": "workflow_map_layer",
+      "data_domain": "climate",
+      "paint_mode": "grid_fill"
+    },
+    "tags": ["cmfd", "precipitation", "frontend-aligned"],
+    "engine": "overlay_registry",
+    "run_readiness_summary": "CMFD 降水叠加层已注册",
+    "temporal_coverage": "2002-01 sample"
+  },
+  {
+    "layer_id": "era5-dwaa-cn",
+    "dataset_key": "era5_dwaa_smci_2020",
+    "display_name": "ERA5 白天热浪事件（2020）",
+    "description": "ERA5 DWAA SMCI 2020 白天热浪事件次数。",
+    "category": "climate",
+    "source_type": "algorithm_output",
+    "render_type": "raster",
+    "supported_map_modes": ["2d"],
+    "supports_time": false,
+    "is_realtime": false,
+    "default_visible": false,
+    "status": "available",
+    "time_granularity": "static",
+    "default_time_offset": 0,
+    "extent": {
+      "west": 73.0,
+      "south": 15.0,
+      "east": 137.0,
+      "north": 59.0,
+      "crs": "EPSG:4326"
+    },
+    "style": { "palette": "YlOrRd", "unit_label": "events", "opacity": 0.8 },
+    "capabilities": {
+      "render_strategy": "workflow_map_layer",
+      "data_domain": "climate",
+      "paint_mode": "grid_fill"
+    },
+    "tags": ["era5", "heatwave", "dwaa", "frontend-aligned"],
+    "engine": "overlay_registry",
+    "run_readiness_summary": "ERA5 白天热浪叠加层已注册",
+    "temporal_coverage": "2020"
+  },
+  {
+    "layer_id": "era5-wdaa-cn",
+    "dataset_key": "era5_wdaa_smci_2020",
+    "display_name": "ERA5 夜间热浪事件（2020）",
+    "description": "ERA5 WDAA SMCI 2020 夜间热浪事件次数。",
+    "category": "climate",
+    "source_type": "algorithm_output",
+    "render_type": "raster",
+    "supported_map_modes": ["2d"],
+    "supports_time": false,
+    "is_realtime": false,
+    "default_visible": false,
+    "status": "available",
+    "time_granularity": "static",
+    "default_time_offset": 0,
+    "extent": {
+      "west": 73.0,
+      "south": 15.0,
+      "east": 137.0,
+      "north": 59.0,
+      "crs": "EPSG:4326"
+    },
+    "style": { "palette": "YlGnBu", "unit_label": "events", "opacity": 0.8 },
+    "capabilities": {
+      "render_strategy": "workflow_map_layer",
+      "data_domain": "climate",
+      "paint_mode": "grid_fill"
+    },
+    "tags": ["era5", "heatwave", "wdaa", "frontend-aligned"],
+    "engine": "overlay_registry",
+    "run_readiness_summary": "ERA5 夜间热浪叠加层已注册",
+    "temporal_coverage": "2020"
+  },
+  {
+    "layer_id": "co2-cn",
+    "dataset_key": "gosat_midlayer_co2",
+    "display_name": "GOSAT 中层 CO₂ 柱浓度",
+    "description": "GOSAT 中层 CO₂ 柱浓度均值产品。",
+    "category": "climate",
+    "source_type": "algorithm_output",
+    "render_type": "raster",
+    "supported_map_modes": ["2d"],
+    "supports_time": false,
+    "is_realtime": false,
+    "default_visible": false,
+    "status": "available",
+    "time_granularity": "static",
+    "default_time_offset": 0,
+    "extent": {
+      "west": 73.0,
+      "south": 15.0,
+      "east": 137.0,
+      "north": 59.0,
+      "crs": "EPSG:4326"
+    },
+    "style": { "palette": "RdYlGn_r", "unit_label": "ppm", "opacity": 0.8 },
+    "capabilities": {
+      "render_strategy": "workflow_map_layer",
+      "data_domain": "climate",
+      "paint_mode": "grid_fill"
+    },
+    "tags": ["co2", "gosat", "frontend-aligned"],
+    "engine": "overlay_registry",
+    "run_readiness_summary": "CO₂ 柱浓度叠加层已注册",
+    "temporal_coverage": "Static Mean Product"
   }
 ]

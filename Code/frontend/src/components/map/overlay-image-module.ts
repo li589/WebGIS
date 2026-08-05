@@ -1,8 +1,19 @@
 import { ref } from 'vue'
 import { showToast } from '../../data-manager/core/workspace-store'
 import { overlaySafeWgs84Bounds } from '../../services/geo-math'
+import { buildOverlayStyleQuery } from './layer-symbology'
 
 type MapInstance = import('maplibre-gl').Map
+
+export interface OverlayStyleParams {
+  palette?: string | null
+  vmin?: number | null
+  vmax?: number | null
+  nodataMode?: 'transparent' | 'solid' | null
+  nodataColor?: string | null
+  /** 有用户覆盖或 supports_recolor 时强制带样式 query */
+  forceStyle?: boolean
+}
 
 export interface OverlayTimeState {
   layerId: string
@@ -95,11 +106,14 @@ export interface OverlayImageModule {
     activeOverlayLayerIds: string[],
     visibleOverlayLayerIds: string[],
     opacityByLayerId?: Record<string, number>,
+    styleByLayerId?: Record<string, OverlayStyleParams>,
   ) => Promise<void>
   /** 切换时间序列图层的时间标签。若 linkTimeEnabled 为 true，联动其他时间序列图层。 */
   setOverlayTime: (layerId: string, time: string) => Promise<void>
   /** 设置已加载 overlay 的栅格透明度。 */
   setOverlayOpacity: (layerId: string, opacity: number) => void
+  /** 应用配色 / 值域 / NaN 样式并刷新 image 或 tiles。 */
+  setOverlayStyle: (layerId: string, style: OverlayStyleParams) => void
   /** 设置已加载 overlay 的显隐。 */
   setOverlayVisibility: (layerId: string, visible: boolean) => void
   /** 返回已加载 overlay 的 MapLibre raster layer id（若存在）。 */
@@ -143,6 +157,8 @@ interface LoadedOverlay {
   tileUrlTemplate: string | null
   bounds: [number, number, number, number] | null
   opacity: number
+  style: OverlayStyleParams
+  styleKey: string
 }
 
 /** 有 GeoTIFF 时优先瓦片；-1 表示任意缩放都用 XYZ（避免 overview PNG 放大糊/闪没） */
@@ -150,11 +166,46 @@ const DEFAULT_OVERVIEW_MAX_ZOOM = -1
 const OVERVIEW_HYSTERESIS = 0.4
 const DEFAULT_TILE_MAX_ZOOM = 18
 
-function _tileUrlFor(template: string, layerId: string, time: string | null): string {
+function styleKeyOf(style: OverlayStyleParams | undefined | null): string {
+  if (!style) return ''
+  return [
+    style.palette ?? '',
+    style.vmin ?? '',
+    style.vmax ?? '',
+    style.nodataMode ?? '',
+    style.nodataColor ?? '',
+    style.forceStyle ? '1' : '0',
+  ].join('|')
+}
+
+function _styleQuery(style: OverlayStyleParams | undefined | null, time: string | null): string {
+  return buildOverlayStyleQuery({
+    time,
+    palette: style?.palette,
+    vmin: style?.vmin,
+    vmax: style?.vmax,
+    nodataMode: style?.nodataMode,
+    nodataColor: style?.nodataColor,
+    forceStyle: Boolean(style?.forceStyle || style?.palette || style?.vmin != null || style?.vmax != null),
+  })
+}
+
+function _tileUrlFor(
+  template: string,
+  layerId: string,
+  time: string | null,
+  style?: OverlayStyleParams | null,
+): string {
   const base = template.includes('{z}') ? template : `/overlay-tiles/${layerId}/{z}/{x}/{y}.png`
-  const qs = time ? `?time=${encodeURIComponent(time)}` : ''
-  // MapLibre appends nothing; bake cache-buster into template path query once
+  const qs = _styleQuery(style, time)
   return `${base}${qs}`
+}
+
+function _previewUrl(layerId: string, time: string | null, style?: OverlayStyleParams | null): string {
+  const qs = _styleQuery(style, time)
+  const bust = `_=${Date.now()}`
+  if (!qs) return `/overlay-preview/${layerId}?${bust}`
+  return `/overlay-preview/${layerId}${qs}&${bust}`
 }
 
 export function createOverlayImageModule(
@@ -166,6 +217,8 @@ export function createOverlayImageModule(
   const loadingOverlays = new Set<string>()
   /** 加载过程中用户切换显隐时记住最新意图，避免 hide 被 in-flight load 覆盖 */
   const desiredVisibility = new Map<string, boolean>()
+  /** 加载过程中记住最新样式，完成后应用 */
+  const desiredStyle = new Map<string, OverlayStyleParams>()
   const linkTimeEnabled = ref(false)
   // bounds 内存缓存：避免显示/隐藏切换时重复请求 /overlay-bounds
   const boundsCache = new Map<string, { bounds: [number, number, number, number]; meta: any }>()
@@ -428,14 +481,11 @@ export function createOverlayImageModule(
     if (mode === 'raster-xyz' && loaded.tileUrlTemplate) {
       _addXyzSource(
         sourceId,
-        _tileUrlFor(loaded.tileUrlTemplate, layerId, loaded.currentTime),
+        _tileUrlFor(loaded.tileUrlTemplate, layerId, loaded.currentTime, loaded.style),
         loaded.maxZoom,
       )
     } else if (loaded.bounds) {
-      const url =
-        loaded.category === 'time-series' && loaded.currentTime
-          ? `/overlay-preview/${layerId}?time=${encodeURIComponent(loaded.currentTime)}&_=${Date.now()}`
-          : `/overlay-preview/${layerId}?_=${Date.now()}`
+      const url = _previewUrl(layerId, loaded.currentTime, loaded.style)
       _addImageSource(sourceId, url, loaded.bounds)
     } else {
       return
@@ -495,14 +545,18 @@ export function createOverlayImageModule(
     layerId: string,
     initialOpacity?: number,
     initiallyVisible: boolean = true,
+    initialStyle?: OverlayStyleParams,
   ): Promise<void> {
     desiredVisibility.set(layerId, initiallyVisible)
+    if (initialStyle) desiredStyle.set(layerId, initialStyle)
     if (loadedOverlays.has(layerId)) {
       setOverlayVisibility(layerId, desiredVisibility.get(layerId) ?? initiallyVisible)
+      const style = desiredStyle.get(layerId)
+      if (style) setOverlayStyle(layerId, style)
       return
     }
     if (loadingOverlays.has(layerId)) {
-      // 已有加载在飞：只更新 desiredVisibility，完成后应用
+      // 已有加载在飞：只更新 desiredVisibility / style，完成后应用
       return
     }
     const { sourceId } = _ids(layerId)
@@ -552,6 +606,7 @@ export function createOverlayImageModule(
           vmax: meta.vmax ?? null,
           unit: meta.unit,
           opacity: typeof initialOpacity === 'number' ? initialOpacity : meta.opacity,
+          supports_recolor: Boolean(meta.supports_recolor),
         })
       } catch {
         // Pinia 未就绪时忽略
@@ -561,10 +616,18 @@ export function createOverlayImageModule(
           ? Math.max(0, Math.min(1, initialOpacity))
           : (meta.opacity ?? 0.7)
 
-      const url =
-        category === 'time-series' && currentTime
-          ? `/overlay-preview/${layerId}?time=${currentTime}`
-          : `/overlay-preview/${layerId}`
+      const style: OverlayStyleParams = {
+        ...(desiredStyle.get(layerId) ?? initialStyle ?? {}),
+      }
+      // 有源可重着色：默认带上注册 palette，便于服务端动态着色与后续覆盖一致
+      if (meta.supports_recolor && !style.palette && meta.palette) {
+        style.palette = meta.palette
+        style.forceStyle = true
+      }
+      if (style.vmin == null && typeof meta.vmin === 'number') style.vmin = meta.vmin
+      if (style.vmax == null && typeof meta.vmax === 'number') style.vmax = meta.vmax
+
+      const url = _previewUrl(layerId, currentTime, style)
 
       const supportsXyzTiles = Boolean(meta.supports_xyz_tiles)
       const overviewMaxZoom =
@@ -585,7 +648,7 @@ export function createOverlayImageModule(
       const { sourceId, rasterLayerId, footprintSourceId, footprintLayerId } = _ids(layerId)
 
       if (renderMode === 'raster-xyz' && supportsXyzTiles) {
-        _addXyzSource(sourceId, _tileUrlFor(tileUrlTemplate, layerId, currentTime), maxZoom)
+        _addXyzSource(sourceId, _tileUrlFor(tileUrlTemplate, layerId, currentTime, style), maxZoom)
       } else {
         _addImageSource(sourceId, url, bounds)
       }
@@ -609,6 +672,8 @@ export function createOverlayImageModule(
         tileUrlTemplate: supportsXyzTiles ? tileUrlTemplate : null,
         bounds,
         opacity,
+        style,
+        styleKey: styleKeyOf(style),
       })
 
       // 更新时间状态
@@ -646,6 +711,7 @@ export function createOverlayImageModule(
     activeOverlayLayerIds: string[],
     visibleOverlayLayerIds: string[],
     opacityByLayerId?: Record<string, number>,
+    styleByLayerId?: Record<string, OverlayStyleParams>,
   ): Promise<void> {
     if (!options.getMapReady()) return
 
@@ -658,24 +724,31 @@ export function createOverlayImageModule(
       }
     }
 
-    // 2) 添加新 active 的图层（首次加载）；对已加载的仅切换 visibility，避免重复 fetch PNG
-    //    并行加载多个新图层，缩短多图层同时显示时的等待
+    // 2) 添加新 active 的图层（首次加载）；对已加载的仅切换 visibility / opacity / style
     const newLayerIds: string[] = []
     for (const layerId of activeOverlayLayerIds) {
+      if (styleByLayerId?.[layerId]) desiredStyle.set(layerId, styleByLayerId[layerId])
       if (!loadedOverlays.has(layerId)) {
         newLayerIds.push(layerId)
       } else {
-        // 已加载：仅切 visibility + opacity，不重新 fetch
         setOverlayVisibility(layerId, visibleSet.has(layerId))
         if (typeof opacityByLayerId?.[layerId] === 'number') {
           setOverlayOpacity(layerId, opacityByLayerId[layerId])
+        }
+        if (styleByLayerId?.[layerId]) {
+          setOverlayStyle(layerId, styleByLayerId[layerId])
         }
       }
     }
     if (newLayerIds.length > 0) {
       await Promise.all(
         newLayerIds.map((layerId) =>
-          _addOverlay(layerId, opacityByLayerId?.[layerId], visibleSet.has(layerId)),
+          _addOverlay(
+            layerId,
+            opacityByLayerId?.[layerId],
+            visibleSet.has(layerId),
+            styleByLayerId?.[layerId],
+          ),
         ),
       )
     }
@@ -714,7 +787,11 @@ export function createOverlayImageModule(
       const { sourceId, rasterLayerId } = loaded
       const visible = desiredVisibility.get(layerId) ?? true
       _removeOverlayLayers(sourceId, rasterLayerId)
-      _addXyzSource(sourceId, _tileUrlFor(loaded.tileUrlTemplate, layerId, time), loaded.maxZoom)
+      _addXyzSource(
+        sourceId,
+        _tileUrlFor(loaded.tileUrlTemplate, layerId, time, loaded.style),
+        loaded.maxZoom,
+      )
       _addRasterLayer(rasterLayerId, sourceId, loaded.opacity, visible)
     } else {
       const source = options.map.getSource(loaded.sourceId) as
@@ -730,7 +807,7 @@ export function createOverlayImageModule(
           }
         | undefined
       if (!source) return
-      const newUrl = `/overlay-preview/${layerId}?time=${encodeURIComponent(time)}&_=${Date.now()}`
+      const newUrl = _previewUrl(layerId, time, loaded.style)
       _applyImageSourceUpdate(source, newUrl, timedBounds)
     }
 
@@ -771,6 +848,41 @@ export function createOverlayImageModule(
     if (!knownOverlayIds.value.includes(layerId)) {
       knownOverlayIds.value = [...knownOverlayIds.value, layerId]
     }
+  }
+
+  function setOverlayStyle(layerId: string, style: OverlayStyleParams) {
+    desiredStyle.set(layerId, style)
+    const loaded = loadedOverlays.get(layerId)
+    if (!loaded) return
+    const nextKey = styleKeyOf(style)
+    if (nextKey === loaded.styleKey) return
+    loaded.style = { ...style }
+    loaded.styleKey = nextKey
+
+    if (loaded.renderMode === 'raster-xyz' && loaded.tileUrlTemplate) {
+      const { sourceId, rasterLayerId } = loaded
+      const visible = desiredVisibility.get(layerId) ?? true
+      _removeOverlayLayers(sourceId, rasterLayerId)
+      _addXyzSource(
+        sourceId,
+        _tileUrlFor(loaded.tileUrlTemplate, layerId, loaded.currentTime, loaded.style),
+        loaded.maxZoom,
+      )
+      _addRasterLayer(rasterLayerId, sourceId, loaded.opacity, visible)
+      return
+    }
+
+    const source = options.map.getSource(loaded.sourceId) as
+      | {
+          updateImage?: (o: {
+            url: string
+            coordinates?: [[number, number], [number, number], [number, number], [number, number]]
+          }) => void
+          setUrl?: (u: string) => void
+        }
+      | undefined
+    if (!source || !loaded.bounds) return
+    _applyImageSourceUpdate(source, _previewUrl(layerId, loaded.currentTime, loaded.style), loaded.bounds)
   }
 
   function setOverlayOpacity(layerId: string, opacity: number) {
@@ -824,6 +936,7 @@ export function createOverlayImageModule(
     }
     loadingOverlays.clear()
     desiredVisibility.clear()
+    desiredStyle.clear()
     boundsCache.clear()
     knownOverlayIds.value = []
     overlayTimeStates.value = []
@@ -847,6 +960,7 @@ export function createOverlayImageModule(
     syncOverlays,
     setOverlayTime,
     setOverlayOpacity,
+    setOverlayStyle,
     setOverlayVisibility,
     getRasterLayerId,
     rememberOverlayId,

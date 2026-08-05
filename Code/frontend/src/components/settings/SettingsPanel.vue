@@ -58,7 +58,7 @@ const tabComponents = shallowRef<Record<SettingsTab, typeof GeneralSettings>>({
   about: AboutSettings,
 })
 
-const tabs: Array<{ id: SettingsTab; label: string; icon: string }> = [
+const ALL_TABS: Array<{ id: SettingsTab; label: string; icon: string }> = [
   { id: 'general', label: SETTINGS_COPY.tabGeneral, icon: '▣' },
   { id: 'api-keys', label: SETTINGS_COPY.tabApiKeys, icon: '🔑' },
   { id: 'gee-accounts', label: SETTINGS_COPY.tabGee, icon: '🌍' },
@@ -68,6 +68,27 @@ const tabs: Array<{ id: SettingsTab; label: string; icon: string }> = [
   { id: 'data-source', label: SETTINGS_COPY.tabDataSource, icon: '⚱' },
   { id: 'about', label: '关于', icon: 'ⓘ' },
 ]
+
+/** VITE_SETTINGS_TABS=comma ids 白名单；未配置则全开（兼容现网） */
+function resolveVisibleSettingsTabs(): Array<{ id: SettingsTab; label: string; icon: string }> {
+  const raw = String(
+    (import.meta.env as Record<string, unknown>).VITE_SETTINGS_TABS ?? '',
+  ).trim()
+  if (!raw) return ALL_TABS
+  const allowed = new Set(
+    raw
+      .split(',')
+      .map((s) => s.trim())
+      .filter(Boolean),
+  )
+  const filtered = ALL_TABS.filter((t) => allowed.has(t.id))
+  return filtered.length ? filtered : ALL_TABS
+}
+
+const tabs = resolveVisibleSettingsTabs()
+if (!tabs.some((t) => t.id === activeTab.value)) {
+  activeTab.value = tabs[0]?.id ?? 'api-keys'
+}
 
 onMounted(async () => {
   const loading = useUiLoadingStore()

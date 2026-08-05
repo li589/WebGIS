@@ -1,4 +1,5 @@
 import type { LayerCatalogItem, LayerCategory, LayerSource } from './types'
+import { ORG_LABEL } from '../../ui-copy/brand'
 
 // 注意：category id 必须与后端 `layer_catalog.py` 中的 `category=` 字段保持一致。
 // 任何新增/重命名都需要后端同步更新。前端独有类别（imported/workflow-output）除外。
@@ -46,7 +47,7 @@ export const LAYER_CATEGORIES: LayerCategory[] = [
   },
   {
     id: 'research-group',
-    name: '课题组数据',
+    name: `${ORG_LABEL}数据`,
     icon: 'R',
     accentColor: '#ff6f91',
     chipTone: 'rgba(255, 111, 145, 0.16)',

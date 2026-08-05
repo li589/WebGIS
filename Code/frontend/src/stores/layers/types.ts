@@ -34,8 +34,8 @@ export interface LayerCatalogItem {
   catalogId: string
   name: string
   category: string
-  /** 课题组数据二级分类: '模型输入' | '模型输出' | '辅助数据' */
-  subCategory?: '模型输入' | '模型输出' | '辅助数据'
+  /** 课题组数据二级分类（由 API sub_category / 静态库提供，勿前端写死枚举） */
+  subCategory?: string
   metricLabel: string
   metricUnit: string
   metricPrecision: number
@@ -252,6 +252,13 @@ export interface ActiveLayer {
   dataState: 'catalog' | 'real' | 'imported'
   /** 用户自定义配色方案覆盖（覆盖默认 renderHint.palette） */
   paletteOverride?: string | null
+  /** 配色值域覆盖（overlay 重着色 / 图例） */
+  vminOverride?: number | null
+  vmaxOverride?: number | null
+  /** NaN/无效像元：transparent | solid */
+  nodataMode?: 'transparent' | 'solid' | null
+  /** solid 模式下的 NaN 填充色（#rrggbb） */
+  nodataColor?: string | null
   /** 实例级强调色（侧栏区分 / 时间轴主色） */
   accentColor?: string
   accentGlow?: string
@@ -322,6 +329,10 @@ export interface ActiveLayerDisplay {
   renderHint?: WeatherLayerRenderHint
   /** 用户自定义配色方案覆盖 */
   paletteOverride?: string | null
+  vminOverride?: number | null
+  vmaxOverride?: number | null
+  nodataMode?: 'transparent' | 'solid' | null
+  nodataColor?: string | null
   /** 导入矢量元信息（仅 isImported） */
   importedGeometryType?: string
   importedFeatureCount?: number

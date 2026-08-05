@@ -257,25 +257,36 @@ class OverlaySpec:
 
 
 # ──────────────────────────────────────────────────────────────────────────────
-# 数据根目录
+# 数据根目录（相对 BACKEND_DATA_ROOT；空根 → 占位路径，exists()=False）
 # ──────────────────────────────────────────────────────────────────────────────
 
-_PROJECT_OUTPUT = Path(r"I:\Geograph_DataSet\ProjectOutput\2023-01_Omega_Inversion")
-_DEM_DIR = Path(r"I:\Geograph_DataSet\Geological\DEM\ETOPO_2022")
-_GPCP_DIR = Path(r"I:\Geograph_DataSet\Meteorological\Precipitation\GPCP\dataset")
+
+def _data_join(*parts: str) -> Path:
+    """拼接地理数据路径；未配置 data_root 时返回不存在的占位路径。"""
+    from app.core.config import settings
+
+    root = (getattr(settings, "data_root", None) or "").strip()
+    if not root:
+        return Path(".__cgda_no_data_root__").joinpath(*parts)
+    return Path(root).joinpath(*parts)
+
+
+_PROJECT_OUTPUT = _data_join("ProjectOutput", "2023-01_Omega_Inversion")
+_DEM_DIR = _data_join("Geological", "DEM", "ETOPO_2022")
+_GPCP_DIR = _data_join("Meteorological", "Precipitation", "GPCP", "dataset")
 _STAGE2_ALIGNED = _PROJECT_OUTPUT / "stage2_aligned"
-_OMEGA_SOURCE = Path(r"I:\Geograph_DataSet\Inversion_Results\smap_avg\doy_017.mat")
+_OMEGA_SOURCE = _data_join("Inversion_Results", "smap_avg", "doy_017.mat")
 _DEM_SOURCE_TIF = _DEM_DIR / "ETOPO_2022_v1_60s_N90W180_surface.tif"
 
 # ── 课题组派生 9km EASE-Grid 数据根 ──────────────────────────────────────────
-_INVERSION_RESULTS_ROOT = Path(r"I:\Geograph_DataSet\Inversion_Results")
+_INVERSION_RESULTS_ROOT = _data_join("Inversion_Results")
 _OMEGA_SMAP_AVG_DIR = _INVERSION_RESULTS_ROOT / "smap_avg"
 _OMEGA_FY_AVG_DIR = _INVERSION_RESULTS_ROOT / "fy_avg"
-_SOIL_DDCA_H_DIR = Path(r"I:\Geograph_DataSet\Soil_Moisture\DDCA\DDCA_DH\H")
+_SOIL_DDCA_H_DIR = _data_join("Soil_Moisture", "DDCA", "DDCA_DH", "H")
 
 # ── Phase 2: 课题组 VOD/SM 产品族（2025-12 时间序列，EASE-Grid 9km）──────────
 # SmapSoil_VOD_SM/YYYYMMDD.mat (v7.3 HDF5) 含 OMEGA / SM / VOD 三个变量，shape (1624, 3856)
-_SMAP_SOIL_VOD_SM_DIR = Path(r"I:\Geograph_DataSet\Soil_Moisture\SMAP_Soil_VOD_SM")
+_SMAP_SOIL_VOD_SM_DIR = _data_join("Soil_Moisture", "SMAP_Soil_VOD_SM")
 
 _OVERLAY_PNG_ROOT = _PROJECT_OUTPUT / "_overlays"
 """所有导出 PNG 的统一存放目录（由 Tools/export_overlay_assets.py 生成）。"""
@@ -710,29 +721,25 @@ register_overlay(
 
 # ─── 新增数据集图层（10 个，静态） ────────────────────────────────────────────
 
-# 源数据根目录
-_GEBCO_NC = Path(r"I:\Geograph_DataSet\Geological\DEM\GEBCO_2024.nc")
-_CMFD_TIF = Path(r"I:\Geograph_DataSet\Meteorological\Precipitation\pre_2002_01.tif")
-_CLCD_TIF = Path(
-    r"I:\Geograph_DataSet\Ecological_Vegetation\LandCover\CLCD\CLCD_v01_1997.tif"
+# 源数据（相对 BACKEND_DATA_ROOT）
+_GEBCO_NC = _data_join("Geological", "DEM", "GEBCO_2024.nc")
+_CMFD_TIF = _data_join("Meteorological", "Precipitation", "pre_2002_01.tif")
+_CLCD_TIF = _data_join(
+    "Ecological_Vegetation", "LandCover", "CLCD", "CLCD_v01_1997.tif"
 )
-_BIOMASS_NC = Path(
-    r"I:\Geograph_DataSet\Ecological_Vegetation\Biomass\ESACCI-BIOMASS-L4-AGB-MERGED-100m-2020-fv6.0.nc"
+_BIOMASS_NC = _data_join(
+    "Ecological_Vegetation",
+    "Biomass",
+    "ESACCI-BIOMASS-L4-AGB-MERGED-100m-2020-fv6.0.nc",
 )
-_ERA5_DWAA_TIF = Path(
-    r"I:\Geograph_DataSet\Hazards\DWAA_result\DW_T7\ERA5_2020_DW_SMCI.tif"
+_ERA5_DWAA_TIF = _data_join("Hazards", "DWAA_result", "DW_T7", "ERA5_2020_DW_SMCI.tif")
+_ERA5_WDAA_TIF = _data_join("Hazards", "DWAA_result", "WD_T7", "ERA5_2020_WD_SMCI.tif")
+_CO2_TIF = _data_join(
+    "Atmospheric", "CO2", "MidLayerCO2Column", "TIF", "MeanCarbonDioxide.tif"
 )
-_ERA5_WDAA_TIF = Path(
-    r"I:\Geograph_DataSet\Hazards\DWAA_result\WD_T7\ERA5_2020_WD_SMCI.tif"
-)
-_CO2_TIF = Path(
-    r"I:\Geograph_DataSet\Atmospheric\CO2\MidLayerCO2Column\TIF\MeanCarbonDioxide.tif"
-)
-_SOIL_DDCA_MAT = Path(r"I:\Geograph_DataSet\Soil_Moisture\DDCA\DDCA_DH\H\20150401.mat")
-_OMEGA_FY_MAT = Path(r"I:\Geograph_DataSet\Inversion_Results\fy_avg\doy_025.mat")
-_FOREST_RATIO_MAT = Path(
-    r"I:\Geograph_DataSet\Inversion_Results\Forest_Ratio_9KM_2020.mat"
-)
+_SOIL_DDCA_MAT = _data_join("Soil_Moisture", "DDCA", "DDCA_DH", "H", "20150401.mat")
+_OMEGA_FY_MAT = _data_join("Inversion_Results", "fy_avg", "doy_025.mat")
+_FOREST_RATIO_MAT = _data_join("Inversion_Results", "Forest_Ratio_9KM_2020.mat")
 
 
 # GEBCO 2024 DEM（中国区域）
@@ -1050,6 +1057,9 @@ def read_bounds(layer_id: str, time: str | None = None) -> dict[str, Any]:
     )
     meta.update(tile_meta_fields(layer_id))
     meta["supports_xyz_tiles"] = supports_tiles
+    from app.services.overlay_recolor import overlay_supports_recolor
+
+    meta["supports_recolor"] = overlay_supports_recolor(layer_id, time)
     data.setdefault("meta", {}).update(meta)
     # 确保 bounds 字段存在
     if "bounds" not in data:

@@ -11,6 +11,7 @@
  * integrations can be updated in one normalized place.
  */
 
+import { getMapDefaults } from './map-defaults'
 import { resolveApiUrl } from './runtime-api'
 
 export type IntegrationDomain = 'basemap' | 'data-source' | 'gee' | 'credential' | 'certificate'
@@ -764,6 +765,9 @@ for (const [style, sources] of TILE_SOURCES_BY_STYLE) {
 }
 
 export function getDefaultTileSource(): TileSourceId {
+  // 运行时可由 /config/general.map_default_tile_source 覆盖（见 map-defaults）
+  const id = getMapDefaults().tileSource as TileSourceId
+  if (TILE_SOURCE_MAP.has(id)) return id
   return 'gaode-street'
 }
 
