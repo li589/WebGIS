@@ -15,7 +15,7 @@ import { ref } from 'vue'
 
 import { useLogStore } from './log'
 import { useSettingsStore } from './settings'
-import { normalizeLngBounds } from '../components/map/map-viewport-sync'
+import { normalizeLngBounds } from '../utils/geo-bounds'
 import {
   buildTileKey,
   fetchWeatherTile,
