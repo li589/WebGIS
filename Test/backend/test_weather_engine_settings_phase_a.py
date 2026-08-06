@@ -86,6 +86,21 @@ class WeatherEngineSettingsServiceTests(unittest.TestCase):
 
 
 class WeatherCoverageProbeTests(unittest.TestCase):
+    def setUp(self) -> None:
+        import importlib
+
+        wr = importlib.import_module("app.api.routers.weather_router")
+        wr._COVERAGE_CACHE.clear()
+        # C2：coverage 结果落 Redis（TTL 300s），测试间残留会污染后续用例，
+        # 故 setUp 一并清除 Redis 中的 coverage 键，保证用例隔离。
+        client = wr.get_redis_client()
+        if client is not None:
+            try:
+                for _model in ("ecmwf_ifs025", "gfs_global"):
+                    client.delete(wr._COVERAGE_REDIS_PREFIX + _model)
+            except Exception:
+                pass
+
     def test_unreachable(self) -> None:
         import importlib
 

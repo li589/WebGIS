@@ -14,6 +14,15 @@ class WeatherCoverageProbePhaseDTests(unittest.TestCase):
 
         self.wr = importlib.import_module("app.api.routers.weather_router")
         self.wr._COVERAGE_CACHE.clear()
+        # C2：coverage 结果落 Redis（TTL 300s），测试间残留会污染后续用例，
+        # 故 setUp 一并清除 Redis 中的 coverage 键，保证用例隔离。
+        client = self.wr.get_redis_client()
+        if client is not None:
+            try:
+                for _model in ("ecmwf_ifs025", "gfs_global"):
+                    client.delete(self.wr._COVERAGE_REDIS_PREFIX + _model)
+            except Exception:
+                pass
 
     def test_unreachable(self) -> None:
         with patch.object(self.wr, "urlopen", side_effect=OSError("down")):
@@ -82,6 +91,39 @@ class WeatherCoverageProbePhaseDTests(unittest.TestCase):
         detail = ctx.exception.detail
         self.assertIsInstance(detail, dict)
         self.assertEqual(detail.get("code"), "local_unreachable")
+
+    # ── R-1：invalidate 必须同时清 Redis coverage 键（读端 Redis 优先）──────
+
+    def test_invalidate_noarg_deletes_all_redis_coverage_keys(self) -> None:
+        client = MagicMock()
+        with (
+            patch.object(self.wr, "get_redis_client", return_value=client),
+            patch.object(
+                self.wr,
+                "scan_keys",
+                return_value=[
+                    "weather:coverage:ecmwf_ifs025",
+                    "weather:coverage:gfs_global",
+                ],
+            ),
+        ):
+            self.wr.invalidate_weather_coverage_cache()
+        client.delete.assert_called_once()
+        self.assertEqual(
+            sorted(client.delete.call_args[0]),
+            ["weather:coverage:ecmwf_ifs025", "weather:coverage:gfs_global"],
+        )
+
+    def test_invalidate_model_deletes_single_redis_key(self) -> None:
+        client = MagicMock()
+        with patch.object(self.wr, "get_redis_client", return_value=client):
+            self.wr.invalidate_weather_coverage_cache("ecmwf_ifs025")
+        client.delete.assert_called_once_with("weather:coverage:ecmwf_ifs025")
+        # 带 model 分支按 key 删，不触发 scan
+        client.reset_mock()
+        with patch.object(self.wr, "get_redis_client", return_value=client):
+            self.wr.invalidate_weather_coverage_cache("gfs_global")
+        client.delete.assert_called_once_with("weather:coverage:gfs_global")
 
 
 if __name__ == "__main__":

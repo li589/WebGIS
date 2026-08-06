@@ -38,6 +38,62 @@ class RedisCircuitBreakerTests(unittest.TestCase):
         self.assertIsNone(redis_client._client)
         self.assertTrue(redis_client._circuit_is_open())
 
+    # ── L-1：dedup lock owner token 语义 ─────────────────────────────────────
+
+    def test_acquire_dedup_lock_returns_owner_token(self) -> None:
+        client = MagicMock()
+        client.set.return_value = True  # SET NX 成功
+        with patch.object(redis_client, "get_redis_client", return_value=client):
+            token = redis_client.acquire_dedup_lock("lock:k", ttl_seconds=30)
+        self.assertIsNotNone(token)
+        self.assertEqual(len(token), 32)  # uuid4().hex
+        args, kwargs = client.set.call_args
+        self.assertEqual(args[0], "lock:k")
+        self.assertEqual(args[1], token)
+        self.assertTrue(kwargs.get("nx"))
+        self.assertEqual(kwargs.get("ex"), 30)
+
+    def test_acquire_dedup_lock_returns_none_when_held(self) -> None:
+        client = MagicMock()
+        client.set.return_value = None  # SET NX 未获取到
+        with patch.object(redis_client, "get_redis_client", return_value=client):
+            token = redis_client.acquire_dedup_lock("lock:k", ttl_seconds=30)
+        self.assertIsNone(token)
+
+    def test_acquire_dedup_lock_redis_down_still_returns_token(self) -> None:
+        with patch.object(redis_client, "get_redis_client", return_value=None):
+            token = redis_client.acquire_dedup_lock("lock:k", ttl_seconds=30)
+        self.assertIsNotNone(token)  # 兼容旧放行语义（None 为假、非空串为真）
+
+    def test_release_dedup_lock_without_token_skips_delete(self) -> None:
+        client = MagicMock()
+        with patch.object(redis_client, "get_redis_client", return_value=client):
+            redis_client.release_dedup_lock("lock:k")  # 无 token → 不 eval、不删
+        client.eval.assert_not_called()
+        client.delete.assert_not_called()
+
+    def test_release_dedup_lock_token_compare_delete_semantics(self) -> None:
+        """用 Python 复刻 Lua 语义：token 不匹配不删除、匹配才删除。"""
+        client = MagicMock()
+        storage: dict[str, str] = {"lock:sync:a": "token-owner"}
+
+        def fake_eval(script, numkeys, key, token):  # type: ignore[no-untyped-def]
+            self.assertEqual(numkeys, 1)
+            self.assertIn("redis.call", script)  # 必须是 Lua 比对删除脚本
+            if storage.get(key) == token:
+                storage.pop(key)
+                return 1
+            return 0
+
+        client.eval.side_effect = fake_eval
+        with patch.object(redis_client, "get_redis_client", return_value=client):
+            # token 不匹配：不删除
+            redis_client.release_dedup_lock("lock:sync:a", "token-other")
+            self.assertIn("lock:sync:a", storage)
+            # token 匹配：删除
+            redis_client.release_dedup_lock("lock:sync:a", "token-owner")
+            self.assertNotIn("lock:sync:a", storage)
+
 
 if __name__ == "__main__":
     unittest.main()

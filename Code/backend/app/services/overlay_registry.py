@@ -92,25 +92,45 @@ class OverlaySpec:
     source_reader: str = "auto"
     """auto | mat | netcdf | geotiff | hdf5。auto 按文件扩展名判断。"""
 
+    def _assert_time_available(self, t: str | None) -> str | None:
+        """校验时序图层的时间值在 time_list 白名单内。
+
+        与 :meth:`resolve_png` 的既有校验保持一致，阻断把用户可控 ``time``
+        直接拼进文件路径的路径穿越（G1-01）。静态图层或空白名单时不拦截。
+        """
+        if self.category == "time-series" and t is None:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Time-series overlay {self.layer_id} requires 'time' parameter",
+            )
+        if self.time_list and t not in self.time_list:
+            raise HTTPException(
+                status_code=404,
+                detail=f"Time {t} not available for overlay {self.layer_id}",
+            )
+        return t
+
+    @staticmethod
+    def _assert_no_path_traversal(path: Path) -> Path:
+        """防御纵深：拒绝含 ``..`` 段的结果路径（白名单之外的最后一层防护）。"""
+        if ".." in path.parts:
+            raise HTTPException(
+                status_code=404,
+                detail="Invalid overlay path (traversal detected)",
+            )
+        return path
+
     def resolve_png(self, time: str | None = None) -> Path:
         if self.category == "time-series":
-            t = time or self.default_time
-            if t is None:
-                raise HTTPException(
-                    status_code=400,
-                    detail=f"Time-series overlay {self.layer_id} requires 'time' parameter",
-                )
-            if self.time_list and t not in self.time_list:
-                raise HTTPException(
-                    status_code=404,
-                    detail=f"Time {t} not available for overlay {self.layer_id}",
-                )
+            t = self._assert_time_available(time or self.default_time)
             if self.time_pattern is None:
                 raise HTTPException(
                     status_code=500,
                     detail=f"Time-series overlay {self.layer_id} missing time_pattern",
                 )
-            return self.overlay_dir / self.time_pattern.format(time=t)
+            return self._assert_no_path_traversal(
+                self.overlay_dir / self.time_pattern.format(time=t)
+            )
         # static
         if self.png_filename is None:
             raise HTTPException(
@@ -121,8 +141,10 @@ class OverlaySpec:
 
     def resolve_bounds(self, time: str | None = None) -> Path:
         if self.category == "time-series" and self.bounds_pattern:
-            t = time or self.default_time
-            return self.overlay_dir / self.bounds_pattern.format(time=t)
+            t = self._assert_time_available(time or self.default_time)
+            return self._assert_no_path_traversal(
+                self.overlay_dir / self.bounds_pattern.format(time=t)
+            )
         if self.bounds_filename is None:
             raise HTTPException(
                 status_code=500,
@@ -154,10 +176,13 @@ class OverlaySpec:
             t = time or self.default_time
             if t is None:
                 return None
+            # 与 resolve_png 一致的白名单校验，阻断 time=../../ 路径穿越（G1-01）
+            self._assert_time_available(t)
             pattern = self.source_pattern.format(time=t)
             # 支持 glob 通配符（如 SMAP R 编号）
             if "*" in pattern or "?" in pattern:
                 p = Path(pattern)
+                self._assert_no_path_traversal(p)
                 # 统一使用 parent.glob(name) 避免绝对路径 glob 异常
                 parent = p.parent
                 matches = sorted(parent.glob(p.name)) if parent.exists() else []
@@ -165,6 +190,7 @@ class OverlaySpec:
                     return None
                 return matches[0]
             p = Path(pattern)
+            self._assert_no_path_traversal(p)
             return p if p.exists() else None
         # static
         if self.source_path is None:

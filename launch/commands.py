@@ -102,6 +102,9 @@ def cmd_start(args: argparse.Namespace) -> int:
         log.ok("Launcher", "Docker 基础设施已启动（不进入监控循环）")
         return 0
 
+    if component == "backend":
+        return _start_backend_app_processes(args)
+
     if component == "fastapi":
         if not redis_running():
             log.warn(
@@ -176,7 +179,7 @@ def cmd_start(args: argparse.Namespace) -> int:
     log.error("Launcher", f"未知组件: {component}")
     log.info(
         "Launcher",
-        "可用组件: all, docker, fastapi, beat, worker, worker:<name>, frontend, gateway",
+        "可用组件: all, docker, fastapi, beat, worker, worker:<name>, frontend, gateway, backend",
     )
     return 1
 
@@ -413,8 +416,63 @@ def cmd_status() -> int:
 
 
 # ─── 重启命令 ────────────────────────────────────────────────────────────────
+def _stop_backend_app_processes() -> None:
+    """仅停止 FastAPI / Celery worker / Beat（不动 Docker、Vite、gateway）。"""
+    terminate_by_cmdline_patterns(
+        [
+            "start_celery_worker.py",
+            "start_celery_beat.py",
+            "start_fastapi.py",
+        ]
+    )
+    # Drop stale PID entries for backend procs if present
+    if PID_FILE.exists():
+        try:
+            pids = json.loads(PID_FILE.read_text(encoding="utf-8"))
+            if isinstance(pids, dict):
+                keep = {
+                    name: pid
+                    for name, pid in pids.items()
+                    if not (
+                        str(name).startswith("worker-")
+                        or str(name) in {"fastapi", "beat", "celery-beat"}
+                    )
+                }
+                if keep:
+                    PID_FILE.write_text(json.dumps(keep, indent=2), encoding="utf-8")
+                else:
+                    PID_FILE.unlink(missing_ok=True)
+        except (json.JSONDecodeError, OSError, TypeError):
+            pass
+
+
+def _start_backend_app_processes(args: argparse.Namespace) -> int:
+    """启动 worker → beat → fastapi（不进入监控循环）。"""
+    pm = ProcessManager(debug=args.debug, frontend_port=args.frontend_port)
+    if not redis_running():
+        log.warn("Launcher", "Redis 未检测到；worker/beat/fastapi 可能失败")
+    pm.start_celery_workers()
+    pm.start_celery_beat()
+    pm.start_fastapi()
+    pm.wait_for_fastapi(max_wait=45)
+    pm.save_pids(merge=True)
+    log.ok("Launcher", "backend（worker+beat+fastapi）已启动")
+    return 0
+
+
 def cmd_restart(args: argparse.Namespace) -> int:
-    """重启 CGDA 服务（全部或指定组件）。"""
+    """重启 CGDA 服务（全部或指定组件）。
+
+    ``backend``：仅重启 FastAPI + Worker + Beat，保留 Docker / Vite。
+    """
+    component = getattr(args, "component", None) or "all"
+    if component == "backend":
+        log.banner("重启 backend（FastAPI + Worker + Beat）")
+        ensure_project_initialized()
+        _stop_backend_app_processes()
+        time.sleep(2)
+        return _start_backend_app_processes(args)
+
     log.banner("重启 CGDA 服务")
     cmd_stop()
     time.sleep(2)
@@ -515,44 +573,73 @@ def cmd_sync(job: str = "open-meteo-sync") -> int:
         except OSError:
             pass
 
-    cmd = ["docker", "compose", "-p", "data-sync"]
-    if env_file.is_file():
-        cmd.extend(["--env-file", str(env_file)])
-    cmd.extend(["--profile", "sync", "run", "--rm", job])
-    log.info("Sync", " ".join(cmd))
+    # C1 + L-1：与 API trigger / Celery Beat 共用全局互斥锁（owner token 释放），
+    # 避免 CLI 与定时同步并发跑 docker、也避免误删他人锁。
+    acquire_sync_lock = None
+    release_sync_lock = None
     try:
-        r = subprocess.run(
-            cmd,
-            cwd=str(DATA_SYNC_DIR),
-            timeout=3600,
+        from app.tasks.open_meteo_sync_tasks import (
+            acquire_open_meteo_sync_lock,
+            release_open_meteo_sync_lock,
         )
-    except subprocess.TimeoutExpired:
-        log.error("Sync", "同步超时（3600s）")
-        _record_cli_sync_result(
-            ok=False, domains=domains, message="sync timeout 3600s", exit_code=1
-        )
-        return 1
-    except FileNotFoundError:
-        log.error("Sync", "docker 命令未找到")
-        _record_cli_sync_result(
-            ok=False, domains=domains, message="docker not found", exit_code=127
+
+        acquire_sync_lock = acquire_open_meteo_sync_lock
+        release_sync_lock = release_open_meteo_sync_lock
+    except Exception as exc:
+        log.warn("Sync", f"未能加载同步互斥锁（降级为不互斥）: {exc}")
+
+    lock_token = acquire_sync_lock(domains) if acquire_sync_lock is not None else None
+    if lock_token is None and acquire_sync_lock is not None:
+        log.error(
+            "Sync", f"另一同步正在进行（domains={domains}），本次 CLI 同步跳过"
         )
         return 1
 
-    if r.returncode != 0:
-        log.error("Sync", f"同步失败 exit={r.returncode}")
+    try:
+        cmd = ["docker", "compose", "-p", "data-sync"]
+        if env_file.is_file():
+            cmd.extend(["--env-file", str(env_file)])
+        cmd.extend(["--profile", "sync", "run", "--rm", job])
+        log.info("Sync", " ".join(cmd))
+        try:
+            r = subprocess.run(
+                cmd,
+                cwd=str(DATA_SYNC_DIR),
+                timeout=3600,
+            )
+        except subprocess.TimeoutExpired:
+            log.error("Sync", "同步超时（3600s）")
+            _record_cli_sync_result(
+                ok=False, domains=domains, message="sync timeout 3600s", exit_code=1
+            )
+            return 1
+        except FileNotFoundError:
+            log.error("Sync", "docker 命令未找到")
+            _record_cli_sync_result(
+                ok=False, domains=domains, message="docker not found", exit_code=127
+            )
+            return 1
+
+        if r.returncode != 0:
+            log.error("Sync", f"同步失败 exit={r.returncode}")
+            _record_cli_sync_result(
+                ok=False,
+                domains=domains,
+                message=f"exit code {r.returncode}",
+                exit_code=r.returncode,
+            )
+            return r.returncode
+        log.ok("Sync", f"{job} 完成")
         _record_cli_sync_result(
-            ok=False,
-            domains=domains,
-            message=f"exit code {r.returncode}",
-            exit_code=r.returncode,
+            ok=True, domains=domains, message=f"{job} completed via launch.py", exit_code=0
         )
-        return r.returncode
-    log.ok("Sync", f"{job} 完成")
-    _record_cli_sync_result(
-        ok=True, domains=domains, message=f"{job} completed via launch.py", exit_code=0
-    )
-    return 0
+        return 0
+    finally:
+        if release_sync_lock is not None:
+            try:
+                release_sync_lock(domains, lock_token)
+            except Exception as exc:
+                log.warn("Sync", f"释放同步锁失败: {exc}")
 
 
 def _record_cli_sync_result(

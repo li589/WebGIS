@@ -89,6 +89,8 @@ def test_apply_remote_layer_data_uris_injects_smap(monkeypatch):
     smap = next(i for i in catalog.items if i.layer_id == "smap-sm-ts")
     candidates = smap.default_data_access_sources["SMAP_L3_DEC2025"]
     assert candidates[0].startswith("smb://")
-    # catalog 本地候选 SMAP_L3_DEC2025 在注入远端 URI 后仍保留
-    assert "SMAP_L3_DEC2025" in candidates
+    # 业务判定（2026-08-07）：SMAP_L3_DEC2025 是数据集 KEY，本地候选为可解析的数据源名
+    # （"SMAP_L3" 经算法 provider dataset_config 解析到 Soil_Moisture/SMAP，运行期可解析；
+    # 直接把 KEY 当候选会导致运行期无法定位数据）。远端 URI 注入后本地候选仍保留。
+    assert "SMAP_L3" in candidates
     assert any("远端数据源候选" in n for n in (smap.run_readiness_notes or []))

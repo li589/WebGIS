@@ -39,9 +39,14 @@ class TestGldasOnlineSeedCompile(unittest.TestCase):
         self.assertIn("gldas_download", module_names)
         self.assertIn("omega_avg_daily", module_names)
         edges = compiled.get("edges") or []
+        # 编译器归一化（_normalize_python_edges）：指向 datasource_selection /
+        # daily_mat_sources / time_range / bbox / region 的 fan-in 边会被有意丢弃，
+        # 数据源改由 request.datasource_selection 绑定注入。故此处不要求 n1→n7 边存在，
+        # 只验证存活边不会命中被刮取的 fan-in 端口（防止未来回归）。
+        scraped_fan_ins = {"datasource_selection", "daily_mat_sources", "time_range", "bbox", "region"}
         self.assertTrue(
-            any(e.get("from_node") == "n1" and e.get("to_node") == "n7" for e in edges),
-            msg=f"expected n1→n7 edge, got {edges}",
+            all(e.get("to_port") not in scraped_fan_ins for e in edges),
+            msg=f"compiled edges must not target scraped fan-in ports, got {edges}",
         )
 
 

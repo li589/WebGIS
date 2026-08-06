@@ -194,8 +194,10 @@ class WorkflowServicesTests(unittest.TestCase):
         # P2.2 修复后 fy-mwri 的首个候选数据源从 “fy” 扩展为 “FY_MWRI_HDF”
         # （见 layer_catalog.py 中 fy-mwri.default_data_access_sources）。
         # catalog 演进：smap-soil 已移除，改用 smap-sm-ts（module=smap_daily, dataset=SMAP_L3_DEC2025）。
+        # 业务判定（2026-08-07）：本地候选为可解析数据源名 "SMAP_L3"
+        # （dataset_config → Soil_Moisture/SMAP），故派生 URI 为 D:/prepared/SMAP_L3。
         expected_layers = {
-            "smap-sm-ts": ("smap_daily", "SMAP_L3_DEC2025", "D:/prepared/SMAP_L3_DEC2025"),
+            "smap-sm-ts": ("smap_daily", "SMAP_L3_DEC2025", "D:/prepared/SMAP_L3"),
             "fy-mwri": ("fy_daily", "FY_MWRI_HDF", "D:/prepared/FY_MWRI_HDF"),
         }
 
