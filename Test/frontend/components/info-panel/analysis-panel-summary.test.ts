@@ -100,11 +100,12 @@ describe('analysis-panel-summary', () => {
     )
     expect(
       resolveWorkflowStageCopy({
-        stage: 'idle',
+        stage: 'running',
         progress: 0,
         isWeather: true,
         tilePending: 3,
         tileCached: 0,
+        tileVisible: 12,
       }),
     ).toBe(ANALYSIS_COPY.stageLoading)
     expect(
@@ -114,7 +115,19 @@ describe('analysis-panel-summary', () => {
         isWeather: true,
         tilePending: 0,
         tileCached: 12,
+        tileVisible: 12,
       }),
     ).toBe(ANALYSIS_COPY.stageCached)
+    // Banner「完整数据」对齐：pending=0 且 cached>=visible 时不显示「加载中」
+    expect(
+      resolveWorkflowStageCopy({
+        stage: 'succeeded',
+        progress: 0,
+        isWeather: true,
+        tilePending: 0,
+        tileCached: 12,
+        tileVisible: 12,
+      }),
+    ).not.toBe(ANALYSIS_COPY.stageLoading)
   })
 })

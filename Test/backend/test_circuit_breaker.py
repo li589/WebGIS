@@ -48,12 +48,14 @@ class CircuitBreakerStateTests(unittest.TestCase):
         self.assertEqual(breaker.state, CircuitState.CLOSED)
 
     def test_open_transitions_to_half_open_after_timeout(self) -> None:
+        # recovery_timeout 取 0.5s（而非 0.01s）：state 属性是惰性求值，
+        # 若超时窗口过短，OPEN 断言可能因调度/日志耗时已被惰性转为 HALF_OPEN 而抖动。
         breaker = CircuitBreaker(
-            "test:halfopen", failure_threshold=1, recovery_timeout=0.01
+            "test:halfopen", failure_threshold=1, recovery_timeout=0.5
         )
         breaker.record_failure()
         self.assertEqual(breaker.state, CircuitState.OPEN)
-        time.sleep(0.1)
+        time.sleep(0.6)
         self.assertEqual(breaker.state, CircuitState.HALF_OPEN)
 
     def test_half_open_probe_success_closes_circuit(self) -> None:

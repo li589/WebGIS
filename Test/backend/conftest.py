@@ -47,3 +47,7 @@ _PROJECT_TMP.mkdir(parents=True, exist_ok=True)
 # 仅当用户未显式覆盖时设置（避免与 --basetemp CLI 冲突）
 if "PYTEST_DEBUG_TEMPROOT" not in os.environ:
     os.environ["PYTEST_DEBUG_TEMPROOT"] = str(_PROJECT_TMP)
+
+# SpatiaLite 测试隔离：默认 spatial DB 落到项目 tmp，避免污染开发库
+if not os.environ.get("BACKEND_SPATIALITE_DB_PATH", "").strip():
+    os.environ["BACKEND_SPATIALITE_DB_PATH"] = str(_PROJECT_TMP / "spatial_test.sqlite")

@@ -7,6 +7,10 @@ import {
   computeViewportBBoxFromBounds,
   mergeRoamBounds,
 } from '@/components/map/wind-particle-canvas'
+import {
+  resolveVisibleLngBounds,
+  resolveVisibleViewportBBox,
+} from '@/components/map/map-viewport-sync'
 import type { WindGridPoint } from '@/components/map/wind-grid'
 
 // ─── 测试夹具 ────────────────────────────────────────────────
@@ -241,6 +245,26 @@ describe('viewport bbox helpers (Part C1+C2)', () => {
     const viewport = { south: 10, north: 20, west: 130, east: 140 }
     const merged = mergeRoamBounds(grid, viewport)
     expect(merged).toEqual({ south: 10, north: 40, west: 100, east: 140 })
+  })
+
+  it('resolveVisibleViewportBBox lng arc matches resolveVisibleLngBounds under IDL worldSize', () => {
+    const map = {
+      getCenter: () => ({ lng: 170, lat: 10 }),
+      getBounds: () => ({
+        getSouth: () => -30,
+        getNorth: () => 40,
+        getWest: () => 90,
+        getEast: () => 160,
+      }),
+      getZoom: () => 3,
+      getViewportWidthPx: () => 800,
+      getWorldSizePx: () => 1600,
+    }
+    const lng = resolveVisibleLngBounds(map)
+    const bbox = resolveVisibleViewportBBox(map, { clampLat: [-85, 85] })
+    expect(bbox.west).toBe(lng.west)
+    expect(bbox.east).toBe(lng.east)
+    expect(lng.east).toBeGreaterThan(180)
   })
 })
 

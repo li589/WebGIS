@@ -90,4 +90,23 @@ describe('aggregateWeatherTileBanner', () => {
     expect(model.partial).toContain('温度')
     expect(model.partial).toContain('补全')
   })
+
+  it('partial shows progress while tiles are still pending mid-fill', () => {
+    const model = aggregateWeatherTileBanner([
+      {
+        label: '温度',
+        active: true,
+        cachedInViewport: 2,
+        missingInViewport: 2,
+        pending: 3,
+        gapSweepActive: false,
+        errorType: null,
+        errorMessage: null,
+      },
+    ])
+    expect(model.show).toBe(true)
+    expect(model.isLoading).toBe(false)
+    expect(model.partial).toContain('温度')
+    expect(model.partial).toContain('2/4')
+  })
 })

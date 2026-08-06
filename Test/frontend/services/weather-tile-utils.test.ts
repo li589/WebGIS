@@ -2,9 +2,11 @@ import { describe, expect, it } from 'vitest'
 
 import type { WindGeoJSON } from '@/components/map/types'
 import {
+  centerInLngBounds,
   filterGeojsonInsideTileBounds,
   filterGeojsonOutsideCoverage,
   mergeWeatherTiles,
+  tileBoundsOverlapViewport,
 } from '@/services/weather-tile-utils'
 
 function pointFc(coords: Array<[number, number]>): WindGeoJSON {
@@ -118,5 +120,32 @@ describe('mergeWeatherTiles parent vs child resolutions', () => {
     ])
     // same 110,20 deduped; 110.25 and 110.5 both survive → would double-paint without gap clip
     expect(merged.features).toHaveLength(3)
+  })
+})
+
+describe('tileBoundsOverlapViewport', () => {
+  it('rejects Americas tile against Asia–Pacific viewport (no false +360 alias)', () => {
+    const asiaPacific = { west: 80, south: -40, east: 240, north: 55 }
+    const americasTile = { west: -120, south: 20, east: -90, north: 40 }
+    expect(tileBoundsOverlapViewport(americasTile, asiaPacific)).toBe(false)
+  })
+
+  it('accepts Asia tile inside Asia–Pacific viewport', () => {
+    const asiaPacific = { west: 80, south: -40, east: 240, north: 55 }
+    const asiaTile = { west: 110, south: 20, east: 120, north: 30 }
+    expect(tileBoundsOverlapViewport(asiaTile, asiaPacific)).toBe(true)
+  })
+
+  it('accepts Pacific tile past 180 when viewport east > 180', () => {
+    const asiaPacific = { west: 80, south: -40, east: 240, north: 55 }
+    const pacificTile = { west: 170, south: -10, east: 180, north: 10 }
+    expect(tileBoundsOverlapViewport(pacificTile, asiaPacific)).toBe(true)
+  })
+})
+
+describe('centerInLngBounds', () => {
+  it('detects center inside unwrapped Asia–Pacific arc', () => {
+    expect(centerInLngBounds(150, { west: 80, east: 240 })).toBe(true)
+    expect(centerInLngBounds(-100, { west: 80, east: 240 })).toBe(false)
   })
 })

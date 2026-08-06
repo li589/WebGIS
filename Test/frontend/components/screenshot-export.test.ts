@@ -6,6 +6,8 @@ import {
   pinLayoutsForCapture,
   prepareCloneForCapture,
   resolveCaptureElement,
+  sanitizeCssColorForHtml2Canvas,
+  stripUnsupportedColorFunctionsFromCss,
   type ScreenshotFormat,
   type ScreenshotMode,
 } from '@/components/screenshot-export'
@@ -236,5 +238,23 @@ describe('screenshot-export helpers', () => {
     expect(toolbarStyle.justifyContent).toBe('space-between')
     expect(mainStyle.marginLeft).toBe('auto')
     expect(mainStyle.alignItems).toBe('flex-end')
+  })
+
+  it('sanitizes CSS color() for html2canvas', () => {
+    expect(sanitizeCssColorForHtml2Canvas('rgb(1, 2, 3)')).toBe('rgb(1, 2, 3)')
+    expect(sanitizeCssColorForHtml2Canvas('color(srgb 0.1 0.2 0.3)')).toBe('')
+    expect(sanitizeCssColorForHtml2Canvas('oklch(0.5 0.1 30)')).toBe('')
+    expect(
+      sanitizeCssColorForHtml2Canvas('color-mix(in srgb, #88d8ff 35%, transparent)'),
+    ).toBe('')
+    expect(sanitizeCssColorForHtml2Canvas('transparent')).toBe('transparent')
+  })
+
+  it('strips color-mix from raw stylesheet text', () => {
+    const input =
+      '.x{border:1px solid color-mix(in srgb, #88d8ff 35%, transparent);color:#fff}'
+    const out = stripUnsupportedColorFunctionsFromCss(input)
+    expect(out).toContain('transparent')
+    expect(out).not.toMatch(/color-mix/i)
   })
 })

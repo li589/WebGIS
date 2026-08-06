@@ -21,11 +21,21 @@ describe('map-canvas-expose-bridge', () => {
         toDataURL: outToDataURL,
       })),
     })
+    // Image used to reload the basemap snapshot for compositing
+    vi.stubGlobal(
+      'Image',
+      class {
+        onload: (() => void) | null = null
+        onerror: (() => void) | null = null
+        set src(_v: string) {
+          queueMicrotask(() => this.onload?.())
+        }
+      },
+    )
     const stageElement = {
       querySelectorAll: vi.fn(() => []),
     } as unknown as HTMLElement
     const toDataURL = vi.fn(() => 'data:image/png;base64,abc')
-    const render = vi.fn()
     const triggerRepaint = vi.fn()
     const once = vi.fn((_event: string, cb: () => void) => {
       cb()
@@ -35,7 +45,6 @@ describe('map-canvas-expose-bridge', () => {
       getMapStageElement: () => stageElement,
       getMap: () =>
         ({
-          render,
           triggerRepaint,
           once,
           getCanvas: () => ({
@@ -51,14 +60,13 @@ describe('map-canvas-expose-bridge', () => {
     expect(bridge.getMapStageElement()).toBe(stageElement)
     await expect(bridge.captureMapCanvas()).resolves.toBe('data:image/png;base64,composite')
     expect(triggerRepaint).toHaveBeenCalled()
-    expect(render).toHaveBeenCalled()
+    expect(once).toHaveBeenCalledWith('render', expect.any(Function))
     expect(drawImage).toHaveBeenCalled()
     expect(outToDataURL).toHaveBeenCalledWith('image/png')
   })
 
   it('captures raw map canvas when no stage element is available', async () => {
     const toDataURL = vi.fn(() => 'data:image/png;base64,abc')
-    const render = vi.fn()
     const triggerRepaint = vi.fn()
     const once = vi.fn((_event: string, cb: () => void) => {
       cb()
@@ -68,7 +76,6 @@ describe('map-canvas-expose-bridge', () => {
       getMapStageElement: () => null,
       getMap: () =>
         ({
-          render,
           triggerRepaint,
           once,
           getCanvas: () => ({
@@ -79,7 +86,7 @@ describe('map-canvas-expose-bridge', () => {
 
     await expect(bridge.captureMapCanvas()).resolves.toBe('data:image/png;base64,abc')
     expect(triggerRepaint).toHaveBeenCalled()
-    expect(render).toHaveBeenCalled()
+    expect(once).toHaveBeenCalledWith('render', expect.any(Function))
     expect(toDataURL).toHaveBeenCalledWith('image/png')
   })
 
@@ -100,18 +107,18 @@ describe('map-canvas-expose-bridge', () => {
         ({
           triggerRepaint: vi.fn(),
           once: vi.fn((_e: string, cb: () => void) => cb()),
-          render: () => {
-            throw new Error('boom')
-          },
           getCanvas: () => ({
-            toDataURL: vi.fn(),
+            toDataURL: () => {
+              throw new Error('tainted')
+            },
           }),
         }) as any,
       dependencies: { warn },
     })
 
     await expect(bridgeWithError.captureMapCanvas()).resolves.toBeNull()
-    expect(warn).toHaveBeenCalled()
-    expect(warn).toHaveBeenCalledWith('[MapCanvas] captureMapCanvas failed:', expect.any(Error))
+    expect(warn).toHaveBeenCalledWith(
+      '[MapCanvas] map canvas is tainted or empty; cannot export basemap',
+    )
   })
 })

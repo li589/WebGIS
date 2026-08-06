@@ -13,6 +13,10 @@ import {
   extractMercatorProjectionMatrix,
   sampleEncodedWindSpeedK,
 } from '@/components/map/wind-particle-webgl-renderer'
+import {
+  WIND_GRID_WRAP_MIN_SPAN_DEG,
+  windGridShouldWrapLon,
+} from '@/components/map/wind-particle-webgl-shaders'
 import type { WindGeoJSON } from '@/components/map/types'
 
 function makeWindGrid(): WindGrid {
@@ -316,6 +320,17 @@ describe('B6 computeWorldWrapOffsets（反子午线世界包裹）', () => {
     expect(computeWorldWrapOffsets(m)).toEqual([-1, -0.5, 0, 0.5, 1])
   })
 
+  it('主世界完全在屏外时保留实际可见的相邻副本（不强制包含 0）', () => {
+    const m = new Float32Array(16)
+    m[0] = 2.0
+    m[12] = 1.0 // 主世界 clip [1,3]，左侧副本 clip [-1,1] 才是可见区域
+    expect(computeWorldWrapOffsets(m)).toEqual([-2])
+
+    m[0] = 3.0
+    m[12] = 1.25 // 主世界 [1.25,4.25]，左侧副本 [-1.75,1.25] 可见
+    expect(computeWorldWrapOffsets(m)).toEqual([-3])
+  })
+
   it('matrix[0] / matrix[12] 非有限值或退化值时安全回退为 [0]', () => {
     expect(computeWorldWrapOffsets(new Float32Array(16))).toEqual([0]) // 全 0 → matrix[0]=0
     const m = new Float32Array(16)
@@ -326,6 +341,17 @@ describe('B6 computeWorldWrapOffsets（反子午线世界包裹）', () => {
     m[0] = 1.0
     m[12] = Number.NaN
     expect(computeWorldWrapOffsets(m)).toEqual([0])
+  })
+
+  it('粒子绘制应与色场使用同一套 wrap offsets（日界线半屏）', () => {
+    // 回归：uploadParticlePointBuffer 按 offsets 复制 NDC；色场 drawWindField 已循环 offsets。
+    // 此处锁定 offsets 在「主世界偏出屏幕」时非平凡，避免粒子只画主副本。
+    const m = new Float32Array(16)
+    m[0] = 1.0
+    m[12] = -0.5
+    const offsets = computeWorldWrapOffsets(m)
+    expect(offsets.length).toBeGreaterThan(1)
+    expect(offsets).toContain(0)
   })
 })
 
@@ -388,5 +414,14 @@ describe('sampleEncodedWindSpeedK', () => {
         0.5,
       ),
     ).toBe(0)
+  })
+})
+
+describe('windGridShouldWrapLon', () => {
+  it('wraps IDL-unwrapped regional grids and near-global spans', () => {
+    expect(WIND_GRID_WRAP_MIN_SPAN_DEG).toBe(180)
+    expect(windGridShouldWrapLon(150, 210)).toBe(true)
+    expect(windGridShouldWrapLon(-180, 180)).toBe(true)
+    expect(windGridShouldWrapLon(100, 120)).toBe(false)
   })
 })

@@ -105,6 +105,30 @@ class DataAccessNodesTests(unittest.TestCase):
             self.assertEqual(out["data"]["input_dir"], "D:/data/SMAP")
             self.assertEqual(out["path"], "D:/data/SMAP")
 
+    def test_output_map_layer_accepts_manifest_on_data_port(self) -> None:
+        """Seeds wire module.manifest → map_layer.data (single LiteGraph slot)."""
+        from workflow.schemas import ArtifactRef
+
+        with tempfile.TemporaryDirectory() as tmp:
+            workspace = Path(tmp)
+            upstream = ArtifactRef(
+                artifact_id="run:n4:manifest",
+                artifact_type="product_manifest",
+                format="python_object",
+                uri=None,
+                producer_node_id="n4",
+                schema_name="ProductManifest",
+                metadata={"module_name": "omega_sf_fenkuai"},
+            )
+            out = self.registry.get_module("output_map_layer").execute(
+                {"data": upstream},
+                {"layer_id": "omega-sf-fenkuai", "display_name": "SF"},
+                _ctx(workspace),
+            )
+            self.assertIs(out["manifest"], upstream)
+            self.assertEqual(out["map_layer"]["source"], "upstream_manifest")
+            self.assertEqual(out["map_layer"]["layer_id"], "omega-sf-fenkuai")
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -33,6 +33,8 @@ describe('mergeWorkflowSummaryWithWeather', () => {
           message: '已完成瓦片 4/4',
           pending: 0,
           missingInViewport: 0,
+          cachedInViewport: 4,
+          viewportTotal: 4,
           errorType: null,
         },
         {
@@ -41,6 +43,8 @@ describe('mergeWorkflowSummaryWithWeather', () => {
           message: '已完成瓦片 6/6',
           pending: 0,
           missingInViewport: 0,
+          cachedInViewport: 6,
+          viewportTotal: 6,
           errorType: null,
         },
       ],

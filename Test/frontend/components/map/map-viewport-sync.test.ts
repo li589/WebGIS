@@ -1,6 +1,92 @@
 import { describe, expect, it } from 'vitest'
 
-import { buildMapViewportSnapshot } from '@/components/map/map-viewport-sync'
+import {
+  buildMapViewportSnapshot,
+  estimateLngBoundsFromCenter,
+  normalizeLngBounds,
+  preferVisibleLngBounds,
+  resolveVisibleLngBounds,
+  resolveVisibleViewportBBox,
+} from '@/components/map/map-viewport-sync'
+
+describe('normalizeLngBounds', () => {
+  it('preserves Asia–Pacific long path when MapLibre already expanded east > 180', () => {
+    // west=-20 east=200：非洲→太平洋长路径；禁止折成美洲短路径
+    expect(normalizeLngBounds(-20, 200, 110)).toEqual({ west: -20, east: 200 })
+  })
+
+  it('keeps unwrapped west < -180 by shifting the whole interval', () => {
+    // 相机在亚太世界副本：west=-200 east=20 若各自 wrap 会变成西半球错弧
+    const out = normalizeLngBounds(-200, 20, 150)
+    // 中心 150 应落在结果弧内（允许 east>180）
+    expect(out.east).toBeGreaterThan(out.west)
+    let c = 150
+    while (c < out.west) c += 360
+    while (c >= out.west + 360) c -= 360
+    expect(c).toBeLessThanOrEqual(out.east)
+  })
+
+  it('flips wrong-hemisphere bounds to the arc containing map center (Asia view → not Americas)', () => {
+    // 视口在亚太（center≈150），但 getBounds 折进 [-120,80]（美洲–大西洋）
+    const out = normalizeLngBounds(-120, 80, 150)
+    expect(out.west).toBeCloseTo(80, 5)
+    expect(out.east).toBeCloseTo(240, 5)
+    expect(out.west).toBeLessThan(150)
+    expect(out.east).toBeGreaterThan(150)
+  })
+
+  it('expands near-global gap at antimeridian to world when center sits in the slit', () => {
+    // west=-170 east=170（340°），中心在日界线缝 180°
+    expect(normalizeLngBounds(-170, 170, 180)).toEqual({ west: -180, east: 180 })
+  })
+
+  it('closes near-global IDL slit even when center is inside the long arc', () => {
+    // 全球视野常见：getBounds≈-170..170，中心在 0（不在缝内）——旧逻辑会留下日界线窄缝→半屏/细带
+    expect(normalizeLngBounds(-170, 170, 0)).toEqual({ west: -180, east: 180 })
+    expect(normalizeLngBounds(-160, 160, 20)).toEqual({ west: -180, east: 180 })
+  })
+
+  it('keeps mid-range Pacific path under near-global threshold', () => {
+    // 220° 亚太长路径不应被误合成世界
+    expect(normalizeLngBounds(-20, 200, 110)).toEqual({ west: -20, east: 200 })
+  })
+
+  it('extends east when east < west (classic antimeridian short path)', () => {
+    expect(normalizeLngBounds(170, -175, 179)).toEqual({ west: 170, east: 185 })
+  })
+})
+
+describe('estimateLngBoundsFromCenter / preferVisibleLngBounds', () => {
+  it('estimates IDL-crossing arc from center and worldSize', () => {
+    // 半屏 ≈ 90°：center=180 → west≈90 east≈270
+    const est = estimateLngBoundsFromCenter(180, 512, 512 * 2)
+    expect(est).not.toBeNull()
+    expect(est!.west).toBeLessThan(180)
+    expect(est!.east).toBeGreaterThan(180)
+  })
+
+  it('preferVisibleLngBounds upgrades single-hemisphere getBounds to center IDL arc', () => {
+    // getBounds 只覆盖亚洲大半（未跨日界线），中心估弧跨 IDL
+    const fromBounds = { west: 40, east: 160 }
+    const fromCenter = { west: 100, east: 260 }
+    const out = preferVisibleLngBounds(fromBounds, fromCenter)
+    expect(out.east).toBeGreaterThan(180)
+    expect(out.west).toBeLessThan(150)
+  })
+
+  it('preferVisibleLngBounds keeps correct short IDL path from getBounds when similar span', () => {
+    const fromBounds = { west: 150, east: 210 }
+    const fromCenter = { west: 155, east: 205 }
+    expect(preferVisibleLngBounds(fromBounds, fromCenter)).toEqual(fromBounds)
+  })
+
+  it('preferVisibleLngBounds forces world for near-global either side', () => {
+    expect(preferVisibleLngBounds({ west: -170, east: 170 }, { west: -90, east: 90 })).toEqual({
+      west: -180,
+      east: 180,
+    })
+  })
+})
 
 describe('map-viewport-sync', () => {
   it('normalizes center and bounds into EPSG:4326 snapshot', () => {
@@ -18,7 +104,8 @@ describe('map-viewport-sync', () => {
     expect(snapshot).toEqual({
       center: { lng: -170, lat: 23 },
       bbox: {
-        west: -179,
+        // 近全球跨度闭合为世界（勿留 -179..180 日界线窄缝）
+        west: -180,
         south: -90,
         east: 180,
         north: 90,
@@ -51,5 +138,99 @@ describe('map-viewport-sync', () => {
       north: 20,
       crs: 'EPSG:4326',
     })
+  })
+
+  it('Asia–Pacific camera with Americas-folded bounds yields Asia–Pacific bbox', () => {
+    const snapshot = buildMapViewportSnapshot({
+      getCenter: () => ({ lng: 150, lat: 20 }),
+      getBounds: () => ({
+        getSouth: () => -40,
+        getNorth: () => 55,
+        getWest: () => -120,
+        getEast: () => 80,
+      }),
+      getZoom: () => 2.5,
+    })
+    expect(snapshot.bbox.west).toBeLessThan(150)
+    expect(snapshot.bbox.east).toBeGreaterThan(150)
+    // 应覆盖亚太而非仅美洲
+    expect(snapshot.bbox.west).toBeGreaterThan(0)
+    expect(snapshot.bbox.east).toBeGreaterThan(180)
+  })
+
+  it('upgrades single-hemisphere getBounds using worldSize when view crosses IDL', () => {
+    // getBounds 只给亚洲侧；worldSize 显示半屏约跨过日界线
+    const snapshot = buildMapViewportSnapshot({
+      getCenter: () => ({ lng: 170, lat: 10 }),
+      getBounds: () => ({
+        getSouth: () => -30,
+        getNorth: () => 40,
+        getWest: () => 80,
+        getEast: () => 170,
+      }),
+      getZoom: () => 2,
+      getViewportWidthPx: () => 800,
+      getWorldSizePx: () => 800, // halfSpan ≈ 180° → 近全球；用更大 world 保留跨 IDL
+    })
+    // worldSize=800, width=800 → halfSpan=180 → world
+    expect(snapshot.bbox.west).toBe(-180)
+    expect(snapshot.bbox.east).toBe(180)
+  })
+
+  it('upgrades Asia-only bounds to IDL-crossing when center span crosses antimeridian', () => {
+    const snapshot = buildMapViewportSnapshot({
+      getCenter: () => ({ lng: 170, lat: 10 }),
+      getBounds: () => ({
+        getSouth: () => -30,
+        getNorth: () => 40,
+        getWest: () => 90,
+        getEast: () => 160,
+      }),
+      getZoom: () => 3,
+      // halfSpan = 800*360/1600/2 = 90 → center±90 ≈ [80, 260]
+      getViewportWidthPx: () => 800,
+      getWorldSizePx: () => 1600,
+    })
+    expect(snapshot.bbox.east).toBeGreaterThan(180)
+    expect(snapshot.bbox.west).toBeLessThan(170)
+  })
+})
+
+describe('resolveVisibleLngBounds / resolveVisibleViewportBBox', () => {
+  it('upgrades Asia-only getBounds with worldSize to IDL-crossing arc', () => {
+    const map = {
+      getCenter: () => ({ lng: 170, lat: 10 }),
+      getBounds: () => ({
+        getSouth: () => -30,
+        getNorth: () => 40,
+        getWest: () => 90,
+        getEast: () => 160,
+      }),
+      getZoom: () => 3,
+      getViewportWidthPx: () => 800,
+      getWorldSizePx: () => 1600,
+    }
+    const lng = resolveVisibleLngBounds(map)
+    expect(lng.east).toBeGreaterThan(180)
+    const bbox = resolveVisibleViewportBBox(map, { clampLat: [-85, 85] })
+    expect(bbox.west).toBe(lng.west)
+    expect(bbox.east).toBe(lng.east)
+    expect(bbox.south).toBeGreaterThanOrEqual(-85)
+  })
+
+  it('matches snapshot lng arc for near-global slit', () => {
+    const map = {
+      getCenter: () => ({ lng: 0, lat: 0 }),
+      getBounds: () => ({
+        getSouth: () => -80,
+        getNorth: () => 80,
+        getWest: () => -170,
+        getEast: () => 170,
+      }),
+      getZoom: () => 1,
+    }
+    expect(resolveVisibleLngBounds(map)).toEqual({ west: -180, east: 180 })
+    expect(buildMapViewportSnapshot(map).bbox.west).toBe(-180)
+    expect(buildMapViewportSnapshot(map).bbox.east).toBe(180)
   })
 })

@@ -169,7 +169,7 @@ async def test_concurrent_generation_respects_semaphore(
     mock_cache_get,
     sample_geojson,
 ):
-    """并发请求 6 个不同瓦片时，最多同时进入 _generate_tile 4 个。"""
+    """并发请求 6 个不同瓦片时，最多同时进入 _generate_tile（本例 semaphore=4）。"""
     service = WeatherTileService(max_concurrent=4)
     active_count = 0
     max_active = 0

@@ -7,6 +7,7 @@ import {
   snapToLatticeCenter,
   buildRegularLatticeAxis,
   detectLatticeResolution,
+  splitAntimeridianCellBounds,
 } from '@/components/map/weather-grid-lattice'
 import { geojsonPointsToGridCells } from '@/components/map/weather-overlay-renderers'
 
@@ -82,6 +83,27 @@ describe('weather-grid-lattice', () => {
     const res = detectLatticeResolution([-38.75, -1.25, 1.25, 38.75])
     expect(res).toBeCloseTo(2.5, 5)
   })
+
+  it('splitAntimeridianCellBounds splits cells that cross ±180', () => {
+    const cell = { west: 179.7, east: 180.3, south: 10, north: 10.5 }
+    const parts = splitAntimeridianCellBounds(cell)
+    expect(parts).toHaveLength(2)
+    expect(parts[0]!.east).toBe(180)
+    expect(parts[1]!.west).toBe(-180)
+    expect(parts[1]!.east).toBeCloseTo(-179.7, 5)
+  })
+
+  it('splitAntimeridianCellBounds shifts fully unwrapped cells into principal meridian', () => {
+    const parts = splitAntimeridianCellBounds({
+      west: 184.75,
+      east: 185.25,
+      south: 10,
+      north: 10.5,
+    })
+    expect(parts).toHaveLength(1)
+    expect(parts[0]!.west).toBeCloseTo(-175.25, 5)
+    expect(parts[0]!.east).toBeCloseTo(-174.75, 5)
+  })
 })
 
 describe('geojsonPointsToGridCells spanning tiles', () => {
@@ -106,5 +128,26 @@ describe('geojsonPointsToGridCells spanning tiles', () => {
     const rightWest = Math.min(...out.features[1].geometry.coordinates[0].map((c) => c[0]))
     // 允许 seam eps，但不允许可见空隙
     expect(leftEast).toBeGreaterThanOrEqual(rightWest - 1e-6)
+  })
+
+  it('splits IDL-crossing lattice cell into two polygons (no wrap-around strip)', () => {
+    const out = geojsonPointsToGridCells({
+      type: 'FeatureCollection',
+      features: [
+        {
+          type: 'Feature',
+          properties: { resolution: 0.5 },
+          // 格心 179.75 → 格元东缘越过 180
+          geometry: { type: 'Point', coordinates: [179.75, 10.25] },
+        },
+      ],
+    } as any) as { features: Array<{ geometry: { coordinates: number[][][] } }> }
+    expect(out.features.length).toBeGreaterThanOrEqual(2)
+    for (const f of out.features) {
+      const lons = f.geometry.coordinates[0].map((c) => c[0])
+      const span = Math.max(...lons) - Math.min(...lons)
+      // 每一片都应是短弧，而非绕地球 ~360° 的阴影细带
+      expect(span).toBeLessThan(2)
+    }
   })
 })

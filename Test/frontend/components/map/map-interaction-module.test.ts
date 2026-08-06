@@ -71,12 +71,22 @@ describe('map-interaction-module', () => {
     expect(setIsMapInteracting).toHaveBeenNthCalledWith(3, true)
     expect(setIsMapInteracting).toHaveBeenNthCalledWith(4, false)
     expect(scheduleHotspotSync).toHaveBeenCalledTimes(6)
-    expect(setMapViewport).toHaveBeenCalledTimes(2)
-    expect(setMapViewport).toHaveBeenCalledWith(
+    // move + moveend + zoom + zoomend（中途节流 + 结束 immediate）
+    expect(setMapViewport).toHaveBeenCalledTimes(4)
+    const immediateCalls = setMapViewport.mock.calls.filter(
+      (call) => (call[3] as { immediate?: boolean } | undefined)?.immediate === true,
+    )
+    const midGestureCalls = setMapViewport.mock.calls.filter(
+      (call) => !(call[3] as { immediate?: boolean } | undefined)?.immediate,
+    )
+    expect(immediateCalls).toHaveLength(2)
+    expect(midGestureCalls).toHaveLength(2)
+    expect(immediateCalls[0]).toEqual([
       { lng: -170, lat: 22 },
       { west: -180, south: -90, east: 180, north: 90, crs: 'EPSG:4326' },
       6.2,
-    )
+      { immediate: true },
+    ])
     expect(emitMapPointSelect).toHaveBeenCalledTimes(1)
     expect(emitMapPointSelect).toHaveBeenCalledWith({ lng: 113.2, lat: 23.1 })
 

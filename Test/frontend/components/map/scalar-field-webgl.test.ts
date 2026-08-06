@@ -6,7 +6,10 @@ import {
   decodeScalarByte,
   buildPaletteLUT,
 } from '@/components/map/scalar-field-webgl-texture'
-import { clampBlend } from '@/components/map/scalar-field-webgl-shaders'
+import {
+  clampBlend,
+  SCALAR_FIELD_FRAGMENT_SHADER,
+} from '@/components/map/scalar-field-webgl-shaders'
 import {
   buildPressureIsobarLevels,
   buildWeakScalarContourLevels,
@@ -43,6 +46,50 @@ describe('scalar-field-grid', () => {
     expect(grid!.points[0][0].hasData).toBe(true)
   })
 
+  it('keeps both IDL sides in one continuous longitude frame', () => {
+    const geo = pointFc([
+      { lon: 170, lat: 20, value: 1 },
+      { lon: 175, lat: 20, value: 2 },
+      { lon: -175, lat: 20, value: 3 },
+      { lon: -170, lat: 20, value: 4 },
+      { lon: 170, lat: 25, value: 5 },
+      { lon: 175, lat: 25, value: 6 },
+      { lon: -175, lat: 25, value: 7 },
+      { lon: -170, lat: 25, value: 8 },
+    ])
+    const grid = buildScalarGridFromGeoJSON(geo, 'temperature_2m', {
+      west: 150,
+      east: 210,
+      centerLng: 180,
+    })
+    expect(grid).not.toBeNull()
+    expect(grid!.west).toBe(170)
+    expect(grid!.east).toBe(190)
+    expect(grid!.cols).toBe(5)
+  })
+
+  it('uses a layout-aware signature instead of a value sum', () => {
+    const westGrid = buildScalarGridFromGeoJSON(
+      pointFc([
+        { lon: -170, lat: 0, value: 1 },
+        { lon: -160, lat: 0, value: 2 },
+        { lon: -170, lat: 10, value: 3 },
+        { lon: -160, lat: 10, value: 4 },
+      ]),
+      'temperature_2m',
+    )!
+    const eastGrid = buildScalarGridFromGeoJSON(
+      pointFc([
+        { lon: 170, lat: 0, value: 4 },
+        { lon: 180, lat: 0, value: 3 },
+        { lon: 170, lat: 10, value: 2 },
+        { lon: 180, lat: 10, value: 1 },
+      ]),
+      'temperature_2m',
+    )!
+    expect(westGrid.signature).not.toBe(eastGrid.signature)
+  })
+
   it('resolves range from legend ticks', () => {
     const range = resolveScalarValueRange([-10, 0, 40], null)
     expect(range).toEqual({ min: -10, max: 40 })
@@ -73,6 +120,11 @@ describe('scalar-field-webgl-shaders', () => {
     expect(clampBlend(0.5)).toBe(0.5)
     expect(clampBlend(2)).toBe(1)
     expect(clampBlend(NaN)).toBe(0)
+  })
+
+  it('does not feather data-quad edges, so world copies meet at IDL without a transparent seam', () => {
+    expect(SCALAR_FIELD_FRAGMENT_SHADER).not.toContain('* feather')
+    expect(SCALAR_FIELD_FRAGMENT_SHADER).toContain('float softMask = smoothstep(0.008, 0.06, mask);')
   })
 })
 

@@ -51,4 +51,22 @@ describe('pickLatestNodeProgress', () => {
     ])
     expect(latest?.message).toBe('fresh')
   })
+
+  it('ties equal updatedAt with eventId order', () => {
+    const latest = pickLatestNodeProgress([
+      {
+        progress: 40,
+        message: 'earlier-id',
+        updatedAt: '2026-08-04T01:00:00Z',
+        eventId: 'evt-aaa',
+      },
+      {
+        progress: 10,
+        message: 'later-id',
+        updatedAt: '2026-08-04T01:00:00Z',
+        eventId: 'evt-zzz',
+      },
+    ])
+    expect(latest?.message).toBe('later-id')
+  })
 })

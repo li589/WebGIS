@@ -78,6 +78,16 @@ describe('wind streamline pure functions', () => {
     expect(path[path.length - 1].lon).toBeGreaterThan(path[0].lon)
   })
 
+  it('resolveStreamlineSeedBounds keeps continuous arc across IDL', () => {
+    const grid = { west: 80, east: 240, south: -60, north: 70 }
+    // 长路径视口：east>180，勿用 min/max 压成短弧导致半屏种子
+    const viewport = { west: 100, east: 220, south: -40, north: 60 }
+    const seed = resolveStreamlineSeedBounds(grid, viewport)
+    expect(seed.east - seed.west).toBeGreaterThan(100)
+    expect(seed.west).toBeLessThan(120)
+    expect(seed.east).toBeGreaterThan(200)
+  })
+
   it('viewport seed bounds keep density after large zoom-out grid', () => {
     const grid = { west: 60, east: 180, south: -10, north: 55 }
     const viewport = { west: 110, east: 125, south: 20, north: 35 }

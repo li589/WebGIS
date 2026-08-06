@@ -91,6 +91,32 @@ class TestGldasDownloadNode(unittest.TestCase):
             self.assertEqual(out["path"], str(local_dir))
             self.assertIn("manifest", out)
 
+    def test_single_module_workflow_omits_missing_output_spec_extra(self) -> None:
+        from datetime import datetime
+
+        from contracts.job import JobRequest, OutputSpec, RegionSpec, TimeRange
+        from runner.dispatch import _build_single_module_workflow
+
+        request = JobRequest(
+            job_id="job-gldas-bind",
+            pipeline_name="workflow",
+            module_name="gldas_download",
+            task_type="gldas_download",
+            time_range=TimeRange(
+                start=datetime(2025, 12, 3), end=datetime(2025, 12, 3)
+            ),
+            region=RegionSpec(kind="global", value={}),
+            datasource_selection={},
+            algorithm_params={"start_date": "20251203", "end_date": "20251203"},
+            output_spec=OutputSpec(extra={}),
+        )
+        workflow = _build_single_module_workflow(request)
+        bindings = workflow.nodes[0].input_bindings
+        self.assertIn("datasource_selection", bindings)
+        self.assertIn("algorithm_params", bindings)
+        self.assertNotIn("output_spec_extra", bindings)
+        self.assertEqual(workflow.outputs[0].source, "node:module_node.manifest")
+
 
 if __name__ == "__main__":
     unittest.main()
