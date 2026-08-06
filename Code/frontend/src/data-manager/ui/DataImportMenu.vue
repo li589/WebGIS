@@ -38,6 +38,16 @@ function openExport() {
   openDataWorkspace({ tab: 'export' })
 }
 
+function openAttributesWorkspace() {
+  closeMenu()
+  openDataWorkspace({ tab: 'attributes' })
+}
+
+function openDetailsWorkspace() {
+  closeMenu()
+  openDataWorkspace({ tab: 'details' })
+}
+
 watch(pendingOpenImport, (req) => {
   if (!req) return
   openImport(req.tab, req.files)
@@ -114,28 +124,14 @@ const progressLabel = computed(() =>
             <span class="item-desc">导出已导入图层</span>
           </span>
         </button>
-        <button
-          class="dropdown-item"
-          type="button"
-          @click="
-            closeMenu()
-            openDataWorkspace({ tab: 'attributes' })
-          "
-        >
+        <button class="dropdown-item" type="button" @click="openAttributesWorkspace">
           <span class="item-icon" aria-hidden="true">☰</span>
           <span class="item-body">
             <span class="item-title">{{ DATA_COPY.wsAttributes }}</span>
             <span class="item-desc">分页浏览与字段重命名</span>
           </span>
         </button>
-        <button
-          class="dropdown-item"
-          type="button"
-          @click="
-            closeMenu()
-            openDataWorkspace({ tab: 'details' })
-          "
-        >
+        <button class="dropdown-item" type="button" @click="openDetailsWorkspace">
           <span class="item-icon" aria-hidden="true">ℹ</span>
           <span class="item-body">
             <span class="item-title">{{ DATA_COPY.wsDetails }}</span>

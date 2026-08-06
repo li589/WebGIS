@@ -100,6 +100,11 @@ const emit = defineEmits<{
   enterSelectMode: []
 }>()
 
+function enterInspectTools() {
+  setActiveTab('tools')
+  emit('enterSelectMode')
+}
+
 const displayLayer = computed(() => props.selectedLayer ?? props.activeLayer)
 const jobLayer = computed(() => displayLayer.value?.jobLayer)
 const resultModel = computed(() => buildResultDisplayModel(jobLayer.value?.resultView ?? null))
@@ -1256,10 +1261,7 @@ onBeforeUnmount(() => {
                 v-if="isRealtimeWeatherLayer && uiStore.interactionMode !== 'select'"
                 type="button"
                 class="weather-mini-btn"
-                @click="
-                  setActiveTab('tools')
-                  emit('enterSelectMode')
-                "
+                @click="enterInspectTools"
               >
                 {{ ANALYSIS_COPY.toolsQuickInspect }}
               </button>
@@ -2224,10 +2226,7 @@ onBeforeUnmount(() => {
                 v-if="isRealtimeWeatherLayer && uiStore.interactionMode !== 'select'"
                 type="button"
                 class="weather-mini-btn"
-                @click="
-                  setActiveTab('tools')
-                  emit('enterSelectMode')
-                "
+                @click="enterInspectTools"
               >
                 {{ ANALYSIS_COPY.toolsQuickInspect }}
               </button>

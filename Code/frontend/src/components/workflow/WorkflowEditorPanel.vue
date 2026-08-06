@@ -328,6 +328,11 @@ function handleRun() {
   showRunDialog.value = true
 }
 
+function proceedAfterValidation() {
+  showValidationPanel.value = false
+  showRunDialog.value = true
+}
+
 async function handleRunConfirm(target: WorkflowRunTarget) {
   if (!currentDefinition.value) return
   clearRunStatusTimers()
@@ -719,10 +724,7 @@ defineExpose({
               v-if="!validationResult.hasErrors"
               class="validation-action-btn proceed"
               type="button"
-              @click="
-                showValidationPanel = false
-                showRunDialog = true
-              "
+              @click="proceedAfterValidation"
             >
               继续运行
             </button>
