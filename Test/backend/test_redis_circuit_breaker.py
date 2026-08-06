@@ -22,10 +22,15 @@ class RedisCircuitBreakerTests(unittest.TestCase):
         pipe.execute.side_effect = boom
 
         with patch.object(redis_client, "get_redis_client", return_value=client):
+            # threshold=3: first two failures increment counter but don't open circuit
             redis_client.record_request_metric("GET", "/docs", 200, 12.0)
+            self.assertFalse(redis_client._circuit_is_open())
             redis_client.record_request_metric("GET", "/docs", 200, 13.0)
+            self.assertFalse(redis_client._circuit_is_open())
+            # third consecutive failure opens the circuit
+            redis_client.record_request_metric("GET", "/docs", 200, 14.0)
 
-        self.assertEqual(pipe.execute.call_count, 1)
+        self.assertEqual(pipe.execute.call_count, 3)
         self.assertTrue(redis_client._circuit_is_open())
 
     def test_get_redis_client_returns_none_while_circuit_open(self) -> None:
@@ -34,9 +39,58 @@ class RedisCircuitBreakerTests(unittest.TestCase):
 
     def test_mark_failure_clears_sticky_client(self) -> None:
         redis_client._client = MagicMock()
-        redis_client._mark_redis_failure("dead")
+        # threshold=3: need 3 consecutive failures to open circuit
+        redis_client._mark_redis_failure("fail1")
+        self.assertIsNone(redis_client._client)
+        self.assertFalse(redis_client._circuit_is_open())
+        redis_client._client = MagicMock()
+        redis_client._mark_redis_failure("fail2")
+        self.assertIsNone(redis_client._client)
+        self.assertFalse(redis_client._circuit_is_open())
+        redis_client._client = MagicMock()
+        redis_client._mark_redis_failure("fail3")
         self.assertIsNone(redis_client._client)
         self.assertTrue(redis_client._circuit_is_open())
+
+    def test_exponential_backoff_doubles_cooldown_on_repeated_openings(self) -> None:
+        """Each repeated circuit opening doubles the cooldown up to max."""
+        base = redis_client._CIRCUIT_COOLDOWN_SECONDS
+        max_cd = redis_client._CIRCUIT_COOLDOWN_MAX_SECONDS
+
+        # First opening: base cooldown (30s)
+        for _ in range(3):
+            redis_client._mark_redis_failure("err")
+        first_until = redis_client._circuit_open_until
+        first_cooldown = first_until - time.monotonic()
+        self.assertAlmostEqual(first_cooldown, base, delta=2)
+
+        # Simulate cooldown elapsing, then fail again → second opening: 60s
+        redis_client._circuit_open_until = 0.0  # allow reconnect attempt
+        redis_client._consecutive_failures = 0  # reset (reconnect "succeeded" then failed)
+        for _ in range(3):
+            redis_client._mark_redis_failure("err2")
+        second_cooldown = redis_client._circuit_open_until - time.monotonic()
+        self.assertAlmostEqual(second_cooldown, base * 2, delta=2)
+
+        # Third opening: 120s (hits max)
+        redis_client._circuit_open_until = 0.0
+        redis_client._consecutive_failures = 0
+        for _ in range(3):
+            redis_client._mark_redis_failure("err3")
+        third_cooldown = redis_client._circuit_open_until - time.monotonic()
+        self.assertAlmostEqual(third_cooldown, min(base * 4, max_cd), delta=2)
+
+        # Fourth opening: capped at max
+        redis_client._circuit_open_until = 0.0
+        redis_client._consecutive_failures = 0
+        for _ in range(3):
+            redis_client._mark_redis_failure("err4")
+        fourth_cooldown = redis_client._circuit_open_until - time.monotonic()
+        self.assertAlmostEqual(fourth_cooldown, max_cd, delta=2)
+
+        # Success resets backoff count
+        redis_client._mark_redis_success()
+        self.assertEqual(redis_client._circuit_open_count, 0)
 
     # ── L-1：dedup lock owner token 语义 ─────────────────────────────────────
 

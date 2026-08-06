@@ -28,8 +28,10 @@ _client: redis.Redis | None = None
 # Circuit breaker: after Redis errors, skip reconnect/ops until cooldown elapses.
 _circuit_open_until: float = 0.0
 _consecutive_failures: int = 0
-_CIRCUIT_FAILURE_THRESHOLD = 1
+_circuit_open_count: int = 0  # for exponential backoff
+_CIRCUIT_FAILURE_THRESHOLD = 3
 _CIRCUIT_COOLDOWN_SECONDS = 30.0
+_CIRCUIT_COOLDOWN_MAX_SECONDS = 120.0
 # Keep connect/read short so a single probe after cooldown cannot stall the API for long.
 _SOCKET_CONNECT_TIMEOUT = 0.5
 _SOCKET_TIMEOUT = 0.5
@@ -40,31 +42,40 @@ def _circuit_is_open() -> bool:
 
 
 def _mark_redis_success() -> None:
-    global _consecutive_failures
+    global _consecutive_failures, _circuit_open_count
     _consecutive_failures = 0
+    _circuit_open_count = 0
 
 
 def _mark_redis_failure(reason: str) -> None:
     """Invalidate sticky client and open the circuit after consecutive failures."""
-    global _client, _circuit_open_until, _consecutive_failures
+    global _client, _circuit_open_until, _consecutive_failures, _circuit_open_count
     _client = None
     _consecutive_failures += 1
     if _consecutive_failures < _CIRCUIT_FAILURE_THRESHOLD:
         return
-    _circuit_open_until = time.monotonic() + _CIRCUIT_COOLDOWN_SECONDS
+    # Exponential backoff: each repeated opening doubles the cooldown up to max.
+    _circuit_open_count += 1
+    cooldown = min(
+        _CIRCUIT_COOLDOWN_SECONDS * (2 ** (_circuit_open_count - 1)),
+        _CIRCUIT_COOLDOWN_MAX_SECONDS,
+    )
+    _circuit_open_until = time.monotonic() + cooldown
     logger.warning(
-        "[RedisClient] circuit open for %.0fs after failure: %s",
-        _CIRCUIT_COOLDOWN_SECONDS,
+        "[RedisClient] circuit open for %.0fs after %d consecutive failures: %s",
+        cooldown,
+        _consecutive_failures,
         reason,
     )
 
 
 def reset_redis_client_state() -> None:
     """Test helper: clear singleton client and circuit breaker state."""
-    global _client, _circuit_open_until, _consecutive_failures
+    global _client, _circuit_open_until, _consecutive_failures, _circuit_open_count
     _client = None
     _circuit_open_until = 0.0
     _consecutive_failures = 0
+    _circuit_open_count = 0
 
 
 def get_redis_client() -> redis.Redis | None:

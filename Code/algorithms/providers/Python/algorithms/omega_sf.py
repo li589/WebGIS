@@ -1335,9 +1335,19 @@ def _load_chunk_checkpoint(
     start_date: str,
     end_date: str,
 ) -> tuple[set[int], list[Any]] | None:
-    """加载块/chunk 检查点；日期范围不一致则忽略。"""
+    """加载块/chunk 检查点；日期范围不一致则忽略。
+
+    Security: pickle 仅用于本地可信检查点文件（BACKEND_OUTPUT_ROOT 下），
+    不接受外部输入。文件大小超过 200MB 视为异常并拒绝加载。
+    """
     path = _checkpoint_path(output_dir)
     if not path.exists():
+        return None
+    # Guard against abnormally large checkpoint files (possible corruption/DoS)
+    if path.stat().st_size > 200 * 1024 * 1024:
+        logger.warning(
+            "[CHECKPOINT] 检查点文件异常过大（%d bytes），跳过加载", path.stat().st_size
+        )
         return None
     try:
         import pickle

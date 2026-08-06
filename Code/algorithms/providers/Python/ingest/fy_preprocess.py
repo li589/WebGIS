@@ -216,9 +216,9 @@ def _hdf_sds(hdf_path: str, sds_path: str) -> str:
 
 
 def _run_gdalinfo(target_path: str) -> str:
-    cmd = f'"{GDAL_INFO}" "{target_path}"'
+    cmd = [GDAL_INFO, target_path]
     proc = subprocess.run(
-        cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True
+        cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True
     )
     if proc.returncode != 0:
         raise RuntimeError(proc.stderr)
@@ -399,12 +399,12 @@ class FyPreprocessor:
         # 1) 数据 VRT
         data_uri = _hdf_sds(hdf_path, subdataset_path)
         vrt_path = os.path.join(work_folder, f"temp_{file_name[:-4]}_{band_name}.vrt")
-        cmd = (
-            f'"{GDAL_TRANSLATE}" -of VRT -a_nodata {src_nodata} '
-            f"-b {band_ids_one[0]} {data_uri} \"{vrt_path}\""
-        )
+        cmd = [
+            GDAL_TRANSLATE, "-of", "VRT", "-a_nodata", str(src_nodata),
+            "-b", str(band_ids_one[0]), data_uri, vrt_path,
+        ]
         try:
-            subprocess.run(cmd, shell=True, check=True)
+            subprocess.run(cmd, check=True)
         except subprocess.CalledProcessError as e:
             logger.warning("[SKIP] %s %s: gdal_translate 数据VRT 失败。错误：%s", file_name, band_name, e)
             return None
@@ -412,18 +412,18 @@ class FyPreprocessor:
         # 2) 纬度/经度 VRT
         vrtlat_path = os.path.join(work_folder, f"lat_{file_name[:-4]}_{band_name}.vrt")
         lat_uri = _hdf_sds(hdf_path, cfg.lat_sds_path)
-        cmd = f'"{GDAL_TRANSLATE}" -of VRT -a_nodata {lat_nodata} {lat_uri} "{vrtlat_path}"'
+        cmd = [GDAL_TRANSLATE, "-of", "VRT", "-a_nodata", str(lat_nodata), lat_uri, vrtlat_path]
         try:
-            subprocess.run(cmd, shell=True, check=True)
+            subprocess.run(cmd, check=True)
         except subprocess.CalledProcessError as e:
             logger.warning("[SKIP] %s %s: gdal_translate 纬度VRT 失败。错误：%s", file_name, band_name, e)
             return None
 
         vrtlon_path = os.path.join(work_folder, f"lon_{file_name[:-4]}.vrt")
         lon_uri = _hdf_sds(hdf_path, cfg.lon_sds_path)
-        cmd = f'"{GDAL_TRANSLATE}" -of VRT -a_nodata {lon_nodata} {lon_uri} "{vrtlon_path}"'
+        cmd = [GDAL_TRANSLATE, "-of", "VRT", "-a_nodata", str(lon_nodata), lon_uri, vrtlon_path]
         try:
-            subprocess.run(cmd, shell=True, check=True)
+            subprocess.run(cmd, check=True)
         except subprocess.CalledProcessError as e:
             logger.warning("[SKIP] %s %s: gdal_translate 经度VRT 失败。错误：%s", file_name, band_name, e)
             return None
@@ -455,15 +455,15 @@ class FyPreprocessor:
 
         # 4) geoloc → 4326
         logger.info("开始地理查找表校正... (%s)", band_name)
-        cmd = (
-            f'"{GDAL_WARP}" -overwrite -geoloc -t_srs EPSG:4326 '
-            f"-srcnodata {src_nodata} -dstnodata {cfg.dst_nodata} "
-            f'-of GTiff -ot Float32 -r average '
-            f'-co "COMPRESS=LZW" -co "PREDICTOR=3" -co "TILED=YES" '
-            f'"{vrt_path0}" "{tif_path}"'
-        )
+        cmd = [
+            GDAL_WARP, "-overwrite", "-geoloc", "-t_srs", "EPSG:4326",
+            "-srcnodata", str(src_nodata), "-dstnodata", str(cfg.dst_nodata),
+            "-of", "GTiff", "-ot", "Float32", "-r", "average",
+            "-co", "COMPRESS=LZW", "-co", "PREDICTOR=3", "-co", "TILED=YES",
+            vrt_path0, tif_path,
+        ]
         try:
-            subprocess.run(cmd, shell=True, check=True)
+            subprocess.run(cmd, check=True)
         except subprocess.CalledProcessError as e:
             logger.warning("[SKIP] %s %s: gdalwarp -geoloc 失败。错误：%s", file_name, band_name, e)
             return None
@@ -485,13 +485,12 @@ class FyPreprocessor:
             logger.warning("[SKIP] %s: 没有找到可拼接的 geoloc 结果。", band_name)
             return None
 
-        inputs = " ".join(f'"{p}"' for p in src_list)
-        cmd = (
-            f'"{GDAL_BUILDVRT}" -srcnodata {cfg.dst_nodata} '
-            f'-vrtnodata {cfg.dst_nodata} "{mosaic_vrt}" {inputs}'
-        )
+        cmd = [
+            GDAL_BUILDVRT, "-srcnodata", str(cfg.dst_nodata),
+            "-vrtnodata", str(cfg.dst_nodata), mosaic_vrt, *src_list,
+        ]
         proc = subprocess.run(
-            cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True
+            cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True
         )
         if proc.returncode != 0:
             logger.warning("[SKIP] %s: gdalbuildvrt 失败。错误：\n%s", band_name, proc.stderr)
@@ -508,13 +507,13 @@ class FyPreprocessor:
         )
 
         # 4326 融合
-        cmd = (
-            f'"{GDAL_WARP}" -of GTiff -ot Float32 -r {options.overlap_option} '
-            f"-srcnodata {cfg.dst_nodata} -dstnodata {cfg.dst_nodata} "
-            f'-co "COMPRESS=LZW" -co "PREDICTOR=3" -co "TILED=YES" '
-            f'"{mosaic_vrt}" "{output_tif_path0}"'
-        )
-        subprocess.run(cmd, shell=True, check=True)
+        cmd = [
+            GDAL_WARP, "-of", "GTiff", "-ot", "Float32", "-r", options.overlap_option,
+            "-srcnodata", str(cfg.dst_nodata), "-dstnodata", str(cfg.dst_nodata),
+            "-co", "COMPRESS=LZW", "-co", "PREDICTOR=3", "-co", "TILED=YES",
+            mosaic_vrt, output_tif_path0,
+        ]
+        subprocess.run(cmd, check=True)
         _check_nodata(output_tif_path0, expected=cfg.dst_nodata, label="mosaic→4326 输出")
 
         # 空间范围裁剪 / 重投影
@@ -557,20 +556,22 @@ class FyPreprocessor:
                 work_folder,
                 f"{cfg.output_prefix}_{band_name}_{day}_{options.orbit_mode}.tif",
             )
-            cmd = (
-                f'"{GDAL_WARP}" -of GTiff -ot Float32 -r {options.overlap_option} '
-                f'-co "COMPRESS=LZW" -co "PREDICTOR=3" -co "TILED=YES" '
-                f'"{mosaic_vrt}" "{out0}"'
-            )
-            subprocess.run(cmd, shell=True, check=True)
-            cmd = (
-                f'"{GDAL_WARP}" -cutline "{options.shapefile_path}" -crop_to_cutline '
-                f'-of GTiff -ot Float32 -co "COMPRESS=LZW" -co "PREDICTOR=3" '
-                f'-co "TILED=YES" "{out0}" "{out1}"'
-            )
+            cmd = [
+                GDAL_WARP, "-of", "GTiff", "-ot", "Float32",
+                "-r", options.overlap_option,
+                "-co", "COMPRESS=LZW", "-co", "PREDICTOR=3", "-co", "TILED=YES",
+                mosaic_vrt, out0,
+            ]
+            subprocess.run(cmd, check=True)
+            cmd = [
+                GDAL_WARP, "-cutline", options.shapefile_path, "-crop_to_cutline",
+                "-of", "GTiff", "-ot", "Float32",
+                "-co", "COMPRESS=LZW", "-co", "PREDICTOR=3", "-co", "TILED=YES",
+                out0, out1,
+            ]
             output_tif_path = out1
 
-        subprocess.run(cmd, shell=True, check=True)
+        subprocess.run(cmd, check=True)
 
         if options.spatial_extent == 0:
             _check_nodata(
@@ -652,33 +653,34 @@ class FyPreprocessor:
             work_folder,
             f"{cfg.output_prefix}_{tb_band_name}_{day}_{options.orbit_mode}_1.vrt",
         )
-        inputs = " ".join(f'"{p}"' for p in (tb_tifs + [ia_tif]))
-        cmd = (
-            f'"{GDAL_BUILDVRT}" -separate '
-            f"-srcnodata {cfg.dst_nodata} -vrtnodata {cfg.dst_nodata} "
-            f'"{mergy_vrt0}" {inputs}'
-        )
+        merge_inputs = tb_tifs + [ia_tif]
+        cmd = [
+            GDAL_BUILDVRT, "-separate",
+            "-srcnodata", str(cfg.dst_nodata), "-vrtnodata", str(cfg.dst_nodata),
+            mergy_vrt0, *merge_inputs,
+        ]
         proc = subprocess.run(
-            cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True
+            cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True
         )
         if proc.returncode != 0 or not os.path.exists(mergy_vrt0):
             logger.error("gdalbuildvrt(separate) 失败：%s", proc.stderr)
             return 0
 
         selected = tb_band_names + [cfg.zenith_name]
-        metadata_strs = " ".join(
-            f"-mo Band_{i}={name}" for i, name in enumerate(selected, start=1)
-        )
+        metadata_args: list[str] = []
+        for i, name in enumerate(selected, start=1):
+            metadata_args.extend(["-mo", f"Band_{i}={name}"])
         mergy_filetifname = os.path.join(
             work_folder,
             f"{cfg.output_prefix}_{tb_band_name}_{day}_{options.orbit_mode}.tif",
         )
-        cmd = (
-            f'"{GDAL_TRANSLATE}" -of GTiff -a_nodata {cfg.dst_nodata} -ot Float32 '
-            f'-co "COMPRESS=LZW" -co "PREDICTOR=3" -co "TILED=YES" '
-            f'{metadata_strs} "{mergy_vrt0}" "{mergy_filetifname}"'
-        )
-        subprocess.run(cmd, shell=True, check=True)
+        cmd = [
+            GDAL_TRANSLATE, "-of", "GTiff", "-a_nodata", str(cfg.dst_nodata),
+            "-ot", "Float32",
+            "-co", "COMPRESS=LZW", "-co", "PREDICTOR=3", "-co", "TILED=YES",
+            *metadata_args, mergy_vrt0, mergy_filetifname,
+        ]
+        subprocess.run(cmd, check=True)
         try:
             os.remove(mergy_vrt0)
         except OSError:
