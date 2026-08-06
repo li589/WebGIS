@@ -48,8 +48,9 @@ CGDA（综合地理数据分析系统）：**面向课题组与大气研究院�
 | 命令 | 作用 |
 |------|------|
 | `start.bat` 或 `Env\Python312\python.exe launch.py start` | 启动全部（Docker + FastAPI + 7 Worker + Beat + Vite 前端） |
-| `Env\Python312\python.exe launch.py start <component>` | 单组件：`docker` / `fastapi` / `beat` / `worker` / `worker:<name>` / `frontend` / `gateway` |
+| `Env\Python312\python.exe launch.py start <component>` | 单组件：`docker` / `fastapi` / `beat` / `worker` / `worker:<name>` / `frontend` / `gateway` / `backend` |
 | `Env\Python312\python.exe launch.py start gateway` | Nginx 同域入口 `:5175`（静态 dist + 反代 API；与 Vite 互斥） |
+| `Env\Python312\python.exe launch.py restart backend` | **仅**重启 FastAPI + 全部 Worker + Beat（不动 Docker / Vite）；改 `BACKEND_DATA_ROOT` 后必用 |
 | `stop.bat` / `… launch.py stop` | 停止全部服务（含 Docker 与 gateway 容器） |
 | `… launch.py stop gateway` | 仅停 Nginx Gateway |
 | `… launch.py status` | 查看服务状态（Docker / FastAPI :8000 / 前端 :5175 / Gateway / Worker PID / volume） |
@@ -63,7 +64,7 @@ CGDA（综合地理数据分析系统）：**面向课题组与大气研究院�
 
 改动以下区域前必须确认鉴权、加密或数据面隔离约束，避免破坏运行态或泄露凭据：
 
-1. **`/config/*` 写操作**：`app/api/config_routes.py` + `app/services/config_service.py` / `api_config.py` / `effective_config.py`。所有 `/config/*` 写操作与 `POST /import/raster` 需 `X-API-Key`（development 且未启用 keys 时可旁路）。鉴权密钥 = `backend_auth` DB 覆盖 env。覆盖图层 URI、天气 provider、remote-storage 等运行真源，改错会污染运行配置。
+1. **`/config/*` 写操作**：`app/api/config_routes.py` + `app/services/config_service.py` / `api_config.py` / `effective_config.py`。所有 `/config/*` 写操作与 `POST /import/raster` 需 `X-API-Key`（development 且未启用 keys 时可旁路）。鉴权密钥 = `backend_auth` DB 覆盖 env。覆盖图层 URI、天气 provider、remote-storage、**数据根路径**等运行真源，改错会污染运行配置。`PUT /config/data-source/paths` 写入 `Code/backend/.env` 后须重启后端进程组才生效；`POST /config/service/restart` 受 `BACKEND_UI_RESTART_ENABLED` 门禁（默认仅 development）。
 
 2. **GEE 凭据**：`app/gee/` + `app/services/gee_parallel_config.py`。存储的 GEE 账号凭据用 `BACKEND_GEE_CREDENTIALS_ENCRYPTION_KEY`（32-byte hex，`.env` 生成）加密落 DB。非 development 环境**必须**配置该密钥，否则凭据无法加解密。涉及 `/config/gee/accounts*` 与 `/gee/config`。
 
@@ -73,6 +74,8 @@ CGDA（综合地理数据分析系统）：**面向课题组与大气研究院�
 
 5. **生产禁止演示开关**：勿开启 `BACKEND_DEMO_SOURCES_ENABLED` / `BACKEND_NODE_STUBS_VISIBLE`；机构交付核对见 `.ai/docs/reference/delivery-checklist.md`。
 
+6. **地理数据根**：`BACKEND_DATA_ROOT`（及 `BACKEND_OUTPUT_ROOT`）为算法 / overlay / 图层 readiness 真源；**禁止**代码静默回退盘符。production 空根拒启。前端设置 → 数据源可改并调度 `restart backend`。
+
 ## "改 X 则跑 Y" 映射
 
 | 改动区域 (X) | 定位模块 | 验证命令 (Y) |
@@ -81,7 +84,9 @@ CGDA（综合地理数据分析系统）：**面向课题组与大气研究院�
 | 天气工作流编译 | `app/services/workflow_graph_compiler.py`、`workflow_seeds/system/weather_*.json` | `Env/Python312/python.exe -m pytest Test/backend/test_workflow_graph_compiler.py -q` |
 | 天气点查 / 引擎 | `app/weatherengine/service.py`、`fetch_gateway.py`、`providers/` | `Env/Python312/python.exe -m pytest Test/backend/test_weather_point_service.py Test/backend/test_weatherengine_service.py Test/backend/test_fetch_gateway.py -q` |
 | 工作流运行 | `app/services/workflow/`、`app/api/routers/workflow_router.py` | `Env/Python312/python.exe -m pytest Test/backend/test_workflow_routes.py Test/backend/test_interaction_hub.py Test/backend/test_business_regression.py -q` |
+| 工作流定时器 | `app/services/workflow_timer_service.py`、`workflow_timer_router.py`、`workflow_timer_tasks.py`；FE `WorkflowTimerPanel.vue` | `Env/Python312/python.exe -m pytest Test/backend/test_workflow_timer_service.py Test/backend/test_celery_tasks.py -q`（真实 cron 需 Beat + standard worker）；FE：`cd Code/frontend && npm run test -- workflow-timer` |
 | 配置 / 鉴权 | `app/api/config_routes.py`、`app/services/config_service.py` | `Env/Python312/python.exe -m pytest Test/backend/test_config_security.py Test/backend/test_api_keys_basemap.py -q` |
+| 数据根 / 图层就绪 | `BACKEND_DATA_ROOT`、`env_file_upsert.py`、`service_restart.py`、`catalog_seeds/layer_descriptors.json`；FE `DataSourceSettings.vue` | `Env/Python312/python.exe -m pytest Test/backend/test_data_source_paths.py Test/backend/test_data_root_policy.py -q`；改路径后 `launch.py restart backend`，再 `GET /layers` 看 `run_readiness` |
 | GEE | `app/gee/`、`app/services/gee_bridge_service.py` | `Env/Python312/python.exe -m pytest Test/backend/test_gee_bridge_service.py -q` |
 | 统一瓦片（底图） | `app/api/tile_routes.py`、`tile_provider_registry.py` | `Env/Python312/python.exe -m pytest Test/backend/test_unified_tile_service.py -q` |
 | 栅格导入 / CRS | `app/api/routers/import_router.py` | `Env/Python312/python.exe -m pytest Test/backend/test_import_raster_crs.py Test/backend/test_crs_detector.py -q` |
@@ -126,10 +131,10 @@ CODEBUDDY_SESSION_ID= CLAUDE_SESSION_ID= CODEBUDDY_SAFE_DELETE_SANDBOX= Env/Pyth
 所有 AI 提示 / 技能 / 计划 / 进度 / 记忆 / 文档集中在仓库根 **`.ai/`**，根目录表面仅保留 `AGENTS.md`、`CLAUDE.md`、`README.md` 三份文档。
 
 - `.ai/rules/` —— **约定单一真源**：`project-conventions.md`（运行时/launch/改X则跑Y/高风险区/命名/提交）、`qingtian-decision-policy.md`（QingTian 决策策略）、`git-commit-message.md`（Conventional Commits）。各 AI 工具（Cursor/Trae/Copilot）的规则文件仅作指针，指向此处。
-- `.ai/skills/` —— 可复用技能：`omega-sf-inversion`（FY/SMAP 反演+Matlab 一致性校验）、`multi-source-data-ingestion`（校园SSH/NAS/NSIDC/Earthdata）、`runtime-and-verify`（运行时与验证命令）、`contract-openapi-drift`（契约/OpenAPI 漂移防护）。
+- `.ai/skills/` —— 可复用技能：`workflow-design`（种子命名/分类/标记与定时器）、`omega-sf-inversion`（FY/SMAP 反演+Matlab 一致性校验）、`multi-source-data-ingestion`（校园SSH/NAS/NSIDC/Earthdata）、`runtime-and-verify`（运行时与验证命令）、`contract-openapi-drift`（契约/OpenAPI 漂移防护）。
 - `.ai/plans/` —— 计划。
 - `.ai/progress/` —— 进度 / 验证追踪（FY-SMAP 系列、`ui-verification-steps.md`）。
 - `.ai/memory/` —— AI 记忆 / 历史上下文（`archive/` 含 ~72 份历史计划与对话）。
 - `.ai/docs/` —— 项目文档（原 `Doc/` 整体迁入：`design/` 架构设计、`specs/` 规范 spec、`reference/` 任务记录与验证报告）。
 
-> 改代码前读 `.ai/rules/project-conventions.md`；做反演 / 数据接入读 `.ai/skills/` 对应技能。
+> 改代码前读 `.ai/rules/project-conventions.md`；做反演 / 数据接入 / **工作流种子与定时器**读 `.ai/skills/` 对应技能。

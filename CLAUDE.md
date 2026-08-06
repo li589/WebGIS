@@ -10,10 +10,11 @@
 - **前端**：Node 22（`Code/frontend/package.json` engines）。
 - **Windows Docker**：`launch.py start` / `sync` 需 Docker Desktop 与终端都以**管理员身份**运行。
 
-## 关键命令
+## 常用命令
 
 - 全栈启动：`Env\Python312\python.exe launch.py start`
-- 单组件：`… launch.py start <docker|fastapi|beat|worker|worker:<name>|frontend|gateway>`
+- 单组件：`… launch.py start <docker|fastapi|beat|worker|worker:<name>|frontend|gateway|backend>`
+- 仅重启后端进程组（改数据根后）：`… launch.py restart backend`
 - 状态/日志：`… launch.py status` / `logs [component] [-n N]`
 - 数据同步：`… launch.py sync [job]`
 - 清缓存（仅排障）：`… launch.py flush`（高风险，清 Redis + 天气缓存）
@@ -24,10 +25,11 @@
 
 ## 高风险区（改动前确认鉴权 / 加密 / 隔离）
 
-1. `/config/*` 写操作与 `POST /import/raster` 需 `X-API-Key`。
+1. `/config/*` 写操作与 `POST /import/raster` 需 `X-API-Key`（含数据根 `PUT /config/data-source/paths`、`POST /config/service/restart`）。
 2. GEE 凭据用 `BACKEND_GEE_CREDENTIALS_ENCRYPTION_KEY`（32-byte hex）加密落库；非 development 必配。
 3. `launch.py flush` 清空 Redis + 天气缓存，仅排障用。
 4. Open-Meteo 走 Docker named volume，勿用 Windows bind mount。
+5. `BACKEND_DATA_ROOT` 必配（production 空根拒启）；前端设置 → 数据源可改，须重启 FastAPI+Worker+Beat 生效。
 
 ## 协议 / 命名
 
@@ -39,10 +41,10 @@
 ## AI 知识库（`.ai/`）
 
 - `.ai/rules/` —— 约定单一真源（project-conventions / qingtian-decision-policy / git-commit-message）
-- `.ai/skills/` —— 可复用技能（omega-sf-inversion / multi-source-data-ingestion / runtime-and-verify / contract-openapi-drift）
+- `.ai/skills/` —— 可复用技能（workflow-design / omega-sf-inversion / multi-source-data-ingestion / runtime-and-verify / contract-openapi-drift）
 - `.ai/plans/` —— 计划
 - `.ai/progress/` —— 进度/验证追踪（FY-SMAP 系列、UI 验证步骤）
 - `.ai/memory/` —— AI 记忆 / 历史上下文（archive/）
-- `.ai/docs/` —— 项目文档（design / specs / reference）
+- `.ai/docs/` —— 项目文档（design / specs / reference；含 `specs/workflow_seed_conventions.md`）
 
 > 本仓库根仅保留 `AGENTS.md`、`CLAUDE.md`、`README.md` 三份文档；其余 AI 上下文均在 `.ai/`。

@@ -75,6 +75,13 @@ jobs:
       - name: Install unrar (for archive import tests)
         run: sudo apt-get update && sudo apt-get install -y unrar
 
+      # SpatiaLite：overlay 视口相交查询测试依赖 mod_spatialite（Windows 本地用 gaia-gis 预编译包；CI 用 apt）
+      - name: Install mod_spatialite (for spatial overlay tests)
+        run: sudo apt-get update && sudo apt-get install -y libsqlite3-mod-spatialite
+      # 验证扩展确实可加载：刚装完若不可用，直接让 CI 失败（而非让 7 个空间测试静默 skip）
+      - name: Verify SpatiaLite extension loads (fail CI if broken)
+        run: python Tools/verify_spatialite.py
+
       # P1-8：生成 omega_avg_daily 端到端测试所需合成数据（Tools/test_data/ 不入库，CI 现生成），
       # 使 AGENTS.md 点名的核心算法链在 CI 有回归而非永久 skip
       - name: Generate synthetic data for omega_avg_daily e2e test

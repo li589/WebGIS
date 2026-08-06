@@ -144,6 +144,7 @@ Doc/一份任务说明-*.txt
 
 # Local pytest/vitest temp + manual verification logs (generated during dev verification)
 Test/.pytest-*/
+Test/.tmp-*/
 be_run*.log
 be_collect.log
 algo_run*.log
@@ -152,5 +153,3 @@ vitest_run.log
 
 # Generated test/verification reports (large dataset_inventory/scan/checkpoint dumps, up to ~188MB). Keep local, NOT in git.
 Test/reports/
-
-

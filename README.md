@@ -152,9 +152,18 @@ Code/
 
 - `start.bat`（或 `Env\Python312\python.exe launch.py start`）— 运行栈 + FastAPI + Workers + Vite 前端
 - `Env\Python312\python.exe launch.py start gateway` — Nginx 同域入口 `:5175`（可选）
+- `Env\Python312\python.exe launch.py restart backend` — 仅重启 FastAPI + Worker + Beat（改数据根后必用；不动 Docker/Vite）
 - `Env\Python312\python.exe launch.py sync` — 数据面 Open-Meteo 同步（`Code/infra/data-sync`）
 - `stop.bat` / `Env\Python312\python.exe launch.py status` / `flush`
 - 活文档应随代码结构变化同步更新；带日期的记录文档可归档保留
+
+## 地理数据根（可变）
+
+- **真源**：`Code/backend/.env` 中的 `BACKEND_DATA_ROOT` / `BACKEND_OUTPUT_ROOT`（进程启动时读入；**禁止**代码静默回退盘符）。
+- **本机联调示例**：`I:\Geograph_DataSet`（见 `.env.example`）；他机构须改为本机绝对路径。production 未设 `BACKEND_DATA_ROOT` 将拒启。
+- **前端**：设置 → **数据源** → 编辑路径 →「保存路径」或「保存并重启后端」（调度 `launch.py restart backend`；需写鉴权 / development 旁路；`BACKEND_UI_RESTART_ENABLED` 控制门禁）。
+- **API**：`PUT /config/data-source/paths`、`POST /config/service/restart`；`GET /config/data-source` 返回生效值与 `pending_restart`。
+- 图层库「默认数据源未就绪」多因根未配或相对路径与盘上布局不一致；就绪检查见 `GET /layers` 的 `run_readiness`。
 
 ## 运维手册（初代）
 
