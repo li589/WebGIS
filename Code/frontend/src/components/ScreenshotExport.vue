@@ -45,6 +45,8 @@ const emit = defineEmits<{
 
 const isCapturing = ref(false)
 const captureMsg = ref('')
+/** Manual download when browser blocks programmatic <a download> after async work */
+const manualDownload = ref<{ href: string; filename: string } | null>(null)
 /** 跟踪 captureMsg 自动清除定时器，组件卸载时统一清理避免访问已销毁的 ref */
 let captureMsgTimer: ReturnType<typeof setTimeout> | null = null
 
@@ -52,6 +54,10 @@ onBeforeUnmount(() => {
   if (captureMsgTimer !== null) {
     clearTimeout(captureMsgTimer)
     captureMsgTimer = null
+  }
+  if (manualDownload.value?.href) {
+    URL.revokeObjectURL(manualDownload.value.href)
+    manualDownload.value = null
   }
 })
 
@@ -72,14 +78,92 @@ const selectedFormat = ref<ScreenshotFormat>('png')
 
 const canCapture = computed(() => !!props.mapStageEl && !isCapturing.value)
 
+type SaveFilePickerHandle = {
+  createWritable: () => Promise<{
+    write: (data: Blob) => Promise<void>
+    close: () => Promise<void>
+  }>
+}
+
+async function pickSaveTarget(
+  filename: string,
+  format: ScreenshotFormat,
+): Promise<SaveFilePickerHandle | null> {
+  const w = window as Window & {
+    showSaveFilePicker?: (opts: Record<string, unknown>) => Promise<SaveFilePickerHandle>
+  }
+  if (typeof w.showSaveFilePicker !== 'function') return null
+  try {
+    return await w.showSaveFilePicker({
+      suggestedName: filename,
+      types:
+        format === 'png'
+          ? [{ description: 'PNG image', accept: { 'image/png': ['.png'] } }]
+          : [{ description: 'PDF document', accept: { 'application/pdf': ['.pdf'] } }],
+    })
+  } catch (err) {
+    // AbortError = user cancelled — treat as cancel of whole export
+    if (err instanceof DOMException && err.name === 'AbortError') throw err
+    return null
+  }
+}
+
+async function persistBlob(
+  blob: Blob,
+  filename: string,
+  fileHandle: SaveFilePickerHandle | null,
+): Promise<'picker' | 'anchor' | 'manual'> {
+  if (fileHandle) {
+    const writable = await fileHandle.createWritable()
+    await writable.write(blob)
+    await writable.close()
+    return 'picker'
+  }
+  // Programmatic download after awaits is often blocked; still try, then keep manual link.
+  downloadBlob(blob, filename)
+  if (manualDownload.value?.href) URL.revokeObjectURL(manualDownload.value.href)
+  manualDownload.value = { href: URL.createObjectURL(blob), filename }
+  return 'manual'
+}
+
+function scheduleMsgClear(ms = 4000) {
+  if (captureMsgTimer !== null) clearTimeout(captureMsgTimer)
+  captureMsgTimer = setTimeout(() => {
+    // Keep manual download affordance; only clear transient status text
+    if (!manualDownload.value) captureMsg.value = ''
+    captureMsgTimer = null
+  }, ms)
+}
+
 async function capture() {
   if (!props.mapStageEl || isCapturing.value) return
-  isCapturing.value = true
-  captureMsg.value = '正在捕获...'
 
   const stage = props.mapStageEl
   const mode = selectedMode.value
   const format = selectedFormat.value
+  const exportName =
+    props.activeLayerName === LAYERS_COPY.emptyTitle ? '无数据图层' : props.activeLayerName
+  const basename = `geoflow-${exportName}-${props.hourLabel.replace(':', '')}-${mode}`
+  const filename = format === 'png' ? `${basename}.png` : `${basename}.pdf`
+
+  // Acquire file handle WHILE user gesture is still valid (before long awaits).
+  let fileHandle: SaveFilePickerHandle | null = null
+  try {
+    fileHandle = await pickSaveTarget(filename, format)
+  } catch (err) {
+    if (err instanceof DOMException && err.name === 'AbortError') {
+      captureMsg.value = '已取消'
+      scheduleMsgClear(1500)
+      return
+    }
+  }
+
+  isCapturing.value = true
+  captureMsg.value = '正在捕获...'
+  if (manualDownload.value?.href) {
+    URL.revokeObjectURL(manualDownload.value.href)
+    manualDownload.value = null
+  }
 
   const captureEl = resolveCaptureElement(mode, {
     dashboardEl: props.dashboardEl,
@@ -87,8 +171,9 @@ async function capture() {
     mapStageEl: props.mapStageEl,
   })
   if (!captureEl) {
-    captureMsg.value = '截图失败'
+    captureMsg.value = '截图失败：找不到捕获区域'
     isCapturing.value = false
+    scheduleMsgClear()
     return
   }
 
@@ -97,10 +182,9 @@ async function capture() {
 
   try {
     captureMsg.value = '正在渲染...'
-    const scale = Math.max(2, window.devicePixelRatio || 1)
+    // Cap scale — shell@dpr*2 can OOM; 2 is enough for crisp export
+    const scale = Math.min(2, Math.max(1, window.devicePixelRatio || 1))
 
-    // Step 1: Capture map WebGL FIRST — before any DOM measurements that could
-    // trigger reflow and clear the GL framebuffer (preserveDrawingBuffer=false).
     const mapCanvasEl =
       (stage.querySelector('.maplibregl-canvas') as HTMLCanvasElement | null) ||
       (stage.querySelector('canvas') as HTMLCanvasElement | null)
@@ -121,106 +205,119 @@ async function capture() {
       }
     }
 
-    // Step 2: Build map snapshot layout using live rects.
     const snapshotTarget = mapCanvasEl ?? stage
     const mapSnapshot = mapDataUrl
       ? buildMapSnapshotLayout(snapshotTarget, captureEl, scale, mapDataUrl)
       : null
 
-    // Step 3: Stamp layout measurements as data attributes (non-destructive to live DOM).
     restoreStamps = stampLayoutMeasurements(captureEl)
-
-    // Step 4: Snapshot live paint (computed styles) before html2canvas clones.
     const paintSnapshots = snapshotLivePaint(captureEl)
     const realToolbar = captureEl.querySelector('.toolbar') as HTMLElement | null
-
-    // Step 5: Run html2canvas — onclone callback does all layout pinning in the clone.
     const captureRect = captureEl.getBoundingClientRect()
-    const uiCanvas = await html2canvas(captureEl, {
-      useCORS: true,
-      allowTaint: false,
-      scale,
-      backgroundColor: null,
-      logging: false,
-      scrollX: -window.scrollX,
-      scrollY: -window.scrollY,
-      windowWidth: Math.ceil(captureRect.width) || captureEl.clientWidth || window.innerWidth,
-      windowHeight: Math.ceil(captureRect.height) || captureEl.clientHeight || window.innerHeight,
-      onclone: (clonedDoc: Document) => {
-        prepareCloneForCapture(clonedDoc, { mode, paintSnapshots, realToolbar })
-      },
-      ignoreElements: (el: Element) => {
-        if (!(el instanceof HTMLElement)) return false
 
-        if (matchesAnySelector(el, MAP_CANVAS_SELECTORS)) {
-          return true
-        }
+    const runHtml2Canvas = () =>
+      html2canvas(captureEl, {
+        useCORS: true,
+        allowTaint: false,
+        scale,
+        backgroundColor: null,
+        logging: false,
+        scrollX: -window.scrollX,
+        scrollY: -window.scrollY,
+        windowWidth: Math.ceil(captureRect.width) || captureEl.clientWidth || window.innerWidth,
+        windowHeight: Math.ceil(captureRect.height) || captureEl.clientHeight || window.innerHeight,
+        onclone: (clonedDoc: Document) => {
+          prepareCloneForCapture(clonedDoc, { mode, paintSnapshots, realToolbar })
+        },
+        ignoreElements: (el: Element) => {
+          if (!(el instanceof HTMLElement)) return false
+          if (matchesAnySelector(el, MAP_CANVAS_SELECTORS)) return true
+          if (el.matches('.screenshot-overlay') || !!el.closest('.screenshot-overlay')) return true
+          if (mode === 'clean' && matchesAnySelector(el, CLEAN_IGNORE_SELECTORS)) return true
+          if (mode === 'pure' && matchesAnySelector(el, PURE_IGNORE_SELECTORS)) return true
+          return false
+        },
+      })
 
-        if (el.matches('.screenshot-overlay') || !!el.closest('.screenshot-overlay')) {
-          return true
-        }
-
-        if (mode === 'clean' && matchesAnySelector(el, CLEAN_IGNORE_SELECTORS)) {
-          return true
-        }
-
-        if (mode === 'pure' && matchesAnySelector(el, PURE_IGNORE_SELECTORS)) {
-          return true
-        }
-
-        return false
-      },
-    })
-
-    // Step 6: Composite map under UI.
-    let finalCanvas = uiCanvas
+    let uiCanvas: HTMLCanvasElement
+    let mapOnlyFallback = false
     try {
-      finalCanvas = await compositeMapUnderUi(uiCanvas, mapSnapshot)
-    } catch (error) {
-      console.warn('[ScreenshotExport] map composite failed, exporting UI only:', error)
+      uiCanvas = await Promise.race([
+        runHtml2Canvas(),
+        new Promise<never>((_, reject) => {
+          window.setTimeout(() => reject(new Error('界面渲染超时（20s）')), 20_000)
+        }),
+      ])
+    } catch (uiErr) {
+      console.warn('[ScreenshotExport] html2canvas failed, exporting map snapshot only:', uiErr)
+      if (!mapDataUrl) throw uiErr
+      mapOnlyFallback = true
+      const fallback = document.createElement('canvas')
+      const mapW = mapCanvasEl?.width || Math.ceil(captureRect.width) || 800
+      const mapH = mapCanvasEl?.height || Math.ceil(captureRect.height) || 600
+      fallback.width = mapW
+      fallback.height = mapH
+      const ctx = fallback.getContext('2d')
+      if (!ctx) throw uiErr
+      ctx.fillStyle = '#07111e'
+      ctx.fillRect(0, 0, mapW, mapH)
+      const img = await new Promise<HTMLImageElement>((resolve, reject) => {
+        const image = new Image()
+        image.onload = () => resolve(image)
+        image.onerror = () => reject(new Error('Failed to load map snapshot for fallback'))
+        image.src = mapDataUrl!
+      })
+      ctx.drawImage(img, 0, 0, mapW, mapH)
+      uiCanvas = fallback
     }
 
-    if (!mapSnapshot) {
-      console.warn(
-        '[ScreenshotExport] map snapshot missing — basemap/overlays may be blank (tainted canvas or capture failure)',
-      )
+    let finalCanvas = uiCanvas
+    if (!mapOnlyFallback) {
+      try {
+        finalCanvas = await compositeMapUnderUi(uiCanvas, mapSnapshot)
+      } catch (error) {
+        console.warn('[ScreenshotExport] map composite failed, exporting UI only:', error)
+      }
+      if (!mapSnapshot) {
+        console.warn(
+          '[ScreenshotExport] map snapshot missing — basemap/overlays may be blank (tainted canvas or capture failure)',
+        )
+      }
     }
 
-    const exportName =
-      props.activeLayerName === LAYERS_COPY.emptyTitle ? '无数据图层' : props.activeLayerName
-    const filename = `geoflow-${exportName}-${props.hourLabel.replace(':', '')}-${mode}`
-
+    captureMsg.value = '正在保存...'
+    let blob: Blob
     if (format === 'png') {
-      const blob = await canvasToPngBlob(finalCanvas)
-      downloadBlob(blob, `${filename}.png`)
+      blob = await canvasToPngBlob(finalCanvas)
     } else {
       const imgData = finalCanvas.toDataURL('image/png')
-      const pdfWidth = finalCanvas.width
-      const pdfHeight = finalCanvas.height
       const pdf = new jsPDF({
-        orientation: pdfWidth > pdfHeight ? 'landscape' : 'portrait',
+        orientation: finalCanvas.width > finalCanvas.height ? 'landscape' : 'portrait',
         unit: 'px',
-        format: [pdfWidth, pdfHeight],
+        format: [finalCanvas.width, finalCanvas.height],
       })
-      pdf.addImage(imgData, 'PNG', 0, 0, pdfWidth, pdfHeight)
-      pdf.save(`${filename}.pdf`)
+      pdf.addImage(imgData, 'PNG', 0, 0, finalCanvas.width, finalCanvas.height)
+      blob = pdf.output('blob')
     }
 
-    captureMsg.value = '已保存'
+    const how = await persistBlob(blob, filename, fileHandle)
+    captureMsg.value = mapOnlyFallback
+      ? how === 'manual'
+        ? '已生成（仅地图）— 请点下方下载'
+        : '已保存（仅地图）'
+      : how === 'manual'
+        ? '已生成 — 若未自动下载请点下方链接'
+        : '已保存'
+    scheduleMsgClear(how === 'manual' ? 12_000 : 4000)
   } catch (err) {
     console.error('[ScreenshotExport] Capture failed:', err)
-    captureMsg.value = '截图失败'
+    const detail = err instanceof Error ? err.message : String(err)
+    captureMsg.value = detail.includes('Abort') ? '已取消' : `截图失败：${detail.slice(0, 80)}`
+    scheduleMsgClear(5000)
   } finally {
     restoreStamps?.()
     props.setWindAnimationPaused?.(false)
     isCapturing.value = false
-    if (captureMsgTimer !== null) {
-      clearTimeout(captureMsgTimer)
-    }
-    captureMsgTimer = setTimeout(() => {
-      captureMsg.value = ''
-      captureMsgTimer = null
-    }, 2000)
   }
 }
 </script>
@@ -283,7 +380,19 @@ async function capture() {
         <span>{{ isCapturing ? captureMsg || '处理中...' : '导出' }}</span>
       </button>
 
-      <p v-if="captureMsg === '已保存'" class="success-hint">文件已保存到下载目录</p>
+      <a
+        v-if="manualDownload"
+        class="manual-download"
+        :href="manualDownload.href"
+        :download="manualDownload.filename"
+        rel="noopener"
+      >
+        ⬇ 点击下载 {{ manualDownload.filename }}
+      </a>
+
+      <p v-if="captureMsg.startsWith('已保存')" class="success-hint">
+        文件已写入所选位置或下载目录
+      </p>
     </div>
   </div>
 </template>
@@ -515,6 +624,28 @@ async function capture() {
   text-align: center;
   color: #7ddfbb;
   font-size: 0.58rem;
+}
+
+.manual-download {
+  display: block;
+  margin: 0.15rem 0 0;
+  padding: 0.45rem 0.55rem;
+  border-radius: 0.55rem;
+  border: 1px solid rgba(90, 213, 255, 0.28);
+  background: rgba(10, 132, 255, 0.12);
+  color: #9ee7ff;
+  font-size: 0.62rem;
+  text-align: center;
+  text-decoration: none;
+  word-break: break-all;
+  transition:
+    background 0.15s ease,
+    border-color 0.15s ease;
+}
+
+.manual-download:hover {
+  border-color: rgba(90, 213, 255, 0.5);
+  background: rgba(10, 132, 255, 0.22);
 }
 
 @media (max-width: 600px) {

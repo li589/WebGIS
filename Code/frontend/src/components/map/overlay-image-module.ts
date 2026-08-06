@@ -186,7 +186,9 @@ function _styleQuery(style: OverlayStyleParams | undefined | null, time: string 
     vmax: style?.vmax,
     nodataMode: style?.nodataMode,
     nodataColor: style?.nodataColor,
-    forceStyle: Boolean(style?.forceStyle || style?.palette || style?.vmin != null || style?.vmax != null),
+    forceStyle: Boolean(
+      style?.forceStyle || style?.palette || style?.vmin != null || style?.vmax != null,
+    ),
   })
 }
 
@@ -201,7 +203,11 @@ function _tileUrlFor(
   return `${base}${qs}`
 }
 
-function _previewUrl(layerId: string, time: string | null, style?: OverlayStyleParams | null): string {
+function _previewUrl(
+  layerId: string,
+  time: string | null,
+  style?: OverlayStyleParams | null,
+): string {
   const qs = _styleQuery(style, time)
   const bust = `_=${Date.now()}`
   if (!qs) return `/overlay-preview/${layerId}?${bust}`
@@ -222,6 +228,8 @@ export function createOverlayImageModule(
   const linkTimeEnabled = ref(false)
   // bounds 内存缓存：避免显示/隐藏切换时重复请求 /overlay-bounds
   const boundsCache = new Map<string, { bounds: [number, number, number, number]; meta: any }>()
+  /** bounds 404 负缓存：缺资产的注册层（如 aridity-cn）不要反复打 404 */
+  const boundsMissCache = new Set<string>()
 
   function _ids(layerId: string) {
     const safe = layerId.replace(/[^a-zA-Z0-9_-]/g, '-')
@@ -336,12 +344,16 @@ export function createOverlayImageModule(
     time: string | null,
   ): Promise<[number, number, number, number] | null> {
     const cacheKey = time ? `${layerId}@${time}` : layerId
+    if (boundsMissCache.has(cacheKey) || boundsMissCache.has(layerId)) return null
     const cached = boundsCache.get(cacheKey)
     if (cached) return cached.bounds
     try {
       const qs = time ? `?time=${encodeURIComponent(time)}` : ''
       const resp = await fetch(`/overlay-bounds/${layerId}${qs}`)
-      if (!resp.ok) return null
+      if (!resp.ok) {
+        if (resp.status === 404) boundsMissCache.add(cacheKey)
+        return null
+      }
       const data = (await resp.json()) as {
         bounds?: [number, number, number, number]
         meta?: Record<string, unknown>
@@ -559,6 +571,7 @@ export function createOverlayImageModule(
       // 已有加载在飞：只更新 desiredVisibility / style，完成后应用
       return
     }
+    if (boundsMissCache.has(layerId)) return
     const { sourceId } = _ids(layerId)
     if (options.map.getSource(sourceId)) return
     loadingOverlays.add(layerId)
@@ -567,6 +580,7 @@ export function createOverlayImageModule(
       // 先取根 meta（time_list），时间序列再按 default_time 取与预览一致的地理框
       const rootResp = await fetch(`/overlay-bounds/${layerId}`)
       if (!rootResp.ok) {
+        if (rootResp.status === 404) boundsMissCache.add(layerId)
         console.warn(`[Overlay] bounds fetch failed for ${layerId}: ${rootResp.status}`)
         return
       }
@@ -882,7 +896,11 @@ export function createOverlayImageModule(
         }
       | undefined
     if (!source || !loaded.bounds) return
-    _applyImageSourceUpdate(source, _previewUrl(layerId, loaded.currentTime, loaded.style), loaded.bounds)
+    _applyImageSourceUpdate(
+      source,
+      _previewUrl(layerId, loaded.currentTime, loaded.style),
+      loaded.bounds,
+    )
   }
 
   function setOverlayOpacity(layerId: string, opacity: number) {

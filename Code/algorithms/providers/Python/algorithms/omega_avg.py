@@ -73,6 +73,11 @@ class OmegaAvgConfig:
     freq_ghz: float = 1.4
     # 是否启用像元级并行（ProcessPoolExecutor + spawn）；失败自动回退串行
     enable_parallel: bool = True
+    # Stage D 可选日期窗口（含两端，YYYYMMDD）；为空表示全年
+    stage_d_start_date: str = ""
+    stage_d_end_date: str = ""
+    # Stage D 最多处理天数（按过滤后 date_keys 顺序）；0 表示不限
+    stage_d_max_days: int = 0
 
 
 def build_omega_avg_config(params: dict[str, Any]) -> OmegaAvgConfig:
@@ -87,7 +92,36 @@ def build_omega_avg_config(params: dict[str, Any]) -> OmegaAvgConfig:
         lambda_tau=float(params.get("lambda_tau", 20.0)),
         freq_ghz=float(params.get("freq_ghz", 1.4)),
         enable_parallel=bool(params.get("enable_parallel", True)),
+        stage_d_start_date=str(params.get("stage_d_start_date", "") or "").strip(),
+        stage_d_end_date=str(params.get("stage_d_end_date", "") or "").strip(),
+        stage_d_max_days=int(params.get("stage_d_max_days", 0) or 0),
     )
+
+
+def _normalize_date_key(value: str) -> str:
+    text = str(value or "").strip()
+    if not text:
+        return ""
+    if len(text) == 8 and text.isdigit():
+        return text
+    try:
+        return datetime.strptime(text, "%Y-%m-%d").strftime(_DATE_KEY_FORMAT)
+    except ValueError:
+        return text.replace("-", "")
+
+
+def _apply_stage_d_window(date_keys: list[str], config: OmegaAvgConfig) -> list[str]:
+    """按配置裁剪 Stage D 日期集合。"""
+    out = list(date_keys)
+    start_key = _normalize_date_key(config.stage_d_start_date)
+    end_key = _normalize_date_key(config.stage_d_end_date)
+    if start_key:
+        out = [k for k in out if k >= start_key]
+    if end_key:
+        out = [k for k in out if k <= end_key]
+    if config.stage_d_max_days > 0:
+        out = out[: int(config.stage_d_max_days)]
+    return out
 
 
 # ─── Stage A: 逐日 OMEGA 缓存 ───────────────────────────────────────────────
@@ -624,7 +658,7 @@ def retrieve_daily_with_avg_omega(
         alpha_vec = alpha_full
 
     npix = h_vec.size
-    date_keys = _iter_date_keys_for_year(target_year)
+    date_keys = _apply_stage_d_window(_iter_date_keys_for_year(target_year), config)
     days_processed = 0
     days_skipped = 0
 

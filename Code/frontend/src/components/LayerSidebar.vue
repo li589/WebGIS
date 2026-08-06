@@ -1049,9 +1049,9 @@ type ActiveLayerDisplayLike = {
               </button>
             </div>
             <div v-if="group.items.length === 0" class="empty-subcategory-hint">
-              暂无匹配【{{
-                selectedSubCategory === 'all' ? '全部' : selectedSubCategory
-              }}】的{{ orgLabel }}图层
+              暂无匹配【{{ selectedSubCategory === 'all' ? '全部' : selectedSubCategory }}】的{{
+                orgLabel
+              }}图层
             </div>
             <div
               v-for="item in group.items"
@@ -1866,9 +1866,10 @@ h2 {
   flex-shrink: 0;
   margin: 0;
   padding: 0.14rem 0.36rem;
-  border: 1px solid color-mix(in srgb, var(--cat-color, #88d8ff) 35%, transparent);
+  /* rgba — avoid color-mix() (html2canvas cannot parse it) */
+  border: 1px solid rgba(136, 216, 255, 0.35);
   border-radius: 999px;
-  background: color-mix(in srgb, var(--cat-color, #88d8ff) 10%, transparent);
+  background: rgba(136, 216, 255, 0.1);
   color: var(--cat-color, #88d8ff);
   cursor: pointer;
   font: inherit;
@@ -1883,8 +1884,8 @@ h2 {
 }
 
 .cat-batch-add:hover {
-  background: color-mix(in srgb, var(--cat-color, #88d8ff) 22%, transparent);
-  border-color: color-mix(in srgb, var(--cat-color, #88d8ff) 55%, transparent);
+  background: rgba(136, 216, 255, 0.22);
+  border-color: rgba(136, 216, 255, 0.55);
 }
 
 /* ── Batch toolbar (active state) ────────────────────────────────────────── */
@@ -2348,10 +2349,10 @@ h2 {
   /* 始终展示三行：主行 + 图例 + 底行，统一间距 */
   gap: 0.18rem;
   padding: 0.3rem 0.42rem;
-  border: 1px solid color-mix(in srgb, var(--accent, #88c0ff) 28%, rgba(136, 192, 255, 0.12));
+  border: 1px solid rgba(136, 192, 255, 0.28);
   border-left: 3px solid var(--accent, #67d4ff);
   border-radius: var(--sidebar-soft-radius);
-  background: color-mix(in srgb, var(--accent, #67d4ff) 14%, rgba(8, 18, 33, 0.78));
+  background: rgba(8, 18, 33, 0.86);
   color: #d8e4ef;
   font: inherit;
   font-size: 0.66rem;
@@ -2364,16 +2365,16 @@ h2 {
 }
 
 .layer-item:hover {
-  border-color: color-mix(in srgb, var(--accent, #5aa2ff) 55%, rgba(90, 162, 255, 0.35));
-  box-shadow: 0 4px 12px -8px color-mix(in srgb, var(--accent, #5aa2ff) 50%, transparent);
+  border-color: rgba(90, 162, 255, 0.55);
+  box-shadow: 0 4px 12px -8px rgba(90, 162, 255, 0.35);
 }
 
 .layer-item.active {
-  background: color-mix(in srgb, var(--accent, #5aa2ff) 22%, rgba(8, 18, 33, 0.82));
-  border-color: color-mix(in srgb, var(--accent, #5aa2ff) 65%, rgba(90, 162, 255, 0.45));
+  background: rgba(20, 40, 72, 0.92);
+  border-color: rgba(90, 162, 255, 0.65);
   box-shadow:
     inset 0 0 0 1px rgba(255, 255, 255, 0.03),
-    0 12px 22px -18px color-mix(in srgb, var(--accent, #5aa2ff) 55%, transparent);
+    0 12px 22px -18px rgba(90, 162, 255, 0.4);
 }
 
 .layer-item.hidden {
@@ -2464,7 +2465,7 @@ h2 {
 .layer-item.in-run-group {
   margin-left: 0.55rem;
   border-left-width: 2px;
-  background: color-mix(in srgb, var(--accent, #67d4ff) 8%, rgba(8, 18, 33, 0.72));
+  background: rgba(8, 18, 33, 0.78);
 }
 
 .layer-item.group-locked {

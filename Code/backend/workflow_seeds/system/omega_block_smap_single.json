@@ -110,7 +110,7 @@
     {"0": 2, "1": 2, "2": 0, "3": 5, "4": 0, "5": "value:string"},
     {"0": 3, "1": 3, "2": 0, "3": 5, "4": 0, "5": "value:string"},
     {"0": 4, "1": 4, "2": 0, "3": 5, "4": 0, "5": "value:string"},
-    {"0": 5, "1": 5, "2": 1, "3": 6, "4": 0, "5": "value:string"}
+    {"0": 5, "1": 5, "2": 0, "3": 6, "4": 0, "5": "data:timeseries"}
   ],
   "extra": {
     "purpose": "d1_omega_block",
@@ -118,6 +118,6 @@
     "pipeline": "timeseries_bundle → omega_block → daily_omega + omega_block_*.mat",
     "prerequisite": "SMAP 逐日 .mat + 辅助库；产出应落到 Inversion_Results/omega_block",
     "outputs": ["OMEGA", "SM", "VOD"],
-    "notes": "UI flatten 单模块时分两步：先 timeseries_bundle，再 omega_block（input_mat=bundle）。时间窗默认 2025-12-03..31（对齐本地 SMAP Dec）。"
+    "notes": "timeseries.output_path → omega_block.input_mat；data/source 由 request.datasource_selection 聚合（不再 fan-in 到模块端口）。时间窗默认 2025-12-03..31（对齐本地 SMAP Dec）。"
   }
 }

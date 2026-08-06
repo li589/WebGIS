@@ -92,7 +92,11 @@ export function resolveWeatherOverlayStates(
       if (lastGood) {
         // 沿用上一良好数据（地理锚定），保持流线/粒子画面，
         // 新瓦片到达后 dataVersion bump → 新 sync 自然覆盖
-        states.push({ ...lastGood, opacity: state.opacity })
+        states.push({
+          ...lastGood,
+          opacity: state.opacity,
+          viewportBounds: state.viewportBounds ?? lastGood.viewportBounds ?? null,
+        })
       }
       continue
     }
@@ -234,8 +238,7 @@ function buildWorkflowOverlayState(
   options: ResolveWeatherOverlayStatesOptions,
 ): WeatherOverlayState | null {
   // 优先用 display 合并后的 renderHint（含 paletteOverride）
-  const renderHint =
-    layer.renderHint ?? layer.jobLayer?.mapLayerPayload?.renderHint ?? null
+  const renderHint = layer.renderHint ?? layer.jobLayer?.mapLayerPayload?.renderHint ?? null
   if (!renderHint) return null
 
   const geojsonUrl = layer.jobLayer?.mapLayerPayload?.layerAssets?.geojsonUrl

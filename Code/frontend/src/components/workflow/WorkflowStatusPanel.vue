@@ -22,12 +22,6 @@ const copyFeedback = ref('')
 const tick = ref(0)
 let tickTimer: number | null = null
 
-/** 是否存在活跃工作流（running/queued/retry_pending），用于决定是否启用 tick 定时器 */
-const hasActiveWorkflows = computed(() => {
-  const s = layersStore.workflowSummary
-  return s.running + s.queued + s.retryPending > 0
-})
-
 const weatherContribution = computed(() => {
   void activityVersion.value
   void statusVersion.value
@@ -89,6 +83,8 @@ const weatherSyntheticItems = computed(() => {
   return weatherContribution.value.items.map((item) => {
     const meta = catalogMeta.get(item.catalogId)
     const active = layersStore.activeLayersDisplay.find((l) => l.catalogId === item.catalogId)
+    const fillPercent =
+      item.viewportTotal > 0 ? Math.round((item.cachedInViewport / item.viewportTotal) * 100) : 0
     return {
       catalogId: item.catalogId,
       name: active?.name ?? meta?.name ?? item.catalogId,
@@ -99,6 +95,9 @@ const weatherSyntheticItems = computed(() => {
       errorType: item.errorType,
       pending: item.pending,
       missingInViewport: item.missingInViewport,
+      cachedInViewport: item.cachedInViewport,
+      viewportTotal: item.viewportTotal,
+      fillPercent,
     }
   })
 })
@@ -111,6 +110,12 @@ const summary = computed(() => {
   void activityVersion.value
   void statusVersion.value
   return mergeWorkflowSummaryWithWeather(jobSummary.value, weatherContribution.value)
+})
+
+/** 是否存在活跃工作流（含天气瓦片），用于启用 tick / 进度刷新 */
+const hasActiveWorkflows = computed(() => {
+  const s = summary.value
+  return s.running + s.queued + s.retryPending > 0
 })
 
 /** 衍生统计指标 */
@@ -612,7 +617,13 @@ onBeforeUnmount(() => {
                 }"
               >
                 {{ weatherStatusMeta[item.status].label }}
+                <template v-if="item.status === 'running' && item.viewportTotal > 0"
+                  >{{ item.fillPercent }}%</template
+                >
               </span>
+            </div>
+            <div v-if="item.status === 'running' && item.viewportTotal > 0" class="wf-progress-bar">
+              <div class="wf-progress-fill" :style="{ width: `${item.fillPercent}%` }"></div>
             </div>
             <p v-if="item.message" class="wf-item-message">{{ item.message }}</p>
             <div class="wf-item-footer">
@@ -1547,6 +1558,17 @@ onBeforeUnmount(() => {
   color: #a8c4d8;
   font-size: 0.6rem;
   line-height: 1.4;
+}
+
+.wf-item-progressive-error {
+  color: #f0a8a8;
+  border-left: 2px solid rgba(220, 80, 80, 0.75);
+  padding-left: 0.4rem;
+}
+
+.wf-item-progressive-hint {
+  color: #9ec5e8;
+  opacity: 0.92;
 }
 
 .wf-item-summary {

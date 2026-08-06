@@ -38,9 +38,11 @@ import {
   resolveAnalysisTabForFocusIds,
   type AnalysisTabId,
 } from './info-panel/analysis-tab-focus'
+import { resolveWeatherWorkflowStage } from '../utils/weather-tile-readiness'
 import PointTimeSeriesChart from './info-panel/PointTimeSeriesChart.vue'
 import MultiOverlayBarChart from './info-panel/MultiOverlayBarChart.vue'
 import BufferAnalysisTool from './info-panel/BufferAnalysisTool.vue'
+import AnalysisResultCharts from './info-panel/AnalysisResultCharts.vue'
 
 const layersStore = useLayersStore()
 const uiStore = useUiStore()
@@ -777,8 +779,15 @@ const showMultiOverlayBar = computed(
   () => !!props.selectedMapPoint && multiOverlayBarItems.value.length > 0,
 )
 
+const analysisCharts = computed(() => jobLayer.value?.analysisCharts ?? [])
+const analysisTables = computed(() => jobLayer.value?.analysisTables ?? [])
+const hasAnalysisCharts = computed(
+  () => analysisCharts.value.length > 0 || analysisTables.value.length > 0,
+)
+
 const hasVisualTabContent = computed(
   () =>
+    hasAnalysisCharts.value ||
     hasPointWeatherSection.value ||
     showMultiOverlayBar.value ||
     !!resultModel.value ||
@@ -809,11 +818,7 @@ const runBlockedReason = computed(() =>
 const workflowStage = computed(() => {
   if (props.isSubmitting) return 'submitting'
   if (isRealtimeWeatherLayer.value) {
-    const stats = tileStats.value
-    if (!stats) return 'idle'
-    if (stats.pending > 0) return 'running'
-    if (stats.cached > 0) return 'succeeded'
-    return 'idle'
+    return resolveWeatherWorkflowStage(tileStats.value)
   }
   if (jobLayer.value?.status === 'queued') return 'queued'
   if (jobLayer.value?.status === 'running') return 'running'
@@ -908,6 +913,7 @@ const workflowStageCopy = computed(() =>
     isWeather: isRealtimeWeatherLayer.value && hasRealSelection.value,
     tilePending: tileStats.value?.pending ?? 0,
     tileCached: tileStats.value?.cached ?? 0,
+    tileVisible: tileStats.value?.visible ?? 0,
   }),
 )
 
@@ -1251,7 +1257,7 @@ onBeforeUnmount(() => {
                 type="button"
                 class="weather-mini-btn"
                 @click="
-                  setActiveTab('tools');
+                  setActiveTab('tools')
                   emit('enterSelectMode')
                 "
               >
@@ -1480,7 +1486,11 @@ onBeforeUnmount(() => {
                 </div>
               </div>
               <ul v-if="jobEventNotes.length" class="job-diagnostic-list">
-                <li v-for="note in jobEventNotes" :key="note" class="job-diagnostic-item">
+                <li
+                  v-for="(note, idx) in jobEventNotes"
+                  :key="`job-note-${idx}`"
+                  class="job-diagnostic-item"
+                >
                   {{ note }}
                 </li>
               </ul>
@@ -1630,6 +1640,16 @@ onBeforeUnmount(() => {
               "
               :current-numeric-value="pointWeatherNumericValue"
             />
+          </section>
+
+          <!-- ── visual Tab：工作流图表结果 ─────────────────────────────── -->
+          <section
+            v-if="hasAnalysisCharts"
+            v-show="activeTab === 'visual'"
+            id="workflow-charts"
+            class="analysis-section"
+          >
+            <AnalysisResultCharts :charts="analysisCharts" :tables="analysisTables" />
           </section>
 
           <!-- ── visual Tab：点查图表 ──────────────────────────────────────── -->
@@ -2205,7 +2225,7 @@ onBeforeUnmount(() => {
                 type="button"
                 class="weather-mini-btn"
                 @click="
-                  setActiveTab('tools');
+                  setActiveTab('tools')
                   emit('enterSelectMode')
                 "
               >

@@ -22,13 +22,16 @@ the bridge service itself.
 
 from __future__ import annotations
 
+import json
 import logging
 import re
 from datetime import datetime
 from pathlib import Path
 from typing import Any
 from urllib.parse import unquote, urlparse
+from uuid import uuid4
 
+from app.core.config import settings
 from app.services.result_storage import result_storage_service
 from shared.contracts.api_contracts import (
     ResultKind,
@@ -328,6 +331,26 @@ class PythonProviderResultBuilder:
         variable = str(product.get("variable") or "")
         tags = as_dict(product.get("tags"))
         layer_label = str(tags.get("layer") or variable or product_type)
+        kind_tag = str(tags.get("kind") or "").lower()
+
+        # Chart / table analysis products → structured result_refs for InfoPanel
+        if (
+            product_type in {"chart_spec", "table_spec"}
+            or kind_tag in {"chart", "table"}
+            or uri.lower().endswith((".chart.json", ".table.json"))
+        ):
+            analysis_ref = self._build_analysis_spec_ref(
+                run_id=run_id,
+                requested_at=requested_at,
+                product=product,
+                index=index,
+                uri=uri,
+                product_type=product_type,
+                kind_tag=kind_tag,
+                layer_label=layer_label,
+            )
+            if analysis_ref is not None:
+                return analysis_ref
 
         # Title must be US-ASCII (Celery metadata constraint)
         title = f"Algorithm Output: {layer_label}"
@@ -360,6 +383,100 @@ class PythonProviderResultBuilder:
             updated_at=requested_at,
         )
 
+    def _build_analysis_spec_ref(
+        self,
+        *,
+        run_id: str,
+        requested_at: datetime,
+        product: dict[str, Any],
+        index: int,
+        uri: str,
+        product_type: str,
+        kind_tag: str,
+        layer_label: str,
+    ) -> WorkflowResultReference | None:
+        """Emit ResultKind.chart / table from chart_spec / table_spec JSON products."""
+        is_table = (
+            product_type == "table_spec"
+            or kind_tag == "table"
+            or uri.lower().endswith(".table.json")
+        )
+        result_kind = ResultKind.table if is_table else ResultKind.chart
+        title = (
+            f"Analysis Table: {layer_label}"
+            if is_table
+            else f"Analysis Chart: {layer_label}"
+        )
+        # Strip non-ASCII for Celery safety
+        title = title.encode("ascii", "ignore").decode("ascii") or (
+            "Analysis Table" if is_table else "Analysis Chart"
+        )
+
+        local_path = self._uri_to_local_path(uri)
+        payload: dict[str, Any] | None = None
+        if local_path is not None and local_path.exists() and local_path.is_file():
+            try:
+                raw = json.loads(local_path.read_text(encoding="utf-8"))
+                if isinstance(raw, dict):
+                    payload = raw
+            except (OSError, UnicodeError, json.JSONDecodeError) as exc:
+                logger.warning("Failed to load analysis JSON %s: %s", uri, exc)
+
+        if payload is None:
+            # Fall back to file artifact if JSON cannot be inlined
+            return None
+
+        # Oversized series: spill via chunked reference (chart only)
+        series = (
+            payload.get("series") if isinstance(payload.get("series"), list) else []
+        )
+        flat_y = payload.get("y") if isinstance(payload.get("y"), list) else []
+        point_count = 0
+        if series:
+            for s in series:
+                if isinstance(s, dict) and isinstance(s.get("y"), list):
+                    point_count = max(point_count, len(s["y"]))
+        else:
+            point_count = len(flat_y)
+
+        chunk_limit = int(getattr(settings, "provider_series_chunk_size", 500) or 500)
+        if result_kind is ResultKind.chart and point_count > chunk_limit:
+            items = []
+            if series and isinstance(series[0], dict):
+                xs = list(series[0].get("x") or [])
+                ys = list(series[0].get("y") or [])
+                for i, y in enumerate(ys):
+                    items.append({"label": xs[i] if i < len(xs) else i, "value": y})
+            else:
+                xs = list(payload.get("x") or [])
+                for i, y in enumerate(flat_y):
+                    items.append({"label": xs[i] if i < len(xs) else i, "value": y})
+            chunked_ref, _diag = result_storage_service.build_chunked_reference(
+                run_id=run_id,
+                result_kind=ResultKind.chart,
+                title=title,
+                mime_type="application/json",
+                updated_at=requested_at,
+                items=iter(items),
+                chunk_size=chunk_limit,
+                manifest_payload={
+                    "chart_type": payload.get("chart_type") or "line",
+                    "series_name": payload.get("series_name") or layer_label,
+                    "point_count": point_count,
+                    "schema_version": payload.get("schema_version") or "1",
+                },
+            )
+            return chunked_ref
+
+        return WorkflowResultReference(
+            result_id=f"analysis-{result_kind.value}-{index}-{uuid4().hex[:8]}",
+            result_kind=result_kind,
+            title=title,
+            mime_type="application/json",
+            inline_data=payload,
+            updated_at=requested_at,
+        )
+
     @staticmethod
     def _infer_product_mime_type(uri: str, product_type: str) -> str:
         """Infer MIME type from URI extension or product type."""
@@ -378,6 +495,8 @@ class PythonProviderResultBuilder:
             return "application/json"
         if lower_uri.endswith(".csv"):
             return "text/csv"
+        if lower_uri.endswith(".png"):
+            return "image/png"
         if "raster" in product_type.lower() or "omega" in product_type.lower():
             return "image/tiff"
         return "application/octet-stream"
@@ -692,15 +811,23 @@ class PythonProviderResultBuilder:
 
         Returns ``None`` for non-file schemes (http, https, s3, etc.).
         Handles Windows drive-letter quirk where ``file:///C:/path``
-        parses to ``/C:/path`` (leading slash stripped).
+        parses to ``/C:/path`` (leading slash stripped), and where a bare
+        ``D:/path`` is mis-parsed by ``urlparse`` as scheme ``D``.
         """
-        parsed = urlparse(uri)
+        raw = (uri or "").strip()
+        if not raw:
+            return None
+        # Windows absolute path: "D:\\..." or "D:/..." — urlparse treats
+        # the drive letter as a scheme; detect before urlparse.
+        if len(raw) >= 3 and raw[1] == ":" and raw[0].isalpha():
+            return Path(raw)
+        parsed = urlparse(raw)
         if parsed.scheme not in {"", "file"}:
             return None
         if parsed.scheme == "file":
             raw_path = unquote(f"{parsed.netloc}{parsed.path}")
         else:
-            raw_path = unquote(uri)
+            raw_path = unquote(raw)
         if raw_path.startswith("/") and len(raw_path) > 2 and raw_path[2] == ":":
             raw_path = raw_path[1:]
         if not raw_path:

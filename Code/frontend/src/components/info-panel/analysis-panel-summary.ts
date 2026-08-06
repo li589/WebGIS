@@ -79,10 +79,14 @@ export function resolveWorkflowStageCopy(options: {
   isWeather?: boolean
   tilePending?: number
   tileCached?: number
+  tileVisible?: number
 }): string {
-  const { stage, progress, isWeather, tilePending = 0, tileCached = 0 } = options
+  const { stage, progress, isWeather, tilePending = 0, tileCached = 0, tileVisible = 0 } = options
   if (isWeather) {
-    if (tilePending > 0) return ANALYSIS_COPY.stageLoading
+    const ready =
+      tileCached > 0 && tileVisible > 0 && tileCached >= tileVisible && tilePending === 0
+    if (ready || stage === 'succeeded') return ANALYSIS_COPY.stageCached
+    if (tilePending > 0 || stage === 'running') return ANALYSIS_COPY.stageLoading
     if (tileCached > 0) return ANALYSIS_COPY.stageCached
   }
   if (stage === 'idle') {

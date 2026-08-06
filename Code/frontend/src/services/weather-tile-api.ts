@@ -5,6 +5,7 @@
  */
 import type { Map as MaplibreMap } from 'maplibre-gl'
 import type { WindGeoJSON } from '../components/map/types'
+import { resolveVisibleLngBounds } from '../components/map/map-viewport-sync'
 import { resolveApiUrl, submitWorkflow } from './runtime-api'
 import type { WorkflowSubmitRequest } from './runtime-api'
 
@@ -95,6 +96,29 @@ export function lngLatToTile(lng: number, lat: number, z: number): WeatherTileCo
   }
 }
 
+/**
+ * 视口瓦片按距地图中心从近到远排序（同 priority 时 sequence 决定调度顺序）。
+ * 缩放后先拉中心瓦片，避免边缘先到、父级 underlay 被裁掉后出现「中间空洞」。
+ * 跨日界线时对 x 取环形最短距离（模 n）。
+ */
+export function sortTilesCenterFirst(
+  tiles: readonly WeatherTileCoords[],
+  centerLng: number,
+  centerLat: number,
+): WeatherTileCoords[] {
+  if (tiles.length <= 1) return tiles.slice()
+  const z = tiles[0]!.z
+  const n = 2 ** z
+  const center = lngLatToTile(centerLng, centerLat, z)
+  const dist2 = (t: WeatherTileCoords): number => {
+    let dx = Math.abs(t.x - center.x)
+    if (dx > n / 2) dx = n - dx
+    const dy = t.y - center.y
+    return dx * dx + dy * dy
+  }
+  return tiles.slice().sort((a, b) => dist2(a) - dist2(b) || a.x - b.x || a.y - b.y)
+}
+
 /** 标准 Web Mercator：瓦片 z/x/y → EPSG:4326 bbox。 */
 export function tileToLngLatBounds(z: number, x: number, y: number): LngLatBounds {
   const n = 2 ** z
@@ -182,11 +206,12 @@ export function tilesInBounds(bounds: LngLatBounds, z: number, buffer = 0): Weat
 export function tilesInViewport(map: MaplibreMap, buffer = 0): WeatherTileCoords[] {
   const z = Math.max(0, Math.min(12, Math.round(map.getZoom())))
   const bounds = map.getBounds()
+  const { west, east } = resolveVisibleLngBounds(map)
   return tilesInBounds(
     {
-      west: bounds.getWest(),
+      west,
       south: bounds.getSouth(),
-      east: bounds.getEast(),
+      east,
       north: bounds.getNorth(),
     },
     z,

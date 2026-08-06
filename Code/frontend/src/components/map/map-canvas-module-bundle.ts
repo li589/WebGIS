@@ -34,6 +34,7 @@ interface LayersStoreLike {
     center: { lng: number; lat: number },
     bbox: { west: number; south: number; east: number; north: number; crs: 'EPSG:4326' } | null,
     zoom?: number,
+    options?: { immediate?: boolean },
   ) => void
 }
 

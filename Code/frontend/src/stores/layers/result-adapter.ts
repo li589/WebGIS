@@ -45,6 +45,138 @@ function extractReportSummary(
   return typeof text === 'string' && text.trim() ? text : fallbackMessage
 }
 
+function asNumberOrNull(value: unknown): number | null {
+  if (typeof value === 'number' && Number.isFinite(value)) return value
+  if (typeof value === 'string' && value.trim() && Number.isFinite(Number(value))) {
+    return Number(value)
+  }
+  return null
+}
+
+async function fetchChunkItems(
+  resourceUrl: string,
+): Promise<Array<{ label?: unknown; value?: unknown }>> {
+  try {
+    const url = resolveApiUrl(resourceUrl)
+    const resp = await fetch(url)
+    if (!resp.ok) return []
+    const body = (await resp.json()) as { items?: unknown }
+    if (!Array.isArray(body.items)) return []
+    return body.items.filter((item): item is { label?: unknown; value?: unknown } => {
+      return item !== null && typeof item === 'object'
+    })
+  } catch {
+    return []
+  }
+}
+
+async function extractAnalysisCharts(resultRefs: WorkflowResultReference[] | undefined) {
+  const charts: NonNullable<JobLayerItem['analysisCharts']> = []
+  for (const item of resultRefs ?? []) {
+    if (item.result_kind !== 'chart') continue
+    const payload = asRecord(item.inline_data)
+    if (!payload) continue
+
+    // Chunked manifests: assemble series from stored chunk items
+    if (payload.chunked === true && Array.isArray(payload.chunks)) {
+      const xs: Array<string | number> = []
+      const ys: Array<number | null> = []
+      for (const chunk of payload.chunks) {
+        const rec = asRecord(chunk)
+        const url = typeof rec?.resource_url === 'string' ? rec.resource_url : ''
+        if (!url) continue
+        const items = await fetchChunkItems(url)
+        for (const row of items) {
+          const label = row.label
+          xs.push(typeof label === 'string' || typeof label === 'number' ? label : xs.length)
+          ys.push(asNumberOrNull(row.value))
+        }
+      }
+      if (!xs.length && !ys.length) continue
+      charts.push({
+        id: item.result_id,
+        title: item.title || String(payload.title || 'Chart'),
+        chartType: String(payload.chart_type || 'line'),
+        xLabel: String(payload.x_label || ''),
+        yLabel: String(payload.y_label || ''),
+        unit: String(payload.unit || ''),
+        series: [
+          {
+            name: typeof payload.series_name === 'string' ? payload.series_name : 'series',
+            x: xs,
+            y: ys,
+          },
+        ],
+      })
+      continue
+    }
+
+    const seriesRaw = Array.isArray(payload.series) ? payload.series : null
+    let series: Array<{ name: string; x: Array<string | number>; y: Array<number | null> }> = []
+    if (seriesRaw && seriesRaw.length) {
+      series = seriesRaw
+        .map((s) => {
+          const rec = asRecord(s)
+          if (!rec) return null
+          const x = Array.isArray(rec.x) ? (rec.x as Array<string | number>) : []
+          const y = Array.isArray(rec.y) ? (rec.y as unknown[]).map((v) => asNumberOrNull(v)) : []
+          return {
+            name: typeof rec.name === 'string' ? rec.name : 'series',
+            x,
+            y,
+          }
+        })
+        .filter((s): s is NonNullable<typeof s> => s !== null)
+    } else {
+      const x = Array.isArray(payload.x) ? (payload.x as Array<string | number>) : []
+      const y = Array.isArray(payload.y)
+        ? (payload.y as unknown[]).map((v) => asNumberOrNull(v))
+        : []
+      if (x.length || y.length) {
+        series = [
+          {
+            name: typeof payload.series_name === 'string' ? payload.series_name : 'series',
+            x,
+            y,
+          },
+        ]
+      }
+    }
+    if (!series.length) continue
+    charts.push({
+      id: item.result_id,
+      title: item.title || String(payload.title || 'Chart'),
+      chartType: String(payload.chart_type || 'line'),
+      xLabel: String(payload.x_label || ''),
+      yLabel: String(payload.y_label || ''),
+      unit: String(payload.unit || ''),
+      series,
+    })
+  }
+  return charts
+}
+
+function extractAnalysisTables(resultRefs: WorkflowResultReference[] | undefined) {
+  const tables: NonNullable<JobLayerItem['analysisTables']> = []
+  for (const item of resultRefs ?? []) {
+    if (item.result_kind !== 'table') continue
+    const payload = asRecord(item.inline_data)
+    if (!payload) continue
+    const columns = Array.isArray(payload.columns)
+      ? (payload.columns as unknown[]).map((c) => String(c))
+      : []
+    const rows = Array.isArray(payload.rows) ? (payload.rows as unknown[][]) : []
+    if (!columns.length && !rows.length) continue
+    tables.push({
+      id: item.result_id,
+      title: item.title || String(payload.title || 'Table'),
+      columns,
+      rows,
+    })
+  }
+  return tables
+}
+
 function extractMetrics(run: WorkflowRunStatusResponse) {
   const metrics: Array<{ label: string; value: string }> = []
   const jsonResult = run.result_refs?.find((item) => item.result_kind === 'json')
@@ -308,6 +440,8 @@ export async function buildJobLayer(
     }
   }
   const localizedMessage = localizeWorkflowErrorMessage(run.message)
+  const analysisCharts = await extractAnalysisCharts(run.result_refs)
+  const analysisTables = extractAnalysisTables(run.result_refs)
   return {
     jobId: run.run_id,
     name: entryName ?? catalogName,
@@ -322,6 +456,8 @@ export async function buildJobLayer(
     resultDto: run.result_dto ?? undefined,
     resultView: resultView ?? undefined,
     resultUrl: resultUrl ?? undefined,
+    analysisCharts: analysisCharts.length > 0 ? analysisCharts : previousJobLayer?.analysisCharts,
+    analysisTables: analysisTables.length > 0 ? analysisTables : previousJobLayer?.analysisTables,
     mapLayerPayload,
     diagnostics: run.diagnostics ?? [],
     diagnosticNotes,

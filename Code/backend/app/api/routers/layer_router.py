@@ -224,6 +224,56 @@ def list_overlays() -> dict[str, Any]:
     return {"overlay_layer_ids": list_overlay_ids()}
 
 
+@router.get("/overlays/intersect", tags=["overlay"])
+def get_overlays_in_viewport(
+    west: float = Query(..., ge=-180, le=360),  # 容许 >180（跨日界线 unwrap）
+    south: float = Query(..., ge=-90, le=90),
+    east: float = Query(..., ge=-180, le=360),
+    north: float = Query(..., ge=-90, le=90),
+    zoom: int | None = Query(default=None, ge=0, le=24),
+) -> dict[str, Any]:
+    """返回与视口相交的 overlay layer_ids（服务端空间索引查询）。
+
+    优先用 spatial.sqlite + R*Tree（``ST_Intersects``）；扩展不可用或表空时
+    回退到逐层读 ``bounds.json`` 做 AABB 相交（与原前端 O(N) 过滤等价）。
+    空间库就绪时即使零命中也信任结果，不再误扫 bounds.json。
+
+    跨日界线约定：前端对跨日界线视口传 ``east > 180``（unwrap），与
+    ``overlay_safe_wgs84_bounds`` 一致。
+
+    回退路径无 zoom 元资料时不过滤（bounds.json / registry 目前无 min/maxzoom）。
+    """
+    from app.services.spatial_repository import get_spatial_repository
+
+    repo = get_spatial_repository()
+    if repo.is_spatial_ready():
+        hits = repo.query_intersects(west, south, east, north, zoom=zoom)
+        return {"layer_ids": [h["layer_id"] for h in hits], "source": "spatialite"}
+
+    # 回退：扫所有 overlay 的 bounds.json 做 AABB 相交（未导入 / 扩展不可用）
+    from app.services.geo_math import overlay_safe_wgs84_bounds
+
+    matched: list[str] = []
+    # 视口也按同一日界线展开约定归一化，与空间路径（BuildMBR 用展开后视口）保持同一空间
+    vw, vs_, ve, vn = overlay_safe_wgs84_bounds(west, south, east, north)
+    for lid in list_overlay_ids():
+        try:
+            b = read_bounds(lid).get("bounds")
+            if not b or len(b) < 4:
+                continue
+            ow, os_, oe, on = b
+            ow, os_, oe, on = overlay_safe_wgs84_bounds(ow, os_, oe, on)
+            # AABB 相交（视口与 bounds 都已 unwrap 到同一空间）
+            if vw <= oe and ve >= ow and vs_ <= on and vn >= os_:
+                matched.append(lid)
+        except Exception:
+            _logger.debug(
+                "overlay %s bounds read failed in fallback", lid, exc_info=True
+            )
+            continue
+    return {"layer_ids": matched, "source": "fallback_bounds_json"}
+
+
 @router.get("/overlay-value/{layer_id}", tags=["overlay"])
 def get_overlay_value(
     layer_id: str,

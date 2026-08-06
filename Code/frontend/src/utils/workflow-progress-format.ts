@@ -86,16 +86,26 @@ export function formatProgressShell(input: ProgressShellInput): string {
   return msg ?? ''
 }
 
-/** Prefer the newest node progress entry for shell display (by updatedAt, then progress). */
+/** Prefer the newest node progress entry for shell display (by updatedAt, then eventId, then progress). */
 export function pickLatestNodeProgress<
-  T extends { progress: number; message?: string; updatedAt?: string },
+  T extends {
+    progress: number
+    message?: string
+    updatedAt?: string
+    eventId?: string
+  },
 >(nodes: T[] | undefined | null): T | null {
   if (!nodes?.length) return null
   return nodes.reduce((best, cur) => {
     const bestAt = best.updatedAt ? Date.parse(best.updatedAt) : NaN
     const curAt = cur.updatedAt ? Date.parse(cur.updatedAt) : NaN
     if (Number.isFinite(curAt) && Number.isFinite(bestAt)) {
-      return curAt >= bestAt ? cur : best
+      if (curAt !== bestAt) return curAt > bestAt ? cur : best
+      // Tie-break equal timestamps with eventId (lexicographic, matches backend ORDER BY).
+      const bestEid = best.eventId ?? ''
+      const curEid = cur.eventId ?? ''
+      if (bestEid || curEid) return curEid >= bestEid ? cur : best
+      return cur.progress >= best.progress ? cur : best
     }
     if (Number.isFinite(curAt) && !Number.isFinite(bestAt)) return cur
     if (!Number.isFinite(curAt) && Number.isFinite(bestAt)) return best

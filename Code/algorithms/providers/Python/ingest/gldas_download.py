@@ -97,7 +97,9 @@ def _search_via_earthaccess(
     password: str,
 ) -> list[Granule]:
     try:
-        earthaccess.login(username=username, password=password, persist=True)
+        from ingest.nsidc_download import _earthaccess_login
+
+        _earthaccess_login(username, password, persist=True)
     except Exception as exc:
         logger.error("earthaccess 登录失败: %s", exc)
         raise
@@ -208,13 +210,14 @@ def _search_via_cmr(
 
 
 def _get_download_session(username: str, password: str) -> Any:
-    import requests  # type: ignore
-    from requests.auth import HTTPBasicAuth  # type: ignore
+    """Reuse NSIDC Earthdata session helper (earthaccess → BasicAuth fallback).
 
-    session = requests.Session()
-    session.auth = HTTPBasicAuth(username, password)
-    session.headers.update({"User-Agent": "cgda-gldas-download/1.0"})
-    return session
+    GES DISC rejects bare HTTP BasicAuth on data URLs with HTTP 401; the
+    earthaccess-backed session carries URS cookies/tokens needed for download.
+    """
+    from ingest.nsidc_download import _get_download_session as _nsidc_session
+
+    return _nsidc_session(username, password)
 
 
 def _download_with_retry(

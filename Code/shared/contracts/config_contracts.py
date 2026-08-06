@@ -127,3 +127,38 @@ class RemoteStorageHistoryItem(BaseModel):
 class RemoteStorageHistoryClearResponse(BaseModel):
     profile_id: str
     deleted: int
+
+
+class DataSourcePathsUpdateRequest(BaseModel):
+    """更新地理数据根 / 产物根（写入 Code/backend/.env，需重启后端生效）。"""
+
+    data_root: str = Field(..., min_length=1, description="绝对路径且目录必须存在")
+    output_root: str | None = Field(
+        default=None,
+        description="可选；留空则默认为 {data_root}/ProjectOutput",
+    )
+
+
+class DataSourcePathsUpdateResponse(BaseModel):
+    data_root: str
+    output_root: str
+    effective_data_root: str
+    effective_output_root: str
+    pending_restart: bool
+    env_path: str
+    message: str
+
+
+class ServiceRestartRequest(BaseModel):
+    components: list[str] | None = Field(
+        default=None,
+        description="默认 fastapi+worker+beat；不允许 docker/frontend",
+    )
+
+
+class ServiceRestartResponse(BaseModel):
+    accepted: bool
+    components: list[str]
+    delay_seconds: float
+    message: str
+    ui_restart_enabled: bool

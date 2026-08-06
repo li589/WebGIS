@@ -71,10 +71,10 @@ export function createMapCanvasNonWeatherLayerSyncModule(
         nodataColor: layer.nodataColor ?? undefined,
         forceStyle: Boolean(
           layer.paletteOverride ||
-            layer.vminOverride != null ||
-            layer.vmaxOverride != null ||
-            (layer.nodataMode && layer.nodataMode !== 'transparent') ||
-            layer.nodataColor,
+          layer.vminOverride != null ||
+          layer.vmaxOverride != null ||
+          (layer.nodataMode && layer.nodataMode !== 'transparent') ||
+          layer.nodataColor,
         ),
       }
       if (layer.importedRaster) {

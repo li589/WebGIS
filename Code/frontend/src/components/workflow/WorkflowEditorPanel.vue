@@ -622,7 +622,7 @@ defineExpose({
             class="header-btn"
             type="button"
             :class="{ active: editorView === 'timers' }"
-            title="工作流定时器（Cron / 间隔 / 事件）"
+            title="工作流定时器（Cron / 间隔 / 事件）。侧栏边缘可拖拽调宽。"
             @click="editorView = editorView === 'timers' ? 'canvas' : 'timers'"
           >
             <span aria-hidden="true">⏰</span>
@@ -720,7 +720,7 @@ defineExpose({
               class="validation-action-btn proceed"
               type="button"
               @click="
-                showValidationPanel = false;
+                showValidationPanel = false
                 showRunDialog = true
               "
             >
@@ -902,6 +902,8 @@ defineExpose({
   width: 100%;
   height: 100%;
   background: rgba(6, 13, 24, 0.98);
+  /* 局部抬高 rem 基准（全局 :root 仍为 15px），改善导师反馈的「字太小」 */
+  font-size: 18px;
 }
 
 /* ── 顶部工具栏 ──────────────────────────────────────────────────── */
@@ -928,9 +930,9 @@ defineExpose({
 }
 
 .header-title {
-  font-size: 0.78rem;
+  font-size: 0.9rem;
   font-weight: 600;
-  color: #d8e6f5;
+  color: #e8f3fc;
 }
 
 .header-sep {

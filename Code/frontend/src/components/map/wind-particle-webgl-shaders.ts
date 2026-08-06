@@ -7,6 +7,14 @@
  * 注意：GLSL 字符串中的 ${} 是 TS 模板插值，在编译期拼接，不进入着色器源码。
  */
 
+/** 风场网格经度跨度超过此值（或 east>180）时粒子在框内 wrap，与 Canvas roam 一致 */
+export const WIND_GRID_WRAP_MIN_SPAN_DEG = 180
+
+/** 区域 IDL 解包网格 / 近全球网格：出界经度应 wrap 而非重撒 */
+export function windGridShouldWrapLon(west: number, east: number): boolean {
+  return east > west && (east > 180 || east - west > WIND_GRID_WRAP_MIN_SPAN_DEG)
+}
+
 // ── 共享 Mercator 投影助手 ─────────────────────────────────────────
 
 /**
@@ -99,9 +107,11 @@ export const WIND_TEXTURE_SAMPLE_GLSL = /* glsl */ `
     float lonU = lon;
     float west = u_windBounds.x;
     float east = u_windBounds.z;
+    // 与 TS unwrapLonIntoGridFrame 一致：以网格中心 ±180 解包，勿用 lon<west 无脑 +360
     if (east > 180.0 || (east - west) > 180.0) {
-      if (lonU < west) lonU += 360.0;
-      if (lonU >= west + 360.0) lonU -= 360.0;
+      float center = (west + east) * 0.5;
+      if (lonU < center - 180.0) lonU += 360.0;
+      if (lonU > center + 180.0) lonU -= 360.0;
     }
     return vec2(
       (lonU - west) / (east - west),
@@ -209,7 +219,7 @@ export const PARTICLE_UPDATE_VERTEX_SHADER = /* glsl */ `
  *   - 概率丢弃 / u_resetAll → 重定位到随机位置；静风粒子静止不每帧重撒
  *   - 2 子步 RK2 + 每子步位移钳制，抑制急流/辐合带单帧大跳
  *   - 高风速区仅轻微提高重生率（DROP_BUMP 很低），避免高密度区粒子狂跳
- *   - 仅全球网格（east-west≥359°）做反子午线包裹；区域网格出界重撒
+ *   - 跨度>WIND_GRID_WRAP_MIN_SPAN_DEG 或 east>180 的网格做框内经度包裹；否则出界重撒
  *   - u_remap：bbox 变化首帧仅做归一化坐标重映射，保持轨迹/拖尾稳定
  * 风场纹理直接存 u/v，无需 GPU 三角函数。
  */
@@ -306,11 +316,10 @@ export const PARTICLE_UPDATE_FRAGMENT_SHADER = /* glsl */ `
     float newLon = curLon;
     float newLat = curLat;
 
-    // 边界处理：仅全球网格（跨整圈经度）做反子午线包裹；区域网格出界即重撒，
-    // 避免粒子从区域一侧瞬移到对侧造成的混乱。纬度出界始终重撒。
-    bool isGlobalGrid = (e - w) >= 359.0;
+    // 边界：跨度够大或 east>180（IDL 解包）时框内 wrap；窄区域出界重撒。纬度出界始终重撒。
+    bool shouldWrapLon = (e > 180.0) || ((e - w) > ${WIND_GRID_WRAP_MIN_SPAN_DEG.toFixed(1)});
     bool outOfDomain;
-    if (isGlobalGrid) {
+    if (shouldWrapLon) {
       if (newLon > e) newLon = w + (newLon - e);
       if (newLon < w) newLon = e - (w - newLon);
       outOfDomain = newLat > n || newLat < s;

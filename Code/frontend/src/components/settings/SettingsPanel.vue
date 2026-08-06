@@ -71,9 +71,7 @@ const ALL_TABS: Array<{ id: SettingsTab; label: string; icon: string }> = [
 
 /** VITE_SETTINGS_TABS=comma ids 白名单；未配置则全开（兼容现网） */
 function resolveVisibleSettingsTabs(): Array<{ id: SettingsTab; label: string; icon: string }> {
-  const raw = String(
-    (import.meta.env as Record<string, unknown>).VITE_SETTINGS_TABS ?? '',
-  ).trim()
+  const raw = String((import.meta.env as Record<string, unknown>).VITE_SETTINGS_TABS ?? '').trim()
   if (!raw) return ALL_TABS
   const allowed = new Set(
     raw

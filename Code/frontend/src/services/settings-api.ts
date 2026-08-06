@@ -203,6 +203,10 @@ export interface DataSourceConfig {
   storage_backend: string
   data_root: string
   output_root: string
+  env_data_root?: string
+  env_output_root?: string
+  pending_restart?: boolean
+  ui_restart_enabled?: boolean
   download_source_root: string
   download_real_fetch_enabled: boolean
   tile_proxy_enabled: boolean
@@ -230,6 +234,24 @@ export interface DataSourceConfig {
     total_bytes: number
   }
   workflow_hint?: string
+}
+
+export interface DataSourcePathsUpdateResponse {
+  data_root: string
+  output_root: string
+  effective_data_root: string
+  effective_output_root: string
+  pending_restart: boolean
+  env_path: string
+  message: string
+}
+
+export interface ServiceRestartResponse {
+  accepted: boolean
+  components: string[]
+  delay_seconds: number
+  message: string
+  ui_restart_enabled: boolean
 }
 
 export interface PortalCredentialPublic {
@@ -519,6 +541,45 @@ export function deleteWeatherProvider(providerId: string): Promise<{ deleted: bo
 // 数据源配置
 export function fetchDataSourceConfig(): Promise<DataSourceConfig> {
   return settingsFetch('/config/data-source')
+}
+
+export function updateDataSourcePaths(payload: {
+  data_root: string
+  output_root?: string | null
+}): Promise<DataSourcePathsUpdateResponse> {
+  return settingsFetch('/config/data-source/paths', {
+    method: 'PUT',
+    body: JSON.stringify(payload),
+  })
+}
+
+export function restartBackendService(payload?: {
+  components?: string[]
+}): Promise<ServiceRestartResponse> {
+  return settingsFetch('/config/service/restart', {
+    method: 'POST',
+    body: JSON.stringify(payload ?? {}),
+  })
+}
+
+/** Poll until FastAPI /health responds OK (after UI-triggered restart). */
+export async function waitForBackendHealthy(options?: {
+  timeoutMs?: number
+  intervalMs?: number
+}): Promise<boolean> {
+  const timeoutMs = options?.timeoutMs ?? 120_000
+  const intervalMs = options?.intervalMs ?? 2000
+  const started = Date.now()
+  while (Date.now() - started < timeoutMs) {
+    try {
+      const res = await fetch(resolveApiUrl('/health'), { method: 'GET', cache: 'no-store' })
+      if (res.ok) return true
+    } catch {
+      // still restarting
+    }
+    await new Promise((r) => setTimeout(r, intervalMs))
+  }
+  return false
 }
 
 export function fetchDataCacheOverview(): Promise<DataCacheOverview> {

@@ -308,6 +308,57 @@ class ResultKind(str, Enum):
     diagnostic = "diagnostic"
 
 
+class ChartType(str, Enum):
+    """Generic analysis chart kinds (raster/vector agnostic)."""
+
+    line = "line"
+    bar = "bar"
+    histogram = "histogram"
+    scatter = "scatter"
+    boxplot = "boxplot"
+
+
+class ChartSeriesSpec(BaseModel):
+    """One named series inside a ChartSpec."""
+
+    name: str = "series"
+    x: list[float | int | str] = Field(default_factory=list)
+    y: list[float | int | None] = Field(default_factory=list)
+
+
+class ChartSpec(BaseModel):
+    """Structured chart payload for ``ResultKind.chart`` inline_data.
+
+    Compatible with the legacy demo shape ``{chart_type, x, y, series_name}``:
+    when ``series`` is empty, consumers may fall back to top-level ``x``/``y``.
+    """
+
+    schema_version: str = "1"
+    chart_type: ChartType = ChartType.line
+    title: str = "Chart"
+    x_label: str = ""
+    y_label: str = ""
+    unit: str = ""
+    series: list[ChartSeriesSpec] = Field(default_factory=list)
+    # Legacy flat axes (demo provider + compact histogram)
+    x: list[float | int | str] = Field(default_factory=list)
+    y: list[float | int | None] = Field(default_factory=list)
+    series_name: str | None = None
+    bins: list[float] | None = None
+    categories: list[str] | None = None
+
+
+class TableSpec(BaseModel):
+    """Structured table payload for ``ResultKind.table`` inline_data."""
+
+    schema_version: str = "1"
+    title: str = "Table"
+    columns: list[str] = Field(default_factory=list)
+    rows: list[list[Any]] = Field(default_factory=list)
+    units: dict[str, str] = Field(default_factory=dict)
+    dtypes: dict[str, str] = Field(default_factory=dict)
+
+
 class EventChannel(str, Enum):
     status = "status"
     log = "log"
@@ -531,6 +582,9 @@ class WorkflowAnalysisResultDto(BaseModel):
     data_state_mode: str | None = None
     result_category: str = "analysis"
     results: dict[str, str | None] = Field(default_factory=dict)
+    # Optional typed analysis payloads (forces ChartSpec/TableSpec into OpenAPI)
+    charts: list[ChartSpec] = Field(default_factory=list)
+    tables: list[TableSpec] = Field(default_factory=list)
 
 
 class WorkflowProviderResultDto(BaseModel):

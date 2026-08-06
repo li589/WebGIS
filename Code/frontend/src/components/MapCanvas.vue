@@ -35,7 +35,8 @@ const layersStore = useLayersStore()
 const uiStore = useUiStore()
 const logStore = useLogStore()
 const weatherTileManager = useWeatherTileManager()
-const { statusVersion: weatherStatusVersion } = storeToRefs(weatherTileManager)
+const { statusVersion: weatherStatusVersion, activityVersion: weatherActivityVersion } =
+  storeToRefs(weatherTileManager)
 
 const props = defineProps<{
   tileSourceId: TileSourceId
@@ -272,7 +273,9 @@ const stageStatusModel = computed(() =>
 
 // 天气瓦片加载/错误/半覆盖状态：按层隔离聚合（单层无数据不盖住健康层）
 const weatherTileStatusModel = computed(() => {
+  // statusVersion：错误/补洞；activityVersion：瓦片入队/完成（缩放中途加载进度）
   void weatherStatusVersion.value
+  void weatherActivityVersion.value
   const weatherLayers = layersStore.activeLayersDisplay.filter(
     (l) => l.visible && layersStore.isWeatherEngineLayer(l.catalogId),
   )

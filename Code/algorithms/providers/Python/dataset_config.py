@@ -730,6 +730,13 @@ PATH_ALIASES: dict[str, str] = {
     "Soil_Ecological_Data/Smap_OriginData": "Soil_Moisture/SMAP_Origin_Data",
     "NDVI/daily": "Ecological_Vegetation/NDVI/NDVIday",
     "NDVI/climatology": "Ecological_Vegetation/NDVI/climatology",
+    "Ecological/Vegetation/NDVI/VIIRS_9km_tif": "Ecological_Vegetation/NDVI/NDVIday",
+    "Ecological/Vegetation/Biomass": "Ecological_Vegetation/Biomass",
+    "Ecological/LandCover": "Ecological_Vegetation/LandCover",
+    "Ecological/Anthropogenic": "Socio_Economic/HumanFootprint",
+    "Geographic/Topography": "Geological/DEM",
+    "Auxiliary/Forest_Ratio_9km.tif": "Inversion_Results/Forest_Ratio_9KM_2020.mat",
+    "Auxiliary/Landscape_Metrics_9km.tif": "Inversion_Results/Landscape_Metrics_LandOnly_9KM_2020.mat",
 }
 
 

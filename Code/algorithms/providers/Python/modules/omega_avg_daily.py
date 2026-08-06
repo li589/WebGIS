@@ -328,6 +328,9 @@ class OmegaAvgDailyModule(BaseModule):
                     getattr(daily_bundle_config, "temp_scheme", "ORIG_TS")
                 ),
                 "avg_build_years": build_years,
+                "stage_d_start_date": config.stage_d_start_date,
+                "stage_d_end_date": config.stage_d_end_date,
+                "stage_d_max_days": int(config.stage_d_max_days),
             },
         )
         return _store_manifest(

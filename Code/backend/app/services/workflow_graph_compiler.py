@@ -20,6 +20,20 @@ _PYTHONISH_ENGINES = frozenset({"common", "python_provider"})
 _WEATHER_ENGINES = frozenset({"weather"})
 _DEFAULT_ALLOW = _PYTHONISH_ENGINES | _WEATHER_ENGINES
 
+# Config ports filled from JobRequest (not fan-in edges from data/source).
+_REQUEST_CONFIG_PORTS: tuple[str, ...] = (
+    "datasource_selection",
+    "algorithm_params",
+    "output_spec_extra",
+)
+# Legacy LiteGraph fan-in names that scrapes into request.datasource_selection.
+# Do NOT include generic ``data`` — used by remote_fetch and other real edges.
+_SCRAPED_FANIN_PORTS = frozenset({"datasource_selection", "daily_mat_sources"})
+_PORT_ALIASES: dict[str, str] = {
+    "timeseries_bundle_mat": "output_path",
+    "omega_mat": "manifest",
+}
+
 
 class WorkflowGraphCompileError(ValueError):
     """Raised when a LiteGraph graph cannot be compiled."""
@@ -68,6 +82,49 @@ def _parse_link(link: Any) -> tuple[int, int, int, int] | None:
             int(link.get("target_slot", link.get("to_slot", 0)) or 0),
         )
     return None
+
+
+def _apply_port_alias(name: str) -> str:
+    return _PORT_ALIASES.get(name, name)
+
+
+def _inject_python_request_bindings(
+    compiled_nodes: list[dict[str, Any]],
+    port_meta: dict[str, dict[str, list[dict[str, Any]]]],
+) -> None:
+    """Bind PortSpec config ports to request:* for python_provider module nodes."""
+    for node in compiled_nodes:
+        if str(node.get("node_type") or "") != "module":
+            continue
+        nid = str(node.get("node_id") or "")
+        inputs = port_meta.get(nid, {}).get("inputs") or []
+        input_names = {str(p.get("name") or "") for p in inputs}
+        bindings = dict(node.get("input_bindings") or {})
+        for port_name in _REQUEST_CONFIG_PORTS:
+            if port_name in input_names:
+                bindings.setdefault(port_name, f"request:{port_name}")
+        node["input_bindings"] = bindings
+
+
+def _normalize_python_edges(edges: list[dict[str, str]]) -> list[dict[str, str]]:
+    """Drop scraped fan-in edges; alias legacy port names for module→module links."""
+    normalized: list[dict[str, str]] = []
+    for edge in edges:
+        from_port = _apply_port_alias(str(edge.get("from_port") or ""))
+        to_port = _apply_port_alias(str(edge.get("to_port") or ""))
+        if to_port in _SCRAPED_FANIN_PORTS:
+            continue
+        if to_port in {"time_range", "bbox", "region"}:
+            continue
+        normalized.append(
+            {
+                "from_node": str(edge.get("from_node") or ""),
+                "from_port": from_port,
+                "to_node": str(edge.get("to_node") or ""),
+                "to_port": to_port,
+            }
+        )
+    return normalized
 
 
 def compile_litegraph_to_workflow_definition(
@@ -203,27 +260,55 @@ def compile_litegraph_to_workflow_definition(
             continue
         from_ports = port_meta[from_nid]["outputs"]
         to_ports = port_meta[to_nid]["inputs"]
-        edges.append(
-            {
-                "from_node": from_nid,
-                "from_port": _port_name(from_ports, from_slot, "out_"),
-                "to_node": to_nid,
-                "to_port": _port_name(to_ports, to_slot, "in_"),
-            }
-        )
+        from_port = _port_name(from_ports, from_slot, "out_")
+        to_port = _port_name(to_ports, to_slot, "in_")
+        # Weatherengine EdgeSpec: source_*/target_*; python provider: from_*/to_*.
+        if target_engine == "weather":
+            edges.append(
+                {
+                    "source_node_id": from_nid,
+                    "source_port": from_port,
+                    "target_node_id": to_nid,
+                    "target_port": to_port,
+                }
+            )
+        else:
+            edges.append(
+                {
+                    "from_node": from_nid,
+                    "from_port": from_port,
+                    "to_node": to_nid,
+                    "to_port": to_port,
+                }
+            )
 
     if not compiled_nodes:
         raise WorkflowGraphCompileError("没有可编译的节点")
 
+    if target_engine == "python_provider":
+        _inject_python_request_bindings(compiled_nodes, port_meta)
+        edges = _normalize_python_edges(edges)
+
+    # Prefer product manifests over config-only sinks (e.g. data/time_range).
+    # Scan all nodes for "manifest" first; only then fall back to other ports,
+    # skipping pure helpers whose primary job is request shaping.
+    _CONFIG_HELPER_MODULES = frozenset({"time_range", "data_source", "bbox"})
     output_specs: list[dict[str, str]] = []
     for node in reversed(compiled_nodes):
         nid = node["node_id"]
         outs = port_meta[nid]["outputs"]
-        manifest_port = next((p for p in outs if p.get("name") == "manifest"), None)
-        if manifest_port:
+        if any(p.get("name") == "manifest" for p in outs):
             output_specs.append({"name": "manifest", "source": f"node:{nid}.manifest"})
             break
-        if outs:
+    if not output_specs:
+        for node in reversed(compiled_nodes):
+            nid = node["node_id"]
+            outs = port_meta[nid]["outputs"]
+            if not outs:
+                continue
+            module_name = str((node.get("params") or {}).get("module_name") or "")
+            if module_name in _CONFIG_HELPER_MODULES:
+                continue
             pname = str(outs[0].get("name") or "result")
             # Weather graphs typically expose geojson as primary output
             out_name = "geojson" if pname == "geojson" else "manifest"

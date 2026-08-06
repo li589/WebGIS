@@ -4,6 +4,7 @@ import json
 import logging
 import os
 from functools import lru_cache
+from pathlib import Path
 from typing import Any, Optional
 
 from app.core.config import settings
@@ -717,10 +718,25 @@ def get_data_source_config() -> dict[str, Any]:
         repo=repo,
         encryption_key=settings.gee_credentials_encryption_key,
     )
+    from app.services.env_file_upsert import read_env_file_values
+
+    env_vals = read_env_file_values()
+    env_data_root = (env_vals.get("BACKEND_DATA_ROOT") or "").strip()
+    env_output_root = (env_vals.get("BACKEND_OUTPUT_ROOT") or "").strip()
+    effective_data = (settings.data_root or "").strip()
+    effective_output = (settings.output_root or "").strip()
+    pending_restart = bool(
+        (env_data_root and env_data_root != effective_data)
+        or (env_output_root and env_output_root != effective_output)
+    )
     return {
         "storage_backend": settings.storage_backend,
         "data_root": settings.data_root,
         "output_root": settings.output_root,
+        "env_data_root": env_data_root,
+        "env_output_root": env_output_root,
+        "pending_restart": pending_restart,
+        "ui_restart_enabled": bool(getattr(settings, "ui_restart_enabled", False)),
         "download_source_root": settings.download_source_root,
         "download_real_fetch_enabled": settings.download_real_fetch_enabled,
         "tile_proxy_enabled": settings.tile_proxy_enabled,
@@ -747,8 +763,83 @@ def get_data_source_config() -> dict[str, Any]:
         "workflow_hint": (
             "开放门户请用工作流「门户数据下载」(http_open_data) + cred_profile；"
             "NAS/任意 URI 用「远程拉取」并引用「远程存储」凭证 profile。"
+            "数据根目录可在本页修改；保存后需重启 FastAPI+Worker+Beat 生效。"
         ),
     }
+
+
+def _validate_absolute_existing_dir(path_str: str, *, label: str) -> Path:
+    raw = str(path_str or "").strip()
+    if not raw:
+        raise ValueError(f"{label} must not be empty")
+    path = Path(raw).expanduser()
+    if not path.is_absolute():
+        raise ValueError(f"{label} must be an absolute path")
+    if not path.exists():
+        raise ValueError(f"{label} does not exist: {path}")
+    if not path.is_dir():
+        raise ValueError(f"{label} is not a directory: {path}")
+    try:
+        next(path.iterdir(), None)
+    except OSError as exc:
+        raise ValueError(f"{label} is not listable: {path}") from exc
+    return path.resolve()
+
+
+def update_data_source_paths(
+    data_root: str,
+    output_root: str | None = None,
+) -> dict[str, Any]:
+    """校验并写入 BACKEND_DATA_ROOT / BACKEND_OUTPUT_ROOT 到 .env。"""
+    from app.services.env_file_upsert import backend_env_path, upsert_env_keys
+
+    root = _validate_absolute_existing_dir(data_root, label="data_root")
+    out_raw = (output_root or "").strip()
+    if out_raw:
+        out = _validate_absolute_existing_dir(out_raw, label="output_root")
+    else:
+        out = root / "ProjectOutput"
+        try:
+            out.mkdir(parents=True, exist_ok=True)
+        except OSError as exc:
+            raise ValueError(f"cannot create output_root: {out}") from exc
+        out = _validate_absolute_existing_dir(str(out), label="output_root")
+
+    env_path = upsert_env_keys(
+        {
+            "BACKEND_DATA_ROOT": str(root),
+            "BACKEND_OUTPUT_ROOT": str(out),
+        }
+    )
+    effective_data = (settings.data_root or "").strip()
+    effective_output = (settings.output_root or "").strip()
+    pending = str(root) != effective_data or str(out) != effective_output
+    return {
+        "data_root": str(root),
+        "output_root": str(out),
+        "effective_data_root": effective_data,
+        "effective_output_root": effective_output,
+        "pending_restart": pending,
+        "env_path": str(env_path if env_path else backend_env_path()),
+        "message": (
+            "Paths saved to .env. Restart FastAPI + Worker + Beat to apply."
+            if pending
+            else "Paths saved; already match the running process."
+        ),
+    }
+
+
+def schedule_ui_backend_restart(
+    components: list[str] | None = None,
+) -> dict[str, Any]:
+    from app.services.service_restart import (
+        schedule_backend_restart,
+        ui_restart_allowed,
+    )
+
+    result = schedule_backend_restart(components)
+    result["ui_restart_enabled"] = ui_restart_allowed()
+    return result
 
 
 def update_open_data_presets(presets: dict[str, Any]) -> dict[str, Any]:

@@ -81,6 +81,14 @@ class UniversalDataReader:
             return "mat"
         if ext in (".grib", ".grib2", ".grb", ".grb2"):
             return "grib"
+        # CGI/filter cache keys may keep opaque suffixes (.pl/.bin); sniff magic.
+        try:
+            with self.path.open("rb") as fh:
+                head = fh.read(4)
+        except OSError:
+            head = b""
+        if head.startswith(b"GRIB"):
+            return "grib"
         raise ValueError(f"不支持的文件格式: {ext}")
 
     # ------------------------------------------------------------------

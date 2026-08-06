@@ -71,6 +71,19 @@
       }
     },
     {
+      "id": 9,
+      "type": "data/source",
+      "pos": [
+        80,
+        1080
+      ],
+      "properties": {
+        "path": "Meteorological/Weather/GLDAS_UTC_TEMPLATE/gldas_utc_template_global.mat",
+        "dataset_key": "gldas_template_mat",
+        "notes": "GLDAS UTC overpass template（SMAP_template.slot_index / slot_day_offset）；缺失时可本地由 lon 网格合成"
+      }
+    },
+    {
       "id": 5,
       "type": "data/source",
       "pos": [
@@ -175,17 +188,25 @@
       "3": 7,
       "4": 2,
       "5": "value:string"
+    },
+    {
+      "0": 7,
+      "1": 9,
+      "2": 0,
+      "3": 7,
+      "4": 2,
+      "5": "value:string"
     }
   ],
   "extra": {
     "purpose": "d2_avg_omega_daily",
     "scheme": "SMAP_SINGLE_DUAL_TEMP",
     "pipeline": "D1 omega_block → D2 DOY climatology → per-day DDCA (omega fixed, tc=Ct/tg=TG from GLDAS)",
-    "prerequisite": "D1 omega_block + GLDAS .mat（Ts_gldas/Tsoil1_gldas/Tsoil2_gldas）；本地联调默认对齐 2025 SMAP 窗口",
+    "prerequisite": "D1 omega_block + GLDAS .mat（Ts_gldas/Tsoil1_gldas/Tsoil2_gldas）+ 可选 gldas_utc_template_global.mat；本地联调默认对齐 2025 SMAP 窗口",
     "outputs": [
       "SM",
       "OMEGA"
     ],
-    "notes": "双温度方案：build_daily_bundle_for_date 内部调用 build_effective_soil_temperature_scheme(sm_ref, tsoil1, tsoil2) → Ct/TG，DDCA 用 ddca_dual_temp(tbv, tbh, tc, tg, ..., omega_value=OMEGA_AVG)。NDVI 用 DOY 气候态。"
+    "notes": "双温度方案：build_daily_bundle_for_date 内部调用 build_effective_soil_temperature_scheme(sm_ref, tsoil1, tsoil2) → Ct/TG，DDCA 用 ddca_dual_temp(tbv, tbh, tc, tg, ..., omega_value=OMEGA_AVG)。NDVI 用 DOY 气候态。模板缺失时 Python 侧回退到过顶时刻匹配。"
   }
 }

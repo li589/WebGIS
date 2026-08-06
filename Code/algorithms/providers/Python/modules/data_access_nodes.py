@@ -911,58 +911,88 @@ class FormatConvertModule(BaseModule):
             ".tif",
             ".tiff",
             ".mat",
+            ".npy",
+            ".npz",
             ".grib",
             ".grib2",
             ".grb",
             ".grb2",
         }:
+            import numpy as np
+
             variable = str(params.get("variable") or "").strip()
-            reader = UniversalDataReader(src)
-            if not variable:
-                try:
-                    vars_ = reader.list_variables()
-                    if vars_:
-                        variable = str(vars_[0])
-                except Exception:
-                    variable = ""
-            if not variable:
-                raise ValueError(
-                    "format_convert requires variable when converting scientific rasters"
+            # Intermediate extract/variable often writes .npz; load without FormatRegistry
+            if src.suffix.lower() == ".npz":
+                with np.load(src) as loaded:
+                    keys = list(loaded.files)
+                    key = variable if variable in keys else (keys[0] if keys else "")
+                    if not key:
+                        raise ValueError(f"empty npz: {src}")
+                    arr = np.asarray(loaded[key])
+                    lat = (
+                        np.asarray(loaded["lat"])
+                        if "lat" in loaded.files
+                        else np.arange(arr.shape[-2] if arr.ndim >= 2 else 1)
+                    )
+                    lon = (
+                        np.asarray(loaded["lon"])
+                        if "lon" in loaded.files
+                        else np.arange(arr.shape[-1] if arr.ndim >= 1 else 1)
+                    )
+                    var_name = key
+                data_values, data_lat, data_lon, data_var = arr, lat, lon, var_name
+            else:
+                reader = UniversalDataReader(src)
+                if not variable:
+                    try:
+                        vars_ = reader.list_variables()
+                        if vars_:
+                            variable = str(vars_[0])
+                    except Exception:
+                        variable = ""
+                if not variable:
+                    raise ValueError(
+                        "format_convert requires variable when converting scientific rasters"
+                    )
+                data = reader.read_variable(variable)
+                data_values, data_lat, data_lon, data_var = (
+                    data.values,
+                    data.lat,
+                    data.lon,
+                    data.var_name,
                 )
-            data = reader.read_variable(variable)
             if target_format == "mat":
                 from scipy.io import savemat
 
                 savemat(
                     out_path,
                     {
-                        "values": data.values,
-                        "lat": data.lat,
-                        "lon": data.lon,
-                        "var_name": data.var_name,
+                        "values": data_values,
+                        "lat": data_lat,
+                        "lon": data_lon,
+                        "var_name": data_var,
                     },
                     do_compression=True,
                 )
             elif target_format in {"npy", "npz"}:
-                import numpy as np
-
                 if target_format == "npy":
-                    np.save(out_path, data.values)
+                    np.save(out_path, data_values)
                 else:
                     np.savez_compressed(
-                        out_path, values=data.values, lat=data.lat, lon=data.lon
+                        out_path, values=data_values, lat=data_lat, lon=data_lon
                     )
             elif target_format == "csv":
-                import numpy as np
-
-                flat = np.asarray(data.values).ravel()
+                flat = np.asarray(data_values).ravel()
                 out_path.write_text(
                     "\n".join(str(float(x)) for x in flat[:1_000_000]), encoding="utf-8"
                 )
             else:
                 out_path.write_text(
                     json.dumps(
-                        {"var_name": data.var_name, "shape": list(data.shape)},
+                        {
+                            "var_name": data_var,
+                            "shape": list(np.asarray(data_values).shape),
+                        },
                         ensure_ascii=False,
                     ),
                     encoding="utf-8",

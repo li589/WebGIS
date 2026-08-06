@@ -3,7 +3,7 @@
     "kind": "system",
     "engine": "python_provider",
     "name": "avg-ω 逐日反演（GLDAS 在线拉取 + DUAL 双温度）",
-    "description": "目的：经 gldas_download 节点在线拉取 GLDAS NOAH025_3H（.nc4）→ 与本地 D1/SMAP/anc/NDVI 一并接入 D2 avg-omega（DUAL）。前置：earthdata 凭证；D1 omega_block 已产出。注意：DUAL 读 .mat（Ts_gldas/Tsoil1/Tsoil2）；.nc4→.mat 预处理仍需补节点或预先落盘，本种子验证下载节点可挂接流水线。",
+    "description": "目的：经 gldas_download 在线拉取 GLDAS NOAH025_3H（.nc4）并由 gldas_nc4_to_mat 转为 DUAL 温度 .mat，再与本地 D1/SMAP/anc/NDVI 一并接入 D2 avg-omega。前置：earthdata 凭证；D1 omega_block 已产出。",
     "author": "system",
     "readonly": true,
     "is_template": true,
@@ -17,7 +17,7 @@
   },
   "workflow_id": "omega_avg_daily_gldas_online",
   "name": "avg-ω 逐日反演（GLDAS 在线拉取 + DUAL 双温度）",
-  "description": "gldas_download（GES DISC / earthdata）→ D2 avg-omega DUAL；本地 D1/SMAP/anc/NDVI 数据源并联。",
+  "description": "gldas_download（GES DISC / earthdata）→ gldas_nc4_to_mat（Ts_gldas/Tsoil*）→ D2 avg-omega DUAL；本地 D1/SMAP/anc/NDVI 数据源并联。",
   "nodes": [
     {
       "id": 1,
@@ -29,6 +29,19 @@
         "local_dir": "{DATA_ROOT_WIN}\\Meteorological\\Weather\\GLDAS_Download",
         "version": "2.1",
         "short_name": "GLDAS_NOAH025_3H",
+        "dry_run": false,
+        "max_files": 8
+      }
+    },
+    {
+      "id": 9,
+      "type": "download/gldas_nc4_to_mat",
+      "pos": [320, 80],
+      "properties": {
+        "input_dir": "{DATA_ROOT_WIN}\\Meteorological\\Weather\\GLDAS_Download",
+        "output_dir": "{DATA_ROOT_WIN}\\Meteorological\\Weather\\GLDAS",
+        "ancillary_mat": "{DATA_ROOT_WIN}\\Soil_Moisture\\SMAP_Auxiliary_Data\\IGBP_9km_12.mat",
+        "skip_existing": true,
         "dry_run": false,
         "max_files": 8
       }
@@ -127,6 +140,7 @@
   ],
   "links": [
     {"0": 1, "1": 1, "2": 0, "3": 7, "4": 2, "5": "value:string"},
+    {"0": 7, "1": 9, "2": 0, "3": 7, "4": 2, "5": "value:string"},
     {"0": 2, "1": 2, "2": 0, "3": 7, "4": 2, "5": "value:string"},
     {"0": 3, "1": 3, "2": 0, "3": 7, "4": 2, "5": "value:string"},
     {"0": 4, "1": 4, "2": 0, "3": 7, "4": 2, "5": "value:string"},
@@ -138,9 +152,9 @@
     "scheme": "SMAP_SINGLE_DUAL_TEMP_ONLINE_GLDAS",
     "portal": "nasa_gldas",
     "cred_profile": "earthdata",
-    "pipeline": "gldas_download → (+ local D1/SMAP/anc/NDVI) → omega_avg_daily DUAL",
-    "prerequisite": "earthdata 凭证 + D1 omega_block；.nc4→.mat 后 gldas_mat 可读",
+    "pipeline": "gldas_download → gldas_nc4_to_mat → (+ local D1/SMAP/anc/NDVI) → omega_avg_daily DUAL",
+    "prerequisite": "earthdata 凭证 + D1 omega_block；gldas_nc4_to_mat 产出 Ts_gldas/Tsoil1_gldas/Tsoil2_gldas",
     "outputs": ["SM", "OMEGA"],
-    "notes": "下载节点已可挂接；科学跑通仍需 nc4→mat（Ts_gldas/Tsoil1_gldas/Tsoil2_gldas）与真实 D1。"
+    "notes": "种子内置 nc4→mat 转换节点；科学跑通仍需真实 D1 与足够时段 GLDAS .mat。"
   }
 }

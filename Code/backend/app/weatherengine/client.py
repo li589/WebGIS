@@ -423,7 +423,8 @@ class OpenMeteoClient:
 
         # 3. Cross-worker request deduplication
         dedup_lock_key = f"{REDIS_CACHE_PREFIX}lock:point:{cache_key}"
-        if not acquire_dedup_lock(dedup_lock_key, ttl_seconds=60):
+        dedup_token = acquire_dedup_lock(dedup_lock_key, ttl_seconds=60)
+        if not dedup_token:
             # Another worker is fetching this data — wait and re-check cache
             if wait_for_dedup(dedup_lock_key, timeout_seconds=30.0):
                 redis_payload = cache_get_json(redis_key)
@@ -571,7 +572,9 @@ class OpenMeteoClient:
         cache_tmp_path.replace(cache_path)
         # Write to Redis cache for fast cross-worker access
         cache_set_json(redis_key, payload, max(60, ttl_seconds))
-        release_dedup_lock(dedup_lock_key)
+        # L-1：仅当本线程实际持有锁时才释放（token 比对），避免误删他人锁。
+        if dedup_token:
+            release_dedup_lock(dedup_lock_key, dedup_token)
         return payload, "miss"
 
     def _build_cache_key(
@@ -674,7 +677,8 @@ class OpenMeteoClient:
 
         # 3. Cross-worker request deduplication（等待上限收紧，避免瓦片请求挂死）
         dedup_lock_key = f"{REDIS_CACHE_PREFIX}lock:grid:{cache_key}"
-        if not acquire_dedup_lock(dedup_lock_key, ttl_seconds=120):
+        dedup_token = acquire_dedup_lock(dedup_lock_key, ttl_seconds=120)
+        if not dedup_token:
             if wait_for_dedup(dedup_lock_key, timeout_seconds=15.0):
                 redis_payload = cache_get_json(redis_key)
                 if redis_payload is not None:
@@ -973,7 +977,9 @@ class OpenMeteoClient:
         cache_tmp_path.replace(cache_path)
         # Write to Redis cache for fast cross-worker access
         cache_set_json(redis_key, grid_data, max(60, ttl_seconds))
-        release_dedup_lock(dedup_lock_key)
+        # L-1：仅当本线程实际持有锁时才释放（token 比对），避免误删他人锁。
+        if dedup_token:
+            release_dedup_lock(dedup_lock_key, dedup_token)
 
         # [OpenMeteoClient] 调试：打印最终数据汇总
         current_fields_summary = {

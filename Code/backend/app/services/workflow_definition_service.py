@@ -139,7 +139,8 @@ def _build_meta(
 
     Args:
         tags: 工作流标签列表（如 ["pipeline", "inversion"]），用于前端分类过滤。
-        category: 工作流主分类（如 "inversion"/"weather"/"data_access"/"demo"）。
+            词汇表见 ``.ai/docs/specs/workflow_seed_conventions.md``。
+        category: 工作流主分类（如 "inversion"/"weather"/"data_access"/"analysis"/"demo"）。
     """
     meta = {
         "kind": kind,  # "system" | "user"

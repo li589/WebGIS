@@ -139,7 +139,7 @@
           "overlay"
         ],
         "summary": "Get Overlay Preview",
-        "description": "返回图层的 PNG 预览图（地理配准），供前端 MapLibre image source 使用。\n\n对于时间序列图层，可通过 `?time=YYYYMMDD` 指定时间标签；\n未指定时使用 default_time。",
+        "description": "返回图层的 PNG 预览图（地理配准），供前端 MapLibre image source 使用。\n\n对于时间序列图层，可通过 `?time=YYYYMMDD` 指定时间标签；\n未指定时使用 default_time。\n\n有可读源且传入 palette/min/max/nodata 时动态重着色；否则返回烘焙 PNG。",
         "operationId": "get_overlay_preview_overlay_preview__layer_id__get",
         "parameters": [
           {
@@ -165,6 +165,86 @@
                 }
               ],
               "title": "Time"
+            }
+          },
+          {
+            "name": "palette",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Palette"
+            }
+          },
+          {
+            "name": "min_value",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Min Value"
+            }
+          },
+          {
+            "name": "max_value",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Max Value"
+            }
+          },
+          {
+            "name": "nodata_mode",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Nodata Mode"
+            }
+          },
+          {
+            "name": "nodata_color",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Nodata Color"
             }
           }
         ],
@@ -249,6 +329,86 @@
                 }
               ],
               "title": "Time"
+            }
+          },
+          {
+            "name": "palette",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Palette"
+            }
+          },
+          {
+            "name": "min_value",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Min Value"
+            }
+          },
+          {
+            "name": "max_value",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Max Value"
+            }
+          },
+          {
+            "name": "nodata_mode",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Nodata Mode"
+            }
+          },
+          {
+            "name": "nodata_color",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Nodata Color"
             }
           }
         ],
@@ -352,6 +512,104 @@
                   "additionalProperties": true,
                   "type": "object",
                   "title": "Response List Overlays Overlays Get"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/overlays/intersect": {
+      "get": {
+        "tags": [
+          "overlay"
+        ],
+        "summary": "Get Overlays In Viewport",
+        "description": "返回与视口相交的 overlay layer_ids（服务端空间索引查询）。\n\n优先用 spatial.sqlite + R*Tree（``ST_Intersects``）；扩展不可用或表空时\n回退到逐层读 ``bounds.json`` 做 AABB 相交（与原前端 O(N) 过滤等价）。\n空间库就绪时即使零命中也信任结果，不再误扫 bounds.json。\n\n跨日界线约定：前端对跨日界线视口传 ``east > 180``（unwrap），与\n``overlay_safe_wgs84_bounds`` 一致。\n\n回退路径无 zoom 元资料时不过滤（bounds.json / registry 目前无 min/maxzoom）。",
+        "operationId": "get_overlays_in_viewport_overlays_intersect_get",
+        "parameters": [
+          {
+            "name": "west",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "number",
+              "maximum": 360,
+              "minimum": -180,
+              "title": "West"
+            }
+          },
+          {
+            "name": "south",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "number",
+              "maximum": 90,
+              "minimum": -90,
+              "title": "South"
+            }
+          },
+          {
+            "name": "east",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "number",
+              "maximum": 360,
+              "minimum": -180,
+              "title": "East"
+            }
+          },
+          {
+            "name": "north",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "number",
+              "maximum": 90,
+              "minimum": -90,
+              "title": "North"
+            }
+          },
+          {
+            "name": "zoom",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer",
+                  "maximum": 24,
+                  "minimum": 0
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Zoom"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Get Overlays In Viewport Overlays Intersect Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
                 }
               }
             }
@@ -7251,6 +7509,129 @@
         }
       }
     },
+    "/config/data-source/paths": {
+      "put": {
+        "tags": [
+          "config"
+        ],
+        "summary": "Update Data Source Paths",
+        "description": "更新数据根 / 产物根（写入 .env；需重启 FastAPI+Worker+Beat 生效）。",
+        "operationId": "update_data_source_paths_config_data_source_paths_put",
+        "parameters": [
+          {
+            "name": "x-api-key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Api-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DataSourcePathsUpdateRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/config/service/restart": {
+      "post": {
+        "tags": [
+          "config"
+        ],
+        "summary": "Restart Backend Service",
+        "description": "调度重启 FastAPI + Celery Worker + Beat（不动 Docker / Vite）。",
+        "operationId": "restart_backend_service_config_service_restart_post",
+        "parameters": [
+          {
+            "name": "x-api-key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Api-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/ServiceRestartRequest"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Request"
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/config/data-cache/overview": {
       "get": {
         "tags": [
@@ -7628,7 +8009,7 @@
           "workflow-definition"
         ],
         "summary": "List Node Templates",
-        "description": "获取所有可用的节点模板，供前端节点面板展示。",
+        "description": "获取所有可用的节点模板，供前端节点面板展示。\n\nP0-10：未实现执行器的占位节点（executable=False 的 stub）在 production 默认\n从面板隐藏（避免面板承诺未实现功能），development 或显式设\nBACKEND_NODE_STUBS_VISIBLE=true 时可见（供开发中联调）。",
         "operationId": "list_node_templates_workflow_definitions_node_templates_get",
         "responses": {
           "200": {
@@ -8820,15 +9201,43 @@
         "summary": "List Servers",
         "description": "列出可用远程服务器配置（不含敏感凭据）。",
         "operationId": "list_servers_api_remote_servers_get",
+        "parameters": [
+          {
+            "name": "x-api-key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Api-Key"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "description": "Successful Response",
             "content": {
               "application/json": {
                 "schema": {
-                  "additionalProperties": true,
                   "type": "object",
+                  "additionalProperties": true,
                   "title": "Response List Servers Api Remote Servers Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
                 }
               }
             }
@@ -8867,6 +9276,22 @@
               "title": "Path"
             },
             "description": "远程目录路径"
+          },
+          {
+            "name": "x-api-key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Api-Key"
+            }
           }
         ],
         "responses": {
@@ -8914,6 +9339,22 @@
               "title": "Server"
             },
             "description": "服务器名称: hpc / win11 / nas"
+          },
+          {
+            "name": "x-api-key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Api-Key"
+            }
           }
         ],
         "responses": {
@@ -9680,6 +10121,180 @@
         "title": "CacheCleanupResponse",
         "description": "缓存清理响应。"
       },
+      "ChartSeriesSpec": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "title": "Name",
+            "default": "series"
+          },
+          "x": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "string"
+                }
+              ]
+            },
+            "type": "array",
+            "title": "X"
+          },
+          "y": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "type": "array",
+            "title": "Y"
+          }
+        },
+        "type": "object",
+        "title": "ChartSeriesSpec",
+        "description": "One named series inside a ChartSpec."
+      },
+      "ChartSpec": {
+        "properties": {
+          "schema_version": {
+            "type": "string",
+            "title": "Schema Version",
+            "default": "1"
+          },
+          "chart_type": {
+            "$ref": "#/components/schemas/ChartType",
+            "default": "line"
+          },
+          "title": {
+            "type": "string",
+            "title": "Title",
+            "default": "Chart"
+          },
+          "x_label": {
+            "type": "string",
+            "title": "X Label",
+            "default": ""
+          },
+          "y_label": {
+            "type": "string",
+            "title": "Y Label",
+            "default": ""
+          },
+          "unit": {
+            "type": "string",
+            "title": "Unit",
+            "default": ""
+          },
+          "series": {
+            "items": {
+              "$ref": "#/components/schemas/ChartSeriesSpec"
+            },
+            "type": "array",
+            "title": "Series"
+          },
+          "x": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "string"
+                }
+              ]
+            },
+            "type": "array",
+            "title": "X"
+          },
+          "y": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "type": "array",
+            "title": "Y"
+          },
+          "series_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Series Name"
+          },
+          "bins": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "number"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Bins"
+          },
+          "categories": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Categories"
+          }
+        },
+        "type": "object",
+        "title": "ChartSpec",
+        "description": "Structured chart payload for ``ResultKind.chart`` inline_data.\n\nCompatible with the legacy demo shape ``{chart_type, x, y, series_name}``:\nwhen ``series`` is empty, consumers may fall back to top-level ``x``/``y``."
+      },
+      "ChartType": {
+        "type": "string",
+        "enum": [
+          "line",
+          "bar",
+          "histogram",
+          "scatter",
+          "boxplot"
+        ],
+        "title": "ChartType",
+        "description": "Generic analysis chart kinds (raster/vector agnostic)."
+      },
       "CleanupStatsResponse": {
         "properties": {
           "cache_stats": {
@@ -9792,6 +10407,34 @@
         ],
         "title": "ConfirmRequest",
         "description": "``POST /import/raster/confirm`` 请求体。\n\n用户在前端确认对话框中选定源 CRS（可覆盖检测结果）并设置偏移后提交。"
+      },
+      "DataSourcePathsUpdateRequest": {
+        "properties": {
+          "data_root": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Data Root",
+            "description": "绝对路径且目录必须存在"
+          },
+          "output_root": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Output Root",
+            "description": "可选；留空则默认为 {data_root}/ProjectOutput"
+          }
+        },
+        "type": "object",
+        "required": [
+          "data_root"
+        ],
+        "title": "DataSourcePathsUpdateRequest",
+        "description": "更新地理数据根 / 产物根（写入 Code/backend/.env，需重启后端生效）。"
       },
       "DiagnosticsReport": {
         "properties": {
@@ -12014,6 +12657,27 @@
         ],
         "title": "ServiceHealth"
       },
+      "ServiceRestartRequest": {
+        "properties": {
+          "components": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Components",
+            "description": "默认 fastapi+worker+beat；不允许 docker/frontend"
+          }
+        },
+        "type": "object",
+        "title": "ServiceRestartRequest"
+      },
       "SpatialFilter": {
         "properties": {
           "filter_type": {
@@ -12084,6 +12748,52 @@
         },
         "type": "object",
         "title": "StoragePolicy"
+      },
+      "TableSpec": {
+        "properties": {
+          "schema_version": {
+            "type": "string",
+            "title": "Schema Version",
+            "default": "1"
+          },
+          "title": {
+            "type": "string",
+            "title": "Title",
+            "default": "Table"
+          },
+          "columns": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Columns"
+          },
+          "rows": {
+            "items": {
+              "items": {},
+              "type": "array"
+            },
+            "type": "array",
+            "title": "Rows"
+          },
+          "units": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "type": "object",
+            "title": "Units"
+          },
+          "dtypes": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "type": "object",
+            "title": "Dtypes"
+          }
+        },
+        "type": "object",
+        "title": "TableSpec",
+        "description": "Structured table payload for ``ResultKind.table`` inline_data."
       },
       "TaskLimit": {
         "properties": {
@@ -13471,6 +14181,20 @@
             },
             "type": "object",
             "title": "Results"
+          },
+          "charts": {
+            "items": {
+              "$ref": "#/components/schemas/ChartSpec"
+            },
+            "type": "array",
+            "title": "Charts"
+          },
+          "tables": {
+            "items": {
+              "$ref": "#/components/schemas/TableSpec"
+            },
+            "type": "array",
+            "title": "Tables"
           }
         },
         "type": "object",

@@ -42,16 +42,20 @@ export const useWorkflowTimersStore = defineStore('workflow-timers', () => {
   }
 
   // ─── 动作 ────────────────────────────────────────────────────────────────
-  async function loadTimers(workflowId?: string) {
-    loading.value = true
-    error.value = null
+  async function loadTimers(workflowId?: string, opts?: { silent?: boolean }) {
+    const silent = opts?.silent === true
+    if (!silent) {
+      loading.value = true
+      error.value = null
+    }
     try {
       timers.value = await fetchWorkflowTimers(workflowId)
+      if (silent) error.value = null
     } catch (err) {
       console.error('[workflow-timers] Failed to load timers:', err)
       error.value = err instanceof Error ? err.message : String(err)
     } finally {
-      loading.value = false
+      if (!silent) loading.value = false
     }
   }
 

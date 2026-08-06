@@ -30,7 +30,7 @@ export const ANALYSIS_COPY = {
 
   sparseVisualTitle: '暂无图表',
   sparseVisualWeather: '平移地图加载瓦片，或进入点查查看数值。',
-  sparseVisualWorkflow: '运行工作流后，结果指标将显示在此。',
+  sparseVisualWorkflow: '运行工作流后，直方/分區/时序图表与表格将显示在此。',
   sparseVisualStatic: '当前图层无可视化图表；可在样式中调节外观，或在工具中点选缓冲。',
   sparseToolsHint: '进入选择模式并在地图上点选后，可估算缓冲覆盖。',
 

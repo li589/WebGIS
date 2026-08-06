@@ -1,4 +1,9 @@
-import { boundsToPolygonRing, latticeCellBounds, latticeIndex } from './weather-grid-lattice'
+import {
+  boundsToPolygonRing,
+  latticeCellBounds,
+  latticeIndex,
+  splitAntimeridianCellBounds,
+} from './weather-grid-lattice'
 import { buildOverlayStyleQuery } from './layer-symbology'
 import {
   buildWeatherArrowSizeExpression,
@@ -146,14 +151,17 @@ export function geojsonPointsToGridCells(
     const nextProps = { ...props }
     delete (nextProps as Record<string, unknown>)._tile_bounds
 
-    features.push({
-      ...feature,
-      properties: nextProps,
-      geometry: {
-        type: 'Polygon' as const,
-        coordinates: [boundsToPolygonRing(cell)],
-      },
-    })
+    // 日界线格元拆环，避免全球视野下 fill 画出绕行阴影细带
+    for (const part of splitAntimeridianCellBounds(cell)) {
+      features.push({
+        ...feature,
+        properties: nextProps,
+        geometry: {
+          type: 'Polygon' as const,
+          coordinates: [boundsToPolygonRing(part)],
+        },
+      })
+    }
   }
 
   return { type: 'FeatureCollection', features } as FieldFeatureCollection | WindGeoJSON

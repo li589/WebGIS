@@ -98,6 +98,7 @@ export function resolveEffectiveLayerSymbology(
 
   if (configured.length < 2 && input.viewportGeojson) {
     const metric = base.primary_metric || 'value'
+    // 图例采样无 map/LonFrame：近似量程；渲染建格以 overlay LonFrame+center 为准
     const grid = buildScalarGridFromGeoJSON(input.viewportGeojson, metric)
     const range = resolveScalarValueRange(base.legend_ticks, grid)
     // 仅当网格或采样给出有效跨度时替换 ticks

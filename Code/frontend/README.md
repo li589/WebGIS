@@ -79,7 +79,7 @@
 - `workflow/`：全局工作流状态按钮与面板；`WorkflowEditorPanel` 画布 Run 提交编译后的 `workflow_definition`
 - `toolbar/`：日志面板；数据入口见 `src/data-manager/ui/DataImportMenu.vue` + `DataWorkspace.vue`
 - `data-manager/`：导入/导出/属性表/详情/作业；侧栏与 InfoPanel 仅调用 `openDataWorkspace` / `exportLayer`
-- `settings/`：系统设置（含数据源扫描、开放数据预设、静态缓存清理、远程存储 profile）
+- `settings/`：系统设置（**数据根 / 产物根可编辑**并「保存并重启后端」、数据源扫描、开放数据预设、静态缓存清理、远程存储 profile）
 - `MapCanvas.vue`：地图运行时总入口（编排各 map 模块；天气错误横幅按层隔离，不因单层无数据盖住健康层）
 
 ## 当前地图与天气渲染事实
@@ -101,7 +101,7 @@
 
 | 模式 | 主实现 | 要点 |
 |------|--------|------|
-| 粒子流 `particle` | WebGL（`wind-particle-webgl-*`）；`?windgl=0` → Canvas `wind-particle-canvas.ts` | 默认路径；急流区降低 drop bump + 多子步 RK2，避免高密度跳动 |
+| 粒子流 `particle` | WebGL（`wind-particle-webgl-*`）；`?windgl=0` → Canvas `wind-particle-canvas.ts` | 默认路径；急流区降低 drop bump + 多子步 RK2；粒子与色场均按世界副本绘制，避免日界线半屏空白 |
 | 流量场 `streamline` | Canvas `wind-streamline-layer.ts` | 视口∩grid 撒种；`lonWrapOffset` 仅在数据变化 / zoomend 重算；绘制 `base±360` 世界副本 |
 | 网格 `off` | 风速色底（平滑开=WebGL 连续面，关=MapLibre 网格） | 无粒子流/流量场 |
 
@@ -120,17 +120,31 @@
 - **大范围 zoom-out 后视口几乎空白、贴边才有线**：曾因按全 grid 摊薄 `MAX_STREAMLINES`，且 wrap 用 bounds 均值 / 每帧重算落到错误世界副本。现按视口撒种 + `map.getCenter().lng` 算 wrap + 多副本绘制（`canvas-utils.computeCanvasLayout` / `resolveStreamlineSeedBounds`）。
 - **粒子急流区闪烁**：WebGL/Canvas 共用压低的 `DROP_RATE_BUMP` 与位移钳制（见 `wind-particle-webgl-shaders.ts` / `wind-particle-canvas.ts`）。
 - **半屏空白 / 错位叠影**：瓦片集合未变时仍须同步 bbox（`weather-tile-manager` view-only 路径）；粒子 Canvas 交互中勿频繁改 `lonWrapOffset`。
+- **缩放后中间空洞、周围有数**：视口瓦片 `sortTilesCenterFirst` 先拉中心；merge 在覆盖未齐时用父级/邻近 z/**上一帧**垫底，且勿把稀缺帧写成 `lastMerged` 锚点。
+- **日界线附近仅窄条有风场**：WebGL 粒子绘制与色场相同，按 `computeWorldWrapOffsets` 投多世界副本（`uploadParticlePointBuffer`）；Canvas/流线路径已有 `lonWrapOffset`。
+- **亚太视口却只显示美洲风场**：`normalizeLngBounds` 必须以地图中心校正；禁止先把 east/west 各自折进 [-180,180] 再取短弧。错半球时改用含中心的互补弧（见 `map-viewport-sync.ts`）。
+- **大范围（跨度>180°）仍只亮美洲**：merge→`buildWindGridFromGeoJSON` 须传视口 `LonFrame`（经度略 pad，丢弃帧外点）；`isLonInFrame` 接受 ±360 别名；`tileBoundsOverlapViewport` 禁止无脑 +360 别名。视口变更按**与当前视口重叠**驱逐错半球缓存（勿仅按 `desiredKeys`，否则会误删多 z 下垫 → 日界线小片空白）。宽跨度 `lastMerged` 覆盖门槛适中（约 0.65 / 中心或 0.85），允许 parent 垫底。
+- **流量场半屏/零星不稳定**：跨日界线种子框保持连续弧（勿 min/max 压短）；`moveend`/`zoomend` 与同 checksum 网格更新均按当前视口重撒种子。
+- **日界线附近只亮面积较大的半球**：`getBounds` 在 `renderWorldCopies` 下常漏掉以世界副本可见的另一侧。`buildMapViewportSnapshot` / `tilesInViewport` 用 `center ± worldSize` 估弧，经 `preferVisibleLngBounds` 在视觉跨 IDL 时升级 bbox，保证瓦片与 LonFrame 双侧齐全。
+- **全球/近全球仍半屏 + 日界线阴影细带**：`getBounds` 常给出 ~340° 弧并在 ±180 留窄缝；跨度≥300° 时强制 `[-180,180]`。网格 fill 对跨日界线格元 `splitAntimeridianCellBounds` 拆成两侧短弧多边形，避免 MapLibre 画成长路径细带。
+- **可见经度弧真源**：瓦片 / LonFrame / 粒子 roam / 流线撒种必须走 `resolveVisibleLngBounds`（或 `resolveVisibleViewportBBox`）；禁止生产路径单独 `normalizeLngBounds(getBounds())`（缺 worldSize 升级会半屏）。
+- **缩放后天气瓦片偶发不加载 / 偏慢**：`weather-viewport` 的 maxWait 必须读 live `currentMap*`（勿闭包冻结首帧 snap），否则持续缩放越过 maxWait 会用过期视口清掉最新防抖；`map-interaction-module` 在 `zoom` 中途同步、`move` 节流（≥100ms）同步，在 `zoomend`/`moveend` 以 `{ immediate: true }` 零等待 flush。
+- **多天气图层抢槽变慢**：全局并发对齐后端 semaphore（≤6）；换 tile z 时短时拉满 cap；`pickNextRequest` 同优先级跨图层 round-robin；可见层 ≥2 时邻域 depth 降为 1 并跳过邻小时预取，把槽位留给各层当前小时视口。
+- **进度指示**：地图横幅需同时订阅 `activityVersion`（瓦片入队/完成）与 `statusVersion`；半填充且仍有 pending 时显示带 `cached/total` 的 partial；工作流状态面板天气行展示视口填充进度条。分析类 `supportsViewportDrivenRefresh` 仍走独立 500ms debounce，不与天气 immediate flush 混用。
 
 地图上下文会进入图层状态并影响请求：
 
 - `currentMapCenter`
 - `currentMapBBox`
+- `currentMapZoom`
 
 天气数据加载主路径已演进为标准瓦片：
 
-- `weather-tile-api.ts` → `GET /weather/tiles/{layer_id}/{z}/{x}/{y}`（热路径，不走 workflow 轮询）
+- `weather-tile-api.ts` → `GET /weather/tiles/{layer_id}/{z}/{x}/{y}`（热路径，不走 workflow 轮询）；`tilesInViewport` 经 `resolveVisibleLngBounds` 校正日界线
 - 底图 MapLibre → `GET /unified-tiles/{layer_id}/{z}/{x}/{y}`
-- `weather-tile-manager.ts` 负责视口瓦片集合、并发与预取；TTL/SWR、同小时 depth=3 邻域、邻小时仅视口预取
+- `stores/layers/weather-viewport.ts`：视口防抖 / maxWait live-read / `immediate` flush
+- `map-viewport-sync.ts`：`resolveVisibleLngBounds` 为可见经度弧真源（normalize + center/worldSize）；近全球跨度≥300° 闭合为世界
+- `weather-tile-manager.ts` 负责视口瓦片集合、并发与预取；TTL/SWR、单层同小时 depth=3 邻域与邻小时视口预取；多层时 depth=1 且抑制邻小时；同优先级图层轮询；视口瓦片中心优先入队
 - 图层无数据（422 / `data-empty`）只短路该 `layerId`；工作流六态贡献与地图横幅均不因其它层失败而连坐
 - `submitWeatherTileWorkflow` 仅保留给显式扩展 DAG / 调试；计入后端 `weather_tile` 容量池
 - 业务分析 workflow 使用独立的 `max_active_runs`（business 池）
@@ -151,7 +165,9 @@
 - `ui-copy/`：验收中文词表（品牌 / 底图 / 风场 / 点查 / 图层 / 工作流 / 地图）
 - `stores/layers/result-adapter.ts`：解析 `render_hint` 与 `layer_assets`
 - `stores/layers/index.ts`：图层状态、workflow、粒子流独占与视口状态
+- `stores/layers/weather-viewport.ts`：天气视口防抖 / maxWait / immediate flush
 - `stores/weather-tile-manager.ts` / `weather-tile-cache-trim.ts`：瓦片调度与 LRU trim
+- `stores/weather-tile-concurrency.ts`：AIMD 并发（上限 6，对齐后端 semaphore / Open-Meteo API pool）
 
 ## 当前前端对后端契约的消费方式
 

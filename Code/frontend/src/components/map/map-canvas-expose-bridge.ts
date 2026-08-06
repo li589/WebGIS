@@ -25,18 +25,51 @@ interface CreateMapCanvasExposeBridgeOptions {
   }
 }
 
-function waitForMapRender(map: MapInstance): Promise<void> {
+/**
+ * Wait for a MapLibre paint frame, then read the canvas in the same turn.
+ * MapLibre 5 has no public `Map.render()` — only `triggerRepaint()` + `render` event.
+ * With preserveDrawingBuffer=false, toDataURL must run synchronously in the render
+ * callback (or immediately after the event fires on the same tick).
+ */
+function captureBasemapDataUrl(map: MapInstance): Promise<string | null> {
   return new Promise((resolve) => {
     let settled = false
-    const finish = () => {
+    const finish = (dataUrl: string | null) => {
       if (settled) return
       settled = true
-      resolve()
+      resolve(dataUrl)
     }
-    map.once('render', finish)
+    const readCanvas = (): string | null => {
+      try {
+        return map.getCanvas().toDataURL('image/png')
+      } catch {
+        return null
+      }
+    }
+    map.once('render', () => {
+      finish(readCanvas())
+    })
     map.triggerRepaint()
     // Fallback if render event is skipped (idle / already painted).
-    window.setTimeout(finish, 120)
+    globalThis.setTimeout(() => finish(readCanvas()), 120)
+  })
+}
+
+function loadImage(src: string, timeoutMs = 5000): Promise<HTMLImageElement> {
+  return new Promise((resolve, reject) => {
+    const img = new Image()
+    const timer = globalThis.setTimeout(() => {
+      reject(new Error('Basemap snapshot image load timed out'))
+    }, timeoutMs)
+    img.onload = () => {
+      globalThis.clearTimeout(timer)
+      resolve(img)
+    }
+    img.onerror = () => {
+      globalThis.clearTimeout(timer)
+      reject(new Error('Failed to load basemap snapshot'))
+    }
+    img.src = src
   })
 }
 
@@ -85,33 +118,40 @@ export function createMapCanvasExposeBridge(
     const stage = options.getMapStageElement()
     if (!map) return null
 
-    try {
-      await waitForMapRender(map)
-      // One sync render after the event so the buffer is current for toDataURL
-      // when preserveDrawingBuffer is false.
-      ;(map as MapInstance & { render: () => void }).render()
-      const mapCanvas = map.getCanvas()
-
-      try {
-        // Probe taint early — cross-origin tiles without CORS break export.
-        mapCanvas.toDataURL('image/png')
-      } catch (error) {
-        warnImpl('[MapCanvas] map canvas is tainted; cannot export basemap:', error)
+    const run = async (): Promise<string | null> => {
+      const basemapDataUrl = await captureBasemapDataUrl(map)
+      if (!basemapDataUrl) {
+        warnImpl('[MapCanvas] map canvas is tainted or empty; cannot export basemap')
         return null
       }
 
-      if (!stage) return mapCanvas.toDataURL('image/png')
+      if (!stage) return basemapDataUrl
 
+      const mapCanvas = map.getCanvas()
       const out = document.createElement('canvas')
       out.width = mapCanvas.width
       out.height = mapCanvas.height
       const ctx = out.getContext('2d')
-      if (!ctx) return mapCanvas.toDataURL('image/png')
-      ctx.drawImage(mapCanvas, 0, 0)
+      if (!ctx) return basemapDataUrl
+
+      const basemapImage = await loadImage(basemapDataUrl)
+      ctx.drawImage(basemapImage, 0, 0)
       const scaleX = mapCanvas.width / Math.max(1, mapCanvas.clientWidth || mapCanvas.width)
       const scaleY = mapCanvas.height / Math.max(1, mapCanvas.clientHeight || mapCanvas.height)
       captureOverlayCanvases(stage, ctx, scaleX, scaleY)
       return out.toDataURL('image/png')
+    }
+
+    try {
+      return await Promise.race([
+        run(),
+        new Promise<null>((resolve) => {
+          globalThis.setTimeout(() => {
+            warnImpl('[MapCanvas] captureMapCanvas timed out')
+            resolve(null)
+          }, 4000)
+        }),
+      ])
     } catch (error) {
       warnImpl('[MapCanvas] captureMapCanvas failed:', error)
       return null

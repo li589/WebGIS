@@ -22,6 +22,7 @@ dependencies = [
   "loguru",
   "pydantic",
   "typing_extensions",
+  "earthaccess>=0.15",
 ]
 
 [tool.pytest.ini_options]

@@ -5,6 +5,7 @@
     - ``ssh_sync``        — 从远程服务器（HPC/Win11/NAS）增量同步数据
     - ``nsidc_smap_download`` — 从 NASA NSIDC 下载 SMAP L3 SPL3SMP_E 数据
     - ``gldas_download``  — 从 NASA GES DISC 下载 GLDAS NOAH025_3H ``.nc4``
+    - ``gldas_nc4_to_mat`` — 将 GLDAS ``.nc4`` 重采样为 DUAL 温度 ``.mat``
     - ``fy_preprocess``   — FY-3B/3D MWRI HDF 亮温预处理（geolocation + 拼接 + 重投影）
 
 所有节点输出 ``path``（本地路径）和 ``manifest``（ProductManifest artifact），
@@ -19,6 +20,32 @@ from contracts.product import ProductManifest, ProductRef
 from modules.base import BaseModule
 from modules.registry import register_module_decorator
 from workflow.schemas import ArtifactRef, NodeExecutionContext, PortSpec
+
+
+def _resolve_earthdata_portal_userpass(
+    datasource_selection: dict[str, object],
+) -> tuple[str, str]:
+    """Resolve earthdata username/password from portal credentials (lazy)."""
+    portal_creds = datasource_selection.get("portal_credentials")
+    if not isinstance(portal_creds, dict):
+        portal_creds = {}
+    if (not portal_creds) and datasource_selection.get("portal_credentials_resolve"):
+        try:
+            from app.services.config_service import get_portal_credentials_runtime
+
+            resolved = get_portal_credentials_runtime()
+            if isinstance(resolved, dict):
+                portal_creds = resolved
+        except Exception:  # noqa: BLE001
+            portal_creds = {}
+    entry = portal_creds.get("earthdata")
+    if not isinstance(entry, dict):
+        return "", ""
+    if entry.get("enabled") is False:
+        return "", ""
+    user = str(entry.get("username") or "").strip()
+    password = str(entry.get("password") or "").strip()
+    return user, password
 
 
 def _store_path_manifest(
@@ -395,6 +422,12 @@ class GldasDownloadModule(BaseModule):
         short_name = str(resolved.get("short_name") or "GLDAS_NOAH025_3H")
         username = str(resolved.get("username") or "").strip()
         password = str(resolved.get("password") or "").strip()
+        # Prefer settings-page earthdata portal credentials when node leaves
+        # username/password blank (bridge sets portal_credentials_resolve).
+        if not (username and password):
+            portal_user, portal_pass = _resolve_earthdata_portal_userpass(ds)
+            username = username or portal_user
+            password = password or portal_pass
         dry_run = bool(resolved.get("dry_run"))
         max_files_raw = resolved.get("max_files")
         max_files = int(max_files_raw) if max_files_raw else None
@@ -456,6 +489,125 @@ class GldasDownloadModule(BaseModule):
                 "skipped": result.skipped,
                 "failed": result.failed,
                 "downloaded_bytes": result.downloaded_bytes,
+                "dry_run": dry_run,
+            },
+        )
+
+
+# ─── GLDAS nc4 → mat 转换节点 ─────────────────────────────────────────────────
+
+
+@register_module_decorator(name="gldas_nc4_to_mat")
+class GldasNc4ToMatModule(BaseModule):
+    name = "gldas_nc4_to_mat"
+    description = (
+        "将 GLDAS NOAH025_3H .nc4 重采样到 9 km 研究网格并写出 "
+        "Ts_gldas/Tsoil1_gldas/Tsoil2_gldas .mat（YYYYMMDD_HHMM.mat）。"
+    )
+    input_ports = [
+        PortSpec(
+            name="datasource_selection",
+            kind="config",
+            data_class="dict",
+            required=False,
+        ),
+        PortSpec(
+            name="algorithm_params", kind="config", data_class="dict", required=False
+        ),
+    ]
+    output_ports = [
+        PortSpec(name="path", kind="value", data_class="string"),
+        PortSpec(name="manifest", kind="artifact", data_class="product_manifest"),
+    ]
+    default_params: dict[str, object] = {
+        "input_dir": "",
+        "output_dir": "",
+        "ancillary_mat": "",
+        "dry_run": False,
+        "skip_existing": True,
+        "max_files": None,
+    }
+
+    def execute(
+        self,
+        inputs: dict[str, object],
+        params: dict[str, object],
+        ctx: NodeExecutionContext,
+    ) -> dict[str, object]:
+        from ingest.gldas_nc4_to_mat import convert_gldas_nc4_directory
+
+        ds = dict(inputs.get("datasource_selection", {}))
+        ap = dict(inputs.get("algorithm_params", {}))
+        resolved = {**self.default_params, **params, **ap, **ds}
+
+        input_dir = str(resolved.get("input_dir") or "").strip()
+        if not input_dir:
+            raise ValueError("gldas_nc4_to_mat requires input_dir")
+        output_dir = str(resolved.get("output_dir") or "").strip()
+        if not output_dir:
+            output_dir = str(ctx.workspace / "data_access" / "gldas_mat")
+
+        ancillary_mat = str(resolved.get("ancillary_mat") or "").strip()
+        if not ancillary_mat:
+            anc_root = str(
+                resolved.get("anc_root")
+                or ds.get("anc_root")
+                or ""
+            ).strip()
+            if anc_root:
+                ancillary_mat = str(Path(anc_root) / "IGBP_9km_12.mat")
+        if not ancillary_mat:
+            raise ValueError(
+                "gldas_nc4_to_mat requires ancillary_mat or anc_root/IGBP_9km_12.mat"
+            )
+
+        dry_run = bool(resolved.get("dry_run"))
+        skip_existing = bool(resolved.get("skip_existing", True))
+        max_files_raw = resolved.get("max_files")
+        max_files = int(max_files_raw) if max_files_raw else None
+
+        if ctx.logger_adapter is not None:
+            ctx.logger_adapter.emit_stage_start(
+                "gldas_nc4_to_mat",
+                f"Convert nc4 {input_dir} -> {output_dir}",
+            )
+
+        result = convert_gldas_nc4_directory(
+            input_dir=input_dir,
+            output_dir=output_dir,
+            ancillary_mat=ancillary_mat,
+            dry_run=dry_run,
+            skip_existing=skip_existing,
+            max_files=max_files,
+        )
+
+        if ctx.logger_adapter is not None:
+            ctx.logger_adapter.emit_stage_end(
+                "gldas_nc4_to_mat",
+                f"converted={result.converted} skipped={result.skipped} "
+                f"failed={result.failed}",
+            )
+
+        if result.failed > 0 and not result.success:
+            error_summary = "; ".join(result.errors[:5]) if result.errors else "unknown"
+            raise RuntimeError(
+                f"gldas_nc4_to_mat completed with {result.failed} failures: "
+                f"{error_summary}"
+            )
+
+        return _store_path_manifest(
+            ctx,
+            module_name=self.name,
+            path=output_dir,
+            product_type="gldas_mat_dir",
+            extra={
+                "input_dir": input_dir,
+                "ancillary_mat": ancillary_mat,
+                "total_nc4": result.total_nc4,
+                "converted": result.converted,
+                "skipped": result.skipped,
+                "failed": result.failed,
+                "outputs": result.outputs[:20],
                 "dry_run": dry_run,
             },
         )

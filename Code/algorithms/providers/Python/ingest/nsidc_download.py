@@ -25,7 +25,10 @@ SPL3SMP_E 数据下载函数，供工作流 ``nsidc_smap_download`` 节点调用
     )
 
 凭据策略：
-    优先读取环境变量 ``EARTHDATA_USERNAME`` / ``EARTHDATA_PASSWORD``。
+    优先使用显式传参；其次读取环境变量
+    ``BACKEND_EARTHDATA_USERNAME`` / ``BACKEND_EARTHDATA_PASSWORD`` 与
+    ``EARTHDATA_USERNAME`` / ``EARTHDATA_PASSWORD``。
+    不再回退任何内置默认账号。
 """
 
 from __future__ import annotations
@@ -54,10 +57,6 @@ MIN_DISK_FREE_GB = 5.0
 PROGRESS_INTERVAL = 2.0
 
 DEFAULT_OUTPUT_DIR = Path(r"I:\Geograph_DataSet\Soil_Moisture\SMAP")
-
-# 回退默认凭据（建议通过环境变量覆盖）
-_DEFAULT_USERNAME = "Rejoyce"
-_DEFAULT_PASSWORD = "Diandian143"
 
 # 尝试导入 earthaccess
 try:
@@ -122,19 +121,31 @@ def load_credentials(
 ) -> tuple[str, str]:
     """读取 Earthdata 凭据。
 
-    优先使用传入参数，其次环境变量，最后回退到默认值。
+    优先使用传入参数，其次环境变量；不使用内置默认账号。
     """
-    if username and password:
-        return username, password
-    env_user = os.environ.get("EARTHDATA_USERNAME", "")
-    env_pass = os.environ.get("EARTHDATA_PASSWORD", "")
-    if env_user and env_pass:
-        return env_user, env_pass
-    logger.warning(
-        "未设置环境变量 EARTHDATA_USERNAME / EARTHDATA_PASSWORD，"
-        "回退到内置默认凭据。"
+    env_user = os.environ.get("BACKEND_EARTHDATA_USERNAME") or os.environ.get(
+        "EARTHDATA_USERNAME"
     )
-    return _DEFAULT_USERNAME, _DEFAULT_PASSWORD
+    env_pass = os.environ.get("BACKEND_EARTHDATA_PASSWORD") or os.environ.get(
+        "EARTHDATA_PASSWORD"
+    )
+
+    resolved_user = username or env_user or ""
+    resolved_pass = password or env_pass or ""
+    if resolved_user and resolved_pass:
+        return resolved_user, resolved_pass
+
+    missing: list[str] = []
+    if not resolved_user:
+        missing.append("username")
+    if not resolved_pass:
+        missing.append("password")
+    raise ValueError(
+        "Earthdata credentials are required; missing "
+        + ", ".join(missing)
+        + ". Set BACKEND_EARTHDATA_USERNAME/BACKEND_EARTHDATA_PASSWORD "
+        + "or EARTHDATA_USERNAME/EARTHDATA_PASSWORD."
+    )
 
 
 def check_disk_space(path: Path, min_gb: float = MIN_DISK_FREE_GB) -> tuple[bool, float]:
@@ -152,12 +163,29 @@ def check_disk_space(path: Path, min_gb: float = MIN_DISK_FREE_GB) -> tuple[bool
 # ─── 认证 ────────────────────────────────────────────────────────────────────
 
 
+def _earthaccess_login(username: str, password: str, *, persist: bool = True) -> Any:
+    """Login via earthaccess 0.15+ API (environment strategy).
+
+    Newer ``earthaccess.login`` no longer accepts ``username``/``password`` kwargs;
+    credentials must be provided via ``EARTHDATA_USERNAME`` / ``EARTHDATA_PASSWORD``
+    (or token / netrc / interactive).
+    """
+    if not _HAS_EARTHACCESS:
+        raise RuntimeError("earthaccess is not installed")
+    if username:
+        os.environ["EARTHDATA_USERNAME"] = username
+    if password:
+        os.environ["EARTHDATA_PASSWORD"] = password
+    # Prefer env strategy so non-interactive workers never fall into prompts.
+    return earthaccess.login(strategy="environment", persist=persist)
+
+
 def test_earthdata_auth(username: str, password: str) -> bool:
     """测试 Earthdata 登录是否可用。"""
     logger.info("测试 Earthdata 认证（用户: %s）...", username)
     if _HAS_EARTHACCESS:
         try:
-            earthaccess.login(username=username, password=password, persist=True)
+            _earthaccess_login(username, password, persist=True)
             logger.info("earthaccess 认证成功")
             return True
         except Exception as exc:
@@ -231,7 +259,7 @@ def _search_via_earthaccess(
 ) -> list[Granule]:
     """使用 earthaccess 搜索 granule。"""
     try:
-        earthaccess.login(username=username, password=password, persist=True)
+        _earthaccess_login(username, password, persist=True)
     except Exception as exc:
         logger.error("earthaccess 登录失败: %s", exc)
         raise
@@ -361,9 +389,7 @@ def _get_download_session(username: str, password: str) -> Any:
     """返回带 Earthdata 认证的 requests.Session。"""
     if _HAS_EARTHACCESS:
         try:
-            auth = earthaccess.login(
-                username=username, password=password, persist=True
-            )
+            auth = _earthaccess_login(username, password, persist=True)
             session = auth.get_session()
             logger.debug("使用 earthaccess 认证 session 进行下载")
             return session

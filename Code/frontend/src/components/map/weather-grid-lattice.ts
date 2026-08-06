@@ -38,6 +38,41 @@ export function pointInTileHalfOpen(
 }
 
 /**
+ * 视口经度帧：east 可 >180（normalizeLngBounds 长路径）。
+ * 建格时把样本 lon 卷入此连续框，避免盲解包塌到错半球。
+ */
+export interface LonFrame {
+  west: number
+  east: number
+  /** 可选；缺省时用 (west+east)/2 */
+  centerLng?: number
+}
+
+/**
+ * 将经度列表解包到视口帧；无有效 frame 时回退到最小连续跨度启发式。
+ * 落在 frame 外的样本由调用方决定是否丢弃（宽视口错半球缓存）。
+ */
+export function unwrapLonsForFrame(lons: readonly number[], frame?: LonFrame | null): number[] {
+  if (!frame || !(frame.east > frame.west)) {
+    return unwrapLonsToMinimalSpan(lons)
+  }
+  const west = frame.west
+  const east = frame.east
+  return lons.map((lon) => unwrapLonIntoGridFrame(lon, west, east))
+}
+
+/** 解包后的 lon 是否落在 frame 内（允许边距；试 ±360 别名，避免日界线两侧漏检）。 */
+export function isLonInFrame(lon: number, frame: LonFrame, marginDeg = 3): boolean {
+  if (!(frame.east > frame.west)) return true
+  const lo = frame.west - marginDeg
+  const hi = frame.east + marginDeg
+  for (const x of [lon, lon + 360, lon - 360]) {
+    if (x >= lo && x <= hi) return true
+  }
+  return false
+}
+
+/**
  * 将经度解包到「最小连续跨度」坐标系（结果中 east 可能 &gt;180）。
  *
  * 跨日界线的亚洲–太平洋等点集若按 [-180,180] 直接排序，会错误形成穿过美洲的
@@ -227,4 +262,37 @@ export function boundsToPolygonRing(bounds: LngLatBounds): number[][] {
     [bounds.west, bounds.north],
     [bounds.west, bounds.south],
   ]
+}
+
+/**
+ * 跨 ±180° 的格元拆成两侧矩形，避免 MapLibre fill 把跨日界线多边形画成绕地球长路径细带。
+ * 亦处理已完全解包到 east>180 / west<-180 的格元（整段平移回主世界）。
+ */
+export function splitAntimeridianCellBounds(cell: LngLatBounds): LngLatBounds[] {
+  const { south, north } = cell
+  let { west, east } = cell
+  if (!(east > west) || !(north > south)) return []
+
+  // 整段落在主世界外侧：先平移进 [-180,180] 连续轴
+  if (west >= 180) {
+    west -= 360
+    east -= 360
+  } else if (east <= -180) {
+    west += 360
+    east += 360
+  }
+
+  // east>180：右缘越过日界线（格心靠近 +180）
+  if (east > 180 && west < 180) {
+    const left: LngLatBounds = { west, east: 180, south, north }
+    const right: LngLatBounds = { west: -180, east: east - 360, south, north }
+    return [left, right].filter((b) => b.east > b.west)
+  }
+  // west<-180：左缘越过日界线（格心靠近 -180）
+  if (west < -180 && east > -180) {
+    const right: LngLatBounds = { west: -180, east, south, north }
+    const left: LngLatBounds = { west: west + 360, east: 180, south, north }
+    return [left, right].filter((b) => b.east > b.west)
+  }
+  return [{ west, east, south, north }]
 }

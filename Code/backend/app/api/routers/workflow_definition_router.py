@@ -150,11 +150,59 @@ def dry_validate_graph(payload: dict[str, Any]) -> dict[str, Any]:
             }
         )
     else:
-        module_nodes = [
-            n
-            for n in nodes
-            if isinstance(n, dict) and str(n.get("type") or "").startswith("module/")
-        ]
+        # Compiled nodes use node_type=module + params.module_name; LiteGraph
+        # seeds (if ever passed through) use type=module/*.
+        _HELPER_MODULES = frozenset(
+            {
+                "data_source",
+                "source",
+                "time_range",
+                "bbox",
+                "number_const",
+                "string_const",
+                "boolean_const",
+                "latlng",
+                "map_viewport",
+                "output_map_layer",
+                "output_file",
+            }
+        )
+
+        def _compiled_module_name(node: dict[str, Any]) -> str:
+            props = (
+                node.get("properties")
+                if isinstance(node.get("properties"), dict)
+                else {}
+            )
+            params = node.get("params") if isinstance(node.get("params"), dict) else {}
+            raw = (
+                props.get("module_name")
+                or params.get("module_name")
+                or node.get("node_class")
+                or ""
+            )
+            name = str(raw).strip()
+            if name:
+                return name
+            ntype = str(node.get("type") or node.get("node_type") or "")
+            if "/" in ntype:
+                return ntype.split("/", 1)[-1]
+            return ntype
+
+        module_nodes = []
+        for n in nodes:
+            if not isinstance(n, dict):
+                continue
+            ntype = str(n.get("type") or "")
+            node_type = str(n.get("node_type") or "")
+            module_name = _compiled_module_name(n)
+            if module_name in _HELPER_MODULES:
+                continue
+            if ntype.startswith("module/") or (
+                node_type == "module" and module_name not in {"", "module"}
+            ):
+                module_nodes.append(n)
+
         if not module_nodes:
             issues.append(
                 {
@@ -164,19 +212,11 @@ def dry_validate_graph(payload: dict[str, Any]) -> dict[str, Any]:
                 }
             )
         for node in module_nodes:
-            props = (
-                node.get("properties")
-                if isinstance(node.get("properties"), dict)
-                else {}
-            )
-            module_name = (
-                props.get("module_name")
-                or str(node.get("type") or "").split("/", 1)[-1]
-            )
+            module_name = _compiled_module_name(node)
             if not module_name:
                 issues.append(
                     {
-                        "field": f"node:{node.get('id')}",
+                        "field": f"node:{node.get('node_id') or node.get('id')}",
                         "code": "module_name_missing",
                         "message": "模块节点缺少 module_name。",
                     }

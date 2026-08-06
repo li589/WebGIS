@@ -21,6 +21,7 @@ import { useWeatherTileManager } from '../weather-tile-manager'
 import { useWeatherSourcePrefsStore } from '../weather-source-prefs'
 import { useUiStore } from '../ui'
 import { formatClockHourLabel } from '../../utils/weather-timeline'
+import { resolveWeatherTileReadyKind } from '../../utils/weather-tile-readiness'
 import { buildDefaultWeatherRenderHint } from '../../components/map/weather-render'
 import type {
   BoundingBox,
@@ -52,6 +53,8 @@ import {
   type PersistedVectorLayer,
 } from './workspace-persist'
 import { formatProgressShell, pickLatestNodeProgress } from '../../utils/workflow-progress-format'
+import { normalizeWorkflowProgress } from './workflow-progress'
+import { resolveRestoreWorkflowBridge as resolveRestoreWorkflowBridgeFromCatalog } from './restore-workflow-bridge'
 import { claimOrphanWorkflowRun, isSubmitTimeoutError } from '../../utils/workflow-submit-reconcile'
 import { WORKFLOW_COPY } from '../../ui-copy/workflow'
 import { resolveEmptyOverlayWorkflowError } from './materialize-empty'
@@ -251,39 +254,7 @@ function saveTrackedWorkflowRuns(runs: TrackedWorkflowRun[]) {
   }
 }
 
-/** Normalize workflow/node progress to 0–100, preferring chunk ratios when available. */
-function normalizeWorkflowProgress(
-  raw: number | null | undefined,
-  detail?: {
-    chunksDone?: number
-    chunksTotal?: number
-    pixelsDone?: number
-    pixelsTotal?: number
-  } | null,
-): number {
-  let pct = 0
-  if (typeof raw === 'number' && Number.isFinite(raw)) {
-    pct = raw >= 0 && raw <= 1 ? raw * 100 : raw
-  }
-  if (
-    detail &&
-    typeof detail.chunksTotal === 'number' &&
-    detail.chunksTotal > 0 &&
-    typeof detail.chunksDone === 'number' &&
-    Number.isFinite(detail.chunksDone)
-  ) {
-    pct = Math.max(pct, (detail.chunksDone / detail.chunksTotal) * 100)
-  } else if (
-    detail &&
-    typeof detail.pixelsTotal === 'number' &&
-    detail.pixelsTotal > 0 &&
-    typeof detail.pixelsDone === 'number' &&
-    Number.isFinite(detail.pixelsDone)
-  ) {
-    pct = Math.max(pct, (detail.pixelsDone / detail.pixelsTotal) * 100)
-  }
-  return Math.max(0, Math.min(100, Math.round(pct)))
-}
+/** Normalize workflow/node progress to 0–100 — see ./workflow-progress.ts */
 function getCatalogDisplayName(catalogId: string) {
   return LAYER_LIBRARY.find((item) => item.catalogId === catalogId)?.name ?? catalogId
 }
@@ -1022,30 +993,29 @@ export const useLayersStore = defineStore('layers', () => {
               label: '无有效数据',
               description: layerStatus.errorMessage || '本地模型无数据，请同步 Open-Meteo',
             }
-          } else if (
-            tileStats.cached > 0 &&
-            tileStats.cached >= tileStats.visible &&
-            tileStats.pending === 0
-          ) {
-            // 勿在 activeLayersDisplay 热路径调用 getMergedGeojsonForViewport：
-            // 同步合并视口瓦片会卡主线程，表现为点「已添加图层」无响应。
-            // 无数据场景由上方 data-empty 状态覆盖。
-            finalAvailability = {
-              state: 'ready' as const,
-              label: '完整数据',
-              description: `已缓存全部 ${tileStats.visible} 个可视瓦片`,
-            }
-          } else if (tileStats.cached > 0 || tileStats.pending > 0) {
-            finalAvailability = {
-              state: 'partial' as const,
-              label: '加载中',
-              description: `已缓存 ${tileStats.cached} / 可视 ${tileStats.visible} / 加载中 ${tileStats.pending}`,
-            }
           } else {
-            finalAvailability = {
-              state: 'partial' as const,
-              label: '等待瓦片',
-              description: '正在等待瓦片调度',
+            const readyKind = resolveWeatherTileReadyKind(tileStats)
+            if (readyKind === 'ready') {
+              // 勿在 activeLayersDisplay 热路径调用 getMergedGeojsonForViewport：
+              // 同步合并视口瓦片会卡主线程，表现为点「已添加图层」无响应。
+              // 无数据场景由上方 data-empty 状态覆盖。
+              finalAvailability = {
+                state: 'ready' as const,
+                label: '完整数据',
+                description: `已缓存全部 ${tileStats.visible} 个可视瓦片`,
+              }
+            } else if (readyKind === 'partial') {
+              finalAvailability = {
+                state: 'partial' as const,
+                label: '加载中',
+                description: `已缓存 ${tileStats.cached} / 可视 ${tileStats.visible} / 加载中 ${tileStats.pending}`,
+              }
+            } else {
+              finalAvailability = {
+                state: 'partial' as const,
+                label: '等待瓦片',
+                description: '正在等待瓦片调度',
+              }
             }
           }
         }
@@ -2069,6 +2039,12 @@ export const useLayersStore = defineStore('layers', () => {
       job.progressiveOverlayError = hadError
         ? errorMsg || WORKFLOW_COPY.progressiveSyncFailed
         : undefined
+      if (hadError) {
+        const note = errorMsg || WORKFLOW_COPY.progressiveSyncFailed
+        const notes = [...(job.diagnosticNotes ?? [])]
+        if (!notes.includes(note)) notes.unshift(note)
+        job.diagnosticNotes = notes.slice(0, 8)
+      }
       if (msg) job.message = msg
       syncJobLayerToActiveLayer(catalogId, job)
       updateRunGroupForCatalog(catalogId, job)
@@ -2217,9 +2193,16 @@ export const useLayersStore = defineStore('layers', () => {
           detail?.phase === 'block_refresh' ||
           detail?.phase === 'artifact'
         ) {
-          // progressive overlay sync (throttled inside helper)
+          // progressive overlay sync (throttled inside helper).
+          // Skip when run is already failed/cancelled — hydrate replay of historical
+          // block_commit events must not POST materialize (BE returns 409).
           const progressiveCatalogId = jobLayer.catalogId
-          if (progressiveCatalogId) {
+          const canMaterialize =
+            nextStatus === 'succeeded' ||
+            nextStatus === 'running' ||
+            nextStatus === 'queued' ||
+            nextStatus === 'retry_pending'
+          if (progressiveCatalogId && canMaterialize) {
             void syncProgressiveBlockOverlays(jobLayer.jobId, progressiveCatalogId)
           }
           if (detail.dateStart && detail.dateEnd) {
@@ -2253,6 +2236,7 @@ export const useLayersStore = defineStore('layers', () => {
               artifacts: Array.isArray(np.artifacts) ? np.artifacts : existing.artifacts,
               detail: detail ?? existing.detail,
               updatedAt: eventAt,
+              eventId: event.event_id,
             })
           } else {
             nextNodeProgress.push({
@@ -2264,6 +2248,7 @@ export const useLayersStore = defineStore('layers', () => {
               artifacts: Array.isArray(np.artifacts) ? np.artifacts : undefined,
               detail,
               updatedAt: eventAt,
+              eventId: event.event_id,
             })
           }
           nextProgress = Math.max(nextProgress, nodePct)
@@ -2430,12 +2415,18 @@ export const useLayersStore = defineStore('layers', () => {
             })
         }
       } catch (error) {
+        const errMsg = error instanceof Error ? error.message : String(error)
         console.warn('[layers] materializeWorkflowMapLayers failed', runId, error)
-        // 发布就绪修复（P0-9）：materialize 失败不再静默吞掉——落到 workflowError，
-        // 避免"工作流显示 succeeded 但地图无图层、无任何错误提示"。
-        workflowError.value = `工作流结果图层加载失败：${
-          error instanceof Error ? error.message : String(error)
-        }`
+        // Failed/cancelled runs correctly get 409 from BE — do not pin a yellow banner.
+        const isNonMaterializableConflict =
+          /\b409\b/.test(errMsg) ||
+          /cannot materialize/i.test(errMsg) ||
+          /ExecutionStatus\.(failed|cancelled)/i.test(errMsg)
+        if (!isNonMaterializableConflict) {
+          // 发布就绪修复（P0-9）：其它 materialize 失败落到 workflowError，
+          // 避免"工作流显示 succeeded 但地图无图层、无任何错误提示"。
+          workflowError.value = `工作流结果图层加载失败：${errMsg}`
+        }
       }
     }
     if (!imports.length) {
@@ -3072,41 +3063,62 @@ export const useLayersStore = defineStore('layers', () => {
     catalogId: string,
     tracked?: TrackedWorkflowRun,
   ): { sourceLayerId?: string; workflowId?: string; title?: string } {
-    const candidates = [layerId, catalogId, tracked?.catalogId].filter(
-      (id): id is string => Boolean(id),
+    const candidates = [layerId, catalogId, tracked?.catalogId].filter((id): id is string =>
+      Boolean(id),
     )
-    let descriptor: RuntimeLayerDescriptor | undefined
+    const catalogMap: Record<
+      string,
+      {
+        layer_id: string
+        workflow_id?: string | null
+        workflow_name?: string | null
+        display_name?: string
+      }
+    > = {}
     for (const id of candidates) {
       const hit = runtimeLayerCatalog.value[id]
       if (hit) {
-        descriptor = hit
-        break
+        catalogMap[id] = {
+          layer_id: hit.layer_id,
+          workflow_id: hit.workflow_id,
+          workflow_name: hit.workflow_name,
+          display_name: hit.display_name,
+        }
       }
     }
-    if (!descriptor) {
-      descriptor = Object.values(runtimeLayerCatalog.value).find(
-        (d) =>
+    if (!Object.keys(catalogMap).length) {
+      for (const d of Object.values(runtimeLayerCatalog.value)) {
+        if (
           Boolean(d.workflow_id) &&
           candidates.some(
             (id) => id === d.layer_id || id.includes(d.layer_id) || d.layer_id.includes(id),
-          ),
-      )
+          )
+        ) {
+          catalogMap[d.layer_id] = {
+            layer_id: d.layer_id,
+            workflow_id: d.workflow_id,
+            workflow_name: d.workflow_name,
+            display_name: d.display_name,
+          }
+          break
+        }
+      }
     }
+    const base = resolveRestoreWorkflowBridgeFromCatalog(catalogMap, layerId, catalogId)
     const group = runLayerGroups.value.find((g) => g.runId === tracked?.runId)
     const sourceLayerId =
       group?.sourceLayerId ||
-      descriptor?.layer_id ||
-      (tracked?.catalogId && !tracked.catalogId.startsWith('wf-') ? tracked.catalogId : undefined) ||
-      (catalogId.startsWith('wf-') ? undefined : catalogId)
-    const workflowId =
-      group?.workflowId ||
-      descriptor?.workflow_id ||
-      descriptor?.workflow_name ||
-      undefined
+      base.sourceLayerId ||
+      (tracked?.catalogId && !tracked.catalogId.startsWith('wf-') ? tracked.catalogId : undefined)
+    const workflowId = group?.workflowId || base.workflowId || undefined
     return {
       sourceLayerId,
       workflowId,
-      title: tracked?.name || descriptor?.display_name || undefined,
+      title:
+        tracked?.name ||
+        catalogMap[layerId]?.display_name ||
+        catalogMap[catalogId]?.display_name ||
+        undefined,
     }
   }
 

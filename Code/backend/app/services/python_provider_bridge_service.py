@@ -62,10 +62,10 @@ _PENDING_IMPLEMENTATION_MODULES = frozenset(
         "stats_temporal_trend",
         "stats_anomaly_detect",
         "stats_correlation",
-        "stats_histogram",
+        # stats_histogram implemented (modules/stats_histogram.py)
         "fusion_spatial_interpolate",
         "fusion_multi_source_merge",
-        "viz_chart_generate",
+        # viz_chart_generate implemented (modules/viz_chart_generate.py)
         "viz_report_export",
         "viz_statistics_summary",
         "gis_buffer_analysis",

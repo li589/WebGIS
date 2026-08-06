@@ -141,6 +141,8 @@ export interface NodeProgress {
   artifacts?: string[]
   /** 最近一次 node_progress 事件时间（ISO） */
   updatedAt?: string
+  /** 最近一次推进该节点进度的 event_id（平局序） */
+  eventId?: string
   /** chunk/pixel/block 细粒度进度（算法反演等长任务） */
   detail?: {
     chunksDone?: number
@@ -187,6 +189,23 @@ export interface JobLayerItem {
   resultView?: WorkflowRunViewResponse
   /** 结果引用链接 */
   resultUrl?: string
+  /** 工作流 ChartSpec 结果（分析框图表 Tab） */
+  analysisCharts?: Array<{
+    id: string
+    title: string
+    chartType: string
+    xLabel: string
+    yLabel: string
+    unit: string
+    series: Array<{ name: string; x: Array<string | number>; y: Array<number | null> }>
+  }>
+  /** 工作流 TableSpec 结果 */
+  analysisTables?: Array<{
+    id: string
+    title: string
+    columns: string[]
+    rows: unknown[][]
+  }>
   /** map_layer 产物中的附加地图资产 */
   mapLayerPayload?: JobLayerMapLayerPayload
   /** 原始诊断信息 */

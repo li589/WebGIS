@@ -7,6 +7,7 @@
  *   - download/ssh_sync           → SshSyncForm
  *   - download/nsidc_smap_download → NsidcDownloadForm
  *   - download/gldas_download      → GldasDownloadForm
+ *   - download/gldas_nc4_to_mat    → GldasNc4ToMatForm
  *   - download/fy_preprocess       → FyPreprocessForm
  *
  * Props: node (LGraphNodeClass) / readonly (boolean)
@@ -17,6 +18,7 @@ import type { LGraphNodeClass } from '../litegraph-setup'
 import SshSyncForm from './SshSyncForm.vue'
 import NsidcDownloadForm from './NsidcDownloadForm.vue'
 import GldasDownloadForm from './GldasDownloadForm.vue'
+import GldasNc4ToMatForm from './GldasNc4ToMatForm.vue'
 import FyPreprocessForm from './FyPreprocessForm.vue'
 
 const props = defineProps<{
@@ -34,6 +36,7 @@ const SUBFORM_LABELS: Record<string, string> = {
   'download/ssh_sync': 'SSH 同步',
   'download/nsidc_smap_download': 'NSIDC SMAP 下载',
   'download/gldas_download': 'GLDAS 在线下载',
+  'download/gldas_nc4_to_mat': 'GLDAS nc4→mat',
   'download/fy_preprocess': 'FY 预处理',
 }
 
@@ -64,6 +67,13 @@ function forward(key: string, value: unknown) {
 
     <GldasDownloadForm
       v-else-if="nodeType === 'download/gldas_download'"
+      :node="node"
+      :readonly="readonly"
+      @update-property="forward"
+    />
+
+    <GldasNc4ToMatForm
+      v-else-if="nodeType === 'download/gldas_nc4_to_mat'"
       :node="node"
       :readonly="readonly"
       @update-property="forward"

@@ -479,6 +479,31 @@ function validateDownloadNode(node: WorkflowDefinitionNode): ValidationIssue[] {
     }
   }
 
+  if (nodeType === 'download/gldas_nc4_to_mat') {
+    if (isEmpty(props.input_dir)) {
+      issues.push({
+        nodeId,
+        nodeType,
+        nodeTitle,
+        field: 'input_dir',
+        severity: 'error',
+        code: 'required_empty',
+        message: '输入 nc4 目录不能为空',
+      })
+    }
+    if (isEmpty(props.output_dir)) {
+      issues.push({
+        nodeId,
+        nodeType,
+        nodeTitle,
+        field: 'output_dir',
+        severity: 'error',
+        code: 'required_empty',
+        message: '输出 mat 目录不能为空',
+      })
+    }
+  }
+
   if (nodeType === 'download/fy_preprocess') {
     if (isEmpty(props.input_dir)) {
       issues.push({

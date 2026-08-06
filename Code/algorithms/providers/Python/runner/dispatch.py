@@ -524,11 +524,30 @@ def _build_single_module_workflow(request: JobRequest):
     if not request.module_name:
         raise ValueError("module_name is required to build a single-module workflow")
 
-    input_bindings = {
+    # Only bind ports the target module actually declares. Download nodes (e.g.
+    # gldas_download) expose datasource_selection/algorithm_params but not
+    # output_spec_extra — hard-wiring that port fails workflow validation.
+    candidate_bindings = {
         "datasource_selection": "request:datasource_selection",
         "algorithm_params": "request:algorithm_params",
         "output_spec_extra": "request:output_spec_extra",
     }
+    input_bindings: dict[str, str] = {}
+    port_names: set[str] = set()
+    try:
+        from modules.registry import get_module
+
+        module_cls = get_module(request.module_name)
+        for port in getattr(module_cls, "input_ports", ()) or ():
+            name = getattr(port, "name", None)
+            if name:
+                port_names.add(str(name))
+    except Exception:
+        port_names = set(candidate_bindings)
+
+    for port_name, binding in candidate_bindings.items():
+        if not port_names or port_name in port_names:
+            input_bindings[port_name] = binding
 
     # Bind mode-required scalar inputs (e.g. input_mat, dh_mat) so the workflow
     # validator passes. The "input:{name}" binding resolves from
@@ -547,6 +566,24 @@ def _build_single_module_workflow(request: JobRequest):
                 input_bindings[input_name] = f"input:{input_name}"
         except Exception:
             pass
+
+    # Prefer manifest when present; otherwise first declared output port.
+    output_port = "manifest"
+    try:
+        from modules.registry import get_module
+
+        module_cls = get_module(request.module_name)
+        out_ports = [
+            str(getattr(p, "name", "") or "")
+            for p in (getattr(module_cls, "output_ports", ()) or ())
+        ]
+        out_ports = [p for p in out_ports if p]
+        if "manifest" in out_ports:
+            output_port = "manifest"
+        elif out_ports:
+            output_port = out_ports[0]
+    except Exception:
+        pass
 
     return WorkflowDefinition(
         workflow_id=request.workflow_name or f"module::{request.module_name}",
@@ -569,7 +606,7 @@ def _build_single_module_workflow(request: JobRequest):
         ],
         outputs=[
             WorkflowOutputSpec(
-                name="final_manifest", source="node:module_node.manifest"
+                name="final_manifest", source=f"node:module_node.{output_port}"
             )
         ],
         metadata={"generated_from": "run_job", "module_name": request.module_name},

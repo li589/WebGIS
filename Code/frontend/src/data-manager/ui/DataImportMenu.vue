@@ -118,7 +118,7 @@ const progressLabel = computed(() =>
           class="dropdown-item"
           type="button"
           @click="
-            closeMenu();
+            closeMenu()
             openDataWorkspace({ tab: 'attributes' })
           "
         >
@@ -132,7 +132,7 @@ const progressLabel = computed(() =>
           class="dropdown-item"
           type="button"
           @click="
-            closeMenu();
+            closeMenu()
             openDataWorkspace({ tab: 'details' })
           "
         >

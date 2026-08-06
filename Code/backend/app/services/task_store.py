@@ -138,6 +138,13 @@ class SQLiteTaskStore:
         connection = sqlite3.connect(self._db_path)
         connection.execute("PRAGMA journal_mode=WAL")
         connection.execute("PRAGMA synchronous=NORMAL")
+        # 与连接池保持一致：尝试加载 SpatiaLite（统一/降级/不抛）。
+        try:
+            from app.services import spatialite_loader
+
+            spatialite_loader.load_into(connection)
+        except Exception:
+            pass
         return connection
 
     def _ensure_column(

@@ -15,7 +15,7 @@ import type { NodeTemplate } from '../../services/workflow-definition-api'
 import type { ValidationIssue } from '../../composables/workflow-validator'
 
 const RIGHT_MIN = 200
-const RIGHT_MAX = 480
+const RIGHT_MAX = 560
 const RIGHT_DEFAULT = 256
 const STORAGE_KEY_W = 'wf-editor-right-width'
 const STORAGE_KEY_H = 'wf-editor-inspector-height'
@@ -141,7 +141,7 @@ function toggleCollapsed() {
       v-if="!collapsed"
       class="wf-sidebar-resizer right"
       :class="{ active: resizingWidth }"
-      title="拖动调整右侧面板宽度"
+      title="拖拽调整右侧面板宽度"
       @mousedown="startWidthResize"
     />
     <button
@@ -210,7 +210,7 @@ function toggleCollapsed() {
   border-radius: 0.32rem;
   background: rgba(12, 24, 42, 0.88);
   color: #8aa8bf;
-  font-size: 0.5rem;
+  font-size: 0.62rem;
   cursor: pointer;
   display: flex;
   align-items: center;

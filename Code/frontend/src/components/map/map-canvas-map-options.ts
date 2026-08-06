@@ -26,7 +26,7 @@ export function createMapCanvasMapOptions(options: CreateMapCanvasMapOptionsOpti
     refreshExpiredTiles: false,
     canvasContextAttributes: {
       // preserveDrawingBuffer=false（默认）：不回读 framebuffer，大幅提升与 Canvas 2D 叠加层的合成性能
-      // 截图改用 captureMapCanvas() 在 render() 后同步读取
+      // 截图：captureMapCanvas() 在 MapLibre `render` 事件回调内同步 toDataURL（无公开 Map.render）
       preserveDrawingBuffer: false,
     },
   }

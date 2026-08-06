@@ -24,6 +24,7 @@ import type {
   WindParticleSyncOptions,
 } from './wind-particle-controller-contract'
 import type { WindGeoJSON } from './types'
+import { lonFrameFromViewportBounds } from './lon-frame'
 
 type MapInstance = import('maplibre-gl').Map
 
@@ -310,12 +311,13 @@ export class WindParticleWebGLOverlayController implements WindParticleControlle
         ? (overlayState.geojsonData as WindGeoJSON)
         : null
 
-    // 视口切换后 merge 为空：清掉 WebGL 粒子，避免旧视口残留
+    // 视口切换后 merge 可能短暂为空。保留当前 WebGL 粒子和最后一份 GeoJSON，
+    // 等新瓦片到达后就地更新，避免缩放瞬态触发 destroy/recreate 闪空。
+    // 真正关闭/删除图层时由 reset()/removeCatalogArtifacts() 显式清理。
     if (!inlineGeojson && !overlayState.geojsonUrl) {
-      this.destroyWebGLLayerAndAuxiliaries()
-      this.currentWindGeojson = null
-      this.lastWindGeojsonUrl = null
-      removeWeatherMapArtifacts(this.map, catalogId)
+      if (this.currentWindGeojson || this.webglLayer) {
+        debugLog('WindParticleWebGL', 'transient empty viewport data; keep last wind frame')
+      }
       return
     }
 
@@ -382,7 +384,7 @@ export class WindParticleWebGLOverlayController implements WindParticleControlle
 
     const enableBarbLayer = overlayState.renderHint.paint_mode === 'barb'
 
-    // 冗余更新短路：数据未变且各层就绪时跳过（粒子模式不叠风速底色）
+    // 冗余更新短路：GeoJSON URL 未变时仍刷新 LonFrame（日界线视口弧随平移变化）
     if (
       !urlChanged &&
       !inlineGeojson &&
@@ -390,6 +392,10 @@ export class WindParticleWebGLOverlayController implements WindParticleControlle
       this.windContourLayer &&
       (!enableBarbLayer || this.windBarbLayer)
     ) {
+      this.webglLayer.setWindData(
+        geojson,
+        lonFrameFromViewportBounds(overlayState.viewportBounds ?? null, this.map.getCenter().lng),
+      )
       return
     }
 
@@ -413,7 +419,10 @@ export class WindParticleWebGLOverlayController implements WindParticleControlle
       await this.ensureCanvasFallback('gl-failure').sync(overlayState, options)
       return
     }
-    layer.setWindData(geojson)
+    layer.setWindData(
+      geojson,
+      lonFrameFromViewportBounds(overlayState.viewportBounds ?? null, this.map.getCenter().lng),
+    )
     layer.setAnimationPaused(this.animationPaused)
     layer.start()
     if (!layer.isUsable()) {

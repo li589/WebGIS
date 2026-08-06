@@ -20,6 +20,14 @@ export const NODE_FORM_SYSTEM_SETTINGS_MAP: NodeFormSystemSettingsEntry[] = [
     formFields: { local_dir: 'dataRoot' },
   },
   {
+    nodeType: 'download/gldas_nc4_to_mat',
+    formFields: {
+      input_dir: 'dataRoot',
+      output_dir: 'dataRoot',
+      ancillary_mat: 'dataRoot',
+    },
+  },
+  {
     nodeType: 'download/nsidc_smap_download',
     formFields: { local_dir: 'dataRoot' },
   },

@@ -10,11 +10,12 @@ logger = logging.getLogger(__name__)
 try:
     from celery import Celery
     from celery.schedules import crontab
-    from celery.signals import task_failure
+    from celery.signals import task_failure, worker_ready
 except ImportError:  # pragma: no cover - optional dependency during bootstrap
     Celery = None
     crontab = None
     task_failure = None
+    worker_ready = None
 
 
 celery_available = Celery is not None
@@ -106,6 +107,25 @@ if celery_available:
                 task_id,
                 exception,
             )
+
+    # FastAPI registers weather providers in lifespan; Celery workers are a
+    # separate process and must bootstrap the same registry or weather DAG
+    # nodes fail with "provider is not registered" while /weather/tiles still works.
+    if worker_ready is not None:
+
+        @worker_ready.connect
+        def _on_worker_ready(**kwargs):  # type: ignore[no-untyped-def]
+            try:
+                from app.weatherengine.provider_registry import (
+                    register_default_providers,
+                )
+
+                register_default_providers()
+                logger.info("Weather providers registered in Celery worker")
+            except Exception:
+                logger.exception(
+                    "Failed to register weather providers in Celery worker"
+                )
 
     beat_schedule: dict[str, dict[str, Any]] = {}
     if settings.weather_schedule_enabled and crontab is not None:

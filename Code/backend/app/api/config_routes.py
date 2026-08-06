@@ -33,7 +33,9 @@
 - DELETE /config/remote-storage/{profile_id} — 删除 Profile
 - PUT /config/remote-storage/{profile_id}/toggle — 启用/禁用
 - POST /config/remote-storage/{profile_id}/test — 测试连通性
-- GET /config/data-source — 数据源配置
+- GET /config/data-source — 数据源配置（含生效/待重启数据根）
+- PUT /config/data-source/paths — 更新数据根/产物根（写 .env，需重启后端）
+- POST /config/service/restart — 调度重启 FastAPI+Worker+Beat
 - GET /config/about — 项目信息
 """
 
@@ -50,6 +52,7 @@ from shared.contracts.config_contracts import (
     ApiKeyHistoryItem,
     ApiKeyToggleRequest,
     ApiKeyUpdateRequest,
+    DataSourcePathsUpdateRequest,
     GeeAccountCreateRequest,
     GeeAccountToggleRequest,
     ReloadResultResponse,
@@ -59,6 +62,7 @@ from shared.contracts.config_contracts import (
     RemoteStorageTestResponse,
     RemoteStorageToggleRequest,
     RemoteStorageUpsertRequest,
+    ServiceRestartRequest,
     TestResultResponse,
     WeatherProviderPriorityRequest,
     WeatherProviderTestResponse,
@@ -556,6 +560,40 @@ async def clear_remote_storage_history(profile_id: str):
 async def get_data_source_config():
     """获取数据源配置（磁盘扫描放到线程池，避免阻塞事件循环）。"""
     return await anyio.to_thread.run_sync(config_service.get_data_source_config)
+
+
+@router.put(
+    "/data-source/paths",
+    dependencies=[Depends(require_write_access)],
+)
+async def update_data_source_paths(request: DataSourcePathsUpdateRequest):
+    """更新数据根 / 产物根（写入 .env；需重启 FastAPI+Worker+Beat 生效）。"""
+    try:
+        return await anyio.to_thread.run_sync(
+            config_service.update_data_source_paths,
+            request.data_root,
+            request.output_root,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.post(
+    "/service/restart",
+    status_code=202,
+    dependencies=[Depends(require_write_access)],
+)
+async def restart_backend_service(request: ServiceRestartRequest | None = None):
+    """调度重启 FastAPI + Celery Worker + Beat（不动 Docker / Vite）。"""
+    body = request or ServiceRestartRequest()
+    try:
+        return config_service.schedule_ui_backend_restart(body.components)
+    except PermissionError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except RuntimeError as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
 
 
 @router.get("/data-cache/overview")

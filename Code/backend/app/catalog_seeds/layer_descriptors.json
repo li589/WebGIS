@@ -45,12 +45,15 @@
     "default_data_access_sources": {
       "NDVI_16DAY_RASTER": [
         "NDVI_16DAY_RASTER",
-        "Ecological/Vegetation/NDVI/VIIRS_9km_tif"
+        "NDVI_VIIRS",
+        "Ecological_Vegetation/NDVI/NDVIday",
+        "Ecological_Vegetation/NDVI/VIIRS_9km_tif",
+        "Ecological_Vegetation/NDVI/VIIRS"
       ]
     },
-    "run_readiness_summary": "NDVI 基础数据就绪",
+    "run_readiness_summary": "NDVI 基础数据（按实盘 NDVIday/VIIRS 解析）",
     "run_readiness_notes": [
-      "数据源: I:/Geograph_DataSet/Ecological/Vegetation/NDVI/VIIRS_9km_tif (306 files)"
+      "数据源优先: Ecological_Vegetation/NDVI/NDVIday 或 VIIRS；预处理 GeoTIFF 目录 VIIRS_9km_tif 可选"
     ],
     "data_owner": "NOAA/NESDIS",
     "temporal_coverage": "2000-01 to 2025-06 (Monthly)",
@@ -102,13 +105,14 @@
     "default_task_type": "biomass_stat",
     "default_data_access_sources": {
       "AGB_30M_RASTER": [
-        "AGB_30M_RASTER",
-        "Ecological/Vegetation/Biomass/China_30m_AGB.tif"
+        "BIOMASS_ESACCI",
+        "Ecological_Vegetation/Biomass",
+        "Ecological_Vegetation/Biomass/ESACCI-BIOMASS-L4-AGB-MERGED-100m-2020-fv6.0.nc"
       ]
     },
-    "run_readiness_summary": "全国 30m AGB 生物量分布图层已就绪",
+    "run_readiness_summary": "全国生物量数据源已对齐 Ecological_Vegetation/Biomass",
     "run_readiness_notes": [
-      "数据源: I:/Geograph_DataSet/Ecological/Vegetation/Biomass/China_30m_AGB.tif"
+      "数据源: Ecological_Vegetation/Biomass (BIOMASS_ESACCI)"
     ],
     "data_owner": "CAS",
     "temporal_coverage": "2020 Baseline",
@@ -159,13 +163,15 @@
     "default_task_type": "landcover_stat",
     "default_data_access_sources": {
       "LANDCOVER_RASTER": [
-        "LANDCOVER_RASTER",
-        "Ecological/LandCover/MCD12Q1_IGBP_500m.tif"
+        "LANDCOVER_MODIS",
+        "LANDCOVER",
+        "Ecological_Vegetation/LandCover",
+        "Ecological_Vegetation/LandCover/MCD12Q1_2021.tif"
       ]
     },
-    "run_readiness_summary": "MODIS MCD12Q1 500m IGBP 土地覆盖数据已就绪",
+    "run_readiness_summary": "MODIS 土地覆盖数据源已对齐",
     "run_readiness_notes": [
-      "数据源: I:/Geograph_DataSet/Ecological/LandCover/MCD12Q1_IGBP_500m.tif"
+      "数据源: Ecological_Vegetation/LandCover (LANDCOVER_MODIS)"
     ],
     "data_owner": "NASA LP DAAC",
     "temporal_coverage": "2001 to 2022 (Annual)",
@@ -216,13 +222,14 @@
     "default_task_type": "landcover_stat",
     "default_data_access_sources": {
       "CLCD_30M_RASTER": [
-        "CLCD_30M_RASTER",
-        "Ecological/LandCover/CLCD_30m_Annual.tif"
+        "LANDCOVER_CLCD",
+        "Ecological_Vegetation/LandCover",
+        "Ecological_Vegetation/LandCover/CLCD_v01_1997.tif"
       ]
     },
-    "run_readiness_summary": "CLCD 30m 年度土地利用数据已就绪",
+    "run_readiness_summary": "CLCD 土地覆盖数据源已对齐",
     "run_readiness_notes": [
-      "数据源: I:/Geograph_DataSet/Ecological/LandCover/CLCD_30m_Annual.tif"
+      "数据源: Ecological_Vegetation/LandCover/CLCD_v01_1997.tif (LANDCOVER_CLCD)"
     ],
     "data_owner": "Wuhan University",
     "temporal_coverage": "1985 to 2022 (Annual)",
@@ -273,13 +280,13 @@
     "default_task_type": "hfp_stat",
     "default_data_access_sources": {
       "HFP_RASTER": [
-        "HFP_RASTER",
-        "Ecological/Anthropogenic/HFP_China_1km.tif"
+        "HUMAN_FOOTPRINT",
+        "Socio_Economic/HumanFootprint"
       ]
     },
-    "run_readiness_summary": "人类足迹指数 HFP 已就绪",
+    "run_readiness_summary": "人类足迹指数数据源已对齐",
     "run_readiness_notes": [
-      "数据源: I:/Geograph_DataSet/Ecological/Anthropogenic/HFP_China_1km.tif"
+      "数据源: Socio_Economic/HumanFootprint (HUMAN_FOOTPRINT)"
     ],
     "data_owner": "WCS / SEDAC",
     "temporal_coverage": "2020 Global HFP Release",
@@ -331,13 +338,14 @@
     "default_task_type": "dem_stat",
     "default_data_access_sources": {
       "DEM_RASTER": [
-        "DEM_RASTER",
-        "Geographic/Topography/ETOPO1_Ice_g_geotiff.tif"
+        "DEM_SRTM",
+        "Geological/DEM",
+        "Geological/DEM/ETOPO_2022"
       ]
     },
-    "run_readiness_summary": "ETOPO1 全球地形高程数据已就绪",
+    "run_readiness_summary": "ETOPO/DEM 数据源已对齐 Geological/DEM",
     "run_readiness_notes": [
-      "数据源: I:/Geograph_DataSet/Geographic/Topography/ETOPO1_Ice_g_geotiff.tif"
+      "数据源: Geological/DEM/ETOPO_2022 (DEM_SRTM)"
     ],
     "data_owner": "NOAA NCEI",
     "temporal_coverage": "Static Topography Baseline",
@@ -389,13 +397,14 @@
     "default_task_type": "dem_stat",
     "default_data_access_sources": {
       "GEBCO_RASTER": [
-        "GEBCO_RASTER",
-        "Geographic/Topography/GEBCO_2023_sub_ice_topo.tif"
+        "DEM_SRTM",
+        "Geological/DEM",
+        "Geological/DEM/GEBCO_2024.nc"
       ]
     },
-    "run_readiness_summary": "GEBCO 2023 15角秒地形高程数据已就绪",
+    "run_readiness_summary": "GEBCO DEM 数据源已对齐",
     "run_readiness_notes": [
-      "数据源: I:/Geograph_DataSet/Geographic/Topography/GEBCO_2023_sub_ice_topo.tif"
+      "数据源: Geological/DEM/GEBCO_2024.nc"
     ],
     "data_owner": "GEBCO Consortium",
     "temporal_coverage": "2023 Release",
@@ -448,13 +457,14 @@
     "default_task_type": "smap_daily",
     "default_data_access_sources": {
       "SMAP_L3_DEC2025": [
-        "SMAP_L3_DEC2025",
-        "Soil_Moisture/SMAP_202512"
+        "SMAP_L3",
+        "Soil_Moisture/SMAP",
+        "Soil_Moisture/SMAP_Origin_Data"
       ]
     },
-    "run_readiness_summary": "2025年12月 SMAP 土壤湿度时序数据已就绪(31 days)。",
+    "run_readiness_summary": "SMAP L3 时序数据源已对齐 Soil_Moisture/SMAP",
     "run_readiness_notes": [
-      "数据源: I:/Geograph_DataSet/Soil_Moisture/SMAP_202512/*.h5 (31 files)"
+      "数据源: Soil_Moisture/SMAP (SMAP_L3；当前盘上为 2023-01 样本集)"
     ],
     "data_owner": "Lab",
     "temporal_coverage": "2025-12-01 to 2025-12-31 (31 days)",
@@ -506,13 +516,14 @@
     "default_task_type": "sm_fusion",
     "default_data_access_sources": {
       "SM_FUSED_DEC2025": [
-        "SM_FUSED_DEC2025",
+        "daily_bundle_mat",
+        "Soil_Moisture/SMAP_Soil_VOD_SM",
         "Soil_Moisture/Fused_202512"
       ]
     },
-    "run_readiness_summary": "2025年12月多源融合土壤湿度网格已就绪。",
+    "run_readiness_summary": "多源融合土壤湿度按实盘 SMAP_Soil_VOD_SM 解析",
     "run_readiness_notes": [
-      "数据源: I:/Geograph_DataSet/Soil_Moisture/Fused_202512/*.tif (31 files)"
+      "数据源优先: Soil_Moisture/SMAP_Soil_VOD_SM（融合 SM/VOD mat）"
     ],
     "data_owner": "Lab",
     "temporal_coverage": "2025-12-01 to 2025-12-31 (31 days)"
@@ -532,7 +543,7 @@
     "supports_time": true,
     "is_realtime": false,
     "default_visible": false,
-    "status": "placeholder",
+    "status": "available",
     "time_granularity": "day",
     "default_time_offset": -1,
     "extent": {
@@ -564,15 +575,16 @@
     "default_data_access_sources": {
       "FY_MWRI_HDF": [
         "FY_MWRI_HDF",
-        "Soil_Moisture/FY3B",
+        "FY3D_DAILY_TB",
+        "FY3B_DAILY_TB",
         "Soil_Moisture/FY3D",
+        "Soil_Moisture/FY3B",
         "Soil_Moisture/FY_MWRI"
       ]
     },
-    "run_readiness_summary": "待下载 FY-3 MWRI 原始 HDF 数据后可运行。",
+    "run_readiness_summary": "待确认 FY MWRI 原始数据是否齐全",
     "run_readiness_notes": [
-      "数据源未就绪：FY_MWRI_HDF 候选路径均不存在（需下载 FY-3B/FY-3D MWRI HDF 轨道数据）。",
-      "建议放置路径：I:/Geograph_DataSet/Soil_Moisture/FY3B 或 FY3D。"
+      "数据源: Soil_Moisture/FY3B 或 FY3D（需原始 MWRI HDF/TB）"
     ]
   },
   {
@@ -590,7 +602,7 @@
     "supports_time": true,
     "is_realtime": false,
     "default_visible": false,
-    "status": "placeholder",
+    "status": "available",
     "time_granularity": "day",
     "default_time_offset": -1,
     "extent": {
@@ -621,13 +633,16 @@
     "default_task_type": "station_validation",
     "default_data_access_sources": {
       "STATION_OBS": [
-        "STATION_OBS",
-        "Soil_Moisture/Stations"
+        "ISMN_STATION",
+        "CASMOS_STATION",
+        "Station_Observation",
+        "Station_Observation/ISMN",
+        "Station_Observation/CASMOS"
       ]
     },
-    "run_readiness_summary": "待放置站点 CSV/NetCDF 数据后可用。",
+    "run_readiness_summary": "站点土壤湿度按 Station_Observation 解析",
     "run_readiness_notes": [
-      "数据源未就绪：STATION_OBS 路径不存在。"
+      "数据源: Station_Observation (ISMN/CASMOS)"
     ]
   },
   {
@@ -676,13 +691,14 @@
     "default_task_type": "lab_model",
     "default_data_access_sources": {
       "LAB_OUTPUT_RASTER": [
-        "LAB_OUTPUT_RASTER",
+        "INVERSION_OMEGA_SMAP",
+        "Inversion_Results/smap_avg",
         "Model_Outputs/Lab_Daily"
       ]
     },
-    "run_readiness_summary": "实验室自研模型产出就绪。",
+    "run_readiness_summary": "课题组模型产出按 Inversion_Results 解析",
     "run_readiness_notes": [
-      "数据源: I:/Geograph_DataSet/Model_Outputs/Lab_Daily"
+      "数据源优先: Inversion_Results/smap_avg"
     ],
     "data_owner": "Lab Team",
     "temporal_coverage": "2023-01 to Present"
@@ -733,13 +749,15 @@
     "default_task_type": "omega_inversion",
     "default_data_access_sources": {
       "OMEGA_OUTPUT_RASTER": [
-        "OMEGA_OUTPUT_RASTER",
-        "Model_Outputs/Omega_Daily"
+        "INVERSION_OMEGA_SMAP",
+        "omega_block_output",
+        "Inversion_Results/smap_avg",
+        "Inversion_Results/omega_block"
       ]
     },
-    "run_readiness_summary": "ω 算法反演网格产出就绪。",
+    "run_readiness_summary": "ω 反演产出按 Inversion_Results 解析",
     "run_readiness_notes": [
-      "数据源: I:/Geograph_DataSet/Model_Outputs/Omega_Daily"
+      "数据源: Inversion_Results/smap_avg 或 omega_block"
     ],
     "data_owner": "Lab Team",
     "temporal_coverage": "2023-01 to Present"
@@ -790,13 +808,13 @@
     "default_task_type": "omega_fy3d",
     "default_data_access_sources": {
       "OMEGA_FY_OUTPUT": [
-        "OMEGA_FY_OUTPUT",
-        "Model_Outputs/Omega_FY3D"
+        "INVERSION_OMEGA_FY",
+        "Inversion_Results/fy_avg"
       ]
     },
-    "run_readiness_summary": "ω FY-3D 算法反演产出就绪。",
+    "run_readiness_summary": "ω FY 产出按 Inversion_Results/fy_avg 解析",
     "run_readiness_notes": [
-      "数据源: I:/Geograph_DataSet/Model_Outputs/Omega_FY3D"
+      "数据源: Inversion_Results/fy_avg (INVERSION_OMEGA_FY)"
     ],
     "data_owner": "Lab Team",
     "temporal_coverage": "2023-01 to Present"
@@ -847,13 +865,14 @@
     "default_task_type": "omega_opt",
     "default_data_access_sources": {
       "OMEGA_DEC2025": [
-        "OMEGA_DEC2025",
-        "Model_Outputs/Omega_202512"
+        "Soil_Moisture/SMAP_Soil_VOD_SM",
+        "Model_Outputs/Omega_202512",
+        "Inversion_Results/omega_block"
       ]
     },
-    "run_readiness_summary": "2025年12月 ω 优化产出数据已就绪(31 days)。",
+    "run_readiness_summary": "ω 2025-12 产出按 SMAP_Soil_VOD_SM 解析",
     "run_readiness_notes": [
-      "数据源: I:/Geograph_DataSet/Model_Outputs/Omega_202512/*.tif (31 files)"
+      "数据源优先: Soil_Moisture/SMAP_Soil_VOD_SM（含 ω/VOD/SM）"
     ],
     "data_owner": "Lab Team",
     "temporal_coverage": "2025-12-01 to 2025-12-31 (31 days)"
@@ -904,13 +923,14 @@
     "default_task_type": "omega_avg_daily",
     "default_data_access_sources": {
       "OMEGA_AVG_DAILY": [
-        "OMEGA_AVG_DAILY",
+        "INVERSION_OMEGA_SMAP",
+        "Inversion_Results/smap_avg",
         "Model_Outputs/Omega_Avg_Daily"
       ]
     },
-    "run_readiness_summary": "ω 逐日均值反演图层已就绪。",
+    "run_readiness_summary": "ω 逐日均值按 Inversion_Results/smap_avg 解析",
     "run_readiness_notes": [
-      "数据源: I:/Geograph_DataSet/Model_Outputs/Omega_Avg_Daily"
+      "数据源: Inversion_Results/smap_avg"
     ],
     "data_owner": "Lab Team",
     "temporal_coverage": "2023-01 to Present"
@@ -963,19 +983,23 @@
     "default_task_type": "omega_sf_fenkuai",
     "default_data_access_sources": {
       "smap_folder": [
+        "smap_daily_mat",
         "Soil_Moisture/SMAP_Origin_Data"
       ],
       "anc_root": [
-        "Soil_Moisture/SMAP_Auxiliary_Data"
+        "ancillary_mat",
+        "Soil_Moisture/SMAP_Auxiliary_Data",
+        "SMAP_ancillary"
       ],
       "ndvi_clim_folder": [
-        "Ecological_Vegetation/NDVI/climatology"
+        "ndvi_clim_dir",
+        "Ecological_Vegetation/NDVI/climatology",
+        "SMAP_ancillary/NDVI_clim"
       ]
     },
-    "run_readiness_summary": "ω 分块反演输入数据源已就绪（SMAP/辅助/NDVI 气候态）。",
+    "run_readiness_summary": "ω 分块反演输入按实盘 Origin/Aux/NDVI_clim 解析",
     "run_readiness_notes": [
-      "输入: Soil_Moisture/SMAP_Origin_Data + SMAP_Auxiliary_Data + NDVI/climatology",
-      "产出目录由运行时写入 _runtime/python_provider/products/omega_sf_fenkuai"
+      "输入: SMAP_Origin_Data + SMAP_Auxiliary_Data + NDVI climatology"
     ],
     "data_owner": "Lab Team",
     "temporal_coverage": "2023-01 to Present"
@@ -1027,13 +1051,13 @@
     "default_task_type": "vod_daily",
     "default_data_access_sources": {
       "VOD_DEC2025": [
-        "VOD_DEC2025",
+        "Soil_Moisture/SMAP_Soil_VOD_SM",
         "Auxiliary/VOD_202512"
       ]
     },
-    "run_readiness_summary": "2025年12月 VOD 植被光学厚度数据已就绪(31 days)。",
+    "run_readiness_summary": "VOD 按 SMAP_Soil_VOD_SM 解析",
     "run_readiness_notes": [
-      "数据源: I:/Geograph_DataSet/Auxiliary/VOD_202512/*.tif (31 files)"
+      "数据源优先: Soil_Moisture/SMAP_Soil_VOD_SM"
     ],
     "data_owner": "Lab",
     "temporal_coverage": "2025-12-01 to 2025-12-31 (31 days)"
@@ -1085,13 +1109,17 @@
     "default_task_type": "sm_dca_sca",
     "default_data_access_sources": {
       "SOIL_DDCA": [
-        "SOIL_DDCA",
-        "Auxiliary/Soil_DDCA"
+        "DDCA_SM",
+        "DDCA_H_ANNUAL",
+        "daily_bundle_mat",
+        "Soil_Moisture/DDCA",
+        "Soil_Moisture/DDCA/SM",
+        "Soil_Moisture/DDCA/H"
       ]
     },
-    "run_readiness_summary": "DCA/SCA 校验土壤湿度数据集已就绪。",
+    "run_readiness_summary": "DDCA 校验数据按 Soil_Moisture/DDCA 解析",
     "run_readiness_notes": [
-      "数据源: I:/Geograph_DataSet/Auxiliary/Soil_DDCA"
+      "数据源: Soil_Moisture/DDCA"
     ],
     "data_owner": "Lab",
     "temporal_coverage": "2023-01 to Present"
@@ -1142,13 +1170,14 @@
     "default_task_type": "forest_ratio",
     "default_data_access_sources": {
       "FOREST_RATIO": [
-        "FOREST_RATIO",
-        "Auxiliary/Forest_Ratio_9km.tif"
+        "LANDSCAPE_METRICS",
+        "Inversion_Results",
+        "Inversion_Results/Forest_Ratio_9KM_2020.mat"
       ]
     },
-    "run_readiness_summary": "9km 森林覆盖率网格数据已就绪。",
+    "run_readiness_summary": "森林覆盖率按 Inversion_Results 解析",
     "run_readiness_notes": [
-      "数据源: I:/Geograph_DataSet/Auxiliary/Forest_Ratio_9km.tif"
+      "数据源: Inversion_Results/Forest_Ratio_9KM_2020.mat"
     ],
     "data_owner": "Lab",
     "temporal_coverage": "Static Auxiliary Baseline"
@@ -1200,12 +1229,13 @@
     "default_data_access_sources": {
       "LANDSCAPE_METRICS": [
         "LANDSCAPE_METRICS",
-        "Auxiliary/Landscape_Metrics_9km.tif"
+        "Inversion_Results",
+        "Inversion_Results/Landscape_Metrics_LandOnly_9KM_2020.mat"
       ]
     },
-    "run_readiness_summary": "9km 景观斑块指数数据已就绪。",
+    "run_readiness_summary": "景观斑块指数按 Inversion_Results 解析",
     "run_readiness_notes": [
-      "数据源: I:/Geograph_DataSet/Auxiliary/Landscape_Metrics_9km.tif"
+      "数据源: Inversion_Results/Landscape_Metrics_LandOnly_9KM_2020.mat"
     ],
     "data_owner": "Lab",
     "temporal_coverage": "Static Auxiliary Baseline"
@@ -1218,7 +1248,9 @@
     "category": "climate",
     "source_type": "algorithm_output",
     "render_type": "raster",
-    "supported_map_modes": ["2d"],
+    "supported_map_modes": [
+      "2d"
+    ],
     "supports_time": false,
     "is_realtime": false,
     "default_visible": false,
@@ -1232,13 +1264,21 @@
       "north": 59.0,
       "crs": "EPSG:4326"
     },
-    "style": { "palette": "brg", "unit_label": "AI", "opacity": 0.8 },
+    "style": {
+      "palette": "brg",
+      "unit_label": "AI",
+      "opacity": 0.8
+    },
     "capabilities": {
       "render_strategy": "workflow_map_layer",
       "data_domain": "climate",
       "paint_mode": "grid_fill"
     },
-    "tags": ["aridity", "climate", "frontend-aligned"],
+    "tags": [
+      "aridity",
+      "climate",
+      "frontend-aligned"
+    ],
     "engine": "overlay_registry",
     "run_readiness_summary": "干旱指数 AI 叠加层已注册",
     "temporal_coverage": "Static Climate Product"
@@ -1251,7 +1291,9 @@
     "category": "climate",
     "source_type": "algorithm_output",
     "render_type": "raster",
-    "supported_map_modes": ["2d"],
+    "supported_map_modes": [
+      "2d"
+    ],
     "supports_time": true,
     "is_realtime": false,
     "default_visible": false,
@@ -1265,13 +1307,22 @@
       "north": 90.0,
       "crs": "EPSG:4326"
     },
-    "style": { "palette": "blues", "unit_label": "mm/month", "opacity": 0.8 },
+    "style": {
+      "palette": "blues",
+      "unit_label": "mm/month",
+      "opacity": 0.8
+    },
     "capabilities": {
       "render_strategy": "workflow_map_layer",
       "data_domain": "climate",
       "paint_mode": "grid_fill"
     },
-    "tags": ["gpcp", "precipitation", "timeseries", "frontend-aligned"],
+    "tags": [
+      "gpcp",
+      "precipitation",
+      "timeseries",
+      "frontend-aligned"
+    ],
     "engine": "overlay_registry",
     "run_readiness_summary": "GPCP 月降水时间序列已注册",
     "temporal_coverage": "Monthly sample series"
@@ -1284,7 +1335,9 @@
     "category": "climate",
     "source_type": "algorithm_output",
     "render_type": "raster",
-    "supported_map_modes": ["2d"],
+    "supported_map_modes": [
+      "2d"
+    ],
     "supports_time": false,
     "is_realtime": false,
     "default_visible": false,
@@ -1298,13 +1351,21 @@
       "north": 59.0,
       "crs": "EPSG:4326"
     },
-    "style": { "palette": "YlGnBu", "unit_label": "mm", "opacity": 0.8 },
+    "style": {
+      "palette": "YlGnBu",
+      "unit_label": "mm",
+      "opacity": 0.8
+    },
     "capabilities": {
       "render_strategy": "workflow_map_layer",
       "data_domain": "climate",
       "paint_mode": "grid_fill"
     },
-    "tags": ["cmfd", "precipitation", "frontend-aligned"],
+    "tags": [
+      "cmfd",
+      "precipitation",
+      "frontend-aligned"
+    ],
     "engine": "overlay_registry",
     "run_readiness_summary": "CMFD 降水叠加层已注册",
     "temporal_coverage": "2002-01 sample"
@@ -1317,7 +1378,9 @@
     "category": "climate",
     "source_type": "algorithm_output",
     "render_type": "raster",
-    "supported_map_modes": ["2d"],
+    "supported_map_modes": [
+      "2d"
+    ],
     "supports_time": false,
     "is_realtime": false,
     "default_visible": false,
@@ -1331,13 +1394,22 @@
       "north": 59.0,
       "crs": "EPSG:4326"
     },
-    "style": { "palette": "YlOrRd", "unit_label": "events", "opacity": 0.8 },
+    "style": {
+      "palette": "YlOrRd",
+      "unit_label": "events",
+      "opacity": 0.8
+    },
     "capabilities": {
       "render_strategy": "workflow_map_layer",
       "data_domain": "climate",
       "paint_mode": "grid_fill"
     },
-    "tags": ["era5", "heatwave", "dwaa", "frontend-aligned"],
+    "tags": [
+      "era5",
+      "heatwave",
+      "dwaa",
+      "frontend-aligned"
+    ],
     "engine": "overlay_registry",
     "run_readiness_summary": "ERA5 白天热浪叠加层已注册",
     "temporal_coverage": "2020"
@@ -1350,7 +1422,9 @@
     "category": "climate",
     "source_type": "algorithm_output",
     "render_type": "raster",
-    "supported_map_modes": ["2d"],
+    "supported_map_modes": [
+      "2d"
+    ],
     "supports_time": false,
     "is_realtime": false,
     "default_visible": false,
@@ -1364,13 +1438,22 @@
       "north": 59.0,
       "crs": "EPSG:4326"
     },
-    "style": { "palette": "YlGnBu", "unit_label": "events", "opacity": 0.8 },
+    "style": {
+      "palette": "YlGnBu",
+      "unit_label": "events",
+      "opacity": 0.8
+    },
     "capabilities": {
       "render_strategy": "workflow_map_layer",
       "data_domain": "climate",
       "paint_mode": "grid_fill"
     },
-    "tags": ["era5", "heatwave", "wdaa", "frontend-aligned"],
+    "tags": [
+      "era5",
+      "heatwave",
+      "wdaa",
+      "frontend-aligned"
+    ],
     "engine": "overlay_registry",
     "run_readiness_summary": "ERA5 夜间热浪叠加层已注册",
     "temporal_coverage": "2020"
@@ -1383,7 +1466,9 @@
     "category": "climate",
     "source_type": "algorithm_output",
     "render_type": "raster",
-    "supported_map_modes": ["2d"],
+    "supported_map_modes": [
+      "2d"
+    ],
     "supports_time": false,
     "is_realtime": false,
     "default_visible": false,
@@ -1397,13 +1482,21 @@
       "north": 59.0,
       "crs": "EPSG:4326"
     },
-    "style": { "palette": "RdYlGn_r", "unit_label": "ppm", "opacity": 0.8 },
+    "style": {
+      "palette": "RdYlGn_r",
+      "unit_label": "ppm",
+      "opacity": 0.8
+    },
     "capabilities": {
       "render_strategy": "workflow_map_layer",
       "data_domain": "climate",
       "paint_mode": "grid_fill"
     },
-    "tags": ["co2", "gosat", "frontend-aligned"],
+    "tags": [
+      "co2",
+      "gosat",
+      "frontend-aligned"
+    ],
     "engine": "overlay_registry",
     "run_readiness_summary": "CO₂ 柱浓度叠加层已注册",
     "temporal_coverage": "Static Mean Product"

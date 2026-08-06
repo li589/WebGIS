@@ -32,6 +32,14 @@ def _parse_csv_env(name: str, default: str = "") -> list[str]:
     return [item.strip() for item in raw_value.split(",") if item.strip()]
 
 
+def _default_ui_restart_enabled() -> bool:
+    raw = os.getenv("BACKEND_UI_RESTART_ENABLED")
+    if raw is not None and str(raw).strip() != "":
+        return str(raw).strip().lower() in {"1", "true", "yes", "on"}
+    env = (os.getenv("BACKEND_ENV") or "production").lower()
+    return env in {"development", "dev"}
+
+
 @dataclass(frozen=True)
 class Settings:
     service_name: str = os.getenv(
@@ -243,6 +251,8 @@ class Settings:
     data_root: str = os.getenv("BACKEND_DATA_ROOT", "")
     # 产物输出根目录（算法产物的写入路径，必须通过环境变量配置）
     output_root: str = os.getenv("BACKEND_OUTPUT_ROOT", "")
+    # 前端设置页「重启后端」（FastAPI+Worker+Beat）；默认仅 development 开启
+    ui_restart_enabled: bool = _default_ui_restart_enabled()
 
     # ---- GEE 引擎配置 ----
     # 是否启用 GEE 引擎桥接（False 时 gee_bridge_service.supports 永远返回 False）
@@ -461,6 +471,21 @@ class Settings:
     node_stubs_visible: bool = os.getenv(
         "BACKEND_NODE_STUBS_VISIBLE", ""
     ).strip().lower() in {"1", "true", "yes", "on"}
+
+    # ---- SpatiaLite 空间扩展（mod_spatialite）----
+    # 总开关：False 时所有连接都不尝试加载（彻底禁用空间特性）。
+    # 默认 True：扩展不可用时 spatialite_loader.load_into 会 warn 并降级，
+    # state/metadata DB（workflow/api_keys/gee_credentials，高风险区）不受影响。
+    spatialite_enabled: bool = (
+        os.getenv("BACKEND_SPATIALITE_ENABLED", "true").lower() == "true"
+    )
+    # 扩展文件路径覆盖（可选；空=自动探测）。
+    spatialite_path: str = os.getenv("BACKEND_SPATIALITE_PATH", "")
+    # 空间叠加层数据库路径（独立 SQLite 文件，与 workflow_state 分离；删除即回滚）。
+    spatialite_db_path: str = os.getenv(
+        "BACKEND_SPATIALITE_DB_PATH",
+        str(BACKEND_ROOT / ".data" / "spatial.sqlite"),
+    )
 
 
 settings = Settings()

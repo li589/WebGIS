@@ -61,14 +61,6 @@
   "links": [
     {
       "0": 1,
-      "1": 1,
-      "2": 0,
-      "3": 2,
-      "4": 2,
-      "5": "data"
-    },
-    {
-      "0": 2,
       "1": 2,
       "2": 0,
       "3": 3,
@@ -78,6 +70,6 @@
   ],
   "extra": {
     "purpose": "weather_editor_demo",
-    "notes": "地图热路径请用瓦片；本种子验证编辑器 compile→weather_request。"
+    "notes": "地图热路径请用瓦片；本种子验证编辑器 compile→weather_request。grid_fetch→temperature_render.grid_data；注入 time_range/bbox 后 grid_data 为 slot 2。forecast_fetch 保留作编辑器演示节点。"
   }
 }

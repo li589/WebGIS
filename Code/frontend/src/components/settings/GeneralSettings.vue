@@ -27,6 +27,9 @@ const readonlyItems = computed(() => {
   ]
 })
 
+const dataRootHint =
+  '数据根 / 产物根请在「数据源」页修改并「保存并重启后端」；此处仅显示当前进程生效值。'
+
 // ── 可编辑运行时参数（热更新） ──────────────────────────────────────────────
 const LOG_LEVELS = ['DEBUG', 'INFO', 'WARNING', 'ERROR'] as const
 const EXECUTORS = ['celery', 'sync'] as const
@@ -344,6 +347,7 @@ const restartParams = computed(() => {
     <!-- 系统信息 -->
     <section class="settings-section">
       <h3 class="section-title">系统信息</h3>
+      <p class="section-hint">{{ dataRootHint }}</p>
       <div class="info-grid">
         <div v-for="item in readonlyItems" :key="item.label" class="info-row">
           <span class="info-label">{{ item.label }}</span>

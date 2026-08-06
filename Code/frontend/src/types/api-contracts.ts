@@ -68,6 +68,8 @@ export interface paths {
          *
          *     对于时间序列图层，可通过 `?time=YYYYMMDD` 指定时间标签；
          *     未指定时使用 default_time。
+         *
+         *     有可读源且传入 palette/min/max/nodata 时动态重着色；否则返回烘焙 PNG。
          */
         get: operations["get_overlay_preview_overlay_preview__layer_id__get"];
         put?: never;
@@ -130,6 +132,35 @@ export interface paths {
          * @description 列出所有已注册的叠加图层 ID（供前端发现可用 overlay 图层）。
          */
         get: operations["list_overlays_overlays_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/overlays/intersect": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Overlays In Viewport
+         * @description 返回与视口相交的 overlay layer_ids（服务端空间索引查询）。
+         *
+         *     优先用 spatial.sqlite + R*Tree（``ST_Intersects``）；扩展不可用或表空时
+         *     回退到逐层读 ``bounds.json`` 做 AABB 相交（与原前端 O(N) 过滤等价）。
+         *     空间库就绪时即使零命中也信任结果，不再误扫 bounds.json。
+         *
+         *     跨日界线约定：前端对跨日界线视口传 ``east > 180``（unwrap），与
+         *     ``overlay_safe_wgs84_bounds`` 一致。
+         *
+         *     回退路径无 zoom 元资料时不过滤（bounds.json / registry 目前无 min/maxzoom）。
+         */
+        get: operations["get_overlays_in_viewport_overlays_intersect_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -2367,6 +2398,46 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/config/data-source/paths": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Update Data Source Paths
+         * @description 更新数据根 / 产物根（写入 .env；需重启 FastAPI+Worker+Beat 生效）。
+         */
+        put: operations["update_data_source_paths_config_data_source_paths_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/config/service/restart": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Restart Backend Service
+         * @description 调度重启 FastAPI + Celery Worker + Beat（不动 Docker / Vite）。
+         */
+        post: operations["restart_backend_service_config_service_restart_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/config/data-cache/overview": {
         parameters: {
             query?: never;
@@ -2521,6 +2592,10 @@ export interface paths {
         /**
          * List Node Templates
          * @description 获取所有可用的节点模板，供前端节点面板展示。
+         *
+         *     P0-10：未实现执行器的占位节点（executable=False 的 stub）在 production 默认
+         *     从面板隐藏（避免面板承诺未实现功能），development 或显式设
+         *     BACKEND_NODE_STUBS_VISIBLE=true 时可见（供开发中联调）。
          */
         get: operations["list_node_templates_workflow_definitions_node_templates_get"];
         put?: never;
@@ -3260,6 +3335,75 @@ export interface components {
             errors: number;
         };
         /**
+         * ChartSeriesSpec
+         * @description One named series inside a ChartSpec.
+         */
+        ChartSeriesSpec: {
+            /**
+             * Name
+             * @default series
+             */
+            name: string;
+            /** X */
+            x?: (number | string)[];
+            /** Y */
+            y?: (number | null)[];
+        };
+        /**
+         * ChartSpec
+         * @description Structured chart payload for ``ResultKind.chart`` inline_data.
+         *
+         *     Compatible with the legacy demo shape ``{chart_type, x, y, series_name}``:
+         *     when ``series`` is empty, consumers may fall back to top-level ``x``/``y``.
+         */
+        ChartSpec: {
+            /**
+             * Schema Version
+             * @default 1
+             */
+            schema_version: string;
+            /** @default line */
+            chart_type: components["schemas"]["ChartType"];
+            /**
+             * Title
+             * @default Chart
+             */
+            title: string;
+            /**
+             * X Label
+             * @default
+             */
+            x_label: string;
+            /**
+             * Y Label
+             * @default
+             */
+            y_label: string;
+            /**
+             * Unit
+             * @default
+             */
+            unit: string;
+            /** Series */
+            series?: components["schemas"]["ChartSeriesSpec"][];
+            /** X */
+            x?: (number | string)[];
+            /** Y */
+            y?: (number | null)[];
+            /** Series Name */
+            series_name?: string | null;
+            /** Bins */
+            bins?: number[] | null;
+            /** Categories */
+            categories?: string[] | null;
+        };
+        /**
+         * ChartType
+         * @description Generic analysis chart kinds (raster/vector agnostic).
+         * @enum {string}
+         */
+        ChartType: "line" | "bar" | "histogram" | "scatter" | "boxplot";
+        /**
          * CleanupStatsResponse
          * @description 当前清理统计（不执行清理）。
          */
@@ -3307,6 +3451,22 @@ export interface components {
              * @default 0
              */
             lat_offset: number;
+        };
+        /**
+         * DataSourcePathsUpdateRequest
+         * @description 更新地理数据根 / 产物根（写入 Code/backend/.env，需重启后端生效）。
+         */
+        DataSourcePathsUpdateRequest: {
+            /**
+             * Data Root
+             * @description 绝对路径且目录必须存在
+             */
+            data_root: string;
+            /**
+             * Output Root
+             * @description 可选；留空则默认为 {data_root}/ProjectOutput
+             */
+            output_root?: string | null;
         };
         /** DiagnosticsReport */
         DiagnosticsReport: {
@@ -4207,6 +4367,14 @@ export interface components {
          * @enum {string}
          */
         ServiceHealth: "ok" | "busy" | "degraded" | "offline";
+        /** ServiceRestartRequest */
+        ServiceRestartRequest: {
+            /**
+             * Components
+             * @description 默认 fastapi+worker+beat；不允许 docker/frontend
+             */
+            components?: string[] | null;
+        };
         /** SpatialFilter */
         SpatialFilter: {
             /**
@@ -4226,6 +4394,34 @@ export interface components {
             backend?: string | null;
             /** Base Path */
             base_path?: string | null;
+        };
+        /**
+         * TableSpec
+         * @description Structured table payload for ``ResultKind.table`` inline_data.
+         */
+        TableSpec: {
+            /**
+             * Schema Version
+             * @default 1
+             */
+            schema_version: string;
+            /**
+             * Title
+             * @default Table
+             */
+            title: string;
+            /** Columns */
+            columns?: string[];
+            /** Rows */
+            rows?: unknown[][];
+            /** Units */
+            units?: {
+                [key: string]: string;
+            };
+            /** Dtypes */
+            dtypes?: {
+                [key: string]: string;
+            };
         };
         /**
          * TaskLimit
@@ -4669,6 +4865,10 @@ export interface components {
             results?: {
                 [key: string]: string | null;
             };
+            /** Charts */
+            charts?: components["schemas"]["ChartSpec"][];
+            /** Tables */
+            tables?: components["schemas"]["TableSpec"][];
         };
         /**
          * WorkflowCommandType
@@ -5201,6 +5401,11 @@ export interface operations {
         parameters: {
             query?: {
                 time?: string | null;
+                palette?: string | null;
+                min_value?: number | null;
+                max_value?: number | null;
+                nodata_mode?: string | null;
+                nodata_color?: string | null;
             };
             header?: never;
             path: {
@@ -5234,6 +5439,11 @@ export interface operations {
         parameters: {
             query?: {
                 time?: string | null;
+                palette?: string | null;
+                min_value?: number | null;
+                max_value?: number | null;
+                nodata_mode?: string | null;
+                nodata_color?: string | null;
             };
             header?: never;
             path: {
@@ -5319,6 +5529,43 @@ export interface operations {
                     "application/json": {
                         [key: string]: unknown;
                     };
+                };
+            };
+        };
+    };
+    get_overlays_in_viewport_overlays_intersect_get: {
+        parameters: {
+            query: {
+                west: number;
+                south: number;
+                east: number;
+                north: number;
+                zoom?: number | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };
@@ -9439,6 +9686,76 @@ export interface operations {
             };
         };
     };
+    update_data_source_paths_config_data_source_paths_put: {
+        parameters: {
+            query?: never;
+            header?: {
+                "x-api-key"?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DataSourcePathsUpdateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    restart_backend_service_config_service_restart_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                "x-api-key"?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["ServiceRestartRequest"] | null;
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     get_data_cache_overview_config_data_cache_overview_get: {
         parameters: {
             query?: never;
@@ -10440,7 +10757,9 @@ export interface operations {
     list_servers_api_remote_servers_get: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                "x-api-key"?: string | null;
+            };
             path?: never;
             cookie?: never;
         };
@@ -10457,6 +10776,15 @@ export interface operations {
                     };
                 };
             };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
         };
     };
     list_remote_dir_api_remote_list_get: {
@@ -10467,7 +10795,9 @@ export interface operations {
                 /** @description 远程目录路径 */
                 path?: string;
             };
-            header?: never;
+            header?: {
+                "x-api-key"?: string | null;
+            };
             path?: never;
             cookie?: never;
         };
@@ -10501,7 +10831,9 @@ export interface operations {
                 /** @description 服务器名称: hpc / win11 / nas */
                 server: string;
             };
-            header?: never;
+            header?: {
+                "x-api-key"?: string | null;
+            };
             path?: never;
             cookie?: never;
         };
