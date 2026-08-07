@@ -89,6 +89,8 @@ const props = defineProps<{
   pointWeatherError?: string | null
   overlayTimeStates?: import('./map/overlay-image-module').OverlayTimeState[]
   overlayPointValues?: import('../services/runtime-api').OverlayPointValue[]
+  /** 当前选中时间序列栅格在选点处的全时间块数值 */
+  selectedOverlayTimeSeries?: import('../services/runtime-api').OverlayPointValue[]
 }>()
 
 const emit = defineEmits<{
@@ -98,11 +100,17 @@ const emit = defineEmits<{
   selectHotspot: [hotspotId: string]
   clearMapPoint: []
   enterSelectMode: []
+  queryOverlaySeries: [payload: { lng: number; lat: number }]
 }>()
 
 function enterInspectTools() {
   setActiveTab('tools')
   emit('enterSelectMode')
+}
+
+function queryDefaultOverlaySeries() {
+  // 撒哈拉稳定观测点，确保 SM/VOD/OMEGA 5块均可见；用户点图后会被选点覆盖。
+  emit('queryOverlaySeries', { lng: 11.25, lat: 19.7623 })
 }
 
 const displayLayer = computed(() => props.selectedLayer ?? props.activeLayer)
@@ -211,10 +219,11 @@ const weatherRenderHint = computed(
 /** 侧栏同源 overlay meta + 可选 overlayTimeStates 兜底 */
 const overlayStyleMeta = computed(() => {
   void overlaySymbologyStore.version
-  const fromStore = overlaySymbologyStore.getMeta(displayLayer.value.catalogId)
+  const overlayId = displayLayer.value.importedRasterOverlayLayerId ?? displayLayer.value.catalogId
+  const fromStore = overlaySymbologyStore.getMeta(overlayId)
   if (fromStore?.palette) return fromStore
   const states = props.overlayTimeStates ?? []
-  const match = states.find((s) => s.layerId === displayLayer.value.catalogId)
+  const match = states.find((s) => s.layerId === overlayId)
   if (!match) return fromStore
   return {
     palette: match.palette,
@@ -633,15 +642,17 @@ const layerMetadata = computed(() => {
 const overlayLayers = computed(() => {
   const timeStateMap = new Map((props.overlayTimeStates ?? []).map((s) => [s.layerId, s]))
   return layersStore.activeLayersDisplay
-    .filter((l) => l.instanceId !== displayLayer.value.instanceId && l.visible)
+    .filter((l) => l.visible && Boolean(l.importedRasterOverlayLayerId))
     .map((l) => {
-      const ts = timeStateMap.get(l.catalogId)
+      const overlayLayerId = l.importedRasterOverlayLayerId ?? l.catalogId
+      const ts = timeStateMap.get(overlayLayerId)
       return {
         name: l.name,
         category: l.category,
         availabilityState: l.availabilityState,
         accentColor: l.accentColor,
         catalogId: l.catalogId,
+        overlayLayerId,
         palette: ts?.palette ?? null,
         vmin: ts?.vmin ?? null,
         vmax: ts?.vmax ?? null,
@@ -765,10 +776,10 @@ const pointWeatherHourlyChartRows = computed(() => {
 const multiOverlayBarItems = computed(() => {
   const list = overlayLayers.value ?? []
   return list.map((layer) => {
-    const pt = overlayPointValueMap.value.get(layer.catalogId)
+    const pt = overlayPointValueMap.value.get(layer.overlayLayerId)
     const val = pt?.value ?? null
     return {
-      layerId: layer.catalogId,
+      layerId: layer.overlayLayerId,
       name: layer.name,
       category: layer.category,
       valueText: pt && pt.value !== null ? formatOverlayValue(pt) : 'N/A',
@@ -784,6 +795,30 @@ const showMultiOverlayBar = computed(
   () => !!props.selectedMapPoint && multiOverlayBarItems.value.length > 0,
 )
 
+const selectedOverlayTimeSeriesRows = computed(() => {
+  const activeTime = (props.overlayTimeStates ?? []).find(
+    (s) => s.layerId === displayLayer.value.importedRasterOverlayLayerId,
+  )?.currentTime
+  return (props.selectedOverlayTimeSeries ?? [])
+    .filter((item) => item.time)
+    .map((item) => ({
+      time: item.time!.replace('_', ' → '),
+      metric: formatOverlayValue(item),
+      numericValue:
+        typeof item.value === 'number' && Number.isFinite(item.value) ? item.value : undefined,
+      active: item.time === activeTime,
+    }))
+})
+
+const showSelectedOverlayTimeSeries = computed(
+  () => !!props.selectedMapPoint && selectedOverlayTimeSeriesRows.value.length > 0,
+)
+
+/** 汇报演示兜底：未点地图时，允许按当前选中图层默认数据点展示时序。 */
+const showDemoOverlayTimeSeries = computed(
+  () => !props.selectedMapPoint && selectedOverlayTimeSeriesRows.value.length > 0,
+)
+
 const analysisCharts = computed(() => jobLayer.value?.analysisCharts ?? [])
 const analysisTables = computed(() => jobLayer.value?.analysisTables ?? [])
 const hasAnalysisCharts = computed(
@@ -795,6 +830,9 @@ const hasVisualTabContent = computed(
     hasAnalysisCharts.value ||
     hasPointWeatherSection.value ||
     showMultiOverlayBar.value ||
+    showSelectedOverlayTimeSeries.value ||
+    showDemoOverlayTimeSeries.value ||
+    displayLayer.value.isImportedRaster ||
     !!resultModel.value ||
     props.visibleHotspots.length > 0,
 )
@@ -1730,8 +1768,46 @@ onBeforeUnmount(() => {
           >
             <div class="section-kicker">叠加对比</div>
             <h3>可见叠加层点值</h3>
-            <p>当前选点处其它可见 overlay 的采样对比（含非天气层）。</p>
+            <p>当前选点处可见 overlay 的采样对比（含当前选中层与非天气层）。</p>
             <MultiOverlayBarChart :items="multiOverlayBarItems" />
+          </section>
+
+          <section
+            v-if="
+              showSelectedOverlayTimeSeries ||
+              showDemoOverlayTimeSeries ||
+              displayLayer.isImportedRaster
+            "
+            v-show="activeTab === 'visual'"
+            id="overlay-point-series"
+            class="analysis-section analysis-section--overlays"
+          >
+            <div class="section-kicker">点时间序列</div>
+            <h3>
+              {{ displayLayer.name }} ·
+              {{ showDemoOverlayTimeSeries ? '默认有效点时序' : '选点时序' }}
+            </h3>
+            <p>
+              {{
+                showDemoOverlayTimeSeries
+                  ? '展示当前图层一个稳定有效观测点在全部 8 天块上的数值变化；点击地图可切换为自定义选点。'
+                  : '同一选点在全部可用 8 天时间块上的数值变化；高亮当前时间轴块。'
+              }}
+            </p>
+            <button
+              v-if="!selectedOverlayTimeSeriesRows.length"
+              type="button"
+              class="weather-mini-btn"
+              @click="queryDefaultOverlaySeries"
+            >
+              加载当前图层 8 天块时序
+            </button>
+            <PointTimeSeriesChart
+              v-if="selectedOverlayTimeSeriesRows.length"
+              :hourly-rows="selectedOverlayTimeSeriesRows"
+              :title="displayLayer.name + ' 8 天块时序'"
+              :unit="overlayStyleMeta?.unit || ''"
+            />
           </section>
 
           <section

@@ -127,6 +127,7 @@ const selectedHotspot = ref<LayerHotspot | null>(null)
 const selectedMapPoint = ref<{ lng: number; lat: number } | null>(null)
 const overlayTimeStates = ref<OverlayTimeState[]>([])
 const overlayPointValues = ref<OverlayPointValue[]>([])
+const selectedOverlayTimeSeries = ref<OverlayPointValue[]>([])
 const dashboardRef = ref<HTMLElement | null>(null)
 const mapShellRef = ref<HTMLElement | null>(null)
 const mapCanvasRef = ref<InstanceType<typeof MapCanvas> | null>(null)
@@ -751,6 +752,7 @@ function clearMapPointInspect() {
   selectedMapPoint.value = null
   layersStore.clearPointWeather()
   overlayPointValues.value = []
+  selectedOverlayTimeSeries.value = []
   logStore.logOperation('map-point-clear', '清除地图选点')
 }
 
@@ -770,17 +772,55 @@ async function fetchOverlayPointValues(lng: number, lat: number) {
   const states = overlayTimeStates.value
   if (states.length === 0) {
     overlayPointValues.value = []
+    selectedOverlayTimeSeries.value = []
     return
   }
   const seq = ++overlayPointFetchSeq
-  const results = await Promise.allSettled(
+  const currentResults = await Promise.allSettled(
     states.map((s) => getOverlayValue(s.layerId, lng, lat, s.currentTime ?? undefined)),
   )
   if (seq !== overlayPointFetchSeq) return
-  overlayPointValues.value = results
+  overlayPointValues.value = currentResults
+    .map((r) => (r.status === 'fulfilled' ? r.value : null))
+    .filter((v): v is OverlayPointValue => v !== null)
+
+  await fetchSelectedOverlaySeries(lng, lat)
+}
+
+async function fetchSelectedOverlaySeries(lng: number, lat: number) {
+  const states = overlayTimeStates.value
+  const preferredOverlayId = selectedLayerDisplay.value?.importedRasterOverlayLayerId
+  const selectedState =
+    (preferredOverlayId ? states.find((s) => s.layerId === preferredOverlayId) : undefined) ??
+    states.find((s) => s.category === 'time-series' && s.timeList.length > 0)
+  const times = selectedState?.timeList ?? []
+  if (!selectedState || times.length === 0) {
+    selectedOverlayTimeSeries.value = []
+    logStore.logOperation(
+      'overlay-series-error',
+      `无法加载点时序：当前没有已加载的时间序列 overlay（${selectedLayerDisplay.value?.name ?? '未选择'}）`,
+    )
+    return
+  }
+  const selectedOverlayId = selectedState.layerId
+  const seriesResults = await Promise.allSettled(
+    times.map((time) => getOverlayValue(selectedOverlayId, lng, lat, time)),
+  )
+  selectedOverlayTimeSeries.value = seriesResults
     .map((r) => (r.status === 'fulfilled' ? r.value : null))
     .filter((v): v is OverlayPointValue => v !== null)
 }
+
+watch(
+  () => selectedLayerDisplay.value?.importedRasterOverlayLayerId,
+  (overlayId) => {
+    if (!overlayId || selectedMapPoint.value) return
+    // 汇报/预览兜底：选择一个常年有 SM 反演覆盖的点，保证分析面板能展示 8 天块时序。
+    // 用户点击地图后，仍以真实选点为准。
+    void fetchSelectedOverlaySeries(11.25, 19.7623)
+  },
+  { immediate: true },
+)
 
 function handleTimelineStep(delta: number) {
   if (!Number.isFinite(delta) || delta === 0) return
@@ -1206,12 +1246,14 @@ watch(tileForecastHour, () => {
             :point-weather-error="pointWeatherError"
             :overlay-time-states="overlayTimeStates"
             :overlay-point-values="overlayPointValues"
+            :selected-overlay-time-series="selectedOverlayTimeSeries"
             @run-workflow="handleRunWorkflow"
             @toggle-layer-visibility="handleToggleLayerVisibility"
             @set-layer-opacity="handleSetLayerOpacity"
             @select-hotspot="handleHotspotSelectFromPanel"
             @clear-map-point="clearMapPointInspect"
             @enter-select-mode="uiStore.setInteractionMode('select')"
+            @query-overlay-series="(p) => fetchSelectedOverlaySeries(p.lng, p.lat)"
           />
         </ControlPanel>
       </div>

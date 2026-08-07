@@ -944,6 +944,7 @@ export const useLayersStore = defineStore('layers', () => {
             opacity: layer.opacity,
             order: layer.order,
             dataState: 'imported',
+            importedRasterOverlayLayerId: payload.overlayLayerId,
             importedRasterBounds: payload.bounds,
             importedBounds: payload.bounds,
             importedRasterSourceCrs: payload.sourceCrs,
@@ -1022,6 +1023,8 @@ export const useLayersStore = defineStore('layers', () => {
           }
         }
 
+        const rasterPayload = layer.importedRaster as
+          import('./imported-raster').ImportedRasterPayload | undefined
         return {
           instanceId: layer.instanceId,
           catalogId: layer.catalogId,
@@ -1090,12 +1093,24 @@ export const useLayersStore = defineStore('layers', () => {
           hotspots: layer.isAdminBoundary ? [] : (realDisplay.hotspots ?? []),
           isAdminBoundary: layer.isAdminBoundary,
           isImported: false,
-          isImportedRaster: false,
+          isImportedRaster: Boolean(layer.importedRaster),
           jobLayer: layer.jobLayer,
           visible: layer.visible,
           opacity: layer.opacity,
           order: layer.order,
           dataState: layer.dataState,
+          importedRasterOverlayLayerId: rasterPayload?.overlayLayerId,
+          importedRasterBounds: rasterPayload?.bounds,
+          importedBounds: rasterPayload?.bounds,
+          importedRasterSourceCrs: rasterPayload?.sourceCrs,
+          importedRasterNativeStep:
+            typeof rasterPayload?.nativeStep === 'string'
+              ? rasterPayload.nativeStep
+              : rasterPayload?.nativeStep
+                ? `${rasterPayload.nativeStep.value}${rasterPayload.nativeStep.unit === 'hour' ? 'h' : rasterPayload.nativeStep.unit === 'day' ? 'd' : rasterPayload.nativeStep.unit === 'month' ? 'm' : 'yr'}`
+                : undefined,
+          importedRasterEffectiveTime: rasterPayload?.effectiveTimeLabel,
+          importedRasterTimeCount: rasterPayload?.timeList?.length ?? 0,
           paletteOverride: layer.paletteOverride ?? null,
           vminOverride: layer.vminOverride ?? null,
           vmaxOverride: layer.vmaxOverride ?? null,

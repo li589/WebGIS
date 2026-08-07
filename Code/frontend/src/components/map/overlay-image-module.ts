@@ -814,7 +814,18 @@ export function createOverlayImageModule(
     if (loaded.category !== 'time-series') return
 
     const timedBounds = await _fetchTimedBounds(layerId, time)
-    if (timedBounds) loaded.bounds = timedBounds
+    if (!timedBounds) {
+      // 时间块被服务端过滤/重建后，旧标签可能不再可用。自动切回当前可用默认块，
+      // 避免时间轴从6块收敛为5块后图层因 404 消失。
+      const state = overlayTimeStates.value.find((s) => s.layerId === layerId)
+      const fallback =
+        state?.timeList?.find((t) => t === state.currentTime) ?? state?.timeList?.at(-1)
+      if (fallback && fallback !== time) {
+        await setOverlayTime(layerId, fallback)
+      }
+      return
+    }
+    loaded.bounds = timedBounds
 
     if (loaded.renderMode === 'raster-xyz' && loaded.tileUrlTemplate) {
       // Rebuild raster source so MapLibre refetches tiles for the new time

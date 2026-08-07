@@ -30,11 +30,48 @@ def test_list_block_mats_time_window(tmp_path: Path) -> None:
         "20260101_20260108.mat",
     ):
         (tmp_path / name).write_bytes(b"x")
-    labels = [t for t, _ in list_block_mats(tmp_path, time_start="20251201", time_end="20251231")]
+    labels = [
+        t
+        for t, _ in list_block_mats(
+            tmp_path, time_start="20251201", time_end="20251231"
+        )
+    ]
     assert labels == ["20251125_20251202", "20251203_20251210"]
 
 
-def test_upsert_refreshes_when_mat_newer(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_list_block_mats_canonical_viirs8_rejects_stale_partial_block(
+    tmp_path: Path,
+) -> None:
+    for name in (
+        "20251125_20251202.mat",
+        "20251203_20251210.mat",
+        "20251211_20251218.mat",
+        "20251219_20251220.mat",  # stale partial-window artifact
+        "20251219_20251226.mat",
+        "20251227_20251231.mat",  # canonical year-end truncated block
+    ):
+        (tmp_path / name).write_bytes(b"x")
+    labels = [
+        t
+        for t, _ in list_block_mats(
+            tmp_path,
+            time_start="20251201",
+            time_end="20251231",
+            canonical_viirs8_only=True,
+        )
+    ]
+    assert labels == [
+        "20251125_20251202",
+        "20251203_20251210",
+        "20251211_20251218",
+        "20251219_20251226",
+        "20251227_20251231",
+    ]
+
+
+def test_upsert_refreshes_when_mat_newer(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     imports = tmp_path / "imports"
     imports.mkdir()
     monkeypatch.setattr(

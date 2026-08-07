@@ -315,6 +315,10 @@ def materialize_workflow_map_layers(run_id: str) -> dict:
             result_dto=result_dto,
             time_start=time_start,
             time_end=time_end,
+            canonical_viirs8_only=(
+                run_status.status == "succeeded"
+                and "omega-sf-fenkuai" in str(run_status.layer_id or "")
+            ),
         )
         for ref in refs:
             assets = (ref.inline_data or {}).get("layer_assets") or {}
@@ -386,6 +390,10 @@ def materialize_workflow_map_layers(run_id: str) -> dict:
                             native_step="8d",
                             time_start=time_start,
                             time_end=time_end,
+                            canonical_viirs8_only=(
+                                run_status.status == "succeeded"
+                                and "omega-sf-fenkuai" in str(run_status.layer_id or "")
+                            ),
                         )
                     except Exception:
                         continue

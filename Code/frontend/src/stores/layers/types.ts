@@ -357,6 +357,8 @@ export interface ActiveLayerDisplay {
   importedFeatureCount?: number
   /** 导入矢量的后端 layer_id（用于 /export/layer） */
   importedVectorBackendLayerId?: string
+  /** 导入栅格后端 overlay_layer_id（点查/时序查询使用） */
+  importedRasterOverlayLayerId?: string
   /** 导入栅格元信息（仅 isImportedRaster） */
   importedRasterBounds?: [number, number, number, number]
   /** 导入栅格源 CRS */

@@ -104,16 +104,40 @@ def resolve_block_timeseries_layer_id(run_id: str, label: str, variable_id: str)
     return layer_id
 
 
+def _is_canonical_viirs8_block(block_start: str, block_end: str) -> bool:
+    """Return whether a label is a canonical Jan-1 anchored VIIRS 8-day block.
+
+    The final block of a year is truncated at Dec 31. This intentionally rejects
+    stale partial-window artifacts such as ``20251219_20251220`` while accepting
+    ``20251227_20251231``.
+    """
+    try:
+        from datetime import datetime, timedelta
+
+        start = datetime.strptime(block_start, "%Y%m%d")
+        end = datetime.strptime(block_end, "%Y%m%d")
+    except ValueError:
+        return False
+    if (start.timetuple().tm_yday - 1) % 8 != 0:
+        return False
+    year_end = datetime(start.year, 12, 31)
+    expected_end = min(start + timedelta(days=7), year_end)
+    return end == expected_end
+
+
 def list_block_mats(
     block_dir: Path,
     *,
     time_start: str | None = None,
     time_end: str | None = None,
+    canonical_viirs8_only: bool = False,
 ) -> list[tuple[str, Path]]:
     """Return sorted (time_label, path) for YYYYMMDD_YYYYMMDD.mat files.
 
     Optional ``time_start`` / ``time_end`` are ``YYYYMMDD`` inclusive filters
     against the block's own start/end dates (overlap with the window).
+    ``canonical_viirs8_only`` rejects stale shortened blocks from older partial
+    runs; use it for completed Omega-SF run publication, not progressive running.
     """
     if not block_dir.is_dir():
         return []
@@ -127,6 +151,10 @@ def list_block_mats(
         if not m:
             continue
         block_start, block_end = m.group(1), m.group(2)
+        if canonical_viirs8_only and not _is_canonical_viirs8_block(
+            block_start, block_end
+        ):
+            continue
         if start and block_end < start:
             continue
         if end and block_start > end:
@@ -163,6 +191,7 @@ def upsert_block_dir_timeseries(
     native_step: str = "8d",
     time_start: str | None = None,
     time_end: str | None = None,
+    canonical_viirs8_only: bool = False,
     force: bool = False,
 ) -> dict[str, Any]:
     """Commit block mats under ``block_dir`` as one time-series overlay.
@@ -172,7 +201,12 @@ def upsert_block_dir_timeseries(
     Overlay id is stable per (run_id, label); OMEGA 与历史 OMEGA_BLOCK 目录兼容。
     """
     block_dir = Path(block_dir)
-    mats = list_block_mats(block_dir, time_start=time_start, time_end=time_end)
+    mats = list_block_mats(
+        block_dir,
+        time_start=time_start,
+        time_end=time_end,
+        canonical_viirs8_only=canonical_viirs8_only,
+    )
     if not mats:
         raise FileNotFoundError(f"块目录无 YYYYMMDD_YYYYMMDD.mat: {block_dir}")
 

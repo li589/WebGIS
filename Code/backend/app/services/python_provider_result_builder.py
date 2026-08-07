@@ -576,6 +576,7 @@ class PythonProviderResultBuilder:
         result_dto: dict[str, Any],
         time_start: str | None = None,
         time_end: str | None = None,
+        canonical_viirs8_only: bool = False,
     ) -> list[WorkflowResultReference]:
         """Commit mappable products as overlays and emit map_layer refs."""
         products = result_dto.get("products")
@@ -603,6 +604,7 @@ class PythonProviderResultBuilder:
                 index=idx,
                 time_start=time_start,
                 time_end=time_end,
+                canonical_viirs8_only=canonical_viirs8_only,
             )
             if ref is not None:
                 refs.append(ref)
@@ -618,6 +620,7 @@ class PythonProviderResultBuilder:
         index: int,
         time_start: str | None = None,
         time_end: str | None = None,
+        canonical_viirs8_only: bool = False,
     ) -> WorkflowResultReference | None:
         product_type = str(product.get("type") or "")
         config = _MAPPABLE_PRODUCTS.get(product_type)
@@ -653,6 +656,7 @@ class PythonProviderResultBuilder:
                     native_step="8d",
                     time_start=time_start,
                     time_end=time_end,
+                    canonical_viirs8_only=canonical_viirs8_only,
                 )
             except Exception:
                 logger.exception(

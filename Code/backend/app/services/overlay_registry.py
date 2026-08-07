@@ -20,6 +20,8 @@ from pathlib import Path
 from typing import Any
 
 import numpy as np
+import rasterio
+from pyproj import Transformer
 from fastapi import HTTPException
 
 # 引入 algorithms providers 目录以复用 universal_reader
@@ -197,6 +199,46 @@ class OverlaySpec:
             return None
         return self.source_path if self.source_path.exists() else None
 
+    def _sample_geotiff_projected(
+        self, src_path: Path, lng: float, lat: float
+    ) -> float | None:
+        """GeoTIFF 专用：按栅格自身投影采样。
+
+        UniversalDataReader 对部分 EASE-Grid GeoTIFF 返回 ``lat=None/lon=None``，
+        导致 FY/SMAP 8 天块点查恒为 null。这里直接用 rasterio 读取栅格 CRS，
+        将 WGS84 点位转换到栅格投影坐标，再最近邻采样。
+        """
+        with rasterio.open(src_path) as ds:
+            if ds.crs is None:
+                return None
+            # 自校准坐标轴：部分 EPSG 投影（如 6933）在 always_xy=True 下仍返回 (y,x)。
+            # 选择非中心、有限像元作为基准，比较直接输出与交换输出对像素中心的还原误差。
+            transformer = Transformer.from_crs("EPSG:4326", ds.crs, always_xy=True)
+            back = Transformer.from_crs(ds.crs, "EPSG:4326", always_xy=True)
+            row = min(max(ds.height // 3, 0), ds.height - 1)
+            col = min(max(ds.width // 3, 0), ds.width - 1)
+            tx0, ty0 = ds.transform * (col + 0.5, row + 0.5)
+            base_lng, base_lat = back.transform(tx0, ty0)
+            tx1, ty1 = transformer.transform(base_lng, base_lat)
+            direct_score = abs(tx1 - tx0) + abs(ty1 - ty0)
+            swapped_score = abs(tx1 - ty0) + abs(ty1 - tx0)
+            need_swap = swapped_score < direct_score
+            x, y = transformer.transform(lng, lat)
+            if need_swap:
+                x, y = y, x
+            arr = ds.read(1, masked=True)
+            try:
+                row, col = ds.index(x, y)
+            except Exception:
+                return None
+            if not (0 <= row < ds.height and 0 <= col < ds.width):
+                return None
+            val = arr[row, col]
+            if np.ma.is_masked(val):
+                return None
+            out = float(val)
+            return out if np.isfinite(out) else None
+
     def resolve_value(
         self, lng: float, lat: float, time: str | None = None
     ) -> dict[str, Any]:
@@ -218,6 +260,10 @@ class OverlaySpec:
         try:
             src_path = self.resolve_source_path(time)
             if src_path is None:
+                return result
+
+            if self.source_reader == "geotiff":
+                result["value"] = self._sample_geotiff_projected(src_path, lng, lat)
                 return result
 
             from data_access.universal_reader import UniversalDataReader
