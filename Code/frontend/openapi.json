@@ -8497,10 +8497,12 @@
           },
           "created_at": {
             "type": "string",
+            "format": "date-time",
             "title": "Created At"
           },
           "superseded_at": {
             "type": "string",
+            "format": "date-time",
             "title": "Superseded At"
           },
           "source": {
@@ -10863,10 +10865,12 @@
           },
           "created_at": {
             "type": "string",
+            "format": "date-time",
             "title": "Created At"
           },
           "superseded_at": {
             "type": "string",
+            "format": "date-time",
             "title": "Superseded At"
           },
           "source": {
@@ -10919,6 +10923,7 @@
           },
           "tested_at": {
             "type": "string",
+            "format": "date-time",
             "title": "Tested At"
           }
         },
@@ -12543,6 +12548,7 @@
           },
           "tested_at": {
             "type": "string",
+            "format": "date-time",
             "title": "Tested At"
           }
         },

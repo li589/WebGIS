@@ -19,6 +19,18 @@
 - 当前先用 `Pydantic` 模型作为协议单一事实来源
 - 后续可再导出 JSON Schema 或 TypeScript 类型
 
+## 命名例外白名单（N-3）
+
+`snake_case` 原则的正式例外：**气压层字段保留 `hPa` 大写后缀**，源自 Open-Meteo 原生命名，
+前后端已一致使用，改名将造成无谓的破坏性变更。以下 9 个字段为豁免项
+（`WeatherPointCurrent`，`api_contracts.py`）：
+
+- `wind_speed_850hPa` / `wind_direction_850hPa` / `temperature_850hPa`
+- `wind_speed_500hPa` / `wind_direction_500hPa` / `temperature_500hPa`
+- `wind_speed_200hPa` / `wind_direction_200hPa` / `temperature_200hPa`
+
+规则：新增气压层字段沿用同一命名模式（`<metric>_<level>hPa`）；其他字段仍严格 `snake_case`。
+
 ## 当前文件
 
 - `api_contracts.py`：当前共享协议的主要定义文件

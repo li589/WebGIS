@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from datetime import datetime
+
 from pydantic import BaseModel, Field
 
 
@@ -23,8 +25,8 @@ class ApiKeyHistoryItem(BaseModel):
     key_name: str
     masked_value: str
     label: str | None = None
-    created_at: str
-    superseded_at: str
+    created_at: datetime
+    superseded_at: datetime
     source: str
 
 
@@ -72,7 +74,7 @@ class WeatherProviderTestResponse(BaseModel):
     provider_id: str
     success: bool
     message: str
-    tested_at: str
+    tested_at: datetime
 
 
 class WeatherModelUpdateRequest(BaseModel):
@@ -110,7 +112,7 @@ class RemoteStorageTestResponse(BaseModel):
     profile_id: str
     success: bool
     message: str
-    tested_at: str
+    tested_at: datetime
 
 
 class RemoteStorageHistoryItem(BaseModel):
@@ -119,8 +121,8 @@ class RemoteStorageHistoryItem(BaseModel):
     masked_secret: str
     has_private_key: bool = False
     label: str | None = None
-    created_at: str
-    superseded_at: str
+    created_at: datetime
+    superseded_at: datetime
     source: str
 
 

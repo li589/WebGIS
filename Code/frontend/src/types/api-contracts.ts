@@ -203,7 +203,8 @@ export interface paths {
          * List Workflow Runs
          * @description 列出工作流 run。active_only=true（默认）仅返回非终态 run。
          *
-         *     供前端启动恢复与跨会话状态同步使用。
+         *     可选 status 过滤与 limit 取最近 N 条（按创建时间倒序），
+         *     供前端启动恢复（含"最近成功 run 产物自动恢复"）与跨会话状态同步使用。
          */
         get: operations["list_workflow_runs_workflow_runs_get"];
         put?: never;
@@ -3206,9 +3207,15 @@ export interface components {
             masked_value: string;
             /** Label */
             label?: string | null;
-            /** Created At */
+            /**
+             * Created At
+             * Format: date-time
+             */
             created_at: string;
-            /** Superseded At */
+            /**
+             * Superseded At
+             * Format: date-time
+             */
             superseded_at: string;
             /** Source */
             source: string;
@@ -4166,9 +4173,15 @@ export interface components {
             has_private_key: boolean;
             /** Label */
             label?: string | null;
-            /** Created At */
+            /**
+             * Created At
+             * Format: date-time
+             */
             created_at: string;
-            /** Superseded At */
+            /**
+             * Superseded At
+             * Format: date-time
+             */
             superseded_at: string;
             /** Source */
             source: string;
@@ -4189,7 +4202,10 @@ export interface components {
             success: boolean;
             /** Message */
             message: string;
-            /** Tested At */
+            /**
+             * Tested At
+             * Format: date-time
+             */
             tested_at: string;
         };
         /** RemoteStorageToggleRequest */
@@ -4768,7 +4784,10 @@ export interface components {
             success: boolean;
             /** Message */
             message: string;
-            /** Tested At */
+            /**
+             * Tested At
+             * Format: date-time
+             */
             tested_at: string;
         };
         /** WeatherProviderToggleRequest */
@@ -5611,6 +5630,10 @@ export interface operations {
         parameters: {
             query?: {
                 active_only?: boolean;
+                /** @description 按状态过滤，如 succeeded / failed / cancelled */
+                status?: string | null;
+                /** @description 取最近 N 条（按创建时间倒序） */
+                limit?: number | null;
             };
             header?: never;
             path?: never;
@@ -5641,9 +5664,7 @@ export interface operations {
     submit_workflow_workflow_runs_post: {
         parameters: {
             query?: never;
-            header?: {
-                "x-api-key"?: string | null;
-            };
+            header?: never;
             path?: never;
             cookie?: never;
         };
@@ -5772,9 +5793,7 @@ export interface operations {
     cancel_workflow_run_workflow_runs__run_id__cancel_post: {
         parameters: {
             query?: never;
-            header?: {
-                "x-api-key"?: string | null;
-            };
+            header?: never;
             path: {
                 run_id: string;
             };
@@ -5805,9 +5824,7 @@ export interface operations {
     retry_workflow_run_workflow_runs__run_id__retry_post: {
         parameters: {
             query?: never;
-            header?: {
-                "x-api-key"?: string | null;
-            };
+            header?: never;
             path: {
                 run_id: string;
             };
@@ -5838,9 +5855,7 @@ export interface operations {
     materialize_workflow_map_layers_workflow_runs__run_id__materialize_map_layers_post: {
         parameters: {
             query?: never;
-            header?: {
-                "x-api-key"?: string | null;
-            };
+            header?: never;
             path: {
                 run_id: string;
             };
@@ -5895,9 +5910,7 @@ export interface operations {
     update_runtime_config_runtime_config_patch: {
         parameters: {
             query?: never;
-            header?: {
-                "x-api-key"?: string | null;
-            };
+            header?: never;
             path?: never;
             cookie?: never;
         };
@@ -5983,9 +5996,7 @@ export interface operations {
     submit_frontend_command_frontend_commands_post: {
         parameters: {
             query?: never;
-            header?: {
-                "x-api-key"?: string | null;
-            };
+            header?: never;
             path?: never;
             cookie?: never;
         };
@@ -6069,9 +6080,7 @@ export interface operations {
     update_provider_api_config_runtime_api_config__provider__post: {
         parameters: {
             query?: never;
-            header?: {
-                "x-api-key"?: string | null;
-            };
+            header?: never;
             path: {
                 provider: string;
             };
@@ -6181,9 +6190,7 @@ export interface operations {
     clear_runtime_tile_cache_runtime_tiles_cache_clear_post: {
         parameters: {
             query?: never;
-            header?: {
-                "x-api-key"?: string | null;
-            };
+            header?: never;
             path?: never;
             cookie?: never;
         };
@@ -6198,15 +6205,6 @@ export interface operations {
                     "application/json": {
                         [key: string]: unknown;
                     };
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };
@@ -6742,9 +6740,7 @@ export interface operations {
     list_crs_options_import_crs_options_get: {
         parameters: {
             query?: never;
-            header?: {
-                "x-api-key"?: string | null;
-            };
+            header?: never;
             path?: never;
             cookie?: never;
         };
@@ -6759,15 +6755,6 @@ export interface operations {
                     "application/json": {
                         [key: string]: unknown;
                     };
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };
@@ -6775,9 +6762,7 @@ export interface operations {
     list_crs_options_expanded_import_crs_options_expanded_get: {
         parameters: {
             query?: never;
-            header?: {
-                "x-api-key"?: string | null;
-            };
+            header?: never;
             path?: never;
             cookie?: never;
         };
@@ -6794,23 +6779,12 @@ export interface operations {
                     };
                 };
             };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
         };
     };
     import_raster_import_raster_post: {
         parameters: {
             query?: never;
-            header?: {
-                "x-api-key"?: string | null;
-            };
+            header?: never;
             path?: never;
             cookie?: never;
         };
@@ -6845,9 +6819,7 @@ export interface operations {
     delete_imported_raster_import_raster__layer_id__delete: {
         parameters: {
             query?: never;
-            header?: {
-                "x-api-key"?: string | null;
-            };
+            header?: never;
             path: {
                 layer_id: string;
             };
@@ -6880,9 +6852,7 @@ export interface operations {
     confirm_imported_raster_import_raster_confirm_post: {
         parameters: {
             query?: never;
-            header?: {
-                "x-api-key"?: string | null;
-            };
+            header?: never;
             path?: never;
             cookie?: never;
         };
@@ -6917,9 +6887,7 @@ export interface operations {
     transform_point_endpoint_import_transform_point_post: {
         parameters: {
             query?: never;
-            header?: {
-                "x-api-key"?: string | null;
-            };
+            header?: never;
             path?: never;
             cookie?: never;
         };
@@ -6954,9 +6922,7 @@ export interface operations {
     transform_bounds_endpoint_import_transform_bounds_post: {
         parameters: {
             query?: never;
-            header?: {
-                "x-api-key"?: string | null;
-            };
+            header?: never;
             path?: never;
             cookie?: never;
         };
@@ -6991,9 +6957,7 @@ export interface operations {
     upload_init_import_upload_init_post: {
         parameters: {
             query?: never;
-            header?: {
-                "x-api-key"?: string | null;
-            };
+            header?: never;
             path?: never;
             cookie?: never;
         };
@@ -7028,9 +6992,7 @@ export interface operations {
     upload_resumable_init_import_upload_resumable_init_post: {
         parameters: {
             query?: never;
-            header?: {
-                "x-api-key"?: string | null;
-            };
+            header?: never;
             path?: never;
             cookie?: never;
         };
@@ -7065,9 +7027,7 @@ export interface operations {
     upload_status_import_upload__upload_id__status_get: {
         parameters: {
             query?: never;
-            header?: {
-                "x-api-key"?: string | null;
-            };
+            header?: never;
             path: {
                 upload_id: string;
             };
@@ -7100,9 +7060,7 @@ export interface operations {
     upload_chunk_import_upload__upload_id__chunk_post: {
         parameters: {
             query?: never;
-            header?: {
-                "x-api-key"?: string | null;
-            };
+            header?: never;
             path: {
                 upload_id: string;
             };
@@ -7139,9 +7097,7 @@ export interface operations {
     upload_chunk_indexed_import_upload__upload_id__chunk__chunk_index__post: {
         parameters: {
             query?: never;
-            header?: {
-                "x-api-key"?: string | null;
-            };
+            header?: never;
             path: {
                 upload_id: string;
                 chunk_index: number;
@@ -7179,9 +7135,7 @@ export interface operations {
     upload_complete_import_upload_complete_post: {
         parameters: {
             query?: never;
-            header?: {
-                "x-api-key"?: string | null;
-            };
+            header?: never;
             path?: never;
             cookie?: never;
         };
@@ -7216,9 +7170,7 @@ export interface operations {
     upload_resumable_complete_import_upload_resumable_complete_post: {
         parameters: {
             query?: never;
-            header?: {
-                "x-api-key"?: string | null;
-            };
+            header?: never;
             path?: never;
             cookie?: never;
         };
@@ -7253,9 +7205,7 @@ export interface operations {
     upload_discard_import_upload__upload_id__delete: {
         parameters: {
             query?: never;
-            header?: {
-                "x-api-key"?: string | null;
-            };
+            header?: never;
             path: {
                 upload_id: string;
             };
@@ -7290,9 +7240,7 @@ export interface operations {
             query?: {
                 limit?: number;
             };
-            header?: {
-                "x-api-key"?: string | null;
-            };
+            header?: never;
             path?: never;
             cookie?: never;
         };
@@ -7323,9 +7271,7 @@ export interface operations {
     import_job_status_import_jobs__job_id__get: {
         parameters: {
             query?: never;
-            header?: {
-                "x-api-key"?: string | null;
-            };
+            header?: never;
             path: {
                 job_id: string;
             };
@@ -7358,9 +7304,7 @@ export interface operations {
     import_job_cancel_import_jobs__job_id__cancel_post: {
         parameters: {
             query?: never;
-            header?: {
-                "x-api-key"?: string | null;
-            };
+            header?: never;
             path: {
                 job_id: string;
             };
@@ -7393,9 +7337,7 @@ export interface operations {
     import_job_download_import_jobs__job_id__download_get: {
         parameters: {
             query?: never;
-            header?: {
-                "x-api-key"?: string | null;
-            };
+            header?: never;
             path: {
                 job_id: string;
             };
@@ -7426,9 +7368,7 @@ export interface operations {
     import_batch_import_batch_post: {
         parameters: {
             query?: never;
-            header?: {
-                "x-api-key"?: string | null;
-            };
+            header?: never;
             path?: never;
             cookie?: never;
         };
@@ -7463,9 +7403,7 @@ export interface operations {
     import_vector_import_vector_post: {
         parameters: {
             query?: never;
-            header?: {
-                "x-api-key"?: string | null;
-            };
+            header?: never;
             path?: never;
             cookie?: never;
         };
@@ -7500,9 +7438,7 @@ export interface operations {
     import_vector_multipart_import_vector_multipart_post: {
         parameters: {
             query?: never;
-            header?: {
-                "x-api-key"?: string | null;
-            };
+            header?: never;
             path?: never;
             cookie?: never;
         };
@@ -7537,9 +7473,7 @@ export interface operations {
     vector_meta_import_layers__layer_id__meta_get: {
         parameters: {
             query?: never;
-            header?: {
-                "x-api-key"?: string | null;
-            };
+            header?: never;
             path: {
                 layer_id: string;
             };
@@ -7574,9 +7508,7 @@ export interface operations {
             query?: {
                 preview?: boolean;
             };
-            header?: {
-                "x-api-key"?: string | null;
-            };
+            header?: never;
             path: {
                 layer_id: string;
             };
@@ -7616,9 +7548,7 @@ export interface operations {
                 sort?: string | null;
                 where?: string | null;
             };
-            header?: {
-                "x-api-key"?: string | null;
-            };
+            header?: never;
             path: {
                 layer_id: string;
             };
@@ -7651,9 +7581,7 @@ export interface operations {
     vector_feature_patch_import_layers__layer_id__features__feature_index__patch: {
         parameters: {
             query?: never;
-            header?: {
-                "x-api-key"?: string | null;
-            };
+            header?: never;
             path: {
                 layer_id: string;
                 feature_index: number;
@@ -7691,9 +7619,7 @@ export interface operations {
     vector_feature_batch_import_layers__layer_id__features_batch_post: {
         parameters: {
             query?: never;
-            header?: {
-                "x-api-key"?: string | null;
-            };
+            header?: never;
             path: {
                 layer_id: string;
             };
@@ -7730,9 +7656,7 @@ export interface operations {
     vector_field_add_import_layers__layer_id__fields_post: {
         parameters: {
             query?: never;
-            header?: {
-                "x-api-key"?: string | null;
-            };
+            header?: never;
             path: {
                 layer_id: string;
             };
@@ -7769,9 +7693,7 @@ export interface operations {
     vector_field_delete_import_layers__layer_id__fields__name__delete: {
         parameters: {
             query?: never;
-            header?: {
-                "x-api-key"?: string | null;
-            };
+            header?: never;
             path: {
                 layer_id: string;
                 name: string;
@@ -7805,9 +7727,7 @@ export interface operations {
     vector_rename_field_import_layers__layer_id__rename_field_post: {
         parameters: {
             query?: never;
-            header?: {
-                "x-api-key"?: string | null;
-            };
+            header?: never;
             path: {
                 layer_id: string;
             };
@@ -7844,9 +7764,7 @@ export interface operations {
     patch_imported_layer_display_name_import_layers__layer_id__display_name_patch: {
         parameters: {
             query?: never;
-            header?: {
-                "x-api-key"?: string | null;
-            };
+            header?: never;
             path: {
                 layer_id: string;
             };
@@ -7883,9 +7801,7 @@ export interface operations {
     delete_imported_layer_import_layers__layer_id__delete: {
         parameters: {
             query?: never;
-            header?: {
-                "x-api-key"?: string | null;
-            };
+            header?: never;
             path: {
                 layer_id: string;
             };
@@ -7918,9 +7834,7 @@ export interface operations {
     import_quota_import_quota_get: {
         parameters: {
             query?: never;
-            header?: {
-                "x-api-key"?: string | null;
-            };
+            header?: never;
             path?: never;
             cookie?: never;
         };
@@ -7935,15 +7849,6 @@ export interface operations {
                     "application/json": {
                         [key: string]: unknown;
                     };
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };
@@ -7951,9 +7856,7 @@ export interface operations {
     import_quota_reclaim_import_quota_reclaim_post: {
         parameters: {
             query?: never;
-            header?: {
-                "x-api-key"?: string | null;
-            };
+            header?: never;
             path?: never;
             cookie?: never;
         };
@@ -7970,23 +7873,12 @@ export interface operations {
                     };
                 };
             };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
         };
     };
     raster_inspect_import_raster_inspect_post: {
         parameters: {
             query?: never;
-            header?: {
-                "x-api-key"?: string | null;
-            };
+            header?: never;
             path?: never;
             cookie?: never;
         };
@@ -8021,9 +7913,7 @@ export interface operations {
     raster_commit_import_raster_commit_post: {
         parameters: {
             query?: never;
-            header?: {
-                "x-api-key"?: string | null;
-            };
+            header?: never;
             path?: never;
             cookie?: never;
         };
@@ -8058,9 +7948,7 @@ export interface operations {
     raster_detect_invalid_import_raster_detect_invalid_post: {
         parameters: {
             query?: never;
-            header?: {
-                "x-api-key"?: string | null;
-            };
+            header?: never;
             path?: never;
             cookie?: never;
         };
@@ -8095,9 +7983,7 @@ export interface operations {
     import_document_import_document_post: {
         parameters: {
             query?: never;
-            header?: {
-                "x-api-key"?: string | null;
-            };
+            header?: never;
             path?: never;
             cookie?: never;
         };
@@ -8132,9 +8018,7 @@ export interface operations {
     import_document_multipart_import_document_multipart_post: {
         parameters: {
             query?: never;
-            header?: {
-                "x-api-key"?: string | null;
-            };
+            header?: never;
             path?: never;
             cookie?: never;
         };
@@ -8169,9 +8053,7 @@ export interface operations {
     document_preview_import_document__session_id__get: {
         parameters: {
             query?: never;
-            header?: {
-                "x-api-key"?: string | null;
-            };
+            header?: never;
             path: {
                 session_id: string;
             };
@@ -8204,9 +8086,7 @@ export interface operations {
     document_ops_import_document__session_id__ops_post: {
         parameters: {
             query?: never;
-            header?: {
-                "x-api-key"?: string | null;
-            };
+            header?: never;
             path: {
                 session_id: string;
             };
@@ -8243,9 +8123,7 @@ export interface operations {
     document_commit_import_document__session_id__commit_post: {
         parameters: {
             query?: never;
-            header?: {
-                "x-api-key"?: string | null;
-            };
+            header?: never;
             path: {
                 session_id: string;
             };
@@ -8282,9 +8160,7 @@ export interface operations {
     export_encodings_endpoint_export_encodings_get: {
         parameters: {
             query?: never;
-            header?: {
-                "x-api-key"?: string | null;
-            };
+            header?: never;
             path?: never;
             cookie?: never;
         };
@@ -8301,23 +8177,12 @@ export interface operations {
                     };
                 };
             };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
         };
     };
     export_layer_endpoint_export_layer_post: {
         parameters: {
             query?: never;
-            header?: {
-                "x-api-key"?: string | null;
-            };
+            header?: never;
             path?: never;
             cookie?: never;
         };
@@ -8350,9 +8215,7 @@ export interface operations {
     export_batch_endpoint_export_batch_post: {
         parameters: {
             query?: never;
-            header?: {
-                "x-api-key"?: string | null;
-            };
+            header?: never;
             path?: never;
             cookie?: never;
         };
@@ -8583,9 +8446,7 @@ export interface operations {
     update_api_key_config_api_keys__key_name__put: {
         parameters: {
             query?: never;
-            header?: {
-                "x-api-key"?: string | null;
-            };
+            header?: never;
             path: {
                 key_name: string;
             };
@@ -8620,9 +8481,7 @@ export interface operations {
     delete_api_key_config_api_keys__key_name__delete: {
         parameters: {
             query?: never;
-            header?: {
-                "x-api-key"?: string | null;
-            };
+            header?: never;
             path: {
                 key_name: string;
             };
@@ -8653,9 +8512,7 @@ export interface operations {
     test_api_key_config_api_keys__key_name__test_post: {
         parameters: {
             query?: never;
-            header?: {
-                "x-api-key"?: string | null;
-            };
+            header?: never;
             path: {
                 key_name: string;
             };
@@ -8686,9 +8543,7 @@ export interface operations {
     toggle_api_key_config_api_keys__key_name__toggle_put: {
         parameters: {
             query?: never;
-            header?: {
-                "x-api-key"?: string | null;
-            };
+            header?: never;
             path: {
                 key_name: string;
             };
@@ -8723,9 +8578,7 @@ export interface operations {
     list_api_key_history_config_api_keys__key_name__history_get: {
         parameters: {
             query?: never;
-            header?: {
-                "x-api-key"?: string | null;
-            };
+            header?: never;
             path: {
                 key_name: string;
             };
@@ -8756,9 +8609,7 @@ export interface operations {
     clear_api_key_history_config_api_keys__key_name__history_delete: {
         parameters: {
             query?: never;
-            header?: {
-                "x-api-key"?: string | null;
-            };
+            header?: never;
             path: {
                 key_name: string;
             };
@@ -8789,9 +8640,7 @@ export interface operations {
     restore_api_key_history_config_api_keys__key_name__history__history_id__restore_post: {
         parameters: {
             query?: never;
-            header?: {
-                "x-api-key"?: string | null;
-            };
+            header?: never;
             path: {
                 key_name: string;
                 history_id: number;
@@ -8823,9 +8672,7 @@ export interface operations {
     delete_api_key_history_entry_config_api_keys__key_name__history__history_id__delete: {
         parameters: {
             query?: never;
-            header?: {
-                "x-api-key"?: string | null;
-            };
+            header?: never;
             path: {
                 key_name: string;
                 history_id: number;
@@ -8877,9 +8724,7 @@ export interface operations {
     create_gee_account_config_gee_accounts_post: {
         parameters: {
             query?: never;
-            header?: {
-                "x-api-key"?: string | null;
-            };
+            header?: never;
             path?: never;
             cookie?: never;
         };
@@ -8912,9 +8757,7 @@ export interface operations {
     delete_gee_account_config_gee_accounts__account_id__delete: {
         parameters: {
             query?: never;
-            header?: {
-                "x-api-key"?: string | null;
-            };
+            header?: never;
             path: {
                 account_id: string;
             };
@@ -8945,9 +8788,7 @@ export interface operations {
     test_gee_account_config_gee_accounts__account_id__test_post: {
         parameters: {
             query?: never;
-            header?: {
-                "x-api-key"?: string | null;
-            };
+            header?: never;
             path: {
                 account_id: string;
             };
@@ -8978,9 +8819,7 @@ export interface operations {
     toggle_gee_account_config_gee_accounts__account_id__toggle_put: {
         parameters: {
             query?: never;
-            header?: {
-                "x-api-key"?: string | null;
-            };
+            header?: never;
             path: {
                 account_id: string;
             };
@@ -9015,9 +8854,7 @@ export interface operations {
     reload_gee_accounts_config_gee_accounts_reload_post: {
         parameters: {
             query?: never;
-            header?: {
-                "x-api-key"?: string | null;
-            };
+            header?: never;
             path?: never;
             cookie?: never;
         };
@@ -9030,15 +8867,6 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ReloadResultResponse"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };
@@ -9086,9 +8914,7 @@ export interface operations {
     update_weather_default_model_config_weather_model_put: {
         parameters: {
             query?: never;
-            header?: {
-                "x-api-key"?: string | null;
-            };
+            header?: never;
             path?: never;
             cookie?: never;
         };
@@ -9183,9 +9009,7 @@ export interface operations {
     update_weather_provider_config_weather_providers__provider_id__put: {
         parameters: {
             query?: never;
-            header?: {
-                "x-api-key"?: string | null;
-            };
+            header?: never;
             path: {
                 provider_id: string;
             };
@@ -9220,9 +9044,7 @@ export interface operations {
     delete_weather_provider_config_weather_providers__provider_id__delete: {
         parameters: {
             query?: never;
-            header?: {
-                "x-api-key"?: string | null;
-            };
+            header?: never;
             path: {
                 provider_id: string;
             };
@@ -9253,9 +9075,7 @@ export interface operations {
     test_weather_provider_config_weather_providers__provider_id__test_post: {
         parameters: {
             query?: never;
-            header?: {
-                "x-api-key"?: string | null;
-            };
+            header?: never;
             path: {
                 provider_id: string;
             };
@@ -9286,9 +9106,7 @@ export interface operations {
     toggle_weather_provider_config_weather_providers__provider_id__toggle_put: {
         parameters: {
             query?: never;
-            header?: {
-                "x-api-key"?: string | null;
-            };
+            header?: never;
             path: {
                 provider_id: string;
             };
@@ -9323,9 +9141,7 @@ export interface operations {
     set_weather_provider_priority_config_weather_providers__provider_id__priority_put: {
         parameters: {
             query?: never;
-            header?: {
-                "x-api-key"?: string | null;
-            };
+            header?: never;
             path: {
                 provider_id: string;
             };
@@ -9391,9 +9207,7 @@ export interface operations {
     upsert_remote_storage_profile_config_remote_storage__profile_id__put: {
         parameters: {
             query?: never;
-            header?: {
-                "x-api-key"?: string | null;
-            };
+            header?: never;
             path: {
                 profile_id: string;
             };
@@ -9428,9 +9242,7 @@ export interface operations {
     delete_remote_storage_profile_config_remote_storage__profile_id__delete: {
         parameters: {
             query?: never;
-            header?: {
-                "x-api-key"?: string | null;
-            };
+            header?: never;
             path: {
                 profile_id: string;
             };
@@ -9461,9 +9273,7 @@ export interface operations {
     toggle_remote_storage_profile_config_remote_storage__profile_id__toggle_put: {
         parameters: {
             query?: never;
-            header?: {
-                "x-api-key"?: string | null;
-            };
+            header?: never;
             path: {
                 profile_id: string;
             };
@@ -9498,9 +9308,7 @@ export interface operations {
     test_remote_storage_profile_config_remote_storage__profile_id__test_post: {
         parameters: {
             query?: never;
-            header?: {
-                "x-api-key"?: string | null;
-            };
+            header?: never;
             path: {
                 profile_id: string;
             };
@@ -9535,9 +9343,7 @@ export interface operations {
     list_remote_storage_history_config_remote_storage__profile_id__history_get: {
         parameters: {
             query?: never;
-            header?: {
-                "x-api-key"?: string | null;
-            };
+            header?: never;
             path: {
                 profile_id: string;
             };
@@ -9568,9 +9374,7 @@ export interface operations {
     clear_remote_storage_history_config_remote_storage__profile_id__history_delete: {
         parameters: {
             query?: never;
-            header?: {
-                "x-api-key"?: string | null;
-            };
+            header?: never;
             path: {
                 profile_id: string;
             };
@@ -9601,9 +9405,7 @@ export interface operations {
     restore_remote_storage_history_config_remote_storage__profile_id__history__history_id__restore_post: {
         parameters: {
             query?: never;
-            header?: {
-                "x-api-key"?: string | null;
-            };
+            header?: never;
             path: {
                 profile_id: string;
                 history_id: number;
@@ -9635,9 +9437,7 @@ export interface operations {
     delete_remote_storage_history_entry_config_remote_storage__profile_id__history__history_id__delete: {
         parameters: {
             query?: never;
-            header?: {
-                "x-api-key"?: string | null;
-            };
+            header?: never;
             path: {
                 profile_id: string;
                 history_id: number;
@@ -9689,9 +9489,7 @@ export interface operations {
     update_data_source_paths_config_data_source_paths_put: {
         parameters: {
             query?: never;
-            header?: {
-                "x-api-key"?: string | null;
-            };
+            header?: never;
             path?: never;
             cookie?: never;
         };
@@ -9724,9 +9522,7 @@ export interface operations {
     restart_backend_service_config_service_restart_post: {
         parameters: {
             query?: never;
-            header?: {
-                "x-api-key"?: string | null;
-            };
+            header?: never;
             path?: never;
             cookie?: never;
         };
@@ -9779,9 +9575,7 @@ export interface operations {
     evict_data_cache_config_data_cache_evict_post: {
         parameters: {
             query?: never;
-            header?: {
-                "x-api-key"?: string | null;
-            };
+            header?: never;
             path?: never;
             cookie?: never;
         };
@@ -9816,9 +9610,7 @@ export interface operations {
     update_open_data_presets_config_data_source_open_data_presets_put: {
         parameters: {
             query?: never;
-            header?: {
-                "x-api-key"?: string | null;
-            };
+            header?: never;
             path?: never;
             cookie?: never;
         };
@@ -9873,9 +9665,7 @@ export interface operations {
     upsert_portal_credential_config_data_source_portal_credentials__portal_id__put: {
         parameters: {
             query?: never;
-            header?: {
-                "x-api-key"?: string | null;
-            };
+            header?: never;
             path: {
                 portal_id: string;
             };
@@ -9912,9 +9702,7 @@ export interface operations {
     delete_portal_credential_config_data_source_portal_credentials__portal_id__delete: {
         parameters: {
             query?: never;
-            header?: {
-                "x-api-key"?: string | null;
-            };
+            header?: never;
             path: {
                 portal_id: string;
             };
@@ -9945,9 +9733,7 @@ export interface operations {
     update_remote_layer_uris_config_data_source_remote_layer_uris_put: {
         parameters: {
             query?: never;
-            header?: {
-                "x-api-key"?: string | null;
-            };
+            header?: never;
             path?: never;
             cookie?: never;
         };
@@ -10024,9 +9810,7 @@ export interface operations {
     compile_graph_workflow_definitions_compile_post: {
         parameters: {
             query?: never;
-            header?: {
-                "x-api-key"?: string | null;
-            };
+            header?: never;
             path?: never;
             cookie?: never;
         };
@@ -10063,9 +9847,7 @@ export interface operations {
     dry_validate_graph_workflow_definitions_dry_validate_post: {
         parameters: {
             query?: never;
-            header?: {
-                "x-api-key"?: string | null;
-            };
+            header?: never;
             path?: never;
             cookie?: never;
         };
@@ -10124,9 +9906,7 @@ export interface operations {
     create_definition_workflow_definitions_post: {
         parameters: {
             query?: never;
-            header?: {
-                "x-api-key"?: string | null;
-            };
+            header?: never;
             path?: never;
             cookie?: never;
         };
@@ -10196,9 +9976,7 @@ export interface operations {
     update_definition_workflow_definitions__workflow_id__put: {
         parameters: {
             query?: never;
-            header?: {
-                "x-api-key"?: string | null;
-            };
+            header?: never;
             path: {
                 workflow_id: string;
             };
@@ -10237,9 +10015,7 @@ export interface operations {
     delete_definition_workflow_definitions__workflow_id__delete: {
         parameters: {
             query?: never;
-            header?: {
-                "x-api-key"?: string | null;
-            };
+            header?: never;
             path: {
                 workflow_id: string;
             };
@@ -10272,9 +10048,7 @@ export interface operations {
     duplicate_definition_workflow_definitions__workflow_id__duplicate_post: {
         parameters: {
             query?: never;
-            header?: {
-                "x-api-key"?: string | null;
-            };
+            header?: never;
             path: {
                 workflow_id: string;
             };
@@ -10383,9 +10157,7 @@ export interface operations {
     create_timer_workflow_timers_post: {
         parameters: {
             query?: never;
-            header?: {
-                "x-api-key"?: string | null;
-            };
+            header?: never;
             path?: never;
             cookie?: never;
         };
@@ -10455,9 +10227,7 @@ export interface operations {
     update_timer_workflow_timers__timer_id__put: {
         parameters: {
             query?: never;
-            header?: {
-                "x-api-key"?: string | null;
-            };
+            header?: never;
             path: {
                 timer_id: string;
             };
@@ -10496,9 +10266,7 @@ export interface operations {
     delete_timer_workflow_timers__timer_id__delete: {
         parameters: {
             query?: never;
-            header?: {
-                "x-api-key"?: string | null;
-            };
+            header?: never;
             path: {
                 timer_id: string;
             };
@@ -10531,9 +10299,7 @@ export interface operations {
     run_timer_workflow_timers__timer_id__run_post: {
         parameters: {
             query?: never;
-            header?: {
-                "x-api-key"?: string | null;
-            };
+            header?: never;
             path: {
                 timer_id: string;
             };
@@ -10566,9 +10332,7 @@ export interface operations {
     emit_event_workflow_timers_events_post: {
         parameters: {
             query?: never;
-            header?: {
-                "x-api-key"?: string | null;
-            };
+            header?: never;
             path?: never;
             cookie?: never;
         };
@@ -10605,9 +10369,7 @@ export interface operations {
     manual_tick_workflow_timers_tick_post: {
         parameters: {
             query?: never;
-            header?: {
-                "x-api-key"?: string | null;
-            };
+            header?: never;
             path?: never;
             cookie?: never;
         };
@@ -10624,23 +10386,12 @@ export interface operations {
                     };
                 };
             };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
         };
     };
     cleanup_workflow_runs_cleanup_workflow_runs_post: {
         parameters: {
             query?: never;
-            header?: {
-                "x-api-key"?: string | null;
-            };
+            header?: never;
             path?: never;
             cookie?: never;
         };
@@ -10673,9 +10424,7 @@ export interface operations {
     cleanup_cache_cleanup_cache_post: {
         parameters: {
             query?: never;
-            header?: {
-                "x-api-key"?: string | null;
-            };
+            header?: never;
             path?: never;
             cookie?: never;
         };
@@ -10690,23 +10439,12 @@ export interface operations {
                     "application/json": components["schemas"]["CacheCleanupResponse"];
                 };
             };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
         };
     };
     vacuum_workflow_state_cleanup_vacuum_post: {
         parameters: {
             query?: never;
-            header?: {
-                "x-api-key"?: string | null;
-            };
+            header?: never;
             path?: never;
             cookie?: never;
         };
@@ -10721,15 +10459,6 @@ export interface operations {
                     "application/json": {
                         [key: string]: unknown;
                     };
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };
@@ -10757,9 +10486,7 @@ export interface operations {
     list_servers_api_remote_servers_get: {
         parameters: {
             query?: never;
-            header?: {
-                "x-api-key"?: string | null;
-            };
+            header?: never;
             path?: never;
             cookie?: never;
         };
@@ -10776,15 +10503,6 @@ export interface operations {
                     };
                 };
             };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
         };
     };
     list_remote_dir_api_remote_list_get: {
@@ -10795,9 +10513,7 @@ export interface operations {
                 /** @description 远程目录路径 */
                 path?: string;
             };
-            header?: {
-                "x-api-key"?: string | null;
-            };
+            header?: never;
             path?: never;
             cookie?: never;
         };
@@ -10831,9 +10547,7 @@ export interface operations {
                 /** @description 服务器名称: hpc / win11 / nas */
                 server: string;
             };
-            header?: {
-                "x-api-key"?: string | null;
-            };
+            header?: never;
             path?: never;
             cookie?: never;
         };
