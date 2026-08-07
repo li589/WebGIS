@@ -49,8 +49,9 @@ if celery_available:
         # Windows 上 Celery 5.4 prefork 模式的 fast_trace_task 存在 thread-local
         # _loc 未初始化 bug（ValueError: not enough values to unpack），
         # 使用 solo pool 在主进程中执行任务以避免此问题。
-        # 算法反演任务较重，不需要高并发，solo 模式更稳定。
-        worker_pool="solo",
+        # C3：池模式经 settings.celery_worker_pool 配置——Windows 默认 solo（开发兜底），
+        # Linux 默认 prefork（生产并行，concurrency 生效）；BACKEND_CELERY_WORKER_POOL 可覆盖。
+        worker_pool=settings.celery_worker_pool,
         task_always_eager=settings.celery_task_always_eager,
         # 默认任务超时限制，防止无限期运行
         # soft_time_limit：软超时，抛出 SoftTimeLimitExceeded，可被捕获清理

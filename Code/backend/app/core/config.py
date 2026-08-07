@@ -1,6 +1,7 @@
 from dataclasses import dataclass, field
 import os
 from pathlib import Path
+import sys
 
 # 尝试加载 dotenv，若不可用或 .env 不可读则跳过
 # catch Exception 而非仅 ImportError：Windows 文件系统可能存在
@@ -416,6 +417,14 @@ class Settings:
     # 配合 acks_late 时应设为 1，避免长任务预取占槽阻塞短任务。
     celery_worker_prefetch_multiplier: int = int(
         os.getenv("BACKEND_CELERY_PREFETCH_MULTIPLIER", "1")
+    )
+    # Celery worker 池模式（C3）：solo=单进程串行（Windows 开发兜底，规避
+    # Celery 5.4 prefork fast_trace_task thread-local bug）；prefork=多进程并行
+    # （生产 Linux 推荐，concurrency 生效）。默认按平台自适应；可用
+    # BACKEND_CELERY_WORKER_POOL 显式覆盖（solo/prefork/threads/gevent）。
+    celery_worker_pool: str = os.getenv(
+        "BACKEND_CELERY_WORKER_POOL",
+        "solo" if sys.platform.startswith("win") else "prefork",
     )
 
     # ---- Phase 1 工程治理开关 ----
