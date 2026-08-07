@@ -23,12 +23,13 @@ import { useUiStore } from '../ui'
 import { formatClockHourLabel } from '../../utils/weather-timeline'
 import { resolveWeatherTileReadyKind } from '../../utils/weather-tile-readiness'
 import { buildDefaultWeatherRenderHint } from '../../data/weather-render-hints'
-import type { BoundingBox, RuntimeLayerDescriptor, WorkflowEvent } from '../../services/runtime-api'
+import type { BoundingBox, RuntimeLayerDescriptor } from '../../services/runtime-api'
 import { LAYER_CATEGORIES, LAYER_LIBRARY } from './catalog'
 import { allocateLayerAccent } from './layer-accent'
 import { isWeatherEngineCatalogId } from './weather-session'
 import { createWeatherViewportSlice } from './weather-viewport'
 import { createPointWeatherSlice } from './point-weather'
+import { createWorkflowPoller } from './workflow-poller'
 import { buildJobLayer, extractOverlayImportsFromResultRefs } from './result-adapter'
 import { buildImportedVectorPayload, computeBounds, inferGeometryType } from './imported-vector'
 import { buildImportedRasterPayload } from './imported-raster'
@@ -61,10 +62,8 @@ import {
   extractLayerHotspots,
   formatClockLabel,
   getCatalogDisplayName,
-  hasRenderableMapLayerAsset,
   isBlockedRunReadiness,
-  isRecognizedJobStatus,
-  mergeRecentEventMessages,
+  isTerminalStatus,
 } from './catalog-builders'
 import { WORKFLOW_COPY } from '../../ui-copy/workflow'
 import { resolveEmptyOverlayWorkflowError } from './materialize-empty'
@@ -80,7 +79,6 @@ import type {
   JobLayerItem,
   JobStatus,
   LayerSidebarView,
-  NodeProgress,
   RuntimeLayerLibraryItem,
   WorkflowSummary,
 } from './types'
@@ -111,11 +109,6 @@ function normalizeProductTag(raw: string | null | undefined): string {
   if (tag === 'SM' || tag.endsWith('_SM') || tag.endsWith('-SM')) return 'SM'
   if (tag === 'VOD' || tag.endsWith('_VOD') || tag.endsWith('-VOD')) return 'VOD'
   return tag
-}
-
-function isTerminalStatus(status: string) {
-  // retry_pending 是非终态（等待重试），不应包含在此处
-  return status === 'succeeded' || status === 'failed' || status === 'cancelled'
 }
 
 function debugLog(module: string, ...args: unknown[]) {
@@ -215,13 +208,6 @@ function buildRealLayerDisplay(
   }
 }
 
-// 事件增量消费主循环：高频拉取事件，低频同步权威状态。
-const EVENT_POLL_ACTIVE_INTERVAL_MS = 1200
-const EVENT_POLL_IDLE_INTERVAL_MS = 2600
-const STATUS_SYNC_INTERVAL_MS = 9000
-/** 无新事件且状态同步后仍非终态时，才判为“事件等待超时”。长批（omega_sf 等）可数小时。 */
-const EVENT_POLL_IDLE_TIMEOUT_MS = 30 * 60_000
-const MAX_CONSECUTIVE_POLL_ERRORS = 3
 /** 刷新后恢复用：记住本机跟踪中的 run，避免仅依赖内存态丢失进度。 */
 const TRACKED_RUNS_STORAGE_KEY = 'geo:tracked-workflow-runs:v1'
 
@@ -295,8 +281,6 @@ export const useLayersStore = defineStore('layers', () => {
   // ── Current hour (用于工作流提交与时间轴状态展示) ─────────────────────────────
   const currentHour = ref(12)
   const workflowError = ref<string | null>(null)
-  const workflowPollingHandles = new Map<string, number>()
-  const workflowLastStatusSyncAt = new Map<string, number>()
   const activeWorkflowCatalogIds = new Set<string>()
   const submittingCatalogIds = new Set<string>()
   const isSubmitting = computed(() => submittingCatalogIds.size > 0)
@@ -449,6 +433,30 @@ export const useLayersStore = defineStore('layers', () => {
     clearPointWeather,
     fetchPointWeather,
   } = pointWeatherSlice
+
+  // 工作流轮询（事件增量 + 快照同步）：见 workflow-poller.ts
+  const workflowPoller = createWorkflowPoller({
+    getJobLayer: (jobId) => jobLayers.value.find((item) => item.jobId === jobId),
+    isViewportRefreshStale: (epoch) => isViewportRefreshStale(epoch),
+    isRunDismissed: (runId) => isRunDismissed(runId),
+    getParticleFlowCatalogId: () => particleFlowCatalogId.value,
+    supportsParticleFlow: (catalogId) => supportsParticleFlow(catalogId),
+    upsertJobLayer: (catalogId, jobLayer) => upsertJobLayer(catalogId, jobLayer),
+    setWorkflowError: (msg) => {
+      workflowError.value = msg
+    },
+    removeActiveCatalog: (catalogId) => activeWorkflowCatalogIds.delete(catalogId),
+    syncProgressiveBlockOverlays: (runId, catalogId) =>
+      void syncProgressiveBlockOverlays(runId, catalogId),
+    emitWorkflowProgressTimeSeek: (jobLayer, status, detail) =>
+      emitWorkflowProgressTimeSeek(jobLayer, status, detail),
+    attachAlgorithmProductOverlays: (refs, catalogId, runId) =>
+      attachAlgorithmProductOverlays(refs as never, catalogId, runId),
+    clearWindForCatalog: (catalogId) => clearWindForCatalog(catalogId),
+    enableParticleIfUnset: (catalogId) => enableParticleIfUnset(catalogId),
+    buildJobLayer: (run, catalogId, opts) => buildJobLayer(run as never, catalogId, opts),
+  })
+  const { stopWorkflowPolling } = workflowPoller
 
   const layerLibrary = computed<RuntimeLayerLibraryItem[]>(() => {
     const runtimeItems = Object.values(runtimeLayerCatalog.value).map((descriptor) =>
@@ -1561,15 +1569,6 @@ export const useLayersStore = defineStore('layers', () => {
     jobLayers.value = jobs
   }
 
-  function stopWorkflowPolling(jobId: string) {
-    const handle = workflowPollingHandles.get(jobId)
-    if (handle !== undefined) {
-      window.clearTimeout(handle)
-      workflowPollingHandles.delete(jobId)
-    }
-    workflowLastStatusSyncAt.delete(jobId)
-  }
-
   function syncJobLayerToActiveLayer(catalogId: string, jobLayer: JobLayerItem) {
     const existingRealLayer = activeLayers.value.find(
       (layer) => layer.jobLayer?.jobId === jobLayer.jobId,
@@ -1766,310 +1765,6 @@ export const useLayersStore = defineStore('layers', () => {
     } finally {
       progressiveMaterializeInFlight.delete(runId)
     }
-  }
-
-  function applyWorkflowEventsToJobLayer(
-    jobLayer: JobLayerItem,
-    events: WorkflowEvent[],
-  ): JobLayerItem {
-    if (events.length === 0) return jobLayer
-
-    let nextStatus = jobLayer.status
-    let nextProgress = jobLayer.progress
-    let nextMessage = jobLayer.message
-    let nextUpdatedAt = jobLayer.updatedAt
-    let lastEventId = jobLayer.lastEventId
-    let lastEventAt = jobLayer.lastEventAt
-    // 节点级进度累计：保留已有节点，按 node_id 合并最新阶段
-    const nextNodeProgress: NodeProgress[] = [...(jobLayer.nodeProgress ?? [])]
-
-    for (const event of events) {
-      if (typeof event.progress === 'number') {
-        nextProgress = Math.max(nextProgress, normalizeWorkflowProgress(event.progress))
-      }
-      if (event.message) {
-        nextMessage = event.message
-      }
-      if (isRecognizedJobStatus(event.payload?.status)) {
-        // 终态保护：已处于终态时，不允许事件流里的中间状态（queued/running）将其降级
-        if (!isTerminalStatus(event.payload.status) && isTerminalStatus(nextStatus)) {
-          // 保留终态，仅继续累积进度/消息
-        } else {
-          nextStatus = event.payload.status
-        }
-      }
-      // 解析节点级进度事件
-      const rawNodeProgress = (event.payload as { node_progress?: unknown } | null | undefined)
-        ?.node_progress
-      if (rawNodeProgress && typeof rawNodeProgress === 'object') {
-        const np = rawNodeProgress as {
-          node_id?: string
-          node_label?: string
-          stage?: string
-          progress?: number
-          message?: string
-          artifacts?: string[]
-          detail?: Record<string, unknown>
-        }
-        const detailRaw = np.detail
-        const detail =
-          detailRaw && typeof detailRaw === 'object'
-            ? {
-                chunksDone:
-                  typeof detailRaw.chunks_done === 'number'
-                    ? detailRaw.chunks_done
-                    : typeof detailRaw.chunksDone === 'number'
-                      ? detailRaw.chunksDone
-                      : undefined,
-                chunksTotal:
-                  typeof detailRaw.chunks_total === 'number'
-                    ? detailRaw.chunks_total
-                    : typeof detailRaw.chunksTotal === 'number'
-                      ? detailRaw.chunksTotal
-                      : undefined,
-                pixelsDone:
-                  typeof detailRaw.pixels_done === 'number'
-                    ? detailRaw.pixels_done
-                    : typeof detailRaw.pixelsDone === 'number'
-                      ? detailRaw.pixelsDone
-                      : undefined,
-                pixelsTotal:
-                  typeof detailRaw.pixels_total === 'number'
-                    ? detailRaw.pixels_total
-                    : typeof detailRaw.pixelsTotal === 'number'
-                      ? detailRaw.pixelsTotal
-                      : undefined,
-                phase: typeof detailRaw.phase === 'string' ? detailRaw.phase : undefined,
-                blocksDone:
-                  typeof detailRaw.blocks_done === 'number' ? detailRaw.blocks_done : undefined,
-                blocksTotal:
-                  typeof detailRaw.blocks_total === 'number' ? detailRaw.blocks_total : undefined,
-                dateStart:
-                  typeof detailRaw.date_start === 'string' ? detailRaw.date_start : undefined,
-                dateEnd: typeof detailRaw.date_end === 'string' ? detailRaw.date_end : undefined,
-                blockDir: typeof detailRaw.block_dir === 'string' ? detailRaw.block_dir : undefined,
-                timeKey:
-                  typeof detailRaw.time_key === 'string'
-                    ? detailRaw.time_key
-                    : typeof detailRaw.timeKey === 'string'
-                      ? detailRaw.timeKey
-                      : undefined,
-                tileId:
-                  typeof detailRaw.tile_id === 'string'
-                    ? detailRaw.tile_id
-                    : typeof detailRaw.tileId === 'string'
-                      ? detailRaw.tileId
-                      : undefined,
-                chunkId:
-                  typeof detailRaw.chunk_id === 'string'
-                    ? detailRaw.chunk_id
-                    : typeof detailRaw.chunkId === 'string'
-                      ? detailRaw.chunkId
-                      : undefined,
-                blockId:
-                  typeof detailRaw.block_id === 'string'
-                    ? detailRaw.block_id
-                    : typeof detailRaw.blockId === 'string'
-                      ? detailRaw.blockId
-                      : undefined,
-                productTag:
-                  typeof detailRaw.product_tag === 'string'
-                    ? detailRaw.product_tag
-                    : typeof detailRaw.productTag === 'string'
-                      ? detailRaw.productTag
-                      : typeof detailRaw.artifact_type === 'string'
-                        ? detailRaw.artifact_type
-                        : undefined,
-                moduleName:
-                  typeof detailRaw.module_name === 'string'
-                    ? detailRaw.module_name
-                    : typeof detailRaw.moduleName === 'string'
-                      ? detailRaw.moduleName
-                      : undefined,
-              }
-            : undefined
-        if (
-          detail?.phase === 'block_commit' ||
-          detail?.phase === 'block_refresh' ||
-          detail?.phase === 'artifact'
-        ) {
-          // progressive overlay sync (throttled inside helper).
-          // Skip when run is already failed/cancelled — hydrate replay of historical
-          // block_commit events must not POST materialize (BE returns 409).
-          const progressiveCatalogId = jobLayer.catalogId
-          const canMaterialize =
-            nextStatus === 'succeeded' ||
-            nextStatus === 'running' ||
-            nextStatus === 'queued' ||
-            nextStatus === 'retry_pending'
-          if (progressiveCatalogId && canMaterialize) {
-            void syncProgressiveBlockOverlays(jobLayer.jobId, progressiveCatalogId)
-          }
-          if (detail.dateStart && detail.dateEnd) {
-            nextMessage = `块 ${detail.blocksDone ?? '?'}/${detail.blocksTotal ?? '?'} · ${detail.dateStart}–${detail.dateEnd}`
-          } else {
-            const shell = formatProgressShell({
-              progress: typeof np.progress === 'number' ? np.progress : undefined,
-              message: typeof np.message === 'string' ? np.message : undefined,
-              stage: typeof np.stage === 'string' ? np.stage : undefined,
-              nodeLabel: typeof np.node_label === 'string' ? np.node_label : undefined,
-              detail,
-            })
-            if (shell) nextMessage = shell
-          }
-        }
-        const nodePct = normalizeWorkflowProgress(
-          typeof np.progress === 'number' ? np.progress : undefined,
-          detail,
-        )
-        if (typeof np.node_id === 'string') {
-          const eventAt = event.created_at
-          const existing = nextNodeProgress.find((p) => p.nodeId === np.node_id)
-          if (existing) {
-            Object.assign(existing, {
-              stage: typeof np.stage === 'string' ? np.stage : existing.stage,
-              progress:
-                typeof np.progress === 'number' || detail
-                  ? Math.max(existing.progress, nodePct)
-                  : existing.progress,
-              message: typeof np.message === 'string' ? np.message : existing.message,
-              artifacts: Array.isArray(np.artifacts) ? np.artifacts : existing.artifacts,
-              detail: detail ?? existing.detail,
-              updatedAt: eventAt,
-              eventId: event.event_id,
-            })
-          } else {
-            nextNodeProgress.push({
-              nodeId: np.node_id,
-              nodeLabel: typeof np.node_label === 'string' ? np.node_label : np.node_id,
-              stage: typeof np.stage === 'string' ? np.stage : '',
-              progress: nodePct,
-              message: typeof np.message === 'string' ? np.message : undefined,
-              artifacts: Array.isArray(np.artifacts) ? np.artifacts : undefined,
-              detail,
-              updatedAt: eventAt,
-              eventId: event.event_id,
-            })
-          }
-          nextProgress = Math.max(nextProgress, nodePct)
-          emitWorkflowProgressTimeSeek(
-            { ...jobLayer, catalogId: jobLayer.catalogId },
-            nextStatus,
-            detail,
-          )
-        }
-      }
-      lastEventId = event.event_id
-      lastEventAt = event.created_at
-      nextUpdatedAt = event.created_at
-    }
-
-    const eventMessages = mergeRecentEventMessages(
-      jobLayer.eventMessages ?? jobLayer.diagnosticNotes,
-      events,
-    )
-    const showEventMessages =
-      nextStatus === 'queued' || nextStatus === 'running' || nextStatus === 'retry_pending'
-
-    return {
-      ...jobLayer,
-      status: nextStatus,
-      progress: nextProgress,
-      message: nextMessage,
-      updatedAt: nextUpdatedAt,
-      lastEventId,
-      lastEventAt,
-      eventMessages,
-      nodeProgress: nextNodeProgress,
-      diagnosticNotes: showEventMessages ? eventMessages : jobLayer.diagnosticNotes,
-    }
-  }
-
-  async function syncWorkflowRunSnapshot(
-    jobId: string,
-    catalogId: string,
-    force = false,
-    expectedViewportEpoch?: number,
-  ) {
-    if (isViewportRefreshStale(expectedViewportEpoch)) {
-      stopWorkflowPolling(jobId)
-      activeWorkflowCatalogIds.delete(catalogId)
-      return true
-    }
-
-    const now = Date.now()
-    if (!force) {
-      const lastSyncedAt = workflowLastStatusSyncAt.get(jobId) ?? 0
-      if (now - lastSyncedAt < STATUS_SYNC_INTERVAL_MS) {
-        return false
-      }
-    }
-
-    const existingJobLayer = jobLayers.value.find((item) => item.jobId === jobId)
-    const run = await getWorkflowRun(jobId)
-    if (isViewportRefreshStale(expectedViewportEpoch)) {
-      stopWorkflowPolling(jobId)
-      activeWorkflowCatalogIds.delete(catalogId)
-      return true
-    }
-    const jobLayer = await buildJobLayer(run, catalogId, { previousJobLayer: existingJobLayer })
-    if (isViewportRefreshStale(expectedViewportEpoch)) {
-      stopWorkflowPolling(jobId)
-      activeWorkflowCatalogIds.delete(catalogId)
-      return true
-    }
-    const mergedJobLayer =
-      existingJobLayer && !isTerminalStatus(jobLayer.status)
-        ? {
-            ...jobLayer,
-            // Keep the higher of server snapshot vs event-derived progress
-            progress: Math.max(
-              normalizeWorkflowProgress(jobLayer.progress),
-              normalizeWorkflowProgress(existingJobLayer.progress),
-              ...(existingJobLayer.nodeProgress ?? []).map((np) =>
-                normalizeWorkflowProgress(np.progress, np.detail),
-              ),
-            ),
-            lastEventId: existingJobLayer.lastEventId,
-            lastEventAt: existingJobLayer.lastEventAt,
-            eventMessages: existingJobLayer.eventMessages,
-            nodeProgress: existingJobLayer.nodeProgress,
-            diagnosticNotes: jobLayer.diagnosticNotes?.length
-              ? jobLayer.diagnosticNotes
-              : (existingJobLayer.eventMessages ?? existingJobLayer.diagnosticNotes),
-          }
-        : {
-            ...jobLayer,
-            progress: normalizeWorkflowProgress(jobLayer.progress),
-          }
-
-    upsertJobLayer(catalogId, mergedJobLayer)
-    workflowLastStatusSyncAt.set(jobId, now)
-
-    if (isTerminalStatus(mergedJobLayer.status)) {
-      stopWorkflowPolling(jobId)
-      activeWorkflowCatalogIds.delete(catalogId)
-      if (mergedJobLayer.status === 'succeeded' && !isRunDismissed(run.run_id)) {
-        void attachAlgorithmProductOverlays(run.result_refs, catalogId, run.run_id)
-      }
-      if (
-        particleFlowCatalogId.value === catalogId &&
-        supportsParticleFlow(catalogId) &&
-        !hasRenderableMapLayerAsset(mergedJobLayer)
-      ) {
-        clearWindForCatalog(catalogId)
-      }
-      if (
-        mergedJobLayer.status === 'succeeded' &&
-        supportsParticleFlow(catalogId) &&
-        hasRenderableMapLayerAsset(mergedJobLayer)
-      ) {
-        enableParticleIfUnset(catalogId)
-      }
-      return true
-    }
-
-    return false
   }
 
   /** Attach algorithm-published overlays so the map shows SM/VOD/OMEGA content. */
@@ -2390,186 +2085,6 @@ export const useLayersStore = defineStore('layers', () => {
     }
   }
 
-  async function pollWorkflowRun(
-    jobId: string,
-    catalogId: string,
-    lastActivityAt = Date.now(),
-    consecutiveErrors = 0,
-    expectedViewportEpoch?: number,
-  ) {
-    if (isViewportRefreshStale(expectedViewportEpoch)) {
-      stopWorkflowPolling(jobId)
-      activeWorkflowCatalogIds.delete(catalogId)
-      return
-    }
-    if (Date.now() - lastActivityAt > EVENT_POLL_IDLE_TIMEOUT_MS) {
-      // Soft timeout: trust the server. Never invent a local failure over a
-      // succeeded/running run (long omega_sf jobs routinely exceed idle gaps).
-      try {
-        const run = await getWorkflowRun(jobId)
-        const serverStatus = run.status === 'accepted' ? 'queued' : run.status
-        if (!isTerminalStatus(serverStatus)) {
-          const handle = window.setTimeout(() => {
-            void pollWorkflowRun(jobId, catalogId, Date.now(), 0, expectedViewportEpoch)
-          }, EVENT_POLL_IDLE_INTERVAL_MS)
-          workflowPollingHandles.set(jobId, handle)
-          return
-        }
-        // Terminal on server — sync authoritative snapshot (incl. succeeded)
-        await syncWorkflowRunSnapshot(jobId, catalogId, true, expectedViewportEpoch)
-        return
-      } catch {
-        // Network blip: keep polling instead of marking failed.
-        const handle = window.setTimeout(() => {
-          void pollWorkflowRun(
-            jobId,
-            catalogId,
-            Date.now(),
-            consecutiveErrors,
-            expectedViewportEpoch,
-          )
-        }, EVENT_POLL_IDLE_INTERVAL_MS)
-        workflowPollingHandles.set(jobId, handle)
-        return
-      }
-    }
-
-    let nextConsecutiveErrors = consecutiveErrors
-    let nextDelayMs = EVENT_POLL_IDLE_INTERVAL_MS
-    let nextActivityAt = lastActivityAt
-
-    try {
-      const existingJobLayer = jobLayers.value.find((item) => item.jobId === jobId)
-      const events = await getWorkflowEvents(jobId, {
-        afterEventId: existingJobLayer?.lastEventId,
-        limit: 24,
-      })
-      if (isViewportRefreshStale(expectedViewportEpoch)) {
-        stopWorkflowPolling(jobId)
-        activeWorkflowCatalogIds.delete(catalogId)
-        return
-      }
-      const newItems = events.items ?? []
-
-      if (existingJobLayer && newItems.length > 0) {
-        upsertJobLayer(catalogId, applyWorkflowEventsToJobLayer(existingJobLayer, newItems))
-        nextDelayMs = EVENT_POLL_ACTIVE_INTERVAL_MS
-        nextActivityAt = Date.now()
-      }
-
-      workflowError.value = null
-      nextConsecutiveErrors = 0
-
-      const shouldForceSync = newItems.some(
-        (event) =>
-          isRecognizedJobStatus(event.payload?.status) && isTerminalStatus(event.payload.status),
-      )
-      const didReachTerminal = await syncWorkflowRunSnapshot(
-        jobId,
-        catalogId,
-        shouldForceSync,
-        expectedViewportEpoch,
-      )
-      if (didReachTerminal) {
-        return
-      }
-      // Status sync that still shows running also counts as activity
-      if (shouldForceSync || newItems.length > 0) {
-        nextActivityAt = Date.now()
-      } else {
-        // Periodic status sync: if still running, treat as activity
-        const current = jobLayers.value.find((item) => item.jobId === jobId)
-        if (
-          current &&
-          (current.status === 'running' ||
-            current.status === 'queued' ||
-            current.status === 'retry_pending')
-        ) {
-          nextActivityAt = Date.now()
-          void syncProgressiveBlockOverlays(jobId, catalogId)
-        }
-      }
-    } catch (error) {
-      if (isViewportRefreshStale(expectedViewportEpoch)) {
-        stopWorkflowPolling(jobId)
-        activeWorkflowCatalogIds.delete(catalogId)
-        return
-      }
-      const errMsg = error instanceof Error ? error.message : String(error)
-      if (errMsg.includes('404')) {
-        stopWorkflowPolling(jobId)
-        activeWorkflowCatalogIds.delete(catalogId)
-        workflowError.value = `工作流 ${jobId} 不存在（可能已过期）`
-        const existingJobLayer = jobLayers.value.find((item) => item.jobId === jobId)
-        if (existingJobLayer) {
-          upsertJobLayer(catalogId, {
-            ...existingJobLayer,
-            status: 'failed',
-            message: '工作流记录不存在',
-            progress: existingJobLayer.progress,
-          })
-        }
-        return
-      }
-
-      // AbortError（requestJson 30s 超时）是临时性错误，不显示给用户，直接重试
-      const isAbortError = error instanceof DOMException && error.name === 'AbortError'
-      if (isAbortError) {
-        // 超时后用 idle 间隔重试，不递增错误计数，不设置 workflowError
-        nextDelayMs = EVENT_POLL_IDLE_INTERVAL_MS
-        nextActivityAt = Date.now()
-      } else {
-        nextConsecutiveErrors = consecutiveErrors + 1
-        if (nextConsecutiveErrors >= MAX_CONSECUTIVE_POLL_ERRORS) {
-          // Before giving up, ask the server — never invent failure over a live/succeeded run.
-          try {
-            const run = await getWorkflowRun(jobId)
-            const serverStatus = run.status === 'accepted' ? 'queued' : run.status
-            if (!isTerminalStatus(serverStatus) || serverStatus === 'succeeded') {
-              await syncWorkflowRunSnapshot(jobId, catalogId, true, expectedViewportEpoch)
-              if (!isTerminalStatus(serverStatus)) {
-                const handle = window.setTimeout(() => {
-                  void pollWorkflowRun(jobId, catalogId, Date.now(), 0, expectedViewportEpoch)
-                }, EVENT_POLL_IDLE_INTERVAL_MS)
-                workflowPollingHandles.set(jobId, handle)
-              }
-              return
-            }
-          } catch {
-            // fall through
-          }
-          stopWorkflowPolling(jobId)
-          activeWorkflowCatalogIds.delete(catalogId)
-          workflowError.value = `工作流 ${jobId} 事件同步连续失败 ${nextConsecutiveErrors} 次：${errMsg}`
-          const existingJobLayer = jobLayers.value.find((item) => item.jobId === jobId)
-          if (existingJobLayer && existingJobLayer.status !== 'succeeded') {
-            upsertJobLayer(catalogId, {
-              ...existingJobLayer,
-              status: 'failed',
-              message: `事件同步连续失败：${errMsg}`,
-              progress: existingJobLayer.progress,
-            })
-          }
-          return
-        }
-        workflowError.value = errMsg
-      }
-    }
-
-    // 页面不可见时延长轮询间隔，避免后台积压定时器导致回来后卡顿
-    const effectiveDelay = document.hidden ? Math.max(nextDelayMs, 10000) : nextDelayMs
-    const handle = window.setTimeout(() => {
-      void pollWorkflowRun(
-        jobId,
-        catalogId,
-        nextActivityAt,
-        nextConsecutiveErrors,
-        expectedViewportEpoch,
-      )
-    }, effectiveDelay)
-    workflowPollingHandles.set(jobId, handle)
-  }
-
   /**
    * 注册一个外部触发的工作流 run（如定时器触发、后端直接提交），
    * 将其写入 jobLayers 并启动轮询跟踪。
@@ -2577,7 +2092,7 @@ export const useLayersStore = defineStore('layers', () => {
    */
   async function registerExternalWorkflowRun(runId: string, catalogIdHint?: string) {
     // 已在跟踪则跳过
-    if (workflowPollingHandles.has(runId)) return
+    if (workflowPoller.isPolling(runId)) return
     const existing = jobLayers.value.find((item) => item.jobId === runId)
     if (existing && !isTerminalStatus(existing.status)) return
 
@@ -2590,7 +2105,7 @@ export const useLayersStore = defineStore('layers', () => {
       upsertJobLayer(inferredCatalogId, jobLayer)
       if (!isTerminalStatus(jobLayer.status)) {
         activeWorkflowCatalogIds.add(inferredCatalogId)
-        void pollWorkflowRun(runId, inferredCatalogId)
+        void workflowPoller.startPolling(runId, inferredCatalogId)
       }
     } catch (err) {
       console.error('[layers] registerExternalWorkflowRun failed:', runId, err)
@@ -2624,7 +2139,7 @@ export const useLayersStore = defineStore('layers', () => {
       const events = await getWorkflowEvents(jobLayer.jobId, { limit: 50 })
       const items = events.items ?? []
       if (!items.length) return jobLayer
-      return applyWorkflowEventsToJobLayer(jobLayer, items)
+      return workflowPoller.applyWorkflowEventsToJobLayer(jobLayer, items)
     } catch {
       return jobLayer
     }
@@ -2713,12 +2228,12 @@ export const useLayersStore = defineStore('layers', () => {
           forgetTrackedWorkflowRun(candidate.runId)
           continue
         }
-        if (workflowPollingHandles.has(candidate.runId)) continue
+        if (workflowPoller.isPolling(candidate.runId)) continue
         const existing = jobLayers.value.find((item) => item.jobId === candidate.runId)
         if (
           existing &&
           !isTerminalStatus(existing.status) &&
-          workflowPollingHandles.has(candidate.runId)
+          workflowPoller.isPolling(candidate.runId)
         ) {
           continue
         }
@@ -2790,7 +2305,7 @@ export const useLayersStore = defineStore('layers', () => {
             })
           }
           activeWorkflowCatalogIds.add(catalogId)
-          void pollWorkflowRun(run.run_id, catalogId)
+          void workflowPoller.startPolling(run.run_id, catalogId)
         } else if (
           jobLayer.status === 'succeeded' &&
           (candidate.autoDiscovered || !isRunDismissed(run.run_id))
@@ -3147,7 +2662,7 @@ export const useLayersStore = defineStore('layers', () => {
       activeWorkflowCatalogIds.add(catalogId)
       // 工作流提交成功，清除 429 重试计数
       workflowRetryCounts.delete(catalogId)
-      void pollWorkflowRun(accepted.run_id, catalogId, Date.now(), 0, options.expectedViewportEpoch)
+      void workflowPoller.startPolling(accepted.run_id, catalogId, options.expectedViewportEpoch)
       return accepted.run_id
     } catch (error) {
       const errMsg = error instanceof Error ? error.message : '提交 workflow 失败'
@@ -3196,11 +2711,9 @@ export const useLayersStore = defineStore('layers', () => {
             })
             activeWorkflowCatalogIds.add(catalogId)
             workflowRetryCounts.delete(catalogId)
-            void pollWorkflowRun(
+            void workflowPoller.startPolling(
               claimed.run_id,
               catalogId,
-              Date.now(),
-              0,
               options.expectedViewportEpoch,
             )
             return claimed.run_id
@@ -3358,7 +2871,7 @@ export const useLayersStore = defineStore('layers', () => {
         resultUrl: undefined,
       })
       activeWorkflowCatalogIds.add(catalogId)
-      void pollWorkflowRun(accepted.run_id, catalogId)
+      void workflowPoller.startPolling(accepted.run_id, catalogId)
       return accepted.run_id
     } catch (error) {
       workflowError.value = error instanceof Error ? error.message : '重试 workflow 失败'

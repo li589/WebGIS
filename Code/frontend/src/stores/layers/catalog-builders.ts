@@ -42,6 +42,11 @@ export function isRecognizedJobStatus(status: unknown): status is JobStatus {
   )
 }
 
+export function isTerminalStatus(status: string) {
+  // retry_pending 是非终态（等待重试），不应包含在此处
+  return status === 'succeeded' || status === 'failed' || status === 'cancelled'
+}
+
 export function formatHotspotValue(value: unknown, unit?: unknown) {
   const unitLabel = typeof unit === 'string' ? unit : ''
   if (typeof value === 'number') {
