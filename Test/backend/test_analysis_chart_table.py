@@ -6,7 +6,11 @@ import json
 from datetime import datetime, timezone
 from pathlib import Path
 
-from shared.contracts.api_contracts import ResultKind, WorkflowCommandType, WorkflowSubmitRequest
+from shared.contracts.api_contracts import (
+    ResultKind,
+    WorkflowCommandType,
+    WorkflowSubmitRequest,
+)
 
 
 def test_build_product_ref_emits_chart_and_table(tmp_path: Path):
@@ -86,9 +90,39 @@ def test_build_product_ref_emits_chart_and_table(tmp_path: Path):
     assert table_ref.inline_data.get("columns") == ["bin", "count"]
 
 
+def test_omega_sf_map_layers_skip_static_omega_when_block_series_exists() -> None:
+    from app.services.python_provider_result_builder import PythonProviderResultBuilder
+
+    class CapturingBuilder(PythonProviderResultBuilder):
+        def _build_product_map_layer_ref(self, **kwargs):
+            return kwargs["product"]["type"]
+
+    refs = CapturingBuilder()._build_product_map_layer_refs(
+        run_id="run-omega-three-layers",
+        requested_at=datetime.now(timezone.utc),
+        payload=WorkflowSubmitRequest(command_type=WorkflowCommandType.analysis),
+        result_dto={
+            "products": [
+                {"type": "omega_sf_omega_pixel"},
+                {"type": "omega_sf_sm_block_dir"},
+                {"type": "omega_sf_vod_block_dir"},
+                {"type": "omega_sf_omega_block_dir"},
+            ]
+        },
+    )
+
+    assert refs == [
+        "omega_sf_sm_block_dir",
+        "omega_sf_vod_block_dir",
+        "omega_sf_omega_block_dir",
+    ]
+
+
 def test_histogram_and_chart_nodes_executable():
     from app.services.node_template_registry import get_node_template
-    from app.services.python_provider_bridge_service import _PENDING_IMPLEMENTATION_MODULES
+    from app.services.python_provider_bridge_service import (
+        _PENDING_IMPLEMENTATION_MODULES,
+    )
 
     hist = get_node_template("stats/histogram")
     chart = get_node_template("viz/chart_generate")
@@ -99,12 +133,20 @@ def test_histogram_and_chart_nodes_executable():
 
 
 def test_analysis_seeds_compile():
-    from app.services.workflow_graph_compiler import compile_litegraph_to_workflow_definition
+    from app.services.workflow_graph_compiler import (
+        compile_litegraph_to_workflow_definition,
+    )
     from app.services.workflow_request_resolver import _filter_invalid_edges
     import json
     from pathlib import Path
 
-    seed_dir = Path(__file__).resolve().parents[2] / "Code" / "backend" / "workflow_seeds" / "system"
+    seed_dir = (
+        Path(__file__).resolve().parents[2]
+        / "Code"
+        / "backend"
+        / "workflow_seeds"
+        / "system"
+    )
     for name in (
         "raster_histogram_basic.json",
         "raster_zonal_stats_aligned.json",

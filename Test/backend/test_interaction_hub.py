@@ -4,6 +4,7 @@ from pathlib import Path
 import tempfile
 import unittest
 from contextlib import contextmanager
+from datetime import datetime, timezone
 from typing import Iterator
 from unittest.mock import MagicMock, patch
 
@@ -145,6 +146,43 @@ class WorkflowServicesTests(unittest.TestCase):
             self.assertEqual(call_kwargs["run_id"], "run-retry-1")
             self.assertEqual(call_kwargs["countdown"], 4.5)
             self.assertEqual(call_kwargs["payload"].retry_attempt, 2)
+
+    def test_cancelled_workflow_does_not_schedule_retry(self) -> None:
+        with _temp_repository() as repository:
+            submission, lifecycle, runtime_status = _build_services(repository)
+            payload = self._build_payload(WorkflowCommandType.analysis)
+            run_id = "run-cancelled-retry"
+            created_at = datetime.now(timezone.utc)
+            repository.save_run(
+                lifecycle._transitions.build_execution_transition(
+                    run_id=run_id,
+                    payload=payload,
+                    status=ExecutionStatus.cancelled,
+                    progress=100,
+                    message="工作流已被用户取消。",
+                    created_at=created_at,
+                    updated_at=created_at,
+                )
+            )
+
+            with patch(
+                "app.services.workflow.lifecycle_service.dispatch_workflow_task"
+            ) as dispatch_mock:
+                lifecycle.finalize_workflow_retry(
+                    run_id=run_id,
+                    payload=payload,
+                    created_at=created_at,
+                    exc=ConnectionError("transient"),
+                    category=FailureCategory.transient_network,
+                    current_attempt=1,
+                    next_attempt=2,
+                    backoff_seconds=1.0,
+                )
+
+            dispatch_mock.assert_not_called()
+            self.assertEqual(
+                repository.get_run(run_id).status, ExecutionStatus.cancelled
+            )
 
     def test_submit_workflow_auto_populates_algorithm_request_from_layer_catalog(
         self,
@@ -453,8 +491,6 @@ class WorkflowServicesTests(unittest.TestCase):
                     )
                 )
             self.assertIsInstance(response, WorkflowAcceptedResponse)
-
-
 
 
 if __name__ == "__main__":

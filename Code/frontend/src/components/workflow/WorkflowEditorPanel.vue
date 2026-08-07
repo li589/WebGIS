@@ -369,15 +369,33 @@ async function handleRunConfirm(target: WorkflowRunTarget) {
 }
 
 /**
- * 将流水线启动器传入的 algorithm_params 注入到 graphData 的 module 节点中。
- * 仅更新包含 algorithm_params 的节点属性，其他节点保持不变。
+ * 将流水线启动器参数同步到算法节点与 data/time_range，保证计算范围和 UI 时间轴元数据一致。
  */
 function applyPipelineParamsToGraph(
   graphData: { nodes: WorkflowDefinitionNode[]; links: WorkflowDefinitionLink[] },
   params: Record<string, unknown>,
 ): { nodes: WorkflowDefinitionNode[]; links: WorkflowDefinitionLink[] } {
+  const startDate = typeof params.start_date === 'string' ? params.start_date : ''
+  const endDate = typeof params.end_date === 'string' ? params.end_date : ''
+  const toIsoDate = (value: string) =>
+    `${value.slice(0, 4)}-${value.slice(4, 6)}-${value.slice(6, 8)}T00:00:00`
+  const startAt = startDate.length === 8 ? toIsoDate(startDate) : ''
+  const endAt = endDate.length === 8 ? toIsoDate(endDate) : ''
+
   const updatedNodes = graphData.nodes.map((node) => {
     const nodeProps = node.properties as Record<string, unknown>
+    const isTimeRangeNode =
+      node.type === 'data/time_range' || nodeProps.module_name === 'time_range'
+    if (isTimeRangeNode && startAt && endAt) {
+      return {
+        ...node,
+        properties: {
+          ...nodeProps,
+          start_at: startAt,
+          end_at: endAt,
+        },
+      }
+    }
     if (
       nodeProps.algorithm_params &&
       typeof nodeProps.algorithm_params === 'object' &&

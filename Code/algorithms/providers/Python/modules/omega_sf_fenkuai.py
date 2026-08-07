@@ -110,7 +110,9 @@ def _resolve_grid_shape(
     )
 
 
-@register_module_decorator(name="omega_sf_fenkuai", aliases=["omega_sf_fenkuai_pipeline"])
+@register_module_decorator(
+    name="omega_sf_fenkuai", aliases=["omega_sf_fenkuai_pipeline"]
+)
 class OmegaSfFenkuaiModule(BaseModule):
     name = "omega_sf_fenkuai"
     description = (
@@ -176,17 +178,26 @@ class OmegaSfFenkuaiModule(BaseModule):
         # 解析 grid_shape
         grid_shape = _resolve_grid_shape(algorithm_params, datasource_selection)
 
-        # 解析输出目录
+        # 每个 workflow run 使用独立目录，防止不同传感器/时间窗口复用旧块产物。
+        # 显式 reuse_output_dir 仅供同一 run 的失败重试复用已有块缓存。
         reuse_output_dir = algorithm_params.get("reuse_output_dir")
         if isinstance(reuse_output_dir, str) and reuse_output_dir.strip():
             output_dir = Path(reuse_output_dir.strip())
         else:
-            output_dir = Path(
-                output_spec_extra.get(
-                    "output_dir", ctx.workspace / "products" / "omega_sf_fenkuai"
-                )
+            configured_output_dir = output_spec_extra.get("output_dir")
+            output_root = (
+                Path(str(configured_output_dir))
+                if isinstance(configured_output_dir, str)
+                and configured_output_dir.strip()
+                else ctx.workspace / "products" / "omega_sf_fenkuai"
             )
+            output_dir = output_root / ctx.runtime_context.run_id
         output_dir.mkdir(parents=True, exist_ok=True)
+        if ctx.logger_adapter is not None:
+            ctx.logger_adapter.emit_stage_start(
+                "omega_sf_fenkuai",
+                f"Using isolated output directory: {output_dir}",
+            )
 
         cancel_flag_path = algorithm_params.get("cancel_flag_path")
         if not cancel_flag_path:
@@ -273,18 +284,8 @@ class OmegaSfFenkuaiModule(BaseModule):
         # 构建三个产品图层引用
         products: list[ProductRef] = []
 
-        # OMEGA pixel 图层
-        omega_pix_path = result.output_paths.get("omega_pixel", "")
-        if omega_pix_path:
-            products.append(
-                ProductRef(
-                    name="omega_sf_omega_pixel",
-                    type="omega_sf_omega_pixel",
-                    uri=omega_pix_path,
-                    variable="omega_pix_map",
-                    tags={"module": self.name, "layer": "OMEGA"},
-                )
-            )
+        # omega_pixel / omega_pft 是反演中间诊断产物；地图仅发布块级
+        # SM / VOD / OMEGA，以保证一个 workflow run 对应一个三层时间序列组。
 
         # OMEGA PFT 图层
         omega_pft_path = result.output_paths.get("omega_pft", "")
@@ -326,7 +327,7 @@ class OmegaSfFenkuaiModule(BaseModule):
                     type="omega_sf_omega_block_dir",
                     uri=block_dir,
                     variable="OMEGA",
-        tags={"module": self.name, "layer": "OMEGA"},
+                    tags={"module": self.name, "layer": "OMEGA"},
                 )
             )
 

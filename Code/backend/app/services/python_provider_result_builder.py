@@ -583,8 +583,17 @@ class PythonProviderResultBuilder:
             return []
 
         refs: list[WorkflowResultReference] = []
+        has_omega_block_series = any(
+            isinstance(product, dict)
+            and product.get("type") == "omega_sf_omega_block_dir"
+            for product in products
+        )
         for idx, product in enumerate(products):
             if not isinstance(product, dict):
+                continue
+            # SF workflow 的 omega_pixel 是静态诊断产物；存在块级 OMEGA
+            # 时间序列时不可再发布一次同标签地图层，否则一个 run 会变成四层。
+            if has_omega_block_series and product.get("type") == "omega_sf_omega_pixel":
                 continue
             ref = self._build_product_map_layer_ref(
                 run_id=run_id,

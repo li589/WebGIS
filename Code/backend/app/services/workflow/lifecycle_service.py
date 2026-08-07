@@ -213,6 +213,15 @@ class WorkflowLifecycleService:
         backoff_seconds: float,
     ) -> None:
         """瞬态失败进入 retry_pending 状态，并调度延迟重试。"""
+        blocked, reason = self._is_protected_terminal(run_id)
+        if blocked:
+            logger.warning(
+                "Skip finalize_workflow_retry for %s: protected terminal (%s)",
+                run_id,
+                reason,
+            )
+            return
+
         retry_at = datetime.now(timezone.utc)
         self._persistence.save_run_status(
             run_status=self._transitions.build_retry_pending_transition(
