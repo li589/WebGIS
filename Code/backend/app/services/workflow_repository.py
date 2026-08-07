@@ -86,6 +86,25 @@ class SQLiteWorkflowRepository:
             payload["result_dto"] = result_dto_override
         return json.dumps(payload, ensure_ascii=False)
 
+    # C4 终态守卫（SQL 原子层，消除应用层 read-check-write 的 TOCTOU 窗口）：
+    # cancelled 或 watchdog-failed（stuck_running_watchdog）的 run 拒绝任何覆盖写，
+    # 与 lifecycle_service._is_protected_terminal 语义一致；INSERT 新行不受影响。
+    _TERMINAL_GUARD_WHERE = """
+        WHERE NOT (
+            workflow_runs.status = 'cancelled'
+            OR (
+                workflow_runs.status = 'failed'
+                AND COALESCE(
+                    json_extract(
+                        workflow_runs.payload_json,
+                        '$.executor_metadata.cleanup_reason'
+                    ),
+                    ''
+                ) = 'stuck_running_watchdog'
+            )
+        )
+    """
+
     def save_run(
         self,
         run_status: WorkflowRunStatusResponse,
@@ -109,7 +128,8 @@ class SQLiteWorkflowRepository:
                         payload_json = excluded.payload_json,
                         request_json = COALESCE(excluded.request_json, request_json),
                         run_class = COALESCE(excluded.run_class, run_class)
-                    """,
+                    """
+                    + self._TERMINAL_GUARD_WHERE,
                     (
                         run_status.run_id,
                         run_status.status.value,
@@ -129,7 +149,8 @@ class SQLiteWorkflowRepository:
                         updated_at = excluded.updated_at,
                         payload_json = excluded.payload_json,
                         run_class = COALESCE(workflow_runs.run_class, excluded.run_class)
-                    """,
+                    """
+                    + self._TERMINAL_GUARD_WHERE,
                     (
                         run_status.run_id,
                         run_status.status.value,
@@ -349,7 +370,8 @@ class SQLiteWorkflowRepository:
                     payload_json = excluded.payload_json,
                     request_json = COALESCE(excluded.request_json, request_json),
                     run_class = COALESCE(excluded.run_class, run_class)
-                """,
+                """
+                + self._TERMINAL_GUARD_WHERE,
                 (
                     run_status.run_id,
                     run_status.status.value,
