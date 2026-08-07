@@ -703,22 +703,9 @@
         ],
         "summary": "Submit Workflow",
         "operationId": "submit_workflow_workflow_runs_post",
-        "parameters": [
+        "security": [
           {
-            "name": "x-api-key",
-            "in": "header",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "X-Api-Key"
-            }
+            "APIKeyHeader": []
           }
         ],
         "requestBody": {
@@ -759,7 +746,7 @@
           "workflow"
         ],
         "summary": "List Workflow Runs",
-        "description": "列出工作流 run。active_only=true（默认）仅返回非终态 run。\n\n供前端启动恢复与跨会话状态同步使用。",
+        "description": "列出工作流 run。active_only=true（默认）仅返回非终态 run。\n\n可选 status 过滤与 limit 取最近 N 条（按创建时间倒序），\n供前端启动恢复（含\"最近成功 run 产物自动恢复\"）与跨会话状态同步使用。",
         "operationId": "list_workflow_runs_workflow_runs_get",
         "parameters": [
           {
@@ -771,6 +758,44 @@
               "default": true,
               "title": "Active Only"
             }
+          },
+          {
+            "name": "status",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "按状态过滤，如 succeeded / failed / cancelled",
+              "title": "Status"
+            },
+            "description": "按状态过滤，如 succeeded / failed / cancelled"
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer",
+                  "maximum": 200,
+                  "minimum": 1
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "取最近 N 条（按创建时间倒序）",
+              "title": "Limit"
+            },
+            "description": "取最近 N 条（按创建时间倒序）"
           }
         ],
         "responses": {
@@ -966,6 +991,11 @@
         ],
         "summary": "Cancel Workflow Run",
         "operationId": "cancel_workflow_run_workflow_runs__run_id__cancel_post",
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ],
         "parameters": [
           {
             "name": "run_id",
@@ -974,22 +1004,6 @@
             "schema": {
               "type": "string",
               "title": "Run Id"
-            }
-          },
-          {
-            "name": "x-api-key",
-            "in": "header",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "X-Api-Key"
             }
           }
         ],
@@ -1024,6 +1038,11 @@
         ],
         "summary": "Retry Workflow Run",
         "operationId": "retry_workflow_run_workflow_runs__run_id__retry_post",
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ],
         "parameters": [
           {
             "name": "run_id",
@@ -1032,22 +1051,6 @@
             "schema": {
               "type": "string",
               "title": "Run Id"
-            }
-          },
-          {
-            "name": "x-api-key",
-            "in": "header",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "X-Api-Key"
             }
           }
         ],
@@ -1083,6 +1086,11 @@
         "summary": "Materialize Workflow Map Layers",
         "description": "Publish algorithm science products as imported overlays for map display.\n\nUsed when a run completed with file-only product refs (no map_layer), or to\nre-publish after code updates without re-running the inversion.\nAlso allowed while ``running`` so block mats can progressively appear.",
         "operationId": "materialize_workflow_map_layers_workflow_runs__run_id__materialize_map_layers_post",
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ],
         "parameters": [
           {
             "name": "run_id",
@@ -1091,22 +1099,6 @@
             "schema": {
               "type": "string",
               "title": "Run Id"
-            }
-          },
-          {
-            "name": "x-api-key",
-            "in": "header",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "X-Api-Key"
             }
           }
         ],
@@ -1137,39 +1129,43 @@
       }
     },
     "/runtime/config": {
+      "get": {
+        "tags": [
+          "runtime"
+        ],
+        "summary": "Get Runtime Config",
+        "description": "Return the current runtime configuration snapshot (defaults + DB overrides).",
+        "operationId": "get_runtime_config_runtime_config_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object",
+                  "title": "Response Get Runtime Config Runtime Config Get"
+                }
+              }
+            }
+          }
+        }
+      },
       "patch": {
         "tags": [
           "runtime"
         ],
         "summary": "Update Runtime Config",
         "operationId": "update_runtime_config_runtime_config_patch",
-        "parameters": [
-          {
-            "name": "x-api-key",
-            "in": "header",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "X-Api-Key"
-            }
-          }
-        ],
         "requestBody": {
-          "required": true,
           "content": {
             "application/json": {
               "schema": {
                 "$ref": "#/components/schemas/RuntimeConfigUpdateRequest"
               }
             }
-          }
+          },
+          "required": true
         },
         "responses": {
           "200": {
@@ -1192,29 +1188,12 @@
               }
             }
           }
-        }
-      },
-      "get": {
-        "tags": [
-          "runtime"
-        ],
-        "summary": "Get Runtime Config",
-        "description": "Return the current runtime configuration snapshot (defaults + DB overrides).",
-        "operationId": "get_runtime_config_runtime_config_get",
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "additionalProperties": true,
-                  "title": "Response Get Runtime Config Runtime Config Get"
-                }
-              }
-            }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
           }
-        }
+        ]
       }
     },
     "/runtime/status": {
@@ -1298,34 +1277,15 @@
         "summary": "Submit Frontend Command",
         "description": "已移除：前端控制指令为占位实现，无实际副作用。",
         "operationId": "submit_frontend_command_frontend_commands_post",
-        "deprecated": true,
-        "parameters": [
-          {
-            "name": "x-api-key",
-            "in": "header",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "X-Api-Key"
-            }
-          }
-        ],
         "requestBody": {
-          "required": true,
           "content": {
             "application/json": {
               "schema": {
                 "$ref": "#/components/schemas/FrontendCommandRequest"
               }
             }
-          }
+          },
+          "required": true
         },
         "responses": {
           "200": {
@@ -1348,7 +1308,13 @@
               }
             }
           }
-        }
+        },
+        "deprecated": true,
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ]
       }
     },
     "/runtime/api-config": {
@@ -1419,6 +1385,11 @@
         "description": "已移除：运行时密钥/配置请改用 /config/api-keys* 与 /config/weather/providers*。",
         "operationId": "update_provider_api_config_runtime_api_config__provider__post",
         "deprecated": true,
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ],
         "parameters": [
           {
             "name": "provider",
@@ -1427,22 +1398,6 @@
             "schema": {
               "type": "string",
               "title": "Provider"
-            }
-          },
-          {
-            "name": "x-api-key",
-            "in": "header",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "X-Api-Key"
             }
           }
         ],
@@ -1575,48 +1530,25 @@
         "summary": "Clear Runtime Tile Cache",
         "description": "清空底图代理进程内缓存。",
         "operationId": "clear_runtime_tile_cache_runtime_tiles_cache_clear_post",
-        "parameters": [
-          {
-            "name": "x-api-key",
-            "in": "header",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "X-Api-Key"
-            }
-          }
-        ],
         "responses": {
           "200": {
             "description": "Successful Response",
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
                   "additionalProperties": true,
+                  "type": "object",
                   "title": "Response Clear Runtime Tile Cache Runtime Tiles Cache Clear Post"
                 }
               }
             }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
           }
-        }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ]
       }
     },
     "/algorithm/workflows": {
@@ -2401,48 +2333,25 @@
         "summary": "List Crs Options",
         "description": "返回前端下拉用 CRS 列表（按 category 分组前的平铺列表）。\n\n委托 ``crs_registry.to_api_payload()``，返回 13 项 Phase 1 扩展版 CRS。",
         "operationId": "list_crs_options_import_crs_options_get",
-        "parameters": [
-          {
-            "name": "x-api-key",
-            "in": "header",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "X-Api-Key"
-            }
-          }
-        ],
         "responses": {
           "200": {
             "description": "Successful Response",
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
                   "additionalProperties": true,
+                  "type": "object",
                   "title": "Response List Crs Options Import Crs Options Get"
                 }
               }
             }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
           }
-        }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ]
       }
     },
     "/import/crs-options/expanded": {
@@ -2453,48 +2362,25 @@
         "summary": "List Crs Options Expanded",
         "description": "返回完整 CRS 列表（含动态 UTM/GK 带，供高级选择）。\n\nfeatured 项为精简集，非 featured 项为动态生成的投影带。",
         "operationId": "list_crs_options_expanded_import_crs_options_expanded_get",
-        "parameters": [
-          {
-            "name": "x-api-key",
-            "in": "header",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "X-Api-Key"
-            }
-          }
-        ],
         "responses": {
           "200": {
             "description": "Successful Response",
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
                   "additionalProperties": true,
+                  "type": "object",
                   "title": "Response List Crs Options Expanded Import Crs Options Expanded Get"
                 }
               }
             }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
           }
-        }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ]
       }
     },
     "/import/raster": {
@@ -2505,33 +2391,15 @@
         "summary": "Import Raster",
         "description": "上传栅格文件（TIF），生成预览 PNG + bounds，动态注册为 overlay 图层。\n\n返回 ``{layer_id, bounds, source_crs, suggested_crs, needs_confirm}``。\nbounds 保持源 CRS 不转换；前端若收到 ``needs_confirm=True`` 应弹确认框，\n用户确认后调 ``POST /import/raster/confirm`` 重投影到 WGS84。",
         "operationId": "import_raster_import_raster_post",
-        "parameters": [
-          {
-            "name": "x-api-key",
-            "in": "header",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "X-Api-Key"
-            }
-          }
-        ],
         "requestBody": {
-          "required": true,
           "content": {
             "multipart/form-data": {
               "schema": {
                 "$ref": "#/components/schemas/Body_import_raster_import_raster_post"
               }
             }
-          }
+          },
+          "required": true
         },
         "responses": {
           "200": {
@@ -2539,8 +2407,8 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
                   "additionalProperties": true,
+                  "type": "object",
                   "title": "Response Import Raster Import Raster Post"
                 }
               }
@@ -2556,7 +2424,12 @@
               }
             }
           }
-        }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ]
       }
     },
     "/import/raster/{layer_id}": {
@@ -2567,6 +2440,11 @@
         "summary": "Delete Imported Raster",
         "description": "删除动态导入的栅格 overlay，并清理磁盘目录。",
         "operationId": "delete_imported_raster_import_raster__layer_id__delete",
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ],
         "parameters": [
           {
             "name": "layer_id",
@@ -2575,22 +2453,6 @@
             "schema": {
               "type": "string",
               "title": "Layer Id"
-            }
-          },
-          {
-            "name": "x-api-key",
-            "in": "header",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "X-Api-Key"
             }
           }
         ],
@@ -2628,33 +2490,15 @@
         "summary": "Confirm Imported Raster",
         "description": "用户确认 CRS 后：重投影 PNG、重算 bounds、更新 overlay。",
         "operationId": "confirm_imported_raster_import_raster_confirm_post",
-        "parameters": [
-          {
-            "name": "x-api-key",
-            "in": "header",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "X-Api-Key"
-            }
-          }
-        ],
         "requestBody": {
-          "required": true,
           "content": {
             "application/json": {
               "schema": {
                 "$ref": "#/components/schemas/ConfirmRequest"
               }
             }
-          }
+          },
+          "required": true
         },
         "responses": {
           "200": {
@@ -2662,8 +2506,8 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
                   "additionalProperties": true,
+                  "type": "object",
                   "title": "Response Confirm Imported Raster Import Raster Confirm Post"
                 }
               }
@@ -2679,7 +2523,12 @@
               }
             }
           }
-        }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ]
       }
     },
     "/import/transform-point": {
@@ -2690,33 +2539,15 @@
         "summary": "Transform Point Endpoint",
         "description": "批量点转换（前端 CSV/POI 提交时用）。\n\n委托 ``crs_transformer.transform_points_batch``。返回转换后的点列表。",
         "operationId": "transform_point_endpoint_import_transform_point_post",
-        "parameters": [
-          {
-            "name": "x-api-key",
-            "in": "header",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "X-Api-Key"
-            }
-          }
-        ],
         "requestBody": {
-          "required": true,
           "content": {
             "application/json": {
               "schema": {
                 "$ref": "#/components/schemas/TransformPointRequest"
               }
             }
-          }
+          },
+          "required": true
         },
         "responses": {
           "200": {
@@ -2724,8 +2555,8 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
                   "additionalProperties": true,
+                  "type": "object",
                   "title": "Response Transform Point Endpoint Import Transform Point Post"
                 }
               }
@@ -2741,7 +2572,12 @@
               }
             }
           }
-        }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ]
       }
     },
     "/import/transform-bounds": {
@@ -2752,33 +2588,15 @@
         "summary": "Transform Bounds Endpoint",
         "description": "bounds 转换（前端栅格预览用）。\n\n委托 ``crs_transformer.transform_bounds``。返回目标 CRS 下的 bounds。",
         "operationId": "transform_bounds_endpoint_import_transform_bounds_post",
-        "parameters": [
-          {
-            "name": "x-api-key",
-            "in": "header",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "X-Api-Key"
-            }
-          }
-        ],
         "requestBody": {
-          "required": true,
           "content": {
             "application/json": {
               "schema": {
                 "$ref": "#/components/schemas/TransformBoundsRequest"
               }
             }
-          }
+          },
+          "required": true
         },
         "responses": {
           "200": {
@@ -2786,8 +2604,8 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
                   "additionalProperties": true,
+                  "type": "object",
                   "title": "Response Transform Bounds Endpoint Import Transform Bounds Post"
                 }
               }
@@ -2803,7 +2621,12 @@
               }
             }
           }
-        }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ]
       }
     },
     "/import/upload/init": {
@@ -2813,33 +2636,15 @@
         ],
         "summary": "Upload Init",
         "operationId": "upload_init_import_upload_init_post",
-        "parameters": [
-          {
-            "name": "x-api-key",
-            "in": "header",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "X-Api-Key"
-            }
-          }
-        ],
         "requestBody": {
-          "required": true,
           "content": {
             "application/json": {
               "schema": {
                 "$ref": "#/components/schemas/UploadInitBody"
               }
             }
-          }
+          },
+          "required": true
         },
         "responses": {
           "200": {
@@ -2847,8 +2652,8 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
                   "additionalProperties": true,
+                  "type": "object",
                   "title": "Response Upload Init Import Upload Init Post"
                 }
               }
@@ -2864,7 +2669,12 @@
               }
             }
           }
-        }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ]
       }
     },
     "/import/upload/resumable/init": {
@@ -2874,33 +2684,15 @@
         ],
         "summary": "Upload Resumable Init",
         "operationId": "upload_resumable_init_import_upload_resumable_init_post",
-        "parameters": [
-          {
-            "name": "x-api-key",
-            "in": "header",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "X-Api-Key"
-            }
-          }
-        ],
         "requestBody": {
-          "required": true,
           "content": {
             "application/json": {
               "schema": {
                 "$ref": "#/components/schemas/UploadResumableInitBody"
               }
             }
-          }
+          },
+          "required": true
         },
         "responses": {
           "200": {
@@ -2908,8 +2700,8 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
                   "additionalProperties": true,
+                  "type": "object",
                   "title": "Response Upload Resumable Init Import Upload Resumable Init Post"
                 }
               }
@@ -2925,7 +2717,12 @@
               }
             }
           }
-        }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ]
       }
     },
     "/import/upload/{upload_id}/status": {
@@ -2935,6 +2732,11 @@
         ],
         "summary": "Upload Status",
         "operationId": "upload_status_import_upload__upload_id__status_get",
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ],
         "parameters": [
           {
             "name": "upload_id",
@@ -2943,22 +2745,6 @@
             "schema": {
               "type": "string",
               "title": "Upload Id"
-            }
-          },
-          {
-            "name": "x-api-key",
-            "in": "header",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "X-Api-Key"
             }
           }
         ],
@@ -2995,6 +2781,11 @@
         ],
         "summary": "Upload Chunk",
         "operationId": "upload_chunk_import_upload__upload_id__chunk_post",
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ],
         "parameters": [
           {
             "name": "upload_id",
@@ -3003,22 +2794,6 @@
             "schema": {
               "type": "string",
               "title": "Upload Id"
-            }
-          },
-          {
-            "name": "x-api-key",
-            "in": "header",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "X-Api-Key"
             }
           }
         ],
@@ -3065,6 +2840,11 @@
         ],
         "summary": "Upload Chunk Indexed",
         "operationId": "upload_chunk_indexed_import_upload__upload_id__chunk__chunk_index__post",
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ],
         "parameters": [
           {
             "name": "upload_id",
@@ -3082,22 +2862,6 @@
             "schema": {
               "type": "integer",
               "title": "Chunk Index"
-            }
-          },
-          {
-            "name": "x-api-key",
-            "in": "header",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "X-Api-Key"
             }
           }
         ],
@@ -3144,33 +2908,15 @@
         ],
         "summary": "Upload Complete",
         "operationId": "upload_complete_import_upload_complete_post",
-        "parameters": [
-          {
-            "name": "x-api-key",
-            "in": "header",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "X-Api-Key"
-            }
-          }
-        ],
         "requestBody": {
-          "required": true,
           "content": {
             "application/json": {
               "schema": {
                 "$ref": "#/components/schemas/UploadCompleteBody"
               }
             }
-          }
+          },
+          "required": true
         },
         "responses": {
           "200": {
@@ -3178,8 +2924,8 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
                   "additionalProperties": true,
+                  "type": "object",
                   "title": "Response Upload Complete Import Upload Complete Post"
                 }
               }
@@ -3195,7 +2941,12 @@
               }
             }
           }
-        }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ]
       }
     },
     "/import/upload/resumable/complete": {
@@ -3205,33 +2956,15 @@
         ],
         "summary": "Upload Resumable Complete",
         "operationId": "upload_resumable_complete_import_upload_resumable_complete_post",
-        "parameters": [
-          {
-            "name": "x-api-key",
-            "in": "header",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "X-Api-Key"
-            }
-          }
-        ],
         "requestBody": {
-          "required": true,
           "content": {
             "application/json": {
               "schema": {
                 "$ref": "#/components/schemas/UploadCompleteBody"
               }
             }
-          }
+          },
+          "required": true
         },
         "responses": {
           "200": {
@@ -3239,8 +2972,8 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
                   "additionalProperties": true,
+                  "type": "object",
                   "title": "Response Upload Resumable Complete Import Upload Resumable Complete Post"
                 }
               }
@@ -3256,7 +2989,12 @@
               }
             }
           }
-        }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ]
       }
     },
     "/import/upload/{upload_id}": {
@@ -3266,6 +3004,11 @@
         ],
         "summary": "Upload Discard",
         "operationId": "upload_discard_import_upload__upload_id__delete",
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ],
         "parameters": [
           {
             "name": "upload_id",
@@ -3274,22 +3017,6 @@
             "schema": {
               "type": "string",
               "title": "Upload Id"
-            }
-          },
-          {
-            "name": "x-api-key",
-            "in": "header",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "X-Api-Key"
             }
           }
         ],
@@ -3326,6 +3053,11 @@
         ],
         "summary": "Import Jobs List",
         "operationId": "import_jobs_list_import_jobs_get",
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ],
         "parameters": [
           {
             "name": "limit",
@@ -3335,22 +3067,6 @@
               "type": "integer",
               "default": 20,
               "title": "Limit"
-            }
-          },
-          {
-            "name": "x-api-key",
-            "in": "header",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "X-Api-Key"
             }
           }
         ],
@@ -3387,6 +3103,11 @@
         ],
         "summary": "Import Job Status",
         "operationId": "import_job_status_import_jobs__job_id__get",
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ],
         "parameters": [
           {
             "name": "job_id",
@@ -3395,22 +3116,6 @@
             "schema": {
               "type": "string",
               "title": "Job Id"
-            }
-          },
-          {
-            "name": "x-api-key",
-            "in": "header",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "X-Api-Key"
             }
           }
         ],
@@ -3447,6 +3152,11 @@
         ],
         "summary": "Import Job Cancel",
         "operationId": "import_job_cancel_import_jobs__job_id__cancel_post",
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ],
         "parameters": [
           {
             "name": "job_id",
@@ -3455,22 +3165,6 @@
             "schema": {
               "type": "string",
               "title": "Job Id"
-            }
-          },
-          {
-            "name": "x-api-key",
-            "in": "header",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "X-Api-Key"
             }
           }
         ],
@@ -3507,6 +3201,11 @@
         ],
         "summary": "Import Job Download",
         "operationId": "import_job_download_import_jobs__job_id__download_get",
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ],
         "parameters": [
           {
             "name": "job_id",
@@ -3515,22 +3214,6 @@
             "schema": {
               "type": "string",
               "title": "Job Id"
-            }
-          },
-          {
-            "name": "x-api-key",
-            "in": "header",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "X-Api-Key"
             }
           }
         ],
@@ -3563,33 +3246,15 @@
         ],
         "summary": "Import Batch",
         "operationId": "import_batch_import_batch_post",
-        "parameters": [
-          {
-            "name": "x-api-key",
-            "in": "header",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "X-Api-Key"
-            }
-          }
-        ],
         "requestBody": {
-          "required": true,
           "content": {
             "application/json": {
               "schema": {
                 "$ref": "#/components/schemas/ImportBatchBody"
               }
             }
-          }
+          },
+          "required": true
         },
         "responses": {
           "200": {
@@ -3597,8 +3262,8 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
                   "additionalProperties": true,
+                  "type": "object",
                   "title": "Response Import Batch Import Batch Post"
                 }
               }
@@ -3614,7 +3279,12 @@
               }
             }
           }
-        }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ]
       }
     },
     "/import/vector": {
@@ -3624,33 +3294,15 @@
         ],
         "summary": "Import Vector",
         "operationId": "import_vector_import_vector_post",
-        "parameters": [
-          {
-            "name": "x-api-key",
-            "in": "header",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "X-Api-Key"
-            }
-          }
-        ],
         "requestBody": {
-          "required": true,
           "content": {
             "application/json": {
               "schema": {
                 "$ref": "#/components/schemas/VectorImportBody"
               }
             }
-          }
+          },
+          "required": true
         },
         "responses": {
           "200": {
@@ -3658,8 +3310,8 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
                   "additionalProperties": true,
+                  "type": "object",
                   "title": "Response Import Vector Import Vector Post"
                 }
               }
@@ -3675,7 +3327,12 @@
               }
             }
           }
-        }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ]
       }
     },
     "/import/vector/multipart": {
@@ -3685,33 +3342,15 @@
         ],
         "summary": "Import Vector Multipart",
         "operationId": "import_vector_multipart_import_vector_multipart_post",
-        "parameters": [
-          {
-            "name": "x-api-key",
-            "in": "header",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "X-Api-Key"
-            }
-          }
-        ],
         "requestBody": {
-          "required": true,
           "content": {
             "multipart/form-data": {
               "schema": {
                 "$ref": "#/components/schemas/Body_import_vector_multipart_import_vector_multipart_post"
               }
             }
-          }
+          },
+          "required": true
         },
         "responses": {
           "200": {
@@ -3719,8 +3358,8 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
                   "additionalProperties": true,
+                  "type": "object",
                   "title": "Response Import Vector Multipart Import Vector Multipart Post"
                 }
               }
@@ -3736,7 +3375,12 @@
               }
             }
           }
-        }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ]
       }
     },
     "/import/layers/{layer_id}/meta": {
@@ -3746,6 +3390,11 @@
         ],
         "summary": "Vector Meta",
         "operationId": "vector_meta_import_layers__layer_id__meta_get",
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ],
         "parameters": [
           {
             "name": "layer_id",
@@ -3754,22 +3403,6 @@
             "schema": {
               "type": "string",
               "title": "Layer Id"
-            }
-          },
-          {
-            "name": "x-api-key",
-            "in": "header",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "X-Api-Key"
             }
           }
         ],
@@ -3806,6 +3439,11 @@
         ],
         "summary": "Vector Geojson",
         "operationId": "vector_geojson_import_layers__layer_id__geojson_get",
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ],
         "parameters": [
           {
             "name": "layer_id",
@@ -3824,22 +3462,6 @@
               "type": "boolean",
               "default": true,
               "title": "Preview"
-            }
-          },
-          {
-            "name": "x-api-key",
-            "in": "header",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "X-Api-Key"
             }
           }
         ],
@@ -3876,6 +3498,11 @@
         ],
         "summary": "Vector Features",
         "operationId": "vector_features_import_layers__layer_id__features_get",
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ],
         "parameters": [
           {
             "name": "layer_id",
@@ -3969,22 +3596,6 @@
               ],
               "title": "Where"
             }
-          },
-          {
-            "name": "x-api-key",
-            "in": "header",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "X-Api-Key"
-            }
           }
         ],
         "responses": {
@@ -4020,6 +3631,11 @@
         ],
         "summary": "Vector Feature Patch",
         "operationId": "vector_feature_patch_import_layers__layer_id__features__feature_index__patch",
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ],
         "parameters": [
           {
             "name": "layer_id",
@@ -4037,22 +3653,6 @@
             "schema": {
               "type": "integer",
               "title": "Feature Index"
-            }
-          },
-          {
-            "name": "x-api-key",
-            "in": "header",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "X-Api-Key"
             }
           }
         ],
@@ -4099,6 +3699,11 @@
         ],
         "summary": "Vector Feature Batch",
         "operationId": "vector_feature_batch_import_layers__layer_id__features_batch_post",
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ],
         "parameters": [
           {
             "name": "layer_id",
@@ -4107,22 +3712,6 @@
             "schema": {
               "type": "string",
               "title": "Layer Id"
-            }
-          },
-          {
-            "name": "x-api-key",
-            "in": "header",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "X-Api-Key"
             }
           }
         ],
@@ -4169,6 +3758,11 @@
         ],
         "summary": "Vector Field Add",
         "operationId": "vector_field_add_import_layers__layer_id__fields_post",
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ],
         "parameters": [
           {
             "name": "layer_id",
@@ -4177,22 +3771,6 @@
             "schema": {
               "type": "string",
               "title": "Layer Id"
-            }
-          },
-          {
-            "name": "x-api-key",
-            "in": "header",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "X-Api-Key"
             }
           }
         ],
@@ -4239,6 +3817,11 @@
         ],
         "summary": "Vector Field Delete",
         "operationId": "vector_field_delete_import_layers__layer_id__fields__name__delete",
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ],
         "parameters": [
           {
             "name": "layer_id",
@@ -4256,22 +3839,6 @@
             "schema": {
               "type": "string",
               "title": "Name"
-            }
-          },
-          {
-            "name": "x-api-key",
-            "in": "header",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "X-Api-Key"
             }
           }
         ],
@@ -4308,6 +3875,11 @@
         ],
         "summary": "Vector Rename Field",
         "operationId": "vector_rename_field_import_layers__layer_id__rename_field_post",
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ],
         "parameters": [
           {
             "name": "layer_id",
@@ -4316,22 +3888,6 @@
             "schema": {
               "type": "string",
               "title": "Layer Id"
-            }
-          },
-          {
-            "name": "x-api-key",
-            "in": "header",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "X-Api-Key"
             }
           }
         ],
@@ -4379,6 +3935,11 @@
         "summary": "Patch Imported Layer Display Name",
         "description": "更新导入图层显示名（meta.display_name / label），不影响物理文件名。",
         "operationId": "patch_imported_layer_display_name_import_layers__layer_id__display_name_patch",
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ],
         "parameters": [
           {
             "name": "layer_id",
@@ -4387,22 +3948,6 @@
             "schema": {
               "type": "string",
               "title": "Layer Id"
-            }
-          },
-          {
-            "name": "x-api-key",
-            "in": "header",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "X-Api-Key"
             }
           }
         ],
@@ -4450,6 +3995,11 @@
         "summary": "Delete Imported Layer",
         "description": "删除已导入矢量/栅格落盘目录（仅允许 imported-* 前缀）。",
         "operationId": "delete_imported_layer_import_layers__layer_id__delete",
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ],
         "parameters": [
           {
             "name": "layer_id",
@@ -4458,22 +4008,6 @@
             "schema": {
               "type": "string",
               "title": "Layer Id"
-            }
-          },
-          {
-            "name": "x-api-key",
-            "in": "header",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "X-Api-Key"
             }
           }
         ],
@@ -4511,48 +4045,25 @@
         "summary": "Import Quota",
         "description": "导入存储配额用量；可选触发临时目录回收。",
         "operationId": "import_quota_import_quota_get",
-        "parameters": [
-          {
-            "name": "x-api-key",
-            "in": "header",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "X-Api-Key"
-            }
-          }
-        ],
         "responses": {
           "200": {
             "description": "Successful Response",
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
                   "additionalProperties": true,
+                  "type": "object",
                   "title": "Response Import Quota Import Quota Get"
                 }
               }
             }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
           }
-        }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ]
       }
     },
     "/import/quota/reclaim": {
@@ -4563,48 +4074,25 @@
         "summary": "Import Quota Reclaim",
         "description": "主动清理 staging/_tmp/_exports，不删除已导入图层。",
         "operationId": "import_quota_reclaim_import_quota_reclaim_post",
-        "parameters": [
-          {
-            "name": "x-api-key",
-            "in": "header",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "X-Api-Key"
-            }
-          }
-        ],
         "responses": {
           "200": {
             "description": "Successful Response",
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
                   "additionalProperties": true,
+                  "type": "object",
                   "title": "Response Import Quota Reclaim Import Quota Reclaim Post"
                 }
               }
             }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
           }
-        }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ]
       }
     },
     "/import/raster/inspect": {
@@ -4614,33 +4102,15 @@
         ],
         "summary": "Raster Inspect",
         "operationId": "raster_inspect_import_raster_inspect_post",
-        "parameters": [
-          {
-            "name": "x-api-key",
-            "in": "header",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "X-Api-Key"
-            }
-          }
-        ],
         "requestBody": {
-          "required": true,
           "content": {
             "application/json": {
               "schema": {
                 "$ref": "#/components/schemas/RasterInspectBody"
               }
             }
-          }
+          },
+          "required": true
         },
         "responses": {
           "200": {
@@ -4648,8 +4118,8 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
                   "additionalProperties": true,
+                  "type": "object",
                   "title": "Response Raster Inspect Import Raster Inspect Post"
                 }
               }
@@ -4665,7 +4135,12 @@
               }
             }
           }
-        }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ]
       }
     },
     "/import/raster/commit": {
@@ -4675,33 +4150,15 @@
         ],
         "summary": "Raster Commit",
         "operationId": "raster_commit_import_raster_commit_post",
-        "parameters": [
-          {
-            "name": "x-api-key",
-            "in": "header",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "X-Api-Key"
-            }
-          }
-        ],
         "requestBody": {
-          "required": true,
           "content": {
             "application/json": {
               "schema": {
                 "$ref": "#/components/schemas/RasterCommitBody"
               }
             }
-          }
+          },
+          "required": true
         },
         "responses": {
           "200": {
@@ -4709,8 +4166,8 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
                   "additionalProperties": true,
+                  "type": "object",
                   "title": "Response Raster Commit Import Raster Commit Post"
                 }
               }
@@ -4726,7 +4183,12 @@
               }
             }
           }
-        }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ]
       }
     },
     "/import/raster/detect-invalid": {
@@ -4737,33 +4199,15 @@
         "summary": "Raster Detect Invalid",
         "description": "检测科学栅格变量中的哨兵值 / Inf / FillValue，供 UI 一键填入。",
         "operationId": "raster_detect_invalid_import_raster_detect_invalid_post",
-        "parameters": [
-          {
-            "name": "x-api-key",
-            "in": "header",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "X-Api-Key"
-            }
-          }
-        ],
         "requestBody": {
-          "required": true,
           "content": {
             "application/json": {
               "schema": {
                 "$ref": "#/components/schemas/RasterDetectInvalidBody"
               }
             }
-          }
+          },
+          "required": true
         },
         "responses": {
           "200": {
@@ -4771,8 +4215,8 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
                   "additionalProperties": true,
+                  "type": "object",
                   "title": "Response Raster Detect Invalid Import Raster Detect Invalid Post"
                 }
               }
@@ -4788,7 +4232,12 @@
               }
             }
           }
-        }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ]
       }
     },
     "/import/document": {
@@ -4799,33 +4248,15 @@
         "summary": "Import Document",
         "description": "复用 upload_id 字段打开文档会话。",
         "operationId": "import_document_import_document_post",
-        "parameters": [
-          {
-            "name": "x-api-key",
-            "in": "header",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "X-Api-Key"
-            }
-          }
-        ],
         "requestBody": {
-          "required": true,
           "content": {
             "application/json": {
               "schema": {
                 "$ref": "#/components/schemas/RasterInspectBody"
               }
             }
-          }
+          },
+          "required": true
         },
         "responses": {
           "200": {
@@ -4833,8 +4264,8 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
                   "additionalProperties": true,
+                  "type": "object",
                   "title": "Response Import Document Import Document Post"
                 }
               }
@@ -4850,7 +4281,12 @@
               }
             }
           }
-        }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ]
       }
     },
     "/import/document/multipart": {
@@ -4860,33 +4296,15 @@
         ],
         "summary": "Import Document Multipart",
         "operationId": "import_document_multipart_import_document_multipart_post",
-        "parameters": [
-          {
-            "name": "x-api-key",
-            "in": "header",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "X-Api-Key"
-            }
-          }
-        ],
         "requestBody": {
-          "required": true,
           "content": {
             "multipart/form-data": {
               "schema": {
                 "$ref": "#/components/schemas/Body_import_document_multipart_import_document_multipart_post"
               }
             }
-          }
+          },
+          "required": true
         },
         "responses": {
           "200": {
@@ -4894,8 +4312,8 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
                   "additionalProperties": true,
+                  "type": "object",
                   "title": "Response Import Document Multipart Import Document Multipart Post"
                 }
               }
@@ -4911,7 +4329,12 @@
               }
             }
           }
-        }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ]
       }
     },
     "/import/document/{session_id}": {
@@ -4921,6 +4344,11 @@
         ],
         "summary": "Document Preview",
         "operationId": "document_preview_import_document__session_id__get",
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ],
         "parameters": [
           {
             "name": "session_id",
@@ -4929,22 +4357,6 @@
             "schema": {
               "type": "string",
               "title": "Session Id"
-            }
-          },
-          {
-            "name": "x-api-key",
-            "in": "header",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "X-Api-Key"
             }
           }
         ],
@@ -4981,6 +4393,11 @@
         ],
         "summary": "Document Ops",
         "operationId": "document_ops_import_document__session_id__ops_post",
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ],
         "parameters": [
           {
             "name": "session_id",
@@ -4989,22 +4406,6 @@
             "schema": {
               "type": "string",
               "title": "Session Id"
-            }
-          },
-          {
-            "name": "x-api-key",
-            "in": "header",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "X-Api-Key"
             }
           }
         ],
@@ -5051,6 +4452,11 @@
         ],
         "summary": "Document Commit",
         "operationId": "document_commit_import_document__session_id__commit_post",
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ],
         "parameters": [
           {
             "name": "session_id",
@@ -5059,22 +4465,6 @@
             "schema": {
               "type": "string",
               "title": "Session Id"
-            }
-          },
-          {
-            "name": "x-api-key",
-            "in": "header",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "X-Api-Key"
             }
           }
         ],
@@ -5121,48 +4511,25 @@
         ],
         "summary": "Export Encodings Endpoint",
         "operationId": "export_encodings_endpoint_export_encodings_get",
-        "parameters": [
-          {
-            "name": "x-api-key",
-            "in": "header",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "X-Api-Key"
-            }
-          }
-        ],
         "responses": {
           "200": {
             "description": "Successful Response",
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
                   "additionalProperties": true,
+                  "type": "object",
                   "title": "Response Export Encodings Endpoint Export Encodings Get"
                 }
               }
             }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
           }
-        }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ]
       }
     },
     "/export/layer": {
@@ -5172,33 +4539,15 @@
         ],
         "summary": "Export Layer Endpoint",
         "operationId": "export_layer_endpoint_export_layer_post",
-        "parameters": [
-          {
-            "name": "x-api-key",
-            "in": "header",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "X-Api-Key"
-            }
-          }
-        ],
         "requestBody": {
-          "required": true,
           "content": {
             "application/json": {
               "schema": {
                 "$ref": "#/components/schemas/ExportBody"
               }
             }
-          }
+          },
+          "required": true
         },
         "responses": {
           "200": {
@@ -5219,7 +4568,12 @@
               }
             }
           }
-        }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ]
       }
     },
     "/export/batch": {
@@ -5229,33 +4583,15 @@
         ],
         "summary": "Export Batch Endpoint",
         "operationId": "export_batch_endpoint_export_batch_post",
-        "parameters": [
-          {
-            "name": "x-api-key",
-            "in": "header",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "X-Api-Key"
-            }
-          }
-        ],
         "requestBody": {
-          "required": true,
           "content": {
             "application/json": {
               "schema": {
                 "$ref": "#/components/schemas/ExportBatchBody"
               }
             }
-          }
+          },
+          "required": true
         },
         "responses": {
           "200": {
@@ -5276,7 +4612,12 @@
               }
             }
           }
-        }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ]
       }
     },
     "/unified-tiles/{layer_id}/{z}/{x}/{y}": {
@@ -5646,6 +4987,11 @@
         "summary": "Update Api Key",
         "description": "新增或更新 API Key。",
         "operationId": "update_api_key_config_api_keys__key_name__put",
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ],
         "parameters": [
           {
             "name": "key_name",
@@ -5654,22 +5000,6 @@
             "schema": {
               "type": "string",
               "title": "Key Name"
-            }
-          },
-          {
-            "name": "x-api-key",
-            "in": "header",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "X-Api-Key"
             }
           }
         ],
@@ -5711,6 +5041,11 @@
         "summary": "Delete Api Key",
         "description": "删除 API Key。",
         "operationId": "delete_api_key_config_api_keys__key_name__delete",
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ],
         "parameters": [
           {
             "name": "key_name",
@@ -5719,22 +5054,6 @@
             "schema": {
               "type": "string",
               "title": "Key Name"
-            }
-          },
-          {
-            "name": "x-api-key",
-            "in": "header",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "X-Api-Key"
             }
           }
         ],
@@ -5768,6 +5087,11 @@
         "summary": "Test Api Key",
         "description": "测试 API Key 是否有效。",
         "operationId": "test_api_key_config_api_keys__key_name__test_post",
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ],
         "parameters": [
           {
             "name": "key_name",
@@ -5776,22 +5100,6 @@
             "schema": {
               "type": "string",
               "title": "Key Name"
-            }
-          },
-          {
-            "name": "x-api-key",
-            "in": "header",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "X-Api-Key"
             }
           }
         ],
@@ -5827,6 +5135,11 @@
         "summary": "Toggle Api Key",
         "description": "启用/禁用 API Key。无值时返回 400；env-only 会物化到 DB。",
         "operationId": "toggle_api_key_config_api_keys__key_name__toggle_put",
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ],
         "parameters": [
           {
             "name": "key_name",
@@ -5835,22 +5148,6 @@
             "schema": {
               "type": "string",
               "title": "Key Name"
-            }
-          },
-          {
-            "name": "x-api-key",
-            "in": "header",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "X-Api-Key"
             }
           }
         ],
@@ -5894,6 +5191,11 @@
         "summary": "List Api Key History",
         "description": "列出密钥历史版本（脱敏）。",
         "operationId": "list_api_key_history_config_api_keys__key_name__history_get",
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ],
         "parameters": [
           {
             "name": "key_name",
@@ -5902,22 +5204,6 @@
             "schema": {
               "type": "string",
               "title": "Key Name"
-            }
-          },
-          {
-            "name": "x-api-key",
-            "in": "header",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "X-Api-Key"
             }
           }
         ],
@@ -5954,6 +5240,11 @@
         ],
         "summary": "Clear Api Key History",
         "operationId": "clear_api_key_history_config_api_keys__key_name__history_delete",
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ],
         "parameters": [
           {
             "name": "key_name",
@@ -5962,22 +5253,6 @@
             "schema": {
               "type": "string",
               "title": "Key Name"
-            }
-          },
-          {
-            "name": "x-api-key",
-            "in": "header",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "X-Api-Key"
             }
           }
         ],
@@ -6013,6 +5288,11 @@
         "summary": "Restore Api Key History",
         "description": "将历史版本恢复为当前密钥。",
         "operationId": "restore_api_key_history_config_api_keys__key_name__history__history_id__restore_post",
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ],
         "parameters": [
           {
             "name": "key_name",
@@ -6030,22 +5310,6 @@
             "schema": {
               "type": "integer",
               "title": "History Id"
-            }
-          },
-          {
-            "name": "x-api-key",
-            "in": "header",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "X-Api-Key"
             }
           }
         ],
@@ -6078,6 +5342,11 @@
         ],
         "summary": "Delete Api Key History Entry",
         "operationId": "delete_api_key_history_entry_config_api_keys__key_name__history__history_id__delete",
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ],
         "parameters": [
           {
             "name": "key_name",
@@ -6095,22 +5364,6 @@
             "schema": {
               "type": "integer",
               "title": "History Id"
-            }
-          },
-          {
-            "name": "x-api-key",
-            "in": "header",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "X-Api-Key"
             }
           }
         ],
@@ -6162,33 +5415,15 @@
         "summary": "Create Gee Account",
         "description": "新增 GEE 账户。",
         "operationId": "create_gee_account_config_gee_accounts_post",
-        "parameters": [
-          {
-            "name": "x-api-key",
-            "in": "header",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "X-Api-Key"
-            }
-          }
-        ],
         "requestBody": {
-          "required": true,
           "content": {
             "application/json": {
               "schema": {
                 "$ref": "#/components/schemas/GeeAccountCreateRequest"
               }
             }
-          }
+          },
+          "required": true
         },
         "responses": {
           "200": {
@@ -6209,7 +5444,12 @@
               }
             }
           }
-        }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ]
       }
     },
     "/config/gee/accounts/{account_id}": {
@@ -6220,6 +5460,11 @@
         "summary": "Delete Gee Account",
         "description": "删除 GEE 账户。",
         "operationId": "delete_gee_account_config_gee_accounts__account_id__delete",
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ],
         "parameters": [
           {
             "name": "account_id",
@@ -6228,22 +5473,6 @@
             "schema": {
               "type": "string",
               "title": "Account Id"
-            }
-          },
-          {
-            "name": "x-api-key",
-            "in": "header",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "X-Api-Key"
             }
           }
         ],
@@ -6277,6 +5506,11 @@
         "summary": "Test Gee Account",
         "description": "测试 GEE 账户凭证是否有效。",
         "operationId": "test_gee_account_config_gee_accounts__account_id__test_post",
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ],
         "parameters": [
           {
             "name": "account_id",
@@ -6285,22 +5519,6 @@
             "schema": {
               "type": "string",
               "title": "Account Id"
-            }
-          },
-          {
-            "name": "x-api-key",
-            "in": "header",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "X-Api-Key"
             }
           }
         ],
@@ -6336,6 +5554,11 @@
         "summary": "Toggle Gee Account",
         "description": "启用/禁用 GEE 账户。",
         "operationId": "toggle_gee_account_config_gee_accounts__account_id__toggle_put",
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ],
         "parameters": [
           {
             "name": "account_id",
@@ -6344,22 +5567,6 @@
             "schema": {
               "type": "string",
               "title": "Account Id"
-            }
-          },
-          {
-            "name": "x-api-key",
-            "in": "header",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "X-Api-Key"
             }
           }
         ],
@@ -6403,24 +5610,6 @@
         "summary": "Reload Gee Accounts",
         "description": "重载 GEE 账户池。",
         "operationId": "reload_gee_accounts_config_gee_accounts_reload_post",
-        "parameters": [
-          {
-            "name": "x-api-key",
-            "in": "header",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "X-Api-Key"
-            }
-          }
-        ],
         "responses": {
           "200": {
             "description": "Successful Response",
@@ -6431,18 +5620,13 @@
                 }
               }
             }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
           }
-        }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ]
       }
     },
     "/config/gee/runtime": {
@@ -6493,33 +5677,15 @@
         "summary": "Update Weather Default Model",
         "description": "更新全局默认天气模型（SQLite 持久化，立即影响无参 coverage / 瓦片默认 model）。",
         "operationId": "update_weather_default_model_config_weather_model_put",
-        "parameters": [
-          {
-            "name": "x-api-key",
-            "in": "header",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "X-Api-Key"
-            }
-          }
-        ],
         "requestBody": {
-          "required": true,
           "content": {
             "application/json": {
               "schema": {
                 "$ref": "#/components/schemas/WeatherModelUpdateRequest"
               }
             }
-          }
+          },
+          "required": true
         },
         "responses": {
           "200": {
@@ -6540,7 +5706,12 @@
               }
             }
           }
-        }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ]
       }
     },
     "/config/weather/providers": {
@@ -6632,6 +5803,11 @@
         "summary": "Update Weather Provider",
         "description": "更新天气源 Provider 配置（enabled/priority/config）。",
         "operationId": "update_weather_provider_config_weather_providers__provider_id__put",
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ],
         "parameters": [
           {
             "name": "provider_id",
@@ -6640,22 +5816,6 @@
             "schema": {
               "type": "string",
               "title": "Provider Id"
-            }
-          },
-          {
-            "name": "x-api-key",
-            "in": "header",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "X-Api-Key"
             }
           }
         ],
@@ -6697,6 +5857,11 @@
         "summary": "Delete Weather Provider",
         "description": "删除天气源 Provider 的 DB 配置记录。\n\n注意：删除后内置 Provider 会回退到代码默认配置；如需彻底禁用请使用 toggle 端点。",
         "operationId": "delete_weather_provider_config_weather_providers__provider_id__delete",
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ],
         "parameters": [
           {
             "name": "provider_id",
@@ -6705,22 +5870,6 @@
             "schema": {
               "type": "string",
               "title": "Provider Id"
-            }
-          },
-          {
-            "name": "x-api-key",
-            "in": "header",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "X-Api-Key"
             }
           }
         ],
@@ -6754,6 +5903,11 @@
         "summary": "Test Weather Provider",
         "description": "测试天气源 Provider 连通性。",
         "operationId": "test_weather_provider_config_weather_providers__provider_id__test_post",
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ],
         "parameters": [
           {
             "name": "provider_id",
@@ -6762,22 +5916,6 @@
             "schema": {
               "type": "string",
               "title": "Provider Id"
-            }
-          },
-          {
-            "name": "x-api-key",
-            "in": "header",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "X-Api-Key"
             }
           }
         ],
@@ -6813,6 +5951,11 @@
         "summary": "Toggle Weather Provider",
         "description": "启用/禁用天气源 Provider。",
         "operationId": "toggle_weather_provider_config_weather_providers__provider_id__toggle_put",
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ],
         "parameters": [
           {
             "name": "provider_id",
@@ -6821,22 +5964,6 @@
             "schema": {
               "type": "string",
               "title": "Provider Id"
-            }
-          },
-          {
-            "name": "x-api-key",
-            "in": "header",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "X-Api-Key"
             }
           }
         ],
@@ -6880,6 +6007,11 @@
         "summary": "Set Weather Provider Priority",
         "description": "调整天气源 Provider 优先级。",
         "operationId": "set_weather_provider_priority_config_weather_providers__provider_id__priority_put",
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ],
         "parameters": [
           {
             "name": "provider_id",
@@ -6888,22 +6020,6 @@
             "schema": {
               "type": "string",
               "title": "Provider Id"
-            }
-          },
-          {
-            "name": "x-api-key",
-            "in": "header",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "X-Api-Key"
             }
           }
         ],
@@ -6987,6 +6103,11 @@
         ],
         "summary": "Upsert Remote Storage Profile",
         "operationId": "upsert_remote_storage_profile_config_remote_storage__profile_id__put",
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ],
         "parameters": [
           {
             "name": "profile_id",
@@ -6995,22 +6116,6 @@
             "schema": {
               "type": "string",
               "title": "Profile Id"
-            }
-          },
-          {
-            "name": "x-api-key",
-            "in": "header",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "X-Api-Key"
             }
           }
         ],
@@ -7051,6 +6156,11 @@
         ],
         "summary": "Delete Remote Storage Profile",
         "operationId": "delete_remote_storage_profile_config_remote_storage__profile_id__delete",
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ],
         "parameters": [
           {
             "name": "profile_id",
@@ -7059,22 +6169,6 @@
             "schema": {
               "type": "string",
               "title": "Profile Id"
-            }
-          },
-          {
-            "name": "x-api-key",
-            "in": "header",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "X-Api-Key"
             }
           }
         ],
@@ -7107,6 +6201,11 @@
         ],
         "summary": "Toggle Remote Storage Profile",
         "operationId": "toggle_remote_storage_profile_config_remote_storage__profile_id__toggle_put",
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ],
         "parameters": [
           {
             "name": "profile_id",
@@ -7115,22 +6214,6 @@
             "schema": {
               "type": "string",
               "title": "Profile Id"
-            }
-          },
-          {
-            "name": "x-api-key",
-            "in": "header",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "X-Api-Key"
             }
           }
         ],
@@ -7173,6 +6256,11 @@
         ],
         "summary": "Test Remote Storage Profile",
         "operationId": "test_remote_storage_profile_config_remote_storage__profile_id__test_post",
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ],
         "parameters": [
           {
             "name": "profile_id",
@@ -7181,22 +6269,6 @@
             "schema": {
               "type": "string",
               "title": "Profile Id"
-            }
-          },
-          {
-            "name": "x-api-key",
-            "in": "header",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "X-Api-Key"
             }
           }
         ],
@@ -7248,6 +6320,11 @@
         ],
         "summary": "List Remote Storage History",
         "operationId": "list_remote_storage_history_config_remote_storage__profile_id__history_get",
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ],
         "parameters": [
           {
             "name": "profile_id",
@@ -7256,22 +6333,6 @@
             "schema": {
               "type": "string",
               "title": "Profile Id"
-            }
-          },
-          {
-            "name": "x-api-key",
-            "in": "header",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "X-Api-Key"
             }
           }
         ],
@@ -7308,6 +6369,11 @@
         ],
         "summary": "Clear Remote Storage History",
         "operationId": "clear_remote_storage_history_config_remote_storage__profile_id__history_delete",
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ],
         "parameters": [
           {
             "name": "profile_id",
@@ -7316,22 +6382,6 @@
             "schema": {
               "type": "string",
               "title": "Profile Id"
-            }
-          },
-          {
-            "name": "x-api-key",
-            "in": "header",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "X-Api-Key"
             }
           }
         ],
@@ -7366,6 +6416,11 @@
         ],
         "summary": "Restore Remote Storage History",
         "operationId": "restore_remote_storage_history_config_remote_storage__profile_id__history__history_id__restore_post",
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ],
         "parameters": [
           {
             "name": "profile_id",
@@ -7383,22 +6438,6 @@
             "schema": {
               "type": "integer",
               "title": "History Id"
-            }
-          },
-          {
-            "name": "x-api-key",
-            "in": "header",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "X-Api-Key"
             }
           }
         ],
@@ -7431,6 +6470,11 @@
         ],
         "summary": "Delete Remote Storage History Entry",
         "operationId": "delete_remote_storage_history_entry_config_remote_storage__profile_id__history__history_id__delete",
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ],
         "parameters": [
           {
             "name": "profile_id",
@@ -7448,22 +6492,6 @@
             "schema": {
               "type": "integer",
               "title": "History Id"
-            }
-          },
-          {
-            "name": "x-api-key",
-            "in": "header",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "X-Api-Key"
             }
           }
         ],
@@ -7517,33 +6545,15 @@
         "summary": "Update Data Source Paths",
         "description": "更新数据根 / 产物根（写入 .env；需重启 FastAPI+Worker+Beat 生效）。",
         "operationId": "update_data_source_paths_config_data_source_paths_put",
-        "parameters": [
-          {
-            "name": "x-api-key",
-            "in": "header",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "X-Api-Key"
-            }
-          }
-        ],
         "requestBody": {
-          "required": true,
           "content": {
             "application/json": {
               "schema": {
                 "$ref": "#/components/schemas/DataSourcePathsUpdateRequest"
               }
             }
-          }
+          },
+          "required": true
         },
         "responses": {
           "200": {
@@ -7564,7 +6574,12 @@
               }
             }
           }
-        }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ]
       }
     },
     "/config/service/restart": {
@@ -7575,24 +6590,6 @@
         "summary": "Restart Backend Service",
         "description": "调度重启 FastAPI + Celery Worker + Beat（不动 Docker / Vite）。",
         "operationId": "restart_backend_service_config_service_restart_post",
-        "parameters": [
-          {
-            "name": "x-api-key",
-            "in": "header",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "X-Api-Key"
-            }
-          }
-        ],
         "requestBody": {
           "content": {
             "application/json": {
@@ -7629,7 +6626,12 @@
               }
             }
           }
-        }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ]
       }
     },
     "/config/data-cache/overview": {
@@ -7660,32 +6662,14 @@
         "summary": "Evict Data Cache",
         "description": "清理静态缓存（按 URI/名称或过期时间）。",
         "operationId": "evict_data_cache_config_data_cache_evict_post",
-        "parameters": [
-          {
-            "name": "x-api-key",
-            "in": "header",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "X-Api-Key"
-            }
-          }
-        ],
         "requestBody": {
           "content": {
             "application/json": {
               "schema": {
                 "anyOf": [
                   {
-                    "type": "object",
-                    "additionalProperties": true
+                    "additionalProperties": true,
+                    "type": "object"
                   },
                   {
                     "type": "null"
@@ -7715,7 +6699,12 @@
               }
             }
           }
-        }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ]
       }
     },
     "/config/data-source/open-data-presets": {
@@ -7726,35 +6715,17 @@
         "summary": "Update Open Data Presets",
         "description": "更新 NOAA/NASA/NSIDC/ESA 开放数据 base URL 预设。",
         "operationId": "update_open_data_presets_config_data_source_open_data_presets_put",
-        "parameters": [
-          {
-            "name": "x-api-key",
-            "in": "header",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "X-Api-Key"
-            }
-          }
-        ],
         "requestBody": {
-          "required": true,
           "content": {
             "application/json": {
               "schema": {
-                "type": "object",
                 "additionalProperties": true,
+                "type": "object",
                 "title": "Payload"
               }
             }
-          }
+          },
+          "required": true
         },
         "responses": {
           "200": {
@@ -7775,7 +6746,12 @@
               }
             }
           }
-        }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ]
       }
     },
     "/config/data-source/portal-credentials": {
@@ -7806,6 +6782,11 @@
         "summary": "Upsert Portal Credential",
         "description": "新增/更新门户凭证（earthdata / nsidc / copernicus）。",
         "operationId": "upsert_portal_credential_config_data_source_portal_credentials__portal_id__put",
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ],
         "parameters": [
           {
             "name": "portal_id",
@@ -7814,22 +6795,6 @@
             "schema": {
               "type": "string",
               "title": "Portal Id"
-            }
-          },
-          {
-            "name": "x-api-key",
-            "in": "header",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "X-Api-Key"
             }
           }
         ],
@@ -7873,6 +6838,11 @@
         "summary": "Delete Portal Credential",
         "description": "删除门户凭证。",
         "operationId": "delete_portal_credential_config_data_source_portal_credentials__portal_id__delete",
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ],
         "parameters": [
           {
             "name": "portal_id",
@@ -7881,22 +6851,6 @@
             "schema": {
               "type": "string",
               "title": "Portal Id"
-            }
-          },
-          {
-            "name": "x-api-key",
-            "in": "header",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "X-Api-Key"
             }
           }
         ],
@@ -7930,35 +6884,17 @@
         "summary": "Update Remote Layer Uris",
         "description": "更新图层 URI 覆盖（等价 BACKEND_REMOTE_LAYER_DATA_URIS）。",
         "operationId": "update_remote_layer_uris_config_data_source_remote_layer_uris_put",
-        "parameters": [
-          {
-            "name": "x-api-key",
-            "in": "header",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "X-Api-Key"
-            }
-          }
-        ],
         "requestBody": {
-          "required": true,
           "content": {
             "application/json": {
               "schema": {
-                "type": "object",
                 "additionalProperties": true,
+                "type": "object",
                 "title": "Payload"
               }
             }
-          }
+          },
+          "required": true
         },
         "responses": {
           "200": {
@@ -7979,7 +6915,12 @@
               }
             }
           }
-        }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ]
       }
     },
     "/config/about": {
@@ -8036,35 +6977,17 @@
         "summary": "Compile Graph",
         "description": "将 LiteGraph 画布编译为 Python provider 可执行的 workflow_definition。",
         "operationId": "compile_graph_workflow_definitions_compile_post",
-        "parameters": [
-          {
-            "name": "x-api-key",
-            "in": "header",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "X-Api-Key"
-            }
-          }
-        ],
         "requestBody": {
-          "required": true,
           "content": {
             "application/json": {
               "schema": {
-                "type": "object",
                 "additionalProperties": true,
+                "type": "object",
                 "title": "Payload"
               }
             }
-          }
+          },
+          "required": true
         },
         "responses": {
           "200": {
@@ -8072,8 +6995,8 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
                   "additionalProperties": true,
+                  "type": "object",
                   "title": "Response Compile Graph Workflow Definitions Compile Post"
                 }
               }
@@ -8089,7 +7012,12 @@
               }
             }
           }
-        }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ]
       }
     },
     "/workflow-definitions/dry-validate": {
@@ -8101,35 +7029,17 @@
         "summary": "Dry Validate Graph",
         "description": "图模式提交前干跑校验：编译 + 静态结构检查，不入队。\n\n成功返回 ``{ ok: true, workflow_definition, issues: [] }``；\n编译失败返回 422 + 字段级 issues（与提交期校验风格一致）。",
         "operationId": "dry_validate_graph_workflow_definitions_dry_validate_post",
-        "parameters": [
-          {
-            "name": "x-api-key",
-            "in": "header",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "X-Api-Key"
-            }
-          }
-        ],
         "requestBody": {
-          "required": true,
           "content": {
             "application/json": {
               "schema": {
-                "type": "object",
                 "additionalProperties": true,
+                "type": "object",
                 "title": "Payload"
               }
             }
-          }
+          },
+          "required": true
         },
         "responses": {
           "200": {
@@ -8137,8 +7047,8 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
                   "additionalProperties": true,
+                  "type": "object",
                   "title": "Response Dry Validate Graph Workflow Definitions Dry Validate Post"
                 }
               }
@@ -8154,7 +7064,12 @@
               }
             }
           }
-        }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ]
       }
     },
     "/workflow-definitions": {
@@ -8172,8 +7087,8 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
                   "additionalProperties": true,
+                  "type": "object",
                   "title": "Response List Definitions Workflow Definitions Get"
                 }
               }
@@ -8189,35 +7104,17 @@
         "summary": "Create Definition",
         "description": "创建用户工作流定义。",
         "operationId": "create_definition_workflow_definitions_post",
-        "parameters": [
-          {
-            "name": "x-api-key",
-            "in": "header",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "X-Api-Key"
-            }
-          }
-        ],
         "requestBody": {
-          "required": true,
           "content": {
             "application/json": {
               "schema": {
-                "type": "object",
                 "additionalProperties": true,
+                "type": "object",
                 "title": "Payload"
               }
             }
-          }
+          },
+          "required": true
         },
         "responses": {
           "201": {
@@ -8225,8 +7122,8 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
                   "additionalProperties": true,
+                  "type": "object",
                   "title": "Response Create Definition Workflow Definitions Post"
                 }
               }
@@ -8242,7 +7139,12 @@
               }
             }
           }
-        }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ]
       }
     },
     "/workflow-definitions/{workflow_id}": {
@@ -8298,6 +7200,11 @@
         "summary": "Update Definition",
         "description": "更新用户工作流定义。system 定义不可更新。",
         "operationId": "update_definition_workflow_definitions__workflow_id__put",
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ],
         "parameters": [
           {
             "name": "workflow_id",
@@ -8306,22 +7213,6 @@
             "schema": {
               "type": "string",
               "title": "Workflow Id"
-            }
-          },
-          {
-            "name": "x-api-key",
-            "in": "header",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "X-Api-Key"
             }
           }
         ],
@@ -8370,6 +7261,11 @@
         "summary": "Delete Definition",
         "description": "删除用户工作流定义。system 定义不可删除。",
         "operationId": "delete_definition_workflow_definitions__workflow_id__delete",
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ],
         "parameters": [
           {
             "name": "workflow_id",
@@ -8378,22 +7274,6 @@
             "schema": {
               "type": "string",
               "title": "Workflow Id"
-            }
-          },
-          {
-            "name": "x-api-key",
-            "in": "header",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "X-Api-Key"
             }
           }
         ],
@@ -8432,6 +7312,11 @@
         "summary": "Duplicate Definition",
         "description": "复制现有工作流定义为新的用户工作流。",
         "operationId": "duplicate_definition_workflow_definitions__workflow_id__duplicate_post",
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ],
         "parameters": [
           {
             "name": "workflow_id",
@@ -8440,22 +7325,6 @@
             "schema": {
               "type": "string",
               "title": "Workflow Id"
-            }
-          },
-          {
-            "name": "x-api-key",
-            "in": "header",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "X-Api-Key"
             }
           }
         ],
@@ -8601,22 +7470,9 @@
         "summary": "Create Timer",
         "description": "创建定时器。\n\n请求体字段：\n- workflow_id (str, 必填)\n- name (str, 必填)\n- trigger_type ('cron' | 'interval' | 'event', 必填)\n- trigger_config (dict, 必填, 格式依 trigger_type 而定)\n- payload_overrides (dict, 可选)\n- enabled (bool, 可选, 默认 true)",
         "operationId": "create_timer_workflow_timers_post",
-        "parameters": [
+        "security": [
           {
-            "name": "x-api-key",
-            "in": "header",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "X-Api-Key"
-            }
+            "APIKeyHeader": []
           }
         ],
         "requestBody": {
@@ -8708,6 +7564,11 @@
         "summary": "Update Timer",
         "description": "更新定时器。允许字段：name / enabled / trigger_type / trigger_config / payload_overrides。",
         "operationId": "update_timer_workflow_timers__timer_id__put",
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ],
         "parameters": [
           {
             "name": "timer_id",
@@ -8716,22 +7577,6 @@
             "schema": {
               "type": "string",
               "title": "Timer Id"
-            }
-          },
-          {
-            "name": "x-api-key",
-            "in": "header",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "X-Api-Key"
             }
           }
         ],
@@ -8779,6 +7624,11 @@
         "summary": "Delete Timer",
         "description": "删除定时器。",
         "operationId": "delete_timer_workflow_timers__timer_id__delete",
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ],
         "parameters": [
           {
             "name": "timer_id",
@@ -8787,22 +7637,6 @@
             "schema": {
               "type": "string",
               "title": "Timer Id"
-            }
-          },
-          {
-            "name": "x-api-key",
-            "in": "header",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "X-Api-Key"
             }
           }
         ],
@@ -8840,6 +7674,11 @@
         "summary": "Run Timer",
         "description": "手动触发一次定时器对应的工作流（不影响 next_fire_at）。",
         "operationId": "run_timer_workflow_timers__timer_id__run_post",
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ],
         "parameters": [
           {
             "name": "timer_id",
@@ -8848,22 +7687,6 @@
             "schema": {
               "type": "string",
               "title": "Timer Id"
-            }
-          },
-          {
-            "name": "x-api-key",
-            "in": "header",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "X-Api-Key"
             }
           }
         ],
@@ -8901,35 +7724,17 @@
         "summary": "Emit Event",
         "description": "发射外部事件，触发匹配的 event 类型定时器。\n\n请求体：\n- event_type (str, 必填)\n- payload (dict, 可选)",
         "operationId": "emit_event_workflow_timers_events_post",
-        "parameters": [
-          {
-            "name": "x-api-key",
-            "in": "header",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "X-Api-Key"
-            }
-          }
-        ],
         "requestBody": {
-          "required": true,
           "content": {
             "application/json": {
               "schema": {
-                "type": "object",
                 "additionalProperties": true,
+                "type": "object",
                 "title": "Payload"
               }
             }
-          }
+          },
+          "required": true
         },
         "responses": {
           "200": {
@@ -8937,8 +7742,8 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
                   "additionalProperties": true,
+                  "type": "object",
                   "title": "Response Emit Event Workflow Timers Events Post"
                 }
               }
@@ -8954,7 +7759,12 @@
               }
             }
           }
-        }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ]
       }
     },
     "/workflow-timers/tick": {
@@ -8965,48 +7775,25 @@
         "summary": "Manual Tick",
         "description": "手动触发一次扫描（调试用，正常情况下由 Celery Beat 每分钟调用）。",
         "operationId": "manual_tick_workflow_timers_tick_post",
-        "parameters": [
-          {
-            "name": "x-api-key",
-            "in": "header",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "X-Api-Key"
-            }
-          }
-        ],
         "responses": {
           "200": {
             "description": "Successful Response",
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
                   "additionalProperties": true,
+                  "type": "object",
                   "title": "Response Manual Tick Workflow Timers Tick Post"
                 }
               }
             }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
           }
-        }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ]
       }
     },
     "/cleanup/workflow-runs": {
@@ -9017,33 +7804,15 @@
         "summary": "Cleanup Workflow Runs",
         "description": "手动清理过期的 workflow runs 及其 events。\n\n清理逻辑：删除 status 为 completed/failed/cancelled 且 updated_at 早于\nretention_days 天前的 run，对应 events 一并删除。\n\n可选执行 VACUUM 回收磁盘空间（耗时，数据库越大耗时越长）。",
         "operationId": "cleanup_workflow_runs_cleanup_workflow_runs_post",
-        "parameters": [
-          {
-            "name": "x-api-key",
-            "in": "header",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "X-Api-Key"
-            }
-          }
-        ],
         "requestBody": {
-          "required": true,
           "content": {
             "application/json": {
               "schema": {
                 "$ref": "#/components/schemas/WorkflowRunsCleanupRequest"
               }
             }
-          }
+          },
+          "required": true
         },
         "responses": {
           "200": {
@@ -9066,7 +7835,12 @@
               }
             }
           }
-        }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ]
       }
     },
     "/cleanup/cache": {
@@ -9077,24 +7851,6 @@
         "summary": "Cleanup Cache",
         "description": "手动清理已过期的缓存文件。\n\n扫描 cache_service 的 cache_dir，删除所有 expires_at 已过期的 JSON 文件。\n损坏的缓存文件也会被删除以避免持续报错。",
         "operationId": "cleanup_cache_cleanup_cache_post",
-        "parameters": [
-          {
-            "name": "x-api-key",
-            "in": "header",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "X-Api-Key"
-            }
-          }
-        ],
         "responses": {
           "200": {
             "description": "Successful Response",
@@ -9105,18 +7861,13 @@
                 }
               }
             }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
           }
-        }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ]
       }
     },
     "/cleanup/vacuum": {
@@ -9127,48 +7878,25 @@
         "summary": "Vacuum Workflow State",
         "description": "VACUUM workflow_state.sqlite3 回收磁盘空间。\n\n在清理 workflow runs 后执行可回收磁盘空间。耗时较长，建议低峰期执行。",
         "operationId": "vacuum_workflow_state_cleanup_vacuum_post",
-        "parameters": [
-          {
-            "name": "x-api-key",
-            "in": "header",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "X-Api-Key"
-            }
-          }
-        ],
         "responses": {
           "200": {
             "description": "Successful Response",
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
                   "additionalProperties": true,
+                  "type": "object",
                   "title": "Response Vacuum Workflow State Cleanup Vacuum Post"
                 }
               }
             }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
           }
-        }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ]
       }
     },
     "/cleanup/stats": {
@@ -9201,48 +7929,25 @@
         "summary": "List Servers",
         "description": "列出可用远程服务器配置（不含敏感凭据）。",
         "operationId": "list_servers_api_remote_servers_get",
-        "parameters": [
-          {
-            "name": "x-api-key",
-            "in": "header",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "X-Api-Key"
-            }
-          }
-        ],
         "responses": {
           "200": {
             "description": "Successful Response",
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
                   "additionalProperties": true,
+                  "type": "object",
                   "title": "Response List Servers Api Remote Servers Get"
                 }
               }
             }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
           }
-        }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ]
       }
     },
     "/api/remote/list": {
@@ -9253,6 +7958,11 @@
         "summary": "List Remote Dir",
         "description": "列出远程目录内容。",
         "operationId": "list_remote_dir_api_remote_list_get",
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ],
         "parameters": [
           {
             "name": "server",
@@ -9276,22 +7986,6 @@
               "title": "Path"
             },
             "description": "远程目录路径"
-          },
-          {
-            "name": "x-api-key",
-            "in": "header",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "X-Api-Key"
-            }
           }
         ],
         "responses": {
@@ -9328,6 +8022,11 @@
         "summary": "Test Remote Connection",
         "description": "测试远程服务器连接是否可用。",
         "operationId": "test_remote_connection_api_remote_test_get",
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ],
         "parameters": [
           {
             "name": "server",
@@ -9339,22 +8038,6 @@
               "title": "Server"
             },
             "description": "服务器名称: hpc / win11 / nas"
-          },
-          {
-            "name": "x-api-key",
-            "in": "header",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "X-Api-Key"
-            }
           }
         ],
         "responses": {
@@ -15501,6 +14184,13 @@
         ],
         "title": "WorkflowValidationResponse",
         "description": "Route-friendly validation response with typed terminal plan projections."
+      }
+    },
+    "securitySchemes": {
+      "APIKeyHeader": {
+        "type": "apiKey",
+        "in": "header",
+        "name": "X-API-Key"
       }
     }
   }

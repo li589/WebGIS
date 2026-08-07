@@ -3,7 +3,8 @@ from __future__ import annotations
 import logging
 import secrets
 
-from fastapi import Header, HTTPException, status
+from fastapi import HTTPException, Security, status
+from fastapi.security import APIKeyHeader
 
 from app.core.config import settings
 
@@ -12,8 +13,12 @@ logger = logging.getLogger(__name__)
 # Permitted module name prefixes for dynamic algorithm loading (P0-3 defence).
 ALLOWED_ALGORITHM_PREFIXES: tuple[str, ...] = ("algorithms.",)
 
+# OpenAPI security scheme（D-2）：写端点 X-API-Key 鉴权在 OpenAPI 文档中显式声明，
+# Swagger UI 出现 Authorize 入口；auto_error=False 保持自定义 401/503 语义。
+_api_key_header = APIKeyHeader(name="X-API-Key", auto_error=False)
 
-def require_write_access(x_api_key: str | None = Header(default=None)) -> None:
+
+def require_write_access(x_api_key: str | None = Security(_api_key_header)) -> None:
     """Enforce API-key authentication for write endpoints.
 
     When ``api_keys_enabled`` is True the key is always required.
