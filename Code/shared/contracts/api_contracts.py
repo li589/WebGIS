@@ -34,19 +34,6 @@ class TimeGranularity(str, Enum):
     month = "month"
 
 
-class TaskType(str, Enum):
-    layer_preview = "layer_preview"
-    analysis = "analysis"
-    export = "export"
-
-
-class TaskStatus(str, Enum):
-    queued = "queued"
-    running = "running"
-    succeeded = "succeeded"
-    failed = "failed"
-
-
 class BoundingBox(BaseModel):
     west: float
     south: float
@@ -187,48 +174,6 @@ class TimeRange(BaseModel):
     start_at: datetime
     end_at: datetime
     granularity: TimeGranularity = TimeGranularity.hour
-
-
-class TaskSubmitRequest(BaseModel):
-    layer_id: str
-    task_type: TaskType = TaskType.analysis
-    map_mode: MapMode = MapMode.mode_2d
-    spatial_filter: SpatialFilter
-    time_range: TimeRange
-    parameters: dict[str, Any] = Field(default_factory=dict)
-    requested_outputs: list[str] = Field(default_factory=lambda: ["json"])
-    client_context: dict[str, Any] = Field(default_factory=dict)
-
-
-class TaskAcceptedResponse(BaseModel):
-    task_id: str
-    status: TaskStatus
-    status_url: str
-    created_at: datetime
-    message: str
-
-
-class TaskResultReference(BaseModel):
-    result_type: str
-    mime_type: str
-    inline_data: dict[str, Any] | None = None
-    resource_url: str | None = None
-
-
-class TaskStatusResponse(BaseModel):
-    task_id: str
-    layer_id: str
-    task_type: TaskType
-    status: TaskStatus
-    progress: int
-    message: str
-    created_at: datetime
-    updated_at: datetime
-    spatial_filter: SpatialFilter
-    time_range: TimeRange
-    requested_outputs: list[str]
-    result_refs: list[TaskResultReference] = Field(default_factory=list)
-    diagnostics: list[str] = Field(default_factory=list)
 
 
 class ExecutionStatus(str, Enum):

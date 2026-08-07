@@ -4,7 +4,7 @@
 过渡到「服务端空间 SQL」的隔离数据平面（不迁 Postgres、不动高风险区 state DB）。
 
 设计约束（见计划 toasty-aurora-curie.md）：
-- **统一加载**：所有池化连接都尝试加载（`_sqlite_pool` + `task_store` + `workflow_timer_service`）。
+- **统一加载**：所有池化连接都尝试加载（`_sqlite_pool` + `workflow_timer_service` 等）。
 - **优雅降级**：扩展缺失 / stdlib 不支持 load_extension / 加载失败 → 仅 warn 返回 False，
   绝不抛异常，state/metadata DB（workflow/api_keys/gee_credentials，AGENTS.md 高风险区）
   必须能正常打开。
