@@ -6,6 +6,7 @@ import {
   getWorkflowEvents,
   getWorkflowRun,
   listActiveWorkflowRuns,
+  listRecentSucceededRuns,
   submitWorkflow,
   cancelWorkflowRun,
   retryWorkflowRun,
@@ -2958,6 +2959,17 @@ export const useLayersStore = defineStore('layers', () => {
         }
         if (!candidates.some((c) => c.runId === item.runId)) {
           candidates.push({ runId: item.runId, catalogIdHint: item.catalogId })
+        }
+      }
+
+      // 自动发现最近成功的反演 run：无需本地跟踪记录即可恢复其产物图层
+      const recentSucceeded = await listRecentSucceededRuns(20).catch(() => [])
+      for (const run of recentSucceeded) {
+        const layerId = String((run as Record<string, unknown>).layer_id || '')
+        // 仅恢复 omega_sf_fenkuai 分块反演等算法产物 run，避免无差别拉起所有历史 run
+        if (!/omega[-_]sf[-_]fenkuai|omega_sf_omega_pixel/i.test(layerId)) continue
+        if (!candidates.some((c) => c.runId === run.run_id)) {
+          candidates.push({ runId: run.run_id, catalogIdHint: layerId || undefined })
         }
       }
 

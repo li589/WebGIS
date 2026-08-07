@@ -44,6 +44,17 @@ export function listActiveWorkflowRuns() {
   })
 }
 
+/**
+ * 列出最近成功的终态 run（按创建时间倒序），用于启动时自动恢复
+ * 已成功工作流的产物图层（无需本地跟踪记录）。
+ */
+export function listRecentSucceededRuns(limit = 20) {
+  return requestJson<WorkflowRunStatusResponse[]>(
+    `/workflow-runs?active_only=false&status=succeeded&limit=${limit}`,
+    { silent: true },
+  )
+}
+
 export function getWorkflowEvents(
   runId: string,
   options?: {

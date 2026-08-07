@@ -2,7 +2,7 @@ import os
 from datetime import datetime, timedelta, timezone
 from threading import Lock
 
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 
 from app.api.deps import require_write_access
 from app.services.result_view_service import result_view_service
@@ -104,24 +104,42 @@ def submit_workflow(payload: WorkflowSubmitRequest) -> WorkflowAcceptedResponse:
 @router.get(
     "/workflow-runs", tags=["workflow"], response_model=list[WorkflowRunStatusResponse]
 )
-def list_workflow_runs(active_only: bool = True) -> list[WorkflowRunStatusResponse]:
+def list_workflow_runs(
+    active_only: bool = True,
+    status: str | None = Query(
+        default=None, description="按状态过滤，如 succeeded / failed / cancelled"
+    ),
+    limit: int | None = Query(
+        default=None, ge=1, le=200, description="取最近 N 条（按创建时间倒序）"
+    ),
+) -> list[WorkflowRunStatusResponse]:
     """列出工作流 run。active_only=true（默认）仅返回非终态 run。
 
-    供前端启动恢复与跨会话状态同步使用。
+    可选 status 过滤与 limit 取最近 N 条（按创建时间倒序），
+    供前端启动恢复（含"最近成功 run 产物自动恢复"）与跨会话状态同步使用。
     """
     from app.services.workflow_repository import SQLiteWorkflowRepository
     from shared.contracts.api_contracts import ExecutionStatus
 
     repo = SQLiteWorkflowRepository()
     all_runs = repo.list_runs()
+    if status is not None:
+        all_runs = [r for r in all_runs if r.status.value == status]
     if not active_only:
+        if limit is not None:
+            all_runs = sorted(all_runs, key=lambda r: r.created_at, reverse=True)[
+                :limit
+            ]
         return all_runs
     active_statuses = {
-        ExecutionStatus.accepted.value,
-        ExecutionStatus.queued.value,
-        ExecutionStatus.running.value,
+        ExecutionStatus.accepted,
+        ExecutionStatus.queued,
+        ExecutionStatus.running,
     }
-    return [r for r in all_runs if r.status in active_statuses]
+    active = [r for r in all_runs if r.status in active_statuses]
+    if limit is not None:
+        active = sorted(active, key=lambda r: r.created_at, reverse=True)[:limit]
+    return active
 
 
 @router.get(
