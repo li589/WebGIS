@@ -23,7 +23,7 @@ import { useWeatherSourcePrefsStore } from '../weather-source-prefs'
 import { useUiStore } from '../ui'
 import { formatClockHourLabel } from '../../utils/weather-timeline'
 import { resolveWeatherTileReadyKind } from '../../utils/weather-tile-readiness'
-import { buildDefaultWeatherRenderHint } from '../../components/map/weather-render'
+import { buildDefaultWeatherRenderHint } from '../../data/weather-render-hints'
 import type {
   BoundingBox,
   RuntimeLayerDescriptor,

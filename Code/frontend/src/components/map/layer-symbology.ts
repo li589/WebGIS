@@ -20,15 +20,9 @@ export {
   resolveCanonicalPaletteId,
 }
 
-export interface OverlaySymbologyMeta {
-  palette?: string
-  vmin?: number | null
-  vmax?: number | null
-  unit?: string
-  opacity?: number
-  /** 有可读源时可服务端重着色 */
-  supports_recolor?: boolean
-}
+// D1 修复后：类型真源在 src/types/overlay-symbology.ts，此处 re-export 保持兼容
+export type { OverlaySymbologyMeta } from '../../types/overlay-symbology'
+import type { OverlaySymbologyMeta } from '../../types/overlay-symbology'
 
 /** paletteOverride ?? renderHint ?? overlayMeta */
 export function resolveEffectivePalette(options: {

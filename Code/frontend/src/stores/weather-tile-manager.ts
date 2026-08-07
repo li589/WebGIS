@@ -36,7 +36,7 @@ import {
   tileBoundsOverlapViewport,
   type MergedWeatherTile,
 } from '../services/weather-tile-utils'
-import type { WindGeoJSON } from '../components/map/types'
+import type { WindGeoJSON } from '../types/map-geo'
 import { isPerfEnabled, perfIncBump, perfMark, perfNoteViewportFill } from '../utils/perf-probe'
 import {
   boostConcurrencyForZoomOut,

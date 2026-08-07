@@ -5,7 +5,7 @@
  */
 import { ref } from 'vue'
 
-import type { WindDisplayMode } from '../../components/map/wind-display-mode'
+import type { WindDisplayMode } from '../../types/wind-display'
 import { getMapDefaults } from '../../services/map-defaults'
 import type { BoundingBox } from '../../services/runtime-api'
 

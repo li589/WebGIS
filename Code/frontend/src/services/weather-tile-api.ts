@@ -4,8 +4,8 @@
  * 提供标准 Web Mercator z/x/y 瓦片请求和坐标转换，供 weather-tile-manager 使用。
  */
 import type { Map as MaplibreMap } from 'maplibre-gl'
-import type { WindGeoJSON } from '../components/map/types'
-import { resolveVisibleLngBounds } from '../components/map/map-viewport-sync'
+import type { WindGeoJSON } from '../types/map-geo'
+import { resolveVisibleLngBounds } from '../utils/map-viewport'
 import { resolveApiUrl, submitWorkflow } from './runtime-api'
 import type { WorkflowSubmitRequest } from './runtime-api'
 

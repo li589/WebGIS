@@ -4,7 +4,7 @@
  * 纯函数，无状态。负责把多个标准瓦片 GeoJSON 合并成一份 FeatureCollection，
  * 用于风场粒子流/等值线/风羽等 Canvas 叠加层统一渲染。
  */
-import type { WindGeoJSON, WindGeoJSONFeature } from '../components/map/types'
+import type { WindGeoJSON, WindGeoJSONFeature } from '../types/map-geo'
 import {
   pointInTileHalfOpen,
   type LngLatBounds as LatticeBounds,

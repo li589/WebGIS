@@ -4,7 +4,7 @@
 import { computed, ref } from 'vue'
 import { defineStore } from 'pinia'
 
-import type { OverlaySymbologyMeta } from '../components/map/layer-symbology'
+import type { OverlaySymbologyMeta } from '../types/overlay-symbology'
 
 type CacheStatus = 'ok' | 'miss' | 'error'
 
