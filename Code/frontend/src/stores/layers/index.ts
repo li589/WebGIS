@@ -10,7 +10,6 @@ import {
   submitWorkflow,
   cancelWorkflowRun,
   retryWorkflowRun,
-  getWeatherPoint,
   materializeWorkflowMapLayers,
 } from '../../services/runtime-api'
 import {
@@ -24,16 +23,12 @@ import { useUiStore } from '../ui'
 import { formatClockHourLabel } from '../../utils/weather-timeline'
 import { resolveWeatherTileReadyKind } from '../../utils/weather-tile-readiness'
 import { buildDefaultWeatherRenderHint } from '../../data/weather-render-hints'
-import type {
-  BoundingBox,
-  RuntimeLayerDescriptor,
-  WeatherPointResponse,
-  WorkflowEvent,
-} from '../../services/runtime-api'
+import type { BoundingBox, RuntimeLayerDescriptor, WorkflowEvent } from '../../services/runtime-api'
 import { LAYER_CATEGORIES, LAYER_LIBRARY } from './catalog'
 import { allocateLayerAccent } from './layer-accent'
 import { isWeatherEngineCatalogId } from './weather-session'
 import { createWeatherViewportSlice } from './weather-viewport'
+import { createPointWeatherSlice } from './point-weather'
 import { buildJobLayer, extractOverlayImportsFromResultRefs } from './result-adapter'
 import { buildImportedVectorPayload, computeBounds, inferGeometryType } from './imported-vector'
 import { buildImportedRasterPayload } from './imported-raster'
@@ -439,6 +434,21 @@ export const useLayersStore = defineStore('layers', () => {
     setMapViewport,
     flushWeatherTileViewports,
   } = weatherViewport
+
+  // 点天气查询（单工作流管理）：见 point-weather.ts
+  const pointWeatherSlice = createPointWeatherSlice({
+    getCurrentHour: () => currentHour.value,
+    isWeatherEngineLayer: (catalogId) => isWeatherEngineLayer(catalogId),
+    weatherProviderQuery: (catalogId) => weatherProviderQuery(catalogId),
+  })
+  const {
+    pointWeather,
+    pointWeatherLoading,
+    pointWeatherError,
+    lastPointWeatherQuery,
+    clearPointWeather,
+    fetchPointWeather,
+  } = pointWeatherSlice
 
   const layerLibrary = computed<RuntimeLayerLibraryItem[]>(() => {
     const runtimeItems = Object.values(runtimeLayerCatalog.value).map((descriptor) =>
@@ -3992,80 +4002,6 @@ export const useLayersStore = defineStore('layers', () => {
   /** 获取图层的 primary_metric 字段名（如 wind_speed_80m），从 capabilities 读取 */
   function getLayerPrimaryMetric(catalogId: string): string | null {
     return getRuntimeLayerDescriptor(catalogId)?.capabilities?.primary_metric ?? null
-  }
-
-  // ─── 点天气查询（单工作流管理：同一时间只允许一个点查询运行） ──────────────
-  const pointWeather = ref<WeatherPointResponse | null>(null)
-  const pointWeatherLoading = ref(false)
-  const pointWeatherError = ref<string | null>(null)
-  const lastPointWeatherQuery = ref<{ lng: number; lat: number; catalogId: string } | null>(null)
-  let pointWeatherAbortController: AbortController | null = null
-
-  /** 清除点天气查询结果与状态 */
-  function clearPointWeather() {
-    if (pointWeatherAbortController) {
-      pointWeatherAbortController.abort()
-      pointWeatherAbortController = null
-    }
-    pointWeather.value = null
-    pointWeatherError.value = null
-    pointWeatherLoading.value = false
-    lastPointWeatherQuery.value = null
-  }
-
-  /**
-   * 提交点天气查询（作为单一工作流管理）。
-   * 每次调用会中断上一次尚未完成的查询，确保同一时间只有一条点查询工作流在运行。
-   */
-  async function fetchPointWeather(
-    lng: number,
-    lat: number,
-    catalogId: string,
-    options?: { forecastHours?: number },
-  ) {
-    if (!isWeatherEngineLayer(catalogId)) {
-      clearPointWeather()
-      return
-    }
-    // 中断上一次查询，保证单工作流约束
-    if (pointWeatherAbortController) {
-      pointWeatherAbortController.abort()
-    }
-    const controller = new AbortController()
-    pointWeatherAbortController = controller
-    pointWeatherLoading.value = true
-    pointWeatherError.value = null
-    lastPointWeatherQuery.value = { lng, lat, catalogId }
-    // 覆盖时间轴当前 hour（0-based）及短时预报；至少 6 小时
-    const forecastHours = Math.min(
-      48,
-      Math.max(6, Math.floor(options?.forecastHours ?? currentHour.value + 1)),
-    )
-    try {
-      const weather = await getWeatherPoint({
-        layer_id: catalogId,
-        latitude: lat,
-        longitude: lng,
-        forecast_hours: forecastHours,
-        place_name: `${lat.toFixed(3)}, ${lng.toFixed(3)}`,
-        provider: weatherProviderQuery(catalogId),
-        signal: controller.signal,
-      })
-      if (controller.signal.aborted) return
-      pointWeather.value = weather
-    } catch (error) {
-      if (controller.signal.aborted) return
-      pointWeather.value = null
-      pointWeatherError.value =
-        error instanceof Error ? error.message : 'Failed to load point weather'
-    } finally {
-      if (!controller.signal.aborted) {
-        pointWeatherLoading.value = false
-      }
-      if (pointWeatherAbortController === controller) {
-        pointWeatherAbortController = null
-      }
-    }
   }
 
   /** 刷新所有活跃的地图型工作流图层（视口变化时调用），天气图层由 tile manager 处理，不在此处刷新 */
