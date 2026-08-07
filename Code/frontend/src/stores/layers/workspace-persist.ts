@@ -145,6 +145,27 @@ export function rememberDismissedLayer(entry: {
   saveDismissedLayers(reg)
 }
 
+/** 从移除清单中解除指定 run / overlay / catalog / vector 的标记。 */
+export function forgetDismissedLayer(entry: {
+  overlayLayerId?: string | null
+  catalogId?: string | null
+  vectorBackendLayerId?: string | null
+  runId?: string | null
+}): void {
+  const reg = loadDismissedLayers()
+  const remove = (list: string[], value: string | undefined | null) => {
+    const v = String(value || '').trim()
+    if (!v) return
+    const idx = list.indexOf(v)
+    if (idx >= 0) list.splice(idx, 1)
+  }
+  remove(reg.overlayLayerIds, entry.overlayLayerId)
+  remove(reg.catalogIds, entry.catalogId)
+  remove(reg.vectorBackendLayerIds, entry.vectorBackendLayerId)
+  remove(reg.runIds, entry.runId)
+  saveDismissedLayers(reg)
+}
+
 export function isOverlayDismissed(overlayLayerId: string | undefined | null): boolean {
   const id = String(overlayLayerId || '').trim()
   if (!id) return false

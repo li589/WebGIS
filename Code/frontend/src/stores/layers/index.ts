@@ -42,6 +42,7 @@ import { useWorkflowOutputLayersStore } from '../workflow-output-layers'
 import { persistLayerDisplayName, resolvePersistedDisplayName } from './layer-display-names'
 import {
   buildWorkspaceSnapshot,
+  forgetDismissedLayer,
   isCatalogDismissed,
   isOverlayDismissed,
   isRunDismissed,
@@ -2097,7 +2098,12 @@ export const useLayersStore = defineStore('layers', () => {
         nextMessage = event.message
       }
       if (isRecognizedJobStatus(event.payload?.status)) {
-        nextStatus = event.payload.status
+        // 终态保护：已处于终态时，不允许事件流里的中间状态（queued/running）将其降级
+        if (!isTerminalStatus(event.payload.status) && isTerminalStatus(nextStatus)) {
+          // 保留终态，仅继续累积进度/消息
+        } else {
+          nextStatus = event.payload.status
+        }
       }
       // 解析节点级进度事件
       const rawNodeProgress = (event.payload as { node_progress?: unknown } | null | undefined)
@@ -2378,8 +2384,9 @@ export const useLayersStore = defineStore('layers', () => {
     resultRefs: Parameters<typeof extractOverlayImportsFromResultRefs>[0],
     preferredCatalogId: string,
     runId?: string,
+    opts?: { forceBind?: boolean },
   ): Promise<number> {
-    if (runId && isRunDismissed(runId)) return 0
+    if (runId && !opts?.forceBind && isRunDismissed(runId)) return 0
 
     let imports = extractOverlayImportsFromResultRefs(resultRefs)
     let materializedLayers: Awaited<ReturnType<typeof materializeWorkflowMapLayers>>['layers'] = []
@@ -2441,12 +2448,12 @@ export const useLayersStore = defineStore('layers', () => {
       if (emptyMsg) workflowError.value = emptyMsg
       return 0
     }
-    imports = imports.filter((item) => !isOverlayDismissed(item.overlayLayerId))
+    imports = imports.filter((item) => opts?.forceBind || !isOverlayDismissed(item.overlayLayerId))
     if (!imports.length) return 0
 
     const outputStore = useWorkflowOutputLayersStore()
     for (const item of imports) {
-      if (isOverlayDismissed(item.overlayLayerId)) continue
+      if (!opts?.forceBind && isOverlayDismissed(item.overlayLayerId)) continue
       const matMeta = materializedLayers.find(
         (layer) => layer.overlay_layer_id === item.overlayLayerId,
       )
@@ -2945,7 +2952,11 @@ export const useLayersStore = defineStore('layers', () => {
       const tracked = loadTrackedWorkflowRuns()
       const seen = new Set<string>()
 
-      const candidates: Array<{ runId: string; catalogIdHint?: string }> = []
+      const candidates: Array<{
+        runId: string
+        catalogIdHint?: string
+        autoDiscovered?: boolean
+      }> = []
       for (const run of activeRuns) {
         candidates.push({
           runId: run.run_id,
@@ -2962,14 +2973,20 @@ export const useLayersStore = defineStore('layers', () => {
         }
       }
 
-      // 自动发现最近成功的反演 run：无需本地跟踪记录即可恢复其产物图层
+      // 自动发现最近成功的反演 run：无需本地跟踪记录即可恢复其产物图层。
+      // 解除 run 级移除标记，保证"有图层就有内容"（用户明确要求已跑结果直接可见）。
       const recentSucceeded = await listRecentSucceededRuns(20).catch(() => [])
       for (const run of recentSucceeded) {
         const layerId = String((run as Record<string, unknown>).layer_id || '')
         // 仅恢复 omega_sf_fenkuai 分块反演等算法产物 run，避免无差别拉起所有历史 run
         if (!/omega[-_]sf[-_]fenkuai|omega_sf_omega_pixel/i.test(layerId)) continue
+        forgetDismissedLayer({ runId: run.run_id })
         if (!candidates.some((c) => c.runId === run.run_id)) {
-          candidates.push({ runId: run.run_id, catalogIdHint: layerId || undefined })
+          candidates.push({
+            runId: run.run_id,
+            catalogIdHint: layerId || undefined,
+            autoDiscovered: true,
+          })
         }
       }
 
@@ -3052,16 +3069,21 @@ export const useLayersStore = defineStore('layers', () => {
           }
           activeWorkflowCatalogIds.add(catalogId)
           void pollWorkflowRun(run.run_id, catalogId)
-        } else if (jobLayer.status === 'succeeded' && !isRunDismissed(run.run_id)) {
+        } else if (
+          jobLayer.status === 'succeeded' &&
+          (candidate.autoDiscovered || !isRunDismissed(run.run_id))
+        ) {
           // 确保计算组结构存在，便于 attach 绑到产物成员
           ensureRestoredRunGroup(
             run.run_id,
             catalogId,
             tracked.find((t) => t.runId === run.run_id),
           )
-          void attachAlgorithmProductOverlays(run.result_refs, catalogId, run.run_id).then(() =>
-            scheduleWorkspacePersist(),
-          )
+          // 自动发现的 run 强制绑定数据（绕过用户此前可能点过的"移除"标记），
+          // 保证"有图层就有内容"；用户主动移除的 tracked run 仍保持被移除状态。
+          void attachAlgorithmProductOverlays(run.result_refs, catalogId, run.run_id, {
+            forceBind: Boolean(candidate.autoDiscovered),
+          }).then(() => scheduleWorkspacePersist())
         }
       }
       scheduleWorkspacePersist()
