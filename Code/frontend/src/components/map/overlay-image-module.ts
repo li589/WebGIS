@@ -527,10 +527,30 @@ export function createOverlayImageModule(
     }
   }
 
+  let globalOverviewFitScheduled = false
+
   function _fitBoundsIfOutside(bounds: [number, number, number, number]) {
     try {
       const center = options.map.getCenter()
+      const zoom = options.map.getZoom()
       const [west, south, east, north] = bounds
+      const lngSpan = east - west
+      const isNearGlobal = lngSpan >= 300
+
+      // 近全球稀疏结果（如 FY/SMAP 轨道条带）在区域级缩放下可能整个视口均为透明瓦片。
+      // 即使当前中心位于全球 bounds 内，也应在首次加载时拉回全球概览，确保用户能看到数据。
+      if (isNearGlobal && zoom > 3 && !globalOverviewFitScheduled) {
+        globalOverviewFitScheduled = true
+        options.map.fitBounds(
+          [
+            [west, south],
+            [east, north],
+          ],
+          { padding: 60, duration: 800, essential: true },
+        )
+        return
+      }
+
       if (center.lat >= south && center.lat <= north) {
         if (east <= 180) {
           if (center.lng >= west && center.lng <= east) return

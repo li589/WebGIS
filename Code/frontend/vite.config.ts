@@ -41,6 +41,9 @@ export default defineConfig(({ mode }) => {
         '/frontend': { target: apiTarget, changeOrigin: true },
         '/config': { target: apiTarget, changeOrigin: true },
         '/unified-tiles': { target: apiTarget, changeOrigin: true },
+        // 时间序列/栅格 XYZ 数据瓦片。缺少该代理时 Vite 会返回 index.html（200 text/html），
+        // MapLibre 将其当 PNG 解码失败，表现为“图层存在但地图无内容”。
+        '/overlay-tiles': { target: apiTarget, changeOrigin: true },
         '/overlay-preview': { target: apiTarget, changeOrigin: true },
         '/overlay-bounds': { target: apiTarget, changeOrigin: true },
         '/overlay-value': { target: apiTarget, changeOrigin: true },
@@ -48,9 +51,7 @@ export default defineConfig(({ mode }) => {
         '/import': { target: apiTarget, changeOrigin: true },
         '/export': { target: apiTarget, changeOrigin: true },
       },
-      allowedHosts: [
-        'geoflow.cgdas.dpdns.org'
-      ]
+      allowedHosts: ['geoflow.cgdas.dpdns.org'],
     },
     build: {
       // MapLibre is large even when isolated, so raise the warning threshold
