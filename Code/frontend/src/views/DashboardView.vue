@@ -788,21 +788,29 @@ async function fetchOverlayPointValues(lng: number, lat: number) {
 }
 
 async function fetchSelectedOverlaySeries(lng: number, lat: number) {
-  const states = overlayTimeStates.value
-  const preferredOverlayId = selectedLayerDisplay.value?.importedRasterOverlayLayerId
-  const selectedState =
-    (preferredOverlayId ? states.find((s) => s.layerId === preferredOverlayId) : undefined) ??
-    states.find((s) => s.category === 'time-series' && s.timeList.length > 0)
-  const times = selectedState?.timeList ?? []
-  if (!selectedState || times.length === 0) {
+  // 优先用选中图层自身的 importedRaster（不依赖地图瓦片加载状态）；
+  // 兜底再退到已加载 overlay 的时间状态。
+  const selectedActive = layersStore.activeLayers.find(
+    (l) => l.instanceId === selectedLayerDisplay.value?.instanceId,
+  )
+  const selectedOverlayId =
+    selectedActive?.importedRaster?.overlayLayerId ??
+    selectedLayerDisplay.value?.importedRasterOverlayLayerId
+  let times = selectedActive?.importedRaster?.timeList ?? []
+  if (!selectedOverlayId || times.length === 0) {
+    const state = overlayTimeStates.value.find(
+      (s) => s.layerId === selectedOverlayId && s.category === 'time-series',
+    )
+    times = state?.timeList ?? []
+  }
+  if (!selectedOverlayId || times.length === 0) {
     selectedOverlayTimeSeries.value = []
     logStore.logOperation(
       'overlay-series-error',
-      `无法加载点时序：当前没有已加载的时间序列 overlay（${selectedLayerDisplay.value?.name ?? '未选择'}）`,
+      `无法加载点时序：当前图层无可用时间块（${selectedLayerDisplay.value?.name ?? '未选择'}）`,
     )
     return
   }
-  const selectedOverlayId = selectedState.layerId
   const seriesResults = await Promise.allSettled(
     times.map((time) => getOverlayValue(selectedOverlayId, lng, lat, time)),
   )

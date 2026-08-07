@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { MapChromeNavigationControl } from './map/map-chrome-controls'
 
-import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, shallowRef, watch } from 'vue'
 import { storeToRefs } from 'pinia'
 
 import { useLayersStore } from '../stores/layers'
@@ -165,7 +165,12 @@ function fitToLayerExtent(instanceId: string): boolean {
 
 // ─── Overlay image module (via non-weather sync module) ──────────────────────
 let overlayImageModule: MapCanvasNonWeatherLayerSyncModule['overlayImageModule'] | null = null
-const overlayTimeStates = computed(() => overlayImageModule?.overlayTimeStates.value ?? [])
+// 响应式句柄：overlayImageModule 是异步挂载后才赋值的普通变量，直接放进 computed
+// 会因 `?.` 短路而丢失依赖追踪（永远为空数组）。用 shallowRef 保证赋值后 watcher 触发。
+const overlayImageModuleRef = shallowRef<
+  MapCanvasNonWeatherLayerSyncModule['overlayImageModule'] | null
+>(null)
+const overlayTimeStates = computed(() => overlayImageModuleRef.value?.overlayTimeStates.value ?? [])
 const activeTimeSeriesOverlays = computed(() =>
   overlayTimeStates.value.filter((s: { category: string }) => s.category === 'time-series'),
 )
@@ -402,6 +407,7 @@ onMounted(async () => {
     state.resources.selectedLayerFocusModule = moduleBundle.selectedLayerFocusModule
     state.resources.measureModule = moduleBundle.measureModule
     overlayImageModule = moduleBundle.nonWeatherLayerSyncModule.overlayImageModule
+    overlayImageModuleRef.value = moduleBundle.nonWeatherLayerSyncModule.overlayImageModule
     moduleBundle.weatherOverlayModule.setupWatchers()
     moduleBundle.nonWeatherLayerSyncModule.setupWatchers()
     void moduleBundle.nonWeatherLayerSyncModule.init()

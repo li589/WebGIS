@@ -2972,7 +2972,40 @@ export const useLayersStore = defineStore('layers', () => {
         catalogIdHint?: string
         autoDiscovered?: boolean
       }> = []
+
+      // 先收集最近成功的 omega 反演 run（列表按创建时间倒序），
+      // 同一工作流（command_label）只保留最新成功 run；
+      // 同时建立「工作流 → 最新成功 run」映射，用于压制同工作流的僵尸活跃 run。
+      const recentSucceeded = await listRecentSucceededRuns(20).catch(() => [])
+      const succeededByWorkflow = new Set<string>()
+      const seenWorkflowLabels = new Set<string>()
+      for (const run of recentSucceeded) {
+        const layerId = String((run as Record<string, unknown>).layer_id || '')
+        // 仅恢复 omega_sf_fenkuai 分块反演等算法产物 run，避免无差别拉起所有历史 run
+        if (!/omega[-_]sf[-_]fenkuai|omega_sf_omega_pixel/i.test(layerId)) continue
+        const workflowKey = String((run as Record<string, unknown>).command_label || layerId)
+        succeededByWorkflow.add(workflowKey)
+        if (seenWorkflowLabels.has(workflowKey)) continue
+        seenWorkflowLabels.add(workflowKey)
+        forgetDismissedLayer({ runId: run.run_id })
+        if (!candidates.some((c) => c.runId === run.run_id)) {
+          candidates.push({
+            runId: run.run_id,
+            catalogIdHint: layerId || undefined,
+            autoDiscovered: true,
+          })
+        }
+      }
+
       for (const run of activeRuns) {
+        // 同一工作流已有成功产物时，不再恢复其 running/queued 占位
+        // （worker 重启后僵尸 running run 会永远卡在占位组，展示陈旧中间块）。
+        const workflowKey = String(
+          (run as Record<string, unknown>).command_label ||
+            (run as Record<string, unknown>).layer_id ||
+            '',
+        )
+        if (workflowKey && succeededByWorkflow.has(workflowKey)) continue
         candidates.push({
           runId: run.run_id,
           catalogIdHint: ((run as Record<string, unknown>).layer_id as string) || undefined,
@@ -2985,23 +3018,6 @@ export const useLayersStore = defineStore('layers', () => {
         }
         if (!candidates.some((c) => c.runId === item.runId)) {
           candidates.push({ runId: item.runId, catalogIdHint: item.catalogId })
-        }
-      }
-
-      // 自动发现最近成功的反演 run：无需本地跟踪记录即可恢复其产物图层。
-      // 解除 run 级移除标记，保证"有图层就有内容"（用户明确要求已跑结果直接可见）。
-      const recentSucceeded = await listRecentSucceededRuns(20).catch(() => [])
-      for (const run of recentSucceeded) {
-        const layerId = String((run as Record<string, unknown>).layer_id || '')
-        // 仅恢复 omega_sf_fenkuai 分块反演等算法产物 run，避免无差别拉起所有历史 run
-        if (!/omega[-_]sf[-_]fenkuai|omega_sf_omega_pixel/i.test(layerId)) continue
-        forgetDismissedLayer({ runId: run.run_id })
-        if (!candidates.some((c) => c.runId === run.run_id)) {
-          candidates.push({
-            runId: run.run_id,
-            catalogIdHint: layerId || undefined,
-            autoDiscovered: true,
-          })
         }
       }
 
@@ -3036,6 +3052,19 @@ export const useLayersStore = defineStore('layers', () => {
           console.warn('[layers] restore skip missing run', candidate.runId, err)
           forgetTrackedWorkflowRun(candidate.runId)
           continue
+        }
+
+        // 非终态且同工作流已有成功版本 → 跳过（防止僵尸 running 重建占位组）
+        if (run.status !== 'succeeded') {
+          const workflowKey = String(
+            (run as Record<string, unknown>).command_label ||
+              (run as Record<string, unknown>).layer_id ||
+              '',
+          )
+          if (workflowKey && succeededByWorkflow.has(workflowKey)) {
+            forgetTrackedWorkflowRun(candidate.runId)
+            continue
+          }
         }
 
         const catalogId = resolveRestoredCatalogId(
@@ -3099,6 +3128,24 @@ export const useLayersStore = defineStore('layers', () => {
           void attachAlgorithmProductOverlays(run.result_refs, catalogId, run.run_id, {
             forceBind: Boolean(candidate.autoDiscovered),
           }).then(() => scheduleWorkspacePersist())
+        }
+      }
+
+      // 清理快照残留的旧 run 组：runId 不在本次恢复集合（已被新 run 取代或已移除）
+      // 的 restored 组连同其占位成员一并移除，避免陈旧时间块继续显示。
+      const restoredRunIds = new Set(candidates.map((c) => c.runId))
+      const staleGroupIds = new Set(
+        runLayerGroups.value
+          .filter((g) => g.runId && !restoredRunIds.has(g.runId))
+          .map((g) => g.groupId),
+      )
+      if (staleGroupIds.size > 0) {
+        runLayerGroups.value = runLayerGroups.value.filter((g) => !staleGroupIds.has(g.groupId))
+        for (let i = activeLayers.value.length - 1; i >= 0; i--) {
+          const layer = activeLayers.value[i]!
+          if (layer.runGroupId && staleGroupIds.has(layer.runGroupId)) {
+            activeLayers.value.splice(i, 1)
+          }
         }
       }
       scheduleWorkspacePersist()
