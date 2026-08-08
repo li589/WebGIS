@@ -64,17 +64,18 @@ CGDA（综合地理数据分析系统）：**面向课题组与大气研究院�
 
 改动以下区域前必须确认鉴权、加密或数据面隔离约束，避免破坏运行态或泄露凭据：
 
-1. **`/config/*` 写操作与敏感读**：`app/api/config_routes.py` + `app/services/config_service.py` / `api_config.py` / `effective_config.py`。写操作与敏感 GET（api-keys / gee / weather config / remote-storage / data-source / cache overview / general）与 `POST /import/raster` 需 `X-API-Key`（`require_config_read_access` 与写同门）。`/config/about` 仍公开。`/runtime/*` 管理读（status / metrics / api-config / tiles 管理面）与 `/cleanup/*` 读端点（stats / node-caches）同样需读鉴权。development 且 `api_keys_enabled=false` 时仅 **直连 loopback** 可旁路（不受 `X-Forwarded-For` 影响；局域网需 `BACKEND_DEV_AUTH_BYPASS=true`）。鉴权密钥 = `backend_auth` DB 覆盖 env。`PUT /config/data-source/paths` 写 `.env` 后须重启后端进程组；`POST /config/service/restart` 受 `BACKEND_UI_RESTART_ENABLED` 门禁，且**始终**重启 FastAPI+Worker+Beat。
+1. **`/config/*` 写操作与敏感读**：`app/api/config_routes.py` + `app/services/config_service.py` / `api_config.py` / `effective_config.py` / `credential_resolver.py`。写操作与敏感 GET 需有效凭据：会话 Cookie、用户 API Token 或 `backend_auth` 服务密钥（`X-API-Key`）。RBAC：`viewer` 只读；`operator`/`admin` 可写。development 且 `api_keys_enabled=false` 时仅 **直连 loopback** 可旁路。`/config/about` 仍公开。`PUT /config/data-source/paths` 写 `.env` 后须重启后端进程组。
+2. **用户鉴权**：`app/api/routers/auth_router.py`（`/auth/*` 登录、账户、个人 Token）、`session_service.py`、`user_repository.py`。角色/密码/禁用变更会吊销该用户全部会话与 Token。
 
-2. **GEE / 共享加密主密钥**：`BACKEND_GEE_CREDENTIALS_ENCRYPTION_KEY` 须为 **64 hex chars（32-byte）**，启动时校验；同一把 key 加密 GEE SA、API keys、天气 provider、远程存储、门户凭据。非 development 缺 key 拒启；空 IV 明文行在生产拒绝解密。GEE API 账号管理 production 默认关闭。涉及 `/config/gee/accounts*` 与 `/gee/config`。
+3. **GEE / 共享加密主密钥**：`BACKEND_GEE_CREDENTIALS_ENCRYPTION_KEY` 须为 **64 hex chars（32-byte）**，启动时校验；同一把 key 加密 GEE SA、API keys、天气 provider、远程存储、门户凭据。非 development 缺 key 拒启；空 IV 明文行在生产拒绝解密。GEE API 账号管理 production 默认关闭。涉及 `/config/gee/accounts*` 与 `/gee/config`。
 
-3. **flush（清缓存）**：`Env\Python312\python.exe launch.py flush` 执行 Redis `FLUSHDB` + 删除 `Code/backend/.data/cache/weather` 与 `weatherengine` 目录。会清空队列、缓存与限流/断路器状态，影响在线服务；**不**删 Open-Meteo Docker volume。仅在排障或强制刷新天气缓存时使用，勿在正常联调中随意执行。
+4. **flush（清缓存）**：`Env\Python312\python.exe launch.py flush` 执行 Redis `FLUSHDB` + 删除 `Code/backend/.data/cache/weather` 与 `weatherengine` 目录。会清空队列、缓存与限流/断路器状态，影响在线服务；**不**删 Open-Meteo Docker volume。仅在排障或强制刷新天气缓存时使用，勿在正常联调中随意执行。
 
-4. **Open-Meteo volume**：named volume `backend_open-meteo-data`（名可经 `Code/infra/data-sync/.env` 的 `OPEN_METEO_DATA_VOLUME` 覆盖），落在 Docker Desktop VHDX 内（`I:\Docker\DockerDesktop`）。**勿用 Windows 路径 bind mount** 替代。API 在 backend 运行栈（容器 `cgda-open-meteo`）；同步在 `Code/infra/data-sync`（`-p data-sync`）。两栈共享同一 volume 但 compose project 不同，改动 compose 时勿混用 project 名。
+5. **Open-Meteo volume**：named volume `backend_open-meteo-data`（名可经 `Code/infra/data-sync/.env` 的 `OPEN_METEO_DATA_VOLUME` 覆盖），落在 Docker Desktop VHDX 内（`I:\Docker\DockerDesktop`）。**勿用 Windows 路径 bind mount** 替代。API 在 backend 运行栈（容器 `cgda-open-meteo`）；同步在 `Code/infra/data-sync`（`-p data-sync`）。两栈共享同一 volume 但 compose project 不同，改动 compose 时勿混用 project 名。
 
-5. **生产禁止演示开关**：勿开启 `BACKEND_DEMO_SOURCES_ENABLED` / `BACKEND_NODE_STUBS_VISIBLE`；机构交付核对见 `.ai/docs/reference/delivery-checklist.md`。
+6. **生产禁止演示开关**：勿开启 `BACKEND_DEMO_SOURCES_ENABLED` / `BACKEND_NODE_STUBS_VISIBLE`；机构交付核对见 `.ai/docs/reference/delivery-checklist.md`。
 
-6. **地理数据根**：`BACKEND_DATA_ROOT`（及 `BACKEND_OUTPUT_ROOT`）为算法 / overlay / 图层 readiness 真源；**禁止**代码静默回退盘符。production 空根拒启。前端设置 → 数据源可改并调度 `restart backend`。
+7. **地理数据根**：`BACKEND_DATA_ROOT`（及 `BACKEND_OUTPUT_ROOT`）为算法 / overlay / 图层 readiness 真源；**禁止**代码静默回退盘符。production 空根拒启。前端设置 → 数据源可改并调度 `restart backend`。
 
 ## "改 X 则跑 Y" 映射
 
@@ -85,7 +86,8 @@ CGDA（综合地理数据分析系统）：**面向课题组与大气研究院�
 | 天气点查 / 引擎 | `app/weatherengine/service.py`、`fetch_gateway.py`、`providers/` | `Env/Python312/python.exe -m pytest Test/backend/test_weather_point_service.py Test/backend/test_weatherengine_service.py Test/backend/test_fetch_gateway.py -q` |
 | 工作流运行 | `app/services/workflow/`、`app/api/routers/workflow_router.py` | `Env/Python312/python.exe -m pytest Test/backend/test_workflow_routes.py Test/backend/test_interaction_hub.py Test/backend/test_business_regression.py -q` |
 | 工作流定时器 | `app/services/workflow_timer_service.py`、`workflow_timer_router.py`、`workflow_timer_tasks.py`；FE `WorkflowTimerPanel.vue` | `Env/Python312/python.exe -m pytest Test/backend/test_workflow_timer_service.py Test/backend/test_celery_tasks.py -q`（真实 cron 需 Beat + standard worker）；FE：`cd Code/frontend && npm run test -- workflow-timer` |
-| 配置 / 鉴权 | `app/api/config_routes.py`、`app/services/config_service.py` | `Env/Python312/python.exe -m pytest Test/backend/test_config_security.py Test/backend/test_api_keys_basemap.py -q` |
+| 配置 / 鉴权 | `app/api/config_routes.py`、`app/services/config_service.py`、`credential_resolver.py` | `Env/Python312/python.exe -m pytest Test/backend/test_config_security.py Test/backend/test_api_keys_basemap.py Test/backend/test_auth.py -q` |
+| 错误处理 / 可观测性 | `app/main.py`（全局异常）、`runtime_status_service.py`；FE `_http.ts`、`LogPanel`、`SystemStatusSettings` | `Env/Python312/python.exe -m pytest Test/backend/test_error_handlers.py Test/backend/test_interaction_hub.py -q`；`cd Code/frontend && npm run test -- _http auth-router` |
 | 数据根 / 图层就绪 | `BACKEND_DATA_ROOT`、`env_file_upsert.py`、`service_restart.py`、`catalog_seeds/layer_descriptors.json`；FE `DataSourceSettings.vue` | `Env/Python312/python.exe -m pytest Test/backend/test_data_source_paths.py Test/backend/test_data_root_policy.py -q`；改路径后 `launch.py restart backend`，再 `GET /layers` 看 `run_readiness` |
 | GEE | `app/gee/`、`app/services/gee_bridge_service.py` | `Env/Python312/python.exe -m pytest Test/backend/test_gee_bridge_service.py -q` |
 | 统一瓦片（底图） | `app/api/tile_routes.py`、`tile_provider_registry.py` | `Env/Python312/python.exe -m pytest Test/backend/test_unified_tile_service.py -q` |
@@ -125,6 +127,16 @@ CODEBUDDY_SESSION_ID= CLAUDE_SESSION_ID= CODEBUDDY_SAFE_DELETE_SANDBOX= Env/Pyth
 - 天气模型缺口：`visibility` 非 `gfs_global` 常 data-empty；80 m 风/温无原生场时外推。本地源需 `launch.py sync`。
 - 活文档以各 README 为准；带日期的快照文档（`代码事实同步文档-*` 等）仅作历史参考，不覆盖现行结构。
 - 提交信息遵循 Conventional Commits（`feat` / `fix` / `refactor` / `perf` / `chore` / `docs` / `test` / `style` / `build` / `ci`）。
+
+## 前端错误与可观测性
+
+- **404**：未知路由 → `NotFoundView`；登录 `?redirect=` 经 `safeRedirect` 防开放重定向。
+- **会话过期**：API 401（非 `/auth/*` bootstrap）→ 自动跳转登录（`session-expired.ts`、`_http.ts`）。
+- **服务不可用**：`ServiceConnectivityBanner` 轮询 `GET /health`；Gateway API 5xx → `Code/infra/gateway/html/50x.html`。
+- **客户端日志**：工具栏「日志」支持仅错误筛选与 JSON 导出；badge 显示 `errorCount`。
+- **系统状态**：设置 → 系统状态（`GET /runtime/status`）。
+- **Gateway 代理**：与 `vite.config.ts` 对齐（含 `/auth`、`/overlay-tiles`、`/health`）。
+- 运维排障：`.ai/docs/reference/error-handling-and-observability.md`。
 
 ## AI 知识库（`.ai/`，本地专用，不上传 GitHub）
 

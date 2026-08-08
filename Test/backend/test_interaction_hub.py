@@ -30,6 +30,7 @@ from shared.contracts.api_contracts import (
     WorkflowSubmitRequest,
     RuntimeMapContext,
     ClientIdentity,
+    ServiceHealth,
 )
 
 
@@ -125,6 +126,17 @@ class WorkflowServicesTests(unittest.TestCase):
 
             self.assertEqual(status.service_name, settings.service_name)
             self.assertGreaterEqual(len(status.services), 3)
+
+    def test_runtime_status_overall_health_rollup_degraded(self) -> None:
+        with _temp_repository() as repository:
+            _submission, _lifecycle, runtime_status = _build_services(repository)
+            with patch.object(
+                runtime_status,
+                "_get_redis_health",
+                return_value=ServiceHealth.degraded,
+            ):
+                status = runtime_status.get_runtime_status()
+            self.assertEqual(status.overall_health, ServiceHealth.degraded)
 
     def test_schedule_retry_passes_countdown_and_attempt(self) -> None:
         with _temp_repository() as repository:

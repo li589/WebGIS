@@ -2,6 +2,7 @@
 import { computed, reactive, ref } from 'vue'
 import { storeToRefs } from 'pinia'
 import { useSettingsStore } from '../../stores/settings'
+import { useAuthStore } from '../../stores/auth'
 import type { ApiKeyHistoryItem, ApiKeyItem } from '../../services/settings-api'
 import {
   clearBackendWriteApiKey,
@@ -17,6 +18,7 @@ import {
 } from '../../services/settings-local'
 
 const settingsStore = useSettingsStore()
+const authStore = useAuthStore()
 const { apiKeys, apiKeyHistory } = storeToRefs(settingsStore)
 
 const writeKeyDraft = ref('')
@@ -461,12 +463,12 @@ function statusBadge(item: ApiKeyItem): { text: string; class: string } | null {
       </div>
     </section>
 
-    <section class="settings-section">
-      <h3 class="section-title">浏览器写请求密钥</h3>
+    <section v-if="authStore.canWrite" class="settings-section">
+      <h3 class="section-title">浏览器写请求密钥（可选）</h3>
       <p class="section-hint">
-        设置页敏感读取与工作流写接口需要带 <code>X-Api-Key</code>。默认仅
-        <code>sessionStorage</code>（关标签即失效，降低 XSS 持久暴露）；勾选下方选项才写入
-        <code>localStorage</code>。当前：{{ writeKeyStatus }}
+        已登录用户默认通过会话 Cookie 鉴权。仅在脚本/CI 或无法使用 Cookie 时，才需在此粘贴
+        <strong>服务密钥</strong>（<code>backend_auth</code>）。个人工具请使用「账户 → API
+        Token」。当前：{{ writeKeyStatus }}
       </p>
       <div class="key-card">
         <div class="key-input-area">

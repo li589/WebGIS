@@ -16,7 +16,15 @@
  *     头 + 不需要 loading + tile 专用超时，模式差异过大，强行合并会降低可读性。
  *   - 需要原始 Response 对象的调用方：直接使用 fetch。
  */
+import { handleSessionExpired, isAuthBootstrapPath } from './session-expired'
+import {
+  ApiRequestError,
+  SessionExpiredError,
+  extractErrorDetail,
+  extractRequestId,
+} from './http-errors'
 import { withWriteAuthHeaders } from './backend-auth'
+import { useLogStore } from '../stores/log'
 import { useUiLoadingStore } from '../stores/ui-loading'
 
 /**
@@ -119,6 +127,41 @@ export interface RequestJsonInit extends RequestInit {
   sensitiveGet?: boolean
 }
 
+function logApiFailure(path: string, message: string, details?: string, silent?: boolean): void {
+  if (silent) return
+  try {
+    useLogStore().logOperation('api-error', message, details ?? `path=${path}`)
+  } catch {
+    // Pinia may be unavailable during early bootstrap tests.
+  }
+}
+
+function handleHttpError(
+  path: string,
+  status: number,
+  errorBody: unknown,
+  errorDetail: string,
+  silent?: boolean,
+): never {
+  const requestId = extractRequestId(errorBody)
+
+  if (status === 401 && !isAuthBootstrapPath(path)) {
+    logApiFailure(path, `未授权：${path}`, errorDetail, silent)
+    handleSessionExpired(path)
+    throw new SessionExpiredError(path)
+  }
+
+  if (status === 403) {
+    const msg = errorDetail || '权限不足'
+    logApiFailure(path, `禁止访问：${path}`, msg, silent)
+    throw new ApiRequestError(msg, 403, path, requestId)
+  }
+
+  const msg = `Request failed: ${status} ${path}${errorDetail ? ` - ${errorDetail}` : ''}`
+  logApiFailure(path, `请求失败 ${status}`, msg, silent)
+  throw new ApiRequestError(msg, status, path, requestId)
+}
+
 /**
  * 统一 JSON fetch 包装器。
  *
@@ -173,6 +216,7 @@ export async function requestJson<T>(path: string, init?: RequestJsonInit): Prom
       ...restInit,
       headers: mergedHeaders,
       signal: restInit.signal ?? controller.signal,
+      credentials: 'include',
     })
 
     if (!response.ok) {
@@ -191,11 +235,11 @@ export async function requestJson<T>(path: string, init?: RequestJsonInit): Prom
       } catch {
         errorDetail = await response.text().catch(() => '')
       }
-      // 结构化校验错误：携带字段级 issues 供 UI 定位具体表单字段。
-      // 后端 FastAPI HTTPException 把 detail 包在 {"detail": {...}} 里，
-      // extractValidationPayload 兼容扁平与包裹两种格式。
       const validationPayload = extractValidationPayload(errorBody)
       if (validationPayload) {
+        if (!silent) {
+          logApiFailure(path, `参数校验失败：${path}`, errorDetail, silent)
+        }
         throw new WorkflowValidationError(
           validationPayload.user_message || '参数校验失败',
           validationPayload.issues,
@@ -203,8 +247,12 @@ export async function requestJson<T>(path: string, init?: RequestJsonInit): Prom
           response.status,
         )
       }
-      throw new Error(
-        `Request failed: ${response.status} ${path}${errorDetail ? ` - ${errorDetail}` : ''}`,
+      handleHttpError(
+        path,
+        response.status,
+        errorBody,
+        extractErrorDetail(errorBody, errorDetail),
+        silent,
       )
     }
 
@@ -225,7 +273,16 @@ export async function requestJson<T>(path: string, init?: RequestJsonInit): Prom
       throw new Error(reasonMsg || `请求超时（${effectiveTimeout}ms）：${path}`, { cause: err })
     }
     if (err instanceof TypeError && /fetch|network|Failed to fetch/i.test(err.message)) {
-      throw new Error(`网络不可用或服务未启动：${path}`, { cause: err })
+      const netMsg = `网络不可用或服务未启动：${path}`
+      logApiFailure(path, netMsg, err.message, silent)
+      throw new Error(netMsg, { cause: err })
+    }
+    if (err instanceof DOMException && err.name === 'AbortError' && !restInit.signal?.aborted) {
+      const reason = controller.signal.reason
+      const reasonMsg =
+        reason instanceof DOMException ? reason.message : typeof reason === 'string' ? reason : ''
+      const timeoutMsg = reasonMsg || `请求超时（${effectiveTimeout}ms）：${path}`
+      logApiFailure(path, timeoutMsg, undefined, silent)
     }
     throw err
   } finally {

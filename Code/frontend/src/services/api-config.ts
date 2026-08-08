@@ -13,6 +13,7 @@
 
 import { getMapDefaults } from './map-defaults'
 import { withWriteAuthHeaders } from './backend-auth'
+import { applyApiFetchDefaults } from './http-credentials'
 import { resolveApiUrl } from './runtime-api'
 
 export type IntegrationDomain = 'basemap' | 'data-source' | 'gee' | 'credential' | 'certificate'
@@ -846,18 +847,21 @@ async function requestConfigJson<T>(
 
   try {
     const method = (restInit.method ?? 'GET').toString()
-    const response = await fetch(resolveApiUrl(path), {
-      ...restInit,
-      headers: withWriteAuthHeaders(
-        {
-          'Content-Type': 'application/json',
-          ...(restInit.headers as Record<string, string> | undefined),
-        },
-        method,
-        true,
-      ),
-      signal: restInit.signal ?? controller.signal,
-    })
+    const response = await fetch(
+      resolveApiUrl(path),
+      applyApiFetchDefaults({
+        ...restInit,
+        headers: withWriteAuthHeaders(
+          {
+            'Content-Type': 'application/json',
+            ...(restInit.headers as Record<string, string> | undefined),
+          },
+          method,
+          true,
+        ),
+        signal: restInit.signal ?? controller.signal,
+      }),
+    )
 
     if (!response.ok) {
       throw new Error(`Request failed: ${response.status} ${path}`)

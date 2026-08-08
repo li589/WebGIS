@@ -1,6 +1,7 @@
 <script setup lang="ts">
-import { onMounted, ref, shallowRef, watch } from 'vue'
+import { computed, onMounted, ref, shallowRef, watch, type Component } from 'vue'
 
+import { useAuthStore } from '../../stores/auth'
 import { useSettingsStore } from '../../stores/settings'
 import { useUiLoadingStore } from '../../stores/ui-loading'
 import { loadSettingsUiLocal, saveSettingsUiLocal } from '../../services/settings-local'
@@ -12,6 +13,8 @@ import OpenMeteoSyncSettings from './OpenMeteoSyncSettings.vue'
 import DataSourceSettings from './DataSourceSettings.vue'
 import RemoteStorageSettings from './RemoteStorageSettings.vue'
 import AboutSettings from './AboutSettings.vue'
+import SystemStatusSettings from './SystemStatusSettings.vue'
+import UserAccountSettings from './UserAccountSettings.vue'
 import { SETTINGS_COPY } from '../../ui-copy'
 
 const emit = defineEmits<{
@@ -19,53 +22,64 @@ const emit = defineEmits<{
 }>()
 
 const settingsStore = useSettingsStore()
+const authStore = useAuthStore()
 
 type SettingsTab =
   | 'general'
+  | 'accounts'
   | 'api-keys'
   | 'gee-accounts'
   | 'weather-providers'
   | 'open-meteo-sync'
   | 'remote-storage'
   | 'data-source'
+  | 'system-status'
   | 'about'
 
 const savedTab = loadSettingsUiLocal().activeTab as SettingsTab | undefined
+const defaultTab = (): SettingsTab =>
+  authStore.authRequired && authStore.isAuthenticated ? 'accounts' : 'general'
 const activeTab = ref<SettingsTab>(
   savedTab &&
     [
       'general',
+      'accounts',
       'api-keys',
       'gee-accounts',
       'weather-providers',
       'open-meteo-sync',
       'remote-storage',
       'data-source',
+      'system-status',
       'about',
     ].includes(savedTab)
     ? savedTab
-    : 'api-keys',
+    : defaultTab(),
 )
 
-const tabComponents = shallowRef<Record<SettingsTab, typeof GeneralSettings>>({
+const tabComponents = shallowRef<Record<SettingsTab, Component>>({
   general: GeneralSettings,
+  accounts: UserAccountSettings,
   'api-keys': ApiKeySettings,
   'gee-accounts': GeeAccountSettings,
   'weather-providers': WeatherProviderSettings,
   'open-meteo-sync': OpenMeteoSyncSettings,
   'remote-storage': RemoteStorageSettings,
   'data-source': DataSourceSettings,
+  'system-status': SystemStatusSettings,
   about: AboutSettings,
 })
 
 const ALL_TABS: Array<{ id: SettingsTab; label: string; icon: string }> = [
   { id: 'general', label: SETTINGS_COPY.tabGeneral, icon: '▣' },
+  { id: 'accounts', label: '账户', icon: '👤' },
   { id: 'api-keys', label: SETTINGS_COPY.tabApiKeys, icon: '🔑' },
   { id: 'gee-accounts', label: SETTINGS_COPY.tabGee, icon: '🌍' },
   { id: 'weather-providers', label: SETTINGS_COPY.tabWeather, icon: '🌦' },
   { id: 'open-meteo-sync', label: SETTINGS_COPY.tabOpenMeteo, icon: '🌩' },
   { id: 'remote-storage', label: '远程存储', icon: '🖧' },
   { id: 'data-source', label: SETTINGS_COPY.tabDataSource, icon: '⚱' },
+  { id: 'system-status', label: SETTINGS_COPY.tabSystemStatus, icon: '◉' },
   { id: 'about', label: '关于', icon: 'ⓘ' },
 ]
 
@@ -83,9 +97,15 @@ function resolveVisibleSettingsTabs(): Array<{ id: SettingsTab; label: string; i
   return filtered.length ? filtered : ALL_TABS
 }
 
-const tabs = resolveVisibleSettingsTabs()
-if (!tabs.some((t) => t.id === activeTab.value)) {
-  activeTab.value = tabs[0]?.id ?? 'api-keys'
+const tabs = computed(() => {
+  const visible = resolveVisibleSettingsTabs()
+  if (!authStore.authRequired) {
+    return visible.filter((t) => t.id !== 'accounts')
+  }
+  return visible
+})
+if (!tabs.value.some((t) => t.id === activeTab.value)) {
+  activeTab.value = tabs.value[0]?.id ?? defaultTab()
 }
 
 onMounted(async () => {

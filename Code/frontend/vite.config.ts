@@ -50,6 +50,8 @@ export default defineConfig(({ mode }) => {
         '/overlays': { target: apiTarget, changeOrigin: true },
         '/import': { target: apiTarget, changeOrigin: true },
         '/export': { target: apiTarget, changeOrigin: true },
+        '/auth': { target: apiTarget, changeOrigin: true },
+        '/health': { target: apiTarget, changeOrigin: true },
       },
       allowedHosts: ['geoflow.cgdas.dpdns.org'],
     },

@@ -6,11 +6,16 @@
  * 由 useUiLoadingStore 驱动；组件内等待请用 InlineLoader。
  */
 import LoadingOverlay from './components/LoadingOverlay.vue'
+import AppErrorBoundary from './components/AppErrorBoundary.vue'
+import ServiceConnectivityBanner from './components/ServiceConnectivityBanner.vue'
 </script>
 
 <template>
   <div class="page-shell">
-    <RouterView />
+    <ServiceConnectivityBanner />
+    <AppErrorBoundary>
+      <RouterView />
+    </AppErrorBoundary>
     <LoadingOverlay />
   </div>
 </template>

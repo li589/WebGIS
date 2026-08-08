@@ -9,6 +9,9 @@ import {
   useDataImportFlow,
 } from '../core/workspace-store'
 import { DATA_COPY } from '../../ui-copy'
+import { useAuthStore } from '../../stores/auth'
+
+const authStore = useAuthStore()
 
 const { importing, importMsg, importError, uploadProgress, processFiles } = useDataImportFlow()
 
@@ -95,7 +98,8 @@ const progressLabel = computed(() =>
       class="import-trigger"
       :class="{ active: menuOpen || dataWorkspaceOpen }"
       type="button"
-      :title="DATA_COPY.menuTitle"
+      :disabled="!authStore.canWrite"
+      :title="authStore.canWrite ? DATA_COPY.menuTitle : '只读账户无法导入/导出数据'"
       @click="toggleMenu"
     >
       <span class="btn-icon" aria-hidden="true">◫</span>

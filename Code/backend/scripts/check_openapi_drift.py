@@ -43,6 +43,7 @@ CRITICAL_PREFIXES: tuple[str, ...] = (
     "/runtime",
     "/gee",
     "/artifacts",
+    "/auth",
 )
 
 

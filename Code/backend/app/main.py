@@ -4,7 +4,9 @@ from contextlib import asynccontextmanager
 from uuid import uuid4
 
 from fastapi import FastAPI, Request
+from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
+from starlette.exceptions import HTTPException as StarletteHTTPException
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.routers import (
@@ -29,6 +31,7 @@ from app.api.routers.workflow_definition_router import (
 )
 from app.api.routers.workflow_timer_router import router as workflow_timer_router
 from app.api.routers.cleanup_router import router as cleanup_router
+from app.api.routers.auth_router import router as auth_router
 from app.core.config import settings
 from app.core.logging import ensure_logging_configured, log_context, set_request_id
 from app.core.redis_client import record_request_metric
@@ -104,6 +107,14 @@ async def lifespan(app: FastAPI):
         logger.exception("Failed to hydrate effective config on startup")
         raise
 
+    try:
+        from app.services.auth_bootstrap import bootstrap_auth
+
+        bootstrap_auth()
+    except Exception:
+        logger.exception("Failed to bootstrap user auth on startup")
+        raise
+
     # 清理过期导入 staging（TTL 见 STAGING_TTL_SECONDS）
     try:
         from app.data_io.services.upload import cleanup_expired_staging
@@ -145,21 +156,30 @@ def create_app() -> FastAPI:
     # 且 development/test 环境旁路（开发、调试时关闭 IP 限制），仅 production 生效。
     @app.middleware("http")
     async def write_rate_limit_middleware(request: Request, call_next):
-        if (settings.environment or "").lower() not in (
-            "test",
-            "testing",
-            "development",
-        ):
-            from app.api.rate_limit import (
-                check_weather_tile_rate_limit,
-                check_write_rate_limit,
-                client_ip,
-                should_rate_limit_weather_tile,
-                should_rate_limit_write,
-            )
+        from app.api.rate_limit import (
+            check_login_rate_limit,
+            check_weather_tile_rate_limit,
+            check_write_rate_limit,
+            client_ip,
+            should_rate_limit_login,
+            should_rate_limit_weather_tile,
+            should_rate_limit_write,
+        )
 
-            path = request.url.path
-            method = request.method
+        path = request.url.path
+        method = request.method
+        env = (settings.environment or "").lower()
+
+        if should_rate_limit_login(path, method):
+            if not check_login_rate_limit(client_ip(request)):
+                from fastapi.responses import JSONResponse
+
+                return JSONResponse(
+                    status_code=429,
+                    content={"detail": "登录尝试过于频繁，请稍后再试。"},
+                )
+
+        if env not in ("test", "testing", "development"):
             if should_rate_limit_write(path, method):
                 if not check_write_rate_limit(client_ip(request)):
                     from fastapi.responses import JSONResponse
@@ -214,6 +234,24 @@ def create_app() -> FastAPI:
             finally:
                 set_request_id(None)
 
+    @app.exception_handler(StarletteHTTPException)
+    async def http_exception_handler(request: Request, exc: StarletteHTTPException):
+        request_id = getattr(request.state, "request_id", None)
+        return JSONResponse(
+            status_code=exc.status_code,
+            content={"detail": exc.detail, "request_id": request_id},
+        )
+
+    @app.exception_handler(RequestValidationError)
+    async def validation_exception_handler(
+        request: Request, exc: RequestValidationError
+    ):
+        request_id = getattr(request.state, "request_id", None)
+        return JSONResponse(
+            status_code=422,
+            content={"detail": exc.errors(), "request_id": request_id},
+        )
+
     @app.exception_handler(Exception)
     async def unhandled_exception_handler(request: Request, exc: Exception):
         request_id = getattr(request.state, "request_id", None)
@@ -225,6 +263,7 @@ def create_app() -> FastAPI:
         )
 
     app.include_router(health_router)
+    app.include_router(auth_router)
     app.include_router(layer_router)
     app.include_router(workflow_router)
     app.include_router(runtime_router)

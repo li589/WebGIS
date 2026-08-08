@@ -2,6 +2,7 @@
  * 统一图层导出入口（侧栏 / InfoPanel / 导出面板共用）。
  */
 import type { ActiveLayer } from '../../stores/layers/types'
+import { applyApiFetchDefaults } from '../../services/http-credentials'
 import { resolveApiUrl } from '../../services/_http'
 import { withWriteAuthHeaders } from '../../services/backend-auth'
 import { downloadBlob, exportImportedLayer, exportBatchLayers, waitForImportJob } from '../core/api'
@@ -151,9 +152,10 @@ export async function exportLayersBatch(
         onProgress: (p, msg) => onProgress?.(p, msg ?? '导出中…'),
       })
       if (job.download_url) {
-        const res = await fetch(resolveApiUrl(job.download_url), {
-          headers: withWriteAuthHeaders({}, 'GET'),
-        })
+        const res = await fetch(
+          resolveApiUrl(job.download_url),
+          applyApiFetchDefaults({ headers: withWriteAuthHeaders({}, 'GET') }),
+        )
         if (!res.ok) throw new Error(`下载批导出失败: HTTP ${res.status}`)
         const blob = await res.blob()
         downloadBlob(blob, safeName('batch_export', 'zip'))

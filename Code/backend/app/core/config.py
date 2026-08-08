@@ -449,6 +449,31 @@ class Settings:
     remote_layer_data_uris: str = os.getenv("BACKEND_REMOTE_LAYER_DATA_URIS", "")
     # 每个 API Key 保留的历史版本上限
     api_key_history_limit: int = int(os.getenv("BACKEND_API_KEY_HISTORY_LIMIT", "20"))
+
+    # ---- User login / session auth ----
+    # 前端登录与会话鉴权；生产默认开启。关闭后仅保留 X-API-Key 写鉴权（旧联调路径）。
+    user_auth_enabled: bool = (
+        os.getenv("BACKEND_USER_AUTH_ENABLED", "true").lower() == "true"
+    )
+    admin_username: str = os.getenv("BACKEND_ADMIN_USERNAME", "")
+    admin_password: str = os.getenv("BACKEND_ADMIN_PASSWORD", "")
+    session_cookie_name: str = os.getenv("BACKEND_SESSION_COOKIE_NAME", "cgda_session")
+    session_ttl_hours: int = int(os.getenv("BACKEND_SESSION_TTL_HOURS", "24"))
+    # development：登录页与 API Key 设置预填默认凭据（勿在生产开启）
+    dev_auth_prefill: bool = os.getenv(
+        "BACKEND_DEV_AUTH_PREFILL", ""
+    ).strip().lower() in {"1", "true", "yes", "on"} or (
+        os.getenv("BACKEND_DEV_AUTH_PREFILL", "").strip() == ""
+        and (os.getenv("BACKEND_ENV") or "production").lower() in {"development", "dev"}
+    )
+    dev_default_api_key: str = os.getenv(
+        "BACKEND_DEV_DEFAULT_API_KEY", "cgda-dev-write-key"
+    )
+    # 服务密钥 backend_auth 绑定角色（脚本/CI）；默认 operator
+    api_key_role: str = os.getenv("BACKEND_API_KEY_ROLE", "operator")
+    login_rate_limit_per_minute: int = int(
+        os.getenv("BACKEND_LOGIN_RATE_LIMIT_PER_MINUTE", "10")
+    )
     # 每个远程存储 profile 保留的密钥历史上限
     remote_storage_history_limit: int = int(
         os.getenv("BACKEND_REMOTE_STORAGE_HISTORY_LIMIT", "20")

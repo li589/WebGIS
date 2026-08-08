@@ -129,6 +129,12 @@ def test_backend_auth_uses_effective_secret(monkeypatch):
     assert effective_config.get_backend_auth_key() == "db-auth-key"
 
 
+def _patch_settings(monkeypatch, patched):
+    monkeypatch.setattr("app.core.config.settings", patched)
+    monkeypatch.setattr("app.services.credential_resolver.settings", patched)
+    monkeypatch.setattr("app.api.deps.settings", patched)
+
+
 def test_require_write_access_dev_bypass_loopback(monkeypatch):
     from dataclasses import replace
     from unittest.mock import MagicMock
@@ -136,14 +142,12 @@ def test_require_write_access_dev_bypass_loopback(monkeypatch):
     from app.api import deps
     from app.core.config import settings
 
-    monkeypatch.setattr(
-        deps,
-        "settings",
-        replace(settings, environment="development", api_keys_enabled=False),
-    )
+    patched = replace(settings, environment="development", api_keys_enabled=False)
+    _patch_settings(monkeypatch, patched)
     monkeypatch.delenv("BACKEND_DEV_AUTH_BYPASS", raising=False)
     request = MagicMock()
     request.headers = {}
+    request.cookies = {}
     request.client.host = "127.0.0.1"
     deps.require_write_access(request, x_api_key=None)  # no raise
 
@@ -157,11 +161,8 @@ def test_require_write_access_dev_bypass_denied_for_remote(monkeypatch):
     from app.api import deps
     from app.core.config import settings
 
-    monkeypatch.setattr(
-        deps,
-        "settings",
-        replace(settings, environment="development", api_keys_enabled=False),
-    )
+    patched = replace(settings, environment="development", api_keys_enabled=False)
+    _patch_settings(monkeypatch, patched)
     monkeypatch.delenv("BACKEND_DEV_AUTH_BYPASS", raising=False)
     monkeypatch.setattr(
         "app.services.effective_config.get_backend_auth_key",
@@ -169,6 +170,7 @@ def test_require_write_access_dev_bypass_denied_for_remote(monkeypatch):
     )
     request = MagicMock()
     request.headers = {}
+    request.cookies = {}
     request.client.host = "10.0.0.5"
     try:
         deps.require_write_access(request, x_api_key=None)
@@ -243,14 +245,12 @@ def test_dev_bypass_allows_real_loopback_direct_peer(monkeypatch):
     from app.api import deps
     from app.core.config import settings
 
-    monkeypatch.setattr(
-        deps,
-        "settings",
-        replace(settings, environment="development", api_keys_enabled=False, trust_proxy=True),
-    )
+    patched = replace(settings, environment="development", api_keys_enabled=False, trust_proxy=True)
+    _patch_settings(monkeypatch, patched)
     monkeypatch.delenv("BACKEND_DEV_AUTH_BYPASS", raising=False)
     request = MagicMock()
     request.headers = {"x-forwarded-for": "10.0.0.5"}
+    request.cookies = {}
     request.client.host = "127.0.0.1"
     deps.require_write_access(request, x_api_key=None)  # no raise
 

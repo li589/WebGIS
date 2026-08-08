@@ -2,6 +2,7 @@
  * 后端统一数据导入/导出 API（分块上传 + 矢量/栅格/文档 + 导出）。
  */
 import { getBackendWriteApiKey, withWriteAuthHeaders } from './backend-auth'
+import { applyApiFetchDefaults } from '../../services/http-credentials'
 import { resolveApiUrl } from './_http'
 
 export const MAX_UPLOAD_BYTES = 512 * 1024 * 1024
@@ -113,9 +114,9 @@ async function writeFetch(path: string, init: RequestInit = {}): Promise<Respons
   )
   const key = getBackendWriteApiKey()
   if (!key && import.meta.env.PROD) {
-    throw new Error('未配置后端写密钥，请先在「设置 → API Key」填写后端认证 Key')
+    throw new Error('未配置写权限：请登录或联系管理员获取 API Token')
   }
-  return fetch(resolveApiUrl(path), { ...init, headers })
+  return fetch(resolveApiUrl(path), applyApiFetchDefaults({ ...init, headers }))
 }
 
 async function sha256Hex(file: File, signal?: AbortSignal): Promise<string> {

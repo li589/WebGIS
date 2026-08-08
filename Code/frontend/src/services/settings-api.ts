@@ -86,8 +86,12 @@ export type {
   WeatherSyncCron,
 } from '../types/api-reexports'
 
+import { applyApiFetchDefaults } from './http-credentials'
+import { extractErrorDetail, extractRequestId } from './http-errors'
+import { handleSessionExpired, isAuthBootstrapPath } from './session-expired'
 import { withWriteAuthHeaders } from './backend-auth'
 import { resolveApiUrl } from './runtime-api'
+import { useLogStore } from '../stores/log'
 import type {
   AboutInfo,
   ApiKeyDeletedResponse,
@@ -161,15 +165,48 @@ async function settingsFetch<T>(path: string, init?: RequestInit): Promise<T> {
   const controller = new AbortController()
   const timeoutId = window.setTimeout(() => controller.abort(), 15_000)
   try {
-    const response = await fetch(url, {
-      ...init,
-      headers,
-      signal: init?.signal ?? controller.signal,
-    })
+    const response = await fetch(
+      url,
+      applyApiFetchDefaults({
+        ...init,
+        headers,
+        signal: init?.signal ?? controller.signal,
+      }),
+    )
     if (!response.ok) {
-      const detail = await response.text().catch(() => '')
+      let errorBody: unknown = null
+      let errorDetail = ''
+      try {
+        errorBody = await response.json()
+        errorDetail = extractErrorDetail(errorBody)
+      } catch {
+        errorDetail = await response.text().catch(() => '')
+      }
+      const requestId = extractRequestId(errorBody)
+      const detailSuffix = requestId ? ` (request_id=${requestId})` : ''
+
+      if (response.status === 401 && !isAuthBootstrapPath(path)) {
+        try {
+          useLogStore().logOperation('api-error', `未授权：${path}`, errorDetail)
+        } catch {
+          /* pinia unavailable in tests */
+        }
+        handleSessionExpired(path)
+        throw new Error(`Settings API unauthorized: ${path}`)
+      }
+
+      try {
+        useLogStore().logOperation(
+          'api-error',
+          `设置 API 失败 ${response.status}`,
+          `${path}${detailSuffix} — ${errorDetail.slice(0, 200)}`,
+        )
+      } catch {
+        /* pinia unavailable in tests */
+      }
+
       throw new Error(
-        `Settings API failed: ${response.status} ${path}${detail ? ` — ${detail.slice(0, 200)}` : ''}`,
+        `Settings API failed: ${response.status} ${path}${errorDetail ? ` — ${errorDetail.slice(0, 200)}` : ''}`,
       )
     }
     return response.json() as Promise<T>

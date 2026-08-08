@@ -7,5 +7,6 @@ export const SETTINGS_COPY = {
   tabWeather: '天气源',
   tabOpenMeteo: 'Open-Meteo',
   tabDataSource: '数据源',
+  tabSystemStatus: '系统状态',
   openLog: '打开系统设置',
 } as const

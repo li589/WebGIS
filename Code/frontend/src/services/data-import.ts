@@ -2,6 +2,7 @@
  * 主界面本地数据导入：文件分类、矢量解析、栅格上传（带写鉴权）。
  */
 import { getBackendWriteApiKey, withWriteAuthHeaders } from './backend-auth'
+import { applyApiFetchDefaults } from './http-credentials'
 import { resolveApiUrl } from './_http'
 import type { CRSOption } from '@/services/crs'
 
@@ -208,6 +209,7 @@ export function uploadRasterFile(
 
   return new Promise((resolve, reject) => {
     const xhr = new XMLHttpRequest()
+    xhr.withCredentials = true
     xhr.open('POST', resolveApiUrl('/import/raster'))
     const headers = withWriteAuthHeaders({}, 'POST')
     for (const [k, v] of Object.entries(headers)) {
@@ -225,7 +227,7 @@ export function uploadRasterFile(
         const detail = parseErrorDetail(xhr.status, text)
         if (xhr.status === 401 || xhr.status === 403) {
           reject(
-            new Error(`鉴权失败（${xhr.status}）：请在设置中配置正确的后端认证 Key。${detail}`),
+            new Error(`鉴权失败（${xhr.status}）：请登录或联系管理员获取 API Token。${detail}`),
           )
           return
         }
@@ -263,10 +265,10 @@ export function uploadRasterFile(
 
 export async function deleteImportedRaster(layerId: string): Promise<void> {
   const headers = withWriteAuthHeaders({ 'Content-Type': 'application/json' }, 'DELETE')
-  const resp = await fetch(resolveApiUrl(`/import/raster/${encodeURIComponent(layerId)}`), {
-    method: 'DELETE',
-    headers,
-  })
+  const resp = await fetch(
+    resolveApiUrl(`/import/raster/${encodeURIComponent(layerId)}`),
+    applyApiFetchDefaults({ method: 'DELETE', headers }),
+  )
   if (resp.status === 404) return
   if (!resp.ok) {
     const text = await resp.text().catch(() => '')
@@ -278,7 +280,8 @@ export async function deleteImportedRaster(layerId: string): Promise<void> {
 
 /** GET /import/crs-options — 获取 featured CRS 下拉选项 */
 export async function fetchCrsOptions(): Promise<{ count: number; items: CRSOption[] }> {
-  const resp = await fetch(resolveApiUrl('/import/crs-options'))
+  const headers = withWriteAuthHeaders({}, 'GET', true)
+  const resp = await fetch(resolveApiUrl('/import/crs-options'), applyApiFetchDefaults({ headers }))
   if (!resp.ok) {
     const text = await resp.text().catch(() => '')
     throw new Error(parseErrorDetail(resp.status, text))
@@ -291,7 +294,11 @@ export async function fetchCrsOptionsExpanded(): Promise<{
   count: number
   items: CRSOption[]
 }> {
-  const resp = await fetch(resolveApiUrl('/import/crs-options/expanded'))
+  const headers = withWriteAuthHeaders({}, 'GET', true)
+  const resp = await fetch(
+    resolveApiUrl('/import/crs-options/expanded'),
+    applyApiFetchDefaults({ headers }),
+  )
   if (!resp.ok) {
     const text = await resp.text().catch(() => '')
     throw new Error(parseErrorDetail(resp.status, text))
@@ -313,16 +320,19 @@ export async function confirmRasterImport(params: {
   bounds: [number, number, number, number]
 }> {
   const headers = withWriteAuthHeaders({ 'Content-Type': 'application/json' }, 'POST')
-  const resp = await fetch(resolveApiUrl('/import/raster/confirm'), {
-    method: 'POST',
-    headers,
-    body: JSON.stringify({
-      layer_id: params.layerId,
-      source_crs: params.sourceCrs,
-      lng_offset: params.lngOffset,
-      lat_offset: params.latOffset,
+  const resp = await fetch(
+    resolveApiUrl('/import/raster/confirm'),
+    applyApiFetchDefaults({
+      method: 'POST',
+      headers,
+      body: JSON.stringify({
+        layer_id: params.layerId,
+        source_crs: params.sourceCrs,
+        lng_offset: params.lngOffset,
+        lat_offset: params.latOffset,
+      }),
     }),
-  })
+  )
   if (!resp.ok) {
     const text = await resp.text().catch(() => '')
     throw new Error(parseErrorDetail(resp.status, text))
@@ -345,17 +355,20 @@ export async function transformPointBatch(params: {
   latOffset?: number
 }): Promise<{ count: number; points: Array<[number, number]> }> {
   const headers = withWriteAuthHeaders({ 'Content-Type': 'application/json' }, 'POST')
-  const resp = await fetch(resolveApiUrl('/import/transform-point'), {
-    method: 'POST',
-    headers,
-    body: JSON.stringify({
-      points: params.points,
-      source_crs: params.sourceCrs,
-      target_crs: params.targetCrs,
-      lng_offset: params.lngOffset ?? 0,
-      lat_offset: params.latOffset ?? 0,
+  const resp = await fetch(
+    resolveApiUrl('/import/transform-point'),
+    applyApiFetchDefaults({
+      method: 'POST',
+      headers,
+      body: JSON.stringify({
+        points: params.points,
+        source_crs: params.sourceCrs,
+        target_crs: params.targetCrs,
+        lng_offset: params.lngOffset ?? 0,
+        lat_offset: params.latOffset ?? 0,
+      }),
     }),
-  })
+  )
   if (!resp.ok) {
     const text = await resp.text().catch(() => '')
     throw new Error(parseErrorDetail(resp.status, text))

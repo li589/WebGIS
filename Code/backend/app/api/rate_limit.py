@@ -60,6 +60,13 @@ _WRITE_LIMITED_PREFIXES = (
 _WRITE_METHODS = ("POST", "PUT", "DELETE", "PATCH")
 
 # 天气瓦片 GET：公开读面，宽松 per-IP 限流（防上游/CPU 放大）
+_login_limiter = SlidingWindowRateLimiter(
+    int(os.getenv("BACKEND_LOGIN_RATE_LIMIT_PER_MINUTE", "10")),
+    timedelta(minutes=1),
+)
+
+_LOGIN_LIMITED_PREFIXES = ("/auth/login",)
+
 _tile_limiter = SlidingWindowRateLimiter(
     int(os.getenv("BACKEND_WEATHER_TILE_RATE_LIMIT_PER_MINUTE", "240")),
     timedelta(minutes=1),
@@ -103,6 +110,19 @@ def check_write_rate_limit(ip: str) -> bool:
     allowed = _write_limiter.check(ip)
     if not allowed:
         logger.warning("写接口限流触发 ip=%s", ip)
+    return allowed
+
+
+def should_rate_limit_login(path: str, method: str) -> bool:
+    if method != "POST":
+        return False
+    return any(path == p or path.startswith(p + "/") for p in _LOGIN_LIMITED_PREFIXES)
+
+
+def check_login_rate_limit(ip: str) -> bool:
+    allowed = _login_limiter.check(ip)
+    if not allowed:
+        logger.warning("登录限流触发 ip=%s", ip)
     return allowed
 
 

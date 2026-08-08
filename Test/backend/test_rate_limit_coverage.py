@@ -6,9 +6,15 @@ from unittest.mock import MagicMock
 
 from app.api.rate_limit import (
     client_ip,
+    should_rate_limit_login,
     should_rate_limit_weather_tile,
     should_rate_limit_write,
 )
+
+
+def test_login_post_is_rate_limited() -> None:
+    assert should_rate_limit_login("/auth/login", "POST")
+    assert not should_rate_limit_login("/auth/login", "GET")
 
 
 def test_workflow_runs_writes_are_rate_limited() -> None:
