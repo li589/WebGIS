@@ -20,8 +20,9 @@ import numpy as np
 import pytest
 
 # ── Provider path setup (must precede algorithm imports) ─────────────────────
+# conftest 位于 <repo>/Test/backend/ → parents[2] = 仓库根；真实算法包根在 Code/ 下
 _PROVIDER_ROOT = (
-    Path(__file__).resolve().parents[2] / "algorithms" / "providers" / "Python"
+    Path(__file__).resolve().parents[2] / "Code" / "algorithms" / "providers" / "Python"
 )
 if str(_PROVIDER_ROOT) not in sys.path:
     sys.path.insert(0, str(_PROVIDER_ROOT))

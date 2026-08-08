@@ -9,9 +9,12 @@ smbprotocol>=1.13.0
 google-cloud-storage>=2.14.0
 cryptography>=42.0.0
 httpx>=0.27.0
-# CRS 转换：app.services.crs._crs_transformer 依赖 pyproj（rasterio 传递依赖，
-# 此处显式 pin 以避免 rasterio 卸载/降级时丢失）
+# CRS 转换：app.services.crs._crs_transformer 直接依赖 rasterio/pyproj；
+# rasterio 曾仅靠 pyproj 传递依赖隐式存在，现显式声明（后端 8+ 模块直接 import）
 pyproj>=3.6,<4
+rasterio>=1.3.10,<2
+# 工作流编排：workflow_engine.executor / GEE workflow validator 直接依赖
+networkx>=3.0
 # 数据导入/导出（矢量 SHP、文档表、科学栅格）
 pyshp>=2.3.1
 pandas>=2.0
