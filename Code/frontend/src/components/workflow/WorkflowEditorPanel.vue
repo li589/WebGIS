@@ -631,7 +631,7 @@ defineExpose({
           <button
             class="header-btn"
             type="button"
-            :disabled="!hasDefinition || isReadonly"
+            :disabled="!hasDefinition"
             title="自动排列节点"
             @click="handleArrange"
           >

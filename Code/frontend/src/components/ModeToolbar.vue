@@ -670,14 +670,6 @@ h1 {
   background: rgba(4, 12, 23, 0.6);
 }
 
-.source-pill::before {
-  content: '源';
-  color: #5a7080;
-  font-size: 0.56rem;
-  letter-spacing: 0.04em;
-  margin-right: 0.12rem;
-}
-
 .source-btn {
   min-width: 1.8rem;
   height: 1.38rem;

@@ -5,6 +5,7 @@
  */
 import { onMounted, ref, watch } from 'vue'
 import { cleanupNodeCaches, listNodeCaches, type NodeCacheEntry } from '../../services/runtime-api'
+import './workflow-editor-chrome.css'
 
 const props = defineProps<{ open: boolean }>()
 const emit = defineEmits<{ close: [] }>()
@@ -114,7 +115,7 @@ onMounted(() => {
 
         <div v-else-if="entries.length === 0" class="nc-empty">暂无节点缓存</div>
 
-        <ul v-else class="nc-list">
+        <ul v-else class="nc-list wf-scroll">
           <li v-for="entry in entries" :key="entry.name" class="nc-item">
             <div class="nc-item-main">
               <span class="nc-item-name" :title="entry.path">{{ entry.name }}</span>

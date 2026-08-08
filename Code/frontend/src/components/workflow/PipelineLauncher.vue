@@ -16,6 +16,7 @@ import { computed, ref, watch } from 'vue'
 import { useWorkflowDefinitionsStore } from '../../stores/workflow-definitions'
 import { fetchWorkflowDefinition } from '../../services/workflow-definition-api'
 import type { WorkflowDefinition } from '../../services/workflow-definition-api'
+import './workflow-editor-chrome.css'
 
 /** 流水线卡片数据 */
 interface PipelineCard {
@@ -391,7 +392,7 @@ watch(
       </div>
 
       <!-- 加载状态 -->
-      <div v-if="loading" class="pipeline-body">
+      <div v-if="loading" class="pipeline-body wf-scroll">
         <div class="loading-hint">
           正在加载流水线列表...<span v-if="loadProgress.total > 0" class="loading-progress"
             >（{{ loadProgress.done }}/{{ loadProgress.total }}）</span
@@ -400,7 +401,7 @@ watch(
       </div>
 
       <!-- 加载错误 -->
-      <div v-else-if="loadError" class="pipeline-body">
+      <div v-else-if="loadError" class="pipeline-body wf-scroll">
         <div class="error-hint">
           <span aria-hidden="true">⚠</span>
           <span>加载失败: {{ loadError }}</span>
@@ -408,12 +409,12 @@ watch(
       </div>
 
       <!-- 空状态 -->
-      <div v-else-if="pipelines.length === 0 && !showParams" class="pipeline-body">
+      <div v-else-if="pipelines.length === 0 && !showParams" class="pipeline-body wf-scroll">
         <div class="empty-hint">未找到带 "pipeline" 标签的系统工作流</div>
       </div>
 
       <!-- 流水线卡片列表 -->
-      <div v-else-if="!showParams" class="pipeline-body">
+      <div v-else-if="!showParams" class="pipeline-body wf-scroll">
         <!-- 搜索栏 -->
         <div v-if="pipelines.length > 1" class="search-row">
           <input
@@ -459,7 +460,7 @@ watch(
       </div>
 
       <!-- 参数配置面板 -->
-      <div v-else class="pipeline-body">
+      <div v-else class="pipeline-body wf-scroll">
         <div class="param-form">
           <!-- 日期范围预设 -->
           <div class="preset-row">
@@ -511,22 +512,16 @@ watch(
         </div>
       </div>
 
-      <!-- 底部操作栏 -->
-      <footer class="pipeline-footer">
-        <button v-if="showParams" class="action-btn cancel" type="button" @click="handleBack">
-          返回
-        </button>
+      <!-- 底部操作栏（参数配置步骤） -->
+      <footer v-if="showParams" class="pipeline-footer">
+        <button class="action-btn cancel" type="button" @click="handleBack">返回</button>
         <button
-          v-if="showParams"
           class="action-btn confirm"
           type="button"
           :disabled="!startDate || !endDate || !!launchResult"
           @click="handleConfirmLaunch"
         >
           确认启动
-        </button>
-        <button v-if="!showParams" class="action-btn cancel" type="button" @click="handleClose">
-          关闭
         </button>
       </footer>
     </div>

@@ -289,7 +289,7 @@ export class MeasureCanvas {
       const lastScreen = screenPoints[screenPoints.length - 1]
       this.drawLabel(
         { x: lastScreen.x, y: lastScreen.y - 22 },
-        `Σ ${formatDistance(total)}`,
+        `总计：${formatDistance(total)}`,
         FONT_SIZE_TOTAL,
         '#b00',
         true,
