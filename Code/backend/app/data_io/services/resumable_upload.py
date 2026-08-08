@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import time
 import uuid
 from pathlib import Path
@@ -134,9 +135,11 @@ def _load_meta(upload_id: str) -> tuple[Path, dict[str, Any]]:
 
 
 def _save_meta(dest: Path, meta: dict[str, Any]) -> None:
-    (dest / "meta.json").write_text(
-        json.dumps(meta, ensure_ascii=False), encoding="utf-8"
-    )
+    """原子写 meta.json：先写临时文件再 os.replace，避免并发读读到半写内容。"""
+    meta_path = dest / "meta.json"
+    tmp_path = meta_path.with_suffix(".json.tmp")
+    tmp_path.write_text(json.dumps(meta, ensure_ascii=False), encoding="utf-8")
+    os.replace(tmp_path, meta_path)
 
 
 def _meta_lock(dest: Path):
@@ -185,7 +188,7 @@ def upload_chunk_by_index(
     Returns:
         ``{upload_id, chunk_index, received_chunks, total_chunks, complete}``
     """
-    dest, _meta0 = _load_meta(upload_id)
+    dest = STAGING_DIR / upload_id
 
     with _meta_lock(dest):
         dest, meta = _load_meta(upload_id)
