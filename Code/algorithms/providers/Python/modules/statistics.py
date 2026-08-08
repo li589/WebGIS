@@ -304,7 +304,11 @@ def _build_chart_table_products(
                 type="chart_spec",
                 uri=str(chart_path),
                 variable=var_name,
-                tags={"kind": "chart", "chart_type": str(chart["chart_type"]), "mode": mode},
+                tags={
+                    "kind": "chart",
+                    "chart_type": str(chart["chart_type"]),
+                    "mode": mode,
+                },
             )
         )
     if table is not None:

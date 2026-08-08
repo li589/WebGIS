@@ -12,6 +12,7 @@
  */
 
 import { getMapDefaults } from './map-defaults'
+import { withWriteAuthHeaders } from './backend-auth'
 import { resolveApiUrl } from './runtime-api'
 
 export type IntegrationDomain = 'basemap' | 'data-source' | 'gee' | 'credential' | 'certificate'
@@ -844,12 +845,17 @@ async function requestConfigJson<T>(
   const timeoutId = window.setTimeout(() => controller.abort(), timeoutMs ?? 15000)
 
   try {
+    const method = (restInit.method ?? 'GET').toString()
     const response = await fetch(resolveApiUrl(path), {
       ...restInit,
-      headers: {
-        'Content-Type': 'application/json',
-        ...(restInit.headers as Record<string, string> | undefined),
-      },
+      headers: withWriteAuthHeaders(
+        {
+          'Content-Type': 'application/json',
+          ...(restInit.headers as Record<string, string> | undefined),
+        },
+        method,
+        true,
+      ),
       signal: restInit.signal ?? controller.signal,
     })
 

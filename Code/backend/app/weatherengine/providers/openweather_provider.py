@@ -11,7 +11,6 @@ from datetime import date
 from typing import Any
 from urllib.error import HTTPError, URLError
 from urllib.parse import urlencode
-from urllib.request import Request, urlopen
 
 from shared.contracts.api_contracts import BoundingBox
 
@@ -332,9 +331,15 @@ class OpenWeatherProvider(WeatherProvider):
             self._daily_used += 1
 
         url = f"{self._base_url}{path}?{urlencode(params)}"
-        req = Request(url, headers={"User-Agent": "QingTian-WeatherEngine/1.0"})
         try:
-            with urlopen(req, timeout=self._timeout_seconds) as resp:
+            from app.core.ssrf import default_allow_private, safe_urlopen
+
+            with safe_urlopen(
+                url,
+                timeout=self._timeout_seconds,
+                headers={"User-Agent": "QingTian-WeatherEngine/1.0"},
+                allow_private=default_allow_private(),
+            ) as resp:
                 body = resp.read().decode("utf-8")
             data = json.loads(body)
             if not isinstance(data, dict):

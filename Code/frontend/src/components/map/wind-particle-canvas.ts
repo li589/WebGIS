@@ -26,6 +26,7 @@ import {
   type WindGrid,
   type WindGridPoint,
 } from './wind-grid'
+import { debugLog } from '../../utils/perf-probe'
 
 // ── 渲染参数常量 ─────────────────────────────────────────
 
@@ -192,11 +193,6 @@ function speedToColorIndex(speed: number, stops: number[]): { idx: number; t: nu
     }
   }
   return { idx: stops.length - 2, t: 1 }
-}
-
-/** 调试日志辅助：带相对时间戳前缀 */
-function debugLog(module: string, ...args: unknown[]) {
-  console.log(`[${performance.now().toFixed(1)}ms] [${module}]`, ...args)
 }
 
 export function interpolateWind(grid: WindGrid, lat: number, lon: number): WindGridPoint {

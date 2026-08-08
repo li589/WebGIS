@@ -45,6 +45,13 @@ export function isDebugLogEnabled(): boolean {
   return false
 }
 
+/** Gated dev logging (`?debug=1` / `cgda.debug=1` / perf probe). */
+export function debugLog(...args: unknown[]): void {
+  if (!isDebugLogEnabled()) return
+  // eslint-disable-next-line no-console -- intentional gated probe output
+  console.log(...args)
+}
+
 /** 测试或运行时强制开关 */
 export function setPerfEnabled(on: boolean): void {
   enabledCache = on
@@ -55,8 +62,7 @@ export function perfMark(kind: string, detail?: Record<string, unknown>): void {
   const sample: PerfSample = { t: performance.now(), kind, detail }
   samples.push(sample)
   if (samples.length > BUFFER_MAX) samples.shift()
-  // 单行，便于过滤
-  console.log(`[cgda.perf] ${kind}`, detail ?? '')
+  debugLog(`[cgda.perf] ${kind}`, detail ?? '')
 }
 
 export function perfIncBump(): void {

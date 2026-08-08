@@ -31,7 +31,7 @@ import { resolveRestoreWorkflowBridge as resolveRestoreWorkflowBridgeFromCatalog
 import { claimOrphanWorkflowRun, isSubmitTimeoutError } from '../../utils/workflow-submit-reconcile'
 import { localizeWorkflowErrorMessage } from '../../utils/workflow-error-messages'
 import { productTagLabel } from '../../utils/workflow-expected-outputs'
-import { isDebugLogEnabled } from '../../utils/perf-probe'
+import { debugLog as probeDebugLog } from '../../utils/perf-probe'
 import { WORKFLOW_COPY } from '../../ui-copy/workflow'
 import type {
   ActiveLayer,
@@ -41,8 +41,7 @@ import type {
 } from './types'
 
 function debugLog(module: string, ...args: unknown[]) {
-  if (!isDebugLogEnabled()) return
-  console.log(`[${performance.now().toFixed(1)}ms] [LayersStore:${module}]`, ...args)
+  probeDebugLog(`[${performance.now().toFixed(1)}ms] [LayersStore:${module}]`, ...args)
 }
 
 /** 刷新后恢复用：记住本机跟踪中的 run，避免仅依赖内存态丢失进度。 */

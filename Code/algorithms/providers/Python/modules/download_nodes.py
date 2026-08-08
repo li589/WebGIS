@@ -189,7 +189,9 @@ class SshSyncModule(BaseModule):
         def _progress_cb(current: int, total: int, downloaded: int) -> None:
             if ctx.logger_adapter is not None:
                 ctx.logger_adapter.emit_progress(
-                    "ssh_sync", current / total if total else 0.0, f"File {current}/{total}"
+                    "ssh_sync",
+                    current / total if total else 0.0,
+                    f"File {current}/{total}",
                 )
 
         result = sync_dataset(
@@ -549,11 +551,7 @@ class GldasNc4ToMatModule(BaseModule):
 
         ancillary_mat = str(resolved.get("ancillary_mat") or "").strip()
         if not ancillary_mat:
-            anc_root = str(
-                resolved.get("anc_root")
-                or ds.get("anc_root")
-                or ""
-            ).strip()
+            anc_root = str(resolved.get("anc_root") or ds.get("anc_root") or "").strip()
             if anc_root:
                 ancillary_mat = str(Path(anc_root) / "IGBP_9km_12.mat")
         if not ancillary_mat:

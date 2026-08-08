@@ -5,9 +5,11 @@ from datetime import datetime
 from urllib.error import HTTPError, URLError
 from urllib.request import urlopen
 
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, Field
 from fastapi.responses import JSONResponse
+
+from app.api.deps import require_write_access
 
 from app.api.routers._helpers import service_json_response
 from app.core.redis_client import (
@@ -227,7 +229,11 @@ class OpenMeteoSyncTriggerRequest(BaseModel):
     )
 
 
-@router.post("/weather/sync/trigger", tags=["weather"])
+@router.post(
+    "/weather/sync/trigger",
+    tags=["weather"],
+    dependencies=[Depends(require_write_access)],
+)
 def trigger_open_meteo_sync(
     body: OpenMeteoSyncTriggerRequest = OpenMeteoSyncTriggerRequest(),
 ):

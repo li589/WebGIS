@@ -21,6 +21,11 @@ _api_key_header = APIKeyHeader(name="X-API-Key", auto_error=False)
 _LOOPBACK_IPS = frozenset({"127.0.0.1", "::1", "localhost"})
 
 
+def _direct_client_host(request: Request) -> str:
+    """TCP peer address; unaffected by trust_proxy / X-Forwarded-For."""
+    return request.client.host if request.client else "unknown"
+
+
 def _dev_auth_bypass_explicit() -> bool:
     return os.getenv("BACKEND_DEV_AUTH_BYPASS", "").strip().lower() in {
         "1",
@@ -48,22 +53,20 @@ def require_write_access(
     (``backend_auth``), not Settings alone.
     """
     if not settings.api_keys_enabled and settings.environment == "development":
-        from app.api.rate_limit import client_ip
-
-        ip = client_ip(request)
-        if _dev_auth_bypass_explicit() or ip in _LOOPBACK_IPS:
+        direct_host = _direct_client_host(request)
+        if _dev_auth_bypass_explicit() or direct_host in _LOOPBACK_IPS:
             logger.warning(
                 "API-key authentication bypassed for write endpoints "
-                "(api_keys_enabled=False, environment=development, client_ip=%s, "
+                "(api_keys_enabled=False, environment=development, direct_host=%s, "
                 "explicit_bypass=%s). Do NOT use this configuration in production.",
-                ip,
+                direct_host,
                 _dev_auth_bypass_explicit(),
             )
             return
         logger.warning(
-            "Development auth bypass denied for non-loopback client_ip=%s; "
+            "Development auth bypass denied for non-loopback direct_host=%s; "
             "requiring API key (set BACKEND_DEV_AUTH_BYPASS=true to override).",
-            ip,
+            direct_host,
         )
 
     from app.services.effective_config import get_backend_auth_key

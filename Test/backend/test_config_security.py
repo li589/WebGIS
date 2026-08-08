@@ -90,6 +90,20 @@ def test_import_raster_requires_write_access():
         assert require_write_access in dep_calls
 
 
+def test_weather_sync_trigger_requires_write_access():
+    from app.api.deps import require_write_access
+    from app.api.routers.weather_router import router as weather_router
+
+    routes = [
+        r
+        for r in weather_router.routes
+        if getattr(r, "path", "") == "/weather/sync/trigger"
+    ]
+    assert len(routes) == 1
+    dep_calls = _route_dependency_callables(routes[0])
+    assert require_write_access in dep_calls
+
+
 def test_runtime_ghost_keys_rejected():
     from app.services.workflow.runtime_status_service import ALLOWED_RUNTIME_CONFIG_KEYS
 
@@ -190,3 +204,81 @@ def test_require_write_access_production_requires_key(monkeypatch):
     except HTTPException as exc:
         assert exc.status_code == 401
     deps.require_write_access(request, x_api_key="secret-key")
+
+
+def test_dev_bypass_ignores_spoofed_xff_when_trust_proxy(monkeypatch):
+    """X-Forwarded-For loopback must not bypass when direct peer is remote."""
+    from dataclasses import replace
+    from unittest.mock import MagicMock
+
+    from fastapi import HTTPException
+
+    from app.api import deps
+    from app.core.config import settings
+
+    monkeypatch.setattr(
+        deps,
+        "settings",
+        replace(settings, environment="development", api_keys_enabled=False, trust_proxy=True),
+    )
+    monkeypatch.delenv("BACKEND_DEV_AUTH_BYPASS", raising=False)
+    monkeypatch.setattr(
+        "app.services.effective_config.get_backend_auth_key",
+        lambda: "",
+    )
+    request = MagicMock()
+    request.headers = {"x-forwarded-for": "127.0.0.1"}
+    request.client.host = "10.0.0.5"
+    try:
+        deps.require_write_access(request, x_api_key=None)
+        raise AssertionError("expected HTTPException")
+    except HTTPException as exc:
+        assert exc.status_code == 503
+
+
+def test_dev_bypass_allows_real_loopback_direct_peer(monkeypatch):
+    from dataclasses import replace
+    from unittest.mock import MagicMock
+
+    from app.api import deps
+    from app.core.config import settings
+
+    monkeypatch.setattr(
+        deps,
+        "settings",
+        replace(settings, environment="development", api_keys_enabled=False, trust_proxy=True),
+    )
+    monkeypatch.delenv("BACKEND_DEV_AUTH_BYPASS", raising=False)
+    request = MagicMock()
+    request.headers = {"x-forwarded-for": "10.0.0.5"}
+    request.client.host = "127.0.0.1"
+    deps.require_write_access(request, x_api_key=None)  # no raise
+
+
+def test_runtime_management_gets_require_read_access():
+    from app.api.deps import require_config_read_access
+    from app.api.routers.runtime_router import router as runtime_router
+
+    paths = (
+        "/runtime/status",
+        "/runtime/metrics",
+        "/runtime/api-config",
+        "/runtime/tiles/providers",
+        "/runtime/tiles/cache/stats",
+    )
+    for path in paths:
+        routes = [r for r in runtime_router.routes if getattr(r, "path", "") == path]
+        assert routes, f"missing route {path}"
+        dep_calls = _route_dependency_callables(routes[0])
+        assert require_config_read_access in dep_calls, f"{path} missing read auth"
+
+
+def test_cleanup_gets_require_read_access():
+    from app.api.deps import require_config_read_access
+    from app.api.routers.cleanup_router import router as cleanup_router
+
+    for path in ("/cleanup/stats", "/cleanup/node-caches"):
+        routes = [r for r in cleanup_router.routes if getattr(r, "path", "") == path]
+        assert routes, f"missing route {path}"
+        dep_calls = _route_dependency_callables(routes[0])
+        assert require_config_read_access in dep_calls, f"{path} missing read auth"

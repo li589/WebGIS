@@ -148,7 +148,9 @@ def load_credentials(
     )
 
 
-def check_disk_space(path: Path, min_gb: float = MIN_DISK_FREE_GB) -> tuple[bool, float]:
+def check_disk_space(
+    path: Path, min_gb: float = MIN_DISK_FREE_GB
+) -> tuple[bool, float]:
     """检查 path 所在磁盘可用空间，返回 (是否充足, 可用 GB)。"""
     try:
         path.mkdir(parents=True, exist_ok=True)
@@ -620,9 +622,7 @@ def download_smap_range(
             if progress_callback:
                 progress_callback(i, len(todo), dl)
 
-        success = _download_with_retry(
-            session, g.url, fp, g.size_mb, file_progress
-        )
+        success = _download_with_retry(session, g.url, fp, g.size_mb, file_progress)
         if success:
             result.downloaded += 1
             result.downloaded_bytes += fp.stat().st_size

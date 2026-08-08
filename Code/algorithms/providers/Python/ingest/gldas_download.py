@@ -67,9 +67,7 @@ def search_gldas_granules(
     """Search GLDAS granules for the given UTC day range."""
     start = _normalize_date(start_date)
     end = _normalize_date(end_date)
-    logger.info(
-        "搜索 %s V%s，时间范围 %s ~ %s", short_name, version, start, end
-    )
+    logger.info("搜索 %s V%s，时间范围 %s ~ %s", short_name, version, start, end)
     if _HAS_EARTHACCESS:
         return _search_via_earthaccess(
             start, end, short_name, version, username, password
@@ -227,7 +225,6 @@ def _download_with_retry(
     size_mb: float | None,
     progress_callback: Callable[[int, int], None] | None,
 ) -> bool:
-
     dest.parent.mkdir(parents=True, exist_ok=True)
     tmp = dest.with_suffix(dest.suffix + ".part")
     for attempt in range(1, MAX_RETRIES + 1):

@@ -21,6 +21,7 @@
  *   - 无风场数据时不绘制任何占位内容（避免生产环境出现调试视觉）。
  */
 import type { CustomRenderMethodInput, Map as MaplibreMap } from 'maplibre-gl'
+import { debugLog } from '../../utils/perf-probe'
 import type { WindGeoJSON } from './types'
 import {
   WIND_FIELD_FRAGMENT_SHADER,
@@ -927,7 +928,7 @@ export class WindParticleWebGLLayer {
     this.matrixMissFrames = 0
     if (!this.matrixReadyLogged) {
       this.matrixReadyLogged = true
-      console.log('[WindParticleWebGL] projection matrix ready, particles drawing')
+      debugLog('[WindParticleWebGL] projection matrix ready, particles drawing')
     }
 
     this.flushPendingWindTexture()

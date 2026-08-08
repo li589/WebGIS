@@ -6,14 +6,12 @@ import type {
   WorkflowRunViewResponse,
 } from '../../services/runtime-api'
 import type { JobLayerItem, JobLayerMapLayerPayload } from './types'
+import type { ActiveLayer, ActiveLayerDisplay, RuntimeLayerLibraryItem } from './types'
+import { asRecord, extractLayerHotspots, formatClockLabel } from './catalog-builders'
 import {
   localizeWorkflowDiagnostics,
   localizeWorkflowErrorMessage,
 } from '../../utils/workflow-error-messages'
-
-function asRecord(value: unknown): Record<string, unknown> | null {
-  return value !== null && typeof value === 'object' ? (value as Record<string, unknown>) : null
-}
 
 function formatMetricValue(value: unknown, unit = '') {
   if (typeof value === 'number') {
@@ -465,5 +463,115 @@ export async function buildJobLayer(
       typeof run.executor_metadata?.retry_of_run_id === 'string'
         ? run.executor_metadata.retry_of_run_id
         : undefined,
+  }
+}
+
+/** 产品标签归一：OMEGA_BLOCK / OMEGA_PIXEL → OMEGA，便于绑入计算组 */
+export function normalizeProductTag(raw: string | null | undefined): string {
+  const tag = String(raw || '')
+    .trim()
+    .toUpperCase()
+    .replace(/^ALGORITHM MAP LAYER:\s*/i, '')
+  if (!tag) return ''
+  if (tag === 'OMEGA_BLOCK' || tag.startsWith('OMEGA_BLOCK') || tag.includes('OMEGA_BLOCK')) {
+    return 'OMEGA'
+  }
+  if (tag === 'OMEGA_PIXEL' || tag.includes('OMEGA_PIXEL') || tag.includes('OMEGA_PIX')) {
+    return 'OMEGA'
+  }
+  if (tag === 'OMEGA' || tag.endsWith('_OMEGA') || tag.endsWith('-OMEGA')) return 'OMEGA'
+  if (tag === 'SM' || tag.endsWith('_SM') || tag.endsWith('-SM')) return 'SM'
+  if (tag === 'VOD' || tag.endsWith('_VOD') || tag.endsWith('-VOD')) return 'VOD'
+  return tag
+}
+
+/** 从 jobLayer 提取真实数据显示数据 */
+export function buildRealLayerDisplay(
+  layer: ActiveLayer,
+  item: RuntimeLayerLibraryItem,
+): Partial<ActiveLayerDisplay> {
+  const jobLayer = layer.jobLayer
+  if (!jobLayer) return {}
+
+  const primaryMetric = jobLayer.metrics?.find((m) => m.label !== '队列')
+  const metricValue = primaryMetric?.value ?? '--'
+  const renderHint = jobLayer.mapLayerPayload?.renderHint
+  const resultDto = asRecord(jobLayer.resultDto)
+  const providerKey = typeof resultDto?.provider_key === 'string' ? resultDto.provider_key : null
+  const resultCategory =
+    typeof resultDto?.result_category === 'string' ? resultDto.result_category : null
+  const providerSummary = typeof resultDto?.summary === 'string' ? resultDto.summary : null
+  const providerStatusLabel =
+    typeof resultDto?.status_label === 'string' ? resultDto.status_label : null
+  const providerConfidenceLabel =
+    typeof resultDto?.confidence_label === 'string' ? resultDto.confidence_label : null
+  const isSampleProvider =
+    item.backendStatus === 'sample' ||
+    (resultCategory === 'provider' && providerKey?.startsWith('lab_output'))
+  let confidenceLabel = '以工作流结果为准'
+  if (renderHint?.notes?.length) {
+    confidenceLabel = renderHint.notes[0]
+  } else if (providerConfidenceLabel) {
+    confidenceLabel = providerConfidenceLabel
+  } else if (jobLayer.diagnosticNotes?.length) {
+    confidenceLabel = jobLayer.diagnosticNotes[0]
+  }
+
+  return {
+    metricValue,
+    summary:
+      providerSummary ??
+      jobLayer.resultView?.summary ??
+      jobLayer.reportSummary ??
+      jobLayer.message ??
+      item.description,
+    statusLabel:
+      jobLayer.status === 'succeeded'
+        ? isSampleProvider
+          ? (providerStatusLabel ?? '实验结果')
+          : '真实数据'
+        : jobLayer.status === 'failed'
+          ? '数据异常'
+          : jobLayer.status === 'cancelled'
+            ? '任务已取消'
+            : '任务处理中',
+    trendLabel:
+      jobLayer.status === 'succeeded'
+        ? isSampleProvider
+          ? '实验 provider 已执行，可用于联调验收'
+          : '最新工作流结果已接入'
+        : jobLayer.status === 'failed'
+          ? '最近一次运行失败'
+          : '等待工作流返回结果',
+    sourceLabel:
+      isSampleProvider && providerKey ? `实验 Provider · ${providerKey}` : item.sourceLabel,
+    confidenceLabel,
+    availabilityState:
+      jobLayer.status === 'succeeded'
+        ? 'ready'
+        : jobLayer.status === 'failed'
+          ? 'empty'
+          : 'partial',
+    availabilityLabel:
+      jobLayer.status === 'succeeded'
+        ? '完整数据'
+        : jobLayer.status === 'failed'
+          ? '数据异常'
+          : '加载中',
+    availabilityDescription:
+      jobLayer.status === 'succeeded'
+        ? isSampleProvider
+          ? '实验 provider 已生成结果，可用于联调与界面验收。'
+          : jobLayer.message || '工作流结果已生成。'
+        : jobLayer.status === 'failed'
+          ? (jobLayer.diagnosticNotes?.[0] ?? '数据加载失败')
+          : jobLayer.message || '正在加载工作流结果...',
+    observationTimeLabel:
+      jobLayer.reportSummary?.match(/\d{2}:\d{2}/)?.[0] ?? formatClockLabel(jobLayer.updatedAt),
+    missingFieldsLabel:
+      jobLayer.status === 'succeeded'
+        ? '无缺失字段'
+        : (jobLayer.diagnosticNotes?.join(' / ') ?? '待加载'),
+    hotspots: extractLayerHotspots(layer, item, metricValue),
   }
 }

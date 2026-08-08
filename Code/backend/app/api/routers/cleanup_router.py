@@ -18,7 +18,7 @@ from typing import Any
 from fastapi import APIRouter, Depends, status
 from pydantic import BaseModel, Field
 
-from app.api.deps import require_write_access
+from app.api.deps import require_config_read_access, require_write_access
 from app.services.cache_service import cache_service
 from app.services.workflow_repository import SQLiteWorkflowRepository
 from app.tasks.cleanup_tasks import (
@@ -137,6 +137,7 @@ def vacuum_workflow_state() -> dict[str, Any]:
     "/stats",
     response_model=CleanupStatsResponse,
     status_code=status.HTTP_200_OK,
+    dependencies=[Depends(require_config_read_access)],
 )
 def get_cleanup_stats() -> CleanupStatsResponse:
     """返回当前清理统计（不执行清理）。
@@ -261,6 +262,7 @@ def _scan_node_caches() -> list[NodeCacheEntry]:
     "/node-caches",
     response_model=NodeCacheListResponse,
     status_code=status.HTTP_200_OK,
+    dependencies=[Depends(require_config_read_access)],
 )
 def list_node_caches() -> NodeCacheListResponse:
     """列出工作流节点产物缓存（每个算法模块的目录/大小/文件数/最近修改）。"""

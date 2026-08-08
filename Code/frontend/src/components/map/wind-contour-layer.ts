@@ -14,6 +14,7 @@ import type { Map as MaplibreMap } from 'maplibre-gl'
 import { DEFAULT_HEIGHT_SUFFIX, MAP_EVENT_MOVE, MAP_EVENT_MOVEEND, MAP_EVENT_RESIZE } from './types'
 import type { WindGeoJSON } from './types'
 import { computeCanvasLayout, type CanvasLayout } from './canvas-utils'
+import { debugLog } from '../../utils/perf-probe'
 
 interface GridData {
   rows: number
@@ -84,7 +85,7 @@ export class WindContourLayer {
     this.ctx = this.canvas.getContext('2d', { alpha: true })!
     this.loadData(geojson)
     this.updateLayout()
-    console.log(
+    debugLog(
       `[${performance.now().toFixed(1)}ms] [WindContourLayer] constructor`,
       'grid',
       this.gridData ? `${this.gridData.rows}x${this.gridData.cols}` : 'null',
@@ -456,7 +457,7 @@ export class WindContourLayer {
   updateGeoJSON(geojson: WindGeoJSON): void {
     this.loadData(geojson)
     this.updateLayout()
-    console.log(
+    debugLog(
       `[${performance.now().toFixed(1)}ms] [WindContourLayer] updateGeoJSON`,
       'grid',
       this.gridData ? `${this.gridData.rows}x${this.gridData.cols}` : 'null',

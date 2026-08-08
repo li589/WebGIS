@@ -81,12 +81,13 @@ class HttpSourceFetcher(SourceFetcher):
         try:
             # 发布就绪修复（P0-2）+ 审查 BUG-1：safe_urlopen 对初始 URL 与每次
             # 重定向 Location 均做 SSRF 校验，避免 urlopen 默认跟随 3xx 绕过到环回。
-            from app.core.ssrf import safe_urlopen
+            from app.core.ssrf import default_allow_private, safe_urlopen
 
             with safe_urlopen(
                 source_uri,
                 timeout=DEFAULT_HTTP_TIMEOUT,
                 headers={"User-Agent": "cgda-backend-download-service/1.0"},
+                allow_private=default_allow_private(),
             ) as response:
                 data = response.read()
                 content_type = response.headers.get(

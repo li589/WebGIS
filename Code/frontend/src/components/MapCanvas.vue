@@ -30,6 +30,7 @@ import {
 import { aggregateWeatherTileBanner } from './map/weather-tile-banner'
 import { TILE_SOURCE_MAP, getDefaultTileSource, type TileSourceId } from '../services/api-config'
 import { dataWorkspaceHighlight, showToast } from '../data-manager/core/workspace-store'
+import { debugLog as probeDebugLog } from '../utils/perf-probe'
 
 const layersStore = useLayersStore()
 const uiStore = useUiStore()
@@ -182,7 +183,7 @@ watch(
 )
 
 function debugLog(module: string, ...args: unknown[]) {
-  console.log(`[${performance.now().toFixed(1)}ms] [${module}]`, ...args)
+  probeDebugLog(`[${performance.now().toFixed(1)}ms] [${module}]`, ...args)
 }
 
 const currentTileConfig = computed(

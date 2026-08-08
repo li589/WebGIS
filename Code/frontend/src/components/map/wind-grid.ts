@@ -8,7 +8,7 @@
  *   - 多瓦片合并产生的"孔洞"用局部 IDW（1/r² 权重，限制半径）填充
  *   - 无法填充的"孤岛"单元清零，避免 NaN 进入投影/渲染
  */
-import { isPerfEnabled } from '../../utils/perf-probe'
+import { debugLog } from '../../utils/perf-probe'
 import { DEFAULT_HEIGHT_SUFFIX, type WindGeoJSON } from './types'
 import {
   buildRegularLatticeAxis,
@@ -62,10 +62,8 @@ export function uvToSpeedDirection(u: number, v: number): { speed: number; direc
   return { speed, direction }
 }
 
-/** 调试日志：仅 ?perf=1 / localStorage cgda.perf=1 时输出 */
-function debugLog(module: string, ...args: unknown[]) {
-  if (!isPerfEnabled()) return
-  console.log(`[${performance.now().toFixed(1)}ms] [${module}]`, ...args)
+function windDebugLog(module: string, ...args: unknown[]) {
+  debugLog(`[${performance.now().toFixed(1)}ms] [${module}]`, ...args)
 }
 
 function readResolutionProp(props: Record<string, unknown> | null | undefined): number | null {
@@ -244,7 +242,7 @@ export function buildWindGridFromGeoJSON(
     }
   }
   if (unfilledCount > 0) {
-    debugLog('WindGrid', 'buildWindGrid unfilled cells left empty', unfilledCount)
+    windDebugLog('WindGrid', 'buildWindGrid unfilled cells left empty', unfilledCount)
   }
 
   const south = sortedLats[rows - 1]!
@@ -275,7 +273,7 @@ export function buildWindGridFromGeoJSON(
     finiteCount +
     (frame ? frame.west * 13 + frame.east * 19 : 0)
 
-  debugLog(
+  windDebugLog(
     'WindGrid',
     'buildWindGrid',
     'rows',

@@ -1217,7 +1217,12 @@
               }
             }
           }
-        }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ]
       }
     },
     "/runtime/metrics": {
@@ -1228,6 +1233,11 @@
         "summary": "Get Runtime Metrics",
         "description": "返回各端点的 P50/P95 请求耗时统计（按天聚合，从 Redis 读取）。\n\nQuery params:\n    date: YYYY-MM-DD 格式日期，默认当天（UTC）。",
         "operationId": "get_runtime_metrics_runtime_metrics_get",
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ],
         "parameters": [
           {
             "name": "date",
@@ -1337,7 +1347,12 @@
               }
             }
           }
-        }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ]
       }
     },
     "/runtime/api-config/{provider}": {
@@ -1348,6 +1363,11 @@
         "summary": "Get Provider Api Config",
         "description": "返回指定 Provider 的 API 配置状态。",
         "operationId": "get_provider_api_config_runtime_api_config__provider__get",
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ],
         "parameters": [
           {
             "name": "provider",
@@ -1446,6 +1466,11 @@
         "summary": "Get Best Available Api",
         "description": "返回指定数据类型中最佳可用的 API Provider。",
         "operationId": "get_best_available_api_runtime_api_config__provider__best_get",
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ],
         "parameters": [
           {
             "name": "provider",
@@ -1498,7 +1523,12 @@
               }
             }
           }
-        }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ]
       }
     },
     "/runtime/tiles/cache/stats": {
@@ -1522,7 +1552,12 @@
               }
             }
           }
-        }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ]
       }
     },
     "/runtime/tiles/cache/clear": {
@@ -1817,7 +1852,12 @@
               }
             }
           }
-        }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ]
       }
     },
     "/weather/sync/status": {
@@ -8059,7 +8099,12 @@
               }
             }
           }
-        }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ]
       }
     },
     "/cleanup/node-caches": {
@@ -8081,7 +8126,12 @@
               }
             }
           }
-        }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ]
       },
       "post": {
         "tags": [

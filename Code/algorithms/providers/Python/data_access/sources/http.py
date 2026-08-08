@@ -206,7 +206,9 @@ class HttpSource:
         suffix = _cache_suffix_from_url_path(parsed.path)
         local_path = destination_root / f"{cache_key}{suffix}"
         # Legacy caches may still use opaque CGI suffixes (.pl); prefer those hits.
-        legacy_opaque = destination_root / f"{cache_key}{Path(parsed.path).suffix.lower()}"
+        legacy_opaque = (
+            destination_root / f"{cache_key}{Path(parsed.path).suffix.lower()}"
+        )
         if (
             not local_path.exists()
             and legacy_opaque != local_path

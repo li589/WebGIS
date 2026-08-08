@@ -64,7 +64,7 @@ CGDA（综合地理数据分析系统）：**面向课题组与大气研究院�
 
 改动以下区域前必须确认鉴权、加密或数据面隔离约束，避免破坏运行态或泄露凭据：
 
-1. **`/config/*` 写操作与敏感读**：`app/api/config_routes.py` + `app/services/config_service.py` / `api_config.py` / `effective_config.py`。写操作与敏感 GET（api-keys / gee / weather config / remote-storage / data-source / cache overview）与 `POST /import/raster` 需 `X-API-Key`（`require_config_read_access` 与写同门）。`/config/general` `/about` 仍公开。development 且 `api_keys_enabled=false` 时仅 **loopback** 可旁路（局域网需 `BACKEND_DEV_AUTH_BYPASS=true`）。鉴权密钥 = `backend_auth` DB 覆盖 env。`PUT /config/data-source/paths` 写 `.env` 后须重启后端进程组；`POST /config/service/restart` 受 `BACKEND_UI_RESTART_ENABLED` 门禁，且**始终**重启 FastAPI+Worker+Beat。
+1. **`/config/*` 写操作与敏感读**：`app/api/config_routes.py` + `app/services/config_service.py` / `api_config.py` / `effective_config.py`。写操作与敏感 GET（api-keys / gee / weather config / remote-storage / data-source / cache overview / general）与 `POST /import/raster` 需 `X-API-Key`（`require_config_read_access` 与写同门）。`/config/about` 仍公开。`/runtime/*` 管理读（status / metrics / api-config / tiles 管理面）与 `/cleanup/*` 读端点（stats / node-caches）同样需读鉴权。development 且 `api_keys_enabled=false` 时仅 **直连 loopback** 可旁路（不受 `X-Forwarded-For` 影响；局域网需 `BACKEND_DEV_AUTH_BYPASS=true`）。鉴权密钥 = `backend_auth` DB 覆盖 env。`PUT /config/data-source/paths` 写 `.env` 后须重启后端进程组；`POST /config/service/restart` 受 `BACKEND_UI_RESTART_ENABLED` 门禁，且**始终**重启 FastAPI+Worker+Beat。
 
 2. **GEE / 共享加密主密钥**：`BACKEND_GEE_CREDENTIALS_ENCRYPTION_KEY` 须为 **64 hex chars（32-byte）**，启动时校验；同一把 key 加密 GEE SA、API keys、天气 provider、远程存储、门户凭据。非 development 缺 key 拒启；空 IV 明文行在生产拒绝解密。GEE API 账号管理 production 默认关闭。涉及 `/config/gee/accounts*` 与 `/gee/config`。
 

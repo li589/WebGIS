@@ -352,7 +352,14 @@ async def test_api_key(key_name: str) -> tuple[bool, str]:
             # 测试天地图 API：请求一个瓦片（使用 httpx 异步客户端，避免阻塞事件循环）
             import httpx
 
+            from app.core.ssrf import validate_outbound_url
+
             url = f"https://t0.tianditu.gov.cn/img_w/wmts?SERVICE=WMTS&REQUEST=GetTile&VERSION=1.0.0&LAYER=img&STYLE=default&TILEMATRIXSET=w&FORMAT=tiles&TILECOL=0&TILEROW=0&TILEMATRIX=0&tk={key_value}"
+            try:
+                validate_outbound_url(url, allow_private=False)
+            except Exception as exc:
+                repo.update_test_status(key_name, "failed")
+                return False, f"出站 URL 校验失败: {exc}"
             try:
                 async with httpx.AsyncClient(
                     timeout=httpx.Timeout(10.0, connect=5.0)
@@ -374,7 +381,14 @@ async def test_api_key(key_name: str) -> tuple[bool, str]:
             # 百度地图 API 测试（使用 httpx 异步客户端）
             import httpx
 
+            from app.core.ssrf import validate_outbound_url
+
             url = f"https://maponline0.bdimg.com/tile/?qt=tile&x=0&y=0&z=1&styles=pl&v=020&udt=20231201&ak={key_value}"
+            try:
+                validate_outbound_url(url, allow_private=False)
+            except Exception as exc:
+                repo.update_test_status(key_name, "failed")
+                return False, f"出站 URL 校验失败: {exc}"
             try:
                 async with httpx.AsyncClient(
                     timeout=httpx.Timeout(10.0, connect=5.0)
@@ -1537,6 +1551,26 @@ def test_remote_storage_profile(
         probe_uri = f"{protocol}://{host_part}/"
 
     try:
+        from urllib.parse import urlparse
+
+        from app.core.ssrf import (
+            SSRFBlockedError,
+            default_allow_private,
+            validate_outbound_url,
+        )
+
+        parsed_probe = urlparse(probe_uri)
+        if parsed_probe.scheme in {"http", "https"}:
+            try:
+                validate_outbound_url(probe_uri, allow_private=default_allow_private())
+            except SSRFBlockedError as exc:
+                repo.update_test_status(profile_id, "failed")
+                return {
+                    "profile_id": profile_id,
+                    "success": False,
+                    "message": str(exc),
+                    "tested_at": datetime.now(timezone.utc).isoformat(),
+                }
         if "cred=" not in probe_uri:
             sep = "&" if "?" in probe_uri else "?"
             probe_uri = f"{probe_uri}{sep}cred={profile_id}"

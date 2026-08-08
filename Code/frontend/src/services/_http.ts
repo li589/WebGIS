@@ -67,28 +67,30 @@ export class WorkflowValidationError extends Error {
  * 非 validation 类型或不包含 issues 数组时返回 null。
  */
 function extractValidationPayload(
-  errorBody: any,
+  errorBody: unknown,
 ): { user_message?: string; issues: ValidationIssue[] } | null {
   if (!errorBody || typeof errorBody !== 'object') return null
+  const body = errorBody as Record<string, unknown>
   // 扁平结构
-  if (errorBody.error_type === 'validation' && Array.isArray(errorBody.issues)) {
+  if (body.error_type === 'validation' && Array.isArray(body.issues)) {
     return {
-      user_message: typeof errorBody.user_message === 'string' ? errorBody.user_message : undefined,
-      issues: errorBody.issues as ValidationIssue[],
+      user_message: typeof body.user_message === 'string' ? body.user_message : undefined,
+      issues: body.issues as ValidationIssue[],
     }
   }
   // FastAPI HTTPException 包裹在 detail 里
-  const detail = errorBody.detail
+  const detail = body.detail
   if (
     detail &&
     typeof detail === 'object' &&
     !Array.isArray(detail) &&
-    detail.error_type === 'validation' &&
-    Array.isArray(detail.issues)
+    (detail as Record<string, unknown>).error_type === 'validation' &&
+    Array.isArray((detail as Record<string, unknown>).issues)
   ) {
+    const detailRec = detail as Record<string, unknown>
     return {
-      user_message: typeof detail.user_message === 'string' ? detail.user_message : undefined,
-      issues: detail.issues as ValidationIssue[],
+      user_message: typeof detailRec.user_message === 'string' ? detailRec.user_message : undefined,
+      issues: detailRec.issues as ValidationIssue[],
     }
   }
   return null
@@ -113,13 +115,16 @@ export interface RequestJsonInit extends RequestInit {
   silent?: boolean
   /** true 时允许 204 No Content 返回 undefined（DELETE 等无响应体端点）。 */
   allowEmpty?: boolean
+  /** true 时 GET/HEAD 也附加 X-Api-Key（敏感读端点，如 /runtime/*、/cleanup/*）。 */
+  sensitiveGet?: boolean
 }
 
 /**
  * 统一 JSON fetch 包装器。
  *
  * 行为契约：
- *   1. 默认 GET 方法；非 GET/HEAD/OPTIONS 自动附加 X-Api-Key（via withWriteAuthHeaders）。
+ *   1. 默认 GET 方法；非 GET/HEAD/OPTIONS 自动附加 X-Api-Key（via withWriteAuthHeaders）；
+ *      sensitiveGet=true 时 GET/HEAD 也附加密钥（与 settings 敏感读一致）。
  *   2. 默认 Content-Type: application/json，可通过 init.headers 覆盖。
  *   3. 默认 30s 超时，通过 AbortController 实现；外部 init.signal 优先于超时 signal。
  *   4. 非 silent 请求触发全局 loading（300ms 延迟显示，避免短请求闪烁，由 store 实现）。
@@ -131,7 +136,14 @@ export interface RequestJsonInit extends RequestInit {
  * 量纲：timeoutMs 单位毫秒；HTTP status 单位为 status code。
  */
 export async function requestJson<T>(path: string, init?: RequestJsonInit): Promise<T> {
-  const { headers: initHeaders, timeoutMs, silent, allowEmpty, ...restInit } = init ?? {}
+  const {
+    headers: initHeaders,
+    timeoutMs,
+    silent,
+    allowEmpty,
+    sensitiveGet,
+    ...restInit
+  } = init ?? {}
   const method = (restInit.method ?? 'GET').toString()
   const mergedHeaders: Record<string, string> = withWriteAuthHeaders(
     {
@@ -139,6 +151,7 @@ export async function requestJson<T>(path: string, init?: RequestJsonInit): Prom
       ...(initHeaders as Record<string, string> | undefined),
     },
     method,
+    sensitiveGet,
   )
 
   const effectiveTimeout = timeoutMs ?? 30000
@@ -164,15 +177,17 @@ export async function requestJson<T>(path: string, init?: RequestJsonInit): Prom
 
     if (!response.ok) {
       // 解析结构化错误体（兼容 user_message / error / detail 三种字段命名）
-      let errorBody: any = null
+      let errorBody: unknown = null
       let errorDetail = ''
       try {
         errorBody = await response.json()
-        errorDetail =
-          (typeof errorBody?.user_message === 'string' && errorBody.user_message) ||
-          (typeof errorBody?.error === 'string' && errorBody.error) ||
-          (typeof errorBody?.detail === 'string' ? errorBody.detail : '') ||
-          JSON.stringify(errorBody)
+        const bodyRec =
+          errorBody && typeof errorBody === 'object' ? (errorBody as Record<string, unknown>) : null
+        const userMsg =
+          bodyRec && typeof bodyRec.user_message === 'string' ? bodyRec.user_message : ''
+        const err = bodyRec && typeof bodyRec.error === 'string' ? bodyRec.error : ''
+        const detail = bodyRec && typeof bodyRec.detail === 'string' ? bodyRec.detail : ''
+        errorDetail = userMsg || err || detail || JSON.stringify(errorBody)
       } catch {
         errorDetail = await response.text().catch(() => '')
       }

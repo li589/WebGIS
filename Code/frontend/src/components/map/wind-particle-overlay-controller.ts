@@ -11,11 +11,12 @@ import type { WindGeoJSON } from './types'
 import { lonFrameFromViewportBounds } from './lon-frame'
 import { shouldUseSmoothWindOffUnderlay } from './wind-off-underlay'
 import type { WindParticleSyncOptions } from './wind-particle-controller-contract'
+import { debugLog } from '../../utils/perf-probe'
 
 type MapInstance = import('maplibre-gl').Map
 
-function debugLog(module: string, ...args: unknown[]) {
-  console.log(`[${performance.now().toFixed(1)}ms] [${module}]`, ...args)
+function windDebugLog(module: string, ...args: unknown[]) {
+  debugLog(`[${performance.now().toFixed(1)}ms] [${module}]`, ...args)
 }
 
 export class WindParticleOverlayController {
@@ -87,7 +88,7 @@ export class WindParticleOverlayController {
   }
 
   reset(options?: { invalidatePendingFetch?: boolean }) {
-    debugLog(
+    windDebugLog(
       'WindParticleController',
       'reset',
       'invalidatePendingFetch',
@@ -166,7 +167,10 @@ export class WindParticleOverlayController {
     // 真正关闭/删除图层时由 reset()/removeCatalogArtifacts() 显式清理。
     if (!inlineGeojson && !overlayState.geojsonUrl) {
       if (this.currentWindGeojson || this.windParticleCanvas || this.windStreamlineLayer) {
-        debugLog('WindParticleController', 'transient empty viewport data; keep last wind frame')
+        windDebugLog(
+          'WindParticleController',
+          'transient empty viewport data; keep last wind frame',
+        )
       }
       return
     }
@@ -192,7 +196,7 @@ export class WindParticleOverlayController {
         geojson = (await resp.json()) as WindGeoJSON
       } catch (err) {
         if ((err as Error)?.name === 'AbortError') return
-        debugLog('WindParticleController', 'fetch failed', err)
+        windDebugLog('WindParticleController', 'fetch failed', err)
         return
       } finally {
         if (this.windParticleFetchAbort === abort) this.windParticleFetchAbort = null

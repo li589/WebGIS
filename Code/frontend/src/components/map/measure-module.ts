@@ -15,7 +15,7 @@
  *   - 标注层（文字 + 预览虚线）由 MeasureCanvas 2D 渲染（文字描边效果 MapLibre 难以实现）
  *   - GeoJSON 在每次 store action 后整体重建（路径点数少，性能不是瓶颈）
  */
-import type { Map as MaplibreMap, MapMouseEvent } from 'maplibre-gl'
+import type { Map as MaplibreMap, MapLayerMouseEvent, MapMouseEvent } from 'maplibre-gl'
 
 import { MeasureCanvas } from './measure-canvas'
 import type { InteractionMode, MeasurePoint, MeasureState } from '../../stores/ui'
@@ -81,7 +81,10 @@ export function createMeasureModule(options: CreateMeasureModuleOptions): Measur
   let sourcesAdded = false
   let eventsBound = false
   /** 已注册的事件处理器引用，用于 dispose 时移除 */
-  const registeredHandlers: Array<{ event: string; handler: (...args: any[]) => void }> = []
+  const registeredHandlers: Array<{
+    event: string
+    handler: (ev: MapMouseEvent | MapLayerMouseEvent) => void
+  }> = []
 
   /**
    * 添加 GeoJSON Source + Layer（仅一次，map.loaded 后调用）。
@@ -297,10 +300,10 @@ export function createMeasureModule(options: CreateMeasureModuleOptions): Measur
     map.on('mousemove', onMouseMove)
 
     registeredHandlers.push(
-      { event: 'click', handler: onClick as (...args: any[]) => void },
-      { event: 'dblclick', handler: onDblClick as (...args: any[]) => void },
-      { event: 'contextmenu', handler: onContextMenu as (...args: any[]) => void },
-      { event: 'mousemove', handler: onMouseMove as (...args: any[]) => void },
+      { event: 'click', handler: onClick },
+      { event: 'dblclick', handler: onDblClick },
+      { event: 'contextmenu', handler: onContextMenu },
+      { event: 'mousemove', handler: onMouseMove },
     )
   }
 
@@ -325,7 +328,7 @@ export function createMeasureModule(options: CreateMeasureModuleOptions): Measur
   function dispose(): void {
     // 移除事件监听
     for (const { event, handler } of registeredHandlers.splice(0)) {
-      map.off(event as any, handler)
+      map.off(event, handler as (ev: MapMouseEvent & object) => void)
     }
     eventsBound = false
 

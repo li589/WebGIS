@@ -85,9 +85,7 @@ def load_study_grid(ancillary_mat: str | Path) -> tuple[Any, Any]:
             lon = payload[key]
             break
     if lat is None or lon is None:
-        raise KeyError(
-            f"lat_9km/lon_9km not found in ancillary MAT: {ancillary_mat}"
-        )
+        raise KeyError(f"lat_9km/lon_9km not found in ancillary MAT: {ancillary_mat}")
     lat_arr = np.asarray(lat, dtype=np.float64)
     lon_arr = np.asarray(lon, dtype=np.float64)
     if lat_arr.shape != lon_arr.shape:

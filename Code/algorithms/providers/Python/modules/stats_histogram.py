@@ -85,7 +85,9 @@ def _load_array(
     return np.asarray(values, dtype=np.float64), str(variable)
 
 
-@register_module_decorator(name="stats_histogram", aliases=["histogram", "raster_histogram"])
+@register_module_decorator(
+    name="stats_histogram", aliases=["histogram", "raster_histogram"]
+)
 class StatsHistogramModule(BaseModule):
     name = "stats_histogram"
     description = "Compute a generic float64 histogram for any numeric raster."
@@ -128,7 +130,9 @@ class StatsHistogramModule(BaseModule):
         band = int(merged.get("band", 0) or 0)
         density = bool(merged.get("density", False))
         nodata_raw = merged.get("nodata")
-        nodata = float(nodata_raw) if nodata_raw is not None and nodata_raw != "" else None
+        nodata = (
+            float(nodata_raw) if nodata_raw is not None and nodata_raw != "" else None
+        )
         variable = merged.get("variable")
         if isinstance(variable, str) and not variable.strip():
             variable = None
@@ -209,9 +213,12 @@ class StatsHistogramModule(BaseModule):
         )
 
         if ctx.logger_adapter is not None:
-            ctx.logger_adapter.emit_artifact("stats_histogram", str(chart_path), "chart")
+            ctx.logger_adapter.emit_artifact(
+                "stats_histogram", str(chart_path), "chart"
+            )
             ctx.logger_adapter.emit_stage_end(
-                "stats_histogram", f"variable={var_name}, count={hist['stats']['count']}"
+                "stats_histogram",
+                f"variable={var_name}, count={hist['stats']['count']}",
             )
 
         manifest = ProductManifest(

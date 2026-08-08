@@ -23,6 +23,22 @@ def test_weather_tiles_get_rate_limited() -> None:
     assert not should_rate_limit_weather_tile("/weather/point", "GET")
 
 
+def test_weather_sync_trigger_write_is_rate_limited() -> None:
+    assert should_rate_limit_write("/weather/sync/trigger", "POST")
+    assert not should_rate_limit_write("/weather/sync/status", "GET")
+
+
+def test_cleanup_runtime_write_prefixes_are_rate_limited() -> None:
+    assert should_rate_limit_write("/cleanup/vacuum", "POST")
+    assert should_rate_limit_write("/cleanup/node-caches", "POST")
+    assert not should_rate_limit_write("/cleanup/node-caches", "GET")
+    assert should_rate_limit_write("/runtime/config", "PATCH")
+    assert should_rate_limit_write("/runtime/tiles/cache/clear", "POST")
+    assert not should_rate_limit_write("/runtime/status", "GET")
+    assert should_rate_limit_write("/workflow-timers", "POST")
+    assert not should_rate_limit_write("/workflow-timers", "GET")
+
+
 def test_client_ip_ignores_xff_unless_trust_proxy(monkeypatch) -> None:
     from dataclasses import replace
 

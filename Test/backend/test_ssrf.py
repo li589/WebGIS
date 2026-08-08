@@ -232,3 +232,27 @@ def test_safe_urlopen_success_no_redirect() -> None:
     ):
         with safe_urlopen("http://example.invalid/data", timeout=1) as resp:
             assert resp.read() == body
+
+
+def test_build_pinned_opener_blocks_proxy_by_default() -> None:
+    target = OutboundTarget(url="http://example.invalid/data", ips=(_PUBLIC_IP,))
+    with patch("app.core.ssrf.getproxies", return_value={"http": "http://127.0.0.1:8888"}):
+        with pytest.raises(SSRFBlockedError, match="fail-closed"):
+            ssrf_mod._build_pinned_opener(target)
+
+
+def test_build_pinned_opener_allows_proxy_when_explicit() -> None:
+    target = OutboundTarget(url="http://example.invalid/data", ips=(_PUBLIC_IP,))
+    with patch("app.core.ssrf.getproxies", return_value={"http": "http://127.0.0.1:8888"}):
+        opener = ssrf_mod._build_pinned_opener(target, allow_proxy=True)
+        assert isinstance(opener, OpenerDirector)
+
+
+def test_is_trusted_open_meteo_local_url() -> None:
+    from app.core.ssrf import is_trusted_open_meteo_local_url
+    from app.weatherengine.provider_ids import OPEN_METEO_LOCAL_URL
+
+    assert is_trusted_open_meteo_local_url(
+        f"{OPEN_METEO_LOCAL_URL}?latitude=0&longitude=0"
+    )
+    assert not is_trusted_open_meteo_local_url("https://api.open-meteo.com/v1/forecast")

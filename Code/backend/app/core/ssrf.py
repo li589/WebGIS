@@ -23,6 +23,7 @@ from __future__ import annotations
 import http.client
 import ipaddress
 import logging
+import os
 import socket
 from dataclasses import dataclass
 from typing import Any, Callable, Mapping
@@ -42,6 +43,25 @@ logger = logging.getLogger(__name__)
 
 _ALLOWED_SCHEMES = {"http", "https"}
 _REDIRECT_STATUS = frozenset({301, 302, 303, 307, 308})
+
+
+def default_allow_private() -> bool:
+    """Production blocks RFC1918; development allows LAN data sources."""
+    from app.core.config import settings
+
+    return settings.environment != "production"
+
+
+def is_trusted_open_meteo_local_url(url: str) -> bool:
+    """Fixed internal Open-Meteo container URL — exempt from public SSRF policy."""
+    from app.weatherengine.provider_ids import OPEN_METEO_LOCAL_URL
+
+    candidates = {OPEN_METEO_LOCAL_URL.rstrip("/")}
+    env_local = os.getenv("BACKEND_OPEN_METEO_LOCAL_URL", "").strip().rstrip("/")
+    if env_local:
+        candidates.add(env_local)
+    normalized = url.split("?", 1)[0].rstrip("/")
+    return any(normalized.startswith(base) for base in candidates)
 
 
 class SSRFBlockedError(ValueError):
@@ -216,16 +236,23 @@ class _PinnedHTTPSHandler(HTTPSHandler):
         )
 
 
-def _build_pinned_opener(target: OutboundTarget) -> OpenerDirector:
+def _build_pinned_opener(
+    target: OutboundTarget, *, allow_proxy: bool = False
+) -> OpenerDirector:
     """构造禁跟随重定向 + IP 钉死的 opener。
 
-    若环境配置了 HTTP(S) 代理，实际连接目标是代理而非原主机，钉 IP 会失效甚至
-    连不通；此时降级为「仅 URL 校验」并告警（代理链路的出站管控应由代理负责）。
+    若环境配置了 HTTP(S) 代理且 ``allow_proxy=False``，fail-closed 阻断出站
+    （代理会绕过 IP 钉死，存在 SSRF 降级风险）。仅可信内部固定上游可显式
+    ``allow_proxy=True``。
     """
     scheme = (urlparse(target.url).scheme or "").lower()
     if getproxies().get(scheme):
+        if not allow_proxy:
+            raise SSRFBlockedError(
+                f"检测到 {scheme} 代理配置，出站请求已阻断（fail-closed）"
+            )
         logger.warning(
-            "检测到 %s 代理配置，跳过出站 IP 钉死（DNS 重绑定防护降级为仅 URL 校验）",
+            "检测到 %s 代理配置，跳过出站 IP 钉死（仅 allow_proxy=True 路径）",
             scheme,
         )
         return build_opener(_NoRedirectHandler(), HTTPSHandler())
@@ -241,7 +268,8 @@ def safe_urlopen(
     *,
     timeout: float,
     headers: Mapping[str, str] | None = None,
-    allow_private: bool = True,
+    allow_private: bool | None = None,
+    allow_proxy: bool = False,
     max_redirects: int = 5,
 ):
     """带 SSRF 校验的 urlopen；每跳重定向再校验，且连接钉死已校验 IP。
@@ -253,13 +281,15 @@ def safe_urlopen(
         SSRFBlockedError: 初始或重定向 URL 被阻断，或重定向次数超限。
         HTTPError / URLError: 网络或非重定向 HTTP 错误（透传）。
     """
+    if allow_private is None:
+        allow_private = default_allow_private()
     target = resolve_outbound_target(url, allow_private=allow_private)
     redirects = 0
     req_headers = dict(headers or {})
 
     while True:
         # 每跳目标主机不同，opener 需按当次已校验 IP 重建。
-        opener = _build_pinned_opener(target)
+        opener = _build_pinned_opener(target, allow_proxy=allow_proxy)
         req = Request(target.url, headers=req_headers)
         try:
             # noqa: S310 — URL 经 resolve_outbound_target 校验；重定向亦同

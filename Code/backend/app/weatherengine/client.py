@@ -330,7 +330,20 @@ class OpenMeteoClient:
                 url, 503, "API rate limit: too many concurrent requests", None, None
             )
         try:
-            resp = urlopen(url, timeout=timeout)
+            from app.core.ssrf import (
+                default_allow_private,
+                is_trusted_open_meteo_local_url,
+                safe_urlopen,
+            )
+
+            if is_trusted_open_meteo_local_url(url):
+                resp = urlopen(url, timeout=timeout)
+            else:
+                resp = safe_urlopen(
+                    url,
+                    timeout=timeout,
+                    allow_private=default_allow_private(),
+                )
             return _RateLimitedResponse(resp, pool=pool)
         except BaseException:
             release_api_slot(pool=pool)

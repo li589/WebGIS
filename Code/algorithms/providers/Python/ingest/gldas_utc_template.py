@@ -100,7 +100,9 @@ def build_slot_maps_for_local_hour(
     # Broadcast vs utc_hours → (nrow, ncol, 3, 8)
     delta = np.abs(cand_abs_hours[None, None, :, :] - utc_hours[:, :, None, None])
     flat = delta.reshape(*lon_arr.shape, -1)
-    best = np.nanargmin(np.where(np.isfinite(lon_arr)[:, :, None], flat, np.inf), axis=-1)
+    best = np.nanargmin(
+        np.where(np.isfinite(lon_arr)[:, :, None], flat, np.inf), axis=-1
+    )
     # Decode: best = day_i * 8 + slot_i
     day_i = best // len(_GLDAS_SLOT_HOURS)
     slot_i = best % len(_GLDAS_SLOT_HOURS)

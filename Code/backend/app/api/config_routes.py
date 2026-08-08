@@ -2,7 +2,7 @@
 配置管理 API 路由
 
 提供以下端点：
-- GET /config/general — 获取常规配置
+- GET /config/general — 获取常规配置（需读鉴权）
 - GET /config/api-keys — 列出 API Key
 - PUT /config/api-keys/{key_name} — 新增/更新 API Key
 - DELETE /config/api-keys/{key_name} — 删除 API Key

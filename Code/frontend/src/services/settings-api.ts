@@ -95,6 +95,7 @@ import type {
   ApiKeyHistoryDeletedResponse,
   ApiKeyHistoryItem,
   ApiKeyItem,
+  ApiKeyToggleRequest,
   ApiKeyUpdateRequest,
   DataCacheEvictRequest,
   DataCacheEvictResponse,
@@ -105,9 +106,11 @@ import type {
   GeeAccountCreateRequest,
   GeeAccountDeletedResponse,
   GeeAccountItem,
+  GeeAccountToggleRequest,
   GeeAccountToggleResponse,
   GeeRuntimeConfig,
   GeneralConfig,
+  OpenDataPresetsUpdateRequest,
   OpenDataPresetsUpdateResponse,
   PortalCredentialUpsertRequest,
   PortalCredentialsMapResponse,
@@ -119,21 +122,27 @@ import type {
   RemoteStorageHistoryDeletedResponse,
   RemoteStorageHistoryItem,
   RemoteStorageProfile,
+  RemoteStorageTestRequest,
   RemoteStorageTestResponse,
+  RemoteStorageToggleRequest,
   RemoteStorageToggleResponse,
   RemoteStorageUpsertRequest,
   RuntimeConfigPatch,
   RuntimeConfigSnapshotResponse,
+  RuntimeConfigUpdateRequest,
   RuntimeConfigUpdateResponse,
   RuntimeStatusResponse,
   ServiceRestartRequest,
   ServiceRestartResponse,
   TestResult,
   WeatherConfig,
+  WeatherModelUpdateRequest,
   WeatherProviderDeletedResponse,
   WeatherProviderItem,
+  WeatherProviderPriorityRequest,
   WeatherProviderPriorityResponse,
   WeatherProviderTestResponse,
+  WeatherProviderToggleRequest,
   WeatherProviderToggleResponse,
   WeatherProviderUpdateRequest,
 } from '../types/api-reexports'
@@ -210,7 +219,7 @@ export function testApiKey(keyName: string): Promise<TestResult> {
 export function toggleApiKey(keyName: string, enabled: boolean): Promise<ApiKeyItem> {
   return settingsFetch(`/config/api-keys/${encodeURIComponent(keyName)}/toggle`, {
     method: 'PUT',
-    body: JSON.stringify({ enabled }),
+    body: JSON.stringify({ enabled } satisfies ApiKeyToggleRequest),
   })
 }
 
@@ -269,7 +278,7 @@ export function toggleGeeAccount(
 ): Promise<GeeAccountToggleResponse> {
   return settingsFetch(`/config/gee/accounts/${encodeURIComponent(accountId)}/toggle`, {
     method: 'PUT',
-    body: JSON.stringify({ enabled }),
+    body: JSON.stringify({ enabled } satisfies GeeAccountToggleRequest),
   })
 }
 
@@ -290,7 +299,7 @@ export function fetchWeatherConfig(): Promise<WeatherConfig> {
 export function updateWeatherDefaultModel(defaultModel: string): Promise<WeatherConfig> {
   return settingsFetch('/config/weather/model', {
     method: 'PUT',
-    body: JSON.stringify({ default_model: defaultModel }),
+    body: JSON.stringify({ default_model: defaultModel } satisfies WeatherModelUpdateRequest),
   })
 }
 
@@ -325,7 +334,7 @@ export function toggleWeatherProvider(
 ): Promise<WeatherProviderToggleResponse> {
   return settingsFetch(`/config/weather/providers/${encodeURIComponent(providerId)}/toggle`, {
     method: 'PUT',
-    body: JSON.stringify({ enabled }),
+    body: JSON.stringify({ enabled } satisfies WeatherProviderToggleRequest),
   })
 }
 
@@ -335,7 +344,7 @@ export function setWeatherProviderPriority(
 ): Promise<WeatherProviderPriorityResponse> {
   return settingsFetch(`/config/weather/providers/${encodeURIComponent(providerId)}/priority`, {
     method: 'PUT',
-    body: JSON.stringify({ priority }),
+    body: JSON.stringify({ priority } satisfies WeatherProviderPriorityRequest),
   })
 }
 
@@ -404,7 +413,7 @@ export function updateOpenDataPresets(
 ): Promise<OpenDataPresetsUpdateResponse> {
   return settingsFetch('/config/data-source/open-data-presets', {
     method: 'PUT',
-    body: JSON.stringify({ open_data_presets }),
+    body: JSON.stringify({ open_data_presets } satisfies OpenDataPresetsUpdateRequest),
   })
 }
 
@@ -463,7 +472,7 @@ export function toggleRemoteStorageProfile(
 ): Promise<RemoteStorageToggleResponse> {
   return settingsFetch(`/config/remote-storage/${encodeURIComponent(profileId)}/toggle`, {
     method: 'PUT',
-    body: JSON.stringify({ enabled }),
+    body: JSON.stringify({ enabled } satisfies RemoteStorageToggleRequest),
   })
 }
 
@@ -473,7 +482,7 @@ export function testRemoteStorageProfile(
 ): Promise<RemoteStorageTestResponse> {
   return settingsFetch(`/config/remote-storage/${encodeURIComponent(profileId)}/test`, {
     method: 'POST',
-    body: JSON.stringify({ uri: uri ?? null }),
+    body: JSON.stringify({ uri: uri ?? null } satisfies RemoteStorageTestRequest),
   })
 }
 
@@ -524,8 +533,12 @@ export function fetchRuntimeStatus(): Promise<RuntimeStatusResponse> {
 export async function updateRuntimeConfig(
   items: RuntimeConfigPatch[],
 ): Promise<RuntimeConfigUpdateResponse> {
+  const body: RuntimeConfigUpdateRequest = {
+    items,
+    client: { client_id: 'web', page: 'settings-ui' },
+  }
   return settingsFetch('/runtime/config', {
     method: 'PATCH',
-    body: JSON.stringify({ items, client: { client_type: 'settings-ui', client_id: 'web' } }),
+    body: JSON.stringify(body),
   })
 }

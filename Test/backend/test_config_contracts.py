@@ -295,6 +295,16 @@ def test_runtime_config_requires_read_auth_without_key(anon_client: TestClient):
     assert resp.status_code == 401
 
 
+def test_runtime_management_reads_require_auth_without_key(anon_client: TestClient):
+    for path in (
+        "/runtime/status",
+        "/runtime/api-config",
+        "/cleanup/node-caches",
+    ):
+        resp = anon_client.get(path)
+        assert resp.status_code == 401, path
+
+
 # ── F12: dev 局域网旁路正向路径 ───────────────────────────────────────────
 # development + api_keys_enabled=False + BACKEND_DEV_AUTH_BYPASS=true +
 # 非 loopback 客户端主机 → 写端点应返回 200（无需 X-API-Key）。

@@ -457,6 +457,7 @@ def _resolve_daily_mat_file(folder: str | Path, date_key: str) -> Path:
     if matches:
         # 记录警告，提示用户可能的误匹配
         import logging
+
         logging.getLogger(__name__).warning(
             "使用模糊匹配找到 %s 的 MAT 文件: %s (建议规范命名为 YYYYMMDD.mat 或 YYYYMMDD_suffix.mat)",
             date_key,

@@ -46,8 +46,7 @@ _VIIRS_QA_SUBDATASET = (
     "Data_Fields/CMG_0.05_Deg_16_days_pixel_reliability"
 )
 _MODIS_NDVI_SUBDATASET = (
-    'HDF4_EOS:EOS_GRID:"{path}":MODIS_Grid_16Day_VI_CMG:'
-    '"CMG 0.05 Deg 16 days NDVI"'
+    'HDF4_EOS:EOS_GRID:"{path}":MODIS_Grid_16Day_VI_CMG:' '"CMG 0.05 Deg 16 days NDVI"'
 )
 _MODIS_QA_SUBDATASET = (
     'HDF4_EOS:EOS_GRID:"{path}":MODIS_Grid_16Day_VI_CMG:'
@@ -248,7 +247,5 @@ def convert_ndvi_hdf_directory_to_9km(
         raise FileNotFoundError(f"No VIIRS/MODIS NDVI HDF files in {input_dir}")
     results: list[NdviHdfPreprocessResult] = []
     for path in files:
-        results.append(
-            preprocess_ndvi_hdf_file(path, output_dir, work_dir=work_dir)
-        )
+        results.append(preprocess_ndvi_hdf_file(path, output_dir, work_dir=work_dir))
     return results

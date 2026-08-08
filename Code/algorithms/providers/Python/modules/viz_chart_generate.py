@@ -215,8 +215,12 @@ class VizChartGenerateModule(BaseModule):
                                 if chart_type != "line"
                                 else "bar",
                                 "title": title,
-                                "x": [r[x_idx] for r in rows if len(r) > max(x_idx, y_idx)],
-                                "y": [r[y_idx] for r in rows if len(r) > max(x_idx, y_idx)],
+                                "x": [
+                                    r[x_idx] for r in rows if len(r) > max(x_idx, y_idx)
+                                ],
+                                "y": [
+                                    r[y_idx] for r in rows if len(r) > max(x_idx, y_idx)
+                                ],
                                 "series_name": str(cols[y_idx]),
                             }
                         break

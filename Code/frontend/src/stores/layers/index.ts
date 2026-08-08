@@ -10,10 +10,7 @@ import {
 import { useWeatherTileManager } from '../weather-tile-manager'
 import { useWeatherSourcePrefsStore } from '../weather-source-prefs'
 import { useUiStore } from '../ui'
-import { isDebugLogEnabled } from '../../utils/perf-probe'
-import { formatClockHourLabel } from '../../utils/weather-timeline'
-import { resolveWeatherTileReadyKind } from '../../utils/weather-tile-readiness'
-import { buildDefaultWeatherRenderHint } from '../../data/weather-render-hints'
+import { debugLog as probeDebugLog } from '../../utils/perf-probe'
 import type { BoundingBox, RuntimeLayerDescriptor } from '../../services/runtime-api'
 import { LAYER_CATEGORIES, LAYER_LIBRARY } from './catalog'
 import { allocateLayerAccent } from './layer-accent'
@@ -22,12 +19,17 @@ import { createWeatherViewportSlice } from './weather-viewport'
 import { createPointWeatherSlice } from './point-weather'
 import { createWorkflowPoller } from './workflow-poller'
 import { createWorkflowRunner, saveTrackedWorkflowRuns } from './workflow-runner'
-import { buildJobLayer, extractOverlayImportsFromResultRefs } from './result-adapter'
+import {
+  buildJobLayer,
+  extractOverlayImportsFromResultRefs,
+  normalizeProductTag,
+} from './result-adapter'
+import { projectActiveLayersDisplay } from './display-projection'
 import { buildImportedVectorPayload, computeBounds, inferGeometryType } from './imported-vector'
 import { buildImportedRasterPayload } from './imported-raster'
 import { deleteImportedRaster } from '../../services/data-import'
 import { useWorkflowOutputLayersStore } from '../workflow-output-layers'
-import { persistLayerDisplayName, resolvePersistedDisplayName } from './layer-display-names'
+import { persistLayerDisplayName } from './layer-display-names'
 import {
   buildWorkspaceSnapshot,
   isCatalogDismissed,
@@ -43,13 +45,9 @@ import {
 } from './workspace-persist'
 import { formatProgressShell, pickLatestNodeProgress } from '../../utils/workflow-progress-format'
 import {
-  asRecord,
-  buildAvailabilityState,
   buildCatalogFallbackItem,
   buildRuntimeLayerLibraryItem,
   CATEGORY_INDEX_BY_ID,
-  extractLayerHotspots,
-  formatClockLabel,
   getCatalogDisplayName,
   isBlockedRunReadiness,
   isTerminalStatus,
@@ -81,124 +79,9 @@ function isLocalImport(layer: ActiveLayer): boolean {
   return Boolean(layer.importedVector || layer.importedRaster)
 }
 
-/** 产品标签归一：OMEGA_BLOCK / OMEGA_PIXEL → OMEGA，便于绑入计算组 */
-function normalizeProductTag(raw: string | null | undefined): string {
-  const tag = String(raw || '')
-    .trim()
-    .toUpperCase()
-    .replace(/^ALGORITHM MAP LAYER:\s*/i, '')
-  if (!tag) return ''
-  if (tag === 'OMEGA_BLOCK' || tag.startsWith('OMEGA_BLOCK') || tag.includes('OMEGA_BLOCK')) {
-    return 'OMEGA'
-  }
-  if (tag === 'OMEGA_PIXEL' || tag.includes('OMEGA_PIXEL') || tag.includes('OMEGA_PIX')) {
-    return 'OMEGA'
-  }
-  if (tag === 'OMEGA' || tag.endsWith('_OMEGA') || tag.endsWith('-OMEGA')) return 'OMEGA'
-  if (tag === 'SM' || tag.endsWith('_SM') || tag.endsWith('-SM')) return 'SM'
-  if (tag === 'VOD' || tag.endsWith('_VOD') || tag.endsWith('-VOD')) return 'VOD'
-  return tag
-}
-
 function debugLog(module: string, ...args: unknown[]) {
-  if (!isDebugLogEnabled()) return
-  console.log(`[${performance.now().toFixed(1)}ms] [LayersStore:${module}]`, ...args)
+  probeDebugLog(`[${performance.now().toFixed(1)}ms] [LayersStore:${module}]`, ...args)
 }
-
-// ─── 真实数据适配器 ──────────────────────────────────────────────────────────
-
-/** 从 jobLayer 提取真实数据显示数据 */
-function buildRealLayerDisplay(
-  layer: ActiveLayer,
-  item: RuntimeLayerLibraryItem,
-): Partial<ActiveLayerDisplay> {
-  const jobLayer = layer.jobLayer
-  if (!jobLayer) return {}
-
-  const primaryMetric = jobLayer.metrics?.find((m) => m.label !== '队列')
-  const metricValue = primaryMetric?.value ?? '--'
-  const renderHint = jobLayer.mapLayerPayload?.renderHint
-  const resultDto = asRecord(jobLayer.resultDto)
-  const providerKey = typeof resultDto?.provider_key === 'string' ? resultDto.provider_key : null
-  const resultCategory =
-    typeof resultDto?.result_category === 'string' ? resultDto.result_category : null
-  const providerSummary = typeof resultDto?.summary === 'string' ? resultDto.summary : null
-  const providerStatusLabel =
-    typeof resultDto?.status_label === 'string' ? resultDto.status_label : null
-  const providerConfidenceLabel =
-    typeof resultDto?.confidence_label === 'string' ? resultDto.confidence_label : null
-  const isSampleProvider =
-    item.backendStatus === 'sample' ||
-    (resultCategory === 'provider' && providerKey?.startsWith('lab_output'))
-  let confidenceLabel = '以工作流结果为准'
-  if (renderHint?.notes?.length) {
-    confidenceLabel = renderHint.notes[0]
-  } else if (providerConfidenceLabel) {
-    confidenceLabel = providerConfidenceLabel
-  } else if (jobLayer.diagnosticNotes?.length) {
-    confidenceLabel = jobLayer.diagnosticNotes[0]
-  }
-
-  return {
-    metricValue,
-    summary:
-      providerSummary ??
-      jobLayer.resultView?.summary ??
-      jobLayer.reportSummary ??
-      jobLayer.message ??
-      item.description,
-    statusLabel:
-      jobLayer.status === 'succeeded'
-        ? isSampleProvider
-          ? (providerStatusLabel ?? '实验结果')
-          : '真实数据'
-        : jobLayer.status === 'failed'
-          ? '数据异常'
-          : jobLayer.status === 'cancelled'
-            ? '任务已取消'
-            : '任务处理中',
-    trendLabel:
-      jobLayer.status === 'succeeded'
-        ? isSampleProvider
-          ? '实验 provider 已执行，可用于联调验收'
-          : '最新工作流结果已接入'
-        : jobLayer.status === 'failed'
-          ? '最近一次运行失败'
-          : '等待工作流返回结果',
-    sourceLabel:
-      isSampleProvider && providerKey ? `实验 Provider · ${providerKey}` : item.sourceLabel,
-    confidenceLabel,
-    availabilityState:
-      jobLayer.status === 'succeeded'
-        ? 'ready'
-        : jobLayer.status === 'failed'
-          ? 'empty'
-          : 'partial',
-    availabilityLabel:
-      jobLayer.status === 'succeeded'
-        ? '完整数据'
-        : jobLayer.status === 'failed'
-          ? '数据异常'
-          : '加载中',
-    availabilityDescription:
-      jobLayer.status === 'succeeded'
-        ? isSampleProvider
-          ? '实验 provider 已生成结果，可用于联调与界面验收。'
-          : jobLayer.message || '工作流结果已生成。'
-        : jobLayer.status === 'failed'
-          ? (jobLayer.diagnosticNotes?.[0] ?? '数据加载失败')
-          : jobLayer.message || '正在加载工作流结果...',
-    observationTimeLabel:
-      jobLayer.reportSummary?.match(/\d{2}:\d{2}/)?.[0] ?? formatClockLabel(jobLayer.updatedAt),
-    missingFieldsLabel:
-      jobLayer.status === 'succeeded'
-        ? '无缺失字段'
-        : (jobLayer.diagnosticNotes?.join(' / ') ?? '待加载'),
-    hotspots: extractLayerHotspots(layer, item, metricValue),
-  }
-}
-
-/** tracked runs 持久化与恢复编排：见 ./workflow-runner.ts（阶段三B 抽离） */
 
 // ─── Store ───────────────────────────────────────────────────────────────────
 
@@ -470,296 +353,16 @@ export const useLayersStore = defineStore('layers', () => {
     () => new Map(layerLibrary.value.map((item) => [item.catalogId, item])),
   )
 
-  const activeLayersDisplay = computed<ActiveLayerDisplay[]>(() => {
-    return activeLayers.value
-      .slice()
-      .filter((layer) => !layer.isAdminBoundary && layer.catalogId !== 'admin-boundary')
-      .sort((a, b) => b.order - a.order)
-      .map((layer): ActiveLayerDisplay | null => {
-        if (layer.importedVector) {
-          const payload = layer.importedVector
-          const persisted = resolvePersistedDisplayName(
-            layer.catalogId,
-            payload.backendLayerId,
-            layer.instanceId,
-          )
-          const displayName = layer.name ?? persisted ?? payload.fileName ?? '导入图层'
-          return {
-            instanceId: layer.instanceId,
-            catalogId: layer.catalogId,
-            name: displayName,
-            category: 'imported',
-            description: `本地导入矢量（${payload.geometryType}）`,
-            engine: 'local',
-            supportsTime: false,
-            runReadiness: 'ready',
-            runReadinessSummary: '本地文件已加载',
-            summary: `${payload.featureCount} 个要素 · ${payload.geometryType}`,
-            metricLabel: '要素数',
-            metricValue: String(payload.featureCount),
-            trendLabel: '本地矢量叠加',
-            statusLabel: '已导入',
-            updateLabel: '本地文件',
-            sourceLabel: payload.fileName ?? '本地导入',
-            confidenceLabel: '本地数据',
-            accentColor: layer.accentColor ?? '#7ee0a8',
-            accentGlow: layer.accentGlow ?? 'rgba(126, 224, 168, 0.28)',
-            chipTone: layer.chipTone ?? 'rgba(126, 224, 168, 0.16)',
-            availabilityState: 'ready',
-            availabilityLabel: '完整数据',
-            availabilityDescription: `已载入 ${payload.featureCount} 个要素，可在图层列表控制显隐与导出。`,
-            observationTimeLabel: '本地',
-            missingFieldsLabel: '无',
-            hotspots: [],
-            isAdminBoundary: false,
-            isImported: true,
-            isImportedRaster: false,
-            jobLayer: undefined,
-            visible: layer.visible,
-            opacity: layer.opacity,
-            order: layer.order,
-            dataState: 'imported',
-            importedGeometryType: payload.geometryType,
-            importedFeatureCount: payload.featureCount,
-            importedVectorBackendLayerId: payload.backendLayerId,
-            importedBounds: payload.bounds,
-            importedFileName: payload.fileName,
-            importedVectorStyle: payload.style,
-          }
-        }
-
-        if (layer.importedRaster) {
-          const payload = layer.importedRaster
-          const displayName =
-            layer.name ??
-            resolvePersistedDisplayName(
-              layer.catalogId,
-              payload.overlayLayerId,
-              layer.instanceId,
-            ) ??
-            payload.fileName ??
-            '导入栅格'
-          const hasTimes = Boolean(payload.timeList?.length)
-          return {
-            instanceId: layer.instanceId,
-            catalogId: layer.catalogId,
-            name: displayName,
-            category: 'imported',
-            description: hasTimes
-              ? '科学时间序列栅格（按块 / 时刻）'
-              : '本地导入栅格（TIF overlay）',
-            engine: 'local',
-            supportsTime: hasTimes,
-            runReadiness: 'ready',
-            runReadinessSummary: '本地栅格已注册',
-            summary: hasTimes ? '时间序列栅格叠加' : '本地 TIF 栅格叠加',
-            metricLabel: '类型',
-            metricValue: '栅格',
-            trendLabel: hasTimes ? '科学时间序列' : '本地栅格叠加',
-            statusLabel: '已导入',
-            updateLabel: '本地文件',
-            sourceLabel: payload.fileName ?? '本地导入',
-            confidenceLabel: '本地数据',
-            accentColor: layer.accentColor ?? '#7eb8e0',
-            accentGlow: layer.accentGlow ?? 'rgba(126, 184, 224, 0.28)',
-            chipTone: layer.chipTone ?? 'rgba(126, 184, 224, 0.16)',
-            availabilityState: 'ready',
-            availabilityLabel: hasTimes ? `${payload.timeList!.length} 个时间块` : '完整数据',
-            availabilityDescription: hasTimes
-              ? '时间序列已注册；底部时间轴按块覆盖日期着色。'
-              : '已通过后端注册为 overlay，可在图层列表控制显隐与透明度。',
-            observationTimeLabel:
-              payload.effectiveTimeLabel ||
-              (hasTimes ? payload.timeList![payload.timeList!.length - 1]! : '静态'),
-            missingFieldsLabel: '无',
-            hotspots: [],
-            isAdminBoundary: false,
-            isImported: false,
-            isImportedRaster: true,
-            jobLayer: undefined,
-            visible: layer.visible,
-            opacity: layer.opacity,
-            order: layer.order,
-            dataState: 'imported',
-            importedRasterOverlayLayerId: payload.overlayLayerId,
-            importedRasterBounds: payload.bounds,
-            importedBounds: payload.bounds,
-            importedRasterSourceCrs: payload.sourceCrs,
-            importedRasterNativeStep:
-              typeof payload.nativeStep === 'string'
-                ? payload.nativeStep
-                : payload.nativeStep
-                  ? `${payload.nativeStep.value}${payload.nativeStep.unit === 'hour' ? 'h' : payload.nativeStep.unit === 'day' ? 'd' : payload.nativeStep.unit === 'month' ? 'm' : 'yr'}`
-                  : undefined,
-            importedRasterEffectiveTime: payload.effectiveTimeLabel,
-            importedRasterTimeCount: payload.timeList?.length,
-            importedFileName: payload.fileName,
-            paletteOverride: layer.paletteOverride ?? null,
-            vminOverride: layer.vminOverride ?? null,
-            vmaxOverride: layer.vmaxOverride ?? null,
-            nodataMode: layer.nodataMode ?? null,
-            nodataColor: layer.nodataColor ?? null,
-            runGroupId: layer.runGroupId,
-            runGroupProductTag: layer.runGroupProductTag,
-            runGroupLocked: layer.runGroupLocked,
-          }
-        }
-
-        const item = buildCatalogFallbackItem(
-          layerLibraryMap.value.get(layer.catalogId) ?? null,
-          layer.catalogId,
-        )
-        const availability = buildAvailabilityState(layer, item, layer.jobLayer)
-        const realDisplay = layer.jobLayer ? buildRealLayerDisplay(layer, item) : {}
-        const descriptor = runtimeLayerCatalog.value[layer.catalogId] ?? null
-
-        const isWeatherLayer = !layer.isAdminBoundary && isWeatherEngineLayer(layer.catalogId)
-        const tileStats =
-          isWeatherLayer && layer.visible ? weatherTileManager.getStats(layer.catalogId) : null
-        const baseRenderHint = isWeatherLayer
-          ? buildDefaultWeatherRenderHint(layer.catalogId, descriptor)
-          : (layer.jobLayer?.mapLayerPayload?.renderHint ?? null)
-        // 应用用户自定义配色方案覆盖
-        const weatherRenderHint =
-          baseRenderHint && layer.paletteOverride
-            ? { ...baseRenderHint, palette: layer.paletteOverride }
-            : baseRenderHint
-        let finalAvailability = availability
-        if (isWeatherLayer && tileStats) {
-          const layerStatus = weatherTileManager.getLayerStatus(layer.catalogId)
-          if (layerStatus.errorType === 'data-empty') {
-            finalAvailability = {
-              state: 'empty' as const,
-              label: '无有效数据',
-              description: layerStatus.errorMessage || '本地模型无数据，请同步 Open-Meteo',
-            }
-          } else {
-            const readyKind = resolveWeatherTileReadyKind(tileStats)
-            if (readyKind === 'ready') {
-              // 勿在 activeLayersDisplay 热路径调用 getMergedGeojsonForViewport：
-              // 同步合并视口瓦片会卡主线程，表现为点「已添加图层」无响应。
-              // 无数据场景由上方 data-empty 状态覆盖。
-              finalAvailability = {
-                state: 'ready' as const,
-                label: '完整数据',
-                description: `已缓存全部 ${tileStats.visible} 个可视瓦片`,
-              }
-            } else if (readyKind === 'partial') {
-              finalAvailability = {
-                state: 'partial' as const,
-                label: '加载中',
-                description: `已缓存 ${tileStats.cached} / 可视 ${tileStats.visible} / 加载中 ${tileStats.pending}`,
-              }
-            } else {
-              finalAvailability = {
-                state: 'partial' as const,
-                label: '等待瓦片',
-                description: '正在等待瓦片调度',
-              }
-            }
-          }
-        }
-
-        const rasterPayload = layer.importedRaster as
-          import('./imported-raster').ImportedRasterPayload | undefined
-        return {
-          instanceId: layer.instanceId,
-          catalogId: layer.catalogId,
-          name: layer.isAdminBoundary
-            ? '行政区边界'
-            : (layer.name ??
-              resolvePersistedDisplayName(layer.catalogId, layer.instanceId) ??
-              item.name),
-          category: layer.isAdminBoundary ? 'boundary' : item.category,
-          description: layer.isAdminBoundary ? '广东省市级行政区边界叠加层。' : item.description,
-          engine: layer.isAdminBoundary ? 'builtin' : item.engine,
-          supportsTime: item.supportsTime,
-          runReadiness: item.runReadiness,
-          runReadinessSummary: item.runReadinessSummary,
-          renderHint: weatherRenderHint ?? undefined,
-          summary: layer.isAdminBoundary
-            ? '广东省市级行政区边界叠加层'
-            : (realDisplay.summary ?? item.description),
-          metricLabel: layer.isAdminBoundary ? '边界层级' : item.metricLabel,
-          metricValue: layer.isAdminBoundary ? '省市级' : (realDisplay.metricValue ?? '--'),
-          trendLabel: layer.isAdminBoundary
-            ? '静态矢量边界叠加'
-            : isWeatherLayer
-              ? 'tile manager 已接入'
-              : (realDisplay.trendLabel ??
-                (item.backendStatus === 'sample'
-                  ? '实验 provider 链路已接入'
-                  : item.supportsTime
-                    ? '支持时间维度查询'
-                    : '课题组数据已接入')),
-          statusLabel: layer.isAdminBoundary
-            ? '静态数据'
-            : isWeatherLayer
-              ? '瓦片数据'
-              : (realDisplay.statusLabel ??
-                (item.backendStatus === 'sample'
-                  ? '实验 Provider'
-                  : item.backendStatus === 'placeholder'
-                    ? '占位图层'
-                    : '目录已接入')),
-          updateLabel: layer.isAdminBoundary ? '静态数据' : item.updateLabel,
-          sourceLabel: layer.isAdminBoundary
-            ? '广东省市级边界'
-            : (realDisplay.sourceLabel ?? item.sourceLabel),
-          confidenceLabel: layer.isAdminBoundary
-            ? '置信度 100%'
-            : (realDisplay.confidenceLabel ?? '以课题组数据为准'),
-          accentColor: layer.accentColor ?? item.accentColor,
-          accentGlow: layer.accentGlow ?? item.accentGlow,
-          chipTone: layer.chipTone ?? item.chipTone,
-          availabilityState: layer.isAdminBoundary ? 'ready' : finalAvailability.state,
-          availabilityLabel: layer.isAdminBoundary ? '完整数据' : finalAvailability.label,
-          availabilityDescription: layer.isAdminBoundary
-            ? '静态矢量边界数据，已完整加载。'
-            : (realDisplay.availabilityDescription ?? finalAvailability.description),
-          observationTimeLabel: layer.isAdminBoundary
-            ? '静态数据'
-            : isWeatherLayer
-              ? // 用 ui 钟点，勿用 layersStore.currentHour（0–47 瓦片索引）
-                formatClockHourLabel(uiStore.currentHour)
-              : (realDisplay.observationTimeLabel ??
-                (item.supportsTime ? formatClockHourLabel(uiStore.currentHour) : '--')),
-          missingFieldsLabel: layer.isAdminBoundary
-            ? '无'
-            : (realDisplay.missingFieldsLabel ?? item.runReadinessNotes[0] ?? '无'),
-          hotspots: layer.isAdminBoundary ? [] : (realDisplay.hotspots ?? []),
-          isAdminBoundary: layer.isAdminBoundary,
-          isImported: false,
-          isImportedRaster: Boolean(layer.importedRaster),
-          jobLayer: layer.jobLayer,
-          visible: layer.visible,
-          opacity: layer.opacity,
-          order: layer.order,
-          dataState: layer.dataState,
-          importedRasterOverlayLayerId: rasterPayload?.overlayLayerId,
-          importedRasterBounds: rasterPayload?.bounds,
-          importedBounds: rasterPayload?.bounds,
-          importedRasterSourceCrs: rasterPayload?.sourceCrs,
-          importedRasterNativeStep:
-            typeof rasterPayload?.nativeStep === 'string'
-              ? rasterPayload.nativeStep
-              : rasterPayload?.nativeStep
-                ? `${rasterPayload.nativeStep.value}${rasterPayload.nativeStep.unit === 'hour' ? 'h' : rasterPayload.nativeStep.unit === 'day' ? 'd' : rasterPayload.nativeStep.unit === 'month' ? 'm' : 'yr'}`
-                : undefined,
-          importedRasterEffectiveTime: rasterPayload?.effectiveTimeLabel,
-          importedRasterTimeCount: rasterPayload?.timeList?.length ?? 0,
-          paletteOverride: layer.paletteOverride ?? null,
-          vminOverride: layer.vminOverride ?? null,
-          vmaxOverride: layer.vmaxOverride ?? null,
-          nodataMode: layer.nodataMode ?? null,
-          nodataColor: layer.nodataColor ?? null,
-          runGroupId: layer.runGroupId,
-          runGroupProductTag: layer.runGroupProductTag,
-          runGroupLocked: layer.runGroupLocked,
-        }
-      })
-      .filter((d): d is ActiveLayerDisplay => d !== null)
-  })
+  const activeLayersDisplay = computed<ActiveLayerDisplay[]>(() =>
+    projectActiveLayersDisplay({
+      activeLayers: activeLayers.value,
+      layerLibraryMap: layerLibraryMap.value,
+      runtimeLayerCatalog: runtimeLayerCatalog.value,
+      currentHour: uiStore.currentHour,
+      weatherTileManager,
+      isWeatherEngineLayer,
+    }),
+  )
 
   const selectedLayerDisplay = computed<ActiveLayerDisplay | null>(() => {
     if (!selectedInstanceId.value) return null

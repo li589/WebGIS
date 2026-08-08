@@ -353,6 +353,7 @@ export interface NodeCacheCleanupResponse {
 export function listNodeCaches() {
   return requestJson<NodeCacheListResponse>('/cleanup/node-caches', {
     silent: true,
+    sensitiveGet: true,
     timeoutMs: 60000,
   })
 }
