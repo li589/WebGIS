@@ -151,7 +151,8 @@ export function hasRenderableMapLayerAsset(jobLayer: JobLayerItem | null | undef
 }
 
 const STATIC_LIBRARY_BY_ID = new Map(LAYER_LIBRARY.map((item) => [item.catalogId, item]))
-const CATEGORY_INDEX_BY_ID = new Map(
+/** 目录分类 → 展示顺序索引（layerLibrary 排序使用，需导出供 store 消费） */
+export const CATEGORY_INDEX_BY_ID = new Map(
   LAYER_CATEGORIES.map((category, index) => [category.id, index]),
 )
 

@@ -46,6 +46,7 @@ import {
   buildAvailabilityState,
   buildCatalogFallbackItem,
   buildRuntimeLayerLibraryItem,
+  CATEGORY_INDEX_BY_ID,
   extractLayerHotspots,
   formatClockLabel,
   getCatalogDisplayName,
