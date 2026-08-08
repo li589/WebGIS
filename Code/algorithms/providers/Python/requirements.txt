@@ -13,3 +13,5 @@ loguru
 pydantic
 typing_extensions
 psutil>=5.9.0
+# 栅格输出 preview PNG（output._generate_preview_from_array 依赖）
+matplotlib>=3.8

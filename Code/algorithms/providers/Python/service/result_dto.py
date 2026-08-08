@@ -605,6 +605,13 @@ def _as_file_uri(value: str | None) -> str | None:
     if not value:
         return None
     try:
+        if _looks_like_windows_path(value):
+            # Windows 盘符路径在 Linux 下 Path.is_absolute() 为 False，
+            # 手动构造 file:///D:/... 形式（跨平台一致）
+            normalized = value.replace("\\", "/")
+            if not normalized.startswith("/"):
+                normalized = "/" + normalized
+            return "file://" + normalized
         path = Path(value)
         if not path.is_absolute():
             return None

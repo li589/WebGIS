@@ -8,10 +8,17 @@ import unittest
 class TestGldasOnlineSeedCompile(unittest.TestCase):
     def test_seed_compiles_with_gldas_download_node(self) -> None:
         from app.services.node_template_registry import get_node_template
-        from app.services.workflow_definition_service import get_definition
+        from app.services.workflow_definition_service import (
+            _ensure_dirs,
+            get_definition,
+        )
         from app.services.workflow_graph_compiler import (
             compile_litegraph_to_workflow_definition,
         )
+
+        # 确保 system seeds 已同步到运行时目录（CI 全新 data root 需显式触发，
+        # 否则 get_definition 查不到尚未同步的定义）
+        _ensure_dirs()
 
         tmpl = get_node_template("download/gldas_download")
         self.assertIsNotNone(tmpl)
