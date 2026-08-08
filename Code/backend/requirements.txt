@@ -8,6 +8,8 @@ paramiko>=3.4.0
 smbprotocol>=1.13.0
 google-cloud-storage>=2.14.0
 cryptography>=42.0.0
+# GEE：app.gee.core.src.webgis_gee.gee.context 直接 import ee（earthengine-api）
+earthengine-api>=0.1.390
 httpx>=0.27.0
 # 配置模型：app.core.config / GEE config settings.py 直接依赖
 pydantic-settings>=2.0
