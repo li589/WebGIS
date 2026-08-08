@@ -15,7 +15,7 @@ print(f"Path: {Path(python_exe).resolve()}")
 
 # Check if pip is available
 print("\n[CHECK] pip module...")
-result = subprocess.run([python_exe, "-m", "pip", "--version"], 
+result = subprocess.run([python_exe, "-m", "pip", "--version"],
                        capture_output=True, text=True)
 if result.returncode == 0:
     print(f"[OK] pip available: {result.stdout.strip()}")

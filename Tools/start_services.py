@@ -20,7 +20,7 @@ print("[INFO] Starting FastAPI + Workers + Gateway...")
 print(f"[CMD] {python_exe} {launch_py} start")
 
 # Start all services
-result = subprocess.run([str(python_exe), str(launch_py), "start"], 
+result = subprocess.run([str(python_exe), str(launch_py), "start"],
                        cwd=Path(__file__).parent,
                        env={**os.environ},
                        text=True,
