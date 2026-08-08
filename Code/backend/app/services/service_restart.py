@@ -69,7 +69,11 @@ def schedule_backend_restart(
             "UI backend restart is disabled "
             "(set BACKEND_UI_RESTART_ENABLED=true or use BACKEND_ENV=development)"
         )
-    planned = _normalize_components(components)
+    # Validate caller input for forward-compat, but always restart the full
+    # backend process group (launch.py has no selective subset today).
+    if components is not None:
+        _normalize_components(components)
+    executed = list(DEFAULT_RESTART_COMPONENTS)
     py = str(_python_exe())
     launch_py = str(REPO_ROOT / "launch.py")
     if not Path(launch_py).is_file():
@@ -79,7 +83,9 @@ def schedule_backend_restart(
         try:
             time.sleep(max(0.5, float(delay_seconds)))
             logger.warning(
-                "UI-triggered backend restart starting components=%s", planned
+                "UI-triggered backend restart starting components=%s "
+                "(request subset ignored; always full backend group)",
+                executed,
             )
             # Prefer dedicated launch target that does not touch Docker/Vite.
             cmd = [py, launch_py, "restart", "backend"]
@@ -107,7 +113,11 @@ def schedule_backend_restart(
     threading.Thread(target=_runner, name="ui-backend-restart", daemon=True).start()
     return {
         "accepted": True,
-        "components": planned,
+        "components": executed,
         "delay_seconds": delay_seconds,
-        "message": "Backend restart scheduled (FastAPI + Worker + Beat; Docker/Vite untouched)",
+        "message": (
+            "Backend restart scheduled (always FastAPI + Worker + Beat; "
+            "request components are validated but ignored until selective "
+            "restart is implemented; Docker/Vite untouched)"
+        ),
     }

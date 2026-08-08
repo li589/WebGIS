@@ -1,10 +1,12 @@
 /**
  * Browser-local preferences for settings (not server secrets history).
- * Write API key: localStorage primary, sessionStorage legacy fallback.
+ * Write API key: sessionStorage primary; localStorage only when persist opt-in.
+ * Legacy local-only keys are treated as persist=true on first read (compat).
  */
 
 const WRITE_KEY_LOCAL = 'cgda.backend_write_api_key'
 const WRITE_KEY_SESSION = 'cgda.backend_write_api_key'
+const WRITE_KEY_PERSIST = 'cgda.backend_write_api_key_persist'
 const API_KEY_PREFS = 'cgda.api_key_prefs'
 const SETTINGS_UI = 'cgda.settings_ui'
 
@@ -44,16 +46,39 @@ function safeRemove(storage: Storage, key: string): void {
   }
 }
 
-/** Prefer localStorage; migrate legacy sessionStorage on first read. */
-export function getLocalWriteApiKey(): string | null {
-  const fromLocal = safeGet(localStorage, WRITE_KEY_LOCAL)?.trim()
-  if (fromLocal) return fromLocal
-  const fromSession = safeGet(sessionStorage, WRITE_KEY_SESSION)?.trim()
-  if (fromSession) {
-    safeSet(localStorage, WRITE_KEY_LOCAL, fromSession)
-    return fromSession
+export function isWriteApiKeyPersistEnabled(): boolean {
+  return safeGet(localStorage, WRITE_KEY_PERSIST) === '1'
+}
+
+/** Opt-in: keep write key in localStorage across browser sessions (XSS surface). */
+export function setWriteApiKeyPersistEnabled(on: boolean): void {
+  if (on) {
+    safeSet(localStorage, WRITE_KEY_PERSIST, '1')
+    const current = getLocalWriteApiKey()
+    if (current) safeSet(localStorage, WRITE_KEY_LOCAL, current)
+    return
   }
-  return null
+  safeRemove(localStorage, WRITE_KEY_PERSIST)
+  safeRemove(localStorage, WRITE_KEY_LOCAL)
+}
+
+/**
+ * Prefer sessionStorage. Legacy localStorage keys without persist flag are
+ * migrated and marked persist=true so existing operators keep the remembered key.
+ */
+export function getLocalWriteApiKey(): string | null {
+  const fromSession = safeGet(sessionStorage, WRITE_KEY_SESSION)?.trim()
+  if (fromSession) return fromSession
+
+  const fromLocal = safeGet(localStorage, WRITE_KEY_LOCAL)?.trim()
+  if (!fromLocal) return null
+
+  safeSet(sessionStorage, WRITE_KEY_SESSION, fromLocal)
+  if (!isWriteApiKeyPersistEnabled()) {
+    // Backward compat: prior versions always persisted to localStorage.
+    safeSet(localStorage, WRITE_KEY_PERSIST, '1')
+  }
+  return fromLocal
 }
 
 export function setLocalWriteApiKey(key: string | null): void {
@@ -63,9 +88,12 @@ export function setLocalWriteApiKey(key: string | null): void {
     return
   }
   const trimmed = key.trim()
-  safeSet(localStorage, WRITE_KEY_LOCAL, trimmed)
-  // Keep session mirror for older code paths during transition
   safeSet(sessionStorage, WRITE_KEY_SESSION, trimmed)
+  if (isWriteApiKeyPersistEnabled()) {
+    safeSet(localStorage, WRITE_KEY_LOCAL, trimmed)
+  } else {
+    safeRemove(localStorage, WRITE_KEY_LOCAL)
+  }
 }
 
 export function clearLocalWriteApiKey(): void {

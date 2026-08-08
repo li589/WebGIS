@@ -151,18 +151,30 @@ def create_app() -> FastAPI:
             "development",
         ):
             from app.api.rate_limit import (
+                check_weather_tile_rate_limit,
                 check_write_rate_limit,
                 client_ip,
+                should_rate_limit_weather_tile,
                 should_rate_limit_write,
             )
 
-            if should_rate_limit_write(request.url.path, request.method):
+            path = request.url.path
+            method = request.method
+            if should_rate_limit_write(path, method):
                 if not check_write_rate_limit(client_ip(request)):
                     from fastapi.responses import JSONResponse
 
                     return JSONResponse(
                         status_code=429,
                         content={"detail": "写请求过于频繁，请稍后再试。"},
+                    )
+            if should_rate_limit_weather_tile(path, method):
+                if not check_weather_tile_rate_limit(client_ip(request)):
+                    from fastapi.responses import JSONResponse
+
+                    return JSONResponse(
+                        status_code=429,
+                        content={"detail": "天气瓦片请求过于频繁，请稍后再试。"},
                     )
         return await call_next(request)
 

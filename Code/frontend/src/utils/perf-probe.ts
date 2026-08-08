@@ -32,6 +32,19 @@ export function isPerfEnabled(): boolean {
   return enabledCache
 }
 
+/** Hot-path debugLog gate: `?debug=1` / localStorage `cgda.debug=1`, or perf probe. */
+export function isDebugLogEnabled(): boolean {
+  if (isPerfEnabled()) return true
+  if (typeof window === 'undefined') return false
+  try {
+    if (new URLSearchParams(window.location.search).get('debug') === '1') return true
+    if (window.localStorage?.getItem('cgda.debug') === '1') return true
+  } catch {
+    /* ignore */
+  }
+  return false
+}
+
 /** 测试或运行时强制开关 */
 export function setPerfEnabled(on: boolean): void {
   enabledCache = on

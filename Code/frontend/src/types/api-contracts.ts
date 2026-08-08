@@ -2964,6 +2964,33 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/cleanup/node-caches": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Node Caches
+         * @description 列出工作流节点产物缓存（每个算法模块的目录/大小/文件数/最近修改）。
+         */
+        get: operations["list_node_caches_cleanup_node_caches_get"];
+        put?: never;
+        /**
+         * Cleanup Node Caches
+         * @description 清理工作流节点产物缓存（默认全部；可指定模块名）。
+         *
+         *     安全约束：仅删除 products/ 下的直接子目录，路径白名单校验，
+         *     绝不触碰目录外的任何文件。
+         */
+        post: operations["cleanup_node_caches_cleanup_node_caches_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/remote/servers": {
         parameters: {
             query?: never;
@@ -3113,6 +3140,31 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        /** AboutInfo */
+        AboutInfo: {
+            /** Project Name */
+            project_name: string;
+            /** Version */
+            version: string;
+            /** Description */
+            description: string;
+            /** Tech Stack */
+            tech_stack?: string[];
+            /** Modules */
+            modules?: components["schemas"]["AboutModule"][];
+            /**
+             * Architecture Summary
+             * @default
+             */
+            architecture_summary: string;
+        };
+        /** AboutModule */
+        AboutModule: {
+            /** Name */
+            name: string;
+            /** Description */
+            description: string;
+        };
         /** AlgorithmOutputSpec */
         AlgorithmOutputSpec: {
             /**
@@ -3219,6 +3271,40 @@ export interface components {
             superseded_at: string;
             /** Source */
             source: string;
+        };
+        /**
+         * ApiKeyItem
+         * @description 脱敏 API Key 列表项（GET /config/api-keys）。
+         */
+        ApiKeyItem: {
+            /** Key Name */
+            key_name: string;
+            /** Display Name */
+            display_name: string;
+            /** Description */
+            description?: string | null;
+            /**
+             * Masked Value
+             * @default
+             */
+            masked_value: string;
+            /**
+             * Enabled
+             * @default false
+             */
+            enabled: boolean;
+            /** Source */
+            source?: string | null;
+            /** Has Value */
+            has_value?: boolean | null;
+            /** Created At */
+            created_at?: string | null;
+            /** Updated At */
+            updated_at?: string | null;
+            /** Last Tested At */
+            last_tested_at?: string | null;
+            /** Last Test Status */
+            last_test_status?: string | null;
         };
         /** ApiKeyToggleRequest */
         ApiKeyToggleRequest: {
@@ -3459,6 +3545,111 @@ export interface components {
              */
             lat_offset: number;
         };
+        /** DataCacheEntry */
+        DataCacheEntry: {
+            /** Name */
+            name: string;
+            /** Path */
+            path: string;
+            /** Size Bytes */
+            size_bytes: number;
+            /** Mtime */
+            mtime: number;
+            /** Age Seconds */
+            age_seconds: number;
+        };
+        /** DataCacheOverview */
+        DataCacheOverview: {
+            /** Cache Root */
+            cache_root: string;
+            /** Ttl Seconds */
+            ttl_seconds: number;
+            /** Ttl Unlimited */
+            ttl_unlimited: boolean;
+            /** Entry Count */
+            entry_count: number;
+            /** Total Bytes */
+            total_bytes: number;
+            /** Entries */
+            entries?: components["schemas"]["DataCacheEntry"][];
+            /**
+             * Data Root
+             * @default
+             */
+            data_root: string;
+            /**
+             * Output Root
+             * @default
+             */
+            output_root: string;
+            /** Discovered Datasets */
+            discovered_datasets?: components["schemas"]["DiscoveredDataset"][];
+        };
+        /** DataSourceConfig */
+        DataSourceConfig: {
+            /** Storage Backend */
+            storage_backend: string;
+            /**
+             * Data Root
+             * @default
+             */
+            data_root: string;
+            /**
+             * Output Root
+             * @default
+             */
+            output_root: string;
+            /** Env Data Root */
+            env_data_root?: string | null;
+            /** Env Output Root */
+            env_output_root?: string | null;
+            /** Pending Restart */
+            pending_restart?: boolean | null;
+            /** Ui Restart Enabled */
+            ui_restart_enabled?: boolean | null;
+            /**
+             * Download Source Root
+             * @default
+             */
+            download_source_root: string;
+            /**
+             * Download Real Fetch Enabled
+             * @default false
+             */
+            download_real_fetch_enabled: boolean;
+            /**
+             * Tile Proxy Enabled
+             * @default false
+             */
+            tile_proxy_enabled: boolean;
+            /**
+             * Tile Proxy Cache Ttl Seconds
+             * @default 0
+             */
+            tile_proxy_cache_ttl_seconds: number;
+            minio?: components["schemas"]["MinioPublicConfig"] | null;
+            /** Discovered Datasets */
+            discovered_datasets?: components["schemas"]["DiscoveredDataset"][];
+            /** Open Data Presets */
+            open_data_presets?: {
+                [key: string]: string;
+            };
+            /** Open Data Preset Labels */
+            open_data_preset_labels?: {
+                [key: string]: string;
+            };
+            /** Portal Credentials */
+            portal_credentials?: {
+                [key: string]: components["schemas"]["PortalCredentialPublic"];
+            };
+            /** Remote Layer Data Uris */
+            remote_layer_data_uris?: {
+                [key: string]: unknown;
+            };
+            static_cache?: components["schemas"]["StaticCacheSummary"] | null;
+            /** Workflow Hint */
+            workflow_hint?: string | null;
+        };
         /**
          * DataSourcePathsUpdateRequest
          * @description 更新地理数据根 / 产物根（写入 Code/backend/.env，需重启后端生效）。
@@ -3475,6 +3666,23 @@ export interface components {
              */
             output_root?: string | null;
         };
+        /** DataSourcePathsUpdateResponse */
+        DataSourcePathsUpdateResponse: {
+            /** Data Root */
+            data_root: string;
+            /** Output Root */
+            output_root: string;
+            /** Effective Data Root */
+            effective_data_root: string;
+            /** Effective Output Root */
+            effective_output_root: string;
+            /** Pending Restart */
+            pending_restart: boolean;
+            /** Env Path */
+            env_path: string;
+            /** Message */
+            message: string;
+        };
         /** DiagnosticsReport */
         DiagnosticsReport: {
             /** Status */
@@ -3485,6 +3693,17 @@ export interface components {
             };
             /** Warnings */
             warnings?: string[];
+        };
+        /** DiscoveredDataset */
+        DiscoveredDataset: {
+            /** Name */
+            name: string;
+            /** Path */
+            path: string;
+            /** File Count */
+            file_count?: number | null;
+            /** File Count Truncated */
+            file_count_truncated?: boolean | null;
         };
         /** DocumentCommitBody */
         DocumentCommitBody: {
@@ -3759,10 +3978,64 @@ export interface components {
             /** Display Name */
             display_name?: string | null;
         };
+        /** GeeAccountItem */
+        GeeAccountItem: {
+            /** Account Id */
+            account_id: string;
+            /** Display Name */
+            display_name?: string | null;
+            /** Project Id */
+            project_id?: string | null;
+            /**
+             * Account Type
+             * @default service_account
+             */
+            account_type: string;
+            /**
+             * Enabled
+             * @default true
+             */
+            enabled: boolean;
+            /**
+             * Created At
+             * @default
+             */
+            created_at: string;
+            /**
+             * Updated At
+             * @default
+             */
+            updated_at: string;
+            /** Last Tested At */
+            last_tested_at?: string | null;
+            /** Last Test Status */
+            last_test_status?: string | null;
+        };
         /** GeeAccountToggleRequest */
         GeeAccountToggleRequest: {
             /** Enabled */
             enabled: boolean;
+        };
+        /** GeeRuntimeConfig */
+        GeeRuntimeConfig: {
+            /** Gee Enabled */
+            gee_enabled: boolean;
+            /** Max Parallel Exports */
+            max_parallel_exports: number;
+            /** Max Parallel Uploads */
+            max_parallel_uploads: number;
+            /** Max Parallel Downloads */
+            max_parallel_downloads: number;
+            /** Account Cooldown Seconds */
+            account_cooldown_seconds: number;
+            /** Storage Backend */
+            storage_backend: string;
+            /** Local Storage Root */
+            local_storage_root: string;
+            /** Api Account Management Enabled */
+            api_account_management_enabled: boolean;
+            /** Credentials Encryption Enabled */
+            credentials_encryption_enabled: boolean;
         };
         /**
          * GeeWorkflowRequest
@@ -3795,6 +4068,115 @@ export interface components {
             tags?: {
                 [key: string]: string;
             };
+        };
+        /** GeneralConfig */
+        GeneralConfig: {
+            /** Environment */
+            environment: string;
+            /** Host */
+            host: string;
+            /** Port */
+            port: number;
+            /** Service Name */
+            service_name: string;
+            /**
+             * Data Root
+             * @default
+             */
+            data_root: string;
+            /**
+             * Output Root
+             * @default
+             */
+            output_root: string;
+            /**
+             * Cache Dir
+             * @default
+             */
+            cache_dir: string;
+            /**
+             * Log Dir
+             * @default
+             */
+            log_dir: string;
+            /**
+             * Log Level
+             * @default INFO
+             */
+            log_level: string;
+            /**
+             * Max Active Runs
+             * @default 0
+             */
+            max_active_runs: number;
+            /**
+             * Max Requested Outputs
+             * @default 0
+             */
+            max_requested_outputs: number;
+            /**
+             * Redis Url
+             * @default
+             */
+            redis_url: string;
+            /**
+             * Storage Backend
+             * @default local
+             */
+            storage_backend: string;
+            /**
+             * Reload
+             * @default false
+             */
+            reload: boolean;
+            /** Max Active Weather Tile Runs */
+            max_active_weather_tile_runs?: number | null;
+            /** Weather Cache Ttl Seconds */
+            weather_cache_ttl_seconds?: number | null;
+            /** Weather Refresh Forecast Hours */
+            weather_refresh_forecast_hours?: number | null;
+            /** Cache Default Ttl Seconds */
+            cache_default_ttl_seconds?: number | null;
+            /** Provider Max Hotspots */
+            provider_max_hotspots?: number | null;
+            /** Provider Max Series Points */
+            provider_max_series_points?: number | null;
+            /** Provider Table Chunk Size */
+            provider_table_chunk_size?: number | null;
+            /** Provider Series Chunk Size */
+            provider_series_chunk_size?: number | null;
+            /** Result Inline Max Bytes */
+            result_inline_max_bytes?: number | null;
+            /** Celery Task Soft Time Limit */
+            celery_task_soft_time_limit?: number | null;
+            /** Celery Task Time Limit */
+            celery_task_time_limit?: number | null;
+            /** Celery Task Always Eager */
+            celery_task_always_eager?: boolean | null;
+            /** Cors Origins */
+            cors_origins?: string[] | null;
+            /** Object Store Backend */
+            object_store_backend?: string | null;
+            /** Object Store Public Base */
+            object_store_public_base?: string | null;
+            /** Result Artifact Dir */
+            result_artifact_dir?: string | null;
+            /** Workflow State Dir */
+            workflow_state_dir?: string | null;
+            /** Python Provider Root */
+            python_provider_root?: string | null;
+            /** Python Provider Workspace */
+            python_provider_workspace?: string | null;
+            /** Map Default Longitude */
+            map_default_longitude?: number | null;
+            /** Map Default Latitude */
+            map_default_latitude?: number | null;
+            /** Map Default Zoom */
+            map_default_zoom?: number | null;
+            /** Map Default Tile Source */
+            map_default_tile_source?: string | null;
+            /** Map Aoi Presets */
+            map_aoi_presets?: components["schemas"]["MapAoiPreset"][] | null;
         };
         /** HTTPValidationError */
         HTTPValidationError: {
@@ -3959,11 +4341,85 @@ export interface components {
          * @enum {string}
          */
         LogLevel: "debug" | "info" | "warning" | "error";
+        /** MapAoiPreset */
+        MapAoiPreset: {
+            /** Label */
+            label: string;
+            /** West */
+            west: number;
+            /** South */
+            south: number;
+            /** East */
+            east: number;
+            /** North */
+            north: number;
+        };
         /**
          * MapMode
          * @enum {string}
          */
         MapMode: "2d" | "3d";
+        /** MinioPublicConfig */
+        MinioPublicConfig: {
+            /** Endpoint */
+            endpoint: string;
+            /** Bucket */
+            bucket: string;
+            /**
+             * Secure
+             * @default false
+             */
+            secure: boolean;
+        };
+        /**
+         * NodeCacheCleanupRequest
+         * @description 节点缓存清理请求；names 为空表示全部清理。
+         */
+        NodeCacheCleanupRequest: {
+            /**
+             * Names
+             * @description 要清理的模块名列表；空=全部
+             */
+            names?: string[] | null;
+        };
+        /**
+         * NodeCacheCleanupResponse
+         * @description 节点缓存清理响应。
+         */
+        NodeCacheCleanupResponse: {
+            /** Deleted */
+            deleted: string[];
+            /** Failed */
+            failed: string[];
+            /** Freed Bytes */
+            freed_bytes: number;
+        };
+        /**
+         * NodeCacheEntry
+         * @description 单个算法模块的产物缓存条目。
+         */
+        NodeCacheEntry: {
+            /** Name */
+            name: string;
+            /** Path */
+            path: string;
+            /** Size Bytes */
+            size_bytes: number;
+            /** File Count */
+            file_count: number;
+            /** Modified At */
+            modified_at: string | null;
+        };
+        /**
+         * NodeCacheListResponse
+         * @description 节点缓存清单（不执行清理）。
+         */
+        NodeCacheListResponse: {
+            /** Entries */
+            entries: components["schemas"]["NodeCacheEntry"][];
+            /** Total Bytes */
+            total_bytes: number;
+        };
         /** NodeSpec */
         NodeSpec: {
             /** Node Id */
@@ -4058,6 +4514,49 @@ export interface components {
             required: boolean;
             /** Description */
             description?: string | null;
+        };
+        /** PortalCredentialPublic */
+        PortalCredentialPublic: {
+            /**
+             * Enabled
+             * @default false
+             */
+            enabled: boolean;
+            /**
+             * Auth Type
+             * @default
+             */
+            auth_type: string;
+            /**
+             * Username
+             * @default
+             */
+            username: string;
+            /**
+             * Has Token
+             * @default false
+             */
+            has_token: boolean;
+            /**
+             * Has Password
+             * @default false
+             */
+            has_password: boolean;
+            /** Source */
+            source?: string | null;
+            /** Use For Nsidc */
+            use_for_nsidc?: boolean | null;
+            /** Use Earthdata */
+            use_earthdata?: boolean | null;
+            /** Client Id */
+            client_id?: string | null;
+        };
+        /** PortalCredentialsMapResponse */
+        PortalCredentialsMapResponse: {
+            /** Portal Credentials */
+            portal_credentials: {
+                [key: string]: components["schemas"]["PortalCredentialPublic"];
+            };
         };
         /** RasterCommitBody */
         RasterCommitBody: {
@@ -4185,6 +4684,62 @@ export interface components {
             superseded_at: string;
             /** Source */
             source: string;
+        };
+        /** RemoteStorageProfile */
+        RemoteStorageProfile: {
+            /** Profile Id */
+            profile_id: string;
+            /** Protocol */
+            protocol: string;
+            /**
+             * Host
+             * @default
+             */
+            host: string;
+            /** Port */
+            port?: number | null;
+            /** Username */
+            username?: string | null;
+            /**
+             * Has Secret
+             * @default false
+             */
+            has_secret: boolean;
+            /**
+             * Has Private Key
+             * @default false
+             */
+            has_private_key: boolean;
+            /** Domain */
+            domain?: string | null;
+            /** Extra */
+            extra?: {
+                [key: string]: unknown;
+            };
+            /**
+             * Display Name
+             * @default
+             */
+            display_name: string;
+            /**
+             * Enabled
+             * @default true
+             */
+            enabled: boolean;
+            /**
+             * Created At
+             * @default
+             */
+            created_at: string;
+            /**
+             * Updated At
+             * @default
+             */
+            updated_at: string;
+            /** Last Tested At */
+            last_tested_at?: string | null;
+            /** Last Test Status */
+            last_test_status?: string | null;
         };
         /**
          * RemoteStorageTestRequest
@@ -4387,9 +4942,22 @@ export interface components {
         ServiceRestartRequest: {
             /**
              * Components
-             * @description 默认 fastapi+worker+beat；不允许 docker/frontend
+             * @description Advisory only today: values are validated (fastapi|worker|beat) but the server always restarts the full backend group. docker/frontend are rejected.
              */
             components?: string[] | null;
+        };
+        /** ServiceRestartResponse */
+        ServiceRestartResponse: {
+            /** Accepted */
+            accepted: boolean;
+            /** Components */
+            components: string[];
+            /** Delay Seconds */
+            delay_seconds: number;
+            /** Message */
+            message: string;
+            /** Ui Restart Enabled */
+            ui_restart_enabled: boolean;
         };
         /** SpatialFilter */
         SpatialFilter: {
@@ -4403,6 +4971,19 @@ export interface components {
             region_code?: string | null;
             /** Region Name */
             region_name?: string | null;
+        };
+        /** StaticCacheSummary */
+        StaticCacheSummary: {
+            /** Cache Root */
+            cache_root: string;
+            /** Ttl Seconds */
+            ttl_seconds: number;
+            /** Ttl Unlimited */
+            ttl_unlimited: boolean;
+            /** Entry Count */
+            entry_count: number;
+            /** Total Bytes */
+            total_bytes: number;
         };
         /** StoragePolicy */
         StoragePolicy: {
@@ -4614,6 +5195,38 @@ export interface components {
             /** New Name */
             new_name: string;
         };
+        /** WeatherConfig */
+        WeatherConfig: {
+            /** Default Model */
+            default_model: string;
+            /** Default Model Source */
+            default_model_source?: string | null;
+            /** Sync Domains */
+            sync_domains?: string[];
+            /** Sync Enabled */
+            sync_enabled?: boolean | null;
+            sync_cron?: components["schemas"]["WeatherSyncCron"] | null;
+            /** Supported Models */
+            supported_models?: components["schemas"]["WeatherSupportedModel"][];
+            /** Model In Sync Domains */
+            model_in_sync_domains?: boolean | null;
+            /** Cache Ttl Seconds */
+            cache_ttl_seconds: number;
+            /** Refresh Forecast Hours */
+            refresh_forecast_hours: number;
+            /** Schedule Enabled */
+            schedule_enabled: boolean;
+            /** Default Latitude */
+            default_latitude: number;
+            /** Default Longitude */
+            default_longitude: number;
+            /** Default Place Name */
+            default_place_name: string;
+            /** Max Active Weather Tile Runs */
+            max_active_weather_tile_runs: number;
+            /** Warning */
+            warning?: string | null;
+        };
         /** WeatherLayerRenderHint */
         WeatherLayerRenderHint: {
             /** Layer Id */
@@ -4771,10 +5384,133 @@ export interface components {
             /** Diagnostics */
             diagnostics?: string[];
         };
+        /** WeatherProviderConfigField */
+        WeatherProviderConfigField: {
+            /** Key */
+            key: string;
+            /**
+             * Label
+             * @default
+             */
+            label: string;
+            /**
+             * Field Type
+             * @default string
+             */
+            field_type: string;
+            /**
+             * Required
+             * @default false
+             */
+            required: boolean;
+            /** Default */
+            default?: unknown;
+            /** Description */
+            description?: string | null;
+            /** Options */
+            options?: string[];
+            /** Placeholder */
+            placeholder?: string | null;
+        };
+        /** WeatherProviderItem */
+        WeatherProviderItem: {
+            /** Provider Id */
+            provider_id: string;
+            /** Display Name */
+            display_name: string;
+            /** Provider Type */
+            provider_type: string;
+            /**
+             * Version
+             * @default
+             */
+            version: string;
+            /**
+             * Description
+             * @default
+             */
+            description: string;
+            /** Homepage Url */
+            homepage_url?: string | null;
+            /**
+             * Requires Api Key
+             * @default false
+             */
+            requires_api_key: boolean;
+            /** Supported Capabilities */
+            supported_capabilities?: string[];
+            /**
+             * Priority
+             * @default 0
+             */
+            priority: number;
+            /**
+             * Enabled
+             * @default true
+             */
+            enabled: boolean;
+            status?: components["schemas"]["WeatherProviderStatus"];
+            /** Config Schema */
+            config_schema?: components["schemas"]["WeatherProviderConfigField"][];
+            /** Current Config */
+            current_config?: {
+                [key: string]: unknown;
+            };
+            /** Persisted Config */
+            persisted_config?: {
+                [key: string]: unknown;
+            } | null;
+            /** Last Tested At */
+            last_tested_at?: string | null;
+            /** Last Test Status */
+            last_test_status?: string | null;
+            /**
+             * Is Builtin
+             * @default true
+             */
+            is_builtin: boolean;
+        };
         /** WeatherProviderPriorityRequest */
         WeatherProviderPriorityRequest: {
             /** Priority */
             priority: number;
+        };
+        /** WeatherProviderStatus */
+        WeatherProviderStatus: {
+            /**
+             * Healthy
+             * @default false
+             */
+            healthy: boolean;
+            /**
+             * Circuit State
+             * @default n/a
+             */
+            circuit_state: string;
+            /** Last Error */
+            last_error?: string | null;
+            /** Daily Quota */
+            daily_quota?: number | null;
+            /** Daily Used */
+            daily_used?: number | null;
+            /** Daily Remaining */
+            daily_remaining?: number | null;
+            /**
+             * Cache Hits
+             * @default 0
+             */
+            cache_hits: number;
+            /**
+             * Cache Misses
+             * @default 0
+             */
+            cache_misses: number;
+            /** Metadata */
+            metadata?: {
+                [key: string]: unknown;
+            };
+            /** Enabled */
+            enabled?: boolean | null;
         };
         /** WeatherProviderTestResponse */
         WeatherProviderTestResponse: {
@@ -4805,6 +5541,38 @@ export interface components {
             config?: {
                 [key: string]: unknown;
             } | null;
+        };
+        /** WeatherSupportedModel */
+        WeatherSupportedModel: {
+            /** Id */
+            id: string;
+            /**
+             * Label
+             * @default
+             */
+            label: string;
+            /**
+             * Region
+             * @default
+             */
+            region: string;
+            /**
+             * Update Interval
+             * @default
+             */
+            update_interval: string;
+        };
+        /** WeatherSyncCron */
+        WeatherSyncCron: {
+            /** Minute */
+            minute: string;
+            /** Hour */
+            hour: string;
+            /**
+             * Timezone
+             * @default UTC
+             */
+            timezone: string;
         };
         /**
          * WeatherWorkflowRequest
@@ -8418,7 +9186,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["GeneralConfig"];
                 };
             };
         };
@@ -8438,7 +9206,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["ApiKeyItem"][];
                 };
             };
         };
@@ -8464,7 +9232,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["ApiKeyItem"];
                 };
             };
             /** @description Validation Error */
@@ -8561,7 +9329,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["ApiKeyItem"];
                 };
             };
             /** @description Validation Error */
@@ -8655,7 +9423,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["ApiKeyItem"];
                 };
             };
             /** @description Validation Error */
@@ -8716,7 +9484,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["GeeAccountItem"][];
                 };
             };
         };
@@ -8740,7 +9508,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["GeeAccountItem"];
                 };
             };
             /** @description Validation Error */
@@ -8886,7 +9654,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["GeeRuntimeConfig"];
                 };
             };
         };
@@ -8906,7 +9674,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["WeatherConfig"];
                 };
             };
         };
@@ -8930,7 +9698,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["WeatherConfig"];
                 };
             };
             /** @description Validation Error */
@@ -8961,7 +9729,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["WeatherProviderItem"][];
                 };
             };
             /** @description Validation Error */
@@ -8992,7 +9760,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["WeatherProviderItem"];
                 };
             };
             /** @description Validation Error */
@@ -9027,7 +9795,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["WeatherProviderItem"];
                 };
             };
             /** @description Validation Error */
@@ -9190,7 +9958,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["RemoteStorageProfile"][];
                 };
             };
             /** @description Validation Error */
@@ -9225,7 +9993,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["RemoteStorageProfile"];
                 };
             };
             /** @description Validation Error */
@@ -9420,7 +10188,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["RemoteStorageProfile"];
                 };
             };
             /** @description Validation Error */
@@ -9481,7 +10249,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["DataSourceConfig"];
                 };
             };
         };
@@ -9505,7 +10273,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["DataSourcePathsUpdateResponse"];
                 };
             };
             /** @description Validation Error */
@@ -9538,7 +10306,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["ServiceRestartResponse"];
                 };
             };
             /** @description Validation Error */
@@ -9567,7 +10335,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["DataCacheOverview"];
                 };
             };
         };
@@ -9657,7 +10425,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["PortalCredentialsMapResponse"];
                 };
             };
         };
@@ -9685,7 +10453,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["PortalCredentialsMapResponse"];
                 };
             };
             /** @description Validation Error */
@@ -9716,7 +10484,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["PortalCredentialsMapResponse"];
                 };
             };
             /** @description Validation Error */
@@ -9780,7 +10548,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["AboutInfo"];
                 };
             };
         };
@@ -10479,6 +11247,59 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["CleanupStatsResponse"];
+                };
+            };
+        };
+    };
+    list_node_caches_cleanup_node_caches_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NodeCacheListResponse"];
+                };
+            };
+        };
+    };
+    cleanup_node_caches_cleanup_node_caches_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["NodeCacheCleanupRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NodeCacheCleanupResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };

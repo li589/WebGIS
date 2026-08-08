@@ -45,30 +45,47 @@ from typing import Any
 import anyio
 from fastapi import APIRouter, Depends, HTTPException
 
-from app.api.deps import require_gee_account_management_enabled, require_write_access
+from app.api.deps import (
+    require_config_read_access,
+    require_gee_account_management_enabled,
+    require_write_access,
+)
 from app.services import config_service
 from shared.contracts.config_contracts import (
+    AboutInfo,
     ApiKeyHistoryClearResponse,
     ApiKeyHistoryItem,
+    ApiKeyItem,
     ApiKeyToggleRequest,
     ApiKeyUpdateRequest,
+    DataCacheOverview,
+    DataSourceConfig,
     DataSourcePathsUpdateRequest,
+    DataSourcePathsUpdateResponse,
     GeeAccountCreateRequest,
+    GeeAccountItem,
     GeeAccountToggleRequest,
+    GeeRuntimeConfig,
+    GeneralConfig,
+    PortalCredentialsMapResponse,
     ReloadResultResponse,
     RemoteStorageHistoryClearResponse,
     RemoteStorageHistoryItem,
+    RemoteStorageProfile,
     RemoteStorageTestRequest,
     RemoteStorageTestResponse,
     RemoteStorageToggleRequest,
     RemoteStorageUpsertRequest,
     ServiceRestartRequest,
+    ServiceRestartResponse,
     TestResultResponse,
+    WeatherConfig,
+    WeatherModelUpdateRequest,
+    WeatherProviderItem,
     WeatherProviderPriorityRequest,
     WeatherProviderTestResponse,
     WeatherProviderToggleRequest,
     WeatherProviderUpdateRequest,
-    WeatherModelUpdateRequest,
 )
 
 
@@ -80,7 +97,7 @@ router = APIRouter(prefix="/config", tags=["config"])
 # ── 常规配置 ──────────────────────────────────────────────────────────────────
 
 
-@router.get("/general")
+@router.get("/general", response_model=GeneralConfig)
 async def get_general_config():
     """获取常规配置（脱敏）。"""
     return config_service.get_general_config()
@@ -89,13 +106,21 @@ async def get_general_config():
 # ── API Key 管理 ──────────────────────────────────────────────────────────────
 
 
-@router.get("/api-keys")
+@router.get(
+    "/api-keys",
+    response_model=list[ApiKeyItem],
+    dependencies=[Depends(require_config_read_access)],
+)
 async def list_api_keys():
     """列出所有 API Key（脱敏）。"""
     return config_service.list_api_keys()
 
 
-@router.put("/api-keys/{key_name}", dependencies=[Depends(require_write_access)])
+@router.put(
+    "/api-keys/{key_name}",
+    response_model=ApiKeyItem,
+    dependencies=[Depends(require_write_access)],
+)
 async def update_api_key(key_name: str, request: ApiKeyUpdateRequest):
     """新增或更新 API Key。"""
     if not request.key_value.strip():
@@ -133,7 +158,11 @@ async def test_api_key(key_name: str):
     return TestResultResponse(success=success, message=message)
 
 
-@router.put("/api-keys/{key_name}/toggle", dependencies=[Depends(require_write_access)])
+@router.put(
+    "/api-keys/{key_name}/toggle",
+    response_model=ApiKeyItem,
+    dependencies=[Depends(require_write_access)],
+)
 async def toggle_api_key(key_name: str, request: ApiKeyToggleRequest):
     """启用/禁用 API Key。无值时返回 400；env-only 会物化到 DB。"""
     try:
@@ -154,6 +183,7 @@ async def list_api_key_history(key_name: str):
 
 @router.post(
     "/api-keys/{key_name}/history/{history_id}/restore",
+    response_model=ApiKeyItem,
     dependencies=[Depends(require_write_access)],
 )
 async def restore_api_key_history(key_name: str, history_id: int):
@@ -188,7 +218,11 @@ async def clear_api_key_history(key_name: str):
 # ── GEE 账户管理 ──────────────────────────────────────────────────────────────
 
 
-@router.get("/gee/accounts")
+@router.get(
+    "/gee/accounts",
+    response_model=list[GeeAccountItem],
+    dependencies=[Depends(require_config_read_access)],
+)
 async def list_gee_accounts():
     """列出所有 GEE 账户（脱敏）。"""
     return config_service.list_gee_accounts()
@@ -196,6 +230,7 @@ async def list_gee_accounts():
 
 @router.post(
     "/gee/accounts",
+    response_model=GeeAccountItem,
     dependencies=[
         Depends(require_write_access),
         Depends(require_gee_account_management_enabled),
@@ -293,7 +328,11 @@ async def reload_gee_accounts():
 # ── GEE 运行时配置 ────────────────────────────────────────────────────────────
 
 
-@router.get("/gee/runtime")
+@router.get(
+    "/gee/runtime",
+    response_model=GeeRuntimeConfig,
+    dependencies=[Depends(require_config_read_access)],
+)
 async def get_gee_runtime_config():
     """获取 GEE 运行时配置。"""
     return config_service.get_gee_runtime_config()
@@ -302,7 +341,11 @@ async def get_gee_runtime_config():
 # ── 天气 API 配置 ─────────────────────────────────────────────────────────────
 
 
-@router.get("/weather")
+@router.get(
+    "/weather",
+    response_model=WeatherConfig,
+    dependencies=[Depends(require_config_read_access)],
+)
 async def get_weather_config():
     """获取天气 API 配置。"""
     return config_service.get_weather_config()
@@ -310,12 +353,14 @@ async def get_weather_config():
 
 @router.put(
     "/weather/model",
+    response_model=WeatherConfig,
     dependencies=[Depends(require_write_access)],
 )
 async def update_weather_default_model(request: WeatherModelUpdateRequest):
     """更新全局默认天气模型（SQLite 持久化，立即影响无参 coverage / 瓦片默认 model）。"""
     try:
-        return config_service.set_weather_default_model(request.default_model)
+        config_service.set_weather_default_model(request.default_model)
+        return config_service.get_weather_config()
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e)) from e
 
@@ -323,13 +368,21 @@ async def update_weather_default_model(request: WeatherModelUpdateRequest):
 # ── 天气源 Provider 管理 ──────────────────────────────────────────────────────
 
 
-@router.get("/weather/providers")
+@router.get(
+    "/weather/providers",
+    response_model=list[WeatherProviderItem],
+    dependencies=[Depends(require_config_read_access)],
+)
 async def list_weather_providers(include_disabled: bool = True):
     """列出所有天气源 Provider。"""
     return config_service.list_weather_providers(include_disabled=include_disabled)
 
 
-@router.get("/weather/providers/{provider_id}")
+@router.get(
+    "/weather/providers/{provider_id}",
+    response_model=WeatherProviderItem,
+    dependencies=[Depends(require_config_read_access)],
+)
 async def get_weather_provider(provider_id: str):
     """获取单个天气源 Provider 详情。"""
     result = config_service.get_weather_provider(provider_id)
@@ -342,6 +395,7 @@ async def get_weather_provider(provider_id: str):
 
 @router.put(
     "/weather/providers/{provider_id}",
+    response_model=WeatherProviderItem,
     dependencies=[Depends(require_write_access)],
 )
 async def update_weather_provider(
@@ -442,7 +496,11 @@ async def delete_weather_provider(provider_id: str):
 # ── 远程存储凭证 ──────────────────────────────────────────────────────────────
 
 
-@router.get("/remote-storage")
+@router.get(
+    "/remote-storage",
+    response_model=list[RemoteStorageProfile],
+    dependencies=[Depends(require_config_read_access)],
+)
 async def list_remote_storage_profiles(include_disabled: bool = True):
     return config_service.list_remote_storage_profiles(
         include_disabled=include_disabled
@@ -451,6 +509,7 @@ async def list_remote_storage_profiles(include_disabled: bool = True):
 
 @router.put(
     "/remote-storage/{profile_id}",
+    response_model=RemoteStorageProfile,
     dependencies=[Depends(require_write_access)],
 )
 async def upsert_remote_storage_profile(
@@ -523,6 +582,7 @@ async def list_remote_storage_history(profile_id: str):
 
 @router.post(
     "/remote-storage/{profile_id}/history/{history_id}/restore",
+    response_model=RemoteStorageProfile,
     dependencies=[Depends(require_write_access)],
 )
 async def restore_remote_storage_history(profile_id: str, history_id: int):
@@ -556,7 +616,11 @@ async def clear_remote_storage_history(profile_id: str):
 # ── 数据源配置 ────────────────────────────────────────────────────────────────
 
 
-@router.get("/data-source")
+@router.get(
+    "/data-source",
+    response_model=DataSourceConfig,
+    dependencies=[Depends(require_config_read_access)],
+)
 async def get_data_source_config():
     """获取数据源配置（磁盘扫描放到线程池，避免阻塞事件循环）。"""
     return await anyio.to_thread.run_sync(config_service.get_data_source_config)
@@ -564,6 +628,7 @@ async def get_data_source_config():
 
 @router.put(
     "/data-source/paths",
+    response_model=DataSourcePathsUpdateResponse,
     dependencies=[Depends(require_write_access)],
 )
 async def update_data_source_paths(request: DataSourcePathsUpdateRequest):
@@ -581,6 +646,7 @@ async def update_data_source_paths(request: DataSourcePathsUpdateRequest):
 @router.post(
     "/service/restart",
     status_code=202,
+    response_model=ServiceRestartResponse,
     dependencies=[Depends(require_write_access)],
 )
 async def restart_backend_service(request: ServiceRestartRequest | None = None):
@@ -596,7 +662,11 @@ async def restart_backend_service(request: ServiceRestartRequest | None = None):
         raise HTTPException(status_code=500, detail=str(exc)) from exc
 
 
-@router.get("/data-cache/overview")
+@router.get(
+    "/data-cache/overview",
+    response_model=DataCacheOverview,
+    dependencies=[Depends(require_config_read_access)],
+)
 async def get_data_cache_overview():
     """静态 materialize 缓存概览。"""
     return await anyio.to_thread.run_sync(config_service.get_data_cache_overview_api)
@@ -625,7 +695,11 @@ async def update_open_data_presets(payload: dict[str, Any]):
     return config_service.update_open_data_presets(presets)
 
 
-@router.get("/data-source/portal-credentials")
+@router.get(
+    "/data-source/portal-credentials",
+    response_model=PortalCredentialsMapResponse,
+    dependencies=[Depends(require_config_read_access)],
+)
 async def get_portal_credentials():
     """开放门户凭证（脱敏）。"""
     return config_service.get_portal_credentials_public()
@@ -633,6 +707,7 @@ async def get_portal_credentials():
 
 @router.put(
     "/data-source/portal-credentials/{portal_id}",
+    response_model=PortalCredentialsMapResponse,
     dependencies=[Depends(require_write_access)],
 )
 async def upsert_portal_credential(portal_id: str, payload: dict[str, Any]):
@@ -645,6 +720,7 @@ async def upsert_portal_credential(portal_id: str, payload: dict[str, Any]):
 
 @router.delete(
     "/data-source/portal-credentials/{portal_id}",
+    response_model=PortalCredentialsMapResponse,
     dependencies=[Depends(require_write_access)],
 )
 async def delete_portal_credential(portal_id: str):
@@ -668,7 +744,7 @@ async def update_remote_layer_uris(payload: dict[str, Any]):
 # ── 关于 ──────────────────────────────────────────────────────────────────────
 
 
-@router.get("/about")
+@router.get("/about", response_model=AboutInfo)
 async def get_about_info():
     """获取项目信息。"""
     return config_service.get_about_info()

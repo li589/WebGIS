@@ -30,17 +30,17 @@ export const ANALYSIS_COPY = {
 
   sparseVisualTitle: '暂无图表',
   sparseVisualWeather: '平移地图加载瓦片，或进入点查查看数值。',
-  sparseVisualWorkflow: '运行工作流后，直方/分區/时序图表与表格将显示在此。',
+  sparseVisualWorkflow: '运行工作流后，直方/分区/时序图表与表格将显示在此。',
   sparseVisualStatic: '当前图层无可视化图表；可在样式中调节外观，或在工具中点选缓冲。',
   sparseToolsHint: '进入选择模式并在地图上点选后，可估算缓冲覆盖。',
 
   overviewImportedVector: (geometry: string, count: number) =>
     `本地导入矢量 · ${geometry} · ${count} 个要素`,
-  overviewImportedRaster: '本地导入栅格（GeoTIFF），已集成至地图 overlay。',
+  overviewImportedRaster: '本地导入栅格（GeoTIFF），已叠加到地图。',
   overviewBoundary: '行政区矢量边界仅作空间参考，不作为分析数据集。',
   importedSectionKicker: '导入',
   importedSectionTitle: '本地数据',
-  importedRasterType: '栅格 · GeoTIFF overlay',
+  importedRasterType: '栅格 · GeoTIFF 叠加层',
   metaNativeStep: '原生时间步',
   metaEffectiveTime: '生效时间区间',
   metaTimeSlices: '可用时刻/块',

@@ -1,9 +1,10 @@
 from __future__ import annotations
 
 import logging
+import os
 import secrets
 
-from fastapi import HTTPException, Security, status
+from fastapi import HTTPException, Request, Security, status
 from fastapi.security import APIKeyHeader
 
 from app.core.config import settings
@@ -17,26 +18,53 @@ ALLOWED_ALGORITHM_PREFIXES: tuple[str, ...] = ("algorithms.",)
 # Swagger UI 出现 Authorize 入口；auto_error=False 保持自定义 401/503 语义。
 _api_key_header = APIKeyHeader(name="X-API-Key", auto_error=False)
 
+_LOOPBACK_IPS = frozenset({"127.0.0.1", "::1", "localhost"})
 
-def require_write_access(x_api_key: str | None = Security(_api_key_header)) -> None:
+
+def _dev_auth_bypass_explicit() -> bool:
+    return os.getenv("BACKEND_DEV_AUTH_BYPASS", "").strip().lower() in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }
+
+
+def require_write_access(
+    request: Request,
+    x_api_key: str | None = Security(_api_key_header),
+) -> None:
     """Enforce API-key authentication for write endpoints.
 
     When ``api_keys_enabled`` is True the key is always required.
-    When False we allow an unauthenticated bypass ONLY in development
-    (and only when no key is configured at all), but a configured key
-    is still honoured even when the flag is False.
+
+    Development escape hatch (``api_keys_enabled=False`` + ``environment=development``):
+    unauthenticated writes are allowed only from loopback clients, or when
+    ``BACKEND_DEV_AUTH_BYPASS=true`` is set explicitly (shared-lab override).
+    Remote clients without the flag fall through to normal key checks (fail-closed
+    if no key is configured).
 
     Auth key resolution: env cold-start + DB overlay via EffectiveSecrets
     (``backend_auth``), not Settings alone.
     """
     if not settings.api_keys_enabled and settings.environment == "development":
-        # Dev-only escape hatch — warn so operators notice it in logs.
+        from app.api.rate_limit import client_ip
+
+        ip = client_ip(request)
+        if _dev_auth_bypass_explicit() or ip in _LOOPBACK_IPS:
+            logger.warning(
+                "API-key authentication bypassed for write endpoints "
+                "(api_keys_enabled=False, environment=development, client_ip=%s, "
+                "explicit_bypass=%s). Do NOT use this configuration in production.",
+                ip,
+                _dev_auth_bypass_explicit(),
+            )
+            return
         logger.warning(
-            "API-key authentication is disabled for write endpoints "
-            "(api_keys_enabled=False, environment=development). "
-            "Do NOT use this configuration in production."
+            "Development auth bypass denied for non-loopback client_ip=%s; "
+            "requiring API key (set BACKEND_DEV_AUTH_BYPASS=true to override).",
+            ip,
         )
-        return
 
     from app.services.effective_config import get_backend_auth_key
 
@@ -44,8 +72,8 @@ def require_write_access(x_api_key: str | None = Security(_api_key_header)) -> N
     if not configured_key:
         # Key not configured at all — fail closed.
         logger.error(
-            "API key is not configured but api_keys_enabled=True. "
-            "Rejecting write request to prevent unauthenticated access."
+            "API key is not configured; rejecting write request to prevent "
+            "unauthenticated access."
         )
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
@@ -57,6 +85,11 @@ def require_write_access(x_api_key: str | None = Security(_api_key_header)) -> N
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid API key.",
         )
+
+
+# Sensitive /config GET surfaces (masked keys, paths, portal/remote metadata).
+# Same gate as writes: production needs X-API-Key; development loopback may bypass.
+require_config_read_access = require_write_access
 
 
 def require_gee_account_management_enabled() -> None:

@@ -9,7 +9,7 @@ from app.services.workflow_request_resolver import describe_layer_run_readiness
 class WorkflowRequestResolverTests(unittest.TestCase):
     def test_lab_output_is_exposed_as_available_provider(self) -> None:
         # catalog 演进：lab-output 现为 status=available（非 sample/placeholder），
-        # summary="课题组模型产出按 Inversion_Results 解析"，notes 为数据源路径。
+        # summary="科研模型反演产出已就绪"，notes 为数据源路径。
         # 测试 env 中 LAB_OUTPUT_RASTER 无法解析为真实路径，故 patch 解析器
         # 以验证 catalog 事实（ready + summary/note 文案）。
         with patch(
@@ -20,11 +20,11 @@ class WorkflowRequestResolverTests(unittest.TestCase):
 
         self.assertIsNotNone(readiness)
         self.assertEqual(readiness["run_readiness"], "ready")
-        # catalog summary "课题组模型产出按 Inversion_Results 解析"
+        # catalog summary 已地学化（不再暴露内部目录名）
         summary = readiness["run_readiness_summary"] or ""
         self.assertTrue(
-            "Inversion_Results" in summary,
-            msg=f"summary 应包含 Inversion_Results 关键词，实际为: {summary!r}",
+            "反演产出已就绪" in summary,
+            msg=f"summary 应包含反演产出就绪文案，实际为: {summary!r}",
         )
         # catalog notes 现为数据源路径，校验 Inversion_Results/smap_avg 关键词
         self.assertTrue(

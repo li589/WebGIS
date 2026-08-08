@@ -95,7 +95,7 @@ def test_schedule_ui_backend_restart_accepted(monkeypatch):
         calls.append(components)
         return {
             "accepted": True,
-            "components": ["worker", "beat", "fastapi"],
+            "components": ["fastapi", "worker", "beat"],
             "delay_seconds": delay_seconds,
             "message": "ok",
         }
@@ -110,3 +110,31 @@ def test_schedule_ui_backend_restart_accepted(monkeypatch):
     assert result["accepted"] is True
     assert result["ui_restart_enabled"] is True
     assert calls == [None]
+
+
+def test_schedule_backend_restart_always_reports_full_group(monkeypatch):
+    from app.services import service_restart
+
+    monkeypatch.setattr(service_restart, "ui_restart_allowed", lambda: True)
+    popped: list[list[str]] = []
+
+    class _Popen:
+        def __init__(self, cmd, **kwargs):
+            popped.append(cmd)
+
+    monkeypatch.setattr(service_restart.subprocess, "Popen", _Popen)
+    monkeypatch.setattr(service_restart.time, "sleep", lambda *_a, **_k: None)
+    # Run the deferred thread synchronously
+    def _immediate(target=None, name=None, daemon=None):
+        class _T:
+            def start(self_inner):
+                if target:
+                    target()
+
+        return _T()
+
+    monkeypatch.setattr(service_restart.threading, "Thread", _immediate)
+    result = service_restart.schedule_backend_restart(["fastapi"], delay_seconds=0.5)
+    assert result["components"] == ["fastapi", "worker", "beat"]
+    assert "ignored" in result["message"].lower() or "always" in result["message"].lower()
+    assert popped and popped[0][-2:] == ["restart", "backend"]

@@ -37,7 +37,13 @@ import {
   type MergedWeatherTile,
 } from '../services/weather-tile-utils'
 import type { WindGeoJSON } from '../types/map-geo'
-import { isPerfEnabled, perfIncBump, perfMark, perfNoteViewportFill } from '../utils/perf-probe'
+import {
+  isDebugLogEnabled,
+  isPerfEnabled,
+  perfIncBump,
+  perfMark,
+  perfNoteViewportFill,
+} from '../utils/perf-probe'
 import {
   boostConcurrencyForZoomOut,
   checkWeatherTileMemoryPressure,
@@ -288,6 +294,7 @@ function parseTileCoordsFromCacheKey(cacheKey: string): WeatherTileCoords | null
 /** 轴对齐 bbox 是否与视口相交 — 见 weather-tile-utils.tileBoundsOverlapViewport */
 
 function debugLog(module: string, ...args: unknown[]) {
+  if (!isDebugLogEnabled()) return
   console.log(`[${performance.now().toFixed(1)}ms] [WeatherTileManager:${module}]`, ...args)
 }
 setWeatherTileConcurrencyDebugLog(debugLog)

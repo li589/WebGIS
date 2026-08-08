@@ -114,55 +114,6 @@ class LayerCatalogResponse(BaseModel):
     items: list[LayerDescriptor]
 
 
-class DemoAvailabilityState(str, Enum):
-    empty = "empty"
-    partial = "partial"
-    ready = "ready"
-
-
-class DemoDataStateMode(str, Enum):
-    demo = "demo"
-    placeholder = "placeholder"
-    mixed = "mixed"
-
-
-class DemoFieldAliasMap(BaseModel):
-    metric_value: list[str]
-    hotspot_value: list[str]
-    observation_time: list[str]
-    status_label: list[str]
-
-
-class DemoLayerSnapshot(BaseModel):
-    layer_id: str
-    display_name: str
-    category: str
-    metric_label: str
-    metric_unit: str
-    metric_precision: int
-    update_label: str
-    source_label: str
-    accent_color: str
-    accent_glow: str
-    chip_tone: str
-    data_state_mode: DemoDataStateMode
-    data_state_label: str
-    empty_state_label: str
-    availability_state: DemoAvailabilityState
-    trend_label: str
-    summary: str
-    status_label: str
-    confidence_label: str
-    requested_hour: float
-    field_aliases: DemoFieldAliasMap
-    raw_payload: dict[str, Any]
-
-
-class DemoLayerSnapshotsResponse(BaseModel):
-    requested_hour: float
-    items: list[DemoLayerSnapshot]
-
-
 class SpatialFilter(BaseModel):
     filter_type: str = "bbox"
     bbox: BoundingBox | None = None

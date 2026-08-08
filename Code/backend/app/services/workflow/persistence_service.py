@@ -175,5 +175,11 @@ class WorkflowPersistenceService:
             if isinstance(value, int) and not isinstance(value, bool):
                 return value
         except Exception:
-            pass
+            logger.warning(
+                "get_effective_config_int failed scope=%s key=%s; using default=%s",
+                scope,
+                key,
+                default,
+                exc_info=True,
+            )
         return default

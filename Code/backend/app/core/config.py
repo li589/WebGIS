@@ -41,6 +41,15 @@ def _default_ui_restart_enabled() -> bool:
     return env in {"development", "dev"}
 
 
+def _default_gee_api_account_management_enabled() -> bool:
+    """Production default OFF; development ON unless explicitly overridden."""
+    raw = os.getenv("BACKEND_GEE_API_ACCOUNT_MANAGEMENT_ENABLED")
+    if raw is not None and str(raw).strip() != "":
+        return str(raw).strip().lower() in {"1", "true", "yes", "on"}
+    env = (os.getenv("BACKEND_ENV") or "production").lower()
+    return env in {"development", "dev"}
+
+
 @dataclass(frozen=True)
 class Settings:
     service_name: str = os.getenv(
@@ -317,10 +326,9 @@ class Settings:
         "BACKEND_GEE_CREDENTIALS_DB_PATH",
         str(_RUNTIME_ROOT / "workflow_state" / "gee_credentials.sqlite3"),
     )
-    # 是否允许通过 API 添加 service_account（生产环境建议 False，仅启动时从环境变量加载）
+    # 是否允许通过 API 添加 service_account（生产默认 False；development 默认 True）
     gee_api_account_management_enabled: bool = (
-        os.getenv("BACKEND_GEE_API_ACCOUNT_MANAGEMENT_ENABLED", "true").lower()
-        == "true"
+        _default_gee_api_account_management_enabled()
     )
 
     # ---- 天气工作流引擎配置 ----

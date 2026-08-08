@@ -87,3 +87,74 @@ export type WeatherLayerRenderHint = Schema<'WeatherLayerRenderHint'>
 export type WeatherPointCurrent = Schema<'WeatherPointCurrent'>
 export type WeatherPointHourlyEntry = Schema<'WeatherPointHourlyEntry'>
 export type WeatherPointResponse = Schema<'WeatherPointResponse'>
+
+// ── Config / settings（/config/*）──────────────────────────────────────────
+
+export type ApiKeyItem = Schema<'ApiKeyItem'>
+export type ApiKeyUpdateRequest = Schema<'ApiKeyUpdateRequest'>
+export type ApiKeyHistoryItem = Schema<'ApiKeyHistoryItem'>
+export type ApiKeyHistoryClearResponse = Schema<'ApiKeyHistoryClearResponse'>
+export type ApiKeyToggleRequest = Schema<'ApiKeyToggleRequest'>
+
+export type GeeAccountItem = Schema<'GeeAccountItem'>
+export type GeeAccountCreateRequest = Schema<'GeeAccountCreateRequest'>
+export type GeeAccountToggleRequest = Schema<'GeeAccountToggleRequest'>
+export type GeeRuntimeConfig = Schema<'GeeRuntimeConfig'>
+
+export type GeneralConfig = Schema<'GeneralConfig'>
+export type MapAoiPreset = Schema<'MapAoiPreset'>
+
+export type WeatherConfig = Schema<'WeatherConfig'>
+export type WeatherSyncCron = Schema<'WeatherSyncCron'>
+export type WeatherSupportedModel = Schema<'WeatherSupportedModel'>
+export type WeatherModelUpdateRequest = Schema<'WeatherModelUpdateRequest'>
+export type WeatherProviderStatus = Schema<'WeatherProviderStatus'>
+export type WeatherProviderConfigField = Schema<'WeatherProviderConfigField'>
+/** @deprecated Prefer WeatherProviderConfigField (OpenAPI name). */
+export type WeatherProviderConfigSchema = WeatherProviderConfigField
+export type WeatherProviderItem = Schema<'WeatherProviderItem'>
+export type WeatherProviderUpdateRequest = Schema<'WeatherProviderUpdateRequest'>
+export type WeatherProviderTestResponse = Schema<'WeatherProviderTestResponse'>
+/** @deprecated Prefer WeatherProviderTestResponse. */
+export type WeatherProviderTestResult = WeatherProviderTestResponse
+export type WeatherProviderToggleRequest = Schema<'WeatherProviderToggleRequest'>
+export type WeatherProviderPriorityRequest = Schema<'WeatherProviderPriorityRequest'>
+
+export type DataSourceConfig = Schema<'DataSourceConfig'>
+export type DataSourcePathsUpdateRequest = Schema<'DataSourcePathsUpdateRequest'>
+export type DataSourcePathsUpdateResponse = Schema<'DataSourcePathsUpdateResponse'>
+export type DiscoveredDataset = Schema<'DiscoveredDataset'>
+export type MinioPublicConfig = Schema<'MinioPublicConfig'>
+export type StaticCacheSummary = Schema<'StaticCacheSummary'>
+export type PortalCredentialPublic = Schema<'PortalCredentialPublic'>
+export type PortalCredentialsMapResponse = Schema<'PortalCredentialsMapResponse'>
+export type DataCacheOverview = Schema<'DataCacheOverview'>
+export type DataCacheEntry = Schema<'DataCacheEntry'>
+
+export type ServiceRestartRequest = Schema<'ServiceRestartRequest'>
+export type ServiceRestartResponse = Schema<'ServiceRestartResponse'>
+
+export type AboutInfo = Schema<'AboutInfo'>
+export type AboutModule = Schema<'AboutModule'>
+
+export type TestResultResponse = Schema<'TestResultResponse'>
+/** @deprecated Prefer TestResultResponse. */
+export type TestResult = TestResultResponse
+export type ReloadResultResponse = Schema<'ReloadResultResponse'>
+/** @deprecated Prefer ReloadResultResponse. */
+export type ReloadResult = ReloadResultResponse
+
+export type RemoteStorageProfile = Schema<'RemoteStorageProfile'>
+export type RemoteStorageUpsertRequest = Schema<'RemoteStorageUpsertRequest'>
+export type RemoteStorageTestResponse = Schema<'RemoteStorageTestResponse'>
+/** @deprecated Prefer RemoteStorageTestResponse. */
+export type RemoteStorageTestResult = RemoteStorageTestResponse
+export type RemoteStorageHistoryItem = Schema<'RemoteStorageHistoryItem'>
+export type RemoteStorageHistoryClearResponse = Schema<'RemoteStorageHistoryClearResponse'>
+export type RemoteStorageToggleRequest = Schema<'RemoteStorageToggleRequest'>
+export type RemoteStorageTestRequest = Schema<'RemoteStorageTestRequest'>
+
+export type RuntimeConfigScope = Schema<'RuntimeConfigScope'>
+export type RuntimeConfigPatch = Schema<'RuntimeConfigPatch'>
+export type RuntimeConfigUpdateResponse = Schema<'RuntimeConfigUpdateResponse'>
+export type RuntimeStatusResponse = Schema<'RuntimeStatusResponse'>

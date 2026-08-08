@@ -57,6 +57,12 @@ def _decrypt_blob(ciphertext: str, iv: str, encryption_key: str) -> str:
     if not ciphertext:
         return ""
     if iv == "plain":
+        from app.services.effective_config import secrets_encryption_required
+
+        if secrets_encryption_required():
+            raise RuntimeError(
+                "Refusing plaintext portal credential blob outside development."
+            )
         return base64.b64decode(ciphertext.encode("ascii")).decode("utf-8")
     if not encryption_key:
         raise RuntimeError("Cannot decrypt portal credentials without encryption key")

@@ -74,3 +74,18 @@ export function defaultProductLayerNames(
     name: tags.length === 1 && tag === 'result' ? prefix : `${prefix}_${tag}`,
   }))
 }
+
+/**
+ * 产品标签 → 面向用户的显示名（单一事实来源）。
+ * 内部 productTag 仍用 SM/VOD/OMEGA 原文（算法/文件名标识），
+ * 仅展示层经此映射为「缩写 + 中文说明」。
+ */
+export const PRODUCT_TAG_LABELS: Record<string, string> = {
+  SM: 'SM（土壤湿度）',
+  VOD: 'VOD（植被光学厚度）',
+  OMEGA: 'ω（植被光学厚度）',
+}
+
+export function productTagLabel(tag: string): string {
+  return PRODUCT_TAG_LABELS[tag] ?? tag
+}

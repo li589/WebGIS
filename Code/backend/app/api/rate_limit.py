@@ -47,9 +47,15 @@ _write_limiter = SlidingWindowRateLimiter(
     timedelta(minutes=1),
 )
 
-# 需限流的写路径前缀
-_WRITE_LIMITED_PREFIXES = ("/config", "/import")
+# 需限流的写路径前缀（含 workflow 提交/取消/重试，防容量池滥用）
+_WRITE_LIMITED_PREFIXES = ("/config", "/import", "/workflow-runs")
 _WRITE_METHODS = ("POST", "PUT", "DELETE", "PATCH")
+
+# 天气瓦片 GET：公开读面，宽松 per-IP 限流（防上游/CPU 放大）
+_tile_limiter = SlidingWindowRateLimiter(
+    int(os.getenv("BACKEND_WEATHER_TILE_RATE_LIMIT_PER_MINUTE", "240")),
+    timedelta(minutes=1),
+)
 
 
 def client_ip(request) -> str:  # type: ignore[no-untyped-def]
@@ -77,9 +83,24 @@ def should_rate_limit_write(path: str, method: str) -> bool:
     return any(path == p or path.startswith(p + "/") for p in _WRITE_LIMITED_PREFIXES)
 
 
+def should_rate_limit_weather_tile(path: str, method: str) -> bool:
+    """公开天气瓦片 GET 限流。"""
+    if method != "GET":
+        return False
+    return path == "/weather/tiles" or path.startswith("/weather/tiles/")
+
+
 def check_write_rate_limit(ip: str) -> bool:
     """返回 True 表示放行，False 表示超阈。"""
     allowed = _write_limiter.check(ip)
     if not allowed:
         logger.warning("写接口限流触发 ip=%s", ip)
+    return allowed
+
+
+def check_weather_tile_rate_limit(ip: str) -> bool:
+    """返回 True 表示放行，False 表示超阈。"""
+    allowed = _tile_limiter.check(ip)
+    if not allowed:
+        logger.warning("天气瓦片限流触发 ip=%s", ip)
     return allowed

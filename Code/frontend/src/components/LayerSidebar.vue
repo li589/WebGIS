@@ -1127,7 +1127,7 @@ type ActiveLayerDisplayLike = {
                       {{ weatherSourceQualityHint(item.catalogId) }}
                     </p>
                     <p v-else-if="weatherSourceSparseHint(item.catalogId)" class="src-sparse-hint">
-                      点查可用；瓦片将回落 dense 源（Open-Meteo）
+                      点查可用；瓦片将回落到稠密数据源（Open-Meteo）
                     </p>
                     <p
                       v-else-if="

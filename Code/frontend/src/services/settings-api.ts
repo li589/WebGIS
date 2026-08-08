@@ -248,6 +248,7 @@ export interface DataSourcePathsUpdateResponse {
 
 export interface ServiceRestartResponse {
   accepted: boolean
+  /** Always fastapi+worker+beat today; request subset is advisory only. */
   components: string[]
   delay_seconds: number
   message: string
@@ -329,7 +330,8 @@ async function settingsFetch<T>(path: string, init?: RequestInit): Promise<T> {
   if (method !== 'GET' && method !== 'HEAD' && init?.body != null) {
     headers['Content-Type'] = headers['Content-Type'] ?? 'application/json'
   }
-  headers = withWriteAuthHeaders(headers, method)
+  // Settings GETs include sensitive surfaces (/api-keys, paths, portal…); attach key.
+  headers = withWriteAuthHeaders(headers, method, true)
 
   const controller = new AbortController()
   const timeoutId = window.setTimeout(() => controller.abort(), 15_000)

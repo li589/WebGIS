@@ -93,7 +93,7 @@ const editableParams = computed<EditableParam[]>(() => [
     max: 7200,
     unit: '秒',
     group: '工作流与并发',
-    description: '任务软时间限制，超时后抛 SoftTimeLimitExceeded',
+    description: '任务软时间限制，超时后任务将被终止',
   },
   {
     key: 'celery_task_time_limit',

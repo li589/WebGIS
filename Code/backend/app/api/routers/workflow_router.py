@@ -57,13 +57,10 @@ _events_poll_limiter = EventsPollRateLimiter(
 
 
 def _get_client_ip(request: Request) -> str:
-    forwarded = request.headers.get("x-forwarded-for")
-    if forwarded:
-        return forwarded.split(",")[0].strip()
-    real_ip = request.headers.get("x-real-ip")
-    if real_ip:
-        return real_ip
-    return request.client.host if request.client else "unknown"
+    """Reuse write-limiter IP policy (honor BACKEND_TRUST_PROXY only)."""
+    from app.api.rate_limit import client_ip
+
+    return client_ip(request)
 
 
 @router.post(

@@ -46,16 +46,53 @@ class RuntimeSnapshot:
 _snapshot = RuntimeSnapshot()
 
 
+# AES-GCM 256-bit key encoded as 64 hex chars (shared master key for GEE / API keys /
+# weather providers / remote storage / portal credentials — blast radius if leaked).
+_ENCRYPTION_KEY_HEX_LEN = 64
+
+
 def secrets_encryption_required() -> bool:
     env = (settings.environment or "").lower()
     return env not in {"development", "dev", "test", "testing"}
 
 
+def validate_encryption_key_format(key: str) -> None:
+    """Require 32-byte AES key as 64 lowercase/uppercase hex chars."""
+    raw = (key or "").strip()
+    if len(raw) != _ENCRYPTION_KEY_HEX_LEN:
+        raise RuntimeError(
+            "BACKEND_GEE_CREDENTIALS_ENCRYPTION_KEY must be exactly 64 hex characters "
+            f"(32 bytes); got length={len(raw)}."
+        )
+    try:
+        key_bytes = bytes.fromhex(raw)
+    except ValueError as exc:
+        raise RuntimeError(
+            "BACKEND_GEE_CREDENTIALS_ENCRYPTION_KEY is not valid hexadecimal."
+        ) from exc
+    if len(key_bytes) != 32:
+        raise RuntimeError(
+            "BACKEND_GEE_CREDENTIALS_ENCRYPTION_KEY must decode to 32 bytes."
+        )
+
+
+def refuse_empty_iv_outside_development(iv_b64: str | None) -> None:
+    """Block treating empty-IV blobs as plaintext when encryption is mandatory."""
+    if iv_b64:
+        return
+    if secrets_encryption_required():
+        raise RuntimeError(
+            "Refusing empty-IV secret blob outside development "
+            "(plaintext legacy rows are not allowed when encryption is required)."
+        )
+
+
 def assert_encryption_policy() -> None:
-    """非 development 环境缺少加密 key 时 fail-fast。"""
+    """非 development 环境缺少加密 key 时 fail-fast；有 key 时校验 hex 形态。"""
     global _secrets_insecure
     key = (settings.gee_credentials_encryption_key or "").strip()
     if key:
+        validate_encryption_key_format(key)
         _secrets_insecure = False
         return
     if secrets_encryption_required():
@@ -66,7 +103,9 @@ def assert_encryption_policy() -> None:
     _secrets_insecure = True
     logger.error(
         "Secrets encryption key is not set; storing plaintext is allowed only in development. "
-        "Set BACKEND_GEE_CREDENTIALS_ENCRYPTION_KEY for production."
+        "Set BACKEND_GEE_CREDENTIALS_ENCRYPTION_KEY for production. "
+        "Note: the same key encrypts GEE SA JSON, API keys, weather provider secrets, "
+        "remote-storage credentials, and portal tokens (shared blast radius)."
     )
 
 

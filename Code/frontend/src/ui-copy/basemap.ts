@@ -24,10 +24,10 @@ export function basemapStyleLabel(style: string): string {
 /** 工具栏源 pill 短标签（可读，非单字母） */
 const SOURCE_SHORT: Record<string, string> = {
   'esri-terrain': 'Esri图',
-  'esri-hillshade': 'Esri晕',
-  'opentopo-terrain': 'OTM',
+  'esri-hillshade': 'Esri 晕渲',
+  'opentopo-terrain': 'OpenTopoMap',
   'tianditu-ter': '天地',
-  'osm-hot': 'OSM热',
+  'osm-hot': 'OSM 热区',
 }
 
 const PROVIDER_SHORT: Record<string, string> = {
@@ -36,7 +36,7 @@ const PROVIDER_SHORT: Record<string, string> = {
   bing: 'Bing',
   esri: 'Esri',
   osm: 'OSM',
-  opentopo: 'OTM',
+  opentopo: 'OpenTopoMap',
   carto: 'CARTO',
   tianditu: '天地',
   baidu: '百度',

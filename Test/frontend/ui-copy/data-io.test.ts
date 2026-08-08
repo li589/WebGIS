@@ -39,8 +39,8 @@ describe('data copy + terrain pill shorts', () => {
 
   it('disambiguates terrain Esri pills', () => {
     expect(basemapProviderShort('esri-terrain', 'Esri')).toBe('Esri图')
-    expect(basemapProviderShort('esri-hillshade', 'Esri')).toBe('Esri晕')
-    expect(basemapProviderShort('opentopo-terrain', 'OpenTopo')).toBe('OTM')
+    expect(basemapProviderShort('esri-hillshade', 'Esri')).toBe('Esri 晕渲')
+    expect(basemapProviderShort('opentopo-terrain', 'OpenTopo')).toBe('OpenTopoMap')
     expect(basemapProviderShort('tianditu-ter', 'Tianditu')).toBe('天地')
   })
 })

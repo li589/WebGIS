@@ -97,6 +97,64 @@ def _path_methods(paths: dict[str, Any]) -> dict[str, list[str]]:
     return result
 
 
+def _schema_ref_token(node: Any) -> str | None:
+    """Extract a stable $ref / type token from requestBody or response content."""
+    if not isinstance(node, dict):
+        return None
+    if "$ref" in node:
+        return str(node["$ref"])
+    content = node.get("content")
+    if isinstance(content, dict):
+        for media in content.values():
+            if not isinstance(media, dict):
+                continue
+            schema = media.get("schema")
+            if isinstance(schema, dict):
+                if "$ref" in schema:
+                    return str(schema["$ref"])
+                if "type" in schema:
+                    return f"type:{schema.get('type')}"
+    schema = node.get("schema")
+    if isinstance(schema, dict):
+        if "$ref" in schema:
+            return str(schema["$ref"])
+        if "type" in schema:
+            return f"type:{schema.get('type')}"
+    return None
+
+
+def _operation_fingerprint(op: dict[str, Any]) -> dict[str, Any]:
+    """Shallow structural fingerprint (params + body/response refs), not full schema."""
+    params = []
+    for p in op.get("parameters") or []:
+        if not isinstance(p, dict):
+            continue
+        # Resolve inline only; skip unresolved $ref parameter objects lightly
+        if "$ref" in p:
+            params.append({"$ref": p["$ref"]})
+            continue
+        params.append(
+            {
+                "name": p.get("name"),
+                "in": p.get("in"),
+                "required": bool(p.get("required", False)),
+            }
+        )
+    params.sort(key=lambda x: (str(x.get("in")), str(x.get("name")), str(x.get("$ref"))))
+    responses: dict[str, str | None] = {}
+    for code, resp in (op.get("responses") or {}).items():
+        if str(code) not in {"200", "201", "202", "204", "400", "401", "403", "422"}:
+            continue
+        responses[str(code)] = _schema_ref_token(resp)
+    return {
+        "operationId": op.get("operationId"),
+        "parameters": params,
+        "requestBody": _schema_ref_token(op.get("requestBody") or {}),
+        "responses": dict(sorted(responses.items())),
+        "security": op.get("security"),
+    }
+
+
 def _diff_paths(live: dict[str, Any], committed: dict[str, Any]) -> list[str]:
     issues: list[str] = []
     live_methods = _path_methods(live)
@@ -120,6 +178,15 @@ def _diff_paths(live: dict[str, Any], committed: dict[str, Any]) -> list[str]:
             issues.append(
                 f"{path}: method mismatch live={live_methods[path]} committed={committed_methods[path]}"
             )
+            continue
+        for method in live_methods[path]:
+            live_fp = _operation_fingerprint(live[path].get(method) or {})
+            committed_fp = _operation_fingerprint(committed[path].get(method) or {})
+            if live_fp != committed_fp:
+                issues.append(
+                    f"{path} {method}: operation fingerprint mismatch "
+                    f"(params/body/response/security/operationId)"
+                )
 
     return issues
 
@@ -144,7 +211,10 @@ def main() -> int:
         return 2
 
     if not issues:
-        print("OK: critical OpenAPI paths match committed frontend/openapi.json")
+        print(
+            "OK: critical OpenAPI paths + operation fingerprints match "
+            "committed frontend/openapi.json"
+        )
         return 0
 
     print("OpenAPI drift detected on critical paths:", file=sys.stderr)

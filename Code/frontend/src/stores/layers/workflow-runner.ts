@@ -30,6 +30,8 @@ import { normalizeWorkflowProgress } from './workflow-progress'
 import { resolveRestoreWorkflowBridge as resolveRestoreWorkflowBridgeFromCatalog } from './restore-workflow-bridge'
 import { claimOrphanWorkflowRun, isSubmitTimeoutError } from '../../utils/workflow-submit-reconcile'
 import { localizeWorkflowErrorMessage } from '../../utils/workflow-error-messages'
+import { productTagLabel } from '../../utils/workflow-expected-outputs'
+import { isDebugLogEnabled } from '../../utils/perf-probe'
 import { WORKFLOW_COPY } from '../../ui-copy/workflow'
 import type {
   ActiveLayer,
@@ -39,6 +41,7 @@ import type {
 } from './types'
 
 function debugLog(module: string, ...args: unknown[]) {
+  if (!isDebugLogEnabled()) return
   console.log(`[${performance.now().toFixed(1)}ms] [LayersStore:${module}]`, ...args)
 }
 
@@ -566,7 +569,7 @@ export function createWorkflowRunner(deps: WorkflowRunnerDeps) {
 
     const created = deps.createRunLayerGroup({
       title: options.title || tracked?.name || bridge.title || '工作流运行',
-      targets: tags.map((tag) => ({ name: tag, productTag: tag })),
+      targets: tags.map((tag) => ({ name: productTagLabel(tag), productTag: tag })),
       sourceLayerId,
       workflowId,
       memberCatalogIds,

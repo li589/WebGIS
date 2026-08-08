@@ -51,7 +51,7 @@
         "Ecological_Vegetation/NDVI/VIIRS"
       ]
     },
-    "run_readiness_summary": "NDVI 基础数据（按实盘 NDVIday/VIIRS 解析）",
+    "run_readiness_summary": "植被指数基础数据已就绪（VIIRS 逐月 NDVI）",
     "run_readiness_notes": [
       "数据源优先: Ecological_Vegetation/NDVI/NDVIday 或 VIIRS；预处理 GeoTIFF 目录 VIIRS_9km_tif 可选"
     ],
@@ -110,9 +110,9 @@
         "Ecological_Vegetation/Biomass/ESACCI-BIOMASS-L4-AGB-MERGED-100m-2020-fv6.0.nc"
       ]
     },
-    "run_readiness_summary": "全国生物量数据源已对齐 Ecological_Vegetation/Biomass",
+    "run_readiness_summary": "全国地上生物量数据已就绪（ESA CCI BIOMASS L4）",
     "run_readiness_notes": [
-      "数据源: Ecological_Vegetation/Biomass (BIOMASS_ESACCI)"
+      "数据源: ESA CCI BIOMASS L4 地上生物量"
     ],
     "data_owner": "CAS",
     "temporal_coverage": "2020 Baseline",
@@ -169,9 +169,9 @@
         "Ecological_Vegetation/LandCover/MCD12Q1_2021.tif"
       ]
     },
-    "run_readiness_summary": "MODIS 土地覆盖数据源已对齐",
+    "run_readiness_summary": "MODIS 土地覆盖数据已就绪（MCD12Q1）",
     "run_readiness_notes": [
-      "数据源: Ecological_Vegetation/LandCover (LANDCOVER_MODIS)"
+      "数据源: MODIS MCD12Q1 土地覆盖"
     ],
     "data_owner": "NASA LP DAAC",
     "temporal_coverage": "2001 to 2022 (Annual)",
@@ -227,9 +227,9 @@
         "Ecological_Vegetation/LandCover/CLCD_v01_1997.tif"
       ]
     },
-    "run_readiness_summary": "CLCD 土地覆盖数据源已对齐",
+    "run_readiness_summary": "CLCD 中国土地覆盖数据已就绪",
     "run_readiness_notes": [
-      "数据源: Ecological_Vegetation/LandCover/CLCD_v01_1997.tif (LANDCOVER_CLCD)"
+      "数据源: CLCD 中国土地覆盖（1997）"
     ],
     "data_owner": "Wuhan University",
     "temporal_coverage": "1985 to 2022 (Annual)",
@@ -284,9 +284,9 @@
         "Socio_Economic/HumanFootprint"
       ]
     },
-    "run_readiness_summary": "人类足迹指数数据源已对齐",
+    "run_readiness_summary": "人类足迹指数数据已就绪（HFP）",
     "run_readiness_notes": [
-      "数据源: Socio_Economic/HumanFootprint (HUMAN_FOOTPRINT)"
+      "数据源: 人类足迹指数 HFP"
     ],
     "data_owner": "WCS / SEDAC",
     "temporal_coverage": "2020 Global HFP Release",
@@ -343,9 +343,9 @@
         "Geological/DEM/ETOPO_2022"
       ]
     },
-    "run_readiness_summary": "ETOPO/DEM 数据源已对齐 Geological/DEM",
+    "run_readiness_summary": "全球地形高程数据已就绪（ETOPO1）",
     "run_readiness_notes": [
-      "数据源: Geological/DEM/ETOPO_2022 (DEM_SRTM)"
+      "数据源: ETOPO1 全球地形高程"
     ],
     "data_owner": "NOAA NCEI",
     "temporal_coverage": "Static Topography Baseline",
@@ -402,9 +402,9 @@
         "Geological/DEM/GEBCO_2024.nc"
       ]
     },
-    "run_readiness_summary": "GEBCO DEM 数据源已对齐",
+    "run_readiness_summary": "海底地形数据已就绪（GEBCO 2024）",
     "run_readiness_notes": [
-      "数据源: Geological/DEM/GEBCO_2024.nc"
+      "数据源: GEBCO 2024 海底地形"
     ],
     "data_owner": "GEBCO Consortium",
     "temporal_coverage": "2023 Release",
@@ -413,7 +413,7 @@
   {
     "layer_id": "smap-sm-ts",
     "dataset_key": "smap_sm_ts_dec2025",
-    "display_name": "SMAP 土壤湿度时序 (2025.12)",
+    "display_name": "SMAP 土壤湿度时序（2025-12）",
     "description": "SMAP L3 9km 逐日土壤湿度时序产品(2025年12月)，包含标准误差与质量控制标志。",
     "category": "research-group",
     "sub_category": "模型输入",
@@ -437,7 +437,7 @@
     },
     "style": {
       "palette": "soil-moisture-ramp",
-      "unit_label": "cm³/cm³",
+      "unit_label": "m³/m³",
       "opacity": 0.82
     },
     "capabilities": {
@@ -462,9 +462,9 @@
         "Soil_Moisture/SMAP_Origin_Data"
       ]
     },
-    "run_readiness_summary": "SMAP L3 时序数据源已对齐 Soil_Moisture/SMAP",
+    "run_readiness_summary": "SMAP L3 逐日土壤湿度时序已就绪（2025 年 12 月）",
     "run_readiness_notes": [
-      "数据源: Soil_Moisture/SMAP (SMAP_L3；当前盘上为 2023-01 样本集)"
+      "数据源: SMAP L3 土壤湿度（2025 年 12 月）"
     ],
     "data_owner": "Lab",
     "temporal_coverage": "2025-12-01 to 2025-12-31 (31 days)",
@@ -473,7 +473,7 @@
   {
     "layer_id": "sm-dec2025",
     "dataset_key": "sm_multisource_dec2025",
-    "display_name": "多源融合土壤湿度 (2025.12)",
+    "display_name": "SMAP 土壤湿度（2025-12）",
     "description": "融合 SMAP、FY-3D 与站点观测的 2025 年 12 月高精度日尺度土壤湿度融合网格。",
     "category": "research-group",
     "sub_category": "模型输入",
@@ -497,7 +497,7 @@
     },
     "style": {
       "palette": "soil-moisture-ramp",
-      "unit_label": "cm³/cm³",
+      "unit_label": "m³/m³",
       "opacity": 0.8
     },
     "capabilities": {
@@ -521,7 +521,7 @@
         "Soil_Moisture/Fused_202512"
       ]
     },
-    "run_readiness_summary": "多源融合土壤湿度按实盘 SMAP_Soil_VOD_SM 解析",
+    "run_readiness_summary": "SMAP 土壤湿度反演数据已就绪（2025 年 12 月）",
     "run_readiness_notes": [
       "数据源优先: Soil_Moisture/SMAP_Soil_VOD_SM（融合 SM/VOD mat）"
     ],
@@ -584,7 +584,7 @@
     },
     "run_readiness_summary": "待确认 FY MWRI 原始数据是否齐全",
     "run_readiness_notes": [
-      "数据源: Soil_Moisture/FY3B 或 FY3D（需原始 MWRI HDF/TB）"
+      "数据源: 风云三号 MWRI 亮温原始数据"
     ]
   },
   {
@@ -640,15 +640,15 @@
         "Station_Observation/CASMOS"
       ]
     },
-    "run_readiness_summary": "站点土壤湿度按 Station_Observation 解析",
+    "run_readiness_summary": "站点土壤湿度观测数据已就绪（ISMN/CASMOS）",
     "run_readiness_notes": [
-      "数据源: Station_Observation (ISMN/CASMOS)"
+      "数据源: ISMN/CASMOS 站点观测"
     ]
   },
   {
     "layer_id": "lab-output",
     "dataset_key": "lab_model_runs",
-    "display_name": "课题组模型模拟结果",
+    "display_name": "科研模型模拟结果",
     "description": "实验室自研水文/植被/陆面过程模型运行产出，包含高时空分辨率格点反演数据。",
     "category": "research-group",
     "sub_category": "模型输出",
@@ -696,7 +696,7 @@
         "Model_Outputs/Lab_Daily"
       ]
     },
-    "run_readiness_summary": "课题组模型产出按 Inversion_Results 解析",
+    "run_readiness_summary": "科研模型反演产出已就绪",
     "run_readiness_notes": [
       "数据源优先: Inversion_Results/smap_avg"
     ],
@@ -706,7 +706,7 @@
   {
     "layer_id": "soil-ddca",
     "dataset_key": "soil_moisture_ddca",
-    "display_name": "DCA/SCA 校验土壤湿度",
+    "display_name": "土壤生态 DDCA（双通道反演，2015-2022）",
     "description": "基于双通道算法(DCA)与单通道算法(SCA)反演校验的高精度土壤湿度融合参考数据。",
     "category": "research-group",
     "sub_category": "辅助数据",
@@ -730,7 +730,7 @@
     },
     "style": {
       "palette": "soil-moisture-ramp",
-      "unit_label": "cm³/cm³",
+      "unit_label": "m³/m³",
       "opacity": 0.8
     },
     "capabilities": {
@@ -758,9 +758,9 @@
         "Soil_Moisture/DDCA/H"
       ]
     },
-    "run_readiness_summary": "DDCA 校验数据按 Soil_Moisture/DDCA 解析",
+    "run_readiness_summary": "DDCA 双通道反演校验数据已就绪",
     "run_readiness_notes": [
-      "数据源: Soil_Moisture/DDCA"
+      "数据源: DDCA 双通道反演校验数据"
     ],
     "data_owner": "Lab",
     "temporal_coverage": "2023-01 to Present"
@@ -816,9 +816,9 @@
         "Inversion_Results/Forest_Ratio_9KM_2020.mat"
       ]
     },
-    "run_readiness_summary": "森林覆盖率按 Inversion_Results 解析",
+    "run_readiness_summary": "森林覆盖率数据已就绪（9km，2020）",
     "run_readiness_notes": [
-      "数据源: Inversion_Results/Forest_Ratio_9KM_2020.mat"
+      "数据源: 全球 9km 森林覆盖比例（2020）"
     ],
     "data_owner": "Lab",
     "temporal_coverage": "Static Auxiliary Baseline"
@@ -827,7 +827,7 @@
     "layer_id": "landscape-metrics-9km",
     "dataset_key": "landscape_metrics_9km",
     "display_name": "景观斑块指数 (9km)",
-    "description": "9km 网格尺度景观异质性与斑块斑快破碎化指数网格，用于空间异质性校正。",
+    "description": "9km 网格尺度景观异质性与斑块破碎化指数网格，用于空间异质性校正。",
     "category": "research-group",
     "sub_category": "辅助数据",
     "source_type": "algorithm_output",
@@ -876,7 +876,7 @@
     },
     "run_readiness_summary": "景观斑块指数按 Inversion_Results 解析",
     "run_readiness_notes": [
-      "数据源: Inversion_Results/Landscape_Metrics_LandOnly_9KM_2020.mat"
+      "数据源: 景观多样性指数 SHDI（9km，2020）"
     ],
     "data_owner": "Lab",
     "temporal_coverage": "Static Auxiliary Baseline"

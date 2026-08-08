@@ -16,5 +16,5 @@ export const BRAND = {
   eyebrow: envTrim('VITE_BRAND_EYEBROW') ?? 'CGDA',
 } as const
 
-/** 侧栏/分类机构叙事标签（默认「课题组」） */
-export const ORG_LABEL = envTrim('VITE_ORG_LABEL') ?? '课题组'
+/** 侧栏/分类机构叙事标签（默认「科研」） */
+export const ORG_LABEL = envTrim('VITE_ORG_LABEL') ?? '科研'

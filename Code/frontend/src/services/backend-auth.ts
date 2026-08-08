@@ -30,13 +30,18 @@ export function hasBackendWriteApiKey(): boolean {
   return hasLocalWriteApiKey()
 }
 
-/** Attach X-Api-Key for mutating requests when a write key is available. */
+/**
+ * Attach X-Api-Key when a write key is available.
+ * @param forSensitiveGet — also attach on GET/HEAD (settings sensitive reads).
+ */
 export function withWriteAuthHeaders(
   headers: Record<string, string> = {},
   method = 'GET',
+  forSensitiveGet = false,
 ): Record<string, string> {
   const upper = method.toUpperCase()
-  if (upper === 'GET' || upper === 'HEAD' || upper === 'OPTIONS') {
+  const isRead = upper === 'GET' || upper === 'HEAD' || upper === 'OPTIONS'
+  if (isRead && !forSensitiveGet) {
     return headers
   }
   const key = getBackendWriteApiKey()

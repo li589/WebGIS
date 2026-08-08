@@ -20,6 +20,7 @@ export type LayerContextActionId =
   | 'exportTif'
   | 'viewReport'
   | 'runWorkflow'
+  | 'runWorkflowNoCache'
   | 'dissolveGroup'
   | 'toggleGroupVisible'
   | 'removeGroup'

@@ -13,6 +13,7 @@ import { useLayersStore } from '../../stores/layers'
 import { useWorkflowDefinitionsStore } from '../../stores/workflow-definitions'
 import {
   defaultProductLayerNames,
+  productTagLabel,
   resolveExpectedOutputTags,
   resolveOutputNamePrefix,
 } from '../../utils/workflow-expected-outputs'
@@ -40,6 +41,7 @@ const props = defineProps<{
   visible: boolean
   workflowId: string
   workflowName: string
+  workflowDescription?: string
   linkedLayerId: string | null
   engine: string
 }>()
@@ -172,6 +174,7 @@ watch(outputTags, (tags) => {
       <header class="dialog-header">
         <h3 class="dialog-title">运行工作流</h3>
         <p class="dialog-subtitle">{{ workflowName }} · 源图层: {{ sourceLayerName }}</p>
+        <p v-if="workflowDescription" class="dialog-description">{{ workflowDescription }}</p>
       </header>
 
       <div class="dialog-body">
@@ -217,7 +220,9 @@ watch(outputTags, (tags) => {
           <div class="multi-info-bar">
             <span class="info-icon" aria-hidden="true">ℹ</span>
             <span class="info-text">
-              将创建计算组，含 {{ productNames.length }} 个图层：{{ outputTags.join(' / ') }}
+              将创建计算组，含 {{ productNames.length }} 个图层：{{
+                outputTags.map(productTagLabel).join(' / ')
+              }}
             </span>
           </div>
 
@@ -235,7 +240,7 @@ watch(outputTags, (tags) => {
             <label class="form-label">图层名称（可编辑）</label>
             <div class="multi-name-list">
               <div v-for="(_name, idx) in productNames" :key="idx" class="multi-name-row">
-                <span class="multi-name-tag">{{ outputTags[idx] }}</span>
+                <span class="multi-name-tag">{{ productTagLabel(outputTags[idx]) }}</span>
                 <input
                   v-model="productNames[idx]"
                   type="text"
@@ -327,6 +332,13 @@ watch(outputTags, (tags) => {
   margin: 0.18rem 0 0;
   font-size: 0.58rem;
   color: #7f93a9;
+}
+.dialog-description {
+  margin: 0.3rem 0 0;
+  font-size: 0.56rem;
+  line-height: 1.5;
+  color: #8aa0b6;
+  white-space: pre-line;
 }
 .dialog-body {
   flex: 1 1 auto;

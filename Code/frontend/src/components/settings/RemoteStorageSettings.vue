@@ -238,7 +238,7 @@ async function deleteHistory(profileId: string, historyId: number) {
           </label>
           <label v-if="form.protocol === 'sftp'" class="checkbox span-2">
             <input v-model="form.host_key_policy" type="checkbox" />
-            <span>自动接受主机密钥（extra.host_key_policy=auto_add，仅内网）</span>
+            <span>自动接受主机密钥（仅内网）</span>
           </label>
           <label v-if="form.protocol === 'smb'">
             <span>域</span>

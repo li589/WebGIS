@@ -45,6 +45,36 @@ def test_config_api_key_write_requires_auth_when_enabled():
         ), f"route {route.path} missing require_write_access"
 
 
+def test_sensitive_config_gets_require_read_access():
+    from app.api import config_routes
+    from app.api.deps import require_config_read_access, require_write_access
+
+    sensitive_suffixes = (
+        "/api-keys",
+        "/gee/accounts",
+        "/gee/runtime",
+        "/weather",
+        "/weather/providers",
+        "/remote-storage",
+        "/data-source",
+        "/data-cache/overview",
+        "/data-source/portal-credentials",
+    )
+    for route in config_routes.router.routes:
+        methods = getattr(route, "methods", None) or set()
+        if "GET" not in methods:
+            continue
+        path = getattr(route, "path", "") or ""
+        if not any(path.endswith(s) or path.endswith(s + "/") for s in sensitive_suffixes):
+            # also match templated provider detail
+            if "/weather/providers/{provider_id}" not in path:
+                continue
+        dep_calls = _route_dependency_callables(route)
+        assert (
+            require_config_read_access in dep_calls or require_write_access in dep_calls
+        ), f"sensitive GET {path} missing require_config_read_access"
+
+
 def test_import_raster_requires_write_access():
     from app.api.deps import require_write_access
     from app.api.routers.import_router import router as import_router
@@ -83,3 +113,80 @@ def test_backend_auth_uses_effective_secret(monkeypatch):
         ),
     )
     assert effective_config.get_backend_auth_key() == "db-auth-key"
+
+
+def test_require_write_access_dev_bypass_loopback(monkeypatch):
+    from dataclasses import replace
+    from unittest.mock import MagicMock
+
+    from app.api import deps
+    from app.core.config import settings
+
+    monkeypatch.setattr(
+        deps,
+        "settings",
+        replace(settings, environment="development", api_keys_enabled=False),
+    )
+    monkeypatch.delenv("BACKEND_DEV_AUTH_BYPASS", raising=False)
+    request = MagicMock()
+    request.headers = {}
+    request.client.host = "127.0.0.1"
+    deps.require_write_access(request, x_api_key=None)  # no raise
+
+
+def test_require_write_access_dev_bypass_denied_for_remote(monkeypatch):
+    from dataclasses import replace
+    from unittest.mock import MagicMock
+
+    from fastapi import HTTPException
+
+    from app.api import deps
+    from app.core.config import settings
+
+    monkeypatch.setattr(
+        deps,
+        "settings",
+        replace(settings, environment="development", api_keys_enabled=False),
+    )
+    monkeypatch.delenv("BACKEND_DEV_AUTH_BYPASS", raising=False)
+    monkeypatch.setattr(
+        "app.services.effective_config.get_backend_auth_key",
+        lambda: "",
+    )
+    request = MagicMock()
+    request.headers = {}
+    request.client.host = "10.0.0.5"
+    try:
+        deps.require_write_access(request, x_api_key=None)
+        raise AssertionError("expected HTTPException")
+    except HTTPException as exc:
+        assert exc.status_code == 503
+
+
+def test_require_write_access_production_requires_key(monkeypatch):
+    from dataclasses import replace
+    from unittest.mock import MagicMock
+
+    from fastapi import HTTPException
+
+    from app.api import deps
+    from app.core.config import settings
+
+    monkeypatch.setattr(
+        deps,
+        "settings",
+        replace(settings, environment="production", api_keys_enabled=True),
+    )
+    monkeypatch.setattr(
+        "app.services.effective_config.get_backend_auth_key",
+        lambda: "secret-key",
+    )
+    request = MagicMock()
+    request.headers = {}
+    request.client.host = "10.0.0.5"
+    try:
+        deps.require_write_access(request, x_api_key="wrong")
+        raise AssertionError("expected HTTPException")
+    except HTTPException as exc:
+        assert exc.status_code == 401
+    deps.require_write_access(request, x_api_key="secret-key")

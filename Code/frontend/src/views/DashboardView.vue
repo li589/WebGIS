@@ -830,6 +830,18 @@ watch(
   { immediate: true },
 )
 
+// 切换为移动/测量等非点选模式时，清除选中点（避免残留 inspect 圆点与选中高亮）
+watch(
+  () => uiStore.interactionMode,
+  (mode) => {
+    if (mode === 'select') return
+    if (selectedMapPoint.value || selectedHotspot.value) {
+      clearMapPointInspect()
+      selectedHotspot.value = null
+    }
+  },
+)
+
 function handleTimelineStep(delta: number) {
   if (!Number.isFinite(delta) || delta === 0) return
   uiStore.stepHour(delta)

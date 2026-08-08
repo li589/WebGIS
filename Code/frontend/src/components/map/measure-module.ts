@@ -23,6 +23,12 @@ import type { InteractionMode, MeasurePoint, MeasureState } from '../../stores/u
 /** 圆点半径（px） */
 const POINT_RADIUS = 5
 
+/** 首点强调半径（px） */
+const POINT_RADIUS_FIRST = 8
+
+/** 首点强调颜色（琥珀色，区分路径蓝） */
+const POINT_COLOR_FIRST = '#ffb84d'
+
 /** 圆点边框宽度（px） */
 const POINT_STROKE_WIDTH = 2
 
@@ -140,8 +146,14 @@ export function createMeasureModule(options: CreateMeasureModuleOptions): Measur
       type: 'circle',
       source: SOURCE_POINTS,
       paint: {
-        'circle-radius': POINT_RADIUS,
-        'circle-color': LINE_COLOR,
+        // 首点强调：琥珀色 + 更大半径，与路径蓝顶点区分
+        'circle-radius': [
+          'case',
+          ['==', ['get', 'isFirst'], true],
+          POINT_RADIUS_FIRST,
+          POINT_RADIUS,
+        ],
+        'circle-color': ['case', ['==', ['get', 'isFirst'], true], POINT_COLOR_FIRST, LINE_COLOR],
         'circle-stroke-width': POINT_STROKE_WIDTH,
         'circle-stroke-color': '#ffffff',
       },
@@ -160,10 +172,10 @@ export function createMeasureModule(options: CreateMeasureModuleOptions): Measur
     const { points, isDrawing, hoverPoint } = options.getMeasureState()
 
     // ── 圆点 FeatureCollection ──
-    const pointFeatures: GeoJSON.Feature<GeoJSON.Point>[] = points.map((p) => ({
+    const pointFeatures: GeoJSON.Feature<GeoJSON.Point>[] = points.map((p, i) => ({
       type: 'Feature',
       geometry: { type: 'Point', coordinates: [p.lng, p.lat] },
-      properties: {},
+      properties: { isFirst: i === 0 },
     }))
     const pointsSource = map.getSource(SOURCE_POINTS) as maplibregl.GeoJSONSource | undefined
     if (pointsSource) {

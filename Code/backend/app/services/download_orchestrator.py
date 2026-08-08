@@ -368,36 +368,44 @@ class DownloadOrchestrator:
         """Resolve the layer's source_refs.
 
         Prefer real ``source_uri`` templates from
-        ``settings.download_source_uri_map``; fall back to ``demo://``
-        placeholders for backward compatibility.
+        ``settings.download_source_uri_map``. When missing, mark the ref as
+        ``missing`` with an empty URI (do not invent ``demo://`` placeholders).
         """
         base_ref = {
-            "kind": "demo_snapshot",
+            "kind": "layer_snapshot",
             "layer_id": layer_id,
             "requested_hour": requested_hour,
             "refresh_policy": refresh_policy,
         }
         real_snapshot_uri = self._resolve_real_source_uri(layer_id, requested_hour)
-        snapshot_source_kind = "snapshot"
-        snapshot_estimated_bytes = 65536
         if real_snapshot_uri:
             snapshot_source_kind = "real_source"
             # Real sources cannot pre-declare byte size; keep the estimate
             # only for cache metadata accounting.
             snapshot_estimated_bytes = 0
+            snapshot_uri = real_snapshot_uri
+            snapshot_fetch_status = "cached" if cache_status == "warm" else "pending"
+            snapshot_fetch_stage = (
+                "source_manifest_ready"
+                if cache_status == "warm"
+                else "awaiting_dispatch"
+            )
+        else:
+            snapshot_source_kind = "missing"
+            snapshot_estimated_bytes = 0
+            snapshot_uri = ""
+            snapshot_fetch_status = "failed"
+            snapshot_fetch_stage = "source_uri_missing"
 
         return [
             {
                 **base_ref,
                 "ref_id": f"{layer_id}-snapshot",
                 "priority": "high" if refresh_policy == "realtime" else "normal",
-                "fetch_status": "cached" if cache_status == "warm" else "pending",
-                "fetch_stage": "source_manifest_ready"
-                if cache_status == "warm"
-                else "awaiting_dispatch",
+                "fetch_status": snapshot_fetch_status,
+                "fetch_stage": snapshot_fetch_stage,
                 "source_kind": snapshot_source_kind,
-                "source_uri": real_snapshot_uri
-                or f"demo://snapshots/{layer_id}?hour={requested_hour}",
+                "source_uri": snapshot_uri,
                 "estimated_bytes": snapshot_estimated_bytes,
             },
             {
@@ -407,7 +415,7 @@ class DownloadOrchestrator:
                 "fetch_status": "cached",
                 "fetch_stage": "metadata_attached",
                 "source_kind": "catalog_metadata",
-                "source_uri": f"demo://catalog/{layer_id}",
+                "source_uri": f"catalog://{layer_id}",
                 "estimated_bytes": 4096,
             },
         ]

@@ -64,9 +64,9 @@ CGDA（综合地理数据分析系统）：**面向课题组与大气研究院�
 
 改动以下区域前必须确认鉴权、加密或数据面隔离约束，避免破坏运行态或泄露凭据：
 
-1. **`/config/*` 写操作**：`app/api/config_routes.py` + `app/services/config_service.py` / `api_config.py` / `effective_config.py`。所有 `/config/*` 写操作与 `POST /import/raster` 需 `X-API-Key`（development 且未启用 keys 时可旁路）。鉴权密钥 = `backend_auth` DB 覆盖 env。覆盖图层 URI、天气 provider、remote-storage、**数据根路径**等运行真源，改错会污染运行配置。`PUT /config/data-source/paths` 写入 `Code/backend/.env` 后须重启后端进程组才生效；`POST /config/service/restart` 受 `BACKEND_UI_RESTART_ENABLED` 门禁（默认仅 development）。
+1. **`/config/*` 写操作与敏感读**：`app/api/config_routes.py` + `app/services/config_service.py` / `api_config.py` / `effective_config.py`。写操作与敏感 GET（api-keys / gee / weather config / remote-storage / data-source / cache overview）与 `POST /import/raster` 需 `X-API-Key`（`require_config_read_access` 与写同门）。`/config/general` `/about` 仍公开。development 且 `api_keys_enabled=false` 时仅 **loopback** 可旁路（局域网需 `BACKEND_DEV_AUTH_BYPASS=true`）。鉴权密钥 = `backend_auth` DB 覆盖 env。`PUT /config/data-source/paths` 写 `.env` 后须重启后端进程组；`POST /config/service/restart` 受 `BACKEND_UI_RESTART_ENABLED` 门禁，且**始终**重启 FastAPI+Worker+Beat。
 
-2. **GEE 凭据**：`app/gee/` + `app/services/gee_parallel_config.py`。存储的 GEE 账号凭据用 `BACKEND_GEE_CREDENTIALS_ENCRYPTION_KEY`（32-byte hex，`.env` 生成）加密落 DB。非 development 环境**必须**配置该密钥，否则凭据无法加解密。涉及 `/config/gee/accounts*` 与 `/gee/config`。
+2. **GEE / 共享加密主密钥**：`BACKEND_GEE_CREDENTIALS_ENCRYPTION_KEY` 须为 **64 hex chars（32-byte）**，启动时校验；同一把 key 加密 GEE SA、API keys、天气 provider、远程存储、门户凭据。非 development 缺 key 拒启；空 IV 明文行在生产拒绝解密。GEE API 账号管理 production 默认关闭。涉及 `/config/gee/accounts*` 与 `/gee/config`。
 
 3. **flush（清缓存）**：`Env\Python312\python.exe launch.py flush` 执行 Redis `FLUSHDB` + 删除 `Code/backend/.data/cache/weather` 与 `weatherengine` 目录。会清空队列、缓存与限流/断路器状态，影响在线服务；**不**删 Open-Meteo Docker volume。仅在排障或强制刷新天气缓存时使用，勿在正常联调中随意执行。
 

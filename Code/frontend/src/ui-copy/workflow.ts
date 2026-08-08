@@ -10,7 +10,7 @@ export const WORKFLOW_COPY = {
   // 提交 / 生命周期
   submitting: '正在提交工作流…',
   reconcilingSubmit: '提交超时，正在对账认领运行…',
-  queued: '已入队',
+  queued: '排队中',
   running: '运行中',
   cancelling: '取消中…',
   cancelled: '已取消',
@@ -22,7 +22,7 @@ export const WORKFLOW_COPY = {
   capacityExhausted: '工作流容量不足，已达最大重试次数，请稍后手动重试',
   cancelFailed: '取消工作流失败',
   retryFailed: '重试工作流失败',
-  retryOf: '重试自',
+  retryOf: '基于重试',
 
   // 预检 / 设置
   dryValidateOk: '图模式预检通过',

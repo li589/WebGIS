@@ -4952,7 +4952,9 @@
             "description": "Successful Response",
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/GeneralConfig"
+                }
               }
             }
           }
@@ -4972,11 +4974,22 @@
             "description": "Successful Response",
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/ApiKeyItem"
+                  },
+                  "type": "array",
+                  "title": "Response List Api Keys Config Api Keys Get"
+                }
               }
             }
           }
-        }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ]
       }
     },
     "/config/api-keys/{key_name}": {
@@ -5018,7 +5031,9 @@
             "description": "Successful Response",
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/ApiKeyItem"
+                }
               }
             }
           },
@@ -5166,7 +5181,9 @@
             "description": "Successful Response",
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/ApiKeyItem"
+                }
               }
             }
           },
@@ -5318,7 +5335,9 @@
             "description": "Successful Response",
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/ApiKeyItem"
+                }
               }
             }
           },
@@ -5402,11 +5421,22 @@
             "description": "Successful Response",
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/GeeAccountItem"
+                  },
+                  "type": "array",
+                  "title": "Response List Gee Accounts Config Gee Accounts Get"
+                }
               }
             }
           }
-        }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ]
       },
       "post": {
         "tags": [
@@ -5430,7 +5460,9 @@
             "description": "Successful Response",
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/GeeAccountItem"
+                }
               }
             }
           },
@@ -5642,11 +5674,18 @@
             "description": "Successful Response",
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/GeeRuntimeConfig"
+                }
               }
             }
           }
-        }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ]
       }
     },
     "/config/weather": {
@@ -5662,11 +5701,18 @@
             "description": "Successful Response",
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/WeatherConfig"
+                }
               }
             }
           }
-        }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ]
       }
     },
     "/config/weather/model": {
@@ -5692,7 +5738,9 @@
             "description": "Successful Response",
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/WeatherConfig"
+                }
               }
             }
           },
@@ -5722,6 +5770,11 @@
         "summary": "List Weather Providers",
         "description": "列出所有天气源 Provider。",
         "operationId": "list_weather_providers_config_weather_providers_get",
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ],
         "parameters": [
           {
             "name": "include_disabled",
@@ -5739,7 +5792,13 @@
             "description": "Successful Response",
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/WeatherProviderItem"
+                  },
+                  "title": "Response List Weather Providers Config Weather Providers Get"
+                }
               }
             }
           },
@@ -5764,6 +5823,11 @@
         "summary": "Get Weather Provider",
         "description": "获取单个天气源 Provider 详情。",
         "operationId": "get_weather_provider_config_weather_providers__provider_id__get",
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ],
         "parameters": [
           {
             "name": "provider_id",
@@ -5780,7 +5844,9 @@
             "description": "Successful Response",
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/WeatherProviderItem"
+                }
               }
             }
           },
@@ -5834,7 +5900,9 @@
             "description": "Successful Response",
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/WeatherProviderItem"
+                }
               }
             }
           },
@@ -6062,6 +6130,11 @@
         ],
         "summary": "List Remote Storage Profiles",
         "operationId": "list_remote_storage_profiles_config_remote_storage_get",
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ],
         "parameters": [
           {
             "name": "include_disabled",
@@ -6079,7 +6152,13 @@
             "description": "Successful Response",
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/RemoteStorageProfile"
+                  },
+                  "title": "Response List Remote Storage Profiles Config Remote Storage Get"
+                }
               }
             }
           },
@@ -6134,7 +6213,9 @@
             "description": "Successful Response",
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/RemoteStorageProfile"
+                }
               }
             }
           },
@@ -6446,7 +6527,9 @@
             "description": "Successful Response",
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/RemoteStorageProfile"
+                }
               }
             }
           },
@@ -6530,11 +6613,18 @@
             "description": "Successful Response",
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/DataSourceConfig"
+                }
               }
             }
           }
-        }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ]
       }
     },
     "/config/data-source/paths": {
@@ -6560,7 +6650,9 @@
             "description": "Successful Response",
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/DataSourcePathsUpdateResponse"
+                }
               }
             }
           },
@@ -6612,7 +6704,9 @@
             "description": "Successful Response",
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/ServiceRestartResponse"
+                }
               }
             }
           },
@@ -6647,11 +6741,18 @@
             "description": "Successful Response",
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/DataCacheOverview"
+                }
               }
             }
           }
-        }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ]
       }
     },
     "/config/data-cache/evict": {
@@ -6767,11 +6868,18 @@
             "description": "Successful Response",
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/PortalCredentialsMapResponse"
+                }
               }
             }
           }
-        }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ]
       }
     },
     "/config/data-source/portal-credentials/{portal_id}": {
@@ -6815,7 +6923,9 @@
             "description": "Successful Response",
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/PortalCredentialsMapResponse"
+                }
               }
             }
           },
@@ -6859,7 +6969,9 @@
             "description": "Successful Response",
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/PortalCredentialsMapResponse"
+                }
               }
             }
           },
@@ -6936,7 +7048,9 @@
             "description": "Successful Response",
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/AboutInfo"
+                }
               }
             }
           }
@@ -8332,6 +8446,66 @@
   },
   "components": {
     "schemas": {
+      "AboutInfo": {
+        "properties": {
+          "project_name": {
+            "type": "string",
+            "title": "Project Name"
+          },
+          "version": {
+            "type": "string",
+            "title": "Version"
+          },
+          "description": {
+            "type": "string",
+            "title": "Description"
+          },
+          "tech_stack": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Tech Stack"
+          },
+          "modules": {
+            "items": {
+              "$ref": "#/components/schemas/AboutModule"
+            },
+            "type": "array",
+            "title": "Modules"
+          },
+          "architecture_summary": {
+            "type": "string",
+            "title": "Architecture Summary",
+            "default": ""
+          }
+        },
+        "type": "object",
+        "required": [
+          "project_name",
+          "version",
+          "description"
+        ],
+        "title": "AboutInfo"
+      },
+      "AboutModule": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "description": {
+            "type": "string",
+            "title": "Description"
+          }
+        },
+        "type": "object",
+        "required": [
+          "name",
+          "description"
+        ],
+        "title": "AboutModule"
+      },
       "AlgorithmOutputSpec": {
         "properties": {
           "raster_format": {
@@ -8587,6 +8761,112 @@
           "source"
         ],
         "title": "ApiKeyHistoryItem"
+      },
+      "ApiKeyItem": {
+        "properties": {
+          "key_name": {
+            "type": "string",
+            "title": "Key Name"
+          },
+          "display_name": {
+            "type": "string",
+            "title": "Display Name"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "masked_value": {
+            "type": "string",
+            "title": "Masked Value",
+            "default": ""
+          },
+          "enabled": {
+            "type": "boolean",
+            "title": "Enabled",
+            "default": false
+          },
+          "source": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source"
+          },
+          "has_value": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Has Value"
+          },
+          "created_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Created At"
+          },
+          "updated_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updated At"
+          },
+          "last_tested_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Tested At"
+          },
+          "last_test_status": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Test Status"
+          }
+        },
+        "type": "object",
+        "required": [
+          "key_name",
+          "display_name"
+        ],
+        "title": "ApiKeyItem",
+        "description": "脱敏 API Key 列表项（GET /config/api-keys）。"
       },
       "ApiKeyToggleRequest": {
         "properties": {
@@ -9160,6 +9440,247 @@
         "title": "ConfirmRequest",
         "description": "``POST /import/raster/confirm`` 请求体。\n\n用户在前端确认对话框中选定源 CRS（可覆盖检测结果）并设置偏移后提交。"
       },
+      "DataCacheEntry": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "path": {
+            "type": "string",
+            "title": "Path"
+          },
+          "size_bytes": {
+            "type": "integer",
+            "title": "Size Bytes"
+          },
+          "mtime": {
+            "type": "number",
+            "title": "Mtime"
+          },
+          "age_seconds": {
+            "type": "integer",
+            "title": "Age Seconds"
+          }
+        },
+        "type": "object",
+        "required": [
+          "name",
+          "path",
+          "size_bytes",
+          "mtime",
+          "age_seconds"
+        ],
+        "title": "DataCacheEntry"
+      },
+      "DataCacheOverview": {
+        "properties": {
+          "cache_root": {
+            "type": "string",
+            "title": "Cache Root"
+          },
+          "ttl_seconds": {
+            "type": "integer",
+            "title": "Ttl Seconds"
+          },
+          "ttl_unlimited": {
+            "type": "boolean",
+            "title": "Ttl Unlimited"
+          },
+          "entry_count": {
+            "type": "integer",
+            "title": "Entry Count"
+          },
+          "total_bytes": {
+            "type": "integer",
+            "title": "Total Bytes"
+          },
+          "entries": {
+            "items": {
+              "$ref": "#/components/schemas/DataCacheEntry"
+            },
+            "type": "array",
+            "title": "Entries"
+          },
+          "data_root": {
+            "type": "string",
+            "title": "Data Root",
+            "default": ""
+          },
+          "output_root": {
+            "type": "string",
+            "title": "Output Root",
+            "default": ""
+          },
+          "discovered_datasets": {
+            "items": {
+              "$ref": "#/components/schemas/DiscoveredDataset"
+            },
+            "type": "array",
+            "title": "Discovered Datasets"
+          }
+        },
+        "type": "object",
+        "required": [
+          "cache_root",
+          "ttl_seconds",
+          "ttl_unlimited",
+          "entry_count",
+          "total_bytes"
+        ],
+        "title": "DataCacheOverview"
+      },
+      "DataSourceConfig": {
+        "properties": {
+          "storage_backend": {
+            "type": "string",
+            "title": "Storage Backend"
+          },
+          "data_root": {
+            "type": "string",
+            "title": "Data Root",
+            "default": ""
+          },
+          "output_root": {
+            "type": "string",
+            "title": "Output Root",
+            "default": ""
+          },
+          "env_data_root": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Env Data Root"
+          },
+          "env_output_root": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Env Output Root"
+          },
+          "pending_restart": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pending Restart"
+          },
+          "ui_restart_enabled": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ui Restart Enabled"
+          },
+          "download_source_root": {
+            "type": "string",
+            "title": "Download Source Root",
+            "default": ""
+          },
+          "download_real_fetch_enabled": {
+            "type": "boolean",
+            "title": "Download Real Fetch Enabled",
+            "default": false
+          },
+          "tile_proxy_enabled": {
+            "type": "boolean",
+            "title": "Tile Proxy Enabled",
+            "default": false
+          },
+          "tile_proxy_cache_ttl_seconds": {
+            "type": "integer",
+            "title": "Tile Proxy Cache Ttl Seconds",
+            "default": 0
+          },
+          "minio": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/MinioPublicConfig"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "discovered_datasets": {
+            "items": {
+              "$ref": "#/components/schemas/DiscoveredDataset"
+            },
+            "type": "array",
+            "title": "Discovered Datasets"
+          },
+          "open_data_presets": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "type": "object",
+            "title": "Open Data Presets"
+          },
+          "open_data_preset_labels": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "type": "object",
+            "title": "Open Data Preset Labels"
+          },
+          "portal_credentials": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/PortalCredentialPublic"
+            },
+            "type": "object",
+            "title": "Portal Credentials"
+          },
+          "remote_layer_data_uris": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Remote Layer Data Uris"
+          },
+          "static_cache": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/StaticCacheSummary"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "workflow_hint": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Workflow Hint"
+          }
+        },
+        "type": "object",
+        "required": [
+          "storage_backend"
+        ],
+        "title": "DataSourceConfig"
+      },
       "DataSourcePathsUpdateRequest": {
         "properties": {
           "data_root": {
@@ -9188,6 +9709,49 @@
         "title": "DataSourcePathsUpdateRequest",
         "description": "更新地理数据根 / 产物根（写入 Code/backend/.env，需重启后端生效）。"
       },
+      "DataSourcePathsUpdateResponse": {
+        "properties": {
+          "data_root": {
+            "type": "string",
+            "title": "Data Root"
+          },
+          "output_root": {
+            "type": "string",
+            "title": "Output Root"
+          },
+          "effective_data_root": {
+            "type": "string",
+            "title": "Effective Data Root"
+          },
+          "effective_output_root": {
+            "type": "string",
+            "title": "Effective Output Root"
+          },
+          "pending_restart": {
+            "type": "boolean",
+            "title": "Pending Restart"
+          },
+          "env_path": {
+            "type": "string",
+            "title": "Env Path"
+          },
+          "message": {
+            "type": "string",
+            "title": "Message"
+          }
+        },
+        "type": "object",
+        "required": [
+          "data_root",
+          "output_root",
+          "effective_data_root",
+          "effective_output_root",
+          "pending_restart",
+          "env_path",
+          "message"
+        ],
+        "title": "DataSourcePathsUpdateResponse"
+      },
       "DiagnosticsReport": {
         "properties": {
           "status": {
@@ -9212,6 +9776,46 @@
           "status"
         ],
         "title": "DiagnosticsReport"
+      },
+      "DiscoveredDataset": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "path": {
+            "type": "string",
+            "title": "Path"
+          },
+          "file_count": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "File Count"
+          },
+          "file_count_truncated": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "File Count Truncated"
+          }
+        },
+        "type": "object",
+        "required": [
+          "name",
+          "path"
+        ],
+        "title": "DiscoveredDataset"
       },
       "DocumentCommitBody": {
         "properties": {
@@ -9878,6 +10482,83 @@
         ],
         "title": "GeeAccountCreateRequest"
       },
+      "GeeAccountItem": {
+        "properties": {
+          "account_id": {
+            "type": "string",
+            "title": "Account Id"
+          },
+          "display_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Display Name"
+          },
+          "project_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Project Id"
+          },
+          "account_type": {
+            "type": "string",
+            "title": "Account Type",
+            "default": "service_account"
+          },
+          "enabled": {
+            "type": "boolean",
+            "title": "Enabled",
+            "default": true
+          },
+          "created_at": {
+            "type": "string",
+            "title": "Created At",
+            "default": ""
+          },
+          "updated_at": {
+            "type": "string",
+            "title": "Updated At",
+            "default": ""
+          },
+          "last_tested_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Tested At"
+          },
+          "last_test_status": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Test Status"
+          }
+        },
+        "type": "object",
+        "required": [
+          "account_id"
+        ],
+        "title": "GeeAccountItem"
+      },
       "GeeAccountToggleRequest": {
         "properties": {
           "enabled": {
@@ -9890,6 +10571,59 @@
           "enabled"
         ],
         "title": "GeeAccountToggleRequest"
+      },
+      "GeeRuntimeConfig": {
+        "properties": {
+          "gee_enabled": {
+            "type": "boolean",
+            "title": "Gee Enabled"
+          },
+          "max_parallel_exports": {
+            "type": "integer",
+            "title": "Max Parallel Exports"
+          },
+          "max_parallel_uploads": {
+            "type": "integer",
+            "title": "Max Parallel Uploads"
+          },
+          "max_parallel_downloads": {
+            "type": "integer",
+            "title": "Max Parallel Downloads"
+          },
+          "account_cooldown_seconds": {
+            "type": "integer",
+            "title": "Account Cooldown Seconds"
+          },
+          "storage_backend": {
+            "type": "string",
+            "title": "Storage Backend"
+          },
+          "local_storage_root": {
+            "type": "string",
+            "title": "Local Storage Root"
+          },
+          "api_account_management_enabled": {
+            "type": "boolean",
+            "title": "Api Account Management Enabled"
+          },
+          "credentials_encryption_enabled": {
+            "type": "boolean",
+            "title": "Credentials Encryption Enabled"
+          }
+        },
+        "type": "object",
+        "required": [
+          "gee_enabled",
+          "max_parallel_exports",
+          "max_parallel_uploads",
+          "max_parallel_downloads",
+          "account_cooldown_seconds",
+          "storage_backend",
+          "local_storage_root",
+          "api_account_management_enabled",
+          "credentials_encryption_enabled"
+        ],
+        "title": "GeeRuntimeConfig"
       },
       "GeeWorkflowRequest": {
         "properties": {
@@ -9955,6 +10689,354 @@
         "type": "object",
         "title": "GeeWorkflowRequest",
         "description": "GEE 引擎工作流请求。\n\n与 AlgorithmWorkflowRequest 平行：\n- workflow / context 直接对应 webgis_gee 的 WorkflowSubmissionPayload\n- 当 workflow_definition 非空时，作为 GEE WorkflowDefinition 字典传入\n- manifest_uri 用于导出状态轮询场景（command_type=custom 且仅查询导出状态时使用）"
+      },
+      "GeneralConfig": {
+        "properties": {
+          "environment": {
+            "type": "string",
+            "title": "Environment"
+          },
+          "host": {
+            "type": "string",
+            "title": "Host"
+          },
+          "port": {
+            "type": "integer",
+            "title": "Port"
+          },
+          "service_name": {
+            "type": "string",
+            "title": "Service Name"
+          },
+          "data_root": {
+            "type": "string",
+            "title": "Data Root",
+            "default": ""
+          },
+          "output_root": {
+            "type": "string",
+            "title": "Output Root",
+            "default": ""
+          },
+          "cache_dir": {
+            "type": "string",
+            "title": "Cache Dir",
+            "default": ""
+          },
+          "log_dir": {
+            "type": "string",
+            "title": "Log Dir",
+            "default": ""
+          },
+          "log_level": {
+            "type": "string",
+            "title": "Log Level",
+            "default": "INFO"
+          },
+          "max_active_runs": {
+            "type": "integer",
+            "title": "Max Active Runs",
+            "default": 0
+          },
+          "max_requested_outputs": {
+            "type": "integer",
+            "title": "Max Requested Outputs",
+            "default": 0
+          },
+          "redis_url": {
+            "type": "string",
+            "title": "Redis Url",
+            "default": ""
+          },
+          "storage_backend": {
+            "type": "string",
+            "title": "Storage Backend",
+            "default": "local"
+          },
+          "reload": {
+            "type": "boolean",
+            "title": "Reload",
+            "default": false
+          },
+          "max_active_weather_tile_runs": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Max Active Weather Tile Runs"
+          },
+          "weather_cache_ttl_seconds": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Weather Cache Ttl Seconds"
+          },
+          "weather_refresh_forecast_hours": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Weather Refresh Forecast Hours"
+          },
+          "cache_default_ttl_seconds": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cache Default Ttl Seconds"
+          },
+          "provider_max_hotspots": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Provider Max Hotspots"
+          },
+          "provider_max_series_points": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Provider Max Series Points"
+          },
+          "provider_table_chunk_size": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Provider Table Chunk Size"
+          },
+          "provider_series_chunk_size": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Provider Series Chunk Size"
+          },
+          "result_inline_max_bytes": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Result Inline Max Bytes"
+          },
+          "celery_task_soft_time_limit": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Celery Task Soft Time Limit"
+          },
+          "celery_task_time_limit": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Celery Task Time Limit"
+          },
+          "celery_task_always_eager": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Celery Task Always Eager"
+          },
+          "cors_origins": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cors Origins"
+          },
+          "object_store_backend": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Object Store Backend"
+          },
+          "object_store_public_base": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Object Store Public Base"
+          },
+          "result_artifact_dir": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Result Artifact Dir"
+          },
+          "workflow_state_dir": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Workflow State Dir"
+          },
+          "python_provider_root": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Python Provider Root"
+          },
+          "python_provider_workspace": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Python Provider Workspace"
+          },
+          "map_default_longitude": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Map Default Longitude"
+          },
+          "map_default_latitude": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Map Default Latitude"
+          },
+          "map_default_zoom": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Map Default Zoom"
+          },
+          "map_default_tile_source": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Map Default Tile Source"
+          },
+          "map_aoi_presets": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/MapAoiPreset"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Map Aoi Presets"
+          }
+        },
+        "type": "object",
+        "required": [
+          "environment",
+          "host",
+          "port",
+          "service_name"
+        ],
+        "title": "GeneralConfig"
       },
       "HTTPValidationError": {
         "properties": {
@@ -10443,6 +11525,39 @@
         ],
         "title": "LogLevel"
       },
+      "MapAoiPreset": {
+        "properties": {
+          "label": {
+            "type": "string",
+            "title": "Label"
+          },
+          "west": {
+            "type": "number",
+            "title": "West"
+          },
+          "south": {
+            "type": "number",
+            "title": "South"
+          },
+          "east": {
+            "type": "number",
+            "title": "East"
+          },
+          "north": {
+            "type": "number",
+            "title": "North"
+          }
+        },
+        "type": "object",
+        "required": [
+          "label",
+          "west",
+          "south",
+          "east",
+          "north"
+        ],
+        "title": "MapAoiPreset"
+      },
       "MapMode": {
         "type": "string",
         "enum": [
@@ -10450,6 +11565,29 @@
           "3d"
         ],
         "title": "MapMode"
+      },
+      "MinioPublicConfig": {
+        "properties": {
+          "endpoint": {
+            "type": "string",
+            "title": "Endpoint"
+          },
+          "bucket": {
+            "type": "string",
+            "title": "Bucket"
+          },
+          "secure": {
+            "type": "boolean",
+            "title": "Secure",
+            "default": false
+          }
+        },
+        "type": "object",
+        "required": [
+          "endpoint",
+          "bucket"
+        ],
+        "title": "MinioPublicConfig"
       },
       "NodeCacheCleanupRequest": {
         "properties": {
@@ -10751,6 +11889,97 @@
           "name"
         ],
         "title": "PortSpec"
+      },
+      "PortalCredentialPublic": {
+        "properties": {
+          "enabled": {
+            "type": "boolean",
+            "title": "Enabled",
+            "default": false
+          },
+          "auth_type": {
+            "type": "string",
+            "title": "Auth Type",
+            "default": ""
+          },
+          "username": {
+            "type": "string",
+            "title": "Username",
+            "default": ""
+          },
+          "has_token": {
+            "type": "boolean",
+            "title": "Has Token",
+            "default": false
+          },
+          "has_password": {
+            "type": "boolean",
+            "title": "Has Password",
+            "default": false
+          },
+          "source": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source"
+          },
+          "use_for_nsidc": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Use For Nsidc"
+          },
+          "use_earthdata": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Use Earthdata"
+          },
+          "client_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Client Id"
+          }
+        },
+        "type": "object",
+        "title": "PortalCredentialPublic"
+      },
+      "PortalCredentialsMapResponse": {
+        "properties": {
+          "portal_credentials": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/PortalCredentialPublic"
+            },
+            "type": "object",
+            "title": "Portal Credentials"
+          }
+        },
+        "type": "object",
+        "required": [
+          "portal_credentials"
+        ],
+        "title": "PortalCredentialsMapResponse"
       },
       "RasterCommitBody": {
         "properties": {
@@ -11070,6 +12299,119 @@
           "source"
         ],
         "title": "RemoteStorageHistoryItem"
+      },
+      "RemoteStorageProfile": {
+        "properties": {
+          "profile_id": {
+            "type": "string",
+            "title": "Profile Id"
+          },
+          "protocol": {
+            "type": "string",
+            "title": "Protocol"
+          },
+          "host": {
+            "type": "string",
+            "title": "Host",
+            "default": ""
+          },
+          "port": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Port"
+          },
+          "username": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Username"
+          },
+          "has_secret": {
+            "type": "boolean",
+            "title": "Has Secret",
+            "default": false
+          },
+          "has_private_key": {
+            "type": "boolean",
+            "title": "Has Private Key",
+            "default": false
+          },
+          "domain": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Domain"
+          },
+          "extra": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Extra"
+          },
+          "display_name": {
+            "type": "string",
+            "title": "Display Name",
+            "default": ""
+          },
+          "enabled": {
+            "type": "boolean",
+            "title": "Enabled",
+            "default": true
+          },
+          "created_at": {
+            "type": "string",
+            "title": "Created At",
+            "default": ""
+          },
+          "updated_at": {
+            "type": "string",
+            "title": "Updated At",
+            "default": ""
+          },
+          "last_tested_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Tested At"
+          },
+          "last_test_status": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Test Status"
+          }
+        },
+        "type": "object",
+        "required": [
+          "profile_id",
+          "protocol"
+        ],
+        "title": "RemoteStorageProfile"
       },
       "RemoteStorageTestRequest": {
         "properties": {
@@ -11542,11 +12884,47 @@
               }
             ],
             "title": "Components",
-            "description": "默认 fastapi+worker+beat；不允许 docker/frontend"
+            "description": "Advisory only today: values are validated (fastapi|worker|beat) but the server always restarts the full backend group. docker/frontend are rejected."
           }
         },
         "type": "object",
         "title": "ServiceRestartRequest"
+      },
+      "ServiceRestartResponse": {
+        "properties": {
+          "accepted": {
+            "type": "boolean",
+            "title": "Accepted"
+          },
+          "components": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Components"
+          },
+          "delay_seconds": {
+            "type": "number",
+            "title": "Delay Seconds"
+          },
+          "message": {
+            "type": "string",
+            "title": "Message"
+          },
+          "ui_restart_enabled": {
+            "type": "boolean",
+            "title": "Ui Restart Enabled"
+          }
+        },
+        "type": "object",
+        "required": [
+          "accepted",
+          "components",
+          "delay_seconds",
+          "message",
+          "ui_restart_enabled"
+        ],
+        "title": "ServiceRestartResponse"
       },
       "SpatialFilter": {
         "properties": {
@@ -11590,6 +12968,39 @@
         },
         "type": "object",
         "title": "SpatialFilter"
+      },
+      "StaticCacheSummary": {
+        "properties": {
+          "cache_root": {
+            "type": "string",
+            "title": "Cache Root"
+          },
+          "ttl_seconds": {
+            "type": "integer",
+            "title": "Ttl Seconds"
+          },
+          "ttl_unlimited": {
+            "type": "boolean",
+            "title": "Ttl Unlimited"
+          },
+          "entry_count": {
+            "type": "integer",
+            "title": "Entry Count"
+          },
+          "total_bytes": {
+            "type": "integer",
+            "title": "Total Bytes"
+          }
+        },
+        "type": "object",
+        "required": [
+          "cache_root",
+          "ttl_seconds",
+          "ttl_unlimited",
+          "entry_count",
+          "total_bytes"
+        ],
+        "title": "StaticCacheSummary"
       },
       "StoragePolicy": {
         "properties": {
@@ -12079,6 +13490,122 @@
           "new_name"
         ],
         "title": "VectorRenameBody"
+      },
+      "WeatherConfig": {
+        "properties": {
+          "default_model": {
+            "type": "string",
+            "title": "Default Model"
+          },
+          "default_model_source": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Default Model Source"
+          },
+          "sync_domains": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Sync Domains"
+          },
+          "sync_enabled": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sync Enabled"
+          },
+          "sync_cron": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/WeatherSyncCron"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "supported_models": {
+            "items": {
+              "$ref": "#/components/schemas/WeatherSupportedModel"
+            },
+            "type": "array",
+            "title": "Supported Models"
+          },
+          "model_in_sync_domains": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Model In Sync Domains"
+          },
+          "cache_ttl_seconds": {
+            "type": "integer",
+            "title": "Cache Ttl Seconds"
+          },
+          "refresh_forecast_hours": {
+            "type": "integer",
+            "title": "Refresh Forecast Hours"
+          },
+          "schedule_enabled": {
+            "type": "boolean",
+            "title": "Schedule Enabled"
+          },
+          "default_latitude": {
+            "type": "number",
+            "title": "Default Latitude"
+          },
+          "default_longitude": {
+            "type": "number",
+            "title": "Default Longitude"
+          },
+          "default_place_name": {
+            "type": "string",
+            "title": "Default Place Name"
+          },
+          "max_active_weather_tile_runs": {
+            "type": "integer",
+            "title": "Max Active Weather Tile Runs"
+          },
+          "warning": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Warning"
+          }
+        },
+        "type": "object",
+        "required": [
+          "default_model",
+          "cache_ttl_seconds",
+          "refresh_forecast_hours",
+          "schedule_enabled",
+          "default_latitude",
+          "default_longitude",
+          "default_place_name",
+          "max_active_weather_tile_runs"
+        ],
+        "title": "WeatherConfig"
       },
       "WeatherLayerRenderHint": {
         "properties": {
@@ -12700,6 +14227,186 @@
         ],
         "title": "WeatherPointResponse"
       },
+      "WeatherProviderConfigField": {
+        "properties": {
+          "key": {
+            "type": "string",
+            "title": "Key"
+          },
+          "label": {
+            "type": "string",
+            "title": "Label",
+            "default": ""
+          },
+          "field_type": {
+            "type": "string",
+            "title": "Field Type",
+            "default": "string"
+          },
+          "required": {
+            "type": "boolean",
+            "title": "Required",
+            "default": false
+          },
+          "default": {
+            "title": "Default"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "options": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Options"
+          },
+          "placeholder": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Placeholder"
+          }
+        },
+        "type": "object",
+        "required": [
+          "key"
+        ],
+        "title": "WeatherProviderConfigField"
+      },
+      "WeatherProviderItem": {
+        "properties": {
+          "provider_id": {
+            "type": "string",
+            "title": "Provider Id"
+          },
+          "display_name": {
+            "type": "string",
+            "title": "Display Name"
+          },
+          "provider_type": {
+            "type": "string",
+            "title": "Provider Type"
+          },
+          "version": {
+            "type": "string",
+            "title": "Version",
+            "default": ""
+          },
+          "description": {
+            "type": "string",
+            "title": "Description",
+            "default": ""
+          },
+          "homepage_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Homepage Url"
+          },
+          "requires_api_key": {
+            "type": "boolean",
+            "title": "Requires Api Key",
+            "default": false
+          },
+          "supported_capabilities": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Supported Capabilities"
+          },
+          "priority": {
+            "type": "integer",
+            "title": "Priority",
+            "default": 0
+          },
+          "enabled": {
+            "type": "boolean",
+            "title": "Enabled",
+            "default": true
+          },
+          "status": {
+            "$ref": "#/components/schemas/WeatherProviderStatus"
+          },
+          "config_schema": {
+            "items": {
+              "$ref": "#/components/schemas/WeatherProviderConfigField"
+            },
+            "type": "array",
+            "title": "Config Schema"
+          },
+          "current_config": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Current Config"
+          },
+          "persisted_config": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Persisted Config"
+          },
+          "last_tested_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Tested At"
+          },
+          "last_test_status": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Test Status"
+          },
+          "is_builtin": {
+            "type": "boolean",
+            "title": "Is Builtin",
+            "default": true
+          }
+        },
+        "type": "object",
+        "required": [
+          "provider_id",
+          "display_name",
+          "provider_type"
+        ],
+        "title": "WeatherProviderItem"
+      },
       "WeatherProviderPriorityRequest": {
         "properties": {
           "priority": {
@@ -12713,6 +14420,92 @@
           "priority"
         ],
         "title": "WeatherProviderPriorityRequest"
+      },
+      "WeatherProviderStatus": {
+        "properties": {
+          "healthy": {
+            "type": "boolean",
+            "title": "Healthy",
+            "default": false
+          },
+          "circuit_state": {
+            "type": "string",
+            "title": "Circuit State",
+            "default": "n/a"
+          },
+          "last_error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Error"
+          },
+          "daily_quota": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Daily Quota"
+          },
+          "daily_used": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Daily Used"
+          },
+          "daily_remaining": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Daily Remaining"
+          },
+          "cache_hits": {
+            "type": "integer",
+            "title": "Cache Hits",
+            "default": 0
+          },
+          "cache_misses": {
+            "type": "integer",
+            "title": "Cache Misses",
+            "default": 0
+          },
+          "metadata": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Metadata"
+          },
+          "enabled": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Enabled"
+          }
+        },
+        "type": "object",
+        "title": "WeatherProviderStatus"
       },
       "WeatherProviderTestResponse": {
         "properties": {
@@ -12795,6 +14588,57 @@
         },
         "type": "object",
         "title": "WeatherProviderUpdateRequest"
+      },
+      "WeatherSupportedModel": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "label": {
+            "type": "string",
+            "title": "Label",
+            "default": ""
+          },
+          "region": {
+            "type": "string",
+            "title": "Region",
+            "default": ""
+          },
+          "update_interval": {
+            "type": "string",
+            "title": "Update Interval",
+            "default": ""
+          }
+        },
+        "type": "object",
+        "required": [
+          "id"
+        ],
+        "title": "WeatherSupportedModel"
+      },
+      "WeatherSyncCron": {
+        "properties": {
+          "minute": {
+            "type": "string",
+            "title": "Minute"
+          },
+          "hour": {
+            "type": "string",
+            "title": "Hour"
+          },
+          "timezone": {
+            "type": "string",
+            "title": "Timezone",
+            "default": "UTC"
+          }
+        },
+        "type": "object",
+        "required": [
+          "minute",
+          "hour"
+        ],
+        "title": "WeatherSyncCron"
       },
       "WeatherWorkflowRequest": {
         "properties": {

@@ -1364,7 +1364,7 @@ onBeforeUnmount(() => {
                 <dd>{{ displayLayer.importedRasterTimeCount }}</dd>
               </div>
               <div v-if="displayLayer.isImportedRaster">
-                <dt>Overlay ID</dt>
+                <dt>叠加层 ID</dt>
                 <dd class="mono">{{ displayLayer.catalogId }}</dd>
               </div>
               <div v-if="displayLayer.importedFileName">
@@ -1461,7 +1461,7 @@ onBeforeUnmount(() => {
           >
             <div class="job-report-header">
               <div>
-                <div class="section-kicker">调度器</div>
+                <div class="section-kicker">任务调度</div>
                 <span class="job-report-title">任务总览</span>
               </div>
               <span class="job-status-chip" :class="`job-${jobLayer.status}`">
@@ -1516,10 +1516,10 @@ onBeforeUnmount(() => {
                       </template>
                     </template>
                     <template v-else-if="np.detail.chunksTotal">
-                      chunk {{ np.detail.chunksDone ?? 0 }}/{{ np.detail.chunksTotal }}
+                      数据块 {{ np.detail.chunksDone ?? 0 }}/{{ np.detail.chunksTotal }}
                     </template>
                     <template v-if="np.detail.pixelsTotal">
-                      · pixel {{ np.detail.pixelsDone ?? 0 }}/{{ np.detail.pixelsTotal }}
+                      · 像素 {{ np.detail.pixelsDone ?? 0 }}/{{ np.detail.pixelsTotal }}
                     </template>
                     <template v-if="np.detail.phase"> · {{ np.detail.phase }}</template>
                   </p>
@@ -1768,7 +1768,7 @@ onBeforeUnmount(() => {
           >
             <div class="section-kicker">叠加对比</div>
             <h3>可见叠加层点值</h3>
-            <p>当前选点处可见 overlay 的采样对比（含当前选中层与非天气层）。</p>
+            <p>当前选点处可见各叠加层的采样对比（含当前选中层与非天气层）。</p>
             <MultiOverlayBarChart :items="multiOverlayBarItems" />
           </section>
 

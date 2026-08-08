@@ -166,6 +166,32 @@ const headerWorkflowLabel = computed(() => {
   return dirty.value ? `${name} *` : name
 })
 
+// ─── 工作流属性编辑（名称/描述） ────────────────────────────────────────────
+const showPropsDialog = ref(false)
+const editName = ref('')
+const editDescription = ref('')
+
+function openPropsDialog() {
+  if (!currentDefinition.value) return
+  editName.value = currentDefinition.value.name
+  editDescription.value = currentDefinition.value.description ?? ''
+  showPropsDialog.value = true
+}
+
+async function saveProps() {
+  if (!currentDefinition.value || !editName.value.trim() || isReadonly.value) return
+  try {
+    await store.updateCurrent({
+      name: editName.value.trim(),
+      description: editDescription.value.trim() || undefined,
+    })
+    showPropsDialog.value = false
+  } catch (error) {
+    // store 自管错误态（error ref），对话框保持打开让用户修正
+    void error
+  }
+}
+
 // ─── 生命周期 ───────────────────────────────────────────────────────────────
 
 onMounted(async () => {
@@ -589,6 +615,16 @@ defineExpose({
           <span v-if="dirty && !isReadonly" class="dirty-badge" title="有未保存的修改"
             >● 未保存</span
           >
+          <button
+            class="header-btn"
+            type="button"
+            :disabled="!hasDefinition || isReadonly"
+            title="编辑工作流名称与说明描述"
+            @click="openPropsDialog"
+          >
+            <span aria-hidden="true">⚙</span>
+            <span>属性</span>
+          </button>
         </div>
 
         <div class="header-actions">
@@ -844,6 +880,7 @@ defineExpose({
       :visible="showRunDialog"
       :workflow-id="currentDefinition?.workflow_id ?? ''"
       :workflow-name="currentDefinition?.name ?? ''"
+      :workflow-description="currentDefinition?.description ?? ''"
       :linked-layer-id="currentLinkedLayerId"
       :engine="currentEngine"
       @confirm="handleRunConfirm"
@@ -914,6 +951,53 @@ defineExpose({
       @close="showPipelineLauncher = false"
       @launch="handlePipelineLaunch"
     />
+
+    <!-- 工作流属性编辑对话框（名称/描述） -->
+    <Teleport to="body">
+      <div v-if="showPropsDialog" class="props-mask" @click.self="showPropsDialog = false">
+        <div class="props-dialog" role="dialog" aria-label="工作流属性">
+          <div class="props-header">
+            <span class="props-title">工作流属性</span>
+            <button
+              class="props-close"
+              type="button"
+              aria-label="关闭"
+              @click="showPropsDialog = false"
+            >
+              ×
+            </button>
+          </div>
+          <div class="props-body">
+            <div class="form-row">
+              <label class="form-label">名称 *</label>
+              <input v-model="editName" type="text" class="form-input" placeholder="显示名称" />
+            </div>
+            <div class="form-row">
+              <label class="form-label">说明描述</label>
+              <textarea
+                v-model="editDescription"
+                class="form-textarea"
+                rows="3"
+                placeholder="说明该工作流的用途、输入输出与注意事项（运行对话框与列表展示）"
+              ></textarea>
+            </div>
+          </div>
+          <div class="dialog-actions">
+            <button class="dialog-btn cancel" type="button" @click="showPropsDialog = false">
+              取消
+            </button>
+            <button
+              class="dialog-btn primary"
+              type="button"
+              :disabled="!editName.trim()"
+              @click="saveProps"
+            >
+              保存
+            </button>
+          </div>
+        </div>
+      </div>
+    </Teleport>
 
     <NodeCacheDialog :open="nodeCacheDialogOpen" @close="nodeCacheDialogOpen = false" />
   </div>
@@ -1475,5 +1559,57 @@ defineExpose({
   text-align: center;
   font-size: 0.62rem;
   color: #6ee7b7;
+}
+
+/* ── 工作流属性对话框 ──────────────────────────────────────────────────── */
+.props-mask {
+  position: fixed;
+  inset: 0;
+  z-index: 1300;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(3, 8, 16, 0.6);
+  backdrop-filter: blur(4px);
+}
+
+.props-dialog {
+  width: min(460px, 90vw);
+  border-radius: 12px;
+  border: 1px solid rgba(148, 163, 184, 0.22);
+  background: #0c1524;
+  color: #dbe7f5;
+  box-shadow: 0 20px 44px rgba(0, 0, 0, 0.45);
+  overflow: hidden;
+}
+
+.props-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.75rem 1rem;
+  border-bottom: 1px solid rgba(148, 163, 184, 0.16);
+}
+
+.props-title {
+  font-size: 14px;
+  font-weight: 500;
+  color: #f1f7ff;
+}
+
+.props-close {
+  border: none;
+  background: transparent;
+  color: #8aa2bd;
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.props-body {
+  padding: 0.9rem 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.7rem;
 }
 </style>

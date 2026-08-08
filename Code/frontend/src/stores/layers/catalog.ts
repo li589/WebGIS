@@ -273,7 +273,7 @@ const SOURCE_LAB: LayerSource = {
   id: 'lab-model',
   name: 'SMAP/ω 交叉分析数据（2023-01）',
   description:
-    '中国区域 SMAP L3 土壤湿度与 ω 反演产品多源交叉分析数据集，含 14 天 SM 均值、ω 反演、IGBP 分区统计。',
+    '中国区域 SMAP L3 土壤湿度与 ω 反演产品多源交叉分析数据集，含 14 天 SM（土壤湿度）均值、ω 反演、IGBP 分区统计。',
   urlTemplate: '',
   needsAuth: false,
   needsBackendTransform: false,
@@ -327,8 +327,8 @@ const SOURCE_ARIDITY_CN: LayerSource = {
 
 const SOURCE_SMAP_TS: LayerSource = {
   id: 'smap-sm-ts',
-  name: 'SMAP 土壤湿度时间序列（2023-01）',
-  description: 'SMAP L3 土壤湿度日数据时间序列（2023 年 1 月，13 天，中国区域）。',
+  name: 'SMAP 土壤湿度时间序列（2025-12）',
+  description: 'SMAP L3 土壤湿度日数据时间序列（2025 年 12 月，31 天，中国区域）。',
   urlTemplate: '',
   needsAuth: false,
   needsBackendTransform: false,
@@ -385,7 +385,7 @@ const SOURCE_CLCD_CN: LayerSource = {
 const SOURCE_BIOMASS_CN: LayerSource = {
   id: 'biomass-cn',
   name: 'ESA BIOMASS 2020（中国区域）',
-  description: 'ESA CCI BIOMASS L4 AGB 合并产品 2020 年，中国区域地上生物量。',
+  description: 'ESA CCI BIOMASS L4 AGB（地上生物量）合并产品 2020 年，中国区域。',
   urlTemplate: '',
   needsAuth: false,
   needsBackendTransform: false,
@@ -396,7 +396,7 @@ const SOURCE_BIOMASS_CN: LayerSource = {
 const SOURCE_ERA5_DWAA_CN: LayerSource = {
   id: 'era5-dwaa-cn',
   name: 'ERA5 白天热浪事件（2020）',
-  description: 'ERA5 基于 SMCI 指标的白天热浪事件累积计数（2020 全年 366 天）。',
+  description: 'ERA5 基于 SMCI（土壤湿度指数）指标的白天热浪事件累积计数（2020 全年 366 天）。',
   urlTemplate: '',
   needsAuth: false,
   needsBackendTransform: false,
@@ -407,7 +407,7 @@ const SOURCE_ERA5_DWAA_CN: LayerSource = {
 const SOURCE_ERA5_WDAA_CN: LayerSource = {
   id: 'era5-wdaa-cn',
   name: 'ERA5 夜间热浪事件（2020）',
-  description: 'ERA5 基于 SMCI 指标的夜间热浪事件累积计数（2020 全年 366 天）。',
+  description: 'ERA5 基于 SMCI（土壤湿度指数）指标的夜间热浪事件累积计数（2020 全年 366 天）。',
   urlTemplate: '',
   needsAuth: false,
   needsBackendTransform: false,
@@ -428,9 +428,9 @@ const SOURCE_CO2_CN: LayerSource = {
 
 const SOURCE_SOIL_DDCA: LayerSource = {
   id: 'soil-ddca',
-  name: '土壤生态 DDCA（2015-2022 时间序列）',
+  name: '土壤生态 DDCA（双通道反演，2015-2022）',
   description:
-    '中国 9km 土壤生态数据集 DDCA 产品（变量 DH，2015-04-01 至 2022-12-31 时间序列，采样 60 个时间点）。',
+    '中国 9km 土壤生态数据集 DDCA（双通道算法 DCA 反演）产品（变量 DH 土壤湿度，2015-04-01 至 2022-12-31 时间序列，采样 60 个时间点）。',
   urlTemplate: '',
   needsAuth: false,
   needsBackendTransform: false,
@@ -464,7 +464,7 @@ const SOURCE_FOREST_RATIO: LayerSource = {
 
 const SOURCE_SM_DEC2025: LayerSource = {
   id: 'sm-dec2025',
-  name: 'SM 土壤湿度（2025-12）',
+  name: 'SMAP 土壤湿度（2025-12）',
   description:
     'SMAP 土壤湿度 SM 反演结果（2025-12-01 至 2025-12-31 时间序列，31 天，EASE-Grid 9km）。',
   urlTemplate: '',
@@ -808,13 +808,13 @@ export const LAYER_LIBRARY: LayerCatalogItem[] = [
   },
   {
     catalogId: 'aridity-cn',
-    name: '干旱指数 AI',
+    name: '干旱指数 AI（P/PET）',
     category: '气候产品',
-    metricLabel: 'AI',
+    metricLabel: 'AI（P/PET）',
     metricUnit: '',
     metricPrecision: 2,
     updateLabel: '静态数据',
-    sourceLabel: 'P/PET',
+    sourceLabel: 'P/PET（降水/蒸散比）',
     accentColor: '#c4a35a',
     accentGlow: 'rgba(196, 163, 90, 0.3)',
     chipTone: 'rgba(196, 163, 90, 0.16)',
@@ -829,7 +829,7 @@ export const LAYER_LIBRARY: LayerCatalogItem[] = [
     metricUnit: 'm³/m³',
     metricPrecision: 3,
     updateLabel: '每日更新',
-    sourceLabel: 'SMAP L3 (2023-01)',
+    sourceLabel: 'SMAP L3 (2025-12)',
     accentColor: '#4ecdc4',
     accentGlow: 'rgba(78, 205, 196, 0.3)',
     chipTone: 'rgba(78, 205, 196, 0.16)',
@@ -1004,14 +1004,14 @@ export const LAYER_LIBRARY: LayerCatalogItem[] = [
   },
   {
     catalogId: 'sm-dec2025',
-    name: 'SM 土壤湿度（2025-12）',
+    name: 'SMAP 土壤湿度（2025-12）',
     category: 'research-group',
     subCategory: '模型输入',
     metricLabel: '土壤湿度',
     metricUnit: 'm³/m³',
     metricPrecision: 3,
     updateLabel: '每日更新',
-    sourceLabel: 'SmapSoil_VOD_SM v7.3',
+    sourceLabel: 'SMAP 土壤湿度反演 v7.3',
     accentColor: '#66c2a5',
     accentGlow: 'rgba(102, 194, 165, 0.3)',
     chipTone: 'rgba(102, 194, 165, 0.16)',

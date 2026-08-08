@@ -11,7 +11,9 @@ import {
 import {
   clearAllSettingsLocalPrefs,
   getApiKeyPref,
+  isWriteApiKeyPersistEnabled,
   patchApiKeyPref,
+  setWriteApiKeyPersistEnabled,
 } from '../../services/settings-local'
 
 const settingsStore = useSettingsStore()
@@ -19,11 +21,18 @@ const { apiKeys, apiKeyHistory } = storeToRefs(settingsStore)
 
 const writeKeyDraft = ref('')
 const writeKeyLocalSet = ref(hasBackendWriteApiKey())
+const writeKeyPersist = ref(isWriteApiKeyPersistEnabled())
 const writeKeyStatus = computed(() => {
-  // P1-1：已移除构建期 VITE_BACKEND_API_KEY 内联路径，仅识别运行时 localStorage 写入的密钥。
-  if (writeKeyLocalSet.value) return '已保存到本机 localStorage'
-  return '未配置'
+  if (!writeKeyLocalSet.value) return '未配置'
+  return writeKeyPersist.value ? '已保存（浏览器会话 + 跨刷新）' : '已保存（仅当前浏览器标签页）'
 })
+
+function onPersistToggle(ev: Event) {
+  const on = (ev.target as HTMLInputElement).checked
+  setWriteApiKeyPersistEnabled(on)
+  writeKeyPersist.value = isWriteApiKeyPersistEnabled()
+  writeKeyLocalSet.value = hasBackendWriteApiKey()
+}
 
 function saveWriteKey() {
   const value = writeKeyDraft.value.trim()
@@ -31,6 +40,7 @@ function saveWriteKey() {
   setBackendWriteApiKey(value)
   writeKeyDraft.value = ''
   writeKeyLocalSet.value = true
+  writeKeyPersist.value = isWriteApiKeyPersistEnabled()
 }
 
 function clearWriteKey() {
@@ -454,8 +464,9 @@ function statusBadge(item: ApiKeyItem): { text: string; class: string } | null {
     <section class="settings-section">
       <h3 class="section-title">浏览器写请求密钥</h3>
       <p class="section-hint">
-        设置页与工作流写接口需要带 <code>X-Api-Key</code>。值保存在本机
-        <code>localStorage</code>（兼容旧 sessionStorage）。 当前：{{ writeKeyStatus }}
+        设置页敏感读取与工作流写接口需要带 <code>X-Api-Key</code>。默认仅
+        <code>sessionStorage</code>（关标签即失效，降低 XSS 持久暴露）；勾选下方选项才写入
+        <code>localStorage</code>。当前：{{ writeKeyStatus }}
       </p>
       <div class="key-card">
         <div class="key-input-area">
@@ -467,13 +478,17 @@ function statusBadge(item: ApiKeyItem): { text: string; class: string } | null {
             placeholder="粘贴与后端 BACKEND_API_KEY / backend_auth 一致的密钥"
           />
           <button class="action-btn save" :disabled="!writeKeyDraft.trim()" @click="saveWriteKey">
-            保存到本机
+            保存
           </button>
           <button class="action-btn cancel" :disabled="!writeKeyLocalSet" @click="clearWriteKey">
             清除本机密钥
           </button>
           <button class="action-btn edit" @click="clearLocalPrefsOnly">清除本机偏好</button>
         </div>
+        <label class="persist-toggle">
+          <input type="checkbox" :checked="writeKeyPersist" @change="onPersistToggle" />
+          跨刷新记住（XSS 风险更大，仅受信本机使用）
+        </label>
       </div>
     </section>
   </div>
@@ -515,6 +530,19 @@ function statusBadge(item: ApiKeyItem): { text: string; class: string } | null {
   border-radius: 0.52rem;
   background: rgba(4, 12, 23, 0.5);
   border: 1px solid rgba(136, 192, 255, 0.1);
+}
+.persist-toggle {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.4rem;
+  margin-top: 0.5rem;
+  color: #8aa0b4;
+  font-size: 0.54rem;
+  line-height: 1.45;
+  cursor: pointer;
+}
+.persist-toggle input {
+  margin-top: 0.12rem;
 }
 .key-card.disabled {
   opacity: 0.5;

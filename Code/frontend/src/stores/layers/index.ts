@@ -10,6 +10,7 @@ import {
 import { useWeatherTileManager } from '../weather-tile-manager'
 import { useWeatherSourcePrefsStore } from '../weather-source-prefs'
 import { useUiStore } from '../ui'
+import { isDebugLogEnabled } from '../../utils/perf-probe'
 import { formatClockHourLabel } from '../../utils/weather-timeline'
 import { resolveWeatherTileReadyKind } from '../../utils/weather-tile-readiness'
 import { buildDefaultWeatherRenderHint } from '../../data/weather-render-hints'
@@ -55,6 +56,7 @@ import {
 } from './catalog-builders'
 import { WORKFLOW_COPY } from '../../ui-copy/workflow'
 import { resolveEmptyOverlayWorkflowError } from './materialize-empty'
+import { productTagLabel } from '../../utils/workflow-expected-outputs'
 import {
   timelineTargetFromWorkflowTimeKey,
   type WorkflowProgressTimeSeekHint,
@@ -99,6 +101,7 @@ function normalizeProductTag(raw: string | null | undefined): string {
 }
 
 function debugLog(module: string, ...args: unknown[]) {
+  if (!isDebugLogEnabled()) return
   console.log(`[${performance.now().toFixed(1)}ms] [LayersStore:${module}]`, ...args)
 }
 
@@ -1802,7 +1805,9 @@ export const useLayersStore = defineStore('layers', () => {
       })
       const displayName =
         matchingOutput?.name ||
-        (tag === 'OMEGA' ? 'OMEGA' : item.title.replace(/^Algorithm Map Layer:\s*/i, '')) ||
+        (tag === 'OMEGA'
+          ? productTagLabel(tag)
+          : item.title.replace(/^Algorithm Map Layer:\s*/i, '')) ||
         item.productTag ||
         item.overlayLayerId
 
@@ -1863,8 +1868,8 @@ export const useLayersStore = defineStore('layers', () => {
           followPolicy: timeList?.length ? 'containing' : undefined,
         })
         groupMember.dataState = 'imported'
-        if (groupMember.name === 'OMEGA' || !groupMember.name) {
-          groupMember.name = displayName === 'OMEGA_BLOCK' ? 'OMEGA' : displayName
+        if (groupMember.name === productTagLabel('OMEGA') || !groupMember.name) {
+          groupMember.name = displayName === 'OMEGA_BLOCK' ? productTagLabel('OMEGA') : displayName
         }
         if (groupMember.runGroupId) refreshRunGroupDissolvable(groupMember.runGroupId)
         continue
@@ -1880,14 +1885,14 @@ export const useLayersStore = defineStore('layers', () => {
         if (omegaPlaceholder) {
           omegaPlaceholder.importedRaster = buildImportedRasterPayload(item.overlayLayerId, {
             bounds: item.bounds,
-            fileName: omegaPlaceholder.name || 'OMEGA',
+            fileName: omegaPlaceholder.name || productTagLabel('OMEGA'),
             sourceCrs: item.sourceCrs,
             nativeStep: nativeStep || (timeList?.length ? '8d' : null),
             timeList,
             followPolicy: timeList?.length ? 'containing' : undefined,
           })
           omegaPlaceholder.dataState = 'imported'
-          omegaPlaceholder.name = 'OMEGA'
+          omegaPlaceholder.name = productTagLabel('OMEGA')
           if (omegaPlaceholder.runGroupId) {
             refreshRunGroupDissolvable(omegaPlaceholder.runGroupId)
           }
@@ -1961,7 +1966,11 @@ export const useLayersStore = defineStore('layers', () => {
     const orphans = activeLayers.value.filter((layer) => {
       if (!layer.importedRaster?.overlayLayerId) return false
       const name = `${layer.name || ''} ${layer.importedRaster.fileName || ''}`.toUpperCase()
-      return name.includes('OMEGA_BLOCK') || normalizeProductTag(layer.name) === 'OMEGA'
+      return (
+        name.includes('OMEGA_BLOCK') ||
+        normalizeProductTag(layer.name) === 'OMEGA' ||
+        layer.name === productTagLabel('OMEGA')
+      )
     })
     for (const orphan of [...orphans]) {
       // 只处理名为 OMEGA_BLOCK 的游离层
@@ -1974,14 +1983,14 @@ export const useLayersStore = defineStore('layers', () => {
           normalizeProductTag(layer.runGroupProductTag || layer.name) === 'OMEGA',
       )
       if (!placeholder) {
-        // 无占位：直接把游离层改名为 OMEGA
-        orphan.name = 'OMEGA'
+        // 无占位：直接把游离层改名为 ω 显示名（runGroupProductTag 保持内部值）
+        orphan.name = productTagLabel('OMEGA')
         if (orphan.runGroupProductTag) orphan.runGroupProductTag = 'OMEGA'
         continue
       }
       placeholder.importedRaster = { ...orphan.importedRaster! }
       placeholder.dataState = 'imported'
-      placeholder.name = 'OMEGA'
+      placeholder.name = productTagLabel('OMEGA')
       placeholder.runGroupProductTag = placeholder.runGroupProductTag || 'OMEGA'
       // 摘掉游离层引用后从列表移除（不清后端）
       orphan.importedRaster = undefined

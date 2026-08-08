@@ -233,7 +233,7 @@ const healthyCount = computed(() => weatherProviders.value.filter((p) => p.statu
     <section class="settings-section">
       <div class="section-header">
         <h3 class="section-title">
-          天气源 Provider
+          天气源
           <span class="count-badge"
             >{{ enabledCount }}/{{ weatherProviders.length }} 启用 · {{ healthyCount }} 健康</span
           >
@@ -246,7 +246,7 @@ const healthyCount = computed(() => weatherProviders.value.filter((p) => p.statu
       </div>
 
       <p class="section-hint">
-        系统按 Provider 优先级（数字越小越优先）路由天气请求。 Open-Meteo
+        系统按数据源优先级（数字越小越优先）路由天气请求。 Open-Meteo
         仅应出现两条：<strong>本地</strong>（open-meteo-local）与
         <strong>Online</strong>（open-meteo-online）。模型与 Docker 同步请到「Open-Meteo」页。
         保存配置后立即作用于后端 registry（可点「测试连通性」验证）。
@@ -255,7 +255,7 @@ const healthyCount = computed(() => weatherProviders.value.filter((p) => p.statu
       <!-- 空状态 -->
       <div v-if="sortedProviders.length === 0" class="empty-state">
         <span class="empty-icon">🌦</span>
-        <span>暂无天气源 Provider，请检查后端是否正确注册</span>
+        <span>暂无天气数据源，请检查后端是否正确注册</span>
       </div>
 
       <!-- Provider 卡片列表 -->

@@ -15,9 +15,14 @@ CGDA 是**面向课题组与大气研究院研究员**的科研数据分析平�
 
 - **目标用户**：本课题组 + 大气研究院研究员，访问量小；可能有临时展出演示需求
 - **部署形态**：单机构部署、单 API Key 写鉴权、SQLite 元数据；多用户模型属 roadmap（不含在初代）
+- **写鉴权**：production 默认 fail-closed；development 且 `BACKEND_API_KEYS_ENABLED=false` 时仅 **loopback** 可旁路，局域网调试需显式 `BACKEND_DEV_AUTH_BYPASS=true`
+- **敏感配置读**：`GET /config/api-keys|gee/*|weather*|remote-storage|data-source*|data-cache/overview` 与写接口同级鉴权；`/config/general` 与 `/config/about` 仍公开。浏览器写 Key 默认 `sessionStorage`，可选持久化到 `localStorage`
+- **加密主密钥**：`BACKEND_GEE_CREDENTIALS_ENCRYPTION_KEY` 须为 **64 位 hex（32 字节）**；同一把 key 加密 GEE SA / API keys / 天气 provider / 远程存储 / 门户凭据（泄露 blast radius 大）。非 development 缺 key 拒启
+- **GEE 账号 API 管理**：production 默认关闭；development 默认开启（`BACKEND_GEE_API_ACCOUNT_MANAGEMENT_ENABLED` 可覆盖）
+- **UI 重启后端**：始终重启 FastAPI+Worker+Beat（请求体 `components` 仅校验、不选子集）；门禁 `BACKEND_UI_RESTART_ENABLED`（默认仅 development）
 - **演示模式**：`demo://` 占位数据源仅 development 默认可用；展出演示需以 production 运行时设 `BACKEND_DEMO_SOURCES_ENABLED=true`
 - **占位节点**：未实现执行器的节点模板在 production 节点面板默认隐藏（`BACKEND_NODE_STUBS_VISIBLE=true` 可显示）
-- **写接口限流**：默认 120 次/分钟/IP（宽松），development/test 环境自动关闭；阈值经 `BACKEND_WRITE_RATE_LIMIT_PER_MINUTE` 配置
+- **写接口限流**：`/config`、`/import`、`/workflow-runs` 写方法默认 120 次/分钟/IP；天气瓦片 GET 另有宽松限流（`BACKEND_WEATHER_TILE_RATE_LIMIT_PER_MINUTE`，默认 240）；development/test 旁路
 
 ## 当前仓库结构
 

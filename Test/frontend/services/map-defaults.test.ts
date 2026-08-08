@@ -46,6 +46,6 @@ describe('brand whitelabel defaults', () => {
   it('keeps stock brand and org label without VITE overrides', () => {
     expect(BRAND.shortName).toBeTruthy()
     expect(BRAND.fullName).toContain('地理')
-    expect(ORG_LABEL).toBe('课题组')
+    expect(ORG_LABEL).toBe('科研')
   })
 })

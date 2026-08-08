@@ -25,8 +25,8 @@
 
 ## 高风险区（改动前确认鉴权 / 加密 / 隔离）
 
-1. `/config/*` 写操作与 `POST /import/raster` 需 `X-API-Key`（含数据根 `PUT /config/data-source/paths`、`POST /config/service/restart`）。
-2. GEE 凭据用 `BACKEND_GEE_CREDENTIALS_ENCRYPTION_KEY`（32-byte hex）加密落库；非 development 必配。
+1. `/config/*` 写操作与 `POST /import/raster` 需 `X-API-Key`（dev 旁路仅 loopback，或 `BACKEND_DEV_AUTH_BYPASS`；含数据根与 `POST /config/service/restart`，后者始终全量后端组）。
+2. 共享加密主密钥 `BACKEND_GEE_CREDENTIALS_ENCRYPTION_KEY`（64 hex / 32-byte，启动校验）加密 GEE/API keys/天气/远程/门户；非 development 必配。
 3. `launch.py flush` 清空 Redis + 天气缓存，仅排障用。
 4. Open-Meteo 走 Docker named volume，勿用 Windows bind mount。
 5. `BACKEND_DATA_ROOT` 必配（production 空根拒启）；前端设置 → 数据源可改，须重启 FastAPI+Worker+Beat 生效。
