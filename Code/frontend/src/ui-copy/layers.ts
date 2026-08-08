@@ -25,6 +25,7 @@ export const LAYERS_COPY = {
   exportPng: '导出 PNG',
   exportTif: '导出 GeoTIFF',
   runWorkflow: '运行工作流',
+  runWorkflowNoCache: '不使用缓存运行',
   viewReport: '查看报告',
   dissolveGroup: '拆分计算组',
   toggleGroupVisible: '整组显隐',

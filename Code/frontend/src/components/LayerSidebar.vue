@@ -790,6 +790,15 @@ function handleContextAction(action: LayerContextActionId) {
       closeContextMenu()
       return
     }
+    case 'runWorkflowNoCache': {
+      // 不使用节点缓存：全量重算，规避复用旧输出目录带来的时间片污染
+      const layer = activeLayersDisplay.value.find((l) => l.instanceId === id)
+      if (layer) {
+        void layersStore.runWorkflowForCatalog(layer.catalogId, { reuseBlockCache: false })
+      }
+      closeContextMenu()
+      return
+    }
     case 'dissolveGroup': {
       const layer = activeLayersDisplay.value.find((l) => l.instanceId === id)
       if (layer?.runGroupId) {

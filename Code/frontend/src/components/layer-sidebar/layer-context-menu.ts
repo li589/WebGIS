@@ -154,6 +154,11 @@ export function buildLayerContextMenu(input: LayerContextMenuInput): LayerContex
       label: LAYERS_COPY.runWorkflow,
       icon: '▶',
     })
+    workflowItems.push({
+      id: 'runWorkflowNoCache',
+      label: LAYERS_COPY.runWorkflowNoCache,
+      icon: '↺',
+    })
   }
   if (input.canDissolveGroup) {
     workflowItems.push({

@@ -619,6 +619,9 @@ export function createWorkflowRunner(deps: WorkflowRunnerDeps) {
       algorithmRequest?: Record<string, unknown>
       weatherRequest?: Record<string, unknown>
       commandLabel?: string
+      /** 显式控制是否复用节点/块缓存（缺省不注入，算法默认 reuse_block_cache=True）。
+       *  false=全量重算，规避复用旧输出目录带来的时间片污染。 */
+      reuseBlockCache?: boolean
     } = {},
   ) {
     if (deps.submittingCatalogIds.has(catalogId)) {
@@ -738,6 +741,16 @@ export function createWorkflowRunner(deps: WorkflowRunnerDeps) {
         options.algorithmRequest,
         options.weatherRequest,
       )
+      // 节点缓存开关：显式指定时注入 algorithm_params.reuse_block_cache，
+      // 供 omega 等模块在下次运行决定是否复用旧输出目录（false=全量重算防时间片污染）
+      if (options.reuseBlockCache !== undefined) {
+        const algoReq = (payload.algorithm_request ?? {}) as Record<string, unknown>
+        const params = (algoReq.algorithm_params ?? {}) as Record<string, unknown>
+        payload.algorithm_request = {
+          ...algoReq,
+          algorithm_params: { ...params, reuse_block_cache: options.reuseBlockCache },
+        }
+      }
       if (options.commandLabel) {
         payload.command_label = options.commandLabel
       }
