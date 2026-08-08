@@ -1,9 +1,13 @@
-"""CRS 注册表 — 声明式目录，含 13 个常用 CRS（Phase 1 扩展版）。
+"""CRS 注册表 — 声明式目录 + 动态投影带生成。
 
-Phase 2 待扩展：
+Phase 2 已实现：
 - 全 UTM 系列（EPSG:32601-32660 北半球、32701-32760 南半球）动态生成
-- 全 Gauss-Krüger 3 度带（EPSG:4513-4533 CGCS2000）+ 6 度带
-- EASE-Grid 2.0 变体：3km/25km/36km
+- 全 Gauss-Krüger 3 度带（EPSG:4513-4533 CGCS2000）动态生成
+- Web Mercator (EPSG:3857) bounds 启发式识别
+
+Featured CRS（13 项静态定义）保留为前端下拉的精简集；
+动态生成的投影带通过 ``get_crs()`` 可查、通过 ``to_api_payload_expanded()``
+返回完整列表供高级用户选择。
 """
 
 from __future__ import annotations
@@ -128,8 +132,85 @@ _CRS_DEFS: list[CRSDef] = [
     ),
 ]
 
-# 按 code 索引的不可变字典
-CRS_REGISTRY: dict[str, CRSDef] = {c.code: c for c in _CRS_DEFS}
+# ── 动态投影带生成（Phase 2）─────────────────────────────────────────
+
+
+def _generate_utm_zones() -> list[CRSDef]:
+    """动态生成全 UTM 带（北半球 32601-32660，南半球 32701-32760）。
+
+    UTM 带号 1-60，每带跨经度 6°，从 180°W 开始。
+    北半球 EPSG:326xx，南半球 EPSG:327xx。
+    跳过已在静态定义中的 32649/32650（避免重复，保留其定制标签）。
+    """
+    featured = {c.code for c in _CRS_DEFS}
+    zones: list[CRSDef] = []
+    for zone in range(1, 61):
+        for hemisphere, epsg_prefix, label_prefix in (
+            ("N", 32600, "北半球"),
+            ("S", 32700, "南半球"),
+        ):
+            code = f"EPSG:{epsg_prefix + zone}"
+            if code in featured:
+                continue
+            central_meridian = -180 + zone * 6 - 3
+            zones.append(
+                CRSDef(
+                    code=code,
+                    label=f"UTM Zone {zone}{hemisphere}（CM {central_meridian}°E）",
+                    category=CRSCategory.PROJECTED,
+                    epsg=epsg_prefix + zone,
+                    proj4_def=(
+                        f"+proj=utm +zone={zone} +datum=WGS84 +units=m +no_defs"
+                    ),
+                    area="Global",
+                )
+            )
+    return zones
+
+
+def _generate_gk_3deg_zones() -> list[CRSDef]:
+    """动态生成全 CGCS2000 高斯-克吕格 3 度带（EPSG:4513-4533）。
+
+    3 度带 zone 25-45，覆盖中央子午线 75°E-135°E（中国全域）。
+    EPSG:4513 = zone 25 (CM 75°E) ... EPSG:4533 = zone 45 (CM 135°E)。
+    false_easting = zone × 1000000 + 500000。
+    跳过已在静态定义中的 4527/4528/4529（保留定制标签）。
+    """
+    featured = {c.code for c in _CRS_DEFS}
+    zones: list[CRSDef] = []
+    for zone in range(25, 46):
+        code = f"EPSG:{4513 + (zone - 25)}"
+        if code in featured:
+            continue
+        central_meridian = zone * 3  # zone 25 → 75°E, zone 45 → 135°E
+        false_easting = zone * 1_000_000 + 500_000
+        zones.append(
+            CRSDef(
+                code=code,
+                label=(
+                    f"CGCS2000 / 3度带 GK zone {zone}" f"（CM {central_meridian}°E）"
+                ),
+                category=CRSCategory.PROJECTED,
+                epsg=4513 + (zone - 25),
+                proj4_def=(
+                    f"+proj=tmerc +lat_0=0 +lon_0={central_meridian} "
+                    f"+k=1 +x_0={false_easting} +y_0=0 "
+                    f"+ellps=GRS80 +units=m +no_defs"
+                ),
+                area="China",
+            )
+        )
+    return zones
+
+
+# 动态生成的投影带
+_DYNAMIC_CRS: list[CRSDef] = _generate_utm_zones() + _generate_gk_3deg_zones()
+
+# 按 code 索引的不可变字典（静态 + 动态）
+CRS_REGISTRY: dict[str, CRSDef] = {c.code: c for c in (_CRS_DEFS + _DYNAMIC_CRS)}
+
+# 静态 featured CRS 的 code 集合（用于区分精简列表与完整列表）
+_FEATURED_CODES: frozenset[str] = frozenset(c.code for c in _CRS_DEFS)
 
 
 def get_crs(code: str) -> CRSDef | None:
@@ -144,15 +225,26 @@ def get_crs(code: str) -> CRSDef | None:
     return CRS_REGISTRY.get(normalized)
 
 
-def list_crs(category: CRSCategory | None = None) -> list[CRSDef]:
-    """列出所有（或指定大类）已注册 CRS。"""
+def list_crs(
+    category: CRSCategory | None = None,
+    *,
+    featured_only: bool = False,
+) -> list[CRSDef]:
+    """列出所有（或指定大类）已注册 CRS。
+
+    Args:
+        category: 可选大类过滤
+        featured_only: True 时仅返回 13 项精简集（前端下拉用）；
+            False 时返回全部（含动态 UTM/GK 带）。
+    """
+    source = _CRS_DEFS if featured_only else (_CRS_DEFS + _DYNAMIC_CRS)
     if category is None:
-        return list(_CRS_DEFS)
-    return [c for c in _CRS_DEFS if c.category == category]
+        return list(source)
+    return [c for c in source if c.category == category]
 
 
 def to_api_payload() -> list[dict[str, Any]]:
-    """序列化为前端下拉用 payload（按 category 分组前的平铺列表）。
+    """序列化为前端下拉用 payload（精简集，13 项 featured CRS）。
 
     Returns:
         ``[{code, label, category, area, deprecated}, ...]``
@@ -167,6 +259,61 @@ def to_api_payload() -> list[dict[str, Any]]:
         }
         for c in _CRS_DEFS
     ]
+
+
+def to_api_payload_expanded() -> list[dict[str, Any]]:
+    """序列化为完整 CRS 列表（含动态 UTM/GK 带，供高级选择）。
+
+    动态项额外携带 ``featured: False`` 标记，前端可折叠展示。
+    """
+    result: list[dict[str, Any]] = [
+        {
+            "code": c.code,
+            "label": c.label,
+            "category": c.category.value,
+            "area": c.area,
+            "deprecated": c.deprecated,
+            "featured": True,
+        }
+        for c in _CRS_DEFS
+    ]
+    result.extend(
+        {
+            "code": c.code,
+            "label": c.label,
+            "category": c.category.value,
+            "area": c.area,
+            "deprecated": c.deprecated,
+            "featured": False,
+        }
+        for c in _DYNAMIC_CRS
+    )
+    return result
+
+
+def suggest_utm_zone(lng: float, lat: float) -> str:
+    """根据经纬度推断最合适的 UTM 带 EPSG code。
+
+    UTM 带号 = floor((lng + 180) / 6) + 1，范围 1-60。
+    北/南半球由纬度正负决定。
+    """
+    zone = int((lng + 180.0) / 6.0) + 1
+    zone = max(1, min(60, zone))
+    if lat >= 0:
+        return f"EPSG:{32600 + zone}"
+    return f"EPSG:{32700 + zone}"
+
+
+def suggest_gk_zone(lng: float) -> str | None:
+    """根据经度推断最合适的 CGCS2000 3 度带 EPSG code。
+
+    3 度带 zone = round(lng / 3)，范围 25-45（覆盖中国 75°E-135°E）。
+    超出范围返回 None。
+    """
+    zone = round(lng / 3.0)
+    if zone < 25 or zone > 45:
+        return None
+    return f"EPSG:{4513 + (zone - 25)}"
 
 
 def normalize_crs_code(code: str) -> str:

@@ -13,6 +13,7 @@ import type { Map as MaplibreMap } from 'maplibre-gl'
 import type { WindGeoJSON } from './types'
 import { DEFAULT_HEIGHT_SUFFIX, MAP_EVENT_MOVE, MAP_EVENT_MOVEEND, MAP_EVENT_RESIZE } from './types'
 import { computeCanvasLayout, type CanvasLayout } from './canvas-utils'
+import { debugLog } from '../../utils/perf-probe'
 
 // ── 渲染参数常量 ─────────────────────────────────────────
 
@@ -132,7 +133,7 @@ export class WindBarbLayer {
 
     this.loadData(geojson)
     this.updateLayout()
-    console.log(
+    debugLog(
       `[${performance.now().toFixed(1)}ms] [WindBarbLayer] constructor`,
       'dataCount',
       this.data.length,
@@ -403,7 +404,7 @@ export class WindBarbLayer {
     ctx.clearRect(0, 0, this.canvas.width, this.canvas.height)
 
     const { lineSegments, circles, step, considered, visible } = this.buildAllBarbs()
-    console.log(
+    debugLog(
       `[${performance.now().toFixed(1)}ms] [WindBarbLayer] draw`,
       'zoom',
       zoom,
@@ -461,7 +462,7 @@ export class WindBarbLayer {
   updateGeoJSON(geojson: WindGeoJSON): void {
     this.loadData(geojson)
     this.updateLayout()
-    console.log(
+    debugLog(
       `[${performance.now().toFixed(1)}ms] [WindBarbLayer] updateGeoJSON`,
       'dataCount',
       this.data.length,

@@ -35,9 +35,14 @@ def _dispatch(kind: str, payload: dict[str, Any]) -> dict[str, Any]:
             target_crs=payload.get("target_crs", "EPSG:4326"),
             lng_offset=float(payload.get("lng_offset") or 0),
             lat_offset=float(payload.get("lat_offset") or 0),
+            swap_xy=payload.get("swap_xy"),
         )
     if kind == "raster_commit":
         from app.data_io.services.raster_commit import commit_raster_upload
+
+        axis_order = str(payload.get("axis_order") or "auto")
+        if payload.get("swap_xy") is True:
+            axis_order = "transpose"
 
         return commit_raster_upload(
             upload_id=str(payload.get("upload_id") or ""),
@@ -53,6 +58,13 @@ def _dispatch(kind: str, payload: dict[str, Any]) -> dict[str, Any]:
             auto_confirm=bool(payload.get("auto_confirm", True)),
             lng_offset=float(payload.get("lng_offset") or 0),
             lat_offset=float(payload.get("lat_offset") or 0),
+            axis_order=axis_order,
+            conflict_policy=str(payload.get("conflict_policy") or "overwrite"),
+            temporal_mode=str(payload.get("temporal_mode") or "auto"),
+            time_label=payload.get("time_label"),
+            time_start=payload.get("time_start"),
+            time_end=payload.get("time_end"),
+            native_step=payload.get("native_step"),
         )
     if kind == "export_batch":
         from app.data_io.services.export_layer import export_layers_batch_zip

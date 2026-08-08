@@ -72,12 +72,20 @@ export const useWeatherSyncStatusStore = defineStore('weatherSyncStatus', () => 
     }, 3000)
   }
 
-  async function triggerSync() {
-    const res = await triggerWeatherSync()
+  async function triggerSync(options?: { domains?: string }) {
+    const res = await triggerWeatherSync(options)
     if (res.task_id) startPolling(res.task_id)
     await refreshOverview()
     return res
   }
+
+  const syncServiceAvailable = computed(() => {
+    if (!overview.value) return true
+    if (typeof overview.value.sync_service_available === 'boolean') {
+      return overview.value.sync_service_available
+    }
+    return Boolean(overview.value.docker_cli_available && overview.value.compose_file_exists)
+  })
 
   return {
     overview,
@@ -85,6 +93,7 @@ export const useWeatherSyncStatusStore = defineStore('weatherSyncStatus', () => 
     taskState,
     lastError,
     syncInProgress,
+    syncServiceAvailable,
     coverageError,
     modelEmpty,
     refreshOverview,

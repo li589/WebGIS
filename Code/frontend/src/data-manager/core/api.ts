@@ -2,12 +2,16 @@
  * 后端统一数据导入/导出 API（分块上传 + 矢量/栅格/文档 + 导出）。
  */
 import { getBackendWriteApiKey, withWriteAuthHeaders } from './backend-auth'
+import { applyApiFetchDefaults } from '../../services/http-credentials'
 import { resolveApiUrl } from './_http'
 
 export const MAX_UPLOAD_BYTES = 512 * 1024 * 1024
 export const CHUNK_SIZE = 2 * 1024 * 1024
+/** Manifest 模式默认分块（与后端 resumable DEFAULT_CHUNK_SIZE 对齐） */
+export const RESUMABLE_CHUNK_SIZE = 4 * 1024 * 1024
 const CHUNK_MAX_RETRIES = 4
 const CHUNK_RETRY_BASE_MS = 400
+const RESUMABLE_CONCURRENCY = 4
 
 export type DataImportKind = 'vector' | 'raster' | 'document' | 'unknown'
 
@@ -110,55 +114,51 @@ async function writeFetch(path: string, init: RequestInit = {}): Promise<Respons
   )
   const key = getBackendWriteApiKey()
   if (!key && import.meta.env.PROD) {
-    throw new Error('未配置后端写密钥，请先在「设置 → API Key」填写后端认证 Key')
+    throw new Error('未配置写权限：请登录或联系管理员获取 API Token')
   }
-  return fetch(resolveApiUrl(path), { ...init, headers })
+  return fetch(resolveApiUrl(path), applyApiFetchDefaults({ ...init, headers }))
 }
 
-async function postChunkWithRetry(
+async function sha256Hex(file: File, signal?: AbortSignal): Promise<string> {
+  if (typeof crypto === 'undefined' || !crypto.subtle) {
+    throw new Error('当前环境不支持 WebCrypto SHA-256')
+  }
+  const buf = await file.arrayBuffer()
+  if (signal?.aborted) throw new Error('上传已取消')
+  const digest = await crypto.subtle.digest('SHA-256', buf)
+  return Array.from(new Uint8Array(digest))
+    .map((b) => b.toString(16).padStart(2, '0'))
+    .join('')
+}
+
+async function postIndexedChunkWithRetry(
   uploadId: string,
   file: File,
-  offset: number,
-  end: number,
+  chunkIndex: number,
+  chunkSize: number,
+  totalSize: number,
   signal?: AbortSignal,
-): Promise<number> {
+): Promise<void> {
+  const start = chunkIndex * chunkSize
+  const end = Math.min(start + chunkSize, totalSize)
   let lastError: Error | null = null
   for (let attempt = 0; attempt <= CHUNK_MAX_RETRIES; attempt++) {
     if (signal?.aborted) throw new Error('上传已取消')
     try {
-      const blob = file.slice(offset, end)
       const form = new FormData()
-      form.append('file', blob, file.name)
-      form.append('offset', String(offset))
-      const chunkResp = await writeFetch(`/import/upload/${encodeURIComponent(uploadId)}/chunk`, {
-        method: 'POST',
-        body: form,
-        signal,
-      })
-      if (chunkResp.ok) {
-        const data = (await chunkResp.json()) as { received?: number }
-        return typeof data.received === 'number' ? data.received : end
-      }
-      const detail = parseErrorDetail(chunkResp.status, await chunkResp.text())
-      // 偏移不匹配：可能上次已写入，尝试用服务端 received 续传
-      if (chunkResp.status === 400 && /偏移不匹配|期望/.test(detail)) {
-        const m = detail.match(/期望\s*(\d+)/)
-        if (m) {
-          const expected = Number(m[1])
-          if (Number.isFinite(expected) && expected > offset) {
-            return expected
-          }
-        }
-      }
+      form.append('file', file.slice(start, end), file.name)
+      const resp = await writeFetch(
+        `/import/upload/${encodeURIComponent(uploadId)}/chunk/${chunkIndex}`,
+        { method: 'POST', body: form, signal },
+      )
+      if (resp.ok) return
+      const detail = parseErrorDetail(resp.status, await resp.text())
       lastError = new Error(detail)
-      if (!isRetryableUploadError(chunkResp.status) || attempt === CHUNK_MAX_RETRIES) {
+      if (!isRetryableUploadError(resp.status) || attempt === CHUNK_MAX_RETRIES) {
         throw lastError
       }
     } catch (err) {
-      if (signal?.aborted) {
-        throw new Error('上传已取消', { cause: err })
-      }
-      // 业务错误（已在上方 throw 的 lastError）不可再吞掉重试
+      if (signal?.aborted) throw new Error('上传已取消', { cause: err })
       if (err === lastError) throw err
       lastError = err instanceof Error ? err : new Error(String(err))
       const networkLike =
@@ -166,16 +166,39 @@ async function postChunkWithRetry(
         /network|fetch|Failed to fetch|timeout|aborted/i.test(lastError.message)
       if (!networkLike || attempt === CHUNK_MAX_RETRIES) throw lastError
     }
-    const delay = CHUNK_RETRY_BASE_MS * 2 ** attempt + Math.floor(Math.random() * 200)
-    await sleep(delay, signal)
+    await sleep(CHUNK_RETRY_BASE_MS * 2 ** attempt + Math.floor(Math.random() * 200), signal)
   }
-  throw lastError ?? new Error('分块上传失败')
+  throw lastError ?? new Error(`分块 ${chunkIndex} 上传失败`)
 }
 
+async function runPool<T>(
+  items: T[],
+  concurrency: number,
+  worker: (item: T) => Promise<void>,
+  signal?: AbortSignal,
+): Promise<void> {
+  let cursor = 0
+  const runners = Array.from({ length: Math.min(concurrency, items.length) }, async () => {
+    while (cursor < items.length) {
+      if (signal?.aborted) throw new Error('上传已取消')
+      const idx = cursor++
+      const item = items[idx]
+      if (item === undefined) return
+      await worker(item)
+    }
+  })
+  await Promise.all(runners)
+}
+
+/**
+ * Manifest 断点续传上传：SHA-256 → 并行分块 → 缺块续传 → complete 校验。
+ */
 export async function chunkedUpload(
   file: File,
   options?: {
     onProgress?: (ratio: number) => void
+    /** 进度阶段文案：校验 SHA-256 / 块续传 / 合并校验 */
+    onPhase?: (phase: string) => void
     signal?: AbortSignal
     onUploadId?: (uploadId: string) => void
   },
@@ -192,39 +215,158 @@ export async function chunkedUpload(
     throw new Error(`不支持的文件类型: ${file.name}`)
   }
 
-  const initResp = await writeFetch('/import/upload/init', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      filename: file.name,
-      size: file.size,
-      content_type: file.type || null,
-    }),
+  const fingerprint = `${file.name}|${file.size}|${file.lastModified}`
+  const resumeKey = `cgda:upload-resume:${fingerprint}`
+  let resumeUploadId: string | null = null
+  try {
+    const raw = localStorage.getItem(resumeKey)
+    if (raw) {
+      const parsed = JSON.parse(raw) as { upload_id?: string; mode?: string }
+      if (parsed.mode === 'manifest' && parsed.upload_id) {
+        resumeUploadId = parsed.upload_id
+      }
+    }
+  } catch {
+    resumeUploadId = null
+  }
+
+  options?.onProgress?.(0.02)
+  // 超大文件避免整文件 ArrayBuffer OOM；服务端仍可无 SHA 完成（未提供则跳过校验）
+  const HASH_LIMIT = 128 * 1024 * 1024
+  options?.onPhase?.(file.size <= HASH_LIMIT ? '校验 SHA-256' : '跳过 SHA-256（文件过大）')
+  const sha256 = file.size <= HASH_LIMIT ? await sha256Hex(file, options?.signal) : null
+
+  let uploadId = ''
+  let chunkSize = RESUMABLE_CHUNK_SIZE
+  let totalChunks = Math.ceil(file.size / chunkSize)
+  let missing: number[] = []
+
+  if (resumeUploadId) {
+    try {
+      const stResp = await writeFetch(
+        `/import/upload/${encodeURIComponent(resumeUploadId)}/status`,
+        { signal: options?.signal },
+      )
+      if (stResp.ok) {
+        const st = (await stResp.json()) as {
+          mode?: string
+          complete?: boolean
+          chunk_size?: number
+          total_chunks?: number
+          missing_chunks?: number[]
+          size?: number
+          filename?: string
+        }
+        if (st.mode === 'manifest' && !st.complete && Number(st.size) === file.size) {
+          uploadId = resumeUploadId
+          chunkSize = Number(st.chunk_size) || chunkSize
+          totalChunks = Number(st.total_chunks) || totalChunks
+          missing = Array.isArray(st.missing_chunks) ? [...st.missing_chunks] : []
+        }
+      }
+    } catch {
+      /* fall through to new init */
+    }
+  }
+
+  if (!uploadId) {
+    const initResp = await writeFetch('/import/upload/resumable/init', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        filename: file.name,
+        size: file.size,
+        content_type: file.type || null,
+        chunk_size: chunkSize,
+        sha256,
+      }),
+      signal: options?.signal,
+    })
+    if (!initResp.ok) {
+      throw new Error(parseErrorDetail(initResp.status, await initResp.text()))
+    }
+    const initData = (await initResp.json()) as {
+      upload_id: string
+      chunk_size: number
+      total_chunks: number
+    }
+    uploadId = initData.upload_id
+    chunkSize = initData.chunk_size
+    totalChunks = initData.total_chunks
+    missing = Array.from({ length: totalChunks }, (_, i) => i)
+  }
+
+  options?.onUploadId?.(uploadId)
+  try {
+    localStorage.setItem(resumeKey, JSON.stringify({ upload_id: uploadId, mode: 'manifest' }))
+  } catch {
+    /* ignore */
+  }
+
+  options?.onPhase?.(
+    resumeUploadId && uploadId === resumeUploadId
+      ? `块续传（缺 ${missing.length}/${totalChunks}）`
+      : `块上传（${totalChunks} 块）`,
+  )
+  let completedChunks = totalChunks - missing.length
+  const bumpProgress = () => {
+    options?.onProgress?.(Math.min(0.95, completedChunks / Math.max(1, totalChunks)))
+  }
+  bumpProgress()
+
+  const toUpload = [...missing]
+  await runPool(
+    toUpload,
+    RESUMABLE_CONCURRENCY,
+    async (chunkIndex) => {
+      await postIndexedChunkWithRetry(
+        uploadId,
+        file,
+        chunkIndex,
+        chunkSize,
+        file.size,
+        options?.signal,
+      )
+      completedChunks += 1
+      bumpProgress()
+    },
+    options?.signal,
+  )
+
+  // 最终核对缺失块
+  const stResp = await writeFetch(`/import/upload/${encodeURIComponent(uploadId)}/status`, {
     signal: options?.signal,
   })
-  if (!initResp.ok) {
-    throw new Error(parseErrorDetail(initResp.status, await initResp.text()))
+  if (stResp.ok) {
+    const st = (await stResp.json()) as { missing_chunks?: number[] }
+    const stillMissing = Array.isArray(st.missing_chunks) ? st.missing_chunks : []
+    if (stillMissing.length) {
+      await runPool(
+        stillMissing,
+        RESUMABLE_CONCURRENCY,
+        async (chunkIndex) => {
+          await postIndexedChunkWithRetry(
+            uploadId,
+            file,
+            chunkIndex,
+            chunkSize,
+            file.size,
+            options?.signal,
+          )
+        },
+        options?.signal,
+      )
+    }
   }
-  const initData = (await initResp.json()) as { upload_id: string; chunk_size_hint?: number }
-  const uploadId = initData.upload_id
-  options?.onUploadId?.(uploadId)
-  const chunkSize = initData.chunk_size_hint || CHUNK_SIZE
 
-  let offset = 0
-  while (offset < file.size) {
-    if (options?.signal?.aborted) throw new Error('上传已取消')
-    const end = Math.min(offset + chunkSize, file.size)
-    const received = await postChunkWithRetry(uploadId, file, offset, end, options?.signal)
-    offset = Math.max(received, end)
-    options?.onProgress?.(Math.min(1, offset / file.size))
-  }
-
+  options?.onPhase?.('合并并校验 SHA-256')
+  options?.onProgress?.(0.97)
   let completeResp: Response | null = null
   let lastCompleteErr: Error | null = null
   for (let attempt = 0; attempt <= CHUNK_MAX_RETRIES; attempt++) {
     if (options?.signal?.aborted) throw new Error('上传已取消')
     try {
-      completeResp = await writeFetch('/import/upload/complete', {
+      completeResp = await writeFetch('/import/upload/resumable/complete', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ upload_id: uploadId }),
@@ -245,8 +387,6 @@ export async function chunkedUpload(
     if (completeResp.ok) break
     const detail = parseErrorDetail(completeResp.status, await completeResp.text())
     lastCompleteErr = new Error(detail)
-    // 400/404 等业务错误不可重试：complete 失败时服务端可能已 discard staging，
-    // 再试会变成「上传会话不存在」，掩盖真实原因（如魔数不匹配）。
     if (!isRetryableUploadError(completeResp.status) || attempt === CHUNK_MAX_RETRIES) {
       throw lastCompleteErr
     }
@@ -255,6 +395,12 @@ export async function chunkedUpload(
   if (!completeResp?.ok) {
     throw lastCompleteErr ?? new Error('完成上传失败')
   }
+  try {
+    localStorage.removeItem(resumeKey)
+  } catch {
+    /* ignore */
+  }
+  options?.onProgress?.(1)
   return (await completeResp.json()) as { upload_id: string; filename: string; size: number }
 }
 
@@ -273,6 +419,9 @@ export async function importVectorByUploads(uploadIds: string[], sourceName?: st
     preview_geojson?: GeoJSON.FeatureCollection
     source_name?: string
     truncated?: boolean
+    field_sanitization?: {
+      changes?: Array<{ original: string; sanitized: string; reason: string }>
+    }
   }>
 }
 
@@ -391,12 +540,22 @@ export async function inspectRasterUpload(uploadId: string) {
     filename: string
     format: string
     needs_variable_select: boolean
+    guessed_temporal?: {
+      kind?: string
+      time_list?: string[]
+      default_time?: string
+      native_step?: string
+      label?: string
+    } | null
     variables: Array<{
       id: string
       name: string
       shape?: number[] | null
       dtype?: string | null
       fill_value?: number | null
+      suggested_grid_preset?: string | null
+      needs_transpose?: boolean
+      axis_hint?: string | null
     }>
     grid_presets?: Array<{
       id: string
@@ -409,7 +568,9 @@ export async function inspectRasterUpload(uploadId: string) {
       category?: string | null
     }>
     suggested_grid_preset?: string | null
+    suggested_needs_transpose?: boolean
     suggested_crs?: string | null
+    file_meta?: Record<string, string>
   }>
 }
 
@@ -428,6 +589,18 @@ export async function commitRasterUpload(params: {
   lngOffset?: number
   latOffset?: number
   asyncMode?: boolean
+  /** auto | as_is | transpose — MATLAB v7.3 颠倒维默认 auto */
+  axisOrder?: 'auto' | 'as_is' | 'transpose'
+  /** True → axis_order=transpose；与 axisOrder 二选一优先 swapXy */
+  swapXy?: boolean | null
+  /** overwrite 覆盖同名 / rename 另存 / error 冲突报错 */
+  conflictPolicy?: 'overwrite' | 'rename' | 'error'
+  /** auto | static | point | range */
+  temporalMode?: 'auto' | 'static' | 'point' | 'range'
+  timeLabel?: string | null
+  timeStart?: string | null
+  timeEnd?: string | null
+  nativeStep?: string | null
 }) {
   const resp = await writeFetch('/import/raster/commit', {
     method: 'POST',
@@ -447,6 +620,14 @@ export async function commitRasterUpload(params: {
       lng_offset: params.lngOffset ?? 0,
       lat_offset: params.latOffset ?? 0,
       async_mode: params.asyncMode ?? false,
+      axis_order: params.axisOrder ?? 'auto',
+      swap_xy: params.swapXy ?? null,
+      conflict_policy: params.conflictPolicy ?? 'overwrite',
+      temporal_mode: params.temporalMode ?? 'auto',
+      time_label: params.timeLabel ?? null,
+      time_start: params.timeStart ?? null,
+      time_end: params.timeEnd ?? null,
+      native_step: params.nativeStep ?? null,
     }),
   })
   if (!resp.ok) throw new Error(parseErrorDetail(resp.status, await resp.text()))
@@ -461,6 +642,14 @@ export async function commitRasterUpload(params: {
       needs_confirm?: boolean
       variable_id?: string
       detection_notes?: string
+      time_list?: string[]
+      default_time?: string | null
+      native_step?: string | null
+      follow_policy?: string | null
+      temporal_kind?: string | null
+      temporal_source?: string | null
+      replaced?: boolean
+      auto_confirm_error?: string
     }>
     bounds?: [number, number, number, number]
     source_crs?: string
@@ -468,7 +657,37 @@ export async function commitRasterUpload(params: {
     needs_confirm?: boolean
     detection_notes?: string
     count?: number
+    time_list?: string[]
+    default_time?: string | null
+    native_step?: string | null
+    follow_policy?: string | null
+    temporal_kind?: string | null
+    temporal_source?: string | null
+    replaced?: boolean
   }>
+}
+
+export async function detectRasterInvalidValues(params: {
+  uploadId: string
+  variableId: string
+}): Promise<{
+  suggested_invalid_values: number[]
+  sentinels?: Array<{ value: number; count?: number; frequency?: number }>
+  has_inf?: boolean
+  fill_value?: number | null
+  missing_value?: number | null
+  [key: string]: unknown
+}> {
+  const resp = await writeFetch('/import/raster/detect-invalid', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      upload_id: params.uploadId,
+      variable_id: params.variableId,
+    }),
+  })
+  if (!resp.ok) throw new Error(parseErrorDetail(resp.status, await resp.text()))
+  return resp.json()
 }
 
 export async function openDocumentUpload(uploadId: string) {
@@ -497,6 +716,8 @@ export interface DocumentSession {
   preview_row_count: number
   truncated: boolean
   rows: Array<Record<string, string>>
+  source_encoding?: string | null
+  encoding_note?: string | null
 }
 
 export async function applyDocumentOps(sessionId: string, ops: Array<Record<string, unknown>>) {
@@ -515,6 +736,8 @@ export async function commitDocumentSession(params: {
   yField: string
   sourceCrs?: string
   targetCrs?: string
+  /** null/undefined=自动检测；true/false=强制 */
+  swapXy?: boolean | null
 }) {
   const resp = await writeFetch(`/import/document/${encodeURIComponent(params.sessionId)}/commit`, {
     method: 'POST',
@@ -524,6 +747,7 @@ export async function commitDocumentSession(params: {
       y_field: params.yField,
       source_crs: params.sourceCrs ?? 'EPSG:4326',
       target_crs: params.targetCrs ?? 'EPSG:4326',
+      swap_xy: params.swapXy === undefined ? null : params.swapXy,
     }),
   })
   if (!resp.ok) throw new Error(parseErrorDetail(resp.status, await resp.text()))
@@ -533,6 +757,11 @@ export async function commitDocumentSession(params: {
     preview_geojson: GeoJSON.FeatureCollection
     source_name: string
     point_count: number
+    xy_swap_applied?: boolean
+    xy_swap_note?: string
+    field_sanitization?: {
+      changes?: Array<{ original: string; sanitized: string; reason: string }>
+    }
   }>
 }
 
@@ -540,11 +769,23 @@ export async function exportImportedLayer(
   layerId: string,
   format: string,
   encoding: string = 'auto',
+  time?: string | null,
+  times?: string[] | null,
 ): Promise<Blob> {
+  const payload: Record<string, unknown> = {
+    layer_id: layerId,
+    format,
+    encoding,
+  }
+  if (times?.length) {
+    payload.times = times
+  } else if (time) {
+    payload.time = time
+  }
   const resp = await writeFetch('/export/layer', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ layer_id: layerId, format, encoding }),
+    body: JSON.stringify(payload),
   })
   if (!resp.ok) throw new Error(parseErrorDetail(resp.status, await resp.text()))
   return resp.blob()
@@ -697,6 +938,17 @@ export async function renameImportedLayerField(layerId: string, oldName: string,
     fields?: string[]
     preview_geojson?: GeoJSON.FeatureCollection
   }>
+}
+
+/** 更新导入图层显示名（写入后端 meta.display_name） */
+export async function renameImportedLayerDisplayName(layerId: string, displayName: string) {
+  const resp = await writeFetch(`/import/layers/${encodeURIComponent(layerId)}/display-name`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ display_name: displayName }),
+  })
+  if (!resp.ok) throw new Error(parseErrorDetail(resp.status, await resp.text()))
+  return resp.json() as Promise<{ layer_id: string; display_name: string; kind?: string }>
 }
 
 export async function deleteImportedLayer(layerId: string): Promise<void> {

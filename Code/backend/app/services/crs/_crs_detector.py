@@ -25,7 +25,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from .crs_registry import get_crs
+from .crs_registry import get_crs, suggest_gk_zone, suggest_utm_zone
 
 
 # 置信度阈值：低于此值时前端必须弹确认框
@@ -232,10 +232,13 @@ class CRSDetector:
     ) -> CRSDetectionResult:
         """基于 bounds 数值范围的启发式检测（最不可靠）。
 
-        判断规则：
-        - west/east 在 ±180 内且 south/north 在 ±90 内 → 地理坐标系（confidence 0.5）
-        - 数值 > 1000 → 投影坐标系（confidence 0.3）
-        - 其他 → 默认 WGS84（confidence 0.3）
+        判断规则（优先级从高到低）：
+        1. west/east 在 ±180 内且 south/north 在 ±90 内 → 地理坐标系（confidence 0.5）
+        2. 数值在 ±20037508 范围 → Web Mercator / EPSG:3857（confidence 0.6）
+        3. 高斯-克吕格 3 度带 false easting 模式 → 对应 GK 带（confidence 0.5）
+        4. Lambert Europe 范围 → EPSG:3034（confidence 0.3）
+        5. 投影系大数值 → 用 bounds 中心经度推断 UTM 带（confidence 0.4）
+        6. 其他 → 默认 WGS84（confidence 0.3）
 
         Args:
             bounds: ``(west, south, east, north)``
@@ -267,6 +270,49 @@ class CRSDetector:
                 notes=f"bounds ({west:.2f},{south:.2f},{east:.2f},{north:.2f}) 在 ±180/±90 内，推断为地理坐标系",
             )
 
+        # EASE-Grid 2.0 Global (EPSG:6933)：对称角点约 ±17.37e6 × ±7.31e6，
+        # 宽高比约 2.37，易被误判为 Web Mercator（max 也 < 20.1e6）。
+        max_abs = max(abs(west), abs(east), abs(south), abs(north))
+        x_span = abs(east - west)
+        y_span = abs(north - south)
+        if (
+            max_abs > 1_000_000
+            and max_abs <= 18_000_000
+            and y_span > 0
+            and 2.0 < x_span / y_span < 2.7
+            and abs(west + east) < 1e5
+            and abs(south + north) < 1e5
+        ):
+            return CRSDetectionResult(
+                source_crs="EPSG:6933",
+                confidence=0.65,
+                method="bounds_heuristic",
+                suggested_crs="EPSG:6933",
+                needs_user_confirm=True,
+                notes=(
+                    f"bounds ({west:.0f},{south:.0f},{east:.0f},{north:.0f}) "
+                    f"接近 EASE-Grid 2.0 Global（宽高比 {x_span / y_span:.2f}），"
+                    f"建议 EPSG:6933，需用户确认"
+                ),
+            )
+
+        # Web Mercator (EPSG:3857)：全球/大区 Web 地图投影。
+        # 要求跨度足够大，避免 UTM 局部米制框（~4e6 northing）被误判。
+        if max_abs > 5_000_000 and max_abs <= 20_100_000 and x_span > 1_000_000:
+            if y_span > 0 and 0.3 < x_span / y_span < 3.5:
+                return CRSDetectionResult(
+                    source_crs="EPSG:3857",
+                    confidence=0.6,
+                    method="bounds_heuristic",
+                    suggested_crs="EPSG:3857",
+                    needs_user_confirm=True,
+                    notes=(
+                        f"bounds ({west:.0f},{south:.0f},{east:.0f},{north:.0f}) "
+                        f"在 Web Mercator 范围内（max={max_abs:.0f}），"
+                        f"建议 EPSG:3857，需用户确认"
+                    ),
+                )
+
         # 投影坐标系：大数值
         if abs(west) > 180 or abs(east) > 180:
             # 高斯-克吕格 3 度带 false easting 模式：X 在 39000000-42000000 范围
@@ -295,9 +341,28 @@ class CRSDetector:
                         f"建议 {suggested}，需用户确认"
                     ),
                 )
-            # Lambert Europe (EPSG:3034, LCC Europe) 范围：X 1500000-7500000, Y 1000000-6000000
-            # 注意：EPSG:3035 是 LAEA（方位等积），不是 LCC；用户需求的"兰伯特等角圆锥"
-            # 对应 EPSG:3034 (ETRS89 / LCC Europe)。
+
+            # 高斯-克吕格 3 度带（更广范围）：false_easting = zone × 1000000 + 500000
+            # zone 25-45 → X 在 25500000-45500000
+            if 25500000 < max_abs < 45500000:
+                mid_x = (west + east) / 2
+                zone = int(mid_x // 1000000)
+                gk_code = suggest_gk_zone(zone * 3.0)
+                if gk_code is not None:
+                    return CRSDetectionResult(
+                        source_crs=gk_code,
+                        confidence=0.45,
+                        method="bounds_heuristic",
+                        suggested_crs=gk_code,
+                        needs_user_confirm=True,
+                        notes=(
+                            f"bounds ({west:.0f},{south:.0f},{east:.0f},{north:.0f}) "
+                            f"匹配高斯-克吕格 3 度带（zone {zone}），"
+                            f"建议 {gk_code}，需用户确认"
+                        ),
+                    )
+
+            # Lambert Europe (EPSG:3034, LCC Europe) 范围
             if 1000000 < west < 8000000 and 1000000 < east < 8000000:
                 return CRSDetectionResult(
                     source_crs="EPSG:3034",
@@ -310,16 +375,41 @@ class CRSDetector:
                         f"在 Lambert Europe 范围内，建议 EPSG:3034，需用户确认"
                     ),
                 )
-            # 默认 UTM 50N（中国区域最常见的投影系）
+
+            # UTM / 投影兜底：用 northing 粗估纬度 + 区域默认经度，调用 suggest_utm_zone
+            mid_x = (west + east) / 2.0
+            mid_y = (south + north) / 2.0
+            # 南半球 UTM 常带 false northing 1e7
+            if mid_y >= 1.0e7:
+                approx_lat = -max(0.0, min(80.0, (10_000_000.0 - mid_y) / 111320.0))
+            else:
+                approx_lat = max(-80.0, min(84.0, mid_y / 111320.0))
+            # 无带号时无法从 easting 反算经度；中国常用北纬取 116°E（UTM50），否则 0°
+            approx_lng = 116.0 if 15.0 <= abs(approx_lat) <= 55.0 else 0.0
+            # 带内 easting（~100k–900k）优先 UTM，勿用 GK（GK 有 8 位 false easting）
+            if 100_000 <= abs(mid_x) <= 900_000:
+                utm_code = suggest_utm_zone(approx_lng, approx_lat)
+                return CRSDetectionResult(
+                    source_crs=utm_code,
+                    confidence=0.4,
+                    method="bounds_heuristic",
+                    suggested_crs=utm_code,
+                    needs_user_confirm=True,
+                    notes=(
+                        f"bounds ({west:.2f},{south:.2f},{east:.2f},{north:.2f}) "
+                        f"像 UTM 米制；粗估 lat≈{approx_lat:.1f} → 建议 {utm_code}，需用户确认"
+                    ),
+                )
             return CRSDetectionResult(
-                source_crs="EPSG:32650",
+                source_crs=suggest_utm_zone(approx_lng, approx_lat),
                 confidence=0.3,
                 method="bounds_heuristic",
-                suggested_crs="EPSG:32650",
+                suggested_crs=suggest_utm_zone(approx_lng, approx_lat),
                 needs_user_confirm=True,
                 notes=(
                     f"bounds ({west:.2f},{south:.2f},{east:.2f},{north:.2f}) "
-                    f"数值超出 ±180，推断为投影坐标系（默认建议 UTM 50N，需用户确认）"
+                    f"数值超出 ±180，推断为投影坐标系（建议 "
+                    f"{suggest_utm_zone(approx_lng, approx_lat)}，需用户确认）"
                 ),
             )
 
@@ -332,6 +422,64 @@ class CRSDetector:
             needs_user_confirm=True,
             notes=f"bounds ({west:.2f},{south:.2f},{east:.2f},{north:.2f}) 无法明确分类，默认 WGS84",
         )
+
+    def detect_xy_swap(
+        self,
+        bounds: tuple[float, float, float, float],
+        *,
+        source_crs: str = "EPSG:4326",
+    ) -> tuple[bool, str]:
+        """检测 bounds 的 XY 轴是否被颠倒。
+
+        对于地理坐标系（EPSG:4326/4490/4258），正常顺序为
+        (west, south, east, north) 即 (lng, lat, lng, lat)。
+        若数据被颠倒为 (lat, lng, lat, lng)，则：
+        - bounds[0]（应为 west/lng）出现在 ±90 范围
+        - bounds[1]（应为 south/lat）出现在 ±180 范围
+
+        Args:
+            bounds: ``(west, south, east, north)``
+            source_crs: 源 CRS code
+
+        Returns:
+            (is_swapped, note) — is_swapped=True 表示需要交换 XY。
+        """
+        west, south, east, north = bounds
+
+        # 仅对地理坐标系检测 XY 颠倒
+        if source_crs not in ("EPSG:4326", "EPSG:4490", "EPSG:4258"):
+            return (False, "非地理坐标系，跳过 XY 颠倒检测")
+
+        # 正常地理坐标：|west|,|east| <= 180，|south|,|north| <= 90
+        # 颠倒情况：|west|,|east| > 90 但 <= 180（实为 lat），|south|,|north| > 180（实为 lng）
+        # 更精确：west/south 中有一个的绝对值超出其正常范围
+        west_oob = abs(west) > 180
+        south_oob = abs(south) > 90
+        east_oob = abs(east) > 180
+        north_oob = abs(north) > 90
+
+        # 典型颠倒：south/north 出现 > 90 的值（实为经度），west/east 在 ±90 内（实为纬度）
+        if (south_oob or north_oob) and not (west_oob or east_oob):
+            return (
+                True,
+                f"bounds ({west:.4f},{south:.4f},{east:.4f},{north:.4f}) "
+                f"疑似 XY 颠倒：south/north 超出 ±90（实为经度），"
+                f"west/east 在 ±90 内（实为纬度）",
+            )
+
+        # 另一种颠倒模式：west > south 且 east > north（数值上 X 恒大于 Y）
+        # 在中国区域（lng 73-135, lat 18-53），正常情况下 lng > lat
+        # 但若数据为 (lat, lng, lat, lng)，则 west=lat < south=lng，不成立
+        # 这种模式不太可靠，仅作辅助
+        if abs(south) > 90 and abs(north) > 90 and abs(west) <= 90 and abs(east) <= 90:
+            return (
+                True,
+                f"bounds ({west:.4f},{south:.4f},{east:.4f},{north:.4f}) "
+                f"XY 颠倒：west/east 在 ±90 内（实为纬度），"
+                f"south/north 超出 ±90（实为经度）",
+            )
+
+        return (False, "XY 轴序正常")
 
     @staticmethod
     def _parse_crs_name(name: str) -> str | None:

@@ -36,7 +36,7 @@ function formatNamedList(labels: string[], fallbackMessage: string): string {
  * 聚合可见天气层状态为全图横幅。
  * - error：无一健康缓存且至少一层有 error
  * - loading：全部无缓存且有 pending
- * - partial：有缓存但仍缺洞（文案带层名）
+ * - partial：有缓存但仍缺洞（含在途加载与 gap-sweep；文案带层名）
  */
 export function aggregateWeatherTileBanner(
   layers: WeatherTileBannerLayerInput[],
@@ -66,13 +66,18 @@ export function aggregateWeatherTileBanner(
     return { show: true, isLoading: true, error: null, partial: null }
   }
 
-  const partialLayers = active.filter(
-    (l) => l.cachedInViewport > 0 && l.missingInViewport > 0 && l.pending === 0,
-  )
+  // 有缓存但仍有缺口：无论是否仍有 pending，都给出带进度的 partial，
+  // 避免缩放中途「半屏有数据却无横幅/进度」的静默状态。
+  const partialLayers = active.filter((l) => l.cachedInViewport > 0 && l.missingInViewport > 0)
   if (partialLayers.length > 0) {
     const parts = partialLayers.map((l) => {
       const progress = `${l.cachedInViewport}/${l.cachedInViewport + l.missingInViewport}`
-      const tip = l.gapSweepActive ? MAP_COPY.weatherGapSweep : MAP_COPY.weatherPartial
+      const tip =
+        l.pending > 0
+          ? MAP_COPY.weatherPartial
+          : l.gapSweepActive
+            ? MAP_COPY.weatherGapSweep
+            : MAP_COPY.weatherPartial
       return `${l.label} ${progress}，${tip}`
     })
     return {

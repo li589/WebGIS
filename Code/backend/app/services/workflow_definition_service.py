@@ -49,6 +49,27 @@ _ID_PATTERN = re.compile(r"^[a-zA-Z0-9][a-zA-Z0-9_\-]*$")
 _SEED_SYSTEM_DIR = _BACKEND_ROOT / "workflow_seeds" / "system"
 
 
+def _json_escape(value: str) -> str:
+    """把字符串转义成可安全嵌入 JSON 字符串字面量的形式（不含外层引号）。
+
+    占位符替换发生在**原始 JSON 文本**上，Windows 路径里的单反斜杠若直接注入会
+    产生非法转义（如 ``\\G``）导致整份种子解析失败，故必须先转义。
+    """
+    return json.dumps(value)[1:-1]
+
+
+def _expand_seed_placeholders(content: str) -> str:
+    """展开种子中的 ``{DATA_ROOT}`` / ``{DATA_ROOT_WIN}``（去硬编码批 1）。"""
+    from app.core.config import settings
+
+    root = (getattr(settings, "data_root", None) or "").strip()
+    root_posix = root.replace("\\", "/")
+    root_win = root.replace("/", "\\")
+    return content.replace("{DATA_ROOT_WIN}", _json_escape(root_win)).replace(
+        "{DATA_ROOT}", _json_escape(root_posix)
+    )
+
+
 def _sync_system_seeds() -> None:
     """Sync packaged system workflow templates into the runtime system dir.
 
@@ -60,7 +81,17 @@ def _sync_system_seeds() -> None:
     for src in sorted(_SEED_SYSTEM_DIR.glob("*.json")):
         dest = _SYSTEM_DIR / src.name
         try:
-            content = src.read_text(encoding="utf-8")
+            content = _expand_seed_placeholders(src.read_text(encoding="utf-8"))
+            try:
+                # 占位符展开后必须仍是合法 JSON，否则宁可保留旧定义也不写坏文件。
+                json.loads(content)
+            except json.JSONDecodeError as exc:
+                logger.error(
+                    "Seed %s invalid JSON after placeholder expansion, skipped: %s",
+                    src.name,
+                    exc,
+                )
+                continue
             existed = dest.exists()
             if existed and dest.read_text(encoding="utf-8") == content:
                 continue
@@ -108,7 +139,8 @@ def _build_meta(
 
     Args:
         tags: 工作流标签列表（如 ["pipeline", "inversion"]），用于前端分类过滤。
-        category: 工作流主分类（如 "inversion"/"weather"/"data_access"/"demo"）。
+            词汇表见 ``.ai/docs/specs/workflow_seed_conventions.md``。
+        category: 工作流主分类（如 "inversion"/"weather"/"data_access"/"analysis"/"demo"）。
     """
     meta = {
         "kind": kind,  # "system" | "user"

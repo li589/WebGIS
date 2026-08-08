@@ -41,8 +41,14 @@ def export_layer(
     fmt: str,
     *,
     encoding: str | None = None,
+    time: str | None = None,
+    times: list[str] | None = None,
 ) -> tuple[bytes, str, str]:
-    """返回 (content, media_type, filename)."""
+    """返回 (content, media_type, filename).
+
+    ``time``：单时刻切片标签（如 ``20251227_20251231``），写入文件名。
+    ``times``：多时刻列表；长度 >1（或显式多选）时打包为 zip。
+    """
     fmt = fmt.lower().strip()
     dest = IMPORTS_DIR / layer_id
     if not dest.exists():
@@ -54,16 +60,99 @@ def export_layer(
         meta = json.loads(meta_path.read_text(encoding="utf-8"))
 
     kind = meta.get("kind")
-    if (dest / "bounds.json").exists() and kind != "vector":
-        return _export_raster(dest, layer_id, fmt, meta)
+    is_raster = (dest / "bounds.json").exists() and kind != "vector"
+    is_raster = is_raster or (
+        kind != "vector"
+        and (dest / "preview.png").exists()
+        and not (dest / "data.geojson").exists()
+    )
+
+    if is_raster:
+        resolved_times = _resolve_export_times(meta, time=time, times=times)
+        if len(resolved_times) > 1:
+            return _export_raster_times_zip(
+                dest, layer_id, fmt, meta, times=resolved_times
+            )
+        single = resolved_times[0] if resolved_times else time
+        return _export_raster(dest, layer_id, fmt, meta, time=single)
 
     if (dest / "data.geojson").exists() or kind == "vector":
         return _export_vector(layer_id, fmt, meta, encoding=encoding)
 
-    if (dest / "preview.png").exists():
-        return _export_raster(dest, layer_id, fmt, meta)
-
     raise ValueError(f"无法识别图层类型: {layer_id}")
+
+
+def _resolve_export_times(
+    meta: dict[str, Any],
+    *,
+    time: str | None,
+    times: list[str] | None,
+) -> list[str]:
+    """规范化导出时刻列表；``*`` / ``all`` 表示 time_list 全部。"""
+    time_list = [str(t) for t in (meta.get("time_list") or []) if str(t).strip()]
+    if times is not None:
+        cleaned = [str(t).strip() for t in times if str(t).strip()]
+        if len(cleaned) == 1 and cleaned[0].lower() in {"*", "all"}:
+            if not time_list:
+                raise ValueError("图层无 time_list，无法导出全部时刻")
+            return time_list
+        if not cleaned:
+            return []
+        if time_list:
+            unknown = [t for t in cleaned if t not in time_list]
+            if unknown:
+                raise ValueError(f"时间切片不存在: {unknown[0]}")
+        return cleaned
+    if time and str(time).strip():
+        key = str(time).strip()
+        if key.lower() in {"*", "all"}:
+            if not time_list:
+                raise ValueError("图层无 time_list，无法导出全部时刻")
+            return time_list
+        if time_list and key not in time_list:
+            raise ValueError(f"时间切片不存在: {key}")
+        return [key]
+    return []
+
+
+def _export_raster_times_zip(
+    dest: Path,
+    layer_id: str,
+    fmt: str,
+    meta: dict[str, Any],
+    *,
+    times: list[str],
+) -> tuple[bytes, str, str]:
+    """同一图层多个时刻打包为 zip（常见多时相下载方式）。"""
+    label = str(
+        meta.get("display_name")
+        or meta.get("label")
+        or meta.get("source_filename")
+        or meta.get("source_name")
+        or layer_id
+    ).rsplit(".", 1)[0]
+    base = _safe_filename_base(label)
+    mem = io.BytesIO()
+    errors: list[str] = []
+    with zipfile.ZipFile(mem, "w", compression=zipfile.ZIP_DEFLATED) as zf:
+        for t in times:
+            try:
+                content, _media, filename = _export_raster(
+                    dest, layer_id, fmt, meta, time=t
+                )
+            except Exception as exc:  # noqa: BLE001 — per-slice errors into zip
+                errors.append(f"{t}: {exc}")
+                zf.writestr(f"{t}.error.txt", str(exc))
+                continue
+            zf.writestr(filename, content)
+        if errors and len(errors) == len(times):
+            raise ValueError(f"多时刻导出全部失败: {errors[0]}")
+    stem = (
+        f"{base}_{len(times)}times"
+        if len(times) > 3
+        else f"{base}_{times[0]}_{times[-1]}"
+    )
+    return mem.getvalue(), "application/zip", f"{_safe_filename_base(stem)}.zip"
 
 
 def _export_vector(
@@ -74,7 +163,12 @@ def _export_vector(
     encoding: str | None,
 ) -> tuple[bytes, str, str]:
     geojson = load_vector_geojson(layer_id, preview=False)
-    base = str(meta.get("source_name") or layer_id).rsplit(".", 1)[0]
+    base = str(
+        meta.get("display_name")
+        or meta.get("label")
+        or meta.get("source_name")
+        or layer_id
+    ).rsplit(".", 1)[0]
     safe_base = _safe_filename_base(base)
 
     if fmt in {"geojson", "json"}:
@@ -230,21 +324,47 @@ def _wgs84_prj() -> str:
 
 
 def _export_raster(
-    dest: Path, layer_id: str, fmt: str, meta: dict[str, Any]
+    dest: Path,
+    layer_id: str,
+    fmt: str,
+    meta: dict[str, Any],
+    *,
+    time: str | None = None,
 ) -> tuple[bytes, str, str]:
-    base = _safe_filename_base(
-        str(meta.get("source_filename") or meta.get("source_name") or layer_id).rsplit(
-            ".", 1
-        )[0]
-    )
-    tifs = list(dest.glob("*.tif")) + list(dest.glob("*.tiff"))
+    label = str(
+        meta.get("display_name")
+        or meta.get("label")
+        or meta.get("source_filename")
+        or meta.get("source_name")
+        or layer_id
+    ).rsplit(".", 1)[0]
+    base = _safe_filename_base(label)
+    time_list = meta.get("time_list") if isinstance(meta.get("time_list"), list) else []
+    time_key = str(time or meta.get("default_time") or "").strip()
+    if time_key and time_list and time_key not in [str(t) for t in time_list]:
+        raise ValueError(f"时间切片不存在: {time_key}")
+    if time_key:
+        base = f"{base}_{time_key}"
+
     source = None
-    for cand in tifs:
-        if cand.name.lower() not in {"preview.tif"}:
+    if time_key:
+        timed = dest / f"source_{time_key}.tif"
+        if timed.exists():
+            source = timed
+    if source is None:
+        tifs = list(dest.glob("*.tif")) + list(dest.glob("*.tiff"))
+        for cand in tifs:
+            name = cand.name.lower()
+            if name.startswith("preview") or name.startswith("source_"):
+                # prefer non-preview; timed sources only when time set
+                if time_key and name == f"source_{time_key.lower()}.tif":
+                    source = cand
+                    break
+                continue
             source = cand
             break
-    if source is None and tifs:
-        source = tifs[0]
+        if source is None and tifs:
+            source = tifs[0]
 
     if fmt in {"geotiff", "tif", "tiff"}:
         if source is None:
@@ -272,11 +392,17 @@ def _export_raster(
             nc.createDimension("x", arr.shape[1])
             var = nc.createVariable("band", "f4", ("y", "x"), zlib=True)
             var[:] = np.asarray(arr, dtype=np.float32)
+            if time_key:
+                nc.product_time = time_key
         data = buf_path.read_bytes()
         buf_path.unlink(missing_ok=True)
         return data, "application/netcdf", f"{base}.nc"
 
     if fmt == "png":
+        if time_key:
+            timed_png = dest / f"preview_{time_key}.png"
+            if timed_png.exists():
+                return timed_png.read_bytes(), "image/png", f"{base}.png"
         png = dest / "preview.png"
         if not png.exists():
             raise ValueError("无预览 PNG")

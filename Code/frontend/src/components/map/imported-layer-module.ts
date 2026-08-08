@@ -29,6 +29,7 @@ interface LoadedImportedLayer {
   layerIds: string[]
   geometryType: ImportedGeometryType
   bounds: [number, number, number, number] | null
+  displayName: string
   /** 注册的事件监听器引用，用于 removeLayer 时精确移除 */
   eventHandlers: Array<{
     type: MapLayerEventType
@@ -244,7 +245,8 @@ export function createImportedLayerModule(options: CreateImportedLayerModuleOpti
               `<tr><td class="pk">${escapeHtml(k)}</td><td class="pv">${escapeHtml(String(v ?? ''))}</td></tr>`,
           )
           .join('')
-        const html = `<div class="imported-popup"><strong>${escapeHtml(name)}</strong><table>${propLines}</table></div>`
+        const title = loaded.get(id)?.displayName ?? name
+        const html = `<div class="imported-popup"><strong>${escapeHtml(title)}</strong><table>${propLines}</table></div>`
         new Popup().setLngLat(e.lngLat).setHTML(html).addTo(options.map)
         // 地图点选 → 属性表跟踪（不自动打开工作台；若已打开则切到属性表）
         const geoFeature = {
@@ -287,8 +289,17 @@ export function createImportedLayerModule(options: CreateImportedLayerModuleOpti
       layerIds,
       geometryType: primaryType,
       bounds: _collectBounds(geojson),
+      displayName: name,
       eventHandlers,
     })
+  }
+
+  function updateLayerDisplayName(id: string, name: string): void {
+    const info = loaded.get(id)
+    if (!info) return
+    const trimmed = name.trim()
+    if (!trimmed) return
+    info.displayName = trimmed
   }
 
   function removeLayer(id: string): void {
@@ -483,6 +494,7 @@ export function createImportedLayerModule(options: CreateImportedLayerModuleOpti
 
   return {
     addVectorLayer,
+    updateLayerDisplayName,
     removeLayer,
     setLayerVisibility,
     setLayerOpacity,

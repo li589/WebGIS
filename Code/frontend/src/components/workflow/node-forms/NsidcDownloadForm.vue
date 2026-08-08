@@ -6,11 +6,11 @@
  *
  * 字段：
  *   - start_date / end_date: YYYYMMDD
- *   - local_dir: 本地输出目录（默认 I:\Geograph_DataSet\Soil_Moisture\SMAP_Download）
+ *   - local_dir: 本地输出目录（须填写；相对 BACKEND_DATA_ROOT 或绝对路径）
  *   - version: 5 / 6
  *   - short_name: NSIDC 数据集短名（默认 SPL3SMP_E）
  */
-import { computed, reactive, watch } from 'vue'
+import { computed, onMounted, reactive, watch } from 'vue'
 import type { LGraphNodeClass } from '../litegraph-setup'
 import {
   type FormErrors,
@@ -20,6 +20,15 @@ import {
   validateRequired,
   yyyymmddToIso,
 } from './utils'
+import {
+  fillPathFieldsFromSystemSettings,
+  loadSystemPathDefaults,
+} from '../../../composables/system-settings-fill'
+import { fieldMapForNodeType } from '../../../composables/node-form-system-settings-map'
+import { WORKFLOW_COPY } from '../../../ui-copy/workflow'
+
+const NODE_TYPE = 'download/nsidc_smap_download'
+const PATH_FIELD_MAP = fieldMapForNodeType(NODE_TYPE)
 
 const props = defineProps<{
   node: LGraphNodeClass | null
@@ -33,7 +42,7 @@ const emit = defineEmits<{
 const DEFAULTS = {
   start_date: '',
   end_date: '',
-  local_dir: 'I:\\Geograph_DataSet\\Soil_Moisture\\SMAP_Download',
+  local_dir: '',
   version: 6,
   short_name: 'SPL3SMP_E',
 }
@@ -75,6 +84,30 @@ function resync() {
 }
 
 watch(() => props.node, resync, { immediate: true })
+
+onMounted(async () => {
+  try {
+    const defaults = await loadSystemPathDefaults()
+    const filled = fillPathFieldsFromSystemSettings(form, defaults, PATH_FIELD_MAP, {
+      onlyEmpty: true,
+    })
+    for (const key of filled) {
+      emit('update-property', key, form[key])
+    }
+    validateForm()
+  } catch {
+    /* ignore settings fetch errors */
+  }
+})
+
+async function applySystemSettings(overwrite = true) {
+  const defaults = await loadSystemPathDefaults(true)
+  const filled = fillPathFieldsFromSystemSettings(form, defaults, PATH_FIELD_MAP, { overwrite })
+  for (const key of filled) {
+    emit('update-property', key, form[key])
+  }
+  validateForm()
+}
 
 function update(key: string, value: unknown) {
   form[key] = value
@@ -144,12 +177,23 @@ function onVersionChange(event: Event) {
 
     <!-- 本地输出目录 -->
     <div class="form-row">
-      <label class="form-label">本地目录 local_dir</label>
+      <label class="form-label">
+        本地目录 local_dir
+        <button
+          v-if="!readonly"
+          type="button"
+          class="sys-fill-btn"
+          :title="WORKFLOW_COPY.useSystemSettings"
+          @click="applySystemSettings(true)"
+        >
+          {{ WORKFLOW_COPY.useSystemSettings }}
+        </button>
+      </label>
       <input
         type="text"
         class="form-input"
         :value="String(form.local_dir ?? '')"
-        placeholder="I:\Geograph_DataSet\Soil_Moisture\SMAP_Download"
+        placeholder="请选择或输入本地目录"
         :readonly="readonly"
         @input="update('local_dir', ($event.target as HTMLInputElement).value)"
       />
@@ -182,6 +226,25 @@ function onVersionChange(event: Event) {
   font-size: 0.56rem;
   color: #6e8ba0;
   font-weight: 500;
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  flex-wrap: wrap;
+}
+
+.sys-fill-btn {
+  margin-left: auto;
+  padding: 0.12rem 0.36rem;
+  border-radius: 0.28rem;
+  border: 1px solid rgba(90, 213, 255, 0.35);
+  background: rgba(90, 213, 255, 0.1);
+  color: #5ad5ff;
+  font-size: 0.5rem;
+  cursor: pointer;
+}
+
+.sys-fill-btn:hover {
+  background: rgba(90, 213, 255, 0.2);
 }
 
 .form-input {

@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { MapChromeNavigationControl } from './map/map-chrome-controls'
 
-import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, shallowRef, watch } from 'vue'
 import { storeToRefs } from 'pinia'
 
 import { useLayersStore } from '../stores/layers'
@@ -30,12 +30,14 @@ import {
 import { aggregateWeatherTileBanner } from './map/weather-tile-banner'
 import { TILE_SOURCE_MAP, getDefaultTileSource, type TileSourceId } from '../services/api-config'
 import { dataWorkspaceHighlight, showToast } from '../data-manager/core/workspace-store'
+import { debugLog as probeDebugLog } from '../utils/perf-probe'
 
 const layersStore = useLayersStore()
 const uiStore = useUiStore()
 const logStore = useLogStore()
 const weatherTileManager = useWeatherTileManager()
-const { statusVersion: weatherStatusVersion } = storeToRefs(weatherTileManager)
+const { statusVersion: weatherStatusVersion, activityVersion: weatherActivityVersion } =
+  storeToRefs(weatherTileManager)
 
 const props = defineProps<{
   tileSourceId: TileSourceId
@@ -88,6 +90,9 @@ const exposeBridge = createMapCanvasExposeBridge({
     state.resources.weatherOverlayModule?.setAnimationPaused(paused)
   },
   fitToLayerExtent: (instanceId: string) => fitToLayerExtent(instanceId),
+  setOverlayTime: (layerId: string, time: string) => {
+    void overlayImageModule?.setOverlayTime(layerId, time)
+  },
 })
 
 defineExpose(exposeBridge)
@@ -161,11 +166,12 @@ function fitToLayerExtent(instanceId: string): boolean {
 
 // ─── Overlay image module (via non-weather sync module) ──────────────────────
 let overlayImageModule: MapCanvasNonWeatherLayerSyncModule['overlayImageModule'] | null = null
-const overlayTimeStates = computed(() => overlayImageModule?.overlayTimeStates.value ?? [])
-const activeTimeSeriesOverlays = computed(() =>
-  overlayTimeStates.value.filter((s: { category: string }) => s.category === 'time-series'),
-)
-const overlayLinkTimeEnabled = computed(() => overlayImageModule?.linkTimeEnabled.value ?? false)
+// 响应式句柄：overlayImageModule 是异步挂载后才赋值的普通变量，直接放进 computed
+// 会因 `?.` 短路而丢失依赖追踪（永远为空数组）。用 shallowRef 保证赋值后 watcher 触发。
+const overlayImageModuleRef = shallowRef<
+  MapCanvasNonWeatherLayerSyncModule['overlayImageModule'] | null
+>(null)
+const overlayTimeStates = computed(() => overlayImageModuleRef.value?.overlayTimeStates.value ?? [])
 
 // 透传 overlay 时间状态到父组件
 watch(
@@ -176,61 +182,8 @@ watch(
   { deep: true },
 )
 
-function overlayStepTime(layerId: string, delta: number) {
-  if (!overlayImageModule) return
-  const state = overlayTimeStates.value.find((s: { layerId: string }) => s.layerId === layerId)
-  if (!state || !state.currentTime) return
-  const idx = state.timeList.indexOf(state.currentTime)
-  if (idx < 0) return
-  const nextIdx = idx + delta
-  if (nextIdx < 0 || nextIdx >= state.timeList.length) return
-  void overlayImageModule.setOverlayTime(layerId, state.timeList[nextIdx])
-}
-
-function overlayToggleLinkTime() {
-  if (!overlayImageModule) return
-  overlayImageModule.setLinkTime(!overlayImageModule.linkTimeEnabled.value)
-}
-
-function overlaySetTime(layerId: string, time: string) {
-  if (!overlayImageModule) return
-  void overlayImageModule.setOverlayTime(layerId, time)
-}
-
-function overlayFormatTime(time: string | null): string {
-  if (!time) return ''
-  // 8-day block: YYYYMMDD_YYYYMMDD -> YYYY-MM-DD ~ YYYY-MM-DD
-  if (time.length === 17 && /^\d{8}_\d{8}$/.test(time)) {
-    const s = time.slice(0, 8)
-    const e = time.slice(9, 17)
-    const fmt = (d: string) => `${d.slice(0, 4)}-${d.slice(4, 6)}-${d.slice(6, 8)}`
-    return `${fmt(s)} ~ ${fmt(e)}`
-  }
-  // YYYYMMDD -> YYYY-MM-DD ; YYYYMM -> YYYY-MM
-  if (time.length === 8 && /^\d{8}$/.test(time)) {
-    return `${time.slice(0, 4)}-${time.slice(4, 6)}-${time.slice(6, 8)}`
-  }
-  if (time.length === 6 && /^\d{6}$/.test(time)) {
-    return `${time.slice(0, 4)}-${time.slice(4, 6)}`
-  }
-  return time
-}
-
-/** 紧凑格式：用于 tick 按钮 */
-function overlayFormatTimeShort(time: string): string {
-  if (time.length === 17 && /^\d{8}_\d{8}$/.test(time)) {
-    const s = time.slice(0, 8)
-    const e = time.slice(9, 17)
-    return `${s.slice(4, 6)}/${s.slice(6, 8)}~${e.slice(4, 6)}/${e.slice(6, 8)}`
-  }
-  if (time.length === 8 && /^\d{8}$/.test(time)) {
-    return `${time.slice(4, 6)}/${time.slice(6, 8)}`
-  }
-  return time
-}
-
 function debugLog(module: string, ...args: unknown[]) {
-  console.log(`[${performance.now().toFixed(1)}ms] [${module}]`, ...args)
+  probeDebugLog(`[${performance.now().toFixed(1)}ms] [${module}]`, ...args)
 }
 
 const currentTileConfig = computed(
@@ -269,7 +222,9 @@ const stageStatusModel = computed(() =>
 
 // 天气瓦片加载/错误/半覆盖状态：按层隔离聚合（单层无数据不盖住健康层）
 const weatherTileStatusModel = computed(() => {
+  // statusVersion：错误/补洞；activityVersion：瓦片入队/完成（缩放中途加载进度）
   void weatherStatusVersion.value
+  void weatherActivityVersion.value
   const weatherLayers = layersStore.activeLayersDisplay.filter(
     (l) => l.visible && layersStore.isWeatherEngineLayer(l.catalogId),
   )
@@ -396,6 +351,7 @@ onMounted(async () => {
     state.resources.selectedLayerFocusModule = moduleBundle.selectedLayerFocusModule
     state.resources.measureModule = moduleBundle.measureModule
     overlayImageModule = moduleBundle.nonWeatherLayerSyncModule.overlayImageModule
+    overlayImageModuleRef.value = moduleBundle.nonWeatherLayerSyncModule.overlayImageModule
     moduleBundle.weatherOverlayModule.setupWatchers()
     moduleBundle.nonWeatherLayerSyncModule.setupWatchers()
     void moduleBundle.nonWeatherLayerSyncModule.init()
@@ -749,61 +705,6 @@ async function handleLocateMe() {
           <span>{{ pin.value }}</span>
         </div>
       </button>
-    </div>
-
-    <!-- Overlay time control (time-series raster overlays) -->
-    <div v-if="activeTimeSeriesOverlays.length > 0" class="overlay-time-bar">
-      <button
-        v-if="activeTimeSeriesOverlays.length > 1"
-        class="overlay-link-btn"
-        :class="{ active: overlayLinkTimeEnabled }"
-        type="button"
-        :title="overlayLinkTimeEnabled ? '取消联动' : '多图层时间联动'"
-        @click="overlayToggleLinkTime"
-      >
-        {{ overlayLinkTimeEnabled ? '🔗' : '⛓' }}
-      </button>
-      <div
-        v-for="state in activeTimeSeriesOverlays"
-        :key="'overlay-time-' + state.layerId"
-        class="overlay-time-control"
-      >
-        <div class="overlay-time-row">
-          <button
-            class="overlay-time-btn"
-            type="button"
-            :disabled="state.timeList.indexOf(state.currentTime ?? '') <= 0"
-            @click="overlayStepTime(state.layerId, -1)"
-            aria-label="上一个时间"
-          >
-            ‹
-          </button>
-          <span class="overlay-time-label">{{ overlayFormatTime(state.currentTime) }}</span>
-          <button
-            class="overlay-time-btn"
-            type="button"
-            :disabled="state.timeList.indexOf(state.currentTime ?? '') >= state.timeList.length - 1"
-            @click="overlayStepTime(state.layerId, 1)"
-            aria-label="下一个时间"
-          >
-            ›
-          </button>
-        </div>
-        <!-- 8-day block tick selector -->
-        <div v-if="state.timeList.length > 1" class="overlay-time-ticks">
-          <button
-            v-for="(t, idx) in state.timeList"
-            :key="'tick-' + state.layerId + '-' + idx"
-            class="overlay-tick-btn"
-            :class="{ active: t === state.currentTime }"
-            type="button"
-            :title="overlayFormatTime(t)"
-            @click="overlaySetTime(state.layerId, t)"
-          >
-            {{ overlayFormatTimeShort(t) }}
-          </button>
-        </div>
-      </div>
     </div>
 
     <!-- 定位失败提示 -->
@@ -1397,142 +1298,6 @@ async function handleLocateMe() {
   margin-top: 0.15rem;
   color: #99afc3;
   font-size: 0.6rem;
-}
-
-/* Overlay time-series control */
-.overlay-time-bar {
-  position: absolute;
-  z-index: 22;
-  bottom: 1rem;
-  right: 1rem;
-  display: flex;
-  flex-direction: column;
-  align-items: flex-end;
-  gap: 0.3rem;
-}
-
-.overlay-time-control {
-  display: inline-flex;
-  flex-direction: column;
-  align-items: stretch;
-  gap: 0.2rem;
-  padding: 0.32rem 0.4rem;
-  border-radius: 0.7rem;
-  background: rgba(8, 18, 33, 0.88);
-  border: 1px solid rgba(136, 192, 255, 0.18);
-  box-shadow: 0 6px 20px rgba(3, 10, 20, 0.22);
-  color: #eaf3fb;
-  font-size: 0.7rem;
-}
-
-.overlay-time-row {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.3rem;
-  justify-content: center;
-}
-
-.overlay-link-btn {
-  width: 1.7rem;
-  height: 1.7rem;
-  border-radius: 0.5rem;
-  border: 1px solid rgba(136, 192, 255, 0.22);
-  background: rgba(8, 18, 33, 0.88);
-  color: #9fb6cc;
-  font-size: 0.85rem;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  transition:
-    background 0.18s ease,
-    color 0.18s ease,
-    border-color 0.18s ease;
-}
-
-.overlay-link-btn.active {
-  background: rgba(60, 160, 100, 0.24);
-  border-color: rgba(114, 255, 207, 0.4);
-  color: #9ff8cf;
-}
-
-.overlay-link-btn:hover {
-  border-color: rgba(136, 192, 255, 0.4);
-  color: #eaf3fb;
-}
-
-.overlay-time-btn {
-  width: 1.5rem;
-  height: 1.5rem;
-  border-radius: 0.4rem;
-  border: 1px solid rgba(136, 192, 255, 0.18);
-  background: rgba(36, 90, 170, 0.14);
-  color: #dfeefd;
-  font-size: 0.9rem;
-  font-family: inherit;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  transition:
-    background 0.18s ease,
-    color 0.18s ease;
-}
-
-.overlay-time-btn:hover:not(:disabled) {
-  background: rgba(60, 120, 200, 0.28);
-  color: #ffffff;
-}
-
-.overlay-time-btn:disabled {
-  opacity: 0.35;
-  cursor: not-allowed;
-}
-
-.overlay-time-label {
-  min-width: 7.6rem;
-  text-align: center;
-  font-variant-numeric: tabular-nums;
-  letter-spacing: 0.02em;
-}
-
-.overlay-time-ticks {
-  display: flex;
-  gap: 0.18rem;
-  margin-top: 0.22rem;
-  padding-top: 0.22rem;
-  border-top: 1px solid rgba(136, 192, 255, 0.12);
-  flex-wrap: wrap;
-  max-width: 14rem;
-}
-
-.overlay-tick-btn {
-  padding: 0.16rem 0.32rem;
-  border: 1px solid rgba(136, 192, 255, 0.12);
-  border-radius: 0.36rem;
-  background: rgba(255, 255, 255, 0.025);
-  color: #7f97ad;
-  font: inherit;
-  font-size: 0.5rem;
-  white-space: nowrap;
-  cursor: pointer;
-  transition:
-    color 0.18s ease,
-    border-color 0.18s ease,
-    background-color 0.18s ease;
-}
-
-.overlay-tick-btn:hover {
-  color: #eaf3fb;
-  border-color: rgba(136, 192, 255, 0.28);
-  background: rgba(90, 162, 255, 0.1);
-}
-
-.overlay-tick-btn.active {
-  color: #f3fbff;
-  border-color: rgba(90, 162, 255, 0.45);
-  background: rgba(90, 162, 255, 0.18);
-  font-weight: 600;
 }
 
 :deep(.maplibregl-ctrl-attrib) {

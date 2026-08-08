@@ -2,13 +2,14 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
-from app.api.deps import require_write_access
+from app.api.deps import require_config_read_access, require_write_access
 from app.services.api_config import ApiProvider, DataType, api_config_manager
 from app.services.tile_proxy_service import tile_proxy_service
 from app.services.workflow.service_container import runtime_status_service
 from shared.contracts.api_contracts import (
     FrontendCommandRequest,
     FrontendCommandResponse,
+    RuntimeConfigSnapshotResponse,
     RuntimeConfigUpdateRequest,
     RuntimeConfigUpdateResponse,
     RuntimeStatusResponse,
@@ -34,18 +35,34 @@ def update_runtime_config(
         ) from exc
 
 
-@router.get("/runtime/config", tags=["runtime"])
-def get_runtime_config() -> dict:
+@router.get(
+    "/runtime/config",
+    tags=["runtime"],
+    response_model=RuntimeConfigSnapshotResponse,
+    dependencies=[Depends(require_config_read_access)],
+)
+def get_runtime_config() -> RuntimeConfigSnapshotResponse:
     """Return the current runtime configuration snapshot (defaults + DB overrides)."""
-    return runtime_status_service.get_runtime_config()
+    return RuntimeConfigSnapshotResponse.model_validate(
+        runtime_status_service.get_runtime_config()
+    )
 
 
-@router.get("/runtime/status", tags=["runtime"], response_model=RuntimeStatusResponse)
+@router.get(
+    "/runtime/status",
+    tags=["runtime"],
+    response_model=RuntimeStatusResponse,
+    dependencies=[Depends(require_config_read_access)],
+)
 def get_runtime_status() -> RuntimeStatusResponse:
     return runtime_status_service.get_runtime_status()
 
 
-@router.get("/runtime/metrics", tags=["runtime"])
+@router.get(
+    "/runtime/metrics",
+    tags=["runtime"],
+    dependencies=[Depends(require_config_read_access)],
+)
 def get_runtime_metrics(date: str | None = None) -> dict:
     """返回各端点的 P50/P95 请求耗时统计（按天聚合，从 Redis 读取）。
 
@@ -80,14 +97,22 @@ def submit_frontend_command(payload: FrontendCommandRequest) -> FrontendCommandR
 # ---------------- API 配置管理接口 ----------------
 
 
-@router.get("/runtime/api-config", tags=["runtime"])
+@router.get(
+    "/runtime/api-config",
+    tags=["runtime"],
+    dependencies=[Depends(require_config_read_access)],
+)
 def get_api_config_status() -> JSONResponse:
     """返回所有 API 配置状态，供前端判断可用数据源。"""
     serializable_configs = api_config_manager.get_all_configs_serializable()
     return JSONResponse(content=serializable_configs)
 
 
-@router.get("/runtime/api-config/{provider}", tags=["runtime"])
+@router.get(
+    "/runtime/api-config/{provider}",
+    tags=["runtime"],
+    dependencies=[Depends(require_config_read_access)],
+)
 def get_provider_api_config(provider: str) -> JSONResponse:
     """返回指定 Provider 的 API 配置状态。"""
     try:
@@ -125,7 +150,11 @@ def update_provider_api_config(provider: str, config_update: dict) -> JSONRespon
     )
 
 
-@router.get("/runtime/api-config/{provider}/best", tags=["runtime"])
+@router.get(
+    "/runtime/api-config/{provider}/best",
+    tags=["runtime"],
+    dependencies=[Depends(require_config_read_access)],
+)
 def get_best_available_api(provider: str) -> JSONResponse:
     """返回指定数据类型中最佳可用的 API Provider。"""
     try:
@@ -167,7 +196,10 @@ class TileProvidersResponse(BaseModel):
 
 
 @router.get(
-    "/runtime/tiles/providers", tags=["runtime"], response_model=TileProvidersResponse
+    "/runtime/tiles/providers",
+    tags=["runtime"],
+    response_model=TileProvidersResponse,
+    dependencies=[Depends(require_config_read_access)],
 )
 def list_runtime_tile_providers() -> TileProvidersResponse:
     """列出可用底图代理提供商（管理面，像素请求请走 /unified-tiles）。"""
@@ -177,7 +209,11 @@ def list_runtime_tile_providers() -> TileProvidersResponse:
     )
 
 
-@router.get("/runtime/tiles/cache/stats", tags=["runtime"])
+@router.get(
+    "/runtime/tiles/cache/stats",
+    tags=["runtime"],
+    dependencies=[Depends(require_config_read_access)],
+)
 def get_runtime_tile_cache_stats() -> dict:
     """底图代理进程内缓存统计。"""
     return {

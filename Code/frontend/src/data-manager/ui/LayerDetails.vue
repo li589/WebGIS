@@ -103,9 +103,22 @@ async function loadFullGeojson() {
 async function exportFmt(fmt: string) {
   if (!selectedLayer.value) return
   try {
-    await exportLayer(selectedLayer.value, fmt as ExportFormat)
-    msg.value = '导出完成'
-    logStore.logOperation('export-layer', selectedLayer.value.name ?? 'layer', fmt)
+    const times = selectedLayer.value.importedRaster?.timeList ?? []
+    let time: string | null = null
+    if (times.length) {
+      const eff = selectedLayer.value.importedRaster?.effectiveTimeLabel
+      time =
+        (eff && times.find((t) => eff === t || eff.startsWith(t))) ||
+        times[times.length - 1] ||
+        null
+    }
+    await exportLayer(selectedLayer.value, fmt as ExportFormat, { time })
+    msg.value = time ? `导出完成 · ${time}` : '导出完成'
+    logStore.logOperation(
+      'export-layer',
+      selectedLayer.value.name ?? 'layer',
+      time ? `${fmt}@${time}` : fmt,
+    )
   } catch (e) {
     error.value = e instanceof Error ? e.message : String(e)
   }

@@ -21,6 +21,145 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/auth/config": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Auth Config */
+        get: operations["get_auth_config_auth_config_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/auth/login": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Login */
+        post: operations["login_auth_login_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/auth/logout": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Logout */
+        post: operations["logout_auth_logout_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/auth/me": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Me */
+        get: operations["me_auth_me_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/auth/users": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Users */
+        get: operations["list_users_auth_users_get"];
+        put?: never;
+        /** Create User */
+        post: operations["create_user_auth_users_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/auth/users/{user_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Delete User */
+        delete: operations["delete_user_auth_users__user_id__delete"];
+        options?: never;
+        head?: never;
+        /** Update User */
+        patch: operations["update_user_auth_users__user_id__patch"];
+        trace?: never;
+    };
+    "/auth/tokens": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Tokens */
+        get: operations["list_tokens_auth_tokens_get"];
+        put?: never;
+        /** Create Token */
+        post: operations["create_token_auth_tokens_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/auth/tokens/{token_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Revoke Token */
+        delete: operations["revoke_token_auth_tokens__token_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/layers": {
         parameters: {
             query?: never;
@@ -68,8 +207,30 @@ export interface paths {
          *
          *     对于时间序列图层，可通过 `?time=YYYYMMDD` 指定时间标签；
          *     未指定时使用 default_time。
+         *
+         *     有可读源且传入 palette/min/max/nodata 时动态重着色；否则返回烘焙 PNG。
          */
         get: operations["get_overlay_preview_overlay_preview__layer_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/overlay-tiles/{layer_id}/{z}/{x}/{y}.png": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Overlay Tile
+         * @description Web Mercator XYZ PNG tile for imported / geotiff-backed overlays.
+         */
+        get: operations["get_overlay_tile_overlay_tiles__layer_id___z___x___y__png_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -118,6 +279,35 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/overlays/intersect": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Overlays In Viewport
+         * @description 返回与视口相交的 overlay layer_ids（服务端空间索引查询）。
+         *
+         *     优先用 spatial.sqlite + R*Tree（``ST_Intersects``）；扩展不可用或表空时
+         *     回退到逐层读 ``bounds.json`` 做 AABB 相交（与原前端 O(N) 过滤等价）。
+         *     空间库就绪时即使零命中也信任结果，不再误扫 bounds.json。
+         *
+         *     跨日界线约定：前端对跨日界线视口传 ``east > 180``（unwrap），与
+         *     ``overlay_safe_wgs84_bounds`` 一致。
+         *
+         *     回退路径无 zoom 元资料时不过滤（bounds.json / registry 目前无 min/maxzoom）。
+         */
+        get: operations["get_overlays_in_viewport_overlays_intersect_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/overlay-value/{layer_id}": {
         parameters: {
             query?: never;
@@ -152,7 +342,8 @@ export interface paths {
          * List Workflow Runs
          * @description 列出工作流 run。active_only=true（默认）仅返回非终态 run。
          *
-         *     供前端启动恢复与跨会话状态同步使用。
+         *     可选 status 过滤与 limit 取最近 N 条（按创建时间倒序），
+         *     供前端启动恢复（含"最近成功 run 产物自动恢复"）与跨会话状态同步使用。
          */
         get: operations["list_workflow_runs_workflow_runs_get"];
         put?: never;
@@ -243,6 +434,30 @@ export interface paths {
         put?: never;
         /** Retry Workflow Run */
         post: operations["retry_workflow_run_workflow_runs__run_id__retry_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/workflow-runs/{run_id}/materialize-map-layers": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Materialize Workflow Map Layers
+         * @description Publish algorithm science products as imported overlays for map display.
+         *
+         *     Used when a run completed with file-only product refs (no map_layer), or to
+         *     re-publish after code updates without re-running the inversion.
+         *     Also allowed while ``running`` so block mats can progressively appear.
+         */
+        post: operations["materialize_workflow_map_layers_workflow_runs__run_id__materialize_map_layers_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -595,8 +810,8 @@ export interface paths {
          * @description 手动触发 Open-Meteo 数据同步。
          *
          *     优先 Celery 异步派发；broker 卡住/超时时降级为本地后台线程。
-         *     注意：Celery apply_async 必须在限时线程中调用，且 ThreadPool 不可 wait=True
-         *     退出（否则 timeout 后仍会挂死整个 HTTP 请求 → 前端 AbortError）。
+         *     可选 body.domains 临时覆盖同步域（白名单校验，不改环境变量）。
+         *     Docker/compose 不可用时返回 503 sync_unavailable。
          */
         post: operations["trigger_open_meteo_sync_weather_sync_trigger_post"];
         delete?: never;
@@ -820,6 +1035,28 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/import/crs-options/expanded": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Crs Options Expanded
+         * @description 返回完整 CRS 列表（含动态 UTM/GK 带，供高级选择）。
+         *
+         *     featured 项为精简集，非 featured 项为动态生成的投影带。
+         */
+        get: operations["list_crs_options_expanded_import_crs_options_expanded_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/import/raster": {
         parameters: {
             query?: never;
@@ -945,6 +1182,40 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/import/upload/resumable/init": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Upload Resumable Init */
+        post: operations["upload_resumable_init_import_upload_resumable_init_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/import/upload/{upload_id}/status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Upload Status */
+        get: operations["upload_status_import_upload__upload_id__status_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/import/upload/{upload_id}/chunk": {
         parameters: {
             query?: never;
@@ -962,6 +1233,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/import/upload/{upload_id}/chunk/{chunk_index}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Upload Chunk Indexed */
+        post: operations["upload_chunk_indexed_import_upload__upload_id__chunk__chunk_index__post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/import/upload/complete": {
         parameters: {
             query?: never;
@@ -973,6 +1261,23 @@ export interface paths {
         put?: never;
         /** Upload Complete */
         post: operations["upload_complete_import_upload_complete_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/import/upload/resumable/complete": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Upload Resumable Complete */
+        post: operations["upload_resumable_complete_import_upload_resumable_complete_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1251,6 +1556,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/import/layers/{layer_id}/display-name": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /**
+         * Patch Imported Layer Display Name
+         * @description 更新导入图层显示名（meta.display_name / label），不影响物理文件名。
+         */
+        patch: operations["patch_imported_layer_display_name_import_layers__layer_id__display_name_patch"];
+        trace?: never;
+    };
     "/import/layers/{layer_id}": {
         parameters: {
             query?: never;
@@ -1266,6 +1591,46 @@ export interface paths {
          * @description 删除已导入矢量/栅格落盘目录（仅允许 imported-* 前缀）。
          */
         delete: operations["delete_imported_layer_import_layers__layer_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/import/quota": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Import Quota
+         * @description 导入存储配额用量；可选触发临时目录回收。
+         */
+        get: operations["import_quota_import_quota_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/import/quota/reclaim": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Import Quota Reclaim
+         * @description 主动清理 staging/_tmp/_exports，不删除已导入图层。
+         */
+        post: operations["import_quota_reclaim_import_quota_reclaim_post"];
+        delete?: never;
         options?: never;
         head?: never;
         patch?: never;
@@ -1299,6 +1664,26 @@ export interface paths {
         put?: never;
         /** Raster Commit */
         post: operations["raster_commit_import_raster_commit_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/import/raster/detect-invalid": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Raster Detect Invalid
+         * @description 检测科学栅格变量中的哨兵值 / Inf / FillValue，供 UI 一键填入。
+         */
+        post: operations["raster_detect_invalid_import_raster_detect_invalid_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1585,7 +1970,7 @@ export interface paths {
         };
         /**
          * Get General Config
-         * @description 获取常规配置（脱敏）。
+         * @description 获取常规配置（脱敏；需读鉴权，redis_url 口令已脱敏）。
          */
         get: operations["get_general_config_config_general_get"];
         put?: never;
@@ -2153,6 +2538,46 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/config/data-source/paths": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Update Data Source Paths
+         * @description 更新数据根 / 产物根（写入 .env；需重启 FastAPI+Worker+Beat 生效）。
+         */
+        put: operations["update_data_source_paths_config_data_source_paths_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/config/service/restart": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Restart Backend Service
+         * @description 调度重启 FastAPI + Celery Worker + Beat（不动 Docker / Vite）。
+         */
+        post: operations["restart_backend_service_config_service_restart_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/config/data-cache/overview": {
         parameters: {
             query?: never;
@@ -2307,6 +2732,10 @@ export interface paths {
         /**
          * List Node Templates
          * @description 获取所有可用的节点模板，供前端节点面板展示。
+         *
+         *     P0-10：未实现执行器的占位节点（executable=False 的 stub）在 production 默认
+         *     从面板隐藏（避免面板承诺未实现功能），development 或显式设
+         *     BACKEND_NODE_STUBS_VISIBLE=true 时可见（供开发中联调）。
          */
         get: operations["list_node_templates_workflow_definitions_node_templates_get"];
         put?: never;
@@ -2331,6 +2760,29 @@ export interface paths {
          * @description 将 LiteGraph 画布编译为 Python provider 可执行的 workflow_definition。
          */
         post: operations["compile_graph_workflow_definitions_compile_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/workflow-definitions/dry-validate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Dry Validate Graph
+         * @description 图模式提交前干跑校验：编译 + 静态结构检查，不入队。
+         *
+         *     成功返回 ``{ ok: true, workflow_definition, issues: [] }``；
+         *     编译失败返回 422 + 字段级 issues（与提交期校验风格一致）。
+         */
+        post: operations["dry_validate_graph_workflow_definitions_dry_validate_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -2651,6 +3103,33 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/cleanup/node-caches": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Node Caches
+         * @description 列出工作流节点产物缓存（每个算法模块的目录/大小/文件数/最近修改）。
+         */
+        get: operations["list_node_caches_cleanup_node_caches_get"];
+        put?: never;
+        /**
+         * Cleanup Node Caches
+         * @description 清理工作流节点产物缓存（默认全部；可指定模块名）。
+         *
+         *     安全约束：仅删除 products/ 下的直接子目录，路径白名单校验，
+         *     绝不触碰目录外的任何文件。
+         */
+        post: operations["cleanup_node_caches_cleanup_node_caches_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/remote/servers": {
         parameters: {
             query?: never;
@@ -2800,6 +3279,31 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        /** AboutInfo */
+        AboutInfo: {
+            /** Project Name */
+            project_name: string;
+            /** Version */
+            version: string;
+            /** Description */
+            description: string;
+            /** Tech Stack */
+            tech_stack?: string[];
+            /** Modules */
+            modules?: components["schemas"]["AboutModule"][];
+            /**
+             * Architecture Summary
+             * @default
+             */
+            architecture_summary: string;
+        };
+        /** AboutModule */
+        AboutModule: {
+            /** Name */
+            name: string;
+            /** Description */
+            description: string;
+        };
         /** AlgorithmOutputSpec */
         AlgorithmOutputSpec: {
             /**
@@ -2877,12 +3381,28 @@ export interface components {
             /** Priority */
             priority?: number | null;
         };
+        /** ApiKeyDeletedResponse */
+        ApiKeyDeletedResponse: {
+            /** Deleted */
+            deleted: boolean;
+            /** Key Name */
+            key_name: string;
+        };
         /** ApiKeyHistoryClearResponse */
         ApiKeyHistoryClearResponse: {
             /** Key Name */
             key_name: string;
             /** Deleted */
             deleted: number;
+        };
+        /** ApiKeyHistoryDeletedResponse */
+        ApiKeyHistoryDeletedResponse: {
+            /** Deleted */
+            deleted: boolean;
+            /** Key Name */
+            key_name: string;
+            /** History Id */
+            history_id: number;
         };
         /** ApiKeyHistoryItem */
         ApiKeyHistoryItem: {
@@ -2894,12 +3414,52 @@ export interface components {
             masked_value: string;
             /** Label */
             label?: string | null;
-            /** Created At */
+            /**
+             * Created At
+             * Format: date-time
+             */
             created_at: string;
-            /** Superseded At */
+            /**
+             * Superseded At
+             * Format: date-time
+             */
             superseded_at: string;
             /** Source */
             source: string;
+        };
+        /**
+         * ApiKeyItem
+         * @description 脱敏 API Key 列表项（GET /config/api-keys）。
+         */
+        ApiKeyItem: {
+            /** Key Name */
+            key_name: string;
+            /** Display Name */
+            display_name: string;
+            /** Description */
+            description?: string | null;
+            /**
+             * Masked Value
+             * @default
+             */
+            masked_value: string;
+            /**
+             * Enabled
+             * @default false
+             */
+            enabled: boolean;
+            /** Source */
+            source?: string | null;
+            /** Has Value */
+            has_value?: boolean | null;
+            /** Created At */
+            created_at?: string | null;
+            /** Updated At */
+            updated_at?: string | null;
+            /** Last Tested At */
+            last_tested_at?: string | null;
+            /** Last Test Status */
+            last_test_status?: string | null;
         };
         /** ApiKeyToggleRequest */
         ApiKeyToggleRequest: {
@@ -2921,6 +3481,21 @@ export interface components {
             enabled: boolean;
             /** History Label */
             history_label?: string | null;
+        };
+        /** AuthConfigResponse */
+        AuthConfigResponse: {
+            /** Auth Required */
+            auth_required: boolean;
+            /** Session Cookie Name */
+            session_cookie_name: string;
+            /** Roles */
+            roles?: string[];
+            /** Dev Prefill */
+            dev_prefill?: {
+                [key: string]: string;
+            } | null;
+            /** Dev Write Api Key */
+            dev_write_api_key?: string | null;
         };
         /** BackendServiceStatus */
         BackendServiceStatus: {
@@ -2986,6 +3561,14 @@ export interface components {
             /** Offset */
             offset?: number | null;
         };
+        /** Body_upload_chunk_indexed_import_upload__upload_id__chunk__chunk_index__post */
+        Body_upload_chunk_indexed_import_upload__upload_id__chunk__chunk_index__post: {
+            /**
+             * File
+             * Format: binary
+             */
+            file: string;
+        };
         /** BoundingBox */
         BoundingBox: {
             /** West */
@@ -3014,6 +3597,75 @@ export interface components {
             /** Errors */
             errors: number;
         };
+        /**
+         * ChartSeriesSpec
+         * @description One named series inside a ChartSpec.
+         */
+        ChartSeriesSpec: {
+            /**
+             * Name
+             * @default series
+             */
+            name: string;
+            /** X */
+            x?: (number | string)[];
+            /** Y */
+            y?: (number | null)[];
+        };
+        /**
+         * ChartSpec
+         * @description Structured chart payload for ``ResultKind.chart`` inline_data.
+         *
+         *     Compatible with the legacy demo shape ``{chart_type, x, y, series_name}``:
+         *     when ``series`` is empty, consumers may fall back to top-level ``x``/``y``.
+         */
+        ChartSpec: {
+            /**
+             * Schema Version
+             * @default 1
+             */
+            schema_version: string;
+            /** @default line */
+            chart_type: components["schemas"]["ChartType"];
+            /**
+             * Title
+             * @default Chart
+             */
+            title: string;
+            /**
+             * X Label
+             * @default
+             */
+            x_label: string;
+            /**
+             * Y Label
+             * @default
+             */
+            y_label: string;
+            /**
+             * Unit
+             * @default
+             */
+            unit: string;
+            /** Series */
+            series?: components["schemas"]["ChartSeriesSpec"][];
+            /** X */
+            x?: (number | string)[];
+            /** Y */
+            y?: (number | null)[];
+            /** Series Name */
+            series_name?: string | null;
+            /** Bins */
+            bins?: number[] | null;
+            /** Categories */
+            categories?: string[] | null;
+        };
+        /**
+         * ChartType
+         * @description Generic analysis chart kinds (raster/vector agnostic).
+         * @enum {string}
+         */
+        ChartType: "line" | "bar" | "histogram" | "scatter" | "boxplot";
         /**
          * CleanupStatsResponse
          * @description 当前清理统计（不执行清理）。
@@ -3063,6 +3715,180 @@ export interface components {
              */
             lat_offset: number;
         };
+        /** CreateTokenRequest */
+        CreateTokenRequest: {
+            /** Label */
+            label?: string | null;
+            /** User Id */
+            user_id?: number | null;
+        };
+        /** CreateUserRequest */
+        CreateUserRequest: {
+            /** Username */
+            username: string;
+            /** Password */
+            password: string;
+            /**
+             * Role
+             * @default operator
+             * @enum {string}
+             */
+            role: "admin" | "operator" | "viewer";
+        };
+        /** DataCacheEntry */
+        DataCacheEntry: {
+            /** Name */
+            name: string;
+            /** Path */
+            path: string;
+            /** Size Bytes */
+            size_bytes: number;
+            /** Mtime */
+            mtime: number;
+            /** Age Seconds */
+            age_seconds: number;
+        };
+        /** DataCacheEvictRequest */
+        DataCacheEvictRequest: {
+            /** Uri Or Name */
+            uri_or_name?: string | null;
+            /** Older Than Seconds */
+            older_than_seconds?: number | null;
+        };
+        /** DataCacheEvictResponse */
+        DataCacheEvictResponse: {
+            /** Removed */
+            removed?: string[];
+            /** Cache Root */
+            cache_root: string;
+            /** Removed Count */
+            removed_count?: number | null;
+        };
+        /** DataCacheOverview */
+        DataCacheOverview: {
+            /** Cache Root */
+            cache_root: string;
+            /** Ttl Seconds */
+            ttl_seconds: number;
+            /** Ttl Unlimited */
+            ttl_unlimited: boolean;
+            /** Entry Count */
+            entry_count: number;
+            /** Total Bytes */
+            total_bytes: number;
+            /** Entries */
+            entries?: components["schemas"]["DataCacheEntry"][];
+            /**
+             * Data Root
+             * @default
+             */
+            data_root: string;
+            /**
+             * Output Root
+             * @default
+             */
+            output_root: string;
+            /** Discovered Datasets */
+            discovered_datasets?: components["schemas"]["DiscoveredDataset"][];
+        };
+        /** DataSourceConfig */
+        DataSourceConfig: {
+            /** Storage Backend */
+            storage_backend: string;
+            /**
+             * Data Root
+             * @default
+             */
+            data_root: string;
+            /**
+             * Output Root
+             * @default
+             */
+            output_root: string;
+            /** Env Data Root */
+            env_data_root?: string | null;
+            /** Env Output Root */
+            env_output_root?: string | null;
+            /** Pending Restart */
+            pending_restart?: boolean | null;
+            /** Ui Restart Enabled */
+            ui_restart_enabled?: boolean | null;
+            /**
+             * Download Source Root
+             * @default
+             */
+            download_source_root: string;
+            /**
+             * Download Real Fetch Enabled
+             * @default false
+             */
+            download_real_fetch_enabled: boolean;
+            /**
+             * Tile Proxy Enabled
+             * @default false
+             */
+            tile_proxy_enabled: boolean;
+            /**
+             * Tile Proxy Cache Ttl Seconds
+             * @default 0
+             */
+            tile_proxy_cache_ttl_seconds: number;
+            minio?: components["schemas"]["MinioPublicConfig"] | null;
+            /** Discovered Datasets */
+            discovered_datasets?: components["schemas"]["DiscoveredDataset"][];
+            /** Open Data Presets */
+            open_data_presets?: {
+                [key: string]: string;
+            };
+            /** Open Data Preset Labels */
+            open_data_preset_labels?: {
+                [key: string]: string;
+            };
+            /** Portal Credentials */
+            portal_credentials?: {
+                [key: string]: components["schemas"]["PortalCredentialPublic"];
+            };
+            /** Remote Layer Data Uris */
+            remote_layer_data_uris?: {
+                [key: string]: unknown;
+            };
+            static_cache?: components["schemas"]["StaticCacheSummary"] | null;
+            /** Workflow Hint */
+            workflow_hint?: string | null;
+        };
+        /**
+         * DataSourcePathsUpdateRequest
+         * @description 更新地理数据根 / 产物根（写入 Code/backend/.env，需重启后端生效）。
+         */
+        DataSourcePathsUpdateRequest: {
+            /**
+             * Data Root
+             * @description 绝对路径且目录必须存在
+             */
+            data_root: string;
+            /**
+             * Output Root
+             * @description 可选；留空则默认为 {data_root}/ProjectOutput
+             */
+            output_root?: string | null;
+        };
+        /** DataSourcePathsUpdateResponse */
+        DataSourcePathsUpdateResponse: {
+            /** Data Root */
+            data_root: string;
+            /** Output Root */
+            output_root: string;
+            /** Effective Data Root */
+            effective_data_root: string;
+            /** Effective Output Root */
+            effective_output_root: string;
+            /** Pending Restart */
+            pending_restart: boolean;
+            /** Env Path */
+            env_path: string;
+            /** Message */
+            message: string;
+        };
         /** DiagnosticsReport */
         DiagnosticsReport: {
             /** Status */
@@ -3073,6 +3899,17 @@ export interface components {
             };
             /** Warnings */
             warnings?: string[];
+        };
+        /** DiscoveredDataset */
+        DiscoveredDataset: {
+            /** Name */
+            name: string;
+            /** Path */
+            path: string;
+            /** File Count */
+            file_count?: number | null;
+            /** File Count Truncated */
+            file_count_truncated?: boolean | null;
         };
         /** DocumentCommitBody */
         DocumentCommitBody: {
@@ -3105,6 +3942,8 @@ export interface components {
              * @default false
              */
             async_mode: boolean;
+            /** Swap Xy */
+            swap_xy?: boolean | null;
         };
         /** DocumentOpsBody */
         DocumentOpsBody: {
@@ -3173,6 +4012,8 @@ export interface components {
              * @default false
              */
             async_mode: boolean;
+            /** Time */
+            time?: string | null;
         };
         /** ExportBody */
         ExportBody: {
@@ -3188,6 +4029,10 @@ export interface components {
              * @default auto
              */
             encoding: string | null;
+            /** Time */
+            time?: string | null;
+            /** Times */
+            times?: string[] | null;
         };
         /**
          * ExportTaskStatusResponse
@@ -3339,10 +4184,78 @@ export interface components {
             /** Display Name */
             display_name?: string | null;
         };
+        /** GeeAccountDeletedResponse */
+        GeeAccountDeletedResponse: {
+            /** Deleted */
+            deleted: boolean;
+            /** Account Id */
+            account_id: string;
+        };
+        /** GeeAccountItem */
+        GeeAccountItem: {
+            /** Account Id */
+            account_id: string;
+            /** Display Name */
+            display_name?: string | null;
+            /** Project Id */
+            project_id?: string | null;
+            /**
+             * Account Type
+             * @default service_account
+             */
+            account_type: string;
+            /**
+             * Enabled
+             * @default true
+             */
+            enabled: boolean;
+            /**
+             * Created At
+             * @default
+             */
+            created_at: string;
+            /**
+             * Updated At
+             * @default
+             */
+            updated_at: string;
+            /** Last Tested At */
+            last_tested_at?: string | null;
+            /** Last Test Status */
+            last_test_status?: string | null;
+        };
         /** GeeAccountToggleRequest */
         GeeAccountToggleRequest: {
             /** Enabled */
             enabled: boolean;
+        };
+        /** GeeAccountToggleResponse */
+        GeeAccountToggleResponse: {
+            /** Account Id */
+            account_id: string;
+            /** Enabled */
+            enabled: boolean;
+        };
+        /** GeeRuntimeConfig */
+        GeeRuntimeConfig: {
+            /** Gee Enabled */
+            gee_enabled: boolean;
+            /** Max Parallel Exports */
+            max_parallel_exports: number;
+            /** Max Parallel Uploads */
+            max_parallel_uploads: number;
+            /** Max Parallel Downloads */
+            max_parallel_downloads: number;
+            /** Account Cooldown Seconds */
+            account_cooldown_seconds: number;
+            /** Storage Backend */
+            storage_backend: string;
+            /** Local Storage Root */
+            local_storage_root: string;
+            /** Api Account Management Enabled */
+            api_account_management_enabled: boolean;
+            /** Credentials Encryption Enabled */
+            credentials_encryption_enabled: boolean;
         };
         /**
          * GeeWorkflowRequest
@@ -3375,6 +4288,115 @@ export interface components {
             tags?: {
                 [key: string]: string;
             };
+        };
+        /** GeneralConfig */
+        GeneralConfig: {
+            /** Environment */
+            environment: string;
+            /** Host */
+            host: string;
+            /** Port */
+            port: number;
+            /** Service Name */
+            service_name: string;
+            /**
+             * Data Root
+             * @default
+             */
+            data_root: string;
+            /**
+             * Output Root
+             * @default
+             */
+            output_root: string;
+            /**
+             * Cache Dir
+             * @default
+             */
+            cache_dir: string;
+            /**
+             * Log Dir
+             * @default
+             */
+            log_dir: string;
+            /**
+             * Log Level
+             * @default INFO
+             */
+            log_level: string;
+            /**
+             * Max Active Runs
+             * @default 0
+             */
+            max_active_runs: number;
+            /**
+             * Max Requested Outputs
+             * @default 0
+             */
+            max_requested_outputs: number;
+            /**
+             * Redis Url
+             * @default
+             */
+            redis_url: string;
+            /**
+             * Storage Backend
+             * @default local
+             */
+            storage_backend: string;
+            /**
+             * Reload
+             * @default false
+             */
+            reload: boolean;
+            /** Max Active Weather Tile Runs */
+            max_active_weather_tile_runs?: number | null;
+            /** Weather Cache Ttl Seconds */
+            weather_cache_ttl_seconds?: number | null;
+            /** Weather Refresh Forecast Hours */
+            weather_refresh_forecast_hours?: number | null;
+            /** Cache Default Ttl Seconds */
+            cache_default_ttl_seconds?: number | null;
+            /** Provider Max Hotspots */
+            provider_max_hotspots?: number | null;
+            /** Provider Max Series Points */
+            provider_max_series_points?: number | null;
+            /** Provider Table Chunk Size */
+            provider_table_chunk_size?: number | null;
+            /** Provider Series Chunk Size */
+            provider_series_chunk_size?: number | null;
+            /** Result Inline Max Bytes */
+            result_inline_max_bytes?: number | null;
+            /** Celery Task Soft Time Limit */
+            celery_task_soft_time_limit?: number | null;
+            /** Celery Task Time Limit */
+            celery_task_time_limit?: number | null;
+            /** Celery Task Always Eager */
+            celery_task_always_eager?: boolean | null;
+            /** Cors Origins */
+            cors_origins?: string[] | null;
+            /** Object Store Backend */
+            object_store_backend?: string | null;
+            /** Object Store Public Base */
+            object_store_public_base?: string | null;
+            /** Result Artifact Dir */
+            result_artifact_dir?: string | null;
+            /** Workflow State Dir */
+            workflow_state_dir?: string | null;
+            /** Python Provider Root */
+            python_provider_root?: string | null;
+            /** Python Provider Workspace */
+            python_provider_workspace?: string | null;
+            /** Map Default Longitude */
+            map_default_longitude?: number | null;
+            /** Map Default Latitude */
+            map_default_latitude?: number | null;
+            /** Map Default Zoom */
+            map_default_zoom?: number | null;
+            /** Map Default Tile Source */
+            map_default_tile_source?: string | null;
+            /** Map Aoi Presets */
+            map_aoi_presets?: components["schemas"]["MapAoiPreset"][] | null;
         };
         /** HTTPValidationError */
         HTTPValidationError: {
@@ -3507,6 +4529,11 @@ export interface components {
             /** Sub Category */
             sub_category?: string | null;
         };
+        /** LayerDisplayNameBody */
+        LayerDisplayNameBody: {
+            /** Display Name */
+            display_name: string;
+        };
         /**
          * LayerRenderType
          * @enum {string}
@@ -3534,11 +4561,92 @@ export interface components {
          * @enum {string}
          */
         LogLevel: "debug" | "info" | "warning" | "error";
+        /** LoginRequest */
+        LoginRequest: {
+            /** Username */
+            username: string;
+            /** Password */
+            password: string;
+        };
+        /** MapAoiPreset */
+        MapAoiPreset: {
+            /** Label */
+            label: string;
+            /** West */
+            west: number;
+            /** South */
+            south: number;
+            /** East */
+            east: number;
+            /** North */
+            north: number;
+        };
         /**
          * MapMode
          * @enum {string}
          */
         MapMode: "2d" | "3d";
+        /** MinioPublicConfig */
+        MinioPublicConfig: {
+            /** Endpoint */
+            endpoint: string;
+            /** Bucket */
+            bucket: string;
+            /**
+             * Secure
+             * @default false
+             */
+            secure: boolean;
+        };
+        /**
+         * NodeCacheCleanupRequest
+         * @description 节点缓存清理请求；names 为空表示全部清理。
+         */
+        NodeCacheCleanupRequest: {
+            /**
+             * Names
+             * @description 要清理的模块名列表；空=全部
+             */
+            names?: string[] | null;
+        };
+        /**
+         * NodeCacheCleanupResponse
+         * @description 节点缓存清理响应。
+         */
+        NodeCacheCleanupResponse: {
+            /** Deleted */
+            deleted: string[];
+            /** Failed */
+            failed: string[];
+            /** Freed Bytes */
+            freed_bytes: number;
+        };
+        /**
+         * NodeCacheEntry
+         * @description 单个算法模块的产物缓存条目。
+         */
+        NodeCacheEntry: {
+            /** Name */
+            name: string;
+            /** Path */
+            path: string;
+            /** Size Bytes */
+            size_bytes: number;
+            /** File Count */
+            file_count: number;
+            /** Modified At */
+            modified_at: string | null;
+        };
+        /**
+         * NodeCacheListResponse
+         * @description 节点缓存清单（不执行清理）。
+         */
+        NodeCacheListResponse: {
+            /** Entries */
+            entries: components["schemas"]["NodeCacheEntry"][];
+            /** Total Bytes */
+            total_bytes: number;
+        };
         /** NodeSpec */
         NodeSpec: {
             /** Node Id */
@@ -3588,6 +4696,31 @@ export interface components {
                 [key: string]: string;
             };
         };
+        /** OpenDataPresetsUpdateRequest */
+        OpenDataPresetsUpdateRequest: {
+            /** Open Data Presets */
+            open_data_presets: {
+                [key: string]: string;
+            };
+        };
+        /** OpenDataPresetsUpdateResponse */
+        OpenDataPresetsUpdateResponse: {
+            /** Open Data Presets */
+            open_data_presets: {
+                [key: string]: string;
+            };
+        };
+        /**
+         * OpenMeteoSyncTriggerRequest
+         * @description Optional one-shot domains override (does not persist OPEN_METEO_SYNC_DOMAINS).
+         */
+        OpenMeteoSyncTriggerRequest: {
+            /**
+             * Domains
+             * @description Comma-separated model ids for this sync only, e.g. ecmwf_ifs025,gfs_global
+             */
+            domains?: string | null;
+        };
         /**
          * ParallelConfig
          * @description 并行配置
@@ -3622,6 +4755,75 @@ export interface components {
             required: boolean;
             /** Description */
             description?: string | null;
+        };
+        /** PortalCredentialPublic */
+        PortalCredentialPublic: {
+            /**
+             * Enabled
+             * @default false
+             */
+            enabled: boolean;
+            /**
+             * Auth Type
+             * @default
+             */
+            auth_type: string;
+            /**
+             * Username
+             * @default
+             */
+            username: string;
+            /**
+             * Has Token
+             * @default false
+             */
+            has_token: boolean;
+            /**
+             * Has Password
+             * @default false
+             */
+            has_password: boolean;
+            /** Source */
+            source?: string | null;
+            /** Use For Nsidc */
+            use_for_nsidc?: boolean | null;
+            /** Use Earthdata */
+            use_earthdata?: boolean | null;
+            /** Client Id */
+            client_id?: string | null;
+        };
+        /**
+         * PortalCredentialUpsertRequest
+         * @description PUT /config/data-source/portal-credentials/{portal_id} body.
+         */
+        PortalCredentialUpsertRequest: {
+            /** Enabled */
+            enabled?: boolean | null;
+            /** Auth Type */
+            auth_type?: string | null;
+            /** Username */
+            username?: string | null;
+            /** Token */
+            token?: string | null;
+            /** Password */
+            password?: string | null;
+            /** Client Id */
+            client_id?: string | null;
+            /** Token Header */
+            token_header?: string | null;
+            /** Use For Nsidc */
+            use_for_nsidc?: boolean | null;
+            /** Use Earthdata */
+            use_earthdata?: boolean | null;
+            /** Clear Secrets */
+            clear_secrets?: boolean | null;
+        };
+        /** PortalCredentialsMapResponse */
+        PortalCredentialsMapResponse: {
+            /** Portal Credentials */
+            portal_credentials: {
+                [key: string]: components["schemas"]["PortalCredentialPublic"];
+            };
         };
         /** RasterCommitBody */
         RasterCommitBody: {
@@ -3668,6 +4870,38 @@ export interface components {
              * @default 0
              */
             lat_offset: number;
+            /**
+             * Axis Order
+             * @default auto
+             */
+            axis_order: string;
+            /** Swap Xy */
+            swap_xy?: boolean | null;
+            /**
+             * Conflict Policy
+             * @default overwrite
+             */
+            conflict_policy: string;
+            /**
+             * Temporal Mode
+             * @default auto
+             */
+            temporal_mode: string;
+            /** Time Label */
+            time_label?: string | null;
+            /** Time Start */
+            time_start?: string | null;
+            /** Time End */
+            time_end?: string | null;
+            /** Native Step */
+            native_step?: string | null;
+        };
+        /** RasterDetectInvalidBody */
+        RasterDetectInvalidBody: {
+            /** Upload Id */
+            upload_id: string;
+            /** Variable Id */
+            variable_id: string;
         };
         /** RasterInspectBody */
         RasterInspectBody: {
@@ -3683,12 +4917,44 @@ export interface components {
             /** Message */
             message: string;
         };
+        /** RemoteLayerUrisUpdateRequest */
+        RemoteLayerUrisUpdateRequest: {
+            /** Remote Layer Data Uris */
+            remote_layer_data_uris: {
+                [key: string]: unknown;
+            };
+        };
+        /** RemoteLayerUrisUpdateResponse */
+        RemoteLayerUrisUpdateResponse: {
+            /** Remote Layer Data Uris */
+            remote_layer_data_uris: {
+                [key: string]: {
+                    [key: string]: string[];
+                };
+            };
+        };
+        /** RemoteStorageDeletedResponse */
+        RemoteStorageDeletedResponse: {
+            /** Deleted */
+            deleted: boolean;
+            /** Profile Id */
+            profile_id: string;
+        };
         /** RemoteStorageHistoryClearResponse */
         RemoteStorageHistoryClearResponse: {
             /** Profile Id */
             profile_id: string;
             /** Deleted */
             deleted: number;
+        };
+        /** RemoteStorageHistoryDeletedResponse */
+        RemoteStorageHistoryDeletedResponse: {
+            /** Deleted */
+            deleted: boolean;
+            /** Profile Id */
+            profile_id: string;
+            /** History Id */
+            history_id: number;
         };
         /** RemoteStorageHistoryItem */
         RemoteStorageHistoryItem: {
@@ -3705,12 +4971,74 @@ export interface components {
             has_private_key: boolean;
             /** Label */
             label?: string | null;
-            /** Created At */
+            /**
+             * Created At
+             * Format: date-time
+             */
             created_at: string;
-            /** Superseded At */
+            /**
+             * Superseded At
+             * Format: date-time
+             */
             superseded_at: string;
             /** Source */
             source: string;
+        };
+        /** RemoteStorageProfile */
+        RemoteStorageProfile: {
+            /** Profile Id */
+            profile_id: string;
+            /** Protocol */
+            protocol: string;
+            /**
+             * Host
+             * @default
+             */
+            host: string;
+            /** Port */
+            port?: number | null;
+            /** Username */
+            username?: string | null;
+            /**
+             * Has Secret
+             * @default false
+             */
+            has_secret: boolean;
+            /**
+             * Has Private Key
+             * @default false
+             */
+            has_private_key: boolean;
+            /** Domain */
+            domain?: string | null;
+            /** Extra */
+            extra?: {
+                [key: string]: unknown;
+            };
+            /**
+             * Display Name
+             * @default
+             */
+            display_name: string;
+            /**
+             * Enabled
+             * @default true
+             */
+            enabled: boolean;
+            /**
+             * Created At
+             * @default
+             */
+            created_at: string;
+            /**
+             * Updated At
+             * @default
+             */
+            updated_at: string;
+            /** Last Tested At */
+            last_tested_at?: string | null;
+            /** Last Test Status */
+            last_test_status?: string | null;
         };
         /**
          * RemoteStorageTestRequest
@@ -3728,11 +5056,21 @@ export interface components {
             success: boolean;
             /** Message */
             message: string;
-            /** Tested At */
+            /**
+             * Tested At
+             * Format: date-time
+             */
             tested_at: string;
         };
         /** RemoteStorageToggleRequest */
         RemoteStorageToggleRequest: {
+            /** Enabled */
+            enabled: boolean;
+        };
+        /** RemoteStorageToggleResponse */
+        RemoteStorageToggleResponse: {
+            /** Profile Id */
+            profile_id: string;
             /** Enabled */
             enabled: boolean;
         };
@@ -3818,6 +5156,13 @@ export interface components {
          * @enum {string}
          */
         RuntimeConfigScope: "frontend" | "backend" | "provider" | "workflow" | "system";
+        /**
+         * RuntimeConfigSnapshotResponse
+         * @description GET /runtime/config — scope→key→value overrides (merged defaults + DB).
+         */
+        RuntimeConfigSnapshotResponse: {
+            [key: string]: unknown;
+        };
         /** RuntimeConfigUpdateRequest */
         RuntimeConfigUpdateRequest: {
             /** Items */
@@ -3906,6 +5251,27 @@ export interface components {
          * @enum {string}
          */
         ServiceHealth: "ok" | "busy" | "degraded" | "offline";
+        /** ServiceRestartRequest */
+        ServiceRestartRequest: {
+            /**
+             * Components
+             * @description Advisory only today: values are validated (fastapi|worker|beat) but the server always restarts the full backend group. docker/frontend are rejected.
+             */
+            components?: string[] | null;
+        };
+        /** ServiceRestartResponse */
+        ServiceRestartResponse: {
+            /** Accepted */
+            accepted: boolean;
+            /** Components */
+            components: string[];
+            /** Delay Seconds */
+            delay_seconds: number;
+            /** Message */
+            message: string;
+            /** Ui Restart Enabled */
+            ui_restart_enabled: boolean;
+        };
         /** SpatialFilter */
         SpatialFilter: {
             /**
@@ -3919,12 +5285,53 @@ export interface components {
             /** Region Name */
             region_name?: string | null;
         };
+        /** StaticCacheSummary */
+        StaticCacheSummary: {
+            /** Cache Root */
+            cache_root: string;
+            /** Ttl Seconds */
+            ttl_seconds: number;
+            /** Ttl Unlimited */
+            ttl_unlimited: boolean;
+            /** Entry Count */
+            entry_count: number;
+            /** Total Bytes */
+            total_bytes: number;
+        };
         /** StoragePolicy */
         StoragePolicy: {
             /** Backend */
             backend?: string | null;
             /** Base Path */
             base_path?: string | null;
+        };
+        /**
+         * TableSpec
+         * @description Structured table payload for ``ResultKind.table`` inline_data.
+         */
+        TableSpec: {
+            /**
+             * Schema Version
+             * @default 1
+             */
+            schema_version: string;
+            /**
+             * Title
+             * @default Table
+             */
+            title: string;
+            /** Columns */
+            columns?: string[];
+            /** Rows */
+            rows?: unknown[][];
+            /** Units */
+            units?: {
+                [key: string]: string;
+            };
+            /** Dtypes */
+            dtypes?: {
+                [key: string]: string;
+            };
         };
         /**
          * TaskLimit
@@ -3999,6 +5406,36 @@ export interface components {
             /** @default hour */
             granularity: components["schemas"]["TimeGranularity"];
         };
+        /** TokenCreatedResponse */
+        TokenCreatedResponse: {
+            /** Id */
+            id: number;
+            /** User Id */
+            user_id: number;
+            /** Username */
+            username: string;
+            /** Label */
+            label: string | null;
+            /** Token */
+            token: string;
+            /** Created At */
+            created_at: string;
+        };
+        /** TokenPublic */
+        TokenPublic: {
+            /** Id */
+            id: number;
+            /** User Id */
+            user_id: number;
+            /** Username */
+            username: string;
+            /** Label */
+            label: string | null;
+            /** Created At */
+            created_at: string;
+            /** Expires At */
+            expires_at?: string | null;
+        };
         /**
          * TransformBoundsRequest
          * @description ``POST /import/transform-bounds`` 请求体。
@@ -4042,6 +5479,15 @@ export interface components {
              */
             lat_offset: number;
         };
+        /** UpdateUserRequest */
+        UpdateUserRequest: {
+            /** Password */
+            password?: string | null;
+            /** Role */
+            role?: ("admin" | "operator" | "viewer") | null;
+            /** Enabled */
+            enabled?: boolean | null;
+        };
         /** UploadCompleteBody */
         UploadCompleteBody: {
             /** Upload Id */
@@ -4055,6 +5501,40 @@ export interface components {
             size: number;
             /** Content Type */
             content_type?: string | null;
+            /** Resume Upload Id */
+            resume_upload_id?: string | null;
+        };
+        /** UploadResumableInitBody */
+        UploadResumableInitBody: {
+            /** Filename */
+            filename: string;
+            /** Size */
+            size: number;
+            /** Content Type */
+            content_type?: string | null;
+            /** Chunk Size */
+            chunk_size?: number | null;
+            /** Total Chunks */
+            total_chunks?: number | null;
+            /** Sha256 */
+            sha256?: string | null;
+        };
+        /** UserPublic */
+        UserPublic: {
+            /** Id */
+            id: number;
+            /** Username */
+            username: string;
+            /**
+             * Role
+             * @enum {string}
+             */
+            role: "admin" | "operator" | "viewer";
+            /**
+             * Enabled
+             * @default true
+             */
+            enabled: boolean;
         };
         /** ValidationError */
         ValidationError: {
@@ -4083,6 +5563,38 @@ export interface components {
             old_name: string;
             /** New Name */
             new_name: string;
+        };
+        /** WeatherConfig */
+        WeatherConfig: {
+            /** Default Model */
+            default_model: string;
+            /** Default Model Source */
+            default_model_source?: string | null;
+            /** Sync Domains */
+            sync_domains?: string[];
+            /** Sync Enabled */
+            sync_enabled?: boolean | null;
+            sync_cron?: components["schemas"]["WeatherSyncCron"] | null;
+            /** Supported Models */
+            supported_models?: components["schemas"]["WeatherSupportedModel"][];
+            /** Model In Sync Domains */
+            model_in_sync_domains?: boolean | null;
+            /** Cache Ttl Seconds */
+            cache_ttl_seconds: number;
+            /** Refresh Forecast Hours */
+            refresh_forecast_hours: number;
+            /** Schedule Enabled */
+            schedule_enabled: boolean;
+            /** Default Latitude */
+            default_latitude: number;
+            /** Default Longitude */
+            default_longitude: number;
+            /** Default Place Name */
+            default_place_name: string;
+            /** Max Active Weather Tile Runs */
+            max_active_weather_tile_runs: number;
+            /** Warning */
+            warning?: string | null;
         };
         /** WeatherLayerRenderHint */
         WeatherLayerRenderHint: {
@@ -4241,10 +5753,147 @@ export interface components {
             /** Diagnostics */
             diagnostics?: string[];
         };
+        /** WeatherProviderConfigField */
+        WeatherProviderConfigField: {
+            /** Key */
+            key: string;
+            /**
+             * Label
+             * @default
+             */
+            label: string;
+            /**
+             * Field Type
+             * @default string
+             */
+            field_type: string;
+            /**
+             * Required
+             * @default false
+             */
+            required: boolean;
+            /** Default */
+            default?: unknown;
+            /** Description */
+            description?: string | null;
+            /** Options */
+            options?: string[];
+            /** Placeholder */
+            placeholder?: string | null;
+        };
+        /** WeatherProviderDeletedResponse */
+        WeatherProviderDeletedResponse: {
+            /** Deleted */
+            deleted: boolean;
+            /** Provider Id */
+            provider_id: string;
+        };
+        /** WeatherProviderItem */
+        WeatherProviderItem: {
+            /** Provider Id */
+            provider_id: string;
+            /** Display Name */
+            display_name: string;
+            /** Provider Type */
+            provider_type: string;
+            /**
+             * Version
+             * @default
+             */
+            version: string;
+            /**
+             * Description
+             * @default
+             */
+            description: string;
+            /** Homepage Url */
+            homepage_url?: string | null;
+            /**
+             * Requires Api Key
+             * @default false
+             */
+            requires_api_key: boolean;
+            /** Supported Capabilities */
+            supported_capabilities?: string[];
+            /**
+             * Priority
+             * @default 0
+             */
+            priority: number;
+            /**
+             * Enabled
+             * @default true
+             */
+            enabled: boolean;
+            status?: components["schemas"]["WeatherProviderStatus"];
+            /** Config Schema */
+            config_schema?: components["schemas"]["WeatherProviderConfigField"][];
+            /** Current Config */
+            current_config?: {
+                [key: string]: unknown;
+            };
+            /** Persisted Config */
+            persisted_config?: {
+                [key: string]: unknown;
+            } | null;
+            /** Last Tested At */
+            last_tested_at?: string | null;
+            /** Last Test Status */
+            last_test_status?: string | null;
+            /**
+             * Is Builtin
+             * @default true
+             */
+            is_builtin: boolean;
+        };
         /** WeatherProviderPriorityRequest */
         WeatherProviderPriorityRequest: {
             /** Priority */
             priority: number;
+        };
+        /** WeatherProviderPriorityResponse */
+        WeatherProviderPriorityResponse: {
+            /** Provider Id */
+            provider_id: string;
+            /** Priority */
+            priority: number;
+        };
+        /** WeatherProviderStatus */
+        WeatherProviderStatus: {
+            /**
+             * Healthy
+             * @default false
+             */
+            healthy: boolean;
+            /**
+             * Circuit State
+             * @default n/a
+             */
+            circuit_state: string;
+            /** Last Error */
+            last_error?: string | null;
+            /** Daily Quota */
+            daily_quota?: number | null;
+            /** Daily Used */
+            daily_used?: number | null;
+            /** Daily Remaining */
+            daily_remaining?: number | null;
+            /**
+             * Cache Hits
+             * @default 0
+             */
+            cache_hits: number;
+            /**
+             * Cache Misses
+             * @default 0
+             */
+            cache_misses: number;
+            /** Metadata */
+            metadata?: {
+                [key: string]: unknown;
+            };
+            /** Enabled */
+            enabled?: boolean | null;
         };
         /** WeatherProviderTestResponse */
         WeatherProviderTestResponse: {
@@ -4254,11 +5903,21 @@ export interface components {
             success: boolean;
             /** Message */
             message: string;
-            /** Tested At */
+            /**
+             * Tested At
+             * Format: date-time
+             */
             tested_at: string;
         };
         /** WeatherProviderToggleRequest */
         WeatherProviderToggleRequest: {
+            /** Enabled */
+            enabled: boolean;
+        };
+        /** WeatherProviderToggleResponse */
+        WeatherProviderToggleResponse: {
+            /** Provider Id */
+            provider_id: string;
             /** Enabled */
             enabled: boolean;
         };
@@ -4272,6 +5931,38 @@ export interface components {
             config?: {
                 [key: string]: unknown;
             } | null;
+        };
+        /** WeatherSupportedModel */
+        WeatherSupportedModel: {
+            /** Id */
+            id: string;
+            /**
+             * Label
+             * @default
+             */
+            label: string;
+            /**
+             * Region
+             * @default
+             */
+            region: string;
+            /**
+             * Update Interval
+             * @default
+             */
+            update_interval: string;
+        };
+        /** WeatherSyncCron */
+        WeatherSyncCron: {
+            /** Minute */
+            minute: string;
+            /** Hour */
+            hour: string;
+            /**
+             * Timezone
+             * @default UTC
+             */
+            timezone: string;
         };
         /**
          * WeatherWorkflowRequest
@@ -4351,6 +6042,10 @@ export interface components {
             results?: {
                 [key: string]: string | null;
             };
+            /** Charts */
+            charts?: components["schemas"]["ChartSpec"][];
+            /** Tables */
+            tables?: components["schemas"]["TableSpec"][];
         };
         /**
          * WorkflowCommandType
@@ -4823,6 +6518,296 @@ export interface operations {
             };
         };
     };
+    get_auth_config_auth_config_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AuthConfigResponse"];
+                };
+            };
+        };
+    };
+    login_auth_login_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["LoginRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UserPublic"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    logout_auth_logout_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    me_auth_me_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UserPublic"];
+                };
+            };
+        };
+    };
+    list_users_auth_users_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UserPublic"][];
+                };
+            };
+        };
+    };
+    create_user_auth_users_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateUserRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UserPublic"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_user_auth_users__user_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                user_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_user_auth_users__user_id__patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                user_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateUserRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UserPublic"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_tokens_auth_tokens_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TokenPublic"][];
+                };
+            };
+        };
+    };
+    create_token_auth_tokens_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateTokenRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TokenCreatedResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    revoke_token_auth_tokens__token_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                token_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     list_layers_layers_get: {
         parameters: {
             query?: never;
@@ -4883,10 +6868,56 @@ export interface operations {
         parameters: {
             query?: {
                 time?: string | null;
+                palette?: string | null;
+                min_value?: number | null;
+                max_value?: number | null;
+                nodata_mode?: string | null;
+                nodata_color?: string | null;
             };
             header?: never;
             path: {
                 layer_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_overlay_tile_overlay_tiles__layer_id___z___x___y__png_get: {
+        parameters: {
+            query?: {
+                time?: string | null;
+                palette?: string | null;
+                min_value?: number | null;
+                max_value?: number | null;
+                nodata_mode?: string | null;
+                nodata_color?: string | null;
+            };
+            header?: never;
+            path: {
+                layer_id: string;
+                z: number;
+                x: number;
+                y: number;
             };
             cookie?: never;
         };
@@ -4969,6 +7000,43 @@ export interface operations {
             };
         };
     };
+    get_overlays_in_viewport_overlays_intersect_get: {
+        parameters: {
+            query: {
+                west: number;
+                south: number;
+                east: number;
+                north: number;
+                zoom?: number | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     get_overlay_value_overlay_value__layer_id__get: {
         parameters: {
             query: {
@@ -5010,6 +7078,10 @@ export interface operations {
         parameters: {
             query?: {
                 active_only?: boolean;
+                /** @description 按状态过滤，如 succeeded / failed / cancelled */
+                status?: string | null;
+                /** @description 取最近 N 条（按创建时间倒序） */
+                limit?: number | null;
             };
             header?: never;
             path?: never;
@@ -5040,9 +7112,7 @@ export interface operations {
     submit_workflow_workflow_runs_post: {
         parameters: {
             query?: never;
-            header?: {
-                "x-api-key"?: string | null;
-            };
+            header?: never;
             path?: never;
             cookie?: never;
         };
@@ -5171,9 +7241,7 @@ export interface operations {
     cancel_workflow_run_workflow_runs__run_id__cancel_post: {
         parameters: {
             query?: never;
-            header?: {
-                "x-api-key"?: string | null;
-            };
+            header?: never;
             path: {
                 run_id: string;
             };
@@ -5204,9 +7272,7 @@ export interface operations {
     retry_workflow_run_workflow_runs__run_id__retry_post: {
         parameters: {
             query?: never;
-            header?: {
-                "x-api-key"?: string | null;
-            };
+            header?: never;
             path: {
                 run_id: string;
             };
@@ -5221,6 +7287,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["WorkflowAcceptedResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    materialize_workflow_map_layers_workflow_runs__run_id__materialize_map_layers_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                run_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
                 };
             };
             /** @description Validation Error */
@@ -5249,9 +7348,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
+                    "application/json": components["schemas"]["RuntimeConfigSnapshotResponse"];
                 };
             };
         };
@@ -5259,9 +7356,7 @@ export interface operations {
     update_runtime_config_runtime_config_patch: {
         parameters: {
             query?: never;
-            header?: {
-                "x-api-key"?: string | null;
-            };
+            header?: never;
             path?: never;
             cookie?: never;
         };
@@ -5347,9 +7442,7 @@ export interface operations {
     submit_frontend_command_frontend_commands_post: {
         parameters: {
             query?: never;
-            header?: {
-                "x-api-key"?: string | null;
-            };
+            header?: never;
             path?: never;
             cookie?: never;
         };
@@ -5433,9 +7526,7 @@ export interface operations {
     update_provider_api_config_runtime_api_config__provider__post: {
         parameters: {
             query?: never;
-            header?: {
-                "x-api-key"?: string | null;
-            };
+            header?: never;
             path: {
                 provider: string;
             };
@@ -5545,9 +7636,7 @@ export interface operations {
     clear_runtime_tile_cache_runtime_tiles_cache_clear_post: {
         parameters: {
             query?: never;
-            header?: {
-                "x-api-key"?: string | null;
-            };
+            header?: never;
             path?: never;
             cookie?: never;
         };
@@ -5562,15 +7651,6 @@ export interface operations {
                     "application/json": {
                         [key: string]: unknown;
                     };
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };
@@ -5766,7 +7846,11 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["OpenMeteoSyncTriggerRequest"];
+            };
+        };
         responses: {
             /** @description Successful Response */
             200: {
@@ -5775,6 +7859,15 @@ export interface operations {
                 };
                 content: {
                     "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };
@@ -6093,9 +8186,7 @@ export interface operations {
     list_crs_options_import_crs_options_get: {
         parameters: {
             query?: never;
-            header?: {
-                "x-api-key"?: string | null;
-            };
+            header?: never;
             path?: never;
             cookie?: never;
         };
@@ -6112,13 +8203,26 @@ export interface operations {
                     };
                 };
             };
-            /** @description Validation Error */
-            422: {
+        };
+    };
+    list_crs_options_expanded_import_crs_options_expanded_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
                 };
             };
         };
@@ -6126,9 +8230,7 @@ export interface operations {
     import_raster_import_raster_post: {
         parameters: {
             query?: never;
-            header?: {
-                "x-api-key"?: string | null;
-            };
+            header?: never;
             path?: never;
             cookie?: never;
         };
@@ -6163,9 +8265,7 @@ export interface operations {
     delete_imported_raster_import_raster__layer_id__delete: {
         parameters: {
             query?: never;
-            header?: {
-                "x-api-key"?: string | null;
-            };
+            header?: never;
             path: {
                 layer_id: string;
             };
@@ -6198,9 +8298,7 @@ export interface operations {
     confirm_imported_raster_import_raster_confirm_post: {
         parameters: {
             query?: never;
-            header?: {
-                "x-api-key"?: string | null;
-            };
+            header?: never;
             path?: never;
             cookie?: never;
         };
@@ -6235,9 +8333,7 @@ export interface operations {
     transform_point_endpoint_import_transform_point_post: {
         parameters: {
             query?: never;
-            header?: {
-                "x-api-key"?: string | null;
-            };
+            header?: never;
             path?: never;
             cookie?: never;
         };
@@ -6272,9 +8368,7 @@ export interface operations {
     transform_bounds_endpoint_import_transform_bounds_post: {
         parameters: {
             query?: never;
-            header?: {
-                "x-api-key"?: string | null;
-            };
+            header?: never;
             path?: never;
             cookie?: never;
         };
@@ -6309,9 +8403,7 @@ export interface operations {
     upload_init_import_upload_init_post: {
         parameters: {
             query?: never;
-            header?: {
-                "x-api-key"?: string | null;
-            };
+            header?: never;
             path?: never;
             cookie?: never;
         };
@@ -6343,12 +8435,78 @@ export interface operations {
             };
         };
     };
+    upload_resumable_init_import_upload_resumable_init_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UploadResumableInitBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    upload_status_import_upload__upload_id__status_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                upload_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     upload_chunk_import_upload__upload_id__chunk_post: {
         parameters: {
             query?: never;
-            header?: {
-                "x-api-key"?: string | null;
-            };
+            header?: never;
             path: {
                 upload_id: string;
             };
@@ -6382,12 +8540,83 @@ export interface operations {
             };
         };
     };
+    upload_chunk_indexed_import_upload__upload_id__chunk__chunk_index__post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                upload_id: string;
+                chunk_index: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "multipart/form-data": components["schemas"]["Body_upload_chunk_indexed_import_upload__upload_id__chunk__chunk_index__post"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     upload_complete_import_upload_complete_post: {
         parameters: {
             query?: never;
-            header?: {
-                "x-api-key"?: string | null;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UploadCompleteBody"];
             };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    upload_resumable_complete_import_upload_resumable_complete_post: {
+        parameters: {
+            query?: never;
+            header?: never;
             path?: never;
             cookie?: never;
         };
@@ -6422,9 +8651,7 @@ export interface operations {
     upload_discard_import_upload__upload_id__delete: {
         parameters: {
             query?: never;
-            header?: {
-                "x-api-key"?: string | null;
-            };
+            header?: never;
             path: {
                 upload_id: string;
             };
@@ -6459,9 +8686,7 @@ export interface operations {
             query?: {
                 limit?: number;
             };
-            header?: {
-                "x-api-key"?: string | null;
-            };
+            header?: never;
             path?: never;
             cookie?: never;
         };
@@ -6492,9 +8717,7 @@ export interface operations {
     import_job_status_import_jobs__job_id__get: {
         parameters: {
             query?: never;
-            header?: {
-                "x-api-key"?: string | null;
-            };
+            header?: never;
             path: {
                 job_id: string;
             };
@@ -6527,9 +8750,7 @@ export interface operations {
     import_job_cancel_import_jobs__job_id__cancel_post: {
         parameters: {
             query?: never;
-            header?: {
-                "x-api-key"?: string | null;
-            };
+            header?: never;
             path: {
                 job_id: string;
             };
@@ -6562,9 +8783,7 @@ export interface operations {
     import_job_download_import_jobs__job_id__download_get: {
         parameters: {
             query?: never;
-            header?: {
-                "x-api-key"?: string | null;
-            };
+            header?: never;
             path: {
                 job_id: string;
             };
@@ -6595,9 +8814,7 @@ export interface operations {
     import_batch_import_batch_post: {
         parameters: {
             query?: never;
-            header?: {
-                "x-api-key"?: string | null;
-            };
+            header?: never;
             path?: never;
             cookie?: never;
         };
@@ -6632,9 +8849,7 @@ export interface operations {
     import_vector_import_vector_post: {
         parameters: {
             query?: never;
-            header?: {
-                "x-api-key"?: string | null;
-            };
+            header?: never;
             path?: never;
             cookie?: never;
         };
@@ -6669,9 +8884,7 @@ export interface operations {
     import_vector_multipart_import_vector_multipart_post: {
         parameters: {
             query?: never;
-            header?: {
-                "x-api-key"?: string | null;
-            };
+            header?: never;
             path?: never;
             cookie?: never;
         };
@@ -6706,9 +8919,7 @@ export interface operations {
     vector_meta_import_layers__layer_id__meta_get: {
         parameters: {
             query?: never;
-            header?: {
-                "x-api-key"?: string | null;
-            };
+            header?: never;
             path: {
                 layer_id: string;
             };
@@ -6743,9 +8954,7 @@ export interface operations {
             query?: {
                 preview?: boolean;
             };
-            header?: {
-                "x-api-key"?: string | null;
-            };
+            header?: never;
             path: {
                 layer_id: string;
             };
@@ -6785,9 +8994,7 @@ export interface operations {
                 sort?: string | null;
                 where?: string | null;
             };
-            header?: {
-                "x-api-key"?: string | null;
-            };
+            header?: never;
             path: {
                 layer_id: string;
             };
@@ -6820,9 +9027,7 @@ export interface operations {
     vector_feature_patch_import_layers__layer_id__features__feature_index__patch: {
         parameters: {
             query?: never;
-            header?: {
-                "x-api-key"?: string | null;
-            };
+            header?: never;
             path: {
                 layer_id: string;
                 feature_index: number;
@@ -6860,9 +9065,7 @@ export interface operations {
     vector_feature_batch_import_layers__layer_id__features_batch_post: {
         parameters: {
             query?: never;
-            header?: {
-                "x-api-key"?: string | null;
-            };
+            header?: never;
             path: {
                 layer_id: string;
             };
@@ -6899,9 +9102,7 @@ export interface operations {
     vector_field_add_import_layers__layer_id__fields_post: {
         parameters: {
             query?: never;
-            header?: {
-                "x-api-key"?: string | null;
-            };
+            header?: never;
             path: {
                 layer_id: string;
             };
@@ -6938,9 +9139,7 @@ export interface operations {
     vector_field_delete_import_layers__layer_id__fields__name__delete: {
         parameters: {
             query?: never;
-            header?: {
-                "x-api-key"?: string | null;
-            };
+            header?: never;
             path: {
                 layer_id: string;
                 name: string;
@@ -6974,9 +9173,7 @@ export interface operations {
     vector_rename_field_import_layers__layer_id__rename_field_post: {
         parameters: {
             query?: never;
-            header?: {
-                "x-api-key"?: string | null;
-            };
+            header?: never;
             path: {
                 layer_id: string;
             };
@@ -7010,12 +9207,47 @@ export interface operations {
             };
         };
     };
+    patch_imported_layer_display_name_import_layers__layer_id__display_name_patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                layer_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["LayerDisplayNameBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     delete_imported_layer_import_layers__layer_id__delete: {
         parameters: {
             query?: never;
-            header?: {
-                "x-api-key"?: string | null;
-            };
+            header?: never;
             path: {
                 layer_id: string;
             };
@@ -7045,12 +9277,54 @@ export interface operations {
             };
         };
     };
+    import_quota_import_quota_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+        };
+    };
+    import_quota_reclaim_import_quota_reclaim_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+        };
+    };
     raster_inspect_import_raster_inspect_post: {
         parameters: {
             query?: never;
-            header?: {
-                "x-api-key"?: string | null;
-            };
+            header?: never;
             path?: never;
             cookie?: never;
         };
@@ -7085,9 +9359,7 @@ export interface operations {
     raster_commit_import_raster_commit_post: {
         parameters: {
             query?: never;
-            header?: {
-                "x-api-key"?: string | null;
-            };
+            header?: never;
             path?: never;
             cookie?: never;
         };
@@ -7119,12 +9391,45 @@ export interface operations {
             };
         };
     };
+    raster_detect_invalid_import_raster_detect_invalid_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RasterDetectInvalidBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     import_document_import_document_post: {
         parameters: {
             query?: never;
-            header?: {
-                "x-api-key"?: string | null;
-            };
+            header?: never;
             path?: never;
             cookie?: never;
         };
@@ -7159,9 +9464,7 @@ export interface operations {
     import_document_multipart_import_document_multipart_post: {
         parameters: {
             query?: never;
-            header?: {
-                "x-api-key"?: string | null;
-            };
+            header?: never;
             path?: never;
             cookie?: never;
         };
@@ -7196,9 +9499,7 @@ export interface operations {
     document_preview_import_document__session_id__get: {
         parameters: {
             query?: never;
-            header?: {
-                "x-api-key"?: string | null;
-            };
+            header?: never;
             path: {
                 session_id: string;
             };
@@ -7231,9 +9532,7 @@ export interface operations {
     document_ops_import_document__session_id__ops_post: {
         parameters: {
             query?: never;
-            header?: {
-                "x-api-key"?: string | null;
-            };
+            header?: never;
             path: {
                 session_id: string;
             };
@@ -7270,9 +9569,7 @@ export interface operations {
     document_commit_import_document__session_id__commit_post: {
         parameters: {
             query?: never;
-            header?: {
-                "x-api-key"?: string | null;
-            };
+            header?: never;
             path: {
                 session_id: string;
             };
@@ -7309,9 +9606,7 @@ export interface operations {
     export_encodings_endpoint_export_encodings_get: {
         parameters: {
             query?: never;
-            header?: {
-                "x-api-key"?: string | null;
-            };
+            header?: never;
             path?: never;
             cookie?: never;
         };
@@ -7328,23 +9623,12 @@ export interface operations {
                     };
                 };
             };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
         };
     };
     export_layer_endpoint_export_layer_post: {
         parameters: {
             query?: never;
-            header?: {
-                "x-api-key"?: string | null;
-            };
+            header?: never;
             path?: never;
             cookie?: never;
         };
@@ -7377,9 +9661,7 @@ export interface operations {
     export_batch_endpoint_export_batch_post: {
         parameters: {
             query?: never;
-            header?: {
-                "x-api-key"?: string | null;
-            };
+            header?: never;
             path?: never;
             cookie?: never;
         };
@@ -7582,7 +9864,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["GeneralConfig"];
                 };
             };
         };
@@ -7602,7 +9884,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["ApiKeyItem"][];
                 };
             };
         };
@@ -7610,9 +9892,7 @@ export interface operations {
     update_api_key_config_api_keys__key_name__put: {
         parameters: {
             query?: never;
-            header?: {
-                "x-api-key"?: string | null;
-            };
+            header?: never;
             path: {
                 key_name: string;
             };
@@ -7630,7 +9910,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["ApiKeyItem"];
                 };
             };
             /** @description Validation Error */
@@ -7647,9 +9927,7 @@ export interface operations {
     delete_api_key_config_api_keys__key_name__delete: {
         parameters: {
             query?: never;
-            header?: {
-                "x-api-key"?: string | null;
-            };
+            header?: never;
             path: {
                 key_name: string;
             };
@@ -7663,7 +9941,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["ApiKeyDeletedResponse"];
                 };
             };
             /** @description Validation Error */
@@ -7680,9 +9958,7 @@ export interface operations {
     test_api_key_config_api_keys__key_name__test_post: {
         parameters: {
             query?: never;
-            header?: {
-                "x-api-key"?: string | null;
-            };
+            header?: never;
             path: {
                 key_name: string;
             };
@@ -7713,9 +9989,7 @@ export interface operations {
     toggle_api_key_config_api_keys__key_name__toggle_put: {
         parameters: {
             query?: never;
-            header?: {
-                "x-api-key"?: string | null;
-            };
+            header?: never;
             path: {
                 key_name: string;
             };
@@ -7733,7 +10007,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["ApiKeyItem"];
                 };
             };
             /** @description Validation Error */
@@ -7750,9 +10024,7 @@ export interface operations {
     list_api_key_history_config_api_keys__key_name__history_get: {
         parameters: {
             query?: never;
-            header?: {
-                "x-api-key"?: string | null;
-            };
+            header?: never;
             path: {
                 key_name: string;
             };
@@ -7783,9 +10055,7 @@ export interface operations {
     clear_api_key_history_config_api_keys__key_name__history_delete: {
         parameters: {
             query?: never;
-            header?: {
-                "x-api-key"?: string | null;
-            };
+            header?: never;
             path: {
                 key_name: string;
             };
@@ -7816,9 +10086,7 @@ export interface operations {
     restore_api_key_history_config_api_keys__key_name__history__history_id__restore_post: {
         parameters: {
             query?: never;
-            header?: {
-                "x-api-key"?: string | null;
-            };
+            header?: never;
             path: {
                 key_name: string;
                 history_id: number;
@@ -7833,7 +10101,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["ApiKeyItem"];
                 };
             };
             /** @description Validation Error */
@@ -7850,9 +10118,7 @@ export interface operations {
     delete_api_key_history_entry_config_api_keys__key_name__history__history_id__delete: {
         parameters: {
             query?: never;
-            header?: {
-                "x-api-key"?: string | null;
-            };
+            header?: never;
             path: {
                 key_name: string;
                 history_id: number;
@@ -7867,7 +10133,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["ApiKeyHistoryDeletedResponse"];
                 };
             };
             /** @description Validation Error */
@@ -7896,7 +10162,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["GeeAccountItem"][];
                 };
             };
         };
@@ -7904,9 +10170,7 @@ export interface operations {
     create_gee_account_config_gee_accounts_post: {
         parameters: {
             query?: never;
-            header?: {
-                "x-api-key"?: string | null;
-            };
+            header?: never;
             path?: never;
             cookie?: never;
         };
@@ -7922,7 +10186,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["GeeAccountItem"];
                 };
             };
             /** @description Validation Error */
@@ -7939,9 +10203,7 @@ export interface operations {
     delete_gee_account_config_gee_accounts__account_id__delete: {
         parameters: {
             query?: never;
-            header?: {
-                "x-api-key"?: string | null;
-            };
+            header?: never;
             path: {
                 account_id: string;
             };
@@ -7955,7 +10217,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["GeeAccountDeletedResponse"];
                 };
             };
             /** @description Validation Error */
@@ -7972,9 +10234,7 @@ export interface operations {
     test_gee_account_config_gee_accounts__account_id__test_post: {
         parameters: {
             query?: never;
-            header?: {
-                "x-api-key"?: string | null;
-            };
+            header?: never;
             path: {
                 account_id: string;
             };
@@ -8005,9 +10265,7 @@ export interface operations {
     toggle_gee_account_config_gee_accounts__account_id__toggle_put: {
         parameters: {
             query?: never;
-            header?: {
-                "x-api-key"?: string | null;
-            };
+            header?: never;
             path: {
                 account_id: string;
             };
@@ -8025,7 +10283,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["GeeAccountToggleResponse"];
                 };
             };
             /** @description Validation Error */
@@ -8042,9 +10300,7 @@ export interface operations {
     reload_gee_accounts_config_gee_accounts_reload_post: {
         parameters: {
             query?: never;
-            header?: {
-                "x-api-key"?: string | null;
-            };
+            header?: never;
             path?: never;
             cookie?: never;
         };
@@ -8057,15 +10313,6 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ReloadResultResponse"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };
@@ -8085,7 +10332,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["GeeRuntimeConfig"];
                 };
             };
         };
@@ -8105,7 +10352,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["WeatherConfig"];
                 };
             };
         };
@@ -8113,9 +10360,7 @@ export interface operations {
     update_weather_default_model_config_weather_model_put: {
         parameters: {
             query?: never;
-            header?: {
-                "x-api-key"?: string | null;
-            };
+            header?: never;
             path?: never;
             cookie?: never;
         };
@@ -8131,7 +10376,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["WeatherConfig"];
                 };
             };
             /** @description Validation Error */
@@ -8162,7 +10407,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["WeatherProviderItem"][];
                 };
             };
             /** @description Validation Error */
@@ -8193,7 +10438,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["WeatherProviderItem"];
                 };
             };
             /** @description Validation Error */
@@ -8210,9 +10455,7 @@ export interface operations {
     update_weather_provider_config_weather_providers__provider_id__put: {
         parameters: {
             query?: never;
-            header?: {
-                "x-api-key"?: string | null;
-            };
+            header?: never;
             path: {
                 provider_id: string;
             };
@@ -8230,7 +10473,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["WeatherProviderItem"];
                 };
             };
             /** @description Validation Error */
@@ -8247,9 +10490,7 @@ export interface operations {
     delete_weather_provider_config_weather_providers__provider_id__delete: {
         parameters: {
             query?: never;
-            header?: {
-                "x-api-key"?: string | null;
-            };
+            header?: never;
             path: {
                 provider_id: string;
             };
@@ -8263,7 +10504,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["WeatherProviderDeletedResponse"];
                 };
             };
             /** @description Validation Error */
@@ -8280,9 +10521,7 @@ export interface operations {
     test_weather_provider_config_weather_providers__provider_id__test_post: {
         parameters: {
             query?: never;
-            header?: {
-                "x-api-key"?: string | null;
-            };
+            header?: never;
             path: {
                 provider_id: string;
             };
@@ -8313,9 +10552,7 @@ export interface operations {
     toggle_weather_provider_config_weather_providers__provider_id__toggle_put: {
         parameters: {
             query?: never;
-            header?: {
-                "x-api-key"?: string | null;
-            };
+            header?: never;
             path: {
                 provider_id: string;
             };
@@ -8333,7 +10570,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["WeatherProviderToggleResponse"];
                 };
             };
             /** @description Validation Error */
@@ -8350,9 +10587,7 @@ export interface operations {
     set_weather_provider_priority_config_weather_providers__provider_id__priority_put: {
         parameters: {
             query?: never;
-            header?: {
-                "x-api-key"?: string | null;
-            };
+            header?: never;
             path: {
                 provider_id: string;
             };
@@ -8370,7 +10605,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["WeatherProviderPriorityResponse"];
                 };
             };
             /** @description Validation Error */
@@ -8401,7 +10636,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["RemoteStorageProfile"][];
                 };
             };
             /** @description Validation Error */
@@ -8418,9 +10653,7 @@ export interface operations {
     upsert_remote_storage_profile_config_remote_storage__profile_id__put: {
         parameters: {
             query?: never;
-            header?: {
-                "x-api-key"?: string | null;
-            };
+            header?: never;
             path: {
                 profile_id: string;
             };
@@ -8438,7 +10671,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["RemoteStorageProfile"];
                 };
             };
             /** @description Validation Error */
@@ -8455,9 +10688,7 @@ export interface operations {
     delete_remote_storage_profile_config_remote_storage__profile_id__delete: {
         parameters: {
             query?: never;
-            header?: {
-                "x-api-key"?: string | null;
-            };
+            header?: never;
             path: {
                 profile_id: string;
             };
@@ -8471,7 +10702,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["RemoteStorageDeletedResponse"];
                 };
             };
             /** @description Validation Error */
@@ -8488,9 +10719,7 @@ export interface operations {
     toggle_remote_storage_profile_config_remote_storage__profile_id__toggle_put: {
         parameters: {
             query?: never;
-            header?: {
-                "x-api-key"?: string | null;
-            };
+            header?: never;
             path: {
                 profile_id: string;
             };
@@ -8508,7 +10737,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["RemoteStorageToggleResponse"];
                 };
             };
             /** @description Validation Error */
@@ -8525,9 +10754,7 @@ export interface operations {
     test_remote_storage_profile_config_remote_storage__profile_id__test_post: {
         parameters: {
             query?: never;
-            header?: {
-                "x-api-key"?: string | null;
-            };
+            header?: never;
             path: {
                 profile_id: string;
             };
@@ -8562,9 +10789,7 @@ export interface operations {
     list_remote_storage_history_config_remote_storage__profile_id__history_get: {
         parameters: {
             query?: never;
-            header?: {
-                "x-api-key"?: string | null;
-            };
+            header?: never;
             path: {
                 profile_id: string;
             };
@@ -8595,9 +10820,7 @@ export interface operations {
     clear_remote_storage_history_config_remote_storage__profile_id__history_delete: {
         parameters: {
             query?: never;
-            header?: {
-                "x-api-key"?: string | null;
-            };
+            header?: never;
             path: {
                 profile_id: string;
             };
@@ -8628,9 +10851,7 @@ export interface operations {
     restore_remote_storage_history_config_remote_storage__profile_id__history__history_id__restore_post: {
         parameters: {
             query?: never;
-            header?: {
-                "x-api-key"?: string | null;
-            };
+            header?: never;
             path: {
                 profile_id: string;
                 history_id: number;
@@ -8645,7 +10866,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["RemoteStorageProfile"];
                 };
             };
             /** @description Validation Error */
@@ -8662,9 +10883,7 @@ export interface operations {
     delete_remote_storage_history_entry_config_remote_storage__profile_id__history__history_id__delete: {
         parameters: {
             query?: never;
-            header?: {
-                "x-api-key"?: string | null;
-            };
+            header?: never;
             path: {
                 profile_id: string;
                 history_id: number;
@@ -8679,7 +10898,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["RemoteStorageHistoryDeletedResponse"];
                 };
             };
             /** @description Validation Error */
@@ -8708,7 +10927,73 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["DataSourceConfig"];
+                };
+            };
+        };
+    };
+    update_data_source_paths_config_data_source_paths_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DataSourcePathsUpdateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DataSourcePathsUpdateResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    restart_backend_service_config_service_restart_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["ServiceRestartRequest"] | null;
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ServiceRestartResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };
@@ -8728,7 +11013,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["DataCacheOverview"];
                 };
             };
         };
@@ -8736,17 +11021,13 @@ export interface operations {
     evict_data_cache_config_data_cache_evict_post: {
         parameters: {
             query?: never;
-            header?: {
-                "x-api-key"?: string | null;
-            };
+            header?: never;
             path?: never;
             cookie?: never;
         };
         requestBody?: {
             content: {
-                "application/json": {
-                    [key: string]: unknown;
-                } | null;
+                "application/json": components["schemas"]["DataCacheEvictRequest"] | null;
             };
         };
         responses: {
@@ -8756,7 +11037,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["DataCacheEvictResponse"];
                 };
             };
             /** @description Validation Error */
@@ -8773,17 +11054,13 @@ export interface operations {
     update_open_data_presets_config_data_source_open_data_presets_put: {
         parameters: {
             query?: never;
-            header?: {
-                "x-api-key"?: string | null;
-            };
+            header?: never;
             path?: never;
             cookie?: never;
         };
         requestBody: {
             content: {
-                "application/json": {
-                    [key: string]: unknown;
-                };
+                "application/json": components["schemas"]["OpenDataPresetsUpdateRequest"];
             };
         };
         responses: {
@@ -8793,7 +11070,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["OpenDataPresetsUpdateResponse"];
                 };
             };
             /** @description Validation Error */
@@ -8822,7 +11099,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["PortalCredentialsMapResponse"];
                 };
             };
         };
@@ -8830,9 +11107,7 @@ export interface operations {
     upsert_portal_credential_config_data_source_portal_credentials__portal_id__put: {
         parameters: {
             query?: never;
-            header?: {
-                "x-api-key"?: string | null;
-            };
+            header?: never;
             path: {
                 portal_id: string;
             };
@@ -8840,9 +11115,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": {
-                    [key: string]: unknown;
-                };
+                "application/json": components["schemas"]["PortalCredentialUpsertRequest"];
             };
         };
         responses: {
@@ -8852,7 +11125,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["PortalCredentialsMapResponse"];
                 };
             };
             /** @description Validation Error */
@@ -8869,9 +11142,7 @@ export interface operations {
     delete_portal_credential_config_data_source_portal_credentials__portal_id__delete: {
         parameters: {
             query?: never;
-            header?: {
-                "x-api-key"?: string | null;
-            };
+            header?: never;
             path: {
                 portal_id: string;
             };
@@ -8885,7 +11156,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["PortalCredentialsMapResponse"];
                 };
             };
             /** @description Validation Error */
@@ -8902,17 +11173,13 @@ export interface operations {
     update_remote_layer_uris_config_data_source_remote_layer_uris_put: {
         parameters: {
             query?: never;
-            header?: {
-                "x-api-key"?: string | null;
-            };
+            header?: never;
             path?: never;
             cookie?: never;
         };
         requestBody: {
             content: {
-                "application/json": {
-                    [key: string]: unknown;
-                };
+                "application/json": components["schemas"]["RemoteLayerUrisUpdateRequest"];
             };
         };
         responses: {
@@ -8922,7 +11189,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["RemoteLayerUrisUpdateResponse"];
                 };
             };
             /** @description Validation Error */
@@ -8951,7 +11218,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["AboutInfo"];
                 };
             };
         };
@@ -8981,9 +11248,44 @@ export interface operations {
     compile_graph_workflow_definitions_compile_post: {
         parameters: {
             query?: never;
-            header?: {
-                "x-api-key"?: string | null;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    [key: string]: unknown;
+                };
             };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    dry_validate_graph_workflow_definitions_dry_validate_post: {
+        parameters: {
+            query?: never;
+            header?: never;
             path?: never;
             cookie?: never;
         };
@@ -9042,9 +11344,7 @@ export interface operations {
     create_definition_workflow_definitions_post: {
         parameters: {
             query?: never;
-            header?: {
-                "x-api-key"?: string | null;
-            };
+            header?: never;
             path?: never;
             cookie?: never;
         };
@@ -9114,9 +11414,7 @@ export interface operations {
     update_definition_workflow_definitions__workflow_id__put: {
         parameters: {
             query?: never;
-            header?: {
-                "x-api-key"?: string | null;
-            };
+            header?: never;
             path: {
                 workflow_id: string;
             };
@@ -9155,9 +11453,7 @@ export interface operations {
     delete_definition_workflow_definitions__workflow_id__delete: {
         parameters: {
             query?: never;
-            header?: {
-                "x-api-key"?: string | null;
-            };
+            header?: never;
             path: {
                 workflow_id: string;
             };
@@ -9190,9 +11486,7 @@ export interface operations {
     duplicate_definition_workflow_definitions__workflow_id__duplicate_post: {
         parameters: {
             query?: never;
-            header?: {
-                "x-api-key"?: string | null;
-            };
+            header?: never;
             path: {
                 workflow_id: string;
             };
@@ -9301,9 +11595,7 @@ export interface operations {
     create_timer_workflow_timers_post: {
         parameters: {
             query?: never;
-            header?: {
-                "x-api-key"?: string | null;
-            };
+            header?: never;
             path?: never;
             cookie?: never;
         };
@@ -9373,9 +11665,7 @@ export interface operations {
     update_timer_workflow_timers__timer_id__put: {
         parameters: {
             query?: never;
-            header?: {
-                "x-api-key"?: string | null;
-            };
+            header?: never;
             path: {
                 timer_id: string;
             };
@@ -9414,9 +11704,7 @@ export interface operations {
     delete_timer_workflow_timers__timer_id__delete: {
         parameters: {
             query?: never;
-            header?: {
-                "x-api-key"?: string | null;
-            };
+            header?: never;
             path: {
                 timer_id: string;
             };
@@ -9449,9 +11737,7 @@ export interface operations {
     run_timer_workflow_timers__timer_id__run_post: {
         parameters: {
             query?: never;
-            header?: {
-                "x-api-key"?: string | null;
-            };
+            header?: never;
             path: {
                 timer_id: string;
             };
@@ -9484,9 +11770,7 @@ export interface operations {
     emit_event_workflow_timers_events_post: {
         parameters: {
             query?: never;
-            header?: {
-                "x-api-key"?: string | null;
-            };
+            header?: never;
             path?: never;
             cookie?: never;
         };
@@ -9523,9 +11807,7 @@ export interface operations {
     manual_tick_workflow_timers_tick_post: {
         parameters: {
             query?: never;
-            header?: {
-                "x-api-key"?: string | null;
-            };
+            header?: never;
             path?: never;
             cookie?: never;
         };
@@ -9542,23 +11824,12 @@ export interface operations {
                     };
                 };
             };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
         };
     };
     cleanup_workflow_runs_cleanup_workflow_runs_post: {
         parameters: {
             query?: never;
-            header?: {
-                "x-api-key"?: string | null;
-            };
+            header?: never;
             path?: never;
             cookie?: never;
         };
@@ -9591,9 +11862,7 @@ export interface operations {
     cleanup_cache_cleanup_cache_post: {
         parameters: {
             query?: never;
-            header?: {
-                "x-api-key"?: string | null;
-            };
+            header?: never;
             path?: never;
             cookie?: never;
         };
@@ -9608,23 +11877,12 @@ export interface operations {
                     "application/json": components["schemas"]["CacheCleanupResponse"];
                 };
             };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
         };
     };
     vacuum_workflow_state_cleanup_vacuum_post: {
         parameters: {
             query?: never;
-            header?: {
-                "x-api-key"?: string | null;
-            };
+            header?: never;
             path?: never;
             cookie?: never;
         };
@@ -9639,15 +11897,6 @@ export interface operations {
                     "application/json": {
                         [key: string]: unknown;
                     };
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };
@@ -9668,6 +11917,59 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["CleanupStatsResponse"];
+                };
+            };
+        };
+    };
+    list_node_caches_cleanup_node_caches_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NodeCacheListResponse"];
+                };
+            };
+        };
+    };
+    cleanup_node_caches_cleanup_node_caches_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["NodeCacheCleanupRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NodeCacheCleanupResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };

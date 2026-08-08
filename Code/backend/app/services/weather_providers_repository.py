@@ -150,6 +150,9 @@ class WeatherProvidersRepository:
         # 此处返回 ciphertext_b64（即明文）以保持 round-trip；
         # 生产模式下 assert_encryption_policy() 会在启动时拒绝无 key 状态，故此分支不会在生产路径触发。
         # 与 api_keys_repository / gee_credentials_repository 保持一致的降级策略。
+        from app.services.effective_config import refuse_empty_iv_outside_development
+
+        refuse_empty_iv_outside_development(iv_b64)
         if not self._encryption_key or not iv_b64:
             if ciphertext_b64:
                 logger.warning(

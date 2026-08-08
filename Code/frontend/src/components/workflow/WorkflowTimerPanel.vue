@@ -2,29 +2,34 @@
 /**
  * WorkflowTimerPanel.vue
  *
- * Phase 4: 工作流定时器管理面板。
- * 提供 CRUD + 启用/禁用 + 手动触发 + 事件发射 + 立即扫描 等操作。
- *
- * 集成方式：作为模态弹窗从 WorkflowList 或 DashboardView 触发。
+ * Phase 4: 工作流定时器管理面板（编辑器主区主从布局）。
+ * Cron / 日期模板墙钟语义为 Asia/Shanghai；API 存 UTC ISO。
  */
-import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, onUnmounted, ref, watch } from 'vue'
 import { storeToRefs } from 'pinia'
 
 import { useWorkflowTimersStore } from '../../stores/workflow-timers'
 import { useWorkflowDefinitionsStore } from '../../stores/workflow-definitions'
-import { previewCron, DATE_TEMPLATES } from '../../services/workflow-timer-api'
+import { previewCron, insertDateTemplateIntoOverridesJson } from '../../services/workflow-timer-api'
 import type {
   WorkflowTimer,
   TriggerType,
   CreateTimerPayload,
   UpdateTimerPayload,
+  TickStats,
 } from '../../services/workflow-timer-api'
+import WorkflowTimerEditorForm from './WorkflowTimerEditorForm.vue'
+import './workflow-editor-chrome.css'
+
+const TIMER_POLL_MS = 30_000
+const LIST_MIN = 240
+const LIST_MAX = 480
+const LIST_DEFAULT = 320
+const LIST_STORAGE_KEY = 'wf-timer-list-width'
 
 const props = withDefaults(
   defineProps<{
-    /** 嵌入流配置面板时使用（无全屏遮罩） */
     embedded?: boolean
-    /** 默认按该 workflow 过滤 */
     defaultWorkflowId?: string
   }>(),
   {
@@ -40,7 +45,57 @@ const definitionsStore = useWorkflowDefinitionsStore()
 const { timers, loading, error, lastActionTimerId } = storeToRefs(timersStore)
 const { summaries } = storeToRefs(definitionsStore)
 
-// ─── 过滤 ────────────────────────────────────────────────────────────────────
+function loadListWidth(): number {
+  try {
+    const raw = localStorage.getItem(LIST_STORAGE_KEY)
+    const n = raw ? Number(raw) : LIST_DEFAULT
+    if (Number.isFinite(n)) return Math.max(LIST_MIN, Math.min(LIST_MAX, n))
+  } catch {
+    /* ignore */
+  }
+  return LIST_DEFAULT
+}
+
+const listWidthPx = ref(loadListWidth())
+const listResizing = ref(false)
+let _listStartX = 0
+let _listStartW = 0
+
+function startListResize(event: MouseEvent) {
+  listResizing.value = true
+  _listStartX = event.clientX
+  _listStartW = listWidthPx.value
+  document.addEventListener('mousemove', onListResizeMove)
+  document.addEventListener('mouseup', stopListResize)
+  document.body.style.cursor = 'ew-resize'
+  document.body.style.userSelect = 'none'
+  event.preventDefault()
+}
+
+function onListResizeMove(event: MouseEvent) {
+  if (!listResizing.value) return
+  const next = _listStartW + (event.clientX - _listStartX)
+  listWidthPx.value = Math.max(LIST_MIN, Math.min(LIST_MAX, next))
+}
+
+function stopListResize() {
+  if (!listResizing.value) return
+  listResizing.value = false
+  document.removeEventListener('mousemove', onListResizeMove)
+  document.removeEventListener('mouseup', stopListResize)
+  document.body.style.cursor = ''
+  document.body.style.userSelect = ''
+  try {
+    localStorage.setItem(LIST_STORAGE_KEY, String(listWidthPx.value))
+  } catch {
+    /* ignore */
+  }
+}
+
+onBeforeUnmount(() => {
+  if (listResizing.value) stopListResize()
+})
+
 const filterWorkflowId = ref(props.defaultWorkflowId || '')
 const searchQuery = ref('')
 watch(
@@ -49,6 +104,7 @@ watch(
     if (id) filterWorkflowId.value = id
   },
 )
+
 const filteredTimers = computed(() => {
   let result = timers.value
   if (filterWorkflowId.value) {
@@ -66,16 +122,43 @@ const filteredTimers = computed(() => {
   return result
 })
 
-// ─── Cron 预设 ──────────────────────────────────────────────────────────────
+const otherTimersCount = computed(() => {
+  if (!filterWorkflowId.value) return 0
+  return timers.value.filter((t) => t.workflow_id !== filterWorkflowId.value).length
+})
+
+const contextTitle = computed(() => {
+  if (filterWorkflowId.value) {
+    return `定时器 · ${workflowName(filterWorkflowId.value)}`
+  }
+  return '定时器 · 全部工作流'
+})
+
+const selectedTimerId = ref<string | null>(null)
+const showEditor = ref(false)
+const editingTimer = ref<WorkflowTimer | null>(null)
+
+watch(filteredTimers, (list) => {
+  if (selectedTimerId.value && !list.some((t) => t.timer_id === selectedTimerId.value)) {
+    if (!editingTimer.value || editingTimer.value.timer_id === selectedTimerId.value) {
+      selectedTimerId.value = null
+      if (editingTimer.value) {
+        showEditor.value = false
+        editingTimer.value = null
+      }
+    }
+  }
+})
+
 const cronPresets: Array<{ label: string; expr: string; description: string }> = [
-  { label: '每小时', expr: '0 * * * *', description: '每整点触发' },
-  { label: '每6小时', expr: '0 */6 * * *', description: '每天 0/6/12/18 点触发' },
-  { label: '每天8点', expr: '0 8 * * *', description: '每天 08:00 触发' },
-  { label: '每天0点', expr: '0 0 * * *', description: '每天 00:00 触发' },
-  { label: '每周一', expr: '0 0 * * 1', description: '每周一 00:00 触发' },
-  { label: '每月1日', expr: '0 0 1 * *', description: '每月 1 日 00:00 触发' },
-  { label: '工作日8点', expr: '0 8 * * 1-5', description: '周一至周五 08:00 触发' },
-  { label: '每15分钟', expr: '*/15 * * * *', description: '每 15 分钟触发' },
+  { label: '每小时', expr: '0 * * * *', description: '每整点触发（北京时间）' },
+  { label: '每6小时', expr: '0 */6 * * *', description: '每天 0/6/12/18 点（北京时间）' },
+  { label: '每天8点', expr: '0 8 * * *', description: '每天 08:00 北京时间' },
+  { label: '每天0点', expr: '0 0 * * *', description: '每天 00:00 北京时间' },
+  { label: '每周一', expr: '0 0 * * 1', description: '每周一 00:00 北京时间' },
+  { label: '每月1日', expr: '0 0 1 * *', description: '每月 1 日 00:00 北京时间' },
+  { label: '工作日8点', expr: '0 8 * * 1-5', description: '周一至周五 08:00 北京时间' },
+  { label: '每15分钟', expr: '*/15 * * * *', description: '每 15 分钟触发（北京时间）' },
 ]
 
 function applyCronPreset(expr: string) {
@@ -83,7 +166,6 @@ function applyCronPreset(expr: string) {
   void fetchCronPreview(expr)
 }
 
-// ─── Cron 预览 ──────────────────────────────────────────────────────────────
 const cronPreviewTimes = ref<string[]>([])
 const cronPreviewError = ref<string | null>(null)
 const cronPreviewLoading = ref(false)
@@ -112,31 +194,21 @@ function debouncedCronPreview(expr: string) {
   _cronPreviewTimer = setTimeout(() => void fetchCronPreview(expr), 400)
 }
 
-watch(
-  () => editorForm.value.cron_expr,
-  (expr) => {
-    if (editorForm.value.trigger_type === 'cron' && expr) {
-      debouncedCronPreview(expr)
-    } else {
-      cronPreviewTimes.value = []
-      cronPreviewError.value = null
-    }
-  },
-)
-
-// ─── 日期模板插入 ───────────────────────────────────────────────────────────
 const showDateTemplates = ref(false)
 
 function insertDateTemplate(template: string) {
-  const current = editorForm.value.payload_overrides_json
-  // 尝试在光标位置插入，简单追加到末尾
-  editorForm.value.payload_overrides_json = current.trimEnd() + ' ' + template
+  const result = insertDateTemplateIntoOverridesJson(
+    editorForm.value.payload_overrides_json,
+    template,
+  )
+  if (result.error) {
+    editorError.value = result.error
+    return
+  }
+  editorForm.value.payload_overrides_json = result.json
+  editorError.value = null
   showDateTemplates.value = false
 }
-
-// ─── 新建/编辑对话框 ────────────────────────────────────────────────────────
-const editingTimer = ref<WorkflowTimer | null>(null)
-const showEditor = ref(false)
 
 const editorForm = ref({
   timer_id: '' as string,
@@ -152,8 +224,25 @@ const editorForm = ref({
 const editorError = ref<string | null>(null)
 const editorSaving = ref(false)
 
+watch(
+  () => editorForm.value.cron_expr,
+  (expr) => {
+    if (editorForm.value.trigger_type === 'cron' && expr) {
+      debouncedCronPreview(expr)
+    } else {
+      cronPreviewTimes.value = []
+      cronPreviewError.value = null
+    }
+  },
+)
+
+function onModelPatch(partial: Record<string, unknown>) {
+  editorForm.value = { ...editorForm.value, ...partial } as typeof editorForm.value
+}
+
 function openCreate() {
   editingTimer.value = null
+  selectedTimerId.value = null
   editorForm.value = {
     timer_id: '',
     workflow_id: filterWorkflowId.value || summaries.value[0]?.workflow_id || '',
@@ -169,7 +258,8 @@ function openCreate() {
   showEditor.value = true
 }
 
-function openEdit(timer: WorkflowTimer) {
+function selectTimer(timer: WorkflowTimer) {
+  selectedTimerId.value = timer.timer_id
   editingTimer.value = timer
   editorForm.value = {
     timer_id: timer.timer_id,
@@ -186,6 +276,12 @@ function openEdit(timer: WorkflowTimer) {
   showEditor.value = true
 }
 
+function cancelEditor() {
+  showEditor.value = false
+  editingTimer.value = null
+  selectedTimerId.value = null
+}
+
 async function saveEditor() {
   editorError.value = null
   if (!editorForm.value.workflow_id.trim()) {
@@ -197,7 +293,6 @@ async function saveEditor() {
     return
   }
 
-  // 构造 trigger_config
   const trigger_type = editorForm.value.trigger_type
   let trigger_config: Record<string, unknown>
   if (trigger_type === 'cron') {
@@ -223,7 +318,6 @@ async function saveEditor() {
     trigger_config = { event_type: editorForm.value.event_type.trim() }
   }
 
-  // 解析 payload_overrides JSON
   let payload_overrides: Record<string, unknown>
   try {
     payload_overrides = JSON.parse(editorForm.value.payload_overrides_json || '{}')
@@ -246,22 +340,25 @@ async function saveEditor() {
         name: editorForm.value.name,
         enabled: editorForm.value.enabled,
         trigger_type,
-        trigger_config: trigger_config as any,
-        payload_overrides: payload_overrides as any,
+        trigger_config: trigger_config as UpdateTimerPayload['trigger_config'],
+        payload_overrides: payload_overrides as UpdateTimerPayload['payload_overrides'],
       }
-      await timersStore.updateTimer(editingTimer.value.timer_id, updates)
+      const updated = await timersStore.updateTimer(editingTimer.value.timer_id, updates)
+      editingTimer.value = updated
+      selectedTimerId.value = updated.timer_id
+      selectTimer(updated)
     } else {
       const payload: CreateTimerPayload = {
         workflow_id: editorForm.value.workflow_id,
         name: editorForm.value.name,
         trigger_type,
-        trigger_config: trigger_config as any,
-        payload_overrides: payload_overrides as any,
+        trigger_config: trigger_config as CreateTimerPayload['trigger_config'],
+        payload_overrides: payload_overrides as CreateTimerPayload['payload_overrides'],
         enabled: editorForm.value.enabled,
       }
-      await timersStore.createTimer(payload)
+      const created = await timersStore.createTimer(payload)
+      selectTimer(created)
     }
-    showEditor.value = false
   } catch (err) {
     editorError.value = err instanceof Error ? err.message : String(err)
   } finally {
@@ -269,39 +366,56 @@ async function saveEditor() {
   }
 }
 
-// ─── 删除确认 ────────────────────────────────────────────────────────────────
 const confirmDeleteId = ref<string | null>(null)
+const confirmDeleteName = ref('')
 function askDelete(timer: WorkflowTimer) {
   confirmDeleteId.value = timer.timer_id
+  confirmDeleteName.value = timer.name || timer.timer_id
+}
+function cancelDeleteConfirm() {
+  confirmDeleteId.value = null
+  confirmDeleteName.value = ''
 }
 async function confirmDelete() {
   if (!confirmDeleteId.value) return
+  const deletedId = confirmDeleteId.value
   try {
-    await timersStore.removeTimer(confirmDeleteId.value)
+    await timersStore.removeTimer(deletedId)
+    if (selectedTimerId.value === deletedId) {
+      selectedTimerId.value = null
+      showEditor.value = false
+      editingTimer.value = null
+    }
   } catch (err) {
     console.error('[workflow-timer] delete failed:', err)
+    alert(`删除失败: ${(err as Error).message}`)
   } finally {
-    confirmDeleteId.value = null
+    cancelDeleteConfirm()
   }
 }
 
-// ─── 手动触发 ────────────────────────────────────────────────────────────────
 const runningTimerIds = ref<Set<string>>(new Set())
 const lastTriggerResult = ref<{ timer_id: string; run_id: string } | null>(null)
 
+function markTimerRunning(timerId: string, running: boolean) {
+  const next = new Set(runningTimerIds.value)
+  if (running) next.add(timerId)
+  else next.delete(timerId)
+  runningTimerIds.value = next
+}
+
 async function runTimer(timer: WorkflowTimer) {
-  runningTimerIds.value.add(timer.timer_id)
+  markTimerRunning(timer.timer_id, true)
   try {
     const result = await timersStore.runTimer(timer.timer_id)
     lastTriggerResult.value = { timer_id: timer.timer_id, run_id: result.run_id }
   } catch (err) {
     alert(`手动触发失败: ${(err as Error).message}`)
   } finally {
-    runningTimerIds.value.delete(timer.timer_id)
+    markTimerRunning(timer.timer_id, false)
   }
 }
 
-// ─── 事件发射对话框 ─────────────────────────────────────────────────────────
 const showEventDialog = ref(false)
 const eventForm = ref({ event_type: '', payload_json: '{}' })
 const eventResult = ref<{ matched: number; fired: number; failed: number } | null>(null)
@@ -334,9 +448,8 @@ async function emitEvent() {
   }
 }
 
-// ─── 立即扫描（手动触发 Beat） ─────────────────────────────────────────────
 const ticking = ref(false)
-const tickResult = ref<{ checked: number; fired: number; failed: number } | null>(null)
+const tickResult = ref<TickStats | null>(null)
 async function manualTick() {
   ticking.value = true
   tickResult.value = null
@@ -349,11 +462,40 @@ async function manualTick() {
   }
 }
 
-// ─── 格式化辅助 ─────────────────────────────────────────────────────────────
 function formatTime(iso: string | null): string {
   if (!iso) return '—'
+  if (iso.startsWith('CLAIMED:')) return '触发中…'
   try {
-    return new Date(iso).toLocaleString('zh-CN', { hour12: false })
+    const d = new Date(iso)
+    if (Number.isNaN(d.getTime())) return iso
+    const beijing = d.toLocaleString('zh-CN', {
+      hour12: false,
+      timeZone: 'Asia/Shanghai',
+    })
+    const utc = d.toLocaleString('zh-CN', {
+      hour12: false,
+      timeZone: 'UTC',
+    })
+    return `${beijing}（北京） / ${utc} UTC`
+  } catch {
+    return iso
+  }
+}
+
+function formatTimeShort(iso: string | null): string {
+  if (!iso) return '—'
+  if (iso.startsWith('CLAIMED:')) return '触发中…'
+  try {
+    const d = new Date(iso)
+    if (Number.isNaN(d.getTime())) return iso
+    return d.toLocaleString('zh-CN', {
+      hour12: false,
+      timeZone: 'Asia/Shanghai',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+    })
   } catch {
     return iso
   }
@@ -376,8 +518,12 @@ function triggerTypeLabel(t: TriggerType): string {
 }
 
 function workflowName(workflowId: string): string {
-  const s = summaries.value.find((s) => s.workflow_id === workflowId)
+  const s = summaries.value.find((item) => item.workflow_id === workflowId)
   return s?.name || workflowId
+}
+
+function showAllWorkflows() {
+  filterWorkflowId.value = ''
 }
 
 const friendlyError = computed(() => {
@@ -388,15 +534,27 @@ const friendlyError = computed(() => {
   return raw
 })
 
-// ─── 生命周期 ────────────────────────────────────────────────────────────────
+const workflowOptions = computed(() =>
+  summaries.value.map((s) => ({ workflow_id: s.workflow_id, name: s.name })),
+)
+
+let _pollTimer: ReturnType<typeof setInterval> | null = null
+
 onMounted(async () => {
   await Promise.all([timersStore.loadTimers(), definitionsStore.loadSummaries()])
+  _pollTimer = setInterval(() => {
+    void timersStore.loadTimers(undefined, { silent: true })
+  }, TIMER_POLL_MS)
 })
 
 onUnmounted(() => {
   if (_cronPreviewTimer) {
     clearTimeout(_cronPreviewTimer)
     _cronPreviewTimer = null
+  }
+  if (_pollTimer) {
+    clearInterval(_pollTimer)
+    _pollTimer = null
   }
 })
 </script>
@@ -409,346 +567,205 @@ onUnmounted(() => {
     <div class="timer-panel" :class="{ 'timer-panel--embedded': embedded }">
       <div class="panel-header">
         <span class="header-icon" aria-hidden="true">⏰</span>
-        <span class="header-title">工作流定时器</span>
+        <span class="header-title">{{ contextTitle }}</span>
+        <span class="header-tz-hint" title="Cron 与日期模板按 Asia/Shanghai 解释；存储为 UTC ISO"
+          >北京时间</span
+        >
         <div class="header-actions">
           <button
             class="header-btn"
             type="button"
             :disabled="ticking"
-            @click="manualTick"
             title="立即扫描到期定时器（调试用，正常由 Celery Beat 每分钟自动执行）"
+            @click="manualTick"
           >
             {{ ticking ? '扫描中...' : '立即扫描' }}
           </button>
           <button
             class="header-btn"
             type="button"
-            @click="showEventDialog = true"
             title="发射外部事件，触发匹配的 event 类型定时器"
+            @click="showEventDialog = true"
           >
             发射事件
           </button>
-          <button class="header-btn primary" type="button" @click="openCreate">+ 新建</button>
           <button
-            v-if="!embedded"
-            class="close-btn"
-            type="button"
-            @click="emit('close')"
-            title="关闭"
-          >
-            <span aria-hidden="true">✕</span>
-          </button>
-        </div>
-      </div>
-
-      <div class="panel-body">
-        <!-- 过滤器 -->
-        <div class="filter-row">
-          <label class="filter-label">按工作流过滤</label>
-          <select v-model="filterWorkflowId" class="filter-select">
-            <option value="">全部工作流</option>
-            <option v-for="s in summaries" :key="s.workflow_id" :value="s.workflow_id">
-              {{ s.name }} ({{ s.workflow_id }})
-            </option>
-          </select>
-          <input
-            v-model="searchQuery"
-            type="text"
-            class="search-input"
-            placeholder="搜索定时器名称..."
-          />
-          <button
-            class="refresh-btn"
+            class="header-btn"
             type="button"
             :disabled="loading"
             @click="timersStore.loadTimers()"
           >
             {{ loading ? '刷新中...' : '刷新' }}
           </button>
-        </div>
-
-        <!-- 错误提示 -->
-        <div v-if="error" class="error-banner">
-          <div>{{ friendlyError }}</div>
+          <button class="header-btn primary" type="button" @click="openCreate">+ 新建</button>
           <button
-            class="header-btn"
+            v-if="!embedded"
+            class="close-btn"
             type="button"
-            style="margin-top: 0.4rem"
-            @click="timersStore.loadTimers()"
+            title="关闭"
+            @click="emit('close')"
           >
-            重试
+            <span aria-hidden="true">✕</span>
           </button>
         </div>
-
-        <!-- 扫描结果 -->
-        <div v-if="tickResult" class="info-banner">
-          扫描完成: 检查 {{ tickResult.checked }} 个，触发 {{ tickResult.fired }} 个， 失败
-          {{ tickResult.failed }} 个。
-        </div>
-
-        <!-- 手动触发结果 -->
-        <div v-if="lastTriggerResult" class="info-banner">
-          定时器 {{ lastTriggerResult.timer_id }} 已触发： run_id = {{ lastTriggerResult.run_id }}
-        </div>
-
-        <!-- 空状态 -->
-        <div v-if="!loading && filteredTimers.length === 0" class="empty-state">
-          <span class="empty-icon" aria-hidden="true">∅</span>
-          <span>暂无定时器</span>
-          <span class="empty-hint">点击"+ 新建"创建第一个定时器</span>
-        </div>
-
-        <!-- 定时器列表 -->
-        <div v-else class="timer-list">
-          <div
-            v-for="timer in filteredTimers"
-            :key="timer.timer_id"
-            class="timer-card"
-            :class="{ disabled: !timer.enabled }"
-          >
-            <div class="card-header">
-              <div class="card-title-row">
-                <span class="timer-name">{{ timer.name }}</span>
-                <span class="type-badge" :class="`badge-${timer.trigger_type}`">
-                  {{ triggerTypeLabel(timer.trigger_type) }}
-                </span>
-                <span v-if="!timer.enabled" class="disabled-badge">已禁用</span>
-                <span v-if="timer.last_error" class="error-badge" :title="timer.last_error">
-                  ⚠ 上次失败
-                </span>
-              </div>
-              <div class="card-meta">
-                <span class="meta-row">
-                  <span class="meta-label">工作流:</span>
-                  <span class="meta-value">{{ workflowName(timer.workflow_id) }}</span>
-                </span>
-                <span class="meta-row">
-                  <span class="meta-label">触发器:</span>
-                  <code class="meta-value mono">{{ triggerSummary(timer) }}</code>
-                </span>
-                <span class="meta-row">
-                  <span class="meta-label">下次触发:</span>
-                  <span class="meta-value">{{ formatTime(timer.next_fire_at) }}</span>
-                </span>
-                <span class="meta-row">
-                  <span class="meta-label">上次触发:</span>
-                  <span class="meta-value">{{ formatTime(timer.last_fired_at) }}</span>
-                </span>
-                <span v-if="timer.last_run_id" class="meta-row">
-                  <span class="meta-label">上次运行:</span>
-                  <code class="meta-value mono">{{ timer.last_run_id }}</code>
-                </span>
-                <span class="meta-row">
-                  <span class="meta-label">触发次数:</span>
-                  <span class="meta-value">{{ timer.fire_count }}</span>
-                </span>
-              </div>
-            </div>
-
-            <div class="card-actions">
-              <button
-                class="toggle-switch"
-                :class="{ on: timer.enabled }"
-                type="button"
-                :disabled="lastActionTimerId === timer.timer_id"
-                :title="timer.enabled ? '点击禁用' : '点击启用'"
-                @click="timersStore.toggleEnabled(timer)"
-              >
-                <span class="toggle-knob"></span>
-              </button>
-              <button
-                class="action-btn primary"
-                type="button"
-                :disabled="runningTimerIds.has(timer.timer_id)"
-                @click="runTimer(timer)"
-              >
-                {{ runningTimerIds.has(timer.timer_id) ? '运行中...' : '▶ 立即运行' }}
-              </button>
-              <button class="action-btn" type="button" @click="openEdit(timer)">⚙ 编辑</button>
-              <button class="action-btn danger" type="button" @click="askDelete(timer)">
-                ✕ 删除
-              </button>
-            </div>
-          </div>
-        </div>
       </div>
 
-      <!-- 新建/编辑对话框 -->
-      <div v-if="showEditor" class="dialog-overlay" @click.self="showEditor = false">
-        <div class="dialog">
-          <h3 class="dialog-title">
-            {{ editingTimer ? '编辑定时器' : '新建定时器' }}
-          </h3>
-          <div class="dialog-form">
-            <div class="form-row">
-              <label class="form-label">工作流 *</label>
-              <select
-                v-model="editorForm.workflow_id"
-                class="form-input"
-                :disabled="!!editingTimer"
+      <div class="panel-body panel-body--split">
+        <div v-if="error" class="error-banner">
+          <div>{{ friendlyError }}</div>
+          <button class="header-btn" type="button" @click="timersStore.loadTimers()">重试</button>
+        </div>
+        <div v-if="tickResult" class="info-banner">
+          扫描完成: 检查 {{ tickResult.checked }} 个，触发 {{ tickResult.fired }} 个，失败
+          {{ tickResult.failed }} 个，跳过 {{ tickResult.skipped }} 个<template
+            v-if="(tickResult.reclaimed ?? 0) > 0"
+            >，回收 {{ tickResult.reclaimed }} 个</template
+          >。
+        </div>
+        <div v-if="lastTriggerResult" class="info-banner">
+          已触发 {{ lastTriggerResult.timer_id }} → run_id = {{ lastTriggerResult.run_id }}
+        </div>
+
+        <div class="timer-split" :class="{ resizing: listResizing }">
+          <aside class="timer-list-pane" :style="{ width: `${listWidthPx}px` }">
+            <div class="list-toolbar">
+              <input
+                v-model="searchQuery"
+                type="text"
+                class="search-input"
+                placeholder="搜索定时器…"
+              />
+              <button
+                v-if="filterWorkflowId"
+                class="link-btn"
+                type="button"
+                @click="showAllWorkflows"
               >
-                <option value="" disabled>请选择工作流</option>
-                <option v-for="s in summaries" :key="s.workflow_id" :value="s.workflow_id">
-                  {{ s.name }} ({{ s.workflow_id }})
-                </option>
-              </select>
+                查看全部{{ otherTimersCount > 0 ? `（另有 ${otherTimersCount}）` : '' }}
+              </button>
             </div>
-            <div class="form-row">
-              <label class="form-label">名称 *</label>
-              <input
-                v-model="editorForm.name"
-                type="text"
-                class="form-input"
-                placeholder="例如：每天 8 点运行"
-              />
+
+            <div v-if="!loading && filteredTimers.length === 0" class="empty-state compact">
+              <span class="empty-icon" aria-hidden="true">∅</span>
+              <span>暂无定时器</span>
+              <span class="empty-hint">为当前工作流创建调度任务</span>
+              <button class="header-btn primary" type="button" @click="openCreate">
+                + 新建定时器
+              </button>
             </div>
-            <div class="form-row">
-              <label class="form-label">触发类型</label>
-              <div class="radio-group">
-                <label class="radio-label">
-                  <input v-model="editorForm.trigger_type" type="radio" value="cron" />
-                  <span>Cron 表达式</span>
-                </label>
-                <label class="radio-label">
-                  <input v-model="editorForm.trigger_type" type="radio" value="interval" />
-                  <span>固定间隔</span>
-                </label>
-                <label class="radio-label">
-                  <input v-model="editorForm.trigger_type" type="radio" value="event" />
-                  <span>事件触发</span>
-                </label>
-              </div>
-            </div>
-            <div v-if="editorForm.trigger_type === 'cron'" class="form-row">
-              <label class="form-label">
-                Cron 表达式 *
-                <span class="form-hint"
-                  >（5 字段：分 时 日 月 周，例如 "0 8 * * *" 每天 8 点）</span
-                >
-              </label>
-              <!-- Cron 预设快捷按钮 -->
-              <div class="cron-presets">
-                <button
-                  v-for="preset in cronPresets"
-                  :key="preset.expr"
-                  class="cron-preset-btn"
-                  type="button"
-                  :title="preset.description"
-                  @click="applyCronPreset(preset.expr)"
-                >
-                  {{ preset.label }}
-                </button>
-              </div>
-              <input
-                v-model="editorForm.cron_expr"
-                type="text"
-                class="form-input mono"
-                placeholder="0 8 * * *"
-              />
-              <!-- Cron 预览：下次触发时间 -->
-              <div v-if="cronPreviewError" class="cron-preview-error">⚠ {{ cronPreviewError }}</div>
-              <div v-else-if="cronPreviewTimes.length > 0" class="cron-preview">
-                <span class="cron-preview-label">{{
-                  cronPreviewLoading ? '计算中...' : '下次触发:'
-                }}</span>
-                <div class="cron-preview-times">
-                  <code v-for="(t, i) in cronPreviewTimes" :key="i" class="cron-time-item">
-                    {{ formatTime(t) }}
-                  </code>
+
+            <div v-else class="timer-list wf-scroll">
+              <button
+                v-for="timer in filteredTimers"
+                :key="timer.timer_id"
+                type="button"
+                class="timer-card"
+                :class="{
+                  disabled: !timer.enabled,
+                  selected: selectedTimerId === timer.timer_id,
+                }"
+                @click="selectTimer(timer)"
+              >
+                <div class="card-title-row">
+                  <span class="timer-name">{{ timer.name }}</span>
+                  <span class="type-badge" :class="`badge-${timer.trigger_type}`">
+                    {{ triggerTypeLabel(timer.trigger_type) }}
+                  </span>
                 </div>
-              </div>
-            </div>
-            <div v-else-if="editorForm.trigger_type === 'interval'" class="form-row">
-              <label class="form-label">
-                间隔秒数 * <span class="form-hint">（>= 60，例如 3600 = 每小时）</span>
-              </label>
-              <input
-                v-model.number="editorForm.interval_seconds"
-                type="number"
-                min="60"
-                step="60"
-                class="form-input"
-              />
-            </div>
-            <div v-else class="form-row">
-              <label class="form-label">
-                事件类型 *
-                <span class="form-hint"
-                  >（例如 "data_ready"、"user_login"，调用 /workflow-timers/events 触发）</span
-                >
-              </label>
-              <input
-                v-model="editorForm.event_type"
-                type="text"
-                class="form-input"
-                placeholder="data_ready"
-              />
-            </div>
-            <div class="form-row">
-              <label class="form-label">
-                Payload Overrides (JSON)
-                <span class="form-hint">（可选，覆盖默认 WorkflowSubmitRequest 字段）</span>
-              </label>
-              <!-- 日期模板快捷插入 -->
-              <div class="date-templates-bar">
-                <button
-                  class="date-templates-toggle"
-                  type="button"
-                  @click="showDateTemplates = !showDateTemplates"
-                >
-                  {{ showDateTemplates ? '▼' : '▶' }} 动态日期模板
-                </button>
-                <div v-if="showDateTemplates" class="date-templates-list">
+                <div class="card-meta">
+                  <span class="meta-line mono">{{ triggerSummary(timer) }}</span>
+                  <span class="meta-line">下次 {{ formatTimeShort(timer.next_fire_at) }}</span>
+                </div>
+                <div class="card-actions" @click.stop>
                   <button
-                    v-for="tpl in DATE_TEMPLATES"
-                    :key="tpl.key"
-                    class="date-template-btn"
+                    class="toggle-switch"
+                    :class="{ on: timer.enabled }"
                     type="button"
-                    :title="tpl.description"
-                    @click="insertDateTemplate(tpl.key)"
+                    :disabled="lastActionTimerId === timer.timer_id"
+                    :title="timer.enabled ? '点击禁用' : '点击启用'"
+                    @click="timersStore.toggleEnabled(timer)"
                   >
-                    {{ tpl.label }}
+                    <span class="toggle-knob"></span>
+                  </button>
+                  <button
+                    class="action-btn primary"
+                    type="button"
+                    :disabled="runningTimerIds.has(timer.timer_id)"
+                    @click="runTimer(timer)"
+                  >
+                    {{ runningTimerIds.has(timer.timer_id) ? '…' : '▶' }}
+                  </button>
+                  <button class="action-btn danger" type="button" @click="askDelete(timer)">
+                    ✕
                   </button>
                 </div>
+              </button>
+            </div>
+          </aside>
+
+          <div
+            class="wf-sidebar-resizer left timer-split-resizer"
+            :class="{ active: listResizing }"
+            title="拖拽调整列表宽度"
+            @mousedown="startListResize"
+          />
+
+          <section class="timer-detail-pane wf-scroll">
+            <div v-if="showEditor" class="detail-editor">
+              <h3 class="detail-title">
+                {{ editingTimer ? '编辑定时器' : '新建定时器' }}
+              </h3>
+              <p v-if="editingTimer" class="detail-sub mono">{{ editingTimer.timer_id }}</p>
+              <div v-if="editingTimer" class="detail-stats">
+                <span>上次触发：{{ formatTime(editingTimer.last_fired_at) }}</span>
+                <span>触发次数：{{ editingTimer.fire_count }}</span>
+                <span v-if="editingTimer.last_run_id" class="mono"
+                  >run：{{ editingTimer.last_run_id }}</span
+                >
+                <span v-if="editingTimer.last_error" class="err" :title="editingTimer.last_error"
+                  >上次失败</span
+                >
               </div>
-              <textarea
-                v-model="editorForm.payload_overrides_json"
-                class="form-input mono textarea"
-                rows="5"
-                placeholder='{"parameters": {"start_date": "{{today}}", "end_date": "{{yesterday}}"}}'
-              ></textarea>
+              <WorkflowTimerEditorForm
+                :model="editorForm"
+                :workflow-options="workflowOptions"
+                :workflow-locked="!!editingTimer"
+                :cron-presets="cronPresets"
+                :cron-preview-times="cronPreviewTimes"
+                :cron-preview-error="cronPreviewError"
+                :cron-preview-loading="cronPreviewLoading"
+                :show-date-templates="showDateTemplates"
+                :editor-error="editorError"
+                :editor-saving="editorSaving"
+                :format-time="formatTime"
+                @update:model="onModelPatch"
+                @update:show-date-templates="showDateTemplates = $event"
+                @apply-cron-preset="applyCronPreset"
+                @insert-date-template="insertDateTemplate"
+                @save="saveEditor"
+                @cancel="cancelEditor"
+              />
             </div>
-            <div class="form-row">
-              <label class="form-label">
-                <input v-model="editorForm.enabled" type="checkbox" />
-                立即启用
-              </label>
+            <div v-else class="detail-empty">
+              <span class="empty-icon" aria-hidden="true">⏱</span>
+              <h3>选择左侧定时器</h3>
+              <p>查看详情、编辑触发规则，或新建调度任务。</p>
+              <button class="header-btn primary" type="button" @click="openCreate">
+                + 新建定时器
+              </button>
             </div>
-          </div>
-          <div v-if="editorError" class="dialog-error">❌ {{ editorError }}</div>
-          <div class="dialog-actions">
-            <button class="dialog-btn cancel" type="button" @click="showEditor = false">
-              取消
-            </button>
-            <button
-              class="dialog-btn primary"
-              type="button"
-              :disabled="editorSaving"
-              @click="saveEditor"
-            >
-              {{ editorSaving ? '保存中...' : '保存' }}
-            </button>
-          </div>
+          </section>
         </div>
       </div>
 
-      <!-- 删除确认 -->
-      <div v-if="confirmDeleteId" class="dialog-overlay" @click.self="confirmDeleteId = null">
+      <div v-if="confirmDeleteId" class="dialog-overlay" @click.self="cancelDeleteConfirm">
         <div class="dialog">
           <h3 class="dialog-title">确认删除</h3>
-          <p class="dialog-text">确定要删除定时器 "{{ confirmDeleteId }}" 吗？此操作无法撤销。</p>
+          <p class="dialog-text">
+            确定要删除定时器「{{ confirmDeleteName }}」（{{ confirmDeleteId }}）吗？此操作无法撤销。
+          </p>
           <div class="dialog-actions">
-            <button class="dialog-btn cancel" type="button" @click="confirmDeleteId = null">
+            <button class="dialog-btn cancel" type="button" @click="cancelDeleteConfirm">
               取消
             </button>
             <button class="dialog-btn danger" type="button" @click="confirmDelete">删除</button>
@@ -756,13 +773,10 @@ onUnmounted(() => {
         </div>
       </div>
 
-      <!-- 事件发射对话框 -->
       <div v-if="showEventDialog" class="dialog-overlay" @click.self="showEventDialog = false">
         <div class="dialog">
           <h3 class="dialog-title">发射事件</h3>
-          <p class="dialog-text">
-            发射外部事件，将触发所有 event 类型且 event_type 匹配的已启用定时器。
-          </p>
+          <p class="dialog-text">触发所有匹配 event_type 的已启用事件定时器。</p>
           <div class="dialog-form">
             <div class="form-row">
               <label class="form-label">事件类型 *</label>
@@ -774,21 +788,18 @@ onUnmounted(() => {
               />
             </div>
             <div class="form-row">
-              <label class="form-label">
-                Payload (JSON)
-                <span class="form-hint">（可选，将作为 event_payload 注入工作流 parameters）</span>
-              </label>
+              <label class="form-label">Payload (JSON)</label>
               <textarea
                 v-model="eventForm.payload_json"
                 class="form-input mono textarea"
                 rows="4"
                 placeholder="{}"
-              ></textarea>
+              />
             </div>
           </div>
           <div v-if="eventResult" class="dialog-info">
-            匹配 {{ eventResult.matched }} 个，触发 {{ eventResult.fired }} 个，失败
-            {{ eventResult.failed }} 个。
+            匹配 {{ eventResult.matched }} · 触发 {{ eventResult.fired }} · 失败
+            {{ eventResult.failed }}
           </div>
           <div class="dialog-actions">
             <button class="dialog-btn cancel" type="button" @click="showEventDialog = false">
@@ -821,7 +832,10 @@ onUnmounted(() => {
 
 .timer-embedded {
   display: flex;
+  flex-direction: column;
   flex: 1;
+  align-self: stretch;
+  width: 100%;
   min-width: 0;
   min-height: 0;
   height: 100%;
@@ -839,12 +853,12 @@ onUnmounted(() => {
 }
 
 .timer-panel--embedded {
-  width: 100%;
-  max-width: none;
-  height: 100%;
+  width: 100% !important;
+  max-width: none !important;
+  height: 100% !important;
   border-left: none;
   box-shadow: none;
-  background: transparent;
+  background: rgba(6, 14, 26, 0.55);
 }
 
 .panel-header {
@@ -854,614 +868,489 @@ onUnmounted(() => {
   padding: 0.72rem 0.82rem;
   border-bottom: 1px solid rgba(136, 192, 255, 0.1);
   color: #e8f3fc;
-  font-size: 0.78rem;
+  font-size: 0.88rem;
   font-weight: 600;
+  flex: none;
 }
 
 .header-icon {
-  font-size: 0.88rem;
+  font-size: 0.95rem;
   color: #5ad5ff;
 }
+
 .header-title {
-  flex: 1;
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.header-tz-hint {
+  margin-left: 0.5rem;
+  margin-right: auto;
+  font-size: 0.68rem;
+  font-weight: 500;
+  color: rgba(160, 200, 240, 0.72);
+  border: 1px solid rgba(136, 192, 255, 0.22);
+  border-radius: 0.25rem;
+  padding: 0.1rem 0.35rem;
+  flex: none;
 }
 
 .header-actions {
   display: flex;
   gap: 0.32rem;
   align-items: center;
+  flex: none;
 }
 
 .header-btn {
-  padding: 0.32rem 0.62rem;
+  padding: 0.36rem 0.68rem;
   border: 1px solid rgba(90, 213, 255, 0.3);
-  border-radius: 0.4rem;
-  background: rgba(10, 132, 255, 0.1);
-  color: #5ad5ff;
+  border-radius: 0.35rem;
+  background: rgba(12, 28, 48, 0.75);
+  color: #c5d8ea;
+  font-size: 0.68rem;
   cursor: pointer;
-  font: inherit;
-  font-size: 0.6rem;
-}
-
-.header-btn:hover:not(:disabled) {
-  background: rgba(10, 132, 255, 0.22);
-}
-
-.header-btn:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
 }
 
 .header-btn.primary {
-  background: rgba(10, 132, 255, 0.24);
-  font-weight: 600;
+  border-color: rgba(90, 213, 255, 0.5);
+  background: rgba(24, 70, 105, 0.85);
+  color: #e8f3fc;
+}
+
+.header-btn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
 }
 
 .close-btn {
-  width: 1.4rem;
-  height: 1.4rem;
   border: none;
-  border-radius: 0.4rem;
   background: transparent;
-  color: #6e8ba0;
+  color: #8aa8bf;
   cursor: pointer;
-  font-size: 0.7rem;
-}
-
-.close-btn:hover {
-  background: rgba(136, 192, 255, 0.1);
-  color: #d8e6f5;
+  font-size: 0.85rem;
 }
 
 .panel-body {
   flex: 1;
-  overflow-y: auto;
-  padding: 0.7rem 0.82rem;
-}
-
-.filter-row {
+  min-height: 0;
   display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  margin-bottom: 0.6rem;
+  flex-direction: column;
+  overflow: hidden;
 }
 
-.filter-label {
-  font-size: 0.62rem;
-  color: #b8cce0;
+.panel-body--split {
+  padding: 0;
+}
+
+.error-banner,
+.info-banner {
+  margin: 0.5rem 0.72rem 0;
+  padding: 0.45rem 0.62rem;
+  border-radius: 0.35rem;
+  font-size: 0.68rem;
   flex: none;
-}
-
-.filter-select {
-  flex: 1;
-  padding: 0.32rem 0.5rem;
-  border: 1px solid rgba(136, 192, 255, 0.2);
-  border-radius: 0.32rem;
-  background: rgba(8, 17, 31, 0.6);
-  color: #e8f3fc;
-  font: inherit;
-  font-size: 0.62rem;
-}
-
-.refresh-btn {
-  padding: 0.32rem 0.62rem;
-  border: 1px solid rgba(90, 213, 255, 0.3);
-  border-radius: 0.32rem;
-  background: rgba(10, 132, 255, 0.1);
-  color: #5ad5ff;
-  cursor: pointer;
-  font: inherit;
-  font-size: 0.6rem;
-  flex: none;
-}
-
-.refresh-btn:hover:not(:disabled) {
-  background: rgba(10, 132, 255, 0.22);
 }
 
 .error-banner {
-  padding: 0.4rem 0.55rem;
-  margin-bottom: 0.6rem;
-  border: 1px solid rgba(255, 100, 100, 0.3);
-  border-radius: 0.4rem;
-  background: rgba(90, 20, 20, 0.25);
-  color: #ffb0b0;
-  font-size: 0.6rem;
+  background: rgba(120, 30, 40, 0.35);
+  color: #ffb4b4;
+  border: 1px solid rgba(255, 120, 120, 0.25);
 }
 
 .info-banner {
-  padding: 0.4rem 0.55rem;
-  margin-bottom: 0.6rem;
-  border: 1px solid rgba(90, 213, 255, 0.25);
-  border-radius: 0.4rem;
-  background: rgba(10, 132, 255, 0.1);
+  background: rgba(20, 50, 80, 0.45);
+  color: #b8d4ec;
+  border: 1px solid rgba(90, 180, 255, 0.22);
+}
+
+.timer-split {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  position: relative;
+  overflow: hidden;
+}
+
+.timer-split.resizing {
+  user-select: none;
+}
+
+.timer-list-pane {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  border-right: 1px solid rgba(136, 192, 255, 0.1);
+  background: rgba(8, 16, 28, 0.45);
+}
+
+.timer-split-resizer {
+  position: relative !important;
+  flex: none;
+  width: 8px;
+  align-self: stretch;
+  right: auto !important;
+  left: auto !important;
+}
+
+.timer-detail-pane {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  overflow: auto;
+  padding: 0.85rem 1rem;
+  background: rgba(4, 12, 22, 0.35);
+}
+
+.list-toolbar {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  padding: 0.55rem 0.55rem 0.4rem;
+  flex: none;
+}
+
+.search-input {
+  width: 100%;
+  padding: 0.35rem 0.45rem;
+  border-radius: 0.3rem;
+  border: 1px solid rgba(136, 192, 255, 0.18);
+  background: rgba(4, 12, 22, 0.65);
+  color: #e8f3fc;
+  font-size: 0.68rem;
+}
+
+.link-btn {
+  align-self: flex-start;
+  border: none;
+  background: transparent;
   color: #5ad5ff;
-  font-size: 0.6rem;
+  font-size: 0.62rem;
+  cursor: pointer;
+  padding: 0;
+}
+
+.timer-list {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: 0.35rem 0.45rem 0.7rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.timer-card {
+  text-align: left;
+  display: flex;
+  flex-direction: column;
+  gap: 0.32rem;
+  padding: 0.55rem 0.55rem 0.45rem;
+  border-radius: 0.4rem;
+  border: 1px solid rgba(136, 192, 255, 0.14);
+  background: rgba(10, 22, 38, 0.72);
+  color: inherit;
+  cursor: pointer;
+}
+
+.timer-card:hover {
+  border-color: rgba(90, 213, 255, 0.35);
+}
+
+.timer-card.selected {
+  border-color: rgba(90, 213, 255, 0.65);
+  box-shadow: inset 0 0 0 1px rgba(90, 213, 255, 0.25);
+}
+
+.timer-card.disabled {
+  opacity: 0.62;
+}
+
+.card-title-row {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  min-width: 0;
+}
+
+.timer-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: #e8f3fc;
+}
+
+.type-badge {
+  flex: none;
+  font-size: 0.58rem;
+  padding: 0.08rem 0.32rem;
+  border-radius: 0.25rem;
+  background: rgba(60, 120, 180, 0.35);
+  color: #b8d4ec;
+}
+
+.badge-interval {
+  background: rgba(80, 140, 90, 0.35);
+}
+.badge-event {
+  background: rgba(140, 100, 60, 0.4);
+}
+
+.card-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 0.12rem;
+}
+
+.meta-line {
+  font-size: 0.62rem;
+  color: #8aa8bf;
+}
+
+.mono {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+
+.card-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.28rem;
+  margin-top: 0.1rem;
+}
+
+.toggle-switch {
+  position: relative;
+  width: 1.8rem;
+  height: 1rem;
+  border-radius: 999px;
+  border: 1px solid rgba(136, 192, 255, 0.25);
+  background: rgba(40, 50, 65, 0.8);
+  cursor: pointer;
+  padding: 0;
+}
+
+.toggle-switch.on {
+  background: rgba(40, 120, 90, 0.75);
+  border-color: rgba(90, 220, 160, 0.45);
+}
+
+.toggle-knob {
+  position: absolute;
+  top: 1px;
+  left: 2px;
+  width: 0.7rem;
+  height: 0.7rem;
+  border-radius: 50%;
+  background: #d8e6f5;
+  transition: left 0.15s ease;
+}
+
+.toggle-switch.on .toggle-knob {
+  left: calc(100% - 0.78rem);
+}
+
+.action-btn {
+  padding: 0.18rem 0.4rem;
+  border-radius: 0.28rem;
+  border: 1px solid rgba(136, 192, 255, 0.22);
+  background: rgba(12, 24, 42, 0.8);
+  color: #c5d8ea;
+  font-size: 0.62rem;
+  cursor: pointer;
+}
+
+.action-btn.primary {
+  border-color: rgba(90, 213, 255, 0.4);
+}
+
+.action-btn.danger {
+  border-color: rgba(255, 120, 120, 0.35);
+  color: #ffb4b4;
 }
 
 .empty-state {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 0.4rem;
-  padding: 3rem 1rem;
-  color: #5a7080;
-  font-size: 0.68rem;
+  justify-content: center;
+  gap: 0.45rem;
+  padding: 1.5rem 1rem;
+  color: #8aa8bf;
+  font-size: 0.75rem;
+  text-align: center;
+}
+
+.empty-state.compact {
+  flex: 1;
 }
 
 .empty-icon {
   font-size: 1.6rem;
-  opacity: 0.6;
+  opacity: 0.7;
 }
 
 .empty-hint {
-  font-size: 0.58rem;
-  color: #4a5a70;
-}
-
-.timer-list {
-  display: flex;
-  flex-direction: column;
-  gap: 0.5rem;
-}
-
-.timer-card {
-  padding: 0.55rem 0.62rem;
-  border: 1px solid rgba(136, 192, 255, 0.12);
-  border-radius: 0.5rem;
-  background: rgba(16, 32, 54, 0.6);
-  display: flex;
-  flex-direction: column;
-  gap: 0.45rem;
-}
-
-.timer-card.disabled {
-  opacity: 0.55;
-  background: rgba(16, 32, 54, 0.3);
-}
-
-.card-title-row {
-  display: flex;
-  align-items: center;
-  gap: 0.4rem;
-  margin-bottom: 0.32rem;
-}
-
-.timer-name {
-  font-size: 0.7rem;
-  font-weight: 600;
-  color: #e8f3fc;
-}
-
-.type-badge {
-  padding: 0.12rem 0.4rem;
-  border-radius: 0.32rem;
-  font-size: 0.54rem;
-  font-weight: 600;
-}
-
-.badge-cron {
-  background: rgba(126, 224, 168, 0.16);
-  color: #a0e8c0;
-}
-.badge-interval {
-  background: rgba(90, 213, 255, 0.16);
-  color: #5ad5ff;
-}
-.badge-event {
-  background: rgba(255, 180, 90, 0.16);
-  color: #ffd9a8;
-}
-
-.disabled-badge {
-  padding: 0.12rem 0.4rem;
-  border-radius: 0.32rem;
-  background: rgba(110, 139, 160, 0.2);
-  color: #8aa8bf;
-  font-size: 0.54rem;
-}
-
-.error-badge {
-  padding: 0.12rem 0.4rem;
-  border-radius: 0.32rem;
-  background: rgba(255, 100, 100, 0.16);
-  color: #ffb0b0;
-  font-size: 0.54rem;
-  cursor: help;
-}
-
-.card-meta {
-  display: flex;
-  flex-direction: column;
-  gap: 0.2rem;
-}
-
-.meta-row {
-  display: flex;
-  gap: 0.4rem;
-  font-size: 0.6rem;
-  line-height: 1.4;
-}
-
-.meta-label {
+  font-size: 0.65rem;
   color: #6e8ba0;
-  flex: none;
-  width: 4.5rem;
 }
 
-.meta-value {
-  color: #b8cce0;
-  word-break: break-all;
-}
-
-.mono {
-  font-family: ui-monospace, 'Cascadia Code', Consolas, monospace;
-}
-
-.card-actions {
+.detail-empty {
+  height: 100%;
+  min-height: 16rem;
   display: flex;
+  flex-direction: column;
   align-items: center;
-  gap: 0.4rem;
-  padding-top: 0.32rem;
-  border-top: 1px solid rgba(136, 192, 255, 0.06);
+  justify-content: center;
+  gap: 0.5rem;
+  color: #8aa8bf;
+  text-align: center;
 }
 
-.toggle-switch {
-  width: 1.6rem;
-  height: 0.9rem;
-  border-radius: 0.45rem;
-  border: none;
-  background: rgba(110, 139, 160, 0.3);
-  position: relative;
-  cursor: pointer;
-  flex: none;
-  transition: background 0.18s;
-  padding: 0;
-}
-
-.toggle-switch.on {
-  background: rgba(10, 132, 255, 0.5);
-}
-
-.toggle-knob {
-  position: absolute;
-  top: 0.1rem;
-  left: 0.1rem;
-  width: 0.7rem;
-  height: 0.7rem;
-  border-radius: 50%;
-  background: #e8f3fc;
-  transition: transform 0.18s;
-}
-
-.toggle-switch.on .toggle-knob {
-  transform: translateX(0.7rem);
-}
-
-.action-btn {
-  padding: 0.28rem 0.55rem;
-  border: 1px solid rgba(136, 192, 255, 0.2);
-  border-radius: 0.32rem;
-  background: rgba(16, 32, 54, 0.6);
-  color: #b8cce0;
-  cursor: pointer;
-  font: inherit;
-  font-size: 0.58rem;
-}
-
-.action-btn:hover:not(:disabled) {
-  background: rgba(136, 192, 255, 0.1);
+.detail-empty h3 {
+  margin: 0;
+  font-size: 0.95rem;
   color: #d8e6f5;
 }
 
-.action-btn:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
+.detail-empty p {
+  margin: 0;
+  font-size: 0.72rem;
+  max-width: 22rem;
 }
 
-.action-btn.primary {
-  border-color: rgba(90, 213, 255, 0.4);
-  background: rgba(10, 132, 255, 0.18);
-  color: #5ad5ff;
+.detail-editor {
+  max-width: 40rem;
 }
 
-.action-btn.danger {
-  border-color: rgba(255, 100, 100, 0.3);
-  color: #ffb0b0;
-}
-
-.action-btn.danger:hover:not(:disabled) {
-  background: rgba(255, 100, 100, 0.12);
-}
-
-/* ── 对话框 ── */
-.dialog-overlay {
-  position: fixed;
-  inset: 0;
-  z-index: 999;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: rgba(4, 10, 18, 0.6);
-}
-
-.dialog {
-  width: 28rem;
-  max-width: 92vw;
-  max-height: 88vh;
-  overflow-y: auto;
-  padding: 0.82rem;
-  border: 1px solid rgba(136, 192, 255, 0.2);
-  border-radius: 0.62rem;
-  background: rgba(12, 22, 38, 0.98);
+.detail-title {
+  margin: 0 0 0.25rem;
+  font-size: 0.92rem;
   color: #e8f3fc;
 }
 
+.detail-sub {
+  margin: 0 0 0.55rem;
+  font-size: 0.62rem;
+  color: #7a96ad;
+}
+
+.detail-stats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.55rem 0.9rem;
+  margin-bottom: 0.85rem;
+  font-size: 0.65rem;
+  color: #9fb6cc;
+}
+
+.detail-stats .err {
+  color: #ff9b9b;
+}
+
+.dialog-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(2, 8, 16, 0.55);
+}
+
+.dialog {
+  width: min(28rem, 92%);
+  max-height: 86%;
+  overflow: auto;
+  padding: 1rem;
+  border-radius: 0.5rem;
+  border: 1px solid rgba(136, 192, 255, 0.18);
+  background: rgba(10, 20, 34, 0.98);
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.45);
+}
+
 .dialog-title {
-  margin: 0 0 0.62rem;
-  font-size: 0.76rem;
+  margin: 0 0 0.55rem;
+  font-size: 0.9rem;
   color: #e8f3fc;
 }
 
 .dialog-text {
-  margin: 0 0 0.62rem;
-  font-size: 0.6rem;
-  color: #8aa8bf;
-  line-height: 1.5;
+  margin: 0 0 0.75rem;
+  font-size: 0.72rem;
+  color: #9fb6cc;
 }
 
 .dialog-form {
   display: flex;
   flex-direction: column;
-  gap: 0.5rem;
+  gap: 0.65rem;
 }
 
 .form-row {
   display: flex;
   flex-direction: column;
-  gap: 0.25rem;
+  gap: 0.28rem;
 }
 
 .form-label {
-  font-size: 0.62rem;
-  color: #b8cce0;
-  display: flex;
-  align-items: center;
-  gap: 0.32rem;
-}
-
-.form-hint {
-  font-size: 0.54rem;
-  color: #6e8ba0;
-  font-weight: normal;
+  font-size: 0.7rem;
+  color: #c5d8ea;
 }
 
 .form-input {
   padding: 0.4rem 0.5rem;
+  border-radius: 0.35rem;
   border: 1px solid rgba(136, 192, 255, 0.2);
-  border-radius: 0.32rem;
-  background: rgba(8, 17, 31, 0.6);
+  background: rgba(4, 12, 22, 0.7);
   color: #e8f3fc;
-  font: inherit;
-  font-size: 0.62rem;
+  font-size: 0.72rem;
 }
 
-.form-input:focus {
-  outline: none;
-  border-color: rgba(90, 213, 255, 0.5);
-}
-
-.textarea {
+.form-input.textarea {
   resize: vertical;
   min-height: 4rem;
 }
 
-.radio-group {
-  display: flex;
-  gap: 0.82rem;
-}
-
-.radio-label {
-  display: flex;
-  align-items: center;
-  gap: 0.32rem;
-  font-size: 0.62rem;
-  color: #b8cce0;
-  cursor: pointer;
-}
-
-.dialog-error {
-  margin-top: 0.5rem;
-  padding: 0.4rem 0.55rem;
-  border: 1px solid rgba(255, 100, 100, 0.3);
-  border-radius: 0.32rem;
-  background: rgba(90, 20, 20, 0.25);
-  color: #ffb0b0;
-  font-size: 0.58rem;
-}
-
 .dialog-info {
-  margin-top: 0.5rem;
-  padding: 0.4rem 0.55rem;
-  border: 1px solid rgba(90, 213, 255, 0.25);
-  border-radius: 0.32rem;
-  background: rgba(10, 132, 255, 0.12);
-  color: #5ad5ff;
-  font-size: 0.58rem;
+  margin: 0.55rem 0;
+  font-size: 0.68rem;
+  color: #b8d4ec;
 }
 
 .dialog-actions {
   display: flex;
   justify-content: flex-end;
   gap: 0.4rem;
-  margin-top: 0.72rem;
+  margin-top: 0.75rem;
 }
 
 .dialog-btn {
-  padding: 0.4rem 0.82rem;
-  border: 1px solid rgba(136, 192, 255, 0.2);
-  border-radius: 0.4rem;
-  background: rgba(16, 32, 54, 0.6);
-  color: #b8cce0;
+  padding: 0.38rem 0.72rem;
+  border-radius: 0.35rem;
+  border: 1px solid rgba(136, 192, 255, 0.22);
+  background: rgba(12, 24, 42, 0.9);
+  color: #c5d8ea;
+  font-size: 0.72rem;
   cursor: pointer;
-  font: inherit;
-  font-size: 0.62rem;
-}
-
-.dialog-btn:hover:not(:disabled) {
-  background: rgba(136, 192, 255, 0.1);
 }
 
 .dialog-btn.primary {
-  border-color: rgba(90, 213, 255, 0.4);
-  background: rgba(10, 132, 255, 0.22);
-  color: #5ad5ff;
+  border-color: rgba(90, 213, 255, 0.45);
+  background: rgba(20, 60, 90, 0.85);
 }
 
 .dialog-btn.danger {
-  border-color: rgba(255, 100, 100, 0.3);
-  color: #ffb0b0;
-}
-
-.dialog-btn:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
-
-/* ── 搜索框 ────────────────────────────────────────────────── */
-.search-input {
-  flex: 1;
-  min-width: 6rem;
-  padding: 0.32rem 0.5rem;
-  border: 1px solid rgba(136, 192, 255, 0.2);
-  border-radius: 0.32rem;
-  background: rgba(8, 17, 31, 0.6);
-  color: #e8f3fc;
-  font: inherit;
-  font-size: 0.6rem;
-  outline: none;
-}
-
-.search-input:focus {
-  border-color: rgba(90, 213, 255, 0.5);
-}
-
-.search-input::placeholder {
-  color: #5a6f85;
-}
-
-/* ── Cron 预设 ─────────────────────────────────────────────── */
-.cron-presets {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.28rem;
-  margin: 0.2rem 0;
-}
-
-.cron-preset-btn {
-  padding: 0.18rem 0.46rem;
-  border-radius: 999px;
-  border: 1px solid rgba(126, 224, 168, 0.25);
-  background: rgba(40, 180, 90, 0.08);
-  color: #a0e8c0;
-  font: inherit;
-  font-size: 0.54rem;
-  cursor: pointer;
-  transition:
-    border-color 0.16s ease,
-    background 0.16s ease;
-}
-
-.cron-preset-btn:hover {
-  border-color: rgba(126, 224, 168, 0.5);
-  background: rgba(40, 180, 90, 0.18);
-}
-
-/* ── Cron 预览 ─────────────────────────────────────────────── */
-.cron-preview {
-  margin-top: 0.32rem;
-  padding: 0.36rem 0.5rem;
-  border-radius: 0.32rem;
-  background: rgba(10, 132, 255, 0.08);
-  border: 1px solid rgba(90, 213, 255, 0.15);
-}
-
-.cron-preview-label {
-  font-size: 0.54rem;
-  color: #5ad5ff;
-  font-weight: 500;
-}
-
-.cron-preview-times {
-  display: flex;
-  flex-direction: column;
-  gap: 0.16rem;
-  margin-top: 0.2rem;
-}
-
-.cron-time-item {
-  font-size: 0.56rem;
-  color: #b8cce0;
-  font-family: ui-monospace, 'Cascadia Code', Consolas, monospace;
-}
-
-.cron-preview-error {
-  margin-top: 0.32rem;
-  padding: 0.36rem 0.5rem;
-  border-radius: 0.32rem;
-  background: rgba(90, 20, 20, 0.2);
-  border: 1px solid rgba(255, 100, 100, 0.25);
-  color: #ffb0b0;
-  font-size: 0.56rem;
-}
-
-/* ── 日期模板 ──────────────────────────────────────────────── */
-.date-templates-bar {
-  margin: 0.2rem 0;
-}
-
-.date-templates-toggle {
-  padding: 0;
-  border: none;
-  background: transparent;
-  color: #6e8ba0;
-  font: inherit;
-  font-size: 0.56rem;
-  cursor: pointer;
-  transition: color 0.16s ease;
-}
-
-.date-templates-toggle:hover {
-  color: #c4d6e8;
-}
-
-.date-templates-list {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.24rem;
-  margin-top: 0.28rem;
-  padding: 0.36rem;
-  border-radius: 0.32rem;
-  background: rgba(4, 12, 23, 0.4);
-  border: 1px solid rgba(136, 192, 255, 0.08);
-}
-
-.date-template-btn {
-  padding: 0.14rem 0.4rem;
-  border-radius: 0.28rem;
-  border: 1px solid rgba(255, 184, 77, 0.2);
-  background: rgba(255, 184, 77, 0.06);
-  color: #ffd38a;
-  font: inherit;
-  font-size: 0.52rem;
-  cursor: pointer;
-  transition:
-    border-color 0.16s ease,
-    background 0.16s ease;
-}
-
-.date-template-btn:hover {
-  border-color: rgba(255, 184, 77, 0.45);
-  background: rgba(255, 184, 77, 0.16);
+  border-color: rgba(255, 120, 120, 0.4);
+  color: #ffb4b4;
+  background: rgba(80, 24, 32, 0.75);
 }
 </style>

@@ -121,11 +121,7 @@
           "block_days": 8,
           "start_date": "20251101",
           "end_date": "20251231",
-          "bbox_west": 15.0,
-          "bbox_south": -35.0,
-          "bbox_east": 35.0,
-          "bbox_north": -10.0,
-          "max_pixels": 8000,
+          "max_pixels": 0,
           "enable_parallel": true,
           "pixel_chunk_size": 200000
         }
@@ -156,10 +152,10 @@
         40
       ],
       "properties": {
-        "west": 15.0,
-        "south": -35.0,
-        "east": 35.0,
-        "north": -10.0,
+        "west": -180.0,
+        "south": -85.0,
+        "east": 180.0,
+        "north": 85.0,
         "crs": "EPSG:4326"
       }
     },

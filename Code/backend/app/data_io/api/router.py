@@ -33,8 +33,15 @@ from app.data_io.services.upload import (
     append_chunk,
     complete_upload,
     discard_upload,
+    get_upload_status,
     init_upload,
     resolve_upload_path,
+)
+from app.data_io.services.resumable_upload import (
+    DEFAULT_CHUNK_SIZE as RESUMABLE_CHUNK_SIZE,
+    complete_resumable,
+    init_resumable,
+    upload_chunk_by_index,
 )
 from app.data_io.services.vector import (
     add_vector_field,
@@ -55,6 +62,17 @@ class UploadInitBody(BaseModel):
     filename: str
     size: int
     content_type: str | None = None
+    """可选：续传已有未完成会话（同名同尺寸）。"""
+    resume_upload_id: str | None = None
+
+
+class UploadResumableInitBody(BaseModel):
+    filename: str
+    size: int
+    content_type: str | None = None
+    chunk_size: int | None = None
+    total_chunks: int | None = None
+    sha256: str | None = None
 
 
 class UploadCompleteBody(BaseModel):
@@ -69,6 +87,11 @@ class VectorImportBody(BaseModel):
 
 class RasterInspectBody(BaseModel):
     upload_id: str
+
+
+class RasterDetectInvalidBody(BaseModel):
+    upload_id: str
+    variable_id: str
 
 
 class RasterCommitBody(BaseModel):
@@ -90,6 +113,20 @@ class RasterCommitBody(BaseModel):
     """若提供 source_crs 且非 WGS84 等价系，提交后自动重投影到 WGS84。"""
     lng_offset: float = 0.0
     lat_offset: float = 0.0
+    """轴序：auto（按网格预设自动转置）/ as_is / transpose。"""
+    axis_order: str = "auto"
+    """别名：True 等价于 axis_order=transpose。"""
+    swap_xy: bool | None = None
+    """同名冲突：overwrite 覆盖 / rename 另存 / error 报错。默认覆盖。"""
+    conflict_policy: str = "overwrite"
+    """时间语义：auto 从文件名猜测；static 强制无时间；point/range 手动指定。"""
+    temporal_mode: str = "auto"
+    """时间点 YYYYMMDD，或时间段标签 YYYYMMDD_YYYYMMDD。"""
+    time_label: str | None = None
+    time_start: str | None = None
+    time_end: str | None = None
+    """原生时间步，如 1d / 8d / 1m。"""
+    native_step: str | None = None
 
 
 class DocumentOpsBody(BaseModel):
@@ -104,11 +141,17 @@ class DocumentCommitBody(BaseModel):
     lng_offset: float = 0.0
     lat_offset: float = 0.0
     async_mode: bool = False
+    """None=自动检测；True/False=强制交换或保持。"""
+    swap_xy: bool | None = None
 
 
 class VectorRenameBody(BaseModel):
     old_name: str
     new_name: str
+
+
+class LayerDisplayNameBody(BaseModel):
+    display_name: str = Field(..., min_length=1, max_length=256)
 
 
 class FeaturePatchBody(BaseModel):
@@ -132,6 +175,10 @@ class ExportBody(BaseModel):
     format: str = "geojson"
     # auto | utf-8 | utf-8-sig | gbk | gb18030 | big5 | cp1252 | …
     encoding: str | None = "auto"
+    # 单时刻切片标签，如 20251227_20251231；也可用 "*" 表示全部（多文件 zip）
+    time: str | None = None
+    # 多时刻列表；长度>1 时打成 zip。与 time 二选一优先 times
+    times: list[str] | None = None
 
 
 class ExportBatchBody(BaseModel):
@@ -139,6 +186,7 @@ class ExportBatchBody(BaseModel):
     format: str = "geojson"
     encoding: str | None = "auto"
     async_mode: bool = False
+    time: str | None = None
 
 
 class BatchGroupBody(BaseModel):
@@ -163,6 +211,20 @@ def _http_err(exc: Exception, *, not_found: bool = False) -> HTTPException:
     return HTTPException(status_code=500, detail=str(exc))
 
 
+def _resolve_raster_axis_order(body: RasterCommitBody) -> str:
+    """``swap_xy=True`` 映射为 ``axis_order=transpose``；其余保留 axis_order。"""
+    if body.swap_xy is True:
+        return "transpose"
+    return (body.axis_order or "auto").strip().lower() or "auto"
+
+
+def _resolve_conflict_policy(raw: str | None) -> str:
+    policy = (raw or "overwrite").strip().lower()
+    if policy not in {"overwrite", "rename", "error"}:
+        raise ValueError("conflict_policy 须为 overwrite | rename | error")
+    return policy
+
+
 def _raster_commit_sync(body: RasterCommitBody) -> dict[str, Any]:
     from app.data_io.services.raster_commit import commit_raster_upload
 
@@ -180,6 +242,13 @@ def _raster_commit_sync(body: RasterCommitBody) -> dict[str, Any]:
         auto_confirm=body.auto_confirm,
         lng_offset=body.lng_offset,
         lat_offset=body.lat_offset,
+        axis_order=_resolve_raster_axis_order(body),
+        conflict_policy=_resolve_conflict_policy(body.conflict_policy),  # type: ignore[arg-type]
+        temporal_mode=body.temporal_mode or "auto",
+        time_label=body.time_label,
+        time_start=body.time_start,
+        time_end=body.time_end,
+        native_step=body.native_step,
     )
 
 
@@ -190,8 +259,38 @@ def _raster_commit_sync(body: RasterCommitBody) -> dict[str, Any]:
 async def upload_init(body: UploadInitBody) -> dict[str, Any]:
     try:
         return init_upload(
-            filename=body.filename, size=body.size, content_type=body.content_type
+            filename=body.filename,
+            size=body.size,
+            content_type=body.content_type,
+            resume_upload_id=body.resume_upload_id,
         )
+    except Exception as exc:
+        raise _http_err(exc) from exc
+
+
+@router.post(
+    "/import/upload/resumable/init", dependencies=[Depends(require_write_access)]
+)
+async def upload_resumable_init(body: UploadResumableInitBody) -> dict[str, Any]:
+    try:
+        return init_resumable(
+            filename=body.filename,
+            size=body.size,
+            content_type=body.content_type,
+            chunk_size=body.chunk_size or RESUMABLE_CHUNK_SIZE,
+            total_chunks=body.total_chunks,
+            sha256_expected=body.sha256,
+        )
+    except Exception as exc:
+        raise _http_err(exc) from exc
+
+
+@router.get(
+    "/import/upload/{upload_id}/status", dependencies=[Depends(require_write_access)]
+)
+async def upload_status(upload_id: str) -> dict[str, Any]:
+    try:
+        return get_upload_status(upload_id)
     except Exception as exc:
         raise _http_err(exc) from exc
 
@@ -213,10 +312,38 @@ async def upload_chunk(
         await file.close()
 
 
+@router.post(
+    "/import/upload/{upload_id}/chunk/{chunk_index}",
+    dependencies=[Depends(require_write_access)],
+)
+async def upload_chunk_indexed(
+    upload_id: str,
+    chunk_index: int,
+    file: UploadFile = File(...),
+) -> dict[str, Any]:
+    try:
+        data = await file.read()
+        return upload_chunk_by_index(upload_id, chunk_index, data)
+    except Exception as exc:
+        raise _http_err(exc) from exc
+    finally:
+        await file.close()
+
+
 @router.post("/import/upload/complete", dependencies=[Depends(require_write_access)])
 async def upload_complete(body: UploadCompleteBody) -> dict[str, Any]:
     try:
         return complete_upload(body.upload_id)
+    except Exception as exc:
+        raise _http_err(exc) from exc
+
+
+@router.post(
+    "/import/upload/resumable/complete", dependencies=[Depends(require_write_access)]
+)
+async def upload_resumable_complete(body: UploadCompleteBody) -> dict[str, Any]:
+    try:
+        return complete_resumable(body.upload_id)
     except Exception as exc:
         raise _http_err(exc) from exc
 
@@ -503,6 +630,24 @@ async def vector_rename_field(layer_id: str, body: VectorRenameBody) -> dict[str
         raise _http_err(exc) from exc
 
 
+@router.patch(
+    "/import/layers/{layer_id}/display-name",
+    dependencies=[Depends(require_write_access)],
+)
+async def patch_imported_layer_display_name(
+    layer_id: str, body: LayerDisplayNameBody
+) -> dict[str, Any]:
+    """更新导入图层显示名（meta.display_name / label），不影响物理文件名。"""
+    try:
+        return import_paths.update_imported_layer_display_name(
+            layer_id, body.display_name
+        )
+    except FileNotFoundError as exc:
+        raise _http_err(exc, not_found=True) from exc
+    except Exception as exc:
+        raise _http_err(exc) from exc
+
+
 @router.delete(
     "/import/layers/{layer_id}", dependencies=[Depends(require_write_access)]
 )
@@ -532,12 +677,34 @@ async def delete_imported_layer(layer_id: str) -> dict[str, Any]:
 # ── 科学栅格 ───────────────────────────────────────────────────────────
 
 
+@router.get("/import/quota", dependencies=[Depends(require_write_access)])
+async def import_quota() -> dict[str, Any]:
+    """导入存储配额用量；可选触发临时目录回收。"""
+    usage = import_paths.get_quota_usage()
+    return {"ok": True, **usage}
+
+
+@router.post("/import/quota/reclaim", dependencies=[Depends(require_write_access)])
+async def import_quota_reclaim() -> dict[str, Any]:
+    """主动清理 staging/_tmp/_exports，不删除已导入图层。"""
+    result = import_paths.reclaim_import_space(needed_bytes=0, aggressive=True)
+    return {"ok": True, **result}
+
+
 @router.post("/import/raster/inspect", dependencies=[Depends(require_write_access)])
 async def raster_inspect(body: RasterInspectBody) -> dict[str, Any]:
     try:
+        from app.data_io.services.time_label import guess_time_label_from_filename
+
         path = resolve_upload_path(body.upload_id)
         info = list_raster_variables(path)
-        return {"upload_id": body.upload_id, "filename": path.name, **info}
+        guessed = guess_time_label_from_filename(path.name)
+        return {
+            "upload_id": body.upload_id,
+            "filename": path.name,
+            "guessed_temporal": guessed,
+            **info,
+        }
     except Exception as exc:
         raise _http_err(exc) from exc
 
@@ -575,11 +742,33 @@ async def raster_commit(body: RasterCommitBody) -> dict[str, Any]:
                     "auto_confirm": body.auto_confirm,
                     "lng_offset": body.lng_offset,
                     "lat_offset": body.lat_offset,
+                    "axis_order": _resolve_raster_axis_order(body),
+                    "swap_xy": body.swap_xy,
+                    "conflict_policy": _resolve_conflict_policy(body.conflict_policy),
+                    "temporal_mode": body.temporal_mode or "auto",
+                    "time_label": body.time_label,
+                    "time_start": body.time_start,
+                    "time_end": body.time_end,
+                    "native_step": body.native_step,
                 },
                 force_async=True,
             )
             return {"async": True, "job_id": job["job_id"], "status": job["status"]}
         return {"async": False, **_raster_commit_sync(body)}
+    except Exception as exc:
+        raise _http_err(exc) from exc
+
+
+@router.post(
+    "/import/raster/detect-invalid", dependencies=[Depends(require_write_access)]
+)
+async def raster_detect_invalid(body: RasterDetectInvalidBody) -> dict[str, Any]:
+    """检测科学栅格变量中的哨兵值 / Inf / FillValue，供 UI 一键填入。"""
+    try:
+        from app.data_io.services.raster_science import auto_detect_invalid_values
+
+        path = resolve_upload_path(body.upload_id)
+        return auto_detect_invalid_values(path, body.variable_id)
     except Exception as exc:
         raise _http_err(exc) from exc
 
@@ -650,6 +839,7 @@ async def document_commit(session_id: str, body: DocumentCommitBody) -> dict[str
             "target_crs": body.target_crs,
             "lng_offset": body.lng_offset,
             "lat_offset": body.lat_offset,
+            "swap_xy": body.swap_xy,
         }
         if body.async_mode:
             job = enqueue_job("document_commit", payload, force_async=True)
@@ -662,6 +852,7 @@ async def document_commit(session_id: str, body: DocumentCommitBody) -> dict[str
             target_crs=body.target_crs,
             lng_offset=body.lng_offset,
             lat_offset=body.lat_offset,
+            swap_xy=body.swap_xy,
         )
         return {"async": False, **result}
     except Exception as exc:
@@ -683,6 +874,8 @@ async def export_layer_endpoint(body: ExportBody) -> Response:
             body.layer_id,
             body.format,
             encoding=body.encoding,
+            time=body.time,
+            times=body.times,
         )
     except Exception as exc:
         raise _http_err(exc) from exc

@@ -57,6 +57,12 @@ def _decrypt_blob(ciphertext: str, iv: str, encryption_key: str) -> str:
     if not ciphertext:
         return ""
     if iv == "plain":
+        from app.services.effective_config import secrets_encryption_required
+
+        if secrets_encryption_required():
+            raise RuntimeError(
+                "Refusing plaintext portal credential blob outside development."
+            )
         return base64.b64decode(ciphertext.encode("ascii")).decode("utf-8")
     if not encryption_key:
         raise RuntimeError("Cannot decrypt portal credentials without encryption key")
@@ -252,7 +258,14 @@ def upsert_portal_credential(
     if "use_earthdata" in payload:
         secrets["use_earthdata"] = bool(payload["use_earthdata"])
 
-    enabled = bool(payload.get("enabled", True))
+    # Fail-closed: only override `enabled` when the caller explicitly provides it;
+    # otherwise preserve the previous value so a partial update cannot silently
+    # resurrect a deliberately disabled portal (security-relevant state machine).
+    prev_enabled = (
+        bool(prev_blob.get("enabled", True)) if isinstance(prev_blob, dict) else True
+    )
+    enabled_raw = payload.get("enabled")
+    enabled = bool(enabled_raw) if enabled_raw is not None else prev_enabled
     public_meta = {
         "enabled": enabled,
         "auth_type": str(

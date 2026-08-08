@@ -88,6 +88,10 @@ def detect_source_kind(uri: str) -> str:
         return "object_storage"
     if scheme == "memory":
         return "memory"
+    if scheme == "":
+        # 无 scheme：POSIX 绝对路径（/tmp/x.csv）或相对路径 → 本地文件
+        path = Path(uri)
+        return "local_dir" if path.suffix == "" else "local_file"
     return "blob"
 
 

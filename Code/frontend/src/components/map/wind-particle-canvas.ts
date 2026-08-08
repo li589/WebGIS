@@ -17,8 +17,8 @@ import {
   MIN_VISIBLE_ZOOM,
 } from './types'
 import { computeCanvasLayout, type CanvasLayout } from './canvas-utils'
-import { normalizeLngBounds } from './map-viewport-sync'
-import { unwrapLonIntoGridFrame } from './weather-grid-lattice'
+import { normalizeLngBounds, resolveVisibleViewportBBox } from './map-viewport-sync'
+import { unwrapLonIntoGridFrame, type LonFrame } from './weather-grid-lattice'
 import {
   buildWindGridFromGeoJSON,
   windToUV,
@@ -26,6 +26,7 @@ import {
   type WindGrid,
   type WindGridPoint,
 } from './wind-grid'
+import { debugLog } from '../../utils/perf-probe'
 
 // ── 渲染参数常量 ─────────────────────────────────────────
 
@@ -194,11 +195,6 @@ function speedToColorIndex(speed: number, stops: number[]): { idx: number; t: nu
   return { idx: stops.length - 2, t: 1 }
 }
 
-/** 调试日志辅助：带相对时间戳前缀 */
-function debugLog(module: string, ...args: unknown[]) {
-  console.log(`[${performance.now().toFixed(1)}ms] [${module}]`, ...args)
-}
-
 export function interpolateWind(grid: WindGrid, lat: number, lon: number): WindGridPoint {
   const { rows, cols, south, north, west, east, points } = grid
   const clampedLat = Math.max(south, Math.min(north, lat))
@@ -303,24 +299,25 @@ function gridBoundsShifted(a: WindGrid, b: WindGrid): boolean {
 }
 
 /**
- * 从 MapLibre-style bounds 计算视口 bbox。
+ * 从 MapLibre-style bounds 计算视口 bbox（无 worldSize 时的纯函数；单测可用）。
+ * 生产路径请用 resolveVisibleViewportBBox(map)，以纳入 center/worldSize 升级。
  *
- * 经度归一化与反子午线处理复用 map-viewport-sync 的 normalizeLngBounds，
- * 避免两处独立维护相同逻辑。
+ * 经度归一化与反子午线处理复用 map-viewport-sync 的 normalizeLngBounds。
  *
  * 纬度钳制到 [-85, 85]：Web Mercator 投影在 ±85.05° 以外无法表示，
  * 粒子 canvas 基于 Mercator 渲染，钳制避免极地区域投影奇异。
  *（map-viewport-sync 保留 [-90, 90] 因其 bbox 也用于点查询等非渲染用途。）
- *
- * 抽离为纯函数以便单测；类方法 updateViewportBBox 是它的薄包装。
  */
-export function computeViewportBBoxFromBounds(bounds: {
-  getWest: () => number
-  getEast: () => number
-  getSouth: () => number
-  getNorth: () => number
-}): WindRoamBounds {
-  const { west, east } = normalizeLngBounds(bounds.getWest(), bounds.getEast())
+export function computeViewportBBoxFromBounds(
+  bounds: {
+    getWest: () => number
+    getEast: () => number
+    getSouth: () => number
+    getNorth: () => number
+  },
+  centerLng?: number,
+): WindRoamBounds {
+  const { west, east } = normalizeLngBounds(bounds.getWest(), bounds.getEast(), centerLng)
   return {
     south: Math.max(-85, bounds.getSouth()),
     north: Math.min(85, bounds.getNorth()),
@@ -345,14 +342,23 @@ export function mergeRoamBounds(
 ): WindRoamBounds | null {
   if (!grid) return viewport
   if (!viewport) return grid
-  const vw = unwrapLonIntoGridFrame(viewport.west, grid.west, grid.east)
-  const ve = unwrapLonIntoGridFrame(viewport.east, grid.west, grid.east)
-  // east 可能被卷到 west 西侧（短路径视口）；保证 east>=west 供粒子均匀撒点
-  const west = Math.min(grid.west, vw, ve)
-  let east = Math.max(grid.east, vw, ve)
-  if (east < west) {
-    east += 360
+  let vw = unwrapLonIntoGridFrame(viewport.west, grid.west, grid.east)
+  let ve = unwrapLonIntoGridFrame(viewport.east, grid.west, grid.east)
+  // 视口已是连续弧（east≥west，可 east>180）时保持长路径，勿 min/max 压短
+  if (viewport.east >= viewport.west && ve < vw) {
+    ve += 360
+  } else if (ve < vw) {
+    const alt = ve + 360
+    if (alt - vw < vw - ve) ve = alt
+    else {
+      const t = vw
+      vw = ve
+      ve = t
+    }
   }
+  const west = Math.min(grid.west, vw)
+  let east = Math.max(grid.east, ve)
+  if (east < west) east += 360
   return {
     south: Math.min(grid.south, viewport.south),
     north: Math.max(grid.north, viewport.north),
@@ -412,7 +418,12 @@ export class WindParticleCanvas {
   /** 调试帧计数器（用于降频日志） */
   private debugFrame = 0
 
-  constructor(map: MaplibreMap, geojson: WindGeoJSON, options?: WindParticleOptions) {
+  constructor(
+    map: MaplibreMap,
+    geojson: WindGeoJSON,
+    options?: WindParticleOptions,
+    frame?: LonFrame | null,
+  ) {
     this.map = map
     this.options = {
       particleCount: options?.particleCount ?? DEFAULT_PARTICLE_OPTIONS.particleCount,
@@ -442,16 +453,7 @@ export class WindParticleCanvas {
 
     this.colorRgbCache = this.options.colors.map(hexToRgb)
 
-    this.grid = buildWindGridFromGeoJSON(geojson)
-    debugLog(
-      'WindParticleCanvas',
-      'constructor grid',
-      this.grid ? `${this.grid.rows}x${this.grid.cols}` : 'null',
-      'features',
-      geojson.features?.length,
-      'zoom',
-      map.getZoom(),
-    )
+    this.grid = buildWindGridFromGeoJSON(geojson, frame)
     this.updateCanvasBounds(true)
     this.updateViewportBBox()
     if (this.grid) {
@@ -488,7 +490,9 @@ export class WindParticleCanvas {
     this.moveendHandler = () => {
       this.isMapInteracting = false
       debugLog('WindParticleCanvas', 'moveend')
-      this.updateCanvasBounds()
+      // 交互期间保持旧 wrap，结束后必须按最新相机副本重算；否则跨日界线或
+      // 缩放改变可见世界副本时，所有粒子可能被投影到屏外。
+      this.updateCanvasBounds(true)
       // 视口 bbox 必须在 reprojectParticleTrailsForInteract 之前更新，
       // 让 reset/getEffectiveRoamBounds 拿到最新视口范围
       this.updateViewportBBox()
@@ -644,12 +648,10 @@ export class WindParticleCanvas {
   }
 
   /**
-   * 从 map.getBounds() 读取当前视口 bbox 并存入 viewportBBox。
-   * 跨 ±180° 经线时（east < west）将 east 扩展到 (180, 360) 区间，
-   * 保留"从 west 向东到 east"的短路径语义，与 map-viewport-sync 保持一致。
+   * 从地图读取当前可见视口 bbox（经度走 resolveVisibleLngBounds，与瓦片/LonFrame 同源）。
    */
   private updateViewportBBox(): void {
-    this.viewportBBox = computeViewportBBoxFromBounds(this.map.getBounds())
+    this.viewportBBox = resolveVisibleViewportBBox(this.map, { clampLat: [-85, 85] })
   }
 
   /**
@@ -671,8 +673,9 @@ export class WindParticleCanvas {
 
     // 判断视口是否完全包含在 grid 内（经度解包后比较）
     const vw = unwrapLonIntoGridFrame(viewport.west, grid.west, grid.east)
-    const ve = unwrapLonIntoGridFrame(viewport.east, grid.west, grid.east)
-    const vpWest = Math.min(vw, ve)
+    let ve = unwrapLonIntoGridFrame(viewport.east, grid.west, grid.east)
+    if (viewport.east >= viewport.west && ve < vw) ve += 360
+    const vpWest = vw
     const vpEast = Math.max(vw, ve)
     const vpContained =
       vpWest >= grid.west &&
@@ -1128,9 +1131,9 @@ export class WindParticleCanvas {
     }
   }
 
-  updateGeoJSON(geojson: WindGeoJSON): void {
+  updateGeoJSON(geojson: WindGeoJSON, frame?: LonFrame | null): void {
     const oldGrid = this.grid
-    const nextGrid = buildWindGridFromGeoJSON(geojson)
+    const nextGrid = buildWindGridFromGeoJSON(geojson, frame)
     debugLog(
       'WindParticleCanvas',
       'updateGeoJSON',

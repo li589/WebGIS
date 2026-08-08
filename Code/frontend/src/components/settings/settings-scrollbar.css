@@ -1,0 +1,65 @@
+/**
+ * 设置面板统一滚动条（纵向 / 横向细条，与 Workflow 侧栏风格一致）。
+ * 由 SettingsPanel 引入，作用于面板内所有可滚动区域。
+ */
+.settings-panel .settings-nav,
+.settings-panel .settings-content,
+.settings-panel .arch-diagram,
+.settings-panel pre,
+.settings-panel .code-block,
+.settings-panel .table-wrap,
+.settings-panel .history-list {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(90, 213, 255, 0.32) rgba(136, 192, 255, 0.06);
+}
+
+.settings-panel .settings-nav::-webkit-scrollbar,
+.settings-panel .settings-content::-webkit-scrollbar,
+.settings-panel .arch-diagram::-webkit-scrollbar,
+.settings-panel pre::-webkit-scrollbar,
+.settings-panel .code-block::-webkit-scrollbar,
+.settings-panel .table-wrap::-webkit-scrollbar,
+.settings-panel .history-list::-webkit-scrollbar {
+  width: 5px;
+  height: 5px;
+}
+
+.settings-panel .settings-nav::-webkit-scrollbar-track,
+.settings-panel .settings-content::-webkit-scrollbar-track,
+.settings-panel .arch-diagram::-webkit-scrollbar-track,
+.settings-panel pre::-webkit-scrollbar-track,
+.settings-panel .code-block::-webkit-scrollbar-track,
+.settings-panel .table-wrap::-webkit-scrollbar-track,
+.settings-panel .history-list::-webkit-scrollbar-track {
+  background: rgba(136, 192, 255, 0.04);
+  border-radius: 4px;
+}
+
+.settings-panel .settings-nav::-webkit-scrollbar-thumb,
+.settings-panel .settings-content::-webkit-scrollbar-thumb,
+.settings-panel .arch-diagram::-webkit-scrollbar-thumb,
+.settings-panel pre::-webkit-scrollbar-thumb,
+.settings-panel .code-block::-webkit-scrollbar-thumb,
+.settings-panel .table-wrap::-webkit-scrollbar-thumb,
+.settings-panel .history-list::-webkit-scrollbar-thumb {
+  background: rgba(90, 213, 255, 0.28);
+  border-radius: 4px;
+  border: 1px solid transparent;
+  background-clip: padding-box;
+}
+
+.settings-panel .settings-nav::-webkit-scrollbar-thumb:hover,
+.settings-panel .settings-content::-webkit-scrollbar-thumb:hover,
+.settings-panel .arch-diagram::-webkit-scrollbar-thumb:hover,
+.settings-panel pre::-webkit-scrollbar-thumb:hover,
+.settings-panel .code-block::-webkit-scrollbar-thumb:hover,
+.settings-panel .table-wrap::-webkit-scrollbar-thumb:hover,
+.settings-panel .history-list::-webkit-scrollbar-thumb:hover {
+  background: rgba(90, 213, 255, 0.48);
+}
+
+.settings-panel .settings-nav::-webkit-scrollbar-corner,
+.settings-panel .settings-content::-webkit-scrollbar-corner,
+.settings-panel .arch-diagram::-webkit-scrollbar-corner {
+  background: transparent;
+}

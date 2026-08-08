@@ -45,12 +45,15 @@
     "default_data_access_sources": {
       "NDVI_16DAY_RASTER": [
         "NDVI_16DAY_RASTER",
-        "Ecological/Vegetation/NDVI/VIIRS_9km_tif"
+        "NDVI_VIIRS",
+        "Ecological_Vegetation/NDVI/NDVIday",
+        "Ecological_Vegetation/NDVI/VIIRS_9km_tif",
+        "Ecological_Vegetation/NDVI/VIIRS"
       ]
     },
-    "run_readiness_summary": "NDVI 基础数据就绪",
+    "run_readiness_summary": "植被指数基础数据已就绪（VIIRS 逐月 NDVI）",
     "run_readiness_notes": [
-      "数据源: I:/Geograph_DataSet/Ecological/Vegetation/NDVI/VIIRS_9km_tif (306 files)"
+      "数据源优先: Ecological_Vegetation/NDVI/NDVIday 或 VIIRS；预处理 GeoTIFF 目录 VIIRS_9km_tif 可选"
     ],
     "data_owner": "NOAA/NESDIS",
     "temporal_coverage": "2000-01 to 2025-06 (Monthly)",
@@ -102,13 +105,14 @@
     "default_task_type": "biomass_stat",
     "default_data_access_sources": {
       "AGB_30M_RASTER": [
-        "AGB_30M_RASTER",
-        "Ecological/Vegetation/Biomass/China_30m_AGB.tif"
+        "BIOMASS_ESACCI",
+        "Ecological_Vegetation/Biomass",
+        "Ecological_Vegetation/Biomass/ESACCI-BIOMASS-L4-AGB-MERGED-100m-2020-fv6.0.nc"
       ]
     },
-    "run_readiness_summary": "全国 30m AGB 生物量分布图层已就绪",
+    "run_readiness_summary": "全国地上生物量数据已就绪（ESA CCI BIOMASS L4）",
     "run_readiness_notes": [
-      "数据源: I:/Geograph_DataSet/Ecological/Vegetation/Biomass/China_30m_AGB.tif"
+      "数据源: ESA CCI BIOMASS L4 地上生物量"
     ],
     "data_owner": "CAS",
     "temporal_coverage": "2020 Baseline",
@@ -159,13 +163,15 @@
     "default_task_type": "landcover_stat",
     "default_data_access_sources": {
       "LANDCOVER_RASTER": [
-        "LANDCOVER_RASTER",
-        "Ecological/LandCover/MCD12Q1_IGBP_500m.tif"
+        "LANDCOVER_MODIS",
+        "LANDCOVER",
+        "Ecological_Vegetation/LandCover",
+        "Ecological_Vegetation/LandCover/MCD12Q1_2021.tif"
       ]
     },
-    "run_readiness_summary": "MODIS MCD12Q1 500m IGBP 土地覆盖数据已就绪",
+    "run_readiness_summary": "MODIS 土地覆盖数据已就绪（MCD12Q1）",
     "run_readiness_notes": [
-      "数据源: I:/Geograph_DataSet/Ecological/LandCover/MCD12Q1_IGBP_500m.tif"
+      "数据源: MODIS MCD12Q1 土地覆盖"
     ],
     "data_owner": "NASA LP DAAC",
     "temporal_coverage": "2001 to 2022 (Annual)",
@@ -216,13 +222,14 @@
     "default_task_type": "landcover_stat",
     "default_data_access_sources": {
       "CLCD_30M_RASTER": [
-        "CLCD_30M_RASTER",
-        "Ecological/LandCover/CLCD_30m_Annual.tif"
+        "LANDCOVER_CLCD",
+        "Ecological_Vegetation/LandCover",
+        "Ecological_Vegetation/LandCover/CLCD_v01_1997.tif"
       ]
     },
-    "run_readiness_summary": "CLCD 30m 年度土地利用数据已就绪",
+    "run_readiness_summary": "CLCD 中国土地覆盖数据已就绪",
     "run_readiness_notes": [
-      "数据源: I:/Geograph_DataSet/Ecological/LandCover/CLCD_30m_Annual.tif"
+      "数据源: CLCD 中国土地覆盖（1997）"
     ],
     "data_owner": "Wuhan University",
     "temporal_coverage": "1985 to 2022 (Annual)",
@@ -273,13 +280,13 @@
     "default_task_type": "hfp_stat",
     "default_data_access_sources": {
       "HFP_RASTER": [
-        "HFP_RASTER",
-        "Ecological/Anthropogenic/HFP_China_1km.tif"
+        "HUMAN_FOOTPRINT",
+        "Socio_Economic/HumanFootprint"
       ]
     },
-    "run_readiness_summary": "人类足迹指数 HFP 已就绪",
+    "run_readiness_summary": "人类足迹指数数据已就绪（HFP）",
     "run_readiness_notes": [
-      "数据源: I:/Geograph_DataSet/Ecological/Anthropogenic/HFP_China_1km.tif"
+      "数据源: 人类足迹指数 HFP"
     ],
     "data_owner": "WCS / SEDAC",
     "temporal_coverage": "2020 Global HFP Release",
@@ -331,13 +338,14 @@
     "default_task_type": "dem_stat",
     "default_data_access_sources": {
       "DEM_RASTER": [
-        "DEM_RASTER",
-        "Geographic/Topography/ETOPO1_Ice_g_geotiff.tif"
+        "DEM_SRTM",
+        "Geological/DEM",
+        "Geological/DEM/ETOPO_2022"
       ]
     },
-    "run_readiness_summary": "ETOPO1 全球地形高程数据已就绪",
+    "run_readiness_summary": "全球地形高程数据已就绪（ETOPO1）",
     "run_readiness_notes": [
-      "数据源: I:/Geograph_DataSet/Geographic/Topography/ETOPO1_Ice_g_geotiff.tif"
+      "数据源: ETOPO1 全球地形高程"
     ],
     "data_owner": "NOAA NCEI",
     "temporal_coverage": "Static Topography Baseline",
@@ -389,13 +397,14 @@
     "default_task_type": "dem_stat",
     "default_data_access_sources": {
       "GEBCO_RASTER": [
-        "GEBCO_RASTER",
-        "Geographic/Topography/GEBCO_2023_sub_ice_topo.tif"
+        "DEM_SRTM",
+        "Geological/DEM",
+        "Geological/DEM/GEBCO_2024.nc"
       ]
     },
-    "run_readiness_summary": "GEBCO 2023 15角秒地形高程数据已就绪",
+    "run_readiness_summary": "海底地形数据已就绪（GEBCO 2024）",
     "run_readiness_notes": [
-      "数据源: I:/Geograph_DataSet/Geographic/Topography/GEBCO_2023_sub_ice_topo.tif"
+      "数据源: GEBCO 2024 海底地形"
     ],
     "data_owner": "GEBCO Consortium",
     "temporal_coverage": "2023 Release",
@@ -404,7 +413,7 @@
   {
     "layer_id": "smap-sm-ts",
     "dataset_key": "smap_sm_ts_dec2025",
-    "display_name": "SMAP 土壤湿度时序 (2025.12)",
+    "display_name": "SMAP 土壤湿度时序（2025-12）",
     "description": "SMAP L3 9km 逐日土壤湿度时序产品(2025年12月)，包含标准误差与质量控制标志。",
     "category": "research-group",
     "sub_category": "模型输入",
@@ -428,7 +437,7 @@
     },
     "style": {
       "palette": "soil-moisture-ramp",
-      "unit_label": "cm³/cm³",
+      "unit_label": "m³/m³",
       "opacity": 0.82
     },
     "capabilities": {
@@ -448,13 +457,14 @@
     "default_task_type": "smap_daily",
     "default_data_access_sources": {
       "SMAP_L3_DEC2025": [
-        "SMAP_L3_DEC2025",
-        "Soil_Moisture/SMAP_202512"
+        "SMAP_L3",
+        "Soil_Moisture/SMAP",
+        "Soil_Moisture/SMAP_Origin_Data"
       ]
     },
-    "run_readiness_summary": "2025年12月 SMAP 土壤湿度时序数据已就绪(31 days)。",
+    "run_readiness_summary": "SMAP L3 逐日土壤湿度时序已就绪（2025 年 12 月）",
     "run_readiness_notes": [
-      "数据源: I:/Geograph_DataSet/Soil_Moisture/SMAP_202512/*.h5 (31 files)"
+      "数据源: SMAP L3 土壤湿度（2025 年 12 月）"
     ],
     "data_owner": "Lab",
     "temporal_coverage": "2025-12-01 to 2025-12-31 (31 days)",
@@ -463,7 +473,7 @@
   {
     "layer_id": "sm-dec2025",
     "dataset_key": "sm_multisource_dec2025",
-    "display_name": "多源融合土壤湿度 (2025.12)",
+    "display_name": "SMAP 土壤湿度（2025-12）",
     "description": "融合 SMAP、FY-3D 与站点观测的 2025 年 12 月高精度日尺度土壤湿度融合网格。",
     "category": "research-group",
     "sub_category": "模型输入",
@@ -487,7 +497,7 @@
     },
     "style": {
       "palette": "soil-moisture-ramp",
-      "unit_label": "cm³/cm³",
+      "unit_label": "m³/m³",
       "opacity": 0.8
     },
     "capabilities": {
@@ -506,13 +516,14 @@
     "default_task_type": "sm_fusion",
     "default_data_access_sources": {
       "SM_FUSED_DEC2025": [
-        "SM_FUSED_DEC2025",
+        "daily_bundle_mat",
+        "Soil_Moisture/SMAP_Soil_VOD_SM",
         "Soil_Moisture/Fused_202512"
       ]
     },
-    "run_readiness_summary": "2025年12月多源融合土壤湿度网格已就绪。",
+    "run_readiness_summary": "SMAP 土壤湿度反演数据已就绪（2025 年 12 月）",
     "run_readiness_notes": [
-      "数据源: I:/Geograph_DataSet/Soil_Moisture/Fused_202512/*.tif (31 files)"
+      "数据源优先: Soil_Moisture/SMAP_Soil_VOD_SM（融合 SM/VOD mat）"
     ],
     "data_owner": "Lab",
     "temporal_coverage": "2025-12-01 to 2025-12-31 (31 days)"
@@ -532,7 +543,7 @@
     "supports_time": true,
     "is_realtime": false,
     "default_visible": false,
-    "status": "placeholder",
+    "status": "available",
     "time_granularity": "day",
     "default_time_offset": -1,
     "extent": {
@@ -564,15 +575,16 @@
     "default_data_access_sources": {
       "FY_MWRI_HDF": [
         "FY_MWRI_HDF",
-        "Soil_Moisture/FY3B",
+        "FY3D_DAILY_TB",
+        "FY3B_DAILY_TB",
         "Soil_Moisture/FY3D",
+        "Soil_Moisture/FY3B",
         "Soil_Moisture/FY_MWRI"
       ]
     },
-    "run_readiness_summary": "待下载 FY-3 MWRI 原始 HDF 数据后可运行。",
+    "run_readiness_summary": "待确认 FY MWRI 原始数据是否齐全",
     "run_readiness_notes": [
-      "数据源未就绪：FY_MWRI_HDF 候选路径均不存在（需下载 FY-3B/FY-3D MWRI HDF 轨道数据）。",
-      "建议放置路径：I:/Geograph_DataSet/Soil_Moisture/FY3B 或 FY3D。"
+      "数据源: 风云三号 MWRI 亮温原始数据"
     ]
   },
   {
@@ -590,7 +602,7 @@
     "supports_time": true,
     "is_realtime": false,
     "default_visible": false,
-    "status": "placeholder",
+    "status": "available",
     "time_granularity": "day",
     "default_time_offset": -1,
     "extent": {
@@ -621,19 +633,22 @@
     "default_task_type": "station_validation",
     "default_data_access_sources": {
       "STATION_OBS": [
-        "STATION_OBS",
-        "Soil_Moisture/Stations"
+        "ISMN_STATION",
+        "CASMOS_STATION",
+        "Station_Observation",
+        "Station_Observation/ISMN",
+        "Station_Observation/CASMOS"
       ]
     },
-    "run_readiness_summary": "待放置站点 CSV/NetCDF 数据后可用。",
+    "run_readiness_summary": "站点土壤湿度观测数据已就绪（ISMN/CASMOS）",
     "run_readiness_notes": [
-      "数据源未就绪：STATION_OBS 路径不存在。"
+      "数据源: ISMN/CASMOS 站点观测"
     ]
   },
   {
     "layer_id": "lab-output",
     "dataset_key": "lab_model_runs",
-    "display_name": "课题组模型模拟结果",
+    "display_name": "科研模型模拟结果",
     "description": "实验室自研水文/植被/陆面过程模型运行产出，包含高时空分辨率格点反演数据。",
     "category": "research-group",
     "sub_category": "模型输出",
@@ -676,364 +691,22 @@
     "default_task_type": "lab_model",
     "default_data_access_sources": {
       "LAB_OUTPUT_RASTER": [
-        "LAB_OUTPUT_RASTER",
+        "INVERSION_OMEGA_SMAP",
+        "Inversion_Results/smap_avg",
         "Model_Outputs/Lab_Daily"
       ]
     },
-    "run_readiness_summary": "实验室自研模型产出就绪。",
+    "run_readiness_summary": "科研模型反演产出已就绪",
     "run_readiness_notes": [
-      "数据源: I:/Geograph_DataSet/Model_Outputs/Lab_Daily"
+      "数据源优先: Inversion_Results/smap_avg"
     ],
     "data_owner": "Lab Team",
     "temporal_coverage": "2023-01 to Present"
-  },
-  {
-    "layer_id": "omega-output",
-    "dataset_key": "omega_inversion_output",
-    "display_name": "ω 反演计算结果",
-    "description": "基于微波辐射传输模型与双通道算法反演的土壤水分/植被光学厚度 ω 产出网格。",
-    "category": "research-group",
-    "sub_category": "模型输出",
-    "source_type": "algorithm_output",
-    "render_type": "raster",
-    "supported_map_modes": [
-      "2d"
-    ],
-    "supports_time": true,
-    "is_realtime": false,
-    "default_visible": false,
-    "status": "available",
-    "time_granularity": "day",
-    "default_time_offset": -1,
-    "extent": {
-      "west": 109.6,
-      "south": 20.1,
-      "east": 117.4,
-      "north": 25.6,
-      "crs": "EPSG:4326"
-    },
-    "style": {
-      "palette": "plasma",
-      "unit_label": "rad",
-      "opacity": 0.82
-    },
-    "capabilities": {
-      "render_strategy": "workflow_map_layer",
-      "data_domain": "remote_sensing",
-      "paint_mode": "grid_fill"
-    },
-    "tags": [
-      "omega",
-      "inversion",
-      "microwave",
-      "frontend-aligned"
-    ],
-    "module_name": "omega_inversion",
-    "engine": "python_provider",
-    "default_task_type": "omega_inversion",
-    "default_data_access_sources": {
-      "OMEGA_OUTPUT_RASTER": [
-        "OMEGA_OUTPUT_RASTER",
-        "Model_Outputs/Omega_Daily"
-      ]
-    },
-    "run_readiness_summary": "ω 算法反演网格产出就绪。",
-    "run_readiness_notes": [
-      "数据源: I:/Geograph_DataSet/Model_Outputs/Omega_Daily"
-    ],
-    "data_owner": "Lab Team",
-    "temporal_coverage": "2023-01 to Present"
-  },
-  {
-    "layer_id": "omega-fy-output",
-    "dataset_key": "omega_fy_inversion",
-    "display_name": "ω FY-3D 反演结果",
-    "description": "基于风云三号 FY-3D MWRI 多频段亮温反演的全国范围日尺度 ω 优化参数分布。",
-    "category": "research-group",
-    "sub_category": "模型输出",
-    "source_type": "algorithm_output",
-    "render_type": "raster",
-    "supported_map_modes": [
-      "2d"
-    ],
-    "supports_time": true,
-    "is_realtime": false,
-    "default_visible": false,
-    "status": "available",
-    "time_granularity": "day",
-    "default_time_offset": -1,
-    "extent": {
-      "west": 109.6,
-      "south": 20.1,
-      "east": 117.4,
-      "north": 25.6,
-      "crs": "EPSG:4326"
-    },
-    "style": {
-      "palette": "magma",
-      "unit_label": "dimensionless",
-      "opacity": 0.8
-    },
-    "capabilities": {
-      "render_strategy": "workflow_map_layer",
-      "data_domain": "remote_sensing",
-      "paint_mode": "grid_fill"
-    },
-    "tags": [
-      "omega",
-      "fy3d",
-      "inversion",
-      "frontend-aligned"
-    ],
-    "module_name": "omega_fy3d",
-    "engine": "python_provider",
-    "default_task_type": "omega_fy3d",
-    "default_data_access_sources": {
-      "OMEGA_FY_OUTPUT": [
-        "OMEGA_FY_OUTPUT",
-        "Model_Outputs/Omega_FY3D"
-      ]
-    },
-    "run_readiness_summary": "ω FY-3D 算法反演产出就绪。",
-    "run_readiness_notes": [
-      "数据源: I:/Geograph_DataSet/Model_Outputs/Omega_FY3D"
-    ],
-    "data_owner": "Lab Team",
-    "temporal_coverage": "2023-01 to Present"
-  },
-  {
-    "layer_id": "omega-dec2025",
-    "dataset_key": "omega_opt_dec2025",
-    "display_name": "ω 优化产出 (2025.12)",
-    "description": "2025 年 12 月全月份日尺度 ω 优化参数集与不确定性评估分布网格。",
-    "category": "research-group",
-    "sub_category": "模型输出",
-    "source_type": "algorithm_output",
-    "render_type": "raster",
-    "supported_map_modes": [
-      "2d"
-    ],
-    "supports_time": true,
-    "is_realtime": false,
-    "default_visible": false,
-    "status": "available",
-    "time_granularity": "day",
-    "default_time_offset": -1,
-    "extent": {
-      "west": 109.6,
-      "south": 20.1,
-      "east": 117.4,
-      "north": 25.6,
-      "crs": "EPSG:4326"
-    },
-    "style": {
-      "palette": "turbo",
-      "unit_label": "dimensionless",
-      "opacity": 0.82
-    },
-    "capabilities": {
-      "render_strategy": "workflow_map_layer",
-      "data_domain": "remote_sensing",
-      "paint_mode": "grid_fill"
-    },
-    "tags": [
-      "omega",
-      "opt",
-      "dec2025",
-      "frontend-aligned"
-    ],
-    "module_name": "omega_opt",
-    "engine": "python_provider",
-    "default_task_type": "omega_opt",
-    "default_data_access_sources": {
-      "OMEGA_DEC2025": [
-        "OMEGA_DEC2025",
-        "Model_Outputs/Omega_202512"
-      ]
-    },
-    "run_readiness_summary": "2025年12月 ω 优化产出数据已就绪(31 days)。",
-    "run_readiness_notes": [
-      "数据源: I:/Geograph_DataSet/Model_Outputs/Omega_202512/*.tif (31 files)"
-    ],
-    "data_owner": "Lab Team",
-    "temporal_coverage": "2025-12-01 to 2025-12-31 (31 days)"
-  },
-  {
-    "layer_id": "omega-avg-daily",
-    "dataset_key": "omega_avg_daily",
-    "display_name": "ω 逐日均值反演",
-    "description": "课题组 D2/A1A2 算法逐日全区 ω 均值与散射参数反演图层。",
-    "category": "research-group",
-    "sub_category": "模型输出",
-    "source_type": "algorithm_output",
-    "render_type": "raster",
-    "supported_map_modes": [
-      "2d"
-    ],
-    "supports_time": true,
-    "is_realtime": false,
-    "default_visible": false,
-    "status": "available",
-    "time_granularity": "day",
-    "default_time_offset": -1,
-    "extent": {
-      "west": 109.6,
-      "south": 20.1,
-      "east": 117.4,
-      "north": 25.6,
-      "crs": "EPSG:4326"
-    },
-    "style": {
-      "palette": "inferno",
-      "unit_label": "dimensionless",
-      "opacity": 0.8
-    },
-    "capabilities": {
-      "render_strategy": "workflow_map_layer",
-      "data_domain": "remote_sensing",
-      "paint_mode": "grid_fill"
-    },
-    "tags": [
-      "omega",
-      "avg-daily",
-      "d2-a1a2",
-      "frontend-aligned"
-    ],
-    "module_name": "omega_avg_daily",
-    "engine": "python_provider",
-    "default_task_type": "omega_avg_daily",
-    "default_data_access_sources": {
-      "OMEGA_AVG_DAILY": [
-        "OMEGA_AVG_DAILY",
-        "Model_Outputs/Omega_Avg_Daily"
-      ]
-    },
-    "run_readiness_summary": "ω 逐日均值反演图层已就绪。",
-    "run_readiness_notes": [
-      "数据源: I:/Geograph_DataSet/Model_Outputs/Omega_Avg_Daily"
-    ],
-    "data_owner": "Lab Team",
-    "temporal_coverage": "2023-01 to Present"
-  },
-  {
-    "layer_id": "omega-sf-fenkuai",
-    "dataset_key": "omega_sf_fenkuai",
-    "display_name": "ω 分块反演",
-    "description": "课题组分块优化算法产出的精细化 ω 分块反演图层。",
-    "category": "research-group",
-    "sub_category": "模型输出",
-    "source_type": "algorithm_output",
-    "render_type": "raster",
-    "supported_map_modes": [
-      "2d"
-    ],
-    "supports_time": true,
-    "is_realtime": false,
-    "default_visible": false,
-    "status": "available",
-    "time_granularity": "day",
-    "default_time_offset": -1,
-    "extent": {
-      "west": 109.6,
-      "south": 20.1,
-      "east": 117.4,
-      "north": 25.6,
-      "crs": "EPSG:4326"
-    },
-    "style": {
-      "palette": "cividis",
-      "unit_label": "dimensionless",
-      "opacity": 0.8
-    },
-    "capabilities": {
-      "render_strategy": "workflow_map_layer",
-      "data_domain": "remote_sensing",
-      "paint_mode": "grid_fill"
-    },
-    "tags": [
-      "omega",
-      "sf-fenkuai",
-      "block-inversion",
-      "frontend-aligned"
-    ],
-    "module_name": "omega_sf_fenkuai",
-    "engine": "python_provider",
-    "default_task_type": "omega_sf_fenkuai",
-    "default_data_access_sources": {
-      "OMEGA_SF_FENKUAI": [
-        "OMEGA_SF_FENKUAI",
-        "Model_Outputs/Omega_SF_Fenkuai"
-      ]
-    },
-    "run_readiness_summary": "ω 分块反演图层已就绪。",
-    "run_readiness_notes": [
-      "数据源: I:/Geograph_DataSet/Model_Outputs/Omega_SF_Fenkuai"
-    ],
-    "data_owner": "Lab Team",
-    "temporal_coverage": "2023-01 to Present"
-  },
-  {
-    "layer_id": "vod-dec2025",
-    "dataset_key": "vod_smap_dec2025",
-    "display_name": "植被光学厚度 VOD (2025.12)",
-    "description": "SMAP L3 9km 植被光学厚度(Vegetation Optical Depth) 2025年12月逐日产品。",
-    "category": "research-group",
-    "sub_category": "辅助数据",
-    "source_type": "algorithm_output",
-    "render_type": "raster",
-    "supported_map_modes": [
-      "2d"
-    ],
-    "supports_time": true,
-    "is_realtime": false,
-    "default_visible": false,
-    "status": "available",
-    "time_granularity": "day",
-    "default_time_offset": -1,
-    "extent": {
-      "west": 109.6,
-      "south": 20.1,
-      "east": 117.4,
-      "north": 25.6,
-      "crs": "EPSG:4326"
-    },
-    "style": {
-      "palette": "greens-ramp",
-      "unit_label": "VOD (0-1.5)",
-      "opacity": 0.8
-    },
-    "capabilities": {
-      "render_strategy": "workflow_map_layer",
-      "data_domain": "vegetation",
-      "paint_mode": "grid_fill"
-    },
-    "tags": [
-      "vod",
-      "smap",
-      "vegetation",
-      "dec2025",
-      "frontend-aligned"
-    ],
-    "module_name": "vod_daily",
-    "engine": "python_provider",
-    "default_task_type": "vod_daily",
-    "default_data_access_sources": {
-      "VOD_DEC2025": [
-        "VOD_DEC2025",
-        "Auxiliary/VOD_202512"
-      ]
-    },
-    "run_readiness_summary": "2025年12月 VOD 植被光学厚度数据已就绪(31 days)。",
-    "run_readiness_notes": [
-      "数据源: I:/Geograph_DataSet/Auxiliary/VOD_202512/*.tif (31 files)"
-    ],
-    "data_owner": "Lab",
-    "temporal_coverage": "2025-12-01 to 2025-12-31 (31 days)"
   },
   {
     "layer_id": "soil-ddca",
     "dataset_key": "soil_moisture_ddca",
-    "display_name": "DCA/SCA 校验土壤湿度",
+    "display_name": "土壤生态 DDCA（双通道反演，2015-2022）",
     "description": "基于双通道算法(DCA)与单通道算法(SCA)反演校验的高精度土壤湿度融合参考数据。",
     "category": "research-group",
     "sub_category": "辅助数据",
@@ -1057,7 +730,7 @@
     },
     "style": {
       "palette": "soil-moisture-ramp",
-      "unit_label": "cm³/cm³",
+      "unit_label": "m³/m³",
       "opacity": 0.8
     },
     "capabilities": {
@@ -1077,13 +750,17 @@
     "default_task_type": "sm_dca_sca",
     "default_data_access_sources": {
       "SOIL_DDCA": [
-        "SOIL_DDCA",
-        "Auxiliary/Soil_DDCA"
+        "DDCA_SM",
+        "DDCA_H_ANNUAL",
+        "daily_bundle_mat",
+        "Soil_Moisture/DDCA",
+        "Soil_Moisture/DDCA/SM",
+        "Soil_Moisture/DDCA/H"
       ]
     },
-    "run_readiness_summary": "DCA/SCA 校验土壤湿度数据集已就绪。",
+    "run_readiness_summary": "DDCA 双通道反演校验数据已就绪",
     "run_readiness_notes": [
-      "数据源: I:/Geograph_DataSet/Auxiliary/Soil_DDCA"
+      "数据源: DDCA 双通道反演校验数据"
     ],
     "data_owner": "Lab",
     "temporal_coverage": "2023-01 to Present"
@@ -1134,13 +811,14 @@
     "default_task_type": "forest_ratio",
     "default_data_access_sources": {
       "FOREST_RATIO": [
-        "FOREST_RATIO",
-        "Auxiliary/Forest_Ratio_9km.tif"
+        "LANDSCAPE_METRICS",
+        "Inversion_Results",
+        "Inversion_Results/Forest_Ratio_9KM_2020.mat"
       ]
     },
-    "run_readiness_summary": "9km 森林覆盖率网格数据已就绪。",
+    "run_readiness_summary": "森林覆盖率数据已就绪（9km，2020）",
     "run_readiness_notes": [
-      "数据源: I:/Geograph_DataSet/Auxiliary/Forest_Ratio_9km.tif"
+      "数据源: 全球 9km 森林覆盖比例（2020）"
     ],
     "data_owner": "Lab",
     "temporal_coverage": "Static Auxiliary Baseline"
@@ -1149,7 +827,7 @@
     "layer_id": "landscape-metrics-9km",
     "dataset_key": "landscape_metrics_9km",
     "display_name": "景观斑块指数 (9km)",
-    "description": "9km 网格尺度景观异质性与斑块斑快破碎化指数网格，用于空间异质性校正。",
+    "description": "9km 网格尺度景观异质性与斑块破碎化指数网格，用于空间异质性校正。",
     "category": "research-group",
     "sub_category": "辅助数据",
     "source_type": "algorithm_output",
@@ -1192,14 +870,276 @@
     "default_data_access_sources": {
       "LANDSCAPE_METRICS": [
         "LANDSCAPE_METRICS",
-        "Auxiliary/Landscape_Metrics_9km.tif"
+        "Inversion_Results",
+        "Inversion_Results/Landscape_Metrics_LandOnly_9KM_2020.mat"
       ]
     },
-    "run_readiness_summary": "9km 景观斑块指数数据已就绪。",
+    "run_readiness_summary": "景观斑块指数按 Inversion_Results 解析",
     "run_readiness_notes": [
-      "数据源: I:/Geograph_DataSet/Auxiliary/Landscape_Metrics_9km.tif"
+      "数据源: 景观多样性指数 SHDI（9km，2020）"
     ],
     "data_owner": "Lab",
     "temporal_coverage": "Static Auxiliary Baseline"
+  },
+  {
+    "layer_id": "aridity-cn",
+    "dataset_key": "aridity_index_cn",
+    "display_name": "干旱指数 AI",
+    "description": "中国区域干旱指数（P/PET）0.25° 网格产品。",
+    "category": "climate",
+    "source_type": "algorithm_output",
+    "render_type": "raster",
+    "supported_map_modes": [
+      "2d"
+    ],
+    "supports_time": false,
+    "is_realtime": false,
+    "default_visible": false,
+    "status": "available",
+    "time_granularity": "static",
+    "default_time_offset": 0,
+    "extent": {
+      "west": 73.0,
+      "south": 15.0,
+      "east": 137.0,
+      "north": 59.0,
+      "crs": "EPSG:4326"
+    },
+    "style": {
+      "palette": "brg",
+      "unit_label": "AI",
+      "opacity": 0.8
+    },
+    "capabilities": {
+      "render_strategy": "workflow_map_layer",
+      "data_domain": "climate",
+      "paint_mode": "grid_fill"
+    },
+    "tags": [
+      "aridity",
+      "climate",
+      "frontend-aligned"
+    ],
+    "engine": "overlay_registry",
+    "run_readiness_summary": "干旱指数 AI 叠加层已注册",
+    "temporal_coverage": "Static Climate Product"
+  },
+  {
+    "layer_id": "gpcp-precip-ts",
+    "dataset_key": "gpcp_v32_monthly",
+    "display_name": "GPCP 月降水时间序列",
+    "description": "GPCP V3.2 月降水时间序列（采样月份）。",
+    "category": "climate",
+    "source_type": "algorithm_output",
+    "render_type": "raster",
+    "supported_map_modes": [
+      "2d"
+    ],
+    "supports_time": true,
+    "is_realtime": false,
+    "default_visible": false,
+    "status": "available",
+    "time_granularity": "month",
+    "default_time_offset": 0,
+    "extent": {
+      "west": -180.0,
+      "south": -90.0,
+      "east": 180.0,
+      "north": 90.0,
+      "crs": "EPSG:4326"
+    },
+    "style": {
+      "palette": "blues",
+      "unit_label": "mm/month",
+      "opacity": 0.8
+    },
+    "capabilities": {
+      "render_strategy": "workflow_map_layer",
+      "data_domain": "climate",
+      "paint_mode": "grid_fill"
+    },
+    "tags": [
+      "gpcp",
+      "precipitation",
+      "timeseries",
+      "frontend-aligned"
+    ],
+    "engine": "overlay_registry",
+    "run_readiness_summary": "GPCP 月降水时间序列已注册",
+    "temporal_coverage": "Monthly sample series"
+  },
+  {
+    "layer_id": "cmfd-precip-cn",
+    "dataset_key": "cmfd_precip_cn",
+    "display_name": "CMFD 中国区域降水",
+    "description": "CMFD 中国区域降水栅格（示例时段 2002-01）。",
+    "category": "climate",
+    "source_type": "algorithm_output",
+    "render_type": "raster",
+    "supported_map_modes": [
+      "2d"
+    ],
+    "supports_time": false,
+    "is_realtime": false,
+    "default_visible": false,
+    "status": "available",
+    "time_granularity": "static",
+    "default_time_offset": 0,
+    "extent": {
+      "west": 73.0,
+      "south": 15.0,
+      "east": 137.0,
+      "north": 59.0,
+      "crs": "EPSG:4326"
+    },
+    "style": {
+      "palette": "YlGnBu",
+      "unit_label": "mm",
+      "opacity": 0.8
+    },
+    "capabilities": {
+      "render_strategy": "workflow_map_layer",
+      "data_domain": "climate",
+      "paint_mode": "grid_fill"
+    },
+    "tags": [
+      "cmfd",
+      "precipitation",
+      "frontend-aligned"
+    ],
+    "engine": "overlay_registry",
+    "run_readiness_summary": "CMFD 降水叠加层已注册",
+    "temporal_coverage": "2002-01 sample"
+  },
+  {
+    "layer_id": "era5-dwaa-cn",
+    "dataset_key": "era5_dwaa_smci_2020",
+    "display_name": "ERA5 白天热浪事件（2020）",
+    "description": "ERA5 DWAA SMCI 2020 白天热浪事件次数。",
+    "category": "climate",
+    "source_type": "algorithm_output",
+    "render_type": "raster",
+    "supported_map_modes": [
+      "2d"
+    ],
+    "supports_time": false,
+    "is_realtime": false,
+    "default_visible": false,
+    "status": "available",
+    "time_granularity": "static",
+    "default_time_offset": 0,
+    "extent": {
+      "west": 73.0,
+      "south": 15.0,
+      "east": 137.0,
+      "north": 59.0,
+      "crs": "EPSG:4326"
+    },
+    "style": {
+      "palette": "YlOrRd",
+      "unit_label": "events",
+      "opacity": 0.8
+    },
+    "capabilities": {
+      "render_strategy": "workflow_map_layer",
+      "data_domain": "climate",
+      "paint_mode": "grid_fill"
+    },
+    "tags": [
+      "era5",
+      "heatwave",
+      "dwaa",
+      "frontend-aligned"
+    ],
+    "engine": "overlay_registry",
+    "run_readiness_summary": "ERA5 白天热浪叠加层已注册",
+    "temporal_coverage": "2020"
+  },
+  {
+    "layer_id": "era5-wdaa-cn",
+    "dataset_key": "era5_wdaa_smci_2020",
+    "display_name": "ERA5 夜间热浪事件（2020）",
+    "description": "ERA5 WDAA SMCI 2020 夜间热浪事件次数。",
+    "category": "climate",
+    "source_type": "algorithm_output",
+    "render_type": "raster",
+    "supported_map_modes": [
+      "2d"
+    ],
+    "supports_time": false,
+    "is_realtime": false,
+    "default_visible": false,
+    "status": "available",
+    "time_granularity": "static",
+    "default_time_offset": 0,
+    "extent": {
+      "west": 73.0,
+      "south": 15.0,
+      "east": 137.0,
+      "north": 59.0,
+      "crs": "EPSG:4326"
+    },
+    "style": {
+      "palette": "YlGnBu",
+      "unit_label": "events",
+      "opacity": 0.8
+    },
+    "capabilities": {
+      "render_strategy": "workflow_map_layer",
+      "data_domain": "climate",
+      "paint_mode": "grid_fill"
+    },
+    "tags": [
+      "era5",
+      "heatwave",
+      "wdaa",
+      "frontend-aligned"
+    ],
+    "engine": "overlay_registry",
+    "run_readiness_summary": "ERA5 夜间热浪叠加层已注册",
+    "temporal_coverage": "2020"
+  },
+  {
+    "layer_id": "co2-cn",
+    "dataset_key": "gosat_midlayer_co2",
+    "display_name": "GOSAT 中层 CO₂ 柱浓度",
+    "description": "GOSAT 中层 CO₂ 柱浓度均值产品。",
+    "category": "climate",
+    "source_type": "algorithm_output",
+    "render_type": "raster",
+    "supported_map_modes": [
+      "2d"
+    ],
+    "supports_time": false,
+    "is_realtime": false,
+    "default_visible": false,
+    "status": "available",
+    "time_granularity": "static",
+    "default_time_offset": 0,
+    "extent": {
+      "west": 73.0,
+      "south": 15.0,
+      "east": 137.0,
+      "north": 59.0,
+      "crs": "EPSG:4326"
+    },
+    "style": {
+      "palette": "RdYlGn_r",
+      "unit_label": "ppm",
+      "opacity": 0.8
+    },
+    "capabilities": {
+      "render_strategy": "workflow_map_layer",
+      "data_domain": "climate",
+      "paint_mode": "grid_fill"
+    },
+    "tags": [
+      "co2",
+      "gosat",
+      "frontend-aligned"
+    ],
+    "engine": "overlay_registry",
+    "run_readiness_summary": "CO₂ 柱浓度叠加层已注册",
+    "temporal_coverage": "Static Mean Product"
   }
 ]

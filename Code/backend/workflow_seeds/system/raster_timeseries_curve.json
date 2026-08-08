@@ -1,0 +1,56 @@
+{
+  "_meta": {
+    "kind": "system",
+    "engine": "python_provider",
+    "name": "Raster timeseries curve (generic)",
+    "description": "3D numeric stack (time, y, x) → module/statistics(mode=timeseries) → viz/chart_generate line chart. Set data/source.path to the stack file.",
+    "author": "system",
+    "readonly": true,
+    "is_template": true,
+    "linked_layer_id": null,
+    "tags": ["analysis", "timeseries", "chart", "raster"],
+    "category": "analysis"
+  },
+  "workflow_id": "raster_timeseries_curve",
+  "name": "Raster timeseries curve (generic)",
+  "description": "data/source → module/statistics(mode=timeseries) → viz/chart_generate",
+  "nodes": [
+    {
+      "id": 1,
+      "type": "data/source",
+      "pos": [80, 160],
+      "properties": {
+        "path": "{DATA_ROOT}",
+        "dataset_key": "input_path",
+        "notes": "3D stack file (time, lat, lon)"
+      }
+    },
+    {
+      "id": 2,
+      "type": "module/statistics",
+      "pos": [420, 160],
+      "properties": {
+        "mode": "timeseries",
+        "variable": "",
+        "zones_source": "",
+        "output_dir": ""
+      }
+    },
+    {
+      "id": 3,
+      "type": "viz/chart_generate",
+      "pos": [720, 160],
+      "properties": {
+        "chart_type": "line",
+        "title": "Timeseries Mean",
+        "x_label": "time_index",
+        "y_label": "mean",
+        "write_png": true
+      }
+    }
+  ],
+  "links": [
+    [1, 1, 2, 2, 2],
+    [2, 2, 0, 3, 2]
+  ]
+}

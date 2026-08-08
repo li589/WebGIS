@@ -16,10 +16,7 @@ import {
 } from '../utils/timeline-play'
 
 export type { TileSourceId } from '../services/api-config'
-export {
-  DEFAULT_PLAY_INTERVAL_MS,
-  TIMELINE_PLAY_INTERVAL_OPTIONS,
-} from '../utils/timeline-play'
+export { DEFAULT_PLAY_INTERVAL_MS, TIMELINE_PLAY_INTERVAL_OPTIONS } from '../utils/timeline-play'
 
 /** 地图交互模式：移动（拖动视角）/ 选择（点击查询点气象）/ 测量（路径规划与测距） */
 export type InteractionMode = 'move' | 'select' | 'measure'
@@ -226,10 +223,7 @@ export const useUiStore = defineStore('ui', () => {
   }
 
   /** 记住某图层最近使用的日期+钟点（仅非统一模式且未被单独锁定时有效） */
-  function rememberLayerTime(
-    catalogId: string | null | undefined,
-    options?: { force?: boolean },
-  ) {
+  function rememberLayerTime(catalogId: string | null | undefined, options?: { force?: boolean }) {
     if (!catalogId) return
     if (!options?.force && (unifiedTimeLock.value || isLayerTimeLocked(catalogId))) return
     layerTimeMemory.value = {
@@ -256,6 +250,13 @@ export const useUiStore = defineStore('ui', () => {
   function applyDateHour(date: Date, hour: number) {
     currentDate.value = date
     setHour(hour)
+  }
+
+  /** 按选中层原生步长切换时间轴粒度（hour/day/month/year） */
+  function applyTimelineFromLayerGranularity(
+    granularity: 'hour' | 'day' | 'month' | 'year' | 'static',
+  ) {
+    setTimelineGranularity(granularity)
   }
 
   function setInteractionMode(mode: InteractionMode) {
@@ -333,6 +334,7 @@ export const useUiStore = defineStore('ui', () => {
     rememberLayerTime,
     restoreLayerTime,
     applyDateHour,
+    applyTimelineFromLayerGranularity,
     setInteractionMode,
     addMeasurePoint,
     undoLastMeasurePoint,

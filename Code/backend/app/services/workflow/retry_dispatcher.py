@@ -20,6 +20,10 @@ from typing import Callable
 
 from app.services.workflow_repository import SQLiteWorkflowRepository
 from app.services.workflow.persistence_service import WorkflowPersistenceService
+from app.services.workflow.reuse_cache import (
+    inject_retry_reuse_params,
+    resolve_reuse_output_dir,
+)
 from app.services.workflow.transition_builder import WorkflowTransitionBuilder
 from shared.contracts.api_contracts import (
     WorkflowAcceptedResponse,
@@ -63,10 +67,25 @@ class RetryDispatcher:
             raise ValueError(f"Cannot retry: no request found for run {run_id}")
 
         payload = WorkflowSubmitRequest.model_validate_json(request_json)
+        reuse_output_dir, _module = resolve_reuse_output_dir(self._repository, run_id)
+        if reuse_output_dir:
+            payload_dict = payload.model_dump(mode="json")
+            merged = inject_retry_reuse_params(
+                payload_dict, reuse_output_dir=reuse_output_dir
+            )
+            payload = WorkflowSubmitRequest.model_validate(merged)
+
         new_response = self._submit_fn(payload)
         new_run = self._repository.get_run(new_response.run_id)
 
         if new_run:
+            retry_meta: dict[str, object] = {
+                **new_run.executor_metadata,
+                "retry_of_run_id": run_id,
+            }
+            if reuse_output_dir:
+                retry_meta["reuse_block_cache"] = True
+                retry_meta["reuse_output_dir"] = reuse_output_dir
             self._persistence.save_run_status(
                 run_status=self._transitions.build_execution_transition(
                     run_id=new_response.run_id,
@@ -79,10 +98,7 @@ class RetryDispatcher:
                     result_refs=new_run.result_refs,
                     result_dto=new_run.result_dto,
                     diagnostics=new_run.diagnostics,
-                    executor_metadata={
-                        **new_run.executor_metadata,
-                        "retry_of_run_id": run_id,
-                    },
+                    executor_metadata=retry_meta,
                 )
             )
         return new_response

@@ -4,7 +4,7 @@
  * 纯函数，无状态。负责把多个标准瓦片 GeoJSON 合并成一份 FeatureCollection，
  * 用于风场粒子流/等值线/风羽等 Canvas 叠加层统一渲染。
  */
-import type { WindGeoJSON, WindGeoJSONFeature } from '../components/map/types'
+import type { WindGeoJSON, WindGeoJSONFeature } from '../types/map-geo'
 import {
   pointInTileHalfOpen,
   type LngLatBounds as LatticeBounds,
@@ -138,6 +138,42 @@ export function mergeWeatherTiles(
     type: 'FeatureCollection',
     features,
   }
+}
+
+/** 轴对齐 bbox 是否与视口相交（视口 east 可 >180）。
+ * 半开相交 + 仅试 ±360 副本，禁止「while x0 < west 无脑 +360」把美洲瓦片卷入亚太弧。
+ */
+export function tileBoundsOverlapViewport(tile: LngLatBounds, viewport: LngLatBounds): boolean {
+  if (tile.north < viewport.south || tile.south > viewport.north) return false
+  const vw = viewport.west
+  let ve = viewport.east
+  if (ve < vw) ve += 360
+  const span = ve - vw
+  if (span >= 360) return true
+  const candidates: Array<[number, number]> = [
+    [tile.west, tile.east],
+    [tile.west + 360, tile.east + 360],
+    [tile.west - 360, tile.east - 360],
+  ]
+  for (const [x0, x1] of candidates) {
+    // 半开：右缘贴视口西缘 / 左缘贴视口东缘不算相交
+    if (x1 > vw && x0 < ve) return true
+  }
+  return false
+}
+
+/** center 是否落在视口经度连续弧内（east 可 >180） */
+export function centerInLngBounds(
+  centerLng: number,
+  bounds: { west: number; east: number },
+): boolean {
+  const w = bounds.west
+  let e = bounds.east
+  if (e < w) e += 360
+  let c = centerLng
+  while (c < w) c += 360
+  while (c >= w + 360) c -= 360
+  return c >= w && c <= e
 }
 
 /** 计算瓦片集合的合并 bbox（用于 canvas layout；经度展开防日界线塌缩）。 */

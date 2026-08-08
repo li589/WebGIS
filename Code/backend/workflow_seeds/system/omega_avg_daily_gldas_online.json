@@ -3,81 +3,118 @@
     "kind": "system",
     "engine": "python_provider",
     "name": "avg-ω 逐日反演（GLDAS 在线拉取 + DUAL 双温度）",
-    "description": "目的：在线拉取 GLDAS NOAH025_3H 温度场（Ts_gldas/Tsoil1_gldas/Tsoil2_gldas）→ 解压 → D2 avg-omega 逐日反演（DUAL 双温度方案，Ct/TG 由 GLDAS 计算）。前置：earthdata 凭证（cred_profile=earthdata，可访问 GES-DISC）；D1 omega_block 已产出；SMAP/anc/NDVI 本地就绪。产出：目标年逐日 SM/VOD/OMEGA .mat。本种子为模板：relative_path 用 YYYY/MMDD 占位符，运行前替换为目标日期。注意：GLDAS .nc4 → .mat 预处理（对应 B 类脚本）当前不在 D2 主链，需用户在实例化时补 h5/nc4→mat 转换节点或预先落盘 .mat。",
+    "description": "目的：经 gldas_download 在线拉取 GLDAS NOAH025_3H（.nc4）并由 gldas_nc4_to_mat 转为 DUAL 温度 .mat，再与本地 D1/SMAP/anc/NDVI 一并接入 D2 avg-omega。前置：earthdata 凭证；D1 omega_block 已产出。",
     "author": "system",
     "readonly": true,
     "is_template": true,
     "linked_layer_id": "omega-avg-daily",
     "tags": [
       "pipeline",
-      "omega_avg"
+      "omega_avg",
+      "gldas_online"
     ],
     "category": "inversion"
   },
   "workflow_id": "omega_avg_daily_gldas_online",
   "name": "avg-ω 逐日反演（GLDAS 在线拉取 + DUAL 双温度）",
-  "description": "nasa_gldas 在线拉取 + earthdata 凭证 → archive_extract → D2 avg-omega 逐日反演（DUAL）。",
+  "description": "gldas_download（GES DISC / earthdata）→ gldas_nc4_to_mat（Ts_gldas/Tsoil*）→ D2 avg-omega DUAL；本地 D1/SMAP/anc/NDVI 数据源并联。",
   "nodes": [
     {
       "id": 1,
-      "type": "download/http_open_data",
-      "pos": [
-        80,
-        140
-      ],
+      "type": "download/gldas_download",
+      "pos": [80, 80],
       "properties": {
-        "preset": "nasa_gldas",
-        "relative_path": "GLDAS_NOAH025_3H.2.1/YYYY/MMDD/*.nc4",
-        "cred_profile": "earthdata",
-        "force_refresh": false
+        "start_date": "20251227",
+        "end_date": "20251231",
+        "local_dir": "{DATA_ROOT_WIN}\\Meteorological\\Weather\\GLDAS_Download",
+        "version": "2.1",
+        "short_name": "GLDAS_NOAH025_3H",
+        "dry_run": false,
+        "max_files": 8
+      }
+    },
+    {
+      "id": 9,
+      "type": "download/gldas_nc4_to_mat",
+      "pos": [320, 80],
+      "properties": {
+        "input_dir": "{DATA_ROOT_WIN}\\Meteorological\\Weather\\GLDAS_Download",
+        "output_dir": "{DATA_ROOT_WIN}\\Meteorological\\Weather\\GLDAS",
+        "ancillary_mat": "{DATA_ROOT_WIN}\\Soil_Moisture\\SMAP_Auxiliary_Data\\IGBP_9km_12.mat",
+        "skip_existing": true,
+        "dry_run": false,
+        "max_files": 8
       }
     },
     {
       "id": 2,
-      "type": "archive/extract",
-      "pos": [
-        400,
-        140
-      ],
+      "type": "data/source",
+      "pos": [80, 280],
       "properties": {
-        "member_glob": "*.nc4",
-        "recurse_once": true,
-        "output_dirname": "gldas_extracted"
+        "path": "Inversion_Results/omega_block",
+        "dataset_key": "omega_block_output",
+        "notes": "D1 omega_block 输出目录"
       }
     },
     {
       "id": 3,
-      "type": "extract/variable",
-      "pos": [
-        720,
-        140
-      ],
+      "type": "data/source",
+      "pos": [80, 440],
       "properties": {
-        "variable": "Ts_gldas,Tsoil1_gldas,Tsoil2_gldas"
+        "path": "Soil_Moisture/SMAP_Origin_Data",
+        "dataset_key": "smap_daily_mat",
+        "notes": "逐日 SMAP .mat"
       }
     },
     {
       "id": 4,
+      "type": "data/source",
+      "pos": [80, 600],
+      "properties": {
+        "path": "Soil_Moisture/SMAP_Auxiliary_Data",
+        "dataset_key": "ancillary_mat",
+        "notes": "静态辅助库"
+      }
+    },
+    {
+      "id": 5,
+      "type": "data/source",
+      "pos": [80, 760],
+      "properties": {
+        "path": "Ecological_Vegetation/NDVI/climatology",
+        "dataset_key": "ndvi_clim_folder",
+        "notes": "NDVI DOY 气候态"
+      }
+    },
+    {
+      "id": 6,
+      "type": "data/source",
+      "pos": [80, 920],
+      "properties": {
+        "path": "Meteorological/Weather/GLDAS",
+        "dataset_key": "gldas_mat",
+        "notes": "本地 GLDAS .mat（若已转好）；在线 nc4 目录由 gldas_download.path 提供，转 mat 后可指向同目录"
+      }
+    },
+    {
+      "id": 7,
       "type": "module/omega_avg_daily",
-      "pos": [
-        1040,
-        140
-      ],
+      "pos": [560, 400],
       "properties": {
         "module_name": "omega_avg_daily",
         "task_type": "omega_avg_daily",
         "algorithm_params": {
-          "target_year": 2023,
+          "target_year": 2025,
           "tb_source": "SMAP",
           "sm_source": "SMAP",
           "temp_scheme": "DUAL",
-          "ndvi_mode": "DAILY_FILE",
+          "ndvi_mode": "DOY_CLIM",
           "sf_mode": "STATIC",
           "use_gldas_template": true,
           "dual_tg_mode": "PAPER_CT",
           "ct_smref": 0.3,
           "ct_exp": 0.3,
-          "avg_build_start_year": 2015,
+          "avg_build_start_year": 2025,
           "avg_build_end_year": 2025,
           "freq_ghz": 1.4,
           "lambda_tau": 20.0,
@@ -85,45 +122,39 @@
           "enable_parallel": true
         }
       }
+    },
+    {
+      "id": 8,
+      "type": "data/time_range",
+      "pos": [80, -40],
+      "properties": {
+        "start_at": "2025-12-27T00:00:00",
+        "end_at": "2025-12-31T00:00:00",
+        "resolution_unit": "day",
+        "resolution_step": 1,
+        "granularity": "day",
+        "bind_timeline": true,
+        "timezone": "UTC"
+      }
     }
   ],
   "links": [
-    {
-      "0": 1,
-      "1": 1,
-      "2": 0,
-      "3": 2,
-      "4": 0,
-      "5": "value:string"
-    },
-    {
-      "0": 2,
-      "1": 2,
-      "2": 0,
-      "3": 3,
-      "4": 0,
-      "5": "value:string"
-    },
-    {
-      "0": 3,
-      "1": 3,
-      "2": 0,
-      "3": 4,
-      "4": 2,
-      "5": "value:string"
-    }
+    {"0": 1, "1": 1, "2": 0, "3": 7, "4": 2, "5": "value:string"},
+    {"0": 7, "1": 9, "2": 0, "3": 7, "4": 2, "5": "value:string"},
+    {"0": 2, "1": 2, "2": 0, "3": 7, "4": 2, "5": "value:string"},
+    {"0": 3, "1": 3, "2": 0, "3": 7, "4": 2, "5": "value:string"},
+    {"0": 4, "1": 4, "2": 0, "3": 7, "4": 2, "5": "value:string"},
+    {"0": 5, "1": 5, "2": 0, "3": 7, "4": 2, "5": "value:string"},
+    {"0": 6, "1": 6, "2": 0, "3": 7, "4": 2, "5": "value:string"}
   ],
   "extra": {
     "purpose": "online_gldas_pipeline",
     "scheme": "SMAP_SINGLE_DUAL_TEMP_ONLINE_GLDAS",
     "portal": "nasa_gldas",
     "cred_profile": "earthdata",
-    "pipeline": "online GLDAS download → extract → D2 DDCA (DUAL, Ct/TG from GLDAS)",
-    "prerequisite": "earthdata 凭证 + D1 omega_block + 本地 SMAP/anc/NDVI .mat",
-    "outputs": [
-      "SM",
-      "OMEGA"
-    ],
-    "notes": "模板种子：relative_path 含 YYYY/MMDD 占位符，运行前替换。GLDAS .nc4 需转 .mat（B 类预处理脚本）方可被 build_daily_bundle_for_date 读取；当前 D2 主链假定 gldas_folder 已含 YYYYMMDD_HHMM.mat。"
+    "pipeline": "gldas_download → gldas_nc4_to_mat → (+ local D1/SMAP/anc/NDVI) → omega_avg_daily DUAL",
+    "prerequisite": "earthdata 凭证 + D1 omega_block；gldas_nc4_to_mat 产出 Ts_gldas/Tsoil1_gldas/Tsoil2_gldas",
+    "outputs": ["SM", "OMEGA"],
+    "notes": "种子内置 nc4→mat 转换节点；科学跑通仍需真实 D1 与足够时段 GLDAS .mat。"
   }
 }

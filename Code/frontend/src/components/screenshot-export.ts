@@ -168,12 +168,30 @@ export function pinLayoutsForCapture(root: HTMLElement): () => void {
   return stampLayoutMeasurements(root)
 }
 
+/**
+ * html2canvas cannot parse CSS Color Level 4 / color-mix.
+ * Prefer browser-resolved rgb/rgba from getComputedStyle; strip unsafe values.
+ */
+const UNSUPPORTED_CSS_COLOR_RE = /\b(?:color-mix|color|lab|lch|oklab|oklch|hwb)\s*\(/i
+
+export function sanitizeCssColorForHtml2Canvas(value: string | null | undefined): string {
+  if (!value) return ''
+  const trimmed = value.trim()
+  if (!trimmed || trimmed === 'none' || trimmed === 'transparent') return trimmed
+  if (UNSUPPORTED_CSS_COLOR_RE.test(trimmed)) {
+    return ''
+  }
+  return trimmed
+}
+
 function copyPaintFromComputed(style: CSSStyleDeclaration): Array<[string, string]> {
+  const safeColor = sanitizeCssColorForHtml2Canvas(style.color)
+  const safeBg = sanitizeCssColorForHtml2Canvas(style.backgroundColor)
   const props: Array<[string, string]> = [
     ['box-shadow', style.boxShadow],
     ['border', style.border],
     ['border-radius', style.borderRadius],
-    ['color', style.color],
+    ['color', safeColor],
     ['opacity', style.opacity],
     ['outline', style.outline],
   ]
@@ -183,14 +201,168 @@ function copyPaintFromComputed(style: CSSStyleDeclaration): Array<[string, strin
   props.push(['filter', style.filter === 'none' ? 'none' : style.filter])
 
   // Provide a clean translucent background for UI panels.
-  const bg = style.backgroundColor
   const isClear =
-    !bg || bg === 'transparent' || bg === 'rgba(0, 0, 0, 0)' || bg === 'rgba(0,0,0,0)'
+    !safeBg ||
+    safeBg === 'transparent' ||
+    safeBg === 'rgba(0, 0, 0, 0)' ||
+    safeBg === 'rgba(0,0,0,0)'
   if (isClear && style.backdropFilter && style.backdropFilter !== 'none') {
     props.push(['background-color', 'rgba(8, 18, 33, 0.92)'])
     props.push(['background-image', 'none'])
+  } else if (safeBg) {
+    props.push(['background-color', safeBg])
   }
   return props
+}
+
+function scrubStyleDeclaration(style: CSSStyleDeclaration): void {
+  for (let i = style.length - 1; i >= 0; i -= 1) {
+    const prop = style.item(i)
+    if (!prop) continue
+    const value = style.getPropertyValue(prop)
+    if (value && UNSUPPORTED_CSS_COLOR_RE.test(value)) {
+      style.removeProperty(prop)
+    }
+  }
+}
+
+function scrubCssRules(rules: CSSRuleList): void {
+  for (let i = rules.length - 1; i >= 0; i -= 1) {
+    const rule = rules.item(i)
+    if (!rule) continue
+    if (rule instanceof CSSStyleRule) {
+      scrubStyleDeclaration(rule.style)
+      continue
+    }
+    // @media / @supports / @layer groupings
+    const grouped = rule as CSSGroupingRule
+    if (typeof grouped.cssRules !== 'undefined') {
+      try {
+        scrubCssRules(grouped.cssRules)
+      } catch {
+        // ignore unreadable nested rules
+      }
+    }
+  }
+}
+
+/**
+ * Neutralize unsupported color functions in clone stylesheets + inline styles.
+ * html2canvas reads raw CSS text (including `color-mix(...)`) and throws.
+ */
+export function scrubUnsupportedCssColorsInClone(root: HTMLElement | Document): void {
+  const COLOR_PROPS = [
+    'color',
+    'background-color',
+    'border-color',
+    'border-top-color',
+    'border-right-color',
+    'border-bottom-color',
+    'border-left-color',
+    'outline-color',
+    'fill',
+    'stroke',
+    'box-shadow',
+    'text-shadow',
+    'background',
+    'border',
+    'outline',
+  ] as const
+
+  const isElement = (node: unknown): node is HTMLElement =>
+    !!node &&
+    typeof node === 'object' &&
+    'style' in (node as object) &&
+    typeof (node as HTMLElement).style?.getPropertyValue === 'function'
+
+  const visit = (el: HTMLElement) => {
+    for (const prop of COLOR_PROPS) {
+      const inline = el.style.getPropertyValue(prop)
+      if (inline && UNSUPPORTED_CSS_COLOR_RE.test(inline)) {
+        el.style.removeProperty(prop)
+      }
+    }
+    // Catch any other inline property carrying color-mix / color()
+    scrubStyleDeclaration(el.style)
+  }
+
+  if (isElement(root)) visit(root)
+  const nodes =
+    typeof (root as Document).querySelectorAll === 'function'
+      ? (root as Document | HTMLElement).querySelectorAll('*')
+      : []
+  nodes.forEach((node) => {
+    if (isElement(node)) visit(node)
+  })
+
+  const doc =
+    typeof Document !== 'undefined' && root instanceof Document
+      ? root
+      : isElement(root)
+        ? root.ownerDocument
+        : null
+  if (!doc) return
+
+  // Rewrite <style> text — CSSOM scrub alone is unreliable with Vue scoped sheets.
+  doc.querySelectorAll?.('style').forEach((node) => {
+    const el = node as HTMLStyleElement
+    const css = el.textContent || ''
+    if (!UNSUPPORTED_CSS_COLOR_RE.test(css)) return
+    el.textContent = stripUnsupportedColorFunctionsFromCss(css)
+  })
+
+  const sheets = doc.styleSheets
+  if (!sheets) return
+  for (const sheet of Array.from(sheets)) {
+    try {
+      if (sheet.cssRules) scrubCssRules(sheet.cssRules)
+    } catch {
+      // Cross-origin / unreadable sheets — ignore
+    }
+  }
+}
+
+/** Replace color-mix()/color()/oklch() tokens with transparent (paren-balanced). */
+export function stripUnsupportedColorFunctionsFromCss(css: string): string {
+  const names = ['color-mix', 'oklch', 'oklab', 'lab', 'lch', 'hwb', 'color']
+  let out = css
+  for (const name of names) {
+    const lower = out.toLowerCase()
+    const token = `${name}(`
+    let i = 0
+    let built = ''
+    while (i < out.length) {
+      const idx = lower.indexOf(token, i)
+      if (idx === -1) {
+        built += out.slice(i)
+        break
+      }
+      // Don't treat color-mix as color(
+      if (name === 'color' && lower.slice(idx, idx + 'color-mix('.length) === 'color-mix(') {
+        built += out.slice(i, idx + 1)
+        i = idx + 1
+        continue
+      }
+      built += out.slice(i, idx)
+      let depth = 0
+      let j = idx + token.length - 1
+      for (; j < out.length; j += 1) {
+        const ch = out[j]
+        if (ch === '(') depth += 1
+        else if (ch === ')') {
+          depth -= 1
+          if (depth === 0) {
+            j += 1
+            break
+          }
+        }
+      }
+      built += 'transparent'
+      i = j
+    }
+    out = built
+  }
+  return out
 }
 
 /**
@@ -265,6 +437,9 @@ export function prepareCloneForCapture(
     clonedRoot.style.setProperty('background-color', 'transparent', 'important')
     clonedRoot.style.setProperty('background-image', 'none', 'important')
   }
+
+  // Strip CSS Color Level 4 functions that crash html2canvas's parser.
+  scrubUnsupportedCssColorsInClone(clonedDoc)
 
   if (options.mode === 'pure') {
     const clonedStage = clonedDoc.querySelector('.map-stage') as HTMLElement | null
@@ -374,13 +549,7 @@ export async function compositeMapUnderUi(
   if (mapSnapshot) {
     try {
       const mapImage = await loadImage(mapSnapshot.dataUrl)
-      ctx.drawImage(
-        mapImage,
-        mapSnapshot.dx,
-        mapSnapshot.dy,
-        mapSnapshot.dw,
-        mapSnapshot.dh,
-      )
+      ctx.drawImage(mapImage, mapSnapshot.dx, mapSnapshot.dy, mapSnapshot.dw, mapSnapshot.dh)
     } catch (err) {
       console.warn('[ScreenshotExport] Failed to load map snapshot image:', err)
     }

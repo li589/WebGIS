@@ -5,13 +5,15 @@
  */
 import { ref } from 'vue'
 
-import type { WindDisplayMode } from '../../components/map/wind-display-mode'
+import type { WindDisplayMode } from '../../types/wind-display'
+import { getMapDefaults } from '../../services/map-defaults'
 import type { BoundingBox } from '../../services/runtime-api'
 
 const VIEWPORT_DEBOUNCE_MS = 500
-const WEATHER_VIEWPORT_DEBOUNCE_MS = 200
-/** 防抖上限：即使持续缩放，最多等 600ms 后必须触发 setViewport */
-const WEATHER_VIEWPORT_MAX_WAIT_MS = 600
+/** 手势中途防抖：连续 zoom/move 合并；正确性靠 live-read + end immediate flush */
+const WEATHER_VIEWPORT_DEBOUNCE_MS = 120
+/** 防抖上限：即使持续缩放，最多等 400ms 后必须触发 setViewport */
+const WEATHER_VIEWPORT_MAX_WAIT_MS = 400
 /** Zoom-out 快速防抖：缩小视口时更快触发瓦片调度，减少新区域空白等待 */
 const WEATHER_VIEWPORT_ZOOMOUT_DEBOUNCE_MS = 80
 const WEATHER_VIEWPORT_ZOOMOUT_MAX_WAIT_MS = 250
@@ -22,6 +24,11 @@ export interface WeatherViewportActiveLayer {
   catalogId: string
   visible: boolean
   jobLayer?: unknown
+}
+
+export interface SetMapViewportOptions {
+  /** 手势结束时立即推送视口，跳过防抖 */
+  immediate?: boolean
 }
 
 export interface WeatherViewportSliceDeps {
@@ -60,9 +67,13 @@ export function createWeatherViewportSlice(deps: WeatherViewportSliceDeps) {
   const weatherViewportDebounceTimer = ref<number | null>(null)
   let weatherViewportMaxWaitTimer: ReturnType<typeof setTimeout> | null = null
 
-  const currentMapCenter = ref<{ lng: number; lat: number }>({ lng: 113.2644, lat: 23.1291 })
+  const mapBoot = getMapDefaults()
+  const currentMapCenter = ref<{ lng: number; lat: number }>({
+    lng: mapBoot.longitude,
+    lat: mapBoot.latitude,
+  })
   const currentMapBBox = ref<BoundingBox | null>(null)
-  const currentMapZoom = ref(4.8)
+  const currentMapZoom = ref(mapBoot.zoom)
 
   /** 平滑渲染：开=WebGL 双线性连续数值面（含风场「网格」色底）；关=网格色块。
    *  默认开；WebGL 不可用时回退网格。变化经 weather-overlay-watcher 触发 sync。 */
@@ -128,7 +139,7 @@ export function createWeatherViewportSlice(deps: WeatherViewportSliceDeps) {
 
   function cancelWeatherViewportDebounce() {
     if (weatherViewportDebounceTimer.value !== null) {
-      window.clearTimeout(weatherViewportDebounceTimer.value)
+      clearTimeout(weatherViewportDebounceTimer.value)
       weatherViewportDebounceTimer.value = null
     }
     if (weatherViewportMaxWaitTimer !== null) {
@@ -137,9 +148,16 @@ export function createWeatherViewportSlice(deps: WeatherViewportSliceDeps) {
     }
   }
 
-  /** 立即把当前视口推给所有可见天气图层（小时变化等离散操作） */
-  function flushWeatherTileViewports(hour?: number) {
-    cancelWeatherViewportDebounce()
+  /**
+   * 推送当前 live 视口给所有可见天气图层。
+   * 必须读 currentMap* refs（勿闭包冻结 snap），否则 maxWait 会用过期视口清掉最新防抖。
+   */
+  function fireWeatherTileViewports(hour?: number) {
+    weatherViewportDebounceTimer.value = null
+    if (weatherViewportMaxWaitTimer !== null) {
+      clearTimeout(weatherViewportMaxWaitTimer)
+      weatherViewportMaxWaitTimer = null
+    }
     const h = hour ?? deps.getCurrentHour()
     for (const layer of deps.getActiveLayers()) {
       if (layer.visible && deps.isWeatherEngineLayer(layer.catalogId)) {
@@ -154,6 +172,12 @@ export function createWeatherViewportSlice(deps: WeatherViewportSliceDeps) {
         )
       }
     }
+  }
+
+  /** 立即把当前视口推给所有可见天气图层（小时变化等离散操作） */
+  function flushWeatherTileViewports(hour?: number) {
+    cancelWeatherViewportDebounce()
+    fireWeatherTileViewports(hour)
   }
 
   /** 处理视口变化：防抖后刷新活跃的地图型工作流（天气图层由 tile manager 处理） */
@@ -179,23 +203,24 @@ export function createWeatherViewportSlice(deps: WeatherViewportSliceDeps) {
       currentMapBBox.value,
     )
     if (viewportDebounceTimer.value !== null) {
-      window.clearTimeout(viewportDebounceTimer.value)
+      clearTimeout(viewportDebounceTimer.value)
       viewportDebounceTimer.value = null
     }
 
-    viewportDebounceTimer.value = window.setTimeout(() => {
+    viewportDebounceTimer.value = setTimeout(() => {
       viewportDebounceTimer.value = null
       viewportRefreshEpoch += 1
       const epoch = viewportRefreshEpoch
       deps.onWorkflowViewportRefresh(epoch)
-    }, VIEWPORT_DEBOUNCE_MS)
+    }, VIEWPORT_DEBOUNCE_MS) as unknown as number
   }
 
-  /** 更新当前地图视口（中心点 + 可见 bbox + zoom），由 MapCanvas 在 moveend/zoomend 时调用 */
+  /** 更新当前地图视口（中心点 + 可见 bbox + zoom），由 MapCanvas 在 move/zoom/end 时调用 */
   function setMapViewport(
     center: { lng: number; lat: number },
     bbox: BoundingBox | null,
     zoom?: number,
+    options?: SetMapViewportOptions,
   ) {
     const bboxChanged = JSON.stringify(currentMapBBox.value) !== JSON.stringify(bbox)
     const prevZoom = currentMapZoom.value
@@ -209,53 +234,37 @@ export function createWeatherViewportSlice(deps: WeatherViewportSliceDeps) {
       .getActiveLayers()
       .some((layer) => layer.visible && deps.isWeatherEngineLayer(layer.catalogId))
     if (hasVisibleWeatherLayer) {
-      // Zoom-out 快速路径：缩小时用更短防抖，让新区域瓦片更快开始加载
-      const isZoomOut = typeof zoom === 'number' && prevZoom - zoom >= ZOOM_OUT_THRESHOLD
-      const debounceMs = isZoomOut
-        ? WEATHER_VIEWPORT_ZOOMOUT_DEBOUNCE_MS
-        : WEATHER_VIEWPORT_DEBOUNCE_MS
-      const maxWaitMs = isZoomOut
-        ? WEATHER_VIEWPORT_ZOOMOUT_MAX_WAIT_MS
-        : WEATHER_VIEWPORT_MAX_WAIT_MS
+      if (options?.immediate) {
+        flushWeatherTileViewports()
+      } else {
+        // Zoom-out 快速路径：缩小时用更短防抖，让新区域瓦片更快开始加载
+        const isZoomOut = typeof zoom === 'number' && prevZoom - zoom >= ZOOM_OUT_THRESHOLD
+        const debounceMs = isZoomOut
+          ? WEATHER_VIEWPORT_ZOOMOUT_DEBOUNCE_MS
+          : WEATHER_VIEWPORT_DEBOUNCE_MS
+        const maxWaitMs = isZoomOut
+          ? WEATHER_VIEWPORT_ZOOMOUT_MAX_WAIT_MS
+          : WEATHER_VIEWPORT_MAX_WAIT_MS
 
-      // 防抖 + maxWait：持续缩放时最多等 maxWaitMs 后必须触发 setViewport，
-      // 避免高频缩放导致防抖定时器不断重置、setViewport 永远不触发
-      if (weatherViewportDebounceTimer.value !== null) {
-        window.clearTimeout(weatherViewportDebounceTimer.value)
-      }
-      const snapCenter = center
-      const snapZoom = currentMapZoom.value
-      const snapHour = deps.getCurrentHour()
-      const snapBbox = bbox
-
-      const fireViewport = () => {
-        weatherViewportDebounceTimer.value = null
-        weatherViewportMaxWaitTimer = null
-        for (const layer of deps.getActiveLayers()) {
-          if (layer.visible && deps.isWeatherEngineLayer(layer.catalogId)) {
-            deps.setWeatherTileViewport(
-              layer.catalogId,
-              snapCenter,
-              snapZoom,
-              snapHour,
-              undefined,
-              snapBbox,
-              deps.weatherProviderArg(layer.catalogId),
-            )
-          }
+        // 防抖 + maxWait：持续缩放时最多等 maxWaitMs 后必须触发；
+        // fire 始终读 live refs，避免 maxWait 闭包用过期 snap 清掉最新防抖
+        if (weatherViewportDebounceTimer.value !== null) {
+          clearTimeout(weatherViewportDebounceTimer.value)
         }
-      }
 
-      weatherViewportDebounceTimer.value = window.setTimeout(fireViewport, debounceMs)
-      // maxWait 保证：首次设防抖时同时起 maxWait 定时器，
-      // 后续重置防抖不重置 maxWait，确保最多 maxWaitMs 后强制触发
-      if (weatherViewportMaxWaitTimer === null) {
-        weatherViewportMaxWaitTimer = setTimeout(() => {
-          if (weatherViewportDebounceTimer.value !== null) {
-            window.clearTimeout(weatherViewportDebounceTimer.value)
-            fireViewport()
-          }
-        }, maxWaitMs)
+        weatherViewportDebounceTimer.value = setTimeout(() => {
+          fireWeatherTileViewports()
+        }, debounceMs) as unknown as number
+        // maxWait 保证：首次设防抖时同时起 maxWait 定时器，
+        // 后续重置防抖不重置 maxWait，确保最多 maxWaitMs 后强制触发
+        if (weatherViewportMaxWaitTimer === null) {
+          weatherViewportMaxWaitTimer = setTimeout(() => {
+            if (weatherViewportDebounceTimer.value !== null) {
+              clearTimeout(weatherViewportDebounceTimer.value)
+              fireWeatherTileViewports()
+            }
+          }, maxWaitMs)
+        }
       }
     }
 

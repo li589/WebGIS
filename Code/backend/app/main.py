@@ -4,7 +4,9 @@ from contextlib import asynccontextmanager
 from uuid import uuid4
 
 from fastapi import FastAPI, Request
+from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
+from starlette.exceptions import HTTPException as StarletteHTTPException
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.routers import (
@@ -29,6 +31,7 @@ from app.api.routers.workflow_definition_router import (
 )
 from app.api.routers.workflow_timer_router import router as workflow_timer_router
 from app.api.routers.cleanup_router import router as cleanup_router
+from app.api.routers.auth_router import router as auth_router
 from app.core.config import settings
 from app.core.logging import ensure_logging_configured, log_context, set_request_id
 from app.core.redis_client import record_request_metric
@@ -93,11 +96,23 @@ async def lifespan(app: FastAPI):
 
     # 单一配置投影：env + DB api keys + runtime overrides
     try:
-        from app.services.effective_config import hydrate_effective_config
+        from app.services.effective_config import (
+            assert_data_root_policy,
+            hydrate_effective_config,
+        )
 
         hydrate_effective_config()
+        assert_data_root_policy()
     except Exception:
         logger.exception("Failed to hydrate effective config on startup")
+        raise
+
+    try:
+        from app.services.auth_bootstrap import bootstrap_auth
+
+        bootstrap_auth()
+    except Exception:
+        logger.exception("Failed to bootstrap user auth on startup")
         raise
 
     # 清理过期导入 staging（TTL 见 STAGING_TTL_SECONDS）
@@ -136,6 +151,53 @@ def create_app() -> FastAPI:
         allow_headers=["*"],
     )
 
+    # 发布就绪修复（P1-2）：/config 与 /import 写接口的 IP 级限流（超阈 429）。
+    # P0-10 产品定位决策：目标用户为课题组/研究院（访问量小），限流宽松化，
+    # 且 development/test 环境旁路（开发、调试时关闭 IP 限制），仅 production 生效。
+    @app.middleware("http")
+    async def write_rate_limit_middleware(request: Request, call_next):
+        from app.api.rate_limit import (
+            check_login_rate_limit,
+            check_weather_tile_rate_limit,
+            check_write_rate_limit,
+            client_ip,
+            should_rate_limit_login,
+            should_rate_limit_weather_tile,
+            should_rate_limit_write,
+        )
+
+        path = request.url.path
+        method = request.method
+        env = (settings.environment or "").lower()
+
+        if should_rate_limit_login(path, method):
+            if not check_login_rate_limit(client_ip(request)):
+                from fastapi.responses import JSONResponse
+
+                return JSONResponse(
+                    status_code=429,
+                    content={"detail": "登录尝试过于频繁，请稍后再试。"},
+                )
+
+        if env not in ("test", "testing", "development"):
+            if should_rate_limit_write(path, method):
+                if not check_write_rate_limit(client_ip(request)):
+                    from fastapi.responses import JSONResponse
+
+                    return JSONResponse(
+                        status_code=429,
+                        content={"detail": "写请求过于频繁，请稍后再试。"},
+                    )
+            if should_rate_limit_weather_tile(path, method):
+                if not check_weather_tile_rate_limit(client_ip(request)):
+                    from fastapi.responses import JSONResponse
+
+                    return JSONResponse(
+                        status_code=429,
+                        content={"detail": "天气瓦片请求过于频繁，请稍后再试。"},
+                    )
+        return await call_next(request)
+
     @app.middleware("http")
     async def request_context_middleware(request: Request, call_next):
         request_id = request.headers.get("x-request-id", f"req-{uuid4().hex[:12]}")
@@ -172,6 +234,24 @@ def create_app() -> FastAPI:
             finally:
                 set_request_id(None)
 
+    @app.exception_handler(StarletteHTTPException)
+    async def http_exception_handler(request: Request, exc: StarletteHTTPException):
+        request_id = getattr(request.state, "request_id", None)
+        return JSONResponse(
+            status_code=exc.status_code,
+            content={"detail": exc.detail, "request_id": request_id},
+        )
+
+    @app.exception_handler(RequestValidationError)
+    async def validation_exception_handler(
+        request: Request, exc: RequestValidationError
+    ):
+        request_id = getattr(request.state, "request_id", None)
+        return JSONResponse(
+            status_code=422,
+            content={"detail": exc.errors(), "request_id": request_id},
+        )
+
     @app.exception_handler(Exception)
     async def unhandled_exception_handler(request: Request, exc: Exception):
         request_id = getattr(request.state, "request_id", None)
@@ -183,6 +263,7 @@ def create_app() -> FastAPI:
         )
 
     app.include_router(health_router)
+    app.include_router(auth_router)
     app.include_router(layer_router)
     app.include_router(workflow_router)
     app.include_router(runtime_router)

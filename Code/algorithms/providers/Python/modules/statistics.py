@@ -18,6 +18,7 @@
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import numpy as np
@@ -100,11 +101,230 @@ def _load_zones(zones_source: str) -> np.ndarray:
     # 优先尝试常见分区变量名
     for candidate in ("landcover", "lc", "zone", "zones", "igbp"):
         if candidate in available:
-            return reader.read_variable(variable=candidate).values
+            return np.asarray(
+                reader.read_variable(variable=candidate).values, dtype=np.float64
+            )
     # 降级: 取第一个变量
     if available:
-        return reader.read_variable(variable=available[0]).values
+        return np.asarray(
+            reader.read_variable(variable=available[0]).values, dtype=np.float64
+        )
     raise ValueError(f"statistics: 无法从 {zones_source} 加载分区数据")
+
+
+def _align_raster_pair(
+    values: np.ndarray,
+    zones: np.ndarray,
+    *,
+    mode: str,
+) -> tuple[np.ndarray, np.ndarray]:
+    """Ensure value/zone arrays are spatially aligned (float64).
+
+    Phase-1 rule (generic, CRS-agnostic arrays):
+    - Squeeze trailing singleton dims.
+    - If 2D shapes match → OK.
+    - If zones is 2D and values is 3D (time, y, x) with matching y,x → keep both
+      (caller handles time separately); for zonal/landcover we require 2D values.
+    - Otherwise fail loudly — never silently assume same CRS/grid.
+    """
+    vals = np.asarray(values, dtype=np.float64)
+    zns = np.asarray(zones, dtype=np.float64)
+    vals = np.squeeze(vals)
+    zns = np.squeeze(zns)
+
+    if vals.ndim == 2 and zns.ndim == 2:
+        if vals.shape != zns.shape:
+            raise ValueError(
+                f"statistics ({mode}): raster/zones shape mismatch "
+                f"{vals.shape} vs {zns.shape}; reproject or resample to a "
+                f"common grid before zonal stats (silent CRS assume forbidden)"
+            )
+        return vals, zns
+
+    if vals.ndim == 3 and zns.ndim == 2 and vals.shape[-2:] == zns.shape:
+        # Time stack + 2D zones: align spatial dims only; reduce not done here
+        raise ValueError(
+            f"statistics ({mode}): expected 2D values for zonal/landcover, "
+            f"got 3D {vals.shape}. Select a time slice or use mode=timeseries."
+        )
+
+    raise ValueError(
+        f"statistics ({mode}): unsupported array ranks values.ndim={vals.ndim} "
+        f"zones.ndim={zns.ndim}; provide aligned 2D rasters"
+    )
+
+
+def _build_chart_table_products(
+    *,
+    mode: str,
+    var_name: str,
+    result: dict[str, object],
+    output_dir: Path,
+) -> tuple[list[ProductRef], list[str]]:
+    """Write ChartSpec + TableSpec JSON products for analysis panel."""
+    products: list[ProductRef] = []
+    tables: list[str] = []
+    chart: dict[str, object] | None = None
+    table: dict[str, object] | None = None
+
+    if mode == "global":
+        g = dict(result.get("global") or {})  # type: ignore[arg-type]
+        metrics = ["mean", "std", "min", "max", "median", "count", "valid_pct"]
+        xs = [m for m in metrics if m in g]
+        ys = [g[m] for m in xs]
+        chart = {
+            "schema_version": "1",
+            "chart_type": "bar",
+            "title": f"Global stats ({var_name})",
+            "x_label": "metric",
+            "y_label": "value",
+            "unit": "",
+            "series": [{"name": var_name, "x": xs, "y": ys}],
+            "x": xs,
+            "y": ys,
+            "series_name": var_name,
+            "bins": None,
+            "categories": xs,
+        }
+        table = {
+            "schema_version": "1",
+            "title": f"Global stats ({var_name})",
+            "columns": ["metric", "value"],
+            "rows": [[m, g[m]] for m in xs],
+            "units": {},
+            "dtypes": {"metric": "str", "value": "float64"},
+        }
+    elif mode == "zonal":
+        zm = dict(result.get("zonal_mean") or {})  # type: ignore[arg-type]
+        zone_ids = sorted(zm.keys(), key=lambda x: int(x))
+        means = [zm[z] for z in zone_ids]
+        xs = [str(z) for z in zone_ids]
+        chart = {
+            "schema_version": "1",
+            "chart_type": "bar",
+            "title": f"Zonal mean ({var_name})",
+            "x_label": "zone_id",
+            "y_label": "mean",
+            "unit": "",
+            "series": [{"name": "mean", "x": xs, "y": means}],
+            "x": xs,
+            "y": means,
+            "series_name": "mean",
+            "bins": None,
+            "categories": xs,
+        }
+        table = {
+            "schema_version": "1",
+            "title": f"Zonal mean ({var_name})",
+            "columns": ["zone_id", "mean"],
+            "rows": [[int(z), means[i]] for i, z in enumerate(zone_ids)],
+            "units": {},
+            "dtypes": {"zone_id": "int", "mean": "float64"},
+        }
+    elif mode == "landcover":
+        lc = dict(result.get("landcover_stats") or {})  # type: ignore[arg-type]
+        lc_ids = sorted(lc.keys(), key=lambda x: int(x))
+        means = [float(lc[k].get("mean", float("nan"))) for k in lc_ids]  # type: ignore[union-attr]
+        xs = [str(k) for k in lc_ids]
+        chart = {
+            "schema_version": "1",
+            "chart_type": "bar",
+            "title": f"Landcover mean ({var_name})",
+            "x_label": "lc_id",
+            "y_label": "mean",
+            "unit": "",
+            "series": [{"name": "mean", "x": xs, "y": means}],
+            "x": xs,
+            "y": means,
+            "series_name": "mean",
+            "bins": None,
+            "categories": xs,
+        }
+        table = {
+            "schema_version": "1",
+            "title": f"Landcover stats ({var_name})",
+            "columns": ["lc_id", "name", "mean", "std", "count", "area_pct"],
+            "rows": [
+                [
+                    int(k),
+                    (lc[k] or {}).get("name", ""),  # type: ignore[union-attr]
+                    (lc[k] or {}).get("mean", ""),  # type: ignore[union-attr]
+                    (lc[k] or {}).get("std", ""),  # type: ignore[union-attr]
+                    (lc[k] or {}).get("count", ""),  # type: ignore[union-attr]
+                    (lc[k] or {}).get("area_pct", ""),  # type: ignore[union-attr]
+                ]
+                for k in lc_ids
+            ],
+            "units": {},
+            "dtypes": {"lc_id": "int", "mean": "float64"},
+        }
+    elif mode == "timeseries":
+        series = list(result.get("timeseries") or [])  # type: ignore[arg-type]
+        xs = [int(s["time_index"]) for s in series]  # type: ignore[index]
+        ys = [s["mean"] for s in series]  # type: ignore[index]
+        chart = {
+            "schema_version": "1",
+            "chart_type": "line",
+            "title": f"Timeseries mean ({var_name})",
+            "x_label": "time_index",
+            "y_label": "mean",
+            "unit": "",
+            "series": [{"name": "mean", "x": xs, "y": ys}],
+            "x": xs,
+            "y": ys,
+            "series_name": "mean",
+            "bins": None,
+            "categories": None,
+        }
+        table = {
+            "schema_version": "1",
+            "title": f"Timeseries stats ({var_name})",
+            "columns": ["time_index", "mean", "std", "min", "max", "median"],
+            "rows": [
+                [
+                    s["time_index"],  # type: ignore[index]
+                    s["mean"],  # type: ignore[index]
+                    s["std"],  # type: ignore[index]
+                    s["min"],  # type: ignore[index]
+                    s["max"],  # type: ignore[index]
+                    s["median"],  # type: ignore[index]
+                ]
+                for s in series
+            ],
+            "units": {},
+            "dtypes": {"time_index": "int", "mean": "float64"},
+        }
+
+    if chart is not None:
+        chart_path = output_dir / f"stats_{mode}_{var_name}.chart.json"
+        chart_path.write_text(json.dumps(chart, ensure_ascii=True), encoding="utf-8")
+        products.append(
+            ProductRef(
+                name=f"stats_chart_{mode}_{var_name}",
+                type="chart_spec",
+                uri=str(chart_path),
+                variable=var_name,
+                tags={
+                    "kind": "chart",
+                    "chart_type": str(chart["chart_type"]),
+                    "mode": mode,
+                },
+            )
+        )
+    if table is not None:
+        table_path = output_dir / f"stats_{mode}_{var_name}.table.json"
+        table_path.write_text(json.dumps(table, ensure_ascii=True), encoding="utf-8")
+        tables.append(str(table_path))
+        products.append(
+            ProductRef(
+                name=f"stats_table_{mode}_{var_name}",
+                type="table_spec",
+                uri=str(table_path),
+                variable=var_name,
+                tags={"kind": "table", "mode": mode},
+            )
+        )
+    return products, tables
 
 
 @register_module_decorator(name="statistics", aliases=["statistics_pipeline"])
@@ -165,7 +385,14 @@ class StatisticsModule(BaseModule):
         values, var_name, _ = _load_input_array(
             inputs, ctx, variable if isinstance(variable, str) else None
         )
+        values = np.asarray(values, dtype=np.float64)
 
+        # Ensure provider root is importable inside Celery worker children
+        import sys
+
+        _provider_root = str(Path(__file__).resolve().parents[1])
+        if _provider_root not in sys.path:
+            sys.path.insert(0, _provider_root)
         from analysis.spatial_stats import ZonalStats
 
         zs = ZonalStats()
@@ -182,11 +409,7 @@ class StatisticsModule(BaseModule):
                     "statistics: zonal 模式需要 algorithm_params.zones_source"
                 )
             zones = _load_zones(str(zones_source))
-            if zones.shape != values.shape:
-                # 尝试裁剪到相同形状
-                min_shape = tuple(min(a, b) for a, b in zip(values.shape, zones.shape))
-                values = values[tuple(slice(0, s) for s in min_shape)]
-                zones = zones[tuple(slice(0, s) for s in min_shape)]
+            values, zones = _align_raster_pair(values, zones, mode="zonal")
             zonal_mean = zs.compute_zonal_mean(values, zones)
             result["zonal_mean"] = {int(k): float(v) for k, v in zonal_mean.items()}
         elif mode == "landcover":
@@ -195,10 +418,7 @@ class StatisticsModule(BaseModule):
                     "statistics: landcover 模式需要 algorithm_params.zones_source"
                 )
             zones = _load_zones(str(zones_source))
-            if zones.shape != values.shape:
-                min_shape = tuple(min(a, b) for a, b in zip(values.shape, zones.shape))
-                values = values[tuple(slice(0, s) for s in min_shape)]
-                zones = zones[tuple(slice(0, s) for s in min_shape)]
+            values, zones = _align_raster_pair(values, zones, mode="landcover")
             lc_stats = zs.compute_landcover_stats(values, zones)
             result["landcover_stats"] = {
                 int(k): {
@@ -208,6 +428,7 @@ class StatisticsModule(BaseModule):
                 for k, v in lc_stats.items()
             }
         elif mode == "timeseries":
+            values = np.squeeze(values)
             if values.ndim != 3:
                 raise ValueError(
                     f"statistics: timeseries 模式需要 3D 数据 (time, lat, lon)，实际 ndim={values.ndim}"
@@ -303,26 +524,40 @@ class StatisticsModule(BaseModule):
                         ]
                     )
 
+        chart_table_products, table_uris = _build_chart_table_products(
+            mode=mode,
+            var_name=var_name,
+            result=result,
+            output_dir=output_dir,
+        )
+
         if ctx.logger_adapter is not None:
             ctx.logger_adapter.emit_artifact("statistics", str(mat_path), "stats_mat")
             ctx.logger_adapter.emit_artifact("statistics", str(csv_path), "stats_csv")
+            for p in chart_table_products:
+                ctx.logger_adapter.emit_artifact(
+                    "statistics", str(p.uri), str(p.tags.get("kind") or p.type)
+                )
             ctx.logger_adapter.emit_stage_end(
                 "statistics", f"Mode={mode}, variable={var_name}"
             )
 
+        products = [
+            ProductRef(
+                name=out_name,
+                type="statistics_result",
+                uri=str(mat_path),
+                variable=",".join(mat_payload.keys()),
+                tags={"mode": mode, "variable": var_name},
+            ),
+            *chart_table_products,
+        ]
         manifest = ProductManifest(
             job_id=ctx.request.job_id,
             run_id=ctx.runtime_context.run_id,
-            products=[
-                ProductRef(
-                    name=out_name,
-                    type="statistics_result",
-                    uri=str(mat_path),
-                    variable=",".join(mat_payload.keys()),
-                    tags={"mode": mode, "variable": var_name},
-                ),
-            ],
+            products=products,
             main_layers=list(mat_payload.keys()),
+            tables=table_uris,
             metadata_uri=None,
             extra={
                 "module_name": self.name,

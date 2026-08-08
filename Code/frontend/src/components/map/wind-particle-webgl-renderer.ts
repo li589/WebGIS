@@ -21,6 +21,7 @@
  *   - 无风场数据时不绘制任何占位内容（避免生产环境出现调试视觉）。
  */
 import type { CustomRenderMethodInput, Map as MaplibreMap } from 'maplibre-gl'
+import { debugLog } from '../../utils/perf-probe'
 import type { WindGeoJSON } from './types'
 import {
   WIND_FIELD_FRAGMENT_SHADER,
@@ -34,6 +35,7 @@ import {
   lngLatToMercatorNormalized,
 } from './wind-particle-webgl-shaders'
 import { buildWindGridFromGeoJSON } from './wind-grid'
+import type { LonFrame } from './weather-grid-lattice'
 import {
   buildPaletteLUT,
   encodeWindGridToRGBA,
@@ -173,7 +175,8 @@ const MAX_WORLD_WRAP_DRAWS = 12
  * 的 x 平移。副本 k 的 clip 范围为 [tx + k·w, tx + (k+1)·w]，与屏幕相交即需绘制。
  * 即使 matrix[0] ≥ 2（单世界比屏幕宽），相机贴近反子午线时屏幕仍会露出相邻
  * 副本（跨幅临界），旧的「±1 启发式」会漏掉 → 表现为半球/半边区域无场。
- * 返回应用于 matrix[12]（x 平移）的偏移数组，恒含 0。抽离为纯函数以便单测。
+ * 返回应用于 matrix[12]（x 平移）的偏移数组。主世界不在屏内时，返回值可以不含 0；
+ * 此时相邻世界副本才是实际可见的副本。抽离为纯函数以便单测。
  */
 export function computeWorldWrapOffsets(matrix: ArrayLike<number>): number[] {
   const w = matrix[0]
@@ -188,7 +191,9 @@ export function computeWorldWrapOffsets(matrix: ArrayLike<number>): number[] {
   const lo = Math.max(kMin, -MAX_WORLD_WRAP_DRAWS)
   const hi = Math.min(kMax, MAX_WORLD_WRAP_DRAWS)
   for (let k = lo; k <= hi; k += 1) offsets.push(k * w)
-  return offsets.includes(0) ? offsets : [0]
+  // 主世界可能完全在屏外，不能强制退回 [0]；否则日界线附近只会绘制
+  // 屏外主世界，实际可见的相邻世界副本反而被丢弃。
+  return offsets.length > 0 ? offsets : [0]
 }
 
 /**
@@ -268,8 +273,8 @@ export class WindParticleWebGLLayer {
   private readonly particleResolution: number
   /** readPixels 缓冲：RGBA8 位置纹理 */
   private readonly particlePosPixels: Uint8Array
-  /** 当前帧各粒子 NDC（x,y,_）；Windy 风格只画点，靠 trail 连成丝 */
-  private readonly particleClipData: Float32Array
+  /** 当前帧各粒子 NDC（x,y,_）；世界包裹时按 offset 副本扩容 */
+  private particleClipData: Float32Array
   private particleDrawCount = 0
   private fullscreenQuadBuffer: WebGLBuffer | null = null
   private particleCount: number
@@ -582,13 +587,13 @@ export class WindParticleWebGLLayer {
   }
 
   /** 喂入风场数据：构建网格 + 编码为纹理（实际上传延迟到 drawFrame，确保 GL 就绪） */
-  setWindData(geojson: WindGeoJSON | null): void {
+  setWindData(geojson: WindGeoJSON | null, frame?: LonFrame | null): void {
     if (!geojson) {
       this.hasWindData = false
       this.pendingWindTexture = null
       return
     }
-    const grid = buildWindGridFromGeoJSON(geojson)
+    const grid = buildWindGridFromGeoJSON(geojson, frame)
     if (!grid) {
       console.warn('[WindParticleWebGL] setWindData: 无法构建风场网格')
       this.hasWindData = false
@@ -923,7 +928,7 @@ export class WindParticleWebGLLayer {
     this.matrixMissFrames = 0
     if (!this.matrixReadyLogged) {
       this.matrixReadyLogged = true
-      console.log('[WindParticleWebGL] projection matrix ready, particles drawing')
+      debugLog('[WindParticleWebGL] projection matrix ready, particles drawing')
     }
 
     this.flushPendingWindTexture()
@@ -1096,7 +1101,7 @@ export class WindParticleWebGLLayer {
     gl.drawArrays(gl.POINTS, 0, this.particleDrawCount)
   }
 
-  /** readPixels → 投影到 NDC → 上传为 GL_POINTS 顶点 */
+  /** readPixels → 投影到 NDC（含世界副本）→ 上传为 GL_POINTS 顶点 */
   private uploadParticlePointBuffer(gl: WebGLRenderingContext): boolean {
     if (!this.particleFBO || !this.windBounds) return false
     gl.bindFramebuffer(gl.FRAMEBUFFER, this.particleFBO)
@@ -1124,6 +1129,12 @@ export class WindParticleWebGLLayer {
     const { west, south, east, north } = this.windBounds
     const m = this.matrix
     const pixels = this.particlePosPixels
+    // 与 drawWindField 相同：屏幕可见的每个世界副本各投一次，避免日界线附近半屏无粒子
+    const wrapOffsets = computeWorldWrapOffsets(m)
+    const capacity = this.particleCount * wrapOffsets.length * 3
+    if (this.particleClipData.length < capacity) {
+      this.particleClipData = new Float32Array(capacity)
+    }
     const out = this.particleClipData
     let write = 0
 
@@ -1133,15 +1144,19 @@ export class WindParticleWebGLLayer {
       const lon = west + (east - west) * nx
       const lat = north + (south - north) * ny
       const [mercX, mercY] = lngLatToMercatorNormalized(lon, lat)
-      const x = m[0] * mercX + m[4] * mercY + m[12]
-      const y = m[1] * mercX + m[5] * mercY + m[13]
+      const baseX = m[0] * mercX + m[4] * mercY + m[12]
+      const baseY = m[1] * mercX + m[5] * mercY + m[13]
       const w = m[3] * mercX + m[7] * mercY + m[15]
       const invW = w !== 0 ? 1 / w : 0
-      const o = write * 3
-      out[o] = x * invW
-      out[o + 1] = y * invW
-      out[o + 2] = 0
-      write += 1
+      const clipY = baseY * invW
+      for (const offset of wrapOffsets) {
+        // matrix[12] += offset ⇒ clipX += offset * invW（与 field 世界包裹一致）
+        const o = write * 3
+        out[o] = (baseX + offset) * invW
+        out[o + 1] = clipY
+        out[o + 2] = 0
+        write += 1
+      }
     }
 
     this.particleDrawCount = write

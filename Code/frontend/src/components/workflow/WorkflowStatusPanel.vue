@@ -15,15 +15,12 @@ const { activityVersion, statusVersion } = storeToRefs(weatherTileManager)
 const { syncInProgress } = storeToRefs(weatherSyncStatus)
 const emit = defineEmits<{ close: [] }>()
 
+const eventStageFilter = ref('')
+const copyFeedback = ref('')
+
 // 每秒刷新 tick，用于运行中工作流的时长动态更新
 const tick = ref(0)
 let tickTimer: number | null = null
-
-/** 是否存在活跃工作流（running/queued/retry_pending），用于决定是否启用 tick 定时器 */
-const hasActiveWorkflows = computed(() => {
-  const s = layersStore.workflowSummary
-  return s.running + s.queued + s.retryPending > 0
-})
 
 const weatherContribution = computed(() => {
   void activityVersion.value
@@ -86,6 +83,8 @@ const weatherSyntheticItems = computed(() => {
   return weatherContribution.value.items.map((item) => {
     const meta = catalogMeta.get(item.catalogId)
     const active = layersStore.activeLayersDisplay.find((l) => l.catalogId === item.catalogId)
+    const fillPercent =
+      item.viewportTotal > 0 ? Math.round((item.cachedInViewport / item.viewportTotal) * 100) : 0
     return {
       catalogId: item.catalogId,
       name: active?.name ?? meta?.name ?? item.catalogId,
@@ -96,6 +95,9 @@ const weatherSyntheticItems = computed(() => {
       errorType: item.errorType,
       pending: item.pending,
       missingInViewport: item.missingInViewport,
+      cachedInViewport: item.cachedInViewport,
+      viewportTotal: item.viewportTotal,
+      fillPercent,
     }
   })
 })
@@ -108,6 +110,12 @@ const summary = computed(() => {
   void activityVersion.value
   void statusVersion.value
   return mergeWorkflowSummaryWithWeather(jobSummary.value, weatherContribution.value)
+})
+
+/** 是否存在活跃工作流（含天气瓦片），用于启用 tick / 进度刷新 */
+const hasActiveWorkflows = computed(() => {
+  const s = summary.value
+  return s.running + s.queued + s.retryPending > 0
 })
 
 /** 衍生统计指标 */
@@ -322,6 +330,42 @@ function handleRetry(jobId: string, catalogId: string) {
   void layersStore.retryWorkflowRunForJob(jobId, catalogId)
 }
 
+function filteredEventMessages(messages: string[] | undefined): string[] {
+  if (!messages?.length) return []
+  const filter = eventStageFilter.value.trim().toLowerCase()
+  if (!filter) return messages
+  return messages.filter((m) => m.toLowerCase().includes(filter))
+}
+
+async function copyRunTimeline(job: {
+  jobId: string
+  status: string
+  progress: number
+  message: string
+  eventMessages?: string[]
+  nodeProgress?: Array<{ stage?: string; nodeLabel?: string; progress?: number; message?: string }>
+  retryOfRunId?: string
+}) {
+  const payload = {
+    run_id: job.jobId,
+    status: job.status,
+    progress: job.progress,
+    message: job.message,
+    retry_of_run_id: job.retryOfRunId,
+    events: filteredEventMessages(job.eventMessages).slice(-40),
+    node_progress: job.nodeProgress ?? [],
+  }
+  try {
+    await navigator.clipboard.writeText(JSON.stringify(payload, null, 2))
+    copyFeedback.value = job.jobId
+    window.setTimeout(() => {
+      if (copyFeedback.value === job.jobId) copyFeedback.value = ''
+    }, 2000)
+  } catch {
+    copyFeedback.value = ''
+  }
+}
+
 function handleWeatherRetry(catalogId: string) {
   weatherTileManager.retryLayerTiles(catalogId)
 }
@@ -383,20 +427,20 @@ onBeforeUnmount(() => {
           <p class="wf-panel-eyebrow">WORKFLOW STATUS</p>
           <h2>{{ WORKFLOW_COPY.statusOverview }}</h2>
         </div>
-        <div class="wf-header-stats" v-if="summary.total > 0 || globalTileStats.totalPending > 0">
+        <div v-if="summary.total > 0 || globalTileStats.totalPending > 0" class="wf-header-stats">
           <span class="wf-header-stat">
             <span class="wf-header-stat-value">{{ summary.total }}</span>
             <span class="wf-header-stat-label">总计</span>
           </span>
-          <span class="wf-header-stat" v-if="derivedStats.active > 0">
+          <span v-if="derivedStats.active > 0" class="wf-header-stat">
             <span class="wf-header-stat-value" style="color: #5ad5ff">{{
               derivedStats.active
             }}</span>
             <span class="wf-header-stat-label">活跃</span>
           </span>
           <span
-            class="wf-header-stat"
             v-if="jobSummary.total > 0 && derivedStats.successRate !== null"
+            class="wf-header-stat"
           >
             <span
               class="wf-header-stat-value"
@@ -515,13 +559,13 @@ onBeforeUnmount(() => {
         <div v-for="cat in categoryBreakdown" :key="cat.category" class="wf-category-stat-item">
           <span class="wf-category-stat-name">{{ getCategoryName(cat.category) }}</span>
           <span class="wf-category-stat-counts">
-            <span class="wf-cat-count" style="color: #5ad5ff" v-if="cat.running > 0">{{
+            <span v-if="cat.running > 0" class="wf-cat-count" style="color: #5ad5ff">{{
               cat.running
             }}</span>
-            <span class="wf-cat-count" style="color: #9ff8cf" v-if="cat.succeeded > 0">{{
+            <span v-if="cat.succeeded > 0" class="wf-cat-count" style="color: #9ff8cf">{{
               cat.succeeded
             }}</span>
-            <span class="wf-cat-count" style="color: #ff8a8a" v-if="cat.failed > 0">{{
+            <span v-if="cat.failed > 0" class="wf-cat-count" style="color: #ff8a8a">{{
               cat.failed
             }}</span>
             <span class="wf-cat-count-total">{{ cat.total }}</span>
@@ -538,11 +582,21 @@ onBeforeUnmount(() => {
           class="wf-empty"
         >
           <span class="wf-empty-icon">◇</span>
-          <p>当前没有运行中的工作流</p>
+          <p>{{ WORKFLOW_COPY.emptyStatus }}</p>
           <p class="wf-empty-hint">从左侧面板添加图层并运行工作流后，状态将显示在这里</p>
         </div>
 
         <div v-else class="wf-list">
+          <div class="wf-list-toolbar">
+            <label class="wf-stage-filter">
+              {{ WORKFLOW_COPY.filterByStage }}
+              <input
+                v-model="eventStageFilter"
+                type="text"
+                :placeholder="WORKFLOW_COPY.allStages"
+              />
+            </label>
+          </div>
           <!-- 天气瓦片合成行 -->
           <div
             v-for="item in weatherSyntheticItems"
@@ -563,7 +617,13 @@ onBeforeUnmount(() => {
                 }"
               >
                 {{ weatherStatusMeta[item.status].label }}
+                <template v-if="item.status === 'running' && item.viewportTotal > 0"
+                  >{{ item.fillPercent }}%</template
+                >
               </span>
+            </div>
+            <div v-if="item.status === 'running' && item.viewportTotal > 0" class="wf-progress-bar">
+              <div class="wf-progress-fill" :style="{ width: `${item.fillPercent}%` }"></div>
             </div>
             <p v-if="item.message" class="wf-item-message">{{ item.message }}</p>
             <div class="wf-item-footer">
@@ -626,6 +686,30 @@ onBeforeUnmount(() => {
             <p v-if="item.jobLayer.message" class="wf-item-message">{{ item.jobLayer.message }}</p>
             <p
               v-if="
+                item.jobLayer.progressiveOverlayError &&
+                item.jobLayer.progressiveOverlayError !== item.jobLayer.message
+              "
+              class="wf-item-message wf-item-progressive-error"
+            >
+              {{ item.jobLayer.progressiveOverlayError }}
+            </p>
+            <p
+              v-else-if="
+                item.jobLayer.progressiveOverlayCount &&
+                item.jobLayer.status === 'running' &&
+                !item.jobLayer.message?.includes('时间片')
+              "
+              class="wf-item-message wf-item-progressive-hint"
+            >
+              {{
+                WORKFLOW_COPY.progressiveSyncOk.replace(
+                  '{count}',
+                  String(item.jobLayer.progressiveOverlayCount),
+                )
+              }}
+            </p>
+            <p
+              v-if="
                 item.jobLayer.reportSummary && item.jobLayer.reportSummary !== item.jobLayer.message
               "
               class="wf-item-summary"
@@ -668,25 +752,28 @@ onBeforeUnmount(() => {
               </button>
             </ul>
 
-            <!-- 事件消息（可展开） -->
-            <ul v-if="item.jobLayer.eventMessages?.length" class="wf-item-events">
+            <!-- 事件消息（可展开，支持阶段过滤） -->
+            <ul
+              v-if="filteredEventMessages(item.jobLayer.eventMessages).length"
+              class="wf-item-events"
+            >
               <li
                 v-for="evt in isExpanded(item.jobLayer.jobId)
-                  ? item.jobLayer.eventMessages
-                  : item.jobLayer.eventMessages.slice(-2)"
+                  ? filteredEventMessages(item.jobLayer.eventMessages)
+                  : filteredEventMessages(item.jobLayer.eventMessages).slice(-2)"
                 :key="evt"
               >
                 {{ evt }}
               </li>
               <button
-                v-if="item.jobLayer.eventMessages.length > 2"
+                v-if="filteredEventMessages(item.jobLayer.eventMessages).length > 2"
                 class="wf-expand-btn"
                 @click="toggleExpand(item.jobLayer.jobId)"
               >
                 {{
                   isExpanded(item.jobLayer.jobId)
                     ? '收起'
-                    : `展开全部 (${item.jobLayer.eventMessages.length})`
+                    : `展开全部 (${filteredEventMessages(item.jobLayer.eventMessages).length})`
                 }}
               </button>
             </ul>
@@ -708,11 +795,36 @@ onBeforeUnmount(() => {
                   <div class="node-progress-fill" :style="{ width: np.progress + '%' }"></div>
                 </div>
                 <span v-if="np.message" class="node-progress-message">{{ np.message }}</span>
+                <!-- P0-10：节点产物下载入口（/artifacts/{id} 由后端 FileResponse 直接下载） -->
+                <div v-if="np.artifacts?.length" class="node-artifacts">
+                  <a
+                    v-for="artifactId in np.artifacts"
+                    :key="artifactId"
+                    class="node-artifact-link"
+                    :href="`/artifacts/${encodeURIComponent(artifactId)}`"
+                    :download="artifactId"
+                    :title="`下载产物 ${artifactId}`"
+                  >
+                    ⬇ {{ artifactId.split('/').pop() }}
+                  </a>
+                </div>
                 <div
-                  v-if="np.detail && (np.detail.chunksTotal || np.detail.pixelsTotal)"
+                  v-if="
+                    np.detail &&
+                    (np.detail.chunksTotal ||
+                      np.detail.pixelsTotal ||
+                      np.detail.blocksTotal ||
+                      np.detail.dateStart)
+                  "
                   class="node-progress-detail"
                 >
-                  <span v-if="np.detail.chunksTotal">
+                  <span v-if="np.detail.blocksTotal">
+                    块 {{ np.detail.blocksDone ?? 0 }}/{{ np.detail.blocksTotal
+                    }}<template v-if="np.detail.dateStart && np.detail.dateEnd">
+                      · {{ np.detail.dateStart }}–{{ np.detail.dateEnd }}
+                    </template>
+                  </span>
+                  <span v-else-if="np.detail.chunksTotal">
                     chunk {{ np.detail.chunksDone ?? 0 }}/{{ np.detail.chunksTotal }}
                   </span>
                   <span v-if="np.detail.pixelsTotal">
@@ -754,8 +866,20 @@ onBeforeUnmount(() => {
                 <span v-if="item.jobLayer.resultUrl" class="wf-item-result-link">
                   · <a :href="item.jobLayer.resultUrl" target="_blank" rel="noopener">查看结果</a>
                 </span>
+                <span v-if="item.jobLayer.retryOfRunId" class="wf-item-retry-of">
+                  · {{ WORKFLOW_COPY.retryOf }} {{ item.jobLayer.retryOfRunId }}
+                </span>
               </div>
               <div class="wf-item-actions">
+                <button
+                  class="wf-action-btn copy"
+                  type="button"
+                  @click="copyRunTimeline(item.jobLayer)"
+                >
+                  {{
+                    copyFeedback === item.jobLayer.jobId ? '已复制' : WORKFLOW_COPY.copyRunTimeline
+                  }}
+                </button>
                 <button
                   v-if="
                     item.jobLayer.status === 'running' ||
@@ -765,14 +889,14 @@ onBeforeUnmount(() => {
                   class="wf-action-btn cancel"
                   @click="handleCancel(item.jobLayer.jobId, item.catalogId)"
                 >
-                  取消
+                  {{ WORKFLOW_COPY.cancelAction }}
                 </button>
                 <button
                   v-if="item.jobLayer.status === 'failed' || item.jobLayer.status === 'cancelled'"
                   class="wf-action-btn retry"
                   @click="handleRetry(item.jobLayer.jobId, item.catalogId)"
                 >
-                  重试
+                  {{ WORKFLOW_COPY.retryAction }}
                 </button>
               </div>
             </div>
@@ -1183,6 +1307,36 @@ onBeforeUnmount(() => {
   padding: 0 1.2rem 1.2rem;
 }
 
+.wf-list-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.45rem;
+}
+
+.wf-stage-filter {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.58rem;
+  color: rgba(200, 220, 235, 0.78);
+}
+
+.wf-stage-filter input {
+  min-width: 8rem;
+  padding: 0.15rem 0.35rem;
+  border-radius: 0.25rem;
+  border: 1px solid rgba(136, 192, 255, 0.2);
+  background: rgba(8, 18, 28, 0.55);
+  color: #d7ecf8;
+  font-size: 0.56rem;
+}
+
+.wf-item-retry-of {
+  color: rgba(255, 211, 138, 0.9);
+  font-size: 0.55rem;
+}
+
 .wf-empty {
   display: flex;
   flex-direction: column;
@@ -1368,6 +1522,28 @@ onBeforeUnmount(() => {
   word-break: break-word;
 }
 
+.node-artifacts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 4px;
+}
+
+.node-artifact-link {
+  font-size: 11px;
+  padding: 2px 8px;
+  border-radius: 4px;
+  background: rgba(88, 166, 255, 0.12);
+  color: #58a6ff;
+  text-decoration: none;
+  word-break: break-all;
+}
+
+.node-artifact-link:hover {
+  background: rgba(88, 166, 255, 0.24);
+  text-decoration: underline;
+}
+
 .node-progress-detail {
   display: flex;
   flex-wrap: wrap;
@@ -1382,6 +1558,17 @@ onBeforeUnmount(() => {
   color: #a8c4d8;
   font-size: 0.6rem;
   line-height: 1.4;
+}
+
+.wf-item-progressive-error {
+  color: #f0a8a8;
+  border-left: 2px solid rgba(220, 80, 80, 0.75);
+  padding-left: 0.4rem;
+}
+
+.wf-item-progressive-hint {
+  color: #9ec5e8;
+  opacity: 0.92;
 }
 
 .wf-item-summary {

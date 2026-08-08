@@ -33,15 +33,18 @@ def docker_available() -> bool:
         return False
 
 
+def _windows_docker_hint() -> str:
+    return (
+        "请先以管理员身份启动 Docker Desktop，并确认引擎就绪"
+        "（Windows 非管理员可能导致 launch 失败）"
+    )
+
+
 def start_docker_infra(*, start_open_meteo: bool = True) -> bool:
     """启动 Redis + MinIO；可选启动 backend 内的 cgda-open-meteo API。"""
     log.banner("启动 Docker 运行栈 (Redis + MinIO + Open-Meteo API)")
     if not docker_available():
-        hint = (
-            "请先启动 Docker Desktop"
-            if IS_WINDOWS
-            else "请先启动 Docker Engine / 守护进程"
-        )
+        hint = _windows_docker_hint() if IS_WINDOWS else "请先启动 Docker Engine / 守护进程"
         log.error("Docker", f"Docker 未运行或未安装，{hint}")
         return False
 
@@ -64,6 +67,8 @@ def start_docker_infra(*, start_open_meteo: bool = True) -> bool:
         )
         if r.returncode != 0:
             log.error("Docker", f"docker compose 启动失败:\n{r.stderr}")
+            if IS_WINDOWS:
+                log.warn("Docker", _windows_docker_hint())
             return False
     except subprocess.TimeoutExpired:
         log.error("Docker", "docker compose 启动超时（180s）")
@@ -120,6 +125,37 @@ def wait_for_redis(max_wait: int = 30) -> bool:
             pass
         time.sleep(1)
     log.warn("Redis", f"Redis 未在 {max_wait}s 内就绪，继续启动（可能影响功能）")
+    return False
+
+
+def wait_for_minio(max_wait: int = 30) -> bool:
+    """等待 MinIO 容器健康检查通过（P2-2：此前无 MinIO 探测）。
+
+    用 ``docker inspect`` 读取容器 Health.Status，避免依赖 MinIO CLI/端口可达性
+    （端口绑定回环后仍可经 docker inspect 探测）。
+    """
+    log.info("MinIO", f"等待 MinIO 就绪（最多 {max_wait}s）...")
+    for _ in range(max_wait):
+        try:
+            r = subprocess.run(
+                [
+                    "docker", "inspect",
+                    "-f", "{{.State.Health.Status}}",
+                    "cgda-minio",
+                ],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.DEVNULL,
+                text=True,
+                timeout=5,
+                **hidden_kwargs(),
+            )
+            if r.returncode == 0 and r.stdout.strip() == "healthy":
+                log.ok("MinIO", "MinIO 就绪")
+                return True
+        except (subprocess.TimeoutExpired, FileNotFoundError):
+            pass
+        time.sleep(1)
+    log.warn("MinIO", f"MinIO 未在 {max_wait}s 内就绪，继续启动（可能影响对象存储）")
     return False
 
 

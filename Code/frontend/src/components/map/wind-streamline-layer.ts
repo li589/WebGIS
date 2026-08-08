@@ -8,13 +8,10 @@ import type { Map as MaplibreMap } from 'maplibre-gl'
 import type { WindGeoJSON } from './types'
 import { MAP_EVENT_MOVE, MAP_EVENT_MOVEEND, MAP_EVENT_RESIZE, MIN_VISIBLE_ZOOM } from './types'
 import { computeCanvasLayout, type CanvasLayout } from './canvas-utils'
+import { unwrapLonIntoGridFrame, type LonFrame } from './weather-grid-lattice'
 import { buildWindGridFromGeoJSON, windToUV, type WindGrid } from './wind-grid'
-import {
-  computeViewportBBoxFromBounds,
-  interpolateWind,
-  type WindRoamBounds,
-} from './wind-particle-canvas'
-import { unwrapLonIntoGridFrame } from './weather-grid-lattice'
+import { resolveVisibleViewportBBox } from './map-viewport-sync'
+import { interpolateWind, type WindRoamBounds } from './wind-particle-canvas'
 
 const TARGET_FRAME_INTERVAL_MS = 33
 const MAX_PIXEL_RATIO = 2
@@ -89,10 +86,22 @@ export function resolveStreamlineSeedBounds(
   if (!viewport) {
     return { west: grid.west, east: grid.east, south: grid.south, north: grid.north }
   }
-  const vw = unwrapLonIntoGridFrame(viewport.west, grid.west, grid.east)
-  const ve = unwrapLonIntoGridFrame(viewport.east, grid.west, grid.east)
-  const vpWest = Math.min(vw, ve)
-  const vpEast = Math.max(vw, ve)
+  let vpWest = unwrapLonIntoGridFrame(viewport.west, grid.west, grid.east)
+  let vpEast = unwrapLonIntoGridFrame(viewport.east, grid.west, grid.east)
+  // 视口已是连续弧（east≥west，可 east>180）时，解包后若顺序颠倒则 +360 保持长路径
+  if (viewport.east >= viewport.west && vpEast < vpWest) {
+    vpEast += 360
+  } else if (vpEast < vpWest) {
+    // 旧式短路径：取较短连续段
+    const altEast = vpEast + 360
+    if (altEast - vpWest < vpWest - vpEast) {
+      vpEast = altEast
+    } else {
+      const t = vpWest
+      vpWest = vpEast
+      vpEast = t
+    }
+  }
   const lonSpan = Math.max(1e-6, vpEast - vpWest)
   const latSpan = Math.max(1e-6, viewport.north - viewport.south)
   const lonMargin = lonSpan * SEED_VIEWPORT_MARGIN
@@ -241,13 +250,12 @@ export class WindStreamlineLayer {
   private running = false
   /** 面板盖住地图时为 true：停 RAF，保留 paths */
   private animationPaused = false
-  private lastSeedZoom = 0
   private moveHandler: () => void
   private moveEndHandler: () => void
   private resizeHandler: () => void
   private visibilityHandler: () => void
 
-  constructor(map: MaplibreMap, geojson: WindGeoJSON) {
+  constructor(map: MaplibreMap, geojson: WindGeoJSON, frame?: LonFrame | null) {
     this.map = map
     this.pixelRatio = Math.min(window.devicePixelRatio || 1, MAX_PIXEL_RATIO)
     const container = map.getContainer()
@@ -271,10 +279,8 @@ export class WindStreamlineLayer {
     this.moveEndHandler = () => {
       this.markProjectionDirty()
       this.syncLayout(false)
-      const zoom = this.map.getZoom()
-      if (this.grid && (this.lastSeedZoom === 0 || Math.abs(zoom - this.lastSeedZoom) >= 0.35)) {
-        this.reseedPathsForZoom(zoom)
-      }
+      // 平移/缩放结束一律按当前视口重撒，避免半屏空线或零星残留
+      if (this.grid) this.reseedPathsForZoom()
       this.draw()
     }
     this.resizeHandler = () => {
@@ -292,13 +298,12 @@ export class WindStreamlineLayer {
     map.on(MAP_EVENT_RESIZE, this.resizeHandler)
     document.addEventListener('visibilitychange', this.visibilityHandler)
 
-    this.updateGeoJSON(geojson)
+    this.updateGeoJSON(geojson, frame)
     this.syncLayout(true)
-    this.lastSeedZoom = map.getZoom()
   }
 
-  updateGeoJSON(geojson: WindGeoJSON) {
-    const nextGrid = buildWindGridFromGeoJSON(geojson)
+  updateGeoJSON(geojson: WindGeoJSON, frame?: LonFrame | null) {
+    const nextGrid = buildWindGridFromGeoJSON(geojson, frame)
     if (!nextGrid) {
       this.grid = null
       this.seeds = []
@@ -307,10 +312,12 @@ export class WindStreamlineLayer {
       return
     }
 
-    // 数据未变：跳过重撒，但仍刷新 wrap（视口可能已变）
+    // 数据 checksum 未变：仍按当前视口重撒（平移后半屏空洞的主因）
     if (this.grid && this.grid.checksum === nextGrid.checksum) {
+      this.grid = nextGrid
       this.markProjectionDirty()
       this.syncLayout(true)
+      this.reseedPathsForZoom()
       return
     }
 
@@ -320,29 +327,32 @@ export class WindStreamlineLayer {
       Math.abs(seedBounds.north - seedBounds.south) * Math.abs(seedBounds.east - seedBounds.west),
     )
 
+    // 瓦片渐进到达时优先整列重撒，避免旧半球种子过滤后只剩零星线
     const old = this.grid
     const oldArea = old ? Math.abs(old.north - old.south) * Math.abs(old.east - old.west) : 0
     const newArea =
       Math.abs(nextGrid.north - nextGrid.south) * Math.abs(nextGrid.east - nextGrid.west)
-    const areaGrew = !old || newArea > oldArea * AREA_RESEED_RATIO
+    const areaChanged =
+      !old || newArea > oldArea * AREA_RESEED_RATIO || newArea < oldArea / AREA_RESEED_RATIO
+    const lonShifted =
+      !!old && (Math.abs(old.west - nextGrid.west) > 5 || Math.abs(old.east - nextGrid.east) > 5)
 
-    const inSeedBounds = (s: StreamlineSeed) => {
-      const lon = unwrapLonIntoGridFrame(s.lon, seedBounds.west, seedBounds.east)
-      return (
-        s.lat >= seedBounds.south &&
-        s.lat <= seedBounds.north &&
-        lon >= seedBounds.west &&
-        lon <= seedBounds.east
-      )
-    }
-
-    // zoom-out 揭示大片新区：整列按视口重撒，保证密度；瓦片微调则增量保留
     let seeds: StreamlineSeed[]
-    if (areaGrew || this.seeds.length === 0) {
+    if (areaChanged || lonShifted || this.seeds.length === 0) {
       seeds = buildStreamlineSeeds(seedBounds, target)
     } else {
+      const inSeedBounds = (s: StreamlineSeed) => {
+        const lon = unwrapLonIntoGridFrame(s.lon, seedBounds.west, seedBounds.east)
+        return (
+          s.lat >= seedBounds.south &&
+          s.lat <= seedBounds.north &&
+          lon >= seedBounds.west &&
+          lon <= seedBounds.east
+        )
+      }
       seeds = this.seeds.filter(inSeedBounds)
-      if (seeds.length === 0) {
+      if (seeds.length < target * 0.45) {
+        // 保留过少（半屏）→ 整列重撒
         seeds = buildStreamlineSeeds(seedBounds, target)
       } else if (seeds.length > target) {
         seeds = seeds.slice(0, target)
@@ -355,13 +365,12 @@ export class WindStreamlineLayer {
     this.grid = nextGrid
     this.seeds = seeds
     this.paths = seeds.map((s) => integrateStreamline(nextGrid, s.lat, s.lon))
-    this.lastSeedZoom = this.map.getZoom()
     this.markProjectionDirty()
     this.syncLayout(true)
   }
 
   /** 缩放后按当前视口∩grid 重撒/重积分，避免亮线挤在旧地理范围或摊稀到全球 */
-  private reseedPathsForZoom(zoom: number) {
+  private reseedPathsForZoom() {
     if (!this.grid) return
     const seedBounds = resolveStreamlineSeedBounds(this.grid, this.readViewportBBox())
     const target = computeStreamlineCountForArea(
@@ -369,14 +378,13 @@ export class WindStreamlineLayer {
     )
     this.seeds = buildStreamlineSeeds(seedBounds, target)
     this.paths = this.seeds.map((s) => integrateStreamline(this.grid!, s.lat, s.lon))
-    this.lastSeedZoom = zoom
     this.markProjectionDirty()
     this.syncLayout(true)
   }
 
   private readViewportBBox(): WindRoamBounds | null {
     try {
-      return computeViewportBBoxFromBounds(this.map.getBounds())
+      return resolveVisibleViewportBBox(this.map, { clampLat: [-85, 85] })
     } catch {
       return null
     }

@@ -17,6 +17,9 @@ BACKEND_DIR = SCRIPT_DIR / "Code" / "backend"
 FRONTEND_DIR = SCRIPT_DIR / "Code" / "frontend"
 DATA_SYNC_DIR = SCRIPT_DIR / "Code" / "infra" / "data-sync"
 GATEWAY_DIR = SCRIPT_DIR / "Code" / "infra" / "gateway"
+# Launcher 本地态（PID/日志/flush 天气缓存）固定在 Code/backend/.data/。
+# 与 FastAPI 的 BACKEND_RUNTIME_ROOT（常指向数据盘 _runtime）是**双轨**：
+# launch 管进程与联调缓存；算法/工作流产物以 BACKEND_*_ROOT 为准。
 LOG_DIR = BACKEND_DIR / ".data" / "logs"
 DATA_DIRS = [
     BACKEND_DIR / ".data" / "logs",

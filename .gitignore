@@ -44,6 +44,7 @@ temp/
 /.data/
 Code/backend/.data/
 Code/backend/imports_output/
+Code/algorithms/providers/Python/imports_output/
 Code/frontend/.tmp_guangdong_pkg/
 Code/frontend/.tmp/
 Code/frontend/*.tgz
@@ -101,6 +102,15 @@ Tools/reports/data_production_e2e_*
 /tmp_*.txt
 /tmp_*.json
 /temp_wf_*.json
+
+# Local Windows env probe / repair scratch (machine-specific, not part of the project)
+/_env_*.bat
+/_env_*.log
+/_probe_*.bat
+/_xlsx_dump.json
+/fix_wsl_vhdx.bat
+/rebuild_env_python.bat
+/wsl_fix_result.log
 .trae/debug-*.png
 .trae/documents/旧对话*.md
 .trae/documents/plan_*.md
@@ -126,3 +136,30 @@ Tools/reports/dataset_inventory_*.json
 
 # Doc task notes (temp)
 Doc/一份任务说明-*.txt
+
+# AI workspace (local-only context: prompts/skills/plans/progress/memory/docs). NOT pushed to GitHub.
+.ai/
+
+# WorkBuddy local desktop state (sessions/logs/cache). NOT pushed to GitHub.
+.workbuddy/
+
+# Local pytest/vitest temp + manual verification logs (generated during dev verification)
+Test/.pytest-*/
+Test/.tmp-*/
+be_run*.log
+be_collect.log
+algo_run*.log
+algo_collect.log
+vitest_run.log
+
+# Generated test/verification reports (large dataset_inventory/scan/checkpoint dumps, up to ~188MB). Keep local, NOT in git.
+Test/reports/
+
+# Local pytest temp dirs under Code/ (created by manual verification runs, e.g. .pytest_tmp_full)
+.pytest_tmp_*/
+
+# AI engineering-assurance deliverables (local reports, not pushed)
+deliverables/
+
+# Windows NUL redirect artifact
+nul

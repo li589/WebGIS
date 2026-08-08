@@ -14,6 +14,7 @@ from __future__ import annotations
 import json
 import logging
 import time
+import uuid
 from typing import Any
 
 import redis
@@ -27,8 +28,10 @@ _client: redis.Redis | None = None
 # Circuit breaker: after Redis errors, skip reconnect/ops until cooldown elapses.
 _circuit_open_until: float = 0.0
 _consecutive_failures: int = 0
-_CIRCUIT_FAILURE_THRESHOLD = 1
+_circuit_open_count: int = 0  # for exponential backoff
+_CIRCUIT_FAILURE_THRESHOLD = 3
 _CIRCUIT_COOLDOWN_SECONDS = 30.0
+_CIRCUIT_COOLDOWN_MAX_SECONDS = 120.0
 # Keep connect/read short so a single probe after cooldown cannot stall the API for long.
 _SOCKET_CONNECT_TIMEOUT = 0.5
 _SOCKET_TIMEOUT = 0.5
@@ -39,31 +42,40 @@ def _circuit_is_open() -> bool:
 
 
 def _mark_redis_success() -> None:
-    global _consecutive_failures
+    global _consecutive_failures, _circuit_open_count
     _consecutive_failures = 0
+    _circuit_open_count = 0
 
 
 def _mark_redis_failure(reason: str) -> None:
     """Invalidate sticky client and open the circuit after consecutive failures."""
-    global _client, _circuit_open_until, _consecutive_failures
+    global _client, _circuit_open_until, _consecutive_failures, _circuit_open_count
     _client = None
     _consecutive_failures += 1
     if _consecutive_failures < _CIRCUIT_FAILURE_THRESHOLD:
         return
-    _circuit_open_until = time.monotonic() + _CIRCUIT_COOLDOWN_SECONDS
+    # Exponential backoff: each repeated opening doubles the cooldown up to max.
+    _circuit_open_count += 1
+    cooldown = min(
+        _CIRCUIT_COOLDOWN_SECONDS * (2 ** (_circuit_open_count - 1)),
+        _CIRCUIT_COOLDOWN_MAX_SECONDS,
+    )
+    _circuit_open_until = time.monotonic() + cooldown
     logger.warning(
-        "[RedisClient] circuit open for %.0fs after failure: %s",
-        _CIRCUIT_COOLDOWN_SECONDS,
+        "[RedisClient] circuit open for %.0fs after %d consecutive failures: %s",
+        cooldown,
+        _consecutive_failures,
         reason,
     )
 
 
 def reset_redis_client_state() -> None:
     """Test helper: clear singleton client and circuit breaker state."""
-    global _client, _circuit_open_until, _consecutive_failures
+    global _client, _circuit_open_until, _consecutive_failures, _circuit_open_count
     _client = None
     _circuit_open_until = 0.0
     _consecutive_failures = 0
+    _circuit_open_count = 0
 
 
 def get_redis_client() -> redis.Redis | None:
@@ -125,32 +137,58 @@ def cache_set_json(key: str, value: Any, ttl_seconds: int) -> bool:
         return False
 
 
-def acquire_dedup_lock(key: str, ttl_seconds: int = 30) -> bool:
+# Lua：仅当 key 的 value 等于持有者 token 时才删除，杜绝「锁过期→他人接管→误删他人锁」（L-1）。
+_RELEASE_LOCK_LUA = """
+if redis.call("get", KEYS[1]) == ARGV[1] then
+    return redis.call("del", KEYS[1])
+else
+    return 0
+end
+"""
+
+
+def acquire_dedup_lock(key: str, ttl_seconds: int = 30) -> str | None:
     """Try to acquire a distributed lock using SET NX.
 
-    Returns True if the lock was acquired, False if another worker is already
-    processing this key.
+    Returns:
+        持有者 owner token（str）——获取成功时返回；失败（另一 worker 持有）返回 None。
+        兼容性：旧调用方 ``if not acquire_dedup_lock(...)`` 依旧成立（None 为假、非空串为真）。
+        Redis 不可用时返回一个临时 token（放行语义，与旧行为一致），由调用方自行
+        决定是否依赖本地兜底互斥。
     """
     client = get_redis_client()
+    token = uuid.uuid4().hex
     if client is None:
-        return True  # No Redis — allow the request to proceed
+        return token  # No Redis — allow the request to proceed
     try:
-        result = client.set(key, "1", nx=True, ex=ttl_seconds)
+        result = client.set(key, token, nx=True, ex=ttl_seconds)
         _mark_redis_success()
-        return result is not None
+        return token if result is not None else None
     except redis.RedisError as exc:
         _mark_redis_failure(f"acquire_dedup_lock:{exc}")
         logger.debug("[RedisClient] acquire_dedup_lock error for key=%s: %s", key, exc)
-        return True  # On error, allow the request to proceed
+        return token  # On error, allow the request to proceed
 
 
-def release_dedup_lock(key: str) -> None:
-    """Release a distributed lock."""
+def release_dedup_lock(key: str, token: str | None = None) -> None:
+    """Release a distributed lock.
+
+    ``token`` 是安全释放的必要条件：用 Lua 比对 value 后才删除（compare-and-delete），
+    避免锁已过期被他人接管后误删他人锁。``token`` 为 None 时不删除任何锁（记警告），
+    因为无法证明锁归属；调用方应把 :func:`acquire_dedup_lock` 返回的 token 透传回来。
+    """
     client = get_redis_client()
     if client is None:
         return
+    if token is None:
+        logger.warning(
+            "[RedisClient] release_dedup_lock called without owner token; "
+            "skipping release for key=%s (lock will expire via TTL)",
+            key,
+        )
+        return
     try:
-        client.delete(key)
+        client.eval(_RELEASE_LOCK_LUA, 1, key, token)
         _mark_redis_success()
     except redis.RedisError as exc:
         _mark_redis_failure(f"release_dedup_lock:{exc}")
@@ -183,9 +221,9 @@ def wait_for_dedup(
 # ─── Weather API 限流（按 pool 隔离：online / local / commercial 互不抢槽）────
 
 _API_CONCURRENT_KEY_PREFIX = "weather:api_concurrent:"
-# 商业源更严；Open-Meteo 与前端瓦片并发 cap(=4) / tile semaphore 对齐
+# 商业源更严；Open-Meteo 与前端瓦片并发 cap(=6) / tile semaphore 对齐
 _MAX_CONCURRENT_API_CALLS_DEFAULT = 2
-_MAX_CONCURRENT_API_CALLS_OPEN_METEO = 4
+_MAX_CONCURRENT_API_CALLS_OPEN_METEO = 6
 _API_SLOT_TTL = 60  # 秒，防止 worker 崩溃后计数器卡住
 
 # 兼容旧测试/引用名
@@ -204,7 +242,7 @@ def _normalize_api_pool(pool: str | None) -> str:
 
 
 def _max_concurrent_for_pool(pool: str) -> int:
-    """Open-Meteo（含 base_url / provider id）放宽到 4；其余池保持 2。
+    """Open-Meteo（含 base_url / provider id）放宽到 6；其余池保持 2。
 
     本地 Open-Meteo Docker（http://127.0.0.1:8080）的 base_url 不含
     "open-meteo" 字符串，需额外匹配 localhost / 127.0.0.1 端口 8080

@@ -1,6 +1,7 @@
 from dataclasses import dataclass, field
 import os
 from pathlib import Path
+import sys
 
 # 尝试加载 dotenv，若不可用或 .env 不可读则跳过
 # catch Exception 而非仅 ImportError：Windows 文件系统可能存在
@@ -32,13 +33,41 @@ def _parse_csv_env(name: str, default: str = "") -> list[str]:
     return [item.strip() for item in raw_value.split(",") if item.strip()]
 
 
+def _default_ui_restart_enabled() -> bool:
+    raw = os.getenv("BACKEND_UI_RESTART_ENABLED")
+    if raw is not None and str(raw).strip() != "":
+        return str(raw).strip().lower() in {"1", "true", "yes", "on"}
+    env = (os.getenv("BACKEND_ENV") or "production").lower()
+    return env in {"development", "dev"}
+
+
+def _default_gee_api_account_management_enabled() -> bool:
+    """Production default OFF; development ON unless explicitly overridden."""
+    raw = os.getenv("BACKEND_GEE_API_ACCOUNT_MANAGEMENT_ENABLED")
+    if raw is not None and str(raw).strip() != "":
+        return str(raw).strip().lower() in {"1", "true", "yes", "on"}
+    env = (os.getenv("BACKEND_ENV") or "production").lower()
+    return env in {"development", "dev"}
+
+
 @dataclass(frozen=True)
 class Settings:
     service_name: str = os.getenv(
         "BACKEND_SERVICE_NAME",
         "Comprehensive Geographic Data Analysis Backend",
     )
-    environment: str = os.getenv("BACKEND_ENV", "development")
+    # 发布就绪修复（P0-1）：默认 environment 反转为 "production"（fail-secure）。
+    # 此前默认 "development" 会在未配置 API Key 时静默放行所有写接口（见 app/api/deps.py）。
+    # 本地联调请在 Code/backend/.env 显式设置 BACKEND_ENV=development 以保留开发旁路。
+    environment: str = os.getenv("BACKEND_ENV", "production")
+    # 审查 BUG-3：仅当后端位于受信反代（Nginx gateway）之后时开启，才信任
+    # X-Forwarded-For / X-Real-IP；默认 false，写限流用 request.client.host，防伪造。
+    trust_proxy: bool = os.getenv("BACKEND_TRUST_PROXY", "false").lower() in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }
     host: str = os.getenv("BACKEND_HOST", "127.0.0.1")
     port: int = int(os.getenv("BACKEND_PORT", "8000"))
     reload: bool = os.getenv("BACKEND_RELOAD", "true").lower() == "true"
@@ -156,6 +185,25 @@ class Settings:
     weather_default_place_name: str = os.getenv(
         "BACKEND_WEATHER_DEFAULT_PLACE_NAME", "Guangzhou"
     )
+    # 地图默认视口（与天气默认点同源缺省；机构可经 BACKEND_MAP_DEFAULT_* 覆盖）
+    map_default_longitude: float = float(
+        os.getenv(
+            "BACKEND_MAP_DEFAULT_LONGITUDE",
+            os.getenv("BACKEND_WEATHER_DEFAULT_LONGITUDE", "113.2644"),
+        )
+    )
+    map_default_latitude: float = float(
+        os.getenv(
+            "BACKEND_MAP_DEFAULT_LATITUDE",
+            os.getenv("BACKEND_WEATHER_DEFAULT_LATITUDE", "23.1291"),
+        )
+    )
+    map_default_zoom: float = float(os.getenv("BACKEND_MAP_DEFAULT_ZOOM", "4.8"))
+    map_default_tile_source: str = os.getenv(
+        "BACKEND_MAP_DEFAULT_TILE_SOURCE", "gaode-street"
+    )
+    # 可选机构 AOI 预设 JSON 数组：[{"label":"...","west":..,"south":..,"east":..,"north":..}]
+    map_aoi_presets_json: str = os.getenv("BACKEND_MAP_AOI_PRESETS", "")
     workflow_queue_realtime: str = os.getenv(
         "BACKEND_WORKFLOW_QUEUE_REALTIME", "realtime"
     )
@@ -213,6 +261,8 @@ class Settings:
     data_root: str = os.getenv("BACKEND_DATA_ROOT", "")
     # 产物输出根目录（算法产物的写入路径，必须通过环境变量配置）
     output_root: str = os.getenv("BACKEND_OUTPUT_ROOT", "")
+    # 前端设置页「重启后端」（FastAPI+Worker+Beat）；默认仅 development 开启
+    ui_restart_enabled: bool = _default_ui_restart_enabled()
 
     # ---- GEE 引擎配置 ----
     # 是否启用 GEE 引擎桥接（False 时 gee_bridge_service.supports 永远返回 False）
@@ -276,10 +326,9 @@ class Settings:
         "BACKEND_GEE_CREDENTIALS_DB_PATH",
         str(_RUNTIME_ROOT / "workflow_state" / "gee_credentials.sqlite3"),
     )
-    # 是否允许通过 API 添加 service_account（生产环境建议 False，仅启动时从环境变量加载）
+    # 是否允许通过 API 添加 service_account（生产默认 False；development 默认 True）
     gee_api_account_management_enabled: bool = (
-        os.getenv("BACKEND_GEE_API_ACCOUNT_MANAGEMENT_ENABLED", "true").lower()
-        == "true"
+        _default_gee_api_account_management_enabled()
     )
 
     # ---- 天气工作流引擎配置 ----
@@ -346,6 +395,27 @@ class Settings:
     celery_task_time_limit: int = int(
         os.getenv("BACKEND_CELERY_TASK_TIME_LIMIT", "360")
     )
+    # 发布就绪修复（P0-7）：broker visibility_timeout（秒）。
+    # 必须大于最长 task_time_limit（workflow 任务 time_limit=7500），否则 acks_late
+    # 下长任务会在 visibility 超时（Redis 默认 3600）后被重投到另一 worker，导致并发重复执行。
+    celery_broker_visibility_timeout: int = int(
+        os.getenv("BACKEND_CELERY_BROKER_VISIBILITY_TIMEOUT", "8100")
+    )
+    # broker 连接/读取超时（秒）：给 broker 操作定上界，避免 broker 挂起时
+    # 工作线程无限期阻塞（同根修复线程池阻塞无寿命上界问题）。
+    celery_broker_socket_timeout: int = int(
+        os.getenv("BACKEND_CELERY_BROKER_SOCKET_TIMEOUT", "30")
+    )
+    celery_broker_socket_connect_timeout: int = int(
+        os.getenv("BACKEND_CELERY_BROKER_SOCKET_CONNECT_TIMEOUT", "10")
+    )
+    # 发布就绪修复（P1-4）：solo 池看门狗阈值（秒）。worker_pool=solo 时 time_limit
+    # 无法强杀卡死任务，run 会永远停在 running。看门狗周期任务把"运行时长超此阈值"
+    # 的 run 标记为 failed（仅纠正状态，不释放被卡 worker）。默认 8100 > workflow
+    # 任务 time_limit=7500，避免误杀合法长任务。
+    workflow_stuck_watchdog_seconds: int = int(
+        os.getenv("BACKEND_WORKFLOW_STUCK_WATCHDOG_SECONDS", "8100")
+    )
     # Celery worker 并发度：每个 worker 进程的最大并发任务数。
     # launch.py 启动 7 个 worker，默认占满 CPU 会严重过订阅；建议物理核数/worker 数。
     celery_worker_concurrency: int = int(
@@ -355,6 +425,14 @@ class Settings:
     # 配合 acks_late 时应设为 1，避免长任务预取占槽阻塞短任务。
     celery_worker_prefetch_multiplier: int = int(
         os.getenv("BACKEND_CELERY_PREFETCH_MULTIPLIER", "1")
+    )
+    # Celery worker 池模式（C3）：solo=单进程串行（Windows 开发兜底，规避
+    # Celery 5.4 prefork fast_trace_task thread-local bug）；prefork=多进程并行
+    # （生产 Linux 推荐，concurrency 生效）。默认按平台自适应；可用
+    # BACKEND_CELERY_WORKER_POOL 显式覆盖（solo/prefork/threads/gevent）。
+    celery_worker_pool: str = os.getenv(
+        "BACKEND_CELERY_WORKER_POOL",
+        "solo" if sys.platform.startswith("win") else "prefork",
     )
 
     # ---- Phase 1 工程治理开关 ----
@@ -371,6 +449,31 @@ class Settings:
     remote_layer_data_uris: str = os.getenv("BACKEND_REMOTE_LAYER_DATA_URIS", "")
     # 每个 API Key 保留的历史版本上限
     api_key_history_limit: int = int(os.getenv("BACKEND_API_KEY_HISTORY_LIMIT", "20"))
+
+    # ---- User login / session auth ----
+    # 前端登录与会话鉴权；生产默认开启。关闭后仅保留 X-API-Key 写鉴权（旧联调路径）。
+    user_auth_enabled: bool = (
+        os.getenv("BACKEND_USER_AUTH_ENABLED", "true").lower() == "true"
+    )
+    admin_username: str = os.getenv("BACKEND_ADMIN_USERNAME", "")
+    admin_password: str = os.getenv("BACKEND_ADMIN_PASSWORD", "")
+    session_cookie_name: str = os.getenv("BACKEND_SESSION_COOKIE_NAME", "cgda_session")
+    session_ttl_hours: int = int(os.getenv("BACKEND_SESSION_TTL_HOURS", "24"))
+    # development：登录页与 API Key 设置预填默认凭据（勿在生产开启）
+    dev_auth_prefill: bool = os.getenv(
+        "BACKEND_DEV_AUTH_PREFILL", ""
+    ).strip().lower() in {"1", "true", "yes", "on"} or (
+        os.getenv("BACKEND_DEV_AUTH_PREFILL", "").strip() == ""
+        and (os.getenv("BACKEND_ENV") or "production").lower() in {"development", "dev"}
+    )
+    dev_default_api_key: str = os.getenv(
+        "BACKEND_DEV_DEFAULT_API_KEY", "cgda-dev-write-key"
+    )
+    # 服务密钥 backend_auth 绑定角色（脚本/CI）；默认 operator
+    api_key_role: str = os.getenv("BACKEND_API_KEY_ROLE", "operator")
+    login_rate_limit_per_minute: int = int(
+        os.getenv("BACKEND_LOGIN_RATE_LIMIT_PER_MINUTE", "10")
+    )
     # 每个远程存储 profile 保留的密钥历史上限
     remote_storage_history_limit: int = int(
         os.getenv("BACKEND_REMOTE_STORAGE_HISTORY_LIMIT", "20")
@@ -379,26 +482,52 @@ class Settings:
     # ---- SSH 远程同步 ----
     ssh_hpc_host: str = os.getenv("BACKEND_SSH_HPC_HOST", "127.0.0.1")
     ssh_hpc_port: int = int(os.getenv("BACKEND_SSH_HPC_PORT", "2222"))
-    ssh_hpc_user: str = os.getenv("BACKEND_SSH_HPC_USER", "likr6008")
+    # 去硬编码批 1：不再默认实验室账号；空 = 未配置（与 FileBrowser URL 一致）
+    ssh_hpc_user: str = os.getenv("BACKEND_SSH_HPC_USER", "")
     ssh_hpc_key_path: str = os.getenv("BACKEND_SSH_HPC_KEY_PATH", "~/.ssh/seahpc_key")
     ssh_win11_alias: str = os.getenv("BACKEND_SSH_WIN11_ALIAS", "win11-lab")
-    ssh_win11_user: str = os.getenv("BACKEND_SSH_WIN11_USER", "qiujianqiu")
+    ssh_win11_user: str = os.getenv("BACKEND_SSH_WIN11_USER", "")
 
     # ---- Earthdata 凭据 ----
     earthdata_username: str = os.getenv("BACKEND_EARTHDATA_USERNAME", "")
     earthdata_password: str = os.getenv("BACKEND_EARTHDATA_PASSWORD", "")
 
     # ---- FileBrowser ----
-    filebrowser_nas_url: str = os.getenv(
-        "BACKEND_FILEBROWSER_NAS_URL",
-        "https://nasfile.personaltunnel.dpdns.org",
-    )
-    filebrowser_win11_url: str = os.getenv(
-        "BACKEND_FILEBROWSER_WIN11_URL",
-        "https://win11file.personaltunnel.dpdns.org",
-    )
-    filebrowser_user: str = os.getenv("BACKEND_FILEBROWSER_USER", "user")
+    # 发布就绪修复（P0-2/P1-7）：移除硬编码的外部免费动态 DNS 端点默认值与默认用户名。
+    # 这些端点曾默认指向 *.personaltunnel.dpdns.org（可被第三方注册的免费 DDNS），
+    # 叠加未鉴权路由会让后端主动向外部域名发起连接并外发凭据。现默认为空 = 功能禁用，
+    # 需管理员在 .env / 设置界面显式配置内部地址后方可使用。
+    filebrowser_nas_url: str = os.getenv("BACKEND_FILEBROWSER_NAS_URL", "")
+    filebrowser_win11_url: str = os.getenv("BACKEND_FILEBROWSER_WIN11_URL", "")
+    filebrowser_user: str = os.getenv("BACKEND_FILEBROWSER_USER", "")
     filebrowser_password: str = os.getenv("BACKEND_FILEBROWSER_PASSWORD", "")
+
+    # ---- P0-10 产品边界开关 ----
+    # demo:// 占位数据源：仅 development 默认可用（联调/展出演示）；production 默认直接
+    # fail，除非显式设 BACKEND_DEMO_SOURCES_ENABLED=true（如临时展出演示以生产模式运行时）。
+    demo_sources_enabled: bool = os.getenv(
+        "BACKEND_DEMO_SOURCES_ENABLED", ""
+    ).strip().lower() in {"1", "true", "yes", "on"}
+    # 未实现执行器的占位节点模板（executable=False 的 stub）：仅 development 默认在节点
+    # 面板可见；production 默认隐藏，除非显式设 BACKEND_NODE_STUBS_VISIBLE=true。
+    node_stubs_visible: bool = os.getenv(
+        "BACKEND_NODE_STUBS_VISIBLE", ""
+    ).strip().lower() in {"1", "true", "yes", "on"}
+
+    # ---- SpatiaLite 空间扩展（mod_spatialite）----
+    # 总开关：False 时所有连接都不尝试加载（彻底禁用空间特性）。
+    # 默认 True：扩展不可用时 spatialite_loader.load_into 会 warn 并降级，
+    # state/metadata DB（workflow/api_keys/gee_credentials，高风险区）不受影响。
+    spatialite_enabled: bool = (
+        os.getenv("BACKEND_SPATIALITE_ENABLED", "true").lower() == "true"
+    )
+    # 扩展文件路径覆盖（可选；空=自动探测）。
+    spatialite_path: str = os.getenv("BACKEND_SPATIALITE_PATH", "")
+    # 空间叠加层数据库路径（独立 SQLite 文件，与 workflow_state 分离；删除即回滚）。
+    spatialite_db_path: str = os.getenv(
+        "BACKEND_SPATIALITE_DB_PATH",
+        str(BACKEND_ROOT / ".data" / "spatial.sqlite"),
+    )
 
 
 settings = Settings()

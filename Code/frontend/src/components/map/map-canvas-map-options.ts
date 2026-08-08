@@ -1,10 +1,13 @@
 import type { MapOptions, StyleSpecification } from 'maplibre-gl'
 
+import { getMapDefaults } from '../../services/map-defaults'
+
 interface CreateMapCanvasMapOptionsOptions {
   container: HTMLElement
 }
 
 export function createMapCanvasMapOptions(options: CreateMapCanvasMapOptionsOptions): MapOptions {
+  const mapDefaults = getMapDefaults()
   return {
     container: options.container,
     style: {
@@ -12,8 +15,8 @@ export function createMapCanvasMapOptions(options: CreateMapCanvasMapOptionsOpti
       sources: {},
       layers: [{ id: 'background', type: 'background', paint: { 'background-color': '#07111e' } }],
     } as StyleSpecification,
-    center: [113.2644, 23.1291],
-    zoom: 4.8,
+    center: [mapDefaults.longitude, mapDefaults.latitude],
+    zoom: mapDefaults.zoom,
     pitch: 0,
     bearing: 0,
     attributionControl: false,
@@ -23,7 +26,7 @@ export function createMapCanvasMapOptions(options: CreateMapCanvasMapOptionsOpti
     refreshExpiredTiles: false,
     canvasContextAttributes: {
       // preserveDrawingBuffer=false（默认）：不回读 framebuffer，大幅提升与 Canvas 2D 叠加层的合成性能
-      // 截图改用 captureMapCanvas() 在 render() 后同步读取
+      // 截图：captureMapCanvas() 在 MapLibre `render` 事件回调内同步 toDataURL（无公开 Map.render）
       preserveDrawingBuffer: false,
     },
   }

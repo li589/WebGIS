@@ -4,7 +4,7 @@ from datetime import datetime
 from enum import Enum
 from typing import Any
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class MapMode(str, Enum):
@@ -32,19 +32,6 @@ class TimeGranularity(str, Enum):
     hour = "hour"
     day = "day"
     month = "month"
-
-
-class TaskType(str, Enum):
-    layer_preview = "layer_preview"
-    analysis = "analysis"
-    export = "export"
-
-
-class TaskStatus(str, Enum):
-    queued = "queued"
-    running = "running"
-    succeeded = "succeeded"
-    failed = "failed"
 
 
 class BoundingBox(BaseModel):
@@ -127,55 +114,6 @@ class LayerCatalogResponse(BaseModel):
     items: list[LayerDescriptor]
 
 
-class DemoAvailabilityState(str, Enum):
-    empty = "empty"
-    partial = "partial"
-    ready = "ready"
-
-
-class DemoDataStateMode(str, Enum):
-    demo = "demo"
-    placeholder = "placeholder"
-    mixed = "mixed"
-
-
-class DemoFieldAliasMap(BaseModel):
-    metric_value: list[str]
-    hotspot_value: list[str]
-    observation_time: list[str]
-    status_label: list[str]
-
-
-class DemoLayerSnapshot(BaseModel):
-    layer_id: str
-    display_name: str
-    category: str
-    metric_label: str
-    metric_unit: str
-    metric_precision: int
-    update_label: str
-    source_label: str
-    accent_color: str
-    accent_glow: str
-    chip_tone: str
-    data_state_mode: DemoDataStateMode
-    data_state_label: str
-    empty_state_label: str
-    availability_state: DemoAvailabilityState
-    trend_label: str
-    summary: str
-    status_label: str
-    confidence_label: str
-    requested_hour: float
-    field_aliases: DemoFieldAliasMap
-    raw_payload: dict[str, Any]
-
-
-class DemoLayerSnapshotsResponse(BaseModel):
-    requested_hour: float
-    items: list[DemoLayerSnapshot]
-
-
 class SpatialFilter(BaseModel):
     filter_type: str = "bbox"
     bbox: BoundingBox | None = None
@@ -187,48 +125,6 @@ class TimeRange(BaseModel):
     start_at: datetime
     end_at: datetime
     granularity: TimeGranularity = TimeGranularity.hour
-
-
-class TaskSubmitRequest(BaseModel):
-    layer_id: str
-    task_type: TaskType = TaskType.analysis
-    map_mode: MapMode = MapMode.mode_2d
-    spatial_filter: SpatialFilter
-    time_range: TimeRange
-    parameters: dict[str, Any] = Field(default_factory=dict)
-    requested_outputs: list[str] = Field(default_factory=lambda: ["json"])
-    client_context: dict[str, Any] = Field(default_factory=dict)
-
-
-class TaskAcceptedResponse(BaseModel):
-    task_id: str
-    status: TaskStatus
-    status_url: str
-    created_at: datetime
-    message: str
-
-
-class TaskResultReference(BaseModel):
-    result_type: str
-    mime_type: str
-    inline_data: dict[str, Any] | None = None
-    resource_url: str | None = None
-
-
-class TaskStatusResponse(BaseModel):
-    task_id: str
-    layer_id: str
-    task_type: TaskType
-    status: TaskStatus
-    progress: int
-    message: str
-    created_at: datetime
-    updated_at: datetime
-    spatial_filter: SpatialFilter
-    time_range: TimeRange
-    requested_outputs: list[str]
-    result_refs: list[TaskResultReference] = Field(default_factory=list)
-    diagnostics: list[str] = Field(default_factory=list)
 
 
 class ExecutionStatus(str, Enum):
@@ -306,6 +202,57 @@ class ResultKind(str, Enum):
     file = "file"
     text = "text"
     diagnostic = "diagnostic"
+
+
+class ChartType(str, Enum):
+    """Generic analysis chart kinds (raster/vector agnostic)."""
+
+    line = "line"
+    bar = "bar"
+    histogram = "histogram"
+    scatter = "scatter"
+    boxplot = "boxplot"
+
+
+class ChartSeriesSpec(BaseModel):
+    """One named series inside a ChartSpec."""
+
+    name: str = "series"
+    x: list[float | int | str] = Field(default_factory=list)
+    y: list[float | int | None] = Field(default_factory=list)
+
+
+class ChartSpec(BaseModel):
+    """Structured chart payload for ``ResultKind.chart`` inline_data.
+
+    Compatible with the legacy demo shape ``{chart_type, x, y, series_name}``:
+    when ``series`` is empty, consumers may fall back to top-level ``x``/``y``.
+    """
+
+    schema_version: str = "1"
+    chart_type: ChartType = ChartType.line
+    title: str = "Chart"
+    x_label: str = ""
+    y_label: str = ""
+    unit: str = ""
+    series: list[ChartSeriesSpec] = Field(default_factory=list)
+    # Legacy flat axes (demo provider + compact histogram)
+    x: list[float | int | str] = Field(default_factory=list)
+    y: list[float | int | None] = Field(default_factory=list)
+    series_name: str | None = None
+    bins: list[float] | None = None
+    categories: list[str] | None = None
+
+
+class TableSpec(BaseModel):
+    """Structured table payload for ``ResultKind.table`` inline_data."""
+
+    schema_version: str = "1"
+    title: str = "Table"
+    columns: list[str] = Field(default_factory=list)
+    rows: list[list[Any]] = Field(default_factory=list)
+    units: dict[str, str] = Field(default_factory=dict)
+    dtypes: dict[str, str] = Field(default_factory=dict)
 
 
 class EventChannel(str, Enum):
@@ -531,6 +478,9 @@ class WorkflowAnalysisResultDto(BaseModel):
     data_state_mode: str | None = None
     result_category: str = "analysis"
     results: dict[str, str | None] = Field(default_factory=dict)
+    # Optional typed analysis payloads (forces ChartSpec/TableSpec into OpenAPI)
+    charts: list[ChartSpec] = Field(default_factory=list)
+    tables: list[TableSpec] = Field(default_factory=list)
 
 
 class WorkflowProviderResultDto(BaseModel):
@@ -724,6 +674,12 @@ class RuntimeConfigUpdateResponse(BaseModel):
     applied_count: int
     message: str
     config_snapshot: dict[str, dict[str, Any]]
+
+
+class RuntimeConfigSnapshotResponse(BaseModel):
+    """GET /runtime/config — scope→key→value overrides (merged defaults + DB)."""
+
+    model_config = ConfigDict(extra="allow")
 
 
 class BackendServiceStatus(BaseModel):

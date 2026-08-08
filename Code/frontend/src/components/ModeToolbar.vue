@@ -17,6 +17,7 @@ import { useLayersStore } from '../stores/layers'
 import { useUiStore } from '../stores/ui'
 import { useLogStore } from '../stores/log'
 import { useSettingsStore } from '../stores/settings'
+import { useAuthStore } from '../stores/auth'
 import { useWeatherTileManager } from '../stores/weather-tile-manager'
 import { useWeatherSyncStatusStore } from '../stores/weather-sync-status'
 import { mergeWorkflowSummaryWithWeather } from '../utils/workflow-status-merge'
@@ -36,6 +37,7 @@ const layersStore = useLayersStore()
 const uiStore = useUiStore()
 const logStore = useLogStore()
 const settingsStore = useSettingsStore()
+const authStore = useAuthStore()
 const weatherTileManager = useWeatherTileManager()
 const weatherSyncStatus = useWeatherSyncStatusStore()
 const { workflowSummary } = storeToRefs(layersStore)
@@ -44,7 +46,7 @@ const { apiKeys } = storeToRefs(settingsStore)
 const { syncInProgress } = storeToRefs(weatherSyncStatus)
 
 onMounted(() => {
-  if (apiKeys.value.length === 0) {
+  if (authStore.isAuthenticated && apiKeys.value.length === 0) {
     void settingsStore.loadApiKeys().catch(() => {
       /* toolbar still works with free basemaps */
     })
@@ -322,9 +324,7 @@ function sourcePillLabel(source: TileSourceConfig): string {
         <button class="tool-btn" type="button" title="系统日志" @click="emit('openLog')">
           <span class="btn-icon" aria-hidden="true">📋</span>
           <span class="btn-label">日志</span>
-          <span v-if="logStore.entries.length > 0" class="log-badge">{{
-            logStore.entries.length
-          }}</span>
+          <span v-if="logStore.errorCount > 0" class="log-badge">{{ logStore.errorCount }}</span>
         </button>
       </div>
     </div>
@@ -668,14 +668,6 @@ h1 {
   border: 1px solid rgba(136, 192, 255, 0.1);
   border-radius: 999px;
   background: rgba(4, 12, 23, 0.6);
-}
-
-.source-pill::before {
-  content: '源';
-  color: #5a7080;
-  font-size: 0.56rem;
-  letter-spacing: 0.04em;
-  margin-right: 0.12rem;
 }
 
 .source-btn {

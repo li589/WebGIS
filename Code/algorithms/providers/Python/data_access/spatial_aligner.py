@@ -191,8 +191,12 @@ class SpatialAligner:
             )
 
         # 生成目标坐标（像素中心，与 from_bounds Affine 一致；禁止 linspace 边点）
-        lat_1d = np.asarray(pixel_center_axis(north, south, target_height), dtype=np.float64)
-        lon_1d = np.asarray(pixel_center_axis(west, east, target_width), dtype=np.float64)
+        lat_1d = np.asarray(
+            pixel_center_axis(north, south, target_height), dtype=np.float64
+        )
+        lon_1d = np.asarray(
+            pixel_center_axis(west, east, target_width), dtype=np.float64
+        )
 
         return aligned, lat_1d, lon_1d
 

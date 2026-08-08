@@ -3,4 +3,8 @@ alwaysApply: true
 scene: git_message
 ---
 
-在此处编写规则，自定义 AI 生成提交信息的风格。
+# Git 提交信息规范（CGDA，指针）
+
+完整规范（Conventional Commits、type/scope、约束、示例）统一维护在 **`.ai/rules/git-commit-message.md`**。
+
+> 以 `.ai/rules/git-commit-message.md` 为准。

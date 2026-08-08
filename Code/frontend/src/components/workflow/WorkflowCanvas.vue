@@ -1918,7 +1918,7 @@ watch(
   overflow: auto;
   padding: 0.55rem 0.65rem 0.6rem;
   border-radius: 0.5rem;
-  border: 1px solid color-mix(in srgb, var(--tip-accent, #5ad5ff) 45%, transparent);
+  border: 1px solid rgba(90, 213, 255, 0.45);
   background: linear-gradient(165deg, rgba(14, 24, 40, 0.96), rgba(8, 14, 26, 0.94));
   box-shadow:
     0 10px 28px rgba(0, 0, 0, 0.45),
@@ -1959,7 +1959,7 @@ watch(
 :global(.wf-port-tooltip .port-tip-type) {
   flex-shrink: 0;
   font-size: 0.52rem;
-  color: color-mix(in srgb, var(--tip-accent, #5ad5ff) 85%, #fff);
+  color: #c8f0ff;
 }
 
 :global(.wf-port-tooltip .port-tip-body) {

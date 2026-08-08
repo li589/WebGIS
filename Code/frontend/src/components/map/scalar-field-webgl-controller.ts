@@ -5,6 +5,7 @@
 import { removeWeatherMapArtifacts, buildWeatherOverlayIds } from './weather-overlay-maplibre'
 import type { WeatherOverlayState } from './weather-overlay-registry'
 import { buildScalarGridFromGeoJSON, resolveScalarValueRange } from './scalar-field-grid'
+import { lonFrameFromViewportBounds } from './lon-frame'
 import { ScalarFieldWebGLLayer, probeScalarFieldWebGLSupport } from './scalar-field-webgl-renderer'
 import { buildPaletteLUT, encodeScalarGridToRGBA } from './scalar-field-webgl-texture'
 import { getPaletteColors, getWeatherFillOpacity } from './weather-render'
@@ -44,7 +45,8 @@ export class ScalarFieldWebGLController {
   private layers = new Map<string, ScalarFieldWebGLLayer>()
   private contours = new Map<string, ScalarContourLayer>()
   private styleHandlers = new Map<string, () => void>()
-  private lastChecksum = new Map<string, number>()
+  /** 各 catalog 最近一次上传的网格签名（布局 + mask + 有序数值）。 */
+  private lastSignature = new Map<string, string>()
   /** 各 catalog 最近一次上传的 grid bounds；bounds 变化（覆盖扩张/收缩）时不做 crossfade */
   private lastBounds = new Map<
     string,
@@ -93,7 +95,11 @@ export class ScalarFieldWebGLController {
 
     if (options.overlayToken !== options.getSyncWeatherToken()) return true
 
-    const grid = buildScalarGridFromGeoJSON(geojson, metric)
+    const grid = buildScalarGridFromGeoJSON(
+      geojson,
+      metric,
+      lonFrameFromViewportBounds(state.viewportBounds ?? null, this.map.getCenter().lng),
+    )
     if (!grid) return false
 
     // 快速连点：构建网格后 token 已过期则 hold，不上传、不打断进行中的淡入
@@ -113,14 +119,9 @@ export class ScalarFieldWebGLController {
     layer.setPaletteLUT(lut)
     layer.setViewportBounds(state.viewportBounds ?? null)
 
-    const prevChecksum = this.lastChecksum.get(state.catalogId)
-    if (prevChecksum === grid.checksum) {
-      // 同 checksum：不重复上传纹理
-      return true
-    }
-
-    // 跨淡入仅用于「同一网格布局下的数值更新」（如时次切换）；
-    // bounds 变化（瓦片覆盖扩张/收缩）直接硬切，避免流式到达期反复淡入闪烁
+    // bounds/frame 变化时必须重上传：否则缩放/平移到另一半球时旧 quad 会被保留。
+    // 同时用布局 + mask + 有序数值签名，而不是简单数值求和，避免同和值不同网格误判相同。
+    const prevSignature = this.lastSignature.get(state.catalogId)
     const prevBounds = this.lastBounds.get(state.catalogId)
     const boundsChanged =
       !prevBounds ||
@@ -128,12 +129,18 @@ export class ScalarFieldWebGLController {
       prevBounds.east !== encoded.east ||
       prevBounds.south !== encoded.south ||
       prevBounds.north !== encoded.north
-    const crossfadeMs = prevChecksum !== undefined && !boundsChanged ? CROSSFADE_MS : 0
+    if (prevSignature === grid.signature && !boundsChanged) {
+      return true
+    }
+
+    // 跨淡入仅用于「同一网格布局下的数值更新」（如时次切换）；
+    // bounds 变化（瓦片覆盖扩张/收缩）直接硬切，避免流式到达期反复淡入闪烁。
+    const crossfadeMs = prevSignature !== undefined && !boundsChanged ? CROSSFADE_MS : 0
     // 仅取消其它 token 的淡入；保留当前 token
     layer.cancelBlend(options.overlayToken)
     if (options.overlayToken !== options.getSyncWeatherToken()) return true
     layer.setFieldData(encoded, { crossfadeMs, token: options.overlayToken })
-    this.lastChecksum.set(state.catalogId, grid.checksum)
+    this.lastSignature.set(state.catalogId, grid.signature)
     this.lastBounds.set(state.catalogId, {
       west: encoded.west,
       south: encoded.south,
@@ -171,7 +178,7 @@ export class ScalarFieldWebGLController {
     }
     this.destroyContour(catalogId)
     this.clearStyleHandler(catalogId)
-    this.lastChecksum.delete(catalogId)
+    this.lastSignature.delete(catalogId)
     this.lastBounds.delete(catalogId)
     removeWeatherMapArtifacts(this.map, catalogId)
     return Boolean(layer)

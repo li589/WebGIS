@@ -14,6 +14,57 @@ from data_access.contracts import DataRequestV2, ResourceRef, build_resource_ref
 logger = logging.getLogger(__name__)
 
 _DEFAULT_MAX_DOWNLOAD_BYTES = 512 * 1024 * 1024  # 512 MiB
+# URL path suffixes that are scripts/filters, not payload extensions (NOMADS CGI).
+_OPAQUE_URL_SUFFIXES = frozenset(
+    {".pl", ".cgi", ".php", ".asp", ".aspx", ".jsp", ".py", ".exe"}
+)
+
+
+def _cache_suffix_from_url_path(path: str) -> str:
+    suffix = Path(path).suffix.lower()
+    if not suffix or suffix in _OPAQUE_URL_SUFFIXES:
+        return ".bin"
+    return suffix
+
+
+def _sniff_file_suffix(local_path: Path) -> str | None:
+    """Return a better extension from magic bytes when URL suffix is opaque."""
+    try:
+        with local_path.open("rb") as fh:
+            head = fh.read(16)
+    except OSError:
+        return None
+    if head.startswith(b"GRIB"):
+        return ".grib2"
+    if head.startswith(b"\x89PNG"):
+        return ".png"
+    if head.startswith(b"\xff\xd8\xff"):
+        return ".jpg"
+    return None
+
+
+def _maybe_rename_sniffed(local_path: Path) -> Path:
+    if local_path.suffix.lower() not in {".bin", *_OPAQUE_URL_SUFFIXES}:
+        return local_path
+    sniffed = _sniff_file_suffix(local_path)
+    if not sniffed or local_path.suffix.lower() == sniffed:
+        return local_path
+    target = local_path.with_suffix(sniffed)
+    if target == local_path:
+        return local_path
+    try:
+        if target.exists():
+            target.unlink()
+        local_path.rename(target)
+        meta_src = _meta_sidecars(local_path)
+        meta_dst = _meta_sidecars(target)
+        if meta_src.is_file():
+            if meta_dst.exists():
+                meta_dst.unlink()
+            meta_src.rename(meta_dst)
+    except OSError:
+        return local_path
+    return target
 
 
 def _max_download_bytes(metadata: dict[str, object] | None = None) -> int:
@@ -152,8 +203,19 @@ class HttpSource:
         force_refresh = bool(meta.get("force_refresh"))
         cache_key = build_http_cache_key(resource.uri, extra_headers)
         parsed = urlparse(resource.uri)
-        suffix = Path(parsed.path).suffix or ".bin"
+        suffix = _cache_suffix_from_url_path(parsed.path)
         local_path = destination_root / f"{cache_key}{suffix}"
+        # Legacy caches may still use opaque CGI suffixes (.pl); prefer those hits.
+        legacy_opaque = (
+            destination_root / f"{cache_key}{Path(parsed.path).suffix.lower()}"
+        )
+        if (
+            not local_path.exists()
+            and legacy_opaque != local_path
+            and legacy_opaque.exists()
+            and legacy_opaque.stat().st_size > 0
+        ):
+            local_path = legacy_opaque
 
         sidecar = _load_sidecar(local_path)
         cache_hit = False
@@ -185,6 +247,8 @@ class HttpSource:
                 extra_headers=extra_headers,
                 meta=meta,
             )
+
+        local_path = _maybe_rename_sniffed(local_path)
 
         staged_metadata = dict(resource.metadata)
         staged_metadata["materialization_status"] = "ready"

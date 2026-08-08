@@ -1,12 +1,12 @@
 /**
  * Adaptive concurrency for weather tile fetches (AIMD + memory pressure).
  * Cap must stay ≤ backend WeatherTileService semaphore
- * (`_DEFAULT_MAX_CONCURRENT_TILE_REQUESTS = 4`) and Open-Meteo API concurrent
- * cap (=4). Higher frontend caps only queue against a saturated backend and
+ * (`_DEFAULT_MAX_CONCURRENT_TILE_REQUESTS = 6`) and Open-Meteo API concurrent
+ * cap (=6). Higher frontend caps only queue against a saturated backend and
  * amplify 429/timeout AIMD oscillation.
  */
 const MIN_CONCURRENT_TILES = 2
-export const MAX_CONCURRENT_TILES_CAP = 4
+export const MAX_CONCURRENT_TILES_CAP = 6
 const SUCCESS_THRESHOLD_FOR_INCREASE = 8
 const MEMORY_PRESSURE_RATIO = 0.8
 
@@ -20,7 +20,7 @@ function computeInitialConcurrency(): number {
 let currentMaxConcurrent = computeInitialConcurrency()
 let consecutiveSuccesses = 0
 let debugLog: ConcurrencyDebugLog = () => {}
-/** Zoom-out 并发提升过期时间戳（ms）；过期后回退到 AIMD 正常值 */
+/** Zoom 并发提升过期时间戳（ms）；过期后回退到 AIMD 正常值 */
 let zoomOutBoostUntil = 0
 const ZOOM_OUT_BOOST_DURATION_MS = 5_000
 
@@ -29,20 +29,20 @@ export function setWeatherTileConcurrencyDebugLog(log: ConcurrencyDebugLog): voi
 }
 
 export function getWeatherTileMaxConcurrent(): number {
-  // Zoom-out boost 过期后回退到 AIMD 正常值
+  // Zoom boost 过期后回退到 AIMD 正常值
   if (zoomOutBoostUntil > 0 && Date.now() > zoomOutBoostUntil) {
     zoomOutBoostUntil = 0
     currentMaxConcurrent = computeInitialConcurrency()
-    debugLog('concurrency', 'zoom-out boost expired →', currentMaxConcurrent)
+    debugLog('concurrency', 'zoom boost expired →', currentMaxConcurrent)
   }
   return currentMaxConcurrent
 }
 
-/** Zoom-out 时临时提升并发上限至 cap，加速新区域瓦片填充；5s 后自动过期 */
+/** 缩放时临时提升并发上限至 cap，加速新视口瓦片填充；5s 后自动过期 */
 export function boostConcurrencyForZoomOut(): void {
   currentMaxConcurrent = MAX_CONCURRENT_TILES_CAP
   zoomOutBoostUntil = Date.now() + ZOOM_OUT_BOOST_DURATION_MS
-  debugLog('concurrency', 'zoom-out boost →', currentMaxConcurrent)
+  debugLog('concurrency', 'zoom boost →', currentMaxConcurrent)
 }
 
 /** Test/reset helper — restores initial concurrency. */

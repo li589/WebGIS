@@ -4,7 +4,7 @@
 import { computed, ref } from 'vue'
 import { defineStore } from 'pinia'
 
-import type { OverlaySymbologyMeta } from '../components/map/layer-symbology'
+import type { OverlaySymbologyMeta } from '../types/overlay-symbology'
 
 type CacheStatus = 'ok' | 'miss' | 'error'
 
@@ -23,6 +23,9 @@ export const useOverlaySymbologyStore = defineStore('overlay-symbology', () => {
   const metaByCatalogId = ref<Map<string, CacheEntry>>(new Map())
   const inflight = new Map<string, Promise<void>>()
   const revision = ref(0)
+  /** `/overlays` 注册表；未列出的 catalog（如纯工作流层）不探测 bounds */
+  const knownOverlayIds = ref<Set<string> | null>(null)
+  let knownOverlaysInflight: Promise<void> | null = null
 
   function bump() {
     revision.value += 1
@@ -68,6 +71,7 @@ export const useOverlaySymbologyStore = defineStore('overlay-symbology', () => {
         vmax: meta.vmax ?? null,
         unit: meta.unit,
         opacity: meta.opacity,
+        supports_recolor: meta.supports_recolor,
       },
       fetchedAt: Date.now(),
     })
@@ -81,9 +85,42 @@ export const useOverlaySymbologyStore = defineStore('overlay-symbology', () => {
     bump()
   }
 
+  async function ensureKnownOverlays(): Promise<Set<string>> {
+    if (knownOverlayIds.value) return knownOverlayIds.value
+    if (knownOverlaysInflight) {
+      await knownOverlaysInflight
+      return knownOverlayIds.value ?? new Set()
+    }
+    knownOverlaysInflight = (async () => {
+      try {
+        const resp = await fetch('/overlays')
+        if (!resp.ok) {
+          knownOverlayIds.value = new Set()
+          return
+        }
+        const data = (await resp.json()) as { overlay_layer_ids?: string[] }
+        knownOverlayIds.value = new Set(data.overlay_layer_ids ?? [])
+      } catch {
+        knownOverlayIds.value = new Set()
+      } finally {
+        knownOverlaysInflight = null
+      }
+    })()
+    await knownOverlaysInflight
+    return knownOverlayIds.value ?? new Set()
+  }
+
+  /** 地图侧 remember 动态 overlay（导入/物化产物）后可加入已知集 */
+  function rememberOverlayId(overlayLayerId: string) {
+    const id = String(overlayLayerId || '').trim()
+    if (!id) return
+    if (!knownOverlayIds.value) knownOverlayIds.value = new Set()
+    knownOverlayIds.value.add(id)
+  }
+
   async function ensureMeta(
     catalogId: string,
-    options?: { force?: boolean },
+    options?: { force?: boolean; skipRegistryCheck?: boolean },
   ): Promise<OverlaySymbologyMeta | null> {
     if (!catalogId) return null
     if (!options?.force && shouldSkipFetch(catalogId)) {
@@ -97,6 +134,14 @@ export const useOverlaySymbologyStore = defineStore('overlay-symbology', () => {
 
     const task = (async () => {
       try {
+        if (!options?.skipRegistryCheck) {
+          const known = await ensureKnownOverlays()
+          if (!known.has(catalogId)) {
+            // 工作流-only catalog（如 omega-sf-fenkuai）：不发 bounds，避免 404 刷屏
+            write(catalogId, { status: 'miss', meta: {}, fetchedAt: Date.now() })
+            return
+          }
+        }
         const resp = await fetch(`/overlay-bounds/${catalogId}`)
         if (resp.status === 404) {
           write(catalogId, { status: 'miss', meta: {}, fetchedAt: Date.now() })
@@ -116,6 +161,7 @@ export const useOverlaySymbologyStore = defineStore('overlay-symbology', () => {
             vmax: meta.vmax ?? null,
             unit: meta.unit,
             opacity: meta.opacity,
+            supports_recolor: Boolean(meta.supports_recolor),
           },
           fetchedAt: Date.now(),
         })
@@ -143,5 +189,7 @@ export const useOverlaySymbologyStore = defineStore('overlay-symbology', () => {
     putMeta,
     invalidate,
     ensureMeta,
+    ensureKnownOverlays,
+    rememberOverlayId,
   }
 })

@@ -144,6 +144,9 @@ class RemoteStorageCredentialsRepository:
     def _decrypt(self, ciphertext_b64: str, iv_b64: str) -> str:
         if not ciphertext_b64:
             return ""
+        from app.services.effective_config import refuse_empty_iv_outside_development
+
+        refuse_empty_iv_outside_development(iv_b64)
         if not self._encryption_key or not iv_b64:
             return ciphertext_b64
         from cryptography.hazmat.primitives.ciphers.aead import AESGCM  # type: ignore

@@ -1,15 +1,21 @@
 from __future__ import annotations
 
+import logging
 from typing import Any
 
 from app.core.config import settings
 
+logger = logging.getLogger(__name__)
+
 try:
     from celery import Celery
     from celery.schedules import crontab
+    from celery.signals import task_failure, worker_ready
 except ImportError:  # pragma: no cover - optional dependency during bootstrap
     Celery = None
     crontab = None
+    task_failure = None
+    worker_ready = None
 
 
 celery_available = Celery is not None
@@ -43,8 +49,9 @@ if celery_available:
         # Windows 上 Celery 5.4 prefork 模式的 fast_trace_task 存在 thread-local
         # _loc 未初始化 bug（ValueError: not enough values to unpack），
         # 使用 solo pool 在主进程中执行任务以避免此问题。
-        # 算法反演任务较重，不需要高并发，solo 模式更稳定。
-        worker_pool="solo",
+        # C3：池模式经 settings.celery_worker_pool 配置——Windows 默认 solo（开发兜底），
+        # Linux 默认 prefork（生产并行，concurrency 生效）；BACKEND_CELERY_WORKER_POOL 可覆盖。
+        worker_pool=settings.celery_worker_pool,
         task_always_eager=settings.celery_task_always_eager,
         # 默认任务超时限制，防止无限期运行
         # soft_time_limit：软超时，抛出 SoftTimeLimitExceeded，可被捕获清理
@@ -60,6 +67,16 @@ if celery_available:
         # launch.py 可按 worker 角色用 -c / --prefetch-multiplier 覆盖。
         worker_concurrency=settings.celery_worker_concurrency,
         worker_prefetch_multiplier=settings.celery_worker_prefetch_multiplier,
+        # 发布就绪修复（P0-7）：broker_transport_options。
+        # visibility_timeout 必须 > 最长 task_time_limit（workflow=7500s），否则 acks_late
+        # 下长任务会在 visibility 超时（Redis 默认 3600s）后被重投到另一 worker → 并发重复执行。
+        # socket_timeout/socket_connect_timeout 给 broker 连接/读取定上界，避免 broker 挂起时
+        # 工作线程无限期阻塞（同根修复线程池阻塞无寿命上界问题）。
+        broker_transport_options={
+            "visibility_timeout": settings.celery_broker_visibility_timeout,
+            "socket_timeout": settings.celery_broker_socket_timeout,
+            "socket_connect_timeout": settings.celery_broker_socket_connect_timeout,
+        },
         # Beat / 运维任务必须落到 launch.py 实际监听的队列（勿用默认 celery）
         task_routes={
             "app.tasks.open_meteo_sync_tasks.sync_open_meteo_data": {
@@ -79,6 +96,38 @@ if celery_available:
             },
         },
     )
+    # 发布就绪修复（P1-6）：任务失败可观测。task_failure 信号在任务抛异常时触发，
+    # 统一记录失败任务与异常，提供聚合的失败观测点（此前任务失败仅散落各模块日志）。
+    if task_failure is not None:
+
+        @task_failure.connect
+        def _on_task_failure(sender=None, task_id=None, exception=None, **kwargs):  # type: ignore[no-untyped-def]
+            logger.error(
+                "Celery task failed: name=%s id=%s error=%r",
+                getattr(sender, "name", "?"),
+                task_id,
+                exception,
+            )
+
+    # FastAPI registers weather providers in lifespan; Celery workers are a
+    # separate process and must bootstrap the same registry or weather DAG
+    # nodes fail with "provider is not registered" while /weather/tiles still works.
+    if worker_ready is not None:
+
+        @worker_ready.connect
+        def _on_worker_ready(**kwargs):  # type: ignore[no-untyped-def]
+            try:
+                from app.weatherengine.provider_registry import (
+                    register_default_providers,
+                )
+
+                register_default_providers()
+                logger.info("Weather providers registered in Celery worker")
+            except Exception:
+                logger.exception(
+                    "Failed to register weather providers in Celery worker"
+                )
+
     beat_schedule: dict[str, dict[str, Any]] = {}
     if settings.weather_schedule_enabled and crontab is not None:
         beat_schedule["refresh-weather-layers-hourly"] = {
@@ -125,6 +174,13 @@ if celery_available:
             "schedule": crontab(minute=30, hour=3),
             "options": {"queue": settings.workflow_queue_batch},
         }
+    # 发布就绪修复（P1-4）：solo 池看门狗，每 15 分钟把卡死的 running 工作流标记为失败
+    if crontab is not None:
+        beat_schedule["watchdog-stuck-running-workflows"] = {
+            "task": "app.tasks.cleanup_tasks.watchdog_stuck_running_workflows",
+            "schedule": crontab(minute="*/15"),
+            "options": {"queue": settings.workflow_queue_batch},
+        }
     if beat_schedule:
         celery_app.conf.beat_schedule = beat_schedule
 else:  # pragma: no cover - exercised only when Celery is unavailable
@@ -165,7 +221,15 @@ def get_celery_runtime_details() -> dict[str, Any]:
 
 
 def revoke_task(task_id: str, terminate: bool = False) -> None:
-    """撤销 Celery 任务。"""
+    """撤销 Celery 任务。
+
+    Windows 上 ``terminate=True`` 对子进程树清理不保证；配合算法侧
+    ``cancel.requested`` 旗标做协作式停止。
+    """
     if not celery_available or celery_app is None:
         return
-    celery_app.control.revoke(task_id, terminate=terminate)
+    try:
+        celery_app.control.revoke(task_id, terminate=terminate)
+    except Exception:
+        logger = __import__("logging").getLogger(__name__)
+        logger.warning("revoke_task failed for %s", task_id, exc_info=True)

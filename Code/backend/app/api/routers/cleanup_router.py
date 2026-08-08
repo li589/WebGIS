@@ -5,16 +5,20 @@
 - POST /cleanup/cache           手动清理过期缓存文件
 - POST /cleanup/vacuum          VACUUM workflow_state 数据库回收磁盘空间
 - GET  /cleanup/stats           返回当前清理统计（不执行清理）
+- GET  /cleanup/node-caches     列出工作流节点产物缓存（路径/大小/文件数）
+- POST /cleanup/node-caches     清理工作流节点产物缓存（可指定模块）
 """
 
 from __future__ import annotations
 
+from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any
 
 from fastapi import APIRouter, Depends, status
 from pydantic import BaseModel, Field
 
-from app.api.deps import require_write_access
+from app.api.deps import require_config_read_access, require_write_access
 from app.services.cache_service import cache_service
 from app.services.workflow_repository import SQLiteWorkflowRepository
 from app.tasks.cleanup_tasks import (
@@ -133,6 +137,7 @@ def vacuum_workflow_state() -> dict[str, Any]:
     "/stats",
     response_model=CleanupStatsResponse,
     status_code=status.HTTP_200_OK,
+    dependencies=[Depends(require_config_read_access)],
 )
 def get_cleanup_stats() -> CleanupStatsResponse:
     """返回当前清理统计（不执行清理）。
@@ -179,4 +184,140 @@ def get_cleanup_stats() -> CleanupStatsResponse:
             "active": active_count,
             **terminal_counts,
         },
+    )
+
+
+# ─── 工作流节点产物缓存（omega 分块反演等算法模块输出） ─────────────────────
+
+
+class NodeCacheEntry(BaseModel):
+    """单个算法模块的产物缓存条目。"""
+
+    name: str
+    path: str
+    size_bytes: int
+    file_count: int
+    modified_at: str | None
+
+
+class NodeCacheListResponse(BaseModel):
+    """节点缓存清单（不执行清理）。"""
+
+    entries: list[NodeCacheEntry]
+    total_bytes: int
+
+
+class NodeCacheCleanupRequest(BaseModel):
+    """节点缓存清理请求；names 为空表示全部清理。"""
+
+    names: list[str] | None = Field(
+        default=None, description="要清理的模块名列表；空=全部"
+    )
+
+
+class NodeCacheCleanupResponse(BaseModel):
+    """节点缓存清理响应。"""
+
+    deleted: list[str]
+    failed: list[str]
+    freed_bytes: int
+
+
+def _node_cache_root() -> Path:
+    from app.core.config import settings
+
+    return Path(getattr(settings, "python_provider_workspace", "") or "") / "products"
+
+
+def _scan_node_caches() -> list[NodeCacheEntry]:
+    """扫描产物目录下的模块缓存（仅一层子目录）。"""
+    root = _node_cache_root()
+    entries: list[NodeCacheEntry] = []
+    if not root.is_dir():
+        return entries
+    for child in sorted(root.iterdir()):
+        if not child.is_dir():
+            continue
+        files = [f for f in child.rglob("*") if f.is_file()]
+        size = sum(f.stat().st_size for f in files)
+        mtime = max((f.stat().st_mtime for f in files), default=0)
+        modified = (
+            datetime.fromtimestamp(mtime, tz=timezone.utc).isoformat()
+            if mtime
+            else None
+        )
+        entries.append(
+            NodeCacheEntry(
+                name=child.name,
+                path=str(child),
+                size_bytes=size,
+                file_count=len(files),
+                modified_at=modified,
+            )
+        )
+    return entries
+
+
+@router.get(
+    "/node-caches",
+    response_model=NodeCacheListResponse,
+    status_code=status.HTTP_200_OK,
+    dependencies=[Depends(require_config_read_access)],
+)
+def list_node_caches() -> NodeCacheListResponse:
+    """列出工作流节点产物缓存（每个算法模块的目录/大小/文件数/最近修改）。"""
+    entries = _scan_node_caches()
+    return NodeCacheListResponse(
+        entries=entries,
+        total_bytes=sum(e.size_bytes for e in entries),
+    )
+
+
+@router.post(
+    "/node-caches",
+    response_model=NodeCacheCleanupResponse,
+    status_code=status.HTTP_200_OK,
+    dependencies=[Depends(require_write_access)],
+)
+def cleanup_node_caches(
+    request: NodeCacheCleanupRequest,
+) -> NodeCacheCleanupResponse:
+    """清理工作流节点产物缓存（默认全部；可指定模块名）。
+
+    安全约束：仅删除 products/ 下的直接子目录，路径白名单校验，
+    绝不触碰目录外的任何文件。
+    """
+    import shutil
+
+    root = _node_cache_root()
+    if not root.is_dir():
+        return NodeCacheCleanupResponse(deleted=[], failed=[], freed_bytes=0)
+
+    existing = {e.name: e for e in _scan_node_caches()}
+    targets = list(request.names or []) if request.names else list(existing.keys())
+
+    deleted: list[str] = []
+    failed: list[str] = []
+    freed = 0
+    for name in targets:
+        entry = existing.get(name)
+        if entry is None:
+            failed.append(name)
+            continue
+        target = Path(entry.path)
+        # 白名单：必须是 products 的直接子目录
+        if target.parent.resolve() != root.resolve():
+            failed.append(name)
+            continue
+        try:
+            shutil.rmtree(target)
+            freed += entry.size_bytes
+            deleted.append(name)
+        except OSError:
+            failed.append(name)
+
+    return NodeCacheCleanupResponse(
+        deleted=deleted,
+        failed=failed,
+        freed_bytes=freed,
     )

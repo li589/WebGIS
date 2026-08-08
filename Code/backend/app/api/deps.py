@@ -1,61 +1,115 @@
 from __future__ import annotations
 
 import logging
-import secrets
 
-from fastapi import Header, HTTPException, status
+from fastapi import Depends, HTTPException, Request, Security, status
+from fastapi.security import APIKeyHeader
 
 from app.core.config import settings
+from app.services.credential_resolver import (
+    CredentialContext,
+    allows_sensitive_read,
+    allows_write,
+    resolve_credential,
+)
 
 logger = logging.getLogger(__name__)
 
-# Permitted module name prefixes for dynamic algorithm loading (P0-3 defence).
 ALLOWED_ALGORITHM_PREFIXES: tuple[str, ...] = ("algorithms.",)
 
+_api_key_header = APIKeyHeader(name="X-API-Key", auto_error=False)
 
-def require_write_access(x_api_key: str | None = Header(default=None)) -> None:
-    """Enforce API-key authentication for write endpoints.
 
-    When ``api_keys_enabled`` is True the key is always required.
-    When False we allow an unauthenticated bypass ONLY in development
-    (and only when no key is configured at all), but a configured key
-    is still honoured even when the flag is False.
+def session_cookie_secure() -> bool:
+    env = (settings.environment or "").lower()
+    return env not in {"development", "dev", "test", "testing"}
 
-    Auth key resolution: env cold-start + DB overlay via EffectiveSecrets
-    (``backend_auth``), not Settings alone.
-    """
-    if not settings.api_keys_enabled and settings.environment == "development":
-        # Dev-only escape hatch — warn so operators notice it in logs.
-        logger.warning(
-            "API-key authentication is disabled for write endpoints "
-            "(api_keys_enabled=False, environment=development). "
-            "Do NOT use this configuration in production."
+
+def resolve_request_credential(
+    request: Request,
+    x_api_key: str | None = Security(_api_key_header),
+) -> CredentialContext | None:
+    return resolve_credential(request, x_api_key)
+
+
+def require_session(request: Request) -> CredentialContext:
+    if not settings.user_auth_enabled:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="User login is disabled on this server.",
         )
+    ctx = resolve_credential(request, None)
+    if ctx is None or ctx.source != "session":
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Authentication required.",
+        )
+    return ctx
+
+
+def require_admin(
+    ctx: CredentialContext = Depends(require_session),
+) -> CredentialContext:
+    if ctx.role != "admin":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Admin role required.",
+        )
+    return ctx
+
+
+def require_write_access(
+    request: Request,
+    x_api_key: str | None = Security(_api_key_header),
+) -> None:
+    """Enforce RBAC for write endpoints via session, user token, or service key."""
+    ctx = resolve_credential(request, x_api_key)
+    if ctx is not None and allows_write(ctx):
         return
+    if ctx is not None and ctx.role == "viewer":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Read-only account cannot perform write operations.",
+        )
+    if ctx is not None:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Insufficient permissions for this operation.",
+        )
+
+    if not settings.api_keys_enabled and settings.environment == "development":
+        from app.services.credential_resolver import dev_bypass_allowed
+
+        if dev_bypass_allowed(request):
+            return
 
     from app.services.effective_config import get_backend_auth_key
 
     configured_key = get_backend_auth_key() or ""
-    if not configured_key:
-        # Key not configured at all — fail closed.
-        logger.error(
-            "API key is not configured but api_keys_enabled=True. "
-            "Rejecting write request to prevent unauthenticated access."
-        )
+    if not configured_key and not settings.api_keys_enabled:
+        logger.error("API key is not configured; rejecting write request.")
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="API key not configured on the server.",
         )
 
-    if x_api_key is None or not secrets.compare_digest(x_api_key, configured_key):
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid API key.",
-        )
+    raise HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail="Authentication required.",
+    )
+
+
+def require_config_read_access(
+    request: Request,
+    x_api_key: str | None = Security(_api_key_header),
+) -> None:
+    ctx = resolve_credential(request, x_api_key)
+    if ctx is not None and allows_sensitive_read(ctx):
+        return
+    require_write_access(request, x_api_key)
 
 
 def require_gee_account_management_enabled() -> None:
-    """Block GEE account mutating APIs when management is disabled."""
     if not settings.gee_api_account_management_enabled:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,

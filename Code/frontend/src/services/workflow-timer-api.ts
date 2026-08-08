@@ -88,6 +88,8 @@ export interface TickStats {
   fired: number
   failed: number
   skipped: number
+  /** 超时 CLAIMED 哨兵回收数量（后端可选字段） */
+  reclaimed?: number
 }
 
 export interface CronPreviewResult {
@@ -95,11 +97,11 @@ export interface CronPreviewResult {
   next_times: string[]
 }
 
-/** 支持的动态日期模板（与后端 resolve_date_templates 对齐） */
+/** 支持的动态日期模板（与后端 resolve_date_templates 对齐；按 Asia/Shanghai 日历日） */
 export const DATE_TEMPLATES: Array<{ key: string; label: string; description: string }> = [
-  { key: '{{today}}', label: '今天', description: '当前日期 YYYYMMDD' },
-  { key: '{{yesterday}}', label: '昨天', description: '昨日 YYYYMMDD' },
-  { key: '{{tomorrow}}', label: '明天', description: '明日 YYYYMMDD' },
+  { key: '{{today}}', label: '今天', description: '当前日期 YYYYMMDD（北京时间）' },
+  { key: '{{yesterday}}', label: '昨天', description: '昨日 YYYYMMDD（北京时间）' },
+  { key: '{{tomorrow}}', label: '明天', description: '明日 YYYYMMDD（北京时间）' },
   { key: '{{last_7_days_start}}', label: '近7天起', description: '7天前 YYYYMMDD' },
   { key: '{{last_7_days_end}}', label: '近7天止', description: '昨日 YYYYMMDD' },
   { key: '{{last_30_days_start}}', label: '近30天起', description: '30天前 YYYYMMDD' },
@@ -111,6 +113,43 @@ export const DATE_TEMPLATES: Array<{ key: string; label: string; description: st
   { key: '{{this_year_start}}', label: '本年起', description: '本年1月1日 YYYYMMDD' },
   { key: '{{this_year_end}}', label: '本年止', description: '今日 YYYYMMDD' },
 ]
+
+/**
+ * 将日期模板安全写入 payload_overrides JSON 的 parameters 字段，避免破坏 JSON。
+ */
+export function insertDateTemplateIntoOverridesJson(
+  jsonText: string,
+  template: string,
+): { json: string; error: string | null } {
+  const trimmed = jsonText.trim() || '{}'
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(trimmed)
+  } catch {
+    return {
+      json: jsonText,
+      error: '无法插入：当前 JSON 无效，请先修复后再插入模板',
+    }
+  }
+  if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) {
+    return { json: jsonText, error: 'payload_overrides 必须是 JSON 对象' }
+  }
+  const root = { ...(parsed as Record<string, unknown>) }
+  const rawParams = root.parameters
+  const parameters: Record<string, unknown> =
+    rawParams && typeof rawParams === 'object' && !Array.isArray(rawParams)
+      ? { ...(rawParams as Record<string, unknown>) }
+      : {}
+  const keyHint = template.replace(/[{}]/g, '') || 'date'
+  let key = keyHint
+  let i = 1
+  while (Object.prototype.hasOwnProperty.call(parameters, key)) {
+    key = `${keyHint}_${i++}`
+  }
+  parameters[key] = template
+  root.parameters = parameters
+  return { json: JSON.stringify(root, null, 2), error: null }
+}
 
 // ─── API 调用层 ────────────────────────────────────────────────────────────
 const BASE = '/workflow-timers'

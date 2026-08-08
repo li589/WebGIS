@@ -33,4 +33,6 @@ docker compose -p gateway down
 
 ## 路径约定
 
-反代前缀与 [`Code/frontend/vite.config.ts`](../../frontend/vite.config.ts) 的 `server.proxy` 对齐，例如 `/weather`、`/workflow-runs`、`/unified-tiles`、`/config` 等。
+反代前缀与 [`Code/frontend/vite.config.ts`](../../frontend/vite.config.ts) 的 `server.proxy` 对齐，例如 `/weather`、`/workflow-runs`、`/unified-tiles`、`/config`、`/auth`、`/overlay-tiles`、`/health` 等。
+
+上游 FastAPI 不可用时，API 反代返回 [`html/50x.html`](html/50x.html)（502/503/504）；SPA 路由仍走 `index.html`。

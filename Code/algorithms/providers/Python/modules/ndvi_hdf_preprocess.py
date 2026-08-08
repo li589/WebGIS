@@ -114,9 +114,7 @@ class NdviHdfPreprocessModule(BaseModule):
                 ctx.workspace / "products" / "ndvi_9km_tif",
             )
         )
-        work_dir = Path(
-            output_spec_extra.get("work_dir", output_dir / "_tmp_ndvi_hdf")
-        )
+        work_dir = Path(output_spec_extra.get("work_dir", output_dir / "_tmp_ndvi_hdf"))
 
         if ctx.logger_adapter is not None:
             ctx.logger_adapter.emit_stage_start(

@@ -144,7 +144,16 @@ class ApiKeysRepository:
             return plaintext, ""
 
     def _decrypt(self, ciphertext_b64: str, iv_b64: str) -> str:
+        from app.services.effective_config import refuse_empty_iv_outside_development
+
+        refuse_empty_iv_outside_development(iv_b64)
         if not self._encryption_key or not iv_b64:
+            from app.services.effective_config import secrets_encryption_required
+
+            if secrets_encryption_required():
+                raise RuntimeError(
+                    "Cannot decrypt API key without encryption key outside development"
+                )
             return ciphertext_b64
         try:
             from cryptography.hazmat.primitives.ciphers.aead import AESGCM  # type: ignore

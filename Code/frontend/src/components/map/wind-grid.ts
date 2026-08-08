@@ -8,13 +8,18 @@
  *   - 多瓦片合并产生的"孔洞"用局部 IDW（1/r² 权重，限制半径）填充
  *   - 无法填充的"孤岛"单元清零，避免 NaN 进入投影/渲染
  */
+import { debugLog } from '../../utils/perf-probe'
 import { DEFAULT_HEIGHT_SUFFIX, type WindGeoJSON } from './types'
 import {
   buildRegularLatticeAxis,
   detectLatticeResolution,
+  isLonInFrame,
   nearestLatticeAxisIndex,
-  unwrapLonsToMinimalSpan,
+  unwrapLonsForFrame,
+  type LonFrame,
 } from './weather-grid-lattice'
+
+export type { LonFrame }
 
 /** 弧度转换常数（Math.PI / 180） */
 const DEG_TO_RAD = Math.PI / 180
@@ -57,9 +62,8 @@ export function uvToSpeedDirection(u: number, v: number): { speed: number; direc
   return { speed, direction }
 }
 
-/** 调试日志辅助 */
-function debugLog(module: string, ...args: unknown[]) {
-  console.log(`[${performance.now().toFixed(1)}ms] [${module}]`, ...args)
+function windDebugLog(module: string, ...args: unknown[]) {
+  debugLog(`[${performance.now().toFixed(1)}ms] [${module}]`, ...args)
 }
 
 function readResolutionProp(props: Record<string, unknown> | null | undefined): number | null {
@@ -74,9 +78,13 @@ function readResolutionProp(props: Record<string, unknown> | null | undefined): 
 
 /**
  * 从 GeoJSON 构建规则风场网格。
+ * @param frame 视口经度帧（east 可 >180）；有则按帧解包并丢弃帧外点，避免大范围错半球建格
  * 返回 null 表示数据不足（无有效点或网格 < 2×2）。
  */
-export function buildWindGridFromGeoJSON(geojson: WindGeoJSON): WindGrid | null {
+export function buildWindGridFromGeoJSON(
+  geojson: WindGeoJSON,
+  frame?: LonFrame | null,
+): WindGrid | null {
   const features = geojson?.features || []
   if (features.length === 0) return null
 
@@ -114,23 +122,30 @@ export function buildWindGridFromGeoJSON(geojson: WindGeoJSON): WindGrid | null 
 
   if (rawPoints.length === 0) return null
 
-  // 跨日界线点集：解包到最小连续经度跨度，避免「半屏有风、半屏空洞」
-  const unwrappedLons = unwrapLonsToMinimalSpan(rawPoints.map((p) => p.lon))
+  // 有视口帧：卷入连续弧并丢弃帧外（错半球旧缓存）；否则最小跨度启发式
+  const unwrappedLons = unwrapLonsForFrame(
+    rawPoints.map((p) => p.lon),
+    frame,
+  )
+  const framedPoints: RawPoint[] = []
   for (let i = 0; i < rawPoints.length; i++) {
-    rawPoints[i].lon = unwrappedLons[i]!
+    const lon = unwrappedLons[i]!
+    if (frame && !isLonInFrame(lon, frame)) continue
+    framedPoints.push({ ...rawPoints[i]!, lon })
   }
+  if (framedPoints.length === 0) return null
 
-  const latRes = propRes ?? detectLatticeResolution(rawPoints.map((p) => p.lat))
-  const lonRes = propRes ?? detectLatticeResolution(rawPoints.map((p) => p.lon))
+  const latRes = propRes ?? detectLatticeResolution(framedPoints.map((p) => p.lat))
+  const lonRes = propRes ?? detectLatticeResolution(framedPoints.map((p) => p.lon))
   // 经纬共用较细步长，避免混分辨率时一向过粗留下赤道缝
   const res = Math.min(latRes, lonRes)
 
   const sortedLats = buildRegularLatticeAxis(
-    rawPoints.map((p) => p.lat),
+    framedPoints.map((p) => p.lat),
     { resolution: res, descending: true },
   )
   const sortedLons = buildRegularLatticeAxis(
-    rawPoints.map((p) => p.lon),
+    framedPoints.map((p) => p.lon),
     { resolution: res, descending: false },
   )
   const rows = sortedLats.length
@@ -156,7 +171,7 @@ export function buildWindGridFromGeoJSON(geojson: WindGeoJSON): WindGrid | null 
   }
 
   let placed = 0
-  for (const p of rawPoints) {
+  for (const p of framedPoints) {
     const r = nearestLatticeAxisIndex(sortedLats, p.lat)
     const c = nearestLatticeAxisIndex(sortedLons, p.lon)
     // 同格多点（混分辨率吸附）：保留先到者
@@ -227,7 +242,7 @@ export function buildWindGridFromGeoJSON(geojson: WindGeoJSON): WindGrid | null 
     }
   }
   if (unfilledCount > 0) {
-    debugLog('WindGrid', 'buildWindGrid unfilled cells left empty', unfilledCount)
+    windDebugLog('WindGrid', 'buildWindGrid unfilled cells left empty', unfilledCount)
   }
 
   const south = sortedLats[rows - 1]!
@@ -235,17 +250,30 @@ export function buildWindGridFromGeoJSON(geojson: WindGeoJSON): WindGrid | null 
   const west = sortedLons[0]!
   const east = sortedLons[cols - 1]!
 
-  let checksum = 0
+  let dataSum = 0
+  let finiteCount = 0
   for (let r = 0; r < rows; r++) {
     for (let c = 0; c < cols; c++) {
       const p = points[r]![c]!
       if (Number.isFinite(p.speed) && Number.isFinite(p.direction)) {
-        checksum += p.speed + p.direction
+        dataSum += p.speed + p.direction
+        finiteCount += 1
       }
     }
   }
+  // 纳入几何 + LonFrame，避免仅 frame 变化时 checksum 碰撞导致跳过更新
+  const checksum =
+    dataSum +
+    west * 1e3 +
+    east * 1e3 +
+    south * 1e2 +
+    north * 1e2 +
+    rows * 17 +
+    cols * 31 +
+    finiteCount +
+    (frame ? frame.west * 13 + frame.east * 19 : 0)
 
-  debugLog(
+  windDebugLog(
     'WindGrid',
     'buildWindGrid',
     'rows',
@@ -254,6 +282,8 @@ export function buildWindGridFromGeoJSON(geojson: WindGeoJSON): WindGrid | null 
     cols,
     'rawPoints',
     rawPoints.length,
+    'framed',
+    framedPoints.length,
     'placed',
     placed,
     'missing',

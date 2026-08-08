@@ -31,8 +31,9 @@ const providerTypeMeta: Record<
   local_data: { label: '本地数据', icon: '💾', class: 'type-local' },
 }
 
-function typeMeta(t: WeatherProviderType) {
-  return providerTypeMeta[t] ?? { label: t, icon: '❓', class: 'type-unknown' }
+function typeMeta(t: string | undefined) {
+  const key = (t ?? 'free_api') as WeatherProviderType
+  return providerTypeMeta[key] ?? { label: t ?? '未知', icon: '❓', class: 'type-unknown' }
 }
 
 /** Open-Meteo 通道标签（避免三条同名混淆） */
@@ -177,8 +178,8 @@ function formatNumber(v: number | null | undefined): string {
   return v.toLocaleString()
 }
 
-function formatPercent(used: number | null, quota: number | null): string {
-  if (used === null || quota === null || quota === 0) return '—'
+function formatPercent(used: number | null | undefined, quota: number | null | undefined): string {
+  if (used == null || quota == null || quota === 0) return '—'
   return `${((used / quota) * 100).toFixed(1)}%`
 }
 
@@ -193,6 +194,14 @@ function formatTime(iso: string | null | undefined): string {
 }
 
 const enabledCount = computed(() => weatherProviders.value.filter((p) => p.enabled).length)
+const localProviderEnabled = computed(() =>
+  weatherProviders.value.some((p) => p.provider_id === 'open-meteo-local' && p.enabled),
+)
+const defaultModelNotSynced = computed(() => {
+  const model = (weatherConfig.value?.default_model || '').trim()
+  const domains = weatherConfig.value?.sync_domains ?? []
+  return Boolean(model) && domains.length > 0 && !domains.includes(model)
+})
 const healthyCount = computed(() => weatherProviders.value.filter((p) => p.status?.healthy).length)
 </script>
 
@@ -215,13 +224,17 @@ const healthyCount = computed(() => weatherProviders.value.filter((p) => p.statu
           <span class="info-value">{{ weatherConfig.max_active_weather_tile_runs }}</span>
         </div>
       </div>
+      <div v-if="localProviderEnabled && defaultModelNotSynced" class="model-sync-callout">
+        当前默认模型「{{ weatherConfig.default_model }}」不在本地 sync 域内。使用 open-meteo-local
+        时瓦片可能为空；请到「Open-Meteo」改模型或加入 OPEN_METEO_SYNC_DOMAINS 后同步。
+      </div>
     </section>
 
     <!-- Provider 列表 -->
     <section class="settings-section">
       <div class="section-header">
         <h3 class="section-title">
-          天气源 Provider
+          天气源
           <span class="count-badge"
             >{{ enabledCount }}/{{ weatherProviders.length }} 启用 · {{ healthyCount }} 健康</span
           >
@@ -234,7 +247,7 @@ const healthyCount = computed(() => weatherProviders.value.filter((p) => p.statu
       </div>
 
       <p class="section-hint">
-        系统按 Provider 优先级（数字越小越优先）路由天气请求。 Open-Meteo
+        系统按数据源优先级（数字越小越优先）路由天气请求。 Open-Meteo
         仅应出现两条：<strong>本地</strong>（open-meteo-local）与
         <strong>Online</strong>（open-meteo-online）。模型与 Docker 同步请到「Open-Meteo」页。
         保存配置后立即作用于后端 registry（可点「测试连通性」验证）。
@@ -243,7 +256,7 @@ const healthyCount = computed(() => weatherProviders.value.filter((p) => p.statu
       <!-- 空状态 -->
       <div v-if="sortedProviders.length === 0" class="empty-state">
         <span class="empty-icon">🌦</span>
-        <span>暂无天气源 Provider，请检查后端是否正确注册</span>
+        <span>暂无天气数据源，请检查后端是否正确注册</span>
       </div>
 
       <!-- Provider 卡片列表 -->
@@ -289,9 +302,9 @@ const healthyCount = computed(() => weatherProviders.value.filter((p) => p.statu
               <button
                 class="toggle-switch"
                 :class="{ on: p.enabled }"
-                @click="toggleProvider(p)"
                 :disabled="togglingIds.has(p.provider_id)"
                 :title="p.enabled ? '点击禁用' : '点击启用'"
+                @click="toggleProvider(p)"
               >
                 <span class="toggle-knob"></span>
               </button>
@@ -306,7 +319,7 @@ const healthyCount = computed(() => weatherProviders.value.filter((p) => p.statu
             </div>
             <div class="meta-item">
               <span class="meta-label">能力</span>
-              <span class="meta-value">{{ p.supported_capabilities.join(', ') }}</span>
+              <span class="meta-value">{{ (p.supported_capabilities ?? []).join(', ') }}</span>
             </div>
             <div class="meta-item">
               <span class="meta-label">需要 API Key</span>
@@ -338,8 +351,9 @@ const healthyCount = computed(() => weatherProviders.value.filter((p) => p.statu
                     class="runtime-bar-fill"
                     :class="{
                       warn:
-                        p.status.daily_used !== null &&
-                        p.status.daily_quota !== null &&
+                        p.status.daily_used != null &&
+                        p.status.daily_quota != null &&
+                        p.status.daily_quota > 0 &&
                         p.status.daily_used / p.status.daily_quota > 0.8,
                     }"
                     :style="{ width: formatPercent(p.status.daily_used, p.status.daily_quota) }"
@@ -358,8 +372,8 @@ const healthyCount = computed(() => weatherProviders.value.filter((p) => p.statu
           <div class="provider-actions">
             <button
               class="action-btn test"
-              @click="runTest(p.provider_id)"
               :disabled="testingIds.has(p.provider_id)"
+              @click="runTest(p.provider_id)"
             >
               {{ testingIds.has(p.provider_id) ? '测试中...' : '测试连通性' }}
             </button>
@@ -412,17 +426,17 @@ const healthyCount = computed(() => weatherProviders.value.filter((p) => p.statu
                   type="number"
                   min="0"
                   max="999"
+                  :disabled="savingPriorityId === p.provider_id"
                   @change="
                     (e) => savePriority(p, parseInt((e.target as HTMLInputElement).value, 10))
                   "
-                  :disabled="savingPriorityId === p.provider_id"
                 />
                 <span v-if="savingPriorityId === p.provider_id" class="saving-hint">保存中...</span>
               </div>
             </div>
 
             <!-- 配置字段 -->
-            <div v-if="p.config_schema.length > 0">
+            <div v-if="(p.config_schema?.length ?? 0) > 0">
               <div v-for="field in p.config_schema" :key="field.key" class="form-row">
                 <label class="form-label">
                   {{ field.label }}
@@ -449,7 +463,7 @@ const healthyCount = computed(() => weatherProviders.value.filter((p) => p.statu
                   class="form-checkbox"
                 />
                 <select
-                  v-else-if="field.field_type === 'select' && field.options.length > 0"
+                  v-else-if="field.field_type === 'select' && (field.options?.length ?? 0) > 0"
                   v-model="editingConfig[p.provider_id][field.key]"
                   class="form-input"
                 >
@@ -470,8 +484,8 @@ const healthyCount = computed(() => weatherProviders.value.filter((p) => p.statu
             <div class="config-actions">
               <button
                 class="action-btn save"
-                @click="saveConfig(p)"
                 :disabled="savingConfigId === p.provider_id"
+                @click="saveConfig(p)"
               >
                 {{ savingConfigId === p.provider_id ? '保存中...' : '保存配置' }}
               </button>
@@ -1152,5 +1166,16 @@ const healthyCount = computed(() => weatherProviders.value.filter((p) => p.statu
   color: #ff9999;
   font-size: 0.54rem;
   line-height: 1.4;
+}
+
+.model-sync-callout {
+  margin-top: 10px;
+  padding: 8px 10px;
+  border-radius: 6px;
+  border: 1px solid rgba(200, 140, 40, 0.45);
+  background: rgba(200, 140, 40, 0.12);
+  color: var(--text-secondary, #c9b896);
+  font-size: 12px;
+  line-height: 1.45;
 }
 </style>

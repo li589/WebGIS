@@ -46,16 +46,53 @@ class RuntimeSnapshot:
 _snapshot = RuntimeSnapshot()
 
 
+# AES-GCM 256-bit key encoded as 64 hex chars (shared master key for GEE / API keys /
+# weather providers / remote storage / portal credentials — blast radius if leaked).
+_ENCRYPTION_KEY_HEX_LEN = 64
+
+
 def secrets_encryption_required() -> bool:
     env = (settings.environment or "").lower()
     return env not in {"development", "dev", "test", "testing"}
 
 
+def validate_encryption_key_format(key: str) -> None:
+    """Require 32-byte AES key as 64 lowercase/uppercase hex chars."""
+    raw = (key or "").strip()
+    if len(raw) != _ENCRYPTION_KEY_HEX_LEN:
+        raise RuntimeError(
+            "BACKEND_GEE_CREDENTIALS_ENCRYPTION_KEY must be exactly 64 hex characters "
+            f"(32 bytes); got length={len(raw)}."
+        )
+    try:
+        key_bytes = bytes.fromhex(raw)
+    except ValueError as exc:
+        raise RuntimeError(
+            "BACKEND_GEE_CREDENTIALS_ENCRYPTION_KEY is not valid hexadecimal."
+        ) from exc
+    if len(key_bytes) != 32:
+        raise RuntimeError(
+            "BACKEND_GEE_CREDENTIALS_ENCRYPTION_KEY must decode to 32 bytes."
+        )
+
+
+def refuse_empty_iv_outside_development(iv_b64: str | None) -> None:
+    """Block treating empty-IV blobs as plaintext when encryption is mandatory."""
+    if iv_b64:
+        return
+    if secrets_encryption_required():
+        raise RuntimeError(
+            "Refusing empty-IV secret blob outside development "
+            "(plaintext legacy rows are not allowed when encryption is required)."
+        )
+
+
 def assert_encryption_policy() -> None:
-    """非 development 环境缺少加密 key 时 fail-fast。"""
+    """非 development 环境缺少加密 key 时 fail-fast；有 key 时校验 hex 形态。"""
     global _secrets_insecure
     key = (settings.gee_credentials_encryption_key or "").strip()
     if key:
+        validate_encryption_key_format(key)
         _secrets_insecure = False
         return
     if secrets_encryption_required():
@@ -66,8 +103,23 @@ def assert_encryption_policy() -> None:
     _secrets_insecure = True
     logger.error(
         "Secrets encryption key is not set; storing plaintext is allowed only in development. "
-        "Set BACKEND_GEE_CREDENTIALS_ENCRYPTION_KEY for production."
+        "Set BACKEND_GEE_CREDENTIALS_ENCRYPTION_KEY for production. "
+        "Note: the same key encrypts GEE SA JSON, API keys, weather provider secrets, "
+        "remote-storage credentials, and portal tokens (shared blast radius)."
     )
+
+
+def assert_data_root_policy() -> None:
+    """非 development/test 环境缺少 BACKEND_DATA_ROOT 时 fail-fast（去硬编码批 1）。"""
+    env = (settings.environment or "").lower()
+    if env in {"development", "dev", "test", "testing"}:
+        return
+    if not (settings.data_root or "").strip():
+        raise RuntimeError(
+            "BACKEND_DATA_ROOT is required outside development. "
+            "Refusing to start without a configured geographic data root "
+            "(do not rely on a hardcoded lab drive letter)."
+        )
 
 
 def is_secrets_insecure() -> bool:
@@ -204,7 +256,24 @@ def get_effective_secret(key_name: str) -> Optional[str]:
 
 
 def get_backend_auth_key() -> Optional[str]:
-    return get_effective_secret("backend_auth") or (settings.api_key or None)
+    """后端写接口鉴权密钥。
+
+    发布就绪修复（P1-6 吊销语义）：DB 存在 backend_auth 行（含禁用）时以 DB 为准，
+    禁用/为空即返回 None，**绝不回落 env**——否则"禁用/删除"会静默复活已退役的
+    env 密钥（settings.api_key 为 frozen dataclass，编辑 .env 不生效，须全栈重启，
+    更放大该风险）。仅当无 DB 行（冷启动）时才回落 env。
+    """
+    secret = get_effective_secret("backend_auth")
+    from app.services.config_service import has_api_key_db_row
+
+    if has_api_key_db_row("backend_auth"):
+        if not secret:
+            logger.warning(
+                "backend_auth DB 行存在但已禁用/为空：按吊销语义返回 None，不回落 env。"
+                "若需恢复请重新启用或更新该 key。"
+            )
+        return secret
+    return secret or (settings.api_key or None)
 
 
 def get_weather_cache_ttl_seconds() -> int:

@@ -1,3 +1,6 @@
+import type { TemporalFollowPolicy, TimeSlice, TimeStep } from '../../utils/temporal-interval'
+import { parseTimeStep, timeListToSlices } from '../../utils/temporal-interval'
+
 /**
  * 本地导入栅格（TIF → 后端预览 overlay）的 payload。
  *
@@ -16,6 +19,15 @@ export interface ImportedRasterPayload {
   lngOffset?: number
   /** 纬度偏移（CRS 转换后追加，度） */
   latOffset?: number
+  /** 原生时间步，如 8d / 1d / 6h */
+  nativeStep?: TimeStep | string | null
+  /** 可用时间切片（块或日） */
+  timeSlices?: TimeSlice[]
+  /** 原始 time_list（与 overlay meta 对齐） */
+  timeList?: string[]
+  followPolicy?: TemporalFollowPolicy
+  /** 当前生效切片标签（跟随策略结果） */
+  effectiveTimeLabel?: string
 }
 
 export function buildImportedRasterPayload(
@@ -26,8 +38,20 @@ export function buildImportedRasterPayload(
     sourceCrs?: string
     lngOffset?: number
     latOffset?: number
+    nativeStep?: TimeStep | string | null
+    timeList?: string[]
+    timeSlices?: TimeSlice[]
+    followPolicy?: TemporalFollowPolicy
+    effectiveTimeLabel?: string
   },
 ): ImportedRasterPayload {
+  const timeList = options?.timeList
+  const timeSlices =
+    options?.timeSlices ?? (timeList?.length ? timeListToSlices(timeList) : undefined)
+  const nativeStep =
+    typeof options?.nativeStep === 'string'
+      ? parseTimeStep(options.nativeStep)
+      : options?.nativeStep
   return {
     overlayLayerId,
     bounds: options?.bounds,
@@ -35,5 +59,10 @@ export function buildImportedRasterPayload(
     sourceCrs: options?.sourceCrs,
     lngOffset: options?.lngOffset,
     latOffset: options?.latOffset,
+    nativeStep: nativeStep ?? null,
+    timeList,
+    timeSlices,
+    followPolicy: options?.followPolicy,
+    effectiveTimeLabel: options?.effectiveTimeLabel,
   }
 }

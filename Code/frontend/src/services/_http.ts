@@ -16,7 +16,15 @@
  *     头 + 不需要 loading + tile 专用超时，模式差异过大，强行合并会降低可读性。
  *   - 需要原始 Response 对象的调用方：直接使用 fetch。
  */
+import { handleSessionExpired, isAuthBootstrapPath } from './session-expired'
+import {
+  ApiRequestError,
+  SessionExpiredError,
+  extractErrorDetail,
+  extractRequestId,
+} from './http-errors'
 import { withWriteAuthHeaders } from './backend-auth'
+import { useLogStore } from '../stores/log'
 import { useUiLoadingStore } from '../stores/ui-loading'
 
 /**
@@ -67,28 +75,30 @@ export class WorkflowValidationError extends Error {
  * 非 validation 类型或不包含 issues 数组时返回 null。
  */
 function extractValidationPayload(
-  errorBody: any,
+  errorBody: unknown,
 ): { user_message?: string; issues: ValidationIssue[] } | null {
   if (!errorBody || typeof errorBody !== 'object') return null
+  const body = errorBody as Record<string, unknown>
   // 扁平结构
-  if (errorBody.error_type === 'validation' && Array.isArray(errorBody.issues)) {
+  if (body.error_type === 'validation' && Array.isArray(body.issues)) {
     return {
-      user_message: typeof errorBody.user_message === 'string' ? errorBody.user_message : undefined,
-      issues: errorBody.issues as ValidationIssue[],
+      user_message: typeof body.user_message === 'string' ? body.user_message : undefined,
+      issues: body.issues as ValidationIssue[],
     }
   }
   // FastAPI HTTPException 包裹在 detail 里
-  const detail = errorBody.detail
+  const detail = body.detail
   if (
     detail &&
     typeof detail === 'object' &&
     !Array.isArray(detail) &&
-    detail.error_type === 'validation' &&
-    Array.isArray(detail.issues)
+    (detail as Record<string, unknown>).error_type === 'validation' &&
+    Array.isArray((detail as Record<string, unknown>).issues)
   ) {
+    const detailRec = detail as Record<string, unknown>
     return {
-      user_message: typeof detail.user_message === 'string' ? detail.user_message : undefined,
-      issues: detail.issues as ValidationIssue[],
+      user_message: typeof detailRec.user_message === 'string' ? detailRec.user_message : undefined,
+      issues: detailRec.issues as ValidationIssue[],
     }
   }
   return null
@@ -113,13 +123,51 @@ export interface RequestJsonInit extends RequestInit {
   silent?: boolean
   /** true 时允许 204 No Content 返回 undefined（DELETE 等无响应体端点）。 */
   allowEmpty?: boolean
+  /** true 时 GET/HEAD 也附加 X-Api-Key（敏感读端点，如 /runtime/*、/cleanup/*）。 */
+  sensitiveGet?: boolean
+}
+
+function logApiFailure(path: string, message: string, details?: string, silent?: boolean): void {
+  if (silent) return
+  try {
+    useLogStore().logOperation('api-error', message, details ?? `path=${path}`)
+  } catch {
+    // Pinia may be unavailable during early bootstrap tests.
+  }
+}
+
+function handleHttpError(
+  path: string,
+  status: number,
+  errorBody: unknown,
+  errorDetail: string,
+  silent?: boolean,
+): never {
+  const requestId = extractRequestId(errorBody)
+
+  if (status === 401 && !isAuthBootstrapPath(path)) {
+    logApiFailure(path, `未授权：${path}`, errorDetail, silent)
+    handleSessionExpired(path)
+    throw new SessionExpiredError(path)
+  }
+
+  if (status === 403) {
+    const msg = errorDetail || '权限不足'
+    logApiFailure(path, `禁止访问：${path}`, msg, silent)
+    throw new ApiRequestError(msg, 403, path, requestId)
+  }
+
+  const msg = `Request failed: ${status} ${path}${errorDetail ? ` - ${errorDetail}` : ''}`
+  logApiFailure(path, `请求失败 ${status}`, msg, silent)
+  throw new ApiRequestError(msg, status, path, requestId)
 }
 
 /**
  * 统一 JSON fetch 包装器。
  *
  * 行为契约：
- *   1. 默认 GET 方法；非 GET/HEAD/OPTIONS 自动附加 X-Api-Key（via withWriteAuthHeaders）。
+ *   1. 默认 GET 方法；非 GET/HEAD/OPTIONS 自动附加 X-Api-Key（via withWriteAuthHeaders）；
+ *      sensitiveGet=true 时 GET/HEAD 也附加密钥（与 settings 敏感读一致）。
  *   2. 默认 Content-Type: application/json，可通过 init.headers 覆盖。
  *   3. 默认 30s 超时，通过 AbortController 实现；外部 init.signal 优先于超时 signal。
  *   4. 非 silent 请求触发全局 loading（300ms 延迟显示，避免短请求闪烁，由 store 实现）。
@@ -131,7 +179,14 @@ export interface RequestJsonInit extends RequestInit {
  * 量纲：timeoutMs 单位毫秒；HTTP status 单位为 status code。
  */
 export async function requestJson<T>(path: string, init?: RequestJsonInit): Promise<T> {
-  const { headers: initHeaders, timeoutMs, silent, allowEmpty, ...restInit } = init ?? {}
+  const {
+    headers: initHeaders,
+    timeoutMs,
+    silent,
+    allowEmpty,
+    sensitiveGet,
+    ...restInit
+  } = init ?? {}
   const method = (restInit.method ?? 'GET').toString()
   const mergedHeaders: Record<string, string> = withWriteAuthHeaders(
     {
@@ -139,6 +194,7 @@ export async function requestJson<T>(path: string, init?: RequestJsonInit): Prom
       ...(initHeaders as Record<string, string> | undefined),
     },
     method,
+    sensitiveGet,
   )
 
   const effectiveTimeout = timeoutMs ?? 30000
@@ -160,27 +216,30 @@ export async function requestJson<T>(path: string, init?: RequestJsonInit): Prom
       ...restInit,
       headers: mergedHeaders,
       signal: restInit.signal ?? controller.signal,
+      credentials: 'include',
     })
 
     if (!response.ok) {
       // 解析结构化错误体（兼容 user_message / error / detail 三种字段命名）
-      let errorBody: any = null
+      let errorBody: unknown = null
       let errorDetail = ''
       try {
         errorBody = await response.json()
-        errorDetail =
-          (typeof errorBody?.user_message === 'string' && errorBody.user_message) ||
-          (typeof errorBody?.error === 'string' && errorBody.error) ||
-          (typeof errorBody?.detail === 'string' ? errorBody.detail : '') ||
-          JSON.stringify(errorBody)
+        const bodyRec =
+          errorBody && typeof errorBody === 'object' ? (errorBody as Record<string, unknown>) : null
+        const userMsg =
+          bodyRec && typeof bodyRec.user_message === 'string' ? bodyRec.user_message : ''
+        const err = bodyRec && typeof bodyRec.error === 'string' ? bodyRec.error : ''
+        const detail = bodyRec && typeof bodyRec.detail === 'string' ? bodyRec.detail : ''
+        errorDetail = userMsg || err || detail || JSON.stringify(errorBody)
       } catch {
         errorDetail = await response.text().catch(() => '')
       }
-      // 结构化校验错误：携带字段级 issues 供 UI 定位具体表单字段。
-      // 后端 FastAPI HTTPException 把 detail 包在 {"detail": {...}} 里，
-      // extractValidationPayload 兼容扁平与包裹两种格式。
       const validationPayload = extractValidationPayload(errorBody)
       if (validationPayload) {
+        if (!silent) {
+          logApiFailure(path, `参数校验失败：${path}`, errorDetail, silent)
+        }
         throw new WorkflowValidationError(
           validationPayload.user_message || '参数校验失败',
           validationPayload.issues,
@@ -188,8 +247,12 @@ export async function requestJson<T>(path: string, init?: RequestJsonInit): Prom
           response.status,
         )
       }
-      throw new Error(
-        `Request failed: ${response.status} ${path}${errorDetail ? ` - ${errorDetail}` : ''}`,
+      handleHttpError(
+        path,
+        response.status,
+        errorBody,
+        extractErrorDetail(errorBody, errorDetail),
+        silent,
       )
     }
 
@@ -210,7 +273,16 @@ export async function requestJson<T>(path: string, init?: RequestJsonInit): Prom
       throw new Error(reasonMsg || `请求超时（${effectiveTimeout}ms）：${path}`, { cause: err })
     }
     if (err instanceof TypeError && /fetch|network|Failed to fetch/i.test(err.message)) {
-      throw new Error(`网络不可用或服务未启动：${path}`, { cause: err })
+      const netMsg = `网络不可用或服务未启动：${path}`
+      logApiFailure(path, netMsg, err.message, silent)
+      throw new Error(netMsg, { cause: err })
+    }
+    if (err instanceof DOMException && err.name === 'AbortError' && !restInit.signal?.aborted) {
+      const reason = controller.signal.reason
+      const reasonMsg =
+        reason instanceof DOMException ? reason.message : typeof reason === 'string' ? reason : ''
+      const timeoutMsg = reasonMsg || `请求超时（${effectiveTimeout}ms）：${path}`
+      logApiFailure(path, timeoutMsg, undefined, silent)
     }
     throw err
   } finally {

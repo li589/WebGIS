@@ -7,10 +7,7 @@ import {
   granularityUnitLabel,
   shiftTimelineDate,
 } from '../utils/layer-timeline'
-import {
-  DEFAULT_PLAY_INTERVAL_MS,
-  TIMELINE_PLAY_INTERVAL_OPTIONS,
-} from '../utils/timeline-play'
+import { DEFAULT_PLAY_INTERVAL_MS, TIMELINE_PLAY_INTERVAL_OPTIONS } from '../utils/timeline-play'
 
 const props = withDefaults(
   defineProps<{
@@ -159,7 +156,9 @@ const nearestSegment = computed(() => {
   return props.timelineSegments.reduce(
     (closest, segment) => {
       const segVal = segmentIndex(segment)
-      return Math.abs(segVal - target) < Math.abs(segmentIndex(closest) - target) ? segment : closest
+      return Math.abs(segVal - target) < Math.abs(segmentIndex(closest) - target)
+        ? segment
+        : closest
     },
     props.timelineSegments[0] ?? {
       index: 0,
@@ -452,9 +451,7 @@ function triggerDatePicker() {
 // ── 刻度智能抽稀 ─────────────────────────────────────────────
 const unitLabel = computed(() => granularityUnitLabel(props.granularity))
 
-const visibleTickSet = computed(() =>
-  computeVisibleTickIndices(props.timelineSegments.length, 12),
-)
+const visibleTickSet = computed(() => computeVisibleTickIndices(props.timelineSegments.length, 12))
 </script>
 
 <template>
@@ -469,7 +466,10 @@ const visibleTickSet = computed(() =>
           @click="triggerDatePicker"
         >
           <svg class="calendar-icon" viewBox="0 0 16 16" aria-hidden="true">
-            <path fill="currentColor" d="M3.5 0a.5.5 0 0 1 .5.5V1h8V.5a.5.5 0 0 1 1 0V1h1a2 2 0 0 1 2 2v11a2 2 0 0 1-2 2H2a2 2 0 0 1-2-2V3a2 2 0 0 1 2-2h1V.5a.5.5 0 0 1 .5-.5zM1 4v10a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V4H1z"/>
+            <path
+              fill="currentColor"
+              d="M3.5 0a.5.5 0 0 1 .5.5V1h8V.5a.5.5 0 0 1 1 0V1h1a2 2 0 0 1 2 2v11a2 2 0 0 1-2 2H2a2 2 0 0 1-2-2V3a2 2 0 0 1 2-2h1V.5a.5.5 0 0 1 .5-.5zM1 4v10a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V4H1z"
+            />
           </svg>
           <span class="date-text">{{ formattedTimeHeader }}</span>
           <span v-if="!isStatic" class="date-weekday">{{ weekdayLabel }}</span>
@@ -516,15 +516,21 @@ const visibleTickSet = computed(() =>
 
       <!-- 中间：激活图层名称 + 粒度标记 (居中对齐) -->
       <div class="time-heading">
-        <span
-          v-if="activeLayerName"
-          class="active-layer-tag"
-          :title="activeLayerName"
-        >
+        <span v-if="activeLayerName" class="active-layer-tag" :title="activeLayerName">
           {{ displayLayerName }}
         </span>
         <span class="granularity-badge" :class="`granularity-${granularity}`">
-          {{ granularity === 'static' ? '静态' : granularity === 'month' ? '月度' : granularity === 'year' ? '年度' : granularity === 'day' ? '日尺度' : '小时' }}
+          {{
+            granularity === 'static'
+              ? '静态'
+              : granularity === 'month'
+                ? '月度'
+                : granularity === 'year'
+                  ? '年度'
+                  : granularity === 'day'
+                    ? '日尺度'
+                    : '小时'
+          }}
         </span>
       </div>
 
@@ -539,7 +545,9 @@ const visibleTickSet = computed(() =>
             title="上一时间切片"
             @click="advanceSlice(-1)"
           >
-            <svg viewBox="0 0 16 16" aria-hidden="true"><path fill="currentColor" d="M10 3 5 8l5 5" /></svg>
+            <svg viewBox="0 0 16 16" aria-hidden="true">
+              <path fill="currentColor" d="M10 3 5 8l5 5" />
+            </svg>
           </button>
 
           <button
@@ -574,7 +582,9 @@ const visibleTickSet = computed(() =>
             title="下一时间切片"
             @click="advanceSlice(1)"
           >
-            <svg viewBox="0 0 16 16" aria-hidden="true"><path fill="currentColor" d="M6 3l5 5-5 5" /></svg>
+            <svg viewBox="0 0 16 16" aria-hidden="true">
+              <path fill="currentColor" d="M6 3l5 5-5 5" />
+            </svg>
           </button>
         </div>
 
@@ -593,10 +603,16 @@ const visibleTickSet = computed(() =>
           @click="emit('toggleLayerLock')"
         >
           <svg v-if="isLayerLocked" viewBox="0 0 16 16" aria-hidden="true">
-            <path fill="currentColor" d="M8 1a3.5 3.5 0 0 0-3.5 3.5V6H4a1 1 0 0 0-1 1v7a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1V7a1 1 0 0 0-1-1h-.5V4.5A3.5 3.5 0 0 0 8 1zm2 5H6V4.5a2 2 0 1 1 4 0V6z"/>
+            <path
+              fill="currentColor"
+              d="M8 1a3.5 3.5 0 0 0-3.5 3.5V6H4a1 1 0 0 0-1 1v7a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1V7a1 1 0 0 0-1-1h-.5V4.5A3.5 3.5 0 0 0 8 1zm2 5H6V4.5a2 2 0 1 1 4 0V6z"
+            />
           </svg>
           <svg v-else viewBox="0 0 16 16" aria-hidden="true">
-            <path fill="currentColor" d="M11 6V4.5a3.5 3.5 0 1 0-7 0v.5h1.5v-.5a2 2 0 1 1 4 0V6H4a1 1 0 0 0-1 1v7a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1V7a1 1 0 0 0-1-1h-1z"/>
+            <path
+              fill="currentColor"
+              d="M11 6V4.5a3.5 3.5 0 1 0-7 0v.5h1.5v-.5a2 2 0 1 1 4 0V6H4a1 1 0 0 0-1 1v7a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1V7a1 1 0 0 0-1-1h-1z"
+            />
           </svg>
         </button>
 
@@ -640,7 +656,9 @@ const visibleTickSet = computed(() =>
         class="availability-caption"
         :title="`${coverageCaption} · ${nearestSegment.availabilityLabel} · ${liveLabel}`"
       >
-        <span class="availability-caption-side availability-caption-main">{{ coverageCaption }}</span>
+        <span class="availability-caption-side availability-caption-main">{{
+          coverageCaption
+        }}</span>
         <strong class="availability-caption-status">{{ nearestSegment.availabilityLabel }}</strong>
         <span class="availability-caption-side availability-live">{{ liveLabel }}</span>
       </div>
@@ -727,14 +745,25 @@ const visibleTickSet = computed(() =>
           <span v-else class="tick-bar" aria-hidden="true"></span>
         </button>
         <!-- 单位指示标签 -->
-        <span v-if="unitLabel && timelineSegments.length > 1" class="tick-unit-badge">{{ unitLabel }}</span>
+        <span v-if="unitLabel && timelineSegments.length > 1" class="tick-unit-badge">{{
+          unitLabel
+        }}</span>
       </div>
     </div>
 
     <!-- 底部：元信息面板 -->
     <div class="timeline-meta">
       <span class="meta-text meta-text--left">
-        模式: <strong>{{ granularity === 'static' ? '静态数据' : granularity === 'month' ? '月度分析' : granularity === 'year' ? '年度产品' : '实时/时序' }}</strong>
+        模式:
+        <strong>{{
+          granularity === 'static'
+            ? '静态数据'
+            : granularity === 'month'
+              ? '月度分析'
+              : granularity === 'year'
+                ? '年度产品'
+                : '实时/时序'
+        }}</strong>
       </span>
       <span class="meta-text meta-text--center">
         维度进度: <strong>{{ progressPercent }}</strong>
@@ -765,7 +794,9 @@ const visibleTickSet = computed(() =>
           :class="{ active: opt.ms === effectivePlayMs }"
           @click="selectPlayInterval(opt.ms)"
         >
-          <span class="play-interval-check" aria-hidden="true">{{ opt.ms === effectivePlayMs ? '●' : '○' }}</span>
+          <span class="play-interval-check" aria-hidden="true">{{
+            opt.ms === effectivePlayMs ? '●' : '○'
+          }}</span>
           <span>{{ opt.label }}</span>
         </button>
       </div>
@@ -832,7 +863,9 @@ const visibleTickSet = computed(() =>
   cursor: pointer;
   flex-shrink: 0;
   max-width: none;
-  transition: border-color 0.15s ease, background 0.15s ease;
+  transition:
+    border-color 0.15s ease,
+    background 0.15s ease;
 }
 
 .date-display:hover {
@@ -897,7 +930,8 @@ const visibleTickSet = computed(() =>
 }
 
 .now-label {
-  font-family: 'JetBrains Mono', ui-monospace, 'Cascadia Code', 'SF Mono', Menlo, Consolas, monospace;
+  font-family:
+    'JetBrains Mono', ui-monospace, 'Cascadia Code', 'SF Mono', Menlo, Consolas, monospace;
   font-style: normal;
   font-weight: 600;
   font-size: 0.62rem;
@@ -1293,8 +1327,7 @@ const visibleTickSet = computed(() =>
   padding: 0.35rem;
   border-radius: 0.55rem;
   border: 1px solid rgba(136, 192, 255, 0.28);
-  background:
-    linear-gradient(180deg, rgba(22, 34, 56, 0.96), rgba(12, 20, 36, 0.94));
+  background: linear-gradient(180deg, rgba(22, 34, 56, 0.96), rgba(12, 20, 36, 0.94));
   box-shadow: 0 12px 28px rgba(1, 8, 16, 0.45);
   backdrop-filter: blur(14px);
   color: #e2e8f0;

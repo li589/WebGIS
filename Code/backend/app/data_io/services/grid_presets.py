@@ -118,19 +118,68 @@ def get_grid_preset(preset_id: str | None) -> dict[str, Any] | None:
     return GRID_PRESETS.get(preset_id)
 
 
-def suggest_grid_preset(shape: list[int] | tuple[int, ...] | None) -> str | None:
-    """按二维 shape (rows, cols) 匹配常用网格。"""
+def match_grid_preset(
+    shape: list[int] | tuple[int, ...] | None,
+) -> tuple[str | None, bool]:
+    """按二维 shape (rows, cols) 匹配常用网格。
+
+    Returns:
+        (preset_id, needs_transpose) — 若 shape 相对预设行列颠倒则为 True。
+        MATLAB v7.3/HDF5 常把 ``[rows, cols]`` 存成 ``(cols, rows)``，此时需转置。
+    """
     if not shape or len(shape) < 2:
-        return None
+        return None, False
     rows, cols = int(shape[-2]), int(shape[-1])
     for pid, preset in GRID_PRESETS.items():
         if pid == "custom" or preset.get("rows") is None:
             continue
-        if int(preset["rows"]) == rows and int(preset["cols"]) == cols:
-            return pid
-        if int(preset["rows"]) == cols and int(preset["cols"]) == rows:
-            return pid
-    return None
+        pr, pc = int(preset["rows"]), int(preset["cols"])
+        if pr == rows and pc == cols:
+            return pid, False
+        if pr == cols and pc == rows:
+            return pid, True
+    return None, False
+
+
+def suggest_grid_preset(shape: list[int] | tuple[int, ...] | None) -> str | None:
+    """按二维 shape (rows, cols) 匹配常用网格（忽略是否需转置）。"""
+    preset_id, _ = match_grid_preset(shape)
+    return preset_id
+
+
+def align_array_to_grid_preset(
+    array: Any,
+    grid_preset: str | None,
+    *,
+    axis_order: str = "auto",
+) -> tuple[Any, bool]:
+    """将二维数组对齐到预设的 (rows, cols)。
+
+    Args:
+        axis_order: ``auto`` 按预设检测转置；``transpose`` 强制转置；``as_is`` 保持。
+
+    Returns:
+        (aligned_array, did_transpose)
+    """
+    import numpy as np
+
+    a = np.asarray(array)
+    order = (axis_order or "auto").strip().lower()
+    if order in {"transpose", "xy_swap", "swap", "t"}:
+        return a.T, True
+    if order in {"as_is", "none", "keep"}:
+        return a, False
+
+    preset = get_grid_preset(grid_preset)
+    if a.ndim < 2 or not preset or preset.get("rows") is None:
+        return a, False
+    height, width = int(a.shape[-2]), int(a.shape[-1])
+    rows, cols = int(preset["rows"]), int(preset["cols"])
+    if height == rows and width == cols:
+        return a, False
+    if height == cols and width == rows:
+        return a.T, True
+    return a, False
 
 
 def clamp_projected_bounds_to_crs_domain(

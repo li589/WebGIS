@@ -11,7 +11,7 @@
  *   - orbit_mode: MWRID / MWRIA / Both
  *   - outfile_type: HDF5 / NetCDF / GTiff
  */
-import { computed, reactive, watch } from 'vue'
+import { computed, onMounted, reactive, watch } from 'vue'
 import type { LGraphNodeClass } from '../litegraph-setup'
 import {
   type FormErrors,
@@ -21,6 +21,15 @@ import {
   validateRequired,
   yyyymmddToIso,
 } from './utils'
+import {
+  fillPathFieldsFromSystemSettings,
+  loadSystemPathDefaults,
+} from '../../../composables/system-settings-fill'
+import { fieldMapForNodeType } from '../../../composables/node-form-system-settings-map'
+import { WORKFLOW_COPY } from '../../../ui-copy/workflow'
+
+const NODE_TYPE = 'download/fy_preprocess'
+const PATH_FIELD_MAP = fieldMapForNodeType(NODE_TYPE)
 
 const props = defineProps<{
   node: LGraphNodeClass | null
@@ -72,6 +81,30 @@ function resync() {
 }
 
 watch(() => props.node, resync, { immediate: true })
+
+onMounted(async () => {
+  try {
+    const defaults = await loadSystemPathDefaults()
+    const filled = fillPathFieldsFromSystemSettings(form, defaults, PATH_FIELD_MAP, {
+      onlyEmpty: true,
+    })
+    for (const key of filled) {
+      emit('update-property', key, form[key])
+    }
+    validateForm()
+  } catch {
+    /* ignore settings fetch errors */
+  }
+})
+
+async function applySystemSettings(overwrite = true) {
+  const defaults = await loadSystemPathDefaults(true)
+  const filled = fillPathFieldsFromSystemSettings(form, defaults, PATH_FIELD_MAP, { overwrite })
+  for (const key of filled) {
+    emit('update-property', key, form[key])
+  }
+  validateForm()
+}
 
 function update(key: string, value: unknown) {
   form[key] = value
@@ -129,7 +162,18 @@ function update(key: string, value: unknown) {
 
     <!-- 输入目录 -->
     <div class="form-row">
-      <label class="form-label">输入目录 input_dir</label>
+      <label class="form-label">
+        输入目录 input_dir
+        <button
+          v-if="!readonly"
+          type="button"
+          class="sys-fill-btn"
+          :title="WORKFLOW_COPY.useSystemSettings"
+          @click="applySystemSettings(true)"
+        >
+          {{ WORKFLOW_COPY.useSystemSettings }}
+        </button>
+      </label>
       <input
         type="text"
         class="form-input"
@@ -279,5 +323,16 @@ function update(key: string, value: unknown) {
   background: rgba(255, 123, 123, 0.08);
   color: #ff7b7b;
   border-color: rgba(255, 123, 123, 0.22);
+}
+
+.sys-fill-btn {
+  margin-left: 0.4rem;
+  font-size: 0.5rem;
+  padding: 0.1rem 0.35rem;
+  border-radius: 0.25rem;
+  border: 1px solid rgba(90, 213, 255, 0.35);
+  background: rgba(90, 213, 255, 0.08);
+  color: #88dfff;
+  cursor: pointer;
 }
 </style>

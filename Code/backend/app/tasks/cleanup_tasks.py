@@ -41,6 +41,19 @@ def execute_cache_cleanup() -> dict[str, Any]:
     return stats
 
 
+def execute_stuck_workflow_watchdog() -> dict[str, Any]:
+    """执行 stuck running 工作流看门狗（非 Celery 入口，可供 API 直接调用）。"""
+    from app.services.workflow.service_container import follow_up_dispatch_service
+
+    failed = follow_up_dispatch_service.fail_stuck_running_workflows(
+        max_running_seconds=settings.workflow_stuck_watchdog_seconds
+    )
+    return {
+        "marked_failed": failed,
+        "threshold_seconds": settings.workflow_stuck_watchdog_seconds,
+    }
+
+
 if celery_available and celery_app is not None:
 
     @celery_app.task(
@@ -71,6 +84,18 @@ if celery_available and celery_app is not None:
             logger.exception("cache cleanup task failed")
             return {"error": "cleanup_failed"}
 
+    @celery_app.task(
+        name="app.tasks.cleanup_tasks.watchdog_stuck_running_workflows",
+        queue=settings.workflow_queue_batch,
+    )
+    def watchdog_stuck_running_workflows() -> dict[str, Any]:
+        """Celery 任务入口：solo 池看门狗，标记卡死的 running 工作流为失败。"""
+        try:
+            return execute_stuck_workflow_watchdog()
+        except Exception:
+            logger.exception("stuck workflow watchdog task failed")
+            return {"error": "watchdog_failed"}
+
 else:
 
     def cleanup_workflow_runs(
@@ -81,6 +106,11 @@ else:
         )
 
     def cleanup_cache_files() -> dict[str, Any]:
+        raise RuntimeError(
+            "Celery is not installed. Install backend dependencies before using cleanup tasks."
+        )
+
+    def watchdog_stuck_running_workflows() -> dict[str, Any]:
         raise RuntimeError(
             "Celery is not installed. Install backend dependencies before using cleanup tasks."
         )

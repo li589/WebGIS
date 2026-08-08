@@ -1,8 +1,19 @@
 import { ref } from 'vue'
 import { showToast } from '../../data-manager/core/workspace-store'
 import { overlaySafeWgs84Bounds } from '../../services/geo-math'
+import { buildOverlayStyleQuery } from './layer-symbology'
 
 type MapInstance = import('maplibre-gl').Map
+
+export interface OverlayStyleParams {
+  palette?: string | null
+  vmin?: number | null
+  vmax?: number | null
+  nodataMode?: 'transparent' | 'solid' | null
+  nodataColor?: string | null
+  /** 有用户覆盖或 supports_recolor 时强制带样式 query */
+  forceStyle?: boolean
+}
 
 export interface OverlayTimeState {
   layerId: string
@@ -95,11 +106,14 @@ export interface OverlayImageModule {
     activeOverlayLayerIds: string[],
     visibleOverlayLayerIds: string[],
     opacityByLayerId?: Record<string, number>,
+    styleByLayerId?: Record<string, OverlayStyleParams>,
   ) => Promise<void>
   /** 切换时间序列图层的时间标签。若 linkTimeEnabled 为 true，联动其他时间序列图层。 */
   setOverlayTime: (layerId: string, time: string) => Promise<void>
   /** 设置已加载 overlay 的栅格透明度。 */
   setOverlayOpacity: (layerId: string, opacity: number) => void
+  /** 应用配色 / 值域 / NaN 样式并刷新 image 或 tiles。 */
+  setOverlayStyle: (layerId: string, style: OverlayStyleParams) => void
   /** 设置已加载 overlay 的显隐。 */
   setOverlayVisibility: (layerId: string, visible: boolean) => void
   /** 返回已加载 overlay 的 MapLibre raster layer id（若存在）。 */
@@ -131,8 +145,73 @@ interface LoadedOverlay {
   layerId: string
   sourceId: string
   rasterLayerId: string
+  footprintLayerId: string
+  footprintSourceId: string
   category: string
   currentTime: string | null
+  /** image = overview PNG; raster-xyz = zoom-aware tiles */
+  renderMode: 'image' | 'raster-xyz'
+  supportsXyzTiles: boolean
+  overviewMaxZoom: number
+  maxZoom: number
+  tileUrlTemplate: string | null
+  bounds: [number, number, number, number] | null
+  opacity: number
+  style: OverlayStyleParams
+  styleKey: string
+}
+
+/** 有 GeoTIFF 时优先瓦片；-1 表示任意缩放都用 XYZ（避免 overview PNG 放大糊/闪没） */
+const DEFAULT_OVERVIEW_MAX_ZOOM = -1
+const OVERVIEW_HYSTERESIS = 0.4
+const DEFAULT_TILE_MAX_ZOOM = 18
+
+function styleKeyOf(style: OverlayStyleParams | undefined | null): string {
+  if (!style) return ''
+  return [
+    style.palette ?? '',
+    style.vmin ?? '',
+    style.vmax ?? '',
+    style.nodataMode ?? '',
+    style.nodataColor ?? '',
+    style.forceStyle ? '1' : '0',
+  ].join('|')
+}
+
+function _styleQuery(style: OverlayStyleParams | undefined | null, time: string | null): string {
+  return buildOverlayStyleQuery({
+    time,
+    palette: style?.palette,
+    vmin: style?.vmin,
+    vmax: style?.vmax,
+    nodataMode: style?.nodataMode,
+    nodataColor: style?.nodataColor,
+    forceStyle: Boolean(
+      style?.forceStyle || style?.palette || style?.vmin != null || style?.vmax != null,
+    ),
+  })
+}
+
+function _tileUrlFor(
+  template: string,
+  layerId: string,
+  time: string | null,
+  style?: OverlayStyleParams | null,
+): string {
+  const base = template.includes('{z}') ? template : `/overlay-tiles/${layerId}/{z}/{x}/{y}.png`
+  const qs = _styleQuery(style, time)
+  return `${base}${qs}`
+}
+
+function _previewUrl(
+  layerId: string,
+  time: string | null,
+  style?: OverlayStyleParams | null,
+): string {
+  const qs = _styleQuery(style, time)
+  const bust = `_=${Date.now()}`
+  if (!qs) return `/overlay-preview/${layerId}?${bust}`
+  return `/overlay-preview/${layerId}${qs}&${bust}`
 }
 
 export function createOverlayImageModule(
@@ -144,15 +223,179 @@ export function createOverlayImageModule(
   const loadingOverlays = new Set<string>()
   /** 加载过程中用户切换显隐时记住最新意图，避免 hide 被 in-flight load 覆盖 */
   const desiredVisibility = new Map<string, boolean>()
+  /** 加载过程中记住最新样式，完成后应用 */
+  const desiredStyle = new Map<string, OverlayStyleParams>()
   const linkTimeEnabled = ref(false)
   // bounds 内存缓存：避免显示/隐藏切换时重复请求 /overlay-bounds
   const boundsCache = new Map<string, { bounds: [number, number, number, number]; meta: any }>()
+  /** bounds 404 负缓存：缺资产的注册层（如 aridity-cn）不要反复打 404 */
+  const boundsMissCache = new Set<string>()
 
   function _ids(layerId: string) {
     const safe = layerId.replace(/[^a-zA-Z0-9_-]/g, '-')
     return {
       sourceId: `overlay-src-${safe}`,
       rasterLayerId: `overlay-raster-${safe}`,
+      footprintSourceId: `overlay-footprint-src-${safe}`,
+      footprintLayerId: `overlay-footprint-${safe}`,
+    }
+  }
+
+  function _desiredMode(
+    zoom: number,
+    overviewMaxZoom: number,
+    supportsXyz: boolean,
+  ): 'image' | 'raster-xyz' {
+    if (!supportsXyz) return 'image'
+    // hysteresis applied by caller using current mode
+    return zoom <= overviewMaxZoom ? 'image' : 'raster-xyz'
+  }
+
+  function _modeWithHysteresis(
+    zoom: number,
+    current: 'image' | 'raster-xyz',
+    overviewMaxZoom: number,
+    supportsXyz: boolean,
+  ): 'image' | 'raster-xyz' {
+    if (!supportsXyz) return 'image'
+    if (current === 'image') {
+      return zoom > overviewMaxZoom + OVERVIEW_HYSTERESIS ? 'raster-xyz' : 'image'
+    }
+    return zoom < overviewMaxZoom - OVERVIEW_HYSTERESIS ? 'image' : 'raster-xyz'
+  }
+
+  function _ensureFootprint(
+    layerId: string,
+    bounds: [number, number, number, number],
+    visible: boolean,
+  ) {
+    const { footprintSourceId, footprintLayerId } = _ids(layerId)
+    const [west, south, east, north] = bounds
+    const feature = {
+      type: 'Feature' as const,
+      properties: {},
+      geometry: {
+        type: 'Polygon' as const,
+        coordinates: [
+          [
+            [west, south],
+            [east, south],
+            [east, north],
+            [west, north],
+            [west, south],
+          ],
+        ],
+      },
+    }
+    if (!options.map.getSource(footprintSourceId)) {
+      options.map.addSource(footprintSourceId, {
+        type: 'geojson',
+        data: { type: 'FeatureCollection', features: [feature] },
+      })
+    } else {
+      const src = options.map.getSource(footprintSourceId) as {
+        setData?: (d: unknown) => void
+      }
+      src.setData?.({ type: 'FeatureCollection', features: [feature] })
+    }
+    if (!options.map.getLayer(footprintLayerId)) {
+      options.map.addLayer(
+        {
+          id: footprintLayerId,
+          type: 'line',
+          source: footprintSourceId,
+          layout: { visibility: visible ? 'visible' : 'none' },
+          paint: {
+            'line-color': 'rgba(90, 213, 255, 0.55)',
+            'line-width': 1.25,
+            'line-opacity': 0.85,
+          },
+        },
+        options.map.getLayer('admin-fill') ? 'admin-fill' : undefined,
+      )
+    } else {
+      options.map.setLayoutProperty(footprintLayerId, 'visibility', visible ? 'visible' : 'none')
+    }
+  }
+
+  function _removeOverlayLayers(sourceId: string, rasterLayerId: string) {
+    if (options.map.getLayer(rasterLayerId)) {
+      options.map.removeLayer(rasterLayerId)
+    }
+    if (options.map.getSource(sourceId)) {
+      options.map.removeSource(sourceId)
+    }
+  }
+
+  function _boundsToCoordinates(
+    bounds: [number, number, number, number],
+  ): [[number, number], [number, number], [number, number], [number, number]] {
+    const [west, south, east, north] = bounds
+    return [
+      [west, north],
+      [east, north],
+      [east, south],
+      [west, south],
+    ]
+  }
+
+  async function _fetchTimedBounds(
+    layerId: string,
+    time: string | null,
+  ): Promise<[number, number, number, number] | null> {
+    const cacheKey = time ? `${layerId}@${time}` : layerId
+    if (boundsMissCache.has(cacheKey) || boundsMissCache.has(layerId)) return null
+    const cached = boundsCache.get(cacheKey)
+    if (cached) return cached.bounds
+    try {
+      const qs = time ? `?time=${encodeURIComponent(time)}` : ''
+      const resp = await fetch(`/overlay-bounds/${layerId}${qs}`)
+      if (!resp.ok) {
+        if (resp.status === 404) boundsMissCache.add(cacheKey)
+        return null
+      }
+      const data = (await resp.json()) as {
+        bounds?: [number, number, number, number]
+        meta?: Record<string, unknown>
+      }
+      const validation = validateOverlayBounds(data.bounds)
+      if (!validation.ok) {
+        console.warn(`[Overlay] timed bounds invalid for ${layerId}@${time}: ${validation.reason}`)
+        return null
+      }
+      boundsCache.set(cacheKey, { bounds: validation.bounds, meta: data.meta ?? {} })
+      return validation.bounds
+    } catch (err) {
+      console.warn(`[Overlay] timed bounds fetch failed for ${layerId}@${time}`, err)
+      return null
+    }
+  }
+
+  function _applyImageSourceUpdate(
+    source: {
+      updateImage?: (o: {
+        url: string
+        coordinates?: [[number, number], [number, number], [number, number], [number, number]]
+      }) => void
+      setCoordinates?: (
+        c: [[number, number], [number, number], [number, number], [number, number]],
+      ) => void
+      setUrl?: (u: string) => void
+    },
+    url: string,
+    bounds: [number, number, number, number] | null,
+  ) {
+    const coordinates = bounds ? _boundsToCoordinates(bounds) : undefined
+    // MapLibre ImageSource：必须同时更新 url + coordinates，否则换时刻 PNG 地理框不同会南北压缩/偏移
+    if (typeof source.updateImage === 'function') {
+      source.updateImage(coordinates ? { url, coordinates } : { url })
+      return
+    }
+    if (coordinates && typeof source.setCoordinates === 'function') {
+      source.setCoordinates(coordinates)
+    }
+    if (typeof source.setUrl === 'function') {
+      source.setUrl(url)
     }
   }
 
@@ -171,23 +414,143 @@ export function createOverlayImageModule(
   function _removeOverlay(layerId: string) {
     const loaded = loadedOverlays.get(layerId)
     if (!loaded) return
-    const { sourceId, rasterLayerId } = loaded
-    if (options.map.getLayer(rasterLayerId)) {
-      options.map.removeLayer(rasterLayerId)
+    const { sourceId, rasterLayerId, footprintLayerId, footprintSourceId } = loaded
+    _removeOverlayLayers(sourceId, rasterLayerId)
+    if (options.map.getLayer(footprintLayerId)) {
+      options.map.removeLayer(footprintLayerId)
     }
-    if (options.map.getSource(sourceId)) {
-      options.map.removeSource(sourceId)
+    if (options.map.getSource(footprintSourceId)) {
+      options.map.removeSource(footprintSourceId)
     }
     loadedOverlays.delete(layerId)
     desiredVisibility.delete(layerId)
-    // 移除时间状态
     overlayTimeStates.value = overlayTimeStates.value.filter((s) => s.layerId !== layerId)
   }
+
+  function _addImageSource(
+    sourceId: string,
+    url: string,
+    bounds: [number, number, number, number],
+  ) {
+    options.map.addSource(sourceId, {
+      type: 'image',
+      url,
+      coordinates: [
+        [bounds[0], bounds[3]],
+        [bounds[2], bounds[3]],
+        [bounds[2], bounds[1]],
+        [bounds[0], bounds[1]],
+      ],
+    } as any)
+  }
+
+  function _addXyzSource(sourceId: string, tileTemplate: string, maxZoom = DEFAULT_TILE_MAX_ZOOM) {
+    options.map.addSource(sourceId, {
+      type: 'raster',
+      tiles: [tileTemplate],
+      tileSize: 256,
+      minzoom: 0,
+      maxzoom: Math.max(0, Math.min(22, Math.floor(maxZoom))),
+      // 允许 MapLibre 在 source maxzoom 之上继续显示（overzoom），避免「再放大就没了」
+    })
+  }
+
+  function _addRasterLayer(
+    rasterLayerId: string,
+    sourceId: string,
+    opacity: number,
+    visible: boolean,
+  ) {
+    options.map.addLayer(
+      {
+        id: rasterLayerId,
+        type: 'raster',
+        source: sourceId,
+        layout: { visibility: visible ? 'visible' : 'none' },
+        paint: {
+          'raster-opacity': opacity,
+          'raster-fade-duration': 0,
+          // 科学栅格放大时用最近邻，避免双线性糊成一片
+          'raster-resampling': 'nearest',
+        },
+      },
+      options.map.getLayer('admin-fill') ? 'admin-fill' : undefined,
+    )
+  }
+
+  async function _switchRenderMode(loaded: LoadedOverlay, mode: 'image' | 'raster-xyz') {
+    if (loaded.renderMode === mode) return
+    const { layerId } = loaded
+    const visible = desiredVisibility.get(layerId) ?? true
+    const { sourceId, rasterLayerId } = _ids(layerId)
+    // 清掉旧层与可能残留的 staging
+    _removeOverlayLayers(`${sourceId}__stg`, `${rasterLayerId}__stg`)
+    _removeOverlayLayers(loaded.sourceId, loaded.rasterLayerId)
+    if (loaded.sourceId !== sourceId) {
+      _removeOverlayLayers(sourceId, rasterLayerId)
+    }
+
+    if (mode === 'raster-xyz' && loaded.tileUrlTemplate) {
+      _addXyzSource(
+        sourceId,
+        _tileUrlFor(loaded.tileUrlTemplate, layerId, loaded.currentTime, loaded.style),
+        loaded.maxZoom,
+      )
+    } else if (loaded.bounds) {
+      const url = _previewUrl(layerId, loaded.currentTime, loaded.style)
+      _addImageSource(sourceId, url, loaded.bounds)
+    } else {
+      return
+    }
+    _addRasterLayer(rasterLayerId, sourceId, loaded.opacity, visible)
+    loaded.sourceId = sourceId
+    loaded.rasterLayerId = rasterLayerId
+    loaded.renderMode = mode
+    if (loaded.bounds) {
+      _ensureFootprint(layerId, loaded.bounds, visible && mode === 'image')
+    }
+  }
+
+  function _syncModesForZoom() {
+    if (!options.getMapReady()) return
+    const zoom = options.map.getZoom()
+    for (const loaded of loadedOverlays.values()) {
+      const next = _modeWithHysteresis(
+        zoom,
+        loaded.renderMode,
+        loaded.overviewMaxZoom,
+        loaded.supportsXyzTiles,
+      )
+      if (next !== loaded.renderMode) {
+        void _switchRenderMode(loaded, next)
+      }
+    }
+  }
+
+  let globalOverviewFitScheduled = false
 
   function _fitBoundsIfOutside(bounds: [number, number, number, number]) {
     try {
       const center = options.map.getCenter()
+      const zoom = options.map.getZoom()
       const [west, south, east, north] = bounds
+      const lngSpan = east - west
+      const isNearGlobal = lngSpan >= 300
+
+      // 近全球稀疏结果（如 FY/SMAP 轨道条带）在区域级缩放下可能整个视口均为透明瓦片。
+      // 即使当前中心位于全球 bounds 内，也应在首次加载时拉回全球概览，确保用户能看到数据。
+      if (isNearGlobal && zoom > 3 && !globalOverviewFitScheduled) {
+        globalOverviewFitScheduled = true
+        options.map.fitBounds(
+          [
+            [west, south],
+            [east, north],
+          ],
+          { padding: 60, duration: 800, essential: true },
+        )
+        return
+      }
+
       if (center.lat >= south && center.lat <= north) {
         if (east <= 180) {
           if (center.lng >= west && center.lng <= east) return
@@ -214,34 +577,53 @@ export function createOverlayImageModule(
     layerId: string,
     initialOpacity?: number,
     initiallyVisible: boolean = true,
+    initialStyle?: OverlayStyleParams,
   ): Promise<void> {
     desiredVisibility.set(layerId, initiallyVisible)
+    if (initialStyle) desiredStyle.set(layerId, initialStyle)
     if (loadedOverlays.has(layerId)) {
       setOverlayVisibility(layerId, desiredVisibility.get(layerId) ?? initiallyVisible)
+      const style = desiredStyle.get(layerId)
+      if (style) setOverlayStyle(layerId, style)
       return
     }
     if (loadingOverlays.has(layerId)) {
-      // 已有加载在飞：只更新 desiredVisibility，完成后应用
+      // 已有加载在飞：只更新 desiredVisibility / style，完成后应用
       return
     }
-    const { sourceId, rasterLayerId } = _ids(layerId)
+    if (boundsMissCache.has(layerId)) return
+    const { sourceId } = _ids(layerId)
     if (options.map.getSource(sourceId)) return
     loadingOverlays.add(layerId)
 
     try {
-      let boundsData: { bounds: [number, number, number, number]; meta: any }
-      const cached = boundsCache.get(layerId)
-      if (cached) {
-        boundsData = cached
-      } else {
-        const boundsResp = await fetch(`/overlay-bounds/${layerId}`)
-        if (!boundsResp.ok) {
-          console.warn(`[Overlay] bounds fetch failed for ${layerId}: ${boundsResp.status}`)
-          return
-        }
-        boundsData = await boundsResp.json()
-        boundsCache.set(layerId, { bounds: boundsData.bounds, meta: boundsData.meta ?? {} })
+      // 先取根 meta（time_list），时间序列再按 default_time 取与预览一致的地理框
+      const rootResp = await fetch(`/overlay-bounds/${layerId}`)
+      if (!rootResp.ok) {
+        if (rootResp.status === 404) boundsMissCache.add(layerId)
+        console.warn(`[Overlay] bounds fetch failed for ${layerId}: ${rootResp.status}`)
+        return
       }
+      const rootData = (await rootResp.json()) as {
+        bounds: [number, number, number, number]
+        meta?: any
+      }
+      const meta = rootData.meta ?? {}
+      const currentTime: string | null = meta.current_time ?? meta.default_time ?? null
+      const timeList: string[] = meta.time_list ?? []
+      const category: string = meta.category ?? 'static'
+
+      let boundsData = rootData
+      if (category === 'time-series' && currentTime) {
+        const timed = await _fetchTimedBounds(layerId, currentTime)
+        if (timed) {
+          boundsData = { bounds: timed, meta }
+          boundsCache.set(`${layerId}@${currentTime}`, { bounds: timed, meta })
+        }
+      } else {
+        boundsCache.set(layerId, { bounds: rootData.bounds, meta })
+      }
+
       const boundsValidation = validateOverlayBounds(boundsData.bounds)
       if (!boundsValidation.ok) {
         console.warn(`[Overlay] Invalid bounds for ${layerId}: ${boundsValidation.reason}`)
@@ -249,7 +631,6 @@ export function createOverlayImageModule(
         return
       }
       const bounds: [number, number, number, number] = boundsValidation.bounds
-      const meta = boundsData.meta ?? {}
       // 写回共享 symbology store（含 bounds 内存缓存命中路径）
       try {
         const { useOverlaySymbologyStore } = await import('../../stores/overlay-symbology')
@@ -259,57 +640,74 @@ export function createOverlayImageModule(
           vmax: meta.vmax ?? null,
           unit: meta.unit,
           opacity: typeof initialOpacity === 'number' ? initialOpacity : meta.opacity,
+          supports_recolor: Boolean(meta.supports_recolor),
         })
       } catch {
         // Pinia 未就绪时忽略
       }
-      const currentTime: string | null = meta.current_time ?? meta.default_time ?? null
-      const timeList: string[] = meta.time_list ?? []
-      const category: string = meta.category ?? 'static'
       const opacity =
         typeof initialOpacity === 'number'
           ? Math.max(0, Math.min(1, initialOpacity))
           : (meta.opacity ?? 0.7)
 
-      const url =
-        category === 'time-series' && currentTime
-          ? `/overlay-preview/${layerId}?time=${currentTime}`
-          : `/overlay-preview/${layerId}`
+      const style: OverlayStyleParams = {
+        ...(desiredStyle.get(layerId) ?? initialStyle ?? {}),
+      }
+      // 有源可重着色：默认带上注册 palette，便于服务端动态着色与后续覆盖一致
+      if (meta.supports_recolor && !style.palette && meta.palette) {
+        style.palette = meta.palette
+        style.forceStyle = true
+      }
+      if (style.vmin == null && typeof meta.vmin === 'number') style.vmin = meta.vmin
+      if (style.vmax == null && typeof meta.vmax === 'number') style.vmax = meta.vmax
 
-      options.map.addSource(sourceId, {
-        type: 'image',
-        url,
-        coordinates: [
-          [bounds[0], bounds[3]], // 左上 (west, north)
-          [bounds[2], bounds[3]], // 右上 (east, north)
-          [bounds[2], bounds[1]], // 右下 (east, south)
-          [bounds[0], bounds[1]], // 左下 (west, south)
-        ],
-      } as any)
+      const url = _previewUrl(layerId, currentTime, style)
+
+      const supportsXyzTiles = Boolean(meta.supports_xyz_tiles)
+      const overviewMaxZoom =
+        typeof meta.overview_max_zoom === 'number' && Number.isFinite(meta.overview_max_zoom)
+          ? Number(meta.overview_max_zoom)
+          : DEFAULT_OVERVIEW_MAX_ZOOM
+      const maxZoom =
+        typeof meta.maxzoom === 'number' && Number.isFinite(meta.maxzoom)
+          ? Number(meta.maxzoom)
+          : DEFAULT_TILE_MAX_ZOOM
+      const tileUrlTemplate =
+        typeof meta.tile_url_template === 'string' && meta.tile_url_template
+          ? String(meta.tile_url_template)
+          : `/overlay-tiles/${layerId}/{z}/{x}/{y}.png`
+
+      const zoom = options.map.getZoom()
+      const renderMode = _desiredMode(zoom, overviewMaxZoom, supportsXyzTiles)
+      const { sourceId, rasterLayerId, footprintSourceId, footprintLayerId } = _ids(layerId)
+
+      if (renderMode === 'raster-xyz' && supportsXyzTiles) {
+        _addXyzSource(sourceId, _tileUrlFor(tileUrlTemplate, layerId, currentTime, style), maxZoom)
+      } else {
+        _addImageSource(sourceId, url, bounds)
+      }
 
       const visibleNow = desiredVisibility.get(layerId) ?? initiallyVisible
-      options.map.addLayer(
-        {
-          id: rasterLayerId,
-          type: 'raster',
-          source: sourceId,
-          // 隐藏的图层以 visibility='none' 加入，避免显示时再触发 addLayer 流程
-          layout: { visibility: visibleNow ? 'visible' : 'none' },
-          paint: {
-            'raster-opacity': opacity,
-            // 降低 fade duration 让显隐切换更跟手（原 300ms 显得迟钝）
-            'raster-fade-duration': 100,
-          },
-        },
-        options.map.getLayer('admin-fill') ? 'admin-fill' : undefined,
-      )
+      _addRasterLayer(rasterLayerId, sourceId, opacity, visibleNow)
+      _ensureFootprint(layerId, bounds, visibleNow && renderMode === 'image')
 
       loadedOverlays.set(layerId, {
         layerId,
         sourceId,
         rasterLayerId,
+        footprintLayerId,
+        footprintSourceId,
         category,
         currentTime,
+        renderMode,
+        supportsXyzTiles,
+        overviewMaxZoom,
+        maxZoom,
+        tileUrlTemplate: supportsXyzTiles ? tileUrlTemplate : null,
+        bounds,
+        opacity,
+        style,
+        styleKey: styleKeyOf(style),
       })
 
       // 更新时间状态
@@ -347,6 +745,7 @@ export function createOverlayImageModule(
     activeOverlayLayerIds: string[],
     visibleOverlayLayerIds: string[],
     opacityByLayerId?: Record<string, number>,
+    styleByLayerId?: Record<string, OverlayStyleParams>,
   ): Promise<void> {
     if (!options.getMapReady()) return
 
@@ -359,24 +758,31 @@ export function createOverlayImageModule(
       }
     }
 
-    // 2) 添加新 active 的图层（首次加载）；对已加载的仅切换 visibility，避免重复 fetch PNG
-    //    并行加载多个新图层，缩短多图层同时显示时的等待
+    // 2) 添加新 active 的图层（首次加载）；对已加载的仅切换 visibility / opacity / style
     const newLayerIds: string[] = []
     for (const layerId of activeOverlayLayerIds) {
+      if (styleByLayerId?.[layerId]) desiredStyle.set(layerId, styleByLayerId[layerId])
       if (!loadedOverlays.has(layerId)) {
         newLayerIds.push(layerId)
       } else {
-        // 已加载：仅切 visibility + opacity，不重新 fetch
         setOverlayVisibility(layerId, visibleSet.has(layerId))
         if (typeof opacityByLayerId?.[layerId] === 'number') {
           setOverlayOpacity(layerId, opacityByLayerId[layerId])
+        }
+        if (styleByLayerId?.[layerId]) {
+          setOverlayStyle(layerId, styleByLayerId[layerId])
         }
       }
     }
     if (newLayerIds.length > 0) {
       await Promise.all(
         newLayerIds.map((layerId) =>
-          _addOverlay(layerId, opacityByLayerId?.[layerId], visibleSet.has(layerId)),
+          _addOverlay(
+            layerId,
+            opacityByLayerId?.[layerId],
+            visibleSet.has(layerId),
+            styleByLayerId?.[layerId],
+          ),
         ),
       )
     }
@@ -407,43 +813,79 @@ export function createOverlayImageModule(
     if (!loaded) return
     if (loaded.category !== 'time-series') return
 
-    const source = options.map.getSource(loaded.sourceId) as any
-    if (!source) return
+    const timedBounds = await _fetchTimedBounds(layerId, time)
+    if (!timedBounds) {
+      // 时间块被服务端过滤/重建后，旧标签可能不再可用。自动切回当前可用默认块，
+      // 避免时间轴从6块收敛为5块后图层因 404 消失。
+      const state = overlayTimeStates.value.find((s) => s.layerId === layerId)
+      const fallback =
+        state?.timeList?.find((t) => t === state.currentTime) ?? state?.timeList?.at(-1)
+      if (fallback && fallback !== time) {
+        await setOverlayTime(layerId, fallback)
+      }
+      return
+    }
+    loaded.bounds = timedBounds
 
-    const newUrl = `/overlay-preview/${layerId}?time=${time}`
-    // MapLibre image source 支持 setUrl
-    source.setUrl(newUrl)
+    if (loaded.renderMode === 'raster-xyz' && loaded.tileUrlTemplate) {
+      // Rebuild raster source so MapLibre refetches tiles for the new time
+      const { sourceId, rasterLayerId } = loaded
+      const visible = desiredVisibility.get(layerId) ?? true
+      _removeOverlayLayers(sourceId, rasterLayerId)
+      _addXyzSource(
+        sourceId,
+        _tileUrlFor(loaded.tileUrlTemplate, layerId, time, loaded.style),
+        loaded.maxZoom,
+      )
+      _addRasterLayer(rasterLayerId, sourceId, loaded.opacity, visible)
+    } else {
+      const source = options.map.getSource(loaded.sourceId) as
+        | {
+            updateImage?: (o: {
+              url: string
+              coordinates?: [[number, number], [number, number], [number, number], [number, number]]
+            }) => void
+            setCoordinates?: (
+              c: [[number, number], [number, number], [number, number], [number, number]],
+            ) => void
+            setUrl?: (u: string) => void
+          }
+        | undefined
+      if (!source) return
+      const newUrl = _previewUrl(layerId, time, loaded.style)
+      _applyImageSourceUpdate(source, newUrl, timedBounds)
+    }
 
     loaded.currentTime = time
-    // 更新时间状态
     overlayTimeStates.value = overlayTimeStates.value.map((s) =>
-      s.layerId === layerId ? { ...s, currentTime: time } : s,
+      s.layerId === layerId ? { ...s, currentTime: time, bounds: timedBounds ?? s.bounds } : s,
     )
+    if (loaded.bounds) {
+      _ensureFootprint(
+        layerId,
+        loaded.bounds,
+        (desiredVisibility.get(layerId) ?? true) && loaded.renderMode === 'image',
+      )
+    }
 
-    // 联动其他时间序列图层
+    // 联动其他时间序列图层（关闭本层联动标志避免递归）
     if (linkTimeEnabled.value) {
       const others = overlayTimeStates.value.filter(
         (s) => s.layerId !== layerId && s.category === 'time-series' && s.currentTime !== time,
       )
-      for (const other of others) {
-        const nearest = _findNearestTime(other.timeList, time)
-        if (nearest && nearest !== other.currentTime) {
-          // 递归调用但禁止再次联动（避免循环）
-          const otherLoaded = loadedOverlays.get(other.layerId)
-          if (!otherLoaded) continue
-          const otherSource = options.map.getSource(otherLoaded.sourceId) as any
-          if (!otherSource) continue
-          const otherUrl = `/overlay-preview/${other.layerId}?time=${nearest}`
-          otherSource.setUrl(otherUrl)
-          otherLoaded.currentTime = nearest
+      if (others.length) {
+        linkTimeEnabled.value = false
+        try {
+          for (const other of others) {
+            const nearest = _findNearestTime(other.timeList, time)
+            if (nearest && nearest !== other.currentTime) {
+              await setOverlayTime(other.layerId, nearest)
+            }
+          }
+        } finally {
+          linkTimeEnabled.value = true
         }
       }
-      // 统一更新时间状态
-      overlayTimeStates.value = overlayTimeStates.value.map((s) => {
-        if (s.layerId === layerId || s.category !== 'time-series') return s
-        const nearest = _findNearestTime(s.timeList, time)
-        return nearest && nearest !== s.currentTime ? { ...s, currentTime: nearest } : s
-      })
     }
   }
 
@@ -453,11 +895,51 @@ export function createOverlayImageModule(
     }
   }
 
+  function setOverlayStyle(layerId: string, style: OverlayStyleParams) {
+    desiredStyle.set(layerId, style)
+    const loaded = loadedOverlays.get(layerId)
+    if (!loaded) return
+    const nextKey = styleKeyOf(style)
+    if (nextKey === loaded.styleKey) return
+    loaded.style = { ...style }
+    loaded.styleKey = nextKey
+
+    if (loaded.renderMode === 'raster-xyz' && loaded.tileUrlTemplate) {
+      const { sourceId, rasterLayerId } = loaded
+      const visible = desiredVisibility.get(layerId) ?? true
+      _removeOverlayLayers(sourceId, rasterLayerId)
+      _addXyzSource(
+        sourceId,
+        _tileUrlFor(loaded.tileUrlTemplate, layerId, loaded.currentTime, loaded.style),
+        loaded.maxZoom,
+      )
+      _addRasterLayer(rasterLayerId, sourceId, loaded.opacity, visible)
+      return
+    }
+
+    const source = options.map.getSource(loaded.sourceId) as
+      | {
+          updateImage?: (o: {
+            url: string
+            coordinates?: [[number, number], [number, number], [number, number], [number, number]]
+          }) => void
+          setUrl?: (u: string) => void
+        }
+      | undefined
+    if (!source || !loaded.bounds) return
+    _applyImageSourceUpdate(
+      source,
+      _previewUrl(layerId, loaded.currentTime, loaded.style),
+      loaded.bounds,
+    )
+  }
+
   function setOverlayOpacity(layerId: string, opacity: number) {
     const loaded = loadedOverlays.get(layerId)
     if (!loaded) return
     if (!options.map.getLayer(loaded.rasterLayerId)) return
     const clamped = Math.max(0, Math.min(1, opacity))
+    loaded.opacity = clamped
     options.map.setPaintProperty(loaded.rasterLayerId, 'raster-opacity', clamped)
     overlayTimeStates.value = overlayTimeStates.value.map((s) =>
       s.layerId === layerId ? { ...s, opacity: clamped } : s,
@@ -468,8 +950,20 @@ export function createOverlayImageModule(
     desiredVisibility.set(layerId, visible)
     const loaded = loadedOverlays.get(layerId)
     if (!loaded) return
-    if (!options.map.getLayer(loaded.rasterLayerId)) return
-    options.map.setLayoutProperty(loaded.rasterLayerId, 'visibility', visible ? 'visible' : 'none')
+    if (options.map.getLayer(loaded.rasterLayerId)) {
+      options.map.setLayoutProperty(
+        loaded.rasterLayerId,
+        'visibility',
+        visible ? 'visible' : 'none',
+      )
+    }
+    if (options.map.getLayer(loaded.footprintLayerId)) {
+      options.map.setLayoutProperty(
+        loaded.footprintLayerId,
+        'visibility',
+        visible && loaded.renderMode === 'image' ? 'visible' : 'none',
+      )
+    }
   }
 
   function getRasterLayerId(layerId: string): string | null {
@@ -479,21 +973,43 @@ export function createOverlayImageModule(
   }
 
   function dispose() {
+    options.map.off('zoomend', _syncModesForZoom)
+    options.map.off('moveend', _syncModesForZoom)
+    options.map.off('zoom', _onZoomDuringGesture)
+    if (zoomSyncTimer != null) {
+      window.clearTimeout(zoomSyncTimer)
+      zoomSyncTimer = null
+    }
     for (const layerId of Array.from(loadedOverlays.keys())) {
       _removeOverlay(layerId)
     }
     loadingOverlays.clear()
     desiredVisibility.clear()
+    desiredStyle.clear()
     boundsCache.clear()
     knownOverlayIds.value = []
     overlayTimeStates.value = []
     linkTimeEnabled.value = false
   }
 
+  let zoomSyncTimer: ReturnType<typeof setTimeout> | null = null
+  function _onZoomDuringGesture() {
+    if (zoomSyncTimer != null) return
+    zoomSyncTimer = setTimeout(() => {
+      zoomSyncTimer = null
+      _syncModesForZoom()
+    }, 120)
+  }
+
+  options.map.on('zoomend', _syncModesForZoom)
+  options.map.on('moveend', _syncModesForZoom)
+  options.map.on('zoom', _onZoomDuringGesture)
+
   return {
     syncOverlays,
     setOverlayTime,
     setOverlayOpacity,
+    setOverlayStyle,
     setOverlayVisibility,
     getRasterLayerId,
     rememberOverlayId,

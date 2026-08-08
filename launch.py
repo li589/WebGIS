@@ -20,6 +20,9 @@ CGDA 跨平台一键启动器（薄入口）
 
 若用系统 ``python launch.py``，启动器会自动切换到 ``Env/Python312``（若存在）。
 
+Windows 联调：Docker Desktop 与终端须**以管理员身份运行**，否则 ``launch.py start``
+/ ``sync`` 等可能失败（详见 ``Doc/本地联调环境说明.md``）。
+
 用法:
     Env\\Python312\\python.exe launch.py                     # 等同 start
     Env\\Python312\\python.exe launch.py start [component]

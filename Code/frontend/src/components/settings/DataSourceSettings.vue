@@ -10,8 +10,12 @@ import {
   updateRemoteLayerUris,
   upsertPortalCredential,
   deletePortalCredential,
+  updateDataSourcePaths,
+  restartBackendService,
+  waitForBackendHealthy,
   type DataCacheOverview,
   type PortalCredentialPublic,
+  type PortalCredentialUpsertRequest,
 } from '../../services/settings-api'
 
 const settingsStore = useSettingsStore()
@@ -21,9 +25,12 @@ const { dataSourceConfig } = storeToRefs(settingsStore)
 const cacheOverview = ref<DataCacheOverview | null>(null)
 const cacheBusy = ref(false)
 const saveBusy = ref(false)
+const restartBusy = ref(false)
 const statusMsg = ref('')
 const presetsText = ref('')
 const urisText = ref('')
+const dataRootDraft = ref('')
+const outputRootDraft = ref('')
 
 const portalForms = reactive<
   Record<
@@ -80,12 +87,13 @@ const storageItems = computed(() => {
   const cfg = dataSourceConfig.value
   return [
     { label: '存储后端类型', value: cfg.storage_backend },
-    { label: '数据根目录', value: cfg.data_root || '未配置' },
-    { label: '产物输出目录', value: cfg.output_root || '未配置' },
     { label: '下载源根目录', value: cfg.download_source_root || '未配置' },
     { label: '真实抓取', value: cfg.download_real_fetch_enabled ? '启用' : '禁用' },
   ]
 })
+
+const pendingRestart = computed(() => Boolean(dataSourceConfig.value?.pending_restart))
+const uiRestartEnabled = computed(() => dataSourceConfig.value?.ui_restart_enabled !== false)
 
 const tileProxyItems = computed(() => {
   if (!dataSourceConfig.value) return []
@@ -114,6 +122,8 @@ function syncEditorsFromConfig() {
   if (!cfg) return
   presetsText.value = JSON.stringify(cfg.open_data_presets ?? {}, null, 2)
   urisText.value = JSON.stringify(cfg.remote_layer_data_uris ?? {}, null, 2)
+  dataRootDraft.value = cfg.env_data_root || cfg.data_root || ''
+  outputRootDraft.value = cfg.env_output_root || cfg.output_root || ''
   const portals = cfg.portal_credentials ?? {}
   for (const id of ['earthdata', 'nsidc', 'copernicus'] as const) {
     const p = portals[id] as PortalCredentialPublic | undefined
@@ -126,6 +136,66 @@ function syncEditorsFromConfig() {
     portalForms[id].use_earthdata = p.use_earthdata !== false
     portalForms[id].token = ''
     portalForms[id].password = ''
+  }
+}
+
+async function savePaths(andRestart: boolean) {
+  const root = dataRootDraft.value.trim()
+  if (!root) {
+    statusMsg.value = '请填写数据根目录（绝对路径）'
+    return
+  }
+  if (andRestart) {
+    if (!uiRestartEnabled.value) {
+      statusMsg.value = '当前环境禁止从前端重启后端（BACKEND_UI_RESTART_ENABLED）'
+      return
+    }
+    if (
+      !confirm(
+        '将保存路径并重启 FastAPI + Celery Worker + Beat（Docker/前端不动）。期间 API 短暂不可用，确认继续？',
+      )
+    ) {
+      return
+    }
+  }
+  saveBusy.value = true
+  restartBusy.value = andRestart
+  statusMsg.value = ''
+  try {
+    const out = outputRootDraft.value.trim()
+    const result = await updateDataSourcePaths({
+      data_root: root,
+      output_root: out || null,
+    })
+    statusMsg.value = result.message
+    dataRootDraft.value = result.data_root
+    outputRootDraft.value = result.output_root
+    await settingsStore.loadAll()
+    syncEditorsFromConfig()
+    if (andRestart) {
+      statusMsg.value = '已调度后端重启，等待健康检查…'
+      await restartBackendService({})
+      const ok = await waitForBackendHealthy({ timeoutMs: 120_000 })
+      if (!ok) {
+        statusMsg.value = '重启已调度，但在超时内未恢复 /health；请检查 launch 日志'
+      } else {
+        statusMsg.value = '后端已恢复；正在刷新配置与图层就绪状态…'
+        await settingsStore.loadAll()
+        syncEditorsFromConfig()
+        try {
+          const { useLayersStore } = await import('../../stores/layers')
+          await useLayersStore().ensureRuntimeLayerCatalog(true)
+        } catch {
+          // catalog refresh is best-effort
+        }
+        statusMsg.value = '路径已生效，后端已重启完成'
+      }
+    }
+  } catch (e) {
+    statusMsg.value = (e as Error).message
+  } finally {
+    saveBusy.value = false
+    restartBusy.value = false
   }
 }
 
@@ -207,7 +277,7 @@ async function savePortal(portalId: string) {
     if (portalId === 'earthdata') payload.use_for_nsidc = form.use_for_nsidc
     if (portalId === 'nsidc') payload.use_earthdata = form.use_earthdata
     if (portalId === 'copernicus') payload.client_id = form.client_id
-    await upsertPortalCredential(portalId, payload)
+    await upsertPortalCredential(portalId, payload as PortalCredentialUpsertRequest)
     statusMsg.value = `门户凭证 ${portalId} 已保存`
     await settingsStore.loadAll()
     syncEditorsFromConfig()
@@ -245,6 +315,65 @@ void refreshCache()
 
 <template>
   <div class="data-source-settings">
+    <section class="settings-section">
+      <h3 class="section-title">地理数据根目录</h3>
+      <p class="section-hint">
+        写入 <code>Code/backend/.env</code>（<code>BACKEND_DATA_ROOT</code> /
+        <code>BACKEND_OUTPUT_ROOT</code>）。当前进程生效值需重启 FastAPI + Worker + Beat。
+        <span v-if="pendingRestart" class="warn"> · 已保存但尚未重启</span>
+      </p>
+      <div class="info-grid">
+        <div class="info-row">
+          <span class="info-label">数据根目录</span>
+          <input
+            v-model="dataRootDraft"
+            class="field"
+            type="text"
+            placeholder="例如 I:\Geograph_DataSet"
+            autocomplete="off"
+          />
+        </div>
+        <div class="info-row">
+          <span class="info-label">产物输出目录</span>
+          <input
+            v-model="outputRootDraft"
+            class="field"
+            type="text"
+            placeholder="留空则使用 {数据根}/ProjectOutput"
+            autocomplete="off"
+          />
+        </div>
+        <div class="info-row">
+          <span class="info-label">进程生效值</span>
+          <span class="info-value" :title="dataSourceConfig?.data_root || ''">
+            {{ dataSourceConfig?.data_root || '未配置' }}
+            <template v-if="dataSourceConfig?.output_root">
+              · 产物 {{ dataSourceConfig.output_root }}
+            </template>
+          </span>
+        </div>
+      </div>
+      <div class="btn-row">
+        <button
+          type="button"
+          class="btn"
+          :disabled="saveBusy || restartBusy"
+          @click="savePaths(false)"
+        >
+          保存路径
+        </button>
+        <button
+          type="button"
+          class="btn btn-primary"
+          :disabled="saveBusy || restartBusy || !uiRestartEnabled"
+          :title="uiRestartEnabled ? '' : 'BACKEND_UI_RESTART_ENABLED 未开启'"
+          @click="savePaths(true)"
+        >
+          {{ restartBusy ? '重启中…' : '保存并重启后端' }}
+        </button>
+      </div>
+    </section>
+
     <section class="settings-section">
       <h3 class="section-title">存储配置</h3>
       <div class="info-grid">
@@ -582,6 +711,15 @@ void refreshCache()
 .btn:disabled {
   opacity: 0.5;
   cursor: not-allowed;
+}
+
+.btn-primary {
+  border-color: #4a7ab0;
+  background: #1e3a55;
+}
+
+.warn {
+  color: #e8b86d;
 }
 
 .btn.danger {

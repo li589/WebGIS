@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+import json
 import logging
 import os
 from functools import lru_cache
+from pathlib import Path
 from typing import Any, Optional
 
 from app.core.config import settings
@@ -276,7 +278,10 @@ def toggle_api_key(key_name: str, enabled: bool) -> dict[str, Any]:
     except Exception:
         logger.exception("Failed to rehydrate effective config after api key toggle")
 
-    return {"key_name": key_name, "enabled": enabled, "effective": bool(effective)}
+    info = repo.get_key_info(key_name) or {}
+    if not info.get("display_name"):
+        info["display_name"] = meta.get("display_name", key_name)
+    return _annotate_key_entry(info, source="db")
 
 
 def _sync_api_config_manager_key(key_name: str, key_value: str) -> None:
@@ -320,6 +325,15 @@ def get_effective_api_key(key_name: str) -> Optional[str]:
     return _get_effective_api_key_cached(key_name)
 
 
+def has_api_key_db_row(key_name: str) -> bool:
+    """是否存在该 key 的 DB 行（无论 enabled）。
+
+    发布就绪修复（P1-6）用于吊销语义：DB 有行（含禁用）时以 DB 为准、不回落 env，
+    避免"禁用/删除"静默复活已退役的 env 密钥。
+    """
+    return _get_api_keys_repository().get_key_info(key_name) is not None
+
+
 def is_basemap_key_available(key_name: str) -> bool:
     """Whether a basemap provider key is currently effective (for UI gating)."""
     return bool(get_effective_api_key(key_name))
@@ -338,7 +352,14 @@ async def test_api_key(key_name: str) -> tuple[bool, str]:
             # 测试天地图 API：请求一个瓦片（使用 httpx 异步客户端，避免阻塞事件循环）
             import httpx
 
+            from app.core.ssrf import validate_outbound_url
+
             url = f"https://t0.tianditu.gov.cn/img_w/wmts?SERVICE=WMTS&REQUEST=GetTile&VERSION=1.0.0&LAYER=img&STYLE=default&TILEMATRIXSET=w&FORMAT=tiles&TILECOL=0&TILEROW=0&TILEMATRIX=0&tk={key_value}"
+            try:
+                validate_outbound_url(url, allow_private=False)
+            except Exception as exc:
+                repo.update_test_status(key_name, "failed")
+                return False, f"出站 URL 校验失败: {exc}"
             try:
                 async with httpx.AsyncClient(
                     timeout=httpx.Timeout(10.0, connect=5.0)
@@ -360,7 +381,14 @@ async def test_api_key(key_name: str) -> tuple[bool, str]:
             # 百度地图 API 测试（使用 httpx 异步客户端）
             import httpx
 
+            from app.core.ssrf import validate_outbound_url
+
             url = f"https://maponline0.bdimg.com/tile/?qt=tile&x=0&y=0&z=1&styles=pl&v=020&udt=20231201&ak={key_value}"
+            try:
+                validate_outbound_url(url, allow_private=False)
+            except Exception as exc:
+                repo.update_test_status(key_name, "failed")
+                return False, f"出站 URL 校验失败: {exc}"
             try:
                 async with httpx.AsyncClient(
                     timeout=httpx.Timeout(10.0, connect=5.0)
@@ -505,6 +533,65 @@ def reload_gee_account_pool() -> tuple[bool, int, str]:
 # ── 常规配置 ──────────────────────────────────────────────────────────────────
 
 
+def _parse_map_aoi_presets(raw: str) -> list[dict[str, Any]]:
+    text = (raw or "").strip()
+    if not text:
+        return []
+    try:
+        data = json.loads(text)
+    except json.JSONDecodeError:
+        return []
+    if not isinstance(data, list):
+        return []
+    presets: list[dict[str, Any]] = []
+    for item in data:
+        if not isinstance(item, dict):
+            continue
+        label = item.get("label")
+        try:
+            west = float(item["west"])
+            south = float(item["south"])
+            east = float(item["east"])
+            north = float(item["north"])
+        except (KeyError, TypeError, ValueError):
+            continue
+        if not isinstance(label, str) or not label.strip():
+            continue
+        presets.append(
+            {
+                "label": label.strip(),
+                "west": west,
+                "south": south,
+                "east": east,
+                "north": north,
+            }
+        )
+    return presets
+
+
+def _redact_redis_url(url: str) -> str:
+    """Mask the password embedded in a Redis connection URL.
+
+    Handles ``redis://:password@host`` and ``redis://user:password@host``;
+    leaves scheme/host/db intact. Non-credential URLs are returned unchanged.
+    """
+    if not url:
+        return url
+    import re
+
+    match = re.match(
+        r"^(?P<scheme>[a-zA-Z][a-zA-Z0-9+.\-]*://)(?P<auth>[^@/]+@)?(?P<rest>.+)$",
+        url,
+    )
+    if not match:
+        return url
+    auth = match.group("auth")
+    if not auth or ":" not in auth:
+        return url  # no password (e.g. ``redis://host`` or ``user@host``)
+    user, _, _pwd = auth.partition(":")
+    return f"{match.group('scheme')}{user}:***@{match.group('rest')}"
+
+
 def get_general_config() -> dict[str, Any]:
     """获取常规配置（脱敏）。"""
     return {
@@ -538,9 +625,14 @@ def get_general_config() -> dict[str, Any]:
         "workflow_state_dir": settings.workflow_state_dir,
         "python_provider_root": settings.python_provider_root,
         "python_provider_workspace": settings.python_provider_workspace,
-        "redis_url": settings.redis_url,
+        "redis_url": _redact_redis_url(settings.redis_url),
         "storage_backend": settings.storage_backend,
         "reload": settings.reload,
+        "map_default_longitude": settings.map_default_longitude,
+        "map_default_latitude": settings.map_default_latitude,
+        "map_default_zoom": settings.map_default_zoom,
+        "map_default_tile_source": settings.map_default_tile_source,
+        "map_aoi_presets": _parse_map_aoi_presets(settings.map_aoi_presets_json),
     }
 
 
@@ -666,10 +758,25 @@ def get_data_source_config() -> dict[str, Any]:
         repo=repo,
         encryption_key=settings.gee_credentials_encryption_key,
     )
+    from app.services.env_file_upsert import read_env_file_values
+
+    env_vals = read_env_file_values()
+    env_data_root = (env_vals.get("BACKEND_DATA_ROOT") or "").strip()
+    env_output_root = (env_vals.get("BACKEND_OUTPUT_ROOT") or "").strip()
+    effective_data = (settings.data_root or "").strip()
+    effective_output = (settings.output_root or "").strip()
+    pending_restart = bool(
+        (env_data_root and env_data_root != effective_data)
+        or (env_output_root and env_output_root != effective_output)
+    )
     return {
         "storage_backend": settings.storage_backend,
         "data_root": settings.data_root,
         "output_root": settings.output_root,
+        "env_data_root": env_data_root,
+        "env_output_root": env_output_root,
+        "pending_restart": pending_restart,
+        "ui_restart_enabled": bool(getattr(settings, "ui_restart_enabled", False)),
         "download_source_root": settings.download_source_root,
         "download_real_fetch_enabled": settings.download_real_fetch_enabled,
         "tile_proxy_enabled": settings.tile_proxy_enabled,
@@ -696,8 +803,83 @@ def get_data_source_config() -> dict[str, Any]:
         "workflow_hint": (
             "开放门户请用工作流「门户数据下载」(http_open_data) + cred_profile；"
             "NAS/任意 URI 用「远程拉取」并引用「远程存储」凭证 profile。"
+            "数据根目录可在本页修改；保存后需重启 FastAPI+Worker+Beat 生效。"
         ),
     }
+
+
+def _validate_absolute_existing_dir(path_str: str, *, label: str) -> Path:
+    raw = str(path_str or "").strip()
+    if not raw:
+        raise ValueError(f"{label} must not be empty")
+    path = Path(raw).expanduser()
+    if not path.is_absolute():
+        raise ValueError(f"{label} must be an absolute path")
+    if not path.exists():
+        raise ValueError(f"{label} does not exist: {path}")
+    if not path.is_dir():
+        raise ValueError(f"{label} is not a directory: {path}")
+    try:
+        next(path.iterdir(), None)
+    except OSError as exc:
+        raise ValueError(f"{label} is not listable: {path}") from exc
+    return path.resolve()
+
+
+def update_data_source_paths(
+    data_root: str,
+    output_root: str | None = None,
+) -> dict[str, Any]:
+    """校验并写入 BACKEND_DATA_ROOT / BACKEND_OUTPUT_ROOT 到 .env。"""
+    from app.services.env_file_upsert import backend_env_path, upsert_env_keys
+
+    root = _validate_absolute_existing_dir(data_root, label="data_root")
+    out_raw = (output_root or "").strip()
+    if out_raw:
+        out = _validate_absolute_existing_dir(out_raw, label="output_root")
+    else:
+        out = root / "ProjectOutput"
+        try:
+            out.mkdir(parents=True, exist_ok=True)
+        except OSError as exc:
+            raise ValueError(f"cannot create output_root: {out}") from exc
+        out = _validate_absolute_existing_dir(str(out), label="output_root")
+
+    env_path = upsert_env_keys(
+        {
+            "BACKEND_DATA_ROOT": str(root),
+            "BACKEND_OUTPUT_ROOT": str(out),
+        }
+    )
+    effective_data = (settings.data_root or "").strip()
+    effective_output = (settings.output_root or "").strip()
+    pending = str(root) != effective_data or str(out) != effective_output
+    return {
+        "data_root": str(root),
+        "output_root": str(out),
+        "effective_data_root": effective_data,
+        "effective_output_root": effective_output,
+        "pending_restart": pending,
+        "env_path": str(env_path if env_path else backend_env_path()),
+        "message": (
+            "Paths saved to .env. Restart FastAPI + Worker + Beat to apply."
+            if pending
+            else "Paths saved; already match the running process."
+        ),
+    }
+
+
+def schedule_ui_backend_restart(
+    components: list[str] | None = None,
+) -> dict[str, Any]:
+    from app.services.service_restart import (
+        schedule_backend_restart,
+        ui_restart_allowed,
+    )
+
+    result = schedule_backend_restart(components)
+    result["ui_restart_enabled"] = ui_restart_allowed()
+    return result
 
 
 def update_open_data_presets(presets: dict[str, Any]) -> dict[str, Any]:
@@ -1369,6 +1551,26 @@ def test_remote_storage_profile(
         probe_uri = f"{protocol}://{host_part}/"
 
     try:
+        from urllib.parse import urlparse
+
+        from app.core.ssrf import (
+            SSRFBlockedError,
+            default_allow_private,
+            validate_outbound_url,
+        )
+
+        parsed_probe = urlparse(probe_uri)
+        if parsed_probe.scheme in {"http", "https"}:
+            try:
+                validate_outbound_url(probe_uri, allow_private=default_allow_private())
+            except SSRFBlockedError as exc:
+                repo.update_test_status(profile_id, "failed")
+                return {
+                    "profile_id": profile_id,
+                    "success": False,
+                    "message": str(exc),
+                    "tested_at": datetime.now(timezone.utc).isoformat(),
+                }
         if "cred=" not in probe_uri:
             sep = "&" if "?" in probe_uri else "?"
             probe_uri = f"{probe_uri}{sep}cred={profile_id}"

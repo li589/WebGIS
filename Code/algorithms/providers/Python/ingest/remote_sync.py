@@ -29,11 +29,8 @@ from __future__ import annotations
 
 import json
 import logging
-import os
 import posixpath
-import shutil
 import stat
-import time
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable, Iterator
@@ -58,10 +55,10 @@ _FILEBROWSER_USER_AGENT: str = "CGDA-RemoteSync/1.0"
 class RemoteFile:
     """远程文件条目。"""
 
-    path: str        # 远程绝对路径
-    name: str        # 文件名
-    size: int        # 字节大小
-    is_dir: bool     # 是否目录
+    path: str  # 远程绝对路径
+    name: str  # 文件名
+    size: int  # 字节大小
+    is_dir: bool  # 是否目录
 
 
 @dataclass(frozen=True, slots=True)
@@ -191,7 +188,9 @@ def _format_size(size_bytes: int) -> str:
     return f"{size:.2f} {units[idx]}"
 
 
-def _extension_allowed(filename: str, file_filter: frozenset[str] | None = None) -> bool:
+def _extension_allowed(
+    filename: str, file_filter: frozenset[str] | None = None
+) -> bool:
     exts = file_filter or ALLOWED_EXTENSIONS
     return Path(filename).suffix.lower() in exts
 
@@ -219,6 +218,7 @@ def _get_paramiko() -> Any:
     """延迟导入 paramiko。"""
     try:
         import paramiko
+
         return paramiko
     except ImportError:
         raise ImportError(
@@ -253,7 +253,9 @@ def _sftp_connect(config: ServerConfig) -> tuple[Any, Any]:
 
     client.connect(**connect_kwargs)
     sftp = client.open_sftp()
-    logger.info("SSH/SFTP 连接成功: %s@%s:%d", config.username, config.host, config.port)
+    logger.info(
+        "SSH/SFTP 连接成功: %s@%s:%d", config.username, config.host, config.port
+    )
     return client, sftp
 
 
@@ -266,7 +268,9 @@ def _sftp_list_dir(sftp: Any, path: str) -> list[RemoteFile]:
         mode = entry.st_mode or 0
         is_dir = stat.S_ISDIR(mode)
         size = entry.st_size if not is_dir else 0
-        result.append(RemoteFile(path=full, name=entry.filename, size=size, is_dir=is_dir))
+        result.append(
+            RemoteFile(path=full, name=entry.filename, size=size, is_dir=is_dir)
+        )
     return result
 
 
@@ -505,8 +509,13 @@ def sync_dataset(
             for rpath, rel, rsize in _sftp_walk(sftp, remote_path, file_filter):
                 result.total_files += 1
                 _sync_one_file(
-                    sftp, rpath, local_path / rel, rsize, result,
-                    progress_callback, dry_run,
+                    sftp,
+                    rpath,
+                    local_path / rel,
+                    rsize,
+                    result,
+                    progress_callback,
+                    dry_run,
                     download_func=lambda rp, lp, rs, off, cb: _sftp_download_file(
                         sftp, rp, lp, rs, off, cb
                     ),
@@ -528,8 +537,13 @@ def sync_dataset(
         ):
             result.total_files += 1
             _sync_one_file(
-                None, rpath, local_path / rel, rsize, result,
-                progress_callback, dry_run,
+                None,
+                rpath,
+                local_path / rel,
+                rsize,
+                result,
+                progress_callback,
+                dry_run,
                 download_func=lambda rp, lp, rs, off, cb: _filebrowser_download(
                     server_config.filebrowser_url, token, rp, lp, rs, off, cb
                 ),
@@ -541,8 +555,11 @@ def sync_dataset(
 
     logger.info(
         "同步完成: total=%d skipped=%d downloaded=%d failed=%d (%s)",
-        result.total_files, result.skipped, result.downloaded,
-        result.failed, _format_size(result.downloaded_bytes),
+        result.total_files,
+        result.skipped,
+        result.downloaded,
+        result.failed,
+        _format_size(result.downloaded_bytes),
     )
     return result
 

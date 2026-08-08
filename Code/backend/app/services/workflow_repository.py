@@ -5,6 +5,7 @@ import logging
 import sqlite3
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from typing import Any
 
 from app.core.config import settings
 from app.services._sqlite_pool import SQLiteConnectionPool
@@ -47,6 +48,19 @@ _TERMINAL_STATUSES = (
 # 默认保留期：30 天前的已完成 run 将被清理
 _DEFAULT_RETENTION_DAYS = 30
 
+# P2-3：schema 版本跟踪（无 Alembic，用 schema_meta 表记录当前 schema 版本，
+# 发版/升级时可检测代码与 DB 版本是否一致）。每次 schema 变更（加列/加表/加索引）
+# 时递增此值并记录变更说明。
+SCHEMA_VERSION = 3
+SCHEMA_CHANGES: list[tuple[int, str]] = [
+    (1, "初始 schema：workflow_runs / workflow_events / runtime_config"),
+    (
+        2,
+        "workflow_runs 加 request_json / run_class 列 + idx_workflow_runs_class_status",
+    ),
+    (3, "新增 schema_meta 版本跟踪表（P2-3）"),
+]
+
 
 class SQLiteWorkflowRepository:
     def __init__(self, state_dir: str | Path | None = None) -> None:
@@ -60,13 +74,48 @@ class SQLiteWorkflowRepository:
         self._initialize_schema()
         self._migrate_schema()
 
+    def _serialize_run_payload(
+        self,
+        run_status: WorkflowRunStatusResponse,
+        *,
+        result_dto_override: dict[str, Any] | None = None,
+    ) -> str:
+        """Serialize run status; optional override keeps provider fields (e.g. products)."""
+        payload = run_status.model_dump(mode="json")
+        if result_dto_override is not None:
+            payload["result_dto"] = result_dto_override
+        return json.dumps(payload, ensure_ascii=False)
+
+    # C4 终态守卫（SQL 原子层，消除应用层 read-check-write 的 TOCTOU 窗口）：
+    # cancelled 或 watchdog-failed（stuck_running_watchdog）的 run 拒绝任何覆盖写，
+    # 与 lifecycle_service._is_protected_terminal 语义一致；INSERT 新行不受影响。
+    _TERMINAL_GUARD_WHERE = """
+        WHERE NOT (
+            workflow_runs.status = 'cancelled'
+            OR (
+                workflow_runs.status = 'failed'
+                AND COALESCE(
+                    json_extract(
+                        workflow_runs.payload_json,
+                        '$.executor_metadata.cleanup_reason'
+                    ),
+                    ''
+                ) = 'stuck_running_watchdog'
+            )
+        )
+    """
+
     def save_run(
         self,
         run_status: WorkflowRunStatusResponse,
         request_json: str | None = None,
         run_class: str | None = None,
+        *,
+        result_dto_override: dict[str, Any] | None = None,
     ) -> None:
-        payload = json.dumps(run_status.model_dump(mode="json"), ensure_ascii=False)
+        payload = self._serialize_run_payload(
+            run_status, result_dto_override=result_dto_override
+        )
         with self._connect() as connection:
             if request_json is not None:
                 connection.execute(
@@ -79,7 +128,8 @@ class SQLiteWorkflowRepository:
                         payload_json = excluded.payload_json,
                         request_json = COALESCE(excluded.request_json, request_json),
                         run_class = COALESCE(excluded.run_class, run_class)
-                    """,
+                    """
+                    + self._TERMINAL_GUARD_WHERE,
                     (
                         run_status.run_id,
                         run_status.status.value,
@@ -99,7 +149,8 @@ class SQLiteWorkflowRepository:
                         updated_at = excluded.updated_at,
                         payload_json = excluded.payload_json,
                         run_class = COALESCE(workflow_runs.run_class, excluded.run_class)
-                    """,
+                    """
+                    + self._TERMINAL_GUARD_WHERE,
                     (
                         run_status.run_id,
                         run_status.status.value,
@@ -126,6 +177,18 @@ class SQLiteWorkflowRepository:
         if row is None:
             return None
         return WorkflowRunStatusResponse.model_validate(json.loads(row[0]))
+
+    def get_run_payload(self, run_id: str) -> dict[str, Any] | None:
+        """Return raw persisted run payload (preserves result_dto fields pydantic may strip)."""
+        with self._connect() as connection:
+            row = connection.execute(
+                "SELECT payload_json FROM workflow_runs WHERE run_id = ?",
+                (run_id,),
+            ).fetchone()
+        if row is None:
+            return None
+        parsed = json.loads(row[0])
+        return parsed if isinstance(parsed, dict) else None
 
     def list_runs(self) -> list[WorkflowRunStatusResponse]:
         with self._connect() as connection:
@@ -229,10 +292,12 @@ class SQLiteWorkflowRepository:
         return config_snapshot
 
     def count_active_runs(self, run_class: str | None = None) -> int:
+        # Include retry_pending so capacity cannot be bypassed via retries.
         active_statuses = (
             ExecutionStatus.accepted.value,
             ExecutionStatus.queued.value,
             ExecutionStatus.running.value,
+            ExecutionStatus.retry_pending.value,
         )
         with self._connect() as connection:
             if run_class is None:
@@ -240,7 +305,7 @@ class SQLiteWorkflowRepository:
                     """
                     SELECT COUNT(*)
                     FROM workflow_runs
-                    WHERE status IN (?, ?, ?)
+                    WHERE status IN (?, ?, ?, ?)
                     """,
                     active_statuses,
                 ).fetchone()
@@ -249,12 +314,73 @@ class SQLiteWorkflowRepository:
                     """
                     SELECT COUNT(*)
                     FROM workflow_runs
-                    WHERE status IN (?, ?, ?)
+                    WHERE status IN (?, ?, ?, ?)
                       AND COALESCE(run_class, 'business') = ?
                     """,
                     (*active_statuses, run_class),
                 ).fetchone()
         return int(row[0]) if row is not None else 0
+
+    def save_run_under_capacity(
+        self,
+        run_status: WorkflowRunStatusResponse,
+        *,
+        request_json: str,
+        run_class: str,
+        limit: int,
+        result_dto_override: dict[str, Any] | None = None,
+    ) -> None:
+        """Atomically reserve a capacity slot and insert the accepted run.
+
+        Uses ``BEGIN IMMEDIATE`` so concurrent submits cannot both pass a
+        TOCTOU capacity check. Raises ``ValueError`` when the pool is full.
+        """
+        payload = self._serialize_run_payload(
+            run_status, result_dto_override=result_dto_override
+        )
+        active_statuses = (
+            ExecutionStatus.accepted.value,
+            ExecutionStatus.queued.value,
+            ExecutionStatus.running.value,
+            ExecutionStatus.retry_pending.value,
+        )
+        with self._connect() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            row = connection.execute(
+                """
+                SELECT COUNT(*)
+                FROM workflow_runs
+                WHERE status IN (?, ?, ?, ?)
+                  AND COALESCE(run_class, 'business') = ?
+                """,
+                (*active_statuses, run_class or "business"),
+            ).fetchone()
+            active = int(row[0]) if row is not None else 0
+            if active >= limit:
+                raise ValueError(
+                    f"Workflow capacity reached: active_runs={active}, limit={limit}"
+                )
+            connection.execute(
+                """
+                INSERT INTO workflow_runs (run_id, status, updated_at, payload_json, request_json, run_class)
+                VALUES (?, ?, ?, ?, ?, ?)
+                ON CONFLICT(run_id) DO UPDATE SET
+                    status = excluded.status,
+                    updated_at = excluded.updated_at,
+                    payload_json = excluded.payload_json,
+                    request_json = COALESCE(excluded.request_json, request_json),
+                    run_class = COALESCE(excluded.run_class, run_class)
+                """
+                + self._TERMINAL_GUARD_WHERE,
+                (
+                    run_status.run_id,
+                    run_status.status.value,
+                    run_status.updated_at.isoformat(),
+                    payload,
+                    request_json,
+                    run_class or "business",
+                ),
+            )
 
     def cleanup_old_runs(
         self,
@@ -386,6 +512,42 @@ class SQLiteWorkflowRepository:
                         """,
                         (scope, config_key, json.dumps(value, ensure_ascii=False)),
                     )
+            # P2-3：schema 版本跟踪表（无 Alembic，记录当前 schema 版本 + 变更日志）
+            connection.execute(
+                """
+                CREATE TABLE IF NOT EXISTS schema_meta (
+                    key TEXT PRIMARY KEY,
+                    value TEXT NOT NULL
+                )
+                """
+            )
+            connection.execute(
+                """
+                INSERT OR IGNORE INTO schema_meta (key, value) VALUES ('schema_version', ?)
+                """,
+                (str(SCHEMA_VERSION),),
+            )
+            # 若已存在的版本号低于代码版本，更新到代码版本（additive-only 迁移：
+            # 仅向前加列/加表/加索引，不删不改类型——与 _migrate_schema 的 ALTER 策略一致）
+            connection.execute(
+                """
+                UPDATE schema_meta SET value = ?
+                WHERE key = 'schema_version' AND CAST(value AS INTEGER) < ?
+                """,
+                (str(SCHEMA_VERSION), SCHEMA_VERSION),
+            )
+
+    def get_schema_version(self) -> int:
+        """返回 DB 中记录的 schema 版本（缺失则 0）。"""
+        try:
+            with self._connect() as connection:
+                cursor = connection.execute(
+                    "SELECT value FROM schema_meta WHERE key = 'schema_version'"
+                )
+                row = cursor.fetchone()
+                return int(row[0]) if row else 0
+        except sqlite3.OperationalError:
+            return 0
 
     def _migrate_schema(self) -> None:
         with self._connect() as connection:

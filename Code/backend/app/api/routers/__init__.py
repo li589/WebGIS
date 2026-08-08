@@ -2,7 +2,7 @@
 
 Split from routes.py (534 lines) into 8 focused router modules:
 - health_router: /health
-- layer_router: /layers, /demo/*, /geo/transform
+- layer_router: /layers, /geo/transform
 - workflow_router: /workflow-runs/*
 - runtime_router: /runtime/*, /frontend/commands
 - algorithm_router: /algorithm/*

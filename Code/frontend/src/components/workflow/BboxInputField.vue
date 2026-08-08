@@ -7,6 +7,8 @@
  */
 import { computed } from 'vue'
 
+import { getMapDefaults, type MapAoiPreset } from '../../services/map-defaults'
+
 const props = defineProps<{
   /** 当前值，格式 { west, south, east, north } 或 null */
   modelValue: unknown
@@ -60,15 +62,19 @@ function onInput(field: 'west' | 'south' | 'east' | 'north', event: Event) {
   if (Number.isFinite(n)) emitField(field, n)
 }
 
-// 预设区域
-const PRESETS = [
+const BUILTIN_PRESETS: MapAoiPreset[] = [
   { label: '中国', west: 73, south: 15, east: 137, north: 59 },
   { label: '全球', west: -180, south: -90, east: 180, north: 90 },
-  { label: '北半球', west: -180, south: 0, east: 180, north: 90 },
-  { label: '热带', west: -180, south: -23.5, east: 180, north: 23.5 },
 ]
 
-function applyPreset(preset: (typeof PRESETS)[number]) {
+const PRESETS = computed(() => {
+  const org = getMapDefaults().aoiPresets
+  const seen = new Set(BUILTIN_PRESETS.map((p) => p.label))
+  const extra = org.filter((p) => !seen.has(p.label))
+  return [...BUILTIN_PRESETS, ...extra]
+})
+
+function applyPreset(preset: MapAoiPreset) {
   const result: Record<string, number> = {}
   result[keys.value.west] = preset.west
   result[keys.value.south] = preset.south

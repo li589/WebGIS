@@ -8,12 +8,15 @@ const emit = defineEmits<{
 
 const logStore = useLogStore()
 
-type FilterTag = 'all' | LogCategory
+type FilterTag = 'all' | LogCategory | 'errors'
 const activeFilter = ref<FilterTag>('all')
 const expandedId = ref<string | null>(null)
 
 const filteredEntries = computed(() => {
   const entries = logStore.entries
+  if (activeFilter.value === 'errors') {
+    return entries.filter((e) => e.severity === 'error')
+  }
   if (activeFilter.value === 'all') return entries
   return entries.filter((e) => e.category === activeFilter.value)
 })
@@ -40,8 +43,8 @@ function toggleExpand(id: string) {
   expandedId.value = expandedId.value === id ? null : id
 }
 
-function handleClearAll() {
-  logStore.clearLogs()
+function handleExport() {
+  logStore.downloadExport()
 }
 </script>
 
@@ -52,7 +55,7 @@ function handleClearAll() {
         <span class="panel-icon" aria-hidden="true">📋</span>
         <span>系统日志</span>
         <span class="entry-count">{{ logStore.entries.length }}</span>
-        <button class="close-btn" @click="emit('close')" title="关闭">
+        <button class="close-btn" title="关闭" @click="emit('close')">
           <span aria-hidden="true">✕</span>
         </button>
       </div>
@@ -80,7 +83,15 @@ function handleClearAll() {
         >
           工作流日志 <span class="tab-count">{{ workflowCount }}</span>
         </button>
-        <button class="clear-btn" @click="handleClearAll" title="清空所有日志">清空</button>
+        <button
+          class="filter-tab"
+          :class="{ active: activeFilter === 'errors' }"
+          @click="activeFilter = 'errors'"
+        >
+          仅错误 <span class="tab-count">{{ logStore.errorCount }}</span>
+        </button>
+        <button class="export-btn" title="导出日志 JSON" @click="handleExport">导出</button>
+        <button class="clear-btn" title="清空所有日志" @click="logStore.clearLogs()">清空</button>
       </div>
 
       <!-- 日志列表 -->
@@ -90,7 +101,7 @@ function handleClearAll() {
           v-for="entry in displayEntries"
           :key="entry.id"
           class="log-entry"
-          :class="`cat-${entry.category}`"
+          :class="[`cat-${entry.category}`, `sev-${entry.severity}`]"
           @click="toggleExpand(entry.id)"
         >
           <div class="entry-row">
@@ -231,6 +242,25 @@ function handleClearAll() {
 }
 .clear-btn:hover {
   background: rgba(255, 77, 77, 0.12);
+}
+
+.export-btn {
+  padding: 0.26rem 0.52rem;
+  border: 1px solid rgba(90, 213, 255, 0.2);
+  border-radius: 999px;
+  background: transparent;
+  color: #5ad5ff;
+  cursor: pointer;
+  font: inherit;
+  font-size: 0.58rem;
+}
+
+.export-btn:hover {
+  background: rgba(10, 132, 255, 0.12);
+}
+
+.log-entry.sev-error .entry-message {
+  color: #ffb4a8;
 }
 
 .log-list {

@@ -9,6 +9,9 @@ import {
   useDataImportFlow,
 } from '../core/workspace-store'
 import { DATA_COPY } from '../../ui-copy'
+import { useAuthStore } from '../../stores/auth'
+
+const authStore = useAuthStore()
 
 const { importing, importMsg, importError, uploadProgress, processFiles } = useDataImportFlow()
 
@@ -36,6 +39,16 @@ function openImport(tab: 'vector' | 'raster' | 'document' = 'vector', files?: Fi
 function openExport() {
   closeMenu()
   openDataWorkspace({ tab: 'export' })
+}
+
+function openAttributesWorkspace() {
+  closeMenu()
+  openDataWorkspace({ tab: 'attributes' })
+}
+
+function openDetailsWorkspace() {
+  closeMenu()
+  openDataWorkspace({ tab: 'details' })
 }
 
 watch(pendingOpenImport, (req) => {
@@ -85,7 +98,8 @@ const progressLabel = computed(() =>
       class="import-trigger"
       :class="{ active: menuOpen || dataWorkspaceOpen }"
       type="button"
-      :title="DATA_COPY.menuTitle"
+      :disabled="!authStore.canWrite"
+      :title="authStore.canWrite ? DATA_COPY.menuTitle : '只读账户无法导入/导出数据'"
       @click="toggleMenu"
     >
       <span class="btn-icon" aria-hidden="true">◫</span>
@@ -114,22 +128,14 @@ const progressLabel = computed(() =>
             <span class="item-desc">导出已导入图层</span>
           </span>
         </button>
-        <button
-          class="dropdown-item"
-          type="button"
-          @click="closeMenu(); openDataWorkspace({ tab: 'attributes' })"
-        >
+        <button class="dropdown-item" type="button" @click="openAttributesWorkspace">
           <span class="item-icon" aria-hidden="true">☰</span>
           <span class="item-body">
             <span class="item-title">{{ DATA_COPY.wsAttributes }}</span>
             <span class="item-desc">分页浏览与字段重命名</span>
           </span>
         </button>
-        <button
-          class="dropdown-item"
-          type="button"
-          @click="closeMenu(); openDataWorkspace({ tab: 'details' })"
-        >
+        <button class="dropdown-item" type="button" @click="openDetailsWorkspace">
           <span class="item-icon" aria-hidden="true">ℹ</span>
           <span class="item-body">
             <span class="item-title">{{ DATA_COPY.wsDetails }}</span>

@@ -44,6 +44,17 @@ export function listActiveWorkflowRuns() {
   })
 }
 
+/**
+ * 列出最近成功的终态 run（按创建时间倒序），用于启动时自动恢复
+ * 已成功工作流的产物图层（无需本地跟踪记录）。
+ */
+export function listRecentSucceededRuns(limit = 20) {
+  return requestJson<WorkflowRunStatusResponse[]>(
+    `/workflow-runs?active_only=false&status=succeeded&limit=${limit}`,
+    { silent: true },
+  )
+}
+
 export function getWorkflowEvents(
   runId: string,
   options?: {
@@ -64,6 +75,29 @@ export function getWorkflowEvents(
 export function getWorkflowRunView(runId: string) {
   // 轮询请求：silent=true
   return requestJson<WorkflowRunViewResponse>(`/workflow-runs/${runId}/view`, { silent: true })
+}
+
+export function materializeWorkflowMapLayers(runId: string) {
+  return requestJson<{
+    run_id: string
+    layers: Array<{
+      overlay_layer_id: string
+      title?: string
+      product_tag?: string
+      bounds?: [number, number, number, number] | (number | null)[] | null
+      source_crs?: string | null
+      cog_preview_url?: string | null
+      time_list?: string[]
+      default_time?: string | null
+      native_step?: string | null
+    }>
+    count?: number
+    message?: string
+  }>(`/workflow-runs/${runId}/materialize-map-layers`, {
+    method: 'POST',
+    body: '{}',
+    timeoutMs: 300000,
+  })
 }
 
 export function getWeatherPoint(params: {
@@ -159,6 +193,8 @@ export interface WeatherSyncTriggerResponse {
   message: string
   /** celery | local_thread */
   mode?: string
+  /** Domains used for this sync (env default or one-shot override) */
+  domains?: string
 }
 
 /** Phase 2: Open-Meteo 同步任务状态 */
@@ -171,10 +207,14 @@ export interface WeatherSyncStatus {
   finished_at?: string | null
 }
 
-/** 手动触发 Open-Meteo 数据同步（异步任务；派发应秒级返回） */
-export function triggerWeatherSync() {
+/** 手动触发 Open-Meteo 数据同步（异步任务；派发应秒级返回）。
+ *  ``domains`` 为一次性覆盖，不改 ``OPEN_METEO_SYNC_DOMAINS``。
+ */
+export function triggerWeatherSync(options?: { domains?: string }) {
+  const body = options?.domains && options.domains.trim() ? { domains: options.domains.trim() } : {}
   return requestJson<WeatherSyncTriggerResponse>('/weather/sync/trigger', {
     method: 'POST',
+    body: JSON.stringify(body),
     timeoutMs: 15000,
     silent: true,
   })
@@ -190,6 +230,8 @@ export function getWeatherSyncStatus(taskId: string, signal?: AbortSignal) {
 
 export interface WeatherSyncOverview {
   local_reachable: boolean
+  /** Docker CLI + compose file ready for sync */
+  sync_service_available?: boolean
   domains: string[]
   variables?: string[]
   models_meta?: Array<{
@@ -283,5 +325,44 @@ export function cancelWorkflowRun(runId: string) {
 export function retryWorkflowRun(runId: string) {
   return requestJson<WorkflowAcceptedResponse>(`/workflow-runs/${runId}/retry`, {
     method: 'POST',
+  })
+}
+
+// ─── 节点产物缓存管理（cleanup router） ─────────────────────────────────────
+
+export interface NodeCacheEntry {
+  name: string
+  path: string
+  size_bytes: number
+  file_count: number
+  modified_at: string | null
+}
+
+export interface NodeCacheListResponse {
+  entries: NodeCacheEntry[]
+  total_bytes: number
+}
+
+export interface NodeCacheCleanupResponse {
+  deleted: string[]
+  failed: string[]
+  freed_bytes: number
+}
+
+/** 列出工作流节点产物缓存（每个算法模块的目录/大小/文件数）。 */
+export function listNodeCaches() {
+  return requestJson<NodeCacheListResponse>('/cleanup/node-caches', {
+    silent: true,
+    sensitiveGet: true,
+    timeoutMs: 60000,
+  })
+}
+
+/** 清理工作流节点产物缓存；names 缺省表示全部。 */
+export function cleanupNodeCaches(names?: string[]) {
+  return requestJson<NodeCacheCleanupResponse>('/cleanup/node-caches', {
+    method: 'POST',
+    body: JSON.stringify({ names: names ?? null }),
+    timeoutMs: 300000,
   })
 }

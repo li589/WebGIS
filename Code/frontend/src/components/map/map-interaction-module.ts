@@ -3,17 +3,21 @@ import { buildMapViewportSnapshot } from './map-viewport-sync'
 type MapInstance = import('maplibre-gl').Map
 type InteractionMode = import('../../stores/ui').InteractionMode
 
+/** 平移中途同步节流：避免每帧 JSON.stringify + 重置防抖，仍能提前拉瓦片 */
+const MOVE_VIEWPORT_SYNC_MIN_MS = 100
+
 interface MapViewportStoreLike {
   setMapViewport: (
     center: { lng: number; lat: number },
     bbox: { west: number; south: number; east: number; north: number; crs: 'EPSG:4326' } | null,
     zoom?: number,
+    options?: { immediate?: boolean },
   ) => void
 }
 
 export interface MapInteractionModule {
   bindEvents: () => void
-  syncViewportToStore: () => void
+  syncViewportToStore: (options?: { immediate?: boolean }) => void
   applyInteractionMode: () => void
   dispose: () => void
 }
@@ -46,10 +50,18 @@ export function createMapInteractionModule(
 ): MapInteractionModule {
   const registeredHandlers: RegisteredEventHandler[] = []
   let eventsBound = false
+  let lastMoveViewportSyncAt = 0
 
-  function syncViewportToStore() {
+  function syncViewportToStore(syncOptions?: { immediate?: boolean }) {
     const snapshot = buildMapViewportSnapshot(options.map)
-    options.layersStore.setMapViewport(snapshot.center, snapshot.bbox, snapshot.zoom)
+    options.layersStore.setMapViewport(snapshot.center, snapshot.bbox, snapshot.zoom, syncOptions)
+  }
+
+  function syncViewportOnMoveThrottled() {
+    const now = typeof performance !== 'undefined' ? performance.now() : Date.now()
+    if (now - lastMoveViewportSyncAt < MOVE_VIEWPORT_SYNC_MIN_MS) return
+    lastMoveViewportSyncAt = now
+    syncViewportToStore()
   }
 
   function applyInteractionMode() {
@@ -90,22 +102,27 @@ export function createMapInteractionModule(
     })
     on('move', () => {
       options.scheduleHotspotSync()
+      // 平移中途节流同步：由 weather-viewport 防抖合并，避免每帧打满调度
+      syncViewportOnMoveThrottled()
     })
     on('moveend', () => {
       options.setIsMapInteracting(false)
       options.scheduleHotspotSync()
-      syncViewportToStore()
+      lastMoveViewportSyncAt = 0
+      syncViewportToStore({ immediate: true })
     })
     on('zoomstart', () => {
       options.setIsMapInteracting(true)
     })
     on('zoom', () => {
       options.scheduleHotspotSync()
+      // 连续缩放中途开始调度，避免仅等 zoomend 再加防抖
+      syncViewportToStore()
     })
     on('zoomend', () => {
       options.setIsMapInteracting(false)
       options.scheduleHotspotSync()
-      syncViewportToStore()
+      syncViewportToStore({ immediate: true })
     })
     on('resize', () => {
       options.scheduleHotspotSync()
@@ -129,6 +146,7 @@ export function createMapInteractionModule(
       options.map.off(event, handler)
     }
     eventsBound = false
+    lastMoveViewportSyncAt = 0
   }
 
   return {

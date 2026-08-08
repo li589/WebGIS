@@ -1,4 +1,5 @@
 import type { LayerCatalogItem, LayerCategory, LayerSource } from './types'
+import { ORG_LABEL } from '../../ui-copy/brand'
 
 // 注意：category id 必须与后端 `layer_catalog.py` 中的 `category=` 字段保持一致。
 // 任何新增/重命名都需要后端同步更新。前端独有类别（imported/workflow-output）除外。
@@ -46,7 +47,7 @@ export const LAYER_CATEGORIES: LayerCategory[] = [
   },
   {
     id: 'research-group',
-    name: '课题组数据',
+    name: `${ORG_LABEL}数据`,
     icon: 'R',
     accentColor: '#ff6f91',
     chipTone: 'rgba(255, 111, 145, 0.16)',
@@ -268,13 +269,11 @@ const SOURCE_NDVI: LayerSource = {
   updateFrequency: '每日更新',
 }
 
-
-
 const SOURCE_LAB: LayerSource = {
   id: 'lab-model',
   name: 'SMAP/ω 交叉分析数据（2023-01）',
   description:
-    '中国区域 SMAP L3 土壤湿度与 ω 反演产品多源交叉分析数据集，含 14 天 SM 均值、ω 反演、IGBP 分区统计。',
+    '中国区域 SMAP L3 土壤湿度与 ω 反演产品多源交叉分析数据集，含 14 天 SM（土壤湿度）均值、ω 反演、IGBP 分区统计。',
   urlTemplate: '',
   needsAuth: false,
   needsBackendTransform: false,
@@ -326,22 +325,10 @@ const SOURCE_ARIDITY_CN: LayerSource = {
   updateFrequency: '静态数据',
 }
 
-const SOURCE_OMEGA: LayerSource = {
-  id: 'omega-output',
-  name: 'ω 植被光学厚度反演（doy 017-030 时间序列）',
-  description:
-    'SMAP ω 植被光学厚度反演结果（全球 EASE-Grid 9km，doy 017-030 多年均值时间序列，14 天）。',
-  urlTemplate: '',
-  needsAuth: false,
-  needsBackendTransform: false,
-  coordSys: 'EPSG:4326',
-  updateFrequency: '按工作流运行',
-}
-
 const SOURCE_SMAP_TS: LayerSource = {
   id: 'smap-sm-ts',
-  name: 'SMAP 土壤湿度时间序列（2023-01）',
-  description: 'SMAP L3 土壤湿度日数据时间序列（2023 年 1 月，13 天，中国区域）。',
+  name: 'SMAP 土壤湿度时间序列（2025-12）',
+  description: 'SMAP L3 土壤湿度日数据时间序列（2025 年 12 月，31 天，中国区域）。',
   urlTemplate: '',
   needsAuth: false,
   needsBackendTransform: false,
@@ -398,7 +385,7 @@ const SOURCE_CLCD_CN: LayerSource = {
 const SOURCE_BIOMASS_CN: LayerSource = {
   id: 'biomass-cn',
   name: 'ESA BIOMASS 2020（中国区域）',
-  description: 'ESA CCI BIOMASS L4 AGB 合并产品 2020 年，中国区域地上生物量。',
+  description: 'ESA CCI BIOMASS L4 AGB（地上生物量）合并产品 2020 年，中国区域。',
   urlTemplate: '',
   needsAuth: false,
   needsBackendTransform: false,
@@ -409,7 +396,7 @@ const SOURCE_BIOMASS_CN: LayerSource = {
 const SOURCE_ERA5_DWAA_CN: LayerSource = {
   id: 'era5-dwaa-cn',
   name: 'ERA5 白天热浪事件（2020）',
-  description: 'ERA5 基于 SMCI 指标的白天热浪事件累积计数（2020 全年 366 天）。',
+  description: 'ERA5 基于 SMCI（土壤湿度指数）指标的白天热浪事件累积计数（2020 全年 366 天）。',
   urlTemplate: '',
   needsAuth: false,
   needsBackendTransform: false,
@@ -420,7 +407,7 @@ const SOURCE_ERA5_DWAA_CN: LayerSource = {
 const SOURCE_ERA5_WDAA_CN: LayerSource = {
   id: 'era5-wdaa-cn',
   name: 'ERA5 夜间热浪事件（2020）',
-  description: 'ERA5 基于 SMCI 指标的夜间热浪事件累积计数（2020 全年 366 天）。',
+  description: 'ERA5 基于 SMCI（土壤湿度指数）指标的夜间热浪事件累积计数（2020 全年 366 天）。',
   urlTemplate: '',
   needsAuth: false,
   needsBackendTransform: false,
@@ -441,25 +428,14 @@ const SOURCE_CO2_CN: LayerSource = {
 
 const SOURCE_SOIL_DDCA: LayerSource = {
   id: 'soil-ddca',
-  name: '土壤生态 DDCA（2015-2022 时间序列）',
+  name: '土壤生态 DDCA（双通道反演，2015-2022）',
   description:
-    '中国 9km 土壤生态数据集 DDCA 产品（变量 DH，2015-04-01 至 2022-12-31 时间序列，采样 60 个时间点）。',
+    '中国 9km 土壤生态数据集 DDCA（双通道算法 DCA 反演）产品（变量 DH 土壤湿度，2015-04-01 至 2022-12-31 时间序列，采样 60 个时间点）。',
   urlTemplate: '',
   needsAuth: false,
   needsBackendTransform: false,
   coordSys: 'EPSG:4326',
   updateFrequency: '每日更新',
-}
-
-const SOURCE_OMEGA_FY_OUTPUT: LayerSource = {
-  id: 'omega-fy-output',
-  name: 'ω FY 反演均值（doy 025-030 时间序列）',
-  description: 'SMAP ω 多年均值反演结果（fy_avg 目录，doy 025-030 时间序列，6 天）。',
-  urlTemplate: '',
-  needsAuth: false,
-  needsBackendTransform: false,
-  coordSys: 'EPSG:4326',
-  updateFrequency: '按工作流运行',
 }
 
 // ── Phase 1.4 新增：课题组 9km EASE-Grid 派生景观指数 ──────────────────────────
@@ -486,36 +462,11 @@ const SOURCE_FOREST_RATIO: LayerSource = {
   updateFrequency: '静态数据',
 }
 
-// ── Phase 2 新增：课题组 VOD/SM/ω 2025-12 产品族（EASE-Grid 9km）─────────────
-const SOURCE_VOD_DEC2025: LayerSource = {
-  id: 'vod-dec2025',
-  name: 'VOD 植被光学厚度（2025-12）',
-  description:
-    'SMAP 植被光学厚度 VOD 反演结果（2025-12-01 至 2025-12-31 时间序列，31 天，EASE-Grid 9km）。',
-  urlTemplate: '',
-  needsAuth: false,
-  needsBackendTransform: false,
-  coordSys: 'EPSG:4326',
-  updateFrequency: '每日更新',
-}
-
 const SOURCE_SM_DEC2025: LayerSource = {
   id: 'sm-dec2025',
-  name: 'SM 土壤湿度（2025-12）',
+  name: 'SMAP 土壤湿度（2025-12）',
   description:
     'SMAP 土壤湿度 SM 反演结果（2025-12-01 至 2025-12-31 时间序列，31 天，EASE-Grid 9km）。',
-  urlTemplate: '',
-  needsAuth: false,
-  needsBackendTransform: false,
-  coordSys: 'EPSG:4326',
-  updateFrequency: '每日更新',
-}
-
-const SOURCE_OMEGA_DEC2025: LayerSource = {
-  id: 'omega-dec2025',
-  name: 'ω 反演（2025-12）',
-  description:
-    'SMAP ω 植被光学厚度反演结果（2025-12-01 至 2025-12-31 时间序列，31 天，EASE-Grid 9km）；与 omega-output（doy 017-030 多年均值）互补。',
   urlTemplate: '',
   needsAuth: false,
   needsBackendTransform: false,
@@ -538,30 +489,6 @@ const SOURCE_STATION_SOIL: LayerSource = {
   id: 'station-soil',
   name: 'ISMN/CASMOS 站点土壤湿度',
   description: 'ISMN/CASMOS 站点逐日土壤湿度观测，用于算法验证与产品订正。',
-  urlTemplate: '',
-  needsAuth: false,
-  needsBackendTransform: false,
-  coordSys: 'EPSG:4326',
-  updateFrequency: '每日更新',
-}
-
-
-
-const SOURCE_OMEGA_SF_FENKUAI: LayerSource = {
-  id: 'omega-sf-fenkuai',
-  name: 'SF 块反演（SMAP）',
-  description: 'SMAP 亮温 + 辅助数据 → 8-day 分块 SF 倒推 → 块级 h/alpha/ω 优化 → DDCA SM/VOD 反演。',
-  urlTemplate: '',
-  needsAuth: false,
-  needsBackendTransform: false,
-  coordSys: 'EPSG:4326',
-  updateFrequency: '每日更新',
-}
-
-const SOURCE_OMEGA_AVG_DAILY: LayerSource = {
-  id: 'omega-avg-daily',
-  name: 'avg-ω 逐日反演',
-  description: 'D2 avg-omega 逐日反演产品：DOY 气候态平均 ω + 逐日 DDCA 回代，产出 SM/VOD/ω。',
   urlTemplate: '',
   needsAuth: false,
   needsBackendTransform: false,
@@ -881,34 +808,17 @@ export const LAYER_LIBRARY: LayerCatalogItem[] = [
   },
   {
     catalogId: 'aridity-cn',
-    name: '干旱指数 AI',
+    name: '干旱指数 AI（P/PET）',
     category: '气候产品',
-    metricLabel: 'AI',
+    metricLabel: 'AI（P/PET）',
     metricUnit: '',
     metricPrecision: 2,
     updateLabel: '静态数据',
-    sourceLabel: 'P/PET',
+    sourceLabel: 'P/PET（降水/蒸散比）',
     accentColor: '#c4a35a',
     accentGlow: 'rgba(196, 163, 90, 0.3)',
     chipTone: 'rgba(196, 163, 90, 0.16)',
     sources: [SOURCE_ARIDITY_CN],
-  },
-  {
-    catalogId: 'omega-output',
-    name: 'ω 植被光学厚度',
-    category: 'research-group',
-    subCategory: '模型输出',
-    metricLabel: 'ω',
-    metricUnit: '',
-    metricPrecision: 3,
-    updateLabel: '按时间维度',
-    sourceLabel: 'SMAP InversionResults',
-    accentColor: '#9d4edd',
-    accentGlow: 'rgba(157, 78, 221, 0.3)',
-    chipTone: 'rgba(157, 78, 221, 0.16)',
-    sources: [SOURCE_OMEGA],
-    dataOwner: 'Lab',
-    temporalCoverage: 'doy 017-030 (multi-year mean)',
   },
   {
     catalogId: 'smap-sm-ts',
@@ -919,7 +829,7 @@ export const LAYER_LIBRARY: LayerCatalogItem[] = [
     metricUnit: 'm³/m³',
     metricPrecision: 3,
     updateLabel: '每日更新',
-    sourceLabel: 'SMAP L3 (2023-01)',
+    sourceLabel: 'SMAP L3 (2025-12)',
     accentColor: '#4ecdc4',
     accentGlow: 'rgba(78, 205, 196, 0.3)',
     chipTone: 'rgba(78, 205, 196, 0.16)',
@@ -1058,23 +968,6 @@ export const LAYER_LIBRARY: LayerCatalogItem[] = [
     temporalCoverage: '2015-04-01 to 2022-12-31 (sampled 60 dates)',
   },
   {
-    catalogId: 'omega-fy-output',
-    name: 'ω FY 反演均值',
-    category: 'research-group',
-    subCategory: '模型输出',
-    metricLabel: 'ω',
-    metricUnit: '',
-    metricPrecision: 3,
-    updateLabel: '按时间维度',
-    sourceLabel: 'SMAP InversionResults fy_avg',
-    accentColor: '#b35806',
-    accentGlow: 'rgba(179, 88, 6, 0.3)',
-    chipTone: 'rgba(179, 88, 6, 0.16)',
-    sources: [SOURCE_OMEGA_FY_OUTPUT],
-    dataOwner: 'Lab',
-    temporalCoverage: 'doy 025-030 (multi-year mean)',
-  },
-  {
     catalogId: 'forest-ratio',
     name: '全球森林比例（9km，2020）',
     category: 'research-group',
@@ -1109,55 +1002,20 @@ export const LAYER_LIBRARY: LayerCatalogItem[] = [
     dataOwner: 'Liuzheng',
     temporalCoverage: '2020',
   },
-  // ── Phase 2 新增：课题组 VOD/SM/ω 2025-12 产品族 ──────────────────────────
-  {
-    catalogId: 'vod-dec2025',
-    name: 'VOD 植被光学厚度（2025-12）',
-    category: 'research-group',
-    subCategory: '辅助数据',
-    metricLabel: 'VOD',
-    metricUnit: '',
-    metricPrecision: 3,
-    updateLabel: '每日更新',
-    sourceLabel: 'SmapSoil_VOD_SM v7.3',
-    accentColor: '#fc8d62',
-    accentGlow: 'rgba(252, 141, 98, 0.3)',
-    chipTone: 'rgba(252, 141, 98, 0.16)',
-    sources: [SOURCE_VOD_DEC2025],
-    dataOwner: 'Lab',
-    temporalCoverage: '2025-12-01 to 2025-12-31 (31 days)',
-  },
   {
     catalogId: 'sm-dec2025',
-    name: 'SM 土壤湿度（2025-12）',
+    name: 'SMAP 土壤湿度（2025-12）',
     category: 'research-group',
     subCategory: '模型输入',
     metricLabel: '土壤湿度',
     metricUnit: 'm³/m³',
     metricPrecision: 3,
     updateLabel: '每日更新',
-    sourceLabel: 'SmapSoil_VOD_SM v7.3',
+    sourceLabel: 'SMAP 土壤湿度反演 v7.3',
     accentColor: '#66c2a5',
     accentGlow: 'rgba(102, 194, 165, 0.3)',
     chipTone: 'rgba(102, 194, 165, 0.16)',
     sources: [SOURCE_SM_DEC2025],
-    dataOwner: 'Lab',
-    temporalCoverage: '2025-12-01 to 2025-12-31 (31 days)',
-  },
-  {
-    catalogId: 'omega-dec2025',
-    name: 'ω 反演（2025-12）',
-    category: 'research-group',
-    subCategory: '模型输出',
-    metricLabel: 'ω',
-    metricUnit: '',
-    metricPrecision: 3,
-    updateLabel: '每日更新',
-    sourceLabel: 'SmapSoil_VOD_SM v7.3',
-    accentColor: '#e78ac3',
-    accentGlow: 'rgba(231, 138, 195, 0.3)',
-    chipTone: 'rgba(231, 138, 195, 0.16)',
-    sources: [SOURCE_OMEGA_DEC2025],
     dataOwner: 'Lab',
     temporalCoverage: '2025-12-01 to 2025-12-31 (31 days)',
   },
@@ -1190,36 +1048,6 @@ export const LAYER_LIBRARY: LayerCatalogItem[] = [
     accentGlow: 'rgba(107, 191, 89, 0.3)',
     chipTone: 'rgba(107, 191, 89, 0.16)',
     sources: [SOURCE_STATION_SOIL],
-  },
-  {
-    catalogId: 'omega-sf-fenkuai',
-    name: 'SF 块反演（SMAP）',
-    category: 'research-group',
-    subCategory: '模型输出',
-    metricLabel: 'ω',
-    metricUnit: '',
-    metricPrecision: 3,
-    updateLabel: '每日更新',
-    sourceLabel: 'SF 块反演',
-    accentColor: '#6a5acd',
-    accentGlow: 'rgba(106, 90, 205, 0.3)',
-    chipTone: 'rgba(106, 90, 205, 0.16)',
-    sources: [SOURCE_OMEGA_SF_FENKUAI],
-  },
-  {
-    catalogId: 'omega-avg-daily',
-    name: 'avg-ω 逐日反演',
-    category: 'research-group',
-    subCategory: '模型输出',
-    metricLabel: 'ω',
-    metricUnit: '',
-    metricPrecision: 3,
-    updateLabel: '每日更新',
-    sourceLabel: 'D2 avg-omega',
-    accentColor: '#9370db',
-    accentGlow: 'rgba(147, 112, 219, 0.3)',
-    chipTone: 'rgba(147, 112, 219, 0.16)',
-    sources: [SOURCE_OMEGA_AVG_DAILY],
   },
 ]
 

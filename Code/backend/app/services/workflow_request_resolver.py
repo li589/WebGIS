@@ -374,9 +374,52 @@ def _extract_datasource_selection_from_nodes(
         props = _node_props(node)
         key = props.get("dataset_key") or props.get("key")
         path = props.get("path") or props.get("uri") or props.get("value")
+        if path:
+            # Generic analysis modules read datasource_selection.input_path
+            selection.setdefault("input_path", str(path))
         if key and path:
             selection[str(key)] = str(path)
     return selection
+
+
+def _count_executable_module_nodes(nodes: list[Any] | None) -> int:
+    """Count algorithm/module nodes, excluding canvas metadata helpers."""
+    scrape_only = {
+        "data_source",
+        "source",
+        "time_range",
+        "bbox",
+        "number_const",
+        "string_const",
+        "boolean_const",
+        "latlng",
+        "map_viewport",
+        "output_map_layer",
+        "output_file",
+    }
+    count = 0
+    for node in nodes or []:
+        if not isinstance(node, dict):
+            continue
+        module_name = _node_module_name(node).strip()
+        if module_name in scrape_only:
+            continue
+        ntype = str(node.get("type") or node.get("node_type") or "")
+        if (
+            ntype.startswith("module/")
+            or ntype.startswith("download/")
+            or ntype.startswith("stats/")
+            or ntype.startswith("viz/")
+        ):
+            count += 1
+            continue
+        # Compiled form: node_type=module + params.module_name=<algorithm>
+        if str(node.get("node_type") or "") == "module" and module_name not in {
+            "",
+            "module",
+        }:
+            count += 1
+    return count
 
 
 def _flatten_ui_workflow_definition(
@@ -386,9 +429,9 @@ def _flatten_ui_workflow_definition(
 ) -> tuple[dict[str, Any], Any, Any]:
     """将 UI 画布 workflow_definition 展平为种子式 algorithm_request。
 
-    画布编译结果常含多条 datasource_selection edge，以及 time_range/bbox 元端口；
-    Python provider validate_job 不接受这些形态。展平后走 module_name +
-    algorithm_params + 默认 data_access，与成功的 API/种子路径一致。
+    单模块画布：展平为 module_name + algorithm_params + datasource_selection。
+    多模块 DAG（如 timeseries_bundle → omega_block）：保留 workflow_definition，
+    仅合并 data/source 到 datasource_selection，避免丢掉模块间边。
     """
     workflow_definition = algorithm_request.get("workflow_definition")
     if not isinstance(workflow_definition, dict):
@@ -398,6 +441,46 @@ def _flatten_ui_workflow_definition(
     canvas_params = _extract_algorithm_params_from_nodes(nodes)
     time_range = _extract_time_range_from_nodes(nodes)
     spatial = _extract_bbox_from_nodes(nodes)
+
+    existing_ds = algorithm_request.get("datasource_selection")
+    if not isinstance(existing_ds, dict):
+        existing_ds = {}
+    canvas_ds = _extract_datasource_selection_from_nodes(nodes)
+    for key, value in canvas_ds.items():
+        existing_ds.setdefault(key, value)
+    for key, value in list(existing_ds.items()):
+        if key.startswith("_") or not isinstance(value, str) or not value.strip():
+            continue
+        if Path(value).is_absolute() and Path(value).exists():
+            continue
+        resolved = _resolve_data_access_source_uri(value)
+        if resolved:
+            existing_ds[key] = resolved
+
+    existing_params = algorithm_request.get("algorithm_params")
+    if not isinstance(existing_params, dict):
+        existing_params = {}
+    if canvas_params:
+        merged = dict(canvas_params)
+        merged.update(existing_params)
+        existing_params = merged
+    if spatial is not None and getattr(spatial, "bbox", None) is not None:
+        bbox = spatial.bbox
+        existing_params.setdefault("bbox_west", float(bbox.west))
+        existing_params.setdefault("bbox_south", float(bbox.south))
+        existing_params.setdefault("bbox_east", float(bbox.east))
+        existing_params.setdefault("bbox_north", float(bbox.north))
+        existing_params.setdefault(
+            "bbox", [bbox.west, bbox.south, bbox.east, bbox.north]
+        )
+
+    # Multi-module graph: keep executable definition; only enrich request fields.
+    if _count_executable_module_nodes(nodes) >= 2:
+        enriched = dict(algorithm_request)
+        enriched["datasource_selection"] = existing_ds
+        enriched["algorithm_params"] = existing_params
+        enriched.setdefault("output_spec", {})
+        return enriched, time_range, spatial
 
     flat = {
         key: value
@@ -416,41 +499,7 @@ def _flatten_ui_workflow_definition(
         or getattr(descriptor, "workflow_name", None)
         or getattr(descriptor, "module_name", None),
     )
-
-    existing_params = flat.get("algorithm_params")
-    if not isinstance(existing_params, dict):
-        existing_params = {}
-    if canvas_params:
-        merged = dict(canvas_params)
-        merged.update(existing_params)  # 显式覆盖优先
-        existing_params = merged
-    # 把 bbox 也写入 algorithm_params，供 OmegaSfConfig.from_params 识别
-    if spatial is not None and getattr(spatial, "bbox", None) is not None:
-        bbox = spatial.bbox
-        existing_params.setdefault("bbox_west", float(bbox.west))
-        existing_params.setdefault("bbox_south", float(bbox.south))
-        existing_params.setdefault("bbox_east", float(bbox.east))
-        existing_params.setdefault("bbox_north", float(bbox.north))
-        existing_params.setdefault(
-            "bbox", [bbox.west, bbox.south, bbox.east, bbox.north]
-        )
     flat["algorithm_params"] = existing_params
-
-    existing_ds = flat.get("datasource_selection")
-    if not isinstance(existing_ds, dict):
-        existing_ds = {}
-    canvas_ds = _extract_datasource_selection_from_nodes(nodes)
-    for key, value in canvas_ds.items():
-        existing_ds.setdefault(key, value)
-    # 画布多为逻辑相对路径；模块侧按绝对本地路径读 anc_root/IGBP
-    for key, value in list(existing_ds.items()):
-        if key.startswith("_") or not isinstance(value, str) or not value.strip():
-            continue
-        if Path(value).is_absolute() and Path(value).exists():
-            continue
-        resolved = _resolve_data_access_source_uri(value)
-        if resolved:
-            existing_ds[key] = resolved
     flat["datasource_selection"] = existing_ds
     flat.setdefault("output_spec", {})
     return flat, time_range, spatial

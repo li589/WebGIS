@@ -377,7 +377,10 @@ onBeforeUnmount(() => {
     0 14px 30px rgba(1, 8, 16, 0.14);
   backdrop-filter: blur(16px) saturate(1.08);
   -webkit-backdrop-filter: blur(16px) saturate(1.08);
-  transition: opacity 0.25s cubic-bezier(0.4, 0, 0.2, 1), transform 0.25s ease, border-color 0.2s ease;
+  transition:
+    opacity 0.25s cubic-bezier(0.4, 0, 0.2, 1),
+    transform 0.25s ease,
+    border-color 0.2s ease;
 }
 
 .timeline-panel.collapsed {
@@ -388,7 +391,9 @@ onBeforeUnmount(() => {
   opacity: 1;
   transform: translateY(-2px);
   border-color: rgba(136, 192, 255, 0.35);
-  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.45), 0 0 14px rgba(56, 189, 248, 0.2);
+  box-shadow:
+    0 12px 28px rgba(0, 0, 0, 0.45),
+    0 0 14px rgba(56, 189, 248, 0.2);
 }
 
 .restore-pill {
@@ -418,7 +423,9 @@ onBeforeUnmount(() => {
 .restore-pill:hover {
   opacity: 1;
   border-color: rgba(136, 192, 255, 0.48);
-  box-shadow: 0 14px 28px rgba(1, 8, 16, 0.3), 0 0 12px rgba(56, 189, 248, 0.25);
+  box-shadow:
+    0 14px 28px rgba(1, 8, 16, 0.3),
+    0 0 12px rgba(56, 189, 248, 0.25);
 }
 
 .restore-pill--dragging {

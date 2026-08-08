@@ -130,6 +130,12 @@ _NODE_TEMPLATES: list[dict[str, Any]] = [
         ],
         "outputs": [
             _port("data", "data:source", description="带上下文的数据源引用。"),
+            _port("path", "value:string", description="解析后的路径字符串。"),
+            _port(
+                "manifest",
+                "data",
+                description="含路径引用的 product_manifest（供下游分析节点）。",
+            ),
         ],
         "params": [
             _param(
@@ -252,6 +258,8 @@ _NODE_TEMPLATES: list[dict[str, Any]] = [
                     "nasa_earthdata",
                     "nasa_cmr",
                     "nsidc_data",
+                    "nasa_ges_disc",
+                    "nasa_gldas",
                     "esa_copernicus",
                     "esa_download",
                 ],
@@ -376,6 +384,114 @@ _NODE_TEMPLATES: list[dict[str, Any]] = [
             ),
         ],
         "node_class": "nsidc_smap_download",
+    },
+    {
+        "type": "download/gldas_download",
+        "engine": "common",
+        "category": "数据获取与解析",
+        "title": "GLDAS 在线下载",
+        "description": "从 NASA GES DISC 下载 GLDAS NOAH025_3H V2.1（.nc4）。支持日期范围、增量下载、earthdata 认证；落地后可转 .mat 接入 DUAL 温度链。",
+        "inputs": [],
+        "outputs": [
+            _port("path", "value:string", description="本地落盘目录。"),
+            _port("manifest", "data", description="产物清单。"),
+        ],
+        "params": [
+            _param(
+                "start_date", "string", description="起始日期 YYYYMMDD。", widget="date"
+            ),
+            _param(
+                "end_date", "string", description="结束日期 YYYYMMDD。", widget="date"
+            ),
+            _param(
+                "local_dir",
+                "string",
+                description="本地目标目录（默认 Meteorological/Weather/GLDAS_Download）。",
+                widget="path",
+            ),
+            _param(
+                "version",
+                "string",
+                default="2.1",
+                options=["2.1"],
+                description="产品版本。",
+            ),
+            _param(
+                "short_name",
+                "string",
+                default="GLDAS_NOAH025_3H",
+                description="CMR/GES DISC 产品短名。",
+            ),
+            _param(
+                "dry_run",
+                "boolean",
+                default=False,
+                description="仅搜索/统计，不实际下载。",
+            ),
+            _param(
+                "max_files",
+                "number",
+                description="最多下载文件数（联调节流，可选）。",
+            ),
+        ],
+        "node_class": "gldas_download",
+    },
+    {
+        "type": "download/gldas_nc4_to_mat",
+        "engine": "common",
+        "category": "数据获取与解析",
+        "title": "GLDAS nc4→mat",
+        "description": "将 GLDAS NOAH025_3H .nc4 重采样到 9 km 研究网格，输出 Ts_gldas/Tsoil1_gldas/Tsoil2_gldas（YYYYMMDD_HHMM.mat），供 DUAL 温度链使用。",
+        "inputs": [
+            _port(
+                "data",
+                "data:source",
+                required=False,
+                description="上游 nc4 目录（可选）。",
+            ),
+        ],
+        "outputs": [
+            _port("path", "value:string", description="输出 .mat 目录。"),
+            _port("manifest", "data", description="产物清单。"),
+        ],
+        "params": [
+            _param(
+                "input_dir",
+                "string",
+                description="输入 .nc4 目录（通常 GLDAS_Download）。",
+                widget="path",
+            ),
+            _param(
+                "output_dir",
+                "string",
+                description="输出 .mat 目录（默认 Meteorological/Weather/GLDAS）。",
+                widget="path",
+            ),
+            _param(
+                "ancillary_mat",
+                "string",
+                description="含 lat_9km/lon_9km 的辅助 MAT（默认 anc_root/IGBP_9km_12.mat）。",
+                widget="path",
+            ),
+            _param(
+                "skip_existing",
+                "boolean",
+                default=True,
+                description="跳过已存在的目标 .mat。",
+            ),
+            _param(
+                "dry_run",
+                "boolean",
+                default=False,
+                description="仅统计，不写文件。",
+            ),
+            _param(
+                "max_files",
+                "number",
+                description="最多转换文件数（联调节流，可选）。",
+            ),
+        ],
+        "node_class": "gldas_nc4_to_mat",
     },
     {
         "type": "download/fy_preprocess",
@@ -862,7 +978,19 @@ _NODE_TEMPLATES: list[dict[str, Any]] = [
         "title": "地图图层输出",
         "description": "将上游数据输出为地图图层。",
         "inputs": [
-            _port("data", "data", description="要输出的图层数据。"),
+            _port("data", "data", description="要输出的图层数据或上游 manifest。"),
+            _port(
+                "manifest",
+                "data",
+                required=False,
+                description="上游产物清单（可与 data 二选一）。",
+            ),
+            _port(
+                "path",
+                "value:string",
+                required=False,
+                description="可选本地路径。",
+            ),
         ],
         "outputs": [
             _port("manifest", "data", description="产物清单。"),
@@ -1189,15 +1317,28 @@ _NODE_TEMPLATES: list[dict[str, Any]] = [
     },
     {
         "type": "stats/histogram",
-        "engine": "common",
+        "engine": "python_provider",
         "category": "统计分析",
         "title": "直方图统计",
-        "description": "计算栅格数据的直方图分布。",
+        "description": "计算任意数值栅格的直方图分布（float64，nodata 感知），产出 ChartSpec/TableSpec。",
         "inputs": [
-            _port("raster", "data:raster", description="输入栅格。"),
+            _port(
+                "manifest",
+                "data",
+                required=False,
+                description="上游 product_manifest。",
+            ),
+            _port(
+                "raster",
+                "data:raster",
+                required=False,
+                description="输入栅格（或 datasource）。",
+            ),
         ],
         "outputs": [
-            _port("histogram", "data:geojson", description="直方图 GeoJSON。"),
+            _port(
+                "manifest", "data", description="含 chart_spec/table_spec 的 manifest。"
+            ),
         ],
         "params": [
             _param(
@@ -1224,8 +1365,20 @@ _NODE_TEMPLATES: list[dict[str, Any]] = [
                 default=False,
                 description="是否归一化为概率密度。",
             ),
+            _param(
+                "variable",
+                "string",
+                default="",
+                description="变量名（空=自动选取）。",
+            ),
+            _param(
+                "nodata",
+                "string",
+                default="",
+                description="Nodata 值（空=仅排除非有限值）。",
+            ),
         ],
-        "executable": False,
+        "executable": True,
         "node_class": "stats_histogram",
     },
     # ═══ 数据融合与可视化模块 ═══════════════════════════════════════════════════
@@ -1309,32 +1462,43 @@ _NODE_TEMPLATES: list[dict[str, Any]] = [
     },
     {
         "type": "viz/chart_generate",
-        "engine": "common",
+        "engine": "python_provider",
         "category": "可视化",
         "title": "图表生成",
-        "description": "根据数据生成图表（折线/柱状/散点/热力/箱线）。",
+        "description": "将上游 chart/table/statistics JSON 规范化为 ChartSpec（可选附带 PNG）。",
         "inputs": [
-            _port("data", "data", description="输入数据。"),
+            _port(
+                "manifest",
+                "data",
+                required=False,
+                description="上游 product_manifest。",
+            ),
+            _port("data", "data", required=False, description="输入数据。"),
         ],
         "outputs": [
-            _port("chart", "value:string", description="Base64 编码的 PNG 图像。"),
+            _port("manifest", "data", description="含 chart_spec 的 manifest。"),
         ],
         "params": [
             _param(
                 "chart_type",
                 "string",
                 default="line",
-                options=["line", "bar", "scatter", "heatmap", "boxplot"],
+                options=["line", "bar", "scatter", "histogram", "boxplot"],
                 description="图表类型。",
             ),
-            _param("title", "string", default="", description="图表标题。"),
+            _param(
+                "title",
+                "string",
+                default="Chart",
+                description="图表标题（建议 ASCII）。",
+            ),
             _param("x_label", "string", default="", description="X 轴标签。"),
             _param("y_label", "string", default="", description="Y 轴标签。"),
             _param(
                 "width",
                 "number",
                 default=800,
-                description="图表宽度。",
+                description="可选 PNG 宽度。",
                 unit="像素",
                 min_val=200,
                 max_val=4000,
@@ -1344,14 +1508,20 @@ _NODE_TEMPLATES: list[dict[str, Any]] = [
                 "height",
                 "number",
                 default=600,
-                description="图表高度。",
+                description="可选 PNG 高度。",
                 unit="像素",
                 min_val=200,
                 max_val=4000,
                 step=50,
             ),
+            _param(
+                "write_png",
+                "boolean",
+                default=True,
+                description="是否额外写出 matplotlib PNG。",
+            ),
         ],
-        "executable": False,
+        "executable": True,
         "node_class": "viz_chart_generate",
     },
     {
@@ -2146,15 +2316,33 @@ _NODE_TEMPLATES: list[dict[str, Any]] = [
                 "input_mat", "data:timeseries", description="timeseries_bundle 输出。"
             ),
             _port(
+                "datasource_selection",
+                "data:mat",
+                required=False,
+                description="可选数据源选择（与 request 绑定合并）。",
+            ),
+            _port(
                 "time_range",
                 "value:time_range",
                 required=False,
                 description="时间窗口。",
             ),
             _port("bbox", "geometry:bbox", required=False, description="空间子集。"),
+            _port(
+                "algorithm_params",
+                "value:any",
+                required=False,
+                description="算法参数（通常 request 绑定）。",
+            ),
+            _port(
+                "output_spec_extra",
+                "value:any",
+                required=False,
+                description="输出扩展配置。",
+            ),
         ],
         "outputs": [
-            _port("omega_mat", "data:mat", description="Omega 反演结果 .mat。"),
+            _port("manifest", "data", description="Omega 反演产物清单。"),
         ],
         "params": [
             _param(
@@ -2240,7 +2428,11 @@ _NODE_TEMPLATES: list[dict[str, Any]] = [
         "title": "时间序列合成",
         "description": "将日常合成产品汇总为时间序列 .mat。",
         "inputs": [
-            _port("daily_mat_sources", "data:mat", description="日常 .mat。"),
+            _port(
+                "datasource_selection",
+                "data:mat",
+                description="日常 .mat 数据源选择（dataset_key→path）。",
+            ),
             _port(
                 "time_range",
                 "value:time_range",
@@ -2248,13 +2440,26 @@ _NODE_TEMPLATES: list[dict[str, Any]] = [
                 description="序列窗口。",
             ),
             _port("bbox", "geometry:bbox", required=False, description="空间子集。"),
+            _port(
+                "algorithm_params",
+                "value:any",
+                required=False,
+                description="算法参数（通常 request 绑定）。",
+            ),
+            _port(
+                "output_spec_extra",
+                "value:any",
+                required=False,
+                description="输出扩展配置。",
+            ),
         ],
         "outputs": [
             _port(
-                "timeseries_bundle_mat",
+                "output_path",
                 "data:timeseries",
-                description="时间序列 .mat 输出。",
+                description="时间序列 .mat 路径（接 omega_block.input_mat）。",
             ),
+            _port("manifest", "data", description="产物清单。"),
         ],
         "params": [
             _param(
@@ -2273,10 +2478,27 @@ _NODE_TEMPLATES: list[dict[str, Any]] = [
         "title": "OMEGA 日均 (D2)",
         "description": "从 omega_block 输出构建 DOY 气候态并回代 SM/VOD（Matlab D2）。",
         "inputs": [
-            _port("data", "data:mat", required=False, description="上游数据或路径。"),
+            _port(
+                "datasource_selection",
+                "data:mat",
+                required=False,
+                description="D2 数据源选择（omega_block/smap/anc/ndvi 等）。",
+            ),
+            _port(
+                "algorithm_params",
+                "value:any",
+                required=False,
+                description="算法参数（通常 request 绑定）。",
+            ),
+            _port(
+                "output_spec_extra",
+                "value:any",
+                required=False,
+                description="输出扩展配置。",
+            ),
         ],
         "outputs": [
-            _port("data", "data:mat", description="日均/回代产物。"),
+            _port("manifest", "data", description="日均/回代产物清单。"),
         ],
         "params": [
             _param("target_year", "number", description="目标反演年份。"),
@@ -2520,12 +2742,20 @@ _NODE_TEMPLATES: list[dict[str, Any]] = [
         "engine": "python_provider",
         "category": "算法模块",
         "title": "分区/时序统计",
-        "description": "平台统计模块。",
+        "description": "平台统计模块（global/zonal/landcover/timeseries），产出 ChartSpec/TableSpec。",
         "inputs": [
-            _port("data", "data", required=False, description="输入数据。"),
+            _port(
+                "manifest",
+                "data",
+                required=False,
+                description="上游 product_manifest。",
+            ),
+            _port("data", "data", required=False, description="输入数据（可选）。"),
         ],
         "outputs": [
-            _port("data", "data", description="统计结果。"),
+            _port(
+                "manifest", "data", description="含 chart_spec/table_spec 的统计结果。"
+            ),
         ],
         "params": [
             _param(
@@ -2556,6 +2786,7 @@ _NODE_TEMPLATES: list[dict[str, Any]] = [
                 widget="path",
             ),
         ],
+        "executable": True,
         "node_class": "statistics",
     },
     {

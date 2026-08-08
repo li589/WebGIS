@@ -8,13 +8,15 @@ import { syncWeatherSpeedUnderlay } from './weather-overlay-renderers'
 import { paletteToParticleColors, resolveCanonicalPaletteId } from './weather-render'
 import type { WeatherOverlayState } from './weather-overlay-registry'
 import type { WindGeoJSON } from './types'
+import { lonFrameFromViewportBounds } from './lon-frame'
 import { shouldUseSmoothWindOffUnderlay } from './wind-off-underlay'
 import type { WindParticleSyncOptions } from './wind-particle-controller-contract'
+import { debugLog } from '../../utils/perf-probe'
 
 type MapInstance = import('maplibre-gl').Map
 
-function debugLog(module: string, ...args: unknown[]) {
-  console.log(`[${performance.now().toFixed(1)}ms] [${module}]`, ...args)
+function windDebugLog(module: string, ...args: unknown[]) {
+  debugLog(`[${performance.now().toFixed(1)}ms] [${module}]`, ...args)
 }
 
 export class WindParticleOverlayController {
@@ -86,7 +88,7 @@ export class WindParticleOverlayController {
   }
 
   reset(options?: { invalidatePendingFetch?: boolean }) {
-    debugLog(
+    windDebugLog(
       'WindParticleController',
       'reset',
       'invalidatePendingFetch',
@@ -160,16 +162,15 @@ export class WindParticleOverlayController {
         ? (overlayState.geojsonData as WindGeoJSON)
         : null
 
-    // 视口切换后 merge 可能短暂为 null：清掉旧画面，等待新瓦片，避免旧区域「粘住」
+    // 视口切换后 merge 可能短暂为 null。保留已有粒子层和最后一份 GeoJSON，
+    // 等新瓦片到达后就地更新；不要把一次调度空窗升级成 destroy/recreate 闪烁。
+    // 真正关闭/删除图层时由 reset()/removeCatalogArtifacts() 显式清理。
     if (!inlineGeojson && !overlayState.geojsonUrl) {
       if (this.currentWindGeojson || this.windParticleCanvas || this.windStreamlineLayer) {
-        this.destroyParticleCanvas()
-        this.destroyStreamlineLayer()
-        this.destroyAuxLayers()
-        this.currentWindGeojson = null
-        this.lastWindGeojsonUrl = null
-        options.clearSmoothScalarUnderlay?.(catalogId)
-        removeWeatherMapArtifacts(this.map, catalogId)
+        windDebugLog(
+          'WindParticleController',
+          'transient empty viewport data; keep last wind frame',
+        )
       }
       return
     }
@@ -195,7 +196,7 @@ export class WindParticleOverlayController {
         geojson = (await resp.json()) as WindGeoJSON
       } catch (err) {
         if ((err as Error)?.name === 'AbortError') return
-        debugLog('WindParticleController', 'fetch failed', err)
+        windDebugLog('WindParticleController', 'fetch failed', err)
         return
       } finally {
         if (this.windParticleFetchAbort === abort) this.windParticleFetchAbort = null
@@ -259,7 +260,7 @@ export class WindParticleOverlayController {
 
     const hasVisualLayer = useParticle ? !!this.windParticleCanvas : !!this.windStreamlineLayer
 
-    // 粒子/流量场：不叠风速底色；数据未变且层已就绪时可跳过
+    // 粒子/流量场：不叠风速底色；数据未变且层已就绪时仍刷新 LonFrame（日界线半球）
     if (
       !dataChanged &&
       !modeChanged &&
@@ -267,6 +268,15 @@ export class WindParticleOverlayController {
       this.windContourLayer &&
       (!enableBarbLayer || this.windBarbLayer)
     ) {
+      const lonFrame = lonFrameFromViewportBounds(
+        overlayState.viewportBounds ?? null,
+        this.map.getCenter().lng,
+      )
+      if (useParticle && this.windParticleCanvas) {
+        this.windParticleCanvas.updateGeoJSON(geojson, lonFrame)
+      } else if (useStreamline && this.windStreamlineLayer) {
+        this.windStreamlineLayer.updateGeoJSON(geojson, lonFrame)
+      }
       return
     }
 
@@ -283,13 +293,18 @@ export class WindParticleOverlayController {
     }
     this.windContourLayer.setOpacity(useStreamline ? 0.1 : 0.06)
 
+    const lonFrame = lonFrameFromViewportBounds(
+      overlayState.viewportBounds ?? null,
+      this.map.getCenter().lng,
+    )
+
     if (useParticle) {
       if (!this.windParticleCanvas) {
-        this.windParticleCanvas = new WindParticleCanvas(this.map, geojson)
+        this.windParticleCanvas = new WindParticleCanvas(this.map, geojson, undefined, lonFrame)
         this.windParticleCanvas.setAnimationPaused(this.animationPaused)
         this.windParticleCanvas.start()
       } else {
-        this.windParticleCanvas.updateGeoJSON(geojson)
+        this.windParticleCanvas.updateGeoJSON(geojson, lonFrame)
       }
       const paletteId = resolveCanonicalPaletteId(overlayState.renderHint?.palette) || 'wind-blue'
       const particleColors = paletteToParticleColors(paletteId)
@@ -298,11 +313,11 @@ export class WindParticleOverlayController {
       }
     } else if (useStreamline) {
       if (!this.windStreamlineLayer) {
-        this.windStreamlineLayer = new WindStreamlineLayer(this.map, geojson)
+        this.windStreamlineLayer = new WindStreamlineLayer(this.map, geojson, lonFrame)
         this.windStreamlineLayer.setAnimationPaused(this.animationPaused)
         this.windStreamlineLayer.start()
       } else {
-        this.windStreamlineLayer.updateGeoJSON(geojson)
+        this.windStreamlineLayer.updateGeoJSON(geojson, lonFrame)
       }
     }
 

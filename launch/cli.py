@@ -31,7 +31,8 @@ from launch.logging_setup import log
 
 # ─── 子命令帮助文本（集中声明，便于审阅 CLI 表面） ──────────────────────────
 _COMPONENT_HELP = (
-    "组件: all/docker/fastapi/beat/worker/worker:<name>/frontend/gateway（默认 all）"
+    "组件: all/docker/fastapi/beat/worker/worker:<name>/frontend/gateway/backend"
+    "（默认 all；backend=仅 FastAPI+Worker+Beat）"
 )
 _LOGS_COMPONENT_HELP = (
     "组件: fastapi/beat/frontend/worker/worker:<name>（默认合并全部）"

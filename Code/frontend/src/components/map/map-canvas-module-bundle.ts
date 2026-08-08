@@ -34,6 +34,7 @@ interface LayersStoreLike {
     center: { lng: number; lat: number },
     bbox: { west: number; south: number; east: number; north: number; crs: 'EPSG:4326' } | null,
     zoom?: number,
+    options?: { immediate?: boolean },
   ) => void
 }
 
@@ -218,6 +219,12 @@ export function createMapCanvasModuleBundle(
     onInteractionModeChange: () => {
       mapInteractionModule.applyInteractionMode()
       measureModule.applyMeasureMode()
+      // 非「点选」模式：清除选中点，避免移动/测量模式下残留 inspect 圆点与选中高亮
+      const mode = options.getInteractionMode()
+      if (mode !== 'select') {
+        options.setSelectedHotspotId(null)
+        options.emitHotspotSelect(null)
+      }
     },
     onAdminBoundaryOverlayChange: options.syncAdminOverlay,
     onMeasureStateChange: () => {

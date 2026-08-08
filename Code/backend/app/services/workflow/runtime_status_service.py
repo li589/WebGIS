@@ -28,6 +28,27 @@ from shared.contracts.api_contracts import (
 
 logger = logging.getLogger(__name__)
 
+_HEALTH_RANK = {
+    ServiceHealth.ok: 0,
+    ServiceHealth.busy: 1,
+    ServiceHealth.degraded: 2,
+    ServiceHealth.offline: 3,
+}
+
+
+def _rollup_overall_health(
+    services: list[BackendServiceStatus],
+    active_run_count: int,
+) -> ServiceHealth:
+    worst = ServiceHealth.ok
+    for svc in services:
+        if _HEALTH_RANK[svc.health] > _HEALTH_RANK[worst]:
+            worst = svc.health
+    if worst == ServiceHealth.ok and active_run_count > 0:
+        return ServiceHealth.busy
+    return worst
+
+
 # 仅允许已接线字段；幽灵 key（如 demo_snapshot_provider、default_queue）禁止写入。
 # frontend scope 暂无消费方，保留空集合占位以支持未来扩展
 ALLOWED_RUNTIME_CONFIG_KEYS: dict[str, set[str]] = {
@@ -233,9 +254,7 @@ class RuntimeStatusService:
                 details=self._collect_redis_stats(),
             ),
         ]
-        overall_health = (
-            ServiceHealth.busy if active_run_count > 0 else ServiceHealth.ok
-        )
+        overall_health = _rollup_overall_health(services, active_run_count)
         return RuntimeStatusResponse(
             overall_health=overall_health,
             service_name=settings.service_name,

@@ -79,13 +79,16 @@ class HttpSourceFetcher(SourceFetcher):
     ) -> FetchResult:
         fetched_at = datetime.now(timezone.utc).isoformat()
         try:
-            import urllib.request
+            # 发布就绪修复（P0-2）+ 审查 BUG-1：safe_urlopen 对初始 URL 与每次
+            # 重定向 Location 均做 SSRF 校验，避免 urlopen 默认跟随 3xx 绕过到环回。
+            from app.core.ssrf import default_allow_private, safe_urlopen
 
-            req = urllib.request.Request(
+            with safe_urlopen(
                 source_uri,
+                timeout=DEFAULT_HTTP_TIMEOUT,
                 headers={"User-Agent": "cgda-backend-download-service/1.0"},
-            )
-            with urllib.request.urlopen(req, timeout=DEFAULT_HTTP_TIMEOUT) as response:  # noqa: S310 - 源 URL 由配置或 layer catalog 提供
+                allow_private=default_allow_private(),
+            ) as response:
                 data = response.read()
                 content_type = response.headers.get(
                     "Content-Type", "application/octet-stream"
@@ -360,6 +363,10 @@ class DemoSourceFetcher(SourceFetcher):
 
     为保持 legacy/demo 下载链路可继续联调，demo:// scheme 仍然走兼容成功路径，
     但只会生成最小的 compat artifact，确保 manifest 始终持有稳定的 resource_key。
+
+    P0-10：demo:// 是占位数据源（不产生真实数据）。development 环境保留用于联调/
+    展出演示；production 环境默认直接 fail（避免占位符静默冒充真实结果），除非显式
+    设 BACKEND_DEMO_SOURCES_ENABLED=true（如展演需以 production 模式运行）。
     """
 
     def supports(self, source_uri: str) -> bool:
@@ -373,6 +380,14 @@ class DemoSourceFetcher(SourceFetcher):
         source_uri: str,
         artifact_key_prefix: str,
     ) -> FetchResult:
+        from app.core.config import settings
+
+        if settings.environment != "development" and not settings.demo_sources_enabled:
+            raise ValueError(
+                "demo:// 为占位演示数据源，不产生真实数据，当前环境（"
+                f"{settings.environment}）已禁用。展出演示请设 "
+                "BACKEND_DEMO_SOURCES_ENABLED=true 显式开启，或使用真实数据源。"
+            )
         fetched_at = datetime.now(timezone.utc).isoformat()
         payload = {
             "ref_id": ref_id,

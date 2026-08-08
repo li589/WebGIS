@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+import json
 import shutil
+import uuid
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 from app.data_io.services import paths as import_paths
 from app.data_io.services.raster_register import (
@@ -13,6 +15,121 @@ from app.data_io.services.raster_register import (
 )
 from app.data_io.services.raster_science import extract_variable_to_geotiff
 from app.data_io.services.upload import resolve_upload_path
+
+ConflictPolicy = Literal["overwrite", "rename", "error"]
+
+
+def _read_layer_fingerprint(layer_dir: Path) -> dict[str, Any] | None:
+    meta_path = layer_dir / "meta.json"
+    if not meta_path.exists():
+        bounds_path = layer_dir / "bounds.json"
+        if bounds_path.exists():
+            try:
+                data = json.loads(bounds_path.read_text(encoding="utf-8"))
+                meta = data.get("meta") if isinstance(data, dict) else None
+                return meta if isinstance(meta, dict) else None
+            except (OSError, json.JSONDecodeError):
+                return None
+        return None
+    try:
+        data = json.loads(meta_path.read_text(encoding="utf-8"))
+        return data if isinstance(data, dict) else None
+    except (OSError, json.JSONDecodeError):
+        return None
+
+
+def find_existing_science_layer(
+    *,
+    source_name: str,
+    variable_id: str,
+    grid_preset: str | None,
+    time_index: int,
+) -> str | None:
+    """按源文件名+变量+网格+时相查找已有 imported 图层（兼容旧随机 id）。"""
+    import_paths.ensure_imports_root()
+    want_src = Path(source_name).name
+    want_stem = Path(source_name).stem
+    want_var = str(variable_id)
+    want_grid = str(grid_preset or "")
+    want_time = int(time_index)
+
+    stable = import_paths.stable_import_layer_id(
+        want_src, want_var, want_grid, str(want_time)
+    )
+    if (import_paths.IMPORTS_DIR / stable).exists():
+        return stable
+
+    for child in import_paths.IMPORTS_DIR.iterdir():
+        if not child.is_dir() or not child.name.startswith("imported"):
+            continue
+        if child.name.startswith("_"):
+            continue
+        meta = _read_layer_fingerprint(child)
+        if not meta:
+            continue
+        science_source = str(meta.get("science_source") or "")
+        source_filename = str(meta.get("source_filename") or "")
+        src_ok = (
+            Path(science_source).name == want_src
+            or science_source == want_src
+            or source_filename.startswith(f"{want_stem}_")
+            or Path(source_filename).stem.startswith(f"{want_stem}_")
+        )
+        if not src_ok:
+            continue
+        meta_var = str(meta.get("variable_id") or "")
+        if meta_var:
+            if meta_var != want_var:
+                continue
+        elif want_var and want_var not in source_filename:
+            continue
+        meta_grid = str(meta.get("grid_preset") or "")
+        if want_grid and meta_grid and meta_grid != want_grid:
+            continue
+        if int(meta.get("time_index") or 0) != want_time:
+            continue
+        return child.name
+    return None
+
+
+def _resolve_science_layer_id(
+    *,
+    source_name: str,
+    variable_id: str,
+    grid_preset: str | None,
+    time_index: int,
+    conflict_policy: ConflictPolicy,
+) -> tuple[str, bool]:
+    """返回 (layer_id, replace_existing)。"""
+    base_id = import_paths.stable_import_layer_id(
+        Path(source_name).name,
+        variable_id,
+        str(grid_preset or ""),
+        str(int(time_index)),
+    )
+    existing = find_existing_science_layer(
+        source_name=source_name,
+        variable_id=variable_id,
+        grid_preset=grid_preset,
+        time_index=time_index,
+    )
+    # 覆盖时优先复用已有目录（含旧随机 id），避免配额净增
+    target_id = existing or base_id
+    exists = (import_paths.IMPORTS_DIR / target_id).exists()
+
+    if conflict_policy == "overwrite":
+        return target_id, exists
+    if conflict_policy == "error":
+        if exists:
+            raise ValueError(
+                f"同名导入已存在: {target_id}（源={Path(source_name).name}, "
+                f"变量={variable_id}）。请选择覆盖或另存为新图层。"
+            )
+        return base_id, False
+    # rename：已存在则新 uuid；不存在仍用稳定 id 便于下次覆盖
+    if exists:
+        return f"imported-{uuid.uuid4().hex[:12]}", False
+    return base_id, False
 
 
 def commit_science_raster_variable(
@@ -30,6 +147,9 @@ def commit_science_raster_variable(
     auto_confirm: bool = True,
     lng_offset: float = 0.0,
     lat_offset: float = 0.0,
+    axis_order: str = "auto",
+    conflict_policy: ConflictPolicy = "overwrite",
+    temporal_meta: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     tmp_dir = import_paths.IMPORTS_DIR / "_tmp"
     tmp_dir.mkdir(parents=True, exist_ok=True)
@@ -45,19 +165,34 @@ def commit_science_raster_variable(
         bounds=bounds,
         invalid_values=invalid_values or None,
         nodata=nodata,
+        axis_order=axis_order,
     )
     base_name = source_name or path.name
+    layer_id, replace_existing = _resolve_science_layer_id(
+        source_name=base_name,
+        variable_id=variable_id,
+        grid_preset=grid_preset or extract_meta.get("grid_preset"),
+        time_index=time_index,
+        conflict_policy=conflict_policy,
+    )
+    extra_meta = {
+        "science_source": path.name,
+        "variable_id": variable_id,
+        "time_index": time_index,
+        "grid_preset": extract_meta.get("grid_preset") or grid_preset,
+        "source_crs_user": source_crs,
+        "extract_bounds": extract_meta.get("bounds"),
+        "axis_transposed": extract_meta.get("axis_transposed"),
+        "invalid_values_applied": extract_meta.get("invalid_values_applied"),
+        "conflict_policy": conflict_policy,
+        **(temporal_meta or {}),
+    }
     result = register_geotiff_as_imported(
         out_tif,
         source_filename=f"{Path(base_name).stem}_{safe_var}.tif",
-        extra_meta={
-            "science_source": path.name,
-            "variable_id": variable_id,
-            "time_index": time_index,
-            "grid_preset": grid_preset,
-            "source_crs_user": source_crs,
-            "extract_bounds": extract_meta.get("bounds"),
-        },
+        layer_id=layer_id,
+        replace_existing=replace_existing,
+        extra_meta=extra_meta,
     )
     layer_dir = import_paths.IMPORTS_DIR / result["layer_id"]
     try:
@@ -100,6 +235,9 @@ def commit_science_raster_variable(
             result["auto_confirm_error"] = str(exc)
 
     result["variable_id"] = variable_id
+    result["axis_transposed"] = extract_meta.get("axis_transposed")
+    result["grid_preset"] = extract_meta.get("grid_preset") or grid_preset
+    result["conflict_policy"] = conflict_policy
     return result
 
 
@@ -118,12 +256,42 @@ def commit_raster_upload(
     auto_confirm: bool = True,
     lng_offset: float = 0.0,
     lat_offset: float = 0.0,
+    axis_order: str = "auto",
+    conflict_policy: ConflictPolicy = "overwrite",
+    temporal_mode: str = "auto",
+    time_label: str | None = None,
+    time_start: str | None = None,
+    time_end: str | None = None,
+    native_step: str | None = None,
 ) -> dict[str, Any]:
+    from app.data_io.services.time_label import build_temporal_meta
+
     path = resolve_upload_path(upload_id)
+    name = source_name or path.name
+    temporal_meta = build_temporal_meta(
+        temporal_mode=temporal_mode,
+        time_label=time_label,
+        time_start=time_start,
+        time_end=time_end,
+        native_step=native_step,
+        source_name=name,
+    )
     ext = path.suffix.lower()
     if ext in {".tif", ".tiff"}:
+        layer_id = import_paths.stable_import_layer_id(Path(name).name, "geotiff")
+        dest = import_paths.IMPORTS_DIR / layer_id
+        replace = conflict_policy == "overwrite" and dest.exists()
+        if conflict_policy == "error" and dest.exists():
+            raise ValueError(f"同名导入已存在: {layer_id}。请选择覆盖或另存为新图层。")
+        if conflict_policy == "rename" and dest.exists():
+            layer_id = f"imported-{uuid.uuid4().hex[:12]}"
+            replace = False
         return register_geotiff_as_imported(
-            path, source_filename=source_name or path.name
+            path,
+            source_filename=name,
+            layer_id=layer_id,
+            replace_existing=replace,
+            extra_meta=temporal_meta,
         )
 
     var_ids = [v for v in (variable_ids or []) if v]
@@ -149,6 +317,9 @@ def commit_raster_upload(
                 auto_confirm=auto_confirm,
                 lng_offset=lng_offset,
                 lat_offset=lat_offset,
+                axis_order=axis_order,
+                conflict_policy=conflict_policy,
+                temporal_meta=temporal_meta,
             )
         )
 
@@ -161,4 +332,13 @@ def commit_raster_upload(
         "source_crs": layers[0].get("source_crs"),
         "needs_confirm": any(layer.get("needs_confirm") for layer in layers),
         "count": len(layers),
+        "replaced": any(layer.get("replaced") for layer in layers),
+        "time_list": layers[0].get("time_list") or temporal_meta.get("time_list") or [],
+        "default_time": layers[0].get("default_time")
+        or temporal_meta.get("default_time"),
+        "native_step": layers[0].get("native_step") or temporal_meta.get("native_step"),
+        "follow_policy": layers[0].get("follow_policy")
+        or temporal_meta.get("follow_policy"),
+        "temporal_kind": temporal_meta.get("temporal_kind"),
+        "temporal_source": temporal_meta.get("temporal_source"),
     }

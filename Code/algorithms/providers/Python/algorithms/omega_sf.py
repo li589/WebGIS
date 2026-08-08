@@ -1280,20 +1280,251 @@ def _emit_progress(
     pixels_done: int,
     pixels_total: int,
     phase: str,
+    blocks_done: int | None = None,
+    blocks_total: int | None = None,
+    date_start: str | None = None,
+    date_end: str | None = None,
+    block_idx: int | None = None,
+    block_dir: str | None = None,
 ) -> None:
     if not progress_callback:
         return
-    detail = {
+    detail: dict[str, Any] = {
         "chunks_done": chunks_done,
         "chunks_total": chunks_total,
         "pixels_done": pixels_done,
         "pixels_total": pixels_total,
         "phase": phase,
     }
+    if blocks_done is not None:
+        detail["blocks_done"] = int(blocks_done)
+    if blocks_total is not None:
+        detail["blocks_total"] = int(blocks_total)
+    if date_start:
+        detail["date_start"] = str(date_start)
+    if date_end:
+        detail["date_end"] = str(date_end)
+    if block_idx is not None:
+        detail["block_idx"] = int(block_idx)
+    if block_dir:
+        detail["block_dir"] = str(block_dir)
     try:
         progress_callback(processed, total, detail)
     except TypeError:
         progress_callback(processed, total)
+
+
+class OmegaSfCancelled(InterruptedError):
+    """用户取消：协作式停止 omega_sf 反演。"""
+
+
+def _check_cancel_requested(cancel_flag_path: str | Path | None) -> None:
+    if not cancel_flag_path:
+        return
+    if Path(cancel_flag_path).exists():
+        raise OmegaSfCancelled("omega_sf cancelled by user (cancel.requested)")
+
+
+def _checkpoint_path(output_dir: str | Path) -> Path:
+    return Path(output_dir) / ".omega_sf_chunk_checkpoint.pkl"
+
+
+def _load_chunk_checkpoint(
+    output_dir: str | Path,
+    *,
+    start_date: str,
+    end_date: str,
+) -> tuple[set[int], list[Any]] | None:
+    """加载块/chunk 检查点；日期范围不一致则忽略。
+
+    Security: pickle 仅用于本地可信检查点文件（BACKEND_OUTPUT_ROOT 下），
+    不接受外部输入。文件大小超过 200MB 视为异常并拒绝加载。
+    """
+    path = _checkpoint_path(output_dir)
+    if not path.exists():
+        return None
+    # Guard against abnormally large checkpoint files (possible corruption/DoS)
+    if path.stat().st_size > 200 * 1024 * 1024:
+        logger.warning(
+            "[CHECKPOINT] 检查点文件异常过大（%d bytes），跳过加载", path.stat().st_size
+        )
+        return None
+    try:
+        import pickle
+
+        with path.open("rb") as fh:
+            payload = pickle.load(fh)
+        if not isinstance(payload, dict):
+            return None
+        if (
+            payload.get("start_date") != start_date
+            or payload.get("end_date") != end_date
+        ):
+            return None
+        done = {int(i) for i in (payload.get("completed_chunks") or [])}
+        results = list(payload.get("all_results") or [])
+        return done, results
+    except Exception:
+        logger.warning("[CHECKPOINT] 加载失败，忽略: %s", path, exc_info=True)
+        return None
+
+
+def _save_chunk_checkpoint(
+    output_dir: str | Path,
+    *,
+    start_date: str,
+    end_date: str,
+    completed_chunks: set[int],
+    all_results: list[Any],
+) -> None:
+    path = _checkpoint_path(output_dir)
+    try:
+        import pickle
+
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with path.open("wb") as fh:
+            pickle.dump(
+                {
+                    "start_date": start_date,
+                    "end_date": end_date,
+                    "completed_chunks": sorted(completed_chunks),
+                    "all_results": all_results,
+                },
+                fh,
+                protocol=pickle.HIGHEST_PROTOCOL,
+            )
+    except Exception:
+        logger.warning("[CHECKPOINT] 写入失败: %s", path, exc_info=True)
+
+
+def _assemble_block_grids(
+    all_results: list[PixelResult],
+    block_struct: BlockStructure,
+    grid_shape: tuple[int, int],
+) -> tuple[dict[int, np.ndarray], dict[int, np.ndarray], dict[int, np.ndarray]]:
+    """从像元结果组装块级 SM/VOD/OMEGA 网格。"""
+    nrows, ncols = grid_shape
+    sm_maps: dict[int, np.ndarray] = {}
+    vod_maps: dict[int, np.ndarray] = {}
+    omega_maps: dict[int, np.ndarray] = {}
+
+    for blk_idx, blk_indices in enumerate(block_struct.indices):
+        sm_grid = np.full(grid_shape, np.nan)
+        vod_grid = np.full(grid_shape, np.nan)
+        om_grid = np.full(grid_shape, np.nan)
+
+        for r in all_results:
+            if not (1 <= r.iy <= nrows and 1 <= r.ix <= ncols):
+                continue
+            iy0 = r.iy - 1
+            ix0 = r.ix - 1
+            sm_blk = r.sm[blk_indices]
+            vod_blk = r.vod[blk_indices]
+            om_blk = r.omega[blk_indices]
+
+            sm_valid = sm_blk[np.isfinite(sm_blk)]
+            vod_valid = vod_blk[np.isfinite(vod_blk)]
+            om_valid = om_blk[np.isfinite(om_blk)]
+
+            if len(sm_valid) > 0:
+                sm_grid[iy0, ix0] = float(np.median(sm_valid))
+            if len(vod_valid) > 0:
+                vod_grid[iy0, ix0] = float(np.median(vod_valid))
+            if len(om_valid) > 0:
+                om_grid[iy0, ix0] = float(np.median(om_valid))
+
+        sm_maps[blk_idx] = sm_grid
+        vod_maps[blk_idx] = vod_grid
+        omega_maps[blk_idx] = om_grid
+
+    return sm_maps, vod_maps, omega_maps
+
+
+def _save_one_block_mat(
+    out_path: Path,
+    *,
+    blk_idx: int,
+    block_struct: BlockStructure,
+    sm_grid: np.ndarray,
+    vod_grid: np.ndarray,
+    om_grid: np.ndarray,
+) -> tuple[str, str, str]:
+    """写入单个块 mat，返回 (path, date_start, date_end)。"""
+    from scipy.io import savemat
+
+    blk_start = block_struct.starts[blk_idx]
+    blk_end = block_struct.ends[blk_idx]
+    date_start_str = blk_start.strftime("%Y%m%d")
+    date_end_str = blk_end.strftime("%Y%m%d")
+    blk_file = out_path / f"{date_start_str}_{date_end_str}.mat"
+    payload = {
+        "SM": sm_grid,
+        "VOD": vod_grid,
+        "OMEGA": om_grid,
+        "block_start": str(blk_start),
+        "block_end": str(blk_end),
+        "block_idx": blk_idx,
+        "date_start": date_start_str,
+        "date_end": date_end_str,
+    }
+    savemat(str(blk_file), payload)
+    compat = out_path / f"block_{blk_idx:03d}.mat"
+    savemat(str(compat), payload)
+    return str(blk_file), date_start_str, date_end_str
+
+
+def _persist_block_maps(
+    output_dir: str | Path | None,
+    *,
+    block_struct: BlockStructure,
+    sm_maps: dict[int, np.ndarray],
+    vod_maps: dict[int, np.ndarray],
+    omega_maps: dict[int, np.ndarray],
+    progress_callback: Any = None,
+    processed: int = 0,
+    total: int = 0,
+    chunks_done: int = 0,
+    chunks_total: int = 0,
+    pixels_done: int = 0,
+    pixels_total: int = 0,
+    finalize: bool = False,
+) -> dict[str, str]:
+    """按块顺序写盘并逐块发 progress（phase=block_commit）。"""
+    output_paths: dict[str, str] = {}
+    if not output_dir:
+        return output_paths
+    out_path = Path(output_dir)
+    out_path.mkdir(parents=True, exist_ok=True)
+    n_blocks = len(sm_maps)
+    for i, blk_idx in enumerate(sorted(sm_maps.keys())):
+        path, d0, d1 = _save_one_block_mat(
+            out_path,
+            blk_idx=blk_idx,
+            block_struct=block_struct,
+            sm_grid=sm_maps[blk_idx],
+            vod_grid=vod_maps[blk_idx],
+            om_grid=omega_maps[blk_idx],
+        )
+        output_paths[f"block_{blk_idx:03d}"] = path
+        output_paths[f"{d0}_{d1}"] = path
+        _emit_progress(
+            progress_callback,
+            processed=processed,
+            total=total,
+            chunks_done=chunks_done,
+            chunks_total=chunks_total,
+            pixels_done=pixels_done,
+            pixels_total=pixels_total,
+            phase="block_commit" if finalize else "block_refresh",
+            blocks_done=i + 1,
+            blocks_total=n_blocks,
+            date_start=d0,
+            date_end=d1,
+            block_idx=blk_idx,
+            block_dir=str(out_path),
+        )
+    output_paths["block_dir"] = str(out_path)
+    return output_paths
 
 
 def _invert_omega_sf_pixel_indices(
@@ -1509,6 +1740,8 @@ def retrieve_omega_sf_daily(
     grid_shape: tuple[int, int] | None = None,
     output_dir: str = "",
     progress_callback: Any = None,
+    cancel_flag_path: str | Path | None = None,
+    reuse_block_cache: bool = True,
 ) -> OmegaSfResult:
     """omega_sf 逐日块反演主循环。
 
@@ -1722,9 +1955,30 @@ def retrieve_omega_sf_daily(
         pack_size,
     )
 
+    completed_chunks: set[int] = set()
+    if reuse_block_cache and output_dir:
+        loaded = _load_chunk_checkpoint(
+            output_dir,
+            start_date=config.start_date,
+            end_date=config.end_date,
+        )
+        if loaded:
+            completed_chunks, restored = loaded
+            all_results.extend(restored)
+            n_success = len(all_results)
+            logger.info(
+                "[CHECKPOINT] 复用 %d 个已完成 chunk，%d 条像元结果",
+                len(completed_chunks),
+                len(restored),
+            )
+
     for ci, lin_pix in enumerate(chunk_lin_list):
+        _check_cancel_requested(cancel_flag_path)
+        if ci in completed_chunks:
+            continue
         chunk_pix = int(lin_pix.size)
         if chunk_pix == 0:
+            completed_chunks.add(ci)
             continue
 
         logger.info(
@@ -1953,6 +2207,15 @@ def retrieve_omega_sf_daily(
         n_valid_processed += n_attempted
         n_success += len(batch_results)
         n_failed += n_batch_failed
+        completed_chunks.add(ci)
+        if reuse_block_cache and output_dir:
+            _save_chunk_checkpoint(
+                output_dir,
+                start_date=config.start_date,
+                end_date=config.end_date,
+                completed_chunks=completed_chunks,
+                all_results=all_results,
+            )
 
         _emit_progress(
             progress_callback,
@@ -1964,6 +2227,27 @@ def retrieve_omega_sf_daily(
             pixels_total=max_valid_pixels or npix,
             phase="step2_omega",
         )
+
+        # 渐进：每个空间 chunk 后按块写盘，供运行中上图
+        if output_dir and all_results:
+            sm_i, vod_i, om_i = _assemble_block_grids(
+                all_results, block_struct, grid_shape
+            )
+            _persist_block_maps(
+                output_dir,
+                block_struct=block_struct,
+                sm_maps=sm_i,
+                vod_maps=vod_i,
+                omega_maps=om_i,
+                progress_callback=progress_callback,
+                processed=n_processed,
+                total=npix,
+                chunks_done=ci + 1,
+                chunks_total=len(chunk_lin_list),
+                pixels_done=n_valid_processed,
+                pixels_total=max_valid_pixels or npix,
+                finalize=False,
+            )
 
         # 测试模式：检查像元限制
         if max_valid_pixels > 0 and n_valid_processed >= max_valid_pixels:
@@ -2009,41 +2293,12 @@ def retrieve_omega_sf_daily(
         all_results, grid_shape
     )
 
-    # 块级 SM/VOD/OMEGA 网格
-    sm_maps: dict[int, np.ndarray] = {}
-    vod_maps: dict[int, np.ndarray] = {}
-    omega_maps: dict[int, np.ndarray] = {}
+    # 块级 SM/VOD/OMEGA 网格（最终完整版）
+    sm_maps, vod_maps, omega_maps = _assemble_block_grids(
+        all_results, block_struct, grid_shape
+    )
 
-    for blk_idx, blk_indices in enumerate(block_struct.indices):
-        sm_grid = np.full(grid_shape, np.nan)
-        vod_grid = np.full(grid_shape, np.nan)
-        om_grid = np.full(grid_shape, np.nan)
-
-        for r in all_results:
-            if not (1 <= r.iy <= nrows and 1 <= r.ix <= ncols):
-                continue
-            iy0 = r.iy - 1
-            ix0 = r.ix - 1
-            sm_blk = r.sm[blk_indices]
-            vod_blk = r.vod[blk_indices]
-            om_blk = r.omega[blk_indices]
-
-            sm_valid = sm_blk[np.isfinite(sm_blk)]
-            vod_valid = vod_blk[np.isfinite(vod_blk)]
-            om_valid = om_blk[np.isfinite(om_blk)]
-
-            if len(sm_valid) > 0:
-                sm_grid[iy0, ix0] = float(np.median(sm_valid))
-            if len(vod_valid) > 0:
-                vod_grid[iy0, ix0] = float(np.median(vod_valid))
-            if len(om_valid) > 0:
-                om_grid[iy0, ix0] = float(np.median(om_valid))
-
-        sm_maps[blk_idx] = sm_grid
-        vod_maps[blk_idx] = vod_grid
-        omega_maps[blk_idx] = om_grid
-
-    # 8) 保存
+    # 8) 保存：先按块最终写盘并 block_commit，再写 pixel/pft
     output_paths: dict[str, str] = {}
     if output_dir:
         out_path = Path(output_dir)
@@ -2052,12 +2307,27 @@ def retrieve_omega_sf_daily(
         try:
             from scipy.io import savemat
 
-            # OMEGA PFT
+            block_paths = _persist_block_maps(
+                out_path,
+                block_struct=block_struct,
+                sm_maps=sm_maps,
+                vod_maps=vod_maps,
+                omega_maps=omega_maps,
+                progress_callback=progress_callback,
+                processed=n_processed,
+                total=npix,
+                chunks_done=len(chunk_lin_list),
+                chunks_total=len(chunk_lin_list),
+                pixels_done=n_valid_processed,
+                pixels_total=max_valid_pixels or npix,
+                finalize=True,
+            )
+            output_paths.update(block_paths)
+
             pft_file = out_path / "omega_pft.mat"
             savemat(str(pft_file), {"omega_pft": omega_pft})
             output_paths["omega_pft"] = str(pft_file)
 
-            # OMEGA pixel
             pix_file = out_path / "omega_pixel.mat"
             savemat(
                 str(pix_file),
@@ -2067,45 +2337,6 @@ def retrieve_omega_sf_daily(
                 },
             )
             output_paths["omega_pixel"] = str(pix_file)
-
-            # 块级 SM / VOD / OMEGA
-            # 使用 Matlab 兼容的命名格式：YYYYMMDD_YYYYMMDD.mat
-            # 同时保留 block_{idx:03d}.mat 作为向后兼容
-            for blk_idx in sm_maps:
-                blk_start = block_struct.starts[blk_idx]
-                blk_end = block_struct.ends[blk_idx]
-                date_start_str = blk_start.strftime("%Y%m%d")
-                date_end_str = blk_end.strftime("%Y%m%d")
-
-                # Matlab 兼容命名：20250101_20250108.mat
-                blk_file = out_path / f"{date_start_str}_{date_end_str}.mat"
-                savemat(
-                    str(blk_file),
-                    {
-                        "SM": sm_maps[blk_idx],
-                        "VOD": vod_maps[blk_idx],
-                        "OMEGA": omega_maps[blk_idx],
-                        "block_start": str(blk_start),
-                        "block_end": str(blk_end),
-                        "block_idx": blk_idx,
-                        "date_start": date_start_str,
-                        "date_end": date_end_str,
-                    },
-                )
-
-                # 向后兼容命名：block_001.mat
-                blk_compat_file = out_path / f"block_{blk_idx:03d}.mat"
-                savemat(
-                    str(blk_compat_file),
-                    {
-                        "SM": sm_maps[blk_idx],
-                        "VOD": vod_maps[blk_idx],
-                        "OMEGA": omega_maps[blk_idx],
-                        "block_start": str(blk_start),
-                        "block_end": str(blk_end),
-                    },
-                )
-            output_paths["block_dir"] = str(out_path)
 
             logger.info("[SAVE] 结果已保存到 %s", out_path)
         except Exception as exc:

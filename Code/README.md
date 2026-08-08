@@ -82,10 +82,14 @@ Code/
 
 ## 当前开发优先级
 
-1. 稳定天气瓦片渲染与风场交互体验
-2. 保持 `workflow-runs` / `unified-tiles` / artifact 契约清晰
-3. 完善课题组 Python 算法真实数据接入（画布编译执行 + 下载/解压/变量提取节点已落地，见 `docs/课题组数据全链路-2026-07-21.md`）
-4. 按需推进 PostGIS、专用切片服务（TiTiler/Martin）、Cesium 3D 与 Nginx 部署层
+近期排期以仓库根 `.ai/progress/2026-08-04-pending-tasks-audit.md` 与 `.ai/docs/reference/工程收口仪表盘.md` 为准：
+
+1. **P0**：FY/SMAP UI 人工闭环（更大样本条带上图 + `.ai/progress/ui-verification-steps.md`）
+2. **P0**：Open-Meteo Phase B（tile-manager / coverage 与 settings `default_model` 贯通）
+3. **P1**：真实课题组数据 e2e / NAS 绿测；工作流调度 P1（见 `docs` 与审计报告）
+4. **P2–P3**：Layers store 继续拆分；按需推进 PostGIS、TiTiler/Martin、Cesium 主链（可选 Nginx：`launch.py start gateway`）
+
+画布编译执行 + 下载/解压/变量提取节点已落地，见 `docs/课题组数据全链路-2026-07-21.md`。保持 `workflow-runs` / `unified-tiles` / artifact 契约清晰。
 
 ## 需要避免的做法
 

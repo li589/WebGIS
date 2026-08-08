@@ -1,7 +1,18 @@
 /**
  * 工作流编辑器共用 UI chrome：
- * - 统一细滚动条
- * - 侧栏水平拖拽手柄
+ * - 统一细滚动条（`.wf-scroll`）
+ * - 侧栏水平拖拽手柄（`.wf-sidebar-resizer`）
+ *
+ * ## 滚动条规范
+ * 工作流编辑器内所有可纵向/横向滚动的面板、列表、对话框主体，
+ * 须使用 `.wf-scroll`（或所在组件已内联的同等 webkit + scrollbar-width 规则），
+ * 禁止裸 `overflow: auto/scroll` 而不套统一样式。
+ *
+ * 已接入：WorkflowLeftSidebar / WorkflowRightSidebar / WorkflowTimerPanel /
+ * PipelineLauncher（`.pipeline-body`）/ NodeCacheDialog（`.nc-list`）。
+ *
+ * 工作流编辑器外的面板可参考 ControlPanel 的 `--panel-scrollbar-*` 变量，
+ * 或复用本文件的色值 `rgba(90, 180, 255, 0.26~0.45)` 以保持视觉一致。
  */
 .wf-scroll {
   scrollbar-width: thin;
@@ -9,8 +20,8 @@
 }
 
 .wf-scroll::-webkit-scrollbar {
-  width: 4px;
-  height: 4px;
+  width: 5px;
+  height: 5px;
 }
 
 .wf-scroll::-webkit-scrollbar-track {
@@ -30,7 +41,7 @@
   position: absolute;
   top: 0;
   bottom: 0;
-  width: 5px;
+  width: 8px;
   z-index: 12;
   cursor: ew-resize;
   background: transparent;
@@ -43,26 +54,28 @@
   position: absolute;
   top: 50%;
   left: 50%;
-  width: 2px;
-  height: 28px;
+  width: 3px;
+  height: 36px;
   transform: translate(-50%, -50%);
-  border-radius: 1px;
-  background: rgba(136, 192, 255, 0.22);
+  border-radius: 2px;
+  background: rgba(136, 192, 255, 0.32);
   transition:
     background 0.16s ease,
-    height 0.16s ease;
+    height 0.16s ease,
+    width 0.16s ease;
 }
 
 .wf-sidebar-resizer:hover::after,
 .wf-sidebar-resizer.active::after {
-  background: rgba(90, 213, 255, 0.72);
-  height: 40px;
+  background: rgba(90, 213, 255, 0.85);
+  height: 52px;
+  width: 3px;
 }
 
 .wf-sidebar-resizer.left {
-  right: -2px;
+  right: -4px;
 }
 
 .wf-sidebar-resizer.right {
-  left: -2px;
+  left: -4px;
 }

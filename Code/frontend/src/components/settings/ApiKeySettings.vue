@@ -2,6 +2,7 @@
 import { computed, reactive, ref } from 'vue'
 import { storeToRefs } from 'pinia'
 import { useSettingsStore } from '../../stores/settings'
+import { useAuthStore } from '../../stores/auth'
 import type { ApiKeyHistoryItem, ApiKeyItem } from '../../services/settings-api'
 import {
   clearBackendWriteApiKey,
@@ -11,22 +12,29 @@ import {
 import {
   clearAllSettingsLocalPrefs,
   getApiKeyPref,
+  isWriteApiKeyPersistEnabled,
   patchApiKeyPref,
+  setWriteApiKeyPersistEnabled,
 } from '../../services/settings-local'
 
 const settingsStore = useSettingsStore()
+const authStore = useAuthStore()
 const { apiKeys, apiKeyHistory } = storeToRefs(settingsStore)
 
 const writeKeyDraft = ref('')
 const writeKeyLocalSet = ref(hasBackendWriteApiKey())
-const writeKeyFromEnv = computed(() =>
-  Boolean((import.meta.env.VITE_BACKEND_API_KEY as string | undefined)?.trim()),
-)
+const writeKeyPersist = ref(isWriteApiKeyPersistEnabled())
 const writeKeyStatus = computed(() => {
-  if (writeKeyLocalSet.value) return '已保存到本机 localStorage'
-  if (writeKeyFromEnv.value) return '可用环境变量 VITE_BACKEND_API_KEY'
-  return '未配置'
+  if (!writeKeyLocalSet.value) return '未配置'
+  return writeKeyPersist.value ? '已保存（浏览器会话 + 跨刷新）' : '已保存（仅当前浏览器标签页）'
 })
+
+function onPersistToggle(ev: Event) {
+  const on = (ev.target as HTMLInputElement).checked
+  setWriteApiKeyPersistEnabled(on)
+  writeKeyPersist.value = isWriteApiKeyPersistEnabled()
+  writeKeyLocalSet.value = hasBackendWriteApiKey()
+}
 
 function saveWriteKey() {
   const value = writeKeyDraft.value.trim()
@@ -34,6 +42,7 @@ function saveWriteKey() {
   setBackendWriteApiKey(value)
   writeKeyDraft.value = ''
   writeKeyLocalSet.value = true
+  writeKeyPersist.value = isWriteApiKeyPersistEnabled()
 }
 
 function clearWriteKey() {
@@ -454,11 +463,12 @@ function statusBadge(item: ApiKeyItem): { text: string; class: string } | null {
       </div>
     </section>
 
-    <section class="settings-section">
-      <h3 class="section-title">浏览器写请求密钥</h3>
+    <section v-if="authStore.canWrite" class="settings-section">
+      <h3 class="section-title">浏览器写请求密钥（可选）</h3>
       <p class="section-hint">
-        设置页与工作流写接口需要带 <code>X-Api-Key</code>。值保存在本机
-        <code>localStorage</code>（兼容旧 sessionStorage）。 当前：{{ writeKeyStatus }}
+        已登录用户默认通过会话 Cookie 鉴权。仅在脚本/CI 或无法使用 Cookie 时，才需在此粘贴
+        <strong>服务密钥</strong>（<code>backend_auth</code>）。个人工具请使用「账户 → API
+        Token」。当前：{{ writeKeyStatus }}
       </p>
       <div class="key-card">
         <div class="key-input-area">
@@ -470,13 +480,17 @@ function statusBadge(item: ApiKeyItem): { text: string; class: string } | null {
             placeholder="粘贴与后端 BACKEND_API_KEY / backend_auth 一致的密钥"
           />
           <button class="action-btn save" :disabled="!writeKeyDraft.trim()" @click="saveWriteKey">
-            保存到本机
+            保存
           </button>
           <button class="action-btn cancel" :disabled="!writeKeyLocalSet" @click="clearWriteKey">
             清除本机密钥
           </button>
           <button class="action-btn edit" @click="clearLocalPrefsOnly">清除本机偏好</button>
         </div>
+        <label class="persist-toggle">
+          <input type="checkbox" :checked="writeKeyPersist" @change="onPersistToggle" />
+          跨刷新记住（XSS 风险更大，仅受信本机使用）
+        </label>
       </div>
     </section>
   </div>
@@ -518,6 +532,19 @@ function statusBadge(item: ApiKeyItem): { text: string; class: string } | null {
   border-radius: 0.52rem;
   background: rgba(4, 12, 23, 0.5);
   border: 1px solid rgba(136, 192, 255, 0.1);
+}
+.persist-toggle {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.4rem;
+  margin-top: 0.5rem;
+  color: #8aa0b4;
+  font-size: 0.54rem;
+  line-height: 1.45;
+  cursor: pointer;
+}
+.persist-toggle input {
+  margin-top: 0.12rem;
 }
 .key-card.disabled {
   opacity: 0.5;

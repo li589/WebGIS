@@ -81,6 +81,14 @@ class UniversalDataReader:
             return "mat"
         if ext in (".grib", ".grib2", ".grb", ".grb2"):
             return "grib"
+        # CGI/filter cache keys may keep opaque suffixes (.pl/.bin); sniff magic.
+        try:
+            with self.path.open("rb") as fh:
+                head = fh.read(4)
+        except OSError:
+            head = b""
+        if head.startswith(b"GRIB"):
+            return "grib"
         raise ValueError(f"不支持的文件格式: {ext}")
 
     # ------------------------------------------------------------------
@@ -545,13 +553,9 @@ class UniversalDataReader:
 
             values = mask_common_fill_values(values.astype(np.float64))
             if lat_out is not None:
-                lat_out = mask_common_fill_values(
-                    lat_out, also_large_abs_sentinel=True
-                )
+                lat_out = mask_common_fill_values(lat_out, also_large_abs_sentinel=True)
             if lon_out is not None:
-                lon_out = mask_common_fill_values(
-                    lon_out, also_large_abs_sentinel=True
-                )
+                lon_out = mask_common_fill_values(lon_out, also_large_abs_sentinel=True)
             return DataArray(
                 values=values,
                 lat=lat_out,
@@ -600,13 +604,9 @@ class UniversalDataReader:
 
             values = mask_common_fill_values(values.astype(np.float64))
             if lat_out is not None:
-                lat_out = mask_common_fill_values(
-                    lat_out, also_large_abs_sentinel=True
-                )
+                lat_out = mask_common_fill_values(lat_out, also_large_abs_sentinel=True)
             if lon_out is not None:
-                lon_out = mask_common_fill_values(
-                    lon_out, also_large_abs_sentinel=True
-                )
+                lon_out = mask_common_fill_values(lon_out, also_large_abs_sentinel=True)
 
             return DataArray(
                 values=values,

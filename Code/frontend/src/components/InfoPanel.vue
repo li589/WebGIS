@@ -26,7 +26,7 @@ import {
 import { useOverlaySymbologyStore } from '../stores/overlay-symbology'
 import { windDisplayModeLabel, type WindDisplayMode } from './map/wind-display-mode'
 import { ANALYSIS_COPY, INSPECT_COPY, LAYERS_COPY, DATA_COPY } from '../ui-copy'
-import { openDataWorkspace } from '../data-manager/core/workspace-store'
+import { openDataWorkspace, openDatedExportForLayer } from '../data-manager/core/workspace-store'
 import { exportLayer } from '../data-manager/adapters/export'
 import {
   resolveAnalysisStageKind,
@@ -38,9 +38,11 @@ import {
   resolveAnalysisTabForFocusIds,
   type AnalysisTabId,
 } from './info-panel/analysis-tab-focus'
+import { resolveWeatherWorkflowStage } from '../utils/weather-tile-readiness'
 import PointTimeSeriesChart from './info-panel/PointTimeSeriesChart.vue'
 import MultiOverlayBarChart from './info-panel/MultiOverlayBarChart.vue'
 import BufferAnalysisTool from './info-panel/BufferAnalysisTool.vue'
+import AnalysisResultCharts from './info-panel/AnalysisResultCharts.vue'
 
 const layersStore = useLayersStore()
 const uiStore = useUiStore()
@@ -87,6 +89,8 @@ const props = defineProps<{
   pointWeatherError?: string | null
   overlayTimeStates?: import('./map/overlay-image-module').OverlayTimeState[]
   overlayPointValues?: import('../services/runtime-api').OverlayPointValue[]
+  /** 当前选中时间序列栅格在选点处的全时间块数值 */
+  selectedOverlayTimeSeries?: import('../services/runtime-api').OverlayPointValue[]
 }>()
 
 const emit = defineEmits<{
@@ -96,7 +100,18 @@ const emit = defineEmits<{
   selectHotspot: [hotspotId: string]
   clearMapPoint: []
   enterSelectMode: []
+  queryOverlaySeries: [payload: { lng: number; lat: number }]
 }>()
+
+function enterInspectTools() {
+  setActiveTab('tools')
+  emit('enterSelectMode')
+}
+
+function queryDefaultOverlaySeries() {
+  // 撒哈拉稳定观测点，确保 SM/VOD/OMEGA 5块均可见；用户点图后会被选点覆盖。
+  emit('queryOverlaySeries', { lng: 11.25, lat: 19.7623 })
+}
 
 const displayLayer = computed(() => props.selectedLayer ?? props.activeLayer)
 const jobLayer = computed(() => displayLayer.value?.jobLayer)
@@ -204,10 +219,11 @@ const weatherRenderHint = computed(
 /** 侧栏同源 overlay meta + 可选 overlayTimeStates 兜底 */
 const overlayStyleMeta = computed(() => {
   void overlaySymbologyStore.version
-  const fromStore = overlaySymbologyStore.getMeta(displayLayer.value.catalogId)
+  const overlayId = displayLayer.value.importedRasterOverlayLayerId ?? displayLayer.value.catalogId
+  const fromStore = overlaySymbologyStore.getMeta(overlayId)
   if (fromStore?.palette) return fromStore
   const states = props.overlayTimeStates ?? []
-  const match = states.find((s) => s.layerId === displayLayer.value.catalogId)
+  const match = states.find((s) => s.layerId === overlayId)
   if (!match) return fromStore
   return {
     palette: match.palette,
@@ -227,9 +243,10 @@ watch(
       displayLayer.value.isImportedRaster,
       displayLayer.value.isAdminBoundary,
     ] as const,
-  ([catalogId, renderHint, isImported, _isImportedRaster, isAdminBoundary]) => {
-    // 导入矢量 / 边界跳过；导入栅格仍拉取 overlay meta（只读色带）
-    if (!catalogId || isImported || isAdminBoundary || renderHint) return
+  ([catalogId, renderHint, isImported, isImportedRaster, isAdminBoundary]) => {
+    if (!catalogId || isImported || isAdminBoundary) return
+    // 天气有 renderHint 时不必拉 overlay meta；有源 overlay / 导入栅格需要 supports_recolor
+    if (renderHint && !isImportedRaster) return
     void overlaySymbologyStore.ensureMeta(catalogId)
   },
   { immediate: true },
@@ -299,12 +316,73 @@ const canEditPalette = computed(() =>
   isMapLinkedPalette({
     hasRenderHint: Boolean(weatherRenderHint.value),
     isImportedRaster: displayLayer.value.isImportedRaster,
+    supportsRecolor: Boolean(overlayStyleMeta.value?.supports_recolor),
   }),
 )
 
+const rangeEditVmin = computed({
+  get: () => {
+    if (displayLayer.value.vminOverride != null) return String(displayLayer.value.vminOverride)
+    const meta = overlayStyleMeta.value
+    if (meta?.vmin != null) return String(meta.vmin)
+    const ticks = styleRenderHint.value?.legend_ticks
+    const first = ticks?.[0]
+    return typeof first === 'number' ? String(first) : ''
+  },
+  set: (raw: string) => {
+    if (!displayLayer.value?.instanceId || !canEditPalette.value) return
+    const n = raw.trim() === '' ? null : Number(raw)
+    layersStore.setLayerRangeOverride(displayLayer.value.instanceId, {
+      vmin: n != null && Number.isFinite(n) ? n : null,
+    })
+  },
+})
+
+const rangeEditVmax = computed({
+  get: () => {
+    if (displayLayer.value.vmaxOverride != null) return String(displayLayer.value.vmaxOverride)
+    const meta = overlayStyleMeta.value
+    if (meta?.vmax != null) return String(meta.vmax)
+    const ticks = styleRenderHint.value?.legend_ticks
+    const last = ticks?.length ? ticks[ticks.length - 1] : undefined
+    return typeof last === 'number' ? String(last) : ''
+  },
+  set: (raw: string) => {
+    if (!displayLayer.value?.instanceId || !canEditPalette.value) return
+    const n = raw.trim() === '' ? null : Number(raw)
+    layersStore.setLayerRangeOverride(displayLayer.value.instanceId, {
+      vmax: n != null && Number.isFinite(n) ? n : null,
+    })
+  },
+})
+
+const nodataModeValue = computed({
+  get: () => displayLayer.value.nodataMode ?? 'transparent',
+  set: (mode: 'transparent' | 'solid') => {
+    if (!displayLayer.value?.instanceId || !canEditPalette.value) return
+    layersStore.setLayerNodataDisplay(displayLayer.value.instanceId, {
+      mode,
+      color: mode === 'solid' ? displayLayer.value.nodataColor || '#808080' : null,
+    })
+  },
+})
+
+const nodataColorValue = computed({
+  get: () => displayLayer.value.nodataColor || '#808080',
+  set: (color: string) => {
+    if (!displayLayer.value?.instanceId || !canEditPalette.value) return
+    layersStore.setLayerNodataDisplay(displayLayer.value.instanceId, {
+      mode: 'solid',
+      color,
+    })
+  },
+})
+
 function handleSelectPalette(paletteId: string) {
   if (!canEditPalette.value) return
-  const defaultId = resolveCanonicalPaletteId(weatherRenderHint.value?.palette ?? '')
+  const defaultId = resolveCanonicalPaletteId(
+    weatherRenderHint.value?.palette ?? overlayStyleMeta.value?.palette ?? '',
+  )
   const target = paletteIdsEqual(paletteId, defaultId) ? null : paletteId
   if (displayLayer.value?.instanceId) {
     layersStore.setLayerPaletteOverride(displayLayer.value.instanceId, target)
@@ -437,6 +515,24 @@ async function exportImportedRaster(format: 'png' | 'tif') {
   if (!id) return
   const active = layersStore.activeLayers.find((l) => l.instanceId === id)
   if (!active) return
+  // 汇合到数据导出框（预选当前生效时刻）
+  if (active.importedRaster) {
+    const times = active.importedRaster.timeList ?? []
+    let time: string | null = null
+    if (times.length) {
+      const eff = active.importedRaster.effectiveTimeLabel
+      time =
+        (eff && times.find((t) => eff === t || eff.startsWith(t))) ||
+        times[times.length - 1] ||
+        null
+    }
+    openDatedExportForLayer(id, time)
+    logStore.logOperation(
+      `export-open-${format}`,
+      `打开导出：${displayLayer.value.name || id}${time ? ` @ ${time}` : ''}`,
+    )
+    return
+  }
   try {
     await exportLayer(active, format)
     flashImportHint(format === 'png' ? '已导出 PNG' : '已导出 GeoTIFF')
@@ -546,15 +642,17 @@ const layerMetadata = computed(() => {
 const overlayLayers = computed(() => {
   const timeStateMap = new Map((props.overlayTimeStates ?? []).map((s) => [s.layerId, s]))
   return layersStore.activeLayersDisplay
-    .filter((l) => l.instanceId !== displayLayer.value.instanceId && l.visible)
+    .filter((l) => l.visible && Boolean(l.importedRasterOverlayLayerId))
     .map((l) => {
-      const ts = timeStateMap.get(l.catalogId)
+      const overlayLayerId = l.importedRasterOverlayLayerId ?? l.catalogId
+      const ts = timeStateMap.get(overlayLayerId)
       return {
         name: l.name,
         category: l.category,
         availabilityState: l.availabilityState,
         accentColor: l.accentColor,
         catalogId: l.catalogId,
+        overlayLayerId,
         palette: ts?.palette ?? null,
         vmin: ts?.vmin ?? null,
         vmax: ts?.vmax ?? null,
@@ -678,10 +776,10 @@ const pointWeatherHourlyChartRows = computed(() => {
 const multiOverlayBarItems = computed(() => {
   const list = overlayLayers.value ?? []
   return list.map((layer) => {
-    const pt = overlayPointValueMap.value.get(layer.catalogId)
+    const pt = overlayPointValueMap.value.get(layer.overlayLayerId)
     const val = pt?.value ?? null
     return {
-      layerId: layer.catalogId,
+      layerId: layer.overlayLayerId,
       name: layer.name,
       category: layer.category,
       valueText: pt && pt.value !== null ? formatOverlayValue(pt) : 'N/A',
@@ -697,10 +795,44 @@ const showMultiOverlayBar = computed(
   () => !!props.selectedMapPoint && multiOverlayBarItems.value.length > 0,
 )
 
+const selectedOverlayTimeSeriesRows = computed(() => {
+  const activeTime = (props.overlayTimeStates ?? []).find(
+    (s) => s.layerId === displayLayer.value.importedRasterOverlayLayerId,
+  )?.currentTime
+  return (props.selectedOverlayTimeSeries ?? [])
+    .filter((item) => item.time)
+    .map((item) => ({
+      time: item.time!.replace('_', ' → '),
+      metric: formatOverlayValue(item),
+      numericValue:
+        typeof item.value === 'number' && Number.isFinite(item.value) ? item.value : undefined,
+      active: item.time === activeTime,
+    }))
+})
+
+const showSelectedOverlayTimeSeries = computed(
+  () => !!props.selectedMapPoint && selectedOverlayTimeSeriesRows.value.length > 0,
+)
+
+/** 汇报演示兜底：未点地图时，允许按当前选中图层默认数据点展示时序。 */
+const showDemoOverlayTimeSeries = computed(
+  () => !props.selectedMapPoint && selectedOverlayTimeSeriesRows.value.length > 0,
+)
+
+const analysisCharts = computed(() => jobLayer.value?.analysisCharts ?? [])
+const analysisTables = computed(() => jobLayer.value?.analysisTables ?? [])
+const hasAnalysisCharts = computed(
+  () => analysisCharts.value.length > 0 || analysisTables.value.length > 0,
+)
+
 const hasVisualTabContent = computed(
   () =>
+    hasAnalysisCharts.value ||
     hasPointWeatherSection.value ||
     showMultiOverlayBar.value ||
+    showSelectedOverlayTimeSeries.value ||
+    showDemoOverlayTimeSeries.value ||
+    displayLayer.value.isImportedRaster ||
     !!resultModel.value ||
     props.visibleHotspots.length > 0,
 )
@@ -729,11 +861,7 @@ const runBlockedReason = computed(() =>
 const workflowStage = computed(() => {
   if (props.isSubmitting) return 'submitting'
   if (isRealtimeWeatherLayer.value) {
-    const stats = tileStats.value
-    if (!stats) return 'idle'
-    if (stats.pending > 0) return 'running'
-    if (stats.cached > 0) return 'succeeded'
-    return 'idle'
+    return resolveWeatherWorkflowStage(tileStats.value)
   }
   if (jobLayer.value?.status === 'queued') return 'queued'
   if (jobLayer.value?.status === 'running') return 'running'
@@ -828,6 +956,7 @@ const workflowStageCopy = computed(() =>
     isWeather: isRealtimeWeatherLayer.value && hasRealSelection.value,
     tilePending: tileStats.value?.pending ?? 0,
     tileCached: tileStats.value?.cached ?? 0,
+    tileVisible: tileStats.value?.visible ?? 0,
   }),
 )
 
@@ -996,8 +1125,7 @@ watch(
 
 /** 天气点查开始或结果到达 → 图表 Tab，避免人停在工具而结果在别处 */
 watch(
-  () =>
-    [props.pointWeatherLoading, !!props.pointWeather, !!props.pointWeatherError] as const,
+  () => [props.pointWeatherLoading, !!props.pointWeather, !!props.pointWeatherError] as const,
   ([loading, hasResult, hasError], prev) => {
     if (!isRealtimeWeatherLayer.value) return
     const becameActive =
@@ -1031,7 +1159,7 @@ onBeforeUnmount(() => {
 <template>
   <aside class="panel" :style="{ '--accent-color': displayLayer.accentColor }">
     <!-- 无选中：整页空态，不展示 Tab / 分区壳 -->
-    <div v-if="!hasRealSelection" class="analysis-idle" ref="analysisScrollEl">
+    <div v-if="!hasRealSelection" ref="analysisScrollEl" class="analysis-idle">
       <div class="analysis-idle-orb" aria-hidden="true"></div>
       <p class="analysis-idle-kicker">{{ ANALYSIS_COPY.panelTitle }}</p>
       <h2 class="analysis-idle-title">{{ ANALYSIS_COPY.emptyTitle }}</h2>
@@ -1044,1055 +1172,1232 @@ onBeforeUnmount(() => {
     </div>
 
     <template v-else>
-    <!-- Tab 始终贴顶 -->
-    <div class="panel-sticky-chrome">
-      <div class="dashboard-nav-tabs">
-        <button
-          type="button"
-          class="dash-tab"
-          :class="{ active: activeTab === 'visual' }"
-          @click="setActiveTab('visual')"
-        >
-          图表
-        </button>
-        <button
-          type="button"
-          class="dash-tab"
-          :class="{ active: activeTab === 'tools' }"
-          @click="setActiveTab('tools')"
-        >
-          工具
-        </button>
-        <button
-          type="button"
-          class="dash-tab"
-          :class="{ active: activeTab === 'style' }"
-          @click="setActiveTab('style')"
-        >
-          样式
-        </button>
-        <button
-          type="button"
-          class="dash-tab"
-          :class="{ active: activeTab === 'meta' }"
-          @click="setActiveTab('meta')"
-        >
-          元数据
-        </button>
-      </div>
-      <div class="panel-stage-row">
-        <span class="readiness readiness--inline" :title="stageLabel">{{ stageLabel }}</span>
-      </div>
-    </div>
-
-    <div class="panel-scroll" ref="analysisScrollEl">
-    <div class="panel-topline" ref="topSummaryEl">
-      <div v-if="workflowError" class="workflow-error">
-        <span class="error-icon">⚠️</span>
-        <span class="error-message">{{ workflowError }}</span>
-      </div>
-
-      <!-- 天气层：短摘要（详细进元数据 Tab） -->
-      <div v-if="isRealtimeWeatherLayer" class="analysis-context-card">
-        <p class="analysis-context-line">
-          {{ displayLayer.name }}
-          <span v-if="weatherTopLines[0]"> · {{ weatherTopLines[0] }}</span>
-        </p>
-      </div>
-
-      <!-- 导入/边界/静态：短说明 -->
-      <div v-else-if="!canRunWorkflow" class="analysis-context-card">
-        <p class="analysis-context-line">{{ displayLayer.name }} · {{ staticTopHint }}</p>
-      </div>
-
-      <!-- 可跑工作流：运行入口 + 短进度 -->
-      <template v-else>
-        <div class="action-row">
+      <!-- Tab 始终贴顶 -->
+      <div class="panel-sticky-chrome">
+        <div class="dashboard-nav-tabs">
           <button
-            class="run-workflow-btn"
-            :disabled="buttonDisabled"
-            :title="runBlockedReason ?? ''"
-            @click="handleRunWorkflow"
-          >
-            {{ buttonLabel }}
-          </button>
-        </div>
-        <div v-if="runBlockedReason" class="run-block-hint">
-          {{ runBlockedReason }}
-        </div>
-        <div v-if="workflowMeta.engineLabel" class="workflow-meta-row">
-          <span class="wf-engine-icon" aria-hidden="true">{{ workflowMeta.engineIcon }}</span>
-          <span class="wf-engine-label">{{ workflowMeta.engineLabel }}</span>
-          <span v-if="workflowMeta.name" class="wf-name">{{ workflowMeta.name }}</span>
-        </div>
-      </template>
-
-      <!-- 阶段行：仅工作流运行中，或天气确有瓦片活动时 -->
-      <div v-if="showWorkflowStageRow" class="workflow-stage-row">
-        <span class="stage-pill" :class="workflowStage">{{ workflowStage }}</span>
-        <span class="stage-copy">{{ workflowStageCopy }}</span>
-      </div>
-
-      <div
-        v-if="canRunWorkflow && (isWorkflowRunning || workflowStage === 'succeeded')"
-        class="wf-progress-bar"
-      >
-        <div
-          class="wf-progress-fill"
-          :class="workflowStage"
-          :style="{ width: workflowProgress + '%' }"
-        ></div>
-      </div>
-
-      <div
-        v-if="canRunWorkflow && latestEventMessage"
-        class="wf-event-msg"
-      >
-        <span class="wf-event-dot" :class="workflowStage"></span>
-        <span class="wf-event-text">{{ latestEventMessage }}</span>
-      </div>
-    </div>
-
-    <div class="analysis-stream">
-      <!-- ── meta Tab ─────────────────────────────────────────────────── -->
-      <section
-        v-show="activeTab === 'meta'"
-        class="analysis-section analysis-section--overview"
-        id="global-overview"
-      >
-        <div class="section-kicker">{{ ANALYSIS_COPY.overviewKicker }}</div>
-        <h3>
-          {{
-            showCompactHero ? ANALYSIS_COPY.overviewTitleCompact : ANALYSIS_COPY.overviewTitleFull
-          }}
-        </h3>
-        <p>{{ analysisSummary }}</p>
-        <div class="overview-quick-actions">
-          <button
-            v-if="isRealtimeWeatherLayer && uiStore.interactionMode !== 'select'"
             type="button"
-            class="weather-mini-btn"
-            @click="setActiveTab('tools'); emit('enterSelectMode')"
+            class="dash-tab"
+            :class="{ active: activeTab === 'visual' }"
+            @click="setActiveTab('visual')"
           >
-            {{ ANALYSIS_COPY.toolsQuickInspect }}
+            图表
           </button>
           <button
-            v-if="canRunWorkflow"
             type="button"
-            class="weather-mini-btn"
+            class="dash-tab"
+            :class="{ active: activeTab === 'tools' }"
             @click="setActiveTab('tools')"
           >
-            {{ ANALYSIS_COPY.toolsQuickBuffer }}
+            工具
           </button>
           <button
-            v-if="hasLayerStyleSection"
             type="button"
-            class="weather-mini-btn"
+            class="dash-tab"
+            :class="{ active: activeTab === 'style' }"
             @click="setActiveTab('style')"
           >
-            符号样式
-          </button>
-        </div>
-      </section>
-
-      <section
-        v-if="displayLayer.isImported || displayLayer.isImportedRaster"
-        v-show="activeTab === 'meta'"
-        class="analysis-section analysis-section--imported"
-        id="imported-layer"
-      >
-        <div class="section-kicker">{{ ANALYSIS_COPY.importedSectionKicker }}</div>
-        <h3>{{ ANALYSIS_COPY.importedSectionTitle }}</h3>
-        <dl class="meta-list imported-meta">
-          <div v-if="displayLayer.isImported">
-            <dt>{{ ANALYSIS_COPY.metaGeometry }}</dt>
-            <dd>{{ displayLayer.importedGeometryType ?? '—' }}</dd>
-          </div>
-          <div v-if="displayLayer.isImported">
-            <dt>{{ ANALYSIS_COPY.metaFeatures }}</dt>
-            <dd>{{ displayLayer.importedFeatureCount ?? 0 }}</dd>
-          </div>
-          <div v-if="displayLayer.isImportedRaster">
-            <dt>{{ ANALYSIS_COPY.metaMode }}</dt>
-            <dd>{{ ANALYSIS_COPY.importedRasterType }}</dd>
-          </div>
-          <div v-if="displayLayer.isImportedRaster">
-            <dt>{{ ANALYSIS_COPY.metaCrs }}</dt>
-            <dd>{{ displayLayer.importedRasterSourceCrs ?? '—' }}</dd>
-          </div>
-          <div v-if="displayLayer.isImportedRaster">
-            <dt>Overlay ID</dt>
-            <dd class="mono">{{ displayLayer.catalogId }}</dd>
-          </div>
-          <div v-if="displayLayer.importedFileName">
-            <dt>{{ ANALYSIS_COPY.metaFile }}</dt>
-            <dd>{{ displayLayer.importedFileName }}</dd>
-          </div>
-          <div>
-            <dt>{{ ANALYSIS_COPY.metaBounds }}</dt>
-            <dd>
-              {{ formatBounds(displayLayer.importedBounds ?? displayLayer.importedRasterBounds) }}
-            </dd>
-          </div>
-          <div>
-            <dt>{{ ANALYSIS_COPY.metaSource }}</dt>
-            <dd>{{ displayLayer.sourceLabel }}</dd>
-          </div>
-        </dl>
-        <div v-if="displayLayer.isImported" class="imported-export-row">
-          <button
-            class="imported-export-btn"
-            type="button"
-            @click="
-              openDataWorkspace({
-                tab: 'attributes',
-                layerInstanceId: displayLayer.instanceId,
-              })
-            "
-          >
-            {{ DATA_COPY.openAttrTable }}
+            样式
           </button>
           <button
-            class="imported-export-btn"
             type="button"
-            @click="
-              openDataWorkspace({
-                tab: 'details',
-                layerInstanceId: displayLayer.instanceId,
-              })
-            "
+            class="dash-tab"
+            :class="{ active: activeTab === 'meta' }"
+            @click="setActiveTab('meta')"
           >
-            {{ DATA_COPY.openDetails }}
-          </button>
-          <button class="imported-export-btn" type="button" @click="exportImportedGeoJson">
-            {{ LAYERS_COPY.exportGeoJson }}
-          </button>
-          <button class="imported-export-btn" type="button" @click="exportImportedCsv">
-            {{ LAYERS_COPY.exportCsv }}
+            元数据
           </button>
         </div>
-        <div v-else-if="displayLayer.isImportedRaster" class="imported-export-row">
-          <button
-            class="imported-export-btn"
-            type="button"
-            @click="
-              openDataWorkspace({
-                tab: 'details',
-                layerInstanceId: displayLayer.instanceId,
-              })
-            "
-          >
-            {{ DATA_COPY.openDetails }}
-          </button>
-          <button class="imported-export-btn" type="button" @click="exportImportedRaster('png')">
-            {{ LAYERS_COPY.exportPng }}
-          </button>
-          <button class="imported-export-btn" type="button" @click="exportImportedRaster('tif')">
-            {{ LAYERS_COPY.exportTif }}
-          </button>
+        <div class="panel-stage-row">
+          <span class="readiness readiness--inline" :title="stageLabel">{{ stageLabel }}</span>
         </div>
-        <p
-          v-if="importActionHint"
-          class="imported-action-hint"
-          :class="{ error: importActionHint.includes('失败') }"
-        >
-          {{ importActionHint }}
-        </p>
-      </section>
+      </div>
 
-      <section
-        v-if="jobLayer"
-        v-show="activeTab === 'meta'"
-        class="job-report-card job-report-card--summary"
-        id="scheduler-status"
-      >
-        <div class="job-report-header">
-          <div>
-            <div class="section-kicker">调度器</div>
-            <span class="job-report-title">任务总览</span>
+      <div ref="analysisScrollEl" class="panel-scroll">
+        <div ref="topSummaryEl" class="panel-topline">
+          <div v-if="workflowError" class="workflow-error">
+            <span class="error-icon">⚠️</span>
+            <span class="error-message">{{ workflowError }}</span>
           </div>
-          <span class="job-status-chip" :class="`job-${jobLayer.status}`">
-            {{
-              jobLayer.status === 'running'
-                ? `运行中 ${jobLayer.progress}%`
-                : jobLayer.status === 'succeeded'
-                  ? '已完成'
-                  : jobLayer.status === 'failed'
-                    ? '失败'
-                    : jobLayer.status
-            }}
-          </span>
-        </div>
 
-        <div class="job-progress-shell">
-          <div v-if="jobLayer.status === 'running'" class="job-progress-row">
-            <div class="job-progress-bar">
-              <div class="job-progress-fill" :style="{ width: `${jobLayer.progress}%` }"></div>
+          <!-- 天气层：短摘要（详细进元数据 Tab） -->
+          <div v-if="isRealtimeWeatherLayer" class="analysis-context-card">
+            <p class="analysis-context-line">
+              {{ displayLayer.name }}
+              <span v-if="weatherTopLines[0]"> · {{ weatherTopLines[0] }}</span>
+            </p>
+          </div>
+
+          <!-- 导入/边界/静态：短说明 -->
+          <div v-else-if="!canRunWorkflow" class="analysis-context-card">
+            <p class="analysis-context-line">{{ displayLayer.name }} · {{ staticTopHint }}</p>
+          </div>
+
+          <!-- 可跑工作流：运行入口 + 短进度 -->
+          <template v-else>
+            <div class="action-row">
+              <button
+                class="run-workflow-btn"
+                :disabled="buttonDisabled"
+                :title="runBlockedReason ?? ''"
+                @click="handleRunWorkflow"
+              >
+                {{ buttonLabel }}
+              </button>
             </div>
-            <span class="job-progress-label">{{ jobLayer.progress }}%</span>
+            <div v-if="runBlockedReason" class="run-block-hint">
+              {{ runBlockedReason }}
+            </div>
+            <div v-if="workflowMeta.engineLabel" class="workflow-meta-row">
+              <span class="wf-engine-icon" aria-hidden="true">{{ workflowMeta.engineIcon }}</span>
+              <span class="wf-engine-label">{{ workflowMeta.engineLabel }}</span>
+              <span v-if="workflowMeta.name" class="wf-name">{{ workflowMeta.name }}</span>
+            </div>
+          </template>
+
+          <!-- 阶段行：仅工作流运行中，或天气确有瓦片活动时 -->
+          <div v-if="showWorkflowStageRow" class="workflow-stage-row">
+            <span class="stage-pill" :class="workflowStage">{{ workflowStage }}</span>
+            <span class="stage-copy">{{ workflowStageCopy }}</span>
           </div>
-          <p class="job-message">{{ jobLayer.message || '作业正在处理中...' }}</p>
+
           <div
-            v-if="jobLayer.nodeProgress?.length"
-            class="job-node-progress-section"
+            v-if="canRunWorkflow && (isWorkflowRunning || workflowStage === 'succeeded')"
+            class="wf-progress-bar"
           >
             <div
-              v-for="np in jobLayer.nodeProgress"
-              :key="np.nodeId"
-              class="job-node-progress-item"
-            >
-              <div class="job-node-progress-header">
-                <span>{{ np.nodeLabel }}</span>
-                <span>{{ np.progress }}%</span>
-              </div>
-              <div class="job-node-progress-bar">
-                <div
-                  class="job-node-progress-fill"
-                  :style="{ width: `${np.progress}%` }"
-                ></div>
-              </div>
-              <p v-if="np.message" class="job-node-progress-message">{{ np.message }}</p>
-              <p
-                v-if="np.detail && (np.detail.chunksTotal || np.detail.pixelsTotal)"
-                class="job-node-progress-detail"
+              class="wf-progress-fill"
+              :class="workflowStage"
+              :style="{ width: workflowProgress + '%' }"
+            ></div>
+          </div>
+
+          <div v-if="canRunWorkflow && latestEventMessage" class="wf-event-msg">
+            <span class="wf-event-dot" :class="workflowStage"></span>
+            <span class="wf-event-text">{{ latestEventMessage }}</span>
+          </div>
+        </div>
+
+        <div class="analysis-stream">
+          <!-- ── meta Tab ─────────────────────────────────────────────────── -->
+          <section
+            v-show="activeTab === 'meta'"
+            id="global-overview"
+            class="analysis-section analysis-section--overview"
+          >
+            <div class="section-kicker">{{ ANALYSIS_COPY.overviewKicker }}</div>
+            <h3>
+              {{
+                showCompactHero
+                  ? ANALYSIS_COPY.overviewTitleCompact
+                  : ANALYSIS_COPY.overviewTitleFull
+              }}
+            </h3>
+            <p>{{ analysisSummary }}</p>
+            <div class="overview-quick-actions">
+              <button
+                v-if="isRealtimeWeatherLayer && uiStore.interactionMode !== 'select'"
+                type="button"
+                class="weather-mini-btn"
+                @click="enterInspectTools"
               >
-                <template v-if="np.detail.chunksTotal">
-                  chunk {{ np.detail.chunksDone ?? 0 }}/{{ np.detail.chunksTotal }}
-                </template>
-                <template v-if="np.detail.pixelsTotal">
-                  · pixel {{ np.detail.pixelsDone ?? 0 }}/{{ np.detail.pixelsTotal }}
-                </template>
-                <template v-if="np.detail.phase"> · {{ np.detail.phase }}</template>
+                {{ ANALYSIS_COPY.toolsQuickInspect }}
+              </button>
+              <button
+                v-if="canRunWorkflow"
+                type="button"
+                class="weather-mini-btn"
+                @click="setActiveTab('tools')"
+              >
+                {{ ANALYSIS_COPY.toolsQuickBuffer }}
+              </button>
+              <button
+                v-if="hasLayerStyleSection"
+                type="button"
+                class="weather-mini-btn"
+                @click="setActiveTab('style')"
+              >
+                符号样式
+              </button>
+            </div>
+          </section>
+
+          <section
+            v-if="displayLayer.isImported || displayLayer.isImportedRaster"
+            v-show="activeTab === 'meta'"
+            id="imported-layer"
+            class="analysis-section analysis-section--imported"
+          >
+            <div class="section-kicker">{{ ANALYSIS_COPY.importedSectionKicker }}</div>
+            <h3>{{ ANALYSIS_COPY.importedSectionTitle }}</h3>
+            <dl class="meta-list imported-meta">
+              <div v-if="displayLayer.isImported">
+                <dt>{{ ANALYSIS_COPY.metaGeometry }}</dt>
+                <dd>{{ displayLayer.importedGeometryType ?? '—' }}</dd>
+              </div>
+              <div v-if="displayLayer.isImported">
+                <dt>{{ ANALYSIS_COPY.metaFeatures }}</dt>
+                <dd>{{ displayLayer.importedFeatureCount ?? 0 }}</dd>
+              </div>
+              <div v-if="displayLayer.isImportedRaster">
+                <dt>{{ ANALYSIS_COPY.metaMode }}</dt>
+                <dd>{{ ANALYSIS_COPY.importedRasterType }}</dd>
+              </div>
+              <div v-if="displayLayer.isImportedRaster">
+                <dt>{{ ANALYSIS_COPY.metaCrs }}</dt>
+                <dd>{{ displayLayer.importedRasterSourceCrs ?? '—' }}</dd>
+              </div>
+              <div v-if="displayLayer.isImportedRaster && displayLayer.importedRasterNativeStep">
+                <dt>{{ ANALYSIS_COPY.metaNativeStep }}</dt>
+                <dd>{{ displayLayer.importedRasterNativeStep }}</dd>
+              </div>
+              <div v-if="displayLayer.isImportedRaster && displayLayer.importedRasterEffectiveTime">
+                <dt>{{ ANALYSIS_COPY.metaEffectiveTime }}</dt>
+                <dd>{{ displayLayer.importedRasterEffectiveTime }}</dd>
+              </div>
+              <div
+                v-if="
+                  displayLayer.isImportedRaster && (displayLayer.importedRasterTimeCount ?? 0) > 0
+                "
+              >
+                <dt>{{ ANALYSIS_COPY.metaTimeSlices }}</dt>
+                <dd>{{ displayLayer.importedRasterTimeCount }}</dd>
+              </div>
+              <div v-if="displayLayer.isImportedRaster">
+                <dt>叠加层 ID</dt>
+                <dd class="mono">{{ displayLayer.catalogId }}</dd>
+              </div>
+              <div v-if="displayLayer.importedFileName">
+                <dt>{{ ANALYSIS_COPY.metaFile }}</dt>
+                <dd>{{ displayLayer.importedFileName }}</dd>
+              </div>
+              <div>
+                <dt>{{ ANALYSIS_COPY.metaBounds }}</dt>
+                <dd>
+                  {{
+                    formatBounds(displayLayer.importedBounds ?? displayLayer.importedRasterBounds)
+                  }}
+                </dd>
+              </div>
+              <div>
+                <dt>{{ ANALYSIS_COPY.metaSource }}</dt>
+                <dd>{{ displayLayer.sourceLabel }}</dd>
+              </div>
+            </dl>
+            <div v-if="displayLayer.isImported" class="imported-export-row">
+              <button
+                class="imported-export-btn"
+                type="button"
+                @click="
+                  openDataWorkspace({
+                    tab: 'attributes',
+                    layerInstanceId: displayLayer.instanceId,
+                  })
+                "
+              >
+                {{ DATA_COPY.openAttrTable }}
+              </button>
+              <button
+                class="imported-export-btn"
+                type="button"
+                @click="
+                  openDataWorkspace({
+                    tab: 'details',
+                    layerInstanceId: displayLayer.instanceId,
+                  })
+                "
+              >
+                {{ DATA_COPY.openDetails }}
+              </button>
+              <button class="imported-export-btn" type="button" @click="exportImportedGeoJson">
+                {{ LAYERS_COPY.exportGeoJson }}
+              </button>
+              <button class="imported-export-btn" type="button" @click="exportImportedCsv">
+                {{ LAYERS_COPY.exportCsv }}
+              </button>
+            </div>
+            <div v-else-if="displayLayer.isImportedRaster" class="imported-export-row">
+              <button
+                class="imported-export-btn"
+                type="button"
+                @click="
+                  openDataWorkspace({
+                    tab: 'details',
+                    layerInstanceId: displayLayer.instanceId,
+                  })
+                "
+              >
+                {{ DATA_COPY.openDetails }}
+              </button>
+              <button
+                class="imported-export-btn"
+                type="button"
+                @click="exportImportedRaster('png')"
+              >
+                {{ LAYERS_COPY.exportPng }}
+              </button>
+              <button
+                class="imported-export-btn"
+                type="button"
+                @click="exportImportedRaster('tif')"
+              >
+                {{ LAYERS_COPY.exportTif }}
+              </button>
+            </div>
+            <p
+              v-if="importActionHint"
+              class="imported-action-hint"
+              :class="{ error: importActionHint.includes('失败') }"
+            >
+              {{ importActionHint }}
+            </p>
+          </section>
+
+          <section
+            v-if="jobLayer"
+            v-show="activeTab === 'meta'"
+            id="scheduler-status"
+            class="job-report-card job-report-card--summary"
+          >
+            <div class="job-report-header">
+              <div>
+                <div class="section-kicker">任务调度</div>
+                <span class="job-report-title">任务总览</span>
+              </div>
+              <span class="job-status-chip" :class="`job-${jobLayer.status}`">
+                {{
+                  jobLayer.status === 'running'
+                    ? `运行中 ${jobLayer.progress}%`
+                    : jobLayer.status === 'succeeded'
+                      ? '已完成'
+                      : jobLayer.status === 'failed'
+                        ? '失败'
+                        : jobLayer.status
+                }}
+              </span>
+            </div>
+
+            <div class="job-progress-shell">
+              <div v-if="jobLayer.status === 'running'" class="job-progress-row">
+                <div class="job-progress-bar">
+                  <div class="job-progress-fill" :style="{ width: `${jobLayer.progress}%` }"></div>
+                </div>
+                <span class="job-progress-label">{{ jobLayer.progress }}%</span>
+              </div>
+              <p class="job-message">{{ jobLayer.message || '作业正在处理中...' }}</p>
+              <div v-if="jobLayer.nodeProgress?.length" class="job-node-progress-section">
+                <div
+                  v-for="np in jobLayer.nodeProgress"
+                  :key="np.nodeId"
+                  class="job-node-progress-item"
+                >
+                  <div class="job-node-progress-header">
+                    <span>{{ np.nodeLabel }}</span>
+                    <span>{{ np.progress }}%</span>
+                  </div>
+                  <div class="job-node-progress-bar">
+                    <div class="job-node-progress-fill" :style="{ width: `${np.progress}%` }"></div>
+                  </div>
+                  <p v-if="np.message" class="job-node-progress-message">{{ np.message }}</p>
+                  <p
+                    v-if="
+                      np.detail &&
+                      (np.detail.chunksTotal ||
+                        np.detail.pixelsTotal ||
+                        np.detail.blocksTotal ||
+                        np.detail.dateStart)
+                    "
+                    class="job-node-progress-detail"
+                  >
+                    <template v-if="np.detail.blocksTotal">
+                      块 {{ np.detail.blocksDone ?? 0 }}/{{ np.detail.blocksTotal }}
+                      <template v-if="np.detail.dateStart && np.detail.dateEnd">
+                        · {{ np.detail.dateStart }}–{{ np.detail.dateEnd }}
+                      </template>
+                    </template>
+                    <template v-else-if="np.detail.chunksTotal">
+                      数据块 {{ np.detail.chunksDone ?? 0 }}/{{ np.detail.chunksTotal }}
+                    </template>
+                    <template v-if="np.detail.pixelsTotal">
+                      · 像素 {{ np.detail.pixelsDone ?? 0 }}/{{ np.detail.pixelsTotal }}
+                    </template>
+                    <template v-if="np.detail.phase"> · {{ np.detail.phase }}</template>
+                  </p>
+                </div>
+              </div>
+              <ul v-if="jobEventNotes.length" class="job-diagnostic-list">
+                <li
+                  v-for="(note, idx) in jobEventNotes"
+                  :key="`job-note-${idx}`"
+                  class="job-diagnostic-item"
+                >
+                  {{ note }}
+                </li>
+              </ul>
+            </div>
+
+            <div class="job-steps">
+              <div class="job-step">1. 提交任务</div>
+              <div
+                class="job-step"
+                :class="{ active: workflowStage === 'queued' || workflowStage === 'running' }"
+              >
+                2. 等待运行结果
+              </div>
+              <div class="job-step" :class="{ active: !!resultModel }">3. 读取视图</div>
+            </div>
+          </section>
+
+          <section
+            v-if="jobLayer"
+            v-show="activeTab === 'meta'"
+            id="report-section"
+            class="analysis-section analysis-section--report"
+          >
+            <div class="section-kicker">报告</div>
+            <div class="report-section-head">
+              <div>
+                <h3>工作流报告</h3>
+                <p>
+                  {{
+                    jobLayer.status === 'running' || jobLayer.status === 'queued'
+                      ? '运行中：下方为实时进度与已产出摘要。'
+                      : '这里展示该图层当前任务的摘要与结果说明。'
+                  }}
+                </p>
+              </div>
+              <a
+                v-if="jobLayer.resultUrl"
+                class="job-result-link"
+                :href="jobLayer.resultUrl"
+                target="_blank"
+                rel="noreferrer"
+              >
+                打开结果
+              </a>
+            </div>
+            <p v-if="jobReportSummary" class="job-report-copy">{{ jobReportSummary }}</p>
+            <p v-else class="job-report-copy">{{ jobLayer.message || '暂无摘要' }}</p>
+
+            <div v-if="jobLayer.nodeProgress?.length" class="report-block">
+              <h4>进度时间线</h4>
+              <ul class="report-node-list">
+                <li v-for="np in jobLayer.nodeProgress" :key="np.nodeId">
+                  <strong>{{ np.nodeLabel || np.nodeId }}</strong>
+                  <span>{{ np.stage }} · {{ np.progress }}%</span>
+                  <span v-if="np.message" class="report-node-msg">{{ np.message }}</span>
+                </li>
+              </ul>
+            </div>
+
+            <div
+              v-if="jobLayer.eventMessages?.length || jobLayer.diagnosticNotes?.length"
+              class="report-block"
+            >
+              <h4>事件 / 诊断</h4>
+              <ul class="report-node-list">
+                <li
+                  v-for="(note, idx) in (jobLayer.eventMessages?.length
+                    ? jobLayer.eventMessages
+                    : jobLayer.diagnosticNotes
+                  )?.slice(0, 12)"
+                  :key="`note-${idx}`"
+                >
+                  {{ note }}
+                </li>
+              </ul>
+            </div>
+
+            <div v-if="displayLayer?.isImportedRaster" class="report-block">
+              <h4>导出</h4>
+              <div class="weather-layer-btn-row" style="gap: 0.4rem">
+                <button type="button" class="weather-mini-btn" @click="exportImportedRaster('png')">
+                  PNG
+                </button>
+                <button type="button" class="weather-mini-btn" @click="exportImportedRaster('tif')">
+                  GeoTIFF
+                </button>
+              </div>
+            </div>
+          </section>
+
+          <section
+            v-show="activeTab === 'meta'"
+            :id="`layer-${displayLayer.instanceId || 'default'}`"
+            class="analysis-section analysis-section--layer"
+          >
+            <div class="section-kicker">{{ ANALYSIS_COPY.selectedLayerKicker }}</div>
+            <h3>{{ ANALYSIS_COPY.selectedLayerTitle }}</h3>
+            <p>
+              {{ displayLayer.name }}
+              <span v-if="displayLayer.availabilityLabel">
+                · {{ displayLayer.availabilityLabel }}</span
+              >
+            </p>
+            <p class="tools-empty-hint" style="margin-top: 0.35rem">
+              透明度与符号请到「样式」Tab 调整。
+            </p>
+          </section>
+
+          <!-- ── tools Tab ────────────────────────────────────────────────── -->
+          <section
+            v-show="activeTab === 'tools'"
+            id="analysis-tools"
+            class="analysis-section analysis-section--tools"
+          >
+            <div class="section-kicker">工具</div>
+            <h3>分析工具</h3>
+            <div class="weather-layer-btn-row" style="margin-bottom: 0.55rem; gap: 0.4rem">
+              <button
+                v-if="uiStore.interactionMode !== 'select'"
+                type="button"
+                class="weather-mini-btn"
+                @click="emit('enterSelectMode')"
+              >
+                进入选择模式
+              </button>
+              <button
+                v-if="selectedMapPoint || pointWeather"
+                type="button"
+                class="weather-mini-btn"
+                @click="emit('clearMapPoint')"
+              >
+                清除选点
+              </button>
+              <span v-if="selectedMapPoint" class="weather-mini-meta">
+                {{ selectedMapPoint.lng.toFixed(3) }}, {{ selectedMapPoint.lat.toFixed(3) }}
+              </span>
+            </div>
+            <div v-if="!selectedMapPoint" class="analysis-sparse-card">
+              <p>{{ ANALYSIS_COPY.sparseToolsHint }}</p>
+            </div>
+            <BufferAnalysisTool
+              v-if="selectedMapPoint"
+              :point-location="selectedMapPoint"
+              :layer-name="displayLayer.name"
+              :current-value-text="
+                pointWeatherPrimaryValue !== '--' ? pointWeatherPrimaryValue : undefined
+              "
+              :current-numeric-value="pointWeatherNumericValue"
+            />
+          </section>
+
+          <!-- ── visual Tab：工作流图表结果 ─────────────────────────────── -->
+          <section
+            v-if="hasAnalysisCharts"
+            v-show="activeTab === 'visual'"
+            id="workflow-charts"
+            class="analysis-section"
+          >
+            <AnalysisResultCharts :charts="analysisCharts" :tables="analysisTables" />
+          </section>
+
+          <!-- ── visual Tab：点查图表 ──────────────────────────────────────── -->
+          <section
+            v-if="hasPointWeatherSection"
+            v-show="activeTab === 'visual'"
+            id="point-weather"
+            class="analysis-section analysis-section--weather"
+          >
+            <div class="section-kicker">{{ INSPECT_COPY.sectionKicker }}</div>
+            <div class="weather-section-head">
+              <div>
+                <h3>{{ INSPECT_COPY.sectionTitle }}</h3>
+                <p v-if="!pointWeather && !pointWeatherLoading">点选地图后显示数值与时序。</p>
+                <p v-else>
+                  使用工具栏「选择」后点击地图；漫游模式下可
+                  <kbd>Shift</kbd>+点击临时查询。
+                </p>
+              </div>
+              <span class="analysis-chip" :class="{ muted: !pointWeather }">
+                {{ pointInspectStatusLabel }}
+              </span>
+            </div>
+
+            <div
+              v-if="!selectedMapPoint && !pointWeather && !pointWeatherLoading"
+              class="weather-state"
+            >
+              尚未选点 — 切到「分析工具」进入选择模式后点击地图。
+            </div>
+            <div v-if="pointWeatherLoading" class="weather-state weather-state-loading">
+              正在获取点查…
+            </div>
+            <div v-else-if="pointWeatherError" class="weather-state weather-state-error">
+              {{ pointWeatherError }}
+            </div>
+            <template v-else-if="pointWeather">
+              <div class="weather-primary-card">
+                <span>{{ pointWeatherPrimaryLabel }}</span>
+                <strong>{{ pointWeatherPrimaryValue }}</strong>
+                <p>{{ pointWeather.summary }}</p>
+              </div>
+
+              <div class="weather-row-grid">
+                <div v-for="row in pointWeatherRows" :key="row.label" class="weather-row-card">
+                  <span>{{ row.label }}</span>
+                  <strong>{{ row.value }}</strong>
+                </div>
+              </div>
+
+              <div v-if="pointWeatherHourlyRows.length" class="weather-hourly-strip">
+                <article
+                  v-for="row in pointWeatherHourlyRows"
+                  :key="row.time"
+                  class="weather-hourly-card"
+                  :class="{ active: row.active }"
+                >
+                  <span>{{ row.time }}</span>
+                  <strong>{{ row.metric }}</strong>
+                </article>
+              </div>
+
+              <PointTimeSeriesChart
+                v-if="pointWeatherHourlyChartRows.length"
+                :hourly-rows="pointWeatherHourlyChartRows"
+                :title="pointWeatherMetric.label + ' 时序趋势'"
+              />
+            </template>
+          </section>
+
+          <section
+            v-if="showMultiOverlayBar"
+            v-show="activeTab === 'visual'"
+            id="overlay-compare"
+            class="analysis-section analysis-section--overlays"
+          >
+            <div class="section-kicker">叠加对比</div>
+            <h3>可见叠加层点值</h3>
+            <p>当前选点处可见各叠加层的采样对比（含当前选中层与非天气层）。</p>
+            <MultiOverlayBarChart :items="multiOverlayBarItems" />
+          </section>
+
+          <section
+            v-if="
+              showSelectedOverlayTimeSeries ||
+              showDemoOverlayTimeSeries ||
+              displayLayer.isImportedRaster
+            "
+            v-show="activeTab === 'visual'"
+            id="overlay-point-series"
+            class="analysis-section analysis-section--overlays"
+          >
+            <div class="section-kicker">点时间序列</div>
+            <h3>
+              {{ displayLayer.name }} ·
+              {{ showDemoOverlayTimeSeries ? '默认有效点时序' : '选点时序' }}
+            </h3>
+            <p>
+              {{
+                showDemoOverlayTimeSeries
+                  ? '展示当前图层一个稳定有效观测点在全部 8 天块上的数值变化；点击地图可切换为自定义选点。'
+                  : '同一选点在全部可用 8 天时间块上的数值变化；高亮当前时间轴块。'
+              }}
+            </p>
+            <button
+              v-if="!selectedOverlayTimeSeriesRows.length"
+              type="button"
+              class="weather-mini-btn"
+              @click="queryDefaultOverlaySeries"
+            >
+              加载当前图层 8 天块时序
+            </button>
+            <PointTimeSeriesChart
+              v-if="selectedOverlayTimeSeriesRows.length"
+              :hourly-rows="selectedOverlayTimeSeriesRows"
+              :title="displayLayer.name + ' 8 天块时序'"
+              :unit="overlayStyleMeta?.unit || ''"
+            />
+          </section>
+
+          <section
+            v-if="hasLayerStyleSection"
+            v-show="activeTab === 'style'"
+            id="layer-style"
+            class="analysis-section analysis-section--style"
+          >
+            <div class="section-kicker">{{ ANALYSIS_COPY.styleSectionKicker }}</div>
+            <div class="weather-style-head">
+              <div>
+                <h3>{{ ANALYSIS_COPY.styleTitle }}</h3>
+                <p>
+                  {{
+                    displayLayer.isImported
+                      ? ANALYSIS_COPY.staticImportedVector
+                      : displayLayer.isImportedRaster
+                        ? ANALYSIS_COPY.staticImportedRaster
+                        : hasAdvancedStyleControls
+                          ? canEditPalette
+                            ? ANALYSIS_COPY.styleHintLinked
+                            : ANALYSIS_COPY.styleHintReadonly
+                          : ANALYSIS_COPY.styleHintOpacityOnly
+                  }}
+                </p>
+              </div>
+              <span v-if="isRealtimeWeatherLayer || canToggleParticleFlow" class="analysis-chip">{{
+                windStyleChipLabel
+              }}</span>
+            </div>
+
+            <div v-if="displayLayer.instanceId" class="layer-opacity-row">
+              <span>{{ LAYERS_COPY.opacity }}</span>
+              <input
+                class="layer-opacity-slider"
+                type="range"
+                min="0"
+                max="100"
+                :value="Math.round(displayLayer.opacity * 100)"
+                @input="handleLayerOpacityInput"
+              />
+              <strong>{{ Math.round(displayLayer.opacity * 100) }}%</strong>
+            </div>
+
+            <template v-if="styleFieldLabel || styleRangeMeta.hasRange">
+              <div class="style-section-label">{{ LAYERS_COPY.sectionAppearance }}</div>
+              <div v-if="styleFieldLabel" class="style-field-row">
+                <span class="style-field-label">{{ LAYERS_COPY.fieldLabel }}</span>
+                <strong>{{ styleFieldLabel }}</strong>
+              </div>
+            </template>
+
+            <!-- 导入矢量就地样式 -->
+            <div v-if="displayLayer.isImported" class="imported-vector-style">
+              <label class="layer-style-row">
+                <span>{{ LAYERS_COPY.vectorColor }}</span>
+                <input
+                  type="color"
+                  :value="importedVectorStyle.color || '#4fc3f7'"
+                  @input="
+                    patchImportedVectorStyle({
+                      color: ($event.target as HTMLInputElement).value,
+                    })
+                  "
+                />
+              </label>
+              <label class="layer-style-row">
+                <span>{{ LAYERS_COPY.vectorWidth }}</span>
+                <input
+                  type="range"
+                  min="0.5"
+                  max="8"
+                  step="0.5"
+                  :value="importedVectorStyle.width ?? 2"
+                  @input="
+                    patchImportedVectorStyle({
+                      width: Number(($event.target as HTMLInputElement).value),
+                    })
+                  "
+                />
+                <strong>{{ importedVectorStyle.width ?? 2 }}</strong>
+              </label>
+              <label class="layer-style-row">
+                <span>{{ LAYERS_COPY.vectorRadius }}</span>
+                <input
+                  type="range"
+                  min="2"
+                  max="16"
+                  step="1"
+                  :value="importedVectorStyle.radius ?? 5"
+                  @input="
+                    patchImportedVectorStyle({
+                      radius: Number(($event.target as HTMLInputElement).value),
+                    })
+                  "
+                />
+                <strong>{{ importedVectorStyle.radius ?? 5 }}</strong>
+              </label>
+              <label class="layer-style-row">
+                <span>{{ LAYERS_COPY.vectorFillOpacity }}</span>
+                <input
+                  type="range"
+                  min="0"
+                  max="100"
+                  :value="Math.round((importedVectorStyle.fillOpacity ?? 0.35) * 100)"
+                  @input="
+                    patchImportedVectorStyle({
+                      fillOpacity: Number(($event.target as HTMLInputElement).value) / 100,
+                    })
+                  "
+                />
+                <strong>{{ Math.round((importedVectorStyle.fillOpacity ?? 0.35) * 100) }}%</strong>
+              </label>
+            </div>
+
+            <!-- 导入栅格：CRS + 只读色带提示 -->
+            <dl
+              v-if="displayLayer.isImportedRaster"
+              class="meta-list"
+              style="margin-bottom: 0.55rem"
+            >
+              <div>
+                <dt>{{ ANALYSIS_COPY.metaCrs }}</dt>
+                <dd>{{ displayLayer.importedRasterSourceCrs ?? '—' }}</dd>
+              </div>
+              <div v-if="displayLayer.importedFileName">
+                <dt>{{ ANALYSIS_COPY.metaFile }}</dt>
+                <dd>{{ displayLayer.importedFileName }}</dd>
+              </div>
+            </dl>
+
+            <div
+              v-if="displayLayer.instanceId && (isRealtimeWeatherLayer || canToggleParticleFlow)"
+              class="weather-layer-controls"
+            >
+              <div v-if="canToggleParticleFlow" class="weather-layer-btn-row wind-mode-layout">
+                <div class="wind-display-mode-seg" role="group" aria-label="风场显示模式">
+                  <button
+                    v-for="mode in ['particle', 'streamline', 'off'] as const"
+                    :key="mode"
+                    class="wind-mode-seg-btn"
+                    :class="{
+                      active: currentWindDisplayMode === mode,
+                      off: mode === 'off' && currentWindDisplayMode === 'off',
+                    }"
+                    :data-mode="mode"
+                    type="button"
+                    :disabled="mode !== 'off' && particleFlowButtonDisabled"
+                    :title="
+                      mode !== 'off' && particleFlowButtonDisabled
+                        ? '当前风场地图产物尚未就绪'
+                        : windDisplayModeLabel(mode)
+                    "
+                    @click="handleSetWindDisplayMode(mode)"
+                  >
+                    {{ windDisplayModeLabel(mode) }}
+                  </button>
+                </div>
+                <button
+                  class="weather-layer-btn weather-visibility-btn"
+                  type="button"
+                  :title="displayLayer.visible ? '隐藏当前图层' : '显示当前图层'"
+                  @click="handleToggleLayerVisibility"
+                >
+                  <span class="weather-layer-btn-text">{{
+                    displayLayer.visible ? '隐藏图层' : '显示图层'
+                  }}</span>
+                </button>
+              </div>
+              <button
+                v-else
+                class="weather-layer-btn weather-visibility-btn"
+                type="button"
+                :title="displayLayer.visible ? '隐藏当前图层' : '显示当前图层'"
+                @click="handleToggleLayerVisibility"
+              >
+                <span class="weather-layer-btn-text">{{
+                  displayLayer.visible ? '隐藏图层' : '显示图层'
+                }}</span>
+              </button>
+              <label v-if="isRealtimeWeatherLayer" class="weather-provider-row">
+                <span class="weather-provider-label">天气数据源</span>
+                <select
+                  v-model="selectedWeatherProvider"
+                  class="weather-provider-select"
+                  :disabled="weatherProvidersLoading"
+                  :title="
+                    weatherProvidersError || '自动按优先级选择已启用源；钉选后瓦片与点查均走该源'
+                  "
+                >
+                  <option value="auto">{{ INSPECT_COPY.providerAuto }}</option>
+                  <option
+                    v-for="opt in weatherProviderOptions"
+                    :key="opt.provider_id"
+                    :value="opt.provider_id"
+                    :disabled="!opt.enabled"
+                  >
+                    {{ weatherProviderOptionLabel(opt) }}
+                  </option>
+                </select>
+              </label>
+              <p
+                v-if="isRealtimeWeatherLayer && selectedWeatherProviderHint"
+                class="weather-provider-error"
+              >
+                {{ selectedWeatherProviderHint }}
+              </p>
+              <p
+                v-else-if="isRealtimeWeatherLayer && selectedWeatherProviderSparse"
+                class="weather-provider-error"
+              >
+                点查可用；瓦片将回落 dense 源（Open-Meteo）
+              </p>
+              <p
+                v-if="isRealtimeWeatherLayer && weatherProvidersError"
+                class="weather-provider-error"
+              >
+                {{ weatherProvidersError }}
+              </p>
+              <div v-if="isRealtimeWeatherLayer" class="weather-layer-btn-row smooth-render-row">
+                <span class="smooth-render-label">平滑渲染</span>
+                <button
+                  class="smooth-toggle-switch"
+                  :class="{ active: layersStore.smoothRendering }"
+                  type="button"
+                  role="switch"
+                  :aria-checked="layersStore.smoothRendering"
+                  title="开：连续数值面（双线性插值）；关：网格色块"
+                  @click="layersStore.setSmoothRendering(!layersStore.smoothRendering)"
+                >
+                  <span class="smooth-toggle-knob"></span>
+                </button>
+                <span class="smooth-render-hint">{{
+                  layersStore.smoothRendering ? '连续数值面' : '网格色块'
+                }}</span>
+              </div>
+            </div>
+
+            <div v-if="styleRenderHint" class="weather-legend-row">
+              <span class="weather-legend-label">图例</span>
+              <span class="weather-legend-meta">
+                {{ styleRenderHint.primary_metric }} · {{ styleRenderHint.unit_label }}
+              </span>
+            </div>
+            <div
+              v-if="styleRenderHint && weatherLegendGradient"
+              class="weather-legend-gradient-wrap"
+            >
+              <div
+                class="weather-legend-gradient"
+                :style="{ background: weatherLegendGradient }"
+              ></div>
+              <div class="weather-legend-gradient-ticks">
+                <span
+                  v-for="stop in weatherLegendStops"
+                  :key="`tick-${stop.value}`"
+                  class="weather-legend-tick"
+                  >{{ stop.label }}</span
+                >
+              </div>
+              <p v-if="legendExplainer" class="weather-legend-explainer">{{ legendExplainer }}</p>
+            </div>
+            <div v-else-if="styleRenderHint" class="weather-legend-strip">
+              <div
+                v-for="stop in weatherLegendStops"
+                :key="`${stop.value}`"
+                class="weather-legend-stop"
+              >
+                <span class="weather-legend-swatch" :style="{ background: stop.color }"></span>
+                <span>{{ stop.label }}</span>
+              </div>
+            </div>
+
+            <div v-if="styleRangeMeta.hasRange" class="style-range-block">
+              <div class="style-section-label">{{ LAYERS_COPY.sectionRange }}</div>
+              <div class="style-range-grid">
+                <div v-if="styleRangeMeta.unit" class="style-range-cell">
+                  <span>{{ LAYERS_COPY.metricUnit }}</span>
+                  <strong>{{ styleRangeMeta.unit }}</strong>
+                </div>
+                <div class="style-range-cell">
+                  <span>min</span>
+                  <input
+                    v-if="canEditPalette"
+                    v-model="rangeEditVmin"
+                    class="style-range-input"
+                    type="number"
+                    step="any"
+                    title="值域下限"
+                  />
+                  <strong v-else>{{ styleRangeMeta.vmin }}</strong>
+                </div>
+                <div class="style-range-cell">
+                  <span>max</span>
+                  <input
+                    v-if="canEditPalette"
+                    v-model="rangeEditVmax"
+                    class="style-range-input"
+                    type="number"
+                    step="any"
+                    title="值域上限"
+                  />
+                  <strong v-else>{{ styleRangeMeta.vmax }}</strong>
+                </div>
+              </div>
+              <div v-if="canEditPalette" class="style-nodata-row">
+                <span class="style-section-label">无效值 (NaN)</span>
+                <select v-model="nodataModeValue" class="style-nodata-select" title="无效像元显示">
+                  <option value="transparent">透明</option>
+                  <option value="solid">固色填充</option>
+                </select>
+                <input
+                  v-if="nodataModeValue === 'solid'"
+                  v-model="nodataColorValue"
+                  class="style-nodata-color"
+                  type="color"
+                  title="NaN 填充色"
+                />
+              </div>
+            </div>
+
+            <div
+              v-if="styleRenderHint || canEditPalette"
+              class="palette-selector"
+              :class="{ 'is-readonly': !canEditPalette }"
+            >
+              <div
+                v-if="paletteDropdownOpen && canEditPalette"
+                class="palette-backdrop"
+                @click="paletteDropdownOpen = false"
+              ></div>
+              <button
+                class="palette-trigger"
+                type="button"
+                :disabled="!canEditPalette"
+                :title="canEditPalette ? '切换地图配色' : '无源预渲染栅格，不支持前端改色'"
+                @click="togglePaletteDropdown"
+              >
+                <span class="palette-trigger-label">配色方案</span>
+                <span class="palette-trigger-preview">
+                  <span
+                    v-for="(c, i) in paletteOptions.find((p) => p.id === currentPaletteId)
+                      ?.colors ?? []"
+                    :key="i"
+                    class="palette-trigger-dot"
+                    :style="{ background: c }"
+                  ></span>
+                </span>
+                <span class="palette-trigger-name">{{
+                  paletteOptions.find((p) => p.id === currentPaletteId)?.label ?? '默认'
+                }}</span>
+                <span
+                  v-if="canEditPalette"
+                  class="palette-trigger-arrow"
+                  :class="{ open: paletteDropdownOpen }"
+                  >▾</span
+                >
+              </button>
+              <div v-if="paletteDropdownOpen && canEditPalette" class="palette-dropdown">
+                <button
+                  v-for="opt in paletteOptions"
+                  :key="opt.id"
+                  class="palette-option"
+                  :class="{ active: paletteIdsEqual(opt.id, currentPaletteId) }"
+                  type="button"
+                  @click="handleSelectPalette(opt.id)"
+                >
+                  <span
+                    class="palette-option-gradient"
+                    :style="{ background: `linear-gradient(90deg, ${opt.colors.join(', ')})` }"
+                  ></span>
+                  <span class="palette-option-label">{{ opt.label }}</span>
+                  <span class="palette-option-type">{{
+                    opt.type === 'diverging' ? '发散' : opt.type === 'qualitative' ? '定性' : '递进'
+                  }}</span>
+                </button>
+                <button
+                  v-if="displayLayer?.paletteOverride"
+                  class="palette-option palette-reset"
+                  type="button"
+                  @click="handleSelectPalette(weatherRenderHint?.palette ?? '')"
+                >
+                  <span class="palette-option-label">恢复默认配色</span>
+                </button>
+              </div>
+              <p v-if="!canEditPalette" class="palette-readonly-hint">
+                无可读源的预渲染产物，配色只读
               </p>
             </div>
-          </div>
-          <ul v-if="jobEventNotes.length" class="job-diagnostic-list">
-            <li v-for="note in jobEventNotes" :key="note" class="job-diagnostic-item">
-              {{ note }}
-            </li>
-          </ul>
-        </div>
 
-        <div class="job-steps">
-          <div class="job-step">1. 提交任务</div>
+            <div class="weather-style-meta">
+              <span v-if="isRealtimeWeatherLayer && tileStats">
+                瓦片：已缓存 {{ tileStats.cached }} / 可视 {{ tileStats.visible }} / 加载中
+                {{ tileStats.pending }}
+              </span>
+              <span v-else-if="isRealtimeWeatherLayer || jobLayer">
+                {{ hasWeatherLayerAsset ? '地图产物已挂载' : '尚无地图产物' }}
+              </span>
+            </div>
+
+            <ul v-if="styleRenderHint?.notes?.length" class="weather-note-list">
+              <li v-for="note in styleRenderHint.notes" :key="note">{{ note }}</li>
+            </ul>
+          </section>
+
           <div
-            class="job-step"
-            :class="{ active: workflowStage === 'queued' || workflowStage === 'running' }"
+            v-show="activeTab === 'style'"
+            v-if="!hasLayerStyleSection"
+            class="analysis-sparse-card"
           >
-            2. 等待运行结果
-          </div>
-          <div class="job-step" :class="{ active: !!resultModel }">3. 读取视图</div>
-        </div>
-      </section>
-
-      <section
-        v-if="jobLayer && jobReportSummary"
-        v-show="activeTab === 'meta'"
-        class="analysis-section analysis-section--report"
-        id="report-section"
-      >
-        <div class="section-kicker">报告</div>
-        <div class="report-section-head">
-          <div>
-            <h3>工作流报告</h3>
-            <p>这里展示该图层当前任务的摘要与结果说明。</p>
-          </div>
-          <a
-            v-if="jobLayer.resultUrl"
-            class="job-result-link"
-            :href="jobLayer.resultUrl"
-            target="_blank"
-            rel="noreferrer"
-          >
-            打开结果
-          </a>
-        </div>
-        <p class="job-report-copy">{{ jobReportSummary }}</p>
-      </section>
-
-      <section
-        v-show="activeTab === 'meta'"
-        class="analysis-section analysis-section--layer"
-        :id="`layer-${displayLayer.instanceId || 'default'}`"
-      >
-        <div class="section-kicker">{{ ANALYSIS_COPY.selectedLayerKicker }}</div>
-        <h3>{{ ANALYSIS_COPY.selectedLayerTitle }}</h3>
-        <p>
-          {{ displayLayer.name }}
-          <span v-if="displayLayer.availabilityLabel"> · {{ displayLayer.availabilityLabel }}</span>
-        </p>
-        <p class="tools-empty-hint" style="margin-top: 0.35rem">
-          透明度与符号请到「样式」Tab 调整。
-        </p>
-      </section>
-
-      <!-- ── tools Tab ────────────────────────────────────────────────── -->
-      <section
-        v-show="activeTab === 'tools'"
-        class="analysis-section analysis-section--tools"
-        id="analysis-tools"
-      >
-        <div class="section-kicker">工具</div>
-        <h3>分析工具</h3>
-        <div class="weather-layer-btn-row" style="margin-bottom: 0.55rem; gap: 0.4rem">
-          <button
-            v-if="uiStore.interactionMode !== 'select'"
-            type="button"
-            class="weather-mini-btn"
-            @click="emit('enterSelectMode')"
-          >
-            进入选择模式
-          </button>
-          <button
-            v-if="selectedMapPoint || pointWeather"
-            type="button"
-            class="weather-mini-btn"
-            @click="emit('clearMapPoint')"
-          >
-            清除选点
-          </button>
-          <span v-if="selectedMapPoint" class="weather-mini-meta">
-            {{ selectedMapPoint.lng.toFixed(3) }}, {{ selectedMapPoint.lat.toFixed(3) }}
-          </span>
-        </div>
-        <div v-if="!selectedMapPoint" class="analysis-sparse-card">
-          <p>{{ ANALYSIS_COPY.sparseToolsHint }}</p>
-        </div>
-        <BufferAnalysisTool
-          v-if="selectedMapPoint"
-          :point-location="selectedMapPoint"
-          :layer-name="displayLayer.name"
-          :current-value-text="
-            pointWeatherPrimaryValue !== '--' ? pointWeatherPrimaryValue : undefined
-          "
-          :current-numeric-value="pointWeatherNumericValue"
-        />
-      </section>
-
-      <!-- ── visual Tab：点查图表 ──────────────────────────────────────── -->
-      <section
-        v-if="hasPointWeatherSection"
-        v-show="activeTab === 'visual'"
-        class="analysis-section analysis-section--weather"
-        id="point-weather"
-      >
-        <div class="section-kicker">{{ INSPECT_COPY.sectionKicker }}</div>
-        <div class="weather-section-head">
-          <div>
-            <h3>{{ INSPECT_COPY.sectionTitle }}</h3>
-            <p v-if="!pointWeather && !pointWeatherLoading">
-              点选地图后显示数值与时序。
-            </p>
-            <p v-else>
-              使用工具栏「选择」后点击地图；漫游模式下可
-              <kbd>Shift</kbd>+点击临时查询。
-            </p>
-          </div>
-          <span class="analysis-chip" :class="{ muted: !pointWeather }">
-            {{ pointInspectStatusLabel }}
-          </span>
-        </div>
-
-        <div v-if="!selectedMapPoint && !pointWeather && !pointWeatherLoading" class="weather-state">
-          尚未选点 — 切到「分析工具」进入选择模式后点击地图。
-        </div>
-        <div v-if="pointWeatherLoading" class="weather-state weather-state-loading">
-          正在获取点查…
-        </div>
-        <div v-else-if="pointWeatherError" class="weather-state weather-state-error">
-          {{ pointWeatherError }}
-        </div>
-        <template v-else-if="pointWeather">
-          <div class="weather-primary-card">
-            <span>{{ pointWeatherPrimaryLabel }}</span>
-            <strong>{{ pointWeatherPrimaryValue }}</strong>
-            <p>{{ pointWeather.summary }}</p>
+            <p>{{ ANALYSIS_COPY.styleTabEmpty }}</p>
           </div>
 
-          <div class="weather-row-grid">
-            <div v-for="row in pointWeatherRows" :key="row.label" class="weather-row-card">
-              <span>{{ row.label }}</span>
-              <strong>{{ row.value }}</strong>
+          <section
+            v-if="visibleHotspots.length > 0"
+            v-show="activeTab === 'visual'"
+            id="hotspot-section"
+            class="analysis-section analysis-section--hotspots"
+          >
+            <div class="section-kicker">热点</div>
+            <h3>点位列表</h3>
+            <ul class="hotspot-list">
+              <li
+                v-for="hotspot in visibleHotspots"
+                :id="`hotspot-${hotspot.id}`"
+                :key="hotspot.id"
+                :class="{ selected: selectedHotspot?.id === hotspot.id }"
+                role="button"
+                tabindex="0"
+                @click="emit('selectHotspot', hotspot.id)"
+                @keydown.enter.prevent="emit('selectHotspot', hotspot.id)"
+              >
+                <span>{{ hotspot.name }}</span>
+                <strong>{{ hotspot.value }}</strong>
+              </li>
+            </ul>
+          </section>
+
+          <section
+            v-if="resultModel"
+            v-show="activeTab === 'visual'"
+            id="result-section"
+            class="analysis-section analysis-section--result"
+          >
+            <div class="section-kicker">结果</div>
+            <div class="report-section-head">
+              <div>
+                <h3>{{ resultModel.title }}</h3>
+                <p v-if="resultModel.subtitle">{{ resultModel.subtitle }}</p>
+              </div>
+              <a
+                v-if="resultModel.canShowResultLink && resultModel.resultUrl"
+                class="job-result-link"
+                :href="resultModel.resultUrl"
+                target="_blank"
+                rel="noreferrer"
+              >
+                打开结果
+              </a>
+            </div>
+            <dl class="meta-list" style="margin-top: 0.35rem">
+              <div v-if="resultModel.statusText">
+                <dt>状态</dt>
+                <dd>{{ resultModel.statusText }}</dd>
+              </div>
+              <div v-if="resultModel.progressText">
+                <dt>进度</dt>
+                <dd>{{ resultModel.progressText }}</dd>
+              </div>
+              <div v-if="resultModel.category">
+                <dt>类别</dt>
+                <dd>{{ resultModel.category }}</dd>
+              </div>
+            </dl>
+            <div v-if="resultModel.metricRows.length" class="job-metrics">
+              <div v-for="m in resultModel.metricRows" :key="m.label" class="job-metric-item">
+                <span class="jm-label">{{ m.label }}</span>
+                <strong class="jm-value">{{ m.value }}</strong>
+              </div>
+            </div>
+          </section>
+
+          <div
+            v-show="activeTab === 'visual'"
+            v-if="!hasVisualTabContent"
+            class="analysis-sparse-card analysis-sparse-card--visual"
+          >
+            <p class="analysis-sparse-title">{{ ANALYSIS_COPY.sparseVisualTitle }}</p>
+            <p>{{ sparseVisualHint }}</p>
+            <div v-if="isRealtimeWeatherLayer || canRunWorkflow" class="overview-quick-actions">
+              <button
+                v-if="isRealtimeWeatherLayer && uiStore.interactionMode !== 'select'"
+                type="button"
+                class="weather-mini-btn"
+                @click="enterInspectTools"
+              >
+                {{ ANALYSIS_COPY.toolsQuickInspect }}
+              </button>
+              <button
+                v-if="canRunWorkflow"
+                type="button"
+                class="weather-mini-btn"
+                :disabled="buttonDisabled"
+                @click="handleRunWorkflow"
+              >
+                {{ buttonLabel }}
+              </button>
+              <button type="button" class="weather-mini-btn" @click="setActiveTab('style')">
+                符号样式
+              </button>
             </div>
           </div>
 
-          <div v-if="pointWeatherHourlyRows.length" class="weather-hourly-strip">
-            <article
-              v-for="row in pointWeatherHourlyRows"
-              :key="row.time"
-              class="weather-hourly-card"
-              :class="{ active: row.active }"
-            >
-              <span>{{ row.time }}</span>
-              <strong>{{ row.metric }}</strong>
+          <!-- meta：主指标与洞察（去冗后只在此 Tab） -->
+          <section
+            v-if="hasRealSelection && !showCompactHero"
+            v-show="activeTab === 'meta'"
+            class="hero-metric"
+            :style="{ '--accent-color': displayLayer.accentColor }"
+          >
+            <span>{{ displayLayer.metricLabel }}</span>
+            <strong>{{ displayLayer.metricValue }}</strong>
+            <p>{{ displayLayer.trendLabel }}</p>
+          </section>
+
+          <div
+            v-if="hasRealSelection && !showCompactHero"
+            v-show="activeTab === 'meta'"
+            class="insight-grid"
+          >
+            <article class="insight-card">
+              <span>更新频率</span>
+              <strong>{{ displayLayer.updateLabel }}</strong>
+            </article>
+            <article class="insight-card">
+              <span>可用性</span>
+              <strong>{{ displayLayer.availabilityLabel }}</strong>
+            </article>
+            <article class="insight-card">
+              <span>可靠性</span>
+              <strong>{{ displayLayer.confidenceLabel }}</strong>
+            </article>
+            <article class="insight-card">
+              <span>观测时间</span>
+              <strong>{{ displayLayer.observationTimeLabel }}</strong>
             </article>
           </div>
 
-          <PointTimeSeriesChart
-            v-if="pointWeatherHourlyChartRows.length"
-            :hourly-rows="pointWeatherHourlyChartRows"
-            :title="pointWeatherMetric.label + ' 时序趋势'"
-          />
-        </template>
-      </section>
-
-      <section
-        v-if="showMultiOverlayBar"
-        v-show="activeTab === 'visual'"
-        class="analysis-section analysis-section--overlays"
-        id="overlay-compare"
-      >
-        <div class="section-kicker">叠加对比</div>
-        <h3>可见叠加层点值</h3>
-        <p>当前选点处其它可见 overlay 的采样对比（含非天气层）。</p>
-        <MultiOverlayBarChart :items="multiOverlayBarItems" />
-      </section>
-
-      <section
-        v-if="hasLayerStyleSection"
-        v-show="activeTab === 'style'"
-        class="analysis-section analysis-section--style"
-        id="layer-style"
-      >
-        <div class="section-kicker">{{ ANALYSIS_COPY.styleSectionKicker }}</div>
-        <div class="weather-style-head">
-          <div>
-            <h3>{{ ANALYSIS_COPY.styleTitle }}</h3>
-            <p>
-              {{
-                displayLayer.isImported
-                  ? ANALYSIS_COPY.staticImportedVector
-                  : displayLayer.isImportedRaster
-                    ? ANALYSIS_COPY.staticImportedRaster
-                    : hasAdvancedStyleControls
-                      ? canEditPalette
-                        ? ANALYSIS_COPY.styleHintLinked
-                        : ANALYSIS_COPY.styleHintReadonly
-                      : ANALYSIS_COPY.styleHintOpacityOnly
-              }}
-            </p>
-          </div>
-          <span v-if="isRealtimeWeatherLayer || canToggleParticleFlow" class="analysis-chip">{{
-            windStyleChipLabel
-          }}</span>
-        </div>
-
-        <div v-if="displayLayer.instanceId" class="layer-opacity-row">
-          <span>{{ LAYERS_COPY.opacity }}</span>
-          <input
-            class="layer-opacity-slider"
-            type="range"
-            min="0"
-            max="100"
-            :value="Math.round(displayLayer.opacity * 100)"
-            @input="handleLayerOpacityInput"
-          />
-          <strong>{{ Math.round(displayLayer.opacity * 100) }}%</strong>
-        </div>
-
-        <template v-if="styleFieldLabel || styleRangeMeta.hasRange">
-          <div class="style-section-label">{{ LAYERS_COPY.sectionAppearance }}</div>
-          <div v-if="styleFieldLabel" class="style-field-row">
-            <span class="style-field-label">{{ LAYERS_COPY.fieldLabel }}</span>
-            <strong>{{ styleFieldLabel }}</strong>
-          </div>
-        </template>
-
-        <!-- 导入矢量就地样式 -->
-        <div v-if="displayLayer.isImported" class="imported-vector-style">
-          <label class="layer-style-row">
-            <span>{{ LAYERS_COPY.vectorColor }}</span>
-            <input
-              type="color"
-              :value="importedVectorStyle.color || '#4fc3f7'"
-              @input="
-                patchImportedVectorStyle({
-                  color: ($event.target as HTMLInputElement).value,
-                })
-              "
-            />
-          </label>
-          <label class="layer-style-row">
-            <span>{{ LAYERS_COPY.vectorWidth }}</span>
-            <input
-              type="range"
-              min="0.5"
-              max="8"
-              step="0.5"
-              :value="importedVectorStyle.width ?? 2"
-              @input="
-                patchImportedVectorStyle({
-                  width: Number(($event.target as HTMLInputElement).value),
-                })
-              "
-            />
-            <strong>{{ importedVectorStyle.width ?? 2 }}</strong>
-          </label>
-          <label class="layer-style-row">
-            <span>{{ LAYERS_COPY.vectorRadius }}</span>
-            <input
-              type="range"
-              min="2"
-              max="16"
-              step="1"
-              :value="importedVectorStyle.radius ?? 5"
-              @input="
-                patchImportedVectorStyle({
-                  radius: Number(($event.target as HTMLInputElement).value),
-                })
-              "
-            />
-            <strong>{{ importedVectorStyle.radius ?? 5 }}</strong>
-          </label>
-          <label class="layer-style-row">
-            <span>{{ LAYERS_COPY.vectorFillOpacity }}</span>
-            <input
-              type="range"
-              min="0"
-              max="100"
-              :value="Math.round((importedVectorStyle.fillOpacity ?? 0.35) * 100)"
-              @input="
-                patchImportedVectorStyle({
-                  fillOpacity: Number(($event.target as HTMLInputElement).value) / 100,
-                })
-              "
-            />
-            <strong>{{ Math.round((importedVectorStyle.fillOpacity ?? 0.35) * 100) }}%</strong>
-          </label>
-        </div>
-
-        <!-- 导入栅格：CRS + 只读色带提示 -->
-        <dl v-if="displayLayer.isImportedRaster" class="meta-list" style="margin-bottom: 0.55rem">
-          <div>
-            <dt>{{ ANALYSIS_COPY.metaCrs }}</dt>
-            <dd>{{ displayLayer.importedRasterSourceCrs ?? '—' }}</dd>
-          </div>
-          <div v-if="displayLayer.importedFileName">
-            <dt>{{ ANALYSIS_COPY.metaFile }}</dt>
-            <dd>{{ displayLayer.importedFileName }}</dd>
-          </div>
-        </dl>
-
-        <div
-          v-if="displayLayer.instanceId && (isRealtimeWeatherLayer || canToggleParticleFlow)"
-          class="weather-layer-controls"
-        >
-          <div v-if="canToggleParticleFlow" class="weather-layer-btn-row wind-mode-layout">
-            <div class="wind-display-mode-seg" role="group" aria-label="风场显示模式">
-              <button
-                v-for="mode in ['particle', 'streamline', 'off'] as const"
-                :key="mode"
-                class="wind-mode-seg-btn"
-                :class="{
-                  active: currentWindDisplayMode === mode,
-                  off: mode === 'off' && currentWindDisplayMode === 'off',
-                }"
-                :data-mode="mode"
-                type="button"
-                :disabled="mode !== 'off' && particleFlowButtonDisabled"
-                :title="
-                  mode !== 'off' && particleFlowButtonDisabled
-                    ? '当前风场地图产物尚未就绪'
-                    : windDisplayModeLabel(mode)
-                "
-                @click="handleSetWindDisplayMode(mode)"
-              >
-                {{ windDisplayModeLabel(mode) }}
-              </button>
+          <section
+            v-if="layerMetadata.length && hasRealSelection"
+            v-show="activeTab === 'meta'"
+            class="info-card meta-card"
+          >
+            <div class="info-card-head">
+              <span class="info-kicker">元数据</span>
+              <span class="info-card-tag" :class="{ real: displayLayer.dataState === 'real' }">
+                {{ displayLayer.dataState === 'real' ? '真实' : '目录' }}
+              </span>
             </div>
-            <button
-              class="weather-layer-btn weather-visibility-btn"
-              type="button"
-              :title="displayLayer.visible ? '隐藏当前图层' : '显示当前图层'"
-              @click="handleToggleLayerVisibility"
-            >
-              <span class="weather-layer-btn-text">{{
-                displayLayer.visible ? '隐藏图层' : '显示图层'
-              }}</span>
-            </button>
-          </div>
-          <button
-            v-else
-            class="weather-layer-btn weather-visibility-btn"
-            type="button"
-            :title="displayLayer.visible ? '隐藏当前图层' : '显示当前图层'"
-            @click="handleToggleLayerVisibility"
-          >
-            <span class="weather-layer-btn-text">{{
-              displayLayer.visible ? '隐藏图层' : '显示图层'
-            }}</span>
-          </button>
-          <label v-if="isRealtimeWeatherLayer" class="weather-provider-row">
-            <span class="weather-provider-label">天气数据源</span>
-            <select
-              v-model="selectedWeatherProvider"
-              class="weather-provider-select"
-              :disabled="weatherProvidersLoading"
-              :title="weatherProvidersError || '自动按优先级选择已启用源；钉选后瓦片与点查均走该源'"
-            >
-              <option value="auto">{{ INSPECT_COPY.providerAuto }}</option>
-              <option
-                v-for="opt in weatherProviderOptions"
-                :key="opt.provider_id"
-                :value="opt.provider_id"
-                :disabled="!opt.enabled"
-              >
-                {{ weatherProviderOptionLabel(opt) }}
-              </option>
-            </select>
-          </label>
-          <p
-            v-if="isRealtimeWeatherLayer && selectedWeatherProviderHint"
-            class="weather-provider-error"
-          >
-            {{ selectedWeatherProviderHint }}
-          </p>
-          <p
-            v-else-if="isRealtimeWeatherLayer && selectedWeatherProviderSparse"
-            class="weather-provider-error"
-          >
-            点查可用；瓦片将回落 dense 源（Open-Meteo）
-          </p>
-          <p v-if="isRealtimeWeatherLayer && weatherProvidersError" class="weather-provider-error">
-            {{ weatherProvidersError }}
-          </p>
-          <div v-if="isRealtimeWeatherLayer" class="weather-layer-btn-row smooth-render-row">
-            <span class="smooth-render-label">平滑渲染</span>
-            <button
-              class="smooth-toggle-switch"
-              :class="{ active: layersStore.smoothRendering }"
-              type="button"
-              role="switch"
-              :aria-checked="layersStore.smoothRendering"
-              title="开：连续数值面（双线性插值）；关：网格色块"
-              @click="layersStore.setSmoothRendering(!layersStore.smoothRendering)"
-            >
-              <span class="smooth-toggle-knob"></span>
-            </button>
-            <span class="smooth-render-hint">{{
-              layersStore.smoothRendering ? '连续数值面' : '网格色块'
-            }}</span>
-          </div>
-        </div>
+            <dl class="meta-grid">
+              <div v-for="row in layerMetadata" :key="row.label" class="meta-grid-row">
+                <dt>{{ row.label }}</dt>
+                <dd>{{ row.value }}</dd>
+              </div>
+            </dl>
+          </section>
 
-        <div v-if="styleRenderHint" class="weather-legend-row">
-          <span class="weather-legend-label">图例</span>
-          <span class="weather-legend-meta">
-            {{ styleRenderHint.primary_metric }} · {{ styleRenderHint.unit_label }}
-          </span>
-        </div>
-        <div v-if="styleRenderHint && weatherLegendGradient" class="weather-legend-gradient-wrap">
-          <div class="weather-legend-gradient" :style="{ background: weatherLegendGradient }"></div>
-          <div class="weather-legend-gradient-ticks">
-            <span
-              v-for="stop in weatherLegendStops"
-              :key="`tick-${stop.value}`"
-              class="weather-legend-tick"
-              >{{ stop.label }}</span
-            >
-          </div>
-          <p v-if="legendExplainer" class="weather-legend-explainer">{{ legendExplainer }}</p>
-        </div>
-        <div v-else-if="styleRenderHint" class="weather-legend-strip">
-          <div
-            v-for="stop in weatherLegendStops"
-            :key="`${stop.value}`"
-            class="weather-legend-stop"
+          <section
+            v-if="displayLayer.trendLabel && hasRealSelection"
+            v-show="activeTab === 'meta'"
+            class="info-card trend-card"
+            :style="{ '--accent-color': displayLayer.accentColor }"
           >
-            <span class="weather-legend-swatch" :style="{ background: stop.color }"></span>
-            <span>{{ stop.label }}</span>
-          </div>
-        </div>
-
-        <div v-if="styleRangeMeta.hasRange" class="style-range-block">
-          <div class="style-section-label">{{ LAYERS_COPY.sectionRange }}</div>
-          <div class="style-range-grid">
-            <div v-if="styleRangeMeta.unit" class="style-range-cell">
-              <span>{{ LAYERS_COPY.metricUnit }}</span>
-              <strong>{{ styleRangeMeta.unit }}</strong>
+            <div class="info-card-head">
+              <span class="info-kicker">历史对比</span>
+              <span class="info-card-tag trend">{{ displayLayer.metricLabel }}</span>
             </div>
-            <div class="style-range-cell">
-              <span>min</span>
-              <strong>{{ styleRangeMeta.vmin }}</strong>
+            <div class="trend-body">
+              <div class="trend-current">
+                <span class="trend-current-label">当前</span>
+                <strong class="trend-current-value">{{ displayLayer.metricValue }}</strong>
+              </div>
+              <div class="trend-indicator">
+                <span class="trend-arrow" :class="trendDirection">{{ trendArrowSymbol }}</span>
+                <span class="trend-text">{{ displayLayer.trendLabel }}</span>
+              </div>
             </div>
-            <div class="style-range-cell">
-              <span>max</span>
-              <strong>{{ styleRangeMeta.vmax }}</strong>
-            </div>
-          </div>
-        </div>
-
-        <div
-          v-if="styleRenderHint"
-          class="palette-selector"
-          :class="{ 'is-readonly': !canEditPalette }"
-        >
-          <div
-            v-if="paletteDropdownOpen && canEditPalette"
-            class="palette-backdrop"
-            @click="paletteDropdownOpen = false"
-          ></div>
-          <button
-            class="palette-trigger"
-            type="button"
-            :disabled="!canEditPalette"
-            :title="canEditPalette ? '切换地图配色' : '预渲染栅格图例，不支持前端改色'"
-            @click="togglePaletteDropdown"
-          >
-            <span class="palette-trigger-label">配色方案</span>
-            <span class="palette-trigger-preview">
-              <span
-                v-for="(c, i) in paletteOptions.find((p) => p.id === currentPaletteId)?.colors ??
-                []"
-                :key="i"
-                class="palette-trigger-dot"
-                :style="{ background: c }"
-              ></span>
-            </span>
-            <span class="palette-trigger-name">{{
-              paletteOptions.find((p) => p.id === currentPaletteId)?.label ?? '默认'
-            }}</span>
-            <span
-              v-if="canEditPalette"
-              class="palette-trigger-arrow"
-              :class="{ open: paletteDropdownOpen }"
-              >▾</span
-            >
-          </button>
-          <div v-if="paletteDropdownOpen && canEditPalette" class="palette-dropdown">
-            <button
-              v-for="opt in paletteOptions"
-              :key="opt.id"
-              class="palette-option"
-              :class="{ active: paletteIdsEqual(opt.id, currentPaletteId) }"
-              type="button"
-              @click="handleSelectPalette(opt.id)"
-            >
-              <span
-                class="palette-option-gradient"
-                :style="{ background: `linear-gradient(90deg, ${opt.colors.join(', ')})` }"
-              ></span>
-              <span class="palette-option-label">{{ opt.label }}</span>
-              <span class="palette-option-type">{{
-                opt.type === 'diverging' ? '发散' : opt.type === 'qualitative' ? '定性' : '递进'
-              }}</span>
-            </button>
-            <button
-              v-if="displayLayer?.paletteOverride"
-              class="palette-option palette-reset"
-              type="button"
-              @click="handleSelectPalette(weatherRenderHint?.palette ?? '')"
-            >
-              <span class="palette-option-label">恢复默认配色</span>
-            </button>
-          </div>
-          <p v-if="!canEditPalette" class="palette-readonly-hint">预渲染产物，配色只读</p>
-        </div>
-
-        <div class="weather-style-meta">
-          <span v-if="isRealtimeWeatherLayer && tileStats">
-            瓦片：已缓存 {{ tileStats.cached }} / 可视 {{ tileStats.visible }} / 加载中
-            {{ tileStats.pending }}
-          </span>
-          <span v-else-if="isRealtimeWeatherLayer || jobLayer">
-            {{ hasWeatherLayerAsset ? '地图产物已挂载' : '尚无地图产物' }}
-          </span>
-        </div>
-
-        <ul v-if="styleRenderHint?.notes?.length" class="weather-note-list">
-          <li v-for="note in styleRenderHint.notes" :key="note">{{ note }}</li>
-        </ul>
-      </section>
-
-      <div
-        v-show="activeTab === 'style'"
-        v-if="!hasLayerStyleSection"
-        class="analysis-sparse-card"
-      >
-        <p>{{ ANALYSIS_COPY.styleTabEmpty }}</p>
-      </div>
-
-      <section
-        v-if="visibleHotspots.length > 0"
-        v-show="activeTab === 'visual'"
-        class="analysis-section analysis-section--hotspots"
-        id="hotspot-section"
-      >
-        <div class="section-kicker">热点</div>
-        <h3>点位列表</h3>
-        <ul class="hotspot-list">
-          <li
-            v-for="hotspot in visibleHotspots"
-            :id="`hotspot-${hotspot.id}`"
-            :key="hotspot.id"
-            :class="{ selected: selectedHotspot?.id === hotspot.id }"
-            role="button"
-            tabindex="0"
-            @click="emit('selectHotspot', hotspot.id)"
-            @keydown.enter.prevent="emit('selectHotspot', hotspot.id)"
-          >
-            <span>{{ hotspot.name }}</span>
-            <strong>{{ hotspot.value }}</strong>
-          </li>
-        </ul>
-      </section>
-
-      <section
-        v-if="resultModel"
-        v-show="activeTab === 'visual'"
-        class="analysis-section analysis-section--result"
-        id="result-section"
-      >
-        <div class="section-kicker">结果</div>
-        <div class="report-section-head">
-          <div>
-            <h3>{{ resultModel.title }}</h3>
-            <p v-if="resultModel.subtitle">{{ resultModel.subtitle }}</p>
-          </div>
-          <a
-            v-if="resultModel.canShowResultLink && resultModel.resultUrl"
-            class="job-result-link"
-            :href="resultModel.resultUrl"
-            target="_blank"
-            rel="noreferrer"
-          >
-            打开结果
-          </a>
-        </div>
-        <dl class="meta-list" style="margin-top: 0.35rem">
-          <div v-if="resultModel.statusText">
-            <dt>状态</dt>
-            <dd>{{ resultModel.statusText }}</dd>
-          </div>
-          <div v-if="resultModel.progressText">
-            <dt>进度</dt>
-            <dd>{{ resultModel.progressText }}</dd>
-          </div>
-          <div v-if="resultModel.category">
-            <dt>类别</dt>
-            <dd>{{ resultModel.category }}</dd>
-          </div>
-        </dl>
-        <div v-if="resultModel.metricRows.length" class="job-metrics">
-          <div v-for="m in resultModel.metricRows" :key="m.label" class="job-metric-item">
-            <span class="jm-label">{{ m.label }}</span>
-            <strong class="jm-value">{{ m.value }}</strong>
-          </div>
-        </div>
-      </section>
-
-      <div
-        v-show="activeTab === 'visual'"
-        v-if="!hasVisualTabContent"
-        class="analysis-sparse-card analysis-sparse-card--visual"
-      >
-        <p class="analysis-sparse-title">{{ ANALYSIS_COPY.sparseVisualTitle }}</p>
-        <p>{{ sparseVisualHint }}</p>
-        <div v-if="isRealtimeWeatherLayer || canRunWorkflow" class="overview-quick-actions">
-          <button
-            v-if="isRealtimeWeatherLayer && uiStore.interactionMode !== 'select'"
-            type="button"
-            class="weather-mini-btn"
-            @click="setActiveTab('tools'); emit('enterSelectMode')"
-          >
-            {{ ANALYSIS_COPY.toolsQuickInspect }}
-          </button>
-          <button
-            v-if="canRunWorkflow"
-            type="button"
-            class="weather-mini-btn"
-            :disabled="buttonDisabled"
-            @click="handleRunWorkflow"
-          >
-            {{ buttonLabel }}
-          </button>
-          <button
-            type="button"
-            class="weather-mini-btn"
-            @click="setActiveTab('style')"
-          >
-            符号样式
-          </button>
+          </section>
         </div>
       </div>
-
-      <!-- meta：主指标与洞察（去冗后只在此 Tab） -->
-      <section
-        v-if="hasRealSelection && !showCompactHero"
-        v-show="activeTab === 'meta'"
-        class="hero-metric"
-        :style="{ '--accent-color': displayLayer.accentColor }"
-      >
-        <span>{{ displayLayer.metricLabel }}</span>
-        <strong>{{ displayLayer.metricValue }}</strong>
-        <p>{{ displayLayer.trendLabel }}</p>
-      </section>
-
-      <div
-        v-if="hasRealSelection && !showCompactHero"
-        v-show="activeTab === 'meta'"
-        class="insight-grid"
-      >
-        <article class="insight-card">
-          <span>更新频率</span>
-          <strong>{{ displayLayer.updateLabel }}</strong>
-        </article>
-        <article class="insight-card">
-          <span>可用性</span>
-          <strong>{{ displayLayer.availabilityLabel }}</strong>
-        </article>
-        <article class="insight-card">
-          <span>可靠性</span>
-          <strong>{{ displayLayer.confidenceLabel }}</strong>
-        </article>
-        <article class="insight-card">
-          <span>观测时间</span>
-          <strong>{{ displayLayer.observationTimeLabel }}</strong>
-        </article>
-      </div>
-
-      <section
-        v-if="layerMetadata.length && hasRealSelection"
-        v-show="activeTab === 'meta'"
-        class="info-card meta-card"
-      >
-        <div class="info-card-head">
-          <span class="info-kicker">元数据</span>
-          <span class="info-card-tag" :class="{ real: displayLayer.dataState === 'real' }">
-            {{ displayLayer.dataState === 'real' ? '真实' : '目录' }}
-          </span>
-        </div>
-        <dl class="meta-grid">
-          <div v-for="row in layerMetadata" :key="row.label" class="meta-grid-row">
-            <dt>{{ row.label }}</dt>
-            <dd>{{ row.value }}</dd>
-          </div>
-        </dl>
-      </section>
-
-      <section
-        v-if="displayLayer.trendLabel && hasRealSelection"
-        v-show="activeTab === 'meta'"
-        class="info-card trend-card"
-        :style="{ '--accent-color': displayLayer.accentColor }"
-      >
-        <div class="info-card-head">
-          <span class="info-kicker">历史对比</span>
-          <span class="info-card-tag trend">{{ displayLayer.metricLabel }}</span>
-        </div>
-        <div class="trend-body">
-          <div class="trend-current">
-            <span class="trend-current-label">当前</span>
-            <strong class="trend-current-value">{{ displayLayer.metricValue }}</strong>
-          </div>
-          <div class="trend-indicator">
-            <span class="trend-arrow" :class="trendDirection">{{ trendArrowSymbol }}</span>
-            <span class="trend-text">{{ displayLayer.trendLabel }}</span>
-          </div>
-        </div>
-      </section>
-    </div>
-    </div>
     </template>
   </aside>
 </template>
@@ -2664,6 +2969,28 @@ onBeforeUnmount(() => {
   margin-top: 0.32rem !important;
   color: #d7e6f5 !important;
 }
+.report-block {
+  margin-top: 0.75rem;
+  padding-top: 0.55rem;
+  border-top: 1px solid rgba(120, 160, 190, 0.18);
+}
+.report-block h4 {
+  margin: 0 0 0.35rem;
+  font-size: 0.72rem;
+  color: #cfe3f2;
+}
+.report-node-list {
+  margin: 0;
+  padding-left: 1.1rem;
+  display: grid;
+  gap: 0.28rem;
+  color: #9eb6c8;
+  font-size: 0.68rem;
+}
+.report-node-msg {
+  display: block;
+  color: #7f9bb0;
+}
 .analysis-section h3 {
   margin: 0.1rem 0 0.18rem;
   font-size: 0.68rem;
@@ -3093,6 +3420,39 @@ onBeforeUnmount(() => {
   color: #e2e8f0;
   font-size: 0.72rem;
   font-variant-numeric: tabular-nums;
+}
+.style-range-input {
+  width: 100%;
+  border: 1px solid rgba(148, 163, 184, 0.25);
+  border-radius: 0.3rem;
+  background: rgba(15, 23, 42, 0.55);
+  color: #e2e8f0;
+  font-size: 0.72rem;
+  padding: 0.15rem 0.3rem;
+  font-variant-numeric: tabular-nums;
+}
+.style-nodata-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4rem;
+  margin-top: 0.25rem;
+}
+.style-nodata-select {
+  border: 1px solid rgba(148, 163, 184, 0.25);
+  border-radius: 0.3rem;
+  background: rgba(15, 23, 42, 0.55);
+  color: #e2e8f0;
+  font-size: 0.72rem;
+  padding: 0.2rem 0.35rem;
+}
+.style-nodata-color {
+  width: 1.6rem;
+  height: 1.4rem;
+  padding: 0;
+  border: none;
+  background: transparent;
+  cursor: pointer;
 }
 .imported-vector-style {
   margin-bottom: 0.55rem;
@@ -3858,7 +4218,9 @@ onBeforeUnmount(() => {
   padding: 0.42rem 0.2rem;
   border-radius: 0;
   cursor: pointer;
-  transition: color 0.15s ease, background 0.15s ease;
+  transition:
+    color 0.15s ease,
+    background 0.15s ease;
   text-align: center;
   white-space: nowrap;
   line-height: 1.25;

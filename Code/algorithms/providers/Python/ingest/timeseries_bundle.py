@@ -36,24 +36,34 @@ def build_timeseries_bundle(
     )
     pixel_count = int(np.asarray(static_bundle["LC"]).reshape(-1).size)
     nt = len(date_keys)
+    # ORIG_TS 不需要 DUAL/匹配元数据；全幅 object 字符串阵会轻易吃掉数十 GB。
+    need_dual = str(getattr(config, "temp_scheme", "ORIG_TS") or "ORIG_TS").upper() == (
+        "DUAL"
+    )
 
     tbv_mat = np.full((nt, pixel_count), np.nan, dtype=np.float64)
     tbh_mat = np.full((nt, pixel_count), np.nan, dtype=np.float64)
     ia_mat = np.full((nt, pixel_count), np.nan, dtype=np.float64)
     ts_mat = np.full((nt, pixel_count), np.nan, dtype=np.float64)
-    tc_mat = np.full((nt, pixel_count), np.nan, dtype=np.float64)
-    tsoil1_mat = np.full((nt, pixel_count), np.nan, dtype=np.float64)
-    tsoil2_mat = np.full((nt, pixel_count), np.nan, dtype=np.float64)
-    ct_mat = np.full((nt, pixel_count), np.nan, dtype=np.float64)
-    tg_mat = np.full((nt, pixel_count), np.nan, dtype=np.float64)
-    match_slot_index_mat = np.full((nt, pixel_count), np.nan, dtype=np.float64)
-    match_day_offset_mat = np.full((nt, pixel_count), np.nan, dtype=np.float64)
-    match_picked_file_mat = np.full((nt, pixel_count), "", dtype=object)
-    match_picked_utc_mat = np.full((nt, pixel_count), "", dtype=object)
     smref_mat = np.full((nt, pixel_count), np.nan, dtype=np.float64)
     ndvi_mat = np.full((nt, pixel_count), np.nan, dtype=np.float64)
     sf_mat = np.full((nt, pixel_count), np.nan, dtype=np.float64)
     vwc_mat = np.full((nt, pixel_count), np.nan, dtype=np.float64)
+
+    tc_mat = tsoil1_mat = tsoil2_mat = ct_mat = tg_mat = None
+    match_slot_index_mat = match_day_offset_mat = None
+    match_picked_file_mat = match_picked_utc_mat = None
+    if need_dual:
+        tc_mat = np.full((nt, pixel_count), np.nan, dtype=np.float64)
+        tsoil1_mat = np.full((nt, pixel_count), np.nan, dtype=np.float64)
+        tsoil2_mat = np.full((nt, pixel_count), np.nan, dtype=np.float64)
+        ct_mat = np.full((nt, pixel_count), np.nan, dtype=np.float64)
+        tg_mat = np.full((nt, pixel_count), np.nan, dtype=np.float64)
+        match_slot_index_mat = np.full((nt, pixel_count), np.nan, dtype=np.float64)
+        match_day_offset_mat = np.full((nt, pixel_count), np.nan, dtype=np.float64)
+        # 匹配文件名仅作调试：按日稀疏存，避免 (nt, npix) object 巨阵
+        match_picked_file_mat = np.full((nt,), "", dtype=object)
+        match_picked_utc_mat = np.full((nt,), "", dtype=object)
 
     missing_dates: list[str] = []
 
@@ -73,15 +83,6 @@ def build_timeseries_bundle(
         tbh_mat[index, :] = np.asarray(bundle["TBh"], dtype=np.float64).reshape(-1)
         ia_value = bundle.get("IA")
         ts_value = bundle.get("Ts")
-        tc_value = bundle.get("TC")
-        tsoil1_value = bundle.get("Tsoil1")
-        tsoil2_value = bundle.get("Tsoil2")
-        ct_value = bundle.get("Ct")
-        tg_value = bundle.get("TG")
-        match_slot_index_value = bundle.get("match_slot_index")
-        match_day_offset_value = bundle.get("match_day_offset")
-        match_picked_file_value = bundle.get("match_picked_file")
-        match_picked_utc_value = bundle.get("match_picked_utc")
         smref_value = bundle.get("SM_ref")
         ndvi_value = bundle.get("NDVI")
         sf_value = bundle.get("SF")
@@ -91,36 +92,6 @@ def build_timeseries_bundle(
             ia_mat[index, :] = np.asarray(ia_value, dtype=np.float64).reshape(-1)
         if ts_value is not None:
             ts_mat[index, :] = np.asarray(ts_value, dtype=np.float64).reshape(-1)
-        if tc_value is not None:
-            tc_mat[index, :] = np.asarray(tc_value, dtype=np.float64).reshape(-1)
-        if tsoil1_value is not None:
-            tsoil1_mat[index, :] = np.asarray(tsoil1_value, dtype=np.float64).reshape(
-                -1
-            )
-        if tsoil2_value is not None:
-            tsoil2_mat[index, :] = np.asarray(tsoil2_value, dtype=np.float64).reshape(
-                -1
-            )
-        if ct_value is not None:
-            ct_mat[index, :] = np.asarray(ct_value, dtype=np.float64).reshape(-1)
-        if tg_value is not None:
-            tg_mat[index, :] = np.asarray(tg_value, dtype=np.float64).reshape(-1)
-        if match_slot_index_value is not None:
-            match_slot_index_mat[index, :] = np.asarray(
-                match_slot_index_value, dtype=np.float64
-            ).reshape(-1)
-        if match_day_offset_value is not None:
-            match_day_offset_mat[index, :] = np.asarray(
-                match_day_offset_value, dtype=np.float64
-            ).reshape(-1)
-        if match_picked_file_value is not None:
-            match_picked_file_mat[index, :] = np.asarray(
-                match_picked_file_value, dtype=object
-            ).reshape(-1)
-        if match_picked_utc_value is not None:
-            match_picked_utc_mat[index, :] = np.asarray(
-                match_picked_utc_value, dtype=object
-            ).reshape(-1)
         if smref_value is not None:
             smref_mat[index, :] = np.asarray(smref_value, dtype=np.float64).reshape(-1)
         if ndvi_value is not None:
@@ -130,21 +101,51 @@ def build_timeseries_bundle(
         if vwc_value is not None:
             vwc_mat[index, :] = np.asarray(vwc_value, dtype=np.float64).reshape(-1)
 
-    data = {
+        if need_dual:
+            tc_value = bundle.get("TC")
+            tsoil1_value = bundle.get("Tsoil1")
+            tsoil2_value = bundle.get("Tsoil2")
+            ct_value = bundle.get("Ct")
+            tg_value = bundle.get("TG")
+            match_slot_index_value = bundle.get("match_slot_index")
+            match_day_offset_value = bundle.get("match_day_offset")
+            match_picked_file_value = bundle.get("match_picked_file")
+            match_picked_utc_value = bundle.get("match_picked_utc")
+            if tc_value is not None:
+                tc_mat[index, :] = np.asarray(tc_value, dtype=np.float64).reshape(-1)
+            if tsoil1_value is not None:
+                tsoil1_mat[index, :] = np.asarray(
+                    tsoil1_value, dtype=np.float64
+                ).reshape(-1)
+            if tsoil2_value is not None:
+                tsoil2_mat[index, :] = np.asarray(
+                    tsoil2_value, dtype=np.float64
+                ).reshape(-1)
+            if ct_value is not None:
+                ct_mat[index, :] = np.asarray(ct_value, dtype=np.float64).reshape(-1)
+            if tg_value is not None:
+                tg_mat[index, :] = np.asarray(tg_value, dtype=np.float64).reshape(-1)
+            if match_slot_index_value is not None:
+                match_slot_index_mat[index, :] = np.asarray(
+                    match_slot_index_value, dtype=np.float64
+                ).reshape(-1)
+            if match_day_offset_value is not None:
+                match_day_offset_mat[index, :] = np.asarray(
+                    match_day_offset_value, dtype=np.float64
+                ).reshape(-1)
+            if match_picked_file_value is not None:
+                arr = np.asarray(match_picked_file_value, dtype=object).reshape(-1)
+                match_picked_file_mat[index] = str(arr[0]) if arr.size else ""
+            if match_picked_utc_value is not None:
+                arr = np.asarray(match_picked_utc_value, dtype=object).reshape(-1)
+                match_picked_utc_mat[index] = str(arr[0]) if arr.size else ""
+
+    data: dict[str, Any] = {
         "date_keys": date_keys,
         "TBv_mat": tbv_mat,
         "TBh_mat": tbh_mat,
         "IA_mat": ia_mat,
         "Ts_mat": ts_mat,
-        "TC_mat": tc_mat,
-        "Tsoil1_mat": tsoil1_mat,
-        "Tsoil2_mat": tsoil2_mat,
-        "Ct_mat": ct_mat,
-        "TG_mat": tg_mat,
-        "match_slot_index_mat": match_slot_index_mat,
-        "match_day_offset_mat": match_day_offset_mat,
-        "match_picked_file_mat": match_picked_file_mat,
-        "match_picked_utc_mat": match_picked_utc_mat,
         "SMref_mat": smref_mat,
         "NDVI_mat": ndvi_mat,
         "SF_mat": sf_mat,
@@ -161,6 +162,20 @@ def build_timeseries_bundle(
         "lat_9km": static_bundle["lat_9km"],
         "lon_9km": static_bundle["lon_9km"],
     }
+    if need_dual:
+        data.update(
+            {
+                "TC_mat": tc_mat,
+                "Tsoil1_mat": tsoil1_mat,
+                "Tsoil2_mat": tsoil2_mat,
+                "Ct_mat": ct_mat,
+                "TG_mat": tg_mat,
+                "match_slot_index_mat": match_slot_index_mat,
+                "match_day_offset_mat": match_day_offset_mat,
+                "match_picked_file_mat": match_picked_file_mat,
+                "match_picked_utc_mat": match_picked_utc_mat,
+            }
+        )
     return TimeSeriesBundle(
         date_keys=date_keys,
         data=data,

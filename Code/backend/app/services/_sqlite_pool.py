@@ -16,6 +16,8 @@ from pathlib import Path
 from queue import Queue
 from typing import Iterator
 
+from app.services import spatialite_loader
+
 logger = logging.getLogger(__name__)
 
 
@@ -58,6 +60,17 @@ class SQLiteConnectionPool:
             conn.execute("PRAGMA journal_mode=WAL")
             conn.execute("PRAGMA synchronous=NORMAL")
             conn.execute(f"PRAGMA busy_timeout={self._busy_timeout_ms}")
+            # SpatiaLite 扩展加载（统一/幂等/降级/不抛；失败仅 warn，不阻断 state DB）。
+            # 高风险区（workflow/api_keys/gee_credentials）连接也走这里：扩展不可用时 PRAGMA 已成功，
+            # DB 仍可正常读写，只是没有空间 SQL 函数。
+            try:
+                spatialite_loader.load_into(conn)
+            except Exception:
+                logger.warning(
+                    "spatialite_loader.load_into failed for %s",
+                    self.db_path,
+                    exc_info=True,
+                )
             return conn
         except Exception:
             # PRAGMA 失败时关闭已建立的连接，避免文件句柄泄漏

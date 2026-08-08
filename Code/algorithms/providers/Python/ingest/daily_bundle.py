@@ -357,6 +357,13 @@ def load_static_ancillary_bundle(
     )
 
     if ndvi_extrema_mat is None:
+        for fname in ("VI_v_qa.mat", "NDVI_extrema.mat", "ndvi_extrema.mat"):
+            candidate = anc_root / fname
+            if candidate.is_file():
+                ndvi_extrema_mat = candidate
+                break
+
+    if ndvi_extrema_mat is None:
         ndvi_v_max = None
         ndvi_v_min = None
     else:
@@ -450,6 +457,7 @@ def _resolve_daily_mat_file(folder: str | Path, date_key: str) -> Path:
     if matches:
         # 记录警告，提示用户可能的误匹配
         import logging
+
         logging.getLogger(__name__).warning(
             "使用模糊匹配找到 %s 的 MAT 文件: %s (建议规范命名为 YYYYMMDD.mat 或 YYYYMMDD_suffix.mat)",
             date_key,
@@ -766,13 +774,36 @@ def load_dual_temperature_row_for_day(
     lon_values = np.asarray(lon_values, dtype=np.float64).reshape(-1)
     match_diagnostics = _init_match_diagnostics(lon_values.size)
     if config.use_gldas_template:
-        picked_indices, slot_index, day_offset = _select_gldas_indices_from_template(
-            date_key,
-            lon_values,
-            datasource_selection,
-            config,
-            lin_pix=lin_pix,
-        )
+        template_path = datasource_selection.get(
+            "gldas_template_file"
+        ) or datasource_selection.get("gldas_template_mat")
+        if template_path and Path(str(template_path)).is_file():
+            picked_indices, slot_index, day_offset = (
+                _select_gldas_indices_from_template(
+                    date_key,
+                    lon_values,
+                    datasource_selection,
+                    config,
+                    lin_pix=lin_pix,
+                )
+            )
+        else:
+            # Soft fallback: seed may request template mode before the MAT
+            # is synced; overpass matching keeps DUAL runnable.
+            import logging
+
+            logging.getLogger(__name__).warning(
+                "use_gldas_template=True but gldas_template_file/mat missing; "
+                "falling back to local-overpass matching"
+            )
+            picked_indices, slot_index, day_offset = (
+                _select_gldas_indices_by_local_overpass(
+                    date_key,
+                    lon_values,
+                    datasource_selection,
+                    config,
+                )
+            )
     else:
         picked_indices, slot_index, day_offset = (
             _select_gldas_indices_by_local_overpass(

@@ -32,6 +32,26 @@ export function isPerfEnabled(): boolean {
   return enabledCache
 }
 
+/** Hot-path debugLog gate: `?debug=1` / localStorage `cgda.debug=1`, or perf probe. */
+export function isDebugLogEnabled(): boolean {
+  if (isPerfEnabled()) return true
+  if (typeof window === 'undefined') return false
+  try {
+    if (new URLSearchParams(window.location.search).get('debug') === '1') return true
+    if (window.localStorage?.getItem('cgda.debug') === '1') return true
+  } catch {
+    /* ignore */
+  }
+  return false
+}
+
+/** Gated dev logging (`?debug=1` / `cgda.debug=1` / perf probe). */
+export function debugLog(...args: unknown[]): void {
+  if (!isDebugLogEnabled()) return
+  // eslint-disable-next-line no-console -- intentional gated probe output
+  console.log(...args)
+}
+
 /** 测试或运行时强制开关 */
 export function setPerfEnabled(on: boolean): void {
   enabledCache = on
@@ -42,8 +62,7 @@ export function perfMark(kind: string, detail?: Record<string, unknown>): void {
   const sample: PerfSample = { t: performance.now(), kind, detail }
   samples.push(sample)
   if (samples.length > BUFFER_MAX) samples.shift()
-  // 单行，便于过滤
-  console.log(`[cgda.perf] ${kind}`, detail ?? '')
+  debugLog(`[cgda.perf] ${kind}`, detail ?? '')
 }
 
 export function perfIncBump(): void {

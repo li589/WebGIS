@@ -24,15 +24,13 @@ from pydantic import BaseModel
 
 from app.api.deps import require_write_access
 from app.services.crs import crs_detector, crs_transformer
-from app.services.crs.crs_registry import to_api_payload
-from app.data_io.services.paths import (
-    MAX_IMPORTS_TOTAL_BYTES as _MAX_IMPORTS_TOTAL_BYTES,
-)
+from app.services.crs.crs_registry import to_api_payload, to_api_payload_expanded
 from app.data_io.services.paths import (
     MAX_UPLOAD_BYTES as _MAX_UPLOAD_BYTES,
 )
 from app.data_io.services.paths import IMPORTS_DIR as _IMPORTS_DIR
-from app.data_io.services.paths import dir_size_bytes as _dir_size_bytes
+from app.data_io.services.paths import assert_quota_available as _assert_quota_available
+from app.data_io.services.paths import QuotaExceededError as _QuotaExceededError
 from app.services.overlay_registry import (
     OverlaySpec,
     register_overlay,
@@ -103,6 +101,20 @@ async def list_crs_options() -> dict[str, Any]:
     }
 
 
+@router.get("/crs-options/expanded", dependencies=[Depends(require_write_access)])
+async def list_crs_options_expanded() -> dict[str, Any]:
+    """返回完整 CRS 列表（含动态 UTM/GK 带，供高级选择）。
+
+    featured 项为精简集，非 featured 项为动态生成的投影带。
+    """
+    items = to_api_payload_expanded()
+    return {
+        "items": items,
+        "count": len(items),
+        "featured_count": sum(1 for i in items if i.get("featured")),
+    }
+
+
 # ── 上传端点 ───────────────────────────────────────────────────────────
 
 
@@ -124,12 +136,10 @@ async def import_raster(file: UploadFile = File(...)) -> dict[str, Any]:
             status_code=400, detail=f"仅支持 TIF/TIFF 文件，收到 .{ext}"
         )
 
-    used = _dir_size_bytes(_IMPORTS_DIR)
-    if used >= _MAX_IMPORTS_TOTAL_BYTES:
-        raise HTTPException(
-            status_code=507,
-            detail="导入存储配额已满，请清理旧导入后再试",
-        )
+    try:
+        _assert_quota_available(0)
+    except _QuotaExceededError as exc:
+        raise HTTPException(status_code=507, detail=str(exc)) from exc
 
     # 生成唯一 ID 和存储目录
     layer_id = f"imported-{uuid.uuid4().hex[:12]}"

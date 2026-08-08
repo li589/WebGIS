@@ -3,6 +3,9 @@ import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { storeToRefs } from 'pinia'
 
 import { useSettingsStore } from '../../stores/settings'
+import { useLayersStore } from '../../stores/layers'
+import { useWeatherEngineStore } from '../../stores/weather-engine'
+import { normalizeWeatherModel } from '../../utils/weather-model'
 import { useWeatherSyncStatusStore } from '../../stores/weather-sync-status'
 import {
   getWeatherCoverage,
@@ -14,6 +17,8 @@ import {
 
 const settingsStore = useSettingsStore()
 const weatherSyncStatusStore = useWeatherSyncStatusStore()
+const layersStore = useLayersStore()
+const weatherEngine = useWeatherEngineStore()
 const { weatherConfig } = storeToRefs(settingsStore)
 
 const FALLBACK_MODELS = [
@@ -33,6 +38,8 @@ const modelOptions = computed(() =>
 )
 
 const selectedModel = ref('ecmwf_ifs025')
+/** One-shot sync domains override (comma-separated); empty = env default */
+const triggerDomainsOverride = ref('')
 const coverage = ref<WeatherCoverage | null>(null)
 const coverageLoading = ref(false)
 const coverageError = ref<string | null>(null)
@@ -139,6 +146,14 @@ const syncStateLabel = computed(() => {
   return map[state] ?? state
 })
 
+const syncServiceAvailable = computed(() => {
+  if (!overview.value) return true
+  if (typeof overview.value.sync_service_available === 'boolean') {
+    return overview.value.sync_service_available
+  }
+  return Boolean(overview.value.docker_cli_available && overview.value.compose_file_exists)
+})
+
 const isSyncRunning = computed(() => {
   const state = syncStatus.value?.state
   if (state === 'PENDING' || state === 'STARTED' || state === 'RETRY') return true
@@ -158,11 +173,7 @@ async function refreshCoverage() {
   coverageLoading.value = true
   coverageError.value = null
   try {
-    const model =
-      !selectedModel.value || selectedModel.value === 'best_match' || selectedModel.value === 'auto'
-        ? 'ecmwf_ifs025'
-        : selectedModel.value
-    coverage.value = await getWeatherCoverage(model)
+    coverage.value = await getWeatherCoverage(normalizeWeatherModel(selectedModel.value))
   } catch (err) {
     coverageError.value = (err as Error).message || '探针失败'
     coverage.value = null
@@ -175,7 +186,8 @@ async function onModelChange() {
   modelUpdating.value = true
   modelUpdateMessage.value = null
   try {
-    const updated = await settingsStore.saveWeatherDefaultModel(selectedModel.value)
+    selectedModel.value = normalizeWeatherModel(selectedModel.value)
+    const updated = await weatherEngine.setDefaultModel(selectedModel.value)
     if (updated.warning === 'not_in_sync_domains') {
       modelUpdateMessage.value =
         '已保存为全局默认模型，但当前不在本地 sync 域内：本地瓦片可能无数据，请先加入 OPEN_METEO_SYNC_DOMAINS 并同步，或改用 Online Provider。'
@@ -184,6 +196,7 @@ async function onModelChange() {
     }
     await refreshCoverage()
     await refreshOverview()
+    layersStore.flushWeatherTileViewports()
   } catch (err) {
     modelUpdateMessage.value = (err as Error).message || '保存失败'
   } finally {
@@ -192,10 +205,11 @@ async function onModelChange() {
 }
 
 async function triggerSync() {
-  if (isSyncRunning.value) return
+  if (isSyncRunning.value || !syncServiceAvailable.value) return
   syncStatus.value = null
   try {
-    const resp = await weatherSyncStatusStore.triggerSync()
+    const domains = triggerDomainsOverride.value.trim()
+    const resp = await weatherSyncStatusStore.triggerSync(domains ? { domains } : undefined)
     syncTaskId.value = resp.task_id
     syncStatus.value = {
       task_id: resp.task_id,
@@ -271,13 +285,8 @@ onMounted(async () => {
       /* ignore */
     }
   }
-  const fromConfig = (weatherConfig.value?.default_model || '').trim()
-  // 本地 coverage 不接受 best_match/auto；映射为具体域
-  const normalized =
-    !fromConfig || fromConfig === 'best_match' || fromConfig === 'auto'
-      ? 'ecmwf_ifs025'
-      : fromConfig
-  selectedModel.value = normalized
+  await weatherEngine.ensureLoaded()
+  selectedModel.value = normalizeWeatherModel(weatherConfig.value?.default_model)
   await Promise.all([refreshCoverage(), refreshOverview()])
 })
 
@@ -358,8 +367,29 @@ onBeforeUnmount(() => {
             <span class="coverage-value">{{ overview.local_reachable ? '是' : '否' }}</span>
           </div>
           <div class="coverage-row">
-            <span class="coverage-label">Sync 域</span>
+            <span class="coverage-label">Sync 域（只读）</span>
             <span class="coverage-value">{{ (overview.domains || []).join(', ') || '—' }}</span>
+          </div>
+          <p class="sync-domains-hint">
+            持久同步域来自环境变量
+            <code>OPEN_METEO_SYNC_DOMAINS</code>（本页不可改）。改后需重启后端 /
+            Beat，或用下方「本次覆盖」临时指定。
+          </p>
+          <div class="coverage-row">
+            <span class="coverage-label">Docker CLI</span>
+            <span class="coverage-value">{{
+              overview.docker_cli_available ? '可用' : '不可用'
+            }}</span>
+          </div>
+          <div class="coverage-row">
+            <span class="coverage-label">Compose 文件</span>
+            <span class="coverage-value">{{ overview.compose_file_exists ? '存在' : '缺失' }}</span>
+          </div>
+          <div class="coverage-row">
+            <span class="coverage-label">同步服务</span>
+            <span class="coverage-value" :class="syncServiceAvailable ? 'ok' : 'warn'">
+              {{ syncServiceAvailable ? '可用' : '不可用' }}
+            </span>
           </div>
           <div class="coverage-row">
             <span class="coverage-label">定时</span>
@@ -464,11 +494,34 @@ onBeforeUnmount(() => {
         <div v-else class="coverage-loading">加载中...</div>
       </div>
 
+      <div v-if="overview && !syncServiceAvailable" class="sync-unavailable-callout">
+        同步服务不可用：需要本机 Docker CLI，且
+        <code>Code/infra/data-sync/docker-compose.yml</code> 存在。Celery 仅负责排队；无 Docker
+        时无法拉取本地气象域数据。
+      </div>
+
       <div class="setting-block">
         <div class="block-title"><span>手动同步</span></div>
+        <div class="setting-row sync-domains-override">
+          <label class="row-label">本次覆盖域</label>
+          <input
+            v-model="triggerDomainsOverride"
+            class="model-select"
+            type="text"
+            placeholder="留空=环境默认；例 ecmwf_ifs025,gfs_global"
+            :disabled="isSyncRunning || !syncServiceAvailable"
+          />
+        </div>
         <div class="sync-control">
-          <button type="button" class="sync-btn" :disabled="isSyncRunning" @click="triggerSync">
-            {{ isSyncRunning ? '同步中...' : '立即同步' }}
+          <button
+            type="button"
+            class="sync-btn"
+            :disabled="isSyncRunning || !syncServiceAvailable"
+            @click="triggerSync"
+          >
+            {{
+              !syncServiceAvailable ? '同步服务不可用' : isSyncRunning ? '同步中...' : '立即同步'
+            }}
           </button>
           <div v-if="syncStatus" class="sync-status">
             <span class="sync-state" :class="`state-${syncStatus.state?.toLowerCase()}`">
@@ -814,5 +867,31 @@ onBeforeUnmount(() => {
   color: #8aa8bf;
   font-size: 0.58rem;
   line-height: 1.55;
+}
+
+.sync-domains-hint {
+  margin: 4px 0 10px;
+  font-size: 11px;
+  line-height: 1.4;
+  color: var(--text-muted, #8a8578);
+}
+.sync-domains-override {
+  margin-bottom: 10px;
+}
+.sync-unavailable-callout {
+  margin: 0 0 12px;
+  padding: 8px 10px;
+  border-radius: 6px;
+  border: 1px solid rgba(200, 80, 60, 0.45);
+  background: rgba(200, 80, 60, 0.12);
+  color: var(--text-secondary, #c9b896);
+  font-size: 12px;
+  line-height: 1.45;
+}
+.coverage-value.ok {
+  color: #6bcf7f;
+}
+.coverage-value.warn {
+  color: #e0a84a;
 }
 </style>

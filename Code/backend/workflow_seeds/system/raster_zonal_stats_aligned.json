@@ -1,0 +1,43 @@
+{
+  "_meta": {
+    "kind": "system",
+    "engine": "python_provider",
+    "name": "Raster zonal stats (aligned grids)",
+    "description": "Generic zonal mean on two aligned rasters. Set data/source.path to the value raster; set module/statistics.zones_source to the zones raster. Grids must match or the node fails.",
+    "author": "system",
+    "readonly": true,
+    "is_template": true,
+    "linked_layer_id": null,
+    "tags": ["analysis", "zonal", "statistics", "raster"],
+    "category": "analysis"
+  },
+  "workflow_id": "raster_zonal_stats_aligned",
+  "name": "Raster zonal stats (aligned grids)",
+  "description": "data/source → module/statistics(mode=zonal)",
+  "nodes": [
+    {
+      "id": 1,
+      "type": "data/source",
+      "pos": [80, 160],
+      "properties": {
+        "path": "{DATA_ROOT}",
+        "dataset_key": "input_path",
+        "notes": "Value raster (GeoTIFF/NetCDF/MAT)"
+      }
+    },
+    {
+      "id": 2,
+      "type": "module/statistics",
+      "pos": [420, 160],
+      "properties": {
+        "mode": "zonal",
+        "variable": "",
+        "zones_source": "",
+        "output_dir": ""
+      }
+    }
+  ],
+  "links": [
+    [1, 1, 2, 2, 2]
+  ]
+}

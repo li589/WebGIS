@@ -180,7 +180,7 @@ function formatTime(iso: string | null): string {
   <div class="workflow-list">
     <div class="list-header">
       <span class="header-title">工作流</span>
-      <button class="new-btn" type="button" @click="emit('create')" title="新建工作流">
+      <button class="new-btn" type="button" title="新建工作流" @click="emit('create')">
         <span aria-hidden="true">+</span>
         <span>新建</span>
       </button>
@@ -561,7 +561,7 @@ function formatTime(iso: string | null): string {
   color: #6e8ba0;
   cursor: pointer;
   font: inherit;
-  font-size: 0.52rem;
+  font-size: 0.62rem;
   font-weight: 500;
   transition: all 0.16s ease;
   white-space: nowrap;
@@ -590,7 +590,7 @@ function formatTime(iso: string | null): string {
   padding: 0.02rem 0.3rem;
   border: 1px solid;
   border-radius: 0.2rem;
-  font-size: 0.48rem;
+  font-size: 0.62rem;
   font-weight: 600;
   letter-spacing: 0.02em;
   background: rgba(136, 192, 255, 0.04);

@@ -1,6 +1,7 @@
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { defineConfig, loadEnv } from 'vite'
+import { defineConfig } from 'vitest/config'
+import { loadEnv } from 'vite'
 import vue from '@vitejs/plugin-vue'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
@@ -17,6 +18,10 @@ export default defineConfig(({ mode }) => {
       },
     },
     server: {
+      fs: {
+        // 允许加载仓库根下的 Test/frontend/（测试已迁出 src/）。
+        allow: [path.resolve(__dirname, '../..')],
+      },
       proxy: {
         // API 请求代理到后端
         // 注意：前端 runtime-api.ts 中所有请求路径均无 /api 前缀，
@@ -36,16 +41,19 @@ export default defineConfig(({ mode }) => {
         '/frontend': { target: apiTarget, changeOrigin: true },
         '/config': { target: apiTarget, changeOrigin: true },
         '/unified-tiles': { target: apiTarget, changeOrigin: true },
+        // 时间序列/栅格 XYZ 数据瓦片。缺少该代理时 Vite 会返回 index.html（200 text/html），
+        // MapLibre 将其当 PNG 解码失败，表现为“图层存在但地图无内容”。
+        '/overlay-tiles': { target: apiTarget, changeOrigin: true },
         '/overlay-preview': { target: apiTarget, changeOrigin: true },
         '/overlay-bounds': { target: apiTarget, changeOrigin: true },
         '/overlay-value': { target: apiTarget, changeOrigin: true },
         '/overlays': { target: apiTarget, changeOrigin: true },
         '/import': { target: apiTarget, changeOrigin: true },
         '/export': { target: apiTarget, changeOrigin: true },
+        '/auth': { target: apiTarget, changeOrigin: true },
+        '/health': { target: apiTarget, changeOrigin: true },
       },
-      allowedHosts: [
-        'geoflow.cgdas.dpdns.org'
-      ]
+      allowedHosts: ['geoflow.cgdas.dpdns.org'],
     },
     build: {
       // MapLibre is large even when isolated, so raise the warning threshold
@@ -65,6 +73,13 @@ export default defineConfig(({ mode }) => {
           },
         },
       },
+    },
+    test: {
+      // 测试已迁出 src/，集中到仓库根 Test/frontend/（保留 src 目录结构）。
+      // 相对导入已改写为 @/ 别名（@ → Code/frontend/src，仍由 resolve.alias 解析）。
+      // 保持 vite root = Code/frontend/，使 bare import（vue/vitest/pinia）经
+      // Code/frontend/node_modules 解析；include 用 ../../ 跨出 root，配合 server.fs.allow。
+      include: ['../../Test/frontend/**/*.test.ts'],
     },
   }
   return config

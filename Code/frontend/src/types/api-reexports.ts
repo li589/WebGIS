@@ -87,3 +87,100 @@ export type WeatherLayerRenderHint = Schema<'WeatherLayerRenderHint'>
 export type WeatherPointCurrent = Schema<'WeatherPointCurrent'>
 export type WeatherPointHourlyEntry = Schema<'WeatherPointHourlyEntry'>
 export type WeatherPointResponse = Schema<'WeatherPointResponse'>
+
+// ── Config / settings（/config/*）──────────────────────────────────────────
+
+export type ApiKeyItem = Schema<'ApiKeyItem'>
+export type ApiKeyUpdateRequest = Schema<'ApiKeyUpdateRequest'>
+export type ApiKeyHistoryItem = Schema<'ApiKeyHistoryItem'>
+export type ApiKeyHistoryClearResponse = Schema<'ApiKeyHistoryClearResponse'>
+export type ApiKeyHistoryDeletedResponse = Schema<'ApiKeyHistoryDeletedResponse'>
+export type ApiKeyDeletedResponse = Schema<'ApiKeyDeletedResponse'>
+export type ApiKeyToggleRequest = Schema<'ApiKeyToggleRequest'>
+
+export type GeeAccountItem = Schema<'GeeAccountItem'>
+export type GeeAccountCreateRequest = Schema<'GeeAccountCreateRequest'>
+export type GeeAccountToggleRequest = Schema<'GeeAccountToggleRequest'>
+export type GeeAccountDeletedResponse = Schema<'GeeAccountDeletedResponse'>
+export type GeeAccountToggleResponse = Schema<'GeeAccountToggleResponse'>
+export type GeeRuntimeConfig = Schema<'GeeRuntimeConfig'>
+
+export type GeneralConfig = Schema<'GeneralConfig'>
+export type MapAoiPreset = Schema<'MapAoiPreset'>
+
+export type WeatherConfig = Schema<'WeatherConfig'>
+export type WeatherSyncCron = Schema<'WeatherSyncCron'>
+export type WeatherSupportedModel = Schema<'WeatherSupportedModel'>
+export type WeatherModelUpdateRequest = Schema<'WeatherModelUpdateRequest'>
+export type WeatherProviderStatus = Schema<'WeatherProviderStatus'>
+export type WeatherProviderConfigField = Schema<'WeatherProviderConfigField'>
+/** @deprecated Prefer WeatherProviderConfigField (OpenAPI name). */
+export type WeatherProviderConfigSchema = WeatherProviderConfigField
+export type WeatherProviderItem = Schema<'WeatherProviderItem'>
+export type WeatherProviderUpdateRequest = Schema<'WeatherProviderUpdateRequest'>
+export type WeatherProviderTestResponse = Schema<'WeatherProviderTestResponse'>
+/** @deprecated Prefer WeatherProviderTestResponse. */
+export type WeatherProviderTestResult = WeatherProviderTestResponse
+export type WeatherProviderToggleRequest = Schema<'WeatherProviderToggleRequest'>
+export type WeatherProviderPriorityRequest = Schema<'WeatherProviderPriorityRequest'>
+export type WeatherProviderToggleResponse = Schema<'WeatherProviderToggleResponse'>
+export type WeatherProviderPriorityResponse = Schema<'WeatherProviderPriorityResponse'>
+export type WeatherProviderDeletedResponse = Schema<'WeatherProviderDeletedResponse'>
+
+export type DataSourceConfig = Schema<'DataSourceConfig'>
+export type DataSourcePathsUpdateRequest = Schema<'DataSourcePathsUpdateRequest'>
+export type DataSourcePathsUpdateResponse = Schema<'DataSourcePathsUpdateResponse'>
+export type DiscoveredDataset = Schema<'DiscoveredDataset'>
+export type MinioPublicConfig = Schema<'MinioPublicConfig'>
+export type StaticCacheSummary = Schema<'StaticCacheSummary'>
+export type PortalCredentialPublic = Schema<'PortalCredentialPublic'>
+export type PortalCredentialsMapResponse = Schema<'PortalCredentialsMapResponse'>
+export type PortalCredentialUpsertRequest = Schema<'PortalCredentialUpsertRequest'>
+export type DataCacheOverview = Schema<'DataCacheOverview'>
+export type DataCacheEntry = Schema<'DataCacheEntry'>
+export type DataCacheEvictRequest = Schema<'DataCacheEvictRequest'>
+export type DataCacheEvictResponse = Schema<'DataCacheEvictResponse'>
+export type OpenDataPresetsUpdateRequest = Schema<'OpenDataPresetsUpdateRequest'>
+export type OpenDataPresetsUpdateResponse = Schema<'OpenDataPresetsUpdateResponse'>
+export type RemoteLayerUrisUpdateRequest = Schema<'RemoteLayerUrisUpdateRequest'>
+export type RemoteLayerUrisUpdateResponse = Schema<'RemoteLayerUrisUpdateResponse'>
+
+export type ServiceRestartRequest = Schema<'ServiceRestartRequest'>
+export type ServiceRestartResponse = Schema<'ServiceRestartResponse'>
+
+export type AboutInfo = Schema<'AboutInfo'>
+export type AboutModule = Schema<'AboutModule'>
+
+export type TestResultResponse = Schema<'TestResultResponse'>
+/** @deprecated Prefer TestResultResponse. */
+export type TestResult = TestResultResponse
+export type ReloadResultResponse = Schema<'ReloadResultResponse'>
+/** @deprecated Prefer ReloadResultResponse. */
+export type ReloadResult = ReloadResultResponse
+
+export type RemoteStorageProfile = Schema<'RemoteStorageProfile'>
+export type RemoteStorageUpsertRequest = Schema<'RemoteStorageUpsertRequest'>
+export type RemoteStorageTestResponse = Schema<'RemoteStorageTestResponse'>
+/** @deprecated Prefer RemoteStorageTestResponse. */
+export type RemoteStorageTestResult = RemoteStorageTestResponse
+export type RemoteStorageHistoryItem = Schema<'RemoteStorageHistoryItem'>
+export type RemoteStorageHistoryClearResponse = Schema<'RemoteStorageHistoryClearResponse'>
+export type RemoteStorageHistoryDeletedResponse = Schema<'RemoteStorageHistoryDeletedResponse'>
+export type RemoteStorageDeletedResponse = Schema<'RemoteStorageDeletedResponse'>
+export type RemoteStorageToggleRequest = Schema<'RemoteStorageToggleRequest'>
+export type RemoteStorageToggleResponse = Schema<'RemoteStorageToggleResponse'>
+export type RemoteStorageTestRequest = Schema<'RemoteStorageTestRequest'>
+
+export type RuntimeConfigScope = Schema<'RuntimeConfigScope'>
+export type RuntimeConfigPatch = Schema<'RuntimeConfigPatch'>
+export type RuntimeConfigUpdateRequest = Schema<'RuntimeConfigUpdateRequest'>
+export type RuntimeConfigUpdateResponse = Schema<'RuntimeConfigUpdateResponse'>
+export type RuntimeConfigSnapshotResponse = Schema<'RuntimeConfigSnapshotResponse'>
+export type RuntimeStatusResponse = Schema<'RuntimeStatusResponse'>
+export type BackendServiceStatus = Schema<'BackendServiceStatus'>
+
+/** OpenAPI 为 plain string；UI 侧已知取值（与后端 weather provider 注册一致）。 */
+export type WeatherProviderType = 'free_api' | 'commercial_api' | 'local_data'
+export type WeatherCapability = 'all' | 'point_query' | 'grid_query'
+export type CircuitState = 'closed' | 'open' | 'half_open' | 'n/a'
+export type RemoteStorageProtocol = 'sftp' | 'smb' | 'ftp' | 'ftps' | 'gs'

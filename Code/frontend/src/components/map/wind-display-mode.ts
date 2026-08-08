@@ -10,53 +10,24 @@
  *
  * 映射：UI `particle` ↔ paint_mode `particle_flow`（内部契约，不对用户展示英文 id）。
  * 用户可见文案见 `ui-copy` / windDisplayModeLabel。
+ *
+ * D1 修复后：类型与纯映射函数真源已移至 src/types/wind-display.ts，
+ * 本文件 re-export 并保留依赖 ui-copy 的文案函数。
  */
 import { windModeUiLabel } from '../../ui-copy'
+import type { WindDisplayMode } from '../../types/wind-display'
 
-export type WindDisplayMode = 'particle' | 'streamline' | 'off'
-
-export const WIND_DISPLAY_MODES: WindDisplayMode[] = ['particle', 'streamline', 'off']
-
-/** Catalog paint_mode 字符串（与 WindDisplayMode 不同命名空间） */
-export type WeatherPaintModeChip =
-  'particle_flow' | 'streamline' | 'off' | 'barb' | 'grid_fill' | 'heatmap' | 'point_symbol'
-
-export function isWindDisplayMode(value: unknown): value is WindDisplayMode {
-  return value === 'particle' || value === 'streamline' || value === 'off'
-}
+export {
+  isWindDisplayMode,
+  paintModeToWindDisplayMode,
+  WIND_DISPLAY_MODES,
+  windDisplayModeChip,
+  windDisplayModeToPaintMode,
+  type WeatherPaintModeChip,
+  type WindDisplayMode,
+} from '../../types/wind-display'
 
 /** 用户可见中文标签（粒子流 / 流量场 / 网格） */
 export function windDisplayModeLabel(mode: WindDisplayMode): string {
   return windModeUiLabel(mode)
-}
-
-/**
- * 与 paint_mode 对齐的内部 chip id（勿直接展示给用户；UI 用 windDisplayModeLabel）。
- */
-export function windDisplayModeChip(mode: WindDisplayMode): WeatherPaintModeChip {
-  switch (mode) {
-    case 'particle':
-      return 'particle_flow'
-    case 'streamline':
-      return 'streamline'
-    case 'off':
-      return 'off'
-  }
-}
-
-/** UI particle ↔ catalog paint_mode particle_flow */
-export function windDisplayModeToPaintMode(
-  mode: WindDisplayMode,
-): 'particle_flow' | 'streamline' | 'off' {
-  return windDisplayModeChip(mode) as 'particle_flow' | 'streamline' | 'off'
-}
-
-export function paintModeToWindDisplayMode(
-  paintMode: string | null | undefined,
-): WindDisplayMode | null {
-  if (paintMode === 'particle_flow') return 'particle'
-  if (paintMode === 'streamline') return 'streamline'
-  if (paintMode === 'off') return 'off'
-  // barb / grid_fill / … 不属于 WindDisplayMode
-  return null
 }

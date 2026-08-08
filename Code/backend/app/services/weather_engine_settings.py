@@ -195,8 +195,11 @@ def get_weather_sync_overview() -> dict[str, Any]:
     compose_dir = Path(settings.open_meteo_sync_compose_dir)
     compose_file = compose_dir / "docker-compose.yml"
 
+    docker_ok = bool(shutil.which("docker"))
+    compose_ok = compose_file.is_file()
     return {
         "local_reachable": probe_local_open_meteo_reachable(),
+        "sync_service_available": docker_ok and compose_ok,
         "domains": domains,
         "variables": variables,
         "models_meta": models_meta,

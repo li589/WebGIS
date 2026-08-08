@@ -10,7 +10,7 @@ import WorkflowList from './WorkflowList.vue'
 import './workflow-editor-chrome.css'
 
 const LEFT_MIN = 180
-const LEFT_MAX = 420
+const LEFT_MAX = 520
 const LEFT_DEFAULT = 256
 const STORAGE_KEY = 'wf-editor-left-width'
 
@@ -99,7 +99,7 @@ onBeforeUnmount(() => {
       v-if="!collapsed"
       class="wf-sidebar-resizer left"
       :class="{ active: resizing }"
-      title="拖动调整左侧面板宽度"
+      title="拖拽调整左侧面板宽度"
       @mousedown="startResize"
     />
   </aside>
@@ -138,7 +138,7 @@ onBeforeUnmount(() => {
   border-radius: 0.32rem;
   background: rgba(12, 24, 42, 0.88);
   color: #8aa8bf;
-  font-size: 0.5rem;
+  font-size: 0.62rem;
   cursor: pointer;
   display: flex;
   align-items: center;

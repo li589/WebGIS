@@ -26,7 +26,13 @@ export const DATA_COPY = {
     '支持 .tif / .nc / .hdf / .h5 / .mat；科学格式可配置变量、网格（WGS84 / EASE-Grid 2.0 9km 等）、范围与无效值后再导入（可多变量→多层）',
   documentHint: '支持 .csv / .xlsx / .xls / .txt；可多选排队，筛选/替换/分列后导入为点',
   exportHint:
-    '可多选已导入图层导出；矢量 GeoJSON/CSV/SHP，栅格 GeoTIFF/NetCDF/PNG。CSV/SHP 可选编码（auto/UTF-8/GBK 等，兼容 Win Excel 与 Linux）；≥3 层自动走批导出 zip',
+    '可多选已导入图层导出；矢量 GeoJSON/CSV/SHP，栅格 GeoTIFF/NetCDF/PNG。时间序列支持单时刻文件或多时刻 zip 打包。CSV/SHP 可选编码',
+  exportTime: '导出时刻 / 块',
+  exportTimeHint: '单时刻写入文件名；多时刻打包为 zip（如 layer_20251203_20251231.zip）',
+  exportTimeModeSingle: '单时刻',
+  exportTimeModeMulti: '多时刻打包 (zip)',
+  exportTimeSelectAll: '全选时刻',
+  exportTimeClear: '清空时刻',
   exportEncoding: '文本编码',
   exportEncodingHint:
     'auto=跟导入源编码；国内 ArcGIS 常用 GBK；Excel 推荐 UTF-8 BOM；GeoJSON 始终 UTF-8',

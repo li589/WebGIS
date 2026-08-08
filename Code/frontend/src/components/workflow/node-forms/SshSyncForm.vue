@@ -7,12 +7,12 @@
  * 字段：
  *   - server_type: hpc / win11 / nas
  *   - remote_path: 远程路径（带"浏览"按钮 → RemoteDirBrowser）
- *   - local_path:  本地路径（默认 I:\Geograph_DataSet\）
+ *   - local_path:  本地路径（须填写；相对 BACKEND_DATA_ROOT 或绝对路径）
  *   - start_date / end_date: YYYYMMDD
  *   - file_filter: 多选扩展名标签 (.mat/.h5/.nc/.tif/.txt)
  *   - 连接状态指示器（GET /api/remote/test?server=...）
  */
-import { computed, reactive, ref, watch } from 'vue'
+import { computed, onMounted, reactive, ref, watch } from 'vue'
 import type { LGraphNodeClass } from '../litegraph-setup'
 import { requestJson } from '../../../services/_http'
 import RemoteDirBrowser from './RemoteDirBrowser.vue'
@@ -24,6 +24,15 @@ import {
   validateRequired,
   yyyymmddToIso,
 } from './utils'
+import {
+  fillPathFieldsFromSystemSettings,
+  loadSystemPathDefaults,
+} from '../../../composables/system-settings-fill'
+import { fieldMapForNodeType } from '../../../composables/node-form-system-settings-map'
+import { WORKFLOW_COPY } from '../../../ui-copy/workflow'
+
+const NODE_TYPE = 'download/ssh_sync'
+const PATH_FIELD_MAP = fieldMapForNodeType(NODE_TYPE)
 
 const props = defineProps<{
   node: LGraphNodeClass | null
@@ -37,7 +46,7 @@ const emit = defineEmits<{
 const DEFAULTS = {
   server_type: 'hpc',
   remote_path: '/',
-  local_path: 'I:\\Geograph_DataSet\\',
+  local_path: '',
   start_date: '',
   end_date: '',
   file_filter: [] as string[],
@@ -79,6 +88,30 @@ function resync() {
 }
 
 watch(() => props.node, resync, { immediate: true })
+
+onMounted(async () => {
+  try {
+    const defaults = await loadSystemPathDefaults()
+    const filled = fillPathFieldsFromSystemSettings(form, defaults, PATH_FIELD_MAP, {
+      onlyEmpty: true,
+    })
+    for (const key of filled) {
+      emit('update-property', key, form[key])
+    }
+    validateForm()
+  } catch {
+    /* ignore settings fetch errors */
+  }
+})
+
+async function applySystemSettings(overwrite = true) {
+  const defaults = await loadSystemPathDefaults(true)
+  const filled = fillPathFieldsFromSystemSettings(form, defaults, PATH_FIELD_MAP, { overwrite })
+  for (const key of filled) {
+    emit('update-property', key, form[key])
+  }
+  validateForm()
+}
 
 function update(key: string, value: unknown) {
   form[key] = value
@@ -226,12 +259,23 @@ function toggleFilter(ext: string) {
 
     <!-- 本地路径 -->
     <div class="form-row">
-      <label class="form-label">本地路径 local_path</label>
+      <label class="form-label">
+        本地路径 local_path
+        <button
+          v-if="!readonly"
+          type="button"
+          class="sys-fill-btn"
+          :title="WORKFLOW_COPY.useSystemSettings"
+          @click="applySystemSettings(true)"
+        >
+          {{ WORKFLOW_COPY.useSystemSettings }}
+        </button>
+      </label>
       <input
         type="text"
         class="form-input"
         :value="String(form.local_path ?? '')"
-        placeholder="I:\Geograph_DataSet\"
+        placeholder="请选择或输入本地目录"
         :readonly="readonly"
         @input="update('local_path', ($event.target as HTMLInputElement).value)"
       />
@@ -315,6 +359,25 @@ function toggleFilter(ext: string) {
   font-size: 0.56rem;
   color: #6e8ba0;
   font-weight: 500;
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  flex-wrap: wrap;
+}
+
+.sys-fill-btn {
+  margin-left: auto;
+  padding: 0.12rem 0.36rem;
+  border-radius: 0.28rem;
+  border: 1px solid rgba(90, 213, 255, 0.35);
+  background: rgba(90, 213, 255, 0.1);
+  color: #5ad5ff;
+  font-size: 0.5rem;
+  cursor: pointer;
+}
+
+.sys-fill-btn:hover {
+  background: rgba(90, 213, 255, 0.2);
 }
 
 .form-input {

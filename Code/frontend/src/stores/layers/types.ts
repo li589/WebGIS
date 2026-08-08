@@ -34,8 +34,8 @@ export interface LayerCatalogItem {
   catalogId: string
   name: string
   category: string
-  /** 课题组数据二级分类: '模型输入' | '模型输出' | '辅助数据' */
-  subCategory?: '模型输入' | '模型输出' | '辅助数据'
+  /** 课题组数据二级分类（由 API sub_category / 静态库提供，勿前端写死枚举） */
+  subCategory?: string
   metricLabel: string
   metricUnit: string
   metricPrecision: number
@@ -113,6 +113,10 @@ export interface JobLayerMapAssets {
     north: number
     crs?: string
   }
+  /** 后端 imported overlay id（算法产品提交后） */
+  overlayLayerId?: string
+  /** 产品标签（SM / VOD / OMEGA 等） */
+  productTag?: string
 }
 
 export interface JobLayerMapLayerPayload {
@@ -135,13 +139,29 @@ export interface NodeProgress {
   message?: string
   /** 产物路径列表 */
   artifacts?: string[]
-  /** chunk/pixel 细粒度进度（算法反演等长任务） */
+  /** 最近一次 node_progress 事件时间（ISO） */
+  updatedAt?: string
+  /** 最近一次推进该节点进度的 event_id（平局序） */
+  eventId?: string
+  /** chunk/pixel/block 细粒度进度（算法反演等长任务） */
   detail?: {
     chunksDone?: number
     chunksTotal?: number
     pixelsDone?: number
     pixelsTotal?: number
     phase?: string
+    blocksDone?: number
+    blocksTotal?: number
+    dateStart?: string
+    dateEnd?: string
+    blockIdx?: number
+    blockDir?: string
+    timeKey?: string
+    tileId?: string
+    chunkId?: string
+    blockId?: string
+    productTag?: string
+    moduleName?: string
   }
 }
 
@@ -169,6 +189,23 @@ export interface JobLayerItem {
   resultView?: WorkflowRunViewResponse
   /** 结果引用链接 */
   resultUrl?: string
+  /** 工作流 ChartSpec 结果（分析框图表 Tab） */
+  analysisCharts?: Array<{
+    id: string
+    title: string
+    chartType: string
+    xLabel: string
+    yLabel: string
+    unit: string
+    series: Array<{ name: string; x: Array<string | number>; y: Array<number | null> }>
+  }>
+  /** 工作流 TableSpec 结果 */
+  analysisTables?: Array<{
+    id: string
+    title: string
+    columns: string[]
+    rows: unknown[][]
+  }>
   /** map_layer 产物中的附加地图资产 */
   mapLayerPayload?: JobLayerMapLayerPayload
   /** 原始诊断信息 */
@@ -183,9 +220,32 @@ export interface JobLayerItem {
   eventMessages?: string[]
   /** 节点级进度（下载/预处理/反演各阶段） */
   nodeProgress?: NodeProgress[]
+  /** 运行中 incremental materialize 已同步的时间片/图层数 */
+  progressiveOverlayCount?: number
+  /** incremental materialize 最近一次错误（用户可见摘要） */
+  progressiveOverlayError?: string
+  /** incremental materialize 最近一次成功时间（ISO） */
+  progressiveOverlayAt?: string
+  /** 若为重试运行，指向原 run_id */
+  retryOfRunId?: string
 }
 
 // ─── Active layer (已添加图层) ────────────────────────────────────────────────
+
+/** Active TOC 中的工作流计算组（与 library 的 output.group 文案无关） */
+export interface ActiveRunLayerGroup {
+  groupId: string
+  runId: string
+  title: string
+  status: 'computing' | 'ready' | 'failed' | 'cancelled'
+  memberInstanceIds: string[]
+  /** succeeded 且成员均可显示，或 failed/cancelled 时可拆 */
+  dissolvable: boolean
+  sourceLayerId?: string
+  workflowId?: string
+  progress?: number
+  message?: string
+}
 
 export interface ActiveLayer {
   /** 实例 ID (uuid)，用于列表 key 和唯一性 */
@@ -211,10 +271,23 @@ export interface ActiveLayer {
   dataState: 'catalog' | 'real' | 'imported'
   /** 用户自定义配色方案覆盖（覆盖默认 renderHint.palette） */
   paletteOverride?: string | null
+  /** 配色值域覆盖（overlay 重着色 / 图例） */
+  vminOverride?: number | null
+  vmaxOverride?: number | null
+  /** NaN/无效像元：transparent | solid */
+  nodataMode?: 'transparent' | 'solid' | null
+  /** solid 模式下的 NaN 填充色（#rrggbb） */
+  nodataColor?: string | null
   /** 实例级强调色（侧栏区分 / 时间轴主色） */
   accentColor?: string
   accentGlow?: string
   chipTone?: string
+  /** 所属计算组（工作流运行占位） */
+  runGroupId?: string
+  /** 组内产品标签（SM / VOD / result…） */
+  runGroupProductTag?: string
+  /** 计算中禁止单独拖出组 */
+  runGroupLocked?: boolean
 }
 
 // ─── Layer sidebar view mode ──────────────────────────────────────────────────
@@ -275,15 +348,27 @@ export interface ActiveLayerDisplay {
   renderHint?: WeatherLayerRenderHint
   /** 用户自定义配色方案覆盖 */
   paletteOverride?: string | null
+  vminOverride?: number | null
+  vmaxOverride?: number | null
+  nodataMode?: 'transparent' | 'solid' | null
+  nodataColor?: string | null
   /** 导入矢量元信息（仅 isImported） */
   importedGeometryType?: string
   importedFeatureCount?: number
   /** 导入矢量的后端 layer_id（用于 /export/layer） */
   importedVectorBackendLayerId?: string
+  /** 导入栅格后端 overlay_layer_id（点查/时序查询使用） */
+  importedRasterOverlayLayerId?: string
   /** 导入栅格元信息（仅 isImportedRaster） */
   importedRasterBounds?: [number, number, number, number]
   /** 导入栅格源 CRS */
   importedRasterSourceCrs?: string
+  /** 导入栅格原生时间步（如 8d） */
+  importedRasterNativeStep?: string
+  /** 导入栅格当前生效区间标签 */
+  importedRasterEffectiveTime?: string
+  /** 导入栅格可用时刻/块数量 */
+  importedRasterTimeCount?: number
   /** 导入文件名 */
   importedFileName?: string
   /** 导入矢量样式（仅 isImported） */
@@ -295,4 +380,8 @@ export interface ActiveLayerDisplay {
   }
   /** 导入数据包围盒（矢量 / 栅格） */
   importedBounds?: [number, number, number, number]
+  /** 计算组 */
+  runGroupId?: string
+  runGroupProductTag?: string
+  runGroupLocked?: boolean
 }

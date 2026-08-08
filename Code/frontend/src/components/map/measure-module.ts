@@ -15,13 +15,19 @@
  *   - 标注层（文字 + 预览虚线）由 MeasureCanvas 2D 渲染（文字描边效果 MapLibre 难以实现）
  *   - GeoJSON 在每次 store action 后整体重建（路径点数少，性能不是瓶颈）
  */
-import type { Map as MaplibreMap, MapMouseEvent } from 'maplibre-gl'
+import type { Map as MaplibreMap, MapLayerMouseEvent, MapMouseEvent } from 'maplibre-gl'
 
 import { MeasureCanvas } from './measure-canvas'
 import type { InteractionMode, MeasurePoint, MeasureState } from '../../stores/ui'
 
 /** 圆点半径（px） */
 const POINT_RADIUS = 5
+
+/** 首点强调半径（px） */
+const POINT_RADIUS_FIRST = 8
+
+/** 首点强调颜色（琥珀色，区分路径蓝） */
+const POINT_COLOR_FIRST = '#ffb84d'
 
 /** 圆点边框宽度（px） */
 const POINT_STROKE_WIDTH = 2
@@ -75,7 +81,10 @@ export function createMeasureModule(options: CreateMeasureModuleOptions): Measur
   let sourcesAdded = false
   let eventsBound = false
   /** 已注册的事件处理器引用，用于 dispose 时移除 */
-  const registeredHandlers: Array<{ event: string; handler: (...args: any[]) => void }> = []
+  const registeredHandlers: Array<{
+    event: string
+    handler: (ev: MapMouseEvent | MapLayerMouseEvent) => void
+  }> = []
 
   /**
    * 添加 GeoJSON Source + Layer（仅一次，map.loaded 后调用）。
@@ -140,8 +149,14 @@ export function createMeasureModule(options: CreateMeasureModuleOptions): Measur
       type: 'circle',
       source: SOURCE_POINTS,
       paint: {
-        'circle-radius': POINT_RADIUS,
-        'circle-color': LINE_COLOR,
+        // 首点强调：琥珀色 + 更大半径，与路径蓝顶点区分
+        'circle-radius': [
+          'case',
+          ['==', ['get', 'isFirst'], true],
+          POINT_RADIUS_FIRST,
+          POINT_RADIUS,
+        ],
+        'circle-color': ['case', ['==', ['get', 'isFirst'], true], POINT_COLOR_FIRST, LINE_COLOR],
         'circle-stroke-width': POINT_STROKE_WIDTH,
         'circle-stroke-color': '#ffffff',
       },
@@ -160,10 +175,10 @@ export function createMeasureModule(options: CreateMeasureModuleOptions): Measur
     const { points, isDrawing, hoverPoint } = options.getMeasureState()
 
     // ── 圆点 FeatureCollection ──
-    const pointFeatures: GeoJSON.Feature<GeoJSON.Point>[] = points.map((p) => ({
+    const pointFeatures: GeoJSON.Feature<GeoJSON.Point>[] = points.map((p, i) => ({
       type: 'Feature',
       geometry: { type: 'Point', coordinates: [p.lng, p.lat] },
-      properties: {},
+      properties: { isFirst: i === 0 },
     }))
     const pointsSource = map.getSource(SOURCE_POINTS) as maplibregl.GeoJSONSource | undefined
     if (pointsSource) {
@@ -285,10 +300,10 @@ export function createMeasureModule(options: CreateMeasureModuleOptions): Measur
     map.on('mousemove', onMouseMove)
 
     registeredHandlers.push(
-      { event: 'click', handler: onClick as (...args: any[]) => void },
-      { event: 'dblclick', handler: onDblClick as (...args: any[]) => void },
-      { event: 'contextmenu', handler: onContextMenu as (...args: any[]) => void },
-      { event: 'mousemove', handler: onMouseMove as (...args: any[]) => void },
+      { event: 'click', handler: onClick },
+      { event: 'dblclick', handler: onDblClick },
+      { event: 'contextmenu', handler: onContextMenu },
+      { event: 'mousemove', handler: onMouseMove },
     )
   }
 
@@ -313,7 +328,7 @@ export function createMeasureModule(options: CreateMeasureModuleOptions): Measur
   function dispose(): void {
     // 移除事件监听
     for (const { event, handler } of registeredHandlers.splice(0)) {
-      map.off(event as any, handler)
+      map.off(event, handler as (ev: MapMouseEvent & object) => void)
     }
     eventsBound = false
 

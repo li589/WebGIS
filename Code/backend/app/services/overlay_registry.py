@@ -20,6 +20,8 @@ from pathlib import Path
 from typing import Any
 
 import numpy as np
+import rasterio
+from pyproj import Transformer
 from fastapi import HTTPException
 
 # 引入 algorithms providers 目录以复用 universal_reader
@@ -92,25 +94,45 @@ class OverlaySpec:
     source_reader: str = "auto"
     """auto | mat | netcdf | geotiff | hdf5。auto 按文件扩展名判断。"""
 
+    def _assert_time_available(self, t: str | None) -> str | None:
+        """校验时序图层的时间值在 time_list 白名单内。
+
+        与 :meth:`resolve_png` 的既有校验保持一致，阻断把用户可控 ``time``
+        直接拼进文件路径的路径穿越（G1-01）。静态图层或空白名单时不拦截。
+        """
+        if self.category == "time-series" and t is None:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Time-series overlay {self.layer_id} requires 'time' parameter",
+            )
+        if self.time_list and t not in self.time_list:
+            raise HTTPException(
+                status_code=404,
+                detail=f"Time {t} not available for overlay {self.layer_id}",
+            )
+        return t
+
+    @staticmethod
+    def _assert_no_path_traversal(path: Path) -> Path:
+        """防御纵深：拒绝含 ``..`` 段的结果路径（白名单之外的最后一层防护）。"""
+        if ".." in path.parts:
+            raise HTTPException(
+                status_code=404,
+                detail="Invalid overlay path (traversal detected)",
+            )
+        return path
+
     def resolve_png(self, time: str | None = None) -> Path:
         if self.category == "time-series":
-            t = time or self.default_time
-            if t is None:
-                raise HTTPException(
-                    status_code=400,
-                    detail=f"Time-series overlay {self.layer_id} requires 'time' parameter",
-                )
-            if self.time_list and t not in self.time_list:
-                raise HTTPException(
-                    status_code=404,
-                    detail=f"Time {t} not available for overlay {self.layer_id}",
-                )
+            t = self._assert_time_available(time or self.default_time)
             if self.time_pattern is None:
                 raise HTTPException(
                     status_code=500,
                     detail=f"Time-series overlay {self.layer_id} missing time_pattern",
                 )
-            return self.overlay_dir / self.time_pattern.format(time=t)
+            return self._assert_no_path_traversal(
+                self.overlay_dir / self.time_pattern.format(time=t)
+            )
         # static
         if self.png_filename is None:
             raise HTTPException(
@@ -121,8 +143,10 @@ class OverlaySpec:
 
     def resolve_bounds(self, time: str | None = None) -> Path:
         if self.category == "time-series" and self.bounds_pattern:
-            t = time or self.default_time
-            return self.overlay_dir / self.bounds_pattern.format(time=t)
+            t = self._assert_time_available(time or self.default_time)
+            return self._assert_no_path_traversal(
+                self.overlay_dir / self.bounds_pattern.format(time=t)
+            )
         if self.bounds_filename is None:
             raise HTTPException(
                 status_code=500,
@@ -154,10 +178,13 @@ class OverlaySpec:
             t = time or self.default_time
             if t is None:
                 return None
+            # 与 resolve_png 一致的白名单校验，阻断 time=../../ 路径穿越（G1-01）
+            self._assert_time_available(t)
             pattern = self.source_pattern.format(time=t)
             # 支持 glob 通配符（如 SMAP R 编号）
             if "*" in pattern or "?" in pattern:
                 p = Path(pattern)
+                self._assert_no_path_traversal(p)
                 # 统一使用 parent.glob(name) 避免绝对路径 glob 异常
                 parent = p.parent
                 matches = sorted(parent.glob(p.name)) if parent.exists() else []
@@ -165,11 +192,52 @@ class OverlaySpec:
                     return None
                 return matches[0]
             p = Path(pattern)
+            self._assert_no_path_traversal(p)
             return p if p.exists() else None
         # static
         if self.source_path is None:
             return None
         return self.source_path if self.source_path.exists() else None
+
+    def _sample_geotiff_projected(
+        self, src_path: Path, lng: float, lat: float
+    ) -> float | None:
+        """GeoTIFF 专用：按栅格自身投影采样。
+
+        UniversalDataReader 对部分 EASE-Grid GeoTIFF 返回 ``lat=None/lon=None``，
+        导致 FY/SMAP 8 天块点查恒为 null。这里直接用 rasterio 读取栅格 CRS，
+        将 WGS84 点位转换到栅格投影坐标，再最近邻采样。
+        """
+        with rasterio.open(src_path) as ds:
+            if ds.crs is None:
+                return None
+            # 自校准坐标轴：部分 EPSG 投影（如 6933）在 always_xy=True 下仍返回 (y,x)。
+            # 选择非中心、有限像元作为基准，比较直接输出与交换输出对像素中心的还原误差。
+            transformer = Transformer.from_crs("EPSG:4326", ds.crs, always_xy=True)
+            back = Transformer.from_crs(ds.crs, "EPSG:4326", always_xy=True)
+            row = min(max(ds.height // 3, 0), ds.height - 1)
+            col = min(max(ds.width // 3, 0), ds.width - 1)
+            tx0, ty0 = ds.transform * (col + 0.5, row + 0.5)
+            base_lng, base_lat = back.transform(tx0, ty0)
+            tx1, ty1 = transformer.transform(base_lng, base_lat)
+            direct_score = abs(tx1 - tx0) + abs(ty1 - ty0)
+            swapped_score = abs(tx1 - ty0) + abs(ty1 - tx0)
+            need_swap = swapped_score < direct_score
+            x, y = transformer.transform(lng, lat)
+            if need_swap:
+                x, y = y, x
+            arr = ds.read(1, masked=True)
+            try:
+                row, col = ds.index(x, y)
+            except Exception:
+                return None
+            if not (0 <= row < ds.height and 0 <= col < ds.width):
+                return None
+            val = arr[row, col]
+            if np.ma.is_masked(val):
+                return None
+            out = float(val)
+            return out if np.isfinite(out) else None
 
     def resolve_value(
         self, lng: float, lat: float, time: str | None = None
@@ -192,6 +260,10 @@ class OverlaySpec:
         try:
             src_path = self.resolve_source_path(time)
             if src_path is None:
+                return result
+
+            if self.source_reader == "geotiff":
+                result["value"] = self._sample_geotiff_projected(src_path, lng, lat)
                 return result
 
             from data_access.universal_reader import UniversalDataReader
@@ -257,25 +329,34 @@ class OverlaySpec:
 
 
 # ──────────────────────────────────────────────────────────────────────────────
-# 数据根目录
+# 数据根目录（相对 BACKEND_DATA_ROOT；空根 → 占位路径，exists()=False）
 # ──────────────────────────────────────────────────────────────────────────────
 
-_PROJECT_OUTPUT = Path(r"I:\Geograph_DataSet\ProjectOutput\2023-01_Omega_Inversion")
-_DEM_DIR = Path(r"I:\Geograph_DataSet\Geological\DEM\ETOPO_2022")
-_GPCP_DIR = Path(r"I:\Geograph_DataSet\Meteorological\Precipitation\GPCP\dataset")
+
+def _data_join(*parts: str) -> Path:
+    """拼接地理数据路径；未配置 data_root 时返回不存在的占位路径。"""
+    from app.core.config import settings
+
+    root = (getattr(settings, "data_root", None) or "").strip()
+    if not root:
+        return Path(".__cgda_no_data_root__").joinpath(*parts)
+    return Path(root).joinpath(*parts)
+
+
+_PROJECT_OUTPUT = _data_join("ProjectOutput", "2023-01_Omega_Inversion")
+_DEM_DIR = _data_join("Geological", "DEM", "ETOPO_2022")
+_GPCP_DIR = _data_join("Meteorological", "Precipitation", "GPCP", "dataset")
 _STAGE2_ALIGNED = _PROJECT_OUTPUT / "stage2_aligned"
-_OMEGA_SOURCE = Path(r"I:\Geograph_DataSet\Inversion_Results\smap_avg\doy_017.mat")
+_OMEGA_SOURCE = _data_join("Inversion_Results", "smap_avg", "doy_017.mat")
 _DEM_SOURCE_TIF = _DEM_DIR / "ETOPO_2022_v1_60s_N90W180_surface.tif"
 
 # ── 课题组派生 9km EASE-Grid 数据根 ──────────────────────────────────────────
-_INVERSION_RESULTS_ROOT = Path(r"I:\Geograph_DataSet\Inversion_Results")
-_OMEGA_SMAP_AVG_DIR = _INVERSION_RESULTS_ROOT / "smap_avg"
-_OMEGA_FY_AVG_DIR = _INVERSION_RESULTS_ROOT / "fy_avg"
-_SOIL_DDCA_H_DIR = Path(r"I:\Geograph_DataSet\Soil_Moisture\DDCA\DDCA_DH\H")
+_INVERSION_RESULTS_ROOT = _data_join("Inversion_Results")
+_SOIL_DDCA_H_DIR = _data_join("Soil_Moisture", "DDCA", "DDCA_DH", "H")
 
 # ── Phase 2: 课题组 VOD/SM 产品族（2025-12 时间序列，EASE-Grid 9km）──────────
 # SmapSoil_VOD_SM/YYYYMMDD.mat (v7.3 HDF5) 含 OMEGA / SM / VOD 三个变量，shape (1624, 3856)
-_SMAP_SOIL_VOD_SM_DIR = Path(r"I:\Geograph_DataSet\Soil_Moisture\SMAP_Soil_VOD_SM")
+_SMAP_SOIL_VOD_SM_DIR = _data_join("Soil_Moisture", "SMAP_Soil_VOD_SM")
 
 _OVERLAY_PNG_ROOT = _PROJECT_OUTPUT / "_overlays"
 """所有导出 PNG 的统一存放目录（由 Tools/export_overlay_assets.py 生成）。"""
@@ -379,8 +460,6 @@ def _date8_time_list(directory: Path, limit: int | None = None) -> list[str]:
 
 _SMAP_TIMES = _smap_time_list()
 _GPCP_TIMES = _gpcp_time_list(limit=24)
-_OMEGA_SMAP_TIMES = _doy_time_list(_OMEGA_SMAP_AVG_DIR)
-_OMEGA_FY_TIMES = _doy_time_list(_OMEGA_FY_AVG_DIR)
 _SOIL_DDCA_TIMES = _soil_ddca_time_list(limit=60)
 # Phase 2: VOD/SM/Omega 2025-12 时间序列（31 天，全量不采样）
 _VOD_SM_TIMES = _date8_time_list(_SMAP_SOIL_VOD_SM_DIR, limit=None)
@@ -393,6 +472,114 @@ _VOD_SM_TIMES = _date8_time_list(_SMAP_SOIL_VOD_SM_DIR, limit=None)
 _REGISTRY: dict[str, OverlaySpec] = {}
 
 
+def _try_load_imported_overlay(layer_id: str) -> OverlaySpec | None:
+    """Lazy-load an imported-* overlay from disk into the in-memory registry.
+
+    Import commits may run in a Celery worker / one-off process while the
+    FastAPI process has a separate ``_REGISTRY``. Rehydrate from
+    ``IMPORTS_DIR/<layer_id>`` so ``/overlay-preview`` works cross-process.
+    """
+    if not layer_id.startswith("imported-"):
+        return None
+    try:
+        from app.data_io.services.paths import IMPORTS_DIR
+    except Exception:
+        return None
+
+    dest_dir = IMPORTS_DIR / layer_id
+    bounds_path = dest_dir / "bounds.json"
+    if not bounds_path.is_file():
+        return None
+
+    try:
+        bounds_data = json.loads(bounds_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return None
+
+    meta = bounds_data.get("meta") if isinstance(bounds_data, dict) else {}
+    if not isinstance(meta, dict):
+        meta = {}
+    # Prefer meta.json when present (timeseries upserts write richer meta)
+    meta_path = dest_dir / "meta.json"
+    if meta_path.is_file():
+        try:
+            disk_meta = json.loads(meta_path.read_text(encoding="utf-8"))
+            if isinstance(disk_meta, dict):
+                meta = {**meta, **disk_meta}
+        except (OSError, json.JSONDecodeError):
+            pass
+
+    time_list = meta.get("time_list") if isinstance(meta.get("time_list"), list) else []
+    time_list = [str(t) for t in time_list]
+    has_time_previews = any(dest_dir.glob("preview_*.png"))
+    has_static_preview = (dest_dir / "preview.png").is_file()
+    category = str(
+        meta.get("category")
+        or ("time-series" if (time_list or has_time_previews) else "static")
+    )
+    # 时序层通常只有 preview_{time}.png，无根目录 preview.png
+    if category == "time-series":
+        if not has_time_previews and not has_static_preview:
+            return None
+    elif not has_static_preview:
+        return None
+
+    source_filename = meta.get("source_filename")
+    source_path = dest_dir / str(source_filename) if source_filename else None
+    if source_path is not None and not source_path.is_file():
+        source_path = None
+    if source_path is None:
+        # Fall back to any source_*.tif / source.tif
+        candidates = sorted(dest_dir.glob("source*.tif")) + sorted(
+            dest_dir.glob("source*.tiff")
+        )
+        if candidates:
+            source_path = candidates[0]
+
+    if not time_list and has_time_previews:
+        time_list = sorted(
+            p.stem.removeprefix("preview_")
+            for p in dest_dir.glob("preview_*.png")
+            if p.stem.startswith("preview_")
+        )
+    default_time_raw = meta.get("default_time")
+    default_time = (
+        str(default_time_raw)
+        if default_time_raw
+        else (time_list[-1] if time_list else None)
+    )
+    source_pattern = None
+    if category == "time-series" and any(dest_dir.glob("source_*.tif")):
+        source_pattern = str(dest_dir / "source_{time}.tif")
+
+    # OMEGA_BLOCK 对外统一为 OMEGA（与工作流组标签一致）
+    label = str(meta.get("label") or "")
+    if label.upper().startswith("OMEGA_BLOCK") or label.upper() == "OMEGA_BLOCK":
+        meta["label"] = "OMEGA"
+
+    spec = OverlaySpec(
+        layer_id=layer_id,
+        overlay_dir=dest_dir,
+        png_filename="preview.png" if has_static_preview else None,
+        bounds_filename="bounds.json",
+        category=category,
+        time_list=time_list,
+        default_time=default_time,
+        time_pattern="preview_{time}.png" if category == "time-series" else None,
+        bounds_pattern="bounds_{time}.json" if category == "time-series" else None,
+        palette=str(meta.get("palette") or "wind-blue"),
+        opacity=float(meta.get("opacity") or 0.7),
+        crs=str(meta.get("crs") or "EPSG:4326"),
+        source_path=source_path if category != "time-series" else None,
+        source_pattern=source_pattern,
+        source_reader="geotiff"
+        if (source_path is not None or source_pattern is not None)
+        else "auto",
+    )
+    _REGISTRY[layer_id] = spec
+    return spec
+
+
 def register_overlay(spec: OverlaySpec) -> None:
     _REGISTRY[spec.layer_id] = spec
 
@@ -403,11 +590,33 @@ def unregister_overlay(layer_id: str) -> OverlaySpec | None:
 
 
 def get_overlay_spec(layer_id: str) -> OverlaySpec | None:
-    return _REGISTRY.get(layer_id)
+    spec = _REGISTRY.get(layer_id)
+    if spec is not None:
+        return spec
+    return _try_load_imported_overlay(layer_id)
 
 
 def list_overlay_ids() -> list[str]:
-    return list(_REGISTRY.keys())
+    ids = set(_REGISTRY.keys())
+    try:
+        from app.data_io.services.paths import IMPORTS_DIR
+
+        if IMPORTS_DIR.is_dir():
+            for child in IMPORTS_DIR.iterdir():
+                if not (
+                    child.is_dir()
+                    and child.name.startswith("imported-")
+                    and (child / "bounds.json").is_file()
+                ):
+                    continue
+                has_preview = (child / "preview.png").is_file() or any(
+                    child.glob("preview_*.png")
+                )
+                if has_preview:
+                    ids.add(child.name)
+    except Exception:
+        pass
+    return sorted(ids)
 
 
 # ─── 静态图层 ─────────────────────────────────────────────────────────────────
@@ -506,28 +715,6 @@ register_overlay(
     )
 )
 
-# Omega 反演结果均值时间序列（doy 017-030，14 天）
-register_overlay(
-    OverlaySpec(
-        layer_id="omega-output",
-        overlay_dir=_OVERLAY_PNG_ROOT / "omega_ts",
-        time_pattern="omega_avg_{time}.png",
-        bounds_pattern="omega_avg_{time}_bounds.json",
-        bounds_filename="omega_avg_overlay_bounds.json",  # 通用 bounds 备用
-        category="time-series",
-        time_list=_OMEGA_SMAP_TIMES,
-        default_time=_OMEGA_SMAP_TIMES[0] if _OMEGA_SMAP_TIMES else None,
-        palette="plasma",
-        vmin=0.0,
-        vmax=1.0,
-        unit="Omega",
-        opacity=0.75,
-        source_pattern=str(_OMEGA_SMAP_AVG_DIR / "doy_{time}.mat"),
-        source_variable="OMEGA_AVG",
-        source_reader="mat",
-    )
-)
-
 
 # ─── 时间序列图层 ────────────────────────────────────────────────────────────
 
@@ -580,29 +767,25 @@ register_overlay(
 
 # ─── 新增数据集图层（10 个，静态） ────────────────────────────────────────────
 
-# 源数据根目录
-_GEBCO_NC = Path(r"I:\Geograph_DataSet\Geological\DEM\GEBCO_2024.nc")
-_CMFD_TIF = Path(r"I:\Geograph_DataSet\Meteorological\Precipitation\pre_2002_01.tif")
-_CLCD_TIF = Path(
-    r"I:\Geograph_DataSet\Ecological_Vegetation\LandCover\CLCD\CLCD_v01_1997.tif"
+# 源数据（相对 BACKEND_DATA_ROOT）
+_GEBCO_NC = _data_join("Geological", "DEM", "GEBCO_2024.nc")
+_CMFD_TIF = _data_join("Meteorological", "Precipitation", "pre_2002_01.tif")
+_CLCD_TIF = _data_join(
+    "Ecological_Vegetation", "LandCover", "CLCD", "CLCD_v01_1997.tif"
 )
-_BIOMASS_NC = Path(
-    r"I:\Geograph_DataSet\Ecological_Vegetation\Biomass\ESACCI-BIOMASS-L4-AGB-MERGED-100m-2020-fv6.0.nc"
+_BIOMASS_NC = _data_join(
+    "Ecological_Vegetation",
+    "Biomass",
+    "ESACCI-BIOMASS-L4-AGB-MERGED-100m-2020-fv6.0.nc",
 )
-_ERA5_DWAA_TIF = Path(
-    r"I:\Geograph_DataSet\Hazards\DWAA_result\DW_T7\ERA5_2020_DW_SMCI.tif"
+_ERA5_DWAA_TIF = _data_join("Hazards", "DWAA_result", "DW_T7", "ERA5_2020_DW_SMCI.tif")
+_ERA5_WDAA_TIF = _data_join("Hazards", "DWAA_result", "WD_T7", "ERA5_2020_WD_SMCI.tif")
+_CO2_TIF = _data_join(
+    "Atmospheric", "CO2", "MidLayerCO2Column", "TIF", "MeanCarbonDioxide.tif"
 )
-_ERA5_WDAA_TIF = Path(
-    r"I:\Geograph_DataSet\Hazards\DWAA_result\WD_T7\ERA5_2020_WD_SMCI.tif"
-)
-_CO2_TIF = Path(
-    r"I:\Geograph_DataSet\Atmospheric\CO2\MidLayerCO2Column\TIF\MeanCarbonDioxide.tif"
-)
-_SOIL_DDCA_MAT = Path(r"I:\Geograph_DataSet\Soil_Moisture\DDCA\DDCA_DH\H\20150401.mat")
-_OMEGA_FY_MAT = Path(r"I:\Geograph_DataSet\Inversion_Results\fy_avg\doy_025.mat")
-_FOREST_RATIO_MAT = Path(
-    r"I:\Geograph_DataSet\Inversion_Results\Forest_Ratio_9KM_2020.mat"
-)
+_SOIL_DDCA_MAT = _data_join("Soil_Moisture", "DDCA", "DDCA_DH", "H", "20150401.mat")
+_OMEGA_FY_MAT = _data_join("Inversion_Results", "fy_avg", "doy_025.mat")
+_FOREST_RATIO_MAT = _data_join("Inversion_Results", "Forest_Ratio_9KM_2020.mat")
 
 
 # GEBCO 2024 DEM（中国区域）
@@ -755,27 +938,6 @@ register_overlay(
     )
 )
 
-# Omega FY avg 时间序列（全球 9km，doy 025-030，6 天）
-register_overlay(
-    OverlaySpec(
-        layer_id="omega-fy-output",
-        overlay_dir=_OVERLAY_PNG_ROOT / "omega_fy_ts",
-        time_pattern="omega_fy_{time}.png",
-        bounds_pattern="omega_fy_{time}_bounds.json",
-        bounds_filename="omega_fy_overlay_bounds.json",  # 通用 bounds 备用
-        category="time-series",
-        time_list=_OMEGA_FY_TIMES,
-        default_time=_OMEGA_FY_TIMES[0] if _OMEGA_FY_TIMES else None,
-        palette="magma",
-        vmin=0.0,
-        vmax=1.0,
-        unit="Omega",
-        opacity=0.75,
-        source_pattern=str(_OMEGA_FY_AVG_DIR / "doy_{time}.mat"),
-        source_variable="OMEGA_AVG",
-        source_reader="mat",
-    )
-)
 
 # Landscape Metrics 9km 2020（全球 EASE-Grid 9km，静态）
 # Phase 1.4 新增：课题组派生景观指数数据，与 Forest_Ratio 同源
@@ -828,26 +990,6 @@ register_overlay(
 # 每个图层导出 31 天（2025-12-01 ~ 2025-12-31）的 PNG + bounds JSON
 
 # VOD 植被光学厚度时间序列（2025-12，31 天，magma 色表）
-register_overlay(
-    OverlaySpec(
-        layer_id="vod-dec2025",
-        overlay_dir=_OVERLAY_PNG_ROOT / "vod_ts",
-        time_pattern="vod_ts_{time}.png",
-        bounds_pattern="vod_ts_{time}_bounds.json",
-        bounds_filename="vod_ts_overlay_bounds.json",  # 通用 bounds 备用
-        category="time-series",
-        time_list=_VOD_SM_TIMES,
-        default_time=_VOD_SM_TIMES[0] if _VOD_SM_TIMES else None,
-        palette="magma",
-        vmin=0.0,
-        vmax=1.0,
-        unit="VOD",
-        opacity=0.8,
-        source_pattern=str(_SMAP_SOIL_VOD_SM_DIR / "{time}.mat"),
-        source_variable="VOD",
-        source_reader="mat",
-    )
-)
 
 # SM 土壤湿度时间序列（2025-12，31 天，YlGnBu 色表）
 register_overlay(
@@ -871,29 +1013,6 @@ register_overlay(
     )
 )
 
-# Omega 反演时间序列（2025-12，31 天，plasma 色表）
-# 与现有 omega-output (doy 017-030 多年均值) 互补，提供 2025-12 每日反演结果
-register_overlay(
-    OverlaySpec(
-        layer_id="omega-dec2025",
-        overlay_dir=_OVERLAY_PNG_ROOT / "omega_2025_ts",
-        time_pattern="omega_2025_ts_{time}.png",
-        bounds_pattern="omega_2025_ts_{time}_bounds.json",
-        bounds_filename="omega_2025_ts_overlay_bounds.json",  # 通用 bounds 备用
-        category="time-series",
-        time_list=_VOD_SM_TIMES,
-        default_time=_VOD_SM_TIMES[0] if _VOD_SM_TIMES else None,
-        palette="plasma",
-        vmin=0.0,
-        vmax=1.0,
-        unit="Omega",
-        opacity=0.75,
-        source_pattern=str(_SMAP_SOIL_VOD_SM_DIR / "{time}.mat"),
-        source_variable="OMEGA",
-        source_reader="mat",
-    )
-)
-
 
 def read_bounds(layer_id: str, time: str | None = None) -> dict[str, Any]:
     """读取 bounds JSON 并附加元数据。"""
@@ -911,6 +1030,18 @@ def read_bounds(layer_id: str, time: str | None = None) -> dict[str, Any]:
     meta = spec.meta_dict()
     if time is not None:
         meta["current_time"] = time
+    from app.services.overlay_tile_service import tile_meta_fields
+
+    source_path = spec.resolve_source_path(time)
+    supports_tiles = bool(
+        source_path is not None
+        and source_path.suffix.lower() in {".tif", ".tiff", ".geotiff", ".cog"}
+    )
+    meta.update(tile_meta_fields(layer_id))
+    meta["supports_xyz_tiles"] = supports_tiles
+    from app.services.overlay_recolor import overlay_supports_recolor
+
+    meta["supports_recolor"] = overlay_supports_recolor(layer_id, time)
     data.setdefault("meta", {}).update(meta)
     # 确保 bounds 字段存在
     if "bounds" not in data:

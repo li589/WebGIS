@@ -5,6 +5,7 @@ import 'maplibre-gl/dist/maplibre-gl.css'
 import App from './App.vue'
 import { router } from './app/router'
 import './styles/main.css'
+import { installClientErrorCapture } from './utils/client-error-capture'
 import { installPerfGlobal } from './utils/perf-probe'
 
 installPerfGlobal()
@@ -13,5 +14,6 @@ const app = createApp(App)
 
 app.use(createPinia())
 app.use(router)
+installClientErrorCapture(app)
 
 app.mount('#app')

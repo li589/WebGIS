@@ -24,11 +24,13 @@ import type {
   WindParticleSyncOptions,
 } from './wind-particle-controller-contract'
 import type { WindGeoJSON } from './types'
+import { lonFrameFromViewportBounds } from './lon-frame'
+import { debugLog } from '../../utils/perf-probe'
 
 type MapInstance = import('maplibre-gl').Map
 
-function debugLog(module: string, ...args: unknown[]) {
-  console.log(`[${performance.now().toFixed(1)}ms] [${module}]`, ...args)
+function windDebugLog(module: string, ...args: unknown[]) {
+  debugLog(`[${performance.now().toFixed(1)}ms] [${module}]`, ...args)
 }
 
 export class WindParticleWebGLOverlayController implements WindParticleControllerContract {
@@ -73,7 +75,7 @@ export class WindParticleWebGLOverlayController implements WindParticleControlle
 
   private ensureCanvasFallback(reason: 'gl-failure' | 'streamline'): WindParticleOverlayController {
     if (!this.canvasFallback) {
-      debugLog('WindParticleWebGL', 'falling back to Canvas 2D', reason)
+      windDebugLog('WindParticleWebGL', 'falling back to Canvas 2D', reason)
       if (reason === 'gl-failure') {
         // GL 不可用：立即销毁 WebGL 层和辅助层
         this.destroyWebGLLayer()
@@ -135,7 +137,7 @@ export class WindParticleWebGLOverlayController implements WindParticleControlle
   }
 
   reset(options?: { invalidatePendingFetch?: boolean }) {
-    debugLog(
+    windDebugLog(
       'WindParticleWebGL',
       'reset',
       'invalidatePendingFetch',
@@ -207,11 +209,11 @@ export class WindParticleWebGLOverlayController implements WindParticleControlle
       try {
         this.map.addLayer(layer)
       } catch (err) {
-        debugLog('WindParticleWebGL', 'addLayer failed', err)
+        windDebugLog('WindParticleWebGL', 'addLayer failed', err)
         return
       }
       if (!layer.isUsable()) {
-        debugLog('WindParticleWebGL', 'onAdd failed', layer.getFailureReason())
+        windDebugLog('WindParticleWebGL', 'onAdd failed', layer.getFailureReason())
         try {
           this.map.removeLayer(layer.id)
         } catch {
@@ -242,7 +244,7 @@ export class WindParticleWebGLOverlayController implements WindParticleControlle
         this.map.removeLayer(this.webglLayer.id) // 触发 onRemove → teardown
       }
     } catch (err) {
-      debugLog(
+      windDebugLog(
         'WindParticleWebGL',
         'destroyWebGLLayer: map already destroyed or layer missing',
         err,
@@ -284,7 +286,7 @@ export class WindParticleWebGLOverlayController implements WindParticleControlle
       return
     }
 
-    debugLog(
+    windDebugLog(
       'WindParticleWebGL',
       'sync start',
       'catalogId',
@@ -310,12 +312,13 @@ export class WindParticleWebGLOverlayController implements WindParticleControlle
         ? (overlayState.geojsonData as WindGeoJSON)
         : null
 
-    // 视口切换后 merge 为空：清掉 WebGL 粒子，避免旧视口残留
+    // 视口切换后 merge 可能短暂为空。保留当前 WebGL 粒子和最后一份 GeoJSON，
+    // 等新瓦片到达后就地更新，避免缩放瞬态触发 destroy/recreate 闪空。
+    // 真正关闭/删除图层时由 reset()/removeCatalogArtifacts() 显式清理。
     if (!inlineGeojson && !overlayState.geojsonUrl) {
-      this.destroyWebGLLayerAndAuxiliaries()
-      this.currentWindGeojson = null
-      this.lastWindGeojsonUrl = null
-      removeWeatherMapArtifacts(this.map, catalogId)
+      if (this.currentWindGeojson || this.webglLayer) {
+        windDebugLog('WindParticleWebGL', 'transient empty viewport data; keep last wind frame')
+      }
       return
     }
 
@@ -349,7 +352,7 @@ export class WindParticleWebGLOverlayController implements WindParticleControlle
         this.lastWindGeojsonUrl = overlayState.geojsonUrl
       } catch (err) {
         if (err instanceof DOMException && err.name === 'AbortError') {
-          debugLog('WindParticleWebGL', 'sync fetch aborted')
+          windDebugLog('WindParticleWebGL', 'sync fetch aborted')
           return
         }
         console.error('[WindParticleWebGL] sync: fetch error', err)
@@ -376,13 +379,13 @@ export class WindParticleWebGLOverlayController implements WindParticleControlle
     }
 
     if (!geojson) {
-      debugLog('WindParticleWebGL', 'sync no geojson, skip')
+      windDebugLog('WindParticleWebGL', 'sync no geojson, skip')
       return
     }
 
     const enableBarbLayer = overlayState.renderHint.paint_mode === 'barb'
 
-    // 冗余更新短路：数据未变且各层就绪时跳过（粒子模式不叠风速底色）
+    // 冗余更新短路：GeoJSON URL 未变时仍刷新 LonFrame（日界线视口弧随平移变化）
     if (
       !urlChanged &&
       !inlineGeojson &&
@@ -390,6 +393,10 @@ export class WindParticleWebGLOverlayController implements WindParticleControlle
       this.windContourLayer &&
       (!enableBarbLayer || this.windBarbLayer)
     ) {
+      this.webglLayer.setWindData(
+        geojson,
+        lonFrameFromViewportBounds(overlayState.viewportBounds ?? null, this.map.getCenter().lng),
+      )
       return
     }
 
@@ -409,15 +416,18 @@ export class WindParticleWebGLOverlayController implements WindParticleControlle
     // 粒子层（WebGL）：首次注册 + 喂数据；更新时就地 setWindData
     const layer = this.ensureWebGLLayer()
     if (!layer.isUsable()) {
-      debugLog('WindParticleWebGL', 'layer unusable, reason=', layer.getFailureReason())
+      windDebugLog('WindParticleWebGL', 'layer unusable, reason=', layer.getFailureReason())
       await this.ensureCanvasFallback('gl-failure').sync(overlayState, options)
       return
     }
-    layer.setWindData(geojson)
+    layer.setWindData(
+      geojson,
+      lonFrameFromViewportBounds(overlayState.viewportBounds ?? null, this.map.getCenter().lng),
+    )
     layer.setAnimationPaused(this.animationPaused)
     layer.start()
     if (!layer.isUsable()) {
-      debugLog('WindParticleWebGL', 'unusable after start', layer.getFailureReason())
+      windDebugLog('WindParticleWebGL', 'unusable after start', layer.getFailureReason())
       await this.ensureCanvasFallback('gl-failure').sync(overlayState, options)
       return
     }
@@ -436,12 +446,12 @@ export class WindParticleWebGLOverlayController implements WindParticleControlle
         this.windBarbLayer.updateGeoJSON(geojson)
       }
     } else if (this.windBarbLayer) {
-      debugLog('WindParticleWebGL', 'destroy unused barb layer')
+      windDebugLog('WindParticleWebGL', 'destroy unused barb layer')
       this.windBarbLayer.destroy()
       this.windBarbLayer = null
     }
 
-    debugLog('WindParticleWebGL', 'sync layers updated', 'barbPresent', !!this.windBarbLayer)
+    windDebugLog('WindParticleWebGL', 'sync layers updated', 'barbPresent', !!this.windBarbLayer)
   }
 
   destroy() {

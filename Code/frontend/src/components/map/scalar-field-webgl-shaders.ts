@@ -59,11 +59,9 @@ export const SCALAR_FIELD_FRAGMENT_SHADER = /* glsl */ `
     if (mask < 0.008) {
       discard;
     }
-    // 边缘羽化：场边界 + alpha softstep，减轻硬边色带
-    // 羽化范围缩小到 0.6%，仅消除像素级硬边，不产生可见边框
-    float edge = min(min(uvClamped.x, 1.0 - uvClamped.x), min(uvClamped.y, 1.0 - uvClamped.y));
-    float feather = smoothstep(0.0, 0.006, edge);
-    float softMask = smoothstep(0.008, 0.06, mask) * feather;
+    // 仅按数据 mask 柔化。不能再对 quad 外框羽化：全球数据的主世界和
+    // 相邻世界副本在国际日期变更线恰好共用该外框，两侧同时透明会形成裂缝。
+    float softMask = smoothstep(0.008, 0.06, mask);
     float t = mix(a.r, b.r, clamp(u_blend, 0.0, 1.0));
     // 轻微 gamma，压缩中间带状感
     t = pow(clamp(t, 0.0, 1.0), 0.92);

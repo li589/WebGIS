@@ -10,12 +10,33 @@ import uuid
 from pathlib import Path
 from typing import Any
 
+from app.data_io.services.dbf_encoding import (
+    codec_available,
+    score_decoded_text,
+)
 from app.data_io.services.paths import (
     DOC_PREVIEW_ROW_LIMIT,
     DOC_SESSIONS_DIR,
     ensure_imports_root,
 )
 from app.data_io.services.vector import import_vector_from_paths
+
+# CSV 编码候选池（优先级从高到低）
+_CSV_ENCODING_CANDIDATES: tuple[str, ...] = (
+    "utf-8-sig",
+    "utf-8",
+    "gb18030",
+    "gbk",
+    "big5",
+    "cp932",
+    "shift_jis",
+    "cp949",
+    "euc_kr",
+    "cp1252",
+    "cp1250",
+    "cp1251",
+    "latin-1",
+)
 
 
 def _session_dir(session_id: str) -> Path:
@@ -37,8 +58,47 @@ def _save_table(session_id: str, table: dict[str, Any]) -> None:
     )
 
 
+def _detect_csv_encoding(path: Path) -> tuple[str, str]:
+    """探测 CSV 文件最佳编码（类似 DBF 的多编码探测策略）。
+
+    Returns:
+        (encoding, detection_note)
+    """
+    raw = path.read_bytes()
+    if not raw:
+        return "utf-8-sig", "空文件，默认 utf-8-sig"
+
+    # 尝试 BOM 检测
+    if raw[:3] == b"\xef\xbb\xbf":
+        return "utf-8-sig", "BOM 检测：UTF-8 with BOM"
+    if raw[:2] in (b"\xff\xfe", b"\xfe\xff"):
+        return "utf-16", "BOM 检测：UTF-16"
+
+    # 采样前 8KB 用于编码评分
+    sample = raw[:8192]
+    best: tuple[float, str] | None = None
+    for enc in _CSV_ENCODING_CANDIDATES:
+        if not codec_available(enc):
+            continue
+        try:
+            text = sample.decode(enc)
+        except (UnicodeDecodeError, LookupError):
+            continue
+        # 取前几行做评分
+        lines = text.splitlines()[:20]
+        score = score_decoded_text(lines, encoding=enc)
+        if best is None or score > best[0]:
+            best = (score, enc)
+
+    if best is not None:
+        return best[1], f"评分检测：{best[1]}（score={best[0]:.2f}）"
+    return "utf-8-sig", "全部编码失败，回退 utf-8-sig+replace"
+
+
 def _read_csv_like(path: Path, *, delimiter: str | None = None) -> dict[str, Any]:
-    text = path.read_text(encoding="utf-8-sig", errors="replace")
+    """读取 CSV/TXT 文件，自动探测编码与分隔符。"""
+    encoding, enc_note = _detect_csv_encoding(path)
+    text = path.read_text(encoding=encoding, errors="replace")
     sample = text[:4096]
     if delimiter is None:
         try:
@@ -55,7 +115,13 @@ def _read_csv_like(path: Path, *, delimiter: str | None = None) -> dict[str, Any
         rows.append(
             {k: (row.get(k) if row.get(k) is not None else "") for k in columns}
         )
-    return {"columns": columns, "rows": rows, "delimiter": delimiter}
+    return {
+        "columns": columns,
+        "rows": rows,
+        "delimiter": delimiter,
+        "encoding": encoding,
+        "encoding_note": enc_note,
+    }
 
 
 def _read_excel(path: Path) -> dict[str, Any]:
@@ -104,6 +170,8 @@ def create_document_session(
         "rows": table["rows"],
         "row_count": len(table["rows"]),
         "delimiter": table.get("delimiter"),
+        "source_encoding": table.get("encoding"),
+        "encoding_note": table.get("encoding_note"),
     }
     _save_table(session_id, payload)
     return preview_document_session(session_id)
@@ -121,6 +189,8 @@ def preview_document_session(session_id: str) -> dict[str, Any]:
         "preview_row_count": len(preview_rows),
         "truncated": len(rows) > DOC_PREVIEW_ROW_LIMIT,
         "rows": preview_rows,
+        "source_encoding": table.get("source_encoding"),
+        "encoding_note": table.get("encoding_note"),
     }
 
 
@@ -190,6 +260,7 @@ def commit_document_session(
     target_crs: str = "EPSG:4326",
     lng_offset: float = 0.0,
     lat_offset: float = 0.0,
+    swap_xy: bool | None = None,
 ) -> dict[str, Any]:
     table = _load_table(session_id)
     columns = table.get("columns") or []
@@ -209,6 +280,29 @@ def commit_document_session(
 
     if not points:
         raise ValueError("没有有效的坐标行")
+
+    # swap_xy: True 强制交换；False 保持；None 对采样点 bounds 自动检测
+    xy_swap_applied = False
+    xy_swap_note = ""
+    if swap_xy is True:
+        points = [(y, x) for x, y in points]
+        xy_swap_applied = True
+        xy_swap_note = "强制交换 XY"
+    elif swap_xy is False:
+        xy_swap_note = "保持 XY（用户指定不交换）"
+    else:
+        sample = points[: min(500, len(points))]
+        xs = [p[0] for p in sample]
+        ys = [p[1] for p in sample]
+        sample_bounds = (min(xs), min(ys), max(xs), max(ys))
+        from app.services.crs import crs_detector
+
+        is_swapped, xy_swap_note = crs_detector.detect_xy_swap(
+            sample_bounds, source_crs=source_crs
+        )
+        if is_swapped:
+            points = [(y, x) for x, y in points]
+            xy_swap_applied = True
 
     if source_crs != target_crs or lng_offset or lat_offset:
         from app.services.crs import crs_transformer
@@ -242,6 +336,8 @@ def commit_document_session(
     )
     result["session_id"] = session_id
     result["point_count"] = len(features)
+    result["xy_swap_applied"] = xy_swap_applied
+    result["xy_swap_note"] = xy_swap_note
     return result
 
 

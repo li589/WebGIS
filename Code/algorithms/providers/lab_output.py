@@ -36,7 +36,7 @@ class LabOutputProvider:
                 raw_result,
                 provider_key=self.provider_key,
                 layer_id=payload.layer_id,
-                default_title="课题组模型输出",
+                default_title="Lab Model Output",
                 default_summary="已通过动态算法入口接入真实课题组实现。",
                 default_metric_label="综合风险评分",
                 default_metric_unit="/ 100",
@@ -63,7 +63,7 @@ class LabOutputProvider:
         return ProviderExecutionResult(
             provider_key=self.provider_key,
             layer_id=payload.layer_id,
-            title="课题组模型输出",
+            title="Lab Model Output",
             summary="基于统一 provider 接口生成的首条真实工作流结果，可直接替换为课题组正式模型实现。",
             metric_label="综合风险评分",
             metric_unit="/ 100",

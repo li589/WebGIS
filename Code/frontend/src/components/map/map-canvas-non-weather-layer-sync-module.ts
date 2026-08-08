@@ -44,6 +44,7 @@ export function createMapCanvasNonWeatherLayerSyncModule(
   })
 
   const stopHandles: WatchStopHandle[] = []
+  let onLayerRenamed: ((ev: Event) => void) | null = null
 
   function applyLayerStackOrder() {
     if (!options.getMapReady()) return
@@ -57,16 +58,32 @@ export function createMapCanvasNonWeatherLayerSyncModule(
   async function syncOverlayLayers() {
     const known = new Set(overlayImageModule.knownOverlayIds.value)
     const opacityByLayerId: Record<string, number> = {}
+    const styleByLayerId: Record<string, import('./overlay-image-module').OverlayStyleParams> = {}
     const activeList: string[] = []
     const visibleList: string[] = []
 
     for (const layer of options.getActiveLayers()) {
+      const styleParams = {
+        palette: layer.paletteOverride ?? undefined,
+        vmin: layer.vminOverride ?? undefined,
+        vmax: layer.vmaxOverride ?? undefined,
+        nodataMode: layer.nodataMode ?? undefined,
+        nodataColor: layer.nodataColor ?? undefined,
+        forceStyle: Boolean(
+          layer.paletteOverride ||
+          layer.vminOverride != null ||
+          layer.vmaxOverride != null ||
+          (layer.nodataMode && layer.nodataMode !== 'transparent') ||
+          layer.nodataColor,
+        ),
+      }
       if (layer.importedRaster) {
         const overlayId = layer.importedRaster.overlayLayerId
         overlayImageModule.rememberOverlayId(overlayId)
         known.add(overlayId)
         activeList.push(overlayId)
         opacityByLayerId[overlayId] = layer.opacity
+        styleByLayerId[overlayId] = styleParams
         if (layer.visible) visibleList.push(overlayId)
         continue
       }
@@ -74,11 +91,12 @@ export function createMapCanvasNonWeatherLayerSyncModule(
       if (known.has(layer.catalogId)) {
         activeList.push(layer.catalogId)
         opacityByLayerId[layer.catalogId] = layer.opacity
+        styleByLayerId[layer.catalogId] = styleParams
         if (layer.visible) visibleList.push(layer.catalogId)
       }
     }
 
-    await overlayImageModule.syncOverlays(activeList, visibleList, opacityByLayerId)
+    await overlayImageModule.syncOverlays(activeList, visibleList, opacityByLayerId, styleByLayerId)
     applyLayerStackOrder()
   }
 
@@ -102,6 +120,9 @@ export function createMapCanvasNonWeatherLayerSyncModule(
     }
     for (const layer of imported) {
       importedLayerModule.setLayerVisibility(layer.instanceId, layer.visible)
+      if (layer.name) {
+        importedLayerModule.updateLayerDisplayName(layer.instanceId, layer.name)
+      }
       const style = layer.importedVector?.style
       if (style) {
         importedLayerModule.applyLayerStyle(layer.instanceId, style, layer.opacity)
@@ -119,6 +140,14 @@ export function createMapCanvasNonWeatherLayerSyncModule(
   }
 
   function setupWatchers() {
+    if (typeof window !== 'undefined') {
+      onLayerRenamed = (ev: Event) => {
+        const detail = (ev as CustomEvent<{ instanceId?: string; name?: string }>).detail
+        if (!detail?.instanceId || !detail.name) return
+        importedLayerModule.updateLayerDisplayName(detail.instanceId, detail.name)
+      }
+      window.addEventListener('cgda:layer-renamed', onLayerRenamed)
+    }
     stopHandles.push(
       watch(
         () =>
@@ -127,7 +156,7 @@ export function createMapCanvasNonWeatherLayerSyncModule(
             .filter((l) => l.importedRaster || (!l.importedVector && !l.isAdminBoundary))
             .map(
               (l) =>
-                `${l.instanceId}:${l.catalogId}:${l.visible}:${l.opacity}:${l.importedRaster ? 'r' : 'c'}`,
+                `${l.instanceId}:${l.catalogId}:${l.visible}:${l.opacity}:${l.importedRaster ? 'r' : 'c'}:${l.paletteOverride ?? ''}:${l.vminOverride ?? ''}:${l.vmaxOverride ?? ''}:${l.nodataMode ?? ''}:${l.nodataColor ?? ''}`,
             )
             .join(','),
         () => {
@@ -155,7 +184,7 @@ export function createMapCanvasNonWeatherLayerSyncModule(
             .filter((l) => l.importedVector)
             .map(
               (l) =>
-                `${l.instanceId}:${l.visible}:${l.opacity}:${l.importedVector!.featureCount}:${JSON.stringify(l.importedVector!.style ?? null)}`,
+                `${l.instanceId}:${l.name ?? ''}:${l.visible}:${l.opacity}:${l.importedVector!.featureCount}:${JSON.stringify(l.importedVector!.style ?? null)}`,
             )
             .join(','),
         () => {
@@ -172,6 +201,10 @@ export function createMapCanvasNonWeatherLayerSyncModule(
   }
 
   function dispose() {
+    if (onLayerRenamed && typeof window !== 'undefined') {
+      window.removeEventListener('cgda:layer-renamed', onLayerRenamed)
+      onLayerRenamed = null
+    }
     for (const stop of stopHandles) stop()
     stopHandles.length = 0
     overlayImageModule.dispose()

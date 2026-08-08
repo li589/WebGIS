@@ -20,7 +20,6 @@ import { storeToRefs } from 'pinia'
 import { useWorkflowDefinitionsStore } from '../../stores/workflow-definitions'
 import { useUiLoadingStore } from '../../stores/ui-loading'
 import { useLogStore } from '../../stores/log'
-import { useWorkflowOutputLayersStore } from '../../stores/workflow-output-layers'
 
 import WorkflowCanvas from './WorkflowCanvas.vue'
 import WorkflowLeftSidebar from './WorkflowLeftSidebar.vue'
@@ -28,6 +27,7 @@ import WorkflowRightSidebar from './WorkflowRightSidebar.vue'
 import WorkflowRunDialog, { type WorkflowRunTarget } from './WorkflowRunDialog.vue'
 import WorkflowTimerPanel from './WorkflowTimerPanel.vue'
 import PipelineLauncher from './PipelineLauncher.vue'
+import NodeCacheDialog from './NodeCacheDialog.vue'
 import { WORKFLOW_COPY } from '../../ui-copy'
 import {
   validateWorkflowBeforeRun,
@@ -57,7 +57,6 @@ const emit = defineEmits<{
 const store = useWorkflowDefinitionsStore()
 const { nodeTemplates, currentDefinition, isReadonly, error } = storeToRefs(store)
 const logStore = useLogStore()
-const outputStore = useWorkflowOutputLayersStore()
 
 // 选中节点状态
 const selectedNode = shallowRef<LGraphNodeClass | null>(null)
@@ -67,6 +66,9 @@ const canvasRef = ref<InstanceType<typeof WorkflowCanvas> | null>(null)
 
 /** 流配置内视图：画布 | 定时器 */
 const editorView = ref<'canvas' | 'timers'>('canvas')
+
+// 节点缓存管理对话框
+const nodeCacheDialogOpen = ref(false)
 
 // 保存状态
 const saving = ref(false)
@@ -113,9 +115,27 @@ const currentGraphData = ref<{
 const validationResult = ref<ValidationResult | null>(null)
 const showValidationPanel = ref(false)
 
+/** 画布序列化优先；LiteGraph 尚未刷入时回退到已加载的定义节点（避免流水线启动误报「画布为空」） */
+function resolveGraphForRun(): {
+  nodes: WorkflowDefinitionNode[]
+  links: WorkflowDefinitionLink[]
+} | null {
+  const fromCanvas = canvasRef.value?.getSerializedGraph() ?? null
+  if (fromCanvas?.nodes?.length) return fromCanvas
+  if (currentGraphData.value?.nodes?.length) return currentGraphData.value
+  const def = currentDefinition.value
+  if (def?.nodes?.length) {
+    return {
+      nodes: def.nodes as WorkflowDefinitionNode[],
+      links: (def.links ?? []) as WorkflowDefinitionLink[],
+    }
+  }
+  return fromCanvas ?? currentGraphData.value ?? null
+}
+
 /** 执行校验并更新状态 */
 function runValidation(): ValidationResult {
-  const graphData = canvasRef.value?.getSerializedGraph() ?? currentGraphData.value ?? null
+  const graphData = resolveGraphForRun()
   const result = validateWorkflowBeforeRun(graphData, nodeTemplates.value)
   validationResult.value = result
   return result
@@ -145,6 +165,32 @@ const headerWorkflowLabel = computed(() => {
   const name = currentDefinition.value.name
   return dirty.value ? `${name} *` : name
 })
+
+// ─── 工作流属性编辑（名称/描述） ────────────────────────────────────────────
+const showPropsDialog = ref(false)
+const editName = ref('')
+const editDescription = ref('')
+
+function openPropsDialog() {
+  if (!currentDefinition.value) return
+  editName.value = currentDefinition.value.name
+  editDescription.value = currentDefinition.value.description ?? ''
+  showPropsDialog.value = true
+}
+
+async function saveProps() {
+  if (!currentDefinition.value || !editName.value.trim() || isReadonly.value) return
+  try {
+    await store.updateCurrent({
+      name: editName.value.trim(),
+      description: editDescription.value.trim() || undefined,
+    })
+    showPropsDialog.value = false
+  } catch (error) {
+    // store 自管错误态（error ref），对话框保持打开让用户修正
+    void error
+  }
+}
 
 // ─── 生命周期 ───────────────────────────────────────────────────────────────
 
@@ -177,7 +223,15 @@ async function handleSelectWorkflow(workflowId: string) {
   selectedNode.value = null
   dirty.value = false
   saveError.value = null
-  await store.loadDefinition(workflowId)
+  const def = await store.loadDefinition(workflowId)
+  if (def?.nodes?.length) {
+    currentGraphData.value = {
+      nodes: def.nodes as WorkflowDefinitionNode[],
+      links: (def.links ?? []) as WorkflowDefinitionLink[],
+    }
+  } else {
+    currentGraphData.value = null
+  }
   logStore.logOperation('workflow-select', `选中工作流: ${workflowId}`)
 }
 
@@ -304,6 +358,11 @@ function handleRun() {
   showRunDialog.value = true
 }
 
+function proceedAfterValidation() {
+  showValidationPanel.value = false
+  showRunDialog.value = true
+}
+
 async function handleRunConfirm(target: WorkflowRunTarget) {
   if (!currentDefinition.value) return
   clearRunStatusTimers()
@@ -329,22 +388,8 @@ async function handleRunConfirm(target: WorkflowRunTarget) {
   running.value = true
   runStatus.value = 'submitting'
 
-  // multi 模式：批量创建输出图层条目（展示用）；提交仍走源图层一次运行
-  if (target.mode === 'multi' && target.targets) {
-    outputStore.createOutputLayers(
-      target.targets,
-      currentDefinition.value.workflow_id,
-      linkedLayerId,
-      currentEngine.value,
-    )
-    logStore.logOperation(
-      'workflow-multi-create',
-      `批量创建 ${target.targets.length} 个产出图层: ${target.targets.map((t) => t.name).join(', ')}`,
-    )
-  }
-
   // 获取画布序列化数据，并注入流水线参数（如有）
-  let graphData = canvasRef.value?.getSerializedGraph() ?? currentGraphData.value ?? null
+  let graphData = resolveGraphForRun()
   if (pendingPipelineParams.value && graphData) {
     graphData = applyPipelineParamsToGraph(graphData, pendingPipelineParams.value)
     pendingPipelineParams.value = null
@@ -354,15 +399,33 @@ async function handleRunConfirm(target: WorkflowRunTarget) {
 }
 
 /**
- * 将流水线启动器传入的 algorithm_params 注入到 graphData 的 module 节点中。
- * 仅更新包含 algorithm_params 的节点属性，其他节点保持不变。
+ * 将流水线启动器参数同步到算法节点与 data/time_range，保证计算范围和 UI 时间轴元数据一致。
  */
 function applyPipelineParamsToGraph(
   graphData: { nodes: WorkflowDefinitionNode[]; links: WorkflowDefinitionLink[] },
   params: Record<string, unknown>,
 ): { nodes: WorkflowDefinitionNode[]; links: WorkflowDefinitionLink[] } {
+  const startDate = typeof params.start_date === 'string' ? params.start_date : ''
+  const endDate = typeof params.end_date === 'string' ? params.end_date : ''
+  const toIsoDate = (value: string) =>
+    `${value.slice(0, 4)}-${value.slice(4, 6)}-${value.slice(6, 8)}T00:00:00`
+  const startAt = startDate.length === 8 ? toIsoDate(startDate) : ''
+  const endAt = endDate.length === 8 ? toIsoDate(endDate) : ''
+
   const updatedNodes = graphData.nodes.map((node) => {
     const nodeProps = node.properties as Record<string, unknown>
+    const isTimeRangeNode =
+      node.type === 'data/time_range' || nodeProps.module_name === 'time_range'
+    if (isTimeRangeNode && startAt && endAt) {
+      return {
+        ...node,
+        properties: {
+          ...nodeProps,
+          start_at: startAt,
+          end_at: endAt,
+        },
+      }
+    }
     if (
       nodeProps.algorithm_params &&
       typeof nodeProps.algorithm_params === 'object' &&
@@ -392,7 +455,17 @@ async function handlePipelineLaunch(workflowId: string, params: Record<string, u
   saveError.value = null
 
   // 加载工作流定义（会更新 currentDefinition 和画布）
-  await store.loadDefinition(workflowId)
+  const def = await store.loadDefinition(workflowId)
+  if (!def?.nodes?.length) {
+    saveError.value = `无法加载流水线定义：${workflowId}（节点为空或请求失败）`
+    runStatus.value = 'error'
+    return
+  }
+  // 立刻写入 graph 快照，避免等 LiteGraph 异步 configure 完成
+  currentGraphData.value = {
+    nodes: def.nodes as WorkflowDefinitionNode[],
+    links: (def.links ?? []) as WorkflowDefinitionLink[],
+  }
   selectedNode.value = null
   dirty.value = false
 
@@ -404,9 +477,11 @@ async function handlePipelineLaunch(workflowId: string, params: Record<string, u
     `启动流水线: ${workflowId}, params: ${JSON.stringify(params)}`,
   )
 
-  // 走正常的 run 流程（检查 linkedLayerId 并显示运行对话框）
-  // 等待画布渲染完成后再触发 run 对话框
+  // 等画布挂载/刷入；即便 LiteGraph 未就绪也可用 definition 节点校验/运行
   await nextTick()
+  await new Promise<void>((resolve) => {
+    requestAnimationFrame(() => resolve())
+  })
   handleRun()
 }
 
@@ -540,15 +615,25 @@ defineExpose({
           <span v-if="dirty && !isReadonly" class="dirty-badge" title="有未保存的修改"
             >● 未保存</span
           >
+          <button
+            class="header-btn"
+            type="button"
+            :disabled="!hasDefinition || isReadonly"
+            title="编辑工作流名称与说明描述"
+            @click="openPropsDialog"
+          >
+            <span aria-hidden="true">⚙</span>
+            <span>属性</span>
+          </button>
         </div>
 
         <div class="header-actions">
           <button
             class="header-btn"
             type="button"
-            :disabled="!hasDefinition || isReadonly"
-            @click="handleArrange"
+            :disabled="!hasDefinition"
             title="自动排列节点"
+            @click="handleArrange"
           >
             <span aria-hidden="true">⊞</span>
             <span>排列</span>
@@ -557,8 +642,8 @@ defineExpose({
             class="header-btn"
             type="button"
             :disabled="!hasDefinition"
-            @click="handleFitView"
             title="适配视图"
+            @click="handleFitView"
           >
             <span aria-hidden="true">⊡</span>
             <span>适配</span>
@@ -567,8 +652,8 @@ defineExpose({
             class="header-btn"
             type="button"
             :disabled="!hasDefinition || isReadonly"
-            @click="handleClear"
             title="清空画布"
+            @click="handleClear"
           >
             <span aria-hidden="true">⊘</span>
             <span>清空</span>
@@ -578,13 +663,13 @@ defineExpose({
             class="header-btn"
             type="button"
             :disabled="!hasDefinition"
-            @click="handleExport"
             title="导出为 JSON"
+            @click="handleExport"
           >
             <span aria-hidden="true">⬇</span>
             <span>导出</span>
           </button>
-          <button class="header-btn" type="button" @click="handleImportClick" title="从 JSON 导入">
+          <button class="header-btn" type="button" title="从 JSON 导入" @click="handleImportClick">
             <span aria-hidden="true">⬆</span>
             <span>导入</span>
           </button>
@@ -600,11 +685,21 @@ defineExpose({
             class="header-btn"
             type="button"
             :class="{ active: editorView === 'timers' }"
+            title="工作流定时器（Cron / 间隔 / 事件）。侧栏边缘可拖拽调宽。"
             @click="editorView = editorView === 'timers' ? 'canvas' : 'timers'"
-            title="工作流定时器（Cron / 间隔 / 事件）"
           >
             <span aria-hidden="true">⏰</span>
             <span>{{ editorView === 'timers' ? '返回画布' : '定时器' }}</span>
+          </button>
+          <span class="action-divider"></span>
+          <button
+            class="header-btn"
+            type="button"
+            title="节点缓存管理（查看/清理算法模块产物缓存）"
+            @click="nodeCacheDialogOpen = true"
+          >
+            <span aria-hidden="true">🗑</span>
+            <span>缓存</span>
           </button>
           <span class="action-divider"></span>
           <button class="header-btn primary" type="button" :disabled="!canSave" @click="handleSave">
@@ -621,8 +716,8 @@ defineExpose({
               'all-good': !validationResult.hasErrors && !validationResult.hasWarnings,
             }"
             type="button"
-            @click="showValidationPanel = !showValidationPanel"
             :title="formatValidationSummary(validationResult)"
+            @click="showValidationPanel = !showValidationPanel"
           >
             <span aria-hidden="true">{{
               validationResult.hasErrors ? '⚠' : validationResult.hasWarnings ? '◐' : '✓'
@@ -635,8 +730,8 @@ defineExpose({
           <button
             class="header-btn pipeline"
             type="button"
-            @click="showPipelineLauncher = true"
             title="端到端流水线"
+            @click="showPipelineLauncher = true"
           >
             <span aria-hidden="true">🚀</span>
             <span>流水线</span>
@@ -649,7 +744,6 @@ defineExpose({
               submitted: runStatus === 'submitted',
             }"
             :disabled="!canRun"
-            @click="handleRun"
             :title="
               runStatus === 'submitting'
                 ? '正在提交...'
@@ -657,6 +751,7 @@ defineExpose({
                   ? '已提交，查看状态面板'
                   : '运行工作流'
             "
+            @click="handleRun"
           >
             <span aria-hidden="true">{{
               runStatus === 'submitting' ? '◌' : runStatus === 'submitted' ? '✓' : '▶'
@@ -670,7 +765,7 @@ defineExpose({
             }}</span>
           </button>
           <span class="action-divider"></span>
-          <button class="header-btn close" type="button" @click="handleClose" title="关闭">
+          <button class="header-btn close" type="button" title="关闭" @click="handleClose">
             <span aria-hidden="true">✕</span>
           </button>
         </div>
@@ -697,10 +792,7 @@ defineExpose({
               v-if="!validationResult.hasErrors"
               class="validation-action-btn proceed"
               type="button"
-              @click="
-                showValidationPanel = false;
-                showRunDialog = true;
-              "
+              @click="proceedAfterValidation"
             >
               继续运行
             </button>
@@ -724,7 +816,7 @@ defineExpose({
               issue.severity === 'error' ? '✕' : '⚠'
             }}</span>
             <span class="validation-node">{{ issue.nodeTitle || '全局' }}</span>
-            <span class="validation-field" v-if="issue.field">{{ issue.field }}</span>
+            <span v-if="issue.field" class="validation-field">{{ issue.field }}</span>
             <span class="validation-message">{{ issue.message }}</span>
           </div>
         </div>
@@ -788,6 +880,7 @@ defineExpose({
       :visible="showRunDialog"
       :workflow-id="currentDefinition?.workflow_id ?? ''"
       :workflow-name="currentDefinition?.name ?? ''"
+      :workflow-description="currentDefinition?.description ?? ''"
       :linked-layer-id="currentLinkedLayerId"
       :engine="currentEngine"
       @confirm="handleRunConfirm"
@@ -858,6 +951,55 @@ defineExpose({
       @close="showPipelineLauncher = false"
       @launch="handlePipelineLaunch"
     />
+
+    <!-- 工作流属性编辑对话框（名称/描述） -->
+    <Teleport to="body">
+      <div v-if="showPropsDialog" class="props-mask" @click.self="showPropsDialog = false">
+        <div class="props-dialog" role="dialog" aria-label="工作流属性">
+          <div class="props-header">
+            <span class="props-title">工作流属性</span>
+            <button
+              class="props-close"
+              type="button"
+              aria-label="关闭"
+              @click="showPropsDialog = false"
+            >
+              ×
+            </button>
+          </div>
+          <div class="props-body">
+            <div class="form-row">
+              <label class="form-label">名称 *</label>
+              <input v-model="editName" type="text" class="form-input" placeholder="显示名称" />
+            </div>
+            <div class="form-row">
+              <label class="form-label">说明描述</label>
+              <textarea
+                v-model="editDescription"
+                class="form-textarea"
+                rows="3"
+                placeholder="说明该工作流的用途、输入输出与注意事项（运行对话框与列表展示）"
+              ></textarea>
+            </div>
+          </div>
+          <div class="dialog-actions">
+            <button class="dialog-btn cancel" type="button" @click="showPropsDialog = false">
+              取消
+            </button>
+            <button
+              class="dialog-btn primary"
+              type="button"
+              :disabled="!editName.trim()"
+              @click="saveProps"
+            >
+              保存
+            </button>
+          </div>
+        </div>
+      </div>
+    </Teleport>
+
+    <NodeCacheDialog :open="nodeCacheDialogOpen" @close="nodeCacheDialogOpen = false" />
   </div>
 </template>
 
@@ -880,6 +1022,8 @@ defineExpose({
   width: 100%;
   height: 100%;
   background: rgba(6, 13, 24, 0.98);
+  /* 局部抬高 rem 基准（全局 :root 仍为 15px），改善导师反馈的「字太小」 */
+  font-size: 18px;
 }
 
 /* ── 顶部工具栏 ──────────────────────────────────────────────────── */
@@ -906,9 +1050,9 @@ defineExpose({
 }
 
 .header-title {
-  font-size: 0.78rem;
+  font-size: 0.9rem;
   font-weight: 600;
-  color: #d8e6f5;
+  color: #e8f3fc;
 }
 
 .header-sep {
@@ -1415,5 +1559,57 @@ defineExpose({
   text-align: center;
   font-size: 0.62rem;
   color: #6ee7b7;
+}
+
+/* ── 工作流属性对话框 ──────────────────────────────────────────────────── */
+.props-mask {
+  position: fixed;
+  inset: 0;
+  z-index: 1300;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(3, 8, 16, 0.6);
+  backdrop-filter: blur(4px);
+}
+
+.props-dialog {
+  width: min(460px, 90vw);
+  border-radius: 12px;
+  border: 1px solid rgba(148, 163, 184, 0.22);
+  background: #0c1524;
+  color: #dbe7f5;
+  box-shadow: 0 20px 44px rgba(0, 0, 0, 0.45);
+  overflow: hidden;
+}
+
+.props-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.75rem 1rem;
+  border-bottom: 1px solid rgba(148, 163, 184, 0.16);
+}
+
+.props-title {
+  font-size: 14px;
+  font-weight: 500;
+  color: #f1f7ff;
+}
+
+.props-close {
+  border: none;
+  background: transparent;
+  color: #8aa2bd;
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.props-body {
+  padding: 0.9rem 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.7rem;
 }
 </style>

@@ -124,20 +124,31 @@ def auto_process_count(
         int(env_cap_str) if env_cap_str and env_cap_str.isdigit() else float("inf")
     )
 
+    # Soft headroom for sibling Celery solo workers sharing the host.
+    # Default assumes ~4 concurrent heavy tasks; set CGDA_ESTIMATED_SIBLING_TASKS=1
+    # to disable sharing (single-task / unit-test mode).
+    sibling_raw = os.environ.get("CGDA_ESTIMATED_SIBLING_TASKS", "4").strip()
+    try:
+        sibling_tasks = max(1, int(sibling_raw)) if sibling_raw else 4
+    except ValueError:
+        sibling_tasks = 4
+    sibling_cap = max(1, physical // sibling_tasks)
+
     # chunk 数约束：进程数不应超过 chunk 数（否则有 worker 闲置）
     chunk_cap = max(1, chunk_count)
 
-    final = max(1, int(min(cpu_based, mem_based, env_cap, chunk_cap)))
+    final = max(1, int(min(cpu_based, mem_based, env_cap, sibling_cap, chunk_cap)))
     if max_workers is not None:
         final = max(1, min(final, max_workers))
 
     logger.debug(
         "auto_process_count: physical=%d cpu_based=%d mem_based=%d env_cap=%s "
-        "chunk_cap=%d max_workers=%s -> final=%d",
+        "sibling_cap=%d chunk_cap=%d max_workers=%s -> final=%d",
         physical,
         cpu_based,
         mem_based,
         env_cap,
+        sibling_cap,
         chunk_cap,
         max_workers,
         final,

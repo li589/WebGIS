@@ -22,7 +22,8 @@ services:
     container_name: cgda-redis
     restart: unless-stopped
     ports:
-      - "6379:6379"
+      # 发布就绪修复（P0-3）：绑定回环，避免 0.0.0.0 对外暴露
+      - "127.0.0.1:6379:6379"
     volumes:
       - redis-data:/data
     command: redis-server --appendonly yes
@@ -43,11 +44,15 @@ services:
     container_name: cgda-minio
     restart: unless-stopped
     ports:
-      - "9100:9000"    # API (宿主机 9100 -> 容器 9000)
-      - "9101:9001"    # Console (宿主机 9101 -> 容器 9001)
+      # 发布就绪修复（P0-3）：绑定回环
+      - "127.0.0.1:9100:9000"    # API (宿主机 9100 -> 容器 9000)
+      - "127.0.0.1:9101:9001"    # Console (宿主机 9101 -> 容器 9001)
     environment:
-      MINIO_ROOT_USER: minioadmin
-      MINIO_ROOT_PASSWORD: minioadmin
+      # 凭据经环境变量注入。生产/他机构部署必须覆盖 minioadmin 默认值
+      #（MINIO_ROOT_USER/PASSWORD，且后端 BACKEND_MINIO_* 与此一致）。
+      # 默认值仅本地联调保留，切勿原样上生产。
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-minioadmin}
       MINIO_DEFAULT_BUCKETS: workflow-artifacts,gee-exports,workflow-artifacts-public
     volumes:
       - minio-data:/data
@@ -67,9 +72,12 @@ services:
     depends_on:
       minio:
         condition: service_healthy
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-minioadmin}
     entrypoint: >
       /bin/sh -c "
-      mc alias set myminio http://minio:9000 minioadmin minioadmin;
+      mc alias set myminio http://minio:9000 \"$${MINIO_ROOT_USER:-minioadmin}\" \"$${MINIO_ROOT_PASSWORD:-minioadmin}\";
       mc mb -p myminio/workflow-artifacts;
       mc mb -p myminio/gee-exports;
       mc mb -p myminio/workflow-artifacts-public;
@@ -89,7 +97,8 @@ services:
     container_name: cgda-open-meteo
     restart: unless-stopped
     ports:
-      - "${OPEN_METEO_HOST_PORT:-8080}:8080"
+      # 发布就绪修复（P0-3）：绑定回环
+      - "127.0.0.1:${OPEN_METEO_HOST_PORT:-8080}:8080"
     volumes:
       - open-meteo-data:/app/data
 

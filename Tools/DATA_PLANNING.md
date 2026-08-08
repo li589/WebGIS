@@ -3,7 +3,7 @@
 > 生成时间: 2026-07-14
 > 最后更新: 2026-07-15
 > 扫描工具: `Tools/remote_data_scanner.py`
-> 数据根目录: `I:\Geograph_DataSet\`
+> 数据根目录: 由 `BACKEND_DATA_ROOT` 配置（本实验室联调示例 `I:\Geograph_DataSet\`；前端设置 → 数据源可改）
 
 ## 1. 远程数据源
 

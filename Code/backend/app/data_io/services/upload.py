@@ -1,4 +1,13 @@
-"""分块上传 staging。"""
+"""分块上传 staging（append 顺序模式）。
+
+与 ``resumable_upload.py`` 的 **manifest** 模式并存：
+
+- **append（本模块）**：顺序追加到 ``blob.part``，按 offset 校验。适合小文件与兼容旧客户端。
+- **manifest（resumable_upload）**：按 ``chunk_index`` 独立落盘，可乱序/并行，complete 时 SHA-256 校验。
+
+``get_upload_status`` 为统一入口：读 meta.mode，``manifest`` 时委托 resumable status
+（含 ``missing_chunks``）；append 模式返回 received/total 字节进度。禁止两套语义混用同一 upload_id。
+"""
 
 from __future__ import annotations
 
@@ -24,7 +33,11 @@ from app.data_io.services.upload_validation import (
 
 
 def init_upload(
-    *, filename: str, size: int, content_type: str | None = None
+    *,
+    filename: str,
+    size: int,
+    content_type: str | None = None,
+    resume_upload_id: str | None = None,
 ) -> dict[str, Any]:
     ensure_imports_root()
     if size <= 0:
@@ -38,11 +51,43 @@ def init_upload(
     except UploadValidationError as exc:
         raise ValueError(str(exc)) from exc
 
+    # 断电/断网续传：同名同尺寸未完成会话可继续写
+    if resume_upload_id:
+        try:
+            dest, meta = _load_meta(resume_upload_id)
+            if (
+                not meta.get("complete")
+                and str(meta.get("filename")) == safe_name
+                and int(meta.get("size") or 0) == int(size)
+            ):
+                part = dest / "blob.part"
+                received = int(meta.get("received") or 0)
+                if part.exists():
+                    try:
+                        received = min(received, part.stat().st_size)
+                    except OSError:
+                        pass
+                meta["received"] = received
+                meta["content_type"] = content_type or meta.get("content_type")
+                (dest / "meta.json").write_text(
+                    json.dumps(meta, ensure_ascii=False), encoding="utf-8"
+                )
+                return {
+                    "upload_id": resume_upload_id,
+                    "chunk_size_hint": 2 * 1024 * 1024,
+                    "max_bytes": MAX_UPLOAD_BYTES,
+                    "received": received,
+                    "resumed": True,
+                }
+        except FileNotFoundError:
+            pass
+
     upload_id = f"up-{uuid.uuid4().hex[:16]}"
     dest = STAGING_DIR / upload_id
     dest.mkdir(parents=True, exist_ok=True)
     meta = {
         "upload_id": upload_id,
+        "mode": "append",
         "filename": safe_name,
         "size": int(size),
         "content_type": content_type,
@@ -58,6 +103,35 @@ def init_upload(
         "upload_id": upload_id,
         "chunk_size_hint": 2 * 1024 * 1024,
         "max_bytes": MAX_UPLOAD_BYTES,
+        "received": 0,
+        "resumed": False,
+    }
+
+
+def get_upload_status(upload_id: str) -> dict[str, Any]:
+    dest, meta = _load_meta(upload_id)
+    if meta.get("mode") == "manifest":
+        from app.data_io.services.resumable_upload import (
+            get_upload_status as get_manifest_status,
+        )
+
+        return get_manifest_status(upload_id)
+
+    received = int(meta.get("received") or 0)
+    part = dest / "blob.part"
+    if part.exists() and not meta.get("complete"):
+        try:
+            received = max(received, part.stat().st_size)
+        except OSError:
+            pass
+    return {
+        "upload_id": upload_id,
+        "mode": "append",
+        "filename": meta.get("filename"),
+        "size": int(meta.get("size") or 0),
+        "received": received,
+        "complete": bool(meta.get("complete")),
+        "path": meta.get("path"),
     }
 
 
@@ -78,8 +152,31 @@ def append_chunk(
         raise ValueError("上传已完成，不能继续写入")
     part = dest / "blob.part"
     current = int(meta.get("received") or 0)
-    if offset is not None and offset != current:
-        raise ValueError(f"分块偏移不匹配：期望 {current}，收到 {offset}")
+    if part.exists():
+        try:
+            current = max(current, part.stat().st_size)
+        except OSError:
+            pass
+
+    if offset is not None:
+        if offset > current:
+            raise ValueError(f"分块偏移不匹配：期望 {current}，收到 {offset}")
+        end = offset + len(chunk)
+        # 幂等：该区间已完整写入（重试/断电后续传）
+        if end <= current:
+            return {
+                "upload_id": upload_id,
+                "received": current,
+                "size": meta["size"],
+                "skipped": True,
+            }
+        # 部分重叠：截断到 offset 后继续追加，避免损坏拼接
+        if offset < current:
+            with part.open("r+b") as f:
+                f.truncate(offset)
+            current = offset
+            meta["received"] = current
+
     new_size = current + len(chunk)
     if new_size > int(meta["size"]):
         raise ValueError("分块累计超过声明大小")

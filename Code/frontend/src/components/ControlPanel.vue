@@ -415,41 +415,44 @@ onBeforeUnmount(() => {
   if (persistTimer.value !== null) window.clearTimeout(persistTimer.value)
 })
 
-watch([visible, collapsed, offsetX, offsetY, panelWidth, panelHeight, visibleLayoutSnapshot], () => {
-  if (typeof window === 'undefined' || !props.panelKey) return
-  if (persistTimer.value !== null) window.clearTimeout(persistTimer.value)
-  persistTimer.value = window.setTimeout(() => {
-    const snap = visibleLayoutSnapshot.value
-    const layoutOffsetX = visible.value ? offsetX.value : (snap?.offsetX ?? offsetX.value)
-    const layoutOffsetY = visible.value ? offsetY.value : (snap?.offsetY ?? offsetY.value)
-    const layoutWidth = visible.value
-      ? userResized.value
-        ? panelWidth.value
-        : undefined
-      : snap?.userResized
-        ? snap.width
-        : undefined
-    const layoutHeight = visible.value
-      ? userResized.value
-        ? panelHeight.value
-        : undefined
-      : snap?.userResized
-        ? snap.height
-        : undefined
-    const nextState: PersistedPanelState = {
-      visible: visible.value,
-      collapsed: visible.value ? collapsed.value : (snap?.collapsed ?? collapsed.value),
-      offsetX: layoutOffsetX,
-      offsetY: layoutOffsetY,
-      width: layoutWidth,
-      height: layoutHeight,
-      pillOffsetX: visible.value ? undefined : offsetX.value,
-      pillOffsetY: visible.value ? undefined : offsetY.value,
-    }
-    window.localStorage.setItem(getStorageKey(props.panelKey), JSON.stringify(nextState))
-    persistTimer.value = null
-  }, 120)
-})
+watch(
+  [visible, collapsed, offsetX, offsetY, panelWidth, panelHeight, visibleLayoutSnapshot],
+  () => {
+    if (typeof window === 'undefined' || !props.panelKey) return
+    if (persistTimer.value !== null) window.clearTimeout(persistTimer.value)
+    persistTimer.value = window.setTimeout(() => {
+      const snap = visibleLayoutSnapshot.value
+      const layoutOffsetX = visible.value ? offsetX.value : (snap?.offsetX ?? offsetX.value)
+      const layoutOffsetY = visible.value ? offsetY.value : (snap?.offsetY ?? offsetY.value)
+      const layoutWidth = visible.value
+        ? userResized.value
+          ? panelWidth.value
+          : undefined
+        : snap?.userResized
+          ? snap.width
+          : undefined
+      const layoutHeight = visible.value
+        ? userResized.value
+          ? panelHeight.value
+          : undefined
+        : snap?.userResized
+          ? snap.height
+          : undefined
+      const nextState: PersistedPanelState = {
+        visible: visible.value,
+        collapsed: visible.value ? collapsed.value : (snap?.collapsed ?? collapsed.value),
+        offsetX: layoutOffsetX,
+        offsetY: layoutOffsetY,
+        width: layoutWidth,
+        height: layoutHeight,
+        pillOffsetX: visible.value ? undefined : offsetX.value,
+        pillOffsetY: visible.value ? undefined : offsetY.value,
+      }
+      window.localStorage.setItem(getStorageKey(props.panelKey), JSON.stringify(nextState))
+      persistTimer.value = null
+    }, 120)
+  },
+)
 
 defineExpose({ showPanel, hidePanel, resetPanel, toggleCollapsed })
 </script>
@@ -601,7 +604,9 @@ defineExpose({ showPanel, hidePanel, resetPanel, toggleCollapsed })
 .restore-pill:hover {
   opacity: 1;
   border-color: rgba(136, 192, 255, 0.48);
-  box-shadow: 0 14px 28px rgba(1, 8, 16, 0.3), 0 0 12px rgba(56, 189, 248, 0.25);
+  box-shadow:
+    0 14px 28px rgba(1, 8, 16, 0.3),
+    0 0 12px rgba(56, 189, 248, 0.25);
 }
 .restore-pill--dragging {
   cursor: grabbing;
@@ -641,11 +646,15 @@ defineExpose({ showPanel, hidePanel, resetPanel, toggleCollapsed })
   border-radius: 0.86rem;
   border-bottom-color: rgba(136, 192, 255, 0.18);
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
-  transition: border-color 0.25s ease, box-shadow 0.25s ease;
+  transition:
+    border-color 0.25s ease,
+    box-shadow 0.25s ease;
 }
 .control-panel.collapsed:hover .panel-tools {
   border-color: rgba(136, 192, 255, 0.45);
-  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.5), 0 0 14px rgba(56, 189, 248, 0.25);
+  box-shadow:
+    0 12px 28px rgba(0, 0, 0, 0.5),
+    0 0 14px rgba(56, 189, 248, 0.25);
 }
 .control-panel--mobile {
   width: 100% !important;

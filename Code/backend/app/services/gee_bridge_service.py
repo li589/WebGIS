@@ -383,7 +383,7 @@ class GeeBridgeService:
             WorkflowResultReference(
                 result_id=f"gee-export-{run_id[-8:]}",
                 result_kind=ResultKind.json,
-                title="GEE 导出状态",
+                title="GEE Export Status",
                 mime_type="application/json",
                 inline_data=status_response.model_dump(mode="json"),
                 updated_at=requested_at,

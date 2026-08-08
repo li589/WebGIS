@@ -1,7 +1,7 @@
 """工作流定时器服务
 
 为工作流模块提供自动运行能力，支持三种触发类型：
-- cron: 5 字段 cron 表达式（minute hour day month weekday）
+- cron: 5 字段 cron 表达式（minute hour day month weekday），按 Asia/Shanghai 墙钟解释
 - interval: 固定间隔（秒）
 - event: 外部事件触发（通过 emit_event 接口）
 
@@ -9,8 +9,12 @@
 表名 workflow_timers。Celery Beat 每分钟调用 tick() 检查到期定时器并提交工作流。
 
 设计要点：
-- 旧数据兼容：表通过 _initialize_schema 创建，迁移用 _migrate_schema
+- 旧数据兼容：表通过 _initialize_schema 创建（当前无额外迁移步骤）
 - cron 解析自实现（无外部依赖），支持 *、*/N、N、N,M、N-M 五种语法
+- day-of-month 与 day-of-week 同时为受限值时按 AND 匹配（非 Vixie OR）
+- 下次触发时间存 UTC ISO；cron / 日期模板按 Asia/Shanghai 墙钟求值
+- tick 用乐观 claim 防止 FastAPI /tick 与 Beat 双触发
+- 僵死 CLAIMED 哨兵按 TTL（默认 5 分钟）在 tick 开头回收，避免进程崩溃后定时器永久停摆
 - 提交失败不影响下次触发，错误记录到 last_error 字段
 - 事件触发器立即响应 emit_event 调用（同步提交）
 """
@@ -26,10 +30,17 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 from uuid import uuid4
+from zoneinfo import ZoneInfo
 
 from app.core.config import settings
 
 logger = logging.getLogger(__name__)
+
+# Cron / 日期模板墙钟时区（存储仍为 UTC ISO）
+TIMER_TZ = ZoneInfo("Asia/Shanghai")
+
+# claim 后若进程在 mark_fired 前崩溃，CLAIMED 哨兵超过此时长则回收为立即到期
+CLAIM_TTL_SECONDS = 300
 
 
 # ─── 异常 ────────────────────────────────────────────────────────────────────
@@ -62,6 +73,7 @@ class WorkflowTimer:
 
 # ─── Cron 解析器（5 字段，无外部依赖） ───────────────────────────────────────
 # 字段范围：minute(0-59) hour(0-23) day-of-month(1-31) month(1-12) day-of-week(0-6, 0=Sunday)
+# 语义：hour/minute 按 Asia/Shanghai 墙钟；DOM 与 DOW 同时受限时为 AND。
 _FIELD_RANGES = [
     (0, 59),  # minute
     (0, 23),  # hour
@@ -143,35 +155,40 @@ def parse_cron(expr: str) -> dict[str, set[int]]:
     }
 
 
-def next_cron_time(cron_expr: str, after: datetime) -> datetime:
-    """计算 cron 表达式在 after 之后的下一次触发时间。
+def _ensure_aware_utc(dt: datetime) -> datetime:
+    if dt.tzinfo is None:
+        return dt.replace(tzinfo=timezone.utc)
+    return dt.astimezone(timezone.utc)
 
+
+def next_cron_time(cron_expr: str, after: datetime) -> datetime:
+    """计算 cron 表达式在 after 之后的下一次触发时间（返回 UTC aware）。
+
+    表达式中的 hour/minute/DOM/DOW 按 Asia/Shanghai 墙钟解释。
     逐日扫描月/日/星期匹配，匹配日内在时/分组合中查找最早时间。
-    最多扫描 8 年（覆盖 Gregorian 闰年最大间隔，如 2096→2104 跨非闰世纪年）。
-    比逐分钟扫描快 ~500x（日级迭代 ≤ 2922 次 vs 分钟级 ~210 万次）。
+    最多扫描 8 年（覆盖 Gregorian 闰年最大间隔）。
     """
     parsed = parse_cron(cron_expr)
-    # 起始：after + 1 分钟，秒归零
-    candidate = after.replace(second=0, microsecond=0) + timedelta(minutes=1)
+    after_utc = _ensure_aware_utc(after)
+    local_after = after_utc.astimezone(TIMER_TZ)
+    candidate = local_after.replace(second=0, microsecond=0) + timedelta(minutes=1)
     # Python weekday: Monday=0 ... Sunday=6；cron weekday: Sunday=0 ... Saturday=6
-    # 转换：cron_wd = (py_wd + 1) % 7
-    max_days = 366 * 8  # 覆盖 Gregorian 闰年最大 8 年间隔（如 2096→2104）
+    max_days = 366 * 8
     for _ in range(max_days):
         cron_wd = (candidate.weekday() + 1) % 7
-        # 检查月/日/星期是否匹配
         if (
             candidate.month in parsed["month"]
             and candidate.day in parsed["day_of_month"]
             and cron_wd in parsed["day_of_week"]
         ):
-            # 日匹配，在当天查找最早匹配的时:分（>= candidate 当前时间）
             for hour in sorted(parsed["hour"]):
                 for minute in sorted(parsed["minute"]):
                     if (hour, minute) >= (candidate.hour, candidate.minute):
-                        return candidate.replace(hour=hour, minute=minute)
-        # 跳到下一天的 00:00
+                        local_hit = candidate.replace(
+                            hour=hour, minute=minute, second=0, microsecond=0
+                        )
+                        return local_hit.astimezone(timezone.utc)
         candidate = (candidate + timedelta(days=1)).replace(hour=0, minute=0)
-    # 理论上不会走到这里（8 年内必有匹配）
     raise TimerValidationError(f"no next fire time found for cron: {cron_expr}")
 
 
@@ -184,7 +201,6 @@ def validate_trigger_config(
         expr = config.get("cron")
         if not isinstance(expr, str) or not expr.strip():
             raise TimerValidationError("cron trigger requires 'cron' string field")
-        # 立即解析一次以验证语法
         parse_cron(expr.strip())
         return {"cron": expr.strip()}
     if trigger_type == "interval":
@@ -210,30 +226,50 @@ def compute_next_fire_at(
     trigger_type: str,
     config: dict[str, Any],
     last_fired_at: datetime | None,
+    *,
+    now: datetime | None = None,
 ) -> str | None:
-    """计算下次触发时间（ISO 8601 UTC）。event 类型返回 None（仅事件触发）。"""
-    now = datetime.now(timezone.utc)
+    """计算下次触发时间（ISO 8601 UTC）。event 类型返回 None（仅事件触发）。
+
+    interval：若 last+seconds 已过去，clamp 到 now+seconds，避免停机后每分钟连打。
+    """
+    now_utc = _ensure_aware_utc(now or datetime.now(timezone.utc))
     if trigger_type == "cron":
-        base = last_fired_at or now
+        base = _ensure_aware_utc(last_fired_at) if last_fired_at else now_utc
         return next_cron_time(config["cron"], base).isoformat()
     if trigger_type == "interval":
-        base = last_fired_at or now
-        return (base + timedelta(seconds=config["seconds"])).isoformat()
+        seconds = int(config["seconds"])
+        base = _ensure_aware_utc(last_fired_at) if last_fired_at else now_utc
+        next_dt = base + timedelta(seconds=seconds)
+        if next_dt <= now_utc:
+            next_dt = now_utc + timedelta(seconds=seconds)
+        return next_dt.astimezone(timezone.utc).isoformat()
     return None  # event
 
 
 # ─── 工作流提交辅助 ──────────────────────────────────────────────────────────
+def _definition_graph_body(definition: dict[str, Any]) -> dict[str, Any]:
+    """提取可提交的图定义体（保留 nodes/links 等，去掉仅元数据用途的 _meta）。"""
+    return {k: v for k, v in definition.items() if k != "_meta"}
+
+
 def _build_submit_payload(
     workflow_id: str,
     overrides: dict[str, Any],
 ) -> Any:
     """根据 workflow_id 加载定义并合并 overrides，构造 WorkflowSubmitRequest。
 
-    约定：工作流定义中 nodes[0] 或 extra.default_command 决定 command_type。
-    若定义缺失，使用 analysis 作为兜底。
+    按 ``_meta.engine`` 注入引擎请求，避免空壳 analysis run：
+    - python_provider → algorithm_request.workflow_name / workflow_definition
+    - weather → weather_request.workflow_id (+ workflow 图)
+    - gee → gee_request.workflow_id (+ workflow 图)
+    overrides 中显式提供的 engine request / layer_id 等仍优先生效。
     """
     from app.services import workflow_definition_service as wds
     from shared.contracts.api_contracts import (
+        AlgorithmWorkflowRequest,
+        GeeWorkflowRequest,
+        WeatherWorkflowRequest,
         WorkflowCommandType,
         WorkflowSubmitRequest,
     )
@@ -242,21 +278,23 @@ def _build_submit_payload(
     if definition is None:
         raise TimerValidationError(f"workflow definition not found: {workflow_id}")
 
-    # 从定义中提取默认 command_type
-    extra = definition.get("extra") or {}
+    meta = definition.get("_meta") if isinstance(definition.get("_meta"), dict) else {}
+    extra = definition.get("extra") if isinstance(definition.get("extra"), dict) else {}
+    engine = str(meta.get("engine") or "common")
+
     command_str = extra.get("default_command") or "analysis"
     try:
         command_type = WorkflowCommandType(command_str)
     except ValueError:
         command_type = WorkflowCommandType.analysis
 
-    # 从定义中提取默认 layer_id
-    layer_id = extra.get("default_layer_id") or overrides.get("layer_id")
+    layer_id = (
+        overrides.get("layer_id")
+        or extra.get("default_layer_id")
+        or meta.get("linked_layer_id")
+    )
     parameters = dict(extra.get("default_parameters") or {})
     parameters.update(overrides.get("parameters") or {})
-
-    # 在提交前解析动态日期模板（{{today}}、{{yesterday}} 等）
-    # 确保使用触发时的实际日期，而非创建定时器时的固定日期
     parameters = resolve_date_templates(parameters)  # type: ignore[assignment]
 
     payload = WorkflowSubmitRequest(
@@ -265,7 +303,35 @@ def _build_submit_payload(
         layer_id=layer_id,
         parameters=parameters,
     )
-    # 应用其余 overrides（time_range / spatial_filter / engine_requests 等）
+
+    graph_body = _definition_graph_body(definition)
+    seed_algo_params = _extract_seed_algorithm_params(definition)
+
+    if "algorithm_request" not in overrides and engine in (
+        "python_provider",
+        "common",
+    ):
+        algo_params = dict(seed_algo_params)
+        if isinstance(parameters, dict):
+            algo_params.update(parameters)
+        # workflow_name 走种子路径；同时附带图定义供 flatten / 画布执行
+        payload.algorithm_request = AlgorithmWorkflowRequest(
+            workflow_name=workflow_id,
+            workflow_definition=graph_body,
+            algorithm_params=algo_params,
+        )
+    if "weather_request" not in overrides and engine == "weather":
+        payload.weather_request = WeatherWorkflowRequest(
+            workflow_id=workflow_id,
+            workflow=graph_body,
+            layer_id=layer_id,
+        )
+    if "gee_request" not in overrides and engine == "gee":
+        payload.gee_request = GeeWorkflowRequest(
+            workflow_id=workflow_id,
+            workflow=graph_body,
+        )
+
     for key in (
         "time_range",
         "spatial_filter",
@@ -283,6 +349,21 @@ def _build_submit_payload(
     return payload
 
 
+def _extract_seed_algorithm_params(definition: dict[str, Any]) -> dict[str, Any]:
+    """从种子 module/* 节点 properties.algorithm_params 提取默认参数。"""
+    for node in definition.get("nodes") or []:
+        if not isinstance(node, dict):
+            continue
+        node_type = node.get("type") or node.get("node_type") or ""
+        if not str(node_type).startswith("module/"):
+            continue
+        props = node.get("properties") or {}
+        params = props.get("algorithm_params")
+        if isinstance(params, dict) and params:
+            return dict(params)
+    return {}
+
+
 # ─── SQLite 持久化 ───────────────────────────────────────────────────────────
 class WorkflowTimerStore:
     """workflow_timers 表的薄包装。
@@ -295,7 +376,6 @@ class WorkflowTimerStore:
         self._state_dir = Path(state_dir or settings.workflow_state_dir)
         self._db_path = self._state_dir / "workflow_state.sqlite3"
         self._state_dir.mkdir(parents=True, exist_ok=True)
-        # 独立连接（线程锁保护，避免引入连接池依赖）
         self._lock = threading.RLock()
         self._conn = sqlite3.connect(
             str(self._db_path),
@@ -304,10 +384,18 @@ class WorkflowTimerStore:
             timeout=30.0,
         )
         self._conn.row_factory = sqlite3.Row
-        # WAL 模式：与 workflow_runs 表共享 DB 时必须
         self._conn.execute("PRAGMA journal_mode=WAL")
         self._conn.execute("PRAGMA synchronous=NORMAL")
         self._conn.execute("PRAGMA busy_timeout=30000")
+        try:
+            from app.services import spatialite_loader
+
+            spatialite_loader.load_into(self._conn)
+        except Exception:
+            logger.debug(
+                "SpatiaLite load skipped for workflow_timers connection",
+                exc_info=True,
+            )
         self._initialize_schema()
 
     def _initialize_schema(self) -> None:
@@ -346,7 +434,6 @@ class WorkflowTimerStore:
             except Exception:
                 pass
 
-    # ── CRUD ──
     def list_timers(self, *, workflow_id: str | None = None) -> list[WorkflowTimer]:
         with self._lock:
             if workflow_id:
@@ -403,18 +490,27 @@ class WorkflowTimerStore:
         if existing is None:
             raise TimerNotFoundError(f"timer not found: {timer_id}")
 
-        # 合并字段
         name = updates.get("name", existing.name)
         enabled = updates.get("enabled", existing.enabled)
         trigger_type = updates.get("trigger_type", existing.trigger_type)
-        trigger_config = existing.trigger_config
-        if "trigger_config" in updates:
-            trigger_config = validate_trigger_config(
-                trigger_type, updates["trigger_config"]
+        type_changed = (
+            "trigger_type" in updates
+            and updates["trigger_type"] != existing.trigger_type
+        )
+        if type_changed and "trigger_config" not in updates:
+            raise TimerValidationError(
+                "changing trigger_type requires a matching trigger_config"
             )
+
+        trigger_config = existing.trigger_config
+        if "trigger_config" in updates or type_changed:
+            raw_config = updates.get("trigger_config", existing.trigger_config)
+            if not isinstance(raw_config, dict):
+                raise TimerValidationError("trigger_config must be an object")
+            trigger_config = validate_trigger_config(trigger_type, raw_config)
+
         payload_overrides = updates.get("payload_overrides", existing.payload_overrides)
 
-        # 若 trigger 或 enabled 变化，重新计算 next_fire_at
         recomputed_next = existing.next_fire_at
         if (
             updates.get("trigger_type") is not None
@@ -463,13 +559,14 @@ class WorkflowTimerStore:
 
     def fetch_due_timers(self, now: datetime) -> list[WorkflowTimer]:
         """获取所有已启用且 next_fire_at <= now 的定时器（不含 event 类型）。"""
-        now_iso = now.isoformat()
+        now_iso = _ensure_aware_utc(now).isoformat()
         with self._lock:
             rows = self._conn.execute(
                 """
                 SELECT * FROM workflow_timers
                 WHERE enabled = 1
                   AND next_fire_at IS NOT NULL
+                  AND next_fire_at NOT LIKE 'CLAIMED:%'
                   AND next_fire_at <= ?
                   AND trigger_type IN ('cron', 'interval')
                 ORDER BY next_fire_at ASC
@@ -477,6 +574,88 @@ class WorkflowTimerStore:
                 (now_iso,),
             ).fetchall()
         return [self._row_to_timer(r) for r in rows]
+
+    def reclaim_stale_claims(
+        self, now: datetime, *, ttl_seconds: int = CLAIM_TTL_SECONDS
+    ) -> int:
+        """回收超时的 CLAIMED 哨兵，避免 claim 后崩溃导致定时器永久停摆。
+
+        依据 claim 时写入的 ``updated_at``：若 ``now - updated_at >= ttl``，
+        将 ``next_fire_at`` 重置为 ``now``（立即再次进入 due）。
+        """
+        now_utc = _ensure_aware_utc(now)
+        now_iso = now_utc.isoformat()
+        cutoff = (now_utc - timedelta(seconds=max(1, ttl_seconds))).isoformat()
+        with self._lock:
+            self._conn.execute("BEGIN IMMEDIATE")
+            try:
+                cur = self._conn.execute(
+                    """
+                    UPDATE workflow_timers
+                    SET next_fire_at = ?, updated_at = ?
+                    WHERE enabled = 1
+                      AND next_fire_at LIKE 'CLAIMED:%'
+                      AND updated_at <= ?
+                      AND trigger_type IN ('cron', 'interval')
+                    """,
+                    (now_iso, now_iso, cutoff),
+                )
+                self._conn.execute("COMMIT")
+            except Exception:
+                try:
+                    self._conn.execute("ROLLBACK")
+                except Exception:
+                    pass
+                raise
+        reclaimed = int(cur.rowcount or 0)
+        if reclaimed:
+            logger.warning(
+                "reclaimed %s stale CLAIMED workflow timer(s) (ttl=%ss)",
+                reclaimed,
+                ttl_seconds,
+            )
+        return reclaimed
+
+    def claim_due_timers(self, now: datetime) -> tuple[list[WorkflowTimer], int]:
+        """乐观 claim 到期定时器，防止跨进程双触发。
+
+        Returns:
+            (claimed, skipped): skipped 为因 next_fire_at 已变而抢锁失败的数量。
+        """
+        now_utc = _ensure_aware_utc(now)
+        now_iso = now_utc.isoformat()
+        candidates = self.fetch_due_timers(now_utc)
+        claimed: list[WorkflowTimer] = []
+        skipped = 0
+        for timer in candidates:
+            expected_next = timer.next_fire_at
+            claim_token = f"CLAIMED:{now_iso}:{uuid4().hex[:8]}"
+            with self._lock:
+                self._conn.execute("BEGIN IMMEDIATE")
+                try:
+                    cur = self._conn.execute(
+                        """
+                        UPDATE workflow_timers
+                        SET next_fire_at = ?, updated_at = ?
+                        WHERE timer_id = ?
+                          AND enabled = 1
+                          AND next_fire_at = ?
+                          AND trigger_type IN ('cron', 'interval')
+                        """,
+                        (claim_token, now_iso, timer.timer_id, expected_next),
+                    )
+                    self._conn.execute("COMMIT")
+                except Exception:
+                    try:
+                        self._conn.execute("ROLLBACK")
+                    except Exception:
+                        pass
+                    raise
+            if cur.rowcount == 1:
+                claimed.append(timer)
+            else:
+                skipped += 1
+        return claimed, skipped
 
     def find_event_timers(self, event_type: str) -> list[WorkflowTimer]:
         """获取匹配 event_type 的所有已启用 event 触发器。"""
@@ -560,7 +739,8 @@ def _parse_iso(s: str | None) -> datetime | None:
     if not s:
         return None
     try:
-        return datetime.fromisoformat(s)
+        dt = datetime.fromisoformat(s.replace("Z", "+00:00"))
+        return _ensure_aware_utc(dt)
     except ValueError:
         return None
 
@@ -571,7 +751,7 @@ _store_lock = threading.Lock()
 
 
 def get_timer_store() -> WorkflowTimerStore:
-    """获取全局 WorkflowTimerStore 单例（lru_cache 替代品，避免 dataclass 限制）。"""
+    """获取全局 WorkflowTimerStore 单例。"""
     global _store_instance
     if _store_instance is None:
         with _store_lock:
@@ -591,7 +771,6 @@ def create_timer(
     enabled: bool = True,
 ) -> WorkflowTimer:
     """创建并持久化一个新定时器。"""
-    # 校验 workflow_id 存在
     from app.services import workflow_definition_service as wds
 
     if wds.get_definition(workflow_id) is None:
@@ -604,6 +783,7 @@ def create_timer(
             trigger_type,
             normalized_config,
             None,
+            now=now,
         )
         if enabled
         else None
@@ -627,14 +807,22 @@ def create_timer(
 def tick() -> dict[str, Any]:
     """Celery Beat 周期入口：检查到期定时器并提交工作流。
 
-    返回 {checked, fired, failed, skipped} 统计。
+    返回 {checked, fired, failed, skipped, reclaimed} 统计。
+    skipped = claim 竞争失败数量；reclaimed = 超时 CLAIMED 回收数量。
     """
     store = get_timer_store()
     now = datetime.now(timezone.utc)
-    due = store.fetch_due_timers(now)
-    stats = {"checked": len(due), "fired": 0, "failed": 0, "skipped": 0}
+    reclaimed = store.reclaim_stale_claims(now)
+    claimed, skipped = store.claim_due_timers(now)
+    stats = {
+        "checked": len(claimed) + skipped,
+        "fired": 0,
+        "failed": 0,
+        "skipped": skipped,
+        "reclaimed": reclaimed,
+    }
 
-    for timer in due:
+    for timer in claimed:
         run_id, error = None, None
         try:
             payload = _build_submit_payload(timer.workflow_id, timer.payload_overrides)
@@ -658,11 +846,10 @@ def tick() -> dict[str, Any]:
                 exc,
             )
 
-        # 计算下次触发时间：以当前时间为基准（避免漏触发）
         try:
             now_dt = datetime.now(timezone.utc)
             next_fire = compute_next_fire_at(
-                timer.trigger_type, timer.trigger_config, now_dt
+                timer.trigger_type, timer.trigger_config, now_dt, now=now_dt
             )
         except Exception:
             next_fire = None
@@ -691,7 +878,6 @@ def emit_event(
     for timer in matched:
         run_id, error = None, None
         try:
-            # 合并事件 payload 到 payload_overrides.parameters
             overrides = dict(timer.payload_overrides)
             if payload:
                 params = dict(overrides.get("parameters") or {})
@@ -717,7 +903,6 @@ def emit_event(
                 timer.timer_id,
                 exc,
             )
-        # event 触发器不需要计算 next_fire_at
         store.mark_fired(timer.timer_id, run_id=run_id, error=error, next_fire_at=None)
     return stats
 
@@ -732,7 +917,6 @@ def trigger_manually(timer_id: str) -> dict[str, Any]:
     from app.services.workflow.service_container import submission_service
 
     accepted = submission_service.submit_workflow(payload)
-    # 仅更新 last_run_id，不影响 fire_count / last_fired_at / next_fire_at
     now_iso = datetime.now(timezone.utc).isoformat()
     store.update_last_run(
         timer_id,
@@ -750,13 +934,12 @@ def trigger_manually(timer_id: str) -> dict[str, Any]:
 def preview_cron(cron_expr: str, count: int = 5) -> list[str]:
     """计算 cron 表达式接下来 count 次触发时间（ISO 8601 UTC）。
 
-    用于前端实时预览，帮助用户确认 cron 表达式语义。
-    复用 next_cron_time 的逐日扫描算法，确保 Feb 29 等罕见日期正确计算。
+    墙钟语义为 Asia/Shanghai；用于前端实时预览。
     """
     if count < 1 or count > 20:
         count = 5
     expr = cron_expr.strip()
-    parse_cron(expr)  # 立即验证语法
+    parse_cron(expr)
     results: list[str] = []
     candidate = datetime.now(timezone.utc)
     for _ in range(count):
@@ -770,7 +953,7 @@ def preview_cron(cron_expr: str, count: int = 5) -> list[str]:
 
 
 def resolve_date_templates(value: Any) -> Any:
-    """递归解析值中的动态日期模板占位符。
+    """递归解析值中的动态日期模板占位符（按 Asia/Shanghai 日历日）。
 
     支持的模板（在触发时求值，确保使用最新日期）：
       {{today}}             → 当前日期 YYYYMMDD
@@ -801,18 +984,16 @@ def _resolve_string_templates(s: str) -> Any:
     if "{{" not in s:
         return s
 
-    now = datetime.now(timezone.utc)
+    now = datetime.now(timezone.utc).astimezone(TIMER_TZ)
     today = now.strftime("%Y%m%d")
     yesterday = (now - timedelta(days=1)).strftime("%Y%m%d")
     tomorrow = (now + timedelta(days=1)).strftime("%Y%m%d")
 
-    # 月初/月末计算
     first_of_month = now.replace(day=1)
     if now.month == 1:
         last_month_first = first_of_month.replace(year=now.year - 1, month=12)
     else:
         last_month_first = first_of_month.replace(month=now.month - 1)
-    # 上月最后一天 = 本月第 1 天 - 1 天
     last_month_last = first_of_month - timedelta(days=1)
 
     first_of_year = now.replace(month=1, day=1)
@@ -837,7 +1018,6 @@ def _resolve_string_templates(s: str) -> Any:
     for key, val in templates.items():
         result = result.replace("{{" + key + "}}", val)
 
-    # 如果整个字符串就是一个模板（如 "{{today}}"），尝试转换为数字
     stripped = result.strip()
     if stripped.isdigit() and len(stripped) == 8:
         try:

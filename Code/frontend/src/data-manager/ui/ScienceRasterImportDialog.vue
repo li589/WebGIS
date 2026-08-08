@@ -4,8 +4,16 @@
  * 全部配置完成且校验通过后才允许提交导入。
  */
 import { computed, ref, watch } from 'vue'
-import { listCrs, type CRSDef } from '@/services/crs'
+import { listCrs } from '@/services/crs'
+import { fetchCrsOptionsExpanded } from '@/services/data-import'
+import type { CRSOption } from '@/services/crs'
+import { detectRasterInvalidValues } from '../core/api'
 import { DATA_COPY } from '../../ui-copy'
+import {
+  buildImportTemporalPayload,
+  guessTimeLabelFromFilename,
+  type ImportTemporalMode,
+} from '../../utils/import-temporal'
 
 export interface ScienceVariable {
   id: string
@@ -13,6 +21,8 @@ export interface ScienceVariable {
   shape?: number[] | null
   dtype?: string | null
   fill_value?: number | null
+  needs_transpose?: boolean
+  axis_hint?: string | null
 }
 
 export interface GridPreset {
@@ -36,16 +46,25 @@ export interface ScienceRasterCommitPayload {
   invalidValues: number[]
   nodata: number | null
   autoConfirm: boolean
+  axisOrder: 'auto' | 'as_is' | 'transpose'
+  conflictPolicy: 'overwrite' | 'rename' | 'error'
+  temporalMode?: 'auto' | 'static' | 'point' | 'range'
+  timePoint?: string
+  timeStart?: string
+  timeEnd?: string
+  nativeStep?: string
 }
 
 const props = defineProps<{
   visible: boolean
   fileName: string
   format?: string
+  uploadId?: string | null
   variables: ScienceVariable[]
   gridPresets: GridPreset[]
   suggestedGridPreset?: string | null
   suggestedCrs?: string | null
+  suggestedNeedsTranspose?: boolean
   importing?: boolean
 }>()
 
@@ -65,18 +84,71 @@ const north = ref(0)
 const invalidText = ref('-9999, -999')
 const nodataText = ref('')
 const autoConfirm = ref(true)
-const crsOptions = ref<CRSDef[]>([])
+const axisOrder = ref<'auto' | 'as_is' | 'transpose'>('auto')
+const conflictPolicy = ref<'overwrite' | 'rename' | 'error'>('overwrite')
+const detectingInvalid = ref(false)
+const invalidDetectNote = ref('')
+const temporalMode = ref<ImportTemporalMode>('auto')
+const temporalPoint = ref('')
+const temporalStart = ref('')
+const temporalEnd = ref('')
+const temporalNativeStep = ref('')
+
+const temporalPreview = computed(() =>
+  buildImportTemporalPayload({
+    mode: temporalMode.value,
+    fileName: props.fileName,
+    timePoint: temporalPoint.value,
+    timeStart: temporalStart.value,
+    timeEnd: temporalEnd.value,
+    nativeStep: temporalNativeStep.value || undefined,
+  }),
+)
+const crsOptions = ref<CRSOption[]>([])
+const crsFilter = ref('')
+
+const filteredCrsOptions = computed(() => {
+  const q = crsFilter.value.trim().toLowerCase()
+  if (!q) return crsOptions.value
+  return crsOptions.value.filter(
+    (c) =>
+      c.code.toLowerCase().includes(q) ||
+      String(c.label || '')
+        .toLowerCase()
+        .includes(q),
+  )
+})
+
+async function loadCrsOptions() {
+  try {
+    const data = await fetchCrsOptionsExpanded()
+    crsOptions.value = data.items || []
+  } catch {
+    crsOptions.value = listCrs().map((c) => ({
+      code: c.code,
+      label: c.label,
+      category: c.category,
+      area: c.area,
+      deprecated: c.deprecated,
+    }))
+  }
+}
 
 watch(
   () => props.visible,
-  (v) => {
+  async (v) => {
     if (!v) return
-    crsOptions.value = listCrs()
+    await loadCrsOptions()
+    crsFilter.value = ''
     selectedIds.value = props.variables.slice(0, 1).map((x) => x.id)
     timeIndex.value = 0
     gridPreset.value = props.suggestedGridPreset || 'custom'
     sourceCrs.value = props.suggestedCrs || 'EPSG:4326'
+    axisOrder.value = props.suggestedNeedsTranspose ? 'auto' : 'auto'
+    conflictPolicy.value = 'overwrite'
     invalidText.value = '-9999, -999'
+    invalidDetectNote.value = ''
+    detectingInvalid.value = false
     const fillHints = props.variables
       .map((x) => x.fill_value)
       .filter((x): x is number => x != null && Number.isFinite(x))
@@ -85,6 +157,21 @@ watch(
     }
     nodataText.value = ''
     autoConfirm.value = true
+    temporalMode.value = 'auto'
+    temporalPoint.value = ''
+    temporalStart.value = ''
+    temporalEnd.value = ''
+    temporalNativeStep.value = ''
+    const guessed = guessTimeLabelFromFilename(props.fileName)
+    if (guessed?.kind === 'point') {
+      temporalPoint.value = guessed.label
+      temporalNativeStep.value = guessed.nativeStep
+    } else if (guessed?.kind === 'range') {
+      const [a, b] = guessed.label.split('_')
+      temporalStart.value = a || ''
+      temporalEnd.value = b || ''
+      temporalNativeStep.value = guessed.nativeStep
+    }
     applyPreset(gridPreset.value)
   },
   { immediate: true },
@@ -111,6 +198,14 @@ const shapeHint = computed(() => {
   const first = props.variables.find((v) => selectedIds.value.includes(v.id))
   if (!first?.shape?.length) return ''
   return first.shape.join(' × ')
+})
+
+const transposeHint = computed(() => {
+  const first = props.variables.find((v) => selectedIds.value.includes(v.id))
+  if (first?.needs_transpose || props.suggestedNeedsTranspose) {
+    return '检测到相对网格预设的行列颠倒（常见于 MATLAB v7.3/HDF5）。轴序选「自动」将转置为正确地理方向。'
+  }
+  return ''
 })
 
 const parsedInvalid = computed(() => {
@@ -161,6 +256,33 @@ function toggleVar(id: string) {
   }
 }
 
+async function runDetectInvalid() {
+  const uploadId = props.uploadId
+  const variableId = selectedIds.value[0]
+  if (!uploadId || !variableId) {
+    invalidDetectNote.value = '请先选择变量（并确保上传已完成）'
+    return
+  }
+  detectingInvalid.value = true
+  invalidDetectNote.value = '检测中…'
+  try {
+    const data = await detectRasterInvalidValues({ uploadId, variableId })
+    const suggested = Array.isArray(data.suggested_invalid_values)
+      ? data.suggested_invalid_values
+      : []
+    if (suggested.length) {
+      invalidText.value = suggested.join(', ')
+      invalidDetectNote.value = `已填入建议无效值（共 ${suggested.length} 个）`
+    } else {
+      invalidDetectNote.value = '未检测到明确哨兵值；可手工填写'
+    }
+  } catch (err) {
+    invalidDetectNote.value = err instanceof Error ? err.message : String(err)
+  } finally {
+    detectingInvalid.value = false
+  }
+}
+
 function selectAllVars() {
   selectedIds.value = props.variables.map((v) => v.id)
 }
@@ -171,6 +293,12 @@ function clearVars() {
 
 function handleConfirm() {
   if (!canSubmit.value) return
+  if (
+    (temporalMode.value === 'point' || temporalMode.value === 'range') &&
+    !temporalPreview.value.preview
+  ) {
+    return
+  }
   emit('confirm', {
     variableIds: [...selectedIds.value],
     timeIndex: timeIndex.value,
@@ -180,6 +308,13 @@ function handleConfirm() {
     invalidValues: parsedInvalid.value,
     nodata: parsedNodata.value,
     autoConfirm: autoConfirm.value,
+    axisOrder: axisOrder.value,
+    conflictPolicy: conflictPolicy.value,
+    temporalMode: temporalMode.value,
+    timePoint: temporalPoint.value,
+    timeStart: temporalStart.value,
+    timeEnd: temporalEnd.value,
+    nativeStep: temporalNativeStep.value || undefined,
   })
 }
 
@@ -239,14 +374,30 @@ function handleCancel() {
           </label>
           <label>
             源坐标系
+            <input
+              v-model="crsFilter"
+              type="search"
+              placeholder="搜索 EPSG / 名称（全量 UTM/GK）"
+              style="margin-bottom: 0.35rem"
+            />
             <select v-model="sourceCrs">
-              <option v-for="c in crsOptions" :key="c.code" :value="c.code">
+              <option v-for="c in filteredCrsOptions" :key="c.code" :value="c.code">
                 {{ c.code }} — {{ c.label }}
               </option>
             </select>
           </label>
         </div>
         <p v-if="shapeHint" class="hint">当前选中变量尺寸：{{ shapeHint }}（行×列）</p>
+        <p v-if="transposeHint" class="hint">{{ transposeHint }}</p>
+        <label>
+          轴序（XY）
+          <select v-model="axisOrder">
+            <option value="auto">自动（推荐，按网格预设校正颠倒）</option>
+            <option value="as_is">保持原样</option>
+            <option value="transpose">强制转置（等同 swap_xy）</option>
+          </select>
+        </label>
+        <p class="hint">轴序与 swap_xy 一致：transpose = 交换行列；EASE 全球图拉伸时优先用自动。</p>
         <div class="grid-4">
           <label>West<input v-model.number="west" type="number" step="any" /></label>
           <label>South<input v-model.number="south" type="number" step="any" /></label>
@@ -274,6 +425,17 @@ function handleCancel() {
             <input v-model="nodataText" type="text" placeholder="留空则用 NaN" />
           </label>
         </div>
+        <div class="detect-row">
+          <button
+            type="button"
+            class="ghost"
+            :disabled="detectingInvalid || importing || !uploadId"
+            @click="runDetectInvalid"
+          >
+            {{ detectingInvalid ? '检测中…' : '自动检测无效值' }}
+          </button>
+          <span v-if="invalidDetectNote" class="hint">{{ invalidDetectNote }}</span>
+        </div>
         <label class="time-row">
           {{ DATA_COPY.timeIndex }}
           <input v-model.number="timeIndex" type="number" min="0" step="1" />
@@ -282,6 +444,54 @@ function handleCancel() {
           <input v-model="autoConfirm" type="checkbox" />
           导入后自动重投影到 WGS84 并注册图层（推荐）
         </label>
+        <label>
+          同名图层
+          <select v-model="conflictPolicy">
+            <option value="overwrite">覆盖已导入的同名图层（不额外占配额，推荐）</option>
+            <option value="rename">另存为新图层（需有剩余配额）</option>
+            <option value="error">若已存在则报错</option>
+          </select>
+        </label>
+      </section>
+
+      <section class="sci-section">
+        <div class="sec-title"><span>数据时间（文件名可自动识别）</span></div>
+        <div class="temporal-modes">
+          <label><input v-model="temporalMode" type="radio" value="auto" /> 自动</label>
+          <label><input v-model="temporalMode" type="radio" value="static" /> 静态</label>
+          <label><input v-model="temporalMode" type="radio" value="point" /> 时间点</label>
+          <label><input v-model="temporalMode" type="radio" value="range" /> 时间段</label>
+        </div>
+        <div v-if="temporalMode === 'point'" class="grid-2">
+          <label>
+            日期
+            <input v-model="temporalPoint" type="text" placeholder="YYYYMMDD" />
+          </label>
+          <label>
+            步长
+            <input v-model="temporalNativeStep" type="text" placeholder="1d" />
+          </label>
+        </div>
+        <div v-else-if="temporalMode === 'range'" class="grid-2">
+          <label>
+            起
+            <input v-model="temporalStart" type="text" placeholder="YYYYMMDD" />
+          </label>
+          <label>
+            止
+            <input v-model="temporalEnd" type="text" placeholder="YYYYMMDD" />
+          </label>
+          <label>
+            步长
+            <input v-model="temporalNativeStep" type="text" placeholder="8d" />
+          </label>
+        </div>
+        <p v-if="temporalPreview.preview" class="hint">
+          将写入：{{ temporalPreview.preview.kind }} · {{ temporalPreview.preview.label
+          }}{{
+            temporalPreview.preview.nativeStep ? ` · ${temporalPreview.preview.nativeStep}` : ''
+          }}
+        </p>
       </section>
 
       <footer class="sci-foot">
@@ -388,6 +598,23 @@ function handleCancel() {
   color: #8aa0b4;
   font-size: 0.66rem;
 }
+.temporal-modes {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.55rem 0.9rem;
+  margin-bottom: 0.45rem;
+  font-size: 0.72rem;
+  color: #c5d7ea;
+}
+.temporal-modes label {
+  display: inline-flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 0.28rem;
+  cursor: pointer;
+  font-size: 0.72rem;
+  color: #c5d7ea;
+}
 .grid-2,
 .grid-4 {
   display: grid;
@@ -421,6 +648,16 @@ select {
   margin: 0.4rem 0 0;
   font-size: 0.64rem;
   color: #8aa0b4;
+}
+.detect-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+  margin: 0.35rem 0 0.25rem;
+}
+.detect-row .hint {
+  margin: 0;
 }
 .hint.bad {
   color: #ffb0b0;

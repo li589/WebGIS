@@ -7,9 +7,13 @@ import type { WindGeoJSON } from './types'
 import {
   buildRegularLatticeAxis,
   detectLatticeResolution,
+  isLonInFrame,
   nearestLatticeAxisIndex,
-  unwrapLonsToMinimalSpan,
+  unwrapLonsForFrame,
+  type LonFrame,
 } from './weather-grid-lattice'
+
+export type { LonFrame }
 
 export interface ScalarGridPoint {
   lat: number
@@ -26,7 +30,8 @@ export interface ScalarGrid {
   west: number
   east: number
   points: ScalarGridPoint[][]
-  checksum: number
+  /** 布局、掩码与有序数值的确定性签名；用于避免不同半球被错误复用为同一纹理。 */
+  signature: string
 }
 
 function readMetric(
@@ -50,12 +55,44 @@ function readResolutionProp(props: Record<string, unknown> | null | undefined): 
 }
 
 /**
+ * FNV-1a 32-bit：用布局、mask 与有序数值标识一张标量纹理。
+ * 不能用单纯数值求和：相同和值的东西半球网格会得到同一个和，却需要重上传 quad。
+ */
+function buildScalarGridSignature(
+  rows: number,
+  cols: number,
+  south: number,
+  north: number,
+  west: number,
+  east: number,
+  points: ScalarGridPoint[][],
+): string {
+  let hash = 0x811c9dc5
+  const append = (value: string) => {
+    for (let i = 0; i < value.length; i++) {
+      hash ^= value.charCodeAt(i)
+      hash = Math.imul(hash, 0x01000193)
+    }
+  }
+
+  append(`${rows}|${cols}|${south}|${north}|${west}|${east}|`)
+  for (const row of points) {
+    for (const point of row) {
+      append(point.hasData ? `1:${point.value}|` : '0|')
+    }
+  }
+  return (hash >>> 0).toString(16)
+}
+
+/**
  * 从 Point FeatureCollection 构建标量网格。
+ * @param frame 视口经度帧；有则按帧解包并丢弃帧外点
  * @returns null 表示数据不足（&lt;2×2）
  */
 export function buildScalarGridFromGeoJSON(
   geojson: WindGeoJSON | { type: string; features?: unknown[] } | null | undefined,
   metric: string,
+  frame?: LonFrame | null,
 ): ScalarGrid | null {
   const features = (geojson as WindGeoJSON | undefined)?.features
   if (!Array.isArray(features) || features.length === 0 || !metric) return null
@@ -79,21 +116,28 @@ export function buildScalarGridFromGeoJSON(
 
   if (rawPoints.length === 0) return null
 
-  const unwrappedLons = unwrapLonsToMinimalSpan(rawPoints.map((p) => p.lon))
+  const unwrappedLons = unwrapLonsForFrame(
+    rawPoints.map((p) => p.lon),
+    frame,
+  )
+  const framedPoints: Array<{ lat: number; lon: number; value: number }> = []
   for (let i = 0; i < rawPoints.length; i++) {
-    rawPoints[i]!.lon = unwrappedLons[i]!
+    const lon = unwrappedLons[i]!
+    if (frame && !isLonInFrame(lon, frame)) continue
+    framedPoints.push({ ...rawPoints[i]!, lon })
   }
+  if (framedPoints.length === 0) return null
 
-  const latRes = propRes ?? detectLatticeResolution(rawPoints.map((p) => p.lat))
-  const lonRes = propRes ?? detectLatticeResolution(rawPoints.map((p) => p.lon))
+  const latRes = propRes ?? detectLatticeResolution(framedPoints.map((p) => p.lat))
+  const lonRes = propRes ?? detectLatticeResolution(framedPoints.map((p) => p.lon))
   const res = Math.min(latRes, lonRes)
 
   const sortedLats = buildRegularLatticeAxis(
-    rawPoints.map((p) => p.lat),
+    framedPoints.map((p) => p.lat),
     { resolution: res, descending: true },
   )
   const sortedLons = buildRegularLatticeAxis(
-    rawPoints.map((p) => p.lon),
+    framedPoints.map((p) => p.lon),
     { resolution: res, descending: false },
   )
   const rows = sortedLats.length
@@ -113,7 +157,7 @@ export function buildScalarGridFromGeoJSON(
     }
   }
 
-  for (const p of rawPoints) {
+  for (const p of framedPoints) {
     const r = nearestLatticeAxisIndex(sortedLats, p.lat)
     const c = nearestLatticeAxisIndex(sortedLons, p.lon)
     if (points[r]![c]!.hasData) continue
@@ -147,22 +191,20 @@ export function buildScalarGridFromGeoJSON(
     }
   }
 
-  let checksum = 0
-  for (let r = 0; r < rows; r++) {
-    for (let c = 0; c < cols; c++) {
-      checksum += points[r]![c]!.hasData ? points[r]![c]!.value : 0
-    }
-  }
+  const south = sortedLats[rows - 1]!
+  const north = sortedLats[0]!
+  const west = sortedLons[0]!
+  const east = sortedLons[cols - 1]!
 
   return {
     rows,
     cols,
-    south: sortedLats[rows - 1]!,
-    north: sortedLats[0]!,
-    west: sortedLons[0]!,
-    east: sortedLons[cols - 1]!,
+    south,
+    north,
+    west,
+    east,
     points,
-    checksum,
+    signature: buildScalarGridSignature(rows, cols, south, north, west, east, points),
   }
 }
 

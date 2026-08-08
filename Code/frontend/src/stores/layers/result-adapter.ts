@@ -6,10 +6,12 @@ import type {
   WorkflowRunViewResponse,
 } from '../../services/runtime-api'
 import type { JobLayerItem, JobLayerMapLayerPayload } from './types'
-
-function asRecord(value: unknown): Record<string, unknown> | null {
-  return value !== null && typeof value === 'object' ? (value as Record<string, unknown>) : null
-}
+import type { ActiveLayer, ActiveLayerDisplay, RuntimeLayerLibraryItem } from './types'
+import { asRecord, extractLayerHotspots, formatClockLabel } from './catalog-builders'
+import {
+  localizeWorkflowDiagnostics,
+  localizeWorkflowErrorMessage,
+} from '../../utils/workflow-error-messages'
 
 function formatMetricValue(value: unknown, unit = '') {
   if (typeof value === 'number') {
@@ -39,6 +41,138 @@ function extractReportSummary(
   const textPayload = asRecord(textResult?.inline_data)
   const text = textPayload?.text
   return typeof text === 'string' && text.trim() ? text : fallbackMessage
+}
+
+function asNumberOrNull(value: unknown): number | null {
+  if (typeof value === 'number' && Number.isFinite(value)) return value
+  if (typeof value === 'string' && value.trim() && Number.isFinite(Number(value))) {
+    return Number(value)
+  }
+  return null
+}
+
+async function fetchChunkItems(
+  resourceUrl: string,
+): Promise<Array<{ label?: unknown; value?: unknown }>> {
+  try {
+    const url = resolveApiUrl(resourceUrl)
+    const resp = await fetch(url)
+    if (!resp.ok) return []
+    const body = (await resp.json()) as { items?: unknown }
+    if (!Array.isArray(body.items)) return []
+    return body.items.filter((item): item is { label?: unknown; value?: unknown } => {
+      return item !== null && typeof item === 'object'
+    })
+  } catch {
+    return []
+  }
+}
+
+async function extractAnalysisCharts(resultRefs: WorkflowResultReference[] | undefined) {
+  const charts: NonNullable<JobLayerItem['analysisCharts']> = []
+  for (const item of resultRefs ?? []) {
+    if (item.result_kind !== 'chart') continue
+    const payload = asRecord(item.inline_data)
+    if (!payload) continue
+
+    // Chunked manifests: assemble series from stored chunk items
+    if (payload.chunked === true && Array.isArray(payload.chunks)) {
+      const xs: Array<string | number> = []
+      const ys: Array<number | null> = []
+      for (const chunk of payload.chunks) {
+        const rec = asRecord(chunk)
+        const url = typeof rec?.resource_url === 'string' ? rec.resource_url : ''
+        if (!url) continue
+        const items = await fetchChunkItems(url)
+        for (const row of items) {
+          const label = row.label
+          xs.push(typeof label === 'string' || typeof label === 'number' ? label : xs.length)
+          ys.push(asNumberOrNull(row.value))
+        }
+      }
+      if (!xs.length && !ys.length) continue
+      charts.push({
+        id: item.result_id,
+        title: item.title || String(payload.title || 'Chart'),
+        chartType: String(payload.chart_type || 'line'),
+        xLabel: String(payload.x_label || ''),
+        yLabel: String(payload.y_label || ''),
+        unit: String(payload.unit || ''),
+        series: [
+          {
+            name: typeof payload.series_name === 'string' ? payload.series_name : 'series',
+            x: xs,
+            y: ys,
+          },
+        ],
+      })
+      continue
+    }
+
+    const seriesRaw = Array.isArray(payload.series) ? payload.series : null
+    let series: Array<{ name: string; x: Array<string | number>; y: Array<number | null> }> = []
+    if (seriesRaw && seriesRaw.length) {
+      series = seriesRaw
+        .map((s) => {
+          const rec = asRecord(s)
+          if (!rec) return null
+          const x = Array.isArray(rec.x) ? (rec.x as Array<string | number>) : []
+          const y = Array.isArray(rec.y) ? (rec.y as unknown[]).map((v) => asNumberOrNull(v)) : []
+          return {
+            name: typeof rec.name === 'string' ? rec.name : 'series',
+            x,
+            y,
+          }
+        })
+        .filter((s): s is NonNullable<typeof s> => s !== null)
+    } else {
+      const x = Array.isArray(payload.x) ? (payload.x as Array<string | number>) : []
+      const y = Array.isArray(payload.y)
+        ? (payload.y as unknown[]).map((v) => asNumberOrNull(v))
+        : []
+      if (x.length || y.length) {
+        series = [
+          {
+            name: typeof payload.series_name === 'string' ? payload.series_name : 'series',
+            x,
+            y,
+          },
+        ]
+      }
+    }
+    if (!series.length) continue
+    charts.push({
+      id: item.result_id,
+      title: item.title || String(payload.title || 'Chart'),
+      chartType: String(payload.chart_type || 'line'),
+      xLabel: String(payload.x_label || ''),
+      yLabel: String(payload.y_label || ''),
+      unit: String(payload.unit || ''),
+      series,
+    })
+  }
+  return charts
+}
+
+function extractAnalysisTables(resultRefs: WorkflowResultReference[] | undefined) {
+  const tables: NonNullable<JobLayerItem['analysisTables']> = []
+  for (const item of resultRefs ?? []) {
+    if (item.result_kind !== 'table') continue
+    const payload = asRecord(item.inline_data)
+    if (!payload) continue
+    const columns = Array.isArray(payload.columns)
+      ? (payload.columns as unknown[]).map((c) => String(c))
+      : []
+    const rows = Array.isArray(payload.rows) ? (payload.rows as unknown[][]) : []
+    if (!columns.length && !rows.length) continue
+    tables.push({
+      id: item.result_id,
+      title: item.title || String(payload.title || 'Table'),
+      columns,
+      rows,
+    })
+  }
+  return tables
 }
 
 function extractMetrics(run: WorkflowRunStatusResponse) {
@@ -121,7 +255,7 @@ function extractDiagnosticNotes(run: WorkflowRunStatusResponse) {
     notes.push(`图层状态：${layerStatus}`)
   }
   if (!notes.length && errorMessage) {
-    notes.push(errorMessage)
+    notes.push(localizeWorkflowErrorMessage(errorMessage))
   }
   return notes
 }
@@ -129,8 +263,23 @@ function extractDiagnosticNotes(run: WorkflowRunStatusResponse) {
 function extractMapLayerPayload(
   resultRefs: WorkflowResultReference[] | undefined,
 ): JobLayerMapLayerPayload | undefined {
-  const mapLayerResult = resultRefs?.find((item) => item.result_kind === 'map_layer')
-  const payload = asRecord(mapLayerResult?.inline_data)
+  const mapLayerResults = (resultRefs ?? []).filter((item) => item.result_kind === 'map_layer')
+  if (!mapLayerResults.length) return undefined
+
+  // Prefer a ref that already carries paintable assets (COG / overlay).
+  const preferred =
+    mapLayerResults.find((item) => {
+      const payload = asRecord(item.inline_data)
+      const assets = asRecord(payload?.layer_assets)
+      return Boolean(
+        assets?.cog_preview_url ||
+        assets?.cog_url ||
+        assets?.geojson_url ||
+        assets?.overlay_layer_id,
+      )
+    }) ?? mapLayerResults[0]
+
+  const payload = asRecord(preferred.inline_data)
   if (!payload) {
     return undefined
   }
@@ -148,6 +297,12 @@ function extractMapLayerPayload(
             typeof layerAssets.cog_preview_url === 'string'
               ? layerAssets.cog_preview_url
               : undefined,
+          overlayLayerId:
+            typeof layerAssets.overlay_layer_id === 'string'
+              ? layerAssets.overlay_layer_id
+              : undefined,
+          productTag:
+            typeof layerAssets.product_tag === 'string' ? layerAssets.product_tag : undefined,
           cogBbox:
             asRecord(layerAssets.cog_bbox) &&
             typeof asRecord(layerAssets.cog_bbox)?.west === 'number'
@@ -165,6 +320,55 @@ function extractMapLayerPayload(
         }
       : undefined,
   }
+}
+
+/** Collect imported-overlay map layers emitted by algorithm workflows. */
+export function extractOverlayImportsFromResultRefs(
+  resultRefs: WorkflowResultReference[] | undefined,
+): Array<{
+  overlayLayerId: string
+  title: string
+  productTag?: string
+  bounds?: [number, number, number, number]
+  sourceCrs?: string
+}> {
+  const out: Array<{
+    overlayLayerId: string
+    title: string
+    productTag?: string
+    bounds?: [number, number, number, number]
+    sourceCrs?: string
+  }> = []
+  for (const item of resultRefs ?? []) {
+    if (item.result_kind !== 'map_layer') continue
+    const payload = asRecord(item.inline_data)
+    const assets = asRecord(payload?.layer_assets)
+    const overlayId =
+      typeof assets?.overlay_layer_id === 'string' ? assets.overlay_layer_id.trim() : ''
+    if (!overlayId) continue
+    const bbox = asRecord(assets?.cog_bbox)
+    const bounds =
+      bbox &&
+      typeof bbox.west === 'number' &&
+      typeof bbox.south === 'number' &&
+      typeof bbox.east === 'number' &&
+      typeof bbox.north === 'number'
+        ? ([Number(bbox.west), Number(bbox.south), Number(bbox.east), Number(bbox.north)] as [
+            number,
+            number,
+            number,
+            number,
+          ])
+        : undefined
+    out.push({
+      overlayLayerId: overlayId,
+      title: item.title || overlayId,
+      productTag: typeof assets?.product_tag === 'string' ? assets.product_tag : undefined,
+      bounds,
+      sourceCrs: typeof bbox?.crs === 'string' ? bbox.crs : undefined,
+    })
+  }
+  return out
 }
 
 async function fetchGeojsonData(geojsonUrl: string): Promise<Record<string, unknown> | undefined> {
@@ -199,7 +403,19 @@ export async function buildJobLayer(
 ): Promise<JobLayerItem> {
   const status = run.status === 'accepted' ? 'queued' : run.status
   const entryName = extractWorkflowEntryName(run)
-  const diagnosticNotes = extractDiagnosticNotes(run)
+  const rawDiagnostics = run.diagnostics ?? []
+  const diagnosticNotes = [
+    ...extractDiagnosticNotes(run),
+    ...localizeWorkflowDiagnostics(
+      rawDiagnostics.filter(
+        (item) =>
+          typeof item === 'string' &&
+          item.trim() &&
+          !item.startsWith('validation_') &&
+          !item.startsWith('error_message='),
+      ),
+    ),
+  ].filter((note, index, arr) => arr.indexOf(note) === index)
   const previousJobLayer = options.previousJobLayer
   const resultView: WorkflowRunViewResponse | null = shouldFetchWorkflowRunView(run)
     ? await getWorkflowRunView(run.run_id).catch(() => previousJobLayer?.resultView ?? null)
@@ -221,6 +437,9 @@ export async function buildJobLayer(
       }
     }
   }
+  const localizedMessage = localizeWorkflowErrorMessage(run.message)
+  const analysisCharts = await extractAnalysisCharts(run.result_refs)
+  const analysisTables = extractAnalysisTables(run.result_refs)
   return {
     jobId: run.run_id,
     name: entryName ?? catalogName,
@@ -229,14 +448,130 @@ export async function buildJobLayer(
     progress: run.progress,
     createdAt: run.created_at,
     updatedAt: run.updated_at,
-    message: run.message,
+    message: localizedMessage,
     metrics: extractMetrics(run),
     reportSummary,
     resultDto: run.result_dto ?? undefined,
     resultView: resultView ?? undefined,
     resultUrl: resultUrl ?? undefined,
+    analysisCharts: analysisCharts.length > 0 ? analysisCharts : previousJobLayer?.analysisCharts,
+    analysisTables: analysisTables.length > 0 ? analysisTables : previousJobLayer?.analysisTables,
     mapLayerPayload,
     diagnostics: run.diagnostics ?? [],
     diagnosticNotes,
+    retryOfRunId:
+      typeof run.executor_metadata?.retry_of_run_id === 'string'
+        ? run.executor_metadata.retry_of_run_id
+        : undefined,
+  }
+}
+
+/** 产品标签归一：OMEGA_BLOCK / OMEGA_PIXEL → OMEGA，便于绑入计算组 */
+export function normalizeProductTag(raw: string | null | undefined): string {
+  const tag = String(raw || '')
+    .trim()
+    .toUpperCase()
+    .replace(/^ALGORITHM MAP LAYER:\s*/i, '')
+  if (!tag) return ''
+  if (tag === 'OMEGA_BLOCK' || tag.startsWith('OMEGA_BLOCK') || tag.includes('OMEGA_BLOCK')) {
+    return 'OMEGA'
+  }
+  if (tag === 'OMEGA_PIXEL' || tag.includes('OMEGA_PIXEL') || tag.includes('OMEGA_PIX')) {
+    return 'OMEGA'
+  }
+  if (tag === 'OMEGA' || tag.endsWith('_OMEGA') || tag.endsWith('-OMEGA')) return 'OMEGA'
+  if (tag === 'SM' || tag.endsWith('_SM') || tag.endsWith('-SM')) return 'SM'
+  if (tag === 'VOD' || tag.endsWith('_VOD') || tag.endsWith('-VOD')) return 'VOD'
+  return tag
+}
+
+/** 从 jobLayer 提取真实数据显示数据 */
+export function buildRealLayerDisplay(
+  layer: ActiveLayer,
+  item: RuntimeLayerLibraryItem,
+): Partial<ActiveLayerDisplay> {
+  const jobLayer = layer.jobLayer
+  if (!jobLayer) return {}
+
+  const primaryMetric = jobLayer.metrics?.find((m) => m.label !== '队列')
+  const metricValue = primaryMetric?.value ?? '--'
+  const renderHint = jobLayer.mapLayerPayload?.renderHint
+  const resultDto = asRecord(jobLayer.resultDto)
+  const providerKey = typeof resultDto?.provider_key === 'string' ? resultDto.provider_key : null
+  const resultCategory =
+    typeof resultDto?.result_category === 'string' ? resultDto.result_category : null
+  const providerSummary = typeof resultDto?.summary === 'string' ? resultDto.summary : null
+  const providerStatusLabel =
+    typeof resultDto?.status_label === 'string' ? resultDto.status_label : null
+  const providerConfidenceLabel =
+    typeof resultDto?.confidence_label === 'string' ? resultDto.confidence_label : null
+  const isSampleProvider =
+    item.backendStatus === 'sample' ||
+    (resultCategory === 'provider' && providerKey?.startsWith('lab_output'))
+  let confidenceLabel = '以工作流结果为准'
+  if (renderHint?.notes?.length) {
+    confidenceLabel = renderHint.notes[0]
+  } else if (providerConfidenceLabel) {
+    confidenceLabel = providerConfidenceLabel
+  } else if (jobLayer.diagnosticNotes?.length) {
+    confidenceLabel = jobLayer.diagnosticNotes[0]
+  }
+
+  return {
+    metricValue,
+    summary:
+      providerSummary ??
+      jobLayer.resultView?.summary ??
+      jobLayer.reportSummary ??
+      jobLayer.message ??
+      item.description,
+    statusLabel:
+      jobLayer.status === 'succeeded'
+        ? isSampleProvider
+          ? (providerStatusLabel ?? '实验结果')
+          : '真实数据'
+        : jobLayer.status === 'failed'
+          ? '数据异常'
+          : jobLayer.status === 'cancelled'
+            ? '任务已取消'
+            : '任务处理中',
+    trendLabel:
+      jobLayer.status === 'succeeded'
+        ? isSampleProvider
+          ? '实验 provider 已执行，可用于联调验收'
+          : '最新工作流结果已接入'
+        : jobLayer.status === 'failed'
+          ? '最近一次运行失败'
+          : '等待工作流返回结果',
+    sourceLabel:
+      isSampleProvider && providerKey ? `实验 Provider · ${providerKey}` : item.sourceLabel,
+    confidenceLabel,
+    availabilityState:
+      jobLayer.status === 'succeeded'
+        ? 'ready'
+        : jobLayer.status === 'failed'
+          ? 'empty'
+          : 'partial',
+    availabilityLabel:
+      jobLayer.status === 'succeeded'
+        ? '完整数据'
+        : jobLayer.status === 'failed'
+          ? '数据异常'
+          : '加载中',
+    availabilityDescription:
+      jobLayer.status === 'succeeded'
+        ? isSampleProvider
+          ? '实验 provider 已生成结果，可用于联调与界面验收。'
+          : jobLayer.message || '工作流结果已生成。'
+        : jobLayer.status === 'failed'
+          ? (jobLayer.diagnosticNotes?.[0] ?? '数据加载失败')
+          : jobLayer.message || '正在加载工作流结果...',
+    observationTimeLabel:
+      jobLayer.reportSummary?.match(/\d{2}:\d{2}/)?.[0] ?? formatClockLabel(jobLayer.updatedAt),
+    missingFieldsLabel:
+      jobLayer.status === 'succeeded'
+        ? '无缺失字段'
+        : (jobLayer.diagnosticNotes?.join(' / ') ?? '待加载'),
+    hotspots: extractLayerHotspots(layer, item, metricValue),
   }
 }

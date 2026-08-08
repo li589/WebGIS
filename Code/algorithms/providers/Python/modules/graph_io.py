@@ -294,17 +294,32 @@ class OutputMapLayerModule(BaseModule):
         params: dict[str, object],
         ctx: NodeExecutionContext,
     ) -> dict[str, object]:
-        if inputs.get("manifest") is not None:
-            artifact = inputs["manifest"]
+        manifest = inputs.get("manifest")
+        data = inputs.get("data")
+        # Canvas / seeds often wire module.manifest → map_layer.data because the
+        # LiteGraph template only exposes a single ``data`` input slot.
+        if manifest is None and data is not None and not isinstance(data, (dict, str)):
+            manifest = data
+        if (
+            manifest is None
+            and isinstance(data, dict)
+            and (
+                "products" in data
+                or data.get("artifact_type") == "product_manifest"
+                or data.get("schema_name") == "ProductManifest"
+            )
+        ):
+            manifest = data
+
+        if manifest is not None:
             map_layer = {
                 "layer_id": str(params.get("layer_id") or ""),
                 "display_name": str(params.get("display_name") or ""),
                 "source": "upstream_manifest",
             }
-            return {"manifest": artifact, "map_layer": map_layer}
+            return {"manifest": manifest, "map_layer": map_layer}
 
         path = None
-        data = inputs.get("data")
         if isinstance(data, dict):
             path = data.get("path") or data.get("input_dir") or data.get("uri")
         elif isinstance(data, str):

@@ -26,7 +26,7 @@ const GEOGRAPHIC_TARGETS = new Set(['EPSG:4326', 'EPSG:4490', 'EPSG:4258'])
 /** NSIDC EASE-Grid 2.0 Global 投影域半宽/半高（米） */
 // eslint-disable-next-line no-loss-of-precision -- NSIDC EASE-Grid 2.0 spec constants
 const EASE2_ULX = 17367530.445161516
-// eslint-disable-next-line no-loss-of-precision -- NSIDC EASE-Grid 2.0 spec constants
+
 const EASE2_ULY = 7314540.830865865
 const EASE2_LAT_MAX = 85.04456642797585
 

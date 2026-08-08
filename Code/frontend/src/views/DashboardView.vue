@@ -27,6 +27,7 @@ import { useLayersStore } from '../stores/layers'
 import { useLogStore } from '../stores/log'
 import { useWeatherTileManager } from '../stores/weather-tile-manager'
 import { useWeatherSyncStatusStore } from '../stores/weather-sync-status'
+import { useWeatherEngineStore } from '../stores/weather-engine'
 import {
   buildClockDayTimelineSegments,
   dateHourToTileHour,
@@ -34,6 +35,21 @@ import {
 } from '../utils/weather-timeline'
 import type { TimeGranularity, TimelineAvailabilitySegment } from '../utils/layer-timeline'
 import { generateTimelineSegments } from '../utils/layer-timeline'
+import {
+  referenceInstantFromTimeline,
+  resolveLayerEffectiveTime,
+  snapTargetFromLayer,
+  temporalSpecFromActiveLayer,
+} from '../utils/layer-temporal'
+import {
+  dayAvailabilityFromTimeList,
+  formatSliceLabel,
+  timeStepToLegacyGranularity,
+} from '../utils/temporal-interval'
+import {
+  matchSliceLabelInTimeList,
+  timelineTargetFromWorkflowTimeKey,
+} from '../utils/workflow-timekey-seek'
 import { buildFallbackActiveLayerDisplay } from '../components/map/map-stage-view-model'
 import {
   resolveAnalysisStageKind,
@@ -46,6 +62,7 @@ const logStore = useLogStore()
 const uiLoading = useUiLoadingStore()
 const weatherTileManager = useWeatherTileManager()
 const weatherSyncStatus = useWeatherSyncStatusStore()
+const weatherEngine = useWeatherEngineStore()
 const workflowOutputStore = useWorkflowOutputLayersStore()
 
 // 首次打开网页：全屏地球+卫星；目录就绪后关闭
@@ -56,12 +73,20 @@ void layersStore.ensureRuntimeLayerCatalog().finally(() => {
 // 恢复后端活跃工作流（跨会话 / 定时器触发 / 其他客户端提交）
 void layersStore.restoreActiveWorkflows()
 
-const { tileSourceId, currentHour, currentDate, hourLabel, isPlaying, playIntervalMs, unifiedTimeLock } =
-  storeToRefs(uiStore)
+const {
+  tileSourceId,
+  currentHour,
+  currentDate,
+  hourLabel,
+  isPlaying,
+  playIntervalMs,
+  unifiedTimeLock,
+} = storeToRefs(uiStore)
 const {
   selectedLayerDisplay,
   activeLayerCount,
   workflowError,
+  workflowProgressTimeSeek,
   isSubmitting,
   pointWeather,
   pointWeatherLoading,
@@ -102,6 +127,7 @@ const selectedHotspot = ref<LayerHotspot | null>(null)
 const selectedMapPoint = ref<{ lng: number; lat: number } | null>(null)
 const overlayTimeStates = ref<OverlayTimeState[]>([])
 const overlayPointValues = ref<OverlayPointValue[]>([])
+const selectedOverlayTimeSeries = ref<OverlayPointValue[]>([])
 const dashboardRef = ref<HTMLElement | null>(null)
 const mapShellRef = ref<HTMLElement | null>(null)
 const mapCanvasRef = ref<InstanceType<typeof MapCanvas> | null>(null)
@@ -120,7 +146,7 @@ async function refreshWeatherCoverage() {
   const ac = new AbortController()
   coverageAbort = ac
   try {
-    const cov = await getWeatherCoverage(undefined, ac.signal)
+    const cov = await getWeatherCoverage(weatherEngine.defaultModel, ac.signal)
     if (!ac.signal.aborted) weatherCoverage.value = cov
   } catch (err) {
     if (!(err instanceof DOMException && err.name === 'AbortError')) {
@@ -133,14 +159,25 @@ async function refreshWeatherCoverage() {
 }
 
 onMounted(() => {
-  void refreshWeatherCoverage()
-  void weatherSyncStatus.refreshOverview()
+  void (async () => {
+    await weatherEngine.ensureLoaded()
+    await refreshWeatherCoverage()
+    await weatherSyncStatus.refreshOverview()
+  })()
   const intervalId = window.setInterval(() => {
     void refreshWeatherCoverage()
     void weatherSyncStatus.refreshOverview()
   }, 600_000)
   onBeforeUnmount(() => window.clearInterval(intervalId))
 })
+
+watch(
+  () => weatherEngine.defaultModel,
+  () => {
+    void refreshWeatherCoverage()
+    layersStore.flushWeatherTileViewports()
+  },
+)
 
 const coverageSourceLabel = computed(() => {
   const hasRealLayer = Boolean(selectedLayerDisplay.value?.catalogId)
@@ -188,6 +225,18 @@ const knownActiveInstanceIds = new Set<string>()
 let layerTimeTrackingReady = false
 
 function snapTimelineToLatestValid(reason: string) {
+  // 优先：选中/新加科学 TS 层的最新切片；否则天气覆盖
+  const selected = layersStore.activeLayers.find((l) => l.catalogId === selectedCatalogId.value)
+  const scienceSnap = snapTargetFromLayer(selected)
+  if (scienceSnap) {
+    uiStore.applyDateHour(scienceSnap.date, scienceSnap.hour)
+    uiStore.applyTimelineFromLayerGranularity(scienceSnap.granularity)
+    if (selectedCatalogId.value) {
+      uiStore.rememberLayerTime(selectedCatalogId.value)
+    }
+    logStore.logOperation('timeline-snap-latest', `${reason} · ${scienceSnap.label}`)
+    return
+  }
   const latest = findLatestValidCoverageInstant(weatherCoverage.value, new Date())
   if (!latest) return
   uiStore.applyDateHour(latest.date, latest.hour)
@@ -197,11 +246,59 @@ function snapTimelineToLatestValid(reason: string) {
   logStore.logOperation('timeline-snap-latest', reason)
 }
 
-// 拖动/改日期时记住当前图层时刻（不含切层，避免把旧时刻写进新图层）
-watch([currentHour, currentDate], () => {
+function snapTimelineToLayerLatest(layerCatalogId: string, reason: string) {
   if (unifiedTimeLock.value) return
-  uiStore.rememberLayerTime(selectedCatalogId.value)
-})
+  if (uiStore.isLayerTimeLocked(layerCatalogId)) return
+  const layer = layersStore.activeLayers.find((l) => l.catalogId === layerCatalogId)
+  const scienceSnap = snapTargetFromLayer(layer)
+  if (!scienceSnap) return
+  uiStore.applyDateHour(scienceSnap.date, scienceSnap.hour)
+  uiStore.applyTimelineFromLayerGranularity(scienceSnap.granularity)
+  uiStore.rememberLayerTime(layerCatalogId)
+  logStore.logOperation('timeline-snap-latest', `${reason} · ${scienceSnap.label}`)
+}
+
+/** 按 T_ref 刷新各导入栅格层的生效时间标签（异粒度跟随），并驱动 overlay 预览时刻 */
+function refreshImportedRasterEffectiveTimes() {
+  const tRef = referenceInstantFromTimeline(currentDate.value, currentHour.value)
+  for (const layer of layersStore.activeLayers) {
+    if (!layer.importedRaster) continue
+    // store 尚无 timeList 时，用地图 overlay 状态兜底，否则永远不会 setOverlayTime
+    if (!layer.importedRaster.timeList?.length) {
+      const oid = layer.importedRaster.overlayLayerId
+      const st = oid
+        ? overlayTimeStates.value.find((s) => s.layerId === oid && s.category === 'time-series')
+        : null
+      if (st?.timeList?.length) {
+        layer.importedRaster.timeList = [...st.timeList]
+        if (!layer.importedRaster.nativeStep) {
+          layer.importedRaster.nativeStep = st.timeList.some((t) => /^\d{8}_\d{8}$/.test(t))
+            ? '8d'
+            : '1d'
+        }
+      }
+    }
+    const resolved = resolveLayerEffectiveTime(layer, tRef)
+    if (!resolved?.slice) continue
+    const sliceLabel = formatSliceLabel(resolved.slice)
+    layer.importedRaster.effectiveTimeLabel = sliceLabel
+    const overlayId = layer.importedRaster.overlayLayerId
+    if (sliceLabel && overlayId) {
+      void mapCanvasRef.value?.setOverlayTime?.(overlayId, sliceLabel)
+    }
+  }
+}
+
+// 拖动/改日期：单通道刷新（避免双 watch 重复 setOverlayTime）
+watch(
+  () => [currentHour.value, currentDate.value, unifiedTimeLock.value] as const,
+  () => {
+    if (!unifiedTimeLock.value) {
+      uiStore.rememberLayerTime(selectedCatalogId.value)
+    }
+    refreshImportedRasterEffectiveTimes()
+  },
+)
 
 // 仅「新加」天气图层：非统一模式对齐最新有效数据时次（须先于切层 watch 登记 pending）
 watch(
@@ -217,10 +314,26 @@ watch(
     for (const id of Array.from(knownActiveInstanceIds)) {
       if (!ids.includes(id)) knownActiveInstanceIds.delete(id)
     }
-    if (unifiedTimeLock.value || added.length === 0) return
+    if (added.length === 0) return
+    // 统一时间：不 snap，但科学层仍需按当前 T_ref 刷预览
+    if (unifiedTimeLock.value) {
+      if (
+        added.some(
+          (id) => layersStore.activeLayers.find((l) => l.instanceId === id)?.importedRaster,
+        )
+      ) {
+        refreshImportedRasterEffectiveTimes()
+      }
+      return
+    }
     for (const instanceId of added) {
       const layer = layersStore.activeLayers.find((l) => l.instanceId === instanceId)
       if (!layer) continue
+      if (layer.importedRaster?.timeList?.length) {
+        pendingSnapCatalogIds.add(layer.catalogId)
+        snapTimelineToLayerLatest(layer.catalogId, `新加科学图层 ${layer.catalogId} → 最新切片`)
+        break
+      }
       if (!layersStore.isWeatherEngineLayer(layer.catalogId)) continue
       pendingSnapCatalogIds.add(layer.catalogId)
       snapTimelineToLatestValid(`新加图层 ${layer.catalogId} → 最新有效时次`)
@@ -230,21 +343,152 @@ watch(
   { immediate: true },
 )
 
+/** 渐进块：非锁定非统一时，科学层 time_list 增长则跟最新块 */
+const scienceTimeListSignature = computed(() =>
+  layersStore.activeLayers
+    .filter((l) => l.importedRaster?.timeList?.length)
+    .map(
+      (l) =>
+        `${l.catalogId}:${l.importedRaster!.timeList!.length}:${l.importedRaster!.timeList!.at(-1)}`,
+    )
+    .join('|'),
+)
+const knownScienceTimeSig = ref('')
+watch(scienceTimeListSignature, (sig) => {
+  if (!layerTimeTrackingReady) {
+    knownScienceTimeSig.value = sig
+    return
+  }
+  if (!sig || sig === knownScienceTimeSig.value) return
+  const prev = knownScienceTimeSig.value
+  knownScienceTimeSig.value = sig
+
+  // 含首次非空签名：始终刷新 overlay；仅在「原本就跟在最新尖」时才自动 snap
+  refreshImportedRasterEffectiveTimes()
+  if (!prev) return
+  if (unifiedTimeLock.value) return
+  if (isPlaying.value) return
+
+  const selected = layersStore.activeLayers.find((l) => l.catalogId === selectedCatalogId.value)
+  if (!selected?.importedRaster?.timeList?.length) return
+  if (uiStore.isLayerTimeLocked(selected.catalogId)) return
+
+  const times = selected.importedRaster.timeList
+  const oldTip = times.length >= 2 ? times[times.length - 2]! : null
+  if (!oldTip) return
+  const tRef = referenceInstantFromTimeline(currentDate.value, currentHour.value)
+  const resolved = resolveLayerEffectiveTime(selected, tRef)
+  const curLabel = resolved?.slice ? formatSliceLabel(resolved.slice) : null
+  // 用户已离开最新块（在看历史）→ 不强制拽回；仅当仍停在旧 tip 时跟随新块
+  if (curLabel !== oldTip) return
+
+  snapTimelineToLayerLatest(selected.catalogId, `新块产出 ${selected.catalogId} → 跟随最新切片`)
+  refreshImportedRasterEffectiveTimes()
+})
+
+/** 运行中 node_progress.timeKey：驱动主时间轴与 overlay 预览 seek（尊重锁定/播放态） */
+function seekTimelineToWorkflowProgressTimeKey(
+  catalogId: string,
+  timeKey: string,
+  sliceLabel: string,
+  reason: string,
+) {
+  if (unifiedTimeLock.value) return
+  if (isPlaying.value) return
+  if (uiStore.isLayerTimeLocked(catalogId)) return
+
+  const target = timelineTargetFromWorkflowTimeKey(timeKey)
+  if (!target) return
+
+  uiStore.applyDateHour(target.date, target.hour)
+  uiStore.applyTimelineFromLayerGranularity(target.granularity)
+  uiStore.rememberLayerTime(catalogId)
+
+  const layer = layersStore.activeLayers.find((l) => l.catalogId === catalogId)
+  const runGroupId = layer?.runGroupId
+  const members = runGroupId
+    ? layersStore.activeLayers.filter(
+        (l) => l.runGroupId === runGroupId && l.importedRaster?.overlayLayerId,
+      )
+    : layer?.importedRaster?.overlayLayerId
+      ? [layer]
+      : []
+
+  for (const member of members) {
+    const overlayId = member.importedRaster?.overlayLayerId
+    if (!overlayId) continue
+    const label =
+      matchSliceLabelInTimeList(member.importedRaster?.timeList, sliceLabel) ?? sliceLabel
+    void mapCanvasRef.value?.setOverlayTime?.(overlayId, label)
+  }
+
+  refreshImportedRasterEffectiveTimes()
+  logStore.logOperation('timeline-seek-workflow', `${reason} · ${sliceLabel}`)
+}
+
+watch(
+  workflowProgressTimeSeek,
+  (hint) => {
+    if (!hint) return
+    const selected = selectedCatalogId.value
+      ? layersStore.activeLayers.find((l) => l.catalogId === selectedCatalogId.value)
+      : null
+    const hintLayer = layersStore.activeLayers.find((l) => l.catalogId === hint.catalogId)
+    const sameRunGroup =
+      Boolean(selected?.runGroupId) &&
+      Boolean(hintLayer?.runGroupId) &&
+      selected!.runGroupId === hintLayer!.runGroupId
+    if (selected && hint.catalogId !== selected.catalogId && !sameRunGroup) return
+    seekTimelineToWorkflowProgressTimeKey(
+      hint.catalogId,
+      hint.timeKey,
+      hint.sliceLabel,
+      `工作流块 ${hint.runId.slice(0, 8)}`,
+    )
+  },
+  { deep: true },
+)
+
 // 切层：非统一模式先记住上一层，再恢复目标层记忆；统一模式保持共享时刻
 watch(selectedCatalogId, (catalogId, previous) => {
   if (!catalogId || catalogId === previous) return
-  if (unifiedTimeLock.value) return
+  const layer = layersStore.activeLayers.find((l) => l.catalogId === catalogId)
+  const spec = temporalSpecFromActiveLayer(layer)
+  if (spec) {
+    uiStore.applyTimelineFromLayerGranularity(timeStepToLegacyGranularity(spec.nativeStep))
+  } else if (layer?.importedRaster) {
+    uiStore.applyTimelineFromLayerGranularity('static')
+  } else {
+    uiStore.applyTimelineFromLayerGranularity('hour')
+  }
+  if (unifiedTimeLock.value) {
+    refreshImportedRasterEffectiveTimes()
+    return
+  }
   if (previous) {
     uiStore.rememberLayerTime(previous)
   }
   if (pendingSnapCatalogIds.has(catalogId)) {
     pendingSnapCatalogIds.delete(catalogId)
+    refreshImportedRasterEffectiveTimes()
     return
   }
   const restored = uiStore.restoreLayerTime(catalogId)
   if (restored) {
-    logStore.logOperation('timeline-restore-layer', `恢复图层 ${catalogId} 记忆时刻`)
+    const times = layer?.importedRaster?.timeList ?? []
+    const day = currentDate.value.getDate()
+    const covered = times.length
+      ? dayAvailabilityFromTimeList(currentDate.value, times)[day] === 'ready'
+      : true
+    if (!covered && spec) {
+      snapTimelineToLayerLatest(catalogId, `切层 ${catalogId} · 记忆日无覆盖 → 最新切片`)
+    } else {
+      logStore.logOperation('timeline-restore-layer', `恢复图层 ${catalogId} 记忆时刻`)
+    }
+  } else if (spec) {
+    snapTimelineToLayerLatest(catalogId, `切层 ${catalogId} → 最新切片`)
   }
+  refreshImportedRasterEffectiveTimes()
 })
 
 const workflowEditorOpen = ref(false)
@@ -337,13 +581,27 @@ const analysisPanelDimensions = Object.freeze({
   defaultWidth: 304,
 })
 
+/** 选中 ActiveLayer（含 importedRaster），供时间轴 / 粒度解析 */
+const selectedActiveLayer = computed(
+  () => layersStore.activeLayers.find((l) => l.catalogId === selectedCatalogId.value) ?? null,
+)
+
 const activeLayerGranularity = computed<TimeGranularity>(() => {
-  const catalogId = activeLayer.value?.catalogId
-  if (!catalogId) return 'hour'
-  const descriptor = layersStore.resolveEffectiveDescriptor(catalogId)
-  if (!descriptor) {
-    return layersStore.isWeatherEngineLayer(catalogId) ? 'hour' : 'hour'
+  const layer = selectedActiveLayer.value
+  const scienceSpec = temporalSpecFromActiveLayer(layer)
+  if (scienceSpec) {
+    return timeStepToLegacyGranularity(scienceSpec.nativeStep)
   }
+  if (layer?.importedRaster) {
+    // 有 overlay 但无 time_list → 静态；勿落入天气小时轴
+    return 'static'
+  }
+  const catalogId = layer?.catalogId ?? activeLayer.value?.catalogId
+  if (!catalogId) return 'hour'
+  // 勿使用粘滞的 uiStore.activeTimeGranularity：科学层 day 会污染后续天气层
+  if (layersStore.isWeatherEngineLayer(catalogId)) return 'hour'
+  const descriptor = layersStore.resolveEffectiveDescriptor(catalogId)
+  if (!descriptor) return 'hour'
   const gran =
     (descriptor as { time_granularity?: string }).time_granularity ||
     (descriptor as { timeGranularity?: string }).timeGranularity
@@ -360,6 +618,7 @@ const isLayerLocked = computed(() => {
 /**
  * 时间轴色段：根据激活图层粒度（static/month/year/day/hour）自动生成或计算。
  * 无选中图层时固定为空闲 8 段，不沿用全局 weather coverage，避免 UI 跳变。
+ * 科学导入栅格按 time_list 标日可用，禁止走天气 coverage=null → 全「无数据」。
  */
 const timelineSegments = computed((): TimelineAvailabilitySegment[] => {
   void weatherStatusVersion.value
@@ -367,6 +626,8 @@ const timelineSegments = computed((): TimelineAvailabilitySegment[] => {
   void currentHour.value
   void currentDate.value
   void weatherCoverage.value
+  void overlayTimeStates.value
+  void selectedActiveLayer.value?.importedRaster?.timeList
 
   if (!hasTimelineLayer.value) {
     return buildClockDayTimelineSegments({
@@ -382,6 +643,26 @@ const timelineSegments = computed((): TimelineAvailabilitySegment[] => {
   if (gran === 'static') {
     return generateTimelineSegments(currentDate.value, 'static')
   }
+
+  const scienceLayer = selectedActiveLayer.value
+  const fromStore = scienceLayer?.importedRaster?.timeList?.filter(Boolean) ?? []
+  const oid = scienceLayer?.importedRaster?.overlayLayerId
+  const fromOverlay = oid
+    ? (overlayTimeStates.value.find((s) => s.layerId === oid)?.timeList ?? [])
+    : []
+  const scienceTimes = fromStore.length ? fromStore : fromOverlay.filter(Boolean)
+
+  if (scienceTimes.length && (gran === 'day' || gran === 'month' || gran === 'year')) {
+    if (gran === 'day') {
+      return generateTimelineSegments(
+        currentDate.value,
+        'day',
+        dayAvailabilityFromTimeList(currentDate.value, scienceTimes),
+      )
+    }
+    return generateTimelineSegments(currentDate.value, gran)
+  }
+
   if (gran === 'month' || gran === 'year' || gran === 'day') {
     return generateTimelineSegments(currentDate.value, gran)
   }
@@ -389,13 +670,17 @@ const timelineSegments = computed((): TimelineAvailabilitySegment[] => {
   const layer = activeLayer.value
   const catalogId = layer.catalogId
   const isWeatherLayer = catalogId ? layersStore.isWeatherEngineLayer(catalogId) : false
+  // 非天气且无科学 time_list：勿用 coverage=null 的天气轴（会全标「无数据」）
+  if (!isWeatherLayer) {
+    return generateTimelineSegments(currentDate.value, 'static')
+  }
   const currentStatus =
     isWeatherLayer && catalogId ? weatherTileManager.getLayerStatus(catalogId) : null
 
   return buildClockDayTimelineSegments({
     selectedDate: currentDate.value,
     currentHour: currentHour.value,
-    coverage: isWeatherLayer ? weatherCoverage.value : null,
+    coverage: weatherCoverage.value,
     currentStatus,
     isWeatherLayer,
     runReadiness: layer.runReadiness,
@@ -467,6 +752,7 @@ function clearMapPointInspect() {
   selectedMapPoint.value = null
   layersStore.clearPointWeather()
   overlayPointValues.value = []
+  selectedOverlayTimeSeries.value = []
   logStore.logOperation('map-point-clear', '清除地图选点')
 }
 
@@ -486,17 +772,75 @@ async function fetchOverlayPointValues(lng: number, lat: number) {
   const states = overlayTimeStates.value
   if (states.length === 0) {
     overlayPointValues.value = []
+    selectedOverlayTimeSeries.value = []
     return
   }
   const seq = ++overlayPointFetchSeq
-  const results = await Promise.allSettled(
+  const currentResults = await Promise.allSettled(
     states.map((s) => getOverlayValue(s.layerId, lng, lat, s.currentTime ?? undefined)),
   )
   if (seq !== overlayPointFetchSeq) return
-  overlayPointValues.value = results
+  overlayPointValues.value = currentResults
+    .map((r) => (r.status === 'fulfilled' ? r.value : null))
+    .filter((v): v is OverlayPointValue => v !== null)
+
+  await fetchSelectedOverlaySeries(lng, lat)
+}
+
+async function fetchSelectedOverlaySeries(lng: number, lat: number) {
+  // 优先用选中图层自身的 importedRaster（不依赖地图瓦片加载状态）；
+  // 兜底再退到已加载 overlay 的时间状态。
+  const selectedActive = layersStore.activeLayers.find(
+    (l) => l.instanceId === selectedLayerDisplay.value?.instanceId,
+  )
+  const selectedOverlayId =
+    selectedActive?.importedRaster?.overlayLayerId ??
+    selectedLayerDisplay.value?.importedRasterOverlayLayerId
+  let times = selectedActive?.importedRaster?.timeList ?? []
+  if (!selectedOverlayId || times.length === 0) {
+    const state = overlayTimeStates.value.find(
+      (s) => s.layerId === selectedOverlayId && s.category === 'time-series',
+    )
+    times = state?.timeList ?? []
+  }
+  if (!selectedOverlayId || times.length === 0) {
+    selectedOverlayTimeSeries.value = []
+    logStore.logOperation(
+      'overlay-series-error',
+      `无法加载点时序：当前图层无可用时间块（${selectedLayerDisplay.value?.name ?? '未选择'}）`,
+    )
+    return
+  }
+  const seriesResults = await Promise.allSettled(
+    times.map((time) => getOverlayValue(selectedOverlayId, lng, lat, time)),
+  )
+  selectedOverlayTimeSeries.value = seriesResults
     .map((r) => (r.status === 'fulfilled' ? r.value : null))
     .filter((v): v is OverlayPointValue => v !== null)
 }
+
+watch(
+  () => selectedLayerDisplay.value?.importedRasterOverlayLayerId,
+  (overlayId) => {
+    if (!overlayId || selectedMapPoint.value) return
+    // 汇报/预览兜底：选择一个常年有 SM 反演覆盖的点，保证分析面板能展示 8 天块时序。
+    // 用户点击地图后，仍以真实选点为准。
+    void fetchSelectedOverlaySeries(11.25, 19.7623)
+  },
+  { immediate: true },
+)
+
+// 切换为移动/测量等非点选模式时，清除选中点（避免残留 inspect 圆点与选中高亮）
+watch(
+  () => uiStore.interactionMode,
+  (mode) => {
+    if (mode === 'select') return
+    if (selectedMapPoint.value || selectedHotspot.value) {
+      clearMapPointInspect()
+      selectedHotspot.value = null
+    }
+  },
+)
 
 function handleTimelineStep(delta: number) {
   if (!Number.isFinite(delta) || delta === 0) return
@@ -578,6 +922,23 @@ function handleVisibleHotspotsChange(hotspots: LayerHotspot[]) {
 
 function handleOverlayTimeUpdate(states: OverlayTimeState[]) {
   overlayTimeStates.value = states
+  // 地图侧已从 bounds meta 拿到 time_list 时，回填 store（避免时间轴仍当静态/无数据）
+  for (const st of states) {
+    if (st.category !== 'time-series' || !st.timeList?.length) continue
+    const layer = layersStore.activeLayers.find(
+      (l) => l.importedRaster?.overlayLayerId === st.layerId,
+    )
+    if (!layer?.importedRaster) continue
+    const prev = layer.importedRaster.timeList ?? []
+    if (prev.length === st.timeList.length && prev.every((t, i) => t === st.timeList[i])) continue
+    layer.importedRaster.timeList = [...st.timeList]
+    layer.importedRaster.timeSlices = undefined
+    if (!layer.importedRaster.nativeStep) {
+      layer.importedRaster.nativeStep = st.timeList.some((t) => /^\d{8}_\d{8}$/.test(t))
+        ? '8d'
+        : '1d'
+    }
+  }
 }
 
 function handleToggleLayerVisibility(instanceId: string) {
@@ -641,28 +1002,41 @@ async function handleRunWorkflowFromEditor(
     return
   }
 
-  let catalogId = sourceLayerId
+  const targets = target.targets?.length
+    ? target.targets
+    : [{ name: target.name ?? `产出 ${workflowId}`, productTag: 'result' }]
+  const groupTitle = target.groupTitle || `${workflowId} · 计算中`
+
+  let memberCatalogIds: string[] | undefined
   if (target.mode === 'new') {
     const engine =
       layersStore.layerLibrary.find((l) => l.catalogId === sourceLayerId)?.engine ?? 'general'
-    const entry = workflowOutputStore.createOutputLayer({
-      name: target.name ?? `产出 ${workflowId}`,
-      group: target.group ?? '默认分组',
-      sourceWorkflowId: workflowId,
+    const libGroup = target.group ?? '默认分组'
+    const entries = workflowOutputStore.createOutputLayers(
+      targets.map((t) => ({ name: t.name, group: libGroup })),
+      workflowId,
       sourceLayerId,
       engine,
-    })
+    )
+    memberCatalogIds = entries.map((e) => e.localId)
     logStore.logWorkflow(
       'workflow-output-create',
-      `创建产出图层「${entry.name}」→ 分组「${entry.group}」`,
+      `创建 ${entries.length} 个产出图层 → 分组「${libGroup}」`,
     )
-    catalogId = entry.localId
-  } else if (target.mode === 'multi' && target.targets?.length) {
-    // multi：编辑器已创建条目；状态跟踪挂到第一个产出图层，后端仍按源图层解析
-    const existing = workflowOutputStore.getBySourceLayerId(sourceLayerId)
-    const latest = existing.find((e) => e.sourceWorkflowId === workflowId)
-    if (latest) catalogId = latest.localId
   }
+
+  const created = layersStore.createRunLayerGroup({
+    title: groupTitle,
+    targets,
+    sourceLayerId,
+    workflowId,
+    memberCatalogIds,
+  })
+  const catalogId = created.memberCatalogIds[0] || sourceLayerId
+
+  // 提交一开始就打开状态面板，避免卡在「加载中」却看不到排队条目
+  workflowEditorOpen.value = false
+  workflowStatusOpen.value = true
 
   try {
     let algorithmRequest: Record<string, unknown> | undefined
@@ -670,53 +1044,81 @@ async function handleRunWorkflowFromEditor(
     const nodes = canvasGraph?.nodes ?? []
     const links = canvasGraph?.links ?? []
     if (nodes.length > 0) {
-      const { compileWorkflowGraph } = await import('../services/workflow-definition-api')
-      const compiled = await compileWorkflowGraph({
+      const { dryValidateWorkflowGraph } = await import('../services/workflow-definition-api')
+      const { WorkflowValidationError } = await import('../services/_http')
+      const { WORKFLOW_COPY } = await import('../ui-copy/workflow')
+      const graphPayload = {
         workflow_id: workflowId,
         name: workflowId,
         nodes,
         links,
-      })
-      const def = compiled.workflow_definition as Record<string, unknown>
-      const engine =
-        ((def.metadata as Record<string, unknown> | undefined)?.engine as string | undefined) ??
-        'python_provider'
-      if (engine === 'weather') {
-        weatherRequest = {
-          workflow_id: workflowId,
-          layer_id: sourceLayerId,
-          workflow: def,
-          context: {
-            latitude: layersStore.currentMapCenter.lat,
-            longitude: layersStore.currentMapCenter.lng,
-          },
-          priority: 'viewport',
-        }
-      } else {
-        algorithmRequest = {
-          workflow_definition: def,
-          workflow_entry_name: workflowId,
-          datasource_selection: {},
-          algorithm_params: {},
-          output_spec: {},
-          tags: { source: 'workflow_editor', workflow_id: workflowId },
-        }
       }
-      logStore.logWorkflow(
-        'workflow-editor-compile',
-        `画布已编译(${engine}): nodes=${(def.nodes as unknown[] | undefined)?.length ?? 0}`,
-      )
+      try {
+        const validated = await dryValidateWorkflowGraph(graphPayload)
+        const def = validated.workflow_definition as Record<string, unknown>
+        if (!def) {
+          throw new Error(WORKFLOW_COPY.dryValidateFailed)
+        }
+        const engine =
+          ((def.metadata as Record<string, unknown> | undefined)?.engine as string | undefined) ??
+          'python_provider'
+        if (engine === 'weather') {
+          weatherRequest = {
+            workflow_id: workflowId,
+            layer_id: sourceLayerId,
+            workflow: def,
+            context: {
+              latitude: layersStore.currentMapCenter.lat,
+              longitude: layersStore.currentMapCenter.lng,
+            },
+            priority: 'viewport',
+          }
+        } else {
+          algorithmRequest = {
+            workflow_definition: def,
+            workflow_entry_name: workflowId,
+            datasource_selection: {},
+            algorithm_params: {},
+            output_spec: {},
+            tags: { source: 'workflow_editor', workflow_id: workflowId },
+          }
+        }
+        logStore.logWorkflow(
+          'workflow-editor-compile',
+          `${WORKFLOW_COPY.dryValidateOk}(${engine}): nodes=${(def.nodes as unknown[] | undefined)?.length ?? 0}`,
+        )
+      } catch (error) {
+        if (error instanceof WorkflowValidationError) {
+          const detail =
+            error.issues
+              .map((i) => i.message)
+              .filter(Boolean)
+              .join('；') ||
+            error.message ||
+            WORKFLOW_COPY.dryValidateFailed
+          throw new Error(`${WORKFLOW_COPY.dryValidateFailed}：${detail}`, { cause: error })
+        }
+        throw error
+      }
     }
-    await layersStore.runWorkflowForCatalog(catalogId, {
+    const runId = await layersStore.runWorkflowForCatalog(catalogId, {
       algorithmRequest,
       weatherRequest,
       commandLabel: `运行画布工作流 ${workflowId}`,
     })
+    if (typeof runId === 'string' && runId) {
+      layersStore.bindRunIdToGroup(created.groupId, runId)
+    }
     workflowEditorRef.value?.notifyRunOutcome?.(true)
-    // 成功后再切到状态面板，便于看进度与结果摘要
-    workflowEditorOpen.value = false
-    workflowStatusOpen.value = true
+    // 状态面板已在提交开始时打开
   } catch (error) {
+    layersStore.updateRunGroupFromJob('', { status: 'failed', progress: 0, message: String(error) })
+    const g = layersStore.findRunGroupById(created.groupId)
+    if (g) {
+      g.status = 'failed'
+      g.dissolvable = true
+      g.message = (error as Error)?.message ?? String(error)
+    }
     const msg = (error as Error)?.message ?? String(error)
     workflowEditorRef.value?.notifyRunOutcome?.(false, msg)
     // 天气瓦片刷新也打开状态面板看瓦片进度
@@ -864,12 +1266,14 @@ watch(tileForecastHour, () => {
             :point-weather-error="pointWeatherError"
             :overlay-time-states="overlayTimeStates"
             :overlay-point-values="overlayPointValues"
+            :selected-overlay-time-series="selectedOverlayTimeSeries"
             @run-workflow="handleRunWorkflow"
             @toggle-layer-visibility="handleToggleLayerVisibility"
             @set-layer-opacity="handleSetLayerOpacity"
             @select-hotspot="handleHotspotSelectFromPanel"
             @clear-map-point="clearMapPointInspect"
             @enter-select-mode="uiStore.setInteractionMode('select')"
+            @query-overlay-series="(p) => fetchSelectedOverlaySeries(p.lng, p.lat)"
           />
         </ControlPanel>
       </div>
