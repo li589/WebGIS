@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import os
 import re
+import tempfile
 from pathlib import Path
 
 from app.core.config import BACKEND_ROOT
@@ -95,5 +97,21 @@ def upsert_env_keys(
     body = "\n".join(new_lines)
     if had_trailing_newline or not body.endswith("\n"):
         body = body + "\n"
-    env_path.write_text(body, encoding="utf-8")
+    # Atomic replace: write to a temp file in the same directory, then rename.
+    # Avoids corrupting the .env (which holds the master encryption key) if the
+    # process crashes mid-write, and prevents TOCTOU on concurrent saves.
+    env_path.parent.mkdir(parents=True, exist_ok=True)
+    fd, tmp_name = tempfile.mkstemp(
+        dir=str(env_path.parent), prefix=".env.", suffix=".tmp"
+    )
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as tmp_file:
+            tmp_file.write(body)
+        os.replace(tmp_name, env_path)
+    except BaseException:
+        try:
+            os.unlink(tmp_name)
+        except OSError:
+            pass
+        raise
     return env_path

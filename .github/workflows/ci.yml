@@ -252,3 +252,34 @@ jobs:
       - name: Run check:catalog
         working-directory: Code/frontend
         run: npm run check:catalog
+
+  # ── gen-types：前端契约类型与 openapi.json 同步闸门（F14）──────────────────
+  # 闭合「openapi.json → api-contracts.ts」这第二跳：check:openapi 只守第一跳
+  # （活应用 ↔ openapi.json），若有人跑了 export_openapi.py 却忘 gen:types，
+  # 提交的前端类型会静默陈旧。本 job 依赖 check-openapi（确保 openapi.json 与活
+  # 应用一致），再就地重生成 api-contracts.ts，用 git diff 卡住任何陈旧差异。
+  gen-types:
+    name: gen:types (contract sync gate)
+    runs-on: ubuntu-latest
+    needs: check-openapi
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: Code/frontend/package-lock.json
+
+      - name: Install frontend deps
+        working-directory: Code/frontend
+        run: npm ci --prefer-offline
+
+      - name: Regenerate api-contracts.ts and verify in sync
+        working-directory: Code/frontend
+        run: |
+          npm run gen:types
+          if ! git diff --exit-code -- src/types/api-contracts.ts; then
+            echo "::error::api-contracts.ts is stale vs openapi.json — run 'npm run gen:types' and commit it"
+            exit 1
+          fi

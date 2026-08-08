@@ -31,8 +31,9 @@ const providerTypeMeta: Record<
   local_data: { label: '本地数据', icon: '💾', class: 'type-local' },
 }
 
-function typeMeta(t: WeatherProviderType) {
-  return providerTypeMeta[t] ?? { label: t, icon: '❓', class: 'type-unknown' }
+function typeMeta(t: string | undefined) {
+  const key = (t ?? 'free_api') as WeatherProviderType
+  return providerTypeMeta[key] ?? { label: t ?? '未知', icon: '❓', class: 'type-unknown' }
 }
 
 /** Open-Meteo 通道标签（避免三条同名混淆） */
@@ -177,8 +178,8 @@ function formatNumber(v: number | null | undefined): string {
   return v.toLocaleString()
 }
 
-function formatPercent(used: number | null, quota: number | null): string {
-  if (used === null || quota === null || quota === 0) return '—'
+function formatPercent(used: number | null | undefined, quota: number | null | undefined): string {
+  if (used == null || quota == null || quota === 0) return '—'
   return `${((used / quota) * 100).toFixed(1)}%`
 }
 
@@ -318,7 +319,7 @@ const healthyCount = computed(() => weatherProviders.value.filter((p) => p.statu
             </div>
             <div class="meta-item">
               <span class="meta-label">能力</span>
-              <span class="meta-value">{{ p.supported_capabilities.join(', ') }}</span>
+              <span class="meta-value">{{ (p.supported_capabilities ?? []).join(', ') }}</span>
             </div>
             <div class="meta-item">
               <span class="meta-label">需要 API Key</span>
@@ -350,8 +351,9 @@ const healthyCount = computed(() => weatherProviders.value.filter((p) => p.statu
                     class="runtime-bar-fill"
                     :class="{
                       warn:
-                        p.status.daily_used !== null &&
-                        p.status.daily_quota !== null &&
+                        p.status.daily_used != null &&
+                        p.status.daily_quota != null &&
+                        p.status.daily_quota > 0 &&
                         p.status.daily_used / p.status.daily_quota > 0.8,
                     }"
                     :style="{ width: formatPercent(p.status.daily_used, p.status.daily_quota) }"
@@ -434,7 +436,7 @@ const healthyCount = computed(() => weatherProviders.value.filter((p) => p.statu
             </div>
 
             <!-- 配置字段 -->
-            <div v-if="p.config_schema.length > 0">
+            <div v-if="(p.config_schema?.length ?? 0) > 0">
               <div v-for="field in p.config_schema" :key="field.key" class="form-row">
                 <label class="form-label">
                   {{ field.label }}
@@ -461,7 +463,7 @@ const healthyCount = computed(() => weatherProviders.value.filter((p) => p.statu
                   class="form-checkbox"
                 />
                 <select
-                  v-else-if="field.field_type === 'select' && field.options.length > 0"
+                  v-else-if="field.field_type === 'select' && (field.options?.length ?? 0) > 0"
                   v-model="editingConfig[p.provider_id][field.key]"
                   class="form-input"
                 >

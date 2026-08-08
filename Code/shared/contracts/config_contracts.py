@@ -484,3 +484,102 @@ class ServiceRestartResponse(BaseModel):
 
 class PortalCredentialsMapResponse(BaseModel):
     portal_credentials: dict[str, PortalCredentialPublic]
+
+
+class PortalCredentialUpsertRequest(BaseModel):
+    """PUT /config/data-source/portal-credentials/{portal_id} body."""
+
+    model_config = ConfigDict(extra="ignore")
+
+    enabled: bool | None = None
+    auth_type: str | None = None
+    username: str | None = None
+    token: str | None = None
+    password: str | None = None
+    client_id: str | None = None
+    token_header: str | None = None
+    use_for_nsidc: bool | None = None
+    use_earthdata: bool | None = None
+    clear_secrets: bool | None = None
+
+
+class DataCacheEvictRequest(BaseModel):
+    uri_or_name: str | None = None
+    older_than_seconds: int | None = None
+
+
+class DataCacheEvictResponse(BaseModel):
+    removed: list[str] = Field(default_factory=list)
+    cache_root: str
+    removed_count: int | None = None
+
+
+class OpenDataPresetsUpdateRequest(BaseModel):
+    open_data_presets: dict[str, str]
+
+
+class OpenDataPresetsUpdateResponse(BaseModel):
+    open_data_presets: dict[str, str]
+
+
+class RemoteLayerUrisUpdateRequest(BaseModel):
+    remote_layer_data_uris: dict[str, Any]
+
+
+class RemoteLayerUrisUpdateResponse(BaseModel):
+    remote_layer_data_uris: dict[str, dict[str, list[str]]]
+
+
+class DeletedResponse(BaseModel):
+    deleted: bool
+
+
+class ApiKeyDeletedResponse(DeletedResponse):
+    key_name: str
+
+
+class ApiKeyHistoryDeletedResponse(DeletedResponse):
+    key_name: str
+    history_id: int
+
+
+class GeeAccountDeletedResponse(DeletedResponse):
+    account_id: str
+
+
+class WeatherProviderDeletedResponse(DeletedResponse):
+    provider_id: str
+
+
+class RemoteStorageDeletedResponse(DeletedResponse):
+    profile_id: str
+
+
+class RemoteStorageHistoryDeletedResponse(DeletedResponse):
+    profile_id: str
+    history_id: int
+
+
+class ApiKeyToggleResponse(BaseModel):
+    key_name: str
+    enabled: bool
+
+
+class GeeAccountToggleResponse(BaseModel):
+    account_id: str
+    enabled: bool
+
+
+class WeatherProviderToggleResponse(BaseModel):
+    provider_id: str
+    enabled: bool
+
+
+class WeatherProviderPriorityResponse(BaseModel):
+    provider_id: str
+    priority: int
+
+
+class RemoteStorageToggleResponse(BaseModel):
+    profile_id: str
+    enabled: bool

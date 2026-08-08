@@ -4,7 +4,7 @@ from datetime import datetime
 from enum import Enum
 from typing import Any
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class MapMode(str, Enum):
@@ -674,6 +674,12 @@ class RuntimeConfigUpdateResponse(BaseModel):
     applied_count: int
     message: str
     config_snapshot: dict[str, dict[str, Any]]
+
+
+class RuntimeConfigSnapshotResponse(BaseModel):
+    """GET /runtime/config — scope→key→value overrides (merged defaults + DB)."""
+
+    model_config = ConfigDict(extra="allow")
 
 
 class BackendServiceStatus(BaseModel):

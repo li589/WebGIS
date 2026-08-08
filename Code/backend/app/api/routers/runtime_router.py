@@ -9,6 +9,7 @@ from app.services.workflow.service_container import runtime_status_service
 from shared.contracts.api_contracts import (
     FrontendCommandRequest,
     FrontendCommandResponse,
+    RuntimeConfigSnapshotResponse,
     RuntimeConfigUpdateRequest,
     RuntimeConfigUpdateResponse,
     RuntimeStatusResponse,
@@ -34,10 +35,16 @@ def update_runtime_config(
         ) from exc
 
 
-@router.get("/runtime/config", tags=["runtime"])
-def get_runtime_config() -> dict:
+@router.get(
+    "/runtime/config",
+    tags=["runtime"],
+    response_model=RuntimeConfigSnapshotResponse,
+)
+def get_runtime_config() -> RuntimeConfigSnapshotResponse:
     """Return the current runtime configuration snapshot (defaults + DB overrides)."""
-    return runtime_status_service.get_runtime_config()
+    return RuntimeConfigSnapshotResponse.model_validate(
+        runtime_status_service.get_runtime_config()
+    )
 
 
 @router.get("/runtime/status", tags=["runtime"], response_model=RuntimeStatusResponse)

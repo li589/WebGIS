@@ -244,7 +244,7 @@ async function refreshRuntimeConfig() {
   try {
     const { fetchRuntimeConfig } = await import('../../services/settings-api')
     const snapshot = await fetchRuntimeConfig()
-    const backend = snapshot.backend ?? {}
+    const backend = (snapshot.backend ?? {}) as Record<string, unknown>
     for (const param of editableParams.value) {
       const v = backend[param.key]
       if (v !== undefined && v !== null) {

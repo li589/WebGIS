@@ -3242,12 +3242,28 @@ export interface components {
             /** Priority */
             priority?: number | null;
         };
+        /** ApiKeyDeletedResponse */
+        ApiKeyDeletedResponse: {
+            /** Deleted */
+            deleted: boolean;
+            /** Key Name */
+            key_name: string;
+        };
         /** ApiKeyHistoryClearResponse */
         ApiKeyHistoryClearResponse: {
             /** Key Name */
             key_name: string;
             /** Deleted */
             deleted: number;
+        };
+        /** ApiKeyHistoryDeletedResponse */
+        ApiKeyHistoryDeletedResponse: {
+            /** Deleted */
+            deleted: boolean;
+            /** Key Name */
+            key_name: string;
+            /** History Id */
+            history_id: number;
         };
         /** ApiKeyHistoryItem */
         ApiKeyHistoryItem: {
@@ -3557,6 +3573,22 @@ export interface components {
             mtime: number;
             /** Age Seconds */
             age_seconds: number;
+        };
+        /** DataCacheEvictRequest */
+        DataCacheEvictRequest: {
+            /** Uri Or Name */
+            uri_or_name?: string | null;
+            /** Older Than Seconds */
+            older_than_seconds?: number | null;
+        };
+        /** DataCacheEvictResponse */
+        DataCacheEvictResponse: {
+            /** Removed */
+            removed?: string[];
+            /** Cache Root */
+            cache_root: string;
+            /** Removed Count */
+            removed_count?: number | null;
         };
         /** DataCacheOverview */
         DataCacheOverview: {
@@ -3978,6 +4010,13 @@ export interface components {
             /** Display Name */
             display_name?: string | null;
         };
+        /** GeeAccountDeletedResponse */
+        GeeAccountDeletedResponse: {
+            /** Deleted */
+            deleted: boolean;
+            /** Account Id */
+            account_id: string;
+        };
         /** GeeAccountItem */
         GeeAccountItem: {
             /** Account Id */
@@ -4013,6 +4052,13 @@ export interface components {
         };
         /** GeeAccountToggleRequest */
         GeeAccountToggleRequest: {
+            /** Enabled */
+            enabled: boolean;
+        };
+        /** GeeAccountToggleResponse */
+        GeeAccountToggleResponse: {
+            /** Account Id */
+            account_id: string;
             /** Enabled */
             enabled: boolean;
         };
@@ -4469,6 +4515,20 @@ export interface components {
                 [key: string]: string;
             };
         };
+        /** OpenDataPresetsUpdateRequest */
+        OpenDataPresetsUpdateRequest: {
+            /** Open Data Presets */
+            open_data_presets: {
+                [key: string]: string;
+            };
+        };
+        /** OpenDataPresetsUpdateResponse */
+        OpenDataPresetsUpdateResponse: {
+            /** Open Data Presets */
+            open_data_presets: {
+                [key: string]: string;
+            };
+        };
         /**
          * OpenMeteoSyncTriggerRequest
          * @description Optional one-shot domains override (does not persist OPEN_METEO_SYNC_DOMAINS).
@@ -4550,6 +4610,32 @@ export interface components {
             use_earthdata?: boolean | null;
             /** Client Id */
             client_id?: string | null;
+        };
+        /**
+         * PortalCredentialUpsertRequest
+         * @description PUT /config/data-source/portal-credentials/{portal_id} body.
+         */
+        PortalCredentialUpsertRequest: {
+            /** Enabled */
+            enabled?: boolean | null;
+            /** Auth Type */
+            auth_type?: string | null;
+            /** Username */
+            username?: string | null;
+            /** Token */
+            token?: string | null;
+            /** Password */
+            password?: string | null;
+            /** Client Id */
+            client_id?: string | null;
+            /** Token Header */
+            token_header?: string | null;
+            /** Use For Nsidc */
+            use_for_nsidc?: boolean | null;
+            /** Use Earthdata */
+            use_earthdata?: boolean | null;
+            /** Clear Secrets */
+            clear_secrets?: boolean | null;
         };
         /** PortalCredentialsMapResponse */
         PortalCredentialsMapResponse: {
@@ -4650,12 +4736,44 @@ export interface components {
             /** Message */
             message: string;
         };
+        /** RemoteLayerUrisUpdateRequest */
+        RemoteLayerUrisUpdateRequest: {
+            /** Remote Layer Data Uris */
+            remote_layer_data_uris: {
+                [key: string]: unknown;
+            };
+        };
+        /** RemoteLayerUrisUpdateResponse */
+        RemoteLayerUrisUpdateResponse: {
+            /** Remote Layer Data Uris */
+            remote_layer_data_uris: {
+                [key: string]: {
+                    [key: string]: string[];
+                };
+            };
+        };
+        /** RemoteStorageDeletedResponse */
+        RemoteStorageDeletedResponse: {
+            /** Deleted */
+            deleted: boolean;
+            /** Profile Id */
+            profile_id: string;
+        };
         /** RemoteStorageHistoryClearResponse */
         RemoteStorageHistoryClearResponse: {
             /** Profile Id */
             profile_id: string;
             /** Deleted */
             deleted: number;
+        };
+        /** RemoteStorageHistoryDeletedResponse */
+        RemoteStorageHistoryDeletedResponse: {
+            /** Deleted */
+            deleted: boolean;
+            /** Profile Id */
+            profile_id: string;
+            /** History Id */
+            history_id: number;
         };
         /** RemoteStorageHistoryItem */
         RemoteStorageHistoryItem: {
@@ -4768,6 +4886,13 @@ export interface components {
             /** Enabled */
             enabled: boolean;
         };
+        /** RemoteStorageToggleResponse */
+        RemoteStorageToggleResponse: {
+            /** Profile Id */
+            profile_id: string;
+            /** Enabled */
+            enabled: boolean;
+        };
         /** RemoteStorageUpsertRequest */
         RemoteStorageUpsertRequest: {
             /** Protocol */
@@ -4850,6 +4975,13 @@ export interface components {
          * @enum {string}
          */
         RuntimeConfigScope: "frontend" | "backend" | "provider" | "workflow" | "system";
+        /**
+         * RuntimeConfigSnapshotResponse
+         * @description GET /runtime/config — scope→key→value overrides (merged defaults + DB).
+         */
+        RuntimeConfigSnapshotResponse: {
+            [key: string]: unknown;
+        };
         /** RuntimeConfigUpdateRequest */
         RuntimeConfigUpdateRequest: {
             /** Items */
@@ -5412,6 +5544,13 @@ export interface components {
             /** Placeholder */
             placeholder?: string | null;
         };
+        /** WeatherProviderDeletedResponse */
+        WeatherProviderDeletedResponse: {
+            /** Deleted */
+            deleted: boolean;
+            /** Provider Id */
+            provider_id: string;
+        };
         /** WeatherProviderItem */
         WeatherProviderItem: {
             /** Provider Id */
@@ -5475,6 +5614,13 @@ export interface components {
             /** Priority */
             priority: number;
         };
+        /** WeatherProviderPriorityResponse */
+        WeatherProviderPriorityResponse: {
+            /** Provider Id */
+            provider_id: string;
+            /** Priority */
+            priority: number;
+        };
         /** WeatherProviderStatus */
         WeatherProviderStatus: {
             /**
@@ -5528,6 +5674,13 @@ export interface components {
         };
         /** WeatherProviderToggleRequest */
         WeatherProviderToggleRequest: {
+            /** Enabled */
+            enabled: boolean;
+        };
+        /** WeatherProviderToggleResponse */
+        WeatherProviderToggleResponse: {
+            /** Provider Id */
+            provider_id: string;
             /** Enabled */
             enabled: boolean;
         };
@@ -6668,9 +6821,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
+                    "application/json": components["schemas"]["RuntimeConfigSnapshotResponse"];
                 };
             };
         };
@@ -9263,7 +9414,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["ApiKeyDeletedResponse"];
                 };
             };
             /** @description Validation Error */
@@ -9455,7 +9606,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["ApiKeyHistoryDeletedResponse"];
                 };
             };
             /** @description Validation Error */
@@ -9539,7 +9690,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["GeeAccountDeletedResponse"];
                 };
             };
             /** @description Validation Error */
@@ -9605,7 +9756,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["GeeAccountToggleResponse"];
                 };
             };
             /** @description Validation Error */
@@ -9826,7 +9977,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["WeatherProviderDeletedResponse"];
                 };
             };
             /** @description Validation Error */
@@ -9892,7 +10043,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["WeatherProviderToggleResponse"];
                 };
             };
             /** @description Validation Error */
@@ -9927,7 +10078,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["WeatherProviderPriorityResponse"];
                 };
             };
             /** @description Validation Error */
@@ -10024,7 +10175,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["RemoteStorageDeletedResponse"];
                 };
             };
             /** @description Validation Error */
@@ -10059,7 +10210,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["RemoteStorageToggleResponse"];
                 };
             };
             /** @description Validation Error */
@@ -10220,7 +10371,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["RemoteStorageHistoryDeletedResponse"];
                 };
             };
             /** @description Validation Error */
@@ -10349,9 +10500,7 @@ export interface operations {
         };
         requestBody?: {
             content: {
-                "application/json": {
-                    [key: string]: unknown;
-                } | null;
+                "application/json": components["schemas"]["DataCacheEvictRequest"] | null;
             };
         };
         responses: {
@@ -10361,7 +10510,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["DataCacheEvictResponse"];
                 };
             };
             /** @description Validation Error */
@@ -10384,9 +10533,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": {
-                    [key: string]: unknown;
-                };
+                "application/json": components["schemas"]["OpenDataPresetsUpdateRequest"];
             };
         };
         responses: {
@@ -10396,7 +10543,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["OpenDataPresetsUpdateResponse"];
                 };
             };
             /** @description Validation Error */
@@ -10441,9 +10588,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": {
-                    [key: string]: unknown;
-                };
+                "application/json": components["schemas"]["PortalCredentialUpsertRequest"];
             };
         };
         responses: {
@@ -10507,9 +10652,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": {
-                    [key: string]: unknown;
-                };
+                "application/json": components["schemas"]["RemoteLayerUrisUpdateRequest"];
             };
         };
         responses: {
@@ -10519,7 +10662,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["RemoteLayerUrisUpdateResponse"];
                 };
             };
             /** @description Validation Error */

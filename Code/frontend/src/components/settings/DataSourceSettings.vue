@@ -15,6 +15,7 @@ import {
   waitForBackendHealthy,
   type DataCacheOverview,
   type PortalCredentialPublic,
+  type PortalCredentialUpsertRequest,
 } from '../../services/settings-api'
 
 const settingsStore = useSettingsStore()
@@ -276,7 +277,7 @@ async function savePortal(portalId: string) {
     if (portalId === 'earthdata') payload.use_for_nsidc = form.use_for_nsidc
     if (portalId === 'nsidc') payload.use_earthdata = form.use_earthdata
     if (portalId === 'copernicus') payload.client_id = form.client_id
-    await upsertPortalCredential(portalId, payload)
+    await upsertPortalCredential(portalId, payload as PortalCredentialUpsertRequest)
     statusMsg.value = `门户凭证 ${portalId} 已保存`
     await settingsStore.loadAll()
     syncEditorsFromConfig()

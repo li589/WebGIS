@@ -1142,9 +1142,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "additionalProperties": true,
-                  "type": "object",
-                  "title": "Response Get Runtime Config Runtime Config Get"
+                  "$ref": "#/components/schemas/RuntimeConfigSnapshotResponse"
                 }
               }
             }
@@ -5077,7 +5075,9 @@
             "description": "Successful Response",
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/ApiKeyDeletedResponse"
+                }
               }
             }
           },
@@ -5391,7 +5391,9 @@
             "description": "Successful Response",
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/ApiKeyHistoryDeletedResponse"
+                }
               }
             }
           },
@@ -5513,7 +5515,9 @@
             "description": "Successful Response",
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/GeeAccountDeletedResponse"
+                }
               }
             }
           },
@@ -5617,7 +5621,9 @@
             "description": "Successful Response",
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/GeeAccountToggleResponse"
+                }
               }
             }
           },
@@ -5946,7 +5952,9 @@
             "description": "Successful Response",
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/WeatherProviderDeletedResponse"
+                }
               }
             }
           },
@@ -6050,7 +6058,9 @@
             "description": "Successful Response",
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/WeatherProviderToggleResponse"
+                }
               }
             }
           },
@@ -6106,7 +6116,9 @@
             "description": "Successful Response",
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/WeatherProviderPriorityResponse"
+                }
               }
             }
           },
@@ -6258,7 +6270,9 @@
             "description": "Successful Response",
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/RemoteStorageDeletedResponse"
+                }
               }
             }
           },
@@ -6313,7 +6327,9 @@
             "description": "Successful Response",
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/RemoteStorageToggleResponse"
+                }
               }
             }
           },
@@ -6583,7 +6599,9 @@
             "description": "Successful Response",
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/RemoteStorageHistoryDeletedResponse"
+                }
               }
             }
           },
@@ -6769,8 +6787,7 @@
               "schema": {
                 "anyOf": [
                   {
-                    "additionalProperties": true,
-                    "type": "object"
+                    "$ref": "#/components/schemas/DataCacheEvictRequest"
                   },
                   {
                     "type": "null"
@@ -6786,7 +6803,9 @@
             "description": "Successful Response",
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/DataCacheEvictResponse"
+                }
               }
             }
           },
@@ -6820,9 +6839,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "additionalProperties": true,
-                "type": "object",
-                "title": "Payload"
+                "$ref": "#/components/schemas/OpenDataPresetsUpdateRequest"
               }
             }
           },
@@ -6833,7 +6850,9 @@
             "description": "Successful Response",
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/OpenDataPresetsUpdateResponse"
+                }
               }
             }
           },
@@ -6911,9 +6930,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "type": "object",
-                "additionalProperties": true,
-                "title": "Payload"
+                "$ref": "#/components/schemas/PortalCredentialUpsertRequest"
               }
             }
           }
@@ -7000,9 +7017,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "additionalProperties": true,
-                "type": "object",
-                "title": "Payload"
+                "$ref": "#/components/schemas/RemoteLayerUrisUpdateRequest"
               }
             }
           },
@@ -7013,7 +7028,9 @@
             "description": "Successful Response",
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/RemoteLayerUrisUpdateResponse"
+                }
               }
             }
           },
@@ -8693,6 +8710,24 @@
         "type": "object",
         "title": "AlgorithmWorkflowRequest"
       },
+      "ApiKeyDeletedResponse": {
+        "properties": {
+          "deleted": {
+            "type": "boolean",
+            "title": "Deleted"
+          },
+          "key_name": {
+            "type": "string",
+            "title": "Key Name"
+          }
+        },
+        "type": "object",
+        "required": [
+          "deleted",
+          "key_name"
+        ],
+        "title": "ApiKeyDeletedResponse"
+      },
       "ApiKeyHistoryClearResponse": {
         "properties": {
           "key_name": {
@@ -8710,6 +8745,29 @@
           "deleted"
         ],
         "title": "ApiKeyHistoryClearResponse"
+      },
+      "ApiKeyHistoryDeletedResponse": {
+        "properties": {
+          "deleted": {
+            "type": "boolean",
+            "title": "Deleted"
+          },
+          "key_name": {
+            "type": "string",
+            "title": "Key Name"
+          },
+          "history_id": {
+            "type": "integer",
+            "title": "History Id"
+          }
+        },
+        "type": "object",
+        "required": [
+          "deleted",
+          "key_name",
+          "history_id"
+        ],
+        "title": "ApiKeyHistoryDeletedResponse"
       },
       "ApiKeyHistoryItem": {
         "properties": {
@@ -9472,6 +9530,65 @@
           "age_seconds"
         ],
         "title": "DataCacheEntry"
+      },
+      "DataCacheEvictRequest": {
+        "properties": {
+          "uri_or_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Uri Or Name"
+          },
+          "older_than_seconds": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Older Than Seconds"
+          }
+        },
+        "type": "object",
+        "title": "DataCacheEvictRequest"
+      },
+      "DataCacheEvictResponse": {
+        "properties": {
+          "removed": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Removed"
+          },
+          "cache_root": {
+            "type": "string",
+            "title": "Cache Root"
+          },
+          "removed_count": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Removed Count"
+          }
+        },
+        "type": "object",
+        "required": [
+          "cache_root"
+        ],
+        "title": "DataCacheEvictResponse"
       },
       "DataCacheOverview": {
         "properties": {
@@ -10482,6 +10599,24 @@
         ],
         "title": "GeeAccountCreateRequest"
       },
+      "GeeAccountDeletedResponse": {
+        "properties": {
+          "deleted": {
+            "type": "boolean",
+            "title": "Deleted"
+          },
+          "account_id": {
+            "type": "string",
+            "title": "Account Id"
+          }
+        },
+        "type": "object",
+        "required": [
+          "deleted",
+          "account_id"
+        ],
+        "title": "GeeAccountDeletedResponse"
+      },
       "GeeAccountItem": {
         "properties": {
           "account_id": {
@@ -10571,6 +10706,24 @@
           "enabled"
         ],
         "title": "GeeAccountToggleRequest"
+      },
+      "GeeAccountToggleResponse": {
+        "properties": {
+          "account_id": {
+            "type": "string",
+            "title": "Account Id"
+          },
+          "enabled": {
+            "type": "boolean",
+            "title": "Enabled"
+          }
+        },
+        "type": "object",
+        "required": [
+          "account_id",
+          "enabled"
+        ],
+        "title": "GeeAccountToggleResponse"
       },
       "GeeRuntimeConfig": {
         "properties": {
@@ -11790,6 +11943,38 @@
         ],
         "title": "NodeSpec"
       },
+      "OpenDataPresetsUpdateRequest": {
+        "properties": {
+          "open_data_presets": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "type": "object",
+            "title": "Open Data Presets"
+          }
+        },
+        "type": "object",
+        "required": [
+          "open_data_presets"
+        ],
+        "title": "OpenDataPresetsUpdateRequest"
+      },
+      "OpenDataPresetsUpdateResponse": {
+        "properties": {
+          "open_data_presets": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "type": "object",
+            "title": "Open Data Presets"
+          }
+        },
+        "type": "object",
+        "required": [
+          "open_data_presets"
+        ],
+        "title": "OpenDataPresetsUpdateResponse"
+      },
       "OpenMeteoSyncTriggerRequest": {
         "properties": {
           "domains": {
@@ -11964,6 +12149,123 @@
         },
         "type": "object",
         "title": "PortalCredentialPublic"
+      },
+      "PortalCredentialUpsertRequest": {
+        "properties": {
+          "enabled": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Enabled"
+          },
+          "auth_type": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Auth Type"
+          },
+          "username": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Username"
+          },
+          "token": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Token"
+          },
+          "password": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Password"
+          },
+          "client_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Client Id"
+          },
+          "token_header": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Token Header"
+          },
+          "use_for_nsidc": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Use For Nsidc"
+          },
+          "use_earthdata": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Use Earthdata"
+          },
+          "clear_secrets": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Clear Secrets"
+          }
+        },
+        "type": "object",
+        "title": "PortalCredentialUpsertRequest",
+        "description": "PUT /config/data-source/portal-credentials/{portal_id} body."
       },
       "PortalCredentialsMapResponse": {
         "properties": {
@@ -12226,6 +12528,60 @@
         ],
         "title": "ReloadResultResponse"
       },
+      "RemoteLayerUrisUpdateRequest": {
+        "properties": {
+          "remote_layer_data_uris": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Remote Layer Data Uris"
+          }
+        },
+        "type": "object",
+        "required": [
+          "remote_layer_data_uris"
+        ],
+        "title": "RemoteLayerUrisUpdateRequest"
+      },
+      "RemoteLayerUrisUpdateResponse": {
+        "properties": {
+          "remote_layer_data_uris": {
+            "additionalProperties": {
+              "additionalProperties": {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "type": "object"
+            },
+            "type": "object",
+            "title": "Remote Layer Data Uris"
+          }
+        },
+        "type": "object",
+        "required": [
+          "remote_layer_data_uris"
+        ],
+        "title": "RemoteLayerUrisUpdateResponse"
+      },
+      "RemoteStorageDeletedResponse": {
+        "properties": {
+          "deleted": {
+            "type": "boolean",
+            "title": "Deleted"
+          },
+          "profile_id": {
+            "type": "string",
+            "title": "Profile Id"
+          }
+        },
+        "type": "object",
+        "required": [
+          "deleted",
+          "profile_id"
+        ],
+        "title": "RemoteStorageDeletedResponse"
+      },
       "RemoteStorageHistoryClearResponse": {
         "properties": {
           "profile_id": {
@@ -12243,6 +12599,29 @@
           "deleted"
         ],
         "title": "RemoteStorageHistoryClearResponse"
+      },
+      "RemoteStorageHistoryDeletedResponse": {
+        "properties": {
+          "deleted": {
+            "type": "boolean",
+            "title": "Deleted"
+          },
+          "profile_id": {
+            "type": "string",
+            "title": "Profile Id"
+          },
+          "history_id": {
+            "type": "integer",
+            "title": "History Id"
+          }
+        },
+        "type": "object",
+        "required": [
+          "deleted",
+          "profile_id",
+          "history_id"
+        ],
+        "title": "RemoteStorageHistoryDeletedResponse"
       },
       "RemoteStorageHistoryItem": {
         "properties": {
@@ -12473,6 +12852,24 @@
         ],
         "title": "RemoteStorageToggleRequest"
       },
+      "RemoteStorageToggleResponse": {
+        "properties": {
+          "profile_id": {
+            "type": "string",
+            "title": "Profile Id"
+          },
+          "enabled": {
+            "type": "boolean",
+            "title": "Enabled"
+          }
+        },
+        "type": "object",
+        "required": [
+          "profile_id",
+          "enabled"
+        ],
+        "title": "RemoteStorageToggleResponse"
+      },
       "RemoteStorageUpsertRequest": {
         "properties": {
           "protocol": {
@@ -12668,6 +13065,13 @@
           "system"
         ],
         "title": "RuntimeConfigScope"
+      },
+      "RuntimeConfigSnapshotResponse": {
+        "properties": {},
+        "additionalProperties": true,
+        "type": "object",
+        "title": "RuntimeConfigSnapshotResponse",
+        "description": "GET /runtime/config — scope→key→value overrides (merged defaults + DB)."
       },
       "RuntimeConfigUpdateRequest": {
         "properties": {
@@ -14287,6 +14691,24 @@
         ],
         "title": "WeatherProviderConfigField"
       },
+      "WeatherProviderDeletedResponse": {
+        "properties": {
+          "deleted": {
+            "type": "boolean",
+            "title": "Deleted"
+          },
+          "provider_id": {
+            "type": "string",
+            "title": "Provider Id"
+          }
+        },
+        "type": "object",
+        "required": [
+          "deleted",
+          "provider_id"
+        ],
+        "title": "WeatherProviderDeletedResponse"
+      },
       "WeatherProviderItem": {
         "properties": {
           "provider_id": {
@@ -14421,6 +14843,24 @@
         ],
         "title": "WeatherProviderPriorityRequest"
       },
+      "WeatherProviderPriorityResponse": {
+        "properties": {
+          "provider_id": {
+            "type": "string",
+            "title": "Provider Id"
+          },
+          "priority": {
+            "type": "integer",
+            "title": "Priority"
+          }
+        },
+        "type": "object",
+        "required": [
+          "provider_id",
+          "priority"
+        ],
+        "title": "WeatherProviderPriorityResponse"
+      },
       "WeatherProviderStatus": {
         "properties": {
           "healthy": {
@@ -14548,6 +14988,24 @@
           "enabled"
         ],
         "title": "WeatherProviderToggleRequest"
+      },
+      "WeatherProviderToggleResponse": {
+        "properties": {
+          "provider_id": {
+            "type": "string",
+            "title": "Provider Id"
+          },
+          "enabled": {
+            "type": "boolean",
+            "title": "Enabled"
+          }
+        },
+        "type": "object",
+        "required": [
+          "provider_id",
+          "enabled"
+        ],
+        "title": "WeatherProviderToggleResponse"
       },
       "WeatherProviderUpdateRequest": {
         "properties": {

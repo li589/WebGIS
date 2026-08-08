@@ -278,7 +278,10 @@ def toggle_api_key(key_name: str, enabled: bool) -> dict[str, Any]:
     except Exception:
         logger.exception("Failed to rehydrate effective config after api key toggle")
 
-    return {"key_name": key_name, "enabled": enabled, "effective": bool(effective)}
+    info = repo.get_key_info(key_name) or {}
+    if not info.get("display_name"):
+        info["display_name"] = meta.get("display_name", key_name)
+    return _annotate_key_entry(info, source="db")
 
 
 def _sync_api_config_manager_key(key_name: str, key_value: str) -> None:
@@ -552,6 +555,29 @@ def _parse_map_aoi_presets(raw: str) -> list[dict[str, Any]]:
     return presets
 
 
+def _redact_redis_url(url: str) -> str:
+    """Mask the password embedded in a Redis connection URL.
+
+    Handles ``redis://:password@host`` and ``redis://user:password@host``;
+    leaves scheme/host/db intact. Non-credential URLs are returned unchanged.
+    """
+    if not url:
+        return url
+    import re
+
+    match = re.match(
+        r"^(?P<scheme>[a-zA-Z][a-zA-Z0-9+.\-]*://)(?P<auth>[^@/]+@)?(?P<rest>.+)$",
+        url,
+    )
+    if not match:
+        return url
+    auth = match.group("auth")
+    if not auth or ":" not in auth:
+        return url  # no password (e.g. ``redis://host`` or ``user@host``)
+    user, _, _pwd = auth.partition(":")
+    return f"{match.group('scheme')}{user}:***@{match.group('rest')}"
+
+
 def get_general_config() -> dict[str, Any]:
     """获取常规配置（脱敏）。"""
     return {
@@ -585,7 +611,7 @@ def get_general_config() -> dict[str, Any]:
         "workflow_state_dir": settings.workflow_state_dir,
         "python_provider_root": settings.python_provider_root,
         "python_provider_workspace": settings.python_provider_workspace,
-        "redis_url": settings.redis_url,
+        "redis_url": _redact_redis_url(settings.redis_url),
         "storage_backend": settings.storage_backend,
         "reload": settings.reload,
         "map_default_longitude": settings.map_default_longitude,
