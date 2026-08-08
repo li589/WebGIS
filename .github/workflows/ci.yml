@@ -71,6 +71,11 @@ jobs:
           pip install -r requirements-dev.txt
           pip install pytest pytest-cov
 
+      # 算法包依赖：Test/algorithms 与后端算法链测试均依赖（numba/xarray 等）
+      - name: Install algorithms deps
+        working-directory: Code/algorithms/providers/Python
+        run: pip install -r requirements.txt
+
       # P1-13：archive 导入测试依赖 unrar 二进制（Windows 本地为 gitignore 的 vendor 二进制；CI 用 apt 安装）
       - name: Install unrar (for archive import tests)
         run: sudo apt-get update && sudo apt-get install -y unrar
@@ -147,6 +152,11 @@ jobs:
         run: |
           pip install -r requirements-dev.txt
           pip install pytest pytest-cov
+
+      # 算法包依赖：Test/algorithms 与后端算法链测试均依赖（numba/xarray 等）
+      - name: Install algorithms deps
+        working-directory: Code/algorithms/providers/Python
+        run: pip install -r requirements.txt
 
       - name: Run pytest (algorithms)
         env:
@@ -230,6 +240,11 @@ jobs:
 
       - name: Install backend deps
         working-directory: Code/backend
+        run: pip install -r requirements.txt
+
+      # 算法包依赖：openapi 生成会 import 算法 router 链
+      - name: Install algorithms deps
+        working-directory: Code/algorithms/providers/Python
         run: pip install -r requirements.txt
 
       - name: Run check:openapi
