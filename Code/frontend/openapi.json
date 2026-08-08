@@ -7921,6 +7921,73 @@
         }
       }
     },
+    "/cleanup/node-caches": {
+      "get": {
+        "tags": [
+          "cleanup"
+        ],
+        "summary": "List Node Caches",
+        "description": "列出工作流节点产物缓存（每个算法模块的目录/大小/文件数/最近修改）。",
+        "operationId": "list_node_caches_cleanup_node_caches_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NodeCacheListResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "cleanup"
+        ],
+        "summary": "Cleanup Node Caches",
+        "description": "清理工作流节点产物缓存（默认全部；可指定模块名）。\n\n安全约束：仅删除 products/ 下的直接子目录，路径白名单校验，\n绝不触碰目录外的任何文件。",
+        "operationId": "cleanup_node_caches_cleanup_node_caches_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NodeCacheCleanupRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NodeCacheCleanupResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ]
+      }
+    },
     "/api/remote/servers": {
       "get": {
         "tags": [
@@ -10383,6 +10450,121 @@
           "3d"
         ],
         "title": "MapMode"
+      },
+      "NodeCacheCleanupRequest": {
+        "properties": {
+          "names": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Names",
+            "description": "要清理的模块名列表；空=全部"
+          }
+        },
+        "type": "object",
+        "title": "NodeCacheCleanupRequest",
+        "description": "节点缓存清理请求；names 为空表示全部清理。"
+      },
+      "NodeCacheCleanupResponse": {
+        "properties": {
+          "deleted": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Deleted"
+          },
+          "failed": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Failed"
+          },
+          "freed_bytes": {
+            "type": "integer",
+            "title": "Freed Bytes"
+          }
+        },
+        "type": "object",
+        "required": [
+          "deleted",
+          "failed",
+          "freed_bytes"
+        ],
+        "title": "NodeCacheCleanupResponse",
+        "description": "节点缓存清理响应。"
+      },
+      "NodeCacheEntry": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "path": {
+            "type": "string",
+            "title": "Path"
+          },
+          "size_bytes": {
+            "type": "integer",
+            "title": "Size Bytes"
+          },
+          "file_count": {
+            "type": "integer",
+            "title": "File Count"
+          },
+          "modified_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Modified At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "name",
+          "path",
+          "size_bytes",
+          "file_count",
+          "modified_at"
+        ],
+        "title": "NodeCacheEntry",
+        "description": "单个算法模块的产物缓存条目。"
+      },
+      "NodeCacheListResponse": {
+        "properties": {
+          "entries": {
+            "items": {
+              "$ref": "#/components/schemas/NodeCacheEntry"
+            },
+            "type": "array",
+            "title": "Entries"
+          },
+          "total_bytes": {
+            "type": "integer",
+            "title": "Total Bytes"
+          }
+        },
+        "type": "object",
+        "required": [
+          "entries",
+          "total_bytes"
+        ],
+        "title": "NodeCacheListResponse",
+        "description": "节点缓存清单（不执行清理）。"
       },
       "NodeSpec": {
         "properties": {

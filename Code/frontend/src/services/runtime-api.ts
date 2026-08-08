@@ -327,3 +327,41 @@ export function retryWorkflowRun(runId: string) {
     method: 'POST',
   })
 }
+
+// ─── 节点产物缓存管理（cleanup router） ─────────────────────────────────────
+
+export interface NodeCacheEntry {
+  name: string
+  path: string
+  size_bytes: number
+  file_count: number
+  modified_at: string | null
+}
+
+export interface NodeCacheListResponse {
+  entries: NodeCacheEntry[]
+  total_bytes: number
+}
+
+export interface NodeCacheCleanupResponse {
+  deleted: string[]
+  failed: string[]
+  freed_bytes: number
+}
+
+/** 列出工作流节点产物缓存（每个算法模块的目录/大小/文件数）。 */
+export function listNodeCaches() {
+  return requestJson<NodeCacheListResponse>('/cleanup/node-caches', {
+    silent: true,
+    timeoutMs: 60000,
+  })
+}
+
+/** 清理工作流节点产物缓存；names 缺省表示全部。 */
+export function cleanupNodeCaches(names?: string[]) {
+  return requestJson<NodeCacheCleanupResponse>('/cleanup/node-caches', {
+    method: 'POST',
+    body: JSON.stringify({ names: names ?? null }),
+    timeoutMs: 300000,
+  })
+}

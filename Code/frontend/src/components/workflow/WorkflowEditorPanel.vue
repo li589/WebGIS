@@ -27,6 +27,7 @@ import WorkflowRightSidebar from './WorkflowRightSidebar.vue'
 import WorkflowRunDialog, { type WorkflowRunTarget } from './WorkflowRunDialog.vue'
 import WorkflowTimerPanel from './WorkflowTimerPanel.vue'
 import PipelineLauncher from './PipelineLauncher.vue'
+import NodeCacheDialog from './NodeCacheDialog.vue'
 import { WORKFLOW_COPY } from '../../ui-copy'
 import {
   validateWorkflowBeforeRun,
@@ -65,6 +66,9 @@ const canvasRef = ref<InstanceType<typeof WorkflowCanvas> | null>(null)
 
 /** 流配置内视图：画布 | 定时器 */
 const editorView = ref<'canvas' | 'timers'>('canvas')
+
+// 节点缓存管理对话框
+const nodeCacheDialogOpen = ref(false)
 
 // 保存状态
 const saving = ref(false)
@@ -652,6 +656,16 @@ defineExpose({
             <span>{{ editorView === 'timers' ? '返回画布' : '定时器' }}</span>
           </button>
           <span class="action-divider"></span>
+          <button
+            class="header-btn"
+            type="button"
+            title="节点缓存管理（查看/清理算法模块产物缓存）"
+            @click="nodeCacheDialogOpen = true"
+          >
+            <span aria-hidden="true">🗑</span>
+            <span>缓存</span>
+          </button>
+          <span class="action-divider"></span>
           <button class="header-btn primary" type="button" :disabled="!canSave" @click="handleSave">
             <span aria-hidden="true">{{ saving ? '◌' : '💾' }}</span>
             <span>{{ saving ? '保存中...' : '保存' }}</span>
@@ -900,6 +914,8 @@ defineExpose({
       @close="showPipelineLauncher = false"
       @launch="handlePipelineLaunch"
     />
+
+    <NodeCacheDialog :open="nodeCacheDialogOpen" @close="nodeCacheDialogOpen = false" />
   </div>
 </template>
 
