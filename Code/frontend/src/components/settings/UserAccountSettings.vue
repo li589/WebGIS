@@ -26,6 +26,12 @@ const createdToken = ref<string | null>(null)
 const message = ref<string | null>(null)
 const error = ref<string | null>(null)
 
+const ROLE_LABEL: Record<UserRole, string> = {
+  admin: '管理员',
+  operator: '操作员',
+  viewer: '只读',
+}
+
 async function loadTokens() {
   tokensLoading.value = true
   try {
@@ -119,14 +125,23 @@ async function removeAccount(userId: number, username: string) {
 
 <template>
   <div class="user-account-settings">
+    <section v-if="auth.user" class="account-hero">
+      <div class="account-avatar" aria-hidden="true">
+        {{ auth.user.username.slice(0, 1).toUpperCase() }}
+      </div>
+      <div class="account-meta">
+        <p class="account-name">{{ auth.user.username }}</p>
+        <p class="account-role">{{ ROLE_LABEL[auth.user.role] }}</p>
+      </div>
+      <button type="button" class="logout-btn" @click="logout">退出登录</button>
+    </section>
+
     <section class="settings-section">
       <h3 class="section-title">账户与登录</h3>
       <p class="section-hint">
-        浏览器通过 HttpOnly 会话 Cookie 鉴权；外部工具可使用下方个人 API Token
-        或联系管理员获取服务密钥。 当前登录：<strong>{{ auth.user?.username }}</strong
-        >（{{ auth.user?.role }}）
+        浏览器通过 HttpOnly 会话 Cookie 鉴权；外部脚本可使用下方个人 API
+        Token，或联系管理员获取服务密钥。
       </p>
-      <button type="button" class="secondary-btn" @click="logout">退出登录</button>
     </section>
 
     <section class="settings-section">
@@ -235,6 +250,64 @@ async function removeAccount(userId: number, username: string) {
   display: flex;
   flex-direction: column;
   gap: 1rem;
+}
+
+.account-hero {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  padding: 0.75rem 0.8rem;
+  border-radius: 0.65rem;
+  border: 1px solid rgba(114, 255, 207, 0.18);
+  background: linear-gradient(135deg, rgba(114, 255, 207, 0.08), rgba(10, 132, 255, 0.06));
+}
+
+.account-avatar {
+  width: 2.2rem;
+  height: 2.2rem;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  font-size: 0.9rem;
+  font-weight: 700;
+  color: #9ff8cf;
+  background: rgba(114, 255, 207, 0.12);
+  border: 1px solid rgba(114, 255, 207, 0.25);
+  flex: none;
+}
+
+.account-meta {
+  flex: 1;
+  min-width: 0;
+}
+
+.account-name {
+  margin: 0;
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: #e8f3fc;
+}
+
+.account-role {
+  margin: 0.12rem 0 0;
+  font-size: 0.58rem;
+  color: #8aa8bf;
+}
+
+.logout-btn {
+  flex: none;
+  padding: 0.38rem 0.55rem;
+  border-radius: 0.35rem;
+  border: 1px solid rgba(255, 140, 100, 0.28);
+  background: rgba(120, 30, 20, 0.35);
+  color: #ffb4a8;
+  font: inherit;
+  font-size: 0.58rem;
+  cursor: pointer;
+}
+
+.logout-btn:hover {
+  background: rgba(120, 30, 20, 0.5);
 }
 
 .settings-section {

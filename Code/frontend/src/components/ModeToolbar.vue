@@ -1,6 +1,5 @@
 <script setup lang="ts">
 import { computed, onMounted, watch } from 'vue'
-import { useRouter } from 'vue-router'
 import { storeToRefs } from 'pinia'
 
 import {
@@ -39,7 +38,6 @@ const uiStore = useUiStore()
 const logStore = useLogStore()
 const settingsStore = useSettingsStore()
 const authStore = useAuthStore()
-const router = useRouter()
 const weatherTileManager = useWeatherTileManager()
 const weatherSyncStatus = useWeatherSyncStatusStore()
 const { workflowSummary } = storeToRefs(layersStore)
@@ -48,7 +46,7 @@ const { apiKeys } = storeToRefs(settingsStore)
 const { syncInProgress } = storeToRefs(weatherSyncStatus)
 
 onMounted(() => {
-  if (apiKeys.value.length === 0) {
+  if (authStore.isAuthenticated && apiKeys.value.length === 0) {
     void settingsStore.loadApiKeys().catch(() => {
       /* toolbar still works with free basemaps */
     })
@@ -183,16 +181,6 @@ function handleWorkflowEditor() {
 function sourcePillLabel(source: TileSourceConfig): string {
   return basemapProviderShort(source.id, source.provider)
 }
-
-const authLabel = computed(() => {
-  if (!authStore.authRequired || !authStore.user) return ''
-  return `${authStore.user.username} · ${authStore.user.role}`
-})
-
-async function logout() {
-  await authStore.logout()
-  await router.replace('/login')
-}
 </script>
 
 <template>
@@ -319,18 +307,6 @@ async function logout() {
         >
           <span class="btn-icon" aria-hidden="true">⬡</span>
           <span class="btn-label">{{ WORKFLOW_COPY.entry }}</span>
-        </button>
-
-        <!-- 账户 -->
-        <button
-          v-if="authLabel"
-          class="tool-btn auth-pill"
-          type="button"
-          title="当前登录账户，点击退出"
-          @click="logout"
-        >
-          <span class="btn-icon" aria-hidden="true">👤</span>
-          <span class="btn-label">{{ authLabel }}</span>
         </button>
 
         <!-- 设置 -->
@@ -533,24 +509,6 @@ h1 {
   color: #5ad5ff;
   background: rgba(10, 132, 255, 0.2);
   box-shadow: inset 0 0 0 1px rgba(90, 213, 255, 0.16);
-}
-
-.tool-btn.auth-pill {
-  max-width: 7.5rem;
-  border-color: rgba(114, 255, 207, 0.22);
-  color: #9ff8cf;
-  background: rgba(114, 255, 207, 0.08);
-}
-
-.tool-btn.auth-pill:hover {
-  border-color: rgba(114, 255, 207, 0.38);
-  color: #c8ffe8;
-  background: rgba(114, 255, 207, 0.14);
-}
-
-.tool-btn.auth-pill .btn-label {
-  overflow: hidden;
-  text-overflow: ellipsis;
 }
 
 .btn-icon {

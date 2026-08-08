@@ -104,6 +104,22 @@ const tabs = computed(() => {
   }
   return visible
 })
+
+const ROLE_LABEL: Record<string, string> = {
+  admin: '管理员',
+  operator: '操作员',
+  viewer: '只读',
+}
+
+const sessionLabel = computed(() => {
+  if (!authStore.authRequired || !authStore.user) return null
+  const role = ROLE_LABEL[authStore.user.role] ?? authStore.user.role
+  return `${authStore.user.username} · ${role}`
+})
+
+function openAccountsTab() {
+  activeTab.value = 'accounts'
+}
 if (!tabs.value.some((t) => t.id === activeTab.value)) {
   activeTab.value = tabs.value[0]?.id ?? defaultTab()
 }
@@ -140,6 +156,16 @@ watch(activeTab, (tab) => {
       <div class="settings-header">
         <span class="header-icon" aria-hidden="true">⚙</span>
         <span class="header-title">{{ SETTINGS_COPY.panelTitle }}</span>
+        <button
+          v-if="sessionLabel"
+          type="button"
+          class="session-chip"
+          title="账户与登录"
+          @click="openAccountsTab"
+        >
+          <span class="session-avatar" aria-hidden="true">👤</span>
+          <span class="session-text">{{ sessionLabel }}</span>
+        </button>
         <button class="close-btn" title="关闭" @click="emit('close')">
           <span aria-hidden="true">✕</span>
         </button>
@@ -226,6 +252,38 @@ watch(activeTab, (tab) => {
 
 .header-title {
   flex: 1;
+  min-width: 0;
+}
+
+.session-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  max-width: 9rem;
+  padding: 0.22rem 0.45rem;
+  border: 1px solid rgba(114, 255, 207, 0.22);
+  border-radius: 999px;
+  background: rgba(114, 255, 207, 0.08);
+  color: #9ff8cf;
+  cursor: pointer;
+  font: inherit;
+  font-size: 0.58rem;
+}
+
+.session-chip:hover {
+  border-color: rgba(114, 255, 207, 0.38);
+  background: rgba(114, 255, 207, 0.14);
+}
+
+.session-avatar {
+  font-size: 0.62rem;
+  line-height: 1;
+}
+
+.session-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .close-btn {
@@ -259,6 +317,9 @@ watch(activeTab, (tab) => {
   padding: 0.52rem 0.32rem;
   border-right: 1px solid rgba(136, 192, 255, 0.08);
   overflow-y: auto;
+  overflow-x: hidden;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
 }
 
 .nav-item {
@@ -309,6 +370,9 @@ watch(activeTab, (tab) => {
 .settings-content {
   flex: 1;
   overflow-y: auto;
+  overflow-x: hidden;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
   padding: 0.62rem 0.82rem;
 }
 
@@ -385,11 +449,17 @@ watch(activeTab, (tab) => {
     border-right: none;
     border-bottom: 1px solid rgba(136, 192, 255, 0.08);
     overflow-x: auto;
+    overflow-y: hidden;
     padding: 0.32rem;
+    scrollbar-gutter: auto;
   }
 
   .nav-item {
     flex: none;
   }
 }
+</style>
+
+<style>
+@import './settings-scrollbar.css';
 </style>

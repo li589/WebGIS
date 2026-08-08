@@ -52,48 +52,66 @@ async function submit() {
 
 <template>
   <div class="login-page">
+    <div class="login-backdrop" aria-hidden="true">
+      <div class="grid-lines"></div>
+      <div class="glow glow-a"></div>
+      <div class="glow glow-b"></div>
+    </div>
+
     <div class="login-card">
-      <div class="brand">
-        <span class="brand-mark" aria-hidden="true">◎</span>
-        <div>
+      <div class="brand-block">
+        <div class="brand-mark" aria-hidden="true">
+          <span class="mark-ring"></span>
+          <span class="mark-core">◎</span>
+        </div>
+        <div class="brand-copy">
+          <p class="eyebrow">{{ BRAND.eyebrow }}</p>
           <h1>{{ BRAND.shortName }}</h1>
-          <p>请登录以继续使用系统</p>
+          <p class="subtitle">登录以访问地图分析、工作流与数据服务</p>
         </div>
       </div>
 
-      <p v-if="auth.bootstrapError" class="error">{{ auth.bootstrapError }}</p>
-      <button
-        v-if="auth.bootstrapError"
-        type="button"
-        class="retry-btn"
-        :disabled="retrying"
-        @click="retryBootstrap"
-      >
-        {{ retrying ? '重试中…' : '重试连接' }}
-      </button>
+      <p v-if="auth.bootstrapError" class="banner banner-warn">
+        {{ auth.bootstrapError }}
+        <button type="button" class="inline-link" :disabled="retrying" @click="retryBootstrap">
+          {{ retrying ? '重试中…' : '重试连接' }}
+        </button>
+      </p>
 
       <form class="login-form" @submit.prevent="submit">
         <label class="field">
-          <span>用户名</span>
-          <input v-model="username" type="text" autocomplete="username" required />
+          <span class="field-label">用户名</span>
+          <input
+            v-model="username"
+            type="text"
+            autocomplete="username"
+            placeholder="请输入用户名"
+            required
+          />
         </label>
         <label class="field">
-          <span>密码</span>
-          <input v-model="password" type="password" autocomplete="current-password" required />
+          <span class="field-label">密码</span>
+          <input
+            v-model="password"
+            type="password"
+            autocomplete="current-password"
+            placeholder="请输入密码"
+            required
+          />
         </label>
 
         <p v-if="devHint" class="dev-hint">
-          调试环境已预填默认账号；生产环境请使用管理员分配的凭据。
+          开发环境已预填默认账号；生产环境请使用管理员分配的凭据。
         </p>
-        <p v-if="auth.config?.dev_write_api_key" class="dev-hint">
-          脚本/CI 服务密钥（仅展示）：{{ auth.config.dev_write_api_key }}
-        </p>
-        <p v-if="error" class="error">{{ error }}</p>
+        <p v-if="error" class="banner banner-error">{{ error }}</p>
 
         <button class="submit-btn" type="submit" :disabled="submitting">
-          {{ submitting ? '登录中…' : '登录' }}
+          <span v-if="submitting" class="btn-spinner" aria-hidden="true"></span>
+          {{ submitting ? '登录中…' : '进入系统' }}
         </button>
       </form>
+
+      <p class="footer-note">会话通过安全 Cookie 维持，请勿在公共设备保持登录。</p>
     </div>
   </div>
 </template>
@@ -104,118 +122,251 @@ async function submit() {
   display: grid;
   place-items: center;
   padding: 1.5rem;
-  background:
-    radial-gradient(circle at 20% 20%, rgba(10, 132, 255, 0.12), transparent 45%),
-    radial-gradient(circle at 80% 0%, rgba(90, 213, 255, 0.08), transparent 40%), #040a12;
-}
-
-.login-card {
-  width: min(24rem, 100%);
-  padding: 1.4rem 1.3rem 1.2rem;
-  border: 1px solid rgba(136, 192, 255, 0.16);
-  border-radius: 0.9rem;
-  background: rgba(8, 17, 31, 0.96);
-  box-shadow: 0 18px 48px rgba(1, 8, 16, 0.45);
-}
-
-.brand {
-  display: flex;
-  gap: 0.7rem;
-  align-items: center;
-  margin-bottom: 1.2rem;
+  position: relative;
+  overflow: hidden;
+  background: #030912;
   color: #e8f3fc;
 }
 
+.login-backdrop {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.grid-lines {
+  position: absolute;
+  inset: -20%;
+  background-image:
+    linear-gradient(rgba(90, 213, 255, 0.04) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(90, 213, 255, 0.04) 1px, transparent 1px);
+  background-size: 48px 48px;
+  transform: perspective(600px) rotateX(58deg) translateY(-8%);
+  opacity: 0.55;
+}
+
+.glow {
+  position: absolute;
+  border-radius: 50%;
+  filter: blur(80px);
+  opacity: 0.35;
+}
+
+.glow-a {
+  width: 420px;
+  height: 420px;
+  top: -120px;
+  left: -80px;
+  background: rgba(10, 132, 255, 0.35);
+}
+
+.glow-b {
+  width: 360px;
+  height: 360px;
+  bottom: -100px;
+  right: -60px;
+  background: rgba(90, 213, 255, 0.2);
+}
+
+.login-card {
+  position: relative;
+  width: min(26rem, 100%);
+  padding: 1.6rem 1.45rem 1.35rem;
+  border: 1px solid rgba(136, 192, 255, 0.18);
+  border-radius: 1rem;
+  background: linear-gradient(165deg, rgba(10, 22, 40, 0.96), rgba(6, 14, 26, 0.92));
+  box-shadow:
+    0 24px 64px rgba(1, 8, 16, 0.55),
+    inset 0 1px 0 rgba(136, 192, 255, 0.08);
+}
+
+.brand-block {
+  display: flex;
+  gap: 0.85rem;
+  align-items: center;
+  margin-bottom: 1.35rem;
+}
+
 .brand-mark {
-  font-size: 1.4rem;
+  position: relative;
+  width: 2.6rem;
+  height: 2.6rem;
+  display: grid;
+  place-items: center;
+}
+
+.mark-ring {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  border: 1px solid rgba(90, 213, 255, 0.35);
+  box-shadow: 0 0 24px rgba(10, 132, 255, 0.2);
+}
+
+.mark-core {
+  font-size: 1.1rem;
   color: #5ad5ff;
 }
 
-.brand h1 {
+.brand-copy .eyebrow {
   margin: 0;
-  font-size: 1rem;
-  font-weight: 700;
+  font-size: 0.58rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: #6e8ba0;
 }
 
-.brand p {
-  margin: 0.2rem 0 0;
+.brand-copy h1 {
+  margin: 0.15rem 0 0;
+  font-size: 1.15rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+
+.subtitle {
+  margin: 0.35rem 0 0;
   font-size: 0.68rem;
+  line-height: 1.45;
   color: #8aa8bf;
 }
 
 .login-form {
   display: flex;
   flex-direction: column;
-  gap: 0.75rem;
+  gap: 0.85rem;
 }
 
 .field {
   display: flex;
   flex-direction: column;
-  gap: 0.28rem;
+  gap: 0.32rem;
+}
+
+.field-label {
   font-size: 0.62rem;
   color: #8aa8bf;
 }
 
 .field input {
-  padding: 0.55rem 0.62rem;
-  border: 1px solid rgba(136, 192, 255, 0.18);
-  border-radius: 0.45rem;
-  background: rgba(4, 10, 18, 0.85);
+  padding: 0.62rem 0.72rem;
+  border: 1px solid rgba(136, 192, 255, 0.16);
+  border-radius: 0.55rem;
+  background: rgba(4, 10, 18, 0.9);
   color: #e8f3fc;
   font: inherit;
+  font-size: 0.72rem;
+  transition:
+    border-color 0.15s ease,
+    box-shadow 0.15s ease;
+}
+
+.field input::placeholder {
+  color: #5a7080;
 }
 
 .field input:focus {
   outline: none;
   border-color: rgba(90, 213, 255, 0.45);
+  box-shadow: 0 0 0 3px rgba(10, 132, 255, 0.12);
 }
 
 .dev-hint {
   margin: 0;
   font-size: 0.58rem;
   line-height: 1.45;
-  color: #9ab0c2;
+  color: #7a94a8;
 }
 
-.error {
-  margin: 0;
-  font-size: 0.6rem;
+.banner {
+  margin: 0 0 0.75rem;
+  padding: 0.5rem 0.65rem;
+  border-radius: 0.5rem;
+  font-size: 0.62rem;
+  line-height: 1.45;
+}
+
+.banner-warn {
+  border: 1px solid rgba(255, 180, 120, 0.28);
+  background: rgba(120, 48, 24, 0.35);
+  color: #ffc8b0;
+}
+
+.banner-error {
+  border: 1px solid rgba(255, 120, 90, 0.28);
+  background: rgba(90, 24, 16, 0.4);
   color: #ffb4a8;
 }
 
-.retry-btn {
-  margin: 0 0 0.75rem;
-  padding: 0.45rem 0.7rem;
-  border: 1px solid rgba(255, 180, 120, 0.35);
-  border-radius: 0.45rem;
-  background: rgba(255, 140, 100, 0.1);
-  color: #ffc8b0;
+.inline-link {
+  margin-left: 0.35rem;
+  padding: 0;
+  border: none;
+  background: none;
+  color: #ffd8c8;
   font: inherit;
-  font-size: 0.62rem;
+  font-size: inherit;
   cursor: pointer;
+  text-decoration: underline;
 }
 
-.retry-btn:disabled {
+.inline-link:disabled {
   opacity: 0.6;
   cursor: wait;
 }
 
 .submit-btn {
-  margin-top: 0.2rem;
-  padding: 0.58rem 0.8rem;
-  border: 1px solid rgba(90, 213, 255, 0.35);
-  border-radius: 0.45rem;
-  background: rgba(10, 132, 255, 0.2);
-  color: #5ad5ff;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.45rem;
+  margin-top: 0.15rem;
+  padding: 0.68rem 0.9rem;
+  border: 1px solid rgba(90, 213, 255, 0.4);
+  border-radius: 0.55rem;
+  background: linear-gradient(180deg, rgba(10, 132, 255, 0.28), rgba(10, 132, 255, 0.16));
+  color: #dff6ff;
   font: inherit;
-  font-size: 0.68rem;
+  font-size: 0.72rem;
   font-weight: 600;
   cursor: pointer;
+  transition:
+    background 0.15s ease,
+    transform 0.1s ease;
+}
+
+.submit-btn:hover:not(:disabled) {
+  background: linear-gradient(180deg, rgba(10, 132, 255, 0.38), rgba(10, 132, 255, 0.22));
+}
+
+.submit-btn:active:not(:disabled) {
+  transform: translateY(1px);
 }
 
 .submit-btn:disabled {
-  opacity: 0.6;
+  opacity: 0.65;
   cursor: wait;
+}
+
+.btn-spinner {
+  width: 0.75rem;
+  height: 0.75rem;
+  border: 2px solid rgba(223, 246, 255, 0.25);
+  border-top-color: #dff6ff;
+  border-radius: 50%;
+  animation: spin 0.7s linear infinite;
+}
+
+.footer-note {
+  margin: 1rem 0 0;
+  font-size: 0.56rem;
+  line-height: 1.4;
+  color: #5a7080;
+  text-align: center;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
 }
 </style>

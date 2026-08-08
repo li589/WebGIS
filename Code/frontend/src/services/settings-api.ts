@@ -87,7 +87,7 @@ export type {
 } from '../types/api-reexports'
 
 import { applyApiFetchDefaults } from './http-credentials'
-import { extractErrorDetail, extractRequestId } from './http-errors'
+import { extractErrorDetail, extractRequestId, SessionExpiredError } from './http-errors'
 import { handleSessionExpired, isAuthBootstrapPath } from './session-expired'
 import { withWriteAuthHeaders } from './backend-auth'
 import { resolveApiUrl } from './runtime-api'
@@ -192,7 +192,7 @@ async function settingsFetch<T>(path: string, init?: RequestInit): Promise<T> {
           /* pinia unavailable in tests */
         }
         handleSessionExpired(path)
-        throw new Error(`Settings API unauthorized: ${path}`)
+        throw new SessionExpiredError(path)
       }
 
       try {

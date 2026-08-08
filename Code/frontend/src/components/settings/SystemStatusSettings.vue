@@ -14,7 +14,14 @@ const error = ref<string | null>(null)
 const status = ref<RuntimeStatusResponse | null>(null)
 let timer: ReturnType<typeof setInterval> | null = null
 
-const HEALTH_LABEL: Record<ServiceHealth, string> = {
+const HEALTH_SYMBOL: Record<ServiceHealth, string> = {
+  ok: '●',
+  busy: '◐',
+  degraded: '▲',
+  offline: '✕',
+}
+
+const HEALTH_TITLE: Record<ServiceHealth, string> = {
   ok: '正常',
   busy: '繁忙',
   degraded: '降级',
@@ -71,7 +78,10 @@ onBeforeUnmount(() => {
 
     <div v-if="status" class="status-summary">
       <div class="summary-chip" :class="healthClass(status.overall_health)">
-        总体：{{ HEALTH_LABEL[status.overall_health] }}
+        <span class="health-symbol" :title="HEALTH_TITLE[status.overall_health]">{{
+          HEALTH_SYMBOL[status.overall_health]
+        }}</span>
+        <span class="health-label">总体</span>
       </div>
       <div class="summary-meta">
         <span>环境：{{ status.environment }}</span>
@@ -84,8 +94,12 @@ onBeforeUnmount(() => {
       <li v-for="svc in status.services as BackendServiceStatus[]" :key="svc.service_name">
         <div class="service-row">
           <span class="service-name">{{ svc.service_name }}</span>
-          <span class="health-badge" :class="healthClass(svc.health)">
-            {{ HEALTH_LABEL[svc.health] }}
+          <span
+            class="health-badge"
+            :class="healthClass(svc.health)"
+            :title="HEALTH_TITLE[svc.health]"
+          >
+            {{ HEALTH_SYMBOL[svc.health] }}
           </span>
         </div>
         <p class="service-message">{{ svc.message }}</p>
@@ -155,6 +169,8 @@ onBeforeUnmount(() => {
   border-radius: 999px;
   font-size: 0.62rem;
   font-weight: 600;
+  gap: 0.35rem;
+  align-items: center;
 }
 
 .summary-meta {
@@ -190,6 +206,26 @@ onBeforeUnmount(() => {
 .health-badge,
 .summary-chip {
   border: 1px solid transparent;
+}
+
+.health-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 1.35rem;
+  padding: 0.15rem 0.35rem;
+  border-radius: 999px;
+  font-size: 0.72rem;
+  line-height: 1;
+}
+
+.health-symbol {
+  font-size: 0.72rem;
+  line-height: 1;
+}
+
+.health-label {
+  font-size: 0.62rem;
 }
 
 .health-ok {
