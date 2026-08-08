@@ -1831,7 +1831,7 @@ export interface paths {
         };
         /**
          * Get General Config
-         * @description 获取常规配置（脱敏）。
+         * @description 获取常规配置（脱敏；需读鉴权，redis_url 口令已脱敏）。
          */
         get: operations["get_general_config_config_general_get"];
         put?: never;

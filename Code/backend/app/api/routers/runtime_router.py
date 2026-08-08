@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
-from app.api.deps import require_write_access
+from app.api.deps import require_config_read_access, require_write_access
 from app.services.api_config import ApiProvider, DataType, api_config_manager
 from app.services.tile_proxy_service import tile_proxy_service
 from app.services.workflow.service_container import runtime_status_service
@@ -39,6 +39,7 @@ def update_runtime_config(
     "/runtime/config",
     tags=["runtime"],
     response_model=RuntimeConfigSnapshotResponse,
+    dependencies=[Depends(require_config_read_access)],
 )
 def get_runtime_config() -> RuntimeConfigSnapshotResponse:
     """Return the current runtime configuration snapshot (defaults + DB overrides)."""

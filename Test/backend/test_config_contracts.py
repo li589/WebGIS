@@ -289,6 +289,12 @@ def test_runtime_config_http_snapshot_scope_structure(client: TestClient):
     assert len(snap["backend"]) > 0
 
 
+def test_runtime_config_requires_read_auth_without_key(anon_client: TestClient):
+    # F15: GET /runtime/config 无 X-API-Key 必须被拒（读鉴权闸门生效，401）。
+    resp = anon_client.get("/runtime/config")
+    assert resp.status_code == 401
+
+
 # ── F12: dev 局域网旁路正向路径 ───────────────────────────────────────────
 # development + api_keys_enabled=False + BACKEND_DEV_AUTH_BYPASS=true +
 # 非 loopback 客户端主机 → 写端点应返回 200（无需 X-API-Key）。
