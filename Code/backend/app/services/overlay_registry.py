@@ -352,8 +352,6 @@ _DEM_SOURCE_TIF = _DEM_DIR / "ETOPO_2022_v1_60s_N90W180_surface.tif"
 
 # ── 课题组派生 9km EASE-Grid 数据根 ──────────────────────────────────────────
 _INVERSION_RESULTS_ROOT = _data_join("Inversion_Results")
-_OMEGA_SMAP_AVG_DIR = _INVERSION_RESULTS_ROOT / "smap_avg"
-_OMEGA_FY_AVG_DIR = _INVERSION_RESULTS_ROOT / "fy_avg"
 _SOIL_DDCA_H_DIR = _data_join("Soil_Moisture", "DDCA", "DDCA_DH", "H")
 
 # ── Phase 2: 课题组 VOD/SM 产品族（2025-12 时间序列，EASE-Grid 9km）──────────
@@ -462,8 +460,6 @@ def _date8_time_list(directory: Path, limit: int | None = None) -> list[str]:
 
 _SMAP_TIMES = _smap_time_list()
 _GPCP_TIMES = _gpcp_time_list(limit=24)
-_OMEGA_SMAP_TIMES = _doy_time_list(_OMEGA_SMAP_AVG_DIR)
-_OMEGA_FY_TIMES = _doy_time_list(_OMEGA_FY_AVG_DIR)
 _SOIL_DDCA_TIMES = _soil_ddca_time_list(limit=60)
 # Phase 2: VOD/SM/Omega 2025-12 时间序列（31 天，全量不采样）
 _VOD_SM_TIMES = _date8_time_list(_SMAP_SOIL_VOD_SM_DIR, limit=None)
@@ -719,28 +715,6 @@ register_overlay(
     )
 )
 
-# Omega 反演结果均值时间序列（doy 017-030，14 天）
-register_overlay(
-    OverlaySpec(
-        layer_id="omega-output",
-        overlay_dir=_OVERLAY_PNG_ROOT / "omega_ts",
-        time_pattern="omega_avg_{time}.png",
-        bounds_pattern="omega_avg_{time}_bounds.json",
-        bounds_filename="omega_avg_overlay_bounds.json",  # 通用 bounds 备用
-        category="time-series",
-        time_list=_OMEGA_SMAP_TIMES,
-        default_time=_OMEGA_SMAP_TIMES[0] if _OMEGA_SMAP_TIMES else None,
-        palette="plasma",
-        vmin=0.0,
-        vmax=1.0,
-        unit="Omega",
-        opacity=0.75,
-        source_pattern=str(_OMEGA_SMAP_AVG_DIR / "doy_{time}.mat"),
-        source_variable="OMEGA_AVG",
-        source_reader="mat",
-    )
-)
-
 
 # ─── 时间序列图层 ────────────────────────────────────────────────────────────
 
@@ -964,27 +938,6 @@ register_overlay(
     )
 )
 
-# Omega FY avg 时间序列（全球 9km，doy 025-030，6 天）
-register_overlay(
-    OverlaySpec(
-        layer_id="omega-fy-output",
-        overlay_dir=_OVERLAY_PNG_ROOT / "omega_fy_ts",
-        time_pattern="omega_fy_{time}.png",
-        bounds_pattern="omega_fy_{time}_bounds.json",
-        bounds_filename="omega_fy_overlay_bounds.json",  # 通用 bounds 备用
-        category="time-series",
-        time_list=_OMEGA_FY_TIMES,
-        default_time=_OMEGA_FY_TIMES[0] if _OMEGA_FY_TIMES else None,
-        palette="magma",
-        vmin=0.0,
-        vmax=1.0,
-        unit="Omega",
-        opacity=0.75,
-        source_pattern=str(_OMEGA_FY_AVG_DIR / "doy_{time}.mat"),
-        source_variable="OMEGA_AVG",
-        source_reader="mat",
-    )
-)
 
 # Landscape Metrics 9km 2020（全球 EASE-Grid 9km，静态）
 # Phase 1.4 新增：课题组派生景观指数数据，与 Forest_Ratio 同源
@@ -1037,26 +990,6 @@ register_overlay(
 # 每个图层导出 31 天（2025-12-01 ~ 2025-12-31）的 PNG + bounds JSON
 
 # VOD 植被光学厚度时间序列（2025-12，31 天，magma 色表）
-register_overlay(
-    OverlaySpec(
-        layer_id="vod-dec2025",
-        overlay_dir=_OVERLAY_PNG_ROOT / "vod_ts",
-        time_pattern="vod_ts_{time}.png",
-        bounds_pattern="vod_ts_{time}_bounds.json",
-        bounds_filename="vod_ts_overlay_bounds.json",  # 通用 bounds 备用
-        category="time-series",
-        time_list=_VOD_SM_TIMES,
-        default_time=_VOD_SM_TIMES[0] if _VOD_SM_TIMES else None,
-        palette="magma",
-        vmin=0.0,
-        vmax=1.0,
-        unit="VOD",
-        opacity=0.8,
-        source_pattern=str(_SMAP_SOIL_VOD_SM_DIR / "{time}.mat"),
-        source_variable="VOD",
-        source_reader="mat",
-    )
-)
 
 # SM 土壤湿度时间序列（2025-12，31 天，YlGnBu 色表）
 register_overlay(
@@ -1076,29 +1009,6 @@ register_overlay(
         opacity=0.8,
         source_pattern=str(_SMAP_SOIL_VOD_SM_DIR / "{time}.mat"),
         source_variable="SM",
-        source_reader="mat",
-    )
-)
-
-# Omega 反演时间序列（2025-12，31 天，plasma 色表）
-# 与现有 omega-output (doy 017-030 多年均值) 互补，提供 2025-12 每日反演结果
-register_overlay(
-    OverlaySpec(
-        layer_id="omega-dec2025",
-        overlay_dir=_OVERLAY_PNG_ROOT / "omega_2025_ts",
-        time_pattern="omega_2025_ts_{time}.png",
-        bounds_pattern="omega_2025_ts_{time}_bounds.json",
-        bounds_filename="omega_2025_ts_overlay_bounds.json",  # 通用 bounds 备用
-        category="time-series",
-        time_list=_VOD_SM_TIMES,
-        default_time=_VOD_SM_TIMES[0] if _VOD_SM_TIMES else None,
-        palette="plasma",
-        vmin=0.0,
-        vmax=1.0,
-        unit="Omega",
-        opacity=0.75,
-        source_pattern=str(_SMAP_SOIL_VOD_SM_DIR / "{time}.mat"),
-        source_variable="OMEGA",
         source_reader="mat",
     )
 )
