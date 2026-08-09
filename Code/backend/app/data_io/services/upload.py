@@ -18,6 +18,9 @@ import uuid
 from pathlib import Path
 from typing import Any
 
+from app.data_io.services._meta_io import load_meta as _io_load_meta
+from app.data_io.services._meta_io import meta_lock as _io_meta_lock
+from app.data_io.services._meta_io import save_meta as _io_save_meta
 from app.data_io.services.paths import (
     MAX_UPLOAD_BYTES,
     STAGING_DIR,
@@ -54,31 +57,31 @@ def init_upload(
     # 断电/断网续传：同名同尺寸未完成会话可继续写
     if resume_upload_id:
         try:
-            dest, meta = _load_meta(resume_upload_id)
-            if (
-                not meta.get("complete")
-                and str(meta.get("filename")) == safe_name
-                and int(meta.get("size") or 0) == int(size)
-            ):
-                part = dest / "blob.part"
-                received = int(meta.get("received") or 0)
-                if part.exists():
-                    try:
-                        received = min(received, part.stat().st_size)
-                    except OSError:
-                        pass
-                meta["received"] = received
-                meta["content_type"] = content_type or meta.get("content_type")
-                (dest / "meta.json").write_text(
-                    json.dumps(meta, ensure_ascii=False), encoding="utf-8"
-                )
-                return {
-                    "upload_id": resume_upload_id,
-                    "chunk_size_hint": 2 * 1024 * 1024,
-                    "max_bytes": MAX_UPLOAD_BYTES,
-                    "received": received,
-                    "resumed": True,
-                }
+            resume_dest = STAGING_DIR / resume_upload_id
+            with _io_meta_lock(resume_dest):
+                meta = _io_load_meta(resume_dest)
+                if (
+                    not meta.get("complete")
+                    and str(meta.get("filename")) == safe_name
+                    and int(meta.get("size") or 0) == int(size)
+                ):
+                    part = resume_dest / "blob.part"
+                    received = int(meta.get("received") or 0)
+                    if part.exists():
+                        try:
+                            received = min(received, part.stat().st_size)
+                        except OSError:
+                            pass
+                    meta["received"] = received
+                    meta["content_type"] = content_type or meta.get("content_type")
+                    _io_save_meta(resume_dest, meta)
+                    return {
+                        "upload_id": resume_upload_id,
+                        "chunk_size_hint": 2 * 1024 * 1024,
+                        "max_bytes": MAX_UPLOAD_BYTES,
+                        "received": received,
+                        "resumed": True,
+                    }
         except FileNotFoundError:
             pass
 
@@ -95,9 +98,7 @@ def init_upload(
         "created_at": time.time(),
         "complete": False,
     }
-    (dest / "meta.json").write_text(
-        json.dumps(meta, ensure_ascii=False), encoding="utf-8"
-    )
+    _io_save_meta(dest, meta)
     (dest / "blob.part").write_bytes(b"")
     return {
         "upload_id": upload_id,
@@ -137,103 +138,102 @@ def get_upload_status(upload_id: str) -> dict[str, Any]:
 
 def _load_meta(upload_id: str) -> tuple[Path, dict[str, Any]]:
     dest = STAGING_DIR / upload_id
-    meta_path = dest / "meta.json"
-    if not meta_path.exists():
-        raise FileNotFoundError(f"上传会话不存在: {upload_id}")
-    meta = json.loads(meta_path.read_text(encoding="utf-8"))
-    return dest, meta
+    return dest, _io_load_meta(dest)
 
 
 def append_chunk(
     upload_id: str, chunk: bytes, *, offset: int | None = None
 ) -> dict[str, Any]:
-    dest, meta = _load_meta(upload_id)
-    if meta.get("complete"):
-        raise ValueError("上传已完成，不能继续写入")
-    part = dest / "blob.part"
-    current = int(meta.get("received") or 0)
-    if part.exists():
-        try:
-            current = max(current, part.stat().st_size)
-        except OSError:
-            pass
+    dest = STAGING_DIR / upload_id
+    # 持锁保护「读 meta → 校验/截断 → append 写 blob.part → 写 meta」整个 check-then-act，
+    # 避免并发重试/双 complete 导致 blob.part 损坏或 meta.received 与实际大小不一致。
+    with _io_meta_lock(dest):
+        meta = _io_load_meta(dest)
+        if meta.get("complete"):
+            raise ValueError("上传已完成，不能继续写入")
+        part = dest / "blob.part"
+        current = int(meta.get("received") or 0)
+        if part.exists():
+            try:
+                current = max(current, part.stat().st_size)
+            except OSError:
+                pass
 
-    if offset is not None:
-        if offset > current:
-            raise ValueError(f"分块偏移不匹配：期望 {current}，收到 {offset}")
-        end = offset + len(chunk)
-        # 幂等：该区间已完整写入（重试/断电后续传）
-        if end <= current:
-            return {
-                "upload_id": upload_id,
-                "received": current,
-                "size": meta["size"],
-                "skipped": True,
-            }
-        # 部分重叠：截断到 offset 后继续追加，避免损坏拼接
-        if offset < current:
-            with part.open("r+b") as f:
-                f.truncate(offset)
-            current = offset
-            meta["received"] = current
+        if offset is not None:
+            if offset > current:
+                raise ValueError(f"分块偏移不匹配：期望 {current}，收到 {offset}")
+            end = offset + len(chunk)
+            # 幂等：该区间已完整写入（重试/断电后续传）
+            if end <= current:
+                return {
+                    "upload_id": upload_id,
+                    "received": current,
+                    "size": meta["size"],
+                    "skipped": True,
+                }
+            # 部分重叠：截断到 offset 后继续追加，避免损坏拼接
+            if offset < current:
+                with part.open("r+b") as f:
+                    f.truncate(offset)
+                current = offset
+                meta["received"] = current
 
-    new_size = current + len(chunk)
-    if new_size > int(meta["size"]):
-        raise ValueError("分块累计超过声明大小")
-    if new_size > MAX_UPLOAD_BYTES:
-        raise ValueError(f"文件超过上限 {MAX_UPLOAD_BYTES // (1024 * 1024)} MiB")
-    with part.open("ab") as f:
-        f.write(chunk)
-    meta["received"] = new_size
-    (dest / "meta.json").write_text(
-        json.dumps(meta, ensure_ascii=False), encoding="utf-8"
-    )
-    return {"upload_id": upload_id, "received": new_size, "size": meta["size"]}
+        new_size = current + len(chunk)
+        if new_size > int(meta["size"]):
+            raise ValueError("分块累计超过声明大小")
+        if new_size > MAX_UPLOAD_BYTES:
+            raise ValueError(f"文件超过上限 {MAX_UPLOAD_BYTES // (1024 * 1024)} MiB")
+        with part.open("ab") as f:
+            f.write(chunk)
+        meta["received"] = new_size
+        _io_save_meta(dest, meta)
+        return {"upload_id": upload_id, "received": new_size, "size": meta["size"]}
 
 
 def complete_upload(upload_id: str) -> dict[str, Any]:
-    dest, meta = _load_meta(upload_id)
-    # 幂等：网络重试时若已完成，直接返回，避免「会话不存在」或二次 rename
-    if meta.get("complete"):
+    dest = STAGING_DIR / upload_id
+    # 持锁防与 append_chunk 并发（rename 与 append 竞争）及双 complete 竞争。
+    with _io_meta_lock(dest):
+        meta = _io_load_meta(dest)
+        # 幂等：网络重试时若已完成，直接返回，避免「会话不存在」或二次 rename
+        if meta.get("complete"):
+            final_name = str(meta["filename"])
+            final_path = Path(str(meta.get("path") or dest / final_name))
+            return {
+                "upload_id": upload_id,
+                "filename": final_name,
+                "path": str(final_path),
+                "size": int(meta["size"]),
+            }
+        received = int(meta.get("received") or 0)
+        expected = int(meta["size"])
+        if received != expected:
+            raise ValueError(f"上传未完整：已收 {received} / 声明 {expected}")
+        part = dest / "blob.part"
         final_name = str(meta["filename"])
-        final_path = Path(str(meta.get("path") or dest / final_name))
+        try:
+            validate_upload_filename(final_name)
+        except UploadValidationError as exc:
+            raise ValueError(str(exc)) from exc
+        final_path = dest / final_name
+        if final_path.exists():
+            final_path.unlink()
+        part.replace(final_path)
+        try:
+            sniff_magic(final_path, declared_ext=final_name.rsplit(".", 1)[-1].lower())
+        except UploadValidationError as exc:
+            # 清理不合法载荷，避免后续被误用
+            discard_upload(upload_id)
+            raise ValueError(str(exc)) from exc
+        meta["complete"] = True
+        meta["path"] = str(final_path)
+        _io_save_meta(dest, meta)
         return {
             "upload_id": upload_id,
             "filename": final_name,
             "path": str(final_path),
-            "size": int(meta["size"]),
+            "size": expected,
         }
-    received = int(meta.get("received") or 0)
-    expected = int(meta["size"])
-    if received != expected:
-        raise ValueError(f"上传未完整：已收 {received} / 声明 {expected}")
-    part = dest / "blob.part"
-    final_name = str(meta["filename"])
-    try:
-        validate_upload_filename(final_name)
-    except UploadValidationError as exc:
-        raise ValueError(str(exc)) from exc
-    final_path = dest / final_name
-    if final_path.exists():
-        final_path.unlink()
-    part.replace(final_path)
-    try:
-        sniff_magic(final_path, declared_ext=final_name.rsplit(".", 1)[-1].lower())
-    except UploadValidationError as exc:
-        # 清理不合法载荷，避免后续被误用
-        discard_upload(upload_id)
-        raise ValueError(str(exc)) from exc
-    meta["complete"] = True
-    meta["path"] = str(final_path)
-    (dest / "meta.json").write_text(
-        json.dumps(meta, ensure_ascii=False), encoding="utf-8"
-    )
-    return {
-        "upload_id": upload_id,
-        "filename": final_name,
-        "path": str(final_path),
-        "size": expected,
-    }
 
 
 def resolve_upload_path(upload_id: str) -> Path:

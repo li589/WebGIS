@@ -2386,7 +2386,7 @@ def _build_time_series(
             "[TS] SMAP 可用日期: %d/%d (%.1f%%)",
             avail,
             total_req,
-            100.0 * avail / total_req,
+            100.0 * avail / max(total_req, 1),
         )
         if avail == 0:
             raise ValueError("SMAP 文件夹无可用日期数据: %s" % smap_folder)
@@ -2400,7 +2400,7 @@ def _build_time_series(
                 "[TS] NDVI 可用日期: %d/%d (%.1f%%)",
                 avail,
                 total_req,
-                100.0 * avail / total_req,
+                100.0 * avail / max(total_req, 1),
             )
 
     # TB 日期诊断
@@ -2414,7 +2414,7 @@ def _build_time_series(
                     "[TS] FY TB 可用日期: %d/%d (%.1f%%)",
                     avail,
                     total_req,
-                    100.0 * avail / total_req,
+                    100.0 * avail / max(total_req, 1),
                 )
                 if avail == 0:
                     raise ValueError("FY TB 文件夹无可用日期数据: %s" % tb_folder)
@@ -2428,7 +2428,7 @@ def _build_time_series(
                 "[TS] DDCA SM 可用日期: %d/%d (%.1f%%)",
                 avail,
                 total_req,
-                100.0 * avail / total_req,
+                100.0 * avail / max(total_req, 1),
             )
 
     logger.info(
