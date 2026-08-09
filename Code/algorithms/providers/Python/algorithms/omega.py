@@ -1826,7 +1826,7 @@ def _build_empty_exp2_info(config: OmegaConfig) -> dict[str, Any]:
     }
 
 
-def retrieve_omega_pixel_timeseries(
+def _prepare_pixel_retrieval_inputs(
     date_keys: list[str],
     tbv: Any,
     tbh: Any,
@@ -1837,30 +1837,18 @@ def retrieve_omega_pixel_timeseries(
     sm_ref: Any,
     ndvi: Any,
     sf_col: Any,
-    ndvi_max_value: float,
-    ndvi_min_value: float,
-    albedo_value: float,
-    b_value: float,
-    landcover_value: float,
-    clay_fraction_value: float,
-    bulk_density_value: float,
-    h_static_value: float,
     fixed_omega_value: float,
-    exp0_h_value: float,
-    exp0_alpha_value: float,
     config: OmegaConfig,
-    *,
-    precomputed_blocks: tuple[list[list[int]], list[datetime], list[Any]] | None = None,
-    precomputed_modes: tuple[str, bool] | None = None,
-) -> dict[str, Any]:
-    """单像素 Omega 时间序列反演主入口。
+    precomputed_blocks: tuple[list[list[int]], list[datetime], list[Any]] | None,
+    precomputed_modes: tuple[str, bool] | None,
+):
+    """Coerce pixel-retrieval inputs to float64 arrays and resolve modes/blocks.
 
-    量纲: date_keys 为 YYYYMMDD 字符串列表，tbv/tbh/ts/tc/tg 单位 K，ia/theta 单位度，
-    sm_ref 单位 m³/m³，ndvi 无量纲 (0-1)，clay_fraction/porosity 无量纲 (0-1)，
-    freq_ghz 单位 GHz。返回字典含 omega/h/tau/sm/vod 时间序列（omega/h/tau/vod 无量纲，sm 单位 m³/m³）。
+    Pure data preparation — no optimization, no numerical computation. Extracted
+    from ``retrieve_omega_pixel_timeseries`` to lower its cyclomatic complexity
+    without changing any numeric result.
     """
     import numpy as np
-    from scipy.optimize import least_squares, minimize_scalar
 
     if precomputed_modes is None:
         exp_mode = str(config.exp_mode).upper()
@@ -1900,6 +1888,413 @@ def retrieve_omega_pixel_timeseries(
     else:
         blocks, block_start_dates, block_index_arrays = precomputed_blocks
     kb = len(blocks)
+    return (
+        tbv,
+        tbh,
+        ts,
+        tc,
+        tg,
+        ia,
+        sm_ref,
+        ndvi,
+        sf_col,
+        nt,
+        omega_fixed,
+        exp_mode,
+        is_dual,
+        blocks,
+        block_start_dates,
+        block_index_arrays,
+        kb,
+    )
+
+
+def _make_block_residual_fun(
+    block_payload: dict[str, Any],
+    lam_smooth: float,
+    omega_prev: float,
+    *,
+    is_dual: bool,
+    h_series: Any,
+    alpha_series: Any,
+    clay_fraction_value: float,
+    freq_ghz: float,
+):
+    """Build the per-block scalar residual function for omega minimization.
+
+    Extracted from ``retrieve_omega_pixel_timeseries``; behavior is identical to
+    the former nested closure. ``h_values``/``alpha_values`` are snapshotted from
+    ``h_series``/``alpha_series`` at call time via fancy indexing (copy), matching
+    the original closure semantics.
+    """
+    import numpy as np
+
+    use = block_payload["use"]
+    model_contexts = block_payload["model_contexts"]
+    tbv_block = block_payload["tbv"]
+    tbh_block = block_payload["tbh"]
+    tau_block = block_payload["tau_star"]
+    sm_block = block_payload["sm_ref"]
+    ia_block = block_payload["ia"]
+    h_values = h_series[use]
+    alpha_values = alpha_series[use]
+    smooth_weight = float(np.sqrt(lam_smooth)) if lam_smooth > 0 else 0.0
+    if is_dual:
+        tc_block = block_payload["tc"]
+        tg_block = block_payload["tg"]
+
+        def residual_fun(omega_value: float) -> Any:
+            return _resid_omega_block_dual_temp_prepared(
+                omega_value,
+                tbv_block,
+                tbh_block,
+                tc_block,
+                tg_block,
+                tau_block,
+                sm_block,
+                ia_block,
+                clay_fraction_value,
+                freq_ghz,
+                h_values,
+                alpha_values,
+                smooth_weight,
+                omega_prev,
+                1.0,
+                1.0,
+                model_contexts,
+            )
+
+        return residual_fun
+    ts_block = block_payload["ts"]
+
+    def residual_fun(omega_value: float) -> Any:
+        return _resid_omega_block_single_temp_prepared(
+            omega_value,
+            tbv_block,
+            tbh_block,
+            ts_block,
+            tau_block,
+            sm_block,
+            ia_block,
+            clay_fraction_value,
+            freq_ghz,
+            h_values,
+            alpha_values,
+            smooth_weight,
+            omega_prev,
+            1.0,
+            1.0,
+            model_contexts,
+        )
+
+    return residual_fun
+
+
+def _evaluate_block_fit(
+    block_payload: dict[str, Any],
+    omega_value: float,
+    *,
+    is_dual: bool,
+    h_series: Any,
+    alpha_series: Any,
+) -> tuple[float, float, float]:
+    """Compute (RMSE_V, RMSE_H, RMSE_HV) of the block fit at ``omega_value``."""
+    import numpy as np
+
+    use = block_payload["use"]
+    model_contexts = block_payload["model_contexts"]
+    if use.size == 0:
+        return float("nan"), float("nan"), float("nan")
+    res_v = np.full(use.size, np.nan, dtype=np.float64)
+    res_h = np.full(use.size, np.nan, dtype=np.float64)
+    for ii, kk in enumerate(use):
+        if is_dual:
+            tbv_mod_k, tbh_mod_k = _tb_forward_dual_temp_with_context(
+                block_payload["sm_ref"][ii],
+                block_payload["tau_star"][ii],
+                h_series[kk],
+                alpha_series[kk],
+                omega_value,
+                block_payload["tc"][ii],
+                block_payload["tg"][ii],
+                1.0,
+                model_contexts[ii],
+            )
+        else:
+            tbv_mod_k, tbh_mod_k = _tb_forward_single_temp_with_context(
+                block_payload["sm_ref"][ii],
+                block_payload["tau_star"][ii],
+                h_series[kk],
+                alpha_series[kk],
+                omega_value,
+                block_payload["ts"][ii],
+                1.0,
+                model_contexts[ii],
+            )
+        res_v[ii] = block_payload["tbv"][ii] - tbv_mod_k
+        res_h[ii] = block_payload["tbh"][ii] - tbh_mod_k
+    rmse_v = (
+        float(np.sqrt(np.nanmean(res_v**2)))
+        if np.any(np.isfinite(res_v))
+        else float("nan")
+    )
+    rmse_h = (
+        float(np.sqrt(np.nanmean(res_h**2)))
+        if np.any(np.isfinite(res_h))
+        else float("nan")
+    )
+    rmse_hv = (
+        float(np.sqrt(np.nanmean(np.concatenate([res_v, res_h]) ** 2)))
+        if np.any(np.isfinite(res_v) | np.isfinite(res_h))
+        else float("nan")
+    )
+    return rmse_v, rmse_h, rmse_hv
+
+
+def _solve_block_omega(
+    block_payload: dict[str, Any],
+    lam_smooth: float,
+    omega_prev: float,
+    *,
+    fixed_mode: bool,
+    initial_guess: float | None = None,
+    config: OmegaConfig,
+    omega_fixed: float,
+    is_dual: bool,
+    h_series: Any,
+    alpha_series: Any,
+    clay_fraction_value: float,
+) -> dict[str, Any]:
+    """Solve one block's omega via bounded scalar minimization (or fixed mode)."""
+    import numpy as np
+    from scipy.optimize import minimize_scalar
+
+    lower_omega = float(config.bounds_omega[0])
+    upper_omega = float(config.bounds_omega[1])
+    residual_fun = _make_block_residual_fun(
+        block_payload,
+        lam_smooth,
+        omega_prev,
+        is_dual=is_dual,
+        h_series=h_series,
+        alpha_series=alpha_series,
+        clay_fraction_value=clay_fraction_value,
+        freq_ghz=config.freq_ghz,
+    )
+    if fixed_mode and np.isfinite(omega_fixed):
+        residual = residual_fun(omega_fixed)
+        return {
+            "omega": float(omega_fixed),
+            "residual": residual,
+            "jac": np.empty((0, 0), dtype=np.float64),
+            "exitflag": 9.0,
+            "iterations": 0,
+            "algorithm": "FIXED",
+            "damping": float("nan"),
+            "firstorderopt": float("nan"),
+            "final_cost": float(np.sum(residual**2)),
+        }
+
+    if initial_guess is not None and np.isfinite(initial_guess):
+        omega_seed = float(initial_guess)
+    elif np.isfinite(omega_prev):
+        omega_seed = float(omega_prev)
+    else:
+        omega_seed = float(config.omega0)
+    omega_seed = min(max(float(omega_seed), lower_omega), upper_omega)
+
+    def objective(omega_value: float) -> float:
+        residual_value = residual_fun(omega_value)
+        return float(np.dot(residual_value, residual_value))
+
+    result = minimize_scalar(
+        objective,
+        bounds=(lower_omega, upper_omega),
+        method="bounded",
+        options={"xatol": 1e-4},
+    )
+    omega_hat = float(result.x if np.isfinite(result.x) else omega_seed)
+    residual = residual_fun(omega_hat)
+    jac = _finite_difference_scalar_jacobian(
+        omega_hat, residual_fun, lower_omega, upper_omega
+    )
+    gradient = float(2.0 * np.dot(jac.reshape(-1), residual))
+    exitflag = 1.0 if bool(result.success) else 0.0
+    return {
+        "omega": omega_hat,
+        "residual": residual,
+        "jac": jac,
+        "exitflag": exitflag,
+        "iterations": int(getattr(result, "nfev", 0)),
+        "algorithm": "SCALAR_BOUNDED",
+        "damping": float(lam_smooth),
+        "firstorderopt": abs(gradient),
+        "final_cost": float(np.dot(residual, residual)),
+    }
+
+
+def _scan_exp2_lambda(
+    *,
+    config: OmegaConfig,
+    kb: int,
+    block_start_dates: list,
+    block_payloads: list[dict[str, Any]],
+    is_dual: bool,
+    h_series: Any,
+    alpha_series: Any,
+    clay_fraction_value: float,
+    omega_fixed: float,
+) -> dict[str, Any]:
+    """L-curve scan over smoothing lambda for EXP2 mode."""
+    import numpy as np
+
+    exp2_info = _build_empty_exp2_info(config)
+    if kb == 0 or np.asarray(exp2_info["lambda_list"]).size == 0:
+        return exp2_info
+
+    lambda_list = np.asarray(exp2_info["lambda_list"], dtype=np.float64)
+    misfit = np.full(lambda_list.shape, np.nan, dtype=np.float64)
+    roughness = np.full(lambda_list.shape, np.nan, dtype=np.float64)
+    rmse = np.full(lambda_list.shape, np.nan, dtype=np.float64)
+    omega_by_lambda = np.full((kb, lambda_list.size), np.nan, dtype=np.float64)
+    previous_lambda_series = np.full(kb, np.nan, dtype=np.float64)
+
+    for lam_index, lam_value in enumerate(lambda_list):
+        trial_prev = float("nan")
+        prev_trial_start: datetime | None = None
+        trial_series = np.full(kb, np.nan, dtype=np.float64)
+        residual_stack: list[np.ndarray] = []
+        for block_index, block_start in enumerate(block_start_dates):
+            block_payload = block_payloads[block_index]
+            use = block_payload["use"]
+            if use.size == 0:
+                continue
+            if (
+                prev_trial_start is not None
+                and (block_start - prev_trial_start).days > config.block_days + 2
+            ):
+                trial_prev = float("nan")
+            lambda_seed = previous_lambda_series[block_index]
+            block_result = _solve_block_omega(
+                block_payload,
+                float(lam_value),
+                trial_prev,
+                fixed_mode=False,
+                initial_guess=lambda_seed if np.isfinite(lambda_seed) else None,
+                config=config,
+                omega_fixed=omega_fixed,
+                is_dual=is_dual,
+                h_series=h_series,
+                alpha_series=alpha_series,
+                clay_fraction_value=clay_fraction_value,
+            )
+            trial_series[block_index] = block_result["omega"]
+            trial_prev = block_result["omega"]
+            prev_trial_start = block_start
+            residual_no_smooth = np.asarray(
+                _make_block_residual_fun(
+                    block_payload,
+                    0.0,
+                    float("nan"),
+                    is_dual=is_dual,
+                    h_series=h_series,
+                    alpha_series=alpha_series,
+                    clay_fraction_value=clay_fraction_value,
+                    freq_ghz=config.freq_ghz,
+                )(trial_prev),
+                dtype=np.float64,
+            ).reshape(-1)
+            residual_stack.append(residual_no_smooth)
+        if residual_stack:
+            merged = np.concatenate(residual_stack)
+            misfit[lam_index] = float(np.linalg.norm(merged))
+            rmse[lam_index] = float(np.sqrt(np.nanmean(merged**2)))
+        finite_trial = trial_series[np.isfinite(trial_series)]
+        if finite_trial.size >= 2:
+            roughness[lam_index] = float(np.linalg.norm(np.diff(finite_trial)))
+        omega_by_lambda[:, lam_index] = trial_series
+        previous_lambda_series = trial_series
+
+    exp2_info["misfit"] = misfit
+    exp2_info["roughness"] = roughness
+    exp2_info["rmse"] = rmse
+    exp2_info["lambda_star"] = pick_lcurve_corner(lambda_list, misfit, roughness)
+    if not np.isfinite(exp2_info["lambda_star"]):
+        exp2_info["lambda_star"] = float(config.lambda_smooth)
+    exp2_info["omega_by_lambda_block"] = omega_by_lambda
+    return exp2_info
+
+
+def retrieve_omega_pixel_timeseries(
+    date_keys: list[str],
+    tbv: Any,
+    tbh: Any,
+    ts: Any,
+    tc: Any,
+    tg: Any,
+    ia: Any,
+    sm_ref: Any,
+    ndvi: Any,
+    sf_col: Any,
+    ndvi_max_value: float,
+    ndvi_min_value: float,
+    albedo_value: float,
+    b_value: float,
+    landcover_value: float,
+    clay_fraction_value: float,
+    bulk_density_value: float,
+    h_static_value: float,
+    fixed_omega_value: float,
+    exp0_h_value: float,
+    exp0_alpha_value: float,
+    config: OmegaConfig,
+    *,
+    precomputed_blocks: tuple[list[list[int]], list[datetime], list[Any]] | None = None,
+    precomputed_modes: tuple[str, bool] | None = None,
+) -> dict[str, Any]:
+    """单像素 Omega 时间序列反演主入口。
+
+    量纲: date_keys 为 YYYYMMDD 字符串列表，tbv/tbh/ts/tc/tg 单位 K，ia/theta 单位度，
+    sm_ref 单位 m³/m³，ndvi 无量纲 (0-1)，clay_fraction/porosity 无量纲 (0-1)，
+    freq_ghz 单位 GHz。返回字典含 omega/h/tau/sm/vod 时间序列（omega/h/tau/vod 无量纲，sm 单位 m³/m³）。
+    """
+    import numpy as np
+    from scipy.optimize import least_squares
+
+    (
+        tbv,
+        tbh,
+        ts,
+        tc,
+        tg,
+        ia,
+        sm_ref,
+        ndvi,
+        sf_col,
+        nt,
+        omega_fixed,
+        exp_mode,
+        is_dual,
+        blocks,
+        block_start_dates,
+        block_index_arrays,
+        kb,
+    ) = _prepare_pixel_retrieval_inputs(
+        date_keys,
+        tbv,
+        tbh,
+        ts,
+        tc,
+        tg,
+        ia,
+        sm_ref,
+        ndvi,
+        sf_col,
+        fixed_omega_value,
+        config,
+        precomputed_blocks,
+        precomputed_modes,
+    )
 
     tau_star = tau_from_ndvi(
         ndvi=ndvi,
@@ -2014,252 +2409,6 @@ def retrieve_omega_pixel_timeseries(
     alpha_series = np.full(nt, np.nan, dtype=np.float64)
     h_star = float("nan")
     alpha_star = float("nan")
-
-    def block_residual_function(
-        block_payload: dict[str, Any],
-        lam_smooth: float,
-        omega_prev: float,
-    ):
-        use = block_payload["use"]
-        model_contexts = block_payload["model_contexts"]
-        tbv_block = block_payload["tbv"]
-        tbh_block = block_payload["tbh"]
-        tau_block = block_payload["tau_star"]
-        sm_block = block_payload["sm_ref"]
-        ia_block = block_payload["ia"]
-        h_values = h_series[use]
-        alpha_values = alpha_series[use]
-        smooth_weight = float(np.sqrt(lam_smooth)) if lam_smooth > 0 else 0.0
-        if is_dual:
-            tc_block = block_payload["tc"]
-            tg_block = block_payload["tg"]
-
-            def residual_fun(omega_value: float) -> Any:
-                return _resid_omega_block_dual_temp_prepared(
-                    omega_value,
-                    tbv_block,
-                    tbh_block,
-                    tc_block,
-                    tg_block,
-                    tau_block,
-                    sm_block,
-                    ia_block,
-                    clay_fraction_value,
-                    config.freq_ghz,
-                    h_values,
-                    alpha_values,
-                    smooth_weight,
-                    omega_prev,
-                    1.0,
-                    1.0,
-                    model_contexts,
-                )
-
-            return residual_fun
-        ts_block = block_payload["ts"]
-
-        def residual_fun(omega_value: float) -> Any:
-            return _resid_omega_block_single_temp_prepared(
-                omega_value,
-                tbv_block,
-                tbh_block,
-                ts_block,
-                tau_block,
-                sm_block,
-                ia_block,
-                clay_fraction_value,
-                config.freq_ghz,
-                h_values,
-                alpha_values,
-                smooth_weight,
-                omega_prev,
-                1.0,
-                1.0,
-                model_contexts,
-            )
-
-        return residual_fun
-
-    def evaluate_block_fit(
-        block_payload: dict[str, Any],
-        omega_value: float,
-    ) -> tuple[float, float, float]:
-        use = block_payload["use"]
-        model_contexts = block_payload["model_contexts"]
-        if use.size == 0:
-            return float("nan"), float("nan"), float("nan")
-        res_v = np.full(use.size, np.nan, dtype=np.float64)
-        res_h = np.full(use.size, np.nan, dtype=np.float64)
-        for ii, kk in enumerate(use):
-            if is_dual:
-                tbv_mod_k, tbh_mod_k = _tb_forward_dual_temp_with_context(
-                    block_payload["sm_ref"][ii],
-                    block_payload["tau_star"][ii],
-                    h_series[kk],
-                    alpha_series[kk],
-                    omega_value,
-                    block_payload["tc"][ii],
-                    block_payload["tg"][ii],
-                    1.0,
-                    model_contexts[ii],
-                )
-            else:
-                tbv_mod_k, tbh_mod_k = _tb_forward_single_temp_with_context(
-                    block_payload["sm_ref"][ii],
-                    block_payload["tau_star"][ii],
-                    h_series[kk],
-                    alpha_series[kk],
-                    omega_value,
-                    block_payload["ts"][ii],
-                    1.0,
-                    model_contexts[ii],
-                )
-            res_v[ii] = block_payload["tbv"][ii] - tbv_mod_k
-            res_h[ii] = block_payload["tbh"][ii] - tbh_mod_k
-        rmse_v = (
-            float(np.sqrt(np.nanmean(res_v**2)))
-            if np.any(np.isfinite(res_v))
-            else float("nan")
-        )
-        rmse_h = (
-            float(np.sqrt(np.nanmean(res_h**2)))
-            if np.any(np.isfinite(res_h))
-            else float("nan")
-        )
-        rmse_hv = (
-            float(np.sqrt(np.nanmean(np.concatenate([res_v, res_h]) ** 2)))
-            if np.any(np.isfinite(res_v) | np.isfinite(res_h))
-            else float("nan")
-        )
-        return rmse_v, rmse_h, rmse_hv
-
-    def solve_block_omega(
-        block_payload: dict[str, Any],
-        lam_smooth: float,
-        omega_prev: float,
-        *,
-        fixed_mode: bool,
-        initial_guess: float | None = None,
-    ) -> dict[str, Any]:
-        lower_omega = float(config.bounds_omega[0])
-        upper_omega = float(config.bounds_omega[1])
-        residual_fun = block_residual_function(block_payload, lam_smooth, omega_prev)
-        if fixed_mode and np.isfinite(omega_fixed):
-            residual = residual_fun(omega_fixed)
-            return {
-                "omega": float(omega_fixed),
-                "residual": residual,
-                "jac": np.empty((0, 0), dtype=np.float64),
-                "exitflag": 9.0,
-                "iterations": 0,
-                "algorithm": "FIXED",
-                "damping": float("nan"),
-                "firstorderopt": float("nan"),
-                "final_cost": float(np.sum(residual**2)),
-            }
-
-        if initial_guess is not None and np.isfinite(initial_guess):
-            omega_seed = float(initial_guess)
-        elif np.isfinite(omega_prev):
-            omega_seed = float(omega_prev)
-        else:
-            omega_seed = float(config.omega0)
-        omega_seed = min(max(float(omega_seed), lower_omega), upper_omega)
-
-        def objective(omega_value: float) -> float:
-            residual_value = residual_fun(omega_value)
-            return float(np.dot(residual_value, residual_value))
-
-        result = minimize_scalar(
-            objective,
-            bounds=(lower_omega, upper_omega),
-            method="bounded",
-            options={"xatol": 1e-4},
-        )
-        omega_hat = float(result.x if np.isfinite(result.x) else omega_seed)
-        residual = residual_fun(omega_hat)
-        jac = _finite_difference_scalar_jacobian(
-            omega_hat, residual_fun, lower_omega, upper_omega
-        )
-        gradient = float(2.0 * np.dot(jac.reshape(-1), residual))
-        exitflag = 1.0 if bool(result.success) else 0.0
-        return {
-            "omega": omega_hat,
-            "residual": residual,
-            "jac": jac,
-            "exitflag": exitflag,
-            "iterations": int(getattr(result, "nfev", 0)),
-            "algorithm": "SCALAR_BOUNDED",
-            "damping": float(lam_smooth),
-            "firstorderopt": abs(gradient),
-            "final_cost": float(np.dot(residual, residual)),
-        }
-
-    def scan_exp2_lambda() -> dict[str, Any]:
-        import numpy as np
-
-        exp2_info = _build_empty_exp2_info(config)
-        if kb == 0 or np.asarray(exp2_info["lambda_list"]).size == 0:
-            return exp2_info
-
-        lambda_list = np.asarray(exp2_info["lambda_list"], dtype=np.float64)
-        misfit = np.full(lambda_list.shape, np.nan, dtype=np.float64)
-        roughness = np.full(lambda_list.shape, np.nan, dtype=np.float64)
-        rmse = np.full(lambda_list.shape, np.nan, dtype=np.float64)
-        omega_by_lambda = np.full((kb, lambda_list.size), np.nan, dtype=np.float64)
-        previous_lambda_series = np.full(kb, np.nan, dtype=np.float64)
-
-        for lam_index, lam_value in enumerate(lambda_list):
-            trial_prev = float("nan")
-            prev_trial_start: datetime | None = None
-            trial_series = np.full(kb, np.nan, dtype=np.float64)
-            residual_stack: list[np.ndarray] = []
-            for block_index, block_start in enumerate(block_start_dates):
-                block_payload = block_payloads[block_index]
-                use = block_payload["use"]
-                if use.size == 0:
-                    continue
-                if (
-                    prev_trial_start is not None
-                    and (block_start - prev_trial_start).days > config.block_days + 2
-                ):
-                    trial_prev = float("nan")
-                lambda_seed = previous_lambda_series[block_index]
-                block_result = solve_block_omega(
-                    block_payload,
-                    float(lam_value),
-                    trial_prev,
-                    fixed_mode=False,
-                    initial_guess=lambda_seed if np.isfinite(lambda_seed) else None,
-                )
-                trial_series[block_index] = block_result["omega"]
-                trial_prev = block_result["omega"]
-                prev_trial_start = block_start
-                residual_no_smooth = np.asarray(
-                    block_residual_function(block_payload, 0.0, float("nan"))(
-                        trial_prev
-                    ),
-                    dtype=np.float64,
-                ).reshape(-1)
-                residual_stack.append(residual_no_smooth)
-            if residual_stack:
-                merged = np.concatenate(residual_stack)
-                misfit[lam_index] = float(np.linalg.norm(merged))
-                rmse[lam_index] = float(np.sqrt(np.nanmean(merged**2)))
-            finite_trial = trial_series[np.isfinite(trial_series)]
-            if finite_trial.size >= 2:
-                roughness[lam_index] = float(np.linalg.norm(np.diff(finite_trial)))
-            omega_by_lambda[:, lam_index] = trial_series
-            previous_lambda_series = trial_series
-
-        exp2_info["misfit"] = misfit
-        exp2_info["roughness"] = roughness
-        exp2_info["rmse"] = rmse
-        exp2_info["lambda_star"] = pick_lcurve_corner(lambda_list, misfit, roughness)
-        if not np.isfinite(exp2_info["lambda_star"]):
-            exp2_info["lambda_star"] = float(config.lambda_smooth)
-        exp2_info["omega_by_lambda_block"] = omega_by_lambda
-        return exp2_info
 
     if n_low_tau >= config.kmin:
         idx = np.where(low_tau)[0]
@@ -2393,7 +2542,17 @@ def retrieve_omega_pixel_timeseries(
     exp2_info = _build_empty_exp2_info(config)
     if np.isfinite(h_star) and np.isfinite(alpha_star):
         if exp_mode == "EXP2":
-            exp2_info = scan_exp2_lambda()
+            exp2_info = _scan_exp2_lambda(
+                config=config,
+                kb=kb,
+                block_start_dates=block_start_dates,
+                block_payloads=block_payloads,
+                is_dual=is_dual,
+                h_series=h_series,
+                alpha_series=alpha_series,
+                clay_fraction_value=clay_fraction_value,
+                omega_fixed=omega_fixed,
+            )
         omega_prev = float("nan")
         prev_block_start: datetime | None = None
         use_fixed_blocks = bool(config.use_fixed_omega_in_blocks) or exp_mode in {
@@ -2420,11 +2579,17 @@ def retrieve_omega_pixel_timeseries(
             lam_smooth = (
                 lambda_star if exp_mode == "EXP2" else float(config.lambda_smooth)
             )
-            block_result = solve_block_omega(
+            block_result = _solve_block_omega(
                 block_payload,
                 lam_smooth,
                 omega_prev,
                 fixed_mode=use_fixed_blocks,
+                config=config,
+                omega_fixed=omega_fixed,
+                is_dual=is_dual,
+                h_series=h_series,
+                alpha_series=alpha_series,
+                clay_fraction_value=clay_fraction_value,
             )
             om_hat = block_result["omega"]
             omega[use] = om_hat
@@ -2438,7 +2603,13 @@ def retrieve_omega_pixel_timeseries(
             diag["damping"][block_index] = block_result["damping"]
             diag["final_cost"][block_index] = block_result["final_cost"]
             diag["firstorderopt"][block_index] = block_result["firstorderopt"]
-            rmse_v, rmse_h, rmse_hv = evaluate_block_fit(block_payload, om_hat)
+            rmse_v, rmse_h, rmse_hv = _evaluate_block_fit(
+                block_payload,
+                om_hat,
+                is_dual=is_dual,
+                h_series=h_series,
+                alpha_series=alpha_series,
+            )
             diag["Tb_RMSE_V"][block_index] = rmse_v
             diag["Tb_RMSE_H"][block_index] = rmse_h
             diag["Tb_RMSE_HV"][block_index] = rmse_hv
