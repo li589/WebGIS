@@ -7,7 +7,13 @@
  */
 import { isNearGlobalLngSpan, normalizeLngBounds } from './geo-bounds'
 
-export { NEAR_GLOBAL_LNG_SPAN_DEG, isNearGlobalLngSpan, normalizeLngBounds } from './geo-bounds'
+export {
+  NEAR_GLOBAL_LNG_SPAN_DEG,
+  isGlobalMapViewport,
+  isNearGlobalLngSpan,
+  lngSpanDegrees,
+  normalizeLngBounds,
+} from './geo-bounds'
 
 export interface MapViewportBounds {
   getSouth: () => number

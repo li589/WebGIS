@@ -11,6 +11,21 @@ export function isNearGlobalLngSpan(spanDeg: number): boolean {
   return Number.isFinite(spanDeg) && spanDeg >= NEAR_GLOBAL_LNG_SPAN_DEG
 }
 
+/** 连续经度跨度（度），兼容 east < west 的跨日界线表示。 */
+export function lngSpanDegrees(west: number, east: number): number {
+  if (!Number.isFinite(west) || !Number.isFinite(east)) return 0
+  if (east >= west) return east - west
+  return 360 - west + east
+}
+
+/** 视口 bbox 是否近全球（用于数据分布淡底模式）。 */
+export function isGlobalMapViewport(
+  bbox: { west: number; east: number } | null | undefined,
+): boolean {
+  if (!bbox) return false
+  return isNearGlobalLngSpan(lngSpanDegrees(bbox.west, bbox.east))
+}
+
 function shiftWestIntoPrincipal(west: number, east: number): { west: number; east: number } {
   let w = west
   let e = east
