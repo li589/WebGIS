@@ -25,7 +25,7 @@ import secrets
 import threading
 import time
 from dataclasses import dataclass
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta, UTC
 from threading import Lock
 from typing import TYPE_CHECKING
 
@@ -54,7 +54,7 @@ class SlidingWindowRateLimiter:
         self._requests: dict[str, list[datetime]] = {}
 
     def check(self, key: str) -> RateLimitResult:
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         cutoff = now - self._window
         with self._lock:
             timestamps = self._requests.pop(key, None) or []
@@ -202,7 +202,7 @@ _tile_limiter = RateLimiter(
 def client_ip(request) -> str:  # type: ignore[no-untyped-def]
     """解析限流用客户端 IP。
 
-    审查 BUG-3：默认不信任 ``X-Forwarded-For`` / ``X-Real-IP``（可被客户端伪造）。
+    默认不信任 ``X-Forwarded-For`` / ``X-Real-IP``（可被客户端伪造）。
     仅当 ``settings.trust_proxy``（``BACKEND_TRUST_PROXY``）为真时才解析转发头。
     """
     from app.core.config import settings
@@ -277,7 +277,7 @@ def rate_limited_response(
     *,
     message: str,
     request_id: str | None = None,
-) -> "JSONResponse":
+) -> JSONResponse:
     """构造统一的 429 限流响应：``C429001`` + ``Retry-After``（架构契约 BD-03）。
 
     响应体与全局异常处理器口径一致：``{"detail", "error_code", "request_id"}``。

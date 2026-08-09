@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from copy import deepcopy
-from datetime import datetime, timezone
+from datetime import datetime, UTC
 from typing import Any
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -392,7 +392,7 @@ class WorkflowDefinitionMigrator:
         metadata = payload.setdefault("metadata", {})
         if not isinstance(metadata, dict):
             raise WorkflowValidationError("workflow metadata must be a mapping")
-        now_iso = datetime.now(timezone.utc).isoformat()
+        now_iso = datetime.now(UTC).isoformat()
         metadata.setdefault("schema_version", CURRENT_SCHEMA_VERSION)
         metadata.setdefault("created_at", now_iso)
         metadata.setdefault("updated_at", now_iso)

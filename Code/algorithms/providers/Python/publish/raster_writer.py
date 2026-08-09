@@ -10,7 +10,7 @@ from __future__ import annotations
 import warnings
 from functools import lru_cache
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Optional
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 
@@ -66,7 +66,7 @@ def _normalize_array(data: np.ndarray) -> tuple[np.ndarray, bool]:
 
 
 def _compute_bounds(
-    transform: "Affine", width: int, height: int
+    transform: Affine, width: int, height: int
 ) -> tuple[float, float, float, float]:
     """根据仿射变换计算地理范围 (west, south, east, north)。"""
     west = transform.xoff
@@ -162,9 +162,9 @@ class COGWriter:
         output_name: str,
         *,
         crs: str = "EPSG:4326",
-        transform: Optional["Affine"] = None,
-        nodata: Optional[float] = None,
-        dtype: Optional[str] = None,
+        transform: Affine | None = None,
+        nodata: float | None = None,
+        dtype: str | None = None,
         compress: str = "deflate",
         description: str = "",
         unit: str = "",
@@ -254,7 +254,7 @@ class COGWriter:
 
         cog_bytes = buf.getvalue()
         if len(cog_bytes) == 0:
-            raise IOError("COG 写入失败，缓冲区为空")
+            raise OSError("COG 写入失败，缓冲区为空")
 
         bounds = _compute_bounds(transform, width, height)
         rel_path = f"{output_name}.tif"
@@ -277,9 +277,9 @@ class COGWriter:
         output_name: str,
         *,
         crs: str = "EPSG:4326",
-        transform: Optional["Affine"] = None,
-        nodata: Optional[float] = None,
-        dtype: Optional[str] = None,
+        transform: Affine | None = None,
+        nodata: float | None = None,
+        dtype: str | None = None,
         compress: str = "deflate",
         description: str = "",
         unit: str = "",
@@ -305,7 +305,7 @@ class COGWriter:
         output_file.write_bytes(cog_bytes)
         file_size = output_file.stat().st_size
         if file_size == 0:
-            raise IOError(f"写入失败，文件大小为 0: {output_file}")
+            raise OSError(f"写入失败，文件大小为 0: {output_file}")
         return {**metadata, "uri": str(output_file.resolve().as_uri())}
 
 
@@ -337,11 +337,11 @@ class PreviewGenerator:
         output_name: str,
         *,
         cmap: str = "viridis",
-        nodata: Optional[float] = None,
-        vmin: Optional[float] = None,
-        vmax: Optional[float] = None,
+        nodata: float | None = None,
+        vmin: float | None = None,
+        vmax: float | None = None,
         title: str = "",
-        overlay_extent: Optional[tuple] = None,
+        overlay_extent: tuple | None = None,
     ) -> tuple[bytes, dict]:
         """从栅格数据生成 PNG bytes 和元数据（不写文件）。
 
@@ -445,7 +445,7 @@ class PreviewGenerator:
         plt.close(fig)
         png_bytes = buf.getvalue()
         if len(png_bytes) == 0:
-            raise IOError("预览图生成失败，缓冲区为空")
+            raise OSError("预览图生成失败，缓冲区为空")
         rel_path = f"{output_name}.png"
         return png_bytes, {
             "path": rel_path,
@@ -459,11 +459,11 @@ class PreviewGenerator:
         output_name: str,
         *,
         cmap: str = "viridis",
-        nodata: Optional[float] = None,
-        vmin: Optional[float] = None,
-        vmax: Optional[float] = None,
+        nodata: float | None = None,
+        vmin: float | None = None,
+        vmax: float | None = None,
         title: str = "",
-        overlay_extent: Optional[tuple] = None,
+        overlay_extent: tuple | None = None,
     ) -> dict:
         """从栅格数据生成 PNG 缩略图文件（兼容旧接口）。"""
         png_bytes, metadata = self.generate_bytes(
@@ -481,5 +481,5 @@ class PreviewGenerator:
         output_file.write_bytes(png_bytes)
         file_size = output_file.stat().st_size
         if file_size == 0:
-            raise IOError("预览图写入失败，文件大小为 0")
+            raise OSError("预览图写入失败，文件大小为 0")
         return {**metadata, "uri": str(output_file.resolve().as_uri())}

@@ -6,9 +6,9 @@
 """
 
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import datetime, UTC
 from enum import Enum
-from typing import Optional, Callable, Awaitable
+from collections.abc import Callable, Awaitable
 import asyncio
 import logging
 import threading
@@ -43,10 +43,10 @@ class ManagedWorkflow:
     priority: WorkflowPriority
     state: WorkflowState
     created_at: datetime
-    run_id: Optional[str] = None
-    bbox: Optional[dict] = None  # 空间范围 {"min_lng", "max_lng", "min_lat", "max_lat"}
+    run_id: str | None = None
+    bbox: dict | None = None  # 空间范围 {"min_lng", "max_lng", "min_lat", "max_lat"}
     metadata: dict = field(default_factory=dict)
-    cancel_callback: Optional[Callable[[], Awaitable[None]]] = None
+    cancel_callback: Callable[[], Awaitable[None]] | None = None
 
 
 class WorkflowLifecycleManager:
@@ -67,7 +67,7 @@ class WorkflowLifecycleManager:
         # 优先级队列存储待处理的工作流
         self._pending_workflows: list[tuple[int, ManagedWorkflow]] = []
         self._lock = threading.RLock()
-        self._async_lock: Optional[asyncio.Lock] = None
+        self._async_lock: asyncio.Lock | None = None
 
     def _get_async_lock(self) -> asyncio.Lock:
         """获取或创建异步锁（延迟初始化避免循环导入）"""
@@ -81,9 +81,9 @@ class WorkflowLifecycleManager:
         layer_id: str,
         workflow_id: str,
         priority: WorkflowPriority,
-        bbox: Optional[dict] = None,
-        metadata: Optional[dict] = None,
-        cancel_callback: Optional[Callable[[], Awaitable[None]]] = None,
+        bbox: dict | None = None,
+        metadata: dict | None = None,
+        cancel_callback: Callable[[], Awaitable[None]] | None = None,
     ) -> str:
         """提交工作流，自动处理旧工作流替换（同步版本）
 
@@ -114,7 +114,7 @@ class WorkflowLifecycleManager:
                 layer_id=layer_id,
                 priority=priority,
                 state=WorkflowState.PENDING,
-                created_at=datetime.now(timezone.utc),
+                created_at=datetime.now(UTC),
                 bbox=bbox,
                 metadata=metadata or {},
                 cancel_callback=cancel_callback,
@@ -136,9 +136,9 @@ class WorkflowLifecycleManager:
         layer_id: str,
         workflow_id: str,
         priority: WorkflowPriority,
-        bbox: Optional[dict] = None,
-        metadata: Optional[dict] = None,
-        cancel_callback: Optional[Callable[[], Awaitable[None]]] = None,
+        bbox: dict | None = None,
+        metadata: dict | None = None,
+        cancel_callback: Callable[[], Awaitable[None]] | None = None,
     ) -> str:
         """提交工作流，自动处理旧工作流替换（异步版本）"""
         async with self._get_async_lock():
@@ -157,7 +157,7 @@ class WorkflowLifecycleManager:
                 layer_id=layer_id,
                 priority=priority,
                 state=WorkflowState.PENDING,
-                created_at=datetime.now(timezone.utc),
+                created_at=datetime.now(UTC),
                 bbox=bbox,
                 metadata=metadata or {},
                 cancel_callback=cancel_callback,
@@ -177,7 +177,7 @@ class WorkflowLifecycleManager:
         self,
         layer_id: str,
         state: WorkflowState,
-        run_id: Optional[str] = None,
+        run_id: str | None = None,
     ) -> bool:
         """更新工作流状态（同步版本）
 
@@ -221,7 +221,7 @@ class WorkflowLifecycleManager:
         self,
         layer_id: str,
         state: WorkflowState,
-        run_id: Optional[str] = None,
+        run_id: str | None = None,
     ) -> bool:
         """更新工作流状态（异步版本）"""
         async with self._get_async_lock():
@@ -306,7 +306,7 @@ class WorkflowLifecycleManager:
                 return True
             return False
 
-    def get_active_workflow(self, layer_id: str) -> Optional[ManagedWorkflow]:
+    def get_active_workflow(self, layer_id: str) -> ManagedWorkflow | None:
         """获取活跃工作流"""
         with self._lock:
             return self._active_workflows.get(layer_id)
@@ -325,7 +325,7 @@ class WorkflowLifecycleManager:
         with self._lock:
             return [w for _, w in self._pending_workflows]
 
-    def get_next_pending_workflow(self) -> Optional[ManagedWorkflow]:
+    def get_next_pending_workflow(self) -> ManagedWorkflow | None:
         """获取下一个待处理的工作流（优先级最高）"""
         with self._lock:
             if self._pending_workflows:
@@ -333,7 +333,7 @@ class WorkflowLifecycleManager:
                 return workflow
             return None
 
-    def pop_next_pending_workflow(self) -> Optional[ManagedWorkflow]:
+    def pop_next_pending_workflow(self) -> ManagedWorkflow | None:
         """弹出并返回下一个待处理的工作流"""
         with self._lock:
             if self._pending_workflows:
@@ -413,7 +413,7 @@ class WorkflowLifecycleManager:
             workflow = self._active_workflows.get(layer_id)
             return workflow is not None and workflow.state == WorkflowState.RUNNING
 
-    def get_layer_workflow_state(self, layer_id: str) -> Optional[WorkflowState]:
+    def get_layer_workflow_state(self, layer_id: str) -> WorkflowState | None:
         """获取指定图层的工作流状态"""
         with self._lock:
             workflow = self._active_workflows.get(layer_id)
@@ -429,9 +429,9 @@ def submit_weather_workflow(
     layer_id: str,
     workflow_id: str,
     priority: WorkflowPriority = WorkflowPriority.VIEWPORT,
-    bbox: Optional[dict] = None,
-    metadata: Optional[dict] = None,
-    cancel_callback: Optional[Callable[[], Awaitable[None]]] = None,
+    bbox: dict | None = None,
+    metadata: dict | None = None,
+    cancel_callback: Callable[[], Awaitable[None]] | None = None,
 ) -> str:
     """便捷函数：提交天气工作流"""
     return workflow_lifecycle_manager.submit_workflow(
@@ -449,6 +449,6 @@ def cancel_weather_workflow(layer_id: str) -> bool:
     return workflow_lifecycle_manager.cancel_workflow(layer_id)
 
 
-def get_weather_workflow_state(layer_id: str) -> Optional[WorkflowState]:
+def get_weather_workflow_state(layer_id: str) -> WorkflowState | None:
     """便捷函数：获取天气工作流状态"""
     return workflow_lifecycle_manager.get_layer_workflow_state(layer_id)

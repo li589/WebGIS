@@ -23,6 +23,7 @@ from app.core.redis_client import (
     get_redis_client,
     release_dedup_lock,
 )
+from datetime import UTC
 
 logger = logging.getLogger(__name__)
 
@@ -178,7 +179,7 @@ def execute_open_meteo_sync(domains: str | None = None) -> dict[str, Any]:
     ``domains``：逗号分隔模型 id，临时覆盖 ``OPEN_METEO_SYNC_DOMAINS``（不落库）。
     返回同步结果摘要。失败时抛 RuntimeError。
     """
-    from datetime import datetime, timezone
+    from datetime import datetime
 
     from app.services.weather_engine_settings import record_open_meteo_sync_result
 
@@ -196,7 +197,7 @@ def execute_open_meteo_sync(domains: str | None = None) -> dict[str, Any]:
             "status": "skipped",
             "domains": domains_eff,
             "message": "another sync is already running for these domains",
-            "finished_at": datetime.now(timezone.utc).isoformat(),
+            "finished_at": datetime.now(UTC).isoformat(),
         }
 
     try:
@@ -252,7 +253,7 @@ def execute_open_meteo_sync(domains: str | None = None) -> dict[str, Any]:
                 f"{result.stderr[-500:] if result.stderr else 'no stderr'}"
             )
 
-        finished_at = datetime.now(timezone.utc).isoformat()
+        finished_at = datetime.now(UTC).isoformat()
         logger.info("Open-Meteo sync completed successfully")
         record_open_meteo_sync_result(
             ok=True,

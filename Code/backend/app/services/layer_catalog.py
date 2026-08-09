@@ -243,7 +243,7 @@ def _load_seed_descriptors() -> list[LayerDescriptor]:
             continue
 
         try:
-            with open(seeds_file, "r", encoding="utf-8") as f:
+            with open(seeds_file, encoding="utf-8") as f:
                 raw_items = json.load(f)
 
             for item in raw_items:
@@ -292,7 +292,7 @@ def get_layer_categories() -> list[dict[str, Any]]:
     if not categories_file.exists():
         return []
     try:
-        with open(categories_file, "r", encoding="utf-8") as f:
+        with open(categories_file, encoding="utf-8") as f:
             _cached_categories = json.load(f)
             return _cached_categories
     except Exception as exc:

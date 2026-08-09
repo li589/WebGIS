@@ -7,7 +7,8 @@ import importlib
 import logging
 from pathlib import Path
 import sys
-from typing import Any, Iterator
+from typing import Any
+from collections.abc import Iterator
 
 from app.core.config import settings
 from app.services.workflow_execution import WorkflowExecutionResult

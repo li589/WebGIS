@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from functools import lru_cache
+from functools import cache
 
 from workflow.panel_schema import (
     WorkflowInputPanelSchema,
@@ -203,7 +203,7 @@ def _build_ui_field(field: WorkflowPanelField) -> WorkflowPanelUiField:
     )
 
 
-@lru_cache(maxsize=None)
+@cache
 def _field_label(key: str) -> str:
     label = _FIELD_LABEL_OVERRIDES.get(key)
     if label is not None:
@@ -221,7 +221,7 @@ def _field_description(field: WorkflowPanelField) -> str:
     return "Workflow 请求级输入。"
 
 
-@lru_cache(maxsize=None)
+@cache
 def _control_type(
     section: str,
     key: str,
@@ -258,12 +258,12 @@ def _control_type(
     return "text_input"
 
 
-@lru_cache(maxsize=None)
+@cache
 def _placeholder(key: str) -> str | None:
     return _FIELD_PLACEHOLDERS.get(key)
 
 
-@lru_cache(maxsize=None)
+@cache
 def _example_value(
     key: str, entry_names: tuple[str, ...], allowed_values: tuple[str, ...]
 ) -> str | None:

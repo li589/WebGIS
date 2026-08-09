@@ -8,7 +8,7 @@ from __future__ import annotations
 import logging
 import threading
 from dataclasses import dataclass, field
-from typing import Any, Optional
+from typing import Any
 
 from app.core.config import settings
 
@@ -244,7 +244,7 @@ def invalidate_effective_config() -> None:
         _hydrated = False
 
 
-def get_effective_secret(key_name: str) -> Optional[str]:
+def get_effective_secret(key_name: str) -> str | None:
     snap = get_runtime_snapshot()
     value = snap.api_keys.get(key_name)
     if value:
@@ -255,7 +255,7 @@ def get_effective_secret(key_name: str) -> Optional[str]:
     return get_effective_api_key(key_name)
 
 
-def get_backend_auth_key() -> Optional[str]:
+def get_backend_auth_key() -> str | None:
     """后端写接口鉴权密钥。
 
     发布就绪修复（P1-6 吊销语义）：DB 存在 backend_auth 行（含禁用）时以 DB 为准，

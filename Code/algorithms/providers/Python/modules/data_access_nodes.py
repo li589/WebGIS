@@ -288,7 +288,7 @@ def _resolve_portal_headers(
     elif auth_type == "basic" and username:
         import base64
 
-        raw_cred = f"{username}:{password}".encode("utf-8")
+        raw_cred = f"{username}:{password}".encode()
         headers["Authorization"] = f"Basic {base64.b64encode(raw_cred).decode('ascii')}"
     elif auth_type == "header" and token:
         headers[header_name] = token

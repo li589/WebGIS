@@ -1,7 +1,7 @@
 import json
 import logging
 import time
-from datetime import datetime
+from datetime import datetime, UTC
 from urllib.error import HTTPError, URLError
 from urllib.request import urlopen
 
@@ -247,7 +247,7 @@ def trigger_open_meteo_sync(
     import shutil
     import threading
     import uuid
-    from datetime import datetime, timezone
+    from datetime import datetime
     from pathlib import Path
 
     from app.core.celery_app import celery_available
@@ -351,7 +351,7 @@ def trigger_open_meteo_sync(
                     "state": "SUCCESS",
                     "info": result,
                     "mode": "local_thread",
-                    "finished_at": datetime.now(timezone.utc).isoformat(),
+                    "finished_at": datetime.now(UTC).isoformat(),
                 },
             )
         except Exception as exc:
@@ -364,7 +364,7 @@ def trigger_open_meteo_sync(
                     "state": "FAILURE",
                     "info": str(exc),
                     "mode": "local_thread",
-                    "finished_at": datetime.now(timezone.utc).isoformat(),
+                    "finished_at": datetime.now(UTC).isoformat(),
                     "error": str(exc),
                 },
             )

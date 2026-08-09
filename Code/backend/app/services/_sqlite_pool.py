@@ -14,7 +14,7 @@ import threading
 from contextlib import contextmanager
 from pathlib import Path
 from queue import Queue
-from typing import Iterator
+from collections.abc import Iterator
 
 from app.services import spatialite_loader
 

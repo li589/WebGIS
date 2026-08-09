@@ -60,7 +60,7 @@ class Settings:
     # 此前默认 "development" 会在未配置 API Key 时静默放行所有写接口（见 app/api/deps.py）。
     # 本地联调请在 Code/backend/.env 显式设置 BACKEND_ENV=development 以保留开发旁路。
     environment: str = os.getenv("BACKEND_ENV", "production")
-    # 审查 BUG-3：仅当后端位于受信反代（Nginx gateway）之后时开启，才信任
+    # 仅当后端位于受信反代（Nginx gateway）之后时才信任
     # X-Forwarded-For / X-Real-IP；默认 false，写限流用 request.client.host，防伪造。
     trust_proxy: bool = os.getenv("BACKEND_TRUST_PROXY", "false").lower() in {
         "1",

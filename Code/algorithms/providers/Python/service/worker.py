@@ -2,7 +2,8 @@ from __future__ import annotations
 
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any
+from collections.abc import Callable
 
 from contracts.api_errors import build_api_error_response
 from contracts.job import JobResult

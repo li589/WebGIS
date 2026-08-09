@@ -7,9 +7,9 @@ import json
 import logging
 import os
 import sqlite3
-from datetime import datetime, timezone
+from datetime import datetime, UTC
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 from app.services._sqlite_pool import SQLiteConnectionPool
 
@@ -179,7 +179,7 @@ class RemoteStorageCredentialsRepository:
         if not profile_id:
             raise ValueError("profile_id is required")
 
-        now = datetime.now(timezone.utc).isoformat()
+        now = datetime.now(UTC).isoformat()
         existing = self.get_secret_bundle(profile_id, include_disabled=True)
         # None = preserve existing secret/key/extra/enabled; "" clears secrets
         secret_val = (
@@ -280,7 +280,7 @@ class RemoteStorageCredentialsRepository:
                 "UPDATE remote_storage_credentials SET enabled=?, updated_at=? WHERE profile_id=?",
                 (
                     1 if enabled else 0,
-                    datetime.now(timezone.utc).isoformat(),
+                    datetime.now(UTC).isoformat(),
                     profile_id,
                 ),
             )
@@ -296,9 +296,9 @@ class RemoteStorageCredentialsRepository:
                 WHERE profile_id=?
                 """,
                 (
-                    datetime.now(timezone.utc).isoformat(),
+                    datetime.now(UTC).isoformat(),
                     status,
-                    datetime.now(timezone.utc).isoformat(),
+                    datetime.now(UTC).isoformat(),
                     profile_id,
                 ),
             )
@@ -316,7 +316,7 @@ class RemoteStorageCredentialsRepository:
                 ).fetchall()
         return [self._row_to_info(r) for r in rows]
 
-    def get_profile_info(self, profile_id: str) -> Optional[dict[str, Any]]:
+    def get_profile_info(self, profile_id: str) -> dict[str, Any] | None:
         with self._connect() as conn:
             row = conn.execute(
                 "SELECT * FROM remote_storage_credentials WHERE profile_id=?",
@@ -329,7 +329,7 @@ class RemoteStorageCredentialsRepository:
         profile_id: str,
         *,
         include_disabled: bool = False,
-    ) -> Optional[dict[str, Any]]:
+    ) -> dict[str, Any] | None:
         with self._connect() as conn:
             row = conn.execute(
                 "SELECT * FROM remote_storage_credentials WHERE profile_id=?",
@@ -363,9 +363,7 @@ class RemoteStorageCredentialsRepository:
             "enabled": bool(row["enabled"]),
         }
 
-    def find_by_host_protocol(
-        self, protocol: str, host: str
-    ) -> Optional[dict[str, Any]]:
+    def find_by_host_protocol(self, protocol: str, host: str) -> dict[str, Any] | None:
         protocol = protocol.lower().strip()
         protocols = [protocol]
         if protocol in {"ftp", "ftps"}:
@@ -490,7 +488,7 @@ class RemoteStorageCredentialsRepository:
 
     def get_history_bundle(
         self, profile_id: str, history_id: int
-    ) -> Optional[dict[str, Any]]:
+    ) -> dict[str, Any] | None:
         with self._connect() as conn:
             row = conn.execute(
                 """

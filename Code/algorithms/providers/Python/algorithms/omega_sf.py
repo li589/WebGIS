@@ -34,7 +34,8 @@ import re
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Any, Sequence
+from typing import Any
+from collections.abc import Sequence
 
 import numpy as np
 
@@ -2549,7 +2550,7 @@ def _build_time_series(
             100.0 * avail / max(total_req, 1),
         )
         if avail == 0:
-            raise ValueError("SMAP 文件夹无可用日期数据: %s" % smap_folder)
+            raise ValueError(f"SMAP 文件夹无可用日期数据: {smap_folder}")
 
     # NDVI 日期（仅 DAILY_FILE 模式诊断）
     if config.ndvi_mode.upper() == "DAILY_FILE" and ndvi_folder:
@@ -2577,7 +2578,7 @@ def _build_time_series(
                     100.0 * avail / max(total_req, 1),
                 )
                 if avail == 0:
-                    raise ValueError("FY TB 文件夹无可用日期数据: %s" % tb_folder)
+                    raise ValueError(f"FY TB 文件夹无可用日期数据: {tb_folder}")
 
     # SM 参考日期诊断
     if config.sm_source.upper() == "DDCA" and ddca_sm_folder:

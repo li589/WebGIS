@@ -47,7 +47,7 @@ from __future__ import annotations
 
 import json
 import logging
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from functools import lru_cache
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -96,21 +96,21 @@ except ImportError:
 # ===========================================================================
 
 
-def _is_float_array(arr: "np.ndarray") -> bool:
+def _is_float_array(arr: np.ndarray) -> bool:
     """判断是否为浮点类型数组"""
     import numpy as np
 
     return np.issubdtype(arr.dtype, np.floating)
 
 
-def _ensure_contiguous(arr: "np.ndarray") -> "np.ndarray":
+def _ensure_contiguous(arr: np.ndarray) -> np.ndarray:
     """确保数组是 C 连续"""
     if not arr.flags["C_CONTIGUOUS"]:
         return arr.copy(order="C")
     return arr
 
 
-def _get_default_nodata(dtype: "np.dtype") -> float:
+def _get_default_nodata(dtype: np.dtype) -> float:
     """根据数据类型返回合理的默认 nodata 值"""
     import numpy as np
 
@@ -120,7 +120,7 @@ def _get_default_nodata(dtype: "np.dtype") -> float:
 
 
 def _estimate_bounds_from_transform(
-    transform: "Affine",
+    transform: Affine,
     width: int,
     height: int,
 ) -> tuple[float, float, float, float]:
@@ -146,7 +146,7 @@ def _estimate_bounds_from_transform(
 
 
 def _generate_preview_from_array(
-    arr: "np.ndarray",
+    arr: np.ndarray,
     output_path: Path,
     *,
     cmap: str = "viridis",
@@ -263,10 +263,10 @@ class RasterPublisher:
 
     def publish(
         self,
-        data: "np.ndarray",
+        data: np.ndarray,
         name: str,
         *,
-        transform: "Affine | None" = None,
+        transform: Affine | None = None,
         nodata: float | None = None,
         unit: str = "",
         description: str = "",
@@ -424,7 +424,7 @@ class RasterPublisher:
 
     def _write_plain_geotiff(
         self,
-        data: "np.ndarray",
+        data: np.ndarray,
         output_path: Path,
         transform,
         nodata: float | None,
@@ -511,7 +511,7 @@ class TablePublisher:
 
     def publish(
         self,
-        df: "pd.DataFrame",
+        df: pd.DataFrame,
         name: str,
         *,
         description: str = "",
@@ -633,7 +633,7 @@ class ManifestPublisher:
         self.region = region
         self._products: list[dict[str, Any]] = []
         self._diagnostics: dict[str, Any] = {}
-        self.created_at = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+        self.created_at = datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
 
     def add_raster(
         self,
@@ -889,9 +889,9 @@ class OutputCoordinator:
     def write_raster(
         self,
         name: str,
-        data: "np.ndarray",
+        data: np.ndarray,
         *,
-        transform: "Affine | None" = None,
+        transform: Affine | None = None,
         nodata: float | None = None,
         unit: str = "",
         description: str = "",
@@ -965,7 +965,7 @@ class OutputCoordinator:
     def write_table(
         self,
         name: str,
-        df: "pd.DataFrame",
+        df: pd.DataFrame,
         *,
         description: str = "",
         **kwargs,

@@ -5,7 +5,8 @@ from datetime import datetime, timedelta
 from functools import lru_cache
 from pathlib import Path
 import re
-from typing import Any, Mapping
+from typing import Any
+from collections.abc import Mapping
 
 from algorithms.omega import _MINERAL_PARTICLE_DENSITY
 from contracts.modes import DualTgMode

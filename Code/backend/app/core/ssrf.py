@@ -8,10 +8,10 @@
 因为本平台存在合法的"内网数据源 / NAS / 局域网文件服务"出站场景。需要更严格
 时可通过 ``validate_outbound_url(..., allow_private=False)`` 收紧。
 
-审查修复（BUG-1）：``safe_urlopen`` 对每次重定向目标再跑校验，避免
+重定向安全：``safe_urlopen`` 对每次重定向目标再跑校验，避免
 ``urlopen`` 默认跟随 3xx 绕过到环回/链路本地。
 
-审查修复（R1，DNS 重绑定 / TOCTOU）：校验与连接之间存在二次 DNS 解析窗口，
+DNS 重绑定防护（TOCTOU）：校验与连接之间存在二次 DNS 解析窗口，
 攻击者控制权威 DNS 时可让校验解析到公网 IP、实际连接解析到 ``127.0.0.1``。
 现改为**解析一次、钉死 IP 连接**：``resolve_outbound_target`` 返回校验通过的
 IP 列表，连接阶段只允许连这些 IP（``_pinned_create_connection``），而 ``Host``
@@ -26,7 +26,8 @@ import logging
 import os
 import socket
 from dataclasses import dataclass
-from typing import Any, Callable, Mapping
+from typing import Any
+from collections.abc import Callable, Mapping
 from urllib.error import HTTPError
 from urllib.parse import urljoin, urlparse
 from urllib.request import (

@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from typing import Optional
 
 from webgis_gee.config.settings import Settings
 from webgis_gee.storage.base import StorageBackend
@@ -9,7 +8,7 @@ from webgis_gee.storage.minio import MinioStorageBackend
 
 
 def create_storage_backend(
-    settings: Optional[Settings] = None,
+    settings: Settings | None = None,
     *,
     backend_type: str | None = None,
     local_storage_root: str | None = None,

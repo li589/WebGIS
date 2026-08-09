@@ -33,7 +33,7 @@ import sys
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Sequence
+from collections.abc import Sequence
 
 import h5py
 import netCDF4 as nc
@@ -218,9 +218,7 @@ def _hdf_sds(hdf_path: str, sds_path: str) -> str:
 
 def _run_gdalinfo(target_path: str) -> str:
     cmd = [GDAL_INFO, target_path]
-    proc = subprocess.run(
-        cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True
-    )
+    proc = subprocess.run(cmd, capture_output=True, text=True)
     if proc.returncode != 0:
         raise RuntimeError(proc.stderr)
     return proc.stdout
@@ -576,9 +574,7 @@ class FyPreprocessor:
             mosaic_vrt,
             *src_list,
         ]
-        proc = subprocess.run(
-            cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True
-        )
+        proc = subprocess.run(cmd, capture_output=True, text=True)
         if proc.returncode != 0:
             logger.warning(
                 "[SKIP] %s: gdalbuildvrt 失败。错误：\n%s", band_name, proc.stderr
@@ -801,9 +797,7 @@ class FyPreprocessor:
             mergy_vrt0,
             *merge_inputs,
         ]
-        proc = subprocess.run(
-            cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True
-        )
+        proc = subprocess.run(cmd, capture_output=True, text=True)
         if proc.returncode != 0 or not os.path.exists(mergy_vrt0):
             logger.error("gdalbuildvrt(separate) 失败：%s", proc.stderr)
             return 0

@@ -20,6 +20,7 @@ from app.weatherengine.supported_models import (
     is_supported_weather_model,
     list_supported_weather_models,
 )
+from datetime import UTC
 
 logger = logging.getLogger(__name__)
 
@@ -91,14 +92,14 @@ def record_open_meteo_sync_result(
     stderr_tail: str = "",
 ) -> None:
     """写入最近一次 sync 结果（供 overview / 设置页）。"""
-    from datetime import datetime, timezone
+    from datetime import datetime
 
     domain_list = (
         [d.strip() for d in domains.split(",") if d.strip()]
         if isinstance(domains, str)
         else [str(d).strip() for d in domains if str(d).strip()]
     )
-    now = datetime.now(timezone.utc).isoformat()
+    now = datetime.now(UTC).isoformat()
     payload: dict[str, Any] = {
         "ok": ok,
         "domains": domain_list,

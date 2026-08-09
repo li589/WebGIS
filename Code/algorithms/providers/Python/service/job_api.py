@@ -3,7 +3,8 @@ from __future__ import annotations
 from dataclasses import asdict, dataclass, is_dataclass
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any
+from collections.abc import Callable
 import threading
 
 from contracts.api_errors import build_api_error_response

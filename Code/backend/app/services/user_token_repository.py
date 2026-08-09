@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import secrets
-from datetime import datetime, timezone
+from datetime import datetime, UTC
 from pathlib import Path
 from typing import Any
 
@@ -65,7 +65,7 @@ class UserTokenRepository:
         """
         plain = f"cgda_{secrets.token_urlsafe(32)}"
         lookup = _token_lookup(plain)
-        now = datetime.now(timezone.utc).isoformat()
+        now = datetime.now(UTC).isoformat()
         with self._pool.connection() as conn:
             cur = conn.execute(
                 """
@@ -95,8 +95,8 @@ class UserTokenRepository:
         if row["expires_at"]:
             expires = datetime.fromisoformat(str(row["expires_at"]))
             if expires.tzinfo is None:
-                expires = expires.replace(tzinfo=timezone.utc)
-            if expires <= datetime.now(timezone.utc):
+                expires = expires.replace(tzinfo=UTC)
+            if expires <= datetime.now(UTC):
                 return None
         return dict(row)
 
@@ -128,7 +128,7 @@ class UserTokenRepository:
         return [dict(r) for r in rows]
 
     def revoke_token(self, token_id: int) -> bool:
-        now = datetime.now(timezone.utc).isoformat()
+        now = datetime.now(UTC).isoformat()
         with self._pool.connection() as conn:
             cur = conn.execute(
                 """
@@ -141,7 +141,7 @@ class UserTokenRepository:
             return cur.rowcount > 0
 
     def revoke_tokens_for_user(self, user_id: int) -> None:
-        now = datetime.now(timezone.utc).isoformat()
+        now = datetime.now(UTC).isoformat()
         with self._pool.connection() as conn:
             conn.execute(
                 """

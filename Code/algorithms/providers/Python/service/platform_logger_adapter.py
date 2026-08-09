@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from typing import Any, Callable
+from typing import Any
+from collections.abc import Callable
 
 from contracts.event import LogEvent
 from service.platform_scheduler_adapter import _resolve_required_callable

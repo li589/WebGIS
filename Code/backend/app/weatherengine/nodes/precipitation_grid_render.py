@@ -17,6 +17,7 @@ from app.weatherengine.nodes._utils import (
     resolve_bbox,
 )
 from shared.contracts.api_contracts import ResultKind, WeatherPointResponse
+from datetime import UTC
 
 logger = logging.getLogger(__name__)
 
@@ -92,7 +93,7 @@ class PrecipitationGridRenderNode(BaseNode):
             run_id = self.context.metadata.get("workflow_run_id", self.context.run_id)
             artifact = None
             try:
-                from datetime import datetime, timezone
+                from datetime import datetime
 
                 artifact_ref = storage.create_artifact_result_ref(
                     run_id=run_id,
@@ -100,7 +101,7 @@ class PrecipitationGridRenderNode(BaseNode):
                     result_kind=ResultKind.file,
                     title="Precipitation Grid GeoJSON",
                     mime_type="application/geo+json",
-                    updated_at=datetime.now(timezone.utc),
+                    updated_at=datetime.now(UTC),
                     payload=geojson,
                 )
                 artifact = ArtifactRecord(

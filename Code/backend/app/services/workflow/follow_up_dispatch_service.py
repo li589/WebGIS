@@ -6,7 +6,7 @@ cleanup on backend startup. Extracted from interaction_hub.py.
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import datetime, UTC
 import logging
 from uuid import uuid4
 
@@ -102,7 +102,7 @@ class FollowUpDispatchService:
                                 "task_type": task_data.get("task_type"),
                                 "task_id": inline_task_id,
                             },
-                            created_at=datetime.now(timezone.utc),
+                            created_at=datetime.now(UTC),
                         )
                 except Exception:
                     logger.exception("Download follow-up dispatch failed")
@@ -116,7 +116,7 @@ class FollowUpDispatchService:
                             "task_type": task_data.get("task_type"),
                             "error_code": "download_follow_up_dispatch_failed",
                         },
-                        created_at=datetime.now(timezone.utc),
+                        created_at=datetime.now(UTC),
                     )
 
     def cleanup_stale_workflow_runs(self) -> int:
@@ -139,7 +139,7 @@ class FollowUpDispatchService:
             ExecutionStatus.queued,
             ExecutionStatus.retry_pending,
         }
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         grace = timedelta(minutes=15)
         live_task_ids = self._collect_live_celery_task_ids()
         cleaned = 0
@@ -152,7 +152,7 @@ class FollowUpDispatchService:
             age = now - (
                 run.updated_at
                 if run.updated_at.tzinfo
-                else run.updated_at.replace(tzinfo=timezone.utc)
+                else run.updated_at.replace(tzinfo=UTC)
             )
             if age < grace:
                 continue
@@ -234,7 +234,7 @@ class FollowUpDispatchService:
         """
         from datetime import timedelta
 
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         threshold = timedelta(seconds=max_running_seconds)
         failed = 0
         for run in self._repository.list_runs():
@@ -243,7 +243,7 @@ class FollowUpDispatchService:
             updated = (
                 run.updated_at
                 if run.updated_at.tzinfo
-                else run.updated_at.replace(tzinfo=timezone.utc)
+                else run.updated_at.replace(tzinfo=UTC)
             )
             if now - updated < threshold:
                 continue

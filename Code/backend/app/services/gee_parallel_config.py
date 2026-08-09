@@ -11,7 +11,6 @@ import logging
 from dataclasses import dataclass
 from datetime import datetime
 from enum import Enum
-from typing import Optional
 
 from app.core.config import settings
 
@@ -54,7 +53,7 @@ class GEEAccountInfo:
     is_active: bool = True
     is_available: bool = True
     current_tasks: int = 0
-    last_used: Optional[datetime] = None
+    last_used: datetime | None = None
     error_count: int = 0
 
 

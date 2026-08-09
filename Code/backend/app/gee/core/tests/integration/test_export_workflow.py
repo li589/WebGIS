@@ -462,7 +462,7 @@ def test_export_workflow_writes_manifest_artifact(tmp_path) -> None:
 
     manifest_uri = result.outputs["export.manifest_uri"]
     manifest_path = manifest_uri.replace("file://", "")
-    manifest_payload = json.loads(open(manifest_path, "r", encoding="utf-8").read())
+    manifest_payload = json.loads(open(manifest_path, encoding="utf-8").read())
 
     assert result.status == "completed"
     assert manifest_payload["workflow_id"] == "export-demo"

@@ -141,7 +141,9 @@ def _operation_fingerprint(op: dict[str, Any]) -> dict[str, Any]:
                 "required": bool(p.get("required", False)),
             }
         )
-    params.sort(key=lambda x: (str(x.get("in")), str(x.get("name")), str(x.get("$ref"))))
+    params.sort(
+        key=lambda x: (str(x.get("in")), str(x.get("name")), str(x.get("$ref")))
+    )
     responses: dict[str, str | None] = {}
     for code, resp in (op.get("responses") or {}).items():
         if str(code) not in {"200", "201", "202", "204", "400", "401", "403", "422"}:

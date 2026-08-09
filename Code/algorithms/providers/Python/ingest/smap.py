@@ -4,7 +4,8 @@ import re
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Iterable
+from typing import Any
+from collections.abc import Iterable
 
 
 SMAP_DATE_PATTERN = re.compile(r"(\d{8})")

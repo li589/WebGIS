@@ -22,7 +22,7 @@ from __future__ import annotations
 import json
 import logging
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime, UTC
 from pathlib import Path
 from typing import Any
 from uuid import uuid4
@@ -292,7 +292,7 @@ class DownloadOrchestrator:
                 "partial_success": False,
                 "last_error": None,
                 "last_attempt_at": None,
-                "completed_at": requested_at.astimezone(timezone.utc).isoformat(),
+                "completed_at": requested_at.astimezone(UTC).isoformat(),
             }
         return {
             "ticket_id": download_ticket_id,

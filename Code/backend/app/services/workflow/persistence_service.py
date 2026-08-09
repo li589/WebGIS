@@ -7,7 +7,7 @@ orchestration logic.
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import datetime, UTC
 import logging
 from uuid import uuid4
 
@@ -112,7 +112,7 @@ class WorkflowPersistenceService:
             channel=resolved_channel,
             level=resolved_level,
             message=message,
-            created_at=created_at or datetime.now(timezone.utc),
+            created_at=created_at or datetime.now(UTC),
             progress=progress,
             payload=payload or {},
         )

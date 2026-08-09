@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 import logging
 import sqlite3
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta, UTC
 from pathlib import Path
 from typing import Any
 
@@ -400,9 +400,7 @@ class SQLiteWorkflowRepository:
         Returns:
             {"runs_deleted": N, "events_deleted": M, "vacuumed": 0|1}
         """
-        cutoff = (
-            datetime.now(timezone.utc) - timedelta(days=retention_days)
-        ).isoformat()
+        cutoff = (datetime.now(UTC) - timedelta(days=retention_days)).isoformat()
         stats = {"runs_deleted": 0, "events_deleted": 0, "vacuumed": 0}
 
         with self._connect() as connection:

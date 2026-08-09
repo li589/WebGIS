@@ -15,7 +15,8 @@ from __future__ import annotations
 import logging
 import time
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any
+from collections.abc import Callable
 
 from ingest.nsidc_download import (
     DOWNLOAD_TIMEOUT,

@@ -20,7 +20,7 @@ Does NOT touch cache upsert logic or fetch state machines — those live in
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import datetime, UTC
 from typing import Any
 from uuid import uuid4
 
@@ -103,7 +103,7 @@ class DownloadManifestWriter:
         """
         manifest_payload = {
             "manifest_version": 1,
-            "generated_at": requested_at.astimezone(timezone.utc).isoformat(),
+            "generated_at": requested_at.astimezone(UTC).isoformat(),
             "workflow": {
                 "run_id": run_id,
                 "download_ticket_id": download_ticket_id,
@@ -157,7 +157,7 @@ class DownloadManifestWriter:
         execution_payload = summary_payload.get("execution", {})
         return {
             "manifest_version": 1,
-            "generated_at": datetime.now(timezone.utc).isoformat(),
+            "generated_at": datetime.now(UTC).isoformat(),
             "workflow": {
                 "run_id": run_id,
                 "download_ticket_id": execution_payload.get("download_ticket_id"),

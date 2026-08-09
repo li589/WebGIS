@@ -5,9 +5,10 @@ import logging
 import os
 from functools import lru_cache
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 from app.core.config import settings
+from datetime import UTC
 
 logger = logging.getLogger(__name__)
 
@@ -153,10 +154,10 @@ def list_api_keys() -> list[dict[str, Any]]:
 def upsert_api_key(
     key_name: str,
     key_value: str,
-    display_name: Optional[str] = None,
-    description: Optional[str] = None,
+    display_name: str | None = None,
+    description: str | None = None,
     enabled: bool = True,
-    history_label: Optional[str] = None,
+    history_label: str | None = None,
     history_source: str = "user",
 ) -> dict[str, Any]:
     """新增或更新 API Key。"""
@@ -308,7 +309,7 @@ def _sync_api_config_manager_key(key_name: str, key_value: str) -> None:
 
 
 @lru_cache(maxsize=32)
-def _get_effective_api_key_cached(key_name: str) -> Optional[str]:
+def _get_effective_api_key_cached(key_name: str) -> str | None:
     """DB 行存在时仅在 enabled 时生效；无 DB 行才回退 env。"""
     repo = _get_api_keys_repository()
     info = repo.get_key_info(key_name)
@@ -320,7 +321,7 @@ def _get_effective_api_key_cached(key_name: str) -> Optional[str]:
     return env_value or None
 
 
-def get_effective_api_key(key_name: str) -> Optional[str]:
+def get_effective_api_key(key_name: str) -> str | None:
     """获取生效的 API Key（公开接口）。"""
     return _get_effective_api_key_cached(key_name)
 
@@ -448,7 +449,7 @@ def list_gee_accounts() -> list[dict[str, Any]]:
 def add_gee_account(
     account_id: str,
     service_account_json: dict[str, Any],
-    display_name: Optional[str] = None,
+    display_name: str | None = None,
 ) -> dict[str, Any]:
     """新增 GEE 账户。"""
     repo = _get_gee_credentials_repository()
@@ -1502,7 +1503,7 @@ def test_remote_storage_profile(
     profile_id: str, uri: str | None = None
 ) -> dict[str, Any]:
     """Probe connectivity for a credential profile (auth/host, not object existence)."""
-    from datetime import datetime, timezone
+    from datetime import datetime
 
     from app.services.remote_auth_resolver import resolve_remote_auth
     from shared.remote_sources.download import (
@@ -1518,14 +1519,14 @@ def test_remote_storage_profile(
             "profile_id": profile_id,
             "success": False,
             "message": f"Profile not found: {profile_id}",
-            "tested_at": datetime.now(timezone.utc).isoformat(),
+            "tested_at": datetime.now(UTC).isoformat(),
         }
     if not info.get("enabled"):
         return {
             "profile_id": profile_id,
             "success": False,
             "message": "Profile is disabled",
-            "tested_at": datetime.now(timezone.utc).isoformat(),
+            "tested_at": datetime.now(UTC).isoformat(),
         }
 
     protocol = info["protocol"]
@@ -1542,7 +1543,7 @@ def test_remote_storage_profile(
                 "profile_id": profile_id,
                 "success": False,
                 "message": "SMB profile requires extra.default_share for connectivity probe",
-                "tested_at": datetime.now(timezone.utc).isoformat(),
+                "tested_at": datetime.now(UTC).isoformat(),
             }
         probe_uri = f"smb://{host_part}/{share}/"
     elif protocol == "gs":
@@ -1569,7 +1570,7 @@ def test_remote_storage_profile(
                     "profile_id": profile_id,
                     "success": False,
                     "message": str(exc),
-                    "tested_at": datetime.now(timezone.utc).isoformat(),
+                    "tested_at": datetime.now(UTC).isoformat(),
                 }
         if "cred=" not in probe_uri:
             sep = "&" if "?" in probe_uri else "?"
@@ -1585,7 +1586,7 @@ def test_remote_storage_profile(
             "profile_id": profile_id,
             "success": True,
             "message": f"Probe OK: {redact_uri(probe_uri)}",
-            "tested_at": datetime.now(timezone.utc).isoformat(),
+            "tested_at": datetime.now(UTC).isoformat(),
         }
     except Exception as exc:
         repo.update_test_status(profile_id, "failed")
@@ -1593,7 +1594,7 @@ def test_remote_storage_profile(
             "profile_id": profile_id,
             "success": False,
             "message": str(exc),
-            "tested_at": datetime.now(timezone.utc).isoformat(),
+            "tested_at": datetime.now(UTC).isoformat(),
         }
 
 

@@ -33,7 +33,8 @@ import posixpath
 import stat
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Callable, Iterator
+from typing import Any
+from collections.abc import Callable, Iterator
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
@@ -282,7 +283,7 @@ def _sftp_walk(
     """递归遍历远程目录，yield (remote_path, rel_path, size)。"""
     try:
         entries = sftp.listdir_attr(remote_dir)
-    except IOError as exc:
+    except OSError as exc:
         logger.error("无法列出远程目录 %s: %s", remote_dir, exc)
         return
 

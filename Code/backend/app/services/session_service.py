@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 import secrets
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta, UTC
 from typing import Any
 
 from app.core.config import settings
@@ -22,9 +22,7 @@ def _session_ttl_seconds() -> int:
 
 
 def _expires_at_iso() -> str:
-    return (
-        datetime.now(timezone.utc) + timedelta(seconds=_session_ttl_seconds())
-    ).isoformat()
+    return (datetime.now(UTC) + timedelta(seconds=_session_ttl_seconds())).isoformat()
 
 
 def _track_user_session(user_id: int, token: str) -> None:
@@ -79,8 +77,8 @@ def get_session(token: str | None) -> dict[str, Any] | None:
         if expires_raw:
             expires = datetime.fromisoformat(str(expires_raw))
             if expires.tzinfo is None:
-                expires = expires.replace(tzinfo=timezone.utc)
-            if expires <= datetime.now(timezone.utc):
+                expires = expires.replace(tzinfo=UTC)
+            if expires <= datetime.now(UTC):
                 revoke_session(token)
                 return None
         return cached

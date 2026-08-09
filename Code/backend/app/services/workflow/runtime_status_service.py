@@ -7,7 +7,7 @@ runtime observability from workflow orchestration.
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import datetime, UTC
 import logging
 from typing import Any
 
@@ -103,7 +103,7 @@ class RuntimeStatusService:
         self._repository = repository or SQLiteWorkflowRepository()
 
     def get_runtime_status(self) -> RuntimeStatusResponse:
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         active_run_count = self._repository.count_active_runs()
         active_business_run_count = self._repository.count_active_runs(
             run_class="business"
@@ -268,7 +268,7 @@ class RuntimeStatusService:
     def update_runtime_config(
         self, payload: RuntimeConfigUpdateRequest
     ) -> RuntimeConfigUpdateResponse:
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         self._validate_runtime_config(payload)
         applied_count = self._repository.apply_runtime_config(payload.items)
         try:

@@ -29,9 +29,9 @@ from __future__ import annotations
 import json
 import logging
 import sqlite3
-from datetime import datetime, timezone
+from datetime import datetime, UTC
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 from app.services._sqlite_pool import SQLiteConnectionPool
 
@@ -178,14 +178,14 @@ class WeatherProvidersRepository:
         self,
         *,
         provider_id: str,
-        display_name: Optional[str] = None,
-        provider_type: Optional[str] = None,
+        display_name: str | None = None,
+        provider_type: str | None = None,
         enabled: bool = True,
         priority: int = 100,
-        config: Optional[dict[str, Any]] = None,
+        config: dict[str, Any] | None = None,
     ) -> dict[str, Any] | None:
         """新增或更新 Provider 配置覆盖。返回脱敏后的记录。"""
-        now = datetime.now(timezone.utc).isoformat()
+        now = datetime.now(UTC).isoformat()
 
         # 加密配置（如有）
         if config is not None:
@@ -276,7 +276,7 @@ class WeatherProvidersRepository:
                 "UPDATE weather_providers SET enabled=?, updated_at=? WHERE provider_id=?",
                 (
                     1 if enabled else 0,
-                    datetime.now(timezone.utc).isoformat(),
+                    datetime.now(UTC).isoformat(),
                     provider_id,
                 ),
             )
@@ -287,7 +287,7 @@ class WeatherProvidersRepository:
         with self._connect() as conn:
             cur = conn.execute(
                 "UPDATE weather_providers SET priority=?, updated_at=? WHERE provider_id=?",
-                (priority, datetime.now(timezone.utc).isoformat(), provider_id),
+                (priority, datetime.now(UTC).isoformat(), provider_id),
             )
             conn.commit()
             return cur.rowcount > 0
@@ -296,7 +296,7 @@ class WeatherProvidersRepository:
         with self._connect() as conn:
             conn.execute(
                 "UPDATE weather_providers SET last_tested_at=?, last_test_status=? WHERE provider_id=?",
-                (datetime.now(timezone.utc).isoformat(), status, provider_id),
+                (datetime.now(UTC).isoformat(), status, provider_id),
             )
             conn.commit()
 

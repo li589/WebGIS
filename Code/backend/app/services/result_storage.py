@@ -1,13 +1,13 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime, UTC
 from itertools import islice
 import json
 import logging
 from pathlib import Path
 import re
-from typing import Iterator
+from collections.abc import Iterator
 from uuid import uuid4
 
 from app.core.config import settings
@@ -59,7 +59,7 @@ class ResultStorageService:
                 "run_id": run_id,
                 "result_id": result_id,
                 "title": title,
-                "created_at": datetime.now(timezone.utc).isoformat(),
+                "created_at": datetime.now(UTC).isoformat(),
             },
         )
         return WorkflowResultReference(
@@ -101,7 +101,7 @@ class ResultStorageService:
                 "run_id": run_id,
                 "result_id": existing_ref.result_id,
                 "title": existing_ref.title,
-                "created_at": datetime.now(timezone.utc).isoformat(),
+                "created_at": datetime.now(UTC).isoformat(),
             },
         )
         return WorkflowResultReference(
@@ -252,7 +252,7 @@ class ResultStorageService:
                 "title": title,
                 "chunk_count": chunk_count,
                 "item_count": total_items,
-                "created_at": datetime.now(timezone.utc).isoformat(),
+                "created_at": datetime.now(UTC).isoformat(),
             },
         )
         return (
@@ -288,7 +288,7 @@ class ResultStorageService:
                 "run_id": run_id,
                 "result_id": result_ref.result_id,
                 "title": result_ref.title,
-                "created_at": datetime.now(timezone.utc).isoformat(),
+                "created_at": datetime.now(UTC).isoformat(),
             },
         )
         return StoredArtifact(

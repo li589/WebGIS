@@ -50,7 +50,7 @@ class NodeExecutionContext:
     request: JobRequest
     runtime_context: RuntimeContext
     workspace: Path
-    artifact_store: "ArtifactStoreLike"
+    artifact_store: ArtifactStoreLike
     datasource_adapter: Any = None
     logger_adapter: Any = None
     product_sink: Any = None

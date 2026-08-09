@@ -1347,7 +1347,7 @@ export const useLayersStore = defineStore('layers', () => {
       }
     }
     if (!imports.length) {
-      // 审查 BUG-4：原始 imports 为空（非 dismiss 滤空）时给出可见空态
+      // 原始 imports 为空（非 dismiss 滤空）时给出可见空态
       const emptyMsg = resolveEmptyOverlayWorkflowError({
         runId,
         rawImportCount: 0,

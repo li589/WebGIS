@@ -10,7 +10,8 @@ import shutil
 import time
 from contextlib import contextmanager
 from pathlib import Path
-from typing import Any, Iterator
+from typing import Any
+from collections.abc import Iterator
 
 from rasterio.warp import transform_bounds as _transform_bounds
 

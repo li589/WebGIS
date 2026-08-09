@@ -12,7 +12,7 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime, UTC
 import logging
 from pathlib import Path
 from typing import Any
@@ -77,9 +77,9 @@ class HttpSourceFetcher(SourceFetcher):
         source_uri: str,
         artifact_key_prefix: str,
     ) -> FetchResult:
-        fetched_at = datetime.now(timezone.utc).isoformat()
+        fetched_at = datetime.now(UTC).isoformat()
         try:
-            # 发布就绪修复（P0-2）+ 审查 BUG-1：safe_urlopen 对初始 URL 与每次
+            # safe_urlopen 对初始 URL 与每次
             # 重定向 Location 均做 SSRF 校验，避免 urlopen 默认跟随 3xx 绕过到环回。
             from app.core.ssrf import default_allow_private, safe_urlopen
 
@@ -141,7 +141,7 @@ class MinioSourceFetcher(SourceFetcher):
         source_uri: str,
         artifact_key_prefix: str,
     ) -> FetchResult:
-        fetched_at = datetime.now(timezone.utc).isoformat()
+        fetched_at = datetime.now(UTC).isoformat()
         try:
             from minio import Minio  # type: ignore[import-not-found]
         except ImportError:
@@ -224,7 +224,7 @@ class LocalFileSourceFetcher(SourceFetcher):
         source_uri: str,
         artifact_key_prefix: str,
     ) -> FetchResult:
-        fetched_at = datetime.now(timezone.utc).isoformat()
+        fetched_at = datetime.now(UTC).isoformat()
         parsed = urlparse(source_uri)
         # file:///C:/path → C:/path；file:///path → /path
         # local://path → path（相对或绝对）
@@ -310,7 +310,7 @@ class RemoteProtocolSourceFetcher(SourceFetcher):
         source_uri: str,
         artifact_key_prefix: str,
     ) -> FetchResult:
-        fetched_at = datetime.now(timezone.utc).isoformat()
+        fetched_at = datetime.now(UTC).isoformat()
         try:
             from app.services.remote_auth_resolver import resolve_remote_auth
             from shared.remote_sources.download import download_remote_uri
@@ -388,7 +388,7 @@ class DemoSourceFetcher(SourceFetcher):
                 f"{settings.environment}）已禁用。展出演示请设 "
                 "BACKEND_DEMO_SOURCES_ENABLED=true 显式开启，或使用真实数据源。"
             )
-        fetched_at = datetime.now(timezone.utc).isoformat()
+        fetched_at = datetime.now(UTC).isoformat()
         payload = {
             "ref_id": ref_id,
             "source_uri": source_uri,
@@ -481,7 +481,7 @@ class SourceFetcherRegistry:
                         ref_id=ref_id,
                         success=False,
                         error="source_uri is empty",
-                        fetched_at=datetime.now(timezone.utc).isoformat(),
+                        fetched_at=datetime.now(UTC).isoformat(),
                     )
                 )
                 continue

@@ -1,7 +1,8 @@
 from __future__ import annotations
 
 from datetime import datetime, timedelta
-from typing import Any, Iterable
+from typing import Any
+from collections.abc import Iterable
 
 # ─── Savitzky-Golay 滤波默认参数（无量纲） ───────────────────────────────────
 # Sprint 3.2 (D1): polyorder 从 6 降为 3。window=9 + polyorder=6 自由度仅 2（过拟合），

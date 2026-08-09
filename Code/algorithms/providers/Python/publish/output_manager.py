@@ -11,7 +11,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Optional
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 
@@ -53,9 +53,9 @@ class OutputManager:
         *,
         module_name: str = "",
         workflow_name: str = "",
-        time_range: Optional[dict] = None,
-        region: Optional[dict] = None,
-        storage_backend: Optional[Any] = None,
+        time_range: dict | None = None,
+        region: dict | None = None,
+        storage_backend: Any | None = None,
     ):
         self.output_root = Path(output_root)
         self.job_id = job_id
@@ -68,12 +68,12 @@ class OutputManager:
         self.job_dir: Path = self.output_root / job_id
 
         # 内部组件（延迟导入避免循环依赖）
-        self._cog_writer: Optional[Any] = None
-        self._preview_gen: Optional[Any] = None
-        self._table_writer: Optional[Any] = None
+        self._cog_writer: Any | None = None
+        self._preview_gen: Any | None = None
+        self._table_writer: Any | None = None
 
         # manifest 构建器
-        self._manifest_builder: Optional[Any] = None
+        self._manifest_builder: Any | None = None
 
     def _ensure_dirs(self) -> None:
         """确保所有子目录已创建。"""
@@ -100,8 +100,8 @@ class OutputManager:
         data: np.ndarray,
         *,
         crs: str = "EPSG:4326",
-        transform: Optional["Affine"] = None,
-        nodata: Optional[float] = None,
+        transform: Affine | None = None,
+        nodata: float | None = None,
         unit: str = "",
         description: str = "",
         generate_preview: bool = True,
@@ -213,7 +213,7 @@ class OutputManager:
     def write_table(
         self,
         name: str,
-        df: "DataFrame",
+        df: DataFrame,
         *,
         description: str = "",
         index: bool = False,
@@ -330,7 +330,7 @@ class OutputManager:
         self._ensure_manifest_builder()
         self._manifest_builder.add_diagnostic(key, value)
 
-    def write_manifest(self, extra: Optional[dict] = None) -> dict:
+    def write_manifest(self, extra: dict | None = None) -> dict:
         """写出 manifest.json，返回 manifest 内容。
 
         manifest 同时写入本地和 storage_backend（如已配置）。

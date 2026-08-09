@@ -1,5 +1,5 @@
 import os
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta, UTC
 from threading import Lock
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
@@ -37,7 +37,7 @@ class EventsPollRateLimiter:
         self._requests: dict[str, list[datetime]] = {}
 
     def check(self, ip: str) -> bool:
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         cutoff = now - self._window
         with self._lock:
             timestamps = self._requests.pop(ip, None)
@@ -242,7 +242,7 @@ def materialize_workflow_map_layers(run_id: str) -> dict:
     re-publish after code updates without re-running the inversion.
     Also allowed while ``running`` so block mats can progressively appear.
     """
-    from datetime import datetime, timezone
+    from datetime import datetime
     from pathlib import Path
 
     from app.core.config import settings
@@ -307,7 +307,7 @@ def materialize_workflow_map_layers(run_id: str) -> dict:
         )
         refs = python_provider_result_builder._build_product_map_layer_refs(
             run_id=run_id,
-            requested_at=datetime.now(timezone.utc),
+            requested_at=datetime.now(UTC),
             payload=payload,
             result_dto=result_dto,
             time_start=time_start,

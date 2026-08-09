@@ -8,7 +8,7 @@ from pathlib import Path
 import sys
 import threading
 from typing import Any
-from typing import Iterator
+from collections.abc import Iterator
 
 from app.core.config import settings
 from app.services.engine_request_registry import (
