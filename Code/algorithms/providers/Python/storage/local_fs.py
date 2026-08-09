@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from path_utils import local_path_to_uri
 from storage.base import StorageBackend
 
 
@@ -154,6 +155,7 @@ class LocalFileSystemStorage(StorageBackend):
         """
         # 将逻辑路径转换为绝对路径，确保 URI 正确
         abs_path = self._to_absolute(path)
-        # 使用 pathlib 生成规范化的 file:// URI
-        uri = abs_path.as_uri()
+        # 跨平台安全的 file:// URI（runtime-local 逻辑路径，无需 resolve 以免
+        # Windows 8.3 短名规范化改变 URI；统一走 local_path_to_uri 闭合 CC-4）
+        uri = local_path_to_uri(abs_path)
         return uri

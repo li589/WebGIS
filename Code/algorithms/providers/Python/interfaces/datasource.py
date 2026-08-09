@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, Protocol
 
 from contracts.data import DataBundle, DataRequest
+from path_utils import local_path_to_uri
 
 if TYPE_CHECKING:
     from storage.base import StorageBackend
@@ -351,6 +352,6 @@ class DataSourceAdapterImpl:
             local_path = temp_dir / Path(object_key).name
             local_path.write_bytes(data)
 
-            return local_path.as_uri()
+            return local_path_to_uri(local_path)
         except Exception as e:
             raise RuntimeError(f"从 S3 下载失败 [{s3_uri}]: {e}") from e

@@ -6,6 +6,7 @@ from pathlib import Path
 from urllib.parse import urlparse
 
 from data_access.contracts import DataRequestV2, ResourceRef, build_resource_ref
+from path_utils import local_path_to_uri
 from shared.remote_sources.download import download_remote_uri
 from shared.remote_sources.limits import get_max_remote_bytes
 from shared.remote_sources.protocol import RemoteAuth
@@ -98,7 +99,7 @@ class RemoteSource:
         if target_dir is not None:
             staged["target_dir"] = str(target_dir)
         return build_resource_ref(
-            uri=local_path.as_uri(),
+            uri=local_path_to_uri(local_path),
             source_kind=resource.source_kind,
             format=resource.format,
             logical_type=resource.logical_type,

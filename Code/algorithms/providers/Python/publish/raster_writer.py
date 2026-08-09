@@ -14,6 +14,8 @@ from typing import TYPE_CHECKING, Any
 
 import numpy as np
 
+from path_utils import local_path_to_uri
+
 if TYPE_CHECKING:
     from rasterio import Affine
 
@@ -306,7 +308,7 @@ class COGWriter:
         file_size = output_file.stat().st_size
         if file_size == 0:
             raise OSError(f"写入失败，文件大小为 0: {output_file}")
-        return {**metadata, "uri": str(output_file.resolve().as_uri())}
+        return {**metadata, "uri": local_path_to_uri(output_file, resolve=True)}
 
 
 # ---------------------------------------------------------------------------
@@ -482,4 +484,4 @@ class PreviewGenerator:
         file_size = output_file.stat().st_size
         if file_size == 0:
             raise OSError("预览图写入失败，文件大小为 0")
-        return {**metadata, "uri": str(output_file.resolve().as_uri())}
+        return {**metadata, "uri": local_path_to_uri(output_file, resolve=True)}

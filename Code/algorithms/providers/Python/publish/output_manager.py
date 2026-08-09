@@ -15,6 +15,8 @@ from typing import TYPE_CHECKING, Any
 
 import numpy as np
 
+from path_utils import local_path_to_uri
+
 # ---------------------------------------------------------------------------
 # 类型检查
 # ---------------------------------------------------------------------------
@@ -155,7 +157,7 @@ class OutputManager:
         # 本地文件写入
         cog_path = self.job_dir / cog_meta["path"]
         cog_path.write_bytes(cog_bytes)
-        local_raster_uri = str(cog_path.resolve().as_uri())
+        local_raster_uri = local_path_to_uri(cog_path, resolve=True)
 
         # 远程存储写入
         remote_raster_uri = self._write_to_backend(cog_meta["path"], cog_bytes)
@@ -187,7 +189,7 @@ class OutputManager:
             # 本地文件写入
             png_path = self.job_dir / png_meta["path"]
             png_path.write_bytes(png_bytes)
-            local_png_uri = str(png_path.resolve().as_uri())
+            local_png_uri = local_path_to_uri(png_path, resolve=True)
 
             # 远程存储写入
             remote_png_uri = self._write_to_backend(png_meta["path"], png_bytes)
@@ -248,7 +250,7 @@ class OutputManager:
         # 本地文件写入
         parquet_path = self.job_dir / parquet_meta["path"]
         parquet_path.write_bytes(parquet_bytes)
-        local_uri = str(parquet_path.resolve().as_uri())
+        local_uri = local_path_to_uri(parquet_path, resolve=True)
 
         # 远程存储写入
         remote_uri = self._write_to_backend(parquet_meta["path"], parquet_bytes)
@@ -351,7 +353,7 @@ class OutputManager:
         # 本地文件写入
         manifest_path = self.job_dir / "manifest.json"
         manifest_path.write_bytes(json_bytes)
-        local_uri = str(manifest_path.resolve().as_uri())
+        local_uri = local_path_to_uri(manifest_path, resolve=True)
 
         result: dict[str, Any] = {"local_uri": local_uri}
         remote_uri = self._write_to_backend("manifest.json", json_bytes)

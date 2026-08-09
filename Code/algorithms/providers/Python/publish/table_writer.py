@@ -12,6 +12,8 @@ from typing import TYPE_CHECKING, Any
 
 import numpy as np
 
+from path_utils import local_path_to_uri
+
 if TYPE_CHECKING:
     import pandas as pd
 
@@ -144,7 +146,7 @@ class TableWriter:
 
         return {
             "path": rel_path,
-            "uri": str(output_file.resolve().as_uri()),
+            "uri": local_path_to_uri(output_file, resolve=True),
             "rows": len(df),
             "columns": list(df.columns),
             "size_bytes": file_size,
@@ -301,7 +303,7 @@ def write_timeseries(
 
     return {
         "path": str(output_path),
-        "uri": str(output_path.resolve().as_uri()),
+        "uri": local_path_to_uri(output_path, resolve=True),
         "rows": n_times,
         "columns": columns,
         "size_bytes": file_size,
