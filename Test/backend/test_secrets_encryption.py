@@ -32,7 +32,7 @@ def test_validate_encryption_key_format_rejects_bad(bad: str) -> None:
 
 def test_assert_encryption_policy_rejects_malformed_key() -> None:
     with patch(
-        "app.services.effective_config.settings",
+        "app.core.config.settings",
         replace(
             settings,
             environment="development",
@@ -45,7 +45,7 @@ def test_assert_encryption_policy_rejects_malformed_key() -> None:
 
 def test_assert_encryption_policy_accepts_valid_key() -> None:
     with patch(
-        "app.services.effective_config.settings",
+        "app.core.config.settings",
         replace(
             settings,
             environment="production",
@@ -57,13 +57,13 @@ def test_assert_encryption_policy_accepts_valid_key() -> None:
 
 def test_refuse_empty_iv_outside_development() -> None:
     with patch(
-        "app.services.effective_config.settings",
+        "app.core.config.settings",
         replace(settings, environment="production"),
     ):
         with pytest.raises(RuntimeError, match="empty-IV"):
             refuse_empty_iv_outside_development("")
     with patch(
-        "app.services.effective_config.settings",
+        "app.core.config.settings",
         replace(settings, environment="development"),
     ):
         refuse_empty_iv_outside_development("")  # allowed in development

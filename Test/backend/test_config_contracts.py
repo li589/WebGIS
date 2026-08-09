@@ -159,7 +159,9 @@ def test_runtime_config_snapshot_shape():
 #        包裹体→200；验证 extra="ignore" 仅透传声明字段 ───────────────────────
 
 
-def test_portal_credential_upsert_declared_fields_incl_clear_secrets(client: TestClient):
+def test_portal_credential_upsert_declared_fields_incl_clear_secrets(
+    client: TestClient,
+):
     resp = client.put(
         "/config/data-source/portal-credentials/earthdata",
         json={
@@ -192,7 +194,9 @@ def test_portal_credential_request_extra_ignored_at_model():
     assert dumped["auth_type"] == "earthdata"
 
 
-def test_portal_credential_upsert_accepts_undeclared_extra_over_http(client: TestClient):
+def test_portal_credential_upsert_accepts_undeclared_extra_over_http(
+    client: TestClient,
+):
     # 通过 HTTP 发送未声明字段，依靠 extra="ignore" 解析而非 422
     resp = client.put(
         "/config/data-source/portal-credentials/earthdata",
@@ -233,28 +237,36 @@ def test_gee_account_toggle_envelope_shape():
 
 
 def test_weather_provider_deleted_envelope_shape():
-    assert WeatherProviderDeletedResponse(deleted=True, provider_id="p1").model_dump() == {
+    assert WeatherProviderDeletedResponse(
+        deleted=True, provider_id="p1"
+    ).model_dump() == {
         "deleted": True,
         "provider_id": "p1",
     }
 
 
 def test_weather_provider_toggle_envelope_shape():
-    assert WeatherProviderToggleResponse(provider_id="p1", enabled=False).model_dump() == {
+    assert WeatherProviderToggleResponse(
+        provider_id="p1", enabled=False
+    ).model_dump() == {
         "provider_id": "p1",
         "enabled": False,
     }
 
 
 def test_weather_provider_priority_envelope_shape():
-    assert WeatherProviderPriorityResponse(provider_id="p1", priority=7).model_dump() == {
+    assert WeatherProviderPriorityResponse(
+        provider_id="p1", priority=7
+    ).model_dump() == {
         "provider_id": "p1",
         "priority": 7,
     }
 
 
 def test_remote_storage_deleted_envelope_shape():
-    assert RemoteStorageDeletedResponse(deleted=True, profile_id="pf1").model_dump() == {
+    assert RemoteStorageDeletedResponse(
+        deleted=True, profile_id="pf1"
+    ).model_dump() == {
         "deleted": True,
         "profile_id": "pf1",
     }
@@ -315,8 +327,7 @@ def test_dev_lan_bypass_allows_write_without_key(
     anon_client: TestClient, monkeypatch: pytest.MonkeyPatch
 ):
     monkeypatch.setattr(
-        deps,
-        "settings",
+        "app.core.config.settings",
         replace(core_settings, environment="development", api_keys_enabled=False),
     )
     monkeypatch.setenv("BACKEND_DEV_AUTH_BYPASS", "true")
@@ -337,7 +348,11 @@ def test_api_key_update_persists_via_thread(client: TestClient):
     name = "tessa_ak_update"
     resp = client.put(
         f"/config/api-keys/{name}",
-        json={"key_value": "tessa-secret-value-123", "enabled": True, "display_name": "Tessa AK"},
+        json={
+            "key_value": "tessa-secret-value-123",
+            "enabled": True,
+            "display_name": "Tessa AK",
+        },
     )
     assert resp.status_code == 200
     assert resp.json()["key_name"] == name
