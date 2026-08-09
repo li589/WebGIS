@@ -151,9 +151,10 @@ def create_app() -> FastAPI:
         allow_headers=["*"],
     )
 
-    # 发布就绪修复（P1-2）：/config 与 /import 写接口的 IP 级限流（超阈 429）。
+    # 发布就绪修复（P1-2）：写接口/登录/天气瓦片的 IP 级限流（超阈 429 + C429001）。
     # P0-10 产品定位决策：目标用户为课题组/研究院（访问量小），限流宽松化，
     # 且 development/test 环境旁路（开发、调试时关闭 IP 限制），仅 production 生效。
+    # 限流计数走 Redis 集中计数（多进程共享阈值），Redis 不可用时降级进程内计数。
     @app.middleware("http")
     async def write_rate_limit_middleware(request: Request, call_next):
         from app.api.rate_limit import (
@@ -161,6 +162,7 @@ def create_app() -> FastAPI:
             check_weather_tile_rate_limit,
             check_write_rate_limit,
             client_ip,
+            rate_limited_response,
             should_rate_limit_login,
             should_rate_limit_weather_tile,
             should_rate_limit_write,
@@ -169,32 +171,32 @@ def create_app() -> FastAPI:
         path = request.url.path
         method = request.method
         env = (settings.environment or "").lower()
-
-        if should_rate_limit_login(path, method):
-            if not check_login_rate_limit(client_ip(request)):
-                from fastapi.responses import JSONResponse
-
-                return JSONResponse(
-                    status_code=429,
-                    content={"detail": "登录尝试过于频繁，请稍后再试。"},
-                )
+        request_id = getattr(request.state, "request_id", None)
 
         if env not in ("test", "testing", "development"):
+            if should_rate_limit_login(path, method):
+                result = check_login_rate_limit(client_ip(request))
+                if not result.allowed:
+                    return rate_limited_response(
+                        result.retry_after_seconds,
+                        message="登录尝试过于频繁，请稍后再试。",
+                        request_id=request_id,
+                    )
             if should_rate_limit_write(path, method):
-                if not check_write_rate_limit(client_ip(request)):
-                    from fastapi.responses import JSONResponse
-
-                    return JSONResponse(
-                        status_code=429,
-                        content={"detail": "写请求过于频繁，请稍后再试。"},
+                result = check_write_rate_limit(client_ip(request))
+                if not result.allowed:
+                    return rate_limited_response(
+                        result.retry_after_seconds,
+                        message="写请求过于频繁，请稍后再试。",
+                        request_id=request_id,
                     )
             if should_rate_limit_weather_tile(path, method):
-                if not check_weather_tile_rate_limit(client_ip(request)):
-                    from fastapi.responses import JSONResponse
-
-                    return JSONResponse(
-                        status_code=429,
-                        content={"detail": "天气瓦片请求过于频繁，请稍后再试。"},
+                result = check_weather_tile_rate_limit(client_ip(request))
+                if not result.allowed:
+                    return rate_limited_response(
+                        result.retry_after_seconds,
+                        message="天气瓦片请求过于频繁，请稍后再试。",
+                        request_id=request_id,
                     )
         return await call_next(request)
 
@@ -237,10 +239,12 @@ def create_app() -> FastAPI:
     @app.exception_handler(StarletteHTTPException)
     async def http_exception_handler(request: Request, exc: StarletteHTTPException):
         request_id = getattr(request.state, "request_id", None)
-        return JSONResponse(
-            status_code=exc.status_code,
-            content={"detail": exc.detail, "request_id": request_id},
-        )
+        content: dict = {"detail": exc.detail, "request_id": request_id}
+        # 业务错误码（ApiError）：统一输出 error_code，见 app/api/error_codes.py
+        error_code = getattr(exc, "error_code", None)
+        if error_code:
+            content["error_code"] = error_code
+        return JSONResponse(status_code=exc.status_code, content=content)
 
     @app.exception_handler(RequestValidationError)
     async def validation_exception_handler(

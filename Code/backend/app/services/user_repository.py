@@ -17,6 +17,10 @@ VALID_ROLES: frozenset[str] = frozenset({"admin", "operator", "viewer"})
 # Fixed hash for timing-equalization when username is missing.
 _DUMMY_PASSWORD_HASH = hash_password("dummy-timing-equalization-secret")
 
+#: ``update_user`` 可写字段白名单（f-string 拼接 SQL 列名时的注入防线：
+#: 未来新增可更新字段必须登记于此，否则断言失败而非静默拼接）。
+_UPDATABLE_COLUMNS = frozenset({"updated_at", "password_hash", "role", "enabled"})
+
 
 def _users_db_path() -> Path:
     state_dir = Path(settings.workflow_state_dir)
@@ -165,6 +169,10 @@ class UserRepository:
         if enabled is not None:
             fields.append("enabled=?")
             params.append(1 if enabled else 0)
+        # 注入防线：拼接的列名必须全部在白名单内（见模块级 _UPDATABLE_COLUMNS），
+        # 用显式检查而非 assert，避免 python -O 下失效。
+        if not set(fields) <= {f"{c}=?" for c in _UPDATABLE_COLUMNS}:
+            raise ValueError(f"unexpected update columns: {fields}")
         params.append(user_id)
         with self._pool.connection() as conn:
             conn.execute(

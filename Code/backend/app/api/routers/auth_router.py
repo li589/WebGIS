@@ -8,6 +8,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from pydantic import BaseModel, Field
 
 from app.api.deps import require_admin, require_session, session_cookie_secure
+from app.api.error_codes import AUTH_ERROR, ApiError
 from app.services.credential_resolver import LOOPBACK_IPS
 from app.core.config import settings
 from app.services import session_service
@@ -154,7 +155,8 @@ def login(body: LoginRequest, response: Response) -> UserPublic:
         )
     user = get_user_repository().verify_credentials(body.username, body.password)
     if user is None:
-        raise HTTPException(
+        raise ApiError(
+            AUTH_ERROR,
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid username or password.",
         )
@@ -183,8 +185,10 @@ def logout(
 def me(ctx: CredentialContext = Depends(require_session)) -> UserPublic:
     user = get_user_repository().get_by_id(int(ctx.user_id))
     if user is None or not user.get("enabled"):
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED, detail="Session expired."
+        raise ApiError(
+            AUTH_ERROR,
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Session expired.",
         )
     return _public_user(user)
 
@@ -306,21 +310,20 @@ def create_token(
 ) -> TokenCreatedResponse:
     target_user_id = body.user_id if body.user_id is not None else int(ctx.user_id)
     if target_user_id != int(ctx.user_id) and ctx.role != "admin":
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN, detail="Admin role required."
+        raise ApiError(
+            AUTH_ERROR,
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Admin role required.",
         )
     user = get_user_repository().get_by_id(target_user_id)
     if user is None or not user.get("enabled"):
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="User not found."
         )
-    token_id, plain = get_user_token_repository().create_token(
+    token_id, plain, created_at = get_user_token_repository().create_token(
         user_id=target_user_id,
         label=body.label,
     )
-    rows = get_user_token_repository().list_tokens_for_user(target_user_id)
-    created_row = next((r for r in rows if int(r["id"]) == token_id), None)
-    created_at = str(created_row["created_at"]) if created_row else ""
     return TokenCreatedResponse(
         id=token_id,
         user_id=target_user_id,
@@ -348,7 +351,9 @@ def revoke_token(
             status_code=status.HTTP_404_NOT_FOUND, detail="Token not found."
         )
     if ctx.role != "admin" and int(owned["user_id"]) != int(ctx.user_id):
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Forbidden.")
+        raise ApiError(
+            AUTH_ERROR, status_code=status.HTTP_403_FORBIDDEN, detail="Forbidden."
+        )
     if not token_repo.revoke_token(token_id):
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="Token not found."

@@ -57,7 +57,12 @@ class UserTokenRepository:
         user_id: int,
         label: str | None = None,
         expires_at: str | None = None,
-    ) -> tuple[int, str]:
+    ) -> tuple[int, str, str]:
+        """创建用户 API Token，返回 ``(id, 明文, created_at)``。
+
+        ``created_at`` 由仓库生成并直接返回，调用方无需二次查询
+        （避免 auth_router 里创建后再 list 一遍取时间的小 N+1）。
+        """
         plain = f"cgda_{secrets.token_urlsafe(32)}"
         lookup = _token_lookup(plain)
         now = datetime.now(timezone.utc).isoformat()
@@ -71,7 +76,7 @@ class UserTokenRepository:
                 (user_id, lookup, label, now, expires_at),
             )
             conn.commit()
-            return int(cur.lastrowid), plain
+            return int(cur.lastrowid), plain, now
 
     def resolve_token(self, token: str) -> dict[str, Any] | None:
         lookup = _token_lookup(token)

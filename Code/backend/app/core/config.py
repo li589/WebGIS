@@ -71,6 +71,10 @@ class Settings:
     host: str = os.getenv("BACKEND_HOST", "127.0.0.1")
     port: int = int(os.getenv("BACKEND_PORT", "8000"))
     reload: bool = os.getenv("BACKEND_RELOAD", "true").lower() == "true"
+    # 多进程部署：uvicorn workers 数（默认 1，保留开发热重载）。多 worker 下必须依赖
+    # Redis 集中限流/会话（见 app/api/rate_limit.py），且 lifespan 初始化须幂等
+    # （bootstrap_auth 等已做并发竞争兜底）。生产可设 BACKEND_FASTAPI_WORKERS=2+。
+    fastapi_workers: int = max(1, int(os.getenv("BACKEND_FASTAPI_WORKERS", "1")))
     workflow_executor: str = os.getenv("BACKEND_WORKFLOW_EXECUTOR", "sync")
     redis_url: str = os.getenv("BACKEND_REDIS_URL", "redis://127.0.0.1:6379/0")
     celery_broker_url: str = os.getenv("BACKEND_CELERY_BROKER_URL", redis_url)
