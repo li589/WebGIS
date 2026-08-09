@@ -27,6 +27,7 @@ from datetime import datetime
 from functools import lru_cache
 import importlib
 import logging
+import os
 from pathlib import Path
 import sys
 import threading
@@ -346,6 +347,28 @@ class PythonProviderBridgeService:
                         "resolution_diagnostics": resolution_diagnostics,
                     },
                 )
+
+        # 注入并发配置到当前进程 env，供算法包 _parallel.auto_process_count 与
+        # dispatch.WorkflowRunner 读取。热更新：每次 execute 读最新 effective_config
+        # （前端 PATCH 后下次算法执行立即生效）。CGDA_MAX_PARALLEL_WORKERS=0/删除=自动。
+        try:
+            from app.services.effective_config import (
+                get_algorithm_max_parallel_workers,
+                get_workflow_node_parallelism,
+            )
+
+            _ampw = get_algorithm_max_parallel_workers()
+            if _ampw > 0:
+                os.environ["CGDA_MAX_PARALLEL_WORKERS"] = str(_ampw)
+            else:
+                os.environ.pop("CGDA_MAX_PARALLEL_WORKERS", None)
+            os.environ["CGDA_WORKFLOW_NODE_PARALLELISM"] = str(
+                get_workflow_node_parallelism()
+            )
+        except Exception:
+            logging.getLogger(__name__).debug(
+                "Failed to apply concurrency env from effective_config", exc_info=True
+            )
 
         # D2+D3 修复：设置线程局部事件上下文，使 _EventForwardingLoggerAdapter
         # 能在算法执行期间将 emit_progress/emit_stage_start 等调用转发为

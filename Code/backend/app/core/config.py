@@ -438,6 +438,32 @@ class Settings:
         "BACKEND_CELERY_WORKER_POOL",
         "solo" if sys.platform.startswith("win") else "prefork",
     )
+    # Celery worker 单进程最大任务数（防内存泄漏兜底）。
+    # worker 进程处理此数量任务后自动回收重启。0=不限制。
+    # 注意：按任务数回收，不会 kill 正在运行的任务。用户要求"运行中内存超
+    # 设定值不 kill"，故不启用 max_memory_per_child（后者会 recycle 运行中任务）。
+    celery_worker_max_tasks_per_child: int = int(
+        os.getenv("BACKEND_CELERY_WORKER_MAX_TASKS_PER_CHILD", "0")
+    )
+    # 单任务内存预算（MB，声明值，0=不限制）。
+    # 仅作调度准入参考与启动时资源分配依据；任务运行中超过此值不会被 kill
+    # （只要不超过系统总可用内存）。用于多任务并发时的资源规划。
+    task_memory_budget_mb: int = int(os.getenv("BACKEND_TASK_MEMORY_BUDGET_MB", "0"))
+    # 单任务 CPU 预算核数（声明值，0=不限制）。
+    # 同上，仅作调度准入参考；不硬限制运行中任务的 CPU 使用。
+    task_cpu_budget_cores: int = int(os.getenv("BACKEND_TASK_CPU_BUDGET_CORES", "0"))
+    # 工作流就绪节点并行度：同一工作流内无依赖关系的就绪节点并行执行数。
+    # 1=串行（兼容旧行为）；>1 时同层就绪节点用线程池并行执行。
+    # 注意：节点内算法若已用 ProcessPoolExecutor，实际进程数 = 节点并行度 ×
+    # 每节点进程数，须与 algorithm_max_parallel_workers 协调避免过订阅。
+    workflow_node_parallelism: int = int(
+        os.getenv("BACKEND_WORKFLOW_NODE_PARALLELISM", "1")
+    )
+    # 算法包单任务最大并行进程数（原 CGDA_MAX_PARALLEL_WORKERS env 纳入 Settings）。
+    # 0=自动（按 CPU/内存自适应）；>0 时硬上限。启动 worker 时注入子进程 env。
+    algorithm_max_parallel_workers: int = int(
+        os.getenv("BACKEND_ALGORITHM_MAX_PARALLEL_WORKERS", "0")
+    )
 
     # ---- Phase 1 工程治理开关 ----
     # 远端数据源就绪检查时是否短超时 probe（stat）；默认只校验凭证可解析

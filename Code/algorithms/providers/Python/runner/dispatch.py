@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from dataclasses import asdict, replace
 from datetime import UTC, datetime
 from pathlib import Path
@@ -731,10 +732,20 @@ def run_job(
             logger_adapter.emit_stage_start(
                 "workflow_dispatch", f"Execute workflow {workflow_name}"
             )
+            # 节点级并行度由 bridge service 注入 CGDA_WORKFLOW_NODE_PARALLELISM env
+            # （默认 1=串行，兼容旧行为）。
+            try:
+                _node_parallelism = max(
+                    1,
+                    int(os.environ.get("CGDA_WORKFLOW_NODE_PARALLELISM", "1") or "1"),
+                )
+            except (TypeError, ValueError):
+                _node_parallelism = 1
             workflow_runner = WorkflowRunner(
                 datasource_adapter=datasource_adapter,
                 logger_adapter=logger_adapter,
                 product_sink=resolved_product_sink,
+                node_parallelism=_node_parallelism,
             )
             workflow_result = workflow_runner.run(
                 workflow_definition, working_request, ctx

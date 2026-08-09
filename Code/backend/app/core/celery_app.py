@@ -67,6 +67,10 @@ if celery_available:
         # launch.py 可按 worker 角色用 -c / --prefetch-multiplier 覆盖。
         worker_concurrency=settings.celery_worker_concurrency,
         worker_prefetch_multiplier=settings.celery_worker_prefetch_multiplier,
+        # 防内存泄漏兜底：worker 进程处理此数任务后回收重启（0=不限制）。
+        # 仅 prefork 池生效（solo 池无子进程可回收）。按任务数回收不会 kill
+        # 运行中任务；不启用 max_memory_per_child 以遵守"运行中内存超限不 kill"。
+        worker_max_tasks_per_child=settings.celery_worker_max_tasks_per_child,
         # 发布就绪修复（P0-7）：broker_transport_options。
         # visibility_timeout 必须 > 最长 task_time_limit（workflow=7500s），否则 acks_late
         # 下长任务会在 visibility 超时（Redis 默认 3600s）后被重投到另一 worker → 并发重复执行。

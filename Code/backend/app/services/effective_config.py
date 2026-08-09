@@ -40,6 +40,11 @@ class RuntimeSnapshot:
     result_inline_max_bytes: int = 131072
     celery_task_soft_time_limit: int = 300
     celery_task_time_limit: int = 360
+    # 并发与资源（热更新类）
+    workflow_node_parallelism: int = 1
+    algorithm_max_parallel_workers: int = 0
+    task_memory_budget_mb: int = 0
+    task_cpu_budget_cores: int = 0
     hydrated: bool = False
 
 
@@ -229,6 +234,42 @@ def hydrate_effective_config() -> RuntimeSnapshot:
                     "celery_task_time_limit", config.settings.celery_task_time_limit
                 )
             ),
+            workflow_node_parallelism=max(
+                1,
+                int(
+                    overrides.get(
+                        "workflow_node_parallelism",
+                        config.settings.workflow_node_parallelism,
+                    )
+                ),
+            ),
+            algorithm_max_parallel_workers=max(
+                0,
+                int(
+                    overrides.get(
+                        "algorithm_max_parallel_workers",
+                        config.settings.algorithm_max_parallel_workers,
+                    )
+                ),
+            ),
+            task_memory_budget_mb=max(
+                0,
+                int(
+                    overrides.get(
+                        "task_memory_budget_mb",
+                        config.settings.task_memory_budget_mb,
+                    )
+                ),
+            ),
+            task_cpu_budget_cores=max(
+                0,
+                int(
+                    overrides.get(
+                        "task_cpu_budget_cores",
+                        config.settings.task_cpu_budget_cores,
+                    )
+                ),
+            ),
             hydrated=True,
         )
         _snapshot = snap
@@ -360,3 +401,27 @@ def get_celery_task_soft_time_limit() -> int:
 
 def get_celery_task_time_limit() -> int:
     return get_runtime_snapshot().celery_task_time_limit
+
+
+def get_workflow_node_parallelism() -> int:
+    """工作流就绪节点并行度（热更新，executor 每次执行时读取）。"""
+    return get_runtime_snapshot().workflow_node_parallelism
+
+
+def get_algorithm_max_parallel_workers() -> int:
+    """算法包单任务最大并行进程数（0=自动）。
+
+    bridge service 在调用算法 run_job 前读取本值并注入 os.environ
+    ``CGDA_MAX_PARALLEL_WORKERS``，使算法包 _parallel.auto_process_count 生效。
+    """
+    return get_runtime_snapshot().algorithm_max_parallel_workers
+
+
+def get_task_memory_budget_mb() -> int:
+    """单任务内存预算（MB，声明值，0=不限制）。调度准入参考，非硬 kill。"""
+    return get_runtime_snapshot().task_memory_budget_mb
+
+
+def get_task_cpu_budget_cores() -> int:
+    """单任务 CPU 预算核数（声明值，0=不限制）。调度准入参考，非硬 kill。"""
+    return get_runtime_snapshot().task_cpu_budget_cores
