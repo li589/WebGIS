@@ -52,12 +52,22 @@ def bootstrap_auth() -> None:
             raise RuntimeError(
                 "No users in database and admin credentials not configured."
             )
-        repo.create_user(
-            username=admin_user,
-            password=admin_password,
-            role="admin",
-        )
-        logger.info("Bootstrapped initial admin user: %s", admin_user)
+        try:
+            repo.create_user(
+                username=admin_user,
+                password=admin_password,
+                role="admin",
+            )
+            logger.info("Bootstrapped initial admin user: %s", admin_user)
+        except ValueError:
+            # 多进程同时启动（uvicorn workers > 1）时，多个 worker 可能同时判定
+            # count==0 并并发创建 admin；唯一约束冲突属正常竞争，重查即可。
+            existing = repo.get_by_username(admin_user)
+            if existing is None:
+                raise
+            logger.warning(
+                "Initial admin already bootstrapped by another worker: %s", admin_user
+            )
 
     if _is_development():
         _bootstrap_dev_api_key()
@@ -68,6 +78,13 @@ def _bootstrap_dev_api_key() -> None:
     env_key = (settings.api_key or "").strip()
     if env_key:
         return
+    if settings.api_key is not None and settings.api_key.strip() == "":
+        # 配置了空串（如 .env 中 BACKEND_API_KEY=）会被静默回退到 dev 默认 key，
+        # 若 operator 误以为已配置真实密钥，将使用已知的默认 key——显式告警。
+        logger.warning(
+            "BACKEND_API_KEY is configured but empty; falling back to dev default "
+            "write key (bootstrap). Remove the empty value or set a real key."
+        )
 
     from app.services.config_service import _get_api_keys_repository
     from app.services.effective_config import (

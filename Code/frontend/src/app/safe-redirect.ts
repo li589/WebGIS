@@ -1,3 +1,6 @@
+/** 白名单由路由单一真源（route-paths.ts）动态推导，新增 SPA 路由无需手改本文件。 */
+import { SPA_PATHS } from './route-paths'
+
 /** Backend API path prefixes — not valid SPA routes; must not be used as post-login redirects. */
 const BACKEND_PATH_PREFIXES = [
   '/config',
@@ -28,9 +31,6 @@ const BACKEND_PATH_PREFIXES = [
   '/redoc',
   '/openapi.json',
 ] as const
-
-/** SPA routes that exist besides `/` (login is rejected to avoid loops). */
-const SPA_PATHS = new Set(['/'])
 
 export function isBackendApiPath(pathOnly: string): boolean {
   if (!pathOnly || pathOnly === '/') return false

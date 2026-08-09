@@ -5,6 +5,7 @@ import logging
 from fastapi import Depends, HTTPException, Request, Security, status
 from fastapi.security import APIKeyHeader
 
+from app.api.error_codes import AUTH_ERROR, ApiError
 from app.core.config import settings
 from app.services.credential_resolver import (
     CredentialContext,
@@ -34,13 +35,15 @@ def resolve_request_credential(
 
 def require_session(request: Request) -> CredentialContext:
     if not settings.user_auth_enabled:
-        raise HTTPException(
+        raise ApiError(
+            AUTH_ERROR,
             status_code=status.HTTP_403_FORBIDDEN,
             detail="User login is disabled on this server.",
         )
     ctx = resolve_credential(request, None)
     if ctx is None or ctx.source != "session":
-        raise HTTPException(
+        raise ApiError(
+            AUTH_ERROR,
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Authentication required.",
         )
@@ -51,7 +54,8 @@ def require_admin(
     ctx: CredentialContext = Depends(require_session),
 ) -> CredentialContext:
     if ctx.role != "admin":
-        raise HTTPException(
+        raise ApiError(
+            AUTH_ERROR,
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Admin role required.",
         )
@@ -67,12 +71,14 @@ def require_write_access(
     if ctx is not None and allows_write(ctx):
         return
     if ctx is not None and ctx.role == "viewer":
-        raise HTTPException(
+        raise ApiError(
+            AUTH_ERROR,
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Read-only account cannot perform write operations.",
         )
     if ctx is not None:
-        raise HTTPException(
+        raise ApiError(
+            AUTH_ERROR,
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Insufficient permissions for this operation.",
         )
@@ -93,7 +99,8 @@ def require_write_access(
             detail="API key not configured on the server.",
         )
 
-    raise HTTPException(
+    raise ApiError(
+        AUTH_ERROR,
         status_code=status.HTTP_401_UNAUTHORIZED,
         detail="Authentication required.",
     )

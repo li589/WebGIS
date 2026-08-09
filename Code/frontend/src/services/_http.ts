@@ -20,6 +20,7 @@ import { handleSessionExpired, isAuthBootstrapPath } from './session-expired'
 import {
   ApiRequestError,
   SessionExpiredError,
+  extractErrorCode,
   extractErrorDetail,
   extractRequestId,
 } from './http-errors'
@@ -142,8 +143,10 @@ function handleHttpError(
   errorBody: unknown,
   errorDetail: string,
   silent?: boolean,
+  retryAfterSec?: number,
 ): never {
   const requestId = extractRequestId(errorBody)
+  const errorCode = extractErrorCode(errorBody)
 
   if (status === 401 && !isAuthBootstrapPath(path)) {
     logApiFailure(path, `未授权：${path}`, errorDetail, silent)
@@ -154,12 +157,12 @@ function handleHttpError(
   if (status === 403) {
     const msg = errorDetail || '权限不足'
     logApiFailure(path, `禁止访问：${path}`, msg, silent)
-    throw new ApiRequestError(msg, 403, path, requestId)
+    throw new ApiRequestError(msg, 403, path, requestId, errorCode)
   }
 
   const msg = `Request failed: ${status} ${path}${errorDetail ? ` - ${errorDetail}` : ''}`
   logApiFailure(path, `请求失败 ${status}`, msg, silent)
-  throw new ApiRequestError(msg, status, path, requestId)
+  throw new ApiRequestError(msg, status, path, requestId, errorCode, retryAfterSec)
 }
 
 /**
@@ -247,12 +250,18 @@ export async function requestJson<T>(path: string, init?: RequestJsonInit): Prom
           response.status,
         )
       }
+      // 429 限流（C429001）：透传 Retry-After 供调用方退避提示。
+      // 注意：写请求（POST/PUT/DELETE/PATCH）不做自动重试——重试存在重复
+      // 提交/副作用风险（如重复创建工作流运行），由 UI 提示用户稍后操作。
+      const retryAfterRaw = response.headers.get('Retry-After')
+      const retryAfterSec = retryAfterRaw ? Number.parseInt(retryAfterRaw, 10) : undefined
       handleHttpError(
         path,
         response.status,
         errorBody,
         extractErrorDetail(errorBody, errorDetail),
         silent,
+        Number.isFinite(retryAfterSec) && (retryAfterSec as number) > 0 ? retryAfterSec : undefined,
       )
     }
 

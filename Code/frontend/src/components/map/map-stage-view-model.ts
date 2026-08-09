@@ -127,9 +127,16 @@ export function buildMapStageAppearanceModel(options: {
   isSourceTransitioning: boolean
   mapVisible: boolean
   skeletonVisible: boolean
+  /** 近全球视口（数据分布淡底模式的前置条件之一） */
+  isGlobalViewport?: boolean
+  /** 工作区是否已有添加图层（非仅底图） */
+  hasAddedLayers?: boolean
 }): MapStageAppearanceModel {
   const usesLightNavigationTheme =
     options.basemapStyle === 'satellite' || options.basemapStyle === 'terrain'
+  const isGlobalViewport = options.isGlobalViewport ?? false
+  const hasAddedLayers = options.hasAddedLayers ?? false
+  const showDistributionChrome = isGlobalViewport && hasAddedLayers
 
   return {
     usesLightNavigationTheme,
@@ -138,6 +145,8 @@ export function buildMapStageAppearanceModel(options: {
       'map-stage-transitioning': options.isSourceTransitioning,
       'map-stage-light': usesLightNavigationTheme,
       'map-stage-dark': options.basemapStyle === 'dark',
+      'map-stage-global-view': isGlobalViewport,
+      'map-stage-distribution': showDistributionChrome,
       [`map-stage-${options.activeLayer.availabilityState}`]: true,
     },
     stageStyleVars: {

@@ -29,6 +29,7 @@ import {
 } from './map/map-stage-view-model'
 import { aggregateWeatherTileBanner } from './map/weather-tile-banner'
 import { TILE_SOURCE_MAP, getDefaultTileSource, type TileSourceId } from '../services/api-config'
+import { isGlobalMapViewport } from '../utils/map-viewport'
 import { dataWorkspaceHighlight, showToast } from '../data-manager/core/workspace-store'
 import { debugLog as probeDebugLog } from '../utils/perf-probe'
 
@@ -253,6 +254,8 @@ const stageAppearanceModel = computed(() =>
     isSourceTransitioning: isSourceTransitioning.value,
     mapVisible: mapVisible.value,
     skeletonVisible: skeletonVisible.value,
+    isGlobalViewport: isGlobalMapViewport(layersStore.currentMapBBox),
+    hasAddedLayers: layersStore.activeLayers.length > 0,
   }),
 )
 
@@ -972,6 +975,15 @@ async function handleLocateMe() {
 }
 .map-stage-empty .grid-overlay {
   opacity: 0.2;
+}
+
+/* 全球视口淡底：仅在有已添加图层时启用，纯底图时保持清晰 */
+.map-stage.map-stage-global-view:not(.map-stage-distribution) .map-fog,
+.map-stage.map-stage-global-view:not(.map-stage-distribution) .time-sheen,
+.map-stage.map-stage-global-view:not(.map-stage-distribution) .time-band,
+.map-stage.map-stage-global-view:not(.map-stage-distribution) .weather-overlay,
+.map-stage.map-stage-global-view:not(.map-stage-distribution) .grid-overlay {
+  opacity: 0;
 }
 
 .map-overlay {
