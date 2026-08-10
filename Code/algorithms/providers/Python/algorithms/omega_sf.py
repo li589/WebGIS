@@ -553,6 +553,253 @@ def build_omega_pixel_from_results(
 # ─── 单像元反演核心 ─────────────────────────────────────────────────────────
 
 
+def _step0_compute_tau_star(
+    ndvi: np.ndarray,
+    ia: np.ndarray,
+    sf_col: np.ndarray,
+    ndvi_max: float,
+    ndvi_min: float,
+    landcover: int,
+    b_param: float,
+    nt: int,
+) -> np.ndarray:
+    """Step 0: 逐日 Tau 计算（矢量化）。
+
+    使用 tau_from_ndvi 计算全时序 Tau。
+    对应原 ``execute_pixel_inversion`` L613–629。
+
+    Args:
+        ndvi: NDVI 时间序列 (Nt,)
+        ia: 入射角时间序列 (Nt,)
+        sf_col: SF 时间序列 (Nt,)
+        ndvi_max, ndvi_min: NDVI 气候态极值
+        landcover: IGBP 类型
+        b_param: B 参数
+        nt: 时间序列长度
+
+    Returns:
+        tau_star (Nt,) — 缺测位置为 NaN
+    """
+    ok_tau_input = np.isfinite(ndvi) & np.isfinite(ia) & np.isfinite(sf_col)
+    tau_star = np.full(nt, np.nan)
+    if np.any(ok_tau_input):
+        ndvi_safe = np.where(ok_tau_input, ndvi, 0.5)
+        sf_safe = np.where(ok_tau_input, sf_col, 0.0)
+        ia_safe = np.where(ok_tau_input, ia, 40.0)
+        tau_all = tau_from_ndvi(
+            ndvi_safe,
+            ndvi_max,
+            ndvi_min,
+            landcover,
+            b_param,
+            sf_safe,
+            ia_safe,
+        )
+        tau_star = np.where(ok_tau_input, tau_all, np.nan)
+    return tau_star
+
+
+def _step1_invert_halpha(
+    tbv: np.ndarray,
+    tbh: np.ndarray,
+    ts: np.ndarray,
+    tau_star: np.ndarray,
+    sm_ref: np.ndarray,
+    ia: np.ndarray,
+    low_tau: np.ndarray,
+    valid_tau: np.ndarray,
+    clay_fraction: float,
+    freq_ghz: float,
+    omega_low: float,
+    h_static: float,
+    config: OmegaSfConfig,
+) -> tuple[float, float, np.ndarray, np.ndarray]:
+    """Step 1: h/alpha 联合优化（所有低 τ 样本）。
+
+    使用 scipy least_squares 联合优化 [h, alpha]。
+    内部定义 _resid_halpha 闭包调用 _resid_halpha_single_temp。
+    对应原 ``execute_pixel_inversion`` L666–760。
+
+    Args:
+        tbv, tbh, ts, tau_star, sm_ref, ia: 全时序 (Nt,)
+        low_tau: 低 τ 布尔掩码 (Nt,)
+        valid_tau: 有效 τ 布尔掩码 (Nt,)，用于广播 h_star_series/alpha_series
+        clay_fraction: 黏土含量
+        freq_ghz: 频率
+        omega_low: 低 τ 模式单次散射反照率
+        h_static: 静态 h 值
+        config: OmegaSfConfig（读取 bounds_h, bounds_alpha, alpha0, lambda_alpha）
+
+    Returns:
+        (h_star, alpha_star, h_star_series, alpha_series)
+        h_star/alpha_star: 标量优化结果
+        h_star_series/alpha_series: (Nt,) 广播到 valid_tau 样本
+    """
+    nt = len(tbv)
+
+    h_star = float("nan")
+    alpha_star = float("nan")
+
+    # 低 τ 样本索引
+    low_tau_idx = np.where(low_tau)[0]
+
+    # 构建低 τ 样本数组
+    tbv_low = tbv[low_tau_idx].astype(np.float64)
+    tbh_low = tbh[low_tau_idx].astype(np.float64)
+    ts_low = ts[low_tau_idx].astype(np.float64)
+    tau_low = tau_star[low_tau_idx].astype(np.float64)
+    sm_low = sm_ref[low_tau_idx].astype(np.float64)
+    theta_low = ia[low_tau_idx].astype(np.float64)
+
+    # 介电上下文（低 τ 样本共用，Fresnel 按样本入射角现算）
+    model_ctx_halpha = build_tb_model_context(freq_ghz, clay_fraction, 40.0)
+
+    # 初始猜测：[h0, ALPHA0]，h0 = clamp(h_static, BOUNDS_H)
+    # 对应 Matlab L1044: h0 = min(max(H_ij, BOUNDS_H(1)), BOUNDS_H(2))
+    h0 = max(min(h_static, config.bounds_h[1]), config.bounds_h[0])
+    x0_halpha = np.array([h0, config.alpha0])
+
+    # V/H 极化权重（EQUAL 模式：wV=wH=1）
+    w_v = 1.0
+    w_h = 1.0
+
+    def _resid_halpha(x):
+        return _resid_halpha_single_temp(
+            x,
+            tbv_low,
+            tbh_low,
+            ts_low,
+            tau_low,
+            sm_low,
+            theta_low,
+            clay_fraction,
+            freq_ghz,
+            omega_low,
+            config.alpha0,
+            config.lambda_alpha,
+            w_v,
+            w_h,
+            model_ctx_halpha,
+        )
+
+    try:
+        from scipy.optimize import least_squares
+
+        result_halpha = least_squares(
+            _resid_halpha,
+            x0_halpha,
+            bounds=(
+                np.array([config.bounds_h[0], config.bounds_alpha[0]]),
+                np.array([config.bounds_h[1], config.bounds_alpha[1]]),
+            ),
+            max_nfev=100,
+            ftol=1e-6,
+            xtol=1e-6,
+        )
+        h_star = float(result_halpha.x[0])
+        alpha_star = float(result_halpha.x[1])
+    except Exception as exc:
+        logger.warning("h/alpha 联合优化失败: %s", exc)
+        return float("nan"), float("nan"), np.full(nt, np.nan), np.full(nt, np.nan)
+
+    # 逐样本 h/alpha 序列（Step 1 结果广播到所有 valid_tau 样本）
+    # 对应 Matlab L1062-1063: h_star_series(valid_tau) = h_star; alpha_series(valid_tau) = alpha_star
+    h_star_series = np.full(nt, np.nan)
+    alpha_series = np.full(nt, np.nan)
+    h_star_series[valid_tau] = h_star
+    alpha_series[valid_tau] = alpha_star
+
+    return h_star, alpha_star, h_star_series, alpha_series
+
+
+def _step3_ddca_retrieval(
+    tbv: np.ndarray,
+    tbh: np.ndarray,
+    ts: np.ndarray,
+    ia: np.ndarray,
+    tau_star: np.ndarray,
+    valid_tau: np.ndarray,
+    omega_series: np.ndarray,
+    h_star_series: np.ndarray,
+    alpha_series: np.ndarray,
+    h_star: float,
+    alpha_star: float,
+    clay_fraction: float,
+    porosity: float,
+    freq_ghz: float,
+    config: OmegaSfConfig,
+) -> tuple[np.ndarray, np.ndarray]:
+    """Step 3: 逐日 SM/VOD DDCA 反演。
+
+    使用 _ddca_single_temp 逐日反演。
+    内部重建 _tb_ctx_for_theta 闭包（含 Fresnel 缓存）。
+    对应原 ``execute_pixel_inversion`` L850–883。
+
+    Args:
+        tbv, tbh, ts, ia, tau_star: 全时序 (Nt,)
+        valid_tau: 有效 τ 布尔掩码 (Nt,)
+        omega_series: OMEGA 序列 (Nt,)
+        h_star_series, alpha_series: h/alpha 序列 (Nt,)
+        h_star, alpha_star: 标量回退值
+        clay_fraction, porosity: 静态参数
+        freq_ghz: 频率
+        config: OmegaSfConfig（读取 lambda_tau）
+
+    Returns:
+        (sm_ret, vod_ret) — 各 (Nt,)，无效位置 NaN
+    """
+    nt = len(tbv)
+
+    # 重建 _tb_ctx_for_theta 闭包（含 Fresnel 缓存）
+    dielectric_ctx = build_tb_model_context(freq_ghz, clay_fraction, 40.0).dielectric
+    fresnel_cache: dict[float, object] = {}
+
+    def _tb_ctx_for_theta(theta: float):
+        key = round(float(theta), 2)
+        cached = fresnel_cache.get(key)
+        if cached is not None:
+            return cached
+        ctx = build_tb_model_context(freq_ghz, clay_fraction, key)
+        ctx = TbModelContext(dielectric=dielectric_ctx, fresnel=ctx.fresnel)
+        fresnel_cache[key] = ctx
+        return ctx
+
+    sm_ret = np.full(nt, np.nan)
+    vod_ret = np.full(nt, np.nan)
+
+    for k in range(nt):
+        if not valid_tau[k] or not np.isfinite(omega_series[k]):
+            continue
+
+        # 逐样本 h/alpha（对应 Matlab L1332-1333: pick_one）
+        hk = h_star_series[k] if np.isfinite(h_star_series[k]) else h_star
+        ak = alpha_series[k] if np.isfinite(alpha_series[k]) else alpha_star
+
+        model_ctx_k = _tb_ctx_for_theta(float(ia[k]))
+
+        sm_val, vod_val = _ddca_single_temp(
+            float(tbv[k]),
+            float(tbh[k]),
+            float(ts[k]),
+            float(tau_star[k]),
+            float(hk),
+            clay_fraction,
+            float(omega_series[k]),
+            porosity,
+            freq_ghz,
+            float(ia[k]),
+            float(ak),
+            config.lambda_tau,
+            model_ctx_k,
+        )
+        if np.isfinite(sm_val):
+            sm_ret[k] = sm_val
+        if np.isfinite(vod_val):
+            vod_ret[k] = vod_val
+
+    return sm_ret, vod_ret
+
+
 def execute_pixel_inversion(
     tbv: np.ndarray,
     tbh: np.ndarray,
@@ -610,23 +857,10 @@ def execute_pixel_inversion(
     ):
         return None
 
-    # ── Step 0: Tau (vectorized — replaces per-day Python loop) ──
-    ok_tau_input = np.isfinite(ndvi) & np.isfinite(ia) & np.isfinite(sf_col)
-    tau_star = np.full(nt, np.nan)
-    if np.any(ok_tau_input):
-        ndvi_safe = np.where(ok_tau_input, ndvi, 0.5)
-        sf_safe = np.where(ok_tau_input, sf_col, 0.0)
-        ia_safe = np.where(ok_tau_input, ia, 40.0)
-        tau_all = tau_from_ndvi(
-            ndvi_safe,
-            ndvi_max,
-            ndvi_min,
-            landcover,
-            b_param,
-            sf_safe,
-            ia_safe,
-        )
-        tau_star = np.where(ok_tau_input, tau_all, np.nan)
+    # ── Step 0: Tau (delegated) ──
+    tau_star = _step0_compute_tau_star(
+        ndvi, ia, sf_col, ndvi_max, ndvi_min, landcover, b_param, nt
+    )
 
     # ── 有效性判断 ──
     if config.temp_scheme.upper() == "ORIG_TS":
@@ -663,101 +897,29 @@ def execute_pixel_inversion(
     if n_low_tau < config.kmin:
         return None
 
-    # ── Step 1: h/alpha 联合优化 ──
-    # 对应 Matlab L1039-1063: lsqnonlin(resid_halpha_single_temp, [h0; ALPHA0], ...)
-    # 使用所有低 τ 样本联合优化 [h, alpha]，而非逐样本反演 h 再倒推 alpha
-    h_star = float("nan")
-    alpha_star = float("nan")
-
-    # 预计算介电上下文（仅依赖 freq/clay）；Fresnel 依赖入射角，按样本缓存
-    dielectric_ctx = build_tb_model_context(freq, clay_fraction, 40.0).dielectric
-    fresnel_cache: dict[float, object] = {}
-
-    def _tb_ctx_for_theta(theta: float):
-        key = round(float(theta), 2)
-        cached = fresnel_cache.get(key)
-        if cached is not None:
-            return cached
-        ctx = build_tb_model_context(freq, clay_fraction, key)
-        ctx = TbModelContext(dielectric=dielectric_ctx, fresnel=ctx.fresnel)
-        fresnel_cache[key] = ctx
-        return ctx
-
+    # ── Step 1: h/alpha 联合优化（delegated） ──
     # omega_low：低 τ 模式的单次散射反照率
     # 对应 Matlab L1033-1037: omega_low = omega_fixed (Exp1b) or ALB_ij
     omega_low = float(omega_fixed) if omega_fixed is not None else albedo
 
-    # 低 τ 样本索引
-    low_tau_idx = np.where(low_tau)[0]
-
-    # 构建低 τ 样本数组
-    tbv_low = tbv[low_tau_idx].astype(np.float64)
-    tbh_low = tbh[low_tau_idx].astype(np.float64)
-    ts_low = ts[low_tau_idx].astype(np.float64)
-    tau_low = tau_star[low_tau_idx].astype(np.float64)
-    sm_low = sm_ref[low_tau_idx].astype(np.float64)
-    theta_low = ia[low_tau_idx].astype(np.float64)
-
-    # 介电上下文（低 τ 样本共用，Fresnel 按样本入射角现算）
-    model_ctx_halpha = build_tb_model_context(freq, clay_fraction, 40.0)
-
-    # 初始猜测：[h0, ALPHA0]，h0 = clamp(h_static, BOUNDS_H)
-    # 对应 Matlab L1044: h0 = min(max(H_ij, BOUNDS_H(1)), BOUNDS_H(2))
-    h0 = max(min(h_static, config.bounds_h[1]), config.bounds_h[0])
-    x0_halpha = np.array([h0, config.alpha0])
-
-    # V/H 极化权重（EQUAL 模式：wV=wH=1）
-    w_v = 1.0
-    w_h = 1.0
-
-    def _resid_halpha(x):
-        return _resid_halpha_single_temp(
-            x,
-            tbv_low,
-            tbh_low,
-            ts_low,
-            tau_low,
-            sm_low,
-            theta_low,
-            clay_fraction,
-            freq,
-            omega_low,
-            config.alpha0,
-            config.lambda_alpha,
-            w_v,
-            w_h,
-            model_ctx_halpha,
-        )
-
-    try:
-        from scipy.optimize import least_squares
-
-        result_halpha = least_squares(
-            _resid_halpha,
-            x0_halpha,
-            bounds=(
-                np.array([config.bounds_h[0], config.bounds_alpha[0]]),
-                np.array([config.bounds_h[1], config.bounds_alpha[1]]),
-            ),
-            max_nfev=100,
-            ftol=1e-6,
-            xtol=1e-6,
-        )
-        h_star = float(result_halpha.x[0])
-        alpha_star = float(result_halpha.x[1])
-    except Exception as exc:
-        logger.warning("h/alpha 联合优化失败: %s", exc)
-        return None
+    h_star, alpha_star, h_star_series, alpha_series = _step1_invert_halpha(
+        tbv,
+        tbh,
+        ts,
+        tau_star,
+        sm_ref,
+        ia,
+        low_tau,
+        valid_tau,
+        clay_fraction,
+        freq,
+        omega_low,
+        h_static,
+        config,
+    )
 
     if not np.isfinite(h_star) or not np.isfinite(alpha_star):
         return None
-
-    # 逐样本 h/alpha 序列（Step 1 结果广播到所有 valid_tau 样本）
-    # 对应 Matlab L1062-1063: h_star_series(valid_tau) = h_star; alpha_series(valid_tau) = alpha_star
-    h_star_series = np.full(nt, np.nan)
-    alpha_series = np.full(nt, np.nan)
-    h_star_series[valid_tau] = h_star
-    alpha_series[valid_tau] = alpha_star
 
     # ── Step 2: OMEGA 块识别（逐样本 h/alpha + 时间平滑） ──
     # 对应 Matlab L1194-1245: 逐块 lsqnonlin(resid_omega_block_single_temp, ...)
@@ -769,6 +931,12 @@ def execute_pixel_inversion(
     else:
         omega_prev = float("nan")
         prev_blk_start = None
+
+        # V/H 极化权重（EQUAL 模式：wV=wH=1）
+        from scipy.optimize import least_squares
+
+        w_v = 1.0
+        w_h = 1.0
 
         for bb, blk_idx in enumerate(block_struct.indices):
             blk_valid_mask = valid_tau[blk_idx]
@@ -847,40 +1015,24 @@ def execute_pixel_inversion(
 
             prev_blk_start = block_struct.starts[bb]
 
-    # ── Step 3: 逐日 SM/VOD（DDCA with Q=max(alpha*h,0)） ──
-    # 对应 Matlab L1326-1351: DDCA_single_temp(TBv, TBh, Ts, Tau_ini, hk, CF, OMEGA, ...)
-    sm_ret = np.full(nt, np.nan)
-    vod_ret = np.full(nt, np.nan)
-
-    for k in range(nt):
-        if not valid_tau[k] or not np.isfinite(omega_series[k]):
-            continue
-
-        # 逐样本 h/alpha（对应 Matlab L1332-1333: pick_one）
-        hk = h_star_series[k] if np.isfinite(h_star_series[k]) else h_star
-        ak = alpha_series[k] if np.isfinite(alpha_series[k]) else alpha_star
-
-        model_ctx_k = _tb_ctx_for_theta(float(ia[k]))
-
-        sm_val, vod_val = _ddca_single_temp(
-            float(tbv[k]),
-            float(tbh[k]),
-            float(ts[k]),
-            float(tau_star[k]),
-            float(hk),
-            clay_fraction,
-            float(omega_series[k]),
-            porosity,
-            freq,
-            float(ia[k]),
-            float(ak),
-            config.lambda_tau,
-            model_ctx_k,
-        )
-        if np.isfinite(sm_val):
-            sm_ret[k] = sm_val
-        if np.isfinite(vod_val):
-            vod_ret[k] = vod_val
+    # ── Step 3: 逐日 SM/VOD（delegated） ──
+    sm_ret, vod_ret = _step3_ddca_retrieval(
+        tbv,
+        tbh,
+        ts,
+        ia,
+        tau_star,
+        valid_tau,
+        omega_series,
+        h_star_series,
+        alpha_series,
+        h_star,
+        alpha_star,
+        clay_fraction,
+        porosity,
+        freq,
+        config,
+    )
 
     return PixelResult(
         iy=0,
@@ -1897,6 +2049,117 @@ def _run_pixel_inversion(
     )
 
 
+def _chunk_progressive_write(
+    ci: int,
+    chunk_lin_list: list[np.ndarray],
+    state: _ChunkLoopState,
+    block_struct: BlockStructure,
+    grid_shape: tuple[int, int],
+    npix: int,
+    config: OmegaSfConfig,
+    output_dir: str,
+    max_valid_pixels: int,
+    progress_callback: Any,
+    reuse_block_cache: bool,
+) -> None:
+    """Checkpoint 保存 + 进度回调 + 渐进写盘。
+
+    对应原 ``_process_one_chunk`` L2207–2246。
+
+    Args:
+        ci: chunk 索引
+        chunk_lin_list: chunk 列表
+        state: chunk 循环状态
+        block_struct: 8 天块结构
+        grid_shape: (nrows, ncols)
+        npix: 总像元数
+        config: OmegaSfConfig
+        output_dir: 输出目录
+        max_valid_pixels: 最大有效像元数
+        progress_callback: 进度回调
+        reuse_block_cache: 是否复用缓存
+    """
+    if reuse_block_cache and output_dir:
+        _save_chunk_checkpoint(
+            output_dir,
+            start_date=config.start_date,
+            end_date=config.end_date,
+            completed_chunks=state.completed_chunks,
+            all_results=state.all_results,
+        )
+
+    _emit_progress(
+        progress_callback,
+        processed=state.n_processed,
+        total=npix,
+        chunks_done=ci + 1,
+        chunks_total=len(chunk_lin_list),
+        pixels_done=state.n_valid_processed,
+        pixels_total=max_valid_pixels or npix,
+        phase="step2_omega",
+    )
+
+    # 渐进：每个空间 chunk 后按块写盘，供运行中上图
+    if output_dir and state.all_results:
+        sm_i, vod_i, om_i = _assemble_block_grids(
+            state.all_results, block_struct, grid_shape
+        )
+        _persist_block_maps(
+            output_dir,
+            block_struct=block_struct,
+            sm_maps=sm_i,
+            vod_maps=vod_i,
+            omega_maps=om_i,
+            progress_callback=progress_callback,
+            processed=state.n_processed,
+            total=npix,
+            chunks_done=ci + 1,
+            chunks_total=len(chunk_lin_list),
+            pixels_done=state.n_valid_processed,
+            pixels_total=max_valid_pixels or npix,
+            finalize=False,
+        )
+
+
+def _build_chunk_validity_mask(
+    chunk_data: dict[str, np.ndarray],
+    anc: dict[str, np.ndarray],
+    lin_pix: np.ndarray,
+) -> np.ndarray:
+    """构建 chunk 有效像元掩码。
+
+    检查 TBv/TBh/Ts/SM_ref/NDVI 至少有一个有限值 + clay/porosity 有效。
+    对应原 ``_process_one_chunk`` L1990–2007。
+
+    Args:
+        chunk_data: _preload_chunk 返回的 dict（含 tbv/tbh/ts/sm_ref/ndvi）
+        anc: 辅助库 dict（含 clay/porosity）
+        lin_pix: 像元线性索引
+
+    Returns:
+        valid_mask (chunk_pix,) bool 数组
+    """
+    tbv_chunk = chunk_data["tbv"]
+    tbh_chunk = chunk_data["tbh"]
+    ts_chunk = chunk_data["ts"]
+    sm_chunk = chunk_data["sm_ref"]
+    ndvi_chunk = chunk_data["ndvi"]
+    clay_chunk = anc["clay"].ravel()[lin_pix]
+    porosity_chunk = anc["porosity"].ravel()[lin_pix]
+    valid_mask = (
+        np.any(np.isfinite(tbv_chunk), axis=0)
+        & np.any(np.isfinite(tbh_chunk), axis=0)
+        & np.any(np.isfinite(ts_chunk), axis=0)
+        & np.any(np.isfinite(sm_chunk), axis=0)
+        & np.any(np.isfinite(ndvi_chunk), axis=0)
+        & np.isfinite(clay_chunk)
+        & (clay_chunk >= 0.0)
+        & (clay_chunk <= 1.0)
+        & np.isfinite(porosity_chunk)
+    )
+    return valid_mask
+
+
 def _process_one_chunk(
     ci: int,
     lin_pix: np.ndarray,
@@ -1987,24 +2250,7 @@ def _process_one_chunk(
     )
 
     # 逐像元反演：预计算有效像元掩码
-    tbv_chunk = chunk_data["tbv"]
-    tbh_chunk = chunk_data["tbh"]
-    ts_chunk = chunk_data["ts"]
-    sm_chunk = chunk_data["sm_ref"]
-    ndvi_chunk = chunk_data["ndvi"]
-    clay_chunk = anc["clay"].ravel()[lin_pix]
-    porosity_chunk = anc["porosity"].ravel()[lin_pix]
-    valid_mask = (
-        np.any(np.isfinite(tbv_chunk), axis=0)
-        & np.any(np.isfinite(tbh_chunk), axis=0)
-        & np.any(np.isfinite(ts_chunk), axis=0)
-        & np.any(np.isfinite(sm_chunk), axis=0)
-        & np.any(np.isfinite(ndvi_chunk), axis=0)
-        & np.isfinite(clay_chunk)
-        & (clay_chunk >= 0.0)
-        & (clay_chunk <= 1.0)
-        & np.isfinite(porosity_chunk)
-    )
+    valid_mask = _build_chunk_validity_mask(chunk_data, anc, lin_pix)
     n_skip_chunk = int((~valid_mask).sum())
     if n_skip_chunk > 0:
         logger.info(
@@ -2055,46 +2301,19 @@ def _process_one_chunk(
     state.n_success += len(batch_results)
     state.n_failed += n_batch_failed
     state.completed_chunks.add(ci)
-    if reuse_block_cache and output_dir:
-        _save_chunk_checkpoint(
-            output_dir,
-            start_date=config.start_date,
-            end_date=config.end_date,
-            completed_chunks=state.completed_chunks,
-            all_results=state.all_results,
-        )
-
-    _emit_progress(
+    _chunk_progressive_write(
+        ci,
+        chunk_lin_list,
+        state,
+        block_struct,
+        grid_shape,
+        npix,
+        config,
+        output_dir,
+        max_valid_pixels,
         progress_callback,
-        processed=state.n_processed,
-        total=npix,
-        chunks_done=ci + 1,
-        chunks_total=len(chunk_lin_list),
-        pixels_done=state.n_valid_processed,
-        pixels_total=max_valid_pixels or npix,
-        phase="step2_omega",
+        reuse_block_cache,
     )
-
-    # 渐进：每个空间 chunk 后按块写盘，供运行中上图
-    if output_dir and state.all_results:
-        sm_i, vod_i, om_i = _assemble_block_grids(
-            state.all_results, block_struct, grid_shape
-        )
-        _persist_block_maps(
-            output_dir,
-            block_struct=block_struct,
-            sm_maps=sm_i,
-            vod_maps=vod_i,
-            omega_maps=om_i,
-            progress_callback=progress_callback,
-            processed=state.n_processed,
-            total=npix,
-            chunks_done=ci + 1,
-            chunks_total=len(chunk_lin_list),
-            pixels_done=state.n_valid_processed,
-            pixels_total=max_valid_pixels or npix,
-            finalize=False,
-        )
 
     # 测试模式：检查像元限制
     if max_valid_pixels > 0 and state.n_valid_processed >= max_valid_pixels:
@@ -2246,6 +2465,130 @@ def _prepare_chunks(
     return chunk_lin_list, max_valid_pixels
 
 
+def _load_fixed_omega_map(config: OmegaSfConfig) -> np.ndarray | None:
+    """加载固定 OMEGA map（PFT 模式）。
+
+    从 ``{config.out_aux}/omega_pft_from_exp0.mat`` 读取 omega_pft。
+    非 PFT 模式或文件不存在时返回 None。
+    对应原 ``retrieve_omega_sf_daily`` L2363–2370。
+
+    Args:
+        config: OmegaSfConfig（读取 omega_fixed_mode / out_aux）
+
+    Returns:
+        omega_fixed_map (npix,) 或 None
+    """
+    from ingest.mat_bundle import load_mat_file
+
+    if config.omega_fixed_mode.upper() != "PFT":
+        return None
+    omega_pft_file = Path(config.out_aux or "") / "omega_pft_from_exp0.mat"
+    if not omega_pft_file.exists():
+        return None
+    data = load_mat_file(str(omega_pft_file))
+    if "omega_pft" not in data:
+        return None
+    return np.asarray(data["omega_pft"], dtype=np.float64)
+
+
+def _finalize_and_save(
+    state: _ChunkLoopState,
+    block_struct: BlockStructure,
+    grid_shape: tuple[int, int],
+    npix: int,
+    chunk_lin_list: list[np.ndarray],
+    max_valid_pixels: int,
+    output_dir: str,
+    progress_callback: Any,
+) -> OmegaSfResult:
+    """汇总输出 + 保存 + 构建 OmegaSfResult。
+
+    包含：
+    - build_omega_pft_from_results / build_omega_pixel_from_results
+    - _assemble_block_grids
+    - _persist_block_maps (finalize=True)
+    - omega_pft.mat / omega_pixel.mat 保存
+    对应原 ``retrieve_omega_sf_daily`` L2451–2517。
+
+    Args:
+        state: chunk 循环状态（含 all_results / n_processed / n_success / n_failed）
+        block_struct: 8 天块结构
+        grid_shape: (nrows, ncols)
+        npix: 总像元数
+        chunk_lin_list: chunk 列表（用于进度）
+        max_valid_pixels: 最大有效像元数
+        output_dir: 输出目录（空字符串表示不写盘）
+        progress_callback: 进度回调
+
+    Returns:
+        OmegaSfResult
+    """
+    omega_pft = build_omega_pft_from_results(state.all_results)
+    omega_pix_map, omega_pix_count = build_omega_pixel_from_results(
+        state.all_results, grid_shape
+    )
+
+    sm_maps, vod_maps, omega_maps = _assemble_block_grids(
+        state.all_results, block_struct, grid_shape
+    )
+
+    output_paths: dict[str, str] = {}
+    if output_dir:
+        out_path = Path(output_dir)
+        out_path.mkdir(parents=True, exist_ok=True)
+
+        try:
+            from scipy.io import savemat
+
+            block_paths = _persist_block_maps(
+                out_path,
+                block_struct=block_struct,
+                sm_maps=sm_maps,
+                vod_maps=vod_maps,
+                omega_maps=omega_maps,
+                progress_callback=progress_callback,
+                processed=state.n_processed,
+                total=npix,
+                chunks_done=len(chunk_lin_list),
+                chunks_total=len(chunk_lin_list),
+                pixels_done=state.n_valid_processed,
+                pixels_total=max_valid_pixels or npix,
+                finalize=True,
+            )
+            output_paths.update(block_paths)
+
+            pft_file = out_path / "omega_pft.mat"
+            savemat(str(pft_file), {"omega_pft": omega_pft})
+            output_paths["omega_pft"] = str(pft_file)
+
+            pix_file = out_path / "omega_pixel.mat"
+            savemat(
+                str(pix_file),
+                {
+                    "omega_pix_map": omega_pix_map,
+                    "omega_pix_count": omega_pix_count,
+                },
+            )
+            output_paths["omega_pixel"] = str(pix_file)
+
+            logger.info("[SAVE] 结果已保存到 %s", out_path)
+        except Exception as exc:
+            logger.error("[SAVE] 保存失败: %s", exc)
+
+    return OmegaSfResult(
+        omega_pft=omega_pft,
+        omega_pixel_map=omega_pix_map,
+        omega_pixel_count=omega_pix_count,
+        sm_maps=sm_maps,
+        vod_maps=vod_maps,
+        omega_maps=omega_maps,
+        n_pixels_total=state.n_processed,
+        n_pixels_success=state.n_success,
+        n_pixels_failed=state.n_failed,
+        output_paths=output_paths,
+    )
+
+
 def retrieve_omega_sf_daily(
     *,
     config: OmegaSfConfig,
@@ -2292,7 +2635,6 @@ def retrieve_omega_sf_daily(
     Returns:
         OmegaSfResult 包含所有输出产品
     """
-    from ingest.mat_bundle import load_mat_file
 
     logger.info("=" * 60)
     logger.info("[START] omega_sf_fenkuai 反演")
@@ -2361,13 +2703,7 @@ def retrieve_omega_sf_daily(
             logger.warning("[DIAG] %-12s MISSING", _k)
 
     # 5) 固定 OMEGA（PFT 模式从 omega_pft_file 加载）
-    omega_fixed_map: np.ndarray | None = None
-    if config.omega_fixed_mode.upper() == "PFT":
-        omega_pft_file = Path(config.out_aux or "") / "omega_pft_from_exp0.mat"
-        if omega_pft_file.exists():
-            data = load_mat_file(str(omega_pft_file))
-            if "omega_pft" in data:
-                omega_fixed_map = np.asarray(data["omega_pft"], dtype=np.float64)
+    omega_fixed_map = _load_fixed_omega_map(config)
 
     # 6) 逐 chunk 反演
     chunk_lin_list, max_valid_pixels = _prepare_chunks(config, anc, nrows, ncols, npix)
@@ -2448,72 +2784,16 @@ def retrieve_omega_sf_daily(
             "3) grid_shape 是否与数据文件匹配。"
         )
 
-    # 7) 汇总输出
-    omega_pft = build_omega_pft_from_results(state.all_results)
-    omega_pix_map, omega_pix_count = build_omega_pixel_from_results(
-        state.all_results, grid_shape
-    )
-
-    # 块级 SM/VOD/OMEGA 网格（最终完整版）
-    sm_maps, vod_maps, omega_maps = _assemble_block_grids(
-        state.all_results, block_struct, grid_shape
-    )
-
-    # 8) 保存：先按块最终写盘并 block_commit，再写 pixel/pft
-    output_paths: dict[str, str] = {}
-    if output_dir:
-        out_path = Path(output_dir)
-        out_path.mkdir(parents=True, exist_ok=True)
-
-        try:
-            from scipy.io import savemat
-
-            block_paths = _persist_block_maps(
-                out_path,
-                block_struct=block_struct,
-                sm_maps=sm_maps,
-                vod_maps=vod_maps,
-                omega_maps=omega_maps,
-                progress_callback=progress_callback,
-                processed=state.n_processed,
-                total=npix,
-                chunks_done=len(chunk_lin_list),
-                chunks_total=len(chunk_lin_list),
-                pixels_done=state.n_valid_processed,
-                pixels_total=max_valid_pixels or npix,
-                finalize=True,
-            )
-            output_paths.update(block_paths)
-
-            pft_file = out_path / "omega_pft.mat"
-            savemat(str(pft_file), {"omega_pft": omega_pft})
-            output_paths["omega_pft"] = str(pft_file)
-
-            pix_file = out_path / "omega_pixel.mat"
-            savemat(
-                str(pix_file),
-                {
-                    "omega_pix_map": omega_pix_map,
-                    "omega_pix_count": omega_pix_count,
-                },
-            )
-            output_paths["omega_pixel"] = str(pix_file)
-
-            logger.info("[SAVE] 结果已保存到 %s", out_path)
-        except Exception as exc:
-            logger.error("[SAVE] 保存失败: %s", exc)
-
-    return OmegaSfResult(
-        omega_pft=omega_pft,
-        omega_pixel_map=omega_pix_map,
-        omega_pixel_count=omega_pix_count,
-        sm_maps=sm_maps,
-        vod_maps=vod_maps,
-        omega_maps=omega_maps,
-        n_pixels_total=state.n_processed,
-        n_pixels_success=state.n_success,
-        n_pixels_failed=state.n_failed,
-        output_paths=output_paths,
+    # 7) 汇总输出 + 保存
+    return _finalize_and_save(
+        state,
+        block_struct,
+        grid_shape,
+        npix,
+        chunk_lin_list,
+        max_valid_pixels,
+        output_dir,
+        progress_callback,
     )
 
 
@@ -2754,6 +3034,35 @@ def _load_anc_ndvi_extrema(root: Path) -> tuple[np.ndarray | None, np.ndarray | 
     return None, None
 
 
+def _load_anc_scalar_fields(root: Path) -> dict[str, np.ndarray]:
+    """加载辅助库 6 个标量场：albedo/b/sf_static/bd/h/clay。
+
+    每个字段从对应 .mat 文件加载，缺失时跳过（dict 中不含该 key）。
+    对应原 ``_load_ancillary`` L2812–2823。
+
+    Args:
+        root: 辅助库根目录 Path
+
+    Returns:
+        dict，可能包含键: albedo, b, sf_static, bd, h, clay
+        仅包含成功加载的字段。
+    """
+    _FIELDS: list[tuple[str, tuple[str, tuple[str, ...]]]] = [
+        ("albedo", ("Albedo.mat", ("ALBEDO", "Albedo", "albedo"))),
+        ("b", ("B.mat", ("B", "b"))),
+        ("sf_static", ("SF.mat", ("SF_smap", "SF"))),
+        ("bd", ("BD.mat", ("BD", "bd"))),
+        ("h", ("H.mat", ("H", "h"))),
+        ("clay", ("CF.mat", ("CF", "cf"))),
+    ]
+    result: dict[str, np.ndarray] = {}
+    for field_name, (fname, keys) in _FIELDS:
+        vals = _load_anc_mat_field(root, fname, keys)
+        if vals is not None:
+            result[field_name] = vals
+    return result
+
+
 def _fill_anc_defaults(anc: dict[str, np.ndarray]) -> None:
     """填充 ancillary 缺失项的默认值 + NDVI 极值回退到气候态。"""
     if "landcover" not in anc:
@@ -2809,18 +3118,7 @@ def _load_ancillary(anc_root: str) -> dict[str, np.ndarray]:
         anc["lon"] = lon
 
     # 单文件标量场（Albedo / B / SF / BD / H / CF）
-    _FIELDS: list[tuple[str, tuple[str, tuple[str, ...]]]] = [
-        ("albedo", ("Albedo.mat", ("ALBEDO", "Albedo", "albedo"))),
-        ("b", ("B.mat", ("B", "b"))),
-        ("sf_static", ("SF.mat", ("SF_smap", "SF"))),
-        ("bd", ("BD.mat", ("BD", "bd"))),
-        ("h", ("H.mat", ("H", "h"))),
-        ("clay", ("CF.mat", ("CF", "cf"))),
-    ]
-    for field_name, (fname, keys) in _FIELDS:
-        vals = _load_anc_mat_field(root, fname, keys)
-        if vals is not None:
-            anc[field_name] = vals
+    anc.update(_load_anc_scalar_fields(root))
 
     # NDVI_v_max / NDVI_v_min（VI_v_qa.mat，权威历史极值；含 NTFS 预检）
     # Matlab 从 VI_v_qa.mat 加载（A5_NDVI_diff_all.m 产出），
@@ -3028,34 +3326,7 @@ def _fill_row_from_keys(
     return True
 
 
-def _make_grid_validator(npix: int, nrows: int, ncols: int):
-    """网格大小一次性校验器（闭包工厂）。
-
-    首个非空 SMAP 字段触发校验并 warn，后续调用 no-op。
-    对应原 ``_preload_chunk`` 内嵌的 ``_validate_grid_size`` 闭包。
-    """
-    state = {"done": False}
-
-    def _validate(vals: np.ndarray, source: str, date_str: str) -> None:
-        if state["done"] or vals.size == 0:
-            return
-        state["done"] = True
-        if vals.size != npix:
-            logger.warning(
-                "[GRID] %s/%s: 数据大小 %d != grid npix %d (nrows=%d ncols=%d)。"
-                "可能存在 MAT v7.3 转置问题或网格定义不匹配。",
-                source,
-                date_str,
-                vals.size,
-                npix,
-                nrows,
-                ncols,
-            )
-
-    return _validate
-
-
-def _load_smap_day(smap_folder: str, date_str: str, validate_grid) -> dict[str, Any]:
+def _load_smap_day(smap_folder: str, date_str: str) -> dict[str, Any]:
     """加载当日 SMAP 文件，首文件触发网格校验。
 
     异常吞掉返回 ``{}``（与原实现 try/except: pass 一致）。
@@ -3067,14 +3338,6 @@ def _load_smap_day(smap_folder: str, date_str: str, validate_grid) -> dict[str, 
         return {}
     try:
         data = load_mat_file(str(smap_file))
-        for _k in ("TBv", "TBv_mat", "Ts", "Ts_mat", "sm_dca", "SM"):
-            if _k in data:
-                validate_grid(
-                    np.asarray(data[_k], dtype=np.float64).ravel(),
-                    "SMAP",
-                    date_str,
-                )
-                break
         return data
     except Exception:  # noqa: BLE001 — SMAP 容错
         return {}
@@ -3284,6 +3547,112 @@ def _compute_sf_inverted_day(
     )
 
 
+def _preload_one_day(
+    date: datetime,
+    doy: int,
+    lin_pix: np.ndarray,
+    *,
+    config: OmegaSfConfig,
+    smap_folder: str,
+    fy3d_folder: str,
+    fy3b_folder: str,
+    ndvi_clim_folder: str,
+    ndvi_folder: str,
+    anc: dict[str, np.ndarray],
+    sf_static: np.ndarray,
+) -> tuple[
+    np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray
+]:
+    """加载单日 chunk 数据。
+
+    从 SMAP/FY/NDVI 文件加载一天的 TBv/TBh/IA/Ts/SM_ref/NDVI/SF，
+    返回 7 个形状为 (chunk_pix,) 的 1D 数组。
+    缺失数据时对应行保持 NaN（各 helper 内部容错）。
+
+    Args:
+        date: 日期
+        doy: day of year
+        lin_pix: 像元线性索引 (chunk_pix,)
+        config: OmegaSfConfig
+        smap_folder: SMAP .mat 文件目录
+        fy3d_folder: FY-3D .mat 目录
+        fy3b_folder: FY-3B .mat 目录
+        ndvi_clim_folder: NDVI DOY 气候态目录
+        ndvi_folder: NDVI 逐日目录
+        anc: 辅助库 dict
+        sf_static: 静态 SF 数组 (npix,) ravel
+
+    Returns:
+        (tbv_row, tbh_row, ia_row, ts_row, sm_ref_row, ndvi_row, sf_row)
+        每个元素为 shape (chunk_pix,) 的 np.ndarray
+    """
+    date_str = date.strftime("%Y%m%d")
+    chunk_pix = int(lin_pix.size)
+
+    # SMAP 文件
+    smap_data: dict[str, Any] = _load_smap_day(smap_folder, date_str)
+
+    # 初始化行
+    tbv_row = np.full(chunk_pix, np.nan)
+    tbh_row = np.full(chunk_pix, np.nan)
+    ia_row = np.full(chunk_pix, np.nan)
+    ts_row = np.full(chunk_pix, np.nan)
+    sm_ref_row = np.full(chunk_pix, np.nan)
+
+    # TB + IA（FY 模式从 FY 文件读，SMAP 模式从 SMAP 文件读）
+    if config.tb_source.upper() == "FY":
+        tb_data, used_fy3b_fallback = _load_fy_tb_day(
+            fy3d_folder, fy3b_folder, date_str, config
+        )
+        _fill_fy_tb_row(
+            tb_data,
+            used_fy3b_fallback,
+            fy3d_folder,
+            fy3b_folder,
+            lin_pix,
+            config,
+            date_str,
+            tbv_row,
+            tbh_row,
+            ia_row,
+        )
+    else:
+        # SMAP TB + IA
+        _fill_row_from_keys(tbv_row, smap_data, ("TBv", "TBv_mat"), lin_pix)
+        _fill_row_from_keys(tbh_row, smap_data, ("TBh", "TBh_mat"), lin_pix)
+        _fill_row_from_keys(ia_row, smap_data, ("IA", "IA_mat"), lin_pix)
+
+    # 温度
+    _fill_row_from_keys(ts_row, smap_data, ("Ts", "Ts_mat"), lin_pix)
+
+    # 参考土壤水分（sm_dca 为 SMAP MAT 标准变量名，
+    # 与 daily_bundle.py smap_sm_aliases 对齐）
+    _fill_row_from_keys(
+        sm_ref_row,
+        smap_data,
+        ("sm_dca", "SM", "SM_mat", "soil_moisture", "sm"),
+        lin_pix,
+    )
+
+    # NDVI
+    ndvi_row = _load_ndvi_day(
+        config, ndvi_clim_folder, ndvi_folder, date_str, doy, lin_pix
+    )
+
+    # SF
+    sf_mode = config.sf_mode.upper()
+    if sf_mode == "STATIC":
+        sf_row = sf_static[lin_pix].copy()
+    elif sf_mode == "INVERTED_DAILY":
+        sf_row = _compute_sf_inverted_day(
+            smap_data, ndvi_clim_folder, doy, lin_pix, anc, config
+        )
+    else:
+        sf_row = np.full(chunk_pix, np.nan)
+
+    return tbv_row, tbh_row, ia_row, ts_row, sm_ref_row, ndvi_row, sf_row
+
+
 def _preload_chunk(
     tvec: list[datetime],
     nrows: int,
@@ -3317,8 +3686,6 @@ def _preload_chunk(
     chunk_pix = int(lin_pix.size)
     npix = nrows * ncols
 
-    validate_grid = _make_grid_validator(npix, nrows, ncols)
-
     tbv_mat = np.full((nt, chunk_pix), np.nan)
     tbh_mat = np.full((nt, chunk_pix), np.nan)
     ia_mat = np.full((nt, chunk_pix), np.nan)
@@ -3329,61 +3696,57 @@ def _preload_chunk(
 
     sf_static = anc.get("sf_static", np.full(anc["landcover"].size, np.nan)).ravel()
 
-    for k, date in enumerate(tvec):
+    # ── 显式 SMAP 网格校验（首个存在的 SMAP .mat 文件） ──
+    _grid_validated = False
+    for date in tvec:
         date_str = date.strftime("%Y%m%d")
+        smap_file = Path(smap_folder) / f"{date_str}.mat"
+        if smap_file.exists():
+            try:
+                from ingest.mat_bundle import load_mat_file
+
+                test_data = load_mat_file(str(smap_file))
+                for _k in ("TBv", "TBv_mat", "Ts", "Ts_mat", "sm_dca", "SM"):
+                    if _k in test_data:
+                        vals = np.asarray(test_data[_k], dtype=np.float64).ravel()
+                        if vals.size != npix:
+                            logger.warning(
+                                "[GRID] SMAP/%s: 数据大小 %d != grid npix %d (nrows=%d ncols=%d)。"
+                                "可能存在 MAT v7.3 转置问题或网格定义不匹配。",
+                                date_str,
+                                vals.size,
+                                npix,
+                                nrows,
+                                ncols,
+                            )
+                        break
+            except Exception:  # noqa: BLE001 — 网格校验容错
+                pass
+            break  # 仅校验首个存在的 SMAP 文件
+
+    for k, date in enumerate(tvec):
         doy = date.timetuple().tm_yday
-
-        # SMAP 文件（含首文件网格校验）
-        smap_data: dict[str, Any] = _load_smap_day(smap_folder, date_str, validate_grid)
-
-        # TB + IA（FY 模式从 FY 文件读，SMAP 模式从 SMAP 文件读）
-        if config.tb_source.upper() == "FY":
-            tb_data, used_fy3b_fallback = _load_fy_tb_day(
-                fy3d_folder, fy3b_folder, date_str, config
-            )
-            _fill_fy_tb_row(
-                tb_data,
-                used_fy3b_fallback,
-                fy3d_folder,
-                fy3b_folder,
-                lin_pix,
-                config,
-                date_str,
-                tbv_mat[k],
-                tbh_mat[k],
-                ia_mat[k],
-            )
-        else:
-            # SMAP TB + IA
-            _fill_row_from_keys(tbv_mat[k], smap_data, ("TBv", "TBv_mat"), lin_pix)
-            _fill_row_from_keys(tbh_mat[k], smap_data, ("TBh", "TBh_mat"), lin_pix)
-            _fill_row_from_keys(ia_mat[k], smap_data, ("IA", "IA_mat"), lin_pix)
-
-        # 温度
-        _fill_row_from_keys(ts_mat[k], smap_data, ("Ts", "Ts_mat"), lin_pix)
-
-        # 参考土壤水分（sm_dca 为 SMAP MAT 标准变量名，
-        # 与 daily_bundle.py smap_sm_aliases 对齐）
-        _fill_row_from_keys(
+        (
+            tbv_mat[k],
+            tbh_mat[k],
+            ia_mat[k],
+            ts_mat[k],
             sm_ref_mat[k],
-            smap_data,
-            ("sm_dca", "SM", "SM_mat", "soil_moisture", "sm"),
+            ndvi_mat[k],
+            sf_mat[k],
+        ) = _preload_one_day(
+            date,
+            doy,
             lin_pix,
+            config=config,
+            smap_folder=smap_folder,
+            fy3d_folder=fy3d_folder,
+            fy3b_folder=fy3b_folder,
+            ndvi_clim_folder=ndvi_clim_folder,
+            ndvi_folder=ndvi_folder,
+            anc=anc,
+            sf_static=sf_static,
         )
-
-        # NDVI
-        ndvi_mat[k] = _load_ndvi_day(
-            config, ndvi_clim_folder, ndvi_folder, date_str, doy, lin_pix
-        )
-
-        # SF
-        sf_mode = config.sf_mode.upper()
-        if sf_mode == "STATIC":
-            sf_mat[k, :] = sf_static[lin_pix]
-        elif sf_mode == "INVERTED_DAILY":
-            sf_mat[k, :] = _compute_sf_inverted_day(
-                smap_data, ndvi_clim_folder, doy, lin_pix, anc, config
-            )
 
     return {
         "tbv": tbv_mat,

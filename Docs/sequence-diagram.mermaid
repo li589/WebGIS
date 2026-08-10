@@ -1,49 +1,54 @@
-%% 异常收窄后请求处理时序图
-%% 文件：sequence-diagram.mermaid
-
 sequenceDiagram
-    participant Client as 客户端
-    participant MW as FastAPI 中间件<br/>(request_id)
-    participant Router as router.py 端点
-    participant SVC as 服务层
-    participant HE as _http_err
-    participant GH as 全局处理器<br/>(main.py)
+    participant Main as retrieve_omega_sf_daily
+    participant TS as _build_time_series
+    participant Anc as _load_ancillary
+    participant Blocks as make_viirs8_blocks
+    participant Omega as _load_fixed_omega_map
+    participant Chunk as _process_one_chunk
+    participant Preload as _preload_chunk
+    participant Day as _preload_one_day
+    participant Pixel as execute_pixel_inversion
+    participant Step0 as _step0_compute_tau_star
+    participant Step1 as _step1_invert_halpha
+    participant Step3 as _step3_ddca_retrieval
+    participant Save as _finalize_and_save
 
-    Client->>MW: HTTP 请求
-    MW->>Router: 注入 request_id
+    Main->>TS: 1) 构建时间序列
+    TS-->>Main: tvec
+    Main->>Anc: 2) 加载辅助库
+    Anc->>Anc: _load_anc_scalar_fields(root)
+    Anc-->>Main: anc dict
+    Main->>Blocks: 3) 构建块结构
+    Blocks-->>Main: block_struct
+    Main->>Omega: 4) 加载固定 OMEGA
+    Omega-->>Main: omega_fixed_map | None
 
-    alt 已知异常 FileNotFoundError
-        Router->>SVC: 调用服务
-        SVC-->>Router: raise FileNotFoundError
-        Router->>HE: _http_err(exc)
-        HE-->>Router: HTTPException(404)
-        Router-->>GH: raise HTTPException
-        GH-->>Client: 404 {detail, request_id}
-    else 已知异常 QuotaExceededError
-        Router->>SVC: 调用服务
-        SVC-->>Router: raise QuotaExceededError
-        Router->>HE: _http_err(exc)
-        Note over HE: isinstance 检查<br/>QuotaExceededError 先于<br/>(ValueError, RuntimeError)
-        HE-->>Router: HTTPException(507)
-        Router-->>GH: raise HTTPException
-        GH-->>Client: 507 {detail, request_id}
-    else 已知异常 ValueError/RuntimeError
-        Router->>SVC: 调用服务
-        SVC-->>Router: raise ValueError
-        Router->>HE: _http_err(exc)
-        HE-->>Router: HTTPException(400)
-        Router-->>GH: raise HTTPException
-        GH-->>Client: 400 {detail, request_id}
-    else 未知异常 JSONDecodeError/OSError
-        Router->>SVC: 调用服务
-        SVC-->>Router: raise JSONDecodeError
-        Note over Router: except 元组不匹配<br/>不捕获
-        Router-->>GH: 异常上抛
-        GH->>GH: logger.exception<br/>("Unhandled API exception")
-        GH-->>Client: 500 {detail:"Internal server error",<br/>request_id}
-    else 有意宽捕获 L671
-        Router->>SVC: unregister_overlay(safe)
-        SVC-->>Router: raise Exception
-        Router->>Router: logger.debug(...)<br/>吞异常
-        Router-->>Client: 200 {ok: true}
+    loop 5) 逐 chunk
+        Main->>Chunk: _process_one_chunk(ci, lin_pix, ...)
+        Chunk->>Preload: _preload_chunk(tvec, ...)
+        Preload->>Preload: Q5: 显式网格校验（首次 SMAP 文件）
+        loop 逐日
+            Preload->>Day: _preload_one_day(date, doy, ...)
+            Day-->>Preload: (tbv, tbh, ia, ts, sm, ndvi, sf) rows
+        end
+        Preload-->>Chunk: chunk_data dict
+        Chunk->>Chunk: _build_chunk_validity_mask(...)
+        Chunk->>Chunk: _run_pixel_inversion(valid_local, ...)
+        loop 逐有效像元
+            Chunk->>Pixel: execute_pixel_inversion(...)
+            Pixel->>Step0: _step0_compute_tau_star(ndvi, ia, ...)
+            Step0-->>Pixel: tau_star
+            Pixel->>Step1: _step1_invert_halpha(tbv, tbh, ...)
+            Step1-->>Pixel: h_star, alpha_star, h_series, a_series
+            Note over Pixel: Step 2: OMEGA 块识别（闭包保持原位，Q2）
+            Pixel->>Step3: _step3_ddca_retrieval(tbv, tbh, ...)
+            Step3-->>Pixel: sm_ret, vod_ret
+            Pixel-->>Chunk: PixelResult | None
+        end
+        Chunk-->>Main: （state 更新）
     end
+
+    Main->>Save: 6) _finalize_and_save(state, ...)
+    Save-->>Main: OmegaSfResult
+
+    Note over Main,Save: 重构前后调用拓扑不变<br/>仅函数边界重新划分
