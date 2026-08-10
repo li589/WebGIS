@@ -1,4 +1,4 @@
-import { computed, nextTick, ref, watch } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { defineStore } from 'pinia'
 
 import { useWeatherTileManager } from '../weather-tile-manager'
@@ -13,21 +13,9 @@ import { createPointWeatherSlice } from './point-weather'
 import { createWorkflowPoller } from './workflow-poller'
 import { createWorkflowRunner, saveTrackedWorkflowRuns } from './workflow-runner'
 import { buildJobLayer } from './result-adapter'
-import { buildImportedRasterPayload } from './imported-raster'
-import { buildImportedVectorPayload } from './imported-vector'
-import {
-  buildWorkspaceSnapshot,
-  isCatalogDismissed,
-  isOverlayDismissed,
-  isRunDismissed,
-  isVectorDismissed,
-  loadWorkspaceSnapshot,
-  saveWorkspaceSnapshot,
-  type PersistedActiveLayer,
-  type PersistedCatalogLayer,
-  type PersistedVectorLayer,
-} from './workspace-persist'
-import type { ActiveLayer, JobLayerItem } from './types'
+import { createWorkspaceHydrateSlice } from './workspace-hydrate'
+import { isRunDismissed } from './workspace-persist'
+import type { JobLayerItem } from './types'
 
 function debugLog(module: string, ...args: unknown[]) {
   probeDebugLog(`[${performance.now().toFixed(1)}ms] [LayersStore:${module}]`, ...args)
@@ -305,273 +293,29 @@ export const useLayersStore = defineStore('layers', () => {
     currentHour.value = hour
   }
 
-  let workspacePersistTimer: ReturnType<typeof setTimeout> | null = null
-
-  flushWorkspacePersistNow = () => {
-    if (typeof window === 'undefined') return
-    if (workspacePersistTimer != null) {
-      window.clearTimeout(workspacePersistTimer)
-      workspacePersistTimer = null
-    }
-    saveWorkspaceSnapshot(buildWorkspaceSnapshot(activeLayers.value, runLayerGroups.value))
-  }
-
-  scheduleWorkspacePersist = () => {
-    if (typeof window === 'undefined') return
-    if (workspacePersistTimer != null) window.clearTimeout(workspacePersistTimer)
-    workspacePersistTimer = window.setTimeout(() => {
-      workspacePersistTimer = null
-      flushWorkspacePersistNow()
-    }, 400)
-  }
-
-  if (typeof window !== 'undefined') {
-    window.addEventListener('pagehide', () => flushWorkspacePersistNow())
-  }
-
-  function restoreCatalogLayerFromSnapshot(
-    saved: PersistedCatalogLayer,
-    instanceIdMap?: Map<string, string>,
-  ) {
-    if (isCatalogDismissed(saved.catalogId)) return
-    if (
-      activeLayers.value.some(
-        (l) => l.catalogId === saved.catalogId && !isLocalImport(l) && !l.jobLayer,
-      )
-    ) {
-      return
-    }
-    const libraryItem = layerLibraryMap.value.get(saved.catalogId)
-    const accent = saved.accentColor
-      ? {
-          accentColor: saved.accentColor,
-          accentGlow: saved.accentGlow ?? 'rgba(255, 255, 255, 0.2)',
-          chipTone: saved.chipTone ?? 'rgba(255, 255, 255, 0.1)',
-        }
-      : assignLayerAccent(libraryItem?.accentColor)
-    const instanceId = genInstanceId()
-    instanceIdMap?.set(saved.instanceId, instanceId)
-    const layer: ActiveLayer = {
-      instanceId,
-      catalogId: saved.catalogId,
-      name: saved.name,
-      visible: saved.visible !== false,
-      opacity: typeof saved.opacity === 'number' ? saved.opacity : 1,
-      order: typeof saved.order === 'number' ? saved.order : activeLayers.value.length,
-      isAdminBoundary: false,
-      dataState: saved.dataState === 'real' ? 'real' : 'catalog',
-      accentColor: accent.accentColor,
-      accentGlow: accent.accentGlow,
-      chipTone: accent.chipTone,
-      runGroupId: saved.runGroupId,
-      runGroupProductTag: saved.runGroupProductTag,
-      paletteOverride: saved.paletteOverride ?? null,
-      vminOverride: saved.vminOverride ?? null,
-      vmaxOverride: saved.vmaxOverride ?? null,
-      nodataMode: saved.nodataMode ?? null,
-      nodataColor: saved.nodataColor ?? null,
-    }
-    activeLayers.value.push(layer)
-    if (isWeatherEngineLayer(saved.catalogId) && layer.visible) {
-      weatherTileManager.setLayerActive(saved.catalogId, true)
-      nextTick(() => {
-        window.setTimeout(() => {
-          weatherTileManager.setViewport(
-            saved.catalogId,
-            currentMapCenter.value,
-            currentMapZoom.value,
-            currentHour.value,
-            undefined,
-            currentMapBBox.value,
-            weatherProviderArg(saved.catalogId),
-          )
-        }, 0)
-      })
-    }
-  }
-
-  function restoreRunGroupsFromSnapshot(
-    snap: NonNullable<ReturnType<typeof loadWorkspaceSnapshot>>,
-    instanceIdMap: Map<string, string>,
-  ) {
-    for (const savedGroup of snap.groups || []) {
-      if (savedGroup.runId && isRunDismissed(savedGroup.runId)) continue
-      if (
-        runLayerGroups.value.some(
-          (g) => g.groupId === savedGroup.groupId || g.runId === savedGroup.runId,
-        )
-      ) {
-        continue
-      }
-      const memberInstanceIds = (savedGroup.memberInstanceIds || [])
-        .map((oldId) => instanceIdMap.get(oldId))
-        .filter((id): id is string => Boolean(id))
-      if (!memberInstanceIds.length) {
-        for (const layer of activeLayers.value) {
-          if (layer.runGroupId === savedGroup.groupId) {
-            memberInstanceIds.push(layer.instanceId)
-          }
-        }
-      }
-      if (!memberInstanceIds.length) continue
-      runLayerGroups.value.push({
-        groupId: savedGroup.groupId,
-        runId: savedGroup.runId || '',
-        title: savedGroup.title,
-        status: savedGroup.status === 'computing' ? 'ready' : savedGroup.status || 'ready',
-        memberInstanceIds,
-        dissolvable: true,
-        sourceLayerId: savedGroup.sourceLayerId,
-        workflowId: savedGroup.workflowId,
-        progress: savedGroup.progress,
-        message: savedGroup.message,
-      })
-      for (const id of memberInstanceIds) {
-        const layer = activeLayers.value.find((l) => l.instanceId === id)
-        if (layer) layer.runGroupId = savedGroup.groupId
-      }
-    }
-  }
-
-  function hydrateWorkspaceFromSnapshot(): Map<string, string> {
-    const snap = loadWorkspaceSnapshot()
-    const instanceIdMap = new Map<string, string>()
-    if (!snap) return instanceIdMap
-    const hasRaster = snap.layers?.length > 0
-    const hasCatalog = (snap.catalogLayers?.length ?? 0) > 0
-    const hasVector = (snap.vectorLayers?.length ?? 0) > 0
-    if (!hasRaster && !hasCatalog && !hasVector) return instanceIdMap
-
-    const existingOverlayIds = new Set(
-      activeLayers.value
-        .map((l) => l.importedRaster?.overlayLayerId)
-        .filter((id): id is string => Boolean(id)),
-    )
-
-    for (const saved of snap.layers as PersistedActiveLayer[]) {
-      if (!saved.importedRaster?.overlayLayerId) continue
-      if (isOverlayDismissed(saved.importedRaster.overlayLayerId)) continue
-      if (existingOverlayIds.has(saved.importedRaster.overlayLayerId)) continue
-
-      const instanceId = genInstanceId()
-      instanceIdMap.set(saved.instanceId, instanceId)
-      const layer: ActiveLayer = {
-        instanceId,
-        catalogId: saved.catalogId,
-        name: saved.name,
-        visible: saved.visible !== false,
-        opacity: typeof saved.opacity === 'number' ? saved.opacity : 1,
-        order: typeof saved.order === 'number' ? saved.order : activeLayers.value.length,
-        isAdminBoundary: false,
-        dataState: 'imported',
-        importedRaster: buildImportedRasterPayload(saved.importedRaster.overlayLayerId, {
-          bounds: saved.importedRaster.bounds,
-          fileName: saved.importedRaster.fileName || saved.name,
-          sourceCrs: saved.importedRaster.sourceCrs,
-          lngOffset: saved.importedRaster.lngOffset,
-          latOffset: saved.importedRaster.latOffset,
-          nativeStep: saved.importedRaster.nativeStep,
-          timeList: saved.importedRaster.timeList,
-          followPolicy: saved.importedRaster.followPolicy,
-          effectiveTimeLabel: saved.importedRaster.effectiveTimeLabel,
-        }),
-        accentColor: saved.accentColor,
-        accentGlow: saved.accentGlow,
-        chipTone: saved.chipTone,
-        runGroupId: saved.runGroupId,
-        runGroupProductTag: saved.runGroupProductTag,
-        runGroupLocked: false,
-        paletteOverride: saved.paletteOverride ?? null,
-        vminOverride: saved.vminOverride ?? null,
-        vmaxOverride: saved.vmaxOverride ?? null,
-        nodataMode: saved.nodataMode ?? null,
-        nodataColor: saved.nodataColor ?? null,
-      }
-      activeLayers.value.push(layer)
-      existingOverlayIds.add(saved.importedRaster.overlayLayerId)
-    }
-
-    for (const saved of snap.catalogLayers ?? []) {
-      restoreCatalogLayerFromSnapshot(saved, instanceIdMap)
-    }
-
-    restoreRunGroupsFromSnapshot(snap, instanceIdMap)
-
-    if (activeLayers.value.length && sidebarView.value === 'empty') {
-      sidebarView.value = 'active'
-    }
-    return instanceIdMap
-  }
-
-  async function hydrateVectorLayersFromSnapshot(instanceIdMap: Map<string, string>) {
-    const snap = loadWorkspaceSnapshot()
-    if (!snap?.vectorLayers?.length) return
-
-    const existingBackendIds = new Set(
-      activeLayers.value
-        .map((l) => l.importedVector?.backendLayerId)
-        .filter((id): id is string => Boolean(id)),
-    )
-
-    const { fetchImportedLayerGeojson, fetchImportedLayerMeta } =
-      await import('../../data-manager/core/api')
-
-    for (const saved of snap.vectorLayers as PersistedVectorLayer[]) {
-      if (!saved.backendLayerId) continue
-      if (isVectorDismissed(saved.backendLayerId)) continue
-      if (existingBackendIds.has(saved.backendLayerId)) continue
-
-      try {
-        const [geojson, meta] = await Promise.all([
-          fetchImportedLayerGeojson(saved.backendLayerId, true),
-          fetchImportedLayerMeta(saved.backendLayerId).catch(() => null),
-        ])
-        const instanceId = genInstanceId()
-        instanceIdMap.set(saved.instanceId, instanceId)
-        const displayName =
-          saved.name ||
-          (typeof meta?.source_name === 'string' ? meta.source_name : undefined) ||
-          saved.fileName ||
-          saved.backendLayerId
-        const payload = buildImportedVectorPayload(geojson, saved.fileName || displayName, {
-          backendLayerId: saved.backendLayerId,
-          featureCount: typeof meta?.feature_count === 'number' ? meta.feature_count : undefined,
-        })
-        if (saved.truncated ?? meta?.truncated) payload.truncated = true
-        if (saved.style) payload.style = saved.style
-
-        const accent = saved.accentColor
-          ? {
-              accentColor: saved.accentColor,
-              accentGlow: saved.accentGlow ?? 'rgba(255, 255, 255, 0.2)',
-              chipTone: saved.chipTone ?? 'rgba(255, 255, 255, 0.1)',
-            }
-          : assignLayerAccent('#7ee0a8')
-
-        activeLayers.value.push({
-          instanceId,
-          catalogId: saved.catalogId || saved.backendLayerId,
-          name: displayName,
-          visible: saved.visible !== false,
-          opacity: typeof saved.opacity === 'number' ? saved.opacity : 0.85,
-          order: typeof saved.order === 'number' ? saved.order : activeLayers.value.length,
-          isAdminBoundary: false,
-          dataState: 'imported',
-          importedVector: payload,
-          accentColor: accent.accentColor,
-          accentGlow: accent.accentGlow,
-          chipTone: accent.chipTone,
-        })
-        existingBackendIds.add(saved.backendLayerId)
-      } catch (err) {
-        console.warn('[layers] restore vector layer failed', saved.backendLayerId, err)
-      }
-    }
-
-    if (activeLayers.value.length && sidebarView.value === 'empty') {
-      sidebarView.value = 'active'
-    }
-  }
+  // Workspace persist / hydrate：见 workspace-hydrate.ts
+  // Created after viewport bind so getMap* late lets are populated.
+  const workspaceHydrate = createWorkspaceHydrateSlice({
+    getActiveLayers: () => activeLayers.value,
+    getRunLayerGroups: () => runLayerGroups.value,
+    getSidebarView: () => sidebarView.value,
+    setSidebarView: (view) => setSidebarView(view),
+    getLayerLibraryMap: () => layerLibraryMap.value,
+    assignLayerAccent: (preferred) => assignLayerAccent(preferred),
+    genInstanceId,
+    isLocalImport,
+    isWeatherEngineLayer: (catalogId) => isWeatherEngineLayer(catalogId),
+    weatherProviderArg,
+    getMapCenter: () => getMapCenter(),
+    getMapZoom: () => getMapZoom(),
+    getMapBBox: () => getMapBBox(),
+    getCurrentHour: () => currentHour.value,
+    bindPersistFns: (fns) => {
+      scheduleWorkspacePersist = fns.scheduleWorkspacePersist
+      flushWorkspacePersistNow = fns.flushWorkspacePersistNow
+    },
+  })
+  const { hydrateWorkspaceFromSnapshot, hydrateVectorLayersFromSnapshot } = workspaceHydrate
 
   // isWeatherEngineLayer / supports* / getLayerPrimaryMetric：见 catalog-runtime.ts
 
