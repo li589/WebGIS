@@ -122,12 +122,12 @@ class DataAccessNodesTests(unittest.TestCase):
             )
             out = self.registry.get_module("output_map_layer").execute(
                 {"data": upstream},
-                {"layer_id": "omega-sf-fenkuai", "display_name": "SF"},
+                {"layer_id": "method-smap-omega-doy-dynamic", "display_name": "SF"},
                 _ctx(workspace),
             )
             self.assertIs(out["manifest"], upstream)
             self.assertEqual(out["map_layer"]["source"], "upstream_manifest")
-            self.assertEqual(out["map_layer"]["layer_id"], "omega-sf-fenkuai")
+            self.assertEqual(out["map_layer"]["layer_id"], "method-smap-omega-doy-dynamic")
 
 
 if __name__ == "__main__":

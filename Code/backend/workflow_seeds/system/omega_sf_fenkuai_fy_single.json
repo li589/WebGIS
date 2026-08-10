@@ -7,7 +7,7 @@
     "author": "system",
     "readonly": true,
     "is_template": true,
-    "linked_layer_id": "omega-sf-fenkuai",
+    "linked_layer_id": "method-fy-omega-doy-dynamic",
     "tags": [
       "pipeline",
       "sf_inversion"
@@ -167,7 +167,7 @@
         360
       ],
       "properties": {
-        "layer_id": "omega-sf-fenkuai",
+        "layer_id": "method-fy-omega-doy-dynamic",
         "display_name": "SF 块反演全流程（FY 单温度）"
       }
     }

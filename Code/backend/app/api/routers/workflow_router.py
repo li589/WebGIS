@@ -314,7 +314,7 @@ def materialize_workflow_map_layers(run_id: str) -> dict:
             time_end=time_end,
             canonical_viirs8_only=(
                 run_status.status == "succeeded"
-                and "omega-sf-fenkuai" in str(run_status.layer_id or "")
+                and "omega-doy-dynamic" in str(run_status.layer_id or "")
             ),
         )
         for ref in refs:
@@ -389,7 +389,8 @@ def materialize_workflow_map_layers(run_id: str) -> dict:
                             time_end=time_end,
                             canonical_viirs8_only=(
                                 run_status.status == "succeeded"
-                                and "omega-sf-fenkuai" in str(run_status.layer_id or "")
+                                and "omega-doy-dynamic"
+                                in str(run_status.layer_id or "")
                             ),
                         )
                     except Exception:

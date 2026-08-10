@@ -12,7 +12,7 @@
 跳过项：
   - GEE 相关（remote-sensing 图层）
   - 门户凭证工作流（4 个 open_data_* 种子）
-  - blocked 图层（ndvi / fy-mwri / station-soil）
+  - blocked 图层（ndvi / ref-fy-tb-202512-mwri / obs-station-sm-daily）
 
 用法：
     python Tools/test_data_production_e2e.py
@@ -65,8 +65,8 @@ ALGO_DEFAULT_TIMEOUT_S = 120
 SKIP_ALGO_LAYERS = {
     "remote-sensing": "GEE 凭据依赖，按用户要求跳过",
     "ndvi": "catalog 标记 blocked（原始数据待下载）",
-    "fy-mwri": "catalog 标记 blocked",
-    "station-soil": "catalog 标记 blocked",
+    "ref-fy-tb-202512-mwri": "catalog 标记 blocked",
+    "obs-station-sm-daily": "catalog 标记 blocked",
 }
 SKIP_PORTAL_SEEDS = {
     "open_data_nsidc_smap_sample",
@@ -621,7 +621,7 @@ def build_algo_request(layer: dict) -> dict:
         "requested_outputs": ["map_layer", "json"],
     }
 
-    # lab-output (engine="provider") 无 module_name，走简化路径
+    # engine="provider" 无 module_name 的图层走简化路径（lab-output 已删除，分支保留兼容）
     if not module_name and engine == "provider":
         payload = {
             "command_type": "analysis",

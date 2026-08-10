@@ -78,15 +78,15 @@ def test_parse_remote_layer_data_uris_db_overrides_env(monkeypatch):
 def test_apply_remote_layer_data_uris_injects_smap(monkeypatch):
     from app.services import layer_catalog
 
-    # catalog 演进：smap-soil 已移除，改用 smap-sm-ts（dataset=SMAP_L3_DEC2025）。
+    # catalog 演进：smap-soil 已移除，改用 ref-smap-sm-202512-l3（dataset=SMAP_L3_DEC2025）。
     payload = {
-        "smap-sm-ts": {
+        "ref-smap-sm-202512-l3": {
             "SMAP_L3_DEC2025": ["smb://192.168.1.10/Geograph/SMAP/x.h5?cred=nas-lab"],
         }
     }
     monkeypatch.setattr(layer_catalog, "_parse_remote_layer_data_uris", lambda: payload)
     catalog = layer_catalog.get_layer_catalog()
-    smap = next(i for i in catalog.items if i.layer_id == "smap-sm-ts")
+    smap = next(i for i in catalog.items if i.layer_id == "ref-smap-sm-202512-l3")
     candidates = smap.default_data_access_sources["SMAP_L3_DEC2025"]
     assert candidates[0].startswith("smb://")
     # 业务判定（2026-08-07）：SMAP_L3_DEC2025 是数据集 KEY，本地候选为可解析的数据源名

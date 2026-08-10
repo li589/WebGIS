@@ -20,11 +20,9 @@
 
   "ndvi": "file:///I:/Geograph_DataSet/Ecological_Vegetation/NDVI/{layer_id}.tif",
   "remote-sensing": "file:///I:/Geograph_DataSet/Ecological_Vegetation/Remote_Sensing/{layer_id}.tif",
-  "lab-output": "file:///I:/GeoOutput/{layer_id}/{hour}.json",
 
-  "smap-soil": "file:///I:/Geograph_DataSet/Soil_Moisture/SMAP/{layer_id}.tif",
-  "fy-mwri": "file:///I:/Geograph_DataSet/Soil_Moisture/FY_MWRI/{layer_id}.tif",
-  "station-soil": "file:///I:/Geograph_DataSet/Station_Observation/{layer_id}.json",
+  "ref-fy-tb-202512-mwri": "file:///I:/Geograph_DataSet/Soil_Moisture/FY_MWRI/{layer_id}.tif",
+  "obs-station-sm-daily": "file:///I:/Geograph_DataSet/Station_Observation/{layer_id}.json",
   "inversion-daily": "file:///I:/Geograph_DataSet/Inversion_Results/{hour}.json",
   "block-inversion": "file:///I:/Geograph_DataSet/Inversion_Results/block_inversion/{layer_id}.json",
   "omega-block": "file:///I:/Geograph_DataSet/Inversion_Results/omega_block/{layer_id}.json"
