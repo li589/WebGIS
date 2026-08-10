@@ -4373,6 +4373,20 @@ export interface components {
             celery_task_time_limit?: number | null;
             /** Celery Task Always Eager */
             celery_task_always_eager?: boolean | null;
+            /** Celery Worker Concurrency */
+            celery_worker_concurrency?: number | null;
+            /** Celery Worker Prefetch Multiplier */
+            celery_worker_prefetch_multiplier?: number | null;
+            /** Celery Worker Max Tasks Per Child */
+            celery_worker_max_tasks_per_child?: number | null;
+            /** Workflow Node Parallelism */
+            workflow_node_parallelism?: number | null;
+            /** Algorithm Max Parallel Workers */
+            algorithm_max_parallel_workers?: number | null;
+            /** Task Memory Budget Mb */
+            task_memory_budget_mb?: number | null;
+            /** Task Cpu Budget Cores */
+            task_cpu_budget_cores?: number | null;
             /** Cors Origins */
             cors_origins?: string[] | null;
             /** Object Store Backend */

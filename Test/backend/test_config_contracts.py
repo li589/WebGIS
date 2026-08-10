@@ -88,6 +88,16 @@ def test_general_config_ok_with_auth_and_no_leak(client: TestClient):
     redis_url = data["redis_url"]
     if "@" in redis_url:
         assert "***" in redis_url
+    for key in (
+        "workflow_node_parallelism",
+        "algorithm_max_parallel_workers",
+        "task_memory_budget_mb",
+        "task_cpu_budget_cores",
+        "celery_worker_concurrency",
+        "celery_worker_prefetch_multiplier",
+        "celery_worker_max_tasks_per_child",
+    ):
+        assert key in data
 
 
 # ── Breaking-change lock: wrapped body required ──────────────────────────
