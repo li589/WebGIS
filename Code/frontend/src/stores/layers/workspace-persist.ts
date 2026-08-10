@@ -49,7 +49,7 @@ export interface PersistedVectorLayer {
   chipTone?: string
 }
 
-/** 目录/天气/分析图层（无 overlay 文件） */
+/** 目录/天气/分析图层（无 overlay 文件）；含计算中占位（runGroupLocked） */
 export interface PersistedCatalogLayer {
   instanceId: string
   catalogId: string
@@ -60,6 +60,8 @@ export interface PersistedCatalogLayer {
   dataState?: 'catalog' | 'real'
   runGroupId?: string
   runGroupProductTag?: string
+  /** 计算组占位锁定：刷新后需保留，避免多图层组丢失 */
+  runGroupLocked?: boolean
   accentColor?: string
   accentGlow?: string
   chipTone?: string
@@ -199,7 +201,7 @@ function isPersistableCatalogLayer(layer: ActiveLayer): boolean {
   if (layer.isAdminBoundary) return false
   if (layer.importedRaster?.overlayLayerId) return false
   if (layer.importedVector) return false
-  if (layer.runGroupLocked && !layer.importedRaster?.overlayLayerId) return false
+  // 计算中占位（无 overlay）必须持久化，否则刷新后多图层组整组消失
   return true
 }
 
@@ -251,6 +253,7 @@ export function buildWorkspaceSnapshot(
       dataState: l.dataState === 'real' ? 'real' : 'catalog',
       runGroupId: l.runGroupId,
       runGroupProductTag: l.runGroupProductTag,
+      runGroupLocked: Boolean(l.runGroupLocked),
       accentColor: l.accentColor,
       accentGlow: l.accentGlow,
       chipTone: l.chipTone,
@@ -293,9 +296,23 @@ export function buildWorkspaceSnapshot(
     }
   }
 
-  const keepGroupIds = new Set(
-    activeLayers.map((l) => l.runGroupId).filter((id): id is string => Boolean(id)),
-  )
+  const persistedInstanceIds = new Set([
+    ...withOverlay.map((l) => l.instanceId),
+    ...catalogLayers.map((l) => l.instanceId),
+    ...vectorLayers.map((l) => l.instanceId),
+  ])
+  const keepGroupIds = new Set<string>()
+  for (const l of activeLayers) {
+    if (l.runGroupId && persistedInstanceIds.has(l.instanceId)) {
+      keepGroupIds.add(l.runGroupId)
+    }
+  }
+  for (const g of runLayerGroups) {
+    if (g.memberInstanceIds.some((id) => persistedInstanceIds.has(id))) {
+      keepGroupIds.add(g.groupId)
+    }
+  }
+
   const layers = withOverlay.slice(0, MAX_LAYERS).map((l): PersistedActiveLayer => ({
     instanceId: l.instanceId,
     catalogId: l.catalogId,
@@ -305,7 +322,7 @@ export function buildWorkspaceSnapshot(
     order: l.order,
     runGroupId: l.runGroupId,
     runGroupProductTag: l.runGroupProductTag,
-    runGroupLocked: false,
+    runGroupLocked: Boolean(l.runGroupLocked),
     importedRaster: l.importedRaster ? serializeImportedRaster(l.importedRaster) : undefined,
     accentColor: l.accentColor,
     accentGlow: l.accentGlow,
@@ -320,16 +337,12 @@ export function buildWorkspaceSnapshot(
   const groups = runLayerGroups
     .filter((g) => keepGroupIds.has(g.groupId) && (!g.runId || !dismissed.runIds.includes(g.runId)))
     .map((g) => {
-      const persistedInstanceIds = new Set([
-        ...layers.map((l) => l.instanceId),
-        ...catalogLayers.map((l) => l.instanceId),
-        ...vectorLayers.map((l) => l.instanceId),
-      ])
+      const computing = g.status === 'computing'
       return {
         ...g,
         memberInstanceIds: g.memberInstanceIds.filter((id) => persistedInstanceIds.has(id)),
-        dissolvable: true,
-        status: g.status === 'computing' ? ('ready' as const) : g.status,
+        dissolvable: computing ? false : true,
+        status: g.status,
       }
     })
     .filter((g) => g.memberInstanceIds.length > 0)

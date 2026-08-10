@@ -228,6 +228,14 @@ export interface JobLayerItem {
   progressiveOverlayAt?: string
   /** 若为重试运行，指向原 run_id */
   retryOfRunId?: string
+  /** 提交时约定的产出时间段（ISO），供运行中时间轴画总覆盖 */
+  expectedTimeRange?: { start_at: string; end_at: string }
+  /** 原生时间步，如 8d / 1h / 1m */
+  expectedNativeStep?: string
+  /** 正在产出/加载中的时间键（块起点或 YYYYMMDD_YYYYMMDD） */
+  inFlightTimeKeys?: string[]
+  /** 明确失败的时间键 */
+  failedTimeKeys?: string[]
 }
 
 // ─── Active layer (已添加图层) ────────────────────────────────────────────────

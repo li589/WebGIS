@@ -19,6 +19,7 @@ import {
   timelineTargetFromWorkflowTimeKey,
   type WorkflowProgressTimeSeekHint,
 } from '../../utils/workflow-timekey-seek'
+import { pruneInFlightTimeKeys } from '../../utils/job-layer-coverage'
 import type {
   ActiveLayer,
   ActiveRunLayerGroup,
@@ -83,6 +84,16 @@ export function createRunLayersSlice(deps: RunLayersSliceDeps) {
     lastWorkflowTimeSeekToken = token
     const target = timelineTargetFromWorkflowTimeKey(timeKey, detail?.dateEnd)
     if (!target) return
+    // 标记当前块为 in-flight（黄格）；已 ready 的键由 time_list 覆盖
+    const job = jobLayers.value.find((j) => j.jobId === jobLayer.jobId)
+    if (job) {
+      const keys = new Set(job.inFlightTimeKeys ?? [])
+      keys.add(timeKey)
+      if (detail?.dateStart && detail?.dateEnd) {
+        keys.add(`${detail.dateStart}_${detail.dateEnd}`)
+      }
+      job.inFlightTimeKeys = [...keys].slice(-40)
+    }
     workflowProgressTimeSeek.value = {
       runId: jobLayer.jobId,
       catalogId: jobLayer.catalogId,
@@ -422,12 +433,24 @@ export function createRunLayersSlice(deps: RunLayersSliceDeps) {
       }
     }
     if (!imports.length) {
-      // 原始 imports 为空（非 dismiss 滤空）时给出可见空态
+      const runStatus = runId
+        ? (jobLayers.value.find((j) => j.jobId === runId)?.status ?? null)
+        : null
+      // 运行中误写的「已完成但无图层」横幅应清除
+      if (
+        runStatus &&
+        runStatus !== 'succeeded' &&
+        workflowError.value === WORKFLOW_COPY.noMapLayers
+      ) {
+        workflowError.value = null
+      }
+      // 原始 imports 为空：仅终态 succeeded 给出可见空态
       const emptyMsg = resolveEmptyOverlayWorkflowError({
         runId,
         rawImportCount: 0,
         existingWorkflowError: workflowError.value,
         emptyMessage: WORKFLOW_COPY.noMapLayers,
+        runStatus,
       })
       if (emptyMsg) workflowError.value = emptyMsg
       return 0
@@ -454,6 +477,12 @@ export function createRunLayersSlice(deps: RunLayersSliceDeps) {
           existingByOverlay.importedRaster.timeSlices = undefined
           existingByOverlay.importedRaster.nativeStep =
             nativeStep || existingByOverlay.importedRaster.nativeStep || '8d'
+          if (runId) {
+            const job = jobLayers.value.find((j) => j.jobId === runId)
+            if (job) {
+              job.inFlightTimeKeys = pruneInFlightTimeKeys(job.inFlightTimeKeys, timeList)
+            }
+          }
         }
         // 若游离 OMEGA_BLOCK 可并入组内 OMEGA 占位，不要在此 continue
         const canMergeIntoGroup =
@@ -638,6 +667,14 @@ export function createRunLayersSlice(deps: RunLayersSliceDeps) {
     if (runId) {
       const g = runLayerGroups.value.find((x) => x.runId === runId)
       if (g) refreshRunGroupDissolvable(g.groupId)
+      const job = jobLayers.value.find((j) => j.jobId === runId)
+      if (job?.inFlightTimeKeys?.length) {
+        const readyKeys = deps
+          .getActiveLayers()
+          .flatMap((l) => l.importedRaster?.timeList ?? [])
+          .filter(Boolean)
+        job.inFlightTimeKeys = pruneInFlightTimeKeys(job.inFlightTimeKeys, readyKeys)
+      }
     }
     reconcileOmegaBlockLayers()
     deps.scheduleWorkspacePersist()

@@ -5,7 +5,12 @@ import { resolveWeatherTileReadyKind } from '../../utils/weather-tile-readiness'
 import { buildAvailabilityState, buildCatalogFallbackItem } from './catalog-builders'
 import { resolvePersistedDisplayName } from './layer-display-names'
 import { buildRealLayerDisplay } from './result-adapter'
-import type { ActiveLayer, ActiveLayerDisplay, RuntimeLayerLibraryItem } from './types'
+import type {
+  ActiveLayer,
+  ActiveLayerDisplay,
+  ActiveRunLayerGroup,
+  RuntimeLayerLibraryItem,
+} from './types'
 
 export interface WeatherTileDisplayBridge {
   getStats(
@@ -24,6 +29,21 @@ export interface ActiveLayersDisplayContext {
   currentHour: number
   weatherTileManager: WeatherTileDisplayBridge
   isWeatherEngineLayer: (catalogId: string) => boolean
+  /** 计算组状态：importedRaster 渐进产物勿在 computing 时标「完整数据」 */
+  runLayerGroups?: ActiveRunLayerGroup[]
+}
+
+function isWorkflowProductComputing(
+  layer: ActiveLayer,
+  groups: ActiveRunLayerGroup[] | undefined,
+): boolean {
+  const jobStatus = layer.jobLayer?.status
+  if (jobStatus === 'running' || jobStatus === 'queued' || jobStatus === 'retry_pending')
+    return true
+  if (layer.runGroupLocked) return true
+  if (!layer.runGroupId || !groups?.length) return false
+  const g = groups.find((x) => x.groupId === layer.runGroupId)
+  return g?.status === 'computing'
 }
 
 /** 将 activeLayers 投影为侧栏/详情展示结构（从 layers store 热路径抽离）。 */
@@ -93,6 +113,23 @@ export function projectActiveLayersDisplay(ctx: ActiveLayersDisplayContext): Act
           payload.fileName ??
           '导入栅格'
         const hasTimes = Boolean(payload.timeList?.length)
+        const timeCount = payload.timeList?.length ?? 0
+        const computing = isWorkflowProductComputing(layer, ctx.runLayerGroups)
+        const availabilityState = computing ? ('partial' as const) : ('ready' as const)
+        const availabilityLabel = computing
+          ? hasTimes
+            ? `已到 ${timeCount} 个时间块`
+            : '运行中'
+          : hasTimes
+            ? `${timeCount} 个时间块`
+            : '完整数据'
+        const availabilityDescription = computing
+          ? hasTimes
+            ? '工作流仍在计算；已到时间块可在底部时间轴查看，其余格为无数据。'
+            : '工作流仍在计算，时间轴暂无可用时间块。'
+          : hasTimes
+            ? '时间序列已注册；底部时间轴按块覆盖日期着色。'
+            : '已通过后端注册为 overlay，可在图层列表控制显隐与透明度。'
         return {
           instanceId: layer.instanceId,
           catalogId: layer.catalogId,
@@ -102,23 +139,21 @@ export function projectActiveLayersDisplay(ctx: ActiveLayersDisplayContext): Act
           engine: 'local',
           supportsTime: hasTimes,
           runReadiness: 'ready',
-          runReadinessSummary: '本地栅格已注册',
+          runReadinessSummary: computing ? '工作流计算中' : '本地栅格已注册',
           summary: hasTimes ? '时间序列栅格叠加' : '本地 TIF 栅格叠加',
           metricLabel: '类型',
           metricValue: '栅格',
-          trendLabel: hasTimes ? '科学时间序列' : '本地栅格叠加',
-          statusLabel: '已导入',
+          trendLabel: computing ? '工作流计算中' : hasTimes ? '科学时间序列' : '本地栅格叠加',
+          statusLabel: computing ? '计算中' : '已导入',
           updateLabel: '本地文件',
           sourceLabel: payload.fileName ?? '本地导入',
           confidenceLabel: '本地数据',
           accentColor: layer.accentColor ?? '#7eb8e0',
           accentGlow: layer.accentGlow ?? 'rgba(126, 184, 224, 0.28)',
           chipTone: layer.chipTone ?? 'rgba(126, 184, 224, 0.16)',
-          availabilityState: 'ready',
-          availabilityLabel: hasTimes ? `${payload.timeList!.length} 个时间块` : '完整数据',
-          availabilityDescription: hasTimes
-            ? '时间序列已注册；底部时间轴按块覆盖日期着色。'
-            : '已通过后端注册为 overlay，可在图层列表控制显隐与透明度。',
+          availabilityState,
+          availabilityLabel,
+          availabilityDescription,
           observationTimeLabel:
             payload.effectiveTimeLabel ||
             (hasTimes ? payload.timeList![payload.timeList!.length - 1]! : '静态'),
@@ -127,7 +162,7 @@ export function projectActiveLayersDisplay(ctx: ActiveLayersDisplayContext): Act
           isAdminBoundary: false,
           isImported: false,
           isImportedRaster: true,
-          jobLayer: undefined,
+          jobLayer: layer.jobLayer,
           visible: layer.visible,
           opacity: layer.opacity,
           order: layer.order,

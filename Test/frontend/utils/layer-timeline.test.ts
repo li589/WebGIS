@@ -42,10 +42,13 @@ describe('layer-timeline (多时间粒度适配)', () => {
     expect(monthSegs).toHaveLength(12)
     // Labels are now bare numbers without unit suffix
     expect(monthSegs[0].label).toBe('1')
+    // 无 availabilityMap → 全 empty（未知 ≠ 就绪）
+    expect(monthSegs.every((s) => s.state === 'empty')).toBe(true)
 
-    const hourSegs = generateTimelineSegments(new Date(), 'hour', { 5: 'empty' })
+    const hourSegs = generateTimelineSegments(new Date(), 'hour', { 5: 'ready' })
     expect(hourSegs).toHaveLength(24)
-    expect(hourSegs[5].state).toBe('empty')
+    expect(hourSegs[5].state).toBe('ready')
+    expect(hourSegs[0].state).toBe('empty')
     // Hour labels are compact integers
     expect(hourSegs[0].label).toBe('0')
     expect(hourSegs[23].label).toBe('23')
@@ -59,6 +62,7 @@ describe('layer-timeline (多时间粒度适配)', () => {
     expect(yearSegs[5].index).toBe(2023)
     expect(yearSegs[9].index).toBe(2027)
     expect(yearSegs[5].label).toBe('2023')
+    expect(yearSegs.every((s) => s.state === 'empty')).toBe(true)
   })
 
   it('generates day segments without unit suffix', () => {
@@ -67,6 +71,17 @@ describe('layer-timeline (多时间粒度适配)', () => {
     expect(daySegs).toHaveLength(31)
     expect(daySegs[0].label).toBe('1')
     expect(daySegs[30].label).toBe('31')
+    expect(daySegs.every((s) => s.state === 'empty')).toBe(true)
+  })
+
+  it('generateTimelineSegments：显式 map 覆盖格为 ready，其余 empty', () => {
+    const monthSegs = generateTimelineSegments(new Date(2023, 4, 1), 'month', {
+      0: 'ready',
+      4: 'ready',
+    })
+    expect(monthSegs[0].state).toBe('ready')
+    expect(monthSegs[4].state).toBe('ready')
+    expect(monthSegs[1].state).toBe('empty')
   })
 
   it('February day segments match month length', () => {
@@ -161,6 +176,8 @@ describe('layer-timeline 补测：边界/闰年/月末/抽稀', () => {
     const segs = generateTimelineSegments(new Date(), 'hour', { 3: 'partial' })
     expect(segs[3].state).toBe('partial')
     expect(segs[3].availabilityLabel).toBe('降采样中/部分补全')
+    expect(segs[0].state).toBe('empty')
+    expect(segs[0].availabilityLabel).toBe('无数据')
   })
 
   it('generateTimelineSegments：year 窗口 availabilityMap 按真实年份优先', () => {

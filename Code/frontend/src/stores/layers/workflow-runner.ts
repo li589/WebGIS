@@ -256,6 +256,8 @@ export function createWorkflowRunner(deps: WorkflowRunnerDeps) {
       const instanceIdMap = deps.hydrateWorkspaceFromSnapshot()
       await deps.hydrateVectorLayersFromSnapshot(instanceIdMap)
       deps.reconcileOmegaBlockLayers()
+      // bridge 依赖目录 descriptor；与 Dashboard 并行启动时需等目录就绪
+      await deps.ensureRuntimeLayerCatalog().catch(() => undefined)
 
       const activeRuns = await listActiveWorkflowRuns().catch(() => [])
       const tracked = loadTrackedWorkflowRuns()
@@ -294,12 +296,14 @@ export function createWorkflowRunner(deps: WorkflowRunnerDeps) {
       for (const run of activeRuns) {
         // 同一工作流已有成功产物时，不再恢复其 running/queued 占位
         // （worker 重启后僵尸 running run 会永远卡在占位组，展示陈旧中间块）。
+        // 但本机 tracked 的进行中 run 必须恢复，否则刷新丢失多图层计算组。
         const workflowKey = String(
           (run as Record<string, unknown>).command_label ||
             (run as Record<string, unknown>).layer_id ||
             '',
         )
-        if (workflowKey && succeededByWorkflow.has(workflowKey)) continue
+        const isTrackedActive = tracked.some((t) => t.runId === run.run_id)
+        if (workflowKey && succeededByWorkflow.has(workflowKey) && !isTrackedActive) continue
         candidates.push({
           runId: run.run_id,
           catalogIdHint: ((run as Record<string, unknown>).layer_id as string) || undefined,
@@ -345,13 +349,15 @@ export function createWorkflowRunner(deps: WorkflowRunnerDeps) {
         }
 
         // 非终态且同工作流已有成功版本 → 跳过（防止僵尸 running 重建占位组）
+        // tracked 进行中 run 例外：刷新后必须续接占位组/轮询。
         if (run.status !== 'succeeded') {
           const workflowKey = String(
             (run as Record<string, unknown>).command_label ||
               (run as Record<string, unknown>).layer_id ||
               '',
           )
-          if (workflowKey && succeededByWorkflow.has(workflowKey)) {
+          const isTrackedActive = tracked.some((t) => t.runId === candidate.runId)
+          if (workflowKey && succeededByWorkflow.has(workflowKey) && !isTrackedActive) {
             forgetTrackedWorkflowRun(candidate.runId)
             continue
           }
@@ -395,7 +401,17 @@ export function createWorkflowRunner(deps: WorkflowRunnerDeps) {
           const trackedItem = tracked.find((t) => t.runId === run.run_id)
           const layerId = String((run as Record<string, unknown>).layer_id || catalogId)
           const bridge = resolveRestoreWorkflowBridge(layerId, catalogId, trackedItem)
-          if (bridge.workflowId || bridge.sourceLayerId || catalogId.startsWith('wf-run-')) {
+          const hasHydratedGroup = deps.getRunLayerGroups().some((g) => g.runId === run.run_id)
+          // 有 bridge / tracked 组 / 已水合组 / wf-run 占位时均重建或补全计算组
+          if (
+            bridge.workflowId ||
+            bridge.sourceLayerId ||
+            catalogId.startsWith('wf-run-') ||
+            catalogId.startsWith('wf-out-') ||
+            Boolean(trackedItem?.groupId) ||
+            (trackedItem?.memberCatalogIds?.length ?? 0) > 0 ||
+            hasHydratedGroup
+          ) {
             ensureRestoredRunGroup(run.run_id, catalogId, trackedItem, {
               createPlaceholders: true,
               title: jobLayer.name || bridge.title || '工作流运行',
@@ -521,43 +537,126 @@ export function createWorkflowRunner(deps: WorkflowRunnerDeps) {
     tracked?: TrackedWorkflowRun,
     options?: { createPlaceholders?: boolean; title?: string },
   ) {
-    if (deps.getRunLayerGroups().some((g) => g.runId === runId)) return
     const bridge = resolveRestoreWorkflowBridge(
       String(tracked?.catalogId || catalogId),
       catalogId,
       tracked,
     )
-    const groupId =
-      tracked?.groupId || `run-group-restored-${runId.replace(/[^a-zA-Z0-9]/g, '').slice(-10)}`
     const tags = ['SM', 'VOD', 'OMEGA'] as const
+    const existingGroup = deps.getRunLayerGroups().find((g) => g.runId === runId)
+    const groupId =
+      existingGroup?.groupId ||
+      tracked?.groupId ||
+      `run-group-restored-${runId.replace(/[^a-zA-Z0-9]/g, '').slice(-10)}`
     const memberCatalogIds =
       tracked?.memberCatalogIds?.length === 3
         ? tracked.memberCatalogIds
         : tags.map((tag) => `wf-run-${groupId}-${tag.toLowerCase()}`)
 
+    // 无 descriptor/workflow 元数据时做通用 restore，禁止写死实验室 seed id
+    const sourceLayerId = existingGroup?.sourceLayerId || bridge.sourceLayerId || catalogId
+    const workflowId = existingGroup?.workflowId || bridge.workflowId || ''
+
+    /** 渐进/部分水合后补全缺失产品槽（勿因组已存在而直接 return） */
+    const fillMissingMembers = (group: ActiveRunLayerGroup) => {
+      if (!options?.createPlaceholders && group.status !== 'computing') return
+      const activeLayers = deps.getActiveLayers()
+      const presentCatalogIds = new Set(
+        group.memberInstanceIds
+          .map((id) => activeLayers.find((l) => l.instanceId === id)?.catalogId)
+          .filter((id): id is string => Boolean(id)),
+      )
+      // 亦认已挂到同组但未进 memberInstanceIds 的层
+      for (const layer of activeLayers) {
+        if (layer.runGroupId === group.groupId && layer.catalogId) {
+          presentCatalogIds.add(layer.catalogId)
+          if (!group.memberInstanceIds.includes(layer.instanceId)) {
+            group.memberInstanceIds.push(layer.instanceId)
+          }
+        }
+      }
+      const accentDonor = activeLayers.find((l) => l.runGroupId === group.groupId)
+      const maxOrder = activeLayers.reduce((max, l) => Math.max(max, l.order), -1)
+      let added = 0
+      tags.forEach((tag, i) => {
+        const cid = memberCatalogIds[i] || `wf-run-${group.groupId}-${tag.toLowerCase()}`
+        if (presentCatalogIds.has(cid)) return
+        const already = activeLayers.find((l) => l.catalogId === cid)
+        if (already) {
+          already.runGroupId = group.groupId
+          already.runGroupProductTag = already.runGroupProductTag || tag
+          if (options?.createPlaceholders || group.status === 'computing') {
+            already.runGroupLocked = !already.importedRaster?.overlayLayerId
+          }
+          if (!group.memberInstanceIds.includes(already.instanceId)) {
+            group.memberInstanceIds.push(already.instanceId)
+          }
+          return
+        }
+        const layer: ActiveLayer = {
+          instanceId: crypto.randomUUID(),
+          catalogId: cid,
+          name: productTagLabel(tag),
+          visible: true,
+          opacity: 1,
+          order: maxOrder + tags.length - i + added,
+          isAdminBoundary: false,
+          dataState: 'catalog',
+          accentColor: accentDonor?.accentColor,
+          accentGlow: accentDonor?.accentGlow,
+          chipTone: accentDonor?.chipTone,
+          runGroupId: group.groupId,
+          runGroupProductTag: tag,
+          runGroupLocked: true,
+        }
+        activeLayers.push(layer)
+        group.memberInstanceIds.push(layer.instanceId)
+        added += 1
+      })
+      if (options?.createPlaceholders) {
+        group.status = 'computing'
+        group.dissolvable = false
+      }
+      if (!group.sourceLayerId) group.sourceLayerId = sourceLayerId
+      if (!group.workflowId) group.workflowId = workflowId
+      if (options?.title) group.title = options.title
+    }
+
+    if (existingGroup) {
+      fillMissingMembers(existingGroup)
+      return
+    }
+
     const existingMembers = memberCatalogIds
       .map((cid) => deps.getActiveLayers().find((l) => l.catalogId === cid))
       .filter((l): l is ActiveLayer => Boolean(l))
 
-    // 无 descriptor/workflow 元数据时做通用 restore，禁止写死实验室 seed id
-    const sourceLayerId = bridge.sourceLayerId || catalogId
-    const workflowId = bridge.workflowId || ''
+    // 快照水合可能用不同 catalogId，但已带 runGroupId / tracked.groupId
+    const hydratedByGroupId = tracked?.groupId
+      ? deps.getActiveLayers().filter((l) => l.runGroupId === tracked.groupId)
+      : []
 
-    if (existingMembers.length) {
-      for (const m of existingMembers) {
+    const seedMembers = existingMembers.length ? existingMembers : hydratedByGroupId
+
+    if (seedMembers.length) {
+      for (const m of seedMembers) {
         m.runGroupId = groupId
-        m.runGroupLocked = options?.createPlaceholders === true
+        if (options?.createPlaceholders && !m.importedRaster?.overlayLayerId) {
+          m.runGroupLocked = true
+        }
       }
-      deps.getRunLayerGroups().push({
+      const group: ActiveRunLayerGroup = {
         groupId,
         runId,
         title: options?.title || tracked?.name || bridge.title || '工作流产物',
         status: options?.createPlaceholders ? 'computing' : 'ready',
-        memberInstanceIds: existingMembers.map((m) => m.instanceId),
+        memberInstanceIds: seedMembers.map((m) => m.instanceId),
         dissolvable: !options?.createPlaceholders,
         sourceLayerId,
         workflowId,
-      })
+      }
+      deps.getRunLayerGroups().push(group)
+      fillMissingMembers(group)
       return
     }
 
@@ -712,22 +811,7 @@ export function createWorkflowRunner(deps: WorkflowRunnerDeps) {
 
       interruptWorkflowForCatalog(catalogId)
 
-      // 提交一开始就写入 jobLayer，使标题栏/状态面板立即显示「排队」，不依赖天气瓦片路径
-      deps.upsertJobLayer(catalogId, {
-        jobId: submitJobId,
-        catalogId,
-        name: catalogName,
-        commandType: 'analysis',
-        status: 'queued',
-        progress: 5,
-        createdAt: submitStartedAt,
-        updatedAt: new Date().toISOString(),
-        message: '正在提交工作流…',
-        metrics: [],
-        reportSummary: '正在提交工作流…',
-        resultUrl: undefined,
-        mapLayerPayload: previousJobLayer?.mapLayerPayload,
-      })
+      const { buildExpectedCoverageForSubmit } = await import('../../utils/job-layer-coverage')
 
       debugLog(
         'runWorkflow',
@@ -750,6 +834,50 @@ export function createWorkflowRunner(deps: WorkflowRunnerDeps) {
       if (options.timeRange && typeof options.timeRange === 'object') {
         payload.time_range = options.timeRange
       }
+      const algoParams =
+        options.algorithmRequest && typeof options.algorithmRequest.algorithm_params === 'object'
+          ? (options.algorithmRequest.algorithm_params as Record<string, unknown>)
+          : null
+      const catalogNative =
+        (runtimeLayerCatalog[backendLayerId] as { native_step?: string } | undefined)
+          ?.native_step ??
+        (runtimeLayerCatalog[catalogId] as { native_step?: string } | undefined)?.native_step ??
+        null
+      const coverage = buildExpectedCoverageForSubmit({
+        timeRange: options.timeRange,
+        payloadTimeRange: payload.time_range as Record<string, unknown> | undefined,
+        algorithmParams: algoParams,
+        catalogNativeStep: catalogNative,
+        workflowId:
+          (typeof options.algorithmRequest?.workflow_entry_name === 'string'
+            ? options.algorithmRequest.workflow_entry_name
+            : null) ||
+          (typeof options.algorithmRequest?.workflow_name === 'string'
+            ? options.algorithmRequest.workflow_name
+            : null) ||
+          catalogId,
+        previous: previousJobLayer,
+      })
+      // 提交一开始就写入 jobLayer，使标题栏/状态面板立即显示「排队」
+      deps.upsertJobLayer(catalogId, {
+        jobId: submitJobId,
+        catalogId,
+        name: catalogName,
+        commandType: 'analysis',
+        status: 'queued',
+        progress: 5,
+        createdAt: submitStartedAt,
+        updatedAt: new Date().toISOString(),
+        message: '正在提交工作流…',
+        metrics: [],
+        reportSummary: '正在提交工作流…',
+        resultUrl: undefined,
+        mapLayerPayload: previousJobLayer?.mapLayerPayload,
+        expectedTimeRange: coverage.expectedTimeRange,
+        expectedNativeStep: coverage.expectedNativeStep,
+        inFlightTimeKeys: [],
+        failedTimeKeys: [],
+      })
       if (options.resourceProfile) {
         payload.resource_profile = options.resourceProfile
       }
@@ -791,6 +919,10 @@ export function createWorkflowRunner(deps: WorkflowRunnerDeps) {
         resultUrl: undefined,
         // 保留旧 mapLayerPayload，使粒子流/网格填充在新工作流运行期间保持可见
         mapLayerPayload: previousJobLayer?.mapLayerPayload,
+        expectedTimeRange: coverage.expectedTimeRange,
+        expectedNativeStep: coverage.expectedNativeStep,
+        inFlightTimeKeys: [],
+        failedTimeKeys: [],
       })
       if (catalogId.startsWith('wf-out-')) {
         useWorkflowOutputLayersStore().updateRunStatus(catalogId, accepted.run_id, 'queued')

@@ -1168,6 +1168,10 @@ const visibleTickSet = computed(() => computeVisibleTickIndices(props.timelineSe
   background: rgba(148, 163, 184, 0.3);
 }
 
+.availability-error {
+  background: #ef4444;
+}
+
 .availability-static {
   background: rgba(100, 116, 139, 0.2);
 }
@@ -1286,6 +1290,10 @@ const visibleTickSet = computed(() => computeVisibleTickIndices(props.timelineSe
 /* 空数据刻度弱化 */
 .tick-button.tick-empty {
   opacity: 0.4;
+}
+
+.tick-button.tick-error {
+  color: #fca5a5;
 }
 
 /* 单位指示标签 */

@@ -76,6 +76,7 @@ export function createActiveLayersSlice(deps: ActiveLayersSliceDeps) {
       currentHour: uiStore.currentHour,
       weatherTileManager,
       isWeatherEngineLayer: deps.isWeatherEngineLayer,
+      runLayerGroups: deps.getRunLayerGroups(),
     }),
   )
 

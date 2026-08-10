@@ -44,8 +44,18 @@ import {
 import {
   dayAvailabilityFromTimeList,
   formatSliceLabel,
+  monthAvailabilityFromTimeList,
+  parseInstant,
   timeStepToLegacyGranularity,
+  yearAvailabilityFromTimeList,
 } from '../utils/temporal-interval'
+import { buildRunTimelineAvailability } from '../utils/run-timeline-availability'
+import {
+  resolveJobLayerForActiveLayer,
+  resolveRunGroupForActiveLayer,
+  resolveTimelineNativeStep,
+  shouldUseExpectedTimelineAxis,
+} from '../utils/job-layer-coverage'
 import {
   matchSliceLabelInTimeList,
   timelineTargetFromWorkflowTimeKey,
@@ -449,6 +459,32 @@ watch(
   { deep: true },
 )
 
+/** 运行启动：有预期时间段时把轴对齐到 start_at（非统一/非锁定） */
+watch(
+  (): { jobId: string; startAt: string; status: string } | null => {
+    const layer = layersStore.activeLayers.find((l) => l.catalogId === selectedCatalogId.value)
+    const job = resolveJobLayerForActiveLayer(
+      layer,
+      layersStore.jobLayers,
+      layersStore.runLayerGroups,
+    )
+    const startAt = job?.expectedTimeRange?.start_at
+    if (!job || !startAt) return null
+    return { jobId: job.jobId, startAt, status: job.status }
+  },
+  (hint, prev) => {
+    if (!hint) return
+    // 同一 run 的 start_at 不变时不重复 snap（status 变化不触发）
+    if (prev && prev.jobId === hint.jobId && prev.startAt === hint.startAt) return
+    if (unifiedTimeLock.value || isPlaying.value) return
+    const catalogId = selectedCatalogId.value
+    if (!catalogId || uiStore.isLayerTimeLocked(catalogId)) return
+    const d = parseInstant(hint.startAt)
+    if (!d) return
+    uiStore.applyDateHour(d, 0)
+  },
+)
+
 // 切层：非统一模式先记住上一层，再恢复目标层记忆；统一模式保持共享时刻
 watch(selectedCatalogId, (catalogId, previous) => {
   if (!catalogId || catalogId === previous) return
@@ -631,6 +667,8 @@ const timelineSegments = computed((): TimelineAvailabilitySegment[] => {
   void weatherCoverage.value
   void overlayTimeStates.value
   void selectedActiveLayer.value?.importedRaster?.timeList
+  void layersStore.jobLayers
+  void layersStore.runLayerGroups
 
   if (!hasTimelineLayer.value) {
     return buildClockDayTimelineSegments({
@@ -655,19 +693,47 @@ const timelineSegments = computed((): TimelineAvailabilitySegment[] => {
     : []
   const scienceTimes = fromStore.length ? fromStore : fromOverlay.filter(Boolean)
 
-  if (scienceTimes.length && (gran === 'day' || gran === 'month' || gran === 'year')) {
-    if (gran === 'day') {
-      return generateTimelineSegments(
-        currentDate.value,
-        'day',
-        dayAvailabilityFromTimeList(currentDate.value, scienceTimes),
-      )
-    }
-    return generateTimelineSegments(currentDate.value, gran)
-  }
+  // 运行中：按提交 time_range + native_step 画预期槽（灰/黄/绿/红）
+  const jobForTimeline = resolveJobLayerForActiveLayer(
+    scienceLayer,
+    layersStore.jobLayers,
+    layersStore.runLayerGroups,
+  )
+  const runGroup = resolveRunGroupForActiveLayer(scienceLayer, layersStore.runLayerGroups)
+  const expected = jobForTimeline?.expectedTimeRange
+  const useExpectedAxis = shouldUseExpectedTimelineAxis({
+    expected,
+    job: jobForTimeline,
+    runGroup,
+    readyTimeCount: scienceTimes.length,
+  })
 
-  if (gran === 'month' || gran === 'year' || gran === 'day') {
-    return generateTimelineSegments(currentDate.value, gran)
+  // day/month/year：始终传 availabilityMap（空 time_list → 全灰；有块 → 渐进绿）
+  if (gran === 'day' || gran === 'month' || gran === 'year') {
+    if (useExpectedAxis && expected) {
+      const map = buildRunTimelineAvailability({
+        windowDate: currentDate.value,
+        granularity: gran,
+        expectedTimeRange: expected,
+        nativeStep: resolveTimelineNativeStep({
+          job: jobForTimeline,
+          layer: scienceLayer,
+          fallback: '1d',
+        }),
+        readyTimeList: scienceTimes,
+        inFlightTimeKeys: jobForTimeline?.inFlightTimeKeys,
+        failedTimeKeys: jobForTimeline?.failedTimeKeys,
+        runFailed: jobForTimeline?.status === 'failed' || runGroup?.status === 'failed',
+      })
+      return generateTimelineSegments(currentDate.value, gran, map)
+    }
+    const map =
+      gran === 'day'
+        ? dayAvailabilityFromTimeList(currentDate.value, scienceTimes)
+        : gran === 'month'
+          ? monthAvailabilityFromTimeList(currentDate.value, scienceTimes)
+          : yearAvailabilityFromTimeList(currentDate.value, scienceTimes)
+    return generateTimelineSegments(currentDate.value, gran, map)
   }
 
   const layer = activeLayer.value
@@ -1182,23 +1248,6 @@ async function handleRunWorkflowFromEditor(
   }
 }
 
-async function handleRunWorkflow(catalogId: string) {
-  logStore.logWorkflow('workflow-submit', `提交工作流: ${catalogId}`)
-  try {
-    await layersStore.runWorkflowForCatalog(catalogId)
-    logStore.logWorkflow('workflow-accepted', `工作流已受理: ${catalogId}`)
-  } catch (error) {
-    const msg = (error as Error)?.message ?? String(error)
-    if (/天气引擎图层|瓦片按需加载/.test(msg)) {
-      logStore.logWorkflow('workflow-weather-refresh', msg)
-    } else {
-      logStore.logWorkflow('workflow-error', `工作流提交失败: ${catalogId} — ${msg}`)
-    }
-    console.error('[DashboardView] workflow submit failed', error)
-    throw error
-  }
-}
-
 watch(
   () => activeLayer.value.catalogId,
   (catalogId) => {
@@ -1321,7 +1370,6 @@ watch(tileForecastHour, () => {
             :overlay-time-states="overlayTimeStates"
             :overlay-point-values="overlayPointValues"
             :selected-overlay-time-series="selectedOverlayTimeSeries"
-            @run-workflow="handleRunWorkflow"
             @toggle-layer-visibility="handleToggleLayerVisibility"
             @set-layer-opacity="handleSetLayerOpacity"
             @select-hotspot="handleHotspotSelectFromPanel"

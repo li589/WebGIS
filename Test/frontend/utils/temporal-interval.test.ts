@@ -4,10 +4,12 @@ import {
   defaultFollowPolicy,
   formatTimeStep,
   latestSlice,
+  monthAvailabilityFromTimeList,
   parseTimeStep,
   resolveSliceForInstant,
   sliceStartAsDateHour,
   timeListToSlices,
+  yearAvailabilityFromTimeList,
 } from '@/utils/temporal-interval'
 
 describe('temporal-interval', () => {
@@ -62,6 +64,30 @@ describe('temporal-interval', () => {
     expect(map[27]).toBe('ready')
     expect(map[31]).toBe('ready')
     expect(map[20]).toBe('empty')
+  })
+
+  it('dayAvailabilityFromTimeList：空列表全 empty', () => {
+    const map = dayAvailabilityFromTimeList(new Date(2025, 0, 1), [])
+    expect(Object.values(map).every((s) => s === 'empty')).toBe(true)
+    expect(Object.keys(map)).toHaveLength(31)
+  })
+
+  it('monthAvailabilityFromTimeList：覆盖月 ready，其余 empty', () => {
+    const map = monthAvailabilityFromTimeList(new Date(2025, 5, 1), [
+      '20251203_20251210',
+      '20250601_20250605',
+    ])
+    expect(map[11]).toBe('ready') // December
+    expect(map[5]).toBe('ready') // June
+    expect(map[0]).toBe('empty')
+    expect(map[4]).toBe('empty')
+  })
+
+  it('yearAvailabilityFromTimeList：覆盖年 ready（真实年份键）', () => {
+    const map = yearAvailabilityFromTimeList(new Date(2025, 5, 1), ['20251203_20251210', '20240101'])
+    expect(map[2025]).toBe('ready')
+    expect(map[2024]).toBe('ready')
+    expect(map[2023]).toBe('empty')
   })
 
   it('sliceStartAsDateHour keeps local calendar day (no UTC backshift)', () => {

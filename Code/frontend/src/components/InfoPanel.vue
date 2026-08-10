@@ -94,7 +94,6 @@ const props = defineProps<{
 }>()
 
 const emit = defineEmits<{
-  runWorkflow: [catalogId: string]
   toggleLayerVisibility: [instanceId: string]
   setLayerOpacity: [payload: { instanceId: string; opacity: number }]
   selectHotspot: [hotspotId: string]
@@ -869,17 +868,6 @@ const workflowStage = computed(() => {
   if (jobLayer.value?.status === 'failed') return 'failed'
   return 'idle'
 })
-const buttonDisabled = computed(
-  () => Boolean(runBlockedReason.value) || isWorkflowRunning.value || props.isSubmitting,
-)
-const buttonLabel = computed(() => {
-  if (runBlockedReason.value) {
-    return runBlockedReason.value.includes('工作流引擎') ? '不支持工作流' : '数据未就绪'
-  }
-  if (props.isSubmitting) return '提交中...'
-  if (isWorkflowRunning.value) return '任务进行中'
-  return '运行工作流'
-})
 
 /** 从图层目录中查找关联的工作流名称和引擎 */
 const workflowMeta = computed(() => {
@@ -1011,11 +999,6 @@ function formatHour(value: string) {
   const date = new Date(value)
   if (Number.isNaN(date.getTime())) return value
   return `${String(date.getHours()).padStart(2, '0')}:00`
-}
-
-function handleRunWorkflow() {
-  if (!displayLayer.value || !canRunWorkflow.value || buttonDisabled.value) return
-  emit('runWorkflow', displayLayer.value.catalogId)
 }
 
 function handleToggleLayerVisibility() {
@@ -1233,18 +1216,8 @@ onBeforeUnmount(() => {
             <p class="analysis-context-line">{{ displayLayer.name }} · {{ staticTopHint }}</p>
           </div>
 
-          <!-- 可跑工作流：运行入口 + 短进度 -->
+          <!-- 可跑工作流：引擎信息 + 进度（运行入口在侧栏右键 / 编辑器） -->
           <template v-else>
-            <div class="action-row">
-              <button
-                class="run-workflow-btn"
-                :disabled="buttonDisabled"
-                :title="runBlockedReason ?? ''"
-                @click="handleRunWorkflow"
-              >
-                {{ buttonLabel }}
-              </button>
-            </div>
             <div v-if="runBlockedReason" class="run-block-hint">
               {{ runBlockedReason }}
             </div>
@@ -2306,15 +2279,6 @@ onBeforeUnmount(() => {
               >
                 {{ ANALYSIS_COPY.toolsQuickInspect }}
               </button>
-              <button
-                v-if="canRunWorkflow"
-                type="button"
-                class="weather-mini-btn"
-                :disabled="buttonDisabled"
-                @click="handleRunWorkflow"
-              >
-                {{ buttonLabel }}
-              </button>
               <button type="button" class="weather-mini-btn" @click="setActiveTab('style')">
                 符号样式
               </button>
@@ -2756,19 +2720,6 @@ onBeforeUnmount(() => {
 }
 .error-icon {
   font-size: 0.72rem;
-}
-.run-workflow-btn {
-  border: 1px solid rgba(103, 212, 255, 0.24);
-  border-radius: 999px;
-  background: rgba(29, 78, 216, 0.18);
-  color: #d8f3ff;
-  font-size: 0.62rem;
-  padding: 0.34rem 0.7rem;
-  cursor: pointer;
-}
-.run-workflow-btn:disabled {
-  opacity: 0.58;
-  cursor: not-allowed;
 }
 .run-block-hint {
   color: #ffd38a;

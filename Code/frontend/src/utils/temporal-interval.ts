@@ -185,6 +185,66 @@ export function dayAvailabilityFromTimeList(
   for (let d = 1; d <= daysInMonth; d++) map[d] = 'empty'
   if (!timeList.length) return map
 
+  for (const { start, endExclusive } of iterTimeListDayRange(timeList)) {
+    for (const cur = new Date(start); cur < endExclusive; cur.setDate(cur.getDate() + 1)) {
+      if (cur.getFullYear() === year && cur.getMonth() === month) {
+        map[cur.getDate()] = 'ready'
+      }
+    }
+  }
+  return map
+}
+
+/** 一年 12 月：time_list 覆盖到的月份标 ready（index 0=1月）。 */
+export function monthAvailabilityFromTimeList(
+  date: Date,
+  timeList: string[],
+): Record<number, 'empty' | 'partial' | 'ready'> {
+  const year = date.getFullYear()
+  const map: Record<number, 'empty' | 'partial' | 'ready'> = {}
+  for (let m = 0; m < 12; m++) map[m] = 'empty'
+  if (!timeList.length) return map
+
+  for (const { start, endExclusive } of iterTimeListDayRange(timeList)) {
+    for (const cur = new Date(start); cur < endExclusive; cur.setDate(cur.getDate() + 1)) {
+      if (cur.getFullYear() === year) {
+        map[cur.getMonth()] = 'ready'
+      }
+    }
+  }
+  return map
+}
+
+/**
+ * 近窗年份可用性：键为真实年份（与 generateTimelineSegments year 的 index 对齐）。
+ * 亦写入相对 index 0..9（以 date 为中心 ±5），兼容旧 map 约定。
+ */
+export function yearAvailabilityFromTimeList(
+  date: Date,
+  timeList: string[],
+): Record<number, 'empty' | 'partial' | 'ready'> {
+  const currentYear = date.getFullYear()
+  const baseYear = currentYear - 5
+  const map: Record<number, 'empty' | 'partial' | 'ready'> = {}
+  for (let i = 0; i < 10; i++) {
+    const yr = baseYear + i
+    map[yr] = 'empty'
+    map[i] = 'empty'
+  }
+  if (!timeList.length) return map
+
+  for (const { start, endExclusive } of iterTimeListDayRange(timeList)) {
+    for (const cur = new Date(start); cur < endExclusive; cur.setDate(cur.getDate() + 1)) {
+      const yr = cur.getFullYear()
+      map[yr] = 'ready'
+      const rel = yr - baseYear
+      if (rel >= 0 && rel < 10) map[rel] = 'ready'
+    }
+  }
+  return map
+}
+
+function* iterTimeListDayRange(timeList: string[]): Generator<{ start: Date; endExclusive: Date }> {
   for (const slice of timeListToSlices(timeList)) {
     const m0 = String(slice.t0)
       .replace(/-/g, '')
@@ -203,13 +263,8 @@ export function dayAvailabilityFromTimeList(
       endExclusive = new Date(start)
       endExclusive.setDate(endExclusive.getDate() + 1)
     }
-    for (const cur = new Date(start); cur < endExclusive; cur.setDate(cur.getDate() + 1)) {
-      if (cur.getFullYear() === year && cur.getMonth() === month) {
-        map[cur.getDate()] = 'ready'
-      }
-    }
+    yield { start, endExclusive }
   }
-  return map
 }
 
 export function resolveSliceForInstant(
