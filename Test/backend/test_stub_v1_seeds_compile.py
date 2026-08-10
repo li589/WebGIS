@@ -30,6 +30,10 @@ _STUB_V1_SEEDS = (
     "gis_contour_slope_basic",
     "stats_trend_anomaly_basic",
     "fusion_multi_source_merge_basic",
+    "gis_watershed_basic",
+    "stats_correlation_basic",
+    "stats_correlation_report_basic",
+    "stats_summary_chart_basic",
 )
 
 

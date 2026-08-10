@@ -1572,6 +1572,9 @@ _NODE_TEMPLATES: list[dict[str, Any]] = [
         ],
         "outputs": [
             _port("summary", "data:geojson", description="统计摘要 GeoJSON。"),
+            _port(
+                "manifest", "data", description="含 table_spec 的 product_manifest。"
+            ),
         ],
         "params": [
             _param("include_mean", "boolean", default=True, description="包含均值。"),

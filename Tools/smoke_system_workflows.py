@@ -73,6 +73,12 @@ BATCH_H = [
     "stats_trend_anomaly_basic",
     "fusion_multi_source_merge_basic",
 ]
+BATCH_I = [
+    "gis_watershed_basic",
+    "stats_correlation_basic",
+    "stats_correlation_report_basic",
+    "stats_summary_chart_basic",
+]
 
 TERMINAL = {"succeeded", "failed", "cancelled", "canceled"}
 
@@ -956,15 +962,17 @@ def ensure_analysis_fixtures() -> dict[str, Path]:
 
 
 def ensure_stub_v1_fixtures() -> dict[str, Path]:
-    """Create GeoTIFF + GeoJSON + timeseries fixtures for stub_v1 Batch G/H seeds."""
+    """Create GeoTIFF + GeoJSON + timeseries fixtures for stub_v1 Batch G/H/I seeds."""
     runtime = DATA_ROOT / "_runtime"
     runtime.mkdir(parents=True, exist_ok=True)
     stub_tif = runtime / "smoke_stub.tif"
     stub_b_tif = runtime / "smoke_stub_b.tif"
     dem_tif = runtime / "smoke_dem.tif"
     points_gj = runtime / "smoke_points.geojson"
+    pour_gj = runtime / "smoke_pour_points.geojson"
     zones_gj = runtime / "smoke_zones.geojson"
     timeseries_json = runtime / "smoke_timeseries.json"
+    timeseries_b_json = runtime / "smoke_timeseries_b.json"
     out: dict[str, Path] = {}
 
     def _write_geotiff(path: Path, data, *, origin=(100.0, 30.0), res=0.1) -> None:
@@ -1056,6 +1064,27 @@ def ensure_stub_v1_fixtures() -> dict[str, Path]:
     if points_gj.is_file():
         out["points"] = points_gj
 
+    if not pour_gj.is_file():
+        # Pour points must lie inside smoke_dem grid (~100–102E / 28–30N).
+        pour = {
+            "type": "FeatureCollection",
+            "features": [
+                {
+                    "type": "Feature",
+                    "geometry": {"type": "Point", "coordinates": [101.0, 29.0]},
+                    "properties": {"name": "pour_a"},
+                },
+                {
+                    "type": "Feature",
+                    "geometry": {"type": "Point", "coordinates": [101.5, 28.5]},
+                    "properties": {"name": "pour_b"},
+                },
+            ],
+        }
+        pour_gj.write_text(json.dumps(pour), encoding="utf-8")
+    if pour_gj.is_file():
+        out["pour_points"] = pour_gj
+
     if not zones_gj.is_file():
         zones = {
             "type": "FeatureCollection",
@@ -1101,6 +1130,26 @@ def ensure_stub_v1_fixtures() -> dict[str, Path]:
         timeseries_json.write_text(json.dumps(series), encoding="utf-8")
     if timeseries_json.is_file():
         out["timeseries"] = timeseries_json
+
+    if not timeseries_b_json.is_file():
+        series_b = {
+            "times": [
+                "2025-01-01",
+                "2025-01-02",
+                "2025-01-03",
+                "2025-01-04",
+                "2025-01-05",
+                "2025-01-06",
+                "2025-01-07",
+                "2025-01-08",
+            ],
+            "values": [2.0, 2.4, 1.8, 2.2, 2.0, 20.0, 2.1, 1.9],
+            "lon": 113.0,
+            "lat": 23.0,
+        }
+        timeseries_b_json.write_text(json.dumps(series_b), encoding="utf-8")
+    if timeseries_b_json.is_file():
+        out["timeseries_b"] = timeseries_b_json
 
     return out
 
@@ -1310,7 +1359,7 @@ def prepare_overrides(
             "light-smoke: 2025-12-03..10 (1×8d block), bbox 110–115E/20–25N, "
             "max_pixels=400, serial; keeps output/map_layer"
         )
-    if workflow_id in BATCH_G or workflow_id in BATCH_H:
+    if workflow_id in BATCH_G or workflow_id in BATCH_H or workflow_id in BATCH_I:
         stub = ensure_stub_v1_fixtures()
         defn = overrides.get("definition") or definition
         path_map = [
@@ -1318,7 +1367,9 @@ def prepare_overrides(
             ("smoke_stub_b.tif", stub.get("stub_b_tif")),
             ("smoke_dem.tif", stub.get("dem_tif")),
             ("smoke_points.geojson", stub.get("points")),
+            ("smoke_pour_points.geojson", stub.get("pour_points")),
             ("smoke_zones.geojson", stub.get("zones")),
+            ("smoke_timeseries_b.json", stub.get("timeseries_b")),
             ("smoke_timeseries.json", stub.get("timeseries")),
         ]
         for node in defn.get("nodes") or []:
@@ -1339,7 +1390,8 @@ def prepare_overrides(
         overrides["_note"] = (
             "stub_v1 fixtures under {DATA_ROOT}/_runtime "
             "(smoke_stub.tif / smoke_stub_b.tif / smoke_dem.tif / "
-            "smoke_points.geojson / smoke_zones.geojson / smoke_timeseries.json)"
+            "smoke_points.geojson / smoke_pour_points.geojson / smoke_zones.geojson / "
+            "smoke_timeseries.json / smoke_timeseries_b.json)"
         )
     return overrides
 
@@ -1726,6 +1778,7 @@ def main() -> int:
         ("F", BATCH_F, args.omega_timeout),
         ("G", BATCH_G, args.timeout),
         ("H", BATCH_H, args.timeout),
+        ("I", BATCH_I, args.timeout),
     ]
     for batch_name, ids, timeout_s in batches:
         if batch_name == "F" and args.skip_omega:
