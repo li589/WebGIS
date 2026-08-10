@@ -71,7 +71,13 @@ class OpenMeteoSyncApiPhaseDTests(unittest.TestCase):
         from fastapi import HTTPException
 
         wr = importlib.import_module("app.api.routers.weather_router")
-        with patch("shutil.which", return_value=None):
+        with (
+            patch("shutil.which", return_value=None),
+            patch(
+                "app.tasks.open_meteo_sync_tasks.is_open_meteo_sync_locked",
+                return_value=False,
+            ),
+        ):
             with self.assertRaises(HTTPException) as ctx:
                 wr.trigger_open_meteo_sync(wr.OpenMeteoSyncTriggerRequest())
         self.assertEqual(ctx.exception.status_code, 503)
