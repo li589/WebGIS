@@ -184,6 +184,7 @@ def upsert_api_key(
 
         hydrate_effective_config()
     except Exception:
+        # 尽力而为：effective config rehydrate 失败不应阻塞 API Key 写入
         logger.exception("Failed to rehydrate effective config after api key upsert")
     return _annotate_key_entry(result or {}, source="db")
 
@@ -234,6 +235,7 @@ def delete_api_key(key_name: str) -> bool:
 
             hydrate_effective_config()
         except Exception:
+            # 尽力而为：effective config rehydrate 失败不应阻塞 API Key 写入
             logger.exception(
                 "Failed to rehydrate effective config after api key delete"
             )
@@ -277,6 +279,7 @@ def toggle_api_key(key_name: str, enabled: bool) -> dict[str, Any]:
 
         hydrate_effective_config()
     except Exception:
+        # 尽力而为：effective config rehydrate 失败不应阻塞 API Key 写入
         logger.exception("Failed to rehydrate effective config after api key toggle")
 
     info = repo.get_key_info(key_name) or {}
@@ -305,6 +308,7 @@ def _sync_api_config_manager_key(key_name: str, key_value: str) -> None:
             if config is not None:
                 config.api_key = None
     except Exception:
+        # 尽力而为：ApiConfigManager 同步失败不应阻塞 Key 操作
         logger.exception("Failed to sync api_config_manager for key=%s", key_name)
 
 
@@ -353,12 +357,12 @@ async def test_api_key(key_name: str) -> tuple[bool, str]:
             # 测试天地图 API：请求一个瓦片（使用 httpx 异步客户端，避免阻塞事件循环）
             import httpx
 
-            from app.core.ssrf import validate_outbound_url
+            from app.core.ssrf import SSRFBlockedError, validate_outbound_url
 
             url = f"https://t0.tianditu.gov.cn/img_w/wmts?SERVICE=WMTS&REQUEST=GetTile&VERSION=1.0.0&LAYER=img&STYLE=default&TILEMATRIXSET=w&FORMAT=tiles&TILECOL=0&TILEROW=0&TILEMATRIX=0&tk={key_value}"
             try:
                 validate_outbound_url(url, allow_private=False)
-            except Exception as exc:
+            except (SSRFBlockedError, ValueError) as exc:
                 repo.update_test_status(key_name, "failed")
                 return False, f"出站 URL 校验失败: {exc}"
             try:
@@ -382,12 +386,12 @@ async def test_api_key(key_name: str) -> tuple[bool, str]:
             # 百度地图 API 测试（使用 httpx 异步客户端）
             import httpx
 
-            from app.core.ssrf import validate_outbound_url
+            from app.core.ssrf import SSRFBlockedError, validate_outbound_url
 
             url = f"https://maponline0.bdimg.com/tile/?qt=tile&x=0&y=0&z=1&styles=pl&v=020&udt=20231201&ak={key_value}"
             try:
                 validate_outbound_url(url, allow_private=False)
-            except Exception as exc:
+            except (SSRFBlockedError, ValueError) as exc:
                 repo.update_test_status(key_name, "failed")
                 return False, f"出站 URL 校验失败: {exc}"
             try:
@@ -433,6 +437,7 @@ async def test_api_key(key_name: str) -> tuple[bool, str]:
                 repo.update_test_status(key_name, "failed")
                 return False, f"API Key '{key_name}' 为空"
     except Exception as e:
+        logger.exception("test_api_key failed for key=%s", key_name)
         repo.update_test_status(key_name, "failed")
         return False, f"测试失败: {e}"
 
@@ -505,6 +510,7 @@ async def test_gee_account(account_id: str) -> tuple[bool, str]:
         repo.update_test_status(account_id, "failed")
         return False, "GEE 模块未安装，无法测试凭证"
     except Exception as e:
+        logger.exception("test_gee_account failed for account=%s", account_id)
         repo.update_test_status(account_id, "failed")
         return False, f"测试失败: {e}"
 
@@ -517,6 +523,7 @@ def _reload_gee_facade() -> None:
         reload_gee_facade()
         logger.info("GEE facade reloaded after account change")
     except Exception as e:
+        # 尽力而为：facade 重载失败不影响账户变更已持久化
         logger.warning("Failed to reload GEE facade: %s", e)
 
 
@@ -528,6 +535,7 @@ def reload_gee_account_pool() -> tuple[bool, int, str]:
         accounts = repo.list_accounts(enabled_only=True)
         return True, len(accounts), f"账户池已重载，共 {len(accounts)} 个启用账户"
     except Exception as e:
+        logger.exception("reload_gee_account_pool failed")
         return False, 0, f"重载失败: {e}"
 
 
@@ -1135,6 +1143,7 @@ def _ensure_weather_providers_registered() -> None:
         apply_persisted_provider_overrides()
         _ = get_registry()
     except Exception:
+        # 尽力而为：惰性注册失败不应阻塞配置读取
         logger.exception("Lazy weather provider registration failed")
 
 
@@ -1197,6 +1206,7 @@ def list_weather_providers(*, include_disabled: bool = True) -> list[dict[str, A
                 "Migrated/removed legacy weather provider id %s", OPEN_METEO_LEGACY_ID
             )
         except Exception as exc:
+            # 尽力而为：遗留 open-meteo 清理失败不应阻塞列表返回
             logger.warning("Failed to purge legacy open-meteo DB row: %s", exc)
 
     for pid, db_record in db_records.items():
@@ -1298,7 +1308,7 @@ def update_weather_provider(
         try:
             provider.apply_config(new_config)
         except Exception as e:
-            logger.warning("Failed to apply config to provider %s: %s", provider_id, e)
+            logger.error("Failed to apply config to provider %s: %s", provider_id, e)
 
     return get_weather_provider(provider_id)
 
@@ -1382,6 +1392,7 @@ def delete_weather_provider(provider_id: str) -> bool:
             try:
                 provider.apply_config({})
             except Exception:
+                # 尽力而为：重置 config 失败不应阻塞 DB 删除
                 logger.exception(
                     "Failed to reset provider config after delete: %s", provider_id
                 )
@@ -1595,7 +1606,20 @@ def test_remote_storage_profile(
             "message": f"Probe OK: {redact_uri(probe_uri)}",
             "tested_at": datetime.now(UTC).isoformat(),
         }
+    except (OSError, ConnectionError, TimeoutError) as exc:
+        # 探测失败（连接拒绝/超时/认证失败等）——预期结果，不记 ERROR
+        repo.update_test_status(profile_id, "failed")
+        return {
+            "profile_id": profile_id,
+            "success": False,
+            "message": str(exc),
+            "tested_at": datetime.now(UTC).isoformat(),
+        }
     except Exception as exc:
+        # 意外错误——记录完整堆栈，但仍返回失败元组（形状不变）
+        logger.exception(
+            "Unexpected error probing remote storage profile %s", profile_id
+        )
         repo.update_test_status(profile_id, "failed")
         return {
             "profile_id": profile_id,
@@ -1618,6 +1642,7 @@ def apply_persisted_provider_overrides() -> None:
     try:
         records = repo.list_providers(include_disabled=True)
     except Exception as e:
+        # 尽力而为：DB 读取失败时回退到默认配置
         logger.warning("Failed to load weather provider overrides from DB: %s", e)
         return
 
@@ -1646,6 +1671,7 @@ def apply_persisted_provider_overrides() -> None:
             online_rec = by_id.get(OPEN_METEO_ONLINE_ID)
             local_rec = by_id.get(OPEN_METEO_LOCAL_ID)
         except Exception as e:
+            # 尽力而为：遗留行清理失败不阻塞覆盖应用
             logger.warning("Failed to purge legacy open-meteo row: %s", e)
 
     # 一次性迁移：旧默认 online=0 / local=1 → 产品默认 local=0 / online=1
@@ -1676,6 +1702,7 @@ def apply_persisted_provider_overrides() -> None:
             )
             records = repo.list_providers(include_disabled=True)
         except Exception as e:
+            # 尽力而为：优先级迁移失败不阻塞覆盖应用
             logger.warning(
                 "Failed to migrate open-meteo priorities to local-first: %s", e
             )
@@ -1695,6 +1722,7 @@ def apply_persisted_provider_overrides() -> None:
                 try:
                     provider.apply_config(config)
                 except Exception as e:
+                    # 尽力而为：单个 provider config 应用失败不阻塞其余
                     logger.warning(
                         "Failed to apply persisted config to provider %s: %s", pid, e
                     )

@@ -1,0 +1,68 @@
+%% 异常类继承与翻译器交互类图
+%% 文件：class-diagram.mermaid
+
+classDiagram
+    class HTTPException {
+        +int status_code
+        +str detail
+    }
+    class ApiError {
+        +str error_code
+    }
+    class _http_err {
+        <<function router.py>>
+        +translate(exc Exception) HTTPException
+        -FileNotFoundError to 404
+        -QuotaExceededError to 507
+        -ValueError/RuntimeError to 400
+        -unknown re-raise
+    }
+    class QuotaExceededError {
+        <<paths.py>>
+        继承 RuntimeError
+    }
+    class SSRFBlockedError {
+        <<ssrf.py>>
+        继承 ValueError
+    }
+    class JSONDecodeError {
+        <<json模块>>
+        继承 ValueError
+    }
+    class FileNotFoundError {
+        <<builtin>>
+    }
+    class ValueError {
+        <<builtin>>
+    }
+    class RuntimeError {
+        <<builtin>>
+    }
+    class unhandled_exception_handler {
+        <<main.py>>
+        +handle(request, exc) JSONResponse
+        -status 500
+        -detail "Internal server error"
+        -logger.exception
+    }
+    class http_exception_handler {
+        <<main.py>>
+        +handle(request, exc) JSONResponse
+        -保留 status+detail
+        -保留 error_code
+        -保留 request_id
+    }
+
+    HTTPException <|-- ApiError : error_codes.py
+    RuntimeError <|-- QuotaExceededError : paths.py
+    ValueError <|-- SSRFBlockedError : ssrf.py
+    ValueError <|-- JSONDecodeError : json模块
+
+    _http_err ..> HTTPException : 返回 404/507/400
+    _http_err ..> FileNotFoundError : isinstance 检查
+    _http_err ..> QuotaExceededError : isinstance 先于父类
+    _http_err ..> ValueError : isinstance
+    _http_err ..> RuntimeError : isinstance
+
+    _http_err ..> unhandled_exception_handler : 未知异常 re-raise 后到达
+    HTTPException ..> http_exception_handler : raise 后到达

@@ -1,0 +1,49 @@
+%% 异常收窄后请求处理时序图
+%% 文件：sequence-diagram.mermaid
+
+sequenceDiagram
+    participant Client as 客户端
+    participant MW as FastAPI 中间件<br/>(request_id)
+    participant Router as router.py 端点
+    participant SVC as 服务层
+    participant HE as _http_err
+    participant GH as 全局处理器<br/>(main.py)
+
+    Client->>MW: HTTP 请求
+    MW->>Router: 注入 request_id
+
+    alt 已知异常 FileNotFoundError
+        Router->>SVC: 调用服务
+        SVC-->>Router: raise FileNotFoundError
+        Router->>HE: _http_err(exc)
+        HE-->>Router: HTTPException(404)
+        Router-->>GH: raise HTTPException
+        GH-->>Client: 404 {detail, request_id}
+    else 已知异常 QuotaExceededError
+        Router->>SVC: 调用服务
+        SVC-->>Router: raise QuotaExceededError
+        Router->>HE: _http_err(exc)
+        Note over HE: isinstance 检查<br/>QuotaExceededError 先于<br/>(ValueError, RuntimeError)
+        HE-->>Router: HTTPException(507)
+        Router-->>GH: raise HTTPException
+        GH-->>Client: 507 {detail, request_id}
+    else 已知异常 ValueError/RuntimeError
+        Router->>SVC: 调用服务
+        SVC-->>Router: raise ValueError
+        Router->>HE: _http_err(exc)
+        HE-->>Router: HTTPException(400)
+        Router-->>GH: raise HTTPException
+        GH-->>Client: 400 {detail, request_id}
+    else 未知异常 JSONDecodeError/OSError
+        Router->>SVC: 调用服务
+        SVC-->>Router: raise JSONDecodeError
+        Note over Router: except 元组不匹配<br/>不捕获
+        Router-->>GH: 异常上抛
+        GH->>GH: logger.exception<br/>("Unhandled API exception")
+        GH-->>Client: 500 {detail:"Internal server error",<br/>request_id}
+    else 有意宽捕获 L671
+        Router->>SVC: unregister_overlay(safe)
+        SVC-->>Router: raise Exception
+        Router->>Router: logger.debug(...)<br/>吞异常
+        Router-->>Client: 200 {ok: true}
+    end

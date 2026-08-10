@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import shutil
 import tempfile
 import uuid
@@ -15,6 +16,7 @@ from pydantic import BaseModel, Field
 
 from app.api.deps import require_write_access
 from app.data_io.services import paths as import_paths
+from app.data_io.services.paths import QuotaExceededError
 from app.data_io.services.document import (
     apply_document_ops,
     commit_document_session,
@@ -56,6 +58,7 @@ from app.data_io.services.vector import (
 )
 
 router = APIRouter(tags=["data-io"])
+logger = logging.getLogger(__name__)
 
 
 class UploadInitBody(BaseModel):
@@ -201,14 +204,20 @@ class ImportBatchBody(BaseModel):
     groups: list[BatchGroupBody] = Field(default_factory=list)
 
 
-def _http_err(exc: Exception, *, not_found: bool = False) -> HTTPException:
-    if isinstance(exc, FileNotFoundError) or not_found:
+def _http_err(exc: Exception) -> HTTPException:
+    """将已知服务异常翻译为 HTTPException。
+
+    仅处理：FileNotFoundError→404、QuotaExceededError→507、
+    ValueError/RuntimeError→400。未知类型 re-raise 上抛全局处理器。
+    QuotaExceededError(RuntimeError) 的 isinstance 检查先于父类，保证 507 先命中。
+    """
+    if isinstance(exc, FileNotFoundError):
         return HTTPException(status_code=404, detail=str(exc))
     if isinstance(exc, import_paths.QuotaExceededError):
         return HTTPException(status_code=507, detail=str(exc))
     if isinstance(exc, (ValueError, RuntimeError)):
         return HTTPException(status_code=400, detail=str(exc))
-    return HTTPException(status_code=500, detail=str(exc))
+    raise exc
 
 
 def _resolve_raster_axis_order(body: RasterCommitBody) -> str:
@@ -264,7 +273,7 @@ async def upload_init(body: UploadInitBody) -> dict[str, Any]:
             content_type=body.content_type,
             resume_upload_id=body.resume_upload_id,
         )
-    except Exception as exc:
+    except (FileNotFoundError, QuotaExceededError, ValueError, RuntimeError) as exc:
         raise _http_err(exc) from exc
 
 
@@ -281,7 +290,7 @@ async def upload_resumable_init(body: UploadResumableInitBody) -> dict[str, Any]
             total_chunks=body.total_chunks,
             sha256_expected=body.sha256,
         )
-    except Exception as exc:
+    except (FileNotFoundError, QuotaExceededError, ValueError, RuntimeError) as exc:
         raise _http_err(exc) from exc
 
 
@@ -291,7 +300,7 @@ async def upload_resumable_init(body: UploadResumableInitBody) -> dict[str, Any]
 async def upload_status(upload_id: str) -> dict[str, Any]:
     try:
         return get_upload_status(upload_id)
-    except Exception as exc:
+    except (FileNotFoundError, QuotaExceededError, ValueError, RuntimeError) as exc:
         raise _http_err(exc) from exc
 
 
@@ -306,7 +315,7 @@ async def upload_chunk(
     try:
         data = await file.read()
         return append_chunk(upload_id, data, offset=offset)
-    except Exception as exc:
+    except (FileNotFoundError, QuotaExceededError, ValueError, RuntimeError) as exc:
         raise _http_err(exc) from exc
     finally:
         await file.close()
@@ -324,7 +333,7 @@ async def upload_chunk_indexed(
     try:
         data = await file.read()
         return upload_chunk_by_index(upload_id, chunk_index, data)
-    except Exception as exc:
+    except (FileNotFoundError, QuotaExceededError, ValueError, RuntimeError) as exc:
         raise _http_err(exc) from exc
     finally:
         await file.close()
@@ -334,7 +343,7 @@ async def upload_chunk_indexed(
 async def upload_complete(body: UploadCompleteBody) -> dict[str, Any]:
     try:
         return complete_upload(body.upload_id)
-    except Exception as exc:
+    except (FileNotFoundError, QuotaExceededError, ValueError, RuntimeError) as exc:
         raise _http_err(exc) from exc
 
 
@@ -344,7 +353,7 @@ async def upload_complete(body: UploadCompleteBody) -> dict[str, Any]:
 async def upload_resumable_complete(body: UploadCompleteBody) -> dict[str, Any]:
     try:
         return complete_resumable(body.upload_id)
-    except Exception as exc:
+    except (FileNotFoundError, QuotaExceededError, ValueError, RuntimeError) as exc:
         raise _http_err(exc) from exc
 
 
@@ -365,8 +374,8 @@ async def import_jobs_list(limit: int = 20) -> dict[str, Any]:
 async def import_job_status(job_id: str) -> dict[str, Any]:
     try:
         return get_job(job_id)
-    except Exception as exc:
-        raise _http_err(exc, not_found=True) from exc
+    except FileNotFoundError as exc:
+        raise _http_err(exc) from exc
 
 
 @router.post(
@@ -375,8 +384,8 @@ async def import_job_status(job_id: str) -> dict[str, Any]:
 async def import_job_cancel(job_id: str) -> dict[str, Any]:
     try:
         return cancel_job(job_id)
-    except Exception as exc:
-        raise _http_err(exc, not_found=True) from exc
+    except FileNotFoundError as exc:
+        raise _http_err(exc) from exc
 
 
 @router.get(
@@ -385,8 +394,8 @@ async def import_job_cancel(job_id: str) -> dict[str, Any]:
 async def import_job_download(job_id: str) -> FileResponse:
     try:
         job = get_job(job_id)
-    except Exception as exc:
-        raise _http_err(exc, not_found=True) from exc
+    except FileNotFoundError as exc:
+        raise _http_err(exc) from exc
     result = job.get("result") or {}
     path_str = result.get("download_path") if isinstance(result, dict) else None
     if not path_str:
@@ -455,7 +464,7 @@ async def import_batch(body: ImportBatchBody) -> dict[str, Any]:
                 job_ids.append(job["job_id"])
             else:
                 raise ValueError(f"不支持的批导入类型: {kind}")
-    except Exception as exc:
+    except (FileNotFoundError, QuotaExceededError, ValueError, RuntimeError) as exc:
         raise _http_err(exc) from exc
     if not job_ids:
         raise HTTPException(status_code=400, detail="没有有效的导入组")
@@ -494,7 +503,7 @@ async def import_vector(body: VectorImportBody) -> dict[str, Any]:
             paths, source_name=body.source_name or paths[0].name
         )
         return {"async": False, **result}
-    except Exception as exc:
+    except (FileNotFoundError, QuotaExceededError, ValueError, RuntimeError) as exc:
         raise _http_err(exc) from exc
 
 
@@ -520,7 +529,7 @@ async def import_vector_multipart(
             await f.close()
         result = import_vector_from_paths(paths, source_name=paths[0].name)
         return {"async": False, **result}
-    except Exception as exc:
+    except (FileNotFoundError, QuotaExceededError, ValueError, RuntimeError) as exc:
         raise _http_err(exc) from exc
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
@@ -532,8 +541,8 @@ async def import_vector_multipart(
 async def vector_meta(layer_id: str) -> dict[str, Any]:
     try:
         return load_vector_meta(layer_id)
-    except Exception as exc:
-        raise _http_err(exc, not_found=True) from exc
+    except FileNotFoundError as exc:
+        raise _http_err(exc) from exc
 
 
 @router.get(
@@ -542,8 +551,8 @@ async def vector_meta(layer_id: str) -> dict[str, Any]:
 async def vector_geojson(layer_id: str, preview: bool = True) -> dict[str, Any]:
     try:
         return load_vector_geojson(layer_id, preview=preview)
-    except Exception as exc:
-        raise _http_err(exc, not_found=True) from exc
+    except FileNotFoundError as exc:
+        raise _http_err(exc) from exc
 
 
 @router.get(
@@ -568,8 +577,8 @@ async def vector_features(
             sort=sort,
             where=where,
         )
-    except Exception as exc:
-        raise _http_err(exc, not_found=True) from exc
+    except (FileNotFoundError, ValueError) as exc:
+        raise _http_err(exc) from exc
 
 
 @router.patch(
@@ -581,7 +590,7 @@ async def vector_feature_patch(
 ) -> dict[str, Any]:
     try:
         return patch_feature_attribute(layer_id, feature_index, body.field, body.value)
-    except Exception as exc:
+    except (FileNotFoundError, QuotaExceededError, ValueError, RuntimeError) as exc:
         raise _http_err(exc) from exc
 
 
@@ -594,7 +603,7 @@ async def vector_feature_batch(layer_id: str, body: FeatureBatchBody) -> dict[st
         return batch_set_feature_attribute(
             layer_id, body.indexes, body.field, body.value
         )
-    except Exception as exc:
+    except (FileNotFoundError, QuotaExceededError, ValueError, RuntimeError) as exc:
         raise _http_err(exc) from exc
 
 
@@ -604,7 +613,7 @@ async def vector_feature_batch(layer_id: str, body: FeatureBatchBody) -> dict[st
 async def vector_field_add(layer_id: str, body: FieldAddBody) -> dict[str, Any]:
     try:
         return add_vector_field(layer_id, body.name, body.default)
-    except Exception as exc:
+    except (FileNotFoundError, QuotaExceededError, ValueError, RuntimeError) as exc:
         raise _http_err(exc) from exc
 
 
@@ -615,7 +624,7 @@ async def vector_field_add(layer_id: str, body: FieldAddBody) -> dict[str, Any]:
 async def vector_field_delete(layer_id: str, name: str) -> dict[str, Any]:
     try:
         return delete_vector_field(layer_id, name)
-    except Exception as exc:
+    except (FileNotFoundError, QuotaExceededError, ValueError, RuntimeError) as exc:
         raise _http_err(exc) from exc
 
 
@@ -626,7 +635,7 @@ async def vector_field_delete(layer_id: str, name: str) -> dict[str, Any]:
 async def vector_rename_field(layer_id: str, body: VectorRenameBody) -> dict[str, Any]:
     try:
         return rename_vector_field(layer_id, body.old_name, body.new_name)
-    except Exception as exc:
+    except (FileNotFoundError, QuotaExceededError, ValueError, RuntimeError) as exc:
         raise _http_err(exc) from exc
 
 
@@ -643,8 +652,6 @@ async def patch_imported_layer_display_name(
             layer_id, body.display_name
         )
     except FileNotFoundError as exc:
-        raise _http_err(exc, not_found=True) from exc
-    except Exception as exc:
         raise _http_err(exc) from exc
 
 
@@ -669,7 +676,8 @@ async def delete_imported_layer(layer_id: str) -> dict[str, Any]:
 
         unregister_overlay(safe)
     except Exception:
-        pass
+        # 故意最后防线：overlay 注销失败不应阻塞图层删除
+        logger.debug("unregister_overlay best-effort cleanup failed for %s", safe)
     shutil.rmtree(dest, ignore_errors=True)
     return {"ok": True, "layer_id": safe}
 
@@ -705,7 +713,7 @@ async def raster_inspect(body: RasterInspectBody) -> dict[str, Any]:
             "guessed_temporal": guessed,
             **info,
         }
-    except Exception as exc:
+    except (FileNotFoundError, QuotaExceededError, ValueError, RuntimeError) as exc:
         raise _http_err(exc) from exc
 
 
@@ -755,7 +763,7 @@ async def raster_commit(body: RasterCommitBody) -> dict[str, Any]:
             )
             return {"async": True, "job_id": job["job_id"], "status": job["status"]}
         return {"async": False, **_raster_commit_sync(body)}
-    except Exception as exc:
+    except (FileNotFoundError, QuotaExceededError, ValueError, RuntimeError) as exc:
         raise _http_err(exc) from exc
 
 
@@ -769,7 +777,7 @@ async def raster_detect_invalid(body: RasterDetectInvalidBody) -> dict[str, Any]
 
         path = resolve_upload_path(body.upload_id)
         return auto_detect_invalid_values(path, body.variable_id)
-    except Exception as exc:
+    except (FileNotFoundError, QuotaExceededError, ValueError, RuntimeError) as exc:
         raise _http_err(exc) from exc
 
 
@@ -782,7 +790,7 @@ async def import_document(body: RasterInspectBody) -> dict[str, Any]:
     try:
         path = resolve_upload_path(body.upload_id)
         return create_document_session(path, source_name=path.name)
-    except Exception as exc:
+    except (FileNotFoundError, QuotaExceededError, ValueError, RuntimeError) as exc:
         raise _http_err(exc) from exc
 
 
@@ -799,7 +807,7 @@ async def import_document_multipart(file: UploadFile = File(...)) -> dict[str, A
                     break
                 out.write(chunk)
         return create_document_session(dest, source_name=name)
-    except Exception as exc:
+    except (FileNotFoundError, QuotaExceededError, ValueError, RuntimeError) as exc:
         raise _http_err(exc) from exc
     finally:
         await file.close()
@@ -812,8 +820,8 @@ async def import_document_multipart(file: UploadFile = File(...)) -> dict[str, A
 async def document_preview(session_id: str) -> dict[str, Any]:
     try:
         return preview_document_session(session_id)
-    except Exception as exc:
-        raise _http_err(exc, not_found=True) from exc
+    except FileNotFoundError as exc:
+        raise _http_err(exc) from exc
 
 
 @router.post(
@@ -822,7 +830,7 @@ async def document_preview(session_id: str) -> dict[str, Any]:
 async def document_ops(session_id: str, body: DocumentOpsBody) -> dict[str, Any]:
     try:
         return apply_document_ops(session_id, body.ops)
-    except Exception as exc:
+    except (FileNotFoundError, QuotaExceededError, ValueError, RuntimeError) as exc:
         raise _http_err(exc) from exc
 
 
@@ -855,7 +863,7 @@ async def document_commit(session_id: str, body: DocumentCommitBody) -> dict[str
             swap_xy=body.swap_xy,
         )
         return {"async": False, **result}
-    except Exception as exc:
+    except (FileNotFoundError, QuotaExceededError, ValueError, RuntimeError) as exc:
         raise _http_err(exc) from exc
 
 
@@ -877,7 +885,7 @@ async def export_layer_endpoint(body: ExportBody) -> Response:
             time=body.time,
             times=body.times,
         )
-    except Exception as exc:
+    except (FileNotFoundError, QuotaExceededError, ValueError, RuntimeError) as exc:
         raise _http_err(exc) from exc
     return Response(
         content=content,
@@ -920,5 +928,5 @@ async def export_batch_endpoint(body: ExportBatchBody) -> Response:
             media_type="application/zip",
             filename=str(result.get("filename") or path.name),
         )
-    except Exception as exc:
+    except (FileNotFoundError, QuotaExceededError, ValueError, RuntimeError) as exc:
         raise _http_err(exc) from exc
