@@ -13,27 +13,37 @@
 
 from __future__ import annotations
 
+import errno
 
 from shared.contracts.api_contracts import FailureCategory
+
+# Disk / resource OSError errno values → terminal (not transient network).
+_DISK_ERRNOS = {
+    errno.ENOSPC,
+    errno.EIO,
+    getattr(errno, "EDQUOT", 122),  # Windows may lack EDQUOT
+}
 
 
 class FailureClassifier:
     """异常 → FailureCategory 映射器。"""
 
-    # 可重试的内置异常类型
+    # 可重试的内置异常类型（网络向；磁盘 OSError 单独处理）
     _TRANSIENT_EXCEPTION_TYPES = {
         ConnectionError,
         TimeoutError,
-        OSError,  # 网络层 OSError 子类（如 ConnectionRefusedError）通常可重试
+        ConnectionRefusedError,
+        ConnectionResetError,
+        BrokenPipeError,
     }
 
     # 不可重试的内置异常类型
     _TERMINAL_EXCEPTION_TYPES = {
-        ValueError,
         KeyError,
         TypeError,
         AttributeError,
         NotImplementedError,
+        MemoryError,
     }
 
     @classmethod
@@ -45,6 +55,32 @@ class FailureClassifier:
         if isinstance(exc, BridgeExecutionError):
             return exc.category
 
+        # Stub / GIS raster ops（算法包）—— 优先于泛化 ValueError
+        exc_name = type(exc).__name__
+        if exc_name == "RasterOpsValidationError":
+            return FailureCategory.validation_error
+        if exc_name == "RasterOpsDataError":
+            return FailureCategory.not_found
+        if exc_name in {"SoftTimeLimitExceeded", "TimeLimitExceeded"}:
+            return FailureCategory.timeout
+
+        if isinstance(exc, FileNotFoundError):
+            return FailureCategory.not_found
+        if isinstance(exc, MemoryError):
+            return FailureCategory.terminal_failure
+        if isinstance(exc, ValueError):
+            # 参数 / 契约类 ValueError → 校验失败（不可重试）
+            return FailureCategory.validation_error
+
+        # 磁盘耗尽等 OSError：终态；其余网络向 OSError 仍可重试
+        if isinstance(exc, OSError):
+            err_no = getattr(exc, "errno", None)
+            if err_no in _DISK_ERRNOS:
+                return FailureCategory.terminal_failure
+            message_os = str(exc).lower()
+            if any(kw in message_os for kw in ("no space", "disk", "quota", "磁盘")):
+                return FailureCategory.terminal_failure
+
         # 按 HTTP 状态码分类（若异常带 status_code 属性）
         status_code = getattr(exc, "status_code", None) or getattr(exc, "status", None)
         if isinstance(status_code, int):
@@ -52,7 +88,9 @@ class FailureClassifier:
 
         # 按异常消息关键词分类
         message = str(exc).lower()
-        if any(kw in message for kw in ("timeout", "timed out", "超时")):
+        if any(
+            kw in message for kw in ("timeout", "timed out", "超时", "soft time limit")
+        ):
             return FailureCategory.timeout
         if any(
             kw in message for kw in ("rate limit", "429", "too many requests", "限流")
@@ -83,6 +121,8 @@ class FailureClassifier:
         for exc_type in cls._TRANSIENT_EXCEPTION_TYPES:
             if isinstance(exc, exc_type):
                 return FailureCategory.transient_network
+        if isinstance(exc, OSError):
+            return FailureCategory.transient_network
         for exc_type in cls._TERMINAL_EXCEPTION_TYPES:
             if isinstance(exc, exc_type):
                 return FailureCategory.terminal_failure

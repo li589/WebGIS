@@ -15,8 +15,8 @@ uses ``dispatch_workflow_task`` directly and is unaffected by this extraction.
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
-from typing import Callable
+from datetime import datetime, UTC
+from collections.abc import Callable
 
 from app.services.workflow_repository import SQLiteWorkflowRepository
 from app.services.workflow.persistence_service import WorkflowPersistenceService
@@ -61,7 +61,7 @@ class RetryDispatcher:
         Fetches the original request JSON, validates it, submits it as a new
         workflow run, then tags the new run with ``retry_of_run_id`` metadata.
         """
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         request_json = self._repository.get_run_request_json(run_id)
         if request_json is None:
             raise ValueError(f"Cannot retry: no request found for run {run_id}")

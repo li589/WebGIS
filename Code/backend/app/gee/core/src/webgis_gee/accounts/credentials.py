@@ -2,8 +2,9 @@ from __future__ import annotations
 
 import json
 import logging
+from contextlib import suppress
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -14,7 +15,7 @@ class GeeCredentialsLoader:
     @staticmethod
     def load_service_account_credentials(
         service_account_json: dict[str, Any] | str,
-        project_id: Optional[str] = None,
+        project_id: str | None = None,
     ) -> Any:
         """根据 service_account JSON 构造可用于 ee.Initialize(credentials=...) 的对象。
 
@@ -99,7 +100,7 @@ class GeeCredentialsLoader:
 
     @staticmethod
     def test_credentials(
-        credentials: Any, project_id: Optional[str] = None
+        credentials: Any, project_id: str | None = None
     ) -> tuple[bool, str]:
         """测试凭证是否可用，返回 (success, message)。
 
@@ -118,7 +119,5 @@ class GeeCredentialsLoader:
         except Exception as e:
             return False, f"GEE credentials test failed: {e}"
         finally:
-            try:
+            with suppress(Exception):
                 ee.Reset()
-            except Exception:
-                pass

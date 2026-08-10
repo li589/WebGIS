@@ -22,13 +22,14 @@ manifest 模式工作流::
 from __future__ import annotations
 
 import hashlib
-import json
-import os
 import time
 import uuid
 from pathlib import Path
 from typing import Any
 
+from app.data_io.services._meta_io import load_meta as _io_load_meta
+from app.data_io.services._meta_io import meta_lock as _io_meta_lock
+from app.data_io.services._meta_io import save_meta as _io_save_meta
 from app.data_io.services.paths import (
     MAX_UPLOAD_BYTES,
     STAGING_DIR,
@@ -110,9 +111,7 @@ def init_resumable(
         "created_at": time.time(),
         "complete": False,
     }
-    (dest / "meta.json").write_text(
-        json.dumps(meta, ensure_ascii=False), encoding="utf-8"
-    )
+    _save_meta(dest, meta)
     return {
         "upload_id": upload_id,
         "chunk_size": int(chunk_size),
@@ -123,56 +122,22 @@ def init_resumable(
 
 
 def _load_meta(upload_id: str) -> tuple[Path, dict[str, Any]]:
-    """加载 manifest 模式的 meta.json。"""
+    """加载 manifest 模式的 meta.json（含 mode 校验）。"""
     dest = STAGING_DIR / upload_id
-    meta_path = dest / "meta.json"
-    if not meta_path.exists():
-        raise FileNotFoundError(f"上传会话不存在: {upload_id}")
-    meta = json.loads(meta_path.read_text(encoding="utf-8"))
+    meta = _io_load_meta(dest)
     if meta.get("mode") != "manifest":
         raise ValueError(f"上传会话非 manifest 模式: {upload_id}")
     return dest, meta
 
 
 def _save_meta(dest: Path, meta: dict[str, Any]) -> None:
-    """原子写 meta.json：先写临时文件再 os.replace，避免并发读读到半写内容。"""
-    meta_path = dest / "meta.json"
-    tmp_path = meta_path.with_suffix(".json.tmp")
-    tmp_path.write_text(json.dumps(meta, ensure_ascii=False), encoding="utf-8")
-    os.replace(tmp_path, meta_path)
+    """原子写 meta.json（委托共享 ``_meta_io.save_meta``）。"""
+    _io_save_meta(dest, meta)
 
 
 def _meta_lock(dest: Path):
-    """跨进程/线程安全的 meta 文件锁（Windows 上用 msvcrt，否则 fcntl）。"""
-    from contextlib import contextmanager
-
-    @contextmanager
-    def _lock():
-        lock_path = dest / "meta.lock"
-        lock_path.touch(exist_ok=True)
-        with lock_path.open("a+b") as lock_f:
-            try:
-                import msvcrt
-
-                msvcrt.locking(lock_f.fileno(), msvcrt.LK_LOCK, 1)
-            except ImportError:
-                import fcntl
-
-                fcntl.flock(lock_f.fileno(), fcntl.LOCK_EX)
-            try:
-                yield
-            finally:
-                try:
-                    import msvcrt
-
-                    lock_f.seek(0)
-                    msvcrt.locking(lock_f.fileno(), msvcrt.LK_UNLCK, 1)
-                except ImportError:
-                    import fcntl
-
-                    fcntl.flock(lock_f.fileno(), fcntl.LOCK_UN)
-
-    return _lock()
+    """跨进程/线程安全的 meta 文件锁（委托共享 ``_meta_io.meta_lock``）。"""
+    return _io_meta_lock(dest)
 
 
 def upload_chunk_by_index(
@@ -279,88 +244,96 @@ def complete_resumable(upload_id: str) -> dict[str, Any]:
 
     幂等：若已完成，直接返回已有结果。
     """
-    dest, meta = _load_meta(upload_id)
-    if meta.get("complete"):
+    dest = STAGING_DIR / upload_id
+    # 持锁防与 upload_chunk_by_index 并发（块写入与 complete 拼接/清理竞争）
+    # 及双 complete 竞争，与 upload_chunk_by_index 的锁对称。
+    with _meta_lock(dest):
+        meta = _io_load_meta(dest)
+        if meta.get("mode") != "manifest":
+            raise ValueError(f"上传会话非 manifest 模式: {upload_id}")
+        if meta.get("complete"):
+            final_name = str(meta["filename"])
+            final_path = Path(str(meta.get("path") or dest / final_name))
+            return {
+                "upload_id": upload_id,
+                "filename": final_name,
+                "path": str(final_path),
+                "size": int(meta["size"]),
+                "sha256_verified": meta.get("sha256_verified", False),
+            }
+
+        total_chunks = int(meta["total_chunks"])
+        received: list[int] = list(meta.get("received_chunks") or [])
+        if len(received) != total_chunks:
+            missing = [i for i in range(total_chunks) if i not in set(received)]
+            raise ValueError(
+                f"上传未完整：已收 {len(received)}/{total_chunks} 块，"
+                f"缺失块: {missing[:20]}{'...' if len(missing) > 20 else ''}"
+            )
+
+        # 拼接所有块到最终文件
         final_name = str(meta["filename"])
-        final_path = Path(str(meta.get("path") or dest / final_name))
+        final_path = dest / final_name
+        if final_path.exists():
+            final_path.unlink()
+
+        sha256_hasher = hashlib.sha256()
+        size = int(meta["size"])
+        written = 0
+        with final_path.open("wb") as out:
+            for idx in range(total_chunks):
+                chunk_path = dest / f"chunk_{idx:06d}.part"
+                if not chunk_path.exists():
+                    raise ValueError(f"块文件缺失: {idx}")
+                chunk_data = chunk_path.read_bytes()
+                out.write(chunk_data)
+                sha256_hasher.update(chunk_data)
+                written += len(chunk_data)
+
+        if written != size:
+            raise ValueError(f"拼接后大小不匹配：期望 {size}，实际 {written}")
+
+        # SHA-256 校验（若客户端提供了期望值）
+        actual_sha256 = sha256_hasher.hexdigest()
+        sha256_verified = False
+        expected = meta.get("sha256_expected")
+        if expected:
+            if actual_sha256.lower() != expected.lower():
+                # 校验失败：清理拼接文件，保留分块供重试
+                final_path.unlink(missing_ok=True)
+                raise ValueError(
+                    f"SHA-256 校验失败：期望 {expected}，实际 {actual_sha256}"
+                )
+            sha256_verified = True
+
+        # 魔数校验（与 append 模式一致）
+        try:
+            sniff_magic(final_path, declared_ext=final_name.rsplit(".", 1)[-1].lower())
+        except UploadValidationError as exc:
+            # 清理不合法载荷
+            _discard_resumable(upload_id)
+            raise ValueError(str(exc)) from exc
+
+        # 清理分块文件
+        for idx in range(total_chunks):
+            chunk_path = dest / f"chunk_{idx:06d}.part"
+            chunk_path.unlink(missing_ok=True)
+
+        # 更新 manifest
+        meta["complete"] = True
+        meta["path"] = str(final_path)
+        meta["sha256_actual"] = actual_sha256
+        meta["sha256_verified"] = sha256_verified
+        _save_meta(dest, meta)
+
         return {
             "upload_id": upload_id,
             "filename": final_name,
             "path": str(final_path),
-            "size": int(meta["size"]),
-            "sha256_verified": meta.get("sha256_verified", False),
+            "size": size,
+            "sha256_actual": actual_sha256,
+            "sha256_verified": sha256_verified,
         }
-
-    total_chunks = int(meta["total_chunks"])
-    received: list[int] = list(meta.get("received_chunks") or [])
-    if len(received) != total_chunks:
-        missing = [i for i in range(total_chunks) if i not in set(received)]
-        raise ValueError(
-            f"上传未完整：已收 {len(received)}/{total_chunks} 块，"
-            f"缺失块: {missing[:20]}{'...' if len(missing) > 20 else ''}"
-        )
-
-    # 拼接所有块到最终文件
-    final_name = str(meta["filename"])
-    final_path = dest / final_name
-    if final_path.exists():
-        final_path.unlink()
-
-    sha256_hasher = hashlib.sha256()
-    size = int(meta["size"])
-    written = 0
-    with final_path.open("wb") as out:
-        for idx in range(total_chunks):
-            chunk_path = dest / f"chunk_{idx:06d}.part"
-            if not chunk_path.exists():
-                raise ValueError(f"块文件缺失: {idx}")
-            chunk_data = chunk_path.read_bytes()
-            out.write(chunk_data)
-            sha256_hasher.update(chunk_data)
-            written += len(chunk_data)
-
-    if written != size:
-        raise ValueError(f"拼接后大小不匹配：期望 {size}，实际 {written}")
-
-    # SHA-256 校验（若客户端提供了期望值）
-    actual_sha256 = sha256_hasher.hexdigest()
-    sha256_verified = False
-    expected = meta.get("sha256_expected")
-    if expected:
-        if actual_sha256.lower() != expected.lower():
-            # 校验失败：清理拼接文件，保留分块供重试
-            final_path.unlink(missing_ok=True)
-            raise ValueError(f"SHA-256 校验失败：期望 {expected}，实际 {actual_sha256}")
-        sha256_verified = True
-
-    # 魔数校验（与 append 模式一致）
-    try:
-        sniff_magic(final_path, declared_ext=final_name.rsplit(".", 1)[-1].lower())
-    except UploadValidationError as exc:
-        # 清理不合法载荷
-        _discard_resumable(upload_id)
-        raise ValueError(str(exc)) from exc
-
-    # 清理分块文件
-    for idx in range(total_chunks):
-        chunk_path = dest / f"chunk_{idx:06d}.part"
-        chunk_path.unlink(missing_ok=True)
-
-    # 更新 manifest
-    meta["complete"] = True
-    meta["path"] = str(final_path)
-    meta["sha256_actual"] = actual_sha256
-    meta["sha256_verified"] = sha256_verified
-    _save_meta(dest, meta)
-
-    return {
-        "upload_id": upload_id,
-        "filename": final_name,
-        "path": str(final_path),
-        "size": size,
-        "sha256_actual": actual_sha256,
-        "sha256_verified": sha256_verified,
-    }
 
 
 def _discard_resumable(upload_id: str) -> None:

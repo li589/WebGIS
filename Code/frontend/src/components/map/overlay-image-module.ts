@@ -166,6 +166,71 @@ const DEFAULT_OVERVIEW_MAX_ZOOM = -1
 const OVERVIEW_HYSTERESIS = 0.4
 const DEFAULT_TILE_MAX_ZOOM = 18
 
+export interface OverlayBoundsMeta {
+  currentTime: string | null
+  timeList: string[]
+  category: 'static' | 'time-series'
+  palette?: string
+  vmin: number | null
+  vmax: number | null
+  unit: string
+  opacity: number
+  supports_recolor: boolean
+  supports_xyz_tiles: boolean
+  overview_max_zoom: number
+  maxzoom: number
+  tile_url_template: string | null
+}
+
+function _overlayMetaString(value: unknown): string | undefined {
+  return typeof value === 'string' ? value : undefined
+}
+
+function _overlayMetaFiniteNumber(value: unknown): number | undefined {
+  return typeof value === 'number' && Number.isFinite(value) ? value : undefined
+}
+
+export function parseOverlayBoundsMeta(raw: unknown): OverlayBoundsMeta {
+  const meta = (raw && typeof raw === 'object' ? raw : {}) as Record<string, unknown>
+  const currentTime =
+    _overlayMetaString(meta.current_time) ?? _overlayMetaString(meta.default_time) ?? null
+  const rawTimeList = meta.time_list
+  const timeList =
+    Array.isArray(rawTimeList) && rawTimeList.every((item) => typeof item === 'string')
+      ? rawTimeList
+      : []
+  const category: 'static' | 'time-series' =
+    meta.category === 'time-series' ? 'time-series' : 'static'
+  const palette = _overlayMetaString(meta.palette)
+  const vmin = _overlayMetaFiniteNumber(meta.vmin) ?? null
+  const vmax = _overlayMetaFiniteNumber(meta.vmax) ?? null
+  const unit = _overlayMetaString(meta.unit) ?? ''
+  const opacity = _overlayMetaFiniteNumber(meta.opacity) ?? 0.7
+  const supports_recolor = Boolean(meta.supports_recolor)
+  const supports_xyz_tiles = Boolean(meta.supports_xyz_tiles)
+  const overview_max_zoom =
+    _overlayMetaFiniteNumber(meta.overview_max_zoom) ?? DEFAULT_OVERVIEW_MAX_ZOOM
+  const maxzoom = _overlayMetaFiniteNumber(meta.maxzoom) ?? DEFAULT_TILE_MAX_ZOOM
+  const rawTemplate = _overlayMetaString(meta.tile_url_template)
+  const tile_url_template = rawTemplate && rawTemplate.length > 0 ? rawTemplate : null
+
+  return {
+    currentTime,
+    timeList,
+    category,
+    palette,
+    vmin,
+    vmax,
+    unit,
+    opacity,
+    supports_recolor,
+    supports_xyz_tiles,
+    overview_max_zoom,
+    maxzoom,
+    tile_url_template,
+  }
+}
+
 function styleKeyOf(style: OverlayStyleParams | undefined | null): string {
   if (!style) return ''
   return [
@@ -227,7 +292,10 @@ export function createOverlayImageModule(
   const desiredStyle = new Map<string, OverlayStyleParams>()
   const linkTimeEnabled = ref(false)
   // bounds 内存缓存：避免显示/隐藏切换时重复请求 /overlay-bounds
-  const boundsCache = new Map<string, { bounds: [number, number, number, number]; meta: any }>()
+  const boundsCache = new Map<
+    string,
+    { bounds: [number, number, number, number]; meta: OverlayBoundsMeta }
+  >()
   /** bounds 404 负缓存：缺资产的注册层（如 aridity-cn）不要反复打 404 */
   const boundsMissCache = new Set<string>()
 
@@ -363,7 +431,10 @@ export function createOverlayImageModule(
         console.warn(`[Overlay] timed bounds invalid for ${layerId}@${time}: ${validation.reason}`)
         return null
       }
-      boundsCache.set(cacheKey, { bounds: validation.bounds, meta: data.meta ?? {} })
+      boundsCache.set(cacheKey, {
+        bounds: validation.bounds,
+        meta: parseOverlayBoundsMeta(data.meta),
+      })
       return validation.bounds
     } catch (err) {
       console.warn(`[Overlay] timed bounds fetch failed for ${layerId}@${time}`, err)
@@ -606,18 +677,18 @@ export function createOverlayImageModule(
       }
       const rootData = (await rootResp.json()) as {
         bounds: [number, number, number, number]
-        meta?: any
+        meta?: Record<string, unknown>
       }
-      const meta = rootData.meta ?? {}
-      const currentTime: string | null = meta.current_time ?? meta.default_time ?? null
-      const timeList: string[] = meta.time_list ?? []
-      const category: string = meta.category ?? 'static'
+      const meta = parseOverlayBoundsMeta(rootData.meta)
+      const currentTime = meta.currentTime
+      const timeList = meta.timeList
+      const category = meta.category
 
       let boundsData = rootData
       if (category === 'time-series' && currentTime) {
         const timed = await _fetchTimedBounds(layerId, currentTime)
         if (timed) {
-          boundsData = { bounds: timed, meta }
+          boundsData = { bounds: timed, meta: rootData.meta }
           boundsCache.set(`${layerId}@${currentTime}`, { bounds: timed, meta })
         }
       } else {
@@ -636,19 +707,17 @@ export function createOverlayImageModule(
         const { useOverlaySymbologyStore } = await import('../../stores/overlay-symbology')
         useOverlaySymbologyStore().putMeta(layerId, {
           palette: meta.palette,
-          vmin: meta.vmin ?? null,
-          vmax: meta.vmax ?? null,
+          vmin: meta.vmin,
+          vmax: meta.vmax,
           unit: meta.unit,
           opacity: typeof initialOpacity === 'number' ? initialOpacity : meta.opacity,
-          supports_recolor: Boolean(meta.supports_recolor),
+          supports_recolor: meta.supports_recolor,
         })
       } catch {
         // Pinia 未就绪时忽略
       }
       const opacity =
-        typeof initialOpacity === 'number'
-          ? Math.max(0, Math.min(1, initialOpacity))
-          : (meta.opacity ?? 0.7)
+        typeof initialOpacity === 'number' ? Math.max(0, Math.min(1, initialOpacity)) : meta.opacity
 
       const style: OverlayStyleParams = {
         ...(desiredStyle.get(layerId) ?? initialStyle ?? {}),
@@ -658,24 +727,15 @@ export function createOverlayImageModule(
         style.palette = meta.palette
         style.forceStyle = true
       }
-      if (style.vmin == null && typeof meta.vmin === 'number') style.vmin = meta.vmin
-      if (style.vmax == null && typeof meta.vmax === 'number') style.vmax = meta.vmax
+      if (style.vmin == null && meta.vmin != null) style.vmin = meta.vmin
+      if (style.vmax == null && meta.vmax != null) style.vmax = meta.vmax
 
       const url = _previewUrl(layerId, currentTime, style)
 
-      const supportsXyzTiles = Boolean(meta.supports_xyz_tiles)
-      const overviewMaxZoom =
-        typeof meta.overview_max_zoom === 'number' && Number.isFinite(meta.overview_max_zoom)
-          ? Number(meta.overview_max_zoom)
-          : DEFAULT_OVERVIEW_MAX_ZOOM
-      const maxZoom =
-        typeof meta.maxzoom === 'number' && Number.isFinite(meta.maxzoom)
-          ? Number(meta.maxzoom)
-          : DEFAULT_TILE_MAX_ZOOM
-      const tileUrlTemplate =
-        typeof meta.tile_url_template === 'string' && meta.tile_url_template
-          ? String(meta.tile_url_template)
-          : `/overlay-tiles/${layerId}/{z}/{x}/{y}.png`
+      const supportsXyzTiles = meta.supports_xyz_tiles
+      const overviewMaxZoom = meta.overview_max_zoom
+      const maxZoom = meta.maxzoom
+      const tileUrlTemplate = meta.tile_url_template ?? `/overlay-tiles/${layerId}/{z}/{x}/{y}.png`
 
       const zoom = options.map.getZoom()
       const renderMode = _desiredMode(zoom, overviewMaxZoom, supportsXyzTiles)
@@ -713,13 +773,13 @@ export function createOverlayImageModule(
       // 更新时间状态
       const state: OverlayTimeState = {
         layerId,
-        category: category as 'static' | 'time-series',
+        category,
         timeList,
         currentTime,
         palette: meta.palette ?? 'viridis',
-        unit: meta.unit ?? '',
-        vmin: meta.vmin ?? null,
-        vmax: meta.vmax ?? null,
+        unit: meta.unit,
+        vmin: meta.vmin,
+        vmax: meta.vmax,
         opacity,
         bounds,
       }

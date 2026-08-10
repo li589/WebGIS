@@ -11,9 +11,11 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Optional
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
+
+from path_utils import local_path_to_uri
 
 # ---------------------------------------------------------------------------
 # 类型检查
@@ -53,9 +55,9 @@ class OutputManager:
         *,
         module_name: str = "",
         workflow_name: str = "",
-        time_range: Optional[dict] = None,
-        region: Optional[dict] = None,
-        storage_backend: Optional[Any] = None,
+        time_range: dict | None = None,
+        region: dict | None = None,
+        storage_backend: Any | None = None,
     ):
         self.output_root = Path(output_root)
         self.job_id = job_id
@@ -68,12 +70,12 @@ class OutputManager:
         self.job_dir: Path = self.output_root / job_id
 
         # 内部组件（延迟导入避免循环依赖）
-        self._cog_writer: Optional[Any] = None
-        self._preview_gen: Optional[Any] = None
-        self._table_writer: Optional[Any] = None
+        self._cog_writer: Any | None = None
+        self._preview_gen: Any | None = None
+        self._table_writer: Any | None = None
 
         # manifest 构建器
-        self._manifest_builder: Optional[Any] = None
+        self._manifest_builder: Any | None = None
 
     def _ensure_dirs(self) -> None:
         """确保所有子目录已创建。"""
@@ -100,8 +102,8 @@ class OutputManager:
         data: np.ndarray,
         *,
         crs: str = "EPSG:4326",
-        transform: Optional["Affine"] = None,
-        nodata: Optional[float] = None,
+        transform: Affine | None = None,
+        nodata: float | None = None,
         unit: str = "",
         description: str = "",
         generate_preview: bool = True,
@@ -155,7 +157,7 @@ class OutputManager:
         # 本地文件写入
         cog_path = self.job_dir / cog_meta["path"]
         cog_path.write_bytes(cog_bytes)
-        local_raster_uri = str(cog_path.resolve().as_uri())
+        local_raster_uri = local_path_to_uri(cog_path, resolve=True)
 
         # 远程存储写入
         remote_raster_uri = self._write_to_backend(cog_meta["path"], cog_bytes)
@@ -187,7 +189,7 @@ class OutputManager:
             # 本地文件写入
             png_path = self.job_dir / png_meta["path"]
             png_path.write_bytes(png_bytes)
-            local_png_uri = str(png_path.resolve().as_uri())
+            local_png_uri = local_path_to_uri(png_path, resolve=True)
 
             # 远程存储写入
             remote_png_uri = self._write_to_backend(png_meta["path"], png_bytes)
@@ -213,7 +215,7 @@ class OutputManager:
     def write_table(
         self,
         name: str,
-        df: "DataFrame",
+        df: DataFrame,
         *,
         description: str = "",
         index: bool = False,
@@ -248,7 +250,7 @@ class OutputManager:
         # 本地文件写入
         parquet_path = self.job_dir / parquet_meta["path"]
         parquet_path.write_bytes(parquet_bytes)
-        local_uri = str(parquet_path.resolve().as_uri())
+        local_uri = local_path_to_uri(parquet_path, resolve=True)
 
         # 远程存储写入
         remote_uri = self._write_to_backend(parquet_meta["path"], parquet_bytes)
@@ -330,7 +332,7 @@ class OutputManager:
         self._ensure_manifest_builder()
         self._manifest_builder.add_diagnostic(key, value)
 
-    def write_manifest(self, extra: Optional[dict] = None) -> dict:
+    def write_manifest(self, extra: dict | None = None) -> dict:
         """写出 manifest.json，返回 manifest 内容。
 
         manifest 同时写入本地和 storage_backend（如已配置）。
@@ -351,7 +353,7 @@ class OutputManager:
         # 本地文件写入
         manifest_path = self.job_dir / "manifest.json"
         manifest_path.write_bytes(json_bytes)
-        local_uri = str(manifest_path.resolve().as_uri())
+        local_uri = local_path_to_uri(manifest_path, resolve=True)
 
         result: dict[str, Any] = {"local_uri": local_uri}
         remote_uri = self._write_to_backend("manifest.json", json_bytes)

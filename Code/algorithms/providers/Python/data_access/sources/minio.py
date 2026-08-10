@@ -6,6 +6,7 @@ from pathlib import Path
 from urllib.parse import urlparse
 
 from data_access.contracts import DataRequestV2, ResourceRef, build_resource_ref
+from path_utils import local_path_to_uri
 
 logger = logging.getLogger(__name__)
 
@@ -111,7 +112,7 @@ class MinioSource:
             staged_metadata["target_dir"] = str(target_dir)
 
         return build_resource_ref(
-            uri=local_path.as_uri(),
+            uri=local_path_to_uri(local_path),
             source_kind=resource.source_kind,
             format=resource.format,
             logical_type=resource.logical_type,

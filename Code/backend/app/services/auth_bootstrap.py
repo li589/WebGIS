@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 import os
 
-from app.core.config import settings
+from app.core import config
 
 logger = logging.getLogger(__name__)
 
@@ -15,17 +15,17 @@ DEV_DEFAULT_ADMIN_PASSWORD = "cgda-dev-admin"
 
 
 def _is_development() -> bool:
-    return (settings.environment or "").lower() in {"development", "dev"}
+    return (config.settings.environment or "").lower() in {"development", "dev"}
 
 
 def _is_production_like() -> bool:
-    env = (settings.environment or "").lower()
+    env = (config.settings.environment or "").lower()
     return env not in {"development", "dev", "test", "testing"}
 
 
 def bootstrap_auth() -> None:
     """Ensure admin account exists; in development seed default API key when unset."""
-    if not settings.user_auth_enabled:
+    if not config.settings.user_auth_enabled:
         logger.info(
             "User auth disabled (BACKEND_USER_AUTH_ENABLED=false); skipping bootstrap"
         )
@@ -34,8 +34,8 @@ def bootstrap_auth() -> None:
     from app.services.user_repository import get_user_repository
 
     repo = get_user_repository()
-    admin_user = (settings.admin_username or "").strip()
-    admin_password = settings.admin_password or ""
+    admin_user = (config.settings.admin_username or "").strip()
+    admin_password = config.settings.admin_password or ""
 
     if not admin_user and _is_development():
         admin_user = DEV_DEFAULT_ADMIN_USER
@@ -75,10 +75,10 @@ def bootstrap_auth() -> None:
 
 def _bootstrap_dev_api_key() -> None:
     """When development has no backend_auth, seed a known dev write key."""
-    env_key = (settings.api_key or "").strip()
+    env_key = (config.settings.api_key or "").strip()
     if env_key:
         return
-    if settings.api_key is not None and settings.api_key.strip() == "":
+    if config.settings.api_key is not None and config.settings.api_key.strip() == "":
         # 配置了空串（如 .env 中 BACKEND_API_KEY=）会被静默回退到 dev 默认 key，
         # 若 operator 误以为已配置真实密钥，将使用已知的默认 key——显式告警。
         logger.warning(
@@ -95,7 +95,7 @@ def _bootstrap_dev_api_key() -> None:
     if get_backend_auth_key():
         return
 
-    default_key = (settings.dev_default_api_key or DEV_DEFAULT_API_KEY).strip()
+    default_key = (config.settings.dev_default_api_key or DEV_DEFAULT_API_KEY).strip()
     repo = _get_api_keys_repository()
     repo.upsert_key(
         key_name="backend_auth",

@@ -4,6 +4,7 @@ import importlib
 import re
 from pathlib import Path
 from typing import Literal
+import contextlib
 
 NodataMode = Literal["transparent", "solid"]
 
@@ -485,7 +486,7 @@ class RasterPreviewService:
             src_nodata = dataset.nodata
             if src_nodata is None:
                 # Float science rasters often store voids as NaN without nodata tag.
-                src_nodata = float(-9999.0)
+                src_nodata = -9999.0
 
             # 投影域钳位：避免 EASE 等全球网格因浮点越界导致东缘经度折返
             try:
@@ -569,7 +570,7 @@ class RasterPreviewService:
 
             # 重投影：用普通 ndarray 作 destination（不能用 MaskedArray + 标量 mask）。
             # Fill NaN voids with src_nodata before warp so GDAL treats them as nodata.
-            dst_nodata = float(src_nodata) if src_nodata is not None else float(-9999.0)
+            dst_nodata = float(src_nodata) if src_nodata is not None else -9999.0
             src_for_warp = numpy.ma.filled(
                 _mask_invalid_raster(numpy, src_band, nodata=src_nodata),
                 dst_nodata,
@@ -621,7 +622,7 @@ class RasterPreviewService:
             target_crs in ("EPSG:4326", "EPSG:4490", "EPSG:4258")
             and normalize_geographic_bounds
         ):
-            try:
+            with contextlib.suppress(ValueError):
                 west, south, east, north = normalize_geographic_bounds(
                     float(west),
                     float(south),
@@ -629,8 +630,6 @@ class RasterPreviewService:
                     float(north),
                     source_span_hint=src_span_hint,
                 )
-            except ValueError:
-                pass
         return png_bytes, (float(west), float(south), float(east), float(north))
 
 

@@ -15,7 +15,6 @@ import time
 from collections import OrderedDict
 from dataclasses import dataclass
 from enum import Enum
-from typing import Optional
 
 import httpx
 from fastapi import HTTPException
@@ -222,7 +221,7 @@ class TileProxyService:
     _MAX_CACHE_ENTRIES = 512
 
     def __init__(self):
-        self._http_client: Optional[httpx.AsyncClient] = None
+        self._http_client: httpx.AsyncClient | None = None
         # OrderedDict LRU：url_hash -> (data, timestamp)
         self._cache: OrderedDict[str, tuple[bytes, float]] = OrderedDict()
         self._cache_ttl = int(
@@ -305,7 +304,7 @@ class TileProxyService:
 
         return new_x, new_y, z
 
-    def _lonlat_to_mercator(self, lng: float, lat: float) -> "CoordinatePoint":
+    def _lonlat_to_mercator(self, lng: float, lat: float) -> CoordinatePoint:
         """经纬度转 Web Mercator"""
         import math
 

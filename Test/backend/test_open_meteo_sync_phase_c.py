@@ -94,7 +94,15 @@ class OpenMeteoSyncTriggerApiTests(unittest.TestCase):
         wr = importlib.import_module("app.api.routers.weather_router")
         body = wr.OpenMeteoSyncTriggerRequest()
         # shutil is imported inside the handler; patch the stdlib symbol.
-        with patch("shutil.which", return_value=None):
+        # 同时隔离互斥锁：真实环境可能有 Open-Meteo 同步正在运行（Redis 锁被持有），
+        # 否则 C1 互斥检查会先返回 409，无法确定性验证 docker 缺失的 503 路径。
+        with (
+            patch("shutil.which", return_value=None),
+            patch(
+                "app.tasks.open_meteo_sync_tasks.is_open_meteo_sync_locked",
+                return_value=False,
+            ),
+        ):
             with self.assertRaises(HTTPException) as ctx:
                 wr.trigger_open_meteo_sync(body)
         self.assertEqual(ctx.exception.status_code, 503)

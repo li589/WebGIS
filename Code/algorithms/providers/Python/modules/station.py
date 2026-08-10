@@ -421,7 +421,7 @@ class StationDailyModule(BaseModule):
 
 def _station_records_to_dataframe(
     records: list[StationRecord], source_type: str = "ISMN"
-) -> "pd.DataFrame":  # noqa: F821  # pandas 在函数内延迟导入，此处注解为前向引用字符串
+) -> pd.DataFrame:  # noqa: F821  # pandas 在函数内延迟导入，此处注解为前向引用字符串
     """
     将 StationRecord 列表转换为 pandas DataFrame（用于 Parquet 写出）。
 

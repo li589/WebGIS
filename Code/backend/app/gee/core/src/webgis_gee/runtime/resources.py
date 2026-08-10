@@ -9,7 +9,7 @@ from pathlib import Path
 from shutil import rmtree
 from threading import BoundedSemaphore, Event, Lock, Thread
 from time import monotonic, time as wall_time
-from typing import Iterator
+from collections.abc import Iterator
 from uuid import uuid4
 
 from webgis_gee.runtime.exceptions import ResourceExhaustedError
@@ -274,7 +274,7 @@ class ResourceManagedStorageBackend(StorageBackend):
         self,
         backend: StorageBackend,
         *,
-        resource_controller: "RuntimeResourceController",
+        resource_controller: RuntimeResourceController,
         run_id: str,
     ) -> None:
         self._backend = backend

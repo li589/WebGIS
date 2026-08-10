@@ -398,7 +398,7 @@ def extract_variable_to_geotiff(
     if nodata is not None and np.isfinite(float(nodata)):
         write_nodata = float(nodata)
     elif np.issubdtype(np.dtype(dtype_name), np.floating):
-        write_nodata = float(-9999.0)
+        write_nodata = -9999.0
     else:
         write_nodata = None
     if write_nodata is not None:

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Iterable
+from collections.abc import Iterable
 
 from shared.remote_sources.protocol import RemoteTransport
 from shared.remote_sources.uri import ParsedRemoteUri, parse_remote_uri

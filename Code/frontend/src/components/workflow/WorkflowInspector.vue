@@ -12,6 +12,7 @@ import { useWorkflowDefinitionsStore } from '../../stores/workflow-definitions'
 import type { LGraphNodeClass, INodeInputSlot, INodeOutputSlot } from './litegraph-setup'
 import { getPortColor, getPortTypeLabel, suggestConnectorsForPortType } from './litegraph-setup'
 import { buildPortTooltip } from './port-tooltip'
+import { paramDisplayLabel } from './display-labels'
 import ParamField from './ParamField.vue'
 import BboxInputField from './BboxInputField.vue'
 import DownloadNodeForm from './node-forms/DownloadNodeForm.vue'
@@ -124,9 +125,7 @@ function getParamMeta(key: string) {
 
 function getParamLabel(key: string): string {
   const meta = getParamMeta(key)
-  if (!meta) return key
-  // 标签不再拼接单位（单位用独立徽章显示）
-  return meta.key
+  return paramDisplayLabel(key, meta?.description)
 }
 
 function getParamHint(key: string): string {

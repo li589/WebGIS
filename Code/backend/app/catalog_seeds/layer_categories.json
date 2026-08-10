@@ -1,11 +1,5 @@
 [
   {
-    "id": "weather",
-    "name": "在线天气",
-    "icon": "CloudSun",
-    "accentColor": "#38bdf8"
-  },
-  {
     "id": "climate",
     "name": "气候与灾害",
     "icon": "Thermometer",
@@ -43,9 +37,9 @@
     "accentColor": "#06b6d4"
   },
   {
-    "id": "workflow-output",
-    "name": "工作流产出",
-    "icon": "Sparkles",
-    "accentColor": "#f43f5e"
+    "id": "weather",
+    "name": "在线天气",
+    "icon": "CloudSun",
+    "accentColor": "#38bdf8"
   }
 ]

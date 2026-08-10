@@ -67,8 +67,7 @@ def execute_fy_command_steps(
         process = subprocess.run(
             step.command,
             shell=shell,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
+            capture_output=True,
             text=True,
             **hidden_kwargs,
         )

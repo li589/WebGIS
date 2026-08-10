@@ -9,7 +9,7 @@ from contracts.job import JobRequest
 from contracts.runtime import RuntimeContext
 
 
-def _build_storage_backend() -> "Any | None":
+def _build_storage_backend() -> Any | None:
     """根据环境变量自动构建 storage backend。
 
     BACKEND_STORAGE_BACKEND:

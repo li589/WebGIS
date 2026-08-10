@@ -25,7 +25,7 @@ Celery.
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timezone
+from datetime import datetime, UTC
 from typing import Any
 
 from app.core.config import settings
@@ -276,7 +276,7 @@ class DownloadProgressTracker:
         max_attempts: int,
         forced_full_failure: bool,
         updated_at: datetime,
-    ) -> "_FetchOutcome":
+    ) -> _FetchOutcome:
         """Iterate ``source_refs`` and dispatch real or simulated fetches.
 
         Returns a :class:`_FetchOutcome` aggregating per-source statuses
@@ -298,9 +298,7 @@ class DownloadProgressTracker:
             source_item = {**item}
             previous_status = str(source_item.get("fetch_status", "pending"))
             source_item["attempt_count"] = attempt_number
-            source_item["last_attempt_at"] = updated_at.astimezone(
-                timezone.utc
-            ).isoformat()
+            source_item["last_attempt_at"] = updated_at.astimezone(UTC).isoformat()
             source_item.setdefault("artifact_locator", None)
             source_item.setdefault("completed_at", None)
             source_item.setdefault("last_error", None)
@@ -347,8 +345,7 @@ class DownloadProgressTracker:
                 artifact_key_prefix=artifact_key_prefix,
             )
             source_item["last_attempt_at"] = (
-                fetch_result.fetched_at
-                or updated_at.astimezone(timezone.utc).isoformat()
+                fetch_result.fetched_at or updated_at.astimezone(UTC).isoformat()
             )
 
             if fetch_result.success:
@@ -356,8 +353,7 @@ class DownloadProgressTracker:
                 source_item["fetch_stage"] = "fetched_to_artifact"
                 source_item["last_error"] = None
                 source_item["completed_at"] = (
-                    fetch_result.fetched_at
-                    or updated_at.astimezone(timezone.utc).isoformat()
+                    fetch_result.fetched_at or updated_at.astimezone(UTC).isoformat()
                 )
                 source_item["artifact_locator"] = fetch_result.artifact_key
                 source_item["fetched_bytes"] = fetch_result.fetched_bytes
@@ -404,7 +400,7 @@ class DownloadProgressTracker:
     def _build_follow_up_source_fetch_summary(
         self,
         *,
-        fetch_outcome: "_FetchOutcome",
+        fetch_outcome: _FetchOutcome,
         updated_at: datetime,
     ) -> dict[str, Any]:
         """Derive the aggregate ``source_fetch_summary`` from per-source outcomes.
@@ -440,7 +436,7 @@ class DownloadProgressTracker:
         # last source's timestamp, but a fully-fetched plan is considered
         # completed at the task's updated_at).
         if fetch_status == "fetched":
-            completed_at_value = updated_at.astimezone(timezone.utc).isoformat()
+            completed_at_value = updated_at.astimezone(UTC).isoformat()
         else:
             completed_at_value = fetch_outcome.completed_at_value
 
@@ -486,8 +482,8 @@ class DownloadProgressTracker:
             "retry_recommended": False,
             "partial_success": False,
             "last_error": last_error,
-            "last_attempt_at": updated_at.astimezone(timezone.utc).isoformat(),
-            "completed_at": updated_at.astimezone(timezone.utc).isoformat(),
+            "last_attempt_at": updated_at.astimezone(UTC).isoformat(),
+            "completed_at": updated_at.astimezone(UTC).isoformat(),
         }
 
     def _build_retry_job_state(
@@ -515,7 +511,7 @@ class DownloadProgressTracker:
             "retry_recommended": True,
             "partial_success": partial_success,
             "last_error": last_error,
-            "last_attempt_at": updated_at.astimezone(timezone.utc).isoformat(),
+            "last_attempt_at": updated_at.astimezone(UTC).isoformat(),
             "completed_at": completed_at_value,
         }
 
@@ -541,8 +537,8 @@ class DownloadProgressTracker:
             "retry_recommended": False,
             "partial_success": False,
             "last_error": None,
-            "last_attempt_at": updated_at.astimezone(timezone.utc).isoformat(),
-            "completed_at": updated_at.astimezone(timezone.utc).isoformat(),
+            "last_attempt_at": updated_at.astimezone(UTC).isoformat(),
+            "completed_at": updated_at.astimezone(UTC).isoformat(),
         }
 
     # ------------------------------------------------------------------

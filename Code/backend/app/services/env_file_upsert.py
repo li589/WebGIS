@@ -8,6 +8,7 @@ import tempfile
 from pathlib import Path
 
 from app.core.config import BACKEND_ROOT
+import contextlib
 
 _ENV_LINE = re.compile(r"^([A-Za-z_][A-Za-z0-9_]*)=(.*)$")
 
@@ -109,9 +110,7 @@ def upsert_env_keys(
             tmp_file.write(body)
         os.replace(tmp_name, env_path)
     except BaseException:
-        try:
+        with contextlib.suppress(OSError):
             os.unlink(tmp_name)
-        except OSError:
-            pass
         raise
     return env_path

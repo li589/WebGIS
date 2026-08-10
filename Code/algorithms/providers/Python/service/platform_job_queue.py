@@ -2,7 +2,8 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 from threading import local
-from typing import Any, Callable
+from typing import Any
+from collections.abc import Callable
 
 from contracts.job import JobRequest
 from service.job_queue import QueuedJobSubmission

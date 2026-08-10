@@ -36,13 +36,16 @@ describe('workflow-expected-outputs', () => {
     expect(resolveExpectedOutputTags(null)).toEqual(['result'])
   })
 
-  it('builds default product names', () => {
+  it('builds default product names from productTagLabel', () => {
     expect(defaultProductLayerNames(['SM', 'VOD'], 'omega_sf_fenkuai')).toEqual([
-      { productTag: 'SM', name: 'omega_sf_fenkuai_SM' },
-      { productTag: 'VOD', name: 'omega_sf_fenkuai_VOD' },
+      { productTag: 'SM', name: 'SM（土壤湿度）' },
+      { productTag: 'VOD', name: 'VOD（植被光学厚度）' },
+    ])
+    expect(defaultProductLayerNames(['OMEGA'])).toEqual([
+      { productTag: 'OMEGA', name: 'ω（反演参数）' },
     ])
     expect(defaultProductLayerNames(['result'], 'my_wf')).toEqual([
-      { productTag: 'result', name: 'my_wf' },
+      { productTag: 'result', name: '计算结果' },
     ])
   })
 

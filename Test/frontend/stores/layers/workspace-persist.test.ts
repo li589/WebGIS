@@ -86,9 +86,9 @@ describe('workspace-persist', () => {
   })
 
   it('persists catalog layers for refresh restore', () => {
-    const snap = buildWorkspaceSnapshot([catalogLayer('omega-sf-fenkuai')], [])
+    const snap = buildWorkspaceSnapshot([catalogLayer('method-smap-omega-doy-dynamic')], [])
     expect(snap.catalogLayers).toHaveLength(1)
-    expect(snap.catalogLayers?.[0]?.catalogId).toBe('omega-sf-fenkuai')
+    expect(snap.catalogLayers?.[0]?.catalogId).toBe('method-smap-omega-doy-dynamic')
     saveWorkspaceSnapshot(snap)
     const loaded = loadWorkspaceSnapshot()
     expect(loaded?.catalogLayers).toHaveLength(1)

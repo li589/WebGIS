@@ -341,10 +341,11 @@ function configureCanvas(canvas: LGraphCanvasClass) {
     LiteGraph.LINK_COLOR = '#5ad5ff' // 默认（青色）
     LiteGraph.CONNECTING_LINK_COLOR = '#ffb84d' // 正在连接（橙色）
     LiteGraph.EVENT_LINK_COLOR = '#78ffa0' // 事件类型（绿色）
-    // 标题栏高度
-    LiteGraph.NODE_TITLE_HEIGHT = 22
-    LiteGraph.NODE_SLOT_HEIGHT = 20
-    LiteGraph.NODE_WIDGET_HEIGHT = 20
+    // 标题栏高度 / 槽位 / 字号（与节点默认尺寸联动，避免溢出）
+    LiteGraph.NODE_TITLE_HEIGHT = 24
+    LiteGraph.NODE_SLOT_HEIGHT = 22
+    LiteGraph.NODE_WIDGET_HEIGHT = 22
+    LiteGraph.NODE_TEXT_SIZE = 15
     // 连线宽度
     lg.LINK_WIDTH = 2.2
     // 鼠标悬停连接线时的高亮颜色（降级方案：依赖 LiteGraph 内置 hover 绘制）

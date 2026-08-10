@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import sqlite3
-from datetime import datetime, timezone
+from datetime import datetime, UTC
 from pathlib import Path
 from typing import Any, Literal
 
@@ -125,7 +125,7 @@ class UserRepository:
             raise ValueError("username is required")
         if role not in VALID_ROLES:
             raise ValueError(f"invalid role: {role}")
-        now = datetime.now(timezone.utc).isoformat()
+        now = datetime.now(UTC).isoformat()
         pwd_hash = hash_password(password)
         with self._pool.connection() as conn:
             try:
@@ -157,7 +157,7 @@ class UserRepository:
             return None
         if role is not None and role not in VALID_ROLES:
             raise ValueError(f"invalid role: {role}")
-        now = datetime.now(timezone.utc).isoformat()
+        now = datetime.now(UTC).isoformat()
         fields: list[str] = ["updated_at=?"]
         params: list[Any] = [now]
         if password is not None:
@@ -198,7 +198,7 @@ class UserRepository:
         role: str,
         expires_at: str,
     ) -> None:
-        now = datetime.now(timezone.utc).isoformat()
+        now = datetime.now(UTC).isoformat()
         with self._pool.connection() as conn:
             conn.execute(
                 """
@@ -224,8 +224,8 @@ class UserRepository:
             return None
         expires = datetime.fromisoformat(str(row["expires_at"]))
         if expires.tzinfo is None:
-            expires = expires.replace(tzinfo=timezone.utc)
-        if expires <= datetime.now(timezone.utc):
+            expires = expires.replace(tzinfo=UTC)
+        if expires <= datetime.now(UTC):
             self.delete_session(token)
             return None
         return dict(row)

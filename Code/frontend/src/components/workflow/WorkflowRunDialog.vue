@@ -29,8 +29,6 @@ export interface WorkflowRunTarget {
   groupTitle: string
   /** 每个预期产出的图层名 + 产品标签 */
   targets: WorkflowRunProductTarget[]
-  /** library 分组名（新建模式写入 registry） */
-  group?: string
   /** 兼容旧字段：单名时可用第一个 target.name */
   name?: string
   /** 运行时选定的源图层 */
@@ -56,9 +54,6 @@ const layersStore = useLayersStore()
 const workflowDefsStore = useWorkflowDefinitionsStore()
 
 const mode = ref<'default' | 'new'>('default')
-const selectedGroup = ref('')
-const newGroupName = ref('')
-const creatingNewGroup = ref(false)
 const pickedLayerId = ref('')
 const groupTitle = ref('')
 const productNames = ref<string[]>([])
@@ -94,16 +89,10 @@ const sourceLayerName = computed(() => {
   return libItem?.name ?? layerId
 })
 
-const effectiveLibraryGroup = computed(() =>
-  creatingNewGroup.value ? newGroupName.value.trim() : selectedGroup.value.trim(),
-)
-
 const canConfirm = computed(() => {
   if (!effectiveLayerId.value) return false
   if (!groupTitle.value.trim()) return false
-  if (!productNames.value.every((n) => n.trim().length > 0)) return false
-  if (mode.value === 'new' && !effectiveLibraryGroup.value) return false
-  return true
+  return productNames.value.every((n) => n.trim().length > 0)
 })
 
 function buildTargets(): WorkflowRunProductTarget[] {
@@ -123,17 +112,11 @@ function handleConfirm() {
     groupTitle: title,
     targets,
     name: targets[0]?.name,
-    group: mode.value === 'new' ? effectiveLibraryGroup.value : title,
   })
 }
 
 function handleCancel() {
   emit('cancel')
-}
-
-function useExistingGroup() {
-  creatingNewGroup.value = false
-  selectedGroup.value = outputStore.groups[0] ?? ''
 }
 
 watch(
@@ -148,15 +131,6 @@ watch(
 
     const defaults = defaultProductLayerNames(outputTags.value, namePrefix.value)
     productNames.value = defaults.map((d) => d.name)
-
-    if (outputStore.groups.length > 0) {
-      selectedGroup.value = outputStore.groups[0]
-      creatingNewGroup.value = false
-    } else {
-      selectedGroup.value = ''
-      creatingNewGroup.value = true
-      newGroupName.value = '默认分组'
-    }
   },
 )
 
@@ -201,7 +175,7 @@ watch(outputTags, (tags) => {
             <input v-model="mode" type="radio" value="new" />
             <span class="mode-label">
               <span class="mode-name">新建图层</span>
-              <span class="mode-desc">计算组 + 写入目录产出条目，便于复用</span>
+              <span class="mode-desc">计算组 + 写入「科研数据 → 模型输出」目录条目</span>
             </span>
           </label>
         </div>
@@ -248,34 +222,6 @@ watch(outputTags, (tags) => {
                   :placeholder="`${namePrefix}_${outputTags[idx]}`"
                 />
               </div>
-            </div>
-          </div>
-
-          <div v-if="mode === 'new'" class="form-row">
-            <label class="form-label">目录分组</label>
-            <div v-if="!creatingNewGroup" class="group-select-row">
-              <select v-model="selectedGroup" class="form-select">
-                <option v-for="g in outputStore.groups" :key="g" :value="g">{{ g }}</option>
-              </select>
-              <button class="toggle-group-btn" type="button" @click="creatingNewGroup = true">
-                + 新建分组
-              </button>
-            </div>
-            <div v-else class="group-select-row">
-              <input
-                v-model="newGroupName"
-                type="text"
-                class="form-input"
-                placeholder="输入新分组名称"
-              />
-              <button
-                v-if="outputStore.groups.length > 0"
-                class="toggle-group-btn"
-                type="button"
-                @click="useExistingGroup"
-              >
-                选择已有
-              </button>
             </div>
           </div>
         </div>

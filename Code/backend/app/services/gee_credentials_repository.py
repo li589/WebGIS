@@ -3,11 +3,12 @@ from __future__ import annotations
 import json
 import logging
 import sqlite3
-from datetime import datetime, timezone
+from datetime import datetime, UTC
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 from app.services._sqlite_pool import SQLiteConnectionPool
+import contextlib
 
 logger = logging.getLogger(__name__)
 
@@ -73,10 +74,8 @@ class GeeCredentialsRepository:
         self._pool.close_all()
 
     def __del__(self) -> None:
-        try:
+        with contextlib.suppress(Exception):
             self._pool.close_all(quiet=True)
-        except Exception:
-            pass
 
     def _encrypt(self, plaintext: str) -> tuple[str, str]:
         """AES-GCM 加密，返回 (ciphertext_b64, iv_b64)。无 key 时仅 development 允许明文。"""
@@ -147,10 +146,10 @@ class GeeCredentialsRepository:
         *,
         account_id: str,
         service_account_json: dict[str, Any] | str,
-        project_id: Optional[str] = None,
-        display_name: Optional[str] = None,
+        project_id: str | None = None,
+        display_name: str | None = None,
         account_type: str = "service_account",
-    ) -> Optional[dict[str, Any]]:
+    ) -> dict[str, Any] | None:
         """新增或更新账号。返回脱敏后的账号信息。"""
         if isinstance(service_account_json, str):
             sa_str = service_account_json
@@ -172,7 +171,7 @@ class GeeCredentialsRepository:
             display_name = sa_dict["client_email"]
 
         ct, iv = self._encrypt(sa_str)
-        now = datetime.now(timezone.utc).isoformat()
+        now = datetime.now(UTC).isoformat()
         with self._connect() as conn:
             conn.execute(
                 """
@@ -194,7 +193,7 @@ class GeeCredentialsRepository:
             conn.commit()
         return self.get_account(account_id)
 
-    def get_account(self, account_id: str) -> Optional[dict[str, Any]]:
+    def get_account(self, account_id: str) -> dict[str, Any] | None:
         with self._connect() as conn:
             row = conn.execute(
                 "SELECT * FROM gee_accounts WHERE account_id=?", (account_id,)
@@ -203,7 +202,7 @@ class GeeCredentialsRepository:
             return None
         return self._row_to_dict(row)
 
-    def get_account_credentials(self, account_id: str) -> Optional[dict[str, Any]]:
+    def get_account_credentials(self, account_id: str) -> dict[str, Any] | None:
         """获取解密后的 service_account JSON。供账号池加载使用。"""
         with self._connect() as conn:
             row = conn.execute(
@@ -251,7 +250,7 @@ class GeeCredentialsRepository:
                 "UPDATE gee_accounts SET enabled=?, updated_at=? WHERE account_id=?",
                 (
                     1 if enabled else 0,
-                    datetime.now(timezone.utc).isoformat(),
+                    datetime.now(UTC).isoformat(),
                     account_id,
                 ),
             )
@@ -262,7 +261,7 @@ class GeeCredentialsRepository:
         with self._connect() as conn:
             conn.execute(
                 "UPDATE gee_accounts SET last_tested_at=?, last_test_status=? WHERE account_id=?",
-                (datetime.now(timezone.utc).isoformat(), status, account_id),
+                (datetime.now(UTC).isoformat(), status, account_id),
             )
             conn.commit()
 
@@ -282,9 +281,9 @@ class GeeCredentialsRepository:
 
     def list_enabled_accounts_with_credentials(
         self,
-    ) -> list[tuple[str, dict[str, Any], Optional[str]]]:
+    ) -> list[tuple[str, dict[str, Any], str | None]]:
         """供账号池加载：返回 [(account_id, sa_json, project_id), ...]"""
-        result: list[tuple[str, dict[str, Any], Optional[str]]] = []
+        result: list[tuple[str, dict[str, Any], str | None]] = []
         for acc in self.list_accounts(enabled_only=True):
             sa = self.get_account_credentials(acc["account_id"])
             if sa:

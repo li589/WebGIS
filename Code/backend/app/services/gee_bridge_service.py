@@ -1,13 +1,14 @@
 from __future__ import annotations
 
-from contextlib import contextmanager, nullcontext
+from contextlib import contextmanager, nullcontext, suppress
 from datetime import datetime
 from functools import lru_cache
 import importlib
 import logging
 from pathlib import Path
 import sys
-from typing import Any, Iterator
+from typing import Any
+from collections.abc import Iterator
 
 from app.core.config import settings
 from app.services.workflow_execution import WorkflowExecutionResult
@@ -123,10 +124,8 @@ def _gee_module_import_path(module_root: Path) -> Iterator[None]:
         yield
     finally:
         if inserted:
-            try:
+            with suppress(ValueError):
                 sys.path.remove(module_path)
-            except ValueError:
-                pass
 
 
 @lru_cache(maxsize=1)

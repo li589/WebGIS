@@ -33,7 +33,7 @@ import sys
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Sequence
+from collections.abc import Sequence
 
 import h5py
 import netCDF4 as nc
@@ -42,6 +42,7 @@ import rasterio
 
 # EASE-Grid 2.0 全球投影参数（精确 NSIDC 对称角点，禁止两位小数近似）
 from data_access.ease_grid_constants import EASE2_GLOBAL_BOUNDS, EASE2_SHAPE_9KM
+import contextlib
 
 logger = logging.getLogger(__name__)
 
@@ -218,9 +219,7 @@ def _hdf_sds(hdf_path: str, sds_path: str) -> str:
 
 def _run_gdalinfo(target_path: str) -> str:
     cmd = [GDAL_INFO, target_path]
-    proc = subprocess.run(
-        cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True
-    )
+    proc = subprocess.run(cmd, capture_output=True, text=True)
     if proc.returncode != 0:
         raise RuntimeError(proc.stderr)
     return proc.stdout
@@ -576,9 +575,7 @@ class FyPreprocessor:
             mosaic_vrt,
             *src_list,
         ]
-        proc = subprocess.run(
-            cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True
-        )
+        proc = subprocess.run(cmd, capture_output=True, text=True)
         if proc.returncode != 0:
             logger.warning(
                 "[SKIP] %s: gdalbuildvrt 失败。错误：\n%s", band_name, proc.stderr
@@ -719,10 +716,8 @@ class FyPreprocessor:
 
         # 清理临时文件
         for p in (output_tif_path0, mosaic_vrt):
-            try:
+            with contextlib.suppress(OSError):
                 os.remove(p)
-            except OSError:
-                pass
 
         return output_tif_path
 
@@ -801,9 +796,7 @@ class FyPreprocessor:
             mergy_vrt0,
             *merge_inputs,
         ]
-        proc = subprocess.run(
-            cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True
-        )
+        proc = subprocess.run(cmd, capture_output=True, text=True)
         if proc.returncode != 0 or not os.path.exists(mergy_vrt0):
             logger.error("gdalbuildvrt(separate) 失败：%s", proc.stderr)
             return 0
@@ -835,10 +828,8 @@ class FyPreprocessor:
             mergy_filetifname,
         ]
         subprocess.run(cmd, check=True)
-        try:
+        with contextlib.suppress(OSError):
             os.remove(mergy_vrt0)
-        except OSError:
-            pass
 
         # 输出
         if options.outfile_type == 1:
@@ -871,10 +862,8 @@ class FyPreprocessor:
         # 清理
         for pattern in ["vrt*.tif", "*.vrt"]:
             for f in glob.glob(os.path.join(work_folder, pattern)):
-                try:
+                with contextlib.suppress(OSError):
                     os.remove(f)
-                except OSError:
-                    pass
 
         return 1
 

@@ -16,7 +16,7 @@ def main() -> None:
     payload = {
         "command_type": "analysis",
         "command_label": "SF SMAP Dec strip timing+UI",
-        "layer_id": "omega-sf-fenkuai",
+        "layer_id": "method-smap-omega-doy-dynamic",
         "priority": "high",
         "resource_profile": "heavy",
         "time_range": {

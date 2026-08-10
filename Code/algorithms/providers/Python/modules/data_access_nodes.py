@@ -14,6 +14,7 @@ from urllib.parse import urljoin
 from contracts.product import ProductManifest, ProductRef
 from modules.base import BaseModule
 from modules.registry import register_module_decorator
+from path_utils import local_path_to_uri
 from workflow.schemas import ArtifactRef, NodeExecutionContext, PortSpec
 
 
@@ -288,7 +289,7 @@ def _resolve_portal_headers(
     elif auth_type == "basic" and username:
         import base64
 
-        raw_cred = f"{username}:{password}".encode("utf-8")
+        raw_cred = f"{username}:{password}".encode()
         headers["Authorization"] = f"Basic {base64.b64encode(raw_cred).decode('ascii')}"
     elif auth_type == "header" and token:
         headers[header_name] = token
@@ -1000,7 +1001,9 @@ class FormatConvertModule(BaseModule):
         else:
             registry = build_default_format_registry()
             resource = build_resource_ref(
-                uri=src.resolve().as_uri(), source_kind="local", local_path=str(src)
+                uri=local_path_to_uri(src, resolve=True),
+                source_kind="local",
+                local_path=str(src),
             )
             loaded = registry.load(resource)
             if target_format == "json":

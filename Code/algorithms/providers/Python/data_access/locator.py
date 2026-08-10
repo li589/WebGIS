@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from typing import Any, Iterable
+from typing import Any
+from collections.abc import Iterable
 
 from data_access.contracts import DataRequestV2, ResourceRef
 from data_access.registry import SourceRegistry

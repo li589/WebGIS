@@ -11,7 +11,7 @@
   3. hfp-cn              — Human Footprint (China 0.25deg, hot)
   4. aridity-cn          — Aridity Index (China 0.25deg, BrBG)
   5. omega-output [TS]   — Omega inversion avg 时间序列 (doy 017-030, 14 天, plasma)
-  6. smap-sm-ts [TS]     — SMAP soil moisture 时间序列 (China, 13 days)
+  6. ref-smap-sm-202512-l3 [TS]     — SMAP soil moisture 时间序列 (China, 13 days)
   7. gpcp-precip-ts [TS] — GPCP monthly precipitation 时间序列 (global, 24 months)
   8. gebco-dem-cn        — GEBCO 2024 DEM (China)
   9. cmfd-precip-cn      — CMFD 降水 (China 1km, 2002-01)
@@ -20,12 +20,12 @@
  12. era5-dwaa-cn        — ERA5 白天热浪事件 (China, 2020)
  13. era5-wdaa-cn        — ERA5 夜间热浪事件 (China, 2020)
  14. co2-cn              — GOSAT 中层 CO2 柱浓度 (China)
- 15. soil-ddca [TS]      — Soil DDCA DH 时间序列 (2015-04 ~ 2022-12, 采样 60 天)
+ 15. ref-ddca-sm-201504-202512 [TS]      — Soil DDCA DH 时间序列 (2015-04 ~ 2022-12, 采样 60 天)
  16. omega-fy-output [TS]— Omega FY avg 时间序列 (doy 025-030, 6 天, magma)
  17. forest-ratio        — Forest Ratio 9KM 2020 (global EASE-Grid 9km, YlGn)
   18. landscape-metrics-9km — Shannon 多样性指数 SHDI (global EASE-Grid 9km, cividis) [Phase 1.6 新增]
   19. vod-dec2025 [TS]    — VOD 植被光学厚度时间序列 (2025-12, 31 天, magma) [Phase 2 新增]
-  20. sm-dec2025 [TS]     — SM 土壤湿度时间序列 (2025-12, 31 天, YlGnBu) [Phase 2 新增]
+  20. prod-fy_smap_station-sm_vod_omega-202512-fusion [TS]     — SM 土壤湿度时间序列 (2025-12, 31 天, YlGnBu) [Phase 2 新增]
   21. omega-dec2025 [TS]  — Omega 反演时间序列 (2025-12, 31 天, plasma) [Phase 2 新增]
 
 [TS] = 时间序列图层，输出多张按时间索引的 PNG + bounds JSON。
@@ -785,12 +785,12 @@ def export_smap_ts() -> None:
         _render_png(
             data, out_dir / f"smap_sm_{tag}.png", cmap="YlGnBu", vmin=0, vmax=0.5
         )
-        _write_bounds(out_dir / f"smap_sm_{tag}_bounds.json", "smap-sm-ts", bounds)
+        _write_bounds(out_dir / f"smap_sm_{tag}_bounds.json", "ref-smap-sm-202512-l3", bounds)
 
     # Also write a generic bounds file
     _write_bounds(
         out_dir / "smap_sm_ts_bounds.json",
-        "smap-sm-ts",
+        "ref-smap-sm-202512-l3",
         generic_bounds if generic_bounds is not None else _CHINA_BBOX,
     )
 
@@ -1206,7 +1206,7 @@ def export_co2() -> None:
 
 
 def export_soil_ddca_ts() -> None:
-    """导出 soil-ddca 时间序列：每个采样日期一个 PNG + bounds JSON。
+    """导出 ref-ddca-sm-201504-202512 时间序列：每个采样日期一个 PNG + bounds JSON。
 
     输出文件：
       - ``_OVERLAY_PNG_ROOT/soil_ddca_ts/soil_ddca_{tag}.png``（tag = '20150401', ...）
@@ -1266,11 +1266,11 @@ def export_soil_ddca_ts() -> None:
             vmin=0,
             vmax=max(vmax, 1),
         )
-        _write_bounds(out_dir / f"soil_ddca_{tag}_bounds.json", "soil-ddca", bounds)
+        _write_bounds(out_dir / f"soil_ddca_{tag}_bounds.json", "ref-ddca-sm-201504-202512", bounds)
 
     if generic_bounds is not None:
         _write_bounds(
-            out_dir / "soil_ddca_overlay_bounds.json", "soil-ddca", generic_bounds
+            out_dir / "soil_ddca_overlay_bounds.json", "ref-ddca-sm-201504-202512", generic_bounds
         )
 
 
@@ -1469,7 +1469,7 @@ def _export_smap_soil_vod_sm_ts(
 
     Args:
         varname: .mat 中的变量名（'VOD' / 'SM' / 'OMEGA'）
-        layer_id: 图层 ID（'vod-dec2025' / 'sm-dec2025' / 'omega-dec2025'）
+        layer_id: 图层 ID（'vod-dec2025' / 'prod-fy_smap_station-sm_vod_omega-202512-fusion' / 'omega-dec2025'）
         out_subdir: 输出子目录名（'vod_ts' / 'sm_ts' / 'omega_2025_ts'）
         cmap: matplotlib colormap 名称
         vmin: 色彩映射下界
@@ -1560,7 +1560,7 @@ def export_vod_ts() -> None:
 
 
 def export_sm_dec2025_ts() -> None:
-    """导出 sm-dec2025 时间序列：土壤湿度 SM（2025-12，31 天）。
+    """导出 prod-fy_smap_station-sm_vod_omega-202512-fusion 时间序列：土壤湿度 SM（2025-12，31 天）。
 
     输出文件：
       - ``_OVERLAY_PNG_ROOT/sm_ts/sm_ts_{tag}.png``（tag = '20251201', ...）
@@ -1569,7 +1569,7 @@ def export_sm_dec2025_ts() -> None:
     """
     _export_smap_soil_vod_sm_ts(
         varname="SM",
-        layer_id="sm-dec2025",
+        layer_id="prod-fy_smap_station-sm_vod_omega-202512-fusion",
         out_subdir="sm_ts",
         cmap="YlGnBu",
         vmin=0,

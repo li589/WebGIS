@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import datetime, UTC
 import logging
 from typing import Any
 from uuid import uuid4
@@ -26,7 +26,7 @@ def execute_download_follow_up_task(*, task_data: dict[str, Any]) -> None:
             raise ValueError(
                 f"Workflow run not found for download follow-up task: {run_id}"
             )
-        updated_at = datetime.now(timezone.utc)
+        updated_at = datetime.now(UTC)
         result_refs, diagnostics, task_report = (
             download_service.complete_follow_up_task(
                 run_id=run_id,

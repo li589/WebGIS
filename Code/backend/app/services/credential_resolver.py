@@ -10,7 +10,7 @@ from typing import Literal
 
 from fastapi import Request
 
-from app.core.config import settings
+from app.core import config
 
 logger = logging.getLogger(__name__)
 
@@ -56,7 +56,7 @@ def resolve_credential(
     x_api_key: str | None,
 ) -> CredentialContext | None:
     """Resolve request to a credential context, or None if unauthenticated."""
-    if settings.user_auth_enabled:
+    if config.settings.user_auth_enabled:
         ctx = _resolve_session(request)
         if ctx is not None:
             return ctx
@@ -65,7 +65,7 @@ def resolve_credential(
             if ctx is not None:
                 return ctx
 
-    if not settings.user_auth_enabled or x_api_key:
+    if not config.settings.user_auth_enabled or x_api_key:
         ctx = _resolve_service_key_only(x_api_key)
         if ctx is not None:
             return ctx
@@ -84,7 +84,7 @@ def resolve_credential(
 def _resolve_session(request: Request) -> CredentialContext | None:
     from app.services.session_service import get_session
 
-    token = request.cookies.get(settings.session_cookie_name)
+    token = request.cookies.get(config.settings.session_cookie_name)
     if not token or not isinstance(token, str):
         return None
     session = get_session(token)
@@ -133,7 +133,7 @@ def _resolve_service_key_only(x_api_key: str | None) -> CredentialContext | None
         return None
     if not secrets.compare_digest(x_api_key, configured):
         return None
-    role = (settings.api_key_role or "operator").strip().lower()
+    role = (config.settings.api_key_role or "operator").strip().lower()
     if role not in _WRITE_ROLES:
         role = "operator"
     return CredentialContext(
@@ -145,7 +145,10 @@ def _resolve_service_key_only(x_api_key: str | None) -> CredentialContext | None
 
 
 def dev_bypass_allowed(request: Request) -> bool:
-    if not settings.api_keys_enabled and settings.environment == "development":
+    if (
+        not config.settings.api_keys_enabled
+        and config.settings.environment == "development"
+    ):
         direct_host = _direct_client_host(request)
         if _dev_auth_bypass_explicit() or direct_host in LOOPBACK_IPS:
             logger.warning(

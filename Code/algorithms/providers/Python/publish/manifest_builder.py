@@ -7,9 +7,9 @@
 from __future__ import annotations
 
 import json
-from datetime import datetime, timezone
+from datetime import datetime, UTC
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 # ---------------------------------------------------------------------------
 # ManifestBuilder
@@ -29,9 +29,9 @@ class ManifestBuilder:
         *,
         module_name: str = "",
         workflow_name: str = "",
-        time_range: Optional[dict] = None,
-        region: Optional[dict] = None,
-        extra: Optional[dict] = None,
+        time_range: dict | None = None,
+        region: dict | None = None,
+        extra: dict | None = None,
     ):
         """初始化产物清单构建器。
 
@@ -62,7 +62,7 @@ class ManifestBuilder:
         var_name: str = "",
         unit: str = "",
         description: str = "",
-        preview_path: Optional[str] = None,
+        preview_path: str | None = None,
         **kwargs: Any,
     ) -> None:
         """添加栅格产物。
@@ -97,7 +97,7 @@ class ManifestBuilder:
         layer_type: str = "table",
         description: str = "",
         rows: int = 0,
-        columns: Optional[list[str]] = None,
+        columns: list[str] | None = None,
         **kwargs: Any,
     ) -> None:
         """添加表格产物。
@@ -164,7 +164,7 @@ class ManifestBuilder:
         返回：
             (bytes, dict): JSON 字节数据和 manifest 内容字典。
         """
-        self.created_at = datetime.now(timezone.utc).isoformat()
+        self.created_at = datetime.now(UTC).isoformat()
 
         manifest: dict[str, Any] = {
             "job_id": self.job_id,
@@ -198,10 +198,10 @@ class ManifestBuilder:
         manifest_file.write_bytes(json_bytes)
 
         if not manifest_file.exists():
-            raise IOError(f"manifest.json 写入失败: {manifest_file}")
+            raise OSError(f"manifest.json 写入失败: {manifest_file}")
         file_size = manifest_file.stat().st_size
         if file_size == 0:
-            raise IOError(f"manifest.json 写入失败，文件大小为 0: {manifest_file}")
+            raise OSError(f"manifest.json 写入失败，文件大小为 0: {manifest_file}")
 
         return manifest
 

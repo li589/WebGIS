@@ -49,7 +49,7 @@ class RunClassResolverTests(unittest.TestCase):
     def test_business_default(self) -> None:
         payload = WorkflowSubmitRequest(
             command_type=WorkflowCommandType.analysis,
-            layer_id="lab-output",
+            layer_id="ref-smap-sm-202512-l3",
             requested_outputs=["json"],
         )
         self.assertEqual(resolve_workflow_run_class(payload), RUN_CLASS_BUSINESS)

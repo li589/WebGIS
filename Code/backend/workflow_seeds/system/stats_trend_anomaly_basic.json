@@ -1,0 +1,51 @@
+{
+  "_meta": {
+    "kind": "system",
+    "engine": "python_provider",
+    "name": "Stats trend + anomaly",
+    "description": "Timeseries JSON → stats/temporal_trend and stats/anomaly_detect in parallel. Series at {DATA_ROOT}/_runtime/smoke_timeseries.json.",
+    "author": "system",
+    "readonly": true,
+    "is_template": true,
+    "linked_layer_id": null,
+    "tags": ["analysis", "stats", "timeseries", "stub_v1", "sample"],
+    "category": "analysis",
+    "resource_profile": "standard"
+  },
+  "workflow_id": "stats_trend_anomaly_basic",
+  "name": "Stats trend + anomaly",
+  "description": "Linear trend and z-score anomalies on smoke timeseries",
+  "nodes": [
+    {
+      "id": 1,
+      "type": "data/source",
+      "pos": [60, 200],
+      "properties": {
+        "path": "{DATA_ROOT}/_runtime/smoke_timeseries.json",
+        "dataset_key": "timeseries_path"
+      }
+    },
+    {
+      "id": 2,
+      "type": "stats/temporal_trend",
+      "pos": [400, 100],
+      "properties": {
+        "trend_method": "linear",
+        "confidence_level": 0.95
+      }
+    },
+    {
+      "id": 3,
+      "type": "stats/anomaly_detect",
+      "pos": [400, 300],
+      "properties": {
+        "method": "zscore",
+        "threshold": 2.0
+      }
+    }
+  ],
+  "links": [
+    [1, 1, 2, 2, 2],
+    [2, 1, 2, 3, 2]
+  ]
+}

@@ -160,7 +160,7 @@ def get_storage_backend() -> StorageBackend:
     return LocalFileSystemStorage(_resolve_local_data_root())
 
 
-def _create_minio_backend() -> "MinIOStorage":  # noqa: F821  # MinIOStorage 经工厂延迟解析，注解为前向引用字符串
+def _create_minio_backend() -> MinIOStorage:  # noqa: F821  # MinIOStorage 经工厂延迟解析，注解为前向引用字符串
     """创建 MinIO 存储后端实例
 
     Returns:

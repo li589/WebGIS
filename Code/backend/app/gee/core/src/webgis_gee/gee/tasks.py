@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import json
-from datetime import datetime, timezone
+from datetime import datetime, UTC
 from pathlib import Path
 from tempfile import NamedTemporaryFile
 from typing import Any
@@ -46,7 +46,7 @@ class GeeExportTaskService:
         if task_ref is None:
             raise ValueError("must provide manifest_uri or task_ref")
 
-        polled_at = datetime.now(timezone.utc).isoformat()
+        polled_at = datetime.now(UTC).isoformat()
         status_payload = self._build_status_payload(
             task_ref=task_ref, gee_module=gee_module
         )

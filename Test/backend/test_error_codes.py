@@ -56,7 +56,10 @@ def auth_client(tmp_path, monkeypatch):
     # 注意：须在 import app.main 之前替换 cfg_mod.settings（main 模块级绑定生效）
     from app.main import create_app
     from app.services.auth_bootstrap import bootstrap_auth
-    from app.services.config_service import _get_api_keys_repository
+    from app.services.config_service import (
+        _get_api_keys_repository,
+        _get_effective_api_key_cached,
+    )
     from app.services.effective_config import hydrate_effective_config
 
     hydrate_effective_config()
@@ -69,6 +72,8 @@ def auth_client(tmp_path, monkeypatch):
         history_source="test",
         archive_previous=False,
     )
+    # 失效 _get_effective_api_key_cached 的 lru_cache，避免跨测试污染读到旧 backend_auth。
+    _get_effective_api_key_cached.cache_clear()
     hydrate_effective_config()
 
     with TestClient(create_app()) as client:

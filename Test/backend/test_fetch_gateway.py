@@ -104,3 +104,49 @@ class FetchGatewayTests(unittest.TestCase):
             self.client.fetch_point_forecast = _capture  # type: ignore[method-assign]
             fetch_point_forecast(layer_id="wind-field", latitude=1.0, longitude=2.0)
             self.assertEqual(seen.get("ttl_seconds"), 12345)
+
+    def test_pinned_commercial_grid_not_swapped_to_dense(self) -> None:
+        """Layer 选源 pin must reach grid/tiles (not silently fall back to OM)."""
+        from app.weatherengine.field_mapping import COMMERCIAL_LAYER_IDS
+        from app.weatherengine.provider_base import ProviderType, WeatherProvider
+
+        commercial_client = _CountingClient()
+
+        class _FakeCommercial(WeatherProvider):
+            @property
+            def provider_id(self) -> str:
+                return "weatherapi"
+
+            @property
+            def display_name(self) -> str:
+                return "WeatherAPI.com"
+
+            @property
+            def provider_type(self) -> str:
+                return ProviderType.COMMERCIAL_API
+
+            @property
+            def supported_capabilities(self) -> frozenset[str]:
+                return frozenset(COMMERCIAL_LAYER_IDS)
+
+            def fetch_point_forecast(self, **kwargs: Any) -> tuple[dict[str, Any], str]:
+                return commercial_client.fetch_point_forecast(**kwargs)
+
+            def fetch_grid_forecast(self, **kwargs: Any) -> tuple[dict[str, Any], str]:
+                return commercial_client.fetch_grid_forecast(**kwargs)
+
+        get_registry().register(_FakeCommercial(), priority=10, enabled=True)
+
+        _grid, _status, pid = fetch_grid_forecast(
+            layer_id="temperature",
+            bbox=BoundingBox(west=113.0, south=23.0, east=113.5, north=23.5),
+            resolution=0.25,
+            provider_id="weatherapi",
+        )
+        self.assertEqual(pid, "weatherapi")
+        self.assertEqual(commercial_client.calls, ["grid"])
+        self.assertEqual(self.client.calls, [])
+
+
+if __name__ == "__main__":
+    unittest.main()

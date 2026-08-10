@@ -59,9 +59,7 @@ class WorkflowValidationResponse(BaseModel):
     )
 
     @classmethod
-    def from_workflow(
-        cls, workflow: WorkflowDefinition
-    ) -> "WorkflowValidationResponse":
+    def from_workflow(cls, workflow: WorkflowDefinition) -> WorkflowValidationResponse:
         saveback_terminal_plans = _collect_saveback_terminal_plans(
             workflow=workflow,
             outputs=None,
@@ -98,7 +96,7 @@ class WorkflowExecutionResponse(BaseModel):
         result: RunResult,
         *,
         workflow: WorkflowDefinition | None = None,
-    ) -> "WorkflowExecutionResponse":
+    ) -> WorkflowExecutionResponse:
         saveback_terminal_plans = _collect_saveback_terminal_plans(
             workflow=workflow,
             outputs=result.outputs,
@@ -138,7 +136,7 @@ class ExportTaskStatusResponse(BaseModel):
     raw: dict[str, Any] | None = None
 
     @classmethod
-    def from_status_payload(cls, payload: dict[str, Any]) -> "ExportTaskStatusResponse":
+    def from_status_payload(cls, payload: dict[str, Any]) -> ExportTaskStatusResponse:
         return cls.model_validate(payload)
 
 

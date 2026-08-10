@@ -10,7 +10,7 @@ direction is now one-way: ``submission → lifecycle`` (for finalize).
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import datetime, UTC
 import logging
 
 from app.core.celery_app import revoke_task
@@ -64,7 +64,7 @@ class WorkflowLifecycleService:
         )
 
     def cancel_workflow_run(self, run_id: str) -> WorkflowRunStatusResponse:
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         current_run = self._repository.get_run(run_id)
         if current_run is None:
             raise ValueError(f"Workflow run not found: {run_id}")
@@ -222,7 +222,7 @@ class WorkflowLifecycleService:
             )
             return
 
-        retry_at = datetime.now(timezone.utc)
+        retry_at = datetime.now(UTC)
         self._persistence.save_run_status(
             run_status=self._transitions.build_retry_pending_transition(
                 run_id=run_id,
@@ -264,7 +264,7 @@ class WorkflowLifecycleService:
         )
 
     def _is_protected_terminal(self, run_id: str) -> tuple[bool, str]:
-        """审查 BUG-2：看门狗失败 / 用户取消为受保护终态，禁止后续成功或失败收口覆盖。
+        """受保护终态检查：看门狗失败 / 用户取消后，禁止后续成功或失败收口覆盖状态。
 
         Returns:
             (blocked, reason) — blocked 为 True 时应跳过 status 写入。
@@ -320,7 +320,7 @@ class WorkflowLifecycleService:
                             "result_count": len(result_refs),
                             "spill_count": len(spill_diagnostics),
                         },
-                        created_at=datetime.now(timezone.utc),
+                        created_at=datetime.now(UTC),
                     )
             except Exception:
                 logger.exception(
@@ -353,7 +353,7 @@ class WorkflowLifecycleService:
             materialized_result_count=len(result_refs),
             spill_diagnostics_count=len(spill_diagnostics),
         )
-        completed_at = datetime.now(timezone.utc)
+        completed_at = datetime.now(UTC)
         self._persistence.save_run_status(
             run_status=self._transitions.build_succeeded_transition(
                 run_id=run_id,
@@ -418,7 +418,7 @@ class WorkflowLifecycleService:
             )
             return
 
-        failed_at = datetime.now(timezone.utc)
+        failed_at = datetime.now(UTC)
         diagnostics = [
             "workflow-runs 已进入服务编排链，但本次执行失败。",
             "error_code=workflow_execution_failed",
@@ -491,7 +491,7 @@ class WorkflowLifecycleService:
             self.finalize_workflow_failure(
                 run_id=run_id,
                 payload=payload,
-                created_at=datetime.now(timezone.utc),
+                created_at=datetime.now(UTC),
                 exc=schedule_exc,
                 category=FailureCategory.terminal_failure,
                 attempt_count=next_attempt - 1,

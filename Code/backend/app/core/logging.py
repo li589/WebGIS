@@ -2,12 +2,12 @@ from __future__ import annotations
 
 from contextlib import contextmanager
 from contextvars import ContextVar
-from datetime import datetime, timezone
+from datetime import datetime, UTC
 import json
 import logging
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
-from typing import Iterator
+from collections.abc import Iterator
 
 from app.core.config import settings
 
@@ -20,7 +20,7 @@ _logging_configured = False
 class StructuredJsonFormatter(logging.Formatter):
     def format(self, record: logging.LogRecord) -> str:
         payload = {
-            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "timestamp": datetime.now(UTC).isoformat(),
             "level": record.levelname,
             "logger": record.name,
             "message": record.getMessage(),

@@ -20,6 +20,11 @@ export type ApiKeyPrefsMap = Record<string, ApiKeyLocalPref>
 
 export interface SettingsUiLocal {
   activeTab?: string
+  /**
+   * 地图分布淡底 / 氛围遮罩。默认开启；
+   * 关闭或无可见数据图层时不盖雾/淡白层。
+   */
+  mapDistributionChrome?: boolean
 }
 
 function safeGet(storage: Storage, key: string): string | null {
@@ -143,6 +148,31 @@ export function loadSettingsUiLocal(): SettingsUiLocal {
 
 export function saveSettingsUiLocal(ui: SettingsUiLocal): void {
   safeSet(localStorage, SETTINGS_UI, JSON.stringify(ui))
+}
+
+/** 地图分布淡底默认开启；显式 false 时关闭。 */
+export function isMapDistributionChromeEnabled(): boolean {
+  return loadSettingsUiLocal().mapDistributionChrome !== false
+}
+
+const mapChromeListeners = new Set<() => void>()
+
+export function subscribeMapDistributionChrome(listener: () => void): () => void {
+  mapChromeListeners.add(listener)
+  return () => {
+    mapChromeListeners.delete(listener)
+  }
+}
+
+export function setMapDistributionChromeEnabled(on: boolean): void {
+  saveSettingsUiLocal({ ...loadSettingsUiLocal(), mapDistributionChrome: on })
+  for (const listener of mapChromeListeners) {
+    try {
+      listener()
+    } catch {
+      // ignore listener errors
+    }
+  }
 }
 
 /** Clear local preferences only — does not touch server-side key history. */

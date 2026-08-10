@@ -26,13 +26,14 @@ import logging
 import sqlite3
 import threading
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta, UTC
 from pathlib import Path
 from typing import Any
 from uuid import uuid4
 from zoneinfo import ZoneInfo
 
 from app.core.config import settings
+import contextlib
 
 logger = logging.getLogger(__name__)
 
@@ -157,8 +158,8 @@ def parse_cron(expr: str) -> dict[str, set[int]]:
 
 def _ensure_aware_utc(dt: datetime) -> datetime:
     if dt.tzinfo is None:
-        return dt.replace(tzinfo=timezone.utc)
-    return dt.astimezone(timezone.utc)
+        return dt.replace(tzinfo=UTC)
+    return dt.astimezone(UTC)
 
 
 def next_cron_time(cron_expr: str, after: datetime) -> datetime:
@@ -187,7 +188,7 @@ def next_cron_time(cron_expr: str, after: datetime) -> datetime:
                         local_hit = candidate.replace(
                             hour=hour, minute=minute, second=0, microsecond=0
                         )
-                        return local_hit.astimezone(timezone.utc)
+                        return local_hit.astimezone(UTC)
         candidate = (candidate + timedelta(days=1)).replace(hour=0, minute=0)
     raise TimerValidationError(f"no next fire time found for cron: {cron_expr}")
 
@@ -233,7 +234,7 @@ def compute_next_fire_at(
 
     interval：若 last+seconds 已过去，clamp 到 now+seconds，避免停机后每分钟连打。
     """
-    now_utc = _ensure_aware_utc(now or datetime.now(timezone.utc))
+    now_utc = _ensure_aware_utc(now or datetime.now(UTC))
     if trigger_type == "cron":
         base = _ensure_aware_utc(last_fired_at) if last_fired_at else now_utc
         return next_cron_time(config["cron"], base).isoformat()
@@ -243,7 +244,7 @@ def compute_next_fire_at(
         next_dt = base + timedelta(seconds=seconds)
         if next_dt <= now_utc:
             next_dt = now_utc + timedelta(seconds=seconds)
-        return next_dt.astimezone(timezone.utc).isoformat()
+        return next_dt.astimezone(UTC).isoformat()
     return None  # event
 
 
@@ -346,6 +347,13 @@ def _build_submit_payload(
     ):
         if key in overrides:
             setattr(payload, key, resolve_date_templates(overrides[key]))
+
+    # Inject seed _meta.resource_profile / heavy-module bump unless override set it
+    from app.services.resource_profile_resolver import apply_resource_profile_to_payload
+
+    apply_resource_profile_to_payload(
+        payload, meta=meta if isinstance(meta, dict) else {}, definition=definition
+    )
     return payload
 
 
@@ -429,10 +437,8 @@ class WorkflowTimerStore:
 
     def close(self) -> None:
         with self._lock:
-            try:
+            with contextlib.suppress(Exception):
                 self._conn.close()
-            except Exception:
-                pass
 
     def list_timers(self, *, workflow_id: str | None = None) -> list[WorkflowTimer]:
         with self._lock:
@@ -524,7 +530,7 @@ class WorkflowTimerStore:
         if not enabled:
             recomputed_next = None
 
-        updated_at = datetime.now(timezone.utc).isoformat()
+        updated_at = datetime.now(UTC).isoformat()
         with self._lock:
             self._conn.execute(
                 """
@@ -602,10 +608,8 @@ class WorkflowTimerStore:
                 )
                 self._conn.execute("COMMIT")
             except Exception:
-                try:
+                with contextlib.suppress(Exception):
                     self._conn.execute("ROLLBACK")
-                except Exception:
-                    pass
                 raise
         reclaimed = int(cur.rowcount or 0)
         if reclaimed:
@@ -646,10 +650,8 @@ class WorkflowTimerStore:
                     )
                     self._conn.execute("COMMIT")
                 except Exception:
-                    try:
+                    with contextlib.suppress(Exception):
                         self._conn.execute("ROLLBACK")
-                    except Exception:
-                        pass
                     raise
             if cur.rowcount == 1:
                 claimed.append(timer)
@@ -682,7 +684,7 @@ class WorkflowTimerStore:
         next_fire_at: str | None,
     ) -> None:
         """更新触发后的状态：last_fired_at/last_run_id/last_error/fire_count/next_fire_at。"""
-        now_iso = datetime.now(timezone.utc).isoformat()
+        now_iso = datetime.now(UTC).isoformat()
         with self._lock:
             self._conn.execute(
                 """
@@ -705,7 +707,7 @@ class WorkflowTimerStore:
 
         用于手动触发场景：记录最新 run_id 但不污染自动触发的统计数据和调度基准。
         """
-        now_iso = datetime.now(timezone.utc).isoformat()
+        now_iso = datetime.now(UTC).isoformat()
         with self._lock:
             self._conn.execute(
                 """
@@ -777,7 +779,7 @@ def create_timer(
         raise TimerValidationError(f"workflow definition not found: {workflow_id}")
 
     normalized_config = validate_trigger_config(trigger_type, trigger_config)
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     next_fire = (
         compute_next_fire_at(
             trigger_type,
@@ -811,7 +813,7 @@ def tick() -> dict[str, Any]:
     skipped = claim 竞争失败数量；reclaimed = 超时 CLAIMED 回收数量。
     """
     store = get_timer_store()
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     reclaimed = store.reclaim_stale_claims(now)
     claimed, skipped = store.claim_due_timers(now)
     stats = {
@@ -847,7 +849,7 @@ def tick() -> dict[str, Any]:
             )
 
         try:
-            now_dt = datetime.now(timezone.utc)
+            now_dt = datetime.now(UTC)
             next_fire = compute_next_fire_at(
                 timer.trigger_type, timer.trigger_config, now_dt, now=now_dt
             )
@@ -917,7 +919,7 @@ def trigger_manually(timer_id: str) -> dict[str, Any]:
     from app.services.workflow.service_container import submission_service
 
     accepted = submission_service.submit_workflow(payload)
-    now_iso = datetime.now(timezone.utc).isoformat()
+    now_iso = datetime.now(UTC).isoformat()
     store.update_last_run(
         timer_id,
         run_id=accepted.run_id,
@@ -941,7 +943,7 @@ def preview_cron(cron_expr: str, count: int = 5) -> list[str]:
     expr = cron_expr.strip()
     parse_cron(expr)
     results: list[str] = []
-    candidate = datetime.now(timezone.utc)
+    candidate = datetime.now(UTC)
     for _ in range(count):
         nxt = next_cron_time(expr, candidate)
         results.append(nxt.isoformat())
@@ -984,7 +986,7 @@ def _resolve_string_templates(s: str) -> Any:
     if "{{" not in s:
         return s
 
-    now = datetime.now(timezone.utc).astimezone(TIMER_TZ)
+    now = datetime.now(UTC).astimezone(TIMER_TZ)
     today = now.strftime("%Y%m%d")
     yesterday = (now - timedelta(days=1)).strftime("%Y%m%d")
     tomorrow = (now + timedelta(days=1)).strftime("%Y%m%d")

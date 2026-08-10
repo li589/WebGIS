@@ -7,7 +7,7 @@ to break the circular dependency: submission → lifecycle → submission.
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import datetime, UTC
 import importlib
 import json
 import logging
@@ -128,14 +128,14 @@ class WorkflowSubmissionService:
         self._follow_up = follow_up or FollowUpDispatchService(
             self._repository, self._persistence, self._transitions
         )
-        self._lifecycle: "WorkflowLifecycleService | None" = None
+        self._lifecycle: WorkflowLifecycleService | None = None
 
-    def set_lifecycle_service(self, lifecycle: "WorkflowLifecycleService") -> None:
+    def set_lifecycle_service(self, lifecycle: WorkflowLifecycleService) -> None:
         """Late binding to break circular dependency."""
         self._lifecycle = lifecycle
 
     @property
-    def lifecycle(self) -> "WorkflowLifecycleService":
+    def lifecycle(self) -> WorkflowLifecycleService:
         if self._lifecycle is None:
             raise RuntimeError(
                 "Lifecycle service not set. Call set_lifecycle_service() first."
@@ -146,7 +146,13 @@ class WorkflowSubmissionService:
         self, payload: WorkflowSubmitRequest
     ) -> WorkflowAcceptedResponse:
         payload = normalize_workflow_submit_request(payload)
-        now = datetime.now(timezone.utc)
+        from app.services.resource_profile_resolver import (
+            apply_resource_profile_to_payload,
+        )
+
+        # Upgrade standard → heavy when seed meta or heavy modules are present
+        apply_resource_profile_to_payload(payload)
+        now = datetime.now(UTC)
         run_id = f"run-{uuid4().hex[:12]}"
         status_url = self._transitions.workflow_status_url(run_id)
         events_url = self._transitions.workflow_events_url(run_id)
@@ -157,7 +163,7 @@ class WorkflowSubmissionService:
             self._validate_request_params(payload)
             logger.info("Workflow accepted run_class=%s", run_class)
             accepted_at = now
-            queued_at = datetime.now(timezone.utc)
+            queued_at = datetime.now(UTC)
             submission_transitions = self._transitions.build_submission_transitions(
                 run_id=run_id,
                 payload=payload,
@@ -216,12 +222,12 @@ class WorkflowSubmissionService:
                 current_run.status.value,
             )
             return
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         created_at = current_run.created_at if current_run is not None else now
 
         with log_context(run_id=run_id):
             try:
-                running_at = datetime.now(timezone.utc)
+                running_at = datetime.now(UTC)
                 logger.info("Workflow execution started")
                 self._persistence.save_run_status(
                     run_status=self._transitions.build_running_transition(
@@ -317,7 +323,7 @@ class WorkflowSubmissionService:
     def _dispatch_async_workflow(
         self, run_id: str, payload: WorkflowSubmitRequest
     ) -> None:
-        dispatch_at = datetime.now(timezone.utc)
+        dispatch_at = datetime.now(UTC)
         queue_name = resolve_workflow_queue(payload)
         dispatch_channel = resolve_workflow_channel(payload)
         with log_context(run_id=run_id):

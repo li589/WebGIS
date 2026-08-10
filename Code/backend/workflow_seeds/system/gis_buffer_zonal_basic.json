@@ -1,0 +1,75 @@
+{
+  "_meta": {
+    "kind": "system",
+    "engine": "python_provider",
+    "name": "GIS buffer + zonal stats",
+    "description": "Buffer smoke points GeoJSON; zonal mean of smoke raster over zones GeoJSON. Paths under {DATA_ROOT}/_runtime/smoke_points.geojson, smoke_zones.geojson, smoke_stub.tif.",
+    "author": "system",
+    "readonly": true,
+    "is_template": true,
+    "linked_layer_id": null,
+    "tags": ["analysis", "gis", "zonal", "stub_v1", "sample"],
+    "category": "analysis",
+    "resource_profile": "standard"
+  },
+  "workflow_id": "gis_buffer_zonal_basic",
+  "name": "GIS buffer + zonal stats",
+  "description": "Buffer points and zonal statistics on a smoke raster",
+  "nodes": [
+    {
+      "id": 1,
+      "type": "data/source",
+      "pos": [60, 80],
+      "properties": {
+        "path": "{DATA_ROOT}/_runtime/smoke_stub.tif",
+        "dataset_key": "input_path",
+        "notes": "Value raster"
+      }
+    },
+    {
+      "id": 2,
+      "type": "data/source",
+      "pos": [60, 240],
+      "properties": {
+        "path": "{DATA_ROOT}/_runtime/smoke_zones.geojson",
+        "dataset_key": "zones_path",
+        "notes": "Zones GeoJSON"
+      }
+    },
+    {
+      "id": 3,
+      "type": "data/source",
+      "pos": [60, 400],
+      "properties": {
+        "path": "{DATA_ROOT}/_runtime/smoke_points.geojson",
+        "dataset_key": "points_path",
+        "notes": "Points for buffer"
+      }
+    },
+    {
+      "id": 4,
+      "type": "gis/buffer_analysis",
+      "pos": [380, 400],
+      "properties": {
+        "distance_unit": "meters",
+        "segments": 8,
+        "distance": 500
+      }
+    },
+    {
+      "id": 5,
+      "type": "gis/zonal_statistics",
+      "pos": [380, 160],
+      "properties": {
+        "statistic": "mean",
+        "band": 0,
+        "all_touched": false
+      }
+    }
+  ],
+  "links": [
+    [1, 1, 2, 5, 1],
+    [2, 2, 2, 5, 2],
+    [3, 3, 2, 4, 1]
+  ]
+}

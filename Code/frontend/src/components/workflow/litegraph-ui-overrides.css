@@ -3,7 +3,7 @@
  * - 缩小 ContextMenu / graphdialog
  * - 提高 z-index，避免被侧栏遮挡
  * - 取消强制 min-height:100
- * - 字号 13–14px（配合编辑器局部 18px rem 基准提升可读性）
+ * - 字号 14px（配合编辑器局部 19px rem 基准提升可读性）
  */
 .litegraph.litecontextmenu,
 .litecontextmenu {
@@ -11,7 +11,7 @@
   max-height: min(240px, 45vh) !important;
   overflow-y: auto !important;
   z-index: 11000 !important;
-  font-size: 13px !important;
+  font-size: 14px !important;
   font-family: ui-sans-serif, system-ui, sans-serif !important;
   padding: 2px 0 !important;
   border-radius: 6px !important;
@@ -22,7 +22,7 @@
 .litecontextmenu .litemenu-entry,
 .litemenu-entry {
   padding: 4px 10px !important;
-  font-size: 13px !important;
+  font-size: 14px !important;
   line-height: 1.35 !important;
   min-height: 0 !important;
 }

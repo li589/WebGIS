@@ -241,14 +241,14 @@ class WorkflowServicesTests(unittest.TestCase):
     def test_submit_workflow_auto_populates_python_provider_defaults_for_smap_and_fy_layers(
         self,
     ) -> None:
-        # P2.2 修复后 fy-mwri 的首个候选数据源从 “fy” 扩展为 “FY_MWRI_HDF”
-        # （见 layer_catalog.py 中 fy-mwri.default_data_access_sources）。
-        # catalog 演进：smap-soil 已移除，改用 smap-sm-ts（module=smap_daily, dataset=SMAP_L3_DEC2025）。
+        # P2.2 修复后 ref-fy-tb-202512-mwri 的首个候选数据源从 “fy” 扩展为 “FY_MWRI_HDF”
+        # （见 layer_catalog.py 中 ref-fy-tb-202512-mwri.default_data_access_sources）。
+        # catalog 演进：smap-soil 已移除，改用 ref-smap-sm-202512-l3（module=smap_daily, dataset=SMAP_L3_DEC2025）。
         # 业务判定（2026-08-07）：本地候选为可解析数据源名 "SMAP_L3"
         # （dataset_config → Soil_Moisture/SMAP），故派生 URI 为 D:/prepared/SMAP_L3。
         expected_layers = {
-            "smap-sm-ts": ("smap_daily", "SMAP_L3_DEC2025", "D:/prepared/SMAP_L3"),
-            "fy-mwri": ("fy_daily", "FY_MWRI_HDF", "D:/prepared/FY_MWRI_HDF"),
+            "ref-smap-sm-202512-l3": ("smap_daily", "SMAP_L3_DEC2025", "D:/prepared/SMAP_L3"),
+            "ref-fy-tb-202512-mwri": ("fy_daily", "FY_MWRI_HDF", "D:/prepared/FY_MWRI_HDF"),
         }
 
         with _temp_repository() as repository:
@@ -262,7 +262,7 @@ class WorkflowServicesTests(unittest.TestCase):
                     "app.services.workflow.submission_service.execute_workflow_task",
                     return_value=WorkflowExecutionResult(message="ok"),
                 ) as execute_mock,
-                # catalog 演进后 smap-sm-ts 的 dataset 名 (SMAP_L3_DEC2025) 与
+                # catalog 演进后 ref-smap-sm-202512-l3 的 dataset 名 (SMAP_L3_DEC2025) 与
                 # smap_daily 模块模板期望的 SMAP_SPL3SMP_E 不一致，提交期模板校验
                 # 会拒绝。本测试关注 normalization 行为（auto-populate defaults），
                 # 非模板校验逻辑，故跳过提交期预校验（与同文件其他测试一致）。

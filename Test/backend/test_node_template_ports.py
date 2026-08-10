@@ -77,6 +77,39 @@ class NodeTemplatePortTests(unittest.TestCase):
         names = {p["name"] for p in tpl["inputs"]}
         self.assertNotIn("time_range", names)
 
+    def test_former_stub_nodes_are_executable_python_provider(self) -> None:
+        """2026-08 stub enablement: preprocess/stats/fusion/viz/gis are runnable."""
+        former_stubs = (
+            "preprocess/reproject",
+            "preprocess/resample",
+            "preprocess/clip",
+            "preprocess/mask",
+            "stats/spatial_mean",
+            "stats/temporal_trend",
+            "stats/anomaly_detect",
+            "stats/correlation",
+            "fusion/spatial_interpolate",
+            "fusion/multi_source_merge",
+            "viz/report_export",
+            "viz/statistics_summary",
+            "gis/buffer_analysis",
+            "gis/zonal_statistics",
+            "gis/raster_calculator",
+            "gis/vector_to_raster",
+            "gis/raster_to_vector",
+            "gis/reclassify",
+            "gis/contour",
+            "gis/slope_aspect",
+            "gis/watershed",
+        )
+        for node_type in former_stubs:
+            tpl = get_node_template(node_type)
+            self.assertIsNotNone(tpl, node_type)
+            assert tpl is not None
+            self.assertTrue(tpl.get("executable"), node_type)
+            self.assertEqual(tpl.get("engine"), "python_provider", node_type)
+            self.assertTrue(str(tpl.get("node_class") or "").strip(), node_type)
+
 
 if __name__ == "__main__":
     unittest.main()

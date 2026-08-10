@@ -8,9 +8,11 @@ from __future__ import annotations
 
 from datetime import datetime
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Optional
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
+
+from path_utils import local_path_to_uri
 
 if TYPE_CHECKING:
     import pandas as pd
@@ -72,12 +74,12 @@ class TableWriter:
 
     def write(
         self,
-        df: "pd.DataFrame",
+        df: pd.DataFrame,
         output_name: str,
         *,
         index: bool = False,
         compression: str = "snappy",
-        metadata: Optional[dict] = None,
+        metadata: dict | None = None,
     ) -> dict:
         """将 pandas DataFrame 写出为 Parquet 格式。
 
@@ -134,17 +136,17 @@ class TableWriter:
 
         # 验证文件
         if not output_file.exists():
-            raise IOError(f"写出失败，文件不存在: {output_file}")
+            raise OSError(f"写出失败，文件不存在: {output_file}")
         file_size = output_file.stat().st_size
         if file_size == 0:
-            raise IOError(f"写出失败，文件大小为 0: {output_file}")
+            raise OSError(f"写出失败，文件大小为 0: {output_file}")
 
         # 返回相对路径
         rel_path = str(output_file.relative_to(self.output_dir))
 
         return {
             "path": rel_path,
-            "uri": str(output_file.resolve().as_uri()),
+            "uri": local_path_to_uri(output_file, resolve=True),
             "rows": len(df),
             "columns": list(df.columns),
             "size_bytes": file_size,
@@ -152,12 +154,12 @@ class TableWriter:
 
     def write_bytes(
         self,
-        df: "pd.DataFrame",
+        df: pd.DataFrame,
         output_name: str,
         *,
         index: bool = False,
         compression: str = "snappy",
-        metadata: Optional[dict] = None,
+        metadata: dict | None = None,
     ) -> tuple[bytes, dict]:
         """将 pandas DataFrame 序列化为 Parquet bytes 和元数据（不写文件）。
 
@@ -192,7 +194,7 @@ class TableWriter:
         pq.write_table(table, buf, compression=compression)
         parquet_bytes = buf.getvalue()
         if len(parquet_bytes) == 0:
-            raise IOError("Parquet 序列化失败，缓冲区为空")
+            raise OSError("Parquet 序列化失败，缓冲区为空")
 
         rel_path = f"{output_name}.parquet"
         return parquet_bytes, {
@@ -214,8 +216,8 @@ def write_timeseries(
     columns: list[str],
     output_path: Path | str,
     *,
-    station_ids: Optional[list[str]] = None,
-    metadata: Optional[dict] = None,
+    station_ids: list[str] | None = None,
+    metadata: dict | None = None,
 ) -> dict:
     """将时序数据写出为 Parquet。
 
@@ -294,14 +296,14 @@ def write_timeseries(
 
     # 验证文件
     if not output_path.exists():
-        raise IOError(f"时序数据写出失败: {output_path}")
+        raise OSError(f"时序数据写出失败: {output_path}")
     file_size = output_path.stat().st_size
     if file_size == 0:
-        raise IOError(f"时序数据写出失败，文件大小为 0: {output_path}")
+        raise OSError(f"时序数据写出失败，文件大小为 0: {output_path}")
 
     return {
         "path": str(output_path),
-        "uri": str(output_path.resolve().as_uri()),
+        "uri": local_path_to_uri(output_path, resolve=True),
         "rows": n_times,
         "columns": columns,
         "size_bytes": file_size,

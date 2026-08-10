@@ -32,6 +32,7 @@ from pathlib import Path
 from typing import Any
 
 from app.core.config import settings
+import contextlib
 
 _OUTPUT_ROOT = (
     Path(settings.output_root)
@@ -98,10 +99,8 @@ def dir_size_bytes(path: Path, *, include_ephemeral: bool = True) -> int:
         for child in path.iterdir():
             if not child.is_dir():
                 if child.is_file():
-                    try:
+                    with contextlib.suppress(OSError):
                         total += child.stat().st_size
-                    except OSError:
-                        pass
                 continue
             if _is_ephemeral_import_child(child.name):
                 continue

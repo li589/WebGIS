@@ -7,7 +7,7 @@
     "author": "system",
     "readonly": true,
     "is_template": true,
-    "linked_layer_id": "smap-sm-ts",
+    "linked_layer_id": "ref-smap-sm-202512-l3",
     "tags": ["sample", "download"],
     "category": "data_access"
   },

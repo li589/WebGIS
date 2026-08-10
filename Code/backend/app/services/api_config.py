@@ -40,7 +40,7 @@ class ApiEndpoint:
 
     url: str
     requires_auth: bool = False
-    rate_limit: Optional[int] = None  # 每分钟请求数限制
+    rate_limit: int | None = None  # 每分钟请求数限制
     timeout: int = 15  # 超时秒数
     retry_count: int = 3  # 重试次数
     capabilities: set[DataType] = field(default_factory=set)
@@ -53,7 +53,7 @@ class ApiConfig:
     provider: ApiProvider
     name: str
     endpoint: ApiEndpoint
-    api_key: Optional[str] = None
+    api_key: str | None = None
     enabled: bool = True
     priority: int = 0  # 优先级，数字越小优先级越高
     metadata: dict = field(default_factory=dict)
@@ -228,11 +228,11 @@ class ApiConfigManager:
             f"[ApiConfigManager] Registered API config for {config.provider.value}"
         )
 
-    def get_config(self, provider: ApiProvider) -> Optional[ApiConfig]:
+    def get_config(self, provider: ApiProvider) -> ApiConfig | None:
         """获取指定提供商的配置"""
         return self._configs.get(provider)
 
-    def get_config_by_name(self, name: str) -> Optional[ApiConfig]:
+    def get_config_by_name(self, name: str) -> ApiConfig | None:
         """通过名称获取配置（支持别名）"""
         # 直接查找
         for config in self._configs.values():
@@ -262,9 +262,9 @@ class ApiConfigManager:
 
     def get_best_available(
         self,
-        required_capabilities: Optional[set[DataType]] = None,
+        required_capabilities: set[DataType] | None = None,
         require_auth: bool = False,
-    ) -> Optional[ApiConfig]:
+    ) -> ApiConfig | None:
         """获取满足需求的最佳可用配置
 
         Args:
@@ -314,9 +314,7 @@ class ApiConfigManager:
         """获取所有配置"""
         return self._configs.copy()
 
-    def get_config_serializable(
-        self, provider: ApiProvider
-    ) -> Optional[dict[str, Any]]:
+    def get_config_serializable(self, provider: ApiProvider) -> dict[str, Any] | None:
         """获取可直接 JSON 序列化的 provider 配置（永不包含明文 api_key）。"""
         config = self._configs.get(provider)
         if config is None:
@@ -428,24 +426,24 @@ def _to_public_config(config: ApiConfig) -> dict[str, Any]:
 
 
 # 便捷函数
-def get_api_config(provider: ApiProvider) -> Optional[ApiConfig]:
+def get_api_config(provider: ApiProvider) -> ApiConfig | None:
     """获取指定提供商的配置"""
     return api_config_manager.get_config(provider)
 
 
-def get_weather_api_config() -> Optional[ApiConfig]:
+def get_weather_api_config() -> ApiConfig | None:
     """获取天气数据 API 配置（优先级最高）"""
     return api_config_manager.get_best_available(
         required_capabilities={DataType.WEATHER}
     )
 
 
-def get_tile_api_config() -> Optional[ApiConfig]:
+def get_tile_api_config() -> ApiConfig | None:
     """获取瓦片数据 API 配置"""
     return api_config_manager.get_best_available(required_capabilities={DataType.TILE})
 
 
-def get_geocoding_api_config() -> Optional[ApiConfig]:
+def get_geocoding_api_config() -> ApiConfig | None:
     """获取地理编码 API 配置"""
     return api_config_manager.get_best_available(
         required_capabilities={DataType.GEOCODING}

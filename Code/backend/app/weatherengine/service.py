@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import datetime, UTC
 from typing import Any
 import importlib
 import logging
@@ -196,7 +196,7 @@ class WeatherEngineService:
             payload={
                 "timezone": None,
                 "current": {
-                    "time": datetime.now(timezone.utc).isoformat(),
+                    "time": datetime.now(UTC).isoformat(),
                     **current_fields,
                 },
                 "hourly": {"time": []},
@@ -303,7 +303,7 @@ class WeatherEngineService:
             longitude=longitude,
             place_name=place_name,
             timezone=payload.get("timezone"),
-            fetched_at=datetime.now(timezone.utc),
+            fetched_at=datetime.now(UTC),
             observation_time=observation_time,
             cache_status=cache_status,
             summary=summary,
@@ -390,7 +390,7 @@ class WeatherEngineService:
             longitude=longitude,
             place_name=place_name,
             timezone=None,
-            fetched_at=datetime.now(timezone.utc),
+            fetched_at=datetime.now(UTC),
             observation_time=None,
             cache_status="fallback",
             summary=f"{spec.display_name} 点位数据暂不可用（API 限流），网格渲染仍可继续。",

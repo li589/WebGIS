@@ -8,7 +8,8 @@ import threading
 import time
 import uuid
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any
+from collections.abc import Callable
 
 from app.data_io.services.paths import JOBS_DIR, ensure_imports_root
 

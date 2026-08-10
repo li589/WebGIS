@@ -24,6 +24,7 @@ import logging
 import os
 import sqlite3
 import sys
+from contextlib import suppress
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -121,11 +122,8 @@ def _ensure_dll_search(ext_dir: Path) -> None:
         os.environ["PATH"] = f"{ext_dir}{os.pathsep}{cur}"
         logger.info("Prepended SpatiaLite dep dir to PATH: %s", ext_dir)
     # 补充：add_dll_directory（不冲突，部分组合下也有帮助）
-    if sys.version_info >= (3, 8):
-        try:
-            os.add_dll_directory(str(ext_dir))
-        except Exception:  # noqa: BLE001
-            pass
+    with suppress(Exception):  # noqa: BLE001
+        os.add_dll_directory(str(ext_dir))
 
 
 def _probe() -> _ProbeResult:
@@ -164,7 +162,7 @@ def _enabled() -> bool:
 
     注意：``app.core.config.Settings`` 是 ``@dataclass(frozen=True)``，其字段默认值在
     模块**首次导入时**由 ``os.getenv`` 求值并冻结。若 ``config.py`` 早于环境变量被导入，
-    重建 ``Settings()`` 不会重新读取 env（见 review 文档 BUG-S1）。故本函数**优先读
+    重建 ``Settings()`` 不会重新读取 env。故本函数**优先读
     ``os.getenv``**，使运行时（含启动脚本 / 容器 env / 测试 monkeypatch）可即时切换开关；
     仅在 env 未显式设置时，才回退到 settings 的冻结默认值（默认 True）。
     """
@@ -243,10 +241,8 @@ def load_into(conn: sqlite3.Connection) -> bool:
                 "SpatiaLite load_extension failed (%s); spatial features disabled", e
             )
             _load_fail_warned = True
-        try:
+        with suppress(Exception):  # noqa: BLE001
             conn.enable_load_extension(False)
-        except Exception:  # noqa: BLE001
-            pass
         return False
     except Exception as e:  # noqa: BLE001
         if not _load_fail_warned:
@@ -254,10 +250,8 @@ def load_into(conn: sqlite3.Connection) -> bool:
                 "SpatiaLite load_into unexpected error: %s", e, exc_info=True
             )
             _load_fail_warned = True
-        try:
+        with suppress(Exception):  # noqa: BLE001
             conn.enable_load_extension(False)
-        except Exception:  # noqa: BLE001
-            pass
         return False
 
 

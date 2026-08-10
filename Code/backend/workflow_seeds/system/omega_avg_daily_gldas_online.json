@@ -7,7 +7,7 @@
     "author": "system",
     "readonly": true,
     "is_template": true,
-    "linked_layer_id": "omega-avg-daily",
+    "linked_layer_id": "method-smap-omega-doy-avg",
     "tags": [
       "pipeline",
       "omega_avg",

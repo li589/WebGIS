@@ -8,9 +8,9 @@ from __future__ import annotations
 import logging
 import threading
 from dataclasses import dataclass, field
-from typing import Any, Optional
+from typing import Any
 
-from app.core.config import settings
+from app.core import config
 
 logger = logging.getLogger(__name__)
 
@@ -40,6 +40,11 @@ class RuntimeSnapshot:
     result_inline_max_bytes: int = 131072
     celery_task_soft_time_limit: int = 300
     celery_task_time_limit: int = 360
+    # 并发与资源（热更新类）
+    workflow_node_parallelism: int = 1
+    algorithm_max_parallel_workers: int = 0
+    task_memory_budget_mb: int = 0
+    task_cpu_budget_cores: int = 0
     hydrated: bool = False
 
 
@@ -52,7 +57,7 @@ _ENCRYPTION_KEY_HEX_LEN = 64
 
 
 def secrets_encryption_required() -> bool:
-    env = (settings.environment or "").lower()
+    env = (config.settings.environment or "").lower()
     return env not in {"development", "dev", "test", "testing"}
 
 
@@ -90,7 +95,7 @@ def refuse_empty_iv_outside_development(iv_b64: str | None) -> None:
 def assert_encryption_policy() -> None:
     """非 development 环境缺少加密 key 时 fail-fast；有 key 时校验 hex 形态。"""
     global _secrets_insecure
-    key = (settings.gee_credentials_encryption_key or "").strip()
+    key = (config.settings.gee_credentials_encryption_key or "").strip()
     if key:
         validate_encryption_key_format(key)
         _secrets_insecure = False
@@ -111,10 +116,10 @@ def assert_encryption_policy() -> None:
 
 def assert_data_root_policy() -> None:
     """非 development/test 环境缺少 BACKEND_DATA_ROOT 时 fail-fast（去硬编码批 1）。"""
-    env = (settings.environment or "").lower()
+    env = (config.settings.environment or "").lower()
     if env in {"development", "dev", "test", "testing"}:
         return
-    if not (settings.data_root or "").strip():
+    if not (config.settings.data_root or "").strip():
         raise RuntimeError(
             "BACKEND_DATA_ROOT is required outside development. "
             "Refusing to start without a configured geographic data root "
@@ -155,67 +160,115 @@ def hydrate_effective_config() -> RuntimeSnapshot:
             api_keys=api_keys,
             weather_cache_ttl_seconds=int(
                 overrides.get(
-                    "weather_cache_ttl_seconds", settings.weather_cache_ttl_seconds
+                    "weather_cache_ttl_seconds",
+                    config.settings.weather_cache_ttl_seconds,
                 )
             ),
             max_active_runs=int(
-                overrides.get("max_active_runs", settings.max_active_runs)
+                overrides.get("max_active_runs", config.settings.max_active_runs)
             ),
             max_active_weather_tile_runs=int(
                 overrides.get(
                     "max_active_weather_tile_runs",
-                    settings.max_active_weather_tile_runs,
+                    config.settings.max_active_weather_tile_runs,
                 )
             ),
             max_requested_outputs=int(
-                overrides.get("max_requested_outputs", settings.max_requested_outputs)
+                overrides.get(
+                    "max_requested_outputs", config.settings.max_requested_outputs
+                )
             ),
             weather_refresh_forecast_hours=int(
                 overrides.get(
                     "weather_refresh_forecast_hours",
-                    settings.weather_refresh_forecast_hours,
+                    config.settings.weather_refresh_forecast_hours,
                 )
             ),
-            log_level=str(overrides.get("log_level", settings.log_level)),
+            log_level=str(overrides.get("log_level", config.settings.log_level)),
             task_executor=str(
-                overrides.get("task_executor", settings.workflow_executor)
+                overrides.get("task_executor", config.settings.workflow_executor)
             ).lower(),
             secrets_insecure=_secrets_insecure,
             cache_default_ttl_seconds=int(
                 overrides.get(
-                    "cache_default_ttl_seconds", settings.cache_default_ttl_seconds
+                    "cache_default_ttl_seconds",
+                    config.settings.cache_default_ttl_seconds,
                 )
             ),
             provider_max_hotspots=int(
-                overrides.get("provider_max_hotspots", settings.provider_max_hotspots)
+                overrides.get(
+                    "provider_max_hotspots", config.settings.provider_max_hotspots
+                )
             ),
             provider_max_series_points=int(
                 overrides.get(
-                    "provider_max_series_points", settings.provider_max_series_points
+                    "provider_max_series_points",
+                    config.settings.provider_max_series_points,
                 )
             ),
             provider_table_chunk_size=int(
                 overrides.get(
-                    "provider_table_chunk_size", settings.provider_table_chunk_size
+                    "provider_table_chunk_size",
+                    config.settings.provider_table_chunk_size,
                 )
             ),
             provider_series_chunk_size=int(
                 overrides.get(
-                    "provider_series_chunk_size", settings.provider_series_chunk_size
+                    "provider_series_chunk_size",
+                    config.settings.provider_series_chunk_size,
                 )
             ),
             result_inline_max_bytes=int(
                 overrides.get(
-                    "result_inline_max_bytes", settings.result_inline_max_bytes
+                    "result_inline_max_bytes", config.settings.result_inline_max_bytes
                 )
             ),
             celery_task_soft_time_limit=int(
                 overrides.get(
-                    "celery_task_soft_time_limit", settings.celery_task_soft_time_limit
+                    "celery_task_soft_time_limit",
+                    config.settings.celery_task_soft_time_limit,
                 )
             ),
             celery_task_time_limit=int(
-                overrides.get("celery_task_time_limit", settings.celery_task_time_limit)
+                overrides.get(
+                    "celery_task_time_limit", config.settings.celery_task_time_limit
+                )
+            ),
+            workflow_node_parallelism=max(
+                1,
+                int(
+                    overrides.get(
+                        "workflow_node_parallelism",
+                        config.settings.workflow_node_parallelism,
+                    )
+                ),
+            ),
+            algorithm_max_parallel_workers=max(
+                0,
+                int(
+                    overrides.get(
+                        "algorithm_max_parallel_workers",
+                        config.settings.algorithm_max_parallel_workers,
+                    )
+                ),
+            ),
+            task_memory_budget_mb=max(
+                0,
+                int(
+                    overrides.get(
+                        "task_memory_budget_mb",
+                        config.settings.task_memory_budget_mb,
+                    )
+                ),
+            ),
+            task_cpu_budget_cores=max(
+                0,
+                int(
+                    overrides.get(
+                        "task_cpu_budget_cores",
+                        config.settings.task_cpu_budget_cores,
+                    )
+                ),
             ),
             hydrated=True,
         )
@@ -244,7 +297,7 @@ def invalidate_effective_config() -> None:
         _hydrated = False
 
 
-def get_effective_secret(key_name: str) -> Optional[str]:
+def get_effective_secret(key_name: str) -> str | None:
     snap = get_runtime_snapshot()
     value = snap.api_keys.get(key_name)
     if value:
@@ -255,12 +308,12 @@ def get_effective_secret(key_name: str) -> Optional[str]:
     return get_effective_api_key(key_name)
 
 
-def get_backend_auth_key() -> Optional[str]:
+def get_backend_auth_key() -> str | None:
     """后端写接口鉴权密钥。
 
     发布就绪修复（P1-6 吊销语义）：DB 存在 backend_auth 行（含禁用）时以 DB 为准，
     禁用/为空即返回 None，**绝不回落 env**——否则"禁用/删除"会静默复活已退役的
-    env 密钥（settings.api_key 为 frozen dataclass，编辑 .env 不生效，须全栈重启，
+    env 密钥（config.settings.api_key 为 frozen dataclass，编辑 .env 不生效，须全栈重启，
     更放大该风险）。仅当无 DB 行（冷启动）时才回落 env。
     """
     secret = get_effective_secret("backend_auth")
@@ -273,7 +326,7 @@ def get_backend_auth_key() -> Optional[str]:
                 "若需恢复请重新启用或更新该 key。"
             )
         return secret
-    return secret or (settings.api_key or None)
+    return secret or (config.settings.api_key or None)
 
 
 def get_weather_cache_ttl_seconds() -> int:
@@ -285,7 +338,7 @@ def get_task_executor() -> str:
 
 
 def use_celery_executor_effective() -> bool:
-    if (settings.environment or "").lower() in ("test", "testing"):
+    if (config.settings.environment or "").lower() in ("test", "testing"):
         return False
     return get_task_executor() == "celery"
 
@@ -348,3 +401,27 @@ def get_celery_task_soft_time_limit() -> int:
 
 def get_celery_task_time_limit() -> int:
     return get_runtime_snapshot().celery_task_time_limit
+
+
+def get_workflow_node_parallelism() -> int:
+    """工作流就绪节点并行度（热更新，executor 每次执行时读取）。"""
+    return get_runtime_snapshot().workflow_node_parallelism
+
+
+def get_algorithm_max_parallel_workers() -> int:
+    """算法包单任务最大并行进程数（0=自动）。
+
+    bridge service 在调用算法 run_job 前读取本值并注入 os.environ
+    ``CGDA_MAX_PARALLEL_WORKERS``，使算法包 _parallel.auto_process_count 生效。
+    """
+    return get_runtime_snapshot().algorithm_max_parallel_workers
+
+
+def get_task_memory_budget_mb() -> int:
+    """单任务内存预算（MB，声明值，0=不限制）。调度准入参考，非硬 kill。"""
+    return get_runtime_snapshot().task_memory_budget_mb
+
+
+def get_task_cpu_budget_cores() -> int:
+    """单任务 CPU 预算核数（声明值，0=不限制）。调度准入参考，非硬 kill。"""
+    return get_runtime_snapshot().task_cpu_budget_cores

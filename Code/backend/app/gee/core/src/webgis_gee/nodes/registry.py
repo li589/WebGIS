@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-from typing import Type
-
 from webgis_gee.nodes.base import BaseNode
 
 
@@ -9,10 +7,10 @@ class NodeRegistry:
     """Registry for workflow node executors."""
 
     def __init__(self) -> None:
-        self._node_classes: dict[str, Type[BaseNode]] = {}
+        self._node_classes: dict[str, type[BaseNode]] = {}
 
     def register(
-        self, node_type: str | None = None, node_cls: Type[BaseNode] | None = None
+        self, node_type: str | None = None, node_cls: type[BaseNode] | None = None
     ) -> None:
         if isinstance(node_type, type) and issubclass(node_type, BaseNode):
             # 简化调用方式：register(MyNode)
@@ -25,7 +23,7 @@ class NodeRegistry:
             raise ValueError(f"node type already registered: {node_type}")
         self._node_classes[node_type] = node_cls
 
-    def get(self, node_type: str) -> Type[BaseNode]:
+    def get(self, node_type: str) -> type[BaseNode]:
         try:
             return self._node_classes[node_type]
         except KeyError as exc:

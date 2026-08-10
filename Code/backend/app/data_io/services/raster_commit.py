@@ -15,6 +15,7 @@ from app.data_io.services.raster_register import (
 )
 from app.data_io.services.raster_science import extract_variable_to_geotiff
 from app.data_io.services.upload import resolve_upload_path
+import contextlib
 
 ConflictPolicy = Literal["overwrite", "rename", "error"]
 
@@ -195,10 +196,8 @@ def commit_science_raster_variable(
         extra_meta=extra_meta,
     )
     layer_dir = import_paths.IMPORTS_DIR / result["layer_id"]
-    try:
+    with contextlib.suppress(OSError):
         shutil.copy2(path, layer_dir / path.name)
-    except OSError:
-        pass
     out_tif.unlink(missing_ok=True)
 
     crs_for_confirm = source_crs or extract_meta.get("crs") or result.get("source_crs")

@@ -65,7 +65,9 @@ def test_sensitive_config_gets_require_read_access():
         if "GET" not in methods:
             continue
         path = getattr(route, "path", "") or ""
-        if not any(path.endswith(s) or path.endswith(s + "/") for s in sensitive_suffixes):
+        if not any(
+            path.endswith(s) or path.endswith(s + "/") for s in sensitive_suffixes
+        ):
             # also match templated provider detail
             if "/weather/providers/{provider_id}" not in path:
                 continue
@@ -130,9 +132,9 @@ def test_backend_auth_uses_effective_secret(monkeypatch):
 
 
 def _patch_settings(monkeypatch, patched):
+    # credential_resolver / deps / effective_config 现动态读 app.core.config.settings，
+    # 故只需 patch 单一真源即可覆盖全部下游模块。
     monkeypatch.setattr("app.core.config.settings", patched)
-    monkeypatch.setattr("app.services.credential_resolver.settings", patched)
-    monkeypatch.setattr("app.api.deps.settings", patched)
 
 
 def test_require_write_access_dev_bypass_loopback(monkeypatch):
@@ -189,8 +191,7 @@ def test_require_write_access_production_requires_key(monkeypatch):
     from app.core.config import settings
 
     monkeypatch.setattr(
-        deps,
-        "settings",
+        "app.core.config.settings",
         replace(settings, environment="production", api_keys_enabled=True),
     )
     monkeypatch.setattr(
@@ -219,9 +220,13 @@ def test_dev_bypass_ignores_spoofed_xff_when_trust_proxy(monkeypatch):
     from app.core.config import settings
 
     monkeypatch.setattr(
-        deps,
-        "settings",
-        replace(settings, environment="development", api_keys_enabled=False, trust_proxy=True),
+        "app.core.config.settings",
+        replace(
+            settings,
+            environment="development",
+            api_keys_enabled=False,
+            trust_proxy=True,
+        ),
     )
     monkeypatch.delenv("BACKEND_DEV_AUTH_BYPASS", raising=False)
     monkeypatch.setattr(
@@ -245,7 +250,9 @@ def test_dev_bypass_allows_real_loopback_direct_peer(monkeypatch):
     from app.api import deps
     from app.core.config import settings
 
-    patched = replace(settings, environment="development", api_keys_enabled=False, trust_proxy=True)
+    patched = replace(
+        settings, environment="development", api_keys_enabled=False, trust_proxy=True
+    )
     _patch_settings(monkeypatch, patched)
     monkeypatch.delenv("BACKEND_DEV_AUTH_BYPASS", raising=False)
     request = MagicMock()

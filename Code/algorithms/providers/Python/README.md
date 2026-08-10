@@ -70,7 +70,7 @@ Python/
 - 支持原生模块与兼容 pipeline 并存
 - 支持平台队列、worker、HTTP 服务和 mock 测试路径
 
-更多：`Code/docs/课题组数据全链路-2026-07-21.md`、`docs/unified_data_access_design.md`、`docs/workflow_extension_design.md`。
+更多：`Docs/课题组数据全链路-2026-07-21.md`、`docs/unified_data_access_design.md`、`docs/workflow_extension_design.md`。
 
 ## 典型执行链路
 

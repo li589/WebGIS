@@ -15,7 +15,7 @@ import logging
 import math
 import threading
 from collections import OrderedDict
-from datetime import datetime, timezone
+from datetime import datetime, UTC
 from functools import lru_cache
 from typing import TYPE_CHECKING, Any
 from urllib.error import HTTPError
@@ -290,7 +290,7 @@ class WeatherTileService:
     def __init__(
         self,
         *,
-        engine_service: "WeatherEngineService" | None = None,
+        engine_service: WeatherEngineService | None = None,
         max_concurrent: int = _DEFAULT_MAX_CONCURRENT_TILE_REQUESTS,
         in_memory_cache_max: int = _IN_MEMORY_TILE_CACHE_MAX,
     ) -> None:
@@ -407,7 +407,7 @@ class WeatherTileService:
             "resolution": effective_res,
             "bbox": bbox.model_dump(mode="json"),
             "feature_count": len(geojson.get("features", [])),
-            "generated_at": datetime.now(timezone.utc).isoformat(),
+            "generated_at": datetime.now(UTC).isoformat(),
             "upstream_cache_status": cache_status,
         }
 

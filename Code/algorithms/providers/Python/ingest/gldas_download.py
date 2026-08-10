@@ -15,7 +15,8 @@ from __future__ import annotations
 import logging
 import time
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any
+from collections.abc import Callable
 
 from ingest.nsidc_download import (
     DOWNLOAD_TIMEOUT,
@@ -28,6 +29,7 @@ from ingest.nsidc_download import (
     format_size,
     load_credentials,
 )
+import contextlib
 
 logger = logging.getLogger(__name__)
 
@@ -124,10 +126,8 @@ def _search_via_earthaccess(
             continue
         name = url.split("/")[-1]
         size_mb: float | None = None
-        try:
+        with contextlib.suppress(Exception):
             size_mb = float(g.size())
-        except Exception:
-            pass
         granules.append(Granule(name=name, url=url, size_mb=size_mb))
     logger.info("earthaccess 搜索到 %d 个 granule", len(granules))
     return granules

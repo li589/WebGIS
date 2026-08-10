@@ -6,6 +6,7 @@ from fastapi.responses import FileResponse
 
 from app.services.raster_preview_service import raster_preview_service
 from app.services.result_storage import result_storage_service
+import contextlib
 
 router = APIRouter()
 
@@ -90,8 +91,6 @@ def get_artifact_preview_png(
         ) from exc
     finally:
         if temp_path is not None and temp_path.exists():
-            try:
+            with contextlib.suppress(OSError):
                 temp_path.unlink()
-            except OSError:
-                pass
     return Response(content=png_bytes, media_type="image/png")

@@ -7,7 +7,7 @@
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timezone
+from datetime import datetime, UTC
 from typing import Any
 
 from app.services.result_storage import result_storage_service
@@ -95,7 +95,7 @@ class WeatherTileRenderNode(BaseNode):
                 result_kind=ResultKind.file,
                 title="Weather Tile GeoJSON",
                 mime_type="application/geo+json",
-                updated_at=datetime.now(timezone.utc),
+                updated_at=datetime.now(UTC),
                 payload=geojson,
             )
             return ArtifactRecord(

@@ -13,7 +13,6 @@ import OpenMeteoSyncSettings from './OpenMeteoSyncSettings.vue'
 import DataSourceSettings from './DataSourceSettings.vue'
 import RemoteStorageSettings from './RemoteStorageSettings.vue'
 import AboutSettings from './AboutSettings.vue'
-import SystemStatusSettings from './SystemStatusSettings.vue'
 import UserAccountSettings from './UserAccountSettings.vue'
 import { SETTINGS_COPY } from '../../ui-copy'
 
@@ -33,29 +32,27 @@ type SettingsTab =
   | 'open-meteo-sync'
   | 'remote-storage'
   | 'data-source'
-  | 'system-status'
   | 'about'
 
-const savedTab = loadSettingsUiLocal().activeTab as SettingsTab | undefined
+const TAB_IDS: SettingsTab[] = [
+  'general',
+  'accounts',
+  'api-keys',
+  'gee-accounts',
+  'weather-providers',
+  'open-meteo-sync',
+  'remote-storage',
+  'data-source',
+  'about',
+]
+
+const savedTabRaw = loadSettingsUiLocal().activeTab
+/** Legacy `system-status` tab merged into about. */
+const savedTab = (savedTabRaw === 'system-status' ? 'about' : savedTabRaw) as
+  SettingsTab | undefined
 const defaultTab = (): SettingsTab =>
   authStore.authRequired && authStore.isAuthenticated ? 'accounts' : 'general'
-const activeTab = ref<SettingsTab>(
-  savedTab &&
-    [
-      'general',
-      'accounts',
-      'api-keys',
-      'gee-accounts',
-      'weather-providers',
-      'open-meteo-sync',
-      'remote-storage',
-      'data-source',
-      'system-status',
-      'about',
-    ].includes(savedTab)
-    ? savedTab
-    : defaultTab(),
-)
+const activeTab = ref<SettingsTab>(savedTab && TAB_IDS.includes(savedTab) ? savedTab : defaultTab())
 
 const tabComponents = shallowRef<Record<SettingsTab, Component>>({
   general: GeneralSettings,
@@ -66,7 +63,6 @@ const tabComponents = shallowRef<Record<SettingsTab, Component>>({
   'open-meteo-sync': OpenMeteoSyncSettings,
   'remote-storage': RemoteStorageSettings,
   'data-source': DataSourceSettings,
-  'system-status': SystemStatusSettings,
   about: AboutSettings,
 })
 
@@ -79,8 +75,7 @@ const ALL_TABS: Array<{ id: SettingsTab; label: string; icon: string }> = [
   { id: 'open-meteo-sync', label: SETTINGS_COPY.tabOpenMeteo, icon: '🌩' },
   { id: 'remote-storage', label: '远程存储', icon: '🖧' },
   { id: 'data-source', label: SETTINGS_COPY.tabDataSource, icon: '⚱' },
-  { id: 'system-status', label: SETTINGS_COPY.tabSystemStatus, icon: '◉' },
-  { id: 'about', label: '关于', icon: 'ⓘ' },
+  { id: 'about', label: '系统与关于', icon: 'ⓘ' },
 ]
 
 /** VITE_SETTINGS_TABS=comma ids 白名单；未配置则全开（兼容现网） */

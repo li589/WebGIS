@@ -2,7 +2,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from threading import RLock
-from typing import Any, Iterable, Optional
+from typing import Any
+from collections.abc import Iterable
 
 from webgis_gee.domain.enums import AccountState
 from webgis_gee.domain.models import AccountLease
@@ -18,13 +19,13 @@ class AccountConfig:
 
     account_id: str
     credentials: Any | None = None
-    project_id: Optional[str] = None
+    project_id: str | None = None
     account_type: str = "service_account"
-    display_name: Optional[str] = None
+    display_name: str | None = None
 
 
 def _normalize_accounts(
-    accounts: "Iterable[AccountConfig | str] | None",
+    accounts: Iterable[AccountConfig | str] | None,
 ) -> list[AccountConfig]:
     """把 Iterable[str] / Iterable[AccountConfig] 统一成 list[AccountConfig]。"""
     if accounts is None:
@@ -50,7 +51,7 @@ class InMemoryAccountPool:
     ``Iterable[AccountConfig]``（新用法，携带凭证）。
     """
 
-    def __init__(self, accounts: "Iterable[AccountConfig | str] | None" = None) -> None:
+    def __init__(self, accounts: Iterable[AccountConfig | str] | None = None) -> None:
         # 兼容旧签名 InMemoryAccountPool(account_ids: Iterable[str]) —— 位置参数即可
         self._configs: dict[str, AccountConfig] = {}
         self._leases: dict[str, AccountLease] = {}
@@ -108,7 +109,7 @@ class InMemoryAccountPool:
             self._leases.pop(account_id, None)
             return existed
 
-    def reload_accounts(self, accounts: "Iterable[AccountConfig | str]") -> None:
+    def reload_accounts(self, accounts: Iterable[AccountConfig | str]) -> None:
         """重建账号池（清空后重新加载）。保留已存在账号的 lease 状态？不保留——重建即重置。"""
         with self._lock:
             self._configs.clear()

@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 import logging
 import sqlite3
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta, UTC
 from pathlib import Path
 from typing import Any
 
@@ -15,6 +15,7 @@ from shared.contracts.api_contracts import (
     WorkflowEvent,
     WorkflowRunStatusResponse,
 )
+import contextlib
 
 DEFAULT_CONFIG_SNAPSHOT: dict[str, dict[str, object]] = {
     "frontend": {
@@ -400,9 +401,7 @@ class SQLiteWorkflowRepository:
         Returns:
             {"runs_deleted": N, "events_deleted": M, "vacuumed": 0|1}
         """
-        cutoff = (
-            datetime.now(timezone.utc) - timedelta(days=retention_days)
-        ).isoformat()
+        cutoff = (datetime.now(UTC) - timedelta(days=retention_days)).isoformat()
         stats = {"runs_deleted": 0, "events_deleted": 0, "vacuumed": 0}
 
         with self._connect() as connection:
@@ -582,10 +581,8 @@ class SQLiteWorkflowRepository:
         self._pool.close_all()
 
     def __del__(self) -> None:
-        try:
+        with contextlib.suppress(Exception):
             self._pool.close_all(quiet=True)
-        except Exception:
-            pass
 
     def _clone_default_config(self) -> dict[str, dict[str, object]]:
         import copy

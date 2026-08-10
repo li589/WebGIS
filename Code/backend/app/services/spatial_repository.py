@@ -14,7 +14,7 @@ from __future__ import annotations
 import logging
 import sqlite3
 import threading
-from datetime import datetime, timezone
+from datetime import datetime, UTC
 from pathlib import Path
 from typing import Any
 
@@ -25,7 +25,7 @@ from app.services.geo_math import overlay_safe_wgs84_bounds
 logger = logging.getLogger(__name__)
 
 _repo_lock = threading.Lock()
-_repo_singleton: "SpatialRepository | None" = None
+_repo_singleton: SpatialRepository | None = None
 _repo_singleton_path: str | None = None
 
 
@@ -115,7 +115,7 @@ class SpatialRepository:
         """
         w2, s2, e2, n2 = overlay_safe_wgs84_bounds(w, s, e, n)
         wkt = f"POLYGON(({w2} {s2},{e2} {s2},{e2} {n2},{w2} {n2},{w2} {s2}))"
-        now = datetime.now(timezone.utc).isoformat()
+        now = datetime.now(UTC).isoformat()
         base_params: tuple[Any, ...] = (
             layer_id,
             source,

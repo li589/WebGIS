@@ -63,7 +63,7 @@ class OpenMeteoClientTests(unittest.TestCase):
             }
 
             with patch(
-                "app.weatherengine.client.urlopen",
+                "app.core.ssrf.safe_urlopen",
                 return_value=_FakeHttpResponse(payload),
             ):
                 result, cache_status = client.fetch_point_forecast(
@@ -102,7 +102,7 @@ class OpenMeteoClientTests(unittest.TestCase):
             }
 
             with patch(
-                "app.weatherengine.client.urlopen",
+                "app.core.ssrf.safe_urlopen",
                 return_value=_FakeHttpResponse(payload),
             ):
                 client.fetch_point_forecast(
@@ -128,7 +128,7 @@ class OpenMeteoClientTests(unittest.TestCase):
                 hdrs=None,
                 fp=None,
             )
-            with patch("app.weatherengine.client.urlopen", side_effect=http_error):
+            with patch("app.core.ssrf.safe_urlopen", side_effect=http_error):
                 result, cache_status = client.fetch_point_forecast(
                     latitude=23.1291,
                     longitude=113.2644,

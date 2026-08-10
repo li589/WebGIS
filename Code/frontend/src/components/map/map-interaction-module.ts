@@ -42,7 +42,7 @@ interface RegisteredEventHandler {
     | 'resize'
     | 'render'
     | 'click'
-  handler: (...args: any[]) => void
+  handler: (...args: unknown[]) => void
 }
 
 export function createMapInteractionModule(
@@ -87,7 +87,7 @@ export function createMapInteractionModule(
 
   function on<T extends RegisteredEventHandler['event']>(
     event: T,
-    handler: (...args: any[]) => void,
+    handler: (...args: unknown[]) => void,
   ) {
     options.map.on(event, handler)
     registeredHandlers.push({ event, handler })
@@ -130,13 +130,17 @@ export function createMapInteractionModule(
     on('render', () => {
       options.scheduleHotspotSync()
     })
-    on('click', (event: { lngLat: { lng: number; lat: number }; originalEvent?: MouseEvent }) => {
+    on('click', (event: unknown) => {
+      const e = event as {
+        lngLat: { lng: number; lat: number }
+        originalEvent?: MouseEvent
+      }
       const mode = options.getInteractionMode()
-      const shiftOneShot = mode === 'move' && Boolean(event.originalEvent?.shiftKey)
+      const shiftOneShot = mode === 'move' && Boolean(e.originalEvent?.shiftKey)
       if (mode !== 'select' && !shiftOneShot) return
       options.emitMapPointSelect({
-        lng: event.lngLat.lng,
-        lat: event.lngLat.lat,
+        lng: e.lngLat.lng,
+        lat: e.lngLat.lat,
       })
     })
   }

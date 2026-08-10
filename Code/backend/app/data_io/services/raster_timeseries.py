@@ -8,9 +8,10 @@ import os
 import re
 import shutil
 import time
-from contextlib import contextmanager
+from contextlib import contextmanager, suppress
 from pathlib import Path
-from typing import Any, Iterator
+from typing import Any
+from collections.abc import Iterator
 
 from rasterio.warp import transform_bounds as _transform_bounds
 
@@ -378,10 +379,8 @@ def _upsert_block_dir_timeseries_locked(
         encoding="utf-8",
     )
 
-    try:
+    with suppress(Exception):
         unregister_overlay(layer_id)
-    except Exception:
-        pass
 
     register_overlay(
         OverlaySpec(

@@ -13,6 +13,7 @@ Usage (repo root):
 from __future__ import annotations
 
 import argparse
+import http.cookiejar
 import json
 import os
 import sys
@@ -29,7 +30,7 @@ SEEDS_DIR = REPO_ROOT / "Code" / "backend" / "workflow_seeds" / "system"
 DEFAULT_BASE = os.environ.get("CGDA_API_BASE", "http://127.0.0.1:8000")
 DATA_ROOT = Path(os.environ.get("BACKEND_DATA_ROOT", r"I:\Geograph_DataSet"))
 
-# Plan batch order (A tiles are separate; B–F below)
+# Plan batch order (A tiles are separate; B–G below)
 BATCH_B = [
     "weather_temperature_grid_demo",
     "weather_wind_field_demo",
@@ -58,6 +59,26 @@ BATCH_F = [
     "omega_sf_fenkuai_smap_single",
     "omega_sf_fenkuai_fy_single",
 ]
+BATCH_G = [
+    "preprocess_clip_reproject_basic",
+    "gis_raster_calc_reclassify_basic",
+    "gis_buffer_zonal_basic",
+    "stats_mean_summary_report_basic",
+    "fusion_idw_interpolate_basic",
+]
+BATCH_H = [
+    "preprocess_mask_resample_basic",
+    "gis_vector_raster_roundtrip_basic",
+    "gis_contour_slope_basic",
+    "stats_trend_anomaly_basic",
+    "fusion_multi_source_merge_basic",
+]
+BATCH_I = [
+    "gis_watershed_basic",
+    "stats_correlation_basic",
+    "stats_correlation_report_basic",
+    "stats_summary_chart_basic",
+]
 
 TERMINAL = {"succeeded", "failed", "cancelled", "canceled"}
 
@@ -72,6 +93,12 @@ class Row:
     blocker: str = ""
     detail: str = ""
     extras: dict[str, Any] = field(default_factory=dict)
+
+
+_COOKIE_JAR = http.cookiejar.CookieJar()
+_URL_OPENER = urllib.request.build_opener(
+    urllib.request.HTTPCookieProcessor(_COOKIE_JAR)
+)
 
 
 def _http_json(
@@ -90,7 +117,7 @@ def _http_json(
         headers["X-API-Key"] = api_key
     req = urllib.request.Request(url, data=data, headers=headers, method=method)
     try:
-        with urllib.request.urlopen(req, timeout=timeout) as resp:
+        with _URL_OPENER.open(req, timeout=timeout) as resp:
             raw = resp.read()
             payload: Any = None
             if raw:
@@ -108,6 +135,27 @@ def _http_json(
         return int(exc.code), payload
     except Exception as exc:  # noqa: BLE001
         return 0, {"detail": str(exc)}
+
+
+def login_session(
+    base: str,
+    *,
+    username: str,
+    password: str,
+) -> tuple[bool, str]:
+    """Establish session cookie for write endpoints when service key mismatches DB."""
+    code, body = _http_json(
+        "POST",
+        f"{base.rstrip('/')}/auth/login",
+        body={"username": username, "password": password},
+        timeout=30,
+    )
+    if code != 200:
+        detail = ""
+        if isinstance(body, dict):
+            detail = str(body.get("detail") or body)[:200]
+        return False, f"HTTP {code} {detail}"
+    return True, "ok"
 
 
 def _http_bytes(url: str, timeout: float = 90.0) -> tuple[int, int, str]:
@@ -453,6 +501,25 @@ def extract_time_range(definition: dict[str, Any]) -> dict[str, Any] | None:
     return None
 
 
+def extract_bbox_list(definition: dict[str, Any]) -> list[float] | None:
+    """First data/bbox node → [west, south, east, north] for algorithm_params."""
+    for node in definition.get("nodes") or []:
+        if not isinstance(node, dict):
+            continue
+        if str(node.get("type") or "") != "data/bbox":
+            continue
+        props = node.get("properties") or {}
+        try:
+            west = float(props["west"])
+            south = float(props["south"])
+            east = float(props["east"])
+            north = float(props["north"])
+        except (KeyError, TypeError, ValueError):
+            continue
+        return [west, south, east, north]
+    return None
+
+
 def extract_datasource_selection(definition: dict[str, Any]) -> dict[str, Any]:
     selection: dict[str, Any] = {}
     for node in definition.get("nodes") or []:
@@ -481,8 +548,11 @@ def compile_litegraph(
     definition: dict[str, Any],
     *,
     api_key: str | None,
-) -> dict[str, Any] | None:
-    """Compile seed LiteGraph → engine WorkflowDefinition via API."""
+) -> tuple[dict[str, Any] | None, str]:
+    """Compile seed LiteGraph → engine WorkflowDefinition via API.
+
+    Returns ``(compiled_or_none, error_detail)``.
+    """
     code, body = _http_json(
         "POST",
         f"{base}/workflow-definitions/compile",
@@ -497,15 +567,18 @@ def compile_litegraph(
         api_key=api_key,
     )
     if code != 200 or not isinstance(body, dict):
-        return None
+        detail = ""
+        if isinstance(body, dict):
+            detail = str(body.get("detail") or body)[:400]
+        return None, f"HTTP {code} {detail}".strip()
     if isinstance(body.get("workflow_definition"), dict):
-        return body["workflow_definition"]
+        return body["workflow_definition"], ""
     if isinstance(body.get("definition"), dict):
-        return body["definition"]
+        return body["definition"], ""
     if "nodes" in body and isinstance(body.get("nodes"), list):
         if body["nodes"] and "node_id" in (body["nodes"][0] or {}):
-            return body
-    return None
+            return body, ""
+    return None, "unexpected compile response shape"
 
 
 def build_payload(
@@ -584,7 +657,7 @@ def build_payload(
         payload["command_type"] = "custom"
     elif engine in ("python_provider", "common"):
         # Do NOT set layer_id: linked_layer_id often points at a different module
-        # (e.g. omega_block seed → omega-avg-daily) and trip submit-time 422.
+        # (e.g. omega_block seed → method-smap-omega-doy-avg) and trip submit-time 422.
         ds = overrides.get("datasource_selection")
         if not isinstance(ds, dict):
             ds = extract_datasource_selection(defn)
@@ -606,6 +679,19 @@ def build_payload(
                 for k, v in props.items():
                     if k not in ("notes",):
                         algo_params.setdefault(k, v)
+            # preprocess/* etc. also carry params on the typed node itself
+            if ntype.startswith(("preprocess/", "gis/", "stats/", "fusion/", "viz/")):
+                for k, v in props.items():
+                    if k not in ("notes", "path", "dataset_key"):
+                        algo_params.setdefault(k, v)
+
+        bbox_list = extract_bbox_list(defn)
+        if bbox_list is not None:
+            algo_params.setdefault("bbox", bbox_list)
+            algo_params.setdefault("bbox_west", bbox_list[0])
+            algo_params.setdefault("bbox_south", bbox_list[1])
+            algo_params.setdefault("bbox_east", bbox_list[2])
+            algo_params.setdefault("bbox_north", bbox_list[3])
 
         # Prefer compiled graph for python_provider/common (D1 multi-module and
         # D2 single-algorithm + data/source).
@@ -626,8 +712,25 @@ def build_payload(
                 "granularity": "day",
             }
         payload["time_range"] = tr
-        if workflow_id.startswith("omega_"):
+        if bbox_list is not None:
+            payload.setdefault(
+                "spatial_filter",
+                {
+                    "filter_type": "bbox",
+                    "bbox": {
+                        "west": bbox_list[0],
+                        "south": bbox_list[1],
+                        "east": bbox_list[2],
+                        "north": bbox_list[3],
+                        "crs": "EPSG:4326",
+                    },
+                },
+            )
+        profile = str(meta.get("resource_profile") or "").strip().lower()
+        if workflow_id.startswith("omega_") or profile == "heavy":
             payload["resource_profile"] = "heavy"
+        elif profile in ("standard", "realtime", "batch"):
+            payload["resource_profile"] = profile
         else:
             payload["resource_profile"] = "standard"
     elif engine == "gee":
@@ -858,6 +961,199 @@ def ensure_analysis_fixtures() -> dict[str, Path]:
     return {"stack": stack, "zones": zones, "value2d": value2d}
 
 
+def ensure_stub_v1_fixtures() -> dict[str, Path]:
+    """Create GeoTIFF + GeoJSON + timeseries fixtures for stub_v1 Batch G/H/I seeds."""
+    runtime = DATA_ROOT / "_runtime"
+    runtime.mkdir(parents=True, exist_ok=True)
+    stub_tif = runtime / "smoke_stub.tif"
+    stub_b_tif = runtime / "smoke_stub_b.tif"
+    dem_tif = runtime / "smoke_dem.tif"
+    points_gj = runtime / "smoke_points.geojson"
+    pour_gj = runtime / "smoke_pour_points.geojson"
+    zones_gj = runtime / "smoke_zones.geojson"
+    timeseries_json = runtime / "smoke_timeseries.json"
+    timeseries_b_json = runtime / "smoke_timeseries_b.json"
+    out: dict[str, Path] = {}
+
+    def _write_geotiff(path: Path, data, *, origin=(100.0, 30.0), res=0.1) -> None:
+        import rasterio
+        from rasterio.transform import from_origin
+
+        transform = from_origin(origin[0], origin[1], res, res)
+        with rasterio.open(
+            path,
+            "w",
+            driver="GTiff",
+            height=data.shape[0],
+            width=data.shape[1],
+            count=1,
+            dtype="float64",
+            crs="EPSG:4326",
+            transform=transform,
+            nodata=float("nan"),
+        ) as dst:
+            dst.write(data, 1)
+
+    try:
+        import numpy as np
+    except Exception as exc:  # noqa: BLE001
+        _log(f"stub_v1 fixture numpy skipped: {exc}")
+        np = None  # type: ignore[assignment]
+
+    if np is not None:
+        if not stub_tif.is_file():
+            try:
+                data = np.full((20, 20), 5.0, dtype=np.float64)
+                data[0, 0] = np.nan
+                _write_geotiff(stub_tif, data)
+            except Exception as exc:  # noqa: BLE001
+                _log(f"stub_v1 fixture GeoTIFF skipped: {exc}")
+        if stub_tif.is_file():
+            out["stub_tif"] = stub_tif
+
+        if not stub_b_tif.is_file():
+            try:
+                data_b = np.full((20, 20), 8.0, dtype=np.float64)
+                data_b[1, 1] = np.nan
+                _write_geotiff(stub_b_tif, data_b)
+            except Exception as exc:  # noqa: BLE001
+                _log(f"stub_v1 fixture stub_b skipped: {exc}")
+        if stub_b_tif.is_file():
+            out["stub_b_tif"] = stub_b_tif
+
+        if not dem_tif.is_file():
+            try:
+                yy, xx = np.mgrid[0:20, 0:20]
+                dem = (xx + yy).astype(np.float64) * 2.0
+                _write_geotiff(dem_tif, dem)
+            except Exception as exc:  # noqa: BLE001
+                _log(f"stub_v1 fixture DEM skipped: {exc}")
+        if dem_tif.is_file():
+            out["dem_tif"] = dem_tif
+    else:
+        if stub_tif.is_file():
+            out["stub_tif"] = stub_tif
+        if stub_b_tif.is_file():
+            out["stub_b_tif"] = stub_b_tif
+        if dem_tif.is_file():
+            out["dem_tif"] = dem_tif
+
+    if not points_gj.is_file():
+        # Points inside fusion_idw bbox (112.9–113.3E / 22.9–23.2N); also used by buffer.
+        points = {
+            "type": "FeatureCollection",
+            "features": [
+                {
+                    "type": "Feature",
+                    "geometry": {"type": "Point", "coordinates": [113.0, 23.0]},
+                    "properties": {"value": 10.0},
+                },
+                {
+                    "type": "Feature",
+                    "geometry": {"type": "Point", "coordinates": [113.2, 23.1]},
+                    "properties": {"value": 20.0},
+                },
+                {
+                    "type": "Feature",
+                    "geometry": {"type": "Point", "coordinates": [113.1, 23.05]},
+                    "properties": {"value": 15.0},
+                },
+            ],
+        }
+        points_gj.write_text(json.dumps(points), encoding="utf-8")
+    if points_gj.is_file():
+        out["points"] = points_gj
+
+    if not pour_gj.is_file():
+        # Pour points must lie inside smoke_dem grid (~100–102E / 28–30N).
+        pour = {
+            "type": "FeatureCollection",
+            "features": [
+                {
+                    "type": "Feature",
+                    "geometry": {"type": "Point", "coordinates": [101.0, 29.0]},
+                    "properties": {"name": "pour_a"},
+                },
+                {
+                    "type": "Feature",
+                    "geometry": {"type": "Point", "coordinates": [101.5, 28.5]},
+                    "properties": {"name": "pour_b"},
+                },
+            ],
+        }
+        pour_gj.write_text(json.dumps(pour), encoding="utf-8")
+    if pour_gj.is_file():
+        out["pour_points"] = pour_gj
+
+    if not zones_gj.is_file():
+        zones = {
+            "type": "FeatureCollection",
+            "features": [
+                {
+                    "type": "Feature",
+                    "geometry": {
+                        "type": "Polygon",
+                        "coordinates": [
+                            [
+                                [100.0, 28.0],
+                                [102.0, 28.0],
+                                [102.0, 30.0],
+                                [100.0, 30.0],
+                                [100.0, 28.0],
+                            ]
+                        ],
+                    },
+                    "properties": {"id": 1},
+                }
+            ],
+        }
+        zones_gj.write_text(json.dumps(zones), encoding="utf-8")
+    if zones_gj.is_file():
+        out["zones"] = zones_gj
+
+    if not timeseries_json.is_file():
+        series = {
+            "times": [
+                "2025-01-01",
+                "2025-01-02",
+                "2025-01-03",
+                "2025-01-04",
+                "2025-01-05",
+                "2025-01-06",
+                "2025-01-07",
+                "2025-01-08",
+            ],
+            "values": [1.0, 1.2, 0.9, 1.1, 1.0, 10.0, 1.05, 0.95],
+            "lon": 113.0,
+            "lat": 23.0,
+        }
+        timeseries_json.write_text(json.dumps(series), encoding="utf-8")
+    if timeseries_json.is_file():
+        out["timeseries"] = timeseries_json
+
+    if not timeseries_b_json.is_file():
+        series_b = {
+            "times": [
+                "2025-01-01",
+                "2025-01-02",
+                "2025-01-03",
+                "2025-01-04",
+                "2025-01-05",
+                "2025-01-06",
+                "2025-01-07",
+                "2025-01-08",
+            ],
+            "values": [2.0, 2.4, 1.8, 2.2, 2.0, 20.0, 2.1, 1.9],
+            "lon": 113.0,
+            "lat": 23.0,
+        }
+        timeseries_b_json.write_text(json.dumps(series_b), encoding="utf-8")
+    if timeseries_b_json.is_file():
+        out["timeseries_b"] = timeseries_b_json
+
+    return out
+
+
 def prepare_overrides(
     workflow_id: str, definition: dict[str, Any]
 ) -> dict[str, Any]:
@@ -1063,6 +1359,40 @@ def prepare_overrides(
             "light-smoke: 2025-12-03..10 (1×8d block), bbox 110–115E/20–25N, "
             "max_pixels=400, serial; keeps output/map_layer"
         )
+    if workflow_id in BATCH_G or workflow_id in BATCH_H or workflow_id in BATCH_I:
+        stub = ensure_stub_v1_fixtures()
+        defn = overrides.get("definition") or definition
+        path_map = [
+            ("smoke_stub.tif", stub.get("stub_tif")),
+            ("smoke_stub_b.tif", stub.get("stub_b_tif")),
+            ("smoke_dem.tif", stub.get("dem_tif")),
+            ("smoke_points.geojson", stub.get("points")),
+            ("smoke_pour_points.geojson", stub.get("pour_points")),
+            ("smoke_zones.geojson", stub.get("zones")),
+            ("smoke_timeseries_b.json", stub.get("timeseries_b")),
+            ("smoke_timeseries.json", stub.get("timeseries")),
+        ]
+        for node in defn.get("nodes") or []:
+            if not isinstance(node, dict):
+                continue
+            if str(node.get("type") or "") != "data/source":
+                continue
+            props = node.get("properties") or {}
+            path = str(props.get("path") or "")
+            for suffix, resolved in path_map:
+                if suffix in path and resolved is not None:
+                    defn = patch_node_path(
+                        defn, int(node["id"]), str(resolved).replace("\\", "/")
+                    )
+                    break
+        overrides["definition"] = defn
+        overrides["datasource_selection"] = extract_datasource_selection(defn)
+        overrides["_note"] = (
+            "stub_v1 fixtures under {DATA_ROOT}/_runtime "
+            "(smoke_stub.tif / smoke_stub_b.tif / smoke_dem.tif / "
+            "smoke_points.geojson / smoke_pour_points.geojson / smoke_zones.geojson / "
+            "smoke_timeseries.json / smoke_timeseries_b.json)"
+        )
     return overrides
 
 
@@ -1205,13 +1535,13 @@ def submit_and_poll(
     needs_compile = engine == "weather" or engine in ("python_provider", "common")
     if needs_compile:
         defn_for_compile = overrides.get("definition") or definition
-        compiled_graph = compile_litegraph(
+        compiled_graph, compile_err = compile_litegraph(
             base, defn_for_compile, api_key=api_key
         )
         if compiled_graph is None:
             row.status = "failed"
             row.blocker = "compile_failed"
-            row.detail = "POST /workflow-definitions/compile failed"
+            row.detail = compile_err or "POST /workflow-definitions/compile failed"
             _log(f"[{batch}] {workflow_id}: {row.detail}")
             return row
     payload = build_payload(
@@ -1353,6 +1683,21 @@ def main() -> int:
     parser.add_argument("--base", default=DEFAULT_BASE)
     parser.add_argument("--api-key", default=os.environ.get("BACKEND_API_KEY") or "")
     parser.add_argument(
+        "--login",
+        action="store_true",
+        help="login via /auth/login (session cookie) for write endpoints",
+    )
+    parser.add_argument(
+        "--username",
+        default=os.environ.get("BACKEND_SMOKE_USER") or "admin",
+        help="username for --login (default admin)",
+    )
+    parser.add_argument(
+        "--password",
+        default=os.environ.get("BACKEND_SMOKE_PASSWORD") or "cgda-dev-admin",
+        help="password for --login (default cgda-dev-admin)",
+    )
+    parser.add_argument(
         "--timeout",
         type=float,
         default=600.0,
@@ -1373,7 +1718,36 @@ def main() -> int:
     api_key = args.api_key or None
     base = args.base.rstrip("/")
 
+    # Prefer session when --login; also auto-login if write probe fails with API key alone.
+    if args.login:
+        ok, msg = login_session(base, username=args.username, password=args.password)
+        _log(f"session login ({args.username}): {'ok' if ok else msg}")
+        if not ok:
+            return 2
+    else:
+        probe, _ = _http_json(
+            "GET", f"{base}/runtime/status", timeout=15, api_key=api_key
+        )
+        if probe == 401:
+            ok, msg = login_session(
+                base, username=args.username, password=args.password
+            )
+            _log(
+                f"auto session login after write-probe 401 ({args.username}): "
+                f"{'ok' if ok else msg}"
+            )
+            if ok:
+                api_key = None  # rely on cookie; avoid mismatched X-API-Key noise
+
     _log(f"DATA_ROOT={DATA_ROOT} exists={DATA_ROOT.is_dir()}")
+    stub_fx = ensure_stub_v1_fixtures()
+    if stub_fx:
+        _log(
+            "stub_v1 fixtures: "
+            + ", ".join(f"{k}={v}" for k, v in stub_fx.items())
+        )
+    else:
+        _log("stub_v1 fixtures: none (Batch G may skip/fail)")
     gldas_conv = ensure_gldas_nc4_converted()
     if gldas_conv.get("converted") or gldas_conv.get("error"):
         _log(f"GLDAS nc4→mat preflight: {gldas_conv}")
@@ -1402,6 +1776,9 @@ def main() -> int:
         ("D", BATCH_D, args.timeout),
         ("E", BATCH_E, min(args.timeout, 180.0)),
         ("F", BATCH_F, args.omega_timeout),
+        ("G", BATCH_G, args.timeout),
+        ("H", BATCH_H, args.timeout),
+        ("I", BATCH_I, args.timeout),
     ]
     for batch_name, ids, timeout_s in batches:
         if batch_name == "F" and args.skip_omega:

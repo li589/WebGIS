@@ -2,21 +2,16 @@ import type { LayerCatalogItem, LayerCategory, LayerSource } from './types'
 import { ORG_LABEL } from '../../ui-copy/brand'
 
 // 注意：category id 必须与后端 `layer_catalog.py` 中的 `category=` 字段保持一致。
-// 任何新增/重命名都需要后端同步更新。前端独有类别（imported/workflow-output）除外。
+// 任何新增/重命名都需要后端同步更新。前端独有类别（imported）除外。
 //
 // 分组约定：
-// - 气象场 / 在线天气：天气引擎实时图层（wind/temp/precip/…）
 // - 气候产品 / 气候与灾害：历史气候、热浪、CO₂、干旱指数等离线产品
-// - landcover / 土地覆盖；terrain / 地形数据；vegetation / 植被相关；research-group / 课题组数据（模型输入/模型输出/辅助数据）
+// - landcover / 土地覆盖；terrain / 地形数据；vegetation / 植被相关
+// - research-group / 课题组数据（模型输入/模型输出/辅助数据；工作流产出归入模型输出）
+// - imported / 本地导入
+// - 气象场 / 在线天气：天气引擎实时图层（wind/temp/precip/…），排序置末
 // - 行政边界不作为数据集目录项（地图参考轮廓如需另走底图/叠层，不入图层库）
 export const LAYER_CATEGORIES: LayerCategory[] = [
-  {
-    id: '气象场',
-    name: '在线天气',
-    icon: 'W',
-    accentColor: '#67d4ff',
-    chipTone: 'rgba(103, 212, 255, 0.18)',
-  },
   {
     id: '气候产品',
     name: '气候与灾害',
@@ -60,11 +55,11 @@ export const LAYER_CATEGORIES: LayerCategory[] = [
     chipTone: 'rgba(126, 224, 168, 0.16)',
   },
   {
-    id: 'workflow-output',
-    name: '工作流产出',
-    icon: 'O',
-    accentColor: '#ffb84d',
-    chipTone: 'rgba(255, 184, 77, 0.16)',
+    id: '气象场',
+    name: '在线天气',
+    icon: 'W',
+    accentColor: '#67d4ff',
+    chipTone: 'rgba(103, 212, 255, 0.18)',
   },
 ]
 
@@ -269,18 +264,6 @@ const SOURCE_NDVI: LayerSource = {
   updateFrequency: '每日更新',
 }
 
-const SOURCE_LAB: LayerSource = {
-  id: 'lab-model',
-  name: 'SMAP/ω 交叉分析数据（2023-01）',
-  description:
-    '中国区域 SMAP L3 土壤湿度与 ω 反演产品多源交叉分析数据集，含 14 天 SM（土壤湿度）均值、ω 反演、IGBP 分区统计。',
-  urlTemplate: '',
-  needsAuth: false,
-  needsBackendTransform: false,
-  coordSys: 'EPSG:4326',
-  updateFrequency: '按工作流运行',
-}
-
 const SOURCE_DEM_ETOPO: LayerSource = {
   id: 'dem-etopo',
   name: 'ETOPO 2022 全球地形',
@@ -326,8 +309,8 @@ const SOURCE_ARIDITY_CN: LayerSource = {
 }
 
 const SOURCE_SMAP_TS: LayerSource = {
-  id: 'smap-sm-ts',
-  name: 'SMAP 土壤湿度时间序列（2025-12）',
+  id: 'ref-smap-sm-202512-l3',
+  name: 'SMAP L3 土壤湿度参考产品（2025-12）',
   description: 'SMAP L3 土壤湿度日数据时间序列（2025 年 12 月，31 天，中国区域）。',
   urlTemplate: '',
   needsAuth: false,
@@ -427,8 +410,8 @@ const SOURCE_CO2_CN: LayerSource = {
 }
 
 const SOURCE_SOIL_DDCA: LayerSource = {
-  id: 'soil-ddca',
-  name: '土壤生态 DDCA（双通道反演，2015-2022）',
+  id: 'ref-ddca-sm-201504-202512',
+  name: 'DDCA双通道土壤水分参考产品（2015年4月—2025年12月）',
   description:
     '中国 9km 土壤生态数据集 DDCA（双通道算法 DCA 反演）产品（变量 DH 土壤湿度，2015-04-01 至 2022-12-31 时间序列，采样 60 个时间点）。',
   urlTemplate: '',
@@ -463,10 +446,10 @@ const SOURCE_FOREST_RATIO: LayerSource = {
 }
 
 const SOURCE_SM_DEC2025: LayerSource = {
-  id: 'sm-dec2025',
-  name: 'SMAP 土壤湿度（2025-12）',
+  id: 'prod-fy_smap_station-sm_vod_omega-202512-fusion',
+  name: 'SMAP/FY/站点融合土壤水分产品（2025-12，SM/VOD/ω）',
   description:
-    'SMAP 土壤湿度 SM 反演结果（2025-12-01 至 2025-12-31 时间序列，31 天，EASE-Grid 9km）。',
+    '融合SMAP/FY-3D/站点观测的土壤湿度（SM）/植被光学厚度（VOD）/动态散射反照率（ω）产品族（2025-12-01 至 2025-12-31，EASE-Grid 9km）。当前展示 SM，VOD/ω 图层补实现中。',
   urlTemplate: '',
   needsAuth: false,
   needsBackendTransform: false,
@@ -475,8 +458,8 @@ const SOURCE_SM_DEC2025: LayerSource = {
 }
 
 const SOURCE_FY_MWRI: LayerSource = {
-  id: 'fy-mwri',
-  name: 'FY-3 MWRI 亮温',
+  id: 'ref-fy-tb-202512-mwri',
+  name: 'FY-3 MWRI 原始亮温（2025年12月）',
   description: '风云三号 MWRI 微波成像仪多波段亮温产品（10V/10H/18V/18H/23V/36V/36H/89V/89H）。',
   urlTemplate: '',
   needsAuth: false,
@@ -486,8 +469,8 @@ const SOURCE_FY_MWRI: LayerSource = {
 }
 
 const SOURCE_STATION_SOIL: LayerSource = {
-  id: 'station-soil',
-  name: 'ISMN/CASMOS 站点土壤湿度',
+  id: 'obs-station-sm-daily',
+  name: 'ISMN/CASMOS 站点土壤水分观测',
   description: 'ISMN/CASMOS 站点逐日土壤湿度观测，用于算法验证与产品订正。',
   urlTemplate: '',
   needsAuth: false,
@@ -750,21 +733,6 @@ export const LAYER_LIBRARY: LayerCatalogItem[] = [
     sources: [SOURCE_NDVI],
   },
   {
-    catalogId: 'lab-output',
-    name: 'SMAP/ω 交叉分析（2023-01）',
-    category: 'research-group',
-    subCategory: '模型输出',
-    metricLabel: '土壤湿度',
-    metricUnit: 'm³/m³',
-    metricPrecision: 3,
-    updateLabel: '按工作流运行',
-    sourceLabel: 'SMAP L3 + InversionResults',
-    accentColor: '#ff6f91',
-    accentGlow: 'rgba(255, 111, 145, 0.3)',
-    chipTone: 'rgba(255, 111, 145, 0.16)',
-    sources: [SOURCE_LAB],
-  },
-  {
     catalogId: 'dem-etopo',
     name: 'ETOPO 2022 全球地形',
     category: 'terrain',
@@ -821,8 +789,8 @@ export const LAYER_LIBRARY: LayerCatalogItem[] = [
     sources: [SOURCE_ARIDITY_CN],
   },
   {
-    catalogId: 'smap-sm-ts',
-    name: 'SMAP 土壤湿度时间序列',
+    catalogId: 'ref-smap-sm-202512-l3',
+    name: 'SMAP官方土壤水分参考产品（2025年12月）',
     category: 'research-group',
     subCategory: '模型输入',
     metricLabel: '土壤湿度',
@@ -951,15 +919,15 @@ export const LAYER_LIBRARY: LayerCatalogItem[] = [
     sources: [SOURCE_CO2_CN],
   },
   {
-    catalogId: 'soil-ddca',
-    name: '土壤生态 DDCA',
+    catalogId: 'ref-ddca-sm-201504-202512',
+    name: 'DDCA双通道土壤水分参考产品（2015年4月—2025年12月）',
     category: 'research-group',
     subCategory: '辅助数据',
     metricLabel: 'DH',
     metricUnit: '',
     metricPrecision: 2,
     updateLabel: '按时间维度',
-    sourceLabel: 'Soil DDCA 2015-04 to 2022-12 (sampled 60)',
+    sourceLabel: 'Soil DDCA 2015-04 to 2025-12 (sampled 60)',
     accentColor: '#5e4fa2',
     accentGlow: 'rgba(94, 79, 162, 0.3)',
     chipTone: 'rgba(94, 79, 162, 0.16)',
@@ -1003,15 +971,15 @@ export const LAYER_LIBRARY: LayerCatalogItem[] = [
     temporalCoverage: '2020',
   },
   {
-    catalogId: 'sm-dec2025',
-    name: 'SMAP 土壤湿度（2025-12）',
+    catalogId: 'prod-fy_smap_station-sm_vod_omega-202512-fusion',
+    name: 'SMAP/FY/站点融合土壤水分产品（2025年12月，SM/VOD/ω）',
     category: 'research-group',
     subCategory: '模型输入',
     metricLabel: '土壤湿度',
     metricUnit: 'm³/m³',
     metricPrecision: 3,
     updateLabel: '每日更新',
-    sourceLabel: 'SMAP 土壤湿度反演 v7.3',
+    sourceLabel: 'SMAP/FY/站点融合 (v7.3)',
     accentColor: '#66c2a5',
     accentGlow: 'rgba(102, 194, 165, 0.3)',
     chipTone: 'rgba(102, 194, 165, 0.16)',
@@ -1020,8 +988,8 @@ export const LAYER_LIBRARY: LayerCatalogItem[] = [
     temporalCoverage: '2025-12-01 to 2025-12-31 (31 days)',
   },
   {
-    catalogId: 'fy-mwri',
-    name: 'FY MWRI 亮温',
+    catalogId: 'ref-fy-tb-202512-mwri',
+    name: 'FY-3 MWRI 原始亮温（2025年12月）',
     category: 'research-group',
     subCategory: '模型输入',
     metricLabel: '亮温',
@@ -1035,8 +1003,8 @@ export const LAYER_LIBRARY: LayerCatalogItem[] = [
     sources: [SOURCE_FY_MWRI],
   },
   {
-    catalogId: 'station-soil',
-    name: '站点土壤湿度',
+    catalogId: 'obs-station-sm-daily',
+    name: '站点土壤水分观测',
     category: 'research-group',
     subCategory: '模型输入',
     metricLabel: '土壤湿度',

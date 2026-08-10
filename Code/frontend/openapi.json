@@ -11559,6 +11559,83 @@
             ],
             "title": "Celery Task Always Eager"
           },
+          "celery_worker_concurrency": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Celery Worker Concurrency"
+          },
+          "celery_worker_prefetch_multiplier": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Celery Worker Prefetch Multiplier"
+          },
+          "celery_worker_max_tasks_per_child": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Celery Worker Max Tasks Per Child"
+          },
+          "workflow_node_parallelism": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Workflow Node Parallelism"
+          },
+          "algorithm_max_parallel_workers": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Algorithm Max Parallel Workers"
+          },
+          "task_memory_budget_mb": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Task Memory Budget Mb"
+          },
+          "task_cpu_budget_cores": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Task Cpu Budget Cores"
+          },
           "cors_origins": {
             "anyOf": [
               {

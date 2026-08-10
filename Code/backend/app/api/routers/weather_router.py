@@ -1,7 +1,8 @@
 import json
 import logging
 import time
-from datetime import datetime
+from contextlib import suppress
+from datetime import datetime, UTC
 from urllib.error import HTTPError, URLError
 from urllib.request import urlopen
 
@@ -21,6 +22,7 @@ from app.core.redis_client import (
 from app.services.weather_bridge_service import weather_bridge_service
 from app.weatherengine.service import weather_engine_service
 from shared.contracts.api_contracts import WeatherPointResponse
+import contextlib
 
 router = APIRouter()
 
@@ -137,10 +139,8 @@ def invalidate_weather_coverage_cache(model: str | None = None) -> None:
     if model:
         _COVERAGE_CACHE.pop(f"local:{model}", None)
         if client is not None:
-            try:
+            with suppress(Exception):  # noqa: BLE001 - best-effort
                 client.delete(f"{_COVERAGE_REDIS_PREFIX}{model}")
-            except Exception:  # noqa: BLE001 - best-effort
-                pass
         return
     _COVERAGE_CACHE.clear()
     if client is None:
@@ -247,7 +247,7 @@ def trigger_open_meteo_sync(
     import shutil
     import threading
     import uuid
-    from datetime import datetime, timezone
+    from datetime import datetime
     from pathlib import Path
 
     from app.core.celery_app import celery_available
@@ -351,7 +351,7 @@ def trigger_open_meteo_sync(
                     "state": "SUCCESS",
                     "info": result,
                     "mode": "local_thread",
-                    "finished_at": datetime.now(timezone.utc).isoformat(),
+                    "finished_at": datetime.now(UTC).isoformat(),
                 },
             )
         except Exception as exc:
@@ -364,7 +364,7 @@ def trigger_open_meteo_sync(
                     "state": "FAILURE",
                     "info": str(exc),
                     "mode": "local_thread",
-                    "finished_at": datetime.now(timezone.utc).isoformat(),
+                    "finished_at": datetime.now(UTC).isoformat(),
                     "error": str(exc),
                 },
             )
@@ -480,10 +480,8 @@ def get_open_meteo_sync_status(task_id: str):
         payload["finished_at"] = info.get("finished_at")
         payload["domains"] = info.get("domains") or settings.open_meteo_sync_domains
         payload["stdout_tail"] = info.get("stdout_tail")
-        try:
+        with contextlib.suppress(Exception):
             invalidate_weather_coverage_cache()
-        except Exception:
-            pass
     if state == "FAILURE":
         payload["error"] = str(result.info) if result.info else "sync failed"
         tb = getattr(result, "traceback", None)

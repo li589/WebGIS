@@ -4,10 +4,22 @@ import { storeToRefs } from 'pinia'
 import { useSettingsStore } from '../../stores/settings'
 import { useWeatherTileManager } from '../../stores/weather-tile-manager'
 import type { RuntimeConfigPatch } from '../../services/settings-api'
+import {
+  isMapDistributionChromeEnabled,
+  setMapDistributionChromeEnabled,
+} from '../../services/settings-local'
 
 const settingsStore = useSettingsStore()
 const weatherTileManager = useWeatherTileManager()
 const { generalConfig } = storeToRefs(settingsStore)
+
+const mapDistributionChrome = ref(isMapDistributionChromeEnabled())
+
+function onMapDistributionChromeChange(event: Event) {
+  const checked = (event.target as HTMLInputElement).checked
+  mapDistributionChrome.value = checked
+  setMapDistributionChromeEnabled(checked)
+}
 
 // ── 只读系统信息 ──────────────────────────────────────────────────────────
 const readonlyItems = computed(() => {
@@ -104,6 +116,44 @@ const editableParams = computed<EditableParam[]>(() => [
     unit: '秒',
     group: '工作流与并发',
     description: '任务硬时间限制，超时后强制终止',
+  },
+  {
+    key: 'workflow_node_parallelism',
+    label: '节点并行度',
+    type: 'number',
+    min: 1,
+    max: 16,
+    group: '工作流与并发',
+    description: '同一工作流内无依赖就绪节点的并行执行数（1=串行）。热更新即时生效',
+  },
+  {
+    key: 'algorithm_max_parallel_workers',
+    label: '算法最大并行进程',
+    type: 'number',
+    min: 0,
+    max: 64,
+    group: '工作流与并发',
+    description: '单任务算法并行进程上限（0=自动按CPU/内存自适应）。热更新即时生效',
+  },
+  {
+    key: 'task_memory_budget_mb',
+    label: '单任务内存预算',
+    type: 'number',
+    min: 0,
+    max: 65536,
+    unit: 'MB',
+    group: '工作流与并发',
+    description: '声明值，仅作调度准入参考；运行中超限不会kill（0=不限制）',
+  },
+  {
+    key: 'task_cpu_budget_cores',
+    label: '单任务CPU预算',
+    type: 'number',
+    min: 0,
+    max: 64,
+    unit: '核',
+    group: '工作流与并发',
+    description: '声明值，仅作调度准入参考；不硬限制运行中任务CPU（0=不限制）',
   },
   // 缓存与性能
   {
@@ -227,6 +277,10 @@ watch(
       max_requested_outputs: cfg.max_requested_outputs,
       celery_task_soft_time_limit: cfg.celery_task_soft_time_limit ?? 300,
       celery_task_time_limit: cfg.celery_task_time_limit ?? 360,
+      workflow_node_parallelism: cfg.workflow_node_parallelism ?? 1,
+      algorithm_max_parallel_workers: cfg.algorithm_max_parallel_workers ?? 0,
+      task_memory_budget_mb: cfg.task_memory_budget_mb ?? 0,
+      task_cpu_budget_cores: cfg.task_cpu_budget_cores ?? 0,
       cache_default_ttl_seconds: cfg.cache_default_ttl_seconds ?? 1800,
       weather_cache_ttl_seconds: cfg.weather_cache_ttl_seconds ?? 3600,
       weather_refresh_forecast_hours: cfg.weather_refresh_forecast_hours ?? 6,
@@ -338,12 +392,46 @@ const restartParams = computed(() => {
       value: cfg.celery_task_always_eager ? '是' : '否',
       hint: '修改 BACKEND_CELERY_TASK_ALWAYS_EAGER 后重启生效',
     },
+    {
+      label: 'Worker 并发度',
+      value: String(cfg.celery_worker_concurrency ?? 2),
+      hint: 'BACKEND_CELERY_WORKER_CONCURRENCY，修改后重启 worker 生效',
+    },
+    {
+      label: 'Worker 预取倍数',
+      value: String(cfg.celery_worker_prefetch_multiplier ?? 1),
+      hint: 'BACKEND_CELERY_PREFETCH_MULTIPLIER，修改后重启 worker 生效',
+    },
+    {
+      label: 'Worker 最大任务数/进程',
+      value:
+        String(cfg.celery_worker_max_tasks_per_child ?? 0) +
+        (cfg.celery_worker_max_tasks_per_child ? '' : '（不限）'),
+      hint: 'BACKEND_CELERY_WORKER_MAX_TASKS_PER_CHILD，防内存泄漏兜底，重启生效',
+    },
   ]
 })
 </script>
 
 <template>
   <div class="general-settings">
+    <!-- 地图显示 -->
+    <section class="settings-section">
+      <h3 class="section-title">地图显示</h3>
+      <p class="section-hint">
+        控制底图上方的分布淡底 /
+        氛围遮罩。无可见数据图层时始终关闭；有图层且缩放到近全球时可呈现数据分布观感。
+      </p>
+      <label class="toggle-row">
+        <input
+          type="checkbox"
+          :checked="mapDistributionChrome"
+          @change="onMapDistributionChromeChange"
+        />
+        <span>地图分布淡底 / 氛围遮罩</span>
+      </label>
+    </section>
+
     <!-- 系统信息 -->
     <section class="settings-section">
       <h3 class="section-title">系统信息</h3>
@@ -449,6 +537,21 @@ const restartParams = computed(() => {
   font-size: 0.7rem;
   font-weight: 600;
   letter-spacing: 0.02em;
+}
+.toggle-row {
+  display: flex;
+  align-items: center;
+  gap: 0.48rem;
+  padding: 0.42rem 0.56rem;
+  border-radius: 0.4rem;
+  background: rgba(4, 12, 23, 0.5);
+  border: 1px solid rgba(136, 192, 255, 0.08);
+  color: #d8e6f5;
+  font-size: 0.62rem;
+  cursor: pointer;
+}
+.toggle-row input {
+  accent-color: #5ad5ff;
 }
 .info-grid {
   display: flex;

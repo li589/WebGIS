@@ -1,5 +1,64 @@
 import { describe, it, expect } from 'vitest'
-import { validateOverlayBounds } from '@/components/map/overlay-image-module'
+import {
+  parseOverlayBoundsMeta,
+  validateOverlayBounds,
+} from '@/components/map/overlay-image-module'
+
+describe('parseOverlayBoundsMeta', () => {
+  it('parses full overlay bounds meta', () => {
+    const meta = parseOverlayBoundsMeta({
+      current_time: '2023-01-01',
+      time_list: ['2023-01-01', '2023-01-02'],
+      category: 'time-series',
+      palette: 'viridis',
+      vmin: 0,
+      vmax: 1,
+      unit: 'm',
+      opacity: 0.5,
+      supports_recolor: true,
+      supports_xyz_tiles: true,
+      overview_max_zoom: 8,
+      maxzoom: 12,
+      tile_url_template: '/overlay-tiles/demo/{z}/{x}/{y}.png',
+    })
+    expect(meta).toEqual({
+      currentTime: '2023-01-01',
+      timeList: ['2023-01-01', '2023-01-02'],
+      category: 'time-series',
+      palette: 'viridis',
+      vmin: 0,
+      vmax: 1,
+      unit: 'm',
+      opacity: 0.5,
+      supports_recolor: true,
+      supports_xyz_tiles: true,
+      overview_max_zoom: 8,
+      maxzoom: 12,
+      tile_url_template: '/overlay-tiles/demo/{z}/{x}/{y}.png',
+    })
+  })
+
+  it('falls back to defaults for missing or invalid fields', () => {
+    const meta = parseOverlayBoundsMeta({
+      default_time: '2023-01-02',
+      time_list: [1, 2, 3],
+      category: 'static',
+      vmin: NaN,
+      vmax: Infinity,
+      opacity: 'bad',
+      tile_url_template: '',
+    })
+    expect(meta.currentTime).toBe('2023-01-02')
+    expect(meta.timeList).toEqual([])
+    expect(meta.category).toBe('static')
+    expect(meta.vmin).toBeNull()
+    expect(meta.vmax).toBeNull()
+    expect(meta.opacity).toBe(0.7)
+    expect(meta.overview_max_zoom).toBe(-1)
+    expect(meta.maxzoom).toBe(18)
+    expect(meta.tile_url_template).toBeNull()
+  })
+})
 
 describe('validateOverlayBounds', () => {
   describe('合法 bounds', () => {

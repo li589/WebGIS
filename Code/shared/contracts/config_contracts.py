@@ -256,6 +256,13 @@ class GeneralConfig(BaseModel):
     celery_task_soft_time_limit: int | None = None
     celery_task_time_limit: int | None = None
     celery_task_always_eager: bool | None = None
+    celery_worker_concurrency: int | None = None
+    celery_worker_prefetch_multiplier: int | None = None
+    celery_worker_max_tasks_per_child: int | None = None
+    workflow_node_parallelism: int | None = None
+    algorithm_max_parallel_workers: int | None = None
+    task_memory_budget_mb: int | None = None
+    task_cpu_budget_cores: int | None = None
     cors_origins: list[str] | None = None
     object_store_backend: str | None = None
     object_store_public_base: str | None = None

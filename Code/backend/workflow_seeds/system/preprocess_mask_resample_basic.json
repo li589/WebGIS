@@ -1,0 +1,62 @@
+{
+  "_meta": {
+    "kind": "system",
+    "engine": "python_provider",
+    "name": "Preprocess mask + resample",
+    "description": "data/source×2 → preprocess/mask → preprocess/resample. Rasters under {DATA_ROOT}/_runtime/smoke_stub.tif and smoke_stub_b.tif.",
+    "author": "system",
+    "readonly": true,
+    "is_template": true,
+    "linked_layer_id": null,
+    "tags": ["analysis", "preprocess", "raster", "stub_v1", "sample"],
+    "category": "analysis",
+    "resource_profile": "standard"
+  },
+  "workflow_id": "preprocess_mask_resample_basic",
+  "name": "Preprocess mask + resample",
+  "description": "Mask then resample smoke GeoTIFFs",
+  "nodes": [
+    {
+      "id": 1,
+      "type": "data/source",
+      "pos": [60, 120],
+      "properties": {
+        "path": "{DATA_ROOT}/_runtime/smoke_stub.tif",
+        "dataset_key": "input_path"
+      }
+    },
+    {
+      "id": 2,
+      "type": "data/source",
+      "pos": [60, 280],
+      "properties": {
+        "path": "{DATA_ROOT}/_runtime/smoke_stub_b.tif",
+        "dataset_key": "mask_path"
+      }
+    },
+    {
+      "id": 3,
+      "type": "preprocess/mask",
+      "pos": [360, 180],
+      "properties": {
+        "mask_value": 0,
+        "invert": false
+      }
+    },
+    {
+      "id": 4,
+      "type": "preprocess/resample",
+      "pos": [660, 180],
+      "properties": {
+        "target_resolution": 0.2,
+        "unit": "degrees",
+        "resampling": "nearest"
+      }
+    }
+  ],
+  "links": [
+    [1, 1, 2, 3, 1],
+    [2, 2, 2, 3, 2],
+    [3, 3, 0, 4, 1]
+  ]
+}

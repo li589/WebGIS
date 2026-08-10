@@ -27,7 +27,7 @@ from __future__ import annotations
 
 import logging
 import threading
-from typing import Iterable
+from collections.abc import Iterable
 
 from app.weatherengine.provider_base import WeatherProvider
 

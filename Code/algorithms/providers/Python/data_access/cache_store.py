@@ -12,6 +12,7 @@ from hashlib import sha256
 from pathlib import Path
 
 from data_access.contracts import ResourceRef, build_resource_ref
+import contextlib
 
 
 def _ttl_seconds() -> int:
@@ -94,10 +95,8 @@ class CacheStore:
             shutil.copy2(source, tmp_path)
             os.replace(tmp_path, target_path)
         except Exception:
-            try:
+            with contextlib.suppress(OSError):
                 tmp_path.unlink(missing_ok=True)
-            except OSError:
-                pass
             raise
         return build_resource_ref(
             uri=f"cache://materialized/{target_path.name}",

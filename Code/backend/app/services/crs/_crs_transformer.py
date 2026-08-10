@@ -16,11 +16,12 @@
 
 from __future__ import annotations
 
-from typing import Iterable
+from collections.abc import Iterable
 
 from . import _gcj_bd
 from .crs_registry import get_crs
 from .crs_types import CRSCategory, CoordinatePoint
+import contextlib
 
 
 class CRSTransformer:
@@ -31,7 +32,7 @@ class CRSTransformer:
 
     # 类级 LRU 缓存：key = (source_code, target_code)，value = pyproj.Transformer
     # 加密系（GCJ02/BD09）不缓存（走纯 Python 算法，无 Transformer 实例）
-    _CACHE: dict[tuple[str, str], "object"] = {}
+    _CACHE: dict[tuple[str, str], object] = {}
 
     # ── 公共 API ─────────────────────────────────────────────────────────
 
@@ -152,10 +153,8 @@ class CRSTransformer:
             target_code in ("EPSG:4326", "EPSG:4490", "EPSG:4258")
             and normalize_geographic_bounds
         ):
-            try:
+            with contextlib.suppress(ValueError):
                 result = normalize_geographic_bounds(*result, source_span_hint=src_span)
-            except ValueError:
-                pass
         return result
 
     def transform_points_batch(

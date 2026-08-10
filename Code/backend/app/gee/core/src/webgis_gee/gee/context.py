@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import logging
 from threading import RLock
-from typing import Any, Optional
+from typing import Any
 
 import ee
 
@@ -18,9 +18,9 @@ class GeeContext:
     def __init__(
         self,
         account_id: str,
-        credentials: Optional[Any] = None,
+        credentials: Any | None = None,
         ee_module: Any | None = None,
-        project_id: Optional[str] = None,
+        project_id: str | None = None,
     ) -> None:
         self.account_id = account_id
         self._credentials = credentials

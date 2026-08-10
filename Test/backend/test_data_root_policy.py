@@ -14,7 +14,7 @@ from app.services.workflow_definition_service import _expand_seed_placeholders
 
 def test_assert_data_root_policy_allows_dev_without_root() -> None:
     with patch(
-        "app.services.effective_config.settings",
+        "app.core.config.settings",
         replace(settings, environment="development", data_root=""),
     ):
         assert_data_root_policy()  # no raise
@@ -22,7 +22,7 @@ def test_assert_data_root_policy_allows_dev_without_root() -> None:
 
 def test_assert_data_root_policy_rejects_production_without_root() -> None:
     with patch(
-        "app.services.effective_config.settings",
+        "app.core.config.settings",
         replace(settings, environment="production", data_root=""),
     ):
         with pytest.raises(RuntimeError, match="BACKEND_DATA_ROOT"):
@@ -37,5 +37,8 @@ def test_expand_seed_placeholders_data_root() -> None:
         out = _expand_seed_placeholders(
             '{"path":"{DATA_ROOT}/SMAP","win":"{DATA_ROOT_WIN}\\\\SMAP"}'
         )
-    assert '"path":"D:/OrgData/SMAP"' in out.replace("\\\\", "\\") or "D:/OrgData/SMAP" in out
+    assert (
+        '"path":"D:/OrgData/SMAP"' in out.replace("\\\\", "\\")
+        or "D:/OrgData/SMAP" in out
+    )
     assert "D:\\OrgData" in out or "D:/OrgData" in out

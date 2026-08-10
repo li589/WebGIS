@@ -732,14 +732,23 @@ class TileSurfaceSplitTests(unittest.TestCase):
         self.assertIn("/weather/tiles", response.json().get("detail", ""))
 
     def test_runtime_tile_cache_stats(self) -> None:
+        from unittest.mock import patch
+
         from fastapi.testclient import TestClient
+
         from app.main import create_app
 
+        # /runtime/tiles/cache/stats 需 config-read 鉴权（require_config_read_access），
+        # test 环境无 dev bypass，须提供 service key（同 test_config_contracts.client 模式）。
         app = create_app()
-        client = TestClient(app)
-        response = client.get("/runtime/tiles/cache/stats")
-        self.assertEqual(response.status_code, 200)
-        self.assertIn("cached_tiles", response.json())
+        with patch(
+            "app.services.effective_config.get_backend_auth_key",
+            return_value="test-key",
+        ):
+            client = TestClient(app, headers={"X-API-Key": "test-key"})
+            response = client.get("/runtime/tiles/cache/stats")
+            self.assertEqual(response.status_code, 200)
+            self.assertIn("cached_tiles", response.json())
 
 
 if __name__ == "__main__":

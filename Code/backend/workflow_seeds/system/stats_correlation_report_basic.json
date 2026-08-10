@@ -1,0 +1,62 @@
+{
+  "_meta": {
+    "kind": "system",
+    "engine": "python_provider",
+    "name": "Stats correlation + report",
+    "description": "Two timeseries → stats/correlation → viz/report_export (HTML). Series under {DATA_ROOT}/_runtime/smoke_timeseries.json and smoke_timeseries_b.json.",
+    "author": "system",
+    "readonly": true,
+    "is_template": true,
+    "linked_layer_id": null,
+    "tags": ["analysis", "stats", "report", "stub_v1", "sample"],
+    "category": "analysis",
+    "resource_profile": "standard"
+  },
+  "workflow_id": "stats_correlation_report_basic",
+  "name": "Stats correlation + report",
+  "description": "Pearson correlation then HTML report export",
+  "nodes": [
+    {
+      "id": 1,
+      "type": "data/source",
+      "pos": [60, 100],
+      "properties": {
+        "path": "{DATA_ROOT}/_runtime/smoke_timeseries.json",
+        "dataset_key": "x_path"
+      }
+    },
+    {
+      "id": 2,
+      "type": "data/source",
+      "pos": [60, 280],
+      "properties": {
+        "path": "{DATA_ROOT}/_runtime/smoke_timeseries_b.json",
+        "dataset_key": "y_path"
+      }
+    },
+    {
+      "id": 3,
+      "type": "stats/correlation",
+      "pos": [380, 180],
+      "properties": {
+        "method": "pearson",
+        "lag_days": 0
+      }
+    },
+    {
+      "id": 4,
+      "type": "viz/report_export",
+      "pos": [680, 180],
+      "properties": {
+        "format": "html",
+        "template": "default",
+        "include_charts": true
+      }
+    }
+  ],
+  "links": [
+    [1, 1, 2, 3, 2],
+    [2, 2, 2, 3, 3],
+    [3, 3, 0, 4, 2]
+  ]
+}

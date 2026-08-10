@@ -30,6 +30,10 @@ import {
 import { aggregateWeatherTileBanner } from './map/weather-tile-banner'
 import { TILE_SOURCE_MAP, getDefaultTileSource, type TileSourceId } from '../services/api-config'
 import { isGlobalMapViewport } from '../utils/map-viewport'
+import {
+  isMapDistributionChromeEnabled,
+  subscribeMapDistributionChrome,
+} from '../services/settings-local'
 import { dataWorkspaceHighlight, showToast } from '../data-manager/core/workspace-store'
 import { debugLog as probeDebugLog } from '../utils/perf-probe'
 
@@ -245,6 +249,11 @@ const weatherTileStatusModel = computed(() => {
     }),
   )
 })
+const mapDistributionChromeEnabled = ref(isMapDistributionChromeEnabled())
+const unsubscribeMapChrome = subscribeMapDistributionChrome(() => {
+  mapDistributionChromeEnabled.value = isMapDistributionChromeEnabled()
+})
+
 const stageAppearanceModel = computed(() =>
   buildMapStageAppearanceModel({
     basemapStyle: currentTileConfig.value.style,
@@ -255,7 +264,10 @@ const stageAppearanceModel = computed(() =>
     mapVisible: mapVisible.value,
     skeletonVisible: skeletonVisible.value,
     isGlobalViewport: isGlobalMapViewport(layersStore.currentMapBBox),
-    hasAddedLayers: layersStore.activeLayers.length > 0,
+    hasVisibleDataLayers: layersStore.activeLayers.some(
+      (layer) => layer.visible && !layer.isAdminBoundary,
+    ),
+    distributionChromeEnabled: mapDistributionChromeEnabled.value,
   }),
 )
 
@@ -417,6 +429,7 @@ onMounted(async () => {
 })
 
 onBeforeUnmount(() => {
+  unsubscribeMapChrome()
   teardownBinder.dispose()
   overlayImageModule = null
   _clearLocationMarker()
@@ -977,13 +990,32 @@ async function handleLocateMe() {
   opacity: 0.2;
 }
 
-/* 全球视口淡底：仅在有已添加图层时启用，纯底图时保持清晰 */
+/* 无可见数据图层或设置关闭：任意缩放下关闭氛围遮罩 */
+.map-stage.map-stage-chrome-off .map-fog,
+.map-stage.map-stage-chrome-off .time-sheen,
+.map-stage.map-stage-chrome-off .time-band,
+.map-stage.map-stage-chrome-off .weather-overlay,
+.map-stage.map-stage-chrome-off .grid-overlay {
+  opacity: 0 !important;
+  pointer-events: none;
+}
+
+/* 全球视口淡底：仅在有可见数据图层时启用，纯底图时保持清晰 */
 .map-stage.map-stage-global-view:not(.map-stage-distribution) .map-fog,
 .map-stage.map-stage-global-view:not(.map-stage-distribution) .time-sheen,
 .map-stage.map-stage-global-view:not(.map-stage-distribution) .time-band,
 .map-stage.map-stage-global-view:not(.map-stage-distribution) .weather-overlay,
 .map-stage.map-stage-global-view:not(.map-stage-distribution) .grid-overlay {
   opacity: 0;
+}
+
+/* 空状态不再额外加暗（无图层时由 chrome-off 清底图） */
+.map-stage-empty.map-stage-chrome-off .map-fog,
+.map-stage-empty.map-stage-chrome-off .time-sheen,
+.map-stage-empty.map-stage-chrome-off .time-band,
+.map-stage-empty.map-stage-chrome-off .weather-overlay,
+.map-stage-empty.map-stage-chrome-off .grid-overlay {
+  opacity: 0 !important;
 }
 
 .map-overlay {

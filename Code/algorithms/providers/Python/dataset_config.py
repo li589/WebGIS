@@ -848,7 +848,7 @@ def get_dataset_summary() -> list[dict[str, str | bool]]:
 # ===========================================================================
 
 
-def get_storage_backend() -> "StorageBackend | None":
+def get_storage_backend() -> StorageBackend | None:
     """
     获取当前配置的存储后端实例。
 
@@ -864,7 +864,7 @@ def get_storage_backend() -> "StorageBackend | None":
         return None
 
 
-def get_output_storage_backend() -> "StorageBackend | None":
+def get_output_storage_backend() -> StorageBackend | None:
     """
     获取产物输出存储后端。
 

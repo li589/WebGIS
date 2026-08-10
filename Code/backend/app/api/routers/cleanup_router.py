@@ -11,7 +11,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import datetime, UTC
 from pathlib import Path
 from typing import Any
 
@@ -241,11 +241,7 @@ def _scan_node_caches() -> list[NodeCacheEntry]:
         files = [f for f in child.rglob("*") if f.is_file()]
         size = sum(f.stat().st_size for f in files)
         mtime = max((f.stat().st_mtime for f in files), default=0)
-        modified = (
-            datetime.fromtimestamp(mtime, tz=timezone.utc).isoformat()
-            if mtime
-            else None
-        )
+        modified = datetime.fromtimestamp(mtime, tz=UTC).isoformat() if mtime else None
         entries.append(
             NodeCacheEntry(
                 name=child.name,

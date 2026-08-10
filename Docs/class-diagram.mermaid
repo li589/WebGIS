@@ -1,0 +1,142 @@
+classDiagram
+    class OmegaSfConfig {
+        +tb_source: str
+        +sm_source: str
+        +fy_platform: str
+        +sf_mode: str
+        +ndvi_mode: str
+        +omega_fixed_mode: str
+        +block_days: int
+        +bounds_h: tuple
+        +bounds_alpha: tuple
+        +bounds_omega: tuple
+        +freq_ghz() float
+        +from_params(params) OmegaSfConfig
+    }
+
+    class BlockStructure {
+        +starts: list~datetime~
+        +indices: list~np.ndarray~
+        +n_blocks: int
+    }
+
+    class PixelResult {
+        +iy: int
+        +ix: int
+        +class_id: int
+        +omega: np.ndarray
+        +sm: np.ndarray
+        +vod: np.ndarray
+        +h_star: float
+        +alpha_star: float
+    }
+
+    class OmegaSfResult {
+        +omega_pft: np.ndarray
+        +omega_pixel_map: np.ndarray
+        +omega_pixel_count: np.ndarray
+        +sm_maps: dict
+        +vod_maps: dict
+        +omega_maps: dict
+        +n_pixels_total: int
+        +n_pixels_success: int
+        +n_pixels_failed: int
+        +output_paths: dict
+    }
+
+    class _ChunkLoopState {
+        +all_results: list
+        +completed_chunks: set
+        +n_processed: int
+        +n_success: int
+        +n_failed: int
+        +n_valid_processed: int
+        +stop: bool
+    }
+
+    %% 重构涉及的关键函数关系
+
+    class retrieve_omega_sf_daily {
+        <<P0-3: D21→C12>>
+        +_load_fixed_omega_map()
+        +_finalize_and_save()
+        -_build_time_series()
+        -_load_ancillary()
+        -_process_one_chunk()
+    }
+
+    class _load_ancillary {
+        <<P0-2: B9→A5>>
+        +_load_anc_scalar_fields()
+        +_load_anc_mat_field()
+        +_load_anc_lat_lon()
+        +_load_anc_ndvi_extrema()
+        +_fill_anc_defaults()
+        +_compute_anc_porosity()
+    }
+
+    class _preload_chunk {
+        <<P0-1: B8→A5>>
+        +_preload_one_day()
+        -Q5: 显式网格校验
+    }
+
+    class _preload_one_day {
+        <<NEW>>
+        +date: datetime
+        +doy: int
+        +lin_pix: ndarray
+        +_load_smap_day()
+        +_load_fy_tb_day()
+        +_fill_fy_tb_row()
+        +_load_ndvi_day()
+        +_compute_sf_inverted_day()
+    }
+
+    class execute_pixel_inversion {
+        <<P1: D28→C15>>
+        +_step0_compute_tau_star()
+        +_step1_invert_halpha()
+        +_step3_ddca_retrieval()
+        -Step2: OMEGA 闭包保持原位(Q2)
+    }
+
+    class _process_one_chunk {
+        <<P1: C18→B10>>
+        +_build_chunk_validity_mask()
+        +_preload_chunk()
+        +_run_pixel_inversion()
+    }
+
+    %% 不可变的 5 个数值核心
+    class _forward_tb {
+        <<NUMERICAL CORE·NO CHANGE>>
+        行号: L897-988
+    }
+    class _resid_halpha_single_temp {
+        <<NUMERICAL CORE·NO CHANGE>>
+        行号: L991-1051
+    }
+    class _resid_omega_block_single_temp {
+        <<NUMERICAL CORE·NO CHANGE>>
+        行号: L1054-1114
+    }
+    class _ddca_single_temp {
+        <<NUMERICAL CORE·NO CHANGE>>
+        行号: L1160-1223
+    }
+    class build_sf_row_daily {
+        <<NUMERICAL CORE·NO CHANGE>>
+        行号: L187-283
+    }
+
+    retrieve_omega_sf_daily --> _load_ancillary
+    retrieve_omega_sf_daily --> _process_one_chunk
+    _process_one_chunk --> _preload_chunk
+    _preload_chunk --> _preload_one_day
+    _process_one_chunk --> execute_pixel_inversion
+    execute_pixel_inversion --> _forward_tb
+    execute_pixel_inversion --> _resid_halpha_single_temp
+    execute_pixel_inversion --> _resid_omega_block_single_temp
+    execute_pixel_inversion --> _ddca_single_temp
+    _preload_one_day --> build_sf_row_daily

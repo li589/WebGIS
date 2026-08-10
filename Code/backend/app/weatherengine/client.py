@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import datetime, UTC
 import json
 from pathlib import Path
 import threading
@@ -224,7 +224,7 @@ class OpenMeteoClient:
 
     def _budget_key(self) -> str:
         """Redis key 按日期 + base_url 分组，online/local 预算互不占用。"""
-        date_str = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+        date_str = datetime.now(UTC).strftime("%Y-%m-%d")
         host = self._base_url.replace("https://", "").replace("http://", "").rstrip("/")
         host_key = "".join(ch if ch.isalnum() or ch in "-_." else "_" for ch in host)[
             :120
@@ -304,7 +304,7 @@ class OpenMeteoClient:
             cached = json.loads(cache_path.read_text(encoding="utf-8"))
             expires_raw = cached.get("expires_at")
             if isinstance(expires_raw, (int, float)):
-                expires_at = datetime.fromtimestamp(expires_raw, tz=timezone.utc)
+                expires_at = datetime.fromtimestamp(expires_raw, tz=UTC)
             else:
                 expires_at = datetime.fromisoformat(expires_raw)
             payload = cached.get("payload")
@@ -393,7 +393,7 @@ class OpenMeteoClient:
         )
         redis_key = f"{REDIS_CACHE_PREFIX}point:{cache_key}"
         cache_path = self._cache_root / f"{cache_key}.json"
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
 
         # 1. Check Redis cache first (fast, cross-worker)
         redis_payload = cache_get_json(redis_key)
@@ -574,7 +574,7 @@ class OpenMeteoClient:
             json.dumps(
                 {
                     "expires_at": datetime.fromtimestamp(
-                        now.timestamp() + max(60, ttl_seconds), tz=timezone.utc
+                        now.timestamp() + max(60, ttl_seconds), tz=UTC
                     ).isoformat(),
                     "payload": payload,
                 },
@@ -661,7 +661,7 @@ class OpenMeteoClient:
         )
         redis_key = f"{REDIS_CACHE_PREFIX}grid:{cache_key}"
         cache_path = self._cache_root / f"grid-{cache_key}.json"
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
 
         # 1. Check Redis cache first (fast, cross-worker)
         redis_payload = cache_get_json(redis_key)
@@ -979,7 +979,7 @@ class OpenMeteoClient:
             json.dumps(
                 {
                     "expires_at": datetime.fromtimestamp(
-                        now.timestamp() + max(60, ttl_seconds), tz=timezone.utc
+                        now.timestamp() + max(60, ttl_seconds), tz=UTC
                     ).isoformat(),
                     "payload": grid_data,
                 },

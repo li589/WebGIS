@@ -9,11 +9,12 @@ from __future__ import annotations
 
 import json
 import logging
-from datetime import datetime, timezone
+from datetime import datetime, UTC
 from pathlib import Path
 from typing import Any
 
 from app.services._sqlite_pool import SQLiteConnectionPool
+import contextlib
 
 logger = logging.getLogger(__name__)
 
@@ -50,14 +51,12 @@ class WeatherEngineSettingsRepository:
         self._pool.close_all()
 
     def __del__(self) -> None:
-        try:
+        with contextlib.suppress(Exception):
             self._pool.close_all(quiet=True)
-        except Exception:
-            pass
 
     @staticmethod
     def _now_iso() -> str:
-        return datetime.now(timezone.utc).isoformat()
+        return datetime.now(UTC).isoformat()
 
     def get(self, key: str) -> str | None:
         with self._connect() as conn:

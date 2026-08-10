@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta, UTC
 from typing import Any
 from uuid import uuid4
 
@@ -62,7 +62,7 @@ class WorkflowDefinition(BaseModel):
     metadata: dict[str, Any] = Field(default_factory=dict)
 
     @model_validator(mode="after")
-    def ensure_node_ids_unique(self) -> "WorkflowDefinition":
+    def ensure_node_ids_unique(self) -> WorkflowDefinition:
         node_ids = [node.node_id for node in self.nodes]
         if len(node_ids) != len(set(node_ids)):
             raise ValueError("workflow contains duplicated node_id values")
@@ -88,7 +88,7 @@ class AccountLease(BaseModel):
 
     def mark_leased(self) -> None:
         self.state = AccountState.LEASED
-        self.leased_at = datetime.now(timezone.utc)
+        self.leased_at = datetime.now(UTC)
         self.cooldown_until = None
 
     def mark_available(self) -> None:
@@ -102,7 +102,7 @@ class AccountLease(BaseModel):
         self.leased_at = None
         self.last_error = reason
         self.failure_count += 1
-        self.cooldown_until = datetime.now(timezone.utc) + timedelta(seconds=seconds)
+        self.cooldown_until = datetime.now(UTC) + timedelta(seconds=seconds)
 
     def mark_success(self) -> None:
         self.success_count += 1
@@ -112,7 +112,7 @@ class AccountLease(BaseModel):
         self.last_error = None
 
     def is_available(self, now: datetime | None = None) -> bool:
-        now = now or datetime.now(timezone.utc)
+        now = now or datetime.now(UTC)
         if self.state == AccountState.AVAILABLE:
             return True
         if (

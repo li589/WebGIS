@@ -621,25 +621,6 @@ def list_overlay_ids() -> list[str]:
 
 # ─── 静态图层 ─────────────────────────────────────────────────────────────────
 
-# SMAP/Omega 交叉分析 14 天均值（保留旧 layer_id 兼容前端）
-register_overlay(
-    OverlaySpec(
-        layer_id="lab-output",
-        overlay_dir=_PROJECT_OUTPUT,
-        png_filename="smap_sm_overlay.png",
-        bounds_filename="smap_sm_overlay_bounds.json",
-        category="static",
-        palette="magenta-yellow",
-        vmin=0.0,
-        vmax=0.5,
-        unit="m³/m³",
-        opacity=0.7,
-        source_path=_OMEGA_SOURCE,
-        source_variable="OMEGA_AVG",
-        source_reader="mat",
-    )
-)
-
 # DEM ETOPO_2022 bed topography（全球）
 register_overlay(
     OverlaySpec(
@@ -721,7 +702,7 @@ register_overlay(
 # SMAP 土壤湿度时间序列（2023-01，13 天）
 register_overlay(
     OverlaySpec(
-        layer_id="smap-sm-ts",
+        layer_id="ref-smap-sm-202512-l3",
         overlay_dir=_OVERLAY_PNG_ROOT / "smap_ts",
         time_pattern="smap_sm_{time}.png",
         bounds_pattern="smap_sm_{time}_bounds.json",
@@ -919,7 +900,7 @@ register_overlay(
 # Soil DDCA 时间序列（中国 9km，2015-04-01 至 2015-05-17，60 天采样）
 register_overlay(
     OverlaySpec(
-        layer_id="soil-ddca",
+        layer_id="ref-ddca-sm-201504-202512",
         overlay_dir=_OVERLAY_PNG_ROOT / "soil_ddca_ts",
         time_pattern="soil_ddca_{time}.png",
         bounds_pattern="soil_ddca_{time}_bounds.json",
@@ -989,12 +970,12 @@ register_overlay(
 # v7.3 HDF5，含 OMEGA / SM / VOD 三个变量，shape (1624, 3856) on EASE-Grid 9km
 # 每个图层导出 31 天（2025-12-01 ~ 2025-12-31）的 PNG + bounds JSON
 
-# VOD 植被光学厚度时间序列（2025-12，31 天，magma 色表）
+# TODO: VOD/ω 独立展示图层待补实现（数据源同 SmapSoil_VOD_SM/{YYYYMMDD}.mat，VOD/OMEGA 变量）
 
-# SM 土壤湿度时间序列（2025-12，31 天，YlGnBu 色表）
+# SMAP/FY/站点融合土壤水分产品（2025-12，31 天，SM/VOD/ω；当前展示 SM，VOD/ω 补实现中）
 register_overlay(
     OverlaySpec(
-        layer_id="sm-dec2025",
+        layer_id="prod-fy_smap_station-sm_vod_omega-202512-fusion",
         overlay_dir=_OVERLAY_PNG_ROOT / "sm_ts",
         time_pattern="sm_ts_{time}.png",
         bounds_pattern="sm_ts_{time}_bounds.json",

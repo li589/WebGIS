@@ -6,11 +6,12 @@ import base64
 import logging
 import os
 import sqlite3
-from datetime import datetime, timezone
+from datetime import datetime, UTC
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 from app.services._sqlite_pool import SQLiteConnectionPool
+import contextlib
 
 logger = logging.getLogger(__name__)
 
@@ -95,10 +96,8 @@ class ApiKeysRepository:
         self._pool.close_all()
 
     def __del__(self) -> None:
-        try:
+        with contextlib.suppress(Exception):
             self._pool.close_all(quiet=True)
-        except Exception:
-            pass
 
     def _encrypt(self, plaintext: str) -> tuple[str, str]:
         """AES-GCM 加密，返回 (ciphertext_b64, iv_b64)。无 key 时仅 development 允许明文。"""
@@ -220,15 +219,15 @@ class ApiKeysRepository:
         key_name: str,
         key_value: str,
         display_name: str,
-        description: Optional[str] = None,
+        description: str | None = None,
         enabled: bool = True,
         history_label: str | None = None,
         history_source: str = "user",
         archive_previous: bool = True,
-    ) -> Optional[dict[str, Any]]:
+    ) -> dict[str, Any] | None:
         """新增或更新 API Key。值变化时归档旧值到 history。"""
         ct, iv = self._encrypt(key_value)
-        now = datetime.now(timezone.utc).isoformat()
+        now = datetime.now(UTC).isoformat()
         enabled_flag = 1 if enabled else 0
         with self._connect() as conn:
             existing = conn.execute(
@@ -268,7 +267,7 @@ class ApiKeysRepository:
             conn.commit()
         return self.get_key_info(key_name)
 
-    def get_key_value(self, key_name: str) -> Optional[str]:
+    def get_key_value(self, key_name: str) -> str | None:
         """获取解密后的 key 值。供运行时服务调用。"""
         with self._connect() as conn:
             row = conn.execute(
@@ -279,7 +278,7 @@ class ApiKeysRepository:
             return None
         return self._decrypt(row["key_value_encrypted"], row["key_iv"])
 
-    def get_key_value_raw(self, key_name: str) -> Optional[str]:
+    def get_key_value_raw(self, key_name: str) -> str | None:
         """Decrypt current key regardless of enabled flag (for restore archive)."""
         with self._connect() as conn:
             row = conn.execute(
@@ -290,7 +289,7 @@ class ApiKeysRepository:
             return None
         return self._decrypt(row["key_value_encrypted"], row["key_iv"])
 
-    def get_key_info(self, key_name: str) -> Optional[dict[str, Any]]:
+    def get_key_info(self, key_name: str) -> dict[str, Any] | None:
         """获取脱敏后的 key 信息（不包含明文）。"""
         with self._connect() as conn:
             row = conn.execute(
@@ -323,7 +322,7 @@ class ApiKeysRepository:
         with self._connect() as conn:
             cur = conn.execute(
                 "UPDATE api_keys SET enabled=?, updated_at=? WHERE key_name=?",
-                (1 if enabled else 0, datetime.now(timezone.utc).isoformat(), key_name),
+                (1 if enabled else 0, datetime.now(UTC).isoformat(), key_name),
             )
             conn.commit()
             return cur.rowcount > 0
@@ -332,7 +331,7 @@ class ApiKeysRepository:
         with self._connect() as conn:
             conn.execute(
                 "UPDATE api_keys SET last_tested_at=?, last_test_status=? WHERE key_name=?",
-                (datetime.now(timezone.utc).isoformat(), status, key_name),
+                (datetime.now(UTC).isoformat(), status, key_name),
             )
             conn.commit()
 
@@ -368,7 +367,7 @@ class ApiKeysRepository:
             )
         return result
 
-    def get_history_value(self, key_name: str, history_id: int) -> Optional[str]:
+    def get_history_value(self, key_name: str, history_id: int) -> str | None:
         with self._connect() as conn:
             row = conn.execute(
                 """

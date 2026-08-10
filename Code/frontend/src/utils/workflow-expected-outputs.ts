@@ -67,11 +67,11 @@ export function resolveExpectedOutputTags(def: WorkflowDefLike | null | undefine
 
 export function defaultProductLayerNames(
   tags: string[],
-  prefix: string,
+  _prefix?: string,
 ): Array<{ name: string; productTag: string }> {
   return tags.map((tag) => ({
     productTag: tag,
-    name: tags.length === 1 && tag === 'result' ? prefix : `${prefix}_${tag}`,
+    name: productTagLabel(tag),
   }))
 }
 
@@ -83,7 +83,8 @@ export function defaultProductLayerNames(
 export const PRODUCT_TAG_LABELS: Record<string, string> = {
   SM: 'SM（土壤湿度）',
   VOD: 'VOD（植被光学厚度）',
-  OMEGA: 'ω（植被光学厚度）',
+  OMEGA: 'ω（反演参数）',
+  result: '计算结果',
 }
 
 export function productTagLabel(tag: string): string {

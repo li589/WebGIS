@@ -11,6 +11,7 @@ import math
 from typing import Any, Literal
 
 from shared.contracts.api_contracts import BoundingBox
+from datetime import UTC
 
 logger = logging.getLogger(__name__)
 
@@ -724,8 +725,8 @@ def _unix_to_iso(value: Any) -> str | None:
     if value is None:
         return None
     try:
-        from datetime import datetime, timezone
+        from datetime import datetime
 
-        return datetime.fromtimestamp(int(value), tz=timezone.utc).isoformat()
+        return datetime.fromtimestamp(int(value), tz=UTC).isoformat()
     except (TypeError, ValueError, OSError):
         return str(value) if value is not None else None

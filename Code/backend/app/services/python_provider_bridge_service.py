@@ -22,15 +22,17 @@ API (list/describe/panel-schema/ui-schema/diagnostics).
 
 from __future__ import annotations
 
-from contextlib import contextmanager
+from contextlib import contextmanager, suppress
 from datetime import datetime
 from functools import lru_cache
 import importlib
 import logging
+import os
 from pathlib import Path
 import sys
 import threading
-from typing import Any, Iterator
+from typing import Any
+from collections.abc import Iterator
 
 from app.core.config import settings
 from app.services.python_provider_request_builder import (
@@ -51,34 +53,8 @@ logger = logging.getLogger(__name__)
 
 # 已在节点模板中注册但尚未实现算法的模块。
 # 这些模块的 workflow 提交后会返回 pending_implementation 状态，而非调用 provider。
-_PENDING_IMPLEMENTATION_MODULES = frozenset(
-    {
-        "preprocess_reproject",
-        "preprocess_resample",
-        # preprocess_format_convert implemented as format_convert (alias)
-        "preprocess_clip",
-        "preprocess_mask",
-        "stats_spatial_mean",
-        "stats_temporal_trend",
-        "stats_anomaly_detect",
-        "stats_correlation",
-        # stats_histogram implemented (modules/stats_histogram.py)
-        "fusion_spatial_interpolate",
-        "fusion_multi_source_merge",
-        # viz_chart_generate implemented (modules/viz_chart_generate.py)
-        "viz_report_export",
-        "viz_statistics_summary",
-        "gis_buffer_analysis",
-        "gis_zonal_statistics",
-        "gis_raster_calculator",
-        "gis_vector_to_raster",
-        "gis_raster_to_vector",
-        "gis_reclassify",
-        "gis_contour",
-        "gis_slope_aspect",
-        "gis_watershed",
-    }
-)
+# 2026-08 stub 完善：预处理 / 统计 / 融合 / 可视化 / GIS 基础已落地，集合清空。
+_PENDING_IMPLEMENTATION_MODULES: frozenset[str] = frozenset()
 
 
 @contextmanager
@@ -92,10 +68,8 @@ def _python_provider_import_path(provider_root: Path) -> Iterator[None]:
         yield
     finally:
         if inserted:
-            try:
+            with suppress(ValueError):
                 sys.path.remove(provider_path)
-            except ValueError:
-                pass
 
 
 # ─── 线程局部事件转发上下文 ───────────────────────────────────────────────────
@@ -346,12 +320,60 @@ class PythonProviderBridgeService:
                     },
                 )
 
+        # 注入并发配置到当前进程 env，供算法包 _parallel.auto_process_count 与
+        # dispatch.WorkflowRunner 读取。热更新：每次 execute 读最新 effective_config
+        # （前端 PATCH 后下次算法执行立即生效）。CGDA_MAX_PARALLEL_WORKERS=0/删除=自动。
+        try:
+            from app.services.effective_config import (
+                get_algorithm_max_parallel_workers,
+                get_workflow_node_parallelism,
+            )
+
+            _ampw = get_algorithm_max_parallel_workers()
+            if _ampw > 0:
+                os.environ["CGDA_MAX_PARALLEL_WORKERS"] = str(_ampw)
+            else:
+                os.environ.pop("CGDA_MAX_PARALLEL_WORKERS", None)
+            os.environ["CGDA_WORKFLOW_NODE_PARALLELISM"] = str(
+                get_workflow_node_parallelism()
+            )
+        except Exception:
+            logging.getLogger(__name__).debug(
+                "Failed to apply concurrency env from effective_config", exc_info=True
+            )
+
         # D2+D3 修复：设置线程局部事件上下文，使 _EventForwardingLoggerAdapter
         # 能在算法执行期间将 emit_progress/emit_stage_start 等调用转发为
         # 前端可解析的 node_progress 事件。
         _set_event_context(event_factory, run_id)
         try:
-            response = service.submit_job(request_payload)
+            from app.services.bridge_protocol import BridgeExecutionError
+            from app.services.failure_classifier import FailureClassifier
+            from shared.contracts.api_contracts import FailureCategory
+
+            try:
+                response = service.submit_job(request_payload)
+            except BridgeExecutionError:
+                raise
+            except Exception as exc:
+                # Stub/GIS 校验与 IO 异常 → FailureCategory，供 lifecycle 决定是否重试
+                category = FailureClassifier.classify(exc)
+                details: dict[str, object] = {
+                    "exception_type": type(exc).__name__,
+                    "module_name": module_name,
+                }
+                if category == FailureCategory.terminal_failure and isinstance(
+                    exc, (MemoryError, OSError)
+                ):
+                    details["hint"] = (
+                        "Reduce resolution, clip extent, or free disk/memory"
+                    )
+                raise BridgeExecutionError(
+                    category=category,
+                    message=str(exc) or type(exc).__name__,
+                    cause=exc,
+                    details=details,
+                ) from exc
         finally:
             _clear_event_context()
         response_body = dict(response.body)

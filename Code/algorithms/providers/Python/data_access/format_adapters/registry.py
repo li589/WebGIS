@@ -20,7 +20,7 @@ class FormatRegistry:
     ) -> None:
         self._adapters = tuple(adapters)
 
-    def register(self, adapter: FormatAdapter) -> "FormatRegistry":
+    def register(self, adapter: FormatAdapter) -> FormatRegistry:
         return FormatRegistry((*self._adapters, adapter))
 
     def registered_names(self) -> tuple[str, ...]:

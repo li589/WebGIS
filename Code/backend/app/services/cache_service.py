@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta, UTC
 import hashlib
 import json
 import logging
@@ -26,7 +26,7 @@ class CacheEntry:
 
     @property
     def is_fresh(self) -> bool:
-        return self.expires_at > datetime.now(timezone.utc)
+        return self.expires_at > datetime.now(UTC)
 
 
 @dataclass
@@ -94,7 +94,7 @@ class CacheService:
         status: str,
         metadata: dict[str, Any],
     ) -> CacheEntry:
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         entry = CacheEntry(
             cache_key=cache_key,
             scope=scope,
@@ -134,7 +134,7 @@ class CacheService:
 
     def get_stats(self) -> CacheStats:
         """返回当前缓存运行时统计快照。"""
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         total_entries = 0
         fresh_entries = 0
         expired_entries = 0
@@ -186,7 +186,7 @@ class CacheService:
         Returns:
             {"deleted": N, "skipped": M, "errors": K}
         """
-        now = now or datetime.now(timezone.utc)
+        now = now or datetime.now(UTC)
         stats = {"deleted": 0, "skipped": 0, "errors": 0}
 
         for entry_file in self._cache_dir.glob("*.json"):
