@@ -18,7 +18,7 @@ TESTS = [
     ("biomass-cn", 110.0, 25.0, "Mg/ha"),  # 华南生物量
     ("era5-dwaa-cn", 116.0, 40.0, "events"),  # 北京热浪
     ("co2-cn", 116.0, 40.0, "ppm"),  # 北京 CO2
-    ("soil-ddca", 116.0, 40.0, ""),  # 土壤
+    ("ref-ddca-sm-201504-202512", 116.0, 40.0, ""),  # 土壤
     ("omega-fy-output", 116.0, 40.0, "Omega"),
     ("forest-ratio", 116.0, 40.0, "ratio"),
 ]

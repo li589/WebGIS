@@ -1,6 +1,6 @@
 # 真实数据 e2e 门槛（Phase 3）
 
-目标：证明「提交 → Celery → artifact/view → 前端可展示」可在**真实课题组数据集**上跑通，而不是 lab_output 合成结果。
+目标：证明「提交 → Celery → artifact/view → 前端可展示」可在**真实课题组数据集**上跑通，而不是「合成样例图层」的合成结果。
 
 本地盘（`file://` / `BACKEND_DATA_ROOT`）若已有多条图层跑通，本文件以 **NAS SMB/SFTP + 远程存储 profile** 作为下一道门槛。
 
@@ -8,7 +8,7 @@
 
 1. `BACKEND_WORKFLOW_EXECUTOR=celery`，Redis/worker 在线  
 2. `BACKEND_DATA_ROOT` / `BACKEND_OUTPUT_ROOT` 指向可读写目录  
-3. 选定图层：优先已在本地跑通的 `smap-soil` / `ndvi` 等（**非** `lab-output`）  
+3. 选定图层：优先已在本地跑通的 `ref-smap-sm-202512-l3` / `ndvi` 等（**非** `合成样例图层`）  
 4. **跑 Celery 的机器**必须能访问数据源（本机路径或 NAS 网段）
 
 ## A. 本地路径门槛（已具备时跳过）
@@ -63,9 +63,9 @@ sftp://nas.lab/data/SMAP/SMAP_L3_SM_P_20220101.h5?cred=nas-lab
 环境变量 `BACKEND_REMOTE_LAYER_DATA_URIS`（JSON）会把远端 URI **插到**对应 layer 的 `default_data_access_sources` **最前面**，本地路径仍保留作回退：
 
 ```powershell
-# 示例：用已本地跑通的 smap-soil，改走 NAS 上同一文件
+# 示例：用已本地跑通的 ref-smap-sm-202512-l3，改走 NAS 上同一文件
 $env:BACKEND_REMOTE_LAYER_DATA_URIS = @{
-  "smap-soil" = @{
+  "ref-smap-sm-202512-l3" = @{
     "SMAP_SPL3SMP_E" = @(
       "smb://192.168.1.10/Geograph/SMAP/SMAP_L3_SM_P_20220101.h5?cred=nas-lab"
     )
@@ -79,7 +79,7 @@ $env:BACKEND_REMOTE_MAX_BYTES = "8589934592"   # 按文件体积调
 重启 API / Worker 后：
 
 ```text
-1. GET /layers → smap-soil 的 notes 含「已注入远端数据源候选」
+1. GET /layers → ref-smap-sm-202512-l3 的 notes 含「已注入远端数据源候选」
 2. run_readiness != blocked（凭证可解析；probe=true 时连通性 OK）
 3. POST /workflow-runs → Worker materialize 远端文件落盘后跑算法
 4. events → succeeded；view / artifacts / 前端展示同 A
@@ -108,7 +108,7 @@ $env:PYTHONPATH="..;app/gee/core/src"
 python -m pytest tests/test_remote_sources.py tests/test_layer_remote_uris.py -q
 ```
 
-未挂载远端数据时，禁止把 `lab-output` 或仅本地绿测当作「多机 NAS 生产就绪」证据。
+未挂载远端数据时，禁止把 `合成样例图层` 或仅本地绿测当作「多机 NAS 生产就绪」证据。
 
 ## 相关文档
 

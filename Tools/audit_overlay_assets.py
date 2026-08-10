@@ -166,14 +166,14 @@ def _format_check_table(check: AssetCheck) -> list[str]:
     return lines
 
 
-# layer_id -> export_overlay_assets function (lab-output has no exporter)
+# layer_id -> export_overlay_assets function (合成样例图层无独立 exporter)
 _EXPORT_MAP: dict[str, str] = {
     "dem-etopo": "export_dem_etopo",
     "landcover-cn": "export_thematic_layers",
     "hfp-cn": "export_thematic_layers",
     "aridity-cn": "export_thematic_layers",
     "omega-output": "export_omega_ts",
-    "smap-sm-ts": "export_smap_ts",
+    "ref-smap-sm-202512-l3": "export_smap_ts",
     "gpcp-precip-ts": "export_gpcp_ts",
     "gebco-dem-cn": "export_gebco_dem",
     "cmfd-precip-cn": "export_cmfd_precip",
@@ -182,12 +182,12 @@ _EXPORT_MAP: dict[str, str] = {
     "era5-dwaa-cn": "export_era5_dwaa",
     "era5-wdaa-cn": "export_era5_wdaa",
     "co2-cn": "export_co2",
-    "soil-ddca": "export_soil_ddca_ts",
+    "ref-ddca-sm-201504-202512": "export_soil_ddca_ts",
     "omega-fy-output": "export_omega_fy_ts",
     "landscape-metrics-9km": "export_landscape_metrics",
     "forest-ratio": "export_forest_ratio",
     "vod-dec2025": "export_vod_ts",
-    "sm-dec2025": "export_sm_dec2025_ts",
+    "prod-fy_smap_station-sm_vod_omega-202512-fusion": "export_sm_dec2025_ts",
     "omega-dec2025": "export_omega_2025_ts",
 }
 

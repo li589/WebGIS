@@ -79,7 +79,7 @@ def main() -> int:
         "era5-dwaa-cn",
         "era5-wdaa-cn",
         "co2-cn",
-        "soil-ddca",
+        "ref-ddca-sm-201504-202512",
         "omega-fy-output",
         "forest-ratio",
     }
