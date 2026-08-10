@@ -16,6 +16,7 @@ from pathlib import Path
 from typing import Any
 
 from app.core.config import settings
+import contextlib
 
 logger = logging.getLogger(__name__)
 
@@ -218,10 +219,8 @@ def _write_file(path: Path, data: dict[str, Any], exclusive: bool = False) -> No
                 f.write(text)
         except Exception:
             # 写入失败时清理占位文件
-            try:
+            with contextlib.suppress(OSError):
                 os.unlink(path)
-            except OSError:
-                pass
             raise
     else:
         # 原子覆盖：写入同目录临时文件后 os.replace 原子替换
@@ -234,10 +233,8 @@ def _write_file(path: Path, data: dict[str, Any], exclusive: bool = False) -> No
                 f.write(text)
             os.replace(tmp_path, path)
         except Exception:
-            try:
+            with contextlib.suppress(OSError):
                 os.unlink(tmp_path)
-            except OSError:
-                pass
             raise
 
 

@@ -227,7 +227,10 @@ export function createOverlayImageModule(
   const desiredStyle = new Map<string, OverlayStyleParams>()
   const linkTimeEnabled = ref(false)
   // bounds 内存缓存：避免显示/隐藏切换时重复请求 /overlay-bounds
-  const boundsCache = new Map<string, { bounds: [number, number, number, number]; meta: any }>()
+  const boundsCache = new Map<
+    string,
+    { bounds: [number, number, number, number]; meta: Record<string, unknown> }
+  >()
   /** bounds 404 负缓存：缺资产的注册层（如 aridity-cn）不要反复打 404 */
   const boundsMissCache = new Set<string>()
 
@@ -606,7 +609,7 @@ export function createOverlayImageModule(
       }
       const rootData = (await rootResp.json()) as {
         bounds: [number, number, number, number]
-        meta?: any
+        meta?: Record<string, unknown>
       }
       const meta = rootData.meta ?? {}
       const currentTime: string | null = meta.current_time ?? meta.default_time ?? null

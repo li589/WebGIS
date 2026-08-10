@@ -41,6 +41,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 from collections.abc import Callable
+import contextlib
 
 logger = logging.getLogger(__name__)
 
@@ -280,10 +281,8 @@ def _search_via_earthaccess(
             continue
         name = url.split("/")[-1]
         size_mb: float | None = None
-        try:
+        with contextlib.suppress(Exception):
             size_mb = float(g.size())
-        except Exception:
-            pass
         granules.append(Granule(name=name, url=url, size_mb=size_mb))
 
     logger.info("earthaccess 搜索到 %d 个 granule", len(granules))

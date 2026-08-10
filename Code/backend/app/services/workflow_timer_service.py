@@ -33,6 +33,7 @@ from uuid import uuid4
 from zoneinfo import ZoneInfo
 
 from app.core.config import settings
+import contextlib
 
 logger = logging.getLogger(__name__)
 
@@ -429,10 +430,8 @@ class WorkflowTimerStore:
 
     def close(self) -> None:
         with self._lock:
-            try:
+            with contextlib.suppress(Exception):
                 self._conn.close()
-            except Exception:
-                pass
 
     def list_timers(self, *, workflow_id: str | None = None) -> list[WorkflowTimer]:
         with self._lock:
@@ -602,10 +601,8 @@ class WorkflowTimerStore:
                 )
                 self._conn.execute("COMMIT")
             except Exception:
-                try:
+                with contextlib.suppress(Exception):
                     self._conn.execute("ROLLBACK")
-                except Exception:
-                    pass
                 raise
         reclaimed = int(cur.rowcount or 0)
         if reclaimed:
@@ -646,10 +643,8 @@ class WorkflowTimerStore:
                     )
                     self._conn.execute("COMMIT")
                 except Exception:
-                    try:
+                    with contextlib.suppress(Exception):
                         self._conn.execute("ROLLBACK")
-                    except Exception:
-                        pass
                     raise
             if cur.rowcount == 1:
                 claimed.append(timer)

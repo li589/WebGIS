@@ -24,6 +24,7 @@ from app.services.overlay_registry import (
     unregister_overlay,
 )
 from app.services.raster_preview_service import raster_preview_service
+import contextlib
 
 
 def _bounds_look_like_wgs84(
@@ -58,10 +59,8 @@ def register_geotiff_as_imported(
                 f"图层已存在: {layer_id}（可改用覆盖策略 conflict_policy=overwrite）"
             )
         replace_bytes = dir_size_bytes(dest_dir)
-        try:
+        with contextlib.suppress(Exception):
             unregister_overlay(layer_id)
-        except Exception:
-            pass
         shutil.rmtree(dest_dir, ignore_errors=True)
         replaced = True
 

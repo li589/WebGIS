@@ -25,6 +25,7 @@ import ipaddress
 import logging
 import os
 import socket
+from contextlib import suppress
 from dataclasses import dataclass
 from typing import Any
 from collections.abc import Callable, Mapping
@@ -299,10 +300,8 @@ def safe_urlopen(
             if exc.code not in _REDIRECT_STATUS:
                 raise
             location = exc.headers.get("Location") if exc.headers else None
-            try:
+            with suppress(Exception):  # pragma: no cover - best-effort
                 exc.close()
-            except Exception:  # pragma: no cover - best-effort
-                pass
             if not location:
                 raise SSRFBlockedError(
                     f"重定向响应缺少 Location（status={exc.code}）"

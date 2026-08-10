@@ -22,7 +22,7 @@ API (list/describe/panel-schema/ui-schema/diagnostics).
 
 from __future__ import annotations
 
-from contextlib import contextmanager
+from contextlib import contextmanager, suppress
 from datetime import datetime
 from functools import lru_cache
 import importlib
@@ -94,10 +94,8 @@ def _python_provider_import_path(provider_root: Path) -> Iterator[None]:
         yield
     finally:
         if inserted:
-            try:
+            with suppress(ValueError):
                 sys.path.remove(provider_path)
-            except ValueError:
-                pass
 
 
 # ─── 线程局部事件转发上下文 ───────────────────────────────────────────────────

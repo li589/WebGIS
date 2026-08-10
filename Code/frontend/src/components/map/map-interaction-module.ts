@@ -42,7 +42,7 @@ interface RegisteredEventHandler {
     | 'resize'
     | 'render'
     | 'click'
-  handler: (...args: any[]) => void
+  handler: (...args: unknown[]) => void
 }
 
 export function createMapInteractionModule(
@@ -87,7 +87,7 @@ export function createMapInteractionModule(
 
   function on<T extends RegisteredEventHandler['event']>(
     event: T,
-    handler: (...args: any[]) => void,
+    handler: (...args: unknown[]) => void,
   ) {
     options.map.on(event, handler)
     registeredHandlers.push({ event, handler })

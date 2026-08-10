@@ -11,7 +11,7 @@ from __future__ import annotations
 import logging
 import sqlite3
 import threading
-from contextlib import contextmanager
+from contextlib import contextmanager, suppress
 from pathlib import Path
 from queue import Queue
 from collections.abc import Iterator
@@ -153,7 +153,5 @@ class SQLiteConnectionPool:
 
     def __del__(self) -> None:
         """析构时尝试关闭空闲连接（best-effort，避免资源泄漏）。"""
-        try:
+        with suppress(Exception):
             self.close_all(quiet=True)
-        except Exception:
-            pass

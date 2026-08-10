@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import logging
+from contextlib import suppress
 from pathlib import Path
 from typing import Any
 
@@ -118,7 +119,5 @@ class GeeCredentialsLoader:
         except Exception as e:
             return False, f"GEE credentials test failed: {e}"
         finally:
-            try:
+            with suppress(Exception):
                 ee.Reset()
-            except Exception:
-                pass

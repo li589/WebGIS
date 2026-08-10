@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import Any
 
 from app.services._sqlite_pool import SQLiteConnectionPool
+import contextlib
 
 logger = logging.getLogger(__name__)
 
@@ -104,10 +105,8 @@ class RemoteStorageCredentialsRepository:
         self._pool.close_all()
 
     def __del__(self) -> None:
-        try:
+        with contextlib.suppress(Exception):
             self._pool.close_all(quiet=True)
-        except Exception:
-            pass
 
     def _encrypt(self, plaintext: str) -> tuple[str, str]:
         if not plaintext:

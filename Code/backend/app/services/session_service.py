@@ -10,6 +10,7 @@ from typing import Any
 from app.core.config import settings
 from app.core.redis_client import cache_get_json, cache_set_json, get_redis_client
 from app.services.user_repository import get_user_repository
+import contextlib
 
 logger = logging.getLogger(__name__)
 
@@ -41,10 +42,8 @@ def _untrack_user_session(user_id: int, token: str) -> None:
     client = get_redis_client()
     if client is None:
         return
-    try:
+    with contextlib.suppress(Exception):
         client.srem(f"{_USER_SESSIONS_PREFIX}{user_id}", token)
-    except Exception:
-        pass
 
 
 def create_session(*, user_id: int, username: str, role: str) -> str:
@@ -95,10 +94,8 @@ def revoke_session(token: str | None) -> None:
 
     client = get_redis_client()
     if client is not None:
-        try:
+        with contextlib.suppress(Exception):
             client.delete(f"{_SESSION_PREFIX}{token}")
-        except Exception:
-            pass
     if user_id is not None:
         _untrack_user_session(user_id, token)
     get_user_repository().delete_session(token)

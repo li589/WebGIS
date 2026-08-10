@@ -15,6 +15,7 @@ from shared.contracts.api_contracts import (
     WorkflowEvent,
     WorkflowRunStatusResponse,
 )
+import contextlib
 
 DEFAULT_CONFIG_SNAPSHOT: dict[str, dict[str, object]] = {
     "frontend": {
@@ -580,10 +581,8 @@ class SQLiteWorkflowRepository:
         self._pool.close_all()
 
     def __del__(self) -> None:
-        try:
+        with contextlib.suppress(Exception):
             self._pool.close_all(quiet=True)
-        except Exception:
-            pass
 
     def _clone_default_config(self) -> dict[str, dict[str, object]]:
         import copy

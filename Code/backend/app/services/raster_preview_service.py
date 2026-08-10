@@ -4,6 +4,7 @@ import importlib
 import re
 from pathlib import Path
 from typing import Literal
+import contextlib
 
 NodataMode = Literal["transparent", "solid"]
 
@@ -621,7 +622,7 @@ class RasterPreviewService:
             target_crs in ("EPSG:4326", "EPSG:4490", "EPSG:4258")
             and normalize_geographic_bounds
         ):
-            try:
+            with contextlib.suppress(ValueError):
                 west, south, east, north = normalize_geographic_bounds(
                     float(west),
                     float(south),
@@ -629,8 +630,6 @@ class RasterPreviewService:
                     float(north),
                     source_span_hint=src_span_hint,
                 )
-            except ValueError:
-                pass
         return png_bytes, (float(west), float(south), float(east), float(north))
 
 

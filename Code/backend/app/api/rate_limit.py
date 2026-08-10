@@ -23,6 +23,7 @@ import logging
 import os
 import secrets
 import threading
+from contextlib import suppress
 import time
 from dataclasses import dataclass
 from datetime import datetime, timedelta, UTC
@@ -120,10 +121,8 @@ class RedisSlidingWindowRateLimiter:
         except Exception as exc:  # noqa: BLE001 — Redis 异常统一交给上层降级
             from app.core.redis_client import _mark_redis_failure
 
-            try:
+            with suppress(Exception):  # pragma: no cover - defensive
                 _mark_redis_failure(f"ratelimit:{self._name}:{exc}")
-            except Exception:  # pragma: no cover - defensive
-                pass
             raise
 
 

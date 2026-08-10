@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from contextlib import contextmanager
+from contextlib import contextmanager, suppress
 from functools import lru_cache
 import importlib
 import logging
@@ -995,10 +995,10 @@ def warm_provider_helpers() -> bool:
 
         catalog = get_layer_catalog()
         for descriptor in catalog.items:
-            try:
-                describe_layer_run_readiness(descriptor.layer_id)
-            except Exception:
-                pass  # 个别图层 readiness 失败不影响整体预热
+            with suppress(Exception):
+                describe_layer_run_readiness(
+                    descriptor.layer_id
+                )  # 个别图层 readiness 失败不影响整体预热
     except Exception:
         pass  # catalog 加载失败不影响 helpers 预热
 
@@ -1016,10 +1016,8 @@ def _python_provider_import_path(provider_root: Path) -> Iterator[None]:
         yield
     finally:
         if inserted:
-            try:
+            with suppress(ValueError):
                 sys.path.remove(provider_path)
-            except ValueError:
-                pass
 
 
 # ── Engine Request Populator 实现 ──────────────────────────────────────────

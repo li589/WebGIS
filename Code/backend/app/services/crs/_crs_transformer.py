@@ -21,6 +21,7 @@ from collections.abc import Iterable
 from . import _gcj_bd
 from .crs_registry import get_crs
 from .crs_types import CRSCategory, CoordinatePoint
+import contextlib
 
 
 class CRSTransformer:
@@ -152,10 +153,8 @@ class CRSTransformer:
             target_code in ("EPSG:4326", "EPSG:4490", "EPSG:4258")
             and normalize_geographic_bounds
         ):
-            try:
+            with contextlib.suppress(ValueError):
                 result = normalize_geographic_bounds(*result, source_span_hint=src_span)
-            except ValueError:
-                pass
         return result
 
     def transform_points_batch(

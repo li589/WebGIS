@@ -33,6 +33,7 @@ from app.data_io.services.upload_validation import (
     sniff_magic,
     validate_upload_filename,
 )
+import contextlib
 
 
 def init_upload(
@@ -68,10 +69,8 @@ def init_upload(
                     part = resume_dest / "blob.part"
                     received = int(meta.get("received") or 0)
                     if part.exists():
-                        try:
+                        with contextlib.suppress(OSError):
                             received = min(received, part.stat().st_size)
-                        except OSError:
-                            pass
                     meta["received"] = received
                     meta["content_type"] = content_type or meta.get("content_type")
                     _io_save_meta(resume_dest, meta)
@@ -121,10 +120,8 @@ def get_upload_status(upload_id: str) -> dict[str, Any]:
     received = int(meta.get("received") or 0)
     part = dest / "blob.part"
     if part.exists() and not meta.get("complete"):
-        try:
+        with contextlib.suppress(OSError):
             received = max(received, part.stat().st_size)
-        except OSError:
-            pass
     return {
         "upload_id": upload_id,
         "mode": "append",
@@ -154,10 +151,8 @@ def append_chunk(
         part = dest / "blob.part"
         current = int(meta.get("received") or 0)
         if part.exists():
-            try:
+            with contextlib.suppress(OSError):
                 current = max(current, part.stat().st_size)
-            except OSError:
-                pass
 
         if offset is not None:
             if offset > current:

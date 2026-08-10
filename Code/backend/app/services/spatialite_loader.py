@@ -24,6 +24,7 @@ import logging
 import os
 import sqlite3
 import sys
+from contextlib import suppress
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -121,10 +122,8 @@ def _ensure_dll_search(ext_dir: Path) -> None:
         os.environ["PATH"] = f"{ext_dir}{os.pathsep}{cur}"
         logger.info("Prepended SpatiaLite dep dir to PATH: %s", ext_dir)
     # 补充：add_dll_directory（不冲突，部分组合下也有帮助）
-    try:
+    with suppress(Exception):  # noqa: BLE001
         os.add_dll_directory(str(ext_dir))
-    except Exception:  # noqa: BLE001
-        pass
 
 
 def _probe() -> _ProbeResult:
@@ -242,10 +241,8 @@ def load_into(conn: sqlite3.Connection) -> bool:
                 "SpatiaLite load_extension failed (%s); spatial features disabled", e
             )
             _load_fail_warned = True
-        try:
+        with suppress(Exception):  # noqa: BLE001
             conn.enable_load_extension(False)
-        except Exception:  # noqa: BLE001
-            pass
         return False
     except Exception as e:  # noqa: BLE001
         if not _load_fail_warned:
@@ -253,10 +250,8 @@ def load_into(conn: sqlite3.Connection) -> bool:
                 "SpatiaLite load_into unexpected error: %s", e, exc_info=True
             )
             _load_fail_warned = True
-        try:
+        with suppress(Exception):  # noqa: BLE001
             conn.enable_load_extension(False)
-        except Exception:  # noqa: BLE001
-            pass
         return False
 
 
