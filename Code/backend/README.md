@@ -71,7 +71,7 @@
 - `GET /workflow-definitions/node-templates`
 - `POST /workflow-definitions/compile`：LiteGraph 画布 → Python `workflow_definition`（编辑器 Run 主路径）
 
-详见 `Code/docs/课题组数据全链路-2026-07-21.md`。
+详见 `Docs/课题组数据全链路-2026-07-21.md`。
 
 **安全（2026-07-16）**：所有 `/config/*` 写操作与 `POST /import/raster` 需 `X-API-Key`（development 且未启用 keys 时可旁路）。  
 鉴权密钥 = `backend_auth` DB 覆盖 env（`effective_config`）。非 development 必须配置 `BACKEND_GEE_CREDENTIALS_ENCRYPTION_KEY`。
@@ -215,7 +215,7 @@ backend/
 
 1. `Code/backend/README.md`
 2. `Code/shared/contracts/README.md`
-3. `Code/docs/双通道接口设计总结.md`
+3. `Docs/双通道接口设计总结.md`
 4. `Code/algorithms/providers/Python/README.md`
 5. `Code/algorithms/providers/docs/backend_integration_contract.md`
 

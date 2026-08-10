@@ -3,14 +3,21 @@ import { computed, ref } from 'vue'
 import { storeToRefs } from 'pinia'
 import { useSettingsStore } from '../../stores/settings'
 import { BRAND } from '../../ui-copy'
+import SystemStatusSettings from './SystemStatusSettings.vue'
 
 const settingsStore = useSettingsStore()
 const { aboutInfo, weatherConfig, geeRuntimeConfig, dataSourceConfig } = storeToRefs(settingsStore)
 
 const selectedNode = ref<string | null>(null)
 
+type ArchNode = {
+  name: string
+  level: number
+  children?: ArchNode[]
+}
+
 // 架构树节点
-const archTree = computed(() => [
+const archTree = computed((): ArchNode[] => [
   {
     name: BRAND.fullName,
     level: 0,
@@ -19,7 +26,7 @@ const archTree = computed(() => [
         name: '前端层',
         level: 1,
         children: [
-          { name: 'UI 组件 (Vue 3)', level: 2 },
+          { name: 'Vue 3', level: 2 },
           { name: 'Pinia Store', level: 2 },
           { name: 'MapLibre GL', level: 2 },
           { name: 'Vite 构建', level: 2 },
@@ -50,7 +57,11 @@ const archTree = computed(() => [
         children: [
           { name: '本地文件系统', level: 2 },
           { name: 'MinIO 对象存储', level: 2 },
-          { name: '远程 FileBrowser', level: 2 },
+          {
+            name: '远程存储',
+            level: 2,
+            children: [{ name: '开放数据站', level: 3 }],
+          },
         ],
       },
     ],
@@ -64,6 +75,8 @@ function selectNode(name: string) {
 
 <template>
   <div class="about-settings">
+    <SystemStatusSettings />
+
     <!-- 项目信息 -->
     <section class="settings-section">
       <h3 class="section-title">项目信息</h3>
@@ -99,7 +112,6 @@ function selectNode(name: string) {
       <h3 class="section-title">系统架构图</h3>
       <div class="arch-diagram">
         <div v-for="rootNode in archTree" :key="rootNode.name" class="arch-node-container">
-          <!-- 根节点 -->
           <div
             class="arch-node root"
             :class="{ selected: selectedNode === rootNode.name }"
@@ -108,10 +120,8 @@ function selectNode(name: string) {
             {{ rootNode.name }}
           </div>
 
-          <!-- 连接线 -->
           <div class="arch-connector"></div>
 
-          <!-- 子节点 -->
           <div class="arch-children">
             <div v-for="child in rootNode.children" :key="child.name" class="arch-branch">
               <div
@@ -123,14 +133,28 @@ function selectNode(name: string) {
               </div>
               <div class="arch-connector sub"></div>
               <div class="arch-leaves">
-                <div
-                  v-for="leaf in child.children"
-                  :key="leaf.name"
-                  class="arch-node level-2"
-                  :class="{ selected: selectedNode === leaf.name }"
-                  @click="selectNode(leaf.name)"
-                >
-                  {{ leaf.name }}
+                <div v-for="leaf in child.children" :key="leaf.name" class="arch-leaf-wrap">
+                  <div
+                    class="arch-node level-2"
+                    :class="{ selected: selectedNode === leaf.name }"
+                    @click="selectNode(leaf.name)"
+                  >
+                    {{ leaf.name }}
+                  </div>
+                  <template v-if="leaf.children?.length">
+                    <div class="arch-connector nested"></div>
+                    <div class="arch-nested">
+                      <div
+                        v-for="nested in leaf.children"
+                        :key="nested.name"
+                        class="arch-node level-3"
+                        :class="{ selected: selectedNode === nested.name }"
+                        @click="selectNode(nested.name)"
+                      >
+                        {{ nested.name }}
+                      </div>
+                    </div>
+                  </template>
                 </div>
               </div>
             </div>
@@ -295,6 +319,13 @@ function selectNode(name: string) {
   color: #8aa8bf;
 }
 
+.arch-node.level-3 {
+  background: rgba(4, 12, 23, 0.45);
+  border: 1px dashed rgba(136, 192, 255, 0.14);
+  color: #7a96ad;
+  font-size: 0.54rem;
+}
+
 .arch-node:hover {
   transform: translateY(-1px);
   box-shadow: 0 4px 12px rgba(10, 132, 255, 0.18);
@@ -315,6 +346,10 @@ function selectNode(name: string) {
   height: 0.52rem;
 }
 
+.arch-connector.nested {
+  height: 0.36rem;
+}
+
 .arch-children {
   display: flex;
   gap: 0.82rem;
@@ -332,6 +367,19 @@ function selectNode(name: string) {
   display: flex;
   flex-direction: column;
   gap: 0.22rem;
+  align-items: center;
+}
+
+.arch-leaf-wrap {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.arch-nested {
+  display: flex;
+  flex-direction: column;
+  gap: 0.16rem;
   align-items: center;
 }
 

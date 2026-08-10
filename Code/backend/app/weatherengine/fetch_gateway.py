@@ -15,7 +15,7 @@ from app.core.config import settings
 from app.weatherengine.default_model import weather_default_model
 from app.services.effective_config import get_weather_cache_ttl_seconds
 from app.weatherengine.constants import WEATHER_LAYER_SPECS, WeatherLayerSpec
-from app.weatherengine.provider_base import ProviderType, WeatherProvider
+from app.weatherengine.provider_base import WeatherProvider
 from app.weatherengine.provider_ids import normalize_provider_id, provider_grid_mode
 from app.weatherengine.provider_registry import get_registry
 from shared.contracts.api_contracts import BoundingBox
@@ -226,13 +226,6 @@ def fetch_point_forecast(
         return payload, cache_status, fallback.provider_id
 
 
-def _is_sparse_grid_provider(provider: WeatherProvider) -> bool:
-    """商业点采样源不适合地图瓦片网格（点数极少，视觉上像「只加载了一部分」）。"""
-    ptype = provider.provider_type
-    ptype_str = ptype.value if hasattr(ptype, "value") else str(ptype)
-    return ptype_str == ProviderType.COMMERCIAL_API
-
-
 def fetch_grid_forecast(
     *,
     layer_id: str,
@@ -245,10 +238,9 @@ def fetch_grid_forecast(
 ) -> tuple[dict[str, Any], str, str]:
     """Fetch grid forecast via registry.
 
-    Map tiles need dense grids. Commercial providers (WeatherAPI / OpenWeather)
-    only sample a handful of points per tile — so for grid/tile paths we prefer
-    free dense sources (Open-Meteo) even when the UI has pinned a commercial
-    provider. Point forecasts still honor the pin.
+    Honors an explicit provider pin (including commercial sparse grids) so
+    layer 选源 matches both point query and map tiles. Auto/unpinned paths
+    still pick the highest-priority enabled provider for the layer.
 
     Returns:
         (grid_data, cache_status, provider_id)
@@ -258,28 +250,6 @@ def fetch_grid_forecast(
         provider_id and str(provider_id).strip().lower() not in {"", "auto", "default"}
     )
     provider = resolve_provider_for_layer(layer_id, provider_id=provider_id)
-
-    # 瓦片网格：商业源钉选时改走 registry 优先级中的密集源
-    if pinned and _is_sparse_grid_provider(provider):
-        try:
-            dense = resolve_provider_for_layer(
-                layer_id, exclude=(provider.provider_id,)
-            )
-            if not _is_sparse_grid_provider(dense):
-                logger.info(
-                    "Grid tile prefers dense provider=%s over pinned commercial=%s for layer=%s",
-                    dense.provider_id,
-                    provider.provider_id,
-                    layer_id,
-                )
-                provider = dense
-                pinned = False
-        except WeatherProviderUnavailableError:
-            logger.warning(
-                "Pinned commercial provider=%s for grid layer=%s; no dense fallback available",
-                provider.provider_id,
-                layer_id,
-            )
 
     resolved_model = model or spec.preferred_model or weather_default_model()
     resolved_ttl = (

@@ -1023,7 +1023,7 @@ defineExpose({
   height: 100%;
   background: rgba(6, 13, 24, 0.98);
   /* 局部抬高 rem 基准（全局 :root 仍为 15px），改善导师反馈的「字太小」 */
-  font-size: 18px;
+  font-size: 19px;
 }
 
 /* ── 顶部工具栏 ──────────────────────────────────────────────────── */
@@ -1601,7 +1601,7 @@ defineExpose({
   border: none;
   background: transparent;
   color: #8aa2bd;
-  font-size: 18px;
+  font-size: 19px;
   line-height: 1;
   cursor: pointer;
 }

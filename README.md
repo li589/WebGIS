@@ -69,7 +69,7 @@ Code/
 - `2D`（当前主路径）：MapLibre 底图、行政区边界、天气图层瓦片、风场 Canvas（粒子/风羽/等值线）
 - `3D`：Cesium / vue-cesium 已打包依赖，真实地球模式尚未作为默认主链启用
 - 统一交互：图层侧栏、时间轴、工具栏导入、截图导出、工作流状态面板、信息面板
-- 工作流编辑器：LiteGraph 画布可编译执行；支持课题组数据下载 / 解压 / 配置读取 / 变量提取节点（见 `Code/docs/课题组数据全链路-2026-07-21.md`）
+- 工作流编辑器：LiteGraph 画布可编译执行；支持课题组数据下载 / 解压 / 配置读取 / 变量提取节点（见 `Docs/课题组数据全链路-2026-07-21.md`）
 
 ### 后端与计算
 
@@ -122,7 +122,7 @@ Code/
 - `Code/backend/README.md`：后端工作流与运行说明
 - `Code/shared/contracts/README.md`：共享协议说明
 - `Code/algorithms/providers/Python/README.md`：Python 算法包说明
-- `Code/docs/双通道接口设计总结.md`：控制流 / 数据流双通道设计
+- `Docs/双通道接口设计总结.md`：控制流 / 数据流双通道设计
 - `.ai/docs/specs/技术栈.md`：目标架构与落地状态对照
 - `.ai/docs/specs/规范文档.md`：字段与接口命名约定
 - `.ai/README.md`：AI 工作区导航（规则/技能/计划/进度/记忆/文档）

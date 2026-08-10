@@ -485,9 +485,8 @@ export function createRunLayersSlice(deps: RunLayersSliceDeps) {
       })
       const displayName =
         matchingOutput?.name ||
-        (tag === 'OMEGA'
-          ? productTagLabel(tag)
-          : item.title.replace(/^Algorithm Map Layer:\s*/i, '')) ||
+        (tag ? productTagLabel(tag) : '') ||
+        item.title.replace(/^Algorithm Map Layer:\s*/i, '') ||
         item.productTag ||
         item.overlayLayerId
 

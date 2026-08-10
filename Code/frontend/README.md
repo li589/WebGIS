@@ -215,7 +215,7 @@
 1. `Code/frontend/README.md`
 2. `Code/shared/contracts/README.md`
 3. `Code/backend/README.md`
-4. `Code/docs/双通道接口设计总结.md`
+4. `Docs/双通道接口设计总结.md`
 
 ## 说明
 

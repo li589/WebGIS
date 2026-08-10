@@ -86,7 +86,8 @@ describe("map-stage-view-model", () => {
         mapVisible: true,
         skeletonVisible: false,
         isGlobalViewport: true,
-        hasAddedLayers: true,
+        hasVisibleDataLayers: true,
+        distributionChromeEnabled: true,
       }),
     ).toEqual({
       usesLightNavigationTheme: true,
@@ -97,6 +98,7 @@ describe("map-stage-view-model", () => {
         "map-stage-dark": false,
         "map-stage-global-view": true,
         "map-stage-distribution": true,
+        "map-stage-chrome-off": false,
         "map-stage-partial": true,
       },
       stageStyleVars: {
@@ -131,9 +133,43 @@ describe("map-stage-view-model", () => {
       mapVisible: true,
       skeletonVisible: false,
       isGlobalViewport: true,
-      hasAddedLayers: false,
+      hasVisibleDataLayers: false,
     });
     expect(model.stageClassNames["map-stage-global-view"]).toBe(true);
+    expect(model.stageClassNames["map-stage-distribution"]).toBe(false);
+    expect(model.stageClassNames["map-stage-chrome-off"]).toBe(true);
+  });
+
+  it("turns off atmosphere chrome at non-global zoom when no visible data layers", () => {
+    const model = buildMapStageAppearanceModel({
+      basemapStyle: "street",
+      activeLayer: buildFallbackActiveLayerDisplay(),
+      timeVisualState: buildMapStageTimeVisualState(8),
+      isMapInteracting: false,
+      isSourceTransitioning: false,
+      mapVisible: true,
+      skeletonVisible: false,
+      isGlobalViewport: false,
+      hasVisibleDataLayers: false,
+    });
+    expect(model.stageClassNames["map-stage-chrome-off"]).toBe(true);
+    expect(model.stageClassNames["map-stage-distribution"]).toBe(false);
+  });
+
+  it("respects distributionChromeEnabled=false even with visible layers", () => {
+    const model = buildMapStageAppearanceModel({
+      basemapStyle: "street",
+      activeLayer: buildFallbackActiveLayerDisplay(),
+      timeVisualState: buildMapStageTimeVisualState(8),
+      isMapInteracting: false,
+      isSourceTransitioning: false,
+      mapVisible: true,
+      skeletonVisible: false,
+      isGlobalViewport: true,
+      hasVisibleDataLayers: true,
+      distributionChromeEnabled: false,
+    });
+    expect(model.stageClassNames["map-stage-chrome-off"]).toBe(true);
     expect(model.stageClassNames["map-stage-distribution"]).toBe(false);
   });
 

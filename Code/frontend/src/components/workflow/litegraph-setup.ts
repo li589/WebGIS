@@ -27,6 +27,7 @@ import type {
   WorkflowDefinitionNode,
   WorkflowDefinitionLink,
 } from '../../services/workflow-definition-api'
+import { paramDisplayLabel, portDisplayLabel } from './display-labels'
 
 // 运行时获取：优先从命名导出获取，回退到 window/globalThis
 const _globalThis = globalThis as unknown as Record<string, unknown>
@@ -240,7 +241,9 @@ export function registerWorkflowNodeTypes(
           if (slot) {
             const slotAny = slotRecord(slot)
             slotAny.color = getPortColor(input.type)
-            // 详细说明挂在 _help，供悬停提示框读取；不要写进 label（会挤占节点宽度）
+            // 显示中文短标签；序列化/连线仍用英文 name
+            slotAny.label = portDisplayLabel(input.name, input.description)
+            // 详细说明挂在 _help，供悬停提示框读取
             if (input.description) slotAny._help = input.description
             if (input.required === false) slotAny._optional = true
           }
@@ -252,6 +255,7 @@ export function registerWorkflowNodeTypes(
           if (slot) {
             const slotAny = slotRecord(slot)
             slotAny.color = getPortColor(output.type)
+            slotAny.label = portDisplayLabel(output.name, output.description)
             if (output.description) slotAny._help = output.description
           }
         }
@@ -276,6 +280,11 @@ export function registerWorkflowNodeTypes(
               param.key,
               options,
             )
+            const widgets = (this as LGraphNodeRuntime).widgets
+            const last = widgets?.[widgets.length - 1] as { label?: string } | undefined
+            if (last) {
+              last.label = paramDisplayLabel(param.key, param.description)
+            }
             // LiteGraph 的 addWidget 不会初始化 this.properties[key]，
             // 只把默认值存在 widget.value 中。必须显式写入 properties，
             // 否则 WorkflowInspector 读取 node.properties 时为空对象，
@@ -288,8 +297,8 @@ export function registerWorkflowNodeTypes(
 
         const slotCount = Math.max(allInputs.length, tpl.outputs.length)
         const widgetCount = tpl.params?.length ?? 0
-        const minHeight = 36 + slotCount * 20 + widgetCount * 18
-        this.size = [220, Math.max(72, minHeight)]
+        const minHeight = 40 + slotCount * 22 + widgetCount * 20
+        this.size = [232, Math.max(80, minHeight)]
       }
 
       onConnectInput(
@@ -513,6 +522,7 @@ export function syncGraphSlotsWithTemplates(
       if (slot) {
         const slotAny = slotRecord(slot)
         slotAny.color = getPortColor(input.type)
+        slotAny.label = portDisplayLabel(input.name, input.description)
         if (input.description) slotAny._help = input.description
         if (input.required === false) slotAny._optional = true
       }
@@ -526,6 +536,7 @@ export function syncGraphSlotsWithTemplates(
       if (slot) {
         const slotAny = slotRecord(slot)
         slotAny.color = getPortColor(output.type)
+        slotAny.label = portDisplayLabel(output.name, output.description)
         if (output.description) slotAny._help = output.description
       }
       existingOut.add(output.name)
@@ -534,9 +545,9 @@ export function syncGraphSlotsWithTemplates(
     const slotCount = Math.max(node.inputs?.length ?? 0, node.outputs?.length ?? 0)
     const widgetCount = (node as LGraphNodeRuntime).widgets?.length ?? 0
     const minHeight = 40 + slotCount * 22 + widgetCount * 20
-    const curW = node.size?.[0] ?? 240
+    const curW = node.size?.[0] ?? 232
     const curH = node.size?.[1] ?? 80
-    node.size = [Math.max(curW, 240), Math.max(curH, minHeight)]
+    node.size = [Math.max(curW, 232), Math.max(curH, minHeight)]
   }
 }
 

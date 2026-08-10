@@ -4,10 +4,22 @@ import { storeToRefs } from 'pinia'
 import { useSettingsStore } from '../../stores/settings'
 import { useWeatherTileManager } from '../../stores/weather-tile-manager'
 import type { RuntimeConfigPatch } from '../../services/settings-api'
+import {
+  isMapDistributionChromeEnabled,
+  setMapDistributionChromeEnabled,
+} from '../../services/settings-local'
 
 const settingsStore = useSettingsStore()
 const weatherTileManager = useWeatherTileManager()
 const { generalConfig } = storeToRefs(settingsStore)
+
+const mapDistributionChrome = ref(isMapDistributionChromeEnabled())
+
+function onMapDistributionChromeChange(event: Event) {
+  const checked = (event.target as HTMLInputElement).checked
+  mapDistributionChrome.value = checked
+  setMapDistributionChromeEnabled(checked)
+}
 
 // ── 只读系统信息 ──────────────────────────────────────────────────────────
 const readonlyItems = computed(() => {
@@ -403,6 +415,23 @@ const restartParams = computed(() => {
 
 <template>
   <div class="general-settings">
+    <!-- 地图显示 -->
+    <section class="settings-section">
+      <h3 class="section-title">地图显示</h3>
+      <p class="section-hint">
+        控制底图上方的分布淡底 /
+        氛围遮罩。无可见数据图层时始终关闭；有图层且缩放到近全球时可呈现数据分布观感。
+      </p>
+      <label class="toggle-row">
+        <input
+          type="checkbox"
+          :checked="mapDistributionChrome"
+          @change="onMapDistributionChromeChange"
+        />
+        <span>地图分布淡底 / 氛围遮罩</span>
+      </label>
+    </section>
+
     <!-- 系统信息 -->
     <section class="settings-section">
       <h3 class="section-title">系统信息</h3>
@@ -508,6 +537,21 @@ const restartParams = computed(() => {
   font-size: 0.7rem;
   font-weight: 600;
   letter-spacing: 0.02em;
+}
+.toggle-row {
+  display: flex;
+  align-items: center;
+  gap: 0.48rem;
+  padding: 0.42rem 0.56rem;
+  border-radius: 0.4rem;
+  background: rgba(4, 12, 23, 0.5);
+  border: 1px solid rgba(136, 192, 255, 0.08);
+  color: #d8e6f5;
+  font-size: 0.62rem;
+  cursor: pointer;
+}
+.toggle-row input {
+  accent-color: #5ad5ff;
 }
 .info-grid {
   display: flex;

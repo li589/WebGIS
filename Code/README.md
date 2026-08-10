@@ -106,7 +106,7 @@ Code/
 3. `Code/backend/README.md`
 4. `Code/frontend/README.md`
 5. `Code/shared/contracts/README.md`
-6. `Code/docs/双通道接口设计总结.md`
+6. `Docs/双通道接口设计总结.md`
 7. `Code/algorithms/providers/Python/README.md`
 8. `Code/algorithms/providers/docs/detailed_design.md`
-9. `Code/docs/课题组数据全链路-2026-07-21.md`（画布编译 + 数据获取节点）
+9. `Docs/课题组数据全链路-2026-07-21.md`（画布编译 + 数据获取节点）
