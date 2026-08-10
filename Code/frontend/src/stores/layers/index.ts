@@ -2,7 +2,6 @@ import { computed, ref, watch } from 'vue'
 import { defineStore } from 'pinia'
 
 import { useWeatherTileManager } from '../weather-tile-manager'
-import { useWeatherSourcePrefsStore } from '../weather-source-prefs'
 import { debugLog as probeDebugLog } from '../../utils/perf-probe'
 import { LAYER_CATEGORIES } from './catalog'
 import { createActiveLayersSlice } from './active-layers'
@@ -14,6 +13,7 @@ import { createWorkflowPoller } from './workflow-poller'
 import { createWorkflowRunner, saveTrackedWorkflowRuns } from './workflow-runner'
 import { buildJobLayer } from './result-adapter'
 import { createWorkspaceHydrateSlice } from './workspace-hydrate'
+import { createWeatherReconcileSlice, type WeatherReconcileSlice } from './weather-reconcile'
 import { isRunDismissed } from './workspace-persist'
 import type { JobLayerItem } from './types'
 
@@ -25,17 +25,6 @@ function debugLog(module: string, ...args: unknown[]) {
 
 export const useLayersStore = defineStore('layers', () => {
   const weatherTileManager = useWeatherTileManager()
-  const weatherSourcePrefs = useWeatherSourcePrefsStore()
-
-  /** Resolve tile manager provider arg (always explicit: auto | provider_id). */
-  function weatherProviderArg(catalogId: string): string {
-    return weatherSourcePrefs.getProvider(catalogId) || 'auto'
-  }
-
-  /** Query param for APIs; undefined when auto so backend uses registry priority. */
-  function weatherProviderQuery(catalogId: string): string | undefined {
-    return weatherSourcePrefs.getProviderQuery(catalogId)
-  }
 
   // ── Current hour (用于工作流提交与时间轴状态展示) ─────────────────────────────
   const currentHour = ref(12)
@@ -51,10 +40,12 @@ export const useLayersStore = defineStore('layers', () => {
     return Boolean(jobId && String(jobId).startsWith('local-submit-'))
   }
 
-  // Late-bound deps (poller / runner / viewport / persist / catalog)
+  // Late-bound deps (poller / runner / viewport / persist / catalog / weather reconcile)
   // catalog is assigned after active/run slices; deps close over the binding.
   // eslint-disable-next-line prefer-const -- late-bound across slice init order
   let catalog!: CatalogRuntimeSlice
+  // eslint-disable-next-line prefer-const -- late-bound across slice init order
+  let weatherReconcile!: WeatherReconcileSlice
   let scheduleWorkspacePersist = () => {}
   let flushWorkspacePersistNow = () => {}
   let stopWorkflowPollingFn: (jobId: string) => void = () => {}
@@ -78,7 +69,7 @@ export const useLayersStore = defineStore('layers', () => {
     getJobLayers: () => jobLayers.value,
     isWeatherEngineLayer: (catalogId) => catalog.isWeatherEngineLayer(catalogId),
     supportsParticleFlow: (catalogId) => catalog.supportsParticleFlow(catalogId),
-    weatherProviderArg,
+    weatherProviderArg: (catalogId) => weatherReconcile.weatherProviderArg(catalogId),
     getMapCenter: () => getMapCenter(),
     getMapZoom: () => getMapZoom(),
     getMapBBox: () => getMapBBox(),
@@ -184,7 +175,7 @@ export const useLayersStore = defineStore('layers', () => {
     getActiveLayers: () => activeLayers.value,
     getRunLayerGroups: () => runLayerGroups.value,
     getJobLayers: () => jobLayers.value,
-    onCatalogLoaded: () => reconcileActiveWeatherLayers(),
+    onCatalogLoaded: () => weatherReconcile.reconcileActiveWeatherLayers(),
   })
   const {
     runtimeLayerCatalog,
@@ -212,7 +203,7 @@ export const useLayersStore = defineStore('layers', () => {
     isWeatherEngineLayer: (catalogId) => isWeatherEngineLayer(catalogId),
     supportsViewportDrivenRefresh: (catalogId) => supportsViewportDrivenRefresh(catalogId),
     getCurrentHour: () => currentHour.value,
-    weatherProviderArg,
+    weatherProviderArg: (catalogId) => weatherReconcile.weatherProviderArg(catalogId),
     setWeatherTileViewport: (catalogId, center, zoom, hour, model, bbox, provider) => {
       weatherTileManager.setViewport(catalogId, center, zoom, hour, model, bbox, provider)
     },
@@ -245,7 +236,7 @@ export const useLayersStore = defineStore('layers', () => {
   const pointWeatherSlice = createPointWeatherSlice({
     getCurrentHour: () => currentHour.value,
     isWeatherEngineLayer: (catalogId) => isWeatherEngineLayer(catalogId),
-    weatherProviderQuery: (catalogId) => weatherProviderQuery(catalogId),
+    weatherProviderQuery: (catalogId) => weatherReconcile.weatherProviderQuery(catalogId),
   })
   const {
     pointWeather,
@@ -255,6 +246,24 @@ export const useLayersStore = defineStore('layers', () => {
     clearPointWeather,
     fetchPointWeather,
   } = pointWeatherSlice
+
+  // 天气瓦片 reconcile / provider：见 weather-reconcile.ts
+  weatherReconcile = createWeatherReconcileSlice({
+    getActiveLayers: () => activeLayers.value,
+    isLocalImport,
+    isWeatherEngineLayer: (catalogId) => isWeatherEngineLayer(catalogId),
+    supportsParticleFlow: (catalogId) => supportsParticleFlow(catalogId),
+    enableParticleIfUnset: (catalogId) => enableParticleIfUnset(catalogId),
+    getMapCenter: () => currentMapCenter.value,
+    getMapZoom: () => currentMapZoom.value,
+    getMapBBox: () => currentMapBBox.value,
+    getCurrentHour: () => currentHour.value,
+    getLastPointWeatherQuery: () => lastPointWeatherQuery.value,
+    fetchPointWeather: (lng, lat, catalogId) => fetchPointWeather(lng, lat, catalogId),
+    clearPointWeather,
+    hasPointWeather: () => Boolean(pointWeather.value),
+  })
+  const { applyWeatherProviderPreference, activateWeatherTileViewport } = weatherReconcile
 
   // 工作流轮询（事件增量 + 快照同步）：见 workflow-poller.ts
   const workflowPoller = createWorkflowPoller({
@@ -305,7 +314,7 @@ export const useLayersStore = defineStore('layers', () => {
     genInstanceId,
     isLocalImport,
     isWeatherEngineLayer: (catalogId) => isWeatherEngineLayer(catalogId),
-    weatherProviderArg,
+    weatherProviderArg: (catalogId) => weatherReconcile.weatherProviderArg(catalogId),
     getMapCenter: () => getMapCenter(),
     getMapZoom: () => getMapZoom(),
     getMapBBox: () => getMapBBox(),
@@ -318,58 +327,6 @@ export const useLayersStore = defineStore('layers', () => {
   const { hydrateWorkspaceFromSnapshot, hydrateVectorLayersFromSnapshot } = workspaceHydrate
 
   // isWeatherEngineLayer / supports* / getLayerPrimaryMetric：见 catalog-runtime.ts
-
-  function reconcileActiveWeatherLayers() {
-    const cc = currentMapCenter.value
-    const cz = currentMapZoom.value
-    const ch = currentHour.value
-    const cb = currentMapBBox.value
-
-    for (const layer of activeLayers.value) {
-      if (layer.isAdminBoundary || isLocalImport(layer)) continue
-      if (layer.visible && isWeatherEngineLayer(layer.catalogId)) {
-        weatherTileManager.setLayerActive(layer.catalogId, true)
-        weatherTileManager.setViewport(
-          layer.catalogId,
-          cc,
-          cz,
-          ch,
-          undefined,
-          cb,
-          weatherProviderArg(layer.catalogId),
-        )
-        if (supportsParticleFlow(layer.catalogId)) {
-          enableParticleIfUnset(layer.catalogId)
-        }
-      } else if (!isWeatherEngineLayer(layer.catalogId)) {
-        weatherTileManager.clearLayer(layer.catalogId)
-      }
-    }
-  }
-
-  /** After user changes per-layer weather provider preference, refresh tiles + point query. */
-  function applyWeatherProviderPreference(catalogId: string, providerId: string) {
-    weatherSourcePrefs.setProvider(catalogId, providerId === 'auto' ? 'auto' : providerId)
-    const layer = activeLayers.value.find((item) => item.catalogId === catalogId && item.visible)
-    if (layer && isWeatherEngineLayer(catalogId)) {
-      weatherTileManager.setViewport(
-        catalogId,
-        currentMapCenter.value,
-        currentMapZoom.value,
-        currentHour.value,
-        undefined,
-        currentMapBBox.value,
-        weatherProviderArg(catalogId),
-      )
-    }
-    const last = lastPointWeatherQuery.value
-    if (last && last.catalogId === catalogId) {
-      void fetchPointWeather(last.lng, last.lat, catalogId)
-    } else if (pointWeather.value) {
-      // Provider changed but no remembered click — clear stale point card.
-      clearPointWeather()
-    }
-  }
 
   /** 刷新所有活跃的地图型工作流图层（视口变化时调用），天气图层由 tile manager 处理，不在此处刷新 */
   async function refreshActiveWeatherWorkflows(expectedViewportEpoch?: number) {
@@ -479,18 +436,7 @@ export const useLayersStore = defineStore('layers', () => {
         algorithmRequest,
         weatherRequest,
       ),
-    activateWeatherTileViewport: (catalogId) => {
-      weatherTileManager.setLayerActive(catalogId, true)
-      weatherTileManager.setViewport(
-        catalogId,
-        currentMapCenter.value,
-        currentMapZoom.value,
-        currentHour.value,
-        undefined,
-        currentMapBBox.value,
-        weatherProviderArg(catalogId),
-      )
-    },
+    activateWeatherTileViewport: (catalogId) => activateWeatherTileViewport(catalogId),
     // ── 快照恢复 ──
     hydrateWorkspaceFromSnapshot: () => hydrateWorkspaceFromSnapshot(),
     hydrateVectorLayersFromSnapshot: (instanceIdMap) =>
