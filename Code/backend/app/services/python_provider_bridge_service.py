@@ -53,34 +53,8 @@ logger = logging.getLogger(__name__)
 
 # 已在节点模板中注册但尚未实现算法的模块。
 # 这些模块的 workflow 提交后会返回 pending_implementation 状态，而非调用 provider。
-_PENDING_IMPLEMENTATION_MODULES = frozenset(
-    {
-        "preprocess_reproject",
-        "preprocess_resample",
-        # preprocess_format_convert implemented as format_convert (alias)
-        "preprocess_clip",
-        "preprocess_mask",
-        "stats_spatial_mean",
-        "stats_temporal_trend",
-        "stats_anomaly_detect",
-        "stats_correlation",
-        # stats_histogram implemented (modules/stats_histogram.py)
-        "fusion_spatial_interpolate",
-        "fusion_multi_source_merge",
-        # viz_chart_generate implemented (modules/viz_chart_generate.py)
-        "viz_report_export",
-        "viz_statistics_summary",
-        "gis_buffer_analysis",
-        "gis_zonal_statistics",
-        "gis_raster_calculator",
-        "gis_vector_to_raster",
-        "gis_raster_to_vector",
-        "gis_reclassify",
-        "gis_contour",
-        "gis_slope_aspect",
-        "gis_watershed",
-    }
-)
+# 2026-08 stub 完善：预处理 / 统计 / 融合 / 可视化 / GIS 基础已落地，集合清空。
+_PENDING_IMPLEMENTATION_MODULES: frozenset[str] = frozenset()
 
 
 @contextmanager
@@ -373,7 +347,33 @@ class PythonProviderBridgeService:
         # 前端可解析的 node_progress 事件。
         _set_event_context(event_factory, run_id)
         try:
-            response = service.submit_job(request_payload)
+            from app.services.bridge_protocol import BridgeExecutionError
+            from app.services.failure_classifier import FailureClassifier
+            from shared.contracts.api_contracts import FailureCategory
+
+            try:
+                response = service.submit_job(request_payload)
+            except BridgeExecutionError:
+                raise
+            except Exception as exc:
+                # Stub/GIS 校验与 IO 异常 → FailureCategory，供 lifecycle 决定是否重试
+                category = FailureClassifier.classify(exc)
+                details: dict[str, object] = {
+                    "exception_type": type(exc).__name__,
+                    "module_name": module_name,
+                }
+                if category == FailureCategory.terminal_failure and isinstance(
+                    exc, (MemoryError, OSError)
+                ):
+                    details["hint"] = (
+                        "Reduce resolution, clip extent, or free disk/memory"
+                    )
+                raise BridgeExecutionError(
+                    category=category,
+                    message=str(exc) or type(exc).__name__,
+                    cause=exc,
+                    details=details,
+                ) from exc
         finally:
             _clear_event_context()
         response_body = dict(response.body)

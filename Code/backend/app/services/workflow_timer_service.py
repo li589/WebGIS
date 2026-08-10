@@ -347,6 +347,13 @@ def _build_submit_payload(
     ):
         if key in overrides:
             setattr(payload, key, resolve_date_templates(overrides[key]))
+
+    # Inject seed _meta.resource_profile / heavy-module bump unless override set it
+    from app.services.resource_profile_resolver import apply_resource_profile_to_payload
+
+    apply_resource_profile_to_payload(
+        payload, meta=meta if isinstance(meta, dict) else {}, definition=definition
+    )
     return payload
 
 

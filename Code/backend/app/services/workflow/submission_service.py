@@ -146,6 +146,12 @@ class WorkflowSubmissionService:
         self, payload: WorkflowSubmitRequest
     ) -> WorkflowAcceptedResponse:
         payload = normalize_workflow_submit_request(payload)
+        from app.services.resource_profile_resolver import (
+            apply_resource_profile_to_payload,
+        )
+
+        # Upgrade standard → heavy when seed meta or heavy modules are present
+        apply_resource_profile_to_payload(payload)
         now = datetime.now(UTC)
         run_id = f"run-{uuid4().hex[:12]}"
         status_url = self._transitions.workflow_status_url(run_id)
