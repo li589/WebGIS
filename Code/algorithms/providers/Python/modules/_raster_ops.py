@@ -145,8 +145,13 @@ def resolve_raster_path(
         if params.get(key):
             candidates.append(str(params[key]))
 
-    # Upstream manifest artifact
-    for mkey in ("manifest", "raster", "data"):
+    # Upstream manifest artifact (port may be named dem/primary/… not only raster)
+    artifact_keys = list(
+        dict.fromkeys(
+            [*keys, "manifest", "raster", "data", "dem", "primary", "secondary"]
+        )
+    )
+    for mkey in artifact_keys:
         art = inputs.get(mkey)
         if art is None:
             continue

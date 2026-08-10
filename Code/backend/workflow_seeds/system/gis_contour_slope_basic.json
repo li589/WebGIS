@@ -1,0 +1,52 @@
+{
+  "_meta": {
+    "kind": "system",
+    "engine": "python_provider",
+    "name": "GIS contour + slope/aspect",
+    "description": "DEM smoke GeoTIFF → gis/slope_aspect → gis/contour. DEM at {DATA_ROOT}/_runtime/smoke_dem.tif.",
+    "author": "system",
+    "readonly": true,
+    "is_template": true,
+    "linked_layer_id": null,
+    "tags": ["analysis", "gis", "dem", "stub_v1", "sample"],
+    "category": "analysis",
+    "resource_profile": "standard"
+  },
+  "workflow_id": "gis_contour_slope_basic",
+  "name": "GIS contour + slope/aspect",
+  "description": "Slope from smoke DEM then extract contours",
+  "nodes": [
+    {
+      "id": 1,
+      "type": "data/source",
+      "pos": [60, 160],
+      "properties": {
+        "path": "{DATA_ROOT}/_runtime/smoke_dem.tif",
+        "dataset_key": "dem_path"
+      }
+    },
+    {
+      "id": 2,
+      "type": "gis/slope_aspect",
+      "pos": [360, 160],
+      "properties": {
+        "z_unit": "meters",
+        "algorithm": "horn"
+      }
+    },
+    {
+      "id": 3,
+      "type": "gis/contour",
+      "pos": [660, 160],
+      "properties": {
+        "interval": 5,
+        "band": 0,
+        "smoothing": true
+      }
+    }
+  ],
+  "links": [
+    [1, 1, 2, 2, 1],
+    [2, 2, 0, 3, 1]
+  ]
+}

@@ -25,6 +25,11 @@ _STUB_V1_SEEDS = (
     "gis_buffer_zonal_basic",
     "stats_mean_summary_report_basic",
     "fusion_idw_interpolate_basic",
+    "preprocess_mask_resample_basic",
+    "gis_vector_raster_roundtrip_basic",
+    "gis_contour_slope_basic",
+    "stats_trend_anomaly_basic",
+    "fusion_multi_source_merge_basic",
 )
 
 

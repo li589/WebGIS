@@ -66,6 +66,13 @@ BATCH_G = [
     "stats_mean_summary_report_basic",
     "fusion_idw_interpolate_basic",
 ]
+BATCH_H = [
+    "preprocess_mask_resample_basic",
+    "gis_vector_raster_roundtrip_basic",
+    "gis_contour_slope_basic",
+    "stats_trend_anomaly_basic",
+    "fusion_multi_source_merge_basic",
+]
 
 TERMINAL = {"succeeded", "failed", "cancelled", "canceled"}
 
@@ -644,7 +651,7 @@ def build_payload(
         payload["command_type"] = "custom"
     elif engine in ("python_provider", "common"):
         # Do NOT set layer_id: linked_layer_id often points at a different module
-        # (e.g. omega_block seed → omega-avg-daily) and trip submit-time 422.
+        # (e.g. omega_block seed → method-smap-omega-doy-avg) and trip submit-time 422.
         ds = overrides.get("datasource_selection")
         if not isinstance(ds, dict):
             ds = extract_datasource_selection(defn)
@@ -949,41 +956,79 @@ def ensure_analysis_fixtures() -> dict[str, Path]:
 
 
 def ensure_stub_v1_fixtures() -> dict[str, Path]:
-    """Create GeoTIFF + GeoJSON fixtures for stub_v1 Batch G seeds."""
+    """Create GeoTIFF + GeoJSON + timeseries fixtures for stub_v1 Batch G/H seeds."""
     runtime = DATA_ROOT / "_runtime"
     runtime.mkdir(parents=True, exist_ok=True)
     stub_tif = runtime / "smoke_stub.tif"
+    stub_b_tif = runtime / "smoke_stub_b.tif"
+    dem_tif = runtime / "smoke_dem.tif"
     points_gj = runtime / "smoke_points.geojson"
     zones_gj = runtime / "smoke_zones.geojson"
+    timeseries_json = runtime / "smoke_timeseries.json"
     out: dict[str, Path] = {}
 
-    if not stub_tif.is_file():
-        try:
-            import numpy as np
-            import rasterio
-            from rasterio.transform import from_origin
-        except Exception as exc:  # noqa: BLE001
-            _log(f"stub_v1 fixture GeoTIFF skipped: {exc}")
-        else:
-            data = np.full((20, 20), 5.0, dtype=np.float64)
-            data[0, 0] = np.nan
-            # Covers clip/zonal window 100–102E / 28–30N
-            transform = from_origin(100.0, 30.0, 0.1, 0.1)
-            with rasterio.open(
-                stub_tif,
-                "w",
-                driver="GTiff",
-                height=20,
-                width=20,
-                count=1,
-                dtype="float64",
-                crs="EPSG:4326",
-                transform=transform,
-                nodata=np.nan,
-            ) as dst:
-                dst.write(data, 1)
-    if stub_tif.is_file():
-        out["stub_tif"] = stub_tif
+    def _write_geotiff(path: Path, data, *, origin=(100.0, 30.0), res=0.1) -> None:
+        import rasterio
+        from rasterio.transform import from_origin
+
+        transform = from_origin(origin[0], origin[1], res, res)
+        with rasterio.open(
+            path,
+            "w",
+            driver="GTiff",
+            height=data.shape[0],
+            width=data.shape[1],
+            count=1,
+            dtype="float64",
+            crs="EPSG:4326",
+            transform=transform,
+            nodata=float("nan"),
+        ) as dst:
+            dst.write(data, 1)
+
+    try:
+        import numpy as np
+    except Exception as exc:  # noqa: BLE001
+        _log(f"stub_v1 fixture numpy skipped: {exc}")
+        np = None  # type: ignore[assignment]
+
+    if np is not None:
+        if not stub_tif.is_file():
+            try:
+                data = np.full((20, 20), 5.0, dtype=np.float64)
+                data[0, 0] = np.nan
+                _write_geotiff(stub_tif, data)
+            except Exception as exc:  # noqa: BLE001
+                _log(f"stub_v1 fixture GeoTIFF skipped: {exc}")
+        if stub_tif.is_file():
+            out["stub_tif"] = stub_tif
+
+        if not stub_b_tif.is_file():
+            try:
+                data_b = np.full((20, 20), 8.0, dtype=np.float64)
+                data_b[1, 1] = np.nan
+                _write_geotiff(stub_b_tif, data_b)
+            except Exception as exc:  # noqa: BLE001
+                _log(f"stub_v1 fixture stub_b skipped: {exc}")
+        if stub_b_tif.is_file():
+            out["stub_b_tif"] = stub_b_tif
+
+        if not dem_tif.is_file():
+            try:
+                yy, xx = np.mgrid[0:20, 0:20]
+                dem = (xx + yy).astype(np.float64) * 2.0
+                _write_geotiff(dem_tif, dem)
+            except Exception as exc:  # noqa: BLE001
+                _log(f"stub_v1 fixture DEM skipped: {exc}")
+        if dem_tif.is_file():
+            out["dem_tif"] = dem_tif
+    else:
+        if stub_tif.is_file():
+            out["stub_tif"] = stub_tif
+        if stub_b_tif.is_file():
+            out["stub_b_tif"] = stub_b_tif
+        if dem_tif.is_file():
+            out["dem_tif"] = dem_tif
 
     if not points_gj.is_file():
         # Points inside fusion_idw bbox (112.9–113.3E / 22.9–23.2N); also used by buffer.
@@ -1036,6 +1081,26 @@ def ensure_stub_v1_fixtures() -> dict[str, Path]:
         zones_gj.write_text(json.dumps(zones), encoding="utf-8")
     if zones_gj.is_file():
         out["zones"] = zones_gj
+
+    if not timeseries_json.is_file():
+        series = {
+            "times": [
+                "2025-01-01",
+                "2025-01-02",
+                "2025-01-03",
+                "2025-01-04",
+                "2025-01-05",
+                "2025-01-06",
+                "2025-01-07",
+                "2025-01-08",
+            ],
+            "values": [1.0, 1.2, 0.9, 1.1, 1.0, 10.0, 1.05, 0.95],
+            "lon": 113.0,
+            "lat": 23.0,
+        }
+        timeseries_json.write_text(json.dumps(series), encoding="utf-8")
+    if timeseries_json.is_file():
+        out["timeseries"] = timeseries_json
 
     return out
 
@@ -1245,48 +1310,36 @@ def prepare_overrides(
             "light-smoke: 2025-12-03..10 (1×8d block), bbox 110–115E/20–25N, "
             "max_pixels=400, serial; keeps output/map_layer"
         )
-    if workflow_id in BATCH_G:
+    if workflow_id in BATCH_G or workflow_id in BATCH_H:
         stub = ensure_stub_v1_fixtures()
         defn = overrides.get("definition") or definition
-        if stub.get("stub_tif"):
-            tif = str(stub["stub_tif"]).replace("\\", "/")
-            # Multi-source seeds: patch each data/source by path suffix
-            for node in defn.get("nodes") or []:
-                if not isinstance(node, dict):
-                    continue
-                if str(node.get("type") or "") != "data/source":
-                    continue
-                props = node.get("properties") or {}
-                path = str(props.get("path") or "")
-                if "smoke_stub.tif" in path:
-                    defn = patch_node_path(defn, int(node["id"]), tif)
-        if stub.get("points"):
-            pts = str(stub["points"]).replace("\\", "/")
-            for node in defn.get("nodes") or []:
-                if not isinstance(node, dict):
-                    continue
-                if str(node.get("type") or "") != "data/source":
-                    continue
-                props = node.get("properties") or {}
-                path = str(props.get("path") or "")
-                if "smoke_points.geojson" in path:
-                    defn = patch_node_path(defn, int(node["id"]), pts)
-        if stub.get("zones"):
-            zpath = str(stub["zones"]).replace("\\", "/")
-            for node in defn.get("nodes") or []:
-                if not isinstance(node, dict):
-                    continue
-                if str(node.get("type") or "") != "data/source":
-                    continue
-                props = node.get("properties") or {}
-                path = str(props.get("path") or "")
-                if "smoke_zones.geojson" in path:
-                    defn = patch_node_path(defn, int(node["id"]), zpath)
+        path_map = [
+            ("smoke_stub.tif", stub.get("stub_tif")),
+            ("smoke_stub_b.tif", stub.get("stub_b_tif")),
+            ("smoke_dem.tif", stub.get("dem_tif")),
+            ("smoke_points.geojson", stub.get("points")),
+            ("smoke_zones.geojson", stub.get("zones")),
+            ("smoke_timeseries.json", stub.get("timeseries")),
+        ]
+        for node in defn.get("nodes") or []:
+            if not isinstance(node, dict):
+                continue
+            if str(node.get("type") or "") != "data/source":
+                continue
+            props = node.get("properties") or {}
+            path = str(props.get("path") or "")
+            for suffix, resolved in path_map:
+                if suffix in path and resolved is not None:
+                    defn = patch_node_path(
+                        defn, int(node["id"]), str(resolved).replace("\\", "/")
+                    )
+                    break
         overrides["definition"] = defn
         overrides["datasource_selection"] = extract_datasource_selection(defn)
         overrides["_note"] = (
             "stub_v1 fixtures under {DATA_ROOT}/_runtime "
-            "(smoke_stub.tif / smoke_points.geojson / smoke_zones.geojson)"
+            "(smoke_stub.tif / smoke_stub_b.tif / smoke_dem.tif / "
+            "smoke_points.geojson / smoke_zones.geojson / smoke_timeseries.json)"
         )
     return overrides
 
@@ -1672,6 +1725,7 @@ def main() -> int:
         ("E", BATCH_E, min(args.timeout, 180.0)),
         ("F", BATCH_F, args.omega_timeout),
         ("G", BATCH_G, args.timeout),
+        ("H", BATCH_H, args.timeout),
     ]
     for batch_name, ids, timeout_s in batches:
         if batch_name == "F" and args.skip_omega:
