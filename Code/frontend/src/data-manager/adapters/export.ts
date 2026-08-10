@@ -10,6 +10,7 @@ import {
   exportFeatureCollectionAsCsv,
   exportFeatureCollectionAsGeoJson,
 } from '../../stores/layers/imported-vector'
+import { resolveExportBasename } from '../../stores/layers/layer-naming'
 
 export type ExportFormat =
   'geojson' | 'csv' | 'shp-zip' | 'tif' | 'png' | 'nc' | 'geotiff' | 'netcdf'
@@ -52,20 +53,33 @@ function backendIdOf(
   return layer.importedVector?.backendLayerId || layer.importedRaster?.overlayLayerId || null
 }
 
+function exportBasenameFor(
+  layer: Pick<ActiveLayer, 'name' | 'importedVector' | 'importedRaster' | 'catalogId'>,
+): string {
+  return resolveExportBasename({
+    catalogId: layer.catalogId,
+    overlayLayerId: layer.importedRaster?.overlayLayerId,
+    backendLayerId: layer.importedVector?.backendLayerId,
+    sourceFilename: layer.importedVector?.fileName ?? layer.importedRaster?.fileName,
+    displayName: layer.name,
+  })
+}
+
 async function exportLocalFallback(
-  layer: Pick<ActiveLayer, 'name' | 'importedVector'>,
+  layer: Pick<ActiveLayer, 'name' | 'importedVector' | 'importedRaster' | 'catalogId'>,
   format: ExportFormat,
 ): Promise<void> {
   const fc = layer.importedVector?.geojson
   if (!fc?.features?.length) {
     throw new Error('本地预览为空，无法导出（可尝试重新导入或先「加载完整数据」）')
   }
+  const base = exportBasenameFor(layer)
   if (format === 'csv') {
-    exportFeatureCollectionAsCsv(fc, safeName(layer.name ?? 'export', 'csv'))
+    exportFeatureCollectionAsCsv(fc, safeName(base, 'csv'))
     return
   }
   // shp-zip 无本地实现时降级 geojson
-  exportFeatureCollectionAsGeoJson(fc, safeName(layer.name ?? 'export', 'geojson'))
+  exportFeatureCollectionAsGeoJson(fc, safeName(base, 'geojson'))
 }
 
 export async function exportLayer(
@@ -106,7 +120,7 @@ export async function exportLayer(
             ? `${multi.length}times`
             : `${multi[0]}_${multi[multi.length - 1]}`
           : options.time
-      downloadBlob(blob, safeName(layer.name ?? 'export', ext, stamp))
+      downloadBlob(blob, safeName(exportBasenameFor(layer), ext, stamp))
       return
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err)

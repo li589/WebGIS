@@ -13,6 +13,7 @@ import { useLayersStore } from '../../stores/layers'
 import { useWorkflowDefinitionsStore } from '../../stores/workflow-definitions'
 import {
   defaultProductLayerNames,
+  productTagDescription,
   productTagLabel,
   resolveExpectedOutputTags,
   resolveOutputNamePrefix,
@@ -214,7 +215,11 @@ watch(outputTags, (tags) => {
             <label class="form-label">图层名称（可编辑）</label>
             <div class="multi-name-list">
               <div v-for="(_name, idx) in productNames" :key="idx" class="multi-name-row">
-                <span class="multi-name-tag">{{ productTagLabel(outputTags[idx]) }}</span>
+                <span
+                  class="multi-name-tag"
+                  :title="productTagDescription(outputTags[idx] ?? '')"
+                  >{{ productTagLabel(outputTags[idx]) }}</span
+                >
                 <input
                   v-model="productNames[idx]"
                   type="text"

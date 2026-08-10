@@ -7,15 +7,31 @@
     "category": "weather",
     "source_type": "weather",
     "render_type": "vector",
-    "supported_map_modes": ["2d"],
+    "supported_map_modes": [
+      "2d"
+    ],
     "supports_time": true,
     "is_realtime": true,
     "default_visible": true,
     "time_granularity": "hour",
     "default_time_offset": 0,
-    "extent": { "west": 109.6, "south": 20.1, "east": 117.4, "north": 25.6, "crs": "EPSG:4326" },
-    "style": { "palette": "blue-cyan", "unit_label": "m/s", "opacity": 0.85 },
-    "tags": ["wind", "frontend-aligned", "10m"]
+    "extent": {
+      "west": 109.6,
+      "south": 20.1,
+      "east": 117.4,
+      "north": 25.6,
+      "crs": "EPSG:4326"
+    },
+    "style": {
+      "palette": "blue-cyan",
+      "unit_label": "m/s",
+      "opacity": 0.85
+    },
+    "tags": [
+      "wind",
+      "frontend-aligned",
+      "10m"
+    ]
   },
   {
     "layer_id": "wind-field-80m",
@@ -25,15 +41,32 @@
     "category": "weather",
     "source_type": "weather",
     "render_type": "vector",
-    "supported_map_modes": ["2d"],
+    "supported_map_modes": [
+      "2d"
+    ],
     "supports_time": true,
     "is_realtime": true,
     "default_visible": false,
     "time_granularity": "hour",
     "default_time_offset": 0,
-    "extent": { "west": 109.6, "south": 20.1, "east": 117.4, "north": 25.6, "crs": "EPSG:4326" },
-    "style": { "palette": "blue-cyan", "unit_label": "m/s", "opacity": 0.85 },
-    "tags": ["wind", "frontend-aligned", "80m", "turbine-hub"]
+    "extent": {
+      "west": 109.6,
+      "south": 20.1,
+      "east": 117.4,
+      "north": 25.6,
+      "crs": "EPSG:4326"
+    },
+    "style": {
+      "palette": "blue-cyan",
+      "unit_label": "m/s",
+      "opacity": 0.85
+    },
+    "tags": [
+      "wind",
+      "frontend-aligned",
+      "80m",
+      "turbine-hub"
+    ]
   },
   {
     "layer_id": "wind-field-120m",
@@ -43,15 +76,32 @@
     "category": "weather",
     "source_type": "weather",
     "render_type": "vector",
-    "supported_map_modes": ["2d"],
+    "supported_map_modes": [
+      "2d"
+    ],
     "supports_time": true,
     "is_realtime": true,
     "default_visible": false,
     "time_granularity": "hour",
     "default_time_offset": 0,
-    "extent": { "west": 109.6, "south": 20.1, "east": 117.4, "north": 25.6, "crs": "EPSG:4326" },
-    "style": { "palette": "blue-cyan", "unit_label": "m/s", "opacity": 0.85 },
-    "tags": ["wind", "frontend-aligned", "120m", "offshore"]
+    "extent": {
+      "west": 109.6,
+      "south": 20.1,
+      "east": 117.4,
+      "north": 25.6,
+      "crs": "EPSG:4326"
+    },
+    "style": {
+      "palette": "blue-cyan",
+      "unit_label": "m/s",
+      "opacity": 0.85
+    },
+    "tags": [
+      "wind",
+      "frontend-aligned",
+      "120m",
+      "offshore"
+    ]
   },
   {
     "layer_id": "wind-field-180m",
@@ -61,15 +111,32 @@
     "category": "weather",
     "source_type": "weather",
     "render_type": "vector",
-    "supported_map_modes": ["2d"],
+    "supported_map_modes": [
+      "2d"
+    ],
     "supports_time": true,
     "is_realtime": true,
     "default_visible": false,
     "time_granularity": "hour",
     "default_time_offset": 0,
-    "extent": { "west": 109.6, "south": 20.1, "east": 117.4, "north": 25.6, "crs": "EPSG:4326" },
-    "style": { "palette": "blue-cyan", "unit_label": "m/s", "opacity": 0.85 },
-    "tags": ["wind", "frontend-aligned", "180m", "boundary-layer"]
+    "extent": {
+      "west": 109.6,
+      "south": 20.1,
+      "east": 117.4,
+      "north": 25.6,
+      "crs": "EPSG:4326"
+    },
+    "style": {
+      "palette": "blue-cyan",
+      "unit_label": "m/s",
+      "opacity": 0.85
+    },
+    "tags": [
+      "wind",
+      "frontend-aligned",
+      "180m",
+      "boundary-layer"
+    ]
   },
   {
     "layer_id": "wind-field-850hPa",
@@ -79,15 +146,33 @@
     "category": "weather",
     "source_type": "weather",
     "render_type": "vector",
-    "supported_map_modes": ["2d"],
+    "supported_map_modes": [
+      "2d"
+    ],
     "supports_time": true,
     "is_realtime": true,
     "default_visible": false,
     "time_granularity": "hour",
     "default_time_offset": 0,
-    "extent": { "west": 109.6, "south": 20.1, "east": 117.4, "north": 25.6, "crs": "EPSG:4326" },
-    "style": { "palette": "blue-cyan", "unit_label": "m/s", "opacity": 0.78 },
-    "tags": ["wind", "frontend-aligned", "850hPa", "pressure-level", "low-level-jet"]
+    "extent": {
+      "west": 109.6,
+      "south": 20.1,
+      "east": 117.4,
+      "north": 25.6,
+      "crs": "EPSG:4326"
+    },
+    "style": {
+      "palette": "blue-cyan",
+      "unit_label": "m/s",
+      "opacity": 0.78
+    },
+    "tags": [
+      "wind",
+      "frontend-aligned",
+      "850hPa",
+      "pressure-level",
+      "low-level-jet"
+    ]
   },
   {
     "layer_id": "wind-field-500hPa",
@@ -97,15 +182,33 @@
     "category": "weather",
     "source_type": "weather",
     "render_type": "vector",
-    "supported_map_modes": ["2d"],
+    "supported_map_modes": [
+      "2d"
+    ],
     "supports_time": true,
     "is_realtime": true,
     "default_visible": false,
     "time_granularity": "hour",
     "default_time_offset": 0,
-    "extent": { "west": 109.6, "south": 20.1, "east": 117.4, "north": 25.6, "crs": "EPSG:4326" },
-    "style": { "palette": "blue-cyan", "unit_label": "m/s", "opacity": 0.74 },
-    "tags": ["wind", "frontend-aligned", "500hPa", "pressure-level", "mid-level"]
+    "extent": {
+      "west": 109.6,
+      "south": 20.1,
+      "east": 117.4,
+      "north": 25.6,
+      "crs": "EPSG:4326"
+    },
+    "style": {
+      "palette": "blue-cyan",
+      "unit_label": "m/s",
+      "opacity": 0.74
+    },
+    "tags": [
+      "wind",
+      "frontend-aligned",
+      "500hPa",
+      "pressure-level",
+      "mid-level"
+    ]
   },
   {
     "layer_id": "wind-field-200hPa",
@@ -115,141 +218,272 @@
     "category": "weather",
     "source_type": "weather",
     "render_type": "vector",
-    "supported_map_modes": ["2d"],
+    "supported_map_modes": [
+      "2d"
+    ],
     "supports_time": true,
     "is_realtime": true,
     "default_visible": false,
     "time_granularity": "hour",
     "default_time_offset": 0,
-    "extent": { "west": 109.6, "south": 20.1, "east": 117.4, "north": 25.6, "crs": "EPSG:4326" },
-    "style": { "palette": "blue-cyan", "unit_label": "m/s", "opacity": 0.7 },
-    "tags": ["wind", "frontend-aligned", "200hPa", "pressure-level", "upper-jet"]
+    "extent": {
+      "west": 109.6,
+      "south": 20.1,
+      "east": 117.4,
+      "north": 25.6,
+      "crs": "EPSG:4326"
+    },
+    "style": {
+      "palette": "blue-cyan",
+      "unit_label": "m/s",
+      "opacity": 0.7
+    },
+    "tags": [
+      "wind",
+      "frontend-aligned",
+      "200hPa",
+      "pressure-level",
+      "upper-jet"
+    ]
   },
   {
     "layer_id": "precipitation",
     "dataset_key": "precipitation",
-    "display_name": "降水",
+    "display_name": "降水量",
     "description": "小时降水图层，天气引擎多源实时预报，可映射到 TiTiler、GEE 或融合降水产品。",
     "category": "weather",
     "source_type": "weather",
     "render_type": "raster",
-    "supported_map_modes": ["2d"],
+    "supported_map_modes": [
+      "2d"
+    ],
     "supports_time": true,
     "is_realtime": false,
     "default_visible": false,
     "time_granularity": "hour",
     "default_time_offset": -1,
-    "extent": { "west": 109.6, "south": 20.1, "east": 117.4, "north": 25.6, "crs": "EPSG:4326" },
-    "style": { "palette": "teal-blue", "unit_label": "mm/h", "opacity": 0.8 },
-    "tags": ["rainfall", "frontend-aligned"]
+    "extent": {
+      "west": 109.6,
+      "south": 20.1,
+      "east": 117.4,
+      "north": 25.6,
+      "crs": "EPSG:4326"
+    },
+    "style": {
+      "palette": "teal-blue",
+      "unit_label": "mm/h",
+      "opacity": 0.8
+    },
+    "tags": [
+      "rainfall",
+      "frontend-aligned"
+    ]
   },
   {
     "layer_id": "temperature",
     "dataset_key": "temperature",
-    "display_name": "温度",
+    "display_name": "气温",
     "description": "2 米气温图层，天气引擎多源实时数据，可接遥感反演、站点订正与历史栅格。",
     "category": "weather",
     "source_type": "weather",
     "render_type": "raster",
-    "supported_map_modes": ["2d"],
+    "supported_map_modes": [
+      "2d"
+    ],
     "supports_time": true,
     "is_realtime": false,
     "default_visible": false,
     "time_granularity": "hour",
     "default_time_offset": 0,
-    "extent": { "west": 109.6, "south": 20.1, "east": 117.4, "north": 25.6, "crs": "EPSG:4326" },
-    "style": { "palette": "orange-red", "unit_label": "degC", "opacity": 0.82 },
-    "tags": ["temperature", "frontend-aligned"]
+    "extent": {
+      "west": 109.6,
+      "south": 20.1,
+      "east": 117.4,
+      "north": 25.6,
+      "crs": "EPSG:4326"
+    },
+    "style": {
+      "palette": "orange-red",
+      "unit_label": "degC",
+      "opacity": 0.82
+    },
+    "tags": [
+      "temperature",
+      "frontend-aligned"
+    ]
   },
   {
     "layer_id": "temperature-80m",
     "dataset_key": "temperature_80m",
-    "display_name": "温度（80m）",
+    "display_name": "气温（80m）",
     "description": "80 米高度温度图层，适用于风机结冰与尾流分析。",
     "category": "weather",
     "source_type": "weather",
     "render_type": "raster",
-    "supported_map_modes": ["2d"],
+    "supported_map_modes": [
+      "2d"
+    ],
     "supports_time": true,
     "is_realtime": true,
     "default_visible": false,
     "time_granularity": "hour",
     "default_time_offset": 0,
-    "extent": { "west": 109.6, "south": 20.1, "east": 117.4, "north": 25.6, "crs": "EPSG:4326" },
-    "style": { "palette": "orange-red", "unit_label": "degC", "opacity": 0.58 },
-    "tags": ["temperature", "frontend-aligned", "80m", "turbine-hub"]
+    "extent": {
+      "west": 109.6,
+      "south": 20.1,
+      "east": 117.4,
+      "north": 25.6,
+      "crs": "EPSG:4326"
+    },
+    "style": {
+      "palette": "orange-red",
+      "unit_label": "degC",
+      "opacity": 0.58
+    },
+    "tags": [
+      "temperature",
+      "frontend-aligned",
+      "80m",
+      "turbine-hub"
+    ]
   },
   {
     "layer_id": "temperature-120m",
     "dataset_key": "temperature_120m",
-    "display_name": "温度（120m）",
+    "display_name": "气温（120m）",
     "description": "120 米高度温度图层，大型风机轮毂高度热力参考。",
     "category": "weather",
     "source_type": "weather",
     "render_type": "raster",
-    "supported_map_modes": ["2d"],
+    "supported_map_modes": [
+      "2d"
+    ],
     "supports_time": true,
     "is_realtime": true,
     "default_visible": false,
     "time_granularity": "hour",
     "default_time_offset": 0,
-    "extent": { "west": 109.6, "south": 20.1, "east": 117.4, "north": 25.6, "crs": "EPSG:4326" },
-    "style": { "palette": "orange-red", "unit_label": "degC", "opacity": 0.58 },
-    "tags": ["temperature", "frontend-aligned", "120m", "offshore"]
+    "extent": {
+      "west": 109.6,
+      "south": 20.1,
+      "east": 117.4,
+      "north": 25.6,
+      "crs": "EPSG:4326"
+    },
+    "style": {
+      "palette": "orange-red",
+      "unit_label": "degC",
+      "opacity": 0.58
+    },
+    "tags": [
+      "temperature",
+      "frontend-aligned",
+      "120m",
+      "offshore"
+    ]
   },
   {
     "layer_id": "temperature-180m",
     "dataset_key": "temperature_180m",
-    "display_name": "温度（180m）",
+    "display_name": "气温（180m）",
     "description": "180 米高度温度图层，大气边界层顶部热力剖面。",
     "category": "weather",
     "source_type": "weather",
     "render_type": "raster",
-    "supported_map_modes": ["2d"],
+    "supported_map_modes": [
+      "2d"
+    ],
     "supports_time": true,
     "is_realtime": true,
     "default_visible": false,
     "time_granularity": "hour",
     "default_time_offset": 0,
-    "extent": { "west": 109.6, "south": 20.1, "east": 117.4, "north": 25.6, "crs": "EPSG:4326" },
-    "style": { "palette": "orange-red", "unit_label": "degC", "opacity": 0.58 },
-    "tags": ["temperature", "frontend-aligned", "180m", "boundary-layer"]
+    "extent": {
+      "west": 109.6,
+      "south": 20.1,
+      "east": 117.4,
+      "north": 25.6,
+      "crs": "EPSG:4326"
+    },
+    "style": {
+      "palette": "orange-red",
+      "unit_label": "degC",
+      "opacity": 0.58
+    },
+    "tags": [
+      "temperature",
+      "frontend-aligned",
+      "180m",
+      "boundary-layer"
+    ]
   },
   {
     "layer_id": "pressure",
     "dataset_key": "pressure",
-    "display_name": "气压",
+    "display_name": "海平面气压",
     "description": "海平面气压图层，支持等压线分析与低压中心追踪。",
     "category": "weather",
     "source_type": "weather",
     "render_type": "raster",
-    "supported_map_modes": ["2d"],
+    "supported_map_modes": [
+      "2d"
+    ],
     "supports_time": true,
     "is_realtime": true,
     "default_visible": false,
     "time_granularity": "hour",
     "default_time_offset": 0,
-    "extent": { "west": 109.6, "south": 20.1, "east": 117.4, "north": 25.6, "crs": "EPSG:4326" },
-    "style": { "palette": "purple-seq", "unit_label": "hPa", "opacity": 0.62 },
-    "tags": ["pressure", "atmosphere", "frontend-aligned"]
+    "extent": {
+      "west": 109.6,
+      "south": 20.1,
+      "east": 117.4,
+      "north": 25.6,
+      "crs": "EPSG:4326"
+    },
+    "style": {
+      "palette": "purple-seq",
+      "unit_label": "hPa",
+      "opacity": 0.62
+    },
+    "tags": [
+      "pressure",
+      "atmosphere",
+      "frontend-aligned"
+    ]
   },
   {
     "layer_id": "humidity",
     "dataset_key": "humidity",
-    "display_name": "湿度",
+    "display_name": "相对湿度",
     "description": "2 米相对湿度图层，反映大气水汽含量与体感舒适度。",
     "category": "weather",
     "source_type": "weather",
     "render_type": "raster",
-    "supported_map_modes": ["2d"],
+    "supported_map_modes": [
+      "2d"
+    ],
     "supports_time": true,
     "is_realtime": true,
     "default_visible": false,
     "time_granularity": "hour",
     "default_time_offset": 0,
-    "extent": { "west": 109.6, "south": 20.1, "east": 117.4, "north": 25.6, "crs": "EPSG:4326" },
-    "style": { "palette": "green-seq", "unit_label": "%", "opacity": 0.66 },
-    "tags": ["humidity", "atmosphere", "frontend-aligned"]
+    "extent": {
+      "west": 109.6,
+      "south": 20.1,
+      "east": 117.4,
+      "north": 25.6,
+      "crs": "EPSG:4326"
+    },
+    "style": {
+      "palette": "green-seq",
+      "unit_label": "%",
+      "opacity": 0.66
+    },
+    "tags": [
+      "humidity",
+      "atmosphere",
+      "frontend-aligned"
+    ]
   },
   {
     "layer_id": "visibility",
@@ -259,15 +493,31 @@
     "category": "weather",
     "source_type": "weather",
     "render_type": "raster",
-    "supported_map_modes": ["2d"],
+    "supported_map_modes": [
+      "2d"
+    ],
     "supports_time": true,
     "is_realtime": true,
     "default_visible": false,
     "time_granularity": "hour",
     "default_time_offset": 0,
-    "extent": { "west": 109.6, "south": 20.1, "east": 117.4, "north": 25.6, "crs": "EPSG:4326" },
-    "style": { "palette": "amber-gray", "unit_label": "m", "opacity": 0.7 },
-    "tags": ["visibility", "atmosphere", "frontend-aligned"]
+    "extent": {
+      "west": 109.6,
+      "south": 20.1,
+      "east": 117.4,
+      "north": 25.6,
+      "crs": "EPSG:4326"
+    },
+    "style": {
+      "palette": "amber-gray",
+      "unit_label": "m",
+      "opacity": 0.7
+    },
+    "tags": [
+      "visibility",
+      "atmosphere",
+      "frontend-aligned"
+    ]
   },
   {
     "layer_id": "cloud-cover",
@@ -277,32 +527,64 @@
     "category": "weather",
     "source_type": "weather",
     "render_type": "raster",
-    "supported_map_modes": ["2d"],
+    "supported_map_modes": [
+      "2d"
+    ],
     "supports_time": true,
     "is_realtime": true,
     "default_visible": false,
     "time_granularity": "hour",
     "default_time_offset": 0,
-    "extent": { "west": 109.6, "south": 20.1, "east": 117.4, "north": 25.6, "crs": "EPSG:4326" },
-    "style": { "palette": "cloud-gray", "unit_label": "%", "opacity": 0.65 },
-    "tags": ["cloud", "atmosphere", "frontend-aligned"]
+    "extent": {
+      "west": 109.6,
+      "south": 20.1,
+      "east": 117.4,
+      "north": 25.6,
+      "crs": "EPSG:4326"
+    },
+    "style": {
+      "palette": "cloud-gray",
+      "unit_label": "%",
+      "opacity": 0.65
+    },
+    "tags": [
+      "cloud",
+      "atmosphere",
+      "frontend-aligned"
+    ]
   },
   {
     "layer_id": "dewpoint",
     "dataset_key": "dewpoint",
-    "display_name": "露点",
+    "display_name": "露点温度",
     "description": "2 米露点温度图层，反映空气湿度饱和度。",
     "category": "weather",
     "source_type": "weather",
     "render_type": "raster",
-    "supported_map_modes": ["2d"],
+    "supported_map_modes": [
+      "2d"
+    ],
     "supports_time": true,
     "is_realtime": true,
     "default_visible": false,
     "time_granularity": "hour",
     "default_time_offset": 0,
-    "extent": { "west": 109.6, "south": 20.1, "east": 117.4, "north": 25.6, "crs": "EPSG:4326" },
-    "style": { "palette": "thermal-orange", "unit_label": "C", "opacity": 0.78 },
-    "tags": ["dewpoint", "atmosphere", "frontend-aligned"]
+    "extent": {
+      "west": 109.6,
+      "south": 20.1,
+      "east": 117.4,
+      "north": 25.6,
+      "crs": "EPSG:4326"
+    },
+    "style": {
+      "palette": "thermal-orange",
+      "unit_label": "C",
+      "opacity": 0.78
+    },
+    "tags": [
+      "dewpoint",
+      "atmosphere",
+      "frontend-aligned"
+    ]
   }
 ]

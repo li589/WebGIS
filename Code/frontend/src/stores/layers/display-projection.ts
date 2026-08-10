@@ -4,6 +4,7 @@ import { formatClockHourLabel } from '../../utils/weather-timeline'
 import { resolveWeatherTileReadyKind } from '../../utils/weather-tile-readiness'
 import { buildAvailabilityState, buildCatalogFallbackItem } from './catalog-builders'
 import { resolvePersistedDisplayName } from './layer-display-names'
+import { resolveLayerDisplayLabel } from './layer-naming'
 import { buildRealLayerDisplay } from './result-adapter'
 import type {
   ActiveLayer,
@@ -60,7 +61,12 @@ export function projectActiveLayersDisplay(ctx: ActiveLayersDisplayContext): Act
           payload.backendLayerId,
           layer.catalogId,
         )
-        const displayName = layer.name ?? persisted ?? payload.fileName ?? '导入图层'
+        const displayName = resolveLayerDisplayLabel({
+          name: layer.name,
+          persisted,
+          catalogId: layer.catalogId,
+          fileStem: payload.fileName,
+        })
         return {
           instanceId: layer.instanceId,
           catalogId: layer.catalogId,
@@ -107,11 +113,16 @@ export function projectActiveLayersDisplay(ctx: ActiveLayersDisplayContext): Act
 
       if (layer.importedRaster) {
         const payload = layer.importedRaster
-        const displayName =
-          layer.name ??
-          resolvePersistedDisplayName(layer.instanceId, payload.overlayLayerId, layer.catalogId) ??
-          payload.fileName ??
-          '导入栅格'
+        const displayName = resolveLayerDisplayLabel({
+          name: layer.name,
+          persisted: resolvePersistedDisplayName(
+            layer.instanceId,
+            payload.overlayLayerId,
+            layer.catalogId,
+          ),
+          catalogId: layer.catalogId,
+          fileStem: payload.fileName,
+        })
         const hasTimes = Boolean(payload.timeList?.length)
         const timeCount = payload.timeList?.length ?? 0
         const computing = isWorkflowProductComputing(layer, ctx.runLayerGroups)
@@ -249,9 +260,16 @@ export function projectActiveLayersDisplay(ctx: ActiveLayersDisplayContext): Act
         catalogId: layer.catalogId,
         name: layer.isAdminBoundary
           ? '行政区边界'
-          : (layer.name ??
-            resolvePersistedDisplayName(layer.instanceId, layer.catalogId) ??
-            item.name),
+          : resolveLayerDisplayLabel({
+              name: layer.name,
+              persisted: resolvePersistedDisplayName(layer.instanceId, layer.catalogId),
+              catalogDisplayName: item.name,
+              datasetKey: (() => {
+                const key = (descriptor as { dataset_key?: unknown } | null)?.dataset_key
+                return typeof key === 'string' && key.trim() ? key : null
+              })(),
+              catalogId: layer.catalogId,
+            }),
         category: layer.isAdminBoundary ? 'boundary' : item.category,
         description: layer.isAdminBoundary ? '广东省市级行政区边界叠加层。' : item.description,
         engine: layer.isAdminBoundary ? 'builtin' : item.engine,

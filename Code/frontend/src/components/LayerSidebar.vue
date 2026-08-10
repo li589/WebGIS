@@ -17,6 +17,7 @@ import { LAYERS_COPY, INSPECT_COPY } from '../ui-copy'
 import { ORG_LABEL } from '../ui-copy/brand'
 import { openDataWorkspace, openDatedExportForLayer } from '../data-manager/core/workspace-store'
 import { exportLayer } from '../data-manager/adapters/export'
+import { productTagDescription } from '../utils/workflow-expected-outputs'
 import {
   buildLayerContextMenu,
   buildGroupContextMenu,
@@ -1370,7 +1371,15 @@ type ActiveLayerDisplayLike = {
                   :style="{ background: row.layer.accentColor }"
                   aria-hidden="true"
                 ></span>
-                <strong class="layer-name">{{ row.layer.name }}</strong>
+                <strong
+                  class="layer-name"
+                  :title="
+                    row.layer.runGroupProductTag
+                      ? productTagDescription(row.layer.runGroupProductTag)
+                      : undefined
+                  "
+                  >{{ row.layer.name }}</strong
+                >
                 <span class="layer-chip" :style="{ background: row.layer.chipTone }">{{
                   getCategoryName(row.layer.category)
                 }}</span>

@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
   defaultProductLayerNames,
   namePrefixFromDefinition,
+  productTagDescription,
   resolveExpectedOutputTags,
   resolveOutputNamePrefix,
 } from '@/utils/workflow-expected-outputs'
@@ -43,8 +44,14 @@ describe('workflow-expected-outputs', () => {
     ])
     expect(defaultProductLayerNames(['OMEGA'])).toEqual([{ productTag: 'OMEGA', name: 'ω' }])
     expect(defaultProductLayerNames(['result'], 'my_wf')).toEqual([
-      { productTag: 'result', name: '结果' },
+      { productTag: 'result', name: '产出变量' },
     ])
+  })
+
+  it('exposes geo-worker descriptions for product tags', () => {
+    expect(productTagDescription('SM')).toBe('土壤水分')
+    expect(productTagDescription('VOD')).toBe('植被光学厚度')
+    expect(productTagDescription('OMEGA')).toBe('反演参数 ω')
   })
 
   it('extracts module name prefix', () => {

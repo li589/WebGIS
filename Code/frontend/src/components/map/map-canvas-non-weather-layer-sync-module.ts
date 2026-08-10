@@ -8,6 +8,7 @@ import { createOverlayImageModule } from './overlay-image-module'
 import { createImportedLayerModule } from './imported-layer-module'
 import { applyActiveLayerStackOrder } from './layer-stack-sync'
 import type { ActiveLayer } from '../../stores/layers/types'
+import { resolveLayerDisplayLabel } from '../../stores/layers/layer-naming'
 
 type MapInstance = import('maplibre-gl').Map
 
@@ -107,11 +108,12 @@ export function createMapCanvasNonWeatherLayerSyncModule(
     for (const layer of imported) {
       const payload = layer.importedVector!
       if (payload.geojson && !loadedIds.has(layer.instanceId)) {
-        importedLayerModule.addVectorLayer(
-          layer.instanceId,
-          payload.geojson,
-          layer.name ?? payload.fileName ?? '导入图层',
-        )
+        const label = resolveLayerDisplayLabel({
+          name: layer.name,
+          catalogId: layer.catalogId,
+          fileStem: payload.fileName,
+        })
+        importedLayerModule.addVectorLayer(layer.instanceId, payload.geojson, label)
         if (importedLayerModule.getLoadedIds().includes(layer.instanceId)) {
           newlyAdded.push(layer.instanceId)
         }
@@ -120,9 +122,13 @@ export function createMapCanvasNonWeatherLayerSyncModule(
     }
     for (const layer of imported) {
       importedLayerModule.setLayerVisibility(layer.instanceId, layer.visible)
-      if (layer.name) {
-        importedLayerModule.updateLayerDisplayName(layer.instanceId, layer.name)
-      }
+      const payload = layer.importedVector
+      const label = resolveLayerDisplayLabel({
+        name: layer.name,
+        catalogId: layer.catalogId,
+        fileStem: payload?.fileName,
+      })
+      importedLayerModule.updateLayerDisplayName(layer.instanceId, label)
       const style = layer.importedVector?.style
       if (style) {
         importedLayerModule.applyLayerStyle(layer.instanceId, style, layer.opacity)

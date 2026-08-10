@@ -71,6 +71,12 @@ export function isDefaultProductDisplayName(
     candidates.add('ω（部分）')
     candidates.add('OMEGA')
   }
+  if (tag === 'RESULT' || tag === 'result') {
+    candidates.add('结果')
+    candidates.add('结果（部分）')
+    candidates.add('产出变量')
+    candidates.add('产出变量（部分）')
+  }
   return candidates.has(n)
 }
 
@@ -89,4 +95,61 @@ export function collectLayerDisplayNameKeys(layer: {
   const overlayId = layer.importedRaster?.overlayLayerId
   if (overlayId) keys.add(overlayId)
   return [...keys].filter(Boolean)
+}
+
+/**
+ * UI 显示名回退链：显式名 → 持久化 → 目录名 → dataset_key → layer_id → 未命名。
+ * 见 .ai/docs/specs/layer-naming.md
+ */
+export function resolveLayerDisplayLabel(options: {
+  name?: string | null
+  persisted?: string | null
+  catalogDisplayName?: string | null
+  datasetKey?: string | null
+  catalogId?: string | null
+  /** 导入层文件 stem，仅在无 id 可用时使用 */
+  fileStem?: string | null
+}): string {
+  const candidates = [
+    options.name,
+    options.persisted,
+    options.catalogDisplayName,
+    options.datasetKey,
+    options.catalogId,
+    options.fileStem,
+  ]
+  for (const c of candidates) {
+    const t = typeof c === 'string' ? c.trim() : ''
+    if (t) return t
+  }
+  return '未命名图层'
+}
+
+/**
+ * 导出/下载文件名基座：优先 machine id（layer_id / catalogId），不用中文显示名。
+ */
+export function resolveExportBasename(options: {
+  layerId?: string | null
+  catalogId?: string | null
+  datasetKey?: string | null
+  overlayLayerId?: string | null
+  backendLayerId?: string | null
+  sourceFilename?: string | null
+  displayName?: string | null
+}): string {
+  const stripExt = (s: string) => s.replace(/\.(geojson|json|shp|zip|csv|tif|tiff|nc)$/i, '')
+  const candidates = [
+    options.layerId,
+    options.catalogId,
+    options.overlayLayerId,
+    options.backendLayerId,
+    options.datasetKey,
+    options.sourceFilename ? stripExt(options.sourceFilename) : null,
+    options.displayName,
+  ]
+  for (const c of candidates) {
+    const t = typeof c === 'string' ? c.trim() : ''
+    if (t) return stripExt(t)
+  }
+  return 'export'
 }

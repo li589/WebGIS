@@ -5,6 +5,8 @@ import {
   isRuntimeCatalogId,
   MAX_LAYER_DISPLAY_NAME_LENGTH,
   normalizeDisplayName,
+  resolveExportBasename,
+  resolveLayerDisplayLabel,
 } from '@/stores/layers/layer-naming'
 
 describe('layer-naming', () => {
@@ -41,5 +43,38 @@ describe('layer-naming', () => {
         importedRaster: { overlayLayerId: 'ov-1' },
       }).sort(),
     ).toEqual(['inst-1', 'ov-1', 'wind-field'].sort())
+  })
+
+  it('resolves display label fallback chain', () => {
+    expect(
+      resolveLayerDisplayLabel({
+        catalogDisplayName: '植被指数 NDVI',
+        datasetKey: 'ndvi_viirs_9km',
+        catalogId: 'ndvi',
+      }),
+    ).toBe('植被指数 NDVI')
+    expect(
+      resolveLayerDisplayLabel({
+        datasetKey: 'ndvi_viirs_9km',
+        catalogId: 'ndvi',
+      }),
+    ).toBe('ndvi_viirs_9km')
+    expect(resolveLayerDisplayLabel({ catalogId: 'imported-abc' })).toBe('imported-abc')
+    expect(resolveLayerDisplayLabel({})).toBe('未命名图层')
+  })
+
+  it('resolves export basename preferring machine ids', () => {
+    expect(
+      resolveExportBasename({
+        layerId: 'ref-smap-sm-202512-l3',
+        displayName: 'SMAP L3 土壤水分',
+      }),
+    ).toBe('ref-smap-sm-202512-l3')
+    expect(
+      resolveExportBasename({
+        catalogId: 'imported-deadbeef',
+        displayName: '我的矢量',
+      }),
+    ).toBe('imported-deadbeef')
   })
 })

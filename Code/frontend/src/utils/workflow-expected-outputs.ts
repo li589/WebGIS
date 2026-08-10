@@ -77,16 +77,29 @@ export function defaultProductLayerNames(
 
 /**
  * 产品标签 → TOC 短显示名（单一事实来源）。
- * 内部 productTag 仍用 SM/VOD/OMEGA 原文；全称放 InfoPanel / 运行组说明。
+ * 内部 productTag 仍用 SM/VOD/OMEGA 原文；全称见 PRODUCT_TAG_DESCRIPTIONS。
  * 见 .ai/docs/specs/layer-naming.md
  */
 export const PRODUCT_TAG_LABELS: Record<string, string> = {
   SM: 'SM',
   VOD: 'VOD',
   OMEGA: 'ω',
-  result: '结果',
+  result: '产出变量',
+}
+
+/** 变量层全称（InfoPanel / tooltip；不进 TOC） */
+export const PRODUCT_TAG_DESCRIPTIONS: Record<string, string> = {
+  SM: '土壤水分',
+  VOD: '植被光学厚度',
+  OMEGA: '反演参数 ω',
+  result: '工作流产出变量',
 }
 
 export function productTagLabel(tag: string): string {
   return PRODUCT_TAG_LABELS[tag] ?? tag
+}
+
+export function productTagDescription(tag: string): string {
+  const key = tag.trim()
+  return PRODUCT_TAG_DESCRIPTIONS[key] ?? PRODUCT_TAG_DESCRIPTIONS[key.toUpperCase()] ?? tag
 }

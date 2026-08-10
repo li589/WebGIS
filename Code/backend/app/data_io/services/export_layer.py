@@ -124,14 +124,7 @@ def _export_raster_times_zip(
     times: list[str],
 ) -> tuple[bytes, str, str]:
     """同一图层多个时刻打包为 zip（常见多时相下载方式）。"""
-    label = str(
-        meta.get("display_name")
-        or meta.get("label")
-        or meta.get("source_filename")
-        or meta.get("source_name")
-        or layer_id
-    ).rsplit(".", 1)[0]
-    base = _safe_filename_base(label)
+    base = _export_filename_stem(layer_id, meta)
     mem = io.BytesIO()
     errors: list[str] = []
     with zipfile.ZipFile(mem, "w", compression=zipfile.ZIP_DEFLATED) as zf:
@@ -163,13 +156,7 @@ def _export_vector(
     encoding: str | None,
 ) -> tuple[bytes, str, str]:
     geojson = load_vector_geojson(layer_id, preview=False)
-    base = str(
-        meta.get("display_name")
-        or meta.get("label")
-        or meta.get("source_name")
-        or layer_id
-    ).rsplit(".", 1)[0]
-    safe_base = _safe_filename_base(base)
+    safe_base = _export_filename_stem(layer_id, meta)
 
     if fmt in {"geojson", "json"}:
         data = json.dumps(geojson, ensure_ascii=False).encode("utf-8")
@@ -192,6 +179,21 @@ def _safe_filename_base(name: str) -> str:
     )
     cleaned = cleaned.strip("._") or "export"
     return cleaned[:80]
+
+
+def _export_filename_stem(layer_id: str, meta: dict[str, Any]) -> str:
+    """导出文件名基座：优先 layer_id（ref-/prod-/method-/obs-/imported-），不用中文显示名。"""
+    dataset_key = meta.get("dataset_key")
+    source = meta.get("source_filename") or meta.get("source_name")
+    display = meta.get("display_name") or meta.get("label")
+    raw = str(
+        layer_id
+        or (dataset_key if isinstance(dataset_key, str) and dataset_key.strip() else "")
+        or (source if isinstance(source, str) and source.strip() else "")
+        or (display if isinstance(display, str) and display.strip() else "")
+        or "export"
+    ).rsplit(".", 1)[0]
+    return _safe_filename_base(raw)
 
 
 def _export_csv(
@@ -331,14 +333,7 @@ def _export_raster(
     *,
     time: str | None = None,
 ) -> tuple[bytes, str, str]:
-    label = str(
-        meta.get("display_name")
-        or meta.get("label")
-        or meta.get("source_filename")
-        or meta.get("source_name")
-        or layer_id
-    ).rsplit(".", 1)[0]
-    base = _safe_filename_base(label)
+    base = _export_filename_stem(layer_id, meta)
     time_list = meta.get("time_list") if isinstance(meta.get("time_list"), list) else []
     time_key = str(time or meta.get("default_time") or "").strip()
     if time_key and time_list and time_key not in [str(t) for t in time_list]:

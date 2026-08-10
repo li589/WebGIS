@@ -156,7 +156,7 @@ const SOURCE_WEATHERENGINE_PRECIP: LayerSource = {
 
 const SOURCE_WEATHERENGINE_TEMP: LayerSource = {
   id: 'weatherengine-temperature',
-  name: '天气引擎 · 温度',
+  name: '天气引擎 · 气温',
   description: '由后端 weatherengine 多源路由的温度数据。',
   urlTemplate: 'https://example.com/temperature/{z}/{x}/{y}.png',
   needsAuth: false,
@@ -167,7 +167,7 @@ const SOURCE_WEATHERENGINE_TEMP: LayerSource = {
 
 const SOURCE_WEATHERENGINE_TEMP_80M: LayerSource = {
   id: 'weatherengine-temperature-80m',
-  name: '天气引擎 · 80m 温度',
+  name: '天气引擎 · 80m 气温',
   description: '天气引擎 80 米高度温度，适用于风机结冰与尾流分析。',
   urlTemplate: 'https://example.com/temperature-80m/{z}/{x}/{y}.png',
   needsAuth: false,
@@ -178,7 +178,7 @@ const SOURCE_WEATHERENGINE_TEMP_80M: LayerSource = {
 
 const SOURCE_WEATHERENGINE_TEMP_120M: LayerSource = {
   id: 'weatherengine-temperature-120m',
-  name: '天气引擎 · 120m 温度',
+  name: '天气引擎 · 120m 气温',
   description: '天气引擎 120 米高度温度，大型风机轮毂高度热力参考。',
   urlTemplate: 'https://example.com/temperature-120m/{z}/{x}/{y}.png',
   needsAuth: false,
@@ -189,7 +189,7 @@ const SOURCE_WEATHERENGINE_TEMP_120M: LayerSource = {
 
 const SOURCE_WEATHERENGINE_TEMP_180M: LayerSource = {
   id: 'weatherengine-temperature-180m',
-  name: '天气引擎 · 180m 温度',
+  name: '天气引擎 · 180m 气温',
   description: '天气引擎 180 米高度温度，大气边界层顶部热力剖面。',
   urlTemplate: 'https://example.com/temperature-180m/{z}/{x}/{y}.png',
   needsAuth: false,
@@ -244,7 +244,7 @@ const SOURCE_WEATHERENGINE_CLOUD: LayerSource = {
 
 const SOURCE_WEATHERENGINE_DEWPOINT: LayerSource = {
   id: 'weatherengine-dewpoint',
-  name: '天气引擎 · 露点',
+  name: '天气引擎 · 露点温度',
   description: 'Open-Meteo online/local 2 米露点温度。',
   urlTemplate: 'https://example.com/dewpoint/{z}/{x}/{y}.png',
   needsAuth: false,
@@ -266,7 +266,7 @@ const SOURCE_NDVI: LayerSource = {
 
 const SOURCE_DEM_ETOPO: LayerSource = {
   id: 'dem-etopo',
-  name: 'ETOPO1 地形高程',
+  name: 'ETOPO 地形高程',
   description: 'ETOPO 2022 全球地形起伏数据（60s 分辨率），含陆地高程与海洋深度。',
   urlTemplate: '',
   needsAuth: false,
@@ -277,7 +277,7 @@ const SOURCE_DEM_ETOPO: LayerSource = {
 
 const SOURCE_LANDCOVER_CN: LayerSource = {
   id: 'landcover-cn',
-  name: 'MCD12Q1 土地覆盖（中国 0.25°）',
+  name: 'MODIS 土地覆盖',
   description: 'MODIS MCD12Q1 IGBP 土地覆盖分类，中国区域 0.25° 重采样。',
   urlTemplate: '',
   needsAuth: false,
@@ -310,8 +310,8 @@ const SOURCE_ARIDITY_CN: LayerSource = {
 
 const SOURCE_SMAP_TS: LayerSource = {
   id: 'ref-smap-sm-202512-l3',
-  name: 'SMAP L3 土壤湿度参考产品（2025-12）',
-  description: 'SMAP L3 土壤湿度日数据时间序列（2025 年 12 月，31 天，中国区域）。',
+  name: 'SMAP L3 土壤水分',
+  description: 'SMAP L3 土壤水分日数据（2025 年 12 月，31 天，中国区域）。',
   urlTemplate: '',
   needsAuth: false,
   needsBackendTransform: false,
@@ -321,8 +321,8 @@ const SOURCE_SMAP_TS: LayerSource = {
 
 const SOURCE_GPCP_TS: LayerSource = {
   id: 'gpcp-precip-ts',
-  name: 'GPCP 月降水时间序列（1983-2010）',
-  description: 'GPCP 月平均降水卫星-雨量计合成产品（V3.2），全球 0.5°，采样 24 个月。',
+  name: 'GPCP 月降水',
+  description: 'GPCP 月平均降水（V3.2），全球 0.5°；库内采样约 1983–2010。',
   urlTemplate: '',
   needsAuth: false,
   needsBackendTransform: false,
@@ -334,7 +334,7 @@ const SOURCE_GPCP_TS: LayerSource = {
 
 const SOURCE_GEBCO_DEM_CN: LayerSource = {
   id: 'gebco-dem-cn',
-  name: 'GEBCO 2024 海底地形（中国区域）',
+  name: 'GEBCO 海底地形',
   description: 'GEBCO 2024 全球海底地形数据，中国区域裁剪，含陆地高程与海洋深度。',
   urlTemplate: '',
   needsAuth: false,
@@ -345,7 +345,7 @@ const SOURCE_GEBCO_DEM_CN: LayerSource = {
 
 const SOURCE_CMFD_PRECIP_CN: LayerSource = {
   id: 'cmfd-precip-cn',
-  name: 'CMFD 中国区域降水（2002-01）',
+  name: 'CMFD 区域降水',
   description: '中国区域高精度格点降水数据集（CMFD），2002 年 1 月月降水（0.1mm 单位转换后）。',
   urlTemplate: '',
   needsAuth: false,
@@ -356,7 +356,7 @@ const SOURCE_CMFD_PRECIP_CN: LayerSource = {
 
 const SOURCE_CLCD_CN: LayerSource = {
   id: 'clcd-cn',
-  name: 'CLCD 中国土地覆盖（1997）',
+  name: 'CLCD 土地利用',
   description: 'China Land Cover Dataset (CLCD) 1997 年土地覆盖分类（9 类）。',
   urlTemplate: '',
   needsAuth: false,
@@ -367,7 +367,7 @@ const SOURCE_CLCD_CN: LayerSource = {
 
 const SOURCE_BIOMASS_CN: LayerSource = {
   id: 'biomass-cn',
-  name: 'ESA BIOMASS 2020（中国区域）',
+  name: '地上生物量 AGB',
   description: 'ESA CCI BIOMASS L4 AGB（地上生物量）合并产品 2020 年，中国区域。',
   urlTemplate: '',
   needsAuth: false,
@@ -378,7 +378,7 @@ const SOURCE_BIOMASS_CN: LayerSource = {
 
 const SOURCE_ERA5_DWAA_CN: LayerSource = {
   id: 'era5-dwaa-cn',
-  name: 'ERA5 白天热浪事件（2020）',
+  name: 'ERA5 白天热浪',
   description: 'ERA5 基于 SMCI（土壤湿度指数）指标的白天热浪事件累积计数（2020 全年 366 天）。',
   urlTemplate: '',
   needsAuth: false,
@@ -389,7 +389,7 @@ const SOURCE_ERA5_DWAA_CN: LayerSource = {
 
 const SOURCE_ERA5_WDAA_CN: LayerSource = {
   id: 'era5-wdaa-cn',
-  name: 'ERA5 夜间热浪事件（2020）',
+  name: 'ERA5 夜间热浪',
   description: 'ERA5 基于 SMCI（土壤湿度指数）指标的夜间热浪事件累积计数（2020 全年 366 天）。',
   urlTemplate: '',
   needsAuth: false,
@@ -411,7 +411,7 @@ const SOURCE_CO2_CN: LayerSource = {
 
 const SOURCE_SOIL_DDCA: LayerSource = {
   id: 'ref-ddca-sm-201504-202512',
-  name: 'DDCA双通道土壤水分参考产品（2015年4月—2025年12月）',
+  name: 'DDCA 土壤水分',
   description:
     '中国 9km 土壤生态数据集 DDCA（双通道算法 DCA 反演）产品（变量 DH 土壤湿度，2015-04-01 至 2022-12-31 时间序列，采样 60 个时间点）。',
   urlTemplate: '',
@@ -424,7 +424,7 @@ const SOURCE_SOIL_DDCA: LayerSource = {
 // ── Phase 1.4 新增：课题组 9km EASE-Grid 派生景观指数 ──────────────────────────
 const SOURCE_LANDSCAPE_METRICS: LayerSource = {
   id: 'landscape-metrics-9km',
-  name: '景观斑块指数 (9km)',
+  name: '景观多样性 SHDI',
   description:
     '全球 9km 景观格局指数（Shannon 多样性指数 SHDI），基于 EASE-Grid 9km 与 IGBP 土地覆盖派生。',
   urlTemplate: '',
@@ -436,7 +436,7 @@ const SOURCE_LANDSCAPE_METRICS: LayerSource = {
 
 const SOURCE_FOREST_RATIO: LayerSource = {
   id: 'forest-ratio',
-  name: '森林覆盖率网格 (9km)',
+  name: '森林覆盖率',
   description: '全球 9km 森林比例数据（Forest_Ratio_9KM_2020），值域 0-1。',
   urlTemplate: '',
   needsAuth: false,
@@ -447,7 +447,7 @@ const SOURCE_FOREST_RATIO: LayerSource = {
 
 const SOURCE_SM_DEC2025: LayerSource = {
   id: 'prod-fy_smap_station-sm_vod_omega-202512-fusion',
-  name: 'SMAP/FY/站点融合土壤水分产品（2025-12，SM/VOD/ω）',
+  name: '多源融合土壤水分',
   description:
     '融合SMAP/FY-3D/站点观测的土壤湿度（SM）/植被光学厚度（VOD）/动态散射反照率（ω）产品族（2025-12-01 至 2025-12-31，EASE-Grid 9km）。当前展示 SM，VOD/ω 图层补实现中。',
   urlTemplate: '',
@@ -459,7 +459,7 @@ const SOURCE_SM_DEC2025: LayerSource = {
 
 const SOURCE_FY_MWRI: LayerSource = {
   id: 'ref-fy-tb-202512-mwri',
-  name: 'FY-3 MWRI 原始亮温（2025年12月）',
+  name: 'FY-3 MWRI 亮温',
   description: '风云三号 MWRI 微波成像仪多波段亮温产品（10V/10H/18V/18H/23V/36V/36H/89V/89H）。',
   urlTemplate: '',
   needsAuth: false,
@@ -470,7 +470,7 @@ const SOURCE_FY_MWRI: LayerSource = {
 
 const SOURCE_STATION_SOIL: LayerSource = {
   id: 'obs-station-sm-daily',
-  name: 'ISMN/CASMOS 站点土壤水分观测',
+  name: '站点土壤水分',
   description: 'ISMN/CASMOS 站点逐日土壤湿度观测，用于算法验证与产品订正。',
   urlTemplate: '',
   needsAuth: false,
@@ -580,7 +580,7 @@ export const LAYER_LIBRARY: LayerCatalogItem[] = [
   },
   {
     catalogId: 'precipitation',
-    name: '降水',
+    name: '降水量',
     category: 'weather',
     metricLabel: '峰值降水',
     metricUnit: 'mm/h',
@@ -594,7 +594,7 @@ export const LAYER_LIBRARY: LayerCatalogItem[] = [
   },
   {
     catalogId: 'temperature',
-    name: '温度',
+    name: '气温',
     category: 'weather',
     metricLabel: '区域均温',
     metricUnit: '°C',
@@ -608,9 +608,9 @@ export const LAYER_LIBRARY: LayerCatalogItem[] = [
   },
   {
     catalogId: 'temperature-80m',
-    name: '温度（80m）',
+    name: '气温（80m）',
     category: 'weather',
-    metricLabel: '80m 温度',
+    metricLabel: '80m 气温',
     metricUnit: '°C',
     metricPrecision: 1,
     updateLabel: '每小时更新',
@@ -622,9 +622,9 @@ export const LAYER_LIBRARY: LayerCatalogItem[] = [
   },
   {
     catalogId: 'temperature-120m',
-    name: '温度（120m）',
+    name: '气温（120m）',
     category: 'weather',
-    metricLabel: '120m 温度',
+    metricLabel: '120m 气温',
     metricUnit: '°C',
     metricPrecision: 1,
     updateLabel: '每小时更新',
@@ -636,9 +636,9 @@ export const LAYER_LIBRARY: LayerCatalogItem[] = [
   },
   {
     catalogId: 'temperature-180m',
-    name: '温度（180m）',
+    name: '气温（180m）',
     category: 'weather',
-    metricLabel: '180m 温度',
+    metricLabel: '180m 气温',
     metricUnit: '°C',
     metricPrecision: 1,
     updateLabel: '每小时更新',
@@ -650,7 +650,7 @@ export const LAYER_LIBRARY: LayerCatalogItem[] = [
   },
   {
     catalogId: 'pressure',
-    name: '气压',
+    name: '海平面气压',
     category: 'weather',
     metricLabel: '海平面气压',
     metricUnit: 'hPa',
@@ -664,7 +664,7 @@ export const LAYER_LIBRARY: LayerCatalogItem[] = [
   },
   {
     catalogId: 'humidity',
-    name: '湿度',
+    name: '相对湿度',
     category: 'weather',
     metricLabel: '相对湿度',
     metricUnit: '%',
@@ -706,7 +706,7 @@ export const LAYER_LIBRARY: LayerCatalogItem[] = [
   },
   {
     catalogId: 'dewpoint',
-    name: '露点',
+    name: '露点温度',
     category: 'weather',
     metricLabel: '露点',
     metricUnit: '°C',
@@ -734,7 +734,7 @@ export const LAYER_LIBRARY: LayerCatalogItem[] = [
   },
   {
     catalogId: 'dem-etopo',
-    name: 'ETOPO1 地形高程',
+    name: 'ETOPO 地形高程',
     category: 'terrain',
     metricLabel: '高程',
     metricUnit: 'm',
@@ -748,7 +748,7 @@ export const LAYER_LIBRARY: LayerCatalogItem[] = [
   },
   {
     catalogId: 'landcover-cn',
-    name: 'MCD12Q1 土地覆盖',
+    name: 'MODIS 土地覆盖',
     category: 'landcover',
     metricLabel: 'IGBP 分类',
     metricUnit: '',
@@ -790,7 +790,7 @@ export const LAYER_LIBRARY: LayerCatalogItem[] = [
   },
   {
     catalogId: 'ref-smap-sm-202512-l3',
-    name: 'SMAP官方土壤水分参考产品（2025年12月）',
+    name: 'SMAP L3 土壤水分',
     category: 'research-group',
     subCategory: '模型输入',
     metricLabel: '土壤湿度',
@@ -808,7 +808,7 @@ export const LAYER_LIBRARY: LayerCatalogItem[] = [
   },
   {
     catalogId: 'gpcp-precip-ts',
-    name: 'GPCP 月降水时间序列',
+    name: 'GPCP 月降水',
     category: 'climate',
     metricLabel: '降水',
     metricUnit: 'mm/month',
@@ -822,7 +822,7 @@ export const LAYER_LIBRARY: LayerCatalogItem[] = [
   },
   {
     catalogId: 'gebco-dem-cn',
-    name: 'GEBCO 15角秒 DEM',
+    name: 'GEBCO 海底地形',
     category: 'terrain',
     metricLabel: '高程',
     metricUnit: 'm',
@@ -836,7 +836,7 @@ export const LAYER_LIBRARY: LayerCatalogItem[] = [
   },
   {
     catalogId: 'cmfd-precip-cn',
-    name: 'CMFD 中国区域降水',
+    name: 'CMFD 区域降水',
     category: 'climate',
     metricLabel: '降水',
     metricUnit: 'mm',
@@ -850,7 +850,7 @@ export const LAYER_LIBRARY: LayerCatalogItem[] = [
   },
   {
     catalogId: 'clcd-cn',
-    name: 'CLCD 30m 土地利用',
+    name: 'CLCD 土地利用',
     category: 'landcover',
     metricLabel: '土地覆盖',
     metricUnit: 'class',
@@ -878,7 +878,7 @@ export const LAYER_LIBRARY: LayerCatalogItem[] = [
   },
   {
     catalogId: 'era5-dwaa-cn',
-    name: 'ERA5 白天热浪事件（2020）',
+    name: 'ERA5 白天热浪',
     category: 'climate',
     metricLabel: '事件次数',
     metricUnit: 'events',
@@ -892,7 +892,7 @@ export const LAYER_LIBRARY: LayerCatalogItem[] = [
   },
   {
     catalogId: 'era5-wdaa-cn',
-    name: 'ERA5 夜间热浪事件（2020）',
+    name: 'ERA5 夜间热浪',
     category: 'climate',
     metricLabel: '事件次数',
     metricUnit: 'events',
@@ -906,7 +906,7 @@ export const LAYER_LIBRARY: LayerCatalogItem[] = [
   },
   {
     catalogId: 'co2-cn',
-    name: 'GOSAT 中层 CO₂ 柱浓度',
+    name: 'GOSAT CO₂ 柱浓度',
     category: 'climate',
     metricLabel: 'CO₂',
     metricUnit: 'ppm',
@@ -920,7 +920,7 @@ export const LAYER_LIBRARY: LayerCatalogItem[] = [
   },
   {
     catalogId: 'ref-ddca-sm-201504-202512',
-    name: 'DDCA双通道土壤水分参考产品（2015年4月—2025年12月）',
+    name: 'DDCA 土壤水分',
     category: 'research-group',
     subCategory: '辅助数据',
     metricLabel: 'DH',
@@ -937,7 +937,7 @@ export const LAYER_LIBRARY: LayerCatalogItem[] = [
   },
   {
     catalogId: 'forest-ratio',
-    name: '森林覆盖率网格 (9km)',
+    name: '森林覆盖率',
     category: 'research-group',
     subCategory: '辅助数据',
     metricLabel: '森林比例',
@@ -955,7 +955,7 @@ export const LAYER_LIBRARY: LayerCatalogItem[] = [
   },
   {
     catalogId: 'landscape-metrics-9km',
-    name: '景观斑块指数 (9km)',
+    name: '景观多样性 SHDI',
     category: 'research-group',
     subCategory: '辅助数据',
     metricLabel: 'SHDI',
@@ -972,7 +972,7 @@ export const LAYER_LIBRARY: LayerCatalogItem[] = [
   },
   {
     catalogId: 'prod-fy_smap_station-sm_vod_omega-202512-fusion',
-    name: 'SMAP/FY/站点融合土壤水分产品（2025年12月，SM/VOD/ω）',
+    name: '多源融合土壤水分',
     category: 'research-group',
     subCategory: '模型输入',
     metricLabel: '土壤湿度',
@@ -989,7 +989,7 @@ export const LAYER_LIBRARY: LayerCatalogItem[] = [
   },
   {
     catalogId: 'ref-fy-tb-202512-mwri',
-    name: 'FY-3 MWRI 原始亮温（2025年12月）',
+    name: 'FY-3 MWRI 亮温',
     category: 'research-group',
     subCategory: '模型输入',
     metricLabel: '亮温',
@@ -1004,7 +1004,7 @@ export const LAYER_LIBRARY: LayerCatalogItem[] = [
   },
   {
     catalogId: 'obs-station-sm-daily',
-    name: '站点土壤水分观测',
+    name: '站点土壤水分',
     category: 'research-group',
     subCategory: '模型输入',
     metricLabel: '土壤湿度',
