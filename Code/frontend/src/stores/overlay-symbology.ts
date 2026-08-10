@@ -137,7 +137,7 @@ export const useOverlaySymbologyStore = defineStore('overlay-symbology', () => {
         if (!options?.skipRegistryCheck) {
           const known = await ensureKnownOverlays()
           if (!known.has(catalogId)) {
-            // 工作流-only catalog（如 omega-sf-fenkuai）：不发 bounds，避免 404 刷屏
+            // 工作流-only catalog（如 method-smap-omega-doy-dynamic）：不发 bounds，避免 404 刷屏
             write(catalogId, { status: 'miss', meta: {}, fetchedAt: Date.now() })
             return
           }

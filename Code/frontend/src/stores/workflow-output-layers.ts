@@ -1,25 +1,23 @@
 /**
  * 工作流产出图层注册表
  *
- * 管理用户通过工作流编辑器"新建图层"方式创建的产出图层条目。
+ * 管理用户通过工作流编辑器「新建图层」方式创建的产出图层条目。
  * 这些条目在前端本地维护（持久化到 localStorage），后端提交时仍使用
- * 源工作流的 linked_layer_id 解析引擎请求，但前端按用户指定的名称与分组
- * 在图层面板中独立展示。
- *
- * 设计要点：
- *  - 后端 API 不支持动态创建图层目录条目，因此采用前端本地注册表方案
- *  - 每个产出条目记录源工作流 ID 与源 layer_id，便于复用现有提交链路
- *  - 分组（group）由用户自定义，可在新建时指定或创建新分组
+ * 源工作流的 linked_layer_id 解析引擎请求，在图层面板中归入
+ * 「科研数据 → 模型输出」展示。
  */
 import { defineStore } from 'pinia'
 import { computed, ref, watch } from 'vue'
+
+/** 工作流产出图层在图层面板中的二级分类（research-group 子类） */
+export const WORKFLOW_OUTPUT_SUBCATEGORY = '模型输出' as const
 
 export interface WorkflowOutputLayerEntry {
   /** 本地唯一 ID，用作 catalogId（前缀 wf-out-） */
   localId: string
   /** 用户指定的显示名称 */
   name: string
-  /** 用户指定的分组名称（对应 LayerSidebar 中的子分组） */
+  /** @deprecated 历史字段；现统一归入 WORKFLOW_OUTPUT_SUBCATEGORY */
   group: string
   /** 源工作流定义 ID */
   sourceWorkflowId: string
@@ -44,9 +42,14 @@ function loadFromStorage(): WorkflowOutputLayerEntry[] {
     if (!raw) return []
     const parsed = JSON.parse(raw)
     if (!Array.isArray(parsed)) return []
-    return parsed.filter((item): item is WorkflowOutputLayerEntry => {
-      return item && typeof item.localId === 'string' && typeof item.sourceLayerId === 'string'
-    })
+    return parsed
+      .filter((item): item is WorkflowOutputLayerEntry => {
+        return item && typeof item.localId === 'string' && typeof item.sourceLayerId === 'string'
+      })
+      .map((item) => ({
+        ...item,
+        group: WORKFLOW_OUTPUT_SUBCATEGORY,
+      }))
   } catch {
     return []
   }
@@ -83,18 +86,8 @@ export const useWorkflowOutputLayersStore = defineStore('workflow-output-layers'
   /** 所有已注册的产出图层条目 */
   const allEntries = computed(() => entries.value)
 
-  /** 所有分组名（去重，按创建顺序） */
-  const groups = computed(() => {
-    const seen = new Set<string>()
-    const result: string[] = []
-    for (const entry of entries.value) {
-      if (!seen.has(entry.group)) {
-        seen.add(entry.group)
-        result.push(entry.group)
-      }
-    }
-    return result
-  })
+  /** 所有分组名（去重，按创建顺序）；现固定为模型输出 */
+  const groups = computed(() => [WORKFLOW_OUTPUT_SUBCATEGORY])
 
   /** 按 sourceLayerId 查找产出图层（用于"默认图层"下拉选择） */
   function getBySourceLayerId(sourceLayerId: string): WorkflowOutputLayerEntry[] {
@@ -116,7 +109,7 @@ export const useWorkflowOutputLayersStore = defineStore('workflow-output-layers'
     const entry: WorkflowOutputLayerEntry = {
       localId: `wf-out-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
       name: params.name.trim() || `产出图层 ${new Date().toLocaleString()}`,
-      group: params.group.trim() || '默认分组',
+      group: WORKFLOW_OUTPUT_SUBCATEGORY,
       sourceWorkflowId: params.sourceWorkflowId,
       sourceLayerId: params.sourceLayerId,
       engine: params.engine,

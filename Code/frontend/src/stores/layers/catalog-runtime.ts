@@ -1,0 +1,313 @@
+/**
+ * Runtime layer catalog + library slice extracted from the layers god store.
+ * Public API remains re-exported via useLayersStore().
+ */
+import { computed, ref, type ComputedRef, type Ref } from 'vue'
+
+import { fetchLayerCatalog, type RuntimeLayerDescriptor } from '../../services/runtime-api'
+import {
+  supportsMapLayerCapability,
+  supportsParticleFlowCapability,
+  supportsViewportDrivenRefreshCapability,
+} from '../../services/layer-capabilities'
+import { LAYER_CATEGORIES, LAYER_LIBRARY } from './catalog'
+import {
+  buildCatalogFallbackItem,
+  buildRuntimeLayerLibraryItem,
+  CATEGORY_INDEX_BY_ID,
+  getCatalogDisplayName,
+  isBlockedRunReadiness,
+} from './catalog-builders'
+import {
+  useWorkflowOutputLayersStore,
+  WORKFLOW_OUTPUT_SUBCATEGORY,
+} from '../workflow-output-layers'
+import { isWeatherEngineCatalogId } from './weather-session'
+import type {
+  ActiveLayer,
+  ActiveRunLayerGroup,
+  JobLayerItem,
+  JobStatus,
+  RuntimeLayerLibraryItem,
+} from './types'
+
+export interface CatalogRuntimeSliceDeps {
+  getActiveLayers: () => ActiveLayer[]
+  getRunLayerGroups: () => ActiveRunLayerGroup[]
+  getJobLayers: () => JobLayerItem[]
+  /** Called after catalog fetch succeeds (e.g. reconcile weather tile active set). */
+  onCatalogLoaded?: () => void
+}
+
+export interface CatalogRuntimeSlice {
+  runtimeLayerCatalog: Ref<Record<string, RuntimeLayerDescriptor>>
+  runtimeLayerCatalogLoading: Ref<boolean>
+  layerLibrary: ComputedRef<RuntimeLayerLibraryItem[]>
+  layerLibraryMap: ComputedRef<Map<string, RuntimeLayerLibraryItem>>
+  catalogJobStatus: ComputedRef<Map<string, JobStatus>>
+  catalogRunReadiness: ComputedRef<Map<string, string>>
+  ensureRuntimeLayerCatalog: (force?: boolean) => Promise<void>
+  getRuntimeLayerDescriptor: (catalogId: string) => RuntimeLayerDescriptor | null
+  resolveBackendLayerId: (catalogId: string) => string
+  resolveEffectiveDescriptor: (catalogId: string) => RuntimeLayerDescriptor | null
+  getCatalogWorkflowEngine: (catalogId: string) => string | null
+  supportsAnalysisWorkflow: (catalogId: string) => boolean
+  getCatalogRunBlockReason: (catalogId: string) => string | null
+  canRunCatalog: (catalogId: string) => boolean
+  isWeatherEngineLayer: (catalogId: string) => boolean
+  supportsMapLayerResult: (catalogId: string) => boolean
+  supportsViewportDrivenRefresh: (catalogId: string) => boolean
+  supportsParticleFlow: (catalogId: string) => boolean
+  getLayerPrimaryMetric: (catalogId: string) => string | null
+  setRuntimeLayerCatalog: (catalog: Record<string, RuntimeLayerDescriptor>) => void
+}
+
+export function createCatalogRuntimeSlice(deps: CatalogRuntimeSliceDeps): CatalogRuntimeSlice {
+  const runtimeLayerCatalog = ref<Record<string, RuntimeLayerDescriptor>>({})
+  const runtimeLayerCatalogLoading = ref(false)
+  let runtimeLayerCatalogRequest: Promise<void> | null = null
+
+  const layerLibrary = computed<RuntimeLayerLibraryItem[]>(() => {
+    const runtimeItems = Object.values(runtimeLayerCatalog.value).map((descriptor) =>
+      buildRuntimeLayerLibraryItem(descriptor),
+    )
+    const items =
+      runtimeItems.length > 0
+        ? runtimeItems
+        : LAYER_LIBRARY.filter((item) => !item.isAdminBoundary).map((item) =>
+            buildCatalogFallbackItem(null, item.catalogId),
+          )
+
+    const outputStore = useWorkflowOutputLayersStore()
+    const researchCategory = LAYER_CATEGORIES.find((c) => c.id === 'research-group')
+    const researchAccent = researchCategory?.accentColor ?? '#ff6f91'
+    const researchChip = researchCategory?.chipTone ?? 'rgba(255, 111, 145, 0.16)'
+    const outputItems: RuntimeLayerLibraryItem[] = outputStore.entries.map((entry) => ({
+      catalogId: entry.localId,
+      name: entry.name,
+      category: 'research-group',
+      subCategory: WORKFLOW_OUTPUT_SUBCATEGORY,
+      metricLabel: '产出',
+      metricUnit: '',
+      metricPrecision: 1,
+      updateLabel: '工作流驱动',
+      sourceLabel: `工作流: ${entry.sourceWorkflowId}`,
+      accentColor: researchAccent,
+      accentGlow: 'rgba(255, 111, 145, 0.28)',
+      chipTone: researchChip,
+      sources: [],
+      description: `模型输出 · 源图层: ${entry.sourceLayerId}`,
+      engine: entry.engine,
+      workflowName: entry.name,
+      runReadiness: 'ready',
+      runReadinessSummary: '工作流产出图层，可运行源工作流刷新数据',
+      runReadinessNotes: [],
+      backendStatus: 'sample',
+      supportsTime: false,
+    }))
+
+    const isDatasetLibraryItem = (item: RuntimeLayerLibraryItem) =>
+      item.category !== 'boundary' &&
+      !item.isAdminBoundary &&
+      item.catalogId !== 'admin-boundary' &&
+      item.catalogId !== 'admin-boundary-cn'
+
+    return items
+      .concat(outputItems)
+      .filter(isDatasetLibraryItem)
+      .sort((a, b) => {
+        const categoryOrderA = CATEGORY_INDEX_BY_ID.get(a.category) ?? Number.MAX_SAFE_INTEGER
+        const categoryOrderB = CATEGORY_INDEX_BY_ID.get(b.category) ?? Number.MAX_SAFE_INTEGER
+        if (categoryOrderA !== categoryOrderB) {
+          return categoryOrderA - categoryOrderB
+        }
+        return a.name.localeCompare(b.name, 'zh-CN')
+      })
+  })
+
+  const layerLibraryMap = computed(
+    () => new Map(layerLibrary.value.map((item) => [item.catalogId, item])),
+  )
+
+  const catalogJobStatus = computed(() => {
+    const map = new Map<string, JobStatus>()
+    for (const job of deps.getJobLayers()) {
+      if (job.catalogId) map.set(job.catalogId, job.status)
+    }
+    for (const layer of deps.getActiveLayers()) {
+      if (layer.jobLayer) {
+        map.set(layer.catalogId, layer.jobLayer.status)
+      }
+    }
+    return map
+  })
+
+  const catalogRunReadiness = computed(() => {
+    const map = new Map<string, string>()
+    for (const descriptor of Object.values(runtimeLayerCatalog.value)) {
+      map.set(descriptor.layer_id, descriptor.run_readiness ?? 'ready')
+    }
+    return map
+  })
+
+  function getRuntimeLayerDescriptor(catalogId: string) {
+    return runtimeLayerCatalog.value[catalogId] ?? null
+  }
+
+  function resolveBackendLayerId(catalogId: string): string {
+    if (catalogId.startsWith('wf-out-')) {
+      const outputStore = useWorkflowOutputLayersStore()
+      const entry = outputStore.getByLocalId(catalogId)
+      return entry?.sourceLayerId ?? catalogId
+    }
+    if (catalogId.startsWith('wf-run-')) {
+      const layer = deps.getActiveLayers().find((l) => l.catalogId === catalogId)
+      if (layer?.runGroupId) {
+        const g = deps.getRunLayerGroups().find((x) => x.groupId === layer.runGroupId)
+        if (g?.sourceLayerId) return g.sourceLayerId
+      }
+    }
+    return catalogId
+  }
+
+  function resolveEffectiveDescriptor(catalogId: string): RuntimeLayerDescriptor | null {
+    if (catalogId.startsWith('wf-out-') || catalogId.startsWith('wf-run-')) {
+      const backendId = resolveBackendLayerId(catalogId)
+      return getRuntimeLayerDescriptor(backendId)
+    }
+    return getRuntimeLayerDescriptor(catalogId)
+  }
+
+  async function ensureRuntimeLayerCatalog(force = false) {
+    if (!force && Object.keys(runtimeLayerCatalog.value).length > 0) {
+      return
+    }
+    if (runtimeLayerCatalogRequest && !force) {
+      return runtimeLayerCatalogRequest
+    }
+
+    runtimeLayerCatalogLoading.value = true
+    runtimeLayerCatalogRequest = fetchLayerCatalog()
+      .catch(async (error) => {
+        const message = error instanceof Error ? error.message : String(error)
+        const shouldRetry = /AbortError|aborted without reason|Failed to fetch|NetworkError/i.test(
+          message,
+        )
+        if (!shouldRetry) {
+          throw error
+        }
+        await new Promise((resolve) => window.setTimeout(resolve, 250))
+        return fetchLayerCatalog()
+      })
+      .then((response) => {
+        runtimeLayerCatalog.value = Object.fromEntries(
+          response.items.map((item) => [item.layer_id, item]),
+        )
+        deps.onCatalogLoaded?.()
+      })
+      .catch((error) => {
+        console.warn(
+          '[LayersStore] ensureRuntimeLayerCatalog failed, will retry on next call:',
+          error.message,
+        )
+        runtimeLayerCatalogRequest = null
+        throw error
+      })
+      .finally(() => {
+        runtimeLayerCatalogLoading.value = false
+        runtimeLayerCatalogRequest = null
+      })
+
+    return runtimeLayerCatalogRequest
+  }
+
+  function getCatalogWorkflowEngine(catalogId: string): string | null {
+    const descriptor = getRuntimeLayerDescriptor(catalogId)
+    if (descriptor?.engine) return descriptor.engine
+    const libItem = layerLibraryMap.value.get(catalogId)
+    return libItem?.engine ?? null
+  }
+
+  function isWeatherEngineLayer(catalogId: string): boolean {
+    return isWeatherEngineCatalogId(catalogId, getRuntimeLayerDescriptor(catalogId))
+  }
+
+  function supportsAnalysisWorkflow(catalogId: string): boolean {
+    const backendLayerId = resolveBackendLayerId(catalogId)
+    if (isWeatherEngineLayer(backendLayerId) || isWeatherEngineLayer(catalogId)) return false
+    return Boolean(getCatalogWorkflowEngine(backendLayerId) || getCatalogWorkflowEngine(catalogId))
+  }
+
+  function getCatalogRunBlockReason(catalogId: string) {
+    const backendLayerId = resolveBackendLayerId(catalogId)
+    if (isWeatherEngineLayer(backendLayerId) || isWeatherEngineLayer(catalogId)) {
+      return null
+    }
+    if (!supportsAnalysisWorkflow(catalogId)) {
+      return `${getCatalogDisplayName(catalogId)} 未配置分析工作流引擎（静态叠加请直接加载图层）`
+    }
+
+    const descriptor =
+      getRuntimeLayerDescriptor(backendLayerId) ?? getRuntimeLayerDescriptor(catalogId)
+    if (!descriptor || !isBlockedRunReadiness(descriptor.run_readiness)) {
+      return null
+    }
+
+    return (
+      descriptor.run_readiness_summary ??
+      descriptor.run_readiness_notes?.[0] ??
+      `${getCatalogDisplayName(catalogId)} 默认数据源未就绪`
+    )
+  }
+
+  function canRunCatalog(catalogId: string) {
+    return !getCatalogRunBlockReason(catalogId)
+  }
+
+  function supportsMapLayerResult(catalogId: string) {
+    return supportsMapLayerCapability(getRuntimeLayerDescriptor(catalogId))
+  }
+
+  function supportsViewportDrivenRefresh(catalogId: string) {
+    return supportsViewportDrivenRefreshCapability(getRuntimeLayerDescriptor(catalogId))
+  }
+
+  function supportsParticleFlow(catalogId: string): boolean {
+    const descriptor = getRuntimeLayerDescriptor(catalogId)
+    if (descriptor) {
+      return supportsParticleFlowCapability(descriptor)
+    }
+    return catalogId.startsWith('wind-field')
+  }
+
+  function getLayerPrimaryMetric(catalogId: string): string | null {
+    return getRuntimeLayerDescriptor(catalogId)?.capabilities?.primary_metric ?? null
+  }
+
+  function setRuntimeLayerCatalog(catalog: Record<string, RuntimeLayerDescriptor>) {
+    runtimeLayerCatalog.value = catalog
+  }
+
+  return {
+    runtimeLayerCatalog,
+    runtimeLayerCatalogLoading,
+    layerLibrary,
+    layerLibraryMap,
+    catalogJobStatus,
+    catalogRunReadiness,
+    ensureRuntimeLayerCatalog,
+    getRuntimeLayerDescriptor,
+    resolveBackendLayerId,
+    resolveEffectiveDescriptor,
+    getCatalogWorkflowEngine,
+    supportsAnalysisWorkflow,
+    getCatalogRunBlockReason,
+    canRunCatalog,
+    isWeatherEngineLayer,
+    supportsMapLayerResult,
+    supportsViewportDrivenRefresh,
+    supportsParticleFlow,
+    getLayerPrimaryMetric,
+    setRuntimeLayerCatalog,
+  }
+}

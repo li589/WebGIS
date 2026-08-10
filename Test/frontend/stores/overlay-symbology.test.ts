@@ -41,9 +41,9 @@ describe('overlay-symbology store', () => {
     const fetchMock = mockOverlaysAndBounds({ overlays: ['aridity-cn'] })
     vi.stubGlobal('fetch', fetchMock)
 
-    await store.ensureMeta('omega-sf-fenkuai')
-    expect(store.getMeta('omega-sf-fenkuai')).toEqual({})
-    expect(store.shouldSkipFetch('omega-sf-fenkuai')).toBe(true)
+    await store.ensureMeta('method-smap-omega-doy-dynamic')
+    expect(store.getMeta('method-smap-omega-doy-dynamic')).toEqual({})
+    expect(store.shouldSkipFetch('method-smap-omega-doy-dynamic')).toBe(true)
     expect(fetchMock.mock.calls.some((c) => String(c[0]).includes('/overlay-bounds/'))).toBe(
       false,
     )

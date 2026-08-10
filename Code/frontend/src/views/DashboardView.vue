@@ -501,7 +501,10 @@ const WorkflowEditorPanel = defineAsyncComponent(
   () => import('../components/workflow/WorkflowEditorPanel.vue'),
 )
 import type { WorkflowRunTarget } from '../components/workflow/WorkflowRunDialog.vue'
-import { useWorkflowOutputLayersStore } from '../stores/workflow-output-layers'
+import {
+  useWorkflowOutputLayersStore,
+  WORKFLOW_OUTPUT_SUBCATEGORY,
+} from '../stores/workflow-output-layers'
 
 const { processFiles: processImportFiles, dropActive, importing: importBusy } = useDataImportFlow()
 
@@ -1011,9 +1014,8 @@ async function handleRunWorkflowFromEditor(
   if (target.mode === 'new') {
     const engine =
       layersStore.layerLibrary.find((l) => l.catalogId === sourceLayerId)?.engine ?? 'general'
-    const libGroup = target.group ?? '默认分组'
     const entries = workflowOutputStore.createOutputLayers(
-      targets.map((t) => ({ name: t.name, group: libGroup })),
+      targets.map((t) => ({ name: t.name, group: WORKFLOW_OUTPUT_SUBCATEGORY })),
       workflowId,
       sourceLayerId,
       engine,
@@ -1021,7 +1023,7 @@ async function handleRunWorkflowFromEditor(
     memberCatalogIds = entries.map((e) => e.localId)
     logStore.logWorkflow(
       'workflow-output-create',
-      `创建 ${entries.length} 个产出图层 → 分组「${libGroup}」`,
+      `创建 ${entries.length} 个产出图层 → ${WORKFLOW_OUTPUT_SUBCATEGORY}`,
     )
   }
 

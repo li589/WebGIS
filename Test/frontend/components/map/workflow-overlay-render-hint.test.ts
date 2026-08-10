@@ -13,7 +13,7 @@ describe('workflow overlay renderHint bridge', () => {
   it('prefers display renderHint with paletteOverride over raw job payload', () => {
     const layer = {
       renderHint: {
-        layer_id: 'omega-sf-fenkuai',
+        layer_id: 'method-smap-omega-doy-dynamic',
         paint_mode: 'grid_fill',
         palette: 'cividis',
         primary_metric: 'value',
@@ -25,7 +25,7 @@ describe('workflow overlay renderHint bridge', () => {
       jobLayer: {
         mapLayerPayload: {
           renderHint: {
-            layer_id: 'omega-sf-fenkuai',
+            layer_id: 'method-smap-omega-doy-dynamic',
             paint_mode: 'grid_fill',
             palette: 'viridis',
             primary_metric: 'value',
