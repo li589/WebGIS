@@ -5,15 +5,15 @@ import { ORG_LABEL } from '../../ui-copy/brand'
 // 任何新增/重命名都需要后端同步更新。前端独有类别（imported）除外。
 //
 // 分组约定：
-// - 气候产品 / 气候与灾害：历史气候、热浪、CO₂、干旱指数等离线产品
+// - climate / 气候与灾害：历史气候、热浪、CO₂、干旱指数等离线产品
 // - landcover / 土地覆盖；terrain / 地形数据；vegetation / 植被相关
 // - research-group / 课题组数据（模型输入/模型输出/辅助数据；工作流产出归入模型输出）
 // - imported / 本地导入
-// - 气象场 / 在线天气：天气引擎实时图层（wind/temp/precip/…），排序置末
+// - weather / 在线天气：天气引擎实时图层（wind/temp/precip/…），排序置末
 // - 行政边界不作为数据集目录项（地图参考轮廓如需另走底图/叠层，不入图层库）
 export const LAYER_CATEGORIES: LayerCategory[] = [
   {
-    id: '气候产品',
+    id: 'climate',
     name: '气候与灾害',
     icon: 'C',
     accentColor: '#ff9d6c',
@@ -55,7 +55,7 @@ export const LAYER_CATEGORIES: LayerCategory[] = [
     chipTone: 'rgba(126, 224, 168, 0.16)',
   },
   {
-    id: '气象场',
+    id: 'weather',
     name: '在线天气',
     icon: 'W',
     accentColor: '#67d4ff',
@@ -266,7 +266,7 @@ const SOURCE_NDVI: LayerSource = {
 
 const SOURCE_DEM_ETOPO: LayerSource = {
   id: 'dem-etopo',
-  name: 'ETOPO 2022 全球地形',
+  name: 'ETOPO1 地形高程',
   description: 'ETOPO 2022 全球地形起伏数据（60s 分辨率），含陆地高程与海洋深度。',
   urlTemplate: '',
   needsAuth: false,
@@ -424,7 +424,7 @@ const SOURCE_SOIL_DDCA: LayerSource = {
 // ── Phase 1.4 新增：课题组 9km EASE-Grid 派生景观指数 ──────────────────────────
 const SOURCE_LANDSCAPE_METRICS: LayerSource = {
   id: 'landscape-metrics-9km',
-  name: '景观多样性指数 SHDI（9km，2020）',
+  name: '景观斑块指数 (9km)',
   description:
     '全球 9km 景观格局指数（Shannon 多样性指数 SHDI），基于 EASE-Grid 9km 与 IGBP 土地覆盖派生。',
   urlTemplate: '',
@@ -436,7 +436,7 @@ const SOURCE_LANDSCAPE_METRICS: LayerSource = {
 
 const SOURCE_FOREST_RATIO: LayerSource = {
   id: 'forest-ratio',
-  name: '全球森林比例（9km，2020）',
+  name: '森林覆盖率网格 (9km)',
   description: '全球 9km 森林比例数据（Forest_Ratio_9KM_2020），值域 0-1。',
   urlTemplate: '',
   needsAuth: false,
@@ -483,7 +483,7 @@ export const LAYER_LIBRARY: LayerCatalogItem[] = [
   {
     catalogId: 'wind-field',
     name: '风场（10m）',
-    category: '气象场',
+    category: 'weather',
     metricLabel: '风速',
     metricUnit: 'm/s',
     metricPrecision: 1,
@@ -497,7 +497,7 @@ export const LAYER_LIBRARY: LayerCatalogItem[] = [
   {
     catalogId: 'wind-field-80m',
     name: '风场（80m）',
-    category: '气象场',
+    category: 'weather',
     metricLabel: '风速',
     metricUnit: 'm/s',
     metricPrecision: 1,
@@ -511,7 +511,7 @@ export const LAYER_LIBRARY: LayerCatalogItem[] = [
   {
     catalogId: 'wind-field-120m',
     name: '风场（120m）',
-    category: '气象场',
+    category: 'weather',
     metricLabel: '风速',
     metricUnit: 'm/s',
     metricPrecision: 1,
@@ -525,7 +525,7 @@ export const LAYER_LIBRARY: LayerCatalogItem[] = [
   {
     catalogId: 'wind-field-180m',
     name: '风场（180m）',
-    category: '气象场',
+    category: 'weather',
     metricLabel: '风速',
     metricUnit: 'm/s',
     metricPrecision: 1,
@@ -539,7 +539,7 @@ export const LAYER_LIBRARY: LayerCatalogItem[] = [
   {
     catalogId: 'wind-field-850hPa',
     name: '风场（850hPa）',
-    category: '气象场',
+    category: 'weather',
     metricLabel: '850hPa 风速',
     metricUnit: 'm/s',
     metricPrecision: 1,
@@ -553,7 +553,7 @@ export const LAYER_LIBRARY: LayerCatalogItem[] = [
   {
     catalogId: 'wind-field-500hPa',
     name: '风场（500hPa）',
-    category: '气象场',
+    category: 'weather',
     metricLabel: '500hPa 风速',
     metricUnit: 'm/s',
     metricPrecision: 1,
@@ -567,7 +567,7 @@ export const LAYER_LIBRARY: LayerCatalogItem[] = [
   {
     catalogId: 'wind-field-200hPa',
     name: '风场（200hPa）',
-    category: '气象场',
+    category: 'weather',
     metricLabel: '200hPa 风速',
     metricUnit: 'm/s',
     metricPrecision: 1,
@@ -581,7 +581,7 @@ export const LAYER_LIBRARY: LayerCatalogItem[] = [
   {
     catalogId: 'precipitation',
     name: '降水',
-    category: '气象场',
+    category: 'weather',
     metricLabel: '峰值降水',
     metricUnit: 'mm/h',
     metricPrecision: 0,
@@ -595,7 +595,7 @@ export const LAYER_LIBRARY: LayerCatalogItem[] = [
   {
     catalogId: 'temperature',
     name: '温度',
-    category: '气象场',
+    category: 'weather',
     metricLabel: '区域均温',
     metricUnit: '°C',
     metricPrecision: 1,
@@ -609,7 +609,7 @@ export const LAYER_LIBRARY: LayerCatalogItem[] = [
   {
     catalogId: 'temperature-80m',
     name: '温度（80m）',
-    category: '气象场',
+    category: 'weather',
     metricLabel: '80m 温度',
     metricUnit: '°C',
     metricPrecision: 1,
@@ -623,7 +623,7 @@ export const LAYER_LIBRARY: LayerCatalogItem[] = [
   {
     catalogId: 'temperature-120m',
     name: '温度（120m）',
-    category: '气象场',
+    category: 'weather',
     metricLabel: '120m 温度',
     metricUnit: '°C',
     metricPrecision: 1,
@@ -637,7 +637,7 @@ export const LAYER_LIBRARY: LayerCatalogItem[] = [
   {
     catalogId: 'temperature-180m',
     name: '温度（180m）',
-    category: '气象场',
+    category: 'weather',
     metricLabel: '180m 温度',
     metricUnit: '°C',
     metricPrecision: 1,
@@ -651,7 +651,7 @@ export const LAYER_LIBRARY: LayerCatalogItem[] = [
   {
     catalogId: 'pressure',
     name: '气压',
-    category: '气象场',
+    category: 'weather',
     metricLabel: '海平面气压',
     metricUnit: 'hPa',
     metricPrecision: 1,
@@ -665,7 +665,7 @@ export const LAYER_LIBRARY: LayerCatalogItem[] = [
   {
     catalogId: 'humidity',
     name: '湿度',
-    category: '气象场',
+    category: 'weather',
     metricLabel: '相对湿度',
     metricUnit: '%',
     metricPrecision: 0,
@@ -679,7 +679,7 @@ export const LAYER_LIBRARY: LayerCatalogItem[] = [
   {
     catalogId: 'visibility',
     name: '能见度',
-    category: '气象场',
+    category: 'weather',
     metricLabel: '能见度',
     metricUnit: 'm',
     metricPrecision: 0,
@@ -693,7 +693,7 @@ export const LAYER_LIBRARY: LayerCatalogItem[] = [
   {
     catalogId: 'cloud-cover',
     name: '云量',
-    category: '气象场',
+    category: 'weather',
     metricLabel: '云量',
     metricUnit: '%',
     metricPrecision: 0,
@@ -706,8 +706,8 @@ export const LAYER_LIBRARY: LayerCatalogItem[] = [
   },
   {
     catalogId: 'dewpoint',
-    name: '露点温度',
-    category: '气象场',
+    name: '露点',
+    category: 'weather',
     metricLabel: '露点',
     metricUnit: '°C',
     metricPrecision: 1,
@@ -720,7 +720,7 @@ export const LAYER_LIBRARY: LayerCatalogItem[] = [
   },
   {
     catalogId: 'ndvi',
-    name: '植被指数（NDVI）',
+    name: '植被指数 NDVI',
     category: 'vegetation',
     metricLabel: '植被指数',
     metricUnit: '',
@@ -734,7 +734,7 @@ export const LAYER_LIBRARY: LayerCatalogItem[] = [
   },
   {
     catalogId: 'dem-etopo',
-    name: 'ETOPO 2022 全球地形',
+    name: 'ETOPO1 地形高程',
     category: 'terrain',
     metricLabel: '高程',
     metricUnit: 'm',
@@ -776,8 +776,8 @@ export const LAYER_LIBRARY: LayerCatalogItem[] = [
   },
   {
     catalogId: 'aridity-cn',
-    name: '干旱指数 AI（P/PET）',
-    category: '气候产品',
+    name: '干旱指数 AI',
+    category: 'climate',
     metricLabel: 'AI（P/PET）',
     metricUnit: '',
     metricPrecision: 2,
@@ -809,7 +809,7 @@ export const LAYER_LIBRARY: LayerCatalogItem[] = [
   {
     catalogId: 'gpcp-precip-ts',
     name: 'GPCP 月降水时间序列',
-    category: '气候产品',
+    category: 'climate',
     metricLabel: '降水',
     metricUnit: 'mm/month',
     metricPrecision: 1,
@@ -822,7 +822,7 @@ export const LAYER_LIBRARY: LayerCatalogItem[] = [
   },
   {
     catalogId: 'gebco-dem-cn',
-    name: 'GEBCO 2024 海底地形（中国）',
+    name: 'GEBCO 15角秒 DEM',
     category: 'terrain',
     metricLabel: '高程',
     metricUnit: 'm',
@@ -837,7 +837,7 @@ export const LAYER_LIBRARY: LayerCatalogItem[] = [
   {
     catalogId: 'cmfd-precip-cn',
     name: 'CMFD 中国区域降水',
-    category: '气候产品',
+    category: 'climate',
     metricLabel: '降水',
     metricUnit: 'mm',
     metricPrecision: 1,
@@ -850,7 +850,7 @@ export const LAYER_LIBRARY: LayerCatalogItem[] = [
   },
   {
     catalogId: 'clcd-cn',
-    name: 'CLCD 中国土地覆盖',
+    name: 'CLCD 30m 土地利用',
     category: 'landcover',
     metricLabel: '土地覆盖',
     metricUnit: 'class',
@@ -864,7 +864,7 @@ export const LAYER_LIBRARY: LayerCatalogItem[] = [
   },
   {
     catalogId: 'biomass-cn',
-    name: 'ESA BIOMASS 2020（中国）',
+    name: '地上生物量 AGB',
     category: 'vegetation',
     metricLabel: '地上生物量',
     metricUnit: 'Mg/ha',
@@ -879,7 +879,7 @@ export const LAYER_LIBRARY: LayerCatalogItem[] = [
   {
     catalogId: 'era5-dwaa-cn',
     name: 'ERA5 白天热浪事件（2020）',
-    category: '气候产品',
+    category: 'climate',
     metricLabel: '事件次数',
     metricUnit: 'events',
     metricPrecision: 0,
@@ -893,7 +893,7 @@ export const LAYER_LIBRARY: LayerCatalogItem[] = [
   {
     catalogId: 'era5-wdaa-cn',
     name: 'ERA5 夜间热浪事件（2020）',
-    category: '气候产品',
+    category: 'climate',
     metricLabel: '事件次数',
     metricUnit: 'events',
     metricPrecision: 0,
@@ -907,7 +907,7 @@ export const LAYER_LIBRARY: LayerCatalogItem[] = [
   {
     catalogId: 'co2-cn',
     name: 'GOSAT 中层 CO₂ 柱浓度',
-    category: '气候产品',
+    category: 'climate',
     metricLabel: 'CO₂',
     metricUnit: 'ppm',
     metricPrecision: 2,
@@ -937,7 +937,7 @@ export const LAYER_LIBRARY: LayerCatalogItem[] = [
   },
   {
     catalogId: 'forest-ratio',
-    name: '全球森林比例（9km，2020）',
+    name: '森林覆盖率网格 (9km)',
     category: 'research-group',
     subCategory: '辅助数据',
     metricLabel: '森林比例',
@@ -955,7 +955,7 @@ export const LAYER_LIBRARY: LayerCatalogItem[] = [
   },
   {
     catalogId: 'landscape-metrics-9km',
-    name: '景观多样性指数 SHDI（9km，2020）',
+    name: '景观斑块指数 (9km)',
     category: 'research-group',
     subCategory: '辅助数据',
     metricLabel: 'SHDI',

@@ -15,6 +15,7 @@ import { isTerminalStatus } from './catalog-builders'
 import { WORKFLOW_COPY } from '../../ui-copy/workflow'
 import { resolveEmptyOverlayWorkflowError } from './materialize-empty'
 import { productTagLabel } from '../../utils/workflow-expected-outputs'
+import { isDefaultProductDisplayName } from './layer-naming'
 import {
   timelineTargetFromWorkflowTimeKey,
   type WorkflowProgressTimeSeekHint,
@@ -885,7 +886,13 @@ export function createRunLayersSlice(deps: RunLayersSliceDeps) {
         removeIds.push(instanceId)
       } else {
         layer.runGroupLocked = false
-        if (layer.name && !layer.name.includes('（部分）')) {
+        const tag = normalizeProductTag(layer.runGroupProductTag || layer.name)
+        const defaultLabel = tag ? productTagLabel(tag) : ''
+        if (
+          layer.name &&
+          !layer.name.includes('（部分）') &&
+          isDefaultProductDisplayName(layer.name, tag, defaultLabel)
+        ) {
           layer.name = `${layer.name}（部分）`
         }
       }

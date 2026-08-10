@@ -1,6 +1,7 @@
 /**
- * 图层显示名持久化（按 catalogId / backendLayerId / overlayLayerId）。
- * 刷新页面后仍可恢复用户重命名。
+ * 图层显示名持久化。
+ * 新写入优先 instanceId（+ 导入 backend/overlay id）；读路径仍兼容旧 catalogId 键。
+ * 见 .ai/docs/specs/layer-naming.md
  */
 const STORAGE_KEY = 'geo:layer-display-names:v1'
 
@@ -54,6 +55,17 @@ export function clearPersistedLayerDisplayName(key: string): void {
   if (!(key in map)) return
   delete map[key]
   saveMap(map)
+}
+
+export function clearPersistedLayerDisplayNames(keys: Iterable<string>): void {
+  const map = loadMap()
+  let changed = false
+  for (const key of keys) {
+    if (!key || !(key in map)) continue
+    delete map[key]
+    changed = true
+  }
+  if (changed) saveMap(map)
 }
 
 /** 按多个候选 key 取第一个命中的持久化名 */

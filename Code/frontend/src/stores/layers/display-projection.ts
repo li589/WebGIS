@@ -56,9 +56,9 @@ export function projectActiveLayersDisplay(ctx: ActiveLayersDisplayContext): Act
       if (layer.importedVector) {
         const payload = layer.importedVector
         const persisted = resolvePersistedDisplayName(
-          layer.catalogId,
-          payload.backendLayerId,
           layer.instanceId,
+          payload.backendLayerId,
+          layer.catalogId,
         )
         const displayName = layer.name ?? persisted ?? payload.fileName ?? '导入图层'
         return {
@@ -109,7 +109,7 @@ export function projectActiveLayersDisplay(ctx: ActiveLayersDisplayContext): Act
         const payload = layer.importedRaster
         const displayName =
           layer.name ??
-          resolvePersistedDisplayName(layer.catalogId, payload.overlayLayerId, layer.instanceId) ??
+          resolvePersistedDisplayName(layer.instanceId, payload.overlayLayerId, layer.catalogId) ??
           payload.fileName ??
           '导入栅格'
         const hasTimes = Boolean(payload.timeList?.length)
@@ -250,7 +250,7 @@ export function projectActiveLayersDisplay(ctx: ActiveLayersDisplayContext): Act
         name: layer.isAdminBoundary
           ? '行政区边界'
           : (layer.name ??
-            resolvePersistedDisplayName(layer.catalogId, layer.instanceId) ??
+            resolvePersistedDisplayName(layer.instanceId, layer.catalogId) ??
             item.name),
         category: layer.isAdminBoundary ? 'boundary' : item.category,
         description: layer.isAdminBoundary ? '广东省市级行政区边界叠加层。' : item.description,

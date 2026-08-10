@@ -237,7 +237,7 @@ const weatherTileStatusModel = computed(() => {
     weatherLayers.map((layer) => {
       const status = weatherTileManager.getLayerStatus(layer.catalogId)
       return {
-        label: layer.metricLabel || layer.name || layer.catalogId,
+        label: layer.name || layer.metricLabel || layer.catalogId,
         active: status.active,
         cachedInViewport: status.cachedInViewport,
         missingInViewport: status.missingInViewport,

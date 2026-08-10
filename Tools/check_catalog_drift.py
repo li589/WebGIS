@@ -1,12 +1,14 @@
 #!/usr/bin/env python3
-"""Gate: FE LAYER_LIBRARY catalogId must be a subset of BE catalog seed layer_id.
+"""Gate: FE LAYER_LIBRARY catalogId ⊆ BE seeds; shared ids share display_name.
 
 Usage (repo root or Code/frontend):
     python Tools/check_catalog_drift.py
     npm run check:catalog   # from Code/frontend
 
-Exit 0 when every FE catalogId (except allowlisted FE-only) exists in
-layer_descriptors.json ∪ weather_descriptors.json.
+Exit 0 when:
+  1. every FE catalogId (except allowlisted FE-only) exists in
+     layer_descriptors.json ∪ weather_descriptors.json;
+  2. for every id present in both FE and BE, FE `name` equals BE `display_name`.
 """
 
 from __future__ import annotations
@@ -39,15 +41,24 @@ def _repo_root() -> Path:
     return here
 
 
-def _fe_catalog_ids(root: Path) -> set[str]:
+def _fe_catalog_entries(root: Path) -> dict[str, str]:
+    """Parse LAYER_LIBRARY blocks: catalogId -> name (first name field in block)."""
     catalog_ts = root / "Code" / "frontend" / "src" / "stores" / "layers" / "catalog.ts"
     text = catalog_ts.read_text(encoding="utf-8")
-    return set(re.findall(r"catalogId:\s*'([^']+)'", text))
+    # Split on object starts inside LAYER_LIBRARY array
+    blocks = re.split(r"\n  \{\n", text)
+    out: dict[str, str] = {}
+    for block in blocks:
+        m_id = re.search(r"catalogId:\s*'([^']+)'", block)
+        m_name = re.search(r"name:\s*'([^']+)'", block)
+        if m_id and m_name:
+            out[m_id.group(1)] = m_name.group(1)
+    return out
 
 
-def _be_layer_ids(root: Path) -> set[str]:
+def _be_layer_entries(root: Path) -> dict[str, str]:
     seeds_dir = root / "Code" / "backend" / "app" / "catalog_seeds"
-    ids: set[str] = set()
+    out: dict[str, str] = {}
     for name in ("layer_descriptors.json", "weather_descriptors.json"):
         path = seeds_dir / name
         data = json.loads(path.read_text(encoding="utf-8"))
@@ -55,25 +66,44 @@ def _be_layer_ids(root: Path) -> set[str]:
         for item in items:
             lid = item.get("layer_id")
             if isinstance(lid, str) and lid:
-                ids.add(lid)
-    return ids
+                dn = item.get("display_name")
+                out[lid] = dn if isinstance(dn, str) else ""
+    return out
 
 
 def main() -> int:
     root = _repo_root()
-    fe = _fe_catalog_ids(root)
-    be = _be_layer_ids(root)
-    missing = sorted(fe - be - FE_ONLY_ALLOWLIST)
+    fe = _fe_catalog_entries(root)
+    be = _be_layer_entries(root)
+    fe_ids = set(fe)
+    be_ids = set(be)
+
+    missing = sorted(fe_ids - be_ids - FE_ONLY_ALLOWLIST)
     if missing:
         print("Catalog drift: FE LAYER_LIBRARY catalogId not in BE seeds:")
         for cid in missing:
             print(f"  - {cid}")
-        print(f"\nFE={len(fe)} BE={len(be)} missing={len(missing)}")
+        print(f"\nFE={len(fe_ids)} BE={len(be_ids)} missing={len(missing)}")
         return 1
-    orphan_note = sorted(be - fe)
+
+    name_mismatches: list[tuple[str, str, str]] = []
+    for cid in sorted(fe_ids & be_ids):
+        fe_name = fe[cid]
+        be_name = be[cid]
+        if fe_name != be_name:
+            name_mismatches.append((cid, fe_name, be_name))
+
+    if name_mismatches:
+        print("Catalog drift: FE name ≠ BE display_name for shared layer_id:")
+        for cid, fe_name, be_name in name_mismatches:
+            print(f"  - {cid}: FE={fe_name!r} BE={be_name!r}")
+        print(f"\nmismatches={len(name_mismatches)}")
+        return 1
+
+    orphan_note = sorted(be_ids - fe_ids)
     print(
-        f"Catalog OK: FE catalogIds subset of BE seeds "
-        f"(FE={len(fe)} BE={len(be)} allowlist={len(FE_ONLY_ALLOWLIST)} "
+        f"Catalog OK: FE catalogIds subset of BE seeds and display names aligned "
+        f"(FE={len(fe_ids)} BE={len(be_ids)} allowlist={len(FE_ONLY_ALLOWLIST)} "
         f"BE-only={len(orphan_note)})"
     )
     return 0

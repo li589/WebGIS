@@ -167,9 +167,10 @@ export function formatClockLabel(value?: string | null) {
   return `${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`
 }
 
+/** BE/历史中文类别 → FE LAYER_CATEGORIES.id（英文） */
 const CATEGORY_ALIASES: Record<string, string> = {
-  weather: '气象场',
-  climate: '气候产品',
+  气象场: 'weather',
+  气候产品: 'climate',
 }
 
 export function resolveCategory(descriptor: RuntimeLayerDescriptor, fallbackCategory?: string) {

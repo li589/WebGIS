@@ -12,7 +12,12 @@ import { useWorkflowOutputLayersStore } from '../workflow-output-layers'
 import { allocateLayerAccent } from './layer-accent'
 import { buildImportedVectorPayload, computeBounds, inferGeometryType } from './imported-vector'
 import { buildImportedRasterPayload } from './imported-raster'
-import { persistLayerDisplayName } from './layer-display-names'
+import { clearPersistedLayerDisplayNames, persistLayerDisplayName } from './layer-display-names'
+import {
+  collectLayerDisplayNameKeys,
+  isRuntimeCatalogId,
+  normalizeDisplayName,
+} from './layer-naming'
 import { projectActiveLayersDisplay } from './display-projection'
 import { rememberDismissedLayer } from './workspace-persist'
 import type {
@@ -380,6 +385,7 @@ export function createActiveLayersSlice(deps: ActiveLayersSliceDeps) {
         }
       }
     }
+    clearPersistedLayerDisplayNames(collectLayerDisplayNameKeys(layer))
     activeLayers.value.splice(idx, 1)
 
     if (selectedInstanceId.value === instanceId) {
@@ -495,6 +501,7 @@ export function createActiveLayersSlice(deps: ActiveLayersSliceDeps) {
     }
     deps.getWorkflowRetryTimers().clear()
     deps.getWorkflowRetryCounts().clear()
+    const displayNameKeys: string[] = []
     for (const layer of layersToRemove) {
       rememberDismissedLayer({
         overlayLayerId: layer.importedRaster?.overlayLayerId,
@@ -502,6 +509,7 @@ export function createActiveLayersSlice(deps: ActiveLayersSliceDeps) {
         vectorBackendLayerId: layer.importedVector?.backendLayerId,
         runId: layer.jobLayer?.jobId,
       })
+      displayNameKeys.push(...collectLayerDisplayNameKeys(layer))
       if (!isLocalImport(layer) && deps.isWeatherEngineLayer(layer.catalogId)) {
         weatherTileManager.clearLayer(layer.catalogId)
       }
@@ -509,6 +517,7 @@ export function createActiveLayersSlice(deps: ActiveLayersSliceDeps) {
       deps.getActiveWorkflowCatalogIds().delete(layer.catalogId)
       if (layer.jobLayer?.jobId) deps.forgetTrackedWorkflowRun(layer.jobLayer.jobId)
     }
+    clearPersistedLayerDisplayNames(displayNameKeys)
     activeLayers.value = []
     deps.setRunLayerGroups([])
     selectedInstanceId.value = null
@@ -563,11 +572,11 @@ export function createActiveLayersSlice(deps: ActiveLayersSliceDeps) {
     }
   }
 
-  /** 覆盖图层显示名（导入层 / 工作流输出等），并同步持久化与关联状态 */
+  /** 覆盖图层显示名（仅显示名；不改 catalogId / overlay / instanceId） */
   function setLayerDisplayName(instanceId: string, name: string) {
     const layer = activeLayers.value.find((l) => l.instanceId === instanceId)
     if (!layer) return
-    const trimmed = name.trim()
+    const trimmed = normalizeDisplayName(name)
     if (!trimmed) return
     layer.name = trimmed
 
@@ -579,8 +588,8 @@ export function createActiveLayersSlice(deps: ActiveLayersSliceDeps) {
       layer.importedRaster = { ...layer.importedRaster, fileName: trimmed }
     }
 
+    // 新写入：instanceId + 导入后端键；目录/天气不再写 catalogId，避免污染新实例
     const keys = new Set<string>()
-    keys.add(layer.catalogId)
     keys.add(layer.instanceId)
     if (layer.importedVector?.backendLayerId) {
       keys.add(layer.importedVector.backendLayerId)
@@ -591,19 +600,22 @@ export function createActiveLayersSlice(deps: ActiveLayersSliceDeps) {
     for (const key of keys) {
       persistLayerDisplayName(key, trimmed)
     }
+    // 清理旧 catalogId 键（含运行时 id 上的历史污染）
+    clearPersistedLayerDisplayNames([layer.catalogId])
 
-    // 同步 jobLayers / 运行跟踪名（分析面板、状态条）
+    // 同步 jobLayers / 运行跟踪名（分析面板、状态条）——按 jobId / 本实例关联
     if (layer.jobLayer) {
       layer.jobLayer = { ...layer.jobLayer, name: trimmed }
     }
+    const jobId = layer.jobLayer?.jobId
     for (const job of deps.getJobLayers()) {
-      if (job.catalogId === layer.catalogId || job.jobId === layer.jobLayer?.jobId) {
+      if (jobId && job.jobId === jobId) {
         job.name = trimmed
       }
     }
 
     // 同步工作流产出注册表（图层面板库）
-    if (layer.catalogId.startsWith('wf-out-')) {
+    if (isRuntimeCatalogId(layer.catalogId) && layer.catalogId.startsWith('wf-out-')) {
       try {
         useWorkflowOutputLayersStore().renameOutputLayer(layer.catalogId, trimmed)
       } catch {

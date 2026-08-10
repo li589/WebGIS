@@ -198,7 +198,7 @@ const filteredLibraryByCategory = computed(() => {
 
 function prefetchVisibleWeatherProviders() {
   for (const group of filteredLibraryByCategory.value) {
-    if (group.category.id !== '气象场') continue
+    if (group.category.id !== 'weather') continue
     for (const item of group.items) {
       void ensureWeatherProviders(item.catalogId)
     }
@@ -679,10 +679,17 @@ function renameLayerFromMenu() {
   const id = contextMenu.value.instanceId
   const layer = activeLayersDisplay.value.find((l) => l.instanceId === id)
   const next = window.prompt(LAYERS_COPY.renamePrompt, layer?.name ?? '')
-  if (next != null && next.trim()) {
-    layersStore.setLayerDisplayName(id, next)
-    logStore.logOperation('layer-rename', `重命名图层「${next.trim()}」`)
+  if (next == null) {
+    closeContextMenu()
+    return
   }
+  const trimmed = next.trim()
+  if (!trimmed) {
+    closeContextMenu()
+    return
+  }
+  layersStore.setLayerDisplayName(id, trimmed)
+  logStore.logOperation('layer-rename', `重命名图层「${trimmed}」`)
   closeContextMenu()
 }
 
@@ -1096,7 +1103,7 @@ type ActiveLayerDisplayLike = {
 
               <!-- 数据源区域：天气图层用运行时 Provider；其它图层仍用目录静态 sources -->
               <div class="source-area">
-                <template v-if="item.category === '气象场'">
+                <template v-if="item.category === 'weather'">
                   <div class="source-weather-live">
                     <label class="weather-src-label">
                       <span class="src-dot" :style="{ background: item.accentColor }"></span>

@@ -96,7 +96,8 @@ CGDA（综合地理数据分析系统）：**面向课题组与大气研究院�
 | overlay 本地图 | `overlay_registry.py`、`Tools/audit_overlay_assets.py` | `python Tools/audit_overlay_assets.py` |
 | D2 / A1A2 NDVI | `modules/omega_avg_daily.py`、`ingest/ndvi_hdf_preprocess.py` | `Env/Python312/python.exe -m pytest Test/backend/test_omega_avg_algorithm.py Test/backend/test_omega_avg_daily_module.py -q`；`Env/Python312/python.exe -m pytest Test/algorithms/test_ndvi_hdf_preprocess.py -q` |
 | 前端任意改动 | `Code/frontend/src/`（测试在 `Test/frontend/`） | `cd Code/frontend && npm run test && npm run lint && npm run build` |
-| 图层工作区持久化 | `stores/layers/workspace-persist.ts`、`stores/layers/index.ts`；说明见 `.ai/docs/design/图层持久化说明.md` | `cd Code/frontend && npm run test -- workspace-persist` |
+| 图层工作区持久化 | `stores/layers/workspace-persist.ts`、`stores/layers/index.ts`；说明见 `.ai/docs/design/图层持久化说明.md`；命名见 `.ai/docs/specs/layer-naming.md` | `cd Code/frontend && npm run test -- workspace-persist` |
+| 图层命名 / 重命名 | `stores/layers/layer-naming.ts`、`layer-display-names.ts`、`active-layers.ts`（`setLayerDisplayName`） | `cd Code/frontend && npm run test -- layer-naming layer-display-names setLayerDisplayName`；`npm run check:catalog` |
 | 天气瓦片 FE 调度 / 图例 | `weather-tile-manager.ts`、`weather-tile-banner.ts`、`effective-layer-symbology.ts` | `cd Code/frontend && npm run test -- weather-tile weather-tile-banner effective-layer-symbology` |
 | 前后端契约 / OpenAPI | `Code/frontend/openapi.json`、`Code/shared/contracts/` | `cd Code/frontend && npm run check:openapi` |
 | 图层目录漂移 | FE `catalog.ts` LAYER_LIBRARY ↔ BE `catalog_seeds/*_descriptors.json` | `cd Code/frontend && npm run check:catalog` |
