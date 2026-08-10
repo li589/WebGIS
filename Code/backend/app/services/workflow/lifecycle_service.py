@@ -264,7 +264,12 @@ class WorkflowLifecycleService:
         )
 
     def _is_protected_terminal(self, run_id: str) -> tuple[bool, str]:
-        """受保护终态检查：看门狗失败 / 用户取消后，禁止后续成功或失败收口覆盖状态。
+        """受保护终态检查：任何终态（succeeded / failed / cancelled）禁止后续收口覆盖。
+
+        原文仅保护 cancelled 与 watchdog-failed；代码审查 H2 发现普通 failed 可能
+        被迟到重复执行的 finalize_workflow_success 覆盖为 succeeded。扩展为所有终态
+        （cancelled / failed / succeeded），任何终态 run 均不可再被 finalize 改写。
+        看门狗失败仍保留 cleanup_reason="stuck_running_watchdog" 用于诊断区分。
 
         Returns:
             (blocked, reason) — blocked 为 True 时应跳过 status 写入。
@@ -276,8 +281,13 @@ class WorkflowLifecycleService:
             return True, "cancelled"
         if current.status == ExecutionStatus.failed:
             meta = current.executor_metadata or {}
-            if meta.get("cleanup_reason") == "stuck_running_watchdog":
-                return True, "stuck_running_watchdog"
+            return True, (
+                "stuck_running_watchdog"
+                if meta.get("cleanup_reason") == "stuck_running_watchdog"
+                else "failed"
+            )
+        if current.status == ExecutionStatus.succeeded:
+            return True, "succeeded"
         return False, ""
 
     def finalize_workflow_success(

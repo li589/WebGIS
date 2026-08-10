@@ -621,6 +621,10 @@ export function createWorkflowRunner(deps: WorkflowRunnerDeps) {
       algorithmRequest?: Record<string, unknown>
       weatherRequest?: Record<string, unknown>
       commandLabel?: string
+      /** Top-level time_range (ISO start_at/end_at); required by python_provider job_request. */
+      timeRange?: Record<string, unknown>
+      /** Optional resource profile override (e.g. heavy for omega_sf). */
+      resourceProfile?: 'realtime' | 'standard' | 'heavy' | 'batch'
       /** 显式控制是否复用节点/块缓存（缺省不注入，算法默认 reuse_block_cache=True）。
        *  false=全量重算，规避复用旧输出目录带来的时间片污染。 */
       reuseBlockCache?: boolean
@@ -743,6 +747,12 @@ export function createWorkflowRunner(deps: WorkflowRunnerDeps) {
         options.algorithmRequest,
         options.weatherRequest,
       )
+      if (options.timeRange && typeof options.timeRange === 'object') {
+        payload.time_range = options.timeRange
+      }
+      if (options.resourceProfile) {
+        payload.resource_profile = options.resourceProfile
+      }
       // 节点缓存开关：显式指定时注入 algorithm_params.reuse_block_cache，
       // 供 omega 等模块在下次运行决定是否复用旧输出目录（false=全量重算防时间片污染）
       if (options.reuseBlockCache !== undefined) {

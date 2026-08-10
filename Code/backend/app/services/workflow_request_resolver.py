@@ -39,17 +39,31 @@ def normalize_workflow_submit_request(
     这里优先使用后端 `layer_catalog` 作为执行事实源，避免前端维护第二份 workflow 元数据。
 
     引擎分发通过 engine_request_registry 注册表完成，新增引擎只需注册 populator。
+
+    若 ``layer_id`` 不在 catalog（例如种子 ``linked_layer_id`` 尚未入库、或仅带
+    画布 ``workflow_definition`` 的编辑器提交），仍须从 algorithm_request /
+    种子补齐 ``time_range``，否则 Python provider 会在 validate_job 处以
+    ``Missing required field: job_request.time_range`` 失败。
     """
 
     if payload.command_type != WorkflowCommandType.analysis:
         return payload
 
     layer_id = payload.layer_id or payload.map_context.active_layer_id
-    if not layer_id:
-        return payload
+    algorithm_request = _normalize_algorithm_request(payload.algorithm_request)
+    has_algorithm_entry = any(
+        algorithm_request.get(key) for key in _ALGORITHM_ENTRY_KEYS
+    )
 
-    descriptor = get_layer_descriptor(layer_id)
+    descriptor = get_layer_descriptor(layer_id) if layer_id else None
     if descriptor is None or not descriptor.engine:
+        if has_algorithm_entry:
+            return _populate_python_provider_request(
+                payload=payload,
+                descriptor=_synthetic_descriptor_from_algorithm_request(
+                    algorithm_request
+                ),
+            )
         return payload
 
     populator = get_engine_populator(descriptor.engine)
@@ -480,6 +494,15 @@ def _flatten_ui_workflow_definition(
         enriched["datasource_selection"] = existing_ds
         enriched["algorithm_params"] = existing_params
         enriched.setdefault("output_spec", {})
+        # Bridge rejects workflow_definition + module_name together; keep graph only.
+        enriched.pop("module_name", None)
+        # Bridge builds job_request from algorithm_request; keep time_range there too
+        # so worker validate_job still sees it if top-level payload.time_range is dropped.
+        if time_range is not None and "time_range" not in enriched:
+            enriched["time_range"] = {
+                "start": time_range.start_at.isoformat(),
+                "end": time_range.end_at.isoformat(),
+            }
         return enriched, time_range, spatial
 
     flat = {
@@ -487,17 +510,25 @@ def _flatten_ui_workflow_definition(
         for key, value in algorithm_request.items()
         if key not in {"workflow_definition", "workflow_name"}
     }
-    flat.setdefault("module_name", getattr(descriptor, "module_name", None))
+    inferred_module = _infer_primary_module_name(
+        nodes if isinstance(nodes, list) else None
+    )
+    flat.setdefault(
+        "module_name",
+        getattr(descriptor, "module_name", None) or inferred_module,
+    )
     flat.setdefault(
         "task_type",
         getattr(descriptor, "default_task_type", None)
-        or getattr(descriptor, "module_name", None),
+        or getattr(descriptor, "module_name", None)
+        or inferred_module,
     )
     flat.setdefault(
         "workflow_entry_name",
         algorithm_request.get("workflow_entry_name")
         or getattr(descriptor, "workflow_name", None)
-        or getattr(descriptor, "module_name", None),
+        or getattr(descriptor, "module_name", None)
+        or inferred_module,
     )
     flat["algorithm_params"] = existing_params
     flat["datasource_selection"] = existing_ds
@@ -597,13 +628,80 @@ def _filter_invalid_edges(compiled: dict[str, Any]) -> None:
     compiled["edges"] = filtered
 
 
+def _infer_primary_module_name(nodes: list[Any] | None) -> str | None:
+    """从画布节点推断主算法 module_name（跳过 data/output 辅助节点）。"""
+    skip = {
+        "",
+        "source",
+        "data_source",
+        "time_range",
+        "bbox",
+        "map_layer",
+        "output_map_layer",
+        "module",
+        "workflow",
+    }
+    if not nodes:
+        return None
+    for node in nodes:
+        if not isinstance(node, dict):
+            continue
+        name = _node_module_name(node)
+        if name and name not in skip:
+            return name
+    return None
+
+
+def _synthetic_descriptor_from_algorithm_request(algorithm_request: dict[str, Any]):
+    """catalog 缺失时，用 algorithm_request / 画布节点拼最小 descriptor。"""
+
+    class _SyntheticDescriptor:
+        engine = "python_provider"
+        module_name: str | None = None
+        workflow_name: str | None = None
+        default_task_type: str | None = None
+        default_data_access_sources: dict[str, list[str]] = {}
+        status = "available"
+
+    stub = _SyntheticDescriptor()
+    stub.module_name = (
+        str(algorithm_request["module_name"])
+        if algorithm_request.get("module_name")
+        else None
+    )
+    tags = algorithm_request.get("tags")
+    tag_workflow_id = tags.get("workflow_id") if isinstance(tags, dict) else None
+    stub.workflow_name = (
+        (
+            str(algorithm_request["workflow_name"])
+            if algorithm_request.get("workflow_name")
+            else None
+        )
+        or (
+            str(algorithm_request["workflow_entry_name"])
+            if algorithm_request.get("workflow_entry_name")
+            else None
+        )
+        or (str(tag_workflow_id) if tag_workflow_id else None)
+    )
+    wf_def = algorithm_request.get("workflow_definition")
+    if not stub.module_name and isinstance(wf_def, dict):
+        stub.module_name = _infer_primary_module_name(wf_def.get("nodes"))
+    stub.default_task_type = stub.module_name
+    stub.default_data_access_sources = {}
+    return stub
+
+
 def _populate_python_provider_request(
     *, payload: WorkflowSubmitRequest, descriptor
 ) -> WorkflowSubmitRequest:
-    if not descriptor.module_name:
+    algorithm_request = _normalize_algorithm_request(payload.algorithm_request)
+    has_algorithm_entry = any(
+        algorithm_request.get(key) for key in _ALGORITHM_ENTRY_KEYS
+    )
+    if not getattr(descriptor, "module_name", None) and not has_algorithm_entry:
         return payload
 
-    algorithm_request = _normalize_algorithm_request(payload.algorithm_request)
     canvas_time_range = None
     canvas_spatial = None
     if algorithm_request.get("workflow_definition"):
@@ -617,6 +715,17 @@ def _populate_python_provider_request(
         if payload.spatial_filter is None and canvas_spatial is not None:
             updates["spatial_filter"] = canvas_spatial
         payload = payload.model_copy(update=updates)
+        # 多模块 DAG 保留 workflow_definition：此处必须返回，否则下方会用
+        # descriptor.module_name 再 setdefault 回 module_name，触发 bridge 互斥校验。
+        if isinstance(algorithm_request.get("workflow_definition"), dict):
+            resolved_tr = _resolve_missing_time_range(
+                payload=payload,
+                algorithm_request=algorithm_request,
+                descriptor=descriptor,
+            )
+            if resolved_tr is not None and payload.time_range is None:
+                payload = payload.model_copy(update={"time_range": resolved_tr})
+            return payload
     elif algorithm_request.get("workflow_name"):
         # 仅声明 workflow_name、无 definition：仍补齐 time_range 后交由种子路径
         resolved_tr = _resolve_missing_time_range(
@@ -628,8 +737,13 @@ def _populate_python_provider_request(
             payload = payload.model_copy(update={"time_range": resolved_tr})
         return payload
 
+    descriptor_module = getattr(descriptor, "module_name", None)
     explicit_module_name = algorithm_request.get("module_name")
-    if explicit_module_name and explicit_module_name != descriptor.module_name:
+    if (
+        explicit_module_name
+        and descriptor_module
+        and explicit_module_name != descriptor_module
+    ):
         updates = {}
         resolved_tr = _resolve_missing_time_range(
             payload=payload,
@@ -640,15 +754,34 @@ def _populate_python_provider_request(
             updates["time_range"] = resolved_tr
         return payload.model_copy(update=updates) if updates else payload
 
+    if not descriptor_module and not algorithm_request.get("module_name"):
+        # 画布已展平但仍无 module：至少补齐 time_range，避免 validate_job 直接炸
+        updates = {}
+        resolved_tr = _resolve_missing_time_range(
+            payload=payload,
+            algorithm_request=algorithm_request,
+            descriptor=descriptor,
+        )
+        if resolved_tr is not None:
+            updates["time_range"] = resolved_tr
+        if algorithm_request:
+            updates["algorithm_request"] = algorithm_request
+        return payload.model_copy(update=updates) if updates else payload
+
     algorithm_request.setdefault(
-        "task_type", descriptor.default_task_type or descriptor.module_name
+        "task_type",
+        getattr(descriptor, "default_task_type", None)
+        or descriptor_module
+        or algorithm_request.get("module_name"),
     )
 
     # 如果图层有 workflow_name，从种子中提取 algorithm_params（如 tb_source=SMAP）
     # 直接合并到 algorithm_request，避免设置 workflow_definition 导致 executor
     # 处理 graph 时出现 datasource_selection 多重绑定问题。
-    if descriptor.workflow_name:
-        seed_params = _extract_algorithm_params_from_seed(descriptor.workflow_name)
+    descriptor_workflow = getattr(descriptor, "workflow_name", None)
+    effective_module = descriptor_module or algorithm_request.get("module_name")
+    if descriptor_workflow:
+        seed_params = _extract_algorithm_params_from_seed(str(descriptor_workflow))
         if seed_params is not None:
             existing_params = algorithm_request.get("algorithm_params")
             if not isinstance(existing_params, dict):
@@ -656,14 +789,16 @@ def _populate_python_provider_request(
                 algorithm_request["algorithm_params"] = existing_params
             for k, v in seed_params.items():
                 existing_params.setdefault(k, v)
-        algorithm_request.setdefault("module_name", descriptor.module_name)
+        if effective_module:
+            algorithm_request.setdefault("module_name", effective_module)
         algorithm_request.setdefault(
             "workflow_entry_name",
-            descriptor.workflow_name or descriptor.module_name,
+            descriptor_workflow or effective_module,
         )
     else:
-        algorithm_request.setdefault("module_name", descriptor.module_name)
-        algorithm_request.setdefault("workflow_entry_name", descriptor.module_name)
+        if effective_module:
+            algorithm_request.setdefault("module_name", effective_module)
+            algorithm_request.setdefault("workflow_entry_name", effective_module)
 
     datasource_selection = _normalize_request(
         algorithm_request.get("datasource_selection")
@@ -672,7 +807,7 @@ def _populate_python_provider_request(
         datasource_selection.get("_data_access_requests")
     )
     default_data_access = _build_default_data_access_requests(
-        descriptor.default_data_access_sources
+        getattr(descriptor, "default_data_access_sources", None) or {}
     )
     for dataset_name, request_payload in default_data_access.items():
         data_access_requests.setdefault(dataset_name, request_payload)
@@ -683,7 +818,12 @@ def _populate_python_provider_request(
     # 修复：模板验证检查 datasource_selection 中有 input_dir 等键，
     # 但 _data_access_requests 中用的是 dataset_name（如 NDVI_16DAY_RASTER）。
     # 需要把解析到的 URI 也设置到 datasource_selection[required_key] 中。
-    template = _get_module_request_template(descriptor.module_name)
+    template_module = str(
+        algorithm_request.get("module_name") or descriptor_module or ""
+    )
+    template = (
+        _get_module_request_template(template_module) if template_module else None
+    )
     if template is not None and template.accepted_data_access_by_required_key:
         for (
             required_key,

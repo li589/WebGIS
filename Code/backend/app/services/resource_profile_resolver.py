@@ -18,6 +18,10 @@ HEAVY_MODULE_NAMES: frozenset[str] = frozenset(
         "gis_watershed",
         "gis_contour",
         "gis_slope_aspect",
+        "omega_sf_fenkuai",
+        "omega_block",
+        "omega_avg_daily",
+        "omega_sf",
     }
 )
 
@@ -79,8 +83,9 @@ def infer_resource_profile(
 
     Precedence:
     1. Explicit non-default current (heavy/batch/light) wins as already chosen.
-    2. ``_meta.resource_profile`` from seed/definition.
-    3. Heavy module presence in the graph → heavy.
+    2. Heavy module presence in the graph → heavy
+       (beats seed ``_meta.resource_profile=standard``, which is a soft default).
+    3. ``_meta.resource_profile`` from seed/definition.
     4. Else current or standard.
     """
     if current in (
@@ -92,12 +97,12 @@ def infer_resource_profile(
         if current != WorkflowResourceProfile.standard:
             return current
 
+    if definition_has_heavy_modules(definition):
+        return WorkflowResourceProfile.heavy
+
     meta_profile = _parse_profile((meta or {}).get("resource_profile"))
     if meta_profile is not None:
         return meta_profile
-
-    if definition_has_heavy_modules(definition):
-        return WorkflowResourceProfile.heavy
 
     return current or WorkflowResourceProfile.standard
 
@@ -111,12 +116,16 @@ def apply_resource_profile_to_payload(
     """Return payload with resource_profile possibly upgraded (mutates in place)."""
     # Prefer algorithm_request.workflow_definition when definition not passed
     graph = definition
+    module_hint: str | None = None
     if graph is None and payload.algorithm_request is not None:
         algo = payload.algorithm_request
         if hasattr(algo, "workflow_definition"):
             graph = getattr(algo, "workflow_definition", None)
         elif isinstance(algo, dict):
             graph = algo.get("workflow_definition")
+            module_hint = (
+                str(algo.get("module_name")) if algo.get("module_name") else None
+            )
         if isinstance(graph, dict) and "nodes" not in graph:
             # May be wrapped
             graph = graph if "nodes" in graph else definition
@@ -125,6 +134,20 @@ def apply_resource_profile_to_payload(
         maybe_meta = graph.get("_meta")
         if isinstance(maybe_meta, dict):
             meta = maybe_meta
+
+    # Flattened module-only requests drop workflow_definition; still bump heavy
+    # when algorithm_request.module_name is a known heavy module.
+    if (
+        not definition_has_heavy_modules(graph if isinstance(graph, dict) else None)
+        and module_hint
+        and module_hint in HEAVY_MODULE_NAMES
+        and (
+            payload.resource_profile is None
+            or payload.resource_profile == WorkflowResourceProfile.standard
+        )
+    ):
+        payload.resource_profile = WorkflowResourceProfile.heavy
+        return payload
 
     payload.resource_profile = infer_resource_profile(
         current=payload.resource_profile,

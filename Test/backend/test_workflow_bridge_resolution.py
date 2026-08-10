@@ -26,12 +26,11 @@ def _bare_analysis_payload(layer_id: str) -> WorkflowSubmitRequest:
 
 class WorkflowBridgeResolutionTests(unittest.TestCase):
     def test_overlay_without_engine_explains_static_layer(self) -> None:
-        # catalog 演进：dem-etopo 现已绑定 engine=python_provider（module=dem_stat），
-        # 不再走 "no engine / Static overlays" 分支。所有图层均已有 engine，
-        # 故此处校验 engine 已配置但未命中 bridge 的可读说明。
+        # catalog 演进：dem-etopo 已绑定 engine=overlay_registry。
+        # 校验 engine 已配置但未命中 bridge 的可读说明。
         message = _explain_no_bridge(_bare_analysis_payload("dem-etopo"))
         self.assertIn("ETOPO1", message)  # display_name
-        self.assertIn("python_provider", message)
+        self.assertIn("overlay_registry", message)
         self.assertIn("did not match", message)
 
     def test_resolve_channel_raises_readable_error_for_overlay(self) -> None:

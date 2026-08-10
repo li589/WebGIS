@@ -76,11 +76,19 @@ if celery_available:
         # 下长任务会在 visibility 超时（Redis 默认 3600s）后被重投到另一 worker → 并发重复执行。
         # socket_timeout/socket_connect_timeout 给 broker 连接/读取定上界，避免 broker 挂起时
         # 工作线程无限期阻塞（同根修复线程池阻塞无寿命上界问题）。
+        # C6：H3 审查修复——启用 Redis 优先级列队，使 dispatch_workflow_task 中传入的
+        # priority=1/5/8/9（low/normal/high/critical）在 broker 端真正生效。
+        # 注意：新增 priority_steps 后需重启全部 worker 并刷新 Redis 列队（launch.py flush）
+        # 才能使现有消息对新优先列结构可见；未刷新时旧消息仍在 priority=0 默认列队，worker
+        # 仍会消费（worker 订阅所有 priority steps）。
         broker_transport_options={
             "visibility_timeout": settings.celery_broker_visibility_timeout,
             "socket_timeout": settings.celery_broker_socket_timeout,
             "socket_connect_timeout": settings.celery_broker_socket_connect_timeout,
+            "priority_steps": [0, 1, 5, 8, 9],
         },
+        # task_queue_max_priority 须与 priority_steps 最大值一致
+        task_queue_max_priority=9,
         # Beat / 运维任务必须落到 launch.py 实际监听的队列（勿用默认 celery）
         task_routes={
             "app.tasks.open_meteo_sync_tasks.sync_open_meteo_data": {

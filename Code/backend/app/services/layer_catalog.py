@@ -19,13 +19,29 @@ logger = logging.getLogger(__name__)
 _SEEDS_DIR = Path(__file__).resolve().parent.parent / "catalog_seeds"
 _cached_descriptors: list[LayerDescriptor] | None = None
 _cached_categories: list[dict[str, Any]] | None = None
+_cached_descriptors_mtime: float | None = None
 
 
 def reload_catalog_seeds() -> None:
-    """Clear in-memory cache and trigger re-reading of catalog JSON seeds."""
-    global _cached_descriptors, _cached_categories
+    """Clear in-memory catalog seed caches (for tests / hot reload)."""
+    global _cached_descriptors, _cached_categories, _cached_descriptors_mtime
     _cached_descriptors = None
     _cached_categories = None
+    _cached_descriptors_mtime = None
+
+
+def _seed_files_mtime() -> float:
+    """Max mtime of catalog seed JSON files; 0 if none exist."""
+    stamp = 0.0
+    for name in (
+        "weather_descriptors.json",
+        "layer_descriptors.json",
+        "layer_categories.json",
+    ):
+        path = _SEEDS_DIR / name
+        if path.exists():
+            stamp = max(stamp, path.stat().st_mtime)
+    return stamp
 
 
 def merge_remote_data_access_candidates(
@@ -219,8 +235,13 @@ def _weather_capabilities(layer_id: str) -> LayerCapabilities:
 
 def _load_seed_descriptors() -> list[LayerDescriptor]:
     """Load layer descriptors from catalog_seeds JSON files (weather_descriptors.json & layer_descriptors.json)."""
-    global _cached_descriptors
-    if _cached_descriptors is not None:
+    global _cached_descriptors, _cached_descriptors_mtime
+    current_mtime = _seed_files_mtime()
+    if (
+        _cached_descriptors is not None
+        and _cached_descriptors_mtime is not None
+        and _cached_descriptors_mtime >= current_mtime
+    ):
         return _cached_descriptors
 
     seed_files = [
@@ -272,13 +293,23 @@ def _load_seed_descriptors() -> list[LayerDescriptor]:
                         item_copy["layer_id"]
                     )
 
-                descriptors.append(LayerDescriptor.model_validate(item_copy))
+                try:
+                    descriptors.append(LayerDescriptor.model_validate(item_copy))
+                except Exception as item_exc:
+                    # 单条失败不应让整文件回退到旧缓存口径；否则尾部新增图层会静默丢失。
+                    logger.exception(
+                        "Skipping invalid catalog seed item %s in %s: %s",
+                        item_copy.get("layer_id"),
+                        seeds_file,
+                        item_exc,
+                    )
         except Exception as exc:
             logger.exception(
                 "Failed to load catalog seeds from %s: %s", seeds_file, exc
             )
 
     _cached_descriptors = descriptors
+    _cached_descriptors_mtime = current_mtime
     return descriptors
 
 

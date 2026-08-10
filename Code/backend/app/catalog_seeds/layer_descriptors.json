@@ -100,9 +100,7 @@
       "forestry",
       "frontend-aligned"
     ],
-    "module_name": "biomass_stat",
-    "engine": "python_provider",
-    "default_task_type": "biomass_stat",
+    "engine": "overlay_registry",
     "default_data_access_sources": {
       "AGB_30M_RASTER": [
         "BIOMASS_ESACCI",
@@ -110,8 +108,9 @@
         "Ecological_Vegetation/Biomass/ESACCI-BIOMASS-L4-AGB-MERGED-100m-2020-fv6.0.nc"
       ]
     },
-    "run_readiness_summary": "全国地上生物量数据已就绪（ESA CCI BIOMASS L4）",
+    "run_readiness_summary": "全国地上生物量数据已就绪（ESA CCI BIOMASS L4）；以本地叠加层展示，非 python_provider 可运行分析",
     "run_readiness_notes": [
+      "静态/产品叠加层：请加载图层查看；勿从图层面板提交分析工作流",
       "数据源: ESA CCI BIOMASS L4 地上生物量"
     ],
     "data_owner": "CAS",
@@ -158,9 +157,7 @@
       "modis",
       "frontend-aligned"
     ],
-    "module_name": "landcover_stat",
-    "engine": "python_provider",
-    "default_task_type": "landcover_stat",
+    "engine": "overlay_registry",
     "default_data_access_sources": {
       "LANDCOVER_RASTER": [
         "LANDCOVER_MODIS",
@@ -169,8 +166,9 @@
         "Ecological_Vegetation/LandCover/MCD12Q1_2021.tif"
       ]
     },
-    "run_readiness_summary": "MODIS 土地覆盖数据已就绪（MCD12Q1）",
+    "run_readiness_summary": "MODIS 土地覆盖数据已就绪（MCD12Q1）；以本地叠加层展示，非 python_provider 可运行分析",
     "run_readiness_notes": [
+      "静态/产品叠加层：请加载图层查看；勿从图层面板提交分析工作流",
       "数据源: MODIS MCD12Q1 土地覆盖"
     ],
     "data_owner": "NASA LP DAAC",
@@ -217,9 +215,7 @@
       "landsat",
       "frontend-aligned"
     ],
-    "module_name": "landcover_stat",
-    "engine": "python_provider",
-    "default_task_type": "landcover_stat",
+    "engine": "overlay_registry",
     "default_data_access_sources": {
       "CLCD_30M_RASTER": [
         "LANDCOVER_CLCD",
@@ -227,8 +223,9 @@
         "Ecological_Vegetation/LandCover/CLCD_v01_1997.tif"
       ]
     },
-    "run_readiness_summary": "CLCD 中国土地覆盖数据已就绪",
+    "run_readiness_summary": "CLCD 中国土地覆盖数据已就绪；以本地叠加层展示，非 python_provider 可运行分析",
     "run_readiness_notes": [
+      "静态/产品叠加层：请加载图层查看；勿从图层面板提交分析工作流",
       "数据源: CLCD 中国土地覆盖（1997）"
     ],
     "data_owner": "Wuhan University",
@@ -275,17 +272,16 @@
       "anthropogenic",
       "frontend-aligned"
     ],
-    "module_name": "hfp_stat",
-    "engine": "python_provider",
-    "default_task_type": "hfp_stat",
+    "engine": "overlay_registry",
     "default_data_access_sources": {
       "HFP_RASTER": [
         "HUMAN_FOOTPRINT",
         "Socio_Economic/HumanFootprint"
       ]
     },
-    "run_readiness_summary": "人类足迹指数数据已就绪（HFP）",
+    "run_readiness_summary": "人类足迹指数数据已就绪（HFP）；以本地叠加层展示，非 python_provider 可运行分析",
     "run_readiness_notes": [
+      "静态/产品叠加层：请加载图层查看；勿从图层面板提交分析工作流",
       "数据源: 人类足迹指数 HFP"
     ],
     "data_owner": "WCS / SEDAC",
@@ -333,9 +329,7 @@
       "bathymetry",
       "frontend-aligned"
     ],
-    "module_name": "dem_stat",
-    "engine": "python_provider",
-    "default_task_type": "dem_stat",
+    "engine": "overlay_registry",
     "default_data_access_sources": {
       "DEM_RASTER": [
         "DEM_SRTM",
@@ -343,8 +337,9 @@
         "Geological/DEM/ETOPO_2022"
       ]
     },
-    "run_readiness_summary": "全球地形高程数据已就绪（ETOPO1）",
+    "run_readiness_summary": "全球地形高程数据已就绪（ETOPO1）；以本地叠加层展示，非 python_provider 可运行分析",
     "run_readiness_notes": [
+      "静态/产品叠加层：请加载图层查看；勿从图层面板提交分析工作流",
       "数据源: ETOPO1 全球地形高程"
     ],
     "data_owner": "NOAA NCEI",
@@ -392,9 +387,7 @@
       "bathymetry",
       "frontend-aligned"
     ],
-    "module_name": "dem_stat",
-    "engine": "python_provider",
-    "default_task_type": "dem_stat",
+    "engine": "overlay_registry",
     "default_data_access_sources": {
       "GEBCO_RASTER": [
         "DEM_SRTM",
@@ -402,8 +395,9 @@
         "Geological/DEM/GEBCO_2024.nc"
       ]
     },
-    "run_readiness_summary": "海底地形数据已就绪（GEBCO 2024）",
+    "run_readiness_summary": "海底地形数据已就绪（GEBCO 2024）；以本地叠加层展示，非 python_provider 可运行分析",
     "run_readiness_notes": [
+      "静态/产品叠加层：请加载图层查看；勿从图层面板提交分析工作流",
       "数据源: GEBCO 2024 海底地形"
     ],
     "data_owner": "GEBCO Consortium",
@@ -511,9 +505,7 @@
       "dec2025",
       "frontend-aligned"
     ],
-    "module_name": "sm_fusion",
-    "engine": "python_provider",
-    "default_task_type": "sm_fusion",
+    "engine": "overlay_registry",
     "default_data_access_sources": {
       "SM_FUSED_DEC2025": [
         "daily_bundle_mat",
@@ -521,8 +513,9 @@
         "Soil_Moisture/Fused_202512"
       ]
     },
-    "run_readiness_summary": "SMAP 土壤湿度反演数据已就绪（2025 年 12 月）",
+    "run_readiness_summary": "SMAP 土壤湿度反演数据已就绪（2025 年 12 月）；以本地叠加层展示，非 python_provider 可运行分析",
     "run_readiness_notes": [
+      "静态/产品叠加层：请加载图层查看；勿从图层面板提交分析工作流",
       "数据源优先: Soil_Moisture/SMAP_Soil_VOD_SM（融合 SM/VOD mat）"
     ],
     "data_owner": "Lab",
@@ -628,9 +621,6 @@
       "ismn",
       "frontend-aligned"
     ],
-    "module_name": "station_validation",
-    "engine": "python_provider",
-    "default_task_type": "station_validation",
     "default_data_access_sources": {
       "STATION_OBS": [
         "ISMN_STATION",
@@ -640,8 +630,9 @@
         "Station_Observation/CASMOS"
       ]
     },
-    "run_readiness_summary": "站点土壤湿度观测数据已就绪（ISMN/CASMOS）",
+    "run_readiness_summary": "站点观测目录项：暂无已注册分析模块，请经工作流种子或数据接入流水线使用",
     "run_readiness_notes": [
+      "原 module_name=station_validation 未注册；已取消图层面板 Run，避免校验/执行失败",
       "数据源: ISMN/CASMOS 站点观测"
     ]
   },
@@ -687,9 +678,7 @@
       "calibrated",
       "frontend-aligned"
     ],
-    "module_name": "sm_dca_sca",
-    "engine": "python_provider",
-    "default_task_type": "sm_dca_sca",
+    "engine": "overlay_registry",
     "default_data_access_sources": {
       "SOIL_DDCA": [
         "DDCA_SM",
@@ -700,8 +689,9 @@
         "Soil_Moisture/DDCA/H"
       ]
     },
-    "run_readiness_summary": "DDCA 双通道反演校验数据已就绪",
+    "run_readiness_summary": "DDCA 双通道反演校验数据已就绪；以本地叠加层展示，非 python_provider 可运行分析",
     "run_readiness_notes": [
+      "静态/产品叠加层：请加载图层查看；勿从图层面板提交分析工作流",
       "数据源: DDCA 双通道反演校验数据"
     ],
     "data_owner": "Lab",
@@ -748,9 +738,7 @@
       "auxiliary",
       "frontend-aligned"
     ],
-    "module_name": "forest_ratio",
-    "engine": "python_provider",
-    "default_task_type": "forest_ratio",
+    "engine": "overlay_registry",
     "default_data_access_sources": {
       "FOREST_RATIO": [
         "LANDSCAPE_METRICS",
@@ -758,8 +746,9 @@
         "Inversion_Results/Forest_Ratio_9KM_2020.mat"
       ]
     },
-    "run_readiness_summary": "森林覆盖率数据已就绪（9km，2020）",
+    "run_readiness_summary": "森林覆盖率数据已就绪（9km，2020）；以本地叠加层展示，非 python_provider 可运行分析",
     "run_readiness_notes": [
+      "静态/产品叠加层：请加载图层查看；勿从图层面板提交分析工作流",
       "数据源: 全球 9km 森林覆盖比例（2020）"
     ],
     "data_owner": "Lab",
@@ -806,9 +795,7 @@
       "heterogeneity",
       "frontend-aligned"
     ],
-    "module_name": "landscape_metrics",
-    "engine": "python_provider",
-    "default_task_type": "landscape_metrics",
+    "engine": "overlay_registry",
     "default_data_access_sources": {
       "LANDSCAPE_METRICS": [
         "LANDSCAPE_METRICS",
@@ -816,8 +803,9 @@
         "Inversion_Results/Landscape_Metrics_LandOnly_9KM_2020.mat"
       ]
     },
-    "run_readiness_summary": "景观斑块指数按 Inversion_Results 解析",
+    "run_readiness_summary": "景观斑块指数按 Inversion_Results 解析；以本地叠加层展示，非 python_provider 可运行分析",
     "run_readiness_notes": [
+      "静态/产品叠加层：请加载图层查看；勿从图层面板提交分析工作流",
       "数据源: 景观多样性指数 SHDI（9km，2020）"
     ],
     "data_owner": "Lab",
@@ -1083,5 +1071,259 @@
     "engine": "overlay_registry",
     "run_readiness_summary": "CO₂ 柱浓度叠加层已注册",
     "temporal_coverage": "Static Mean Product"
+  },
+  {
+    "layer_id": "method-smap-omega-doy-dynamic",
+    "dataset_key": "omega_sf_fenkuai_smap",
+    "display_name": "SMAP SF 块反演（动态 ω）",
+    "description": "omega_sf_fenkuai 流水线产出：SMAP 亮温 + 辅助数据 → 8-day 分块 SF 倒推 → SM/VOD/OMEGA。关联种子 omega_sf_fenkuai_smap_single。",
+    "category": "research-group",
+    "source_type": "algorithm_output",
+    "render_type": "raster",
+    "supported_map_modes": [
+      "2d"
+    ],
+    "supports_time": true,
+    "is_realtime": false,
+    "default_visible": false,
+    "status": "available",
+    "time_granularity": "day",
+    "default_time_offset": 0,
+    "extent": {
+      "west": -180.0,
+      "south": -85.0,
+      "east": 180.0,
+      "north": 85.0,
+      "crs": "EPSG:4326"
+    },
+    "style": {
+      "palette": "ylgnbu",
+      "unit_label": "m3/m3",
+      "opacity": 0.85
+    },
+    "capabilities": {
+      "render_strategy": "workflow_map_layer",
+      "data_domain": "remote_sensing",
+      "paint_mode": "grid_fill"
+    },
+    "tags": [
+      "omega",
+      "sf-fenkuai",
+      "smap",
+      "block-inversion",
+      "frontend-aligned"
+    ],
+    "module_name": "omega_sf_fenkuai",
+    "engine": "python_provider",
+    "workflow_name": "omega_sf_fenkuai_smap_single",
+    "workflow_id": "omega_sf_fenkuai_smap_single",
+    "default_task_type": "omega_sf_fenkuai",
+    "default_data_access_sources": {
+      "smap_folder": [
+        "smap_daily_mat",
+        "Soil_Moisture/SMAP_Origin_Data"
+      ],
+      "anc_root": [
+        "ancillary_mat",
+        "Soil_Moisture/SMAP_Auxiliary_Data"
+      ],
+      "ndvi_clim_folder": [
+        "ndvi_clim_dir",
+        "Ecological_Vegetation/NDVI/climatology"
+      ]
+    },
+    "run_readiness_summary": "SMAP SF 块反演输入（日 .mat / 辅助库 / NDVI 气候态）按 DATA_ROOT 解析",
+    "run_readiness_notes": [
+      "运行请使用 heavy 队列；默认种子时间窗见 omega_sf_fenkuai_smap_single"
+    ],
+    "data_owner": "Lab",
+    "temporal_coverage": "Depends on SMAP daily mats under DATA_ROOT"
+  },
+  {
+    "layer_id": "method-fy-omega-doy-dynamic",
+    "dataset_key": "omega_sf_fenkuai_fy",
+    "display_name": "FY SF 块反演（动态 ω）",
+    "description": "omega_sf_fenkuai 流水线产出：FY 亮温 + SMAP 辅助 → 8-day 分块 SF 倒推 → SM/VOD/OMEGA。关联种子 omega_sf_fenkuai_fy_single。",
+    "category": "research-group",
+    "source_type": "algorithm_output",
+    "render_type": "raster",
+    "supported_map_modes": [
+      "2d"
+    ],
+    "supports_time": true,
+    "is_realtime": false,
+    "default_visible": false,
+    "status": "available",
+    "time_granularity": "day",
+    "default_time_offset": 0,
+    "extent": {
+      "west": -180.0,
+      "south": -85.0,
+      "east": 180.0,
+      "north": 85.0,
+      "crs": "EPSG:4326"
+    },
+    "style": {
+      "palette": "ylgnbu",
+      "unit_label": "m3/m3",
+      "opacity": 0.85
+    },
+    "capabilities": {
+      "render_strategy": "workflow_map_layer",
+      "data_domain": "remote_sensing",
+      "paint_mode": "grid_fill"
+    },
+    "tags": [
+      "omega",
+      "sf-fenkuai",
+      "fy",
+      "block-inversion",
+      "frontend-aligned"
+    ],
+    "module_name": "omega_sf_fenkuai",
+    "engine": "python_provider",
+    "workflow_name": "omega_sf_fenkuai_fy_single",
+    "workflow_id": "omega_sf_fenkuai_fy_single",
+    "default_task_type": "omega_sf_fenkuai",
+    "default_data_access_sources": {
+      "smap_folder": [
+        "smap_daily_mat",
+        "Soil_Moisture/SMAP_Origin_Data"
+      ],
+      "anc_root": [
+        "ancillary_mat",
+        "Soil_Moisture/SMAP_Auxiliary_Data"
+      ],
+      "ndvi_clim_folder": [
+        "ndvi_clim_dir",
+        "Ecological_Vegetation/NDVI/climatology"
+      ],
+      "fy_folder": [
+        "Soil_Moisture/FY3D",
+        "Soil_Moisture/FY3B"
+      ]
+    },
+    "run_readiness_summary": "FY SF 块反演输入（FY/SMAP/辅助库/NDVI）按 DATA_ROOT 解析",
+    "run_readiness_notes": [
+      "运行请使用 heavy 队列；默认种子见 omega_sf_fenkuai_fy_single"
+    ],
+    "data_owner": "Lab",
+    "temporal_coverage": "Depends on FY/SMAP daily mats under DATA_ROOT"
+  },
+  {
+    "layer_id": "method-smap-omega-doy-avg",
+    "dataset_key": "omega_avg_daily_smap",
+    "display_name": "SMAP 日均 ω 反演（D2）",
+    "description": "omega_avg_daily / omega_block 经典 D1→D2 链路产出。关联种子 omega_avg_daily_smap_single。",
+    "category": "research-group",
+    "source_type": "algorithm_output",
+    "render_type": "raster",
+    "supported_map_modes": [
+      "2d"
+    ],
+    "supports_time": true,
+    "is_realtime": false,
+    "default_visible": false,
+    "status": "available",
+    "time_granularity": "day",
+    "default_time_offset": 0,
+    "extent": {
+      "west": -180.0,
+      "south": -85.0,
+      "east": 180.0,
+      "north": 85.0,
+      "crs": "EPSG:4326"
+    },
+    "style": {
+      "palette": "viridis",
+      "unit_label": "m3/m3",
+      "opacity": 0.85
+    },
+    "capabilities": {
+      "render_strategy": "workflow_map_layer",
+      "data_domain": "remote_sensing",
+      "paint_mode": "grid_fill"
+    },
+    "tags": [
+      "omega",
+      "avg-daily",
+      "smap",
+      "d2",
+      "frontend-aligned"
+    ],
+    "module_name": "omega_avg_daily",
+    "engine": "python_provider",
+    "workflow_name": "omega_avg_daily_smap_single",
+    "workflow_id": "omega_avg_daily_smap_single",
+    "default_task_type": "omega_avg_daily",
+    "default_data_access_sources": {
+      "omega_block_dir": [
+        "Inversion_Results/omega_block"
+      ]
+    },
+    "run_readiness_summary": "D2 日均 ω 依赖 D1 omega_block 产物目录",
+    "run_readiness_notes": [
+      "请先跑 omega_block_smap_single 或确认 Inversion_Results/omega_block 就绪"
+    ],
+    "data_owner": "Lab",
+    "temporal_coverage": "Depends on omega_block outputs"
+  },
+  {
+    "layer_id": "method-fy-omega-doy-avg",
+    "dataset_key": "omega_avg_daily_fy",
+    "display_name": "FY 日均 ω 反演（D2）",
+    "description": "omega_avg_daily FY ORIG_TS 链路。关联种子 omega_avg_daily_fy_single。",
+    "category": "research-group",
+    "source_type": "algorithm_output",
+    "render_type": "raster",
+    "supported_map_modes": [
+      "2d"
+    ],
+    "supports_time": true,
+    "is_realtime": false,
+    "default_visible": false,
+    "status": "available",
+    "time_granularity": "day",
+    "default_time_offset": 0,
+    "extent": {
+      "west": -180.0,
+      "south": -85.0,
+      "east": 180.0,
+      "north": 85.0,
+      "crs": "EPSG:4326"
+    },
+    "style": {
+      "palette": "viridis",
+      "unit_label": "m3/m3",
+      "opacity": 0.85
+    },
+    "capabilities": {
+      "render_strategy": "workflow_map_layer",
+      "data_domain": "remote_sensing",
+      "paint_mode": "grid_fill"
+    },
+    "tags": [
+      "omega",
+      "avg-daily",
+      "fy",
+      "d2",
+      "frontend-aligned"
+    ],
+    "module_name": "omega_avg_daily",
+    "engine": "python_provider",
+    "workflow_name": "omega_avg_daily_fy_single",
+    "workflow_id": "omega_avg_daily_fy_single",
+    "default_task_type": "omega_avg_daily",
+    "default_data_access_sources": {
+      "omega_block_dir": [
+        "Inversion_Results/omega_block"
+      ]
+    },
+    "run_readiness_summary": "FY D2 日均 ω 依赖 D1 omega_block 产物目录",
+    "run_readiness_notes": [
+      "请先跑对应 FY/SMAP D1 块反演或确认 omega_block 目录就绪"
+    ],
+    "data_owner": "Lab",
+    "temporal_coverage": "Depends on omega_block outputs"
   }
 ]

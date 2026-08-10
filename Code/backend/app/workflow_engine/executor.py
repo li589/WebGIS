@@ -129,12 +129,24 @@ class WorkflowExecutor:
         优先级：上游边输出 > 全局输入 > 节点 params 默认值。
         """
         inputs: dict[str, Any] = {}
+        missing_upstream_outputs: list[str] = []
         # 处理从上游节点来的输入
         for edge in edges:
             if edge.target_node_id == node_spec.node_id:
                 source_outputs = node_outputs.get(edge.source_node_id, {})
                 if edge.source_port in source_outputs:
                     inputs[edge.target_port] = source_outputs[edge.source_port]
+                else:
+                    # C7：审查 M4 — 上游输出缺失时收集错误，而非静默放行（下游带缺输入
+                    # 可能产出垃圾或运行时才炸）。
+                    missing_upstream_outputs.append(
+                        f"{edge.source_node_id}.{edge.source_port} -> {edge.target_port}"
+                    )
+        if missing_upstream_outputs:
+            raise KeyError(
+                f"Node {node_spec.node_id} missing upstream outputs: "
+                + ", ".join(missing_upstream_outputs)
+            )
         # 处理全局输入覆盖（如果该端口未被上游赋值）
         for port in input_ports:
             if port.name in global_inputs and port.name not in inputs:

@@ -107,6 +107,22 @@ class ResourceProfileResolverTests(unittest.TestCase):
             ),
             WorkflowResourceProfile.heavy,
         )
+        # Seed meta "standard" is a soft default; heavy graph modules still bump.
+        self.assertEqual(
+            infer_resource_profile(
+                current=WorkflowResourceProfile.standard,
+                meta={"resource_profile": "standard"},
+                definition={
+                    "nodes": [
+                        {
+                            "type": "gis/watershed",
+                            "properties": {"module_name": "gis_watershed"},
+                        }
+                    ]
+                },
+            ),
+            WorkflowResourceProfile.heavy,
+        )
 
 
 if __name__ == "__main__":

@@ -235,7 +235,9 @@ export function createCatalogRuntimeSlice(deps: CatalogRuntimeSliceDeps): Catalo
   function supportsAnalysisWorkflow(catalogId: string): boolean {
     const backendLayerId = resolveBackendLayerId(catalogId)
     if (isWeatherEngineLayer(backendLayerId) || isWeatherEngineLayer(catalogId)) return false
-    return Boolean(getCatalogWorkflowEngine(backendLayerId) || getCatalogWorkflowEngine(catalogId))
+    const engine = getCatalogWorkflowEngine(backendLayerId) || getCatalogWorkflowEngine(catalogId)
+    // overlay_registry / missing engine = display-only; only these engines can submit /workflow-runs
+    return engine === 'python_provider' || engine === 'gee'
   }
 
   function getCatalogRunBlockReason(catalogId: string) {

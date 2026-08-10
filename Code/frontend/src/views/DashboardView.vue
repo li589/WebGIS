@@ -1043,12 +1043,14 @@ async function handleRunWorkflowFromEditor(
   try {
     let algorithmRequest: Record<string, unknown> | undefined
     let weatherRequest: Record<string, unknown> | undefined
+    let topLevelTimeRange: Record<string, unknown> | undefined
     const nodes = canvasGraph?.nodes ?? []
     const links = canvasGraph?.links ?? []
     if (nodes.length > 0) {
       const { dryValidateWorkflowGraph } = await import('../services/workflow-definition-api')
       const { WorkflowValidationError } = await import('../services/_http')
       const { WORKFLOW_COPY } = await import('../ui-copy/workflow')
+      const { buildTimeRangeFromProps } = await import('../components/workflow/dimension-model')
       const graphPayload = {
         workflow_id: workflowId,
         name: workflowId,
@@ -1064,6 +1066,27 @@ async function handleRunWorkflowFromEditor(
         const engine =
           ((def.metadata as Record<string, unknown> | undefined)?.engine as string | undefined) ??
           'python_provider'
+        // 顶层 time_range：避免仅依赖后端 catalog 补齐（linked_layer 缺失时会 validation_error）
+        // dry-validate / 画布节点可能混用 properties|params、type|node_type
+        const canvasNodes = ((def.nodes as unknown) ?? nodes) as Array<Record<string, unknown>>
+        for (const node of canvasNodes) {
+          const props = (node.properties ?? node.params ?? {}) as Record<string, unknown>
+          const ntype = String(node.type ?? node.node_type ?? '')
+          const isTime =
+            ntype === 'data/time_range' ||
+            ntype.endsWith('/time_range') ||
+            props.module_name === 'time_range'
+          if (!isTime) continue
+          const built = buildTimeRangeFromProps(props)
+          if (built?.start_at && built?.end_at) {
+            topLevelTimeRange = {
+              start_at: built.start_at,
+              end_at: built.end_at,
+              granularity: built.granularity ?? 'day',
+            }
+            break
+          }
+        }
         if (engine === 'weather') {
           weatherRequest = {
             workflow_id: workflowId,
@@ -1076,13 +1099,40 @@ async function handleRunWorkflowFromEditor(
             priority: 'viewport',
           }
         } else {
+          const datasourceSelection: Record<string, unknown> = {}
+          const algorithmParams: Record<string, unknown> = {}
+          for (const node of canvasNodes) {
+            const props = (node.properties ?? node.params ?? {}) as Record<string, unknown>
+            const ntype = String(node.type ?? node.node_type ?? '')
+            const moduleName = String(props.module_name ?? '')
+            const isSource =
+              ntype === 'data/source' ||
+              ntype.endsWith('/source') ||
+              moduleName === 'data_source' ||
+              moduleName === 'source'
+            if (isSource) {
+              const key = String(props.dataset_key ?? props.key ?? '').trim()
+              const path = String(props.path ?? props.value ?? '').trim()
+              if (key && path) datasourceSelection[key] = path
+            }
+            const ap = props.algorithm_params
+            if (ap && typeof ap === 'object' && !Array.isArray(ap)) {
+              Object.assign(algorithmParams, ap as Record<string, unknown>)
+            }
+          }
           algorithmRequest = {
             workflow_definition: def,
             workflow_entry_name: workflowId,
-            datasource_selection: {},
-            algorithm_params: {},
+            datasource_selection: datasourceSelection,
+            algorithm_params: algorithmParams,
             output_spec: {},
             tags: { source: 'workflow_editor', workflow_id: workflowId },
+          }
+          if (topLevelTimeRange) {
+            algorithmRequest.time_range = {
+              start: topLevelTimeRange.start_at,
+              end: topLevelTimeRange.end_at,
+            }
           }
         }
         logStore.logWorkflow(
@@ -1106,7 +1156,9 @@ async function handleRunWorkflowFromEditor(
     const runId = await layersStore.runWorkflowForCatalog(catalogId, {
       algorithmRequest,
       weatherRequest,
+      timeRange: topLevelTimeRange,
       commandLabel: `运行画布工作流 ${workflowId}`,
+      resourceProfile: /omega_sf|omega_block|omega_avg/i.test(workflowId) ? 'heavy' : undefined,
     })
     if (typeof runId === 'string' && runId) {
       layersStore.bindRunIdToGroup(created.groupId, runId)

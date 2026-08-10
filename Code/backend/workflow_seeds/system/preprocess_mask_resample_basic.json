@@ -10,7 +10,7 @@
     "linked_layer_id": null,
     "tags": ["analysis", "preprocess", "raster", "stub_v1", "sample"],
     "category": "analysis",
-    "resource_profile": "standard"
+    "resource_profile": "heavy"
   },
   "workflow_id": "preprocess_mask_resample_basic",
   "name": "Preprocess mask + resample",

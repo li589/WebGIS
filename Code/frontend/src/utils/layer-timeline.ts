@@ -66,7 +66,11 @@ export function granularityUnitLabel(granularity: TimeGranularity): string {
 }
 
 /**
- * 根据粒度移动时间/日期
+ * 根据粒度移动时间/日期。
+ *
+ * 月末（如 1/31 +1 月）和闰日跨平年（如 2/29 +1 年）时 JS Date 会滚动到次月
+ * （setMonth/setFullYear 不钳制），本函数在溢出后用 ``setDate(0)`` 钳制到目标月
+ * 最后一天（如 1/31 +1月 → 2/28，2/29 +1年 → 2/28），保持"月末不移出当月"语义。
  */
 export function shiftTimelineDate(
   date: Date,
@@ -77,11 +81,17 @@ export function shiftTimelineDate(
   if (granularity === 'static') return result
 
   if (granularity === 'year') {
+    const origDay = date.getDate()
     result.setFullYear(result.getFullYear() + delta)
+    // 闰日跨平年溢出 → 钳制到目标年同月最后一天
+    if (result.getDate() !== origDay) result.setDate(0)
     return result
   }
   if (granularity === 'month') {
+    const origDay = date.getDate()
     result.setMonth(result.getMonth() + delta)
+    // 月末溢出（如 1/31→2 月）→ 钳制到目标月最后一天
+    if (result.getDate() !== origDay) result.setDate(0)
     return result
   }
   if (granularity === 'day' || granularity === 'hour') {

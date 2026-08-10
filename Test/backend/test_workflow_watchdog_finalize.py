@@ -117,3 +117,48 @@ def test_finalize_success_skips_cancelled(tmp_path: Path) -> None:
         assert run.status == ExecutionStatus.cancelled
     finally:
         repo.close()
+
+
+def test_finalize_success_skips_ordinary_failed(tmp_path: Path) -> None:
+    """H2：普通 failed（非 watchdog）也不可被迟到的 success finalize 覆盖。"""
+    repo = SQLiteWorkflowRepository(state_dir=tmp_path)
+    try:
+        persistence = WorkflowPersistenceService(repo)
+        transitions = WorkflowTransitionBuilder()
+        lifecycle = WorkflowLifecycleService(repo, persistence, transitions)
+        now = datetime.now(timezone.utc)
+        run_id = "run-ordinary-failed-protected"
+        payload = _payload()
+        persistence.save_run_status(
+            run_status=transitions.build_execution_transition(
+                run_id=run_id,
+                payload=payload,
+                status=ExecutionStatus.failed,
+                progress=100,
+                message="algorithm validation failed",
+                created_at=now,
+                updated_at=now,
+                diagnostics=["error_code=workflow_execution_failed"],
+                executor_metadata={},
+            )
+        )
+
+        execution = SimpleNamespace(
+            result_refs=[],
+            diagnostics=[],
+            result_dto=None,
+            message="late success must not win",
+            follow_up_tasks=[],
+        )
+        lifecycle.finalize_workflow_success(
+            run_id=run_id,
+            payload=payload,
+            execution=execution,
+            requested_at=now,
+        )
+        run = repo.get_run(run_id)
+        assert run is not None
+        assert run.status == ExecutionStatus.failed
+        assert run.message == "algorithm validation failed"
+    finally:
+        repo.close()

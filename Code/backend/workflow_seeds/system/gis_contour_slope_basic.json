@@ -10,7 +10,7 @@
     "linked_layer_id": null,
     "tags": ["analysis", "gis", "dem", "stub_v1", "sample"],
     "category": "analysis",
-    "resource_profile": "standard"
+    "resource_profile": "heavy"
   },
   "workflow_id": "gis_contour_slope_basic",
   "name": "GIS contour + slope/aspect",
